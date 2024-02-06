@@ -42,13 +42,30 @@ def delete(id):
 def search(id,book):
     db=sqlite3.connect(DATABASE)
     cur=db.cursor()
+    #处理启动时间查询
+    if id=="time":
+        cur.execute("SELECT * FROM timeset WHERE True")
+        timex=cur.fetchall()
+        timex=[list(row) for row in timex]
+        cur.close()
+        db.close()
+        if len(timex)==0:
+            return "启动时间未设置"
+        else:
+            for i in range(len(timex)):
+                print(timex[i][0])
+            return ""
     #处理MAA路径查询
     if id=="maa":
-        cur.execute("SELECT * FROM setting WHERE True")
+        cur.execute("SELECT * FROM pathset WHERE True")
         pathx=cur.fetchall()
         if len(pathx)>0:
+            cur.close()
+            db.close()
             return pathx[0][0]
         else:
+            cur.close()
+            db.close()
             return "MAA路径未设置"
     #处理用户查询与全部信息查询
     if id=="all":
@@ -56,13 +73,24 @@ def search(id,book):
     else:
         cur.execute("SELECT * FROM adminx WHERE admin='%s'" %(id))
     data=cur.fetchall()
+    #处理全部信息查询时的MAA路径与启动时间查询
     if id=="all":
-        cur.execute("SELECT * FROM setting WHERE True")
+        cur.execute("SELECT * FROM pathset WHERE True")
         pathx=cur.fetchall()
         if len(pathx)>0:
             print("\nMAA路径："+pathx[0][0])
         else:
             print("\nMAA路径未设置")
+        cur.execute("SELECT * FROM timeset WHERE True")
+        timex=cur.fetchall()
+        timex=[list(row) for row in timex]
+        if len(timex)==0:
+            print("\n启动时间未设置")
+        else:
+            print("启动时间：",end='')
+            for i in range(len(timex)):
+                print(timex[i][0],end='    ')
+            print('')
     cur.close()
     db.close()
     data=[list(row) for row in data]
@@ -89,7 +117,7 @@ def search(id,book):
                 print(unit(data[i][0],15),unit(data[i][1],12),unit(data[i][2],8),unit(data[i][3],4),unit(data[i][4],10),unit(data[i][5],10),unit(data[i][6],25))
         return ""
     elif id=="all":
-        return "当前没有用户记录"
+        return "\n当前没有用户记录"
     else:
         return "未找到"+id
 
@@ -107,6 +135,8 @@ def renewal(readxx):
     cur.execute("SELECT * FROM adminx WHERE admin='%s'" %(id))
     data=cur.fetchall()
     if len(data)==0:
+        cur.close()
+        db.close()
         return "未找到"+id
     #应用更新
     cur.execute("UPDATE adminx SET day=%d WHERE admin='%s'" %(data[0][2]+dayp,id))
@@ -123,10 +153,11 @@ def turn(id,t):
     cur.execute("SELECT * FROM adminx WHERE admin='%s'" %(id))
     data=cur.fetchall()
     if len(data)==0:
+        cur.close()
+        db.close()
         return "未找到"+id
     #应用更新
-    if t=='y' or t=='n':
-        cur.execute("UPDATE adminx SET status='%s' WHERE admin='%s'" %(t,id))
+    cur.execute("UPDATE adminx SET status='%s' WHERE admin='%s'" %(t,id))
     db.commit()
     cur.close()
     db.close()
@@ -149,6 +180,8 @@ def gameid(readxx):
     cur.execute("SELECT * FROM adminx WHERE admin='%s'" %(id))
     data=cur.fetchall()
     if len(data)==0:
+        cur.close()
+        db.close()
         return "未找到"+id
     #导入与应用特殊关卡规则
     games={}
@@ -174,16 +207,51 @@ def gameid(readxx):
 def setpath(pathx):
     db=sqlite3.connect(DATABASE)
     cur=db.cursor()
-    cur.execute("SELECT * FROM setting WHERE True")
+    cur.execute("SELECT * FROM pathset WHERE True")
     pathold=cur.fetchall()
     if len(pathold)>0:
-        cur.execute("UPDATE setting SET path='%s' WHERE True" %(pathx))
+        cur.execute("UPDATE pathset SET path='%s' WHERE True" %(pathx))
     else:
-        cur.execute("INSERT INTO setting(path) VALUES('%s')" %(pathx))
+        cur.execute("INSERT INTO pathset(path) VALUES('%s')" %(pathx))
     db.commit()
     cur.close()
     db.close()
     return "MAA路径已设置为"+pathx
+
+#设置启动时间
+def settime(book,timex):
+    db=sqlite3.connect(DATABASE)
+    cur=db.cursor()
+    #检查待操作对象存在情况
+    cur.execute("SELECT * FROM timeset WHERE True")
+    timeold=cur.fetchall()
+    timeold=[list(row) for row in timeold]
+    timenew=[]
+    timenew.append(timex)
+    #添加时间设置
+    if book=='+':
+        if timenew in timeold:
+            cur.close()
+            db.close()
+            return "已存在"+timex
+        else:
+            cur.execute("INSERT INTO timeset(time) VALUES('%s')" %(timex))
+            db.commit()
+            cur.close()
+            db.close()
+            return "已添加"+timex
+    #删除时间设置
+    elif book=='-':
+        if timenew in timeold:
+            cur.execute("DELETE FROM timeset WHERE time='%s'" %(timex))
+            db.commit()
+            cur.close()
+            db.close()
+            return "已删除"+timex
+        else:
+            cur.close()
+            db.close()
+            return "未找到"+timex
 
 #统一制表单元
 def unit(x,m):
@@ -201,9 +269,10 @@ if not os.path.exists(DATABASE):
     db=sqlite3.connect(DATABASE)
     cur=db.cursor()
     db.execute("CREATE TABLE adminx(admin text,number text,day int,status text,last date,game text,password text)")
-    db.execute("CREATE TABLE setting(path text)")
+    db.execute("CREATE TABLE pathset(path text)")
+    db.execute("CREATE TABLE timeset(time text)")
     readx=input("首次启动，请设置MAA路径：")
-    cur.execute("INSERT INTO setting(path) VALUES('%s')" %(readx))
+    cur.execute("INSERT INTO pathset(path) VALUES('%s')" %(readx))
     db.commit()
     cur.close()
     db.close()
@@ -223,6 +292,8 @@ while True:
         exit()
     elif read[0]=='/':
         print(setpath(read[1:]))
+    elif read[0]==':' and (read[1]=='+' or read[1]=='-'):
+        print(settime(read[1],read[2:]))
     else:
         if read[-1]=='?':
             print(search(read[:-2],1))

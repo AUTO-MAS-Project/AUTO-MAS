@@ -1,7 +1,0 @@
- 声明：
-
-KillSpecifiedProcess.cpp与mytaskkill.exe来自CSDN博主的文章，遵循CC 4.0 BY-SA 版权协议附加以下信息：
-
-版权声明：本文为博主原创文章，遵循 CC 4.0 BY-SA 版权协议，转载请附上原文出处链接和本声明。
-                        
-原文链接：https://blog.csdn.net/qq_29542611/article/details/122003681

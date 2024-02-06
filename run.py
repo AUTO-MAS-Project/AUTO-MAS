@@ -1,10 +1,12 @@
 import os
+import subprocess
 import sqlite3
 import datetime
 import time
 import json
 from termcolor import colored
 
+#判断MAA程序运行状态
 def ifoff():
     while True:
         time.sleep(10)
@@ -17,16 +19,9 @@ def ifoff():
             elif ("请检查连接设置或尝试重启模拟器与 ADB 或重启电脑" in log) or ("已停止" in log):
                 return False
 
-def killpath(maapath):
-    kpath='.\\mytaskkill.exe '
-    for i in maapath:
-        if i=='/':
-            kpath=kpath+'\\'
-        else:
-            kpath=kpath+i
-    return kpath
-
-def runmaa(tel,game):
+#执行MAA任务
+def runmaa(tel,game,num=2):
+    #配置MAA运行参数
     with open(setpath,"r",encoding="utf-8") as f:
         data = json.load(f)
     data["Configurations"]["Default"]["Start.AccountName"]=tel[:3]+"****"+tel[7:]
@@ -37,22 +32,18 @@ def runmaa(tel,game):
         data["Configurations"]["Default"]["MainFunction.Stage1"]=game
     with open(setpath,"w",encoding="utf-8") as f:
         json.dump(data,f)
-    os.system('start '+maapath)
-    time.sleep(60)
-    if ifoff():
-        return True
-    else:
-        command=killpath(maapath)
-        os.system(command)
-        os.system('start '+maapath)
+    #开始运行
+    for i in range(num):
+        maa=subprocess.Popen([maapath])
+        maapid=maa.pid
         time.sleep(60)
         if ifoff():
             return True
         else:
-            command=killpath(maapath)
-            os.system(command)
-            return False
+            os.system('taskkill /F /T /PID '+str(maapid))
+    return False
 
+#更新已完成用户的数据
 def updata(id):
     db=sqlite3.connect(DATABASE)
     cur=db.cursor()
@@ -71,7 +62,7 @@ def updata(id):
 DATABASE="data/data.db"
 db=sqlite3.connect(DATABASE)
 cur=db.cursor()
-cur.execute("SELECT * FROM setting WHERE True")
+cur.execute("SELECT * FROM pathset WHERE True")
 path=cur.fetchall()
 path=str(path[0][0])
 setpath=path+"/config/gui.json"
@@ -110,3 +101,5 @@ with open("log.txt","w", encoding="utf-8") as f:
         print("代理未完成的用户：",file=f)
     for i in range(len(idfail)):
         print(idfail[i],file=f)
+with open("OVER","w", encoding="utf-8") as f:
+    print("OVER",file=f)
