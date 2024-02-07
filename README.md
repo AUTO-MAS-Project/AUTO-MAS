@@ -188,6 +188,14 @@ time ?
 
 ![信息配置14](https://github.com/DLmaster361/AUTO_MAA/blob/main/res/README/信息配置14.png "MAA配置14")
 
+**退出**
+
+输入“-”以退出`manage.exe`，如下：
+
+```plaintext
+-
+```
+
 ## 运行代理
 
 **直接运行**
