@@ -14,13 +14,13 @@ This software is open source, free of charge and for learning and exchange purpo
 
 本软件是MAA的外部工具，需要安装配置MAA后才能使用。
 
-**MAA安装**
+#### MAA安装
 
 什么是MAA？    [官网](https://maa.plus/)/[GitHub](https://github.com/CHNZYX/Auto_Simulated_Universe/archive/refs/heads/main.zip)
 
 MAA下载地址    [GitHub下载](https://github.com/MaaAssistantArknights/MaaAssistantArknights/releases)
 
-**MAA配置**
+#### MAA配置
 
 1.完成MAA的adb配置等基本配置
 
@@ -46,13 +46,23 @@ GitHub下载地址    [GitHub下载](https://github.com/DLmaster361/AUTO_MAA/rel
 
 ## 配置用户信息与相关参数
 
-**第一次启动**
+注意：当前所有的密码输入部分都存在一点“小问题”，请在输入密码时避免输入Delete、F12、Tab等功能键。
 
-双击启动`manage.exe`，输入MAA所在文件夹路径并回车（注意使用斜杠的种类，不要使用反斜杠）
+-------------------------------------------------
+
+#### 第一次启动
+
+双击启动`manage.exe`，输入MAA所在文件夹路径并回车（注意使用斜杠的种类，不要使用反斜杠），然后设置管理密钥。
 
 ![信息配置1](https://github.com/DLmaster361/AUTO_MAA/blob/main/res/README/信息配置1.png "MAA配置1")
 
-**添加用户**
+管理密钥是解密用户密码的唯一凭证，与数据库绑定。密钥丢失或`data/key/`目录下任一文件损坏都将导致解密无法正常进行。
+
+本项目采用自主组建的混合加密模式，项目组也无法找回您的管理密钥或修复`data/key/`目录下的文件。如果不幸的事发生，建议您删除`data/data.db`重新录入信息。
+
+当前暂不支持修改管理密钥，请等待后续更新。
+
+#### 添加用户
 
 输入“+”以开始添加用户。依次输入：
 
@@ -66,7 +76,7 @@ GitHub下载地址    [GitHub下载](https://github.com/DLmaster361/AUTO_MAA/rel
 
 ![信息配置2](https://github.com/DLmaster361/AUTO_MAA/blob/main/res/README/信息配置2.png "MAA配置2")
 
-**删除用户**
+#### 删除用户
 
 输入用户名+“-”以删除用户。格式：
 
@@ -76,7 +86,7 @@ GitHub下载地址    [GitHub下载](https://github.com/DLmaster361/AUTO_MAA/rel
 
 ![信息配置3](https://github.com/DLmaster361/AUTO_MAA/blob/main/res/README/信息配置3.png "MAA配置3")
 
-**配置用户状态**
+#### 配置用户状态
 
 启用代理：输入用户名+“y”以启用该用户的代理。格式：
 
@@ -94,7 +104,7 @@ GitHub下载地址    [GitHub下载](https://github.com/DLmaster361/AUTO_MAA/rel
 
 ![信息配置5](https://github.com/DLmaster361/AUTO_MAA/blob/main/res/README/信息配置5.png "MAA配置5")
 
-**续期**
+#### 续期
 
 输入用户名+续期天数+“+”以延长该用户的代理天数。格式：
 
@@ -104,7 +114,7 @@ GitHub下载地址    [GitHub下载](https://github.com/DLmaster361/AUTO_MAA/rel
 
 ![信息配置6](https://github.com/DLmaster361/AUTO_MAA/blob/main/res/README/信息配置6.png "MAA配置6")
 
-**修改刷取关卡**
+#### 修改刷取关卡
 
 输入用户名+关卡号+“~”以更改该用户的代理关卡。格式：
 
@@ -120,7 +130,7 @@ GitHub下载地址    [GitHub下载](https://github.com/DLmaster361/AUTO_MAA/rel
 
 ![gameid](https://github.com/DLmaster361/AUTO_MAA/blob/main/res/README/gameid.png "gameid")
 
-**设置MAA路径**
+#### 设置MAA路径
 
 输入“/”+新的MAA文件夹路径以修改MAA安装位置的配置。格式：
 
@@ -132,7 +142,7 @@ GitHub下载地址    [GitHub下载](https://github.com/DLmaster361/AUTO_MAA/rel
 
 ![信息配置8](https://github.com/DLmaster361/AUTO_MAA/blob/main/res/README/信息配置8.png "MAA配置8")
 
-**设置启动时间**
+#### 设置启动时间
 
 添加启动时间：输入“:+”+时间以添加定时启动时间。格式：
 
@@ -154,7 +164,7 @@ GitHub下载地址    [GitHub下载](https://github.com/DLmaster361/AUTO_MAA/rel
 
 ![信息配置10](https://github.com/DLmaster361/AUTO_MAA/blob/main/res/README/信息配置10.png "MAA配置10")
 
-**检索信息**
+#### 检索信息
 
 检索所有信息：`manage.exe`打开时会打印所有用户与配置信息。除此之外，你可以通过输入“all ?”以打印所有信息，如下：
 
@@ -188,7 +198,7 @@ time ?
 
 ![信息配置14](https://github.com/DLmaster361/AUTO_MAA/blob/main/res/README/信息配置14.png "MAA配置14")
 
-**退出**
+#### 退出
 
 输入“-”以退出`manage.exe`，如下：
 
@@ -198,11 +208,11 @@ time ?
 
 ## 运行代理
 
-**直接运行**
+#### 直接运行
 
 双击`run.exe`直接运行 
 
-**定时运行**
+#### 定时运行
 
 双击`AUTO_MAA.exe`打开，不要关闭。它会读取设定时间，在该时刻自动运行
 
