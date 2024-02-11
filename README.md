@@ -1,6 +1,8 @@
 # AUTO_MAA
 MAA多账号管理与自动化软件
 
+!["软件图标"](https://github.com/DLmaster361/AUTO_MAA/blob/main/res/AUTO_MAA.png "软件图标")
+
 ----------------------------------------------------------------------------------------------
 
 ## 免责声明
@@ -14,13 +16,13 @@ This software is open source, free of charge and for learning and exchange purpo
 
 本软件是MAA的外部工具，需要安装配置MAA后才能使用。
 
-#### MAA安装
+### MAA安装
 
 什么是MAA？    [官网](https://maa.plus/)/[GitHub](https://github.com/CHNZYX/Auto_Simulated_Universe/archive/refs/heads/main.zip)
 
 MAA下载地址    [GitHub下载](https://github.com/MaaAssistantArknights/MaaAssistantArknights/releases)
 
-#### MAA配置
+### MAA配置
 
 1.完成MAA的adb配置等基本配置
 
@@ -46,37 +48,35 @@ GitHub下载地址    [GitHub下载](https://github.com/DLmaster361/AUTO_MAA/rel
 
 ## 配置用户信息与相关参数
 
-注意：当前所有的密码输入部分都存在一点“小问题”，请在输入密码时避免输入Delete、F12、Tab等功能键。
+**注意：** 当前所有的密码输入部分都存在一点“小问题”，请在输入密码时避免输入Delete、F12、Tab等功能键。
 
 -------------------------------------------------
 
-#### 第一次启动
+### 第一次启动
 
-双击启动`manage.exe`，输入MAA所在文件夹路径并回车（注意使用斜杠的种类，不要使用反斜杠），然后设置管理密钥。
+双击启动`manage.exe`，输入MAA所在文件夹路径并回车（注意使用斜杠的种类，不要使用反斜杠），然后设置管理密钥（密钥可以包含字母大小写与特殊字符）。
 
-![信息配置1](https://github.com/DLmaster361/AUTO_MAA/blob/main/res/README/信息配置1.png "MAA配置1")
+![信息配置1](https://github.com/DLmaster361/AUTO_MAA/blob/main/res/README/信息配置1.png "信息配置1")
 
 管理密钥是解密用户密码的唯一凭证，与数据库绑定。密钥丢失或`data/key/`目录下任一文件损坏都将导致解密无法正常进行。
 
-本项目采用自主组建的混合加密模式，项目组也无法找回您的管理密钥或修复`data/key/`目录下的文件。如果不幸的事发生，建议您删除`data/data.db`重新录入信息。
+本项目采用自主开发的混合加密模式，项目组也无法找回您的管理密钥或修复`data/key/`目录下的文件。如果不幸的事发生，建议您删除`data/data.db`重新录入信息。
 
 当前暂不支持修改管理密钥，请等待后续更新。
 
-#### 添加用户
+### 添加用户
 
 输入“+”以开始添加用户。依次输入：
 
-用户名：管理用户的惟一凭证
+**用户名：** 管理用户的惟一凭证
 
-手机号码：允许隐去中间四位以“****”代替
+**手机号码：** 允许隐去中间四位以“****”代替
 
-代理天数：这个还要我解释吗？
+**代理天数：** 这个还要我解释吗？
 
-密码：警告！密码功能暂未开发，输入的信息会以明文存储，有泄露风险，请勿使用。可以用无意义的字符串代替。由于忽略警告导致的信息泄露，本项目组概不负责
+![信息配置2](https://github.com/DLmaster361/AUTO_MAA/blob/main/res/README/信息配置2.png "信息配置2")
 
-![信息配置2](https://github.com/DLmaster361/AUTO_MAA/blob/main/res/README/信息配置2.png "MAA配置2")
-
-#### 删除用户
+### 删除用户
 
 输入用户名+“-”以删除用户。格式：
 
@@ -84,27 +84,27 @@ GitHub下载地址    [GitHub下载](https://github.com/DLmaster361/AUTO_MAA/rel
 用户名 -
 ```
 
-![信息配置3](https://github.com/DLmaster361/AUTO_MAA/blob/main/res/README/信息配置3.png "MAA配置3")
+![信息配置3](https://github.com/DLmaster361/AUTO_MAA/blob/main/res/README/信息配置3.png "信息配置3")
 
-#### 配置用户状态
+### 配置用户状态
 
-启用代理：输入用户名+“y”以启用该用户的代理。格式：
+**启用代理：** 输入用户名+“y”以启用该用户的代理。格式：
 
 ```plaintext
 用户名 y
 ```
 
-![信息配置4](https://github.com/DLmaster361/AUTO_MAA/blob/main/res/README/信息配置4.png "MAA配置4")
+![信息配置4](https://github.com/DLmaster361/AUTO_MAA/blob/main/res/README/信息配置4.png "信息配置4")
 
-禁用代理：输入用户名+“n”以禁用该用户的代理。格式：
+**禁用代理：** 输入用户名+“n”以禁用该用户的代理。格式：
 
 ```plaintext
 用户名 n
 ```
 
-![信息配置5](https://github.com/DLmaster361/AUTO_MAA/blob/main/res/README/信息配置5.png "MAA配置5")
+![信息配置5](https://github.com/DLmaster361/AUTO_MAA/blob/main/res/README/信息配置5.png "信息配置5")
 
-#### 续期
+### 续期
 
 输入用户名+续期天数+“+”以延长该用户的代理天数。格式：
 
@@ -112,9 +112,9 @@ GitHub下载地址    [GitHub下载](https://github.com/DLmaster361/AUTO_MAA/rel
 用户名 续期天数 +
 ```
 
-![信息配置6](https://github.com/DLmaster361/AUTO_MAA/blob/main/res/README/信息配置6.png "MAA配置6")
+![信息配置6](https://github.com/DLmaster361/AUTO_MAA/blob/main/res/README/信息配置6.png "信息配置6")
 
-#### 修改刷取关卡
+### 修改刷取关卡
 
 输入用户名+关卡号+“~”以更改该用户的代理关卡。格式：
 
@@ -122,15 +122,15 @@ GitHub下载地址    [GitHub下载](https://github.com/DLmaster361/AUTO_MAA/rel
 用户名 关卡号 ~
 ```
 
-![信息配置7](https://github.com/DLmaster361/AUTO_MAA/blob/main/res/README/信息配置7.png "MAA配置7")
+![信息配置7](https://github.com/DLmaster361/AUTO_MAA/blob/main/res/README/信息配置7.png "信息配置7")
 
-特别的：
+**特别的：**
 
 你可以自定义关卡号替换方案。程序会读取`gameid.txt`中的数据，依据此进行关卡号的替换，便于常用关卡的使用。`gameid.txt`在初始已经存储了一些常用资源本的替代方案。
 
 ![gameid](https://github.com/DLmaster361/AUTO_MAA/blob/main/res/README/gameid.png "gameid")
 
-#### 设置MAA路径
+### 设置MAA路径
 
 输入“/”+新的MAA文件夹路径以修改MAA安装位置的配置。格式：
 
@@ -138,67 +138,69 @@ GitHub下载地址    [GitHub下载](https://github.com/DLmaster361/AUTO_MAA/rel
 /新的MAA文件夹路径
 ```
 
-注意：‘/’与路径间没有空格，路径同样不能使用反斜杠
+**注意：** ‘/’与路径间没有空格，路径同样不能使用反斜杠
 
-![信息配置8](https://github.com/DLmaster361/AUTO_MAA/blob/main/res/README/信息配置8.png "MAA配置8")
+![信息配置8](https://github.com/DLmaster361/AUTO_MAA/blob/main/res/README/信息配置8.png "信息配置8")
 
-#### 设置启动时间
+### 设置启动时间
 
-添加启动时间：输入“:+”+时间以添加定时启动时间。格式：
+**添加启动时间：** 输入“:+”+时间以添加定时启动时间。格式：
 
 ```plaintext
 :+小时:分钟
 ```
 
-注意：所有输入间没有空格
+**注意：** 所有输入间没有空格
 
-![信息配置9](https://github.com/DLmaster361/AUTO_MAA/blob/main/res/README/信息配置9.png "MAA配置9")
+![信息配置9](https://github.com/DLmaster361/AUTO_MAA/blob/main/res/README/信息配置9.png "信息配置9")
 
-删除启动时间：输入“:-”+时间以删除定时启动时间。格式：
+**删除启动时间：** 输入“:-”+时间以删除定时启动时间。格式：
 
 ```plaintext
 :-小时:分钟
 ```
 
-注意：所有输入间没有空格
+**注意：** 所有输入间没有空格
 
-![信息配置10](https://github.com/DLmaster361/AUTO_MAA/blob/main/res/README/信息配置10.png "MAA配置10")
+![信息配置10](https://github.com/DLmaster361/AUTO_MAA/blob/main/res/README/信息配置10.png "信息配置10")
 
-#### 检索信息
+### 检索信息
 
-检索所有信息：`manage.exe`打开时会打印所有用户与配置信息。除此之外，你可以通过输入“all ?”以打印所有信息，如下：
+**检索所有信息：** `manage.exe`打开时会打印所有用户与配置信息。除此之外，你可以通过输入“all ?”以打印所有信息，如下：
 
 ```plaintext
 all ?
 ```
 
-![信息配置11](https://github.com/DLmaster361/AUTO_MAA/blob/main/res/README/信息配置11.png "MAA配置11")
+![信息配置11](https://github.com/DLmaster361/AUTO_MAA/blob/main/res/README/信息配置11.png "信息配置11")
 
-检索MAA路径：输入“maa ?”以检索MAA安装路径，如下：
+**检索MAA路径：** 输入“maa ?”以检索MAA安装路径，如下：
 
 ```plaintext
 maa ?
 ```
 
-![信息配置12](https://github.com/DLmaster361/AUTO_MAA/blob/main/res/README/信息配置12.png "MAA配置12")
+![信息配置12](https://github.com/DLmaster361/AUTO_MAA/blob/main/res/README/信息配置12.png "信息配置12")
 
-检索启动时间：输入“time ?”以检索定时启动的时间，如下：
+**检索启动时间：** 输入“time ?”以检索定时启动的时间，如下：
 
 ```plaintext
 time ?
 ```
 
-![信息配置13](https://github.com/DLmaster361/AUTO_MAA/blob/main/res/README/信息配置13.png "MAA配置13")
+![信息配置13](https://github.com/DLmaster361/AUTO_MAA/blob/main/res/README/信息配置13.png "信息配置13")
 
-检索指定用户：输入用户名+“?”以检索指定用户信息，如下：
+**检索指定用户：** 输入用户名+“?”以检索指定用户信息，如下：
 
 ```plaintext
 用户名 ?
 ```
 
-![信息配置14](https://github.com/DLmaster361/AUTO_MAA/blob/main/res/README/信息配置14.png "MAA配置14")
+**注意：** 由于需要检索用户密码，每一次`manage.exe`启动后的首次查询需要验证管理密钥。为了方便操作，之后的查询不会再要求重复验证。因此，完成密码查询后，请及时关闭`manage.exe`。
 
-#### 退出
+![信息配置14](https://github.com/DLmaster361/AUTO_MAA/blob/main/res/README/信息配置14.png "信息配置14")
+
+### 退出
 
 输入“-”以退出`manage.exe`，如下：
 
@@ -208,15 +210,15 @@ time ?
 
 ## 运行代理
 
-#### 直接运行
+### 直接运行
 
 双击`run.exe`直接运行 
 
-#### 定时运行
+### 定时运行
 
 双击`AUTO_MAA.exe`打开，不要关闭。它会读取设定时间，在该时刻自动运行
 
-注意：周一将自动进行剿灭代理
+**注意：** 周一将自动进行剿灭代理
 
 ## 关于
 
@@ -224,7 +226,7 @@ time ?
 
 ----------------------------------------------------------------------------------------------
 
-欢迎加入，欢迎反馈bug
+欢迎加入AUTO_MAA项目组，欢迎反馈bug
 
 QQ群：没有
 
