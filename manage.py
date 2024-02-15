@@ -36,7 +36,6 @@ def readpass(text):
             p+=typed.decode("utf-8")
             sys.stdout.write(typed.decode("utf-8"))
             sys.stdout.flush()
-        
     print('')
     return p
 
@@ -101,7 +100,48 @@ def decryptx(note,PASSWORD):
         private_key=RSA.import_key(private_key_pem)
         #使用RSA私钥解密数据
         decrypter=PKCS1_OAEP.new(private_key)
-        return decrypter.decrypt(note)
+        note=decrypter.decrypt(note)
+        return note.decode("utf-8")
+
+#修改管理密钥
+def changePASSWORD():
+    #获取用户信息
+    db=sqlite3.connect(DATABASE)
+    cur=db.cursor()
+    cur.execute("SELECT * FROM adminx WHERE True")
+    data=cur.fetchall()
+    cur.close()
+    db.close()
+    data=[list(row) for row in data]
+    global PASSWORD
+    #验证管理密钥
+    PASSWORDold=readpass("请输入旧管理密钥：")
+    if len(data)==0:
+        print("当前无用户，验证自动通过")
+        PASSWORDnew=readpass("请输入新管理密钥：")
+        getPASSWORD(PASSWORDnew)
+        PASSWORD=PASSWORDnew
+        return "管理密钥修改成功"
+    while decryptx(data[0][6],PASSWORDold)=="管理密钥错误":
+            print("管理密钥错误")
+            PASSWORDold=readpass("请输入旧管理密钥：")
+    print("验证通过")
+    #修改管理密钥
+    PASSWORDnew=readpass("请输入新管理密钥：")
+    #使用旧管理密钥解密
+    for i in range(len(data)):
+        data[i][6]=decryptx(data[i][6],PASSWORDold)
+    #使用新管理密钥重新加密
+    getPASSWORD(PASSWORDnew)
+    db=sqlite3.connect(DATABASE)
+    cur=db.cursor()
+    for i in range(len(data)):
+        cur.execute("UPDATE adminx SET password=? WHERE admin=?",(encryptx(data[i][6]),data[i][0]))
+        db.commit()
+    cur.close()
+    db.close()
+    PASSWORD=PASSWORDnew
+    return "管理密钥修改成功"
 
 #添加用户
 def add():
@@ -214,9 +254,9 @@ def search(id,book):
             else:
                 #解密
                 global PASSWORD
-                if PASSWORD==0:
-                    PASSWORD=input("请输入管理密钥：")
-                data[i][6]=decryptx(data[i][6],PASSWORD).decode("utf-8")
+                if PASSWORD==0 or decryptx(data[i][6],PASSWORD)=="管理密钥错误":
+                    PASSWORD=readpass("请输入管理密钥：")
+                data[i][6]=decryptx(data[i][6],PASSWORD)
         #制表输出
         if book==1:
             print('')
@@ -385,7 +425,7 @@ if not os.path.exists(DATABASE):
     db.commit()
     cur.close()
     db.close()
-    PASSWORD=readpass("请设置管理密钥（密钥与数据库绑定且唯一不可变）：")
+    PASSWORD=readpass("请设置管理密钥（密钥与数据库绑定）：")
     getPASSWORD(PASSWORD)
 
 #初始界面
@@ -397,24 +437,26 @@ while True:
     read=input()
     if len(read)==0:
         print("无法识别的输入")
-    elif read[0]=='+':
+    elif read[0]=='+' and len(read)==1:
         print(add())
-    elif read[0]=='-':
+    elif read[0]=='-' and len(read)==1:
         exit()
     elif read[0]=='/':
         print(setpath(read[1:]))
+    elif read[0]=='*' and len(read)==1:
+        print(changePASSWORD())
     elif read[0]==':' and (read[1]=='+' or read[1]=='-'):
         print(settime(read[1],read[2:]))
     else:
-        if read[-1]=='?':
+        if read[-1]=='?' and read[-2]==' ':
             print(search(read[:-2],1))
-        elif read[-1]=='+':
+        elif read[-1]=='+' and read[-2]==' ':
             print(renewal(read[:-2]))
-        elif read[-1]=='-':
+        elif read[-1]=='-' and read[-2]==' ':
             print(delete(read[:-2]))
-        elif read[-1]=='~':
+        elif read[-1]=='~' and read[-2]==' ':
             print(gameid(read[:-2]))
-        elif read[-1]=='y' or read[-1]=='n':
+        elif (read[-1]=='y' or read[-1]=='n') and read[-2]==' ':
             print(turn(read[:-2],read[-1]))
         else:
             print("无法识别的输入")

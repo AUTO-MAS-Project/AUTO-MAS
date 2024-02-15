@@ -6,7 +6,7 @@ MAA多账号管理与自动化软件
 ----------------------------------------------------------------------------------------------
 
 ## 免责声明
-本软件是一个外部工具，旨在优化MAA多账号功能体验。该软件包可以存储多账号数据，并通过修改MAA配置文件、读取MAA日志等行为自动完成多账号代理。
+本软件是一个外部工具，旨在优化MAA多账号功能体验。该软件包可以存储明日方舟多账号数据，并通过修改MAA配置文件、读取MAA日志等行为自动完成多账号代理。
 
 This software is open source, free of charge and for learning and exchange purposes only. The developer team has the final right to interpret this project. All problems arising from the use of this software are not related to this project and the developer team. If you encounter a merchant using this software to practice on your behalf and charging for it, it may be the cost of equipment and time, etc. The problems and consequences arising from this software have nothing to do with it.
 
@@ -62,8 +62,6 @@ GitHub下载地址    [GitHub下载](https://github.com/DLmaster361/AUTO_MAA/rel
 
 本项目采用自主开发的混合加密模式，项目组也无法找回您的管理密钥或修复`data/key/`目录下的文件。如果不幸的事发生，建议您删除`data/data.db`重新录入信息。
 
-当前暂不支持修改管理密钥，请等待后续更新。
-
 ### 添加用户
 
 输入“+”以开始添加用户。依次输入：
@@ -80,7 +78,7 @@ GitHub下载地址    [GitHub下载](https://github.com/DLmaster361/AUTO_MAA/rel
 
 输入用户名+“-”以删除用户。格式：
 
-```plaintext
+```
 用户名 -
 ```
 
@@ -90,7 +88,7 @@ GitHub下载地址    [GitHub下载](https://github.com/DLmaster361/AUTO_MAA/rel
 
 **启用代理：** 输入用户名+“y”以启用该用户的代理。格式：
 
-```plaintext
+```
 用户名 y
 ```
 
@@ -98,7 +96,7 @@ GitHub下载地址    [GitHub下载](https://github.com/DLmaster361/AUTO_MAA/rel
 
 **禁用代理：** 输入用户名+“n”以禁用该用户的代理。格式：
 
-```plaintext
+```
 用户名 n
 ```
 
@@ -108,7 +106,7 @@ GitHub下载地址    [GitHub下载](https://github.com/DLmaster361/AUTO_MAA/rel
 
 输入用户名+续期天数+“+”以延长该用户的代理天数。格式：
 
-```plaintext
+```
 用户名 续期天数 +
 ```
 
@@ -118,7 +116,7 @@ GitHub下载地址    [GitHub下载](https://github.com/DLmaster361/AUTO_MAA/rel
 
 输入用户名+关卡号+“~”以更改该用户的代理关卡。格式：
 
-```plaintext
+```
 用户名 关卡号 ~
 ```
 
@@ -134,7 +132,7 @@ GitHub下载地址    [GitHub下载](https://github.com/DLmaster361/AUTO_MAA/rel
 
 输入“/”+新的MAA文件夹路径以修改MAA安装位置的配置。格式：
 
-```plaintext
+```
 /新的MAA文件夹路径
 ```
 
@@ -146,7 +144,7 @@ GitHub下载地址    [GitHub下载](https://github.com/DLmaster361/AUTO_MAA/rel
 
 **添加启动时间：** 输入“:+”+时间以添加定时启动时间。格式：
 
-```plaintext
+```
 :+小时:分钟
 ```
 
@@ -156,7 +154,7 @@ GitHub下载地址    [GitHub下载](https://github.com/DLmaster361/AUTO_MAA/rel
 
 **删除启动时间：** 输入“:-”+时间以删除定时启动时间。格式：
 
-```plaintext
+```
 :-小时:分钟
 ```
 
@@ -168,7 +166,7 @@ GitHub下载地址    [GitHub下载](https://github.com/DLmaster361/AUTO_MAA/rel
 
 **检索所有信息：** `manage.exe`打开时会打印所有用户与配置信息。除此之外，你可以通过输入“all ?”以打印所有信息，如下：
 
-```plaintext
+```
 all ?
 ```
 
@@ -176,7 +174,7 @@ all ?
 
 **检索MAA路径：** 输入“maa ?”以检索MAA安装路径，如下：
 
-```plaintext
+```
 maa ?
 ```
 
@@ -184,7 +182,7 @@ maa ?
 
 **检索启动时间：** 输入“time ?”以检索定时启动的时间，如下：
 
-```plaintext
+```
 time ?
 ```
 
@@ -192,7 +190,7 @@ time ?
 
 **检索指定用户：** 输入用户名+“?”以检索指定用户信息，如下：
 
-```plaintext
+```
 用户名 ?
 ```
 
@@ -200,11 +198,21 @@ time ?
 
 ![信息配置14](https://github.com/DLmaster361/AUTO_MAA/blob/main/res/README/信息配置14.png "信息配置14")
 
+### 修改管理密钥
+
+输入“*”以开始修改管理密钥。依次输入：
+
+**旧管理密钥：** 当数据库中没有存储用户信息时，允许跳过验证直接配置新管理密钥
+
+**新管理密钥：** 请妥善保管，丢失无法找回。
+
+![信息配置15](https://github.com/DLmaster361/AUTO_MAA/blob/main/res/README/信息配置15.png "信息配置15")
+
 ### 退出
 
 输入“-”以退出`manage.exe`，如下：
 
-```plaintext
+```
 -
 ```
 
@@ -228,7 +236,7 @@ time ?
 
 欢迎加入AUTO_MAA项目组，欢迎反馈bug
 
-QQ群：没有
+QQ群：暂时没有
 
 ----------------------------------------------------------------------------------------------
 
