@@ -5,12 +5,20 @@ MAA多账号管理与自动化软件
 
 ----------------------------------------------------------------------------------------------
 
-## 免责声明
-本软件是一个外部工具，旨在优化MAA多账号功能体验。该软件包可以存储明日方舟多账号数据，并通过修改MAA配置文件、读取MAA日志等行为自动完成多账号代理。
+## 重要声明
+本软件是一个外部工具，旨在优化MAA多账号功能体验。该软件包可以存储明日方舟多账号数据，并通过修改MAA配置文件、读取MAA日志等行为自动完成多账号代理。本开发团队承诺，不会修改明日方舟游戏本体与相关配置文件。
 
-This software is open source, free of charge and for learning and exchange purposes only. The developer team has the final right to interpret this project. All problems arising from the use of this software are not related to this project and the developer team. If you encounter a merchant using this software to practice on your behalf and charging for it, it may be the cost of equipment and time, etc. The problems and consequences arising from this software have nothing to do with it.
+本项目使用GPL开源，相关细则如下：
 
-本软件开源、免费，仅供学习交流使用。开发者团队拥有本项目的最终解释权。使用本软件产生的所有问题与本项目与开发者团队无关。若您遇到商家使用本软件进行代练并收费，可能是设备与时间等费用，产生的问题及后果与本软件无关。
+- **作者：** AUTO_MAA软件作者为DLmaster、DLmaster361或DLmaster_361，以上均指代同一人。
+- **使用：** AUTO_MAA使用者可以按自己的意愿自由使用本软件。依据GPL，对于由此可能产生的损失，AUTO_MAA项目组不负任何责任
+- **分发：** AUTO_MAA允许任何人自由分发本软件，包括进行商业活动牟利。但所有分发者必须遵循GPL向接收者提供本软件项目地址、完整的软件源码与GPL协议原文（件），违反者可能会被追究法律责任
+- **传播：** AUTO_MAA原则上允许传播者自由传播本软件。但由于软件性质，项目组不希望发现任何人在明日方舟官方媒体（包括官方媒体账号与森空岛社区等）或明日方舟游戏相关内容（包括同好群、线下活动与游戏内容讨论等）下提及AUTO_MAA或MAA，希望各位理解
+- **衍生：** AUTO_MAA允许任何人对软件本体或软件部分代码进行二次开发或利用。但依据GPL，相关成果也必须使用GPL开源
+- **授权：** 如果希望在使用AUTO_MAA的相关成果后仍保持自己的项目闭源，请在Issues中说明来意。得到项目组认可后，我们可以提供另一份使用不同协议的代码，此协议主要内容如下：被授权者可以自由使用该代码并维持闭源；被授权者必须定期为AUTO_MAA作出贡献
+- **贡献：** 不论是直接参与软件的维护编写，或是撰写文档、测试、反馈BUG、给出建议、参与讨论，都为AUTO_MAA项目的发展完善做出了不可忽视的贡献。项目组提倡各位贡献者遵照GitHub开源社区惯例，发布Issues参与项目。避免私信或私发邮件（安全性漏洞或敏感问题除外），以帮助更多用户
+
+以上细则是本项目对GPL的相关补充与强调。未提及的以GPL为准，发生冲突的以GPL为准。如有不清楚的部分，请发Issues询问。若发生纠纷，相关内容也没有在Issues上提及的，项目组拥有最终解释权
 
 ## 安装与配置MAA
 
