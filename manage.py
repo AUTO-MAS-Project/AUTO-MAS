@@ -165,8 +165,6 @@ def changePASSWORD():
 
 #添加用户
 def add():
-    db=sqlite3.connect(DATABASE)
-    cur=db.cursor()
     adminx=input("用户名：")
     #用户名重复验证
     while search(adminx,0)=="":
@@ -178,6 +176,8 @@ def add():
     passwordx=readpass("密码：")
     passwordx=encryptx(passwordx)
     #应用更新
+    db=sqlite3.connect(DATABASE)
+    cur=db.cursor()
     cur.execute("INSERT INTO adminx VALUES(?,?,?,'y','2000-01-01',?,?)",(adminx,numberx,dayx,gamex,passwordx))
     db.commit()
     cur.close()
@@ -186,14 +186,12 @@ def add():
 
 #删除用户信息
 def delete(id):
-    db=sqlite3.connect(DATABASE)
-    cur=db.cursor()
     #检查用户是否存在
-    cur.execute("SELECT * FROM adminx WHERE admin=?",(id,))
-    data=cur.fetchall()
-    if len(data)==0:
+    if search(id,0)!="":
         return "未找到"+id
     #应用更新
+    db=sqlite3.connect(DATABASE)
+    cur=db.cursor()
     cur.execute("DELETE FROM adminx WHERE admin=?",(id,))
     db.commit()
     cur.close()
@@ -298,15 +296,13 @@ def renewal(readxx):
             dayp=int(readxx[i+1:])
             break
     #检查用户是否存在
+    if search(id,0)!="":
+        return "未找到"+id
+    #应用更新
     db=sqlite3.connect(DATABASE)
     cur=db.cursor()
     cur.execute("SELECT * FROM adminx WHERE admin=?",(id,))
     data=cur.fetchall()
-    if len(data)==0:
-        cur.close()
-        db.close()
-        return "未找到"+id
-    #应用更新
     cur.execute("UPDATE adminx SET day=? WHERE admin=?",(data[0][2]+dayp,id))
     db.commit()
     cur.close()
@@ -316,15 +312,11 @@ def renewal(readxx):
 #用户状态配置
 def turn(id,t):
     #检查用户是否存在
-    db=sqlite3.connect(DATABASE)
-    cur=db.cursor()
-    cur.execute("SELECT * FROM adminx WHERE admin=?",(id,))
-    data=cur.fetchall()
-    if len(data)==0:
-        cur.close()
-        db.close()
+    if search(id,0)!="":
         return "未找到"+id
     #应用更新
+    db=sqlite3.connect(DATABASE)
+    cur=db.cursor()
     cur.execute("UPDATE adminx SET status=? WHERE admin=?",(t,id))
     db.commit()
     cur.close()
@@ -343,13 +335,7 @@ def gameid(readxx):
             gamep=readxx[i+1:]
             break
     #检查用户是否存在
-    db=sqlite3.connect(DATABASE)
-    cur=db.cursor()
-    cur.execute("SELECT * FROM adminx WHERE admin=?",(id,))
-    data=cur.fetchall()
-    if len(data)==0:
-        cur.close()
-        db.close()
+    if search(id,0)!="":
         return "未找到"+id
     #导入与应用特殊关卡规则
     games={}
@@ -365,6 +351,8 @@ def gameid(readxx):
     if gamep in games:
         gamep=games[gamep]
     #应用更新
+    db=sqlite3.connect(DATABASE)
+    cur=db.cursor()
     cur.execute("UPDATE adminx SET game=? WHERE admin=?",(gamep,id))
     db.commit()
     cur.close()

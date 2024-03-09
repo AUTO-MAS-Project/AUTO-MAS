@@ -20,30 +20,55 @@
 
 import sqlite3
 import subprocess
+import atexit
 import datetime
 import time
 import os
 from termcolor import colored
 
+#资源回收
+def cleanup():
+    if os.path.exists("state/BEGIN"):
+        os.remove("state/BEGIN")
+
 DATABASE="data/data.db"
-db=sqlite3.connect(DATABASE)
-cur=db.cursor()
-cur.execute("SELECT * FROM timeset WHERE True")
-timeset=cur.fetchall()
-timeset=[list(row) for row in timeset]
+
+#设置回调函数
+atexit.register(cleanup)
 while True:
-    curtime=datetime.datetime.now().strftime("%H:%M")
-    print(colored("当前时间："+curtime,'green'))
-    timenew=[]
-    timenew.append(curtime)
-    if timenew in timeset:
-        print(colored("开始执行",'yellow'))
-        maa=subprocess.Popen(["run.exe"])
-        maapid=maa.pid
-        while True:
-            if os.path.exists("OVER"):
-                os.system('taskkill /F /T /PID '+str(maapid))
-                os.remove("OVER")
-                print(colored("执行完毕",'yellow'))
-                break
-    time.sleep(1)
+    db=sqlite3.connect(DATABASE)
+    cur=db.cursor()
+    cur.execute("SELECT * FROM timeset WHERE True")
+    timeset=cur.fetchall()
+    cur.close()
+    db.close()
+    timeset=[list(row) for row in timeset]
+    timeset=[timeset[i][0] for i in range(len(timeset))]
+    for i in range(60):
+        #展示当前信息
+        curtime=datetime.datetime.now().strftime("%H:%M")
+        os.system('cls')
+        if len(timeset)!=0:
+            print(colored("设定时间："+'，'.join(timeset),'green'))
+        print(colored("当前时间："+curtime,'green'))
+        print(colored("运行日志：",'green'))
+        if os.path.exists("state/running"):
+            print(colored("正在运行代理",'yellow'))
+        elif os.path.exists("log.txt"):
+            with open("log.txt",'r',encoding="utf-8") as f:
+                linex=f.read()
+                print(colored(linex,'light_green'))
+        else:
+            print(colored("暂无",'light_green'))
+        if (curtime in timeset) and not os.path.exists("running"):
+            with open("state/BEGIN","w",encoding="utf-8") as f:
+                print("BEGIN",file=f)
+            maa=subprocess.Popen(["run.exe"])
+            maapid=maa.pid
+            while True:
+                if os.path.exists("state/END"):
+                    os.system('taskkill /F /T /PID '+str(maapid))
+                    os.remove("state/END")
+                    break
+            os.remove("state/BEGIN")
+        time.sleep(1)
