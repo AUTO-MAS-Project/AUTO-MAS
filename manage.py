@@ -255,7 +255,7 @@ def search(id,book):
     db.close()
     data=[list(row) for row in data]
     if len(data)>0:
-        #转译执行情况、用户状态，对全部信息查询隐去密码
+        #转译执行情况、用户状态，对全部信息查询与无输出查询隐去密码
         curdate=datetime.date.today()
         curdate=curdate.strftime('%Y-%m-%d')
         for i in range(len(data)):
@@ -267,7 +267,7 @@ def search(id,book):
                 data[i][3]="启用"
             else:
                 data[i][3]="禁用"
-            if id=="all":
+            if id=="all" or book==0:
                 data[i][6]="******"
             else:
                 #解密
