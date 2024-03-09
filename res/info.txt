@@ -1,30 +1,43 @@
 # UTF-8
+#
 VSVersionInfo(
   ffi=FixedFileInfo(
-#filevers和prodvers应该始终是包含四个项的元组：（1、2、3、4）,将不需要的项设置为0
-filevers=(2,1,2,0),  # 文件版本******，鼠标悬浮exe会显示，也显示在 详细信息-文件版本,这个是检测版本的依据
-prodvers=(0,0,0,0), # 生产商，未见显示在哪里
-mask=0x3f, # 两个位掩码
-flags=0x0,
-OS=0x4, # 为其设计此文件的操作系统,0x4-NT，无需更改它
-fileType=0x1, # 文件的常规类型，0x1-该文件是一个应用程序
-subtype=0x0, # 文件的功能，0x0表示该文件类型未定义
-date=(0,0) # 创建日期和时间戳
-),
+    # filevers and prodvers should be always a tuple with four items: (1, 2, 3, 4)
+    # Set not needed items to zero 0.
+    filevers=(2, 1, 2, 0),
+    prodvers=(0, 0, 0, 0),
+    # Contains a bitmask that specifies the valid bits 'flags'r
+    mask=0x3f,
+    # Contains a bitmask that specifies the Boolean attributes of the file.
+    flags=0x0,
+    # The operating system for which this file was designed.
+    # 0x4 - NT and there is no need to change it.
+    OS=0x4,
+    # The general type of file.
+    # 0x1 - the file is an application.
+    fileType=0x1,
+    # The function of the file.
+    # 0x0 - the function is not defined for this fileType
+    subtype=0x0,
+    # Creation date and time stamp.
+    date=(0, 0)
+    ),
   kids=[
-StringFileInfo(
-  [
-  StringTable(
-    u'040904B0',
-    [StringStruct(u'CompanyName', u'AUTO_MAA项目组'), # 鼠标悬浮exe会显示
-    StringStruct(u'FileDescription', u'AUTO_MAA组件'),    # 文件说明，鼠标悬浮exe会显示，也会显示在 详细信息-文件说明
-    StringStruct(u'FileVersion', u'2.1.2'), # 没见哪里显示
-    StringStruct(u'InternalName', u'AUTO_MAA'),
-    StringStruct(u'LegalCopyright', u'DLmaster_361'), #版权，会显示在 详细信息-版权
-    StringStruct(u'OriginalFilename', u'AUTO_MAA源代码'), #原始文件名，会显示在 详细信息-原始文件名
-    StringStruct(u'ProductName', u'AUTO_MAA'),      #产品名称，会显示在 详细信息-产品名称
-    StringStruct(u'ProductVersion', u'2.1.2')])    #产品版本，会显示在 详细信息-产品版本
-  ]),
-VarFileInfo([VarStruct(u'Translation', [2052, 1200])]) # 语言，中文简体
+    VarFileInfo([VarStruct('Translation', [0, 1200])]), 
+    StringFileInfo(
+      [
+      StringTable(
+        '000004b0',
+        [StringStruct('Comments', 'https://github.com/DLmaster361/AUTO_MAA/'),
+        StringStruct('CompanyName', 'AUTO_MAA Team'),
+        StringStruct('FileDescription', 'AUTO_MAA Component'),
+        StringStruct('FileVersion', '2.1.2'),
+        StringStruct('InternalName', 'AUTO_MAA'),
+        StringStruct('LegalCopyright', 'Copyright © 2024 DLmaster361'),
+        StringStruct('OriginalFilename', 'AUTO_MAA'),
+        StringStruct('ProductName', 'AUTO_MAA'),
+        StringStruct('ProductVersion', 'v2.1.2'),
+        StringStruct('Assembly Version', '2.1.2.0')])
+      ])
   ]
 )
