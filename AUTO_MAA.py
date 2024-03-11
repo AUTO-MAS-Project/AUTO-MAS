@@ -60,7 +60,7 @@ while True:
                 print(colored(linex,'light_green'))
         else:
             print(colored("暂无",'light_green'))
-        if (curtime in timeset) and not os.path.exists("running"):
+        if (curtime in timeset) and not os.path.exists("state/running"):
             with open("state/BEGIN","w",encoding="utf-8") as f:
                 print("BEGIN",file=f)
             maa=subprocess.Popen(["run.exe"])

@@ -19,6 +19,7 @@
 #   DLmaster_361@163.com
 
 import os
+import sys
 import subprocess
 import atexit
 import sqlite3
@@ -116,7 +117,7 @@ def cleanup():
 
 #读取运行情况
 if os.path.exists("state/RUNNING"):
-    exit()
+    os._exit(1)
 #标记当前正在运行
 with open("state/RUNNING","w",encoding="utf-8") as f:
     print("RUNNING",file=f)
@@ -173,4 +174,4 @@ with open("log.txt","w",encoding="utf-8") as f:
 if os.path.exists("state/BEGIN"):
     with open("state/END","w",encoding="utf-8") as f:
         print("END",file=f)
-exit()
+sys.exit(0)

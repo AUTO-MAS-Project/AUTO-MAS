@@ -448,7 +448,7 @@ while True:
     elif read[0]=='+' and len(read)==1:
         print(add())
     elif read[0]=='-' and len(read)==1:
-        exit()
+        os._exit(0)
     elif read[0]=='/':
         print(setpath(read[1:]))
     elif read[0]=='*' and len(read)==1:
