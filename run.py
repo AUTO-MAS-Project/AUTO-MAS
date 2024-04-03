@@ -44,6 +44,7 @@ def runmaa(id,tel,game,num=3):
     for i in range(num):
         global idnew,idold,idfail,idall,logx,logi
         #创建MAA任务
+        time.sleep(10)
         maa=subprocess.Popen([maapath])
         maapid=maa.pid
         #等待MAA启动
@@ -73,8 +74,8 @@ def runmaa(id,tel,game,num=3):
             print(colored("运行日志：",'white'))
             #读取并保存MAA日志
             with open(logpath,'r',encoding='utf-8') as f:
-                logs=f.readlines()[-1:-10:-1]
-                print(colored(''.join(logs[::-1]),'light_green'))
+                logs=f.readlines()[-1:-11:-1]
+                print(colored(''.join(logs[::-1]),'light_green'),end='')
                 log=''.join(logs)
                 logx[logi]=log
                 logi=(logi+1) % len(logx)

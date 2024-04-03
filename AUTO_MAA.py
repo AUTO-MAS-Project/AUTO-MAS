@@ -60,15 +60,17 @@ while True:
                 print(colored(linex,'light_green'))
         else:
             print(colored("暂无",'light_green'))
+        #定时执行
         if (curtime in timeset) and not os.path.exists("state/running"):
             with open("state/BEGIN","w",encoding="utf-8") as f:
                 print("BEGIN",file=f)
-            maa=subprocess.Popen(["run.exe"])
-            maapid=maa.pid
+            run=subprocess.Popen(["run.exe"])
+            runpid=run.pid
             while True:
                 if os.path.exists("state/END"):
-                    os.system('taskkill /F /T /PID '+str(maapid))
+                    os.system('taskkill /F /T /PID '+str(runpid))
                     os.remove("state/END")
                     break
+                time.sleep(1)
             os.remove("state/BEGIN")
         time.sleep(1)
