@@ -1,0 +1,25 @@
+#主界面
+"MainFunction.ActionAfterCompleted": "ExitEmulatorAndSelf"        #完成后
+"TaskQueue.WakeUp.IsChecked": "True"        #开始唤醒
+"TaskQueue.Recruiting.IsChecked": "True"        #自动公招
+"TaskQueue.Base.IsChecked": "True"      #基建换班
+"TaskQueue.Combat.IsChecked": "True"        #刷理智
+"TaskQueue.Mission.IsChecked": "True"       #领取奖励
+"TaskQueue.Mall.IsChecked": "True"       #获取信用及购物
+#刷理智
+"MainFunction.Stage1": ""        #主关卡
+"MainFunction.Stage2": ""        #备选关卡1
+"MainFunction.Stage3": ""        #备选关卡2
+"Fight.RemainingSanityStage": "Annihilation"        #剩余理智关卡
+"Penguin.IsDrGrandet": "True"        #博朗台模式
+"GUI.CustomStageCode": "False"        #手动输入关卡名
+"GUI.UseAlternateStage": "False"        #使用备选关卡
+"Fight.UseRemainingSanityStage": "True"        #使用剩余理智
+"Fight.UseExpiringMedicine": "False"        #无限吃48小时内过期的理智药
+"GUI.HideUnavailableStage": "False"        #隐藏当日不开放关卡
+"Infrast.CustomInfrastPlanShowInFightSettings": "False"        #显示基建计划
+"Penguin.EnablePenguin": "True"        #上报企鹅物流
+"Yituliu.EnableYituliu": "True"        #上报一图流
+#设置
+"Start.RunDirectly": "True"        #启动MAA后直接运行
+"Start.StartEmulator": "True"        #启动MAA后自动开启模拟器
