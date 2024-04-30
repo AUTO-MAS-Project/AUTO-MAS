@@ -36,23 +36,19 @@ MAA下载地址    [GitHub下载](https://github.com/MaaAssistantArknights/MaaAs
 
 ### MAA配置
 
-1.完成MAA的adb配置等基本配置
+1. 完成MAA的adb配置等基本配置
 
-2.在“完成后”菜单，选择“退出MAA和模拟器”。勾选“手动输入关卡名”和“无限吃48小时内过期的理智药”
+2. 确保当前配置名为“Default”，取消所有“定时执行”
 
 ![MAA配置1](https://github.com/DLmaster361/AUTO_MAA/blob/main/res/README/MAA配置1.png "MAA配置1")
 
-3.确保当前配置名为“Default”，取消所有“定时执行”
+3. 取消勾选“开机自启动MAA”，勾选“启动MAA后直接运行”和“启动MAA后自动开启模拟器”。配置自己模拟器所在的位置并根据实际情况填写“等待模拟器启动时间”（建议预留10s以防意外）。如果是多开用户，需要填写“附加命令”，具体填写值参见多开模拟器对应快捷方式路径（如“-v 1”）。
 
 ![MAA配置2](https://github.com/DLmaster361/AUTO_MAA/blob/main/res/README/MAA配置2.png "MAA配置2")
 
-4.取消勾选“开机自启动MAA”，勾选“启动MAA后直接运行”和“启动MAA后自动开启模拟器”。配置自己模拟器所在的位置并根据实际情况填写“等待模拟器启动时间”（建议预留10s以防意外）。如果是多开用户，需要填写“附加命令”，具体填写值参见多开模拟器对应快捷方式路径（如“-v 1”）。
+4. 勾选“定时检查更新”、“自动下载更新包”和“自动安装更新包”
 
 ![MAA配置3](https://github.com/DLmaster361/AUTO_MAA/blob/main/res/README/MAA配置3.png "MAA配置3")
-
-5.勾选“定时检查更新”、“自动下载更新包”和“自动安装更新包”
-
-![MAA配置4](https://github.com/DLmaster361/AUTO_MAA/blob/main/res/README/MAA配置4.png "MAA配置4")
 
 ## 下载AUTO_MAA软件包 [![](https://img.shields.io/github/downloads/DLmaster361/AUTO_MAA/total?color=66ccff)](https://github.com/DLmaster361/AUTO_MAA/releases)
 

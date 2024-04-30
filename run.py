@@ -28,64 +28,123 @@ import time
 import json
 from termcolor import colored
 
-#执行MAA任务
-def runmaa(id,tel,game,num=3):
-    #配置MAA运行参数
+#配置MAA运行参数
+def setmaa(s,tel,game):
     with open(setpath,"r",encoding="utf-8") as f:
         data=json.load(f)
-    data["Configurations"]["Default"]["Start.AccountName"]=tel[:3]+"****"+tel[7:]
-    data["Configurations"]["Default"]["MainFunction.Stage1"]="Annihilation"
-    data["Configurations"]["Default"]["Fight.RemainingSanityStage"]=game
-    data["Configurations"]["Default"]["Fight.UseRemainingSanityStage"]="True"
-    data["Configurations"]["Default"]["GUI.CustomStageCode"]="True"
+    if s==0:
+        data["Configurations"]["Default"]["MainFunction.ActionAfterCompleted"]="ExitEmulatorAndSelf"        #完成后退出MAA和模拟器
+        data["Configurations"]["Default"]["Start.RunDirectly"]="True"       #启动MAA后直接运行
+        data["Configurations"]["Default"]["Start.StartEmulator"]="True"     #启动MAA后自动开启模拟器
+    elif s==1:
+        data["Configurations"]["Default"]["Start.AccountName"]=tel[:3]+"****"+tel[7:]       #账号切换
+        data["Configurations"]["Default"]["TaskQueue.WakeUp.IsChecked"]="True"        #开始唤醒
+        data["Configurations"]["Default"]["TaskQueue.Recruiting.IsChecked"]="False"        #自动公招
+        data["Configurations"]["Default"]["TaskQueue.Base.IsChecked"]="False"      #基建换班
+        data["Configurations"]["Default"]["TaskQueue.Combat.IsChecked"]="True"        #刷理智
+        data["Configurations"]["Default"]["TaskQueue.Mission.IsChecked"]="False"       #领取奖励
+        data["Configurations"]["Default"]["TaskQueue.Mall.IsChecked"]="False"       #获取信用及购物
+        data["Configurations"]["Default"]["MainFunction.Stage1"]="Annihilation"     #主关卡
+        data["Configurations"]["Default"]["MainFunction.Stage2"]=""     #备选关卡1
+        data["Configurations"]["Default"]["MainFunction.Stage3"]=""     #备选关卡2
+        data["Configurations"]["Default"]["Fight.RemainingSanityStage"]=""      #剩余理智关卡
+        data["Configurations"]["Default"]["Penguin.IsDrGrandet"]="False"     #博朗台模式
+        data["Configurations"]["Default"]["GUI.CustomStageCode"]="True"        #手动输入关卡名
+        data["Configurations"]["Default"]["GUI.UseAlternateStage"]="False"        #使用备选关卡
+        data["Configurations"]["Default"]["Fight.UseRemainingSanityStage"]="False"        #使用剩余理智
+        data["Configurations"]["Default"]["Fight.UseExpiringMedicine"]="True"        #无限吃48小时内过期的理智药
+    elif s==2:
+        data["Configurations"]["Default"]["Start.AccountName"]=tel[:3]+"****"+tel[7:]       #账号切换
+        data["Configurations"]["Default"]["TaskQueue.WakeUp.IsChecked"]="True"        #开始唤醒
+        data["Configurations"]["Default"]["TaskQueue.Recruiting.IsChecked"]="True"        #自动公招
+        data["Configurations"]["Default"]["TaskQueue.Base.IsChecked"]="True"      #基建换班
+        data["Configurations"]["Default"]["TaskQueue.Combat.IsChecked"]="True"        #刷理智
+        data["Configurations"]["Default"]["TaskQueue.Mission.IsChecked"]="True"       #领取奖励
+        data["Configurations"]["Default"]["TaskQueue.Mall.IsChecked"]="True"       #获取信用及购物
+        data["Configurations"]["Default"]["MainFunction.Stage1"]=game    #主关卡
+        data["Configurations"]["Default"]["MainFunction.Stage2"]=""     #备选关卡1
+        data["Configurations"]["Default"]["MainFunction.Stage3"]=""     #备选关卡2
+        data["Configurations"]["Default"]["Fight.RemainingSanityStage"]=""      #剩余理智关卡
+        data["Configurations"]["Default"]["Penguin.IsDrGrandet"]="False"     #博朗台模式
+        data["Configurations"]["Default"]["GUI.CustomStageCode"]="True"        #手动输入关卡名
+        data["Configurations"]["Default"]["GUI.UseAlternateStage"]="False"        #使用备选关卡
+        data["Configurations"]["Default"]["Fight.UseRemainingSanityStage"]="False"        #使用剩余理智
+        data["Configurations"]["Default"]["Fight.UseExpiringMedicine"]="True"        #无限吃48小时内过期的理智药
     with open(setpath,"w",encoding="utf-8") as f:
         json.dump(data,f)
+    return True
+
+#执行MAA任务
+def runmaa(id,tel,game,num=3):
     #开始运行
     for i in range(num):
         global idnew,idold,idfail,idall,logx,logi
-        #创建MAA任务
-        time.sleep(10)
-        maa=subprocess.Popen([maapath])
-        maapid=maa.pid
-        #等待MAA启动
-        idsuccess=idnew+idold
-        idwait=[idx for idx in idall if not idx in idsuccess+idfail+[id]]
-        os.system('cls')
-        if i==0:
-            print(colored("正在代理：",'white')+colored(id,'blue'))
-        else:
-            print(colored("正在代理：",'white')+colored(id,'light_blue'))
-        print(colored("等待代理：",'white')+colored('，'.join(idwait),'yellow'))
-        print(colored("代理成功：",'white')+colored('，'.join(idsuccess),'green'))
-        print(colored("代理失败：",'white')+colored('，'.join(idfail),'red'))
-        print(colored("运行日志：",'white')+colored("等待MAA初始化",'light_green'))
-        time.sleep(60)
-        #监测MAA运行状态
-        while True:
-            #打印基本信息
+        runbook=[False for i in range(2)]
+        for j in range(2):
+            #配置MAA
+            setmaa(j+1,tel,game)
+            #创建MAA任务
+            print(colored("等待中~",'yellow'))
+            time.sleep(10)
+            maa=subprocess.Popen([maapath])
+            maapid=maa.pid
+            #等待MAA启动
+            idsuccess=idnew+idold
+            idwait=[idx for idx in idall if not idx in idsuccess+idfail+[id]]
             os.system('cls')
             if i==0:
-                print(colored("正在代理：",'white')+colored(id,'blue'))
+                if j==0:
+                    print(colored("正在代理：",'white')+colored(id+"-剿灭",'blue'))
+                elif j==1:
+                    print(colored("正在代理：",'white')+colored(id+"-日常",'blue'))
             else:
-                print(colored("正在代理：",'white')+colored(id,'light_blue'))
+                if j==0:
+                    print(colored("正在代理：",'white')+colored(id+"-剿灭",'light_blue'))
+                elif j==1:
+                    print(colored("正在代理：",'white')+colored(id+"-日常",'light_blue'))
             print(colored("等待代理：",'white')+colored('，'.join(idwait),'yellow'))
             print(colored("代理成功：",'white')+colored('，'.join(idsuccess),'green'))
             print(colored("代理失败：",'white')+colored('，'.join(idfail),'red'))
-            print(colored("运行日志：",'white'))
-            #读取并保存MAA日志
-            with open(logpath,'r',encoding='utf-8') as f:
-                logs=f.readlines()[-1:-11:-1]
-                print(colored(''.join(logs[::-1]),'light_green'),end='')
-                log=''.join(logs)
-                logx[logi]=log
-                logi=(logi+1) % len(logx)
-            #判断MAA程序运行状态
-            if ("任务已全部完成！" in log):
-                return True
-            elif ("请检查连接设置或尝试重启模拟器与 ADB 或重启电脑" in log) or ("已停止" in log) or ("MaaAssistantArknights GUI exited" in log) or timeout():
-                os.system('taskkill /F /T /PID '+str(maapid))
-                break
-            time.sleep(10)
+            print(colored("运行日志：",'white')+colored("等待MAA初始化",'light_green'))
+            time.sleep(60)
+            #监测MAA运行状态
+            while True:
+                #打印基本信息
+                os.system('cls')
+                if i==0:
+                    if j==0:
+                        print(colored("正在代理：",'white')+colored(id+"-剿灭",'blue'))
+                    elif j==1:
+                        print(colored("正在代理：",'white')+colored(id+"-日常",'blue'))
+                else:
+                    if j==0:
+                        print(colored("正在代理：",'white')+colored(id+"-剿灭",'light_blue'))
+                    elif j==1:
+                        print(colored("正在代理：",'white')+colored(id+"-日常",'light_blue'))
+                print(colored("等待代理：",'white')+colored('，'.join(idwait),'yellow'))
+                print(colored("代理成功：",'white')+colored('，'.join(idsuccess),'green'))
+                print(colored("代理失败：",'white')+colored('，'.join(idfail),'red'))
+                print(colored("运行日志：",'white'))
+                #读取并保存MAA日志
+                with open(logpath,'r',encoding='utf-8') as f:
+                    logs=f.readlines()[-1:-11:-1]
+                    print(colored(''.join(logs[::-1]),'light_green'),end='')
+                    log=''.join(logs)
+                    logx[logi]=log
+                    logi=(logi+1) % len(logx)
+                #判断MAA程序运行状态
+                if ("任务已全部完成！" in log):
+                    runbook[j]=True
+                    break
+                elif ("请检查连接设置或尝试重启模拟器与 ADB 或重启电脑" in log) or ("已停止" in log) or ("MaaAssistantArknights GUI exited" in log) or timeout():
+                    os.system('taskkill /F /T /PID '+str(maapid))
+                    break
+                if j==0:
+                    time.sleep(40)
+                elif j==1:
+                    time.sleep(10)
+        if runbook[0] and runbook[1]:
+            return True
     return False
 
 #检查是否超时
@@ -149,6 +208,9 @@ idall=[data[i][0] for i in range(len(data))]
 LOGXLEN=60
 logx=['' for i in range(LOGXLEN)]
 logi=0
+#MAA预配置
+setmaa(0,0,0)
+#优先代理今日未完成的用户
 for i in range(len(data)):
     if data[i][3]=='y' and data[i][4]!=curdate and data[i][2]>0:
         book=runmaa(data[i][0],data[i][1],data[i][5])
@@ -157,6 +219,7 @@ for i in range(len(data)):
             idnew.append(data[i][0])
         else:
             idfail.append(data[i][0])
+#次优先重复代理
 for i in range(len(data)):
     if data[i][3]=='y' and data[i][4]==curdate and data[i][2]>0:
         book=runmaa(data[i][0],data[i][1],data[i][5])
