@@ -48,6 +48,7 @@ def setmaa(s,tel,game):
         data["Configurations"]["Default"]["MainFunction.Stage2"]=""     #备选关卡1
         data["Configurations"]["Default"]["MainFunction.Stage3"]=""     #备选关卡2
         data["Configurations"]["Default"]["Fight.RemainingSanityStage"]=""      #剩余理智关卡
+        data["Configurations"]["Default"]["MainFunction.Series.Quantity"]="1"        #连战次数
         data["Configurations"]["Default"]["Penguin.IsDrGrandet"]="False"     #博朗台模式
         data["Configurations"]["Default"]["GUI.CustomStageCode"]="True"        #手动输入关卡名
         data["Configurations"]["Default"]["GUI.UseAlternateStage"]="False"        #使用备选关卡
@@ -65,6 +66,10 @@ def setmaa(s,tel,game):
         data["Configurations"]["Default"]["MainFunction.Stage2"]=""     #备选关卡1
         data["Configurations"]["Default"]["MainFunction.Stage3"]=""     #备选关卡2
         data["Configurations"]["Default"]["Fight.RemainingSanityStage"]=""      #剩余理智关卡
+        if game=="1-7":
+            data["Configurations"]["Default"]["MainFunction.Series.Quantity"]="6"        #连战次数
+        else:
+            data["Configurations"]["Default"]["MainFunction.Series.Quantity"]="1"        #连战次数
         data["Configurations"]["Default"]["Penguin.IsDrGrandet"]="False"     #博朗台模式
         data["Configurations"]["Default"]["GUI.CustomStageCode"]="True"        #手动输入关卡名
         data["Configurations"]["Default"]["GUI.UseAlternateStage"]="False"        #使用备选关卡
