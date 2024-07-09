@@ -391,7 +391,7 @@ class MaaTimer(QtCore.QThread):
             TimeSet = [
                 self.config["Default"]["TimeSet.run" + str(k + 1)]
                 for k in range(10)
-                if self.config["Default"]["TimeSet.set" + str(k + 1)]
+                if self.config["Default"]["TimeSet.set" + str(k + 1)] == "True"
             ]
             curtime = datetime.datetime.now().strftime("%H:%M")
             if (curtime in TimeSet) and not self.isMaaRun:
@@ -995,6 +995,9 @@ class Main(QWidget):
 
     # 启动MaaRunner线程
     def RunStarter(self):
+        if self.config["Default"]["MaaSet.path"] == "":
+            QMessageBox.critical(self.ui, "错误", "MAA路径未设置！")
+            return None
         # 运行过程中修改部分组件
         self.runnow.clicked.disconnect()
         self.runnow.setText("结束运行")
