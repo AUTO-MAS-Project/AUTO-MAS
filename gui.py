@@ -102,7 +102,10 @@ class MaaRunner(QtCore.QThread):
                 for j in range(2):
                     if not self.ifRun:
                         break
-                    if (j == 0 and self.data[uid][8] == "n") or runbook[j]:
+                    if j == 0 and self.data[uid][8] == "n":
+                        runbook[0] = True
+                        continue
+                    if runbook[j]:
                         continue
                     # 配置MAA
                     self.SetMaa(j + 1, uid)
