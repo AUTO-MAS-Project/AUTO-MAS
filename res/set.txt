@@ -21,6 +21,11 @@
 "Infrast.CustomInfrastPlanShowInFightSettings": "False"        #显示基建计划
 "Penguin.EnablePenguin": "True"        #上报企鹅物流
 "Yituliu.EnableYituliu": "True"        #上报一图流
+#基建换班
+"Infrast.CustomInfrastEnabled": "True"        #启用自定义基建配置
+"Infrast.DefaultInfrast": "user_defined"        #内置配置
+"Infrast.IsCustomInfrastFileReadOnly": "False"        #自定义基建配置文件只读
+"Infrast.CustomInfrastFile": ""        #自定义基建配置文件地址
 #设置
 "Start.RunDirectly": "True"        #启动MAA后直接运行
 "Start.StartEmulator": "True"        #启动MAA后自动开启模拟器

@@ -20,4 +20,6 @@
 
 import os
 
-os.system("pyinstaller -F --version-file res/info.txt --icon=res/AUTO_MAA.ico gui.py")
+os.system(
+    "pyinstaller -F --version-file res/info.txt -w --icon=res/AUTO_MAA.ico AUTO_MAA.py"
+)

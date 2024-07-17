@@ -365,6 +365,25 @@ class MaaRunner(QtCore.QThread):
             data["Configurations"]["Default"][
                 "Fight.UseExpiringMedicine"
             ] = "True"  # 无限吃48小时内过期的理智药
+            if self.data[uid][9] == "-":
+                data["Configurations"]["Default"][
+                    "Infrast.CustomInfrastEnabled"
+                ] = "False"  # 禁用自定义基建配置
+            else:
+                data["Configurations"]["Default"][
+                    "Infrast.CustomInfrastEnabled"
+                ] = "True"  # 启用自定义基建配置
+                data["Configurations"]["Default"][
+                    "Infrast.DefaultInfrast"
+                ] = "user_defined"  # 内置配置
+                data["Configurations"]["Default"][
+                    "Infrast.IsCustomInfrastFileReadOnly"
+                ] = "False"  # 自定义基建配置文件只读
+                data["Configurations"]["Default"][
+                    "Infrast.CustomInfrastFile"
+                ] = self.data[uid][
+                    9
+                ]  # 自定义基建配置文件地址
         with open(self.SetPath, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=4)
         return True
@@ -772,8 +791,7 @@ class Main(QWidget):
                         item = QTableWidgetItem("今日已代理" + str(data[i][12]) + "次")
                     item.setFlags(QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled)
                 elif j == 9:
-                    item = QTableWidgetItem(str(value))
-                    item.setFlags(QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled)
+                    item = QTableWidgetItem(str(value).replace("\\", "/"))
                 elif j == 10:
                     if self.PASSWORD == "":
                         item = QTableWidgetItem("******")
@@ -840,7 +858,7 @@ class Main(QWidget):
                 "1-7",
                 "-",
                 "-",
-                "暂不支持",
+                "-",
                 self.encryptx("未设置"),
                 self.userlist.rowCount(),
             ),
@@ -891,6 +909,8 @@ class Main(QWidget):
                             games[gamein.strip()] = gameout.strip()
                 if text in games:
                     text = games[text]
+            if item.column() == 9:
+                text = text.replace("\\", "/")
             if item.column() == 10:
                 text = self.encryptx(text)
             if text != "":
