@@ -42,11 +42,14 @@ import sqlite3
 import json
 import datetime
 import os
+import sys
+import ctypes
 import hashlib
 import subprocess
 import time
 import random
 import secrets
+import winreg
 from Crypto.Cipher import AES
 from Crypto.PublicKey import RSA
 from Crypto.Cipher import PKCS1_OAEP
@@ -60,6 +63,9 @@ class MaaRunner(QtCore.QThread):
     UpGui = QtCore.Signal(str, str, str, str, str)
     UpUserInfo = QtCore.Signal(list, list, list, list)
     Accomplish = QtCore.Signal()
+    AppPath = os.path.dirname(os.path.realpath(sys.argv[0])).replace(
+        "\\", "/"
+    )  # 获取软件自身的路径
     ifRun = False
 
     def __init__(self, SetPath, LogPath, MaaPath, Routine, Annihilation, Num, data):
@@ -167,7 +173,6 @@ class MaaRunner(QtCore.QThread):
                                 "\n".join([self.data[k][0] for k in ErrorUid]),
                                 "检测到MAA进程完成代理任务\n正在等待相关程序结束\n请等待10s",
                             )
-                            maa.wait()
                             time.sleep(10)
                             break
                         elif (
@@ -199,7 +204,6 @@ class MaaRunner(QtCore.QThread):
                                 info,
                             )
                             os.system("taskkill /F /T /PID " + str(maa.pid))
-                            maa.wait()
                             if self.ifRun:
                                 time.sleep(10)
                             break
@@ -220,7 +224,7 @@ class MaaRunner(QtCore.QThread):
         self.UpUserInfo.emit(AllUid, days, lasts, numbs)
         # 保存运行日志
         endtime = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        with open("log.txt", "w", encoding="utf-8") as f:
+        with open(self.AppPath + "log.txt", "w", encoding="utf-8") as f:
             print("任务开始时间：" + begintime + "，结束时间：" + endtime, file=f)
             print(
                 "已完成数：" + str(len(OverUid)) + "，未完成数：" + str(len(ErrorUid)),
@@ -234,7 +238,7 @@ class MaaRunner(QtCore.QThread):
             if len(WaitUid) != 0:
                 print("未代理的用户：", file=f)
                 print("\n".join([self.data[k][0] for k in WaitUid]), file=f)
-        with open("log.txt", "r", encoding="utf-8") as f:
+        with open(self.AppPath + "log.txt", "r", encoding="utf-8") as f:
             EndLog = f.read()
         # 恢复GUI运行面板
         self.UpGui.emit("", "", "", "", EndLog)
@@ -397,19 +401,24 @@ class MaaRunner(QtCore.QThread):
         return True
 
 
-class MaaTimer(QtCore.QThread):
+class MainTimer(QtCore.QThread):
 
     GetConfig = QtCore.Signal()
     StartForTimer = QtCore.Signal()
+    AppPath = os.path.realpath(sys.argv[0])  # 获取软件自身的路径
+    AppName = os.path.basename(AppPath)  # 获取软件自身的名称
+    ES_CONTINUOUS = 0x80000000
+    ES_SYSTEM_REQUIRED = 0x00000001
     isMaaRun = False
 
     def __init__(self, config):
-        super(MaaTimer, self).__init__()
+        super(MainTimer, self).__init__()
         self.config = config
 
     def run(self):
         while True:
             self.GetConfig.emit()
+            self.setSystem()
             TimeSet = [
                 self.config["Default"]["TimeSet.run" + str(k + 1)]
                 for k in range(10)
@@ -420,16 +429,73 @@ class MaaTimer(QtCore.QThread):
                 self.StartForTimer.emit()
             time.sleep(1)
 
+    def setSystem(self):
+
+        # 同步系统休眠状态
+        if self.config["Default"]["SelfSet.IfSleep"] == "True":
+            # 设置系统电源状态
+            ctypes.windll.kernel32.SetThreadExecutionState(
+                self.ES_CONTINUOUS | self.ES_SYSTEM_REQUIRED
+            )
+        elif self.config["Default"]["SelfSet.IfSleep"] == "False":
+            # 恢复系统电源状态
+            ctypes.windll.kernel32.SetThreadExecutionState(self.ES_CONTINUOUS)
+
+        # 同步开机自启
+        if (
+            self.config["Default"]["SelfSet.IfSelfStart"] == "True"
+            and not self.IsStartup()
+        ):
+            key = winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER,
+                r"Software\Microsoft\Windows\CurrentVersion\Run",
+                winreg.KEY_SET_VALUE,
+                winreg.KEY_ALL_ACCESS | winreg.KEY_WRITE | winreg.KEY_CREATE_SUB_KEY,
+            )
+            winreg.SetValueEx(key, self.AppName, 0, winreg.REG_SZ, self.AppPath)
+            winreg.CloseKey(key)
+        elif (
+            self.config["Default"]["SelfSet.IfSelfStart"] == "False"
+            and self.IsStartup()
+        ):
+            key = winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER,
+                r"Software\Microsoft\Windows\CurrentVersion\Run",
+                winreg.KEY_SET_VALUE,
+                winreg.KEY_ALL_ACCESS | winreg.KEY_WRITE | winreg.KEY_CREATE_SUB_KEY,
+            )
+            winreg.DeleteValue(key, self.AppName)
+            winreg.CloseKey(key)
+
+    def IsStartup(self):
+        key = winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\CurrentVersion\Run",
+            0,
+            winreg.KEY_READ,
+        )
+        try:
+            value, _ = winreg.QueryValueEx(key, self.AppName)
+            return True
+        except FileNotFoundError:
+            return False
+        finally:
+            winreg.CloseKey(key)
+
 
 class Main(QWidget):
+
+    AppPath = os.path.dirname(os.path.realpath(sys.argv[0])).replace(
+        "\\", "/"
+    )  # 获取软件自身的路径
 
     def __init__(self, PASSWARD=""):
         super().__init__()
 
-        self.DatabasePath = "data/data.db"
-        self.ConfigPath = "config/gui.json"
-        self.KeyPath = "data/key"
-        self.GameidPath = "data/gameid.txt"
+        self.DatabasePath = self.AppPath + "/data/data.db"
+        self.ConfigPath = self.AppPath + "/config/gui.json"
+        self.KeyPath = self.AppPath + "/data/key"
+        self.GameidPath = self.AppPath + "/data/gameid.txt"
         self.PASSWORD = PASSWARD
         self.ifUpDatabase = True
         self.ifUpConfig = True
@@ -450,12 +516,13 @@ class Main(QWidget):
             "uid",
         ]
 
-        self.ui = uiLoader.load("gui/ui/main.ui")
+        self.ui = uiLoader.load(self.AppPath + "/gui/ui/main.ui")
         self.ui.setWindowTitle("AUTO_MAA")
-        self.ui.setWindowIcon(QIcon("res/AUTO_MAA.ico"))
+        self.ui.setWindowIcon(QIcon(self.AppPath + "/res/AUTO_MAA.ico"))
         # 检查文件完整性
         if not os.path.exists(self.DatabasePath) or not os.path.exists(self.ConfigPath):
             self.initialize()
+        self.CheckConfig()
         with open(self.ConfigPath, "r") as f:
             self.config = json.load(f)
         if not os.path.exists(self.KeyPath):
@@ -510,6 +577,12 @@ class Main(QWidget):
         self.num = self.ui.findChild(QSpinBox, "spinBox_numt")
         self.num.valueChanged.connect(self.ChangeConfig)
 
+        self.IfSelfStart = self.ui.findChild(QCheckBox, "checkBox_ifselfstart")
+        self.IfSelfStart.stateChanged.connect(self.ChangeConfig)
+
+        self.IfSleep = self.ui.findChild(QCheckBox, "checkBox_ifsleep")
+        self.IfSleep.stateChanged.connect(self.ChangeConfig)
+
         self.RunText = self.ui.findChild(QTextBrowser, "textBrowser_run")
         self.WaitText = self.ui.findChild(QTextBrowser, "textBrowser_wait")
         self.OverText = self.ui.findChild(QTextBrowser, "textBrowser_over")
@@ -553,10 +626,10 @@ class Main(QWidget):
         self.MaaRunner.UpUserInfo.connect(self.ChangeUserInfo)
         self.MaaRunner.Accomplish.connect(self.end)
 
-        self.MaaTimer = MaaTimer(self.config)
-        self.MaaTimer.GetConfig.connect(self.GiveConfig)
-        self.MaaTimer.StartForTimer.connect(self.RunStarter)
-        self.MaaTimer.start()
+        self.MainTimer = MainTimer(self.config)
+        self.MainTimer.GetConfig.connect(self.GiveConfig)
+        self.MainTimer.StartForTimer.connect(self.RunStarter)
+        self.MainTimer.start()
 
         # 载入GUI数据
         self.UpdateTable("normal")
@@ -565,10 +638,10 @@ class Main(QWidget):
     # 初始化
     def initialize(self):
         # 检查目录
-        if not os.path.exists("data"):
-            os.makedirs("data")
-        if not os.path.exists("config"):
-            os.makedirs("config")
+        if not os.path.exists(self.AppPath + "/data"):
+            os.makedirs(self.AppPath + "/data")
+        if not os.path.exists(self.AppPath + "/config"):
+            os.makedirs(self.AppPath + "/config")
         # 生成用户数据库
         if not os.path.exists(self.DatabasePath):
             db = sqlite3.connect(self.DatabasePath)
@@ -583,55 +656,74 @@ class Main(QWidget):
             db.close()
         # 生成配置文件
         if not os.path.exists(self.ConfigPath):
-            config = {
-                "Default": {
-                    "TimeSet.set1": "False",
-                    "TimeSet.run1": "00:00",
-                    "TimeSet.set2": "False",
-                    "TimeSet.run2": "00:00",
-                    "TimeSet.set3": "False",
-                    "TimeSet.run3": "00:00",
-                    "TimeSet.set4": "False",
-                    "TimeSet.run4": "00:00",
-                    "TimeSet.set5": "False",
-                    "TimeSet.run5": "00:00",
-                    "TimeSet.set6": "False",
-                    "TimeSet.run6": "00:00",
-                    "TimeSet.set7": "False",
-                    "TimeSet.run7": "00:00",
-                    "TimeSet.set8": "False",
-                    "TimeSet.run8": "00:00",
-                    "TimeSet.set9": "False",
-                    "TimeSet.run9": "00:00",
-                    "TimeSet.set10": "False",
-                    "TimeSet.run10": "00:00",
-                    "MaaSet.path": "",
-                    "TimeLimit.routine": 10,
-                    "TimeLimit.annihilation": 40,
-                    "TimesLimit.run": 3,
-                }
-            }
+            config = {"Default": {}}
             with open(self.ConfigPath, "w") as f:
                 json.dump(config, f, indent=4)
+
+    # 检查配置文件字段
+    def CheckConfig(self):
+
+        ConfigList = [
+            ["TimeSet.set1", "False"],
+            ["TimeSet.run1", "00:00"],
+            ["TimeSet.set2", "False"],
+            ["TimeSet.run2", "00:00"],
+            ["TimeSet.set3", "False"],
+            ["TimeSet.run3", "00:00"],
+            ["TimeSet.set4", "False"],
+            ["TimeSet.run4", "00:00"],
+            ["TimeSet.set5", "False"],
+            ["TimeSet.run5", "00:00"],
+            ["TimeSet.set6", "False"],
+            ["TimeSet.run6", "00:00"],
+            ["TimeSet.set7", "False"],
+            ["TimeSet.run7", "00:00"],
+            ["TimeSet.set8", "False"],
+            ["TimeSet.run8", "00:00"],
+            ["TimeSet.set9", "False"],
+            ["TimeSet.run9", "00:00"],
+            ["TimeSet.set10", "False"],
+            ["TimeSet.run10", "00:00"],
+            ["MaaSet.path", ""],
+            ["TimeLimit.routine", 10],
+            ["TimeLimit.annihilation", 40],
+            ["TimesLimit.run", 3],
+            ["SelfSet.IfSelfStart", "False"],
+            ["SelfSet.IfSleep", "False"],
+        ]
+        # 导入配置文件
+        with open(self.ConfigPath, "r") as f:
+            config = json.load(f)
+        # 检查并补充缺失的字段
+        for i in range(len(ConfigList)):
+            if not ConfigList[i][0] in config["Default"]:
+                config["Default"][ConfigList[i][0]] = ConfigList[i][1]
+        # 导出配置文件
+        with open(self.ConfigPath, "w") as f:
+            json.dump(config, f, indent=4)
 
     # 配置密钥
     def getPASSWORD(self):
         # 检查目录
-        if not os.path.exists("data/key"):
-            os.makedirs("data/key")
+        if not os.path.exists(self.AppPath + "/data/key"):
+            os.makedirs(self.AppPath + "/data/key")
         # 生成RSA密钥对
         key = RSA.generate(2048)
         public_key_local = key.publickey()
         private_key = key
         # 保存RSA公钥
-        with open("data/key/public_key.pem", "wb") as f:
+        with open(self.AppPath + "/data/key/public_key.pem", "wb") as f:
             f.write(public_key_local.exportKey())
         # 生成密钥转换与校验随机盐
         PASSWORDsalt = secrets.token_hex(random.randint(32, 1024))
-        with open("data/key/PASSWORDsalt.txt", "w", encoding="utf-8") as f:
+        with open(
+            self.AppPath + "/data/key/PASSWORDsalt.txt", "w", encoding="utf-8"
+        ) as f:
             print(PASSWORDsalt, file=f)
         verifysalt = secrets.token_hex(random.randint(32, 1024))
-        with open("data/key/verifysalt.txt", "w", encoding="utf-8") as f:
+        with open(
+            self.AppPath + "/data/key/verifysalt.txt", "w", encoding="utf-8"
+        ) as f:
             print(verifysalt, file=f)
         # 将管理密钥转化为AES-256密钥
         AES_password = hashlib.sha256(
@@ -641,18 +733,18 @@ class Main(QWidget):
         AES_password_verify = hashlib.sha256(
             AES_password + verifysalt.encode("utf-8")
         ).digest()
-        with open("data/key/AES_password_verify.bin", "wb") as f:
+        with open(self.AppPath + "/data/key/AES_password_verify.bin", "wb") as f:
             f.write(AES_password_verify)
         # AES-256加密RSA私钥并保存密文
         AES_key = AES.new(AES_password, AES.MODE_ECB)
         private_key_local = AES_key.encrypt(pad(private_key.exportKey(), 32))
-        with open("data/key/private_key.bin", "wb") as f:
+        with open(self.AppPath + "/data/key/private_key.bin", "wb") as f:
             f.write(private_key_local)
 
     # 加密
     def encryptx(self, note):
         # 读取RSA公钥
-        with open("data/key/public_key.pem", "rb") as f:
+        with open(self.AppPath + "/data/key/public_key.pem", "rb") as f:
             public_key_local = RSA.import_key(f.read())
         # 使用RSA公钥对数据进行加密
         cipher = PKCS1_OAEP.new(public_key_local)
@@ -662,13 +754,17 @@ class Main(QWidget):
     # 解密
     def decryptx(self, note):
         # 读入RSA私钥密文、盐与校验哈希值
-        with open("data/key/private_key.bin", "rb") as f:
+        with open(self.AppPath + "/data/key/private_key.bin", "rb") as f:
             private_key_local = f.read().strip()
-        with open("data/key/PASSWORDsalt.txt", "r", encoding="utf-8") as f:
+        with open(
+            self.AppPath + "/data/key/PASSWORDsalt.txt", "r", encoding="utf-8"
+        ) as f:
             PASSWORDsalt = f.read().strip()
-        with open("data/key/verifysalt.txt", "r", encoding="utf-8") as f:
+        with open(
+            self.AppPath + "/data/key/verifysalt.txt", "r", encoding="utf-8"
+        ) as f:
             verifysalt = f.read().strip()
-        with open("data/key/AES_password_verify.bin", "rb") as f:
+        with open(self.AppPath + "/data/key/AES_password_verify.bin", "rb") as f:
             AES_password_verify = f.read().strip()
         # 将管理密钥转化为AES-256密钥并验证
         AES_password = hashlib.sha256(
@@ -825,6 +921,15 @@ class Main(QWidget):
         self.routine.setValue(self.config["Default"]["TimeLimit.routine"])
         self.annihilation.setValue(self.config["Default"]["TimeLimit.annihilation"])
         self.num.setValue(self.config["Default"]["TimesLimit.run"])
+
+        self.IfSelfStart.setChecked(
+            bool(self.config["Default"]["SelfSet.IfSelfStart"] == "True")
+        )
+
+        self.IfSleep.setChecked(
+            bool(self.config["Default"]["SelfSet.IfSleep"] == "True")
+        )
+
         for i in range(10):
             self.StartTime[i][0].setChecked(
                 bool(self.config["Default"]["TimeSet.set" + str(i + 1)] == "True")
@@ -962,6 +1067,17 @@ class Main(QWidget):
             self.config["Default"]["TimeLimit.routine"] = self.routine.value()
             self.config["Default"]["TimeLimit.annihilation"] = self.annihilation.value()
             self.config["Default"]["TimesLimit.run"] = self.num.value()
+
+            if self.IfSleep.isChecked():
+                self.config["Default"]["SelfSet.IfSleep"] = "True"
+            else:
+                self.config["Default"]["SelfSet.IfSleep"] = "False"
+
+            if self.IfSelfStart.isChecked():
+                self.config["Default"]["SelfSet.IfSelfStart"] = "True"
+            else:
+                self.config["Default"]["SelfSet.IfSelfStart"] = "False"
+
             for i in range(10):
                 if self.StartTime[i][0].isChecked():
                     self.config["Default"]["TimeSet.set" + str(i + 1)] = "True"
@@ -1000,7 +1116,7 @@ class Main(QWidget):
                 return 0
 
     def closeEvent(self, event):
-        self.MaaTimer.quit()
+        self.MainTimer.quit()
         self.MaaRunner.ifRun = False
         self.MaaRunner.wait()
         self.cur.close()
@@ -1011,7 +1127,7 @@ class Main(QWidget):
     def end(self):
         self.MaaRunner.ifRun = False
         self.MaaRunner.wait()
-        self.MaaTimer.isMaaRun = False
+        self.MainTimer.isMaaRun = False
         self.runnow.clicked.disconnect()
         self.runnow.setText("立即执行")
         self.runnow.clicked.connect(self.RunStarter)
@@ -1040,11 +1156,12 @@ class Main(QWidget):
         self.data_ = self.cur.fetchall()
         self.MaaRunner.data = [list(row) for row in self.data_]
         # 启动执行线程
-        self.MaaTimer.isMaaRun = True
+        self.MainTimer.isMaaRun = True
         self.MaaRunner.start()
 
+    # 同步配置文件到子线程
     def GiveConfig(self):
-        self.MaaTimer.config = self.config
+        self.MainTimer.config = self.config
 
 
 class AUTO_MAA(QApplication):
