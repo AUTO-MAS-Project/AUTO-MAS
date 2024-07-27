@@ -37,3 +37,8 @@ jobs:
     - name: Built with pyinstaller
       run: |
         pyinstaller -F --version-file res/info.txt -w --icon=res/AUTO_MAA.ico AUTO_MAA.py
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v2
+      with:
+        name: AUTO_MAA
+        path: ./
