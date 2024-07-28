@@ -119,21 +119,17 @@ class MaaRunner(QtCore.QThread):
                     maa = subprocess.Popen([self.MaaPath])
                     # 记录当前时间
                     StartTime = datetime.datetime.now()
-                    # 初始化log记录列表
-                    if j == 0:
-                        logx = [k for k in range(self.Annihilation * 60)]
-                    elif j == 1:
-                        logx = [k for k in range(self.Routine * 60)]
-                    logi = 0
+                    # 记录是否超时的标记
+                    self.TimeOut = False
                     # 更新运行信息
                     WaitUid = [
                         idx for idx in AllUid if (not idx in OverUid + ErrorUid + [uid])
                     ]
                     # 监测MAA运行状态
                     while True:
-                        # 更新MAA日志
+                        # 获取MAA日志
+                        logs = []
                         with open(self.LogPath, "r", encoding="utf-8") as f:
-                            logs = []
                             for entry in f:
                                 try:
                                     entry_time = datetime.datetime.strptime(
@@ -143,26 +139,41 @@ class MaaRunner(QtCore.QThread):
                                         logs.append(entry)
                                 except ValueError:
                                     pass
-                            log = "".join(logs)
-                            if j == 0:
-                                self.UpGui.emit(
-                                    self.data[uid][0] + "_第" + str(i + 1) + "次_剿灭",
-                                    "\n".join([self.data[k][0] for k in WaitUid]),
-                                    "\n".join([self.data[k][0] for k in OverUid]),
-                                    "\n".join([self.data[k][0] for k in ErrorUid]),
-                                    log,
-                                )
-                            elif j == 1:
-                                self.UpGui.emit(
-                                    self.data[uid][0] + "_第" + str(i + 1) + "次_日常",
-                                    "\n".join([self.data[k][0] for k in WaitUid]),
-                                    "\n".join([self.data[k][0] for k in OverUid]),
-                                    "\n".join([self.data[k][0] for k in ErrorUid]),
-                                    log,
-                                )
-                            if len(logs) != 0:
-                                logx[logi] = logs[-1]
-                                logi = (logi + 1) % len(logx)
+                        # 判断是否超时
+                        if len(logs) > 0:
+                            LastTime = datetime.datetime.strptime(
+                                logs[-1][1:20], "%Y-%m-%d %H:%M:%S"
+                            )
+                            NowTime = datetime.datetime.now()
+                            if (
+                                j == 0
+                                and NowTime - LastTime
+                                > datetime.timedelta(minutes=self.Annihilation)
+                            ) or (
+                                j == 1
+                                and NowTime - LastTime
+                                > datetime.timedelta(minutes=self.Routine)
+                            ):
+                                self.TimeOut = True
+                        # 合并日志
+                        log = "".join(logs)
+                        # 更新MAA日志
+                        if j == 0:
+                            self.UpGui.emit(
+                                self.data[uid][0] + "_第" + str(i + 1) + "次_剿灭",
+                                "\n".join([self.data[k][0] for k in WaitUid]),
+                                "\n".join([self.data[k][0] for k in OverUid]),
+                                "\n".join([self.data[k][0] for k in ErrorUid]),
+                                log,
+                            )
+                        elif j == 1:
+                            self.UpGui.emit(
+                                self.data[uid][0] + "_第" + str(i + 1) + "次_日常",
+                                "\n".join([self.data[k][0] for k in WaitUid]),
+                                "\n".join([self.data[k][0] for k in OverUid]),
+                                "\n".join([self.data[k][0] for k in ErrorUid]),
+                                log,
+                            )
                         # 判断MAA程序运行状态
                         if "任务已全部完成！" in log:
                             runbook[j] = True
@@ -179,10 +190,11 @@ class MaaRunner(QtCore.QThread):
                             ("请检查连接设置或尝试重启模拟器与 ADB 或重启电脑" in log)
                             or ("已停止" in log)
                             or ("MaaAssistantArknights GUI exited" in log)
-                            or self.TimeOut(logx)
+                            or self.TimeOut
                             or not self.ifRun
                         ):
                             # 打印中止信息
+                            # 此时，log变量内存储的就是出现异常的日志信息，可以保存或发送用于问题排查
                             if (
                                 (
                                     "请检查连接设置或尝试重启模拟器与 ADB 或重启电脑"
@@ -192,7 +204,7 @@ class MaaRunner(QtCore.QThread):
                                 or ("MaaAssistantArknights GUI exited" in log)
                             ):
                                 info = "检测到MAA进程异常\n正在中止相关程序\n请等待10s"
-                            elif self.TimeOut(logx):
+                            elif self.TimeOut:
                                 info = "检测到MAA进程超时\n正在中止相关程序\n请等待10s"
                             elif not self.ifRun:
                                 info = "您中止了本次任务\n正在中止相关程序\n请等待"
@@ -390,14 +402,6 @@ class MaaRunner(QtCore.QThread):
                 ]  # 自定义基建配置文件地址
         with open(self.SetPath, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=4)
-        return True
-
-    # 超时判断
-    def TimeOut(self, logx):
-        log0 = logx[0]
-        for i in logx:
-            if i != log0:
-                return False
         return True
 
 
@@ -1005,15 +1009,11 @@ class Main(QWidget):
                 if os.path.exists(self.GameidPath):
                     with open(self.GameidPath, encoding="utf-8") as f:
                         gameids = f.readlines()
-                        for i in range(len(gameids)):
-                            for j in range(len(gameids[i])):
-                                if gameids[i][j] == "：" or gameids[i][j] == ":":
-                                    gamein = gameids[i][:j]
-                                    gameout = gameids[i][j + 1 :]
-                                    break
-                            games[gamein.strip()] = gameout.strip()
-                if text in games:
-                    text = games[text]
+                        for line in gameids:
+                            if "：" in line:
+                                gamein, gameout = line.split("：", 1)
+                                games[gamein.strip()] = gameout.strip()
+                text = games.get(text, text)
             if item.column() == 9:
                 text = text.replace("\\", "/")
             if item.column() == 10:
