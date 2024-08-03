@@ -1,5 +1,6 @@
 #主界面
-"MainFunction.ActionAfterCompleted": "ExitEmulatorAndSelf"        #完成后
+"MainFunction.ActionAfterCompleted": "ExitEmulatorAndSelf"        #完成后（旧）
+"MainFunction.PostActions": "12"        #完成后（新）
 "TaskQueue.WakeUp.IsChecked": "True"        #开始唤醒
 "TaskQueue.Recruiting.IsChecked": "True"        #自动公招
 "TaskQueue.Base.IsChecked": "True"      #基建换班

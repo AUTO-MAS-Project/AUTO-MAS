@@ -263,8 +263,8 @@ class MaaRunner(QtCore.QThread):
             data = json.load(f)
         if s == 0:
             data["Configurations"]["Default"][
-                "MainFunction.ActionAfterCompleted"
-            ] = "ExitEmulatorAndSelf"  # 完成后退出MAA和模拟器
+                "MainFunction.PostActions"
+            ] = "12"  # 完成后退出MAA和模拟器
             data["Configurations"]["Default"][
                 "Start.RunDirectly"
             ] = "True"  # 启动MAA后直接运行
@@ -341,46 +341,53 @@ class MaaRunner(QtCore.QThread):
             data["Configurations"]["Default"][
                 "TaskQueue.Mall.IsChecked"
             ] = "True"  # 获取信用及购物
-            data["Configurations"]["Default"]["MainFunction.Stage1"] = self.data[uid][
-                5
-            ]  # 主关卡
-            data["Configurations"]["Default"]["MainFunction.Stage2"] = self.data[uid][
-                6
-            ]  # 备选关卡1
-            data["Configurations"]["Default"]["MainFunction.Stage3"] = self.data[uid][
-                7
-            ]  # 备选关卡2
+            # 主关卡
+            if self.data[uid][5] == "-":
+                data["Configurations"]["Default"]["MainFunction.Stage1"] = ""
+            else:
+                data["Configurations"]["Default"]["MainFunction.Stage1"] = self.data[
+                    uid
+                ][5]
+            # 备选关卡1
+            if self.data[uid][6] == "-":
+                data["Configurations"]["Default"]["MainFunction.Stage2"] = ""
+            else:
+                data["Configurations"]["Default"]["MainFunction.Stage2"] = self.data[
+                    uid
+                ][6]
+            # 备选关卡2
+            if self.data[uid][7] == "-":
+                data["Configurations"]["Default"]["MainFunction.Stage3"] = ""
+            else:
+                data["Configurations"]["Default"]["MainFunction.Stage3"] = self.data[
+                    uid
+                ][7]
             data["Configurations"]["Default"][
                 "Fight.RemainingSanityStage"
             ] = ""  # 剩余理智关卡
+            # 连战次数
             if self.data[uid][5] == "1-7":
-                data["Configurations"]["Default"][
-                    "MainFunction.Series.Quantity"
-                ] = "6"  # 连战次数
+                data["Configurations"]["Default"]["MainFunction.Series.Quantity"] = "6"
             else:
-                data["Configurations"]["Default"][
-                    "MainFunction.Series.Quantity"
-                ] = "1"  # 连战次数
+                data["Configurations"]["Default"]["MainFunction.Series.Quantity"] = "1"
             data["Configurations"]["Default"][
                 "Penguin.IsDrGrandet"
             ] = "False"  # 博朗台模式
             data["Configurations"]["Default"][
                 "GUI.CustomStageCode"
             ] = "True"  # 手动输入关卡名
+            # 备选关卡
             if self.data[uid][6] == "-" and self.data[uid][7] == "-":
-                data["Configurations"]["Default"][
-                    "GUI.UseAlternateStage"
-                ] = "False"  # 不使用备选关卡
+                data["Configurations"]["Default"]["GUI.UseAlternateStage"] = "False"
             else:
-                data["Configurations"]["Default"][
-                    "GUI.UseAlternateStage"
-                ] = "True"  # 使用备选关卡
+                data["Configurations"]["Default"]["GUI.UseAlternateStage"] = "True"
             data["Configurations"]["Default"][
                 "Fight.UseRemainingSanityStage"
             ] = "False"  # 使用剩余理智
             data["Configurations"]["Default"][
                 "Fight.UseExpiringMedicine"
             ] = "True"  # 无限吃48小时内过期的理智药
+            # 自定义基建配置
             if self.data[uid][9] == "-":
                 data["Configurations"]["Default"][
                     "Infrast.CustomInfrastEnabled"
