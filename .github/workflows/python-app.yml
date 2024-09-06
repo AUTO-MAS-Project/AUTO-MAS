@@ -51,7 +51,7 @@ jobs:
       - name: Extract version number
         id: extract_version_number
         run: |
-          python -c "import re; content = open('res/info.txt', 'r', encoding='utf-8').read(); match = re.search(r\"StringStruct(\'ProductVersion\', \'(.*?)\')\", content);\nif match:\n\tversion_number = match.group(1);print(f'::set-output name=version_number::{version_number}')"
+          python -c "import re; content = open('res/info.txt', 'r', encoding='utf-8').read(); match = re.search(r\\\"StringStruct(\\'ProductVersion\\', \\'(.*?)\\')\\\", content);\\nif match:\\n\\tversion_number = match.group(1);print(f'::set-output name=version_number::{version_number}')"
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
@@ -76,7 +76,7 @@ jobs:
       - name: Extract version number
         id: extract_version_number
         run: |
-          python -c "import re; content = open('res/info.txt', 'r', encoding='utf-8').read(); match = re.search(r\"StringStruct(\'ProductVersion\', \'(.*?)\')\", content);\nif match:\n\tversion_number = match.group(1);print(f'::set-output name=version_number::{version_number}')"
+          python -c "import re; content = open('res/info.txt', 'r', encoding='utf-8').read(); match = re.search(r\\\"StringStruct(\\'ProductVersion\\', \\'(.*?)\\')\\\", content);\\nif match:\\n\\tversion_number = match.group(1);print(f'::set-output name=version_number::{version_number}')"
       - name: Read release content
         id: read_release_content
         run: |
