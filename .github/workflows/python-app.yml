@@ -70,7 +70,7 @@ jobs:
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: AUTO_MAA_$(head -n 1 更新说明.txt)
+          name: "AUTO_MAA_$(head -n 1 更新说明.txt)"
           path: |
             data/**/*
             gui/**/*
@@ -101,7 +101,9 @@ jobs:
           shopt -s nullglob
           NAME="$(head -n 1 更新说明.txt)"
           TAGNAME="$(head -n 1 更新说明.txt)"
-          CONTENT="$(tail -n +2 更新说明.txt)\n\n```本release通过GitHub Actions自动构建```"
+          CONTENT_MAIN="$(tail -n +2 更新说明.txt)"
+          CONTENT_TAIL="```本release通过GitHub Actions自动构建```"
+          CONTENT="$CONTENT_MAIN\n\n$CONTENT_TAIL"
           gh release create "$TAGNAME" --target "main" --title "$NAME" --description "$CONTENT" --artifact artifacts/*.{zip,tar.xz}
         env:
           GITHUB_TOKEN: ${{ secrets.WORKFLOW_TOKEN }}
