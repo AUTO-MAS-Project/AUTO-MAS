@@ -28,6 +28,9 @@ on:
       - 'LICENSE'
   pull_request:
     branches: [ "main" ]
+    paths-ignore:
+      - '**.md'
+      - 'LICENSE'
 
 permissions:
   contents: read
