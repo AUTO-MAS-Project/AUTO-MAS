@@ -70,7 +70,7 @@ jobs:
       - name: Read version
         id: read_version
         run: |
-          VERSION="$(head -n 1 更新说明.txt)"
+          $VERSION=(Get-Content -Path "更新说明.txt" -TotalCount 1).Trim()
           echo "::set-output name=version::$VERSION"
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
