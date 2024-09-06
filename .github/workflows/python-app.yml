@@ -79,7 +79,7 @@ jobs:
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: AUTO_MAA_$env:version
+          name: AUTO_MAA_${{ env.version }}
           path: |
             data/**/*
             gui/**/*
