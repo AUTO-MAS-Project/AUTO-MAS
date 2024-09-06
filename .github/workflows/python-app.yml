@@ -46,6 +46,7 @@ jobs:
           exit 0
   build_AUTO_MAA:
     runs-on: windows-latest
+    needs: pre_check
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -99,8 +100,18 @@ jobs:
           pattern: AUTO_MAA_*
           merge-multiple: true
           path: artifacts
+      - name: Check if release exists
+        id: check_if_release_exists
+        run: |
+          release_id=$(gh release view $(head -n 1 更新说明.txt) --json id --jq .id)
+          if [[ -z $release_id ]]; then
+            echo "::set-output name=release_exists::false"
+          else
+            echo "::set-output name=release_exists::true"
+          fi
       - name: Create release
         id: create_release
+        if: steps.check_if_release_exists.outputs.release_exists == 'false'
         run: |
           set -xe
           shopt -s nullglob
@@ -109,6 +120,20 @@ jobs:
           NOTES_MAIN="$(tail -n +2 更新说明.txt)"
           NOTES_TAIL="\`\`\`本release通过GitHub Actions自动构建\`\`\`"
           NOTES="$NOTES_MAIN\n\n$NOTES_TAIL"
-          gh release create "$TAGNAME" --target "main" --title "$NAME" --notes "$NOTES" artifacts/*.{zip,tar.xz} --update
+          gh release create "$TAGNAME" --target "main" --title "$NAME" --notes "$NOTES" artifacts/*.{zip,tar.xz}
+        env:
+          GITHUB_TOKEN: ${{ secrets.WORKFLOW_TOKEN }}
+
+      - name: Update release
+        if: steps.check_if_release_exists.outputs.release_exists == 'true'
+        run: |
+          set -xe
+          shopt -s nullglob
+          NAME="$(head -n 1 更新说明.txt)"
+          TAGNAME="$(head -n 1 更新说明.txt)"
+          NOTES_MAIN="$(tail -n +2 更新说明.txt)"
+          NOTES_TAIL="\`\`\`本release通过GitHub Actions自动构建\`\`\`"
+          NOTES="$NOTES_MAIN\n\n$NOTES_TAIL"
+          gh release edit "$TAGNAME" --target "main" --title "$NAME" --notes "$NOTES" artifacts/*.{zip,tar.xz}
         env:
           GITHUB_TOKEN: ${{ secrets.WORKFLOW_TOKEN }}
