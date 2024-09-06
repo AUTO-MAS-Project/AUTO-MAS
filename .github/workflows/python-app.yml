@@ -1,11 +1,13 @@
-# This workflow will install Python dependencies, run tests and lint with a single version of Python
-# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python
+# 依照 MIT 协议，在此注明：本段代码改写自 BtbN/FFmpeg-Builds
 
-name: Python application
+name: Build AUTO_MAA
 
 on:
   push:
     branches: [ "main" ]
+    paths-ignore:
+      - '**.md'
+      - 'LICENSE'
   pull_request:
     branches: [ "main" ]
 
@@ -13,32 +15,86 @@ permissions:
   contents: read
 
 jobs:
-  build:
-
-    runs-on: windows-latest
-
+  pre_check:
+    name: Pre Checks
+    runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-    - name: Set up Python 3.12
-      uses: actions/setup-python@v3
-      with:
-        python-version: "3.12"
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install flake8 pytest
-        pip install -r requirements.txt
-    - name: Lint with flake8
-      run: |
-        # stop the build if there are Python syntax errors or undefined names
-        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-        # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
-        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
-    - name: Built with pyinstaller
-      run: |
-        pyinstaller -F --version-file res/info.txt -w --icon=res/AUTO_MAA.ico AUTO_MAA.py
-    - name: Upload Artifact
-      uses: actions/upload-artifact@v2
-      with:
-        name: AUTO_MAA
-        path: ./
+      - name: Repo Check
+        run: |
+          if [[ "$GITHUB_REPOSITORY" != "DLmaster361/AUTO_MAA" ]]; then
+            echo "When forking this repository to make your own builds, you have to adjust this check."
+            exit 1
+          fi
+          exit 0
+  build_AUTO_MAA:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v3
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install flake8 pytest
+          pip install -r requirements.txt
+      - name: Lint with flake8
+        run: |
+          # stop the build if there are Python syntax errors or undefined names
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+          # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
+          flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+      - name: Built with pyinstaller
+        run: |
+          pyinstaller -F --version-file res/info.txt -w --icon=res/AUTO_MAA.ico AUTO_MAA.py
+      - name: Extract version number
+        id: extract_version_number
+        run: |
+          python -c "import re; content = open('res/info.txt', 'r').read(); match = re.search(r'StringStruct\\(\'ProductVersion\', \'(.*?)\'\\)', content); if match: version_number = match.group(1); print(f'::set-output name=version_number::{version_number}')"
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AUTO_MAA_${{ steps.extract_version_number.outputs.version_number }}
+          path: |
+            data/**/*
+            gui/**/*
+            res/**/*
+            AUTO_MAA.py
+            dist/AUTO_MAA.exe
+            requirements.txt
+            README.md
+            LICENSE
+            更新说明.txt
+  publish_release:
+    name: Publish release
+    needs: build_AUTO_MAA
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Extract version number
+        id: extract_version_number
+        run: |
+          python -c "import re; content = open('res/info.txt', 'r').read(); match = re.search(r'StringStruct\\(\'ProductVersion\', \'(.*?)\'\\)', content); if match: version_number = match.group(1); print(f'::set-output name=version_number::{version_number}')"
+      - name: Read release content
+        id: read_release_content
+        run: |
+          python -c "with open('更新说明.txt', 'r') as f: release_content = f.read(); print(f'::set-output name=release_content::{release_content}')"
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: AUTO_MAA_*
+          merge-multiple: true
+          path: artifacts
+      - name: Create release
+        id: create_release
+        run: |
+          set -xe
+          shopt -s nullglob
+          NAME="${{ steps.extract_version_number.outputs.version_number }}"
+          TAGNAME="${{ steps.extract_version_number.outputs.version_number }}"
+          CONTENT="${{ steps.read_release_content.outputs.release_content }}"
+          gh release create "$TAGNAME" --target "main" --title "$NAME" --description "$CONTENT" --artifact artifacts/*.{zip,tar.xz}
+        env:
+          GITHUB_TOKEN: ${{ secrets.WORKFLOW_TOKEN }}
