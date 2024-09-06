@@ -72,7 +72,7 @@ jobs:
         id: read_version
         run: |
           $VERSION=(Get-Content -Path "更新说明.txt" -TotalCount 1).Trim()
-          echo "::set-output name=version::$VERSION"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
@@ -105,9 +105,9 @@ jobs:
         run: |
           release_id=$(gh release view $(head -n 1 更新说明.txt) --json id --jq .id)
           if [[ -z $release_id ]]; then
-            echo "::set-output name=release_exists::false"
+            echo "release_exists=false" >> $GITHUB_OUTPUT
           else
-            echo "::set-output name=release_exists::true"
+            echo "release_exists=true" >> $GITHUB_OUTPUT
           fi
         env:
           GITHUB_TOKEN: ${{ secrets.WORKFLOW_TOKEN }}
