@@ -75,11 +75,11 @@ jobs:
         id: read_version
         run: |
           $VERSION=(Get-Content -Path "更新说明.txt" -TotalCount 1).Trim()
-          echo "name=AUTO_MAA_$VERSION" >> $GITHUB_OUTPUT
+          "version=$VERSION" | Out-File -FilePath $env:GITHUB_ENV -Append
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.read_version.outputs.name }}
+          name: AUTO_MAA_$env:version
           path: |
             data/**/*
             gui/**/*
