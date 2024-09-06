@@ -109,6 +109,8 @@ jobs:
           else
             echo "::set-output name=release_exists::true"
           fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.WORKFLOW_TOKEN }}
       - name: Create release
         id: create_release
         if: steps.check_if_release_exists.outputs.release_exists == 'false'
@@ -123,7 +125,6 @@ jobs:
           gh release create "$TAGNAME" --target "main" --title "$NAME" --notes "$NOTES" artifacts/*.{zip,tar.xz}
         env:
           GITHUB_TOKEN: ${{ secrets.WORKFLOW_TOKEN }}
-
       - name: Update release
         if: steps.check_if_release_exists.outputs.release_exists == 'true'
         run: |
