@@ -1,4 +1,22 @@
-# 依照 MIT 协议，在此注明：本段代码改写自 BtbN/FFmpeg-Builds
+#   <AUTO_MAA:A MAA Multi Account Management and Automation Tool>
+#   Copyright © <2024> <DLmaster361>
+
+#   This file is part of AUTO_MAA.
+
+#   AUTO_MAA is free software: you can redistribute it and/or modify
+#   it under the terms of the GNU General Public License as published
+#   by the Free Software Foundation, either version 3 of the License,
+#   or (at your option) any later version.
+
+#   AUTO_MAA is distributed in the hope that it will be useful,
+#   but WITHOUT ANY WARRANTY; without even the implied warranty
+#   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
+#   the GNU General Public License for more details.
+
+#   You should have received a copy of the GNU General Public License
+#   along with AUTO_MAA. If not, see <https://www.gnu.org/licenses/>.
+
+#   DLmaster_361@163.com
 
 name: Build AUTO_MAA
 
@@ -29,9 +47,10 @@ jobs:
   build_AUTO_MAA:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
       - name: Set up Python 3.12
-        uses: actions/setup-python@v3
+        uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - name: Install dependencies
@@ -48,14 +67,10 @@ jobs:
       - name: Built with pyinstaller
         run: |
           pyinstaller -F --version-file res/info.txt -w --icon=res/AUTO_MAA.ico AUTO_MAA.py
-      - name: Extract version number
-        id: extract_version_number
-        run: |
-          python -c "import re; content = open('res/info.txt', 'r', encoding='utf-8').read(); match = re.search(r\\\"StringStruct(\\'ProductVersion\\', \\'(.*?)\\')\\\", content);\\nif match:\\n\\tversion_number = match.group(1);print(f'::set-output name=version_number::{version_number}')"
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: AUTO_MAA_${{ steps.extract_version_number.outputs.version_number }}
+          name: AUTO_MAA_$(head -n 1 更新说明.txt)
           path: |
             data/**/*
             gui/**/*
@@ -73,14 +88,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Extract version number
-        id: extract_version_number
-        run: |
-          python -c "import re; content = open('res/info.txt', 'r', encoding='utf-8').read(); match = re.search(r\\\"StringStruct(\\'ProductVersion\\', \\'(.*?)\\')\\\", content);\\nif match:\\n\\tversion_number = match.group(1);print(f'::set-output name=version_number::{version_number}')"
-      - name: Read release content
-        id: read_release_content
-        run: |
-          python -c "with open('更新说明.txt', 'r', encoding='utf-8') as f:\n\trelease_content = f.read(); print(f'::set-output name=release_content::{release_content}')"
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
@@ -92,9 +99,9 @@ jobs:
         run: |
           set -xe
           shopt -s nullglob
-          NAME="${{ steps.extract_version_number.outputs.version_number }}"
-          TAGNAME="${{ steps.extract_version_number.outputs.version_number }}"
-          CONTENT="${{ steps.read_release_content.outputs.release_content }}"
+          NAME="$(head -n 1 更新说明.txt)"
+          TAGNAME="$(head -n 1 更新说明.txt)"
+          CONTENT="$(tail -n +2 更新说明.txt)\n\n```本release通过GitHub Actions自动构建```"
           gh release create "$TAGNAME" --target "main" --title "$NAME" --description "$CONTENT" --artifact artifacts/*.{zip,tar.xz}
         env:
           GITHUB_TOKEN: ${{ secrets.WORKFLOW_TOKEN }}
