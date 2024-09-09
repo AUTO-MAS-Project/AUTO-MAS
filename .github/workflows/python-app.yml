@@ -106,7 +106,7 @@ jobs:
       - name: Check if release exists
         id: check_if_release_exists
         run: |
-          release_id=$(gh release view $(head -n 1 更新说明.txt) --json id --jq .id)
+          release_id=$(gh release view $(head -n 1 更新说明.txt) --json id --jq .id || true)
           if [[ -z $release_id ]]; then
             echo "release_exists=false" >> $GITHUB_OUTPUT
           else
