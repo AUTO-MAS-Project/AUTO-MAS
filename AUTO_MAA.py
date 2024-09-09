@@ -129,21 +129,32 @@ class MaaRunner(QtCore.QThread):
                     while True:
                         # 获取MAA日志
                         logs = []
+                        IfLogStart = False
                         with open(self.LogPath, "r", encoding="utf-8") as f:
                             for entry in f:
-                                try:
-                                    entry_time = datetime.datetime.strptime(
-                                        entry[1:20], "%Y-%m-%d %H:%M:%S"
-                                    )
-                                    if entry_time > StartTime:
-                                        logs.append(entry)
-                                except ValueError:
-                                    pass
+                                if not IfLogStart:
+                                    try:
+                                        entry_time = datetime.datetime.strptime(
+                                            entry[1:20], "%Y-%m-%d %H:%M:%S"
+                                        )
+                                        if entry_time > StartTime:
+                                            IfLogStart = True
+                                            logs.append(entry)
+                                    except ValueError:
+                                        pass
+                                else:
+                                    logs.append(entry)
                         # 判断是否超时
                         if len(logs) > 0:
-                            LastTime = datetime.datetime.strptime(
-                                logs[-1][1:20], "%Y-%m-%d %H:%M:%S"
-                            )
+                            LastTime = datetime.datetime.now()
+                            for i in range(-1, 0 - len(logs) - 1, -1):
+                                try:
+                                    LastTime = datetime.datetime.strptime(
+                                        logs[i][1:20], "%Y-%m-%d %H:%M:%S"
+                                    )
+                                    break
+                                except ValueError:
+                                    pass
                             NowTime = datetime.datetime.now()
                             if (
                                 j == 0
@@ -175,7 +186,8 @@ class MaaRunner(QtCore.QThread):
                                 log,
                             )
                         # 判断MAA程序运行状态
-                        if "任务已全部完成！" in log:
+                        result = self.IfMaaSuccess(log)
+                        if result == "Success!":
                             runbook[j] = True
                             self.UpGui.emit(
                                 self.data[uid][0] + "_第" + str(i + 1) + "次_日常",
@@ -186,41 +198,23 @@ class MaaRunner(QtCore.QThread):
                             )
                             time.sleep(10)
                             break
-                        elif (
-                            ("请检查连接设置或尝试重启模拟器与 ADB 或重启电脑" in log)
-                            or ("已停止" in log)
-                            or ("MaaAssistantArknights GUI exited" in log)
-                            or self.TimeOut
-                            or not self.ifRun
-                        ):
+                        elif result == "Wait":
+                            # 检测时间间隔
+                            time.sleep(1)
+                        else:
                             # 打印中止信息
                             # 此时，log变量内存储的就是出现异常的日志信息，可以保存或发送用于问题排查
-                            if (
-                                (
-                                    "请检查连接设置或尝试重启模拟器与 ADB 或重启电脑"
-                                    in log
-                                )
-                                or ("已停止" in log)
-                                or ("MaaAssistantArknights GUI exited" in log)
-                            ):
-                                info = "检测到MAA进程异常\n正在中止相关程序\n请等待10s"
-                            elif self.TimeOut:
-                                info = "检测到MAA进程超时\n正在中止相关程序\n请等待10s"
-                            elif not self.ifRun:
-                                info = "您中止了本次任务\n正在中止相关程序\n请等待"
                             self.UpGui.emit(
                                 self.data[uid][0] + "_第" + str(i + 1) + "次_日常",
                                 "\n".join([self.data[k][0] for k in WaitUid]),
                                 "\n".join([self.data[k][0] for k in OverUid]),
                                 "\n".join([self.data[k][0] for k in ErrorUid]),
-                                info,
+                                result,
                             )
                             os.system("taskkill /F /T /PID " + str(maa.pid))
                             if self.ifRun:
                                 time.sleep(10)
                             break
-                        # 检测时间间隔
-                        time.sleep(1)
                 if runbook[0] and runbook[1]:
                     if self.data[uid][12] == 0:
                         self.data[uid][2] -= 1
@@ -256,6 +250,23 @@ class MaaRunner(QtCore.QThread):
         self.UpGui.emit("", "", "", "", EndLog)
         self.Accomplish.emit()
         self.ifRun = False
+
+    # 判断MAA程序运行状态
+    def IfMaaSuccess(self, log):
+        if "任务已全部完成！" in log:
+            return "Success!"
+        elif (
+            ("请检查连接设置或尝试重启模拟器与 ADB 或重启电脑" in log)
+            or ("已停止" in log)
+            or ("MaaAssistantArknights GUI exited" in log)
+        ):
+            return "检测到MAA进程异常\n正在中止相关程序\n请等待10s"
+        elif self.TimeOut:
+            return "检测到MAA进程超时\n正在中止相关程序\n请等待10s"
+        elif not self.ifRun:
+            return "您中止了本次任务\n正在中止相关程序\n请等待"
+        else:
+            return "Wait"
 
     # 配置MAA运行参数
     def SetMaa(self, s, uid):
