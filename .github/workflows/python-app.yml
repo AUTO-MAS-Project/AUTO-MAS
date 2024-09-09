@@ -124,7 +124,7 @@ jobs:
           TAGNAME="$(head -n 1 更新说明.txt)"
           NOTES_MAIN="$(tail -n +2 更新说明.txt)"
           NOTES_TAIL="\`\`\`本release通过GitHub Actions自动构建\`\`\`"
-          NOTES="$NOTES_MAIN\n\n$NOTES_TAIL"
+          NOTES="$NOTES_MAIN<br><br>$NOTES_TAIL"
           gh release create "$TAGNAME" --target "main" --title "$NAME" --notes "$NOTES" artifacts/*.{zip,tar.xz}
         env:
           GITHUB_TOKEN: ${{ secrets.WORKFLOW_TOKEN }}
