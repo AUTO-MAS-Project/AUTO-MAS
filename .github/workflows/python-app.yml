@@ -132,6 +132,7 @@ jobs:
           NOTES_MAIN="$(tail -n +2 更新说明.txt)"
           NOTES_TAIL="\`\`\`本release通过GitHub Actions自动构建\`\`\`"
           NOTES="$NOTES_MAIN<br><br>$NOTES_TAIL"
-          gh release edit "$TAGNAME" --target "main" --title "$NAME" --notes "$NOTES" artifacts/*
+          echo "--target main --title $NAME --notes $NOTES" > release_options.txt
+          gh release edit "$TAGNAME" -F release_options.txt artifacts/*
         env:
           GITHUB_TOKEN: ${{ secrets.WORKFLOW_TOKEN }}
