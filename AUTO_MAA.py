@@ -147,10 +147,10 @@ class MaaRunner(QtCore.QThread):
                         # 判断是否超时
                         if len(logs) > 0:
                             LastTime = datetime.datetime.now()
-                            for i in range(-1, 0 - len(logs) - 1, -1):
+                            for index in range(-1, 0 - len(logs) - 1, -1):
                                 try:
                                     LastTime = datetime.datetime.strptime(
-                                        logs[i][1:20], "%Y-%m-%d %H:%M:%S"
+                                        logs[index][1:20], "%Y-%m-%d %H:%M:%S"
                                     )
                                     break
                                 except ValueError:
