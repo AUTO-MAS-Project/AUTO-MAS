@@ -186,7 +186,7 @@ class MaaRunner(QtCore.QThread):
                                 log,
                             )
                         # 判断MAA程序运行状态
-                        result = self.IfMaaSuccess(log)
+                        result = self.IfMaaSuccess(log, j)
                         if result == "Success!":
                             runbook[j] = True
                             self.UpGui.emit(
@@ -252,8 +252,10 @@ class MaaRunner(QtCore.QThread):
         self.ifRun = False
 
     # 判断MAA程序运行状态
-    def IfMaaSuccess(self, log):
-        if "任务已全部完成！" in log:
+    def IfMaaSuccess(self, log, mode):
+        if mode == 1 and "任务出错: Fight" in log:
+            return "检测到MAA未能实际执行任务\n正在中止相关程序\n请等待10s"
+        elif "任务已全部完成！" in log:
             return "Success!"
         elif (
             ("请检查连接设置或尝试重启模拟器与 ADB 或重启电脑" in log)
