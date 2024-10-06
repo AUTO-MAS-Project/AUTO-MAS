@@ -388,7 +388,7 @@ class MaaRunner(QtCore.QThread):
     # 判断MAA程序运行状态
     def IfMaaSuccess(self, log, mode):
         if "日常代理" in mode:
-            if mode == "日常代理_剿灭" and "任务出错: Fight" in log:
+            if mode == "日常代理_日常" and "任务出错: Fight" in log:
                 return "检测到MAA未能实际执行任务\n正在中止相关程序\n请等待10s"
             elif "任务已全部完成！" in log:
                 return "Success!"
