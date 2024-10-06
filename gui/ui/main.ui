@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>1280</width>
-    <height>720</height>
+    <height>697</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -17,7 +17,7 @@
    <item>
     <widget class="QTabWidget" name="tabWidget">
      <property name="currentIndex">
-      <number>2</number>
+      <number>0</number>
      </property>
      <widget class="QWidget" name="tab_users">
       <property name="enabled">
@@ -545,7 +545,7 @@
          </property>
          <layout class="QHBoxLayout" name="horizontalLayout_3">
           <item>
-           <layout class="QVBoxLayout" name="verticalLayout_9">
+           <layout class="QVBoxLayout" name="verticalLayout_9" stretch="1,1,3,3,2">
             <item>
              <widget class="QFrame" name="frame_main">
               <property name="frameShape">
@@ -576,6 +576,13 @@
                     </size>
                    </property>
                   </spacer>
+                 </item>
+                 <item>
+                  <widget class="QPushButton" name="pushButton_checkstart">
+                   <property name="text">
+                    <string>开始排查</string>
+                   </property>
+                  </widget>
                  </item>
                  <item>
                   <widget class="QPushButton" name="pushButton_runnow">

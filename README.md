@@ -5,6 +5,15 @@ MAA多账号管理与自动化软件
 
 ----------------------------------------------------------------------------------------------
 
+</h1>
+
+[![GitHub Stars](https://img.shields.io/github/stars/DLmaster361/AUTO_MAA?style=flat-square)](https://github.com/DLmaster361/AUTO_MAA/stargazers)
+[![GitHub Forks](https://img.shields.io/github/forks/DLmaster361/AUTO_MAA?style=flat-square)](https://github.com/DLmaster361/AUTO_MAA/network)
+[![GitHub Issues](https://img.shields.io/github/issues/DLmaster361/AUTO_MAA?style=flat-square)](https://github.com/DLmaster361/AUTO_MAA/issues)
+[![GitHub Contributors](https://img.shields.io/github/contributors/DLmaster361/AUTO_MAA?style=flat-square)](https://github.com/DLmaster361/AUTO_MAA/graphs/contributors)
+[![GitHub License](https://img.shields.io/github/license/DLmaster361/AUTO_MAA?style=flat-square)](https://github.com/DLmaster361/AUTO_MAA/blob/main/LICENSE)
+</div>
+
 ## 重要声明
 本软件是一个外部工具，旨在优化MAA多账号功能体验，并通过一些方法解决MAA项目未能解决的部分问题，改善代理的稳定性。该软件包可以存储明日方舟多账号数据，并通过修改MAA配置文件、读取MAA日志等行为自动完成多账号代理。本开发团队承诺，不会修改明日方舟游戏本体与相关配置文件。
 
@@ -102,6 +111,20 @@ gameid.txt在初始已经存储了一些常用资源本的替代方案。
 - 在执行页的`定时执行`栏设置时间
 
 - 保持软件打开，软件会在设定的时间自动运行
+
+## 人工排查代理结果
+
+### 直接开始人工排查
+
+- 在执行页单击`开始排查`启动排查进程
+
+- 软件将调起MAA，依次登录各用户的账号
+
+- 检查代理情况，可以手动完成未代理的任务
+
+- 在对话框中单击对应账号的代理情况
+
+- 结束人工排查后，相关排查情况将被写入用户管理页的`备注`
 
 ---
 # 关于

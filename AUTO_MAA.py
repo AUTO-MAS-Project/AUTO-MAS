@@ -60,15 +60,18 @@ uiLoader = QUiLoader()
 
 class MaaRunner(QtCore.QThread):
 
+    question = QtCore.Signal()
     UpGui = QtCore.Signal(str, str, str, str, str)
-    UpUserInfo = QtCore.Signal(list, list, list, list)
+    UpUserInfo = QtCore.Signal(list, list, list, list, list)
     Accomplish = QtCore.Signal()
     AppPath = os.path.dirname(os.path.realpath(sys.argv[0])).replace(
         "\\", "/"
     )  # 获取软件自身的路径
     ifRun = False
 
-    def __init__(self, SetPath, LogPath, MaaPath, Routine, Annihilation, Num, data):
+    def __init__(
+        self, SetPath, LogPath, MaaPath, Routine, Annihilation, Num, data, mode
+    ):
         super(MaaRunner, self).__init__()
         self.SetPath = SetPath
         self.LogPath = LogPath
@@ -77,6 +80,7 @@ class MaaRunner(QtCore.QThread):
         self.Annihilation = Annihilation
         self.Num = Num
         self.data = data
+        self.mode = mode
 
     def run(self):
         self.ifRun = True
@@ -89,44 +93,179 @@ class MaaRunner(QtCore.QThread):
             for i in range(len(self.data))
             if (self.data[i][2] > 0 and self.data[i][3] == "y")
         ]
-        # MAA预配置
-        self.SetMaa(0, 0)
-        # 执行情况预处理
-        for i in AllUid:
-            if self.data[i][4] != curdate:
-                self.data[i][4] = curdate
-                self.data[i][12] = 0
-            self.data[i][0] += "_第" + str(self.data[i][12] + 1) + "次代理"
-        # 开始代理
-        for uid in AllUid:
-            if not self.ifRun:
-                break
-            runbook = [False for k in range(2)]
-            for i in range(self.Num):
+        # 日常代理模式
+        if self.mode == "日常代理":
+            # 执行情况预处理
+            for i in AllUid:
+                if self.data[i][4] != curdate:
+                    self.data[i][4] = curdate
+                    self.data[i][12] = 0
+                self.data[i][0] += "_第" + str(self.data[i][12] + 1) + "次代理"
+            # 开始代理
+            for uid in AllUid:
                 if not self.ifRun:
                     break
-                for j in range(2):
+                # 初始化代理情况记录和模式替换记录
+                runbook = [False for k in range(2)]
+                modebook = ["日常代理_剿灭", "日常代理_日常"]
+                # 尝试次数循环
+                for i in range(self.Num):
                     if not self.ifRun:
                         break
-                    if j == 0 and self.data[uid][8] == "n":
-                        runbook[0] = True
-                        continue
-                    if runbook[j]:
-                        continue
+                    # 剿灭-日常模式循环
+                    for j in range(2):
+                        if not self.ifRun:
+                            break
+                        if j == 0 and self.data[uid][8] == "n":
+                            runbook[0] = True
+                            continue
+                        if runbook[j]:
+                            continue
+                        # 配置MAA
+                        self.SetMaa(modebook[j], uid)
+                        # 创建MAA任务
+                        maa = subprocess.Popen([self.MaaPath])
+                        # 记录当前时间
+                        StartTime = datetime.datetime.now()
+                        # 记录是否超时的标记
+                        self.TimeOut = False
+                        # 更新运行信息
+                        WaitUid = [
+                            idx
+                            for idx in AllUid
+                            if (not idx in OverUid + ErrorUid + [uid])
+                        ]
+                        # 监测MAA运行状态
+                        while self.ifRun:
+                            # 获取MAA日志
+                            logs = []
+                            IfLogStart = False
+                            with open(self.LogPath, "r", encoding="utf-8") as f:
+                                for entry in f:
+                                    if not IfLogStart:
+                                        try:
+                                            entry_time = datetime.datetime.strptime(
+                                                entry[1:20], "%Y-%m-%d %H:%M:%S"
+                                            )
+                                            if entry_time > StartTime:
+                                                IfLogStart = True
+                                                logs.append(entry)
+                                        except ValueError:
+                                            pass
+                                    else:
+                                        logs.append(entry)
+                            # 判断是否超时
+                            if len(logs) > 0:
+                                LastTime = datetime.datetime.now()
+                                for index in range(-1, 0 - len(logs) - 1, -1):
+                                    try:
+                                        LastTime = datetime.datetime.strptime(
+                                            logs[index][1:20], "%Y-%m-%d %H:%M:%S"
+                                        )
+                                        break
+                                    except ValueError:
+                                        pass
+                                NowTime = datetime.datetime.now()
+                                if (
+                                    j == 0
+                                    and NowTime - LastTime
+                                    > datetime.timedelta(minutes=self.Annihilation)
+                                ) or (
+                                    j == 1
+                                    and NowTime - LastTime
+                                    > datetime.timedelta(minutes=self.Routine)
+                                ):
+                                    self.TimeOut = True
+                            # 合并日志
+                            log = "".join(logs)
+                            # 更新MAA日志
+                            self.UpGui.emit(
+                                self.data[uid][0]
+                                + "_第"
+                                + str(i + 1)
+                                + "次_"
+                                + modebook[j][5:7],
+                                "\n".join([self.data[k][0] for k in WaitUid]),
+                                "\n".join([self.data[k][0] for k in OverUid]),
+                                "\n".join([self.data[k][0] for k in ErrorUid]),
+                                log,
+                            )
+                            # 判断MAA程序运行状态
+                            result = self.IfMaaSuccess(log, modebook[j])
+                            if result == "Success!":
+                                runbook[j] = True
+                                self.UpGui.emit(
+                                    self.data[uid][0]
+                                    + "_第"
+                                    + str(i + 1)
+                                    + "次_"
+                                    + modebook[j][5:7],
+                                    "\n".join([self.data[k][0] for k in WaitUid]),
+                                    "\n".join([self.data[k][0] for k in OverUid]),
+                                    "\n".join([self.data[k][0] for k in ErrorUid]),
+                                    "检测到MAA进程完成代理任务\n正在等待相关程序结束\n请等待10s",
+                                )
+                                time.sleep(10)
+                                break
+                            elif result == "Wait":
+                                # 检测时间间隔
+                                time.sleep(1)
+                            else:
+                                # 打印中止信息
+                                # 此时，log变量内存储的就是出现异常的日志信息，可以保存或发送用于问题排查
+                                self.UpGui.emit(
+                                    self.data[uid][0]
+                                    + "_第"
+                                    + str(i + 1)
+                                    + "次_"
+                                    + modebook[j][5:7],
+                                    "\n".join([self.data[k][0] for k in WaitUid]),
+                                    "\n".join([self.data[k][0] for k in OverUid]),
+                                    "\n".join([self.data[k][0] for k in ErrorUid]),
+                                    result,
+                                )
+                                os.system("taskkill /F /T /PID " + str(maa.pid))
+                                if self.ifRun:
+                                    time.sleep(10)
+                                break
+                    if runbook[0] and runbook[1]:
+                        if self.data[uid][12] == 0:
+                            self.data[uid][2] -= 1
+                        self.data[uid][12] += 1
+                        OverUid.append(uid)
+                        break
+                if not (runbook[0] and runbook[1]):
+                    ErrorUid.append(uid)
+        # 人工排查模式
+        elif self.mode == "人工排查":
+            # 标记是否需要启动模拟器
+            if_strat_app = True
+            # 标识排查模式
+            for i in AllUid:
+                self.data[i][0] += "_排查模式"
+            # 开始排查
+            for uid in AllUid:
+                if not self.ifRun:
+                    break
+                runbook = [False for k in range(2)]
+                # 启动重试循环
+                while self.ifRun:
                     # 配置MAA
-                    self.SetMaa(j + 1, uid)
+                    if if_strat_app:
+                        self.SetMaa("人工排查_启动模拟器", uid)
+                        if_strat_app = False
+                    else:
+                        self.SetMaa("人工排查_仅切换账号", uid)
                     # 创建MAA任务
                     maa = subprocess.Popen([self.MaaPath])
                     # 记录当前时间
                     StartTime = datetime.datetime.now()
-                    # 记录是否超时的标记
-                    self.TimeOut = False
                     # 更新运行信息
                     WaitUid = [
                         idx for idx in AllUid if (not idx in OverUid + ErrorUid + [uid])
                     ]
                     # 监测MAA运行状态
-                    while True:
+                    while self.ifRun:
                         # 获取MAA日志
                         logs = []
                         IfLogStart = False
@@ -144,137 +283,222 @@ class MaaRunner(QtCore.QThread):
                                         pass
                                 else:
                                     logs.append(entry)
-                        # 判断是否超时
-                        if len(logs) > 0:
-                            LastTime = datetime.datetime.now()
-                            for index in range(-1, 0 - len(logs) - 1, -1):
-                                try:
-                                    LastTime = datetime.datetime.strptime(
-                                        logs[index][1:20], "%Y-%m-%d %H:%M:%S"
-                                    )
-                                    break
-                                except ValueError:
-                                    pass
-                            NowTime = datetime.datetime.now()
-                            if (
-                                j == 0
-                                and NowTime - LastTime
-                                > datetime.timedelta(minutes=self.Annihilation)
-                            ) or (
-                                j == 1
-                                and NowTime - LastTime
-                                > datetime.timedelta(minutes=self.Routine)
-                            ):
-                                self.TimeOut = True
                         # 合并日志
                         log = "".join(logs)
                         # 更新MAA日志
-                        if j == 0:
-                            self.UpGui.emit(
-                                self.data[uid][0] + "_第" + str(i + 1) + "次_剿灭",
-                                "\n".join([self.data[k][0] for k in WaitUid]),
-                                "\n".join([self.data[k][0] for k in OverUid]),
-                                "\n".join([self.data[k][0] for k in ErrorUid]),
-                                log,
-                            )
-                        elif j == 1:
-                            self.UpGui.emit(
-                                self.data[uid][0] + "_第" + str(i + 1) + "次_日常",
-                                "\n".join([self.data[k][0] for k in WaitUid]),
-                                "\n".join([self.data[k][0] for k in OverUid]),
-                                "\n".join([self.data[k][0] for k in ErrorUid]),
-                                log,
-                            )
+                        self.UpGui.emit(
+                            self.data[uid][0],
+                            "\n".join([self.data[k][0] for k in WaitUid]),
+                            "\n".join([self.data[k][0] for k in OverUid]),
+                            "\n".join([self.data[k][0] for k in ErrorUid]),
+                            log,
+                        )
                         # 判断MAA程序运行状态
-                        result = self.IfMaaSuccess(log, j)
+                        result = self.IfMaaSuccess(log, "人工排查")
                         if result == "Success!":
-                            runbook[j] = True
+                            runbook[0] = True
                             self.UpGui.emit(
-                                self.data[uid][0] + "_第" + str(i + 1) + "次_日常",
+                                self.data[uid][0],
                                 "\n".join([self.data[k][0] for k in WaitUid]),
                                 "\n".join([self.data[k][0] for k in OverUid]),
                                 "\n".join([self.data[k][0] for k in ErrorUid]),
-                                "检测到MAA进程完成代理任务\n正在等待相关程序结束\n请等待10s",
+                                "检测到MAA进程成功登录PRTS",
                             )
-                            time.sleep(10)
                             break
                         elif result == "Wait":
                             # 检测时间间隔
                             time.sleep(1)
                         else:
-                            # 打印中止信息
-                            # 此时，log变量内存储的就是出现异常的日志信息，可以保存或发送用于问题排查
                             self.UpGui.emit(
-                                self.data[uid][0] + "_第" + str(i + 1) + "次_日常",
+                                self.data[uid][0],
                                 "\n".join([self.data[k][0] for k in WaitUid]),
                                 "\n".join([self.data[k][0] for k in OverUid]),
                                 "\n".join([self.data[k][0] for k in ErrorUid]),
                                 result,
                             )
                             os.system("taskkill /F /T /PID " + str(maa.pid))
+                            if_strat_app = True
                             if self.ifRun:
                                 time.sleep(10)
                             break
+                    if runbook[0]:
+                        break
+                    elif self.ifRun:
+                        self.question_title = "操作提示"
+                        self.question_info = "MAA未能正确登录到PRTS，是否重试？"
+                        self.question_choice = "wait"
+                        self.question.emit()
+                        while self.question_choice == "wait":
+                            time.sleep(1)
+                        if self.question_choice == "No":
+                            break
+                if runbook[0] and self.ifRun:
+                    self.question_title = "操作提示"
+                    self.question_info = "请检查用户代理情况，如无异常请按下确认键。"
+                    self.question_choice = "wait"
+                    self.question.emit()
+                    while self.question_choice == "wait":
+                        time.sleep(1)
+                    if self.question_choice == "Yes":
+                        runbook[1] = True
                 if runbook[0] and runbook[1]:
-                    if self.data[uid][12] == 0:
-                        self.data[uid][2] -= 1
-                    self.data[uid][12] += 1
+                    if "未通过人工排查" in self.data[uid][11]:
+                        self.data[uid][11] = self.data[uid][11].replace(
+                            "未通过人工排查|", ""
+                        )
                     OverUid.append(uid)
-                    break
-            if not (runbook[0] and runbook[1]):
-                ErrorUid.append(uid)
+                elif not (runbook[0] and runbook[1]):
+                    if not "未通过人工排查" in self.data[uid][11]:
+                        self.data[uid][11] = "未通过人工排查|" + self.data[uid][11]
+                    ErrorUid.append(uid)
+        if not self.ifRun:
+            os.system("taskkill /F /T /PID " + str(maa.pid))
         # 更新用户数据
         days = [self.data[k][2] for k in AllUid]
         lasts = [self.data[k][4] for k in AllUid]
+        notes = [self.data[k][11] for k in AllUid]
         numbs = [self.data[k][12] for k in AllUid]
-        self.UpUserInfo.emit(AllUid, days, lasts, numbs)
+        self.UpUserInfo.emit(AllUid, days, lasts, notes, numbs)
         # 保存运行日志
         endtime = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        with open(self.AppPath + "log.txt", "w", encoding="utf-8") as f:
+        with open(self.AppPath + "/log.txt", "w", encoding="utf-8") as f:
             print("任务开始时间：" + begintime + "，结束时间：" + endtime, file=f)
             print(
-                "已完成数：" + str(len(OverUid)) + "，未完成数：" + str(len(ErrorUid)),
+                "已完成数："
+                + str(len(OverUid))
+                + "，未完成数："
+                + str(len(ErrorUid) + len(WaitUid))
+                + "\n",
                 file=f,
             )
-            ErrorUid = [idx for idx in AllUid if (not idx in OverUid)]
             if len(ErrorUid) != 0:
-                print("代理未完成的用户：", file=f)
+                print(self.mode[2:4] + "未成功的用户：", file=f)
                 print("\n".join([self.data[k][0] for k in ErrorUid]), file=f)
-            WaitUid = [idx for idx in AllUid if (not idx in OverUid + ErrorUid + [uid])]
+            WaitUid = [idx for idx in AllUid if (not idx in OverUid + ErrorUid)]
             if len(WaitUid) != 0:
-                print("未代理的用户：", file=f)
+                print("\n未开始" + self.mode[2:4] + "的用户：", file=f)
                 print("\n".join([self.data[k][0] for k in WaitUid]), file=f)
-        with open(self.AppPath + "log.txt", "r", encoding="utf-8") as f:
-            EndLog = f.read()
         # 恢复GUI运行面板
+        with open(self.AppPath + "/log.txt", "r", encoding="utf-8") as f:
+            EndLog = f.read()
         self.UpGui.emit("", "", "", "", EndLog)
         self.Accomplish.emit()
         self.ifRun = False
 
     # 判断MAA程序运行状态
     def IfMaaSuccess(self, log, mode):
-        if mode == 1 and "任务出错: Fight" in log:
-            return "检测到MAA未能实际执行任务\n正在中止相关程序\n请等待10s"
-        elif "任务已全部完成！" in log:
-            return "Success!"
-        elif (
-            ("请检查连接设置或尝试重启模拟器与 ADB 或重启电脑" in log)
-            or ("已停止" in log)
-            or ("MaaAssistantArknights GUI exited" in log)
-        ):
-            return "检测到MAA进程异常\n正在中止相关程序\n请等待10s"
-        elif self.TimeOut:
-            return "检测到MAA进程超时\n正在中止相关程序\n请等待10s"
-        elif not self.ifRun:
-            return "您中止了本次任务\n正在中止相关程序\n请等待"
-        else:
-            return "Wait"
+        if "日常代理" in mode:
+            if mode == "日常代理_剿灭" and "任务出错: Fight" in log:
+                return "检测到MAA未能实际执行任务\n正在中止相关程序\n请等待10s"
+            elif "任务已全部完成！" in log:
+                return "Success!"
+            elif (
+                ("请检查连接设置或尝试重启模拟器与 ADB 或重启电脑" in log)
+                or ("已停止" in log)
+                or ("MaaAssistantArknights GUI exited" in log)
+            ):
+                return "检测到MAA进程异常\n正在中止相关程序\n请等待10s"
+            elif self.TimeOut:
+                return "检测到MAA进程超时\n正在中止相关程序\n请等待10s"
+            elif not self.ifRun:
+                return "您中止了本次任务\n正在中止相关程序\n请等待"
+            else:
+                return "Wait"
+        elif mode == "人工排查":
+            if "完成任务: StartUp" in log:
+                return "Success!"
+            elif (
+                ("请检查连接设置或尝试重启模拟器与 ADB 或重启电脑" in log)
+                or ("已停止" in log)
+                or ("MaaAssistantArknights GUI exited" in log)
+            ):
+                return "检测到MAA进程异常\n正在中止相关程序\n请等待10s"
+            elif not self.ifRun:
+                return "您中止了本次任务\n正在中止相关程序\n请等待"
+            else:
+                return "Wait"
 
     # 配置MAA运行参数
-    def SetMaa(self, s, uid):
+    def SetMaa(self, mode, uid):
         with open(self.SetPath, "r", encoding="utf-8") as f:
             data = json.load(f)
-        if s == 0:
+        # 人工排查配置
+        if mode == "人工排查_启动模拟器":
+            data["Configurations"]["Default"][
+                "MainFunction.PostActions"
+            ] = "8"  # 完成后退出MAA
+            data["Configurations"]["Default"][
+                "Start.RunDirectly"
+            ] = "True"  # 启动MAA后直接运行
+            data["Configurations"]["Default"][
+                "Start.StartEmulator"
+            ] = "True"  # 启动MAA后自动开启模拟器
+            data["Configurations"]["Default"]["Start.AccountName"] = (
+                self.data[uid][1][:3] + "****" + self.data[uid][1][7:]
+            )  # 账号切换
+            data["Configurations"]["Default"][
+                "TaskQueue.WakeUp.IsChecked"
+            ] = "True"  # 开始唤醒
+            data["Configurations"]["Default"][
+                "TaskQueue.Recruiting.IsChecked"
+            ] = "False"  # 自动公招
+            data["Configurations"]["Default"][
+                "TaskQueue.Base.IsChecked"
+            ] = "False"  # 基建换班
+            data["Configurations"]["Default"][
+                "TaskQueue.Combat.IsChecked"
+            ] = "False"  # 刷理智
+            data["Configurations"]["Default"][
+                "TaskQueue.Mission.IsChecked"
+            ] = "False"  # 领取奖励
+            data["Configurations"]["Default"][
+                "TaskQueue.Mall.IsChecked"
+            ] = "False"  # 获取信用及购物
+            data["Configurations"]["Default"][
+                "TaskQueue.AutoRoguelike.IsChecked"
+            ] = "False"  # 自动肉鸽
+            data["Configurations"]["Default"][
+                "TaskQueue.Reclamation.IsChecked"
+            ] = "False"  # 生息演算        # 人工排查配置
+        if mode == "人工排查_仅切换账号":
+            data["Configurations"]["Default"][
+                "MainFunction.PostActions"
+            ] = "8"  # 完成后无退出MAA
+            data["Configurations"]["Default"][
+                "Start.RunDirectly"
+            ] = "True"  # 启动MAA后直接运行
+            data["Configurations"]["Default"][
+                "Start.StartEmulator"
+            ] = "False"  # 启动MAA后自动开启模拟器
+            data["Configurations"]["Default"]["Start.AccountName"] = (
+                self.data[uid][1][:3] + "****" + self.data[uid][1][7:]
+            )  # 账号切换
+            data["Configurations"]["Default"][
+                "TaskQueue.WakeUp.IsChecked"
+            ] = "True"  # 开始唤醒
+            data["Configurations"]["Default"][
+                "TaskQueue.Recruiting.IsChecked"
+            ] = "False"  # 自动公招
+            data["Configurations"]["Default"][
+                "TaskQueue.Base.IsChecked"
+            ] = "False"  # 基建换班
+            data["Configurations"]["Default"][
+                "TaskQueue.Combat.IsChecked"
+            ] = "False"  # 刷理智
+            data["Configurations"]["Default"][
+                "TaskQueue.Mission.IsChecked"
+            ] = "False"  # 领取奖励
+            data["Configurations"]["Default"][
+                "TaskQueue.Mall.IsChecked"
+            ] = "False"  # 获取信用及购物
+            data["Configurations"]["Default"][
+                "TaskQueue.AutoRoguelike.IsChecked"
+            ] = "False"  # 自动肉鸽
+            data["Configurations"]["Default"][
+                "TaskQueue.Reclamation.IsChecked"
+            ] = "False"  # 生息演算
+        # 剿灭代理配置
+        elif mode == "日常代理_剿灭":
             data["Configurations"]["Default"][
                 "MainFunction.PostActions"
             ] = "12"  # 完成后退出MAA和模拟器
@@ -284,7 +508,6 @@ class MaaRunner(QtCore.QThread):
             data["Configurations"]["Default"][
                 "Start.StartEmulator"
             ] = "True"  # 启动MAA后自动开启模拟器
-        elif s == 1:
             data["Configurations"]["Default"]["Start.AccountName"] = (
                 self.data[uid][1][:3] + "****" + self.data[uid][1][7:]
             )  # 账号切换
@@ -306,6 +529,12 @@ class MaaRunner(QtCore.QThread):
             data["Configurations"]["Default"][
                 "TaskQueue.Mall.IsChecked"
             ] = "False"  # 获取信用及购物
+            data["Configurations"]["Default"][
+                "TaskQueue.AutoRoguelike.IsChecked"
+            ] = "False"  # 自动肉鸽
+            data["Configurations"]["Default"][
+                "TaskQueue.Reclamation.IsChecked"
+            ] = "False"  # 生息演算
             data["Configurations"]["Default"][
                 "MainFunction.Stage1"
             ] = "Annihilation"  # 主关卡
@@ -332,7 +561,17 @@ class MaaRunner(QtCore.QThread):
             data["Configurations"]["Default"][
                 "Fight.UseExpiringMedicine"
             ] = "True"  # 无限吃48小时内过期的理智药
-        elif s == 2:
+        # 日常代理配置
+        elif mode == "日常代理_日常":
+            data["Configurations"]["Default"][
+                "MainFunction.PostActions"
+            ] = "12"  # 完成后退出MAA和模拟器
+            data["Configurations"]["Default"][
+                "Start.RunDirectly"
+            ] = "True"  # 启动MAA后直接运行
+            data["Configurations"]["Default"][
+                "Start.StartEmulator"
+            ] = "True"  # 启动MAA后自动开启模拟器
             data["Configurations"]["Default"]["Start.AccountName"] = (
                 self.data[uid][1][:3] + "****" + self.data[uid][1][7:]
             )  # 账号切换
@@ -354,6 +593,12 @@ class MaaRunner(QtCore.QThread):
             data["Configurations"]["Default"][
                 "TaskQueue.Mall.IsChecked"
             ] = "True"  # 获取信用及购物
+            data["Configurations"]["Default"][
+                "TaskQueue.AutoRoguelike.IsChecked"
+            ] = "False"  # 自动肉鸽
+            data["Configurations"]["Default"][
+                "TaskQueue.Reclamation.IsChecked"
+            ] = "False"  # 生息演算
             # 主关卡
             if self.data[uid][5] == "-":
                 data["Configurations"]["Default"]["MainFunction.Stage1"] = ""
@@ -420,6 +665,7 @@ class MaaRunner(QtCore.QThread):
                 ] = self.data[uid][
                     9
                 ]  # 自定义基建配置文件地址
+        # 覆写配置文件
         with open(self.SetPath, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=4)
         return True
@@ -589,6 +835,9 @@ class Main(QWidget):
         self.runnow = self.ui.findChild(QPushButton, "pushButton_runnow")
         self.runnow.clicked.connect(self.RunStarter)
 
+        self.checkstart = self.ui.findChild(QPushButton, "pushButton_checkstart")
+        self.checkstart.clicked.connect(self.CheckStarter)
+
         self.MaaPath = self.ui.findChild(QLineEdit, "lineEdit_MAApath")
         self.MaaPath.textChanged.connect(self.ChangeConfig)
 
@@ -645,10 +894,12 @@ class Main(QWidget):
             self.Annihilation_,
             self.Num_,
             self.data_,
+            "未知",
         )
+        self.MaaRunner.question.connect(lambda: self.read("question_runner"))
         self.MaaRunner.UpGui.connect(self.UpdateBoard)
         self.MaaRunner.UpUserInfo.connect(self.ChangeUserInfo)
-        self.MaaRunner.Accomplish.connect(self.end)
+        self.MaaRunner.Accomplish.connect(self.RunEnd)
 
         self.MainTimer = MainTimer(self.config)
         self.MainTimer.GetConfig.connect(self.GiveConfig)
@@ -1064,13 +1315,16 @@ class Main(QWidget):
             self.UpdateTable("normal")
 
     # 修改用户信息
-    def ChangeUserInfo(self, AllUid, days, lasts, numbs):
+    def ChangeUserInfo(self, AllUid, days, lasts, notes, numbs):
         for i in range(len(AllUid)):
             self.cur.execute(
                 "UPDATE adminx SET day=? WHERE uid=?", (days[i], AllUid[i])
             )
             self.cur.execute(
                 "UPDATE adminx SET last=? WHERE uid=?", (lasts[i], AllUid[i])
+            )
+            self.cur.execute(
+                "UPDATE adminx SET notes=? WHERE uid=?", (notes[i], AllUid[i])
             )
             self.cur.execute(
                 "UPDATE adminx SET numb=? WHERE uid=?", (numbs[i], AllUid[i])
@@ -1134,6 +1388,17 @@ class Main(QWidget):
                 return newPASSWORD
             else:
                 return 0
+        # 读入选择
+        elif operation == "question_runner":
+            choice = QMessageBox.question(
+                self.ui,
+                self.MaaRunner.question_title,
+                self.MaaRunner.question_info,
+            )
+            if choice == QMessageBox.Yes:
+                self.MaaRunner.question_choice = "Yes"
+            elif choice == QMessageBox.No:
+                self.MaaRunner.question_choice = "No"
 
     def closeEvent(self, event):
         self.MainTimer.quit()
@@ -1144,23 +1409,25 @@ class Main(QWidget):
         super().closeEvent(event)
 
     # 中止任务
-    def end(self):
+    def RunEnd(self):
         self.MaaRunner.ifRun = False
         self.MaaRunner.wait()
         self.MainTimer.isMaaRun = False
+        self.checkstart.setEnabled(True)
         self.runnow.clicked.disconnect()
         self.runnow.setText("立即执行")
         self.runnow.clicked.connect(self.RunStarter)
 
-    # 启动MaaRunner线程
+    # 启动MaaRunner线程进行代理
     def RunStarter(self):
         if self.config["Default"]["MaaSet.path"] == "":
             QMessageBox.critical(self.ui, "错误", "MAA路径未设置！")
             return None
         # 运行过程中修改部分组件
+        self.checkstart.setEnabled(False)
         self.runnow.clicked.disconnect()
         self.runnow.setText("结束运行")
-        self.runnow.clicked.connect(self.end)
+        self.runnow.clicked.connect(self.RunEnd)
         # 配置参数
         self.MaaRunner.SetPath = (
             self.config["Default"]["MaaSet.path"] + "/config/gui.json"
@@ -1175,6 +1442,43 @@ class Main(QWidget):
         self.cur.execute("SELECT * FROM adminx WHERE True")
         self.data_ = self.cur.fetchall()
         self.MaaRunner.data = [list(row) for row in self.data_]
+        self.MaaRunner.mode = "日常代理"
+        # 启动执行线程
+        self.MainTimer.isMaaRun = True
+        self.MaaRunner.start()
+
+    # 排查结束
+    def CheckEnd(self):
+        self.MaaRunner.ifRun = False
+        self.MaaRunner.wait()
+        self.MainTimer.isMaaRun = False
+        self.runnow.setEnabled(True)
+        self.checkstart.clicked.disconnect()
+        self.checkstart.setText("开始排查")
+        self.checkstart.clicked.connect(self.CheckStarter)
+
+    # 启动MaaRunner线程进行排查
+    def CheckStarter(self):
+        if self.config["Default"]["MaaSet.path"] == "":
+            QMessageBox.critical(self.ui, "错误", "MAA路径未设置！")
+            return None
+        # 运行过程中修改部分组件
+        self.runnow.setEnabled(False)
+        self.checkstart.clicked.disconnect()
+        self.checkstart.setText("中止排查")
+        self.checkstart.clicked.connect(self.CheckEnd)
+        # 配置参数
+        self.MaaRunner.SetPath = (
+            self.config["Default"]["MaaSet.path"] + "/config/gui.json"
+        )
+        self.MaaRunner.LogPath = (
+            self.config["Default"]["MaaSet.path"] + "/debug/gui.log"
+        )
+        self.MaaRunner.MaaPath = self.config["Default"]["MaaSet.path"] + "/MAA.exe"
+        self.cur.execute("SELECT * FROM adminx WHERE True")
+        self.data_ = self.cur.fetchall()
+        self.MaaRunner.data = [list(row) for row in self.data_]
+        self.MaaRunner.mode = "人工排查"
         # 启动执行线程
         self.MainTimer.isMaaRun = True
         self.MaaRunner.start()
