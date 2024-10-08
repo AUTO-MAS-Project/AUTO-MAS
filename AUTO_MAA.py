@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
     QWidget,
     QApplication,
     QInputDialog,
+    QFileDialog,
     QMessageBox,
     QLineEdit,
     QTableWidget,
@@ -352,39 +353,79 @@ class MaaRunner(QtCore.QThread):
                     if not "未通过人工排查" in self.data[uid][11]:
                         self.data[uid][11] = "未通过人工排查|" + self.data[uid][11]
                     error_uid.append(uid)
-        if not self.if_run:
-            os.system("taskkill /F /T /PID " + str(maa.pid))
-        # 更新用户数据
-        days = [self.data[_][2] for _ in all_uid]
-        lasts = [self.data[_][4] for _ in all_uid]
-        notes = [self.data[_][11] for _ in all_uid]
-        numbs = [self.data[_][12] for _ in all_uid]
-        self.update_user_info.emit(all_uid, days, lasts, notes, numbs)
-        # 保存运行日志
-        end_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        with open(self.app_path + "/log.txt", "w", encoding="utf-8") as f:
-            print("任务开始时间：" + begin_time + "，结束时间：" + end_time, file=f)
-            print(
-                "已完成数："
-                + str(len(over_uid))
-                + "，未完成数："
-                + str(len(error_uid) + len(wait_uid))
-                + "\n",
-                file=f,
-            )
-            if len(error_uid) != 0:
-                print(self.mode[2:4] + "未成功的用户：", file=f)
-                print("\n".join([self.data[_][0] for _ in error_uid]), file=f)
-            wait_uid = [_ for _ in all_uid if (not _ in over_uid + error_uid)]
-            if len(wait_uid) != 0:
-                print("\n未开始" + self.mode[2:4] + "的用户：", file=f)
-                print("\n".join([self.data[_][0] for _ in wait_uid]), file=f)
-        # 恢复GUI运行面板
-        with open(self.app_path + "/log.txt", "r", encoding="utf-8") as f:
-            end_log = f.read()
-        self.update_gui.emit("", "", "", "", end_log)
-        self.accomplish.emit()
-        self.if_run = False
+        # 设置MAA模式
+        elif self.mode == "设置MAA":
+            # 配置MAA
+            self.set_maa("设置MAA", "")
+            # 创建MAA任务
+            maa = subprocess.Popen([self.maa_path])
+            # 记录当前时间
+            start_time = datetime.datetime.now()
+            # 监测MAA运行状态
+            while self.if_run:
+                # 获取MAA日志
+                logs = []
+                if_log_start = False
+                with open(self.log_path, "r", encoding="utf-8") as f:
+                    for entry in f:
+                        if not if_log_start:
+                            try:
+                                entry_time = datetime.datetime.strptime(
+                                    entry[1:20], "%Y-%m-%d %H:%M:%S"
+                                )
+                                if entry_time > start_time:
+                                    if_log_start = True
+                                    logs.append(entry)
+                            except ValueError:
+                                pass
+                        else:
+                            logs.append(entry)
+                # 合并日志
+                log = "".join(logs)
+                # 判断MAA程序运行状态
+                result = self.if_maa_success(log, "设置MAA")
+                if result == "Success!":
+                    break
+                elif result == "Wait":
+                    # 检测时间间隔
+                    time.sleep(1)
+            self.accomplish.emit()
+            self.if_run = False
+        if self.mode in ["日常代理", "人工排查"]:
+            # 关闭可能未正常退出的MAA进程
+            if not self.if_run:
+                os.system("taskkill /F /T /PID " + str(maa.pid))
+            # 更新用户数据
+            days = [self.data[_][2] for _ in all_uid]
+            lasts = [self.data[_][4] for _ in all_uid]
+            notes = [self.data[_][11] for _ in all_uid]
+            numbs = [self.data[_][12] for _ in all_uid]
+            self.update_user_info.emit(all_uid, days, lasts, notes, numbs)
+            # 保存运行日志
+            end_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            with open(self.app_path + "/log.txt", "w", encoding="utf-8") as f:
+                print("任务开始时间：" + begin_time + "，结束时间：" + end_time, file=f)
+                print(
+                    "已完成数："
+                    + str(len(over_uid))
+                    + "，未完成数："
+                    + str(len(error_uid) + len(wait_uid))
+                    + "\n",
+                    file=f,
+                )
+                if len(error_uid) != 0:
+                    print(self.mode[2:4] + "未成功的用户：", file=f)
+                    print("\n".join([self.data[_][0] for _ in error_uid]), file=f)
+                wait_uid = [_ for _ in all_uid if (not _ in over_uid + error_uid)]
+                if len(wait_uid) != 0:
+                    print("\n未开始" + self.mode[2:4] + "的用户：", file=f)
+                    print("\n".join([self.data[_][0] for _ in wait_uid]), file=f)
+            # 恢复GUI运行面板
+            with open(self.app_path + "/log.txt", "r", encoding="utf-8") as f:
+                end_log = f.read()
+            self.update_gui.emit("", "", "", "", end_log)
+            self.accomplish.emit()
+            self.if_run = False
 
     def if_maa_success(self, log, mode):
         """判断MAA程序运行状态"""
@@ -416,6 +457,11 @@ class MaaRunner(QtCore.QThread):
                 return "检测到MAA进程异常\n正在中止相关程序\n请等待10s"
             elif not self.if_run:
                 return "您中止了本次任务\n正在中止相关程序\n请等待"
+            else:
+                return "Wait"
+        elif mode == "设置MAA":
+            if "MaaAssistantArknights GUI exited" in log:
+                return "Success!"
             else:
                 return "Wait"
 
@@ -460,11 +506,12 @@ class MaaRunner(QtCore.QThread):
             ] = "False"  # 自动肉鸽
             data["Configurations"]["Default"][
                 "TaskQueue.Reclamation.IsChecked"
-            ] = "False"  # 生息演算        # 人工排查配置
-        if mode == "人工排查_仅切换账号":
+            ] = "False"  # 生息演算
+        # 人工排查配置
+        elif mode == "人工排查_仅切换账号":
             data["Configurations"]["Default"][
                 "MainFunction.PostActions"
-            ] = "8"  # 完成后无退出MAA
+            ] = "8"  # 完成后退出MAA
             data["Configurations"]["Default"][
                 "Start.RunDirectly"
             ] = "True"  # 启动MAA后直接运行
@@ -477,6 +524,41 @@ class MaaRunner(QtCore.QThread):
             data["Configurations"]["Default"][
                 "TaskQueue.WakeUp.IsChecked"
             ] = "True"  # 开始唤醒
+            data["Configurations"]["Default"][
+                "TaskQueue.Recruiting.IsChecked"
+            ] = "False"  # 自动公招
+            data["Configurations"]["Default"][
+                "TaskQueue.Base.IsChecked"
+            ] = "False"  # 基建换班
+            data["Configurations"]["Default"][
+                "TaskQueue.Combat.IsChecked"
+            ] = "False"  # 刷理智
+            data["Configurations"]["Default"][
+                "TaskQueue.Mission.IsChecked"
+            ] = "False"  # 领取奖励
+            data["Configurations"]["Default"][
+                "TaskQueue.Mall.IsChecked"
+            ] = "False"  # 获取信用及购物
+            data["Configurations"]["Default"][
+                "TaskQueue.AutoRoguelike.IsChecked"
+            ] = "False"  # 自动肉鸽
+            data["Configurations"]["Default"][
+                "TaskQueue.Reclamation.IsChecked"
+            ] = "False"  # 生息演算
+        # 设置MAA配置
+        elif mode == "设置MAA":
+            data["Configurations"]["Default"][
+                "MainFunction.PostActions"
+            ] = "0"  # 完成后无动作
+            data["Configurations"]["Default"][
+                "Start.RunDirectly"
+            ] = "False"  # 启动MAA后直接运行
+            data["Configurations"]["Default"][
+                "Start.StartEmulator"
+            ] = "False"  # 启动MAA后自动开启模拟器
+            data["Configurations"]["Default"][
+                "TaskQueue.WakeUp.IsChecked"
+            ] = "False"  # 开始唤醒
             data["Configurations"]["Default"][
                 "TaskQueue.Recruiting.IsChecked"
             ] = "False"  # 自动公招
@@ -845,6 +927,12 @@ class Main(QWidget):
 
         self.maa_path = self.ui.findChild(QLineEdit, "lineEdit_MAApath")
         self.maa_path.textChanged.connect(self.change_config)
+
+        self.get_maa_path = self.ui.findChild(QPushButton, "pushButton_getMAApath")
+        self.get_maa_path.clicked.connect(lambda: self.read("file_path"))
+
+        self.set_maa = self.ui.findChild(QPushButton, "pushButton_setMAA")
+        self.set_maa.clicked.connect(self.maa_set_starter)
 
         self.routine = self.ui.findChild(QSpinBox, "spinBox_routine")
         self.routine.valueChanged.connect(self.change_config)
@@ -1403,6 +1491,11 @@ class Main(QWidget):
                 self.MaaRunner.question_choice = "Yes"
             elif choice == QMessageBox.No:
                 self.MaaRunner.question_choice = "No"
+        # 读入文件目录
+        elif operation == "file_path":
+            file_path = QFileDialog.getExistingDirectory(self.ui, "选择MAA文件夹")
+            if file_path != "":
+                self.maa_path.setText(file_path)
 
     def closeEvent(self, event):
         """清理残余进程"""
@@ -1429,6 +1522,8 @@ class Main(QWidget):
             QMessageBox.critical(self.ui, "错误", "MAA路径未设置！")
             return None
         # 运行过程中修改部分组件
+        self.MaaRunner.accomplish.disconnect()
+        self.MaaRunner.accomplish.connect(self.routine_ender)
         self.check_start.setEnabled(False)
         self.run_now.clicked.disconnect()
         self.run_now.setText("结束运行")
@@ -1468,6 +1563,8 @@ class Main(QWidget):
             QMessageBox.critical(self.ui, "错误", "MAA路径未设置！")
             return None
         # 运行过程中修改部分组件
+        self.MaaRunner.accomplish.disconnect()
+        self.MaaRunner.accomplish.connect(self.check_ender)
         self.run_now.setEnabled(False)
         self.check_start.clicked.disconnect()
         self.check_start.setText("中止排查")
@@ -1484,6 +1581,35 @@ class Main(QWidget):
         self.data_ = self.cur.fetchall()
         self.MaaRunner.data = [list(row) for row in self.data_]
         self.MaaRunner.mode = "人工排查"
+        # 启动执行线程
+        self.MainTimer.is_maa_run = True
+        self.MaaRunner.start()
+
+    def maa_set_ender(self):
+        """中止MAA设置进程"""
+        self.MaaRunner.if_run = False
+        self.MaaRunner.wait()
+        self.MainTimer.is_maa_run = False
+        self.set_maa.setEnabled(True)
+
+    def maa_set_starter(self):
+        """启动MaaRunner线程进行MAA设置"""
+        if self.config["Default"]["MaaSet.path"] == "":
+            QMessageBox.critical(self.ui, "错误", "MAA路径未设置！")
+            return None
+        # 运行过程中修改部分组件
+        self.MaaRunner.accomplish.disconnect()
+        self.MaaRunner.accomplish.connect(self.maa_set_ender)
+        self.set_maa.setEnabled(False)
+        # 配置参数
+        self.MaaRunner.set_path = (
+            self.config["Default"]["MaaSet.path"] + "/config/gui.json"
+        )
+        self.MaaRunner.log_path = (
+            self.config["Default"]["MaaSet.path"] + "/debug/gui.log"
+        )
+        self.MaaRunner.maa_path = self.config["Default"]["MaaSet.path"] + "/MAA.exe"
+        self.MaaRunner.mode = "设置MAA"
         # 启动执行线程
         self.MainTimer.is_maa_run = True
         self.MaaRunner.start()
