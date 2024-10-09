@@ -1,6 +1,7 @@
 v3.1.3_beta
 ## 新增功能
 - MAA设置逻辑优化
+- 新增windows通知功能
 ## 修复BUG
 - accomplish槽函数绑定逻辑修复
 ## 程序优化

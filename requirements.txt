@@ -1,3 +1,4 @@
+plyer
 PySide6
 pycryptodome
 pyinstaller

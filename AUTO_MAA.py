@@ -39,6 +39,7 @@ from PySide6.QtUiTools import QUiLoader
 from PySide6.QtGui import QIcon
 from PySide6 import QtCore
 from functools import partial
+from plyer import notification
 import sqlite3
 import json
 import datetime
@@ -62,6 +63,7 @@ uiLoader = QUiLoader()
 class MaaRunner(QtCore.QThread):
 
     question = QtCore.Signal()
+    push_notification = QtCore.Signal(str, str, str, int)
     update_gui = QtCore.Signal(str, str, str, str, str)
     update_user_info = QtCore.Signal(list, list, list, list, list)
     accomplish = QtCore.Signal()
@@ -125,10 +127,10 @@ class MaaRunner(QtCore.QThread):
                             continue
                         # 配置MAA
                         self.set_maa(mode_book[j], uid)
-                        # 创建MAA任务
-                        maa = subprocess.Popen([self.maa_path])
                         # 记录当前时间
                         start_time = datetime.datetime.now()
+                        # 创建MAA任务
+                        maa = subprocess.Popen([self.maa_path])
                         # 记录是否超时的标记
                         self.if_time_out = False
                         # 更新运行信息
@@ -227,6 +229,19 @@ class MaaRunner(QtCore.QThread):
                                     result,
                                 )
                                 os.system("taskkill /F /T /PID " + str(maa.pid))
+                                self.push_notification.emit(
+                                    "用户日常代理出现异常！",
+                                    "用户 "
+                                    + self.data[uid][0].replace("_", " 今天的")
+                                    + "的"
+                                    + mode_book[j][5:7]
+                                    + "部分出现一次异常",
+                                    self.data[uid][0].replace("_", " ")
+                                    + "的"
+                                    + mode_book[j][5:7]
+                                    + "出现异常",
+                                    1,
+                                )
                                 if self.if_run:
                                     time.sleep(10)
                                 break
@@ -235,6 +250,14 @@ class MaaRunner(QtCore.QThread):
                             self.data[uid][2] -= 1
                         self.data[uid][12] += 1
                         over_uid.append(uid)
+                        self.push_notification.emit(
+                            "成功完成一个日常代理任务！",
+                            "已完成用户 "
+                            + self.data[uid][0].replace("_", " 今天的")
+                            + "任务",
+                            "已完成 " + self.data[uid][0].replace("_", " 的"),
+                            3,
+                        )
                         break
                 if not (run_book[0] and run_book[1]):
                     error_uid.append(uid)
@@ -258,10 +281,10 @@ class MaaRunner(QtCore.QThread):
                         if_strat_app = False
                     else:
                         self.set_maa("人工排查_仅切换账号", uid)
-                    # 创建MAA任务
-                    maa = subprocess.Popen([self.maa_path])
                     # 记录当前时间
                     start_time = datetime.datetime.now()
+                    # 创建MAA任务
+                    maa = subprocess.Popen([self.maa_path])
                     # 更新运行信息
                     wait_uid = [
                         _ for _ in all_uid if (not _ in over_uid + error_uid + [uid])
@@ -424,6 +447,19 @@ class MaaRunner(QtCore.QThread):
             with open(self.app_path + "/log.txt", "r", encoding="utf-8") as f:
                 end_log = f.read()
             self.update_gui.emit("", "", "", "", end_log)
+            # 推送windows通知
+            self.push_notification.emit(
+                self.mode[2:4] + "任务已完成！",
+                "已完成用户数："
+                + str(len(over_uid))
+                + "，未完成用户数："
+                + str(len(error_uid) + len(wait_uid)),
+                "已完成用户数："
+                + str(len(over_uid))
+                + "，未完成用户数："
+                + str(len(error_uid) + len(wait_uid)),
+                10,
+            )
             self.accomplish.emit()
             self.if_run = False
 
@@ -992,6 +1028,7 @@ class Main(QWidget):
         self.MaaRunner.question.connect(lambda: self.read("question_runner"))
         self.MaaRunner.update_gui.connect(self.update_board)
         self.MaaRunner.update_user_info.connect(self.change_user_info)
+        self.MaaRunner.push_notification.connect(self.push_notification)
         self.MaaRunner.accomplish.connect(self.routine_ender)
 
         self.MainTimer = MainTimer(self.config)
@@ -1613,6 +1650,18 @@ class Main(QWidget):
         # 启动执行线程
         self.MainTimer.is_maa_run = True
         self.MaaRunner.start()
+
+    def push_notification(self, title, message, ticker, t):
+        """推送系统通知"""
+        notification.notify(
+            title=title,
+            message=message,
+            app_name="AUTO_MAA",
+            app_icon=self.app_path + "/res/AUTO_MAA.ico",
+            timeout=t,
+            ticker=ticker,
+            toast=True,
+        )
 
     def give_config(self):
         """同步配置文件到子线程"""

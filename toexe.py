@@ -21,5 +21,5 @@
 import os
 
 os.system(
-    "pyinstaller -F --version-file res/info.txt -w --icon=res/AUTO_MAA.ico AUTO_MAA.py"
+    "pyinstaller -F --version-file res/info.txt -w --icon=res/AUTO_MAA.ico AUTO_MAA.py --hidden-import plyer.platforms.win.notification"
 )

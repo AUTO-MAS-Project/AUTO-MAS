@@ -70,7 +70,7 @@ jobs:
           flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
       - name: Built with pyinstaller
         run: |
-          pyinstaller -F --version-file res/info.txt -w --icon=res/AUTO_MAA.ico AUTO_MAA.py
+          pyinstaller -F --version-file res/info.txt -w --icon=res/AUTO_MAA.ico AUTO_MAA.py --hidden-import plyer.platforms.win.notification
       - name: Read version
         id: read_version
         run: |
