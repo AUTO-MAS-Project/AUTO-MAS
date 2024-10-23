@@ -1077,6 +1077,7 @@ class Main(QWidget):
 
         self.maa_path = self.ui.findChild(QLineEdit, "lineEdit_MAApath")
         self.maa_path.textChanged.connect(self.change_config)
+        self.maa_path.setReadOnly(True)
 
         self.get_maa_path = self.ui.findChild(QPushButton, "pushButton_getMAApath")
         self.get_maa_path.clicked.connect(lambda: self.read("file_path"))
