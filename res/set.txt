@@ -30,5 +30,10 @@
 "Infrast.IsCustomInfrastFileReadOnly": "False"        #自定义基建配置文件只读
 "Infrast.CustomInfrastFile": ""        #自定义基建配置文件地址
 #设置
+"Start.ClientType": "Bilibili"、 "Official"        #服务器
+"Timer.Timer1": "False"        #时间设置1
+"VersionUpdate.ScheduledUpdateCheck": "True"        #定时检查更新
+"VersionUpdate.AutoDownloadUpdatePackage": "True"        #自动下载更新包
+"VersionUpdate.AutoInstallUpdatePackage": "True"        #自动安装更新包
 "Start.RunDirectly": "True"        #启动MAA后直接运行
 "Start.StartEmulator": "True"        #启动MAA后自动开启模拟器

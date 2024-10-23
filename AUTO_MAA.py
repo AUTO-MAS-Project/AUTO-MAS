@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QMessageBox,
     QLineEdit,
+    QToolBox,
     QTableWidget,
     QTableWidgetItem,
     QComboBox,
@@ -48,6 +49,7 @@ import sys
 import ctypes
 import hashlib
 import subprocess
+import shutil
 import time
 import random
 import secrets
@@ -65,8 +67,9 @@ class MaaRunner(QtCore.QThread):
     question = QtCore.Signal()
     push_notification = QtCore.Signal(str, str, str, int)
     update_gui = QtCore.Signal(str, str, str, str, str)
-    update_user_info = QtCore.Signal(list, list, list, list, list)
+    update_user_info = QtCore.Signal(list, list, list, list, list, list)
     accomplish = QtCore.Signal()
+    get_json = QtCore.Signal(list)
     app_path = os.path.dirname(os.path.realpath(sys.argv[0])).replace(
         "\\", "/"
     )  # 获取软件自身的路径
@@ -79,34 +82,38 @@ class MaaRunner(QtCore.QThread):
         self.set_path = set_path
         self.log_path = log_path
         self.maa_path = maa_path
+        self.json_path = self.app_path + "/data/MAAconfig"
         self.routine = routine
         self.annihilation = annihilation
         self.num = num
         self.data = data
         self.mode = mode
+        self.get_json_path = [0, 0, 0]
 
     def run(self):
         """主进程，运行MAA代理进程"""
         self.if_run = True
         curdate = server_date()
         begin_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        over_uid = []
-        error_uid = []
-        all_uid = [
-            self.data[i][13]
-            for i in range(len(self.data))
-            if (self.data[i][2] > 0 and self.data[i][3] == "y")
+        self.data = sorted(self.data, key=lambda x: (-len(x[15]), x[16]))
+        wait_index = []
+        over_index = []
+        error_index = []
+        all_index = [
+            _
+            for _ in range(len(self.data))
+            if (self.data[_][3] > 0 and self.data[_][4] == "y")
         ]
         # 日常代理模式
         if self.mode == "日常代理":
             # 执行情况预处理
-            for i in all_uid:
-                if self.data[i][4] != curdate:
-                    self.data[i][4] = curdate
-                    self.data[i][12] = 0
-                self.data[i][0] += "_第" + str(self.data[i][12] + 1) + "次代理"
+            for _ in all_index:
+                if self.data[_][5] != curdate:
+                    self.data[_][5] = curdate
+                    self.data[_][14] = 0
+                self.data[_][0] += "_第" + str(self.data[_][14] + 1) + "次代理"
             # 开始代理
-            for uid in all_uid:
+            for index in all_index:
                 if not self.if_run:
                     break
                 # 初始化代理情况记录和模式替换记录
@@ -120,13 +127,13 @@ class MaaRunner(QtCore.QThread):
                     for j in range(2):
                         if not self.if_run:
                             break
-                        if j == 0 and self.data[uid][8] == "n":
+                        if j == 0 and self.data[index][10] == "n":
                             run_book[0] = True
                             continue
                         if run_book[j]:
                             continue
                         # 配置MAA
-                        self.set_maa(mode_book[j], uid)
+                        self.set_maa(mode_book[j], index)
                         # 记录当前时间
                         start_time = datetime.datetime.now()
                         # 创建MAA任务
@@ -134,37 +141,22 @@ class MaaRunner(QtCore.QThread):
                         # 记录是否超时的标记
                         self.if_time_out = False
                         # 更新运行信息
-                        wait_uid = [
+                        wait_index = [
                             _
-                            for _ in all_uid
-                            if (not _ in over_uid + error_uid + [uid])
+                            for _ in all_index
+                            if (not _ in over_index + error_index + [index])
                         ]
                         # 监测MAA运行状态
                         while self.if_run:
                             # 获取MAA日志
-                            logs = []
-                            if_log_start = False
-                            with open(self.log_path, "r", encoding="utf-8") as f:
-                                for entry in f:
-                                    if not if_log_start:
-                                        try:
-                                            entry_time = datetime.datetime.strptime(
-                                                entry[1:20], "%Y-%m-%d %H:%M:%S"
-                                            )
-                                            if entry_time > start_time:
-                                                if_log_start = True
-                                                logs.append(entry)
-                                        except ValueError:
-                                            pass
-                                    else:
-                                        logs.append(entry)
+                            logs = self.get_maa_log(start_time)
                             # 判断是否超时
                             if len(logs) > 0:
                                 last_time = datetime.datetime.now()
-                                for index in range(-1, 0 - len(logs) - 1, -1):
+                                for _ in range(-1, 0 - len(logs) - 1, -1):
                                     try:
                                         last_time = datetime.datetime.strptime(
-                                            logs[index][1:20], "%Y-%m-%d %H:%M:%S"
+                                            logs[_][1:20], "%Y-%m-%d %H:%M:%S"
                                         )
                                         break
                                     except ValueError:
@@ -184,14 +176,14 @@ class MaaRunner(QtCore.QThread):
                             log = "".join(logs)
                             # 更新MAA日志
                             self.update_gui.emit(
-                                self.data[uid][0]
+                                self.data[index][0]
                                 + "_第"
                                 + str(i + 1)
                                 + "次_"
                                 + mode_book[j][5:7],
-                                "\n".join([self.data[_][0] for _ in wait_uid]),
-                                "\n".join([self.data[_][0] for _ in over_uid]),
-                                "\n".join([self.data[_][0] for _ in error_uid]),
+                                "\n".join([self.data[_][0] for _ in wait_index]),
+                                "\n".join([self.data[_][0] for _ in over_index]),
+                                "\n".join([self.data[_][0] for _ in error_index]),
                                 log,
                             )
                             # 判断MAA程序运行状态
@@ -199,14 +191,14 @@ class MaaRunner(QtCore.QThread):
                             if result == "Success!":
                                 run_book[j] = True
                                 self.update_gui.emit(
-                                    self.data[uid][0]
+                                    self.data[index][0]
                                     + "_第"
                                     + str(i + 1)
                                     + "次_"
                                     + mode_book[j][5:7],
-                                    "\n".join([self.data[_][0] for _ in wait_uid]),
-                                    "\n".join([self.data[_][0] for _ in over_uid]),
-                                    "\n".join([self.data[_][0] for _ in error_uid]),
+                                    "\n".join([self.data[_][0] for _ in wait_index]),
+                                    "\n".join([self.data[_][0] for _ in over_index]),
+                                    "\n".join([self.data[_][0] for _ in error_index]),
                                     "检测到MAA进程完成代理任务\n正在等待相关程序结束\n请等待10s",
                                 )
                                 time.sleep(10)
@@ -218,25 +210,25 @@ class MaaRunner(QtCore.QThread):
                                 # 打印中止信息
                                 # 此时，log变量内存储的就是出现异常的日志信息，可以保存或发送用于问题排查
                                 self.update_gui.emit(
-                                    self.data[uid][0]
+                                    self.data[index][0]
                                     + "_第"
                                     + str(i + 1)
                                     + "次_"
                                     + mode_book[j][5:7],
-                                    "\n".join([self.data[_][0] for _ in wait_uid]),
-                                    "\n".join([self.data[_][0] for _ in over_uid]),
-                                    "\n".join([self.data[_][0] for _ in error_uid]),
+                                    "\n".join([self.data[_][0] for _ in wait_index]),
+                                    "\n".join([self.data[_][0] for _ in over_index]),
+                                    "\n".join([self.data[_][0] for _ in error_index]),
                                     result,
                                 )
                                 os.system("taskkill /F /T /PID " + str(maa.pid))
                                 self.push_notification.emit(
                                     "用户日常代理出现异常！",
                                     "用户 "
-                                    + self.data[uid][0].replace("_", " 今天的")
+                                    + self.data[index][0].replace("_", " 今天的")
                                     + "的"
                                     + mode_book[j][5:7]
                                     + "部分出现一次异常",
-                                    self.data[uid][0].replace("_", " ")
+                                    self.data[index][0].replace("_", " ")
                                     + "的"
                                     + mode_book[j][5:7]
                                     + "出现异常",
@@ -246,76 +238,65 @@ class MaaRunner(QtCore.QThread):
                                     time.sleep(10)
                                 break
                     if run_book[0] and run_book[1]:
-                        if self.data[uid][12] == 0:
-                            self.data[uid][2] -= 1
-                        self.data[uid][12] += 1
-                        over_uid.append(uid)
+                        if self.data[index][14] == 0:
+                            self.data[index][3] -= 1
+                        self.data[index][14] += 1
+                        over_index.append(index)
                         self.push_notification.emit(
                             "成功完成一个日常代理任务！",
                             "已完成用户 "
-                            + self.data[uid][0].replace("_", " 今天的")
+                            + self.data[index][0].replace("_", " 今天的")
                             + "任务",
-                            "已完成 " + self.data[uid][0].replace("_", " 的"),
+                            "已完成 " + self.data[index][0].replace("_", " 的"),
                             3,
                         )
                         break
                 if not (run_book[0] and run_book[1]):
-                    error_uid.append(uid)
+                    error_index.append(index)
         # 人工排查模式
         elif self.mode == "人工排查":
             # 标记是否需要启动模拟器
             if_strat_app = True
             # 标识排查模式
-            for i in all_uid:
-                self.data[i][0] += "_排查模式"
+            for _ in all_index:
+                self.data[_][0] += "_排查模式"
             # 开始排查
-            for uid in all_uid:
+            for index in all_index:
                 if not self.if_run:
                     break
+                if self.data[index][15] == "beta":
+                    if_strat_app = True
                 run_book = [False for _ in range(2)]
                 # 启动重试循环
                 while self.if_run:
                     # 配置MAA
                     if if_strat_app:
-                        self.set_maa("人工排查_启动模拟器", uid)
+                        self.set_maa("人工排查_启动模拟器", index)
                         if_strat_app = False
                     else:
-                        self.set_maa("人工排查_仅切换账号", uid)
+                        self.set_maa("人工排查_仅切换账号", index)
                     # 记录当前时间
                     start_time = datetime.datetime.now()
                     # 创建MAA任务
                     maa = subprocess.Popen([self.maa_path])
                     # 更新运行信息
-                    wait_uid = [
-                        _ for _ in all_uid if (not _ in over_uid + error_uid + [uid])
+                    wait_index = [
+                        _
+                        for _ in all_index
+                        if (not _ in over_index + error_index + [index])
                     ]
                     # 监测MAA运行状态
                     while self.if_run:
                         # 获取MAA日志
-                        logs = []
-                        if_log_start = False
-                        with open(self.log_path, "r", encoding="utf-8") as f:
-                            for entry in f:
-                                if not if_log_start:
-                                    try:
-                                        entry_time = datetime.datetime.strptime(
-                                            entry[1:20], "%Y-%m-%d %H:%M:%S"
-                                        )
-                                        if entry_time > start_time:
-                                            if_log_start = True
-                                            logs.append(entry)
-                                    except ValueError:
-                                        pass
-                                else:
-                                    logs.append(entry)
+                        logs = self.get_maa_log(start_time)
                         # 合并日志
                         log = "".join(logs)
                         # 更新MAA日志
                         self.update_gui.emit(
-                            self.data[uid][0],
-                            "\n".join([self.data[_][0] for _ in wait_uid]),
-                            "\n".join([self.data[_][0] for _ in over_uid]),
-                            "\n".join([self.data[_][0] for _ in error_uid]),
+                            self.data[index][0],
+                            "\n".join([self.data[_][0] for _ in wait_index]),
+                            "\n".join([self.data[_][0] for _ in over_index]),
+                            "\n".join([self.data[_][0] for _ in error_index]),
                             log,
                         )
                         # 判断MAA程序运行状态
@@ -323,10 +304,10 @@ class MaaRunner(QtCore.QThread):
                         if result == "Success!":
                             run_book[0] = True
                             self.update_gui.emit(
-                                self.data[uid][0],
-                                "\n".join([self.data[_][0] for _ in wait_uid]),
-                                "\n".join([self.data[_][0] for _ in over_uid]),
-                                "\n".join([self.data[_][0] for _ in error_uid]),
+                                self.data[index][0],
+                                "\n".join([self.data[_][0] for _ in wait_index]),
+                                "\n".join([self.data[_][0] for _ in over_index]),
+                                "\n".join([self.data[_][0] for _ in error_index]),
                                 "检测到MAA进程成功登录PRTS",
                             )
                             break
@@ -335,10 +316,10 @@ class MaaRunner(QtCore.QThread):
                             time.sleep(1)
                         else:
                             self.update_gui.emit(
-                                self.data[uid][0],
-                                "\n".join([self.data[_][0] for _ in wait_uid]),
-                                "\n".join([self.data[_][0] for _ in over_uid]),
-                                "\n".join([self.data[_][0] for _ in error_uid]),
+                                self.data[index][0],
+                                "\n".join([self.data[_][0] for _ in wait_index]),
+                                "\n".join([self.data[_][0] for _ in over_index]),
+                                "\n".join([self.data[_][0] for _ in error_index]),
                                 result,
                             )
                             os.system("taskkill /F /T /PID " + str(maa.pid))
@@ -367,19 +348,19 @@ class MaaRunner(QtCore.QThread):
                     if self.question_choice == "Yes":
                         run_book[1] = True
                 if run_book[0] and run_book[1]:
-                    if "未通过人工排查" in self.data[uid][11]:
-                        self.data[uid][11] = self.data[uid][11].replace(
+                    if "未通过人工排查" in self.data[index][13]:
+                        self.data[index][13] = self.data[index][13].replace(
                             "未通过人工排查|", ""
                         )
-                    over_uid.append(uid)
+                    over_index.append(index)
                 elif not (run_book[0] and run_book[1]):
-                    if not "未通过人工排查" in self.data[uid][11]:
-                        self.data[uid][11] = "未通过人工排查|" + self.data[uid][11]
-                    error_uid.append(uid)
+                    if not "未通过人工排查" in self.data[index][13]:
+                        self.data[index][13] = "未通过人工排查|" + self.data[index][13]
+                    error_index.append(index)
         # 设置MAA模式
-        elif self.mode == "设置MAA":
+        elif "设置MAA" in self.mode:
             # 配置MAA
-            self.set_maa("设置MAA", "")
+            self.set_maa(self.mode, "")
             # 创建MAA任务
             maa = subprocess.Popen([self.maa_path])
             # 记录当前时间
@@ -387,22 +368,7 @@ class MaaRunner(QtCore.QThread):
             # 监测MAA运行状态
             while self.if_run:
                 # 获取MAA日志
-                logs = []
-                if_log_start = False
-                with open(self.log_path, "r", encoding="utf-8") as f:
-                    for entry in f:
-                        if not if_log_start:
-                            try:
-                                entry_time = datetime.datetime.strptime(
-                                    entry[1:20], "%Y-%m-%d %H:%M:%S"
-                                )
-                                if entry_time > start_time:
-                                    if_log_start = True
-                                    logs.append(entry)
-                            except ValueError:
-                                pass
-                        else:
-                            logs.append(entry)
+                logs = self.get_maa_log(start_time)
                 # 合并日志
                 log = "".join(logs)
                 # 判断MAA程序运行状态
@@ -412,6 +378,10 @@ class MaaRunner(QtCore.QThread):
                 elif result == "Wait":
                     # 检测时间间隔
                     time.sleep(1)
+            if "全局" in self.mode:
+                self.get_json.emit(["Default"])
+            elif "用户" in self.mode:
+                self.get_json.emit(self.get_json_path)
             self.accomplish.emit()
             self.if_run = False
         if self.mode in ["日常代理", "人工排查"]:
@@ -419,30 +389,34 @@ class MaaRunner(QtCore.QThread):
             if not self.if_run:
                 os.system("taskkill /F /T /PID " + str(maa.pid))
             # 更新用户数据
-            days = [self.data[_][2] for _ in all_uid]
-            lasts = [self.data[_][4] for _ in all_uid]
-            notes = [self.data[_][11] for _ in all_uid]
-            numbs = [self.data[_][12] for _ in all_uid]
-            self.update_user_info.emit(all_uid, days, lasts, notes, numbs)
+            modes = [self.data[_][15] for _ in all_index]
+            uids = [self.data[_][16] for _ in all_index]
+            days = [self.data[_][3] for _ in all_index]
+            lasts = [self.data[_][5] for _ in all_index]
+            notes = [self.data[_][13] for _ in all_index]
+            numbs = [self.data[_][14] for _ in all_index]
+            self.update_user_info.emit(modes, uids, days, lasts, notes, numbs)
             # 保存运行日志
             end_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             with open(self.app_path + "/log.txt", "w", encoding="utf-8") as f:
                 print("任务开始时间：" + begin_time + "，结束时间：" + end_time, file=f)
                 print(
                     "已完成数："
-                    + str(len(over_uid))
+                    + str(len(over_index))
                     + "，未完成数："
-                    + str(len(error_uid) + len(wait_uid))
+                    + str(len(error_index) + len(wait_index))
                     + "\n",
                     file=f,
                 )
-                if len(error_uid) != 0:
+                if len(error_index) != 0:
                     print(self.mode[2:4] + "未成功的用户：", file=f)
-                    print("\n".join([self.data[_][0] for _ in error_uid]), file=f)
-                wait_uid = [_ for _ in all_uid if (not _ in over_uid + error_uid)]
-                if len(wait_uid) != 0:
+                    print("\n".join([self.data[_][0] for _ in error_index]), file=f)
+                wait_index = [
+                    _ for _ in all_index if (not _ in over_index + error_index)
+                ]
+                if len(wait_index) != 0:
                     print("\n未开始" + self.mode[2:4] + "的用户：", file=f)
-                    print("\n".join([self.data[_][0] for _ in wait_uid]), file=f)
+                    print("\n".join([self.data[_][0] for _ in wait_index]), file=f)
             # 恢复GUI运行面板
             with open(self.app_path + "/log.txt", "r", encoding="utf-8") as f:
                 end_log = f.read()
@@ -451,23 +425,45 @@ class MaaRunner(QtCore.QThread):
             self.push_notification.emit(
                 self.mode[2:4] + "任务已完成！",
                 "已完成用户数："
-                + str(len(over_uid))
+                + str(len(over_index))
                 + "，未完成用户数："
-                + str(len(error_uid) + len(wait_uid)),
+                + str(len(error_index) + len(wait_index)),
                 "已完成用户数："
-                + str(len(over_uid))
+                + str(len(over_index))
                 + "，未完成用户数："
-                + str(len(error_uid) + len(wait_uid)),
+                + str(len(error_index) + len(wait_index)),
                 10,
             )
             self.accomplish.emit()
             self.if_run = False
+
+    def get_maa_log(self, start_time):
+        """获取MAA日志"""
+        logs = []
+        if_log_start = False
+        with open(self.log_path, "r", encoding="utf-8") as f:
+            for entry in f:
+                if not if_log_start:
+                    try:
+                        entry_time = datetime.datetime.strptime(
+                            entry[1:20], "%Y-%m-%d %H:%M:%S"
+                        )
+                        if entry_time > start_time:
+                            if_log_start = True
+                            logs.append(entry)
+                    except ValueError:
+                        pass
+                else:
+                    logs.append(entry)
+        return logs
 
     def if_maa_success(self, log, mode):
         """判断MAA程序运行状态"""
         if "日常代理" in mode:
             if mode == "日常代理_日常" and "任务出错: Fight" in log:
                 return "检测到MAA未能实际执行任务\n正在中止相关程序\n请等待10s"
+            if "任务出错: StartUp" in log:
+                return "检测到MAA未能正确登录PRTS\n正在中止相关程序\n请等待10s"
             elif "任务已全部完成！" in log:
                 return "Success!"
             elif (
@@ -501,62 +497,93 @@ class MaaRunner(QtCore.QThread):
             else:
                 return "Wait"
 
-    def set_maa(self, mode, uid):
+    def set_maa(self, mode, index):
         """配置MAA运行参数"""
+        if mode == "设置MAA_用户":
+            set_book1 = ["/simple/", "/beta/"]
+            set_book2 = ["/routine/gui.json", "/annihilation/gui.json"]
+            shutil.copy(
+                self.json_path
+                + set_book1[self.get_json_path[0]]
+                + str(self.get_json_path[1])
+                + set_book2[self.get_json_path[2]],
+                self.set_path,
+            )
+        elif (mode == "设置MAA_全局") or (
+            ("日常代理" in mode or "人工排查" in mode)
+            and self.data[index][15] == "simple"
+        ):
+            shutil.copy(
+                self.json_path + "/Default/gui.json",
+                self.set_path,
+            )
+        elif "日常代理" in mode and self.data[index][15] == "beta":
+            if mode == "日常代理_剿灭":
+                shutil.copy(
+                    self.json_path
+                    + "/beta/"
+                    + str(self.data[index][16])
+                    + "/annihilation/gui.json",
+                    self.set_path,
+                )
+            elif mode == "日常代理_日常":
+                shutil.copy(
+                    self.json_path
+                    + "/beta/"
+                    + str(self.data[index][16])
+                    + "/routine/gui.json",
+                    self.set_path,
+                )
+        elif "人工排查" in mode and self.data[index][15] == "beta":
+            shutil.copy(
+                self.json_path
+                + "/beta/"
+                + str(self.data[index][16])
+                + "/routine/gui.json",
+                self.set_path,
+            )
         with open(self.set_path, "r", encoding="utf-8") as f:
             data = json.load(f)
         # 人工排查配置
-        if mode == "人工排查_启动模拟器":
+        if "人工排查" in mode:
+            data["Current"] = "Default"  # 切换配置
+            for i in range(1, 9):
+                data["Global"]["Timer.Timer" + str(i)] = "False"  # 时间设置
             data["Configurations"]["Default"][
                 "MainFunction.PostActions"
             ] = "8"  # 完成后退出MAA
             data["Configurations"]["Default"][
                 "Start.RunDirectly"
             ] = "True"  # 启动MAA后直接运行
-            data["Configurations"]["Default"][
-                "Start.StartEmulator"
-            ] = "True"  # 启动MAA后自动开启模拟器
-            data["Configurations"]["Default"]["Start.AccountName"] = (
-                self.data[uid][1][:3] + "****" + self.data[uid][1][7:]
-            )  # 账号切换
-            data["Configurations"]["Default"][
-                "TaskQueue.WakeUp.IsChecked"
-            ] = "True"  # 开始唤醒
-            data["Configurations"]["Default"][
-                "TaskQueue.Recruiting.IsChecked"
-            ] = "False"  # 自动公招
-            data["Configurations"]["Default"][
-                "TaskQueue.Base.IsChecked"
-            ] = "False"  # 基建换班
-            data["Configurations"]["Default"][
-                "TaskQueue.Combat.IsChecked"
-            ] = "False"  # 刷理智
-            data["Configurations"]["Default"][
-                "TaskQueue.Mission.IsChecked"
-            ] = "False"  # 领取奖励
-            data["Configurations"]["Default"][
-                "TaskQueue.Mall.IsChecked"
-            ] = "False"  # 获取信用及购物
-            data["Configurations"]["Default"][
-                "TaskQueue.AutoRoguelike.IsChecked"
-            ] = "False"  # 自动肉鸽
-            data["Configurations"]["Default"][
-                "TaskQueue.Reclamation.IsChecked"
-            ] = "False"  # 生息演算
-        # 人工排查配置
-        elif mode == "人工排查_仅切换账号":
-            data["Configurations"]["Default"][
-                "MainFunction.PostActions"
-            ] = "8"  # 完成后退出MAA
-            data["Configurations"]["Default"][
-                "Start.RunDirectly"
-            ] = "True"  # 启动MAA后直接运行
-            data["Configurations"]["Default"][
-                "Start.StartEmulator"
-            ] = "False"  # 启动MAA后自动开启模拟器
-            data["Configurations"]["Default"]["Start.AccountName"] = (
-                self.data[uid][1][:3] + "****" + self.data[uid][1][7:]
-            )  # 账号切换
+            # 启动MAA后自动开启模拟器
+            if "启动模拟器" in mode:
+                data["Configurations"]["Default"]["Start.StartEmulator"] = "True"
+            elif "仅切换账号" in mode:
+                data["Configurations"]["Default"]["Start.StartEmulator"] = "False"
+            if self.data[index][15] == "simple":
+                data["Global"][
+                    "VersionUpdate.ScheduledUpdateCheck"
+                ] = "False"  # 定时检查更新
+                data["Global"][
+                    "VersionUpdate.AutoDownloadUpdatePackage"
+                ] = "False"  # 自动下载更新包
+                data["Global"][
+                    "VersionUpdate.AutoInstallUpdatePackage"
+                ] = "False"  # 自动安装更新包
+                data["Configurations"]["Default"]["Start.ClientType"] = self.data[
+                    index
+                ][
+                    2
+                ]  # 客户端类型
+                # 账号切换
+                if self.data[index][2] == "Official":
+                    data["Configurations"]["Default"]["Start.AccountName"] = (
+                        self.data[index][1][:3] + "****" + self.data[index][1][7:]
+                    )
+                elif self.data[index][2] == "Bilibili":
+                    data["Configurations"]["Default"]["Start.AccountName"] = self.data[
+                        index
+                    ][1]
             data["Configurations"]["Default"][
                 "TaskQueue.WakeUp.IsChecked"
             ] = "True"  # 开始唤醒
@@ -582,7 +609,10 @@ class MaaRunner(QtCore.QThread):
                 "TaskQueue.Reclamation.IsChecked"
             ] = "False"  # 生息演算
         # 设置MAA配置
-        elif mode == "设置MAA":
+        elif "设置MAA" in mode:
+            data["Current"] = "Default"  # 切换配置
+            for i in range(1, 9):
+                data["Global"]["Timer.Timer" + str(i)] = "False"  # 时间设置
             data["Configurations"]["Default"][
                 "MainFunction.PostActions"
             ] = "0"  # 完成后无动作
@@ -592,30 +622,40 @@ class MaaRunner(QtCore.QThread):
             data["Configurations"]["Default"][
                 "Start.StartEmulator"
             ] = "False"  # 启动MAA后自动开启模拟器
-            data["Configurations"]["Default"][
-                "TaskQueue.WakeUp.IsChecked"
-            ] = "False"  # 开始唤醒
-            data["Configurations"]["Default"][
-                "TaskQueue.Recruiting.IsChecked"
-            ] = "False"  # 自动公招
-            data["Configurations"]["Default"][
-                "TaskQueue.Base.IsChecked"
-            ] = "False"  # 基建换班
-            data["Configurations"]["Default"][
-                "TaskQueue.Combat.IsChecked"
-            ] = "False"  # 刷理智
-            data["Configurations"]["Default"][
-                "TaskQueue.Mission.IsChecked"
-            ] = "False"  # 领取奖励
-            data["Configurations"]["Default"][
-                "TaskQueue.Mall.IsChecked"
-            ] = "False"  # 获取信用及购物
-            data["Configurations"]["Default"][
-                "TaskQueue.AutoRoguelike.IsChecked"
-            ] = "False"  # 自动肉鸽
-            data["Configurations"]["Default"][
-                "TaskQueue.Reclamation.IsChecked"
-            ] = "False"  # 生息演算
+            if "全局" in mode:
+                data["Global"][
+                    "VersionUpdate.ScheduledUpdateCheck"
+                ] = "False"  # 定时检查更新
+                data["Global"][
+                    "VersionUpdate.AutoDownloadUpdatePackage"
+                ] = "False"  # 自动下载更新包
+                data["Global"][
+                    "VersionUpdate.AutoInstallUpdatePackage"
+                ] = "False"  # 自动安装更新包
+                data["Configurations"]["Default"][
+                    "TaskQueue.WakeUp.IsChecked"
+                ] = "False"  # 开始唤醒
+                data["Configurations"]["Default"][
+                    "TaskQueue.Recruiting.IsChecked"
+                ] = "False"  # 自动公招
+                data["Configurations"]["Default"][
+                    "TaskQueue.Base.IsChecked"
+                ] = "False"  # 基建换班
+                data["Configurations"]["Default"][
+                    "TaskQueue.Combat.IsChecked"
+                ] = "False"  # 刷理智
+                data["Configurations"]["Default"][
+                    "TaskQueue.Mission.IsChecked"
+                ] = "False"  # 领取奖励
+                data["Configurations"]["Default"][
+                    "TaskQueue.Mall.IsChecked"
+                ] = "False"  # 获取信用及购物
+                data["Configurations"]["Default"][
+                    "TaskQueue.AutoRoguelike.IsChecked"
+                ] = "False"  # 自动肉鸽
+                data["Configurations"]["Default"][
+                    "TaskQueue.Reclamation.IsChecked"
+                ] = "False"  # 生息演算
         # 剿灭代理配置
         elif mode == "日常代理_剿灭":
             data["Configurations"]["Default"][
@@ -627,59 +667,75 @@ class MaaRunner(QtCore.QThread):
             data["Configurations"]["Default"][
                 "Start.StartEmulator"
             ] = "True"  # 启动MAA后自动开启模拟器
-            data["Configurations"]["Default"]["Start.AccountName"] = (
-                self.data[uid][1][:3] + "****" + self.data[uid][1][7:]
-            )  # 账号切换
-            data["Configurations"]["Default"][
-                "TaskQueue.WakeUp.IsChecked"
-            ] = "True"  # 开始唤醒
-            data["Configurations"]["Default"][
-                "TaskQueue.Recruiting.IsChecked"
-            ] = "False"  # 自动公招
-            data["Configurations"]["Default"][
-                "TaskQueue.Base.IsChecked"
-            ] = "False"  # 基建换班
-            data["Configurations"]["Default"][
-                "TaskQueue.Combat.IsChecked"
-            ] = "True"  # 刷理智
-            data["Configurations"]["Default"][
-                "TaskQueue.Mission.IsChecked"
-            ] = "False"  # 领取奖励
-            data["Configurations"]["Default"][
-                "TaskQueue.Mall.IsChecked"
-            ] = "False"  # 获取信用及购物
-            data["Configurations"]["Default"][
-                "TaskQueue.AutoRoguelike.IsChecked"
-            ] = "False"  # 自动肉鸽
-            data["Configurations"]["Default"][
-                "TaskQueue.Reclamation.IsChecked"
-            ] = "False"  # 生息演算
-            data["Configurations"]["Default"][
-                "MainFunction.Stage1"
-            ] = "Annihilation"  # 主关卡
-            data["Configurations"]["Default"]["MainFunction.Stage2"] = ""  # 备选关卡1
-            data["Configurations"]["Default"]["MainFunction.Stage3"] = ""  # 备选关卡2
-            data["Configurations"]["Default"][
-                "Fight.RemainingSanityStage"
-            ] = ""  # 剩余理智关卡
-            data["Configurations"]["Default"][
-                "MainFunction.Series.Quantity"
-            ] = "1"  # 连战次数
-            data["Configurations"]["Default"][
-                "Penguin.IsDrGrandet"
-            ] = "False"  # 博朗台模式
-            data["Configurations"]["Default"][
-                "GUI.CustomStageCode"
-            ] = "True"  # 手动输入关卡名
-            data["Configurations"]["Default"][
-                "GUI.UseAlternateStage"
-            ] = "False"  # 使用备选关卡
-            data["Configurations"]["Default"][
-                "Fight.UseRemainingSanityStage"
-            ] = "False"  # 使用剩余理智
-            data["Configurations"]["Default"][
-                "Fight.UseExpiringMedicine"
-            ] = "True"  # 无限吃48小时内过期的理智药
+            if self.data[index][15] == "simple":
+                data["Configurations"]["Default"]["Start.ClientType"] = self.data[
+                    index
+                ][
+                    2
+                ]  # 客户端类型
+                # 账号切换
+                if self.data[index][2] == "Official":
+                    data["Configurations"]["Default"]["Start.AccountName"] = (
+                        self.data[index][1][:3] + "****" + self.data[index][1][7:]
+                    )
+                elif self.data[index][2] == "Bilibili":
+                    data["Configurations"]["Default"]["Start.AccountName"] = self.data[
+                        index
+                    ][1]
+                data["Configurations"]["Default"][
+                    "TaskQueue.WakeUp.IsChecked"
+                ] = "True"  # 开始唤醒
+                data["Configurations"]["Default"][
+                    "TaskQueue.Recruiting.IsChecked"
+                ] = "False"  # 自动公招
+                data["Configurations"]["Default"][
+                    "TaskQueue.Base.IsChecked"
+                ] = "False"  # 基建换班
+                data["Configurations"]["Default"][
+                    "TaskQueue.Combat.IsChecked"
+                ] = "True"  # 刷理智
+                data["Configurations"]["Default"][
+                    "TaskQueue.Mission.IsChecked"
+                ] = "False"  # 领取奖励
+                data["Configurations"]["Default"][
+                    "TaskQueue.Mall.IsChecked"
+                ] = "False"  # 获取信用及购物
+                data["Configurations"]["Default"][
+                    "TaskQueue.AutoRoguelike.IsChecked"
+                ] = "False"  # 自动肉鸽
+                data["Configurations"]["Default"][
+                    "TaskQueue.Reclamation.IsChecked"
+                ] = "False"  # 生息演算
+                data["Configurations"]["Default"][
+                    "MainFunction.Stage1"
+                ] = "Annihilation"  # 主关卡
+                data["Configurations"]["Default"][
+                    "MainFunction.Stage2"
+                ] = ""  # 备选关卡1
+                data["Configurations"]["Default"][
+                    "MainFunction.Stage3"
+                ] = ""  # 备选关卡2
+                data["Configurations"]["Default"][
+                    "Fight.RemainingSanityStage"
+                ] = ""  # 剩余理智关卡
+                data["Configurations"]["Default"][
+                    "MainFunction.Series.Quantity"
+                ] = "1"  # 连战次数
+                data["Configurations"]["Default"][
+                    "Penguin.IsDrGrandet"
+                ] = "False"  # 博朗台模式
+                data["Configurations"]["Default"][
+                    "GUI.CustomStageCode"
+                ] = "True"  # 手动输入关卡名
+                data["Configurations"]["Default"][
+                    "GUI.UseAlternateStage"
+                ] = "False"  # 使用备选关卡
+                data["Configurations"]["Default"][
+                    "Fight.UseRemainingSanityStage"
+                ] = "False"  # 使用剩余理智
+                data["Configurations"]["Default"][
+                    "Fight.UseExpiringMedicine"
+                ] = "True"  # 无限吃48小时内过期的理智药
         # 日常代理配置
         elif mode == "日常代理_日常":
             data["Configurations"]["Default"][
@@ -691,99 +747,115 @@ class MaaRunner(QtCore.QThread):
             data["Configurations"]["Default"][
                 "Start.StartEmulator"
             ] = "True"  # 启动MAA后自动开启模拟器
-            data["Configurations"]["Default"]["Start.AccountName"] = (
-                self.data[uid][1][:3] + "****" + self.data[uid][1][7:]
-            )  # 账号切换
-            data["Configurations"]["Default"][
-                "TaskQueue.WakeUp.IsChecked"
-            ] = "True"  # 开始唤醒
-            data["Configurations"]["Default"][
-                "TaskQueue.Recruiting.IsChecked"
-            ] = "True"  # 自动公招
-            data["Configurations"]["Default"][
-                "TaskQueue.Base.IsChecked"
-            ] = "True"  # 基建换班
-            data["Configurations"]["Default"][
-                "TaskQueue.Combat.IsChecked"
-            ] = "True"  # 刷理智
-            data["Configurations"]["Default"][
-                "TaskQueue.Mission.IsChecked"
-            ] = "True"  # 领取奖励
-            data["Configurations"]["Default"][
-                "TaskQueue.Mall.IsChecked"
-            ] = "True"  # 获取信用及购物
-            data["Configurations"]["Default"][
-                "TaskQueue.AutoRoguelike.IsChecked"
-            ] = "False"  # 自动肉鸽
-            data["Configurations"]["Default"][
-                "TaskQueue.Reclamation.IsChecked"
-            ] = "False"  # 生息演算
-            # 主关卡
-            if self.data[uid][5] == "-":
-                data["Configurations"]["Default"]["MainFunction.Stage1"] = ""
-            else:
-                data["Configurations"]["Default"]["MainFunction.Stage1"] = self.data[
-                    uid
-                ][5]
-            # 备选关卡1
-            if self.data[uid][6] == "-":
-                data["Configurations"]["Default"]["MainFunction.Stage2"] = ""
-            else:
-                data["Configurations"]["Default"]["MainFunction.Stage2"] = self.data[
-                    uid
-                ][6]
-            # 备选关卡2
-            if self.data[uid][7] == "-":
-                data["Configurations"]["Default"]["MainFunction.Stage3"] = ""
-            else:
-                data["Configurations"]["Default"]["MainFunction.Stage3"] = self.data[
-                    uid
-                ][7]
-            data["Configurations"]["Default"][
-                "Fight.RemainingSanityStage"
-            ] = ""  # 剩余理智关卡
-            # 连战次数
-            if self.data[uid][5] == "1-7":
-                data["Configurations"]["Default"]["MainFunction.Series.Quantity"] = "6"
-            else:
-                data["Configurations"]["Default"]["MainFunction.Series.Quantity"] = "1"
-            data["Configurations"]["Default"][
-                "Penguin.IsDrGrandet"
-            ] = "False"  # 博朗台模式
-            data["Configurations"]["Default"][
-                "GUI.CustomStageCode"
-            ] = "True"  # 手动输入关卡名
-            # 备选关卡
-            if self.data[uid][6] == "-" and self.data[uid][7] == "-":
-                data["Configurations"]["Default"]["GUI.UseAlternateStage"] = "False"
-            else:
-                data["Configurations"]["Default"]["GUI.UseAlternateStage"] = "True"
-            data["Configurations"]["Default"][
-                "Fight.UseRemainingSanityStage"
-            ] = "False"  # 使用剩余理智
-            data["Configurations"]["Default"][
-                "Fight.UseExpiringMedicine"
-            ] = "True"  # 无限吃48小时内过期的理智药
-            # 自定义基建配置
-            if self.data[uid][9] == "-":
+            if self.data[index][15] == "simple":
+                data["Configurations"]["Default"]["Start.ClientType"] = self.data[
+                    index
+                ][
+                    2
+                ]  # 客户端类型
+                # 账号切换
+                if self.data[index][2] == "Official":
+                    data["Configurations"]["Default"]["Start.AccountName"] = (
+                        self.data[index][1][:3] + "****" + self.data[index][1][7:]
+                    )
+                elif self.data[index][2] == "Bilibili":
+                    data["Configurations"]["Default"]["Start.AccountName"] = self.data[
+                        index
+                    ][1]
                 data["Configurations"]["Default"][
-                    "Infrast.CustomInfrastEnabled"
-                ] = "False"  # 禁用自定义基建配置
-            else:
+                    "TaskQueue.WakeUp.IsChecked"
+                ] = "True"  # 开始唤醒
                 data["Configurations"]["Default"][
-                    "Infrast.CustomInfrastEnabled"
-                ] = "True"  # 启用自定义基建配置
+                    "TaskQueue.Recruiting.IsChecked"
+                ] = "True"  # 自动公招
                 data["Configurations"]["Default"][
-                    "Infrast.DefaultInfrast"
-                ] = "user_defined"  # 内置配置
+                    "TaskQueue.Base.IsChecked"
+                ] = "True"  # 基建换班
                 data["Configurations"]["Default"][
-                    "Infrast.IsCustomInfrastFileReadOnly"
-                ] = "False"  # 自定义基建配置文件只读
+                    "TaskQueue.Combat.IsChecked"
+                ] = "True"  # 刷理智
                 data["Configurations"]["Default"][
-                    "Infrast.CustomInfrastFile"
-                ] = self.data[uid][
-                    9
-                ]  # 自定义基建配置文件地址
+                    "TaskQueue.Mission.IsChecked"
+                ] = "True"  # 领取奖励
+                data["Configurations"]["Default"][
+                    "TaskQueue.Mall.IsChecked"
+                ] = "True"  # 获取信用及购物
+                data["Configurations"]["Default"][
+                    "TaskQueue.AutoRoguelike.IsChecked"
+                ] = "False"  # 自动肉鸽
+                data["Configurations"]["Default"][
+                    "TaskQueue.Reclamation.IsChecked"
+                ] = "False"  # 生息演算
+                # 主关卡
+                if self.data[index][6] == "-":
+                    data["Configurations"]["Default"]["MainFunction.Stage1"] = ""
+                else:
+                    data["Configurations"]["Default"]["MainFunction.Stage1"] = (
+                        self.data[index][6]
+                    )
+                # 备选关卡1
+                if self.data[index][7] == "-":
+                    data["Configurations"]["Default"]["MainFunction.Stage2"] = ""
+                else:
+                    data["Configurations"]["Default"]["MainFunction.Stage2"] = (
+                        self.data[index][7]
+                    )
+                # 备选关卡2
+                if self.data[index][8] == "-":
+                    data["Configurations"]["Default"]["MainFunction.Stage3"] = ""
+                else:
+                    data["Configurations"]["Default"]["MainFunction.Stage3"] = (
+                        self.data[index][8]
+                    )
+                data["Configurations"]["Default"][
+                    "Fight.RemainingSanityStage"
+                ] = ""  # 剩余理智关卡
+                # 连战次数
+                if self.data[index][6] == "1-7":
+                    data["Configurations"]["Default"][
+                        "MainFunction.Series.Quantity"
+                    ] = "6"
+                else:
+                    data["Configurations"]["Default"][
+                        "MainFunction.Series.Quantity"
+                    ] = "1"
+                data["Configurations"]["Default"][
+                    "Penguin.IsDrGrandet"
+                ] = "False"  # 博朗台模式
+                data["Configurations"]["Default"][
+                    "GUI.CustomStageCode"
+                ] = "True"  # 手动输入关卡名
+                # 备选关卡
+                if self.data[index][7] == "-" and self.data[index][8] == "-":
+                    data["Configurations"]["Default"]["GUI.UseAlternateStage"] = "False"
+                else:
+                    data["Configurations"]["Default"]["GUI.UseAlternateStage"] = "True"
+                data["Configurations"]["Default"][
+                    "Fight.UseRemainingSanityStage"
+                ] = "False"  # 使用剩余理智
+                data["Configurations"]["Default"][
+                    "Fight.UseExpiringMedicine"
+                ] = "True"  # 无限吃48小时内过期的理智药
+                # 自定义基建配置
+                if self.data[index][11] == "-":
+                    data["Configurations"]["Default"][
+                        "Infrast.CustomInfrastEnabled"
+                    ] = "False"  # 禁用自定义基建配置
+                else:
+                    data["Configurations"]["Default"][
+                        "Infrast.CustomInfrastEnabled"
+                    ] = "True"  # 启用自定义基建配置
+                    data["Configurations"]["Default"][
+                        "Infrast.DefaultInfrast"
+                    ] = "user_defined"  # 内置配置
+                    data["Configurations"]["Default"][
+                        "Infrast.IsCustomInfrastFileReadOnly"
+                    ] = "False"  # 自定义基建配置文件只读
+                    data["Configurations"]["Default"][
+                        "Infrast.CustomInfrastFile"
+                    ] = self.data[index][
+                        11
+                    ]  # 自定义基建配置文件地址
         # 覆写配置文件
         with open(self.set_path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=4)
@@ -890,64 +962,106 @@ class Main(QWidget):
         self.PASSWORD = PASSWARD
         self.if_update_database = True
         self.if_update_config = True
+        self.user_mode_list = ["simple", "beta"]
         self.user_column = [
             "admin",
-            "number",
+            "id",
+            "server",
             "day",
             "status",
             "last",
             "game",
             "game_1",
             "game_2",
+            "routines",
             "annihilation",
             "infrastructure",
             "password",
             "notes",
             "numb",
+            "mode",
             "uid",
+        ]
+        self.userlist_simple_index = [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            "-",
+            9,
+            10,
+            11,
+            12,
+            "-",
+            "-",
+            "-",
+        ]
+        self.userlist_beta_index = [
+            0,
+            "-",
+            "-",
+            1,
+            2,
+            3,
+            "-",
+            "-",
+            "-",
+            4,
+            5,
+            "-",
+            6,
+            7,
+            "-",
+            "-",
+            "-",
         ]
 
         self.ui = uiLoader.load(self.app_path + "/gui/ui/main.ui")
         self.ui.setWindowTitle("AUTO_MAA")
         self.ui.setWindowIcon(QIcon(self.app_path + "/res/AUTO_MAA.ico"))
         # 检查文件完整性
-        if not os.path.exists(self.database_path) or not os.path.exists(
-            self.config_path
-        ):
-            self.initialize()
+        self.initialize()
         self.check_config()
-        with open(self.config_path, "r") as f:
-            self.config = json.load(f)
-        if not os.path.exists(self.key_path):
-            while True:
-                self.PASSWORD, ok_pressed = QInputDialog.getText(
-                    self.ui,
-                    "请设置管理密钥",
-                    "未检测到管理密钥，请设置您的管理密钥：",
-                    QLineEdit.Password,
-                    "",
-                )
-                if ok_pressed and self.PASSWORD != "":
-                    self.get_PASSWORD()
-                    break
-                else:
-                    choice = QMessageBox.question(
-                        self.ui, "确认", "您没有输入管理密钥，确定要暂时跳过这一步吗？"
-                    )
-                    if choice == QMessageBox.Yes:
-                        break
+        self.check_database()
         # 初始化数据库连接
         self.db = sqlite3.connect(self.database_path)
         self.cur = self.db.cursor()
         # 初始化控件
-        self.user_list = self.ui.findChild(QTableWidget, "tableWidget_userlist")
-        self.user_list.itemChanged.connect(self.change_user_Item)
+        self.user_set = self.ui.findChild(QToolBox, "toolBox_userset")
+        self.user_set.currentChanged.connect(self.change_userlist_method)
+
+        self.user_list_simple = self.ui.findChild(
+            QTableWidget, "tableWidget_userlist_simple"
+        )
+        self.user_list_simple.itemChanged.connect(
+            lambda item: self.change_user_Item(item, "simple")
+        )
+        self.user_list_simple.setStyleSheet("background-color: rgb(255, 255, 255);")
+
+        self.user_list_beta = self.ui.findChild(
+            QTableWidget, "tableWidget_userlist_beta"
+        )
+        self.user_list_beta.itemChanged.connect(
+            lambda item: self.change_user_Item(item, "beta")
+        )
+        self.user_list_beta.setStyleSheet("background-color: rgb(255, 255, 255);")
 
         self.user_add = self.ui.findChild(QPushButton, "pushButton_new")
         self.user_add.clicked.connect(self.add_user)
 
         self.user_del = self.ui.findChild(QPushButton, "pushButton_del")
         self.user_del.clicked.connect(self.del_user)
+
+        self.user_switch = self.ui.findChild(QPushButton, "pushButton_switch")
+        self.user_switch.clicked.connect(self.switch_user)
+
+        self.user_changeset = self.ui.findChild(QPushButton, "pushButton_changeset")
+        self.user_changeset.clicked.connect(self.change_user_set)
 
         self.read_PASSWORD = self.ui.findChild(QPushButton, "pushButton_password")
         self.read_PASSWORD.clicked.connect(lambda: self.read("key"))
@@ -968,7 +1082,7 @@ class Main(QWidget):
         self.get_maa_path.clicked.connect(lambda: self.read("file_path"))
 
         self.set_maa = self.ui.findChild(QPushButton, "pushButton_setMAA")
-        self.set_maa.clicked.connect(self.maa_set_starter)
+        self.set_maa.clicked.connect(lambda: self.maa_set_starter("设置MAA_全局"))
 
         self.routine = self.ui.findChild(QSpinBox, "spinBox_routine")
         self.routine.valueChanged.connect(self.change_config)
@@ -1030,6 +1144,7 @@ class Main(QWidget):
         self.MaaRunner.update_user_info.connect(self.change_user_info)
         self.MaaRunner.push_notification.connect(self.push_notification)
         self.MaaRunner.accomplish.connect(self.routine_ender)
+        self.MaaRunner.get_json.connect(self.get_maa_config)
 
         self.MainTimer = MainTimer(self.config)
         self.MainTimer.get_config.connect(self.give_config)
@@ -1039,35 +1154,43 @@ class Main(QWidget):
         # 载入GUI数据
         self.update_user_info("normal")
         self.update_config()
+        self.change_userlist_method()
 
     def initialize(self):
         """初始化程序的配置文件"""
         # 检查目录
-        if not os.path.exists(self.app_path + "/data"):
-            os.makedirs(self.app_path + "/data")
-        if not os.path.exists(self.app_path + "/config"):
-            os.makedirs(self.app_path + "/config")
-        # 生成用户数据库
-        if not os.path.exists(self.database_path):
-            db = sqlite3.connect(self.database_path)
-            cur = db.cursor()
-            cur.execute(
-                "CREATE TABLE adminx(admin text,number text,day int,status text,last date,game text,game_1 text,game_2 text,annihilation text,infrastructure text,password byte,notes text,numb int,uid int)"
-            )
-            cur.execute("CREATE TABLE version(v text)")
-            cur.execute("INSERT INTO version VALUES(?)", ("v1.0",))
-            db.commit()
-            cur.close()
-            db.close()
+        os.makedirs(self.app_path + "/data", exist_ok=True)
+        os.makedirs(self.app_path + "/config", exist_ok=True)
+        os.makedirs(self.app_path + "/data/MAAconfig/simple", exist_ok=True)
+        os.makedirs(self.app_path + "/data/MAAconfig/beta", exist_ok=True)
+        os.makedirs(self.app_path + "/data/MAAconfig/Default", exist_ok=True)
         # 生成配置文件
         if not os.path.exists(self.config_path):
             config = {"Default": {}}
             with open(self.config_path, "w") as f:
                 json.dump(config, f, indent=4)
+        # 生成管理密钥
+        if not os.path.exists(self.key_path):
+            while True:
+                self.PASSWORD, ok_pressed = QInputDialog.getText(
+                    self.ui,
+                    "请设置管理密钥",
+                    "未检测到管理密钥，请设置您的管理密钥：",
+                    QLineEdit.Password,
+                    "",
+                )
+                if ok_pressed and self.PASSWORD != "":
+                    self.get_PASSWORD()
+                    break
+                else:
+                    choice = QMessageBox.question(
+                        self.ui, "确认", "您没有输入管理密钥，确定要暂时跳过这一步吗？"
+                    )
+                    if choice == QMessageBox.Yes:
+                        break
 
     def check_config(self):
         """检查配置文件字段完整性并补全"""
-
         config_list = [
             ["TimeSet.set1", "False"],
             ["TimeSet.run1", "00:00"],
@@ -1103,15 +1226,73 @@ class Main(QWidget):
         for i in range(len(config_list)):
             if not config_list[i][0] in config["Default"]:
                 config["Default"][config_list[i][0]] = config_list[i][1]
+        self.config = config
         # 导出配置文件
         with open(self.config_path, "w") as f:
             json.dump(config, f, indent=4)
 
+    def check_database(self):
+        """检查用户数据库文件并处理数据库版本更新"""
+        # 生成用户数据库
+        if not os.path.exists(self.database_path):
+            db = sqlite3.connect(self.database_path)
+            cur = db.cursor()
+            cur.execute(
+                "CREATE TABLE adminx(admin text,id text,server text,day int,status text,last date,game text,game_1 text,game_2 text,routines text,annihilation text,infrastructure text,password byte,notes text,numb int,mode text,uid int)"
+            )
+            cur.execute("CREATE TABLE version(v text)")
+            cur.execute("INSERT INTO version VALUES(?)", ("v1.1",))
+            db.commit()
+            cur.close()
+            db.close()
+        # 数据库版本更新
+        db = sqlite3.connect(self.database_path)
+        cur = db.cursor()
+        cur.execute("SELECT * FROM version WHERE True")
+        version = cur.fetchall()
+        # v1.0-->v1.1
+        if version[0][0] == "v1.0":
+            cur.execute("SELECT * FROM adminx WHERE True")
+            data = cur.fetchall()
+            cur.execute("DROP TABLE IF EXISTS adminx")
+            cur.execute(
+                "CREATE TABLE adminx(admin text,id text,server text,day int,status text,last date,game text,game_1 text,game_2 text,routines text,annihilation text,infrastructure text,password byte,notes text,numb int,mode text,uid int)"
+            )
+            for i in range(len(data)):
+                cur.execute(
+                    "INSERT INTO adminx VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (
+                        data[i][0],  # 0 0 0
+                        data[i][1],  # 1 1 -
+                        "Official",  # 2 2 -
+                        data[i][2],  # 3 3 1
+                        data[i][3],  # 4 4 2
+                        data[i][4],  # 5 5 3
+                        data[i][5],  # 6 6 -
+                        data[i][6],  # 7 7 -
+                        data[i][7],  # 8 8 -
+                        "y",  # 9 - 4
+                        data[i][8],  # 10 9 5
+                        data[i][9],  # 11 10 -
+                        data[i][10],  # 12 11 6
+                        data[i][11],  # 13 12 7
+                        data[i][12],  # 14 - -
+                        "simple",  # 15 - -
+                        data[i][13],  # 16 - -
+                    ),
+                )
+                self.get_maa_config([0, data[i][13], 0])
+                self.get_maa_config([0, data[i][13], 1])
+            cur.execute("DELETE FROM version WHERE v = ?", ("v1.0",))
+            cur.execute("INSERT INTO version VALUES(?)", ("v1.1",))
+            db.commit()
+        cur.close()
+        db.close()
+
     def get_PASSWORD(self):
         """配置管理密钥"""
         # 检查目录
-        if not os.path.exists(self.app_path + "/data/key"):
-            os.makedirs(self.app_path + "/data/key")
+        os.makedirs(self.app_path + "/data/key", exist_ok=True)
         # 生成RSA密钥对
         key = RSA.generate(2048)
         public_key_local = key.publickey()
@@ -1239,14 +1420,18 @@ class Main(QWidget):
                                 # 使用旧管理密钥解密
                                 new_data = []
                                 for i in range(len(data)):
-                                    new_data.append(self.decryptx(data[i][10]))
+                                    new_data.append(self.decryptx(data[i][12]))
                                 # 使用新管理密钥重新加密
                                 self.PASSWORD = PASSWORD_new
                                 self.get_PASSWORD()
                                 for i in range(len(data)):
                                     self.cur.execute(
-                                        "UPDATE adminx SET password = ? WHERE uid = ?",
-                                        (self.encryptx(new_data[i]), i),
+                                        "UPDATE adminx SET password = ? WHERE mode = ? AND uid = ?",
+                                        (
+                                            self.encryptx(new_data[i]),
+                                            data[i][15],
+                                            data[i][16],
+                                        ),
                                     )
                                 self.db.commit()
                                 QMessageBox.information(
@@ -1271,52 +1456,137 @@ class Main(QWidget):
             self.PASSWORD = ""
 
         self.if_update_database = False
-        self.user_list.setRowCount(len(data))
-        for i, row in enumerate(data):
-            for j, value in enumerate(row):
-                if j in [3, 8]:
-                    item = QComboBox()
-                    item.addItems(["启用", "禁用"])
-                    if value == "y":
-                        item.setCurrentIndex(0)
-                    elif value == "n":
-                        item.setCurrentIndex(1)
-                    item.currentIndexChanged.connect(
-                        partial(self.change_user_CellWidget, i, j)
-                    )
-                elif j == 4:
-                    curdate = server_date()
-                    if curdate != value:
-                        item = QTableWidgetItem("今日未代理")
-                    else:
-                        item = QTableWidgetItem("今日已代理" + str(data[i][12]) + "次")
-                    item.setFlags(QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled)
-                elif j == 9:
-                    item = QTableWidgetItem(str(value).replace("\\", "/"))
-                elif j == 10:
-                    if self.PASSWORD == "":
-                        item = QTableWidgetItem("******")
+        if self.user_set.currentIndex() == 0:
+            data = [_ for _ in data if _[15] == "simple"]
+            self.user_list_simple.setRowCount(len(data))
+            for i, row in enumerate(data):
+                for j, value in enumerate(row):
+                    if self.userlist_simple_index[j] == "-":
+                        continue
+                    if j == 2:
+                        item = QComboBox()
+                        item.addItems(["官服", "B服"])
+                        if value == "Official":
+                            item.setCurrentIndex(0)
+                        elif value == "Bilibili":
+                            item.setCurrentIndex(1)
+                        item.currentIndexChanged.connect(
+                            partial(
+                                self.change_user_CellWidget,
+                                data[i][16],
+                                self.user_column[j],
+                            )
+                        )
+                    elif j in [4, 10]:
+                        item = QComboBox()
+                        item.addItems(["启用", "禁用"])
+                        if value == "y":
+                            item.setCurrentIndex(0)
+                        elif value == "n":
+                            item.setCurrentIndex(1)
+                        item.currentIndexChanged.connect(
+                            partial(
+                                self.change_user_CellWidget,
+                                data[i][16],
+                                self.user_column[j],
+                            )
+                        )
+                    elif j == 5:
+                        curdate = server_date()
+                        if curdate != value:
+                            item = QTableWidgetItem("今日未代理")
+                        else:
+                            item = QTableWidgetItem(
+                                "今日已代理" + str(data[i][14]) + "次"
+                            )
                         item.setFlags(
                             QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled
                         )
-                    else:
-                        result = self.decryptx(value)
-                        item = QTableWidgetItem(result)
-                        if result == "管理密钥错误":
+                    elif j == 11:
+                        item = QTableWidgetItem(str(value).replace("\\", "/"))
+                    elif j == 12:
+                        if self.PASSWORD == "":
+                            item = QTableWidgetItem("******")
                             item.setFlags(
                                 QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled
                             )
-                else:
-                    item = QTableWidgetItem(str(value))
-                if j in [3, 8]:
-                    self.user_list.setCellWidget(i, j, item)
-                else:
-                    self.user_list.setItem(i, j, item)
+                        else:
+                            result = self.decryptx(value)
+                            item = QTableWidgetItem(result)
+                            if result == "管理密钥错误":
+                                item.setFlags(
+                                    QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled
+                                )
+                    else:
+                        item = QTableWidgetItem(str(value))
+                    if j in [2, 4, 10]:
+                        self.user_list_simple.setCellWidget(
+                            data[i][16], self.userlist_simple_index[j], item
+                        )
+                    else:
+                        self.user_list_simple.setItem(
+                            data[i][16], self.userlist_simple_index[j], item
+                        )
+        elif self.user_set.currentIndex() == 1:
+            data = [_ for _ in data if _[15] == "beta"]
+            self.user_list_beta.setRowCount(len(data))
+            for i, row in enumerate(data):
+                for j, value in enumerate(row):
+                    if self.userlist_beta_index[j] == "-":
+                        continue
+                    if j in [4, 9, 10]:
+                        item = QComboBox()
+                        item.addItems(["启用", "禁用"])
+                        if value == "y":
+                            item.setCurrentIndex(0)
+                        elif value == "n":
+                            item.setCurrentIndex(1)
+                        item.currentIndexChanged.connect(
+                            partial(
+                                self.change_user_CellWidget,
+                                data[i][16],
+                                self.user_column[j],
+                            )
+                        )
+                    elif j == 5:
+                        curdate = server_date()
+                        if curdate != value:
+                            item = QTableWidgetItem("今日未代理")
+                        else:
+                            item = QTableWidgetItem(
+                                "今日已代理" + str(data[i][14]) + "次"
+                            )
+                        item.setFlags(
+                            QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled
+                        )
+                    elif j == 12:
+                        if self.PASSWORD == "":
+                            item = QTableWidgetItem("******")
+                            item.setFlags(
+                                QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled
+                            )
+                        else:
+                            result = self.decryptx(value)
+                            item = QTableWidgetItem(result)
+                            if result == "管理密钥错误":
+                                item.setFlags(
+                                    QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled
+                                )
+                    else:
+                        item = QTableWidgetItem(str(value))
+                    if j in [4, 9, 10]:
+                        self.user_list_beta.setCellWidget(
+                            data[i][16], self.userlist_beta_index[j], item
+                        )
+                    else:
+                        self.user_list_beta.setItem(
+                            data[i][16], self.userlist_beta_index[j], item
+                        )
         self.if_update_database = True
-        self.user_list.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        # self.user_list.resizeColumnsToContents()
-        # self.user_list.resizeRowsToContents()
-        # self.user_list.horizontalHeader().setStretchLastSection(True)
+        self.user_list_simple.horizontalHeader().setSectionResizeMode(
+            QHeaderView.Stretch
+        )
+        self.user_list_beta.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
 
     def update_config(self):
         """将self.config中的程序配置同步至GUI界面"""
@@ -1360,51 +1630,250 @@ class Main(QWidget):
 
     def add_user(self):
         """添加一位新用户"""
-        self.cur.execute(
-            "INSERT INTO adminx VALUES(?,?,0,'y','2000-01-01',?,?,?,'y',?,?,'无',0,?)",
-            (
-                "新用户",
-                "12312341234",
-                "1-7",
-                "-",
-                "-",
-                "-",
-                self.encryptx("未设置"),
-                self.user_list.rowCount(),
-            ),
-        )
+        if not self.check_maa_path():
+            QMessageBox.critical(
+                self.ui,
+                "错误",
+                "请先正确配置MAA路径再执行添加用户操作",
+            )
+            return None
+        if self.user_set.currentIndex() == 0:
+            self.cur.execute(
+                "INSERT INTO adminx VALUES('新用户','手机号码（官服）/B站ID（B服）','Official',0,'y','2000-01-01','1-7','-','-','y','y','-',?,'无',0,'simple',?)",
+                (
+                    self.encryptx("未设置"),
+                    self.user_list_simple.rowCount(),
+                ),
+            )
+            self.get_maa_config(
+                [self.user_set.currentIndex(), self.user_list_simple.rowCount(), 0]
+            )
+            self.get_maa_config(
+                [self.user_set.currentIndex(), self.user_list_simple.rowCount(), 1]
+            )
+        elif self.user_set.currentIndex() == 1:
+            self.cur.execute(
+                "INSERT INTO adminx VALUES('新用户','手机号码（官服）/B站ID（B服）','Official',0,'y','2000-01-01','1-7','-','-','y','y','-',?,'无',0,'beta',?)",
+                (
+                    self.encryptx("未设置"),
+                    self.user_list_beta.rowCount(),
+                ),
+            )
+            self.get_maa_config(
+                [self.user_set.currentIndex(), self.user_list_beta.rowCount(), 0]
+            )
+            self.get_maa_config(
+                [self.user_set.currentIndex(), self.user_list_beta.rowCount(), 1]
+            )
         self.db.commit()
         self.update_user_info("normal")
 
     def del_user(self):
         """删除选中的首位用户"""
-        row = self.user_list.currentRow()
-        self.cur.execute("SELECT * FROM adminx WHERE uid=?", (row,))
-        data = self.cur.fetchall()
-        if len(data) == 0:
+        if self.user_set.currentIndex() == 0:
+            row = self.user_list_simple.currentRow()
+        elif self.user_set.currentIndex() == 1:
+            row = self.user_list_beta.currentRow()
+        if row == -1:
             QMessageBox.critical(self.ui, "错误", "请选中一个用户后再执行删除操作")
+            return None
+        self.cur.execute(
+            "SELECT * FROM adminx WHERE mode = ? AND uid = ?",
+            (
+                self.user_mode_list[self.user_set.currentIndex()],
+                row,
+            ),
+        )
+        data = self.cur.fetchall()
+        choice = QMessageBox.question(
+            self.ui, "确认", "确定要删除用户 " + data[0][0] + " 吗？"
+        )
+
+        if choice == QMessageBox.Yes:
+            self.cur.execute(
+                "DELETE FROM adminx WHERE mode = ? AND uid = ?",
+                (
+                    self.user_mode_list[self.user_set.currentIndex()],
+                    row,
+                ),
+            )
+            self.db.commit()
+            shutil.rmtree(
+                self.app_path
+                + "/data/MAAconfig/"
+                + self.user_mode_list[self.user_set.currentIndex()]
+                + "/"
+                + str(row)
+            )
+            if self.user_set.currentIndex() == 0:
+                current_numb = self.user_list_simple.rowCount()
+            elif self.user_set.currentIndex() == 1:
+                current_numb = self.user_list_beta.rowCount()
+            for i in range(row + 1, current_numb):
+                self.cur.execute(
+                    "UPDATE adminx SET uid = ? WHERE mode = ? AND uid = ?",
+                    (i - 1, self.user_mode_list[self.user_set.currentIndex()], i),
+                )
+                self.db.commit()
+                os.rename(
+                    self.app_path
+                    + "/data/MAAconfig/"
+                    + self.user_mode_list[self.user_set.currentIndex()]
+                    + "/"
+                    + str(i),
+                    self.app_path
+                    + "/data/MAAconfig/"
+                    + self.user_mode_list[self.user_set.currentIndex()]
+                    + "/"
+                    + str(i - 1),
+                )
+            self.update_user_info("normal")
+
+    def switch_user(self):
+        """切换用户配置模式"""
+        if self.user_set.currentIndex() == 0:
+            row = self.user_list_simple.currentRow()
+        elif self.user_set.currentIndex() == 1:
+            row = self.user_list_beta.currentRow()
+        if row == -1:
+            QMessageBox.critical(self.ui, "错误", "请选中一个用户后再执行切换操作")
+            return None
+        self.cur.execute(
+            "SELECT * FROM adminx WHERE mode = ? AND uid = ?",
+            (
+                self.user_mode_list[self.user_set.currentIndex()],
+                row,
+            ),
+        )
+        data = self.cur.fetchall()
+        mode_list = ["简洁", "高级"]
+        choice = QMessageBox.question(
+            self.ui,
+            "确认",
+            "确定要将用户 "
+            + data[0][0]
+            + " 转为"
+            + mode_list[1 - self.user_set.currentIndex()]
+            + "配置模式吗？",
+        )
+
+        if choice == QMessageBox.Yes:
+            self.cur.execute("SELECT * FROM adminx WHERE True")
+            data = self.cur.fetchall()
+            if self.user_set.currentIndex() == 0:
+                current_numb = self.user_list_simple.rowCount()
+            elif self.user_set.currentIndex() == 1:
+                current_numb = self.user_list_beta.rowCount()
+            other_numb = len(data) - current_numb
+            self.cur.execute(
+                "UPDATE adminx SET mode = ?, uid = ? WHERE mode = ? AND uid = ?",
+                (
+                    self.user_mode_list[1 - self.user_set.currentIndex()],
+                    other_numb,
+                    self.user_mode_list[self.user_set.currentIndex()],
+                    row,
+                ),
+            )
+            self.db.commit()
+            shutil.move(
+                self.app_path
+                + "/data/MAAconfig/"
+                + self.user_mode_list[self.user_set.currentIndex()]
+                + "/"
+                + str(row),
+                self.app_path
+                + "/data/MAAconfig/"
+                + self.user_mode_list[1 - self.user_set.currentIndex()]
+                + "/-1",
+            )
+            os.rename(
+                self.app_path
+                + "/data/MAAconfig/"
+                + self.user_mode_list[1 - self.user_set.currentIndex()]
+                + "/-1",
+                self.app_path
+                + "/data/MAAconfig/"
+                + self.user_mode_list[1 - self.user_set.currentIndex()]
+                + "/"
+                + str(other_numb),
+            )
+            for i in range(row + 1, current_numb):
+                self.cur.execute(
+                    "UPDATE adminx SET uid = ? WHERE mode = ? AND uid = ?",
+                    (i - 1, self.user_mode_list[self.user_set.currentIndex()], i),
+                )
+                self.db.commit()
+                os.rename(
+                    self.app_path
+                    + "/data/MAAconfig/"
+                    + self.user_mode_list[self.user_set.currentIndex()]
+                    + "/"
+                    + str(i),
+                    self.app_path
+                    + "/data/MAAconfig/"
+                    + self.user_mode_list[self.user_set.currentIndex()]
+                    + "/"
+                    + str(i - 1),
+                )
+            self.update_user_info("normal")
+
+    def change_user_set(self):
+        """修改用户配置的详细文件"""
+        if self.user_set.currentIndex() == 0:
+            QMessageBox.critical(self.ui, "错误", "该项目无法进一步配置")
+        elif self.user_set.currentIndex() == 1:
+            if self.user_list_beta.currentColumn() in [4, 5]:
+                self.MaaRunner.get_json_path = [
+                    self.user_set.currentIndex(),
+                    self.user_list_beta.currentRow(),
+                    self.user_list_beta.currentColumn() - 4,
+                ]
+                self.maa_set_starter("设置MAA_用户")
+            else:
+                QMessageBox.critical(self.ui, "错误", "该项目无法进一步配置")
+
+    def get_maa_config(self, info):
+        """获取MAA配置文件"""
+        set_book1 = ["simple/", "beta/"]
+        set_book2 = ["/routine", "/annihilation"]
+        if info == ["infrastructure"]:
+            pass
+        elif info == ["Default"]:
+            os.makedirs(
+                self.app_path + "/data/MAAconfig/Default",
+                exist_ok=True,
+            )
+            shutil.copy(
+                self.config["Default"]["MaaSet.path"] + "/config/gui.json",
+                self.app_path + "/data/MAAconfig/Default",
+            )
         else:
-            choice = QMessageBox.question(
-                self.ui, "确认", "确定要删除用户 " + data[0][0] + " 吗？"
+            os.makedirs(
+                self.app_path
+                + "/data/MAAconfig/"
+                + set_book1[info[0]]
+                + str(info[1])
+                + set_book2[info[2]],
+                exist_ok=True,
+            )
+            shutil.copy(
+                self.config["Default"]["MaaSet.path"] + "/config/gui.json",
+                self.app_path
+                + "/data/MAAconfig/"
+                + set_book1[info[0]]
+                + str(info[1])
+                + set_book2[info[2]],
             )
 
-            if choice == QMessageBox.Yes:
-                self.cur.execute("DELETE FROM adminx WHERE uid = ?", (row,))
-                self.db.commit()
-                for i in range(row + 1, self.user_list.rowCount()):
-                    self.cur.execute(
-                        "UPDATE adminx SET uid = ? WHERE uid = ?", (i - 1, i)
-                    )
-                    self.db.commit()
-                self.update_user_info("normal")
-
-    def change_user_Item(self, item):
+    def change_user_Item(self, item, mode):
         """将GUI中发生修改的用户配置表中的一般信息同步至本地数据库"""
-        if self.if_update_database:
-            text = item.text()
-            if item.column() in [2, 12]:
+        if not self.if_update_database:
+            return None
+        text = item.text()
+        if mode == "simple":
+            if item.column() == 3:
                 text = int(text)
-            if item.column() in [5, 6, 7]:
+            if item.column() in [6, 7, 8]:
                 # 导入与应用特殊关卡规则
                 games = {}
                 if os.path.exists(self.gameid_path):
@@ -1415,82 +1884,117 @@ class Main(QWidget):
                                 game_in, game_out = line.split("：", 1)
                                 games[game_in.strip()] = game_out.strip()
                 text = games.get(text, text)
-            if item.column() == 9:
-                text = text.replace("\\", "/")
             if item.column() == 10:
+                text = text.replace("\\", "/")
+            if item.column() == 11:
                 text = self.encryptx(text)
             if text != "":
                 self.cur.execute(
-                    f"UPDATE adminx SET {self.user_column[item.column()]} = ? WHERE uid = ?",
+                    f"UPDATE adminx SET {self.user_column[self.userlist_simple_index.index(item.column())]} = ? WHERE mode = 'simple' AND uid = ?",
                     (text, item.row()),
                 )
-            self.db.commit()
-            self.update_user_info("normal")
+        elif mode == "beta":
+            if item.column() == 1:
+                text = int(text)
+            if item.column() == 6:
+                text = self.encryptx(text)
+            if text != "":
+                self.cur.execute(
+                    f"UPDATE adminx SET {self.user_column[self.userlist_beta_index.index(item.column())]} = ? WHERE mode = 'beta' AND uid = ?",
+                    (text, item.row()),
+                )
+        self.db.commit()
+        self.update_user_info("normal")
 
     def change_user_CellWidget(self, row, column, index):
         """将GUI中发生修改的用户配置表中的CellWidget类信息同步至本地数据库"""
-        if self.if_update_database:
-            if index == 0:
-                self.cur.execute(
-                    f"UPDATE adminx SET {self.user_column[column]} = ? WHERE uid = ?",
-                    ("y", row),
-                )
-            elif index == 1:
-                self.cur.execute(
-                    f"UPDATE adminx SET {self.user_column[column]} = ? WHERE uid = ?",
-                    ("n", row),
-                )
-            self.db.commit()
-            self.update_user_info("normal")
+        if not self.if_update_database:
+            return None
+        if self.user_set.currentIndex() == 0 and column == "server":
+            server_list = ["Official", "Bilibili"]
+            self.cur.execute(
+                f"UPDATE adminx SET server = ? WHERE mode = 'simple' AND uid = ?",
+                (server_list[index], row),
+            )
+        else:
+            index_list = ["y", "n"]
+            self.cur.execute(
+                f"UPDATE adminx SET {column} = ? WHERE mode = ? AND uid = ?",
+                (
+                    index_list[index],
+                    self.user_mode_list[self.user_set.currentIndex()],
+                    row,
+                ),
+            )
+        self.db.commit()
+        self.update_user_info("normal")
 
-    def change_user_info(self, all_uid, days, lasts, notes, numbs):
+    def change_user_info(self, modes, uids, days, lasts, notes, numbs):
         """将代理完成后发生改动的用户信息同步至本地数据库"""
-        for i in range(len(all_uid)):
+        for index in range(len(uids)):
             self.cur.execute(
-                "UPDATE adminx SET day=? WHERE uid=?", (days[i], all_uid[i])
+                "UPDATE adminx SET day = ? WHERE mode = ? AND uid = ?",
+                (days[index], modes[index], uids[index]),
             )
             self.cur.execute(
-                "UPDATE adminx SET last=? WHERE uid=?", (lasts[i], all_uid[i])
+                "UPDATE adminx SET last = ? WHERE mode = ? AND uid = ?",
+                (lasts[index], modes[index], uids[index]),
             )
             self.cur.execute(
-                "UPDATE adminx SET notes=? WHERE uid=?", (notes[i], all_uid[i])
+                "UPDATE adminx SET notes = ? WHERE mode = ? AND uid = ?",
+                (notes[index], modes[index], uids[index]),
             )
             self.cur.execute(
-                "UPDATE adminx SET numb=? WHERE uid=?", (numbs[i], all_uid[i])
+                "UPDATE adminx SET numb = ? WHERE mode = ? AND uid = ?",
+                (numbs[index], modes[index], uids[index]),
             )
         self.db.commit()
         self.update_user_info("normal")
 
     def change_config(self):
         """将GUI中发生修改的程序配置同步至self.config变量"""
-        if self.if_update_config:
-            self.config["Default"]["MaaSet.path"] = self.maa_path.text().replace(
-                "\\", "/"
-            )
-            self.config["Default"]["TimeLimit.routine"] = self.routine.value()
-            self.config["Default"]["TimeLimit.annihilation"] = self.annihilation.value()
-            self.config["Default"]["TimesLimit.run"] = self.num.value()
-
-            if self.if_sleep.isChecked():
-                self.config["Default"]["SelfSet.IfSleep"] = "True"
-            else:
-                self.config["Default"]["SelfSet.IfSleep"] = "False"
-
-            if self.if_self_start.isChecked():
-                self.config["Default"]["SelfSet.IfSelfStart"] = "True"
-            else:
-                self.config["Default"]["SelfSet.IfSelfStart"] = "False"
-
-            for i in range(10):
-                if self.start_time[i][0].isChecked():
-                    self.config["Default"]["TimeSet.set" + str(i + 1)] = "True"
-                else:
-                    self.config["Default"]["TimeSet.set" + str(i + 1)] = "False"
-                time = self.start_time[i][1].time().toString("HH:mm")
-                self.config["Default"]["TimeSet.run" + str(i + 1)] = time
+        if not self.if_update_config:
+            return None
+        self.config["Default"]["MaaSet.path"] = self.maa_path.text().replace("\\", "/")
+        if not self.check_maa_path():
+            self.config["Default"]["MaaSet.path"] = ""
             with open(self.config_path, "w") as f:
                 json.dump(self.config, f, indent=4)
             self.update_config()
+            QMessageBox.critical(
+                self.ui, "错误", "未找到MAA.exe或MAA配置文件，请重新设置MAA路径！"
+            )
+            return None
+        self.config["Default"]["TimeLimit.routine"] = self.routine.value()
+        self.config["Default"]["TimeLimit.annihilation"] = self.annihilation.value()
+        self.config["Default"]["TimesLimit.run"] = self.num.value()
+
+        if self.if_sleep.isChecked():
+            self.config["Default"]["SelfSet.IfSleep"] = "True"
+        else:
+            self.config["Default"]["SelfSet.IfSleep"] = "False"
+
+        if self.if_self_start.isChecked():
+            self.config["Default"]["SelfSet.IfSelfStart"] = "True"
+        else:
+            self.config["Default"]["SelfSet.IfSelfStart"] = "False"
+
+        for i in range(10):
+            if self.start_time[i][0].isChecked():
+                self.config["Default"]["TimeSet.set" + str(i + 1)] = "True"
+            else:
+                self.config["Default"]["TimeSet.set" + str(i + 1)] = "False"
+            time = self.start_time[i][1].time().toString("HH:mm")
+            self.config["Default"]["TimeSet.run" + str(i + 1)] = time
+        with open(self.config_path, "w") as f:
+            json.dump(self.config, f, indent=4)
+        self.update_config()
+
+    def change_userlist_method(self):
+        """更新GUI界面使之适配用户配置模式"""
+        user_switch_list = ["转为高级", "转为简洁"]
+        self.user_switch.setText(user_switch_list[self.user_set.currentIndex()])
+        self.update_user_info("normal")
 
     def read(self, operation):
         """弹出对话框组件进行读入"""
@@ -1516,7 +2020,7 @@ class Main(QWidget):
             if ok_pressed and new_PASSWORD != "":
                 return new_PASSWORD
             else:
-                return 0
+                return None
         # 读入选择
         elif operation == "question_runner":
             choice = QMessageBox.question(
@@ -1534,34 +2038,44 @@ class Main(QWidget):
             if file_path != "":
                 self.maa_path.setText(file_path)
 
-    def closeEvent(self, event):
-        """清理残余进程"""
-        self.MainTimer.quit()
-        self.MaaRunner.if_run = False
-        self.MaaRunner.wait()
-        self.cur.close()
-        self.db.close()
-        super().closeEvent(event)
+    def check_maa_path(self):
+        if os.path.exists(
+            self.config["Default"]["MaaSet.path"] + "/MAA.exe"
+        ) and os.path.exists(
+            self.config["Default"]["MaaSet.path"] + "/config/gui.json"
+        ):
+            self.get_maa_config(["Default"])
+            return True
+        else:
+            return False
 
     def routine_ender(self):
         """中止日常代理进程"""
         self.MaaRunner.if_run = False
         self.MaaRunner.wait()
         self.MainTimer.is_maa_run = False
+        shutil.copy(
+            self.app_path + "/data/MAAconfig/Default/gui.json",
+            self.config["Default"]["MaaSet.path"] + "/config",
+        )
         self.check_start.setEnabled(True)
+        self.set_maa.setEnabled(True)
+        self.user_changeset.setEnabled(True)
         self.run_now.clicked.disconnect()
         self.run_now.setText("立即执行")
         self.run_now.clicked.connect(self.routine_starter)
 
     def routine_starter(self):
         """启动MaaRunner线程运行日常代理任务"""
-        if self.config["Default"]["MaaSet.path"] == "":
-            QMessageBox.critical(self.ui, "错误", "MAA路径未设置！")
+        if not self.check_maa_path():
+            QMessageBox.critical(self.ui, "错误", "您还未正确配置MAA路径！")
             return None
         # 运行过程中修改部分组件
         self.MaaRunner.accomplish.disconnect()
         self.MaaRunner.accomplish.connect(self.routine_ender)
         self.check_start.setEnabled(False)
+        self.set_maa.setEnabled(False)
+        self.user_changeset.setEnabled(False)
         self.run_now.clicked.disconnect()
         self.run_now.setText("结束运行")
         self.run_now.clicked.connect(self.routine_ender)
@@ -1589,20 +2103,28 @@ class Main(QWidget):
         self.MaaRunner.if_run = False
         self.MaaRunner.wait()
         self.MainTimer.is_maa_run = False
+        shutil.copy(
+            self.app_path + "/data/MAAconfig/Default/gui.json",
+            self.config["Default"]["MaaSet.path"] + "/config",
+        )
         self.run_now.setEnabled(True)
+        self.set_maa.setEnabled(True)
+        self.user_changeset.setEnabled(True)
         self.check_start.clicked.disconnect()
         self.check_start.setText("开始排查")
         self.check_start.clicked.connect(self.check_starter)
 
     def check_starter(self):
         """启动MaaRunner线程运行人工排查任务"""
-        if self.config["Default"]["MaaSet.path"] == "":
-            QMessageBox.critical(self.ui, "错误", "MAA路径未设置！")
+        if not self.check_maa_path():
+            QMessageBox.critical(self.ui, "错误", "您还未正确配置MAA路径！")
             return None
         # 运行过程中修改部分组件
         self.MaaRunner.accomplish.disconnect()
         self.MaaRunner.accomplish.connect(self.check_ender)
         self.run_now.setEnabled(False)
+        self.set_maa.setEnabled(False)
+        self.user_changeset.setEnabled(False)
         self.check_start.clicked.disconnect()
         self.check_start.setText("中止排查")
         self.check_start.clicked.connect(self.check_ender)
@@ -1627,17 +2149,28 @@ class Main(QWidget):
         self.MaaRunner.if_run = False
         self.MaaRunner.wait()
         self.MainTimer.is_maa_run = False
+        if self.MaaRunner.mode == "设置MAA_用户":
+            shutil.copy(
+                self.app_path + "/data/MAAconfig/Default/gui.json",
+                self.config["Default"]["MaaSet.path"] + "/config",
+            )
         self.set_maa.setEnabled(True)
+        self.user_changeset.setEnabled(True)
+        self.run_now.setEnabled(True)
+        self.check_start.setEnabled(True)
 
-    def maa_set_starter(self):
+    def maa_set_starter(self, mode):
         """启动MaaRunner线程进行MAA设置"""
-        if self.config["Default"]["MaaSet.path"] == "":
-            QMessageBox.critical(self.ui, "错误", "MAA路径未设置！")
+        if not self.check_maa_path():
+            QMessageBox.critical(self.ui, "错误", "您还未正确配置MAA路径！")
             return None
         # 运行过程中修改部分组件
         self.MaaRunner.accomplish.disconnect()
         self.MaaRunner.accomplish.connect(self.maa_set_ender)
         self.set_maa.setEnabled(False)
+        self.user_changeset.setEnabled(False)
+        self.run_now.setEnabled(False)
+        self.check_start.setEnabled(False)
         # 配置参数
         self.MaaRunner.set_path = (
             self.config["Default"]["MaaSet.path"] + "/config/gui.json"
@@ -1646,7 +2179,7 @@ class Main(QWidget):
             self.config["Default"]["MaaSet.path"] + "/debug/gui.log"
         )
         self.MaaRunner.maa_path = self.config["Default"]["MaaSet.path"] + "/MAA.exe"
-        self.MaaRunner.mode = "设置MAA"
+        self.MaaRunner.mode = mode
         # 启动执行线程
         self.MainTimer.is_maa_run = True
         self.MaaRunner.start()
@@ -1666,6 +2199,15 @@ class Main(QWidget):
     def give_config(self):
         """同步配置文件到子线程"""
         self.MainTimer.config = self.config
+
+    def closeEvent(self, event):
+        """清理残余进程"""
+        self.MainTimer.quit()
+        self.MaaRunner.if_run = False
+        self.MaaRunner.wait()
+        self.cur.close()
+        self.db.close()
+        super().closeEvent(event)
 
 
 class AUTO_MAA(QApplication):
