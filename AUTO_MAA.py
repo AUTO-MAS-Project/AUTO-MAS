@@ -1170,6 +1170,13 @@ class Main(QWidget):
             config = {"Default": {}}
             with open(self.config_path, "w") as f:
                 json.dump(config, f, indent=4)
+        # 生成预设gameid替换方案文件
+        if not os.path.exists(self.gameid_path):
+            with open(self.gameid_path, "w", encoding="utf-8") as f:
+                print(
+                    "龙门币：CE-6\n技能：CA-5\n红票：AP-5\n经验：LS-6\n剿灭模式：Annihilation",
+                    file=f,
+                )
         # 生成管理密钥
         if not os.path.exists(self.key_path):
             while True:
@@ -1877,13 +1884,12 @@ class Main(QWidget):
             if item.column() in [6, 7, 8]:
                 # 导入与应用特殊关卡规则
                 games = {}
-                if os.path.exists(self.gameid_path):
-                    with open(self.gameid_path, encoding="utf-8") as f:
-                        gameids = f.readlines()
-                        for line in gameids:
-                            if "：" in line:
-                                game_in, game_out = line.split("：", 1)
-                                games[game_in.strip()] = game_out.strip()
+                with open(self.gameid_path, encoding="utf-8") as f:
+                    gameids = f.readlines()
+                    for line in gameids:
+                        if "：" in line:
+                            game_in, game_out = line.split("：", 1)
+                            games[game_in.strip()] = game_out.strip()
                 text = games.get(text, text)
             if item.column() == 10:
                 text = text.replace("\\", "/")
