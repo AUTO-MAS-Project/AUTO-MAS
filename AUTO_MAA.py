@@ -658,6 +658,9 @@ class MaaRunner(QtCore.QThread):
                 ] = "False"  # 生息演算
         # 剿灭代理配置
         elif mode == "日常代理_剿灭":
+            data["Current"] = "Default"  # 切换配置
+            for i in range(1, 9):
+                data["Global"]["Timer.Timer" + str(i)] = "False"  # 时间设置
             data["Configurations"]["Default"][
                 "MainFunction.PostActions"
             ] = "12"  # 完成后退出MAA和模拟器
@@ -738,6 +741,9 @@ class MaaRunner(QtCore.QThread):
                 ] = "True"  # 无限吃48小时内过期的理智药
         # 日常代理配置
         elif mode == "日常代理_日常":
+            data["Current"] = "Default"  # 切换配置
+            for i in range(1, 9):
+                data["Global"]["Timer.Timer" + str(i)] = "False"  # 时间设置
             data["Configurations"]["Default"][
                 "MainFunction.PostActions"
             ] = "12"  # 完成后退出MAA和模拟器
