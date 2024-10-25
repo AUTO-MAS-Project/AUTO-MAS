@@ -837,7 +837,7 @@ class MaaRunner(QtCore.QThread):
                     "Fight.UseExpiringMedicine"
                 ] = "True"  # 无限吃48小时内过期的理智药
                 # 自定义基建配置
-                if self.data[index][11] == "-":
+                if self.data[index][11] == "n":
                     data["Configurations"]["Default"][
                         "Infrast.CustomInfrastEnabled"
                     ] = "False"  # 禁用自定义基建配置
@@ -851,11 +851,12 @@ class MaaRunner(QtCore.QThread):
                     data["Configurations"]["Default"][
                         "Infrast.IsCustomInfrastFileReadOnly"
                     ] = "False"  # 自定义基建配置文件只读
-                    data["Configurations"]["Default"][
-                        "Infrast.CustomInfrastFile"
-                    ] = self.data[index][
-                        11
-                    ]  # 自定义基建配置文件地址
+                    data["Configurations"]["Default"]["Infrast.CustomInfrastFile"] = (
+                        self.json_path
+                        + "/simple/"
+                        + str(self.data[index][16])
+                        + "/infrastructure/infrastructure.json"
+                    )  # 自定义基建配置文件地址
         # 覆写配置文件
         with open(self.set_path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=4)
@@ -960,6 +961,7 @@ class Main(QWidget):
         self.key_path = self.app_path + "/data/key"
         self.gameid_path = self.app_path + "/data/gameid.txt"
         self.PASSWORD = PASSWARD
+        self.if_user_list_editable = True
         self.if_update_database = True
         self.if_update_config = True
         self.user_mode_list = ["simple", "beta"]
@@ -1080,7 +1082,7 @@ class Main(QWidget):
         self.maa_path.setReadOnly(True)
 
         self.get_maa_path = self.ui.findChild(QPushButton, "pushButton_getMAApath")
-        self.get_maa_path.clicked.connect(lambda: self.read("file_path"))
+        self.get_maa_path.clicked.connect(lambda: self.read("file_path_maa"))
 
         self.set_maa = self.ui.findChild(QPushButton, "pushButton_setMAA")
         self.set_maa.clicked.connect(lambda: self.maa_set_starter("设置MAA_全局"))
@@ -1144,7 +1146,7 @@ class Main(QWidget):
         self.MaaRunner.update_gui.connect(self.update_board)
         self.MaaRunner.update_user_info.connect(self.change_user_info)
         self.MaaRunner.push_notification.connect(self.push_notification)
-        self.MaaRunner.accomplish.connect(self.routine_ender)
+        self.MaaRunner.accomplish.connect(lambda: self.maa_ender("日常代理_结束"))
         self.MaaRunner.get_json.connect(self.get_maa_config)
 
         self.MainTimer = MainTimer(self.config)
@@ -1293,6 +1295,21 @@ class Main(QWidget):
                 self.get_maa_config([0, data[i][13], 1])
             cur.execute("DELETE FROM version WHERE v = ?", ("v1.0",))
             cur.execute("INSERT INTO version VALUES(?)", ("v1.1",))
+            db.commit()
+        # v1.1-->v1.2
+        if version[0][0] == "v1.1":
+            cur.execute("SELECT * FROM adminx WHERE True")
+            data = cur.fetchall()
+            for i in range(len(data)):
+                cur.execute(
+                    "UPDATE adminx SET infrastructure = 'n' WHERE mode = ? AND uid = ?",
+                    (
+                        data[i][15],
+                        data[i][16],
+                    ),
+                )
+            cur.execute("DELETE FROM version WHERE v = ?", ("v1.1",))
+            cur.execute("INSERT INTO version VALUES(?)", ("v1.2",))
             db.commit()
         cur.close()
         db.close()
@@ -1462,134 +1479,143 @@ class Main(QWidget):
 
         if operation == "clear":
             self.PASSWORD = ""
+        elif operation == "read_only":
+            self.if_user_list_editable = False
+        elif operation == "editable":
+            self.if_user_list_editable = True
 
         self.if_update_database = False
-        if self.user_set.currentIndex() == 0:
-            data = [_ for _ in data if _[15] == "simple"]
-            self.user_list_simple.setRowCount(len(data))
-            for i, row in enumerate(data):
-                for j, value in enumerate(row):
-                    if self.userlist_simple_index[j] == "-":
-                        continue
-                    if j == 2:
-                        item = QComboBox()
-                        item.addItems(["官服", "B服"])
-                        if value == "Official":
-                            item.setCurrentIndex(0)
-                        elif value == "Bilibili":
-                            item.setCurrentIndex(1)
-                        item.currentIndexChanged.connect(
-                            partial(
-                                self.change_user_CellWidget,
-                                data[i][16],
-                                self.user_column[j],
-                            )
+
+        data_simple = [_ for _ in data if _[15] == "simple"]
+        self.user_list_simple.setRowCount(len(data_simple))
+        for i, row in enumerate(data_simple):
+            for j, value in enumerate(row):
+                if self.userlist_simple_index[j] == "-":
+                    continue
+                if j == 2:
+                    item = QComboBox()
+                    item.addItems(["官服", "B服"])
+                    if value == "Official":
+                        item.setCurrentIndex(0)
+                    elif value == "Bilibili":
+                        item.setCurrentIndex(1)
+                    item.currentIndexChanged.connect(
+                        partial(
+                            self.change_user_CellWidget,
+                            data_simple[i][16],
+                            self.user_column[j],
                         )
-                    elif j in [4, 10]:
-                        item = QComboBox()
-                        item.addItems(["启用", "禁用"])
-                        if value == "y":
-                            item.setCurrentIndex(0)
-                        elif value == "n":
-                            item.setCurrentIndex(1)
-                        item.currentIndexChanged.connect(
-                            partial(
-                                self.change_user_CellWidget,
-                                data[i][16],
-                                self.user_column[j],
-                            )
+                    )
+                elif j in [4, 10, 11]:
+                    item = QComboBox()
+                    item.addItems(["启用", "禁用"])
+                    if value == "y":
+                        item.setCurrentIndex(0)
+                    elif value == "n":
+                        item.setCurrentIndex(1)
+                    item.currentIndexChanged.connect(
+                        partial(
+                            self.change_user_CellWidget,
+                            data_simple[i][16],
+                            self.user_column[j],
                         )
-                    elif j == 5:
-                        curdate = server_date()
-                        if curdate != value:
-                            item = QTableWidgetItem("今日未代理")
-                        else:
-                            item = QTableWidgetItem(
-                                "今日已代理" + str(data[i][14]) + "次"
-                            )
+                    )
+                elif j == 5:
+                    curdate = server_date()
+                    if curdate != value:
+                        item = QTableWidgetItem("今日未代理")
+                    else:
+                        item = QTableWidgetItem(
+                            "今日已代理" + str(data_simple[i][14]) + "次"
+                        )
+                    item.setFlags(QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled)
+                elif j == 12:
+                    if self.PASSWORD == "":
+                        item = QTableWidgetItem("******")
                         item.setFlags(
                             QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled
                         )
-                    elif j == 11:
-                        item = QTableWidgetItem(str(value).replace("\\", "/"))
-                    elif j == 12:
-                        if self.PASSWORD == "":
-                            item = QTableWidgetItem("******")
+                    else:
+                        result = self.decryptx(value)
+                        item = QTableWidgetItem(result)
+                        if result == "管理密钥错误":
                             item.setFlags(
                                 QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled
                             )
-                        else:
-                            result = self.decryptx(value)
-                            item = QTableWidgetItem(result)
-                            if result == "管理密钥错误":
-                                item.setFlags(
-                                    QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled
-                                )
+                else:
+                    item = QTableWidgetItem(str(value))
+                if j in [2, 4, 10, 11]:
+                    if not self.if_user_list_editable:
+                        item.setEnabled(False)
+                    self.user_list_simple.setCellWidget(
+                        data_simple[i][16], self.userlist_simple_index[j], item
+                    )
+                else:
+                    self.user_list_simple.setItem(
+                        data_simple[i][16], self.userlist_simple_index[j], item
+                    )
+
+        data_beta = [_ for _ in data if _[15] == "beta"]
+        self.user_list_beta.setRowCount(len(data_beta))
+        for i, row in enumerate(data_beta):
+            for j, value in enumerate(row):
+                if self.userlist_beta_index[j] == "-":
+                    continue
+                if j in [4, 9, 10]:
+                    item = QComboBox()
+                    item.addItems(["启用", "禁用"])
+                    if value == "y":
+                        item.setCurrentIndex(0)
+                    elif value == "n":
+                        item.setCurrentIndex(1)
+                    item.currentIndexChanged.connect(
+                        partial(
+                            self.change_user_CellWidget,
+                            data_beta[i][16],
+                            self.user_column[j],
+                        )
+                    )
+                elif j == 5:
+                    curdate = server_date()
+                    if curdate != value:
+                        item = QTableWidgetItem("今日未代理")
                     else:
-                        item = QTableWidgetItem(str(value))
-                    if j in [2, 4, 10]:
-                        self.user_list_simple.setCellWidget(
-                            data[i][16], self.userlist_simple_index[j], item
+                        item = QTableWidgetItem(
+                            "今日已代理" + str(data_beta[i][14]) + "次"
                         )
-                    else:
-                        self.user_list_simple.setItem(
-                            data[i][16], self.userlist_simple_index[j], item
-                        )
-        elif self.user_set.currentIndex() == 1:
-            data = [_ for _ in data if _[15] == "beta"]
-            self.user_list_beta.setRowCount(len(data))
-            for i, row in enumerate(data):
-                for j, value in enumerate(row):
-                    if self.userlist_beta_index[j] == "-":
-                        continue
-                    if j in [4, 9, 10]:
-                        item = QComboBox()
-                        item.addItems(["启用", "禁用"])
-                        if value == "y":
-                            item.setCurrentIndex(0)
-                        elif value == "n":
-                            item.setCurrentIndex(1)
-                        item.currentIndexChanged.connect(
-                            partial(
-                                self.change_user_CellWidget,
-                                data[i][16],
-                                self.user_column[j],
-                            )
-                        )
-                    elif j == 5:
-                        curdate = server_date()
-                        if curdate != value:
-                            item = QTableWidgetItem("今日未代理")
-                        else:
-                            item = QTableWidgetItem(
-                                "今日已代理" + str(data[i][14]) + "次"
-                            )
+                    item.setFlags(QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled)
+                elif j == 12:
+                    if self.PASSWORD == "":
+                        item = QTableWidgetItem("******")
                         item.setFlags(
                             QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled
                         )
-                    elif j == 12:
-                        if self.PASSWORD == "":
-                            item = QTableWidgetItem("******")
+                    else:
+                        result = self.decryptx(value)
+                        item = QTableWidgetItem(result)
+                        if result == "管理密钥错误":
                             item.setFlags(
                                 QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled
                             )
-                        else:
-                            result = self.decryptx(value)
-                            item = QTableWidgetItem(result)
-                            if result == "管理密钥错误":
-                                item.setFlags(
-                                    QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled
-                                )
-                    else:
-                        item = QTableWidgetItem(str(value))
-                    if j in [4, 9, 10]:
-                        self.user_list_beta.setCellWidget(
-                            data[i][16], self.userlist_beta_index[j], item
-                        )
-                    else:
-                        self.user_list_beta.setItem(
-                            data[i][16], self.userlist_beta_index[j], item
-                        )
+                else:
+                    item = QTableWidgetItem(str(value))
+                if j in [4, 9, 10]:
+                    if not self.if_user_list_editable:
+                        item.setEnabled(False)
+                    self.user_list_beta.setCellWidget(
+                        data_beta[i][16], self.userlist_beta_index[j], item
+                    )
+                else:
+                    self.user_list_beta.setItem(
+                        data_beta[i][16], self.userlist_beta_index[j], item
+                    )
+        if self.if_user_list_editable:
+            self.user_list_simple.setEditTriggers(QTableWidget.AllEditTriggers)
+            self.user_list_beta.setEditTriggers(QTableWidget.AllEditTriggers)
+        else:
+            self.user_list_simple.setEditTriggers(QTableWidget.NoEditTriggers)
+            self.user_list_beta.setEditTriggers(QTableWidget.NoEditTriggers)
+        # 设置QComboBox为可编辑
         self.if_update_database = True
         self.user_list_simple.horizontalHeader().setSectionResizeMode(
             QHeaderView.Stretch
@@ -1792,16 +1818,6 @@ class Main(QWidget):
                 self.app_path
                 + "/data/MAAconfig/"
                 + self.user_mode_list[1 - self.user_set.currentIndex()]
-                + "/-1",
-            )
-            os.rename(
-                self.app_path
-                + "/data/MAAconfig/"
-                + self.user_mode_list[1 - self.user_set.currentIndex()]
-                + "/-1",
-                self.app_path
-                + "/data/MAAconfig/"
-                + self.user_mode_list[1 - self.user_set.currentIndex()]
                 + "/"
                 + str(other_numb),
             )
@@ -1826,9 +1842,12 @@ class Main(QWidget):
             self.update_user_info("normal")
 
     def change_user_set(self):
-        """修改用户配置的详细文件"""
+        """执行用户配置列表的进一步配置"""
         if self.user_set.currentIndex() == 0:
-            QMessageBox.critical(self.ui, "错误", "该项目无法进一步配置")
+            if self.user_list_simple.currentColumn() in [10]:
+                self.get_maa_config([0, self.user_list_simple.currentRow(), 2])
+            else:
+                QMessageBox.critical(self.ui, "错误", "该项目无法进一步配置")
         elif self.user_set.currentIndex() == 1:
             if self.user_list_beta.currentColumn() in [4, 5]:
                 self.MaaRunner.get_json_path = [
@@ -1855,6 +1874,33 @@ class Main(QWidget):
                 self.config["Default"]["MaaSet.path"] + "/config/gui.json",
                 self.app_path + "/data/MAAconfig/Default",
             )
+        elif info[2] == 2:
+            infrastructure_path = self.read("file_path_infrastructure")
+            if infrastructure_path:
+                os.makedirs(
+                    self.app_path
+                    + "/data/MAAconfig/"
+                    + set_book1[info[0]]
+                    + str(info[1])
+                    + "/infrastructure",
+                    exist_ok=True,
+                )
+                shutil.copy(
+                    infrastructure_path,
+                    self.app_path
+                    + "/data/MAAconfig/"
+                    + set_book1[info[0]]
+                    + str(info[1])
+                    + "/infrastructure/infrastructure.json",
+                )
+                return True
+            else:
+                QMessageBox.critical(
+                    self.ui,
+                    "错误",
+                    "未选择自定义基建文件",
+                )
+                return False
         else:
             os.makedirs(
                 self.app_path
@@ -1917,6 +1963,22 @@ class Main(QWidget):
         """将GUI中发生修改的用户配置表中的CellWidget类信息同步至本地数据库"""
         if not self.if_update_database:
             return None
+        if (
+            self.user_set.currentIndex() == 0
+            and column == "infrastructure"
+            and index == 0
+        ):
+            if not os.path.exists(
+                self.app_path
+                + "/data/MAAconfig/"
+                + self.user_mode_list[self.user_set.currentIndex()]
+                + "/"
+                + str(row)
+                + "/infrastructure/infrastructure.json",
+            ):
+                result = self.get_maa_config([0, row, 2])
+                if not result:
+                    index = 1
         if self.user_set.currentIndex() == 0 and column == "server":
             server_list = ["Official", "Bilibili"]
             self.cur.execute(
@@ -2039,11 +2101,17 @@ class Main(QWidget):
                 self.MaaRunner.question_choice = "Yes"
             elif choice == QMessageBox.No:
                 self.MaaRunner.question_choice = "No"
-        # 读入文件目录
-        elif operation == "file_path":
+        # 读入MAA文件目录
+        elif operation == "file_path_maa":
             file_path = QFileDialog.getExistingDirectory(self.ui, "选择MAA文件夹")
-            if file_path != "":
+            if file_path:
                 self.maa_path.setText(file_path)
+        # 读入自定义基建文件目录
+        elif operation == "file_path_infrastructure":
+            file_path, _ = QFileDialog.getOpenFileName(
+                self.ui, "选择自定义基建文件", "", "JSON 文件 (*.json)"
+            )
+            return file_path
 
     def check_maa_path(self):
         if os.path.exists(
@@ -2056,36 +2124,12 @@ class Main(QWidget):
         else:
             return False
 
-    def routine_ender(self):
-        """中止日常代理进程"""
-        self.MaaRunner.if_run = False
-        self.MaaRunner.wait()
-        self.MainTimer.is_maa_run = False
-        shutil.copy(
-            self.app_path + "/data/MAAconfig/Default/gui.json",
-            self.config["Default"]["MaaSet.path"] + "/config",
-        )
-        self.check_start.setEnabled(True)
-        self.set_maa.setEnabled(True)
-        self.user_changeset.setEnabled(True)
-        self.run_now.clicked.disconnect()
-        self.run_now.setText("立即执行")
-        self.run_now.clicked.connect(self.routine_starter)
-
     def routine_starter(self):
         """启动MaaRunner线程运行日常代理任务"""
         if not self.check_maa_path():
             QMessageBox.critical(self.ui, "错误", "您还未正确配置MAA路径！")
             return None
-        # 运行过程中修改部分组件
-        self.MaaRunner.accomplish.disconnect()
-        self.MaaRunner.accomplish.connect(self.routine_ender)
-        self.check_start.setEnabled(False)
-        self.set_maa.setEnabled(False)
-        self.user_changeset.setEnabled(False)
-        self.run_now.clicked.disconnect()
-        self.run_now.setText("结束运行")
-        self.run_now.clicked.connect(self.routine_ender)
+        self.maa_running_set("日常代理_开始")
         # 配置参数
         self.MaaRunner.set_path = (
             self.config["Default"]["MaaSet.path"] + "/config/gui.json"
@@ -2105,36 +2149,12 @@ class Main(QWidget):
         self.MainTimer.is_maa_run = True
         self.MaaRunner.start()
 
-    def check_ender(self):
-        """中止人工排查进程"""
-        self.MaaRunner.if_run = False
-        self.MaaRunner.wait()
-        self.MainTimer.is_maa_run = False
-        shutil.copy(
-            self.app_path + "/data/MAAconfig/Default/gui.json",
-            self.config["Default"]["MaaSet.path"] + "/config",
-        )
-        self.run_now.setEnabled(True)
-        self.set_maa.setEnabled(True)
-        self.user_changeset.setEnabled(True)
-        self.check_start.clicked.disconnect()
-        self.check_start.setText("开始排查")
-        self.check_start.clicked.connect(self.check_starter)
-
     def check_starter(self):
         """启动MaaRunner线程运行人工排查任务"""
         if not self.check_maa_path():
             QMessageBox.critical(self.ui, "错误", "您还未正确配置MAA路径！")
             return None
-        # 运行过程中修改部分组件
-        self.MaaRunner.accomplish.disconnect()
-        self.MaaRunner.accomplish.connect(self.check_ender)
-        self.run_now.setEnabled(False)
-        self.set_maa.setEnabled(False)
-        self.user_changeset.setEnabled(False)
-        self.check_start.clicked.disconnect()
-        self.check_start.setText("中止排查")
-        self.check_start.clicked.connect(self.check_ender)
+        self.maa_running_set("人工排查_开始")
         # 配置参数
         self.MaaRunner.set_path = (
             self.config["Default"]["MaaSet.path"] + "/config/gui.json"
@@ -2151,33 +2171,12 @@ class Main(QWidget):
         self.MainTimer.is_maa_run = True
         self.MaaRunner.start()
 
-    def maa_set_ender(self):
-        """中止MAA设置进程"""
-        self.MaaRunner.if_run = False
-        self.MaaRunner.wait()
-        self.MainTimer.is_maa_run = False
-        if self.MaaRunner.mode == "设置MAA_用户":
-            shutil.copy(
-                self.app_path + "/data/MAAconfig/Default/gui.json",
-                self.config["Default"]["MaaSet.path"] + "/config",
-            )
-        self.set_maa.setEnabled(True)
-        self.user_changeset.setEnabled(True)
-        self.run_now.setEnabled(True)
-        self.check_start.setEnabled(True)
-
     def maa_set_starter(self, mode):
         """启动MaaRunner线程进行MAA设置"""
         if not self.check_maa_path():
             QMessageBox.critical(self.ui, "错误", "您还未正确配置MAA路径！")
             return None
-        # 运行过程中修改部分组件
-        self.MaaRunner.accomplish.disconnect()
-        self.MaaRunner.accomplish.connect(self.maa_set_ender)
-        self.set_maa.setEnabled(False)
-        self.user_changeset.setEnabled(False)
-        self.run_now.setEnabled(False)
-        self.check_start.setEnabled(False)
+        self.maa_running_set("设置MAA_开始")
         # 配置参数
         self.MaaRunner.set_path = (
             self.config["Default"]["MaaSet.path"] + "/config/gui.json"
@@ -2190,6 +2189,82 @@ class Main(QWidget):
         # 启动执行线程
         self.MainTimer.is_maa_run = True
         self.MaaRunner.start()
+
+    def maa_ender(self, mode):
+        """中止MAA线程"""
+        self.MaaRunner.if_run = False
+        self.MaaRunner.wait()
+        self.MainTimer.is_maa_run = False
+        self.maa_running_set(mode)
+
+    def maa_running_set(self, mode):
+        """处理MAA运行过程中的GUI组件变化"""
+        if "开始" in mode:
+
+            self.MaaRunner.accomplish.disconnect()
+            self.user_add.setEnabled(False)
+            self.user_del.setEnabled(False)
+            self.user_switch.setEnabled(False)
+            self.user_changeset.setEnabled(False)
+            self.set_maa.setEnabled(False)
+            # self.update_user_info("read_only")
+
+            if mode == "日常代理_开始":
+                self.MaaRunner.accomplish.connect(
+                    lambda: self.maa_ender("日常代理_结束")
+                )
+                self.check_start.setEnabled(False)
+                self.run_now.clicked.disconnect()
+                self.run_now.setText("结束运行")
+                self.run_now.clicked.connect(lambda: self.maa_ender("日常代理_结束"))
+
+            elif mode == "人工排查_开始":
+                self.MaaRunner.accomplish.connect(
+                    lambda: self.maa_ender("人工排查_结束")
+                )
+                self.run_now.setEnabled(False)
+                self.check_start.clicked.disconnect()
+                self.check_start.setText("中止排查")
+                self.check_start.clicked.connect(
+                    lambda: self.maa_ender("人工排查_结束")
+                )
+
+            elif mode == "设置MAA_开始":
+                self.MaaRunner.accomplish.connect(
+                    lambda: self.maa_ender("设置MAA_结束")
+                )
+                self.run_now.setEnabled(False)
+                self.check_start.setEnabled(False)
+
+        elif "结束" in mode:
+
+            shutil.copy(
+                self.app_path + "/data/MAAconfig/Default/gui.json",
+                self.config["Default"]["MaaSet.path"] + "/config",
+            )
+            self.user_add.setEnabled(True)
+            self.user_del.setEnabled(True)
+            self.user_switch.setEnabled(True)
+            self.user_changeset.setEnabled(True)
+            self.set_maa.setEnabled(True)
+            # self.update_user_info("editable")
+
+            if mode == "设置MAA_结束":
+                self.run_now.setEnabled(True)
+                self.check_start.setEnabled(True)
+
+            elif mode == "人工排查_结束":
+
+                self.run_now.setEnabled(True)
+                self.check_start.clicked.disconnect()
+                self.check_start.setText("开始排查")
+                self.check_start.clicked.connect(self.check_starter)
+
+            elif mode == "日常代理_结束":
+                self.check_start.setEnabled(True)
+                self.run_now.clicked.disconnect()
+                self.run_now.setText("立即执行")
+                self.run_now.clicked.connect(self.routine_starter)
 
     def push_notification(self, title, message, ticker, t):
         """推送系统通知"""
