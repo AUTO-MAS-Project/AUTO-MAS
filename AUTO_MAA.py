@@ -1251,7 +1251,7 @@ class Main(QWidget):
                 "CREATE TABLE adminx(admin text,id text,server text,day int,status text,last date,game text,game_1 text,game_2 text,routines text,annihilation text,infrastructure text,password byte,notes text,numb int,mode text,uid int)"
             )
             cur.execute("CREATE TABLE version(v text)")
-            cur.execute("INSERT INTO version VALUES(?)", ("v1.1",))
+            cur.execute("INSERT INTO version VALUES(?)", ("v1.2",))
             db.commit()
             cur.close()
             db.close()
@@ -1673,7 +1673,7 @@ class Main(QWidget):
             return None
         if self.user_set.currentIndex() == 0:
             self.cur.execute(
-                "INSERT INTO adminx VALUES('新用户','手机号码（官服）/B站ID（B服）','Official',0,'y','2000-01-01','1-7','-','-','y','y','-',?,'无',0,'simple',?)",
+                "INSERT INTO adminx VALUES('新用户','手机号码（官服）/B站ID（B服）','Official',0,'y','2000-01-01','1-7','-','-','y','y','n',?,'无',0,'simple',?)",
                 (
                     self.encryptx("未设置"),
                     self.user_list_simple.rowCount(),
