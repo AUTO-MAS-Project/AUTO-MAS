@@ -220,7 +220,12 @@ class MaaRunner(QtCore.QThread):
                                     "\n".join([self.data[_][0] for _ in error_index]),
                                     result,
                                 )
-                                os.system("taskkill /F /T /PID " + str(maa.pid))
+                                killprocess = subprocess.Popen(
+                                    "taskkill /F /T /PID " + str(maa.pid),
+                                    shell=True,
+                                    creationflags=subprocess.CREATE_NO_WINDOW,
+                                )
+                                killprocess.wait()
                                 self.push_notification.emit(
                                     "用户日常代理出现异常！",
                                     "用户 "
@@ -322,7 +327,12 @@ class MaaRunner(QtCore.QThread):
                                 "\n".join([self.data[_][0] for _ in error_index]),
                                 result,
                             )
-                            os.system("taskkill /F /T /PID " + str(maa.pid))
+                            killprocess = subprocess.Popen(
+                                "taskkill /F /T /PID " + str(maa.pid),
+                                shell=True,
+                                creationflags=subprocess.CREATE_NO_WINDOW,
+                            )
+                            killprocess.wait()
                             if_strat_app = True
                             if self.if_run:
                                 time.sleep(10)
@@ -387,7 +397,12 @@ class MaaRunner(QtCore.QThread):
         if self.mode in ["日常代理", "人工排查"]:
             # 关闭可能未正常退出的MAA进程
             if not self.if_run:
-                os.system("taskkill /F /T /PID " + str(maa.pid))
+                killprocess = subprocess.Popen(
+                    "taskkill /F /T /PID " + str(maa.pid),
+                    shell=True,
+                    creationflags=subprocess.CREATE_NO_WINDOW,
+                )
+                killprocess.wait()
             # 更新用户数据
             modes = [self.data[_][15] for _ in all_index]
             uids = [self.data[_][16] for _ in all_index]
