@@ -1949,8 +1949,6 @@ class Main(QWidget):
                             game_in, game_out = line.split("：", 1)
                             games[game_in.strip()] = game_out.strip()
                 text = games.get(text, text)
-            if item.column() == 10:
-                text = text.replace("\\", "/")
             if item.column() == 11:
                 text = self.encryptx(text)
             if text != "":
