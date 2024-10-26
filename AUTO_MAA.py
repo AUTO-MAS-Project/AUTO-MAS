@@ -555,11 +555,17 @@ class MaaRunner(QtCore.QThread):
             data["Configurations"]["Default"][
                 "Start.RunDirectly"
             ] = "True"  # 启动MAA后直接运行
+            data["Configurations"]["Default"][
+                "Start.MinimizeDirectly"
+            ] = "True"  # 启动MAA后直接最小化
             # 启动MAA后自动开启模拟器
             if "启动模拟器" in mode:
                 data["Configurations"]["Default"]["Start.StartEmulator"] = "True"
             elif "仅切换账号" in mode:
                 data["Configurations"]["Default"]["Start.StartEmulator"] = "False"
+            data["Configurations"]["Default"][
+                "Start.MinimizingStartup"
+            ] = "False"  # 最小化启动模拟器
             if self.data[index][15] == "simple":
                 data["Global"][
                     "VersionUpdate.ScheduledUpdateCheck"
