@@ -692,6 +692,15 @@ class MaaRunner(QtCore.QThread):
                 "Start.StartEmulator"
             ] = "True"  # 启动MAA后自动开启模拟器
             if self.data[index][15] == "simple":
+                data["Global"][
+                    "VersionUpdate.ScheduledUpdateCheck"
+                ] = "True"  # 定时检查更新
+                data["Global"][
+                    "VersionUpdate.AutoDownloadUpdatePackage"
+                ] = "True"  # 自动下载更新包
+                data["Global"][
+                    "VersionUpdate.AutoInstallUpdatePackage"
+                ] = "True"  # 自动安装更新包
                 data["Configurations"]["Default"]["Start.ClientType"] = self.data[
                     index
                 ][
@@ -775,6 +784,15 @@ class MaaRunner(QtCore.QThread):
                 "Start.StartEmulator"
             ] = "True"  # 启动MAA后自动开启模拟器
             if self.data[index][15] == "simple":
+                data["Global"][
+                    "VersionUpdate.ScheduledUpdateCheck"
+                ] = "True"  # 定时检查更新
+                data["Global"][
+                    "VersionUpdate.AutoDownloadUpdatePackage"
+                ] = "True"  # 自动下载更新包
+                data["Global"][
+                    "VersionUpdate.AutoInstallUpdatePackage"
+                ] = "True"  # 自动安装更新包
                 data["Configurations"]["Default"]["Start.ClientType"] = self.data[
                     index
                 ][
