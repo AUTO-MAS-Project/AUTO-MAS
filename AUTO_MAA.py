@@ -482,7 +482,7 @@ class MaaRunner(QtCore.QThread):
             elif "任务已全部完成！" in log:
                 return "Success!"
             elif (
-                ("请检查连接设置或尝试重启模拟器与 ADB 或重启电脑" in log)
+                ("请「检查连接设置」或「尝试重启模拟器与 ADB」或「重启电脑」" in log)
                 or ("已停止" in log)
                 or ("MaaAssistantArknights GUI exited" in log)
             ):
@@ -497,7 +497,7 @@ class MaaRunner(QtCore.QThread):
             if "完成任务: StartUp" in log:
                 return "Success!"
             elif (
-                ("请检查连接设置或尝试重启模拟器与 ADB 或重启电脑" in log)
+                ("请「检查连接设置」或「尝试重启模拟器与 ADB」或「重启电脑」" in log)
                 or ("已停止" in log)
                 or ("MaaAssistantArknights GUI exited" in log)
             ):
