@@ -2384,6 +2384,11 @@ class Main(QWidget):
                 self.updater.ui.show()
             elif main_version_remote > main_version_current:
                 self.update_main()
+            if not (
+                updater_version_remote > updater_version_current
+                or main_version_remote > main_version_current
+            ):
+                self.push_notification("已是最新版本~", " ", " ", 10)
 
     def update_main(self):
         subprocess.Popen(

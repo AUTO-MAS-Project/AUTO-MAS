@@ -78,7 +78,9 @@ class UpdateProcess(QThread):
                     )
                     self.progress.emit(0, 100, int(downloaded_size / file_size * 100))
         except Exception as e:
-            self.info.emit(f"下载{self.name}时出错: {e}")
+            e = str(e)
+            e = "\n".join([e[_ : _ + 75] for _ in range(0, len(e), 75)])
+            self.info.emit(f"下载{self.name}时出错：\n{e}")
             return None
         # 解压
         try:
@@ -95,7 +97,9 @@ class UpdateProcess(QThread):
             self.progress.emit(0, 100, 100)
 
         except Exception as e:
-            self.info.emit(f"解压更新时出错: {e}")
+            e = str(e)
+            e = "\n".join([e[_ : _ + 75] for _ in range(0, len(e), 75)])
+            self.info.emit(f"解压更新时出错：\n{e}")
         self.accomplish.emit()
 
 
