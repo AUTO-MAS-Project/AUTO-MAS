@@ -22,12 +22,12 @@ name: Build AUTO_MAA
 
 on:
   push:
-    branches: [ "main","Updater" ]
+    branches: [ "main" ]
     paths-ignore:
       - '**.md'
       - 'LICENSE'
   pull_request:
-    branches: [ "main","Updater" ]
+    branches: [ "main" ]
     paths-ignore:
       - '**.md'
       - 'LICENSE'

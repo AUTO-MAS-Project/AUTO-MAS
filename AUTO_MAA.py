@@ -2347,7 +2347,7 @@ class Main(QWidget):
         # 从远程服务器获取最新版本信息
         try:
             response = requests.get(
-                "https://ghp.ci/https://github.com/DLmaster361/AUTO_MAA/blob/Updater/res/version.json"
+                "https://ghp.ci/https://github.com/DLmaster361/AUTO_MAA/blob/main/res/version.json"
             )
         except Exception as e:
             QMessageBox.critical(

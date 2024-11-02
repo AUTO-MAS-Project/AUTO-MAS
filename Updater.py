@@ -146,7 +146,7 @@ if __name__ == "__main__":
     main_version_current = list(map(int, version_current["main_version"].split(".")))
     # 从远程服务器获取最新版本信息
     response = requests.get(
-        "https://ghp.ci/https://github.com/DLmaster361/AUTO_MAA/blob/Updater/res/version.json"
+        "https://ghp.ci/https://github.com/DLmaster361/AUTO_MAA/blob/main/res/version.json"
     )
     version_remote = response.json()
     main_version_remote = list(map(int, version_remote["main_version"].split(".")))
