@@ -18,6 +18,13 @@
 
 #   DLmaster_361@163.com
 
+"""
+AUTO_MAA
+AUTO_MAA主程序
+v4.1
+作者：DLmaster_361
+"""
+
 from PySide6.QtWidgets import (
     QWidget,
     QApplication,
@@ -54,10 +61,13 @@ import time
 import random
 import secrets
 import winreg
+import requests
 from Crypto.Cipher import AES
 from Crypto.PublicKey import RSA
 from Crypto.Cipher import PKCS1_OAEP
 from Crypto.Util.Padding import pad, unpad
+
+import Updater
 
 uiLoader = QUiLoader()
 
@@ -1005,6 +1015,7 @@ class Main(QWidget):
         self.config_path = self.app_path + "/config/gui.json"
         self.key_path = self.app_path + "/data/key"
         self.gameid_path = self.app_path + "/data/gameid.txt"
+        self.version_path = self.app_path + "/res/version.json"
         self.PASSWORD = PASSWARD
         self.if_user_list_editable = True
         self.if_update_database = True
@@ -1147,6 +1158,9 @@ class Main(QWidget):
         self.if_sleep = self.ui.findChild(QCheckBox, "checkBox_ifsleep")
         self.if_sleep.stateChanged.connect(self.change_config)
 
+        self.check_update = self.ui.findChild(QPushButton, "pushButton_check_update")
+        self.check_update.clicked.connect(self.check_version)
+
         self.run_text = self.ui.findChild(QTextBrowser, "textBrowser_run")
         self.wait_text = self.ui.findChild(QTextBrowser, "textBrowser_wait")
         self.over_text = self.ui.findChild(QTextBrowser, "textBrowser_over")
@@ -1212,10 +1226,18 @@ class Main(QWidget):
         os.makedirs(self.app_path + "/data/MAAconfig/simple", exist_ok=True)
         os.makedirs(self.app_path + "/data/MAAconfig/beta", exist_ok=True)
         os.makedirs(self.app_path + "/data/MAAconfig/Default", exist_ok=True)
+        # 生成版本信息文件
+        if not os.path.exists(self.version_path):
+            version = {
+                "main_version": "0.0.0.0",
+                "updater_version": "0.0.0.0",
+            }
+            with open(self.version_path, "w", encoding="utf-8") as f:
+                json.dump(version, f, indent=4)
         # 生成配置文件
         if not os.path.exists(self.config_path):
             config = {"Default": {}}
-            with open(self.config_path, "w") as f:
+            with open(self.config_path, "w", encoding="utf-8") as f:
                 json.dump(config, f, indent=4)
         # 生成预设gameid替换方案文件
         if not os.path.exists(self.gameid_path):
@@ -1275,7 +1297,7 @@ class Main(QWidget):
             ["SelfSet.IfSleep", "False"],
         ]
         # 导入配置文件
-        with open(self.config_path, "r") as f:
+        with open(self.config_path, "r", encoding="utf-8") as f:
             config = json.load(f)
         # 检查并补充缺失的字段
         for i in range(len(config_list)):
@@ -1283,7 +1305,7 @@ class Main(QWidget):
                 config["Default"][config_list[i][0]] = config_list[i][1]
         self.config = config
         # 导出配置文件
-        with open(self.config_path, "w") as f:
+        with open(self.config_path, "w", encoding="utf-8") as f:
             json.dump(config, f, indent=4)
 
     def check_database(self):
@@ -2070,7 +2092,7 @@ class Main(QWidget):
         self.config["Default"]["MaaSet.path"] = self.maa_path.text().replace("\\", "/")
         if not self.check_maa_path():
             self.config["Default"]["MaaSet.path"] = ""
-            with open(self.config_path, "w") as f:
+            with open(self.config_path, "w", encoding="utf-8") as f:
                 json.dump(self.config, f, indent=4)
             self.update_config()
             QMessageBox.critical(
@@ -2098,7 +2120,7 @@ class Main(QWidget):
                 self.config["Default"]["TimeSet.set" + str(i + 1)] = "False"
             time = self.start_time[i][1].time().toString("HH:mm")
             self.config["Default"]["TimeSet.run" + str(i + 1)] = time
-        with open(self.config_path, "w") as f:
+        with open(self.config_path, "w", encoding="utf-8") as f:
             json.dump(self.config, f, indent=4)
         self.update_config()
 
@@ -2308,6 +2330,76 @@ class Main(QWidget):
                 self.run_now.clicked.disconnect()
                 self.run_now.setText("立即执行")
                 self.run_now.clicked.connect(self.routine_starter)
+
+    def check_version(self):
+        """检查版本更新，调起文件下载进程"""
+        # 从本地版本信息文件获取当前版本信息
+        with open(self.version_path, "r", encoding="utf-8") as f:
+            version_current = json.load(f)
+        main_version_current = list(
+            map(int, version_current["main_version"].split("."))
+        )
+        updater_version_current = list(
+            map(int, version_current["updater_version"].split("."))
+        )
+        if not os.path.exists(self.app_path + "/Updater.exe"):
+            updater_version_current = [0, 0, 0, 0]
+        # 从远程服务器获取最新版本信息
+        try:
+            response = requests.get(
+                "https://ghp.ci/https://github.com/DLmaster361/AUTO_MAA/blob/Updater/res/version.json"
+            )
+        except Exception as e:
+            QMessageBox.critical(
+                self.ui,
+                "错误",
+                f"获取版本信息时出错: {e}",
+            )
+            return None
+        version_remote = response.json()
+        main_version_remote = list(map(int, version_remote["main_version"].split(".")))
+        updater_version_remote = list(
+            map(int, version_remote["updater_version"].split("."))
+        )
+
+        if (main_version_remote > main_version_current) or (
+            updater_version_remote > updater_version_current
+        ):
+            choice = QMessageBox.question(
+                self.ui,
+                "版本更新",
+                f"发现新版本：\n    主程序：{self.version_text(main_version_current)} --> {self.version_text(main_version_remote)}\n    更新器：{self.version_text(updater_version_current)} --> {self.version_text(updater_version_remote)}\n    更新说明：\n{version_remote['announcement'].replace("\n","\n        ")}\n\n是否开始更新？\n\n    注意：主程序更新时AUTO_MAA将自动关闭",
+            )
+            if choice == QMessageBox.No:
+                return None
+
+            if updater_version_remote > updater_version_current:
+                self.updater = Updater.Updater(
+                    self.app_path,
+                    "AUTO_MAA更新器",
+                    version_remote["updater_download_url"],
+                )
+                if main_version_remote > main_version_current:
+                    self.updater.update_process.accomplish.connect(self.update_main)
+                self.updater.ui.show()
+            elif main_version_remote > main_version_current:
+                self.update_main()
+
+    def update_main(self):
+        subprocess.Popen(
+            self.app_path + "/Updater.exe",
+            shell=True,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+        sys.exit()
+
+    def version_text(self, version_numb):
+        """将版本号列表转为可读的文本信息"""
+        if version_numb[3] == 0:
+            version = f"v{'.'.join(str(_) for _ in version_numb[0:3])}"
+        elif version_numb[3] == 1:
+            version = f"v{'.'.join(str(_) for _ in version_numb[0:3])}_beta"
+        return version
 
     def push_notification(self, title, message, ticker, t):
         """推送系统通知"""

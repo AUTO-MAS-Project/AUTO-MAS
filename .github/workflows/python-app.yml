@@ -22,12 +22,12 @@ name: Build AUTO_MAA
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main","Updater" ]
     paths-ignore:
       - '**.md'
       - 'LICENSE'
   pull_request:
-    branches: [ "main" ]
+    branches: [ "main","Updater" ]
     paths-ignore:
       - '**.md'
       - 'LICENSE'
@@ -41,6 +41,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Repo Check
+        id: repo_check
         run: |
           if [[ "$GITHUB_REPOSITORY" != "DLmaster361/AUTO_MAA" ]]; then
             echo "When forking this repository to make your own builds, you have to adjust this check."
@@ -69,21 +70,33 @@ jobs:
           # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
           flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
       - name: Built with pyinstaller
+        id: built_with_pyinstaller
         run: |
-          pyinstaller -F --version-file res/info.txt -w --icon=res/AUTO_MAA.ico AUTO_MAA.py --hidden-import plyer.platforms.win.notification
+          python package.py
       - name: Read version
         id: read_version
         run: |
-          $VERSION=(Get-Content -Path "更新说明.txt" -TotalCount 1).Trim()
-          "version=$VERSION" | Out-File -FilePath $env:GITHUB_ENV -Append
+          $MAIN_VERSION=(Get-Content -Path "update_info.txt" -TotalCount 1).Trim()
+          "AUTO_MAA_version=$MAIN_VERSION" | Out-File -FilePath $env:GITHUB_ENV -Append
+          $UPDATER_VERSION=(Get-Content -Path "update_info.txt" -TotalCount 2 | Select-Object -Index 1).Trim()
+          "updater_version=$UPDATER_VERSION" | Out-File -FilePath $env:GITHUB_ENV -Append
       - name: Create Zip
+        id: create_zip
         run: |
-           Compress-Archive -Path gui,res,AUTO_MAA.py,dist/AUTO_MAA.exe,requirements.txt,README.md,LICENSE,更新说明.txt -DestinationPath AUTO_MAA_${{ env.version }}.zip
+          Compress-Archive -Path gui,res,AUTO_MAA.py,Updater.py,package.py,dist/AUTO_MAA.exe,requirements.txt,README.md,LICENSE -DestinationPath AUTO_MAA_${{ env.AUTO_MAA_version }}.zip
+          Compress-Archive -Path gui,dist/Updater.exe -DestinationPath Updater_${{ env.updater_version }}.zip
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: AUTO_MAA_${{ env.version }}
-          path: AUTO_MAA_${{ env.version }}.zip
+          name: AUTO_MAA_${{ env.AUTO_MAA_version }}
+          path: |
+            AUTO_MAA_${{ env.AUTO_MAA_version }}.zip
+            Updater_${{ env.updater_version }}.zip
+      - name: Upload Update_Info Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: update_info
+          path: update_info.txt
   publish_release:
     name: Publish release
     needs: build_AUTO_MAA
@@ -97,10 +110,15 @@ jobs:
           pattern: AUTO_MAA_*
           merge-multiple: true
           path: artifacts
+      - name: Download Update_Info
+        uses: actions/download-artifact@v4
+        with:
+          name: update_info
+          path: ./
       - name: Check if release exists
         id: check_if_release_exists
         run: |
-          release_id=$(gh release view $(head -n 1 更新说明.txt) --json id --jq .id || true)
+          release_id=$(gh release view $(sed 's/\r$//g' <(head -n 1 update_info.txt)) --json id --jq .id || true)
           if [[ -z $release_id ]]; then
             echo "release_exists=false" >> $GITHUB_OUTPUT
           else
@@ -114,22 +132,23 @@ jobs:
         run: |
           set -xe
           shopt -s nullglob
-          NAME="$(head -n 1 更新说明.txt)"
-          TAGNAME="$(head -n 1 更新说明.txt)"
-          NOTES_MAIN="$(tail -n +2 更新说明.txt)"
+          NAME="$(sed 's/\r$//g' <(head -n 1 update_info.txt))"
+          TAGNAME="$(sed 's/\r$//g' <(head -n 1 update_info.txt))"
+          NOTES_MAIN="$(sed 's/\r$//g' <(tail -n +3 update_info.txt))"
           NOTES_TAIL="\`\`\`本release通过GitHub Actions自动构建\`\`\`"
           NOTES="$NOTES_MAIN<br><br>$NOTES_TAIL"
           gh release create "$TAGNAME" --target "main" --title "$NAME" --notes "$NOTES" artifacts/*
         env:
           GITHUB_TOKEN: ${{ secrets.WORKFLOW_TOKEN }}
       - name: Update release
+        id: update_release
         if: steps.check_if_release_exists.outputs.release_exists == 'true'
         run: |
           set -xe
           shopt -s nullglob
-          NAME="$(head -n 1 更新说明.txt)"
-          TAGNAME="$(head -n 1 更新说明.txt)"
-          NOTES_MAIN="$(tail -n +2 更新说明.txt)"
+          NAME="$(sed 's/\r$//g' <(head -n 1 update_info.txt))"
+          TAGNAME="$(sed 's/\r$//g' <(head -n 1 update_info.txt))"
+          NOTES_MAIN="$(sed 's/\r$//g' <(tail -n +3 update_info.txt))"
           NOTES_TAIL="\`\`\`本release通过GitHub Actions自动构建\`\`\`"
           NOTES="$NOTES_MAIN<br><br>$NOTES_TAIL"
           gh release delete "$TAGNAME" --yes

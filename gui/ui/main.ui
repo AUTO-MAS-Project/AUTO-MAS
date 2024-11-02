@@ -6,12 +6,12 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1280</width>
-    <height>697</height>
+    <width>1200</width>
+    <height>700</height>
    </rect>
   </property>
   <property name="windowTitle">
-   <string>Form</string>
+   <string>AUTO_MAA</string>
   </property>
   <layout class="QVBoxLayout" name="verticalLayout_13">
    <item>
@@ -105,8 +105,8 @@
               <rect>
                <x>0</x>
                <y>0</y>
-               <width>1218</width>
-               <height>525</height>
+               <width>1138</width>
+               <height>528</height>
               </rect>
              </property>
              <attribute name="label">
@@ -189,8 +189,8 @@
               <rect>
                <x>0</x>
                <y>0</y>
-               <width>98</width>
-               <height>74</height>
+               <width>1156</width>
+               <height>546</height>
               </rect>
              </property>
              <attribute name="label">
@@ -1101,6 +1101,25 @@
              </size>
             </property>
            </spacer>
+          </item>
+          <item>
+           <widget class="QFrame" name="frame_check_update">
+            <property name="frameShape">
+             <enum>QFrame::Shape::StyledPanel</enum>
+            </property>
+            <property name="frameShadow">
+             <enum>QFrame::Shadow::Raised</enum>
+            </property>
+            <layout class="QHBoxLayout" name="horizontalLayout_21">
+             <item>
+              <widget class="QPushButton" name="pushButton_check_update">
+               <property name="text">
+                <string>检查版本更新</string>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </widget>
           </item>
          </layout>
         </widget>
