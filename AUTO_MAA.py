@@ -2353,7 +2353,7 @@ class Main(QWidget):
             QMessageBox.critical(
                 self.ui,
                 "错误",
-                f"获取版本信息时出错: {e}",
+                f"获取版本信息时出错：\n{e}",
             )
             return None
         version_remote = response.json()
@@ -2384,11 +2384,8 @@ class Main(QWidget):
                 self.updater.ui.show()
             elif main_version_remote > main_version_current:
                 self.update_main()
-            if not (
-                updater_version_remote > updater_version_current
-                or main_version_remote > main_version_current
-            ):
-                self.push_notification("已是最新版本~", " ", " ", 10)
+        else:
+            self.push_notification("已是最新版本~", " ", " ", 10)
 
     def update_main(self):
         subprocess.Popen(
