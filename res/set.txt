@@ -1,6 +1,5 @@
 #主界面
-"MainFunction.ActionAfterCompleted": "ExitEmulatorAndSelf"        #完成后（旧）
-"MainFunction.PostActions": "12"        #完成后（新）
+"MainFunction.PostActions": "12"        #完成后
 "TaskQueue.WakeUp.IsChecked": "True"        #开始唤醒
 "TaskQueue.Recruiting.IsChecked": "True"        #自动公招
 "TaskQueue.Base.IsChecked": "True"      #基建换班
@@ -37,5 +36,5 @@
 "VersionUpdate.AutoInstallUpdatePackage": "True"        #自动安装更新包
 "Start.RunDirectly": "True"        #启动MAA后直接运行
 "Start.MinimizeDirectly": "True"        #启动MAA后直接最小化
-"Start.StartEmulator": "True"        #启动MAA后自动开启模拟器
+"Start.OpenEmulatorAfterLaunch": "True"        #启动MAA后自动开启模拟器
 "Start.MinimizingStartup": "True"        #最小化启动模拟器

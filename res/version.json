@@ -1,7 +1,7 @@
 {
-    "main_version": "4.1.0.0",
-    "main_download_url": "https://ghp.ci/https://github.com/DLmaster361/AUTO_MAA/releases/download/v4.1.0/AUTO_MAA_v4.1.0.zip",
+    "main_version": "4.1.1.0",
+    "main_download_url": "https://ghp.ci/https://github.com/DLmaster361/AUTO_MAA/releases/download/v4.1.1/AUTO_MAA_v4.1.1.zip",
     "updater_version": "1.0.0.0",
-    "updater_download_url": "https://ghp.ci/https://github.com/DLmaster361/AUTO_MAA/releases/download/v4.1.0/Updater_v1.0.0.zip",
-    "announcement": "\n## 新增功能\n- 版本更新功能上线，程序可进行版本更新"
+    "updater_download_url": "https://ghp.ci/https://github.com/DLmaster361/AUTO_MAA/releases/download/v4.1.1/Updater_v1.0.0.zip",
+    "announcement": "\n## 修复BUG\n- 适配MAA的`启动MAA后自动开启模拟器`字段更改"
 }
