@@ -51,14 +51,14 @@ with open("AUTO_MAA_info.txt", "w", encoding="utf-8") as f:
     print(main_info, end="", file=f)
 with open("Updater_info.txt", "w", encoding="utf-8") as f:
     print(updater_info, end="", file=f)
-"""
+
 os.system(
     "pyinstaller -F --version-file AUTO_MAA_info.txt -w --icon=res/AUTO_MAA.ico AUTO_MAA.py --hidden-import plyer.platforms.win.notification"
 )
 os.system(
     "pyinstaller -F --version-file Updater_info.txt -w --icon=res/AUTO_MAA.ico Updater.py"
 )
-"""
+
 with open("update_info.txt", "w", encoding="utf-8") as f:
     print(
         f"{version_text(main_version_numb)}\n{version_text(updater_version_numb)}{version["announcement"]}",
