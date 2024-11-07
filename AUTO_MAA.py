@@ -1084,7 +1084,6 @@ class Main(QWidget):
         ]
 
         self.ui = uiLoader.load(self.app_path + "/gui/ui/main.ui")
-        self.ui.setWindowTitle("AUTO_MAA")
         self.ui.setWindowIcon(QIcon(self.app_path + "/res/AUTO_MAA.ico"))
         # 检查文件完整性
         self.initialize()
@@ -1162,6 +1161,11 @@ class Main(QWidget):
         self.if_sleep = self.ui.findChild(QCheckBox, "checkBox_ifsleep")
         self.if_sleep.stateChanged.connect(self.change_config)
 
+        self.if_proxy_directly = self.ui.findChild(
+            QCheckBox, "checkBox_ifproxydirectly"
+        )
+        self.if_proxy_directly.stateChanged.connect(self.change_config)
+
         self.check_update = self.ui.findChild(QPushButton, "pushButton_check_update")
         self.check_update.clicked.connect(self.check_version)
 
@@ -1221,6 +1225,9 @@ class Main(QWidget):
         self.update_user_info("normal")
         self.update_config()
         self.change_userlist_method()
+
+        if self.config["Default"]["SelfSet.IfProxyDirectly"] == "True":
+            self.routine_starter()
 
     def initialize(self):
         """初始化程序的配置文件"""
@@ -1299,6 +1306,7 @@ class Main(QWidget):
             ["TimesLimit.run", 3],
             ["SelfSet.IfSelfStart", "False"],
             ["SelfSet.IfSleep", "False"],
+            ["SelfSet.IfProxyDirectly", "False"],
         ]
         # 导入配置文件
         with open(self.config_path, "r", encoding="utf-8") as f:
@@ -1710,6 +1718,10 @@ class Main(QWidget):
             bool(self.config["Default"]["SelfSet.IfSleep"] == "True")
         )
 
+        self.if_proxy_directly.setChecked(
+            bool(self.config["Default"]["SelfSet.IfProxyDirectly"] == "True")
+        )
+
         for i in range(10):
             self.start_time[i][0].setChecked(
                 bool(self.config["Default"]["TimeSet.set" + str(i + 1)] == "True")
@@ -2093,6 +2105,7 @@ class Main(QWidget):
         """将GUI中发生修改的程序配置同步至self.config变量"""
         if not self.if_update_config:
             return None
+
         self.config["Default"]["MaaSet.path"] = self.maa_path.text().replace("\\", "/")
         if not self.check_maa_path():
             self.config["Default"]["MaaSet.path"] = ""
@@ -2103,6 +2116,7 @@ class Main(QWidget):
                 self.ui, "错误", "未找到MAA.exe或MAA配置文件，请重新设置MAA路径！"
             )
             return None
+
         self.config["Default"]["TimeLimit.routine"] = self.routine.value()
         self.config["Default"]["TimeLimit.annihilation"] = self.annihilation.value()
         self.config["Default"]["TimesLimit.run"] = self.num.value()
@@ -2117,6 +2131,11 @@ class Main(QWidget):
         else:
             self.config["Default"]["SelfSet.IfSelfStart"] = "False"
 
+        if self.if_proxy_directly.isChecked():
+            self.config["Default"]["SelfSet.IfProxyDirectly"] = "True"
+        else:
+            self.config["Default"]["SelfSet.IfProxyDirectly"] = "False"
+
         for i in range(10):
             if self.start_time[i][0].isChecked():
                 self.config["Default"]["TimeSet.set" + str(i + 1)] = "True"
@@ -2124,8 +2143,10 @@ class Main(QWidget):
                 self.config["Default"]["TimeSet.set" + str(i + 1)] = "False"
             time = self.start_time[i][1].time().toString("HH:mm")
             self.config["Default"]["TimeSet.run" + str(i + 1)] = time
+
         with open(self.config_path, "w", encoding="utf-8") as f:
             json.dump(self.config, f, indent=4)
+
         self.update_config()
 
     def change_userlist_method(self):
