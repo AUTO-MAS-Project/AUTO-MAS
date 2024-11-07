@@ -112,7 +112,7 @@ class MaaRunner(QtCore.QThread):
         all_index = [
             _
             for _ in range(len(self.data))
-            if (self.data[_][3] > 0 and self.data[_][4] == "y")
+            if (self.data[_][3] != 0 and self.data[_][4] == "y")
         ]
         # 日常代理模式
         if self.mode == "日常代理":
@@ -253,7 +253,7 @@ class MaaRunner(QtCore.QThread):
                                     time.sleep(10)
                                 break
                     if run_book[0] and run_book[1]:
-                        if self.data[index][14] == 0:
+                        if self.data[index][14] == 0 and self.data[index][3] != -1:
                             self.data[index][3] -= 1
                         self.data[index][14] += 1
                         over_index.append(index)
@@ -1599,6 +1599,8 @@ class Main(QWidget):
                             self.user_column[j],
                         )
                     )
+                elif j == 3 and value == -1:
+                    item = QTableWidgetItem("无限")
                 elif j == 5:
                     curdate = server_date()
                     if curdate != value:
@@ -1654,6 +1656,8 @@ class Main(QWidget):
                             self.user_column[j],
                         )
                     )
+                elif j == 3 and value == -1:
+                    item = QTableWidgetItem("无限")
                 elif j == 5:
                     curdate = server_date()
                     if curdate != value:
@@ -2009,7 +2013,11 @@ class Main(QWidget):
         text = item.text()
         if mode == "simple":
             if item.column() == 3:
-                text = int(text)
+                try:
+                    text = max(int(text), -1)
+                except ValueError:
+                    self.update_user_info("normal")
+                    return None
             if item.column() in [6, 7, 8]:
                 # 导入与应用特殊关卡规则
                 games = {}
@@ -2029,7 +2037,11 @@ class Main(QWidget):
                 )
         elif mode == "beta":
             if item.column() == 1:
-                text = int(text)
+                try:
+                    text = max(int(text), -1)
+                except ValueError:
+                    self.update_user_info("normal")
+                    return None
             if item.column() == 6:
                 text = self.encryptx(text)
             if text != "":
