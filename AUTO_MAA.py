@@ -1744,7 +1744,6 @@ class Main(QWidget):
         self.over_text.setPlainText(over_text)
         self.error_text.setPlainText(error_text)
         self.log_text.setPlainText(log_text)
-        self.log_text.ensureCursorVisible()
         self.log_text.verticalScrollBar().setValue(
             self.log_text.verticalScrollBar().maximum()
         )
