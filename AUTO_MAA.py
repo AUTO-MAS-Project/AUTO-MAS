@@ -1084,7 +1084,7 @@ class Main(QWidget):
         ]
 
         self.ui = uiLoader.load(self.app_path + "/gui/ui/main.ui")
-        self.ui.setWindowIcon(QIcon(self.app_path + "/res/AUTO_MAA.ico"))
+        self.ui.setWindowIcon(QIcon(self.app_path + "/gui/ico/AUTO_MAA.ico"))
         # 检查文件完整性
         self.initialize()
         self.check_config()
@@ -2414,6 +2414,7 @@ class Main(QWidget):
                     self.app_path,
                     "AUTO_MAA更新器",
                     version_remote["updater_download_url"],
+                    version_remote["updater_version"],
                 )
                 if main_version_remote > main_version_current:
                     self.updater.update_process.accomplish.connect(self.update_main)
@@ -2435,7 +2436,7 @@ class Main(QWidget):
         """将版本号列表转为可读的文本信息"""
         if version_numb[3] == 0:
             version = f"v{'.'.join(str(_) for _ in version_numb[0:3])}"
-        elif version_numb[3] == 1:
+        else:
             version = f"v{'.'.join(str(_) for _ in version_numb[0:3])}_beta"
         return version
 
@@ -2445,7 +2446,7 @@ class Main(QWidget):
             title=title,
             message=message,
             app_name="AUTO_MAA",
-            app_icon=self.app_path + "/res/AUTO_MAA.ico",
+            app_icon=self.app_path + "/gui/ico/AUTO_MAA.ico",
             timeout=t,
             ticker=ticker,
             toast=True,

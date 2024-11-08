@@ -83,7 +83,13 @@ jobs:
       - name: Create Zip
         id: create_zip
         run: |
+          move gui\ui\updater.ui .\
+          move gui\ico\AUTO_MAA_Updater.ico .\
           Compress-Archive -Path gui,res,AUTO_MAA.py,Updater.py,package.py,dist/AUTO_MAA.exe,requirements.txt,README.md,LICENSE -DestinationPath AUTO_MAA_${{ env.AUTO_MAA_version }}.zip
+          del gui\ui\main.ui
+          del gui\ico\AUTO_MAA.ico
+          move updater.ui gui\ui
+          move AUTO_MAA_Updater.ico gui\ico
           Compress-Archive -Path gui,dist/Updater.exe -DestinationPath Updater_${{ env.updater_version }}.zip
       - name: Upload Artifact
         uses: actions/upload-artifact@v4

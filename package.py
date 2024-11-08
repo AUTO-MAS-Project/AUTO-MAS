@@ -33,7 +33,7 @@ def version_text(version_numb):
     """将版本号列表转为可读的文本信息"""
     if version_numb[3] == 0:
         version = f"v{'.'.join(str(_) for _ in version_numb[0:3])}"
-    elif version_numb[3] == 1:
+    else:
         version = f"v{'.'.join(str(_) for _ in version_numb[0:3])}_beta"
     return version
 
@@ -53,10 +53,10 @@ with open("Updater_info.txt", "w", encoding="utf-8") as f:
     print(updater_info, end="", file=f)
 
 os.system(
-    "pyinstaller -F --version-file AUTO_MAA_info.txt -w --icon=res/AUTO_MAA.ico AUTO_MAA.py --hidden-import plyer.platforms.win.notification"
+    "pyinstaller -F --version-file AUTO_MAA_info.txt -w --icon=gui/ico/AUTO_MAA.ico AUTO_MAA.py --hidden-import plyer.platforms.win.notification"
 )
 os.system(
-    "pyinstaller -F --version-file Updater_info.txt -w --icon=res/AUTO_MAA_Updater.ico Updater.py"
+    "pyinstaller -F --version-file Updater_info.txt -w --icon=gui/ico/AUTO_MAA_Updater.ico Updater.py"
 )
 
 with open("update_info.txt", "w", encoding="utf-8") as f:

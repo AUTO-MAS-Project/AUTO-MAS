@@ -49,12 +49,13 @@ class UpdateProcess(QThread):
     progress = Signal(int, int, int)
     accomplish = Signal()
 
-    def __init__(self, app_path, name, download_url):
+    def __init__(self, app_path, name, download_url, version):
         super(UpdateProcess, self).__init__()
 
         self.app_path = app_path
         self.name = name
         self.download_url = download_url
+        self.version = version
         self.download_path = app_path + "/AUTO_MAA_Update.zip"  #  临时下载文件的路径
         self.version_path = app_path + "/res/version.json"
 
@@ -100,17 +101,27 @@ class UpdateProcess(QThread):
             e = str(e)
             e = "\n".join([e[_ : _ + 75] for _ in range(0, len(e), 75)])
             self.info.emit(f"解压更新时出错：\n{e}")
+
+        with open(self.version_path, "r", encoding="utf-8") as f:
+            version_info = json.load(f)
+        if self.name == "AUTO_MAA更新器":
+            version_info["updater_version"] = self.version
+        elif self.name == "AUTO_MAA主程序":
+            version_info["main_version"] = self.version
+        with open(self.version_path, "w", encoding="utf-8") as f:
+            json.dump(version_info, f, indent=4)
+
         self.accomplish.emit()
 
 
 class Updater(QObject):
 
-    def __init__(self, app_path, name, download_url):
+    def __init__(self, app_path, name, download_url, version):
         super().__init__()
 
         self.ui = uiLoader.load(app_path + "/gui/ui/updater.ui")
         self.ui.setWindowTitle("AUTO_MAA更新器")
-        self.ui.setWindowIcon(QIcon(app_path + "/res/AUTO_MAA_Updater.ico"))
+        self.ui.setWindowIcon(QIcon(app_path + "/gui/ico/AUTO_MAA_Updater.ico"))
 
         self.info = self.ui.findChild(QLabel, "label")
         self.info.setText("正在初始化")
@@ -118,7 +129,7 @@ class Updater(QObject):
         self.progress = self.ui.findChild(QProgressBar, "progressBar")
         self.progress.setRange(0, 0)
 
-        self.update_process = UpdateProcess(app_path, name, download_url)
+        self.update_process = UpdateProcess(app_path, name, download_url, version)
 
         self.update_process.info.connect(self.update_info)
         self.update_process.progress.connect(self.update_progress)
@@ -134,10 +145,10 @@ class Updater(QObject):
 
 
 class AUTO_MAA_Updater(QApplication):
-    def __init__(self, app_path, name, download_url):
+    def __init__(self, app_path, name, download_url, version):
         super().__init__()
 
-        self.main = Updater(app_path, name, download_url)
+        self.main = Updater(app_path, name, download_url, version)
         self.main.ui.show()
 
 
@@ -157,6 +168,9 @@ if __name__ == "__main__":
 
     if main_version_remote > main_version_current:
         app = AUTO_MAA_Updater(
-            app_path, "AUTO_MAA主程序", version_remote["main_download_url"]
+            app_path,
+            "AUTO_MAA主程序",
+            version_remote["main_download_url"],
+            version_remote["main_version"],
         )
         sys.exit(app.exec())
