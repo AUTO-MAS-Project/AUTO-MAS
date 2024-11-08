@@ -61,6 +61,11 @@ class UpdateProcess(QThread):
 
     def run(self):
 
+        # 清理可能存在的临时文件
+        try:
+            os.remove(self.download_path)
+        except FileNotFoundError:
+            pass
         # 下载
         try:
             response = requests.get(self.download_url, stream=True)
