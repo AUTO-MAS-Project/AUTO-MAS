@@ -110,7 +110,7 @@ class Updater(QObject):
 
         self.ui = uiLoader.load(app_path + "/gui/ui/updater.ui")
         self.ui.setWindowTitle("AUTO_MAA更新器")
-        self.ui.setWindowIcon(QIcon(app_path + "/res/AUTO_MAA.ico"))
+        self.ui.setWindowIcon(QIcon(app_path + "/res/AUTO_MAA_Updater.ico"))
 
         self.info = self.ui.findChild(QLabel, "label")
         self.info.setText("正在初始化")
