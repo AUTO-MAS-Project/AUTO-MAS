@@ -106,6 +106,7 @@ class UpdateProcess(QThread):
             e = str(e)
             e = "\n".join([e[_ : _ + 75] for _ in range(0, len(e), 75)])
             self.info.emit(f"解压更新时出错：\n{e}")
+            return None
 
         with open(self.version_path, "r", encoding="utf-8") as f:
             version_info = json.load(f)
