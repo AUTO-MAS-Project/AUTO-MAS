@@ -110,6 +110,7 @@ class UpdateProcess(QThread):
             self.info.emit(f"解压更新时出错：\n{e}")
             return None
 
+        # 更新version文件
         with open(self.version_path, "r", encoding="utf-8") as f:
             version_info = json.load(f)
         if self.name == "AUTO_MAA更新器":
@@ -119,6 +120,7 @@ class UpdateProcess(QThread):
         with open(self.version_path, "w", encoding="utf-8") as f:
             json.dump(version_info, f, indent=4)
 
+        # 主程序更新完成后打开AUTO_MAA
         if self.name == "AUTO_MAA主程序":
             subprocess.Popen(
                 f"{self.app_path}/AUTO_MAA.exe",
@@ -189,6 +191,7 @@ if __name__ == "__main__":
     version_remote = response.json()
     main_version_remote = list(map(int, version_remote["main_version"].split(".")))
 
+    # 启动更新线程
     if main_version_remote > main_version_current:
         app = AUTO_MAA_Updater(
             app_path,
