@@ -3,5 +3,5 @@
     "main_download_url": "https://ghp.ci/https://github.com/DLmaster361/AUTO_MAA/releases/download/v4.1.2_beta/AUTO_MAA_v4.1.2_beta.zip",
     "updater_version": "1.0.4.0",
     "updater_download_url": "https://ghp.ci/https://github.com/DLmaster361/AUTO_MAA/releases/download/v4.1.2_beta/Updater_v1.0.4.zip",
-    "announcement": "\n# 公测版，若出现问题请及时反馈给项目组！\n## 新增功能\n- 添加`启动AUTO_MAA后直接代理`功能\n- 添加无限代理天数模式\n## 修复BUG\n- 通过限制日志长度解决卡日志情况 #8\n- 修复tips链接无法打开问题 #9\n- 修复正常退出窗口显示停止工作问题 #9\n- 修复解压失败时本地版本号异常变动问题\n- 修复无`version.json`时更新器无法更新的问题\n- 修复未设置管理密钥时添加用户报错\n## 程序优化\n- Updater.exe图标更换\n- 更新逻辑优化\n- GUI窗口逻辑优化\n- 添加更多注释"
+    "announcement": "\n# 公测版，若出现问题请及时反馈给项目组！\n## 新增功能\n- 添加`启动AUTO_MAA后直接代理`功能\n- 添加无限代理天数模式\n- 完成主程序更新后打开AUTO_MAA\n## 修复BUG\n- 通过限制日志长度解决卡日志情况 #8\n- 修复tips链接无法打开问题 #9\n- 修复正常退出窗口显示停止工作问题 #9\n- 修复解压失败时本地版本号异常变动问题\n- 修复无`version.json`时更新器无法更新的问题\n- 修复未设置管理密钥时添加用户报错\n## 程序优化\n- Updater.exe图标更换\n- 更新逻辑优化\n- GUI窗口逻辑优化\n- 添加更多注释"
 }

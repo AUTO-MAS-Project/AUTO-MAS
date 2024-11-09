@@ -30,6 +30,7 @@ import sys
 import json
 import zipfile
 import requests
+import subprocess
 
 from PySide6.QtWidgets import (
     QApplication,
@@ -117,6 +118,13 @@ class UpdateProcess(QThread):
             version_info["main_version"] = self.version
         with open(self.version_path, "w", encoding="utf-8") as f:
             json.dump(version_info, f, indent=4)
+
+        if self.name == "AUTO_MAA主程序":
+            subprocess.Popen(
+                f"{self.app_path}/AUTO_MAA.exe",
+                shell=True,
+                creationflags=subprocess.CREATE_NO_WINDOW,
+            )
 
         self.accomplish.emit()
 
