@@ -185,7 +185,7 @@ class MaaRunner(QtCore.QThread):
                             # 合并日志
                             log = "".join(logs)
                             # 更新MAA日志
-                            if len(logs) > 10000:
+                            if len(logs) > 100:
                                 self.update_gui.emit(
                                     self.data[index][0]
                                     + "_第"
@@ -195,7 +195,7 @@ class MaaRunner(QtCore.QThread):
                                     "\n".join([self.data[_][0] for _ in wait_index]),
                                     "\n".join([self.data[_][0] for _ in over_index]),
                                     "\n".join([self.data[_][0] for _ in error_index]),
-                                    "".join(logs[-10000:]),
+                                    "".join(logs[-100:]),
                                 )
                             else:
                                 self.update_gui.emit(
@@ -320,7 +320,7 @@ class MaaRunner(QtCore.QThread):
                         # 合并日志
                         log = "".join(logs)
                         # 更新MAA日志
-                        if len(logs) > 10000:
+                        if len(logs) > 100:
                             self.update_gui.emit(
                                 self.data[index][0]
                                 + "_第"
@@ -330,7 +330,7 @@ class MaaRunner(QtCore.QThread):
                                 "\n".join([self.data[_][0] for _ in wait_index]),
                                 "\n".join([self.data[_][0] for _ in over_index]),
                                 "\n".join([self.data[_][0] for _ in error_index]),
-                                "".join(logs[-10000:]),
+                                "".join(logs[-100:]),
                             )
                         else:
                             self.update_gui.emit(
