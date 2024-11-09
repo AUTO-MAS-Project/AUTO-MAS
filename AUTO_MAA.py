@@ -27,6 +27,7 @@ v4.1
 
 from PySide6.QtWidgets import (
     QWidget,
+    QMainWindow,
     QApplication,
     QInputDialog,
     QFileDialog,
@@ -83,7 +84,6 @@ class MaaRunner(QtCore.QThread):
     app_path = os.path.dirname(os.path.realpath(sys.argv[0])).replace(
         "\\", "/"
     )  # 获取软件自身的路径
-    if_run = False
 
     def __init__(
         self, set_path, log_path, maa_path, routine, annihilation, num, data, mode
@@ -102,7 +102,6 @@ class MaaRunner(QtCore.QThread):
 
     def run(self):
         """主进程，运行MAA代理进程"""
-        self.if_run = True
         curdate = server_date()
         begin_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self.data = sorted(self.data, key=lambda x: (-len(x[15]), x[16]))
@@ -124,18 +123,18 @@ class MaaRunner(QtCore.QThread):
                 self.data[_][0] += "_第" + str(self.data[_][14] + 1) + "次代理"
             # 开始代理
             for index in all_index:
-                if not self.if_run:
+                if self.isInterruptionRequested():
                     break
                 # 初始化代理情况记录和模式替换记录
                 run_book = [False for _ in range(2)]
                 mode_book = ["日常代理_剿灭", "日常代理_日常"]
                 # 尝试次数循环
                 for i in range(self.num):
-                    if not self.if_run:
+                    if self.isInterruptionRequested():
                         break
                     # 剿灭-日常模式循环
                     for j in range(2):
-                        if not self.if_run:
+                        if self.isInterruptionRequested():
                             break
                         if j == 0 and self.data[index][10] == "n":
                             run_book[0] = True
@@ -157,7 +156,7 @@ class MaaRunner(QtCore.QThread):
                             if (not _ in over_index + error_index + [index])
                         ]
                         # 监测MAA运行状态
-                        while self.if_run:
+                        while not self.isInterruptionRequested():
                             # 获取MAA日志
                             logs = self.get_maa_log(start_time)
                             # 判断是否超时
@@ -262,7 +261,7 @@ class MaaRunner(QtCore.QThread):
                                     + "出现异常",
                                     1,
                                 )
-                                if self.if_run:
+                                if not self.isInterruptionRequested():
                                     time.sleep(10)
                                 break
                     if run_book[0] and run_book[1]:
@@ -290,13 +289,13 @@ class MaaRunner(QtCore.QThread):
                 self.data[_][0] += "_排查模式"
             # 开始排查
             for index in all_index:
-                if not self.if_run:
+                if self.isInterruptionRequested():
                     break
                 if self.data[index][15] == "beta":
                     if_strat_app = True
                 run_book = [False for _ in range(2)]
                 # 启动重试循环
-                while self.if_run:
+                while not self.isInterruptionRequested():
                     # 配置MAA
                     if if_strat_app:
                         self.set_maa("人工排查_启动模拟器", index)
@@ -314,7 +313,7 @@ class MaaRunner(QtCore.QThread):
                         if (not _ in over_index + error_index + [index])
                     ]
                     # 监测MAA运行状态
-                    while self.if_run:
+                    while not self.isInterruptionRequested():
                         # 获取MAA日志
                         logs = self.get_maa_log(start_time)
                         # 合并日志
@@ -322,11 +321,7 @@ class MaaRunner(QtCore.QThread):
                         # 更新MAA日志
                         if len(logs) > 100:
                             self.update_gui.emit(
-                                self.data[index][0]
-                                + "_第"
-                                + str(i + 1)
-                                + "次_"
-                                + mode_book[j][5:7],
+                                self.data[index][0],
                                 "\n".join([self.data[_][0] for _ in wait_index]),
                                 "\n".join([self.data[_][0] for _ in over_index]),
                                 "\n".join([self.data[_][0] for _ in error_index]),
@@ -334,11 +329,7 @@ class MaaRunner(QtCore.QThread):
                             )
                         else:
                             self.update_gui.emit(
-                                self.data[index][0]
-                                + "_第"
-                                + str(i + 1)
-                                + "次_"
-                                + mode_book[j][5:7],
+                                self.data[index][0],
                                 "\n".join([self.data[_][0] for _ in wait_index]),
                                 "\n".join([self.data[_][0] for _ in over_index]),
                                 "\n".join([self.data[_][0] for _ in error_index]),
@@ -374,12 +365,12 @@ class MaaRunner(QtCore.QThread):
                             )
                             killprocess.wait()
                             if_strat_app = True
-                            if self.if_run:
+                            if not self.isInterruptionRequested():
                                 time.sleep(10)
                             break
                     if run_book[0]:
                         break
-                    elif self.if_run:
+                    elif not self.isInterruptionRequested():
                         self.question_title = "操作提示"
                         self.question_info = "MAA未能正确登录到PRTS，是否重试？"
                         self.question_choice = "wait"
@@ -388,7 +379,7 @@ class MaaRunner(QtCore.QThread):
                             time.sleep(1)
                         if self.question_choice == "No":
                             break
-                if run_book[0] and self.if_run:
+                if run_book[0] and not self.isInterruptionRequested():
                     self.question_title = "操作提示"
                     self.question_info = "请检查用户代理情况，如无异常请按下确认键。"
                     self.question_choice = "wait"
@@ -416,7 +407,7 @@ class MaaRunner(QtCore.QThread):
             # 记录当前时间
             start_time = datetime.datetime.now()
             # 监测MAA运行状态
-            while self.if_run:
+            while not self.isInterruptionRequested():
                 # 获取MAA日志
                 logs = self.get_maa_log(start_time)
                 # 合并日志
@@ -433,10 +424,9 @@ class MaaRunner(QtCore.QThread):
             elif "用户" in self.mode:
                 self.get_json.emit(self.get_json_path)
             self.accomplish.emit()
-            self.if_run = False
         if self.mode in ["日常代理", "人工排查"]:
             # 关闭可能未正常退出的MAA进程
-            if not self.if_run:
+            if self.isInterruptionRequested():
                 killprocess = subprocess.Popen(
                     "taskkill /F /T /PID " + str(maa.pid),
                     shell=True,
@@ -490,7 +480,6 @@ class MaaRunner(QtCore.QThread):
                 10,
             )
             self.accomplish.emit()
-            self.if_run = False
 
     def get_maa_log(self, start_time):
         """获取MAA日志"""
@@ -529,7 +518,7 @@ class MaaRunner(QtCore.QThread):
                 return "检测到MAA进程异常\n正在中止相关程序\n请等待10s"
             elif self.if_time_out:
                 return "检测到MAA进程超时\n正在中止相关程序\n请等待10s"
-            elif not self.if_run:
+            elif self.isInterruptionRequested():
                 return "您中止了本次任务\n正在中止相关程序\n请等待"
             else:
                 return "Wait"
@@ -542,7 +531,7 @@ class MaaRunner(QtCore.QThread):
                 or ("MaaAssistantArknights GUI exited" in log)
             ):
                 return "检测到MAA进程异常\n正在中止相关程序\n请等待10s"
-            elif not self.if_run:
+            elif self.isInterruptionRequested():
                 return "您中止了本次任务\n正在中止相关程序\n请等待"
             else:
                 return "Wait"
@@ -968,7 +957,7 @@ class MainTimer(QtCore.QThread):
 
     def run(self):
         """主功能代码，实现定时执行以及相关配置信息的实时同步"""
-        while True:
+        while not self.isInterruptionRequested():
             self.get_config.emit()
             self.set_system()
             time_set = [
@@ -1114,7 +1103,6 @@ class Main(QWidget):
         ]
 
         self.ui = uiLoader.load(self.app_path + "/gui/ui/main.ui")
-        self.ui.setWindowIcon(QIcon(self.app_path + "/gui/ico/AUTO_MAA.ico"))
         # 检查文件完整性
         self.initialize()
         self.check_config()
@@ -1198,6 +1186,9 @@ class Main(QWidget):
 
         self.check_update = self.ui.findChild(QPushButton, "pushButton_check_update")
         self.check_update.clicked.connect(self.check_version)
+
+        self.tips = self.ui.findChild(QTextBrowser, "textBrowser_tips")
+        self.tips.setOpenExternalLinks(True)
 
         self.run_text = self.ui.findChild(QTextBrowser, "textBrowser_run")
         self.wait_text = self.ui.findChild(QTextBrowser, "textBrowser_wait")
@@ -2321,13 +2312,6 @@ class Main(QWidget):
         self.MainTimer.is_maa_run = True
         self.MaaRunner.start()
 
-    def maa_ender(self, mode):
-        """中止MAA线程"""
-        self.MaaRunner.if_run = False
-        self.MaaRunner.wait()
-        self.MainTimer.is_maa_run = False
-        self.maa_running_set(mode)
-
     def maa_running_set(self, mode):
         """处理MAA运行过程中的GUI组件变化"""
         if "开始" in mode:
@@ -2396,6 +2380,14 @@ class Main(QWidget):
                 self.run_now.clicked.disconnect()
                 self.run_now.setText("立即执行")
                 self.run_now.clicked.connect(self.routine_starter)
+
+    def maa_ender(self, mode):
+        """中止MAA线程"""
+        self.MainTimer.quit()
+        self.MaaRunner.requestInterruption()
+        self.MaaRunner.wait()
+        self.MainTimer.is_maa_run = False
+        self.maa_running_set(mode)
 
     def check_version(self):
         """检查版本更新，调起文件下载进程"""
@@ -2486,22 +2478,27 @@ class Main(QWidget):
         """同步配置文件到子线程"""
         self.MainTimer.config = self.config
 
-    def closeEvent(self, event):
-        """清理残余进程"""
-        self.MainTimer.quit()
-        self.MaaRunner.if_run = False
-        self.MaaRunner.wait()
-        self.cur.close()
-        self.db.close()
-        super().closeEvent(event)
 
-
-class AUTO_MAA(QApplication):
+class AUTO_MAA(QMainWindow):
     def __init__(self):
         super().__init__()
 
         self.main = Main()
-        self.main.ui.show()
+        self.setCentralWidget(self.main.ui)
+        self.setWindowIcon(QIcon(self.main.app_path + "/gui/ico/AUTO_MAA.ico"))
+        self.setWindowTitle("AUTO_MAA")
+
+    def closeEvent(self, event):
+        """清理残余进程"""
+        self.main.MainTimer.requestInterruption()
+        self.main.MainTimer.quit()
+        self.main.MainTimer.wait()
+        self.main.MaaRunner.requestInterruption()
+        self.main.MaaRunner.quit()
+        self.main.MaaRunner.wait()
+        self.main.cur.close()
+        self.main.db.close()
+        event.accept()
 
 
 def server_date():
@@ -2513,5 +2510,7 @@ def server_date():
 
 
 if __name__ == "__main__":
-    app = AUTO_MAA()
-    app.exec()
+    app = QApplication(sys.argv)
+    window = AUTO_MAA()
+    window.show()
+    sys.exit(app.exec())
