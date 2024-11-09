@@ -56,8 +56,8 @@ class UpdateProcess(QThread):
         self.name = name
         self.download_url = download_url
         self.version = version
-        self.download_path = app_path + "/AUTO_MAA_Update.zip"  #  临时下载文件的路径
-        self.version_path = app_path + "/res/version.json"
+        self.download_path = f"{app_path}/AUTO_MAA_Update.zip"  #  临时下载文件的路径
+        self.version_path = f"{app_path}/res/version.json"
 
     def run(self):
 
@@ -66,6 +66,7 @@ class UpdateProcess(QThread):
             os.remove(self.download_path)
         except FileNotFoundError:
             pass
+
         # 下载
         try:
             response = requests.get(self.download_url, stream=True)
@@ -88,6 +89,7 @@ class UpdateProcess(QThread):
             e = "\n".join([e[_ : _ + 75] for _ in range(0, len(e), 75)])
             self.info.emit(f"下载{self.name}时出错：\n{e}")
             return None
+
         # 解压
         try:
             self.info.emit("正在解压更新文件")
@@ -101,7 +103,6 @@ class UpdateProcess(QThread):
 
             self.info.emit(f"{self.name}更新成功！")
             self.progress.emit(0, 100, 100)
-
         except Exception as e:
             e = str(e)
             e = "\n".join([e[_ : _ + 75] for _ in range(0, len(e), 75)])
@@ -125,9 +126,9 @@ class Updater(QObject):
     def __init__(self, app_path, name, download_url, version):
         super().__init__()
 
-        self.ui = uiLoader.load(app_path + "/gui/ui/updater.ui")
+        self.ui = uiLoader.load(f"{app_path}/gui/ui/updater.ui")
         self.ui.setWindowTitle("AUTO_MAA更新器")
-        self.ui.setWindowIcon(QIcon(app_path + "/gui/ico/AUTO_MAA_Updater.ico"))
+        self.ui.setWindowIcon(QIcon(f"{app_path}/gui/ico/AUTO_MAA_Updater.ico"))
 
         self.info = self.ui.findChild(QLabel, "label")
         self.info.setText("正在初始化")
@@ -159,12 +160,20 @@ class AUTO_MAA_Updater(QApplication):
 
 
 if __name__ == "__main__":
+
     # 获取软件自身的路径
     app_path = os.path.dirname(os.path.realpath(sys.argv[0])).replace("\\", "/")
+
     # 从本地版本信息文件获取当前版本信息
-    with open(app_path + "/res/version.json", "r", encoding="utf-8") as f:
-        version_current = json.load(f)
-    main_version_current = list(map(int, version_current["main_version"].split(".")))
+    if os.path.exists(f"{app_path}/res/version.json"):
+        with open(f"{app_path}/res/version.json", "r", encoding="utf-8") as f:
+            version_current = json.load(f)
+        main_version_current = list(
+            map(int, version_current["main_version"].split("."))
+        )
+    else:
+        main_version_current = [0, 0, 0, 0]
+
     # 从远程服务器获取最新版本信息
     response = requests.get(
         "https://ghp.ci/https://github.com/DLmaster361/AUTO_MAA/blob/main/res/version.json"
