@@ -185,17 +185,30 @@ class MaaRunner(QtCore.QThread):
                             # 合并日志
                             log = "".join(logs)
                             # 更新MAA日志
-                            self.update_gui.emit(
-                                self.data[index][0]
-                                + "_第"
-                                + str(i + 1)
-                                + "次_"
-                                + mode_book[j][5:7],
-                                "\n".join([self.data[_][0] for _ in wait_index]),
-                                "\n".join([self.data[_][0] for _ in over_index]),
-                                "\n".join([self.data[_][0] for _ in error_index]),
-                                log,
-                            )
+                            if len(logs) > 10000:
+                                self.update_gui.emit(
+                                    self.data[index][0]
+                                    + "_第"
+                                    + str(i + 1)
+                                    + "次_"
+                                    + mode_book[j][5:7],
+                                    "\n".join([self.data[_][0] for _ in wait_index]),
+                                    "\n".join([self.data[_][0] for _ in over_index]),
+                                    "\n".join([self.data[_][0] for _ in error_index]),
+                                    "".join(logs[-10000:]),
+                                )
+                            else:
+                                self.update_gui.emit(
+                                    self.data[index][0]
+                                    + "_第"
+                                    + str(i + 1)
+                                    + "次_"
+                                    + mode_book[j][5:7],
+                                    "\n".join([self.data[_][0] for _ in wait_index]),
+                                    "\n".join([self.data[_][0] for _ in over_index]),
+                                    "\n".join([self.data[_][0] for _ in error_index]),
+                                    "".join(logs),
+                                )
                             # 判断MAA程序运行状态
                             result = self.if_maa_success(log, mode_book[j])
                             if result == "Success!":
@@ -307,13 +320,30 @@ class MaaRunner(QtCore.QThread):
                         # 合并日志
                         log = "".join(logs)
                         # 更新MAA日志
-                        self.update_gui.emit(
-                            self.data[index][0],
-                            "\n".join([self.data[_][0] for _ in wait_index]),
-                            "\n".join([self.data[_][0] for _ in over_index]),
-                            "\n".join([self.data[_][0] for _ in error_index]),
-                            log,
-                        )
+                        if len(logs) > 10000:
+                            self.update_gui.emit(
+                                self.data[index][0]
+                                + "_第"
+                                + str(i + 1)
+                                + "次_"
+                                + mode_book[j][5:7],
+                                "\n".join([self.data[_][0] for _ in wait_index]),
+                                "\n".join([self.data[_][0] for _ in over_index]),
+                                "\n".join([self.data[_][0] for _ in error_index]),
+                                "".join(logs[-10000:]),
+                            )
+                        else:
+                            self.update_gui.emit(
+                                self.data[index][0]
+                                + "_第"
+                                + str(i + 1)
+                                + "次_"
+                                + mode_book[j][5:7],
+                                "\n".join([self.data[_][0] for _ in wait_index]),
+                                "\n".join([self.data[_][0] for _ in over_index]),
+                                "\n".join([self.data[_][0] for _ in error_index]),
+                                "".join(logs),
+                            )
                         # 判断MAA程序运行状态
                         result = self.if_maa_success(log, "人工排查")
                         if result == "Success!":
