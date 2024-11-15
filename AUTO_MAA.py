@@ -1392,6 +1392,8 @@ class Main(QWidget):
             ["SelfSet.IfSelfStart", "False"],
             ["SelfSet.IfSleep", "False"],
             ["SelfSet.IfProxyDirectly", "False"],
+            ["SelfSet.UIsize", "1200x700"],
+            ["SelfSet.UIlocation", "100x100"],
         ]
 
         # 导入配置文件
@@ -2650,8 +2652,25 @@ class AUTO_MAA(QMainWindow):
         self.setWindowIcon(QIcon(f"{self.main.app_path}/gui/ico/AUTO_MAA.ico"))
         self.setWindowTitle("AUTO_MAA")
 
+        # 设置窗口初始大小与位置
+        size = list(map(int, self.main.config["Default"]["SelfSet.UIsize"].split("x")))
+        location = list(
+            map(int, self.main.config["Default"]["SelfSet.UIlocation"].split("x"))
+        )
+        self.setGeometry(location[0], location[1], size[0], size[1])
+
     def closeEvent(self, event):
         """清理残余进程"""
+
+        # 保存窗口最终大小与位置
+        self.main.config["Default"][
+            "SelfSet.UIsize"
+        ] = f"{self.geometry().width()}x{self.geometry().height()}"
+        self.main.config["Default"][
+            "SelfSet.UIlocation"
+        ] = f"{self.geometry().x()}x{self.geometry().y()}"
+        with open(self.main.config_path, "w", encoding="utf-8") as f:
+            json.dump(self.main.config, f, indent=4)
 
         self.main.MainTimer.requestInterruption()
         self.main.MainTimer.quit()
