@@ -63,6 +63,10 @@ import random
 import secrets
 import winreg
 import requests
+import smtplib
+from email.mime.text import MIMEText
+from email.header import Header
+from email.utils import formataddr
 from Crypto.Cipher import AES
 from Crypto.PublicKey import RSA
 from Crypto.Cipher import PKCS1_OAEP
@@ -77,6 +81,7 @@ class MaaRunner(QtCore.QThread):
 
     question = QtCore.Signal()
     push_notification = QtCore.Signal(str, str, str, int)
+    send_mail = QtCore.Signal(str, str)
     update_gui = QtCore.Signal(str, str, str, str, str)
     update_user_info = QtCore.Signal(list, list, list, list, list, list)
     accomplish = QtCore.Signal()
@@ -85,19 +90,18 @@ class MaaRunner(QtCore.QThread):
         "\\", "/"
     )  # 获取软件自身的路径
 
-    def __init__(
-        self, set_path, log_path, maa_path, routine, annihilation, num, data, mode
-    ):
+    def __init__(self):
         super(MaaRunner, self).__init__()
-        self.set_path = set_path
-        self.log_path = log_path
-        self.maa_path = maa_path
+        self.set_path = None
+        self.log_path = None
+        self.maa_path = None
         self.json_path = f"{self.app_path}/data/MAAconfig"
-        self.routine = routine
-        self.annihilation = annihilation
-        self.num = num
-        self.data = data
-        self.mode = mode
+        self.routine = None
+        self.annihilation = None
+        self.num = None
+        self.data = None
+        self.if_send_mail = None
+        self.mode = None
         self.get_json_path = [0, 0, 0]
 
     def run(self):
@@ -506,6 +510,11 @@ class MaaRunner(QtCore.QThread):
                 f"已完成用户数：{len(over_index)}，未完成用户数：{len(error_index) + len(wait_index)}",
                 10,
             )
+            if self.if_send_mail:
+                self.send_mail.emit(
+                    f"{self.mode[:4]}任务报告",
+                    f"{end_log}\n\nAUTO_MAA 敬上\n\n我们根据您在 AUTO_MAA 中的设置发送了这封电子邮件，本邮件无需回复\n",
+                )
 
             self.accomplish.emit()
 
@@ -1240,6 +1249,12 @@ class Main(QWidget):
         )
         self.if_proxy_directly.stateChanged.connect(self.change_config)
 
+        self.if_send_mail = self.ui.findChild(QCheckBox, "checkBox_ifsendmail")
+        self.if_send_mail.stateChanged.connect(self.change_config)
+
+        self.mail_address = self.ui.findChild(QLineEdit, "lineEdit_mailaddress")
+        self.mail_address.textChanged.connect(self.change_config)
+
         self.check_update = self.ui.findChild(QPushButton, "pushButton_check_update")
         self.check_update.clicked.connect(self.check_version)
 
@@ -1267,30 +1282,12 @@ class Main(QWidget):
         self.change_password.clicked.connect(self.change_PASSWORD)
 
         # 初始化线程
-        self.set_path_ = f"{self.config["Default"]["MaaSet.path"]}/config/gui.json"
-        self.log_path_ = f"{self.config["Default"]["MaaSet.path"]}/debug/gui.log"
-        self.maa_path_ = f"{self.config["Default"]["MaaSet.path"]}/MAA.exe"
-        self.routine_ = self.config["Default"]["TimeLimit.routine"]
-        self.annihilation_ = self.config["Default"]["TimeLimit.annihilation"]
-        self.num_ = self.config["Default"]["TimesLimit.run"]
-        self.cur.execute("SELECT * FROM adminx WHERE True")
-        self.data_ = self.cur.fetchall()
-        self.data_ = [list(row) for row in self.data_]
-
-        self.MaaRunner = MaaRunner(
-            self.set_path_,
-            self.log_path_,
-            self.maa_path_,
-            self.routine_,
-            self.annihilation_,
-            self.num_,
-            self.data_,
-            "未知",
-        )
+        self.MaaRunner = MaaRunner()
         self.MaaRunner.question.connect(lambda: self.read("question_runner"))
         self.MaaRunner.update_gui.connect(self.update_board)
         self.MaaRunner.update_user_info.connect(self.change_user_info)
         self.MaaRunner.push_notification.connect(self.push_notification)
+        self.MaaRunner.send_mail.connect(self.send_mail)
         self.MaaRunner.accomplish.connect(lambda: self.maa_ender("日常代理_结束"))
         self.MaaRunner.get_json.connect(self.get_maa_config)
 
@@ -1392,6 +1389,8 @@ class Main(QWidget):
             ["SelfSet.IfSelfStart", "False"],
             ["SelfSet.IfSleep", "False"],
             ["SelfSet.IfProxyDirectly", "False"],
+            ["SelfSet.IfSendMail", "False"],
+            ["SelfSet.MailAddress", ""],
             ["SelfSet.UIsize", "1200x700"],
             ["SelfSet.UIlocation", "100x100"],
         ]
@@ -1836,6 +1835,7 @@ class Main(QWidget):
         self.routine.setValue(self.config["Default"]["TimeLimit.routine"])
         self.annihilation.setValue(self.config["Default"]["TimeLimit.annihilation"])
         self.num.setValue(self.config["Default"]["TimesLimit.run"])
+        self.mail_address.setText(self.config["Default"]["SelfSet.MailAddress"])
 
         self.if_self_start.setChecked(
             bool(self.config["Default"]["SelfSet.IfSelfStart"] == "True")
@@ -1847,6 +1847,14 @@ class Main(QWidget):
 
         self.if_proxy_directly.setChecked(
             bool(self.config["Default"]["SelfSet.IfProxyDirectly"] == "True")
+        )
+
+        self.if_send_mail.setChecked(
+            bool(self.config["Default"]["SelfSet.IfSendMail"] == "True")
+        )
+
+        self.mail_address.setVisible(
+            bool(self.config["Default"]["SelfSet.IfSendMail"] == "True")
         )
 
         for i in range(10):
@@ -2270,6 +2278,7 @@ class Main(QWidget):
         self.config["Default"]["TimeLimit.routine"] = self.routine.value()
         self.config["Default"]["TimeLimit.annihilation"] = self.annihilation.value()
         self.config["Default"]["TimesLimit.run"] = self.num.value()
+        self.config["Default"]["SelfSet.MailAddress"] = self.mail_address.text()
 
         if self.if_sleep.isChecked():
             self.config["Default"]["SelfSet.IfSleep"] = "True"
@@ -2285,6 +2294,11 @@ class Main(QWidget):
             self.config["Default"]["SelfSet.IfProxyDirectly"] = "True"
         else:
             self.config["Default"]["SelfSet.IfProxyDirectly"] = "False"
+
+        if self.if_send_mail.isChecked():
+            self.config["Default"]["SelfSet.IfSendMail"] = "True"
+        else:
+            self.config["Default"]["SelfSet.IfSendMail"] = "False"
 
         for i in range(10):
             if self.start_time[i][0].isChecked():
@@ -2390,10 +2404,19 @@ class Main(QWidget):
         self.MaaRunner.log_path = (
             f"{self.config["Default"]["MaaSet.path"]}/debug/gui.log"
         )
+        self.MaaRunner.set_path = (
+            f"{self.config["Default"]["MaaSet.path"]}/config/gui.json"
+        )
+        self.MaaRunner.log_path = (
+            f"{self.config["Default"]["MaaSet.path"]}/debug/gui.log"
+        )
         self.MaaRunner.maa_path = f"{self.config["Default"]["MaaSet.path"]}/MAA.exe"
         self.MaaRunner.routine = self.config["Default"]["TimeLimit.routine"]
         self.MaaRunner.annihilation = self.config["Default"]["TimeLimit.annihilation"]
         self.MaaRunner.num = self.config["Default"]["TimesLimit.run"]
+        self.MaaRunner.if_send_mail = bool(
+            self.config["Default"]["SelfSet.IfSendMail"] == "True"
+        )
         self.cur.execute("SELECT * FROM adminx WHERE True")
         self.data_ = self.cur.fetchall()
         self.MaaRunner.data = [list(row) for row in self.data_]
@@ -2421,6 +2444,9 @@ class Main(QWidget):
             f"{self.config["Default"]["MaaSet.path"]}/debug/gui.log"
         )
         self.MaaRunner.maa_path = f"{self.config["Default"]["MaaSet.path"]}/MAA.exe"
+        self.MaaRunner.if_send_mail = bool(
+            self.config["Default"]["SelfSet.IfSendMail"] == "True"
+        )
         self.cur.execute("SELECT * FROM adminx WHERE True")
         self.data_ = self.cur.fetchall()
         self.MaaRunner.data = [list(row) for row in self.data_]
@@ -2636,6 +2662,40 @@ class Main(QWidget):
             ticker=ticker,
             toast=True,
         )
+
+    def send_mail(self, title, content):
+        """使用官方专用邮箱推送邮件通知"""
+
+        # 第三方 SMTP 服务配置
+        mail_host = "smtp.163.com"  # 设置服务器
+        mail_sender = "AUTO_MAA_server@163.com"  # 用户名
+        mail_key = "SYrq87nDLD4RNB5T"  # 授权码 24/11/15
+
+        # 定义邮件正文
+        message = MIMEText(content, "plain", "utf-8")
+        message["From"] = formataddr(
+            (Header("AUTO_MAA通知服务", "utf-8").encode(), "AUTO_MAA_server@163.com")
+        )  # 发件人显示的名字
+        message["To"] = formataddr(
+            (
+                Header("AUTO_MAA用户", "utf-8").encode(),
+                self.config["Default"]["SelfSet.MailAddress"],
+            )
+        )  # 收件人显示的名字
+        message["Subject"] = Header(title, "utf-8")
+
+        try:
+            smtpObj = smtplib.SMTP_SSL(mail_host, 465)  # 465为SMTP_SSL默认端口
+            smtpObj.login(mail_sender, mail_key)
+            smtpObj.sendmail(
+                mail_sender,
+                self.config["Default"]["SelfSet.MailAddress"],
+                message.as_string(),
+            )
+        except smtplib.SMTPException as e:
+            QMessageBox.critical(self.ui, "错误", f"发送邮件时出错：\n{e}")
+        finally:
+            smtpObj.quit()
 
     def give_config(self):
         """同步配置文件到子线程"""
