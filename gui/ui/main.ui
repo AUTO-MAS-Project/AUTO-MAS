@@ -919,6 +919,12 @@
                  <height>0</height>
                 </size>
                </property>
+               <property name="minimum">
+                <number>1</number>
+               </property>
+               <property name="maximum">
+                <number>1024</number>
+               </property>
               </widget>
              </item>
              <item>
@@ -968,6 +974,12 @@
                  <height>0</height>
                 </size>
                </property>
+               <property name="minimum">
+                <number>1</number>
+               </property>
+               <property name="maximum">
+                <number>1024</number>
+               </property>
               </widget>
              </item>
              <item>
@@ -1016,6 +1028,12 @@
                  <width>100</width>
                  <height>0</height>
                 </size>
+               </property>
+               <property name="minimum">
+                <number>1</number>
+               </property>
+               <property name="maximum">
+                <number>1024</number>
                </property>
               </widget>
              </item>

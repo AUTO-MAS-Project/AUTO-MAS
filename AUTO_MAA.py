@@ -92,23 +92,31 @@ class MaaRunner(QtCore.QThread):
 
     def __init__(self):
         super(MaaRunner, self).__init__()
-        self.set_path = None
-        self.log_path = None
-        self.maa_path = None
-        self.json_path = f"{self.app_path}/data/MAAconfig"
-        self.routine = None
-        self.annihilation = None
-        self.num = None
+
+        self.config = None
         self.data = None
-        self.if_send_mail = None
         self.mode = None
         self.get_json_path = [0, 0, 0]
+
+    def configure(self):
+        """提取配置信息"""
+
+        self.set_path = f"{self.config["Default"]["MaaSet.path"]}/config/gui.json"
+        self.log_path = f"{self.config["Default"]["MaaSet.path"]}/debug/gui.log"
+        self.maa_path = f"{self.config["Default"]["MaaSet.path"]}/MAA.exe"
+        self.json_path = f"{self.app_path}/data/MAAconfig"
+        self.routine = self.config["Default"]["TimeLimit.routine"]
+        self.annihilation = self.config["Default"]["TimeLimit.annihilation"]
+        self.num = self.config["Default"]["TimesLimit.run"]
+        self.if_send_mail = bool(self.config["Default"]["SelfSet.IfSendMail"] == "True")
 
     def run(self):
         """主进程，运行MAA代理进程"""
 
         curdate = server_date()
         begin_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        self.configure()
 
         # 整理用户数据，筛选需代理的用户
         self.data = sorted(self.data, key=lambda x: (-len(x[15]), x[16]))
@@ -1214,10 +1222,10 @@ class Main(QWidget):
         self.refresh.clicked.connect(lambda: self.update_user_info("clear"))
 
         self.run_now = self.ui.findChild(QPushButton, "pushButton_runnow")
-        self.run_now.clicked.connect(self.routine_starter)
+        self.run_now.clicked.connect(lambda: self.maa_starter("日常代理"))
 
         self.check_start = self.ui.findChild(QPushButton, "pushButton_checkstart")
-        self.check_start.clicked.connect(self.check_starter)
+        self.check_start.clicked.connect(lambda: self.maa_starter("人工排查"))
 
         self.maa_path = self.ui.findChild(QLineEdit, "lineEdit_MAApath")
         self.maa_path.textChanged.connect(self.change_config)
@@ -1227,7 +1235,7 @@ class Main(QWidget):
         self.get_maa_path.clicked.connect(lambda: self.read("file_path_maa"))
 
         self.set_maa = self.ui.findChild(QPushButton, "pushButton_setMAA")
-        self.set_maa.clicked.connect(lambda: self.maa_set_starter("设置MAA_全局"))
+        self.set_maa.clicked.connect(lambda: self.maa_starter("设置MAA_全局"))
 
         self.routine = self.ui.findChild(QSpinBox, "spinBox_routine")
         self.routine.valueChanged.connect(self.change_config)
@@ -1293,7 +1301,7 @@ class Main(QWidget):
 
         self.MainTimer = MainTimer(self.config)
         self.MainTimer.get_config.connect(self.give_config)
-        self.MainTimer.start_for_timer.connect(self.routine_starter)
+        self.MainTimer.start_for_timer.connect(lambda: self.maa_starter("日常代理"))
         self.MainTimer.start()
 
         # 载入GUI数据
@@ -1303,7 +1311,7 @@ class Main(QWidget):
 
         # 启动后直接开始代理
         if self.config["Default"]["SelfSet.IfProxyDirectly"] == "True":
-            self.routine_starter()
+            self.maa_starter("日常代理")
 
     def initialize(self):
         """初始化程序的配置文件"""
@@ -2078,7 +2086,7 @@ class Main(QWidget):
                     self.user_list_beta.currentRow(),
                     self.user_list_beta.currentColumn() - 4,
                 ]
-                self.maa_set_starter("设置MAA_用户")
+                self.maa_starter("设置MAA_用户")
             else:
                 QMessageBox.critical(self.ui, "错误", "该项目无法进一步配置")
 
@@ -2387,93 +2395,21 @@ class Main(QWidget):
         else:
             return False
 
-    def routine_starter(self):
-        """启动MaaRunner线程运行日常代理任务"""
+    def maa_starter(self, mode):
+        """启动MaaRunner线程运行任务"""
 
         # 检查MAA路径是否可用
         if not self.check_maa_path():
             QMessageBox.critical(self.ui, "错误", "您还未正确配置MAA路径！")
             return None
 
-        self.maa_running_set("日常代理_开始")
+        self.maa_running_set(f"{mode}_开始")
 
         # 配置参数
-        self.MaaRunner.set_path = (
-            f"{self.config["Default"]["MaaSet.path"]}/config/gui.json"
-        )
-        self.MaaRunner.log_path = (
-            f"{self.config["Default"]["MaaSet.path"]}/debug/gui.log"
-        )
-        self.MaaRunner.set_path = (
-            f"{self.config["Default"]["MaaSet.path"]}/config/gui.json"
-        )
-        self.MaaRunner.log_path = (
-            f"{self.config["Default"]["MaaSet.path"]}/debug/gui.log"
-        )
-        self.MaaRunner.maa_path = f"{self.config["Default"]["MaaSet.path"]}/MAA.exe"
-        self.MaaRunner.routine = self.config["Default"]["TimeLimit.routine"]
-        self.MaaRunner.annihilation = self.config["Default"]["TimeLimit.annihilation"]
-        self.MaaRunner.num = self.config["Default"]["TimesLimit.run"]
-        self.MaaRunner.if_send_mail = bool(
-            self.config["Default"]["SelfSet.IfSendMail"] == "True"
-        )
+        self.MaaRunner.config = self.config
         self.cur.execute("SELECT * FROM adminx WHERE True")
         self.data_ = self.cur.fetchall()
         self.MaaRunner.data = [list(row) for row in self.data_]
-        self.MaaRunner.mode = "日常代理"
-
-        # 启动执行线程
-        self.MainTimer.is_maa_run = True
-        self.MaaRunner.start()
-
-    def check_starter(self):
-        """启动MaaRunner线程运行人工排查任务"""
-
-        # 检查MAA路径是否可用
-        if not self.check_maa_path():
-            QMessageBox.critical(self.ui, "错误", "您还未正确配置MAA路径！")
-            return None
-
-        self.maa_running_set("人工排查_开始")
-
-        # 配置参数
-        self.MaaRunner.set_path = (
-            f"{self.config["Default"]["MaaSet.path"]}/config/gui.json"
-        )
-        self.MaaRunner.log_path = (
-            f"{self.config["Default"]["MaaSet.path"]}/debug/gui.log"
-        )
-        self.MaaRunner.maa_path = f"{self.config["Default"]["MaaSet.path"]}/MAA.exe"
-        self.MaaRunner.if_send_mail = bool(
-            self.config["Default"]["SelfSet.IfSendMail"] == "True"
-        )
-        self.cur.execute("SELECT * FROM adminx WHERE True")
-        self.data_ = self.cur.fetchall()
-        self.MaaRunner.data = [list(row) for row in self.data_]
-        self.MaaRunner.mode = "人工排查"
-
-        # 启动执行线程
-        self.MainTimer.is_maa_run = True
-        self.MaaRunner.start()
-
-    def maa_set_starter(self, mode):
-        """启动MaaRunner线程进行MAA设置"""
-
-        # 检查MAA路径是否可用
-        if not self.check_maa_path():
-            QMessageBox.critical(self.ui, "错误", "您还未正确配置MAA路径！")
-            return None
-
-        self.maa_running_set("设置MAA_开始")
-
-        # 配置参数
-        self.MaaRunner.set_path = (
-            f"{self.config["Default"]["MaaSet.path"]}/config/gui.json"
-        )
-        self.MaaRunner.log_path = (
-            f"{self.config["Default"]["MaaSet.path"]}/debug/gui.log"
-        )
-        self.MaaRunner.maa_path = f"{self.config["Default"]["MaaSet.path"]}/MAA.exe"
         self.MaaRunner.mode = mode
 
         # 启动执行线程
@@ -2483,7 +2419,6 @@ class Main(QWidget):
     def maa_ender(self, mode):
         """中止MAA线程"""
 
-        self.MainTimer.quit()
         self.MaaRunner.requestInterruption()
         self.MaaRunner.wait()
 
@@ -2524,7 +2459,7 @@ class Main(QWidget):
                     lambda: self.maa_ender("人工排查_结束")
                 )
 
-            elif mode == "设置MAA_开始":
+            elif mode == "设置MAA_全局_开始" or mode == "设置MAA_用户_开始":
                 self.MaaRunner.accomplish.connect(
                     lambda: self.maa_ender("设置MAA_结束")
                 )
@@ -2544,22 +2479,24 @@ class Main(QWidget):
             self.set_maa.setEnabled(True)
             # self.update_user_info("editable")
 
-            if mode == "设置MAA_结束":
-                self.run_now.setEnabled(True)
+            if mode == "日常代理_结束":
+
                 self.check_start.setEnabled(True)
+                self.run_now.clicked.disconnect()
+                self.run_now.setText("立即执行")
+                self.run_now.clicked.connect(lambda: self.maa_starter("日常代理"))
 
             elif mode == "人工排查_结束":
 
                 self.run_now.setEnabled(True)
                 self.check_start.clicked.disconnect()
                 self.check_start.setText("开始排查")
-                self.check_start.clicked.connect(self.check_starter)
+                self.check_start.clicked.connect(lambda: self.maa_starter("人工排查"))
 
-            elif mode == "日常代理_结束":
+            elif mode == "设置MAA_结束":
+
+                self.run_now.setEnabled(True)
                 self.check_start.setEnabled(True)
-                self.run_now.clicked.disconnect()
-                self.run_now.setText("立即执行")
-                self.run_now.clicked.connect(self.routine_starter)
 
     def check_version(self):
         """检查版本更新，调起文件下载进程"""
