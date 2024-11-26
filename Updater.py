@@ -34,14 +34,13 @@ import subprocess
 
 from PySide6.QtWidgets import (
     QApplication,
+    QDialog,
+    QVBoxLayout,
     QLabel,
     QProgressBar,
 )
 from PySide6.QtGui import QIcon
 from PySide6.QtCore import QObject, QThread, Signal
-from PySide6.QtUiTools import QUiLoader
-
-uiLoader = QUiLoader()
 
 
 class UpdateProcess(QThread):
@@ -136,15 +135,20 @@ class Updater(QObject):
     def __init__(self, app_path, name, download_url, version):
         super().__init__()
 
-        self.ui = uiLoader.load(f"{app_path}/gui/ui/updater.ui")
+        self.ui = QDialog()
         self.ui.setWindowTitle("AUTO_MAA更新器")
+        self.ui.resize(500, 70)
         self.ui.setWindowIcon(QIcon(f"{app_path}/gui/ico/AUTO_MAA_Updater.ico"))
 
-        self.info = self.ui.findChild(QLabel, "label")
-        self.info.setText("正在初始化")
+        # 创建垂直布局
+        self.Layout_v = QVBoxLayout(self.ui)
 
-        self.progress = self.ui.findChild(QProgressBar, "progressBar")
+        self.info = QLabel("正在初始化", self.ui)
+        self.Layout_v.addWidget(self.info)
+
+        self.progress = QProgressBar(self.ui)
         self.progress.setRange(0, 0)
+        self.Layout_v.addWidget(self.progress)
 
         self.update_process = UpdateProcess(app_path, name, download_url, version)
 

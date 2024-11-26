@@ -29,6 +29,8 @@ from PySide6.QtWidgets import (
     QWidget,
     QMainWindow,
     QApplication,
+    QSystemTrayIcon,
+    QMenu,
     QInputDialog,
     QFileDialog,
     QMessageBox,
@@ -45,7 +47,7 @@ from PySide6.QtWidgets import (
     QTextBrowser,
 )
 from PySide6.QtUiTools import QUiLoader
-from PySide6.QtGui import QIcon
+from PySide6.QtGui import QIcon, QCloseEvent
 from PySide6 import QtCore
 from functools import partial
 from plyer import notification
@@ -1262,6 +1264,8 @@ class Main(QWidget):
 
         self.mail_address = self.ui.findChild(QLineEdit, "lineEdit_mailaddress")
         self.mail_address.textChanged.connect(self.change_config)
+
+        self.show_tray = self.ui.findChild(QPushButton, "pushButton_show_tray")
 
         self.check_update = self.ui.findChild(QPushButton, "pushButton_check_update")
         self.check_update.clicked.connect(self.check_version)
@@ -2641,8 +2645,9 @@ class Main(QWidget):
 
 
 class AUTO_MAA(QMainWindow):
+
     def __init__(self):
-        super().__init__()
+        super(AUTO_MAA, self).__init__()
 
         self.main = Main()
         self.setCentralWidget(self.main.ui)
@@ -2656,7 +2661,53 @@ class AUTO_MAA(QMainWindow):
         )
         self.setGeometry(location[0], location[1], size[0], size[1])
 
-    def closeEvent(self, event):
+        # 设置系统托盘图标
+        self.tray = QSystemTrayIcon(
+            QIcon(f"{self.main.app_path}/gui/ico/AUTO_MAA.ico"), self
+        )
+        self.tray_menu = QMenu()
+
+        self.main.show_tray.clicked.connect(self.show_tray)
+
+        # 显示主界面动作
+        show_main = self.tray_menu.addAction("显示主界面")
+        show_main.triggered.connect(self.show_main)
+
+        # 开始任务动作
+        start_task_1 = self.tray_menu.addAction("运行日常代理")
+        start_task_1.triggered.connect(lambda: self.start_task("日常代理"))
+
+        start_task_2 = self.tray_menu.addAction("运行人工排查")
+        start_task_2.triggered.connect(lambda: self.start_task("人工排查"))
+
+        # 退出动作
+        kill = self.tray_menu.addAction("退出主程序")
+        kill.triggered.connect(self.kill_main)
+
+        self.tray.setContextMenu(self.tray_menu)
+        self.tray.activated.connect(self.on_tray_activated)
+
+    def show_tray(self):
+        self.hide()
+        self.tray.show()
+
+    def show_main(self):
+        self.show()
+        self.tray.hide()
+
+    def on_tray_activated(self, reason):
+        if reason == QSystemTrayIcon.DoubleClick:
+            self.show_main()
+
+    def start_task(self, mode):
+        if not self.main.MainTimer.is_maa_run:
+            self.main.maa_starter(mode)
+
+    def kill_main(self):
+        self.close()
+        app.quit()
+
+    def closeEvent(self, event: QCloseEvent):
         """清理残余进程"""
 
         # 保存窗口最终大小与位置

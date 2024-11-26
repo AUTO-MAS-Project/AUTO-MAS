@@ -1,7 +1,7 @@
 {
-    "main_version": "4.1.2.4",
+    "main_version": "4.1.2.5",
     "main_download_url": "https://ghp.ci/https://github.com/DLmaster361/AUTO_MAA/releases/download/v4.1.2_beta/AUTO_MAA_v4.1.2_beta.zip",
-    "updater_version": "1.0.4.0",
-    "updater_download_url": "https://ghp.ci/https://github.com/DLmaster361/AUTO_MAA/releases/download/v4.1.2_beta/Updater_v1.0.4.zip",
-    "announcement": "\n## 新增功能\n- 记忆窗口位置\n- 邮件通知功能上线\n## 修复BUG\n- 解决程序启动后无法设置MAA的问题\n## 程序优化\n- 优化`MaaRunner`初始化流程\n- 合并MAA启动器配置流程"
+    "updater_version": "1.0.5.0",
+    "updater_download_url": "https://ghp.ci/https://github.com/DLmaster361/AUTO_MAA/releases/download/v4.1.2_beta/Updater_v1.0.5.zip",
+    "announcement": "\n## 新增功能\n- 记忆窗口位置\n- 邮件通知功能上线\n- 添加最小化到托盘功能\n## 修复BUG\n- 暂无\n## 程序优化\n- 优化`MaaRunner`初始化流程\n- 合并MAA启动器配置流程\n- 修复ico文件\n- Updater.exe不再依赖.ui文件"
 }
