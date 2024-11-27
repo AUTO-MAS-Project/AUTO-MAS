@@ -2586,7 +2586,8 @@ class Main(QWidget):
             shell=True,
             creationflags=subprocess.CREATE_NO_WINDOW,
         )
-        sys.exit()
+        self.close()
+        app.quit()
 
     def version_text(self, version_numb):
         """将版本号列表转为可读的文本信息"""
