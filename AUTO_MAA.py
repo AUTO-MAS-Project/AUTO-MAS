@@ -1011,6 +1011,7 @@ class MainTimer(QtCore.QThread):
     def __init__(self, config):
         super(MainTimer, self).__init__()
         self.config = config
+        self.last_time = "0000-00-00 00:00"
 
     def run(self):
         """主功能代码，实现定时执行以及相关配置信息的实时同步"""
@@ -1030,8 +1031,13 @@ class MainTimer(QtCore.QThread):
                 if self.config["Default"][f"TimeSet.set{_ + 1}"] == "True"
             ]
             # 按时间调起代理任务
-            curtime = datetime.datetime.now().strftime("%H:%M")
-            if (curtime in time_set) and not self.is_maa_run:
+            curtime = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+            if (
+                curtime[11:16] in time_set
+                and curtime != self.last_time
+                and not self.is_maa_run
+            ):
+                self.last_time = curtime
                 self.start_for_timer.emit()
 
             # 同步时间间隔
@@ -2649,6 +2655,7 @@ class AUTO_MAA(QMainWindow):
     def __init__(self):
         super(AUTO_MAA, self).__init__()
 
+        # 创建主窗口
         self.main = Main()
         self.setCentralWidget(self.main.ui)
         self.setWindowIcon(QIcon(f"{self.main.app_path}/gui/ico/AUTO_MAA.ico"))
@@ -2661,49 +2668,56 @@ class AUTO_MAA(QMainWindow):
         )
         self.setGeometry(location[0], location[1], size[0], size[1])
 
-        # 设置系统托盘图标
+        # 创建系统托盘及其菜单
         self.tray = QSystemTrayIcon(
             QIcon(f"{self.main.app_path}/gui/ico/AUTO_MAA.ico"), self
         )
         self.tray_menu = QMenu()
 
+        # 连接最小化到托盘功能
         self.main.show_tray.clicked.connect(self.show_tray)
 
-        # 显示主界面动作
+        # 显示主界面菜单项
         show_main = self.tray_menu.addAction("显示主界面")
         show_main.triggered.connect(self.show_main)
 
-        # 开始任务动作
+        # 开始任务菜单项
         start_task_1 = self.tray_menu.addAction("运行日常代理")
         start_task_1.triggered.connect(lambda: self.start_task("日常代理"))
 
         start_task_2 = self.tray_menu.addAction("运行人工排查")
         start_task_2.triggered.connect(lambda: self.start_task("人工排查"))
 
-        # 退出动作
+        # 退出主程序菜单项
         kill = self.tray_menu.addAction("退出主程序")
         kill.triggered.connect(self.kill_main)
 
+        # 设置托盘菜单
         self.tray.setContextMenu(self.tray_menu)
         self.tray.activated.connect(self.on_tray_activated)
 
     def show_tray(self):
+        """最小化到托盘"""
         self.hide()
         self.tray.show()
 
     def show_main(self):
+        """显示主界面"""
         self.show()
         self.tray.hide()
 
     def on_tray_activated(self, reason):
+        """双击返回主界面"""
         if reason == QSystemTrayIcon.DoubleClick:
             self.show_main()
 
     def start_task(self, mode):
+        """调起对应任务"""
         if not self.main.MainTimer.is_maa_run:
             self.main.maa_starter(mode)
 
     def kill_main(self):
+        """退出主程序"""
         self.close()
         app.quit()
 
@@ -2720,14 +2734,18 @@ class AUTO_MAA(QMainWindow):
         with open(self.main.config_path, "w", encoding="utf-8") as f:
             json.dump(self.main.config, f, indent=4)
 
+        # 清理各功能线程
         self.main.MainTimer.requestInterruption()
         self.main.MainTimer.quit()
         self.main.MainTimer.wait()
         self.main.MaaRunner.requestInterruption()
         self.main.MaaRunner.quit()
         self.main.MaaRunner.wait()
+
+        # 关闭数据库连接
         self.main.cur.close()
         self.main.db.close()
+
         event.accept()
 
 
