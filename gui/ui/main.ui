@@ -15,7 +15,7 @@
   </property>
   <layout class="QVBoxLayout" name="verticalLayout_13">
    <item>
-    <widget class="QTabWidget" name="tabWidget">
+    <widget class="QTabWidget" name="tabWidget_main">
      <property name="currentIndex">
       <number>0</number>
      </property>
@@ -189,8 +189,8 @@
               <rect>
                <x>0</x>
                <y>0</y>
-               <width>98</width>
-               <height>74</height>
+               <width>1156</width>
+               <height>546</height>
               </rect>
              </property>
              <attribute name="label">
@@ -1227,7 +1227,7 @@
            </widget>
           </item>
           <item row="2" column="0">
-           <widget class="QFrame" name="frame_show_tray">
+           <widget class="QFrame" name="frame_iftotray">
             <property name="frameShape">
              <enum>QFrame::Shape::StyledPanel</enum>
             </property>
@@ -1236,33 +1236,20 @@
             </property>
             <layout class="QHBoxLayout" name="horizontalLayout_23">
              <item>
-              <spacer name="horizontalSpacer_17">
-               <property name="orientation">
-                <enum>Qt::Orientation::Horizontal</enum>
-               </property>
-               <property name="sizeHint" stdset="0">
-                <size>
-                 <width>40</width>
-                 <height>20</height>
-                </size>
-               </property>
-              </spacer>
-             </item>
-             <item>
-              <widget class="QPushButton" name="pushButton_show_tray">
+              <widget class="QCheckBox" name="checkBox_iftotray">
                <property name="text">
                 <string>最小化到托盘</string>
                </property>
               </widget>
              </item>
              <item>
-              <spacer name="horizontalSpacer_18">
+              <spacer name="horizontalSpacer_17">
                <property name="orientation">
                 <enum>Qt::Orientation::Horizontal</enum>
                </property>
                <property name="sizeHint" stdset="0">
                 <size>
-                 <width>40</width>
+                 <width>149</width>
                  <height>20</height>
                 </size>
                </property>

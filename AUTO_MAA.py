@@ -35,6 +35,7 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QMessageBox,
     QLineEdit,
+    QTabWidget,
     QToolBox,
     QTableWidget,
     QTableWidgetItem,
@@ -1192,6 +1193,9 @@ class Main(QWidget):
         self.cur = self.db.cursor()
 
         # 初始化控件
+        self.main_tab = self.ui.findChild(QTabWidget, "tabWidget_main")
+        self.main_tab.currentChanged.connect(self.change_config)
+
         self.user_set = self.ui.findChild(QToolBox, "toolBox_userset")
         self.user_set.currentChanged.connect(self.change_userlist_method)
 
@@ -1271,7 +1275,8 @@ class Main(QWidget):
         self.mail_address = self.ui.findChild(QLineEdit, "lineEdit_mailaddress")
         self.mail_address.textChanged.connect(self.change_config)
 
-        self.show_tray = self.ui.findChild(QPushButton, "pushButton_show_tray")
+        self.if_to_tray = self.ui.findChild(QCheckBox, "checkBox_iftotray")
+        self.if_to_tray.stateChanged.connect(self.change_config)
 
         self.check_update = self.ui.findChild(QPushButton, "pushButton_check_update")
         self.check_update.clicked.connect(self.check_version)
@@ -1409,8 +1414,11 @@ class Main(QWidget):
             ["SelfSet.IfProxyDirectly", "False"],
             ["SelfSet.IfSendMail", "False"],
             ["SelfSet.MailAddress", ""],
+            ["SelfSet.IfToTray", "False"],
             ["SelfSet.UIsize", "1200x700"],
             ["SelfSet.UIlocation", "100x100"],
+            ["SelfSet.UImaximized", "False"],
+            ["SelfSet.MainIndex", 0],
         ]
 
         # 导入配置文件
@@ -1849,6 +1857,8 @@ class Main(QWidget):
         # 阻止GUI程序配置被立即读入程序形成死循环
         self.if_update_config = False
 
+        self.main_tab.setCurrentIndex(self.config["Default"]["SelfSet.MainIndex"])
+
         self.maa_path.setText(self.config["Default"]["MaaSet.path"].replace("\\", "/"))
         self.routine.setValue(self.config["Default"]["TimeLimit.routine"])
         self.annihilation.setValue(self.config["Default"]["TimeLimit.annihilation"])
@@ -1873,6 +1883,10 @@ class Main(QWidget):
 
         self.mail_address.setVisible(
             bool(self.config["Default"]["SelfSet.IfSendMail"] == "True")
+        )
+
+        self.if_to_tray.setChecked(
+            bool(self.config["Default"]["SelfSet.IfToTray"] == "True")
         )
 
         for i in range(10):
@@ -2293,6 +2307,8 @@ class Main(QWidget):
             )
             return None
 
+        self.config["Default"]["SelfSet.MainIndex"] = self.main_tab.currentIndex()
+
         self.config["Default"]["TimeLimit.routine"] = self.routine.value()
         self.config["Default"]["TimeLimit.annihilation"] = self.annihilation.value()
         self.config["Default"]["TimesLimit.run"] = self.num.value()
@@ -2317,6 +2333,11 @@ class Main(QWidget):
             self.config["Default"]["SelfSet.IfSendMail"] = "True"
         else:
             self.config["Default"]["SelfSet.IfSendMail"] = "False"
+
+        if self.if_to_tray.isChecked():
+            self.config["Default"]["SelfSet.IfToTray"] = "True"
+        else:
+            self.config["Default"]["SelfSet.IfToTray"] = "False"
 
         for i in range(10):
             if self.start_time[i][0].isChecked():
@@ -2662,21 +2683,11 @@ class AUTO_MAA(QMainWindow):
         self.setWindowIcon(QIcon(f"{self.main.app_path}/gui/ico/AUTO_MAA.ico"))
         self.setWindowTitle("AUTO_MAA")
 
-        # 设置窗口初始大小与位置
-        size = list(map(int, self.main.config["Default"]["SelfSet.UIsize"].split("x")))
-        location = list(
-            map(int, self.main.config["Default"]["SelfSet.UIlocation"].split("x"))
-        )
-        self.setGeometry(location[0], location[1], size[0], size[1])
-
         # 创建系统托盘及其菜单
         self.tray = QSystemTrayIcon(
             QIcon(f"{self.main.app_path}/gui/ico/AUTO_MAA.ico"), self
         )
         self.tray_menu = QMenu()
-
-        # 连接最小化到托盘功能
-        self.main.show_tray.clicked.connect(self.show_tray)
 
         # 显示主界面菜单项
         show_main = self.tray_menu.addAction("显示主界面")
@@ -2697,14 +2708,17 @@ class AUTO_MAA(QMainWindow):
         self.tray.setContextMenu(self.tray_menu)
         self.tray.activated.connect(self.on_tray_activated)
 
+        self.set_ui("配置")
+
     def show_tray(self):
         """最小化到托盘"""
+        self.set_ui("保存")
         self.hide()
         self.tray.show()
 
     def show_main(self):
         """显示主界面"""
-        self.show()
+        self.set_ui("配置")
         self.tray.hide()
 
     def on_tray_activated(self, reason):
@@ -2714,7 +2728,14 @@ class AUTO_MAA(QMainWindow):
 
     def start_task(self, mode):
         """调起对应任务"""
-        if not self.main.MainTimer.is_maa_run:
+        if self.main.MainTimer.is_maa_run:
+            self.main.push_notification(
+                f"无法运行{mode}！",
+                "当前已有任务正在运行，请在该任务结束后重试",
+                "当前已有任务正在运行，请在该任务结束后重试",
+                10,
+            )
+        else:
             self.main.maa_starter(mode)
 
     def kill_main(self):
@@ -2722,18 +2743,61 @@ class AUTO_MAA(QMainWindow):
         self.close()
         app.quit()
 
+    def set_ui(self, mode):
+        """设置窗口相关属性"""
+
+        # 保存窗口相关属性
+        if mode == "保存":
+
+            self.main.config["Default"][
+                "SelfSet.UIsize"
+            ] = f"{self.geometry().width()}x{self.geometry().height()}"
+            self.main.config["Default"][
+                "SelfSet.UIlocation"
+            ] = f"{self.geometry().x()}x{self.geometry().y()}"
+            if self.isMaximized():
+                self.main.config["Default"]["SelfSet.UImaximized"] = "True"
+            else:
+                self.main.config["Default"]["SelfSet.UImaximized"] = "False"
+            with open(self.main.config_path, "w", encoding="utf-8") as f:
+                json.dump(self.main.config, f, indent=4)
+
+        # 配置窗口相关属性
+        elif mode == "配置":
+
+            size = list(
+                map(int, self.main.config["Default"]["SelfSet.UIsize"].split("x"))
+            )
+            location = list(
+                map(int, self.main.config["Default"]["SelfSet.UIlocation"].split("x"))
+            )
+            self.setGeometry(location[0], location[1], size[0], size[1])
+            if self.main.config["Default"]["SelfSet.UImaximized"] == "True":
+                self.showMinimized()
+                self.showMaximized()
+            elif self.main.config["Default"]["SelfSet.UImaximized"] == "False":
+                self.showMinimized()
+                self.showNormal()
+            else:
+                self.showMinimized()
+                self.show()
+
+    def changeEvent(self, event: QtCore.QEvent):
+        """重写后的 changeEvent"""
+
+        # 最小化到托盘功能实现
+        if event.type() == QtCore.QEvent.WindowStateChange:
+            if self.windowState() & QtCore.Qt.WindowMinimized:
+                if self.main.config["Default"]["SelfSet.IfToTray"] == "True":
+                    self.show_tray()
+
+        # 保留其它 changeEvent 方法
+        return super().changeEvent(event)
+
     def closeEvent(self, event: QCloseEvent):
         """清理残余进程"""
 
-        # 保存窗口最终大小与位置
-        self.main.config["Default"][
-            "SelfSet.UIsize"
-        ] = f"{self.geometry().width()}x{self.geometry().height()}"
-        self.main.config["Default"][
-            "SelfSet.UIlocation"
-        ] = f"{self.geometry().x()}x{self.geometry().y()}"
-        with open(self.main.config_path, "w", encoding="utf-8") as f:
-            json.dump(self.main.config, f, indent=4)
+        self.set_ui("保存")
 
         # 清理各功能线程
         self.main.MainTimer.requestInterruption()
@@ -2763,5 +2827,4 @@ if __name__ == "__main__":
 
     app = QApplication(sys.argv)
     window = AUTO_MAA()
-    window.show()
     sys.exit(app.exec())
