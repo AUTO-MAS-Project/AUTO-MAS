@@ -1415,7 +1415,7 @@ class Main(QWidget):
             ["SelfSet.UIsize", "1200x700"],
             ["SelfSet.UIlocation", "100x100"],
             ["SelfSet.UImaximized", "False"],
-            ["SelfSet.MainIndex", 0],
+            ["SelfSet.MainIndex", 2],
         ]
 
         # 导入配置文件
