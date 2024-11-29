@@ -2706,6 +2706,7 @@ class AUTO_MAA(QMainWindow):
         self.tray.activated.connect(self.on_tray_activated)
 
         self.set_ui("配置")
+        self.show_main()
 
     def show_tray(self):
         """最小化到托盘"""
