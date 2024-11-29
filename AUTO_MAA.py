@@ -655,9 +655,6 @@ class MaaRunner(QtCore.QThread):
                 data["Configurations"]["Default"][
                     "Start.OpenEmulatorAfterLaunch"
                 ] = "False"
-            data["Configurations"]["Default"][
-                "Start.MinimizingStartup"
-            ] = "False"  # 最小化启动模拟器
 
             if self.data[index][15] == "simple":
 

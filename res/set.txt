@@ -37,4 +37,3 @@
 "Start.RunDirectly": "True"        #启动MAA后直接运行
 "Start.MinimizeDirectly": "True"        #启动MAA后直接最小化
 "Start.OpenEmulatorAfterLaunch": "True"        #启动MAA后自动开启模拟器
-"Start.MinimizingStartup": "True"        #最小化启动模拟器
