@@ -2671,6 +2671,8 @@ class Main(QWidget):
 
 class AUTO_MAA(QMainWindow):
 
+    if_save = True
+
     def __init__(self):
         super(AUTO_MAA, self).__init__()
 
@@ -2705,12 +2707,12 @@ class AUTO_MAA(QMainWindow):
         self.tray.setContextMenu(self.tray_menu)
         self.tray.activated.connect(self.on_tray_activated)
 
-        self.set_ui("配置")
         self.show_main()
 
     def show_tray(self):
         """最小化到托盘"""
-        self.set_ui("保存")
+        if self.if_save:
+            self.set_ui("保存")
         self.hide()
         self.tray.show()
 
@@ -2763,6 +2765,8 @@ class AUTO_MAA(QMainWindow):
         # 配置窗口相关属性
         elif mode == "配置":
 
+            self.if_save = False
+
             size = list(
                 map(int, self.main.config["Default"]["SelfSet.UIsize"].split("x"))
             )
@@ -2773,12 +2777,11 @@ class AUTO_MAA(QMainWindow):
             if self.main.config["Default"]["SelfSet.UImaximized"] == "True":
                 self.showMinimized()
                 self.showMaximized()
-            elif self.main.config["Default"]["SelfSet.UImaximized"] == "False":
-                self.showMinimized()
-                self.showNormal()
             else:
                 self.showMinimized()
-                self.show()
+                self.showNormal()
+
+            self.if_save = True
 
     def changeEvent(self, event: QtCore.QEvent):
         """重写后的 changeEvent"""
