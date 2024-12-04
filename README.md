@@ -66,7 +66,7 @@ MAA多账号管理与自动化软件
 
 ### 下载MAA
 
-- 什么是MAA？    [官网](https://maa.plus/)/[GitHub](https://github.com/CHNZYX/Auto_Simulated_Universe/archive/refs/heads/main.zip)
+- 什么是MAA？    [官网](https://maa.plus/)/[GitHub](https://github.com/MaaAssistantArknights/MaaAssistantArknights)
 
 - MAA下载地址    [GitHub下载](https://github.com/MaaAssistantArknights/MaaAssistantArknights/releases)
 
