@@ -175,7 +175,11 @@ class MaaRunner(QtCore.QThread):
                         # 记录当前时间
                         start_time = datetime.datetime.now()
                         # 创建MAA任务
-                        maa = subprocess.Popen([self.maa_path])
+                        maa = subprocess.Popen(
+                            [self.maa_path],
+                            shell=True,
+                            creationflags=subprocess.CREATE_NO_WINDOW,
+                        )
                         # 记录是否超时的标记
                         self.if_time_out = False
                         # 更新运行信息
@@ -330,7 +334,11 @@ class MaaRunner(QtCore.QThread):
                     # 记录当前时间
                     start_time = datetime.datetime.now()
                     # 创建MAA任务
-                    maa = subprocess.Popen([self.maa_path])
+                    maa = subprocess.Popen(
+                        [self.maa_path],
+                        shell=True,
+                        creationflags=subprocess.CREATE_NO_WINDOW,
+                    )
                     # 更新运行信息
                     wait_index = [
                         _
@@ -442,7 +450,11 @@ class MaaRunner(QtCore.QThread):
             # 配置MAA
             self.set_maa(self.mode, "")
             # 创建MAA任务
-            maa = subprocess.Popen([self.maa_path])
+            maa = subprocess.Popen(
+                [self.maa_path],
+                shell=True,
+                creationflags=subprocess.CREATE_NO_WINDOW,
+            )
             # 记录当前时间
             start_time = datetime.datetime.now()
 
@@ -1202,7 +1214,6 @@ class Main(QWidget):
         self.user_list_simple.itemChanged.connect(
             lambda item: self.change_user_Item(item, "simple")
         )
-        self.user_list_simple.setStyleSheet("background-color: rgb(255, 255, 255);")
 
         self.user_list_beta = self.ui.findChild(
             QTableWidget, "tableWidget_userlist_beta"
@@ -1210,7 +1221,6 @@ class Main(QWidget):
         self.user_list_beta.itemChanged.connect(
             lambda item: self.change_user_Item(item, "beta")
         )
-        self.user_list_beta.setStyleSheet("background-color: rgb(255, 255, 255);")
 
         self.user_add = self.ui.findChild(QPushButton, "pushButton_new")
         self.user_add.clicked.connect(self.add_user)
