@@ -2618,6 +2618,8 @@ class Main(QWidget):
     def send_mail(self, title, content):
         """使用官方专用邮箱推送邮件通知"""
 
+        # 声明：此邮箱为AUTO_MAA项目组资产，未经授权不得私自使用
+
         # 第三方 SMTP 服务配置
         mail_host = "smtp.163.com"  # 设置服务器
         mail_sender = "AUTO_MAA_server@163.com"  # 用户名
@@ -2667,6 +2669,7 @@ class AUTO_MAA(QMainWindow):
         self.tray = QSystemTrayIcon(
             QIcon(f"{self.main.app_path}/gui/ico/AUTO_MAA.ico"), self
         )
+        self.tray.setToolTip("AUTO_MAA")
         self.tray_menu = QMenu()
 
         # 显示主界面菜单项
