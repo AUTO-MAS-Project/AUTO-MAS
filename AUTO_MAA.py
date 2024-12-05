@@ -539,7 +539,8 @@ class MaaRunner(QtCore.QThread):
                     f"{end_log}\n\nAUTO_MAA 敬上\n\n我们根据您在 AUTO_MAA 中的设置发送了这封电子邮件，本邮件无需回复\n",
                 )
 
-            self.accomplish.emit()
+            if not self.isInterruptionRequested():
+                self.accomplish.emit()
 
     def get_maa_log(self, start_time):
         """获取MAA日志"""
@@ -1008,114 +1009,15 @@ class MaaRunner(QtCore.QThread):
         return True
 
 
-class MainTimer(QtCore.QThread):
-
-    get_config = QtCore.Signal()
-    start_for_timer = QtCore.Signal()
-    app_path = os.path.realpath(sys.argv[0])  # 获取软件自身的路径
-    app_name = os.path.basename(app_path)  # 获取软件自身的名称
-    ES_CONTINUOUS = 0x80000000
-    ES_SYSTEM_REQUIRED = 0x00000001
-    is_maa_run = False
-
-    def __init__(self, config):
-        super(MainTimer, self).__init__()
-        self.config = config
-        self.last_time = "0000-00-00 00:00"
-
-    def run(self):
-        """主功能代码，实现定时执行以及相关配置信息的实时同步"""
-
-        while not self.isInterruptionRequested():
-
-            # 同步程序设置
-            self.get_config.emit()
-
-            # 同步到系统设置
-            self.set_system()
-
-            # 获取定时列表
-            time_set = [
-                self.config["Default"][f"TimeSet.run{_ + 1}"]
-                for _ in range(10)
-                if self.config["Default"][f"TimeSet.set{_ + 1}"] == "True"
-            ]
-            # 按时间调起代理任务
-            curtime = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
-            if (
-                curtime[11:16] in time_set
-                and curtime != self.last_time
-                and not self.is_maa_run
-            ):
-                self.last_time = curtime
-                self.start_for_timer.emit()
-
-            # 同步时间间隔
-            time.sleep(1)
-
-    def set_system(self):
-        """设置系统相关配置"""
-
-        # 同步系统休眠状态
-        if self.config["Default"]["SelfSet.IfSleep"] == "True":
-            # 设置系统电源状态
-            ctypes.windll.kernel32.SetThreadExecutionState(
-                self.ES_CONTINUOUS | self.ES_SYSTEM_REQUIRED
-            )
-        elif self.config["Default"]["SelfSet.IfSleep"] == "False":
-            # 恢复系统电源状态
-            ctypes.windll.kernel32.SetThreadExecutionState(self.ES_CONTINUOUS)
-
-        # 同步开机自启
-        if (
-            self.config["Default"]["SelfSet.IfSelfStart"] == "True"
-            and not self.is_startup()
-        ):
-            key = winreg.OpenKey(
-                winreg.HKEY_CURRENT_USER,
-                r"Software\Microsoft\Windows\CurrentVersion\Run",
-                winreg.KEY_SET_VALUE,
-                winreg.KEY_ALL_ACCESS | winreg.KEY_WRITE | winreg.KEY_CREATE_SUB_KEY,
-            )
-            winreg.SetValueEx(key, self.app_name, 0, winreg.REG_SZ, self.app_path)
-            winreg.CloseKey(key)
-        elif (
-            self.config["Default"]["SelfSet.IfSelfStart"] == "False"
-            and self.is_startup()
-        ):
-            key = winreg.OpenKey(
-                winreg.HKEY_CURRENT_USER,
-                r"Software\Microsoft\Windows\CurrentVersion\Run",
-                winreg.KEY_SET_VALUE,
-                winreg.KEY_ALL_ACCESS | winreg.KEY_WRITE | winreg.KEY_CREATE_SUB_KEY,
-            )
-            winreg.DeleteValue(key, self.app_name)
-            winreg.CloseKey(key)
-
-    def is_startup(self):
-        """判断程序是否已经开机自启"""
-
-        key = winreg.OpenKey(
-            winreg.HKEY_CURRENT_USER,
-            r"Software\Microsoft\Windows\CurrentVersion\Run",
-            0,
-            winreg.KEY_READ,
-        )
-
-        try:
-            value, _ = winreg.QueryValueEx(key, self.app_name)
-            winreg.CloseKey(key)
-            return True
-        except FileNotFoundError:
-            winreg.CloseKey(key)
-            return False
-
-
 class Main(QWidget):
 
     app_path = os.path.dirname(os.path.realpath(sys.argv[0])).replace(
         "\\", "/"
     )  # 获取软件自身的路径
+    app_path_sys = os.path.realpath(sys.argv[0])  # 获取软件自身的路径
+    app_name = os.path.basename(app_path)  # 获取软件自身的名称
+    ES_CONTINUOUS = 0x80000000
+    ES_SYSTEM_REQUIRED = 0x00000001
 
     def __init__(self, PASSWARD=""):
         super().__init__()
@@ -1321,10 +1223,11 @@ class Main(QWidget):
         self.MaaRunner.accomplish.connect(lambda: self.maa_ender("日常代理_结束"))
         self.MaaRunner.get_json.connect(self.get_maa_config)
 
-        self.MainTimer = MainTimer(self.config)
-        self.MainTimer.get_config.connect(self.give_config)
-        self.MainTimer.start_for_timer.connect(lambda: self.maa_starter("日常代理"))
-        self.MainTimer.start()
+        self.latest_time = "0000-00-00 00:00"
+        self.Timer = QtCore.QTimer()
+        self.Timer.timeout.connect(self.set_system)
+        self.Timer.timeout.connect(self.timed_start)
+        self.Timer.start(1000)
 
         # 载入GUI数据
         self.update_user_info("normal")
@@ -2433,6 +2336,80 @@ class Main(QWidget):
         else:
             return False
 
+    def set_system(self):
+        """设置系统相关配置"""
+
+        # 同步系统休眠状态
+        if self.config["Default"]["SelfSet.IfSleep"] == "True":
+            # 设置系统电源状态
+            ctypes.windll.kernel32.SetThreadExecutionState(
+                self.ES_CONTINUOUS | self.ES_SYSTEM_REQUIRED
+            )
+        elif self.config["Default"]["SelfSet.IfSleep"] == "False":
+            # 恢复系统电源状态
+            ctypes.windll.kernel32.SetThreadExecutionState(self.ES_CONTINUOUS)
+
+        # 同步开机自启
+        if (
+            self.config["Default"]["SelfSet.IfSelfStart"] == "True"
+            and not self.is_startup()
+        ):
+            key = winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER,
+                r"Software\Microsoft\Windows\CurrentVersion\Run",
+                winreg.KEY_SET_VALUE,
+                winreg.KEY_ALL_ACCESS | winreg.KEY_WRITE | winreg.KEY_CREATE_SUB_KEY,
+            )
+            winreg.SetValueEx(key, self.app_name, 0, winreg.REG_SZ, self.app_path_sys)
+            winreg.CloseKey(key)
+        elif (
+            self.config["Default"]["SelfSet.IfSelfStart"] == "False"
+            and self.is_startup()
+        ):
+            key = winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER,
+                r"Software\Microsoft\Windows\CurrentVersion\Run",
+                winreg.KEY_SET_VALUE,
+                winreg.KEY_ALL_ACCESS | winreg.KEY_WRITE | winreg.KEY_CREATE_SUB_KEY,
+            )
+            winreg.DeleteValue(key, self.app_name)
+            winreg.CloseKey(key)
+
+    def is_startup(self):
+        """判断程序是否已经开机自启"""
+
+        key = winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\CurrentVersion\Run",
+            0,
+            winreg.KEY_READ,
+        )
+
+        try:
+            value, _ = winreg.QueryValueEx(key, self.app_name)
+            winreg.CloseKey(key)
+            return True
+        except FileNotFoundError:
+            winreg.CloseKey(key)
+            return False
+
+    def timed_start(self):
+        # 获取定时列表
+        time_set = [
+            self.config["Default"][f"TimeSet.run{_ + 1}"]
+            for _ in range(10)
+            if self.config["Default"][f"TimeSet.set{_ + 1}"] == "True"
+        ]
+        # 按时间调起代理任务
+        curtime = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+        if (
+            curtime[11:16] in time_set
+            and curtime != self.latest_time
+            and not self.MaaRunner.isRunning()
+        ):
+            self.latest_time = curtime
+            self.maa_starter("日常代理")
+
     def maa_starter(self, mode):
         """启动MaaRunner线程运行任务"""
 
@@ -2451,7 +2428,6 @@ class Main(QWidget):
         self.MaaRunner.mode = mode
 
         # 启动执行线程
-        self.MainTimer.is_maa_run = True
         self.MaaRunner.start()
 
     def maa_ender(self, mode):
@@ -2459,8 +2435,6 @@ class Main(QWidget):
 
         self.MaaRunner.requestInterruption()
         self.MaaRunner.wait()
-
-        self.MainTimer.is_maa_run = False
 
         self.maa_running_set(mode)
 
@@ -2673,11 +2647,6 @@ class Main(QWidget):
         finally:
             smtpObj.quit()
 
-    def give_config(self):
-        """同步配置文件到子线程"""
-
-        self.MainTimer.config = self.config
-
 
 class AUTO_MAA(QMainWindow):
 
@@ -2738,7 +2707,7 @@ class AUTO_MAA(QMainWindow):
 
     def start_task(self, mode):
         """调起对应任务"""
-        if self.main.MainTimer.is_maa_run:
+        if self.main.MaaRunner.isRunning():
             self.main.push_notification(
                 f"无法运行{mode}！",
                 "当前已有任务正在运行，请在该任务结束后重试",
@@ -2811,9 +2780,6 @@ class AUTO_MAA(QMainWindow):
         self.set_ui("保存")
 
         # 清理各功能线程
-        self.main.MainTimer.requestInterruption()
-        self.main.MainTimer.quit()
-        self.main.MainTimer.wait()
         self.main.MaaRunner.requestInterruption()
         self.main.MaaRunner.quit()
         self.main.MaaRunner.wait()
