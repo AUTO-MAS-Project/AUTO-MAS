@@ -48,7 +48,7 @@ from PySide6.QtWidgets import (
     QTextBrowser,
 )
 from PySide6.QtUiTools import QUiLoader
-from PySide6.QtGui import QIcon, QCloseEvent
+from PySide6.QtGui import QIcon, QPalette, QCloseEvent
 from PySide6 import QtCore
 from functools import partial
 from plyer import notification
@@ -197,10 +197,10 @@ class MaaRunner(QtCore.QThread):
 
                             # 判断是否超时
                             if len(logs) > 0:
-                                last_time = datetime.datetime.now()
+                                latest_time = datetime.datetime.now()
                                 for _ in range(-1, 0 - len(logs) - 1, -1):
                                     try:
-                                        last_time = datetime.datetime.strptime(
+                                        latest_time = datetime.datetime.strptime(
                                             logs[_][1:20], "%Y-%m-%d %H:%M:%S"
                                         )
                                         break
@@ -209,11 +209,11 @@ class MaaRunner(QtCore.QThread):
                                 now_time = datetime.datetime.now()
                                 if (
                                     j == 0
-                                    and now_time - last_time
+                                    and now_time - latest_time
                                     > datetime.timedelta(minutes=self.annihilation)
                                 ) or (
                                     j == 1
-                                    and now_time - last_time
+                                    and now_time - latest_time
                                     > datetime.timedelta(minutes=self.routine)
                                 ):
                                     self.if_time_out = True
@@ -1108,7 +1108,7 @@ class Main(QWidget):
         self.main_tab.currentChanged.connect(self.change_config)
 
         self.user_set = self.ui.findChild(QToolBox, "toolBox_userset")
-        self.user_set.currentChanged.connect(self.change_userlist_method)
+        self.user_set.currentChanged.connect(lambda: self.update_user_info("normal"))
 
         self.user_list_simple = self.ui.findChild(
             QTableWidget, "tableWidget_userlist_simple"
@@ -1223,8 +1223,9 @@ class Main(QWidget):
         self.MaaRunner.accomplish.connect(lambda: self.maa_ender("日常代理_结束"))
         self.MaaRunner.get_json.connect(self.get_maa_config)
 
-        self.latest_time = "0000-00-00 00:00"
+        self.last_time = "0000-00-00 00:00"
         self.Timer = QtCore.QTimer()
+        self.Timer.timeout.connect(self.set_theme)
         self.Timer.timeout.connect(self.set_system)
         self.Timer.timeout.connect(self.timed_start)
         self.Timer.start(1000)
@@ -1232,7 +1233,6 @@ class Main(QWidget):
         # 载入GUI数据
         self.update_user_info("normal")
         self.update_config()
-        self.change_userlist_method()
 
         # 启动后直接开始代理
         if self.config["Default"]["SelfSet.IfProxyDirectly"] == "True":
@@ -1603,6 +1603,9 @@ class Main(QWidget):
 
         # 阻止GUI用户数据被立即写入数据库形成死循环
         self.if_update_database = False
+
+        user_switch_list = ["转为高级", "转为简洁"]
+        self.user_switch.setText(user_switch_list[self.user_set.currentIndex()])
 
         # 同步简洁用户配置列表
         data_simple = [_ for _ in data if _[15] == "simple"]
@@ -2264,12 +2267,11 @@ class Main(QWidget):
         # 同步程序配置至GUI
         self.update_config()
 
-    def change_userlist_method(self):
-        """更新GUI界面使之适配用户配置模式"""
+    def set_theme(self):
+        """手动更新主题色到组件"""
 
-        user_switch_list = ["转为高级", "转为简洁"]
-        self.user_switch.setText(user_switch_list[self.user_set.currentIndex()])
-        self.update_user_info("normal")
+        self.user_list_simple.setStyleSheet("QTableWidget::item {}")
+        self.user_list_beta.setStyleSheet("QTableWidget::item {}")
 
     def read(self, operation):
         """弹出对话框组件进行读入"""
@@ -2404,10 +2406,10 @@ class Main(QWidget):
         curtime = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
         if (
             curtime[11:16] in time_set
-            and curtime != self.latest_time
+            and curtime != self.last_time
             and not self.MaaRunner.isRunning()
         ):
-            self.latest_time = curtime
+            self.last_time = curtime
             self.maa_starter("日常代理")
 
     def maa_starter(self, mode):
