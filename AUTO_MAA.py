@@ -2580,7 +2580,7 @@ class Main(QWidget):
 
         # 无版本更新
         else:
-            self.push_notification("已是最新版本~", " ", " ", 10)
+            self.push_notification("已是最新版本~", " ", " ", 3)
 
     def update_main(self):
         """更新主程序"""
@@ -2720,7 +2720,7 @@ class AUTO_MAA(QMainWindow):
                 f"无法运行{mode}！",
                 "当前已有任务正在运行，请在该任务结束后重试",
                 "当前已有任务正在运行，请在该任务结束后重试",
-                10,
+                3,
             )
         else:
             self.main.maa_starter(mode)
@@ -2738,14 +2738,14 @@ class AUTO_MAA(QMainWindow):
                     "正在设置MAA！",
                     "正在运行设置MAA任务，无法中止",
                     "正在运行设置MAA任务，无法中止",
-                    10,
+                    3,
                 )
         else:
             self.main.push_notification(
                 "无任务运行！",
                 "当前无任务正在运行，无需中止",
                 "当前无任务正在运行，无需中止",
-                10,
+                3,
             )
 
     def kill_main(self):
