@@ -1847,7 +1847,7 @@ class Main(QWidget):
         # 插入预设用户数据
         if self.user_set.currentIndex() == 0:
             self.cur.execute(
-                "INSERT INTO adminx VALUES('新用户','手机号码（官服）/B站ID（B服）','Official',0,'y','2000-01-01','1-7','-','-','y','y','n',?,'无',0,'simple',?)",
+                "INSERT INTO adminx VALUES('新用户','手机号码（官服）/B站ID（B服）','Official',-1,'y','2000-01-01','1-7','-','-','y','y','n',?,'无',0,'simple',?)",
                 (
                     self.encryptx("未设置"),
                     self.user_list_simple.rowCount(),
@@ -1861,7 +1861,7 @@ class Main(QWidget):
             )
         elif self.user_set.currentIndex() == 1:
             self.cur.execute(
-                "INSERT INTO adminx VALUES('新用户','手机号码（官服）/B站ID（B服）','Official',0,'y','2000-01-01','1-7','-','-','y','y','-',?,'无',0,'beta',?)",
+                "INSERT INTO adminx VALUES('新用户','手机号码（官服）/B站ID（B服）','Official',-1,'y','2000-01-01','1-7','-','-','y','y','-',?,'无',0,'beta',?)",
                 (
                     self.encryptx("未设置"),
                     self.user_list_beta.rowCount(),
@@ -2683,6 +2683,9 @@ class AUTO_MAA(QMainWindow):
         start_task_2 = self.tray_menu.addAction("运行人工排查")
         start_task_2.triggered.connect(lambda: self.start_task("人工排查"))
 
+        stop_task = self.tray_menu.addAction("中止当前任务")
+        stop_task.triggered.connect(self.stop_task)
+
         # 退出主程序菜单项
         kill = self.tray_menu.addAction("退出主程序")
         kill.triggered.connect(self.kill_main)
@@ -2721,6 +2724,29 @@ class AUTO_MAA(QMainWindow):
             )
         else:
             self.main.maa_starter(mode)
+
+    def stop_task(self):
+        """中止当前任务"""
+        if self.main.MaaRunner.isRunning():
+            if (
+                self.main.MaaRunner.mode == "日常代理"
+                or self.main.MaaRunner.mode == "人工排查"
+            ):
+                self.main.maa_ender(f"{self.main.MaaRunner.mode}_结束")
+            elif "设置MAA" in self.main.MaaRunner.mode:
+                self.main.push_notification(
+                    "正在设置MAA！",
+                    "正在运行设置MAA任务，无法中止",
+                    "正在运行设置MAA任务，无法中止",
+                    10,
+                )
+        else:
+            self.main.push_notification(
+                "无任务运行！",
+                "当前无任务正在运行，无需中止",
+                "当前无任务正在运行，无需中止",
+                10,
+            )
 
     def kill_main(self):
         """退出主程序"""
