@@ -60,13 +60,6 @@
              </widget>
             </item>
             <item>
-             <widget class="QPushButton" name="pushButton_changeset">
-              <property name="text">
-               <string>修改配置</string>
-              </property>
-             </widget>
-            </item>
-            <item>
              <spacer name="horizontalSpacer">
               <property name="orientation">
                <enum>Qt::Orientation::Horizontal</enum>
@@ -1378,6 +1371,8 @@ li.checked::marker { content: &quot;\2612&quot;; }
 &lt;p style=&quot;-qt-paragraph-type:empty; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;br /&gt;&lt;/p&gt;
 &lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;       官方QQ交流群：957750551&lt;/p&gt;
 &lt;p style=&quot;-qt-paragraph-type:empty; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;br /&gt;&lt;/p&gt;
+&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;       友情推荐项目：&lt;a href=&quot;https://git.zhaozuohong.vip/mower-ng&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#004194;&quot;&gt;zhaozuohong/mower-ng&lt;/span&gt;&lt;/a&gt; 、  &lt;a href=&quot;https://github.com/AegirTech/ArkLights&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#004194;&quot;&gt;AegirTech/ArkLights&lt;/span&gt;&lt;/a&gt;&lt;/p&gt;
+&lt;p style=&quot;-qt-paragraph-type:empty; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;br /&gt;&lt;/p&gt;
 &lt;p align=&quot;right&quot; style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;DLmaster&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
             </property>
            </widget>
@@ -1385,7 +1380,7 @@ li.checked::marker { content: &quot;\2612&quot;; }
           <item>
            <widget class="QLabel" name="label_notice">
             <property name="text">
-             <string>注意：在用户管理页与设置页执行的所有更改，不会对正在执行的任务生效。</string>
+             <string>注意：在设置页执行的所有更改，不会对正在执行的任务生效；正在执行任务时，用户管理页无法编辑。</string>
             </property>
            </widget>
           </item>
