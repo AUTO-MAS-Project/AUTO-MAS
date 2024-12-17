@@ -112,6 +112,9 @@ class MaaRunner(QtCore.QThread):
         self.annihilation = self.config["Default"]["TimeLimit.annihilation"]
         self.num = self.config["Default"]["TimesLimit.run"]
         self.if_send_mail = bool(self.config["Default"]["SelfSet.IfSendMail"] == "True")
+        self.if_send_error_only = bool(
+            self.config["Default"]["SelfSet.IfSendMail.OnlyError"] == "True"
+        )
 
     def run(self):
         """主进程，运行MAA代理进程"""
@@ -544,7 +547,10 @@ class MaaRunner(QtCore.QThread):
                 f"已完成用户数：{len(over_index)}，未完成用户数：{len(error_index) + len(wait_index)}",
                 10,
             )
-            if self.if_send_mail:
+            if self.if_send_mail and (
+                not self.if_send_error_only
+                or (self.if_send_error_only and len(error_index) + len(wait_index) != 0)
+            ):
                 self.send_mail.emit(
                     f"{self.mode[:4]}任务报告",
                     f"{end_log}\n\nAUTO_MAA 敬上\n\n我们根据您在 AUTO_MAA 中的设置发送了这封电子邮件，本邮件无需回复\n",
@@ -1199,6 +1205,9 @@ class Main(QWidget):
         self.mail_address = self.ui.findChild(QLineEdit, "lineEdit_mailaddress")
         self.mail_address.textChanged.connect(self.change_config)
 
+        self.if_send_error_only = self.ui.findChild(QCheckBox, "checkBox_ifonlyerror")
+        self.if_send_error_only.stateChanged.connect(self.change_config)
+
         self.if_to_tray = self.ui.findChild(QCheckBox, "checkBox_iftotray")
         self.if_to_tray.stateChanged.connect(self.change_config)
 
@@ -1339,6 +1348,7 @@ class Main(QWidget):
             ["SelfSet.IfProxyDirectly", "False"],
             ["SelfSet.IfSendMail", "False"],
             ["SelfSet.MailAddress", ""],
+            ["SelfSet.IfSendMail.OnlyError", "False"],
             ["SelfSet.IfToTray", "False"],
             ["SelfSet.UIsize", "1200x700"],
             ["SelfSet.UIlocation", "100x100"],
@@ -1825,6 +1835,14 @@ class Main(QWidget):
             bool(self.config["Default"]["SelfSet.IfSendMail"] == "True")
         )
 
+        self.if_send_error_only.setChecked(
+            bool(self.config["Default"]["SelfSet.IfSendMail.OnlyError"] == "True")
+        )
+
+        self.if_send_error_only.setVisible(
+            bool(self.config["Default"]["SelfSet.IfSendMail"] == "True")
+        )
+
         self.if_to_tray.setChecked(
             bool(self.config["Default"]["SelfSet.IfToTray"] == "True")
         )
@@ -2272,6 +2290,11 @@ class Main(QWidget):
         else:
             self.config["Default"]["SelfSet.IfSendMail"] = "False"
 
+        if self.if_send_error_only.isChecked():
+            self.config["Default"]["SelfSet.IfSendMail.OnlyError"] = "True"
+        else:
+            self.config["Default"]["SelfSet.IfSendMail.OnlyError"] = "False"
+
         if self.if_to_tray.isChecked():
             self.config["Default"]["SelfSet.IfToTray"] = "True"
         else:
@@ -2546,18 +2569,24 @@ class Main(QWidget):
             updater_version_current = [0, 0, 0, 0]
 
         # 从远程服务器获取最新版本信息
-        try:
-            response = requests.get(
-                "https://ghp.ci/https://github.com/DLmaster361/AUTO_MAA/blob/main/res/version.json"
-            )
-        except Exception as e:
+        for _ in range(3):
+            try:
+                response = requests.get(
+                    "https://gitee.com/DLmaster_361/AUTO_MAA/raw/main/res/version.json"
+                )
+                version_remote = response.json()
+                break
+            except Exception as e:
+                err = e
+                time.sleep(0.1)
+        else:
             QMessageBox.critical(
                 self.ui,
                 "错误",
-                f"获取版本信息时出错：\n{e}",
+                f"获取版本信息时出错：\n{err}",
             )
             return None
-        version_remote = response.json()
+
         main_version_remote = list(map(int, version_remote["main_version"].split(".")))
         updater_version_remote = list(
             map(int, version_remote["updater_version"].split("."))
@@ -2567,11 +2596,26 @@ class Main(QWidget):
         if (main_version_remote > main_version_current) or (
             updater_version_remote > updater_version_current
         ):
+
+            # 生成版本更新信息
+            if main_version_remote > main_version_current:
+                main_version_info = f"    主程序：{self.version_text(main_version_current)} --> {self.version_text(main_version_remote)}\n"
+            else:
+                main_version_info = (
+                    f"    主程序：{self.version_text(main_version_current)}\n"
+                )
+            if updater_version_remote > updater_version_current:
+                updater_version_info = f"    更新器：{self.version_text(updater_version_current)} --> {self.version_text(updater_version_remote)}\n"
+            else:
+                updater_version_info = (
+                    f"    更新器：{self.version_text(updater_version_current)}\n"
+                )
+
             # 询问是否开始版本更新
             choice = QMessageBox.question(
                 self.ui,
                 "版本更新",
-                f"发现新版本：\n    主程序：{self.version_text(main_version_current)} --> {self.version_text(main_version_remote)}\n    更新器：{self.version_text(updater_version_current)} --> {self.version_text(updater_version_remote)}\n    更新说明：\n{version_remote['announcement'].replace("\n","\n        ")}\n\n是否开始更新？\n\n    注意：主程序更新时AUTO_MAA将自动关闭",
+                f"发现新版本：\n{main_version_info}{updater_version_info}    更新说明：\n{version_remote['announcement'].replace("\n# ","\n   ！").replace("\n## ","\n        - ").replace("\n- ","\n            · ")}\n\n是否开始更新？\n\n    注意：主程序更新时AUTO_MAA将自动关闭",
             )
             if choice == QMessageBox.No:
                 return None
@@ -2582,8 +2626,8 @@ class Main(QWidget):
                 self.updater = Updater.Updater(
                     self.app_path,
                     "AUTO_MAA更新器",
-                    version_remote["updater_download_url"],
-                    version_remote["updater_version"],
+                    main_version_remote,
+                    updater_version_remote,
                 )
                 # 完成更新器的更新后更新主程序
                 if main_version_remote > main_version_current:
@@ -2616,7 +2660,9 @@ class Main(QWidget):
         if version_numb[3] == 0:
             version = f"v{'.'.join(str(_) for _ in version_numb[0:3])}"
         else:
-            version = f"v{'.'.join(str(_) for _ in version_numb[0:3])}_beta"
+            version = (
+                f"v{'.'.join(str(_) for _ in version_numb[0:3])}_beta{version_numb[3]}"
+            )
         return version
 
     def push_notification(self, title, message, ticker, t):

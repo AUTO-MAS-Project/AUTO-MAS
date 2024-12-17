@@ -1,7 +1,5 @@
 {
-    "main_version": "4.1.3.5",
-    "main_download_url": "https://ghp.ci/https://github.com/DLmaster361/AUTO_MAA/releases/download/v4.1.3_beta/AUTO_MAA_v4.1.3_beta.zip",
-    "updater_version": "1.0.5.0",
-    "updater_download_url": "https://ghp.ci/https://github.com/DLmaster361/AUTO_MAA/releases/download/v4.1.3_beta/Updater_v1.0.5.zip",
-    "announcement": "\n# 测试版本，遇BUG速速上报，谢谢~\n## 新增功能\n- 添加托盘中止当前任务选项\n## 修复BUG\n- 修复深色模式下UI异常 #10\n## 程序优化\n- MainTimer逻辑实现优化\n- 修改配置方法优化\n- 代理逻辑优化"
+    "main_version": "4.1.3.6",
+    "updater_version": "1.0.5.1",
+    "announcement": "\n# 测试版本，遇BUG速速上报，谢谢~\n## 新增功能\n- 添加托盘中止当前任务选项\n- 添加邮件仅推送异常信息选项\n## 修复BUG\n- 修复深色模式下UI异常 #10\n## 程序优化\n- MainTimer逻辑实现优化\n- 修改配置方法优化\n- 代理逻辑优化\n- 更新器添加更多代理地址，更新流程优化"
 }

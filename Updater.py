@@ -31,6 +31,7 @@ import json
 import zipfile
 import requests
 import subprocess
+import time
 
 from PySide6.QtWidgets import (
     QApplication,
@@ -42,6 +43,8 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui import QIcon
 from PySide6.QtCore import QObject, QThread, Signal
 
+from package import version_text
+
 
 class UpdateProcess(QThread):
 
@@ -49,13 +52,13 @@ class UpdateProcess(QThread):
     progress = Signal(int, int, int)
     accomplish = Signal()
 
-    def __init__(self, app_path, name, download_url, version):
+    def __init__(self, app_path, name, main_version, updater_version):
         super(UpdateProcess, self).__init__()
 
         self.app_path = app_path
         self.name = name
-        self.download_url = download_url
-        self.version = version
+        self.main_version = main_version
+        self.updater_version = updater_version
         self.download_path = f"{app_path}/AUTO_MAA_Update.zip"  #  临时下载文件的路径
         self.version_path = f"{app_path}/res/version.json"
 
@@ -67,23 +70,71 @@ class UpdateProcess(QThread):
         except FileNotFoundError:
             pass
 
+        url_list = self.get_download_url()
+
         # 下载
         try:
-            response = requests.get(self.download_url, stream=True)
-            file_size = response.headers.get("Content-Length")
+            # 验证下载地址并获取文件大小
+            for i in range(len(url_list)):
+                try:
+                    response = requests.get(url_list[i], stream=True)
+                    if response.status_code != 200:
+                        self.info.emit(
+                            f"连接失败，错误代码 {response.status_code} ，正在切换代理（{i+1}/{len(url_list)}）"
+                        )
+                        time.sleep(1)
+                        continue
+                    print(url_list[i])
+                    file_size = response.headers.get("Content-Length")
+                    break
+                except requests.RequestException:
+                    self.info.emit(f"请求超时，正在切换代理（{i+1}/{len(url_list)}）")
+                    time.sleep(1)
+                    print(i)
+            else:
+                self.info.emit(f"服务器连接失败，已尝试所有{len(url_list)}个代理")
+                return None
+
             if file_size is None:
                 file_size = 1
             else:
                 file_size = int(file_size)
+
+            # 下载文件
             with open(self.download_path, "wb") as f:
+
                 downloaded_size = 0
+                last_download_size = 0
+                speed = 0
+                last_time = time.time()
+
                 for chunk in response.iter_content(chunk_size=8192):
+
+                    # 写入已下载数据
                     f.write(chunk)
                     downloaded_size += len(chunk)
-                    self.info.emit(
-                        f"正在下载：{self.name} 已下载: {downloaded_size / 1048576:.2f}/{file_size / 1048576:.2f} MB ({downloaded_size / file_size * 100:.2f}%)"
-                    )
+
+                    # 计算下载速度
+                    if time.time() - last_time >= 1.0:
+                        speed = (
+                            (downloaded_size - last_download_size)
+                            / (time.time() - last_time)
+                            / 1024
+                        )
+                        last_download_size = downloaded_size
+                        last_time = time.time()
+
+                    # 更新下载进度
+                    if speed >= 1024:
+                        self.info.emit(
+                            f"正在下载：{self.name} 已下载: {downloaded_size / 1048576:.2f}/{file_size / 1048576:.2f} MB ({downloaded_size / file_size * 100:.2f}%) 下载速度 {speed / 1024:.2f} MB/s",
+                        )
+                    else:
+                        self.info.emit(
+                            f"正在下载：{self.name} 已下载: {downloaded_size / 1048576:.2f}/{file_size / 1048576:.2f} MB ({downloaded_size / file_size * 100:.2f}%) 下载速度 {speed:.2f} KB/s",
+                        )
                     self.progress.emit(0, 100, int(downloaded_size / file_size * 100))
+
         except Exception as e:
             e = str(e)
             e = "\n".join([e[_ : _ + 75] for _ in range(0, len(e), 75)])
@@ -92,10 +143,17 @@ class UpdateProcess(QThread):
 
         # 解压
         try:
-            self.info.emit("正在解压更新文件")
-            self.progress.emit(0, 0, 0)
-            with zipfile.ZipFile(self.download_path, "r") as zip_ref:
-                zip_ref.extractall(self.app_path)
+
+            while True:
+                try:
+                    self.info.emit("正在解压更新文件")
+                    self.progress.emit(0, 0, 0)
+                    with zipfile.ZipFile(self.download_path, "r") as zip_ref:
+                        zip_ref.extractall(self.app_path)
+                    break
+                except PermissionError:
+                    self.info.emit("解压失败：AUTO_MAA正在运行，正在等待其关闭")
+                    time.sleep(1)
 
             self.info.emit("正在删除临时文件")
             self.progress.emit(0, 0, 0)
@@ -103,7 +161,9 @@ class UpdateProcess(QThread):
 
             self.info.emit(f"{self.name}更新成功！")
             self.progress.emit(0, 100, 100)
+
         except Exception as e:
+
             e = str(e)
             e = "\n".join([e[_ : _ + 75] for _ in range(0, len(e), 75)])
             self.info.emit(f"解压更新时出错：\n{e}")
@@ -113,9 +173,9 @@ class UpdateProcess(QThread):
         with open(self.version_path, "r", encoding="utf-8") as f:
             version_info = json.load(f)
         if self.name == "AUTO_MAA更新器":
-            version_info["updater_version"] = self.version
+            version_info["updater_version"] = self.updater_version
         elif self.name == "AUTO_MAA主程序":
-            version_info["main_version"] = self.version
+            version_info["main_version"] = self.main_version
         with open(self.version_path, "w", encoding="utf-8") as f:
             json.dump(version_info, f, indent=4)
 
@@ -128,6 +188,35 @@ class UpdateProcess(QThread):
             )
 
         self.accomplish.emit()
+
+    def get_download_url(self):
+        """计算下载链接"""
+        PROXY_list = [
+            "",
+            "https://gitproxy.click/",
+            "https://cdn.moran233.xyz/",
+            "https://gh.llkk.cc/",
+            "https://github.akams.cn/",
+            "https://www.ghproxy.cn/",
+        ]
+        url_list = []
+        if self.name == "AUTO_MAA主程序":
+            url_list.append(
+                f"https://gitee.com/DLmaster_361/AUTO_MAA/releases/download/{version_text(self.main_version)}/AUTO_MAA_{version_text(self.main_version)}.zip"
+            )
+            for i in range(len(PROXY_list)):
+                url_list.append(
+                    f"{PROXY_list[i]}https://github.com/DLmaster361/AUTO_MAA/releases/download/{version_text(self.main_version)}/AUTO_MAA_{version_text(self.main_version)}.zip"
+                )
+        elif self.name == "AUTO_MAA更新器":
+            url_list.append(
+                f"https://gitee.com/DLmaster_361/AUTO_MAA/releases/download/{version_text(self.main_version)}/Updater_{version_text(self.updater_version)}.zip"
+            )
+            for i in range(len(PROXY_list)):
+                url_list.append(
+                    f"{PROXY_list[i]}https://github.com/DLmaster361/AUTO_MAA/releases/download/{version_text(self.main_version)}/Updater_{version_text(self.updater_version)}.zip"
+                )
+        return url_list
 
 
 class Updater(QObject):
@@ -190,7 +279,7 @@ if __name__ == "__main__":
 
     # 从远程服务器获取最新版本信息
     response = requests.get(
-        "https://ghp.ci/https://github.com/DLmaster361/AUTO_MAA/blob/main/res/version.json"
+        "https://gitee.com/DLmaster_361/AUTO_MAA/raw/main/res/version.json"
     )
     version_remote = response.json()
     main_version_remote = list(map(int, version_remote["main_version"].split(".")))
@@ -200,7 +289,7 @@ if __name__ == "__main__":
         app = AUTO_MAA_Updater(
             app_path,
             "AUTO_MAA主程序",
-            version_remote["main_download_url"],
-            version_remote["main_version"],
+            main_version_remote,
+            "",
         )
         sys.exit(app.exec())
