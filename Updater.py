@@ -84,13 +84,11 @@ class UpdateProcess(QThread):
                         )
                         time.sleep(1)
                         continue
-                    print(url_list[i])
                     file_size = response.headers.get("Content-Length")
                     break
                 except requests.RequestException:
                     self.info.emit(f"请求超时，正在切换代理（{i+1}/{len(url_list)}）")
                     time.sleep(1)
-                    print(i)
             else:
                 self.info.emit(f"服务器连接失败，已尝试所有{len(url_list)}个代理")
                 return None
@@ -152,7 +150,7 @@ class UpdateProcess(QThread):
                         zip_ref.extractall(self.app_path)
                     break
                 except PermissionError:
-                    self.info.emit("解压失败：AUTO_MAA正在运行，正在等待其关闭")
+                    self.info.emit("解压出错：AUTO_MAA正在运行，正在等待其关闭")
                     time.sleep(1)
 
             self.info.emit("正在删除临时文件")
@@ -173,9 +171,9 @@ class UpdateProcess(QThread):
         with open(self.version_path, "r", encoding="utf-8") as f:
             version_info = json.load(f)
         if self.name == "AUTO_MAA更新器":
-            version_info["updater_version"] = self.updater_version
+            version_info["updater_version"] = ".".join(map(str, self.updater_version))
         elif self.name == "AUTO_MAA主程序":
-            version_info["main_version"] = self.main_version
+            version_info["main_version"] = ".".join(map(str, self.main_version))
         with open(self.version_path, "w", encoding="utf-8") as f:
             json.dump(version_info, f, indent=4)
 
