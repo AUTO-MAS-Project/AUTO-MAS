@@ -125,11 +125,11 @@ class UpdateProcess(QThread):
                     # 更新下载进度
                     if speed >= 1024:
                         self.info.emit(
-                            f"正在下载：{self.name} 已下载: {downloaded_size / 1048576:.2f}/{file_size / 1048576:.2f} MB ({downloaded_size / file_size * 100:.2f}%) 下载速度 {speed / 1024:.2f} MB/s",
+                            f"正在下载：{self.name} 已下载：{downloaded_size / 1048576:.2f}/{file_size / 1048576:.2f} MB （{downloaded_size / file_size * 100:.2f}%） 下载速度：{speed / 1024:.2f} MB/s",
                         )
                     else:
                         self.info.emit(
-                            f"正在下载：{self.name} 已下载: {downloaded_size / 1048576:.2f}/{file_size / 1048576:.2f} MB ({downloaded_size / file_size * 100:.2f}%) 下载速度 {speed:.2f} KB/s",
+                            f"正在下载：{self.name} 已下载：{downloaded_size / 1048576:.2f}/{file_size / 1048576:.2f} MB （{downloaded_size / file_size * 100:.2f}%） 下载速度：{speed:.2f} KB/s",
                         )
                     self.progress.emit(0, 100, int(downloaded_size / file_size * 100))
 
