@@ -196,6 +196,7 @@ class UpdateProcess(QThread):
             "https://gh.llkk.cc/",
             "https://github.akams.cn/",
             "https://www.ghproxy.cn/",
+            "https://ghp.ci/",
         ]
         url_list = []
         if self.name == "AUTO_MAA主程序":
