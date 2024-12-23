@@ -1,5 +1,6 @@
 plyer
 PySide6
+psutil
 pywin32
 pyautogui
 pycryptodome
