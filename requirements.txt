@@ -1,5 +1,7 @@
 plyer
 PySide6
+pywin32
+pyautogui
 pycryptodome
 pyinstaller
 requests

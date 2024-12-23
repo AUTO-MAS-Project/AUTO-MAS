@@ -37,3 +37,6 @@
 "Start.RunDirectly": "True"        #启动MAA后直接运行
 "Start.MinimizeDirectly": "True"        #启动MAA后直接最小化
 "Start.OpenEmulatorAfterLaunch": "True"        #启动MAA后自动开启模拟器
+"GUI.UseTray": "True"        #显示托盘图标
+"GUI.MinimizeToTray": "False"        #最小化时隐藏至托盘
+"Start.EmulatorPath"        #模拟器路径

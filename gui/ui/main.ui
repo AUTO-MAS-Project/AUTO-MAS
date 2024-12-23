@@ -182,7 +182,7 @@
               <rect>
                <x>0</x>
                <y>0</y>
-               <width>88</width>
+               <width>98</width>
                <height>74</height>
               </rect>
              </property>
@@ -1048,84 +1048,7 @@
          <property name="title">
           <string>AUTO_MAA设置</string>
          </property>
-         <layout class="QGridLayout" name="gridLayout_4">
-          <item row="0" column="0">
-           <widget class="QFrame" name="frame_routine_3">
-            <property name="frameShape">
-             <enum>QFrame::Shape::StyledPanel</enum>
-            </property>
-            <property name="frameShadow">
-             <enum>QFrame::Shadow::Raised</enum>
-            </property>
-            <layout class="QHBoxLayout" name="horizontalLayout_19">
-             <item>
-              <widget class="QCheckBox" name="checkBox_ifselfstart">
-               <property name="text">
-                <string>开机自动启动AUTO_MAA</string>
-               </property>
-              </widget>
-             </item>
-             <item>
-              <spacer name="horizontalSpacer_14">
-               <property name="orientation">
-                <enum>Qt::Orientation::Horizontal</enum>
-               </property>
-               <property name="sizeHint" stdset="0">
-                <size>
-                 <width>40</width>
-                 <height>20</height>
-                </size>
-               </property>
-              </spacer>
-             </item>
-            </layout>
-           </widget>
-          </item>
-          <item row="0" column="1">
-           <spacer name="horizontalSpacer_6">
-            <property name="orientation">
-             <enum>Qt::Orientation::Horizontal</enum>
-            </property>
-            <property name="sizeHint" stdset="0">
-             <size>
-              <width>40</width>
-              <height>20</height>
-             </size>
-            </property>
-           </spacer>
-          </item>
-          <item row="0" column="2">
-           <widget class="QFrame" name="frame_routine_2">
-            <property name="frameShape">
-             <enum>QFrame::Shape::StyledPanel</enum>
-            </property>
-            <property name="frameShadow">
-             <enum>QFrame::Shadow::Raised</enum>
-            </property>
-            <layout class="QHBoxLayout" name="horizontalLayout_18">
-             <item>
-              <widget class="QCheckBox" name="checkBox_ifsleep">
-               <property name="text">
-                <string>AUTO_MAA启动时禁止电脑休眠</string>
-               </property>
-              </widget>
-             </item>
-             <item>
-              <spacer name="horizontalSpacer_13">
-               <property name="orientation">
-                <enum>Qt::Orientation::Horizontal</enum>
-               </property>
-               <property name="sizeHint" stdset="0">
-                <size>
-                 <width>40</width>
-                 <height>20</height>
-                </size>
-               </property>
-              </spacer>
-             </item>
-            </layout>
-           </widget>
-          </item>
+         <layout class="QGridLayout" name="gridLayout_3">
           <item row="0" column="3">
            <spacer name="horizontalSpacer_7">
             <property name="orientation">
@@ -1138,6 +1061,136 @@
              </size>
             </property>
            </spacer>
+          </item>
+          <item row="2" column="0" colspan="2">
+           <widget class="QFrame" name="frame_routine_5">
+            <property name="frameShape">
+             <enum>QFrame::Shape::StyledPanel</enum>
+            </property>
+            <property name="frameShadow">
+             <enum>QFrame::Shadow::Raised</enum>
+            </property>
+            <layout class="QHBoxLayout" name="horizontalLayout_22" stretch="0,1,3">
+             <item>
+              <widget class="QCheckBox" name="checkBox_silence">
+               <property name="text">
+                <string>后台静默代理</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <spacer name="horizontalSpacer_16">
+               <property name="orientation">
+                <enum>Qt::Orientation::Horizontal</enum>
+               </property>
+               <property name="sizeHint" stdset="0">
+                <size>
+                 <width>40</width>
+                 <height>20</height>
+                </size>
+               </property>
+              </spacer>
+             </item>
+             <item>
+              <widget class="QLineEdit" name="lineEdit_boss">
+               <property name="placeholderText">
+                <string>安卓模拟器老板键</string>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </widget>
+          </item>
+          <item row="1" column="1">
+           <spacer name="horizontalSpacer_11">
+            <property name="orientation">
+             <enum>Qt::Orientation::Horizontal</enum>
+            </property>
+            <property name="sizeHint" stdset="0">
+             <size>
+              <width>231</width>
+              <height>20</height>
+             </size>
+            </property>
+           </spacer>
+          </item>
+          <item row="2" column="2" colspan="2">
+           <widget class="QFrame" name="frame_routine_6">
+            <property name="frameShape">
+             <enum>QFrame::Shape::StyledPanel</enum>
+            </property>
+            <property name="frameShadow">
+             <enum>QFrame::Shadow::Raised</enum>
+            </property>
+            <layout class="QHBoxLayout" name="horizontalLayout_26" stretch="0,1,3,0">
+             <item>
+              <widget class="QCheckBox" name="checkBox_ifsendmail">
+               <property name="text">
+                <string>通过邮件通知结果</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <spacer name="horizontalSpacer_24">
+               <property name="orientation">
+                <enum>Qt::Orientation::Horizontal</enum>
+               </property>
+               <property name="sizeHint" stdset="0">
+                <size>
+                 <width>40</width>
+                 <height>20</height>
+                </size>
+               </property>
+              </spacer>
+             </item>
+             <item>
+              <widget class="QLineEdit" name="lineEdit_mailaddress">
+               <property name="placeholderText">
+                <string>收信邮箱地址</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QCheckBox" name="checkBox_ifonlyerror">
+               <property name="text">
+                <string>仅推送异常信息</string>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </widget>
+          </item>
+          <item row="1" column="2">
+           <widget class="QFrame" name="frame_iftotray">
+            <property name="frameShape">
+             <enum>QFrame::Shape::StyledPanel</enum>
+            </property>
+            <property name="frameShadow">
+             <enum>QFrame::Shadow::Raised</enum>
+            </property>
+            <layout class="QHBoxLayout" name="horizontalLayout_23">
+             <item>
+              <widget class="QCheckBox" name="checkBox_iftotray">
+               <property name="text">
+                <string>最小化到托盘</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <spacer name="horizontalSpacer_17">
+               <property name="orientation">
+                <enum>Qt::Orientation::Horizontal</enum>
+               </property>
+               <property name="sizeHint" stdset="0">
+                <size>
+                 <width>149</width>
+                 <height>20</height>
+                </size>
+               </property>
+              </spacer>
+             </item>
+            </layout>
+           </widget>
           </item>
           <item row="1" column="0">
            <widget class="QFrame" name="frame_routine_4">
@@ -1171,37 +1224,37 @@
             </layout>
            </widget>
           </item>
-          <item row="1" column="1">
-           <spacer name="horizontalSpacer_11">
+          <item row="3" column="1">
+           <spacer name="horizontalSpacer_23">
             <property name="orientation">
              <enum>Qt::Orientation::Horizontal</enum>
             </property>
             <property name="sizeHint" stdset="0">
              <size>
-              <width>231</width>
+              <width>32</width>
               <height>20</height>
              </size>
             </property>
            </spacer>
           </item>
-          <item row="1" column="2" colspan="2">
-           <widget class="QFrame" name="frame_routine_5">
+          <item row="0" column="0">
+           <widget class="QFrame" name="frame_routine_3">
             <property name="frameShape">
              <enum>QFrame::Shape::StyledPanel</enum>
             </property>
             <property name="frameShadow">
              <enum>QFrame::Shadow::Raised</enum>
             </property>
-            <layout class="QHBoxLayout" name="horizontalLayout_22" stretch="0,1,3,0">
+            <layout class="QHBoxLayout" name="horizontalLayout_19">
              <item>
-              <widget class="QCheckBox" name="checkBox_ifsendmail">
+              <widget class="QCheckBox" name="checkBox_ifselfstart">
                <property name="text">
-                <string>通过邮件通知结果</string>
+                <string>开机自动启动AUTO_MAA</string>
                </property>
               </widget>
              </item>
              <item>
-              <spacer name="horizontalSpacer_16">
+              <spacer name="horizontalSpacer_14">
                <property name="orientation">
                 <enum>Qt::Orientation::Horizontal</enum>
                </property>
@@ -1213,43 +1266,33 @@
                </property>
               </spacer>
              </item>
-             <item>
-              <widget class="QLineEdit" name="lineEdit_mailaddress"/>
-             </item>
-             <item>
-              <widget class="QCheckBox" name="checkBox_ifonlyerror">
-               <property name="text">
-                <string>仅推送异常信息</string>
-               </property>
-              </widget>
-             </item>
             </layout>
            </widget>
           </item>
-          <item row="2" column="0">
-           <widget class="QFrame" name="frame_iftotray">
+          <item row="0" column="2">
+           <widget class="QFrame" name="frame_routine_2">
             <property name="frameShape">
              <enum>QFrame::Shape::StyledPanel</enum>
             </property>
             <property name="frameShadow">
              <enum>QFrame::Shadow::Raised</enum>
             </property>
-            <layout class="QHBoxLayout" name="horizontalLayout_23">
+            <layout class="QHBoxLayout" name="horizontalLayout_18">
              <item>
-              <widget class="QCheckBox" name="checkBox_iftotray">
+              <widget class="QCheckBox" name="checkBox_ifsleep">
                <property name="text">
-                <string>最小化到托盘</string>
+                <string>AUTO_MAA启动时禁止电脑休眠</string>
                </property>
               </widget>
              </item>
              <item>
-              <spacer name="horizontalSpacer_17">
+              <spacer name="horizontalSpacer_13">
                <property name="orientation">
                 <enum>Qt::Orientation::Horizontal</enum>
                </property>
                <property name="sizeHint" stdset="0">
                 <size>
-                 <width>149</width>
+                 <width>40</width>
                  <height>20</height>
                 </size>
                </property>
@@ -1258,7 +1301,7 @@
             </layout>
            </widget>
           </item>
-          <item row="2" column="1">
+          <item row="1" column="3">
            <spacer name="horizontalSpacer_12">
             <property name="orientation">
              <enum>Qt::Orientation::Horizontal</enum>
@@ -1271,7 +1314,78 @@
             </property>
            </spacer>
           </item>
-          <item row="2" column="2">
+          <item row="0" column="1">
+           <spacer name="horizontalSpacer_6">
+            <property name="orientation">
+             <enum>Qt::Orientation::Horizontal</enum>
+            </property>
+            <property name="sizeHint" stdset="0">
+             <size>
+              <width>40</width>
+              <height>20</height>
+             </size>
+            </property>
+           </spacer>
+          </item>
+          <item row="3" column="0">
+           <widget class="QFrame" name="frame_changePASSWORD">
+            <property name="frameShape">
+             <enum>QFrame::Shape::StyledPanel</enum>
+            </property>
+            <property name="frameShadow">
+             <enum>QFrame::Shadow::Raised</enum>
+            </property>
+            <layout class="QHBoxLayout" name="horizontalLayout_25">
+             <item>
+              <spacer name="horizontalSpacer_21">
+               <property name="orientation">
+                <enum>Qt::Orientation::Horizontal</enum>
+               </property>
+               <property name="sizeHint" stdset="0">
+                <size>
+                 <width>40</width>
+                 <height>20</height>
+                </size>
+               </property>
+              </spacer>
+             </item>
+             <item>
+              <widget class="QPushButton" name="pushButton_changePASSWORD">
+               <property name="text">
+                <string>修改管理密钥</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <spacer name="horizontalSpacer_22">
+               <property name="orientation">
+                <enum>Qt::Orientation::Horizontal</enum>
+               </property>
+               <property name="sizeHint" stdset="0">
+                <size>
+                 <width>40</width>
+                 <height>20</height>
+                </size>
+               </property>
+              </spacer>
+             </item>
+            </layout>
+           </widget>
+          </item>
+          <item row="3" column="3">
+           <spacer name="horizontalSpacer_25">
+            <property name="orientation">
+             <enum>Qt::Orientation::Horizontal</enum>
+            </property>
+            <property name="sizeHint" stdset="0">
+             <size>
+              <width>40</width>
+              <height>20</height>
+             </size>
+            </property>
+           </spacer>
+          </item>
+          <item row="3" column="2">
            <widget class="QFrame" name="frame_check_update">
             <property name="frameShape">
              <enum>QFrame::Shape::StyledPanel</enum>
@@ -1314,35 +1428,6 @@
               </spacer>
              </item>
             </layout>
-           </widget>
-          </item>
-          <item row="2" column="3">
-           <spacer name="horizontalSpacer_19">
-            <property name="orientation">
-             <enum>Qt::Orientation::Horizontal</enum>
-            </property>
-            <property name="sizeHint" stdset="0">
-             <size>
-              <width>40</width>
-              <height>20</height>
-             </size>
-            </property>
-           </spacer>
-          </item>
-         </layout>
-        </widget>
-       </item>
-       <item>
-        <widget class="QGroupBox" name="groupBox_5">
-         <property name="title">
-          <string>管理密钥</string>
-         </property>
-         <layout class="QGridLayout" name="gridLayout_3">
-          <item row="0" column="0">
-           <widget class="QPushButton" name="pushButton_changePASSWORD">
-            <property name="text">
-             <string>修改管理密钥</string>
-            </property>
            </widget>
           </item>
          </layout>

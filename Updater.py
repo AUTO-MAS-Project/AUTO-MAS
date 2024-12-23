@@ -59,8 +59,10 @@ class UpdateProcess(QThread):
         self.name = name
         self.main_version = main_version
         self.updater_version = updater_version
-        self.download_path = f"{app_path}/AUTO_MAA_Update.zip"  #  临时下载文件的路径
-        self.version_path = f"{app_path}/res/version.json"
+        self.download_path = os.path.normpath(
+            f"{app_path}/AUTO_MAA_Update.zip"
+        )  #  临时下载文件的路径
+        self.version_path = os.path.normpath(f"{app_path}/res/version.json")
 
     def run(self):
 
@@ -70,34 +72,35 @@ class UpdateProcess(QThread):
         except FileNotFoundError:
             pass
 
+        self.info.emit("正在获取下载链接")
         url_list = self.get_download_url()
 
-        # 下载
-        try:
-            # 验证下载地址并获取文件大小
-            for i in range(len(url_list)):
-                try:
-                    response = requests.get(url_list[i], stream=True)
-                    if response.status_code != 200:
-                        self.info.emit(
-                            f"连接失败，错误代码 {response.status_code} ，正在切换代理（{i+1}/{len(url_list)}）"
-                        )
-                        time.sleep(1)
-                        continue
-                    file_size = response.headers.get("Content-Length")
-                    break
-                except requests.RequestException:
-                    self.info.emit(f"请求超时，正在切换代理（{i+1}/{len(url_list)}）")
+        # 验证下载地址并获取文件大小
+        for i in range(len(url_list)):
+            try:
+                self.info.emit(f"正在验证下载地址：{url_list[i]}")
+                response = requests.get(url_list[i], stream=True)
+                if response.status_code != 200:
+                    self.info.emit(
+                        f"连接失败，错误代码 {response.status_code} ，正在切换代理（{i+1}/{len(url_list)}）"
+                    )
                     time.sleep(1)
-            else:
-                self.info.emit(f"服务器连接失败，已尝试所有{len(url_list)}个代理")
-                return None
+                    continue
+                file_size = response.headers.get("Content-Length")
+                break
+            except requests.RequestException:
+                self.info.emit(f"请求超时，正在切换代理（{i+1}/{len(url_list)}）")
+                time.sleep(1)
+        else:
+            self.info.emit(f"连接失败，已尝试所有{len(url_list)}个代理")
+            return None
 
-            if file_size is None:
-                file_size = 1
-            else:
-                file_size = int(file_size)
+        if file_size is None:
+            file_size = 1
+        else:
+            file_size = int(file_size)
 
+        try:
             # 下载文件
             with open(self.download_path, "wb") as f:
 
@@ -180,7 +183,7 @@ class UpdateProcess(QThread):
         # 主程序更新完成后打开AUTO_MAA
         if self.name == "AUTO_MAA主程序":
             subprocess.Popen(
-                f"{self.app_path}/AUTO_MAA.exe",
+                os.path.normpath(f"{self.app_path}/AUTO_MAA.exe"),
                 shell=True,
                 creationflags=subprocess.CREATE_NO_WINDOW,
             )
@@ -188,16 +191,42 @@ class UpdateProcess(QThread):
         self.accomplish.emit()
 
     def get_download_url(self):
-        """计算下载链接"""
-        PROXY_list = [
-            "",
-            "https://gitproxy.click/",
-            "https://cdn.moran233.xyz/",
-            "https://gh.llkk.cc/",
-            "https://github.akams.cn/",
-            "https://www.ghproxy.cn/",
-            "https://ghp.ci/",
-        ]
+        """获取下载链接"""
+
+        try_num = 3
+        for i in range(try_num):
+            try:
+                response = requests.get(
+                    "https://gitee.com/DLmaster_361/AUTO_MAA/raw/main/res/version.json"
+                )
+                if response.status_code != 200:
+                    self.info.emit(
+                        f"连接失败，错误代码 {response.status_code} ，正在重试（{i+1}/{try_num}）"
+                    )
+                    time.sleep(0.1)
+                    continue
+                version_remote = response.json()
+                PROXY_list = version_remote["proxy_list"]
+                break
+            except requests.RequestException:
+                self.info.emit(f"请求超时，正在重试（{i+1}/{try_num}）")
+                time.sleep(0.1)
+            except KeyError:
+                self.info.emit(f"未找到远端代理网址项，正在重试（{i+1}/{try_num}）")
+                time.sleep(0.1)
+        else:
+            self.info.emit("获取远端代理信息失败，将使用默认代理地址")
+            PROXY_list = [
+                "",
+                "https://gitproxy.click/",
+                "https://cdn.moran233.xyz/",
+                "https://gh.llkk.cc/",
+                "https://github.akams.cn/",
+                "https://www.ghproxy.cn/",
+                "https://ghp.ci/",
+            ]
+            time.sleep(1)
+
         url_list = []
         if self.name == "AUTO_MAA主程序":
             url_list.append(
@@ -225,8 +254,10 @@ class Updater(QObject):
 
         self.ui = QDialog()
         self.ui.setWindowTitle("AUTO_MAA更新器")
-        self.ui.resize(500, 70)
-        self.ui.setWindowIcon(QIcon(f"{app_path}/gui/ico/AUTO_MAA_Updater.ico"))
+        self.ui.resize(700, 70)
+        self.ui.setWindowIcon(
+            QIcon(os.path.normpath(f"{app_path}/gui/ico/AUTO_MAA_Updater.ico"))
+        )
 
         # 创建垂直布局
         self.Layout_v = QVBoxLayout(self.ui)
@@ -264,11 +295,13 @@ class AUTO_MAA_Updater(QApplication):
 if __name__ == "__main__":
 
     # 获取软件自身的路径
-    app_path = os.path.dirname(os.path.realpath(sys.argv[0])).replace("\\", "/")
+    app_path = os.path.normpath(os.path.dirname(os.path.realpath(sys.argv[0])))
 
     # 从本地版本信息文件获取当前版本信息
-    if os.path.exists(f"{app_path}/res/version.json"):
-        with open(f"{app_path}/res/version.json", "r", encoding="utf-8") as f:
+    if os.path.exists(os.path.normpath(f"{app_path}/res/version.json")):
+        with open(
+            os.path.normpath(f"{app_path}/res/version.json"), "r", encoding="utf-8"
+        ) as f:
             version_current = json.load(f)
         main_version_current = list(
             map(int, version_current["main_version"].split("."))
@@ -277,11 +310,21 @@ if __name__ == "__main__":
         main_version_current = [0, 0, 0, 0]
 
     # 从远程服务器获取最新版本信息
-    response = requests.get(
-        "https://gitee.com/DLmaster_361/AUTO_MAA/raw/main/res/version.json"
-    )
-    version_remote = response.json()
-    main_version_remote = list(map(int, version_remote["main_version"].split(".")))
+    for _ in range(3):
+        try:
+            response = requests.get(
+                "https://gitee.com/DLmaster_361/AUTO_MAA/raw/main/res/version.json"
+            )
+            version_remote = response.json()
+            main_version_remote = list(
+                map(int, version_remote["main_version"].split("."))
+            )
+            break
+        except Exception as e:
+            err = e
+            time.sleep(0.1)
+    else:
+        sys.exit(f"获取版本信息时出错：\n{err}")
 
     # 启动更新线程
     if main_version_remote > main_version_current:

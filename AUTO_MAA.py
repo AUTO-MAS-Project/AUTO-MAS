@@ -61,6 +61,10 @@ import ctypes
 import hashlib
 import subprocess
 import shutil
+import win32gui
+import win32process
+import psutil
+import pyautogui
 import time
 import random
 import secrets
@@ -87,10 +91,11 @@ class MaaRunner(QtCore.QThread):
     send_mail = QtCore.Signal(str, str)
     update_gui = QtCore.Signal(str, str, str, str, str)
     update_user_info = QtCore.Signal(list, list, list, list, list, list)
+    set_silence = QtCore.Signal(str, str, list)
     accomplish = QtCore.Signal()
     get_json = QtCore.Signal(list)
-    app_path = os.path.dirname(os.path.realpath(sys.argv[0])).replace(
-        "\\", "/"
+    app_path = os.path.normpath(
+        os.path.dirname(os.path.realpath(sys.argv[0]))
     )  # 获取软件自身的路径
 
     def __init__(self):
@@ -104,17 +109,28 @@ class MaaRunner(QtCore.QThread):
     def configure(self):
         """提取配置信息"""
 
-        self.set_path = f"{self.config["Default"]["MaaSet.path"]}/config/gui.json"
-        self.log_path = f"{self.config["Default"]["MaaSet.path"]}/debug/gui.log"
-        self.maa_path = f"{self.config["Default"]["MaaSet.path"]}/MAA.exe"
-        self.json_path = f"{self.app_path}/data/MAAconfig"
+        self.set_path = os.path.normpath(
+            f"{self.config["Default"]["MaaSet.path"]}/config/gui.json"
+        )
+        self.log_path = os.path.normpath(
+            f"{self.config["Default"]["MaaSet.path"]}/debug/gui.log"
+        )
+        self.maa_path = os.path.normpath(
+            f"{self.config["Default"]["MaaSet.path"]}/MAA.exe"
+        )
+        self.json_path = os.path.normpath(f"{self.app_path}/data/MAAconfig")
         self.routine = self.config["Default"]["TimeLimit.routine"]
         self.annihilation = self.config["Default"]["TimeLimit.annihilation"]
         self.num = self.config["Default"]["TimesLimit.run"]
+        self.boss_key = [
+            _.strip().lower()
+            for _ in self.config["Default"]["SelfSet.BossKey"].split("+")
+        ]
         self.if_send_mail = bool(self.config["Default"]["SelfSet.IfSendMail"] == "True")
         self.if_send_error_only = bool(
             self.config["Default"]["SelfSet.IfSendMail.OnlyError"] == "True"
         )
+        self.if_silence = bool(self.config["Default"]["SelfSet.IfSilence"] == "True")
 
     def run(self):
         """主进程，运行MAA代理进程"""
@@ -187,6 +203,11 @@ class MaaRunner(QtCore.QThread):
                             shell=True,
                             creationflags=subprocess.CREATE_NO_WINDOW,
                         )
+                        # 启动静默进程
+                        if self.if_silence:
+                            self.set_silence.emit(
+                                "启用", self.get_emulator_path(), self.boss_key
+                            )
                         # 记录是否超时的标记
                         self.if_time_out = False
                         # 更新运行信息
@@ -257,6 +278,9 @@ class MaaRunner(QtCore.QThread):
                                     "\n".join([self.data[_][0] for _ in error_index]),
                                     "检测到MAA进程完成代理任务\n正在等待相关程序结束\n请等待10s",
                                 )
+                                # 关闭静默进程
+                                if self.if_silence:
+                                    self.set_silence.emit("禁用", "", [])
                                 for _ in range(10):
                                     if self.isInterruptionRequested():
                                         break
@@ -282,6 +306,9 @@ class MaaRunner(QtCore.QThread):
                                     creationflags=subprocess.CREATE_NO_WINDOW,
                                 )
                                 killprocess.wait()
+                                # 关闭静默进程
+                                if self.if_silence:
+                                    self.set_silence.emit("禁用", "", [])
                                 # 推送异常通知
                                 self.push_notification.emit(
                                     "用户日常代理出现异常！",
@@ -519,7 +546,9 @@ class MaaRunner(QtCore.QThread):
 
             # 保存运行日志
             end_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            with open(f"{self.app_path}/log.txt", "w", encoding="utf-8") as f:
+            with open(
+                os.path.normpath(f"{self.app_path}/log.txt"), "w", encoding="utf-8"
+            ) as f:
                 print(f"任务开始时间：{begin_time}，结束时间：{end_time}", file=f)
                 print(
                     f"已完成数：{len(over_index)}，未完成数：{len(error_index) + len(wait_index)}\n",
@@ -536,7 +565,9 @@ class MaaRunner(QtCore.QThread):
                     print("\n".join([self.data[_][0] for _ in wait_index]), file=f)
 
             # 恢复GUI运行面板
-            with open(f"{self.app_path}/log.txt", "r", encoding="utf-8") as f:
+            with open(
+                os.path.normpath(f"{self.app_path}/log.txt"), "r", encoding="utf-8"
+            ) as f:
                 end_log = f.read()
             self.update_gui.emit("", "", "", "", end_log)
 
@@ -630,15 +661,19 @@ class MaaRunner(QtCore.QThread):
         if mode == "设置MAA_用户":
             set_book = ["simple", "beta"]
             if os.path.exists(
-                f"{self.json_path}/{set_book[self.get_json_path[0]]}/{self.get_json_path[1]}/{self.get_json_path[2]}/gui.json"
+                os.path.normpath(
+                    f"{self.json_path}/{set_book[self.get_json_path[0]]}/{self.get_json_path[1]}/{self.get_json_path[2]}/gui.json"
+                )
             ):
                 shutil.copy(
-                    f"{self.json_path}/{set_book[self.get_json_path[0]]}/{self.get_json_path[1]}/{self.get_json_path[2]}/gui.json",
+                    os.path.normpath(
+                        f"{self.json_path}/{set_book[self.get_json_path[0]]}/{self.get_json_path[1]}/{self.get_json_path[2]}/gui.json"
+                    ),
                     self.set_path,
                 )
             else:
                 shutil.copy(
-                    f"{self.json_path}/Default/gui.json",
+                    os.path.normpath(f"{self.json_path}/Default/gui.json"),
                     self.set_path,
                 )
         elif (mode == "设置MAA_全局") or (
@@ -646,30 +681,245 @@ class MaaRunner(QtCore.QThread):
             and self.data[index][15] == "simple"
         ):
             shutil.copy(
-                f"{self.json_path}/Default/gui.json",
+                os.path.normpath(f"{self.json_path}/Default/gui.json"),
                 self.set_path,
             )
         elif "日常代理" in mode and self.data[index][15] == "beta":
             if mode == "日常代理_剿灭":
                 shutil.copy(
-                    f"{self.json_path}/beta/{self.data[index][16]}/annihilation/gui.json",
+                    os.path.normpath(
+                        f"{self.json_path}/beta/{self.data[index][16]}/annihilation/gui.json"
+                    ),
                     self.set_path,
                 )
             elif mode == "日常代理_日常":
                 shutil.copy(
-                    f"{self.json_path}/beta/{self.data[index][16]}/routine/gui.json",
+                    os.path.normpath(
+                        f"{self.json_path}/beta/{self.data[index][16]}/routine/gui.json"
+                    ),
                     self.set_path,
                 )
         elif "人工排查" in mode and self.data[index][15] == "beta":
             shutil.copy(
-                f"{self.json_path}/beta/{self.data[index][16]}/routine/gui.json",
+                os.path.normpath(
+                    f"{self.json_path}/beta/{self.data[index][16]}/routine/gui.json"
+                ),
                 self.set_path,
             )
         with open(self.set_path, "r", encoding="utf-8") as f:
             data = json.load(f)
 
+        # 日常代理配置
+        if "日常代理" in mode:
+
+            data["Current"] = "Default"  # 切换配置
+            for i in range(1, 9):
+                data["Global"][f"Timer.Timer{i}"] = "False"  # 时间设置
+            data["Configurations"]["Default"][
+                "MainFunction.PostActions"
+            ] = "12"  # 完成后退出MAA和模拟器
+            data["Configurations"]["Default"][
+                "Start.RunDirectly"
+            ] = "True"  # 启动MAA后直接运行
+            data["Configurations"]["Default"][
+                "Start.OpenEmulatorAfterLaunch"
+            ] = "True"  # 启动MAA后自动开启模拟器
+
+            if self.if_silence:
+                data["Configurations"]["Default"][
+                    "Start.MinimizeDirectly"
+                ] = "True"  # 启动MAA后直接最小化
+                data["Configurations"]["Default"][
+                    "GUI.UseTray"
+                ] = "True"  # 显示托盘图标
+                data["Configurations"]["Default"][
+                    "GUI.MinimizeToTray"
+                ] = "True"  # 最小化时隐藏至托盘
+
+            if self.data[index][15] == "simple":
+
+                data["Global"][
+                    "VersionUpdate.ScheduledUpdateCheck"
+                ] = "True"  # 定时检查更新
+                data["Global"][
+                    "VersionUpdate.AutoDownloadUpdatePackage"
+                ] = "True"  # 自动下载更新包
+                data["Global"][
+                    "VersionUpdate.AutoInstallUpdatePackage"
+                ] = "True"  # 自动安装更新包
+                data["Configurations"]["Default"]["Start.ClientType"] = self.data[
+                    index
+                ][
+                    2
+                ]  # 客户端类型
+                # 账号切换
+                if self.data[index][2] == "Official":
+                    data["Configurations"]["Default"][
+                        "Start.AccountName"
+                    ] = f"{self.data[index][1][:3]}****{self.data[index][1][7:]}"
+                elif self.data[index][2] == "Bilibili":
+                    data["Configurations"]["Default"]["Start.AccountName"] = self.data[
+                        index
+                    ][1]
+
+                if "剿灭" in mode:
+
+                    data["Configurations"]["Default"][
+                        "TaskQueue.WakeUp.IsChecked"
+                    ] = "True"  # 开始唤醒
+                    data["Configurations"]["Default"][
+                        "TaskQueue.Recruiting.IsChecked"
+                    ] = "False"  # 自动公招
+                    data["Configurations"]["Default"][
+                        "TaskQueue.Base.IsChecked"
+                    ] = "False"  # 基建换班
+                    data["Configurations"]["Default"][
+                        "TaskQueue.Combat.IsChecked"
+                    ] = "True"  # 刷理智
+                    data["Configurations"]["Default"][
+                        "TaskQueue.Mission.IsChecked"
+                    ] = "False"  # 领取奖励
+                    data["Configurations"]["Default"][
+                        "TaskQueue.Mall.IsChecked"
+                    ] = "False"  # 获取信用及购物
+                    data["Configurations"]["Default"][
+                        "TaskQueue.AutoRoguelike.IsChecked"
+                    ] = "False"  # 自动肉鸽
+                    data["Configurations"]["Default"][
+                        "TaskQueue.Reclamation.IsChecked"
+                    ] = "False"  # 生息演算
+                    data["Configurations"]["Default"][
+                        "MainFunction.Stage1"
+                    ] = "Annihilation"  # 主关卡
+                    data["Configurations"]["Default"][
+                        "MainFunction.Stage2"
+                    ] = ""  # 备选关卡1
+                    data["Configurations"]["Default"][
+                        "MainFunction.Stage3"
+                    ] = ""  # 备选关卡2
+                    data["Configurations"]["Default"][
+                        "Fight.RemainingSanityStage"
+                    ] = ""  # 剩余理智关卡
+                    data["Configurations"]["Default"][
+                        "MainFunction.Series.Quantity"
+                    ] = "1"  # 连战次数
+                    data["Configurations"]["Default"][
+                        "Penguin.IsDrGrandet"
+                    ] = "False"  # 博朗台模式
+                    data["Configurations"]["Default"][
+                        "GUI.CustomStageCode"
+                    ] = "True"  # 手动输入关卡名
+                    data["Configurations"]["Default"][
+                        "GUI.UseAlternateStage"
+                    ] = "False"  # 使用备选关卡
+                    data["Configurations"]["Default"][
+                        "Fight.UseRemainingSanityStage"
+                    ] = "False"  # 使用剩余理智
+                    data["Configurations"]["Default"][
+                        "Fight.UseExpiringMedicine"
+                    ] = "True"  # 无限吃48小时内过期的理智药
+
+                elif "日常" in mode:
+
+                    data["Configurations"]["Default"][
+                        "TaskQueue.WakeUp.IsChecked"
+                    ] = "True"  # 开始唤醒
+                    data["Configurations"]["Default"][
+                        "TaskQueue.Recruiting.IsChecked"
+                    ] = "True"  # 自动公招
+                    data["Configurations"]["Default"][
+                        "TaskQueue.Base.IsChecked"
+                    ] = "True"  # 基建换班
+                    data["Configurations"]["Default"][
+                        "TaskQueue.Combat.IsChecked"
+                    ] = "True"  # 刷理智
+                    data["Configurations"]["Default"][
+                        "TaskQueue.Mission.IsChecked"
+                    ] = "True"  # 领取奖励
+                    data["Configurations"]["Default"][
+                        "TaskQueue.Mall.IsChecked"
+                    ] = "True"  # 获取信用及购物
+                    data["Configurations"]["Default"][
+                        "TaskQueue.AutoRoguelike.IsChecked"
+                    ] = "False"  # 自动肉鸽
+                    data["Configurations"]["Default"][
+                        "TaskQueue.Reclamation.IsChecked"
+                    ] = "False"  # 生息演算
+                    # 主关卡
+                    if self.data[index][6] == "-":
+                        data["Configurations"]["Default"]["MainFunction.Stage1"] = ""
+                    else:
+                        data["Configurations"]["Default"]["MainFunction.Stage1"] = (
+                            self.data[index][6]
+                        )
+                    # 备选关卡1
+                    if self.data[index][7] == "-":
+                        data["Configurations"]["Default"]["MainFunction.Stage2"] = ""
+                    else:
+                        data["Configurations"]["Default"]["MainFunction.Stage2"] = (
+                            self.data[index][7]
+                        )
+                    # 备选关卡2
+                    if self.data[index][8] == "-":
+                        data["Configurations"]["Default"]["MainFunction.Stage3"] = ""
+                    else:
+                        data["Configurations"]["Default"]["MainFunction.Stage3"] = (
+                            self.data[index][8]
+                        )
+                    data["Configurations"]["Default"][
+                        "Fight.RemainingSanityStage"
+                    ] = ""  # 剩余理智关卡
+                    # 连战次数
+                    if self.data[index][6] == "1-7":
+                        data["Configurations"]["Default"][
+                            "MainFunction.Series.Quantity"
+                        ] = "6"
+                    else:
+                        data["Configurations"]["Default"][
+                            "MainFunction.Series.Quantity"
+                        ] = "1"
+                    data["Configurations"]["Default"][
+                        "Penguin.IsDrGrandet"
+                    ] = "False"  # 博朗台模式
+                    data["Configurations"]["Default"][
+                        "GUI.CustomStageCode"
+                    ] = "True"  # 手动输入关卡名
+                    # 备选关卡
+                    if self.data[index][7] == "-" and self.data[index][8] == "-":
+                        data["Configurations"]["Default"][
+                            "GUI.UseAlternateStage"
+                        ] = "False"
+                    else:
+                        data["Configurations"]["Default"][
+                            "GUI.UseAlternateStage"
+                        ] = "True"
+                    data["Configurations"]["Default"][
+                        "Fight.UseRemainingSanityStage"
+                    ] = "False"  # 使用剩余理智
+                    data["Configurations"]["Default"][
+                        "Fight.UseExpiringMedicine"
+                    ] = "True"  # 无限吃48小时内过期的理智药
+                    # 自定义基建配置
+                    if self.data[index][11] == "n":
+                        data["Configurations"]["Default"][
+                            "Infrast.CustomInfrastEnabled"
+                        ] = "False"  # 禁用自定义基建配置
+                    else:
+                        data["Configurations"]["Default"][
+                            "Infrast.CustomInfrastEnabled"
+                        ] = "True"  # 启用自定义基建配置
+                        data["Configurations"]["Default"][
+                            "Infrast.DefaultInfrast"
+                        ] = "user_defined"  # 内置配置
+                        data["Configurations"]["Default"][
+                            "Infrast.IsCustomInfrastFileReadOnly"
+                        ] = "False"  # 自定义基建配置文件只读
+                        data["Configurations"]["Default"][
+                            "Infrast.CustomInfrastFile"
+                        ] = f"{self.json_path}/simple/{self.data[index][16]}/infrastructure/infrastructure.json"  # 自定义基建配置文件地址
+
         # 人工排查配置
-        if "人工排查" in mode:
+        elif "人工排查" in mode:
 
             data["Current"] = "Default"  # 切换配置
             for i in range(1, 9):
@@ -683,6 +933,10 @@ class MaaRunner(QtCore.QThread):
             data["Configurations"]["Default"][
                 "Start.MinimizeDirectly"
             ] = "True"  # 启动MAA后直接最小化
+            data["Configurations"]["Default"]["GUI.UseTray"] = "True"  # 显示托盘图标
+            data["Configurations"]["Default"][
+                "GUI.MinimizeToTray"
+            ] = "True"  # 最小化时隐藏至托盘
             # 启动MAA后自动开启模拟器
             if "启动模拟器" in mode:
                 data["Configurations"]["Default"][
@@ -760,6 +1014,11 @@ class MaaRunner(QtCore.QThread):
                 "Start.OpenEmulatorAfterLaunch"
             ] = "False"  # 启动MAA后自动开启模拟器
 
+            if self.if_silence:
+                data["Configurations"]["Default"][
+                    "Start.MinimizeDirectly"
+                ] = "False"  # 启动MAA后直接最小化
+
             if "全局" in mode:
 
                 data["Global"][
@@ -796,247 +1055,28 @@ class MaaRunner(QtCore.QThread):
                     "TaskQueue.Reclamation.IsChecked"
                 ] = "False"  # 生息演算
 
-        # 剿灭代理配置
-        elif mode == "日常代理_剿灭":
-
-            data["Current"] = "Default"  # 切换配置
-            for i in range(1, 9):
-                data["Global"][f"Timer.Timer{i}"] = "False"  # 时间设置
-            data["Configurations"]["Default"][
-                "MainFunction.PostActions"
-            ] = "12"  # 完成后退出MAA和模拟器
-            data["Configurations"]["Default"][
-                "Start.RunDirectly"
-            ] = "True"  # 启动MAA后直接运行
-            data["Configurations"]["Default"][
-                "Start.OpenEmulatorAfterLaunch"
-            ] = "True"  # 启动MAA后自动开启模拟器
-
-            if self.data[index][15] == "simple":
-
-                data["Global"][
-                    "VersionUpdate.ScheduledUpdateCheck"
-                ] = "True"  # 定时检查更新
-                data["Global"][
-                    "VersionUpdate.AutoDownloadUpdatePackage"
-                ] = "True"  # 自动下载更新包
-                data["Global"][
-                    "VersionUpdate.AutoInstallUpdatePackage"
-                ] = "True"  # 自动安装更新包
-                data["Configurations"]["Default"]["Start.ClientType"] = self.data[
-                    index
-                ][
-                    2
-                ]  # 客户端类型
-                # 账号切换
-                if self.data[index][2] == "Official":
-                    data["Configurations"]["Default"][
-                        "Start.AccountName"
-                    ] = f"{self.data[index][1][:3]}****{self.data[index][1][7:]}"
-                elif self.data[index][2] == "Bilibili":
-                    data["Configurations"]["Default"]["Start.AccountName"] = self.data[
-                        index
-                    ][1]
-                data["Configurations"]["Default"][
-                    "TaskQueue.WakeUp.IsChecked"
-                ] = "True"  # 开始唤醒
-                data["Configurations"]["Default"][
-                    "TaskQueue.Recruiting.IsChecked"
-                ] = "False"  # 自动公招
-                data["Configurations"]["Default"][
-                    "TaskQueue.Base.IsChecked"
-                ] = "False"  # 基建换班
-                data["Configurations"]["Default"][
-                    "TaskQueue.Combat.IsChecked"
-                ] = "True"  # 刷理智
-                data["Configurations"]["Default"][
-                    "TaskQueue.Mission.IsChecked"
-                ] = "False"  # 领取奖励
-                data["Configurations"]["Default"][
-                    "TaskQueue.Mall.IsChecked"
-                ] = "False"  # 获取信用及购物
-                data["Configurations"]["Default"][
-                    "TaskQueue.AutoRoguelike.IsChecked"
-                ] = "False"  # 自动肉鸽
-                data["Configurations"]["Default"][
-                    "TaskQueue.Reclamation.IsChecked"
-                ] = "False"  # 生息演算
-                data["Configurations"]["Default"][
-                    "MainFunction.Stage1"
-                ] = "Annihilation"  # 主关卡
-                data["Configurations"]["Default"][
-                    "MainFunction.Stage2"
-                ] = ""  # 备选关卡1
-                data["Configurations"]["Default"][
-                    "MainFunction.Stage3"
-                ] = ""  # 备选关卡2
-                data["Configurations"]["Default"][
-                    "Fight.RemainingSanityStage"
-                ] = ""  # 剩余理智关卡
-                data["Configurations"]["Default"][
-                    "MainFunction.Series.Quantity"
-                ] = "1"  # 连战次数
-                data["Configurations"]["Default"][
-                    "Penguin.IsDrGrandet"
-                ] = "False"  # 博朗台模式
-                data["Configurations"]["Default"][
-                    "GUI.CustomStageCode"
-                ] = "True"  # 手动输入关卡名
-                data["Configurations"]["Default"][
-                    "GUI.UseAlternateStage"
-                ] = "False"  # 使用备选关卡
-                data["Configurations"]["Default"][
-                    "Fight.UseRemainingSanityStage"
-                ] = "False"  # 使用剩余理智
-                data["Configurations"]["Default"][
-                    "Fight.UseExpiringMedicine"
-                ] = "True"  # 无限吃48小时内过期的理智药
-
-        # 日常代理配置
-        elif mode == "日常代理_日常":
-
-            data["Current"] = "Default"  # 切换配置
-            for i in range(1, 9):
-                data["Global"][f"Timer.Timer{i}"] = "False"  # 时间设置
-            data["Configurations"]["Default"][
-                "MainFunction.PostActions"
-            ] = "12"  # 完成后退出MAA和模拟器
-            data["Configurations"]["Default"][
-                "Start.RunDirectly"
-            ] = "True"  # 启动MAA后直接运行
-            data["Configurations"]["Default"][
-                "Start.OpenEmulatorAfterLaunch"
-            ] = "True"  # 启动MAA后自动开启模拟器
-
-            if self.data[index][15] == "simple":
-
-                data["Global"][
-                    "VersionUpdate.ScheduledUpdateCheck"
-                ] = "True"  # 定时检查更新
-                data["Global"][
-                    "VersionUpdate.AutoDownloadUpdatePackage"
-                ] = "True"  # 自动下载更新包
-                data["Global"][
-                    "VersionUpdate.AutoInstallUpdatePackage"
-                ] = "True"  # 自动安装更新包
-                data["Configurations"]["Default"]["Start.ClientType"] = self.data[
-                    index
-                ][
-                    2
-                ]  # 客户端类型
-                # 账号切换
-                if self.data[index][2] == "Official":
-                    data["Configurations"]["Default"][
-                        "Start.AccountName"
-                    ] = f"{self.data[index][1][:3]}****{self.data[index][1][7:]}"
-                elif self.data[index][2] == "Bilibili":
-                    data["Configurations"]["Default"]["Start.AccountName"] = self.data[
-                        index
-                    ][1]
-                data["Configurations"]["Default"][
-                    "TaskQueue.WakeUp.IsChecked"
-                ] = "True"  # 开始唤醒
-                data["Configurations"]["Default"][
-                    "TaskQueue.Recruiting.IsChecked"
-                ] = "True"  # 自动公招
-                data["Configurations"]["Default"][
-                    "TaskQueue.Base.IsChecked"
-                ] = "True"  # 基建换班
-                data["Configurations"]["Default"][
-                    "TaskQueue.Combat.IsChecked"
-                ] = "True"  # 刷理智
-                data["Configurations"]["Default"][
-                    "TaskQueue.Mission.IsChecked"
-                ] = "True"  # 领取奖励
-                data["Configurations"]["Default"][
-                    "TaskQueue.Mall.IsChecked"
-                ] = "True"  # 获取信用及购物
-                data["Configurations"]["Default"][
-                    "TaskQueue.AutoRoguelike.IsChecked"
-                ] = "False"  # 自动肉鸽
-                data["Configurations"]["Default"][
-                    "TaskQueue.Reclamation.IsChecked"
-                ] = "False"  # 生息演算
-                # 主关卡
-                if self.data[index][6] == "-":
-                    data["Configurations"]["Default"]["MainFunction.Stage1"] = ""
-                else:
-                    data["Configurations"]["Default"]["MainFunction.Stage1"] = (
-                        self.data[index][6]
-                    )
-                # 备选关卡1
-                if self.data[index][7] == "-":
-                    data["Configurations"]["Default"]["MainFunction.Stage2"] = ""
-                else:
-                    data["Configurations"]["Default"]["MainFunction.Stage2"] = (
-                        self.data[index][7]
-                    )
-                # 备选关卡2
-                if self.data[index][8] == "-":
-                    data["Configurations"]["Default"]["MainFunction.Stage3"] = ""
-                else:
-                    data["Configurations"]["Default"]["MainFunction.Stage3"] = (
-                        self.data[index][8]
-                    )
-                data["Configurations"]["Default"][
-                    "Fight.RemainingSanityStage"
-                ] = ""  # 剩余理智关卡
-                # 连战次数
-                if self.data[index][6] == "1-7":
-                    data["Configurations"]["Default"][
-                        "MainFunction.Series.Quantity"
-                    ] = "6"
-                else:
-                    data["Configurations"]["Default"][
-                        "MainFunction.Series.Quantity"
-                    ] = "1"
-                data["Configurations"]["Default"][
-                    "Penguin.IsDrGrandet"
-                ] = "False"  # 博朗台模式
-                data["Configurations"]["Default"][
-                    "GUI.CustomStageCode"
-                ] = "True"  # 手动输入关卡名
-                # 备选关卡
-                if self.data[index][7] == "-" and self.data[index][8] == "-":
-                    data["Configurations"]["Default"]["GUI.UseAlternateStage"] = "False"
-                else:
-                    data["Configurations"]["Default"]["GUI.UseAlternateStage"] = "True"
-                data["Configurations"]["Default"][
-                    "Fight.UseRemainingSanityStage"
-                ] = "False"  # 使用剩余理智
-                data["Configurations"]["Default"][
-                    "Fight.UseExpiringMedicine"
-                ] = "True"  # 无限吃48小时内过期的理智药
-                # 自定义基建配置
-                if self.data[index][11] == "n":
-                    data["Configurations"]["Default"][
-                        "Infrast.CustomInfrastEnabled"
-                    ] = "False"  # 禁用自定义基建配置
-                else:
-                    data["Configurations"]["Default"][
-                        "Infrast.CustomInfrastEnabled"
-                    ] = "True"  # 启用自定义基建配置
-                    data["Configurations"]["Default"][
-                        "Infrast.DefaultInfrast"
-                    ] = "user_defined"  # 内置配置
-                    data["Configurations"]["Default"][
-                        "Infrast.IsCustomInfrastFileReadOnly"
-                    ] = "False"  # 自定义基建配置文件只读
-                    data["Configurations"]["Default"][
-                        "Infrast.CustomInfrastFile"
-                    ] = f"{self.json_path}/simple/{self.data[index][16]}/infrastructure/infrastructure.json"  # 自定义基建配置文件地址
-
         # 覆写配置文件
         with open(self.set_path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=4)
 
         return True
 
+    def get_emulator_path(self):
+        """获取模拟器路径"""
+
+        # 读取配置文件
+        with open(self.set_path, "r", encoding="utf-8") as f:
+            set = json.load(f)
+            # 获取模拟器路径
+            return os.path.normpath(
+                set["Configurations"]["Default"]["Start.EmulatorPath"]
+            )
+
 
 class Main(QWidget):
 
-    app_path = os.path.dirname(os.path.realpath(sys.argv[0])).replace(
-        "\\", "/"
+    app_path = os.path.normpath(
+        os.path.dirname(os.path.realpath(sys.argv[0]))
     )  # 获取软件自身的路径
     app_path_sys = os.path.realpath(sys.argv[0])  # 获取软件自身的路径
     app_name = os.path.basename(app_path)  # 获取软件自身的名称
@@ -1046,11 +1086,11 @@ class Main(QWidget):
     def __init__(self, PASSWARD=""):
         super().__init__()
 
-        self.database_path = f"{self.app_path}/data/data.db"
-        self.config_path = f"{self.app_path}/config/gui.json"
-        self.key_path = f"{self.app_path}/data/key"
-        self.gameid_path = f"{self.app_path}/data/gameid.txt"
-        self.version_path = f"{self.app_path}/res/version.json"
+        self.database_path = os.path.normpath(f"{self.app_path}/data/data.db")
+        self.config_path = os.path.normpath(f"{self.app_path}/config/gui.json")
+        self.key_path = os.path.normpath(f"{self.app_path}/data/key")
+        self.gameid_path = os.path.normpath(f"{self.app_path}/data/gameid.txt")
+        self.version_path = os.path.normpath(f"{self.app_path}/res/version.json")
         self.PASSWORD = PASSWARD
         self.if_user_list_editable = True
         self.if_update_database = True
@@ -1115,8 +1155,10 @@ class Main(QWidget):
         ]
 
         # 导入ui配置
-        self.ui = uiLoader.load(f"{self.app_path}/gui/ui/main.ui")
-        self.ui.setWindowIcon(QIcon(f"{self.app_path}/gui/ico/AUTO_MAA.ico"))
+        self.ui = uiLoader.load(os.path.normpath(f"{self.app_path}/gui/ui/main.ui"))
+        self.ui.setWindowIcon(
+            QIcon(os.path.normpath(f"{self.app_path}/gui/ico/AUTO_MAA.ico"))
+        )
 
         # 检查文件完整性
         self.initialize()
@@ -1208,6 +1250,12 @@ class Main(QWidget):
         self.if_send_error_only = self.ui.findChild(QCheckBox, "checkBox_ifonlyerror")
         self.if_send_error_only.stateChanged.connect(self.change_config)
 
+        self.if_silence = self.ui.findChild(QCheckBox, "checkBox_silence")
+        self.if_silence.stateChanged.connect(self.change_config)
+
+        self.boss_key = self.ui.findChild(QLineEdit, "lineEdit_boss")
+        self.boss_key.textChanged.connect(self.change_config)
+
         self.if_to_tray = self.ui.findChild(QCheckBox, "checkBox_iftotray")
         self.if_to_tray.stateChanged.connect(self.change_config)
 
@@ -1246,6 +1294,7 @@ class Main(QWidget):
         self.MaaRunner.send_mail.connect(self.send_mail)
         self.MaaRunner.accomplish.connect(lambda: self.maa_ender("日常代理_结束"))
         self.MaaRunner.get_json.connect(self.get_maa_config)
+        self.MaaRunner.set_silence.connect(self.switch_silence)
 
         self.last_time = "0000-00-00 00:00"
         self.Timer = QtCore.QTimer()
@@ -1266,11 +1315,17 @@ class Main(QWidget):
         """初始化程序的配置文件"""
 
         # 检查目录
-        os.makedirs(f"{self.app_path}/data", exist_ok=True)
-        os.makedirs(f"{self.app_path}/config", exist_ok=True)
-        os.makedirs(f"{self.app_path}/data/MAAconfig/simple", exist_ok=True)
-        os.makedirs(f"{self.app_path}/data/MAAconfig/beta", exist_ok=True)
-        os.makedirs(f"{self.app_path}/data/MAAconfig/Default", exist_ok=True)
+        os.makedirs(os.path.normpath(f"{self.app_path}/data"), exist_ok=True)
+        os.makedirs(os.path.normpath(f"{self.app_path}/config"), exist_ok=True)
+        os.makedirs(
+            os.path.normpath(f"{self.app_path}/data/MAAconfig/simple"), exist_ok=True
+        )
+        os.makedirs(
+            os.path.normpath(f"{self.app_path}/data/MAAconfig/beta"), exist_ok=True
+        )
+        os.makedirs(
+            os.path.normpath(f"{self.app_path}/data/MAAconfig/Default"), exist_ok=True
+        )
 
         # 生成版本信息文件
         if not os.path.exists(self.version_path):
@@ -1349,6 +1404,8 @@ class Main(QWidget):
             ["SelfSet.IfSendMail", "False"],
             ["SelfSet.MailAddress", ""],
             ["SelfSet.IfSendMail.OnlyError", "False"],
+            ["SelfSet.IfSilence", "False"],
+            ["SelfSet.BossKey", ""],
             ["SelfSet.IfToTray", "False"],
             ["SelfSet.UIsize", "1200x700"],
             ["SelfSet.UIlocation", "100x100"],
@@ -1457,24 +1514,30 @@ class Main(QWidget):
         """配置管理密钥"""
 
         # 生成目录
-        os.makedirs(f"{self.app_path}/data/key", exist_ok=True)
+        os.makedirs(os.path.normpath(f"{self.app_path}/data/key"), exist_ok=True)
 
         # 生成RSA密钥对
         key = RSA.generate(2048)
         public_key_local = key.publickey()
         private_key = key
         # 保存RSA公钥
-        with open(f"{self.app_path}/data/key/public_key.pem", "wb") as f:
+        with open(
+            os.path.normpath(f"{self.app_path}/data/key/public_key.pem"), "wb"
+        ) as f:
             f.write(public_key_local.exportKey())
         # 生成密钥转换与校验随机盐
         PASSWORD_salt = secrets.token_hex(random.randint(32, 1024))
         with open(
-            f"{self.app_path}/data/key/PASSWORDsalt.txt", "w", encoding="utf-8"
+            os.path.normpath(f"{self.app_path}/data/key/PASSWORDsalt.txt"),
+            "w",
+            encoding="utf-8",
         ) as f:
             print(PASSWORD_salt, file=f)
         verify_salt = secrets.token_hex(random.randint(32, 1024))
         with open(
-            f"{self.app_path}/data/key/verifysalt.txt", "w", encoding="utf-8"
+            os.path.normpath(f"{self.app_path}/data/key/verifysalt.txt"),
+            "w",
+            encoding="utf-8",
         ) as f:
             print(verify_salt, file=f)
         # 将管理密钥转化为AES-256密钥
@@ -1485,19 +1548,25 @@ class Main(QWidget):
         AES_password_verify = hashlib.sha256(
             AES_password + verify_salt.encode("utf-8")
         ).digest()
-        with open(f"{self.app_path}/data/key/AES_password_verify.bin", "wb") as f:
+        with open(
+            os.path.normpath(f"{self.app_path}/data/key/AES_password_verify.bin"), "wb"
+        ) as f:
             f.write(AES_password_verify)
         # AES-256加密RSA私钥并保存密文
         AES_key = AES.new(AES_password, AES.MODE_ECB)
         private_key_local = AES_key.encrypt(pad(private_key.exportKey(), 32))
-        with open(f"{self.app_path}/data/key/private_key.bin", "wb") as f:
+        with open(
+            os.path.normpath(f"{self.app_path}/data/key/private_key.bin"), "wb"
+        ) as f:
             f.write(private_key_local)
 
     def encryptx(self, note):
         """加密数据"""
 
         # 读取RSA公钥
-        with open(f"{self.app_path}/data/key/public_key.pem", "rb") as f:
+        with open(
+            os.path.normpath(f"{self.app_path}/data/key/public_key.pem"), "rb"
+        ) as f:
             public_key_local = RSA.import_key(f.read())
         # 使用RSA公钥对数据进行加密
         cipher = PKCS1_OAEP.new(public_key_local)
@@ -1508,17 +1577,25 @@ class Main(QWidget):
         """解密数据"""
 
         # 读入RSA私钥密文、盐与校验哈希值
-        with open(f"{self.app_path}/data/key/private_key.bin", "rb") as f:
+        with open(
+            os.path.normpath(f"{self.app_path}/data/key/private_key.bin"), "rb"
+        ) as f:
             private_key_local = f.read().strip()
         with open(
-            f"{self.app_path}/data/key/PASSWORDsalt.txt", "r", encoding="utf-8"
+            os.path.normpath(f"{self.app_path}/data/key/PASSWORDsalt.txt"),
+            "r",
+            encoding="utf-8",
         ) as f:
             PASSWORD_salt = f.read().strip()
         with open(
-            f"{self.app_path}/data/key/verifysalt.txt", "r", encoding="utf-8"
+            os.path.normpath(f"{self.app_path}/data/key/verifysalt.txt"),
+            "r",
+            encoding="utf-8",
         ) as f:
             verify_salt = f.read().strip()
-        with open(f"{self.app_path}/data/key/AES_password_verify.bin", "rb") as f:
+        with open(
+            os.path.normpath(f"{self.app_path}/data/key/AES_password_verify.bin"), "rb"
+        ) as f:
             AES_password_verify = f.read().strip()
         # 将管理密钥转化为AES-256密钥并验证
         AES_password = hashlib.sha256(
@@ -1809,11 +1886,12 @@ class Main(QWidget):
 
         self.main_tab.setCurrentIndex(self.config["Default"]["SelfSet.MainIndex"])
 
-        self.maa_path.setText(self.config["Default"]["MaaSet.path"].replace("\\", "/"))
+        self.maa_path.setText(os.path.normpath(self.config["Default"]["MaaSet.path"]))
         self.routine.setValue(self.config["Default"]["TimeLimit.routine"])
         self.annihilation.setValue(self.config["Default"]["TimeLimit.annihilation"])
         self.num.setValue(self.config["Default"]["TimesLimit.run"])
         self.mail_address.setText(self.config["Default"]["SelfSet.MailAddress"])
+        self.boss_key.setText(self.config["Default"]["SelfSet.BossKey"])
 
         self.if_self_start.setChecked(
             bool(self.config["Default"]["SelfSet.IfSelfStart"] == "True")
@@ -1841,6 +1919,14 @@ class Main(QWidget):
 
         self.if_send_error_only.setVisible(
             bool(self.config["Default"]["SelfSet.IfSendMail"] == "True")
+        )
+
+        self.if_silence.setChecked(
+            bool(self.config["Default"]["SelfSet.IfSilence"] == "True")
+        )
+
+        self.boss_key.setVisible(
+            bool(self.config["Default"]["SelfSet.IfSilence"] == "True")
         )
 
         self.if_to_tray.setChecked(
@@ -1939,10 +2025,14 @@ class Main(QWidget):
             )
             self.db.commit()
             if os.path.exists(
-                f"{self.app_path}/data/MAAconfig/{self.user_mode_list[self.user_set.currentIndex()]}/{row}"
+                os.path.normpath(
+                    f"{self.app_path}/data/MAAconfig/{self.user_mode_list[self.user_set.currentIndex()]}/{row}"
+                )
             ):
                 shutil.rmtree(
-                    f"{self.app_path}/data/MAAconfig/{self.user_mode_list[self.user_set.currentIndex()]}/{row}"
+                    os.path.normpath(
+                        f"{self.app_path}/data/MAAconfig/{self.user_mode_list[self.user_set.currentIndex()]}/{row}"
+                    )
                 )
             # 后续用户补位
             if self.user_set.currentIndex() == 0:
@@ -1956,11 +2046,17 @@ class Main(QWidget):
                 )
                 self.db.commit()
                 if os.path.exists(
-                    f"{self.app_path}/data/MAAconfig/{self.user_mode_list[self.user_set.currentIndex()]}/{i}"
+                    os.path.normpath(
+                        f"{self.app_path}/data/MAAconfig/{self.user_mode_list[self.user_set.currentIndex()]}/{i}"
+                    )
                 ):
                     os.rename(
-                        f"{self.app_path}/data/MAAconfig/{self.user_mode_list[self.user_set.currentIndex()]}/{i}",
-                        f"{self.app_path}/data/MAAconfig/{self.user_mode_list[self.user_set.currentIndex()]}/{i - 1}",
+                        os.path.normpath(
+                            f"{self.app_path}/data/MAAconfig/{self.user_mode_list[self.user_set.currentIndex()]}/{i}"
+                        ),
+                        os.path.normpath(
+                            f"{self.app_path}/data/MAAconfig/{self.user_mode_list[self.user_set.currentIndex()]}/{i - 1}"
+                        ),
                     )
 
             # 同步最终结果至GUI
@@ -2017,11 +2113,17 @@ class Main(QWidget):
             )
             self.db.commit()
             if os.path.exists(
-                f"{self.app_path}/data/MAAconfig/{self.user_mode_list[self.user_set.currentIndex()]}/{row}"
+                os.path.normpath(
+                    f"{self.app_path}/data/MAAconfig/{self.user_mode_list[self.user_set.currentIndex()]}/{row}"
+                )
             ):
                 shutil.move(
-                    f"{self.app_path}/data/MAAconfig/{self.user_mode_list[self.user_set.currentIndex()]}/{row}",
-                    f"{self.app_path}/data/MAAconfig/{self.user_mode_list[1 - self.user_set.currentIndex()]}/{other_numb}",
+                    os.path.normpath(
+                        f"{self.app_path}/data/MAAconfig/{self.user_mode_list[self.user_set.currentIndex()]}/{row}"
+                    ),
+                    os.path.normpath(
+                        f"{self.app_path}/data/MAAconfig/{self.user_mode_list[1 - self.user_set.currentIndex()]}/{other_numb}"
+                    ),
                 )
             # 后续用户补位
             for i in range(row + 1, current_numb):
@@ -2031,11 +2133,17 @@ class Main(QWidget):
                 )
                 self.db.commit()
                 if os.path.exists(
-                    f"{self.app_path}/data/MAAconfig/{self.user_mode_list[self.user_set.currentIndex()]}/{i}"
+                    os.path.normpath(
+                        f"{self.app_path}/data/MAAconfig/{self.user_mode_list[self.user_set.currentIndex()]}/{i}"
+                    )
                 ):
                     os.rename(
-                        f"{self.app_path}/data/MAAconfig/{self.user_mode_list[self.user_set.currentIndex()]}/{i}",
-                        f"{self.app_path}/data/MAAconfig/{self.user_mode_list[self.user_set.currentIndex()]}/{i - 1}",
+                        os.path.normpath(
+                            f"{self.app_path}/data/MAAconfig/{self.user_mode_list[self.user_set.currentIndex()]}/{i}"
+                        ),
+                        os.path.normpath(
+                            f"{self.app_path}/data/MAAconfig/{self.user_mode_list[self.user_set.currentIndex()]}/{i - 1}"
+                        ),
                     )
             self.update_user_info("normal")
 
@@ -2045,24 +2153,30 @@ class Main(QWidget):
         # 获取全局MAA配置文件
         if info == ["Default"]:
             os.makedirs(
-                f"{self.app_path}/data/MAAconfig/Default",
+                os.path.normpath(f"{self.app_path}/data/MAAconfig/Default"),
                 exist_ok=True,
             )
             shutil.copy(
-                f"{self.config["Default"]["MaaSet.path"]}/config/gui.json",
-                f"{self.app_path}/data/MAAconfig/Default",
+                os.path.normpath(
+                    f"{self.config["Default"]["MaaSet.path"]}/config/gui.json"
+                ),
+                os.path.normpath(f"{self.app_path}/data/MAAconfig/Default"),
             )
         # 获取基建配置文件
         elif info[2] == "infrastructure":
             infrastructure_path = self.read("file_path_infrastructure")
             if infrastructure_path:
                 os.makedirs(
-                    f"{self.app_path}/data/MAAconfig/{self.user_mode_list[info[0]]}/{info[1]}/infrastructure",
+                    os.path.normpath(
+                        f"{self.app_path}/data/MAAconfig/{self.user_mode_list[info[0]]}/{info[1]}/infrastructure"
+                    ),
                     exist_ok=True,
                 )
                 shutil.copy(
                     infrastructure_path,
-                    f"{self.app_path}/data/MAAconfig/{self.user_mode_list[info[0]]}/{info[1]}/infrastructure/infrastructure.json",
+                    os.path.normpath(
+                        f"{self.app_path}/data/MAAconfig/{self.user_mode_list[info[0]]}/{info[1]}/infrastructure/infrastructure.json"
+                    ),
                 )
                 return True
             else:
@@ -2075,12 +2189,18 @@ class Main(QWidget):
         # 获取高级用户MAA配置文件
         elif info[2] in ["routine", "annihilation"]:
             os.makedirs(
-                f"{self.app_path}/data/MAAconfig/{self.user_mode_list[info[0]]}/{info[1]}/{info[2]}",
+                os.path.normpath(
+                    f"{self.app_path}/data/MAAconfig/{self.user_mode_list[info[0]]}/{info[1]}/{info[2]}"
+                ),
                 exist_ok=True,
             )
             shutil.copy(
-                f"{self.config["Default"]["MaaSet.path"]}/config/gui.json",
-                f"{self.app_path}/data/MAAconfig/{self.user_mode_list[info[0]]}/{info[1]}/{info[2]}",
+                os.path.normpath(
+                    f"{self.config["Default"]["MaaSet.path"]}/config/gui.json"
+                ),
+                os.path.normpath(
+                    f"{self.app_path}/data/MAAconfig/{self.user_mode_list[info[0]]}/{info[1]}/{info[2]}"
+                ),
             )
 
     def change_user_Item(self, item, mode):
@@ -2158,7 +2278,9 @@ class Main(QWidget):
                 or (
                     index == 0
                     and not os.path.exists(
-                        f"{self.app_path}/data/MAAconfig/{self.user_mode_list[self.user_set.currentIndex()]}/{row}/infrastructure/infrastructure.json",
+                        os.path.normpath(
+                            f"{self.app_path}/data/MAAconfig/{self.user_mode_list[self.user_set.currentIndex()]}/{row}/infrastructure/infrastructure.json"
+                        ),
                     )
                 )
             )
@@ -2176,7 +2298,9 @@ class Main(QWidget):
                 or (
                     index == 0
                     and not os.path.exists(
-                        f"{self.app_path}/data/MAAconfig/{self.user_mode_list[self.user_set.currentIndex()]}/{row}/{column}/gui.json",
+                        os.path.normpath(
+                            f"{self.app_path}/data/MAAconfig/{self.user_mode_list[self.user_set.currentIndex()]}/{row}/{column}/gui.json"
+                        ),
                     )
                 )
             )
@@ -2244,16 +2368,16 @@ class Main(QWidget):
             return None
 
         # 验证MAA路径
-        if self.config["Default"]["MaaSet.path"] != self.maa_path.text().replace(
-            "\\", "/"
+        if self.config["Default"]["MaaSet.path"] != os.path.normpath(
+            self.maa_path.text()
         ):
             if os.path.exists(
-                f"{self.maa_path.text().replace("\\", "/")}/MAA.exe"
+                os.path.normpath(f"{self.maa_path.text()}/MAA.exe")
             ) and os.path.exists(
-                f"{self.maa_path.text().replace("\\", "/")}/config/gui.json"
+                os.path.normpath(f"{self.maa_path.text()}/config/gui.json")
             ):
-                self.config["Default"]["MaaSet.path"] = self.maa_path.text().replace(
-                    "\\", "/"
+                self.config["Default"]["MaaSet.path"] = os.path.normpath(
+                    self.maa_path.text()
                 )
                 self.get_maa_config(["Default"])
             else:
@@ -2269,6 +2393,7 @@ class Main(QWidget):
         self.config["Default"]["TimeLimit.annihilation"] = self.annihilation.value()
         self.config["Default"]["TimesLimit.run"] = self.num.value()
         self.config["Default"]["SelfSet.MailAddress"] = self.mail_address.text()
+        self.config["Default"]["SelfSet.BossKey"] = self.boss_key.text()
 
         if self.if_sleep.isChecked():
             self.config["Default"]["SelfSet.IfSleep"] = "True"
@@ -2294,6 +2419,11 @@ class Main(QWidget):
             self.config["Default"]["SelfSet.IfSendMail.OnlyError"] = "True"
         else:
             self.config["Default"]["SelfSet.IfSendMail.OnlyError"] = "False"
+
+        if self.if_silence.isChecked():
+            self.config["Default"]["SelfSet.IfSilence"] = "True"
+        else:
+            self.config["Default"]["SelfSet.IfSilence"] = "False"
 
         if self.if_to_tray.isChecked():
             self.config["Default"]["SelfSet.IfToTray"] = "True"
@@ -2447,14 +2577,56 @@ class Main(QWidget):
             self.last_time = curtime
             self.maa_starter("日常代理")
 
+    def switch_silence(self, mode, emulator_path, boss_key):
+        """切换静默模式"""
+
+        if mode == "启用":
+            self.Timer.timeout.disconnect()
+            self.Timer.timeout.connect(self.set_theme)
+            self.Timer.timeout.connect(self.set_system)
+            self.Timer.timeout.connect(self.timed_start)
+            self.Timer.timeout.connect(
+                lambda: self.set_silence(emulator_path, boss_key)
+            )
+        elif mode == "禁用":
+            self.Timer.timeout.disconnect()
+            self.Timer.timeout.connect(self.set_theme)
+            self.Timer.timeout.connect(self.set_system)
+            self.Timer.timeout.connect(self.timed_start)
+
+    def set_silence(self, emulator_path, boss_key):
+        """设置静默模式"""
+
+        windows = self.get_window_info()
+        if any(emulator_path in _ for _ in windows):
+            pyautogui.hotkey(*boss_key)
+
+    def get_window_info(self):
+        """获取当前窗口信息"""
+
+        def callback(hwnd, window_info):
+            if win32gui.IsWindowVisible(hwnd) and win32gui.GetWindowText(hwnd):
+                _, pid = win32process.GetWindowThreadProcessId(hwnd)
+                process = psutil.Process(pid)
+                window_info.append((win32gui.GetWindowText(hwnd), process.exe()))
+            return True
+
+        window_info = []
+        win32gui.EnumWindows(callback, window_info)
+        return window_info
+
     def maa_starter(self, mode):
         """启动MaaRunner线程运行任务"""
 
         # 检查MAA路径是否可用
         if not (
-            os.path.exists(f"{self.config["Default"]["MaaSet.path"]}/MAA.exe")
+            os.path.exists(
+                os.path.normpath(f"{self.config["Default"]["MaaSet.path"]}/MAA.exe")
+            )
             and os.path.exists(
-                f"{self.config["Default"]["MaaSet.path"]}/config/gui.json"
+                os.path.normpath(
+                    f"{self.config["Default"]["MaaSet.path"]}/config/gui.json"
+                )
             )
         ):
             QMessageBox.critical(self.ui, "错误", "您还未正确配置MAA路径！")
@@ -2474,6 +2646,8 @@ class Main(QWidget):
 
     def maa_ender(self, mode):
         """中止MAA线程"""
+
+        self.switch_silence("禁用", "", [])
 
         self.MaaRunner.requestInterruption()
         self.MaaRunner.wait()
@@ -2523,8 +2697,8 @@ class Main(QWidget):
         elif "结束" in mode:
 
             shutil.copy(
-                f"{self.app_path}/data/MAAconfig/Default/gui.json",
-                f"{self.config["Default"]["MaaSet.path"]}/config",
+                os.path.normpath(f"{self.app_path}/data/MAAconfig/Default/gui.json"),
+                os.path.normpath(f"{self.config["Default"]["MaaSet.path"]}/config"),
             )
             self.user_add.setEnabled(True)
             self.user_del.setEnabled(True)
@@ -2565,7 +2739,7 @@ class Main(QWidget):
             map(int, version_current["updater_version"].split("."))
         )
         # 检查更新器是否存在
-        if not os.path.exists(f"{self.app_path}/Updater.exe"):
+        if not os.path.exists(os.path.normpath(f"{self.app_path}/Updater.exe")):
             updater_version_current = [0, 0, 0, 0]
 
         # 从远程服务器获取最新版本信息
@@ -2647,7 +2821,7 @@ class Main(QWidget):
         """更新主程序"""
 
         subprocess.Popen(
-            f"{self.app_path}/Updater.exe",
+            os.path.normpath(f"{self.app_path}/Updater.exe"),
             shell=True,
             creationflags=subprocess.CREATE_NO_WINDOW,
         )
@@ -2661,7 +2835,7 @@ class Main(QWidget):
             version = f"v{'.'.join(str(_) for _ in version_numb[0:3])}"
         else:
             version = (
-                f"v{'.'.join(str(_) for _ in version_numb[0:3])}_beta{version_numb[3]}"
+                f"v{'.'.join(str(_) for _ in version_numb[0:3])}-beta.{version_numb[3]}"
             )
         return version
 
@@ -2672,7 +2846,7 @@ class Main(QWidget):
             title=title,
             message=message,
             app_name="AUTO_MAA",
-            app_icon=f"{self.app_path}/gui/ico/AUTO_MAA.ico",
+            app_icon=os.path.normpath(f"{self.app_path}/gui/ico/AUTO_MAA.ico"),
             timeout=t,
             ticker=ticker,
             toast=True,
@@ -2726,12 +2900,14 @@ class AUTO_MAA(QMainWindow):
         # 创建主窗口
         self.main = Main()
         self.setCentralWidget(self.main.ui)
-        self.setWindowIcon(QIcon(f"{self.main.app_path}/gui/ico/AUTO_MAA.ico"))
+        self.setWindowIcon(
+            QIcon(os.path.normpath(f"{self.main.app_path}/gui/ico/AUTO_MAA.ico"))
+        )
         self.setWindowTitle("AUTO_MAA")
 
         # 创建系统托盘及其菜单
         self.tray = QSystemTrayIcon(
-            QIcon(f"{self.main.app_path}/gui/ico/AUTO_MAA.ico"), self
+            QIcon(os.path.normpath(f"{self.main.app_path}/gui/ico/AUTO_MAA.ico")), self
         )
         self.tray.setToolTip("AUTO_MAA")
         self.tray_menu = QMenu()
@@ -2875,6 +3051,8 @@ class AUTO_MAA(QMainWindow):
         self.set_ui("保存")
 
         # 清理各功能线程
+        self.main.Timer.stop()
+        self.main.Timer.deleteLater()
         self.main.MaaRunner.requestInterruption()
         self.main.MaaRunner.quit()
         self.main.MaaRunner.wait()
