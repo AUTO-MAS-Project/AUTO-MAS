@@ -2368,7 +2368,7 @@ class Main(QWidget):
             return None
 
         # 验证MAA路径
-        if self.config["Default"]["MaaSet.path"] != os.path.normpath(
+        if os.path.normpath(self.config["Default"]["MaaSet.path"]) != os.path.normpath(
             self.maa_path.text()
         ):
             if os.path.exists(
@@ -2561,6 +2561,8 @@ class Main(QWidget):
             return False
 
     def timed_start(self):
+        """定时启动代理任务"""
+
         # 获取定时列表
         time_set = [
             self.config["Default"][f"TimeSet.run{_ + 1}"]
