@@ -726,9 +726,7 @@ class MaaRunner(QtCore.QThread):
             ] = "True"  # 启动MAA后自动开启模拟器
 
             if self.if_silence:
-                data["Configurations"]["Default"][
-                    "Start.MinimizeDirectly"
-                ] = "True"  # 启动MAA后直接最小化
+                data["Global"]["Start.MinimizeDirectly"] = "True"  # 启动MAA后直接最小化
                 data["Configurations"]["Default"][
                     "GUI.UseTray"
                 ] = "True"  # 显示托盘图标
@@ -930,9 +928,7 @@ class MaaRunner(QtCore.QThread):
             data["Configurations"]["Default"][
                 "Start.RunDirectly"
             ] = "True"  # 启动MAA后直接运行
-            data["Configurations"]["Default"][
-                "Start.MinimizeDirectly"
-            ] = "True"  # 启动MAA后直接最小化
+            data["Global"]["Start.MinimizeDirectly"] = "True"  # 启动MAA后直接最小化
             data["Configurations"]["Default"]["GUI.UseTray"] = "True"  # 显示托盘图标
             data["Configurations"]["Default"][
                 "GUI.MinimizeToTray"
@@ -1015,7 +1011,7 @@ class MaaRunner(QtCore.QThread):
             ] = "False"  # 启动MAA后自动开启模拟器
 
             if self.if_silence:
-                data["Configurations"]["Default"][
+                data["Global"][
                     "Start.MinimizeDirectly"
                 ] = "False"  # 启动MAA后直接最小化
 
