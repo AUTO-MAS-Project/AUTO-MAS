@@ -43,7 +43,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui import QIcon
 from PySide6.QtCore import QObject, QThread, Signal
 
-from package import version_text
+from .version import version_text
 
 
 class UpdateProcess(QThread):
@@ -52,7 +52,9 @@ class UpdateProcess(QThread):
     progress = Signal(int, int, int)
     accomplish = Signal()
 
-    def __init__(self, app_path, name, main_version, updater_version):
+    def __init__(
+        self, app_path: str, name: str, main_version: list, updater_version: list
+    ) -> None:
         super(UpdateProcess, self).__init__()
 
         self.app_path = app_path
@@ -62,9 +64,9 @@ class UpdateProcess(QThread):
         self.download_path = os.path.normpath(
             f"{app_path}/AUTO_MAA_Update.zip"
         )  #  临时下载文件的路径
-        self.version_path = os.path.normpath(f"{app_path}/res/version.json")
+        self.version_path = os.path.normpath(f"{app_path}/resources/version.json")
 
-    def run(self):
+    def run(self) -> None:
 
         # 清理可能存在的临时文件
         try:
@@ -190,14 +192,14 @@ class UpdateProcess(QThread):
 
         self.accomplish.emit()
 
-    def get_download_url(self):
+    def get_download_url(self) -> list:
         """获取下载链接"""
 
         try_num = 3
         for i in range(try_num):
             try:
                 response = requests.get(
-                    "https://gitee.com/DLmaster_361/AUTO_MAA/raw/main/res/version.json"
+                    "https://gitee.com/DLmaster_361/AUTO_MAA/raw/main/resources/version.json"
                 )
                 if response.status_code != 200:
                     self.info.emit(
@@ -249,14 +251,16 @@ class UpdateProcess(QThread):
 
 class Updater(QObject):
 
-    def __init__(self, app_path, name, download_url, version):
+    def __init__(
+        self, app_path: str, name: str, main_version: list, updater_version: list
+    ) -> None:
         super().__init__()
 
         self.ui = QDialog()
         self.ui.setWindowTitle("AUTO_MAA更新器")
         self.ui.resize(700, 70)
         self.ui.setWindowIcon(
-            QIcon(os.path.normpath(f"{app_path}/gui/ico/AUTO_MAA_Updater.ico"))
+            QIcon(os.path.normpath(f"{app_path}/resources/icons/AUTO_MAA_Updater.ico"))
         )
 
         # 创建垂直布局
@@ -269,26 +273,30 @@ class Updater(QObject):
         self.progress.setRange(0, 0)
         self.Layout_v.addWidget(self.progress)
 
-        self.update_process = UpdateProcess(app_path, name, download_url, version)
+        self.update_process = UpdateProcess(
+            app_path, name, main_version, updater_version
+        )
 
         self.update_process.info.connect(self.update_info)
         self.update_process.progress.connect(self.update_progress)
 
         self.update_process.start()
 
-    def update_info(self, text):
+    def update_info(self, text: str) -> None:
         self.info.setText(text)
 
-    def update_progress(self, begin, end, current):
+    def update_progress(self, begin: int, end: int, current: int) -> None:
         self.progress.setRange(begin, end)
         self.progress.setValue(current)
 
 
 class AUTO_MAA_Updater(QApplication):
-    def __init__(self, app_path, name, download_url, version):
+    def __init__(
+        self, app_path: str, name: str, main_version: list, updater_version: list
+    ) -> None:
         super().__init__()
 
-        self.main = Updater(app_path, name, download_url, version)
+        self.main = Updater(app_path, name, main_version, updater_version)
         self.main.ui.show()
 
 
@@ -298,9 +306,11 @@ if __name__ == "__main__":
     app_path = os.path.normpath(os.path.dirname(os.path.realpath(sys.argv[0])))
 
     # 从本地版本信息文件获取当前版本信息
-    if os.path.exists(os.path.normpath(f"{app_path}/res/version.json")):
+    if os.path.exists(os.path.normpath(f"{app_path}/resources/version.json")):
         with open(
-            os.path.normpath(f"{app_path}/res/version.json"), "r", encoding="utf-8"
+            os.path.normpath(f"{app_path}/resources/version.json"),
+            "r",
+            encoding="utf-8",
         ) as f:
             version_current = json.load(f)
         main_version_current = list(
@@ -313,7 +323,7 @@ if __name__ == "__main__":
     for _ in range(3):
         try:
             response = requests.get(
-                "https://gitee.com/DLmaster_361/AUTO_MAA/raw/main/res/version.json"
+                "https://gitee.com/DLmaster_361/AUTO_MAA/raw/main/resources/version.json"
             )
             version_remote = response.json()
             main_version_remote = list(
@@ -332,6 +342,6 @@ if __name__ == "__main__":
             app_path,
             "AUTO_MAA主程序",
             main_version_remote,
-            "",
+            [],
         )
         sys.exit(app.exec())

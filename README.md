@@ -2,7 +2,7 @@
 
 MAA多账号管理与自动化软件
 
-!["软件图标"](https://github.com/DLmaster361/AUTO_MAA/blob/main/res/AUTO_MAA.png "软件图标")
+!["软件图标"](https://github.com/DLmaster361/AUTO_MAA/blob/main/resources/AUTO_MAA.png "软件图标")
 
 ---
 
@@ -119,7 +119,7 @@ MAA多账号管理与自动化软件
   - 配置自己模拟器所在的位置并根据实际情况填写`等待模拟器启动时间`（建议预留10s以防意外）。
   - 如果是模拟器多开用户，还需要填写`附加命令`，具体填写值参见多开模拟器对应快捷方式路径（如`-v 1`）。
 
-![MAA配置](https://github.com/DLmaster361/AUTO_MAA/blob/main/res/README/MAA配置.png "MAA配置")
+![MAA配置](https://github.com/DLmaster361/AUTO_MAA/blob/main/resources/README/MAA配置.png "MAA配置")
 
 #### 设置AUTO_MAA
 
@@ -165,7 +165,7 @@ MAA多账号管理与自动化软件
   - 程序会读取`data/gameid.txt`中的数据，依据此进行关卡号的替换，便于常用关卡的使用。
   - `gameid.txt`会在程序首次运行时生成，其中将预置一些常用资源本的替换方案。
 
-![gameid](https://github.com/DLmaster361/AUTO_MAA/blob/main/res/README/gameid.png "gameid")
+![gameid](https://github.com/DLmaster361/AUTO_MAA/blob/main/resources/README/gameid.png "gameid")
 
 ## 运行代理任务
 
@@ -231,4 +231,4 @@ MAA多账号管理与自动化软件
 
 如果喜欢这个项目的话，给作者来杯咖啡吧！
 
-![payid](https://github.com/DLmaster361/AUTO_MAA/blob/main/res/README/payid.png "payid")
+![payid](https://github.com/DLmaster361/AUTO_MAA/blob/main/resources/README/payid.png "payid")
