@@ -21,7 +21,7 @@
 """
 AUTO_MAA
 AUTO_MAA更新器
-v1.0
+v1.1
 作者：DLmaster_361
 """
 

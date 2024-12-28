@@ -25,7 +25,9 @@ v4.2
 作者：DLmaster_361
 """
 
+import os
 import json
+import shutil
 import subprocess
 
 from app import version_text
@@ -55,6 +57,19 @@ if __name__ == "__main__":
         capture_output=True,
         text=True,
     )
+
+    shutil.copy(os.path.normpath("app/utils/Updater.py"), os.path.normpath("."))
+
+    with open(os.path.normpath("Updater.py"), "r", encoding="utf-8") as f:
+        file_content = f.read()
+
+    file_content = file_content.replace(
+        "from .version import version_text", "from app import version_text"
+    )
+
+    with open(os.path.normpath("Updater.py"), "w", encoding="utf-8") as f:
+        f.write(file_content)
+
     result = subprocess.run(
         f"powershell -Command nuitka --standalone --onefile --mingw64"
         f" --enable-plugins=pyside6 --windows-console-mode=disable"
@@ -66,7 +81,7 @@ if __name__ == "__main__":
         f" --copyright='Copyright © 2024 DLmaster361'"
         f" --assume-yes-for-downloads --show-progress"
         f" --output-filename=Updater --remove-output"
-        f" app\\utils\\Updater.py",
+        f" Updater.py",
         shell=True,
         capture_output=True,
         text=True,
