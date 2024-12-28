@@ -84,11 +84,7 @@ jobs:
       - name: Create Zip
         id: create_zip
         run: |
-          move resources\icons\AUTO_MAA_Updater.ico .\
           Compress-Archive -Path app,resources,main.py,AUTO_MAA.exe,requirements.txt,README.md,LICENSE -DestinationPath AUTO_MAA_${{ env.AUTO_MAA_version }}.zip
-          del resources\gui\main.ui
-          del resources\icons\AUTO_MAA.ico
-          move AUTO_MAA_Updater.ico resources\icons
           Compress-Archive -Path Updater.exe -DestinationPath Updater_${{ env.updater_version }}.zip
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
