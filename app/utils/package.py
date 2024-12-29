@@ -52,7 +52,6 @@ if __name__ == "__main__":
         f" --copyright='Copyright © 2024 DLmaster361'"
         f" --assume-yes-for-downloads --show-progress"
         f" --output-filename=AUTO_MAA --remove-output"
-        f" --optimize=1"
         f" main.py",
         shell=True,
         capture_output=True,
@@ -82,7 +81,6 @@ if __name__ == "__main__":
         f" --copyright='Copyright © 2024 DLmaster361'"
         f" --assume-yes-for-downloads --show-progress"
         f" --output-filename=Updater --remove-output"
-        f" --optimize=1"
         f" Updater.py",
         shell=True,
         capture_output=True,
