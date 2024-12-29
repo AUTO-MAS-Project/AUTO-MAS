@@ -1334,7 +1334,11 @@ class Main(QWidget):
 
         windows = self.get_window_info()
         if any(emulator_path in _ for _ in windows):
-            pyautogui.hotkey(*boss_key)
+            try:
+                pyautogui.hotkey(*boss_key)
+            except pyautogui.FailSafeException as e:
+                # 执行日志记录，暂时缺省
+                pass
 
     def get_window_info(self):
         """获取当前窗口信息"""
