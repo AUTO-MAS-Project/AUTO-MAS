@@ -18,25 +18,28 @@
 "GUI.CustomStageCode": "False"        #手动输入关卡名
 "GUI.UseAlternateStage": "False"        #使用备选关卡
 "Fight.UseRemainingSanityStage": "True"        #使用剩余理智
+"GUI.AllowUseStoneSave": "False"        #允许吃源石保持状态
 "Fight.UseExpiringMedicine": "False"        #无限吃48小时内过期的理智药
 "GUI.HideUnavailableStage": "False"        #隐藏当日不开放关卡
+"GUI.HideSeries": "False"        #隐藏连战次数
 "Infrast.CustomInfrastPlanShowInFightSettings": "False"        #显示基建计划
 "Penguin.EnablePenguin": "True"        #上报企鹅物流
 "Yituliu.EnableYituliu": "True"        #上报一图流
 #基建换班
 "Infrast.CustomInfrastEnabled": "True"        #启用自定义基建配置
+"Infrast.CustomInfrastPlanIndex": "1"        #自定义基建配置索引
 "Infrast.DefaultInfrast": "user_defined"        #内置配置
 "Infrast.IsCustomInfrastFileReadOnly": "False"        #自定义基建配置文件只读
 "Infrast.CustomInfrastFile": ""        #自定义基建配置文件地址
 #设置
 "Start.ClientType": "Bilibili"、 "Official"        #服务器
-"Timer.Timer1": "False"        #时间设置1
-"VersionUpdate.ScheduledUpdateCheck": "True"        #定时检查更新
-"VersionUpdate.AutoDownloadUpdatePackage": "True"        #自动下载更新包
-"VersionUpdate.AutoInstallUpdatePackage": "True"        #自动安装更新包
-"Start.RunDirectly": "True"        #启动MAA后直接运行
-"Start.MinimizeDirectly": "True"        #启动MAA后直接最小化
-"Start.OpenEmulatorAfterLaunch": "True"        #启动MAA后自动开启模拟器
-"GUI.UseTray": "True"        #显示托盘图标
-"GUI.MinimizeToTray": "False"        #最小化时隐藏至托盘
+G"Timer.Timer1": "False"        #时间设置1
+G"VersionUpdate.ScheduledUpdateCheck": "True"        #定时检查更新
+G"VersionUpdate.AutoDownloadUpdatePackage": "True"        #自动下载更新包
+G"VersionUpdate.AutoInstallUpdatePackage": "True"        #自动安装更新包
+G"Start.RunDirectly": "True"        #启动MAA后直接运行
+G"Start.MinimizeDirectly": "True"        #启动MAA后直接最小化
+G"Start.OpenEmulatorAfterLaunch": "True"        #启动MAA后自动开启模拟器
+G"GUI.UseTray": "True"        #显示托盘图标
+G"GUI.MinimizeToTray": "False"        #最小化时隐藏至托盘
 "Start.EmulatorPath"        #模拟器路径

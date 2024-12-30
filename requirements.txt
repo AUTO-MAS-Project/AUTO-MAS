@@ -4,5 +4,5 @@ psutil
 pywin32
 pyautogui
 pycryptodome
-pyinstaller
 requests
+nuitka
