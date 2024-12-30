@@ -41,7 +41,7 @@ if __name__ == "__main__":
     main_version_numb = list(map(int, version["main_version"].split(".")))
     updater_version_numb = list(map(int, version["updater_version"].split(".")))
 
-    print("Packaging AUTO-MAA main program ...")
+    print("Packaging AUTO_MAA main program ...")
 
     result = subprocess.run(
         f"powershell -Command nuitka --standalone --onefile --mingw64"
@@ -61,7 +61,7 @@ if __name__ == "__main__":
 
     print(result.stdout)
     print(result.stderr)
-    print("AUTO-MAA main program packaging completed !")
+    print("AUTO_MAA main program packaging completed !")
 
     shutil.copy(os.path.normpath("app/utils/Updater.py"), os.path.normpath("."))
 
@@ -75,7 +75,7 @@ if __name__ == "__main__":
     with open(os.path.normpath("Updater.py"), "w", encoding="utf-8") as f:
         f.write(file_content)
 
-    print("Packaging AUTO-MAA update program ...")
+    print("Packaging AUTO_MAA update program ...")
 
     result = subprocess.run(
         f"powershell -Command nuitka --standalone --onefile --mingw64"
@@ -83,7 +83,7 @@ if __name__ == "__main__":
         f" --windows-icon-from-ico=resources\\icons\\AUTO_MAA_Updater.ico"
         f" --company-name='AUTO_MAA Team' --product-name=AUTO_MAA"
         f" --file-version={version["updater_version"]}"
-        f" --product-version={version["updater_version"]}"
+        f" --product-version={version["main_version"]}"
         f" --file-description='AUTO_MAA Component'"
         f" --copyright='Copyright © 2024 DLmaster361'"
         f" --assume-yes-for-downloads --output-filename=Updater"
@@ -95,7 +95,7 @@ if __name__ == "__main__":
 
     print(result.stdout)
     print(result.stderr)
-    print("AUTO-MAA update program packaging completed !")
+    print("AUTO_MAA update program packaging completed !")
 
     os.remove(os.path.normpath("Updater.py"))
 
