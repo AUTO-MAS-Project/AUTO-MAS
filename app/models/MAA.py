@@ -676,21 +676,15 @@ class MaaManager(QtCore.QThread):
             data["Configurations"]["Default"][
                 "MainFunction.PostActions"
             ] = "12"  # 完成后退出MAA和模拟器
-            data["Configurations"]["Default"][
-                "Start.RunDirectly"
-            ] = "True"  # 启动MAA后直接运行
-            data["Configurations"]["Default"][
+            data["Global"]["Start.RunDirectly"] = "True"  # 启动MAA后直接运行
+            data["Global"][
                 "Start.OpenEmulatorAfterLaunch"
             ] = "True"  # 启动MAA后自动开启模拟器
 
             if self.if_silence:
                 data["Global"]["Start.MinimizeDirectly"] = "True"  # 启动MAA后直接最小化
-                data["Configurations"]["Default"][
-                    "GUI.UseTray"
-                ] = "True"  # 显示托盘图标
-                data["Configurations"]["Default"][
-                    "GUI.MinimizeToTray"
-                ] = "True"  # 最小化时隐藏至托盘
+                data["Global"]["GUI.UseTray"] = "True"  # 显示托盘图标
+                data["Global"]["GUI.MinimizeToTray"] = "True"  # 最小化时隐藏至托盘
 
             if self.data[index][15] == "simple":
 
@@ -774,6 +768,9 @@ class MaaManager(QtCore.QThread):
                     data["Configurations"]["Default"][
                         "Fight.UseExpiringMedicine"
                     ] = "True"  # 无限吃48小时内过期的理智药
+                    data["Configurations"]["Default"][
+                        "GUI.HideSeries"
+                    ] = "False"  # 隐藏连战次数
 
                 elif "日常" in mode:
 
@@ -865,6 +862,9 @@ class MaaManager(QtCore.QThread):
                             "Infrast.CustomInfrastEnabled"
                         ] = "True"  # 启用自定义基建配置
                         data["Configurations"]["Default"][
+                            "Infrast.CustomInfrastPlanIndex"
+                        ] = "1"  # 自定义基建配置索引
+                        data["Configurations"]["Default"][
                             "Infrast.DefaultInfrast"
                         ] = "user_defined"  # 内置配置
                         data["Configurations"]["Default"][
@@ -883,23 +883,15 @@ class MaaManager(QtCore.QThread):
             data["Configurations"]["Default"][
                 "MainFunction.PostActions"
             ] = "8"  # 完成后退出MAA
-            data["Configurations"]["Default"][
-                "Start.RunDirectly"
-            ] = "True"  # 启动MAA后直接运行
+            data["Global"]["Start.RunDirectly"] = "True"  # 启动MAA后直接运行
             data["Global"]["Start.MinimizeDirectly"] = "True"  # 启动MAA后直接最小化
-            data["Configurations"]["Default"]["GUI.UseTray"] = "True"  # 显示托盘图标
-            data["Configurations"]["Default"][
-                "GUI.MinimizeToTray"
-            ] = "True"  # 最小化时隐藏至托盘
+            data["Global"]["GUI.UseTray"] = "True"  # 显示托盘图标
+            data["Global"]["GUI.MinimizeToTray"] = "True"  # 最小化时隐藏至托盘
             # 启动MAA后自动开启模拟器
             if "启动模拟器" in mode:
-                data["Configurations"]["Default"][
-                    "Start.OpenEmulatorAfterLaunch"
-                ] = "True"
+                data["Global"]["Start.OpenEmulatorAfterLaunch"] = "True"
             elif "仅切换账号" in mode:
-                data["Configurations"]["Default"][
-                    "Start.OpenEmulatorAfterLaunch"
-                ] = "False"
+                data["Global"]["Start.OpenEmulatorAfterLaunch"] = "False"
 
             if self.data[index][15] == "simple":
 
@@ -961,10 +953,8 @@ class MaaManager(QtCore.QThread):
             data["Configurations"]["Default"][
                 "MainFunction.PostActions"
             ] = "0"  # 完成后无动作
-            data["Configurations"]["Default"][
-                "Start.RunDirectly"
-            ] = "False"  # 启动MAA后直接运行
-            data["Configurations"]["Default"][
+            data["Global"]["Start.RunDirectly"] = "False"  # 启动MAA后直接运行
+            data["Global"][
                 "Start.OpenEmulatorAfterLaunch"
             ] = "False"  # 启动MAA后自动开启模拟器
 

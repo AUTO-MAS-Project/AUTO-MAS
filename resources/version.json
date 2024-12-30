@@ -1,7 +1,7 @@
 {
     "main_version": "4.2.0.0",
     "updater_version": "1.1.0.0",
-    "announcement": "\n# 这是一个中间版本，此版本后更换程序架构方式。\n# 由于更新方法无法通用，您需要在完成更新后再次检查更新以获取最新版本。\n",
+    "announcement": "\n## 新增功能\n- 提供完整打包代码\n## 修复BUG\n- 同步MAA`v5.11.1`的字段修改\n- 清除自动化中无效的整合流程\n## 程序优化\n- 调整项目结构，模块化各功能组件\n- 改用`nuitka`编译，压缩软件体积，提升运行速度",
     "proxy_list":[
         "",
         "https://gitproxy.click/",
