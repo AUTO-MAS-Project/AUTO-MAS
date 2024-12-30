@@ -41,7 +41,7 @@ if __name__ == "__main__":
     main_version_numb = list(map(int, version["main_version"].split(".")))
     updater_version_numb = list(map(int, version["updater_version"].split(".")))
 
-    print("正在打包AUTO_MAA主程序...")
+    print("Packaging AUTO-MAA main program ...")
 
     result = subprocess.run(
         f"powershell -Command nuitka --standalone --onefile --mingw64"
@@ -62,7 +62,7 @@ if __name__ == "__main__":
 
     print(result.stdout)
     print(result.stderr)
-    print("AUTO_MAA主程序打包完成！")
+    print("AUTO-MAA main program packaging completed !")
 
     shutil.copy(os.path.normpath("app/utils/Updater.py"), os.path.normpath("."))
 
@@ -76,7 +76,7 @@ if __name__ == "__main__":
     with open(os.path.normpath("Updater.py"), "w", encoding="utf-8") as f:
         f.write(file_content)
 
-    print("正在打包AUTO_MAA更新程序...")
+    print("Packaging AUTO-MAA update program ...")
 
     result = subprocess.run(
         f"powershell -Command nuitka --standalone --onefile --mingw64"
@@ -97,7 +97,7 @@ if __name__ == "__main__":
 
     print(result.stdout)
     print(result.stderr)
-    print("AUTO_MAA更新程序打包完成！")
+    print("AUTO-MAA update program packaging completed !")
 
     os.remove(os.path.normpath("Updater.py"))
 
