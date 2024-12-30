@@ -52,9 +52,8 @@ if __name__ == "__main__":
         f" --product-version={version["main_version"]}"
         f" --file-description='AUTO_MAA Component'"
         f" --copyright='Copyright © 2024 DLmaster361'"
-        f" --assume-yes-for-downloads --show-progress"
-        f" --output-filename=AUTO_MAA --remove-output"
-        f" main.py",
+        f" --assume-yes-for-downloads --output-filename=AUTO_MAA"
+        f" --remove-output main.py",
         shell=True,
         capture_output=True,
         text=True,
@@ -87,9 +86,8 @@ if __name__ == "__main__":
         f" --product-version={version["updater_version"]}"
         f" --file-description='AUTO_MAA Component'"
         f" --copyright='Copyright © 2024 DLmaster361'"
-        f" --assume-yes-for-downloads --show-progress"
-        f" --output-filename=Updater --remove-output"
-        f" Updater.py",
+        f" --assume-yes-for-downloads --output-filename=Updater"
+        f" --remove-output Updater.py",
         shell=True,
         capture_output=True,
         text=True,
@@ -101,7 +99,7 @@ if __name__ == "__main__":
 
     os.remove(os.path.normpath("Updater.py"))
 
-    with open("update_info.txt", "w", encoding="utf-8") as f:
+    with open("version_info.txt", "w", encoding="utf-8") as f:
         print(
             f"{version_text(main_version_numb)}\n{version_text(updater_version_numb)}{version["announcement"]}",
             file=f,
