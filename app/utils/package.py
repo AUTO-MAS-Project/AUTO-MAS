@@ -29,13 +29,16 @@ import os
 import json
 import shutil
 import subprocess
+from pathlib import Path
 
 from app import version_text
 
 
 if __name__ == "__main__":
 
-    with open("resources/version.json", "r", encoding="utf-8") as f:
+    root_path = Path.cwd()
+
+    with (root_path / "resources/version.json").open(mode="r", encoding="utf-8") as f:
         version = json.load(f)
 
     main_version_numb = list(map(int, version["main_version"].split(".")))
@@ -63,17 +66,16 @@ if __name__ == "__main__":
     print(result.stderr)
     print("AUTO_MAA main program packaging completed !")
 
-    shutil.copy(os.path.normpath("app/utils/Updater.py"), os.path.normpath("."))
+    shutil.copy(root_path / "app/utils/Updater.py", root_path)
 
-    with open(os.path.normpath("Updater.py"), "r", encoding="utf-8") as f:
-        file_content = f.read()
+    file_content = (root_path / "Updater.py").read_text(encoding="utf-8")
 
-    file_content = file_content.replace(
-        "from .version import version_text", "from app import version_text"
+    (root_path / "Updater.py").write_text(
+        file_content.replace(
+            "from .version import version_text", "from app import version_text"
+        ),
+        encoding="utf-8",
     )
-
-    with open(os.path.normpath("Updater.py"), "w", encoding="utf-8") as f:
-        f.write(file_content)
 
     print("Packaging AUTO_MAA update program ...")
 
@@ -97,10 +99,9 @@ if __name__ == "__main__":
     print(result.stderr)
     print("AUTO_MAA update program packaging completed !")
 
-    os.remove(os.path.normpath("Updater.py"))
+    os.remove(root_path / "Updater.py")
 
-    with open("version_info.txt", "w", encoding="utf-8") as f:
-        print(
-            f"{version_text(main_version_numb)}\n{version_text(updater_version_numb)}{version["announcement"]}",
-            file=f,
-        )
+    (root_path / "version_info.txt").write_text(
+        f"{version_text(main_version_numb)}\n{version_text(updater_version_numb)}{version["announcement"]}",
+        encoding="utf-8",
+    )

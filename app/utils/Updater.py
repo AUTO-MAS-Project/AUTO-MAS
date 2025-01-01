@@ -32,6 +32,7 @@ import zipfile
 import requests
 import subprocess
 import time
+from pathlib import Path
 
 from PySide6.QtWidgets import (
     QApplication,
@@ -53,7 +54,7 @@ class UpdateProcess(QThread):
     accomplish = Signal()
 
     def __init__(
-        self, app_path: str, name: str, main_version: list, updater_version: list
+        self, app_path: Path, name: str, main_version: list, updater_version: list
     ) -> None:
         super(UpdateProcess, self).__init__()
 
@@ -61,10 +62,8 @@ class UpdateProcess(QThread):
         self.name = name
         self.main_version = main_version
         self.updater_version = updater_version
-        self.download_path = os.path.normpath(
-            f"{app_path}/AUTO_MAA_Update.zip"
-        )  #  临时下载文件的路径
-        self.version_path = os.path.normpath(f"{app_path}/resources/version.json")
+        self.download_path = app_path / "AUTO_MAA_Update.zip"  #  临时下载文件的路径
+        self.version_path = app_path / "resources/version.json"
 
     def run(self) -> None:
 
@@ -185,7 +184,7 @@ class UpdateProcess(QThread):
         # 主程序更新完成后打开AUTO_MAA
         if self.name == "AUTO_MAA主程序":
             subprocess.Popen(
-                os.path.normpath(f"{self.app_path}/AUTO_MAA.exe"),
+                str(self.app_path / "AUTO_MAA.exe"),
                 shell=True,
                 creationflags=subprocess.CREATE_NO_WINDOW,
             )
@@ -252,7 +251,7 @@ class UpdateProcess(QThread):
 class Updater(QObject):
 
     def __init__(
-        self, app_path: str, name: str, main_version: list, updater_version: list
+        self, app_path: Path, name: str, main_version: list, updater_version: list
     ) -> None:
         super().__init__()
 
@@ -260,7 +259,7 @@ class Updater(QObject):
         self.ui.setWindowTitle("AUTO_MAA更新器")
         self.ui.resize(700, 70)
         self.ui.setWindowIcon(
-            QIcon(os.path.normpath(f"{app_path}/resources/icons/AUTO_MAA_Updater.ico"))
+            QIcon(str(app_path / "resources/icons/AUTO_MAA_Updater.ico"))
         )
 
         # 创建垂直布局
@@ -292,7 +291,7 @@ class Updater(QObject):
 
 class AUTO_MAA_Updater(QApplication):
     def __init__(
-        self, app_path: str, name: str, main_version: list, updater_version: list
+        self, app_path: Path, name: str, main_version: list, updater_version: list
     ) -> None:
         super().__init__()
 
@@ -303,14 +302,12 @@ class AUTO_MAA_Updater(QApplication):
 if __name__ == "__main__":
 
     # 获取软件自身的路径
-    app_path = os.path.normpath(os.path.dirname(os.path.realpath(sys.argv[0])))
+    app_path = Path.cwd()
 
     # 从本地版本信息文件获取当前版本信息
-    if os.path.exists(os.path.normpath(f"{app_path}/resources/version.json")):
-        with open(
-            os.path.normpath(f"{app_path}/resources/version.json"),
-            "r",
-            encoding="utf-8",
+    if (app_path / "resources/version.json").exists():
+        with (app_path / "resources/version.json").open(
+            mode="r", encoding="utf-8"
         ) as f:
             version_current = json.load(f)
         main_version_current = list(

@@ -32,6 +32,7 @@ import os
 import subprocess
 import shutil
 import time
+from pathlib import Path
 
 from app import AppConfig
 
@@ -59,16 +60,11 @@ class MaaManager(QtCore.QThread):
     def configure(self):
         """提取配置信息"""
 
-        self.set_path = os.path.normpath(
-            f"{self.config.content["Default"]["MaaSet.path"]}/config/gui.json"
-        )
-        self.log_path = os.path.normpath(
-            f"{self.config.content["Default"]["MaaSet.path"]}/debug/gui.log"
-        )
-        self.maa_path = os.path.normpath(
-            f"{self.config.content["Default"]["MaaSet.path"]}/MAA.exe"
-        )
-        self.json_path = os.path.normpath(f"{self.config.app_path}/data/MAAconfig")
+        self.maa_root_path = Path(self.config.content["Default"]["MaaSet.path"])
+        self.set_path = self.maa_root_path / "config/gui.json"
+        self.log_path = self.maa_root_path / "debug/gui.log"
+        self.maa_path = self.maa_root_path / "MAA.exe"
+        self.json_path = self.config.app_path / "data/MAAconfig"
         self.routine = self.config.content["Default"]["TimeLimit.routine"]
         self.annihilation = self.config.content["Default"]["TimeLimit.annihilation"]
         self.num = self.config.content["Default"]["TimesLimit.run"]
@@ -500,33 +496,29 @@ class MaaManager(QtCore.QThread):
 
             # 保存运行日志
             end_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            with open(
-                os.path.normpath(f"{self.config.app_path}/log.txt"),
-                "w",
-                encoding="utf-8",
-            ) as f:
-                print(f"任务开始时间：{begin_time}，结束时间：{end_time}", file=f)
-                print(
-                    f"已完成数：{len(over_index)}，未完成数：{len(error_index) + len(wait_index)}\n",
-                    file=f,
+            end_log = (
+                f"任务开始时间：{begin_time}，结束时间：{end_time}\n"
+                f"已完成数：{len(over_index)}，未完成数：{len(error_index) + len(wait_index)}\n\n"
+            )
+
+            if len(error_index) != 0:
+                end_log += (
+                    f"{self.mode[2:4]}未成功的用户：\n"
+                    f"{"\n".join([self.data[_][0] for _ in error_index])}\n"
                 )
-                if len(error_index) != 0:
-                    print(f"{self.mode[2:4]}未成功的用户：", file=f)
-                    print("\n".join([self.data[_][0] for _ in error_index]), file=f)
-                wait_index = [
-                    _ for _ in all_index if (not _ in over_index + error_index)
-                ]
-                if len(wait_index) != 0:
-                    print(f"\n未开始{self.mode[2:4]}的用户：", file=f)
-                    print("\n".join([self.data[_][0] for _ in wait_index]), file=f)
+            wait_index = [_ for _ in all_index if (not _ in over_index + error_index)]
+            if len(wait_index) != 0:
+                end_log += (
+                    f"\n未开始{self.mode[2:4]}的用户：\n"
+                    f"{"\n".join([self.data[_][0] for _ in wait_index])}\n"
+                )
+
+            (self.config.app_path / "log.txt").write_text(
+                end_log,
+                encoding="utf-8",
+            )
 
             # 恢复GUI运行面板
-            with open(
-                os.path.normpath(f"{self.config.app_path}/log.txt"),
-                "r",
-                encoding="utf-8",
-            ) as f:
-                end_log = f.read()
             self.update_gui.emit("", "", "", "", end_log)
 
             # 推送代理结果通知
@@ -553,7 +545,7 @@ class MaaManager(QtCore.QThread):
 
         logs = []
         if_log_start = False
-        with open(self.log_path, "r", encoding="utf-8") as f:
+        with self.log_path.open(mode="r", encoding="utf-8") as f:
             for entry in f:
                 if not if_log_start:
                     try:
@@ -618,20 +610,18 @@ class MaaManager(QtCore.QThread):
         # 预导入MAA配置文件
         if mode == "设置MAA_用户":
             set_book = ["simple", "beta"]
-            if os.path.exists(
-                os.path.normpath(
-                    f"{self.json_path}/{set_book[self.get_json_path[0]]}/{self.get_json_path[1]}/{self.get_json_path[2]}/gui.json"
-                )
-            ):
+            if (
+                self.json_path
+                / f"{set_book[self.get_json_path[0]]}/{self.get_json_path[1]}/{self.get_json_path[2]}/gui.json"
+            ).exists():
                 shutil.copy(
-                    os.path.normpath(
-                        f"{self.json_path}/{set_book[self.get_json_path[0]]}/{self.get_json_path[1]}/{self.get_json_path[2]}/gui.json"
-                    ),
+                    self.json_path
+                    / f"{set_book[self.get_json_path[0]]}/{self.get_json_path[1]}/{self.get_json_path[2]}/gui.json",
                     self.set_path,
                 )
             else:
                 shutil.copy(
-                    os.path.normpath(f"{self.json_path}/Default/gui.json"),
+                    self.json_path / "Default/gui.json",
                     self.set_path,
                 )
         elif (mode == "设置MAA_全局") or (
@@ -639,32 +629,27 @@ class MaaManager(QtCore.QThread):
             and self.data[index][15] == "simple"
         ):
             shutil.copy(
-                os.path.normpath(f"{self.json_path}/Default/gui.json"),
+                self.json_path / "Default/gui.json",
                 self.set_path,
             )
         elif "日常代理" in mode and self.data[index][15] == "beta":
             if mode == "日常代理_剿灭":
                 shutil.copy(
-                    os.path.normpath(
-                        f"{self.json_path}/beta/{self.data[index][16]}/annihilation/gui.json"
-                    ),
+                    self.json_path
+                    / f"beta/{self.data[index][16]}/annihilation/gui.json",
                     self.set_path,
                 )
             elif mode == "日常代理_日常":
                 shutil.copy(
-                    os.path.normpath(
-                        f"{self.json_path}/beta/{self.data[index][16]}/routine/gui.json"
-                    ),
+                    self.json_path / f"beta/{self.data[index][16]}/routine/gui.json",
                     self.set_path,
                 )
         elif "人工排查" in mode and self.data[index][15] == "beta":
             shutil.copy(
-                os.path.normpath(
-                    f"{self.json_path}/beta/{self.data[index][16]}/routine/gui.json"
-                ),
+                self.json_path / f"beta/{self.data[index][16]}/routine/gui.json",
                 self.set_path,
             )
-        with open(self.set_path, "r", encoding="utf-8") as f:
+        with self.set_path.open(mode="r", encoding="utf-8") as f:
             data = json.load(f)
 
         # 日常代理配置
@@ -1000,7 +985,7 @@ class MaaManager(QtCore.QThread):
                 ] = "False"  # 生息演算
 
         # 覆写配置文件
-        with open(self.set_path, "w", encoding="utf-8") as f:
+        with self.set_path.open(mode="w", encoding="utf-8") as f:
             json.dump(data, f, indent=4)
 
         return True
@@ -1009,12 +994,10 @@ class MaaManager(QtCore.QThread):
         """获取模拟器路径"""
 
         # 读取配置文件
-        with open(self.set_path, "r", encoding="utf-8") as f:
+        with self.set_path.open(mode="r", encoding="utf-8") as f:
             set = json.load(f)
-            # 获取模拟器路径
-            return os.path.normpath(
-                set["Configurations"]["Default"]["Start.EmulatorPath"]
-            )
+        # 获取模拟器路径
+        return Path(set["Configurations"]["Default"]["Start.EmulatorPath"])
 
     def server_date(self):
         """获取当前的服务器日期"""
