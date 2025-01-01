@@ -29,6 +29,7 @@ import sqlite3
 import json
 import os
 import sys
+from pathlib import Path
 from typing import Dict, Union
 
 
@@ -36,17 +37,15 @@ class AppConfig:
 
     def __init__(self) -> None:
 
-        self.app_path = os.path.normpath(
-            os.path.dirname(os.path.realpath(sys.argv[0]))
-        )  # 获取软件自身的路径
+        self.app_path = Path.cwd()  # 获取软件根目录
         self.app_path_sys = os.path.realpath(sys.argv[0])  # 获取软件自身的路径
         self.app_name = os.path.basename(self.app_path)  # 获取软件自身的名称
 
-        self.database_path = os.path.normpath(f"{self.app_path}/data/data.db")
-        self.config_path = os.path.normpath(f"{self.app_path}/config/gui.json")
-        self.key_path = os.path.normpath(f"{self.app_path}/data/key")
-        self.gameid_path = os.path.normpath(f"{self.app_path}/data/gameid.txt")
-        self.version_path = os.path.normpath(f"{self.app_path}/resources/version.json")
+        self.database_path = self.app_path / "data/data.db"
+        self.config_path = self.app_path / "config/gui.json"
+        self.key_path = self.app_path / "data/key"
+        self.gameid_path = self.app_path / "data/gameid.txt"
+        self.version_path = self.app_path / "resources/version.json"
 
         # 检查文件完整性
         self.initialize()
@@ -57,40 +56,32 @@ class AppConfig:
         """初始化程序的配置文件"""
 
         # 检查目录
-        os.makedirs(os.path.normpath(f"{self.app_path}/data"), exist_ok=True)
-        os.makedirs(os.path.normpath(f"{self.app_path}/config"), exist_ok=True)
-        os.makedirs(
-            os.path.normpath(f"{self.app_path}/data/MAAconfig/simple"), exist_ok=True
-        )
-        os.makedirs(
-            os.path.normpath(f"{self.app_path}/data/MAAconfig/beta"), exist_ok=True
-        )
-        os.makedirs(
-            os.path.normpath(f"{self.app_path}/data/MAAconfig/Default"), exist_ok=True
-        )
+        (self.app_path / "config").mkdir(parents=True, exist_ok=True)
+        (self.app_path / "data/MAAconfig/simple").mkdir(parents=True, exist_ok=True)
+        (self.app_path / "data/MAAconfig/beta").mkdir(parents=True, exist_ok=True)
+        (self.app_path / "data/MAAconfig/Default").mkdir(parents=True, exist_ok=True)
 
         # 生成版本信息文件
-        if not os.path.exists(self.version_path):
+        if not self.version_path.exists():
             version = {
                 "main_version": "0.0.0.0",
                 "updater_version": "0.0.0.0",
             }
-            with open(self.version_path, "w", encoding="utf-8") as f:
+            with self.version_path.open(mode="w", encoding="utf-8") as f:
                 json.dump(version, f, indent=4)
 
         # 生成配置文件
-        if not os.path.exists(self.config_path):
+        if not self.config_path.exists():
             config = {"Default": {}}
-            with open(self.config_path, "w", encoding="utf-8") as f:
+            with self.config_path.open(mode="w", encoding="utf-8") as f:
                 json.dump(config, f, indent=4)
 
         # 生成预设gameid替换方案文件
-        if not os.path.exists(self.gameid_path):
-            with open(self.gameid_path, "w", encoding="utf-8") as f:
-                print(
-                    "龙门币：CE-6\n技能：CA-5\n红票：AP-5\n经验：LS-6\n剿灭模式：Annihilation",
-                    file=f,
-                )
+        if not self.gameid_path.exists():
+            self.gameid_path.write_text(
+                "龙门币：CE-6\n技能：CA-5\n红票：AP-5\n经验：LS-6\n剿灭模式：Annihilation",
+                encoding="utf-8",
+            )
 
     def check_config(self) -> None:
         """检查配置文件字段完整性并补全"""
@@ -136,7 +127,7 @@ class AppConfig:
         ]
 
         # 导入配置文件
-        with open(self.config_path, "r", encoding="utf-8") as f:
+        with self.config_path.open(mode="r", encoding="utf-8") as f:
             config = json.load(f)
 
         # 检查并补充缺失的字段
@@ -154,7 +145,7 @@ class AppConfig:
         """检查用户数据库文件并处理数据库版本更新"""
 
         # 生成用户数据库
-        if not os.path.exists(self.database_path):
+        if not self.database_path.exists():
             db = sqlite3.connect(self.database_path)
             cur = db.cursor()
             cur.execute(
@@ -244,5 +235,5 @@ class AppConfig:
     def save_config(self) -> None:
         """保存配置文件"""
 
-        with open(self.config_path, "w", encoding="utf-8") as f:
+        with self.config_path.open(mode="w", encoding="utf-8") as f:
             json.dump(self.content, f, indent=4)

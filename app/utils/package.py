@@ -29,19 +29,22 @@ import os
 import json
 import shutil
 import subprocess
+from pathlib import Path
 
 from app import version_text
 
 
 if __name__ == "__main__":
 
-    with open("resources/version.json", "r", encoding="utf-8") as f:
+    root_path = Path.cwd()
+
+    with (root_path / "resources/version.json").open(mode="r", encoding="utf-8") as f:
         version = json.load(f)
 
     main_version_numb = list(map(int, version["main_version"].split(".")))
     updater_version_numb = list(map(int, version["updater_version"].split(".")))
 
-    print("Packaging AUTO-MAA main program ...")
+    print("Packaging AUTO_MAA main program ...")
 
     result = subprocess.run(
         f"powershell -Command nuitka --standalone --onefile --mingw64"
@@ -52,9 +55,8 @@ if __name__ == "__main__":
         f" --product-version={version["main_version"]}"
         f" --file-description='AUTO_MAA Component'"
         f" --copyright='Copyright © 2024 DLmaster361'"
-        f" --assume-yes-for-downloads --show-progress"
-        f" --output-filename=AUTO_MAA --remove-output"
-        f" main.py",
+        f" --assume-yes-for-downloads --output-filename=AUTO_MAA"
+        f" --remove-output main.py",
         shell=True,
         capture_output=True,
         text=True,
@@ -62,21 +64,20 @@ if __name__ == "__main__":
 
     print(result.stdout)
     print(result.stderr)
-    print("AUTO-MAA main program packaging completed !")
+    print("AUTO_MAA main program packaging completed !")
 
-    shutil.copy(os.path.normpath("app/utils/Updater.py"), os.path.normpath("."))
+    shutil.copy(root_path / "app/utils/Updater.py", root_path)
 
-    with open(os.path.normpath("Updater.py"), "r", encoding="utf-8") as f:
-        file_content = f.read()
+    file_content = (root_path / "Updater.py").read_text(encoding="utf-8")
 
-    file_content = file_content.replace(
-        "from .version import version_text", "from app import version_text"
+    (root_path / "Updater.py").write_text(
+        file_content.replace(
+            "from .version import version_text", "from app import version_text"
+        ),
+        encoding="utf-8",
     )
 
-    with open(os.path.normpath("Updater.py"), "w", encoding="utf-8") as f:
-        f.write(file_content)
-
-    print("Packaging AUTO-MAA update program ...")
+    print("Packaging AUTO_MAA update program ...")
 
     result = subprocess.run(
         f"powershell -Command nuitka --standalone --onefile --mingw64"
@@ -84,12 +85,11 @@ if __name__ == "__main__":
         f" --windows-icon-from-ico=resources\\icons\\AUTO_MAA_Updater.ico"
         f" --company-name='AUTO_MAA Team' --product-name=AUTO_MAA"
         f" --file-version={version["updater_version"]}"
-        f" --product-version={version["updater_version"]}"
+        f" --product-version={version["main_version"]}"
         f" --file-description='AUTO_MAA Component'"
         f" --copyright='Copyright © 2024 DLmaster361'"
-        f" --assume-yes-for-downloads --show-progress"
-        f" --output-filename=Updater --remove-output"
-        f" Updater.py",
+        f" --assume-yes-for-downloads --output-filename=Updater"
+        f" --remove-output Updater.py",
         shell=True,
         capture_output=True,
         text=True,
@@ -97,12 +97,11 @@ if __name__ == "__main__":
 
     print(result.stdout)
     print(result.stderr)
-    print("AUTO-MAA update program packaging completed !")
+    print("AUTO_MAA update program packaging completed !")
 
-    os.remove(os.path.normpath("Updater.py"))
+    os.remove(root_path / "Updater.py")
 
-    with open("update_info.txt", "w", encoding="utf-8") as f:
-        print(
-            f"{version_text(main_version_numb)}\n{version_text(updater_version_numb)}{version["announcement"]}",
-            file=f,
-        )
+    (root_path / "version_info.txt").write_text(
+        f"{version_text(main_version_numb)}\n{version_text(updater_version_numb)}{version["announcement"]}",
+        encoding="utf-8",
+    )

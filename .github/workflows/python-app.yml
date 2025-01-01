@@ -77,9 +77,9 @@ jobs:
       - name: Read version
         id: read_version
         run: |
-          $MAIN_VERSION=(Get-Content -Path "update_info.txt" -TotalCount 1).Trim()
+          $MAIN_VERSION=(Get-Content -Path "version_info.txt" -TotalCount 1).Trim()
           "AUTO_MAA_version=$MAIN_VERSION" | Out-File -FilePath $env:GITHUB_ENV -Append
-          $UPDATER_VERSION=(Get-Content -Path "update_info.txt" -TotalCount 2 | Select-Object -Index 1).Trim()
+          $UPDATER_VERSION=(Get-Content -Path "version_info.txt" -TotalCount 2 | Select-Object -Index 1).Trim()
           "updater_version=$UPDATER_VERSION" | Out-File -FilePath $env:GITHUB_ENV -Append
       - name: Create Zip
         id: create_zip
@@ -93,11 +93,11 @@ jobs:
           path: |
             AUTO_MAA_${{ env.AUTO_MAA_version }}.zip
             Updater_${{ env.updater_version }}.zip
-      - name: Upload Update_Info Artifact
+      - name: Upload Version_Info Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: update_info
-          path: update_info.txt
+          name: version_info
+          path: version_info.txt
   publish_release:
     name: Publish release
     needs: build_AUTO_MAA
@@ -111,15 +111,15 @@ jobs:
           pattern: AUTO_MAA_*
           merge-multiple: true
           path: artifacts
-      - name: Download Update_Info
+      - name: Download Version_Info
         uses: actions/download-artifact@v4
         with:
-          name: update_info
+          name: version_info
           path: ./
       - name: Check if release exists
         id: check_if_release_exists
         run: |
-          release_id=$(gh release view $(sed 's/\r$//g' <(head -n 1 update_info.txt)) --json id --jq .id || true)
+          release_id=$(gh release view $(sed 's/\r$//g' <(head -n 1 version_info.txt)) --json id --jq .id || true)
           if [[ -z $release_id ]]; then
             echo "release_exists=false" >> $GITHUB_OUTPUT
           else
@@ -133,9 +133,9 @@ jobs:
         run: |
           set -xe
           shopt -s nullglob
-          NAME="$(sed 's/\r$//g' <(head -n 1 update_info.txt))"
-          TAGNAME="$(sed 's/\r$//g' <(head -n 1 update_info.txt))"
-          NOTES_MAIN="$(sed 's/\r$//g' <(tail -n +3 update_info.txt))"
+          NAME="$(sed 's/\r$//g' <(head -n 1 version_info.txt))"
+          TAGNAME="$(sed 's/\r$//g' <(head -n 1 version_info.txt))"
+          NOTES_MAIN="$(sed 's/\r$//g' <(tail -n +3 version_info.txt))"
           NOTES_TAIL="\`\`\`本release通过GitHub Actions自动构建\`\`\`"
           NOTES="$NOTES_MAIN<br><br>$NOTES_TAIL"
           gh release create "$TAGNAME" --target "main" --title "$NAME" --notes "$NOTES" artifacts/*
@@ -147,9 +147,9 @@ jobs:
         run: |
           set -xe
           shopt -s nullglob
-          NAME="$(sed 's/\r$//g' <(head -n 1 update_info.txt))"
-          TAGNAME="$(sed 's/\r$//g' <(head -n 1 update_info.txt))"
-          NOTES_MAIN="$(sed 's/\r$//g' <(tail -n +3 update_info.txt))"
+          NAME="$(sed 's/\r$//g' <(head -n 1 version_info.txt))"
+          TAGNAME="$(sed 's/\r$//g' <(head -n 1 version_info.txt))"
+          NOTES_MAIN="$(sed 's/\r$//g' <(tail -n +3 version_info.txt))"
           NOTES_TAIL="\`\`\`本release通过GitHub Actions自动构建\`\`\`"
           NOTES="$NOTES_MAIN<br><br>$NOTES_TAIL"
           gh release delete "$TAGNAME" --yes

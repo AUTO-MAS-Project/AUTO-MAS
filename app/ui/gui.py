@@ -52,9 +52,9 @@ from PySide6.QtGui import QIcon, QCloseEvent
 from PySide6 import QtCore
 from functools import partial
 from typing import List, Tuple
+from pathlib import Path
 import json
 import datetime
-import os
 import ctypes
 import subprocess
 import shutil
@@ -150,17 +150,13 @@ class Main(QWidget):
         ]
 
         # 导入ui配置
-        self.ui = uiLoader.load(
-            os.path.normpath(f"{self.config.app_path}/resources/gui/main.ui")
-        )
+        self.ui = uiLoader.load(self.config.app_path / "resources/gui/main.ui")
         self.ui.setWindowIcon(
-            QIcon(
-                os.path.normpath(f"{self.config.app_path}/resources/icons/AUTO_MAA.ico")
-            )
+            QIcon(str(self.config.app_path / "resources/icons/AUTO_MAA.ico"))
         )
 
         # 生成管理密钥
-        if not os.path.exists(self.config.key_path):
+        if not self.config.key_path.exists():
             while True:
                 self.PASSWORD, ok_pressed = QInputDialog.getText(
                     self.ui,
@@ -608,9 +604,7 @@ class Main(QWidget):
             self.config.content["Default"]["SelfSet.MainIndex"]
         )
 
-        self.maa_path.setText(
-            os.path.normpath(self.config.content["Default"]["MaaSet.path"])
-        )
+        self.maa_path.setText(str(Path(self.config.content["Default"]["MaaSet.path"])))
         self.routine.setValue(self.config.content["Default"]["TimeLimit.routine"])
         self.annihilation.setValue(
             self.config.content["Default"]["TimeLimit.annihilation"]
@@ -688,7 +682,7 @@ class Main(QWidget):
         """添加一位新用户"""
 
         # 判断是否已设置管理密钥
-        if not os.path.exists(self.config.key_path):
+        if not self.config.key_path.exists():
             QMessageBox.critical(
                 self.ui,
                 "错误",
@@ -752,15 +746,13 @@ class Main(QWidget):
                 ),
             )
             self.config.db.commit()
-            if os.path.exists(
-                os.path.normpath(
-                    f"{self.config.app_path}/data/MAAconfig/{self.user_mode_list[self.user_set.currentIndex()]}/{row}"
-                )
-            ):
+            if (
+                self.config.app_path
+                / f"data/MAAconfig/{self.user_mode_list[self.user_set.currentIndex()]}/{row}"
+            ).exists():
                 shutil.rmtree(
-                    os.path.normpath(
-                        f"{self.config.app_path}/data/MAAconfig/{self.user_mode_list[self.user_set.currentIndex()]}/{row}"
-                    )
+                    self.config.app_path
+                    / f"data/MAAconfig/{self.user_mode_list[self.user_set.currentIndex()]}/{row}"
                 )
             # 后续用户补位
             if self.user_set.currentIndex() == 0:
@@ -773,18 +765,16 @@ class Main(QWidget):
                     (i - 1, self.user_mode_list[self.user_set.currentIndex()], i),
                 )
                 self.config.db.commit()
-                if os.path.exists(
-                    os.path.normpath(
-                        f"{self.config.app_path}/data/MAAconfig/{self.user_mode_list[self.user_set.currentIndex()]}/{i}"
-                    )
-                ):
-                    os.rename(
-                        os.path.normpath(
-                            f"{self.config.app_path}/data/MAAconfig/{self.user_mode_list[self.user_set.currentIndex()]}/{i}"
-                        ),
-                        os.path.normpath(
-                            f"{self.config.app_path}/data/MAAconfig/{self.user_mode_list[self.user_set.currentIndex()]}/{i - 1}"
-                        ),
+                if (
+                    self.config.app_path
+                    / f"data/MAAconfig/{self.user_mode_list[self.user_set.currentIndex()]}/{i}"
+                ).exists():
+                    (
+                        self.config.app_path
+                        / f"data/MAAconfig/{self.user_mode_list[self.user_set.currentIndex()]}/{i}"
+                    ).rename(
+                        self.config.app_path
+                        / f"data/MAAconfig/{self.user_mode_list[self.user_set.currentIndex()]}/{i - 1}",
                     )
 
             # 同步最终结果至GUI
@@ -841,18 +831,15 @@ class Main(QWidget):
                 ),
             )
             self.config.db.commit()
-            if os.path.exists(
-                os.path.normpath(
-                    f"{self.config.app_path}/data/MAAconfig/{self.user_mode_list[self.user_set.currentIndex()]}/{row}"
-                )
-            ):
+            if (
+                self.config.app_path
+                / f"data/MAAconfig/{self.user_mode_list[self.user_set.currentIndex()]}/{row}"
+            ).exists():
                 shutil.move(
-                    os.path.normpath(
-                        f"{self.config.app_path}/data/MAAconfig/{self.user_mode_list[self.user_set.currentIndex()]}/{row}"
-                    ),
-                    os.path.normpath(
-                        f"{self.config.app_path}/data/MAAconfig/{self.user_mode_list[1 - self.user_set.currentIndex()]}/{other_numb}"
-                    ),
+                    self.config.app_path
+                    / f"data/MAAconfig/{self.user_mode_list[self.user_set.currentIndex()]}/{row}",
+                    self.config.app_path
+                    / f"data/MAAconfig/{self.user_mode_list[1 - self.user_set.currentIndex()]}/{other_numb}",
                 )
             # 后续用户补位
             for i in range(row + 1, current_numb):
@@ -861,19 +848,18 @@ class Main(QWidget):
                     (i - 1, self.user_mode_list[self.user_set.currentIndex()], i),
                 )
                 self.config.db.commit(),
-                if os.path.exists(
-                    os.path.normpath(
-                        f"{self.config.app_path}/data/MAAconfig/{self.user_mode_list[self.user_set.currentIndex()]}/{i}"
+                if (
+                    self.config.app_path
+                    / f"data/MAAconfig/{self.user_mode_list[self.user_set.currentIndex()]}/{i}"
+                ).exists():
+                    (
+                        self.config.app_path
+                        / f"data/MAAconfig/{self.user_mode_list[self.user_set.currentIndex()]}/{i}"
+                    ).rename(
+                        self.config.app_path
+                        / f"data/MAAconfig/{self.user_mode_list[self.user_set.currentIndex()]}/{i - 1}"
                     )
-                ):
-                    os.rename(
-                        os.path.normpath(
-                            f"{self.config.app_path}/data/MAAconfig/{self.user_mode_list[self.user_set.currentIndex()]}/{i}"
-                        ),
-                        os.path.normpath(
-                            f"{self.config.app_path}/data/MAAconfig/{self.user_mode_list[self.user_set.currentIndex()]}/{i - 1}"
-                        ),
-                    )
+
             self.update_user_info("normal")
 
     def get_maa_config(self, info):
@@ -881,31 +867,22 @@ class Main(QWidget):
 
         # 获取全局MAA配置文件
         if info == ["Default"]:
-            os.makedirs(
-                os.path.normpath(f"{self.config.app_path}/data/MAAconfig/Default"),
-                exist_ok=True,
-            )
             shutil.copy(
-                os.path.normpath(
-                    f"{self.config.content["Default"]["MaaSet.path"]}/config/gui.json"
-                ),
-                os.path.normpath(f"{self.config.app_path}/data/MAAconfig/Default"),
+                Path(self.config.content["Default"]["MaaSet.path"]) / "config/gui.json",
+                self.config.app_path / "data/MAAconfig/Default",
             )
         # 获取基建配置文件
         elif info[2] == "infrastructure":
             infrastructure_path = self.read("file_path_infrastructure")
             if infrastructure_path:
-                os.makedirs(
-                    os.path.normpath(
-                        f"{self.config.app_path}/data/MAAconfig/{self.user_mode_list[info[0]]}/{info[1]}/infrastructure"
-                    ),
-                    exist_ok=True,
-                )
+                (
+                    self.config.app_path
+                    / f"data/MAAconfig/{self.user_mode_list[info[0]]}/{info[1]}/infrastructure"
+                ).mkdir(parents=True, exist_ok=True)
                 shutil.copy(
                     infrastructure_path,
-                    os.path.normpath(
-                        f"{self.config.app_path}/data/MAAconfig/{self.user_mode_list[info[0]]}/{info[1]}/infrastructure/infrastructure.json"
-                    ),
+                    self.config.app_path
+                    / f"data/MAAconfig/{self.user_mode_list[info[0]]}/{info[1]}/infrastructure/infrastructure.json",
                 )
                 return True
             else:
@@ -917,19 +894,14 @@ class Main(QWidget):
                 return False
         # 获取高级用户MAA配置文件
         elif info[2] in ["routine", "annihilation"]:
-            os.makedirs(
-                os.path.normpath(
-                    f"{self.config.app_path}/data/MAAconfig/{self.user_mode_list[info[0]]}/{info[1]}/{info[2]}"
-                ),
-                exist_ok=True,
-            )
+            (
+                self.config.app_path
+                / f"data/MAAconfig/{self.user_mode_list[info[0]]}/{info[1]}/{info[2]}"
+            ).mkdir(parents=True, exist_ok=True)
             shutil.copy(
-                os.path.normpath(
-                    f"{self.config.content["Default"]["MaaSet.path"]}/config/gui.json"
-                ),
-                os.path.normpath(
-                    f"{self.config.app_path}/data/MAAconfig/{self.user_mode_list[info[0]]}/{info[1]}/{info[2]}"
-                ),
+                Path(self.config.content["Default"]["MaaSet.path"]) / "config/gui.json",
+                self.config.app_path
+                / f"data/MAAconfig/{self.user_mode_list[info[0]]}/{info[1]}/{info[2]}",
             )
 
     def change_user_Item(self, item: QTableWidget, mode):
@@ -952,7 +924,7 @@ class Main(QWidget):
             if item.column() in [6, 7, 8]:  # 关卡号
                 # 导入与应用特殊关卡规则
                 games = {}
-                with open(self.config.gameid_path, encoding="utf-8") as f:
+                with self.config.gameid_path.open(mode="r", encoding="utf-8") as f:
                     gameids = f.readlines()
                     for line in gameids:
                         if "：" in line:
@@ -1006,11 +978,10 @@ class Main(QWidget):
                 index == 2
                 or (
                     index == 0
-                    and not os.path.exists(
-                        os.path.normpath(
-                            f"{self.config.app_path}/data/MAAconfig/{self.user_mode_list[self.user_set.currentIndex()]}/{row}/infrastructure/infrastructure.json"
-                        ),
-                    )
+                    and not (
+                        self.config.app_path
+                        / f"data/MAAconfig/{self.user_mode_list[self.user_set.currentIndex()]}/{row}/infrastructure/infrastructure.json"
+                    ).exists()
                 )
             )
         ):
@@ -1026,11 +997,10 @@ class Main(QWidget):
                 index == 2
                 or (
                     index == 0
-                    and not os.path.exists(
-                        os.path.normpath(
-                            f"{self.config.app_path}/data/MAAconfig/{self.user_mode_list[self.user_set.currentIndex()]}/{row}/{column}/gui.json"
-                        ),
-                    )
+                    and not (
+                        self.config.app_path
+                        / f"data/MAAconfig/{self.user_mode_list[self.user_set.currentIndex()]}/{row}/{column}/gui.json"
+                    ).exists()
                 )
             )
         ):
@@ -1097,16 +1067,14 @@ class Main(QWidget):
             return None
 
         # 验证MAA路径
-        if os.path.normpath(
-            self.config.content["Default"]["MaaSet.path"]
-        ) != os.path.normpath(self.maa_path.text()):
-            if os.path.exists(
-                os.path.normpath(f"{self.maa_path.text()}/MAA.exe")
-            ) and os.path.exists(
-                os.path.normpath(f"{self.maa_path.text()}/config/gui.json")
-            ):
-                self.config.content["Default"]["MaaSet.path"] = os.path.normpath(
-                    self.maa_path.text()
+        if Path(self.config.content["Default"]["MaaSet.path"]) != Path(
+            self.maa_path.text()
+        ):
+            if (Path(self.maa_path.text()) / "MAA.exe").exists() and (
+                Path(self.maa_path.text()) / "config/gui.json"
+            ).exists():
+                self.config.content["Default"]["MaaSet.path"] = str(
+                    Path(self.maa_path.text())
                 )
                 self.get_maa_config(["Default"])
             else:
@@ -1358,17 +1326,13 @@ class Main(QWidget):
         """启动MaaManager线程运行任务"""
 
         # 检查MAA路径是否可用
-        if not (
-            os.path.exists(
-                os.path.normpath(
-                    f"{self.config.content["Default"]["MaaSet.path"]}/MAA.exe"
-                )
-            )
-            and os.path.exists(
-                os.path.normpath(
-                    f"{self.config.content["Default"]["MaaSet.path"]}/config/gui.json"
-                )
-            )
+        if (
+            not (
+                Path(self.config.content["Default"]["MaaSet.path"]) / "MAA.exe"
+            ).exists()
+            and (
+                Path(self.config.content["Default"]["MaaSet.path"]) / "config/gui.json"
+            ).exists()
         ):
             QMessageBox.critical(self.ui, "错误", "您还未正确配置MAA路径！")
             return None
@@ -1437,12 +1401,8 @@ class Main(QWidget):
         elif "结束" in mode:
 
             shutil.copy(
-                os.path.normpath(
-                    f"{self.config.app_path}/data/MAAconfig/Default/gui.json"
-                ),
-                os.path.normpath(
-                    f"{self.config.content["Default"]["MaaSet.path"]}/config"
-                ),
+                self.config.app_path / "data/MAAconfig/Default/gui.json",
+                Path(self.config.content["Default"]["MaaSet.path"]) / "config",
             )
             self.user_add.setEnabled(True)
             self.user_del.setEnabled(True)
@@ -1474,7 +1434,7 @@ class Main(QWidget):
         """检查版本更新，调起文件下载进程"""
 
         # 从本地版本信息文件获取当前版本信息
-        with open(self.config.version_path, "r", encoding="utf-8") as f:
+        with self.config.version_path.open(mode="r", encoding="utf-8") as f:
             version_current = json.load(f)
         main_version_current = list(
             map(int, version_current["main_version"].split("."))
@@ -1483,7 +1443,7 @@ class Main(QWidget):
             map(int, version_current["updater_version"].split("."))
         )
         # 检查更新器是否存在
-        if not os.path.exists(os.path.normpath(f"{self.config.app_path}/Updater.exe")):
+        if not (self.config.app_path / "Updater.exe").exists():
             updater_version_current = [0, 0, 0, 0]
 
         # 从远程服务器获取最新版本信息
@@ -1565,7 +1525,7 @@ class Main(QWidget):
         """更新主程序"""
 
         subprocess.Popen(
-            os.path.normpath(f"{self.config.app_path}/Updater.exe"),
+            str(self.config.app_path / "Updater.exe"),
             shell=True,
             creationflags=subprocess.CREATE_NO_WINDOW,
         )
@@ -1597,17 +1557,13 @@ class AUTO_MAA(QMainWindow):
         self.main = Main(config=config, notify=notify, crypto=crypto)
         self.setCentralWidget(self.main.ui)
         self.setWindowIcon(
-            QIcon(
-                os.path.normpath(f"{self.config.app_path}/resources/icons/AUTO_MAA.ico")
-            )
+            QIcon(str(self.config.app_path / "resources/icons/AUTO_MAA.ico"))
         )
         self.setWindowTitle("AUTO_MAA")
 
         # 创建系统托盘及其菜单
         self.tray = QSystemTrayIcon(
-            QIcon(
-                os.path.normpath(f"{self.config.app_path}/resources/icons/AUTO_MAA.ico")
-            ),
+            QIcon(str(self.config.app_path / "resources/icons/AUTO_MAA.ico")),
             self,
         )
         self.tray.setToolTip("AUTO_MAA")
