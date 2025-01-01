@@ -49,8 +49,6 @@ class AppConfig:
 
         # 检查文件完整性
         self.initialize()
-        self.check_config()
-        self.check_database()
 
     def initialize(self) -> None:
         """初始化程序的配置文件"""
@@ -82,6 +80,9 @@ class AppConfig:
                 "龙门币：CE-6\n技能：CA-5\n红票：AP-5\n经验：LS-6\n剿灭模式：Annihilation",
                 encoding="utf-8",
             )
+
+        self.check_config()
+        self.check_database()
 
     def check_config(self) -> None:
         """检查配置文件字段完整性并补全"""

@@ -26,26 +26,35 @@ v4.2
 """
 
 from PySide6.QtWidgets import (
-    QWidget,
-    QMainWindow,
-    QApplication,
-    QSystemTrayIcon,
-    QMenu,
-    QInputDialog,
-    QFileDialog,
-    QMessageBox,
-    QLineEdit,
-    QTabWidget,
-    QToolBox,
-    QTableWidget,
-    QTableWidgetItem,
-    QComboBox,
-    QPushButton,
-    QHeaderView,
-    QSpinBox,
-    QTimeEdit,
-    QCheckBox,
-    QTextBrowser,
+    QWidget,  #
+    QMainWindow,  #
+    QApplication,  #
+    QSystemTrayIcon,  #
+    QFileDialog,  #
+    QTabWidget,  #
+    QToolBox,  #
+    QComboBox,  #
+    QTableWidgetItem,  #
+    QHeaderView,  #
+)
+from qfluentwidgets import (
+    Action,
+    PushButton,
+    LineEdit,
+    PasswordLineEdit,
+    TextBrowser,
+    TableWidget,
+    TimePicker,
+    ComboBox,
+    CheckBox,
+    SpinBox,
+    FluentIcon,
+    RoundMenu,
+    MessageBox,
+    MessageBoxBase,
+    HeaderCardWidget,
+    BodyLabel,
+    SubtitleLabel,
 )
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtGui import QIcon, QCloseEvent
@@ -149,31 +158,21 @@ class Main(QWidget):
             "-",
         ]
 
+        uiLoader.registerCustomWidget(PushButton)
+        uiLoader.registerCustomWidget(LineEdit)
+        uiLoader.registerCustomWidget(TextBrowser)
+        uiLoader.registerCustomWidget(TableWidget)
+        uiLoader.registerCustomWidget(TimePicker)
+        uiLoader.registerCustomWidget(SpinBox)
+        uiLoader.registerCustomWidget(CheckBox)
+        uiLoader.registerCustomWidget(HeaderCardWidget)
+        uiLoader.registerCustomWidget(BodyLabel)
+
         # 导入ui配置
         self.ui = uiLoader.load(self.config.app_path / "resources/gui/main.ui")
         self.ui.setWindowIcon(
             QIcon(str(self.config.app_path / "resources/icons/AUTO_MAA.ico"))
         )
-
-        # 生成管理密钥
-        if not self.config.key_path.exists():
-            while True:
-                self.PASSWORD, ok_pressed = QInputDialog.getText(
-                    self.ui,
-                    "请设置管理密钥",
-                    "未检测到管理密钥，请设置您的管理密钥：",
-                    QLineEdit.Password,
-                    "",
-                )
-                if ok_pressed and self.PASSWORD != "":
-                    self.crypto.get_PASSWORD(self.PASSWORD)
-                    break
-                else:
-                    choice = QMessageBox.question(
-                        self.ui, "确认", "您没有输入管理密钥，确定要暂时跳过这一步吗？"
-                    )
-                    if choice == QMessageBox.Yes:
-                        break
 
         # 初始化控件
         self.main_tab: QTabWidget = self.ui.findChild(QTabWidget, "tabWidget_main")
@@ -182,141 +181,144 @@ class Main(QWidget):
         self.user_set: QToolBox = self.ui.findChild(QToolBox, "toolBox_userset")
         self.user_set.currentChanged.connect(lambda: self.update_user_info("normal"))
 
-        self.user_list_simple: QTableWidget = self.ui.findChild(
-            QTableWidget, "tableWidget_userlist_simple"
+        self.user_list_simple: TableWidget = self.ui.findChild(
+            TableWidget, "tableWidget_userlist_simple"
         )
         self.user_list_simple.itemChanged.connect(
             lambda item: self.change_user_Item(item, "simple")
         )
 
-        self.user_list_beta: QTableWidget = self.ui.findChild(
-            QTableWidget, "tableWidget_userlist_beta"
+        self.user_list_beta: TableWidget = self.ui.findChild(
+            TableWidget, "tableWidget_userlist_beta"
         )
         self.user_list_beta.itemChanged.connect(
             lambda item: self.change_user_Item(item, "beta")
         )
 
-        self.user_add: QPushButton = self.ui.findChild(QPushButton, "pushButton_new")
+        self.user_add: PushButton = self.ui.findChild(PushButton, "pushButton_new")
+        self.user_add.setIcon(FluentIcon.ADD_TO)
         self.user_add.clicked.connect(self.add_user)
 
-        self.user_del: QPushButton = self.ui.findChild(QPushButton, "pushButton_del")
+        self.user_del: PushButton = self.ui.findChild(PushButton, "pushButton_del")
+        self.user_del.setIcon(FluentIcon.REMOVE_FROM)
         self.user_del.clicked.connect(self.del_user)
 
-        self.user_switch: QPushButton = self.ui.findChild(
-            QPushButton, "pushButton_switch"
+        self.user_switch: PushButton = self.ui.findChild(
+            PushButton, "pushButton_switch"
         )
+        self.user_switch.setIcon(FluentIcon.MOVE)
         self.user_switch.clicked.connect(self.switch_user)
 
-        self.read_PASSWORD: QPushButton = self.ui.findChild(
-            QPushButton, "pushButton_password"
+        self.read_PASSWORD: PushButton = self.ui.findChild(
+            PushButton, "pushButton_password"
         )
+        self.read_PASSWORD.setIcon(FluentIcon.HIDE)
         self.read_PASSWORD.clicked.connect(lambda: self.read("key"))
 
-        self.refresh: QPushButton = self.ui.findChild(QPushButton, "pushButton_refresh")
+        self.refresh: PushButton = self.ui.findChild(PushButton, "pushButton_refresh")
+        self.refresh.setIcon(FluentIcon.SYNC)
         self.refresh.clicked.connect(lambda: self.update_user_info("clear"))
 
-        self.run_now: QPushButton = self.ui.findChild(QPushButton, "pushButton_runnow")
+        self.run_now: PushButton = self.ui.findChild(PushButton, "pushButton_runnow")
+        self.run_now.setIcon(FluentIcon.PLAY)
         self.run_now.clicked.connect(lambda: self.maa_starter("日常代理"))
 
-        self.check_start: QPushButton = self.ui.findChild(
-            QPushButton, "pushButton_checkstart"
+        self.check_start: PushButton = self.ui.findChild(
+            PushButton, "pushButton_checkstart"
         )
+        self.check_start.setIcon(FluentIcon.PLAY)
         self.check_start.clicked.connect(lambda: self.maa_starter("人工排查"))
 
-        self.maa_path: QLineEdit = self.ui.findChild(QLineEdit, "lineEdit_MAApath")
+        self.maa_path: LineEdit = self.ui.findChild(LineEdit, "lineEdit_MAApath")
         self.maa_path.textChanged.connect(self.change_config)
         self.maa_path.setReadOnly(True)
 
-        self.get_maa_path: QPushButton = self.ui.findChild(
-            QPushButton, "pushButton_getMAApath"
+        self.get_maa_path: PushButton = self.ui.findChild(
+            PushButton, "pushButton_getMAApath"
         )
+        self.get_maa_path.setIcon(FluentIcon.FOLDER)
         self.get_maa_path.clicked.connect(lambda: self.read("file_path_maa"))
 
-        self.set_maa: QPushButton = self.ui.findChild(QPushButton, "pushButton_setMAA")
+        self.set_maa: PushButton = self.ui.findChild(PushButton, "pushButton_setMAA")
+        self.set_maa.setIcon(FluentIcon.SETTING)
         self.set_maa.clicked.connect(lambda: self.maa_starter("设置MAA_全局"))
 
-        self.routine: QSpinBox = self.ui.findChild(QSpinBox, "spinBox_routine")
+        self.routine: SpinBox = self.ui.findChild(SpinBox, "spinBox_routine")
         self.routine.valueChanged.connect(self.change_config)
 
-        self.annihilation: QSpinBox = self.ui.findChild(
-            QSpinBox, "spinBox_annihilation"
-        )
+        self.annihilation: SpinBox = self.ui.findChild(SpinBox, "spinBox_annihilation")
         self.annihilation.valueChanged.connect(self.change_config)
 
-        self.num: QSpinBox = self.ui.findChild(QSpinBox, "spinBox_numt")
+        self.num: SpinBox = self.ui.findChild(SpinBox, "spinBox_numt")
         self.num.valueChanged.connect(self.change_config)
 
-        self.if_self_start: QCheckBox = self.ui.findChild(
-            QCheckBox, "checkBox_ifselfstart"
+        self.if_self_start: CheckBox = self.ui.findChild(
+            CheckBox, "checkBox_ifselfstart"
         )
         self.if_self_start.stateChanged.connect(self.change_config)
 
-        self.if_sleep: QCheckBox = self.ui.findChild(QCheckBox, "checkBox_ifsleep")
+        self.if_sleep: CheckBox = self.ui.findChild(CheckBox, "checkBox_ifsleep")
         self.if_sleep.stateChanged.connect(self.change_config)
 
-        self.if_proxy_directly: QCheckBox = self.ui.findChild(
-            QCheckBox, "checkBox_ifproxydirectly"
+        self.if_proxy_directly: CheckBox = self.ui.findChild(
+            CheckBox, "checkBox_ifproxydirectly"
         )
         self.if_proxy_directly.stateChanged.connect(self.change_config)
 
-        self.if_send_mail: QCheckBox = self.ui.findChild(
-            QCheckBox, "checkBox_ifsendmail"
-        )
+        self.if_send_mail: CheckBox = self.ui.findChild(CheckBox, "checkBox_ifsendmail")
         self.if_send_mail.stateChanged.connect(self.change_config)
 
-        self.mail_address: QLineEdit = self.ui.findChild(
-            QLineEdit, "lineEdit_mailaddress"
+        self.mail_address: LineEdit = self.ui.findChild(
+            LineEdit, "lineEdit_mailaddress"
         )
         self.mail_address.textChanged.connect(self.change_config)
 
-        self.if_send_error_only: QCheckBox = self.ui.findChild(
-            QCheckBox, "checkBox_ifonlyerror"
+        self.if_send_error_only: CheckBox = self.ui.findChild(
+            CheckBox, "checkBox_ifonlyerror"
         )
         self.if_send_error_only.stateChanged.connect(self.change_config)
 
-        self.if_silence: QCheckBox = self.ui.findChild(QCheckBox, "checkBox_silence")
+        self.if_silence: CheckBox = self.ui.findChild(CheckBox, "checkBox_silence")
         self.if_silence.stateChanged.connect(self.change_config)
 
-        self.boss_key: QLineEdit = self.ui.findChild(QLineEdit, "lineEdit_boss")
+        self.boss_key: LineEdit = self.ui.findChild(LineEdit, "lineEdit_boss")
         self.boss_key.textChanged.connect(self.change_config)
 
-        self.if_to_tray: QCheckBox = self.ui.findChild(QCheckBox, "checkBox_iftotray")
+        self.if_to_tray: CheckBox = self.ui.findChild(CheckBox, "checkBox_iftotray")
         self.if_to_tray.stateChanged.connect(self.change_config)
 
-        self.check_update: QCheckBox = self.ui.findChild(
-            QPushButton, "pushButton_check_update"
+        self.check_update: PushButton = self.ui.findChild(
+            PushButton, "pushButton_check_update"
         )
+        self.check_update.setIcon(FluentIcon.UPDATE)
         self.check_update.clicked.connect(self.check_version)
 
-        self.tips: QTextBrowser = self.ui.findChild(QTextBrowser, "textBrowser_tips")
+        self.tips: TextBrowser = self.ui.findChild(TextBrowser, "textBrowser_tips")
         self.tips.setOpenExternalLinks(True)
 
-        self.run_text: QTextBrowser = self.ui.findChild(QTextBrowser, "textBrowser_run")
-        self.wait_text: QTextBrowser = self.ui.findChild(
-            QTextBrowser, "textBrowser_wait"
+        self.run_text: TextBrowser = self.ui.findChild(TextBrowser, "textBrowser_run")
+        self.wait_text: TextBrowser = self.ui.findChild(TextBrowser, "textBrowser_wait")
+        self.over_text: TextBrowser = self.ui.findChild(TextBrowser, "textBrowser_over")
+        self.error_text: TextBrowser = self.ui.findChild(
+            TextBrowser, "textBrowser_error"
         )
-        self.over_text: QTextBrowser = self.ui.findChild(
-            QTextBrowser, "textBrowser_over"
-        )
-        self.error_text: QTextBrowser = self.ui.findChild(
-            QTextBrowser, "textBrowser_error"
-        )
-        self.log_text: QTextBrowser = self.ui.findChild(QTextBrowser, "textBrowser_log")
+        self.log_text: TextBrowser = self.ui.findChild(TextBrowser, "textBrowser_log")
 
-        self.start_time: List[Tuple[QCheckBox, QTimeEdit]] = []
+        self.start_time: List[Tuple[CheckBox, TimePicker]] = []
         for i in range(10):
             self.start_time.append(
                 [
-                    self.ui.findChild(QCheckBox, f"checkBox_t{i + 1}"),
-                    self.ui.findChild(QTimeEdit, f"timeEdit_{i + 1}"),
+                    self.ui.findChild(CheckBox, f"checkBox_t{i + 1}"),
+                    self.ui.findChild(TimePicker, f"timeEdit_{i + 1}"),
                 ]
             )
             self.start_time[i][0].stateChanged.connect(self.change_config)
             self.start_time[i][1].timeChanged.connect(self.change_config)
 
-        self.change_password: QPushButton = self.ui.findChild(
-            QPushButton, "pushButton_changePASSWORD"
+        self.change_password: PushButton = self.ui.findChild(
+            PushButton, "pushButton_changePASSWORD"
         )
+        self.change_password.setIcon(FluentIcon.VPN)
         self.change_password.clicked.connect(self.change_PASSWORD)
 
         # 初始化线程
@@ -345,6 +347,24 @@ class Main(QWidget):
         if self.config.content["Default"]["SelfSet.IfProxyDirectly"] == "True":
             self.maa_starter("日常代理")
 
+    def check_PASSWORD(self) -> None:
+        """检查并配置管理密钥"""
+
+        if self.config.key_path.exists():
+            return None
+
+        while True:
+
+            if self.read("setkey"):
+                self.crypto.get_PASSWORD(self.PASSWORD)
+                break
+            else:
+                choice = MessageBox(
+                    "确认", "您没有输入管理密钥，确定要暂时跳过这一步吗？", self.ui
+                )
+                if choice.exec():
+                    break
+
     def change_PASSWORD(self) -> None:
         """修改管理密钥"""
 
@@ -353,24 +373,30 @@ class Main(QWidget):
         data = self.config.cur.fetchall()
 
         if len(data) == 0:
-            QMessageBox.information(self.ui, "验证通过", "当前无用户，验证自动通过")
+            choice = MessageBox("验证通过", "当前无用户，验证自动通过", self.ui)
+            choice.cancelButton.hide()
+            choice.buttonLayout.insertStretch(1)
             # 获取新的管理密钥
-            while True:
-                PASSWORD_new = self.read("newkey")
-                if PASSWORD_new == 0:
-                    choice = QMessageBox.question(
-                        self.ui,
-                        "确认",
-                        "您没有输入新的管理密钥，是否取消修改管理密钥？",
-                    )
-                    if choice == QMessageBox.Yes:
-                        break
-                else:
-                    # 修改管理密钥
-                    self.PASSWORD = PASSWORD_new
-                    self.crypto.get_PASSWORD(self.PASSWORD)
-                    QMessageBox.information(self.ui, "操作成功", "管理密钥修改成功")
-                    break
+            if choice.exec():
+                while True:
+                    PASSWORD_new = self.read("newkey")
+                    if PASSWORD_new == None:
+                        choice = MessageBox(
+                            "确认",
+                            "您没有输入新的管理密钥，是否取消修改管理密钥？",
+                            self.ui,
+                        )
+                        if choice.exec():
+                            break
+                    else:
+                        # 修改管理密钥
+                        self.PASSWORD = PASSWORD_new
+                        self.crypto.get_PASSWORD(self.PASSWORD)
+                        choice = MessageBox("操作成功", "管理密钥修改成功", self.ui)
+                        choice.cancelButton.hide()
+                        choice.buttonLayout.insertStretch(1)
+                        if choice.exec():
+                            break
         else:
             # 验证管理密钥
             if_change = True
@@ -378,18 +404,22 @@ class Main(QWidget):
                 if self.read("oldkey"):
                     # 验证旧管理密钥
                     if not self.crypto.check_PASSWORD(self.PASSWORD):
-                        QMessageBox.critical(self.ui, "错误", "管理密钥错误")
+                        choice = MessageBox("错误", "管理密钥错误", self.ui)
+                        choice.cancelButton.hide()
+                        choice.buttonLayout.insertStretch(1)
+                        if choice.exec():
+                            pass
                     else:
                         # 获取新的管理密钥
                         while True:
                             PASSWORD_new = self.read("newkey")
-                            if PASSWORD_new == 0:
-                                choice = QMessageBox.question(
-                                    self.ui,
+                            if PASSWORD_new == None:
+                                choice = MessageBox(
                                     "确认",
                                     "您没有输入新的管理密钥，是否取消修改管理密钥？",
+                                    self.ui,
                                 )
-                                if choice == QMessageBox.Yes:
+                                if choice.exec():
                                     if_change = False
                                     break
                             # 修改管理密钥
@@ -398,16 +428,21 @@ class Main(QWidget):
                                     data, self.PASSWORD, PASSWORD_new
                                 )
                                 self.PASSWORD = PASSWORD_new
-                                QMessageBox.information(
-                                    self.ui, "操作成功", "管理密钥修改成功"
+                                choice = MessageBox(
+                                    "操作成功", "管理密钥修改成功", self.ui
                                 )
-                                if_change = False
-                                break
+                                choice.cancelButton.hide()
+                                choice.buttonLayout.insertStretch(1)
+                                if choice.exec():
+                                    if_change = False
+                                    break
                 else:
-                    choice = QMessageBox.question(
-                        self.ui, "确认", "您没有输入管理密钥，是否取消修改管理密钥？"
+                    choice = MessageBox(
+                        "确认",
+                        "您没有输入管理密钥，是否取消修改管理密钥？",
+                        self.ui,
                     )
-                    if choice == QMessageBox.Yes:
+                    if choice.exec():
                         break
 
     def update_user_info(self, operation: str) -> None:
@@ -444,7 +479,7 @@ class Main(QWidget):
 
                 # 生成表格组件
                 if j == 2:
-                    item = QComboBox()
+                    item = ComboBox()
                     item.addItems(["官服", "B服"])
                     if value == "Official":
                         item.setCurrentIndex(0)
@@ -524,7 +559,7 @@ class Main(QWidget):
 
                 # 生成表格组件
                 if j in [4, 9, 10]:
-                    item = QComboBox()
+                    item = ComboBox()
                     if j == 4:
                         item.addItems(["启用", "禁用"])
                     elif j in [9, 10]:
@@ -579,11 +614,11 @@ class Main(QWidget):
 
         # 设置列表可编辑状态
         if self.if_user_list_editable:
-            self.user_list_simple.setEditTriggers(QTableWidget.AllEditTriggers)
-            self.user_list_beta.setEditTriggers(QTableWidget.AllEditTriggers)
+            self.user_list_simple.setEditTriggers(TableWidget.AllEditTriggers)
+            self.user_list_beta.setEditTriggers(TableWidget.AllEditTriggers)
         else:
-            self.user_list_simple.setEditTriggers(QTableWidget.NoEditTriggers)
-            self.user_list_beta.setEditTriggers(QTableWidget.NoEditTriggers)
+            self.user_list_simple.setEditTriggers(TableWidget.NoEditTriggers)
+            self.user_list_beta.setEditTriggers(TableWidget.NoEditTriggers)
 
         # 允许GUI改变被同步到本地数据库
         self.if_update_database = True
@@ -683,12 +718,15 @@ class Main(QWidget):
 
         # 判断是否已设置管理密钥
         if not self.config.key_path.exists():
-            QMessageBox.critical(
-                self.ui,
+            choice = MessageBox(
                 "错误",
                 "请先设置管理密钥再执行添加用户操作",
+                self.ui,
             )
-            return None
+            choice.cancelButton.hide()
+            choice.buttonLayout.insertStretch(1)
+            if choice.exec():
+                return None
 
         # 插入预设用户数据
         set_book = [
@@ -719,8 +757,11 @@ class Main(QWidget):
 
         # 判断选择合理性
         if row == -1:
-            QMessageBox.critical(self.ui, "错误", "请选中一个用户后再执行删除操作")
-            return None
+            choice = MessageBox("错误", "请选中一个用户后再执行删除操作", self.ui)
+            choice.cancelButton.hide()
+            choice.buttonLayout.insertStretch(1)
+            if choice.exec():
+                return None
 
         # 确认待删除用户信息
         self.config.cur.execute(
@@ -731,12 +772,10 @@ class Main(QWidget):
             ),
         )
         data = self.config.cur.fetchall()
-        choice = QMessageBox.question(
-            self.ui, "确认", f"确定要删除用户 {data[0][0]} 吗？"
-        )
+        choice = MessageBox("确认", f"确定要删除用户 {data[0][0]} 吗？", self.ui)
 
         # 删除用户
-        if choice == QMessageBox.Yes:
+        if choice.exec():
             # 删除所选用户
             self.config.cur.execute(
                 "DELETE FROM adminx WHERE mode = ? AND uid = ?",
@@ -791,8 +830,11 @@ class Main(QWidget):
 
         # 判断选择合理性
         if row == -1:
-            QMessageBox.critical(self.ui, "错误", "请选中一个用户后再执行切换操作")
-            return None
+            choice = MessageBox("错误", "请选中一个用户后再执行切换操作", self.ui)
+            choice.cancelButton.hide()
+            choice.buttonLayout.insertStretch(1)
+            if choice.exec():
+                return None
 
         # 确认待切换用户信息
         self.config.cur.execute(
@@ -805,14 +847,14 @@ class Main(QWidget):
         data = self.config.cur.fetchall()
 
         mode_list = ["简洁", "高级"]
-        choice = QMessageBox.question(
-            self.ui,
+        choice = MessageBox(
             "确认",
             f"确定要将用户 {data[0][0]} 转为{mode_list[1 - self.user_set.currentIndex()]}配置模式吗？",
+            self.ui,
         )
 
         # 切换用户
-        if choice == QMessageBox.Yes:
+        if choice.exec():
             self.config.cur.execute("SELECT * FROM adminx WHERE True")
             data = self.config.cur.fetchall()
             if self.user_set.currentIndex() == 0:
@@ -886,12 +928,15 @@ class Main(QWidget):
                 )
                 return True
             else:
-                QMessageBox.critical(
-                    self.ui,
+                choice = MessageBox(
                     "错误",
                     "未选择自定义基建文件",
+                    self.ui,
                 )
-                return False
+                choice.cancelButton.hide()
+                choice.buttonLayout.insertStretch(1)
+                if choice.exec():
+                    return False
         # 获取高级用户MAA配置文件
         elif info[2] in ["routine", "annihilation"]:
             (
@@ -904,7 +949,7 @@ class Main(QWidget):
                 / f"data/MAAconfig/{self.user_mode_list[info[0]]}/{info[1]}/{info[2]}",
             )
 
-    def change_user_Item(self, item: QTableWidget, mode):
+    def change_user_Item(self, item: TableWidget, mode):
         """将GUI中发生修改的用户配置表中的一般信息同步至本地数据库"""
 
         # 验证能否写入本地数据库
@@ -1078,11 +1123,13 @@ class Main(QWidget):
                 )
                 self.get_maa_config(["Default"])
             else:
-                QMessageBox.critical(
-                    self.ui,
+                choice = MessageBox(
                     "错误",
                     "该路径下未找到MAA.exe或MAA配置文件，请重新设置MAA路径！",
+                    self.ui,
                 )
+                if choice.exec():
+                    pass
 
         self.config.content["Default"][
             "SelfSet.MainIndex"
@@ -1135,7 +1182,7 @@ class Main(QWidget):
                 self.config.content["Default"][f"TimeSet.set{i + 1}"] = "True"
             else:
                 self.config.content["Default"][f"TimeSet.set{i + 1}"] = "False"
-            time = self.start_time[i][1].time().toString("HH:mm")
+            time = self.start_time[i][1].getTime().toString("HH:mm")
             self.config.content["Default"][f"TimeSet.run{i + 1}"] = time
 
         # 将配置信息同步至本地JSON文件
@@ -1153,40 +1200,78 @@ class Main(QWidget):
     def read(self, operation):
         """弹出对话框组件进行读入"""
 
+        class InputMessageBox(MessageBoxBase):
+            """输入对话框"""
+
+            def __init__(self, parent, title: str, content: str, mode: str):
+                super().__init__(parent)
+                self.title = SubtitleLabel(title)
+
+                if mode == "明文":
+                    self.input = LineEdit()
+                elif mode == "密码":
+                    self.input = PasswordLineEdit()
+
+                self.input.setPlaceholderText(content)
+                self.input.setClearButtonEnabled(True)
+
+                # 将组件添加到布局中
+                self.viewLayout.addWidget(self.title)
+                self.viewLayout.addWidget(self.input)
+
         # 读入PASSWORD
         if operation == "key":
-            self.PASSWORD, ok_pressed = QInputDialog.getText(
-                self.ui, "请输入管理密钥", "管理密钥：", QLineEdit.Password, ""
-            )
-            if ok_pressed and self.PASSWORD != "":
+
+            choice = InputMessageBox(self.ui, "请输入管理密钥", "管理密钥", "密码")
+            if choice.exec() and choice.input.text() != "":
+                self.PASSWORD = choice.input.text()
                 self.update_user_info("normal")
+
         elif operation == "oldkey":
-            self.PASSWORD, ok_pressed = QInputDialog.getText(
-                self.ui, "请输入旧的管理密钥", "旧管理密钥：", QLineEdit.Password, ""
+
+            choice = InputMessageBox(
+                self.ui, "请输入旧的管理密钥", "旧管理密钥", "密码"
             )
-            if ok_pressed and self.PASSWORD != "":
+            if choice.exec() and choice.input.text() != "":
+                self.PASSWORD = choice.input.text()
                 return True
             else:
                 return False
+
         elif operation == "newkey":
-            new_PASSWORD, ok_pressed = QInputDialog.getText(
-                self.ui, "请输入新的管理密钥", "新管理密钥：", QLineEdit.Password, ""
+
+            choice = InputMessageBox(
+                self.ui, "请输入新的管理密钥", "新管理密钥", "密码"
             )
-            if ok_pressed and new_PASSWORD != "":
-                return new_PASSWORD
+            if choice.exec() and choice.input.text() != "":
+                return choice.input.text()
             else:
                 return None
 
+        elif operation == "setkey":
+
+            choice = InputMessageBox(
+                self.ui,
+                "未检测到管理密钥，请设置您的管理密钥",
+                "管理密钥",
+                "密码",
+            )
+            if choice.exec() and choice.input.text() != "":
+                self.PASSWORD = choice.input.text()
+                return True
+            else:
+                return False
+
         # 读入选择
         elif operation == "question_runner":
-            choice = QMessageBox.question(
-                self.ui,
+            choice = MessageBox(
                 self.MaaManager.question_title,
                 self.MaaManager.question_info,
+                None,
             )
-            if choice == QMessageBox.Yes:
+            if choice.exec():
                 self.MaaManager.question_choice = "Yes"
-            elif choice == QMessageBox.No:
+            else:
                 self.MaaManager.question_choice = "No"
 
         # 读入MAA文件目录
@@ -1334,8 +1419,11 @@ class Main(QWidget):
                 Path(self.config.content["Default"]["MaaSet.path"]) / "config/gui.json"
             ).exists()
         ):
-            QMessageBox.critical(self.ui, "错误", "您还未正确配置MAA路径！")
-            return None
+            choice = MessageBox("错误", "您还未正确配置MAA路径！", self.ui)
+            choice.cancelButton.hide()
+            choice.buttonLayout.insertStretch(1)
+            if choice.exec():
+                return None
 
         self.maa_running_set(f"{mode}_开始")
 
@@ -1458,12 +1546,15 @@ class Main(QWidget):
                 err = e
                 time.sleep(0.1)
         else:
-            QMessageBox.critical(
-                self.ui,
+            choice = MessageBox(
                 "错误",
                 f"获取版本信息时出错：\n{err}",
+                self.ui,
             )
-            return None
+            choice.cancelButton.hide()
+            choice.buttonLayout.insertStretch(1)
+            if choice.exec():
+                return None
 
         main_version_remote = list(map(int, version_remote["main_version"].split(".")))
         updater_version_remote = list(
@@ -1490,12 +1581,12 @@ class Main(QWidget):
                 )
 
             # 询问是否开始版本更新
-            choice = QMessageBox.question(
-                self.ui,
+            choice = MessageBox(
                 "版本更新",
                 f"发现新版本：\n{main_version_info}{updater_version_info}    更新说明：\n{version_remote['announcement'].replace("\n# ","\n   ！").replace("\n## ","\n        - ").replace("\n- ","\n            · ")}\n\n是否开始更新？\n\n    注意：主程序更新时AUTO_MAA将自动关闭",
+                self.ui,
             )
-            if choice == QMessageBox.No:
+            if not choice.exec():
                 return None
 
             # 更新更新器
@@ -1567,25 +1658,36 @@ class AUTO_MAA(QMainWindow):
             self,
         )
         self.tray.setToolTip("AUTO_MAA")
-        self.tray_menu = QMenu()
+        self.tray_menu = RoundMenu()
 
         # 显示主界面菜单项
-        show_main = self.tray_menu.addAction("显示主界面")
-        show_main.triggered.connect(self.show_main)
+        self.tray_menu.addAction(
+            Action(FluentIcon.CAFE, "显示主界面", triggered=self.show_main)
+        )
+        self.tray_menu.addSeparator()
 
         # 开始任务菜单项
-        start_task_1 = self.tray_menu.addAction("运行日常代理")
-        start_task_1.triggered.connect(lambda: self.start_task("日常代理"))
-
-        start_task_2 = self.tray_menu.addAction("运行人工排查")
-        start_task_2.triggered.connect(lambda: self.start_task("人工排查"))
-
-        stop_task = self.tray_menu.addAction("中止当前任务")
-        stop_task.triggered.connect(self.stop_task)
+        self.tray_menu.addActions(
+            [
+                Action(
+                    FluentIcon.PLAY,
+                    "运行日常代理",
+                    triggered=lambda: self.start_task("日常代理"),
+                ),
+                # Action(
+                #     FluentIcon.PLAY,
+                #     "运行人工排查",
+                #     triggered=lambda: self.start_task("人工排查"),
+                # ),
+                Action(FluentIcon.PAUSE, "中止当前任务", triggered=self.stop_task),
+            ]
+        )
+        self.tray_menu.addSeparator()
 
         # 退出主程序菜单项
-        kill = self.tray_menu.addAction("退出主程序")
-        kill.triggered.connect(self.kill_main)
+        self.tray_menu.addAction(
+            Action(FluentIcon.POWER_BUTTON, "退出主程序", triggered=self.kill_main)
+        )
 
         # 设置托盘菜单
         self.tray.setContextMenu(self.tray_menu)
