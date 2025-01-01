@@ -38,4 +38,5 @@ if __name__ == "__main__":
 
     application = QApplication(sys.argv)
     window = AUTO_MAA(config=config, notify=notify, crypto=crypto)
+    window.main.check_PASSWORD()
     sys.exit(application.exec())

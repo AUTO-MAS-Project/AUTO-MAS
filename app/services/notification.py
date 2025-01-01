@@ -48,7 +48,7 @@ class Notification:
             title=title,
             message=message,
             app_name="AUTO_MAA",
-            app_icon=self.config.app_path / "resources/icons/AUTO_MAA.ico",
+            app_icon=str(self.config.app_path / "resources/icons/AUTO_MAA.ico"),
             timeout=t,
             ticker=ticker,
             toast=True,

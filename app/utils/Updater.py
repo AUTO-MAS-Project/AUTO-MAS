@@ -38,9 +38,8 @@ from PySide6.QtWidgets import (
     QApplication,
     QDialog,
     QVBoxLayout,
-    QLabel,
-    QProgressBar,
 )
+from qfluentwidgets import ProgressBar, BodyLabel
 from PySide6.QtGui import QIcon
 from PySide6.QtCore import QObject, QThread, Signal
 
@@ -265,10 +264,10 @@ class Updater(QObject):
         # 创建垂直布局
         self.Layout_v = QVBoxLayout(self.ui)
 
-        self.info = QLabel("正在初始化", self.ui)
+        self.info = BodyLabel("正在初始化", self.ui)
         self.Layout_v.addWidget(self.info)
 
-        self.progress = QProgressBar(self.ui)
+        self.progress = ProgressBar(self.ui)
         self.progress.setRange(0, 0)
         self.Layout_v.addWidget(self.progress)
 
