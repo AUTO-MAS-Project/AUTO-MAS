@@ -39,7 +39,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QVBoxLayout,
 )
-from qfluentwidgets import ProgressBar, BodyLabel
+from qfluentwidgets import ProgressBar, IndeterminateProgressBar, BodyLabel
 from PySide6.QtGui import QIcon
 from PySide6.QtCore import QObject, QThread, Signal
 
@@ -262,14 +262,19 @@ class Updater(QObject):
         )
 
         # 创建垂直布局
-        self.Layout_v = QVBoxLayout(self.ui)
+        self.Layout = QVBoxLayout(self.ui)
 
         self.info = BodyLabel("正在初始化", self.ui)
-        self.Layout_v.addWidget(self.info)
+        self.progress_1 = IndeterminateProgressBar(self.ui)
+        self.progress_2 = ProgressBar(self.ui)
 
-        self.progress = ProgressBar(self.ui)
-        self.progress.setRange(0, 0)
-        self.Layout_v.addWidget(self.progress)
+        self.update_progress(0, 0, 0)
+
+        self.Layout.addWidget(self.info)
+        self.Layout.addStretch(1)
+        self.Layout.addWidget(self.progress_1)
+        self.Layout.addWidget(self.progress_2)
+        self.Layout.addStretch(1)
 
         self.update_process = UpdateProcess(
             app_path, name, main_version, updater_version
@@ -284,8 +289,14 @@ class Updater(QObject):
         self.info.setText(text)
 
     def update_progress(self, begin: int, end: int, current: int) -> None:
-        self.progress.setRange(begin, end)
-        self.progress.setValue(current)
+        if begin == 0 and end == 0:
+            self.progress_2.setVisible(False)
+            self.progress_1.setVisible(True)
+        else:
+            self.progress_1.setVisible(False)
+            self.progress_2.setVisible(True)
+            self.progress_2.setRange(begin, end)
+            self.progress_2.setValue(current)
 
 
 class AUTO_MAA_Updater(QApplication):

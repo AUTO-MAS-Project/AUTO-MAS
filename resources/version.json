@@ -1,8 +1,8 @@
 {
     "main_version": "4.2.0.1",
     "updater_version": "1.1.0.1",
-    "announcement": "\n## 新增功能\n- 初步引入`qfluentwidgets`，UI界面美化",
-    "proxy_list":[
+    "announcement": "\n# 这是一个预览版本！\n# 这个版本仅能进行用于展示页面，未实现任何功能！！！\n- 若不慎更新到此版本，请前往官方仓库，下载4.2.0版本压缩包替换本地文件即可回退版本",
+    "proxy_list": [
         "",
         "https://gitproxy.click/",
         "https://cdn.moran233.xyz/",

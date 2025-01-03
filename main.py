@@ -26,9 +26,13 @@ v4.2
 """
 
 from PySide6.QtWidgets import QApplication
+from qfluentwidgets import FluentTranslator
 import sys
 
-from app import AppConfig, Notification, CryptoHandler, AUTO_MAA
+from app.config import AppConfig
+from app.services.notification import Notification
+from app.services.security import CryptoHandler
+from app.ui.main_window import AUTO_MAA
 
 if __name__ == "__main__":
 
@@ -37,6 +41,10 @@ if __name__ == "__main__":
     crypto = CryptoHandler(config)
 
     application = QApplication(sys.argv)
+
+    translator = FluentTranslator()
+    application.installTranslator(translator)
+
     window = AUTO_MAA(config=config, notify=notify, crypto=crypto)
-    window.main.check_PASSWORD()
+    window.setting.check_PASSWORD()
     sys.exit(application.exec())

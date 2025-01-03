@@ -33,6 +33,18 @@ import subprocess
 import shutil
 import time
 from pathlib import Path
+from qfluentwidgets import (
+    QConfig,
+    ConfigItem,
+    qconfig,
+    OptionsConfigItem,
+    RangeConfigItem,
+    OptionsValidator,
+    BoolValidator,
+    RangeValidator,
+    EnumSerializer,
+    FolderValidator,
+)
 
 from app import AppConfig
 

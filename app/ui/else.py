@@ -1,88 +1,3 @@
-#   <AUTO_MAA:A MAA Multi Account Management and Automation Tool>
-#   Copyright © <2024> <DLmaster361>
-
-#   This file is part of AUTO_MAA.
-
-#   AUTO_MAA is free software: you can redistribute it and/or modify
-#   it under the terms of the GNU General Public License as published
-#   by the Free Software Foundation, either version 3 of the License,
-#   or (at your option) any later version.
-
-#   AUTO_MAA is distributed in the hope that it will be useful,
-#   but WITHOUT ANY WARRANTY; without even the implied warranty
-#   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
-#   the GNU General Public License for more details.
-
-#   You should have received a copy of the GNU General Public License
-#   along with AUTO_MAA. If not, see <https://www.gnu.org/licenses/>.
-
-#   DLmaster_361@163.com
-
-"""
-AUTO_MAA
-AUTO_MAA主界面
-v4.2
-作者：DLmaster_361
-"""
-
-from PySide6.QtWidgets import (
-    QWidget,  #
-    QMainWindow,  #
-    QApplication,  #
-    QSystemTrayIcon,  #
-    QFileDialog,  #
-    QTabWidget,  #
-    QToolBox,  #
-    QComboBox,  #
-    QTableWidgetItem,  #
-    QHeaderView,  #
-)
-from qfluentwidgets import (
-    Action,
-    PushButton,
-    LineEdit,
-    PasswordLineEdit,
-    TextBrowser,
-    TableWidget,
-    TimePicker,
-    ComboBox,
-    CheckBox,
-    SpinBox,
-    FluentIcon,
-    RoundMenu,
-    MessageBox,
-    MessageBoxBase,
-    HeaderCardWidget,
-    BodyLabel,
-    SubtitleLabel,
-)
-from PySide6.QtUiTools import QUiLoader
-from PySide6.QtGui import QIcon, QCloseEvent
-from PySide6 import QtCore
-from functools import partial
-from typing import List, Tuple
-from pathlib import Path
-import json
-import datetime
-import ctypes
-import subprocess
-import shutil
-import win32gui
-import win32process
-import psutil
-import pyautogui
-import time
-import winreg
-import requests
-
-uiLoader = QUiLoader()
-
-from app import AppConfig
-from app.models import MaaManager
-from app.services import Notification, CryptoHandler
-from app.utils import Updater, version_text
-
-
 class Main(QWidget):
 
     ES_CONTINUOUS = 0x80000000
@@ -158,168 +73,168 @@ class Main(QWidget):
             "-",
         ]
 
-        uiLoader.registerCustomWidget(PushButton)
-        uiLoader.registerCustomWidget(LineEdit)
-        uiLoader.registerCustomWidget(TextBrowser)
-        uiLoader.registerCustomWidget(TableWidget)
-        uiLoader.registerCustomWidget(TimePicker)
-        uiLoader.registerCustomWidget(SpinBox)
-        uiLoader.registerCustomWidget(CheckBox)
-        uiLoader.registerCustomWidget(HeaderCardWidget)
-        uiLoader.registerCustomWidget(BodyLabel)
+        # uiLoader.registerCustomWidget(PushButton)
+        # uiLoader.registerCustomWidget(LineEdit)
+        # uiLoader.registerCustomWidget(TextBrowser)
+        # uiLoader.registerCustomWidget(TableWidget)
+        # uiLoader.registerCustomWidget(TimePicker)
+        # uiLoader.registerCustomWidget(SpinBox)
+        # uiLoader.registerCustomWidget(CheckBox)
+        # uiLoader.registerCustomWidget(HeaderCardWidget)
+        # uiLoader.registerCustomWidget(BodyLabel)
 
-        # 导入ui配置
-        self.ui = uiLoader.load(self.config.app_path / "resources/gui/main.ui")
-        self.ui.setWindowIcon(
-            QIcon(str(self.config.app_path / "resources/icons/AUTO_MAA.ico"))
-        )
+        # # 导入ui配置
+        # self.ui = uiLoader.load(self.config.app_path / "resources/gui/main.ui")
+        # self.ui.setWindowIcon(
+        #     QIcon(str(self.config.app_path / "resources/icons/AUTO_MAA.ico"))
+        # )
 
-        # 初始化控件
-        self.main_tab: QTabWidget = self.ui.findChild(QTabWidget, "tabWidget_main")
-        self.main_tab.currentChanged.connect(self.change_config)
+        # # 初始化控件
+        # self.main_tab: QTabWidget = self.ui.findChild(QTabWidget, "tabWidget_main")
+        # self.main_tab.currentChanged.connect(self.change_config)
 
-        self.user_set: QToolBox = self.ui.findChild(QToolBox, "toolBox_userset")
-        self.user_set.currentChanged.connect(lambda: self.update_user_info("normal"))
+        # self.user_set: QToolBox = self.ui.findChild(QToolBox, "toolBox_userset")
+        # self.user_set.currentChanged.connect(lambda: self.update_user_info("normal"))
 
-        self.user_list_simple: TableWidget = self.ui.findChild(
-            TableWidget, "tableWidget_userlist_simple"
-        )
-        self.user_list_simple.itemChanged.connect(
-            lambda item: self.change_user_Item(item, "simple")
-        )
+        # self.user_list_simple: TableWidget = self.ui.findChild(
+        #     TableWidget, "tableWidget_userlist_simple"
+        # )
+        # self.user_list_simple.itemChanged.connect(
+        #     lambda item: self.change_user_Item(item, "simple")
+        # )
 
-        self.user_list_beta: TableWidget = self.ui.findChild(
-            TableWidget, "tableWidget_userlist_beta"
-        )
-        self.user_list_beta.itemChanged.connect(
-            lambda item: self.change_user_Item(item, "beta")
-        )
+        # self.user_list_beta: TableWidget = self.ui.findChild(
+        #     TableWidget, "tableWidget_userlist_beta"
+        # )
+        # self.user_list_beta.itemChanged.connect(
+        #     lambda item: self.change_user_Item(item, "beta")
+        # )
 
-        self.user_add: PushButton = self.ui.findChild(PushButton, "pushButton_new")
-        self.user_add.setIcon(FluentIcon.ADD_TO)
-        self.user_add.clicked.connect(self.add_user)
+        # self.user_add: PushButton = self.ui.findChild(PushButton, "pushButton_new")
+        # self.user_add.setIcon(FluentIcon.ADD_TO)
+        # self.user_add.clicked.connect(self.add_user)
 
-        self.user_del: PushButton = self.ui.findChild(PushButton, "pushButton_del")
-        self.user_del.setIcon(FluentIcon.REMOVE_FROM)
-        self.user_del.clicked.connect(self.del_user)
+        # self.user_del: PushButton = self.ui.findChild(PushButton, "pushButton_del")
+        # self.user_del.setIcon(FluentIcon.REMOVE_FROM)
+        # self.user_del.clicked.connect(self.del_user)
 
-        self.user_switch: PushButton = self.ui.findChild(
-            PushButton, "pushButton_switch"
-        )
-        self.user_switch.setIcon(FluentIcon.MOVE)
-        self.user_switch.clicked.connect(self.switch_user)
+        # self.user_switch: PushButton = self.ui.findChild(
+        #     PushButton, "pushButton_switch"
+        # )
+        # self.user_switch.setIcon(FluentIcon.MOVE)
+        # self.user_switch.clicked.connect(self.switch_user)
 
-        self.read_PASSWORD: PushButton = self.ui.findChild(
-            PushButton, "pushButton_password"
-        )
-        self.read_PASSWORD.setIcon(FluentIcon.HIDE)
-        self.read_PASSWORD.clicked.connect(lambda: self.read("key"))
+        # self.read_PASSWORD: PushButton = self.ui.findChild(
+        #     PushButton, "pushButton_password"
+        # )
+        # self.read_PASSWORD.setIcon(FluentIcon.HIDE)
+        # self.read_PASSWORD.clicked.connect(lambda: self.read("key"))
 
-        self.refresh: PushButton = self.ui.findChild(PushButton, "pushButton_refresh")
-        self.refresh.setIcon(FluentIcon.SYNC)
-        self.refresh.clicked.connect(lambda: self.update_user_info("clear"))
+        # self.refresh: PushButton = self.ui.findChild(PushButton, "pushButton_refresh")
+        # self.refresh.setIcon(FluentIcon.SYNC)
+        # self.refresh.clicked.connect(lambda: self.update_user_info("clear"))
 
-        self.run_now: PushButton = self.ui.findChild(PushButton, "pushButton_runnow")
-        self.run_now.setIcon(FluentIcon.PLAY)
-        self.run_now.clicked.connect(lambda: self.maa_starter("日常代理"))
+        # self.run_now: PushButton = self.ui.findChild(PushButton, "pushButton_runnow")
+        # self.run_now.setIcon(FluentIcon.PLAY)
+        # self.run_now.clicked.connect(lambda: self.maa_starter("日常代理"))
 
-        self.check_start: PushButton = self.ui.findChild(
-            PushButton, "pushButton_checkstart"
-        )
-        self.check_start.setIcon(FluentIcon.PLAY)
-        self.check_start.clicked.connect(lambda: self.maa_starter("人工排查"))
+        # self.check_start: PushButton = self.ui.findChild(
+        #     PushButton, "pushButton_checkstart"
+        # )
+        # self.check_start.setIcon(FluentIcon.PLAY)
+        # self.check_start.clicked.connect(lambda: self.maa_starter("人工排查"))
 
-        self.maa_path: LineEdit = self.ui.findChild(LineEdit, "lineEdit_MAApath")
-        self.maa_path.textChanged.connect(self.change_config)
-        self.maa_path.setReadOnly(True)
+        # self.maa_path: LineEdit = self.ui.findChild(LineEdit, "lineEdit_MAApath")
+        # self.maa_path.textChanged.connect(self.change_config)
+        # self.maa_path.setReadOnly(True)
 
-        self.get_maa_path: PushButton = self.ui.findChild(
-            PushButton, "pushButton_getMAApath"
-        )
-        self.get_maa_path.setIcon(FluentIcon.FOLDER)
-        self.get_maa_path.clicked.connect(lambda: self.read("file_path_maa"))
+        # self.get_maa_path: PushButton = self.ui.findChild(
+        #     PushButton, "pushButton_getMAApath"
+        # )
+        # self.get_maa_path.setIcon(FluentIcon.FOLDER)
+        # self.get_maa_path.clicked.connect(lambda: self.read("file_path_maa"))
 
-        self.set_maa: PushButton = self.ui.findChild(PushButton, "pushButton_setMAA")
-        self.set_maa.setIcon(FluentIcon.SETTING)
-        self.set_maa.clicked.connect(lambda: self.maa_starter("设置MAA_全局"))
+        # self.set_maa: PushButton = self.ui.findChild(PushButton, "pushButton_setMAA")
+        # self.set_maa.setIcon(FluentIcon.SETTING)
+        # self.set_maa.clicked.connect(lambda: self.maa_starter("设置MAA_全局"))
 
-        self.routine: SpinBox = self.ui.findChild(SpinBox, "spinBox_routine")
-        self.routine.valueChanged.connect(self.change_config)
+        # self.routine: SpinBox = self.ui.findChild(SpinBox, "spinBox_routine")
+        # self.routine.valueChanged.connect(self.change_config)
 
-        self.annihilation: SpinBox = self.ui.findChild(SpinBox, "spinBox_annihilation")
-        self.annihilation.valueChanged.connect(self.change_config)
+        # self.annihilation: SpinBox = self.ui.findChild(SpinBox, "spinBox_annihilation")
+        # self.annihilation.valueChanged.connect(self.change_config)
 
-        self.num: SpinBox = self.ui.findChild(SpinBox, "spinBox_numt")
-        self.num.valueChanged.connect(self.change_config)
+        # self.num: SpinBox = self.ui.findChild(SpinBox, "spinBox_numt")
+        # self.num.valueChanged.connect(self.change_config)
 
-        self.if_self_start: CheckBox = self.ui.findChild(
-            CheckBox, "checkBox_ifselfstart"
-        )
-        self.if_self_start.stateChanged.connect(self.change_config)
+        # self.if_self_start: CheckBox = self.ui.findChild(
+        #     CheckBox, "checkBox_ifselfstart"
+        # )
+        # self.if_self_start.stateChanged.connect(self.change_config)
 
-        self.if_sleep: CheckBox = self.ui.findChild(CheckBox, "checkBox_ifsleep")
-        self.if_sleep.stateChanged.connect(self.change_config)
+        # self.if_sleep: CheckBox = self.ui.findChild(CheckBox, "checkBox_ifsleep")
+        # self.if_sleep.stateChanged.connect(self.change_config)
 
-        self.if_proxy_directly: CheckBox = self.ui.findChild(
-            CheckBox, "checkBox_ifproxydirectly"
-        )
-        self.if_proxy_directly.stateChanged.connect(self.change_config)
+        # self.if_proxy_directly: CheckBox = self.ui.findChild(
+        #     CheckBox, "checkBox_ifproxydirectly"
+        # )
+        # self.if_proxy_directly.stateChanged.connect(self.change_config)
 
-        self.if_send_mail: CheckBox = self.ui.findChild(CheckBox, "checkBox_ifsendmail")
-        self.if_send_mail.stateChanged.connect(self.change_config)
+        # self.if_send_mail: CheckBox = self.ui.findChild(CheckBox, "checkBox_ifsendmail")
+        # self.if_send_mail.stateChanged.connect(self.change_config)
 
-        self.mail_address: LineEdit = self.ui.findChild(
-            LineEdit, "lineEdit_mailaddress"
-        )
-        self.mail_address.textChanged.connect(self.change_config)
+        # self.mail_address: LineEdit = self.ui.findChild(
+        #     LineEdit, "lineEdit_mailaddress"
+        # )
+        # self.mail_address.textChanged.connect(self.change_config)
 
-        self.if_send_error_only: CheckBox = self.ui.findChild(
-            CheckBox, "checkBox_ifonlyerror"
-        )
-        self.if_send_error_only.stateChanged.connect(self.change_config)
+        # self.if_send_error_only: CheckBox = self.ui.findChild(
+        #     CheckBox, "checkBox_ifonlyerror"
+        # )
+        # self.if_send_error_only.stateChanged.connect(self.change_config)
 
-        self.if_silence: CheckBox = self.ui.findChild(CheckBox, "checkBox_silence")
-        self.if_silence.stateChanged.connect(self.change_config)
+        # self.if_silence: CheckBox = self.ui.findChild(CheckBox, "checkBox_silence")
+        # self.if_silence.stateChanged.connect(self.change_config)
 
-        self.boss_key: LineEdit = self.ui.findChild(LineEdit, "lineEdit_boss")
-        self.boss_key.textChanged.connect(self.change_config)
+        # self.boss_key: LineEdit = self.ui.findChild(LineEdit, "lineEdit_boss")
+        # self.boss_key.textChanged.connect(self.change_config)
 
-        self.if_to_tray: CheckBox = self.ui.findChild(CheckBox, "checkBox_iftotray")
-        self.if_to_tray.stateChanged.connect(self.change_config)
+        # self.if_to_tray: CheckBox = self.ui.findChild(CheckBox, "checkBox_iftotray")
+        # self.if_to_tray.stateChanged.connect(self.change_config)
 
-        self.check_update: PushButton = self.ui.findChild(
-            PushButton, "pushButton_check_update"
-        )
-        self.check_update.setIcon(FluentIcon.UPDATE)
-        self.check_update.clicked.connect(self.check_version)
+        # self.check_update: PushButton = self.ui.findChild(
+        #     PushButton, "pushButton_check_update"
+        # )
+        # self.check_update.setIcon(FluentIcon.UPDATE)
+        # self.check_update.clicked.connect(self.check_version)
 
-        self.tips: TextBrowser = self.ui.findChild(TextBrowser, "textBrowser_tips")
-        self.tips.setOpenExternalLinks(True)
+        # self.tips: TextBrowser = self.ui.findChild(TextBrowser, "textBrowser_tips")
+        # self.tips.setOpenExternalLinks(True)
 
-        self.run_text: TextBrowser = self.ui.findChild(TextBrowser, "textBrowser_run")
-        self.wait_text: TextBrowser = self.ui.findChild(TextBrowser, "textBrowser_wait")
-        self.over_text: TextBrowser = self.ui.findChild(TextBrowser, "textBrowser_over")
-        self.error_text: TextBrowser = self.ui.findChild(
-            TextBrowser, "textBrowser_error"
-        )
-        self.log_text: TextBrowser = self.ui.findChild(TextBrowser, "textBrowser_log")
+        # self.run_text: TextBrowser = self.ui.findChild(TextBrowser, "textBrowser_run")
+        # self.wait_text: TextBrowser = self.ui.findChild(TextBrowser, "textBrowser_wait")
+        # self.over_text: TextBrowser = self.ui.findChild(TextBrowser, "textBrowser_over")
+        # self.error_text: TextBrowser = self.ui.findChild(
+        #     TextBrowser, "textBrowser_error"
+        # )
+        # self.log_text: TextBrowser = self.ui.findChild(TextBrowser, "textBrowser_log")
 
-        self.start_time: List[Tuple[CheckBox, TimePicker]] = []
-        for i in range(10):
-            self.start_time.append(
-                [
-                    self.ui.findChild(CheckBox, f"checkBox_t{i + 1}"),
-                    self.ui.findChild(TimePicker, f"timeEdit_{i + 1}"),
-                ]
-            )
-            self.start_time[i][0].stateChanged.connect(self.change_config)
-            self.start_time[i][1].timeChanged.connect(self.change_config)
+        # self.start_time: List[Tuple[CheckBox, TimePicker]] = []
+        # for i in range(10):
+        #     self.start_time.append(
+        #         [
+        #             self.ui.findChild(CheckBox, f"checkBox_t{i + 1}"),
+        #             self.ui.findChild(TimePicker, f"timeEdit_{i + 1}"),
+        #         ]
+        #     )
+        #     self.start_time[i][0].stateChanged.connect(self.change_config)
+        #     self.start_time[i][1].timeChanged.connect(self.change_config)
 
-        self.change_password: PushButton = self.ui.findChild(
-            PushButton, "pushButton_changePASSWORD"
-        )
-        self.change_password.setIcon(FluentIcon.VPN)
-        self.change_password.clicked.connect(self.change_PASSWORD)
+        # self.change_password: PushButton = self.ui.findChild(
+        #     PushButton, "pushButton_changePASSWORD"
+        # )
+        # self.change_password.setIcon(FluentIcon.VPN)
+        # self.change_password.clicked.connect(self.change_PASSWORD)
 
         # 初始化线程
         self.MaaManager = MaaManager(self.config)
@@ -332,16 +247,16 @@ class Main(QWidget):
         self.MaaManager.get_json.connect(self.get_maa_config)
         self.MaaManager.set_silence.connect(self.switch_silence)
 
-        self.last_time = "0000-00-00 00:00"
-        self.Timer = QtCore.QTimer()
-        self.Timer.timeout.connect(self.set_theme)
-        self.Timer.timeout.connect(self.set_system)
-        self.Timer.timeout.connect(self.timed_start)
-        self.Timer.start(1000)
+        # self.last_time = "0000-00-00 00:00"
+        # self.Timer = QtCore.QTimer()
+        # self.Timer.timeout.connect(self.set_theme)
+        # self.Timer.timeout.connect(self.set_system)
+        # self.Timer.timeout.connect(self.timed_start)
+        # self.Timer.start(1000)
 
         # 载入GUI数据
-        self.update_user_info("normal")
-        self.update_config()
+        # self.update_user_info("normal")
+        # self.update_config()
 
         # 启动后直接开始代理
         if self.config.content["Default"]["SelfSet.IfProxyDirectly"] == "True":
@@ -364,86 +279,6 @@ class Main(QWidget):
                 )
                 if choice.exec():
                     break
-
-    def change_PASSWORD(self) -> None:
-        """修改管理密钥"""
-
-        # 获取用户信息
-        self.config.cur.execute("SELECT * FROM adminx WHERE True")
-        data = self.config.cur.fetchall()
-
-        if len(data) == 0:
-            choice = MessageBox("验证通过", "当前无用户，验证自动通过", self.ui)
-            choice.cancelButton.hide()
-            choice.buttonLayout.insertStretch(1)
-            # 获取新的管理密钥
-            if choice.exec():
-                while True:
-                    PASSWORD_new = self.read("newkey")
-                    if PASSWORD_new == None:
-                        choice = MessageBox(
-                            "确认",
-                            "您没有输入新的管理密钥，是否取消修改管理密钥？",
-                            self.ui,
-                        )
-                        if choice.exec():
-                            break
-                    else:
-                        # 修改管理密钥
-                        self.PASSWORD = PASSWORD_new
-                        self.crypto.get_PASSWORD(self.PASSWORD)
-                        choice = MessageBox("操作成功", "管理密钥修改成功", self.ui)
-                        choice.cancelButton.hide()
-                        choice.buttonLayout.insertStretch(1)
-                        if choice.exec():
-                            break
-        else:
-            # 验证管理密钥
-            if_change = True
-            while if_change:
-                if self.read("oldkey"):
-                    # 验证旧管理密钥
-                    if not self.crypto.check_PASSWORD(self.PASSWORD):
-                        choice = MessageBox("错误", "管理密钥错误", self.ui)
-                        choice.cancelButton.hide()
-                        choice.buttonLayout.insertStretch(1)
-                        if choice.exec():
-                            pass
-                    else:
-                        # 获取新的管理密钥
-                        while True:
-                            PASSWORD_new = self.read("newkey")
-                            if PASSWORD_new == None:
-                                choice = MessageBox(
-                                    "确认",
-                                    "您没有输入新的管理密钥，是否取消修改管理密钥？",
-                                    self.ui,
-                                )
-                                if choice.exec():
-                                    if_change = False
-                                    break
-                            # 修改管理密钥
-                            else:
-                                self.crypto.change_PASSWORD(
-                                    data, self.PASSWORD, PASSWORD_new
-                                )
-                                self.PASSWORD = PASSWORD_new
-                                choice = MessageBox(
-                                    "操作成功", "管理密钥修改成功", self.ui
-                                )
-                                choice.cancelButton.hide()
-                                choice.buttonLayout.insertStretch(1)
-                                if choice.exec():
-                                    if_change = False
-                                    break
-                else:
-                    choice = MessageBox(
-                        "确认",
-                        "您没有输入管理密钥，是否取消修改管理密钥？",
-                        self.ui,
-                    )
-                    if choice.exec():
-                        break
 
     def update_user_info(self, operation: str) -> None:
         """将本地数据库中的用户配置同步至GUI的用户管理界面"""
@@ -1518,111 +1353,6 @@ class Main(QWidget):
                 self.run_now.setEnabled(True)
                 self.check_start.setEnabled(True)
 
-    def check_version(self):
-        """检查版本更新，调起文件下载进程"""
-
-        # 从本地版本信息文件获取当前版本信息
-        with self.config.version_path.open(mode="r", encoding="utf-8") as f:
-            version_current = json.load(f)
-        main_version_current = list(
-            map(int, version_current["main_version"].split("."))
-        )
-        updater_version_current = list(
-            map(int, version_current["updater_version"].split("."))
-        )
-        # 检查更新器是否存在
-        if not (self.config.app_path / "Updater.exe").exists():
-            updater_version_current = [0, 0, 0, 0]
-
-        # 从远程服务器获取最新版本信息
-        for _ in range(3):
-            try:
-                response = requests.get(
-                    "https://gitee.com/DLmaster_361/AUTO_MAA/raw/main/resources/version.json"
-                )
-                version_remote = response.json()
-                break
-            except Exception as e:
-                err = e
-                time.sleep(0.1)
-        else:
-            choice = MessageBox(
-                "错误",
-                f"获取版本信息时出错：\n{err}",
-                self.ui,
-            )
-            choice.cancelButton.hide()
-            choice.buttonLayout.insertStretch(1)
-            if choice.exec():
-                return None
-
-        main_version_remote = list(map(int, version_remote["main_version"].split(".")))
-        updater_version_remote = list(
-            map(int, version_remote["updater_version"].split("."))
-        )
-
-        # 有版本更新
-        if (main_version_remote > main_version_current) or (
-            updater_version_remote > updater_version_current
-        ):
-
-            # 生成版本更新信息
-            if main_version_remote > main_version_current:
-                main_version_info = f"    主程序：{version_text(main_version_current)} --> {version_text(main_version_remote)}\n"
-            else:
-                main_version_info = (
-                    f"    主程序：{version_text(main_version_current)}\n"
-                )
-            if updater_version_remote > updater_version_current:
-                updater_version_info = f"    更新器：{version_text(updater_version_current)} --> {version_text(updater_version_remote)}\n"
-            else:
-                updater_version_info = (
-                    f"    更新器：{version_text(updater_version_current)}\n"
-                )
-
-            # 询问是否开始版本更新
-            choice = MessageBox(
-                "版本更新",
-                f"发现新版本：\n{main_version_info}{updater_version_info}    更新说明：\n{version_remote['announcement'].replace("\n# ","\n   ！").replace("\n## ","\n        - ").replace("\n- ","\n            · ")}\n\n是否开始更新？\n\n    注意：主程序更新时AUTO_MAA将自动关闭",
-                self.ui,
-            )
-            if not choice.exec():
-                return None
-
-            # 更新更新器
-            if updater_version_remote > updater_version_current:
-                # 创建更新进程
-                self.updater = Updater(
-                    self.config.app_path,
-                    "AUTO_MAA更新器",
-                    main_version_remote,
-                    updater_version_remote,
-                )
-                # 完成更新器的更新后更新主程序
-                if main_version_remote > main_version_current:
-                    self.updater.update_process.accomplish.connect(self.update_main)
-                # 显示更新页面
-                self.updater.ui.show()
-
-            # 更新主程序
-            elif main_version_remote > main_version_current:
-                self.update_main()
-
-        # 无版本更新
-        else:
-            self.notify.push_notification("已是最新版本~", " ", " ", 3)
-
-    def update_main(self):
-        """更新主程序"""
-
-        subprocess.Popen(
-            str(self.config.app_path / "Updater.exe"),
-            shell=True,
-            creationflags=subprocess.CREATE_NO_WINDOW,
-        )
-        self.close()
-        QApplication.quit()
-
     def server_date(self):
         """获取当前的服务器日期"""
 
@@ -1630,194 +1360,3 @@ class Main(QWidget):
         if dt.time() < datetime.datetime.min.time().replace(hour=4):
             dt = dt - datetime.timedelta(days=1)
         return dt.strftime("%Y-%m-%d")
-
-
-class AUTO_MAA(QMainWindow):
-
-    if_save = True
-
-    def __init__(self, config: AppConfig, notify: Notification, crypto: CryptoHandler):
-        super(AUTO_MAA, self).__init__()
-
-        self.config = config
-        self.notify = notify
-
-        self.config.open_database()
-
-        # 创建主窗口
-        self.main = Main(config=config, notify=notify, crypto=crypto)
-        self.setCentralWidget(self.main.ui)
-        self.setWindowIcon(
-            QIcon(str(self.config.app_path / "resources/icons/AUTO_MAA.ico"))
-        )
-        self.setWindowTitle("AUTO_MAA")
-
-        # 创建系统托盘及其菜单
-        self.tray = QSystemTrayIcon(
-            QIcon(str(self.config.app_path / "resources/icons/AUTO_MAA.ico")),
-            self,
-        )
-        self.tray.setToolTip("AUTO_MAA")
-        self.tray_menu = RoundMenu()
-
-        # 显示主界面菜单项
-        self.tray_menu.addAction(
-            Action(FluentIcon.CAFE, "显示主界面", triggered=self.show_main)
-        )
-        self.tray_menu.addSeparator()
-
-        # 开始任务菜单项
-        self.tray_menu.addActions(
-            [
-                Action(
-                    FluentIcon.PLAY,
-                    "运行日常代理",
-                    triggered=lambda: self.start_task("日常代理"),
-                ),
-                # Action(
-                #     FluentIcon.PLAY,
-                #     "运行人工排查",
-                #     triggered=lambda: self.start_task("人工排查"),
-                # ),
-                Action(FluentIcon.PAUSE, "中止当前任务", triggered=self.stop_task),
-            ]
-        )
-        self.tray_menu.addSeparator()
-
-        # 退出主程序菜单项
-        self.tray_menu.addAction(
-            Action(FluentIcon.POWER_BUTTON, "退出主程序", triggered=self.kill_main)
-        )
-
-        # 设置托盘菜单
-        self.tray.setContextMenu(self.tray_menu)
-        self.tray.activated.connect(self.on_tray_activated)
-
-        self.show_main()
-
-    def show_tray(self):
-        """最小化到托盘"""
-        if self.if_save:
-            self.set_ui("保存")
-        self.hide()
-        self.tray.show()
-
-    def show_main(self):
-        """显示主界面"""
-        self.set_ui("配置")
-        self.tray.hide()
-
-    def on_tray_activated(self, reason):
-        """双击返回主界面"""
-        if reason == QSystemTrayIcon.DoubleClick:
-            self.show_main()
-
-    def start_task(self, mode):
-        """调起对应任务"""
-        if self.main.MaaManager.isRunning():
-            self.notify.push_notification(
-                f"无法运行{mode}！",
-                "当前已有任务正在运行，请在该任务结束后重试",
-                "当前已有任务正在运行，请在该任务结束后重试",
-                3,
-            )
-        else:
-            self.main.maa_starter(mode)
-
-    def stop_task(self):
-        """中止当前任务"""
-        if self.main.MaaManager.isRunning():
-            if (
-                self.main.MaaManager.mode == "日常代理"
-                or self.main.MaaManager.mode == "人工排查"
-            ):
-                self.main.maa_ender(f"{self.main.MaaManager.mode}_结束")
-            elif "设置MAA" in self.main.MaaManager.mode:
-                self.notify.push_notification(
-                    "正在设置MAA！",
-                    "正在运行设置MAA任务，无法中止",
-                    "正在运行设置MAA任务，无法中止",
-                    3,
-                )
-        else:
-            self.notify.push_notification(
-                "无任务运行！",
-                "当前无任务正在运行，无需中止",
-                "当前无任务正在运行，无需中止",
-                3,
-            )
-
-    def kill_main(self):
-        """退出主程序"""
-        self.close()
-        QApplication.quit()
-
-    def set_ui(self, mode):
-        """设置窗口相关属性"""
-
-        # 保存窗口相关属性
-        if mode == "保存":
-
-            self.config.content["Default"][
-                "SelfSet.UIsize"
-            ] = f"{self.geometry().width()}x{self.geometry().height()}"
-            self.config.content["Default"][
-                "SelfSet.UIlocation"
-            ] = f"{self.geometry().x()}x{self.geometry().y()}"
-            if self.isMaximized():
-                self.config.content["Default"]["SelfSet.UImaximized"] = "True"
-            else:
-                self.config.content["Default"]["SelfSet.UImaximized"] = "False"
-            self.config.save_config()
-
-        # 配置窗口相关属性
-        elif mode == "配置":
-
-            self.if_save = False
-
-            size = list(
-                map(int, self.config.content["Default"]["SelfSet.UIsize"].split("x"))
-            )
-            location = list(
-                map(
-                    int, self.config.content["Default"]["SelfSet.UIlocation"].split("x")
-                )
-            )
-            self.setGeometry(location[0], location[1], size[0], size[1])
-            if self.config.content["Default"]["SelfSet.UImaximized"] == "True":
-                self.showMinimized()
-                self.showMaximized()
-            else:
-                self.showMinimized()
-                self.showNormal()
-
-            self.if_save = True
-
-    def changeEvent(self, event: QtCore.QEvent):
-        """重写后的 changeEvent"""
-
-        # 最小化到托盘功能实现
-        if event.type() == QtCore.QEvent.WindowStateChange:
-            if self.windowState() & QtCore.Qt.WindowMinimized:
-                if self.config.content["Default"]["SelfSet.IfToTray"] == "True":
-                    self.show_tray()
-
-        # 保留其它 changeEvent 方法
-        return super().changeEvent(event)
-
-    def closeEvent(self, event: QCloseEvent):
-        """清理残余进程"""
-
-        self.set_ui("保存")
-
-        # 清理各功能线程
-        self.main.Timer.stop()
-        self.main.Timer.deleteLater()
-        self.main.MaaManager.requestInterruption()
-        self.main.MaaManager.quit()
-        self.main.MaaManager.wait()
-
-        # 关闭数据库连接
-        self.config.close_database()
-
-        event.accept()

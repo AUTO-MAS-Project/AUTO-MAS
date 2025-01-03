@@ -29,7 +29,7 @@ __version__ = "4.2.0"
 __author__ = "DLmaster361 <DLmaster_361@163.com>"
 __license__ = "GPL-3.0 license"
 
-from .config import AppConfig
+from .config import AppConfig, MaaConfig
 from .models import MaaManager
 from .services import Notification, CryptoHandler
 from .ui import AUTO_MAA
@@ -37,6 +37,7 @@ from .utils import Updater, version_text
 
 __all__ = [
     "AppConfig",
+    "MaaConfig",
     "MaaManager",
     "Notification",
     "CryptoHandler",

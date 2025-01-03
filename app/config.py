@@ -31,6 +31,18 @@ import os
 import sys
 from pathlib import Path
 from typing import Dict, Union
+from qfluentwidgets import (
+    QConfig,
+    ConfigItem,
+    qconfig,
+    OptionsConfigItem,
+    RangeConfigItem,
+    OptionsValidator,
+    FolderValidator,
+    BoolValidator,
+    RangeValidator,
+    EnumSerializer,
+)
 
 
 class AppConfig:
@@ -42,7 +54,7 @@ class AppConfig:
         self.app_name = os.path.basename(self.app_path)  # 获取软件自身的名称
 
         self.database_path = self.app_path / "data/data.db"
-        self.config_path = self.app_path / "config/gui.json"
+        self.config_path = self.app_path / "config/config.json"
         self.key_path = self.app_path / "data/key"
         self.gameid_path = self.app_path / "data/gameid.txt"
         self.version_path = self.app_path / "resources/version.json"
@@ -68,12 +80,6 @@ class AppConfig:
             with self.version_path.open(mode="w", encoding="utf-8") as f:
                 json.dump(version, f, indent=4)
 
-        # 生成配置文件
-        if not self.config_path.exists():
-            config = {"Default": {}}
-            with self.config_path.open(mode="w", encoding="utf-8") as f:
-                json.dump(config, f, indent=4)
-
         # 生成预设gameid替换方案文件
         if not self.gameid_path.exists():
             self.gameid_path.write_text(
@@ -87,60 +93,11 @@ class AppConfig:
     def check_config(self) -> None:
         """检查配置文件字段完整性并补全"""
 
-        config_list = [
-            ["TimeSet.set1", "False"],
-            ["TimeSet.run1", "00:00"],
-            ["TimeSet.set2", "False"],
-            ["TimeSet.run2", "00:00"],
-            ["TimeSet.set3", "False"],
-            ["TimeSet.run3", "00:00"],
-            ["TimeSet.set4", "False"],
-            ["TimeSet.run4", "00:00"],
-            ["TimeSet.set5", "False"],
-            ["TimeSet.run5", "00:00"],
-            ["TimeSet.set6", "False"],
-            ["TimeSet.run6", "00:00"],
-            ["TimeSet.set7", "False"],
-            ["TimeSet.run7", "00:00"],
-            ["TimeSet.set8", "False"],
-            ["TimeSet.run8", "00:00"],
-            ["TimeSet.set9", "False"],
-            ["TimeSet.run9", "00:00"],
-            ["TimeSet.set10", "False"],
-            ["TimeSet.run10", "00:00"],
-            ["MaaSet.path", ""],
-            ["TimeLimit.routine", 10],
-            ["TimeLimit.annihilation", 40],
-            ["TimesLimit.run", 3],
-            ["SelfSet.IfSelfStart", "False"],
-            ["SelfSet.IfSleep", "False"],
-            ["SelfSet.IfProxyDirectly", "False"],
-            ["SelfSet.IfSendMail", "False"],
-            ["SelfSet.MailAddress", ""],
-            ["SelfSet.IfSendMail.OnlyError", "False"],
-            ["SelfSet.IfSilence", "False"],
-            ["SelfSet.BossKey", ""],
-            ["SelfSet.IfToTray", "False"],
-            ["SelfSet.UIsize", "1200x700"],
-            ["SelfSet.UIlocation", "100x100"],
-            ["SelfSet.UImaximized", "False"],
-            ["SelfSet.MainIndex", 2],
-        ]
+        self.global_config = GlobalConfig()
+        qconfig.load(self.config_path, self.global_config)
+        self.global_config.save()
 
-        # 导入配置文件
-        with self.config_path.open(mode="r", encoding="utf-8") as f:
-            config = json.load(f)
-
-        # 检查并补充缺失的字段
-        for i in range(len(config_list)):
-            if not config_list[i][0] in config["Default"]:
-                config["Default"][config_list[i][0]] = config_list[i][1]
-
-        # 初始化配置信息
-        self.content: Dict[str, Dict[str, Union[str, int]]] = config
-
-        # 导出配置文件
-        self.save_config()
+        self.maa_config = MaaConfig()
 
     def check_database(self) -> None:
         """检查用户数据库文件并处理数据库版本更新"""
@@ -233,8 +190,71 @@ class AppConfig:
         self.cur.close()
         self.db.close()
 
-    def save_config(self) -> None:
-        """保存配置文件"""
 
-        with self.config_path.open(mode="w", encoding="utf-8") as f:
-            json.dump(self.content, f, indent=4)
+class GlobalConfig(QConfig):
+    """全局配置"""
+
+    #   ["TimeSet.set1", "False"],
+    #         ["TimeSet.run1", "00:00"],
+    #         ["TimeSet.set2", "False"],
+    #         ["TimeSet.run2", "00:00"],
+    #         ["TimeSet.set3", "False"],
+    #         ["TimeSet.run3", "00:00"],
+    #         ["TimeSet.set4", "False"],
+    #         ["TimeSet.run4", "00:00"],
+    #         ["TimeSet.set5", "False"],
+    #         ["TimeSet.run5", "00:00"],
+    #         ["TimeSet.set6", "False"],
+    #         ["TimeSet.run6", "00:00"],
+    #         ["TimeSet.set7", "False"],
+    #         ["TimeSet.run7", "00:00"],
+    #         ["TimeSet.set8", "False"],
+    #         ["TimeSet.run8", "00:00"],
+    #         ["TimeSet.set9", "False"],
+    #         ["TimeSet.run9", "00:00"],
+    #         ["TimeSet.set10", "False"],
+    #         ["TimeSet.run10", "00:00"],
+    #         ["MaaSet.path", ""],
+    #         ["TimeLimit.routine", 10],
+    #         ["TimeLimit.annihilation", 40],
+    #         ["TimesLimit.run", 3],
+
+    function_IfSleep = ConfigItem("Function", "IfSleep", False, BoolValidator())
+    function_IfSilence = ConfigItem("Function", "IfSilence", False, BoolValidator())
+    function_BossKey = ConfigItem("Function", "BossKey", "")
+
+    start_IfSelfStart = ConfigItem("Start", "IfSelfStart", False, BoolValidator())
+    start_IfRunDirectly = ConfigItem("Start", "IfRunDirectly", False, BoolValidator())
+
+    ui_IfShowTray = ConfigItem("UI", "IfShowTray", False, BoolValidator())
+    ui_IfToTray = ConfigItem("UI", "IfToTray", False, BoolValidator())
+    ui_size = ConfigItem("UI", "size", "1200x700")
+    ui_location = ConfigItem("UI", "location", "100x100")
+    ui_maximized = ConfigItem("UI", "maximized", False, BoolValidator())
+    ui_MainIndex = RangeConfigItem("UI", "MainIndex", 0, RangeValidator(0, 3))
+
+    notify_IfPushPlyer = ConfigItem("Notify", "IfPushPlyer", False, BoolValidator())
+    notify_IfSendMail = ConfigItem("Notify", "IfSendMail", False, BoolValidator())
+    notify_IfSendErrorOnly = ConfigItem(
+        "Notify", "IfSendErrorOnly", False, BoolValidator()
+    )
+    notify_MailAddress = ConfigItem("Notify", "MailAddress", "")
+
+    update_IfAutoUpdate = ConfigItem("Update", "IfAutoUpdate", False, BoolValidator())
+
+
+class MaaConfig(QConfig):
+    """MAA配置"""
+
+    MaaSet_Name = ConfigItem("MaaSet", "Name", "")
+    MaaSet_Path = ConfigItem("MaaSet", "Path", ".", FolderValidator())
+
+    RunSet_AnnihilationTimeLimit = RangeConfigItem(
+        "RunSet", "AnnihilationTimeLimit", 40, RangeValidator(1, 1024)
+    )
+    RunSet_RoutineTimeLimit = RangeConfigItem(
+        "RunSet", "RoutineTimeLimit", 10, RangeValidator(1, 1024)
+    )
+    RunSet_RunTimesLimit = RangeConfigItem(
+        "RunSet", "RunTimesLimit", 3, RangeValidator(1, 1024)
+    )
