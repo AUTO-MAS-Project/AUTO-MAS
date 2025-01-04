@@ -50,6 +50,7 @@ from qfluentwidgets import (
     ComboBox,
     CheckBox,
     SpinBox,
+    SplashScreen,
     FluentIcon,
     RoundMenu,
     MessageBox,
@@ -103,6 +104,14 @@ class AUTO_MAA(MSFluentWindow):
 
         self.config.open_database()
 
+        self.setWindowIcon(
+            QIcon(str(self.config.app_path / "resources/icons/AUTO_MAA.ico"))
+        )
+        self.setWindowTitle("AUTO_MAA")
+
+        self.splashScreen = SplashScreen(self.windowIcon(), self)
+        self.show()
+
         # 创建主窗口
         self.setting = Setting(config=config, notify=notify, crypto=crypto)
         self.member_manager = MemberManager(config=config, notify=notify, crypto=crypto)
@@ -121,11 +130,6 @@ class AUTO_MAA(MSFluentWindow):
             FluentIcon.ROBOT,
             NavigationItemPosition.TOP,
         )
-
-        self.setWindowIcon(
-            QIcon(str(self.config.app_path / "resources/icons/AUTO_MAA.ico"))
-        )
-        self.setWindowTitle("AUTO_MAA")
 
         # 创建系统托盘及其菜单
         self.tray = QSystemTrayIcon(
@@ -168,6 +172,7 @@ class AUTO_MAA(MSFluentWindow):
         self.tray.setContextMenu(self.tray_menu)
         self.tray.activated.connect(self.on_tray_activated)
 
+        self.splashScreen.finish()
         self.show_main()
 
     def show_tray(self):
@@ -274,10 +279,8 @@ class AUTO_MAA(MSFluentWindow):
             )
             self.setGeometry(location[0], location[1], size[0], size[1])
             if self.config.global_config.get(self.config.global_config.ui_maximized):
-                self.showMinimized()
                 self.showMaximized()
             else:
-                self.showMinimized()
                 self.showNormal()
 
             self.if_save = True
