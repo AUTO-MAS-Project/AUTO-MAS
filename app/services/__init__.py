@@ -31,5 +31,6 @@ __license__ = "GPL-3.0 license"
 
 from .notification import Notification
 from .security import CryptoHandler
+from .system import SystemHandler
 
-__all__ = ["Notification", "CryptoHandler"]
+__all__ = ["Notification", "CryptoHandler", "SystemHandler"]

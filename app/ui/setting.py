@@ -52,13 +52,14 @@ from qfluentwidgets import (
     ScrollArea,
     SpinBox,
     FluentIcon,
-    SwitchButton,
-    RoundMenu,
+    setTheme,
+    Theme,
     MessageBox,
     MessageBoxBase,
     HeaderCardWidget,
     BodyLabel,
-    Dialog,
+    InfoBar,
+    InfoBarPosition,
     SubtitleLabel,
     GroupHeaderCardWidget,
     SwitchSettingCard,
@@ -88,21 +89,31 @@ import requests
 uiLoader = QUiLoader()
 
 from app import AppConfig
-from app.services import Notification, CryptoHandler
+from app.services import Notification, CryptoHandler, SystemHandler
 from app.utils import Updater, version_text
 from .Widget import InputMessageBox, LineEditSettingCard
 
 
 class Setting(QWidget):
 
-    def __init__(self, config: AppConfig, notify: Notification, crypto: CryptoHandler):
-        super(Setting, self).__init__()
+    def __init__(
+        self,
+        config: AppConfig,
+        notify: Notification,
+        crypto: CryptoHandler,
+        system: SystemHandler,
+        parent=None,
+    ):
+        super().__init__(parent)
 
         self.setObjectName("设置")
 
         self.config = config
         self.notify = notify
         self.crypto = crypto
+        self.system = system
+
+        setTheme(Theme.AUTO)
 
         layout = QVBoxLayout()
 
@@ -120,6 +131,8 @@ class Setting(QWidget):
         self.updater = UpdaterSettingCard(self, self.config)
         self.other = OtherSettingCard(self, self.config)
 
+        self.function.card_IfAllowSleep.checkedChanged.connect(self.system.set_Sleep)
+        self.start.card_IfSelfStart.checkedChanged.connect(self.system.set_SelfStart)
         self.security.card_changePASSWORD.clicked.connect(self.change_PASSWORD)
         self.updater.card_CheckUpdate.clicked.connect(self.check_version)
         self.other.card_Tips.clicked.connect(self.show_tips)
@@ -147,7 +160,7 @@ class Setting(QWidget):
         while True:
 
             choice = InputMessageBox(
-                self,
+                self.parent().parent().parent(),
                 "未检测到管理密钥，请设置您的管理密钥",
                 "管理密钥",
                 "密码",
@@ -157,10 +170,14 @@ class Setting(QWidget):
                 break
             else:
                 choice = MessageBox(
-                    "确认", "您没有输入管理密钥，确定要暂时跳过这一步吗？", self
+                    "警告",
+                    "您没有设置管理密钥，无法使用本软件，请先设置管理密钥",
+                    self.parent().parent().parent(),
                 )
+                choice.cancelButton.hide()
+                choice.buttonLayout.insertStretch(1)
                 if choice.exec():
-                    break
+                    pass
 
     def change_PASSWORD(self) -> None:
         """修改管理密钥"""
@@ -180,13 +197,20 @@ class Setting(QWidget):
 
                 while True:
 
-                    a = InputMessageBox(
-                        self, "请输入新的管理密钥", "新管理密钥", "密码"
+                    choice = InputMessageBox(
+                        self,
+                        "请输入新的管理密钥",
+                        "新管理密钥",
+                        "密码",
                     )
-                    if a.exec() and a.input.text() != "":
+                    if choice.exec() and choice.input.text() != "":
                         # 修改管理密钥
-                        self.crypto.get_PASSWORD(a.input.text())
-                        choice = MessageBox("操作成功", "管理密钥修改成功", self)
+                        self.crypto.get_PASSWORD(choice.input.text())
+                        choice = MessageBox(
+                            "操作成功",
+                            "管理密钥修改成功",
+                            self,
+                        )
                         choice.cancelButton.hide()
                         choice.buttonLayout.insertStretch(1)
                         if choice.exec():
@@ -207,7 +231,10 @@ class Setting(QWidget):
             while if_change:
 
                 choice = InputMessageBox(
-                    self, "请输入旧的管理密钥", "旧管理密钥", "密码"
+                    self,
+                    "请输入旧的管理密钥",
+                    "旧管理密钥",
+                    "密码",
                 )
                 if choice.exec() and choice.input.text() != "":
 
@@ -219,7 +246,10 @@ class Setting(QWidget):
                         while True:
 
                             choice = InputMessageBox(
-                                self, "请输入新的管理密钥", "新管理密钥", "密码"
+                                self,
+                                "请输入新的管理密钥",
+                                "新管理密钥",
+                                "密码",
                             )
                             if choice.exec() and choice.input.text() != "":
 
@@ -228,7 +258,9 @@ class Setting(QWidget):
                                     data, PASSWORD_old, choice.input.text()
                                 )
                                 choice = MessageBox(
-                                    "操作成功", "管理密钥修改成功", self
+                                    "操作成功",
+                                    "管理密钥修改成功",
+                                    self,
                                 )
                                 choice.cancelButton.hide()
                                 choice.buttonLayout.insertStretch(1)
@@ -262,7 +294,43 @@ class Setting(QWidget):
                     if choice.exec():
                         break
 
-    def check_version(self):
+    def check_update(self) -> str:
+        """检查主程序版本更新，返回更新信息"""
+
+        # 从本地版本信息文件获取当前版本信息
+        with self.config.version_path.open(mode="r", encoding="utf-8") as f:
+            version_current = json.load(f)
+        main_version_current = list(
+            map(int, version_current["main_version"].split("."))
+        )
+
+        # 从远程服务器获取最新版本信息
+        for _ in range(3):
+            try:
+                response = requests.get(
+                    "https://gitee.com/DLmaster_361/AUTO_MAA/raw/main/resources/version.json"
+                )
+                version_remote = response.json()
+                break
+            except Exception as e:
+                err = e
+                time.sleep(0.1)
+        else:
+            return f"获取版本信息时出错：\n{err}"
+
+        main_version_remote = list(map(int, version_remote["main_version"].split(".")))
+
+        # 有版本更新
+        if main_version_remote > main_version_current:
+
+            main_version_info = f"    主程序：{version_text(main_version_current)} --> {version_text(main_version_remote)}\n"
+
+            return f"发现新版本：\n{main_version_info}    更新说明：\n{version_remote['announcement'].replace("\n# ","\n   ！").replace("\n## ","\n        - ").replace("\n- ","\n            · ")}\n\n是否开始更新？\n\n    注意：主程序更新时AUTO_MAA将自动关闭"
+
+        else:
+            return "已是最新版本~"
+
+    def check_version(self, if_question: bool = True) -> None:
         """检查版本更新，调起文件下载进程"""
 
         # 从本地版本信息文件获取当前版本信息
@@ -325,13 +393,14 @@ class Setting(QWidget):
                 )
 
             # 询问是否开始版本更新
-            choice = MessageBox(
-                "版本更新",
-                f"发现新版本：\n{main_version_info}{updater_version_info}    更新说明：\n{version_remote['announcement'].replace("\n# ","\n   ！").replace("\n## ","\n        - ").replace("\n- ","\n            · ")}\n\n是否开始更新？\n\n    注意：主程序更新时AUTO_MAA将自动关闭",
-                self,
-            )
-            if not choice.exec():
-                return None
+            if if_question:
+                choice = MessageBox(
+                    "版本更新",
+                    f"发现新版本：\n{main_version_info}{updater_version_info}    更新说明：\n{version_remote['announcement'].replace("\n# ","\n   ！").replace("\n## ","\n        - ").replace("\n- ","\n            · ")}\n\n是否开始更新？\n\n    注意：主程序更新时AUTO_MAA将自动关闭",
+                    self,
+                )
+                if not choice.exec():
+                    return None
 
             # 更新更新器
             if updater_version_remote > updater_version_current:
@@ -354,7 +423,15 @@ class Setting(QWidget):
 
         # 无版本更新
         else:
-            self.notify.push_notification("已是最新版本~", " ", " ", 3)
+            InfoBar.success(
+                title="更新检查",
+                content="已是最新版本~",
+                orient=QtCore.Qt.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP_RIGHT,
+                duration=3000,
+                parent=self,
+            )
 
     def update_main(self):
         """更新主程序"""
@@ -388,11 +465,11 @@ class FunctionSettingCard(HeaderCardWidget):
 
         Layout = QVBoxLayout()
 
-        self.card_IfSleep = SwitchSettingCard(
+        self.card_IfAllowSleep = SwitchSettingCard(
             icon=FluentIcon.PAGE_RIGHT,
             title="启动时阻止系统休眠",
             content="仅阻止电脑自动休眠，不会影响屏幕是否熄灭",
-            configItem=self.config.function_IfSleep,
+            configItem=self.config.function_IfAllowSleep,
         )
 
         self.card_IfSilence = SwitchSettingCard(
@@ -403,7 +480,7 @@ class FunctionSettingCard(HeaderCardWidget):
         )
 
         # 添加各组到设置卡中
-        Layout.addWidget(self.card_IfSleep)
+        Layout.addWidget(self.card_IfAllowSleep)
         Layout.addWidget(self.card_IfSilence)
 
         self.viewLayout.addLayout(Layout)

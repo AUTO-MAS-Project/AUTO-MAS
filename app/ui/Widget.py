@@ -25,8 +25,9 @@ v4.2
 作者：DLmaster_361
 """
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTime
 from PySide6.QtGui import QIcon
+from PySide6.QtWidgets import QWidget, QHBoxLayout
 from qfluentwidgets import (
     LineEdit,
     PasswordLineEdit,
@@ -37,11 +38,14 @@ from qfluentwidgets import (
     FluentIconBase,
     Signal,
     ComboBox,
+    CheckBox,
     qconfig,
     ConfigItem,
+    TimeEdit,
+    OptionsConfigItem,
 )
 
-from typing import Union
+from typing import Union, List
 
 
 class InputMessageBox(MessageBoxBase):
@@ -66,6 +70,31 @@ class InputMessageBox(MessageBoxBase):
         # 将组件添加到布局中
         self.viewLayout.addWidget(self.title)
         self.viewLayout.addWidget(self.input)
+
+
+class SetMessageBox(MessageBoxBase):
+    """输入对话框"""
+
+    def __init__(self, parent, title: str, content: List[str], list: List[List[str]]):
+        super().__init__(parent)
+        self.title = SubtitleLabel(title)
+
+        Widget = QWidget()
+        Layout = QHBoxLayout(Widget)
+
+        self.input: List[ComboBox] = []
+
+        for i in range(len(content)):
+
+            self.input.append(ComboBox())
+            self.input[i].addItems(list[i])
+            self.input[i].setCurrentIndex(-1)
+            self.input[i].setPlaceholderText(content[i])
+            Layout.addWidget(self.input[i])
+
+        # 将组件添加到布局中
+        self.viewLayout.addWidget(self.title)
+        self.viewLayout.addWidget(Widget)
 
 
 class LineEditSettingCard(SettingCard):
@@ -147,3 +176,107 @@ class SpinBoxSettingCard(SettingCard):
             qconfig.set(self.configItem, value)
 
         self.SpinBox.setValue(value)
+
+
+class NoOptionComboBoxSettingCard(SettingCard):
+
+    def __init__(
+        self,
+        configItem: OptionsConfigItem,
+        icon: Union[str, QIcon, FluentIconBase],
+        title,
+        content=None,
+        value=None,
+        texts=None,
+        parent=None,
+    ):
+
+        super().__init__(icon, title, content, parent)
+        self.configItem = configItem
+        self.comboBox = ComboBox(self)
+        self.comboBox.setMinimumWidth(250)
+        self.hBoxLayout.addWidget(self.comboBox, 0, Qt.AlignRight)
+        self.hBoxLayout.addSpacing(16)
+
+        self.optionToText = {o: t for o, t in zip(value, texts)}
+        for text, option in zip(texts, value):
+            self.comboBox.addItem(text, userData=option)
+
+        self.comboBox.setCurrentText(self.optionToText[qconfig.get(configItem)])
+        self.comboBox.currentIndexChanged.connect(self._onCurrentIndexChanged)
+        configItem.valueChanged.connect(self.setValue)
+
+    def _onCurrentIndexChanged(self, index: int):
+
+        qconfig.set(self.configItem, self.comboBox.itemData(index))
+
+    def setValue(self, value):
+        if value not in self.optionToText:
+            return
+
+        self.comboBox.setCurrentText(self.optionToText[value])
+        qconfig.set(self.configItem, value)
+
+
+class TimeEditSettingCard(SettingCard):
+
+    enabledChanged = Signal(bool)
+    timeChanged = Signal(str)
+
+    def __init__(
+        self,
+        icon: Union[str, QIcon, FluentIconBase],
+        title,
+        content=None,
+        configItem_bool: ConfigItem = None,
+        configItem_time: ConfigItem = None,
+        parent=None,
+    ):
+
+        super().__init__(icon, title, content, parent)
+        self.configItem_bool = configItem_bool
+        self.configItem_time = configItem_time
+        self.CheckBox = CheckBox(self)
+        self.CheckBox.setTristate(False)
+        self.TimeEdit = TimeEdit(self)
+        self.TimeEdit.setDisplayFormat("HH:mm")
+        self.TimeEdit.setMinimumWidth(150)
+
+        if configItem_bool:
+            self.setValue_bool(qconfig.get(configItem_bool))
+            configItem_bool.valueChanged.connect(self.setValue_bool)
+
+        if configItem_time:
+            self.setValue_time(qconfig.get(configItem_time))
+            configItem_time.valueChanged.connect(self.setValue_time)
+
+        self.hBoxLayout.addWidget(self.CheckBox, 0, Qt.AlignRight)
+        self.hBoxLayout.addWidget(self.TimeEdit, 0, Qt.AlignRight)
+        self.hBoxLayout.addSpacing(16)
+
+        self.CheckBox.stateChanged.connect(self.__enableChanged)
+        self.TimeEdit.timeChanged.connect(self.__timeChanged)
+
+    def __timeChanged(self, value: QTime):
+        self.setValue_time(value.toString("HH:mm"))
+        self.timeChanged.emit(value.toString("HH:mm"))
+
+    def __enableChanged(self, value: int):
+        if value == 0:
+            self.setValue_bool(False)
+            self.enabledChanged.emit(False)
+        else:
+            self.setValue_bool(True)
+            self.enabledChanged.emit(True)
+
+    def setValue_bool(self, value: bool):
+        if self.configItem_bool:
+            qconfig.set(self.configItem_bool, value)
+
+        self.CheckBox.setChecked(value)
+
+    def setValue_time(self, value: str):
+        if self.configItem_time:
+            qconfig.set(self.configItem_time, value)
+
+        self.TimeEdit.setTime(QTime.fromString(value, "HH:mm"))

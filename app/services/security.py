@@ -20,7 +20,7 @@
 
 """
 AUTO_MAA
-AUTO_MAA主程序
+AUTO_MAA安全服务
 v4.2
 作者：DLmaster_361
 """

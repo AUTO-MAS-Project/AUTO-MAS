@@ -59,6 +59,9 @@ class AppConfig:
         self.gameid_path = self.app_path / "data/gameid.txt"
         self.version_path = self.app_path / "resources/version.json"
 
+        self.PASSWORD = ""
+        self.if_database_opened = False
+
         # 检查文件完整性
         self.initialize()
 
@@ -87,16 +90,16 @@ class AppConfig:
                 encoding="utf-8",
             )
 
-        self.check_config()
-        self.check_database()
+        self.get_config()
+        # self.check_database()
 
-    def check_config(self) -> None:
-        """检查配置文件字段完整性并补全"""
+    def get_config(self) -> None:
+        """创建配置类"""
 
         self.global_config = GlobalConfig()
         qconfig.load(self.config_path, self.global_config)
-        self.global_config.save()
 
+        self.queue_config = QueueConfig()
         self.maa_config = MaaConfig()
 
     def check_database(self) -> None:
@@ -178,48 +181,44 @@ class AppConfig:
         cur.close()
         db.close()
 
-    def open_database(self) -> None:
+    def init_database(self, mode: str) -> None:
+        """初始化用户数据库"""
+
+        if mode == "Maa":
+            self.cur.execute(
+                "CREATE TABLE adminx(admin text,id text,server text,day int,status text,last date,game text,game_1 text,game_2 text,routine text,annihilation text,infrastructure text,password byte,notes text,numb int,mode text,uid int)"
+            )
+            self.cur.execute("CREATE TABLE version(v text)")
+            self.cur.execute("INSERT INTO version VALUES(?)", ("v1.3",))
+            self.db.commit()
+
+    def open_database(self, mode: str, index: str = None) -> None:
         """打开数据库"""
 
-        self.db = sqlite3.connect(self.database_path)
+        if self.if_database_opened:
+            self.close_database()
+
+        if mode == "Maa":
+            self.db = sqlite3.connect(
+                self.app_path / f"config/{mode}Config/{index}/user_date.db"
+            )
         self.cur = self.db.cursor()
+        self.if_database_opened = True
 
     def close_database(self) -> None:
         """关闭数据库"""
 
         self.cur.close()
         self.db.close()
+        self.if_database_opened = False
 
 
 class GlobalConfig(QConfig):
     """全局配置"""
 
-    #   ["TimeSet.set1", "False"],
-    #         ["TimeSet.run1", "00:00"],
-    #         ["TimeSet.set2", "False"],
-    #         ["TimeSet.run2", "00:00"],
-    #         ["TimeSet.set3", "False"],
-    #         ["TimeSet.run3", "00:00"],
-    #         ["TimeSet.set4", "False"],
-    #         ["TimeSet.run4", "00:00"],
-    #         ["TimeSet.set5", "False"],
-    #         ["TimeSet.run5", "00:00"],
-    #         ["TimeSet.set6", "False"],
-    #         ["TimeSet.run6", "00:00"],
-    #         ["TimeSet.set7", "False"],
-    #         ["TimeSet.run7", "00:00"],
-    #         ["TimeSet.set8", "False"],
-    #         ["TimeSet.run8", "00:00"],
-    #         ["TimeSet.set9", "False"],
-    #         ["TimeSet.run9", "00:00"],
-    #         ["TimeSet.set10", "False"],
-    #         ["TimeSet.run10", "00:00"],
-    #         ["MaaSet.path", ""],
-    #         ["TimeLimit.routine", 10],
-    #         ["TimeLimit.annihilation", 40],
-    #         ["TimesLimit.run", 3],
-
-    function_IfSleep = ConfigItem("Function", "IfSleep", False, BoolValidator())
+    function_IfAllowSleep = ConfigItem(
+        "Function", "IfAllowSleep", False, BoolValidator()
+    )
     function_IfSilence = ConfigItem("Function", "IfSilence", False, BoolValidator())
     function_BossKey = ConfigItem("Function", "BossKey", "")
 
@@ -241,6 +240,54 @@ class GlobalConfig(QConfig):
     notify_MailAddress = ConfigItem("Notify", "MailAddress", "")
 
     update_IfAutoUpdate = ConfigItem("Update", "IfAutoUpdate", False, BoolValidator())
+
+
+class QueueConfig(QConfig):
+    """队列配置"""
+
+    queueSet_Name = ConfigItem("QueueSet", "Name", "")
+    queueSet_Enabled = ConfigItem("QueueSet", "Enabled", False, BoolValidator())
+
+    time_TimeEnabled_0 = ConfigItem("Time", "TimeEnabled_0", False, BoolValidator())
+    time_TimeSet_0 = ConfigItem("Time", "TimeSet_0", "00:00")
+
+    time_TimeEnabled_1 = ConfigItem("Time", "TimeEnabled_1", False, BoolValidator())
+    time_TimeSet_1 = ConfigItem("Time", "TimeSet_1", "00:00")
+
+    time_TimeEnabled_2 = ConfigItem("Time", "TimeEnabled_2", False, BoolValidator())
+    time_TimeSet_2 = ConfigItem("Time", "TimeSet_2", "00:00")
+
+    time_TimeEnabled_3 = ConfigItem("Time", "TimeEnabled_3", False, BoolValidator())
+    time_TimeSet_3 = ConfigItem("Time", "TimeSet_3", "00:00")
+
+    time_TimeEnabled_4 = ConfigItem("Time", "TimeEnabled_4", False, BoolValidator())
+    time_TimeSet_4 = ConfigItem("Time", "TimeSet_4", "00:00")
+
+    time_TimeEnabled_5 = ConfigItem("Time", "TimeEnabled_5", False, BoolValidator())
+    time_TimeSet_5 = ConfigItem("Time", "TimeSet_5", "00:00")
+
+    time_TimeEnabled_6 = ConfigItem("Time", "TimeEnabled_6", False, BoolValidator())
+    time_TimeSet_6 = ConfigItem("Time", "TimeSet_6", "00:00")
+
+    time_TimeEnabled_7 = ConfigItem("Time", "TimeEnabled_7", False, BoolValidator())
+    time_TimeSet_7 = ConfigItem("Time", "TimeSet_7", "00:00")
+
+    time_TimeEnabled_8 = ConfigItem("Time", "TimeEnabled_8", False, BoolValidator())
+    time_TimeSet_8 = ConfigItem("Time", "TimeSet_8", "00:00")
+
+    time_TimeEnabled_9 = ConfigItem("Time", "TimeEnabled_9", False, BoolValidator())
+    time_TimeSet_9 = ConfigItem("Time", "TimeSet_9", "00:00")
+
+    queue_Member_1 = OptionsConfigItem("Queue", "Member_1", "禁用")
+    queue_Member_2 = OptionsConfigItem("Queue", "Member_2", "禁用")
+    queue_Member_3 = OptionsConfigItem("Queue", "Member_3", "禁用")
+    queue_Member_4 = OptionsConfigItem("Queue", "Member_4", "禁用")
+    queue_Member_5 = OptionsConfigItem("Queue", "Member_5", "禁用")
+    queue_Member_6 = OptionsConfigItem("Queue", "Member_6", "禁用")
+    queue_Member_7 = OptionsConfigItem("Queue", "Member_7", "禁用")
+    queue_Member_8 = OptionsConfigItem("Queue", "Member_8", "禁用")
+    queue_Member_9 = OptionsConfigItem("Queue", "Member_9", "禁用")
+    queue_Member_10 = OptionsConfigItem("Queue", "Member_10", "禁用")
 
 
 class MaaConfig(QConfig):

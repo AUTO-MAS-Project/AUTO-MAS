@@ -44,15 +44,17 @@ class Notification:
     def push_notification(self, title, message, ticker, t):
         """推送系统通知"""
 
-        notification.notify(
-            title=title,
-            message=message,
-            app_name="AUTO_MAA",
-            app_icon=str(self.config.app_path / "resources/icons/AUTO_MAA.ico"),
-            timeout=t,
-            ticker=ticker,
-            toast=True,
-        )
+        if self.config.global_config.get(self.config.global_config.notify_IfPushPlyer):
+
+            notification.notify(
+                title=title,
+                message=message,
+                app_name="AUTO_MAA",
+                app_icon=str(self.config.app_path / "resources/icons/AUTO_MAA.ico"),
+                timeout=t,
+                ticker=ticker,
+                toast=True,
+            )
 
         return True
 
@@ -62,34 +64,43 @@ class Notification:
         # 声明：此邮箱为AUTO_MAA项目组资产，未经授权不得私自使用
         # 注意：此声明注释只有使用者更换发信邮箱时才能删除，本条规则优先级高于GPLv3
 
-        # 第三方 SMTP 服务配置
-        mail_host = "smtp.163.com"  # 设置服务器
-        mail_sender = "AUTO_MAA_server@163.com"  # 用户名
-        mail_key = "SYrq87nDLD4RNB5T"  # 授权码 24/11/15
+        if self.config.global_config.get(self.config.global_config.notify_IfSendMail):
 
-        # 定义邮件正文
-        message = MIMEText(content, "plain", "utf-8")
-        message["From"] = formataddr(
-            (Header("AUTO_MAA通知服务", "utf-8").encode(), "AUTO_MAA_server@163.com")
-        )  # 发件人显示的名字
-        message["To"] = formataddr(
-            (
-                Header("AUTO_MAA用户", "utf-8").encode(),
-                self.config.content["Default"]["SelfSet.MailAddress"],
-            )
-        )  # 收件人显示的名字
-        message["Subject"] = Header(title, "utf-8")
+            # 第三方 SMTP 服务配置
+            mail_host = "smtp.163.com"  # 设置服务器
+            mail_sender = "AUTO_MAA_server@163.com"  # 用户名
+            mail_key = "SYrq87nDLD4RNB5T"  # 授权码 24/11/15
 
-        try:
-            smtpObj = smtplib.SMTP_SSL(mail_host, 465)  # 465为SMTP_SSL默认端口
-            smtpObj.login(mail_sender, mail_key)
-            smtpObj.sendmail(
-                mail_sender,
-                self.config.content["Default"]["SelfSet.MailAddress"],
-                message.as_string(),
-            )
-            return True
-        except smtplib.SMTPException as e:
-            return f"发送邮件时出错：\n{e}"
-        finally:
-            smtpObj.quit()
+            # 定义邮件正文
+            message = MIMEText(content, "plain", "utf-8")
+            message["From"] = formataddr(
+                (
+                    Header("AUTO_MAA通知服务", "utf-8").encode(),
+                    "AUTO_MAA_server@163.com",
+                )
+            )  # 发件人显示的名字
+            message["To"] = formataddr(
+                (
+                    Header("AUTO_MAA用户", "utf-8").encode(),
+                    self.config.global_config.get(
+                        self.config.global_config.notify_MailAddress
+                    ),
+                )
+            )  # 收件人显示的名字
+            message["Subject"] = Header(title, "utf-8")
+
+            try:
+                smtpObj = smtplib.SMTP_SSL(mail_host, 465)  # 465为SMTP_SSL默认端口
+                smtpObj.login(mail_sender, mail_key)
+                smtpObj.sendmail(
+                    mail_sender,
+                    self.config.global_config.get(
+                        self.config.global_config.notify_MailAddress
+                    ),
+                    message.as_string(),
+                )
+                return True
+            except smtplib.SMTPException as e:
+                return f"发送邮件时出错：\n{e}"
+            finally:
+                smtpObj.quit()

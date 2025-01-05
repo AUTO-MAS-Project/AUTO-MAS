@@ -32,6 +32,7 @@ import sys
 from app.config import AppConfig
 from app.services.notification import Notification
 from app.services.security import CryptoHandler
+from app.services.system import SystemHandler
 from app.ui.main_window import AUTO_MAA
 
 if __name__ == "__main__":
@@ -39,12 +40,13 @@ if __name__ == "__main__":
     config = AppConfig()
     notify = Notification(config)
     crypto = CryptoHandler(config)
+    system = SystemHandler(config)
 
     application = QApplication(sys.argv)
 
     translator = FluentTranslator()
     application.installTranslator(translator)
 
-    window = AUTO_MAA(config=config, notify=notify, crypto=crypto)
+    window = AUTO_MAA(config=config, notify=notify, crypto=crypto, system=system)
     window.setting.check_PASSWORD()
     sys.exit(application.exec())

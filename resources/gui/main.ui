@@ -1279,7 +1279,7 @@
             </property>
             <layout class="QHBoxLayout" name="horizontalLayout_18">
              <item>
-              <widget class="CheckBox" name="checkBox_ifsleep">
+              <widget class="CheckBox" name="checkBox_IfAllowSleep">
                <property name="text">
                 <string>AUTO_MAA启动时禁止电脑休眠</string>
                </property>

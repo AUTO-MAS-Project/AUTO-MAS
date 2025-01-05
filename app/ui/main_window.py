@@ -33,7 +33,6 @@ from PySide6.QtWidgets import (
     QFileDialog,  #
     QTabWidget,  #
     QToolBox,  #
-    QComboBox,  #
     QTableWidgetItem,  #
     QHeaderView,  #
     QVBoxLayout,
@@ -55,11 +54,14 @@ from qfluentwidgets import (
     RoundMenu,
     MessageBox,
     MessageBoxBase,
-    HeaderCardWidget,
+    InfoBar,
+    InfoBarPosition,
     BodyLabel,
     Dialog,
-    SingleDirectionScrollArea,
-    SubtitleLabel,
+    setTheme,
+    Theme,
+    SystemThemeListener,
+    qconfig,
     MSFluentWindow,
     NavigationItemPosition,
 )
@@ -85,36 +87,46 @@ import requests
 uiLoader = QUiLoader()
 
 from app import AppConfig, MaaConfig
-from app.services import Notification, CryptoHandler
+from app.services import Notification, CryptoHandler, SystemHandler
 from app.utils import Updater, version_text
 from .Widget import InputMessageBox, LineEditSettingCard, SpinBoxSettingCard
 from .setting import Setting
 from .member_manager import MemberManager
+from .queue_manager import QueueManager
 
 
 class AUTO_MAA(MSFluentWindow):
 
     if_save = True
 
-    def __init__(self, config: AppConfig, notify: Notification, crypto: CryptoHandler):
-        super(AUTO_MAA, self).__init__()
+    def __init__(
+        self,
+        config: AppConfig,
+        notify: Notification,
+        crypto: CryptoHandler,
+        system: SystemHandler,
+    ):
+        super().__init__()
 
         self.config = config
         self.notify = notify
-
-        self.config.open_database()
+        self.crypto = crypto
+        self.system = system
 
         self.setWindowIcon(
             QIcon(str(self.config.app_path / "resources/icons/AUTO_MAA.ico"))
         )
         self.setWindowTitle("AUTO_MAA")
 
+        setTheme(Theme.AUTO)
+
         self.splashScreen = SplashScreen(self.windowIcon(), self)
         self.show()
 
         # 创建主窗口
-        self.setting = Setting(config=config, notify=notify, crypto=crypto)
-        self.member_manager = MemberManager(config=config, notify=notify, crypto=crypto)
+        self.setting = Setting(self.config, self.notify, self.crypto, self.system, self)
+        self.member_manager = MemberManager(self.config, self.notify, self.crypto, self)
+        self.queue_manager = QueueManager(self.config, self.notify, self)
 
         self.addSubInterface(
             self.setting,
@@ -130,6 +142,13 @@ class AUTO_MAA(MSFluentWindow):
             FluentIcon.ROBOT,
             NavigationItemPosition.TOP,
         )
+        self.addSubInterface(
+            self.queue_manager,
+            FluentIcon.BOOK_SHELF,
+            "调度队列",
+            FluentIcon.BOOK_SHELF,
+            NavigationItemPosition.TOP,
+        )
 
         # 创建系统托盘及其菜单
         self.tray = QSystemTrayIcon(
@@ -137,7 +156,7 @@ class AUTO_MAA(MSFluentWindow):
             self,
         )
         self.tray.setToolTip("AUTO_MAA")
-        self.tray_menu = SystemTrayMenu()
+        self.tray_menu = SystemTrayMenu("AUTO_MAA", self)
 
         # 显示主界面菜单项
         self.tray_menu.addAction(
@@ -171,9 +190,42 @@ class AUTO_MAA(MSFluentWindow):
         # 设置托盘菜单
         self.tray.setContextMenu(self.tray_menu)
         self.tray.activated.connect(self.on_tray_activated)
+        self.setting.ui.card_IfShowTray.checkedChanged.connect(
+            lambda x: self.tray.show() if x else self.tray.hide()
+        )
 
         self.splashScreen.finish()
         self.show_main()
+
+        if self.config.global_config.get(self.config.global_config.update_IfAutoUpdate):
+            result = self.setting.check_update()
+            if result == "已是最新版本~":
+                InfoBar.success(
+                    title="更新检查",
+                    content=result,
+                    orient=QtCore.Qt.Horizontal,
+                    isClosable=True,
+                    position=InfoBarPosition.TOP_RIGHT,
+                    duration=3000,
+                    parent=self,
+                )
+            else:
+                info = InfoBar.info(
+                    title="更新检查",
+                    content=result,
+                    orient=QtCore.Qt.Horizontal,
+                    isClosable=True,
+                    position=InfoBarPosition.BOTTOM_LEFT,
+                    duration=-1,
+                    parent=self,
+                )
+                Up = PushButton("更新")
+                Up.clicked.connect(
+                    lambda: self.setting.check_version(if_question=False)
+                )
+                Up.clicked.connect(info.close)
+                info.addWidget(Up)
+                info.show()
 
     def show_tray(self):
         """最小化到托盘"""
@@ -185,7 +237,10 @@ class AUTO_MAA(MSFluentWindow):
     def show_main(self):
         """显示主界面"""
         self.set_ui("配置")
-        self.tray.hide()
+        if self.config.global_config.get(self.config.global_config.ui_IfShowTray):
+            self.tray.show()
+        else:
+            self.tray.hide()
 
     def on_tray_activated(self, reason):
         """双击返回主界面"""
