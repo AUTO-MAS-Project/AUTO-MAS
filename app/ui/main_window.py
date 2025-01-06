@@ -149,6 +149,9 @@ class AUTO_MAA(MSFluentWindow):
             FluentIcon.BOOK_SHELF,
             NavigationItemPosition.TOP,
         )
+        self.stackedWidget.currentChanged.connect(
+            lambda index: self.queue_manager.refresh() if index == 2 else None
+        )
 
         # 创建系统托盘及其菜单
         self.tray = QSystemTrayIcon(

@@ -67,10 +67,8 @@ class UpdateProcess(QThread):
     def run(self) -> None:
 
         # 清理可能存在的临时文件
-        try:
-            os.remove(self.download_path)
-        except FileNotFoundError:
-            pass
+        if self.download_path.exists():
+            self.download_path.unlink()
 
         self.info.emit("正在获取下载链接")
         url_list = self.get_download_url()
@@ -158,7 +156,7 @@ class UpdateProcess(QThread):
 
             self.info.emit("正在删除临时文件")
             self.progress.emit(0, 0, 0)
-            os.remove(self.download_path)
+            self.download_path.unlink()
 
             self.info.emit(f"{self.name}更新成功！")
             self.progress.emit(0, 100, 100)

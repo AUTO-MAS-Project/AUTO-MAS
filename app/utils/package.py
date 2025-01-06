@@ -99,7 +99,7 @@ if __name__ == "__main__":
     print(result.stderr)
     print("AUTO_MAA update program packaging completed !")
 
-    os.remove(root_path / "Updater.py")
+    (root_path / "Updater.py").unlink()
 
     (root_path / "version_info.txt").write_text(
         f"{version_text(main_version_numb)}\n{version_text(updater_version_numb)}{version["announcement"]}",

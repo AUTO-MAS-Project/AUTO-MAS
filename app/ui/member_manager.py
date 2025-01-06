@@ -76,7 +76,7 @@ from typing import List, Tuple
 from pathlib import Path
 import os
 import datetime
-import ctypes
+import json
 import subprocess
 import shutil
 import win32gui
@@ -183,21 +183,7 @@ class MemberManager(QWidget):
                     self.config.app_path / f"config/MaaConfig/脚本_{index}/config.json",
                     self.config.maa_config,
                 )
-
-                self.config.maa_config.set(self.config.maa_config.MaaSet_Name, "")
-                self.config.maa_config.set(self.config.maa_config.MaaSet_Path, ".")
-                self.config.maa_config.set(
-                    self.config.maa_config.RunSet_AnnihilationTimeLimit, 40
-                )
-                self.config.maa_config.set(
-                    self.config.maa_config.RunSet_RoutineTimeLimit, 10
-                )
-                self.config.maa_config.set(
-                    self.config.maa_config.RunSet_RunTimesLimit, 3
-                )
-                self.config.maa_config.set(self.config.maa_config.MaaSet_Name, "")
-                self.config.maa_config.set(self.config.maa_config.MaaSet_Name, "")
-                self.config.maa_config.set(self.config.maa_config.MaaSet_Name, "")
+                self.config.clear_maa_config()
                 self.config.maa_config.save()
 
                 self.config.open_database("Maa", f"脚本_{index}")
@@ -229,6 +215,7 @@ class MemberManager(QWidget):
             self.member_manager.clear_SettingBox()
 
             shutil.rmtree(self.config.app_path / f"config/{type[0]}Config/{name}")
+            self.change_queue(name, "禁用")
             for member in move_list:
                 if (
                     self.config.app_path / f"config/{member[1]}Config/{member[0]}"
@@ -237,8 +224,9 @@ class MemberManager(QWidget):
                         self.config.app_path / f"config/{member[1]}Config/{member[0]}"
                     ).rename(
                         self.config.app_path
-                        / f"config/{member[1]}Config/{member[0][:3]}{int(member[0][3:])-1}",
+                        / f"config/{member[1]}Config/脚本_{int(member[0][3:])-1}",
                     )
+                self.change_queue(member[0], f"脚本_{int(member[0][3:])-1}")
 
             self.member_manager.show_SettingBox(index)
 
@@ -262,15 +250,17 @@ class MemberManager(QWidget):
         self.member_manager.clear_SettingBox()
 
         (self.config.app_path / f"config/{type_right[0]}Config/脚本_{index}").rename(
-            self.config.app_path / f"config/{type_right[0]}Config/脚本_0",
+            self.config.app_path / f"config/{type_right[0]}Config/脚本_0"
         )
-        shutil.move(
-            str(self.config.app_path / f"config/{type_left[0]}Config/脚本_{index-1}"),
-            str(self.config.app_path / f"config/{type_left[0]}Config/脚本_{index}"),
+        self.change_queue(f"脚本_{index}", "脚本_0")
+        (self.config.app_path / f"config/{type_left[0]}Config/脚本_{index-1}").rename(
+            self.config.app_path / f"config/{type_left[0]}Config/脚本_{index}"
         )
+        self.change_queue(f"脚本_{index-1}", f"脚本_{index}")
         (self.config.app_path / f"config/{type_right[0]}Config/脚本_0").rename(
-            self.config.app_path / f"config/{type_right[0]}Config/脚本_{index-1}",
+            self.config.app_path / f"config/{type_right[0]}Config/脚本_{index-1}"
         )
+        self.change_queue("脚本_0", f"脚本_{index-1}")
 
         self.member_manager.show_SettingBox(index - 1)
 
@@ -296,12 +286,15 @@ class MemberManager(QWidget):
         (self.config.app_path / f"config/{type_left[0]}Config/脚本_{index}").rename(
             self.config.app_path / f"config/{type_left[0]}Config/脚本_0",
         )
+        self.change_queue(f"脚本_{index}", "脚本_0")
         (self.config.app_path / f"config/{type_right[0]}Config/脚本_{index+1}").rename(
             self.config.app_path / f"config/{type_right[0]}Config/脚本_{index}",
         )
+        self.change_queue(f"脚本_{index+1}", f"脚本_{index}")
         (self.config.app_path / f"config/{type_left[0]}Config/脚本_0").rename(
             self.config.app_path / f"config/{type_left[0]}Config/脚本_{index+1}",
         )
+        self.change_queue("脚本_0", f"脚本_{index+1}")
 
         self.member_manager.show_SettingBox(index + 1)
 
@@ -336,6 +329,23 @@ class MemberManager(QWidget):
             self.key.setIcon(FluentIcon.HIDE)
             self.key.setChecked(False)
 
+    def change_queue(self, old: str, new: str) -> None:
+        """修改调度队列配置文件的队列参数"""
+
+        if (self.config.app_path / "config/QueueConfig").exists():
+            for json_file in (self.config.app_path / "config/QueueConfig").glob(
+                "*.json"
+            ):
+                with json_file.open("r", encoding="utf-8") as f:
+                    data = json.load(f)
+
+                for i in range(10):
+                    if data["Queue"][f"Member_{i+1}"] == old:
+                        data["Queue"][f"Member_{i+1}"] = new
+
+                with json_file.open("w", encoding="utf-8") as f:
+                    json.dump(data, f, ensure_ascii=False, indent=4)
+
 
 class MemberSettingBox(QWidget):
 
@@ -367,10 +377,17 @@ class MemberSettingBox(QWidget):
 
         member_list = self.search_member()
 
+        qconfig.load(
+            self.config.app_path / "config/临时.json",
+            self.config.maa_config,
+        )
+        self.config.clear_maa_config()
         for member in member_list:
             if member[1] == "Maa":
                 self.config.open_database(member[1], member[0])
                 self.add_MaaSettingBox(int(member[0][3:]))
+        if (self.config.app_path / "config/临时.json").exists():
+            (self.config.app_path / "config/临时.json").unlink()
 
         self.switch_SettingBox(index)
 
@@ -404,6 +421,13 @@ class MemberSettingBox(QWidget):
             sub_interface.deleteLater()
         self.script_list.clear()
         self.pivot.clear()
+        qconfig.load(
+            self.config.app_path / "config/临时.json",
+            self.config.maa_config,
+        )
+        self.config.clear_maa_config()
+        if (self.config.app_path / "config/临时.json").exists():
+            (self.config.app_path / "config/临时.json").unlink()
         self.config.close_database()
 
     def add_MaaSettingBox(self, uid: int) -> None:
@@ -475,7 +499,7 @@ class MaaSettingBox(QWidget):
             Layout = QVBoxLayout()
 
             self.card_Name = LineEditSettingCard(
-                "实例名称",
+                "请输入实例名称",
                 FluentIcon.EDIT,
                 "实例名称",
                 "用于标识MAA实例的名称",

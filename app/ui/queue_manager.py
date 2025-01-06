@@ -147,8 +147,6 @@ class QueueManager(QWidget):
                 ),
             ]
         )
-        self.tools.addSeparator()
-        self.tools.addAction(Action(FluentIcon.ROTATE, "刷新", triggered=self.refresh))
 
         layout.addWidget(self.tools)
         layout.addWidget(self.queue_manager)
@@ -162,42 +160,7 @@ class QueueManager(QWidget):
             self.config.app_path / f"config/QueueConfig/调度队列_{index}.json",
             self.config.queue_config,
         )
-
-        self.config.queue_config.set(self.config.queue_config.queueSet_Name, "")
-        self.config.queue_config.set(self.config.queue_config.queueSet_Enabled, False)
-
-        self.config.queue_config.set(self.config.queue_config.time_TimeEnabled_0, False)
-        self.config.queue_config.set(self.config.queue_config.time_TimeSet_0, "00:00")
-        self.config.queue_config.set(self.config.queue_config.time_TimeEnabled_1, False)
-        self.config.queue_config.set(self.config.queue_config.time_TimeSet_1, "00:00")
-        self.config.queue_config.set(self.config.queue_config.time_TimeEnabled_2, False)
-        self.config.queue_config.set(self.config.queue_config.time_TimeSet_2, "00:00")
-        self.config.queue_config.set(self.config.queue_config.time_TimeEnabled_3, False)
-        self.config.queue_config.set(self.config.queue_config.time_TimeSet_3, "00:00")
-        self.config.queue_config.set(self.config.queue_config.time_TimeEnabled_4, False)
-        self.config.queue_config.set(self.config.queue_config.time_TimeSet_4, "00:00")
-        self.config.queue_config.set(self.config.queue_config.time_TimeEnabled_5, False)
-        self.config.queue_config.set(self.config.queue_config.time_TimeSet_5, "00:00")
-        self.config.queue_config.set(self.config.queue_config.time_TimeEnabled_6, False)
-        self.config.queue_config.set(self.config.queue_config.time_TimeSet_6, "00:00")
-        self.config.queue_config.set(self.config.queue_config.time_TimeEnabled_7, False)
-        self.config.queue_config.set(self.config.queue_config.time_TimeSet_7, "00:00")
-        self.config.queue_config.set(self.config.queue_config.time_TimeEnabled_8, False)
-        self.config.queue_config.set(self.config.queue_config.time_TimeSet_8, "00:00")
-        self.config.queue_config.set(self.config.queue_config.time_TimeEnabled_9, False)
-        self.config.queue_config.set(self.config.queue_config.time_TimeSet_9, "00:00")
-
-        self.config.queue_config.set(self.config.queue_config.queue_Member_1, "禁用")
-        self.config.queue_config.set(self.config.queue_config.queue_Member_2, "禁用")
-        self.config.queue_config.set(self.config.queue_config.queue_Member_3, "禁用")
-        self.config.queue_config.set(self.config.queue_config.queue_Member_4, "禁用")
-        self.config.queue_config.set(self.config.queue_config.queue_Member_5, "禁用")
-        self.config.queue_config.set(self.config.queue_config.queue_Member_6, "禁用")
-        self.config.queue_config.set(self.config.queue_config.queue_Member_7, "禁用")
-        self.config.queue_config.set(self.config.queue_config.queue_Member_8, "禁用")
-        self.config.queue_config.set(self.config.queue_config.queue_Member_9, "禁用")
-        self.config.queue_config.set(self.config.queue_config.queue_Member_10, "禁用")
-
+        self.config.clear_queue_config()
         self.config.queue_config.save()
 
         self.queue_manager.add_QueueSettingBox(index)
@@ -225,7 +188,7 @@ class QueueManager(QWidget):
 
             self.queue_manager.clear_SettingBox()
 
-            os.remove(self.config.app_path / f"config/QueueConfig/{name}.json")
+            (self.config.app_path / f"config/QueueConfig/{name}.json").unlink()
             for queue in move_list:
                 if (
                     self.config.app_path / f"config/QueueConfig/{queue[0]}.json"
@@ -332,8 +295,15 @@ class QueueSettingBox(QWidget):
 
         queue_list = self.search_queue()
 
+        qconfig.load(
+            self.config.app_path / "config/临时.json",
+            self.config.queue_config,
+        )
+        self.config.clear_queue_config()
         for queue in queue_list:
             self.add_QueueSettingBox(int(queue[0][5:]))
+        if (self.config.app_path / "config/临时.json").exists():
+            (self.config.app_path / "config/临时.json").unlink()
 
         self.switch_SettingBox(index)
 
@@ -363,6 +333,13 @@ class QueueSettingBox(QWidget):
             sub_interface.deleteLater()
         self.script_list.clear()
         self.pivot.clear()
+        qconfig.load(
+            self.config.app_path / "config/临时.json",
+            self.config.queue_config,
+        )
+        self.config.clear_queue_config()
+        if (self.config.app_path / "config/临时.json").exists():
+            (self.config.app_path / "config/临时.json").unlink()
 
     def add_QueueSettingBox(self, uid: int) -> None:
         """添加一个调度队列设置界面"""
@@ -435,7 +412,7 @@ class QueueMemberSettingBox(QWidget):
             Layout = QVBoxLayout()
 
             self.card_Name = LineEditSettingCard(
-                "调度队列名称",
+                "请输入调度队列名称",
                 FluentIcon.EDIT,
                 "调度队列名称",
                 "用于标识调度队列的名称",
@@ -566,7 +543,7 @@ class QueueMemberSettingBox(QWidget):
             Layout = QVBoxLayout()
 
             self.card_Name = LineEditSettingCard(
-                "调度队列名称",
+                "请输入调度队列名称",
                 FluentIcon.EDIT,
                 "调度队列名称",
                 "用于标识调度队列的名称",
@@ -589,7 +566,7 @@ class QueueMemberSettingBox(QWidget):
         def __init__(self, parent=None, config: AppConfig = None):
             super().__init__(parent)
 
-            self.setTitle("定时设置")
+            self.setTitle("任务队列")
 
             self.config = config
             self.queue_config = config.queue_config
@@ -601,7 +578,7 @@ class QueueMemberSettingBox(QWidget):
             self.card_Member_1 = NoOptionComboBoxSettingCard(
                 self.queue_config.queue_Member_1,
                 FluentIcon.APPLICATION,
-                "任务实例1",
+                "任务实例 1",
                 "第一个调起的脚本任务实例",
                 member_list[0],
                 member_list[1],
@@ -609,7 +586,7 @@ class QueueMemberSettingBox(QWidget):
             self.card_Member_2 = NoOptionComboBoxSettingCard(
                 self.queue_config.queue_Member_2,
                 FluentIcon.APPLICATION,
-                "任务实例2",
+                "任务实例 2",
                 "第二个调起的脚本任务实例",
                 member_list[0],
                 member_list[1],
@@ -617,7 +594,7 @@ class QueueMemberSettingBox(QWidget):
             self.card_Member_3 = NoOptionComboBoxSettingCard(
                 self.queue_config.queue_Member_3,
                 FluentIcon.APPLICATION,
-                "任务实例3",
+                "任务实例 3",
                 "第三个调起的脚本任务实例",
                 member_list[0],
                 member_list[1],
@@ -625,7 +602,7 @@ class QueueMemberSettingBox(QWidget):
             self.card_Member_4 = NoOptionComboBoxSettingCard(
                 self.queue_config.queue_Member_4,
                 FluentIcon.APPLICATION,
-                "任务实例4",
+                "任务实例 4",
                 "第四个调起的脚本任务实例",
                 member_list[0],
                 member_list[1],
@@ -633,7 +610,7 @@ class QueueMemberSettingBox(QWidget):
             self.card_Member_5 = NoOptionComboBoxSettingCard(
                 self.queue_config.queue_Member_5,
                 FluentIcon.APPLICATION,
-                "任务实例5",
+                "任务实例 5",
                 "第五个调起的脚本任务实例",
                 member_list[0],
                 member_list[1],
@@ -641,7 +618,7 @@ class QueueMemberSettingBox(QWidget):
             self.card_Member_6 = NoOptionComboBoxSettingCard(
                 self.queue_config.queue_Member_6,
                 FluentIcon.APPLICATION,
-                "任务实例6",
+                "任务实例 6",
                 "第六个调起的脚本任务实例",
                 member_list[0],
                 member_list[1],
@@ -649,7 +626,7 @@ class QueueMemberSettingBox(QWidget):
             self.card_Member_7 = NoOptionComboBoxSettingCard(
                 self.queue_config.queue_Member_7,
                 FluentIcon.APPLICATION,
-                "任务实例7",
+                "任务实例 7",
                 "第七个调起的脚本任务实例",
                 member_list[0],
                 member_list[1],
@@ -657,7 +634,7 @@ class QueueMemberSettingBox(QWidget):
             self.card_Member_8 = NoOptionComboBoxSettingCard(
                 self.queue_config.queue_Member_8,
                 FluentIcon.APPLICATION,
-                "任务实例8",
+                "任务实例 8",
                 "第八个调起的脚本任务实例",
                 member_list[0],
                 member_list[1],
@@ -665,7 +642,7 @@ class QueueMemberSettingBox(QWidget):
             self.card_Member_9 = NoOptionComboBoxSettingCard(
                 self.queue_config.queue_Member_9,
                 FluentIcon.APPLICATION,
-                "任务实例9",
+                "任务实例 9",
                 "第九个调起的脚本任务实例",
                 member_list[0],
                 member_list[1],
@@ -673,7 +650,7 @@ class QueueMemberSettingBox(QWidget):
             self.card_Member_10 = NoOptionComboBoxSettingCard(
                 self.queue_config.queue_Member_10,
                 FluentIcon.APPLICATION,
-                "任务实例10",
+                "任务实例 10",
                 "第十个调起的脚本任务实例",
                 member_list[0],
                 member_list[1],

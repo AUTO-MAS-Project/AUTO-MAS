@@ -77,13 +77,7 @@ import json
 import datetime
 import ctypes
 import subprocess
-import shutil
-import win32gui
-import win32process
-import psutil
-import pyautogui
 import time
-import winreg
 import requests
 
 uiLoader = QUiLoader()

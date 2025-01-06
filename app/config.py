@@ -70,9 +70,9 @@ class AppConfig:
 
         # 检查目录
         (self.app_path / "config").mkdir(parents=True, exist_ok=True)
-        (self.app_path / "data/MAAconfig/simple").mkdir(parents=True, exist_ok=True)
-        (self.app_path / "data/MAAconfig/beta").mkdir(parents=True, exist_ok=True)
-        (self.app_path / "data/MAAconfig/Default").mkdir(parents=True, exist_ok=True)
+        # (self.app_path / "data/MAAconfig/simple").mkdir(parents=True, exist_ok=True)
+        # (self.app_path / "data/MAAconfig/beta").mkdir(parents=True, exist_ok=True)
+        # (self.app_path / "data/MAAconfig/Default").mkdir(parents=True, exist_ok=True)
 
         # 生成版本信息文件
         if not self.version_path.exists():
@@ -90,17 +90,28 @@ class AppConfig:
                 encoding="utf-8",
             )
 
-        self.get_config()
+        self.init_config()
         # self.check_database()
 
-    def get_config(self) -> None:
-        """创建配置类"""
+    def init_config(self) -> None:
+        """初始化配置类"""
 
         self.global_config = GlobalConfig()
         qconfig.load(self.config_path, self.global_config)
 
         self.queue_config = QueueConfig()
         self.maa_config = MaaConfig()
+
+    def init_database(self, mode: str) -> None:
+        """初始化用户数据库"""
+
+        if mode == "Maa":
+            self.cur.execute(
+                "CREATE TABLE adminx(admin text,id text,server text,day int,status text,last date,game text,game_1 text,game_2 text,routine text,annihilation text,infrastructure text,password byte,notes text,numb int,mode text,uid int)"
+            )
+            self.cur.execute("CREATE TABLE version(v text)")
+            self.cur.execute("INSERT INTO version VALUES(?)", ("v1.3",))
+            self.db.commit()
 
     def check_database(self) -> None:
         """检查用户数据库文件并处理数据库版本更新"""
@@ -181,17 +192,6 @@ class AppConfig:
         cur.close()
         db.close()
 
-    def init_database(self, mode: str) -> None:
-        """初始化用户数据库"""
-
-        if mode == "Maa":
-            self.cur.execute(
-                "CREATE TABLE adminx(admin text,id text,server text,day int,status text,last date,game text,game_1 text,game_2 text,routine text,annihilation text,infrastructure text,password byte,notes text,numb int,mode text,uid int)"
-            )
-            self.cur.execute("CREATE TABLE version(v text)")
-            self.cur.execute("INSERT INTO version VALUES(?)", ("v1.3",))
-            self.db.commit()
-
     def open_database(self, mode: str, index: str = None) -> None:
         """打开数据库"""
 
@@ -211,6 +211,56 @@ class AppConfig:
         self.cur.close()
         self.db.close()
         self.if_database_opened = False
+
+    def clear_maa_config(self) -> None:
+        """清空MAA配置"""
+
+        self.maa_config.set(self.maa_config.MaaSet_Name, "")
+        self.maa_config.set(self.maa_config.MaaSet_Path, ".")
+        self.maa_config.set(self.maa_config.RunSet_AnnihilationTimeLimit, 40)
+        self.maa_config.set(self.maa_config.RunSet_RoutineTimeLimit, 10)
+        self.maa_config.set(self.maa_config.RunSet_RunTimesLimit, 3)
+        self.maa_config.set(self.maa_config.MaaSet_Name, "")
+        self.maa_config.set(self.maa_config.MaaSet_Name, "")
+        self.maa_config.set(self.maa_config.MaaSet_Name, "")
+
+    def clear_queue_config(self) -> None:
+        """清空队列配置"""
+
+        self.queue_config.set(self.queue_config.queueSet_Name, "")
+        self.queue_config.set(self.queue_config.queueSet_Enabled, False)
+
+        self.queue_config.set(self.queue_config.time_TimeEnabled_0, False)
+        self.queue_config.set(self.queue_config.time_TimeSet_0, "00:00")
+        self.queue_config.set(self.queue_config.time_TimeEnabled_1, False)
+        self.queue_config.set(self.queue_config.time_TimeSet_1, "00:00")
+        self.queue_config.set(self.queue_config.time_TimeEnabled_2, False)
+        self.queue_config.set(self.queue_config.time_TimeSet_2, "00:00")
+        self.queue_config.set(self.queue_config.time_TimeEnabled_3, False)
+        self.queue_config.set(self.queue_config.time_TimeSet_3, "00:00")
+        self.queue_config.set(self.queue_config.time_TimeEnabled_4, False)
+        self.queue_config.set(self.queue_config.time_TimeSet_4, "00:00")
+        self.queue_config.set(self.queue_config.time_TimeEnabled_5, False)
+        self.queue_config.set(self.queue_config.time_TimeSet_5, "00:00")
+        self.queue_config.set(self.queue_config.time_TimeEnabled_6, False)
+        self.queue_config.set(self.queue_config.time_TimeSet_6, "00:00")
+        self.queue_config.set(self.queue_config.time_TimeEnabled_7, False)
+        self.queue_config.set(self.queue_config.time_TimeSet_7, "00:00")
+        self.queue_config.set(self.queue_config.time_TimeEnabled_8, False)
+        self.queue_config.set(self.queue_config.time_TimeSet_8, "00:00")
+        self.queue_config.set(self.queue_config.time_TimeEnabled_9, False)
+        self.queue_config.set(self.queue_config.time_TimeSet_9, "00:00")
+
+        self.queue_config.set(self.queue_config.queue_Member_1, "禁用")
+        self.queue_config.set(self.queue_config.queue_Member_2, "禁用")
+        self.queue_config.set(self.queue_config.queue_Member_3, "禁用")
+        self.queue_config.set(self.queue_config.queue_Member_4, "禁用")
+        self.queue_config.set(self.queue_config.queue_Member_5, "禁用")
+        self.queue_config.set(self.queue_config.queue_Member_6, "禁用")
+        self.queue_config.set(self.queue_config.queue_Member_7, "禁用")
+        self.queue_config.set(self.queue_config.queue_Member_8, "禁用")
+        self.queue_config.set(self.queue_config.queue_Member_9, "禁用")
+        self.queue_config.set(self.queue_config.queue_Member_10, "禁用")
 
 
 class GlobalConfig(QConfig):
