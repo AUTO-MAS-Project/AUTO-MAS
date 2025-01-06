@@ -49,6 +49,7 @@ if __name__ == "__main__":
     result = subprocess.run(
         f"powershell -Command nuitka --standalone --onefile --mingw64"
         f" --enable-plugins=pyside6 --windows-console-mode=disable"
+        f" --onefile-tempdir-spec=%TEMP%\\AUTO_MAA"
         f" --windows-icon-from-ico=resources\\icons\\AUTO_MAA.ico"
         f" --company-name='AUTO_MAA Team' --product-name=AUTO_MAA"
         f" --file-version={version["main_version"]}"
@@ -82,6 +83,7 @@ if __name__ == "__main__":
     result = subprocess.run(
         f"powershell -Command nuitka --standalone --onefile --mingw64"
         f" --enable-plugins=pyside6 --windows-console-mode=disable"
+        f" --onefile-tempdir-spec=%TEMP%\\AUTO_MAA_Updater"
         f" --windows-icon-from-ico=resources\\icons\\AUTO_MAA_Updater.ico"
         f" --company-name='AUTO_MAA Team' --product-name=AUTO_MAA"
         f" --file-version={version["updater_version"]}"
