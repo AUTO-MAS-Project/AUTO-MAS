@@ -46,25 +46,20 @@ if __name__ == "__main__":
 
     print("Packaging AUTO_MAA main program ...")
 
-    result = subprocess.run(
-        f"powershell -Command nuitka --standalone --onefile --mingw64"
-        f" --enable-plugins=pyside6 --windows-console-mode=disable"
-        f" --onefile-tempdir-spec=%TEMP%\\AUTO_MAA"
-        f" --windows-icon-from-ico=resources\\icons\\AUTO_MAA.ico"
-        f" --company-name='AUTO_MAA Team' --product-name=AUTO_MAA"
+    os.system(
+        "powershell -Command python -m nuitka --standalone --onefile --mingw64"
+        " --enable-plugins=pyside6 --windows-console-mode=disable"
+        " --onefile-tempdir-spec='{TEMP}\\AUTO_MAA'"
+        " --windows-icon-from-ico=resources\\icons\\AUTO_MAA.ico"
+        " --company-name='AUTO_MAA Team' --product-name=AUTO_MAA"
         f" --file-version={version["main_version"]}"
         f" --product-version={version["main_version"]}"
-        f" --file-description='AUTO_MAA Component'"
-        f" --copyright='Copyright © 2024 DLmaster361'"
-        f" --assume-yes-for-downloads --output-filename=AUTO_MAA"
-        f" --remove-output main.py",
-        shell=True,
-        capture_output=True,
-        text=True,
+        " --file-description='AUTO_MAA Component'"
+        " --copyright='Copyright © 2024 DLmaster361'"
+        " --assume-yes-for-downloads --output-filename=AUTO_MAA"
+        " --remove-output main.py"
     )
 
-    print(result.stdout)
-    print(result.stderr)
     print("AUTO_MAA main program packaging completed !")
 
     shutil.copy(root_path / "app/utils/Updater.py", root_path)
@@ -80,25 +75,20 @@ if __name__ == "__main__":
 
     print("Packaging AUTO_MAA update program ...")
 
-    result = subprocess.run(
-        f"powershell -Command nuitka --standalone --onefile --mingw64"
-        f" --enable-plugins=pyside6 --windows-console-mode=disable"
-        f" --onefile-tempdir-spec=%TEMP%\\AUTO_MAA_Updater"
-        f" --windows-icon-from-ico=resources\\icons\\AUTO_MAA_Updater.ico"
-        f" --company-name='AUTO_MAA Team' --product-name=AUTO_MAA"
+    os.system(
+        "powershell -Command python -m nuitka --standalone --onefile --mingw64"
+        " --enable-plugins=pyside6 --windows-console-mode=disable"
+        " --onefile-tempdir-spec='{TEMP}\\AUTO_MAA_Updater'"
+        " --windows-icon-from-ico=resources\\icons\\AUTO_MAA_Updater.ico"
+        " --company-name='AUTO_MAA Team' --product-name=AUTO_MAA"
         f" --file-version={version["updater_version"]}"
         f" --product-version={version["main_version"]}"
-        f" --file-description='AUTO_MAA Component'"
-        f" --copyright='Copyright © 2024 DLmaster361'"
-        f" --assume-yes-for-downloads --output-filename=Updater"
-        f" --remove-output Updater.py",
-        shell=True,
-        capture_output=True,
-        text=True,
+        " --file-description='AUTO_MAA Component'"
+        " --copyright='Copyright © 2024 DLmaster361'"
+        " --assume-yes-for-downloads --output-filename=Updater"
+        " --remove-output Updater.py"
     )
 
-    print(result.stdout)
-    print(result.stderr)
     print("AUTO_MAA update program packaging completed !")
 
     (root_path / "Updater.py").unlink()

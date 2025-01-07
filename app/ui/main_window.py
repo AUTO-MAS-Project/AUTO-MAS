@@ -198,7 +198,6 @@ class AUTO_MAA(MSFluentWindow):
         )
 
         self.splashScreen.finish()
-        self.show_main()
 
         if self.config.global_config.get(self.config.global_config.update_IfAutoUpdate):
             result = self.setting.check_update()

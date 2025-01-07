@@ -49,9 +49,8 @@ class AppConfig:
 
     def __init__(self) -> None:
 
-        self.app_path = Path.cwd()  # 获取软件根目录
-        self.app_path_sys = os.path.realpath(sys.argv[0])  # 获取软件自身的路径
-        self.app_name = os.path.basename(self.app_path)  # 获取软件自身的名称
+        self.app_path = Path(sys.argv[0]).resolve().parent  # 获取软件根目录
+        self.app_path_sys = str(Path(sys.argv[0]).resolve())  # 获取软件自身的路径
 
         self.database_path = self.app_path / "data/data.db"
         self.config_path = self.app_path / "config/config.json"
@@ -70,6 +69,7 @@ class AppConfig:
 
         # 检查目录
         (self.app_path / "config").mkdir(parents=True, exist_ok=True)
+        (self.app_path / "data").mkdir(parents=True, exist_ok=True)
         # (self.app_path / "data/MAAconfig/simple").mkdir(parents=True, exist_ok=True)
         # (self.app_path / "data/MAAconfig/beta").mkdir(parents=True, exist_ok=True)
         # (self.app_path / "data/MAAconfig/Default").mkdir(parents=True, exist_ok=True)
@@ -195,9 +195,7 @@ class AppConfig:
     def open_database(self, mode: str, index: str = None) -> None:
         """打开数据库"""
 
-        if self.if_database_opened:
-            self.close_database()
-
+        self.close_database()
         if mode == "Maa":
             self.db = sqlite3.connect(
                 self.app_path / f"config/{mode}Config/{index}/user_date.db"
@@ -208,8 +206,9 @@ class AppConfig:
     def close_database(self) -> None:
         """关闭数据库"""
 
-        self.cur.close()
-        self.db.close()
+        if self.if_database_opened:
+            self.cur.close()
+            self.db.close()
         self.if_database_opened = False
 
     def clear_maa_config(self) -> None:

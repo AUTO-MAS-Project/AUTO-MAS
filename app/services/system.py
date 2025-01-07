@@ -74,7 +74,7 @@ class SystemHandler:
                 winreg.KEY_ALL_ACCESS | winreg.KEY_WRITE | winreg.KEY_CREATE_SUB_KEY,
             )
             winreg.SetValueEx(
-                key, self.config.app_name, 0, winreg.REG_SZ, self.config.app_path_sys
+                key, "AUTO_MAA主程序", 0, winreg.REG_SZ, self.config.app_path_sys
             )
             winreg.CloseKey(key)
         elif (
@@ -89,7 +89,7 @@ class SystemHandler:
                 winreg.KEY_SET_VALUE,
                 winreg.KEY_ALL_ACCESS | winreg.KEY_WRITE | winreg.KEY_CREATE_SUB_KEY,
             )
-            winreg.DeleteValue(key, self.config.app_name)
+            winreg.DeleteValue(key, "AUTO_MAA主程序")
             winreg.CloseKey(key)
 
     def is_startup(self):
@@ -103,7 +103,7 @@ class SystemHandler:
         )
 
         try:
-            value, _ = winreg.QueryValueEx(key, self.config.app_name)
+            value, _ = winreg.QueryValueEx(key, "AUTO_MAA主程序")
             winreg.CloseKey(key)
             return True
         except FileNotFoundError:

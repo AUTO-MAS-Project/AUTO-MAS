@@ -48,5 +48,6 @@ if __name__ == "__main__":
     application.installTranslator(translator)
 
     window = AUTO_MAA(config=config, notify=notify, crypto=crypto, system=system)
+    window.show_main()
     window.setting.check_PASSWORD()
     sys.exit(application.exec())
