@@ -26,75 +26,36 @@ v4.2
 """
 
 from PySide6.QtWidgets import (
-    QWidget,  #
-    QMainWindow,  #
-    QApplication,  #
-    QSystemTrayIcon,  #
-    QFileDialog,  #
-    QTabWidget,  #
-    QToolBox,  #
-    QComboBox,  #
-    QTableWidgetItem,  #
-    QHeaderView,  #
+    QWidget,
     QVBoxLayout,
     QStackedWidget,
     QHBoxLayout,
 )
 from qfluentwidgets import (
     Action,
-    PushButton,
-    LineEdit,
-    PasswordLineEdit,
     qconfig,
-    TableWidget,
     Pivot,
-    TimePicker,
-    ComboBox,
-    CheckBox,
     ScrollArea,
-    SpinBox,
     FluentIcon,
-    SwitchButton,
-    RoundMenu,
     MessageBox,
-    MessageBoxBase,
     HeaderCardWidget,
-    BodyLabel,
     CommandBar,
     setTheme,
     Theme,
     SwitchSettingCard,
-    ExpandGroupSettingCard,
-    SingleDirectionScrollArea,
 )
 from PySide6.QtUiTools import QUiLoader
-from PySide6.QtGui import QIcon, QCloseEvent
 from PySide6 import QtCore
-from functools import partial
-from typing import List, Tuple
-from pathlib import Path
-import os
-import datetime
+from typing import List
 import json
-import subprocess
 import shutil
-import win32gui
-import win32process
-import psutil
-import pyautogui
-import time
-import winreg
-import requests
 
 uiLoader = QUiLoader()
 
-from app import AppConfig, QueueConfig, MaaConfig
-from app.services import Notification, CryptoHandler
-from app.utils import Updater, version_text
+from app import AppConfig, QueueConfig
+from app.services import Notification
 from .Widget import (
-    InputMessageBox,
     LineEditSettingCard,
-    SpinBoxSettingCard,
     TimeEditSettingCard,
     NoOptionComboBoxSettingCard,
 )
@@ -261,7 +222,10 @@ class QueueManager(QWidget):
     def refresh(self):
         """刷新调度队列界面"""
 
-        index = int(self.queue_manager.pivot.currentRouteKey()[5:])
+        if len(self.queue_manager.search_queue()) == 0:
+            index = 0
+        else:
+            index = int(self.queue_manager.pivot.currentRouteKey()[5:])
         self.queue_manager.clear_SettingBox()
         self.queue_manager.show_SettingBox(index)
 
@@ -311,6 +275,9 @@ class QueueSettingBox(QWidget):
         """切换到指定的子界面"""
 
         queue_list = self.search_queue()
+
+        if len(queue_list) == 0:
+            return None
 
         if index > len(queue_list):
             return None

@@ -26,72 +26,41 @@ v4.2
 """
 
 from PySide6.QtWidgets import (
-    QWidget,  #
-    QMainWindow,  #
-    QApplication,  #
-    QSystemTrayIcon,  #
-    QFileDialog,  #
-    QTabWidget,  #
-    QToolBox,  #
-    QComboBox,  #
-    QTableWidgetItem,  #
-    QHeaderView,  #
+    QWidget,
+    QFileDialog,
+    QTableWidgetItem,
+    QHeaderView,
     QVBoxLayout,
     QStackedWidget,
-    QHBoxLayout,
 )
 from qfluentwidgets import (
     Action,
-    PushButton,
-    LineEdit,
-    PasswordLineEdit,
     qconfig,
     TableWidget,
     Pivot,
-    TimePicker,
     ComboBox,
-    CheckBox,
     ScrollArea,
-    SpinBox,
     FluentIcon,
-    SwitchButton,
-    RoundMenu,
     MessageBox,
-    MessageBoxBase,
     HeaderCardWidget,
-    BodyLabel,
     CommandBar,
     setTheme,
     Theme,
-    SwitchSettingCard,
     ExpandGroupSettingCard,
-    SingleDirectionScrollArea,
     PushSettingCard,
 )
 from PySide6.QtUiTools import QUiLoader
-from PySide6.QtGui import QIcon, QCloseEvent
 from PySide6 import QtCore
 from functools import partial
-from typing import List, Tuple
-from pathlib import Path
-import os
+from typing import List
 import datetime
 import json
-import subprocess
 import shutil
-import win32gui
-import win32process
-import psutil
-import pyautogui
-import time
-import winreg
-import requests
 
 uiLoader = QUiLoader()
 
 from app import AppConfig, MaaConfig
 from app.services import Notification, CryptoHandler
-from app.utils import Updater, version_text
 from .Widget import (
     InputMessageBox,
     LineEditSettingCard,
@@ -395,6 +364,9 @@ class MemberSettingBox(QWidget):
         """切换到指定的子界面"""
 
         member_list = self.search_member()
+
+        if len(member_list) == 0:
+            return None
 
         if index > len(member_list):
             return None

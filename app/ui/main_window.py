@@ -26,78 +26,36 @@ v4.2
 """
 
 from PySide6.QtWidgets import (
-    QWidget,  #
-    QMainWindow,  #
-    QApplication,  #
-    QSystemTrayIcon,  #
-    QFileDialog,  #
-    QTabWidget,  #
-    QToolBox,  #
-    QTableWidgetItem,  #
-    QHeaderView,  #
-    QVBoxLayout,
+    QApplication,
+    QSystemTrayIcon,
 )
 from qfluentwidgets import (
     Action,
     PushButton,
-    LineEdit,
-    PasswordLineEdit,
-    TextBrowser,
-    TableWidget,
-    TimePicker,
     SystemTrayMenu,
-    ComboBox,
-    CheckBox,
-    SpinBox,
     SplashScreen,
     FluentIcon,
-    RoundMenu,
-    MessageBox,
-    MessageBoxBase,
     InfoBar,
     InfoBarPosition,
-    BodyLabel,
-    Dialog,
     setTheme,
     Theme,
-    SystemThemeListener,
-    qconfig,
     MSFluentWindow,
     NavigationItemPosition,
 )
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtGui import QIcon, QCloseEvent
 from PySide6 import QtCore
-from functools import partial
-from typing import List, Tuple
-from pathlib import Path
-import json
-import datetime
-import ctypes
-import subprocess
-import shutil
-import win32gui
-import win32process
-import psutil
-import pyautogui
-import time
-import winreg
-import requests
 
 uiLoader = QUiLoader()
 
-from app import AppConfig, MaaConfig
+from app import AppConfig
 from app.services import Notification, CryptoHandler, SystemHandler
-from app.utils import Updater, version_text
-from .Widget import InputMessageBox, LineEditSettingCard, SpinBoxSettingCard
 from .setting import Setting
 from .member_manager import MemberManager
 from .queue_manager import QueueManager
 
 
 class AUTO_MAA(MSFluentWindow):
-
-    if_save = True
 
     def __init__(
         self,
@@ -121,7 +79,7 @@ class AUTO_MAA(MSFluentWindow):
         setTheme(Theme.AUTO)
 
         self.splashScreen = SplashScreen(self.windowIcon(), self)
-        self.show()
+        self.show_ui("显示主窗口", if_quick=True)
 
         # 创建主窗口
         self.setting = Setting(self.config, self.notify, self.crypto, self.system, self)
@@ -163,7 +121,11 @@ class AUTO_MAA(MSFluentWindow):
 
         # 显示主界面菜单项
         self.tray_menu.addAction(
-            Action(FluentIcon.CAFE, "显示主界面", triggered=self.show_main)
+            Action(
+                FluentIcon.CAFE,
+                "显示主界面",
+                triggered=lambda: self.show_ui("显示主窗口"),
+            )
         )
         self.tray_menu.addSeparator()
 
@@ -193,12 +155,21 @@ class AUTO_MAA(MSFluentWindow):
         # 设置托盘菜单
         self.tray.setContextMenu(self.tray_menu)
         self.tray.activated.connect(self.on_tray_activated)
+
         self.setting.ui.card_IfShowTray.checkedChanged.connect(
-            lambda x: self.tray.show() if x else self.tray.hide()
+            lambda: self.show_ui("配置托盘")
         )
+        self.setting.ui.card_IfToTray.checkedChanged.connect(self.set_min_method)
 
         self.splashScreen.finish()
 
+    def start_up_task(self) -> None:
+        """启动时任务"""
+
+        # 检查密码
+        self.setting.check_PASSWORD()
+
+        # 检查更新
         if self.config.global_config.get(self.config.global_config.update_IfAutoUpdate):
             result = self.setting.check_update()
             if result == "已是最新版本~":
@@ -229,95 +200,70 @@ class AUTO_MAA(MSFluentWindow):
                 info.addWidget(Up)
                 info.show()
 
-    def show_tray(self):
-        """最小化到托盘"""
-        if self.if_save:
-            self.set_ui("保存")
-        self.hide()
-        self.tray.show()
+    def set_min_method(self) -> None:
+        """设置最小化方法"""
 
-    def show_main(self):
-        """显示主界面"""
-        self.set_ui("配置")
-        if self.config.global_config.get(self.config.global_config.ui_IfShowTray):
-            self.tray.show()
+        if self.config.global_config.get(self.config.global_config.ui_IfToTray):
+
+            self.titleBar.minBtn.clicked.disconnect()
+            self.titleBar.minBtn.clicked.connect(lambda: self.show_ui("隐藏到托盘"))
+
         else:
-            self.tray.hide()
+
+            self.titleBar.minBtn.clicked.disconnect()
+            self.titleBar.minBtn.clicked.connect(self.showMinimized)
 
     def on_tray_activated(self, reason):
         """双击返回主界面"""
         if reason == QSystemTrayIcon.DoubleClick:
-            self.show_main()
+            self.show_ui("显示主窗口")
 
-    def start_task(self, mode):
-        """调起对应任务"""
-        if self.main.MaaManager.isRunning():
-            self.notify.push_notification(
-                f"无法运行{mode}！",
-                "当前已有任务正在运行，请在该任务结束后重试",
-                "当前已有任务正在运行，请在该任务结束后重试",
-                3,
-            )
-        else:
-            self.main.maa_starter(mode)
+    # def start_task(self, mode):
+    #     """调起对应任务"""
+    #     if self.main.MaaManager.isRunning():
+    #         self.notify.push_notification(
+    #             f"无法运行{mode}！",
+    #             "当前已有任务正在运行，请在该任务结束后重试",
+    #             "当前已有任务正在运行，请在该任务结束后重试",
+    #             3,
+    #         )
+    #     else:
+    #         self.main.maa_starter(mode)
 
-    def stop_task(self):
-        """中止当前任务"""
-        if self.main.MaaManager.isRunning():
-            if (
-                self.main.MaaManager.mode == "日常代理"
-                or self.main.MaaManager.mode == "人工排查"
-            ):
-                self.main.maa_ender(f"{self.main.MaaManager.mode}_结束")
-            elif "设置MAA" in self.main.MaaManager.mode:
-                self.notify.push_notification(
-                    "正在设置MAA！",
-                    "正在运行设置MAA任务，无法中止",
-                    "正在运行设置MAA任务，无法中止",
-                    3,
-                )
-        else:
-            self.notify.push_notification(
-                "无任务运行！",
-                "当前无任务正在运行，无需中止",
-                "当前无任务正在运行，无需中止",
-                3,
-            )
+    # def stop_task(self):
+    #     """中止当前任务"""
+    #     if self.main.MaaManager.isRunning():
+    #         if (
+    #             self.main.MaaManager.mode == "日常代理"
+    #             or self.main.MaaManager.mode == "人工排查"
+    #         ):
+    #             self.main.maa_ender(f"{self.main.MaaManager.mode}_结束")
+    #         elif "设置MAA" in self.main.MaaManager.mode:
+    #             self.notify.push_notification(
+    #                 "正在设置MAA！",
+    #                 "正在运行设置MAA任务，无法中止",
+    #                 "正在运行设置MAA任务，无法中止",
+    #                 3,
+    #             )
+    #     else:
+    #         self.notify.push_notification(
+    #             "无任务运行！",
+    #             "当前无任务正在运行，无需中止",
+    #             "当前无任务正在运行，无需中止",
+    #             3,
+    #         )
 
-    def kill_main(self):
+    def kill_main(self) -> None:
         """退出主程序"""
         self.close()
         QApplication.quit()
 
-    def set_ui(self, mode):
-        """设置窗口相关属性"""
+    def show_ui(self, mode: str, if_quick: bool = False) -> None:
+        """配置窗口状态"""
 
-        # 保存窗口相关属性
-        if mode == "保存":
+        if mode == "显示主窗口":
 
-            self.config.global_config.set(
-                self.config.global_config.ui_size,
-                f"{self.geometry().width()}x{self.geometry().height()}",
-            )
-            self.config.global_config.set(
-                self.config.global_config.ui_location,
-                f"{self.geometry().x()}x{self.geometry().y()}",
-            )
-            if self.isMaximized():
-                self.config.global_config.set(
-                    self.config.global_config.ui_maximized, True
-                )
-            else:
-                self.config.global_config.set(
-                    self.config.global_config.ui_maximized, False
-                )
-            self.config.global_config.save()
-
-        # 配置窗口相关属性
-        elif mode == "配置":
-
-            self.if_save = False
-
+            # 配置主窗口
             size = list(
                 map(
                     int,
@@ -335,29 +281,50 @@ class AUTO_MAA(MSFluentWindow):
                 )
             )
             self.setGeometry(location[0], location[1], size[0], size[1])
-            if self.config.global_config.get(self.config.global_config.ui_maximized):
-                self.showMaximized()
+            self.show()
+            if not if_quick:
+                if self.config.global_config.get(
+                    self.config.global_config.ui_maximized
+                ):
+                    self.showMaximized()
+                self.set_min_method()
+                self.show_ui("配置托盘")
+
+        elif mode == "配置托盘":
+
+            if self.config.global_config.get(self.config.global_config.ui_IfShowTray):
+                self.tray.show()
             else:
-                self.showNormal()
+                self.tray.hide()
 
-            self.if_save = True
+        elif mode == "隐藏到托盘":
 
-    def changeEvent(self, event: QtCore.QEvent):
-        """重写后的 changeEvent"""
+            # 保存窗口相关属性
+            if not self.isMaximized():
 
-        # 最小化到托盘功能实现
-        if event.type() == QtCore.QEvent.WindowStateChange:
-            if self.windowState() & QtCore.Qt.WindowMinimized:
-                if self.config.global_config.get(self.config.global_config.ui_IfToTray):
-                    self.show_tray()
+                self.config.global_config.set(
+                    self.config.global_config.ui_size,
+                    f"{self.geometry().width()}x{self.geometry().height()}",
+                )
+                self.config.global_config.set(
+                    self.config.global_config.ui_location,
+                    f"{self.geometry().x()}x{self.geometry().y()}",
+                )
+            self.config.global_config.set(
+                self.config.global_config.ui_maximized, self.isMaximized()
+            )
+            self.config.global_config.save()
 
-        # 保留其它 changeEvent 方法
-        return super().changeEvent(event)
+            # 隐藏主窗口
+            if not if_quick:
+
+                self.hide()
+                self.tray.show()
 
     def closeEvent(self, event: QCloseEvent):
         """清理残余进程"""
 
-        self.set_ui("保存")
+        self.show_ui("隐藏到托盘", if_quick=True)
 
         # 清理各功能线程
         # self.main.Timer.stop()

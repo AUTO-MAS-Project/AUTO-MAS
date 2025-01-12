@@ -26,56 +26,26 @@ v4.2
 """
 
 from PySide6.QtWidgets import (
-    QWidget,  #
-    QMainWindow,  #
-    QApplication,  #
-    QSystemTrayIcon,  #
-    QFileDialog,  #
-    QTabWidget,  #
-    QToolBox,  #
-    QComboBox,  #
-    QTableWidgetItem,  #
-    QHeaderView,  #
+    QWidget,
+    QApplication,
     QVBoxLayout,
-    QHBoxLayout,
 )
 from qfluentwidgets import (
-    Action,
-    PushButton,
-    LineEdit,
-    PasswordLineEdit,
-    TextBrowser,
-    TableWidget,
-    TimePicker,
-    ComboBox,
-    CheckBox,
     ScrollArea,
-    SpinBox,
     FluentIcon,
     setTheme,
     Theme,
     MessageBox,
-    MessageBoxBase,
     HeaderCardWidget,
-    BodyLabel,
     InfoBar,
     InfoBarPosition,
-    SubtitleLabel,
-    GroupHeaderCardWidget,
     SwitchSettingCard,
     ExpandGroupSettingCard,
-    SingleDirectionScrollArea,
     PushSettingCard,
 )
 from PySide6.QtUiTools import QUiLoader
-from PySide6.QtGui import QIcon, QCloseEvent
 from PySide6 import QtCore
-from functools import partial
-from typing import List, Tuple
-from pathlib import Path
 import json
-import datetime
-import ctypes
 import subprocess
 import time
 import requests
