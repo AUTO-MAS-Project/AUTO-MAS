@@ -661,10 +661,20 @@ class MaaManager(QtCore.QThread):
             data["Configurations"]["Default"][
                 "MainFunction.PostActions"
             ] = "12"  # 完成后退出MAA和模拟器
-            data["Global"]["Start.RunDirectly"] = "True"  # 启动MAA后直接运行
+
+            # v5.1.11版本对于以下字段处理
+            # 启动MAA后直接运行
+            data["Global"]["Start.RunDirectly"] = "True"
+            # 启动MAA后自动开启模拟器
             data["Global"][
                 "Start.OpenEmulatorAfterLaunch"
-            ] = "True"  # 启动MAA后自动开启模拟器
+            ] = "True"
+
+            # v5.1.12版本对以下字段处理
+            # 启动MAA后直接运行
+            data["Configurations"]["Default"]["Start.OpenEmulatorAfterLaunch"] = "True"
+            # 启动MAA后自动开启模拟器
+            data["Configurations"]["Default"]["Start.RunDirectly"] = "True"
 
             if self.if_silence:
                 data["Global"]["Start.MinimizeDirectly"] = "True"  # 启动MAA后直接最小化
@@ -868,8 +878,17 @@ class MaaManager(QtCore.QThread):
             data["Configurations"]["Default"][
                 "MainFunction.PostActions"
             ] = "8"  # 完成后退出MAA
+
+            # v5.1.11版本对于以下字段处理
             data["Global"]["Start.RunDirectly"] = "True"  # 启动MAA后直接运行
             data["Global"]["Start.MinimizeDirectly"] = "True"  # 启动MAA后直接最小化
+            # v5.1.12版本对以下字段处理
+            # 启动MAA后直接运行
+            data["Configurations"]["Default"]["Start.OpenEmulatorAfterLaunch"] = "True"
+            # 启动MAA后自动开启模拟器
+            data["Configurations"]["Default"]["Start.RunDirectly"] = "True"
+
+
             data["Global"]["GUI.UseTray"] = "True"  # 显示托盘图标
             data["Global"]["GUI.MinimizeToTray"] = "True"  # 最小化时隐藏至托盘
             # 启动MAA后自动开启模拟器
@@ -938,10 +957,18 @@ class MaaManager(QtCore.QThread):
             data["Configurations"]["Default"][
                 "MainFunction.PostActions"
             ] = "0"  # 完成后无动作
+
+            # v5.11.1及以下版本的字段处理
             data["Global"]["Start.RunDirectly"] = "False"  # 启动MAA后直接运行
             data["Global"][
                 "Start.OpenEmulatorAfterLaunch"
             ] = "False"  # 启动MAA后自动开启模拟器
+
+            # v5.1.12版本对以下字段处理
+            # 启动MAA后直接运行
+            data["Configurations"]["Default"]["Start.OpenEmulatorAfterLaunch"] = "False"
+            # 启动MAA后自动开启模拟器
+            data["Configurations"]["Default"]["Start.RunDirectly"] = "False"
 
             if self.if_silence:
                 data["Global"][
