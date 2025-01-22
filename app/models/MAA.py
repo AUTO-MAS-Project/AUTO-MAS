@@ -675,7 +675,6 @@ class MaaManager(QtCore.QThread):
             data["Configurations"]["Default"]["Start.RunDirectly"] = "True"
 
 
-
             if self.if_silence:
                 data["Global"]["Start.MinimizeDirectly"] = "True"  # 启动MAA后直接最小化
                 data["Global"]["GUI.UseTray"] = "True"  # 显示托盘图标
