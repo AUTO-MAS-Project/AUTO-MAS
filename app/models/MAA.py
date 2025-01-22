@@ -33,7 +33,6 @@ import subprocess
 import shutil
 import time
 from pathlib import Path
-
 from app import AppConfig
 
 
@@ -658,13 +657,23 @@ class MaaManager(QtCore.QThread):
             data["Current"] = "Default"  # 切换配置
             for i in range(1, 9):
                 data["Global"][f"Timer.Timer{i}"] = "False"  # 时间设置
+            # 完成后退出MAA和模拟器
             data["Configurations"]["Default"][
                 "MainFunction.PostActions"
-            ] = "12"  # 完成后退出MAA和模拟器
-            data["Global"]["Start.RunDirectly"] = "True"  # 启动MAA后直接运行
+            ] = "12"
+            # v5.1.11版本对于以下字段处理
+            # 启动MAA后直接运行
+            data["Global"]["Start.RunDirectly"] = "True"
+            # 启动MAA后自动开启模拟器
             data["Global"][
                 "Start.OpenEmulatorAfterLaunch"
-            ] = "True"  # 启动MAA后自动开启模拟器
+            ] = "True"
+            # v5.1.12版本对以下字段处理
+            # 启动MAA后直接运行
+            data["Configurations"]["Default"]["Start.OpenEmulatorAfterLaunch"] = "True"
+            # 启动MAA后自动开启模拟器
+            data["Configurations"]["Default"]["Start.RunDirectly"] = "True"
+
 
             if self.if_silence:
                 data["Global"]["Start.MinimizeDirectly"] = "True"  # 启动MAA后直接最小化
