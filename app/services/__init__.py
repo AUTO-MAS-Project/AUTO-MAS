@@ -29,8 +29,8 @@ __version__ = "4.2.0"
 __author__ = "DLmaster361 <DLmaster_361@163.com>"
 __license__ = "GPL-3.0 license"
 
-from .notification import Notification
-from .security import CryptoHandler
-from .system import SystemHandler
+from .notification import Notify
+from .security import Crypto
+from .system import System
 
-__all__ = ["Notification", "CryptoHandler", "SystemHandler"]
+__all__ = ["Notify", "Crypto", "System"]

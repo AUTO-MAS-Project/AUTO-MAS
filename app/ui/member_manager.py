@@ -57,8 +57,8 @@ import datetime
 import json
 import shutil
 
-from app.core import AppConfig, MaaConfig, MainInfoBar
-from app.services import Notification, CryptoHandler
+from app.core import Config, MainInfoBar
+from app.services import Notify, Crypto
 from .Widget import (
     InputMessageBox,
     LineEditSettingCard,
@@ -71,18 +71,11 @@ class MemberManager(QWidget):
 
     def __init__(
         self,
-        config: AppConfig,
-        notify: Notification,
-        crypto: CryptoHandler,
         parent=None,
     ):
         super().__init__(parent)
 
         self.setObjectName("脚本管理")
-
-        self.config = config
-        self.notify = notify
-        self.crypto = crypto
 
         setTheme(Theme.AUTO)
 
@@ -90,7 +83,7 @@ class MemberManager(QWidget):
 
         self.tools = CommandBar()
 
-        self.member_manager = MemberSettingBox(self.config, self.crypto, self)
+        self.member_manager = MemberSettingBox(self)
 
         # 逐个添加动作
         self.tools.addActions(
@@ -147,14 +140,14 @@ class MemberManager(QWidget):
                 index = len(self.member_manager.search_member()) + 1
 
                 qconfig.load(
-                    self.config.app_path / f"config/MaaConfig/脚本_{index}/config.json",
-                    self.config.maa_config,
+                    Config.app_path / f"config/MaaConfig/脚本_{index}/config.json",
+                    Config.maa_config,
                 )
-                self.config.clear_maa_config()
-                self.config.maa_config.save()
+                Config.clear_maa_config()
+                Config.maa_config.save()
 
-                self.config.open_database("Maa", f"脚本_{index}")
-                self.config.init_database("Maa")
+                Config.open_database("Maa", f"脚本_{index}")
+                Config.init_database("Maa")
                 self.member_manager.add_MaaSettingBox(index)
                 self.member_manager.switch_SettingBox(index)
 
@@ -181,16 +174,12 @@ class MemberManager(QWidget):
 
             self.member_manager.clear_SettingBox()
 
-            shutil.rmtree(self.config.app_path / f"config/{type[0]}Config/{name}")
+            shutil.rmtree(Config.app_path / f"config/{type[0]}Config/{name}")
             self.change_queue(name, "禁用")
             for member in move_list:
-                if (
-                    self.config.app_path / f"config/{member[1]}Config/{member[0]}"
-                ).exists():
-                    (
-                        self.config.app_path / f"config/{member[1]}Config/{member[0]}"
-                    ).rename(
-                        self.config.app_path
+                if (Config.app_path / f"config/{member[1]}Config/{member[0]}").exists():
+                    (Config.app_path / f"config/{member[1]}Config/{member[0]}").rename(
+                        Config.app_path
                         / f"config/{member[1]}Config/脚本_{int(member[0][3:])-1}",
                     )
                 self.change_queue(member[0], f"脚本_{int(member[0][3:])-1}")
@@ -216,16 +205,16 @@ class MemberManager(QWidget):
 
         self.member_manager.clear_SettingBox()
 
-        (self.config.app_path / f"config/{type_right[0]}Config/脚本_{index}").rename(
-            self.config.app_path / f"config/{type_right[0]}Config/脚本_0"
+        (Config.app_path / f"config/{type_right[0]}Config/脚本_{index}").rename(
+            Config.app_path / f"config/{type_right[0]}Config/脚本_0"
         )
         self.change_queue(f"脚本_{index}", "脚本_0")
-        (self.config.app_path / f"config/{type_left[0]}Config/脚本_{index-1}").rename(
-            self.config.app_path / f"config/{type_left[0]}Config/脚本_{index}"
+        (Config.app_path / f"config/{type_left[0]}Config/脚本_{index-1}").rename(
+            Config.app_path / f"config/{type_left[0]}Config/脚本_{index}"
         )
         self.change_queue(f"脚本_{index-1}", f"脚本_{index}")
-        (self.config.app_path / f"config/{type_right[0]}Config/脚本_0").rename(
-            self.config.app_path / f"config/{type_right[0]}Config/脚本_{index-1}"
+        (Config.app_path / f"config/{type_right[0]}Config/脚本_0").rename(
+            Config.app_path / f"config/{type_right[0]}Config/脚本_{index-1}"
         )
         self.change_queue("脚本_0", f"脚本_{index-1}")
 
@@ -250,16 +239,16 @@ class MemberManager(QWidget):
 
         self.member_manager.clear_SettingBox()
 
-        (self.config.app_path / f"config/{type_left[0]}Config/脚本_{index}").rename(
-            self.config.app_path / f"config/{type_left[0]}Config/脚本_0",
+        (Config.app_path / f"config/{type_left[0]}Config/脚本_{index}").rename(
+            Config.app_path / f"config/{type_left[0]}Config/脚本_0",
         )
         self.change_queue(f"脚本_{index}", "脚本_0")
-        (self.config.app_path / f"config/{type_right[0]}Config/脚本_{index+1}").rename(
-            self.config.app_path / f"config/{type_right[0]}Config/脚本_{index}",
+        (Config.app_path / f"config/{type_right[0]}Config/脚本_{index+1}").rename(
+            Config.app_path / f"config/{type_right[0]}Config/脚本_{index}",
         )
         self.change_queue(f"脚本_{index+1}", f"脚本_{index}")
-        (self.config.app_path / f"config/{type_left[0]}Config/脚本_0").rename(
-            self.config.app_path / f"config/{type_left[0]}Config/脚本_{index+1}",
+        (Config.app_path / f"config/{type_left[0]}Config/脚本_0").rename(
+            Config.app_path / f"config/{type_left[0]}Config/脚本_{index+1}",
         )
         self.change_queue("脚本_0", f"脚本_{index+1}")
 
@@ -267,7 +256,7 @@ class MemberManager(QWidget):
 
     def show_password(self):
 
-        if self.config.PASSWORD == "":
+        if Config.PASSWORD == "":
             choice = InputMessageBox(
                 self,
                 "请输入管理密钥",
@@ -275,21 +264,21 @@ class MemberManager(QWidget):
                 "密码",
             )
             if choice.exec() and choice.input.text() != "":
-                self.config.PASSWORD = choice.input.text()
+                Config.PASSWORD = choice.input.text()
                 self.member_manager.script_list[
                     int(self.member_manager.pivot.currentRouteKey()[3:]) - 1
                 ].user_setting.user_list.update_user_info("normal")
                 self.key.setIcon(FluentIcon.VIEW)
                 self.key.setChecked(True)
             else:
-                self.config.PASSWORD = ""
+                Config.PASSWORD = ""
                 self.member_manager.script_list[
                     int(self.member_manager.pivot.currentRouteKey()[3:]) - 1
                 ].user_setting.user_list.update_user_info("normal")
                 self.key.setIcon(FluentIcon.HIDE)
                 self.key.setChecked(False)
         else:
-            self.config.PASSWORD = ""
+            Config.PASSWORD = ""
             self.member_manager.script_list[
                 int(self.member_manager.pivot.currentRouteKey()[3:]) - 1
             ].user_setting.user_list.update_user_info("normal")
@@ -299,10 +288,8 @@ class MemberManager(QWidget):
     def change_queue(self, old: str, new: str) -> None:
         """修改调度队列配置文件的队列参数"""
 
-        if (self.config.app_path / "config/QueueConfig").exists():
-            for json_file in (self.config.app_path / "config/QueueConfig").glob(
-                "*.json"
-            ):
+        if (Config.app_path / "config/QueueConfig").exists():
+            for json_file in (Config.app_path / "config/QueueConfig").glob("*.json"):
                 with json_file.open("r", encoding="utf-8") as f:
                     data = json.load(f)
 
@@ -325,12 +312,10 @@ class MemberManager(QWidget):
 
 class MemberSettingBox(QWidget):
 
-    def __init__(self, config: AppConfig, crypto: CryptoHandler, parent=None):
+    def __init__(self, parent=None):
         super().__init__(parent)
 
         self.setObjectName("脚本管理")
-        self.config = config
-        self.crypto = crypto
 
         self.pivot = Pivot(self)
         self.stackedWidget = QStackedWidget(self)
@@ -354,16 +339,16 @@ class MemberSettingBox(QWidget):
         member_list = self.search_member()
 
         qconfig.load(
-            self.config.app_path / "config/临时.json",
-            self.config.maa_config,
+            Config.app_path / "config/临时.json",
+            Config.maa_config,
         )
-        self.config.clear_maa_config()
+        Config.clear_maa_config()
         for member in member_list:
             if member[1] == "Maa":
-                self.config.open_database(member[1], member[0])
+                Config.open_database(member[1], member[0])
                 self.add_MaaSettingBox(int(member[0][3:]))
-        if (self.config.app_path / "config/临时.json").exists():
-            (self.config.app_path / "config/临时.json").unlink()
+        if (Config.app_path / "config/临时.json").exists():
+            (Config.app_path / "config/临时.json").unlink()
 
         self.switch_SettingBox(index)
 
@@ -381,11 +366,11 @@ class MemberSettingBox(QWidget):
         type = [_[1] for _ in member_list if _[0] == f"脚本_{index}"]
 
         qconfig.load(
-            self.config.app_path
+            Config.app_path
             / f"config/{type[0]}Config/{self.script_list[index-1].objectName()}/config.json",
-            self.config.maa_config,
+            Config.maa_config,
         )
-        self.config.open_database(type[0], self.script_list[index - 1].objectName())
+        Config.open_database(type[0], self.script_list[index - 1].objectName())
         self.script_list[index - 1].user_setting.user_list.update_user_info("normal")
 
         if if_chang_pivot:
@@ -401,18 +386,18 @@ class MemberSettingBox(QWidget):
         self.script_list.clear()
         self.pivot.clear()
         qconfig.load(
-            self.config.app_path / "config/临时.json",
-            self.config.maa_config,
+            Config.app_path / "config/临时.json",
+            Config.maa_config,
         )
-        self.config.clear_maa_config()
-        if (self.config.app_path / "config/临时.json").exists():
-            (self.config.app_path / "config/临时.json").unlink()
-        self.config.close_database()
+        Config.clear_maa_config()
+        if (Config.app_path / "config/临时.json").exists():
+            (Config.app_path / "config/临时.json").unlink()
+        Config.close_database()
 
     def add_MaaSettingBox(self, uid: int) -> None:
         """添加一个MAA设置界面"""
 
-        maa_setting_box = MaaSettingBox(self.config, self.crypto, uid, self)
+        maa_setting_box = MaaSettingBox(uid, self)
 
         self.script_list.append(maa_setting_box)
 
@@ -425,8 +410,8 @@ class MemberSettingBox(QWidget):
 
         member_list = []
 
-        if (self.config.app_path / "config/MaaConfig").exists():
-            for subdir in (self.config.app_path / "config/MaaConfig").iterdir():
+        if (Config.app_path / "config/MaaConfig").exists():
+            for subdir in (Config.app_path / "config/MaaConfig").iterdir():
                 if subdir.is_dir():
                     member_list.append([subdir.name, "Maa"])
 
@@ -435,13 +420,10 @@ class MemberSettingBox(QWidget):
 
 class MaaSettingBox(QWidget):
 
-    def __init__(self, config: AppConfig, crypto: CryptoHandler, uid: int, parent=None):
+    def __init__(self, uid: int, parent=None):
         super().__init__(parent)
 
         self.setObjectName(f"脚本_{uid}")
-
-        self.config = config
-        self.crypto = crypto
 
         layout = QVBoxLayout()
 
@@ -451,10 +433,8 @@ class MaaSettingBox(QWidget):
         content_widget = QWidget()
         content_layout = QVBoxLayout(content_widget)
 
-        self.app_setting = self.AppSettingCard(self, self.config, uid)
-        self.user_setting = self.UserSettingCard(
-            self, self.objectName(), self.config, self.crypto
-        )
+        self.app_setting = self.AppSettingCard(self, uid)
+        self.user_setting = self.UserSettingCard(self, self.objectName())
 
         content_layout.addWidget(self.app_setting)
         content_layout.addWidget(self.user_setting)
@@ -468,12 +448,11 @@ class MaaSettingBox(QWidget):
 
     class AppSettingCard(HeaderCardWidget):
 
-        def __init__(self, parent=None, config: AppConfig = None, uid: int = None):
+        def __init__(self, parent=None, uid: int = None):
             super().__init__(parent)
 
             self.setTitle("MAA实例")
 
-            self.config = config
             self.uid = uid
 
             Layout = QVBoxLayout()
@@ -483,13 +462,13 @@ class MaaSettingBox(QWidget):
                 FluentIcon.EDIT,
                 "实例名称",
                 "用于标识MAA实例的名称",
-                self.config.maa_config.MaaSet_Name,
+                Config.maa_config.MaaSet_Name,
             )
             self.card_Path = PushSettingCard(
                 "选择文件夹",
                 FluentIcon.FOLDER,
                 "MAA目录",
-                self.config.maa_config.get(self.config.maa_config.MaaSet_Path),
+                Config.maa_config.get(Config.maa_config.MaaSet_Path),
             )
             self.card_Set = PushSettingCard(
                 "设置",
@@ -497,12 +476,12 @@ class MaaSettingBox(QWidget):
                 "MAA全局配置",
                 "简洁模式下MAA将继承全局配置",
             )
-            self.RunSet = self.RunSetSettingCard(self, self.config.maa_config)
+            self.RunSet = self.RunSetSettingCard(self)
 
             self.card_Path.clicked.connect(self.PathClicked)
-            self.config.maa_config.MaaSet_Path.valueChanged.connect(
+            Config.maa_config.MaaSet_Path.valueChanged.connect(
                 lambda: self.card_Path.setContent(
-                    self.config.maa_config.get(self.config.maa_config.MaaSet_Path)
+                    Config.maa_config.get(Config.maa_config.MaaSet_Path)
                 )
             )
 
@@ -518,8 +497,7 @@ class MaaSettingBox(QWidget):
             folder = QFileDialog.getExistingDirectory(self, "选择MAA目录", "./")
             if (
                 not folder
-                or self.config.maa_config.get(self.config.maa_config.MaaSet_Path)
-                == folder
+                or Config.maa_config.get(Config.maa_config.MaaSet_Path) == folder
             ):
                 logger.warning("选择MAA目录时未选择文件夹或未更改文件夹")
                 MainInfoBar.push_info_bar(
@@ -536,28 +514,25 @@ class MaaSettingBox(QWidget):
                 )
                 return None
 
-            (self.config.app_path / f"config/MaaConfig/脚本_{self.uid}/Default").mkdir(
+            (Config.app_path / f"config/MaaConfig/脚本_{self.uid}/Default").mkdir(
                 parents=True, exist_ok=True
             )
             shutil.copy(
                 Path(folder) / "config/gui.json",
-                self.config.app_path
-                / f"config/MaaConfig/脚本_{self.uid}/Default/gui.json",
+                Config.app_path / f"config/MaaConfig/脚本_{self.uid}/Default/gui.json",
             )
-            self.config.maa_config.set(self.config.maa_config.MaaSet_Path, folder)
+            Config.maa_config.set(Config.maa_config.MaaSet_Path, folder)
             self.card_Path.setContent(folder)
 
         class RunSetSettingCard(ExpandGroupSettingCard):
 
-            def __init__(self, parent=None, maa_config: MaaConfig = None):
+            def __init__(self, parent=None):
                 super().__init__(
                     FluentIcon.SETTING,
                     "运行",
                     "MAA运行调控选项",
                     parent,
                 )
-
-                self.maa_config = maa_config
 
                 widget = QWidget()
                 Layout = QVBoxLayout(widget)
@@ -567,7 +542,7 @@ class MaaSettingBox(QWidget):
                     FluentIcon.PAGE_RIGHT,
                     "剿灭代理超时限制",
                     "MAA日志无变化时间超过该阈值视为超时，单位为分钟",
-                    self.maa_config.RunSet_AnnihilationTimeLimit,
+                    Config.maa_config.RunSet_AnnihilationTimeLimit,
                 )
 
                 self.RoutineTimeLimit = SpinBoxSettingCard(
@@ -575,7 +550,7 @@ class MaaSettingBox(QWidget):
                     FluentIcon.PAGE_RIGHT,
                     "自动代理超时限制",
                     "MAA日志无变化时间超过该阈值视为超时，单位为分钟",
-                    self.maa_config.RunSet_RoutineTimeLimit,
+                    Config.maa_config.RunSet_RoutineTimeLimit,
                 )
 
                 self.RunTimesLimit = SpinBoxSettingCard(
@@ -583,7 +558,7 @@ class MaaSettingBox(QWidget):
                     FluentIcon.PAGE_RIGHT,
                     "代理重试次数限制",
                     "若超过该次数限制仍未完成代理，视为代理失败",
-                    self.maa_config.RunSet_RunTimesLimit,
+                    Config.maa_config.RunSet_RunTimesLimit,
                 )
 
                 Layout.addWidget(self.AnnihilationTimeLimit)
@@ -601,20 +576,16 @@ class MaaSettingBox(QWidget):
             self,
             parent=None,
             name: str = None,
-            config: AppConfig = None,
-            crypto: CryptoHandler = None,
         ):
             super().__init__(parent)
 
             self.setTitle("用户列表")
 
-            self.config = config
-            self.crypto = crypto
             self.name = name
 
             Layout = QVBoxLayout()
 
-            self.user_list = self.UserListBox(self.name, self.config, self.crypto, self)
+            self.user_list = self.UserListBox(self.name, self)
 
             self.tools = CommandBar()
             self.tools.addActions(
@@ -656,8 +627,8 @@ class MaaSettingBox(QWidget):
 
         def set_more(self):
 
-            self.config.cur.execute("SELECT * FROM adminx WHERE True")
-            data = self.config.cur.fetchall()
+            Config.cur.execute("SELECT * FROM adminx WHERE True")
+            data = Config.cur.fetchall()
 
             if self.user_list.pivot.currentRouteKey() == f"{self.name}_简洁用户列表":
 
@@ -685,12 +656,12 @@ class MaaSettingBox(QWidget):
                         )
                         if file_path != "":
                             (
-                                self.config.app_path
+                                Config.app_path
                                 / f"config/MaaConfig/{self.name}/simple/{choice.input[0].currentIndex()}/infrastructure"
                             ).mkdir(parents=True, exist_ok=True)
                             shutil.copy(
                                 file_path,
-                                self.config.app_path
+                                Config.app_path
                                 / f"config/MaaConfig/{self.name}/simple/{choice.input[0].currentIndex()}/infrastructure",
                             )
                         else:
@@ -712,13 +683,9 @@ class MaaSettingBox(QWidget):
 
         class UserListBox(QWidget):
 
-            def __init__(
-                self, name: str, config: AppConfig, crypto: CryptoHandler, parent=None
-            ):
+            def __init__(self, name: str, parent=None):
                 super().__init__(parent)
                 self.setObjectName(f"{name}_用户列表")
-                self.config = config
-                self.crypto = crypto
 
                 self.name = name
 
@@ -874,8 +841,8 @@ class MaaSettingBox(QWidget):
                 """将本地数据库中的用户配置同步至GUI的用户管理界面"""
 
                 # 读入本地数据库
-                self.config.cur.execute("SELECT * FROM adminx WHERE True")
-                data = self.config.cur.fetchall()
+                Config.cur.execute("SELECT * FROM adminx WHERE True")
+                data = Config.cur.fetchall()
 
                 # 处理部分模式调整
                 if operation == "read_only":
@@ -946,15 +913,13 @@ class MaaSettingBox(QWidget):
                                 QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled
                             )
                         elif j == 12:
-                            if self.config.PASSWORD == "":
+                            if Config.PASSWORD == "":
                                 item = QTableWidgetItem("******")
                                 item.setFlags(
                                     QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled
                                 )
                             else:
-                                result = self.crypto.decryptx(
-                                    value, self.config.PASSWORD
-                                )
+                                result = Crypto.decryptx(value, Config.PASSWORD)
                                 item = QTableWidgetItem(result)
                                 if result == "管理密钥错误":
                                     item.setFlags(
@@ -1022,15 +987,13 @@ class MaaSettingBox(QWidget):
                                 QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled
                             )
                         elif j == 12:
-                            if self.config.PASSWORD == "":
+                            if Config.PASSWORD == "":
                                 item = QTableWidgetItem("******")
                                 item.setFlags(
                                     QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled
                                 )
                             else:
-                                result = self.crypto.decryptx(
-                                    value, self.config.PASSWORD
-                                )
+                                result = Crypto.decryptx(value, Config.PASSWORD)
                                 item = QTableWidgetItem(result)
                                 if result == "管理密钥错误":
                                     item.setFlags(
@@ -1094,9 +1057,7 @@ class MaaSettingBox(QWidget):
                     if item.column() in [6, 7, 8]:  # 关卡号
                         # 导入与应用特殊关卡规则
                         games = {}
-                        with self.config.gameid_path.open(
-                            mode="r", encoding="utf-8"
-                        ) as f:
+                        with Config.gameid_path.open(mode="r", encoding="utf-8") as f:
                             gameids = f.readlines()
                             for line in gameids:
                                 if "：" in line:
@@ -1104,11 +1065,11 @@ class MaaSettingBox(QWidget):
                                     games[game_in.strip()] = game_out.strip()
                         text = games.get(text, text)
                     if item.column() == 11:  # 密码
-                        text = self.crypto.encryptx(text)
+                        text = Crypto.encryptx(text)
 
                     # 保存至本地数据库
                     if text != "":
-                        self.config.cur.execute(
+                        Config.cur.execute(
                             f"UPDATE adminx SET {self.user_column[self.userlist_simple_index.index(item.column())]} = ? WHERE mode = 'simple' AND uid = ?",
                             (text, item.row()),
                         )
@@ -1122,15 +1083,15 @@ class MaaSettingBox(QWidget):
                             self.update_user_info("normal")
                             return None
                     if item.column() == 6:  # 密码
-                        text = self.crypto.encryptx(text)
+                        text = Crypto.encryptx(text)
 
                     # 保存至本地数据库
                     if text != "":
-                        self.config.cur.execute(
+                        Config.cur.execute(
                             f"UPDATE adminx SET {self.user_column[self.userlist_beta_index.index(item.column())]} = ? WHERE mode = 'beta' AND uid = ?",
                             (text, item.row()),
                         )
-                self.config.db.commit()
+                Config.db.commit()
 
                 # 同步一般用户信息更改到GUI
                 self.update_user_info("normal")
@@ -1156,7 +1117,7 @@ class MaaSettingBox(QWidget):
                 #         or (
                 #             index == 0
                 #             and not (
-                #                 self.config.app_path
+                #                 Config.app_path
                 #                 / f"data/MAAconfig/{self.user_mode_list[index]}/{row}/{column}/gui.json"
                 #             ).exists()
                 #         )
@@ -1173,14 +1134,14 @@ class MaaSettingBox(QWidget):
                 # 服务器
                 if mode == 0 and column == "server":
                     server_list = ["Official", "Bilibili"]
-                    self.config.cur.execute(
+                    Config.cur.execute(
                         f"UPDATE adminx SET server = ? WHERE mode = 'simple' AND uid = ?",
                         (server_list[index], row),
                     )
                 # 其它(启用/禁用)
                 elif index in [0, 1]:
                     index_list = ["y", "n"]
-                    self.config.cur.execute(
+                    Config.cur.execute(
                         f"UPDATE adminx SET {column} = ? WHERE mode = ? AND uid = ?",
                         (
                             index_list[index],
@@ -1188,7 +1149,7 @@ class MaaSettingBox(QWidget):
                             row,
                         ),
                     )
-                self.config.db.commit()
+                Config.db.commit()
 
                 # 同步用户组件信息修改到GUI
                 self.update_user_info("normal")
@@ -1201,15 +1162,15 @@ class MaaSettingBox(QWidget):
                     set_book = ["simple", self.user_list_simple.rowCount()]
                 elif "高级用户列表" in self.pivot.currentRouteKey():
                     set_book = ["beta", self.user_list_beta.rowCount()]
-                self.config.cur.execute(
+                Config.cur.execute(
                     "INSERT INTO adminx VALUES('新用户','手机号码（官服）/B站ID（B服）','Official',-1,'y','2000-01-01','1-7','-','-','n','n','n',?,'无',0,?,?)",
                     (
-                        self.crypto.encryptx("未设置"),
+                        Crypto.encryptx("未设置"),
                         set_book[0],
                         set_book[1],
                     ),
                 )
-                self.config.db.commit(),
+                Config.db.commit(),
 
                 # 同步新用户至GUI
                 self.update_user_info("normal")
@@ -1248,14 +1209,14 @@ class MaaSettingBox(QWidget):
                         return None
 
                 # 确认待删除用户信息
-                self.config.cur.execute(
+                Config.cur.execute(
                     "SELECT * FROM adminx WHERE mode = ? AND uid = ?",
                     (
                         self.user_mode_list[mode],
                         row,
                     ),
                 )
-                data = self.config.cur.fetchall()
+                data = Config.cur.fetchall()
                 choice = MessageBox(
                     "确认",
                     f"确定要删除用户 {data[0][0]} 吗？",
@@ -1273,26 +1234,26 @@ class MaaSettingBox(QWidget):
                 # 删除用户
                 if choice.exec():
                     # 删除所选用户
-                    self.config.cur.execute(
+                    Config.cur.execute(
                         "DELETE FROM adminx WHERE mode = ? AND uid = ?",
                         (
                             self.user_mode_list[mode],
                             row,
                         ),
                     )
-                    self.config.db.commit()
+                    Config.db.commit()
 
                     if (
-                        self.config.app_path
+                        Config.app_path
                         / f"config/MaaConfig/{self.name}/{self.user_mode_list[mode]}/{row}"
                     ).exists():
                         shutil.rmtree(
-                            self.config.app_path
+                            Config.app_path
                             / f"config/MaaConfig/{self.name}/{self.user_mode_list[mode]}/{row}"
                         )
                     # 后续用户补位
                     for i in range(row + 1, current_numb):
-                        self.config.cur.execute(
+                        Config.cur.execute(
                             "UPDATE adminx SET uid = ? WHERE mode = ? AND uid = ?",
                             (
                                 i - 1,
@@ -1300,16 +1261,16 @@ class MaaSettingBox(QWidget):
                                 i,
                             ),
                         )
-                        self.config.db.commit()
+                        Config.db.commit()
                         if (
-                            self.config.app_path
+                            Config.app_path
                             / f"config/MaaConfig/{self.name}/{self.user_mode_list[mode]}/{i}"
                         ).exists():
                             (
-                                self.config.app_path
+                                Config.app_path
                                 / f"config/MaaConfig/{self.name}/{self.user_mode_list[mode]}/{i}"
                             ).rename(
-                                self.config.app_path
+                                Config.app_path
                                 / f"config/MaaConfig/{self.name}/{self.user_mode_list[mode]}/{i}"
                             )
 
@@ -1350,7 +1311,7 @@ class MaaSettingBox(QWidget):
                 if row == 0:
                     return None
 
-                self.config.cur.execute(
+                Config.cur.execute(
                     "UPDATE adminx SET uid = ? WHERE mode = ? AND uid = ?",
                     (
                         -1,
@@ -1358,7 +1319,7 @@ class MaaSettingBox(QWidget):
                         row,
                     ),
                 )
-                self.config.cur.execute(
+                Config.cur.execute(
                     "UPDATE adminx SET uid = ? WHERE mode = ? AND uid = ?",
                     (
                         row,
@@ -1366,7 +1327,7 @@ class MaaSettingBox(QWidget):
                         row - 1,
                     ),
                 )
-                self.config.cur.execute(
+                Config.cur.execute(
                     "UPDATE adminx SET uid = ? WHERE mode = ? AND uid = ?",
                     (
                         row - 1,
@@ -1374,39 +1335,39 @@ class MaaSettingBox(QWidget):
                         -1,
                     ),
                 )
-                self.config.db.commit()
+                Config.db.commit()
 
                 if (
-                    self.config.app_path
+                    Config.app_path
                     / f"config/MaaConfig/{self.name}/{self.user_mode_list[mode]}/{row}"
                 ).exists():
                     (
-                        self.config.app_path
+                        Config.app_path
                         / f"config/MaaConfig/{self.name}/{self.user_mode_list[mode]}/{row}"
                     ).rename(
-                        self.config.app_path
+                        Config.app_path
                         / f"config/MaaConfig/{self.name}/{self.user_mode_list[mode]}/{-1}"
                     )
                 if (
-                    self.config.app_path
+                    Config.app_path
                     / f"config/MaaConfig/{self.name}/{self.user_mode_list[mode]}/{row - 1}"
                 ).exists():
                     (
-                        self.config.app_path
+                        Config.app_path
                         / f"config/MaaConfig/{self.name}/{self.user_mode_list[mode]}/{row - 1}"
                     ).rename(
-                        self.config.app_path
+                        Config.app_path
                         / f"config/MaaConfig/{self.name}/{self.user_mode_list[mode]}/{row}"
                     )
                 if (
-                    self.config.app_path
+                    Config.app_path
                     / f"config/MaaConfig/{self.name}/{self.user_mode_list[mode]}/{-1}"
                 ).exists():
                     (
-                        self.config.app_path
+                        Config.app_path
                         / f"config/MaaConfig/{self.name}/{self.user_mode_list[mode]}/{-1}"
                     ).rename(
-                        self.config.app_path
+                        Config.app_path
                         / f"config/MaaConfig/{self.name}/{self.user_mode_list[mode]}/{row - 1}"
                     )
 
@@ -1452,7 +1413,7 @@ class MaaSettingBox(QWidget):
                 if row == current_numb - 1:
                     return None
 
-                self.config.cur.execute(
+                Config.cur.execute(
                     "UPDATE adminx SET uid = ? WHERE mode = ? AND uid = ?",
                     (
                         -1,
@@ -1460,7 +1421,7 @@ class MaaSettingBox(QWidget):
                         row,
                     ),
                 )
-                self.config.cur.execute(
+                Config.cur.execute(
                     "UPDATE adminx SET uid = ? WHERE mode = ? AND uid = ?",
                     (
                         row,
@@ -1468,7 +1429,7 @@ class MaaSettingBox(QWidget):
                         row + 1,
                     ),
                 )
-                self.config.cur.execute(
+                Config.cur.execute(
                     "UPDATE adminx SET uid = ? WHERE mode = ? AND uid = ?",
                     (
                         row + 1,
@@ -1476,39 +1437,39 @@ class MaaSettingBox(QWidget):
                         -1,
                     ),
                 )
-                self.config.db.commit()
+                Config.db.commit()
 
                 if (
-                    self.config.app_path
+                    Config.app_path
                     / f"config/MaaConfig/{self.name}/{self.user_mode_list[mode]}/{row}"
                 ).exists():
                     (
-                        self.config.app_path
+                        Config.app_path
                         / f"config/MaaConfig/{self.name}/{self.user_mode_list[mode]}/{row}"
                     ).rename(
-                        self.config.app_path
+                        Config.app_path
                         / f"config/MaaConfig/{self.name}/{self.user_mode_list[mode]}/{-1}"
                     )
                 if (
-                    self.config.app_path
+                    Config.app_path
                     / f"config/MaaConfig/{self.name}/{self.user_mode_list[mode]}/{row + 1}"
                 ).exists():
                     (
-                        self.config.app_path
+                        Config.app_path
                         / f"config/MaaConfig/{self.name}/{self.user_mode_list[mode]}/{row + 1}"
                     ).rename(
-                        self.config.app_path
+                        Config.app_path
                         / f"config/MaaConfig/{self.name}/{self.user_mode_list[mode]}/{row}"
                     )
                 if (
-                    self.config.app_path
+                    Config.app_path
                     / f"config/MaaConfig/{self.name}/{self.user_mode_list[mode]}/{-1}"
                 ).exists():
                     (
-                        self.config.app_path
+                        Config.app_path
                         / f"config/MaaConfig/{self.name}/{self.user_mode_list[mode]}/{-1}"
                     ).rename(
-                        self.config.app_path
+                        Config.app_path
                         / f"config/MaaConfig/{self.name}/{self.user_mode_list[mode]}/{row + 1}"
                     )
 
@@ -1550,14 +1511,14 @@ class MaaSettingBox(QWidget):
                         return None
 
                 # 确认待切换用户信息
-                self.config.cur.execute(
+                Config.cur.execute(
                     "SELECT * FROM adminx WHERE mode = ? AND uid = ?",
                     (
                         self.user_mode_list[mode],
                         row,
                     ),
                 )
-                data = self.config.cur.fetchall()
+                data = Config.cur.fetchall()
 
                 mode_list = ["简洁", "高级"]
                 choice = MessageBox(
@@ -1576,15 +1537,15 @@ class MaaSettingBox(QWidget):
 
                 # 切换用户
                 if choice.exec():
-                    self.config.cur.execute("SELECT * FROM adminx WHERE True")
-                    data = self.config.cur.fetchall()
+                    Config.cur.execute("SELECT * FROM adminx WHERE True")
+                    data = Config.cur.fetchall()
                     if mode == 0:
                         current_numb = self.user_list_simple.rowCount()
                     elif mode == 1:
                         current_numb = self.user_list_beta.rowCount()
                     # 切换所选用户
                     other_numb = len(data) - current_numb
-                    self.config.cur.execute(
+                    Config.cur.execute(
                         "UPDATE adminx SET mode = ?, uid = ? WHERE mode = ? AND uid = ?",
                         (
                             self.user_mode_list[1 - mode],
@@ -1593,20 +1554,20 @@ class MaaSettingBox(QWidget):
                             row,
                         ),
                     )
-                    self.config.db.commit()
+                    Config.db.commit()
                     if (
-                        self.config.app_path
+                        Config.app_path
                         / f"config/MaaConfig/{self.name}/{self.user_mode_list[mode]}/{row}"
                     ).exists():
                         shutil.move(
-                            self.config.app_path
+                            Config.app_path
                             / f"config/MaaConfig/{self.name}/{self.user_mode_list[mode]}/{row}",
-                            self.config.app_path
+                            Config.app_path
                             / f"config/MaaConfig/{self.name}/{self.user_mode_list[1 - mode]}/{other_numb}",
                         )
                     # 后续用户补位
                     for i in range(row + 1, current_numb):
-                        self.config.cur.execute(
+                        Config.cur.execute(
                             "UPDATE adminx SET uid = ? WHERE mode = ? AND uid = ?",
                             (
                                 i - 1,
@@ -1614,16 +1575,16 @@ class MaaSettingBox(QWidget):
                                 i,
                             ),
                         )
-                        self.config.db.commit(),
+                        Config.db.commit(),
                         if (
-                            self.config.app_path
+                            Config.app_path
                             / f"config/MaaConfig/{self.name}/{self.user_mode_list[mode]}/{i}"
                         ).exists():
                             (
-                                self.config.app_path
+                                Config.app_path
                                 / f"config/MaaConfig/{self.name}/{self.user_mode_list[mode]}/{i}"
                             ).rename(
-                                self.config.app_path
+                                Config.app_path
                                 / f"config/MaaConfig/{self.name}/{self.user_mode_list[mode]}/{i - 1}"
                             )
 

@@ -6,9 +6,9 @@ class Main(QWidget):
     def __init__(self, config: AppConfig, notify: Notification, crypto: CryptoHandler):
         super().__init__()
 
-        self.config = config
-        self.notify = notify
-        self.crypto = crypto
+        Config = config
+        Notify = notify
+        Crypto = crypto
 
         
 
@@ -23,9 +23,9 @@ class Main(QWidget):
         # uiLoader.registerCustomWidget(BodyLabel)
 
         # # 导入ui配置
-        # self.ui = uiLoader.load(self.config.app_path / "resources/gui/main.ui")
+        # self.ui = uiLoader.load(Config.app_path / "resources/gui/main.ui")
         # self.ui.setWindowIcon(
-        #     QIcon(str(self.config.app_path / "resources/icons/AUTO_MAA.ico"))
+        #     QIcon(str(Config.app_path / "resources/icons/AUTO_MAA.ico"))
         # )
 
         # # 初始化控件
@@ -176,12 +176,12 @@ class Main(QWidget):
         # self.change_password.clicked.connect(self.change_PASSWORD)
 
         # 初始化线程
-        self.MaaManager = MaaManager(self.config)
+        self.MaaManager = MaaManager(Config)
         self.MaaManager.question.connect(lambda: self.read("question_runner"))
         self.MaaManager.update_gui.connect(self.update_board)
         self.MaaManager.update_user_info.connect(self.change_user_info)
-        self.MaaManager.push_notification.connect(self.notify.push_notification)
-        self.MaaManager.send_mail.connect(self.notify.send_mail)
+        self.MaaManager.push_notification.connect(Notify.push_notification)
+        self.MaaManager.send_mail.connect(Notify.send_mail)
         self.MaaManager.accomplish.connect(lambda: self.maa_ender("自动代理_结束"))
         self.MaaManager.get_json.connect(self.get_maa_config)
         self.MaaManager.set_silence.connect(self.switch_silence)
@@ -198,79 +198,79 @@ class Main(QWidget):
         # self.update_config()
 
         # 启动后直接开始代理
-        if self.config.content["Default"]["SelfSet.IfProxyDirectly"] == "True":
+        if Config.content["Default"]["SelfSet.IfProxyDirectly"] == "True":
             self.maa_starter("自动代理")
 
 
 
     # def update_config(self):
-    #     """将self.config中的程序配置同步至GUI界面"""
+    #     """将Config中的程序配置同步至GUI界面"""
 
     #     # 阻止GUI程序配置被立即读入程序形成死循环
     #     self.if_update_config = False
 
     #     self.main_tab.setCurrentIndex(
-    #         self.config.content["Default"]["SelfSet.MainIndex"]
+    #         Config.content["Default"]["SelfSet.MainIndex"]
     #     )
 
-    #     self.maa_path.setText(str(Path(self.config.content["Default"]["MaaSet.path"])))
-    #     self.routine.setValue(self.config.content["Default"]["TimeLimit.routine"])
+    #     self.maa_path.setText(str(Path(Config.content["Default"]["MaaSet.path"])))
+    #     self.routine.setValue(Config.content["Default"]["TimeLimit.routine"])
     #     self.annihilation.setValue(
-    #         self.config.content["Default"]["TimeLimit.annihilation"]
+    #         Config.content["Default"]["TimeLimit.annihilation"]
     #     )
-    #     self.num.setValue(self.config.content["Default"]["TimesLimit.run"])
-    #     self.mail_address.setText(self.config.content["Default"]["SelfSet.MailAddress"])
-    #     self.boss_key.setText(self.config.content["Default"]["SelfSet.BossKey"])
+    #     self.num.setValue(Config.content["Default"]["TimesLimit.run"])
+    #     self.mail_address.setText(Config.content["Default"]["SelfSet.MailAddress"])
+    #     self.boss_key.setText(Config.content["Default"]["SelfSet.BossKey"])
 
     #     self.if_self_start.setChecked(
-    #         bool(self.config.content["Default"]["SelfSet.IfSelfStart"] == "True")
+    #         bool(Config.content["Default"]["SelfSet.IfSelfStart"] == "True")
     #     )
 
     #     self.if_sleep.setChecked(
-    #         bool(self.config.content["Default"]["SelfSet.IfAllowSleep"] == "True")
+    #         bool(Config.content["Default"]["SelfSet.IfAllowSleep"] == "True")
     #     )
 
     #     self.if_proxy_directly.setChecked(
-    #         bool(self.config.content["Default"]["SelfSet.IfProxyDirectly"] == "True")
+    #         bool(Config.content["Default"]["SelfSet.IfProxyDirectly"] == "True")
     #     )
 
     #     self.if_send_mail.setChecked(
-    #         bool(self.config.content["Default"]["SelfSet.IfSendMail"] == "True")
+    #         bool(Config.content["Default"]["SelfSet.IfSendMail"] == "True")
     #     )
 
     #     self.mail_address.setVisible(
-    #         bool(self.config.content["Default"]["SelfSet.IfSendMail"] == "True")
+    #         bool(Config.content["Default"]["SelfSet.IfSendMail"] == "True")
     #     )
 
     #     self.if_send_error_only.setChecked(
     #         bool(
-    #             self.config.content["Default"]["SelfSet.IfSendMail.OnlyError"] == "True"
+    #             Config.content["Default"]["SelfSet.IfSendMail.OnlyError"] == "True"
     #         )
     #     )
 
     #     self.if_send_error_only.setVisible(
-    #         bool(self.config.content["Default"]["SelfSet.IfSendMail"] == "True")
+    #         bool(Config.content["Default"]["SelfSet.IfSendMail"] == "True")
     #     )
 
     #     self.if_silence.setChecked(
-    #         bool(self.config.content["Default"]["SelfSet.IfSilence"] == "True")
+    #         bool(Config.content["Default"]["SelfSet.IfSilence"] == "True")
     #     )
 
     #     self.boss_key.setVisible(
-    #         bool(self.config.content["Default"]["SelfSet.IfSilence"] == "True")
+    #         bool(Config.content["Default"]["SelfSet.IfSilence"] == "True")
     #     )
 
     #     self.if_to_tray.setChecked(
-    #         bool(self.config.content["Default"]["SelfSet.IfToTray"] == "True")
+    #         bool(Config.content["Default"]["SelfSet.IfToTray"] == "True")
     #     )
 
     #     for i in range(10):
     #         self.start_time[i][0].setChecked(
-    #             bool(self.config.content["Default"][f"TimeSet.set{i + 1}"] == "True")
+    #             bool(Config.content["Default"][f"TimeSet.set{i + 1}"] == "True")
     #         )
     #         time = QtCore.QTime(
-    #             int(self.config.content["Default"][f"TimeSet.run{i + 1}"][:2]),
-    #             int(self.config.content["Default"][f"TimeSet.run{i + 1}"][3:]),
+    #             int(Config.content["Default"][f"TimeSet.run{i + 1}"][:2]),
+    #             int(Config.content["Default"][f"TimeSet.run{i + 1}"][3:]),
     #         )
     #         self.start_time[i][1].setTime(time)
     #     self.if_update_config = True
@@ -281,20 +281,20 @@ class Main(QWidget):
         self.update_user_info("normal")
 
     def change_config(self):
-        """将GUI中发生修改的程序配置同步至self.config变量"""
+        """将GUI中发生修改的程序配置同步至Config变量"""
 
-        # 验证能否写入self.config变量
+        # 验证能否写入Config变量
         if not self.if_update_config:
             return None
 
         # 验证MAA路径
-        if Path(self.config.content["Default"]["MaaSet.path"]) != Path(
+        if Path(Config.content["Default"]["MaaSet.path"]) != Path(
             self.maa_path.text()
         ):
             if (Path(self.maa_path.text()) / "MAA.exe").exists() and (
                 Path(self.maa_path.text()) / "config/gui.json"
             ).exists():
-                self.config.content["Default"]["MaaSet.path"] = str(
+                Config.content["Default"]["MaaSet.path"] = str(
                     Path(self.maa_path.text())
                 )
                 self.get_maa_config(["Default"])
@@ -307,62 +307,62 @@ class Main(QWidget):
                 if choice.exec():
                     pass
 
-        self.config.content["Default"][
+        Config.content["Default"][
             "SelfSet.MainIndex"
         ] = self.main_tab.currentIndex()
-        self.config.content["Default"]["TimeLimit.routine"] = self.routine.value()
-        self.config.content["Default"][
+        Config.content["Default"]["TimeLimit.routine"] = self.routine.value()
+        Config.content["Default"][
             "TimeLimit.annihilation"
         ] = self.annihilation.value()
-        self.config.content["Default"]["TimesLimit.run"] = self.num.value()
-        self.config.content["Default"]["SelfSet.MailAddress"] = self.mail_address.text()
-        self.config.content["Default"]["SelfSet.BossKey"] = self.boss_key.text()
+        Config.content["Default"]["TimesLimit.run"] = self.num.value()
+        Config.content["Default"]["SelfSet.MailAddress"] = self.mail_address.text()
+        Config.content["Default"]["SelfSet.BossKey"] = self.boss_key.text()
 
         if self.if_sleep.isChecked():
-            self.config.content["Default"]["SelfSet.IfAllowSleep"] = "True"
+            Config.content["Default"]["SelfSet.IfAllowSleep"] = "True"
         else:
-            self.config.content["Default"]["SelfSet.IfAllowSleep"] = "False"
+            Config.content["Default"]["SelfSet.IfAllowSleep"] = "False"
 
         if self.if_self_start.isChecked():
-            self.config.content["Default"]["SelfSet.IfSelfStart"] = "True"
+            Config.content["Default"]["SelfSet.IfSelfStart"] = "True"
         else:
-            self.config.content["Default"]["SelfSet.IfSelfStart"] = "False"
+            Config.content["Default"]["SelfSet.IfSelfStart"] = "False"
 
         if self.if_proxy_directly.isChecked():
-            self.config.content["Default"]["SelfSet.IfProxyDirectly"] = "True"
+            Config.content["Default"]["SelfSet.IfProxyDirectly"] = "True"
         else:
-            self.config.content["Default"]["SelfSet.IfProxyDirectly"] = "False"
+            Config.content["Default"]["SelfSet.IfProxyDirectly"] = "False"
 
         if self.if_send_mail.isChecked():
-            self.config.content["Default"]["SelfSet.IfSendMail"] = "True"
+            Config.content["Default"]["SelfSet.IfSendMail"] = "True"
         else:
-            self.config.content["Default"]["SelfSet.IfSendMail"] = "False"
+            Config.content["Default"]["SelfSet.IfSendMail"] = "False"
 
         if self.if_send_error_only.isChecked():
-            self.config.content["Default"]["SelfSet.IfSendMail.OnlyError"] = "True"
+            Config.content["Default"]["SelfSet.IfSendMail.OnlyError"] = "True"
         else:
-            self.config.content["Default"]["SelfSet.IfSendMail.OnlyError"] = "False"
+            Config.content["Default"]["SelfSet.IfSendMail.OnlyError"] = "False"
 
         if self.if_silence.isChecked():
-            self.config.content["Default"]["SelfSet.IfSilence"] = "True"
+            Config.content["Default"]["SelfSet.IfSilence"] = "True"
         else:
-            self.config.content["Default"]["SelfSet.IfSilence"] = "False"
+            Config.content["Default"]["SelfSet.IfSilence"] = "False"
 
         if self.if_to_tray.isChecked():
-            self.config.content["Default"]["SelfSet.IfToTray"] = "True"
+            Config.content["Default"]["SelfSet.IfToTray"] = "True"
         else:
-            self.config.content["Default"]["SelfSet.IfToTray"] = "False"
+            Config.content["Default"]["SelfSet.IfToTray"] = "False"
 
         for i in range(10):
             if self.start_time[i][0].isChecked():
-                self.config.content["Default"][f"TimeSet.set{i + 1}"] = "True"
+                Config.content["Default"][f"TimeSet.set{i + 1}"] = "True"
             else:
-                self.config.content["Default"][f"TimeSet.set{i + 1}"] = "False"
+                Config.content["Default"][f"TimeSet.set{i + 1}"] = "False"
             time = self.start_time[i][1].getTime().toString("HH:mm")
-            self.config.content["Default"][f"TimeSet.run{i + 1}"] = time
+            Config.content["Default"][f"TimeSet.run{i + 1}"] = time
 
         # 将配置信息同步至本地JSON文件
-        self.config.save_config()
+        Config.save_config()
 
         # 同步程序配置至GUI
         self.update_config()
@@ -374,22 +374,22 @@ class Main(QWidget):
                 # 获取全局MAA配置文件
                 if info == ["Default"]:
                     shutil.copy(
-                        Path(self.config.content["Default"]["MaaSet.path"])
+                        Path(Config.content["Default"]["MaaSet.path"])
                         / "config/gui.json",
-                        self.config.app_path / "data/MAAconfig/Default",
+                        Config.app_path / "data/MAAconfig/Default",
                     )
                 # 获取基建配置文件
          
                 # 获取高级用户MAA配置文件
                 elif info[2] in ["routine", "annihilation"]:
                     (
-                        self.config.app_path
+                        Config.app_path
                         / f"data/MAAconfig/{self.user_mode_list[info[0]]}/{info[1]}/{info[2]}"
                     ).mkdir(parents=True, exist_ok=True)
                     shutil.copy(
-                        Path(self.config.content["Default"]["MaaSet.path"])
+                        Path(Config.content["Default"]["MaaSet.path"])
                         / "config/gui.json",
-                        self.config.app_path
+                        Config.app_path
                         / f"data/MAAconfig/{self.user_mode_list[info[0]]}/{info[1]}/{info[2]}",
                     )
 
@@ -425,10 +425,10 @@ class Main(QWidget):
         # 检查MAA路径是否可用
         if (
             not (
-                Path(self.config.content["Default"]["MaaSet.path"]) / "MAA.exe"
+                Path(Config.content["Default"]["MaaSet.path"]) / "MAA.exe"
             ).exists()
             and (
-                Path(self.config.content["Default"]["MaaSet.path"]) / "config/gui.json"
+                Path(Config.content["Default"]["MaaSet.path"]) / "config/gui.json"
             ).exists()
         ):
             choice = MessageBox("错误", "您还未正确配置MAA路径！", self.ui)
@@ -441,8 +441,8 @@ class Main(QWidget):
 
         # 配置参数
         self.MaaManager.mode = mode
-        self.config.cur.execute("SELECT * FROM adminx WHERE True")
-        data = self.config.cur.fetchall()
+        Config.cur.execute("SELECT * FROM adminx WHERE True")
+        data = Config.cur.fetchall()
         self.MaaManager.data = [list(row) for row in data]
 
         # 启动执行线程
@@ -501,8 +501,8 @@ class Main(QWidget):
         elif "结束" in mode:
 
             shutil.copy(
-                self.config.app_path / "data/MAAconfig/Default/gui.json",
-                Path(self.config.content["Default"]["MaaSet.path"]) / "config",
+                Config.app_path / "data/MAAconfig/Default/gui.json",
+                Path(Config.content["Default"]["MaaSet.path"]) / "config",
             )
             self.user_add.setEnabled(True)
             self.user_del.setEnabled(True)

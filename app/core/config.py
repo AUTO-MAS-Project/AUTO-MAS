@@ -84,7 +84,7 @@ class AppConfig:
                 "updater_version": "0.0.0.0",
             }
             with self.version_path.open(mode="w", encoding="utf-8") as f:
-                json.dump(version, f, indent=4)
+                json.dump(version, f, ensure_ascii=False, indent=4)
 
         # 生成预设gameid替换方案文件
         if not self.gameid_path.exists():
@@ -253,7 +253,7 @@ class AppConfig:
                 history = json.load(f)
         history[key] = content
         with self.history_path.open(mode="w", encoding="utf-8") as f:
-            json.dump(history, f, indent=4)
+            json.dump(history, f, ensure_ascii=False, indent=4)
 
     def get_history(self, key: str) -> dict:
         """获取历史记录"""
@@ -409,3 +409,6 @@ class MaaConfig(QConfig):
     RunSet_RunTimesLimit = RangeConfigItem(
         "RunSet", "RunTimesLimit", 3, RangeValidator(1, 1024)
     )
+
+
+Config = AppConfig()

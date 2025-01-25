@@ -29,17 +29,18 @@ __version__ = "4.2.0"
 __author__ = "DLmaster361 <DLmaster_361@163.com>"
 __license__ = "GPL-3.0 license"
 
-from .config import AppConfig, QueueConfig, MaaConfig
+from .config import AppConfig, QueueConfig, MaaConfig, Config
 from .main_info_bar import MainInfoBar
-from .task_manager import Task, TaskManager
-from .timer import MainTimer
+from .task_manager import Task, Task_manager
+from .timer import Main_timer
 
 __all__ = [
     "AppConfig",
+    "Config",
     "QueueConfig",
     "MaaConfig",
     "MainInfoBar",
     "Task",
-    "TaskManager",
-    "MainTimer",
+    "Task_manager",
+    "Main_timer",
 ]

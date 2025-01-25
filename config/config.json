@@ -1,7 +1,7 @@
 {
     "Function": {
         "BossKey": "",
-        "IfAllowSleep": true,
+        "IfAllowSleep": false,
         "IfSilence": false
     },
     "Notify": {
@@ -22,7 +22,7 @@
         "IfShowTray": false,
         "IfToTray": false,
         "MainIndex": 0,
-        "location": "207x195",
+        "location": "100x100",
         "maximized": false,
         "size": "1200x700"
     },

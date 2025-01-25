@@ -26,15 +26,13 @@ v4.2
 """
 
 from loguru import logger
-from PySide6.QtWidgets import QApplication
 from PySide6 import QtCore
-import json
 from typing import Dict, Union, List
 
-from .config import AppConfig
+from .config import Config
 from .main_info_bar import MainInfoBar
 from app.models import MaaManager
-from app.services import Notification
+from app.services import Notify
 
 
 class Task(QtCore.QThread):
@@ -51,15 +49,11 @@ class Task(QtCore.QThread):
 
     def __init__(
         self,
-        config: AppConfig,
-        notify: Notification,
         name: str,
         info: Dict[str, Dict[str, Union[str, int, bool]]],
     ):
         super(Task, self).__init__()
 
-        self.config = config
-        self.notify = notify
         self.name = name
         self.info = info
 
@@ -84,17 +78,15 @@ class Task(QtCore.QThread):
             self.task_list[i][1] = "运行"
             self.update_task_list.emit(self.task_list)
 
-            if self.task_list[i][0] not in self.config.running_list:
+            if self.task_list[i][0] not in Config.running_list:
 
-                self.config.running_list.append(self.task_list[i][0])
+                Config.running_list.append(self.task_list[i][0])
                 logger.info(f"任务开始：{self.task_list[i][0]}")
                 self.push_info_bar.emit("info", "任务开始", self.task_list[i][0], 5000)
 
                 if self.member_dict[self.task_list[i][0]][0] == "Maa":
 
                     self.task = MaaManager(
-                        self.config,
-                        self.notify,
                         "自动代理",
                         self.member_dict[self.task_list[i][0]][1],
                     )
@@ -110,7 +102,7 @@ class Task(QtCore.QThread):
 
                     self.task.run()
 
-                self.config.running_list.remove(self.task_list[i][0])
+                Config.running_list.remove(self.task_list[i][0])
 
                 self.task_list[i][1] = "完成"
                 logger.info(f"任务完成：{self.task_list[i][0]}")
@@ -129,8 +121,8 @@ class Task(QtCore.QThread):
 
         member_dict = {}
 
-        if (self.config.app_path / "config/MaaConfig").exists():
-            for subdir in (self.config.app_path / "config/MaaConfig").iterdir():
+        if (Config.app_path / "config/MaaConfig").exists():
+            for subdir in (Config.app_path / "config/MaaConfig").iterdir():
                 if subdir.is_dir():
 
                     member_dict[subdir.name] = ["Maa", subdir]
@@ -147,13 +139,11 @@ class TaskManager(QtCore.QObject):
     """业务调度器"""
 
     create_gui = QtCore.Signal(Task)
+    connect_gui = QtCore.Signal(Task)
     push_info_bar = QtCore.Signal(str, str, str, int)
 
-    def __init__(self, config: AppConfig, notify: Notification):
+    def __init__(self):
         super(TaskManager, self).__init__()
-
-        self.config = config
-        self.notify = notify
 
         self.task_list: Dict[str, Task] = {}
 
@@ -162,29 +152,35 @@ class TaskManager(QtCore.QObject):
     ):
         """添加任务"""
 
-        if (
-            mode == "运行队列"
-            and name not in self.config.running_list
-            and name not in self.task_list
-        ):
+        if name in Config.running_list or name in self.task_list:
 
-            logger.info(f"任务开始：{name}")
-            MainInfoBar.push_info_bar("info", "任务开始", name, 5000)
+            logger.warning(f"任务已存在：{name}")
+            MainInfoBar.push_info_bar("warning", "任务已存在", name, 5000)
+            return None
 
-            self.config.running_list.append(name)
-            self.task_list[name] = Task(self.config, self.notify, name, info)
-            self.task_list[name].push_info_bar.connect(MainInfoBar.push_info_bar)
-            self.task_list[name].accomplish.connect(
-                lambda logs: self.remove_task(name, logs)
-            )
+        logger.info(f"任务开始：{name}")
+        MainInfoBar.push_info_bar("info", "任务开始", name, 3000)
+
+        Config.running_list.append(name)
+        self.task_list[name] = Task(name, info)
+        self.task_list[name].push_info_bar.connect(MainInfoBar.push_info_bar)
+        self.task_list[name].accomplish.connect(
+            lambda logs: self.remove_task(name, logs)
+        )
+
+        if mode == "新窗口":
             self.create_gui.emit(self.task_list[name])
-            self.task_list[name].start()
+
+        elif mode == "主窗口":
+            self.connect_gui.emit(self.task_list[name])
+
+        self.task_list[name].start()
 
     def stop_task(self, name: str):
         """中止任务"""
 
         logger.info(f"中止任务：{name}")
-        MainInfoBar.push_info_bar("info", "中止任务", name, 5000)
+        MainInfoBar.push_info_bar("info", "中止任务", name, 3000)
 
         if name == "ALL":
 
@@ -206,17 +202,20 @@ class TaskManager(QtCore.QObject):
         """移除任务标记"""
 
         logger.info(f"任务结束：{name}")
-        MainInfoBar.push_info_bar("info", "任务结束", name, 5000)
+        MainInfoBar.push_info_bar("info", "任务结束", name, 3000)
 
         if len(logs) > 0:
             time = logs[0][1]["Time"]
             history = ""
             for log in logs:
-                self.config.save_history(log[0], log[1])
+                Config.save_history(log[0], log[1])
                 history += (
                     f"任务名称：{log[0]}，{log[1]["History"].replace("\n","\n    ")}\n"
                 )
-            self.config.save_history(name, {"Time": time, "History": history})
+            Config.save_history(name, {"Time": time, "History": history})
 
         self.task_list.pop(name)
-        self.config.running_list.remove(name)
+        Config.running_list.remove(name)
+
+
+Task_manager = TaskManager()

@@ -35,8 +35,8 @@ import time
 from pathlib import Path
 from typing import List, Dict, Union
 
-from app.core import AppConfig
-from app.services import Notification
+from app.core import Config
+from app.services import Notify
 
 
 class MaaManager(QtCore.QObject):
@@ -56,15 +56,11 @@ class MaaManager(QtCore.QObject):
 
     def __init__(
         self,
-        config: AppConfig,
-        notify: Notification,
         mode: str,
         config_path: Path,
     ):
         super(MaaManager, self).__init__()
 
-        self.config = config
-        self.notify = notify
         self.mode = mode
         self.config_path = config_path
 
@@ -90,8 +86,8 @@ class MaaManager(QtCore.QObject):
         self.maa_exe_path = self.maa_root_path / "MAA.exe"
         self.boss_key = [
             _.strip().lower()
-            for _ in self.config.global_config.get(
-                self.config.global_config.function_BossKey
+            for _ in Config.global_config.get(
+                Config.global_config.function_BossKey
             ).split("+")
         ]
 
@@ -108,6 +104,12 @@ class MaaManager(QtCore.QObject):
             logger.error("未正确配置MAA路径，MAA代理进程中止")
             self.push_info_bar.emit(
                 "error", "启动MAA代理进程失败", "您还未正确配置MAA路径！", -1
+            )
+            self.accomplish.emit(
+                {
+                    "Time": begin_time,
+                    "History": "由于未正确配置MAA路径，MAA代理进程中止",
+                }
             )
             return None
 
@@ -176,7 +178,7 @@ class MaaManager(QtCore.QObject):
                             creationflags=subprocess.CREATE_NO_WINDOW,
                         )
                         # 添加静默进程数量标记
-                        self.config.if_silence_needed += 1
+                        Config.if_silence_needed += 1
                         # 记录是否超时的标记
                         self.if_time_out = False
 
@@ -232,7 +234,7 @@ class MaaManager(QtCore.QObject):
                                     "检测到MAA进程完成代理任务\n正在等待相关程序结束\n请等待10s"
                                 )
                                 # 移除静默进程数量标记
-                                self.config.if_silence_needed -= 1
+                                Config.if_silence_needed -= 1
                                 for _ in range(10):
                                     if self.isInterruptionRequested:
                                         break
@@ -253,9 +255,9 @@ class MaaManager(QtCore.QObject):
                                 )
                                 killprocess.wait()
                                 # 移除静默进程数量标记
-                                self.config.if_silence_needed -= 1
+                                Config.if_silence_needed -= 1
                                 # 推送异常通知
-                                self.notify.push_notification(
+                                Notify.push_notification(
                                     "用户自动代理出现异常！",
                                     f"用户 {user[0].replace("_", " 今天的")}的{mode_book[j][5:7]}部分出现一次异常",
                                     f"{user[0].replace("_", " ")}的{mode_book[j][5:7]}出现异常",
@@ -273,7 +275,7 @@ class MaaManager(QtCore.QObject):
                             self.data[user[2]][3] -= 1
                         self.data[user[2]][14] += 1
                         user[1] = "完成"
-                        self.notify.push_notification(
+                        Notify.push_notification(
                             "成功完成一个自动代理任务！",
                             f"已完成用户 {user[0].replace("_", " 今天的")}任务",
                             f"已完成 {user[0].replace("_", " 的")}",
@@ -491,21 +493,19 @@ class MaaManager(QtCore.QObject):
                 )
 
             # 推送代理结果通知
-            self.notify.push_notification(
+            Notify.push_notification(
                 f"{self.mode[2:4]}任务已完成！",
                 f"已完成用户数：{len(over_index)}，未完成用户数：{len(error_index) + len(wait_index)}",
                 f"已完成用户数：{len(over_index)}，未完成用户数：{len(error_index) + len(wait_index)}",
                 10,
             )
-            if not self.config.global_config.get(
-                self.config.global_config.notify_IfSendErrorOnly
+            if not Config.global_config.get(
+                Config.global_config.notify_IfSendErrorOnly
             ) or (
-                self.config.global_config.get(
-                    self.config.global_config.notify_IfSendErrorOnly
-                )
+                Config.global_config.get(Config.global_config.notify_IfSendErrorOnly)
                 and len(error_index) + len(wait_index) != 0
             ):
-                self.notify.send_mail(
+                Notify.send_mail(
                     f"{self.mode[:4]}任务报告",
                     f"{end_log}\n\nAUTO_MAA 敬上\n\n我们根据您在 AUTO_MAA 中的设置发送了这封电子邮件，本邮件无需回复\n",
                 )
@@ -643,7 +643,7 @@ class MaaManager(QtCore.QObject):
                 "Start.OpenEmulatorAfterLaunch"
             ] = "True"  # 启动MAA后自动开启模拟器
 
-            if self.config.if_silence_needed > 0:
+            if Config.if_silence_needed > 0:
                 data["Global"]["Start.MinimizeDirectly"] = "True"  # 启动MAA后直接最小化
                 data["Global"]["GUI.UseTray"] = "True"  # 显示托盘图标
                 data["Global"]["GUI.MinimizeToTray"] = "True"  # 最小化时隐藏至托盘
@@ -920,7 +920,7 @@ class MaaManager(QtCore.QObject):
                 "Start.OpenEmulatorAfterLaunch"
             ] = "False"  # 启动MAA后自动开启模拟器
 
-            if self.config.if_silence_needed > 0:
+            if Config.if_silence_needed > 0:
                 data["Global"][
                     "Start.MinimizeDirectly"
                 ] = "False"  # 启动MAA后直接最小化
@@ -963,7 +963,7 @@ class MaaManager(QtCore.QObject):
 
         # 覆写配置文件
         with self.maa_set_path.open(mode="w", encoding="utf-8") as f:
-            json.dump(data, f, indent=4)
+            json.dump(data, f, ensure_ascii=False, indent=4)
 
         return True
 

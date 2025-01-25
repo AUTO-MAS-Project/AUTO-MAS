@@ -51,8 +51,8 @@ import requests
 
 uiLoader = QUiLoader()
 
-from app.core import AppConfig, MainInfoBar
-from app.services import Notification, CryptoHandler, SystemHandler
+from app.core import Config, MainInfoBar
+from app.services import Notify, Crypto, System
 from app.utils import Updater, version_text
 from .Widget import InputMessageBox, LineEditSettingCard
 
@@ -61,20 +61,11 @@ class Setting(QWidget):
 
     def __init__(
         self,
-        config: AppConfig,
-        notify: Notification,
-        crypto: CryptoHandler,
-        system: SystemHandler,
         parent=None,
     ):
         super().__init__(parent)
 
         self.setObjectName("设置")
-
-        self.config = config
-        self.notify = notify
-        self.crypto = crypto
-        self.system = system
 
         setTheme(Theme.AUTO)
 
@@ -86,16 +77,16 @@ class Setting(QWidget):
         content_widget = QWidget()
         content_layout = QVBoxLayout(content_widget)
 
-        self.function = FunctionSettingCard(self, self.config)
-        self.start = StartSettingCard(self, self.config)
-        self.ui = UiSettingCard(self, self.config)
-        self.notification = NotifySettingCard(self, self.config)
+        self.function = FunctionSettingCard(self)
+        self.start = StartSettingCard(self)
+        self.ui = UiSettingCard(self)
+        self.notification = NotifySettingCard(self)
         self.security = SecuritySettingCard(self)
-        self.updater = UpdaterSettingCard(self, self.config)
-        self.other = OtherSettingCard(self, self.config)
+        self.updater = UpdaterSettingCard(self)
+        self.other = OtherSettingCard(self)
 
-        self.function.card_IfAllowSleep.checkedChanged.connect(self.system.set_Sleep)
-        self.start.card_IfSelfStart.checkedChanged.connect(self.system.set_SelfStart)
+        self.function.card_IfAllowSleep.checkedChanged.connect(System.set_Sleep)
+        self.start.card_IfSelfStart.checkedChanged.connect(System.set_SelfStart)
         self.security.card_changePASSWORD.clicked.connect(self.change_PASSWORD)
         self.updater.card_CheckUpdate.clicked.connect(self.get_update)
         self.other.card_Tips.clicked.connect(self.show_tips)
@@ -117,7 +108,7 @@ class Setting(QWidget):
     def check_PASSWORD(self) -> None:
         """检查并配置管理密钥"""
 
-        if self.config.key_path.exists():
+        if Config.key_path.exists():
             return None
 
         while True:
@@ -129,7 +120,7 @@ class Setting(QWidget):
                 "密码",
             )
             if choice.exec() and choice.input.text() != "":
-                self.crypto.get_PASSWORD(choice.input.text())
+                Crypto.get_PASSWORD(choice.input.text())
                 break
             else:
                 choice = MessageBox(
@@ -146,8 +137,8 @@ class Setting(QWidget):
         """修改管理密钥"""
 
         # 获取用户信息
-        self.config.cur.execute("SELECT * FROM adminx WHERE True")
-        data = self.config.cur.fetchall()
+        Config.cur.execute("SELECT * FROM adminx WHERE True")
+        data = Config.cur.fetchall()
 
         if len(data) == 0:
 
@@ -168,7 +159,7 @@ class Setting(QWidget):
                     )
                     if choice.exec() and choice.input.text() != "":
                         # 修改管理密钥
-                        self.crypto.get_PASSWORD(choice.input.text())
+                        Crypto.get_PASSWORD(choice.input.text())
                         choice = MessageBox(
                             "操作成功",
                             "管理密钥修改成功",
@@ -202,7 +193,7 @@ class Setting(QWidget):
                 if choice.exec() and choice.input.text() != "":
 
                     # 验证旧管理密钥
-                    if self.crypto.check_PASSWORD(choice.input.text()):
+                    if Crypto.check_PASSWORD(choice.input.text()):
 
                         PASSWORD_old = choice.input.text()
                         # 获取新的管理密钥
@@ -217,7 +208,7 @@ class Setting(QWidget):
                             if choice.exec() and choice.input.text() != "":
 
                                 # 修改管理密钥
-                                self.crypto.change_PASSWORD(
+                                Crypto.change_PASSWORD(
                                     data, PASSWORD_old, choice.input.text()
                                 )
                                 choice = MessageBox(
@@ -261,7 +252,7 @@ class Setting(QWidget):
         """检查主程序版本更新，返回更新信息"""
 
         # 从本地版本信息文件获取当前版本信息
-        with self.config.version_path.open(mode="r", encoding="utf-8") as f:
+        with Config.version_path.open(mode="r", encoding="utf-8") as f:
             version_current = json.load(f)
         main_version_current = list(
             map(int, version_current["main_version"].split("."))
@@ -297,7 +288,7 @@ class Setting(QWidget):
         """检查版本更新，调起文件下载进程"""
 
         # 从本地版本信息文件获取当前版本信息
-        with self.config.version_path.open(mode="r", encoding="utf-8") as f:
+        with Config.version_path.open(mode="r", encoding="utf-8") as f:
             version_current = json.load(f)
         main_version_current = list(
             map(int, version_current["main_version"].split("."))
@@ -306,7 +297,7 @@ class Setting(QWidget):
             map(int, version_current["updater_version"].split("."))
         )
         # 检查更新器是否存在
-        if not (self.config.app_path / "Updater.exe").exists():
+        if not (Config.app_path / "Updater.exe").exists():
             updater_version_current = [0, 0, 0, 0]
 
         # 从远程服务器获取最新版本信息
@@ -369,7 +360,7 @@ class Setting(QWidget):
             if updater_version_remote > updater_version_current:
                 # 创建更新进程
                 self.updater = Updater(
-                    self.config.app_path,
+                    Config.app_path,
                     "AUTO_MAA更新器",
                     main_version_remote,
                     updater_version_remote,
@@ -392,7 +383,7 @@ class Setting(QWidget):
         """更新主程序"""
 
         subprocess.Popen(
-            str(self.config.app_path / "Updater.exe"),
+            str(Config.app_path / "Updater.exe"),
             shell=True,
             creationflags=subprocess.CREATE_NO_WINDOW,
         )
@@ -411,12 +402,10 @@ class Setting(QWidget):
 
 class FunctionSettingCard(HeaderCardWidget):
 
-    def __init__(self, parent=None, config: AppConfig = None):
+    def __init__(self, parent=None):
         super().__init__(parent)
 
         self.setTitle("功能")
-
-        self.config = config.global_config
 
         Layout = QVBoxLayout()
 
@@ -424,14 +413,14 @@ class FunctionSettingCard(HeaderCardWidget):
             icon=FluentIcon.PAGE_RIGHT,
             title="启动时阻止系统休眠",
             content="仅阻止电脑自动休眠，不会影响屏幕是否熄灭",
-            configItem=self.config.function_IfAllowSleep,
+            configItem=Config.global_config.function_IfAllowSleep,
         )
 
         self.card_IfSilence = SwitchSettingCard(
             icon=FluentIcon.PAGE_RIGHT,
             title="静默模式",
             content="将各代理窗口置于后台运行，减少对前台的干扰",
-            configItem=self.config.function_IfSilence,
+            configItem=Config.global_config.function_IfSilence,
         )
 
         # 添加各组到设置卡中
@@ -443,12 +432,10 @@ class FunctionSettingCard(HeaderCardWidget):
 
 class StartSettingCard(HeaderCardWidget):
 
-    def __init__(self, parent=None, config: AppConfig = None):
+    def __init__(self, parent=None):
         super().__init__(parent)
 
         self.setTitle("启动")
-
-        self.config = config.global_config
 
         Layout = QVBoxLayout()
 
@@ -456,14 +443,14 @@ class StartSettingCard(HeaderCardWidget):
             icon=FluentIcon.PAGE_RIGHT,
             title="开机时自动启动",
             content="将AUTO_MAA添加到开机启动项",
-            configItem=self.config.start_IfSelfStart,
+            configItem=Config.global_config.start_IfSelfStart,
         )
 
         self.card_IfRunDirectly = SwitchSettingCard(
             icon=FluentIcon.PAGE_RIGHT,
             title="启动后直接运行",
             content="启动AUTO_MAA后自动运行任务",
-            configItem=self.config.start_IfRunDirectly,
+            configItem=Config.global_config.start_IfRunDirectly,
         )
 
         # 添加各组到设置卡中
@@ -477,12 +464,10 @@ class StartSettingCard(HeaderCardWidget):
 
 class UiSettingCard(HeaderCardWidget):
 
-    def __init__(self, parent=None, config: AppConfig = None):
+    def __init__(self, parent=None):
         super().__init__(parent)
 
         self.setTitle("界面")
-
-        self.config = config.global_config
 
         Layout = QVBoxLayout()
 
@@ -490,14 +475,14 @@ class UiSettingCard(HeaderCardWidget):
             icon=FluentIcon.PAGE_RIGHT,
             title="显示托盘图标",
             content="常态显示托盘图标",
-            configItem=self.config.ui_IfShowTray,
+            configItem=Config.global_config.ui_IfShowTray,
         )
 
         self.card_IfToTray = SwitchSettingCard(
             icon=FluentIcon.PAGE_RIGHT,
             title="最小化到托盘",
             content="最小化时隐藏到托盘",
-            configItem=self.config.ui_IfToTray,
+            configItem=Config.global_config.ui_IfToTray,
         )
 
         # 添加各组到设置卡中
@@ -509,12 +494,10 @@ class UiSettingCard(HeaderCardWidget):
 
 class NotifySettingCard(HeaderCardWidget):
 
-    def __init__(self, parent=None, config: AppConfig = None):
+    def __init__(self, parent=None):
         super().__init__(parent)
 
         self.setTitle("通知")
-
-        self.config = config
 
         Layout = QVBoxLayout()
 
@@ -522,10 +505,10 @@ class NotifySettingCard(HeaderCardWidget):
             icon=FluentIcon.PAGE_RIGHT,
             title="推送系统通知",
             content="推送系统级通知，不会在通知中心停留",
-            configItem=self.config.global_config.notify_IfPushPlyer,
+            configItem=Config.global_config.notify_IfPushPlyer,
         )
 
-        self.card_SendMail = self.SendMailSettingCard(self, self.config)
+        self.card_SendMail = self.SendMailSettingCard(self)
 
         Layout.addWidget(self.card_IfPushPlyer)
         Layout.addWidget(self.card_SendMail)
@@ -534,15 +517,13 @@ class NotifySettingCard(HeaderCardWidget):
 
     class SendMailSettingCard(ExpandGroupSettingCard):
 
-        def __init__(self, parent=None, config: AppConfig = None):
+        def __init__(self, parent=None):
             super().__init__(
                 FluentIcon.SETTING,
                 "推送邮件通知",
                 "通过AUTO_MAA官方通知服务邮箱推送任务结果",
                 parent,
             )
-
-            self.config = config.global_config
 
             widget = QWidget()
             Layout = QVBoxLayout(widget)
@@ -551,7 +532,7 @@ class NotifySettingCard(HeaderCardWidget):
                 icon=FluentIcon.PAGE_RIGHT,
                 title="推送邮件通知",
                 content="是否启用邮件通知功能",
-                configItem=self.config.notify_IfSendMail,
+                configItem=Config.global_config.notify_IfSendMail,
             )
 
             self.MailAddress = LineEditSettingCard(
@@ -559,14 +540,14 @@ class NotifySettingCard(HeaderCardWidget):
                 icon=FluentIcon.PAGE_RIGHT,
                 title="邮箱地址",
                 content="接收通知的邮箱地址",
-                configItem=self.config.notify_MailAddress,
+                configItem=Config.global_config.notify_MailAddress,
             )
 
             self.card_IfSendErrorOnly = SwitchSettingCard(
                 icon=FluentIcon.PAGE_RIGHT,
                 title="仅推送异常信息",
                 content="仅在任务出现异常时推送通知",
-                configItem=self.config.notify_IfSendErrorOnly,
+                configItem=Config.global_config.notify_IfSendErrorOnly,
             )
 
             Layout.addWidget(self.card_IfSendMail)
@@ -603,12 +584,10 @@ class SecuritySettingCard(HeaderCardWidget):
 
 class UpdaterSettingCard(HeaderCardWidget):
 
-    def __init__(self, parent=None, config: AppConfig = None):
+    def __init__(self, parent=None):
         super().__init__(parent)
 
         self.setTitle("更新")
-
-        self.config = config.global_config
 
         Layout = QVBoxLayout()
 
@@ -616,7 +595,7 @@ class UpdaterSettingCard(HeaderCardWidget):
             icon=FluentIcon.PAGE_RIGHT,
             title="自动检查更新",
             content="将在启动时自动检查AUTO_MAA是否有新版本",
-            configItem=self.config.update_IfAutoUpdate,
+            configItem=Config.global_config.update_IfAutoUpdate,
         )
 
         self.card_CheckUpdate = PushSettingCard(
@@ -634,12 +613,10 @@ class UpdaterSettingCard(HeaderCardWidget):
 
 class OtherSettingCard(HeaderCardWidget):
 
-    def __init__(self, parent=None, config: AppConfig = None):
+    def __init__(self, parent=None):
         super().__init__(parent)
 
         self.setTitle("其他")
-
-        self.config = config.global_config
 
         Layout = QVBoxLayout()
 

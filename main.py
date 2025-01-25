@@ -31,31 +31,18 @@ from PySide6.QtCore import Qt
 from qfluentwidgets import FluentTranslator
 import sys
 
-from app.core import AppConfig
-from app.services.notification import Notification
-from app.services.security import CryptoHandler
-from app.services.system import SystemHandler
-from app.ui.main_window import AUTO_MAA
 
 if __name__ == "__main__":
 
-    config = AppConfig()
-    notify = Notification(config)
-    crypto = CryptoHandler(config)
-    system = SystemHandler(config)
-
-    QApplication.setAttribute(Qt.AA_DontCreateNativeWidgetSiblings)
     application = QApplication(sys.argv)
+    QApplication.setAttribute(Qt.AA_DontCreateNativeWidgetSiblings)
 
     translator = FluentTranslator()
     application.installTranslator(translator)
 
-    window = AUTO_MAA(
-        config=config,
-        notify=notify,
-        crypto=crypto,
-        system=system,
-    )
+    from app.ui.main_window import AUTO_MAA
+
+    window = AUTO_MAA()
     window.show_ui("显示主窗口")
     window.start_up_task()
     sys.exit(application.exec())

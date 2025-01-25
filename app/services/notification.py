@@ -30,27 +30,22 @@ import smtplib
 from email.mime.text import MIMEText
 from email.header import Header
 from email.utils import formataddr
-import os
 
-from app.core import AppConfig
+from app.core import Config
 
 
 class Notification:
 
-    def __init__(self, config: AppConfig):
-
-        self.config = config
-
     def push_notification(self, title, message, ticker, t):
         """推送系统通知"""
 
-        if self.config.global_config.get(self.config.global_config.notify_IfPushPlyer):
+        if Config.global_config.get(Config.global_config.notify_IfPushPlyer):
 
             notification.notify(
                 title=title,
                 message=message,
                 app_name="AUTO_MAA",
-                app_icon=str(self.config.app_path / "resources/icons/AUTO_MAA.ico"),
+                app_icon=str(Config.app_path / "resources/icons/AUTO_MAA.ico"),
                 timeout=t,
                 ticker=ticker,
                 toast=True,
@@ -64,7 +59,7 @@ class Notification:
         # 声明：此邮箱为AUTO_MAA项目组资产，未经授权不得私自使用
         # 注意：此声明注释只有使用者更换发信邮箱时才能删除，本条规则优先级高于GPLv3
 
-        if self.config.global_config.get(self.config.global_config.notify_IfSendMail):
+        if Config.global_config.get(Config.global_config.notify_IfSendMail):
 
             # 第三方 SMTP 服务配置
             mail_host = "smtp.163.com"  # 设置服务器
@@ -82,9 +77,7 @@ class Notification:
             message["To"] = formataddr(
                 (
                     Header("AUTO_MAA用户", "utf-8").encode(),
-                    self.config.global_config.get(
-                        self.config.global_config.notify_MailAddress
-                    ),
+                    Config.global_config.get(Config.global_config.notify_MailAddress),
                 )
             )  # 收件人显示的名字
             message["Subject"] = Header(title, "utf-8")
@@ -94,9 +87,7 @@ class Notification:
                 smtpObj.login(mail_sender, mail_key)
                 smtpObj.sendmail(
                     mail_sender,
-                    self.config.global_config.get(
-                        self.config.global_config.notify_MailAddress
-                    ),
+                    Config.global_config.get(Config.global_config.notify_MailAddress),
                     message.as_string(),
                 )
                 return True
@@ -104,3 +95,6 @@ class Notification:
                 return f"发送邮件时出错：\n{e}"
             finally:
                 smtpObj.quit()
+
+
+Notify = Notification()

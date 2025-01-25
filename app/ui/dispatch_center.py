@@ -60,18 +60,16 @@ import shutil
 
 uiLoader = QUiLoader()
 
-from app.core import AppConfig, TaskManager, Task, MainInfoBar
-from app.services import Notification
+from app.core import Config, Task_manager, Task, MainInfoBar
+from app.services import Notify
 
 
 class DispatchCenter(QWidget):
 
-    def __init__(self, config: AppConfig, task_manager: TaskManager, parent=None):
+    def __init__(self, parent=None):
         super().__init__(parent)
 
         self.setObjectName("调度中枢")
-        self.config = config
-        self.task_manager = task_manager
 
         self.pivot = Pivot(self)
         self.stackedWidget = QStackedWidget(self)
@@ -79,7 +77,7 @@ class DispatchCenter(QWidget):
 
         self.script_list: Dict[str, DispatchBox] = {}
 
-        dispatch_box = DispatchBox(self.config, "主调度台", self)
+        dispatch_box = DispatchBox("主调度台", self)
         self.script_list["主调度台"] = dispatch_box
         self.stackedWidget.addWidget(self.script_list["主调度台"])
         self.pivot.addItem(
@@ -101,10 +99,10 @@ class DispatchCenter(QWidget):
     def add_board(self, task: Task) -> None:
         """添加一个调度台界面"""
 
-        dispatch_box = DispatchBox(self.config, task.name, self)
+        dispatch_box = DispatchBox(task.name, self)
 
         dispatch_box.top_bar.button.clicked.connect(
-            lambda: self.task_manager.stop_task(task.name)
+            lambda: Task_manager.stop_task(task.name)
         )
 
         task.create_task_list.connect(dispatch_box.info.task.create_task)
@@ -128,19 +126,54 @@ class DispatchCenter(QWidget):
         self.script_list[name].deleteLater()
         self.pivot.removeWidget(name)
 
+    def connect_main_board(self, task: Task) -> None:
+        """连接主调度台"""
+
+        self.script_list["主调度台"].top_bar.button.clicked.disconnect()
+        self.script_list["主调度台"].top_bar.button.setText("中止任务")
+        self.script_list["主调度台"].top_bar.button.clicked.connect(
+            lambda: Task_manager.stop_task(task.name)
+        )
+        task.create_task_list.connect(
+            self.script_list["主调度台"].info.task.create_task
+        )
+        task.create_user_list.connect(
+            self.script_list["主调度台"].info.user.create_user
+        )
+        task.update_task_list.connect(
+            self.script_list["主调度台"].info.task.update_task
+        )
+        task.update_user_list.connect(
+            self.script_list["主调度台"].info.user.update_user
+        )
+        task.update_log_text.connect(
+            self.script_list["主调度台"].info.log_text.text.setText
+        )
+        task.accomplish.connect(lambda: self.disconnect_main_board(task.name))
+
+    def disconnect_main_board(self, name: str) -> None:
+        """断开主调度台"""
+
+        self.script_list["主调度台"].top_bar.button.clicked.disconnect()
+        self.script_list["主调度台"].top_bar.button.setText("开始任务")
+        self.script_list["主调度台"].top_bar.button.clicked.connect(
+            self.script_list["主调度台"].top_bar.start_task
+        )
+        self.script_list["主调度台"].info.log_text.text.setText(
+            Config.get_history(name)["History"]
+        )
+
     def update_top_bar(self):
         """更新顶栏"""
 
         list = []
 
-        if (self.config.app_path / "config/QueueConfig").exists():
-            for json_file in (self.config.app_path / "config/QueueConfig").glob(
-                "*.json"
-            ):
+        if (Config.app_path / "config/QueueConfig").exists():
+            for json_file in (Config.app_path / "config/QueueConfig").glob("*.json"):
                 list.append(f"队列 - {json_file.stem}")
 
-        if (self.config.app_path / "config/MaaConfig").exists():
-            for subdir in (self.config.app_path / "config/MaaConfig").iterdir():
+        if (Config.app_path / "config/MaaConfig").exists():
+            for subdir in (Config.app_path / "config/MaaConfig").iterdir():
                 if subdir.is_dir():
                     list.append(f"实例 - Maa - {subdir.name}")
 
@@ -150,12 +183,10 @@ class DispatchCenter(QWidget):
 
 class DispatchBox(QWidget):
 
-    def __init__(self, config: AppConfig, name: str, parent=None):
+    def __init__(self, name: str, parent=None):
         super().__init__(parent)
 
         self.setObjectName(name)
-
-        self.config = config
 
         layout = QVBoxLayout()
 
@@ -195,6 +226,7 @@ class DispatchBox(QWidget):
                 self.mode.setPlaceholderText("请选择调度模式")
 
                 self.button = PushButton("开始任务")
+                self.button.clicked.connect(self.start_task)
 
                 Layout.addWidget(self.object)
                 Layout.addWidget(self.mode)
@@ -209,6 +241,40 @@ class DispatchBox(QWidget):
                 Layout.addWidget(self.Lable)
                 Layout.addStretch(1)
                 Layout.addWidget(self.button)
+
+        def start_task(self):
+            """开始任务"""
+
+            if self.object.currentIndex() == -1:
+                logger.warning("未选择调度对象")
+                MainInfoBar.push_info_bar(
+                    "warning", "未选择调度对象", "请选择后再开始任务", 5000
+                )
+                return None
+
+            if self.mode.currentIndex() == -1:
+                logger.warning("未选择调度模式")
+                MainInfoBar.push_info_bar(
+                    "warning", "未选择调度模式", "请选择后再开始任务", 5000
+                )
+                return None
+
+            name = self.object.currentText().split(" - ")[1]
+
+            if name in Config.running_list:
+                logger.warning(f"任务已存在：{name}")
+                MainInfoBar.push_info_bar("warning", "任务已存在", name, 5000)
+                return None
+
+            if self.object.currentText().split(" - ")[0] == "队列":
+
+                with (Config.app_path / f"config/QueueConfig/{name}.json").open(
+                    mode="r", encoding="utf-8"
+                ) as f:
+                    info = json.load(f)
+
+                logger.info(f"用户添加任务：{name}")
+                Task_manager.add_task("主窗口", name, info)
 
     class DispatchInfoCard(HeaderCardWidget):
 

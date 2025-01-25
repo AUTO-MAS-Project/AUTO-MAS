@@ -31,7 +31,7 @@ import win32process
 import winreg
 import psutil
 
-from app.core import AppConfig
+from app.core import Config
 
 
 class SystemHandler:
@@ -39,9 +39,7 @@ class SystemHandler:
     ES_CONTINUOUS = 0x80000000
     ES_SYSTEM_REQUIRED = 0x00000001
 
-    def __init__(self, config: AppConfig):
-
-        self.config = config
+    def __init__(self):
 
         self.set_Sleep()
         self.set_SelfStart()
@@ -49,9 +47,7 @@ class SystemHandler:
     def set_Sleep(self):
         """同步系统休眠状态"""
 
-        if self.config.global_config.get(
-            self.config.global_config.function_IfAllowSleep
-        ):
+        if Config.global_config.get(Config.global_config.function_IfAllowSleep):
             # 设置系统电源状态
             ctypes.windll.kernel32.SetThreadExecutionState(
                 self.ES_CONTINUOUS | self.ES_SYSTEM_REQUIRED
@@ -64,7 +60,7 @@ class SystemHandler:
         """同步开机自启"""
 
         if (
-            self.config.global_config.get(self.config.global_config.start_IfSelfStart)
+            Config.global_config.get(Config.global_config.start_IfSelfStart)
             and not self.is_startup()
         ):
             key = winreg.OpenKey(
@@ -73,14 +69,10 @@ class SystemHandler:
                 winreg.KEY_SET_VALUE,
                 winreg.KEY_ALL_ACCESS | winreg.KEY_WRITE | winreg.KEY_CREATE_SUB_KEY,
             )
-            winreg.SetValueEx(
-                key, "AUTO_MAA", 0, winreg.REG_SZ, self.config.app_path_sys
-            )
+            winreg.SetValueEx(key, "AUTO_MAA", 0, winreg.REG_SZ, Config.app_path_sys)
             winreg.CloseKey(key)
         elif (
-            not self.config.global_config.get(
-                self.config.global_config.start_IfSelfStart
-            )
+            not Config.global_config.get(Config.global_config.start_IfSelfStart)
             and self.is_startup()
         ):
             key = winreg.OpenKey(
@@ -123,3 +115,6 @@ class SystemHandler:
         window_info = []
         win32gui.EnumWindows(callback, window_info)
         return window_info
+
+
+System = SystemHandler()

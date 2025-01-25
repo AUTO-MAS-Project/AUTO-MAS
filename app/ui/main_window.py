@@ -47,8 +47,8 @@ from qfluentwidgets import (
 from PySide6.QtGui import QIcon, QCloseEvent
 from PySide6 import QtCore
 
-from app.core import AppConfig, TaskManager, MainTimer, MainInfoBar
-from app.services import Notification, CryptoHandler, SystemHandler
+from app.core import Config, Task_manager, Main_timer, MainInfoBar
+from app.services import Notify, Crypto, System
 from .setting import Setting
 from .member_manager import MemberManager
 from .queue_manager import QueueManager
@@ -57,23 +57,10 @@ from .dispatch_center import DispatchCenter
 
 class AUTO_MAA(MSFluentWindow):
 
-    def __init__(
-        self,
-        config: AppConfig,
-        notify: Notification,
-        crypto: CryptoHandler,
-        system: SystemHandler,
-    ):
+    def __init__(self):
         super().__init__()
 
-        self.config = config
-        self.notify = notify
-        self.crypto = crypto
-        self.system = system
-
-        self.setWindowIcon(
-            QIcon(str(self.config.app_path / "resources/icons/AUTO_MAA.ico"))
-        )
+        self.setWindowIcon(QIcon(str(Config.app_path / "resources/icons/AUTO_MAA.ico")))
         self.setWindowTitle("AUTO_MAA")
 
         setTheme(Theme.AUTO)
@@ -83,14 +70,11 @@ class AUTO_MAA(MSFluentWindow):
 
         MainInfoBar.parent = self
 
-        self.task_manager = TaskManager(self.config, self.notify)
-        self.main_timer = MainTimer(self.config, self.system, self.task_manager, self)
-
         # 创建主窗口
-        self.setting = Setting(self.config, self.notify, self.crypto, self.system, self)
-        self.member_manager = MemberManager(self.config, self.notify, self.crypto, self)
-        self.queue_manager = QueueManager(self.config, self.notify, self)
-        self.dispatch_center = DispatchCenter(self.config, self.task_manager, self)
+        self.setting = Setting(self)
+        self.member_manager = MemberManager(self)
+        self.queue_manager = QueueManager(self)
+        self.dispatch_center = DispatchCenter(self)
 
         self.addSubInterface(
             self.setting,
@@ -141,7 +125,7 @@ class AUTO_MAA(MSFluentWindow):
 
         # 创建系统托盘及其菜单
         self.tray = QSystemTrayIcon(
-            QIcon(str(self.config.app_path / "resources/icons/AUTO_MAA.ico")),
+            QIcon(str(Config.app_path / "resources/icons/AUTO_MAA.ico")),
             self,
         )
         self.tray.setToolTip("AUTO_MAA")
@@ -184,7 +168,8 @@ class AUTO_MAA(MSFluentWindow):
         self.tray.setContextMenu(self.tray_menu)
         self.tray.activated.connect(self.on_tray_activated)
 
-        self.task_manager.create_gui.connect(self.dispatch_center.add_board)
+        Task_manager.create_gui.connect(self.dispatch_center.add_board)
+        Task_manager.connect_gui.connect(self.dispatch_center.connect_main_board)
         self.setting.ui.card_IfShowTray.checkedChanged.connect(
             lambda: self.show_ui("配置托盘")
         )
@@ -195,14 +180,16 @@ class AUTO_MAA(MSFluentWindow):
     def start_up_task(self) -> None:
         """启动时任务"""
 
+        logger.debug(f"{Config.app_path}, {Config.app_path_sys}")
+
         # 加载配置
-        qconfig.load(self.config.config_path, self.config.global_config)
+        qconfig.load(Config.config_path, Config.global_config)
 
         # 检查密码
         self.setting.check_PASSWORD()
 
         # 检查更新
-        if self.config.global_config.get(self.config.global_config.update_IfAutoUpdate):
+        if Config.global_config.get(Config.global_config.update_IfAutoUpdate):
             result = self.setting.get_update_info()
             if result == "已是最新版本~":
                 MainInfoBar.push_info_bar("success", "更新检查", result, 3000)
@@ -225,7 +212,7 @@ class AUTO_MAA(MSFluentWindow):
     def set_min_method(self) -> None:
         """设置最小化方法"""
 
-        if self.config.global_config.get(self.config.global_config.ui_IfToTray):
+        if Config.global_config.get(Config.global_config.ui_IfToTray):
 
             self.titleBar.minBtn.clicked.disconnect()
             self.titleBar.minBtn.clicked.connect(lambda: self.show_ui("隐藏到托盘"))
@@ -243,7 +230,7 @@ class AUTO_MAA(MSFluentWindow):
     # def start_task(self, mode):
     #     """调起对应任务"""
     #     if self.main.MaaManager.isRunning():
-    #         self.notify.push_notification(
+    #         Notify.push_notification(
     #             f"无法运行{mode}！",
     #             "当前已有任务正在运行，请在该任务结束后重试",
     #             "当前已有任务正在运行，请在该任务结束后重试",
@@ -261,14 +248,14 @@ class AUTO_MAA(MSFluentWindow):
     #         ):
     #             self.main.maa_ender(f"{self.main.MaaManager.mode}_结束")
     #         elif "设置MAA" in self.main.MaaManager.mode:
-    #             self.notify.push_notification(
+    #             Notify.push_notification(
     #                 "正在设置MAA！",
     #                 "正在运行设置MAA任务，无法中止",
     #                 "正在运行设置MAA任务，无法中止",
     #                 3,
     #             )
     #     else:
-    #         self.notify.push_notification(
+    #         Notify.push_notification(
     #             "无任务运行！",
     #             "当前无任务正在运行，无需中止",
     #             "当前无任务正在运行，无需中止",
@@ -289,32 +276,28 @@ class AUTO_MAA(MSFluentWindow):
             size = list(
                 map(
                     int,
-                    self.config.global_config.get(
-                        self.config.global_config.ui_size
-                    ).split("x"),
+                    Config.global_config.get(Config.global_config.ui_size).split("x"),
                 )
             )
             location = list(
                 map(
                     int,
-                    self.config.global_config.get(
-                        self.config.global_config.ui_location
-                    ).split("x"),
+                    Config.global_config.get(Config.global_config.ui_location).split(
+                        "x"
+                    ),
                 )
             )
             self.setGeometry(location[0], location[1], size[0], size[1])
             self.show()
             if not if_quick:
-                if self.config.global_config.get(
-                    self.config.global_config.ui_maximized
-                ):
+                if Config.global_config.get(Config.global_config.ui_maximized):
                     self.showMaximized()
                 self.set_min_method()
                 self.show_ui("配置托盘")
 
         elif mode == "配置托盘":
 
-            if self.config.global_config.get(self.config.global_config.ui_IfShowTray):
+            if Config.global_config.get(Config.global_config.ui_IfShowTray):
                 self.tray.show()
             else:
                 self.tray.hide()
@@ -324,18 +307,18 @@ class AUTO_MAA(MSFluentWindow):
             # 保存窗口相关属性
             if not self.isMaximized():
 
-                self.config.global_config.set(
-                    self.config.global_config.ui_size,
+                Config.global_config.set(
+                    Config.global_config.ui_size,
                     f"{self.geometry().width()}x{self.geometry().height()}",
                 )
-                self.config.global_config.set(
-                    self.config.global_config.ui_location,
+                Config.global_config.set(
+                    Config.global_config.ui_location,
                     f"{self.geometry().x()}x{self.geometry().y()}",
                 )
-            self.config.global_config.set(
-                self.config.global_config.ui_maximized, self.isMaximized()
+            Config.global_config.set(
+                Config.global_config.ui_maximized, self.isMaximized()
             )
-            self.config.global_config.save()
+            Config.global_config.save()
 
             # 隐藏主窗口
             if not if_quick:
@@ -356,6 +339,6 @@ class AUTO_MAA(MSFluentWindow):
         # self.main.MaaManager.wait()
 
         # 关闭数据库连接
-        self.config.close_database()
+        Config.close_database()
 
         event.accept()

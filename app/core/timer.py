@@ -31,25 +31,18 @@ from PySide6 import QtCore
 import json
 import datetime
 
-from .config import AppConfig
-from .task_manager import TaskManager
-from app.services import SystemHandler
+from .config import Config
+from .task_manager import Task_manager
+from app.services import System
 
 
 class MainTimer(QWidget):
 
     def __init__(
         self,
-        config: AppConfig,
-        system: SystemHandler,
-        task_manager: TaskManager,
         parent=None,
     ):
         super().__init__(parent)
-
-        self.config = config
-        self.system = system
-        self.task_manager = task_manager
 
         self.Timer = QtCore.QTimer()
         self.Timer.timeout.connect(self.timed_start)
@@ -69,7 +62,7 @@ class MainTimer(QWidget):
             if not info["QueueSet"]["Enabled"]:
                 continue
 
-            history = self.config.get_history(name)
+            history = Config.get_history(name)
 
             time_set = [
                 info["Time"][f"TimeSet_{_}"]
@@ -81,22 +74,22 @@ class MainTimer(QWidget):
             if (
                 curtime[11:16] in time_set
                 and curtime != history["Time"][:16]
-                and name not in self.config.running_list
+                and name not in Config.running_list
             ):
 
                 logger.info(f"按时间调起任务：{name}")
-                self.task_manager.add_task("运行队列", name, info)
+                Task_manager.add_task("新窗口", name, info)
 
     def set_silence(self):
         """设置静默模式"""
         # # 临时
-        # windows = self.system.get_window_info()
+        # windows = System.get_window_info()
         # if any(emulator_path in _ for _ in windows):
         #     try:
         #         pyautogui.hotkey(*boss_key)
         #     except pyautogui.FailSafeException as e:
         # 执行日志记录，暂时缺省
-        logger.debug(self.config.running_list)
+        logger.debug(Config.running_list)
 
     def set_last_time(self):
         """设置上次运行时间"""
@@ -108,12 +101,13 @@ class MainTimer(QWidget):
 
         queue_list = []
 
-        if (self.config.app_path / "config/QueueConfig").exists():
-            for json_file in (self.config.app_path / "config/QueueConfig").glob(
-                "*.json"
-            ):
+        if (Config.app_path / "config/QueueConfig").exists():
+            for json_file in (Config.app_path / "config/QueueConfig").glob("*.json"):
                 with json_file.open("r", encoding="utf-8") as f:
                     info = json.load(f)
                 queue_list.append([json_file.stem, info])
 
         return queue_list
+
+
+Main_timer = MainTimer()

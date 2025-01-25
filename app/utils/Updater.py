@@ -176,7 +176,7 @@ class UpdateProcess(QThread):
         elif self.name == "AUTO_MAA主程序":
             version_info["main_version"] = ".".join(map(str, self.main_version))
         with open(self.version_path, "w", encoding="utf-8") as f:
-            json.dump(version_info, f, indent=4)
+            json.dump(version_info, f, ensure_ascii=False, indent=4)
 
         # 主程序更新完成后打开AUTO_MAA
         if self.name == "AUTO_MAA主程序":
