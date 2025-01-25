@@ -24,7 +24,7 @@ AUTO_MAA脚本管理界面
 v4.2
 作者：DLmaster_361
 """
-
+from loguru import logger
 from PySide6.QtWidgets import (
     QWidget,
     QFileDialog,
@@ -49,17 +49,15 @@ from qfluentwidgets import (
     ExpandGroupSettingCard,
     PushSettingCard,
 )
-from PySide6.QtUiTools import QUiLoader
 from PySide6 import QtCore
 from functools import partial
+from pathlib import Path
 from typing import List
 import datetime
 import json
 import shutil
 
-uiLoader = QUiLoader()
-
-from app import AppConfig, MaaConfig
+from app.core import AppConfig, MaaConfig, MainInfoBar
 from app.services import Notification, CryptoHandler
 from .Widget import (
     InputMessageBox,
@@ -315,6 +313,15 @@ class MemberManager(QWidget):
                 with json_file.open("w", encoding="utf-8") as f:
                     json.dump(data, f, ensure_ascii=False, indent=4)
 
+    def refresh(self):
+        """刷新脚本实例界面"""
+
+        if len(self.member_manager.search_member()) == 0:
+            index = 0
+        else:
+            index = int(self.member_manager.pivot.currentRouteKey()[3:])
+        self.member_manager.switch_SettingBox(index)
+
 
 class MemberSettingBox(QWidget):
 
@@ -444,7 +451,7 @@ class MaaSettingBox(QWidget):
         content_widget = QWidget()
         content_layout = QVBoxLayout(content_widget)
 
-        self.app_setting = self.AppSettingCard(self, self.config.maa_config)
+        self.app_setting = self.AppSettingCard(self, self.config, uid)
         self.user_setting = self.UserSettingCard(
             self, self.objectName(), self.config, self.crypto
         )
@@ -461,12 +468,13 @@ class MaaSettingBox(QWidget):
 
     class AppSettingCard(HeaderCardWidget):
 
-        def __init__(self, parent=None, maa_config: MaaConfig = None):
+        def __init__(self, parent=None, config: AppConfig = None, uid: int = None):
             super().__init__(parent)
 
             self.setTitle("MAA实例")
 
-            self.maa_config = maa_config
+            self.config = config
+            self.uid = uid
 
             Layout = QVBoxLayout()
 
@@ -475,13 +483,13 @@ class MaaSettingBox(QWidget):
                 FluentIcon.EDIT,
                 "实例名称",
                 "用于标识MAA实例的名称",
-                self.maa_config.MaaSet_Name,
+                self.config.maa_config.MaaSet_Name,
             )
             self.card_Path = PushSettingCard(
                 "选择文件夹",
                 FluentIcon.FOLDER,
                 "MAA目录",
-                self.maa_config.get(self.maa_config.MaaSet_Path),
+                self.config.maa_config.get(self.config.maa_config.MaaSet_Path),
             )
             self.card_Set = PushSettingCard(
                 "设置",
@@ -489,9 +497,14 @@ class MaaSettingBox(QWidget):
                 "MAA全局配置",
                 "简洁模式下MAA将继承全局配置",
             )
-            self.RunSet = self.RunSetSettingCard(self, self.maa_config)
+            self.RunSet = self.RunSetSettingCard(self, self.config.maa_config)
 
             self.card_Path.clicked.connect(self.PathClicked)
+            self.config.maa_config.MaaSet_Path.valueChanged.connect(
+                lambda: self.card_Path.setContent(
+                    self.config.maa_config.get(self.config.maa_config.MaaSet_Path)
+                )
+            )
 
             Layout.addWidget(self.card_Name)
             Layout.addWidget(self.card_Path)
@@ -503,9 +516,35 @@ class MaaSettingBox(QWidget):
         def PathClicked(self):
 
             folder = QFileDialog.getExistingDirectory(self, "选择MAA目录", "./")
-            if not folder or self.maa_config.get(self.maa_config.MaaSet_Path) == folder:
-                return
-            self.maa_config.set(self.maa_config.MaaSet_Path, folder)
+            if (
+                not folder
+                or self.config.maa_config.get(self.config.maa_config.MaaSet_Path)
+                == folder
+            ):
+                logger.warning("选择MAA目录时未选择文件夹或未更改文件夹")
+                MainInfoBar.push_info_bar(
+                    "warning", "警告", "未选择文件夹或未更改文件夹", 5000
+                )
+                return None
+            elif (
+                not (Path(folder) / "config/gui.json").exists()
+                or not (Path(folder) / "MAA.exe").exists()
+            ):
+                logger.warning("选择MAA目录时未找到MAA程序或配置文件")
+                MainInfoBar.push_info_bar(
+                    "warning", "警告", "未找到MAA程序或配置文件", 5000
+                )
+                return None
+
+            (self.config.app_path / f"config/MaaConfig/脚本_{self.uid}/Default").mkdir(
+                parents=True, exist_ok=True
+            )
+            shutil.copy(
+                Path(folder) / "config/gui.json",
+                self.config.app_path
+                / f"config/MaaConfig/脚本_{self.uid}/Default/gui.json",
+            )
+            self.config.maa_config.set(self.config.maa_config.MaaSet_Path, folder)
             self.card_Path.setContent(folder)
 
         class RunSetSettingCard(ExpandGroupSettingCard):
@@ -534,7 +573,7 @@ class MaaSettingBox(QWidget):
                 self.RoutineTimeLimit = SpinBoxSettingCard(
                     (1, 1024),
                     FluentIcon.PAGE_RIGHT,
-                    "日常代理超时限制",
+                    "自动代理超时限制",
                     "MAA日志无变化时间超过该阈值视为超时，单位为分钟",
                     self.maa_config.RunSet_RoutineTimeLimit,
                 )

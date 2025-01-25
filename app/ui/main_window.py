@@ -25,6 +25,7 @@ v4.2
 作者：DLmaster_361
 """
 
+from loguru import logger
 from PySide6.QtWidgets import (
     QApplication,
     QSystemTrayIcon,
@@ -41,18 +42,17 @@ from qfluentwidgets import (
     Theme,
     MSFluentWindow,
     NavigationItemPosition,
+    qconfig,
 )
-from PySide6.QtUiTools import QUiLoader
 from PySide6.QtGui import QIcon, QCloseEvent
 from PySide6 import QtCore
 
-uiLoader = QUiLoader()
-
-from app import AppConfig
+from app.core import AppConfig, TaskManager, MainTimer, MainInfoBar
 from app.services import Notification, CryptoHandler, SystemHandler
 from .setting import Setting
 from .member_manager import MemberManager
 from .queue_manager import QueueManager
+from .dispatch_center import DispatchCenter
 
 
 class AUTO_MAA(MSFluentWindow):
@@ -81,10 +81,16 @@ class AUTO_MAA(MSFluentWindow):
         self.splashScreen = SplashScreen(self.windowIcon(), self)
         self.show_ui("显示主窗口", if_quick=True)
 
+        MainInfoBar.parent = self
+
+        self.task_manager = TaskManager(self.config, self.notify)
+        self.main_timer = MainTimer(self.config, self.system, self.task_manager, self)
+
         # 创建主窗口
         self.setting = Setting(self.config, self.notify, self.crypto, self.system, self)
         self.member_manager = MemberManager(self.config, self.notify, self.crypto, self)
         self.queue_manager = QueueManager(self.config, self.notify, self)
+        self.dispatch_center = DispatchCenter(self.config, self.task_manager, self)
 
         self.addSubInterface(
             self.setting,
@@ -107,8 +113,30 @@ class AUTO_MAA(MSFluentWindow):
             FluentIcon.BOOK_SHELF,
             NavigationItemPosition.TOP,
         )
+        self.addSubInterface(
+            self.dispatch_center,
+            FluentIcon.IOT,
+            "调度中心",
+            FluentIcon.IOT,
+            NavigationItemPosition.TOP,
+        )
+        self.stackedWidget.currentChanged.connect(
+            lambda index: (self.member_manager.refresh() if index == 1 else None)
+        )
         self.stackedWidget.currentChanged.connect(
             lambda index: self.queue_manager.refresh() if index == 2 else None
+        )
+        self.stackedWidget.currentChanged.connect(
+            lambda index: (
+                self.dispatch_center.pivot.setCurrentItem("主调度台")
+                if index == 3
+                else None
+            )
+        )
+        self.stackedWidget.currentChanged.connect(
+            lambda index: (
+                self.dispatch_center.update_top_bar() if index == 3 else None
+            )
         )
 
         # 创建系统托盘及其菜单
@@ -134,8 +162,8 @@ class AUTO_MAA(MSFluentWindow):
         #     [
         #         Action(
         #             FluentIcon.PLAY,
-        #             "运行日常代理",
-        #             triggered=lambda: self.start_task("日常代理"),
+        #             "运行自动代理",
+        #             triggered=lambda: self.start_task("自动代理"),
         #         ),
         #         Action(
         #             FluentIcon.PLAY,
@@ -156,6 +184,7 @@ class AUTO_MAA(MSFluentWindow):
         self.tray.setContextMenu(self.tray_menu)
         self.tray.activated.connect(self.on_tray_activated)
 
+        self.task_manager.create_gui.connect(self.dispatch_center.add_board)
         self.setting.ui.card_IfShowTray.checkedChanged.connect(
             lambda: self.show_ui("配置托盘")
         )
@@ -166,22 +195,17 @@ class AUTO_MAA(MSFluentWindow):
     def start_up_task(self) -> None:
         """启动时任务"""
 
+        # 加载配置
+        qconfig.load(self.config.config_path, self.config.global_config)
+
         # 检查密码
         self.setting.check_PASSWORD()
 
         # 检查更新
         if self.config.global_config.get(self.config.global_config.update_IfAutoUpdate):
-            result = self.setting.check_update()
+            result = self.setting.get_update_info()
             if result == "已是最新版本~":
-                InfoBar.success(
-                    title="更新检查",
-                    content=result,
-                    orient=QtCore.Qt.Horizontal,
-                    isClosable=True,
-                    position=InfoBarPosition.TOP_RIGHT,
-                    duration=3000,
-                    parent=self,
-                )
+                MainInfoBar.push_info_bar("success", "更新检查", result, 3000)
             else:
                 info = InfoBar.info(
                     title="更新检查",
@@ -193,9 +217,7 @@ class AUTO_MAA(MSFluentWindow):
                     parent=self,
                 )
                 Up = PushButton("更新")
-                Up.clicked.connect(
-                    lambda: self.setting.check_version(if_question=False)
-                )
+                Up.clicked.connect(lambda: self.setting.get_update(if_question=False))
                 Up.clicked.connect(info.close)
                 info.addWidget(Up)
                 info.show()
@@ -234,7 +256,7 @@ class AUTO_MAA(MSFluentWindow):
     #     """中止当前任务"""
     #     if self.main.MaaManager.isRunning():
     #         if (
-    #             self.main.MaaManager.mode == "日常代理"
+    #             self.main.MaaManager.mode == "自动代理"
     #             or self.main.MaaManager.mode == "人工排查"
     #         ):
     #             self.main.maa_ender(f"{self.main.MaaManager.mode}_结束")

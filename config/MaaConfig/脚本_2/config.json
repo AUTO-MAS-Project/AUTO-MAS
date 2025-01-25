@@ -1,0 +1,15 @@
+{
+    "MaaSet": {
+        "Name": "132",
+        "Path": "D:/AUTO/MAA"
+    },
+    "RunSet": {
+        "AnnihilationTimeLimit": 44,
+        "RoutineTimeLimit": 13,
+        "RunTimesLimit": 1
+    },
+    "QFluentWidgets": {
+        "ThemeColor": "#ff009faa",
+        "ThemeMode": "Auto"
+    }
+}

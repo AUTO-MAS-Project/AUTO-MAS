@@ -32,7 +32,7 @@ from email.header import Header
 from email.utils import formataddr
 import os
 
-from app import AppConfig
+from app.core import AppConfig
 
 
 class Notification:

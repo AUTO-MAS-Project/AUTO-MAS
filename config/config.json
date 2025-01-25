@@ -1,0 +1,32 @@
+{
+    "Function": {
+        "BossKey": "",
+        "IfAllowSleep": true,
+        "IfSilence": false
+    },
+    "Notify": {
+        "IfPushPlyer": false,
+        "IfSendErrorOnly": false,
+        "IfSendMail": false,
+        "MailAddress": ""
+    },
+    "Start": {
+        "IfRunDirectly": false,
+        "IfSelfStart": false
+    },
+    "QFluentWidgets": {
+        "ThemeColor": "#ff009faa",
+        "ThemeMode": "Auto"
+    },
+    "UI": {
+        "IfShowTray": false,
+        "IfToTray": false,
+        "MainIndex": 0,
+        "location": "207x195",
+        "maximized": false,
+        "size": "1200x700"
+    },
+    "Update": {
+        "IfAutoUpdate": false
+    }
+}

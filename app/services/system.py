@@ -31,7 +31,7 @@ import win32process
 import winreg
 import psutil
 
-from app import AppConfig
+from app.core import AppConfig
 
 
 class SystemHandler:

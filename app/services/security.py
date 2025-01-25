@@ -34,7 +34,7 @@ from Crypto.PublicKey import RSA
 from Crypto.Cipher import PKCS1_OAEP
 from Crypto.Util.Padding import pad, unpad
 
-from app import AppConfig
+from app.core import AppConfig
 
 
 class CryptoHandler:

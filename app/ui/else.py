@@ -75,7 +75,7 @@ class Main(QWidget):
 
         # self.run_now: PushButton = self.ui.findChild(PushButton, "pushButton_runnow")
         # self.run_now.setIcon(FluentIcon.PLAY)
-        # self.run_now.clicked.connect(lambda: self.maa_starter("日常代理"))
+        # self.run_now.clicked.connect(lambda: self.maa_starter("自动代理"))
 
         # self.check_start: PushButton = self.ui.findChild(
         #     PushButton, "pushButton_checkstart"
@@ -182,7 +182,7 @@ class Main(QWidget):
         self.MaaManager.update_user_info.connect(self.change_user_info)
         self.MaaManager.push_notification.connect(self.notify.push_notification)
         self.MaaManager.send_mail.connect(self.notify.send_mail)
-        self.MaaManager.accomplish.connect(lambda: self.maa_ender("日常代理_结束"))
+        self.MaaManager.accomplish.connect(lambda: self.maa_ender("自动代理_结束"))
         self.MaaManager.get_json.connect(self.get_maa_config)
         self.MaaManager.set_silence.connect(self.switch_silence)
 
@@ -199,7 +199,7 @@ class Main(QWidget):
 
         # 启动后直接开始代理
         if self.config.content["Default"]["SelfSet.IfProxyDirectly"] == "True":
-            self.maa_starter("日常代理")
+            self.maa_starter("自动代理")
 
 
 
@@ -275,39 +275,7 @@ class Main(QWidget):
     #         self.start_time[i][1].setTime(time)
     #     self.if_update_config = True
 
-    def update_board(self, run_text, wait_text, over_text, error_text, log_text):
-        """写入数据至GUI执行界面的调度台面板"""
 
-        self.run_text.setPlainText(run_text)
-        self.wait_text.setPlainText(wait_text)
-        self.over_text.setPlainText(over_text)
-        self.error_text.setPlainText(error_text)
-        self.log_text.setPlainText(log_text)
-        self.log_text.verticalScrollBar().setValue(
-            self.log_text.verticalScrollBar().maximum()
-        )
-
-    def change_user_info(self, modes, uids, days, lasts, notes, numbs):
-        """将代理完成后发生改动的用户信息同步至本地数据库"""
-
-        for index in range(len(uids)):
-            self.config.cur.execute(
-                "UPDATE adminx SET day = ? WHERE mode = ? AND uid = ?",
-                (days[index], modes[index], uids[index]),
-            )
-            self.config.cur.execute(
-                "UPDATE adminx SET last = ? WHERE mode = ? AND uid = ?",
-                (lasts[index], modes[index], uids[index]),
-            )
-            self.config.cur.execute(
-                "UPDATE adminx SET notes = ? WHERE mode = ? AND uid = ?",
-                (notes[index], modes[index], uids[index]),
-            )
-            self.config.cur.execute(
-                "UPDATE adminx SET numb = ? WHERE mode = ? AND uid = ?",
-                (numbs[index], modes[index], uids[index]),
-            )
-        self.config.db.commit()
 
         # 同步用户信息更改至GUI
         self.update_user_info("normal")
@@ -431,115 +399,7 @@ class Main(QWidget):
         self.user_list_simple.setStyleSheet("QTableWidget::item {}")
         self.user_list_beta.setStyleSheet("QTableWidget::item {}")
 
-    def read(self, operation):
-        """弹出对话框组件进行读入"""
-
-        class InputMessageBox(MessageBoxBase):
-            """输入对话框"""
-
-            def __init__(self, parent, title: str, content: str, mode: str):
-                super().__init__(parent)
-                self.title = SubtitleLabel(title)
-
-                if mode == "明文":
-                    self.input = LineEdit()
-                elif mode == "密码":
-                    self.input = PasswordLineEdit()
-
-                self.input.setPlaceholderText(content)
-                self.input.setClearButtonEnabled(True)
-
-                # 将组件添加到布局中
-                self.viewLayout.addWidget(self.title)
-                self.viewLayout.addWidget(self.input)
-
-        # 读入PASSWORD
-        if operation == "key":
-
-            choice = InputMessageBox(self.ui, "请输入管理密钥", "管理密钥", "密码")
-            if choice.exec() and choice.input.text() != "":
-                self.PASSWORD = choice.input.text()
-                self.update_user_info("normal")
-
-        elif operation == "oldkey":
-
-            choice = InputMessageBox(
-                self.ui, "请输入旧的管理密钥", "旧管理密钥", "密码"
-            )
-            if choice.exec() and choice.input.text() != "":
-                self.PASSWORD = choice.input.text()
-                return True
-            else:
-                return False
-
-        elif operation == "newkey":
-
-            choice = InputMessageBox(
-                self.ui, "请输入新的管理密钥", "新管理密钥", "密码"
-            )
-            if choice.exec() and choice.input.text() != "":
-                return choice.input.text()
-            else:
-                return None
-
-        elif operation == "setkey":
-
-            choice = InputMessageBox(
-                self.ui,
-                "未检测到管理密钥，请设置您的管理密钥",
-                "管理密钥",
-                "密码",
-            )
-            if choice.exec() and choice.input.text() != "":
-                self.PASSWORD = choice.input.text()
-                return True
-            else:
-                return False
-
-        # 读入选择
-        elif operation == "question_runner":
-            choice = MessageBox(
-                self.MaaManager.question_title,
-                self.MaaManager.question_info,
-                None,
-            )
-            if choice.exec():
-                self.MaaManager.question_choice = "Yes"
-            else:
-                self.MaaManager.question_choice = "No"
-
-        # 读入MAA文件目录
-        elif operation == "file_path_maa":
-            file_path = QFileDialog.getExistingDirectory(self.ui, "选择MAA文件夹")
-            if file_path:
-                self.maa_path.setText(file_path)
-
-        # 读入自定义基建文件目录
-        elif operation == "file_path_infrastructure":
-            file_path, _ = QFileDialog.getOpenFileName(
-                self.ui, "选择自定义基建文件", "", "JSON 文件 (*.json)"
-            )
-            return file_path
-
-    def timed_start(self):
-        """定时启动代理任务"""
-
-        # 获取定时列表
-        time_set = [
-            self.config.content["Default"][f"TimeSet.run{_ + 1}"]
-            for _ in range(10)
-            if self.config.content["Default"][f"TimeSet.set{_ + 1}"] == "True"
-        ]
-        # 按时间调起代理任务
-        curtime = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
-        if (
-            curtime[11:16] in time_set
-            and curtime != self.last_time
-            and not self.MaaManager.isRunning()
-        ):
-            self.last_time = curtime
-            self.maa_starter("日常代理")
-
+    
     def switch_silence(self, mode, emulator_path, boss_key):
         """切换静默模式"""
 
@@ -557,16 +417,7 @@ class Main(QWidget):
             self.Timer.timeout.connect(self.set_system)
             self.Timer.timeout.connect(self.timed_start)
 
-    def set_silence(self, emulator_path, boss_key):
-        """设置静默模式"""
-
-        windows = self.get_window_info()
-        if any(emulator_path in _ for _ in windows):
-            try:
-                pyautogui.hotkey(*boss_key)
-            except pyautogui.FailSafeException as e:
-                # 执行日志记录，暂时缺省
-                pass
+   
 
     def maa_starter(self, mode):
         """启动MaaManager线程运行任务"""
@@ -620,14 +471,14 @@ class Main(QWidget):
 
             self.update_user_info("read_only")
 
-            if mode == "日常代理_开始":
+            if mode == "自动代理_开始":
                 self.MaaManager.accomplish.connect(
-                    lambda: self.maa_ender("日常代理_结束")
+                    lambda: self.maa_ender("自动代理_结束")
                 )
                 self.check_start.setEnabled(False)
                 self.run_now.clicked.disconnect()
                 self.run_now.setText("结束运行")
-                self.run_now.clicked.connect(lambda: self.maa_ender("日常代理_结束"))
+                self.run_now.clicked.connect(lambda: self.maa_ender("自动代理_结束"))
 
             elif mode == "人工排查_开始":
                 self.MaaManager.accomplish.connect(
@@ -660,12 +511,12 @@ class Main(QWidget):
 
             self.update_user_info("editable")
 
-            if mode == "日常代理_结束":
+            if mode == "自动代理_结束":
 
                 self.check_start.setEnabled(True)
                 self.run_now.clicked.disconnect()
                 self.run_now.setText("立即执行")
-                self.run_now.clicked.connect(lambda: self.maa_starter("日常代理"))
+                self.run_now.clicked.connect(lambda: self.maa_starter("自动代理"))
 
             elif mode == "人工排查_结束":
 

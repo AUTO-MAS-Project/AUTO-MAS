@@ -39,6 +39,7 @@ from qfluentwidgets import (
     FluentIcon,
     MessageBox,
     HeaderCardWidget,
+    TextBrowser,
     CommandBar,
     setTheme,
     Theme,
@@ -52,7 +53,7 @@ import shutil
 
 uiLoader = QUiLoader()
 
-from app import AppConfig, QueueConfig
+from app.core import AppConfig, QueueConfig
 from app.services import Notification
 from .Widget import (
     LineEditSettingCard,
@@ -143,9 +144,9 @@ class QueueManager(QWidget):
         if choice.exec():
 
             queue_list = self.queue_manager.search_queue()
-            move_list = [_ for _ in queue_list if int(_[0][3:]) > int(name[3:])]
+            move_list = [_ for _ in queue_list if int(_[0][5:]) > int(name[5:])]
 
-            index = max(int(name[3:]) - 1, 1)
+            index = max(int(name[5:]) - 1, 1)
 
             self.queue_manager.clear_SettingBox()
 
@@ -249,7 +250,7 @@ class QueueSettingBox(QWidget):
         self.Layout.setContentsMargins(0, 0, 0, 0)
 
         self.pivot.currentItemChanged.connect(
-            lambda index: self.switch_SettingBox(int(index[5:]), if_chang_pivot=False)
+            lambda index: self.switch_SettingBox(int(index[5:]), if_change_pivot=False)
         )
 
         self.show_SettingBox(1)
@@ -271,7 +272,7 @@ class QueueSettingBox(QWidget):
 
         self.switch_SettingBox(index)
 
-    def switch_SettingBox(self, index: int, if_chang_pivot: bool = True) -> None:
+    def switch_SettingBox(self, index: int, if_change_pivot: bool = True) -> None:
         """切换到指定的子界面"""
 
         queue_list = self.search_queue()
@@ -288,7 +289,7 @@ class QueueSettingBox(QWidget):
             self.config.queue_config,
         )
 
-        if if_chang_pivot:
+        if if_change_pivot:
             self.pivot.setCurrentItem(self.script_list[index - 1].objectName())
         self.stackedWidget.setCurrentWidget(self.script_list[index - 1])
 
@@ -355,10 +356,12 @@ class QueueMemberSettingBox(QWidget):
         self.queue_set = self.QueueSetSettingCard(self, self.config.queue_config)
         self.time = self.TimeSettingCard(self, self.config.queue_config)
         self.task = self.TaskSettingCard(self, self.config)
+        self.history = self.HistoryCard(self, self.config, f"调度队列_{uid}")
 
         content_layout.addWidget(self.queue_set)
         content_layout.addWidget(self.time)
         content_layout.addWidget(self.task)
+        content_layout.addWidget(self.history)
         content_layout.addStretch(1)
 
         scrollArea.setWidget(content_widget)
@@ -498,36 +501,6 @@ class QueueMemberSettingBox(QWidget):
 
             self.viewLayout.addLayout(Layout)
 
-    class QueueSetSettingCard(HeaderCardWidget):
-
-        def __init__(self, parent=None, queue_config: QueueConfig = None):
-            super().__init__(parent)
-
-            self.setTitle("队列设置")
-
-            self.queue_config = queue_config
-
-            Layout = QVBoxLayout()
-
-            self.card_Name = LineEditSettingCard(
-                "请输入调度队列名称",
-                FluentIcon.EDIT,
-                "调度队列名称",
-                "用于标识调度队列的名称",
-                self.queue_config.queueSet_Name,
-            )
-            self.card_Enable = SwitchSettingCard(
-                FluentIcon.HOME,
-                "状态",
-                "调度队列状态",
-                self.queue_config.queueSet_Enabled,
-            )
-
-            Layout.addWidget(self.card_Name)
-            Layout.addWidget(self.card_Enable)
-
-            self.viewLayout.addLayout(Layout)
-
     class TaskSettingCard(HeaderCardWidget):
 
         def __init__(self, parent=None, config: AppConfig = None):
@@ -656,3 +629,18 @@ class QueueMemberSettingBox(QWidget):
                             member_list_text.append(subdir.name)
 
             return [member_list_name, member_list_text]
+
+    class HistoryCard(HeaderCardWidget):
+
+        def __init__(self, parent=None, config: AppConfig = None, name: str = None):
+            super().__init__(parent)
+            self.setTitle("历史运行记录")
+
+            self.config = config
+
+            self.text = TextBrowser()
+            self.text.setMinimumHeight(300)
+            history = self.config.get_history(name)
+            self.text.setPlainText(history["History"])
+
+            self.viewLayout.addWidget(self.text)

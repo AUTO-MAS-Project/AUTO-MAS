@@ -36,9 +36,8 @@ from qfluentwidgets import (
     setTheme,
     Theme,
     MessageBox,
+    Dialog,
     HeaderCardWidget,
-    InfoBar,
-    InfoBarPosition,
     SwitchSettingCard,
     ExpandGroupSettingCard,
     PushSettingCard,
@@ -52,7 +51,7 @@ import requests
 
 uiLoader = QUiLoader()
 
-from app import AppConfig
+from app.core import AppConfig, MainInfoBar
 from app.services import Notification, CryptoHandler, SystemHandler
 from app.utils import Updater, version_text
 from .Widget import InputMessageBox, LineEditSettingCard
@@ -98,7 +97,7 @@ class Setting(QWidget):
         self.function.card_IfAllowSleep.checkedChanged.connect(self.system.set_Sleep)
         self.start.card_IfSelfStart.checkedChanged.connect(self.system.set_SelfStart)
         self.security.card_changePASSWORD.clicked.connect(self.change_PASSWORD)
-        self.updater.card_CheckUpdate.clicked.connect(self.check_version)
+        self.updater.card_CheckUpdate.clicked.connect(self.get_update)
         self.other.card_Tips.clicked.connect(self.show_tips)
 
         content_layout.addWidget(self.function)
@@ -258,7 +257,7 @@ class Setting(QWidget):
                     if choice.exec():
                         break
 
-    def check_update(self) -> str:
+    def get_update_info(self) -> str:
         """检查主程序版本更新，返回更新信息"""
 
         # 从本地版本信息文件获取当前版本信息
@@ -294,7 +293,7 @@ class Setting(QWidget):
         else:
             return "已是最新版本~"
 
-    def check_version(self, if_question: bool = True) -> None:
+    def get_update(self, if_question: bool = True) -> None:
         """检查版本更新，调起文件下载进程"""
 
         # 从本地版本信息文件获取当前版本信息
@@ -387,15 +386,7 @@ class Setting(QWidget):
 
         # 无版本更新
         else:
-            InfoBar.success(
-                title="更新检查",
-                content="已是最新版本~",
-                orient=QtCore.Qt.Horizontal,
-                isClosable=True,
-                position=InfoBarPosition.TOP_RIGHT,
-                duration=3000,
-                parent=self,
-            )
+            MainInfoBar.push_info_bar("success", "更新检查", "已是最新版本~", 3000)
 
     def update_main(self):
         """更新主程序"""
@@ -411,7 +402,7 @@ class Setting(QWidget):
     def show_tips(self):
         """显示小贴士"""
 
-        choice = MessageBox("小贴士", "这里什么都没有~", self)
+        choice = Dialog("小贴士", "这里什么都没有~", self)
         choice.cancelButton.hide()
         choice.buttonLayout.insertStretch(1)
         if choice.exec():

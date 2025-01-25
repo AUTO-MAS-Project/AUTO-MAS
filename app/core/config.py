@@ -25,9 +25,9 @@ v4.2
 作者：DLmaster_361
 """
 
+from loguru import logger
 import sqlite3
 import json
-import os
 import sys
 from pathlib import Path
 from typing import Dict, Union
@@ -37,11 +37,9 @@ from qfluentwidgets import (
     qconfig,
     OptionsConfigItem,
     RangeConfigItem,
-    OptionsValidator,
     FolderValidator,
     BoolValidator,
     RangeValidator,
-    EnumSerializer,
 )
 
 
@@ -52,13 +50,17 @@ class AppConfig:
         self.app_path = Path(sys.argv[0]).resolve().parent  # 获取软件根目录
         self.app_path_sys = str(Path(sys.argv[0]).resolve())  # 获取软件自身的路径
 
+        self.log_path = self.app_path / "debug/AUTO_MAA.log"
         self.database_path = self.app_path / "data/data.db"
         self.config_path = self.app_path / "config/config.json"
+        self.history_path = self.app_path / "config/history.json"
         self.key_path = self.app_path / "data/key"
         self.gameid_path = self.app_path / "data/gameid.txt"
         self.version_path = self.app_path / "resources/version.json"
 
         self.PASSWORD = ""
+        self.running_list = []
+        self.if_silence_needed = 0
         self.if_database_opened = False
 
         # 检查文件完整性
@@ -70,6 +72,7 @@ class AppConfig:
         # 检查目录
         (self.app_path / "config").mkdir(parents=True, exist_ok=True)
         (self.app_path / "data").mkdir(parents=True, exist_ok=True)
+        (self.app_path / "debug").mkdir(parents=True, exist_ok=True)
         # (self.app_path / "data/MAAconfig/simple").mkdir(parents=True, exist_ok=True)
         # (self.app_path / "data/MAAconfig/beta").mkdir(parents=True, exist_ok=True)
         # (self.app_path / "data/MAAconfig/Default").mkdir(parents=True, exist_ok=True)
@@ -90,17 +93,46 @@ class AppConfig:
                 encoding="utf-8",
             )
 
+        self.init_logger()
         self.init_config()
         # self.check_database()
+        logger.info("程序配置管理模块初始化完成")
+
+    def init_logger(self) -> None:
+        """初始化日志记录器"""
+
+        # logger.remove(0)
+
+        # logger.add(
+        #     sink=sys.stdout,
+        #     level="DEBUG",
+        #     format="<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | <level>{message}</level>",
+        #     enqueue=True,
+        #     backtrace=True,
+        #     diagnose=True,
+        # )
+        logger.add(
+            sink=self.log_path,
+            level="DEBUG",
+            format="<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | <level>{message}</level>",
+            enqueue=True,
+            backtrace=True,
+            diagnose=True,
+            rotation="1 week",
+            retention="1 month",
+            compression="zip",
+        )
+
+        logger.info("日志记录器初始化完成")
 
     def init_config(self) -> None:
         """初始化配置类"""
 
         self.global_config = GlobalConfig()
-        qconfig.load(self.config_path, self.global_config)
-
         self.queue_config = QueueConfig()
         self.maa_config = MaaConfig()
+
+        logger.info("配置类初始化完成")
 
     def init_database(self, mode: str) -> None:
         """初始化用户数据库"""
@@ -112,6 +144,8 @@ class AppConfig:
             self.cur.execute("CREATE TABLE version(v text)")
             self.cur.execute("INSERT INTO version VALUES(?)", ("v1.3",))
             self.db.commit()
+
+        logger.info("用户数据库初始化完成")
 
     def check_database(self) -> None:
         """检查用户数据库文件并处理数据库版本更新"""
@@ -196,10 +230,9 @@ class AppConfig:
         """打开数据库"""
 
         self.close_database()
-        if mode == "Maa":
-            self.db = sqlite3.connect(
-                self.app_path / f"config/{mode}Config/{index}/user_date.db"
-            )
+        self.db = sqlite3.connect(
+            self.app_path / f"config/{mode}Config/{index}/user_data.db"
+        )
         self.cur = self.db.cursor()
         self.if_database_opened = True
 
@@ -210,6 +243,28 @@ class AppConfig:
             self.cur.close()
             self.db.close()
         self.if_database_opened = False
+
+    def save_history(self, key: str, content: dict) -> None:
+        """保存历史记录"""
+
+        history = {}
+        if self.history_path.exists():
+            with self.history_path.open(mode="r", encoding="utf-8") as f:
+                history = json.load(f)
+        history[key] = content
+        with self.history_path.open(mode="w", encoding="utf-8") as f:
+            json.dump(history, f, indent=4)
+
+    def get_history(self, key: str) -> dict:
+        """获取历史记录"""
+
+        history = {}
+        if self.history_path.exists():
+            with self.history_path.open(mode="r", encoding="utf-8") as f:
+                history = json.load(f)
+        return history.get(
+            key, {"Time": "0000-00-00 00:00", "History": "暂无历史运行记录"}
+        )
 
     def clear_maa_config(self) -> None:
         """清空MAA配置"""
