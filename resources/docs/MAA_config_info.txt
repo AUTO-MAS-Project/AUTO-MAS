@@ -8,8 +8,6 @@
 "TaskQueue.Mall.IsChecked": "True"       #获取信用及购物
 "TaskQueue.AutoRoguelike.IsChecked": "False"        #自动肉鸽
 "TaskQueue.Reclamation.IsChecked": "False"      #生息演算
-"Start.RunDirectly": "True"        #启动MAA后直接运行
-"Start.OpenEmulatorAfterLaunch": "True"        #启动MAA后自动开启模拟器
 #刷理智
 "MainFunction.Stage1": ""        #主关卡
 "MainFunction.Stage2": ""        #备选关卡1
@@ -40,6 +38,8 @@ G"VersionUpdate.ScheduledUpdateCheck": "True"        #定时检查更新
 G"VersionUpdate.AutoDownloadUpdatePackage": "True"        #自动下载更新包
 G"VersionUpdate.AutoInstallUpdatePackage": "True"        #自动安装更新包
 G"Start.MinimizeDirectly": "True"        #启动MAA后直接最小化
+"Start.RunDirectly": "True"        #启动MAA后直接运行
+"Start.OpenEmulatorAfterLaunch": "True"        #启动MAA后自动开启模拟器
 G"GUI.UseTray": "True"        #显示托盘图标
 G"GUI.MinimizeToTray": "False"        #最小化时隐藏至托盘
 "Start.EmulatorPath"        #模拟器路径
