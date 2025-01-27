@@ -1,0 +1,158 @@
+#   <AUTO_MAA:A MAA Multi Account Management and Automation Tool>
+#   Copyright © <2024> <DLmaster361>
+
+#   This file is part of AUTO_MAA.
+
+#   AUTO_MAA is free software: you can redistribute it and/or modify
+#   it under the terms of the GNU General Public License as published
+#   by the Free Software Foundation, either version 3 of the License,
+#   or (at your option) any later version.
+
+#   AUTO_MAA is distributed in the hope that it will be useful,
+#   but WITHOUT ANY WARRANTY; without even the implied warranty
+#   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
+#   the GNU General Public License for more details.
+
+#   You should have received a copy of the GNU General Public License
+#   along with AUTO_MAA. If not, see <https://www.gnu.org/licenses/>.
+
+#   DLmaster_361@163.com
+
+name: Build AUTO_MAA_Pre
+
+on:
+  push:
+    branches: [ "dev" ]
+    paths-ignore:
+      - '**.md'
+      - 'LICENSE'
+  pull_request:
+    branches: [ "dev" ]
+    paths-ignore:
+      - '**.md'
+      - 'LICENSE'
+
+permissions:
+  contents: read
+
+jobs:
+  pre_check:
+    name: Pre Checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Repo Check
+        id: repo_check
+        run: |
+          if [[ "$GITHUB_REPOSITORY" != "DLmaster361/AUTO_MAA" ]]; then
+            echo "When forking this repository to make your own builds, you have to adjust this check."
+            exit 1
+          fi
+          exit 0
+  build_AUTO_MAA:
+    runs-on: windows-latest
+    needs: pre_check
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install flake8 pytest
+          pip install -r requirements.txt
+      - name: Lint with flake8
+        run: |
+          # stop the build if there are Python syntax errors or undefined names
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+          # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
+          flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+      - name: Package
+        id: package
+        run: |
+          copy app\utils\package.py .\
+          python package.py
+      - name: Read version
+        id: read_version
+        run: |
+          $MAIN_VERSION=(Get-Content -Path "version_info.txt" -TotalCount 1).Trim()
+          "AUTO_MAA_version=$MAIN_VERSION" | Out-File -FilePath $env:GITHUB_ENV -Append
+          $UPDATER_VERSION=(Get-Content -Path "version_info.txt" -TotalCount 2 | Select-Object -Index 1).Trim()
+          "updater_version=$UPDATER_VERSION" | Out-File -FilePath $env:GITHUB_ENV -Append
+      - name: Create Zip
+        id: create_zip
+        run: |
+          Compress-Archive -Path app,resources,main.py,AUTO_MAA.exe,requirements.txt,README.md,LICENSE -DestinationPath AUTO_MAA_${{ env.AUTO_MAA_version }}.zip
+          Compress-Archive -Path Updater.exe -DestinationPath Updater_${{ env.updater_version }}.zip
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AUTO_MAA_${{ env.AUTO_MAA_version }}
+          path: |
+            AUTO_MAA_${{ env.AUTO_MAA_version }}.zip
+            Updater_${{ env.updater_version }}.zip
+      - name: Upload Version_Info Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: version_info
+          path: version_info.txt
+  publish_prerelease:
+    name: Publish prerelease
+    needs: build_AUTO_MAA
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: AUTO_MAA_*
+          merge-multiple: true
+          path: artifacts
+      - name: Download Version_Info
+        uses: actions/download-artifact@v4
+        with:
+          name: version_info
+          path: ./
+      - name: Check if release exists
+        id: check_if_release_exists
+        run: |
+          release_id=$(gh release view $(sed 's/\r$//g' <(head -n 1 version_info.txt)) --json id --jq .id || true)
+          if [[ -z $release_id ]]; then
+            echo "release_exists=false" >> $GITHUB_OUTPUT
+          else
+            echo "release_exists=true" >> $GITHUB_OUTPUT
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.WORKFLOW_TOKEN }}
+      - name: Create prerelease
+        id: create_prerelease
+        if: steps.check_if_release_exists.outputs.release_exists == 'false'
+        run: |
+          set -xe
+          shopt -s nullglob
+          NAME="$(sed 's/\r$//g' <(head -n 1 version_info.txt))"
+          TAGNAME="$(sed 's/\r$//g' <(head -n 1 version_info.txt))"
+          NOTES_MAIN="$(sed 's/\r$//g' <(tail -n +3 version_info.txt))"
+          NOTES_TAIL="\`\`\`本release通过GitHub Actions自动构建\`\`\`"
+          NOTES="$NOTES_MAIN<br><br>$NOTES_TAIL"
+          gh release create "$TAGNAME" --target "main" --title "$NAME" --notes "$NOTES" --prerelease artifacts/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.WORKFLOW_TOKEN }}
+      - name: Update prerelease
+        id: update_prerelease
+        if: steps.check_if_release_exists.outputs.release_exists == 'true'
+        run: |
+          set -xe
+          shopt -s nullglob
+          NAME="$(sed 's/\r$//g' <(head -n 1 version_info.txt))"
+          TAGNAME="$(sed 's/\r$//g' <(head -n 1 version_info.txt))"
+          NOTES_MAIN="$(sed 's/\r$//g' <(tail -n +3 version_info.txt))"
+          NOTES_TAIL="\`\`\`本release通过GitHub Actions自动构建\`\`\`"
+          NOTES="$NOTES_MAIN<br><br>$NOTES_TAIL"
+          gh release delete "$TAGNAME" --yes
+          gh release create "$TAGNAME" --target "main" --title "$NAME" --notes "$NOTES" --prerelease artifacts/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.WORKFLOW_TOKEN }}

@@ -22,7 +22,7 @@ name: Build AUTO_MAA
 
 on:
   push:
-    branches: [ "main","dev" ]
+    branches: [ "main" ]
     paths-ignore:
       - '**.md'
       - 'LICENSE'
