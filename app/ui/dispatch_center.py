@@ -36,32 +36,23 @@ from qfluentwidgets import (
     CardWidget,
     IconWidget,
     BodyLabel,
-    qconfig,
     Pivot,
     ScrollArea,
     FluentIcon,
-    MessageBox,
     HeaderCardWidget,
-    CommandBar,
     FluentIcon,
     TextBrowser,
     ComboBox,
-    setTheme,
-    Theme,
     SubtitleLabel,
     PushButton,
-    ElevatedCardWidget,
 )
-from PySide6.QtUiTools import QUiLoader
-from PySide6 import QtCore
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QTextCursor
 from typing import List, Dict
 import json
-import shutil
 
-uiLoader = QUiLoader()
 
 from app.core import Config, Task_manager, Task, MainInfoBar
-from app.services import Notify
 
 
 class DispatchCenter(QWidget):
@@ -88,7 +79,7 @@ class DispatchCenter(QWidget):
         )
         self.update_top_bar()
 
-        self.Layout.addWidget(self.pivot, 0, QtCore.Qt.AlignHCenter)
+        self.Layout.addWidget(self.pivot, 0, Qt.AlignHCenter)
         self.Layout.addWidget(self.stackedWidget)
         self.Layout.setContentsMargins(0, 0, 0, 0)
 
@@ -259,7 +250,7 @@ class DispatchBox(QWidget):
                 )
                 return None
 
-            name = self.object.currentText().split(" - ")[1]
+            name = self.object.currentText().split(" - ")[-1]
 
             if name in Config.running_list:
                 logger.warning(f"任务已存在：{name}")
@@ -274,7 +265,18 @@ class DispatchBox(QWidget):
                     info = json.load(f)
 
                 logger.info(f"用户添加任务：{name}")
-                Task_manager.add_task("主窗口", name, info)
+                Task_manager.add_task(f"{self.mode.currentText()}_主窗口", name, info)
+
+            elif self.object.currentText().split(" - ")[0] == "实例":
+
+                if self.object.currentText().split(" - ")[1] == "Maa":
+
+                    info = {"Queue": {"Member_1": name}}
+
+                    logger.info(f"用户添加任务：{name}")
+                    Task_manager.add_task(
+                        f"{self.mode.currentText()}_主窗口", "用户自定义队列", info
+                    )
 
     class DispatchInfoCard(HeaderCardWidget):
 
@@ -388,6 +390,14 @@ class DispatchBox(QWidget):
                 self.text = TextBrowser()
                 self.viewLayout.setContentsMargins(3, 0, 3, 3)
                 self.viewLayout.addWidget(self.text)
+
+                self.text.textChanged.connect(self.to_end)
+
+            def to_end(self):
+                """滚动到底部"""
+
+                self.text.moveCursor(QTextCursor.End)
+                self.text.ensureCursorVisible()
 
 
 class ItemCard(CardWidget):

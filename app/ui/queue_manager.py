@@ -24,7 +24,7 @@ AUTO_MAA调度队列界面
 v4.2
 作者：DLmaster_361
 """
-
+from loguru import logger
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -41,20 +41,14 @@ from qfluentwidgets import (
     HeaderCardWidget,
     TextBrowser,
     CommandBar,
-    setTheme,
-    Theme,
     SwitchSettingCard,
 )
-from PySide6.QtUiTools import QUiLoader
-from PySide6 import QtCore
+from PySide6.QtCore import Qt
 from typing import List
 import json
 import shutil
 
-uiLoader = QUiLoader()
-
-from app.core import Config
-from app.services import Notify
+from app.core import Config, MainInfoBar
 from .Widget import (
     LineEditSettingCard,
     TimeEditSettingCard,
@@ -71,8 +65,6 @@ class QueueManager(QWidget):
         super().__init__(parent)
 
         self.setObjectName("调度队列")
-
-        setTheme(Theme.AUTO)
 
         layout = QVBoxLayout(self)
 
@@ -129,6 +121,17 @@ class QueueManager(QWidget):
         name = self.queue_manager.pivot.currentRouteKey()
 
         if name == None:
+            logger.warning("未选择调度队列")
+            MainInfoBar.push_info_bar(
+                "warning", "未选择调度队列", "请先选择一个调度队列", 5000
+            )
+            return None
+
+        if name in Config.running_list:
+            logger.warning("调度队列正在运行")
+            MainInfoBar.push_info_bar(
+                "warning", "调度队列正在运行", "请先停止调度队列", 5000
+            )
             return None
 
         choice = MessageBox(
@@ -161,11 +164,26 @@ class QueueManager(QWidget):
         name = self.queue_manager.pivot.currentRouteKey()
 
         if name == None:
+            logger.warning("未选择调度队列")
+            MainInfoBar.push_info_bar(
+                "warning", "未选择调度队列", "请先选择一个调度队列", 5000
+            )
             return None
 
         index = int(name[5:])
 
         if index == 1:
+            logger.warning("向左移动调度队列时已到达最左端")
+            MainInfoBar.push_info_bar(
+                "warning", "已经是第一个调度队列", "无法向左移动", 5000
+            )
+            return None
+
+        if name in Config.running_list or f"调度队列_{index-1}" in Config.running_list:
+            logger.warning("相关调度队列正在运行")
+            MainInfoBar.push_info_bar(
+                "warning", "相关调度队列正在运行", "请先停止调度队列", 5000
+            )
             return None
 
         self.queue_manager.clear_SettingBox()
@@ -189,12 +207,27 @@ class QueueManager(QWidget):
         name = self.queue_manager.pivot.currentRouteKey()
 
         if name == None:
+            logger.warning("未选择调度队列")
+            MainInfoBar.push_info_bar(
+                "warning", "未选择调度队列", "请先选择一个调度队列", 5000
+            )
             return None
 
         queue_list = self.queue_manager.search_queue()
         index = int(name[5:])
 
         if index == len(queue_list):
+            logger.warning("向右移动调度队列时已到达最右端")
+            MainInfoBar.push_info_bar(
+                "warning", "已经是最后一个调度队列", "无法向右移动", 5000
+            )
+            return None
+
+        if name in Config.running_list or f"调度队列_{index+1}" in Config.running_list:
+            logger.warning("相关调度队列正在运行")
+            MainInfoBar.push_info_bar(
+                "warning", "相关调度队列正在运行", "请先停止调度队列", 5000
+            )
             return None
 
         self.queue_manager.clear_SettingBox()
@@ -235,7 +268,7 @@ class QueueSettingBox(QWidget):
 
         self.script_list: List[QueueMemberSettingBox] = []
 
-        self.Layout.addWidget(self.pivot, 0, QtCore.Qt.AlignHCenter)
+        self.Layout.addWidget(self.pivot, 0, Qt.AlignHCenter)
         self.Layout.addWidget(self.stackedWidget)
         self.Layout.setContentsMargins(0, 0, 0, 0)
 

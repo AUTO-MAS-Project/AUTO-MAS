@@ -25,34 +25,31 @@ v4.2
 作者：DLmaster_361
 """
 
+from loguru import logger
 from PySide6.QtWidgets import (
     QWidget,
     QApplication,
+    QVBoxLayout,
     QVBoxLayout,
 )
 from qfluentwidgets import (
     ScrollArea,
     FluentIcon,
-    setTheme,
-    Theme,
     MessageBox,
     Dialog,
+    HyperlinkCard,
     HeaderCardWidget,
     SwitchSettingCard,
     ExpandGroupSettingCard,
     PushSettingCard,
 )
-from PySide6.QtUiTools import QUiLoader
-from PySide6 import QtCore
 import json
 import subprocess
 import time
 import requests
 
-uiLoader = QUiLoader()
-
 from app.core import Config, MainInfoBar
-from app.services import Notify, Crypto, System
+from app.services import Crypto, System
 from app.utils import Updater, version_text
 from .Widget import InputMessageBox, LineEditSettingCard
 
@@ -66,8 +63,6 @@ class Setting(QWidget):
         super().__init__(parent)
 
         self.setObjectName("设置")
-
-        setTheme(Theme.AUTO)
 
         layout = QVBoxLayout()
 
@@ -89,7 +84,7 @@ class Setting(QWidget):
         self.start.card_IfSelfStart.checkedChanged.connect(System.set_SelfStart)
         self.security.card_changePASSWORD.clicked.connect(self.change_PASSWORD)
         self.updater.card_CheckUpdate.clicked.connect(self.get_update)
-        self.other.card_Tips.clicked.connect(self.show_tips)
+        self.other.card_Notice.clicked.connect(self.show_notice)
 
         content_layout.addWidget(self.function)
         content_layout.addWidget(self.start)
@@ -379,7 +374,7 @@ class Setting(QWidget):
         else:
             MainInfoBar.push_info_bar("success", "更新检查", "已是最新版本~", 3000)
 
-    def update_main(self):
+    def update_main(self) -> None:
         """更新主程序"""
 
         subprocess.Popen(
@@ -390,14 +385,41 @@ class Setting(QWidget):
         self.close()
         QApplication.quit()
 
-    def show_tips(self):
-        """显示小贴士"""
+    def show_notice(self):
+        """显示公告"""
 
-        choice = Dialog("小贴士", "这里什么都没有~", self)
+        # 从远程服务器获取最新版本信息
+        for _ in range(3):
+            try:
+                response = requests.get(
+                    "https://gitee.com/DLmaster_361/AUTO_MAA/raw/main/resources/version.json"
+                )
+                version_remote = response.json()
+                break
+            except Exception as e:
+                err = e
+                time.sleep(0.1)
+        else:
+            logger.warning(f"获取最新公告时出错：\n{err}")
+            choice = Dialog(
+                "网络错误",
+                f"获取最新公告时出错：\n{err}",
+                self,
+            )
+            choice.cancelButton.hide()
+            choice.buttonLayout.insertStretch(1)
+            if choice.exec():
+                return None
+
+        if "notice" in version_remote:
+            notice = version_remote["notice"]
+        else:
+            notice = "暂无公告~"
+
+        choice = Dialog("公告", notice, self)
         choice.cancelButton.hide()
         choice.buttonLayout.insertStretch(1)
-        if choice.exec():
-            pass
+        choice.exec()
 
 
 class FunctionSettingCard(HeaderCardWidget):
@@ -416,18 +438,50 @@ class FunctionSettingCard(HeaderCardWidget):
             configItem=Config.global_config.function_IfAllowSleep,
         )
 
-        self.card_IfSilence = SwitchSettingCard(
-            icon=FluentIcon.PAGE_RIGHT,
-            title="静默模式",
-            content="将各代理窗口置于后台运行，减少对前台的干扰",
-            configItem=Config.global_config.function_IfSilence,
-        )
+        self.card_IfSilence = self.SilenceSettingCard(self)
 
         # 添加各组到设置卡中
         Layout.addWidget(self.card_IfAllowSleep)
         Layout.addWidget(self.card_IfSilence)
 
         self.viewLayout.addLayout(Layout)
+
+    class SilenceSettingCard(ExpandGroupSettingCard):
+
+        def __init__(self, parent=None):
+            super().__init__(
+                FluentIcon.SETTING,
+                "静默模式",
+                "将各代理窗口置于后台运行，减少对前台的干扰",
+                parent,
+            )
+
+            widget = QWidget()
+            Layout = QVBoxLayout(widget)
+
+            self.card_IfSilence = SwitchSettingCard(
+                icon=FluentIcon.PAGE_RIGHT,
+                title="静默模式",
+                content="是否启用静默模式",
+                configItem=Config.global_config.function_IfSilence,
+            )
+
+            self.card_BossKey = LineEditSettingCard(
+                text="请输入安卓模拟器老版键",
+                icon=FluentIcon.PAGE_RIGHT,
+                title="模拟器老版键",
+                content="输入模拟器老版快捷键，以“+”分隔",
+                configItem=Config.global_config.function_BossKey,
+            )
+
+            Layout.addWidget(self.card_IfSilence)
+            Layout.addWidget(self.card_BossKey)
+
+            # 调整内部布局
+            self.viewLayout.setContentsMargins(0, 0, 0, 0)
+            self.viewLayout.setSpacing(0)
+
+            self.addGroupWidget(widget)
 
 
 class StartSettingCard(HeaderCardWidget):
@@ -449,7 +503,7 @@ class StartSettingCard(HeaderCardWidget):
         self.card_IfRunDirectly = SwitchSettingCard(
             icon=FluentIcon.PAGE_RIGHT,
             title="启动后直接运行",
-            content="启动AUTO_MAA后自动运行任务",
+            content="启动AUTO_MAA后自动运行任务(暂不可用)",
             configItem=Config.global_config.start_IfRunDirectly,
         )
 
@@ -618,15 +672,48 @@ class OtherSettingCard(HeaderCardWidget):
 
         self.setTitle("其他")
 
-        Layout = QVBoxLayout()
-
-        self.card_Tips = PushSettingCard(
+        self.card_Notice = PushSettingCard(
             text="查看",
             icon=FluentIcon.PAGE_RIGHT,
-            title="小贴士",
-            content="查看AUTO_MAA的小贴士",
+            title="公告",
+            content="查看AUTO_MAA的最新公告",
         )
+        self.card_Association = self.AssociationSettingCard()
 
-        Layout.addWidget(self.card_Tips)
-
+        Layout = QVBoxLayout()
+        Layout.addWidget(self.card_Notice)
+        Layout.addWidget(self.card_Association)
         self.viewLayout.addLayout(Layout)
+
+    class AssociationSettingCard(ExpandGroupSettingCard):
+
+        def __init__(self, parent=None):
+            super().__init__(
+                FluentIcon.SETTING,
+                "AUTO_MAA官方社群",
+                "加入AUTO_MAA官方社群，获取更多帮助",
+                parent,
+            )
+
+            self.card_GitHubRepository = HyperlinkCard(
+                url="https://github.com/DLmaster361/AUTO_MAA",
+                text="访问GitHub仓库",
+                icon=FluentIcon.GITHUB,
+                title="GitHub",
+                content="查看AUTO_MAA的源代码，提交问题和建议，欢迎参与开发",
+            )
+            self.card_QQGroup = HyperlinkCard(
+                url="https://qm.qq.com/q/bd9fISNoME",
+                text="加入官方QQ交流群",
+                icon=FluentIcon.CHAT,
+                title="QQ群",
+                content="与AUTO_MAA开发者和用户交流",
+            )
+
+            widget = QWidget()
+            Layout = QVBoxLayout(widget)
+            Layout.addWidget(self.card_GitHubRepository)
+            Layout.addWidget(self.card_QQGroup)
+            self.viewLayout.setContentsMargins(0, 0, 0, 0)
+            self.viewLayout.setSpacing(0)
+            self.addGroupWidget(widget)

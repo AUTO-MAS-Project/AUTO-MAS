@@ -44,12 +44,10 @@ from qfluentwidgets import (
     MessageBox,
     HeaderCardWidget,
     CommandBar,
-    setTheme,
-    Theme,
     ExpandGroupSettingCard,
     PushSettingCard,
 )
-from PySide6 import QtCore
+from PySide6.QtCore import Qt
 from functools import partial
 from pathlib import Path
 from typing import List
@@ -57,8 +55,8 @@ import datetime
 import json
 import shutil
 
-from app.core import Config, MainInfoBar
-from app.services import Notify, Crypto
+from app.core import Config, MainInfoBar, Task_manager
+from app.services import Crypto
 from .Widget import (
     InputMessageBox,
     LineEditSettingCard,
@@ -76,8 +74,6 @@ class MemberManager(QWidget):
         super().__init__(parent)
 
         self.setObjectName("脚本管理")
-
-        setTheme(Theme.AUTO)
 
         layout = QVBoxLayout(self)
 
@@ -157,6 +153,17 @@ class MemberManager(QWidget):
         name = self.member_manager.pivot.currentRouteKey()
 
         if name == None:
+            logger.warning("删除脚本实例时未选择脚本实例")
+            MainInfoBar.push_info_bar(
+                "warning", "未选择脚本实例", "请选择一个脚本实例", 5000
+            )
+            return None
+
+        if len(Config.running_list) > 0:
+            logger.warning("删除脚本实例时调度队列未停止运行")
+            MainInfoBar.push_info_bar(
+                "warning", "调度中心正在执行任务", "请等待或手动中止任务", 5000
+            )
             return None
 
         choice = MessageBox(
@@ -192,12 +199,27 @@ class MemberManager(QWidget):
         name = self.member_manager.pivot.currentRouteKey()
 
         if name == None:
+            logger.warning("向左移动脚本实例时未选择脚本实例")
+            MainInfoBar.push_info_bar(
+                "warning", "未选择脚本实例", "请选择一个脚本实例", 5000
+            )
             return None
 
         member_list = self.member_manager.search_member()
         index = int(name[3:])
 
         if index == 1:
+            logger.warning("向左移动脚本实例时已到达最左端")
+            MainInfoBar.push_info_bar(
+                "warning", "已经是第一个脚本实例", "无法向左移动", 5000
+            )
+            return None
+
+        if len(Config.running_list) > 0:
+            logger.warning("向左移动脚本实例时调度队列未停止运行")
+            MainInfoBar.push_info_bar(
+                "warning", "调度中心正在执行任务", "请等待或手动中止任务", 5000
+            )
             return None
 
         type_right = [_[1] for _ in member_list if _[0] == name]
@@ -226,12 +248,27 @@ class MemberManager(QWidget):
         name = self.member_manager.pivot.currentRouteKey()
 
         if name == None:
+            logger.warning("向右移动脚本实例时未选择脚本实例")
+            MainInfoBar.push_info_bar(
+                "warning", "未选择脚本实例", "请选择一个脚本实例", 5000
+            )
             return None
 
         member_list = self.member_manager.search_member()
         index = int(name[3:])
 
         if index == len(member_list):
+            logger.warning("向右移动脚本实例时已到达最右端")
+            MainInfoBar.push_info_bar(
+                "warning", "已经是最后一个脚本实例", "无法向右移动", 5000
+            )
+            return None
+
+        if len(Config.running_list) > 0:
+            logger.warning("向右移动脚本实例时调度队列未停止运行")
+            MainInfoBar.push_info_bar(
+                "warning", "调度中心正在执行任务", "请等待或手动中止任务", 5000
+            )
             return None
 
         type_left = [_[1] for _ in member_list if _[0] == name]
@@ -323,7 +360,7 @@ class MemberSettingBox(QWidget):
 
         self.script_list: List[MaaSettingBox] = []
 
-        self.Layout.addWidget(self.pivot, 0, QtCore.Qt.AlignHCenter)
+        self.Layout.addWidget(self.pivot, 0, Qt.AlignHCenter)
         self.Layout.addWidget(self.stackedWidget)
         self.Layout.setContentsMargins(0, 0, 0, 0)
 
@@ -433,7 +470,7 @@ class MaaSettingBox(QWidget):
         content_widget = QWidget()
         content_layout = QVBoxLayout(content_widget)
 
-        self.app_setting = self.AppSettingCard(self, uid)
+        self.app_setting = self.AppSettingCard(self, self.objectName())
         self.user_setting = self.UserSettingCard(self, self.objectName())
 
         content_layout.addWidget(self.app_setting)
@@ -448,12 +485,12 @@ class MaaSettingBox(QWidget):
 
     class AppSettingCard(HeaderCardWidget):
 
-        def __init__(self, parent=None, uid: int = None):
+        def __init__(self, parent=None, name: str = None):
             super().__init__(parent)
 
             self.setTitle("MAA实例")
 
-            self.uid = uid
+            self.name = name
 
             Layout = QVBoxLayout()
 
@@ -483,6 +520,9 @@ class MaaSettingBox(QWidget):
                 lambda: self.card_Path.setContent(
                     Config.maa_config.get(Config.maa_config.MaaSet_Path)
                 )
+            )
+            self.card_Set.clicked.connect(
+                lambda: Task_manager.add_task("设置MAA_全局", self.name, None)
             )
 
             Layout.addWidget(self.card_Name)
@@ -514,12 +554,12 @@ class MaaSettingBox(QWidget):
                 )
                 return None
 
-            (Config.app_path / f"config/MaaConfig/脚本_{self.uid}/Default").mkdir(
+            (Config.app_path / f"config/MaaConfig/{self.name}/Default").mkdir(
                 parents=True, exist_ok=True
             )
             shutil.copy(
                 Path(folder) / "config/gui.json",
-                Config.app_path / f"config/MaaConfig/脚本_{self.uid}/Default/gui.json",
+                Config.app_path / f"config/MaaConfig/{self.name}/Default/gui.json",
             )
             Config.maa_config.set(Config.maa_config.MaaSet_Path, folder)
             self.card_Path.setContent(folder)
@@ -572,11 +612,7 @@ class MaaSettingBox(QWidget):
 
     class UserSettingCard(HeaderCardWidget):
 
-        def __init__(
-            self,
-            parent=None,
-            name: str = None,
-        ):
+        def __init__(self, parent=None, name: str = None):
             super().__init__(parent)
 
             self.setTitle("用户列表")
@@ -626,6 +662,14 @@ class MaaSettingBox(QWidget):
             self.viewLayout.addLayout(Layout)
 
         def set_more(self):
+            """用户选项配置"""
+
+            if len(Config.running_list) > 0:
+                logger.warning("配置用户选项时调度队列未停止运行")
+                MainInfoBar.push_info_bar(
+                    "warning", "调度中心正在执行任务", "请等待或手动中止任务", 5000
+                )
+                return None
 
             Config.cur.execute("SELECT * FROM adminx WHERE True")
             data = Config.cur.fetchall()
@@ -665,21 +709,39 @@ class MaaSettingBox(QWidget):
                                 / f"config/MaaConfig/{self.name}/simple/{choice.input[0].currentIndex()}/infrastructure",
                             )
                         else:
-                            choice = MessageBox(
-                                "错误",
-                                "未选择自定义基建文件",
-                                self.parent()
-                                .parent()
-                                .parent()
-                                .parent()
-                                .parent()
-                                .parent()
-                                .parent(),
+                            logger.warning("未选择自定义基建文件")
+                            MainInfoBar.push_info_bar(
+                                "warning", "警告", "未选择自定义基建文件", 5000
                             )
-                            choice.cancelButton.hide()
-                            choice.buttonLayout.insertStretch(1)
-                            if choice.exec():
-                                pass
+
+            elif self.user_list.pivot.currentRouteKey() == f"{self.name}_高级用户列表":
+
+                user_list = [_[0] for _ in data if _[15] == "beta"]
+                set_list = ["MAA日常配置", "MAA剿灭配置"]
+
+                choice = SetMessageBox(
+                    self.parent().parent().parent().parent().parent().parent().parent(),
+                    "用户选项配置",
+                    ["选择要配置的用户", "选择要配置的选项"],
+                    [user_list, set_list],
+                )
+                if (
+                    choice.exec()
+                    and choice.input[0].currentIndex() != -1
+                    and choice.input[1].currentIndex() != -1
+                ):
+
+                    set_book = ["routine", "annihilation"]
+                    Task_manager.add_task(
+                        "设置MAA_用户",
+                        self.name,
+                        {
+                            "SetMaaInfo": {
+                                "UserId": choice.input[0].currentIndex(),
+                                "SetType": set_book[choice.input[1].currentIndex()],
+                            }
+                        },
+                    )
 
         class UserListBox(QWidget):
 
@@ -762,9 +824,7 @@ class MaaSettingBox(QWidget):
                 self.user_list_simple.setBorderVisible(True)
                 self.user_list_simple.setBorderRadius(10)
                 self.user_list_simple.setWordWrap(False)
-                self.user_list_simple.setVerticalScrollBarPolicy(
-                    QtCore.Qt.ScrollBarAlwaysOff
-                )
+                self.user_list_simple.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
                 self.user_list_simple.setHorizontalHeaderLabels(
                     [
                         "用户名",
@@ -789,9 +849,7 @@ class MaaSettingBox(QWidget):
                 self.user_list_beta.setBorderVisible(True)
                 self.user_list_beta.setBorderRadius(10)
                 self.user_list_beta.setWordWrap(False)
-                self.user_list_beta.setVerticalScrollBarPolicy(
-                    QtCore.Qt.ScrollBarAlwaysOff
-                )
+                self.user_list_beta.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
                 self.user_list_beta.setHorizontalHeaderLabels(
                     [
                         "用户名",
@@ -818,7 +876,7 @@ class MaaSettingBox(QWidget):
                     routeKey=f"{name}_高级用户列表", text=f"高级用户列表"
                 )
 
-                self.Layout.addWidget(self.pivot, 0, QtCore.Qt.AlignHCenter)
+                self.Layout.addWidget(self.pivot, 0, Qt.AlignHCenter)
                 self.Layout.addWidget(self.stackedWidget)
                 self.Layout.setContentsMargins(0, 0, 0, 0)
 
@@ -909,22 +967,17 @@ class MaaSettingBox(QWidget):
                                 item = QTableWidgetItem(
                                     f"今日已代理{data_simple[i][14]}次"
                                 )
-                            item.setFlags(
-                                QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled
-                            )
+                            item.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
                         elif j == 12:
                             if Config.PASSWORD == "":
                                 item = QTableWidgetItem("******")
-                                item.setFlags(
-                                    QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled
-                                )
+                                item.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
                             else:
                                 result = Crypto.decryptx(value, Config.PASSWORD)
                                 item = QTableWidgetItem(result)
                                 if result == "管理密钥错误":
                                     item.setFlags(
-                                        QtCore.Qt.ItemIsSelectable
-                                        | QtCore.Qt.ItemIsEnabled
+                                        Qt.ItemIsSelectable | Qt.ItemIsEnabled
                                     )
                         else:
                             item = QTableWidgetItem(str(value))
@@ -983,22 +1036,17 @@ class MaaSettingBox(QWidget):
                                 item = QTableWidgetItem(
                                     f"今日已代理{data_beta[i][14]}次"
                                 )
-                            item.setFlags(
-                                QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled
-                            )
+                            item.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
                         elif j == 12:
                             if Config.PASSWORD == "":
                                 item = QTableWidgetItem("******")
-                                item.setFlags(
-                                    QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled
-                                )
+                                item.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
                             else:
                                 result = Crypto.decryptx(value, Config.PASSWORD)
                                 item = QTableWidgetItem(result)
                                 if result == "管理密钥错误":
                                     item.setFlags(
-                                        QtCore.Qt.ItemIsSelectable
-                                        | QtCore.Qt.ItemIsEnabled
+                                        Qt.ItemIsSelectable | Qt.ItemIsEnabled
                                     )
                         else:
                             item = QTableWidgetItem(str(value))
@@ -1178,6 +1226,13 @@ class MaaSettingBox(QWidget):
             def del_user(self) -> None:
                 """删除选中的首位用户"""
 
+                if len(Config.running_list) > 0:
+                    logger.warning("删除用户时调度队列未停止运行")
+                    MainInfoBar.push_info_bar(
+                        "warning", "调度中心正在执行任务", "请等待或手动中止任务", 5000
+                    )
+                    return None
+
                 # 获取对应的行索引
                 if "简洁用户列表" in self.pivot.currentRouteKey():
                     row = self.user_list_simple.currentRow()
@@ -1190,23 +1245,11 @@ class MaaSettingBox(QWidget):
 
                 # 判断选择合理性
                 if row == -1:
-                    choice = MessageBox(
-                        "错误",
-                        "请选中一个用户后再执行删除操作",
-                        self.parent()
-                        .parent()
-                        .parent()
-                        .parent()
-                        .parent()
-                        .parent()
-                        .parent()
-                        .parent()
-                        .parent(),
+                    logger.warning("删除用户时未选中用户")
+                    MainInfoBar.push_info_bar(
+                        "warning", "未选择用户", "请先选择一个用户", 5000
                     )
-                    choice.cancelButton.hide()
-                    choice.buttonLayout.insertStretch(1)
-                    if choice.exec():
-                        return None
+                    return None
 
                 # 确认待删除用户信息
                 Config.cur.execute(
@@ -1280,6 +1323,13 @@ class MaaSettingBox(QWidget):
             def up_user(self):
                 """向上移动用户"""
 
+                if len(Config.running_list) > 0:
+                    logger.warning("向上移动用户时调度队列未停止运行")
+                    MainInfoBar.push_info_bar(
+                        "warning", "调度中心正在执行任务", "请等待或手动中止任务", 5000
+                    )
+                    return None
+
                 # 获取对应的行索引
                 if "简洁用户列表" in self.pivot.currentRouteKey():
                     row = self.user_list_simple.currentRow()
@@ -1290,23 +1340,11 @@ class MaaSettingBox(QWidget):
 
                 # 判断选择合理性
                 if row == -1:
-                    choice = MessageBox(
-                        "错误",
-                        "请选中一个用户后再执行向下移动操作",
-                        self.parent()
-                        .parent()
-                        .parent()
-                        .parent()
-                        .parent()
-                        .parent()
-                        .parent()
-                        .parent()
-                        .parent(),
+                    logger.warning("向上移动用户时未选中用户")
+                    MainInfoBar.push_info_bar(
+                        "warning", "未选中用户", "请先选择一个用户", 5000
                     )
-                    choice.cancelButton.hide()
-                    choice.buttonLayout.insertStretch(1)
-                    if choice.exec():
-                        return None
+                    return None
 
                 if row == 0:
                     return None
@@ -1380,6 +1418,13 @@ class MaaSettingBox(QWidget):
             def down_user(self):
                 """向下移动用户"""
 
+                if len(Config.running_list) > 0:
+                    logger.warning("向下移动用户时调度队列未停止运行")
+                    MainInfoBar.push_info_bar(
+                        "warning", "调度中心正在执行任务", "请等待或手动中止任务", 5000
+                    )
+                    return None
+
                 # 获取对应的行索引
                 if "简洁用户列表" in self.pivot.currentRouteKey():
                     row = self.user_list_simple.currentRow()
@@ -1392,23 +1437,11 @@ class MaaSettingBox(QWidget):
 
                 # 判断选择合理性
                 if row == -1:
-                    choice = MessageBox(
-                        "错误",
-                        "请选中一个用户后再执行向下移动操作",
-                        self.parent()
-                        .parent()
-                        .parent()
-                        .parent()
-                        .parent()
-                        .parent()
-                        .parent()
-                        .parent()
-                        .parent(),
+                    logger.warning("向下移动用户时未选中用户")
+                    MainInfoBar.push_info_bar(
+                        "warning", "未选中用户", "请先选择一个用户", 5000
                     )
-                    choice.cancelButton.hide()
-                    choice.buttonLayout.insertStretch(1)
-                    if choice.exec():
-                        return None
+                    return None
 
                 if row == current_numb - 1:
                     return None
@@ -1482,6 +1515,13 @@ class MaaSettingBox(QWidget):
             def switch_user(self) -> None:
                 """切换用户配置模式"""
 
+                if len(Config.running_list) > 0:
+                    logger.warning("切换用户配置模式时调度队列未停止运行")
+                    MainInfoBar.push_info_bar(
+                        "warning", "调度中心正在执行任务", "请等待或手动中止任务", 5000
+                    )
+                    return None
+
                 # 获取当前用户配置模式信息
                 if "简洁用户列表" in self.pivot.currentRouteKey():
                     row = self.user_list_simple.currentRow()
@@ -1492,23 +1532,11 @@ class MaaSettingBox(QWidget):
 
                 # 判断选择合理性
                 if row == -1:
-                    choice = MessageBox(
-                        "错误",
-                        "请选中一个用户后再执行切换操作",
-                        self.parent()
-                        .parent()
-                        .parent()
-                        .parent()
-                        .parent()
-                        .parent()
-                        .parent()
-                        .parent()
-                        .parent(),
+                    logger.warning("切换用户配置模式时未选中用户")
+                    MainInfoBar.push_info_bar(
+                        "warning", "未选中用户", "请先选择一个用户", 5000
                     )
-                    choice.cancelButton.hide()
-                    choice.buttonLayout.insertStretch(1)
-                    if choice.exec():
-                        return None
+                    return None
 
                 # 确认待切换用户信息
                 Config.cur.execute(

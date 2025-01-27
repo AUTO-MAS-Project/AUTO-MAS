@@ -45,7 +45,7 @@ from qfluentwidgets import (
     qconfig,
 )
 from PySide6.QtGui import QIcon, QCloseEvent
-from PySide6 import QtCore
+from PySide6.QtCore import Qt
 
 from app.core import Config, Task_manager, Main_timer, MainInfoBar
 from app.services import Notify, Crypto, System
@@ -180,8 +180,6 @@ class AUTO_MAA(MSFluentWindow):
     def start_up_task(self) -> None:
         """启动时任务"""
 
-        logger.debug(f"{Config.app_path}, {Config.app_path_sys}")
-
         # 加载配置
         qconfig.load(Config.config_path, Config.global_config)
 
@@ -197,7 +195,7 @@ class AUTO_MAA(MSFluentWindow):
                 info = InfoBar.info(
                     title="更新检查",
                     content=result,
-                    orient=QtCore.Qt.Horizontal,
+                    orient=Qt.Horizontal,
                     isClosable=True,
                     position=InfoBarPosition.BOTTOM_LEFT,
                     duration=-1,
@@ -332,13 +330,14 @@ class AUTO_MAA(MSFluentWindow):
         self.show_ui("隐藏到托盘", if_quick=True)
 
         # 清理各功能线程
-        # self.main.Timer.stop()
-        # self.main.Timer.deleteLater()
-        # self.main.MaaManager.requestInterruption()
-        # self.main.MaaManager.quit()
-        # self.main.MaaManager.wait()
+        Main_timer.Timer.stop()
+        Main_timer.Timer.deleteLater()
+        Task_manager.stop_task("ALL")
 
         # 关闭数据库连接
         Config.close_database()
+
+        logger.info("AUTO_MAA主程序关闭")
+        logger.info("===================================")
 
         event.accept()

@@ -28,7 +28,6 @@ v4.2
 import os
 import json
 import shutil
-import subprocess
 from pathlib import Path
 
 from app import version_text

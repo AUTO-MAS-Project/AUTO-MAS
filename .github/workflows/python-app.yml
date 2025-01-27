@@ -22,7 +22,7 @@ name: Build AUTO_MAA
 
 on:
   push:
-    branches: [ "main","fluent-gui-dev" ]
+    branches: [ "main","dev" ]
     paths-ignore:
       - '**.md'
       - 'LICENSE'

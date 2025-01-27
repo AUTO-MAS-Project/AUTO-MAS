@@ -25,7 +25,6 @@ v1.1
 作者：DLmaster_361
 """
 
-import os
 import sys
 import json
 import zipfile

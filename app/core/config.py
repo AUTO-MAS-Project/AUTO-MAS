@@ -29,12 +29,11 @@ from loguru import logger
 import sqlite3
 import json
 import sys
+import shutil
 from pathlib import Path
-from typing import Dict, Union
 from qfluentwidgets import (
     QConfig,
     ConfigItem,
-    qconfig,
     OptionsConfigItem,
     RangeConfigItem,
     FolderValidator,
@@ -60,7 +59,7 @@ class AppConfig:
 
         self.PASSWORD = ""
         self.running_list = []
-        self.if_silence_needed = 0
+        self.silence_list = []
         self.if_database_opened = False
 
         # 检查文件完整性
@@ -73,9 +72,6 @@ class AppConfig:
         (self.app_path / "config").mkdir(parents=True, exist_ok=True)
         (self.app_path / "data").mkdir(parents=True, exist_ok=True)
         (self.app_path / "debug").mkdir(parents=True, exist_ok=True)
-        # (self.app_path / "data/MAAconfig/simple").mkdir(parents=True, exist_ok=True)
-        # (self.app_path / "data/MAAconfig/beta").mkdir(parents=True, exist_ok=True)
-        # (self.app_path / "data/MAAconfig/Default").mkdir(parents=True, exist_ok=True)
 
         # 生成版本信息文件
         if not self.version_path.exists():
@@ -95,22 +91,14 @@ class AppConfig:
 
         self.init_logger()
         self.init_config()
-        # self.check_database()
+        self.check_data()
         logger.info("程序配置管理模块初始化完成")
 
     def init_logger(self) -> None:
         """初始化日志记录器"""
 
-        # logger.remove(0)
+        logger.remove(0)
 
-        # logger.add(
-        #     sink=sys.stdout,
-        #     level="DEBUG",
-        #     format="<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | <level>{message}</level>",
-        #     enqueue=True,
-        #     backtrace=True,
-        #     diagnose=True,
-        # )
         logger.add(
             sink=self.log_path,
             level="DEBUG",
@@ -122,6 +110,11 @@ class AppConfig:
             retention="1 month",
             compression="zip",
         )
+        logger.info("===================================")
+        logger.info("AUTO_MAA 主程序")
+        logger.info("版本号： v4.2.1.1")
+        logger.info(f"根目录： {self.app_path}")
+        logger.info("===================================")
 
         logger.info("日志记录器初始化完成")
 
@@ -142,89 +135,248 @@ class AppConfig:
                 "CREATE TABLE adminx(admin text,id text,server text,day int,status text,last date,game text,game_1 text,game_2 text,routine text,annihilation text,infrastructure text,password byte,notes text,numb int,mode text,uid int)"
             )
             self.cur.execute("CREATE TABLE version(v text)")
-            self.cur.execute("INSERT INTO version VALUES(?)", ("v1.3",))
+            self.cur.execute("INSERT INTO version VALUES(?)", ("v1.4",))
             self.db.commit()
 
         logger.info("用户数据库初始化完成")
 
-    def check_database(self) -> None:
-        """检查用户数据库文件并处理数据库版本更新"""
+    def check_data(self) -> None:
+        """检查用户数据文件并处理数据文件版本更新"""
 
-        # 生成用户数据库
+        # 生成主数据库
         if not self.database_path.exists():
             db = sqlite3.connect(self.database_path)
             cur = db.cursor()
-            cur.execute(
-                "CREATE TABLE adminx(admin text,id text,server text,day int,status text,last date,game text,game_1 text,game_2 text,routine text,annihilation text,infrastructure text,password byte,notes text,numb int,mode text,uid int)"
-            )
             cur.execute("CREATE TABLE version(v text)")
-            cur.execute("INSERT INTO version VALUES(?)", ("v1.3",))
+            cur.execute("INSERT INTO version VALUES(?)", ("v1.4",))
             db.commit()
             cur.close()
             db.close()
 
-        # 数据库版本更新
+        # 数据文件版本更新
         db = sqlite3.connect(self.database_path)
         cur = db.cursor()
         cur.execute("SELECT * FROM version WHERE True")
         version = cur.fetchall()
-        # v1.0-->v1.1
-        if version[0][0] == "v1.0":
-            cur.execute("SELECT * FROM adminx WHERE True")
-            data = cur.fetchall()
-            cur.execute("DROP TABLE IF EXISTS adminx")
-            cur.execute(
-                "CREATE TABLE adminx(admin text,id text,server text,day int,status text,last date,game text,game_1 text,game_2 text,routines text,annihilation text,infrastructure text,password byte,notes text,numb int,mode text,uid int)"
-            )
-            for i in range(len(data)):
+
+        if version[0][0] != "v1.4":
+            logger.info("数据文件版本更新开始")
+            if_streaming = False
+            # v1.0-->v1.1
+            if version[0][0] == "v1.0" or if_streaming:
+                logger.info("数据文件版本更新：v1.0-->v1.1")
+                if_streaming = True
+                cur.execute("SELECT * FROM adminx WHERE True")
+                data = cur.fetchall()
+                cur.execute("DROP TABLE IF EXISTS adminx")
                 cur.execute(
-                    "INSERT INTO adminx VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                    (
-                        data[i][0],  # 0 0 0
-                        data[i][1],  # 1 1 -
-                        "Official",  # 2 2 -
-                        data[i][2],  # 3 3 1
-                        data[i][3],  # 4 4 2
-                        data[i][4],  # 5 5 3
-                        data[i][5],  # 6 6 -
-                        data[i][6],  # 7 7 -
-                        data[i][7],  # 8 8 -
-                        "y",  # 9 - 4
-                        data[i][8],  # 10 9 5
-                        data[i][9],  # 11 10 -
-                        data[i][10],  # 12 11 6
-                        data[i][11],  # 13 12 7
-                        data[i][12],  # 14 - -
-                        "simple",  # 15 - -
-                        data[i][13],  # 16 - -
-                    ),
+                    "CREATE TABLE adminx(admin text,id text,server text,day int,status text,last date,game text,game_1 text,game_2 text,routines text,annihilation text,infrastructure text,password byte,notes text,numb int,mode text,uid int)"
                 )
-            cur.execute("DELETE FROM version WHERE v = ?", ("v1.0",))
-            cur.execute("INSERT INTO version VALUES(?)", ("v1.1",))
-            db.commit()
-        # v1.1-->v1.2
-        if version[0][0] == "v1.1":
-            cur.execute("SELECT * FROM adminx WHERE True")
-            data = cur.fetchall()
-            for i in range(len(data)):
-                cur.execute(
-                    "UPDATE adminx SET infrastructure = 'n' WHERE mode = ? AND uid = ?",
-                    (
-                        data[i][15],
-                        data[i][16],
-                    ),
+                for i in range(len(data)):
+                    cur.execute(
+                        "INSERT INTO adminx VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                        (
+                            data[i][0],  # 0 0 0
+                            data[i][1],  # 1 1 -
+                            "Official",  # 2 2 -
+                            data[i][2],  # 3 3 1
+                            data[i][3],  # 4 4 2
+                            data[i][4],  # 5 5 3
+                            data[i][5],  # 6 6 -
+                            data[i][6],  # 7 7 -
+                            data[i][7],  # 8 8 -
+                            "y",  # 9 - 4
+                            data[i][8],  # 10 9 5
+                            data[i][9],  # 11 10 -
+                            data[i][10],  # 12 11 6
+                            data[i][11],  # 13 12 7
+                            data[i][12],  # 14 - -
+                            "simple",  # 15 - -
+                            data[i][13],  # 16 - -
+                        ),
+                    )
+                cur.execute("DELETE FROM version WHERE v = ?", ("v1.0",))
+                cur.execute("INSERT INTO version VALUES(?)", ("v1.1",))
+                db.commit()
+            # v1.1-->v1.2
+            if version[0][0] == "v1.1" or if_streaming:
+                logger.info("数据文件版本更新：v1.1-->v1.2")
+                if_streaming = True
+                cur.execute("SELECT * FROM adminx WHERE True")
+                data = cur.fetchall()
+                for i in range(len(data)):
+                    cur.execute(
+                        "UPDATE adminx SET infrastructure = 'n' WHERE mode = ? AND uid = ?",
+                        (
+                            data[i][15],
+                            data[i][16],
+                        ),
+                    )
+                cur.execute("DELETE FROM version WHERE v = ?", ("v1.1",))
+                cur.execute("INSERT INTO version VALUES(?)", ("v1.2",))
+                db.commit()
+            # v1.2-->v1.3
+            if version[0][0] == "v1.2" or if_streaming:
+                logger.info("数据文件版本更新：v1.2-->v1.3")
+                if_streaming = True
+                cur.execute("ALTER TABLE adminx RENAME COLUMN routines TO routine")
+                cur.execute("DELETE FROM version WHERE v = ?", ("v1.2",))
+                cur.execute("INSERT INTO version VALUES(?)", ("v1.3",))
+                db.commit()
+            # v1.3-->v1.4
+            if version[0][0] == "v1.3" or if_streaming:
+                logger.info("数据文件版本更新：v1.3-->v1.4")
+                if_streaming = True
+                (self.app_path / "config/MaaConfig").mkdir(parents=True, exist_ok=True)
+                shutil.move(
+                    self.app_path / "data/MaaConfig",
+                    self.app_path / "config/MaaConfig",
                 )
-            cur.execute("DELETE FROM version WHERE v = ?", ("v1.1",))
-            cur.execute("INSERT INTO version VALUES(?)", ("v1.2",))
-            db.commit()
-        # v1.2-->v1.3
-        if version[0][0] == "v1.2":
-            cur.execute("ALTER TABLE adminx RENAME COLUMN routines TO routine")
-            cur.execute("DELETE FROM version WHERE v = ?", ("v1.2",))
-            cur.execute("INSERT INTO version VALUES(?)", ("v1.3",))
-            db.commit()
-        cur.close()
-        db.close()
+                (self.app_path / "config/MaaConfig/MaaConfig").rename(
+                    self.app_path / "config/MaaConfig/脚本_1"
+                )
+                shutil.copy(
+                    self.database_path,
+                    self.app_path / "config/MaaConfig/脚本_1/user_data.db",
+                )
+                cur.execute("DROP TABLE IF EXISTS adminx")
+                cur.execute("DELETE FROM version WHERE v = ?", ("v1.3",))
+                cur.execute("INSERT INTO version VALUES(?)", ("v1.4",))
+                db.commit()
+                with (self.app_path / "config/gui.json").open(
+                    "r", encoding="utf-8"
+                ) as f:
+                    info = json.load(f)
+                maa_config = {
+                    "MaaSet": {
+                        "Name": "",
+                        "Path": info["Default"]["MaaSet.path"],
+                    },
+                    "RunSet": {
+                        "AnnihilationTimeLimit": info["Default"][
+                            "TimeLimit.annihilation"
+                        ],
+                        "RoutineTimeLimit": info["Default"]["TimeLimit.routine"],
+                        "RunTimesLimit": info["Default"]["TimesLimit.run"],
+                    },
+                }
+                with (self.app_path / "config/MaaConfig/脚本_1/config.json").open(
+                    "w", encoding="utf-8"
+                ) as f:
+                    json.dump(maa_config, f, ensure_ascii=False, indent=4)
+                config = {
+                    "Function": {
+                        "BossKey": info["Default"]["SelfSet.BossKey"],
+                        "IfAllowSleep": bool(
+                            info["Default"]["SelfSet.IfSleep"] == "True"
+                        ),
+                        "IfSilence": bool(
+                            info["Default"]["SelfSet.IfSilence"] == "True"
+                        ),
+                    },
+                    "Notify": {
+                        "IfPushPlyer": True,
+                        "IfSendErrorOnly": bool(
+                            info["Default"]["SelfSet.IfSendMail.OnlyError"] == "True"
+                        ),
+                        "IfSendMail": bool(
+                            info["Default"]["SelfSet.IfSendMail"] == "True"
+                        ),
+                        "MailAddress": info["Default"]["SelfSet.MailAddress"],
+                    },
+                    "Start": {
+                        "IfRunDirectly": bool(
+                            info["Default"]["SelfSet.IfProxyDirectly"] == "True"
+                        ),
+                        "IfSelfStart": bool(
+                            info["Default"]["SelfSet.IfSelfStart"] == "True"
+                        ),
+                    },
+                    "UI": {
+                        "IfShowTray": bool(
+                            info["Default"]["SelfSet.IfToTray"] == "True"
+                        ),
+                        "IfToTray": bool(info["Default"]["SelfSet.IfToTray"] == "True"),
+                        "location": info["Default"]["SelfSet.UIlocation"],
+                        "maximized": bool(
+                            info["Default"]["SelfSet.UImaximized"] == "True"
+                        ),
+                        "size": info["Default"]["SelfSet.UIsize"],
+                    },
+                    "Update": {"IfAutoUpdate": False},
+                }
+                with (self.app_path / "config/config.json").open(
+                    "w", encoding="utf-8"
+                ) as f:
+                    json.dump(config, f, ensure_ascii=False, indent=4)
+                queue_config = {
+                    "QueueSet": {"Enabled": True, "Name": ""},
+                    "Queue": {
+                        "Member_1": "脚本_1",
+                        "Member_10": "禁用",
+                        "Member_2": "禁用",
+                        "Member_3": "禁用",
+                        "Member_4": "禁用",
+                        "Member_5": "禁用",
+                        "Member_6": "禁用",
+                        "Member_7": "禁用",
+                        "Member_8": "禁用",
+                        "Member_9": "禁用",
+                    },
+                    "Time": {
+                        "TimeEnabled_0": bool(
+                            info["Default"]["TimeSet.set1"] == "True"
+                        ),
+                        "TimeEnabled_1": bool(
+                            info["Default"]["TimeSet.set2"] == "True"
+                        ),
+                        "TimeEnabled_2": bool(
+                            info["Default"]["TimeSet.set3"] == "True"
+                        ),
+                        "TimeEnabled_3": bool(
+                            info["Default"]["TimeSet.set4"] == "True"
+                        ),
+                        "TimeEnabled_4": bool(
+                            info["Default"]["TimeSet.set5"] == "True"
+                        ),
+                        "TimeEnabled_5": bool(
+                            info["Default"]["TimeSet.set6"] == "True"
+                        ),
+                        "TimeEnabled_6": bool(
+                            info["Default"]["TimeSet.set7"] == "True"
+                        ),
+                        "TimeEnabled_7": bool(
+                            info["Default"]["TimeSet.set8"] == "True"
+                        ),
+                        "TimeEnabled_8": bool(
+                            info["Default"]["TimeSet.set9"] == "True"
+                        ),
+                        "TimeEnabled_9": bool(
+                            info["Default"]["TimeSet.set10"] == "True"
+                        ),
+                        "TimeSet_0": info["Default"]["TimeSet.run1"],
+                        "TimeSet_1": info["Default"]["TimeSet.run2"],
+                        "TimeSet_2": info["Default"]["TimeSet.run3"],
+                        "TimeSet_3": info["Default"]["TimeSet.run4"],
+                        "TimeSet_4": info["Default"]["TimeSet.run5"],
+                        "TimeSet_5": info["Default"]["TimeSet.run6"],
+                        "TimeSet_6": info["Default"]["TimeSet.run7"],
+                        "TimeSet_7": info["Default"]["TimeSet.run8"],
+                        "TimeSet_8": info["Default"]["TimeSet.run9"],
+                        "TimeSet_9": info["Default"]["TimeSet.run10"],
+                    },
+                }
+                (self.app_path / "config/QueueConfig").mkdir(
+                    parents=True, exist_ok=True
+                )
+                with (self.app_path / "config/QueueConfig/调度队列_1.json").open(
+                    "w", encoding="utf-8"
+                ) as f:
+                    json.dump(queue_config, f, ensure_ascii=False, indent=4)
+                (self.app_path / "config/gui.json").unlink()
+            cur.close()
+            db.close()
+            logger.info("数据文件版本更新完成")
 
     def open_database(self, mode: str, index: str = None) -> None:
         """打开数据库"""
@@ -243,6 +395,42 @@ class AppConfig:
             self.cur.close()
             self.db.close()
         self.if_database_opened = False
+
+    def change_user_info(
+        self,
+        data_path: Path,
+        modes: list,
+        uids: list,
+        days: list,
+        lasts: list,
+        notes: list,
+        numbs: list,
+    ) -> None:
+        """将代理完成后发生改动的用户信息同步至本地数据库"""
+
+        db = sqlite3.connect(data_path / "user_data.db")
+        cur = db.cursor()
+
+        for index in range(len(uids)):
+            cur.execute(
+                "UPDATE adminx SET day = ? WHERE mode = ? AND uid = ?",
+                (days[index], modes[index], uids[index]),
+            )
+            cur.execute(
+                "UPDATE adminx SET last = ? WHERE mode = ? AND uid = ?",
+                (lasts[index], modes[index], uids[index]),
+            )
+            cur.execute(
+                "UPDATE adminx SET notes = ? WHERE mode = ? AND uid = ?",
+                (notes[index], modes[index], uids[index]),
+            )
+            cur.execute(
+                "UPDATE adminx SET numb = ? WHERE mode = ? AND uid = ?",
+                (numbs[index], modes[index], uids[index]),
+            )
+        db.commit()
+        cur.close()
+        db.close()
 
     def save_history(self, key: str, content: dict) -> None:
         """保存历史记录"""
@@ -334,7 +522,6 @@ class GlobalConfig(QConfig):
     ui_size = ConfigItem("UI", "size", "1200x700")
     ui_location = ConfigItem("UI", "location", "100x100")
     ui_maximized = ConfigItem("UI", "maximized", False, BoolValidator())
-    ui_MainIndex = RangeConfigItem("UI", "MainIndex", 0, RangeValidator(0, 3))
 
     notify_IfPushPlyer = ConfigItem("Notify", "IfPushPlyer", False, BoolValidator())
     notify_IfSendMail = ConfigItem("Notify", "IfSendMail", False, BoolValidator())

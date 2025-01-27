@@ -32,7 +32,8 @@ from qfluentwidgets import FluentTranslator
 import sys
 
 
-if __name__ == "__main__":
+# @logger.catch
+def main():
 
     application = QApplication(sys.argv)
     QApplication.setAttribute(Qt.AA_DontCreateNativeWidgetSiblings)
@@ -46,3 +47,8 @@ if __name__ == "__main__":
     window.show_ui("显示主窗口")
     window.start_up_task()
     sys.exit(application.exec())
+
+
+if __name__ == "__main__":
+
+    main()

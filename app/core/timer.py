@@ -27,9 +27,10 @@ v4.2
 
 from loguru import logger
 from PySide6.QtWidgets import QWidget
-from PySide6 import QtCore
+from PySide6.QtCore import QTimer
 import json
 import datetime
+import pyautogui
 
 from .config import Config
 from .task_manager import Task_manager
@@ -44,7 +45,7 @@ class MainTimer(QWidget):
     ):
         super().__init__(parent)
 
-        self.Timer = QtCore.QTimer()
+        self.Timer = QTimer()
         self.Timer.timeout.connect(self.timed_start)
         self.Timer.timeout.connect(self.set_silence)
         self.Timer.start(1000)
@@ -77,24 +78,29 @@ class MainTimer(QWidget):
                 and name not in Config.running_list
             ):
 
-                logger.info(f"按时间调起任务：{name}")
-                Task_manager.add_task("新窗口", name, info)
+                logger.info(f"定时任务：{name}")
+                Task_manager.add_task("自动代理_新窗口", name, info)
 
     def set_silence(self):
         """设置静默模式"""
-        # # 临时
-        # windows = System.get_window_info()
-        # if any(emulator_path in _ for _ in windows):
-        #     try:
-        #         pyautogui.hotkey(*boss_key)
-        #     except pyautogui.FailSafeException as e:
-        # 执行日志记录，暂时缺省
-        logger.debug(Config.running_list)
 
-    def set_last_time(self):
-        """设置上次运行时间"""
-
-        pass
+        windows = System.get_window_info()
+        if any(
+            str(emulator_path) in window
+            for window in windows
+            for emulator_path in Config.silence_list
+        ):
+            try:
+                pyautogui.hotkey(
+                    *[
+                        _.strip().lower()
+                        for _ in Config.global_config.get(
+                            Config.global_config.function_BossKey
+                        ).split("+")
+                    ]
+                )
+            except pyautogui.FailSafeException as e:
+                logger.warning(f"FailSafeException: {e}")
 
     def search_queue(self) -> list:
         """搜索所有调度队列实例"""

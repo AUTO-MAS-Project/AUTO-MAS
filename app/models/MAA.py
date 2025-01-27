@@ -25,7 +25,7 @@ v4.2
 作者：DLmaster_361
 """
 from loguru import logger
-from PySide6 import QtCore
+from PySide6.QtCore import QObject, Signal, QEventLoop
 import json
 import sqlite3
 import datetime
@@ -33,24 +33,23 @@ import subprocess
 import shutil
 import time
 from pathlib import Path
-from typing import List, Dict, Union
+from typing import List
 
 from app.core import Config
 from app.services import Notify
 
 
-class MaaManager(QtCore.QObject):
+class MaaManager(QObject):
     """MAA控制器"""
 
-    question = QtCore.Signal(str, str)
-    question_response = QtCore.Signal(int)
-    update_user_info = QtCore.Signal(list, list, list, list, list, list)
-    push_info_bar = QtCore.Signal(str, str, str, int)
-    create_user_list = QtCore.Signal(list)
-    update_user_list = QtCore.Signal(list)
-    update_log_text = QtCore.Signal(str)
-    accomplish = QtCore.Signal(dict)
-    get_json = QtCore.Signal(list)
+    question = Signal(str, str)
+    question_response = Signal(bool)
+    update_user_info = Signal(list, list, list, list, list, list)
+    push_info_bar = Signal(str, str, str, int)
+    create_user_list = Signal(list)
+    update_user_list = Signal(list)
+    update_log_text = Signal(str)
+    accomplish = Signal(dict)
 
     isInterruptionRequested = False
 
@@ -58,24 +57,29 @@ class MaaManager(QtCore.QObject):
         self,
         mode: str,
         config_path: Path,
+        user_config_path: Path = None,
     ):
         super(MaaManager, self).__init__()
 
         self.mode = mode
         self.config_path = config_path
+        self.user_config_path = user_config_path
 
         with (self.config_path / "config.json").open("r", encoding="utf-8") as f:
             self.set = json.load(f)
 
-        db = sqlite3.connect(self.config_path / "user_data.db")
-        cur = db.cursor()
-        cur.execute("SELECT * FROM adminx WHERE True")
-        self.data = cur.fetchall()
-        self.data = [list(row) for row in self.data]
-        cur.close()
-        db.close()
+        if "设置MAA" not in self.mode:
 
-        self.get_json_path = [0, 0, 0]
+            db = sqlite3.connect(self.config_path / "user_data.db")
+            cur = db.cursor()
+            cur.execute("SELECT * FROM adminx WHERE True")
+            self.data = cur.fetchall()
+            self.data = [list(row) for row in self.data]
+            cur.close()
+            db.close()
+
+        else:
+            self.data = []
 
     def configure(self):
         """提取配置信息"""
@@ -84,12 +88,6 @@ class MaaManager(QtCore.QObject):
         self.maa_set_path = self.maa_root_path / "config/gui.json"
         self.maa_log_path = self.maa_root_path / "debug/gui.log"
         self.maa_exe_path = self.maa_root_path / "MAA.exe"
-        self.boss_key = [
-            _.strip().lower()
-            for _ in Config.global_config.get(
-                Config.global_config.function_BossKey
-            ).split("+")
-        ]
 
     def run(self):
         """主进程，运行MAA代理进程"""
@@ -177,8 +175,18 @@ class MaaManager(QtCore.QObject):
                             shell=True,
                             creationflags=subprocess.CREATE_NO_WINDOW,
                         )
-                        # 添加静默进程数量标记
-                        Config.if_silence_needed += 1
+                        # 添加静默进程标记
+                        if Config.global_config.get(
+                            Config.global_config.function_IfSilence
+                        ):
+                            with self.maa_set_path.open(
+                                mode="r", encoding="utf-8"
+                            ) as f:
+                                set = json.load(f)
+                            self.emulator_path = Path(
+                                set["Configurations"]["Default"]["Start.EmulatorPath"]
+                            )
+                            Config.silence_list.append(self.emulator_path)
                         # 记录是否超时的标记
                         self.if_time_out = False
 
@@ -233,8 +241,11 @@ class MaaManager(QtCore.QObject):
                                 self.update_log_text.emit(
                                     "检测到MAA进程完成代理任务\n正在等待相关程序结束\n请等待10s"
                                 )
-                                # 移除静默进程数量标记
-                                Config.if_silence_needed -= 1
+                                # 移除静默进程标记
+                                if Config.global_config.get(
+                                    Config.global_config.function_IfSilence
+                                ):
+                                    Config.silence_list.remove(self.emulator_path)
                                 for _ in range(10):
                                     if self.isInterruptionRequested:
                                         break
@@ -254,8 +265,11 @@ class MaaManager(QtCore.QObject):
                                     creationflags=subprocess.CREATE_NO_WINDOW,
                                 )
                                 killprocess.wait()
-                                # 移除静默进程数量标记
-                                Config.if_silence_needed -= 1
+                                # 移除静默进程标记
+                                if Config.global_config.get(
+                                    Config.global_config.function_IfSilence
+                                ):
+                                    Config.silence_list.remove(self.emulator_path)
                                 # 推送异常通知
                                 Notify.push_notification(
                                     "用户自动代理出现异常！",
@@ -375,24 +389,18 @@ class MaaManager(QtCore.QObject):
                         break
                     # 登录失败，询问是否结束循环
                     elif not self.isInterruptionRequested:
-                        self.question_title = "操作提示"
-                        self.question_info = "MAA未能正确登录到PRTS，是否重试？"
-                        self.question_choice = "wait"
-                        self.question.emit()
-                        while self.question_choice == "wait":
-                            time.sleep(1)
-                        if self.question_choice == "No":
+
+                        if not self.push_question(
+                            "操作提示", "MAA未能正确登录到PRTS，是否重试？"
+                        ):
                             break
 
                 # 登录成功，录入人工排查情况
                 if run_book[0] and not self.isInterruptionRequested:
-                    self.question_title = "操作提示"
-                    self.question_info = "请检查用户代理情况，如无异常请按下确认键。"
-                    self.question_choice = "wait"
-                    self.question.emit()
-                    while self.question_choice == "wait":
-                        time.sleep(1)
-                    if self.question_choice == "Yes":
+
+                    if self.push_question(
+                        "操作提示", "请检查用户代理情况，是否将该用户标记为异常？"
+                    ):
                         run_book[1] = True
 
                 # 结果录入用户备注栏
@@ -441,13 +449,16 @@ class MaaManager(QtCore.QObject):
                     # 检测时间间隔
                     time.sleep(1)
 
-            # 保存MAA配置文件
             if "全局" in self.mode:
-                self.get_json.emit(["Default"])
-            elif "用户" in self.mode:
-                self.get_json.emit(self.get_json_path)
+                (self.config_path / "Default").mkdir(parents=True, exist_ok=True)
+                shutil.copy(self.maa_set_path, self.config_path / "Default")
 
-        end_log = ""
+            elif "用户" in self.mode:
+                self.user_config_path.mkdir(parents=True, exist_ok=True)
+                shutil.copy(self.maa_set_path, self.user_config_path)
+                logger.debug(self.user_config_path)
+
+            end_log = ""
 
         # 导出结果
         if self.mode in ["自动代理", "人工排查"]:
@@ -516,6 +527,18 @@ class MaaManager(QtCore.QObject):
 
         logger.info("申请中止本次任务")
         self.isInterruptionRequested = True
+
+    def push_question(self, title: str, message: str) -> bool:
+
+        self.question.emit(title, message)
+        loop = QEventLoop()
+        self.question_response.connect(self._capture_response)
+        self.question_response.connect(loop.quit)
+        loop.exec()
+        return self.response
+
+    def _capture_response(self, response: bool) -> None:
+        self.response = response
 
     def get_maa_log(self, start_time):
         """获取MAA日志"""
@@ -586,16 +609,8 @@ class MaaManager(QtCore.QObject):
 
         # 预导入MAA配置文件
         if mode == "设置MAA_用户":
-            set_book = ["simple", "beta"]
-            if (
-                self.config_path
-                / f"{set_book[self.get_json_path[0]]}/{self.get_json_path[1]}/{self.get_json_path[2]}/gui.json"
-            ).exists():
-                shutil.copy(
-                    self.config_path
-                    / f"{set_book[self.get_json_path[0]]}/{self.get_json_path[1]}/{self.get_json_path[2]}/gui.json",
-                    self.maa_set_path,
-                )
+            if self.user_config_path.exists():
+                shutil.copy(self.user_config_path / "gui.json", self.maa_set_path)
             else:
                 shutil.copy(
                     self.config_path / "Default/gui.json",
@@ -638,12 +653,14 @@ class MaaManager(QtCore.QObject):
             data["Configurations"]["Default"][
                 "MainFunction.PostActions"
             ] = "12"  # 完成后退出MAA和模拟器
-            data["Global"]["Start.RunDirectly"] = "True"  # 启动MAA后直接运行
-            data["Global"][
+            data["Configurations"]["Default"][
+                "Start.RunDirectly"
+            ] = "True"  # 启动MAA后直接运行
+            data["Configurations"]["Default"][
                 "Start.OpenEmulatorAfterLaunch"
             ] = "True"  # 启动MAA后自动开启模拟器
 
-            if Config.if_silence_needed > 0:
+            if Config.global_config.get(Config.global_config.function_IfSilence):
                 data["Global"]["Start.MinimizeDirectly"] = "True"  # 启动MAA后直接最小化
                 data["Global"]["GUI.UseTray"] = "True"  # 显示托盘图标
                 data["Global"]["GUI.MinimizeToTray"] = "True"  # 最小化时隐藏至托盘
@@ -845,15 +862,21 @@ class MaaManager(QtCore.QObject):
             data["Configurations"]["Default"][
                 "MainFunction.PostActions"
             ] = "8"  # 完成后退出MAA
-            data["Global"]["Start.RunDirectly"] = "True"  # 启动MAA后直接运行
+            data["Configurations"]["Default"][
+                "Start.RunDirectly"
+            ] = "True"  # 启动MAA后直接运行
             data["Global"]["Start.MinimizeDirectly"] = "True"  # 启动MAA后直接最小化
             data["Global"]["GUI.UseTray"] = "True"  # 显示托盘图标
             data["Global"]["GUI.MinimizeToTray"] = "True"  # 最小化时隐藏至托盘
             # 启动MAA后自动开启模拟器
             if "启动模拟器" in mode:
-                data["Global"]["Start.OpenEmulatorAfterLaunch"] = "True"
+                data["Configurations"]["Default"][
+                    "Start.OpenEmulatorAfterLaunch"
+                ] = "True"
             elif "仅切换账号" in mode:
-                data["Global"]["Start.OpenEmulatorAfterLaunch"] = "False"
+                data["Configurations"]["Default"][
+                    "Start.OpenEmulatorAfterLaunch"
+                ] = "False"
 
             if self.data[index][15] == "simple":
 
@@ -915,12 +938,14 @@ class MaaManager(QtCore.QObject):
             data["Configurations"]["Default"][
                 "MainFunction.PostActions"
             ] = "0"  # 完成后无动作
-            data["Global"]["Start.RunDirectly"] = "False"  # 启动MAA后直接运行
-            data["Global"][
+            data["Configurations"]["Default"][
+                "Start.RunDirectly"
+            ] = "False"  # 启动MAA后直接运行
+            data["Configurations"]["Default"][
                 "Start.OpenEmulatorAfterLaunch"
             ] = "False"  # 启动MAA后自动开启模拟器
 
-            if Config.if_silence_needed > 0:
+            if Config.global_config.get(Config.global_config.function_IfSilence):
                 data["Global"][
                     "Start.MinimizeDirectly"
                 ] = "False"  # 启动MAA后直接最小化
