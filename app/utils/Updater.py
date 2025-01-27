@@ -42,7 +42,17 @@ from qfluentwidgets import ProgressBar, IndeterminateProgressBar, BodyLabel
 from PySide6.QtGui import QIcon
 from PySide6.QtCore import QObject, QThread, Signal
 
-from .version import version_text
+
+def version_text(version_numb: list) -> str:
+    """将版本号列表转为可读的文本信息"""
+
+    if version_numb[3] == 0:
+        version = f"v{'.'.join(str(_) for _ in version_numb[0:3])}"
+    else:
+        version = (
+            f"v{'.'.join(str(_) for _ in version_numb[0:3])}-beta.{version_numb[3]}"
+        )
+    return version
 
 
 class UpdateProcess(QThread):

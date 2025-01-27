@@ -26,16 +26,27 @@ v4.2
 """
 
 import os
+import sys
 import json
 import shutil
 from pathlib import Path
 
-from app import version_text
+
+def version_text(version_numb: list) -> str:
+    """将版本号列表转为可读的文本信息"""
+
+    if version_numb[3] == 0:
+        version = f"v{'.'.join(str(_) for _ in version_numb[0:3])}"
+    else:
+        version = (
+            f"v{'.'.join(str(_) for _ in version_numb[0:3])}-beta.{version_numb[3]}"
+        )
+    return version
 
 
 if __name__ == "__main__":
 
-    root_path = Path.cwd()
+    root_path = Path(sys.argv[0]).resolve().parent
 
     with (root_path / "resources/version.json").open(mode="r", encoding="utf-8") as f:
         version = json.load(f)

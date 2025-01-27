@@ -50,7 +50,7 @@ import requests
 
 from app.core import Config, MainInfoBar
 from app.services import Crypto, System
-from app.utils import Updater, version_text
+from app.utils import Updater
 from .Widget import InputMessageBox, LineEditSettingCard
 
 
@@ -717,3 +717,15 @@ class OtherSettingCard(HeaderCardWidget):
             self.viewLayout.setContentsMargins(0, 0, 0, 0)
             self.viewLayout.setSpacing(0)
             self.addGroupWidget(widget)
+
+
+def version_text(version_numb: list) -> str:
+    """将版本号列表转为可读的文本信息"""
+
+    if version_numb[3] == 0:
+        version = f"v{'.'.join(str(_) for _ in version_numb[0:3])}"
+    else:
+        version = (
+            f"v{'.'.join(str(_) for _ in version_numb[0:3])}-beta.{version_numb[3]}"
+        )
+    return version

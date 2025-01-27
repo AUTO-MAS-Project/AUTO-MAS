@@ -30,6 +30,5 @@ __author__ = "DLmaster361 <DLmaster_361@163.com>"
 __license__ = "GPL-3.0 license"
 
 from .Updater import Updater
-from .version import version_text
 
-__all__ = ["Updater", "version_text"]
+__all__ = ["Updater"]

@@ -33,7 +33,7 @@ from .core import AppConfig, QueueConfig, MaaConfig, Task, Task_manager, Main_ti
 from .models import MaaManager
 from .services import Notify, Crypto, System
 from .ui import AUTO_MAA
-from .utils import Updater, version_text
+from .utils import Updater
 
 __all__ = [
     "AppConfig",
@@ -48,5 +48,4 @@ __all__ = [
     "System",
     "AUTO_MAA",
     "Updater",
-    "version_text",
 ]
