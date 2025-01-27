@@ -684,9 +684,11 @@ class MaaManager(QObject):
                 ]  # 客户端类型
                 # 账号切换
                 if self.data[index][2] == "Official":
-                    data["Configurations"]["Default"][
-                        "Start.AccountName"
-                    ] = f"{self.data[index][1][:3]}****{self.data[index][1][7:]}"
+                    data["Configurations"]["Default"]["Start.AccountName"] = (
+                        f"{self.data[index][1][:3]}****{self.data[index][1][7:]}"
+                        if len(self.data[index][1]) == 11
+                        else self.data[index][1]
+                    )
                 elif self.data[index][2] == "Bilibili":
                     data["Configurations"]["Default"]["Start.AccountName"] = self.data[
                         index
@@ -903,9 +905,11 @@ class MaaManager(QObject):
                 ]  # 客户端类型
                 # 账号切换
                 if self.data[index][2] == "Official":
-                    data["Configurations"]["Default"][
-                        "Start.AccountName"
-                    ] = f"{self.data[index][1][:3]}****{self.data[index][1][7:]}"
+                    data["Configurations"]["Default"]["Start.AccountName"] = (
+                        f"{self.data[index][1][:3]}****{self.data[index][1][7:]}"
+                        if len(self.data[index][1]) == 11
+                        else self.data[index][1]
+                    )
                 elif self.data[index][2] == "Bilibili":
                     data["Configurations"]["Default"]["Start.AccountName"] = self.data[
                         index
