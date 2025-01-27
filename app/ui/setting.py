@@ -393,7 +393,7 @@ class Setting(QWidget):
         for _ in range(3):
             try:
                 response = requests.get(
-                    "https://gitee.com/DLmaster_361/AUTO_MAA/raw/main/resources/notice.json"
+                    "https://gitee.com/DLmaster_361/AUTO_MAA/raw/server/notice.json"
                 )
                 notice = response.json()
                 break
