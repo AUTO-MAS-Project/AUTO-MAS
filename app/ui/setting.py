@@ -43,6 +43,7 @@ from qfluentwidgets import (
     ExpandGroupSettingCard,
     PushSettingCard,
 )
+from datetime import datetime
 import json
 import subprocess
 import time
@@ -385,41 +386,52 @@ class Setting(QWidget):
         self.close()
         QApplication.quit()
 
-    def show_notice(self):
+    def show_notice(self, if_show: bool = True):
         """显示公告"""
 
         # 从远程服务器获取最新版本信息
         for _ in range(3):
             try:
                 response = requests.get(
-                    "https://gitee.com/DLmaster_361/AUTO_MAA/raw/main/resources/version.json"
+                    "https://gitee.com/DLmaster_361/AUTO_MAA/raw/main/resources/notice.json"
                 )
-                version_remote = response.json()
+                notice = response.json()
                 break
             except Exception as e:
                 err = e
                 time.sleep(0.1)
         else:
             logger.warning(f"获取最新公告时出错：\n{err}")
-            choice = Dialog(
-                "网络错误",
-                f"获取最新公告时出错：\n{err}",
-                self,
-            )
+            if if_show:
+                choice = Dialog(
+                    "网络错误",
+                    f"获取最新公告时出错：\n{err}",
+                    self,
+                )
+                choice.cancelButton.hide()
+                choice.buttonLayout.insertStretch(1)
+                choice.exec()
+            return None
+
+        if (Config.app_path / "resources/notice.json").exists():
+            with (Config.app_path / "resources/notice.json").open(
+                mode="r", encoding="utf-8"
+            ) as f:
+                notice_local = json.load(f)
+            time_local = datetime.strptime(notice_local["time"], "%Y-%m-%d %H:%M")
+        else:
+            time_local = datetime.strptime("2000-01-01 00:00", "%Y-%m-%d %H:%M")
+
+        if if_show or datetime.strptime(notice["time"], "%Y-%m-%d %H:%M") > time_local:
+
+            choice = Dialog("公告", notice["content"], self)
             choice.cancelButton.hide()
             choice.buttonLayout.insertStretch(1)
             if choice.exec():
-                return None
-
-        if "notice" in version_remote:
-            notice = version_remote["notice"]
-        else:
-            notice = "暂无公告~"
-
-        choice = Dialog("公告", notice, self)
-        choice.cancelButton.hide()
-        choice.buttonLayout.insertStretch(1)
-        choice.exec()
+                with (Config.app_path / "resources/notice.json").open(
+                    mode="w", encoding="utf-8"
+                ) as f:
+                    json.dump(notice, f, ensure_ascii=False, indent=4)
 
 
 class FunctionSettingCard(HeaderCardWidget):
