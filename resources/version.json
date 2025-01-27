@@ -1,8 +1,9 @@
 {
-    "main_version": "4.2.0.0",
-    "updater_version": "1.1.0.0",
-    "announcement": "\n## 新增功能\n- 提供完整打包代码\n## 修复BUG\n- 同步MAA`v5.11.1`的字段修改\n- 清除自动化中无效的整合流程\n## 程序优化\n- 调整项目结构，模块化各功能组件\n- 改用`nuitka`编译，压缩软件体积，提升运行速度",
-    "proxy_list":[
+    "main_version": "4.2.1.1",
+    "updater_version": "1.1.0.1",
+    "announcement": "\n## 新增功能\n- 调度队列上线，支持MAA多开\n## 修复BUG\n- 添加了一堆BUG（确信）\n## 程序优化\n- 界面重构，引入`QFluentWidgets`美化界面",
+    "notice": "公告系统测试中~",
+    "proxy_list": [
         "",
         "https://gitproxy.click/",
         "https://cdn.moran233.xyz/",

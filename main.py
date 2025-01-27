@@ -25,18 +25,30 @@ v4.2
 作者：DLmaster_361
 """
 
+from loguru import logger
 from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import Qt
+from qfluentwidgets import FluentTranslator
 import sys
 
-from app import AppConfig, Notification, CryptoHandler, AUTO_MAA
+
+@logger.catch
+def main():
+
+    application = QApplication(sys.argv)
+    QApplication.setAttribute(Qt.AA_DontCreateNativeWidgetSiblings)
+
+    translator = FluentTranslator()
+    application.installTranslator(translator)
+
+    from app.ui.main_window import AUTO_MAA
+
+    window = AUTO_MAA()
+    window.show_ui("显示主窗口")
+    window.start_up_task()
+    sys.exit(application.exec())
+
 
 if __name__ == "__main__":
 
-    config = AppConfig()
-    notify = Notification(config)
-    crypto = CryptoHandler(config)
-
-    application = QApplication(sys.argv)
-    window = AUTO_MAA(config=config, notify=notify, crypto=crypto)
-    window.main.check_PASSWORD()
-    sys.exit(application.exec())
+    main()

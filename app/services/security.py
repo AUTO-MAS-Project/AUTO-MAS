@@ -20,12 +20,11 @@
 
 """
 AUTO_MAA
-AUTO_MAA主程序
+AUTO_MAA安全服务
 v4.2
 作者：DLmaster_361
 """
 
-import os
 import hashlib
 import random
 import secrets
@@ -34,37 +33,33 @@ from Crypto.PublicKey import RSA
 from Crypto.Cipher import PKCS1_OAEP
 from Crypto.Util.Padding import pad, unpad
 
-from app import AppConfig
+from app.core import Config
 
 
 class CryptoHandler:
-
-    def __init__(self, config: AppConfig):
-
-        self.config = config
 
     def get_PASSWORD(self, PASSWORD: str) -> None:
         """配置管理密钥"""
 
         # 生成目录
-        self.config.key_path.mkdir(parents=True, exist_ok=True)
+        Config.key_path.mkdir(parents=True, exist_ok=True)
 
         # 生成RSA密钥对
         key = RSA.generate(2048)
         public_key_local = key.publickey()
         private_key = key
         # 保存RSA公钥
-        (self.config.app_path / "data/key/public_key.pem").write_bytes(
+        (Config.app_path / "data/key/public_key.pem").write_bytes(
             public_key_local.exportKey()
         )
         # 生成密钥转换与校验随机盐
         PASSWORD_salt = secrets.token_hex(random.randint(32, 1024))
-        (self.config.app_path / "data/key/PASSWORDsalt.txt").write_text(
+        (Config.app_path / "data/key/PASSWORDsalt.txt").write_text(
             PASSWORD_salt,
             encoding="utf-8",
         )
         verify_salt = secrets.token_hex(random.randint(32, 1024))
-        (self.config.app_path / "data/key/verifysalt.txt").write_text(
+        (Config.app_path / "data/key/verifysalt.txt").write_text(
             verify_salt,
             encoding="utf-8",
         )
@@ -76,22 +71,20 @@ class CryptoHandler:
         AES_password_verify = hashlib.sha256(
             AES_password + verify_salt.encode("utf-8")
         ).digest()
-        (self.config.app_path / "data/key/AES_password_verify.bin").write_bytes(
+        (Config.app_path / "data/key/AES_password_verify.bin").write_bytes(
             AES_password_verify
         )
         # AES-256加密RSA私钥并保存密文
         AES_key = AES.new(AES_password, AES.MODE_ECB)
         private_key_local = AES_key.encrypt(pad(private_key.exportKey(), 32))
-        (self.config.app_path / "data/key/private_key.bin").write_bytes(
-            private_key_local
-        )
+        (Config.app_path / "data/key/private_key.bin").write_bytes(private_key_local)
 
     def encryptx(self, note: str) -> bytes:
         """加密数据"""
 
         # 读取RSA公钥
         public_key_local = RSA.import_key(
-            (self.config.app_path / "data/key/public_key.pem").read_bytes()
+            (Config.app_path / "data/key/public_key.pem").read_bytes()
         )
         # 使用RSA公钥对数据进行加密
         cipher = PKCS1_OAEP.new(public_key_local)
@@ -103,22 +96,20 @@ class CryptoHandler:
 
         # 读入RSA私钥密文、盐与校验哈希值
         private_key_local = (
-            (self.config.app_path / "data/key/private_key.bin").read_bytes().strip()
+            (Config.app_path / "data/key/private_key.bin").read_bytes().strip()
         )
         PASSWORD_salt = (
-            (self.config.app_path / "data/key/PASSWORDsalt.txt")
+            (Config.app_path / "data/key/PASSWORDsalt.txt")
             .read_text(encoding="utf-8")
             .strip()
         )
         verify_salt = (
-            (self.config.app_path / "data/key/verifysalt.txt")
+            (Config.app_path / "data/key/verifysalt.txt")
             .read_text(encoding="utf-8")
             .strip()
         )
         AES_password_verify = (
-            (self.config.app_path / "data/key/AES_password_verify.bin")
-            .read_bytes()
-            .strip()
+            (Config.app_path / "data/key/AES_password_verify.bin").read_bytes().strip()
         )
         # 将管理密钥转化为AES-256密钥并验证
         AES_password = hashlib.sha256(
@@ -149,7 +140,7 @@ class CryptoHandler:
         # 使用新管理密钥重新加密
         self.get_PASSWORD(PASSWORD_new)
         for i in range(len(data)):
-            self.config.cur.execute(
+            Config.cur.execute(
                 "UPDATE adminx SET password = ? WHERE mode = ? AND uid = ?",
                 (
                     self.encryptx(new_data[i]),
@@ -157,7 +148,7 @@ class CryptoHandler:
                     data[i][16],
                 ),
             )
-            self.config.db.commit(),
+            Config.db.commit(),
             new_data[i] = None
         del new_data
 
@@ -165,3 +156,6 @@ class CryptoHandler:
         """验证管理密钥"""
 
         return bool(self.decryptx(self.encryptx(""), PASSWORD) != "管理密钥错误")
+
+
+Crypto = CryptoHandler()
