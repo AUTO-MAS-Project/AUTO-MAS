@@ -24,6 +24,7 @@ MAA功能组件
 v4.2
 作者：DLmaster_361
 """
+
 from loguru import logger
 from PySide6.QtCore import QObject, Signal, QEventLoop
 import json
