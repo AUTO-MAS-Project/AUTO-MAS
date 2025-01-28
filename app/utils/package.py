@@ -26,17 +26,27 @@ v4.2
 """
 
 import os
+import sys
 import json
 import shutil
-import subprocess
 from pathlib import Path
 
-from app import version_text
+
+def version_text(version_numb: list) -> str:
+    """将版本号列表转为可读的文本信息"""
+
+    if version_numb[3] == 0:
+        version = f"v{'.'.join(str(_) for _ in version_numb[0:3])}"
+    else:
+        version = (
+            f"v{'.'.join(str(_) for _ in version_numb[0:3])}-beta.{version_numb[3]}"
+        )
+    return version
 
 
 if __name__ == "__main__":
 
-    root_path = Path.cwd()
+    root_path = Path(sys.argv[0]).resolve().parent
 
     with (root_path / "resources/version.json").open(mode="r", encoding="utf-8") as f:
         version = json.load(f)
@@ -46,24 +56,20 @@ if __name__ == "__main__":
 
     print("Packaging AUTO_MAA main program ...")
 
-    result = subprocess.run(
-        f"powershell -Command nuitka --standalone --onefile --mingw64"
-        f" --enable-plugins=pyside6 --windows-console-mode=disable"
-        f" --windows-icon-from-ico=resources\\icons\\AUTO_MAA.ico"
-        f" --company-name='AUTO_MAA Team' --product-name=AUTO_MAA"
+    os.system(
+        "powershell -Command python -m nuitka --standalone --onefile --mingw64"
+        " --enable-plugins=pyside6 --windows-console-mode=disable"
+        " --onefile-tempdir-spec='{TEMP}\\AUTO_MAA'"
+        " --windows-icon-from-ico=resources\\icons\\AUTO_MAA.ico"
+        " --company-name='AUTO_MAA Team' --product-name=AUTO_MAA"
         f" --file-version={version["main_version"]}"
         f" --product-version={version["main_version"]}"
-        f" --file-description='AUTO_MAA Component'"
-        f" --copyright='Copyright © 2024 DLmaster361'"
-        f" --assume-yes-for-downloads --output-filename=AUTO_MAA"
-        f" --remove-output main.py",
-        shell=True,
-        capture_output=True,
-        text=True,
+        " --file-description='AUTO_MAA Component'"
+        " --copyright='Copyright © 2024 DLmaster361'"
+        " --assume-yes-for-downloads --output-filename=AUTO_MAA"
+        " --remove-output main.py"
     )
 
-    print(result.stdout)
-    print(result.stderr)
     print("AUTO_MAA main program packaging completed !")
 
     shutil.copy(root_path / "app/utils/Updater.py", root_path)
@@ -79,27 +85,23 @@ if __name__ == "__main__":
 
     print("Packaging AUTO_MAA update program ...")
 
-    result = subprocess.run(
-        f"powershell -Command nuitka --standalone --onefile --mingw64"
-        f" --enable-plugins=pyside6 --windows-console-mode=disable"
-        f" --windows-icon-from-ico=resources\\icons\\AUTO_MAA_Updater.ico"
-        f" --company-name='AUTO_MAA Team' --product-name=AUTO_MAA"
+    os.system(
+        "powershell -Command python -m nuitka --standalone --onefile --mingw64"
+        " --enable-plugins=pyside6 --windows-console-mode=disable"
+        " --onefile-tempdir-spec='{TEMP}\\AUTO_MAA_Updater'"
+        " --windows-icon-from-ico=resources\\icons\\AUTO_MAA_Updater.ico"
+        " --company-name='AUTO_MAA Team' --product-name=AUTO_MAA"
         f" --file-version={version["updater_version"]}"
         f" --product-version={version["main_version"]}"
-        f" --file-description='AUTO_MAA Component'"
-        f" --copyright='Copyright © 2024 DLmaster361'"
-        f" --assume-yes-for-downloads --output-filename=Updater"
-        f" --remove-output Updater.py",
-        shell=True,
-        capture_output=True,
-        text=True,
+        " --file-description='AUTO_MAA Component'"
+        " --copyright='Copyright © 2024 DLmaster361'"
+        " --assume-yes-for-downloads --output-filename=Updater"
+        " --remove-output Updater.py"
     )
 
-    print(result.stdout)
-    print(result.stderr)
     print("AUTO_MAA update program packaging completed !")
 
-    os.remove(root_path / "Updater.py")
+    (root_path / "Updater.py").unlink()
 
     (root_path / "version_info.txt").write_text(
         f"{version_text(main_version_numb)}\n{version_text(updater_version_numb)}{version["announcement"]}",

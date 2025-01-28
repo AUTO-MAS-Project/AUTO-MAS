@@ -20,19 +20,27 @@
 
 """
 AUTO_MAA
-AUTO_MAA版本号工具
+AUTO_MAA核心组件包
 v4.2
 作者：DLmaster_361
 """
 
+__version__ = "4.2.0"
+__author__ = "DLmaster361 <DLmaster_361@163.com>"
+__license__ = "GPL-3.0 license"
 
-def version_text(version_numb: list) -> str:
-    """将版本号列表转为可读的文本信息"""
+from .config import AppConfig, QueueConfig, MaaConfig, Config
+from .main_info_bar import MainInfoBar
+from .task_manager import Task, Task_manager
+from .timer import Main_timer
 
-    if version_numb[3] == 0:
-        version = f"v{'.'.join(str(_) for _ in version_numb[0:3])}"
-    else:
-        version = (
-            f"v{'.'.join(str(_) for _ in version_numb[0:3])}-beta.{version_numb[3]}"
-        )
-    return version
+__all__ = [
+    "AppConfig",
+    "Config",
+    "QueueConfig",
+    "MaaConfig",
+    "MainInfoBar",
+    "Task",
+    "Task_manager",
+    "Main_timer",
+]

@@ -1,9 +1,11 @@
+loguru
 plyer
 PySide6
 PySide6-Fluent-Widgets[full]
 psutil
+opencv-python
 pywin32
 pyautogui
 pycryptodome
 requests
-nuitka
+nuitka==2.6
