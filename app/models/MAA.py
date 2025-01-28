@@ -457,7 +457,6 @@ class MaaManager(QObject):
             elif "用户" in self.mode:
                 self.user_config_path.mkdir(parents=True, exist_ok=True)
                 shutil.copy(self.maa_set_path, self.user_config_path)
-                logger.debug(self.user_config_path)
 
             end_log = ""
 

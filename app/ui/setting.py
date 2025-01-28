@@ -132,117 +132,66 @@ class Setting(QWidget):
     def change_PASSWORD(self) -> None:
         """修改管理密钥"""
 
-        # 获取用户信息
-        Config.cur.execute("SELECT * FROM adminx WHERE True")
-        data = Config.cur.fetchall()
+        if_change = True
 
-        if len(data) == 0:
+        while if_change:
 
-            choice = MessageBox("验证通过", "当前无用户，验证自动通过", self)
-            choice.cancelButton.hide()
-            choice.buttonLayout.insertStretch(1)
+            choice = InputMessageBox(
+                self,
+                "请输入旧的管理密钥",
+                "旧管理密钥",
+                "密码",
+            )
+            if choice.exec() and choice.input.text() != "":
 
-            # 获取新的管理密钥
-            if choice.exec():
+                # 验证旧管理密钥
+                if Crypto.check_PASSWORD(choice.input.text()):
 
-                while True:
+                    PASSWORD_old = choice.input.text()
+                    # 获取新的管理密钥
+                    while True:
 
-                    choice = InputMessageBox(
-                        self,
-                        "请输入新的管理密钥",
-                        "新管理密钥",
-                        "密码",
-                    )
-                    if choice.exec() and choice.input.text() != "":
-                        # 修改管理密钥
-                        Crypto.get_PASSWORD(choice.input.text())
-                        choice = MessageBox(
-                            "操作成功",
-                            "管理密钥修改成功",
+                        choice = InputMessageBox(
                             self,
+                            "请输入新的管理密钥",
+                            "新管理密钥",
+                            "密码",
                         )
-                        choice.cancelButton.hide()
-                        choice.buttonLayout.insertStretch(1)
-                        if choice.exec():
-                            break
-                    else:
-                        choice = MessageBox(
-                            "确认",
-                            "您没有输入新的管理密钥，是否取消修改管理密钥？",
-                            self,
-                        )
-                        if choice.exec():
-                            break
+                        if choice.exec() and choice.input.text() != "":
 
-        else:
-            # 验证管理密钥
-            if_change = True
-
-            while if_change:
-
-                choice = InputMessageBox(
-                    self,
-                    "请输入旧的管理密钥",
-                    "旧管理密钥",
-                    "密码",
-                )
-                if choice.exec() and choice.input.text() != "":
-
-                    # 验证旧管理密钥
-                    if Crypto.check_PASSWORD(choice.input.text()):
-
-                        PASSWORD_old = choice.input.text()
-                        # 获取新的管理密钥
-                        while True:
-
-                            choice = InputMessageBox(
-                                self,
-                                "请输入新的管理密钥",
-                                "新管理密钥",
-                                "密码",
+                            # 修改管理密钥
+                            Crypto.change_PASSWORD(PASSWORD_old, choice.input.text())
+                            MainInfoBar.push_info_bar(
+                                "success", "操作成功", "管理密钥修改成功", 3000
                             )
-                            if choice.exec() and choice.input.text() != "":
+                            if_change = False
+                            break
 
-                                # 修改管理密钥
-                                Crypto.change_PASSWORD(
-                                    data, PASSWORD_old, choice.input.text()
-                                )
-                                choice = MessageBox(
-                                    "操作成功",
-                                    "管理密钥修改成功",
-                                    self,
-                                )
-                                choice.cancelButton.hide()
-                                choice.buttonLayout.insertStretch(1)
-                                if choice.exec():
-                                    if_change = False
-                                    break
+                        else:
 
-                            else:
+                            choice = MessageBox(
+                                "确认",
+                                "您没有输入新的管理密钥，是否取消修改管理密钥？",
+                                self,
+                            )
+                            if choice.exec():
+                                if_change = False
+                                break
 
-                                choice = MessageBox(
-                                    "确认",
-                                    "您没有输入新的管理密钥，是否取消修改管理密钥？",
-                                    self,
-                                )
-                                if choice.exec():
-                                    if_change = False
-                                    break
-
-                    else:
-                        choice = MessageBox("错误", "管理密钥错误", self)
-                        choice.cancelButton.hide()
-                        choice.buttonLayout.insertStretch(1)
-                        if choice.exec():
-                            pass
                 else:
-                    choice = MessageBox(
-                        "确认",
-                        "您没有输入管理密钥，是否取消修改管理密钥？",
-                        self,
-                    )
+                    choice = MessageBox("错误", "管理密钥错误", self)
+                    choice.cancelButton.hide()
+                    choice.buttonLayout.insertStretch(1)
                     if choice.exec():
-                        break
+                        pass
+            else:
+                choice = MessageBox(
+                    "确认",
+                    "您没有输入管理密钥，是否取消修改管理密钥？",
+                    self,
+                )
+                if choice.exec():
+                    break
 
     def get_update_info(self) -> str:
         """检查主程序版本更新，返回更新信息"""

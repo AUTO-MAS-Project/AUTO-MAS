@@ -162,7 +162,7 @@ class Task(QThread):
             self.accomplish.emit(self.logs)
 
     def search_member(self) -> dict:
-        """搜索所有脚本实例并固定相关配置信息"""
+        """搜索所有脚本实例及其路径"""
 
         member_dict = {}
 
