@@ -45,6 +45,8 @@ class MainTimer(QWidget):
     ):
         super().__init__(parent)
 
+        self.if_FailSafeException = False
+
         self.Timer = QTimer()
         self.Timer.timeout.connect(self.timed_start)
         self.Timer.timeout.connect(self.set_silence)
@@ -100,7 +102,9 @@ class MainTimer(QWidget):
                     ]
                 )
             except pyautogui.FailSafeException as e:
-                logger.warning(f"FailSafeException: {e}")
+                if not self.if_FailSafeException:
+                    logger.warning(f"FailSafeException: {e}")
+                    self.if_FailSafeException = True
 
     def search_queue(self) -> list:
         """搜索所有调度队列实例"""
