@@ -29,7 +29,7 @@ from loguru import logger
 from PySide6.QtCore import QObject, Signal, QEventLoop
 import json
 import sqlite3
-import datetime
+from datetime import datetime, timedelta
 import subprocess
 import shutil
 import time
@@ -94,7 +94,7 @@ class MaaManager(QObject):
         """主进程，运行MAA代理进程"""
 
         curdate = self.server_date()
-        begin_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        begin_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         self.configure()
         # 检查MAA路径是否可用
@@ -169,7 +169,7 @@ class MaaManager(QObject):
                         # 配置MAA
                         self.set_maa(mode_book[j], user[2])
                         # 记录当前时间
-                        start_time = datetime.datetime.now()
+                        start_time = datetime.now()
                         # 创建MAA任务
                         maa = subprocess.Popen(
                             [self.maa_exe_path],
@@ -199,20 +199,20 @@ class MaaManager(QObject):
 
                             # 判断是否超时
                             if len(logs) > 0:
-                                latest_time = datetime.datetime.now()
+                                latest_time = datetime.now()
                                 for _ in range(-1, 0 - len(logs) - 1, -1):
                                     try:
-                                        latest_time = datetime.datetime.strptime(
+                                        latest_time = datetime.strptime(
                                             logs[_][1:20], "%Y-%m-%d %H:%M:%S"
                                         )
                                         break
                                     except ValueError:
                                         pass
-                                now_time = datetime.datetime.now()
+                                now_time = datetime.now()
                                 if (
                                     j == 0
                                     and now_time - latest_time
-                                    > datetime.timedelta(
+                                    > timedelta(
                                         minutes=self.set["RunSet"][
                                             "AnnihilationTimeLimit"
                                         ]
@@ -220,7 +220,7 @@ class MaaManager(QObject):
                                 ) or (
                                     j == 1
                                     and now_time - latest_time
-                                    > datetime.timedelta(
+                                    > timedelta(
                                         minutes=self.set["RunSet"]["RoutineTimeLimit"]
                                     )
                                 ):
@@ -338,7 +338,7 @@ class MaaManager(QObject):
                         self.set_maa("人工排查_仅切换账号", user[2])
 
                     # 记录当前时间
-                    start_time = datetime.datetime.now()
+                    start_time = datetime.now()
                     # 创建MAA任务
                     maa = subprocess.Popen(
                         [self.maa_exe_path],
@@ -432,7 +432,7 @@ class MaaManager(QObject):
                 creationflags=subprocess.CREATE_NO_WINDOW,
             )
             # 记录当前时间
-            start_time = datetime.datetime.now()
+            start_time = datetime.now()
 
             # 监测MAA运行状态
             while not self.isInterruptionRequested:
@@ -487,7 +487,7 @@ class MaaManager(QObject):
             wait_index = [_[2] for _ in user_list if _[1] == "等待"]
 
             # 保存运行日志
-            end_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            end_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             end_log = (
                 f"任务开始时间：{begin_time}，结束时间：{end_time}\n"
                 f"已完成数：{len(over_index)}，未完成数：{len(error_index) + len(wait_index)}\n\n"
@@ -550,9 +550,7 @@ class MaaManager(QObject):
             for entry in f:
                 if not if_log_start:
                     try:
-                        entry_time = datetime.datetime.strptime(
-                            entry[1:20], "%Y-%m-%d %H:%M:%S"
-                        )
+                        entry_time = datetime.strptime(entry[1:20], "%Y-%m-%d %H:%M:%S")
                         if entry_time > start_time:
                             if_log_start = True
                             logs.append(entry)
@@ -1015,7 +1013,7 @@ class MaaManager(QObject):
     def server_date(self):
         """获取当前的服务器日期"""
 
-        dt = datetime.datetime.now()
-        if dt.time() < datetime.datetime.min.time().replace(hour=4):
-            dt = dt - datetime.timedelta(days=1)
+        dt = datetime.now()
+        if dt.time() < datetime.min.time().replace(hour=4):
+            dt = dt - timedelta(days=1)
         return dt.strftime("%Y-%m-%d")

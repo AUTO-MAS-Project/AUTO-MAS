@@ -52,7 +52,7 @@ from PySide6.QtCore import Qt
 from functools import partial
 from pathlib import Path
 from typing import List
-import datetime
+from datetime import datetime, timedelta
 import json
 import shutil
 
@@ -1623,7 +1623,7 @@ class MaaSettingBox(QWidget):
 def server_date() -> str:
     """获取当前的服务器日期"""
 
-    dt = datetime.datetime.now()
-    if dt.time() < datetime.datetime.min.time().replace(hour=4):
-        dt = dt - datetime.timedelta(days=1)
+    dt = datetime.now()
+    if dt.time() < datetime.min.time().replace(hour=4):
+        dt = dt - timedelta(days=1)
     return dt.strftime("%Y-%m-%d")

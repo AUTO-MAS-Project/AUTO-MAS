@@ -29,7 +29,7 @@ from loguru import logger
 from PySide6.QtWidgets import QWidget
 from PySide6.QtCore import QTimer
 import json
-import datetime
+from datetime import datetime
 import pyautogui
 
 from .config import Config
@@ -73,7 +73,7 @@ class MainTimer(QWidget):
                 if info["Time"][f"TimeEnabled_{_}"]
             ]
             # 按时间调起代理任务
-            curtime = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+            curtime = datetime.now().strftime("%Y-%m-%d %H:%M")
             if (
                 curtime[11:16] in time_set
                 and curtime != history["Time"][:16]

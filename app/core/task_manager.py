@@ -29,6 +29,7 @@ from loguru import logger
 from PySide6.QtCore import QThread, QObject, Signal
 from qfluentwidgets import Dialog
 from pathlib import Path
+from datetime import datetime
 from typing import Dict, Union
 
 from .config import Config
@@ -261,6 +262,14 @@ class TaskManager(QObject):
                     f"任务名称：{log[0]}，{log[1]["History"].replace("\n","\n    ")}\n"
                 )
             Config.save_history(name, {"Time": time, "History": history})
+        else:
+            Config.save_history(
+                name,
+                {
+                    "Time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "History": "没有任务被执行",
+                },
+            )
 
         self.task_list.pop(name)
         Config.running_list.remove(name)
