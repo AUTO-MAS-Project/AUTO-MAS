@@ -39,8 +39,6 @@ from app.services import System
 
 class MainTimer(QWidget):
 
-    if_FailSafeExceptioned = False
-
     def __init__(
         self,
         parent=None,
@@ -102,9 +100,7 @@ class MainTimer(QWidget):
                     ]
                 )
             except pyautogui.FailSafeException as e:
-                if not self.if_FailSafeExceptioned:
-                    logger.warning(f"FailSafeException: {e}")
-                    self.if_FailSafeExceptioned = True
+                logger.warning(f"FailSafeException: {e}")
 
     def search_queue(self) -> list:
         """搜索所有调度队列实例"""
