@@ -371,7 +371,10 @@ class Setting(QWidget):
         else:
             time_local = datetime.strptime("2000-01-01 00:00", "%Y-%m-%d %H:%M")
 
-        if if_show or datetime.strptime(notice["time"], "%Y-%m-%d %H:%M") > time_local:
+        if if_show or (
+            datetime.now() > datetime.strptime(notice["time"], "%Y-%m-%d %H:%M")
+            and datetime.strptime(notice["time"], "%Y-%m-%d %H:%M") > time_local
+        ):
 
             choice = Dialog("公告", notice["content"], self)
             choice.cancelButton.hide()
