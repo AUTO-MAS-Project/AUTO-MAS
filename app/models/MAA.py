@@ -400,7 +400,7 @@ class MaaManager(QObject):
                 if run_book[0] and not self.isInterruptionRequested:
 
                     if self.push_question(
-                        "操作提示", "请检查用户代理情况，是否将该用户标记为异常？"
+                        "操作提示", "请检查用户代理情况，该用户是否正确完成代理任务？"
                     ):
                         run_book[1] = True
 
