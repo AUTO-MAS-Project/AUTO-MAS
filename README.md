@@ -67,13 +67,11 @@ MAA多账号管理与自动化软件
 ### 下载MAA
 
 - 什么是MAA？    [官网](https://maa.plus/)/[GitHub](https://github.com/MaaAssistantArknights/MaaAssistantArknights)
-
 - MAA下载地址    [GitHub下载](https://github.com/MaaAssistantArknights/MaaAssistantArknights/releases)
 
 ### 安装MAA
 
 - 将MAA压缩包解压至任意普通文件夹即可。
-
 - 若为首次安装MAA，请双击`MAA.exe`启动MAA程序以生成MAA配置文件。
 
 ### 下载AUTO_MAA [![](https://img.shields.io/github/downloads/DLmaster361/AUTO_MAA/total?color=66ccff)](https://github.com/DLmaster361/AUTO_MAA/releases)
@@ -153,6 +151,8 @@ MAA多账号管理与自动化软件
   - 程序会读取`data/gameid.txt`中的数据，依据此进行关卡号的替换，便于常用关卡的使用。
   - `gameid.txt`会在程序首次运行时生成，其中将预置一些常用资源本的替换方案。
 
+![gameid](https://github.com/DLmaster361/AUTO_MAA/blob/main/resources/images/README/gameid.png "gameid")
+
 #### 设置调度队列
 
 - 单个调度队列可包含至多10个定时与至多10个任务实例。
@@ -163,8 +163,6 @@ MAA多账号管理与自动化软件
 #### 设置AUTO_MAA
 
 - 详见软件中对应选项卡的注解。
-
-![gameid](https://github.com/DLmaster361/AUTO_MAA/blob/main/resources/images/README/gameid.png "gameid")
 
 ## 运行代理任务
 
@@ -182,13 +180,9 @@ MAA多账号管理与自动化软件
 ### 直接开始人工排查
 
 - 在`调度中心`的`主调度台`选择对应任务与`人工排查`模式，单击`开始任务`即可开始人工排查。
-
 - 软件将调起MAA，依次登录各用户的账号。
-
 - 完成PRTS登录后，请人工检查代理情况，可以手动完成未代理的任务。
-
 - 在对话框中单击对应账号的代理情况。
-
 - 结束人工排查后，相应排查情况将被写入用户管理页的`备注栏目`。
 
 ---
@@ -223,7 +217,7 @@ MAA多账号管理与自动化软件
 
 欢迎加入AUTO_MAA项目组，欢迎反馈bug
 
-- QQ群：[957750551](https://qm.qq.com/cgi-bin/qm/qr?k=EET-OL_o52KPlDLEmbzaNkKUXuyQ4WZY&jump_from=webapi&authKey=6NxGwEu9JAOLHqfdEmNfrZy4tUvC/3ar2j5+Go7Hgf3j+ntAK1VS6SUOLOjYVKTt)
+- QQ群：[957750551](https://qm.qq.com/q/bd9fISNoME)
 
 ---
 
