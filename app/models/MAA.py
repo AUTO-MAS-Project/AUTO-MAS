@@ -137,8 +137,16 @@ class MaaManager(QObject):
                 if self.isInterruptionRequested:
                     break
 
-                user[1] = "运行"
-                self.update_user_list.emit(user_list)
+                if (
+                    self.set["RunSet"]["ProxyTimesLimit"] == 0
+                    or self.data[user[2]][14] < self.set["RunSet"]["ProxyTimesLimit"]
+                ):
+                    user[1] = "运行"
+                    self.update_user_list.emit(user_list)
+                else:
+                    user[1] = "跳过"
+                    self.update_user_list.emit(user_list)
+                    continue
 
                 # 初始化代理情况记录和模式替换记录
                 run_book = [False for _ in range(2)]
@@ -851,7 +859,10 @@ class MaaManager(QObject):
                         ] = "False"  # 自定义基建配置文件只读
                         data["Configurations"]["Default"][
                             "Infrast.CustomInfrastFile"
-                        ] = f"{self.config_path}/simple/{self.data[index][16]}/infrastructure/infrastructure.json"  # 自定义基建配置文件地址
+                        ] = str(
+                            self.config_path
+                            / f"simple/{self.data[index][16]}/infrastructure/infrastructure.json"
+                        )  # 自定义基建配置文件地址
 
         # 人工排查配置
         elif "人工排查" in mode:
