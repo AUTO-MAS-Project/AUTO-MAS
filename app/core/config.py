@@ -39,6 +39,7 @@ from qfluentwidgets import (
     FolderValidator,
     BoolValidator,
     RangeValidator,
+    qconfig,
 )
 
 
@@ -124,6 +125,15 @@ class AppConfig:
         self.global_config = GlobalConfig()
         self.queue_config = QueueConfig()
         self.maa_config = MaaConfig()
+
+        config_list = self.search_config()
+        for config in config_list:
+            if config[0] == "Maa":
+                qconfig.load(config[1], self.maa_config)
+                self.maa_config.save()
+            elif config[0] == "Queue":
+                qconfig.load(config[1], self.queue_config)
+                self.queue_config.save()
 
         logger.info("配置类初始化完成")
 
@@ -378,6 +388,22 @@ class AppConfig:
             db.close()
             logger.info("数据文件版本更新完成")
 
+    def search_config(self) -> list:
+        """搜索所有子配置文件"""
+
+        config_list = []
+
+        if (self.app_path / "config/MaaConfig").exists():
+            for subdir in (self.app_path / "config/MaaConfig").iterdir():
+                if subdir.is_dir():
+                    config_list.append(["Maa", subdir / "config.json"])
+
+        if (self.app_path / "config/QueueConfig").exists():
+            for json_file in (self.app_path / "config/QueueConfig").glob("*.json"):
+                config_list.append(["Queue", json_file])
+
+        return config_list
+
     def open_database(self, mode: str, index: str = None) -> None:
         """打开数据库"""
 
@@ -459,6 +485,7 @@ class AppConfig:
 
         self.maa_config.set(self.maa_config.MaaSet_Name, "")
         self.maa_config.set(self.maa_config.MaaSet_Path, ".")
+        self.maa_config.set(self.maa_config.RunSet_ProxyTimesLimit, 0)
         self.maa_config.set(self.maa_config.RunSet_AnnihilationTimeLimit, 40)
         self.maa_config.set(self.maa_config.RunSet_RoutineTimeLimit, 10)
         self.maa_config.set(self.maa_config.RunSet_RunTimesLimit, 3)
@@ -587,6 +614,9 @@ class MaaConfig(QConfig):
     MaaSet_Name = ConfigItem("MaaSet", "Name", "")
     MaaSet_Path = ConfigItem("MaaSet", "Path", ".", FolderValidator())
 
+    RunSet_ProxyTimesLimit = RangeConfigItem(
+        "RunSet", "ProxyTimesLimit", 0, RangeValidator(0, 1024)
+    )
     RunSet_AnnihilationTimeLimit = RangeConfigItem(
         "RunSet", "AnnihilationTimeLimit", 40, RangeValidator(1, 1024)
     )
