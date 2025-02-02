@@ -578,6 +578,14 @@ class MaaSettingBox(QWidget):
                 widget = QWidget()
                 Layout = QVBoxLayout(widget)
 
+                self.ProxyTimesLimit = SpinBoxSettingCard(
+                    (0, 1024),
+                    FluentIcon.PAGE_RIGHT,
+                    "用户单日代理次数上限",
+                    "当用户本日代理成功次数超过该阈值时跳过代理，阈值为“0”时视为无代理次数上限",
+                    Config.maa_config.RunSet_ProxyTimesLimit,
+                )
+
                 self.AnnihilationTimeLimit = SpinBoxSettingCard(
                     (1, 1024),
                     FluentIcon.PAGE_RIGHT,
@@ -602,6 +610,7 @@ class MaaSettingBox(QWidget):
                     Config.maa_config.RunSet_RunTimesLimit,
                 )
 
+                Layout.addWidget(self.ProxyTimesLimit)
                 Layout.addWidget(self.AnnihilationTimeLimit)
                 Layout.addWidget(self.RoutineTimeLimit)
                 Layout.addWidget(self.RunTimesLimit)
@@ -707,7 +716,7 @@ class MaaSettingBox(QWidget):
                             shutil.copy(
                                 file_path,
                                 Config.app_path
-                                / f"config/MaaConfig/{self.name}/simple/{choice.input[0].currentIndex()}/infrastructure",
+                                / f"config/MaaConfig/{self.name}/simple/{choice.input[0].currentIndex()}/infrastructure/infrastructure.json",
                             )
                         else:
                             logger.warning("未选择自定义基建文件")
@@ -963,11 +972,9 @@ class MaaSettingBox(QWidget):
                         elif j == 5:
                             curdate = server_date()
                             if curdate != value:
-                                item = QTableWidgetItem("今日未代理")
+                                item = QTableWidgetItem("未代理")
                             else:
-                                item = QTableWidgetItem(
-                                    f"今日已代理{data_simple[i][14]}次"
-                                )
+                                item = QTableWidgetItem(f"已代理{data_simple[i][14]}次")
                             item.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
                         elif j == 12:
                             if Config.PASSWORD == "":
@@ -1032,11 +1039,9 @@ class MaaSettingBox(QWidget):
                         elif j == 5:
                             curdate = server_date()
                             if curdate != value:
-                                item = QTableWidgetItem("今日未代理")
+                                item = QTableWidgetItem("未代理")
                             else:
-                                item = QTableWidgetItem(
-                                    f"今日已代理{data_beta[i][14]}次"
-                                )
+                                item = QTableWidgetItem(f"已代理{data_beta[i][14]}次")
                             item.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
                         elif j == 12:
                             if Config.PASSWORD == "":

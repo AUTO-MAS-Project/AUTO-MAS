@@ -1,7 +1,7 @@
 {
-    "main_version": "4.2.2.0",
+    "main_version": "4.2.2.1",
     "updater_version": "1.1.1.0",
-    "announcement": "\n## 新增功能\n- 调度队列上线，支持MAA多开 #12\n- 公告系统上线\n## 修复BUG\n- 修复手机号码不全时引发的混乱\n- 添加了一堆BUG（确信）\n## 程序优化\n- 界面重构，引入`QFluentWidgets`美化界面",
+    "announcement": "\n## 新增功能\n- 添加用户每日代理次数上限功能 #15\n## 修复BUG\n- 修复自定义基建无法正常使用的问题\n- 修正人工排查文案\n## 程序优化\n- 无",
     "proxy_list": [
         "",
         "https://gitproxy.click/",
