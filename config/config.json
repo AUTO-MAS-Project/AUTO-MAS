@@ -1,0 +1,39 @@
+{
+    "Function": {
+        "BossKey": "",
+        "IfAllowSleep": false,
+        "IfSilence": false
+    },
+    "Notify": {
+        "CompanyWebHookBotUrl": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=2c9218cb-c086-42d9-9f0a-a8859e10cc0a",
+        "IfCompanyWebHookBot": false,
+        "IfPushDeer": false,
+        "PushDeerKey": "",
+        "IfPushPlyer": false,
+        "IfSendErrorOnly": false,
+        "IfSendMail": false,
+        "IfServerChan": false,
+        "MailAddress": "hezizizi@126.com",
+        "ServerChanChannel": "hello",
+        "ServerChanKey": "SCT53272TqVLN4TlrrKmgcmKI1nnoQHmb",
+        "ServerChanTag": ""
+    },
+    "Start": {
+        "IfRunDirectly": false,
+        "IfSelfStart": false
+    },
+    "QFluentWidgets": {
+        "ThemeColor": "#ff009faa",
+        "ThemeMode": "Auto"
+    },
+    "UI": {
+        "IfShowTray": false,
+        "IfToTray": false,
+        "location": "239x13",
+        "maximized": false,
+        "size": "1200x700"
+    },
+    "Update": {
+        "IfAutoUpdate": false
+    }
+}
