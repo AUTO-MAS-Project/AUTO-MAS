@@ -519,13 +519,6 @@ class NotifySettingCard(HeaderCardWidget):
 
         Layout = QVBoxLayout()
 
-        self.card_IfSendErrorOnly = SwitchSettingCard(
-            icon=FluentIcon.PAGE_RIGHT,
-            title="仅推送异常信息",
-            content="仅在任务出现异常时推送通知",
-            configItem=Config.global_config.notify_IfSendErrorOnly,
-        )
-
         self.card_IfPushPlyer = SwitchSettingCard(
             icon=FluentIcon.PAGE_RIGHT,
             title="推送系统通知",
@@ -534,13 +527,9 @@ class NotifySettingCard(HeaderCardWidget):
         )
 
         self.card_SendMail = self.SendMailSettingCard(self)
-        self.card_ServerChan = self.ServerChanSettingCard(self)
-        self.card_CompanyWebhookBot = self.CompanyWechatPushSettingCard(self)
-        Layout.addWidget(self.card_IfSendErrorOnly)
+
         Layout.addWidget(self.card_IfPushPlyer)
         Layout.addWidget(self.card_SendMail)
-        Layout.addWidget(self.card_ServerChan)
-        Layout.addWidget(self.card_CompanyWebhookBot)
 
         self.viewLayout.addLayout(Layout)
 
@@ -572,102 +561,22 @@ class NotifySettingCard(HeaderCardWidget):
                 configItem=Config.global_config.notify_MailAddress,
             )
 
+            self.card_IfSendErrorOnly = SwitchSettingCard(
+                icon=FluentIcon.PAGE_RIGHT,
+                title="仅推送异常信息",
+                content="仅在任务出现异常时推送通知",
+                configItem=Config.global_config.notify_IfSendErrorOnly,
+            )
+
             Layout.addWidget(self.card_IfSendMail)
             Layout.addWidget(self.MailAddress)
+            Layout.addWidget(self.card_IfSendErrorOnly)
 
             # 调整内部布局
             self.viewLayout.setContentsMargins(0, 0, 0, 0)
             self.viewLayout.setSpacing(0)
 
             self.addGroupWidget(widget)
-
-    class ServerChanSettingCard(ExpandGroupSettingCard):
-        def __init__(self, parent=None):
-            super().__init__(
-                FluentIcon.SETTING,
-                "ServerChan推送",
-                "通过ServerChan推送推送任务结果",
-                parent,
-            )
-
-            widget = QWidget()
-            Layout = QVBoxLayout(widget)
-
-            self.card_IfServerChan = SwitchSettingCard(
-                icon=FluentIcon.PAGE_RIGHT,
-                title="SeverChan推送",
-                content="是否SeverChan推送",
-                configItem=Config.global_config.notify_IfServerChan,
-            )
-
-            self.ServerChanKey = LineEditSettingCard(
-                text="请输入SendKey",
-                icon=FluentIcon.PAGE_RIGHT,
-                title="SendKey",
-                content="Server酱的SendKey（SC3与SCT都可以）",
-                configItem=Config.global_config.notify_ServerChanKey,
-            )
-
-            self.ServerChanChannel = LineEditSettingCard(
-                text="请输入需要推送的Channel代码(SCT生效）",
-                icon=FluentIcon.PAGE_RIGHT,
-                title="ServerChanChannel代码",
-                content="可以留空，留空则默认。可以多个，请使用|隔开",
-                configItem=Config.global_config.notify_ServerChanChannel,
-            )
-
-            self.ServerChanTag = LineEditSettingCard(
-                text="请输入加入推送的Tag（SC3生效）",
-                icon=FluentIcon.PAGE_RIGHT,
-                title="Tag内容",
-                content="可以留空，留空则默认。可以多个，请使用|隔开",
-                configItem=Config.global_config.notify_ServerChanTag,
-            )
-            Layout.addWidget(self.card_IfServerChan)
-            Layout.addWidget(self.ServerChanKey)
-            Layout.addWidget(self.ServerChanChannel)
-            Layout.addWidget(self.ServerChanTag)
-            self.viewLayout.setContentsMargins(0, 0, 0, 0)
-            self.viewLayout.setSpacing(0)
-            self.addGroupWidget(widget)
-
-        widget = QWidget()
-        Layout = QVBoxLayout(widget)
-
-    class CompanyWechatPushSettingCard(ExpandGroupSettingCard):
-        def __init__(self, parent=None):
-            super().__init__(
-                FluentIcon.SETTING,
-                "企业微信机器人推送",
-                "通过企业微信机器人Webhook推送推送任务结果",
-                parent,
-            )
-
-            widget = QWidget()
-            Layout = QVBoxLayout(widget)
-
-            self.card_IfCompanyWechat = SwitchSettingCard(
-                icon=FluentIcon.PAGE_RIGHT,
-                title="企业微信机器人推送",
-                content="是否启用企业微信机器人推送",
-                configItem=Config.global_config.notify_IfCompanyWebHookBot,
-            )
-
-            self.CompanyWebHookBotUrl = LineEditSettingCard(
-                text="请输入Webhook的Url",
-                icon=FluentIcon.PAGE_RIGHT,
-                title="WebhookUrl",
-                content="企业微信群机器人的Webhook地址",
-                configItem=Config.global_config.notify_CompanyWebHookBotUrl,
-            )
-
-            Layout.addWidget(self.card_IfCompanyWechat)
-            Layout.addWidget(self.CompanyWebHookBotUrl)
-            self.viewLayout.setContentsMargins(0, 0, 0, 0)
-            self.viewLayout.setSpacing(0)
-            self.addGroupWidget(widget)
-        widget = QWidget()
-        Layout = QVBoxLayout(widget)
 
 
 class SecuritySettingCard(HeaderCardWidget):
@@ -733,20 +642,10 @@ class OtherSettingCard(HeaderCardWidget):
             title="公告",
             content="查看AUTO_MAA的最新公告",
         )
-
-        self.card_UserDocs = HyperlinkCard(
-            url="https://docs.qq.com/aio/DQ2NwUHRiWGtMWHBy",
-            text="访问用户文档",
-            icon=FluentIcon.PAGE_RIGHT,
-            title="用户文档",
-            content="查看AUTO_MAA的使用教程和文档",
-        )
-
         self.card_Association = self.AssociationSettingCard()
 
         Layout = QVBoxLayout()
         Layout.addWidget(self.card_Notice)
-        Layout.addWidget(self.card_UserDocs)
         Layout.addWidget(self.card_Association)
         self.viewLayout.addLayout(Layout)
 

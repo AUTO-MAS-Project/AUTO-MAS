@@ -528,14 +528,6 @@ class MaaManager(QObject):
                     f"{self.mode[:4]}任务报告",
                     f"{end_log}\n\nAUTO_MAA 敬上\n\n我们根据您在 AUTO_MAA 中的设置发送了这封电子邮件，本邮件无需回复\n",
                 )
-                Notify.ServerChanPush(
-                    f"{self.mode[:4]}任务报告",
-                    f"{end_log}\n\nAUTO_MAA 敬上",
-                )
-                Notify.CompanyWebHookBotPush(
-                    f"{self.mode[:4]}任务报告",
-                    f"{end_log}\nAUTO_MAA 敬上",
-                )
 
         self.accomplish.emit({"Time": begin_time, "History": end_log})
 
