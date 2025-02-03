@@ -319,7 +319,7 @@ class AUTO_MAA_Updater(QApplication):
 if __name__ == "__main__":
 
     # 获取软件自身的路径
-    app_path = Path.cwd()
+    app_path = Path(sys.argv[0]).resolve().parent
 
     # 从本地版本信息文件获取当前版本信息
     if (app_path / "resources/version.json").exists():

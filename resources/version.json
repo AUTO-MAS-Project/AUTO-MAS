@@ -1,7 +1,7 @@
 {
     "main_version": "4.2.2.1",
-    "updater_version": "1.1.1.0",
-    "announcement": "\n## 新增功能\n- 添加用户每日代理次数上限功能 #15\n## 修复BUG\n- 修复自定义基建无法正常使用的问题\n- 修正人工排查文案\n## 程序优化\n- 无",
+    "updater_version": "1.1.1.1",
+    "announcement": "\n## 新增功能\n- 添加用户每日代理次数上限功能 #15\n## 修复BUG\n- 修复自定义基建无法正常使用的问题\n- 修正人工排查文案\n- 修复更新器文件夹定位问题\n## 程序优化\n- 无",
     "proxy_list": [
         "",
         "https://gitproxy.click/",
