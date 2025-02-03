@@ -81,7 +81,7 @@ class MainTimer(QWidget):
             ):
 
                 logger.info(f"定时任务：{name}")
-                Task_manager.add_task("自动代理_新窗口", name, info)
+                Task_manager.add_task("自动代理_新调度台", name, info)
 
     def set_silence(self):
         """设置静默模式"""

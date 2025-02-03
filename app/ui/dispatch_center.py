@@ -77,7 +77,6 @@ class DispatchCenter(QWidget):
             onClick=self.update_top_bar,
             icon=FluentIcon.CAFE,
         )
-        self.update_top_bar()
 
         self.Layout.addWidget(self.pivot, 0, Qt.AlignHCenter)
         self.Layout.addWidget(self.stackedWidget)
@@ -120,6 +119,12 @@ class DispatchCenter(QWidget):
     def connect_main_board(self, task: Task) -> None:
         """连接主调度台"""
 
+        self.script_list["主调度台"].top_bar.Lable.setText(
+            f"{task.name} - {task.mode.replace("_主调度台","")}模式"
+        )
+        self.script_list["主调度台"].top_bar.Lable.show()
+        self.script_list["主调度台"].top_bar.object.hide()
+        self.script_list["主调度台"].top_bar.mode.hide()
         self.script_list["主调度台"].top_bar.button.clicked.disconnect()
         self.script_list["主调度台"].top_bar.button.setText("中止任务")
         self.script_list["主调度台"].top_bar.button.clicked.connect(
@@ -145,6 +150,9 @@ class DispatchCenter(QWidget):
     def disconnect_main_board(self, name: str) -> None:
         """断开主调度台"""
 
+        self.script_list["主调度台"].top_bar.Lable.hide()
+        self.script_list["主调度台"].top_bar.object.show()
+        self.script_list["主调度台"].top_bar.mode.show()
         self.script_list["主调度台"].top_bar.button.clicked.disconnect()
         self.script_list["主调度台"].top_bar.button.setText("开始任务")
         self.script_list["主调度台"].top_bar.button.clicked.connect(
@@ -170,6 +178,8 @@ class DispatchCenter(QWidget):
 
         self.script_list["主调度台"].top_bar.object.clear()
         self.script_list["主调度台"].top_bar.object.addItems(list)
+        self.script_list["主调度台"].top_bar.object.setCurrentIndex(-1)
+        self.script_list["主调度台"].top_bar.mode.setCurrentIndex(-1)
 
 
 class DispatchBox(QWidget):
@@ -208,17 +218,18 @@ class DispatchBox(QWidget):
 
             if name == "主调度台":
 
+                self.Lable = SubtitleLabel("", self)
+                self.Lable.hide()
                 self.object = ComboBox()
-                self.object.setCurrentIndex(-1)
                 self.object.setPlaceholderText("请选择调度对象")
                 self.mode = ComboBox()
                 self.mode.addItems(["自动代理", "人工排查"])
-                self.mode.setCurrentIndex(-1)
                 self.mode.setPlaceholderText("请选择调度模式")
 
                 self.button = PushButton("开始任务")
                 self.button.clicked.connect(self.start_task)
 
+                Layout.addWidget(self.Lable)
                 Layout.addWidget(self.object)
                 Layout.addWidget(self.mode)
                 Layout.addStretch(1)
@@ -265,7 +276,7 @@ class DispatchBox(QWidget):
                     info = json.load(f)
 
                 logger.info(f"用户添加任务：{name}")
-                Task_manager.add_task(f"{self.mode.currentText()}_主窗口", name, info)
+                Task_manager.add_task(f"{self.mode.currentText()}_主调度台", name, info)
 
             elif self.object.currentText().split(" - ")[0] == "实例":
 
@@ -275,7 +286,7 @@ class DispatchBox(QWidget):
 
                     logger.info(f"用户添加任务：{name}")
                     Task_manager.add_task(
-                        f"{self.mode.currentText()}_主窗口", "用户自定义队列", info
+                        f"{self.mode.currentText()}_主调度台", "用户自定义队列", info
                     )
 
     class DispatchInfoCard(HeaderCardWidget):
