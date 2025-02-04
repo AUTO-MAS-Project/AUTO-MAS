@@ -42,6 +42,7 @@ from qfluentwidgets import (
     SwitchSettingCard,
     ExpandGroupSettingCard,
     PushSettingCard,
+    ComboBoxSettingCard,
 )
 from datetime import datetime
 import json
@@ -207,7 +208,7 @@ class Setting(QWidget):
         for _ in range(3):
             try:
                 response = requests.get(
-                    "https://gitee.com/DLmaster_361/AUTO_MAA/raw/main/resources/version.json"
+                    f"https://gitee.com/DLmaster_361/AUTO_MAA/raw/{Config.global_config.get(Config.global_config.update_UpdateType)}/resources/version.json"
                 )
                 version_remote = response.json()
                 break
@@ -249,7 +250,7 @@ class Setting(QWidget):
         for _ in range(3):
             try:
                 response = requests.get(
-                    "https://gitee.com/DLmaster_361/AUTO_MAA/raw/main/resources/version.json"
+                    f"https://gitee.com/DLmaster_361/AUTO_MAA/raw/{Config.global_config.get(Config.global_config.update_UpdateType)}/resources/version.json"
                 )
                 version_remote = response.json()
                 break
@@ -666,6 +667,7 @@ class NotifySettingCard(HeaderCardWidget):
             self.viewLayout.setContentsMargins(0, 0, 0, 0)
             self.viewLayout.setSpacing(0)
             self.addGroupWidget(widget)
+
         widget = QWidget()
         Layout = QVBoxLayout(widget)
 
@@ -695,10 +697,7 @@ class UpdaterSettingCard(HeaderCardWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-
         self.setTitle("更新")
-
-        Layout = QVBoxLayout()
 
         self.card_IfAutoUpdate = SwitchSettingCard(
             icon=FluentIcon.PAGE_RIGHT,
@@ -706,7 +705,13 @@ class UpdaterSettingCard(HeaderCardWidget):
             content="将在启动时自动检查AUTO_MAA是否有新版本",
             configItem=Config.global_config.update_IfAutoUpdate,
         )
-
+        self.card_UpdateType = ComboBoxSettingCard(
+            configItem=Config.global_config.update_UpdateType,
+            icon=FluentIcon.PAGE_RIGHT,
+            title="版本更新类别",
+            content="选择AUTO_MAA的更新类别",
+            texts=["稳定版", "公测版"],
+        )
         self.card_CheckUpdate = PushSettingCard(
             text="检查更新",
             icon=FluentIcon.UPDATE,
@@ -714,9 +719,10 @@ class UpdaterSettingCard(HeaderCardWidget):
             content="检查AUTO_MAA是否有新版本",
         )
 
+        Layout = QVBoxLayout()
         Layout.addWidget(self.card_IfAutoUpdate)
+        Layout.addWidget(self.card_UpdateType)
         Layout.addWidget(self.card_CheckUpdate)
-
         self.viewLayout.addLayout(Layout)
 
 
@@ -759,7 +765,6 @@ class OtherSettingCard(HeaderCardWidget):
                 "加入AUTO_MAA官方社群，获取更多帮助",
                 parent,
             )
-
 
             self.card_GitHubRepository = HyperlinkCard(
                 url="https://github.com/DLmaster361/AUTO_MAA",

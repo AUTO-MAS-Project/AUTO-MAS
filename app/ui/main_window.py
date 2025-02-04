@@ -182,6 +182,7 @@ class AUTO_MAA(MSFluentWindow):
 
         # 加载配置
         qconfig.load(Config.config_path, Config.global_config)
+        Config.global_config.save()
 
         # 检查密码
         self.setting.check_PASSWORD()

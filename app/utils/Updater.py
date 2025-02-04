@@ -333,11 +333,19 @@ if __name__ == "__main__":
     else:
         main_version_current = [0, 0, 0, 0]
 
+    # 从本地配置文件获取更新类型
+    if (app_path / "config/config.json").exists():
+        with (app_path / "config/config.json").open(mode="r", encoding="utf-8") as f:
+            config = json.load(f)
+        update_type = config["Update"]["UpdateType"]
+    else:
+        update_type = "main"
+
     # 从远程服务器获取最新版本信息
     for _ in range(3):
         try:
             response = requests.get(
-                "https://gitee.com/DLmaster_361/AUTO_MAA/raw/main/resources/version.json"
+                f"https://gitee.com/DLmaster_361/AUTO_MAA/raw/{update_type}/resources/version.json"
             )
             version_remote = response.json()
             main_version_remote = list(
