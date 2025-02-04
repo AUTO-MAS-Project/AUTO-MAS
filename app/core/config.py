@@ -556,6 +556,14 @@ class GlobalConfig(QConfig):
         "Notify", "IfSendErrorOnly", False, BoolValidator()
     )
     notify_MailAddress = ConfigItem("Notify", "MailAddress", "")
+    notify_IfServerChan = ConfigItem("Notify", "IfServerChan", False, BoolValidator())
+    notify_ServerChanKey = ConfigItem("Notify", "ServerChanKey", "")
+    notify_ServerChanChannel = ConfigItem("Notify", "ServerChanChannel", "")
+    notify_ServerChanTag = ConfigItem("Notify", "ServerChanTag", "")
+    notify_IfCompanyWebHookBot = ConfigItem("Notify", "IfCompanyWebHookBot", False, BoolValidator())
+    notify_CompanyWebHookBotUrl = ConfigItem("Notify", "CompanyWebHookBotUrl", "")
+    notify_IfPushDeer = ConfigItem("Notify", "IfPushDeer", False, BoolValidator())
+    notify_IfPushDeerKey = ConfigItem("Notify", "PushDeerKey", "")
 
     update_IfAutoUpdate = ConfigItem("Update", "IfAutoUpdate", False, BoolValidator())
 
