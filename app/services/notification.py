@@ -24,12 +24,15 @@ AUTO_MAA通知服务
 v4.2
 作者：DLmaster_361
 """
-
+import requests
+from loguru import logger
 from plyer import notification
 import smtplib
 from email.mime.text import MIMEText
 from email.header import Header
 from email.utils import formataddr
+
+from serverchan_sdk import sc_send
 
 from app.core import Config
 
@@ -95,6 +98,63 @@ class Notification:
                 return f"发送邮件时出错：\n{e}"
             finally:
                 smtpObj.quit()
+
+    def ServerChanPush(self, title, content):
+        """使用Server酱推送通知"""
+
+        if Config.global_config.get(Config.global_config.notify_IfServerChan):
+            send_key = Config.global_config.get(Config.global_config.notify_ServerChanKey)
+            option = {}
+            is_valid = lambda s: s == "" or (s == '|'.join(s.split('|')) and (s.count('|') == 0 or all(s.split('|'))))
+            """
+            is_valid => True, 如果启用的话需要正确设置Tag和Channel。
+            允许空的Tag和Channel即不启用，但不允许例如a||b，|a|b，a|b|，||||
+            """
+            send_tag = Config.global_config.get(Config.global_config.notify_ServerChanTag)
+            send_channel = Config.global_config.get(Config.global_config.notify_ServerChanChannel)
+
+            if is_valid(send_tag):
+                option['tags'] = send_tag
+            else:
+                option['tags'] = ''
+                logger.warning('请正确设置Auto_MAA中ServerChan的Tag。')
+
+            if is_valid(send_channel):
+                option['channel'] = send_channel
+            else:
+                option['channel'] = ''
+                logger.warning('请正确设置Auto_MAA中ServerChan的Channel。')
+
+            response = sc_send(send_key, title, content, option)
+            if response["code"] == 0:
+                logger.info("Server酱推送通知成功")
+                return True
+            else:
+                logger.info("Server酱推送通知失败")
+                logger.error(response)
+                return f'使用Server酱推送通知时出错：\n{response["data"]['error']}'
+
+    def CompanyWebHookBotPush(self, title, content):
+        """使用企业微信群机器人推送通知"""
+        if Config.global_config.get(Config.global_config.notify_IfCompanyWebHookBot):
+            content = f'{title}\n{content}'
+            data = {
+                "msgtype": "text",
+                "text": {
+                    "content": content
+                }
+            }
+            response = requests.post(
+                url=Config.global_config.get(Config.global_config.notify_CompanyWebHookBotUrl),
+                json=data
+            )
+            if response.json()["errcode"] == 0:
+                logger.info("企业微信群机器人推送通知成功")
+                return True
+            else:
+                logger.info("企业微信群机器人推送通知失败")
+                logger.error(response.json())
+                return f'使用企业微信群机器人推送通知时出错：\n{response.json()["errmsg"]}'
 
 
 Notify = Notification()
