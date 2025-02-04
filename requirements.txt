@@ -8,5 +8,5 @@ pywin32
 pyautogui
 pycryptodome
 requests
-nuitka==2.6
 serverchan_sdk
+nuitka==2.6
