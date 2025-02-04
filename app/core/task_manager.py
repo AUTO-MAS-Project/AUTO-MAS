@@ -217,10 +217,10 @@ class TaskManager(QObject):
             lambda logs: self.remove_task(name, logs)
         )
 
-        if "新窗口" in mode:
+        if "新调度台" in mode:
             self.create_gui.emit(self.task_list[name])
 
-        elif "主窗口" in mode:
+        elif "主调度台" in mode:
             self.connect_gui.emit(self.task_list[name])
 
         self.task_list[name].start()

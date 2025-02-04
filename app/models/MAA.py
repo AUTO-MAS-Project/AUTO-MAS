@@ -113,13 +113,15 @@ class MaaManager(QObject):
             return None
 
         # 整理用户数据，筛选需代理的用户
-        self.data = sorted(self.data, key=lambda x: (-len(x[15]), x[16]))
-        user_list: List[List[str, str, int]] = [
-            [_[0], "等待", index]
-            for index, _ in enumerate(self.data)
-            if (_[3] != 0 and _[4] == "y")
-        ]
-        self.create_user_list.emit(user_list)
+        if "设置MAA" not in self.mode:
+
+            self.data = sorted(self.data, key=lambda x: (-len(x[15]), x[16]))
+            user_list: List[List[str, str, int]] = [
+                [_[0], "等待", index]
+                for index, _ in enumerate(self.data)
+                if (_[3] != 0 and _[4] == "y")
+            ]
+            self.create_user_list.emit(user_list)
 
         # 自动代理模式
         if self.mode == "自动代理":
@@ -527,6 +529,14 @@ class MaaManager(QObject):
                 Notify.send_mail(
                     f"{self.mode[:4]}任务报告",
                     f"{end_log}\n\nAUTO_MAA 敬上\n\n我们根据您在 AUTO_MAA 中的设置发送了这封电子邮件，本邮件无需回复\n",
+                )
+                Notify.ServerChanPush(
+                    f"{self.mode[:4]}任务报告",
+                    f"{end_log}\n\nAUTO_MAA 敬上",
+                )
+                Notify.CompanyWebHookBotPush(
+                    f"{self.mode[:4]}任务报告",
+                    f"{end_log}AUTO_MAA 敬上",
                 )
 
         self.accomplish.emit({"Time": begin_time, "History": end_log})

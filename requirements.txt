@@ -8,4 +8,5 @@ pywin32
 pyautogui
 pycryptodome
 requests
+serverchan_sdk
 nuitka==2.6
