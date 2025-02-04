@@ -225,7 +225,7 @@ class UpdateProcess(QThread):
             self.info.emit("获取远端代理信息失败，将使用默认代理地址")
             PROXY_list = [
                 "",
-                "https://ghfast.top",
+                "https://ghfast.top/",
                 "https://gitproxy.click/",
                 "https://cdn.moran233.xyz/",
                 "https://gh.llkk.cc/",
@@ -337,7 +337,10 @@ if __name__ == "__main__":
     if (app_path / "config/config.json").exists():
         with (app_path / "config/config.json").open(mode="r", encoding="utf-8") as f:
             config = json.load(f)
-        update_type = config["Update"]["UpdateType"]
+        if "Update" in config and "UpdateType" in config["Update"]:
+            update_type = config["Update"]["UpdateType"]
+        else:
+            update_type = "main"
     else:
         update_type = "main"
 
