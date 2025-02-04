@@ -683,6 +683,7 @@ class MaaSettingBox(QWidget):
 
             Config.cur.execute("SELECT * FROM adminx WHERE True")
             data = Config.cur.fetchall()
+            data = sorted(data, key=lambda x: (-len(x[15]), x[16]))
 
             if self.user_list.pivot.currentRouteKey() == f"{self.name}_简洁用户列表":
 
@@ -875,6 +876,9 @@ class MaaSettingBox(QWidget):
 
                 self.user_list_simple.itemChanged.connect(
                     lambda item: self.change_user_Item(item, "simple")
+                )
+                self.user_list_beta.itemChanged.connect(
+                    lambda item: self.change_user_Item(item, "beta")
                 )
 
                 self.stackedWidget.addWidget(self.user_list_simple)
@@ -1353,6 +1357,10 @@ class MaaSettingBox(QWidget):
                     return None
 
                 if row == 0:
+                    logger.warning("向上移动用户时已到达最上端")
+                    MainInfoBar.push_info_bar(
+                        "warning", "已经是第一个用户", "无法向上移动", 5000
+                    )
                     return None
 
                 Config.cur.execute(
@@ -1450,6 +1458,10 @@ class MaaSettingBox(QWidget):
                     return None
 
                 if row == current_numb - 1:
+                    logger.warning("向下移动用户时已到达最下端")
+                    MainInfoBar.push_info_bar(
+                        "warning", "已经是最后一个用户", "无法向下移动", 5000
+                    )
                     return None
 
                 Config.cur.execute(
