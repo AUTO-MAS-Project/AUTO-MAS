@@ -39,6 +39,7 @@ from qfluentwidgets import (
     FolderValidator,
     BoolValidator,
     RangeValidator,
+    OptionsValidator,
     qconfig,
 )
 
@@ -560,12 +561,17 @@ class GlobalConfig(QConfig):
     notify_ServerChanKey = ConfigItem("Notify", "ServerChanKey", "")
     notify_ServerChanChannel = ConfigItem("Notify", "ServerChanChannel", "")
     notify_ServerChanTag = ConfigItem("Notify", "ServerChanTag", "")
-    notify_IfCompanyWebHookBot = ConfigItem("Notify", "IfCompanyWebHookBot", False, BoolValidator())
+    notify_IfCompanyWebHookBot = ConfigItem(
+        "Notify", "IfCompanyWebHookBot", False, BoolValidator()
+    )
     notify_CompanyWebHookBotUrl = ConfigItem("Notify", "CompanyWebHookBotUrl", "")
     notify_IfPushDeer = ConfigItem("Notify", "IfPushDeer", False, BoolValidator())
     notify_IfPushDeerKey = ConfigItem("Notify", "PushDeerKey", "")
 
     update_IfAutoUpdate = ConfigItem("Update", "IfAutoUpdate", False, BoolValidator())
+    update_UpdateType = OptionsConfigItem(
+        "Update", "UpdateType", "main", OptionsValidator(["main", "dev"])
+    )
 
 
 class QueueConfig(QConfig):
