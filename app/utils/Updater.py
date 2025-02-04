@@ -225,12 +225,12 @@ class UpdateProcess(QThread):
             self.info.emit("获取远端代理信息失败，将使用默认代理地址")
             PROXY_list = [
                 "",
-                "https://ghfast.top/",
                 "https://gitproxy.click/",
                 "https://cdn.moran233.xyz/",
                 "https://gh.llkk.cc/",
                 "https://github.akams.cn/",
                 "https://www.ghproxy.cn/",
+                "https://ghfast.top/",
             ]
             time.sleep(1)
 
