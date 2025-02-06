@@ -539,13 +539,6 @@ class MaaManager(QObject):
                     f"{self.mode[:4]}任务报告",
                     f"{end_log}AUTO_MAA 敬上",
                 )
-            if Config.global_config.function_AutoShutdown:
-                logger.info("任务完成，系统将在 60 秒后自动关机...")
-                if sys.platform.startswith("win"):
-                    subprocess.run("shutdown /s /t 60", shell=True)  # Windows
-                else:
-                    # 看到 Issues 里有兼容 Linux 的计划，加上 Linux 的
-                    subprocess.run("shutdown -h +1", shell=True)  # Linux/macOS
 
         self.accomplish.emit({"Time": begin_time, "History": end_log})
 

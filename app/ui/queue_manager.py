@@ -43,6 +43,7 @@ from qfluentwidgets import (
     TextBrowser,
     CommandBar,
     SwitchSettingCard,
+    ComboBoxSettingCard,
 )
 from PySide6.QtCore import Qt
 from typing import List
@@ -138,7 +139,7 @@ class QueueManager(QWidget):
         choice = MessageBox(
             "确认",
             f"确定要删除 {name} 吗？",
-            self,
+            self.window(),
         )
         if choice.exec():
 
@@ -412,9 +413,23 @@ class QueueMemberSettingBox(QWidget):
                 "调度队列状态",
                 Config.queue_config.queueSet_Enabled,
             )
+            self.card_AfterAccomplish = ComboBoxSettingCard(
+                configItem=Config.queue_config.queueSet_AfterAccomplish,
+                icon=FluentIcon.POWER_BUTTON,
+                title="调度队列结束后",
+                content="选择调度队列结束后的操作",
+                texts=[
+                    "无动作",
+                    "退出AUTO_MAA",
+                    "睡眠（win系统需禁用休眠）",
+                    "休眠",
+                    "关机",
+                ],
+            )
 
             Layout.addWidget(self.card_Name)
             Layout.addWidget(self.card_Enable)
+            Layout.addWidget(self.card_AfterAccomplish)
 
             self.viewLayout.addLayout(Layout)
 

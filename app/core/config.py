@@ -499,6 +499,7 @@ class AppConfig:
 
         self.queue_config.set(self.queue_config.queueSet_Name, "")
         self.queue_config.set(self.queue_config.queueSet_Enabled, False)
+        self.queue_config.set(self.queue_config.queueSet_AfterAccomplish, "None")
 
         self.queue_config.set(self.queue_config.time_TimeEnabled_0, False)
         self.queue_config.set(self.queue_config.time_TimeSet_0, "00:00")
@@ -542,8 +543,6 @@ class GlobalConfig(QConfig):
     function_IfSilence = ConfigItem("Function", "IfSilence", False, BoolValidator())
     function_BossKey = ConfigItem("Function", "BossKey", "")
 
-    function_AutoShutdown = ConfigItem("Function", "AutoShutdown", False, BoolValidator())
-
     start_IfSelfStart = ConfigItem("Start", "IfSelfStart", False, BoolValidator())
     start_IfRunDirectly = ConfigItem("Start", "IfRunDirectly", False, BoolValidator())
 
@@ -581,6 +580,12 @@ class QueueConfig(QConfig):
 
     queueSet_Name = ConfigItem("QueueSet", "Name", "")
     queueSet_Enabled = ConfigItem("QueueSet", "Enabled", False, BoolValidator())
+    queueSet_AfterAccomplish = OptionsConfigItem(
+        "QueueSet",
+        "AfterAccomplish",
+        "None",
+        OptionsValidator(["None", "KillSelf", "Sleep", "Hibernate", "Shutdown"]),
+    )
 
     time_TimeEnabled_0 = ConfigItem("Time", "TimeEnabled_0", False, BoolValidator())
     time_TimeSet_0 = ConfigItem("Time", "TimeSet_0", "00:00")
