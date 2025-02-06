@@ -399,11 +399,20 @@ class FunctionSettingCard(HeaderCardWidget):
             content="仅阻止电脑自动休眠，不会影响屏幕是否熄灭",
             configItem=Config.global_config.function_IfAllowSleep,
         )
+
+        self.card_AutoShutdown = SwitchSettingCard(
+            icon=FluentIcon.POWER_BUTTON,
+            title="运行完成后自动关机",
+            content="启用后，任务完成后将自动关机",
+            configItem=Config.global_config.function_AutoShutdown,
+        )
+
         self.card_IfSilence = self.SilenceSettingCard(self)
 
         Layout = QVBoxLayout()
         Layout.addWidget(self.card_IfAllowSleep)
         Layout.addWidget(self.card_IfSilence)
+        Layout.addWidget(self.card_AutoShutdown)
         self.viewLayout.addLayout(Layout)
 
     class SilenceSettingCard(ExpandGroupSettingCard):
@@ -753,3 +762,7 @@ def version_text(version_numb: list) -> str:
             f"v{'.'.join(str(_) for _ in version_numb[0:3])}-beta.{version_numb[3]}"
         )
     return version
+
+def toggle_auto_shutdown(self, checked: bool) -> None:
+    """启用或禁用自动关机"""
+    Config.global_config.function_AutoShutdown = checked
