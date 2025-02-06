@@ -68,7 +68,8 @@ class AUTO_MAA(MSFluentWindow):
         self.splashScreen = SplashScreen(self.windowIcon(), self)
         self.show_ui("显示主窗口", if_quick=True)
 
-        MainInfoBar.parent = self
+        MainInfoBar.main_window = self.window()
+        System.main_window = self.window()
 
         # 创建主窗口
         self.setting = Setting(self)
@@ -161,7 +162,7 @@ class AUTO_MAA(MSFluentWindow):
 
         # 退出主程序菜单项
         self.tray_menu.addAction(
-            Action(FluentIcon.POWER_BUTTON, "退出主程序", triggered=self.kill_main)
+            Action(FluentIcon.POWER_BUTTON, "退出主程序", triggered=self.window().close)
         )
 
         # 设置托盘菜单
@@ -263,11 +264,6 @@ class AUTO_MAA(MSFluentWindow):
     #             "当前无任务正在运行，无需中止",
     #             3,
     #         )
-
-    def kill_main(self) -> None:
-        """退出主程序"""
-        self.close()
-        QApplication.quit()
 
     def show_ui(self, mode: str, if_quick: bool = False) -> None:
         """配置窗口状态"""

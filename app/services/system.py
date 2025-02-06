@@ -25,21 +25,27 @@ v4.2
 作者：DLmaster_361
 """
 
+from loguru import logger
+from PySide6.QtWidgets import QWidget
+import sys
 import ctypes
 import win32gui
 import win32process
 import winreg
 import psutil
+import subprocess
 
 from app.core import Config
 
 
-class SystemHandler:
+class _SystemHandler:
 
     ES_CONTINUOUS = 0x80000000
     ES_SYSTEM_REQUIRED = 0x00000001
 
-    def __init__(self):
+    def __init__(self, main_window: QWidget = None):
+
+        self.main_window = main_window
 
         self.set_Sleep()
         self.set_SelfStart()
@@ -84,6 +90,60 @@ class SystemHandler:
             winreg.DeleteValue(key, "AUTO_MAA")
             winreg.CloseKey(key)
 
+    def set_power(self, mode):
+
+        if sys.platform.startswith("win"):
+
+            if mode == "None":
+
+                logger.info("不执行系统电源操作")
+
+            elif mode == "Shutdown":
+
+                logger.info("执行关机操作")
+                subprocess.run(["shutdown", "/s", "/t", "0"])
+
+            elif mode == "Hibernate":
+
+                logger.info("执行休眠操作")
+                subprocess.run(["shutdown", "/h"])
+
+            elif mode == "Sleep":
+
+                logger.info("执行睡眠操作")
+                subprocess.run(
+                    ["rundll32.exe", "powrprof.dll,SetSuspendState", "0,1,0"]
+                )
+
+            elif mode == "KillSelf":
+
+                self.main_window.close()
+
+        elif sys.platform.startswith("linux"):
+
+            if mode == "None":
+
+                logger.info("不执行系统电源操作")
+
+            elif mode == "Shutdown":
+
+                logger.info("执行关机操作")
+                subprocess.run(["shutdown", "-h", "now"])
+
+            elif mode == "Hibernate":
+
+                logger.info("执行休眠操作")
+                subprocess.run(["systemctl", "hibernate"])
+
+            elif mode == "Sleep":
+
+                logger.info("执行睡眠操作")
+                subprocess.run(["systemctl", "suspend"])
+
+            elif mode == "KillSelf":
+
+                self.main_window.close()
+
     def is_startup(self):
         """判断程序是否已经开机自启"""
 
@@ -117,4 +177,4 @@ class SystemHandler:
         return window_info
 
 
-System = SystemHandler()
+System = _SystemHandler()

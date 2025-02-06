@@ -124,7 +124,7 @@ class MemberManager(QWidget):
         """添加一个脚本实例"""
 
         choice = InputMessageBox(
-            self,
+            self.window(),
             "选择一个脚本类型并添加相应脚本实例",
             "选择脚本类型",
             "选择",
@@ -170,7 +170,7 @@ class MemberManager(QWidget):
         choice = MessageBox(
             "确认",
             f"确定要删除 {name} 实例吗？",
-            self,
+            self.window(),
         )
         if choice.exec():
 
@@ -296,7 +296,7 @@ class MemberManager(QWidget):
 
         if Config.PASSWORD == "":
             choice = InputMessageBox(
-                self,
+                self.window(),
                 "请输入管理密钥",
                 "管理密钥",
                 "密码",
@@ -691,7 +691,7 @@ class MaaSettingBox(QWidget):
                 set_list = ["自定义基建"]
 
                 choice = SetMessageBox(
-                    self.parent().parent().parent().parent().parent().parent().parent(),
+                    self.window(),
                     "用户选项配置",
                     ["选择要配置的用户", "选择要配置的选项"],
                     [user_list, set_list],
@@ -731,7 +731,7 @@ class MaaSettingBox(QWidget):
                 set_list = ["MAA日常配置", "MAA剿灭配置"]
 
                 choice = SetMessageBox(
-                    self.parent().parent().parent().parent().parent().parent().parent(),
+                    self.window(),
                     "用户选项配置",
                     ["选择要配置的用户", "选择要配置的选项"],
                     [user_list, set_list],
@@ -1273,15 +1273,7 @@ class MaaSettingBox(QWidget):
                 choice = MessageBox(
                     "确认",
                     f"确定要删除用户 {data[0][0]} 吗？",
-                    self.parent()
-                    .parent()
-                    .parent()
-                    .parent()
-                    .parent()
-                    .parent()
-                    .parent()
-                    .parent()
-                    .parent(),
+                    self.window(),
                 )
 
                 # 删除用户
@@ -1570,15 +1562,7 @@ class MaaSettingBox(QWidget):
                 choice = MessageBox(
                     "确认",
                     f"确定要将用户 {data[0][0]} 转为{mode_list[1 - mode]}配置模式吗？",
-                    self.parent()
-                    .parent()
-                    .parent()
-                    .parent()
-                    .parent()
-                    .parent()
-                    .parent()
-                    .parent()
-                    .parent(),
+                    self.window(),
                 )
 
                 # 切换用户

@@ -28,6 +28,7 @@ v4.2
 from loguru import logger
 from PySide6.QtCore import QThread, QObject, Signal
 from qfluentwidgets import Dialog
+import json
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, Union
@@ -35,6 +36,7 @@ from typing import Dict, Union
 from .config import Config
 from .main_info_bar import MainInfoBar
 from app.models import MaaManager
+from app.services import System
 
 
 class Task(QThread):
@@ -214,7 +216,7 @@ class TaskManager(QObject):
         self.task_list[name].push_info_bar.connect(MainInfoBar.push_info_bar)
         self.task_list[name].update_user_info.connect(Config.change_user_info)
         self.task_list[name].accomplish.connect(
-            lambda logs: self.remove_task(name, logs)
+            lambda logs: self.remove_task(mode, name, logs)
         )
 
         if "新调度台" in mode:
@@ -247,8 +249,8 @@ class TaskManager(QObject):
             self.task_list[name].quit()
             self.task_list[name].wait()
 
-    def remove_task(self, name: str, logs: str):
-        """移除任务标记"""
+    def remove_task(self, mode: str, name: str, logs: str):
+        """任务结束后的处理"""
 
         logger.info(f"任务结束：{name}")
         MainInfoBar.push_info_bar("info", "任务结束", name, 3000)
@@ -273,6 +275,13 @@ class TaskManager(QObject):
 
         self.task_list.pop(name)
         Config.running_list.remove(name)
+
+        if "调度队列" in name and "人工排查" not in mode:
+            with (Config.app_path / f"config/QueueConfig/{name}.json").open(
+                "r", encoding="utf-8"
+            ) as f:
+                info = json.load(f)
+            System.set_power(info["QueueSet"]["AfterAccomplish"])
 
     def push_dialog(self, name: str, title: str, content: str):
         """推送对话框"""

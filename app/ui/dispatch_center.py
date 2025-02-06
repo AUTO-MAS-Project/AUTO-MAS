@@ -286,7 +286,7 @@ class DispatchBox(QWidget):
 
                     logger.info(f"用户添加任务：{name}")
                     Task_manager.add_task(
-                        f"{self.mode.currentText()}_主调度台", "用户自定义队列", info
+                        f"{self.mode.currentText()}_主调度台", "自定义队列", info
                     )
 
     class DispatchInfoCard(HeaderCardWidget):

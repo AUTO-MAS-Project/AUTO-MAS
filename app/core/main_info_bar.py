@@ -36,14 +36,14 @@ from qfluentwidgets import (
 class _MainInfoBar:
     """信息通知栏"""
 
-    def __init__(self, parent=None):
+    def __init__(self, main_window=None):
 
-        self.parent = parent
+        self.main_window = main_window
 
     def push_info_bar(self, mode: str, title: str, content: str, time: int):
         """推送到信息通知栏"""
 
-        if self.parent is None:
+        if self.main_window is None:
             logger.error("信息通知栏未设置父窗口")
             return None
 
@@ -55,7 +55,7 @@ class _MainInfoBar:
                 isClosable=True,
                 position=InfoBarPosition.TOP_RIGHT,
                 duration=time,
-                parent=self.parent,
+                parent=self.main_window,
             )
         elif mode == "warning":
             InfoBar.warning(
@@ -65,7 +65,7 @@ class _MainInfoBar:
                 isClosable=True,
                 position=InfoBarPosition.TOP_RIGHT,
                 duration=time,
-                parent=self.parent,
+                parent=self.main_window,
             )
         elif mode == "error":
             InfoBar.error(
@@ -75,7 +75,7 @@ class _MainInfoBar:
                 isClosable=True,
                 position=InfoBarPosition.TOP_RIGHT,
                 duration=time,
-                parent=self.parent,
+                parent=self.main_window,
             )
         elif mode == "info":
             InfoBar.info(
@@ -85,7 +85,7 @@ class _MainInfoBar:
                 isClosable=True,
                 position=InfoBarPosition.TOP_RIGHT,
                 duration=time,
-                parent=self.parent,
+                parent=self.main_window,
             )
 
 
