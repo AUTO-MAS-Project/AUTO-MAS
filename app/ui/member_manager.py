@@ -789,6 +789,7 @@ class MaaSettingBox(QWidget):
                     "numb",
                     "mode",
                     "uid",
+                    "today_status",
                 ]
                 self.userlist_simple_index = [
                     0,
@@ -808,6 +809,7 @@ class MaaSettingBox(QWidget):
                     "-",
                     "-",
                     "-",
+                    "-"
                 ]
                 self.userlist_beta_index = [
                     0,
@@ -824,6 +826,7 @@ class MaaSettingBox(QWidget):
                     "-",
                     6,
                     7,
+                    "-",
                     "-",
                     "-",
                     "-",
@@ -1225,7 +1228,7 @@ class MaaSettingBox(QWidget):
                 elif "高级用户列表" in self.pivot.currentRouteKey():
                     set_book = ["beta", self.user_list_beta.rowCount()]
                 Config.cur.execute(
-                    "INSERT INTO adminx VALUES('新用户','手机号码（官服）/B站ID（B服）','Official',-1,'y','2000-01-01','1-7','-','-','n','n','n',?,'无',0,?,?)",
+                    "INSERT INTO adminx VALUES('新用户','手机号码（官服）/B站ID（B服）','Official',-1,'y','2000-01-01','1-7','-','-','n','n','n',?,'无',0,?,?,'n')",
                     (
                         Crypto.encryptx("未设置"),
                         set_book[0],

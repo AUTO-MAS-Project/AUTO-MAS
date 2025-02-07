@@ -46,7 +46,7 @@ class MaaManager(QObject):
 
     question = Signal(str, str)
     question_response = Signal(bool)
-    update_user_info = Signal(list, list, list, list, list, list)
+    update_user_info = Signal(list, list, list, list, list, list, list)
     push_info_bar = Signal(str, str, str, int)
     create_user_list = Signal(list)
     update_user_list = Signal(list)
@@ -272,6 +272,7 @@ class MaaManager(QObject):
                                 # 移除静默进程标记
                                 Config.silence_list.remove(self.emulator_path)
                                 # 推送异常通知
+                                self.data[user[2]][17] = 'n'
                                 Notify.push_notification(
                                     "用户自动代理出现异常！",
                                     f"用户 {user[0].replace("_", " 今天的")}的{mode_book[j][5:7]}部分出现一次异常",
@@ -300,6 +301,7 @@ class MaaManager(QObject):
 
                 # 录入代理失败的用户
                 if not (run_book[0] and run_book[1]):
+                    self.data[user[2]][17] = 'n'
                     user[1] = "异常"
 
                 self.update_user_list.emit(user_list)
@@ -479,7 +481,8 @@ class MaaManager(QObject):
             lasts = [self.data[_[2]][5] for _ in user_list]
             notes = [self.data[_[2]][13] for _ in user_list]
             numbs = [self.data[_[2]][14] for _ in user_list]
-            self.update_user_info.emit(modes, uids, days, lasts, notes, numbs)
+            today_status = [self.data[_[2]][17] for _ in user_list]
+            self.update_user_info.emit(modes, uids, days, lasts, notes, numbs, today_status)
 
             error_index = [_[2] for _ in user_list if _[1] == "异常"]
             over_index = [_[2] for _ in user_list if _[1] == "完成"]

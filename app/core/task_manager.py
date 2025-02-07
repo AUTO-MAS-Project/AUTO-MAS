@@ -45,7 +45,7 @@ class Task(QThread):
     push_info_bar = Signal(str, str, str, int)
     question = Signal(str, str)
     question_response = Signal(bool)
-    update_user_info = Signal(Path, list, list, list, list, list, list)
+    update_user_info = Signal(Path, list, list, list, list, list, list, list)
     create_task_list = Signal(list)
     create_user_list = Signal(list)
     update_task_list = Signal(list)
@@ -137,7 +137,7 @@ class Task(QThread):
                     self.task.update_user_list.connect(self.update_user_list.emit)
                     self.task.update_log_text.connect(self.update_log_text.emit)
                     self.task.update_user_info.connect(
-                        lambda modes, uids, days, lasts, notes, numbs: self.update_user_info.emit(
+                        lambda modes, uids, days, lasts, notes, numbs, today_status: self.update_user_info.emit(
                             self.member_dict[self.task_list[i][0]][1],
                             modes,
                             uids,
@@ -145,6 +145,7 @@ class Task(QThread):
                             lasts,
                             notes,
                             numbs,
+                            today_status
                         )
                     )
                     self.task.accomplish.connect(

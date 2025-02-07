@@ -145,7 +145,7 @@ class AppConfig:
 
         if mode == "Maa":
             self.cur.execute(
-                "CREATE TABLE adminx(admin text,id text,server text,day int,status text,last date,game text,game_1 text,game_2 text,routine text,annihilation text,infrastructure text,password byte,notes text,numb int,mode text,uid int)"
+                "CREATE TABLE adminx(admin text,id text,server text,day int,status text,last date,game text,game_1 text,game_2 text,routine text,annihilation text,infrastructure text,password byte,notes text,numb int,mode text,uid int,today_status text)"
             )
             self.cur.execute("CREATE TABLE version(v text)")
             self.cur.execute("INSERT INTO version VALUES(?)", ("v1.4",))
@@ -161,7 +161,7 @@ class AppConfig:
             db = sqlite3.connect(self.database_path)
             cur = db.cursor()
             cur.execute("CREATE TABLE version(v text)")
-            cur.execute("INSERT INTO version VALUES(?)", ("v1.4",))
+            cur.execute("INSERT INTO version VALUES(?)", ("v1.5",))
             db.commit()
             cur.close()
             db.close()
@@ -172,7 +172,7 @@ class AppConfig:
         cur.execute("SELECT * FROM version WHERE True")
         version = cur.fetchall()
 
-        if version[0][0] != "v1.4":
+        if version[0][0] != "v1.5":
             logger.info("数据文件版本更新开始")
             if_streaming = False
             # v1.0-->v1.1
@@ -387,9 +387,39 @@ class AppConfig:
                 ) as f:
                     json.dump(queue_config, f, ensure_ascii=False, indent=4)
                 (self.app_path / "config/gui.json").unlink()
+
+            if version[0][0] == "v1.4" or if_streaming:
+                logger.info("数据文件版本更新：v1.4-->v1.5")
+                if_streaming = True
+                # 检查adminx表是否存在
+                cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='adminx'")
+                if not cur.fetchone():
+                    self.create_adminx_table(cur)
+                else:
+                    # 获取现有数据
+                    cur.execute("SELECT * FROM adminx")
+                    data = cur.fetchall()
+                    # 重建表以包含新字段
+                    cur.execute("DROP TABLE IF EXISTS adminx")
+                    self.create_adminx_table(cur)
+                    # 恢复数据
+                    for row in data:
+                        cur.execute(
+                            "INSERT INTO adminx VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                            row + ("n",)  # 添加today_status默认值为'n'
+                        )
+                cur.execute("DELETE FROM version WHERE v = ?", ("v1.4",))
+                cur.execute("INSERT INTO version VALUES(?)", ("v1.5",))
+                db.commit()
             cur.close()
             db.close()
             logger.info("数据文件版本更新完成")
+
+    def create_adminx_table(self, cur):
+        """创建adminx表"""
+        cur.execute(
+            "CREATE TABLE adminx(admin text,id text,server text,day int,status text,last date,game text,game_1 text,game_2 text,routine text,annihilation text,infrastructure text,password byte,notes text,numb int,mode text,uid int,today_status text)"
+        )
 
     def search_config(self) -> list:
         """搜索所有子配置文件"""
@@ -434,6 +464,7 @@ class AppConfig:
         lasts: list,
         notes: list,
         numbs: list,
+        today_status: list,
     ) -> None:
         """将代理完成后发生改动的用户信息同步至本地数据库"""
 
@@ -456,6 +487,10 @@ class AppConfig:
             cur.execute(
                 "UPDATE adminx SET numb = ? WHERE mode = ? AND uid = ?",
                 (numbs[index], modes[index], uids[index]),
+            )
+            cur.execute(  # 添加today_status的更新
+                "UPDATE adminx SET today_status = ? WHERE mode = ? AND uid = ?",
+                (today_status[index], modes[index], uids[index]),
             )
         db.commit()
         cur.close()
