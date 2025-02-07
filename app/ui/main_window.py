@@ -223,7 +223,7 @@ class AUTO_MAA(MSFluentWindow):
         else:
 
             self.titleBar.minBtn.clicked.disconnect()
-            self.titleBar.minBtn.clicked.connect(self.showMinimized)
+            self.titleBar.minBtn.clicked.connect(self.window().showMinimized)
 
     def on_tray_activated(self, reason):
         """双击返回主界面"""
@@ -285,11 +285,11 @@ class AUTO_MAA(MSFluentWindow):
                     ),
                 )
             )
-            self.setGeometry(location[0], location[1], size[0], size[1])
-            self.show()
+            self.window().setGeometry(location[0], location[1], size[0], size[1])
+            self.window().show()
             if not if_quick:
                 if Config.global_config.get(Config.global_config.ui_maximized):
-                    self.showMaximized()
+                    self.window().showMaximized()
                 self.set_min_method()
                 self.show_ui("配置托盘")
 
@@ -303,7 +303,7 @@ class AUTO_MAA(MSFluentWindow):
         elif mode == "隐藏到托盘":
 
             # 保存窗口相关属性
-            if not self.isMaximized():
+            if not self.window().isMaximized():
 
                 Config.global_config.set(
                     Config.global_config.ui_size,
@@ -314,14 +314,14 @@ class AUTO_MAA(MSFluentWindow):
                     f"{self.geometry().x()}x{self.geometry().y()}",
                 )
             Config.global_config.set(
-                Config.global_config.ui_maximized, self.isMaximized()
+                Config.global_config.ui_maximized, self.window().isMaximized()
             )
             Config.global_config.save()
 
             # 隐藏主窗口
             if not if_quick:
 
-                self.hide()
+                self.window().hide()
                 self.tray.show()
 
     def closeEvent(self, event: QCloseEvent):
@@ -338,6 +338,6 @@ class AUTO_MAA(MSFluentWindow):
         Config.close_database()
 
         logger.info("AUTO_MAA主程序关闭")
-        logger.info("===================================")
+        logger.info("----------------END----------------")
 
         event.accept()

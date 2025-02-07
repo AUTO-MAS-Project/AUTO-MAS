@@ -127,6 +127,8 @@ class AppConfig:
         self.queue_config = QueueConfig()
         self.maa_config = MaaConfig()
 
+        qconfig.load(self.config_path, self.global_config)
+
         config_list = self.search_config()
         for config in config_list:
             if config[0] == "Maa":
