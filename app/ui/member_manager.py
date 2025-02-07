@@ -535,7 +535,11 @@ class MaaSettingBox(QWidget):
 
         def PathClicked(self):
 
-            folder = QFileDialog.getExistingDirectory(self, "选择MAA目录", "./")
+            folder = QFileDialog.getExistingDirectory(
+                self,
+                "选择MAA目录",
+                Config.maa_config.get(Config.maa_config.MaaSet_Path),
+            )
             if (
                 not folder
                 or Config.maa_config.get(Config.maa_config.MaaSet_Path) == folder
