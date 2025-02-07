@@ -67,8 +67,6 @@ class Task(QThread):
 
         self.logs = []
 
-        self.question_response.connect(lambda: print("response"))
-
     def run(self):
 
         if "设置MAA" in self.mode:
