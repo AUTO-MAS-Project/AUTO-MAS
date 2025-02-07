@@ -188,17 +188,12 @@ class MaaManager(QObject):
                             creationflags=subprocess.CREATE_NO_WINDOW,
                         )
                         # 添加静默进程标记
-                        if Config.global_config.get(
-                            Config.global_config.function_IfSilence
-                        ):
-                            with self.maa_set_path.open(
-                                mode="r", encoding="utf-8"
-                            ) as f:
-                                set = json.load(f)
-                            self.emulator_path = Path(
-                                set["Configurations"]["Default"]["Start.EmulatorPath"]
-                            )
-                            Config.silence_list.append(self.emulator_path)
+                        with self.maa_set_path.open(mode="r", encoding="utf-8") as f:
+                            set = json.load(f)
+                        self.emulator_path = Path(
+                            set["Configurations"]["Default"]["Start.EmulatorPath"]
+                        )
+                        Config.silence_list.append(self.emulator_path)
                         # 记录是否超时的标记
                         self.if_time_out = False
 
@@ -254,10 +249,7 @@ class MaaManager(QObject):
                                     "检测到MAA进程完成代理任务\n正在等待相关程序结束\n请等待10s"
                                 )
                                 # 移除静默进程标记
-                                if Config.global_config.get(
-                                    Config.global_config.function_IfSilence
-                                ):
-                                    Config.silence_list.remove(self.emulator_path)
+                                Config.silence_list.remove(self.emulator_path)
                                 for _ in range(10):
                                     if self.isInterruptionRequested:
                                         break
@@ -278,10 +270,7 @@ class MaaManager(QObject):
                                 )
                                 killprocess.wait()
                                 # 移除静默进程标记
-                                if Config.global_config.get(
-                                    Config.global_config.function_IfSilence
-                                ):
-                                    Config.silence_list.remove(self.emulator_path)
+                                Config.silence_list.remove(self.emulator_path)
                                 # 推送异常通知
                                 Notify.push_notification(
                                     "用户自动代理出现异常！",
