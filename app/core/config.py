@@ -544,6 +544,9 @@ class GlobalConfig(QConfig):
     )
     function_IfSilence = ConfigItem("Function", "IfSilence", False, BoolValidator())
     function_BossKey = ConfigItem("Function", "BossKey", "")
+    function_IfAgreeBilibili = ConfigItem(
+        "Function", "IfAgreeBilibili", False, BoolValidator()
+    )
 
     start_IfSelfStart = ConfigItem("Start", "IfSelfStart", False, BoolValidator())
     start_IfRunDirectly = ConfigItem("Start", "IfRunDirectly", False, BoolValidator())

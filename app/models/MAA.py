@@ -24,7 +24,6 @@ MAA功能组件
 v4.2
 作者：DLmaster_361
 """
-import sys
 
 from loguru import logger
 from PySide6.QtCore import QObject, Signal, QEventLoop
@@ -90,6 +89,7 @@ class MaaManager(QObject):
         self.maa_set_path = self.maa_root_path / "config/gui.json"
         self.maa_log_path = self.maa_root_path / "debug/gui.log"
         self.maa_exe_path = self.maa_root_path / "MAA.exe"
+        self.maa_tasks_path = self.maa_root_path / "resource/tasks.json"
 
     def run(self):
         """主进程，运行MAA代理进程"""
@@ -529,6 +529,7 @@ class MaaManager(QObject):
                     f"{end_log}AUTO_MAA 敬上",
                 )
 
+        self.agree_bilibili(False)
         self.accomplish.emit({"Time": begin_time, "History": end_log})
 
     def requestInterruption(self) -> None:
@@ -649,6 +650,14 @@ class MaaManager(QObject):
             )
         with self.maa_set_path.open(mode="r", encoding="utf-8") as f:
             data = json.load(f)
+
+        if (self.data[index][15] == "simple" and self.data[index][2] == "Bilibili") or (
+            self.data[index][15] == "beta"
+            and data["Configurations"]["Default"]["Start.ClientType"] == "Bilibili"
+        ):
+            self.agree_bilibili(True)
+        else:
+            self.agree_bilibili(False)
 
         # 自动代理配置
         if "自动代理" in mode:
@@ -1010,6 +1019,34 @@ class MaaManager(QObject):
             json.dump(data, f, ensure_ascii=False, indent=4)
 
         return True
+
+    def agree_bilibili(self, if_agree):
+        """向MAA写入Bilibili协议相关任务"""
+
+        with self.maa_tasks_path.open(mode="r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        if if_agree and Config.global_config.get(
+            Config.global_config.function_IfAgreeBilibili
+        ):
+            data["BilibiliAgreement_AUTO"] = {
+                "algorithm": "OcrDetect",
+                "action": "ClickSelf",
+                "text": ["同意"],
+                "maxTimes": 5,
+                "Doc": "关闭B服用户协议",
+                "next": ["StartUpThemes#next"],
+            }
+            if "BilibiliAgreement_AUTO" not in data["StartUpThemes"]["next"]:
+                data["StartUpThemes"]["next"].insert(0, "BilibiliAgreement_AUTO")
+        else:
+            if "BilibiliAgreement_AUTO" in data:
+                data.pop("BilibiliAgreement_AUTO")
+            if "BilibiliAgreement_AUTO" in data["StartUpThemes"]["next"]:
+                data["StartUpThemes"]["next"].remove("BilibiliAgreement_AUTO")
+
+        with self.maa_tasks_path.open(mode="w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=4)
 
     def get_emulator_path(self):
         """获取模拟器路径"""
