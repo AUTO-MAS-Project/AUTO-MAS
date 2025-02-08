@@ -54,10 +54,7 @@ class Task(QThread):
     accomplish = Signal(list)
 
     def __init__(
-        self,
-        mode: str,
-        name: str,
-        info: Dict[str, Dict[str, Union[str, int, bool]]],
+        self, mode: str, name: str, info: Dict[str, Dict[str, Union[str, int, bool]]]
     ):
         super(Task, self).__init__()
 
@@ -66,6 +63,8 @@ class Task(QThread):
         self.info = info
 
         self.logs = []
+
+        self.question_response.connect(lambda: print("response"))
 
     def run(self):
 
@@ -92,41 +91,41 @@ class Task(QThread):
         else:
 
             self.member_dict = self.search_member()
-            self.task_list = [
+            self.task_dict = [
                 [value, "等待"]
                 for _, value in self.info["Queue"].items()
                 if value != "禁用"
             ]
 
-            self.create_task_list.emit(self.task_list)
+            self.create_task_list.emit(self.task_dict)
 
-            for i in range(len(self.task_list)):
+            for i in range(len(self.task_dict)):
 
                 if self.isInterruptionRequested():
                     break
 
-                self.task_list[i][1] = "运行"
-                self.update_task_list.emit(self.task_list)
+                self.task_dict[i][1] = "运行"
+                self.update_task_list.emit(self.task_dict)
 
-                if self.task_list[i][0] in Config.running_list:
+                if self.task_dict[i][0] in Config.running_list:
 
-                    self.task_list[i][1] = "跳过"
-                    self.update_task_list.emit(self.task_list)
-                    logger.info(f"跳过任务：{self.task_list[i][0]}")
+                    self.task_dict[i][1] = "跳过"
+                    self.update_task_list.emit(self.task_dict)
+                    logger.info(f"跳过任务：{self.task_dict[i][0]}")
                     self.push_info_bar.emit(
-                        "info", "跳过任务", self.task_list[i][0], 3000
+                        "info", "跳过任务", self.task_dict[i][0], 3000
                     )
                     continue
 
-                Config.running_list.append(self.task_list[i][0])
-                logger.info(f"任务开始：{self.task_list[i][0]}")
-                self.push_info_bar.emit("info", "任务开始", self.task_list[i][0], 3000)
+                Config.running_list.append(self.task_dict[i][0])
+                logger.info(f"任务开始：{self.task_dict[i][0]}")
+                self.push_info_bar.emit("info", "任务开始", self.task_dict[i][0], 3000)
 
-                if self.member_dict[self.task_list[i][0]][0] == "Maa":
+                if self.member_dict[self.task_dict[i][0]][0] == "Maa":
 
                     self.task = MaaManager(
                         self.mode[0:4],
-                        self.member_dict[self.task_list[i][0]][1],
+                        self.member_dict[self.task_dict[i][0]][1],
                     )
 
                     self.task.question.connect(self.question.emit)
@@ -138,7 +137,7 @@ class Task(QThread):
                     self.task.update_log_text.connect(self.update_log_text.emit)
                     self.task.update_user_info.connect(
                         lambda modes, uids, days, lasts, notes, numbs: self.update_user_info.emit(
-                            self.member_dict[self.task_list[i][0]][1],
+                            self.member_dict[self.task_dict[i][0]][1],
                             modes,
                             uids,
                             days,
@@ -148,16 +147,16 @@ class Task(QThread):
                         )
                     )
                     self.task.accomplish.connect(
-                        lambda log: self.save_log(self.task_list[i][0], log)
+                        lambda log: self.save_log(self.task_dict[i][0], log)
                     )
 
                     self.task.run()
 
-                Config.running_list.remove(self.task_list[i][0])
+                Config.running_list.remove(self.task_dict[i][0])
 
-                self.task_list[i][1] = "完成"
-                logger.info(f"任务完成：{self.task_list[i][0]}")
-                self.push_info_bar.emit("info", "任务完成", self.task_list[i][0], 3000)
+                self.task_dict[i][1] = "完成"
+                logger.info(f"任务完成：{self.task_dict[i][0]}")
+                self.push_info_bar.emit("info", "任务完成", self.task_dict[i][0], 3000)
 
             self.accomplish.emit(self.logs)
 
@@ -190,14 +189,14 @@ class TaskManager(QObject):
     def __init__(self):
         super(TaskManager, self).__init__()
 
-        self.task_list: Dict[str, Task] = {}
+        self.task_dict: Dict[str, Task] = {}
 
     def add_task(
         self, mode: str, name: str, info: Dict[str, Dict[str, Union[str, int, bool]]]
     ):
         """添加任务"""
 
-        if name in Config.running_list or name in self.task_list:
+        if name in Config.running_list or name in self.task_dict:
 
             logger.warning(f"任务已存在：{name}")
             MainInfoBar.push_info_bar("warning", "任务已存在", name, 5000)
@@ -207,23 +206,23 @@ class TaskManager(QObject):
         MainInfoBar.push_info_bar("info", "任务开始", name, 3000)
 
         Config.running_list.append(name)
-        self.task_list[name] = Task(mode, name, info)
-        self.task_list[name].question.connect(
+        self.task_dict[name] = Task(mode, name, info)
+        self.task_dict[name].question.connect(
             lambda title, content: self.push_dialog(name, title, content)
         )
-        self.task_list[name].push_info_bar.connect(MainInfoBar.push_info_bar)
-        self.task_list[name].update_user_info.connect(Config.change_user_info)
-        self.task_list[name].accomplish.connect(
+        self.task_dict[name].push_info_bar.connect(MainInfoBar.push_info_bar)
+        self.task_dict[name].update_user_info.connect(Config.change_user_info)
+        self.task_dict[name].accomplish.connect(
             lambda logs: self.remove_task(mode, name, logs)
         )
 
         if "新调度台" in mode:
-            self.create_gui.emit(self.task_list[name])
+            self.create_gui.emit(self.task_dict[name])
 
         elif "主调度台" in mode:
-            self.connect_gui.emit(self.task_list[name])
+            self.connect_gui.emit(self.task_dict[name])
 
-        self.task_list[name].start()
+        self.task_dict[name].start()
 
     def stop_task(self, name: str):
         """中止任务"""
@@ -233,19 +232,19 @@ class TaskManager(QObject):
 
         if name == "ALL":
 
-            for name in self.task_list:
+            for name in self.task_dict:
 
-                self.task_list[name].task.requestInterruption()
-                self.task_list[name].requestInterruption()
-                self.task_list[name].quit()
-                self.task_list[name].wait()
+                self.task_dict[name].task.requestInterruption()
+                self.task_dict[name].requestInterruption()
+                self.task_dict[name].quit()
+                self.task_dict[name].wait()
 
-        elif name in self.task_list:
+        elif name in self.task_dict:
 
-            self.task_list[name].task.requestInterruption()
-            self.task_list[name].requestInterruption()
-            self.task_list[name].quit()
-            self.task_list[name].wait()
+            self.task_dict[name].task.requestInterruption()
+            self.task_dict[name].requestInterruption()
+            self.task_dict[name].quit()
+            self.task_dict[name].wait()
 
     def remove_task(self, mode: str, name: str, logs: str):
         """任务结束后的处理"""
@@ -271,7 +270,7 @@ class TaskManager(QObject):
                 },
             )
 
-        self.task_list.pop(name)
+        self.task_dict.pop(name)
         Config.running_list.remove(name)
 
         if "调度队列" in name and "人工排查" not in mode:
@@ -288,7 +287,7 @@ class TaskManager(QObject):
         choice.yesButton.setText("是")
         choice.cancelButton.setText("否")
 
-        self.task_list[name].question_response.emit(bool(choice.exec_()))
+        self.task_dict[name].question_response.emit(bool(choice.exec_()))
 
 
 Task_manager = TaskManager()
