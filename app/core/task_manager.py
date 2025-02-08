@@ -54,10 +54,7 @@ class Task(QThread):
     accomplish = Signal(list)
 
     def __init__(
-        self,
-        mode: str,
-        name: str,
-        info: Dict[str, Dict[str, Union[str, int, bool]]],
+        self, mode: str, name: str, info: Dict[str, Dict[str, Union[str, int, bool]]]
     ):
         super(Task, self).__init__()
 
@@ -66,6 +63,8 @@ class Task(QThread):
         self.info = info
 
         self.logs = []
+
+        self.question_response.connect(lambda: print("response"))
 
     def run(self):
 

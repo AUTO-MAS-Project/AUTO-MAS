@@ -503,9 +503,14 @@ class MaaManager(QObject):
                     f"{"\n".join([self.data[_][0] for _ in wait_index])}\n"
                 )
 
+            title = (
+                f"{self.set["MaaSet"]["Name"]}的{self.mode[:4]}任务报告"
+                if self.set["MaaSet"]["Name"] != ""
+                else f"{self.mode[:4]}任务报告"
+            )
             # 推送代理结果通知
             Notify.push_notification(
-                f"{self.mode[2:4]}任务已完成！",
+                title.replace("报告", "已完成！"),
                 f"已完成用户数：{len(over_index)}，未完成用户数：{len(error_index) + len(wait_index)}",
                 f"已完成用户数：{len(over_index)}，未完成用户数：{len(error_index) + len(wait_index)}",
                 10,
@@ -517,17 +522,11 @@ class MaaManager(QObject):
                 and len(error_index) + len(wait_index) != 0
             ):
                 Notify.send_mail(
-                    f"{self.mode[:4]}任务报告",
+                    title,
                     f"{end_log}\n\nAUTO_MAA 敬上\n\n我们根据您在 AUTO_MAA 中的设置发送了这封电子邮件，本邮件无需回复\n",
                 )
-                Notify.ServerChanPush(
-                    f"{self.mode[:4]}任务报告",
-                    f"{end_log}\n\nAUTO_MAA 敬上",
-                )
-                Notify.CompanyWebHookBotPush(
-                    f"{self.mode[:4]}任务报告",
-                    f"{end_log}AUTO_MAA 敬上",
-                )
+                Notify.ServerChanPush(title, f"{end_log}\n\nAUTO_MAA 敬上")
+                Notify.CompanyWebHookBotPush(title, f"{end_log}AUTO_MAA 敬上")
 
         self.agree_bilibili(False)
         self.accomplish.emit({"Time": begin_time, "History": end_log})
