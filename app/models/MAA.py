@@ -650,9 +650,12 @@ class MaaManager(QObject):
         with self.maa_set_path.open(mode="r", encoding="utf-8") as f:
             data = json.load(f)
 
-        if (self.data[index][15] == "simple" and self.data[index][2] == "Bilibili") or (
-            self.data[index][15] == "beta"
-            and data["Configurations"]["Default"]["Start.ClientType"] == "Bilibili"
+        if "设置MAA" not in mode and (
+            (self.data[index][15] == "simple" and self.data[index][2] == "Bilibili")
+            or (
+                self.data[index][15] == "beta"
+                and data["Configurations"]["Default"]["Start.ClientType"] == "Bilibili"
+            )
         ):
             self.agree_bilibili(True)
         else:
