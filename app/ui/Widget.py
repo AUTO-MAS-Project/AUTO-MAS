@@ -44,14 +44,15 @@ from qfluentwidgets import (
     TimeEdit,
     OptionsConfigItem,
 )
-
 from typing import Union, List
 
+from app.services import Crypto
 
-class InputMessageBox(MessageBoxBase):
+
+class LineEditMessageBox(MessageBoxBase):
     """输入对话框"""
 
-    def __init__(self, parent, title: str, content: str, mode: str, list: list = None):
+    def __init__(self, parent, title: str, content: str, mode: str):
         super().__init__(parent)
         self.title = SubtitleLabel(title)
 
@@ -60,10 +61,6 @@ class InputMessageBox(MessageBoxBase):
             self.input.setClearButtonEnabled(True)
         elif mode == "密码":
             self.input = PasswordLineEdit()
-        elif mode == "选择":
-            self.input = ComboBox()
-            self.input.addItems(list)
-            self.input.setCurrentIndex(-1)
 
         self.input.setPlaceholderText(content)
 
@@ -72,8 +69,8 @@ class InputMessageBox(MessageBoxBase):
         self.viewLayout.addWidget(self.input)
 
 
-class SetMessageBox(MessageBoxBase):
-    """输入对话框"""
+class ComboBoxMessageBox(MessageBoxBase):
+    """选择对话框"""
 
     def __init__(self, parent, title: str, content: List[str], list: List[List[str]]):
         super().__init__(parent)
@@ -98,7 +95,7 @@ class SetMessageBox(MessageBoxBase):
 
 
 class LineEditSettingCard(SettingCard):
-    """Setting card with switch button"""
+    """Setting card with LineEdit"""
 
     textChanged = Signal(str)
 
@@ -138,7 +135,49 @@ class LineEditSettingCard(SettingCard):
         self.LineEdit.setText(content)
 
 
+class PasswordLineEditSettingCard(SettingCard):
+    """Setting card with PasswordLineEdit"""
+
+    textChanged = Signal(str)
+
+    def __init__(
+        self,
+        text,
+        icon: Union[str, QIcon, FluentIconBase],
+        title,
+        content=None,
+        configItem: ConfigItem = None,
+        parent=None,
+    ):
+
+        super().__init__(icon, title, content, parent)
+        self.configItem = configItem
+        self.LineEdit = PasswordLineEdit(self)
+        self.LineEdit.setMinimumWidth(250)
+        self.LineEdit.setPlaceholderText(text)
+
+        if configItem:
+            self.setValue(qconfig.get(configItem))
+            configItem.valueChanged.connect(self.setValue)
+
+        self.hBoxLayout.addWidget(self.LineEdit, 0, Qt.AlignRight)
+        self.hBoxLayout.addSpacing(16)
+
+        self.LineEdit.textChanged.connect(self.__textChanged)
+
+    def __textChanged(self, content: str):
+        self.setValue(Crypto.win_encryptor(content))
+        self.textChanged.emit(content)
+
+    def setValue(self, content: str):
+        if self.configItem:
+            qconfig.set(self.configItem, content)
+
+        self.LineEdit.setText(Crypto.win_decryptor(content))
+
+
 class SpinBoxSettingCard(SettingCard):
+    """Setting card with SpinBox"""
 
     textChanged = Signal(int)
 

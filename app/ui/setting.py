@@ -53,7 +53,7 @@ import requests
 from app.core import Config, MainInfoBar
 from app.services import Crypto, System
 from app.utils import Updater
-from .Widget import InputMessageBox, LineEditSettingCard
+from .Widget import LineEditMessageBox, LineEditSettingCard, PasswordLineEditSettingCard
 
 
 class Setting(QWidget):
@@ -136,7 +136,7 @@ class Setting(QWidget):
 
         while True:
 
-            choice = InputMessageBox(
+            choice = LineEditMessageBox(
                 self.window(),
                 "未检测到管理密钥，请设置您的管理密钥",
                 "管理密钥",
@@ -162,7 +162,7 @@ class Setting(QWidget):
 
         while if_change:
 
-            choice = InputMessageBox(
+            choice = LineEditMessageBox(
                 self.window(),
                 "请输入旧的管理密钥",
                 "旧管理密钥",
@@ -177,7 +177,7 @@ class Setting(QWidget):
                     # 获取新的管理密钥
                     while True:
 
-                        choice = InputMessageBox(
+                        choice = LineEditMessageBox(
                             self.window(),
                             "请输入新的管理密钥",
                             "新管理密钥",
@@ -557,7 +557,7 @@ class NotifySettingCard(HeaderCardWidget):
             super().__init__(
                 FluentIcon.SETTING,
                 "推送邮件通知",
-                "通过AUTO_MAA官方通知服务邮箱推送任务结果",
+                "通过电子邮箱推送任务结果",
                 parent,
             )
 
@@ -567,18 +567,42 @@ class NotifySettingCard(HeaderCardWidget):
                 content="是否启用邮件通知功能",
                 configItem=Config.global_config.notify_IfSendMail,
             )
-            self.card_MailAddress = LineEditSettingCard(
-                text="请输入邮箱地址",
+            self.card_SMTPServerAddress = LineEditSettingCard(
+                text="请输入SMTP服务器地址",
                 icon=FluentIcon.PAGE_RIGHT,
-                title="邮箱地址",
+                title="SMTP服务器地址",
+                content="发信邮箱的SMTP服务器地址",
+                configItem=Config.global_config.notify_SMTPServerAddress,
+            )
+            self.card_FromAddress = LineEditSettingCard(
+                text="请输入发信邮箱地址",
+                icon=FluentIcon.PAGE_RIGHT,
+                title="发信邮箱地址",
+                content="发送通知的邮箱地址",
+                configItem=Config.global_config.notify_FromAddress,
+            )
+            self.card_AuthorizationCode = PasswordLineEditSettingCard(
+                text="请输入发信邮箱授权码",
+                icon=FluentIcon.PAGE_RIGHT,
+                title="发信邮箱授权码",
+                content="发送通知的邮箱授权码",
+                configItem=Config.global_config.notify_AuthorizationCode,
+            )
+            self.card_ToAddress = LineEditSettingCard(
+                text="请输入收信邮箱地址",
+                icon=FluentIcon.PAGE_RIGHT,
+                title="收信邮箱地址",
                 content="接收通知的邮箱地址",
-                configItem=Config.global_config.notify_MailAddress,
+                configItem=Config.global_config.notify_ToAddress,
             )
 
             widget = QWidget()
             Layout = QVBoxLayout(widget)
             Layout.addWidget(self.card_IfSendMail)
-            Layout.addWidget(self.card_MailAddress)
+            Layout.addWidget(self.card_SMTPServerAddress)
+            Layout.addWidget(self.card_FromAddress)
+            Layout.addWidget(self.card_AuthorizationCode)
+            Layout.addWidget(self.card_ToAddress)
             self.viewLayout.setContentsMargins(0, 0, 0, 0)
             self.viewLayout.setSpacing(0)
             self.addGroupWidget(widget)
