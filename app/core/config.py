@@ -562,7 +562,10 @@ class GlobalConfig(QConfig):
     notify_IfSendErrorOnly = ConfigItem(
         "Notify", "IfSendErrorOnly", False, BoolValidator()
     )
-    notify_MailAddress = ConfigItem("Notify", "MailAddress", "")
+    notify_SMTPServerAddress = ConfigItem("Notify", "SMTPServerAddress", "")
+    notify_AuthorizationCode = ConfigItem("Notify", "AuthorizationCode", "")
+    notify_FromAddress = ConfigItem("Notify", "FromAddress", "")
+    notify_ToAddress = ConfigItem("Notify", "ToAddress", "")
     notify_IfServerChan = ConfigItem("Notify", "IfServerChan", False, BoolValidator())
     notify_ServerChanKey = ConfigItem("Notify", "ServerChanKey", "")
     notify_ServerChanChannel = ConfigItem("Notify", "ServerChanChannel", "")
