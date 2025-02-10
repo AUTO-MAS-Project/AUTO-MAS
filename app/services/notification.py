@@ -68,7 +68,9 @@ class Notification:
                 message["From"] = formataddr(
                     (
                         Header("AUTO_MAA通知服务", "utf-8").encode(),
-                        "AUTO_MAA_server@163.com",
+                        Config.global_config.get(
+                            Config.global_config.notify_FromAddress
+                        ),
                     )
                 )  # 发件人显示的名字
                 message["To"] = formataddr(
