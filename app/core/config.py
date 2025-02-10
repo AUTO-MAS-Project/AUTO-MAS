@@ -127,6 +127,8 @@ class AppConfig:
         self.queue_config = QueueConfig()
         self.maa_config = MaaConfig()
 
+        qconfig.load(self.config_path, self.global_config)
+
         config_list = self.search_config()
         for config in config_list:
             if config[0] == "Maa":
@@ -499,6 +501,7 @@ class AppConfig:
 
         self.queue_config.set(self.queue_config.queueSet_Name, "")
         self.queue_config.set(self.queue_config.queueSet_Enabled, False)
+        self.queue_config.set(self.queue_config.queueSet_AfterAccomplish, "None")
 
         self.queue_config.set(self.queue_config.time_TimeEnabled_0, False)
         self.queue_config.set(self.queue_config.time_TimeSet_0, "00:00")
@@ -541,6 +544,9 @@ class GlobalConfig(QConfig):
     )
     function_IfSilence = ConfigItem("Function", "IfSilence", False, BoolValidator())
     function_BossKey = ConfigItem("Function", "BossKey", "")
+    function_IfAgreeBilibili = ConfigItem(
+        "Function", "IfAgreeBilibili", False, BoolValidator()
+    )
 
     start_IfSelfStart = ConfigItem("Start", "IfSelfStart", False, BoolValidator())
     start_IfRunDirectly = ConfigItem("Start", "IfRunDirectly", False, BoolValidator())
@@ -556,7 +562,10 @@ class GlobalConfig(QConfig):
     notify_IfSendErrorOnly = ConfigItem(
         "Notify", "IfSendErrorOnly", False, BoolValidator()
     )
-    notify_MailAddress = ConfigItem("Notify", "MailAddress", "")
+    notify_SMTPServerAddress = ConfigItem("Notify", "SMTPServerAddress", "")
+    notify_AuthorizationCode = ConfigItem("Notify", "AuthorizationCode", "")
+    notify_FromAddress = ConfigItem("Notify", "FromAddress", "")
+    notify_ToAddress = ConfigItem("Notify", "ToAddress", "")
     notify_IfServerChan = ConfigItem("Notify", "IfServerChan", False, BoolValidator())
     notify_ServerChanKey = ConfigItem("Notify", "ServerChanKey", "")
     notify_ServerChanChannel = ConfigItem("Notify", "ServerChanChannel", "")
@@ -579,6 +588,12 @@ class QueueConfig(QConfig):
 
     queueSet_Name = ConfigItem("QueueSet", "Name", "")
     queueSet_Enabled = ConfigItem("QueueSet", "Enabled", False, BoolValidator())
+    queueSet_AfterAccomplish = OptionsConfigItem(
+        "QueueSet",
+        "AfterAccomplish",
+        "None",
+        OptionsValidator(["None", "KillSelf", "Sleep", "Hibernate", "Shutdown"]),
+    )
 
     time_TimeEnabled_0 = ConfigItem("Time", "TimeEnabled_0", False, BoolValidator())
     time_TimeSet_0 = ConfigItem("Time", "TimeSet_0", "00:00")

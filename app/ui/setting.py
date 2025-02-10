@@ -53,7 +53,7 @@ import requests
 from app.core import Config, MainInfoBar
 from app.services import Crypto, System
 from app.utils import Updater
-from .Widget import InputMessageBox, LineEditSettingCard
+from .Widget import LineEditMessageBox, LineEditSettingCard, PasswordLineEditSettingCard
 
 
 class Setting(QWidget):
@@ -83,6 +83,7 @@ class Setting(QWidget):
         self.other = OtherSettingCard(self)
 
         self.function.card_IfAllowSleep.checkedChanged.connect(System.set_Sleep)
+        self.function.card_IfAgreeBilibili.checkedChanged.connect(self.agree_bilibili)
         self.start.card_IfSelfStart.checkedChanged.connect(System.set_SelfStart)
         self.security.card_changePASSWORD.clicked.connect(self.change_PASSWORD)
         self.updater.card_CheckUpdate.clicked.connect(self.get_update)
@@ -102,6 +103,31 @@ class Setting(QWidget):
 
         self.setLayout(layout)
 
+    def agree_bilibili(self) -> None:
+        """授权bilibili游戏隐私政策"""
+
+        if not Config.global_config.get(Config.global_config.function_IfAgreeBilibili):
+            logger.info("取消授权bilibili游戏隐私政策")
+            MainInfoBar.push_info_bar(
+                "info", "操作成功", "已取消授权bilibili游戏隐私政策", 3000
+            )
+            return None
+
+        choice = MessageBox(
+            "授权声明",
+            "开启“托管bilibili游戏隐私政策”功能，即代表您已完整阅读并同意《哔哩哔哩弹幕网用户使用协议》、《哔哩哔哩隐私政策》和《哔哩哔哩游戏中心用户协议》，并授权AUTO_MAA在其认定需要时以其认定合适的方法替您处理相关弹窗\n\n是否同意授权？",
+            self.window(),
+        )
+        if choice.exec():
+            logger.success("确认授权bilibili游戏隐私政策")
+            MainInfoBar.push_info_bar(
+                "success", "操作成功", "已确认授权bilibili游戏隐私政策", 3000
+            )
+        else:
+            Config.global_config.set(
+                Config.global_config.function_IfAgreeBilibili, False
+            )
+
     def check_PASSWORD(self) -> None:
         """检查并配置管理密钥"""
 
@@ -110,8 +136,8 @@ class Setting(QWidget):
 
         while True:
 
-            choice = InputMessageBox(
-                self.parent().parent().parent(),
+            choice = LineEditMessageBox(
+                self.window(),
                 "未检测到管理密钥，请设置您的管理密钥",
                 "管理密钥",
                 "密码",
@@ -123,12 +149,11 @@ class Setting(QWidget):
                 choice = MessageBox(
                     "警告",
                     "您没有设置管理密钥，无法使用本软件，请先设置管理密钥",
-                    self.parent().parent().parent(),
+                    self.window(),
                 )
                 choice.cancelButton.hide()
                 choice.buttonLayout.insertStretch(1)
-                if choice.exec():
-                    pass
+                choice.exec()
 
     def change_PASSWORD(self) -> None:
         """修改管理密钥"""
@@ -137,8 +162,8 @@ class Setting(QWidget):
 
         while if_change:
 
-            choice = InputMessageBox(
-                self,
+            choice = LineEditMessageBox(
+                self.window(),
                 "请输入旧的管理密钥",
                 "旧管理密钥",
                 "密码",
@@ -152,8 +177,8 @@ class Setting(QWidget):
                     # 获取新的管理密钥
                     while True:
 
-                        choice = InputMessageBox(
-                            self,
+                        choice = LineEditMessageBox(
+                            self.window(),
                             "请输入新的管理密钥",
                             "新管理密钥",
                             "密码",
@@ -173,23 +198,22 @@ class Setting(QWidget):
                             choice = MessageBox(
                                 "确认",
                                 "您没有输入新的管理密钥，是否取消修改管理密钥？",
-                                self,
+                                self.window(),
                             )
                             if choice.exec():
                                 if_change = False
                                 break
 
                 else:
-                    choice = MessageBox("错误", "管理密钥错误", self)
+                    choice = MessageBox("错误", "管理密钥错误", self.window())
                     choice.cancelButton.hide()
                     choice.buttonLayout.insertStretch(1)
-                    if choice.exec():
-                        pass
+                    choice.exec()
             else:
                 choice = MessageBox(
                     "确认",
                     "您没有输入管理密钥，是否取消修改管理密钥？",
-                    self,
+                    self.window(),
                 )
                 if choice.exec():
                     break
@@ -261,7 +285,7 @@ class Setting(QWidget):
             choice = MessageBox(
                 "错误",
                 f"获取版本信息时出错：\n{err}",
-                self,
+                self.window(),
             )
             choice.cancelButton.hide()
             choice.buttonLayout.insertStretch(1)
@@ -297,7 +321,7 @@ class Setting(QWidget):
                 choice = MessageBox(
                     "版本更新",
                     f"发现新版本：\n{main_version_info}{updater_version_info}    更新说明：\n{version_remote['announcement'].replace("\n# ","\n   ！").replace("\n## ","\n        - ").replace("\n- ","\n            · ")}\n\n是否开始更新？\n\n    注意：主程序更新时AUTO_MAA将自动关闭",
-                    self,
+                    self.window(),
                 )
                 if not choice.exec():
                     return None
@@ -400,10 +424,17 @@ class FunctionSettingCard(HeaderCardWidget):
             configItem=Config.global_config.function_IfAllowSleep,
         )
         self.card_IfSilence = self.SilenceSettingCard(self)
+        self.card_IfAgreeBilibili = SwitchSettingCard(
+            icon=FluentIcon.PAGE_RIGHT,
+            title="托管bilibili游戏隐私政策",
+            content="授权AUTO_MAA同意bilibili游戏隐私政策",
+            configItem=Config.global_config.function_IfAgreeBilibili,
+        )
 
         Layout = QVBoxLayout()
         Layout.addWidget(self.card_IfAllowSleep)
         Layout.addWidget(self.card_IfSilence)
+        Layout.addWidget(self.card_IfAgreeBilibili)
         self.viewLayout.addLayout(Layout)
 
     class SilenceSettingCard(ExpandGroupSettingCard):
@@ -526,7 +557,7 @@ class NotifySettingCard(HeaderCardWidget):
             super().__init__(
                 FluentIcon.SETTING,
                 "推送邮件通知",
-                "通过AUTO_MAA官方通知服务邮箱推送任务结果",
+                "通过电子邮箱推送任务结果",
                 parent,
             )
 
@@ -536,18 +567,42 @@ class NotifySettingCard(HeaderCardWidget):
                 content="是否启用邮件通知功能",
                 configItem=Config.global_config.notify_IfSendMail,
             )
-            self.card_MailAddress = LineEditSettingCard(
-                text="请输入邮箱地址",
+            self.card_SMTPServerAddress = LineEditSettingCard(
+                text="请输入SMTP服务器地址",
                 icon=FluentIcon.PAGE_RIGHT,
-                title="邮箱地址",
+                title="SMTP服务器地址",
+                content="发信邮箱的SMTP服务器地址",
+                configItem=Config.global_config.notify_SMTPServerAddress,
+            )
+            self.card_FromAddress = LineEditSettingCard(
+                text="请输入发信邮箱地址",
+                icon=FluentIcon.PAGE_RIGHT,
+                title="发信邮箱地址",
+                content="发送通知的邮箱地址",
+                configItem=Config.global_config.notify_FromAddress,
+            )
+            self.card_AuthorizationCode = PasswordLineEditSettingCard(
+                text="请输入发信邮箱授权码",
+                icon=FluentIcon.PAGE_RIGHT,
+                title="发信邮箱授权码",
+                content="发送通知的邮箱授权码",
+                configItem=Config.global_config.notify_AuthorizationCode,
+            )
+            self.card_ToAddress = LineEditSettingCard(
+                text="请输入收信邮箱地址",
+                icon=FluentIcon.PAGE_RIGHT,
+                title="收信邮箱地址",
                 content="接收通知的邮箱地址",
-                configItem=Config.global_config.notify_MailAddress,
+                configItem=Config.global_config.notify_ToAddress,
             )
 
             widget = QWidget()
             Layout = QVBoxLayout(widget)
             Layout.addWidget(self.card_IfSendMail)
-            Layout.addWidget(self.card_MailAddress)
+            Layout.addWidget(self.card_SMTPServerAddress)
+            Layout.addWidget(self.card_FromAddress)
+            Layout.addWidget(self.card_AuthorizationCode)
+            Layout.addWidget(self.card_ToAddress)
             self.viewLayout.setContentsMargins(0, 0, 0, 0)
             self.viewLayout.setSpacing(0)
             self.addGroupWidget(widget)

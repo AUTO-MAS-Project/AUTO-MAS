@@ -86,25 +86,30 @@ class MainTimer(QWidget):
     def set_silence(self):
         """设置静默模式"""
 
-        windows = System.get_window_info()
-        if any(
-            str(emulator_path) in window
-            for window in windows
-            for emulator_path in Config.silence_list
+        if (
+            Config.global_config.get(Config.global_config.function_IfSilence)
+            and Config.global_config.get(Config.global_config.function_BossKey) != ""
         ):
-            try:
-                pyautogui.hotkey(
-                    *[
-                        _.strip().lower()
-                        for _ in Config.global_config.get(
-                            Config.global_config.function_BossKey
-                        ).split("+")
-                    ]
-                )
-            except pyautogui.FailSafeException as e:
-                if not self.if_FailSafeException:
-                    logger.warning(f"FailSafeException: {e}")
-                    self.if_FailSafeException = True
+
+            windows = System.get_window_info()
+            if any(
+                str(emulator_path) in window
+                for window in windows
+                for emulator_path in Config.silence_list
+            ):
+                try:
+                    pyautogui.hotkey(
+                        *[
+                            _.strip().lower()
+                            for _ in Config.global_config.get(
+                                Config.global_config.function_BossKey
+                            ).split("+")
+                        ]
+                    )
+                except pyautogui.FailSafeException as e:
+                    if not self.if_FailSafeException:
+                        logger.warning(f"FailSafeException: {e}")
+                        self.if_FailSafeException = True
 
     def search_queue(self) -> list:
         """搜索所有调度队列实例"""

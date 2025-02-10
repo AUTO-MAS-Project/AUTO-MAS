@@ -30,6 +30,8 @@ import sqlite3
 import hashlib
 import random
 import secrets
+import base64
+import win32crypt
 from pathlib import Path
 from Crypto.Cipher import AES
 from Crypto.PublicKey import RSA
@@ -83,8 +85,8 @@ class CryptoHandler:
         private_key_local = AES_key.encrypt(pad(private_key.exportKey(), 32))
         (Config.app_path / "data/key/private_key.bin").write_bytes(private_key_local)
 
-    def encryptx(self, note: str) -> bytes:
-        """加密数据"""
+    def AUTO_encryptor(self, note: str) -> bytes:
+        """使用AUTO_MAA的算法加密数据"""
 
         # 读取RSA公钥
         public_key_local = RSA.import_key(
@@ -95,8 +97,8 @@ class CryptoHandler:
         encrypted = cipher.encrypt(note.encode("utf-8"))
         return encrypted
 
-    def decryptx(self, note: bytes, PASSWORD: str) -> str:
-        """解密数据"""
+    def AUTO_decryptor(self, note: bytes, PASSWORD: str) -> str:
+        """使用AUTO_MAA的算法解密数据"""
 
         # 读入RSA私钥密文、盐与校验哈希值
         private_key_local = (
@@ -150,7 +152,9 @@ class CryptoHandler:
             # 使用旧管理密钥解密
             user_data["Password"] = []
             for i in range(len(data)):
-                user_data["Password"].append(self.decryptx(data[i][12], PASSWORD_old))
+                user_data["Password"].append(
+                    self.AUTO_decryptor(data[i][12], PASSWORD_old)
+                )
             cur.close()
             db.close()
 
@@ -169,7 +173,7 @@ class CryptoHandler:
                 cur.execute(
                     "UPDATE adminx SET password = ? WHERE mode = ? AND uid = ?",
                     (
-                        self.encryptx(user_data["Password"][i]),
+                        self.AUTO_encryptor(user_data["Password"][i]),
                         data[i][15],
                         data[i][16],
                     ),
@@ -180,6 +184,27 @@ class CryptoHandler:
 
             cur.close()
             db.close()
+
+    def win_encryptor(
+        self, note: str, description: str = None, entropy: bytes = None
+    ) -> str:
+        """使用Windows DPAPI加密数据"""
+
+        encrypted = win32crypt.CryptProtectData(
+            note.encode("utf-8"), description, entropy, None, None, 0
+        )
+        return base64.b64encode(encrypted).decode("utf-8")
+
+    def win_decryptor(self, note: str, entropy: bytes = None) -> str:
+        """使用Windows DPAPI解密数据"""
+
+        if note == "":
+            return ""
+
+        decrypted = win32crypt.CryptUnprotectData(
+            base64.b64decode(note), entropy, None, None, 0
+        )
+        return decrypted[1].decode("utf-8")
 
     def search_member(self) -> List[Dict[str, Union[Path, list]]]:
         """搜索所有脚本实例及其用户数据库路径"""
@@ -197,7 +222,9 @@ class CryptoHandler:
     def check_PASSWORD(self, PASSWORD: str) -> bool:
         """验证管理密钥"""
 
-        return bool(self.decryptx(self.encryptx(""), PASSWORD) != "管理密钥错误")
+        return bool(
+            self.AUTO_decryptor(self.AUTO_encryptor(""), PASSWORD) != "管理密钥错误"
+        )
 
 
 Crypto = CryptoHandler()

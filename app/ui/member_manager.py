@@ -59,10 +59,10 @@ import shutil
 from app.core import Config, MainInfoBar, Task_manager
 from app.services import Crypto
 from .Widget import (
-    InputMessageBox,
+    LineEditMessageBox,
     LineEditSettingCard,
     SpinBoxSettingCard,
-    SetMessageBox,
+    ComboBoxMessageBox,
 )
 
 
@@ -123,16 +123,15 @@ class MemberManager(QWidget):
     def add_setting_box(self):
         """添加一个脚本实例"""
 
-        choice = InputMessageBox(
-            self,
-            "选择一个脚本类型并添加相应脚本实例",
-            "选择脚本类型",
-            "选择",
-            ["MAA"],
+        choice = ComboBoxMessageBox(
+            self.window(),
+            "选择一个脚本类型以添加相应脚本实例",
+            ["选择脚本类型"],
+            [["MAA"]],
         )
-        if choice.exec() and choice.input.currentIndex() != -1:
+        if choice.exec() and choice.input[0].currentIndex() != -1:
 
-            if choice.input.currentText() == "MAA":
+            if choice.input[0].currentText() == "MAA":
 
                 index = len(self.member_manager.search_member()) + 1
 
@@ -170,7 +169,7 @@ class MemberManager(QWidget):
         choice = MessageBox(
             "确认",
             f"确定要删除 {name} 实例吗？",
-            self,
+            self.window(),
         )
         if choice.exec():
 
@@ -295,8 +294,8 @@ class MemberManager(QWidget):
     def show_password(self):
 
         if Config.PASSWORD == "":
-            choice = InputMessageBox(
-                self,
+            choice = LineEditMessageBox(
+                self.window(),
                 "请输入管理密钥",
                 "管理密钥",
                 "密码",
@@ -535,7 +534,11 @@ class MaaSettingBox(QWidget):
 
         def PathClicked(self):
 
-            folder = QFileDialog.getExistingDirectory(self, "选择MAA目录", "./")
+            folder = QFileDialog.getExistingDirectory(
+                self,
+                "选择MAA目录",
+                Config.maa_config.get(Config.maa_config.MaaSet_Path),
+            )
             if (
                 not folder
                 or Config.maa_config.get(Config.maa_config.MaaSet_Path) == folder
@@ -690,8 +693,8 @@ class MaaSettingBox(QWidget):
                 user_list = [_[0] for _ in data if _[15] == "simple"]
                 set_list = ["自定义基建"]
 
-                choice = SetMessageBox(
-                    self.parent().parent().parent().parent().parent().parent().parent(),
+                choice = ComboBoxMessageBox(
+                    self.window(),
                     "用户选项配置",
                     ["选择要配置的用户", "选择要配置的选项"],
                     [user_list, set_list],
@@ -730,8 +733,8 @@ class MaaSettingBox(QWidget):
                 user_list = [_[0] for _ in data if _[15] == "beta"]
                 set_list = ["MAA日常配置", "MAA剿灭配置"]
 
-                choice = SetMessageBox(
-                    self.parent().parent().parent().parent().parent().parent().parent(),
+                choice = ComboBoxMessageBox(
+                    self.window(),
                     "用户选项配置",
                     ["选择要配置的用户", "选择要配置的选项"],
                     [user_list, set_list],
@@ -985,7 +988,7 @@ class MaaSettingBox(QWidget):
                                 item = QTableWidgetItem("******")
                                 item.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
                             else:
-                                result = Crypto.decryptx(value, Config.PASSWORD)
+                                result = Crypto.AUTO_decryptor(value, Config.PASSWORD)
                                 item = QTableWidgetItem(result)
                                 if result == "管理密钥错误":
                                     item.setFlags(
@@ -1052,7 +1055,7 @@ class MaaSettingBox(QWidget):
                                 item = QTableWidgetItem("******")
                                 item.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
                             else:
-                                result = Crypto.decryptx(value, Config.PASSWORD)
+                                result = Crypto.AUTO_decryptor(value, Config.PASSWORD)
                                 item = QTableWidgetItem(result)
                                 if result == "管理密钥错误":
                                     item.setFlags(
@@ -1123,7 +1126,7 @@ class MaaSettingBox(QWidget):
                                     games[game_in.strip()] = game_out.strip()
                         text = games.get(text, text)
                     if item.column() == 11:  # 密码
-                        text = Crypto.encryptx(text)
+                        text = Crypto.AUTO_encryptor(text)
 
                     # 保存至本地数据库
                     if text != "":
@@ -1141,7 +1144,7 @@ class MaaSettingBox(QWidget):
                             self.update_user_info("normal")
                             return None
                     if item.column() == 6:  # 密码
-                        text = Crypto.encryptx(text)
+                        text = Crypto.AUTO_encryptor(text)
 
                     # 保存至本地数据库
                     if text != "":
@@ -1223,7 +1226,7 @@ class MaaSettingBox(QWidget):
                 Config.cur.execute(
                     "INSERT INTO adminx VALUES('新用户','手机号码（官服）/B站ID（B服）','Official',-1,'y','2000-01-01','1-7','-','-','n','n','n',?,'无',0,?,?)",
                     (
-                        Crypto.encryptx("未设置"),
+                        Crypto.AUTO_encryptor("未设置"),
                         set_book[0],
                         set_book[1],
                     ),
@@ -1273,15 +1276,7 @@ class MaaSettingBox(QWidget):
                 choice = MessageBox(
                     "确认",
                     f"确定要删除用户 {data[0][0]} 吗？",
-                    self.parent()
-                    .parent()
-                    .parent()
-                    .parent()
-                    .parent()
-                    .parent()
-                    .parent()
-                    .parent()
-                    .parent(),
+                    self.window(),
                 )
 
                 # 删除用户
@@ -1570,15 +1565,7 @@ class MaaSettingBox(QWidget):
                 choice = MessageBox(
                     "确认",
                     f"确定要将用户 {data[0][0]} 转为{mode_list[1 - mode]}配置模式吗？",
-                    self.parent()
-                    .parent()
-                    .parent()
-                    .parent()
-                    .parent()
-                    .parent()
-                    .parent()
-                    .parent()
-                    .parent(),
+                    self.window(),
                 )
 
                 # 切换用户

@@ -34,7 +34,8 @@ from email.utils import formataddr
 
 from serverchan_sdk import sc_send
 
-from app.core import Config
+from app.core import Config, MainInfoBar
+from app.services.security import Crypto
 
 
 class Notification:
@@ -57,73 +58,99 @@ class Notification:
         return True
 
     def send_mail(self, title, content):
-        """使用官方专用邮箱推送邮件通知"""
-
-        # 声明：此邮箱为AUTO_MAA项目组资产，未经授权不得私自使用
-        # 注意：此声明注释只有使用者更换发信邮箱时才能删除，本条规则优先级高于GPLv3
+        """推送邮件通知"""
 
         if Config.global_config.get(Config.global_config.notify_IfSendMail):
 
-            # 第三方 SMTP 服务配置
-            mail_host = "smtp.163.com"  # 设置服务器
-            mail_sender = "AUTO_MAA_server@163.com"  # 用户名
-            mail_key = "SYrq87nDLD4RNB5T"  # 授权码 24/11/15
-
-            # 定义邮件正文
-            message = MIMEText(content, "plain", "utf-8")
-            message["From"] = formataddr(
-                (
-                    Header("AUTO_MAA通知服务", "utf-8").encode(),
-                    "AUTO_MAA_server@163.com",
-                )
-            )  # 发件人显示的名字
-            message["To"] = formataddr(
-                (
-                    Header("AUTO_MAA用户", "utf-8").encode(),
-                    Config.global_config.get(Config.global_config.notify_MailAddress),
-                )
-            )  # 收件人显示的名字
-            message["Subject"] = Header(title, "utf-8")
-
             try:
-                smtpObj = smtplib.SMTP_SSL(mail_host, 465)  # 465为SMTP_SSL默认端口
-                smtpObj.login(mail_sender, mail_key)
+                # 定义邮件正文
+                message = MIMEText(content, "plain", "utf-8")
+                message["From"] = formataddr(
+                    (
+                        Header("AUTO_MAA通知服务", "utf-8").encode(),
+                        Config.global_config.get(
+                            Config.global_config.notify_FromAddress
+                        ),
+                    )
+                )  # 发件人显示的名字
+                message["To"] = formataddr(
+                    (
+                        Header("AUTO_MAA用户", "utf-8").encode(),
+                        Config.global_config.get(Config.global_config.notify_ToAddress),
+                    )
+                )  # 收件人显示的名字
+                message["Subject"] = Header(title, "utf-8")
+
+                smtpObj = smtplib.SMTP_SSL(
+                    Config.global_config.get(
+                        Config.global_config.notify_SMTPServerAddress
+                    ),
+                    465,
+                )
+                smtpObj.login(
+                    Config.global_config.get(Config.global_config.notify_FromAddress),
+                    Crypto.win_decryptor(
+                        Config.global_config.get(
+                            Config.global_config.notify_AuthorizationCode
+                        )
+                    ),
+                )
                 smtpObj.sendmail(
-                    mail_sender,
-                    Config.global_config.get(Config.global_config.notify_MailAddress),
+                    Config.global_config.get(Config.global_config.notify_FromAddress),
+                    Config.global_config.get(Config.global_config.notify_ToAddress),
                     message.as_string(),
                 )
-                return True
-            except smtplib.SMTPException as e:
-                return f"发送邮件时出错：\n{e}"
-            finally:
                 smtpObj.quit()
+                logger.success("邮件发送成功")
+            except Exception as e:
+                logger.error(f"发送邮件时出错：\n{e}")
+                MainInfoBar.push_info_bar("error", "发送邮件时出错", f"{e}", -1)
 
     def ServerChanPush(self, title, content):
         """使用Server酱推送通知"""
 
         if Config.global_config.get(Config.global_config.notify_IfServerChan):
-            send_key = Config.global_config.get(Config.global_config.notify_ServerChanKey)
+            send_key = Config.global_config.get(
+                Config.global_config.notify_ServerChanKey
+            )
             option = {}
-            is_valid = lambda s: s == "" or (s == '|'.join(s.split('|')) and (s.count('|') == 0 or all(s.split('|'))))
+            is_valid = lambda s: s == "" or (
+                s == "|".join(s.split("|")) and (s.count("|") == 0 or all(s.split("|")))
+            )
             """
             is_valid => True, 如果启用的话需要正确设置Tag和Channel。
             允许空的Tag和Channel即不启用，但不允许例如a||b，|a|b，a|b|，||||
             """
-            send_tag = Config.global_config.get(Config.global_config.notify_ServerChanTag)
-            send_channel = Config.global_config.get(Config.global_config.notify_ServerChanChannel)
+            send_tag = Config.global_config.get(
+                Config.global_config.notify_ServerChanTag
+            )
+            send_channel = Config.global_config.get(
+                Config.global_config.notify_ServerChanChannel
+            )
 
             if is_valid(send_tag):
-                option['tags'] = send_tag
+                option["tags"] = send_tag
             else:
-                option['tags'] = ''
-                logger.warning('请正确设置Auto_MAA中ServerChan的Tag。')
+                option["tags"] = ""
+                logger.warning("请正确设置Auto_MAA中ServerChan的Tag。")
+                MainInfoBar.push_info_bar(
+                    "warning",
+                    "Server酱通知推送异常",
+                    "请正确设置Auto_MAA中ServerChan的Tag。",
+                    -1,
+                )
 
             if is_valid(send_channel):
-                option['channel'] = send_channel
+                option["channel"] = send_channel
             else:
-                option['channel'] = ''
-                logger.warning('请正确设置Auto_MAA中ServerChan的Channel。')
+                option["channel"] = ""
+                logger.warning("请正确设置Auto_MAA中ServerChan的Channel。")
+                MainInfoBar.push_info_bar(
+                    "warning",
+                    "Server酱通知推送异常",
+                    "请正确设置Auto_MAA中ServerChan的Channel。",
+                    -1,
+                )
 
             response = sc_send(send_key, title, content, option)
             if response["code"] == 0:
@@ -132,21 +159,24 @@ class Notification:
             else:
                 logger.info("Server酱推送通知失败")
                 logger.error(response)
+                MainInfoBar.push_info_bar(
+                    "error",
+                    "Server酱通知推送失败",
+                    f'使用Server酱推送通知时出错：\n{response["data"]['error']}',
+                    -1,
+                )
                 return f'使用Server酱推送通知时出错：\n{response["data"]['error']}'
 
     def CompanyWebHookBotPush(self, title, content):
         """使用企业微信群机器人推送通知"""
         if Config.global_config.get(Config.global_config.notify_IfCompanyWebHookBot):
-            content = f'{title}\n{content}'
-            data = {
-                "msgtype": "text",
-                "text": {
-                    "content": content
-                }
-            }
+            content = f"{title}\n{content}"
+            data = {"msgtype": "text", "text": {"content": content}}
             response = requests.post(
-                url=Config.global_config.get(Config.global_config.notify_CompanyWebHookBotUrl),
-                json=data
+                url=Config.global_config.get(
+                    Config.global_config.notify_CompanyWebHookBotUrl
+                ),
+                json=data,
             )
             if response.json()["errcode"] == 0:
                 logger.info("企业微信群机器人推送通知成功")
@@ -154,7 +184,15 @@ class Notification:
             else:
                 logger.info("企业微信群机器人推送通知失败")
                 logger.error(response.json())
-                return f'使用企业微信群机器人推送通知时出错：\n{response.json()["errmsg"]}'
+                MainInfoBar.push_info_bar(
+                    "error",
+                    "企业微信群机器人通知推送失败",
+                    f'使用企业微信群机器人推送通知时出错：\n{response.json()["errmsg"]}',
+                    -1,
+                )
+                return (
+                    f'使用企业微信群机器人推送通知时出错：\n{response.json()["errmsg"]}'
+                )
 
 
 Notify = Notification()
