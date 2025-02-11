@@ -248,8 +248,6 @@ class MaaManager(QObject):
                                 self.update_log_text.emit(
                                     "检测到MAA进程完成代理任务\n正在等待相关程序结束\n请等待10s"
                                 )
-                                # 移除静默进程标记
-                                Config.silence_list.remove(self.emulator_path)
                                 for _ in range(10):
                                     if self.isInterruptionRequested:
                                         break
@@ -269,8 +267,6 @@ class MaaManager(QObject):
                                     creationflags=subprocess.CREATE_NO_WINDOW,
                                 )
                                 killprocess.wait()
-                                # 移除静默进程标记
-                                Config.silence_list.remove(self.emulator_path)
                                 # 推送异常通知
                                 Notify.push_notification(
                                     "用户自动代理出现异常！",
@@ -283,6 +279,9 @@ class MaaManager(QObject):
                                         break
                                     time.sleep(1)
                                 break
+
+                        # 移除静默进程标记
+                        Config.silence_list.remove(self.emulator_path)
 
                     # 成功完成代理的用户修改相关参数
                     if run_book[0] and run_book[1]:
