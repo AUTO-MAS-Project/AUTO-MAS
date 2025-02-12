@@ -177,6 +177,17 @@ class _SystemHandler:
         win32gui.EnumWindows(callback, window_info)
         return window_info
 
+    def kill_process(self, path: Path) -> None:
+        """根据路径中止进程"""
+
+        for pid in self.search_pids(path):
+            killprocess = subprocess.Popen(
+                f"taskkill /F /T /PID {pid}",
+                shell=True,
+                creationflags=subprocess.CREATE_NO_WINDOW,
+            )
+            killprocess.wait()
+
     def search_pids(path: Path) -> list:
         """根据路径查找进程PID"""
 

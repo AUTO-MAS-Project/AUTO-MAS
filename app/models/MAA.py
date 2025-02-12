@@ -37,7 +37,7 @@ from pathlib import Path
 from typing import List
 
 from app.core import Config
-from app.services import Notify
+from app.services import Notify, System
 
 
 class MaaManager(QObject):
@@ -265,12 +265,7 @@ class MaaManager(QObject):
                                 # 此时，log变量内存储的就是出现异常的日志信息，可以保存或发送用于问题排查
                                 self.update_log_text.emit(result)
                                 # 无命令行中止MAA与其子程序
-                                killprocess = subprocess.Popen(
-                                    f"taskkill /F /T /PID {maa.pid}",
-                                    shell=True,
-                                    creationflags=subprocess.CREATE_NO_WINDOW,
-                                )
-                                killprocess.wait()
+                                System.kill_process(self.maa_exe_path)
                                 self.if_open_emulator = True
                                 # 推送异常通知
                                 Notify.push_notification(
@@ -372,12 +367,7 @@ class MaaManager(QObject):
                         else:
                             self.update_log_text.emit(result)
                             # 无命令行中止MAA与其子程序
-                            killprocess = subprocess.Popen(
-                                f"taskkill /F /T /PID {maa.pid}",
-                                shell=True,
-                                creationflags=subprocess.CREATE_NO_WINDOW,
-                            )
-                            killprocess.wait()
+                            System.kill_process(self.maa_exe_path)
                             self.if_open_emulator = True
                             for _ in range(10):
                                 if self.isInterruptionRequested:
@@ -465,12 +455,7 @@ class MaaManager(QObject):
 
             # 关闭可能未正常退出的MAA进程
             if self.isInterruptionRequested:
-                killprocess = subprocess.Popen(
-                    f"taskkill /F /T /PID {maa.pid}",
-                    shell=True,
-                    creationflags=subprocess.CREATE_NO_WINDOW,
-                )
-                killprocess.wait()
+                System.kill_process(self.maa_exe_path)
 
             # 更新用户数据
             modes = [self.data[_[2]][15] for _ in self.user_list]
