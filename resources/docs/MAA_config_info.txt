@@ -1,5 +1,7 @@
 #主界面
-"MainFunction.PostActions": "12"        #完成后
+"MainFunction.PostActions": "8"        #完成后退出MAA
+"MainFunction.PostActions": "9"        #完成后退出MAA和游戏
+"MainFunction.PostActions": "12"        #完成后退出MAA和模拟器
 "TaskQueue.WakeUp.IsChecked": "True"        #开始唤醒
 "TaskQueue.Recruiting.IsChecked": "True"        #自动公招
 "TaskQueue.Base.IsChecked": "True"      #基建换班

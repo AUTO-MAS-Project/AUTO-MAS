@@ -46,6 +46,7 @@ from qfluentwidgets import (
     HeaderCardWidget,
     CommandBar,
     ExpandGroupSettingCard,
+    ComboBoxSettingCard,
     PushSettingCard,
 )
 from PySide6.QtCore import Qt
@@ -578,9 +579,13 @@ class MaaSettingBox(QWidget):
                     parent,
                 )
 
-                widget = QWidget()
-                Layout = QVBoxLayout(widget)
-
+                self.card_TaskTransitionMethod = ComboBoxSettingCard(
+                    configItem=Config.maa_config.RunSet_TaskTransitionMethod,
+                    icon=FluentIcon.PAGE_RIGHT,
+                    title="任务切换方式",
+                    content="简洁用户列表下相邻两个任务间的切换方式",
+                    texts=["直接切换账号", "重启明日方舟", "重启模拟器"],
+                )
                 self.ProxyTimesLimit = SpinBoxSettingCard(
                     (0, 1024),
                     FluentIcon.PAGE_RIGHT,
@@ -588,7 +593,6 @@ class MaaSettingBox(QWidget):
                     "当用户本日代理成功次数超过该阈值时跳过代理，阈值为“0”时视为无代理次数上限",
                     Config.maa_config.RunSet_ProxyTimesLimit,
                 )
-
                 self.AnnihilationTimeLimit = SpinBoxSettingCard(
                     (1, 1024),
                     FluentIcon.PAGE_RIGHT,
@@ -596,7 +600,6 @@ class MaaSettingBox(QWidget):
                     "MAA日志无变化时间超过该阈值视为超时，单位为分钟",
                     Config.maa_config.RunSet_AnnihilationTimeLimit,
                 )
-
                 self.RoutineTimeLimit = SpinBoxSettingCard(
                     (1, 1024),
                     FluentIcon.PAGE_RIGHT,
@@ -604,7 +607,6 @@ class MaaSettingBox(QWidget):
                     "MAA日志无变化时间超过该阈值视为超时，单位为分钟",
                     Config.maa_config.RunSet_RoutineTimeLimit,
                 )
-
                 self.RunTimesLimit = SpinBoxSettingCard(
                     (1, 1024),
                     FluentIcon.PAGE_RIGHT,
@@ -613,14 +615,15 @@ class MaaSettingBox(QWidget):
                     Config.maa_config.RunSet_RunTimesLimit,
                 )
 
+                widget = QWidget()
+                Layout = QVBoxLayout(widget)
+                Layout.addWidget(self.card_TaskTransitionMethod)
                 Layout.addWidget(self.ProxyTimesLimit)
                 Layout.addWidget(self.AnnihilationTimeLimit)
                 Layout.addWidget(self.RoutineTimeLimit)
                 Layout.addWidget(self.RunTimesLimit)
-
                 self.viewLayout.setContentsMargins(0, 0, 0, 0)
                 self.viewLayout.setSpacing(0)
-
                 self.addGroupWidget(widget)
 
     class UserSettingCard(HeaderCardWidget):

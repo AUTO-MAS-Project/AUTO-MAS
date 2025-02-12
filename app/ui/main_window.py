@@ -26,10 +26,7 @@ v4.2
 """
 
 from loguru import logger
-from PySide6.QtWidgets import (
-    QApplication,
-    QSystemTrayIcon,
-)
+from PySide6.QtWidgets import QSystemTrayIcon
 from qfluentwidgets import (
     Action,
     PushButton,

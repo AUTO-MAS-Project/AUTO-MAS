@@ -117,25 +117,27 @@ class MaaManager(QObject):
         if "设置MAA" not in self.mode:
 
             self.data = sorted(self.data, key=lambda x: (-len(x[15]), x[16]))
-            user_list: List[List[str, str, int]] = [
+            self.user_list: List[List[str, str, int]] = [
                 [_[0], "等待", index]
                 for index, _ in enumerate(self.data)
                 if (_[3] != 0 and _[4] == "y")
             ]
-            self.create_user_list.emit(user_list)
+            self.create_user_list.emit(self.user_list)
 
         # 自动代理模式
         if self.mode == "自动代理":
 
+            # 标记是否需要重启模拟器
+            self.if_open_emulator = True
             # 执行情况预处理
-            for _ in user_list:
+            for _ in self.user_list:
                 if self.data[_[2]][5] != curdate:
                     self.data[_[2]][5] = curdate
                     self.data[_[2]][14] = 0
                 _[0] += f" - 第{self.data[_[2]][14] + 1}次代理"
 
             # 开始代理
-            for user in user_list:
+            for user in self.user_list:
 
                 if self.isInterruptionRequested:
                     break
@@ -145,10 +147,10 @@ class MaaManager(QObject):
                     or self.data[user[2]][14] < self.set["RunSet"]["ProxyTimesLimit"]
                 ):
                     user[1] = "运行"
-                    self.update_user_list.emit(user_list)
+                    self.update_user_list.emit(self.user_list)
                 else:
                     user[1] = "跳过"
-                    self.update_user_list.emit(user_list)
+                    self.update_user_list.emit(self.user_list)
                     continue
 
                 # 初始化代理情况记录和模式替换记录
@@ -177,6 +179,8 @@ class MaaManager(QObject):
                         if run_book[j]:
                             continue
 
+                        if self.data[user[2]][15] == "beta":
+                            self.if_open_emulator = True
                         # 配置MAA
                         self.set_maa(mode_book[j], user[2])
                         # 记录当前时间
@@ -267,6 +271,7 @@ class MaaManager(QObject):
                                     creationflags=subprocess.CREATE_NO_WINDOW,
                                 )
                                 killprocess.wait()
+                                self.if_open_emulator = True
                                 # 推送异常通知
                                 Notify.push_notification(
                                     "用户自动代理出现异常！",
@@ -301,28 +306,28 @@ class MaaManager(QObject):
                 if not (run_book[0] and run_book[1]):
                     user[1] = "异常"
 
-                self.update_user_list.emit(user_list)
+                self.update_user_list.emit(self.user_list)
 
         # 人工排查模式
         elif self.mode == "人工排查":
 
             # 标记是否需要启动模拟器
-            if_strat_app = True
+            self.if_open_emulator = True
             # 标识排查模式
-            for _ in user_list:
+            for _ in self.user_list:
                 _[0] += "_排查模式"
 
             # 开始排查
-            for user in user_list:
+            for user in self.user_list:
 
                 if self.isInterruptionRequested:
                     break
 
                 user[1] = "运行"
-                self.update_user_list.emit(user_list)
+                self.update_user_list.emit(self.user_list)
 
                 if self.data[user[2]][15] == "beta":
-                    if_strat_app = True
+                    self.if_open_emulator = True
 
                 run_book = [False for _ in range(2)]
 
@@ -330,11 +335,7 @@ class MaaManager(QObject):
                 while not self.isInterruptionRequested:
 
                     # 配置MAA
-                    if if_strat_app:
-                        self.set_maa("人工排查_启动模拟器", user[2])
-                        if_strat_app = False
-                    else:
-                        self.set_maa("人工排查_仅切换账号", user[2])
+                    self.set_maa("人工排查", user[2])
 
                     # 记录当前时间
                     start_time = datetime.now()
@@ -377,7 +378,7 @@ class MaaManager(QObject):
                                 creationflags=subprocess.CREATE_NO_WINDOW,
                             )
                             killprocess.wait()
-                            if_strat_app = True
+                            self.if_open_emulator = True
                             for _ in range(10):
                                 if self.isInterruptionRequested:
                                     break
@@ -417,7 +418,7 @@ class MaaManager(QObject):
                         ] = f"未通过人工排查|{self.data[user[2]][13]}"
                     user[1] = "异常"
 
-                self.update_user_list.emit(user_list)
+                self.update_user_list.emit(self.user_list)
 
         # 设置MAA模式
         elif "设置MAA" in self.mode:
@@ -472,17 +473,17 @@ class MaaManager(QObject):
                 killprocess.wait()
 
             # 更新用户数据
-            modes = [self.data[_[2]][15] for _ in user_list]
-            uids = [self.data[_[2]][16] for _ in user_list]
-            days = [self.data[_[2]][3] for _ in user_list]
-            lasts = [self.data[_[2]][5] for _ in user_list]
-            notes = [self.data[_[2]][13] for _ in user_list]
-            numbs = [self.data[_[2]][14] for _ in user_list]
+            modes = [self.data[_[2]][15] for _ in self.user_list]
+            uids = [self.data[_[2]][16] for _ in self.user_list]
+            days = [self.data[_[2]][3] for _ in self.user_list]
+            lasts = [self.data[_[2]][5] for _ in self.user_list]
+            notes = [self.data[_[2]][13] for _ in self.user_list]
+            numbs = [self.data[_[2]][14] for _ in self.user_list]
             self.update_user_info.emit(modes, uids, days, lasts, notes, numbs)
 
-            error_index = [_[2] for _ in user_list if _[1] == "异常"]
-            over_index = [_[2] for _ in user_list if _[1] == "完成"]
-            wait_index = [_[2] for _ in user_list if _[1] == "等待"]
+            error_index = [_[2] for _ in self.user_list if _[1] == "异常"]
+            over_index = [_[2] for _ in self.user_list if _[1] == "完成"]
+            wait_index = [_[2] for _ in self.user_list if _[1] == "等待"]
 
             # 保存运行日志
             end_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -666,15 +667,34 @@ class MaaManager(QObject):
             data["Current"] = "Default"  # 切换配置
             for i in range(1, 9):
                 data["Global"][f"Timer.Timer{i}"] = "False"  # 时间设置
-            data["Configurations"]["Default"][
-                "MainFunction.PostActions"
-            ] = "12"  # 完成后退出MAA和模拟器
+
+            if (
+                [i for i, _ in enumerate(self.user_list) if _[2] == index][0]
+                == len(self.user_list) - 1
+            ) or (
+                self.data[
+                    self.user_list[
+                        [i for i, _ in enumerate(self.user_list) if _[2] == index][0]
+                        + 1
+                    ][2]
+                ][15]
+                == "beta"
+            ):
+                data["Configurations"]["Default"][
+                    "MainFunction.PostActions"
+                ] = "12"  # 完成后退出MAA和模拟器
+            else:
+                method_dict = {"NoAction": "8", "ExitGame": "9", "ExitEmulator": "12"}
+                data["Configurations"]["Default"]["MainFunction.PostActions"] = (
+                    method_dict[self.set["RunSet"]["TaskTransitionMethod"]]
+                )  # 完成后行为
+
             data["Configurations"]["Default"][
                 "Start.RunDirectly"
             ] = "True"  # 启动MAA后直接运行
-            data["Configurations"]["Default"][
-                "Start.OpenEmulatorAfterLaunch"
-            ] = "True"  # 启动MAA后自动开启模拟器
+            data["Configurations"]["Default"]["Start.OpenEmulatorAfterLaunch"] = (
+                "True" if self.if_open_emulator else "False"
+            )  # 启动MAA后自动开启模拟器
 
             if Config.global_config.get(Config.global_config.function_IfSilence):
                 data["Global"]["Start.MinimizeDirectly"] = "True"  # 启动MAA后直接最小化
@@ -887,7 +907,6 @@ class MaaManager(QObject):
                 "Start.RunDirectly"
             ] = "True"  # 启动MAA后直接运行
             data["Global"]["Start.MinimizeDirectly"] = "True"  # 启动MAA后直接最小化
-            # v5.1.12版本对以下字段处理
             # 启动MAA后直接运行
             data["Configurations"]["Default"]["Start.OpenEmulatorAfterLaunch"] = "True"
             # 启动MAA后自动开启模拟器
@@ -895,15 +914,9 @@ class MaaManager(QObject):
 
             data["Global"]["GUI.UseTray"] = "True"  # 显示托盘图标
             data["Global"]["GUI.MinimizeToTray"] = "True"  # 最小化时隐藏至托盘
-            # 启动MAA后自动开启模拟器
-            if "启动模拟器" in mode:
-                data["Configurations"]["Default"][
-                    "Start.OpenEmulatorAfterLaunch"
-                ] = "True"
-            elif "仅切换账号" in mode:
-                data["Configurations"]["Default"][
-                    "Start.OpenEmulatorAfterLaunch"
-                ] = "False"
+            data["Configurations"]["Default"]["Start.OpenEmulatorAfterLaunch"] = (
+                "True" if self.if_open_emulator else "False"
+            )  # 启动MAA后自动开启模拟器
 
             if self.data[index][15] == "simple":
 
@@ -1014,6 +1027,13 @@ class MaaManager(QObject):
                 data["Configurations"]["Default"][
                     "TaskQueue.Reclamation.IsChecked"
                 ] = "False"  # 生息演算
+
+        # 启动模拟器仅生效一次
+        if (
+            self.if_open_emulator
+            and self.set["RunSet"]["TaskTransitionMethod"] != "ExitEmulator"
+        ):
+            self.if_open_emulator = False
 
         # 覆写配置文件
         with self.maa_set_path.open(mode="w", encoding="utf-8") as f:

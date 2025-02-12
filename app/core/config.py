@@ -488,6 +488,7 @@ class AppConfig:
 
         self.maa_config.set(self.maa_config.MaaSet_Name, "")
         self.maa_config.set(self.maa_config.MaaSet_Path, ".")
+        self.maa_config.set(self.maa_config.RunSet_TaskTransitionMethod, "ExitEmulator")
         self.maa_config.set(self.maa_config.RunSet_ProxyTimesLimit, 0)
         self.maa_config.set(self.maa_config.RunSet_AnnihilationTimeLimit, 40)
         self.maa_config.set(self.maa_config.RunSet_RoutineTimeLimit, 10)
@@ -643,6 +644,12 @@ class MaaConfig(QConfig):
     MaaSet_Name = ConfigItem("MaaSet", "Name", "")
     MaaSet_Path = ConfigItem("MaaSet", "Path", ".", FolderValidator())
 
+    RunSet_TaskTransitionMethod = OptionsConfigItem(
+        "RunSet",
+        "TaskTransitionMethod",
+        "ExitEmulator",
+        OptionsValidator(["NoAction", "ExitGame", "ExitEmulator"]),
+    )
     RunSet_ProxyTimesLimit = RangeConfigItem(
         "RunSet", "ProxyTimesLimit", 0, RangeValidator(0, 1024)
     )
