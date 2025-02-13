@@ -188,7 +188,7 @@ class _SystemHandler:
             )
             killprocess.wait()
 
-    def search_pids(path: Path) -> list:
+    def search_pids(self, path: Path) -> list:
         """根据路径查找进程PID"""
 
         pids = []

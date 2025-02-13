@@ -85,6 +85,7 @@ class MaaManager(QObject):
     def configure(self):
         """提取配置信息"""
 
+        self.name = self.set["MaaSet"]["Name"]
         self.maa_root_path = Path(self.set["MaaSet"]["Path"])
         self.maa_set_path = self.maa_root_path / "config/gui.json"
         self.maa_log_path = self.maa_root_path / "debug/gui.log"
@@ -138,6 +139,7 @@ class MaaManager(QObject):
 
             # 开始代理
             for user in self.user_list:
+                logger.info(f"{self.name} | 开始代理用户: {user[0]}")
 
                 if self.isInterruptionRequested:
                     break
@@ -160,15 +162,26 @@ class MaaManager(QObject):
                 # 简洁模式用户默认开启日常选项
                 if self.data[user[2]][15] == "simple":
                     self.data[user[2]][9] = "y"
+                elif self.data[user[2]][15] == "beta":
+                    check_book = [
+                        [True, "annihilation", "剿灭"],
+                        [True, "routine", "日常"],
+                    ]
 
                 # 尝试次数循环
                 for i in range(self.set["RunSet"]["RunTimesLimit"]):
+                    logger.info(
+                        f"{self.name} | 用户: {user[0]} - 尝试次数: {i + 1}/{self.set["RunSet"]["RunTimesLimit"]}"
+                    )
 
                     if self.isInterruptionRequested:
                         break
 
                     # 剿灭-日常模式循环
                     for j in range(2):
+                        logger.info(
+                            f"{self.name} | 用户: {user[0]} - 模式: {mode_book[j]}"
+                        )
 
                         if self.isInterruptionRequested:
                             break
@@ -180,7 +193,30 @@ class MaaManager(QObject):
                             continue
 
                         if self.data[user[2]][15] == "beta":
+
                             self.if_open_emulator = True
+
+                            if (
+                                check_book[j][0]
+                                and not (
+                                    self.config_path
+                                    / f"beta/{self.data[user[2]][16]}/{check_book[j][1]}/gui.json"
+                                ).exists()
+                            ):
+                                logger.error(
+                                    f"{self.name} | 用户: {user[0]} - 未找到{check_book[j][2]}配置文件"
+                                )
+                                self.push_info_bar.emit(
+                                    "error",
+                                    "启动MAA代理进程失败",
+                                    f"未找到{user[0]}的{check_book[j][2]}配置文件！",
+                                    -1,
+                                )
+                                check_book[j][0] = False
+                                continue
+                            elif not check_book[j][0]:
+                                continue
+
                         # 配置MAA
                         self.set_maa(mode_book[j], user[2])
                         # 记录当前时间
@@ -248,6 +284,9 @@ class MaaManager(QObject):
                             # 判断MAA程序运行状态
                             result = self.if_maa_success(log, mode_book[j])
                             if result == "Success!":
+                                logger.info(
+                                    f"{self.name} | 用户: {user[0]} - MAA进程完成代理任务"
+                                )
                                 run_book[j] = True
                                 self.update_log_text.emit(
                                     "检测到MAA进程完成代理任务\n正在等待相关程序结束\n请等待10s"
@@ -261,9 +300,14 @@ class MaaManager(QObject):
                                 # 检测时间间隔
                                 time.sleep(1)
                             else:
+                                logger.error(
+                                    f"{self.name} | 用户: {user[0]} - 代理任务异常: {result}"
+                                )
                                 # 打印中止信息
                                 # 此时，log变量内存储的就是出现异常的日志信息，可以保存或发送用于问题排查
-                                self.update_log_text.emit(result)
+                                self.update_log_text.emit(
+                                    f"{result}\n正在中止相关程序\n请等待10s"
+                                )
                                 # 无命令行中止MAA与其子程序
                                 System.kill_process(self.maa_exe_path)
                                 self.if_open_emulator = True
@@ -314,6 +358,7 @@ class MaaManager(QObject):
 
             # 开始排查
             for user in self.user_list:
+                logger.info(f"{self.name} | 开始排查用户: {user[0]}")
 
                 if self.isInterruptionRequested:
                     break
@@ -358,6 +403,9 @@ class MaaManager(QObject):
                         # 判断MAA程序运行状态
                         result = self.if_maa_success(log, "人工排查")
                         if result == "Success!":
+                            logger.info(
+                                f"{self.name} | 用户: {user[0]} - MAA进程成功登录PRTS"
+                            )
                             run_book[0] = True
                             self.update_log_text.emit("检测到MAA进程成功登录PRTS")
                             break
@@ -365,7 +413,12 @@ class MaaManager(QObject):
                             # 检测时间间隔
                             time.sleep(1)
                         else:
-                            self.update_log_text.emit(result)
+                            logger.error(
+                                f"{self.name} | 用户: {user[0]} - MAA未能正确登录到PRTS: {result}"
+                            )
+                            self.update_log_text.emit(
+                                f"{result}\n正在中止相关程序\n请等待10s"
+                            )
                             # 无命令行中止MAA与其子程序
                             System.kill_process(self.maa_exe_path)
                             self.if_open_emulator = True
@@ -396,12 +449,14 @@ class MaaManager(QObject):
 
                 # 结果录入用户备注栏
                 if run_book[0] and run_book[1]:
+                    logger.info(f"{self.name} | 用户 {user[0]} 通过人工排查")
                     if "未通过人工排查" in self.data[user[2]][13]:
                         self.data[user[2]][13] = self.data[user[2]][13].replace(
                             "未通过人工排查|", ""
                         )
                     user[1] = "完成"
-                elif not (run_book[0] and run_book[1]):
+                else:
+                    logger.info(f"{self.name} | 用户 {user[0]} 未通过人工排查")
                     if not "未通过人工排查" in self.data[user[2]][13]:
                         self.data[user[2]][
                             13
@@ -517,8 +572,7 @@ class MaaManager(QObject):
         self.accomplish.emit({"Time": begin_time, "History": end_log})
 
     def requestInterruption(self) -> None:
-
-        logger.info("申请中止本次任务")
+        logger.info(f"{self.name} | 收到任务中止申请")
         self.isInterruptionRequested = True
 
     def push_question(self, title: str, message: str) -> bool:
@@ -552,14 +606,14 @@ class MaaManager(QObject):
                     logs.append(entry)
         return logs
 
-    def if_maa_success(self, log, mode):
+    def if_maa_success(self, log, mode) -> str:
         """判断MAA程序运行状态"""
 
         if "自动代理" in mode:
             if mode == "自动代理_日常" and "任务出错: Fight" in log:
-                return "检测到MAA未能实际执行任务\n正在中止相关程序\n请等待10s"
+                return "检测到MAA未能实际执行任务"
             if "任务出错: StartUp" in log:
-                return "检测到MAA未能正确登录PRTS\n正在中止相关程序\n请等待10s"
+                return "检测到MAA未能正确登录PRTS"
             elif "任务已全部完成！" in log:
                 return "Success!"
             elif (
@@ -567,11 +621,11 @@ class MaaManager(QObject):
                 or ("已停止" in log)
                 or ("MaaAssistantArknights GUI exited" in log)
             ):
-                return "检测到MAA进程异常\n正在中止相关程序\n请等待10s"
+                return "检测到MAA进程异常"
             elif self.if_time_out:
-                return "检测到MAA进程超时\n正在中止相关程序\n请等待10s"
+                return "检测到MAA进程超时"
             elif self.isInterruptionRequested:
-                return "您中止了本次任务\n正在中止相关程序\n请等待"
+                return "您中止了本次任务"
             else:
                 return "Wait"
 
@@ -583,9 +637,9 @@ class MaaManager(QObject):
                 or ("已停止" in log)
                 or ("MaaAssistantArknights GUI exited" in log)
             ):
-                return "检测到MAA进程异常\n正在中止相关程序\n请等待10s"
+                return "检测到MAA进程异常"
             elif self.isInterruptionRequested:
-                return "您中止了本次任务\n正在中止相关程序\n请等待"
+                return "您中止了本次任务"
             else:
                 return "Wait"
 
@@ -597,6 +651,7 @@ class MaaManager(QObject):
 
     def set_maa(self, mode, index):
         """配置MAA运行参数"""
+        logger.info(f"{self.name} | 配置MAA运行参数: {mode}/{index}")
 
         # 预导入MAA配置文件
         if mode == "设置MAA_用户":
@@ -1015,7 +1070,8 @@ class MaaManager(QObject):
 
         # 启动模拟器仅生效一次
         if (
-            self.if_open_emulator
+            "设置MAA" not in mode
+            and self.if_open_emulator
             and self.set["RunSet"]["TaskTransitionMethod"] != "ExitEmulator"
         ):
             self.if_open_emulator = False
@@ -1028,6 +1084,9 @@ class MaaManager(QObject):
 
     def agree_bilibili(self, if_agree):
         """向MAA写入Bilibili协议相关任务"""
+        logger.info(
+            f"{self.name} | Bilibili协议相关任务状态: {"启用" if if_agree else "禁用"}"
+        )
 
         with self.maa_tasks_path.open(mode="r", encoding="utf-8") as f:
             data = json.load(f)
