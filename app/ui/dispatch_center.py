@@ -52,7 +52,7 @@ from typing import List, Dict
 import json
 
 
-from app.core import Config, Task_manager, Task, MainInfoBar
+from app.core import Config, TaskManager, Task, MainInfoBar
 
 
 class DispatchCenter(QWidget):
@@ -92,7 +92,7 @@ class DispatchCenter(QWidget):
         dispatch_box = DispatchBox(task.name, self)
 
         dispatch_box.top_bar.button.clicked.connect(
-            lambda: Task_manager.stop_task(task.name)
+            lambda: TaskManager.stop_task(task.name)
         )
 
         task.create_task_list.connect(dispatch_box.info.task.create_task)
@@ -128,7 +128,7 @@ class DispatchCenter(QWidget):
         self.script_list["主调度台"].top_bar.button.clicked.disconnect()
         self.script_list["主调度台"].top_bar.button.setText("中止任务")
         self.script_list["主调度台"].top_bar.button.clicked.connect(
-            lambda: Task_manager.stop_task(task.name)
+            lambda: TaskManager.stop_task(task.name)
         )
         task.create_task_list.connect(
             self.script_list["主调度台"].info.task.create_task
@@ -276,7 +276,7 @@ class DispatchBox(QWidget):
                     info = json.load(f)
 
                 logger.info(f"用户添加任务：{name}")
-                Task_manager.add_task(f"{self.mode.currentText()}_主调度台", name, info)
+                TaskManager.add_task(f"{self.mode.currentText()}_主调度台", name, info)
 
             elif self.object.currentText().split(" - ")[0] == "实例":
 
@@ -285,7 +285,7 @@ class DispatchBox(QWidget):
                     info = {"Queue": {"Member_1": name}}
 
                     logger.info(f"用户添加任务：{name}")
-                    Task_manager.add_task(
+                    TaskManager.add_task(
                         f"{self.mode.currentText()}_主调度台", "自定义队列", info
                     )
 

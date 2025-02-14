@@ -57,7 +57,7 @@ from datetime import datetime, timedelta
 import json
 import shutil
 
-from app.core import Config, MainInfoBar, Task_manager
+from app.core import Config, MainInfoBar, TaskManager
 from app.services import Crypto
 from .Widget import (
     LineEditMessageBox,
@@ -523,7 +523,7 @@ class MaaSettingBox(QWidget):
                 )
             )
             self.card_Set.clicked.connect(
-                lambda: Task_manager.add_task("设置MAA_全局", self.name, None)
+                lambda: TaskManager.add_task("设置MAA_全局", self.name, None)
             )
 
             Layout.addWidget(self.card_Name)
@@ -749,7 +749,7 @@ class MaaSettingBox(QWidget):
                 ):
 
                     set_book = ["routine", "annihilation"]
-                    Task_manager.add_task(
+                    TaskManager.add_task(
                         "设置MAA_用户",
                         self.name,
                         {
