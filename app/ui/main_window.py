@@ -26,10 +26,7 @@ v4.2
 """
 
 from loguru import logger
-from PySide6.QtWidgets import (
-    QApplication,
-    QSystemTrayIcon,
-)
+from PySide6.QtWidgets import QSystemTrayIcon
 from qfluentwidgets import (
     Action,
     PushButton,
@@ -47,7 +44,7 @@ from qfluentwidgets import (
 from PySide6.QtGui import QIcon, QCloseEvent
 from PySide6.QtCore import Qt
 
-from app.core import Config, Task_manager, Main_timer, MainInfoBar
+from app.core import Config, TaskManager, MainTimer, MainInfoBar
 from app.services import Notify, Crypto, System
 from .setting import Setting
 from .member_manager import MemberManager
@@ -169,8 +166,8 @@ class AUTO_MAA(MSFluentWindow):
         self.tray.setContextMenu(self.tray_menu)
         self.tray.activated.connect(self.on_tray_activated)
 
-        Task_manager.create_gui.connect(self.dispatch_center.add_board)
-        Task_manager.connect_gui.connect(self.dispatch_center.connect_main_board)
+        TaskManager.create_gui.connect(self.dispatch_center.add_board)
+        TaskManager.connect_gui.connect(self.dispatch_center.connect_main_board)
         self.setting.ui.card_IfShowTray.checkedChanged.connect(
             lambda: self.show_ui("配置托盘")
         )
@@ -330,9 +327,9 @@ class AUTO_MAA(MSFluentWindow):
         self.show_ui("隐藏到托盘", if_quick=True)
 
         # 清理各功能线程
-        Main_timer.Timer.stop()
-        Main_timer.Timer.deleteLater()
-        Task_manager.stop_task("ALL")
+        MainTimer.Timer.stop()
+        MainTimer.Timer.deleteLater()
+        TaskManager.stop_task("ALL")
 
         # 关闭数据库连接
         Config.close_database()
