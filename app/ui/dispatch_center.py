@@ -166,20 +166,31 @@ class DispatchCenter(QWidget):
         """更新顶栏"""
 
         list = []
+        queue_numb, member_numb = 0, 0
 
         if (Config.app_path / "config/QueueConfig").exists():
             for json_file in (Config.app_path / "config/QueueConfig").glob("*.json"):
                 list.append(f"队列 - {json_file.stem}")
+                queue_numb += 1
 
         if (Config.app_path / "config/MaaConfig").exists():
             for subdir in (Config.app_path / "config/MaaConfig").iterdir():
                 if subdir.is_dir():
                     list.append(f"实例 - Maa - {subdir.name}")
+                    member_numb += 1
 
         self.script_list["主调度台"].top_bar.object.clear()
         self.script_list["主调度台"].top_bar.object.addItems(list)
-        self.script_list["主调度台"].top_bar.object.setCurrentIndex(-1)
-        self.script_list["主调度台"].top_bar.mode.setCurrentIndex(-1)
+        self.script_list["主调度台"].top_bar.mode.clear()
+        self.script_list["主调度台"].top_bar.mode.addItems(["自动代理", "人工排查"])
+
+        if queue_numb == 1:
+            self.script_list["主调度台"].top_bar.object.setCurrentIndex(0)
+        elif member_numb == 1:
+            self.script_list["主调度台"].top_bar.object.setCurrentIndex(queue_numb)
+        else:
+            self.script_list["主调度台"].top_bar.object.setCurrentIndex(-1)
+        self.script_list["主调度台"].top_bar.mode.setCurrentIndex(0)
 
 
 class DispatchBox(QWidget):
@@ -223,7 +234,6 @@ class DispatchBox(QWidget):
                 self.object = ComboBox()
                 self.object.setPlaceholderText("请选择调度对象")
                 self.mode = ComboBox()
-                self.mode.addItems(["自动代理", "人工排查"])
                 self.mode.setPlaceholderText("请选择调度模式")
 
                 self.button = PushButton("开始任务")
