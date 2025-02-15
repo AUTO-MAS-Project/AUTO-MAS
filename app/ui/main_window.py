@@ -36,13 +36,15 @@ from qfluentwidgets import (
     InfoBar,
     InfoBarPosition,
     setTheme,
+    isDarkTheme,
+    SystemThemeListener,
     Theme,
     MSFluentWindow,
     NavigationItemPosition,
     qconfig,
 )
 from PySide6.QtGui import QIcon, QCloseEvent
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 
 from app.core import Config, TaskManager, MainTimer, MainInfoBar
 from app.services import Notify, Crypto, System
@@ -60,7 +62,7 @@ class AUTO_MAA(MSFluentWindow):
         self.setWindowIcon(QIcon(str(Config.app_path / "resources/icons/AUTO_MAA.ico")))
         self.setWindowTitle("AUTO_MAA")
 
-        setTheme(Theme.AUTO)
+        setTheme(Theme.AUTO, lazy=True)
 
         self.splashScreen = SplashScreen(self.windowIcon(), self)
         self.show_ui("显示主窗口", if_quick=True)
@@ -174,6 +176,23 @@ class AUTO_MAA(MSFluentWindow):
         self.setting.ui.card_IfToTray.checkedChanged.connect(self.set_min_method)
 
         self.splashScreen.finish()
+
+        self.themeListener = SystemThemeListener(self)
+        self.themeListener.systemThemeChanged.connect(self.switch_theme)
+        self.themeListener.start()
+
+    def switch_theme(self):
+        """切换主题"""
+
+        setTheme(Theme.AUTO, lazy=True)
+        QTimer.singleShot(100, lambda: setTheme(Theme.AUTO, lazy=True))
+
+        # 云母特效启用时需要增加重试机制
+        if self.isMicaEffectEnabled():
+            QTimer.singleShot(
+                100,
+                lambda: self.windowEffect.setMicaEffect(self.winId(), isDarkTheme()),
+            )
 
     def start_up_task(self) -> None:
         """启动时任务"""
@@ -333,6 +352,10 @@ class AUTO_MAA(MSFluentWindow):
 
         # 关闭数据库连接
         Config.close_database()
+
+        # 关闭主题监听
+        self.themeListener.terminate()
+        self.themeListener.deleteLater()
 
         logger.info("AUTO_MAA主程序关闭")
         logger.info("----------------END----------------")
