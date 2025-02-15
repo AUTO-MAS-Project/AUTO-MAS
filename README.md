@@ -58,9 +58,9 @@ MAA多账号管理与自动化软件
 
 # 使用方法
 
-本项目已改用腾讯文档展示使用方法
+访问AUTO_MAA官方文档站以获取使用指南和项目相关信息
 
-- [《AUTO_MAA用户指南》](https://docs.qq.com/aio/DQ2NwUHRiWGtMWHBy)
+- [AUTO_MAA官方文档站](https://clozya.github.io/AUTOMAA_docs)
 
 ---
 

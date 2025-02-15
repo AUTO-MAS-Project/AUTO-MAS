@@ -750,11 +750,11 @@ class OtherSettingCard(HeaderCardWidget):
             content="查看AUTO_MAA的最新公告",
         )
         self.card_UserDocs = HyperlinkCard(
-            url="https://docs.qq.com/aio/DQ2NwUHRiWGtMWHBy",
-            text="查看使用指南",
+            url="https://clozya.github.io/AUTOMAA_docs",
+            text="访问",
             icon=FluentIcon.PAGE_RIGHT,
-            title="使用指南",
-            content="查看AUTO_MAA的使用教程和文档",
+            title="AUTO_MAA官方文档站",
+            content="访问AUTO_MAA的官方文档站，获取使用指南和项目相关信息",
         )
         self.card_Association = self.AssociationSettingCard()
 
