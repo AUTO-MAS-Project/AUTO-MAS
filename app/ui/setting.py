@@ -484,8 +484,8 @@ class StartSettingCard(HeaderCardWidget):
         )
         self.card_IfRunDirectly = SwitchSettingCard(
             icon=FluentIcon.PAGE_RIGHT,
-            title="启动后直接运行",
-            content="启动AUTO_MAA后自动运行任务(暂不可用)",
+            title="启动后直接运行主任务",
+            content="启动AUTO_MAA后自动运行自动代理任务，优先级：调度队列 1 > 脚本 1",
             configItem=Config.global_config.start_IfRunDirectly,
         )
 
