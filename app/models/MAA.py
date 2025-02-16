@@ -639,6 +639,9 @@ class MaaManager(QObject):
         """配置MAA运行参数"""
         logger.info(f"{self.name} | 配置MAA运行参数: {mode}/{index}")
 
+        # 配置MAA前关闭可能未正常退出的MAA进程
+        System.kill_process(self.maa_exe_path)
+
         # 预导入MAA配置文件
         if mode == "设置MAA_用户":
             if self.user_config_path.exists():
