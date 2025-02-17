@@ -82,6 +82,8 @@ MAA多账号管理与自动化软件
 
 ![Alt](https://repobeats.axiom.co/api/embed/6c2f834141eff1ac297db70d12bd11c6236a58a5.svg "Repobeats analytics image")
 
+感谢 @ClozyA 为本项目提供的下载服务器
+
 ## Star History
 
 [![Star History Chart](https://api.star-history.com/svg?repos=DLmaster361/AUTO_MAA&type=Date)](https://star-history.com/#DLmaster361/AUTO_MAA&Date)
