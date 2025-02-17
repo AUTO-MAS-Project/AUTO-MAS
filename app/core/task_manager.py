@@ -147,7 +147,7 @@ class Task(QThread):
                         )
                     )
                     self.task.accomplish.connect(
-                        lambda log: self.save_log(self.task_dict[i][0], log)
+                        lambda log: self.task_accomplish(self.task_dict[i][0], log)
                     )
 
                     self.task.run()
@@ -173,13 +173,14 @@ class Task(QThread):
 
         return member_dict
 
-    def save_log(self, name: str, log: dict):
+    def task_accomplish(self, name: str, log: dict):
         """保存保存任务结果"""
 
         self.logs.append([name, log])
+        self.task.deleteLater()
 
 
-class TaskManager(QObject):
+class _TaskManager(QObject):
     """业务调度器"""
 
     create_gui = Signal(Task)
@@ -187,7 +188,7 @@ class TaskManager(QObject):
     push_info_bar = Signal(str, str, str, int)
 
     def __init__(self):
-        super(TaskManager, self).__init__()
+        super(_TaskManager, self).__init__()
 
         self.task_dict: Dict[str, Task] = {}
 
@@ -252,6 +253,8 @@ class TaskManager(QObject):
         logger.info(f"任务结束：{name}")
         MainInfoBar.push_info_bar("info", "任务结束", name, 3000)
 
+        self.task_dict[name].deleteLater()
+
         if len(logs) > 0:
             time = logs[0][1]["Time"]
             history = ""
@@ -290,4 +293,4 @@ class TaskManager(QObject):
         self.task_dict[name].question_response.emit(bool(choice.exec_()))
 
 
-Task_manager = TaskManager()
+TaskManager = _TaskManager()

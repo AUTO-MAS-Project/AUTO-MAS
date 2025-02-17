@@ -70,7 +70,7 @@ class UpdateProcess(QThread):
         self.name = name
         self.main_version = main_version
         self.updater_version = updater_version
-        self.download_path = app_path / "AUTO_MAA_Update.zip"  #  临时下载文件的路径
+        self.download_path = app_path / "DOWNLOAD_TEMP.zip"  #  临时下载文件的路径
         self.version_path = app_path / "resources/version.json"
 
     def run(self) -> None:
@@ -160,7 +160,7 @@ class UpdateProcess(QThread):
                         zip_ref.extractall(self.app_path)
                     break
                 except PermissionError:
-                    self.info.emit("解压出错：AUTO_MAA正在运行，正在等待其关闭")
+                    self.info.emit(f"解压出错：{self.name}正在运行，正在等待其关闭")
                     time.sleep(1)
 
             self.info.emit("正在删除临时文件")
@@ -178,19 +178,28 @@ class UpdateProcess(QThread):
             return None
 
         # 更新version文件
-        with open(self.version_path, "r", encoding="utf-8") as f:
-            version_info = json.load(f)
-        if self.name == "AUTO_MAA更新器":
-            version_info["updater_version"] = ".".join(map(str, self.updater_version))
-        elif self.name == "AUTO_MAA主程序":
-            version_info["main_version"] = ".".join(map(str, self.main_version))
-        with open(self.version_path, "w", encoding="utf-8") as f:
-            json.dump(version_info, f, ensure_ascii=False, indent=4)
+        if self.name in ["AUTO_MAA主程序", "AUTO_MAA更新器"]:
+            with open(self.version_path, "r", encoding="utf-8") as f:
+                version_info = json.load(f)
+            if self.name == "AUTO_MAA主程序":
+                version_info["main_version"] = ".".join(map(str, self.main_version))
+            elif self.name == "AUTO_MAA更新器":
+                version_info["updater_version"] = ".".join(
+                    map(str, self.updater_version)
+                )
+            with open(self.version_path, "w", encoding="utf-8") as f:
+                json.dump(version_info, f, ensure_ascii=False, indent=4)
 
         # 主程序更新完成后打开AUTO_MAA
         if self.name == "AUTO_MAA主程序":
             subprocess.Popen(
                 str(self.app_path / "AUTO_MAA.exe"),
+                shell=True,
+                creationflags=subprocess.CREATE_NO_WINDOW,
+            )
+        elif self.name == "MAA":
+            subprocess.Popen(
+                str(self.app_path / "MAA.exe"),
                 shell=True,
                 creationflags=subprocess.CREATE_NO_WINDOW,
             )
@@ -239,6 +248,9 @@ class UpdateProcess(QThread):
             url_list.append(
                 f"https://gitee.com/DLmaster_361/AUTO_MAA/releases/download/{version_text(self.main_version)}/AUTO_MAA_{version_text(self.main_version)}.zip"
             )
+            url_list.append(
+                f"https://jp-download.fearr.xyz/AUTO_MAA/AUTO_MAA_{version_text(self.main_version)}.zip"
+            )
             for i in range(len(PROXY_list)):
                 url_list.append(
                     f"{PROXY_list[i]}https://github.com/DLmaster361/AUTO_MAA/releases/download/{version_text(self.main_version)}/AUTO_MAA_{version_text(self.main_version)}.zip"
@@ -247,9 +259,20 @@ class UpdateProcess(QThread):
             url_list.append(
                 f"https://gitee.com/DLmaster_361/AUTO_MAA/releases/download/{version_text(self.main_version)}/Updater_{version_text(self.updater_version)}.zip"
             )
+            url_list.append(
+                f"https://jp-download.fearr.xyz/AUTO_MAA/Updater_{version_text(self.updater_version)}.zip"
+            )
             for i in range(len(PROXY_list)):
                 url_list.append(
                     f"{PROXY_list[i]}https://github.com/DLmaster361/AUTO_MAA/releases/download/{version_text(self.main_version)}/Updater_{version_text(self.updater_version)}.zip"
+                )
+        elif self.name == "MAA":
+            url_list.append(
+                f"https://jp-download.fearr.xyz/MAA/MAA-{version_text(self.main_version)}-win-x64.zip"
+            )
+            for i in range(len(PROXY_list)):
+                url_list.append(
+                    f"{PROXY_list[i]}https://github.com/MaaAssistantArknights/MaaAssistantArknights/releases/download/{version_text(self.main_version)}/MAA-{version_text(self.main_version)}-win-x64.zip"
                 )
         return url_list
 
@@ -265,7 +288,12 @@ class Updater(QObject):
         self.ui.setWindowTitle("AUTO_MAA更新器")
         self.ui.resize(700, 70)
         self.ui.setWindowIcon(
-            QIcon(str(app_path / "resources/icons/AUTO_MAA_Updater.ico"))
+            QIcon(
+                str(
+                    Path(sys.argv[0]).resolve().parent
+                    / "resources/icons/AUTO_MAA_Updater.ico"
+                )
+            )
         )
 
         # 创建垂直布局

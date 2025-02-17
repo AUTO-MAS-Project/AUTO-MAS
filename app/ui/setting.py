@@ -363,7 +363,7 @@ class Setting(QWidget):
     def show_notice(self, if_show: bool = True):
         """显示公告"""
 
-        # 从远程服务器获取最新版本信息
+        # 从远程服务器获取最新公告
         for _ in range(3):
             try:
                 response = requests.get(
@@ -454,10 +454,10 @@ class FunctionSettingCard(HeaderCardWidget):
                 configItem=Config.global_config.function_IfSilence,
             )
             self.card_BossKey = LineEditSettingCard(
-                text="请输入安卓模拟器老版键",
+                text="请输入安卓模拟器老板键",
                 icon=FluentIcon.PAGE_RIGHT,
-                title="模拟器老版键",
-                content="输入模拟器老版快捷键，以“+”分隔",
+                title="模拟器老板键",
+                content="输入模拟器老板快捷键，以“+”分隔",
                 configItem=Config.global_config.function_BossKey,
             )
 
@@ -484,8 +484,8 @@ class StartSettingCard(HeaderCardWidget):
         )
         self.card_IfRunDirectly = SwitchSettingCard(
             icon=FluentIcon.PAGE_RIGHT,
-            title="启动后直接运行",
-            content="启动AUTO_MAA后自动运行任务(暂不可用)",
+            title="启动后直接运行主任务",
+            content="启动AUTO_MAA后自动运行自动代理任务，优先级：调度队列 1 > 脚本 1",
             configItem=Config.global_config.start_IfRunDirectly,
         )
 
@@ -750,11 +750,11 @@ class OtherSettingCard(HeaderCardWidget):
             content="查看AUTO_MAA的最新公告",
         )
         self.card_UserDocs = HyperlinkCard(
-            url="https://docs.qq.com/aio/DQ2NwUHRiWGtMWHBy",
-            text="查看使用指南",
+            url="https://clozya.github.io/AUTOMAA_docs",
+            text="访问",
             icon=FluentIcon.PAGE_RIGHT,
-            title="使用指南",
-            content="查看AUTO_MAA的使用教程和文档",
+            title="AUTO_MAA官方文档站",
+            content="访问AUTO_MAA的官方文档站，获取使用指南和项目相关信息",
         )
         self.card_Association = self.AssociationSettingCard()
 

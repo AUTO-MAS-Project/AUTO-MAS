@@ -52,7 +52,7 @@ from typing import List, Dict
 import json
 
 
-from app.core import Config, Task_manager, Task, MainInfoBar
+from app.core import Config, TaskManager, Task, MainInfoBar
 
 
 class DispatchCenter(QWidget):
@@ -92,7 +92,7 @@ class DispatchCenter(QWidget):
         dispatch_box = DispatchBox(task.name, self)
 
         dispatch_box.top_bar.button.clicked.connect(
-            lambda: Task_manager.stop_task(task.name)
+            lambda: TaskManager.stop_task(task.name)
         )
 
         task.create_task_list.connect(dispatch_box.info.task.create_task)
@@ -128,7 +128,7 @@ class DispatchCenter(QWidget):
         self.script_list["主调度台"].top_bar.button.clicked.disconnect()
         self.script_list["主调度台"].top_bar.button.setText("中止任务")
         self.script_list["主调度台"].top_bar.button.clicked.connect(
-            lambda: Task_manager.stop_task(task.name)
+            lambda: TaskManager.stop_task(task.name)
         )
         task.create_task_list.connect(
             self.script_list["主调度台"].info.task.create_task
@@ -166,20 +166,31 @@ class DispatchCenter(QWidget):
         """更新顶栏"""
 
         list = []
+        queue_numb, member_numb = 0, 0
 
         if (Config.app_path / "config/QueueConfig").exists():
             for json_file in (Config.app_path / "config/QueueConfig").glob("*.json"):
                 list.append(f"队列 - {json_file.stem}")
+                queue_numb += 1
 
         if (Config.app_path / "config/MaaConfig").exists():
             for subdir in (Config.app_path / "config/MaaConfig").iterdir():
                 if subdir.is_dir():
                     list.append(f"实例 - Maa - {subdir.name}")
+                    member_numb += 1
 
         self.script_list["主调度台"].top_bar.object.clear()
         self.script_list["主调度台"].top_bar.object.addItems(list)
-        self.script_list["主调度台"].top_bar.object.setCurrentIndex(-1)
-        self.script_list["主调度台"].top_bar.mode.setCurrentIndex(-1)
+        self.script_list["主调度台"].top_bar.mode.clear()
+        self.script_list["主调度台"].top_bar.mode.addItems(["自动代理", "人工排查"])
+
+        if queue_numb == 1:
+            self.script_list["主调度台"].top_bar.object.setCurrentIndex(0)
+        elif member_numb == 1:
+            self.script_list["主调度台"].top_bar.object.setCurrentIndex(queue_numb)
+        else:
+            self.script_list["主调度台"].top_bar.object.setCurrentIndex(-1)
+        self.script_list["主调度台"].top_bar.mode.setCurrentIndex(0)
 
 
 class DispatchBox(QWidget):
@@ -223,7 +234,6 @@ class DispatchBox(QWidget):
                 self.object = ComboBox()
                 self.object.setPlaceholderText("请选择调度对象")
                 self.mode = ComboBox()
-                self.mode.addItems(["自动代理", "人工排查"])
                 self.mode.setPlaceholderText("请选择调度模式")
 
                 self.button = PushButton("开始任务")
@@ -276,7 +286,7 @@ class DispatchBox(QWidget):
                     info = json.load(f)
 
                 logger.info(f"用户添加任务：{name}")
-                Task_manager.add_task(f"{self.mode.currentText()}_主调度台", name, info)
+                TaskManager.add_task(f"{self.mode.currentText()}_主调度台", name, info)
 
             elif self.object.currentText().split(" - ")[0] == "实例":
 
@@ -285,7 +295,7 @@ class DispatchBox(QWidget):
                     info = {"Queue": {"Member_1": name}}
 
                     logger.info(f"用户添加任务：{name}")
-                    Task_manager.add_task(
+                    TaskManager.add_task(
                         f"{self.mode.currentText()}_主调度台", "自定义队列", info
                     )
 

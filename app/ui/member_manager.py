@@ -46,9 +46,12 @@ from qfluentwidgets import (
     HeaderCardWidget,
     CommandBar,
     ExpandGroupSettingCard,
+    ComboBoxSettingCard,
     PushSettingCard,
 )
 from PySide6.QtCore import Qt
+import requests
+import time
 from functools import partial
 from pathlib import Path
 from typing import List
@@ -56,8 +59,9 @@ from datetime import datetime, timedelta
 import json
 import shutil
 
-from app.core import Config, MainInfoBar, Task_manager
+from app.core import Config, MainInfoBar, TaskManager
 from app.services import Crypto
+from app.utils import Updater
 from .Widget import (
     LineEditMessageBox,
     LineEditSettingCard,
@@ -107,14 +111,21 @@ class MemberManager(QWidget):
             ]
         )
         self.tools.addSeparator()
-        self.key = Action(
-            FluentIcon.HIDE,
-            "显示/隐藏密码",
-            checkable=True,
-            triggered=self.show_password,
-        )
         self.tools.addAction(
-            self.key,
+            Action(
+                FluentIcon.DOWNLOAD,
+                "脚本下载器",
+                triggered=self.member_downloader,
+            )
+        )
+        self.tools.addSeparator()
+        self.tools.addAction(
+            Action(
+                FluentIcon.HIDE,
+                "显示/隐藏密码",
+                checkable=True,
+                triggered=self.show_password,
+            )
         )
 
         layout.addWidget(self.tools)
@@ -290,6 +301,64 @@ class MemberManager(QWidget):
         self.change_queue("脚本_0", f"脚本_{index+1}")
 
         self.member_manager.show_SettingBox(index + 1)
+
+    def member_downloader(self):
+        """脚本下载器"""
+
+        choice = ComboBoxMessageBox(
+            self.window(),
+            "选择一个脚本类型以下载相应脚本",
+            ["选择脚本类型"],
+            [["MAA"]],
+        )
+        if choice.exec() and choice.input[0].currentIndex() != -1:
+
+            if choice.input[0].currentText() == "MAA":
+
+                folder = QFileDialog.getExistingDirectory(
+                    self, "选择MAA下载目录", str(Config.app_path)
+                )
+                if not folder:
+                    logger.warning("选择MAA下载目录时未选择文件夹")
+                    MainInfoBar.push_info_bar(
+                        "warning", "警告", "未选择MAA下载目录", 5000
+                    )
+                    return None
+
+                # 从mirrorc服务器获取最新版本信息
+                for _ in range(3):
+                    try:
+                        response = requests.get(
+                            "https://mirrorc.top/api/resources/MAA/latest?user_agent=MaaWpfGui&os=win&arch=x64&channel=beta"
+                        )
+                        maa_info = response.json()
+                        break
+                    except Exception as e:
+                        err = e
+                        time.sleep(0.1)
+                else:
+                    choice = MessageBox(
+                        "错误",
+                        f"获取版本信息时出错：\n{err}",
+                        self.window(),
+                    )
+                    choice.cancelButton.hide()
+                    choice.buttonLayout.insertStretch(1)
+                    if choice.exec():
+                        return None
+                maa_version = list(
+                    map(
+                        int,
+                        maa_info["data"]["version_name"][1:]
+                        .replace("-beta", "")
+                        .split("."),
+                    )
+                )
+                while len(maa_version) < 4:
+                    maa_version.append(0)
+
+                self.downloader = Updater(Path(folder), "MAA", maa_version, [])
+                self.downloader.ui.show()
 
     def show_password(self):
 
@@ -522,7 +591,7 @@ class MaaSettingBox(QWidget):
                 )
             )
             self.card_Set.clicked.connect(
-                lambda: Task_manager.add_task("设置MAA_全局", self.name, None)
+                lambda: TaskManager.add_task("设置MAA_全局", self.name, None)
             )
 
             Layout.addWidget(self.card_Name)
@@ -578,9 +647,13 @@ class MaaSettingBox(QWidget):
                     parent,
                 )
 
-                widget = QWidget()
-                Layout = QVBoxLayout(widget)
-
+                self.card_TaskTransitionMethod = ComboBoxSettingCard(
+                    configItem=Config.maa_config.RunSet_TaskTransitionMethod,
+                    icon=FluentIcon.PAGE_RIGHT,
+                    title="任务切换方式",
+                    content="简洁用户列表下相邻两个任务间的切换方式",
+                    texts=["直接切换账号", "重启明日方舟", "重启模拟器"],
+                )
                 self.ProxyTimesLimit = SpinBoxSettingCard(
                     (0, 1024),
                     FluentIcon.PAGE_RIGHT,
@@ -588,7 +661,6 @@ class MaaSettingBox(QWidget):
                     "当用户本日代理成功次数超过该阈值时跳过代理，阈值为“0”时视为无代理次数上限",
                     Config.maa_config.RunSet_ProxyTimesLimit,
                 )
-
                 self.AnnihilationTimeLimit = SpinBoxSettingCard(
                     (1, 1024),
                     FluentIcon.PAGE_RIGHT,
@@ -596,7 +668,6 @@ class MaaSettingBox(QWidget):
                     "MAA日志无变化时间超过该阈值视为超时，单位为分钟",
                     Config.maa_config.RunSet_AnnihilationTimeLimit,
                 )
-
                 self.RoutineTimeLimit = SpinBoxSettingCard(
                     (1, 1024),
                     FluentIcon.PAGE_RIGHT,
@@ -604,7 +675,6 @@ class MaaSettingBox(QWidget):
                     "MAA日志无变化时间超过该阈值视为超时，单位为分钟",
                     Config.maa_config.RunSet_RoutineTimeLimit,
                 )
-
                 self.RunTimesLimit = SpinBoxSettingCard(
                     (1, 1024),
                     FluentIcon.PAGE_RIGHT,
@@ -613,14 +683,15 @@ class MaaSettingBox(QWidget):
                     Config.maa_config.RunSet_RunTimesLimit,
                 )
 
+                widget = QWidget()
+                Layout = QVBoxLayout(widget)
+                Layout.addWidget(self.card_TaskTransitionMethod)
                 Layout.addWidget(self.ProxyTimesLimit)
                 Layout.addWidget(self.AnnihilationTimeLimit)
                 Layout.addWidget(self.RoutineTimeLimit)
                 Layout.addWidget(self.RunTimesLimit)
-
                 self.viewLayout.setContentsMargins(0, 0, 0, 0)
                 self.viewLayout.setSpacing(0)
-
                 self.addGroupWidget(widget)
 
     class UserSettingCard(HeaderCardWidget):
@@ -746,7 +817,7 @@ class MaaSettingBox(QWidget):
                 ):
 
                     set_book = ["routine", "annihilation"]
-                    Task_manager.add_task(
+                    TaskManager.add_task(
                         "设置MAA_用户",
                         self.name,
                         {

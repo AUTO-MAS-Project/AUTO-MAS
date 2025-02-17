@@ -33,11 +33,11 @@ from datetime import datetime
 import pyautogui
 
 from .config import Config
-from .task_manager import Task_manager
+from .task_manager import TaskManager
 from app.services import System
 
 
-class MainTimer(QWidget):
+class _MainTimer(QWidget):
 
     def __init__(
         self,
@@ -81,7 +81,7 @@ class MainTimer(QWidget):
             ):
 
                 logger.info(f"定时任务：{name}")
-                Task_manager.add_task("自动代理_新调度台", name, info)
+                TaskManager.add_task("自动代理_新调度台", name, info)
 
     def set_silence(self):
         """设置静默模式"""
@@ -125,4 +125,4 @@ class MainTimer(QWidget):
         return queue_list
 
 
-Main_timer = MainTimer()
+MainTimer = _MainTimer()

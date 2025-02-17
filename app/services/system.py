@@ -34,6 +34,7 @@ import win32process
 import winreg
 import psutil
 import subprocess
+from pathlib import Path
 
 from app.core import Config
 
@@ -50,7 +51,7 @@ class _SystemHandler:
         self.set_Sleep()
         self.set_SelfStart()
 
-    def set_Sleep(self):
+    def set_Sleep(self) -> None:
         """同步系统休眠状态"""
 
         if Config.global_config.get(Config.global_config.function_IfAllowSleep):
@@ -62,7 +63,7 @@ class _SystemHandler:
             # 恢复系统电源状态
             ctypes.windll.kernel32.SetThreadExecutionState(self.ES_CONTINUOUS)
 
-    def set_SelfStart(self):
+    def set_SelfStart(self) -> None:
         """同步开机自启"""
 
         if (
@@ -90,7 +91,7 @@ class _SystemHandler:
             winreg.DeleteValue(key, "AUTO_MAA")
             winreg.CloseKey(key)
 
-    def set_power(self, mode):
+    def set_power(self, mode) -> None:
 
         if sys.platform.startswith("win"):
 
@@ -144,7 +145,7 @@ class _SystemHandler:
 
                 self.main_window.close()
 
-    def is_startup(self):
+    def is_startup(self) -> bool:
         """判断程序是否已经开机自启"""
 
         key = winreg.OpenKey(
@@ -162,7 +163,7 @@ class _SystemHandler:
             winreg.CloseKey(key)
             return False
 
-    def get_window_info(self):
+    def get_window_info(self) -> list:
         """获取当前窗口信息"""
 
         def callback(hwnd, window_info):
@@ -175,6 +176,30 @@ class _SystemHandler:
         window_info = []
         win32gui.EnumWindows(callback, window_info)
         return window_info
+
+    def kill_process(self, path: Path) -> None:
+        """根据路径中止进程"""
+
+        for pid in self.search_pids(path):
+            killprocess = subprocess.Popen(
+                f"taskkill /F /T /PID {pid}",
+                shell=True,
+                creationflags=subprocess.CREATE_NO_WINDOW,
+            )
+            killprocess.wait()
+
+    def search_pids(self, path: Path) -> list:
+        """根据路径查找进程PID"""
+
+        pids = []
+        for proc in psutil.process_iter(["pid", "exe"]):
+            try:
+                if proc.info["exe"] and proc.info["exe"].lower() == str(path).lower():
+                    pids.append(proc.info["pid"])
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                # 进程可能在此期间已结束或无法访问，忽略这些异常
+                pass
+        return pids
 
 
 System = _SystemHandler()

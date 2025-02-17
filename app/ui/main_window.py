@@ -26,10 +26,7 @@ v4.2
 """
 
 from loguru import logger
-from PySide6.QtWidgets import (
-    QApplication,
-    QSystemTrayIcon,
-)
+from PySide6.QtWidgets import QSystemTrayIcon
 from qfluentwidgets import (
     Action,
     PushButton,
@@ -39,15 +36,18 @@ from qfluentwidgets import (
     InfoBar,
     InfoBarPosition,
     setTheme,
+    isDarkTheme,
+    SystemThemeListener,
     Theme,
     MSFluentWindow,
     NavigationItemPosition,
     qconfig,
 )
 from PySide6.QtGui import QIcon, QCloseEvent
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
+import json
 
-from app.core import Config, Task_manager, Main_timer, MainInfoBar
+from app.core import Config, TaskManager, MainTimer, MainInfoBar
 from app.services import Notify, Crypto, System
 from .setting import Setting
 from .member_manager import MemberManager
@@ -63,7 +63,7 @@ class AUTO_MAA(MSFluentWindow):
         self.setWindowIcon(QIcon(str(Config.app_path / "resources/icons/AUTO_MAA.ico")))
         self.setWindowTitle("AUTO_MAA")
 
-        setTheme(Theme.AUTO)
+        setTheme(Theme.AUTO, lazy=True)
 
         self.splashScreen = SplashScreen(self.windowIcon(), self)
         self.show_ui("显示主窗口", if_quick=True)
@@ -143,22 +143,17 @@ class AUTO_MAA(MSFluentWindow):
         self.tray_menu.addSeparator()
 
         # 开始任务菜单项
-        # self.tray_menu.addActions(
-        #     [
-        #         Action(
-        #             FluentIcon.PLAY,
-        #             "运行自动代理",
-        #             triggered=lambda: self.start_task("自动代理"),
-        #         ),
-        #         Action(
-        #             FluentIcon.PLAY,
-        #             "运行人工排查",
-        #             triggered=lambda: self.start_task("人工排查"),
-        #         ),
-        #         Action(FluentIcon.PAUSE, "中止当前任务", triggered=self.stop_task),
-        #     ]
-        # )
-        # self.tray_menu.addSeparator()
+        self.tray_menu.addActions(
+            [
+                Action(FluentIcon.PLAY, "运行自动代理", triggered=self.start_main_task),
+                Action(
+                    FluentIcon.PAUSE,
+                    "中止所有任务",
+                    triggered=lambda: TaskManager.stop_task("ALL"),
+                ),
+            ]
+        )
+        self.tray_menu.addSeparator()
 
         # 退出主程序菜单项
         self.tray_menu.addAction(
@@ -169,14 +164,31 @@ class AUTO_MAA(MSFluentWindow):
         self.tray.setContextMenu(self.tray_menu)
         self.tray.activated.connect(self.on_tray_activated)
 
-        Task_manager.create_gui.connect(self.dispatch_center.add_board)
-        Task_manager.connect_gui.connect(self.dispatch_center.connect_main_board)
+        TaskManager.create_gui.connect(self.dispatch_center.add_board)
+        TaskManager.connect_gui.connect(self.dispatch_center.connect_main_board)
         self.setting.ui.card_IfShowTray.checkedChanged.connect(
             lambda: self.show_ui("配置托盘")
         )
         self.setting.ui.card_IfToTray.checkedChanged.connect(self.set_min_method)
 
         self.splashScreen.finish()
+
+        self.themeListener = SystemThemeListener(self)
+        self.themeListener.systemThemeChanged.connect(self.switch_theme)
+        self.themeListener.start()
+
+    def switch_theme(self):
+        """切换主题"""
+
+        setTheme(Theme.AUTO, lazy=True)
+        QTimer.singleShot(100, lambda: setTheme(Theme.AUTO, lazy=True))
+
+        # 云母特效启用时需要增加重试机制
+        if self.isMicaEffectEnabled():
+            QTimer.singleShot(
+                100,
+                lambda: self.windowEffect.setMicaEffect(self.winId(), isDarkTheme()),
+            )
 
     def start_up_task(self) -> None:
         """启动时任务"""
@@ -212,6 +224,11 @@ class AUTO_MAA(MSFluentWindow):
                 info.addWidget(Up)
                 info.show()
 
+        # 直接运行主任务
+        if Config.global_config.get(Config.global_config.start_IfRunDirectly):
+
+            self.start_main_task()
+
     def set_min_method(self) -> None:
         """设置最小化方法"""
 
@@ -230,40 +247,32 @@ class AUTO_MAA(MSFluentWindow):
         if reason == QSystemTrayIcon.DoubleClick:
             self.show_ui("显示主窗口")
 
-    # def start_task(self, mode):
-    #     """调起对应任务"""
-    #     if self.main.MaaManager.isRunning():
-    #         Notify.push_notification(
-    #             f"无法运行{mode}！",
-    #             "当前已有任务正在运行，请在该任务结束后重试",
-    #             "当前已有任务正在运行，请在该任务结束后重试",
-    #             3,
-    #         )
-    #     else:
-    #         self.main.maa_starter(mode)
+    def start_main_task(self) -> None:
+        """启动主任务"""
 
-    # def stop_task(self):
-    #     """中止当前任务"""
-    #     if self.main.MaaManager.isRunning():
-    #         if (
-    #             self.main.MaaManager.mode == "自动代理"
-    #             or self.main.MaaManager.mode == "人工排查"
-    #         ):
-    #             self.main.maa_ender(f"{self.main.MaaManager.mode}_结束")
-    #         elif "设置MAA" in self.main.MaaManager.mode:
-    #             Notify.push_notification(
-    #                 "正在设置MAA！",
-    #                 "正在运行设置MAA任务，无法中止",
-    #                 "正在运行设置MAA任务，无法中止",
-    #                 3,
-    #             )
-    #     else:
-    #         Notify.push_notification(
-    #             "无任务运行！",
-    #             "当前无任务正在运行，无需中止",
-    #             "当前无任务正在运行，无需中止",
-    #             3,
-    #         )
+        if (Config.app_path / "config/QueueConfig/调度队列_1.json").exists():
+
+            with (Config.app_path / "config/QueueConfig/调度队列_1.json").open(
+                mode="r", encoding="utf-8"
+            ) as f:
+                info = json.load(f)
+
+            logger.info("自动添加任务：调度队列_1")
+            TaskManager.add_task("自动代理_主调度台", "主任务队列", info)
+
+        elif (Config.app_path / "config/MaaConfig/脚本_1").exists():
+
+            info = {"Queue": {"Member_1": "脚本_1"}}
+
+            logger.info("自动添加任务：脚本_1")
+            TaskManager.add_task("自动代理_主调度台", "主任务队列", info)
+
+        else:
+
+            logger.worning("启动主任务失败：未找到有效的主任务配置文件")
+            MainInfoBar.push_info_bar(
+                "warning", "启动主任务失败", "“调度队列_1”与“脚本_1”均不存在", -1
+            )
 
     def show_ui(self, mode: str, if_quick: bool = False) -> None:
         """配置窗口状态"""
@@ -330,12 +339,16 @@ class AUTO_MAA(MSFluentWindow):
         self.show_ui("隐藏到托盘", if_quick=True)
 
         # 清理各功能线程
-        Main_timer.Timer.stop()
-        Main_timer.Timer.deleteLater()
-        Task_manager.stop_task("ALL")
+        MainTimer.Timer.stop()
+        MainTimer.Timer.deleteLater()
+        TaskManager.stop_task("ALL")
 
         # 关闭数据库连接
         Config.close_database()
+
+        # 关闭主题监听
+        self.themeListener.terminate()
+        self.themeListener.deleteLater()
 
         logger.info("AUTO_MAA主程序关闭")
         logger.info("----------------END----------------")
