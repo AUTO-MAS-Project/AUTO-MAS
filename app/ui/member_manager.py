@@ -50,6 +50,8 @@ from qfluentwidgets import (
     PushSettingCard,
 )
 from PySide6.QtCore import Qt
+import requests
+import time
 from functools import partial
 from pathlib import Path
 from typing import List
@@ -59,6 +61,7 @@ import shutil
 
 from app.core import Config, MainInfoBar, TaskManager
 from app.services import Crypto
+from app.utils import Updater
 from .Widget import (
     LineEditMessageBox,
     LineEditSettingCard,
@@ -108,14 +111,21 @@ class MemberManager(QWidget):
             ]
         )
         self.tools.addSeparator()
-        self.key = Action(
-            FluentIcon.HIDE,
-            "显示/隐藏密码",
-            checkable=True,
-            triggered=self.show_password,
-        )
         self.tools.addAction(
-            self.key,
+            Action(
+                FluentIcon.DOWNLOAD,
+                "脚本下载器",
+                triggered=self.member_downloader,
+            )
+        )
+        self.tools.addSeparator()
+        self.tools.addAction(
+            Action(
+                FluentIcon.HIDE,
+                "显示/隐藏密码",
+                checkable=True,
+                triggered=self.show_password,
+            )
         )
 
         layout.addWidget(self.tools)
@@ -291,6 +301,64 @@ class MemberManager(QWidget):
         self.change_queue("脚本_0", f"脚本_{index+1}")
 
         self.member_manager.show_SettingBox(index + 1)
+
+    def member_downloader(self):
+        """脚本下载器"""
+
+        choice = ComboBoxMessageBox(
+            self.window(),
+            "选择一个脚本类型以下载相应脚本",
+            ["选择脚本类型"],
+            [["MAA"]],
+        )
+        if choice.exec() and choice.input[0].currentIndex() != -1:
+
+            if choice.input[0].currentText() == "MAA":
+
+                folder = QFileDialog.getExistingDirectory(
+                    self, "选择MAA下载目录", str(Config.app_path)
+                )
+                if not folder:
+                    logger.warning("选择MAA下载目录时未选择文件夹")
+                    MainInfoBar.push_info_bar(
+                        "warning", "警告", "未选择MAA下载目录", 5000
+                    )
+                    return None
+
+                # 从mirrorc服务器获取最新版本信息
+                for _ in range(3):
+                    try:
+                        response = requests.get(
+                            "https://mirrorc.top/api/resources/MAA/latest?user_agent=MaaWpfGui&os=win&arch=x64&channel=beta"
+                        )
+                        maa_info = response.json()
+                        break
+                    except Exception as e:
+                        err = e
+                        time.sleep(0.1)
+                else:
+                    choice = MessageBox(
+                        "错误",
+                        f"获取版本信息时出错：\n{err}",
+                        self.window(),
+                    )
+                    choice.cancelButton.hide()
+                    choice.buttonLayout.insertStretch(1)
+                    if choice.exec():
+                        return None
+                maa_version = list(
+                    map(
+                        int,
+                        maa_info["data"]["version_name"][1:]
+                        .replace("-beta", "")
+                        .split("."),
+                    )
+                )
+                while len(maa_version) < 4:
+                    maa_version.append(0)
+
+                self.downloader = Updater(Path(folder), "MAA", maa_version, [])
+                self.downloader.ui.show()
 
     def show_password(self):
 

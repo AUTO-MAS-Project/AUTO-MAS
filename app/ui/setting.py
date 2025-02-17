@@ -363,7 +363,7 @@ class Setting(QWidget):
     def show_notice(self, if_show: bool = True):
         """显示公告"""
 
-        # 从远程服务器获取最新版本信息
+        # 从远程服务器获取最新公告
         for _ in range(3):
             try:
                 response = requests.get(
