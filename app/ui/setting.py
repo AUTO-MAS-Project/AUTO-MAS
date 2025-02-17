@@ -454,10 +454,10 @@ class FunctionSettingCard(HeaderCardWidget):
                 configItem=Config.global_config.function_IfSilence,
             )
             self.card_BossKey = LineEditSettingCard(
-                text="请输入安卓模拟器老版键",
+                text="请输入安卓模拟器老板键",
                 icon=FluentIcon.PAGE_RIGHT,
-                title="模拟器老版键",
-                content="输入模拟器老版快捷键，以“+”分隔",
+                title="模拟器老板键",
+                content="输入模拟器老板快捷键，以“+”分隔",
                 configItem=Config.global_config.function_BossKey,
             )
 
