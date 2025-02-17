@@ -315,8 +315,9 @@ class MemberManager(QWidget):
 
             if choice.input[0].currentText() == "MAA":
 
+                (Config.app_path / "script/MAA").mkdir(parents=True, exist_ok=True)
                 folder = QFileDialog.getExistingDirectory(
-                    self, "选择MAA下载目录", str(Config.app_path)
+                    self, "选择MAA下载目录", str(Config.app_path / "script/MAA")
                 )
                 if not folder:
                     logger.warning("选择MAA下载目录时未选择文件夹")
