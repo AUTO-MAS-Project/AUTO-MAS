@@ -580,6 +580,7 @@ class MaaManager(QObject):
                 self.maa_result = "Success!"
             elif (
                 ("请「检查连接设置」或「尝试重启模拟器与 ADB」或「重启电脑」" in log)
+                or ("未检测到任何模拟器" in log)
                 or ("已停止" in log)
                 or ("MaaAssistantArknights GUI exited" in log)
             ):
@@ -596,6 +597,7 @@ class MaaManager(QObject):
                 self.maa_result = "Success!"
             elif (
                 ("请「检查连接设置」或「尝试重启模拟器与 ADB」或「重启电脑」" in log)
+                or ("未检测到任何模拟器" in log)
                 or ("已停止" in log)
                 or ("MaaAssistantArknights GUI exited" in log)
             ):
@@ -734,13 +736,13 @@ class MaaManager(QObject):
 
                 data["Global"][
                     "VersionUpdate.ScheduledUpdateCheck"
-                ] = "True"  # 定时检查更新
+                ] = "False"  # 定时检查更新
                 data["Global"][
                     "VersionUpdate.AutoDownloadUpdatePackage"
-                ] = "True"  # 自动下载更新包
+                ] = "False"  # 自动下载更新包
                 data["Global"][
                     "VersionUpdate.AutoInstallUpdatePackage"
-                ] = "True"  # 自动安装更新包
+                ] = "False"  # 自动安装更新包
                 data["Configurations"]["Default"]["Start.ClientType"] = self.data[
                     index
                 ][

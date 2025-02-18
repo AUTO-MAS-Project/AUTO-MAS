@@ -330,7 +330,7 @@ class MemberManager(QWidget):
                 for _ in range(3):
                     try:
                         response = requests.get(
-                            "https://mirrorc.top/api/resources/MAA/latest?user_agent=MaaWpfGui&os=win&arch=x64&channel=beta"
+                            "https://mirrorc.top/api/resources/MAA/latest?user_agent=MaaWpfGui&os=win&arch=x64&channel=stable"
                         )
                         maa_info = response.json()
                         break
