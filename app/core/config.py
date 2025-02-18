@@ -582,6 +582,12 @@ class GlobalConfig(QConfig):
     update_UpdateType = OptionsConfigItem(
         "Update", "UpdateType", "main", OptionsValidator(["main", "dev"])
     )
+    # 日志管理
+    function_IfEnableLog = ConfigItem("Function", "IfEnableLog", False, BoolValidator())
+    function_LogRetentionDays = OptionsConfigItem(
+        "Function", "LogRetentionDays", "7 天",
+        OptionsValidator(["7 天", "15 天", "30 天", "60 天", "永不清理"])
+    )
 
 
 class QueueConfig(QConfig):
