@@ -759,6 +759,9 @@ class GlobalConfig(QConfig):
 
     start_IfSelfStart = ConfigItem("Start", "IfSelfStart", False, BoolValidator())
     start_IfRunDirectly = ConfigItem("Start", "IfRunDirectly", False, BoolValidator())
+    start_IfMinimizeDirectly = ConfigItem(
+        "Start", "IfMinimizeDirectly", False, BoolValidator()
+    )
 
     ui_IfShowTray = ConfigItem("UI", "IfShowTray", False, BoolValidator())
     ui_IfToTray = ConfigItem("UI", "IfToTray", False, BoolValidator())

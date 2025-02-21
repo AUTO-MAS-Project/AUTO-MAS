@@ -255,6 +255,11 @@ class AUTO_MAA(MSFluentWindow):
 
             self.start_main_task()
 
+        # 直接最小化
+        if Config.global_config.get(Config.global_config.start_IfMinimizeDirectly):
+
+            self.titleBar.minBtn.click()
+
     def set_min_method(self) -> None:
         """设置最小化方法"""
 
