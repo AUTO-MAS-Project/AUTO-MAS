@@ -414,6 +414,18 @@ class FunctionSettingCard(HeaderCardWidget):
         super().__init__(parent)
         self.setTitle("功能")
 
+        self.card_HomePage = ComboBoxSettingCard(
+            configItem=Config.global_config.function_HomePage,
+            icon=FluentIcon.PAGE_RIGHT,
+            title="主页内容",
+            content="选择AUTO_MAA主页展示的内容",
+            texts=[
+                "明日方舟官网情报",
+                "明日方舟游戏公告",
+                "明日方舟个人中心",
+                "PRTS百科网站首页",
+            ],
+        )
         self.card_HistoryRetentionTime = ComboBoxSettingCard(
             configItem=Config.global_config.function_HistoryRetentionTime,
             icon=FluentIcon.PAGE_RIGHT,
@@ -436,6 +448,7 @@ class FunctionSettingCard(HeaderCardWidget):
         )
 
         Layout = QVBoxLayout()
+        Layout.addWidget(self.card_HomePage)
         Layout.addWidget(self.card_HistoryRetentionTime)
         Layout.addWidget(self.card_IfAllowSleep)
         Layout.addWidget(self.card_IfSilence)

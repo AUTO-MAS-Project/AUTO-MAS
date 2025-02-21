@@ -30,9 +30,10 @@ from PySide6.QtWidgets import (
     QFrame,
     QVBoxLayout,
 )
-from qfluentwidgets import TitleLabel
 from qframelesswindow.webengine import FramelessWebEngineView
 from PySide6.QtCore import QUrl
+
+from app.core import Config
 
 
 class Home(QFrame):
@@ -41,12 +42,26 @@ class Home(QFrame):
         super().__init__(parent=parent)
         self.setObjectName("主界面")
 
-        # self.webView = FramelessWebEngineView(self)
-        # self.webView.load(QUrl("https://github.com/DLmaster361/AUTO_MAA"))
-        self.Lable = TitleLabel(" 正在施工中~")
+        self.webView = FramelessWebEngineView(self)
 
         self.vBoxLayout = QVBoxLayout(self)
         self.vBoxLayout.setContentsMargins(0, 0, 0, 0)
-        # self.vBoxLayout.addWidget(self.webView)
-        self.vBoxLayout.addWidget(self.Lable)
-        self.vBoxLayout.addStretch(1)
+        self.vBoxLayout.addWidget(self.webView)
+
+        self.current_url = None
+
+        self.refresh()
+
+    def refresh(self):
+
+        if (
+            Config.global_config.get(Config.global_config.function_HomePage)
+            != self.current_url
+        ):
+
+            self.webView.load(
+                QUrl(Config.global_config.get(Config.global_config.function_HomePage))
+            )
+            self.current_url = Config.global_config.get(
+                Config.global_config.function_HomePage
+            )
