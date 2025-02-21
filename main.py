@@ -32,7 +32,7 @@ from qfluentwidgets import FluentTranslator
 import sys
 
 
-@logger.catch
+# @logger.catch
 def main():
 
     application = QApplication(sys.argv)

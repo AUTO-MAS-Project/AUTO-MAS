@@ -46,6 +46,8 @@ from qfluentwidgets import (
 from PySide6.QtGui import QIcon, QCloseEvent
 from PySide6.QtCore import Qt, QTimer
 import json
+from datetime import datetime, timedelta
+import shutil
 
 from app.core import Config, TaskManager, MainTimer, MainInfoBar
 from app.services import Notify, Crypto, System
@@ -53,6 +55,7 @@ from .setting import Setting
 from .member_manager import MemberManager
 from .queue_manager import QueueManager
 from .dispatch_center import DispatchCenter
+from .history import History
 
 
 class AUTO_MAA(MSFluentWindow):
@@ -76,6 +79,7 @@ class AUTO_MAA(MSFluentWindow):
         self.member_manager = MemberManager(self)
         self.queue_manager = QueueManager(self)
         self.dispatch_center = DispatchCenter(self)
+        self.history = History(self)
 
         self.addSubInterface(
             self.setting,
@@ -105,6 +109,13 @@ class AUTO_MAA(MSFluentWindow):
             FluentIcon.IOT,
             NavigationItemPosition.TOP,
         )
+        self.addSubInterface(
+            self.history,
+            FluentIcon.HISTORY,
+            "历史记录",
+            FluentIcon.HISTORY,
+            NavigationItemPosition.BOTTOM,
+        )
         self.stackedWidget.currentChanged.connect(
             lambda index: (self.member_manager.refresh() if index == 1 else None)
         )
@@ -122,6 +133,9 @@ class AUTO_MAA(MSFluentWindow):
             lambda index: (
                 self.dispatch_center.update_top_bar() if index == 3 else None
             )
+        )
+        self.stackedWidget.currentChanged.connect(
+            lambda index: (self.history.refresh() if index == 4 else None)
         )
 
         # 创建系统托盘及其菜单
@@ -197,6 +211,9 @@ class AUTO_MAA(MSFluentWindow):
         qconfig.load(Config.config_path, Config.global_config)
         Config.global_config.save()
 
+        # 清理旧日志
+        self.clean_old_logs()
+
         # 检查密码
         self.setting.check_PASSWORD()
 
@@ -246,6 +263,40 @@ class AUTO_MAA(MSFluentWindow):
         """双击返回主界面"""
         if reason == QSystemTrayIcon.DoubleClick:
             self.show_ui("显示主窗口")
+
+    def clean_old_logs(self):
+        """
+        删除超过用户设定天数的日志文件（基于目录日期）
+        """
+
+        if (
+            Config.global_config.get(Config.global_config.function_HistoryRetentionTime)
+            == 0
+        ):
+            logger.info("由于用户设置日志永久保留，跳过日志清理")
+            return
+
+        deleted_count = 0
+
+        for date_folder in (Config.app_path / "history").iterdir():
+            if not date_folder.is_dir():
+                continue  # 只处理日期文件夹
+
+            try:
+                # 只检查 `YYYY-MM-DD` 格式的文件夹
+                folder_date = datetime.strptime(date_folder.name, "%Y-%m-%d")
+                if datetime.now() - folder_date > timedelta(
+                    days=Config.global_config.get(
+                        Config.global_config.function_HistoryRetentionTime
+                    )
+                ):
+                    shutil.rmtree(date_folder, ignore_errors=True)
+                    deleted_count += 1
+                    logger.info(f"已删除超期日志目录: {date_folder}")
+            except ValueError:
+                logger.warning(f"非日期格式的目录: {date_folder}")
+
+        logger.info(f"清理完成: {deleted_count} 个日期目录")
 
     def start_main_task(self) -> None:
         """启动主任务"""

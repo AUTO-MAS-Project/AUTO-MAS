@@ -39,6 +39,10 @@ from qfluentwidgets import (
     Signal,
     ComboBox,
     CheckBox,
+    IconWidget,
+    FluentIcon,
+    CardWidget,
+    BodyLabel,
     qconfig,
     ConfigItem,
     TimeEdit,
@@ -319,3 +323,53 @@ class TimeEditSettingCard(SettingCard):
             qconfig.set(self.configItem_time, value)
 
         self.TimeEdit.setTime(QTime.fromString(value, "HH:mm"))
+
+
+class StatefulItemCard(CardWidget):
+
+    def __init__(self, item: list, parent=None):
+        super().__init__(parent)
+
+        self.Layout = QHBoxLayout(self)
+
+        self.Label = BodyLabel(item[0], self)
+        self.icon = IconWidget(FluentIcon.MORE, self)
+        self.icon.setFixedSize(16, 16)
+        self.update_status(item[1])
+
+        self.Layout.addWidget(self.icon)
+        self.Layout.addWidget(self.Label)
+        self.Layout.addStretch(1)
+
+    def update_status(self, status: str):
+
+        if status == "完成":
+            self.icon.setIcon(FluentIcon.ACCEPT)
+            self.Label.setTextColor("#0eb840", "#0eb840")
+        elif status == "等待":
+            self.icon.setIcon(FluentIcon.MORE)
+            self.Label.setTextColor("#161823", "#e3f9fd")
+        elif status == "运行":
+            self.icon.setIcon(FluentIcon.PLAY)
+            self.Label.setTextColor("#177cb0", "#70f3ff")
+        elif status == "跳过":
+            self.icon.setIcon(FluentIcon.REMOVE)
+            self.Label.setTextColor("#75878a", "#7397ab")
+        elif status == "异常":
+            self.icon.setIcon(FluentIcon.CLOSE)
+            self.Label.setTextColor("#ff2121", "#ff2121")
+
+
+class QuantifiedItemCard(CardWidget):
+
+    def __init__(self, item: list, parent=None):
+        super().__init__(parent)
+
+        self.Layout = QHBoxLayout(self)
+
+        self.Name = BodyLabel(item[0], self)
+        self.Numb = BodyLabel(str(item[1]), self)
+
+        self.Layout.addWidget(self.Name)
+        self.Layout.addStretch(1)
+        self.Layout.addWidget(self.Numb)

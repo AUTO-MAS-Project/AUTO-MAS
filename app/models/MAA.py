@@ -38,7 +38,6 @@ from typing import List
 
 from app.core import Config
 from app.services import Notify, System
-from app.services.maa_log_analyzer import analyze_maa_logs
 
 
 class MaaManager(QObject):
@@ -288,6 +287,14 @@ class MaaManager(QObject):
                         # 移除静默进程标记
                         Config.silence_list.remove(self.emulator_path)
 
+                        # 保存运行日志
+                        Config.save_maa_log(
+                            Config.app_path
+                            / f"history/{curdate}/{self.data[user[2]][0]}/{start_time.strftime("%H-%M-%S")}.log",
+                            self.check_maa_log(start_time, mode_book[j]),
+                            self.maa_result,
+                        )
+
                     # 成功完成代理的用户修改相关参数
                     if run_book[0] and run_book[1]:
                         if self.data[user[2]][14] == 0 and self.data[user[2]][3] != -1:
@@ -531,8 +538,8 @@ class MaaManager(QObject):
         with self.maa_log_path.open(mode="r", encoding="utf-8") as f:
             pass
 
-    def check_maa_log(self, start_time: datetime, mode: str) -> None:
-        """检查MAA日志以判断MAA程序运行状态"""
+    def check_maa_log(self, start_time: datetime, mode: str) -> list:
+        """获取MAA日志并检查以判断MAA程序运行状态"""
 
         # 获取日志
         logs = []
@@ -616,6 +623,8 @@ class MaaManager(QObject):
 
             self.quit_monitor()
 
+        return logs
+
     def start_monitor(self, start_time: datetime, mode: str) -> None:
         """开始监视MAA日志"""
 
@@ -637,70 +646,6 @@ class MaaManager(QObject):
             self.log_monitor.fileChanged.disconnect()
             self.log_monitor_timer.stop()
             self.monitor_loop.quit()
-
-        # 检查用户是否开启日志保存功能
-        if not Config.global_config.get(Config.global_config.function_IfEnableLog):
-            logger.info(f"{self.name} | 用户未启用日志保存功能，跳过保存")
-            return
-
-        # 获取当前运行的用户
-        current_user = next((user[0].split(" - ")[0] for user in self.user_list if user[1] == "运行"), "UnknownUser")
-
-        # 新增日志保存功能
-        try:
-            # 获取当前日期和时间
-            now = datetime.now()
-            date_str = now.strftime("%Y-%m-%d")
-            time_str = now.strftime("%H-%M-%S")
-
-            # 停三秒，保证日志完全写入
-            time.sleep(3)
-
-            # 设定日志保存路径：/maa_run_history/{date}/{实例}/{用户}/{time}.log
-            base_path = Path(f"./maa_run_history/{date_str}/{self.name}/{current_user}")
-            base_path.mkdir(parents=True, exist_ok=True)  # 确保目录存在
-
-            log_file_path = base_path / f"{time_str}.log"
-
-            # 读取 MAA 运行日志
-            with self.maa_log_path.open(mode="r", encoding="utf-8") as f:
-                logs = f.readlines()
-
-            # **只获取最后一次 MAA 运行日志**
-            last_start_idx = None
-            last_exit_idx = None
-
-            # 反向查找最后一个 "MaaAssistantArknights GUI exited"
-            for i in range(len(logs) - 1, -1, -1):
-                if "MaaAssistantArknights GUI exited" in logs[i]:
-                    last_exit_idx = i
-                    break
-
-            # 反向查找最近的 "MaaAssistantArknights GUI started"
-            if last_exit_idx is not None:
-                for i in range(last_exit_idx, -1, -1):
-                    if "MaaAssistantArknights GUI started" in logs[i]:
-                        last_start_idx = i
-                        break
-
-            # 确保找到了完整的日志片段
-            if last_start_idx is not None and last_exit_idx is not None:
-                relevant_logs = logs[last_start_idx: last_exit_idx + 1]
-
-                # 只保存最后一次的完整日志
-                with log_file_path.open(mode="w", encoding="utf-8") as f:
-                    f.writelines(relevant_logs)
-
-                logger.info(f"{self.name} | 运行日志已保存: {log_file_path}")
-
-                # ========== **调用分析函数** ==========
-                analyze_maa_logs(base_path)
-
-            else:
-                logger.warning(f"{self.name} | 未找到完整的 MAA 运行日志片段，跳过保存")
-
-        except Exception as e:
-            logger.error(f"{self.name} | 日志保存失败: {str(e)}")
 
     def set_maa(self, mode, index):
         """配置MAA运行参数"""
