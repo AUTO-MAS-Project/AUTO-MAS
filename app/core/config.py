@@ -748,10 +748,10 @@ class GlobalConfig(QConfig):
     function_HomePage = OptionsConfigItem(
         "Function",
         "HomePage",
-        "https://ak.hypergryph.com/#information",
+        "https://ak.hypergryph.com/news",
         OptionsValidator(
             [
-                "https://ak.hypergryph.com/#information",
+                "https://ak.hypergryph.com/news",
                 "https://ak-webview.hypergryph.com/gameBulletin",
                 "https://ak.hypergryph.com/user/home",
                 "https://prts.wiki/w/%E9%A6%96%E9%A1%B5",
