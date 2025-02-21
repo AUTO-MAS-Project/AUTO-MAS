@@ -72,10 +72,7 @@ from .Widget import (
 
 class MemberManager(QWidget):
 
-    def __init__(
-        self,
-        parent=None,
-    ):
+    def __init__(self, parent=None):
         super().__init__(parent)
 
         self.setObjectName("脚本管理")

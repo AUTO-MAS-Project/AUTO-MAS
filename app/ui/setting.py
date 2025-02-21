@@ -58,10 +58,7 @@ from .Widget import LineEditMessageBox, LineEditSettingCard, PasswordLineEditSet
 
 class Setting(QWidget):
 
-    def __init__(
-        self,
-        parent=None,
-    ):
+    def __init__(self, parent=None):
         super().__init__(parent)
 
         self.setObjectName("设置")

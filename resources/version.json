@@ -1,7 +1,7 @@
 {
-    "main_version": "4.2.4.2",
+    "main_version": "4.2.4.3",
     "updater_version": "1.1.2.0",
-    "announcement": "\n## 新增功能\n- 历史记录统计功能上线\n## 修复BUG\n- 更新器修正`channel`\n## 程序优化\n- 添加MAA监测字段：`未检测到任何模拟器`\n- 取消MAA运行中自动更新",
+    "announcement": "\n## 新增功能\n- 历史记录统计功能上线\n- 添加软件主页\n## 修复BUG\n- 更新器修正`channel`\n## 程序优化\n- 添加MAA监测字段：`未检测到任何模拟器`\n- 取消MAA运行中自动更新",
     "proxy_list": [
         "",
         "https://gitproxy.click/",

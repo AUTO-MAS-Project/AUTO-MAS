@@ -20,36 +20,33 @@
 
 """
 AUTO_MAA
-AUTO_MAA主程序
+AUTO_MAA主界面
 v4.2
 作者：DLmaster_361
 """
 
 from loguru import logger
-from PySide6.QtWidgets import QApplication
-from PySide6.QtCore import Qt
-from qfluentwidgets import FluentTranslator
-import sys
+from PySide6.QtWidgets import (
+    QFrame,
+    QVBoxLayout,
+)
+from qfluentwidgets import TitleLabel
+from qframelesswindow.webengine import FramelessWebEngineView
+from PySide6.QtCore import QUrl
 
 
-# @logger.catch
-def main():
+class Home(QFrame):
 
-    application = QApplication(sys.argv)
-    QApplication.setAttribute(Qt.AA_DontCreateNativeWidgetSiblings)
+    def __init__(self, parent=None):
+        super().__init__(parent=parent)
+        self.setObjectName("主界面")
 
-    translator = FluentTranslator()
-    application.installTranslator(translator)
+        # self.webView = FramelessWebEngineView(self)
+        # self.webView.load(QUrl("https://github.com/DLmaster361/AUTO_MAA"))
+        self.Lable = TitleLabel(" 正在施工中~")
 
-    from app.ui.main_window import AUTO_MAA
-
-    window = AUTO_MAA()
-    window.show_ui("显示主窗口")
-    window.setMicaEffectEnabled(True)
-    window.start_up_task()
-    sys.exit(application.exec())
-
-
-if __name__ == "__main__":
-
-    main()
+        self.vBoxLayout = QVBoxLayout(self)
+        self.vBoxLayout.setContentsMargins(0, 0, 0, 0)
+        # self.vBoxLayout.addWidget(self.webView)
+        self.vBoxLayout.addWidget(self.Lable)
+        self.vBoxLayout.addStretch(1)
