@@ -126,9 +126,6 @@ class AUTO_MAA(MSFluentWindow):
             NavigationItemPosition.BOTTOM,
         )
         self.stackedWidget.currentChanged.connect(
-            lambda index: (self.home.refresh() if index == 0 else None)
-        )
-        self.stackedWidget.currentChanged.connect(
             lambda index: (self.member_manager.refresh() if index == 1 else None)
         )
         self.stackedWidget.currentChanged.connect(

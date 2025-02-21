@@ -45,7 +45,6 @@ def main():
 
     window = AUTO_MAA()
     window.show_ui("显示主窗口")
-    window.setMicaEffectEnabled(True)
     window.start_up_task()
     sys.exit(application.exec())
 
