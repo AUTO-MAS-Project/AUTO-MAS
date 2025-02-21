@@ -745,8 +745,21 @@ class AppConfig:
 class GlobalConfig(QConfig):
     """全局配置"""
 
+    function_HomePage = OptionsConfigItem(
+        "Function",
+        "HomePage",
+        "https://ak.hypergryph.com/#information",
+        OptionsValidator(
+            [
+                "https://ak.hypergryph.com/#information",
+                "https://ak-webview.hypergryph.com/gameBulletin",
+                "https://ak.hypergryph.com/user/home",
+                "https://prts.wiki/w/%E9%A6%96%E9%A1%B5",
+            ]
+        ),
+    )
     function_HistoryRetentionTime = OptionsConfigItem(
-        "Function", "HistoryRetentionTime", 7, OptionsValidator([7, 15, 30, 60, 0])
+        "Function", "HistoryRetentionTime", 0, OptionsValidator([7, 15, 30, 60, 0])
     )
     function_IfAllowSleep = ConfigItem(
         "Function", "IfAllowSleep", False, BoolValidator()
@@ -759,6 +772,9 @@ class GlobalConfig(QConfig):
 
     start_IfSelfStart = ConfigItem("Start", "IfSelfStart", False, BoolValidator())
     start_IfRunDirectly = ConfigItem("Start", "IfRunDirectly", False, BoolValidator())
+    start_IfMinimizeDirectly = ConfigItem(
+        "Start", "IfMinimizeDirectly", False, BoolValidator()
+    )
 
     ui_IfShowTray = ConfigItem("UI", "IfShowTray", False, BoolValidator())
     ui_IfToTray = ConfigItem("UI", "IfToTray", False, BoolValidator())

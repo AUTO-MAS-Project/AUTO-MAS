@@ -51,11 +51,12 @@ import shutil
 
 from app.core import Config, TaskManager, MainTimer, MainInfoBar
 from app.services import Notify, Crypto, System
-from .setting import Setting
+from .home import Home
 from .member_manager import MemberManager
 from .queue_manager import QueueManager
 from .dispatch_center import DispatchCenter
 from .history import History
+from .setting import Setting
 
 
 class AUTO_MAA(MSFluentWindow):
@@ -75,18 +76,19 @@ class AUTO_MAA(MSFluentWindow):
         System.main_window = self.window()
 
         # 创建主窗口
-        self.setting = Setting(self)
+        self.home = Home(self)
         self.member_manager = MemberManager(self)
         self.queue_manager = QueueManager(self)
         self.dispatch_center = DispatchCenter(self)
         self.history = History(self)
+        self.setting = Setting(self)
 
         self.addSubInterface(
-            self.setting,
-            FluentIcon.SETTING,
-            "设置",
-            FluentIcon.SETTING,
-            NavigationItemPosition.BOTTOM,
+            self.home,
+            FluentIcon.HOME,
+            "主页",
+            FluentIcon.HOME,
+            NavigationItemPosition.TOP,
         )
         self.addSubInterface(
             self.member_manager,
@@ -115,6 +117,16 @@ class AUTO_MAA(MSFluentWindow):
             "历史记录",
             FluentIcon.HISTORY,
             NavigationItemPosition.BOTTOM,
+        )
+        self.addSubInterface(
+            self.setting,
+            FluentIcon.SETTING,
+            "设置",
+            FluentIcon.SETTING,
+            NavigationItemPosition.BOTTOM,
+        )
+        self.stackedWidget.currentChanged.connect(
+            lambda index: (self.home.refresh() if index == 0 else None)
         )
         self.stackedWidget.currentChanged.connect(
             lambda index: (self.member_manager.refresh() if index == 1 else None)
@@ -246,6 +258,11 @@ class AUTO_MAA(MSFluentWindow):
 
             self.start_main_task()
 
+        # 直接最小化
+        if Config.global_config.get(Config.global_config.start_IfMinimizeDirectly):
+
+            self.titleBar.minBtn.click()
+
     def set_min_method(self) -> None:
         """设置最小化方法"""
 
@@ -347,6 +364,8 @@ class AUTO_MAA(MSFluentWindow):
             )
             self.window().setGeometry(location[0], location[1], size[0], size[1])
             self.window().show()
+            self.window().raise_()
+            self.window().activateWindow()
             if not if_quick:
                 if Config.global_config.get(Config.global_config.ui_maximized):
                     self.window().showMaximized()

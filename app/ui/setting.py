@@ -58,10 +58,7 @@ from .Widget import LineEditMessageBox, LineEditSettingCard, PasswordLineEditSet
 
 class Setting(QWidget):
 
-    def __init__(
-        self,
-        parent=None,
-    ):
+    def __init__(self, parent=None):
         super().__init__(parent)
 
         self.setObjectName("设置")
@@ -417,6 +414,18 @@ class FunctionSettingCard(HeaderCardWidget):
         super().__init__(parent)
         self.setTitle("功能")
 
+        self.card_HomePage = ComboBoxSettingCard(
+            configItem=Config.global_config.function_HomePage,
+            icon=FluentIcon.PAGE_RIGHT,
+            title="主页内容",
+            content="选择AUTO_MAA主页展示的内容",
+            texts=[
+                "明日方舟官网情报",
+                "明日方舟游戏公告",
+                "明日方舟个人中心",
+                "PRTS百科网站首页",
+            ],
+        )
         self.card_HistoryRetentionTime = ComboBoxSettingCard(
             configItem=Config.global_config.function_HistoryRetentionTime,
             icon=FluentIcon.PAGE_RIGHT,
@@ -439,6 +448,7 @@ class FunctionSettingCard(HeaderCardWidget):
         )
 
         Layout = QVBoxLayout()
+        Layout.addWidget(self.card_HomePage)
         Layout.addWidget(self.card_HistoryRetentionTime)
         Layout.addWidget(self.card_IfAllowSleep)
         Layout.addWidget(self.card_IfSilence)
@@ -496,10 +506,17 @@ class StartSettingCard(HeaderCardWidget):
             content="启动AUTO_MAA后自动运行自动代理任务，优先级：调度队列 1 > 脚本 1",
             configItem=Config.global_config.start_IfRunDirectly,
         )
+        self.card_IfMinimizeDirectly = SwitchSettingCard(
+            icon=FluentIcon.PAGE_RIGHT,
+            title="启动后直接最小化",
+            content="启动AUTO_MAA后直接最小化",
+            configItem=Config.global_config.start_IfMinimizeDirectly,
+        )
 
         Layout = QVBoxLayout()
         Layout.addWidget(self.card_IfSelfStart)
         Layout.addWidget(self.card_IfRunDirectly)
+        Layout.addWidget(self.card_IfMinimizeDirectly)
         self.viewLayout.addLayout(Layout)
 
 
