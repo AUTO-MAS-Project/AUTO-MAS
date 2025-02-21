@@ -77,7 +77,6 @@ class Setting(QWidget):
         self.function = FunctionSettingCard(self)
         self.start = StartSettingCard(self)
         self.ui = UiSettingCard(self)
-        self.log_settings = LogSettingCard(self)
         self.notification = NotifySettingCard(self)
         self.security = SecuritySettingCard(self)
         self.updater = UpdaterSettingCard(self)
@@ -93,7 +92,6 @@ class Setting(QWidget):
         content_layout.addWidget(self.function)
         content_layout.addWidget(self.start)
         content_layout.addWidget(self.ui)
-        content_layout.addWidget(self.log_settings)
         content_layout.addWidget(self.notification)
         content_layout.addWidget(self.security)
         content_layout.addWidget(self.updater)
@@ -419,6 +417,13 @@ class FunctionSettingCard(HeaderCardWidget):
         super().__init__(parent)
         self.setTitle("功能")
 
+        self.card_HistoryRetentionTime = ComboBoxSettingCard(
+            configItem=Config.global_config.function_HistoryRetentionTime,
+            icon=FluentIcon.PAGE_RIGHT,
+            title="历史记录保留时间",
+            content="选择历史记录的保留时间，超期自动清理",
+            texts=["7 天", "15 天", "30 天", "60 天", "永久"],
+        )
         self.card_IfAllowSleep = SwitchSettingCard(
             icon=FluentIcon.PAGE_RIGHT,
             title="启动时阻止系统休眠",
@@ -434,6 +439,7 @@ class FunctionSettingCard(HeaderCardWidget):
         )
 
         Layout = QVBoxLayout()
+        Layout.addWidget(self.card_HistoryRetentionTime)
         Layout.addWidget(self.card_IfAllowSleep)
         Layout.addWidget(self.card_IfSilence)
         Layout.addWidget(self.card_IfAgreeBilibili)
@@ -798,35 +804,6 @@ class OtherSettingCard(HeaderCardWidget):
             self.viewLayout.setContentsMargins(0, 0, 0, 0)
             self.viewLayout.setSpacing(0)
             self.addGroupWidget(widget)
-
-class LogSettingCard(HeaderCardWidget):
-    """日志管理设置"""
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setTitle("日志管理")
-
-        # 日志存储开关
-        self.card_IfEnableLog = SwitchSettingCard(
-            icon=FluentIcon.PAGE_RIGHT,
-            title="启用日志存储",
-            content="记录并存储每次运行的日志，用于多账号日常掉落统计",
-            configItem=Config.global_config.function_IfEnableLog,
-        )
-
-        # 日志保留天数设置
-        self.card_LogRetentionDays = ComboBoxSettingCard(
-            configItem=Config.global_config.function_LogRetentionDays,
-            icon=FluentIcon.PAGE_RIGHT,
-            title="日志保留天数",
-            content="选择日志的保留时间，超期自动清理",
-            texts=["7 天", "15 天", "30 天", "60 天", "永不清理"],
-        )
-
-        Layout = QVBoxLayout()
-        Layout.addWidget(self.card_IfEnableLog)
-        Layout.addWidget(self.card_LogRetentionDays)
-        self.viewLayout.addLayout(Layout)
 
 
 def version_text(version_numb: list) -> str:

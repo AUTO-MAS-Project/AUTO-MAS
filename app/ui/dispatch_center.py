@@ -34,8 +34,6 @@ from PySide6.QtWidgets import (
 )
 from qfluentwidgets import (
     CardWidget,
-    IconWidget,
-    BodyLabel,
     Pivot,
     ScrollArea,
     FluentIcon,
@@ -53,6 +51,7 @@ import json
 
 
 from app.core import Config, TaskManager, Task, MainInfoBar
+from .Widget import StatefulItemCard
 
 
 class DispatchCenter(QWidget):
@@ -335,7 +334,7 @@ class DispatchBox(QWidget):
                 self.viewLayout.addLayout(self.Layout)
                 self.viewLayout.setContentsMargins(3, 0, 3, 3)
 
-                self.task_cards: List[ItemCard] = []
+                self.task_cards: List[StatefulItemCard] = []
 
             def create_task(self, task_list: list):
                 """创建任务队列"""
@@ -351,7 +350,7 @@ class DispatchBox(QWidget):
 
                 for task in task_list:
 
-                    self.task_cards.append(ItemCard(task))
+                    self.task_cards.append(StatefulItemCard(task))
                     self.Layout.addWidget(self.task_cards[-1])
 
                 self.Layout.addStretch(1)
@@ -373,7 +372,7 @@ class DispatchBox(QWidget):
                 self.viewLayout.addLayout(self.Layout)
                 self.viewLayout.setContentsMargins(3, 0, 3, 3)
 
-                self.user_cards: List[ItemCard] = []
+                self.user_cards: List[StatefulItemCard] = []
 
             def create_user(self, user_list: list):
                 """创建用户队列"""
@@ -389,7 +388,7 @@ class DispatchBox(QWidget):
 
                 for user in user_list:
 
-                    self.user_cards.append(ItemCard(user))
+                    self.user_cards.append(StatefulItemCard(user))
                     self.Layout.addWidget(self.user_cards[-1])
 
                 self.Layout.addStretch(1)
@@ -419,38 +418,3 @@ class DispatchBox(QWidget):
 
                 self.text.moveCursor(QTextCursor.End)
                 self.text.ensureCursorVisible()
-
-
-class ItemCard(CardWidget):
-
-    def __init__(self, task_item: list, parent=None):
-        super().__init__(parent)
-
-        self.Layout = QHBoxLayout(self)
-
-        self.Label = BodyLabel(task_item[0], self)
-        self.icon = IconWidget(FluentIcon.MORE, self)
-        self.icon.setFixedSize(16, 16)
-        self.update_status(task_item[1])
-
-        self.Layout.addWidget(self.icon)
-        self.Layout.addWidget(self.Label)
-        self.Layout.addStretch(1)
-
-    def update_status(self, status: str):
-
-        if status == "完成":
-            self.icon.setIcon(FluentIcon.ACCEPT)
-            self.Label.setTextColor("#0eb840", "#0eb840")
-        elif status == "等待":
-            self.icon.setIcon(FluentIcon.MORE)
-            self.Label.setTextColor("#7397ab", "#7397ab")
-        elif status == "运行":
-            self.icon.setIcon(FluentIcon.PLAY)
-            self.Label.setTextColor("#2e4e7e", "#2e4e7e")
-        elif status == "跳过":
-            self.icon.setIcon(FluentIcon.REMOVE)
-            self.Label.setTextColor("#606060", "#d2d2d2")
-        elif status == "异常":
-            self.icon.setIcon(FluentIcon.CLOSE)
-            self.Label.setTextColor("#ff2121", "#ff2121")

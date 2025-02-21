@@ -30,6 +30,9 @@ import sqlite3
 import json
 import sys
 import shutil
+import re
+from datetime import datetime, timedelta
+from collections import defaultdict
 from pathlib import Path
 from qfluentwidgets import (
     QConfig,
@@ -42,6 +45,7 @@ from qfluentwidgets import (
     OptionsValidator,
     qconfig,
 )
+from typing import Union, Dict, List
 
 
 class AppConfig:
@@ -54,7 +58,7 @@ class AppConfig:
         self.log_path = self.app_path / "debug/AUTO_MAA.log"
         self.database_path = self.app_path / "data/data.db"
         self.config_path = self.app_path / "config/config.json"
-        self.history_path = self.app_path / "config/history.json"
+        self.history_path = self.app_path / "history/main.json"
         self.key_path = self.app_path / "data/key"
         self.gameid_path = self.app_path / "data/gameid.txt"
         self.version_path = self.app_path / "resources/version.json"
@@ -74,6 +78,7 @@ class AppConfig:
         (self.app_path / "config").mkdir(parents=True, exist_ok=True)
         (self.app_path / "data").mkdir(parents=True, exist_ok=True)
         (self.app_path / "debug").mkdir(parents=True, exist_ok=True)
+        (self.app_path / "history").mkdir(parents=True, exist_ok=True)
 
         # 生成版本信息文件
         if not self.version_path.exists():
@@ -461,6 +466,206 @@ class AppConfig:
         cur.close()
         db.close()
 
+    def save_maa_log(self, log_path: Path, logs: list, maa_result: str) -> None:
+        """保存MAA日志"""
+
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+
+        data: Dict[str, Union[str, Dict[str, Union[int, dict]]]] = {
+            "recruit_statistics": defaultdict(int),
+            "drop_statistics": defaultdict(dict),
+            "maa_result": maa_result,
+        }
+
+        # 公招统计（仅统计招募到的）
+        confirmed_recruit = False
+        current_star_level = None
+        i = 0
+        while i < len(logs):
+            if "公招识别结果:" in logs[i]:
+                current_star_level = None  # 每次识别公招时清空之前的星级
+                i += 1
+                while i < len(logs) and "Tags" not in logs[i]:  # 读取所有公招标签
+                    i += 1
+
+                if i < len(logs) and "Tags" in logs[i]:  # 识别星级
+                    star_match = re.search(r"(\d+)\s*★ Tags", logs[i])
+                    if star_match:
+                        current_star_level = f"{star_match.group(1)}★"
+
+            if "已确认招募" in logs[i]:  # 只有确认招募后才统计
+                confirmed_recruit = True
+
+            if confirmed_recruit and current_star_level:
+                data["recruit_statistics"][current_star_level] += 1
+                confirmed_recruit = False  # 重置，等待下一次公招
+                current_star_level = None  # 清空已处理的星级
+
+            i += 1
+
+        # 掉落统计
+        current_stage = None
+        stage_drops = {}
+
+        for i, line in enumerate(logs):
+            drop_match = re.search(r"([A-Za-z0-9\-]+) 掉落统计:", line)
+            if drop_match:
+                # 发现新关卡，保存前一个关卡数据
+                if current_stage and stage_drops:
+                    data["drop_statistics"][current_stage] = stage_drops
+
+                current_stage = drop_match.group(1)
+                stage_drops = {}
+                continue
+
+            if current_stage:
+                item_match: List[str] = re.findall(
+                    r"([\u4e00-\u9fa5]+)\s*:\s*([\d,]+)(?:\s*\(\+[\d,]+\))?", line
+                )
+                for item, total in item_match:
+                    # 解析数值时去掉逗号 （如 2,160 -> 2160）
+                    total = int(total.replace(",", ""))
+
+                    # 黑名单
+                    if item not in [
+                        "当前次数",
+                        "理智",
+                        "最快截图耗时",
+                        "专精等级",
+                        "剩余时间",
+                    ]:
+                        stage_drops[item] = total
+
+        # 处理最后一个关卡的掉落数据
+        if current_stage and stage_drops:
+            data["drop_statistics"][current_stage] = stage_drops
+
+        # 保存日志
+        with log_path.open("w", encoding="utf-8") as f:
+            f.writelines(logs)
+        with log_path.with_suffix(".json").open("w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=4)
+
+        logger.info(f"处理完成：{log_path}")
+
+        self.merge_maa_logs(log_path.parent)
+
+    def merge_maa_logs(self, logs_path: Path) -> None:
+        """合并所有 .log 文件"""
+
+        data = {
+            "recruit_statistics": defaultdict(int),
+            "drop_statistics": defaultdict(dict),
+            "maa_result": defaultdict(str),
+        }
+
+        for json_file in logs_path.glob("*.json"):
+
+            with json_file.open("r", encoding="utf-8") as f:
+                single_data: Dict[str, Union[str, Dict[str, Union[int, dict]]]] = (
+                    json.load(f)
+                )
+
+            # 合并公招统计
+            for star_level, count in single_data["recruit_statistics"].items():
+                data["recruit_statistics"][star_level] += count
+
+            # 合并掉落统计
+            for stage, drops in single_data["drop_statistics"].items():
+                if stage not in data["drop_statistics"]:
+                    data["drop_statistics"][stage] = {}  # 初始化关卡
+
+                for item, count in drops.items():
+
+                    if item in data["drop_statistics"][stage]:
+                        data["drop_statistics"][stage][item] += count
+                    else:
+                        data["drop_statistics"][stage][item] = count
+
+            # 合并MAA结果
+            data["maa_result"][
+                json_file.name.replace(".json", "").replace("-", ":")
+            ] = single_data["maa_result"]
+
+        # 生成汇总 JSON 文件
+        with logs_path.with_suffix(".json").open("w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=4)
+
+        logger.info(f"统计完成：{logs_path.with_suffix(".json")}")
+
+    def load_maa_logs(
+        self, mode: str, json_path: Path
+    ) -> Dict[str, Union[str, list, Dict[str, list]]]:
+        """加载MAA日志统计信息"""
+
+        if mode == "总览":
+
+            with json_path.open("r", encoding="utf-8") as f:
+                info: Dict[str, Dict[str, Union[int, dict]]] = json.load(f)
+
+            data = {}
+            data["条目索引"] = [
+                [k, "完成" if v == "Success!" else "异常"]
+                for k, v in info["maa_result"].items()
+            ]
+            data["条目索引"].insert(0, ["数据总览", "运行"])
+            data["统计数据"] = {"公招统计": list(info["recruit_statistics"].items())}
+
+            for game_id, drops in info["drop_statistics"].items():
+                data["统计数据"][f"掉落统计：{game_id}"] = list(drops.items())
+
+            data["统计数据"]["报错汇总"] = [
+                [k, v] for k, v in info["maa_result"].items() if v != "Success!"
+            ]
+
+        elif mode == "单项":
+
+            with json_path.open("r", encoding="utf-8") as f:
+                info: Dict[str, Union[str, Dict[str, Union[int, dict]]]] = json.load(f)
+
+            data = {}
+
+            data["统计数据"] = {"公招统计": list(info["recruit_statistics"].items())}
+
+            for game_id, drops in info["drop_statistics"].items():
+                data["统计数据"][f"掉落统计：{game_id}"] = list(drops.items())
+
+            with json_path.with_suffix(".log").open("r", encoding="utf-8") as f:
+                log = f.read()
+
+            data["日志信息"] = log
+
+        return data
+
+    def search_history(self) -> dict:
+        """搜索所有历史记录"""
+
+        history_dict = {}
+
+        for date_folder in (Config.app_path / "history").iterdir():
+            if not date_folder.is_dir():
+                continue  # 只处理日期文件夹
+
+            try:
+
+                date = datetime.strptime(date_folder.name, "%Y-%m-%d")
+
+                history_dict[date.strftime("%Y年 %m月 %d日")] = list(
+                    date_folder.glob("*.json")
+                )
+
+            except ValueError:
+                logger.warning(f"非日期格式的目录: {date_folder}")
+
+        return {
+            k: v
+            for k, v in sorted(
+                history_dict.items(),
+                key=lambda x: datetime.strptime(x[0], "%Y年 %m月 %d日"),
+                reverse=True,
+            )
+        }
+
     def save_history(self, key: str, content: dict) -> None:
         """保存历史记录"""
 
@@ -540,6 +745,9 @@ class AppConfig:
 class GlobalConfig(QConfig):
     """全局配置"""
 
+    function_HistoryRetentionTime = OptionsConfigItem(
+        "Function", "HistoryRetentionTime", 7, OptionsValidator([7, 15, 30, 60, 0])
+    )
     function_IfAllowSleep = ConfigItem(
         "Function", "IfAllowSleep", False, BoolValidator()
     )
@@ -581,12 +789,6 @@ class GlobalConfig(QConfig):
     update_IfAutoUpdate = ConfigItem("Update", "IfAutoUpdate", False, BoolValidator())
     update_UpdateType = OptionsConfigItem(
         "Update", "UpdateType", "main", OptionsValidator(["main", "dev"])
-    )
-    # 日志管理
-    function_IfEnableLog = ConfigItem("Function", "IfEnableLog", False, BoolValidator())
-    function_LogRetentionDays = OptionsConfigItem(
-        "Function", "LogRetentionDays", "7 天",
-        OptionsValidator(["7 天", "15 天", "30 天", "60 天", "永不清理"])
     )
 
 
