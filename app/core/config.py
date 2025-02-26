@@ -515,6 +515,8 @@ class AppConfig:
                     data["drop_statistics"][current_stage] = stage_drops
 
                 current_stage = drop_match.group(1)
+                if current_stage == "WE":
+                    current_stage = "剿灭模式"
                 stage_drops = {}
                 continue
 
