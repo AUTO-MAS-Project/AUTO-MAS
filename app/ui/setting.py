@@ -409,6 +409,13 @@ class FunctionSettingCard(HeaderCardWidget):
         super().__init__(parent)
         self.setTitle("功能")
 
+        self.card_HomeImageMode = ComboBoxSettingCard(
+            configItem=Config.global_config.function_HomeImageMode,
+            icon=FluentIcon.PAGE_RIGHT,
+            title="主页背景图模式",
+            content="选择主页背景图的来源",
+            texts=["默认", "自定义", "主题图像"],
+        )
         self.card_HistoryRetentionTime = ComboBoxSettingCard(
             configItem=Config.global_config.function_HistoryRetentionTime,
             icon=FluentIcon.PAGE_RIGHT,
@@ -431,6 +438,7 @@ class FunctionSettingCard(HeaderCardWidget):
         )
 
         Layout = QVBoxLayout()
+        Layout.addWidget(self.card_HomeImageMode)
         Layout.addWidget(self.card_HistoryRetentionTime)
         Layout.addWidget(self.card_IfAllowSleep)
         Layout.addWidget(self.card_IfSilence)

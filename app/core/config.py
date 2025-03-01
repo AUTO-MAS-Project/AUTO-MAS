@@ -515,12 +515,15 @@ class AppConfig:
                     data["drop_statistics"][current_stage] = stage_drops
 
                 current_stage = drop_match.group(1)
+                if current_stage == "WE":
+                    current_stage = "剿灭模式"
                 stage_drops = {}
                 continue
 
             if current_stage:
                 item_match: List[str] = re.findall(
-                    r"([\u4e00-\u9fa5]+)\s*:\s*([\d,]+)(?:\s*\(\+[\d,]+\))?", line
+                    r"([\u4e00-\u9fa5A-Za-z0-9\-]+)\s*:\s*([\d,]+)(?:\s*\(\+[\d,]+\))?",
+                    line,
                 )
                 for item, total in item_match:
                     # 解析数值时去掉逗号 （如 2,160 -> 2160）
@@ -745,6 +748,12 @@ class AppConfig:
 class GlobalConfig(QConfig):
     """全局配置"""
 
+    function_HomeImageMode = OptionsConfigItem(
+        "Function",
+        "HomeImageMode",
+        "默认",
+        OptionsValidator(["默认", "自定义", "主题图像"]),
+    )
     function_HistoryRetentionTime = OptionsConfigItem(
         "Function", "HistoryRetentionTime", 0, OptionsValidator([7, 15, 30, 60, 0])
     )

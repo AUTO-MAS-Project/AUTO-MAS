@@ -463,14 +463,22 @@ class IconButton(TransparentToolButton):
 class Banner(QWidget):
     """展示带有圆角的固定大小横幅小部件"""
 
-    def __init__(self, image_path: str, parent=None):
+    def __init__(self, image_path: str = None, parent=None):
         QWidget.__init__(self, parent)
+        self.image_path = None
+        self.banner_image = None
+        self.scaled_image = None
+
+        if image_path:
+            self.set_banner_image(image_path)
+
+    def set_banner_image(self, image_path: str):
+        """设置横幅图片"""
         self.image_path = image_path
         self.banner_image = self.load_banner_image(image_path)
-        self.scaled_image = None
         self.update_scaled_image()
 
-    def load_banner_image(self, image_path: str):
+    def load_banner_image(self, image_path: str) -> QPixmap:
         """加载横幅图片，或创建渐变备用图片"""
         if os.path.isfile(image_path):
             return QPixmap(image_path)

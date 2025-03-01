@@ -32,12 +32,19 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QSpacerItem,
     QSizePolicy,
+    QFileDialog,
 )
 from PySide6.QtCore import Qt, QSize, QUrl
 from PySide6.QtGui import QDesktopServices, QColor
-from qfluentwidgets import FluentIcon, ScrollArea, SimpleCardWidget
+from qfluentwidgets import FluentIcon, ScrollArea, SimpleCardWidget, PrimaryToolButton
+import shutil
+import requests
+import json
+import time
+from datetime import datetime
+from pathlib import Path
 
-from app.core import Config
+from app.core import Config, MainInfoBar
 from .Widget import Banner, IconButton
 
 
@@ -47,12 +54,12 @@ class Home(QWidget):
         super().__init__(parent)
         self.setObjectName("主页")
 
-        widget = Banner(str(Config.app_path / "resources/images/Home.png"))
-        widget.set_percentage_size(
+        self.banner = Banner()
+        self.banner.set_percentage_size(
             0.8, 0.5
         )  # 设置 Banner 大小为窗口的 80% 宽度和 50% 高度
 
-        v_layout = QVBoxLayout(widget)
+        v_layout = QVBoxLayout(self.banner)
         v_layout.setContentsMargins(0, 0, 0, 15)
         v_layout.setSpacing(5)
         v_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
@@ -88,12 +95,215 @@ class Home(QWidget):
         )
         v_layout.addStretch()
 
+        # 中间留白区域
+        v_layout.addItem(
+            QSpacerItem(10, 10, QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Minimum)
+        )
+        v_layout.addStretch()
+
+        # 底部部分 (图片切换按钮)
+        h2_layout = QHBoxLayout()
+        h2_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+
+        # 左边留白区域
+        h2_layout.addItem(
+            QSpacerItem(20, 10, QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Minimum)
+        )
+
+        # # 公告卡片
+        # noticeCard = NoticeCard()
+        # h2_layout.addWidget(noticeCard)
+
+        h2_layout.addStretch()
+
+        # 自定义图像按钮布局
+        self.imageButton = PrimaryToolButton(FluentIcon.IMAGE_EXPORT)
+        self.imageButton.setFixedSize(56, 56)
+        self.imageButton.setIconSize(QSize(32, 32))
+        self.imageButton.clicked.connect(self.get_home_image)
+
+        v1_layout = QVBoxLayout()
+        v1_layout.addWidget(self.imageButton, alignment=Qt.AlignmentFlag.AlignBottom)
+
+        h2_layout.addLayout(v1_layout)
+
+        # 空白占位符
+        h2_layout.addItem(
+            QSpacerItem(25, 10, QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Minimum)
+        )
+
+        # 将底部水平布局添加到垂直布局
+        v_layout.addLayout(h2_layout)
+
         layout = QVBoxLayout()
         scrollArea = ScrollArea()
         scrollArea.setWidgetResizable(True)
-        scrollArea.setWidget(widget)
+        scrollArea.setWidget(self.banner)
         layout.addWidget(scrollArea)
         self.setLayout(layout)
+
+        self.set_banner()
+
+    def get_home_image(self) -> None:
+        """获取主页图片"""
+
+        if (
+            Config.global_config.get(Config.global_config.function_HomeImageMode)
+            == "默认"
+        ):
+            pass
+        elif (
+            Config.global_config.get(Config.global_config.function_HomeImageMode)
+            == "自定义"
+        ):
+
+            file_path, _ = QFileDialog.getOpenFileName(
+                self, "打开自定义主页图片", "", "图片文件 (*.png *.jpg *.bmp)"
+            )
+            if file_path:
+
+                for file in Config.app_path.glob(
+                    "resources/images/Home/BannerCustomize.*"
+                ):
+                    file.unlink()
+
+                shutil.copy(
+                    file_path,
+                    Config.app_path
+                    / f"resources/images/Home/BannerCustomize{Path(file_path).suffix}",
+                )
+
+                logger.info(f"自定义主页图片更换成功：{file_path}")
+                MainInfoBar.push_info_bar(
+                    "success",
+                    "主页图片更换成功",
+                    "自定义主页图片更换成功！",
+                    3000,
+                )
+
+            else:
+                logger.warning("自定义主页图片更换失败：未选择图片文件")
+                MainInfoBar.push_info_bar(
+                    "warning",
+                    "主页图片更换失败",
+                    "未选择图片文件！",
+                    5000,
+                )
+        elif (
+            Config.global_config.get(Config.global_config.function_HomeImageMode)
+            == "主题图像"
+        ):
+
+            # 从远程服务器获取最新主题图像
+            for _ in range(3):
+                try:
+                    response = requests.get(
+                        "https://gitee.com/DLmaster_361/AUTO_MAA/raw/server/theme_image.json"
+                    )
+                    theme_image = response.json()
+                    break
+                except Exception as e:
+                    err = e
+                    time.sleep(0.1)
+            else:
+                logger.error(f"获取最新主题图像时出错：\n{err}")
+                MainInfoBar.push_info_bar(
+                    "error",
+                    "主题图像获取失败",
+                    f"获取最新主题图像信息时出错：\n{err}",
+                    -1,
+                )
+                return None
+
+            if (Config.app_path / "resources/theme_image.json").exists():
+                with (Config.app_path / "resources/theme_image.json").open(
+                    mode="r", encoding="utf-8"
+                ) as f:
+                    theme_image_local = json.load(f)
+                time_local = datetime.strptime(
+                    theme_image_local["time"], "%Y-%m-%d %H:%M"
+                )
+            else:
+                time_local = datetime.strptime("2000-01-01 00:00", "%Y-%m-%d %H:%M")
+
+            if not (
+                Config.app_path / "resources/images/Home/BannerTheme.jpg"
+            ).exists() or (
+                datetime.now()
+                > datetime.strptime(theme_image["time"], "%Y-%m-%d %H:%M")
+                and datetime.strptime(theme_image["time"], "%Y-%m-%d %H:%M")
+                > time_local
+            ):
+
+                response = requests.get(theme_image["url"])
+                if response.status_code == 200:
+
+                    with open(
+                        Config.app_path / "resources/images/Home/BannerTheme.jpg", "wb"
+                    ) as file:
+                        file.write(response.content)
+
+                    logger.info("主题图像下载成功")
+                    MainInfoBar.push_info_bar(
+                        "success",
+                        "主题图像下载成功",
+                        "主题图像下载成功！",
+                        3000,
+                    )
+
+                else:
+
+                    logger.error("主题图像下载失败")
+                    MainInfoBar.push_info_bar(
+                        "error",
+                        "主题图像下载失败",
+                        f"主题图像下载失败：{response.status_code}",
+                        -1,
+                    )
+
+                with (Config.app_path / "resources/theme_image.json").open(
+                    mode="w", encoding="utf-8"
+                ) as f:
+                    json.dump(theme_image, f, ensure_ascii=False, indent=4)
+
+            else:
+
+                logger.info("主题图像已是最新")
+                MainInfoBar.push_info_bar(
+                    "info",
+                    "主题图像已是最新",
+                    "主题图像已是最新！",
+                    3000,
+                )
+
+        self.set_banner()
+
+    def set_banner(self):
+        """设置主页图像"""
+        if (
+            Config.global_config.get(Config.global_config.function_HomeImageMode)
+            == "默认"
+        ):
+            self.banner.set_banner_image(
+                str(Config.app_path / "resources/images/Home/BannerDefault.png")
+            )
+            self.imageButton.hide()
+        elif (
+            Config.global_config.get(Config.global_config.function_HomeImageMode)
+            == "自定义"
+        ):
+            for file in Config.app_path.glob("resources/images/Home/BannerCustomize.*"):
+                self.banner.set_banner_image(str(file))
+                break
+            self.imageButton.show()
+        elif (
+            Config.global_config.get(Config.global_config.function_HomeImageMode)
+            == "主题图像"
+        ):
+            self.banner.set_banner_image(
+                str(Config.app_path / "resources/images/Home/BannerTheme.jpg")
+            )
+            self.imageButton.show()
 
 
 class ButtonGroup(SimpleCardWidget):
