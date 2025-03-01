@@ -193,6 +193,11 @@ class AUTO_MAA(MSFluentWindow):
             lambda: self.show_ui("配置托盘")
         )
         self.setting.ui.card_IfToTray.checkedChanged.connect(self.set_min_method)
+        self.setting.function.card_HomeImageMode.comboBox.currentIndexChanged.connect(
+            lambda index: (
+                self.home.get_home_image() if index == 2 else self.home.set_banner()
+            )
+        )
 
         self.splashScreen.finish()
 
@@ -228,6 +233,12 @@ class AUTO_MAA(MSFluentWindow):
 
         # 获取公告
         self.setting.show_notice(if_show=False)
+
+        if (
+            Config.global_config.get(Config.global_config.function_HomeImageMode)
+            == "主题图像"
+        ):
+            self.home.get_home_image()
 
         # 检查更新
         if Config.global_config.get(Config.global_config.update_IfAutoUpdate):
