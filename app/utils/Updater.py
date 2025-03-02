@@ -33,14 +33,16 @@ import subprocess
 import time
 from pathlib import Path
 
-from PySide6.QtWidgets import (
-    QApplication,
-    QDialog,
-    QVBoxLayout,
+from PySide6.QtWidgets import QApplication, QDialog, QVBoxLayout, QHBoxLayout
+from qfluentwidgets import (
+    ProgressBar,
+    IndeterminateProgressBar,
+    BodyLabel,
+    PushButton,
+    EditableComboBox,
 )
-from qfluentwidgets import ProgressBar, IndeterminateProgressBar, BodyLabel
-from PySide6.QtGui import QIcon
-from PySide6.QtCore import QObject, QThread, Signal
+from PySide6.QtGui import QIcon, QCloseEvent
+from PySide6.QtCore import QThread, Signal, QEventLoop
 
 
 def version_text(version_numb: list) -> str:
@@ -59,6 +61,8 @@ class UpdateProcess(QThread):
 
     info = Signal(str)
     progress = Signal(int, int, int)
+    question = Signal(dict)
+    question_response = Signal(str)
     accomplish = Signal()
 
     def __init__(
@@ -72,6 +76,9 @@ class UpdateProcess(QThread):
         self.updater_version = updater_version
         self.download_path = app_path / "DOWNLOAD_TEMP.zip"  #  临时下载文件的路径
         self.version_path = app_path / "resources/version.json"
+        self.response = None
+
+        self.question_response.connect(self._capture_response)
 
     def run(self) -> None:
 
@@ -81,25 +88,41 @@ class UpdateProcess(QThread):
 
         self.info.emit("正在获取下载链接")
         url_list = self.get_download_url()
+        url_dict = {}
 
-        # 验证下载地址并获取文件大小
-        for i in range(len(url_list)):
+        # 验证下载地址
+        for i, url in enumerate(url_list):
+
+            if self.isInterruptionRequested():
+                return None
+
+            self.progress.emit(0, len(url_list), i)
+
             try:
-                self.info.emit(f"正在验证下载地址：{url_list[i]}")
-                response = requests.get(url_list[i], stream=True)
+                self.info.emit(f"正在验证下载地址：{url}")
+                response = requests.get(url, stream=True)
                 if response.status_code != 200:
-                    self.info.emit(
-                        f"连接失败，错误代码 {response.status_code} ，正在切换代理（{i+1}/{len(url_list)}）"
-                    )
+                    self.info.emit(f"连接失败，错误代码 {response.status_code}")
                     time.sleep(1)
                     continue
-                file_size = response.headers.get("Content-Length")
-                break
+                url_dict[url] = response.elapsed.total_seconds()
             except requests.RequestException:
-                self.info.emit(f"请求超时，正在切换代理（{i+1}/{len(url_list)}）")
+                self.info.emit(f"请求超时")
                 time.sleep(1)
-        else:
-            self.info.emit(f"连接失败，已尝试所有{len(url_list)}个代理")
+
+        download_url = self.push_question(url_dict)
+
+        # 获取文件大小
+        try:
+            self.info.emit(f"正在连接下载地址：{download_url}")
+            self.progress.emit(0, 0, 0)
+            response = requests.get(download_url, stream=True)
+            if response.status_code != 200:
+                self.info.emit(f"连接失败，错误代码 {response.status_code}")
+                return None
+            file_size = response.headers.get("Content-Length")
+        except requests.RequestException:
+            self.info.emit(f"请求超时")
             return None
 
         if file_size is None:
@@ -117,6 +140,9 @@ class UpdateProcess(QThread):
                 last_time = time.time()
 
                 for chunk in response.iter_content(chunk_size=8192):
+
+                    if self.isInterruptionRequested():
+                        break
 
                     # 写入已下载数据
                     f.write(chunk)
@@ -143,6 +169,10 @@ class UpdateProcess(QThread):
                         )
                     self.progress.emit(0, 100, int(downloaded_size / file_size * 100))
 
+                if self.isInterruptionRequested() and self.download_path.exists():
+                    self.download_path.unlink()
+                    return None
+
         except Exception as e:
             e = str(e)
             e = "\n".join([e[_ : _ + 75] for _ in range(0, len(e), 75)])
@@ -153,6 +183,9 @@ class UpdateProcess(QThread):
         try:
 
             while True:
+                if self.isInterruptionRequested():
+                    self.download_path.unlink()
+                    return None
                 try:
                     self.info.emit("正在解压更新文件")
                     self.progress.emit(0, 0, 0)
@@ -178,7 +211,10 @@ class UpdateProcess(QThread):
             return None
 
         # 更新version文件
-        if self.name in ["AUTO_MAA主程序", "AUTO_MAA更新器"]:
+        if not self.isInterruptionRequested and self.name in [
+            "AUTO_MAA主程序",
+            "AUTO_MAA更新器",
+        ]:
             with open(self.version_path, "r", encoding="utf-8") as f:
                 version_info = json.load(f)
             if self.name == "AUTO_MAA主程序":
@@ -191,13 +227,13 @@ class UpdateProcess(QThread):
                 json.dump(version_info, f, ensure_ascii=False, indent=4)
 
         # 主程序更新完成后打开AUTO_MAA
-        if self.name == "AUTO_MAA主程序":
+        if not self.isInterruptionRequested and self.name == "AUTO_MAA主程序":
             subprocess.Popen(
                 str(self.app_path / "AUTO_MAA.exe"),
                 shell=True,
                 creationflags=subprocess.CREATE_NO_WINDOW,
             )
-        elif self.name == "MAA":
+        elif not self.isInterruptionRequested and self.name == "MAA":
             subprocess.Popen(
                 str(self.app_path / "MAA.exe"),
                 shell=True,
@@ -276,18 +312,26 @@ class UpdateProcess(QThread):
                 )
         return url_list
 
+    def push_question(self, url_dict: dict) -> str:
+        self.question.emit(url_dict)
+        loop = QEventLoop()
+        self.question_response.connect(loop.quit)
+        loop.exec()
+        return self.response
 
-class Updater(QObject):
+    def _capture_response(self, response: str) -> None:
+        self.response = response
+
+
+class Updater(QDialog):
 
     def __init__(
         self, app_path: Path, name: str, main_version: list, updater_version: list
     ) -> None:
         super().__init__()
 
-        self.ui = QDialog()
-        self.ui.setWindowTitle("AUTO_MAA更新器")
-        self.ui.resize(700, 70)
-        self.ui.setWindowIcon(
+        self.setWindowTitle("AUTO_MAA更新器")
+        self.setWindowIcon(
             QIcon(
                 str(
                     Path(sys.argv[0]).resolve().parent
@@ -297,11 +341,17 @@ class Updater(QObject):
         )
 
         # 创建垂直布局
-        self.Layout = QVBoxLayout(self.ui)
+        self.Layout = QVBoxLayout(self)
 
-        self.info = BodyLabel("正在初始化", self.ui)
-        self.progress_1 = IndeterminateProgressBar(self.ui)
-        self.progress_2 = ProgressBar(self.ui)
+        self.info = BodyLabel("正在初始化", self)
+        self.progress_1 = IndeterminateProgressBar(self)
+        self.progress_2 = ProgressBar(self)
+        self.combo_box = EditableComboBox(self)
+
+        self.button = PushButton("继续", self)
+        self.h_layout = QHBoxLayout()
+        self.h_layout.addStretch(1)
+        self.h_layout.addWidget(self.button)
 
         self.update_progress(0, 0, 0)
 
@@ -309,6 +359,8 @@ class Updater(QObject):
         self.Layout.addStretch(1)
         self.Layout.addWidget(self.progress_1)
         self.Layout.addWidget(self.progress_2)
+        self.Layout.addWidget(self.combo_box)
+        self.Layout.addLayout(self.h_layout)
         self.Layout.addStretch(1)
 
         self.update_process = UpdateProcess(
@@ -317,21 +369,59 @@ class Updater(QObject):
 
         self.update_process.info.connect(self.update_info)
         self.update_process.progress.connect(self.update_progress)
+        self.update_process.question.connect(self.question)
 
         self.update_process.start()
 
     def update_info(self, text: str) -> None:
         self.info.setText(text)
 
-    def update_progress(self, begin: int, end: int, current: int) -> None:
-        if begin == 0 and end == 0:
+    def update_progress(
+        self, begin: int, end: int, current: int, if_show_combo_box: bool = False
+    ) -> None:
+
+        self.combo_box.setVisible(if_show_combo_box)
+        self.button.setVisible(if_show_combo_box)
+
+        if if_show_combo_box:
+            self.progress_1.setVisible(False)
+            self.progress_2.setVisible(False)
+            self.resize(1000, 90)
+        elif begin == 0 and end == 0:
             self.progress_2.setVisible(False)
             self.progress_1.setVisible(True)
+            self.resize(700, 70)
         else:
             self.progress_1.setVisible(False)
             self.progress_2.setVisible(True)
             self.progress_2.setRange(begin, end)
             self.progress_2.setValue(current)
+            self.resize(700, 70)
+
+    def question(self, url_dict: dict) -> None:
+
+        self.update_info("测速完成，请选择或自行输入一个合适下载地址：")
+        self.update_progress(0, 0, 0, True)
+
+        url_dict = dict(sorted(url_dict.items(), key=lambda item: item[1]))
+
+        for url, time in url_dict.items():
+            self.combo_box.addItem(f"{url} | 响应时间：{time:.3f}秒")
+
+        self.button.clicked.connect(
+            lambda: self.update_process.question_response.emit(
+                self.combo_box.currentText().split(" | ")[0]
+            )
+        )
+
+    def closeEvent(self, event: QCloseEvent):
+        """清理残余进程"""
+
+        self.update_process.requestInterruption()
+        self.update_process.quit()
+        self.update_process.wait()
+
+        event.accept()
 
 
 class AUTO_MAA_Updater(QApplication):
@@ -341,7 +431,7 @@ class AUTO_MAA_Updater(QApplication):
         super().__init__()
 
         self.main = Updater(app_path, name, main_version, updater_version)
-        self.main.ui.show()
+        self.main.show()
 
 
 if __name__ == "__main__":

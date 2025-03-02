@@ -356,7 +356,7 @@ class MemberManager(QWidget):
                     maa_version.append(0)
 
                 self.downloader = Updater(Path(folder), "MAA", maa_version, [])
-                self.downloader.ui.show()
+                self.downloader.show()
 
     def show_password(self):
 

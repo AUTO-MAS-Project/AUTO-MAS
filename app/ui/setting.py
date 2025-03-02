@@ -331,7 +331,7 @@ class Setting(QWidget):
                 if main_version_remote > main_version_current:
                     self.updater.update_process.accomplish.connect(self.update_main)
                 # 显示更新页面
-                self.updater.ui.show()
+                self.updater.show()
 
             # 更新主程序
             elif main_version_remote > main_version_current:
