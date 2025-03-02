@@ -36,7 +36,14 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, QSize, QUrl
 from PySide6.QtGui import QDesktopServices, QColor
-from qfluentwidgets import FluentIcon, ScrollArea, SimpleCardWidget, PrimaryToolButton
+from qfluentwidgets import (
+    FluentIcon,
+    ScrollArea,
+    SimpleCardWidget,
+    PrimaryToolButton,
+    TextBrowser,
+)
+import re
 import shutil
 import requests
 import json
@@ -55,9 +62,13 @@ class Home(QWidget):
         self.setObjectName("主页")
 
         self.banner = Banner()
-        self.banner.set_percentage_size(
-            0.8, 0.5
-        )  # 设置 Banner 大小为窗口的 80% 宽度和 50% 高度
+        self.banner_text = TextBrowser()
+
+        widget = QWidget()
+        Layout = QVBoxLayout(widget)
+
+        Layout.addWidget(self.banner)
+        Layout.addWidget(self.banner_text)
 
         v_layout = QVBoxLayout(self.banner)
         v_layout.setContentsMargins(0, 0, 0, 15)
@@ -138,7 +149,7 @@ class Home(QWidget):
         layout = QVBoxLayout()
         scrollArea = ScrollArea()
         scrollArea.setWidgetResizable(True)
-        scrollArea.setWidget(self.banner)
+        scrollArea.setWidget(widget)
         layout.addWidget(scrollArea)
         self.setLayout(layout)
 
@@ -243,11 +254,11 @@ class Home(QWidget):
                     ) as file:
                         file.write(response.content)
 
-                    logger.info("主题图像下载成功")
+                    logger.info(f"主题图像「{theme_image["name"]}」下载成功")
                     MainInfoBar.push_info_bar(
                         "success",
                         "主题图像下载成功",
-                        "主题图像下载成功！",
+                        f"「{theme_image["name"]}」下载成功！",
                         3000,
                     )
 
@@ -288,6 +299,7 @@ class Home(QWidget):
                 str(Config.app_path / "resources/images/Home/BannerDefault.png")
             )
             self.imageButton.hide()
+            self.banner_text.setVisible(False)
         elif (
             Config.global_config.get(Config.global_config.function_HomeImageMode)
             == "自定义"
@@ -296,6 +308,7 @@ class Home(QWidget):
                 self.banner.set_banner_image(str(file))
                 break
             self.imageButton.show()
+            self.banner_text.setVisible(False)
         elif (
             Config.global_config.get(Config.global_config.function_HomeImageMode)
             == "主题图像"
@@ -304,6 +317,18 @@ class Home(QWidget):
                 str(Config.app_path / "resources/images/Home/BannerTheme.jpg")
             )
             self.imageButton.show()
+            self.banner_text.setVisible(True)
+
+            if (Config.app_path / "resources/theme_image.json").exists():
+                with (Config.app_path / "resources/theme_image.json").open(
+                    mode="r", encoding="utf-8"
+                ) as f:
+                    theme_image = json.load(f)
+                    html_content = theme_image["html"]
+            else:
+                html_content = "<h1>主题图像</h1><p>主题图像信息未知</p>"
+
+            self.banner_text.setHtml(re.sub(r"<img[^>]*>", "", html_content))
 
 
 class ButtonGroup(SimpleCardWidget):
