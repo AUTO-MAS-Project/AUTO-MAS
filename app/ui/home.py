@@ -69,6 +69,8 @@ class Home(QWidget):
 
         Layout.addWidget(self.banner)
         Layout.addWidget(self.banner_text)
+        Layout.setStretch(0, 2)
+        Layout.setStretch(1, 3)
 
         v_layout = QVBoxLayout(self.banner)
         v_layout.setContentsMargins(0, 0, 0, 15)

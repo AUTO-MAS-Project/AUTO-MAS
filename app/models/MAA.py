@@ -34,7 +34,7 @@ import subprocess
 import shutil
 import time
 from pathlib import Path
-from typing import List
+from typing import Union, List
 
 from app.core import Config
 from app.services import Notify, System
@@ -176,6 +176,9 @@ class MaaManager(QObject):
                         [True, "routine", "日常"],
                     ]
 
+                user_logs_list = []
+                user_start_time = datetime.now()
+
                 # 尝试次数循环
                 for i in range(self.set["RunSet"]["RunTimesLimit"]):
 
@@ -273,7 +276,7 @@ class MaaManager(QObject):
                             System.kill_process(self.maa_exe_path)
                             self.if_open_emulator = True
                             # 推送异常通知
-                            Notify.push_notification(
+                            Notify.push_plyer(
                                 "用户自动代理出现异常！",
                                 f"用户 {user[0].replace("_", " 今天的")}的{mode_book[j][5:7]}部分出现一次异常",
                                 f"{user[0].replace("_", " ")}的{mode_book[j][5:7]}出现异常",
@@ -287,12 +290,16 @@ class MaaManager(QObject):
                         # 移除静默进程标记
                         Config.silence_list.remove(self.emulator_path)
 
-                        # 保存运行日志
+                        # 保存运行日志以及统计信息
                         Config.save_maa_log(
                             Config.app_path
                             / f"history/{curdate}/{self.data[user[2]][0]}/{start_time.strftime("%H-%M-%S")}.log",
                             self.check_maa_log(start_time, mode_book[j]),
                             self.maa_result,
+                        )
+                        user_logs_list.append(
+                            Config.app_path
+                            / f"history/{curdate}/{self.data[user[2]][0]}/{start_time.strftime("%H-%M-%S")}.json",
                         )
 
                     # 成功完成代理的用户修改相关参数
@@ -301,13 +308,33 @@ class MaaManager(QObject):
                             self.data[user[2]][3] -= 1
                         self.data[user[2]][14] += 1
                         user[1] = "完成"
-                        Notify.push_notification(
+                        Notify.push_plyer(
                             "成功完成一个自动代理任务！",
                             f"已完成用户 {user[0].replace("_", " 今天的")}任务",
                             f"已完成 {user[0].replace("_", " 的")}",
                             3,
                         )
                         break
+
+                if Config.global_config.get(
+                    Config.global_config.notify_IfSendStatistic
+                ):
+
+                    statistics = Config.merge_maa_logs("指定项", user_logs_list)
+                    statistics["start_time"] = user_start_time.strftime(
+                        "%Y-%m-%d %H:%M:%S"
+                    )
+                    statistics["end_time"] = datetime.now().strftime(
+                        "%Y-%m-%d %H:%M:%S"
+                    )
+                    statistics["maa_result"] = (
+                        "代理任务全部完成"
+                        if (run_book[0] and run_book[1])
+                        else "代理任务未全部完成"
+                    )
+                    self.push_notification(
+                        "统计信息", f"用户 {user[0]} 的自动代理统计报告", statistics
+                    )
 
                 # 录入代理失败的用户
                 if not (run_book[0] and run_book[1]):
@@ -487,7 +514,7 @@ class MaaManager(QObject):
                 else f"{self.mode[:4]}任务报告"
             )
             # 推送代理结果通知
-            Notify.push_notification(
+            Notify.push_plyer(
                 title.replace("报告", "已完成！"),
                 f"已完成用户数：{len(over_index)}，未完成用户数：{len(error_index) + len(wait_index)}",
                 f"已完成用户数：{len(over_index)}，未完成用户数：{len(error_index) + len(wait_index)}",
@@ -499,12 +526,7 @@ class MaaManager(QObject):
                 Config.global_config.get(Config.global_config.notify_IfSendErrorOnly)
                 and len(error_index) + len(wait_index) != 0
             ):
-                Notify.send_mail(
-                    title,
-                    f"{end_log}\n\nAUTO_MAA 敬上\n\n我们根据您在 AUTO_MAA 中的设置发送了这封电子邮件，本邮件无需回复\n",
-                )
-                Notify.ServerChanPush(title, f"{end_log}\n\nAUTO_MAA 敬上")
-                Notify.CompanyWebHookBotPush(title, f"{end_log}AUTO_MAA 敬上")
+                self.push_notification("代理结果", title, end_log)
 
         self.agree_bilibili(False)
         self.log_monitor.deleteLater()
@@ -1130,3 +1152,165 @@ class MaaManager(QObject):
         if dt.time() < datetime.min.time().replace(hour=4):
             dt = dt - timedelta(days=1)
         return dt.strftime("%Y-%m-%d")
+
+    def push_notification(
+        self, mode: str, title: str, message: Union[str, dict]
+    ) -> None:
+        """通过所有渠道推送通知"""
+
+        if mode == "代理结果":
+
+            Notify.send_mail(
+                "文本",
+                title,
+                f"{message}\n\nAUTO_MAA 敬上\n\n我们根据您在 AUTO_MAA 中的设置发送了这封电子邮件，本邮件无需回复\n",
+            )
+            Notify.ServerChanPush(title, f"{message}\n\nAUTO_MAA 敬上")
+            Notify.CompanyWebHookBotPush(title, f"{message}AUTO_MAA 敬上")
+
+        elif mode == "统计信息":
+
+            # HTML模板
+            html_template = """
+            <!DOCTYPE html>
+            <html lang="zh-CN">
+            <head>
+                <meta charset="UTF-8">
+                <title>{title}</title>
+                <style>
+                    body {{
+                        font-family: Arial, sans-serif;
+                        margin: 0;
+                        padding: 0;
+                        background-color: #f4f4f4;
+                    }}
+                    .container {{
+                        width: 80%;
+                        margin: auto;
+                        overflow: hidden;
+                        padding: 20px;
+                        background-color: white;
+                        box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+                    }}
+                    h1.main-title {{
+                        text-align: center;
+                        color: #333;
+                        font-size: 2em;
+                        margin-bottom: 20px;
+                    }}
+                    p {{
+                        font-size: 16px;
+                        color: #555;
+                    }}
+                    table {{
+                        width: 100%;
+                        border-collapse: collapse;
+                        margin: 25px 0;
+                        font-size: 18px;
+                        text-align: left;
+                    }}
+                    th, td {{
+                        padding: 12px 15px;
+                    }}
+                    th {{
+                        background-color: #007BFF;
+                        color: white;
+                    }}
+                    tr:nth-child(even) {{
+                        background-color: #f3f3f3;
+                    }}
+                    tr:hover {{
+                        background-color: #ddd;
+                    }}
+                </style>
+            </head>
+            <body>
+            <div class="container">
+                <h1 class="main-title">{title}</h1>
+
+                <p><strong>开始时间:</strong> {start_time}</p>
+                <p><strong>结束时间:</strong> {end_time}</p>
+                <p><strong>MAA执行结果:</strong> {maa_result}</p>
+
+                <h2>招募统计</h2>
+                <table>
+                    <thead>
+                    <tr>
+                        <th>星级</th>
+                        <th>数量</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    {recruit_rows}
+                    </tbody>
+                </table>
+
+                {drop_tables}
+            </div>
+            </body>
+            </html>
+            """
+
+            # 构建招募统计表格行
+            recruit_rows = "".join(
+                f"<tr><td>{star}</td><td>{count}</td></tr>"
+                for star, count in message["recruit_statistics"].items()
+            )
+
+            # 构建掉落统计数据表格
+            drop_tables_html = ""
+            for stage, items in message["drop_statistics"].items():
+                drop_rows = "".join(
+                    f"<tr><td>{item}</td><td>{quantity}</td></tr>"
+                    for item, quantity in items.items()
+                )
+                drop_table = f"""
+                <h2>掉落统计 ({stage})</h2>
+                <table>
+                    <thead>
+                    <tr>
+                        <th>物品</th>
+                        <th>数量</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    {drop_rows}
+                    </tbody>
+                </table>
+                """
+                drop_tables_html += drop_table
+
+            # 填充HTML模板
+            html_content = html_template.format(
+                title=title,
+                start_time=message["start_time"],
+                end_time=message["end_time"],
+                maa_result=message["maa_result"],
+                recruit_rows=recruit_rows,
+                drop_tables=drop_tables_html,
+            )
+
+            formatted = []
+            for stage, items in message["drop_statistics"].items():
+                formatted.append(f"掉落统计（{stage}）:")
+                for item, quantity in items.items():
+                    formatted.append(f"  {item}: {quantity}")
+            drop_text = "\n".join(formatted)
+
+            formatted = ["招募统计:"]
+            for star, count in message["recruit_statistics"].items():
+                formatted.append(f"  {star}: {count}")
+            recruit_text = "\n".join(formatted)
+
+            # 构建通知消息
+            message_text = (
+                f"开始时间: {message['start_time']}\n"
+                f"结束时间: {message['end_time']}\n"
+                f"MAA执行结果: {message['maa_result']}\n\n"
+                f"{recruit_text}\n"
+                f"{drop_text}"
+            )
+
+            Notify.send_mail("网页", title, html_content)
+            Notify.ServerChanPush(title, f"{message_text}\n\nAUTO_MAA 敬上")
+            Notify.CompanyWebHookBotPush(title, f"{message_text}AUTO_MAA 敬上")

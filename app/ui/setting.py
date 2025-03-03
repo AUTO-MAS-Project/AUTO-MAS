@@ -548,6 +548,12 @@ class NotifySettingCard(HeaderCardWidget):
             content="仅在任务出现异常时推送通知",
             configItem=Config.global_config.notify_IfSendErrorOnly,
         )
+        self.caer_IfSendStatistic = SwitchSettingCard(
+            icon=FluentIcon.PAGE_RIGHT,
+            title="推送统计信息",
+            content="推送自动代理统计信息的通知",
+            configItem=Config.global_config.notify_IfSendStatistic,
+        )
         self.card_IfPushPlyer = SwitchSettingCard(
             icon=FluentIcon.PAGE_RIGHT,
             title="推送系统通知",
@@ -560,6 +566,7 @@ class NotifySettingCard(HeaderCardWidget):
 
         Layout = QVBoxLayout()
         Layout.addWidget(self.card_IfSendErrorOnly)
+        Layout.addWidget(self.caer_IfSendStatistic)
         Layout.addWidget(self.card_IfPushPlyer)
         Layout.addWidget(self.card_SendMail)
         Layout.addWidget(self.card_ServerChan)

@@ -31,7 +31,7 @@ import json
 import sys
 import shutil
 import re
-from datetime import datetime, timedelta
+from datetime import datetime
 from collections import defaultdict
 from pathlib import Path
 from qfluentwidgets import (
@@ -45,7 +45,7 @@ from qfluentwidgets import (
     OptionsValidator,
     qconfig,
 )
-from typing import Union, Dict, List
+from typing import Union, Dict, List, Tuple
 
 
 class AppConfig:
@@ -469,8 +469,6 @@ class AppConfig:
     def save_maa_log(self, log_path: Path, logs: list, maa_result: str) -> None:
         """保存MAA日志"""
 
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-
         data: Dict[str, Union[str, Dict[str, Union[int, dict]]]] = {
             "recruit_statistics": defaultdict(int),
             "drop_statistics": defaultdict(dict),
@@ -545,6 +543,7 @@ class AppConfig:
             data["drop_statistics"][current_stage] = stage_drops
 
         # 保存日志
+        log_path.parent.mkdir(parents=True, exist_ok=True)
         with log_path.open("w", encoding="utf-8") as f:
             f.writelines(logs)
         with log_path.with_suffix(".json").open("w", encoding="utf-8") as f:
@@ -552,10 +551,10 @@ class AppConfig:
 
         logger.info(f"处理完成：{log_path}")
 
-        self.merge_maa_logs(log_path.parent)
+        self.merge_maa_logs("所有项", log_path.parent)
 
-    def merge_maa_logs(self, logs_path: Path) -> None:
-        """合并所有 .log 文件"""
+    def merge_maa_logs(self, mode: str, logs_path: Union[Path, List[Path]]) -> dict:
+        """合并指定数据统计信息文件"""
 
         data = {
             "recruit_statistics": defaultdict(int),
@@ -563,7 +562,12 @@ class AppConfig:
             "maa_result": defaultdict(str),
         }
 
-        for json_file in logs_path.glob("*.json"):
+        if mode == "所有项":
+            logs_path_list = list(logs_path.glob("*.json"))
+        elif mode == "指定项":
+            logs_path_list = logs_path
+
+        for json_file in logs_path_list:
 
             with json_file.open("r", encoding="utf-8") as f:
                 single_data: Dict[str, Union[str, Dict[str, Union[int, dict]]]] = (
@@ -592,10 +596,14 @@ class AppConfig:
             ] = single_data["maa_result"]
 
         # 生成汇总 JSON 文件
-        with logs_path.with_suffix(".json").open("w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=4)
+        if mode == "所有项":
 
-        logger.info(f"统计完成：{logs_path.with_suffix(".json")}")
+            with logs_path.with_suffix(".json").open("w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=4)
+
+            logger.info(f"统计完成：{logs_path.with_suffix(".json")}")
+
+        return data
 
     def load_maa_logs(
         self, mode: str, json_path: Path
@@ -779,11 +787,14 @@ class GlobalConfig(QConfig):
     ui_location = ConfigItem("UI", "location", "100x100")
     ui_maximized = ConfigItem("UI", "maximized", False, BoolValidator())
 
-    notify_IfPushPlyer = ConfigItem("Notify", "IfPushPlyer", False, BoolValidator())
-    notify_IfSendMail = ConfigItem("Notify", "IfSendMail", False, BoolValidator())
     notify_IfSendErrorOnly = ConfigItem(
         "Notify", "IfSendErrorOnly", False, BoolValidator()
     )
+    notify_IfSendStatistic = ConfigItem(
+        "Notify", "IfSendStatistic", False, BoolValidator()
+    )
+    notify_IfPushPlyer = ConfigItem("Notify", "IfPushPlyer", False, BoolValidator())
+    notify_IfSendMail = ConfigItem("Notify", "IfSendMail", False, BoolValidator())
     notify_SMTPServerAddress = ConfigItem("Notify", "SMTPServerAddress", "")
     notify_AuthorizationCode = ConfigItem("Notify", "AuthorizationCode", "")
     notify_FromAddress = ConfigItem("Notify", "FromAddress", "")
