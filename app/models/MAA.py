@@ -291,7 +291,7 @@ class MaaManager(QObject):
                         Config.silence_list.remove(self.emulator_path)
 
                         # 保存运行日志以及统计信息
-                        Config.save_maa_log(
+                        if_six_star = Config.save_maa_log(
                             Config.app_path
                             / f"history/{curdate}/{self.data[user[2]][0]}/{start_time.strftime("%H-%M-%S")}.log",
                             self.check_maa_log(start_time, mode_book[j]),
@@ -301,6 +301,14 @@ class MaaManager(QObject):
                             Config.app_path
                             / f"history/{curdate}/{self.data[user[2]][0]}/{start_time.strftime("%H-%M-%S")}.json",
                         )
+
+                        if if_six_star:
+
+                            self.push_notification(
+                                "公招六星",
+                                f"喜报：用户 {user[0]} 公招出六星啦！",
+                                "好羡慕~",
+                            )
 
                     # 成功完成代理的用户修改相关参数
                     if run_book[0] and run_book[1]:
@@ -1314,3 +1322,13 @@ class MaaManager(QObject):
             Notify.send_mail("网页", title, html_content)
             Notify.ServerChanPush(title, f"{message_text}\n\nAUTO_MAA 敬上")
             Notify.CompanyWebHookBotPush(title, f"{message_text}AUTO_MAA 敬上")
+
+        elif mode == "公招六星":
+
+            Notify.send_mail(
+                "文本",
+                title,
+                f"{message}\n\nAUTO_MAA 敬上\n\n我们根据您在 AUTO_MAA 中的设置发送了这封电子邮件，本邮件无需回复\n",
+            )
+            Notify.ServerChanPush(title, f"{message}\n\nAUTO_MAA 敬上")
+            Notify.CompanyWebHookBotPush(title, f"{message}AUTO_MAA 敬上")
