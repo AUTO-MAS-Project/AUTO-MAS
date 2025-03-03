@@ -29,6 +29,7 @@ from loguru import logger
 from plyer import notification
 import smtplib
 from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from email.header import Header
 from email.utils import formataddr
 
@@ -40,7 +41,7 @@ from app.services.security import Crypto
 
 class Notification:
 
-    def push_notification(self, title, message, ticker, t):
+    def push_plyer(self, title, message, ticker, t):
         """推送系统通知"""
 
         if Config.global_config.get(Config.global_config.notify_IfPushPlyer):
@@ -57,14 +58,17 @@ class Notification:
 
         return True
 
-    def send_mail(self, title, content):
+    def send_mail(self, mode, title, content):
         """推送邮件通知"""
 
         if Config.global_config.get(Config.global_config.notify_IfSendMail):
 
             try:
                 # 定义邮件正文
-                message = MIMEText(content, "plain", "utf-8")
+                if mode == "文本":
+                    message = MIMEText(content, "plain", "utf-8")
+                elif mode == "网页":
+                    message = MIMEMultipart("alternative")
                 message["From"] = formataddr(
                     (
                         Header("AUTO_MAA通知服务", "utf-8").encode(),
@@ -80,6 +84,9 @@ class Notification:
                     )
                 )  # 收件人显示的名字
                 message["Subject"] = Header(title, "utf-8")
+
+                if mode == "网页":
+                    message.attach(MIMEText(content, "html", "utf-8"))
 
                 smtpObj = smtplib.SMTP_SSL(
                     Config.global_config.get(
