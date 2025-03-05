@@ -302,7 +302,12 @@ class MaaManager(QObject):
                             / f"history/{curdate}/{self.data[user[2]][0]}/{start_time.strftime("%H-%M-%S")}.json",
                         )
 
-                        if if_six_star:
+                        if (
+                            Config.global_config.get(
+                                Config.global_config.notify_IfSendSixStar
+                            )
+                            and if_six_star
+                        ):
 
                             self.push_notification(
                                 "公招六星",

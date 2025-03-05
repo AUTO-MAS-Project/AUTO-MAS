@@ -149,8 +149,7 @@ class AUTO_MAA(MSFluentWindow):
 
         # 创建系统托盘及其菜单
         self.tray = QSystemTrayIcon(
-            QIcon(str(Config.app_path / "resources/icons/AUTO_MAA.ico")),
-            self,
+            QIcon(str(Config.app_path / "resources/icons/AUTO_MAA.ico")), self
         )
         self.tray.setToolTip("AUTO_MAA")
         self.tray_menu = SystemTrayMenu("AUTO_MAA", self)

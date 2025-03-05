@@ -799,6 +799,7 @@ class GlobalConfig(QConfig):
     notify_IfSendStatistic = ConfigItem(
         "Notify", "IfSendStatistic", False, BoolValidator()
     )
+    notify_IfSendSixStar = ConfigItem("Notify", "IfSendSixStar", False, BoolValidator())
     notify_IfPushPlyer = ConfigItem("Notify", "IfPushPlyer", False, BoolValidator())
     notify_IfSendMail = ConfigItem("Notify", "IfSendMail", False, BoolValidator())
     notify_SMTPServerAddress = ConfigItem("Notify", "SMTPServerAddress", "")

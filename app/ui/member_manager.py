@@ -638,12 +638,7 @@ class MaaSettingBox(QWidget):
         class RunSetSettingCard(ExpandGroupSettingCard):
 
             def __init__(self, parent=None):
-                super().__init__(
-                    FluentIcon.SETTING,
-                    "运行",
-                    "MAA运行调控选项",
-                    parent,
-                )
+                super().__init__(FluentIcon.SETTING, "运行", "MAA运行调控选项", parent)
 
                 self.card_TaskTransitionMethod = ComboBoxSettingCard(
                     configItem=Config.maa_config.RunSet_TaskTransitionMethod,
