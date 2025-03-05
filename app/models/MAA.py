@@ -1321,7 +1321,7 @@ class MaaManager(QObject):
 
             Notify.send_mail("网页", title, html_content)
             Notify.ServerChanPush(title, f"{message_text}\n\nAUTO_MAA 敬上")
-            Notify.CompanyWebHookBotPush(title, f"{message_text}AUTO_MAA 敬上")
+            Notify.CompanyWebHookBotPush(title, f"{message_text}\n\nAUTO_MAA 敬上")
 
         elif mode == "公招六星":
 
