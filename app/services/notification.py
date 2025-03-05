@@ -24,6 +24,9 @@ AUTO_MAA通知服务
 v4.2
 作者：DLmaster_361
 """
+
+from PySide6.QtWidgets import QWidget
+from PySide6.QtCore import Signal
 import requests
 from loguru import logger
 from plyer import notification
@@ -36,11 +39,16 @@ from email.utils import formataddr
 
 from serverchan_sdk import sc_send
 
-from app.core import Config, MainInfoBar
+from app.core import Config
 from app.services.security import Crypto
 
 
-class Notification:
+class Notification(QWidget):
+
+    push_info_bar = Signal(str, str, str, int)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
 
     def push_plyer(self, title, message, ticker, t):
         """推送系统通知"""
@@ -88,6 +96,12 @@ class Notification:
             ):
                 logger.error(
                     "请正确设置邮件通知的SMTP服务器地址、授权码、发件人地址和收件人地址"
+                )
+                self.push_info_bar.emit(
+                    "error",
+                    "邮件通知推送异常",
+                    "请正确设置邮件通知的SMTP服务器地址、授权码、发件人地址和收件人地址",
+                    -1,
                 )
                 return None
 
@@ -139,7 +153,7 @@ class Notification:
                 logger.success("邮件发送成功")
             except Exception as e:
                 logger.error(f"发送邮件时出错：\n{e}")
-                MainInfoBar.push_info_bar("error", "发送邮件时出错", f"{e}", -1)
+                self.push_info_bar.emit("error", "发送邮件时出错", f"{e}", -1)
 
     def ServerChanPush(self, title, content):
         """使用Server酱推送通知"""
@@ -168,7 +182,7 @@ class Notification:
             else:
                 option["tags"] = ""
                 logger.warning("请正确设置Auto_MAA中ServerChan的Tag。")
-                MainInfoBar.push_info_bar(
+                self.push_info_bar.emit(
                     "warning",
                     "Server酱通知推送异常",
                     "请正确设置Auto_MAA中ServerChan的Tag。",
@@ -180,7 +194,7 @@ class Notification:
             else:
                 option["channel"] = ""
                 logger.warning("请正确设置Auto_MAA中ServerChan的Channel。")
-                MainInfoBar.push_info_bar(
+                self.push_info_bar.emit(
                     "warning",
                     "Server酱通知推送异常",
                     "请正确设置Auto_MAA中ServerChan的Channel。",
@@ -194,7 +208,7 @@ class Notification:
             else:
                 logger.info("Server酱推送通知失败")
                 logger.error(response)
-                MainInfoBar.push_info_bar(
+                self.push_info_bar.emit(
                     "error",
                     "Server酱通知推送失败",
                     f'使用Server酱推送通知时出错：\n{response["data"]['error']}',
@@ -219,7 +233,7 @@ class Notification:
             else:
                 logger.info("企业微信群机器人推送通知失败")
                 logger.error(response.json())
-                MainInfoBar.push_info_bar(
+                self.push_info_bar.emit(
                     "error",
                     "企业微信群机器人通知推送失败",
                     f'使用企业微信群机器人推送通知时出错：\n{response.json()["errmsg"]}',

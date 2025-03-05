@@ -189,6 +189,7 @@ class AUTO_MAA(MSFluentWindow):
 
         TaskManager.create_gui.connect(self.dispatch_center.add_board)
         TaskManager.connect_gui.connect(self.dispatch_center.connect_main_board)
+        Notify.push_info_bar.connect(MainInfoBar.push_info_bar)
         self.setting.ui.card_IfShowTray.checkedChanged.connect(
             lambda: self.show_ui("配置托盘")
         )
