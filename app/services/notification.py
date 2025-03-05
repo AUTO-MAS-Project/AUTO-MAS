@@ -27,6 +27,7 @@ v4.2
 import requests
 from loguru import logger
 from plyer import notification
+import re
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -58,10 +59,37 @@ class Notification:
 
         return True
 
-    def send_mail(self, mode, title, content):
+    def send_mail(self, mode, title, content) -> None:
         """推送邮件通知"""
 
         if Config.global_config.get(Config.global_config.notify_IfSendMail):
+
+            if (
+                Config.global_config.get(Config.global_config.notify_SMTPServerAddress)
+                == ""
+                or Config.global_config.get(
+                    Config.global_config.notify_AuthorizationCode
+                )
+                == ""
+                or not bool(
+                    re.match(
+                        r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$",
+                        Config.global_config.get(
+                            Config.global_config.notify_FromAddress
+                        ),
+                    )
+                )
+                or not bool(
+                    re.match(
+                        r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$",
+                        Config.global_config.get(Config.global_config.notify_ToAddress),
+                    )
+                )
+            ):
+                logger.error(
+                    "请正确设置邮件通知的SMTP服务器地址、授权码、发件人地址和收件人地址"
+                )
+                return None
 
             try:
                 # 定义邮件正文
