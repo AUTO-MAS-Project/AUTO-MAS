@@ -556,7 +556,7 @@ class MaaManager(QObject):
         if len(self.log_monitor.files()) != 0:
             self.interrupt.emit()
 
-        self.maa_result = "您中止了本次任务"
+        self.maa_result = "任务被手动中止"
         self.isInterruptionRequested = True
 
     def push_question(self, title: str, message: str) -> bool:
@@ -636,6 +636,8 @@ class MaaManager(QObject):
                 minutes=self.set["RunSet"][time_book[mode]]
             ):
                 self.maa_result = "检测到MAA进程超时"
+            elif self.isInterruptionRequested:
+                self.maa_result = "任务被手动中止"
             else:
                 self.maa_result = "Wait"
 
@@ -649,6 +651,8 @@ class MaaManager(QObject):
                 or ("MaaAssistantArknights GUI exited" in log)
             ):
                 self.maa_result = "检测到MAA进程异常"
+            elif self.isInterruptionRequested:
+                self.maa_result = "任务被手动中止"
             else:
                 self.maa_result = "Wait"
 
