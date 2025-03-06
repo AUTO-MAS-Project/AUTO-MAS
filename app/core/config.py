@@ -793,8 +793,11 @@ class GlobalConfig(QConfig):
     ui_location = ConfigItem("UI", "location", "100x100")
     ui_maximized = ConfigItem("UI", "maximized", False, BoolValidator())
 
-    notify_IfSendErrorOnly = ConfigItem(
-        "Notify", "IfSendErrorOnly", False, BoolValidator()
+    notify_SendTaskResultTime = OptionsConfigItem(
+        "Notify",
+        "SendTaskResultTime",
+        "不推送",
+        OptionsValidator(["不推送", "任何时刻", "仅失败时"]),
     )
     notify_IfSendStatistic = ConfigItem(
         "Notify", "IfSendStatistic", False, BoolValidator()
