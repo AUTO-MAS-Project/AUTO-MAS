@@ -149,8 +149,7 @@ class AUTO_MAA(MSFluentWindow):
 
         # 创建系统托盘及其菜单
         self.tray = QSystemTrayIcon(
-            QIcon(str(Config.app_path / "resources/icons/AUTO_MAA.ico")),
-            self,
+            QIcon(str(Config.app_path / "resources/icons/AUTO_MAA.ico")), self
         )
         self.tray.setToolTip("AUTO_MAA")
         self.tray_menu = SystemTrayMenu("AUTO_MAA", self)
@@ -189,6 +188,7 @@ class AUTO_MAA(MSFluentWindow):
 
         TaskManager.create_gui.connect(self.dispatch_center.add_board)
         TaskManager.connect_gui.connect(self.dispatch_center.connect_main_board)
+        Notify.push_info_bar.connect(MainInfoBar.push_info_bar)
         self.setting.ui.card_IfShowTray.checkedChanged.connect(
             lambda: self.show_ui("配置托盘")
         )
@@ -231,14 +231,15 @@ class AUTO_MAA(MSFluentWindow):
         # 检查密码
         self.setting.check_PASSWORD()
 
-        # 获取公告
-        self.setting.show_notice(if_show=False)
-
+        # 获取主题图像
         if (
             Config.global_config.get(Config.global_config.function_HomeImageMode)
             == "主题图像"
         ):
             self.home.get_home_image()
+
+        # 获取公告
+        self.setting.show_notice(if_show=False)
 
         # 检查更新
         if Config.global_config.get(Config.global_config.update_IfAutoUpdate):

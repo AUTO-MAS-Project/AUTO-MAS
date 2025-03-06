@@ -8,5 +8,6 @@ pywin32
 pyautogui
 pycryptodome
 requests
+Jinja2
 serverchan_sdk
 nuitka==2.6

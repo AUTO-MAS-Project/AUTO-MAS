@@ -466,7 +466,7 @@ class AppConfig:
         cur.close()
         db.close()
 
-    def save_maa_log(self, log_path: Path, logs: list, maa_result: str) -> None:
+    def save_maa_log(self, log_path: Path, logs: list, maa_result: str) -> bool:
         """保存MAA日志"""
 
         data: Dict[str, Union[str, Dict[str, Union[int, dict]]]] = {
@@ -474,6 +474,8 @@ class AppConfig:
             "drop_statistics": defaultdict(dict),
             "maa_result": maa_result,
         }
+
+        if_six_star = False
 
         # 公招统计（仅统计招募到的）
         confirmed_recruit = False
@@ -490,6 +492,8 @@ class AppConfig:
                     star_match = re.search(r"(\d+)\s*★ Tags", logs[i])
                     if star_match:
                         current_star_level = f"{star_match.group(1)}★"
+                        if current_star_level == "6★":
+                            if_six_star = True
 
             if "已确认招募" in logs[i]:  # 只有确认招募后才统计
                 confirmed_recruit = True
@@ -552,6 +556,8 @@ class AppConfig:
         logger.info(f"处理完成：{log_path}")
 
         self.merge_maa_logs("所有项", log_path.parent)
+
+        return if_six_star
 
     def merge_maa_logs(self, mode: str, logs_path: Union[Path, List[Path]]) -> dict:
         """合并指定数据统计信息文件"""
@@ -787,12 +793,16 @@ class GlobalConfig(QConfig):
     ui_location = ConfigItem("UI", "location", "100x100")
     ui_maximized = ConfigItem("UI", "maximized", False, BoolValidator())
 
-    notify_IfSendErrorOnly = ConfigItem(
-        "Notify", "IfSendErrorOnly", False, BoolValidator()
+    notify_SendTaskResultTime = OptionsConfigItem(
+        "Notify",
+        "SendTaskResultTime",
+        "不推送",
+        OptionsValidator(["不推送", "任何时刻", "仅失败时"]),
     )
     notify_IfSendStatistic = ConfigItem(
         "Notify", "IfSendStatistic", False, BoolValidator()
     )
+    notify_IfSendSixStar = ConfigItem("Notify", "IfSendSixStar", False, BoolValidator())
     notify_IfPushPlyer = ConfigItem("Notify", "IfPushPlyer", False, BoolValidator())
     notify_IfSendMail = ConfigItem("Notify", "IfSendMail", False, BoolValidator())
     notify_SMTPServerAddress = ConfigItem("Notify", "SMTPServerAddress", "")

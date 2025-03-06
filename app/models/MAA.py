@@ -34,6 +34,7 @@ import subprocess
 import shutil
 import time
 from pathlib import Path
+from jinja2 import Environment, FileSystemLoader
 from typing import Union, List
 
 from app.core import Config
@@ -291,7 +292,7 @@ class MaaManager(QObject):
                         Config.silence_list.remove(self.emulator_path)
 
                         # 保存运行日志以及统计信息
-                        Config.save_maa_log(
+                        if_six_star = Config.save_maa_log(
                             Config.app_path
                             / f"history/{curdate}/{self.data[user[2]][0]}/{start_time.strftime("%H-%M-%S")}.log",
                             self.check_maa_log(start_time, mode_book[j]),
@@ -301,6 +302,19 @@ class MaaManager(QObject):
                             Config.app_path
                             / f"history/{curdate}/{self.data[user[2]][0]}/{start_time.strftime("%H-%M-%S")}.json",
                         )
+
+                        if (
+                            Config.global_config.get(
+                                Config.global_config.notify_IfSendSixStar
+                            )
+                            and if_six_star
+                        ):
+
+                            self.push_notification(
+                                "公招六星",
+                                f"喜报：用户 {user[0]} 公招出六星啦！",
+                                {"user_name": self.data[user[2]][0]},
+                            )
 
                     # 成功完成代理的用户修改相关参数
                     if run_book[0] and run_book[1]:
@@ -321,6 +335,7 @@ class MaaManager(QObject):
                 ):
 
                     statistics = Config.merge_maa_logs("指定项", user_logs_list)
+                    statistics["user_info"] = user[0]
                     statistics["start_time"] = user_start_time.strftime(
                         "%Y-%m-%d %H:%M:%S"
                     )
@@ -468,7 +483,7 @@ class MaaManager(QObject):
                 self.user_config_path.mkdir(parents=True, exist_ok=True)
                 shutil.copy(self.maa_set_path, self.user_config_path)
 
-            end_log = ""
+            result_text = ""
 
         # 导出结果
         if self.mode in ["自动代理", "人工排查"]:
@@ -491,28 +506,25 @@ class MaaManager(QObject):
             wait_index = [_[2] for _ in self.user_list if _[1] == "等待"]
 
             # 保存运行日志
-            end_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            end_log = (
-                f"任务开始时间：{begin_time}，结束时间：{end_time}\n"
-                f"已完成数：{len(over_index)}，未完成数：{len(error_index) + len(wait_index)}\n\n"
-            )
-
-            if len(error_index) != 0:
-                end_log += (
-                    f"{self.mode[2:4]}未成功的用户：\n"
-                    f"{"\n".join([self.data[_][0] for _ in error_index])}\n"
-                )
-            if len(wait_index) != 0:
-                end_log += (
-                    f"\n未开始{self.mode[2:4]}的用户：\n"
-                    f"{"\n".join([self.data[_][0] for _ in wait_index])}\n"
-                )
-
             title = (
                 f"{self.set["MaaSet"]["Name"]}的{self.mode[:4]}任务报告"
                 if self.set["MaaSet"]["Name"] != ""
                 else f"{self.mode[:4]}任务报告"
             )
+            result = {
+                "title": f"{self.mode[:4]}任务报告",
+                "script_name": (
+                    self.set["MaaSet"]["Name"]
+                    if self.set["MaaSet"]["Name"] != ""
+                    else "空白"
+                ),
+                "start_time": begin_time,
+                "end_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "completed_count": len(over_index),
+                "uncompleted_count": len(error_index) + len(wait_index),
+                "failed_user": [self.data[_][0] for _ in error_index],
+                "waiting_user": [self.data[_][0] for _ in wait_index],
+            }
             # 推送代理结果通知
             Notify.push_plyer(
                 title.replace("报告", "已完成！"),
@@ -520,18 +532,23 @@ class MaaManager(QObject):
                 f"已完成用户数：{len(over_index)}，未完成用户数：{len(error_index) + len(wait_index)}",
                 10,
             )
-            if not Config.global_config.get(
-                Config.global_config.notify_IfSendErrorOnly
-            ) or (
-                Config.global_config.get(Config.global_config.notify_IfSendErrorOnly)
+            if Config.global_config.get(
+                Config.global_config.notify_SendTaskResultTime
+            ) == "任何时刻" or (
+                Config.global_config.get(Config.global_config.notify_SendTaskResultTime)
+                == "仅失败时"
                 and len(error_index) + len(wait_index) != 0
             ):
-                self.push_notification("代理结果", title, end_log)
+                result_text = self.push_notification("代理结果", title, result)
+            else:
+                result_text = self.push_notification(
+                    "代理结果", title, result, if_get_text_only=True
+                )
 
         self.agree_bilibili(False)
         self.log_monitor.deleteLater()
         self.log_monitor_timer.deleteLater()
-        self.accomplish.emit({"Time": begin_time, "History": end_log})
+        self.accomplish.emit({"Time": begin_time, "History": result_text})
 
     def requestInterruption(self) -> None:
         logger.info(f"{self.name} | 收到任务中止申请")
@@ -539,7 +556,7 @@ class MaaManager(QObject):
         if len(self.log_monitor.files()) != 0:
             self.interrupt.emit()
 
-        self.maa_result = "您中止了本次任务"
+        self.maa_result = "任务被手动中止"
         self.isInterruptionRequested = True
 
     def push_question(self, title: str, message: str) -> bool:
@@ -619,6 +636,8 @@ class MaaManager(QObject):
                 minutes=self.set["RunSet"][time_book[mode]]
             ):
                 self.maa_result = "检测到MAA进程超时"
+            elif self.isInterruptionRequested:
+                self.maa_result = "任务被手动中止"
             else:
                 self.maa_result = "Wait"
 
@@ -632,6 +651,8 @@ class MaaManager(QObject):
                 or ("MaaAssistantArknights GUI exited" in log)
             ):
                 self.maa_result = "检测到MAA进程异常"
+            elif self.isInterruptionRequested:
+                self.maa_result = "任务被手动中止"
             else:
                 self.maa_result = "Wait"
 
@@ -1154,142 +1175,50 @@ class MaaManager(QObject):
         return dt.strftime("%Y-%m-%d")
 
     def push_notification(
-        self, mode: str, title: str, message: Union[str, dict]
-    ) -> None:
+        self,
+        mode: str,
+        title: str,
+        message: Union[str, dict],
+        if_get_text_only: bool = False,
+    ) -> str:
         """通过所有渠道推送通知"""
+
+        env = Environment(
+            loader=FileSystemLoader(str(Config.app_path / "resources/html"))
+        )
 
         if mode == "代理结果":
 
-            Notify.send_mail(
-                "文本",
-                title,
-                f"{message}\n\nAUTO_MAA 敬上\n\n我们根据您在 AUTO_MAA 中的设置发送了这封电子邮件，本邮件无需回复\n",
+            # 生成文本通知内容
+            message_text = (
+                f"任务开始时间：{message["start_time"]}，结束时间：{message["end_time"]}\n"
+                f"已完成数：{message["completed_count"]}，未完成数：{message["uncompleted_count"]}\n\n"
             )
-            Notify.ServerChanPush(title, f"{message}\n\nAUTO_MAA 敬上")
-            Notify.CompanyWebHookBotPush(title, f"{message}AUTO_MAA 敬上")
+
+            if len(message["failed_user"]) > 0:
+                message_text += f"{self.mode[2:4]}未成功的用户：\n{"\n".join(message["failed_user"])}\n"
+            if len(message["waiting_user"]) > 0:
+                message_text += f"\n未开始{self.mode[2:4]}的用户：\n{"\n".join(message["waiting_user"])}\n"
+
+            if if_get_text_only:
+                return message_text
+
+            # 生成HTML通知内容
+            message["failed_user"] = "、".join(message["failed_user"])
+            message["waiting_user"] = "、".join(message["waiting_user"])
+
+            template = env.get_template("MAA_result.html")
+            message_html = template.render(message)
+
+            Notify.send_mail("网页", title, message_html)
+            Notify.ServerChanPush(title, f"{message_text}\n\nAUTO_MAA 敬上")
+            Notify.CompanyWebHookBotPush(title, f"{message_text}\n\nAUTO_MAA 敬上")
+
+            return message_text
 
         elif mode == "统计信息":
 
-            # HTML模板
-            html_template = """
-            <!DOCTYPE html>
-            <html lang="zh-CN">
-            <head>
-                <meta charset="UTF-8">
-                <title>{title}</title>
-                <style>
-                    body {{
-                        font-family: Arial, sans-serif;
-                        margin: 0;
-                        padding: 0;
-                        background-color: #f4f4f4;
-                    }}
-                    .container {{
-                        width: 80%;
-                        margin: auto;
-                        overflow: hidden;
-                        padding: 20px;
-                        background-color: white;
-                        box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-                    }}
-                    h1.main-title {{
-                        text-align: center;
-                        color: #333;
-                        font-size: 2em;
-                        margin-bottom: 20px;
-                    }}
-                    p {{
-                        font-size: 16px;
-                        color: #555;
-                    }}
-                    table {{
-                        width: 100%;
-                        border-collapse: collapse;
-                        margin: 25px 0;
-                        font-size: 18px;
-                        text-align: left;
-                    }}
-                    th, td {{
-                        padding: 12px 15px;
-                    }}
-                    th {{
-                        background-color: #007BFF;
-                        color: white;
-                    }}
-                    tr:nth-child(even) {{
-                        background-color: #f3f3f3;
-                    }}
-                    tr:hover {{
-                        background-color: #ddd;
-                    }}
-                </style>
-            </head>
-            <body>
-            <div class="container">
-                <h1 class="main-title">{title}</h1>
-
-                <p><strong>开始时间:</strong> {start_time}</p>
-                <p><strong>结束时间:</strong> {end_time}</p>
-                <p><strong>MAA执行结果:</strong> {maa_result}</p>
-
-                <h2>招募统计</h2>
-                <table>
-                    <thead>
-                    <tr>
-                        <th>星级</th>
-                        <th>数量</th>
-                    </tr>
-                    </thead>
-                    <tbody>
-                    {recruit_rows}
-                    </tbody>
-                </table>
-
-                {drop_tables}
-            </div>
-            </body>
-            </html>
-            """
-
-            # 构建招募统计表格行
-            recruit_rows = "".join(
-                f"<tr><td>{star}</td><td>{count}</td></tr>"
-                for star, count in message["recruit_statistics"].items()
-            )
-
-            # 构建掉落统计数据表格
-            drop_tables_html = ""
-            for stage, items in message["drop_statistics"].items():
-                drop_rows = "".join(
-                    f"<tr><td>{item}</td><td>{quantity}</td></tr>"
-                    for item, quantity in items.items()
-                )
-                drop_table = f"""
-                <h2>掉落统计 ({stage})</h2>
-                <table>
-                    <thead>
-                    <tr>
-                        <th>物品</th>
-                        <th>数量</th>
-                    </tr>
-                    </thead>
-                    <tbody>
-                    {drop_rows}
-                    </tbody>
-                </table>
-                """
-                drop_tables_html += drop_table
-
-            # 填充HTML模板
-            html_content = html_template.format(
-                title=title,
-                start_time=message["start_time"],
-                end_time=message["end_time"],
-                maa_result=message["maa_result"],
-                recruit_rows=recruit_rows,
-                drop_tables=drop_tables_html,
-            )
-
+            # 生成文本通知内容
             formatted = []
             for stage, items in message["drop_statistics"].items():
                 formatted.append(f"掉落统计（{stage}）:")
@@ -1302,7 +1231,6 @@ class MaaManager(QObject):
                 formatted.append(f"  {star}: {count}")
             recruit_text = "\n".join(formatted)
 
-            # 构建通知消息
             message_text = (
                 f"开始时间: {message['start_time']}\n"
                 f"结束时间: {message['end_time']}\n"
@@ -1311,6 +1239,20 @@ class MaaManager(QObject):
                 f"{drop_text}"
             )
 
-            Notify.send_mail("网页", title, html_content)
+            # 生成HTML通知内容
+            template = env.get_template("MAA_statistics.html")
+            message_html = template.render(message)
+
+            Notify.send_mail("网页", title, message_html)
             Notify.ServerChanPush(title, f"{message_text}\n\nAUTO_MAA 敬上")
-            Notify.CompanyWebHookBotPush(title, f"{message_text}AUTO_MAA 敬上")
+            Notify.CompanyWebHookBotPush(title, f"{message_text}\n\nAUTO_MAA 敬上")
+
+        elif mode == "公招六星":
+
+            # 生成HTML通知内容
+            template = env.get_template("MAA_six_star.html")
+            message_html = template.render(message)
+
+            Notify.send_mail("网页", title, message_html)
+            Notify.ServerChanPush(title, "好羡慕~\n\nAUTO_MAA 敬上")
+            Notify.CompanyWebHookBotPush(title, "好羡慕~\n\nAUTO_MAA 敬上")

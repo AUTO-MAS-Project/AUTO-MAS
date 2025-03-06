@@ -96,10 +96,7 @@ class HistoryCard(ExpandGroupSettingCard):
 
     def __init__(self, date: str, user_list: List[Path], parent=None):
         super().__init__(
-            FluentIcon.HISTORY,
-            date,
-            f"{date}的历史运行记录与统计信息",
-            parent,
+            FluentIcon.HISTORY, date, f"{date}的历史运行记录与统计信息", parent
         )
 
         widget = QWidget()
