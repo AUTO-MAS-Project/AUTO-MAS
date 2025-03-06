@@ -231,14 +231,15 @@ class AUTO_MAA(MSFluentWindow):
         # 检查密码
         self.setting.check_PASSWORD()
 
-        # 获取公告
-        self.setting.show_notice(if_show=False)
-
+        # 获取主题图像
         if (
             Config.global_config.get(Config.global_config.function_HomeImageMode)
             == "主题图像"
         ):
             self.home.get_home_image()
+
+        # 获取公告
+        self.setting.show_notice(if_show=False)
 
         # 检查更新
         if Config.global_config.get(Config.global_config.update_IfAutoUpdate):
