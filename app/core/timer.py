@@ -39,10 +39,7 @@ from app.services import System
 
 class _MainTimer(QWidget):
 
-    def __init__(
-        self,
-        parent=None,
-    ):
+    def __init__(self, parent=None):
         super().__init__(parent)
 
         self.if_FailSafeException = False

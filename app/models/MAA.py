@@ -34,7 +34,8 @@ import subprocess
 import shutil
 import time
 from pathlib import Path
-from typing import List
+from jinja2 import Environment, FileSystemLoader
+from typing import Union, List
 
 from app.core import Config
 from app.services import Notify, System
@@ -176,6 +177,9 @@ class MaaManager(QObject):
                         [True, "routine", "日常"],
                     ]
 
+                user_logs_list = []
+                user_start_time = datetime.now()
+
                 # 尝试次数循环
                 for i in range(self.set["RunSet"]["RunTimesLimit"]):
 
@@ -273,7 +277,7 @@ class MaaManager(QObject):
                             System.kill_process(self.maa_exe_path)
                             self.if_open_emulator = True
                             # 推送异常通知
-                            Notify.push_notification(
+                            Notify.push_plyer(
                                 "用户自动代理出现异常！",
                                 f"用户 {user[0].replace("_", " 今天的")}的{mode_book[j][5:7]}部分出现一次异常",
                                 f"{user[0].replace("_", " ")}的{mode_book[j][5:7]}出现异常",
@@ -287,19 +291,65 @@ class MaaManager(QObject):
                         # 移除静默进程标记
                         Config.silence_list.remove(self.emulator_path)
 
+                        # 保存运行日志以及统计信息
+                        if_six_star = Config.save_maa_log(
+                            Config.app_path
+                            / f"history/{curdate}/{self.data[user[2]][0]}/{start_time.strftime("%H-%M-%S")}.log",
+                            self.check_maa_log(start_time, mode_book[j]),
+                            self.maa_result,
+                        )
+                        user_logs_list.append(
+                            Config.app_path
+                            / f"history/{curdate}/{self.data[user[2]][0]}/{start_time.strftime("%H-%M-%S")}.json",
+                        )
+
+                        if (
+                            Config.global_config.get(
+                                Config.global_config.notify_IfSendSixStar
+                            )
+                            and if_six_star
+                        ):
+
+                            self.push_notification(
+                                "公招六星",
+                                f"喜报：用户 {user[0]} 公招出六星啦！",
+                                {"user_name": self.data[user[2]][0]},
+                            )
+
                     # 成功完成代理的用户修改相关参数
                     if run_book[0] and run_book[1]:
                         if self.data[user[2]][14] == 0 and self.data[user[2]][3] != -1:
                             self.data[user[2]][3] -= 1
                         self.data[user[2]][14] += 1
                         user[1] = "完成"
-                        Notify.push_notification(
+                        Notify.push_plyer(
                             "成功完成一个自动代理任务！",
                             f"已完成用户 {user[0].replace("_", " 今天的")}任务",
                             f"已完成 {user[0].replace("_", " 的")}",
                             3,
                         )
                         break
+
+                if Config.global_config.get(
+                    Config.global_config.notify_IfSendStatistic
+                ):
+
+                    statistics = Config.merge_maa_logs("指定项", user_logs_list)
+                    statistics["user_info"] = user[0]
+                    statistics["start_time"] = user_start_time.strftime(
+                        "%Y-%m-%d %H:%M:%S"
+                    )
+                    statistics["end_time"] = datetime.now().strftime(
+                        "%Y-%m-%d %H:%M:%S"
+                    )
+                    statistics["maa_result"] = (
+                        "代理任务全部完成"
+                        if (run_book[0] and run_book[1])
+                        else "代理任务未全部完成"
+                    )
+                    self.push_notification(
+                        "统计信息", f"用户 {user[0]} 的自动代理统计报告", statistics
+                    )
 
                 # 录入代理失败的用户
                 if not (run_book[0] and run_book[1]):
@@ -433,7 +483,7 @@ class MaaManager(QObject):
                 self.user_config_path.mkdir(parents=True, exist_ok=True)
                 shutil.copy(self.maa_set_path, self.user_config_path)
 
-            end_log = ""
+            result_text = ""
 
         # 导出结果
         if self.mode in ["自动代理", "人工排查"]:
@@ -456,52 +506,49 @@ class MaaManager(QObject):
             wait_index = [_[2] for _ in self.user_list if _[1] == "等待"]
 
             # 保存运行日志
-            end_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            end_log = (
-                f"任务开始时间：{begin_time}，结束时间：{end_time}\n"
-                f"已完成数：{len(over_index)}，未完成数：{len(error_index) + len(wait_index)}\n\n"
-            )
-
-            if len(error_index) != 0:
-                end_log += (
-                    f"{self.mode[2:4]}未成功的用户：\n"
-                    f"{"\n".join([self.data[_][0] for _ in error_index])}\n"
-                )
-            if len(wait_index) != 0:
-                end_log += (
-                    f"\n未开始{self.mode[2:4]}的用户：\n"
-                    f"{"\n".join([self.data[_][0] for _ in wait_index])}\n"
-                )
-
             title = (
                 f"{self.set["MaaSet"]["Name"]}的{self.mode[:4]}任务报告"
                 if self.set["MaaSet"]["Name"] != ""
                 else f"{self.mode[:4]}任务报告"
             )
+            result = {
+                "title": f"{self.mode[:4]}任务报告",
+                "script_name": (
+                    self.set["MaaSet"]["Name"]
+                    if self.set["MaaSet"]["Name"] != ""
+                    else "空白"
+                ),
+                "start_time": begin_time,
+                "end_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "completed_count": len(over_index),
+                "uncompleted_count": len(error_index) + len(wait_index),
+                "failed_user": [self.data[_][0] for _ in error_index],
+                "waiting_user": [self.data[_][0] for _ in wait_index],
+            }
             # 推送代理结果通知
-            Notify.push_notification(
+            Notify.push_plyer(
                 title.replace("报告", "已完成！"),
                 f"已完成用户数：{len(over_index)}，未完成用户数：{len(error_index) + len(wait_index)}",
                 f"已完成用户数：{len(over_index)}，未完成用户数：{len(error_index) + len(wait_index)}",
                 10,
             )
-            if not Config.global_config.get(
-                Config.global_config.notify_IfSendErrorOnly
-            ) or (
-                Config.global_config.get(Config.global_config.notify_IfSendErrorOnly)
+            if Config.global_config.get(
+                Config.global_config.notify_SendTaskResultTime
+            ) == "任何时刻" or (
+                Config.global_config.get(Config.global_config.notify_SendTaskResultTime)
+                == "仅失败时"
                 and len(error_index) + len(wait_index) != 0
             ):
-                Notify.send_mail(
-                    title,
-                    f"{end_log}\n\nAUTO_MAA 敬上\n\n我们根据您在 AUTO_MAA 中的设置发送了这封电子邮件，本邮件无需回复\n",
+                result_text = self.push_notification("代理结果", title, result)
+            else:
+                result_text = self.push_notification(
+                    "代理结果", title, result, if_get_text_only=True
                 )
-                Notify.ServerChanPush(title, f"{end_log}\n\nAUTO_MAA 敬上")
-                Notify.CompanyWebHookBotPush(title, f"{end_log}AUTO_MAA 敬上")
 
         self.agree_bilibili(False)
         self.log_monitor.deleteLater()
         self.log_monitor_timer.deleteLater()
-        self.accomplish.emit({"Time": begin_time, "History": end_log})
+        self.accomplish.emit({"Time": begin_time, "History": result_text})
 
     def requestInterruption(self) -> None:
         logger.info(f"{self.name} | 收到任务中止申请")
@@ -509,7 +556,7 @@ class MaaManager(QObject):
         if len(self.log_monitor.files()) != 0:
             self.interrupt.emit()
 
-        self.maa_result = "您中止了本次任务"
+        self.maa_result = "任务被手动中止"
         self.isInterruptionRequested = True
 
     def push_question(self, title: str, message: str) -> bool:
@@ -530,8 +577,8 @@ class MaaManager(QObject):
         with self.maa_log_path.open(mode="r", encoding="utf-8") as f:
             pass
 
-    def check_maa_log(self, start_time: datetime, mode: str) -> None:
-        """检查MAA日志以判断MAA程序运行状态"""
+    def check_maa_log(self, start_time: datetime, mode: str) -> list:
+        """获取MAA日志并检查以判断MAA程序运行状态"""
 
         # 获取日志
         logs = []
@@ -580,6 +627,7 @@ class MaaManager(QObject):
                 self.maa_result = "Success!"
             elif (
                 ("请「检查连接设置」或「尝试重启模拟器与 ADB」或「重启电脑」" in log)
+                or ("未检测到任何模拟器" in log)
                 or ("已停止" in log)
                 or ("MaaAssistantArknights GUI exited" in log)
             ):
@@ -588,6 +636,8 @@ class MaaManager(QObject):
                 minutes=self.set["RunSet"][time_book[mode]]
             ):
                 self.maa_result = "检测到MAA进程超时"
+            elif self.isInterruptionRequested:
+                self.maa_result = "任务被手动中止"
             else:
                 self.maa_result = "Wait"
 
@@ -596,10 +646,13 @@ class MaaManager(QObject):
                 self.maa_result = "Success!"
             elif (
                 ("请「检查连接设置」或「尝试重启模拟器与 ADB」或「重启电脑」" in log)
+                or ("未检测到任何模拟器" in log)
                 or ("已停止" in log)
                 or ("MaaAssistantArknights GUI exited" in log)
             ):
                 self.maa_result = "检测到MAA进程异常"
+            elif self.isInterruptionRequested:
+                self.maa_result = "任务被手动中止"
             else:
                 self.maa_result = "Wait"
 
@@ -612,6 +665,8 @@ class MaaManager(QObject):
         if self.maa_result != "Wait":
 
             self.quit_monitor()
+
+        return logs
 
     def start_monitor(self, start_time: datetime, mode: str) -> None:
         """开始监视MAA日志"""
@@ -734,13 +789,13 @@ class MaaManager(QObject):
 
                 data["Global"][
                     "VersionUpdate.ScheduledUpdateCheck"
-                ] = "True"  # 定时检查更新
+                ] = "False"  # 定时检查更新
                 data["Global"][
                     "VersionUpdate.AutoDownloadUpdatePackage"
-                ] = "True"  # 自动下载更新包
+                ] = "False"  # 自动下载更新包
                 data["Global"][
                     "VersionUpdate.AutoInstallUpdatePackage"
-                ] = "True"  # 自动安装更新包
+                ] = "False"  # 自动安装更新包
                 data["Configurations"]["Default"]["Start.ClientType"] = self.data[
                     index
                 ][
@@ -1118,3 +1173,86 @@ class MaaManager(QObject):
         if dt.time() < datetime.min.time().replace(hour=4):
             dt = dt - timedelta(days=1)
         return dt.strftime("%Y-%m-%d")
+
+    def push_notification(
+        self,
+        mode: str,
+        title: str,
+        message: Union[str, dict],
+        if_get_text_only: bool = False,
+    ) -> str:
+        """通过所有渠道推送通知"""
+
+        env = Environment(
+            loader=FileSystemLoader(str(Config.app_path / "resources/html"))
+        )
+
+        if mode == "代理结果":
+
+            # 生成文本通知内容
+            message_text = (
+                f"任务开始时间：{message["start_time"]}，结束时间：{message["end_time"]}\n"
+                f"已完成数：{message["completed_count"]}，未完成数：{message["uncompleted_count"]}\n\n"
+            )
+
+            if len(message["failed_user"]) > 0:
+                message_text += f"{self.mode[2:4]}未成功的用户：\n{"\n".join(message["failed_user"])}\n"
+            if len(message["waiting_user"]) > 0:
+                message_text += f"\n未开始{self.mode[2:4]}的用户：\n{"\n".join(message["waiting_user"])}\n"
+
+            if if_get_text_only:
+                return message_text
+
+            # 生成HTML通知内容
+            message["failed_user"] = "、".join(message["failed_user"])
+            message["waiting_user"] = "、".join(message["waiting_user"])
+
+            template = env.get_template("MAA_result.html")
+            message_html = template.render(message)
+
+            Notify.send_mail("网页", title, message_html)
+            Notify.ServerChanPush(title, f"{message_text}\n\nAUTO_MAA 敬上")
+            Notify.CompanyWebHookBotPush(title, f"{message_text}\n\nAUTO_MAA 敬上")
+
+            return message_text
+
+        elif mode == "统计信息":
+
+            # 生成文本通知内容
+            formatted = []
+            for stage, items in message["drop_statistics"].items():
+                formatted.append(f"掉落统计（{stage}）:")
+                for item, quantity in items.items():
+                    formatted.append(f"  {item}: {quantity}")
+            drop_text = "\n".join(formatted)
+
+            formatted = ["招募统计:"]
+            for star, count in message["recruit_statistics"].items():
+                formatted.append(f"  {star}: {count}")
+            recruit_text = "\n".join(formatted)
+
+            message_text = (
+                f"开始时间: {message['start_time']}\n"
+                f"结束时间: {message['end_time']}\n"
+                f"MAA执行结果: {message['maa_result']}\n\n"
+                f"{recruit_text}\n"
+                f"{drop_text}"
+            )
+
+            # 生成HTML通知内容
+            template = env.get_template("MAA_statistics.html")
+            message_html = template.render(message)
+
+            Notify.send_mail("网页", title, message_html)
+            Notify.ServerChanPush(title, f"{message_text}\n\nAUTO_MAA 敬上")
+            Notify.CompanyWebHookBotPush(title, f"{message_text}\n\nAUTO_MAA 敬上")
+
+        elif mode == "公招六星":
+
+            # 生成HTML通知内容
+            template = env.get_template("MAA_six_star.html")
+            message_html = template.render(message)
+
+            Notify.send_mail("网页", title, message_html)
+            Notify.ServerChanPush(title, "好羡慕~\n\nAUTO_MAA 敬上")
+            Notify.CompanyWebHookBotPush(title, "好羡慕~\n\nAUTO_MAA 敬上")

@@ -72,10 +72,7 @@ from .Widget import (
 
 class MemberManager(QWidget):
 
-    def __init__(
-        self,
-        parent=None,
-    ):
+    def __init__(self, parent=None):
         super().__init__(parent)
 
         self.setObjectName("脚本管理")
@@ -315,8 +312,9 @@ class MemberManager(QWidget):
 
             if choice.input[0].currentText() == "MAA":
 
+                (Config.app_path / "script/MAA").mkdir(parents=True, exist_ok=True)
                 folder = QFileDialog.getExistingDirectory(
-                    self, "选择MAA下载目录", str(Config.app_path)
+                    self, "选择MAA下载目录", str(Config.app_path / "script/MAA")
                 )
                 if not folder:
                     logger.warning("选择MAA下载目录时未选择文件夹")
@@ -329,7 +327,7 @@ class MemberManager(QWidget):
                 for _ in range(3):
                     try:
                         response = requests.get(
-                            "https://mirrorc.top/api/resources/MAA/latest?user_agent=MaaWpfGui&os=win&arch=x64&channel=beta"
+                            "https://mirrorc.top/api/resources/MAA/latest?user_agent=MaaWpfGui&os=win&arch=x64&channel=stable"
                         )
                         maa_info = response.json()
                         break
@@ -358,7 +356,7 @@ class MemberManager(QWidget):
                     maa_version.append(0)
 
                 self.downloader = Updater(Path(folder), "MAA", maa_version, [])
-                self.downloader.ui.show()
+                self.downloader.show()
 
     def show_password(self):
 
@@ -640,12 +638,7 @@ class MaaSettingBox(QWidget):
         class RunSetSettingCard(ExpandGroupSettingCard):
 
             def __init__(self, parent=None):
-                super().__init__(
-                    FluentIcon.SETTING,
-                    "运行",
-                    "MAA运行调控选项",
-                    parent,
-                )
+                super().__init__(FluentIcon.SETTING, "运行", "MAA运行调控选项", parent)
 
                 self.card_TaskTransitionMethod = ComboBoxSettingCard(
                     configItem=Config.maa_config.RunSet_TaskTransitionMethod,

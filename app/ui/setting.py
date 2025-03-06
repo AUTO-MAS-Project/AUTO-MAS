@@ -58,18 +58,9 @@ from .Widget import LineEditMessageBox, LineEditSettingCard, PasswordLineEditSet
 
 class Setting(QWidget):
 
-    def __init__(
-        self,
-        parent=None,
-    ):
+    def __init__(self, parent=None):
         super().__init__(parent)
-
         self.setObjectName("设置")
-
-        layout = QVBoxLayout()
-
-        scrollArea = ScrollArea()
-        scrollArea.setWidgetResizable(True)
 
         content_widget = QWidget()
         content_layout = QVBoxLayout(content_widget)
@@ -97,10 +88,11 @@ class Setting(QWidget):
         content_layout.addWidget(self.updater)
         content_layout.addWidget(self.other)
 
+        scrollArea = ScrollArea()
+        scrollArea.setWidgetResizable(True)
         scrollArea.setWidget(content_widget)
-
+        layout = QVBoxLayout()
         layout.addWidget(scrollArea)
-
         self.setLayout(layout)
 
     def agree_bilibili(self) -> None:
@@ -339,7 +331,7 @@ class Setting(QWidget):
                 if main_version_remote > main_version_current:
                     self.updater.update_process.accomplish.connect(self.update_main)
                 # 显示更新页面
-                self.updater.ui.show()
+                self.updater.show()
 
             # 更新主程序
             elif main_version_remote > main_version_current:
@@ -417,6 +409,20 @@ class FunctionSettingCard(HeaderCardWidget):
         super().__init__(parent)
         self.setTitle("功能")
 
+        self.card_HomeImageMode = ComboBoxSettingCard(
+            configItem=Config.global_config.function_HomeImageMode,
+            icon=FluentIcon.PAGE_RIGHT,
+            title="主页背景图模式",
+            content="选择主页背景图的来源",
+            texts=["默认", "自定义", "主题图像"],
+        )
+        self.card_HistoryRetentionTime = ComboBoxSettingCard(
+            configItem=Config.global_config.function_HistoryRetentionTime,
+            icon=FluentIcon.PAGE_RIGHT,
+            title="历史记录保留时间",
+            content="选择历史记录的保留时间，超期自动清理",
+            texts=["7 天", "15 天", "30 天", "60 天", "永久"],
+        )
         self.card_IfAllowSleep = SwitchSettingCard(
             icon=FluentIcon.PAGE_RIGHT,
             title="启动时阻止系统休眠",
@@ -432,6 +438,8 @@ class FunctionSettingCard(HeaderCardWidget):
         )
 
         Layout = QVBoxLayout()
+        Layout.addWidget(self.card_HomeImageMode)
+        Layout.addWidget(self.card_HistoryRetentionTime)
         Layout.addWidget(self.card_IfAllowSleep)
         Layout.addWidget(self.card_IfSilence)
         Layout.addWidget(self.card_IfAgreeBilibili)
@@ -488,10 +496,17 @@ class StartSettingCard(HeaderCardWidget):
             content="启动AUTO_MAA后自动运行自动代理任务，优先级：调度队列 1 > 脚本 1",
             configItem=Config.global_config.start_IfRunDirectly,
         )
+        self.card_IfMinimizeDirectly = SwitchSettingCard(
+            icon=FluentIcon.PAGE_RIGHT,
+            title="启动后直接最小化",
+            content="启动AUTO_MAA后直接最小化",
+            configItem=Config.global_config.start_IfMinimizeDirectly,
+        )
 
         Layout = QVBoxLayout()
         Layout.addWidget(self.card_IfSelfStart)
         Layout.addWidget(self.card_IfRunDirectly)
+        Layout.addWidget(self.card_IfMinimizeDirectly)
         self.viewLayout.addLayout(Layout)
 
 
@@ -527,38 +542,82 @@ class NotifySettingCard(HeaderCardWidget):
 
         self.setTitle("通知")
 
-        self.card_IfSendErrorOnly = SwitchSettingCard(
-            icon=FluentIcon.PAGE_RIGHT,
-            title="仅推送异常信息",
-            content="仅在任务出现异常时推送通知",
-            configItem=Config.global_config.notify_IfSendErrorOnly,
-        )
-        self.card_IfPushPlyer = SwitchSettingCard(
-            icon=FluentIcon.PAGE_RIGHT,
-            title="推送系统通知",
-            content="推送系统级通知，不会在通知中心停留",
-            configItem=Config.global_config.notify_IfPushPlyer,
-        )
-        self.card_SendMail = self.SendMailSettingCard(self)
+        self.card_NotifyContent = self.NotifyContentSettingCard(self)
+        self.card_Plyer = self.PlyerSettingCard(self)
+        self.card_EMail = self.EMailSettingCard(self)
         self.card_ServerChan = self.ServerChanSettingCard(self)
         self.card_CompanyWebhookBot = self.CompanyWechatPushSettingCard(self)
 
         Layout = QVBoxLayout()
-        Layout.addWidget(self.card_IfSendErrorOnly)
-        Layout.addWidget(self.card_IfPushPlyer)
-        Layout.addWidget(self.card_SendMail)
+        Layout.addWidget(self.card_NotifyContent)
+        Layout.addWidget(self.card_Plyer)
+        Layout.addWidget(self.card_EMail)
         Layout.addWidget(self.card_ServerChan)
         Layout.addWidget(self.card_CompanyWebhookBot)
         self.viewLayout.addLayout(Layout)
 
-    class SendMailSettingCard(ExpandGroupSettingCard):
+    class NotifyContentSettingCard(ExpandGroupSettingCard):
 
         def __init__(self, parent=None):
             super().__init__(
-                FluentIcon.SETTING,
-                "推送邮件通知",
-                "通过电子邮箱推送任务结果",
-                parent,
+                FluentIcon.SETTING, "通知内容选项", "选择需要推送的通知内容", parent
+            )
+
+            self.card_SendTaskResultTime = ComboBoxSettingCard(
+                configItem=Config.global_config.notify_SendTaskResultTime,
+                icon=FluentIcon.PAGE_RIGHT,
+                title="推送任务结果选项",
+                content="选择推送自动代理与人工排查任务结果的时机",
+                texts=["不推送", "任何时刻", "仅失败时"],
+            )
+            self.card_IfSendStatistic = SwitchSettingCard(
+                icon=FluentIcon.PAGE_RIGHT,
+                title="推送统计信息",
+                content="推送自动代理统计信息的通知",
+                configItem=Config.global_config.notify_IfSendStatistic,
+            )
+            self.card_IfSendSixStar = SwitchSettingCard(
+                icon=FluentIcon.PAGE_RIGHT,
+                title="推送公招高资喜报",
+                content="公招出现六星词条时推送喜报",
+                configItem=Config.global_config.notify_IfSendSixStar,
+            )
+
+            widget = QWidget()
+            Layout = QVBoxLayout(widget)
+            Layout.addWidget(self.card_SendTaskResultTime)
+            Layout.addWidget(self.card_IfSendStatistic)
+            Layout.addWidget(self.card_IfSendSixStar)
+            self.viewLayout.setContentsMargins(0, 0, 0, 0)
+            self.viewLayout.setSpacing(0)
+            self.addGroupWidget(widget)
+
+    class PlyerSettingCard(ExpandGroupSettingCard):
+
+        def __init__(self, parent=None):
+            super().__init__(
+                FluentIcon.SETTING, "推送系统通知", "Plyer系统通知推送渠道", parent
+            )
+
+            self.card_IfPushPlyer = SwitchSettingCard(
+                icon=FluentIcon.PAGE_RIGHT,
+                title="推送系统通知",
+                content="使用Plyer推送系统级通知，不会在通知中心停留",
+                configItem=Config.global_config.notify_IfPushPlyer,
+            )
+
+            widget = QWidget()
+            Layout = QVBoxLayout(widget)
+            Layout.addWidget(self.card_IfPushPlyer)
+            self.viewLayout.setContentsMargins(0, 0, 0, 0)
+            self.viewLayout.setSpacing(0)
+            self.addGroupWidget(widget)
+
+    class EMailSettingCard(ExpandGroupSettingCard):
+
+        def __init__(self, parent=None):
+            super().__init__(
+                FluentIcon.SETTING, "推送邮件通知", "电子邮箱通知推送渠道", parent
             )
 
             self.card_IfSendMail = SwitchSettingCard(
@@ -612,7 +671,7 @@ class NotifySettingCard(HeaderCardWidget):
             super().__init__(
                 FluentIcon.SETTING,
                 "推送ServerChan通知",
-                "通过ServerChan通知推送任务结果",
+                "ServerChan通知推送渠道",
                 parent,
             )
 
@@ -659,7 +718,7 @@ class NotifySettingCard(HeaderCardWidget):
             super().__init__(
                 FluentIcon.SETTING,
                 "推送企业微信机器人通知",
-                "通过企业微信机器人Webhook通知推送任务结果",
+                "企业微信机器人Webhook通知推送渠道",
                 parent,
             )
 
