@@ -186,7 +186,7 @@
                     <th>星级</th>
                     <th>数量</th>
                 </tr>
-                {% for star, count in recruit_statistics %}
+                {% for star, count in recruit_statistics.items() %}
                 <tr>
                     <td>{{ star }}</td>
                     <td>{{ count }}</td>
