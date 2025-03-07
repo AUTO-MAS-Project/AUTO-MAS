@@ -44,11 +44,14 @@ from qfluentwidgets import (
     PushSettingCard,
     ComboBoxSettingCard,
 )
-from datetime import datetime
+import os
 import json
-import subprocess
 import time
+import shutil
 import requests
+import subprocess
+from datetime import datetime
+from pathlib import Path
 
 from app.core import Config, MainInfoBar
 from app.services import Crypto, System
@@ -75,6 +78,9 @@ class Setting(QWidget):
 
         self.function.card_IfAllowSleep.checkedChanged.connect(System.set_Sleep)
         self.function.card_IfAgreeBilibili.checkedChanged.connect(self.agree_bilibili)
+        self.function.card_IfSkipMumuSplashAds.checkedChanged.connect(
+            self.skip_MuMu_splash_ads
+        )
         self.start.card_IfSelfStart.checkedChanged.connect(System.set_SelfStart)
         self.security.card_changePASSWORD.clicked.connect(self.change_PASSWORD)
         self.updater.card_CheckUpdate.clicked.connect(self.get_update)
@@ -98,26 +104,67 @@ class Setting(QWidget):
     def agree_bilibili(self) -> None:
         """授权bilibili游戏隐私政策"""
 
-        if not Config.global_config.get(Config.global_config.function_IfAgreeBilibili):
+        if Config.global_config.get(Config.global_config.function_IfAgreeBilibili):
+
+            choice = MessageBox(
+                "授权声明",
+                "开启“托管bilibili游戏隐私政策”功能，即代表您已完整阅读并同意《哔哩哔哩弹幕网用户使用协议》、《哔哩哔哩隐私政策》和《哔哩哔哩游戏中心用户协议》，并授权AUTO_MAA在其认定需要时以其认定合适的方法替您处理相关弹窗\n\n是否同意授权？",
+                self.window(),
+            )
+            if choice.exec():
+                logger.success("确认授权bilibili游戏隐私政策")
+                MainInfoBar.push_info_bar(
+                    "success", "操作成功", "已确认授权bilibili游戏隐私政策", 3000
+                )
+            else:
+                Config.global_config.set(
+                    Config.global_config.function_IfAgreeBilibili, False
+                )
+        else:
+
             logger.info("取消授权bilibili游戏隐私政策")
             MainInfoBar.push_info_bar(
                 "info", "操作成功", "已取消授权bilibili游戏隐私政策", 3000
             )
-            return None
 
-        choice = MessageBox(
-            "授权声明",
-            "开启“托管bilibili游戏隐私政策”功能，即代表您已完整阅读并同意《哔哩哔哩弹幕网用户使用协议》、《哔哩哔哩隐私政策》和《哔哩哔哩游戏中心用户协议》，并授权AUTO_MAA在其认定需要时以其认定合适的方法替您处理相关弹窗\n\n是否同意授权？",
-            self.window(),
+    def skip_MuMu_splash_ads(self) -> None:
+        """跳过MuMu启动广告"""
+
+        MuMu_splash_ads_path = (
+            Path(os.getenv("APPDATA")) / "Netease/MuMuPlayer-12.0/data/startupImage"
         )
-        if choice.exec():
-            logger.success("确认授权bilibili游戏隐私政策")
-            MainInfoBar.push_info_bar(
-                "success", "操作成功", "已确认授权bilibili游戏隐私政策", 3000
+
+        if Config.global_config.get(Config.global_config.function_IfSkipMumuSplashAds):
+
+            choice = MessageBox(
+                "风险声明",
+                "开启“跳过MuMu启动广告”功能，即代表您已安装MuMu模拟器-12且允许AUTO_MAA以其认定合适的方法屏蔽MuMu启动广告，并接受此操作带来的风险\n\n此功能即时生效，是否仍要开启此功能？",
+                self.window(),
             )
+            if choice.exec():
+
+                if MuMu_splash_ads_path.exists() and MuMu_splash_ads_path.is_dir():
+                    shutil.rmtree(MuMu_splash_ads_path)
+
+                MuMu_splash_ads_path.touch()
+
+                logger.success("开启跳过MuMu启动广告功能")
+                MainInfoBar.push_info_bar(
+                    "success", "操作成功", "已开启跳过MuMu启动广告功能", 3000
+                )
+            else:
+                Config.global_config.set(
+                    Config.global_config.function_IfSkipMumuSplashAds, False
+                )
+
         else:
-            Config.global_config.set(
-                Config.global_config.function_IfAgreeBilibili, False
+
+            if MuMu_splash_ads_path.exists() and MuMu_splash_ads_path.is_file():
+                MuMu_splash_ads_path.unlink()
+
+            logger.info("关闭跳过MuMu启动广告功能")
+            MainInfoBar.push_info_bar(
+                "info", "操作成功", "已关闭跳过MuMu启动广告功能", 3000
             )
 
     def check_PASSWORD(self) -> None:
@@ -436,6 +483,12 @@ class FunctionSettingCard(HeaderCardWidget):
             content="授权AUTO_MAA同意bilibili游戏隐私政策",
             configItem=Config.global_config.function_IfAgreeBilibili,
         )
+        self.card_IfSkipMumuSplashAds = SwitchSettingCard(
+            icon=FluentIcon.PAGE_RIGHT,
+            title="跳过MuMu启动广告",
+            content="启动MuMu模拟器时屏蔽启动广告",
+            configItem=Config.global_config.function_IfSkipMumuSplashAds,
+        )
 
         Layout = QVBoxLayout()
         Layout.addWidget(self.card_HomeImageMode)
@@ -443,6 +496,7 @@ class FunctionSettingCard(HeaderCardWidget):
         Layout.addWidget(self.card_IfAllowSleep)
         Layout.addWidget(self.card_IfSilence)
         Layout.addWidget(self.card_IfAgreeBilibili)
+        Layout.addWidget(self.card_IfSkipMumuSplashAds)
         self.viewLayout.addLayout(Layout)
 
     class SilenceSettingCard(ExpandGroupSettingCard):

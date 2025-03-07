@@ -780,6 +780,9 @@ class GlobalConfig(QConfig):
     function_IfAgreeBilibili = ConfigItem(
         "Function", "IfAgreeBilibili", False, BoolValidator()
     )
+    function_IfSkipMumuSplashAds = ConfigItem(
+        "Function", "IfSkipMumuSplashAds", False, BoolValidator()
+    )
 
     start_IfSelfStart = ConfigItem("Start", "IfSelfStart", False, BoolValidator())
     start_IfRunDirectly = ConfigItem("Start", "IfRunDirectly", False, BoolValidator())

@@ -1,7 +1,7 @@
 {
-    "main_version": "4.2.5.1",
+    "main_version": "4.2.5.2",
     "updater_version": "1.1.2.1",
-    "announcement": "\n## 新增功能\n- 暂无\n## 修复BUG\n- 修复统计信息HTML模板公招匹配错误\n## 程序优化\n- 暂无",
+    "announcement": "\n## 新增功能\n- 屏蔽MuMu模拟器开屏广告功能上线\n## 修复BUG\n- 修复统计信息HTML模板公招匹配错误\n## 程序优化\n- 暂无",
     "proxy_list": [
         "",
         "https://gitproxy.click/",
