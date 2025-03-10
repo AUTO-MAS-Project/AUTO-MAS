@@ -223,7 +223,7 @@ class Home(QWidget):
                 MainInfoBar.push_info_bar(
                     "error",
                     "主题图像获取失败",
-                    f"获取最新主题图像信息时出错：\n{err}",
+                    f"获取最新主题图像信息时出错！",
                     -1,
                 )
                 return None

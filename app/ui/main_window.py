@@ -247,6 +247,8 @@ class AUTO_MAA(MSFluentWindow):
             if result == "已是最新版本~":
                 MainInfoBar.push_info_bar("success", "更新检查", result, 3000)
             else:
+                if "获取版本信息时出错" in result:
+                    result = "网络错误"
                 info = InfoBar.info(
                     title="更新检查",
                     content=result,
@@ -256,10 +258,11 @@ class AUTO_MAA(MSFluentWindow):
                     duration=-1,
                     parent=self,
                 )
-                Up = PushButton("更新")
-                Up.clicked.connect(lambda: self.setting.get_update(if_question=False))
-                Up.clicked.connect(info.close)
-                info.addWidget(Up)
+                if "网络错误" not in result:
+                    Up = PushButton("更新")
+                    Up.clicked.connect(lambda: self.setting.get_update(if_question=False))
+                    Up.clicked.connect(info.close)
+                    info.addWidget(Up)
                 info.show()
 
         # 直接运行主任务
