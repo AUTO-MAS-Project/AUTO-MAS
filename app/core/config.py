@@ -853,6 +853,9 @@ class GlobalConfig(QConfig):
     update_UpdateType = OptionsConfigItem(
         "Update", "UpdateType", "main", OptionsValidator(["main", "dev"])
     )
+    update_ThreadNumb = RangeConfigItem(
+        "Update", "ThreadNumb", 8, RangeValidator(1, 32)
+    )
     update_ProxyUrlList = ConfigItem("Update", "ProxyUrlList", [], UrlListValidator())
 
 

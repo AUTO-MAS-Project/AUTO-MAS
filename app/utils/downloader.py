@@ -369,21 +369,25 @@ class DownloadManager(QDialog):
         response = requests.head(url)
 
         self.file_size = int(response.headers.get("content-length", 0))
-        part_size = self.file_size // 8
+        part_size = self.file_size // self.config["thread_numb"]
         self.downloaded_size = 0
         self.last_download_size = 0
         self.last_time = time.time()
         self.speed = 0
 
         # 拆分下载任务，启用多线程下载
-        for i in range(8):
+        for i in range(self.config["thread_numb"]):
 
             if self.isInterruptionRequested:
                 break
 
             # 计算单任务下载范围
             start_byte = i * part_size
-            end_byte = (i + 1) * part_size - 1 if i != 7 else self.file_size - 1
+            end_byte = (
+                (i + 1) * part_size - 1
+                if (i != self.config["thread_numb"] - 1)
+                else self.file_size - 1
+            )
 
             # 创建下载子线程
             self.download_process_dict[f"part{i}"] = DownloadProcess(
@@ -445,7 +449,7 @@ class DownloadManager(QDialog):
 
         # 合并下载的分段文件
         with self.download_path.open(mode="wb") as outfile:
-            for i in range(8):
+            for i in range(self.config["thread_numb"]):
                 with self.download_path.with_suffix(f".part{i}").open(
                     mode="rb"
                 ) as infile:
@@ -588,7 +592,7 @@ if __name__ == "__main__":
     else:
         main_version_current = [0, 0, 0, 0]
 
-    # 从本地配置文件获取更新类型
+    # 从本地配置文件获取更新信息
     if (app_path / "config/config.json").exists():
         with (app_path / "config/config.json").open(mode="r", encoding="utf-8") as f:
             config = json.load(f)
@@ -600,9 +604,14 @@ if __name__ == "__main__":
             proxy_list = config["Update"]["ProxyUrlList"]
         else:
             proxy_list = []
+        if "Update" in config and "ThreadNumb" in config["Update"]:
+            thread_numb = config["Update"]["ThreadNumb"]
+        else:
+            thread_numb = 8
     else:
         update_type = "main"
         proxy_list = []
+        thread_numb = 8
 
     # 从远程服务器获取最新版本信息
     for _ in range(3):
@@ -623,7 +632,10 @@ if __name__ == "__main__":
         sys.exit(f"获取版本信息时出错：\n{err}")
 
     # 合并代理列表
-    download_config = {"proxy_list": list(set(proxy_list + remote_proxy_list))}
+    download_config = {
+        "proxy_list": list(set(proxy_list + remote_proxy_list)),
+        "thread_numb": thread_numb,
+    }
 
     # 启动更新线程
     if main_version_remote > main_version_current:

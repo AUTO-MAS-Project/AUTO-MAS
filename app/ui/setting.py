@@ -40,6 +40,7 @@ from qfluentwidgets import (
     HyperlinkCard,
     HeaderCardWidget,
     SwitchSettingCard,
+    RangeSettingCard,
     ExpandGroupSettingCard,
     PushSettingCard,
     ComboBoxSettingCard,
@@ -391,7 +392,10 @@ class Setting(QWidget):
                     {
                         "proxy_list": Config.global_config.get(
                             Config.global_config.update_ProxyUrlList
-                        )
+                        ),
+                        "thread_numb": Config.global_config.get(
+                            Config.global_config.update_ThreadNumb
+                        ),
                     },
                 )
                 # 完成更新器的更新后更新主程序
@@ -857,6 +861,12 @@ class UpdaterSettingCard(HeaderCardWidget):
             content="选择AUTO_MAA的更新类别",
             texts=["稳定版", "公测版"],
         )
+        self.card_ThreadNumb = RangeSettingCard(
+            configItem=Config.global_config.update_ThreadNumb,
+            icon=FluentIcon.PAGE_RIGHT,
+            title="下载器线程数",
+            content="更新器的下载线程数，建议仅在下载速度较慢时适量拉高",
+        )
         self.card_ProxyUrlList = UrlListSettingCard(
             icon=FluentIcon.SETTING,
             configItem=Config.global_config.update_ProxyUrlList,
@@ -874,6 +884,7 @@ class UpdaterSettingCard(HeaderCardWidget):
         Layout = QVBoxLayout()
         Layout.addWidget(self.card_IfAutoUpdate)
         Layout.addWidget(self.card_UpdateType)
+        Layout.addWidget(self.card_ThreadNumb)
         Layout.addWidget(self.card_ProxyUrlList)
         Layout.addWidget(self.card_CheckUpdate)
         self.viewLayout.addLayout(Layout)

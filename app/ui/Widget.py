@@ -447,9 +447,9 @@ class UrlListSettingCard(ExpandSettingCard):
             self.window(),
         )
         if choice.exec():
-            self.__removeFolder(item)
+            self.__removeUrl(item)
 
-    def __removeFolder(self, item: UrlItem):
+    def __removeUrl(self, item: UrlItem):
         """remove folder"""
         if item.url not in self.urls:
             return

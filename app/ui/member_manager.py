@@ -356,7 +356,15 @@ class MemberManager(QWidget):
                     maa_version.append(0)
 
                 self.downloader = DownloadManager(
-                    Path(folder), "MAA", maa_version, [], {}
+                    Path(folder),
+                    "MAA",
+                    maa_version,
+                    [],
+                    {
+                        "thread_numb": Config.global_config.get(
+                            Config.global_config.update_ThreadNumb
+                        )
+                    },
                 )
                 self.downloader.show()
                 self.downloader.run()
