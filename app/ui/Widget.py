@@ -25,13 +25,14 @@ v4.2
 作者：DLmaster_361
 """
 
-from PySide6.QtWidgets import QWidget, QHBoxLayout
-from PySide6.QtCore import Qt, QTime, QEvent
+from PySide6.QtWidgets import QWidget, QWidget, QLabel, QHBoxLayout, QSizePolicy
+from PySide6.QtCore import Qt, QTime, QEvent, QSize
 from PySide6.QtGui import QIcon, QPixmap, QPainter, QPainterPath
 from qfluentwidgets import (
     LineEdit,
     PasswordLineEdit,
     MessageBoxBase,
+    MessageBox,
     SubtitleLabel,
     SettingCard,
     SpinBox,
@@ -50,9 +51,13 @@ from qfluentwidgets import (
     TeachingTip,
     TransparentToolButton,
     TeachingTipTailPosition,
+    ExpandSettingCard,
+    ToolButton,
+    PushButton,
 )
 from qfluentwidgets.common.overload import singledispatchmethod
 import os
+from urllib.parse import urlparse
 from typing import Optional, Union, List
 
 from app.services import Crypto
@@ -328,6 +333,142 @@ class TimeEditSettingCard(SettingCard):
             qconfig.set(self.configItem_time, value)
 
         self.TimeEdit.setTime(QTime.fromString(value, "HH:mm"))
+
+
+class UrlItem(QWidget):
+    """Url item"""
+
+    removed = Signal(QWidget)
+
+    def __init__(self, url: str, parent=None):
+        super().__init__(parent=parent)
+        self.url = url
+        self.hBoxLayout = QHBoxLayout(self)
+        self.folderLabel = QLabel(url, self)
+        self.removeButton = ToolButton(FluentIcon.CLOSE, self)
+
+        self.removeButton.setFixedSize(39, 29)
+        self.removeButton.setIconSize(QSize(12, 12))
+
+        self.setFixedHeight(53)
+        self.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
+        self.hBoxLayout.setContentsMargins(48, 0, 60, 0)
+        self.hBoxLayout.addWidget(self.folderLabel, 0, Qt.AlignLeft)
+        self.hBoxLayout.addSpacing(16)
+        self.hBoxLayout.addStretch(1)
+        self.hBoxLayout.addWidget(self.removeButton, 0, Qt.AlignRight)
+        self.hBoxLayout.setAlignment(Qt.AlignVCenter)
+
+        self.removeButton.clicked.connect(lambda: self.removed.emit(self))
+
+
+class UrlListSettingCard(ExpandSettingCard):
+    """Url list setting card"""
+
+    urlChanged = Signal(list)
+
+    def __init__(
+        self,
+        icon: Union[str, QIcon, FluentIconBase],
+        configItem: ConfigItem,
+        title: str,
+        content: str = None,
+        parent=None,
+    ):
+        """
+        Parameters
+        ----------
+        configItem: RangeConfigItem
+            configuration item operated by the card
+
+        title: str
+            the title of card
+
+        content: str
+            the content of card
+
+        parent: QWidget
+            parent widget
+        """
+        super().__init__(icon, title, content, parent)
+        self.configItem = configItem
+        self.addUrlButton = PushButton("添加代理网址", self)
+
+        self.urls: List[str] = qconfig.get(configItem).copy()
+        self.__initWidget()
+
+    def __initWidget(self):
+        self.addWidget(self.addUrlButton)
+
+        # initialize layout
+        self.viewLayout.setSpacing(0)
+        self.viewLayout.setAlignment(Qt.AlignTop)
+        self.viewLayout.setContentsMargins(0, 0, 0, 0)
+        for url in self.urls:
+            self.__addUrlItem(url)
+
+        self.addUrlButton.clicked.connect(self.__showUrlDialog)
+
+    def __showUrlDialog(self):
+        """show url dialog"""
+
+        choice = LineEditMessageBox(
+            self.window(), "添加代理网址", "请输入代理网址", "明文"
+        )
+        if choice.exec() and self.__validate(choice.input.text()):
+
+            if choice.input.text()[-1] == "/":
+                url = choice.input.text()
+            else:
+                url = f"{choice.input.text()}/"
+
+            if url in self.urls:
+                return
+
+            self.__addUrlItem(url)
+            self.urls.append(url)
+            qconfig.set(self.configItem, self.urls)
+            self.urlChanged.emit(self.urls)
+
+    def __addUrlItem(self, url: str):
+        """add url item"""
+        item = UrlItem(url, self.view)
+        item.removed.connect(self.__showConfirmDialog)
+        self.viewLayout.addWidget(item)
+        item.show()
+        self._adjustViewSize()
+
+    def __showConfirmDialog(self, item: UrlItem):
+        """show confirm dialog"""
+
+        choice = MessageBox(
+            "确认",
+            f"确定要删除 {item.url} 代理网址吗？",
+            self.window(),
+        )
+        if choice.exec():
+            self.__removeUrl(item)
+
+    def __removeUrl(self, item: UrlItem):
+        """remove folder"""
+        if item.url not in self.urls:
+            return
+
+        self.urls.remove(item.url)
+        self.viewLayout.removeWidget(item)
+        item.deleteLater()
+        self._adjustViewSize()
+
+        self.urlChanged.emit(self.urls)
+        qconfig.set(self.configItem, self.urls)
+
+    def __validate(self, value):
+
+        try:
+            result = urlparse(value)
+            return all([result.scheme, result.netloc])
+        except ValueError:
+            return False
 
 
 class StatefulItemCard(CardWidget):

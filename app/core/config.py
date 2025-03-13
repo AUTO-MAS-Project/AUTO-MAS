@@ -39,12 +39,14 @@ from qfluentwidgets import (
     ConfigItem,
     OptionsConfigItem,
     RangeConfigItem,
+    ConfigValidator,
     FolderValidator,
     BoolValidator,
     RangeValidator,
     OptionsValidator,
     qconfig,
 )
+from urllib.parse import urlparse
 from typing import Union, Dict, List, Tuple
 
 
@@ -760,6 +762,30 @@ class AppConfig:
         self.queue_config.set(self.queue_config.queue_Member_10, "禁用")
 
 
+class UrlListValidator(ConfigValidator):
+    """Url list validator"""
+
+    def validate(self, value):
+
+        try:
+            result = urlparse(value)
+            return all([result.scheme, result.netloc])
+        except ValueError:
+            return False
+
+    def correct(self, value: List[str]):
+
+        urls = []
+
+        for url in [_ for _ in value if _ != ""]:
+            if url[-1] != "/":
+                urls.append(f"{url}/")
+            else:
+                urls.append(url)
+
+        return list(set([_ for _ in urls if self.validate(_)]))
+
+
 class GlobalConfig(QConfig):
     """全局配置"""
 
@@ -827,6 +853,10 @@ class GlobalConfig(QConfig):
     update_UpdateType = OptionsConfigItem(
         "Update", "UpdateType", "main", OptionsValidator(["main", "dev"])
     )
+    update_ThreadNumb = RangeConfigItem(
+        "Update", "ThreadNumb", 8, RangeValidator(1, 32)
+    )
+    update_ProxyUrlList = ConfigItem("Update", "ProxyUrlList", [], UrlListValidator())
 
 
 class QueueConfig(QConfig):

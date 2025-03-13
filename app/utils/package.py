@@ -72,11 +72,11 @@ if __name__ == "__main__":
 
     print("AUTO_MAA main program packaging completed !")
 
-    shutil.copy(root_path / "app/utils/Updater.py", root_path)
+    shutil.copy(root_path / "app/utils/downloader.py", root_path)
 
-    file_content = (root_path / "Updater.py").read_text(encoding="utf-8")
+    file_content = (root_path / "downloader.py").read_text(encoding="utf-8")
 
-    (root_path / "Updater.py").write_text(
+    (root_path / "downloader.py").write_text(
         file_content.replace(
             "from .version import version_text", "from app import version_text"
         ),
@@ -96,12 +96,12 @@ if __name__ == "__main__":
         " --file-description='AUTO_MAA Component'"
         " --copyright='Copyright © 2024 DLmaster361'"
         " --assume-yes-for-downloads --output-filename=Updater"
-        " --remove-output Updater.py"
+        " --remove-output downloader.py"
     )
 
     print("AUTO_MAA update program packaging completed !")
 
-    (root_path / "Updater.py").unlink()
+    (root_path / "downloader.py").unlink()
 
     (root_path / "version_info.txt").write_text(
         f"{version_text(main_version_numb)}\n{version_text(updater_version_numb)}{version["announcement"]}",

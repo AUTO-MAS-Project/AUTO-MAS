@@ -61,7 +61,7 @@ import shutil
 
 from app.core import Config, MainInfoBar, TaskManager
 from app.services import Crypto
-from app.utils import Updater
+from app.utils import DownloadManager
 from .Widget import (
     LineEditMessageBox,
     LineEditSettingCard,
@@ -355,8 +355,19 @@ class MemberManager(QWidget):
                 while len(maa_version) < 4:
                     maa_version.append(0)
 
-                self.downloader = Updater(Path(folder), "MAA", maa_version, [])
+                self.downloader = DownloadManager(
+                    Path(folder),
+                    "MAA",
+                    maa_version,
+                    [],
+                    {
+                        "thread_numb": Config.global_config.get(
+                            Config.global_config.update_ThreadNumb
+                        )
+                    },
+                )
                 self.downloader.show()
+                self.downloader.run()
 
     def show_password(self):
 
