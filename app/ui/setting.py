@@ -55,8 +55,13 @@ from pathlib import Path
 
 from app.core import Config, MainInfoBar
 from app.services import Crypto, System
-from app.utils import Updater
-from .Widget import LineEditMessageBox, LineEditSettingCard, PasswordLineEditSettingCard
+from app.utils import DownloadManager
+from .Widget import (
+    LineEditMessageBox,
+    LineEditSettingCard,
+    PasswordLineEditSettingCard,
+    UrlListSettingCard,
+)
 
 
 class Setting(QWidget):
@@ -335,6 +340,16 @@ class Setting(QWidget):
         updater_version_remote = list(
             map(int, version_remote["updater_version"].split("."))
         )
+        remote_proxy_list = version_remote["proxy_list"]
+        Config.global_config.set(
+            Config.global_config.update_ProxyUrlList,
+            list(
+                set(
+                    Config.global_config.get(Config.global_config.update_ProxyUrlList)
+                    + remote_proxy_list
+                )
+            ),
+        )
 
         # 有版本更新
         if (main_version_remote > main_version_current) or (
@@ -368,17 +383,23 @@ class Setting(QWidget):
             # 更新更新器
             if updater_version_remote > updater_version_current:
                 # 创建更新进程
-                self.updater = Updater(
+                self.updater = DownloadManager(
                     Config.app_path,
                     "AUTO_MAA更新器",
                     main_version_remote,
                     updater_version_remote,
+                    {
+                        "proxy_list": Config.global_config.get(
+                            Config.global_config.update_ProxyUrlList
+                        )
+                    },
                 )
                 # 完成更新器的更新后更新主程序
                 if main_version_remote > main_version_current:
-                    self.updater.update_process.accomplish.connect(self.update_main)
+                    self.updater.download_accomplish.connect(self.update_main)
                 # 显示更新页面
                 self.updater.show()
+                self.updater.run()
 
             # 更新主程序
             elif main_version_remote > main_version_current:
@@ -836,6 +857,13 @@ class UpdaterSettingCard(HeaderCardWidget):
             content="选择AUTO_MAA的更新类别",
             texts=["稳定版", "公测版"],
         )
+        self.card_ProxyUrlList = UrlListSettingCard(
+            icon=FluentIcon.SETTING,
+            configItem=Config.global_config.update_ProxyUrlList,
+            title="代理地址列表",
+            content="更新器代理地址列表",
+            parent=self,
+        )
         self.card_CheckUpdate = PushSettingCard(
             text="检查更新",
             icon=FluentIcon.UPDATE,
@@ -846,6 +874,7 @@ class UpdaterSettingCard(HeaderCardWidget):
         Layout = QVBoxLayout()
         Layout.addWidget(self.card_IfAutoUpdate)
         Layout.addWidget(self.card_UpdateType)
+        Layout.addWidget(self.card_ProxyUrlList)
         Layout.addWidget(self.card_CheckUpdate)
         self.viewLayout.addLayout(Layout)
 
