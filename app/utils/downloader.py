@@ -100,8 +100,6 @@ class DownloadProcess(QThread):
                     self.url, headers=headers, timeout=10, stream=True
                 )
 
-                print(self.download_path.suffix, response.status_code)
-
                 if response.status_code != 206:
 
                     if self.check_times != -1:
@@ -116,9 +114,6 @@ class DownloadProcess(QThread):
                     for chunk in response.iter_content(chunk_size=8192):
 
                         if self.isInterruptionRequested():
-                            print(
-                                f"{self.download_path.suffix}: isInterruptionRequested"
-                            )
                             break
 
                         f.write(chunk)
@@ -145,9 +140,7 @@ class DownloadProcess(QThread):
                 time.sleep(1)
 
         else:
-            print(
-                f"{self.download_path.suffix}: isInterruptionRequested---{self.check_times}/{self.isInterruptionRequested()}"
-            )
+
             if self.download_path.exists():
                 self.download_path.unlink()
             self.accomplish.emit(0)
@@ -307,11 +300,8 @@ class DownloadManager(QDialog):
 
     def kill_speed_test(self, name: str) -> None:
 
-        print(f"time: {name}")
-
         if name in self.download_process_dict:
             self.download_process_dict[name].requestInterruption()
-            print(f"kill_speed_test: {name}")
 
     def test_speed_task2(self, name: str, t: float) -> None:
 
@@ -346,8 +336,6 @@ class DownloadManager(QDialog):
         self.download_process_dict.pop(name)
         if not self.download_process_dict:
             self.download_process_clear.emit()
-
-        print(self.download_process_dict.keys())
 
         if any(speed == -1 for _, speed in self.test_speed_result.items()):
             return None
@@ -510,7 +498,6 @@ class DownloadManager(QDialog):
                 shell=True,
                 creationflags=subprocess.CREATE_NO_WINDOW,
             )
-            print(str(self.app_path / "AUTO_MAA.exe"))
         elif not self.isInterruptionRequested and self.name == "MAA":
             subprocess.Popen(
                 str(self.app_path / "MAA.exe"),
@@ -538,7 +525,6 @@ class DownloadManager(QDialog):
 
         self.isInterruptionRequested = True
 
-        print(self.download_process_dict)
         for process in self.download_process_dict.values():
             process.requestInterruption()
 
@@ -551,8 +537,6 @@ class DownloadManager(QDialog):
         """清理残余进程"""
 
         self.requestInterruption()
-
-        print(self.download_process_dict)
 
         event.accept()
 

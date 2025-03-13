@@ -116,14 +116,13 @@ class MemberManager(QWidget):
             )
         )
         self.tools.addSeparator()
-        self.tools.addAction(
-            Action(
-                FluentIcon.HIDE,
-                "显示/隐藏密码",
-                checkable=True,
-                triggered=self.show_password,
-            )
+        self.key = Action(
+            FluentIcon.HIDE,
+            "显示/隐藏密码",
+            checkable=True,
+            triggered=self.show_password,
         )
+        self.tools.addAction(self.key)
 
         layout.addWidget(self.tools)
         layout.addWidget(self.member_manager)
