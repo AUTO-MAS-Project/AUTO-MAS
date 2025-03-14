@@ -365,6 +365,9 @@ class MaaManager(QObject):
         # 人工排查模式
         elif self.mode == "人工排查":
 
+            # 人工排查时，屏蔽静默操作
+            Config.if_ignore_silence = True
+
             # 标记是否需要启动模拟器
             self.if_open_emulator = True
             # 标识排查模式
@@ -462,6 +465,9 @@ class MaaManager(QObject):
                     user[1] = "异常"
 
                 self.update_user_list.emit(self.user_list)
+
+            # 解除静默操作屏蔽
+            Config.if_ignore_silence = False
 
         # 设置MAA模式
         elif "设置MAA" in self.mode:
@@ -572,7 +578,6 @@ class MaaManager(QObject):
 
     def __capture_response(self, response: bool) -> None:
         self.response = response
-        print(response)
 
     def refresh_maa_log(self) -> None:
         """刷新MAA日志"""

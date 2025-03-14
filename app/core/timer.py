@@ -84,7 +84,8 @@ class _MainTimer(QWidget):
         """设置静默模式"""
 
         if (
-            Config.global_config.get(Config.global_config.function_IfSilence)
+            not Config.if_ignore_silence
+            and Config.global_config.get(Config.global_config.function_IfSilence)
             and Config.global_config.get(Config.global_config.function_BossKey) != ""
         ):
 

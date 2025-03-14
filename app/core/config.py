@@ -68,6 +68,7 @@ class AppConfig:
         self.PASSWORD = ""
         self.running_list = []
         self.silence_list = []
+        self.if_ignore_silence = False
         self.if_database_opened = False
 
         # 检查文件完整性
