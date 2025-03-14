@@ -27,7 +27,7 @@ v4.2
 
 from loguru import logger
 from PySide6.QtCore import QThread, QObject, Signal
-from qfluentwidgets import Dialog
+from qfluentwidgets import MessageBox
 import json
 from pathlib import Path
 from datetime import datetime
@@ -187,9 +187,10 @@ class _TaskManager(QObject):
     connect_gui = Signal(Task)
     push_info_bar = Signal(str, str, str, int)
 
-    def __init__(self):
+    def __init__(self, main_window=None):
         super(_TaskManager, self).__init__()
 
+        self.main_window = main_window
         self.task_dict: Dict[str, Task] = {}
 
     def add_task(
@@ -281,16 +282,33 @@ class _TaskManager(QObject):
                 "r", encoding="utf-8"
             ) as f:
                 info = json.load(f)
-            System.set_power(info["QueueSet"]["AfterAccomplish"])
+
+            if info["QueueSet"]["AfterAccomplish"] != "None":
+
+                from app.ui import ProgressRingMessageBox
+
+                mode_book = {
+                    "Shutdown": "关机",
+                    "Hibernate": "休眠",
+                    "Sleep": "睡眠",
+                    "KillSelf": "关闭AUTO_MAA",
+                }
+
+                choice = ProgressRingMessageBox(
+                    self.main_window,
+                    f"{mode_book[info['QueueSet']['AfterAccomplish']]}倒计时",
+                )
+                if choice.exec():
+                    System.set_power(info["QueueSet"]["AfterAccomplish"])
 
     def push_dialog(self, name: str, title: str, content: str):
         """推送对话框"""
 
-        choice = Dialog(title, content, None)
+        choice = MessageBox(title, content, self.main_window)
         choice.yesButton.setText("是")
         choice.cancelButton.setText("否")
 
-        self.task_dict[name].question_response.emit(bool(choice.exec_()))
+        self.task_dict[name].question_response.emit(bool(choice.exec()))
 
 
 TaskManager = _TaskManager()

@@ -67,10 +67,15 @@ class MaaManager(QObject):
         self.mode = mode
         self.config_path = config_path
         self.user_config_path = user_config_path
+
         self.log_monitor = QFileSystemWatcher()
         self.log_monitor_timer = QTimer()
         self.log_monitor_timer.timeout.connect(self.refresh_maa_log)
         self.monitor_loop = QEventLoop()
+
+        self.question_loop = QEventLoop()
+        self.question_response.connect(self.__capture_response)
+        self.question_response.connect(self.question_loop.quit)
 
         self.interrupt.connect(self.quit_monitor)
 
@@ -360,6 +365,9 @@ class MaaManager(QObject):
         # 人工排查模式
         elif self.mode == "人工排查":
 
+            # 人工排查时，屏蔽静默操作
+            Config.if_ignore_silence = True
+
             # 标记是否需要启动模拟器
             self.if_open_emulator = True
             # 标识排查模式
@@ -457,6 +465,9 @@ class MaaManager(QObject):
                     user[1] = "异常"
 
                 self.update_user_list.emit(self.user_list)
+
+            # 解除静默操作屏蔽
+            Config.if_ignore_silence = False
 
         # 设置MAA模式
         elif "设置MAA" in self.mode:
@@ -562,13 +573,10 @@ class MaaManager(QObject):
     def push_question(self, title: str, message: str) -> bool:
 
         self.question.emit(title, message)
-        loop = QEventLoop()
-        self.question_response.connect(self._capture_response)
-        self.question_response.connect(loop.quit)
-        loop.exec()
+        self.question_loop.exec()
         return self.response
 
-    def _capture_response(self, response: bool) -> None:
+    def __capture_response(self, response: bool) -> None:
         self.response = response
 
     def refresh_maa_log(self) -> None:

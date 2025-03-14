@@ -26,7 +26,7 @@ v4.2
 """
 
 from PySide6.QtWidgets import QWidget, QWidget, QLabel, QHBoxLayout, QSizePolicy
-from PySide6.QtCore import Qt, QTime, QEvent, QSize
+from PySide6.QtCore import Qt, QTime, QTimer, QEvent, QSize
 from PySide6.QtGui import QIcon, QPixmap, QPainter, QPainterPath
 from qfluentwidgets import (
     LineEdit,
@@ -54,6 +54,7 @@ from qfluentwidgets import (
     ExpandSettingCard,
     ToolButton,
     PushButton,
+    ProgressRing,
 )
 from qfluentwidgets.common.overload import singledispatchmethod
 import os
@@ -106,6 +107,52 @@ class ComboBoxMessageBox(MessageBoxBase):
         # 将组件添加到布局中
         self.viewLayout.addWidget(self.title)
         self.viewLayout.addWidget(Widget)
+
+
+class ProgressRingMessageBox(MessageBoxBase):
+    """进度环倒计时对话框"""
+
+    def __init__(self, parent, title: str):
+        super().__init__(parent)
+        self.title = SubtitleLabel(title)
+
+        self.time = 100
+        Widget = QWidget()
+        Layout = QHBoxLayout(Widget)
+        self.ring = ProgressRing()
+        self.ring.setRange(0, 100)
+        self.ring.setValue(100)
+        self.ring.setTextVisible(True)
+        self.ring.setFormat("%p 秒")
+        self.ring.setFixedSize(100, 100)
+        self.ring.setStrokeWidth(4)
+        Layout.addWidget(self.ring)
+
+        self.yesButton.hide()
+        self.cancelButton.clicked.connect(self.__quit_timer)
+        self.buttonLayout.insertStretch(1)
+
+        # 将组件添加到布局中
+        self.viewLayout.addWidget(self.title)
+        self.viewLayout.addWidget(Widget)
+
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.__update_time)
+        self.timer.start(1000)
+
+    def __update_time(self):
+
+        self.time -= 1
+        self.ring.setValue(self.time)
+
+        if self.time == 0:
+            self.timer.stop()
+            self.timer.deleteLater()
+            self.yesButton.click()
+
+    def __quit_timer(self):
+        self.timer.stop()
+        self.timer.deleteLater()
 
 
 class LineEditSettingCard(SettingCard):
