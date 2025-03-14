@@ -72,6 +72,7 @@ class AUTO_MAA(MSFluentWindow):
         self.splashScreen = SplashScreen(self.windowIcon(), self)
         self.show_ui("显示主窗口", if_quick=True)
 
+        TaskManager.main_window = self.window()
         MainInfoBar.main_window = self.window()
         System.main_window = self.window()
 
@@ -260,7 +261,9 @@ class AUTO_MAA(MSFluentWindow):
                 )
                 if "网络错误" not in result:
                     Up = PushButton("更新")
-                    Up.clicked.connect(lambda: self.setting.get_update(if_question=False))
+                    Up.clicked.connect(
+                        lambda: self.setting.get_update(if_question=False)
+                    )
                     Up.clicked.connect(info.close)
                     info.addWidget(Up)
                 info.show()
