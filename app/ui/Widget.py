@@ -25,7 +25,14 @@ v4.2
 作者：DLmaster_361
 """
 
-from PySide6.QtWidgets import QWidget, QWidget, QLabel, QHBoxLayout, QSizePolicy
+from PySide6.QtWidgets import (
+    QWidget,
+    QWidget,
+    QLabel,
+    QHBoxLayout,
+    QVBoxLayout,
+    QSizePolicy,
+)
 from PySide6.QtCore import Qt, QTime, QTimer, QEvent, QSize
 from PySide6.QtGui import QIcon, QPixmap, QPainter, QPainterPath
 from qfluentwidgets import (
@@ -54,12 +61,18 @@ from qfluentwidgets import (
     ExpandSettingCard,
     ToolButton,
     PushButton,
+    PrimaryPushButton,
     ProgressRing,
+    TextBrowser,
+    HeaderCardWidget,
 )
 from qfluentwidgets.common.overload import singledispatchmethod
 import os
+import re
+import markdown
 from urllib.parse import urlparse
-from typing import Optional, Union, List
+from functools import partial
+from typing import Optional, Union, List, Dict
 
 from app.services import Crypto
 
@@ -153,6 +166,87 @@ class ProgressRingMessageBox(MessageBoxBase):
     def __quit_timer(self):
         self.timer.stop()
         self.timer.deleteLater()
+
+
+class NoticeMessageBox(MessageBoxBase):
+    """公告对话框"""
+
+    def __init__(self, parent, content: Dict[str, str]):
+        super().__init__(parent)
+
+        self.index = self.NoticeIndexCard(content, self)
+        self.text = TextBrowser(self)
+        self.text.setOpenExternalLinks(True)
+        self.button = PrimaryPushButton("确认", self)
+
+        self.buttonGroup.hide()
+
+        self.v_layout = QVBoxLayout()
+        self.v_layout.addWidget(self.text)
+        self.v_layout.addWidget(self.button)
+
+        self.h_layout = QHBoxLayout()
+        self.h_layout.addWidget(self.index)
+        self.h_layout.addLayout(self.v_layout)
+        self.h_layout.setStretch(0, 1)
+        self.h_layout.setStretch(1, 3)
+
+        # 将组件添加到布局中
+        self.viewLayout.addLayout(self.h_layout)
+        self.widget.setFixedSize(800, 600)
+
+        self.index.index_changed.connect(self.__update_text)
+        self.button.clicked.connect(self.yesButton.click)
+        self.index.index_cards[0].clicked.emit()
+
+    def __update_text(self, text: str):
+
+        html = markdown.markdown(text).replace("\n", "")
+        html = re.sub(
+            r"<code>(.*?)</code>",
+            r"<span style='color: #009faa;'>\1</span>",
+            html,
+        )
+        html = re.sub(r"<li><p>(.*?)</p></li>", r"<p><strong>◆ </strong>\1</p>", html)
+        html = re.sub(r"<ul>(.*?)</ul>", r"\1", html)
+
+        self.text.setHtml(html)
+
+    class NoticeIndexCard(HeaderCardWidget):
+
+        index_changed = Signal(str)
+
+        def __init__(self, content: Dict[str, str], parent=None):
+            super().__init__(parent)
+            self.setTitle("公告")
+
+            self.Layout = QVBoxLayout()
+            self.viewLayout.addLayout(self.Layout)
+            self.viewLayout.setContentsMargins(3, 0, 3, 3)
+
+            self.index_cards: List[QuantifiedItemCard] = []
+
+            if content:
+                self.index_cards.append(QuantifiedItemCard(["ALL", ""]))
+                self.index_cards[-1].clicked.connect(
+                    lambda: self.index_changed.emit(
+                        "\n---\n".join(
+                            [str(_) for _ in content.values() if isinstance(_, str)]
+                        )
+                    )
+                )
+                self.Layout.addWidget(self.index_cards[-1])
+            else:
+                self.Layout.addWidget(QuantifiedItemCard(["暂无公告", ""]))
+            for index, text in content.items():
+
+                self.index_cards.append(QuantifiedItemCard([index, ""]))
+                self.index_cards[-1].clicked.connect(
+                    partial(self.index_changed.emit, text)
+                )
+                self.Layout.addWidget(self.index_cards[-1])
+
+            self.Layout.addStretch(1)
 
 
 class LineEditSettingCard(SettingCard):
