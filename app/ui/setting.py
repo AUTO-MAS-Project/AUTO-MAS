@@ -62,6 +62,7 @@ from .Widget import (
     LineEditSettingCard,
     PasswordLineEditSettingCard,
     UrlListSettingCard,
+    NoticeMessageBox,
 )
 
 
@@ -465,9 +466,7 @@ class Setting(QWidget):
             and datetime.strptime(notice["time"], "%Y-%m-%d %H:%M") > time_local
         ):
 
-            choice = Dialog("公告", notice["content"], self)
-            choice.cancelButton.hide()
-            choice.buttonLayout.insertStretch(1)
+            choice = NoticeMessageBox(self.window(), notice["notice_dict"])
             if choice.exec():
                 with (Config.app_path / "resources/notice.json").open(
                     mode="w", encoding="utf-8"

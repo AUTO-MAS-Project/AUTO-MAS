@@ -210,12 +210,12 @@ class AUTO_MAA(MSFluentWindow):
         """切换主题"""
 
         setTheme(Theme.AUTO, lazy=True)
-        QTimer.singleShot(100, lambda: setTheme(Theme.AUTO, lazy=True))
+        QTimer.singleShot(500, lambda: setTheme(Theme.AUTO, lazy=True))
 
         # 云母特效启用时需要增加重试机制
         if self.isMicaEffectEnabled():
             QTimer.singleShot(
-                100,
+                500,
                 lambda: self.windowEffect.setMicaEffect(self.winId(), isDarkTheme()),
             )
 
