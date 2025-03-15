@@ -607,8 +607,14 @@ class MaaManager(QObject):
         with self.maa_log_path.open(mode="r", encoding="utf-8") as f:
             pass
 
+        # 一分钟内未执行日志变化检查，强制检查一次
+        if datetime.now() - self.last_check_time > timedelta(minutes=1):
+            self.log_monitor.fileChanged.emit(self.log_monitor.files()[0])
+
     def check_maa_log(self, start_time: datetime, mode: str) -> list:
         """获取MAA日志并检查以判断MAA程序运行状态"""
+
+        self.last_check_time = datetime.now()
 
         # 获取日志
         logs = []
@@ -707,6 +713,7 @@ class MaaManager(QObject):
             lambda: self.check_maa_log(start_time, mode)
         )
         self.log_monitor_timer.start(1000)
+        self.last_check_time = datetime.now()
         self.monitor_loop.exec()
 
     def quit_monitor(self) -> None:
@@ -718,6 +725,7 @@ class MaaManager(QObject):
             self.log_monitor.removePath(str(self.maa_log_path))
             self.log_monitor.fileChanged.disconnect()
             self.log_monitor_timer.stop()
+            self.last_check_time = None
             self.monitor_loop.quit()
 
     def set_maa(self, mode, index) -> dict:
