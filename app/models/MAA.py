@@ -651,7 +651,7 @@ class MaaManager(QObject):
 
             if mode == "自动代理_日常" and "任务出错: Fight" in log:
                 self.maa_result = "检测到MAA未能实际执行任务"
-            if "任务出错: StartUp" in log:
+            elif "任务出错: StartUp" in log:
                 self.maa_result = "检测到MAA未能正确登录PRTS"
             elif "任务已全部完成！" in log:
                 self.maa_result = "Success!"
