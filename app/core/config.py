@@ -926,6 +926,12 @@ class MaaConfig(QConfig):
         "ExitEmulator",
         OptionsValidator(["NoAction", "ExitGame", "ExitEmulator"]),
     )
+    RunSet_EnhanceTask = OptionsConfigItem(
+        "RunSet",
+        "EnhanceTask",
+        "None",
+        OptionsValidator(["None", "KillADB", "KillEmulator", "KillADB&Emulator"]),
+    )
     RunSet_ProxyTimesLimit = RangeConfigItem(
         "RunSet", "ProxyTimesLimit", 0, RangeValidator(0, 1024)
     )

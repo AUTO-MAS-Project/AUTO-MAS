@@ -237,23 +237,34 @@ class MaaManager(QObject):
                                 continue
 
                         # 配置MAA
-                        self.set_maa(mode_book[j], user[2])
+                        set = self.set_maa(mode_book[j], user[2])
                         # 记录当前时间
                         start_time = datetime.now()
+
+                        # 记录模拟器与ADB路径
+                        self.emulator_path = Path(
+                            set["Configurations"]["Default"]["Start.EmulatorPath"]
+                        )
+                        self.ADB_path = Path(
+                            set["Configurations"]["Default"]["Connect.AdbPath"]
+                        )
+                        self.if_kill_emulator = bool(
+                            set["Configurations"]["Default"]["MainFunction.PostActions"]
+                            == "12"
+                        )
+                        # 添加静默进程标记
+                        Config.silence_list.append(self.emulator_path)
+
+                        # 增强任务：任务开始前强杀ADB
+                        if "ADB" in self.set["RunSet"]["EnhanceTask"]:
+                            System.kill_process(self.ADB_path)
+
                         # 创建MAA任务
                         maa = subprocess.Popen(
                             [self.maa_exe_path],
                             shell=True,
                             creationflags=subprocess.CREATE_NO_WINDOW,
                         )
-                        # 添加静默进程标记
-                        with self.maa_set_path.open(mode="r", encoding="utf-8") as f:
-                            set = json.load(f)
-                        self.emulator_path = Path(
-                            set["Configurations"]["Default"]["Start.EmulatorPath"]
-                        )
-                        Config.silence_list.append(self.emulator_path)
-
                         # 监测MAA运行状态
                         self.start_monitor(start_time, mode_book[j])
 
@@ -280,6 +291,8 @@ class MaaManager(QObject):
                             )
                             # 无命令行中止MAA与其子程序
                             System.kill_process(self.maa_exe_path)
+                            if "Emulator" in self.set["RunSet"]["EnhanceTask"]:
+                                System.kill_process(self.emulator_path)
                             self.if_open_emulator = True
                             # 推送异常通知
                             Notify.push_plyer(
@@ -295,6 +308,15 @@ class MaaManager(QObject):
 
                         # 移除静默进程标记
                         Config.silence_list.remove(self.emulator_path)
+
+                        # 增强任务：任务结束后强杀ADB和模拟器
+                        if "ADB" in self.set["RunSet"]["EnhanceTask"]:
+                            System.kill_process(self.ADB_path)
+                        if (
+                            self.if_kill_emulator
+                            and "Emulator" in self.set["RunSet"]["EnhanceTask"]
+                        ):
+                            System.kill_process(self.emulator_path)
 
                         # 保存运行日志以及统计信息
                         if_six_star = Config.save_maa_log(
@@ -698,7 +720,7 @@ class MaaManager(QObject):
             self.log_monitor_timer.stop()
             self.monitor_loop.quit()
 
-    def set_maa(self, mode, index):
+    def set_maa(self, mode, index) -> dict:
         """配置MAA运行参数"""
         logger.info(f"{self.name} | 配置MAA运行参数: {mode}/{index}")
 
@@ -1132,7 +1154,7 @@ class MaaManager(QObject):
         with self.maa_set_path.open(mode="w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=4)
 
-        return True
+        return data
 
     def agree_bilibili(self, if_agree):
         """向MAA写入Bilibili协议相关任务"""
@@ -1164,15 +1186,6 @@ class MaaManager(QObject):
 
         with self.maa_tasks_path.open(mode="w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=4)
-
-    def get_emulator_path(self):
-        """获取模拟器路径"""
-
-        # 读取配置文件
-        with self.maa_set_path.open(mode="r", encoding="utf-8") as f:
-            set = json.load(f)
-        # 获取模拟器路径
-        return Path(set["Configurations"]["Default"]["Start.EmulatorPath"])
 
     def server_date(self):
         """获取当前的服务器日期"""

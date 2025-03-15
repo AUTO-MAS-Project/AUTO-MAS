@@ -657,6 +657,18 @@ class MaaSettingBox(QWidget):
                     content="简洁用户列表下相邻两个任务间的切换方式",
                     texts=["直接切换账号", "重启明日方舟", "重启模拟器"],
                 )
+                self.card_EnhanceTask = ComboBoxSettingCard(
+                    configItem=Config.maa_config.RunSet_EnhanceTask,
+                    icon=FluentIcon.PAGE_RIGHT,
+                    title="自动代理增效任务",
+                    content="自动代理时的额外操作，此操作无法区分多开，可能会干扰其他任务，也可能关闭您正在使用的模拟器",
+                    texts=[
+                        "禁用",
+                        "强制关闭ADB",
+                        "强制关闭所有模拟器",
+                        "强制关闭ADB和所有模拟器",
+                    ],
+                )
                 self.ProxyTimesLimit = SpinBoxSettingCard(
                     (0, 1024),
                     FluentIcon.PAGE_RIGHT,
@@ -689,6 +701,7 @@ class MaaSettingBox(QWidget):
                 widget = QWidget()
                 Layout = QVBoxLayout(widget)
                 Layout.addWidget(self.card_TaskTransitionMethod)
+                Layout.addWidget(self.card_EnhanceTask)
                 Layout.addWidget(self.ProxyTimesLimit)
                 Layout.addWidget(self.AnnihilationTimeLimit)
                 Layout.addWidget(self.RoutineTimeLimit)

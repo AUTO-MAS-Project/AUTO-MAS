@@ -45,3 +45,4 @@ G"Start.MinimizeDirectly": "True"        #启动MAA后直接最小化
 G"GUI.UseTray": "True"        #显示托盘图标
 G"GUI.MinimizeToTray": "False"        #最小化时隐藏至托盘
 "Start.EmulatorPath"        #模拟器路径
+"Connect.AdbPath"        #ADB路径
