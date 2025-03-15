@@ -207,10 +207,13 @@ class NoticeMessageBox(MessageBoxBase):
             r"<span style='color: #009faa;'>\1</span>",
             html,
         )
+        html = re.sub(
+            r'(<a\s+[^>]*href="[^"]+"[^>]*)>', r'\1 style="color: #009faa;">', html
+        )
         html = re.sub(r"<li><p>(.*?)</p></li>", r"<p><strong>◆ </strong>\1</p>", html)
         html = re.sub(r"<ul>(.*?)</ul>", r"\1", html)
 
-        self.text.setHtml(html)
+        self.text.setHtml(f"<body>{html}</body>")
 
     class NoticeIndexCard(HeaderCardWidget):
 
