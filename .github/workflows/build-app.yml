@@ -174,4 +174,4 @@ jobs:
           OBS_BUCKET: ${{ secrets.OBS_BUCKET }}
         run: |
           ./obsutil config -i $OBS_AK -k $OBS_SK -e $OBS_ENDPOINT
-          ./obsutil cp artifacts/* obs://$OBS_BUCKET/releases/
+          ./obsutil cp artifacts/* obs://$OBS_BUCKET/releases/ -r -f
