@@ -44,6 +44,17 @@ def version_text(version_numb: list) -> str:
     return version
 
 
+def version_info_markdown(info: dict) -> str:
+    """将版本信息字典转为markdown信息"""
+
+    version_info = ""
+    for key, value in info.items():
+        version_info += f"## {key}\n"
+        for v in value:
+            version_info += f"- {v}\n"
+    return version_info
+
+
 if __name__ == "__main__":
 
     root_path = Path(sys.argv[0]).resolve().parent
@@ -103,7 +114,15 @@ if __name__ == "__main__":
 
     (root_path / "downloader.py").unlink()
 
+    all_version_info = {}
+    for v_i in version["version_info"].values():
+        for key, value in v_i.items():
+            if key in all_version_info:
+                all_version_info[key] += value.copy()
+            else:
+                all_version_info[key] = value.copy()
+
     (root_path / "version_info.txt").write_text(
-        f"{version_text(main_version_numb)}\n{version_text(updater_version_numb)}{version["announcement"]}",
+        f"{version_text(main_version_numb)}\n{version_text(updater_version_numb)}\n{version_info_markdown(all_version_info)}",
         encoding="utf-8",
     )
