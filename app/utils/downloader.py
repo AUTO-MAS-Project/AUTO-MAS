@@ -219,9 +219,10 @@ class DownloadManager(QDialog):
             url_dict["官方镜像站"] = (
                 f"https://gitee.com/DLmaster_361/AUTO_MAA/releases/download/{version_text(self.main_version)}/AUTO_MAA_{version_text(self.main_version)}.zip"
             )
-            url_dict["官方下载站"] = (
-                f"https://jp-download.fearr.xyz/AUTO_MAA/AUTO_MAA_{version_text(self.main_version)}.zip"
-            )
+            for name, download_url_head in self.config["download_dict"].items():
+                url_dict[name] = (
+                    f"{download_url_head}AUTO_MAA_{version_text(self.main_version)}.zip"
+                )
             for proxy_url in self.config["proxy_list"]:
                 url_dict[proxy_url] = (
                     f"{proxy_url}https://github.com/DLmaster361/AUTO_MAA/releases/download/{version_text(self.main_version)}/AUTO_MAA_{version_text(self.main_version)}.zip"
@@ -234,33 +235,36 @@ class DownloadManager(QDialog):
                 return f"https://jp-download.fearr.xyz/MAA/MAA-{version_text(self.main_version)}-win-x64.zip"
 
             if "selected" in self.config:
-                proxy_url = self.config["selected"]
+                selected_url = self.config["selected"]
             elif "speed_result" in self.config:
-                proxy_url = max(
+                selected_url = max(
                     self.config["speed_result"], key=self.config["speed_result"].get
                 )
 
             if self.name == "AUTO_MAA主程序":
 
-                if proxy_url == "GitHub站":
+                if selected_url == "GitHub站":
                     return f"https://github.com/DLmaster361/AUTO_MAA/releases/download/{version_text(self.main_version)}/AUTO_MAA_{version_text(self.main_version)}.zip"
-                elif proxy_url == "官方镜像站":
+                elif selected_url == "官方镜像站":
                     return f"https://gitee.com/DLmaster_361/AUTO_MAA/releases/download/{version_text(self.main_version)}/AUTO_MAA_{version_text(self.main_version)}.zip"
-                elif proxy_url == "官方下载站":
-                    return f"https://jp-download.fearr.xyz/AUTO_MAA/AUTO_MAA_{version_text(self.main_version)}.zip"
+                elif selected_url in self.config["download_dict"].keys():
+                    return f"{self.config["download_dict"][selected_url]}AUTO_MAA_{version_text(self.main_version)}.zip"
                 else:
-                    return f"{proxy_url}https://github.com/DLmaster361/AUTO_MAA/releases/download/{version_text(self.main_version)}/AUTO_MAA_{version_text(self.main_version)}.zip"
+                    return f"{selected_url}https://github.com/DLmaster361/AUTO_MAA/releases/download/{version_text(self.main_version)}/AUTO_MAA_{version_text(self.main_version)}.zip"
 
             elif self.name == "AUTO_MAA更新器":
 
-                if proxy_url == "GitHub站":
+                if selected_url == "GitHub站":
                     return f"https://github.com/DLmaster361/AUTO_MAA/releases/download/{version_text(self.main_version)}/Updater_{version_text(self.updater_version)}.zip"
-                elif proxy_url == "官方镜像站":
+                elif selected_url == "官方镜像站":
                     return f"https://gitee.com/DLmaster_361/AUTO_MAA/releases/download/{version_text(self.main_version)}/Updater_{version_text(self.updater_version)}.zip"
-                elif proxy_url == "官方下载站":
-                    return f"https://jp-download.fearr.xyz/AUTO_MAA/Updater_{version_text(self.updater_version)}.zip"
+                elif selected_url in self.config["download_dict"].keys():
+                    print(
+                        f"{self.config["download_dict"][selected_url]}Updater_{version_text(self.updater_version)}.zip"
+                    )
+                    return f"{self.config["download_dict"][selected_url]}Updater_{version_text(self.updater_version)}.zip"
                 else:
-                    return f"{proxy_url}https://github.com/DLmaster361/AUTO_MAA/releases/download/{version_text(self.main_version)}/Updater_{version_text(self.updater_version)}.zip"
+                    return f"{selected_url}https://github.com/DLmaster361/AUTO_MAA/releases/download/{version_text(self.main_version)}/Updater_{version_text(self.updater_version)}.zip"
 
     def test_speed_task1(self) -> None:
 
@@ -618,6 +622,7 @@ if __name__ == "__main__":
     # 合并代理列表
     download_config = {
         "proxy_list": list(set(proxy_list + remote_proxy_list)),
+        "download_dict": version_remote["download_dict"],
         "thread_numb": thread_numb,
     }
 

@@ -160,3 +160,18 @@ jobs:
       - name: Upload Release to Server
         run: |
           scp -r artifacts/* ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:/home/user/files/AUTO_MAA/
+      - name: Install obsutil
+        run: |
+          wget https://obs-community.obs.cn-north-1.myhuaweicloud.com/obsutil/current/obsutil_linux_amd64.tar.gz
+          tar -xzvf obsutil_linux_amd64.tar.gz --strip-components=1
+          chmod 755 obsutil
+          ./obsutil version
+      - name: Upload Release to Huawei OBS
+        env:
+          OBS_AK: ${{ secrets.OBS_AK }}
+          OBS_SK: ${{ secrets.OBS_SK }}
+          OBS_ENDPOINT: ${{ secrets.OBS_ENDPOINT }}
+          OBS_BUCKET: ${{ secrets.OBS_BUCKET }}
+        run: |
+          ./obsutil config -i $OBS_AK -k $OBS_SK -e $OBS_ENDPOINT
+          ./obsutil cp artifacts/ obs://$OBS_BUCKET/releases/ -r -f

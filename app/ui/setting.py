@@ -53,6 +53,7 @@ import requests
 import subprocess
 from datetime import datetime
 from pathlib import Path
+from typing import Dict, List, Union
 
 from app.core import Config, MainInfoBar
 from app.services import Crypto, System
@@ -305,7 +306,9 @@ class Setting(QWidget):
 
         # 从本地版本信息文件获取当前版本信息
         with Config.version_path.open(mode="r", encoding="utf-8") as f:
-            version_current = json.load(f)
+            version_current: Dict[
+                str, Union[str, Dict[str, Union[str, Dict[str, List[str]]]]]
+            ] = json.load(f)
         main_version_current = list(
             map(int, version_current["main_version"].split("."))
         )
@@ -322,7 +325,9 @@ class Setting(QWidget):
                 response = requests.get(
                     f"https://gitee.com/DLmaster_361/AUTO_MAA/raw/{Config.global_config.get(Config.global_config.update_UpdateType)}/resources/version.json"
                 )
-                version_remote = response.json()
+                version_remote: Dict[
+                    str, Union[str, Dict[str, Union[str, Dict[str, List[str]]]]]
+                ] = response.json()
                 break
             except Exception as e:
                 err = e
@@ -360,25 +365,48 @@ class Setting(QWidget):
 
             # 生成版本更新信息
             if main_version_remote > main_version_current:
-                main_version_info = f"    主程序：{version_text(main_version_current)} --> {version_text(main_version_remote)}\n"
+                main_version_info = f"## 主程序：{version_text(main_version_current)} --> {version_text(main_version_remote)}\n\n"
             else:
                 main_version_info = (
-                    f"    主程序：{version_text(main_version_current)}\n"
+                    f"## 主程序：{version_text(main_version_current)}\n\n"
                 )
             if updater_version_remote > updater_version_current:
-                updater_version_info = f"    更新器：{version_text(updater_version_current)} --> {version_text(updater_version_remote)}\n"
+                updater_version_info = f"## 更新器：{version_text(updater_version_current)} --> {version_text(updater_version_remote)}\n\n"
             else:
                 updater_version_info = (
-                    f"    更新器：{version_text(updater_version_current)}\n"
+                    f"## 更新器：{version_text(updater_version_current)}\n\n"
                 )
+            update_version_info = {}
+            all_version_info = {}
+            for v_i in [
+                info
+                for version, info in version_remote["version_info"].items()
+                if list(map(int, version.split("."))) > main_version_current
+            ]:
+                for key, value in v_i.items():
+                    if key in update_version_info:
+                        update_version_info[key] += value.copy()
+                    else:
+                        update_version_info[key] = value.copy()
+            for v_i in version_remote["version_info"].values():
+                for key, value in v_i.items():
+                    if key in all_version_info:
+                        all_version_info[key] += value.copy()
+                    else:
+                        all_version_info[key] = value.copy()
+
+            version_info = {
+                "更新总览": f"{main_version_info}{updater_version_info}{version_info_markdown(update_version_info)}",
+                "ALL~版本信息": version_info_markdown(all_version_info),
+                **{
+                    version_text(list(map(int, k.split(".")))): version_info_markdown(v)
+                    for k, v in version_remote["version_info"].items()
+                },
+            }
 
             # 询问是否开始版本更新
             if if_question:
-                choice = MessageBox(
-                    "版本更新",
-                    f"发现新版本：\n{main_version_info}{updater_version_info}    更新说明：\n{version_remote['announcement'].replace("\n# ","\n   ！").replace("\n## ","\n        - ").replace("\n- ","\n            · ")}\n\n是否开始更新？\n\n    注意：主程序更新时AUTO_MAA将自动关闭",
-                    self.window(),
-                )
+                choice = NoticeMessageBox(self.window(), "版本更新", version_info)
                 if not choice.exec():
                     return None
 
@@ -394,6 +422,7 @@ class Setting(QWidget):
                         "proxy_list": Config.global_config.get(
                             Config.global_config.update_ProxyUrlList
                         ),
+                        "download_dict": version_remote["download_dict"],
                         "thread_numb": Config.global_config.get(
                             Config.global_config.update_ThreadNumb
                         ),
@@ -461,12 +490,21 @@ class Setting(QWidget):
         else:
             time_local = datetime.strptime("2000-01-01 00:00", "%Y-%m-%d %H:%M")
 
+        notice["notice_dict"] = {
+            "ALL~公告": "\n---\n".join(
+                [str(_) for _ in notice["notice_dict"].values() if isinstance(_, str)]
+            ),
+            **notice["notice_dict"],
+        }
+
         if if_show or (
             datetime.now() > datetime.strptime(notice["time"], "%Y-%m-%d %H:%M")
             and datetime.strptime(notice["time"], "%Y-%m-%d %H:%M") > time_local
         ):
 
-            choice = NoticeMessageBox(self.window(), notice["notice_dict"])
+            choice = NoticeMessageBox(self.window(), "公告", notice["notice_dict"])
+            choice.button_cancel.hide()
+            choice.button_layout.insertStretch(0, 1)
             if choice.exec():
                 with (Config.app_path / "resources/notice.json").open(
                     mode="w", encoding="utf-8"
@@ -960,3 +998,14 @@ def version_text(version_numb: list) -> str:
             f"v{'.'.join(str(_) for _ in version_numb[0:3])}-beta.{version_numb[3]}"
         )
     return version
+
+
+def version_info_markdown(info: dict) -> str:
+    """将版本信息字典转为markdown信息"""
+
+    version_info = ""
+    for key, value in info.items():
+        version_info += f"### {key}\n\n"
+        for v in value:
+            version_info += f"- {v}\n\n"
+    return version_info

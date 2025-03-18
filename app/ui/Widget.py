@@ -171,19 +171,23 @@ class ProgressRingMessageBox(MessageBoxBase):
 class NoticeMessageBox(MessageBoxBase):
     """公告对话框"""
 
-    def __init__(self, parent, content: Dict[str, str]):
+    def __init__(self, parent, title: str, content: Dict[str, str]):
         super().__init__(parent)
 
-        self.index = self.NoticeIndexCard(content, self)
+        self.index = self.NoticeIndexCard(title, content, self)
         self.text = TextBrowser(self)
         self.text.setOpenExternalLinks(True)
-        self.button = PrimaryPushButton("确认", self)
+        self.button_yes = PrimaryPushButton("确认", self)
+        self.button_cancel = PrimaryPushButton("取消", self)
 
         self.buttonGroup.hide()
 
         self.v_layout = QVBoxLayout()
         self.v_layout.addWidget(self.text)
-        self.v_layout.addWidget(self.button)
+        self.button_layout = QHBoxLayout()
+        self.button_layout.addWidget(self.button_yes)
+        self.button_layout.addWidget(self.button_cancel)
+        self.v_layout.addLayout(self.button_layout)
 
         self.h_layout = QHBoxLayout()
         self.h_layout.addWidget(self.index)
@@ -196,7 +200,8 @@ class NoticeMessageBox(MessageBoxBase):
         self.widget.setFixedSize(800, 600)
 
         self.index.index_changed.connect(self.__update_text)
-        self.button.clicked.connect(self.yesButton.click)
+        self.button_yes.clicked.connect(self.yesButton.click)
+        self.button_cancel.clicked.connect(self.cancelButton.click)
         self.index.index_cards[0].clicked.emit()
 
     def __update_text(self, text: str):
@@ -219,9 +224,9 @@ class NoticeMessageBox(MessageBoxBase):
 
         index_changed = Signal(str)
 
-        def __init__(self, content: Dict[str, str], parent=None):
+        def __init__(self, title: str, content: Dict[str, str], parent=None):
             super().__init__(parent)
-            self.setTitle("公告")
+            self.setTitle(title)
 
             self.Layout = QVBoxLayout()
             self.viewLayout.addLayout(self.Layout)
@@ -229,18 +234,6 @@ class NoticeMessageBox(MessageBoxBase):
 
             self.index_cards: List[QuantifiedItemCard] = []
 
-            if content:
-                self.index_cards.append(QuantifiedItemCard(["ALL", ""]))
-                self.index_cards[-1].clicked.connect(
-                    lambda: self.index_changed.emit(
-                        "\n---\n".join(
-                            [str(_) for _ in content.values() if isinstance(_, str)]
-                        )
-                    )
-                )
-                self.Layout.addWidget(self.index_cards[-1])
-            else:
-                self.Layout.addWidget(QuantifiedItemCard(["暂无公告", ""]))
             for index, text in content.items():
 
                 self.index_cards.append(QuantifiedItemCard([index, ""]))
@@ -248,6 +241,9 @@ class NoticeMessageBox(MessageBoxBase):
                     partial(self.index_changed.emit, text)
                 )
                 self.Layout.addWidget(self.index_cards[-1])
+
+            if not content:
+                self.Layout.addWidget(QuantifiedItemCard(["暂无信息", ""]))
 
             self.Layout.addStretch(1)
 
