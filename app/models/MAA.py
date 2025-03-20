@@ -64,6 +64,9 @@ class MaaManager(QObject):
     ):
         super(MaaManager, self).__init__()
 
+        self.current_user = ""
+        self.weekly_annihilation_limit_reached = False
+        self.user_list = ""
         self.mode = mode
         self.config_path = config_path
         self.user_config_path = user_config_path
@@ -107,6 +110,8 @@ class MaaManager(QObject):
 
     def run(self):
         """主进程，运行MAA代理进程"""
+        # 初始化本周剿灭上限标志
+        self.weekly_annihilation_limit_reached = False
 
         curdate = self.server_date()
         begin_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -152,6 +157,12 @@ class MaaManager(QObject):
 
             # 开始代理
             for user in self.user_list:
+                self.current_user = user[0].split(" - ")[0]
+                if self.load_weekly_annihilation_status(self.current_user):
+                    self.weekly_annihilation_limit_reached = True
+                    logger.info(f"用户 {self.current_user} 本周已达上限")
+                else:
+                    self.weekly_annihilation_limit_reached = False
 
                 if self.isInterruptionRequested:
                     break
@@ -200,6 +211,12 @@ class MaaManager(QObject):
 
                         if self.isInterruptionRequested:
                             break
+
+                        # j == 0 剿灭模式；满足条件跳过剿灭
+                        if j == 0 and self.set["RunSet"].get("RunSet_AnnihilationWeeklyLimit", True) and self.weekly_annihilation_limit_reached:
+                            logger.info(f"{self.name} | 用户: {self.current_user} - 本周剿灭模式已达上限，跳过执行剿灭任务")
+                            run_book[j] = True
+                            continue
 
                         if self.data[user[2]][10 - j] == "n":
                             run_book[j] = True
@@ -632,6 +649,12 @@ class MaaManager(QObject):
                 else:
                     logs.append(entry)
         log = "".join(logs)
+
+        # 如果日志中包含提示信息，则设置上限标志，并记录持久化信息
+        if "剿灭任务失败" in log:
+            logger.info(f"用户：{self.current_user} | 剿灭任务失败，设置上限标志为True")
+            self.weekly_annihilation_limit_reached = True
+            self.record_weekly_annihilation_limit(self.current_user)
 
         # 更新MAA日志
         if len(logs) > 100:
@@ -1285,3 +1308,60 @@ class MaaManager(QObject):
             Notify.send_mail("网页", title, message_html)
             Notify.ServerChanPush(title, "好羡慕~\n\nAUTO_MAA 敬上")
             Notify.CompanyWebHookBotPush(title, "好羡慕~\n\nAUTO_MAA 敬上")
+
+    def record_weekly_annihilation_limit(self, username: str) -> None:
+        """
+        持久化记录当前用户在本周剿灭模式达到上限的信息
+        计算方式：以周一凌晨4点为一周起点，故将当前时间减4小时再计算 ISO 周
+        """
+        self.weekly_annihilation_limit_reached = True
+        logger.info(f"已记录用户 {username} 达到本周剿灭模式达到上限")
+        now = datetime.now()
+        shifted_time = now - timedelta(hours=4)
+        year, week, _ = shifted_time.isocalendar()
+
+        # 构造/history/annihilation.json路径
+        record_path = Config.app_path / "history" / "annihilation.json"
+        record_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # 如果文件存在，则读取原有数据，否则初始化为空字典
+        if record_path.exists():
+            with record_path.open("r", encoding="utf-8") as f:
+                data = json.load(f)
+        else:
+            data = {}
+
+        # 如果该用户本周已经记录则不更新，否则写入当前记录
+        if username in data:
+            existing = data[username]
+            if existing.get("year") == year and existing.get("week") == week:
+                return
+        data[username] = {"year": year, "week": week}
+
+        with record_path.open("w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=4)
+
+    @staticmethod
+    def load_weekly_annihilation_status(username: str) -> bool:
+        """
+        读取 /history/annihilation.json 判断当前用户是否在本周已经达到剿灭上限
+        计算方式：当前时间减4小时再计算 ISO 周
+        """
+        record_path = Config.app_path / "history" / "annihilation.json"
+        if not record_path.exists():
+            logger.info("未找到记录文件，将不进行剿灭上限判断")
+            return False
+
+        with record_path.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        now = datetime.now()
+        shifted_time = now - timedelta(hours=4)
+        year, week, _ = shifted_time.isocalendar()
+
+        if username in data:
+            existing = data[username]
+            if existing.get("year") == year and existing.get("week") == week:
+                return True
+
+        return False
