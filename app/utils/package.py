@@ -85,15 +85,6 @@ if __name__ == "__main__":
 
     shutil.copy(root_path / "app/utils/downloader.py", root_path)
 
-    file_content = (root_path / "downloader.py").read_text(encoding="utf-8")
-
-    (root_path / "downloader.py").write_text(
-        file_content.replace(
-            "from .version import version_text", "from app import version_text"
-        ),
-        encoding="utf-8",
-    )
-
     print("Packaging AUTO_MAA update program ...")
 
     os.system(

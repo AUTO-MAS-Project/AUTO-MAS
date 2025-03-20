@@ -239,39 +239,17 @@ class AUTO_MAA(MSFluentWindow):
         ):
             self.home.get_home_image()
 
+        # 直接运行主任务
+        if Config.global_config.get(Config.global_config.start_IfRunDirectly):
+
+            self.start_main_task()
+
         # 获取公告
         self.setting.show_notice(if_show=False)
 
         # 检查更新
         if Config.global_config.get(Config.global_config.update_IfAutoUpdate):
-            result = self.setting.get_update_info()
-            if result == "已是最新版本~":
-                MainInfoBar.push_info_bar("success", "更新检查", result, 3000)
-            else:
-                if "获取版本信息时出错" in result:
-                    result = "网络错误"
-                info = InfoBar.info(
-                    title="更新检查",
-                    content=result,
-                    orient=Qt.Horizontal,
-                    isClosable=True,
-                    position=InfoBarPosition.BOTTOM_LEFT,
-                    duration=-1,
-                    parent=self,
-                )
-                if "网络错误" not in result:
-                    Up = PushButton("更新")
-                    Up.clicked.connect(
-                        lambda: self.setting.get_update(if_question=False)
-                    )
-                    Up.clicked.connect(info.close)
-                    info.addWidget(Up)
-                info.show()
-
-        # 直接运行主任务
-        if Config.global_config.get(Config.global_config.start_IfRunDirectly):
-
-            self.start_main_task()
+            self.setting.check_update()
 
         # 直接最小化
         if Config.global_config.get(Config.global_config.start_IfMinimizeDirectly):

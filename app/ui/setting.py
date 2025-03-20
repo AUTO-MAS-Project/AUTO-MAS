@@ -91,7 +91,7 @@ class Setting(QWidget):
         )
         self.start.card_IfSelfStart.checkedChanged.connect(System.set_SelfStart)
         self.security.card_changePASSWORD.clicked.connect(self.change_PASSWORD)
-        self.updater.card_CheckUpdate.clicked.connect(self.get_update)
+        self.updater.card_CheckUpdate.clicked.connect(self.check_update)
         self.other.card_Notice.clicked.connect(self.show_notice)
 
         content_layout.addWidget(self.function)
@@ -265,43 +265,7 @@ class Setting(QWidget):
                 if choice.exec():
                     break
 
-    def get_update_info(self) -> str:
-        """检查主程序版本更新，返回更新信息"""
-
-        # 从本地版本信息文件获取当前版本信息
-        with Config.version_path.open(mode="r", encoding="utf-8") as f:
-            version_current = json.load(f)
-        main_version_current = list(
-            map(int, version_current["main_version"].split("."))
-        )
-
-        # 从远程服务器获取最新版本信息
-        for _ in range(3):
-            try:
-                response = requests.get(
-                    f"https://gitee.com/DLmaster_361/AUTO_MAA/raw/{Config.global_config.get(Config.global_config.update_UpdateType)}/resources/version.json"
-                )
-                version_remote = response.json()
-                break
-            except Exception as e:
-                err = e
-                time.sleep(0.1)
-        else:
-            return f"获取版本信息时出错：\n{err}"
-
-        main_version_remote = list(map(int, version_remote["main_version"].split(".")))
-
-        # 有版本更新
-        if main_version_remote > main_version_current:
-
-            main_version_info = f"    主程序：{version_text(main_version_current)} --> {version_text(main_version_remote)}\n"
-
-            return f"发现新版本：\n{main_version_info}    更新说明：\n{version_remote['announcement'].replace("\n# ","\n   ！").replace("\n## ","\n        - ").replace("\n- ","\n            · ")}\n\n是否开始更新？\n\n    注意：主程序更新时AUTO_MAA将自动关闭"
-
-        else:
-            return "已是最新版本~"
-
-    def get_update(self, if_question: bool = True) -> None:
+    def check_update(self) -> None:
         """检查版本更新，调起文件下载进程"""
 
         # 从本地版本信息文件获取当前版本信息
@@ -405,10 +369,9 @@ class Setting(QWidget):
             }
 
             # 询问是否开始版本更新
-            if if_question:
-                choice = NoticeMessageBox(self.window(), "版本更新", version_info)
-                if not choice.exec():
-                    return None
+            choice = NoticeMessageBox(self.window(), "版本更新", version_info)
+            if not choice.exec():
+                return None
 
             # 更新更新器
             if updater_version_remote > updater_version_current:
