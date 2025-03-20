@@ -719,6 +719,7 @@ class AppConfig:
         self.maa_config.set(self.maa_config.RunSet_AnnihilationTimeLimit, 40)
         self.maa_config.set(self.maa_config.RunSet_RoutineTimeLimit, 10)
         self.maa_config.set(self.maa_config.RunSet_RunTimesLimit, 3)
+        self.maa_config.set(self.maa_config.RunSet_AnnihilationWeeklyLimit, False)
         self.maa_config.set(self.maa_config.MaaSet_Name, "")
         self.maa_config.set(self.maa_config.MaaSet_Name, "")
         self.maa_config.set(self.maa_config.MaaSet_Name, "")
@@ -915,6 +916,9 @@ class QueueConfig(QConfig):
 
 
 class MaaConfig(QConfig):
+    def __init__(self):
+        super().__init__()
+
     """MAA配置"""
 
     MaaSet_Name = ConfigItem("MaaSet", "Name", "")
@@ -943,6 +947,9 @@ class MaaConfig(QConfig):
     )
     RunSet_RunTimesLimit = RangeConfigItem(
         "RunSet", "RunTimesLimit", 3, RangeValidator(1, 1024)
+    )
+    RunSet_AnnihilationWeeklyLimit = ConfigItem(
+        "RunSet", "AnnihilationWeeklyLimit", False, BoolValidator()
     )
 
 

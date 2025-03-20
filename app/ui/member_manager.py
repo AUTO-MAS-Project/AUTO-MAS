@@ -48,6 +48,7 @@ from qfluentwidgets import (
     ExpandGroupSettingCard,
     ComboBoxSettingCard,
     PushSettingCard,
+    SwitchSettingCard,
 )
 from PySide6.QtCore import Qt
 import requests
@@ -697,6 +698,12 @@ class MaaSettingBox(QWidget):
                     "若超过该次数限制仍未完成代理，视为代理失败",
                     Config.maa_config.RunSet_RunTimesLimit,
                 )
+                self.AnnihilationWeeklyLimit = SwitchSettingCard(
+                    configItem=Config.maa_config.RunSet_AnnihilationWeeklyLimit,
+                    icon=FluentIcon.PAGE_RIGHT,
+                    title="每周剿灭仅执行到上限",
+                    content="每周剿灭模式执行到上限，本周剩下时间不再执行剿灭任务",
+                )
 
                 widget = QWidget()
                 Layout = QVBoxLayout(widget)
@@ -706,6 +713,7 @@ class MaaSettingBox(QWidget):
                 Layout.addWidget(self.AnnihilationTimeLimit)
                 Layout.addWidget(self.RoutineTimeLimit)
                 Layout.addWidget(self.RunTimesLimit)
+                Layout.addWidget(self.AnnihilationWeeklyLimit)
                 self.viewLayout.setContentsMargins(0, 0, 0, 0)
                 self.viewLayout.setSpacing(0)
                 self.addGroupWidget(widget)
