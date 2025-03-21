@@ -52,6 +52,8 @@ from typing import Union, Dict, List, Tuple
 
 class AppConfig:
 
+    VERSION = "4.2.5.7"
+
     def __init__(self) -> None:
 
         self.app_path = Path(sys.argv[0]).resolve().parent  # 获取软件根目录
@@ -86,7 +88,7 @@ class AppConfig:
         # 生成版本信息文件
         if not self.version_path.exists():
             version = {
-                "main_version": "0.0.0.0",
+                "main_version": self.VERSION,
                 "updater_version": "0.0.0.0",
             }
             with self.version_path.open(mode="w", encoding="utf-8") as f:
@@ -122,7 +124,7 @@ class AppConfig:
         )
         logger.info("===================================")
         logger.info("AUTO_MAA 主程序")
-        logger.info("版本号： v4.2.5.4")
+        logger.info(f"版本号： v{self.VERSION}")
         logger.info(f"根目录： {self.app_path}")
         logger.info("===================================")
 
