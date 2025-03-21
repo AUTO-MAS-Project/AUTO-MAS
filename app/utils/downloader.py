@@ -146,6 +146,45 @@ class DownloadProcess(QThread):
             self.accomplish.emit(0)
 
 
+class ZipExtractProcess(QThread):
+    """解压子线程"""
+
+    info = Signal(str)
+    accomplish = Signal()
+
+    def __init__(self, name: str, app_path: Path, download_path: Path) -> None:
+        super(ZipExtractProcess, self).__init__()
+
+        self.name = name
+        self.app_path = app_path
+        self.download_path = download_path
+
+    def run(self) -> None:
+
+        try:
+
+            while True:
+
+                if self.isInterruptionRequested():
+                    self.download_path.unlink()
+                    return None
+                try:
+                    with zipfile.ZipFile(self.download_path, "r") as zip_ref:
+                        zip_ref.extractall(self.app_path)
+                    self.accomplish.emit()
+                    break
+                except PermissionError:
+                    self.info.emit(f"解压出错：{self.name}正在运行，正在等待其关闭")
+                    time.sleep(1)
+
+        except Exception as e:
+
+            e = str(e)
+            e = "\n".join([e[_ : _ + 75] for _ in range(0, len(e), 75)])
+            self.info.emit(f"解压更新时出错：\n{e}")
+            return None
+
+
 class DownloadManager(QDialog):
     """下载管理器"""
 
@@ -179,7 +218,7 @@ class DownloadManager(QDialog):
         self.setWindowIcon(
             QIcon(str(app_path / "resources/icons/AUTO_MAA_Updater.ico"))
         )
-        self.setFixedSize(700, 70)
+        self.resize(700, 70)
 
         setTheme(Theme.AUTO, lazy=True)
 
@@ -448,36 +487,23 @@ class DownloadManager(QDialog):
                     outfile.write(infile.read())
                 self.download_path.with_suffix(f".part{i}").unlink()
 
-        # # 解压
-        try:
+        self.update_info("正在解压更新文件")
+        self.update_progress(0, 0, 0)
 
-            while True:
-                if self.isInterruptionRequested:
-                    self.download_path.unlink()
-                    return None
-                try:
-                    self.update_info("正在解压更新文件")
-                    self.update_progress(0, 0, 0)
-                    with zipfile.ZipFile(self.download_path, "r") as zip_ref:
-                        zip_ref.extractall(self.app_path)
-                    break
-                except PermissionError:
-                    self.info.emit(f"解压出错：{self.name}正在运行，正在等待其关闭")
-                    time.sleep(1)
+        # 创建解压线程
+        self.zip_extract = ZipExtractProcess(
+            self.name, self.app_path, self.download_path
+        )
+        self.zip_loop = QEventLoop()
+        self.zip_extract.info.connect(self.update_info)
+        self.zip_extract.accomplish.connect(self.zip_loop.quit)
+        self.zip_extract.start()
+        self.zip_loop.exec()
 
-            self.update_info("正在删除临时文件")
-            self.update_progress(0, 0, 0)
+        self.update_info("正在删除临时文件")
+        self.update_progress(0, 0, 0)
+        if self.download_path.exists():
             self.download_path.unlink()
-
-            self.update_info(f"{self.name}更新成功！")
-            self.update_progress(0, 100, 100)
-
-        except Exception as e:
-
-            e = str(e)
-            e = "\n".join([e[_ : _ + 75] for _ in range(0, len(e), 75)])
-            self.update_info(f"解压更新时出错：\n{e}")
-            return None
 
         # 更新version文件
         if not self.isInterruptionRequested and self.name in [
@@ -509,6 +535,8 @@ class DownloadManager(QDialog):
                 creationflags=subprocess.CREATE_NO_WINDOW,
             )
 
+        self.update_info(f"{self.name}更新成功！")
+        self.update_progress(0, 100, 100)
         self.download_accomplish.emit()
 
     def update_info(self, text: str) -> None:
@@ -528,6 +556,12 @@ class DownloadManager(QDialog):
     def requestInterruption(self) -> None:
 
         self.isInterruptionRequested = True
+
+        if hasattr(self, "zip_extract") and self.zip_extract:
+            self.zip_extract.requestInterruption()
+
+        if hasattr(self, "zip_loop") and self.zip_loop:
+            self.zip_loop.quit()
 
         for process in self.download_process_dict.values():
             process.requestInterruption()

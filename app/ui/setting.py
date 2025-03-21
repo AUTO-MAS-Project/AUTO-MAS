@@ -273,9 +273,7 @@ class Setting(QWidget):
             version_current: Dict[
                 str, Union[str, Dict[str, Union[str, Dict[str, List[str]]]]]
             ] = json.load(f)
-        main_version_current = list(
-            map(int, version_current["main_version"].split("."))
-        )
+        main_version_current = list(map(int, Config.VERSION.split(".")))
         updater_version_current = list(
             map(int, version_current["updater_version"].split("."))
         )
@@ -408,6 +406,12 @@ class Setting(QWidget):
 
     def update_main(self) -> None:
         """更新主程序"""
+
+        with Config.version_path.open(mode="r", encoding="utf-8") as f:
+            version_info = json.load(f)
+        version_info["main_version"] = Config.VERSION
+        with Config.version_path.open(mode="w", encoding="utf-8") as f:
+            json.dump(version_info, f, ensure_ascii=False, indent=4)
 
         subprocess.Popen(
             str(Config.app_path / "Updater.exe"),
