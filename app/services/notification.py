@@ -243,5 +243,39 @@ class Notification(QWidget):
                     f'使用企业微信群机器人推送通知时出错：\n{response.json()["errmsg"]}'
                 )
 
+    def send_test_notification(self):
+        """发送测试通知到所有已启用的通知渠道"""
+        # 发送系统通知
+        self.push_plyer(
+            "测试通知",
+            "这是 AUTO_MAA 外部通知测试信息。如果你看到了这段内容，说明 AUTO_MAA 的通知功能已经正确配置且可以正常工作！",
+            "测试通知",
+            3,
+        )
+
+        # 发送邮件通知
+        if Config.global_config.get(Config.global_config.notify_IfSendMail):
+            self.send_mail(
+                "文本",
+                "AUTO_MAA测试通知",
+                "这是 AUTO_MAA 外部通知测试信息。如果你看到了这段内容，说明 AUTO_MAA 的通知功能已经正确配置且可以正常工作！"
+            )
+
+        # 发送Server酱通知
+        if Config.global_config.get(Config.global_config.notify_IfServerChan):
+            self.ServerChanPush(
+                "AUTO_MAA测试通知",
+                "这是 AUTO_MAA 外部通知测试信息。如果你看到了这段内容，说明 AUTO_MAA 的通知功能已经正确配置且可以正常工作！"
+            )
+
+        # 发送企业微信机器人通知
+        if Config.global_config.get(Config.global_config.notify_IfCompanyWebHookBot):
+            self.CompanyWebHookBotPush(
+                "AUTO_MAA测试通知",
+                "这是 AUTO_MAA 外部通知测试信息。如果你看到了这段内容，说明 AUTO_MAA 的通知功能已经正确配置且可以正常工作！"
+            )
+
+        return True
+
 
 Notify = Notification()
