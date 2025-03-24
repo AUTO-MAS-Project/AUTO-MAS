@@ -159,9 +159,24 @@ class Notification(QWidget):
         """使用Server酱推送通知"""
 
         if Config.global_config.get(Config.global_config.notify_IfServerChan):
-            send_key = Config.global_config.get(
-                Config.global_config.notify_ServerChanKey
-            )
+
+            if (
+                Config.global_config.get(Config.global_config.notify_ServerChanKey)
+                == ""
+            ):
+                logger.error("请正确设置Server酱的SendKey")
+                self.push_info_bar.emit(
+                    "error",
+                    "Server酱通知推送异常",
+                    "请正确设置Server酱的SendKey",
+                    -1,
+                )
+                return None
+            else:
+                send_key = Config.global_config.get(
+                    Config.global_config.notify_ServerChanKey
+                )
+
             option = {}
             is_valid = lambda s: s == "" or (
                 s == "|".join(s.split("|")) and (s.count("|") == 0 or all(s.split("|")))
@@ -170,11 +185,17 @@ class Notification(QWidget):
             is_valid => True, 如果启用的话需要正确设置Tag和Channel。
             允许空的Tag和Channel即不启用，但不允许例如a||b，|a|b，a|b|，||||
             """
-            send_tag = Config.global_config.get(
-                Config.global_config.notify_ServerChanTag
+            send_tag = "|".join(
+                _.strip()
+                for _ in Config.global_config.get(
+                    Config.global_config.notify_ServerChanTag
+                ).split("|")
             )
-            send_channel = Config.global_config.get(
-                Config.global_config.notify_ServerChanChannel
+            send_channel = "|".join(
+                _.strip()
+                for _ in Config.global_config.get(
+                    Config.global_config.notify_ServerChanChannel
+                ).split("|")
             )
 
             if is_valid(send_tag):
@@ -219,6 +240,22 @@ class Notification(QWidget):
     def CompanyWebHookBotPush(self, title, content):
         """使用企业微信群机器人推送通知"""
         if Config.global_config.get(Config.global_config.notify_IfCompanyWebHookBot):
+
+            if (
+                Config.global_config.get(
+                    Config.global_config.notify_CompanyWebHookBotUrl
+                )
+                == ""
+            ):
+                logger.error("请正确设置企业微信群机器人的WebHook地址")
+                self.push_info_bar.emit(
+                    "error",
+                    "企业微信群机器人通知推送异常",
+                    "请正确设置企业微信群机器人的WebHook地址",
+                    -1,
+                )
+                return None
+
             content = f"{title}\n{content}"
             data = {"msgtype": "text", "text": {"content": content}}
             response = requests.post(
@@ -258,21 +295,21 @@ class Notification(QWidget):
             self.send_mail(
                 "文本",
                 "AUTO_MAA测试通知",
-                "这是 AUTO_MAA 外部通知测试信息。如果你看到了这段内容，说明 AUTO_MAA 的通知功能已经正确配置且可以正常工作！"
+                "这是 AUTO_MAA 外部通知测试信息。如果你看到了这段内容，说明 AUTO_MAA 的通知功能已经正确配置且可以正常工作！",
             )
 
         # 发送Server酱通知
         if Config.global_config.get(Config.global_config.notify_IfServerChan):
             self.ServerChanPush(
                 "AUTO_MAA测试通知",
-                "这是 AUTO_MAA 外部通知测试信息。如果你看到了这段内容，说明 AUTO_MAA 的通知功能已经正确配置且可以正常工作！"
+                "这是 AUTO_MAA 外部通知测试信息。如果你看到了这段内容，说明 AUTO_MAA 的通知功能已经正确配置且可以正常工作！",
             )
 
         # 发送企业微信机器人通知
         if Config.global_config.get(Config.global_config.notify_IfCompanyWebHookBot):
             self.CompanyWebHookBotPush(
                 "AUTO_MAA测试通知",
-                "这是 AUTO_MAA 外部通知测试信息。如果你看到了这段内容，说明 AUTO_MAA 的通知功能已经正确配置且可以正常工作！"
+                "这是 AUTO_MAA 外部通知测试信息。如果你看到了这段内容，说明 AUTO_MAA 的通知功能已经正确配置且可以正常工作！",
             )
 
         return True

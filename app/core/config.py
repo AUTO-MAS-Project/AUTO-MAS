@@ -52,7 +52,7 @@ from typing import Union, Dict, List, Tuple
 
 class AppConfig:
 
-    VERSION = "4.2.5.7"
+    VERSION = "4.2.5.8"
 
     def __init__(self) -> None:
 
