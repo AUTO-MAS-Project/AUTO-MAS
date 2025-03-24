@@ -30,7 +30,6 @@ from PySide6.QtWidgets import (
     QWidget,
     QApplication,
     QVBoxLayout,
-    QVBoxLayout,
 )
 from qfluentwidgets import (
     ScrollArea,
@@ -56,7 +55,7 @@ from pathlib import Path
 from typing import Dict, List, Union
 
 from app.core import Config, MainInfoBar
-from app.services import Crypto, System
+from app.services import Crypto, System, Notify
 from app.utils import DownloadManager
 from .Widget import (
     LineEditMessageBox,
@@ -630,6 +629,13 @@ class NotifySettingCard(HeaderCardWidget):
         self.card_EMail = self.EMailSettingCard(self)
         self.card_ServerChan = self.ServerChanSettingCard(self)
         self.card_CompanyWebhookBot = self.CompanyWechatPushSettingCard(self)
+        self.card_TestNotification = PushSettingCard(
+            text="发送测试通知",
+            icon=FluentIcon.SEND,
+            title="测试通知",
+            content="发送测试通知到所有已启用的通知渠道",
+        )
+        self.card_TestNotification.clicked.connect(self.send_test_notification)
 
         Layout = QVBoxLayout()
         Layout.addWidget(self.card_NotifyContent)
@@ -637,7 +643,18 @@ class NotifySettingCard(HeaderCardWidget):
         Layout.addWidget(self.card_EMail)
         Layout.addWidget(self.card_ServerChan)
         Layout.addWidget(self.card_CompanyWebhookBot)
+        Layout.addWidget(self.card_TestNotification)
         self.viewLayout.addLayout(Layout)
+
+    def send_test_notification(self):
+        """发送测试通知到所有已启用的通知渠道"""
+        if Notify.send_test_notification():
+            MainInfoBar.push_info_bar(
+                "success",
+                "测试通知已发送",
+                "请检查已配置的通知渠道是否可以收到消息",
+                3000
+            )
 
     class NotifyContentSettingCard(ExpandGroupSettingCard):
 
