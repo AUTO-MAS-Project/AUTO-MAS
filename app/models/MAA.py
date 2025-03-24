@@ -213,8 +213,16 @@ class MaaManager(QObject):
                             break
 
                         # j == 0 剿灭模式；满足条件跳过剿灭
-                        if j == 0 and self.set["RunSet"].get("RunSet_AnnihilationWeeklyLimit", True) and self.weekly_annihilation_limit_reached:
-                            logger.info(f"{self.name} | 用户: {self.current_user} - 本周剿灭模式已达上限，跳过执行剿灭任务")
+                        if (
+                            j == 0
+                            and self.set["RunSet"].get(
+                                "RunSet_AnnihilationWeeklyLimit", True
+                            )
+                            and self.weekly_annihilation_limit_reached
+                        ):
+                            logger.info(
+                                f"{self.name} | 用户: {self.current_user} - 本周剿灭模式已达上限，跳过执行剿灭任务"
+                            )
                             run_book[j] = True
                             continue
 
