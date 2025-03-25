@@ -1304,7 +1304,9 @@ class MaaManager(QObject):
             message_html = template.render(message)
 
             Notify.send_mail("网页", title, message_html)
-            Notify.ServerChanPush(title, f"{message_text}\n\nAUTO_MAA 敬上")
+            # ServerChan的换行是两个换行符。故而将\n替换为\n\n
+            seeverchan_message = message_text.replace("\n", "\n\n")
+            Notify.ServerChanPush(title, f"{seeverchan_message}\n\nAUTO_MAA 敬上")
             Notify.CompanyWebHookBotPush(title, f"{message_text}\n\nAUTO_MAA 敬上")
 
         elif mode == "公招六星":
