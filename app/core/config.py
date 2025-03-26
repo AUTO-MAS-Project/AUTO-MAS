@@ -529,7 +529,7 @@ class AppConfig:
 
             if current_stage:
                 item_match: List[str] = re.findall(
-                    r"^(?!\[)([\u4e00-\u9fa5A-Za-z0-9\-]+)\s*:\s*([\d,]+)(?:\s*\(\+[\d,]+\))?",
+                    r"^(?!\[)([\u4e00-\u9fa5A-Za-z0-9·\-]+)\s*:\s*([\d,]+)(?:\s*\(\+[\d,]+\))?",
                     line,
                     re.M,
                 )
