@@ -42,7 +42,7 @@ from qfluentwidgets import (
     MSFluentWindow,
     NavigationItemPosition,
     qconfig,
-    FluentBackgroundTheme
+    FluentBackgroundTheme,
 )
 from PySide6.QtGui import QIcon, QCloseEvent
 from PySide6.QtCore import Qt, QTimer
@@ -70,13 +70,7 @@ class AUTO_MAA(MSFluentWindow):
         self.setWindowTitle("AUTO_MAA")
 
         setTheme(Theme.AUTO, lazy=True)
-        if isDarkTheme():
-            self.setStyleSheet("""
-                CardWidget {background-color: #313131;}
-                FluentBackgroundTheme {background-color: #313131;}
-                               """)
-        else:
-            self.setStyleSheet("""background-color: #ffffff;""")
+        self.switch_theme()
 
         self.splashScreen = SplashScreen(self.windowIcon(), self)
         self.show_ui("显示主窗口", if_quick=True)
@@ -215,29 +209,31 @@ class AUTO_MAA(MSFluentWindow):
         self.themeListener.systemThemeChanged.connect(self.switch_theme)
         self.themeListener.start()
 
-    def switch_theme(self):
-        #切换主题
+    def switch_theme(self) -> None:
+        """切换主题"""
         setTheme(Theme.AUTO, lazy=True)
         QTimer.singleShot(300, lambda: setTheme(Theme.AUTO, lazy=True))
-        # 云母特效不兼容Win10,如果True则通过云母进行主题转换,False则根据当前主题设置背景颜色
+
         # 云母特效启用时需要增加重试机制
-        if sys.platform != 'win32' or sys.getwindowsversion().build < 22000:
-            #根据当前主题设置背景颜色
-            if isDarkTheme():
-                self.setStyleSheet("""
-                    CardWidget {background-color: #313131;}
-                    HeaderCardWidget {background-color: #313131;}
-                    background-color: #313131;
-                """)
-            else:
-                self.setStyleSheet("background-color: #ffffff;")
-                
-        else:
-            print(sys.platform)
+        # 云母特效不兼容Win10,如果True则通过云母进行主题转换,False则根据当前主题设置背景颜色
+        if self.isMicaEffectEnabled():
             QTimer.singleShot(
                 300,
                 lambda: self.windowEffect.setMicaEffect(self.winId(), isDarkTheme()),
             )
+
+        else:
+            # 根据当前主题设置背景颜色
+            if isDarkTheme():
+                self.setStyleSheet(
+                    """
+                    CardWidget {background-color: #313131;}
+                    HeaderCardWidget {background-color: #313131;}
+                    background-color: #313131;
+                """
+                )
+            else:
+                self.setStyleSheet("background-color: #ffffff;")
 
     def start_up_task(self) -> None:
         """启动时任务"""
