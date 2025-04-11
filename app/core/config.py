@@ -599,9 +599,11 @@ class MaaUserConfig(QConfig):
 
 class AppConfig(GlobalConfig):
 
-    VERSION = "4.2.5.9"
+    VERSION = "4.2.5.10"
 
     gameid_refreshed = Signal()
+    PASSWORD_refreshed = Signal()
+    user_info_changed = Signal()
 
     def __init__(self) -> None:
         super().__init__()
@@ -620,7 +622,10 @@ class AppConfig(GlobalConfig):
         self.PASSWORD = ""
         self.running_list = []
         self.silence_list = []
-        self.gameid_dict = {"value": [], "text": []}
+        self.gameid_dict = {
+            "ALL": {"value": [], "text": []},
+            "Today": {"value": [], "text": []},
+        }
         self.if_ignore_silence = False
         self.if_database_opened = False
 
@@ -635,21 +640,12 @@ class AppConfig(GlobalConfig):
         (self.app_path / "debug").mkdir(parents=True, exist_ok=True)
         (self.app_path / "history").mkdir(parents=True, exist_ok=True)
 
-        # 生成版本信息文件
-        if not self.version_path.exists():
-            version = {
-                "main_version": "0.0.0.0",
-                "updater_version": "0.0.0.0",
-            }
-            with self.version_path.open(mode="w", encoding="utf-8") as f:
-                json.dump(version, f, ensure_ascii=False, indent=4)
-
         self.load(self.config_path, self)
         self.save()
 
         self.init_logger()
         self.check_data()
-        self.get_gameid("ALL")
+        self.get_gameid()
         logger.info("程序初始化完成")
 
     def init_logger(self) -> None:
@@ -676,7 +672,7 @@ class AppConfig(GlobalConfig):
 
         logger.info("日志记录器初始化完成")
 
-    def get_gameid(self, mode: str) -> list:
+    def get_gameid(self) -> None:
 
         # 从MAA服务器获取活动关卡信息
         for _ in range(3):
@@ -711,82 +707,81 @@ class AppConfig(GlobalConfig):
                 gameid_dict["value"].append(gameid_info["Value"])
                 gameid_dict["text"].append(gameid_info["Value"])
 
-        if mode == "ALL":
-            self.gameid_dict["value"] = gameid_dict["value"] + [
-                "-",
-                "1-7",
-                "R8-11",
-                "12-17-HARD",
-                "CE-6",
-                "AP-5",
-                "CA-5",
-                "LS-6",
-                "SK-5",
-                "PR-A-1",
-                "PR-A-2",
-                "PR-B-1",
-                "PR-B-2",
-                "PR-C-1",
-                "PR-C-2",
-                "PR-D-1",
-                "PR-D-2",
-            ]
-            self.gameid_dict["text"] = gameid_dict["text"] + [
-                "当前/上次",
-                "1-7",
-                "R8-11",
-                "12-17-HARD",
-                "龙门币-6/5",
-                "红票-5",
-                "技能-5",
-                "经验-6/5",
-                "碳-5",
-                "奶/盾芯片",
-                "奶/盾芯片组",
-                "术/狙芯片",
-                "术/狙芯片组",
-                "先/辅芯片",
-                "先/辅芯片组",
-                "近/特芯片",
-                "近/特芯片组",
-            ]
+        # 生成全部关卡信息
+        self.gameid_dict["ALL"]["value"] = gameid_dict["value"] + [
+            "-",
+            "1-7",
+            "R8-11",
+            "12-17-HARD",
+            "CE-6",
+            "AP-5",
+            "CA-5",
+            "LS-6",
+            "SK-5",
+            "PR-A-1",
+            "PR-A-2",
+            "PR-B-1",
+            "PR-B-2",
+            "PR-C-1",
+            "PR-C-2",
+            "PR-D-1",
+            "PR-D-2",
+        ]
+        self.gameid_dict["ALL"]["text"] = gameid_dict["text"] + [
+            "当前/上次",
+            "1-7",
+            "R8-11",
+            "12-17-HARD",
+            "龙门币-6/5",
+            "红票-5",
+            "技能-5",
+            "经验-6/5",
+            "碳-5",
+            "奶/盾芯片",
+            "奶/盾芯片组",
+            "术/狙芯片",
+            "术/狙芯片组",
+            "先/辅芯片",
+            "先/辅芯片组",
+            "近/特芯片",
+            "近/特芯片组",
+        ]
 
-            self.gameid_refreshed.emit()
+        # 生成本日关卡信息
+        days = datetime.strptime(self.server_date(), "%Y-%m-%d").isoweekday()
 
-        elif mode == "Week":
+        gameid_list = [
+            {"value": "-", "text": "当前/上次", "days": [1, 2, 3, 4, 5, 6, 7]},
+            {"value": "1-7", "text": "1-7", "days": [1, 2, 3, 4, 5, 6, 7]},
+            {"value": "R8-11", "text": "R8-11", "days": [1, 2, 3, 4, 5, 6, 7]},
+            {
+                "value": "12-17-HARD",
+                "text": "12-17-HARD",
+                "days": [1, 2, 3, 4, 5, 6, 7],
+            },
+            {"value": "CE-6", "text": "龙门币-6/5", "days": [2, 4, 6, 7]},
+            {"value": "AP-5", "text": "红票-5", "days": [1, 4, 6, 7]},
+            {"value": "CA-5", "text": "技能-5", "days": [2, 3, 5, 7]},
+            {"value": "LS-6", "text": "经验-6/5", "days": [1, 2, 3, 4, 5, 6, 7]},
+            {"value": "SK-5", "text": "碳-5", "days": [1, 3, 5, 6]},
+            {"value": "PR-A-1", "text": "奶/盾芯片", "days": [1, 4, 5, 7]},
+            {"value": "PR-A-2", "text": "奶/盾芯片组", "days": [1, 4, 5, 7]},
+            {"value": "PR-B-1", "text": "术/狙芯片", "days": [1, 2, 5, 6]},
+            {"value": "PR-B-2", "text": "术/狙芯片组", "days": [1, 2, 5, 6]},
+            {"value": "PR-C-1", "text": "先/辅芯片", "days": [3, 4, 6, 7]},
+            {"value": "PR-C-2", "text": "先/辅芯片组", "days": [3, 4, 6, 7]},
+            {"value": "PR-D-1", "text": "近/特芯片", "days": [2, 3, 6, 7]},
+            {"value": "PR-D-2", "text": "近/特芯片组", "days": [2, 3, 6, 7]},
+        ]
 
-            days = datetime.strptime(self.server_date(), "%Y-%m-%d").isoweekday()
+        for gameid_info in gameid_list:
+            if days in gameid_info["days"]:
+                gameid_dict["value"].append(gameid_info["value"])
+                gameid_dict["text"].append(gameid_info["text"])
 
-            gameid_list = [
-                {"value": "-", "text": "当前/上次", "days": [1, 2, 3, 4, 5, 6, 7]},
-                {"value": "1-7", "text": "1-7", "days": [1, 2, 3, 4, 5, 6, 7]},
-                {"value": "R8-11", "text": "R8-11", "days": [1, 2, 3, 4, 5, 6, 7]},
-                {
-                    "value": "12-17-HARD",
-                    "text": "12-17-HARD",
-                    "days": [1, 2, 3, 4, 5, 6, 7],
-                },
-                {"value": "CE-6", "text": "龙门币-6/5", "days": [2, 4, 6, 7]},
-                {"value": "AP-5", "text": "红票-5", "days": [1, 4, 6, 7]},
-                {"value": "CA-5", "text": "技能-5", "days": [2, 3, 5, 7]},
-                {"value": "LS-6", "text": "经验-6/5", "days": [1, 2, 3, 4, 5, 6, 7]},
-                {"value": "SK-5", "text": "碳-5", "days": [1, 3, 5, 6]},
-                {"value": "PR-A-1", "text": "奶/盾芯片", "days": [1, 4, 5, 7]},
-                {"value": "PR-A-2", "text": "奶/盾芯片组", "days": [1, 4, 5, 7]},
-                {"value": "PR-B-1", "text": "术/狙芯片", "days": [1, 2, 5, 6]},
-                {"value": "PR-B-2", "text": "术/狙芯片组", "days": [1, 2, 5, 6]},
-                {"value": "PR-C-1", "text": "先/辅芯片", "days": [3, 4, 6, 7]},
-                {"value": "PR-C-2", "text": "先/辅芯片组", "days": [3, 4, 6, 7]},
-                {"value": "PR-D-1", "text": "近/特芯片", "days": [2, 3, 6, 7]},
-                {"value": "PR-D-2", "text": "近/特芯片组", "days": [2, 3, 6, 7]},
-            ]
+        self.gameid_dict["Today"] = gameid_dict
 
-            for gameid_info in gameid_list:
-                if days in gameid_info["days"]:
-                    gameid_dict["value"].append(gameid_info["value"])
-                    gameid_dict["text"].append(gameid_info["text"])
-
-            return gameid_dict
+        self.gameid_refreshed.emit()
 
     def server_date(self) -> str:
         """获取当前的服务器日期"""
@@ -1185,19 +1180,6 @@ class AppConfig(GlobalConfig):
                     maa_config.load(maa_dir / "config.json", maa_config)
                     maa_config.save()
 
-                    # user_dict: Dict[str, Dict[str, Union[Path, MaaUserConfig]]] = {}
-                    # for user_dir in (maa_dir / "UserData").iterdir():
-                    #     if user_dir.is_dir():
-
-                    #         # user_config = MaaUserConfig()
-                    #         # user_config.load(user_dir / "config.json", user_config)
-                    #         # user_config.save()
-
-                    #         user_dict[user_dir.stem] = {
-                    #             "Path": user_dir,
-                    #             "Config": None,
-                    #         }
-
                     self.member_dict[maa_dir.name] = {
                         "Type": "Maa",
                         "Path": maa_dir,
@@ -1300,6 +1282,8 @@ class AppConfig(GlobalConfig):
             user_config.set(
                 user_config.Data_IfPassCheck, info["Config"]["Data"]["IfPassCheck"]
             )
+
+        self.user_info_changed.emit()
 
     def save_maa_log(self, log_path: Path, logs: list, maa_result: str) -> bool:
         """保存MAA日志"""

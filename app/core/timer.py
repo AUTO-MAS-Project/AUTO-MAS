@@ -54,7 +54,7 @@ class _MainTimer(QWidget):
     def long_timed_task(self):
         """长时间定期检定任务"""
 
-        Config.get_gameid("ALL")
+        Config.get_gameid()
 
     def timed_start(self):
         """定时启动代理任务"""

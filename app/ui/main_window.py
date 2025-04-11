@@ -183,7 +183,7 @@ class AUTO_MAA(MSFluentWindow):
         self.tray.setContextMenu(self.tray_menu)
         self.tray.activated.connect(self.on_tray_activated)
 
-        Config.gameid_refreshed.connect(self.member_manager.refresh_gameid)
+        Config.user_info_changed.connect(self.member_manager.refresh_dashboard)
         TaskManager.create_gui.connect(self.dispatch_center.add_board)
         TaskManager.connect_gui.connect(self.dispatch_center.connect_main_board)
         Notify.push_info_bar.connect(MainInfoBar.push_info_bar)

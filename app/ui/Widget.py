@@ -512,8 +512,6 @@ class PasswordLineEditSettingCard(SettingCard):
 class UserLableSettingCard(SettingCard):
     """Setting card with User's Lable"""
 
-    textChanged = Signal(str)
-
     def __init__(
         self,
         icon: Union[str, QIcon, FluentIconBase],
