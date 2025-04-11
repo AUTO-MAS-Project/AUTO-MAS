@@ -28,7 +28,8 @@ on:
       - 'LICENSE'
 
 permissions:
-  contents: read
+  contents: write
+  actions: write
 
 jobs:
   pre_check:
