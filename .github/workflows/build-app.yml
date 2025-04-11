@@ -76,18 +76,12 @@ jobs:
           "AUTO_MAA_version=$MAIN_VERSION" | Out-File -FilePath $env:GITHUB_ENV -Append
           $UPDATER_VERSION=(Get-Content -Path "version_info.txt" -TotalCount 2 | Select-Object -Index 1).Trim()
           "updater_version=$UPDATER_VERSION" | Out-File -FilePath $env:GITHUB_ENV -Append
-      - name: Create Zip
-        id: create_zip
-        run: |
-          Compress-Archive -Path app,resources,main.py,AUTO_MAA.exe,requirements.txt,README.md,LICENSE -DestinationPath AUTO_MAA_${{ env.AUTO_MAA_version }}.zip
-          Compress-Archive -Path Updater.exe -DestinationPath Updater_${{ env.updater_version }}.zip
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: AUTO_MAA_${{ env.AUTO_MAA_version }}
           path: |
             AUTO_MAA_${{ env.AUTO_MAA_version }}.zip
-            Updater_${{ env.updater_version }}.zip
       - name: Upload Version_Info Artifact
         uses: actions/upload-artifact@v4
         with:
@@ -151,14 +145,12 @@ jobs:
           gh release create "$TAGNAME" --target "main" --title "$NAME" --notes "$NOTES" artifacts/*
         env:
           GITHUB_TOKEN: ${{ secrets.WORKFLOW_TOKEN }}
-
       - name: Trigger MirrorChyanUploading
         run: |
           gh workflow run --repo $GITHUB_REPOSITORY mirrorchyan
           gh workflow run --repo $GITHUB_REPOSITORY mirrorchyan_release_note
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Setup SSH Key
         run: |
           mkdir -p ~/.ssh
