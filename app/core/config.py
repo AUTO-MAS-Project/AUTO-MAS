@@ -39,20 +39,16 @@ from qfluentwidgets import (
     ConfigItem,
     OptionsConfigItem,
     RangeConfigItem,
-    ConfigValidator,
     FolderValidator,
     BoolValidator,
     RangeValidator,
     OptionsValidator,
     qconfig,
 )
-from urllib.parse import urlparse
 from typing import Union, Dict, List, Tuple
 
 
 class AppConfig:
-
-    VERSION = "4.2.5.8"
 
     def __init__(self) -> None:
 
@@ -70,7 +66,6 @@ class AppConfig:
         self.PASSWORD = ""
         self.running_list = []
         self.silence_list = []
-        self.if_ignore_silence = False
         self.if_database_opened = False
 
         # 检查文件完整性
@@ -88,7 +83,7 @@ class AppConfig:
         # 生成版本信息文件
         if not self.version_path.exists():
             version = {
-                "main_version": self.VERSION,
+                "main_version": "0.0.0.0",
                 "updater_version": "0.0.0.0",
             }
             with self.version_path.open(mode="w", encoding="utf-8") as f:
@@ -124,7 +119,7 @@ class AppConfig:
         )
         logger.info("===================================")
         logger.info("AUTO_MAA 主程序")
-        logger.info(f"版本号： v{self.VERSION}")
+        logger.info("版本号： v4.2.1.1")
         logger.info(f"根目录： {self.app_path}")
         logger.info("===================================")
 
@@ -511,45 +506,78 @@ class AppConfig:
             i += 1
 
         # 掉落统计
-        current_stage = None
-        stage_drops = {}
-
+        # 存储所有关卡的掉落统计
+        all_stage_drops = {}
+        
+        # 查找所有Fight任务的开始和结束位置
+        fight_tasks = []
         for i, line in enumerate(logs):
-            drop_match = re.search(r"([A-Za-z0-9\-]+) 掉落统计:", line)
-            if drop_match:
-                # 发现新关卡，保存前一个关卡数据
-                if current_stage and stage_drops:
-                    data["drop_statistics"][current_stage] = stage_drops
+            if "开始任务: Fight" in line:
+                # 查找对应的任务结束位置
+                end_index = -1
+                for j in range(i+1, len(logs)):
+                    if "完成任务: Fight" in logs[j]:
+                        end_index = j
+                        break
+                    # 如果遇到新的Fight任务开始，则当前任务没有正常结束
+                    if j < len(logs) and "开始任务: Fight" in logs[j]:
+                        break
+                
+                # 如果找到了结束位置，记录这个任务的范围
+                if end_index != -1:
+                    fight_tasks.append((i, end_index))
+        
+        # 处理每个Fight任务
+        for start_idx, end_idx in fight_tasks:
+            # 提取当前任务的日志
+            task_logs = logs[start_idx:end_idx+1]
+            
+            # 查找任务中的最后一次掉落统计
+            last_drop_stats = {}
+            current_stage = None
+            
+            for line in task_logs:
+                # 匹配掉落统计行，如"1-7 掉落统计:"
+                drop_match = re.search(r"([A-Za-z0-9\-]+) 掉落统计:", line)
+                if drop_match:
+                    # 发现新的掉落统计，重置当前关卡的掉落数据
+                    current_stage = drop_match.group(1)
+                    last_drop_stats = {}
+                    continue
+                
+                # 如果已经找到了关卡，处理掉落物
+                if current_stage:
+                    item_match: List[str] = re.findall(
+                        r"^(?!\[)([\u4e00-\u9fa5A-Za-z0-9\-]+)\s*:\s*([\d,]+)(?:\s*\(\+[\d,]+\))?",
+                        line,
+                        re.M,
+                    )
+                    for item, total in item_match:
+                        # 解析数值时去掉逗号 （如 2,160 -> 2160）
+                        total = int(total.replace(",", ""))
 
-                current_stage = drop_match.group(1)
-                if current_stage == "WE":
-                    current_stage = "剿灭模式"
-                stage_drops = {}
-                continue
-
-            if current_stage:
-                item_match: List[str] = re.findall(
-                    r"^(?!\[)([\u4e00-\u9fa5A-Za-z0-9·\-]+)\s*:\s*([\d,]+)(?:\s*\(\+[\d,]+\))?",
-                    line,
-                    re.M,
-                )
-                for item, total in item_match:
-                    # 解析数值时去掉逗号 （如 2,160 -> 2160）
-                    total = int(total.replace(",", ""))
-
-                    # 黑名单
-                    if item not in [
-                        "当前次数",
-                        "理智",
-                        "最快截图耗时",
-                        "专精等级",
-                        "剩余时间",
-                    ]:
-                        stage_drops[item] = total
-
-        # 处理最后一个关卡的掉落数据
-        if current_stage and stage_drops:
-            data["drop_statistics"][current_stage] = stage_drops
+                        # 黑名单
+                        if item not in [
+                            "当前次数",
+                            "理智",
+                            "最快截图耗时",
+                            "专精等级",
+                            "剩余时间",
+                        ]:
+                            last_drop_stats[item] = total
+            
+            # 如果任务中有掉落统计，更新总统计
+            if current_stage and last_drop_stats:
+                if current_stage not in all_stage_drops:
+                    all_stage_drops[current_stage] = {}
+                
+                # 累加掉落数据
+                for item, count in last_drop_stats.items():
+                    all_stage_drops[current_stage].setdefault(item, 0)
+                    all_stage_drops[current_stage][item] += count
+        
+        # 将累加后的掉落数据保存到结果中
+        data["drop_statistics"] = all_stage_drops
 
         # 保存日志
         log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -612,7 +640,7 @@ class AppConfig:
             with logs_path.with_suffix(".json").open("w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=4)
 
-            logger.info(f"统计完成：{logs_path.with_suffix(".json")}")
+            logger.info(f"统计完成：{logs_path.with_suffix('.json')}")
 
         return data
 
@@ -721,7 +749,6 @@ class AppConfig:
         self.maa_config.set(self.maa_config.RunSet_AnnihilationTimeLimit, 40)
         self.maa_config.set(self.maa_config.RunSet_RoutineTimeLimit, 10)
         self.maa_config.set(self.maa_config.RunSet_RunTimesLimit, 3)
-        self.maa_config.set(self.maa_config.RunSet_AnnihilationWeeklyLimit, False)
         self.maa_config.set(self.maa_config.MaaSet_Name, "")
         self.maa_config.set(self.maa_config.MaaSet_Name, "")
         self.maa_config.set(self.maa_config.MaaSet_Name, "")
@@ -766,30 +793,6 @@ class AppConfig:
         self.queue_config.set(self.queue_config.queue_Member_10, "禁用")
 
 
-class UrlListValidator(ConfigValidator):
-    """Url list validator"""
-
-    def validate(self, value):
-
-        try:
-            result = urlparse(value)
-            return all([result.scheme, result.netloc])
-        except ValueError:
-            return False
-
-    def correct(self, value: List[str]):
-
-        urls = []
-
-        for url in [_ for _ in value if _ != ""]:
-            if url[-1] != "/":
-                urls.append(f"{url}/")
-            else:
-                urls.append(url)
-
-        return list(set([_ for _ in urls if self.validate(_)]))
-
-
 class GlobalConfig(QConfig):
     """全局配置"""
 
@@ -809,9 +812,6 @@ class GlobalConfig(QConfig):
     function_BossKey = ConfigItem("Function", "BossKey", "")
     function_IfAgreeBilibili = ConfigItem(
         "Function", "IfAgreeBilibili", False, BoolValidator()
-    )
-    function_IfSkipMumuSplashAds = ConfigItem(
-        "Function", "IfSkipMumuSplashAds", False, BoolValidator()
     )
 
     start_IfSelfStart = ConfigItem("Start", "IfSelfStart", False, BoolValidator())
@@ -857,10 +857,6 @@ class GlobalConfig(QConfig):
     update_UpdateType = OptionsConfigItem(
         "Update", "UpdateType", "main", OptionsValidator(["main", "dev"])
     )
-    update_ThreadNumb = RangeConfigItem(
-        "Update", "ThreadNumb", 8, RangeValidator(1, 32)
-    )
-    update_ProxyUrlList = ConfigItem("Update", "ProxyUrlList", [], UrlListValidator())
 
 
 class QueueConfig(QConfig):
@@ -918,9 +914,6 @@ class QueueConfig(QConfig):
 
 
 class MaaConfig(QConfig):
-    def __init__(self):
-        super().__init__()
-
     """MAA配置"""
 
     MaaSet_Name = ConfigItem("MaaSet", "Name", "")
@@ -931,12 +924,6 @@ class MaaConfig(QConfig):
         "TaskTransitionMethod",
         "ExitEmulator",
         OptionsValidator(["NoAction", "ExitGame", "ExitEmulator"]),
-    )
-    RunSet_EnhanceTask = OptionsConfigItem(
-        "RunSet",
-        "EnhanceTask",
-        "None",
-        OptionsValidator(["None", "KillADB", "KillEmulator", "KillADB&Emulator"]),
     )
     RunSet_ProxyTimesLimit = RangeConfigItem(
         "RunSet", "ProxyTimesLimit", 0, RangeValidator(0, 1024)
@@ -950,9 +937,8 @@ class MaaConfig(QConfig):
     RunSet_RunTimesLimit = RangeConfigItem(
         "RunSet", "RunTimesLimit", 3, RangeValidator(1, 1024)
     )
-    RunSet_AnnihilationWeeklyLimit = ConfigItem(
-        "RunSet", "AnnihilationWeeklyLimit", False, BoolValidator()
-    )
 
 
 Config = AppConfig()
+
+
