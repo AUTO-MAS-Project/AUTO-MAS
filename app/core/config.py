@@ -506,45 +506,78 @@ class AppConfig:
             i += 1
 
         # 掉落统计
-        current_stage = None
-        stage_drops = {}
-
+        # 存储所有关卡的掉落统计
+        all_stage_drops = {}
+        
+        # 查找所有Fight任务的开始和结束位置
+        fight_tasks = []
         for i, line in enumerate(logs):
-            drop_match = re.search(r"([A-Za-z0-9\-]+) 掉落统计:", line)
-            if drop_match:
-                # 发现新关卡，保存前一个关卡数据
-                if current_stage and stage_drops:
-                    data["drop_statistics"][current_stage] = stage_drops
+            if "开始任务: Fight" in line:
+                # 查找对应的任务结束位置
+                end_index = -1
+                for j in range(i+1, len(logs)):
+                    if "完成任务: Fight" in logs[j]:
+                        end_index = j
+                        break
+                    # 如果遇到新的Fight任务开始，则当前任务没有正常结束
+                    if j < len(logs) and "开始任务: Fight" in logs[j]:
+                        break
+                
+                # 如果找到了结束位置，记录这个任务的范围
+                if end_index != -1:
+                    fight_tasks.append((i, end_index))
+        
+        # 处理每个Fight任务
+        for start_idx, end_idx in fight_tasks:
+            # 提取当前任务的日志
+            task_logs = logs[start_idx:end_idx+1]
+            
+            # 查找任务中的最后一次掉落统计
+            last_drop_stats = {}
+            current_stage = None
+            
+            for line in task_logs:
+                # 匹配掉落统计行，如"1-7 掉落统计:"
+                drop_match = re.search(r"([A-Za-z0-9\-]+) 掉落统计:", line)
+                if drop_match:
+                    # 发现新的掉落统计，重置当前关卡的掉落数据
+                    current_stage = drop_match.group(1)
+                    last_drop_stats = {}
+                    continue
+                
+                # 如果已经找到了关卡，处理掉落物
+                if current_stage:
+                    item_match: List[str] = re.findall(
+                        r"^(?!\[)([\u4e00-\u9fa5A-Za-z0-9\-]+)\s*:\s*([\d,]+)(?:\s*\(\+[\d,]+\))?",
+                        line,
+                        re.M,
+                    )
+                    for item, total in item_match:
+                        # 解析数值时去掉逗号 （如 2,160 -> 2160）
+                        total = int(total.replace(",", ""))
 
-                current_stage = drop_match.group(1)
-                if current_stage == "WE":
-                    current_stage = "剿灭模式"
-                stage_drops = {}
-                continue
-
-            if current_stage:
-                item_match: List[str] = re.findall(
-                    r"^(?!\[)([\u4e00-\u9fa5A-Za-z0-9\-]+)\s*:\s*([\d,]+)(?:\s*\(\+[\d,]+\))?",
-                    line,
-                    re.M,
-                )
-                for item, total in item_match:
-                    # 解析数值时去掉逗号 （如 2,160 -> 2160）
-                    total = int(total.replace(",", ""))
-
-                    # 黑名单
-                    if item not in [
-                        "当前次数",
-                        "理智",
-                        "最快截图耗时",
-                        "专精等级",
-                        "剩余时间",
-                    ]:
-                        stage_drops[item] = total
-
-        # 处理最后一个关卡的掉落数据
-        if current_stage and stage_drops:
-            data["drop_statistics"][current_stage] = stage_drops
+                        # 黑名单
+                        if item not in [
+                            "当前次数",
+                            "理智",
+                            "最快截图耗时",
+                            "专精等级",
+                            "剩余时间",
+                        ]:
+                            last_drop_stats[item] = total
+            
+            # 如果任务中有掉落统计，更新总统计
+            if current_stage and last_drop_stats:
+                if current_stage not in all_stage_drops:
+                    all_stage_drops[current_stage] = {}
+                
+                # 累加掉落数据
+                for item, count in last_drop_stats.items():
+                    all_stage_drops[current_stage].setdefault(item, 0)
+                    all_stage_drops[current_stage][item] += count
+        
+        # 将累加后的掉落数据保存到结果中
+        data["drop_statistics"] = all_stage_drops
 
         # 保存日志
         log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -607,7 +640,7 @@ class AppConfig:
             with logs_path.with_suffix(".json").open("w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=4)
 
-            logger.info(f"统计完成：{logs_path.with_suffix(".json")}")
+            logger.info(f"统计完成：{logs_path.with_suffix('.json')}")
 
         return data
 
@@ -907,3 +940,5 @@ class MaaConfig(QConfig):
 
 
 Config = AppConfig()
+
+
