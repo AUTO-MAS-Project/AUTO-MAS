@@ -335,16 +335,16 @@ class Setting(QWidget):
             )
         )
 
-        version_info_json: Dict[str, Dict[str, str]] = json.loads(
-            re.sub(
-                r"^<!--\s*(.*?)\s*-->$",
-                r"\1",
-                version_info["data"]["release_note"].splitlines()[0],
-            )
-        )
-
         # 有版本更新
         if remote_version > current_version:
+
+            version_info_json: Dict[str, Dict[str, str]] = json.loads(
+                re.sub(
+                    r"^<!--\s*(.*?)\s*-->$",
+                    r"\1",
+                    version_info["data"]["release_note"].splitlines()[0],
+                )
+            )
 
             # 生成版本更新信息
             main_version_info = f"## 主程序：{version_text(current_version)} --> {version_text(remote_version)}"
@@ -361,7 +361,7 @@ class Setting(QWidget):
                         update_version_info[key] += value.copy()
                     else:
                         update_version_info[key] = value.copy()
-            for v_i in update_version_info.values():
+            for v_i in version_info_json.values():
                 for key, value in v_i.items():
                     if key in all_version_info:
                         all_version_info[key] += value.copy()
@@ -373,7 +373,7 @@ class Setting(QWidget):
                 "ALL~版本信息": version_info_markdown(all_version_info),
                 **{
                     version_text(list(map(int, k.split(".")))): version_info_markdown(v)
-                    for k, v in update_version_info.items()
+                    for k, v in version_info_json.items()
                 },
             }
 

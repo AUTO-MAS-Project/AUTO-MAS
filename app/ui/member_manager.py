@@ -32,6 +32,8 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QVBoxLayout,
     QStackedWidget,
+    QTableWidgetItem,
+    QHeaderView,
 )
 from qfluentwidgets import (
     Action,
@@ -43,15 +45,20 @@ from qfluentwidgets import (
     CommandBar,
     ExpandGroupSettingCard,
     PushSettingCard,
+    TableWidget,
+    PrimaryToolButton,
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 import requests
 import time
+from datetime import datetime
+from functools import partial
 from pathlib import Path
 from typing import List
 import shutil
 
 from app.core import Config, MainInfoBar, TaskManager, MaaConfig, MaaUserConfig
+from app.services import Crypto
 from app.utils import DownloadManager
 from .Widget import (
     LineEditMessageBox,
@@ -381,28 +388,25 @@ class MemberManager(QWidget):
             )
             if choice.exec() and choice.input.text() != "":
                 Config.PASSWORD = choice.input.text()
-                for script in self.member_manager.script_list:
-                    script.user_setting.refresh_password()
+                Config.PASSWORD_refreshed.emit()
                 self.key.setIcon(FluentIcon.VIEW)
                 self.key.setChecked(True)
             else:
                 Config.PASSWORD = ""
-                for script in self.member_manager.script_list:
-                    script.user_setting.refresh_password()
+                Config.PASSWORD_refreshed.emit()
                 self.key.setIcon(FluentIcon.HIDE)
                 self.key.setChecked(False)
         else:
             Config.PASSWORD = ""
-            for script in self.member_manager.script_list:
-                script.user_setting.refresh_password()
+            Config.PASSWORD_refreshed.emit()
             self.key.setIcon(FluentIcon.HIDE)
             self.key.setChecked(False)
 
-    def refresh_gameid(self):
-        """刷新所有脚本实例的游戏ID列表"""
+    def refresh_dashboard(self):
+        """刷新所有脚本实例的用户仪表盘"""
 
         for script in self.member_manager.script_list:
-            script.user_setting.refresh_gameid()
+            script.user_setting.user_manager.user_dashboard.load_info()
 
     class MemberSettingBox(QWidget):
         """脚本管理子页面组"""
@@ -453,6 +457,9 @@ class MemberManager(QWidget):
             if if_chang_pivot:
                 self.pivot.setCurrentItem(self.script_list[index - 1].objectName())
             self.stackedWidget.setCurrentWidget(self.script_list[index - 1])
+            self.script_list[index - 1].user_setting.user_manager.switch_SettingBox(
+                "用户仪表盘"
+            )
 
         def clear_SettingBox(self) -> None:
             """清空所有子界面"""
@@ -746,7 +753,7 @@ class MemberManager(QWidget):
                     }
 
                     self.user_manager.add_userSettingBox(index)
-                    self.user_manager.switch_SettingBox(index)
+                    self.user_manager.switch_SettingBox(f"用户_{index}")
 
                     logger.success(f"{self.name} 用户_{index} 添加成功")
                     MainInfoBar.push_info_bar(
@@ -762,6 +769,12 @@ class MemberManager(QWidget):
                         logger.warning("未选择用户")
                         MainInfoBar.push_info_bar(
                             "warning", "未选择用户", "请先选择一个用户", 5000
+                        )
+                        return None
+                    if name == "用户仪表盘":
+                        logger.warning("试图删除用户仪表盘")
+                        MainInfoBar.push_info_bar(
+                            "warning", "未选择用户", "请勿尝试删除用户仪表盘", 5000
                         )
                         return None
 
@@ -799,7 +812,9 @@ class MemberManager(QWidget):
                                     ]["Path"].with_name(f"用户_{i-1}")
                                 )
 
-                        self.user_manager.show_SettingBox(max(int(name[3:]) - 1, 1))
+                        self.user_manager.show_SettingBox(
+                            f"用户_{max(int(name[3:]) - 1, 1)}"
+                        )
 
                         logger.success(f"{self.name} {name} 删除成功")
                         MainInfoBar.push_info_bar(
@@ -815,6 +830,12 @@ class MemberManager(QWidget):
                         logger.warning("未选择用户")
                         MainInfoBar.push_info_bar(
                             "warning", "未选择用户", "请先选择一个用户", 5000
+                        )
+                        return None
+                    if name == "用户仪表盘":
+                        logger.warning("试图移动用户仪表盘")
+                        MainInfoBar.push_info_bar(
+                            "warning", "未选择用户", "请勿尝试移动用户仪表盘", 5000
                         )
                         return None
 
@@ -852,7 +873,7 @@ class MemberManager(QWidget):
                         ]
                     )
 
-                    self.user_manager.show_SettingBox(index - 1)
+                    self.user_manager.show_SettingBox(f"用户_{index - 1}")
 
                     logger.success(f"{self.name} {name} 前移成功")
                     MainInfoBar.push_info_bar(
@@ -868,6 +889,12 @@ class MemberManager(QWidget):
                         logger.warning("未选择用户")
                         MainInfoBar.push_info_bar(
                             "warning", "未选择用户", "请先选择一个用户", 5000
+                        )
+                        return None
+                    if name == "用户仪表盘":
+                        logger.warning("试图删除用户仪表盘")
+                        MainInfoBar.push_info_bar(
+                            "warning", "未选择用户", "请勿尝试移动用户仪表盘", 5000
                         )
                         return None
 
@@ -905,47 +932,17 @@ class MemberManager(QWidget):
                         ]
                     )
 
-                    self.user_manager.show_SettingBox(index + 1)
+                    self.user_manager.show_SettingBox(f"用户_{index + 1}")
 
                     logger.success(f"{self.name} {name} 后移成功")
                     MainInfoBar.push_info_bar(
                         "success", "操作成功", f"{self.name} 后移 {name}", 3000
                     )
 
-                def refresh_password(self):
-                    """刷新用户密码栏"""
-
-                    for script in self.user_manager.script_list:
-
-                        script.card_Password.setValue(
-                            script.card_Password.qconfig.get(
-                                script.card_Password.configItem
-                            )
-                        )
-
-                def refresh_gameid(self):
-                    """刷新用户密码栏"""
-
-                    for script in self.user_manager.script_list:
-
-                        script.card_GameId.reLoadOptions(
-                            Config.gameid_dict["value"], Config.gameid_dict["text"]
-                        )
-                        script.card_GameId_1.reLoadOptions(
-                            Config.gameid_dict["value"], Config.gameid_dict["text"]
-                        )
-                        script.card_GameId_2.reLoadOptions(
-                            Config.gameid_dict["value"], Config.gameid_dict["text"]
-                        )
-
                 class UserSettingBox(QWidget):
                     """用户管理子页面组"""
 
-                    def __init__(
-                        self,
-                        name: str,
-                        parent=None,
-                    ):
+                    def __init__(self, name: str, parent=None):
                         super().__init__(parent)
 
                         self.setObjectName("用户管理")
@@ -959,53 +956,74 @@ class MemberManager(QWidget):
                             MemberManager.MemberSettingBox.MaaSettingBox.UserManager.UserSettingBox.UserMemberSettingBox
                         ] = []
 
+                        self.user_dashboard = self.UserDashboard(self.name, self)
+                        self.user_dashboard.switch_to.connect(self.switch_SettingBox)
+                        self.stackedWidget.addWidget(self.user_dashboard)
+                        self.pivot.addItem(routeKey="用户仪表盘", text="用户仪表盘")
+
                         self.Layout.addWidget(self.pivot, 0, Qt.AlignHCenter)
                         self.Layout.addWidget(self.stackedWidget)
                         self.Layout.setContentsMargins(0, 0, 0, 0)
 
                         self.pivot.currentItemChanged.connect(
                             lambda index: self.switch_SettingBox(
-                                int(index[3:]), if_change_pivot=False
+                                index, if_change_pivot=False
                             )
                         )
 
-                        self.show_SettingBox(1)
+                        self.show_SettingBox("用户仪表盘")
 
-                    def show_SettingBox(self, index) -> None:
+                    def show_SettingBox(self, index: str) -> None:
                         """加载所有子界面"""
 
                         Config.search_maa_user(self.name)
 
                         for name in Config.member_dict[self.name]["UserData"].keys():
-                            self.add_userSettingBox(int(name[3:]))
+                            self.add_userSettingBox(name[3:])
 
                         self.switch_SettingBox(index)
 
                     def switch_SettingBox(
-                        self, index: int, if_change_pivot: bool = True
+                        self, index: str, if_change_pivot: bool = True
                     ) -> None:
                         """切换到指定的子界面"""
 
                         if len(Config.member_dict[self.name]["UserData"]) == 0:
+                            index = "用户仪表盘"
+
+                        if index != "用户仪表盘" and int(index[3:]) > len(
+                            Config.member_dict[self.name]["UserData"]
+                        ):
                             return None
 
-                        if index > len(Config.member_dict[self.name]["UserData"]):
-                            return None
+                        if index == "用户仪表盘":
+                            self.user_dashboard.load_info()
 
                         if if_change_pivot:
-                            self.pivot.setCurrentItem(
-                                self.script_list[index - 1].objectName()
-                            )
-                        self.stackedWidget.setCurrentWidget(self.script_list[index - 1])
+                            self.pivot.setCurrentItem(index)
+                        self.stackedWidget.setCurrentWidget(
+                            self.user_dashboard
+                            if index == "用户仪表盘"
+                            else self.script_list[int(index[3:]) - 1]
+                        )
 
                     def clear_SettingBox(self) -> None:
                         """清空所有子界面"""
 
                         for sub_interface in self.script_list:
+                            Config.gameid_refreshed.disconnect(
+                                sub_interface.refresh_gameid
+                            )
+                            Config.PASSWORD_refreshed.disconnect(
+                                sub_interface.refresh_password
+                            )
                             self.stackedWidget.removeWidget(sub_interface)
                             sub_interface.deleteLater()
                         self.script_list.clear()
                         self.pivot.clear()
+                        self.user_dashboard.dashboard.setRowCount(0)
+                        self.stackedWidget.addWidget(self.user_dashboard)
+                        self.pivot.addItem(routeKey="用户仪表盘", text="用户仪表盘")
 
                     def add_userSettingBox(self, uid: int) -> None:
                         """添加一个用户设置界面"""
@@ -1019,6 +1037,182 @@ class MemberManager(QWidget):
                         self.stackedWidget.addWidget(self.script_list[-1])
 
                         self.pivot.addItem(routeKey=f"用户_{uid}", text=f"用户 {uid}")
+
+                    class UserDashboard(HeaderCardWidget):
+                        """用户仪表盘页面"""
+
+                        switch_to = Signal(str)
+
+                        def __init__(self, name: str, parent=None):
+                            super().__init__(parent)
+                            self.setObjectName("用户仪表盘")
+                            self.setTitle("用户仪表盘")
+                            self.name = name
+
+                            self.dashboard = TableWidget(self)
+                            self.dashboard.setColumnCount(10)
+                            self.dashboard.setHorizontalHeaderLabels(
+                                [
+                                    "用户名",
+                                    "账号ID",
+                                    "密码",
+                                    "状态",
+                                    "代理情况",
+                                    "给药量",
+                                    "关卡选择",
+                                    "备选关卡-1",
+                                    "备选关卡-2",
+                                    "详",
+                                ]
+                            )
+                            self.dashboard.setEditTriggers(TableWidget.NoEditTriggers)
+                            self.dashboard.verticalHeader().setVisible(False)
+                            for col in range(6):
+                                self.dashboard.horizontalHeader().setSectionResizeMode(
+                                    col, QHeaderView.ResizeMode.ResizeToContents
+                                )
+                            for col in range(6, 9):
+                                self.dashboard.horizontalHeader().setSectionResizeMode(
+                                    col, QHeaderView.ResizeMode.Stretch
+                                )
+                            self.dashboard.horizontalHeader().setSectionResizeMode(
+                                9, QHeaderView.ResizeMode.Fixed
+                            )
+                            self.dashboard.setColumnWidth(9, 32)
+
+                            self.viewLayout.addWidget(self.dashboard)
+                            self.viewLayout.setContentsMargins(3, 0, 3, 3)
+
+                            Config.PASSWORD_refreshed.connect(self.load_info)
+
+                        def load_info(self):
+
+                            self.user_data = Config.member_dict[self.name]["UserData"]
+
+                            self.dashboard.setRowCount(len(self.user_data))
+
+                            for name, info in self.user_data.items():
+
+                                config = info["Config"]
+
+                                text_list = []
+                                if not config.get(config.Data_IfPassCheck):
+                                    text_list.append("未通过人工排查")
+                                text_list.append(
+                                    f"今日已代理{config.get(config.Data_ProxyTimes)}次"
+                                    if Config.server_date()
+                                    == config.get(config.Data_LastProxyDate)
+                                    else "今日未进行代理"
+                                )
+                                text_list.append(
+                                    "本周剿灭已完成"
+                                    if datetime.strptime(
+                                        config.get(config.Data_LastAnnihilationDate),
+                                        "%Y-%m-%d",
+                                    ).isocalendar()[:2]
+                                    == datetime.strptime(
+                                        Config.server_date(), "%Y-%m-%d"
+                                    ).isocalendar()[:2]
+                                    else "本周剿灭未完成"
+                                )
+
+                                button = PrimaryToolButton(
+                                    FluentIcon.CHEVRON_RIGHT, self
+                                )
+                                button.setFixedSize(32, 32)
+                                button.clicked.connect(
+                                    partial(self.switch_to.emit, name)
+                                )
+
+                                self.dashboard.setItem(
+                                    int(name[3:]) - 1,
+                                    0,
+                                    QTableWidgetItem(config.get(config.Info_Name)),
+                                )
+                                self.dashboard.setItem(
+                                    int(name[3:]) - 1,
+                                    1,
+                                    QTableWidgetItem(config.get(config.Info_Id)),
+                                )
+                                self.dashboard.setItem(
+                                    int(name[3:]) - 1,
+                                    2,
+                                    QTableWidgetItem(
+                                        Crypto.AUTO_decryptor(
+                                            config.get(config.Info_Password),
+                                            Config.PASSWORD,
+                                        )
+                                        if Config.PASSWORD
+                                        else "******"
+                                    ),
+                                )
+                                self.dashboard.setItem(
+                                    int(name[3:]) - 1,
+                                    3,
+                                    QTableWidgetItem(
+                                        "启用"
+                                        if config.get(config.Info_Status)
+                                        and config.get(config.Info_RemainedDay) != 0
+                                        else "禁用"
+                                    ),
+                                )
+                                self.dashboard.setItem(
+                                    int(name[3:]) - 1,
+                                    4,
+                                    QTableWidgetItem(" | ".join(text_list)),
+                                )
+                                self.dashboard.setItem(
+                                    int(name[3:]) - 1,
+                                    5,
+                                    QTableWidgetItem(
+                                        str(config.get(config.Info_MedicineNumb))
+                                    ),
+                                )
+                                self.dashboard.setItem(
+                                    int(name[3:]) - 1,
+                                    6,
+                                    QTableWidgetItem(
+                                        Config.gameid_dict["ALL"]["text"][
+                                            Config.gameid_dict["ALL"]["value"].index(
+                                                config.get(config.Info_GameId)
+                                            )
+                                        ]
+                                        if config.get(config.Info_GameId)
+                                        in Config.gameid_dict["ALL"]["value"]
+                                        else config.get(config.Info_GameId)
+                                    ),
+                                )
+                                self.dashboard.setItem(
+                                    int(name[3:]) - 1,
+                                    7,
+                                    QTableWidgetItem(
+                                        Config.gameid_dict["ALL"]["text"][
+                                            Config.gameid_dict["ALL"]["value"].index(
+                                                config.get(config.Info_GameId_1)
+                                            )
+                                        ]
+                                        if config.get(config.Info_GameId_1)
+                                        in Config.gameid_dict["ALL"]["value"]
+                                        else config.get(config.Info_GameId_1)
+                                    ),
+                                )
+                                self.dashboard.setItem(
+                                    int(name[3:]) - 1,
+                                    8,
+                                    QTableWidgetItem(
+                                        Config.gameid_dict["ALL"]["text"][
+                                            Config.gameid_dict["ALL"]["value"].index(
+                                                config.get(config.Info_GameId_2)
+                                            )
+                                        ]
+                                        if config.get(config.Info_GameId_2)
+                                        in Config.gameid_dict["ALL"]["value"]
+                                        else config.get(config.Info_GameId_2)
+                                    ),
+                                )
+                                self.dashboard.setCellWidget(
+                                    int(name[3:]) - 1, 9, button
+                                )
 
                     class UserMemberSettingBox(HeaderCardWidget):
                         """用户管理子页面"""
@@ -1157,8 +1351,8 @@ class MemberManager(QWidget):
                                 icon=FluentIcon.GAME,
                                 title="关卡选择",
                                 content="按下回车以添加自定义关卡号",
-                                value=Config.gameid_dict["value"],
-                                texts=Config.gameid_dict["text"],
+                                value=Config.gameid_dict["ALL"]["value"],
+                                texts=Config.gameid_dict["ALL"]["text"],
                                 qconfig=self.config,
                                 configItem=self.config.Info_GameId,
                                 parent=self,
@@ -1167,8 +1361,8 @@ class MemberManager(QWidget):
                                 icon=FluentIcon.GAME,
                                 title="备选关卡-1",
                                 content="按下回车以添加自定义关卡号",
-                                value=Config.gameid_dict["value"],
-                                texts=Config.gameid_dict["text"],
+                                value=Config.gameid_dict["ALL"]["value"],
+                                texts=Config.gameid_dict["ALL"]["text"],
                                 qconfig=self.config,
                                 configItem=self.config.Info_GameId_1,
                                 parent=self,
@@ -1177,8 +1371,8 @@ class MemberManager(QWidget):
                                 icon=FluentIcon.GAME,
                                 title="备选关卡-2",
                                 content="按下回车以添加自定义关卡号",
-                                value=Config.gameid_dict["value"],
-                                texts=Config.gameid_dict["text"],
+                                value=Config.gameid_dict["ALL"]["value"],
+                                texts=Config.gameid_dict["ALL"]["text"],
                                 qconfig=self.config,
                                 configItem=self.config.Info_GameId_2,
                                 parent=self,
@@ -1233,6 +1427,7 @@ class MemberManager(QWidget):
                             Layout.addLayout(h7_layout)
 
                             self.viewLayout.addLayout(Layout)
+                            self.viewLayout.setContentsMargins(3, 0, 3, 3)
 
                             self.card_Mode.comboBox.currentIndexChanged.connect(
                                 self.switch_mode
@@ -1246,6 +1441,8 @@ class MemberManager(QWidget):
                             self.card_Infrastructure.clicked.connect(
                                 self.set_infrastructure
                             )
+                            Config.gameid_refreshed.connect(self.refresh_gameid)
+                            Config.PASSWORD_refreshed.connect(self.refresh_password)
 
                             self.switch_mode()
 
@@ -1264,6 +1461,29 @@ class MemberManager(QWidget):
                                 self.card_Infrastructure.setVisible(False)
                                 self.card_Annihilation.button.setVisible(True)
                                 self.card_Routine.setVisible(True)
+
+                        def refresh_gameid(self):
+
+                            self.card_GameId.reLoadOptions(
+                                Config.gameid_dict["ALL"]["value"],
+                                Config.gameid_dict["ALL"]["text"],
+                            )
+                            self.card_GameId_1.reLoadOptions(
+                                Config.gameid_dict["ALL"]["value"],
+                                Config.gameid_dict["ALL"]["text"],
+                            )
+                            self.card_GameId_2.reLoadOptions(
+                                Config.gameid_dict["ALL"]["value"],
+                                Config.gameid_dict["ALL"]["text"],
+                            )
+
+                        def refresh_password(self):
+
+                            self.card_Password.setValue(
+                                self.card_Password.qconfig.get(
+                                    self.card_Password.configItem
+                                )
+                            )
 
                         def set_infrastructure(self) -> None:
                             """配置自定义基建"""
