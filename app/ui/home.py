@@ -160,15 +160,9 @@ class Home(QWidget):
     def get_home_image(self) -> None:
         """获取主页图片"""
 
-        if (
-            Config.global_config.get(Config.global_config.function_HomeImageMode)
-            == "默认"
-        ):
+        if Config.get(Config.function_HomeImageMode) == "默认":
             pass
-        elif (
-            Config.global_config.get(Config.global_config.function_HomeImageMode)
-            == "自定义"
-        ):
+        elif Config.get(Config.function_HomeImageMode) == "自定义":
 
             file_path, _ = QFileDialog.getOpenFileName(
                 self, "打开自定义主页图片", "", "图片文件 (*.png *.jpg *.bmp)"
@@ -202,10 +196,7 @@ class Home(QWidget):
                     "未选择图片文件！",
                     5000,
                 )
-        elif (
-            Config.global_config.get(Config.global_config.function_HomeImageMode)
-            == "主题图像"
-        ):
+        elif Config.get(Config.function_HomeImageMode) == "主题图像":
 
             # 从远程服务器获取最新主题图像
             for _ in range(3):
@@ -244,7 +235,6 @@ class Home(QWidget):
             ).exists() or (
                 datetime.now()
                 > datetime.strptime(theme_image["time"], "%Y-%m-%d %H:%M")
-                and datetime.strptime(theme_image["time"], "%Y-%m-%d %H:%M")
                 > time_local
             ):
 
@@ -293,28 +283,19 @@ class Home(QWidget):
 
     def set_banner(self):
         """设置主页图像"""
-        if (
-            Config.global_config.get(Config.global_config.function_HomeImageMode)
-            == "默认"
-        ):
+        if Config.get(Config.function_HomeImageMode) == "默认":
             self.banner.set_banner_image(
                 str(Config.app_path / "resources/images/Home/BannerDefault.png")
             )
             self.imageButton.hide()
             self.banner_text.setVisible(False)
-        elif (
-            Config.global_config.get(Config.global_config.function_HomeImageMode)
-            == "自定义"
-        ):
+        elif Config.get(Config.function_HomeImageMode) == "自定义":
             for file in Config.app_path.glob("resources/images/Home/BannerCustomize.*"):
                 self.banner.set_banner_image(str(file))
                 break
             self.imageButton.show()
             self.banner_text.setVisible(False)
-        elif (
-            Config.global_config.get(Config.global_config.function_HomeImageMode)
-            == "主题图像"
-        ):
+        elif Config.get(Config.function_HomeImageMode) == "主题图像":
             self.banner.set_banner_image(
                 str(Config.app_path / "resources/images/Home/BannerTheme.jpg")
             )

@@ -28,7 +28,6 @@ v4.2
 from loguru import logger
 from PySide6.QtWidgets import QWidget
 from PySide6.QtCore import QTimer
-import json
 from datetime import datetime
 import pyautogui
 
@@ -48,26 +47,31 @@ class _MainTimer(QWidget):
         self.Timer.timeout.connect(self.timed_start)
         self.Timer.timeout.connect(self.set_silence)
         self.Timer.start(1000)
+        self.LongTimer = QTimer()
+        self.LongTimer.timeout.connect(self.long_timed_task)
+        self.LongTimer.start(3600000)
+
+    def long_timed_task(self):
+        """长时间定期检定任务"""
+
+        Config.get_gameid("ALL")
 
     def timed_start(self):
         """定时启动代理任务"""
 
-        # 获取定时列表
-        queue_list = self.search_queue()
+        for name, info in Config.queue_dict.items():
 
-        for i in queue_list:
-
-            name, info = i
-
-            if not info["QueueSet"]["Enabled"]:
+            if not info["Config"].get(info["Config"].queueSet_Enabled):
                 continue
 
             history = Config.get_history(name)
 
+            data = info["Config"].toDict()
+
             time_set = [
-                info["Time"][f"TimeSet_{_}"]
+                data["Time"][f"TimeSet_{_}"]
                 for _ in range(10)
-                if info["Time"][f"TimeEnabled_{_}"]
+                if data["Time"][f"TimeEnabled_{_}"]
             ]
             # 按时间调起代理任务
             curtime = datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -78,15 +82,15 @@ class _MainTimer(QWidget):
             ):
 
                 logger.info(f"定时任务：{name}")
-                TaskManager.add_task("自动代理_新调度台", name, info)
+                TaskManager.add_task("自动代理_新调度台", name, data)
 
     def set_silence(self):
         """设置静默模式"""
 
         if (
             not Config.if_ignore_silence
-            and Config.global_config.get(Config.global_config.function_IfSilence)
-            and Config.global_config.get(Config.global_config.function_BossKey) != ""
+            and Config.get(Config.function_IfSilence)
+            and Config.get(Config.function_BossKey) != ""
         ):
 
             windows = System.get_window_info()
@@ -99,28 +103,13 @@ class _MainTimer(QWidget):
                     pyautogui.hotkey(
                         *[
                             _.strip().lower()
-                            for _ in Config.global_config.get(
-                                Config.global_config.function_BossKey
-                            ).split("+")
+                            for _ in Config.get(Config.function_BossKey).split("+")
                         ]
                     )
                 except pyautogui.FailSafeException as e:
                     if not self.if_FailSafeException:
                         logger.warning(f"FailSafeException: {e}")
                         self.if_FailSafeException = True
-
-    def search_queue(self) -> list:
-        """搜索所有调度队列实例"""
-
-        queue_list = []
-
-        if (Config.app_path / "config/QueueConfig").exists():
-            for json_file in (Config.app_path / "config/QueueConfig").glob("*.json"):
-                with json_file.open("r", encoding="utf-8") as f:
-                    info = json.load(f)
-                queue_list.append([json_file.stem, info])
-
-        return queue_list
 
 
 MainTimer = _MainTimer()

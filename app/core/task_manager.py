@@ -28,8 +28,6 @@ v4.2
 from loguru import logger
 from PySide6.QtCore import QThread, QObject, Signal
 from qfluentwidgets import MessageBox
-import json
-from pathlib import Path
 from datetime import datetime
 from typing import Dict, Union
 
@@ -45,7 +43,7 @@ class Task(QThread):
     push_info_bar = Signal(str, str, str, int)
     question = Signal(str, str)
     question_response = Signal(bool)
-    update_user_info = Signal(Path, list, list, list, list, list, list)
+    update_user_info = Signal(str, dict)
     create_task_list = Signal(list)
     create_user_list = Signal(list)
     update_task_list = Signal(list)
@@ -76,13 +74,8 @@ class Task(QThread):
 
             self.task = MaaManager(
                 self.mode,
-                Config.app_path / f"config/MaaConfig/{self.name}",
-                (
-                    None
-                    if "全局" in self.mode
-                    else Config.app_path
-                    / f"config/MaaConfig/{self.name}/beta/{self.info["SetMaaInfo"]["UserId"]}/{self.info["SetMaaInfo"]["SetType"]}"
-                ),
+                Config.member_dict[self.name],
+                (None if "全局" in self.mode else self.info["SetMaaInfo"]["Path"]),
             )
             self.task.push_info_bar.connect(self.push_info_bar.emit)
             self.task.accomplish.connect(lambda: self.accomplish.emit([]))
@@ -91,42 +84,52 @@ class Task(QThread):
 
         else:
 
-            self.member_dict = self.search_member()
-            self.task_dict = [
-                [value, "等待"]
-                for _, value in self.info["Queue"].items()
+            self.task_list = [
+                [
+                    (
+                        value
+                        if Config.member_dict[value]["Config"].get(
+                            Config.member_dict[value]["Config"].MaaSet_Name
+                        )
+                        == ""
+                        else f"{value} - {Config.member_dict[value]["Config"].get(Config.member_dict[value]["Config"].MaaSet_Name)}"
+                    ),
+                    "等待",
+                    value,
+                ]
+                for _, value in sorted(
+                    self.info["Queue"].items(), key=lambda x: int(x[0][7:])
+                )
                 if value != "禁用"
             ]
 
-            self.create_task_list.emit(self.task_dict)
+            self.create_task_list.emit(self.task_list)
 
-            for i in range(len(self.task_dict)):
+            for task in self.task_list:
 
                 if self.isInterruptionRequested():
                     break
 
-                self.task_dict[i][1] = "运行"
-                self.update_task_list.emit(self.task_dict)
+                task[1] = "运行"
+                self.update_task_list.emit(self.task_list)
 
-                if self.task_dict[i][0] in Config.running_list:
+                if task[2] in Config.running_list:
 
-                    self.task_dict[i][1] = "跳过"
-                    self.update_task_list.emit(self.task_dict)
-                    logger.info(f"跳过任务：{self.task_dict[i][0]}")
-                    self.push_info_bar.emit(
-                        "info", "跳过任务", self.task_dict[i][0], 3000
-                    )
+                    task[1] = "跳过"
+                    self.update_task_list.emit(self.task_list)
+                    logger.info(f"跳过任务：{task[0]}")
+                    self.push_info_bar.emit("info", "跳过任务", task[0], 3000)
                     continue
 
-                Config.running_list.append(self.task_dict[i][0])
-                logger.info(f"任务开始：{self.task_dict[i][0]}")
-                self.push_info_bar.emit("info", "任务开始", self.task_dict[i][0], 3000)
+                Config.running_list.append(task[2])
+                logger.info(f"任务开始：{task[0]}")
+                self.push_info_bar.emit("info", "任务开始", task[0], 3000)
 
-                if self.member_dict[self.task_dict[i][0]][0] == "Maa":
+                if Config.member_dict[task[2]]["Type"] == "Maa":
 
                     self.task = MaaManager(
                         self.mode[0:4],
-                        self.member_dict[self.task_dict[i][0]][1],
+                        Config.member_dict[task[2]],
                     )
 
                     self.task.question.connect(self.question.emit)
@@ -136,43 +139,20 @@ class Task(QThread):
                     self.task.create_user_list.connect(self.create_user_list.emit)
                     self.task.update_user_list.connect(self.update_user_list.emit)
                     self.task.update_log_text.connect(self.update_log_text.emit)
-                    self.task.update_user_info.connect(
-                        lambda modes, uids, days, lasts, notes, numbs: self.update_user_info.emit(
-                            self.member_dict[self.task_dict[i][0]][1],
-                            modes,
-                            uids,
-                            days,
-                            lasts,
-                            notes,
-                            numbs,
-                        )
-                    )
+                    self.task.update_user_info.connect(self.update_user_info.emit)
                     self.task.accomplish.connect(
-                        lambda log: self.task_accomplish(self.task_dict[i][0], log)
+                        lambda log: self.task_accomplish(task[2], log)
                     )
 
                     self.task.run()
 
-                Config.running_list.remove(self.task_dict[i][0])
+                Config.running_list.remove(task[2])
 
-                self.task_dict[i][1] = "完成"
-                logger.info(f"任务完成：{self.task_dict[i][0]}")
-                self.push_info_bar.emit("info", "任务完成", self.task_dict[i][0], 3000)
+                task[1] = "完成"
+                logger.info(f"任务完成：{task[0]}")
+                self.push_info_bar.emit("info", "任务完成", task[0], 3000)
 
             self.accomplish.emit(self.logs)
-
-    def search_member(self) -> dict:
-        """搜索所有脚本实例及其路径"""
-
-        member_dict = {}
-
-        if (Config.app_path / "config/MaaConfig").exists():
-            for subdir in (Config.app_path / "config/MaaConfig").iterdir():
-                if subdir.is_dir():
-
-                    member_dict[subdir.name] = ["Maa", subdir]
-
-        return member_dict
 
     def task_accomplish(self, name: str, log: dict):
         """保存保存任务结果"""
@@ -279,12 +259,13 @@ class _TaskManager(QObject):
         Config.running_list.remove(name)
 
         if "调度队列" in name and "人工排查" not in mode:
-            with (Config.app_path / f"config/QueueConfig/{name}.json").open(
-                "r", encoding="utf-8"
-            ) as f:
-                info = json.load(f)
 
-            if info["QueueSet"]["AfterAccomplish"] != "None":
+            if (
+                Config.queue_dict[name]["Config"].get(
+                    Config.queue_dict[name]["Config"].queueSet_AfterAccomplish
+                )
+                != "None"
+            ):
 
                 from app.ui import ProgressRingMessageBox
 
@@ -297,10 +278,14 @@ class _TaskManager(QObject):
 
                 choice = ProgressRingMessageBox(
                     self.main_window,
-                    f"{mode_book[info['QueueSet']['AfterAccomplish']]}倒计时",
+                    f"{mode_book[Config.queue_dict[name]["Config"].get(Config.queue_dict[name]["Config"].queueSet_AfterAccomplish)]}倒计时",
                 )
                 if choice.exec():
-                    System.set_power(info["QueueSet"]["AfterAccomplish"])
+                    System.set_power(
+                        Config.queue_dict[name]["Config"].get(
+                            Config.queue_dict[name]["Config"].queueSet_AfterAccomplish
+                        )
+                    )
 
     def push_dialog(self, name: str, title: str, content: str):
         """推送对话框"""

@@ -26,7 +26,6 @@ v4.2
 """
 
 from loguru import logger
-import sqlite3
 import hashlib
 import random
 import secrets
@@ -85,8 +84,11 @@ class CryptoHandler:
         private_key_local = AES_key.encrypt(pad(private_key.exportKey(), 32))
         (Config.app_path / "data/key/private_key.bin").write_bytes(private_key_local)
 
-    def AUTO_encryptor(self, note: str) -> bytes:
+    def AUTO_encryptor(self, note: str) -> str:
         """使用AUTO_MAA的算法加密数据"""
+
+        if note == "":
+            return ""
 
         # 读取RSA公钥
         public_key_local = RSA.import_key(
@@ -95,10 +97,13 @@ class CryptoHandler:
         # 使用RSA公钥对数据进行加密
         cipher = PKCS1_OAEP.new(public_key_local)
         encrypted = cipher.encrypt(note.encode("utf-8"))
-        return encrypted
+        return base64.b64encode(encrypted).decode("utf-8")
 
-    def AUTO_decryptor(self, note: bytes, PASSWORD: str) -> str:
+    def AUTO_decryptor(self, note: str, PASSWORD: str) -> str:
         """使用AUTO_MAA的算法解密数据"""
+
+        if note == "":
+            return ""
 
         # 读入RSA私钥密文、盐与校验哈希值
         private_key_local = (
@@ -133,62 +138,39 @@ class CryptoHandler:
             private_key = RSA.import_key(private_key_pem)
             # 使用RSA私钥解密数据
             decrypter = PKCS1_OAEP.new(private_key)
-            note = decrypter.decrypt(note)
-            return note.decode("utf-8")
+            note = decrypter.decrypt(base64.b64decode(note)).decode("utf-8")
+            return note
 
     def change_PASSWORD(self, PASSWORD_old: str, PASSWORD_new: str) -> None:
         """修改管理密钥"""
 
-        member_list = self.search_member()
-
-        for user_data in member_list:
-
-            # 读取用户数据
-            db = sqlite3.connect(user_data["Path"])
-            cur = db.cursor()
-            cur.execute("SELECT * FROM adminx WHERE True")
-            data = cur.fetchall()
+        for member in Config.member_dict.values():
 
             # 使用旧管理密钥解密
-            user_data["Password"] = []
-            for i in range(len(data)):
-                user_data["Password"].append(
-                    self.AUTO_decryptor(data[i][12], PASSWORD_old)
+            for user in member["UserData"].values():
+                user["Password"] = self.AUTO_decryptor(
+                    user["Config"].get(user["Config"].Info_Password), PASSWORD_old
                 )
-            cur.close()
-            db.close()
 
         self.get_PASSWORD(PASSWORD_new)
 
-        for user_data in member_list:
-
-            # 读取用户数据
-            db = sqlite3.connect(user_data["Path"])
-            cur = db.cursor()
-            cur.execute("SELECT * FROM adminx WHERE True")
-            data = cur.fetchall()
+        for member in Config.member_dict.values():
 
             # 使用新管理密钥重新加密
-            for i in range(len(data)):
-                cur.execute(
-                    "UPDATE adminx SET password = ? WHERE mode = ? AND uid = ?",
-                    (
-                        self.AUTO_encryptor(user_data["Password"][i]),
-                        data[i][15],
-                        data[i][16],
-                    ),
+            for user in member["UserData"].values():
+                user["Config"].set(
+                    user["Config"].Info_Password, self.AUTO_encryptor(user["Password"])
                 )
-                db.commit()
-                user_data["Password"][i] = None
-            del user_data["Password"]
-
-            cur.close()
-            db.close()
+                user["Password"] = None
+                del user["Password"]
 
     def win_encryptor(
         self, note: str, description: str = None, entropy: bytes = None
     ) -> str:
         """使用Windows DPAPI加密数据"""
+
+        if note == "":
+            return ""
 
         encrypted = win32crypt.CryptProtectData(
             note.encode("utf-8"), description, entropy, None, None, 0
@@ -223,7 +205,7 @@ class CryptoHandler:
         """验证管理密钥"""
 
         return bool(
-            self.AUTO_decryptor(self.AUTO_encryptor(""), PASSWORD) != "管理密钥错误"
+            self.AUTO_decryptor(self.AUTO_encryptor("-"), PASSWORD) != "管理密钥错误"
         )
 
 

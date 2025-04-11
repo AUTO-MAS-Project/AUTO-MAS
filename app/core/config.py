@@ -26,12 +26,16 @@ v4.2
 """
 
 from loguru import logger
+from PySide6.QtCore import Signal
 import sqlite3
 import json
 import sys
 import shutil
 import re
-from datetime import datetime
+import requests
+import time
+import base64
+from datetime import datetime, timedelta
 from collections import defaultdict
 from pathlib import Path
 from qfluentwidgets import (
@@ -39,18 +43,568 @@ from qfluentwidgets import (
     ConfigItem,
     OptionsConfigItem,
     RangeConfigItem,
+    ConfigValidator,
     FolderValidator,
     BoolValidator,
     RangeValidator,
     OptionsValidator,
-    qconfig,
+    exceptionHandler,
 )
-from typing import Union, Dict, List, Tuple
+from urllib.parse import urlparse
+from typing import Union, Dict, List
 
 
-class AppConfig:
+class UrlListValidator(ConfigValidator):
+    """Url list validator"""
+
+    def validate(self, value):
+
+        try:
+            result = urlparse(value)
+            return all([result.scheme, result.netloc])
+        except ValueError:
+            return False
+
+    def correct(self, value: List[str]):
+
+        urls = []
+
+        for url in [_ for _ in value if _ != ""]:
+            if url[-1] != "/":
+                urls.append(f"{url}/")
+            else:
+                urls.append(url)
+
+        return list(set([_ for _ in urls if self.validate(_)]))
+
+
+class GlobalConfig(QConfig):
+    """全局配置"""
 
     def __init__(self) -> None:
+        super().__init__()
+
+        self.function_HomeImageMode = OptionsConfigItem(
+            "Function",
+            "HomeImageMode",
+            "默认",
+            OptionsValidator(["默认", "自定义", "主题图像"]),
+        )
+        self.function_HistoryRetentionTime = OptionsConfigItem(
+            "Function", "HistoryRetentionTime", 0, OptionsValidator([7, 15, 30, 60, 0])
+        )
+        self.function_IfAllowSleep = ConfigItem(
+            "Function", "IfAllowSleep", False, BoolValidator()
+        )
+        self.function_IfSilence = ConfigItem(
+            "Function", "IfSilence", False, BoolValidator()
+        )
+        self.function_BossKey = ConfigItem("Function", "BossKey", "")
+        self.function_IfAgreeBilibili = ConfigItem(
+            "Function", "IfAgreeBilibili", False, BoolValidator()
+        )
+        self.function_IfSkipMumuSplashAds = ConfigItem(
+            "Function", "IfSkipMumuSplashAds", False, BoolValidator()
+        )
+
+        self.start_IfSelfStart = ConfigItem(
+            "Start", "IfSelfStart", False, BoolValidator()
+        )
+        self.start_IfRunDirectly = ConfigItem(
+            "Start", "IfRunDirectly", False, BoolValidator()
+        )
+        self.start_IfMinimizeDirectly = ConfigItem(
+            "Start", "IfMinimizeDirectly", False, BoolValidator()
+        )
+
+        self.ui_IfShowTray = ConfigItem("UI", "IfShowTray", False, BoolValidator())
+        self.ui_IfToTray = ConfigItem("UI", "IfToTray", False, BoolValidator())
+        self.ui_size = ConfigItem("UI", "size", "1200x700")
+        self.ui_location = ConfigItem("UI", "location", "100x100")
+        self.ui_maximized = ConfigItem("UI", "maximized", False, BoolValidator())
+
+        self.notify_SendTaskResultTime = OptionsConfigItem(
+            "Notify",
+            "SendTaskResultTime",
+            "不推送",
+            OptionsValidator(["不推送", "任何时刻", "仅失败时"]),
+        )
+        self.notify_IfSendStatistic = ConfigItem(
+            "Notify", "IfSendStatistic", False, BoolValidator()
+        )
+        self.notify_IfSendSixStar = ConfigItem(
+            "Notify", "IfSendSixStar", False, BoolValidator()
+        )
+        self.notify_IfPushPlyer = ConfigItem(
+            "Notify", "IfPushPlyer", False, BoolValidator()
+        )
+        self.notify_IfSendMail = ConfigItem(
+            "Notify", "IfSendMail", False, BoolValidator()
+        )
+        self.notify_SMTPServerAddress = ConfigItem("Notify", "SMTPServerAddress", "")
+        self.notify_AuthorizationCode = ConfigItem("Notify", "AuthorizationCode", "")
+        self.notify_FromAddress = ConfigItem("Notify", "FromAddress", "")
+        self.notify_ToAddress = ConfigItem("Notify", "ToAddress", "")
+        self.notify_IfServerChan = ConfigItem(
+            "Notify", "IfServerChan", False, BoolValidator()
+        )
+        self.notify_ServerChanKey = ConfigItem("Notify", "ServerChanKey", "")
+        self.notify_ServerChanChannel = ConfigItem("Notify", "ServerChanChannel", "")
+        self.notify_ServerChanTag = ConfigItem("Notify", "ServerChanTag", "")
+        self.notify_IfCompanyWebHookBot = ConfigItem(
+            "Notify", "IfCompanyWebHookBot", False, BoolValidator()
+        )
+        self.notify_CompanyWebHookBotUrl = ConfigItem(
+            "Notify", "CompanyWebHookBotUrl", ""
+        )
+        self.notify_IfPushDeer = ConfigItem(
+            "Notify", "IfPushDeer", False, BoolValidator()
+        )
+        self.notify_IfPushDeerKey = ConfigItem("Notify", "PushDeerKey", "")
+
+        self.update_IfAutoUpdate = ConfigItem(
+            "Update", "IfAutoUpdate", False, BoolValidator()
+        )
+        self.update_UpdateType = OptionsConfigItem(
+            "Update", "UpdateType", "stable", OptionsValidator(["stable", "beta"])
+        )
+        self.update_ThreadNumb = RangeConfigItem(
+            "Update", "ThreadNumb", 8, RangeValidator(1, 32)
+        )
+        self.update_ProxyUrlList = ConfigItem(
+            "Update", "ProxyUrlList", [], UrlListValidator()
+        )
+        self.update_MirrorChyanCDK = ConfigItem("Update", "MirrorChyanCDK", "")
+
+    def toDict(self, serialize=True):
+        """convert config items to `dict`"""
+        items = {}
+        for name in dir(self._cfg):
+            item = getattr(self._cfg, name)
+            if not isinstance(item, ConfigItem):
+                continue
+
+            value = item.serialize() if serialize else item.value
+            if not items.get(item.group):
+                if not item.name:
+                    items[item.group] = value
+                else:
+                    items[item.group] = {}
+
+            if item.name:
+                items[item.group][item.name] = value
+
+        return items
+
+    @exceptionHandler()
+    def load(self, file=None, config=None):
+        """load config
+
+        Parameters
+        ----------
+        file: str or Path
+            the path of json config file
+
+        config: Config
+            config object to be initialized
+        """
+        if isinstance(config, QConfig):
+            self._cfg = config
+            self._cfg.themeChanged.connect(self.themeChanged)
+
+        if isinstance(file, (str, Path)):
+            self._cfg.file = Path(file)
+
+        try:
+            with open(self._cfg.file, encoding="utf-8") as f:
+                cfg = json.load(f)
+        except:
+            cfg = {}
+
+        # map config items'key to item
+        items = {}
+        for name in dir(self._cfg):
+            item = getattr(self._cfg, name)
+            if isinstance(item, ConfigItem):
+                items[item.key] = item
+
+        # update the value of config item
+        for k, v in cfg.items():
+            if not isinstance(v, dict) and items.get(k) is not None:
+                items[k].deserializeFrom(v)
+            elif isinstance(v, dict):
+                for key, value in v.items():
+                    key = k + "." + key
+                    if items.get(key) is not None:
+                        items[key].deserializeFrom(value)
+
+        self.theme = self.get(self._cfg.themeMode)
+
+
+class QueueConfig(QConfig):
+    """队列配置"""
+
+    def __init__(self) -> None:
+        super().__init__()
+
+        self.queueSet_Name = ConfigItem("QueueSet", "Name", "")
+        self.queueSet_Enabled = ConfigItem(
+            "QueueSet", "Enabled", False, BoolValidator()
+        )
+        self.queueSet_AfterAccomplish = OptionsConfigItem(
+            "QueueSet",
+            "AfterAccomplish",
+            "None",
+            OptionsValidator(["None", "KillSelf", "Sleep", "Hibernate", "Shutdown"]),
+        )
+
+        self.time_TimeEnabled_0 = ConfigItem(
+            "Time", "TimeEnabled_0", False, BoolValidator()
+        )
+        self.time_TimeSet_0 = ConfigItem("Time", "TimeSet_0", "00:00")
+
+        self.time_TimeEnabled_1 = ConfigItem(
+            "Time", "TimeEnabled_1", False, BoolValidator()
+        )
+        self.time_TimeSet_1 = ConfigItem("Time", "TimeSet_1", "00:00")
+
+        self.time_TimeEnabled_2 = ConfigItem(
+            "Time", "TimeEnabled_2", False, BoolValidator()
+        )
+        self.time_TimeSet_2 = ConfigItem("Time", "TimeSet_2", "00:00")
+
+        self.time_TimeEnabled_3 = ConfigItem(
+            "Time", "TimeEnabled_3", False, BoolValidator()
+        )
+        self.time_TimeSet_3 = ConfigItem("Time", "TimeSet_3", "00:00")
+
+        self.time_TimeEnabled_4 = ConfigItem(
+            "Time", "TimeEnabled_4", False, BoolValidator()
+        )
+        self.time_TimeSet_4 = ConfigItem("Time", "TimeSet_4", "00:00")
+
+        self.time_TimeEnabled_5 = ConfigItem(
+            "Time", "TimeEnabled_5", False, BoolValidator()
+        )
+        self.time_TimeSet_5 = ConfigItem("Time", "TimeSet_5", "00:00")
+
+        self.time_TimeEnabled_6 = ConfigItem(
+            "Time", "TimeEnabled_6", False, BoolValidator()
+        )
+        self.time_TimeSet_6 = ConfigItem("Time", "TimeSet_6", "00:00")
+
+        self.time_TimeEnabled_7 = ConfigItem(
+            "Time", "TimeEnabled_7", False, BoolValidator()
+        )
+        self.time_TimeSet_7 = ConfigItem("Time", "TimeSet_7", "00:00")
+
+        self.time_TimeEnabled_8 = ConfigItem(
+            "Time", "TimeEnabled_8", False, BoolValidator()
+        )
+        self.time_TimeSet_8 = ConfigItem("Time", "TimeSet_8", "00:00")
+
+        self.time_TimeEnabled_9 = ConfigItem(
+            "Time", "TimeEnabled_9", False, BoolValidator()
+        )
+        self.time_TimeSet_9 = ConfigItem("Time", "TimeSet_9", "00:00")
+
+        self.queue_Member_1 = OptionsConfigItem("Queue", "Member_1", "禁用")
+        self.queue_Member_2 = OptionsConfigItem("Queue", "Member_2", "禁用")
+        self.queue_Member_3 = OptionsConfigItem("Queue", "Member_3", "禁用")
+        self.queue_Member_4 = OptionsConfigItem("Queue", "Member_4", "禁用")
+        self.queue_Member_5 = OptionsConfigItem("Queue", "Member_5", "禁用")
+        self.queue_Member_6 = OptionsConfigItem("Queue", "Member_6", "禁用")
+        self.queue_Member_7 = OptionsConfigItem("Queue", "Member_7", "禁用")
+        self.queue_Member_8 = OptionsConfigItem("Queue", "Member_8", "禁用")
+        self.queue_Member_9 = OptionsConfigItem("Queue", "Member_9", "禁用")
+        self.queue_Member_10 = OptionsConfigItem("Queue", "Member_10", "禁用")
+
+    def toDict(self, serialize=True):
+        """convert config items to `dict`"""
+        items = {}
+        for name in dir(self._cfg):
+            item = getattr(self._cfg, name)
+            if not isinstance(item, ConfigItem):
+                continue
+
+            value = item.serialize() if serialize else item.value
+            if not items.get(item.group):
+                if not item.name:
+                    items[item.group] = value
+                else:
+                    items[item.group] = {}
+
+            if item.name:
+                items[item.group][item.name] = value
+
+        return items
+
+    @exceptionHandler()
+    def load(self, file=None, config=None):
+        """load config
+
+        Parameters
+        ----------
+        file: str or Path
+            the path of json config file
+
+        config: Config
+            config object to be initialized
+        """
+        if isinstance(config, QConfig):
+            self._cfg = config
+            self._cfg.themeChanged.connect(self.themeChanged)
+
+        if isinstance(file, (str, Path)):
+            self._cfg.file = Path(file)
+
+        try:
+            with open(self._cfg.file, encoding="utf-8") as f:
+                cfg = json.load(f)
+        except:
+            cfg = {}
+
+        # map config items'key to item
+        items = {}
+        for name in dir(self._cfg):
+            item = getattr(self._cfg, name)
+            if isinstance(item, ConfigItem):
+                items[item.key] = item
+
+        # update the value of config item
+        for k, v in cfg.items():
+            if not isinstance(v, dict) and items.get(k) is not None:
+                items[k].deserializeFrom(v)
+            elif isinstance(v, dict):
+                for key, value in v.items():
+                    key = k + "." + key
+                    if items.get(key) is not None:
+                        items[key].deserializeFrom(value)
+
+        self.theme = self.get(self._cfg.themeMode)
+
+
+class MaaConfig(QConfig):
+    """MAA配置"""
+
+    def __init__(self) -> None:
+        super().__init__()
+
+        self.MaaSet_Name = ConfigItem("MaaSet", "Name", "")
+        self.MaaSet_Path = ConfigItem("MaaSet", "Path", ".", FolderValidator())
+
+        self.RunSet_TaskTransitionMethod = OptionsConfigItem(
+            "RunSet",
+            "TaskTransitionMethod",
+            "ExitEmulator",
+            OptionsValidator(["NoAction", "ExitGame", "ExitEmulator"]),
+        )
+        self.RunSet_EnhanceTask = OptionsConfigItem(
+            "RunSet",
+            "EnhanceTask",
+            "None",
+            OptionsValidator(["None", "KillADB", "KillEmulator", "KillADB&Emulator"]),
+        )
+        self.RunSet_ProxyTimesLimit = RangeConfigItem(
+            "RunSet", "ProxyTimesLimit", 0, RangeValidator(0, 1024)
+        )
+        self.RunSet_AnnihilationTimeLimit = RangeConfigItem(
+            "RunSet", "AnnihilationTimeLimit", 40, RangeValidator(1, 1024)
+        )
+        self.RunSet_RoutineTimeLimit = RangeConfigItem(
+            "RunSet", "RoutineTimeLimit", 10, RangeValidator(1, 1024)
+        )
+        self.RunSet_RunTimesLimit = RangeConfigItem(
+            "RunSet", "RunTimesLimit", 3, RangeValidator(1, 1024)
+        )
+        self.RunSet_AnnihilationWeeklyLimit = ConfigItem(
+            "RunSet", "AnnihilationWeeklyLimit", False, BoolValidator()
+        )
+
+    def toDict(self, serialize=True):
+        """convert config items to `dict`"""
+        items = {}
+        for name in dir(self._cfg):
+            item = getattr(self._cfg, name)
+            if not isinstance(item, ConfigItem):
+                continue
+
+            value = item.serialize() if serialize else item.value
+            if not items.get(item.group):
+                if not item.name:
+                    items[item.group] = value
+                else:
+                    items[item.group] = {}
+
+            if item.name:
+                items[item.group][item.name] = value
+
+        return items
+
+    @exceptionHandler()
+    def load(self, file=None, config=None):
+        """load config
+
+        Parameters
+        ----------
+        file: str or Path
+            the path of json config file
+
+        config: Config
+            config object to be initialized
+        """
+        if isinstance(config, QConfig):
+            self._cfg = config
+            self._cfg.themeChanged.connect(self.themeChanged)
+
+        if isinstance(file, (str, Path)):
+            self._cfg.file = Path(file)
+
+        try:
+            with open(self._cfg.file, encoding="utf-8") as f:
+                cfg = json.load(f)
+        except:
+            cfg = {}
+
+        # map config items'key to item
+        items = {}
+        for name in dir(self._cfg):
+            item = getattr(self._cfg, name)
+            if isinstance(item, ConfigItem):
+                items[item.key] = item
+
+        # update the value of config item
+        for k, v in cfg.items():
+            if not isinstance(v, dict) and items.get(k) is not None:
+                items[k].deserializeFrom(v)
+            elif isinstance(v, dict):
+                for key, value in v.items():
+                    key = k + "." + key
+                    if items.get(key) is not None:
+                        items[key].deserializeFrom(value)
+
+        self.theme = self.get(self._cfg.themeMode)
+
+
+class MaaUserConfig(QConfig):
+    """MAA用户配置"""
+
+    def __init__(self) -> None:
+        super().__init__()
+
+        self.Info_Name = ConfigItem("Info", "Name", "新用户")
+        self.Info_Id = ConfigItem("Info", "Id", "")
+        self.Info_Mode = OptionsConfigItem(
+            "Info", "Mode", "简洁", OptionsValidator(["简洁", "详细"])
+        )
+        self.Info_GameIdMode = OptionsConfigItem(
+            "Info", "GameIdMode", "固定", OptionsValidator(["固定"])
+        )
+        self.Info_Server = OptionsConfigItem(
+            "Info", "Server", "Official", OptionsValidator(["Official", "Bilibili"])
+        )
+        self.Info_Status = ConfigItem("Info", "Status", True, BoolValidator())
+        self.Info_RemainedDay = ConfigItem(
+            "Info", "RemainedDay", -1, RangeValidator(-1, 1024)
+        )
+        self.Info_Annihilation = ConfigItem(
+            "Info", "Annihilation", False, BoolValidator()
+        )
+        self.Info_Routine = ConfigItem("Info", "Routine", False, BoolValidator())
+        self.Info_Infrastructure = ConfigItem(
+            "Info", "Infrastructure", False, BoolValidator()
+        )
+        self.Info_Password = ConfigItem("Info", "Password", "")
+        self.Info_Notes = ConfigItem("Info", "Notes", "无")
+        self.Info_MedicineNumb = ConfigItem(
+            "Info", "MedicineNumb", 0, RangeValidator(0, 1024)
+        )
+        self.Info_GameId = ConfigItem("Info", "GameId", "-")
+        self.Info_GameId_1 = ConfigItem("Info", "GameId_1", "-")
+        self.Info_GameId_2 = ConfigItem("Info", "GameId_2", "-")
+
+        self.Data_LastProxyDate = ConfigItem("Data", "LastProxyDate", "2000-01-01")
+        self.Data_LastAnnihilationDate = ConfigItem(
+            "Data", "LastAnnihilationDate", "2000-01-01"
+        )
+        self.Data_ProxyTimes = ConfigItem(
+            "Data", "ProxyTimes", 0, RangeValidator(0, 1024)
+        )
+        self.Data_IfPassCheck = ConfigItem("Data", "IfPassCheck", True, BoolValidator())
+
+    def toDict(self, serialize=True):
+        """convert config items to `dict`"""
+        items = {}
+        for name in dir(self._cfg):
+            item = getattr(self._cfg, name)
+            if not isinstance(item, ConfigItem):
+                continue
+
+            value = item.serialize() if serialize else item.value
+            if not items.get(item.group):
+                if not item.name:
+                    items[item.group] = value
+                else:
+                    items[item.group] = {}
+
+            if item.name:
+                items[item.group][item.name] = value
+
+        return items
+
+    @exceptionHandler()
+    def load(self, file=None, config=None):
+        """load config
+
+        Parameters
+        ----------
+        file: str or Path
+            the path of json config file
+
+        config: Config
+            config object to be initialized
+        """
+        if isinstance(config, QConfig):
+            self._cfg = config
+            self._cfg.themeChanged.connect(self.themeChanged)
+
+        if isinstance(file, (str, Path)):
+            self._cfg.file = Path(file)
+
+        try:
+            with open(self._cfg.file, encoding="utf-8") as f:
+                cfg = json.load(f)
+        except:
+            cfg = {}
+
+        # map config items'key to item
+        items = {}
+        for name in dir(self._cfg):
+            item = getattr(self._cfg, name)
+            if isinstance(item, ConfigItem):
+                items[item.key] = item
+
+        # update the value of config item
+        for k, v in cfg.items():
+            if not isinstance(v, dict) and items.get(k) is not None:
+                items[k].deserializeFrom(v)
+            elif isinstance(v, dict):
+                for key, value in v.items():
+                    key = k + "." + key
+                    if items.get(key) is not None:
+                        items[key].deserializeFrom(value)
+
+        self.theme = self.get(self._cfg.themeMode)
+
+
+class AppConfig(GlobalConfig):
+
+    VERSION = "4.2.5.9"
+
+    gameid_refreshed = Signal()
+
+    def __init__(self) -> None:
+        super().__init__()
 
         self.app_path = Path(sys.argv[0]).resolve().parent  # 获取软件根目录
         self.app_path_sys = str(Path(sys.argv[0]).resolve())  # 获取软件自身的路径
@@ -66,13 +620,14 @@ class AppConfig:
         self.PASSWORD = ""
         self.running_list = []
         self.silence_list = []
+        self.gameid_dict = {"value": [], "text": []}
+        self.if_ignore_silence = False
         self.if_database_opened = False
 
-        # 检查文件完整性
         self.initialize()
 
     def initialize(self) -> None:
-        """初始化程序的配置文件"""
+        """初始化程序配置管理模块"""
 
         # 检查目录
         (self.app_path / "config").mkdir(parents=True, exist_ok=True)
@@ -89,17 +644,13 @@ class AppConfig:
             with self.version_path.open(mode="w", encoding="utf-8") as f:
                 json.dump(version, f, ensure_ascii=False, indent=4)
 
-        # 生成预设gameid替换方案文件
-        if not self.gameid_path.exists():
-            self.gameid_path.write_text(
-                "龙门币：CE-6\n技能：CA-5\n红票：AP-5\n经验：LS-6\n剿灭模式：Annihilation",
-                encoding="utf-8",
-            )
+        self.load(self.config_path, self)
+        self.save()
 
         self.init_logger()
-        self.init_config()
         self.check_data()
-        logger.info("程序配置管理模块初始化完成")
+        self.get_gameid("ALL")
+        logger.info("程序初始化完成")
 
     def init_logger(self) -> None:
         """初始化日志记录器"""
@@ -125,38 +676,125 @@ class AppConfig:
 
         logger.info("日志记录器初始化完成")
 
-    def init_config(self) -> None:
-        """初始化配置类"""
+    def get_gameid(self, mode: str) -> list:
 
-        self.global_config = GlobalConfig()
-        self.queue_config = QueueConfig()
-        self.maa_config = MaaConfig()
+        # 从MAA服务器获取活动关卡信息
+        for _ in range(3):
+            try:
+                response = requests.get(
+                    "https://ota.maa.plus/MaaAssistantArknights/api/gui/StageActivity.json"
+                )
+                gameid_infos: List[
+                    Dict[str, Union[str, Dict[str, Union[str, int]]]]
+                ] = response.json()["Official"]["sideStoryStage"]
+                break
+            except Exception as e:
+                err = e
+                time.sleep(0.1)
+        else:
+            logger.warning(f"无法从MAA服务器获取活动关卡信息:{err}")
+            gameid_infos = []
 
-        qconfig.load(self.config_path, self.global_config)
+        gameid_dict = {"value": [], "text": []}
 
-        config_list = self.search_config()
-        for config in config_list:
-            if config[0] == "Maa":
-                qconfig.load(config[1], self.maa_config)
-                self.maa_config.save()
-            elif config[0] == "Queue":
-                qconfig.load(config[1], self.queue_config)
-                self.queue_config.save()
+        for gameid_info in gameid_infos:
 
-        logger.info("配置类初始化完成")
+            if (
+                datetime.strptime(
+                    gameid_info["Activity"]["UtcStartTime"], "%Y/%m/%d %H:%M:%S"
+                )
+                < datetime.now()
+                < datetime.strptime(
+                    gameid_info["Activity"]["UtcExpireTime"], "%Y/%m/%d %H:%M:%S"
+                )
+            ):
+                gameid_dict["value"].append(gameid_info["Value"])
+                gameid_dict["text"].append(gameid_info["Value"])
 
-    def init_database(self, mode: str) -> None:
-        """初始化用户数据库"""
+        if mode == "ALL":
+            self.gameid_dict["value"] = gameid_dict["value"] + [
+                "-",
+                "1-7",
+                "R8-11",
+                "12-17-HARD",
+                "CE-6",
+                "AP-5",
+                "CA-5",
+                "LS-6",
+                "SK-5",
+                "PR-A-1",
+                "PR-A-2",
+                "PR-B-1",
+                "PR-B-2",
+                "PR-C-1",
+                "PR-C-2",
+                "PR-D-1",
+                "PR-D-2",
+            ]
+            self.gameid_dict["text"] = gameid_dict["text"] + [
+                "当前/上次",
+                "1-7",
+                "R8-11",
+                "12-17-HARD",
+                "龙门币-6/5",
+                "红票-5",
+                "技能-5",
+                "经验-6/5",
+                "碳-5",
+                "奶/盾芯片",
+                "奶/盾芯片组",
+                "术/狙芯片",
+                "术/狙芯片组",
+                "先/辅芯片",
+                "先/辅芯片组",
+                "近/特芯片",
+                "近/特芯片组",
+            ]
 
-        if mode == "Maa":
-            self.cur.execute(
-                "CREATE TABLE adminx(admin text,id text,server text,day int,status text,last date,game text,game_1 text,game_2 text,routine text,annihilation text,infrastructure text,password byte,notes text,numb int,mode text,uid int)"
-            )
-            self.cur.execute("CREATE TABLE version(v text)")
-            self.cur.execute("INSERT INTO version VALUES(?)", ("v1.4",))
-            self.db.commit()
+            self.gameid_refreshed.emit()
 
-        logger.info("用户数据库初始化完成")
+        elif mode == "Week":
+
+            days = datetime.strptime(self.server_date(), "%Y-%m-%d").isoweekday()
+
+            gameid_list = [
+                {"value": "-", "text": "当前/上次", "days": [1, 2, 3, 4, 5, 6, 7]},
+                {"value": "1-7", "text": "1-7", "days": [1, 2, 3, 4, 5, 6, 7]},
+                {"value": "R8-11", "text": "R8-11", "days": [1, 2, 3, 4, 5, 6, 7]},
+                {
+                    "value": "12-17-HARD",
+                    "text": "12-17-HARD",
+                    "days": [1, 2, 3, 4, 5, 6, 7],
+                },
+                {"value": "CE-6", "text": "龙门币-6/5", "days": [2, 4, 6, 7]},
+                {"value": "AP-5", "text": "红票-5", "days": [1, 4, 6, 7]},
+                {"value": "CA-5", "text": "技能-5", "days": [2, 3, 5, 7]},
+                {"value": "LS-6", "text": "经验-6/5", "days": [1, 2, 3, 4, 5, 6, 7]},
+                {"value": "SK-5", "text": "碳-5", "days": [1, 3, 5, 6]},
+                {"value": "PR-A-1", "text": "奶/盾芯片", "days": [1, 4, 5, 7]},
+                {"value": "PR-A-2", "text": "奶/盾芯片组", "days": [1, 4, 5, 7]},
+                {"value": "PR-B-1", "text": "术/狙芯片", "days": [1, 2, 5, 6]},
+                {"value": "PR-B-2", "text": "术/狙芯片组", "days": [1, 2, 5, 6]},
+                {"value": "PR-C-1", "text": "先/辅芯片", "days": [3, 4, 6, 7]},
+                {"value": "PR-C-2", "text": "先/辅芯片组", "days": [3, 4, 6, 7]},
+                {"value": "PR-D-1", "text": "近/特芯片", "days": [2, 3, 6, 7]},
+                {"value": "PR-D-2", "text": "近/特芯片组", "days": [2, 3, 6, 7]},
+            ]
+
+            for gameid_info in gameid_list:
+                if days in gameid_info["days"]:
+                    gameid_dict["value"].append(gameid_info["value"])
+                    gameid_dict["text"].append(gameid_info["text"])
+
+            return gameid_dict
+
+    def server_date(self) -> str:
+        """获取当前的服务器日期"""
+
+        dt = datetime.now()
+        if dt.time() < datetime.min.time().replace(hour=4):
+            dt = dt - timedelta(days=1)
+        return dt.strftime("%Y-%m-%d")
 
     def check_data(self) -> None:
         """检查用户数据文件并处理数据文件版本更新"""
@@ -166,7 +804,7 @@ class AppConfig:
             db = sqlite3.connect(self.database_path)
             cur = db.cursor()
             cur.execute("CREATE TABLE version(v text)")
-            cur.execute("INSERT INTO version VALUES(?)", ("v1.4",))
+            cur.execute("INSERT INTO version VALUES(?)", ("v1.5",))
             db.commit()
             cur.close()
             db.close()
@@ -177,7 +815,7 @@ class AppConfig:
         cur.execute("SELECT * FROM version WHERE True")
         version = cur.fetchall()
 
-        if version[0][0] != "v1.4":
+        if version[0][0] != "v1.5":
             logger.info("数据文件版本更新开始")
             if_streaming = False
             # v1.0-->v1.1
@@ -392,79 +1030,276 @@ class AppConfig:
                 ) as f:
                     json.dump(queue_config, f, ensure_ascii=False, indent=4)
                 (self.app_path / "config/gui.json").unlink()
+            # v1.4-->v1.5
+            if version[0][0] == "v1.4" or if_streaming:
+                logger.info("数据文件版本更新：v1.4-->v1.5")
+                if_streaming = True
+
+                cur.execute("DELETE FROM version WHERE v = ?", ("v1.4",))
+                cur.execute("INSERT INTO version VALUES(?)", ("v1.5",))
+                db.commit()
+
+                member_dict: Dict[str, Dict[str, Union[str, Path]]] = {}
+                if (self.app_path / "config/MaaConfig").exists():
+                    for maa_dir in (self.app_path / "config/MaaConfig").iterdir():
+                        if maa_dir.is_dir():
+                            member_dict[maa_dir.name] = {
+                                "Type": "Maa",
+                                "Path": maa_dir,
+                            }
+
+                member_dict = dict(
+                    sorted(member_dict.items(), key=lambda x: int(x[0][3:]))
+                )
+
+                for name, config in member_dict.items():
+                    if config["Type"] == "Maa":
+
+                        _db = sqlite3.connect(config["Path"] / "user_data.db")
+                        _cur = _db.cursor()
+                        _cur.execute("SELECT * FROM adminx WHERE True")
+                        data = _cur.fetchall()
+                        data = [list(row) for row in data]
+                        data = sorted(data, key=lambda x: (-len(x[15]), x[16]))
+                        _cur.close()
+                        _db.close()
+
+                        (config["Path"] / "user_data.db").unlink()
+
+                        (config["Path"] / f"UserData").mkdir(
+                            parents=True, exist_ok=True
+                        )
+
+                        for i in range(len(data)):
+
+                            info = {
+                                "Data": {
+                                    "IfPassCheck": True,
+                                    "LastAnnihilationDate": "2000-01-01",
+                                    "LastProxyDate": data[i][5],
+                                    "ProxyTimes": data[i][14],
+                                },
+                                "Info": {
+                                    "Annihilation": bool(data[i][10] == "y"),
+                                    "GameId": data[i][6],
+                                    "GameIdMode": "固定",
+                                    "GameId_1": data[i][7],
+                                    "GameId_2": data[i][8],
+                                    "Id": data[i][1],
+                                    "Infrastructure": bool(data[i][11] == "y"),
+                                    "MedicineNumb": 0,
+                                    "Mode": (
+                                        "简洁" if data[i][15] == "simple" else "详细"
+                                    ),
+                                    "Name": data[i][0],
+                                    "Notes": data[i][13],
+                                    "Password": base64.b64encode(data[i][12]).decode(
+                                        "utf-8"
+                                    ),
+                                    "RemainedDay": data[i][3],
+                                    "Routine": bool(data[i][9] == "y"),
+                                    "Server": data[i][2],
+                                    "Status": bool(data[i][4] == "y"),
+                                },
+                            }
+
+                            (config["Path"] / f"UserData/用户_{i + 1}").mkdir(
+                                parents=True, exist_ok=True
+                            )
+                            with (
+                                config["Path"] / f"UserData/用户_{i + 1}/config.json"
+                            ).open(mode="w", encoding="utf-8") as f:
+                                json.dump(info, f, ensure_ascii=False, indent=4)
+
+                            if (
+                                self.app_path
+                                / f"config/MaaConfig/{name}/{data[i][15]}/{data[i][16]}/annihilation/gui.json"
+                            ).exists():
+                                (
+                                    config["Path"]
+                                    / f"UserData/用户_{i + 1}/Annihilation"
+                                ).mkdir(parents=True, exist_ok=True)
+                                shutil.move(
+                                    self.app_path
+                                    / f"config/MaaConfig/{name}/{data[i][15]}/{data[i][16]}/annihilation/gui.json",
+                                    config["Path"]
+                                    / f"UserData/用户_{i + 1}/Annihilation/gui.json",
+                                )
+                            if (
+                                self.app_path
+                                / f"config/MaaConfig/{name}/{data[i][15]}/{data[i][16]}/routine/gui.json"
+                            ).exists():
+                                (
+                                    config["Path"] / f"UserData/用户_{i + 1}/Routine"
+                                ).mkdir(parents=True, exist_ok=True)
+                                shutil.move(
+                                    self.app_path
+                                    / f"config/MaaConfig/{name}/{data[i][15]}/{data[i][16]}/routine/gui.json",
+                                    config["Path"]
+                                    / f"UserData/用户_{i + 1}/Routine/gui.json",
+                                )
+                            if (
+                                self.app_path
+                                / f"config/MaaConfig/{name}/{data[i][15]}/{data[i][16]}/infrastructure/infrastructure.json"
+                            ).exists():
+                                (
+                                    config["Path"]
+                                    / f"UserData/用户_{i + 1}/Infrastructure"
+                                ).mkdir(parents=True, exist_ok=True)
+                                shutil.move(
+                                    self.app_path
+                                    / f"config/MaaConfig/{name}/{data[i][15]}/{data[i][16]}/infrastructure/infrastructure.json",
+                                    config["Path"]
+                                    / f"UserData/用户_{i + 1}/Infrastructure/infrastructure.json",
+                                )
+
+                        if (config["Path"] / f"simple").exists():
+                            shutil.rmtree(config["Path"] / f"simple")
+                        if (config["Path"] / f"beta").exists():
+                            shutil.rmtree(config["Path"] / f"beta")
+
             cur.close()
             db.close()
             logger.info("数据文件版本更新完成")
 
-    def search_config(self) -> list:
-        """搜索所有子配置文件"""
+    def search_member(self) -> None:
+        """搜索所有脚本实例"""
 
-        config_list = []
-
+        self.member_dict: Dict[
+            str,
+            Dict[
+                str,
+                Union[
+                    str,
+                    Path,
+                    MaaConfig,
+                    Dict[str, Dict[str, Union[Path, MaaUserConfig]]],
+                ],
+            ],
+        ] = {}
         if (self.app_path / "config/MaaConfig").exists():
-            for subdir in (self.app_path / "config/MaaConfig").iterdir():
-                if subdir.is_dir():
-                    config_list.append(["Maa", subdir / "config.json"])
+            for maa_dir in (self.app_path / "config/MaaConfig").iterdir():
+                if maa_dir.is_dir():
+
+                    maa_config = MaaConfig()
+                    maa_config.load(maa_dir / "config.json", maa_config)
+                    maa_config.save()
+
+                    # user_dict: Dict[str, Dict[str, Union[Path, MaaUserConfig]]] = {}
+                    # for user_dir in (maa_dir / "UserData").iterdir():
+                    #     if user_dir.is_dir():
+
+                    #         # user_config = MaaUserConfig()
+                    #         # user_config.load(user_dir / "config.json", user_config)
+                    #         # user_config.save()
+
+                    #         user_dict[user_dir.stem] = {
+                    #             "Path": user_dir,
+                    #             "Config": None,
+                    #         }
+
+                    self.member_dict[maa_dir.name] = {
+                        "Type": "Maa",
+                        "Path": maa_dir,
+                        "Config": maa_config,
+                        "UserData": None,
+                    }
+
+        self.member_dict = dict(
+            sorted(self.member_dict.items(), key=lambda x: int(x[0][3:]))
+        )
+
+    def search_maa_user(self, name) -> None:
+
+        user_dict: Dict[str, Dict[str, Union[Path, MaaUserConfig]]] = {}
+        for user_dir in (Config.member_dict[name]["Path"] / "UserData").iterdir():
+            if user_dir.is_dir():
+
+                user_config = MaaUserConfig()
+                user_config.load(user_dir / "config.json", user_config)
+                user_config.save()
+
+                user_dict[user_dir.stem] = {
+                    "Path": user_dir,
+                    "Config": user_config,
+                }
+
+        self.member_dict[name]["UserData"] = dict(
+            sorted(user_dict.items(), key=lambda x: int(x[0][3:]))
+        )
+
+    def search_queue(self):
+        """搜索所有调度队列实例"""
+
+        self.queue_dict: Dict[str, Dict[str, Union[Path, QueueConfig]]] = {}
 
         if (self.app_path / "config/QueueConfig").exists():
             for json_file in (self.app_path / "config/QueueConfig").glob("*.json"):
-                config_list.append(["Queue", json_file])
 
-        return config_list
+                queue_config = QueueConfig()
+                queue_config.load(json_file, queue_config)
+                queue_config.save()
 
-    def open_database(self, mode: str, index: str = None) -> None:
-        """打开数据库"""
+                self.queue_dict[json_file.stem] = {
+                    "Path": json_file,
+                    "Config": queue_config,
+                }
 
-        self.close_database()
-        self.db = sqlite3.connect(
-            self.app_path / f"config/{mode}Config/{index}/user_data.db"
+        self.queue_dict = dict(
+            sorted(self.queue_dict.items(), key=lambda x: int(x[0][5:]))
         )
-        self.cur = self.db.cursor()
-        self.if_database_opened = True
 
-    def close_database(self) -> None:
-        """关闭数据库"""
+    def change_queue(self, old: str, new: str) -> None:
+        """修改调度队列配置文件的队列参数"""
 
-        if self.if_database_opened:
-            self.cur.close()
-            self.db.close()
-        self.if_database_opened = False
+        for queue in self.queue_dict.values():
+
+            if queue["Config"].get(queue["Config"].queue_Member_1) == old:
+                queue["Config"].set(queue["Config"].queue_Member_1, new)
+            if queue["Config"].get(queue["Config"].queue_Member_2) == old:
+                queue["Config"].set(queue["Config"].queue_Member_2, new)
+            if queue["Config"].get(queue["Config"].queue_Member_3) == old:
+                queue["Config"].set(queue["Config"].queue_Member_3, new)
+            if queue["Config"].get(queue["Config"].queue_Member_4) == old:
+                queue["Config"].set(queue["Config"].queue_Member_4, new)
+            if queue["Config"].get(queue["Config"].queue_Member_5) == old:
+                queue["Config"].set(queue["Config"].queue_Member_5, new)
+            if queue["Config"].get(queue["Config"].queue_Member_6) == old:
+                queue["Config"].set(queue["Config"].queue_Member_6, new)
+            if queue["Config"].get(queue["Config"].queue_Member_7) == old:
+                queue["Config"].set(queue["Config"].queue_Member_7, new)
+            if queue["Config"].get(queue["Config"].queue_Member_8) == old:
+                queue["Config"].set(queue["Config"].queue_Member_8, new)
+            if queue["Config"].get(queue["Config"].queue_Member_9) == old:
+                queue["Config"].set(queue["Config"].queue_Member_9, new)
+            if queue["Config"].get(queue["Config"].queue_Member_10) == old:
+                queue["Config"].set(queue["Config"].queue_Member_10, new)
 
     def change_user_info(
-        self,
-        data_path: Path,
-        modes: list,
-        uids: list,
-        days: list,
-        lasts: list,
-        notes: list,
-        numbs: list,
+        self, name: str, user_data: Dict[str, Dict[str, Union[str, Path, dict]]]
     ) -> None:
-        """将代理完成后发生改动的用户信息同步至本地数据库"""
+        """代理完成后保存改动的用户信息"""
 
-        db = sqlite3.connect(data_path / "user_data.db")
-        cur = db.cursor()
+        for user, info in user_data.items():
 
-        for index in range(len(uids)):
-            cur.execute(
-                "UPDATE adminx SET day = ? WHERE mode = ? AND uid = ?",
-                (days[index], modes[index], uids[index]),
+            user_config = self.member_dict[name]["UserData"][user]["Config"]
+
+            user_config.set(
+                user_config.Info_RemainedDay, info["Config"]["Info"]["RemainedDay"]
             )
-            cur.execute(
-                "UPDATE adminx SET last = ? WHERE mode = ? AND uid = ?",
-                (lasts[index], modes[index], uids[index]),
+            user_config.set(
+                user_config.Data_LastProxyDate, info["Config"]["Data"]["LastProxyDate"]
             )
-            cur.execute(
-                "UPDATE adminx SET notes = ? WHERE mode = ? AND uid = ?",
-                (notes[index], modes[index], uids[index]),
+            user_config.set(
+                user_config.Data_LastAnnihilationDate,
+                info["Config"]["Data"]["LastAnnihilationDate"],
             )
-            cur.execute(
-                "UPDATE adminx SET numb = ? WHERE mode = ? AND uid = ?",
-                (numbs[index], modes[index], uids[index]),
+            user_config.set(
+                user_config.Data_ProxyTimes, info["Config"]["Data"]["ProxyTimes"]
             )
-        db.commit()
-        cur.close()
-        db.close()
+            user_config.set(
+                user_config.Data_IfPassCheck, info["Config"]["Data"]["IfPassCheck"]
+            )
 
     def save_maa_log(self, log_path: Path, logs: list, maa_result: str) -> bool:
         """保存MAA日志"""
@@ -508,34 +1343,34 @@ class AppConfig:
         # 掉落统计
         # 存储所有关卡的掉落统计
         all_stage_drops = {}
-        
+
         # 查找所有Fight任务的开始和结束位置
         fight_tasks = []
         for i, line in enumerate(logs):
             if "开始任务: Fight" in line:
                 # 查找对应的任务结束位置
                 end_index = -1
-                for j in range(i+1, len(logs)):
+                for j in range(i + 1, len(logs)):
                     if "完成任务: Fight" in logs[j]:
                         end_index = j
                         break
                     # 如果遇到新的Fight任务开始，则当前任务没有正常结束
                     if j < len(logs) and "开始任务: Fight" in logs[j]:
                         break
-                
+
                 # 如果找到了结束位置，记录这个任务的范围
                 if end_index != -1:
                     fight_tasks.append((i, end_index))
-        
+
         # 处理每个Fight任务
         for start_idx, end_idx in fight_tasks:
             # 提取当前任务的日志
-            task_logs = logs[start_idx:end_idx+1]
-            
+            task_logs = logs[start_idx : end_idx + 1]
+
             # 查找任务中的最后一次掉落统计
             last_drop_stats = {}
             current_stage = None
-            
+
             for line in task_logs:
                 # 匹配掉落统计行，如"1-7 掉落统计:"
                 drop_match = re.search(r"([A-Za-z0-9\-]+) 掉落统计:", line)
@@ -544,7 +1379,7 @@ class AppConfig:
                     current_stage = drop_match.group(1)
                     last_drop_stats = {}
                     continue
-                
+
                 # 如果已经找到了关卡，处理掉落物
                 if current_stage:
                     item_match: List[str] = re.findall(
@@ -565,17 +1400,17 @@ class AppConfig:
                             "剩余时间",
                         ]:
                             last_drop_stats[item] = total
-            
+
             # 如果任务中有掉落统计，更新总统计
             if current_stage and last_drop_stats:
                 if current_stage not in all_stage_drops:
                     all_stage_drops[current_stage] = {}
-                
+
                 # 累加掉落数据
                 for item, count in last_drop_stats.items():
                     all_stage_drops[current_stage].setdefault(item, 0)
                     all_stage_drops[current_stage][item] += count
-        
+
         # 将累加后的掉落数据保存到结果中
         data["drop_statistics"] = all_stage_drops
 
@@ -739,206 +1574,5 @@ class AppConfig:
             key, {"Time": "0000-00-00 00:00", "History": "暂无历史运行记录"}
         )
 
-    def clear_maa_config(self) -> None:
-        """清空MAA配置"""
-
-        self.maa_config.set(self.maa_config.MaaSet_Name, "")
-        self.maa_config.set(self.maa_config.MaaSet_Path, ".")
-        self.maa_config.set(self.maa_config.RunSet_TaskTransitionMethod, "ExitEmulator")
-        self.maa_config.set(self.maa_config.RunSet_ProxyTimesLimit, 0)
-        self.maa_config.set(self.maa_config.RunSet_AnnihilationTimeLimit, 40)
-        self.maa_config.set(self.maa_config.RunSet_RoutineTimeLimit, 10)
-        self.maa_config.set(self.maa_config.RunSet_RunTimesLimit, 3)
-        self.maa_config.set(self.maa_config.MaaSet_Name, "")
-        self.maa_config.set(self.maa_config.MaaSet_Name, "")
-        self.maa_config.set(self.maa_config.MaaSet_Name, "")
-
-    def clear_queue_config(self) -> None:
-        """清空队列配置"""
-
-        self.queue_config.set(self.queue_config.queueSet_Name, "")
-        self.queue_config.set(self.queue_config.queueSet_Enabled, False)
-        self.queue_config.set(self.queue_config.queueSet_AfterAccomplish, "None")
-
-        self.queue_config.set(self.queue_config.time_TimeEnabled_0, False)
-        self.queue_config.set(self.queue_config.time_TimeSet_0, "00:00")
-        self.queue_config.set(self.queue_config.time_TimeEnabled_1, False)
-        self.queue_config.set(self.queue_config.time_TimeSet_1, "00:00")
-        self.queue_config.set(self.queue_config.time_TimeEnabled_2, False)
-        self.queue_config.set(self.queue_config.time_TimeSet_2, "00:00")
-        self.queue_config.set(self.queue_config.time_TimeEnabled_3, False)
-        self.queue_config.set(self.queue_config.time_TimeSet_3, "00:00")
-        self.queue_config.set(self.queue_config.time_TimeEnabled_4, False)
-        self.queue_config.set(self.queue_config.time_TimeSet_4, "00:00")
-        self.queue_config.set(self.queue_config.time_TimeEnabled_5, False)
-        self.queue_config.set(self.queue_config.time_TimeSet_5, "00:00")
-        self.queue_config.set(self.queue_config.time_TimeEnabled_6, False)
-        self.queue_config.set(self.queue_config.time_TimeSet_6, "00:00")
-        self.queue_config.set(self.queue_config.time_TimeEnabled_7, False)
-        self.queue_config.set(self.queue_config.time_TimeSet_7, "00:00")
-        self.queue_config.set(self.queue_config.time_TimeEnabled_8, False)
-        self.queue_config.set(self.queue_config.time_TimeSet_8, "00:00")
-        self.queue_config.set(self.queue_config.time_TimeEnabled_9, False)
-        self.queue_config.set(self.queue_config.time_TimeSet_9, "00:00")
-
-        self.queue_config.set(self.queue_config.queue_Member_1, "禁用")
-        self.queue_config.set(self.queue_config.queue_Member_2, "禁用")
-        self.queue_config.set(self.queue_config.queue_Member_3, "禁用")
-        self.queue_config.set(self.queue_config.queue_Member_4, "禁用")
-        self.queue_config.set(self.queue_config.queue_Member_5, "禁用")
-        self.queue_config.set(self.queue_config.queue_Member_6, "禁用")
-        self.queue_config.set(self.queue_config.queue_Member_7, "禁用")
-        self.queue_config.set(self.queue_config.queue_Member_8, "禁用")
-        self.queue_config.set(self.queue_config.queue_Member_9, "禁用")
-        self.queue_config.set(self.queue_config.queue_Member_10, "禁用")
-
-
-class GlobalConfig(QConfig):
-    """全局配置"""
-
-    function_HomeImageMode = OptionsConfigItem(
-        "Function",
-        "HomeImageMode",
-        "默认",
-        OptionsValidator(["默认", "自定义", "主题图像"]),
-    )
-    function_HistoryRetentionTime = OptionsConfigItem(
-        "Function", "HistoryRetentionTime", 0, OptionsValidator([7, 15, 30, 60, 0])
-    )
-    function_IfAllowSleep = ConfigItem(
-        "Function", "IfAllowSleep", False, BoolValidator()
-    )
-    function_IfSilence = ConfigItem("Function", "IfSilence", False, BoolValidator())
-    function_BossKey = ConfigItem("Function", "BossKey", "")
-    function_IfAgreeBilibili = ConfigItem(
-        "Function", "IfAgreeBilibili", False, BoolValidator()
-    )
-
-    start_IfSelfStart = ConfigItem("Start", "IfSelfStart", False, BoolValidator())
-    start_IfRunDirectly = ConfigItem("Start", "IfRunDirectly", False, BoolValidator())
-    start_IfMinimizeDirectly = ConfigItem(
-        "Start", "IfMinimizeDirectly", False, BoolValidator()
-    )
-
-    ui_IfShowTray = ConfigItem("UI", "IfShowTray", False, BoolValidator())
-    ui_IfToTray = ConfigItem("UI", "IfToTray", False, BoolValidator())
-    ui_size = ConfigItem("UI", "size", "1200x700")
-    ui_location = ConfigItem("UI", "location", "100x100")
-    ui_maximized = ConfigItem("UI", "maximized", False, BoolValidator())
-
-    notify_SendTaskResultTime = OptionsConfigItem(
-        "Notify",
-        "SendTaskResultTime",
-        "不推送",
-        OptionsValidator(["不推送", "任何时刻", "仅失败时"]),
-    )
-    notify_IfSendStatistic = ConfigItem(
-        "Notify", "IfSendStatistic", False, BoolValidator()
-    )
-    notify_IfSendSixStar = ConfigItem("Notify", "IfSendSixStar", False, BoolValidator())
-    notify_IfPushPlyer = ConfigItem("Notify", "IfPushPlyer", False, BoolValidator())
-    notify_IfSendMail = ConfigItem("Notify", "IfSendMail", False, BoolValidator())
-    notify_SMTPServerAddress = ConfigItem("Notify", "SMTPServerAddress", "")
-    notify_AuthorizationCode = ConfigItem("Notify", "AuthorizationCode", "")
-    notify_FromAddress = ConfigItem("Notify", "FromAddress", "")
-    notify_ToAddress = ConfigItem("Notify", "ToAddress", "")
-    notify_IfServerChan = ConfigItem("Notify", "IfServerChan", False, BoolValidator())
-    notify_ServerChanKey = ConfigItem("Notify", "ServerChanKey", "")
-    notify_ServerChanChannel = ConfigItem("Notify", "ServerChanChannel", "")
-    notify_ServerChanTag = ConfigItem("Notify", "ServerChanTag", "")
-    notify_IfCompanyWebHookBot = ConfigItem(
-        "Notify", "IfCompanyWebHookBot", False, BoolValidator()
-    )
-    notify_CompanyWebHookBotUrl = ConfigItem("Notify", "CompanyWebHookBotUrl", "")
-    notify_IfPushDeer = ConfigItem("Notify", "IfPushDeer", False, BoolValidator())
-    notify_IfPushDeerKey = ConfigItem("Notify", "PushDeerKey", "")
-
-    update_IfAutoUpdate = ConfigItem("Update", "IfAutoUpdate", False, BoolValidator())
-    update_UpdateType = OptionsConfigItem(
-        "Update", "UpdateType", "main", OptionsValidator(["main", "dev"])
-    )
-
-
-class QueueConfig(QConfig):
-    """队列配置"""
-
-    queueSet_Name = ConfigItem("QueueSet", "Name", "")
-    queueSet_Enabled = ConfigItem("QueueSet", "Enabled", False, BoolValidator())
-    queueSet_AfterAccomplish = OptionsConfigItem(
-        "QueueSet",
-        "AfterAccomplish",
-        "None",
-        OptionsValidator(["None", "KillSelf", "Sleep", "Hibernate", "Shutdown"]),
-    )
-
-    time_TimeEnabled_0 = ConfigItem("Time", "TimeEnabled_0", False, BoolValidator())
-    time_TimeSet_0 = ConfigItem("Time", "TimeSet_0", "00:00")
-
-    time_TimeEnabled_1 = ConfigItem("Time", "TimeEnabled_1", False, BoolValidator())
-    time_TimeSet_1 = ConfigItem("Time", "TimeSet_1", "00:00")
-
-    time_TimeEnabled_2 = ConfigItem("Time", "TimeEnabled_2", False, BoolValidator())
-    time_TimeSet_2 = ConfigItem("Time", "TimeSet_2", "00:00")
-
-    time_TimeEnabled_3 = ConfigItem("Time", "TimeEnabled_3", False, BoolValidator())
-    time_TimeSet_3 = ConfigItem("Time", "TimeSet_3", "00:00")
-
-    time_TimeEnabled_4 = ConfigItem("Time", "TimeEnabled_4", False, BoolValidator())
-    time_TimeSet_4 = ConfigItem("Time", "TimeSet_4", "00:00")
-
-    time_TimeEnabled_5 = ConfigItem("Time", "TimeEnabled_5", False, BoolValidator())
-    time_TimeSet_5 = ConfigItem("Time", "TimeSet_5", "00:00")
-
-    time_TimeEnabled_6 = ConfigItem("Time", "TimeEnabled_6", False, BoolValidator())
-    time_TimeSet_6 = ConfigItem("Time", "TimeSet_6", "00:00")
-
-    time_TimeEnabled_7 = ConfigItem("Time", "TimeEnabled_7", False, BoolValidator())
-    time_TimeSet_7 = ConfigItem("Time", "TimeSet_7", "00:00")
-
-    time_TimeEnabled_8 = ConfigItem("Time", "TimeEnabled_8", False, BoolValidator())
-    time_TimeSet_8 = ConfigItem("Time", "TimeSet_8", "00:00")
-
-    time_TimeEnabled_9 = ConfigItem("Time", "TimeEnabled_9", False, BoolValidator())
-    time_TimeSet_9 = ConfigItem("Time", "TimeSet_9", "00:00")
-
-    queue_Member_1 = OptionsConfigItem("Queue", "Member_1", "禁用")
-    queue_Member_2 = OptionsConfigItem("Queue", "Member_2", "禁用")
-    queue_Member_3 = OptionsConfigItem("Queue", "Member_3", "禁用")
-    queue_Member_4 = OptionsConfigItem("Queue", "Member_4", "禁用")
-    queue_Member_5 = OptionsConfigItem("Queue", "Member_5", "禁用")
-    queue_Member_6 = OptionsConfigItem("Queue", "Member_6", "禁用")
-    queue_Member_7 = OptionsConfigItem("Queue", "Member_7", "禁用")
-    queue_Member_8 = OptionsConfigItem("Queue", "Member_8", "禁用")
-    queue_Member_9 = OptionsConfigItem("Queue", "Member_9", "禁用")
-    queue_Member_10 = OptionsConfigItem("Queue", "Member_10", "禁用")
-
-
-class MaaConfig(QConfig):
-    """MAA配置"""
-
-    MaaSet_Name = ConfigItem("MaaSet", "Name", "")
-    MaaSet_Path = ConfigItem("MaaSet", "Path", ".", FolderValidator())
-
-    RunSet_TaskTransitionMethod = OptionsConfigItem(
-        "RunSet",
-        "TaskTransitionMethod",
-        "ExitEmulator",
-        OptionsValidator(["NoAction", "ExitGame", "ExitEmulator"]),
-    )
-    RunSet_ProxyTimesLimit = RangeConfigItem(
-        "RunSet", "ProxyTimesLimit", 0, RangeValidator(0, 1024)
-    )
-    RunSet_AnnihilationTimeLimit = RangeConfigItem(
-        "RunSet", "AnnihilationTimeLimit", 40, RangeValidator(1, 1024)
-    )
-    RunSet_RoutineTimeLimit = RangeConfigItem(
-        "RunSet", "RoutineTimeLimit", 10, RangeValidator(1, 1024)
-    )
-    RunSet_RunTimesLimit = RangeConfigItem(
-        "RunSet", "RunTimesLimit", 3, RangeValidator(1, 1024)
-    )
-
 
 Config = AppConfig()
-
-
