@@ -542,8 +542,6 @@ class AppConfig:
                 if drop_match:
                     # 发现新的掉落统计，重置当前关卡的掉落数据
                     current_stage = drop_match.group(1)
-                    if current_stage == "WE":
-                        current_stage = "剿灭模式"
                     last_drop_stats = {}
                     continue
                 
@@ -575,10 +573,8 @@ class AppConfig:
                 
                 # 累加掉落数据
                 for item, count in last_drop_stats.items():
-                    if item in all_stage_drops[current_stage]:
-                        all_stage_drops[current_stage][item] += count
-                    else:
-                        all_stage_drops[current_stage][item] = count
+                    all_stage_drops[current_stage].setdefault(item, 0)
+                    all_stage_drops[current_stage][item] += count
         
         # 将累加后的掉落数据保存到结果中
         data["drop_statistics"] = all_stage_drops
@@ -944,3 +940,5 @@ class MaaConfig(QConfig):
 
 
 Config = AppConfig()
+
+
