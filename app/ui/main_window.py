@@ -238,10 +238,6 @@ class AUTO_MAA(MSFluentWindow):
         # 清理旧日志
         self.clean_old_logs()
 
-        # 清理临时更新器
-        if (Config.app_path / "AUTO_Updater.active.exe").exists():
-            (Config.app_path / "AUTO_Updater.active.exe").unlink()
-
         # 检查密码
         self.setting.check_PASSWORD()
 
@@ -402,6 +398,11 @@ class AUTO_MAA(MSFluentWindow):
         """清理残余进程"""
 
         self.show_ui("隐藏到托盘", if_quick=True)
+
+        # 清理临时更新器
+        if (Config.app_path / "AUTO_Updater.active.exe").exists():
+            System.kill_process(Config.app_path / "AUTO_Updater.active.exe")
+            (Config.app_path / "AUTO_Updater.active.exe").unlink()
 
         # 清理各功能线程
         MainTimer.Timer.stop()
