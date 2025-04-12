@@ -68,8 +68,9 @@ if __name__ == "__main__":
     print("Packaging AUTO_MAA main program ...")
 
     os.system(
-        "powershell -Command python -m nuitka --standalone --mingw64"
+        "powershell -Command python -m nuitka --standalone --onefile --mingw64"
         " --enable-plugins=pyside6 --windows-console-mode=disable"
+        " --onefile-tempdir-spec='{TEMP}\\AUTO_MAA'"
         " --windows-icon-from-ico=resources\\icons\\AUTO_MAA.ico"
         " --company-name='AUTO_MAA Team' --product-name=AUTO_MAA"
         f" --file-version={version["main_version"]}"
@@ -86,8 +87,9 @@ if __name__ == "__main__":
 
     shutil.copy(root_path / "app/utils/downloader.py", root_path)
     os.system(
-        "powershell -Command python -m nuitka --standalone --mingw64"
+        "powershell -Command python -m nuitka --standalone --onefile --mingw64"
         " --enable-plugins=pyside6 --windows-console-mode=disable"
+        " --onefile-tempdir-spec='{TEMP}\\AUTO_MAA_Updater'"
         " --windows-icon-from-ico=resources\\icons\\AUTO_MAA_Updater.ico"
         " --company-name='AUTO_MAA Team' --product-name=AUTO_MAA"
         f" --file-version={version["updater_version"]}"
