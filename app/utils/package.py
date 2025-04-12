@@ -71,8 +71,9 @@ if __name__ == "__main__":
     print("Packaging AUTO_MAA main program ...")
 
     os.system(
-        "powershell -Command python -m nuitka --standalone --mingw64"
+        "powershell -Command python -m nuitka --standalone --onefile --mingw64"
         " --enable-plugins=pyside6 --windows-console-mode=disable"
+        " --onefile-tempdir-spec='{TEMP}\\AUTO_MAA'"
         " --windows-icon-from-ico=resources\\icons\\AUTO_MAA.ico"
         " --company-name='AUTO_MAA Team' --product-name=AUTO_MAA"
         f" --file-version={version["main_version"]}"
@@ -107,19 +108,9 @@ if __name__ == "__main__":
 
     (root_path / "AUTO_MAA").mkdir(parents=True, exist_ok=True)
 
-    print("Start to copy AUTO_MAA main program ...")
+    print("Start to move AUTO_MAA program ...")
 
-    for item in (root_path / "main.dist").iterdir():
-        if item.is_dir():
-            shutil.copytree(
-                item, root_path / "AUTO_MAA" / item.name, dirs_exist_ok=True
-            )
-        else:
-            shutil.copy(item, root_path / "AUTO_MAA/")
-    shutil.rmtree(root_path / "main.dist")
-
-    print("Start to copy AUTO_MAA update program ...")
-
+    shutil.move(root_path / "AUTO_MAA.exe", root_path / "AUTO_MAA/")
     shutil.move(root_path / "AUTO_Updater.exe", root_path / "AUTO_MAA/")
 
     print("Start to copy rescourses ...")
