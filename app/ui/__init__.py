@@ -21,7 +21,7 @@
 """
 AUTO_MAA
 AUTO_MAA图形化界面包
-v4.2
+v4.3
 作者：DLmaster_361
 """
 
