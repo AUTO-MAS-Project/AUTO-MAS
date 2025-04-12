@@ -30,5 +30,6 @@ __author__ = "DLmaster361 <DLmaster_361@163.com>"
 __license__ = "GPL-3.0 license"
 
 from .main_window import AUTO_MAA
+from .Widget import ProgressRingMessageBox
 
-__all__ = ["AUTO_MAA"]
+__all__ = ["AUTO_MAA", "ProgressRingMessageBox"]

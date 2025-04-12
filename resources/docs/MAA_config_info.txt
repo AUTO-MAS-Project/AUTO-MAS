@@ -11,6 +11,8 @@
 "TaskQueue.AutoRoguelike.IsChecked": "False"        #自动肉鸽
 "TaskQueue.Reclamation.IsChecked": "False"      #生息演算
 #刷理智
+"MainFunction.UseMedicine": "True"        #吃理智药
+"MainFunction.UseMedicine.Quantity": "999"        #吃理智药数量
 "MainFunction.Stage1": ""        #主关卡
 "MainFunction.Stage2": ""        #备选关卡1
 "MainFunction.Stage3": ""        #备选关卡2
@@ -45,3 +47,4 @@ G"Start.MinimizeDirectly": "True"        #启动MAA后直接最小化
 G"GUI.UseTray": "True"        #显示托盘图标
 G"GUI.MinimizeToTray": "False"        #最小化时隐藏至托盘
 "Start.EmulatorPath"        #模拟器路径
+"Connect.AdbPath"        #ADB路径

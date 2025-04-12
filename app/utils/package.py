@@ -44,6 +44,17 @@ def version_text(version_numb: list) -> str:
     return version
 
 
+def version_info_markdown(info: dict) -> str:
+    """将版本信息字典转为markdown信息"""
+
+    version_info = ""
+    for key, value in info.items():
+        version_info += f"## {key}\n"
+        for v in value:
+            version_info += f"- {v}\n"
+    return version_info
+
+
 if __name__ == "__main__":
 
     root_path = Path(sys.argv[0]).resolve().parent
@@ -57,9 +68,8 @@ if __name__ == "__main__":
     print("Packaging AUTO_MAA main program ...")
 
     os.system(
-        "powershell -Command python -m nuitka --standalone --onefile --mingw64"
+        "powershell -Command python -m nuitka --standalone --mingw64"
         " --enable-plugins=pyside6 --windows-console-mode=disable"
-        " --onefile-tempdir-spec='{TEMP}\\AUTO_MAA'"
         " --windows-icon-from-ico=resources\\icons\\AUTO_MAA.ico"
         " --company-name='AUTO_MAA Team' --product-name=AUTO_MAA"
         f" --file-version={version["main_version"]}"
@@ -72,19 +82,9 @@ if __name__ == "__main__":
 
     print("AUTO_MAA main program packaging completed !")
 
-    shutil.copy(root_path / "app/utils/Updater.py", root_path)
-
-    file_content = (root_path / "Updater.py").read_text(encoding="utf-8")
-
-    (root_path / "Updater.py").write_text(
-        file_content.replace(
-            "from .version import version_text", "from app import version_text"
-        ),
-        encoding="utf-8",
-    )
-
     print("Packaging AUTO_MAA update program ...")
 
+    shutil.copy(root_path / "app/utils/downloader.py", root_path)
     os.system(
         "powershell -Command python -m nuitka --standalone --onefile --mingw64"
         " --enable-plugins=pyside6 --windows-console-mode=disable"
@@ -95,15 +95,60 @@ if __name__ == "__main__":
         f" --product-version={version["main_version"]}"
         " --file-description='AUTO_MAA Component'"
         " --copyright='Copyright © 2024 DLmaster361'"
-        " --assume-yes-for-downloads --output-filename=Updater"
-        " --remove-output Updater.py"
+        " --assume-yes-for-downloads --output-filename=AUTO_Updater"
+        " --remove-output downloader.py"
     )
+    (root_path / "downloader.py").unlink()
 
     print("AUTO_MAA update program packaging completed !")
 
-    (root_path / "Updater.py").unlink()
+    (root_path / "AUTO_MAA").mkdir(parents=True, exist_ok=True)
+
+    print("Start to copy AUTO_MAA main program ...")
+
+    for item in (root_path / "main.dist").iterdir():
+        if item.is_dir():
+            shutil.copytree(
+                item, root_path / "AUTO_MAA" / item.name, dirs_exist_ok=True
+            )
+        else:
+            shutil.copy(item, root_path / "AUTO_MAA/")
+    shutil.rmtree(root_path / "main.dist")
+
+    print("Start to copy AUTO_MAA update program ...")
+
+    shutil.move(root_path / "AUTO_Updater.exe", root_path / "AUTO_MAA/")
+
+    print("Start to copy rescourses ...")
+
+    shutil.copytree(root_path / "app", root_path / "AUTO_MAA/app")
+    shutil.copytree(root_path / "resources", root_path / "AUTO_MAA/resources")
+    shutil.copy(root_path / "main.py", root_path / "AUTO_MAA/")
+    shutil.copy(root_path / "requirements.txt", root_path / "AUTO_MAA/")
+    shutil.copy(root_path / "README.md", root_path / "AUTO_MAA/")
+    shutil.copy(root_path / "LICENSE", root_path / "AUTO_MAA/")
+
+    print("Start to compress ...")
+
+    shutil.make_archive(
+        base_name=root_path / f"AUTO_MAA_{version_text(main_version_numb)}",
+        format="zip",
+        root_dir=root_path / "AUTO_MAA",
+        base_dir=".",
+    )
+    shutil.rmtree(root_path / "AUTO_MAA")
+
+    print("compress completed !")
+
+    all_version_info = {}
+    for v_i in version["version_info"].values():
+        for key, value in v_i.items():
+            if key in all_version_info:
+                all_version_info[key] += value.copy()
+            else:
+                all_version_info[key] = value.copy()
 
     (root_path / "version_info.txt").write_text(
-        f"{version_text(main_version_numb)}\n{version_text(updater_version_numb)}{version["announcement"]}",
+        f"{version_text(main_version_numb)}\n{version_text(updater_version_numb)}\n<!--{json.dumps(version["version_info"], ensure_ascii=False)}-->\n{version_info_markdown(all_version_info)}",
         encoding="utf-8",
     )

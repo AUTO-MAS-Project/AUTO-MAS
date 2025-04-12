@@ -53,7 +53,7 @@ class Notification(QWidget):
     def push_plyer(self, title, message, ticker, t):
         """推送系统通知"""
 
-        if Config.global_config.get(Config.global_config.notify_IfPushPlyer):
+        if Config.get(Config.notify_IfPushPlyer):
 
             notification.notify(
                 title=title,
@@ -70,27 +70,21 @@ class Notification(QWidget):
     def send_mail(self, mode, title, content) -> None:
         """推送邮件通知"""
 
-        if Config.global_config.get(Config.global_config.notify_IfSendMail):
+        if Config.get(Config.notify_IfSendMail):
 
             if (
-                Config.global_config.get(Config.global_config.notify_SMTPServerAddress)
-                == ""
-                or Config.global_config.get(
-                    Config.global_config.notify_AuthorizationCode
-                )
-                == ""
+                Config.get(Config.notify_SMTPServerAddress) == ""
+                or Config.get(Config.notify_AuthorizationCode) == ""
                 or not bool(
                     re.match(
                         r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$",
-                        Config.global_config.get(
-                            Config.global_config.notify_FromAddress
-                        ),
+                        Config.get(Config.notify_FromAddress),
                     )
                 )
                 or not bool(
                     re.match(
                         r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$",
-                        Config.global_config.get(Config.global_config.notify_ToAddress),
+                        Config.get(Config.notify_ToAddress),
                     )
                 )
             ):
@@ -114,15 +108,13 @@ class Notification(QWidget):
                 message["From"] = formataddr(
                     (
                         Header("AUTO_MAA通知服务", "utf-8").encode(),
-                        Config.global_config.get(
-                            Config.global_config.notify_FromAddress
-                        ),
+                        Config.get(Config.notify_FromAddress),
                     )
                 )  # 发件人显示的名字
                 message["To"] = formataddr(
                     (
                         Header("AUTO_MAA用户", "utf-8").encode(),
-                        Config.global_config.get(Config.global_config.notify_ToAddress),
+                        Config.get(Config.notify_ToAddress),
                     )
                 )  # 收件人显示的名字
                 message["Subject"] = Header(title, "utf-8")
@@ -131,22 +123,16 @@ class Notification(QWidget):
                     message.attach(MIMEText(content, "html", "utf-8"))
 
                 smtpObj = smtplib.SMTP_SSL(
-                    Config.global_config.get(
-                        Config.global_config.notify_SMTPServerAddress
-                    ),
+                    Config.get(Config.notify_SMTPServerAddress),
                     465,
                 )
                 smtpObj.login(
-                    Config.global_config.get(Config.global_config.notify_FromAddress),
-                    Crypto.win_decryptor(
-                        Config.global_config.get(
-                            Config.global_config.notify_AuthorizationCode
-                        )
-                    ),
+                    Config.get(Config.notify_FromAddress),
+                    Crypto.win_decryptor(Config.get(Config.notify_AuthorizationCode)),
                 )
                 smtpObj.sendmail(
-                    Config.global_config.get(Config.global_config.notify_FromAddress),
-                    Config.global_config.get(Config.global_config.notify_ToAddress),
+                    Config.get(Config.notify_FromAddress),
+                    Config.get(Config.notify_ToAddress),
                     message.as_string(),
                 )
                 smtpObj.quit()
@@ -158,10 +144,20 @@ class Notification(QWidget):
     def ServerChanPush(self, title, content):
         """使用Server酱推送通知"""
 
-        if Config.global_config.get(Config.global_config.notify_IfServerChan):
-            send_key = Config.global_config.get(
-                Config.global_config.notify_ServerChanKey
-            )
+        if Config.get(Config.notify_IfServerChan):
+
+            if Config.get(Config.notify_ServerChanKey) == "":
+                logger.error("请正确设置Server酱的SendKey")
+                self.push_info_bar.emit(
+                    "error",
+                    "Server酱通知推送异常",
+                    "请正确设置Server酱的SendKey",
+                    -1,
+                )
+                return None
+            else:
+                send_key = Config.get(Config.notify_ServerChanKey)
+
             option = {}
             is_valid = lambda s: s == "" or (
                 s == "|".join(s.split("|")) and (s.count("|") == 0 or all(s.split("|")))
@@ -170,11 +166,12 @@ class Notification(QWidget):
             is_valid => True, 如果启用的话需要正确设置Tag和Channel。
             允许空的Tag和Channel即不启用，但不允许例如a||b，|a|b，a|b|，||||
             """
-            send_tag = Config.global_config.get(
-                Config.global_config.notify_ServerChanTag
+            send_tag = "|".join(
+                _.strip() for _ in Config.get(Config.notify_ServerChanTag).split("|")
             )
-            send_channel = Config.global_config.get(
-                Config.global_config.notify_ServerChanChannel
+            send_channel = "|".join(
+                _.strip()
+                for _ in Config.get(Config.notify_ServerChanChannel).split("|")
             )
 
             if is_valid(send_tag):
@@ -218,13 +215,22 @@ class Notification(QWidget):
 
     def CompanyWebHookBotPush(self, title, content):
         """使用企业微信群机器人推送通知"""
-        if Config.global_config.get(Config.global_config.notify_IfCompanyWebHookBot):
+        if Config.get(Config.notify_IfCompanyWebHookBot):
+
+            if Config.get(Config.notify_CompanyWebHookBotUrl) == "":
+                logger.error("请正确设置企业微信群机器人的WebHook地址")
+                self.push_info_bar.emit(
+                    "error",
+                    "企业微信群机器人通知推送异常",
+                    "请正确设置企业微信群机器人的WebHook地址",
+                    -1,
+                )
+                return None
+
             content = f"{title}\n{content}"
             data = {"msgtype": "text", "text": {"content": content}}
             response = requests.post(
-                url=Config.global_config.get(
-                    Config.global_config.notify_CompanyWebHookBotUrl
-                ),
+                url=Config.get(Config.notify_CompanyWebHookBotUrl),
                 json=data,
             )
             if response.json()["errcode"] == 0:
@@ -242,6 +248,40 @@ class Notification(QWidget):
                 return (
                     f'使用企业微信群机器人推送通知时出错：\n{response.json()["errmsg"]}'
                 )
+
+    def send_test_notification(self):
+        """发送测试通知到所有已启用的通知渠道"""
+        # 发送系统通知
+        self.push_plyer(
+            "测试通知",
+            "这是 AUTO_MAA 外部通知测试信息。如果你看到了这段内容，说明 AUTO_MAA 的通知功能已经正确配置且可以正常工作！",
+            "测试通知",
+            3,
+        )
+
+        # 发送邮件通知
+        if Config.get(Config.notify_IfSendMail):
+            self.send_mail(
+                "文本",
+                "AUTO_MAA测试通知",
+                "这是 AUTO_MAA 外部通知测试信息。如果你看到了这段内容，说明 AUTO_MAA 的通知功能已经正确配置且可以正常工作！",
+            )
+
+        # 发送Server酱通知
+        if Config.get(Config.notify_IfServerChan):
+            self.ServerChanPush(
+                "AUTO_MAA测试通知",
+                "这是 AUTO_MAA 外部通知测试信息。如果你看到了这段内容，说明 AUTO_MAA 的通知功能已经正确配置且可以正常工作！",
+            )
+
+        # 发送企业微信机器人通知
+        if Config.get(Config.notify_IfCompanyWebHookBot):
+            self.CompanyWebHookBotPush(
+                "AUTO_MAA测试通知",
+                "这是 AUTO_MAA 外部通知测试信息。如果你看到了这段内容，说明 AUTO_MAA 的通知功能已经正确配置且可以正常工作！",
+            )
+
+        return True
 
 
 Notify = Notification()

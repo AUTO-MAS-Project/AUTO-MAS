@@ -28,26 +28,23 @@ v4.2
 from loguru import logger
 from PySide6.QtWidgets import QSystemTrayIcon
 from qfluentwidgets import (
+    qconfig,
     Action,
-    PushButton,
     SystemTrayMenu,
     SplashScreen,
     FluentIcon,
-    InfoBar,
-    InfoBarPosition,
     setTheme,
     isDarkTheme,
     SystemThemeListener,
     Theme,
     MSFluentWindow,
     NavigationItemPosition,
-    qconfig,
 )
 from PySide6.QtGui import QIcon, QCloseEvent
-from PySide6.QtCore import Qt, QTimer
-import json
+from PySide6.QtCore import QTimer
 from datetime import datetime, timedelta
 import shutil
+import darkdetect
 
 from app.core import Config, TaskManager, MainTimer, MainInfoBar
 from app.services import Notify, Crypto, System
@@ -67,11 +64,12 @@ class AUTO_MAA(MSFluentWindow):
         self.setWindowIcon(QIcon(str(Config.app_path / "resources/icons/AUTO_MAA.ico")))
         self.setWindowTitle("AUTO_MAA")
 
-        setTheme(Theme.AUTO, lazy=True)
+        self.switch_theme()
 
         self.splashScreen = SplashScreen(self.windowIcon(), self)
         self.show_ui("显示主窗口", if_quick=True)
 
+        TaskManager.main_window = self.window()
         MainInfoBar.main_window = self.window()
         System.main_window = self.window()
 
@@ -126,10 +124,9 @@ class AUTO_MAA(MSFluentWindow):
             NavigationItemPosition.BOTTOM,
         )
         self.stackedWidget.currentChanged.connect(
-            lambda index: (self.member_manager.refresh() if index == 1 else None)
-        )
-        self.stackedWidget.currentChanged.connect(
-            lambda index: self.queue_manager.refresh() if index == 2 else None
+            lambda index: (
+                self.queue_manager.reload_member_name() if index == 2 else None
+            )
         )
         self.stackedWidget.currentChanged.connect(
             lambda index: (
@@ -186,6 +183,7 @@ class AUTO_MAA(MSFluentWindow):
         self.tray.setContextMenu(self.tray_menu)
         self.tray.activated.connect(self.on_tray_activated)
 
+        Config.user_info_changed.connect(self.member_manager.refresh_dashboard)
         TaskManager.create_gui.connect(self.dispatch_center.add_board)
         TaskManager.connect_gui.connect(self.dispatch_center.connect_main_board)
         Notify.push_info_bar.connect(MainInfoBar.push_info_bar)
@@ -205,25 +203,37 @@ class AUTO_MAA(MSFluentWindow):
         self.themeListener.systemThemeChanged.connect(self.switch_theme)
         self.themeListener.start()
 
-    def switch_theme(self):
+    def switch_theme(self) -> None:
         """切换主题"""
 
-        setTheme(Theme.AUTO, lazy=True)
-        QTimer.singleShot(100, lambda: setTheme(Theme.AUTO, lazy=True))
+        setTheme(
+            Theme(darkdetect.theme()) if darkdetect.theme() else Theme.LIGHT, lazy=True
+        )
+        QTimer.singleShot(300, lambda: setTheme(Theme.AUTO, lazy=True))
 
         # 云母特效启用时需要增加重试机制
+        # 云母特效不兼容Win10,如果True则通过云母进行主题转换,False则根据当前主题设置背景颜色
         if self.isMicaEffectEnabled():
             QTimer.singleShot(
-                100,
+                300,
                 lambda: self.windowEffect.setMicaEffect(self.winId(), isDarkTheme()),
             )
 
+        else:
+            # 根据当前主题设置背景颜色
+            if isDarkTheme():
+                self.setStyleSheet(
+                    """
+                    CardWidget {background-color: #313131;}
+                    HeaderCardWidget {background-color: #313131;}
+                    background-color: #313131;
+                """
+                )
+            else:
+                self.setStyleSheet("background-color: #ffffff;")
+
     def start_up_task(self) -> None:
         """启动时任务"""
-
-        # 加载配置
-        qconfig.load(Config.config_path, Config.global_config)
-        Config.global_config.save()
 
         # 清理旧日志
         self.clean_old_logs()
@@ -232,50 +242,30 @@ class AUTO_MAA(MSFluentWindow):
         self.setting.check_PASSWORD()
 
         # 获取主题图像
-        if (
-            Config.global_config.get(Config.global_config.function_HomeImageMode)
-            == "主题图像"
-        ):
+        if Config.get(Config.function_HomeImageMode) == "主题图像":
             self.home.get_home_image()
+
+        # 直接运行主任务
+        if Config.get(Config.start_IfRunDirectly):
+
+            self.start_main_task()
 
         # 获取公告
         self.setting.show_notice(if_show=False)
 
         # 检查更新
-        if Config.global_config.get(Config.global_config.update_IfAutoUpdate):
-            result = self.setting.get_update_info()
-            if result == "已是最新版本~":
-                MainInfoBar.push_info_bar("success", "更新检查", result, 3000)
-            else:
-                info = InfoBar.info(
-                    title="更新检查",
-                    content=result,
-                    orient=Qt.Horizontal,
-                    isClosable=True,
-                    position=InfoBarPosition.BOTTOM_LEFT,
-                    duration=-1,
-                    parent=self,
-                )
-                Up = PushButton("更新")
-                Up.clicked.connect(lambda: self.setting.get_update(if_question=False))
-                Up.clicked.connect(info.close)
-                info.addWidget(Up)
-                info.show()
-
-        # 直接运行主任务
-        if Config.global_config.get(Config.global_config.start_IfRunDirectly):
-
-            self.start_main_task()
+        if Config.get(Config.update_IfAutoUpdate):
+            self.setting.check_update()
 
         # 直接最小化
-        if Config.global_config.get(Config.global_config.start_IfMinimizeDirectly):
+        if Config.get(Config.start_IfMinimizeDirectly):
 
             self.titleBar.minBtn.click()
 
     def set_min_method(self) -> None:
         """设置最小化方法"""
 
-        if Config.global_config.get(Config.global_config.ui_IfToTray):
+        if Config.get(Config.ui_IfToTray):
 
             self.titleBar.minBtn.clicked.disconnect()
             self.titleBar.minBtn.clicked.connect(lambda: self.show_ui("隐藏到托盘"))
@@ -295,10 +285,7 @@ class AUTO_MAA(MSFluentWindow):
         删除超过用户设定天数的日志文件（基于目录日期）
         """
 
-        if (
-            Config.global_config.get(Config.global_config.function_HistoryRetentionTime)
-            == 0
-        ):
+        if Config.get(Config.function_HistoryRetentionTime) == 0:
             logger.info("由于用户设置日志永久保留，跳过日志清理")
             return
 
@@ -312,9 +299,7 @@ class AUTO_MAA(MSFluentWindow):
                 # 只检查 `YYYY-MM-DD` 格式的文件夹
                 folder_date = datetime.strptime(date_folder.name, "%Y-%m-%d")
                 if datetime.now() - folder_date > timedelta(
-                    days=Config.global_config.get(
-                        Config.global_config.function_HistoryRetentionTime
-                    )
+                    days=Config.get(Config.function_HistoryRetentionTime)
                 ):
                     shutil.rmtree(date_folder, ignore_errors=True)
                     deleted_count += 1
@@ -327,26 +312,25 @@ class AUTO_MAA(MSFluentWindow):
     def start_main_task(self) -> None:
         """启动主任务"""
 
-        if (Config.app_path / "config/QueueConfig/调度队列_1.json").exists():
-
-            with (Config.app_path / "config/QueueConfig/调度队列_1.json").open(
-                mode="r", encoding="utf-8"
-            ) as f:
-                info = json.load(f)
+        if "调度队列_1" in Config.queue_dict:
 
             logger.info("自动添加任务：调度队列_1")
-            TaskManager.add_task("自动代理_主调度台", "主任务队列", info)
+            TaskManager.add_task(
+                "自动代理_主调度台",
+                "主任务队列",
+                Config.queue_dict["调度队列_1"]["Config"].toDict(),
+            )
 
-        elif (Config.app_path / "config/MaaConfig/脚本_1").exists():
-
-            info = {"Queue": {"Member_1": "脚本_1"}}
+        elif "脚本_1" in Config.member_dict:
 
             logger.info("自动添加任务：脚本_1")
-            TaskManager.add_task("自动代理_主调度台", "主任务队列", info)
+            TaskManager.add_task(
+                "自动代理_主调度台", "主任务队列", {"Queue": {"Member_1": "脚本_1"}}
+            )
 
         else:
 
-            logger.worning("启动主任务失败：未找到有效的主任务配置文件")
+            logger.warning("启动主任务失败：未找到有效的主任务配置文件")
             MainInfoBar.push_info_bar(
                 "warning", "启动主任务失败", "“调度队列_1”与“脚本_1”均不存在", -1
             )
@@ -354,21 +338,21 @@ class AUTO_MAA(MSFluentWindow):
     def show_ui(self, mode: str, if_quick: bool = False) -> None:
         """配置窗口状态"""
 
+        self.switch_theme()
+
         if mode == "显示主窗口":
 
             # 配置主窗口
             size = list(
                 map(
                     int,
-                    Config.global_config.get(Config.global_config.ui_size).split("x"),
+                    Config.get(Config.ui_size).split("x"),
                 )
             )
             location = list(
                 map(
                     int,
-                    Config.global_config.get(Config.global_config.ui_location).split(
-                        "x"
-                    ),
+                    Config.get(Config.ui_location).split("x"),
                 )
             )
             self.window().setGeometry(location[0], location[1], size[0], size[1])
@@ -376,14 +360,14 @@ class AUTO_MAA(MSFluentWindow):
             self.window().raise_()
             self.window().activateWindow()
             if not if_quick:
-                if Config.global_config.get(Config.global_config.ui_maximized):
+                if Config.get(Config.ui_maximized):
                     self.window().showMaximized()
                 self.set_min_method()
                 self.show_ui("配置托盘")
 
         elif mode == "配置托盘":
 
-            if Config.global_config.get(Config.global_config.ui_IfShowTray):
+            if Config.get(Config.ui_IfShowTray):
                 self.tray.show()
             else:
                 self.tray.hide()
@@ -393,18 +377,16 @@ class AUTO_MAA(MSFluentWindow):
             # 保存窗口相关属性
             if not self.window().isMaximized():
 
-                Config.global_config.set(
-                    Config.global_config.ui_size,
+                Config.set(
+                    Config.ui_size,
                     f"{self.geometry().width()}x{self.geometry().height()}",
                 )
-                Config.global_config.set(
-                    Config.global_config.ui_location,
+                Config.set(
+                    Config.ui_location,
                     f"{self.geometry().x()}x{self.geometry().y()}",
                 )
-            Config.global_config.set(
-                Config.global_config.ui_maximized, self.window().isMaximized()
-            )
-            Config.global_config.save()
+            Config.set(Config.ui_maximized, self.window().isMaximized())
+            Config.save()
 
             # 隐藏主窗口
             if not if_quick:
@@ -417,13 +399,17 @@ class AUTO_MAA(MSFluentWindow):
 
         self.show_ui("隐藏到托盘", if_quick=True)
 
+        # 清理临时更新器
+        if (Config.app_path / "AUTO_Updater.active.exe").exists():
+            System.kill_process(Config.app_path / "AUTO_Updater.active.exe")
+            (Config.app_path / "AUTO_Updater.active.exe").unlink()
+
         # 清理各功能线程
         MainTimer.Timer.stop()
         MainTimer.Timer.deleteLater()
+        MainTimer.LongTimer.stop()
+        MainTimer.LongTimer.deleteLater()
         TaskManager.stop_task("ALL")
-
-        # 关闭数据库连接
-        Config.close_database()
 
         # 关闭主题监听
         self.themeListener.terminate()

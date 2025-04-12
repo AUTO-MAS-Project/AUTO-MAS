@@ -47,7 +47,6 @@ from qfluentwidgets import (
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QTextCursor
 from typing import List, Dict
-import json
 
 
 from app.core import Config, TaskManager, Task, MainInfoBar
@@ -164,31 +163,39 @@ class DispatchCenter(QWidget):
     def update_top_bar(self):
         """更新顶栏"""
 
-        list = []
-        queue_numb, member_numb = 0, 0
-
-        if (Config.app_path / "config/QueueConfig").exists():
-            for json_file in (Config.app_path / "config/QueueConfig").glob("*.json"):
-                list.append(f"队列 - {json_file.stem}")
-                queue_numb += 1
-
-        if (Config.app_path / "config/MaaConfig").exists():
-            for subdir in (Config.app_path / "config/MaaConfig").iterdir():
-                if subdir.is_dir():
-                    list.append(f"实例 - Maa - {subdir.name}")
-                    member_numb += 1
-
         self.script_list["主调度台"].top_bar.object.clear()
-        self.script_list["主调度台"].top_bar.object.addItems(list)
-        self.script_list["主调度台"].top_bar.mode.clear()
-        self.script_list["主调度台"].top_bar.mode.addItems(["自动代理", "人工排查"])
 
-        if queue_numb == 1:
+        for name, info in Config.queue_dict.items():
+            self.script_list["主调度台"].top_bar.object.addItem(
+                (
+                    "队列"
+                    if info["Config"].get(info["Config"].queueSet_Name) == ""
+                    else f"队列 - {info["Config"].get(info["Config"].queueSet_Name)}"
+                ),
+                userData=name,
+            )
+
+        for name, info in Config.member_dict.items():
+            self.script_list["主调度台"].top_bar.object.addItem(
+                (
+                    f"实例 - {info['Type']}"
+                    if info["Config"].get(info["Config"].MaaSet_Name) == ""
+                    else f"实例 - {info['Type']} - {info["Config"].get(info["Config"].MaaSet_Name)}"
+                ),
+                userData=name,
+            )
+
+        if len(Config.queue_dict) == 1:
             self.script_list["主调度台"].top_bar.object.setCurrentIndex(0)
-        elif member_numb == 1:
-            self.script_list["主调度台"].top_bar.object.setCurrentIndex(queue_numb)
+        elif len(Config.member_dict) == 1:
+            self.script_list["主调度台"].top_bar.object.setCurrentIndex(
+                len(Config.queue_dict)
+            )
         else:
             self.script_list["主调度台"].top_bar.object.setCurrentIndex(-1)
+
+        self.script_list["主调度台"].top_bar.mode.clear()
+        self.script_list["主调度台"].top_bar.mode.addItems(["自动代理", "人工排查"])
         self.script_list["主调度台"].top_bar.mode.setCurrentIndex(0)
 
 
@@ -270,32 +277,31 @@ class DispatchBox(QWidget):
                 )
                 return None
 
-            name = self.object.currentText().split(" - ")[-1]
-
-            if name in Config.running_list:
-                logger.warning(f"任务已存在：{name}")
-                MainInfoBar.push_info_bar("warning", "任务已存在", name, 5000)
+            if self.object.currentData() in Config.running_list:
+                logger.warning(f"任务已存在：{self.object.currentData()}")
+                MainInfoBar.push_info_bar(
+                    "warning", "任务已存在", self.object.currentData(), 5000
+                )
                 return None
 
-            if self.object.currentText().split(" - ")[0] == "队列":
+            if "调度队列" in self.object.currentData():
 
-                with (Config.app_path / f"config/QueueConfig/{name}.json").open(
-                    mode="r", encoding="utf-8"
-                ) as f:
-                    info = json.load(f)
+                logger.info(f"用户添加任务：{self.object.currentData()}")
+                TaskManager.add_task(
+                    f"{self.mode.currentText()}_主调度台",
+                    self.object.currentData(),
+                    Config.queue_dict[self.object.currentData()]["Config"].toDict(),
+                )
 
-                logger.info(f"用户添加任务：{name}")
-                TaskManager.add_task(f"{self.mode.currentText()}_主调度台", name, info)
+            elif "脚本" in self.object.currentData():
 
-            elif self.object.currentText().split(" - ")[0] == "实例":
+                if Config.member_dict[self.object.currentData()]["Type"] == "Maa":
 
-                if self.object.currentText().split(" - ")[1] == "Maa":
-
-                    info = {"Queue": {"Member_1": name}}
-
-                    logger.info(f"用户添加任务：{name}")
+                    logger.info(f"用户添加任务：{self.object.currentData()}")
                     TaskManager.add_task(
-                        f"{self.mode.currentText()}_主调度台", "自定义队列", info
+                        f"{self.mode.currentText()}_主调度台",
+                        "自定义队列",
+                        {"Queue": {"Member_1": self.object.currentData()}},
                     )
 
     class DispatchInfoCard(HeaderCardWidget):

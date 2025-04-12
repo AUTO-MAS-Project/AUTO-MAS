@@ -54,7 +54,7 @@ class _SystemHandler:
     def set_Sleep(self) -> None:
         """同步系统休眠状态"""
 
-        if Config.global_config.get(Config.global_config.function_IfAllowSleep):
+        if Config.get(Config.function_IfAllowSleep):
             # 设置系统电源状态
             ctypes.windll.kernel32.SetThreadExecutionState(
                 self.ES_CONTINUOUS | self.ES_SYSTEM_REQUIRED
@@ -66,10 +66,7 @@ class _SystemHandler:
     def set_SelfStart(self) -> None:
         """同步开机自启"""
 
-        if (
-            Config.global_config.get(Config.global_config.start_IfSelfStart)
-            and not self.is_startup()
-        ):
+        if Config.get(Config.start_IfSelfStart) and not self.is_startup():
             key = winreg.OpenKey(
                 winreg.HKEY_CURRENT_USER,
                 r"Software\Microsoft\Windows\CurrentVersion\Run",
@@ -78,10 +75,7 @@ class _SystemHandler:
             )
             winreg.SetValueEx(key, "AUTO_MAA", 0, winreg.REG_SZ, Config.app_path_sys)
             winreg.CloseKey(key)
-        elif (
-            not Config.global_config.get(Config.global_config.start_IfSelfStart)
-            and self.is_startup()
-        ):
+        elif not Config.get(Config.start_IfSelfStart) and self.is_startup():
             key = winreg.OpenKey(
                 winreg.HKEY_CURRENT_USER,
                 r"Software\Microsoft\Windows\CurrentVersion\Run",

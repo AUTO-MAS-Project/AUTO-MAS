@@ -42,51 +42,32 @@ class _MainInfoBar:
 
     def push_info_bar(self, mode: str, title: str, content: str, time: int):
         """推送到信息通知栏"""
-
         if self.main_window is None:
             logger.error("信息通知栏未设置父窗口")
             return None
-
-        if mode == "success":
-            InfoBar.success(
+    
+        # 定义模式到 InfoBar 方法的映射
+        mode_mapping = {
+            "success": InfoBar.success,
+            "warning": InfoBar.warning,
+            "error": InfoBar.error,
+            "info": InfoBar.info
+        }
+    
+        # 根据 mode 获取对应的 InfoBar 方法
+        info_bar_method = mode_mapping.get(mode)
+        if info_bar_method:
+            info_bar_method(
                 title=title,
                 content=content,
                 orient=Qt.Horizontal,
                 isClosable=True,
                 position=InfoBarPosition.TOP_RIGHT,
                 duration=time,
-                parent=self.main_window,
+                parent=self.main_window
             )
-        elif mode == "warning":
-            InfoBar.warning(
-                title=title,
-                content=content,
-                orient=Qt.Horizontal,
-                isClosable=True,
-                position=InfoBarPosition.TOP_RIGHT,
-                duration=time,
-                parent=self.main_window,
-            )
-        elif mode == "error":
-            InfoBar.error(
-                title=title,
-                content=content,
-                orient=Qt.Horizontal,
-                isClosable=True,
-                position=InfoBarPosition.TOP_RIGHT,
-                duration=time,
-                parent=self.main_window,
-            )
-        elif mode == "info":
-            InfoBar.info(
-                title=title,
-                content=content,
-                orient=Qt.Horizontal,
-                isClosable=True,
-                position=InfoBarPosition.TOP_RIGHT,
-                duration=time,
-                parent=self.main_window,
-            )
+        else:
+            logger.error(f"未知的通知栏模式: {mode}")
 
 
 MainInfoBar = _MainInfoBar()

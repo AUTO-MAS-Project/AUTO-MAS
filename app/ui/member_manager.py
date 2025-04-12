@@ -29,48 +29,53 @@ from loguru import logger
 from PySide6.QtWidgets import (
     QWidget,
     QFileDialog,
-    QTableWidgetItem,
-    QHeaderView,
+    QHBoxLayout,
     QVBoxLayout,
     QStackedWidget,
+    QTableWidgetItem,
+    QHeaderView,
 )
 from qfluentwidgets import (
     Action,
-    qconfig,
-    TableWidget,
     Pivot,
-    ComboBox,
     ScrollArea,
     FluentIcon,
     MessageBox,
     HeaderCardWidget,
     CommandBar,
     ExpandGroupSettingCard,
-    ComboBoxSettingCard,
     PushSettingCard,
+    TableWidget,
+    PrimaryToolButton,
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 import requests
 import time
+from datetime import datetime
 from functools import partial
 from pathlib import Path
 from typing import List
-from datetime import datetime, timedelta
-import json
 import shutil
 
-from app.core import Config, MainInfoBar, TaskManager
+from app.core import Config, MainInfoBar, TaskManager, MaaConfig, MaaUserConfig
 from app.services import Crypto
-from app.utils import Updater
+from app.utils import DownloadManager
 from .Widget import (
     LineEditMessageBox,
     LineEditSettingCard,
     SpinBoxSettingCard,
     ComboBoxMessageBox,
+    EditableComboBoxSettingCard,
+    PasswordLineEditSettingCard,
+    UserLableSettingCard,
+    ComboBoxSettingCard,
+    SwitchSettingCard,
+    PushAndSwitchButtonSettingCard,
 )
 
 
 class MemberManager(QWidget):
+    """脚本管理父界面"""
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -81,7 +86,7 @@ class MemberManager(QWidget):
 
         self.tools = CommandBar()
 
-        self.member_manager = MemberSettingBox(self)
+        self.member_manager = self.MemberSettingBox(self)
 
         # 逐个添加动作
         self.tools.addActions(
@@ -116,14 +121,13 @@ class MemberManager(QWidget):
             )
         )
         self.tools.addSeparator()
-        self.tools.addAction(
-            Action(
-                FluentIcon.HIDE,
-                "显示/隐藏密码",
-                checkable=True,
-                triggered=self.show_password,
-            )
+        self.key = Action(
+            FluentIcon.HIDE,
+            "显示/隐藏密码",
+            checkable=True,
+            triggered=self.show_password,
         )
+        self.tools.addAction(self.key)
 
         layout.addWidget(self.tools)
         layout.addWidget(self.member_manager)
@@ -141,19 +145,32 @@ class MemberManager(QWidget):
 
             if choice.input[0].currentText() == "MAA":
 
-                index = len(self.member_manager.search_member()) + 1
+                index = len(Config.member_dict) + 1
 
-                qconfig.load(
+                maa_config = MaaConfig()
+                maa_config.load(
                     Config.app_path / f"config/MaaConfig/脚本_{index}/config.json",
-                    Config.maa_config,
+                    maa_config,
                 )
-                Config.clear_maa_config()
-                Config.maa_config.save()
+                maa_config.save()
+                (Config.app_path / f"config/MaaConfig/脚本_{index}/UserData").mkdir(
+                    parents=True, exist_ok=True
+                )
 
-                Config.open_database("Maa", f"脚本_{index}")
-                Config.init_database("Maa")
+                Config.member_dict[f"脚本_{index}"] = {
+                    "Type": "Maa",
+                    "Path": Config.app_path / f"config/MaaConfig/脚本_{index}",
+                    "Config": maa_config,
+                    "UserData": {},
+                }
+
                 self.member_manager.add_MaaSettingBox(index)
                 self.member_manager.switch_SettingBox(index)
+
+                logger.success(f"脚本实例 脚本_{index} 添加成功")
+                MainInfoBar.push_info_bar(
+                    "success", "操作成功", f"添加脚本实例 脚本_{index}", 3000
+                )
 
     def del_setting_box(self):
         """删除一个脚本实例"""
@@ -181,25 +198,23 @@ class MemberManager(QWidget):
         )
         if choice.exec():
 
-            member_list = self.member_manager.search_member()
-            move_list = [_ for _ in member_list if int(_[0][3:]) > int(name[3:])]
-
-            type = [_[1] for _ in member_list if _[0] == name]
-            index = max(int(name[3:]) - 1, 1)
-
             self.member_manager.clear_SettingBox()
 
-            shutil.rmtree(Config.app_path / f"config/{type[0]}Config/{name}")
-            self.change_queue(name, "禁用")
-            for member in move_list:
-                if (Config.app_path / f"config/{member[1]}Config/{member[0]}").exists():
-                    (Config.app_path / f"config/{member[1]}Config/{member[0]}").rename(
-                        Config.app_path
-                        / f"config/{member[1]}Config/脚本_{int(member[0][3:])-1}",
+            shutil.rmtree(Config.member_dict[name]["Path"])
+            Config.change_queue(name, "禁用")
+            for i in range(int(name[3:]) + 1, len(Config.member_dict) + 1):
+                if Config.member_dict[f"脚本_{i}"]["Path"].exists():
+                    Config.member_dict[f"脚本_{i}"]["Path"].rename(
+                        Config.member_dict[f"脚本_{i}"]["Path"].with_name(f"脚本_{i-1}")
                     )
-                self.change_queue(member[0], f"脚本_{int(member[0][3:])-1}")
+                Config.change_queue(f"脚本_{i}", f"脚本_{i-1}")
 
-            self.member_manager.show_SettingBox(index)
+            self.member_manager.show_SettingBox(max(int(name[3:]) - 1, 1))
+
+            logger.success(f"脚本实例 {name} 删除成功")
+            MainInfoBar.push_info_bar(
+                "success", "操作成功", f"删除脚本实例 {name}", 3000
+            )
 
     def left_setting_box(self):
         """向左移动脚本实例"""
@@ -213,7 +228,6 @@ class MemberManager(QWidget):
             )
             return None
 
-        member_list = self.member_manager.search_member()
         index = int(name[3:])
 
         if index == 1:
@@ -230,25 +244,25 @@ class MemberManager(QWidget):
             )
             return None
 
-        type_right = [_[1] for _ in member_list if _[0] == name]
-        type_left = [_[1] for _ in member_list if _[0] == f"脚本_{index-1}"]
-
         self.member_manager.clear_SettingBox()
 
-        (Config.app_path / f"config/{type_right[0]}Config/脚本_{index}").rename(
-            Config.app_path / f"config/{type_right[0]}Config/脚本_0"
+        Config.member_dict[name]["Path"].rename(
+            Config.member_dict[name]["Path"].with_name("脚本_0")
         )
-        self.change_queue(f"脚本_{index}", "脚本_0")
-        (Config.app_path / f"config/{type_left[0]}Config/脚本_{index-1}").rename(
-            Config.app_path / f"config/{type_left[0]}Config/脚本_{index}"
+        Config.change_queue(name, "脚本_0")
+        Config.member_dict[f"脚本_{index-1}"]["Path"].rename(
+            Config.member_dict[name]["Path"]
         )
-        self.change_queue(f"脚本_{index-1}", f"脚本_{index}")
-        (Config.app_path / f"config/{type_right[0]}Config/脚本_0").rename(
-            Config.app_path / f"config/{type_right[0]}Config/脚本_{index-1}"
+        Config.change_queue(f"脚本_{index-1}", name)
+        Config.member_dict[name]["Path"].with_name("脚本_0").rename(
+            Config.member_dict[f"脚本_{index-1}"]["Path"]
         )
-        self.change_queue("脚本_0", f"脚本_{index-1}")
+        Config.change_queue("脚本_0", f"脚本_{index-1}")
 
         self.member_manager.show_SettingBox(index - 1)
+
+        logger.success(f"脚本实例 {name} 左移成功")
+        MainInfoBar.push_info_bar("success", "操作成功", f"左移脚本实例 {name}", 3000)
 
     def right_setting_box(self):
         """向右移动脚本实例"""
@@ -262,10 +276,9 @@ class MemberManager(QWidget):
             )
             return None
 
-        member_list = self.member_manager.search_member()
         index = int(name[3:])
 
-        if index == len(member_list):
+        if index == len(Config.member_dict):
             logger.warning("向右移动脚本实例时已到达最右端")
             MainInfoBar.push_info_bar(
                 "warning", "已经是最后一个脚本实例", "无法向右移动", 5000
@@ -279,25 +292,25 @@ class MemberManager(QWidget):
             )
             return None
 
-        type_left = [_[1] for _ in member_list if _[0] == name]
-        type_right = [_[1] for _ in member_list if _[0] == f"脚本_{index+1}"]
-
         self.member_manager.clear_SettingBox()
 
-        (Config.app_path / f"config/{type_left[0]}Config/脚本_{index}").rename(
-            Config.app_path / f"config/{type_left[0]}Config/脚本_0",
+        Config.member_dict[name]["Path"].rename(
+            Config.member_dict[name]["Path"].with_name("脚本_0")
         )
-        self.change_queue(f"脚本_{index}", "脚本_0")
-        (Config.app_path / f"config/{type_right[0]}Config/脚本_{index+1}").rename(
-            Config.app_path / f"config/{type_right[0]}Config/脚本_{index}",
+        Config.change_queue(name, "脚本_0")
+        Config.member_dict[f"脚本_{index+1}"]["Path"].rename(
+            Config.member_dict[name]["Path"]
         )
-        self.change_queue(f"脚本_{index+1}", f"脚本_{index}")
-        (Config.app_path / f"config/{type_left[0]}Config/脚本_0").rename(
-            Config.app_path / f"config/{type_left[0]}Config/脚本_{index+1}",
+        Config.change_queue(f"脚本_{index+1}", name)
+        Config.member_dict[name]["Path"].with_name("脚本_0").rename(
+            Config.member_dict[f"脚本_{index+1}"]["Path"]
         )
-        self.change_queue("脚本_0", f"脚本_{index+1}")
+        Config.change_queue("脚本_0", f"脚本_{index+1}")
 
         self.member_manager.show_SettingBox(index + 1)
+
+        logger.success(f"脚本实例 {name} 右移成功")
+        MainInfoBar.push_info_bar("success", "操作成功", f"右移脚本实例 {name}", 3000)
 
     def member_downloader(self):
         """脚本下载器"""
@@ -327,7 +340,7 @@ class MemberManager(QWidget):
                 for _ in range(3):
                     try:
                         response = requests.get(
-                            "https://mirrorc.top/api/resources/MAA/latest?user_agent=MaaWpfGui&os=win&arch=x64&channel=stable"
+                            "https://mirrorchyan.com/api/resources/MAA/latest?user_agent=MaaWpfGui&os=win&arch=x64&channel=stable"
                         )
                         maa_info = response.json()
                         break
@@ -355,8 +368,14 @@ class MemberManager(QWidget):
                 while len(maa_version) < 4:
                     maa_version.append(0)
 
-                self.downloader = Updater(Path(folder), "MAA", maa_version, [])
+                self.downloader = DownloadManager(
+                    Path(folder),
+                    "MAA",
+                    maa_version,
+                    {"thread_numb": Config.get(Config.update_ThreadNumb)},
+                )
                 self.downloader.show()
+                self.downloader.run()
 
     def show_password(self):
 
@@ -369,1329 +388,1150 @@ class MemberManager(QWidget):
             )
             if choice.exec() and choice.input.text() != "":
                 Config.PASSWORD = choice.input.text()
-                self.member_manager.script_list[
-                    int(self.member_manager.pivot.currentRouteKey()[3:]) - 1
-                ].user_setting.user_list.update_user_info("normal")
+                Config.PASSWORD_refreshed.emit()
                 self.key.setIcon(FluentIcon.VIEW)
                 self.key.setChecked(True)
             else:
                 Config.PASSWORD = ""
-                self.member_manager.script_list[
-                    int(self.member_manager.pivot.currentRouteKey()[3:]) - 1
-                ].user_setting.user_list.update_user_info("normal")
+                Config.PASSWORD_refreshed.emit()
                 self.key.setIcon(FluentIcon.HIDE)
                 self.key.setChecked(False)
         else:
             Config.PASSWORD = ""
-            self.member_manager.script_list[
-                int(self.member_manager.pivot.currentRouteKey()[3:]) - 1
-            ].user_setting.user_list.update_user_info("normal")
+            Config.PASSWORD_refreshed.emit()
             self.key.setIcon(FluentIcon.HIDE)
             self.key.setChecked(False)
 
-    def change_queue(self, old: str, new: str) -> None:
-        """修改调度队列配置文件的队列参数"""
+    def refresh_dashboard(self):
+        """刷新所有脚本实例的用户仪表盘"""
 
-        if (Config.app_path / "config/QueueConfig").exists():
-            for json_file in (Config.app_path / "config/QueueConfig").glob("*.json"):
-                with json_file.open("r", encoding="utf-8") as f:
-                    data = json.load(f)
+        for script in self.member_manager.script_list:
+            script.user_setting.user_manager.user_dashboard.load_info()
 
-                for i in range(10):
-                    if data["Queue"][f"Member_{i+1}"] == old:
-                        data["Queue"][f"Member_{i+1}"] = new
+    class MemberSettingBox(QWidget):
+        """脚本管理子页面组"""
 
-                with json_file.open("w", encoding="utf-8") as f:
-                    json.dump(data, f, ensure_ascii=False, indent=4)
-
-    def refresh(self):
-        """刷新脚本实例界面"""
-
-        if len(self.member_manager.search_member()) == 0:
-            index = 0
-        else:
-            index = int(self.member_manager.pivot.currentRouteKey()[3:])
-        self.member_manager.switch_SettingBox(index)
-
-
-class MemberSettingBox(QWidget):
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-
-        self.setObjectName("脚本管理")
-
-        self.pivot = Pivot(self)
-        self.stackedWidget = QStackedWidget(self)
-        self.Layout = QVBoxLayout(self)
-
-        self.script_list: List[MaaSettingBox] = []
-
-        self.Layout.addWidget(self.pivot, 0, Qt.AlignHCenter)
-        self.Layout.addWidget(self.stackedWidget)
-        self.Layout.setContentsMargins(0, 0, 0, 0)
-
-        self.pivot.currentItemChanged.connect(
-            lambda index: self.switch_SettingBox(int(index[3:]), if_chang_pivot=False)
-        )
-
-        self.show_SettingBox(1)
-
-    def show_SettingBox(self, index) -> None:
-        """加载所有子界面"""
-
-        member_list = self.search_member()
-
-        qconfig.load(
-            Config.app_path / "config/临时.json",
-            Config.maa_config,
-        )
-        Config.clear_maa_config()
-        for member in member_list:
-            if member[1] == "Maa":
-                Config.open_database(member[1], member[0])
-                self.add_MaaSettingBox(int(member[0][3:]))
-        if (Config.app_path / "config/临时.json").exists():
-            (Config.app_path / "config/临时.json").unlink()
-
-        self.switch_SettingBox(index)
-
-    def switch_SettingBox(self, index: int, if_chang_pivot: bool = True) -> None:
-        """切换到指定的子界面"""
-
-        member_list = self.search_member()
-
-        if len(member_list) == 0:
-            return None
-
-        if index > len(member_list):
-            return None
-
-        type = [_[1] for _ in member_list if _[0] == f"脚本_{index}"]
-
-        qconfig.load(
-            Config.app_path
-            / f"config/{type[0]}Config/{self.script_list[index-1].objectName()}/config.json",
-            Config.maa_config,
-        )
-        Config.open_database(type[0], self.script_list[index - 1].objectName())
-        self.script_list[index - 1].user_setting.user_list.update_user_info("normal")
-
-        if if_chang_pivot:
-            self.pivot.setCurrentItem(self.script_list[index - 1].objectName())
-        self.stackedWidget.setCurrentWidget(self.script_list[index - 1])
-
-    def clear_SettingBox(self) -> None:
-        """清空所有子界面"""
-
-        for sub_interface in self.script_list:
-            self.stackedWidget.removeWidget(sub_interface)
-            sub_interface.deleteLater()
-        self.script_list.clear()
-        self.pivot.clear()
-        qconfig.load(
-            Config.app_path / "config/临时.json",
-            Config.maa_config,
-        )
-        Config.clear_maa_config()
-        if (Config.app_path / "config/临时.json").exists():
-            (Config.app_path / "config/临时.json").unlink()
-        Config.close_database()
-
-    def add_MaaSettingBox(self, uid: int) -> None:
-        """添加一个MAA设置界面"""
-
-        maa_setting_box = MaaSettingBox(uid, self)
-
-        self.script_list.append(maa_setting_box)
-
-        self.stackedWidget.addWidget(self.script_list[-1])
-
-        self.pivot.addItem(routeKey=f"脚本_{uid}", text=f"脚本 {uid}")
-
-    def search_member(self) -> list:
-        """搜索所有脚本实例"""
-
-        member_list = []
-
-        if (Config.app_path / "config/MaaConfig").exists():
-            for subdir in (Config.app_path / "config/MaaConfig").iterdir():
-                if subdir.is_dir():
-                    member_list.append([subdir.name, "Maa"])
-
-        return member_list
-
-
-class MaaSettingBox(QWidget):
-
-    def __init__(self, uid: int, parent=None):
-        super().__init__(parent)
-
-        self.setObjectName(f"脚本_{uid}")
-
-        layout = QVBoxLayout()
-
-        scrollArea = ScrollArea()
-        scrollArea.setWidgetResizable(True)
-
-        content_widget = QWidget()
-        content_layout = QVBoxLayout(content_widget)
-
-        self.app_setting = self.AppSettingCard(self, self.objectName())
-        self.user_setting = self.UserSettingCard(self, self.objectName())
-
-        content_layout.addWidget(self.app_setting)
-        content_layout.addWidget(self.user_setting)
-        content_layout.addStretch(1)
-
-        scrollArea.setWidget(content_widget)
-
-        layout.addWidget(scrollArea)
-
-        self.setLayout(layout)
-
-    class AppSettingCard(HeaderCardWidget):
-
-        def __init__(self, parent=None, name: str = None):
+        def __init__(self, parent=None):
             super().__init__(parent)
 
-            self.setTitle("MAA实例")
+            self.setObjectName("脚本管理页面组")
 
-            self.name = name
+            self.pivot = Pivot(self)
+            self.stackedWidget = QStackedWidget(self)
+            self.Layout = QVBoxLayout(self)
 
-            Layout = QVBoxLayout()
+            self.script_list: List[MemberManager.MemberSettingBox.MaaSettingBox] = []
 
-            self.card_Name = LineEditSettingCard(
-                "请输入实例名称",
-                FluentIcon.EDIT,
-                "实例名称",
-                "用于标识MAA实例的名称",
-                Config.maa_config.MaaSet_Name,
-            )
-            self.card_Path = PushSettingCard(
-                "选择文件夹",
-                FluentIcon.FOLDER,
-                "MAA目录",
-                Config.maa_config.get(Config.maa_config.MaaSet_Path),
-            )
-            self.card_Set = PushSettingCard(
-                "设置",
-                FluentIcon.HOME,
-                "MAA全局配置",
-                "简洁模式下MAA将继承全局配置",
-            )
-            self.RunSet = self.RunSetSettingCard(self)
+            self.Layout.addWidget(self.pivot, 0, Qt.AlignHCenter)
+            self.Layout.addWidget(self.stackedWidget)
+            self.Layout.setContentsMargins(0, 0, 0, 0)
 
-            self.card_Path.clicked.connect(self.PathClicked)
-            Config.maa_config.MaaSet_Path.valueChanged.connect(
-                lambda: self.card_Path.setContent(
-                    Config.maa_config.get(Config.maa_config.MaaSet_Path)
+            self.pivot.currentItemChanged.connect(
+                lambda index: self.switch_SettingBox(
+                    int(index[3:]), if_chang_pivot=False
                 )
             )
-            self.card_Set.clicked.connect(
-                lambda: TaskManager.add_task("设置MAA_全局", self.name, None)
-            )
 
-            Layout.addWidget(self.card_Name)
-            Layout.addWidget(self.card_Path)
-            Layout.addWidget(self.card_Set)
-            Layout.addWidget(self.RunSet)
+            self.show_SettingBox(1)
 
-            self.viewLayout.addLayout(Layout)
+        def show_SettingBox(self, index) -> None:
+            """加载所有子界面"""
 
-        def PathClicked(self):
+            Config.search_member()
 
-            folder = QFileDialog.getExistingDirectory(
-                self,
-                "选择MAA目录",
-                Config.maa_config.get(Config.maa_config.MaaSet_Path),
-            )
-            if (
-                not folder
-                or Config.maa_config.get(Config.maa_config.MaaSet_Path) == folder
-            ):
-                logger.warning("选择MAA目录时未选择文件夹或未更改文件夹")
-                MainInfoBar.push_info_bar(
-                    "warning", "警告", "未选择文件夹或未更改文件夹", 5000
-                )
-                return None
-            elif (
-                not (Path(folder) / "config/gui.json").exists()
-                or not (Path(folder) / "MAA.exe").exists()
-            ):
-                logger.warning("选择MAA目录时未找到MAA程序或配置文件")
-                MainInfoBar.push_info_bar(
-                    "warning", "警告", "未找到MAA程序或配置文件", 5000
-                )
+            for name, info in Config.member_dict.items():
+                if info["Type"] == "Maa":
+                    self.add_MaaSettingBox(int(name[3:]))
+
+            self.switch_SettingBox(index)
+
+        def switch_SettingBox(self, index: int, if_chang_pivot: bool = True) -> None:
+            """切换到指定的子界面"""
+
+            if len(Config.member_dict) == 0:
                 return None
 
-            (Config.app_path / f"config/MaaConfig/{self.name}/Default").mkdir(
-                parents=True, exist_ok=True
-            )
-            shutil.copy(
-                Path(folder) / "config/gui.json",
-                Config.app_path / f"config/MaaConfig/{self.name}/Default/gui.json",
-            )
-            Config.maa_config.set(Config.maa_config.MaaSet_Path, folder)
-            self.card_Path.setContent(folder)
-
-        class RunSetSettingCard(ExpandGroupSettingCard):
-
-            def __init__(self, parent=None):
-                super().__init__(FluentIcon.SETTING, "运行", "MAA运行调控选项", parent)
-
-                self.card_TaskTransitionMethod = ComboBoxSettingCard(
-                    configItem=Config.maa_config.RunSet_TaskTransitionMethod,
-                    icon=FluentIcon.PAGE_RIGHT,
-                    title="任务切换方式",
-                    content="简洁用户列表下相邻两个任务间的切换方式",
-                    texts=["直接切换账号", "重启明日方舟", "重启模拟器"],
-                )
-                self.ProxyTimesLimit = SpinBoxSettingCard(
-                    (0, 1024),
-                    FluentIcon.PAGE_RIGHT,
-                    "用户单日代理次数上限",
-                    "当用户本日代理成功次数超过该阈值时跳过代理，阈值为“0”时视为无代理次数上限",
-                    Config.maa_config.RunSet_ProxyTimesLimit,
-                )
-                self.AnnihilationTimeLimit = SpinBoxSettingCard(
-                    (1, 1024),
-                    FluentIcon.PAGE_RIGHT,
-                    "剿灭代理超时限制",
-                    "MAA日志无变化时间超过该阈值视为超时，单位为分钟",
-                    Config.maa_config.RunSet_AnnihilationTimeLimit,
-                )
-                self.RoutineTimeLimit = SpinBoxSettingCard(
-                    (1, 1024),
-                    FluentIcon.PAGE_RIGHT,
-                    "自动代理超时限制",
-                    "MAA日志无变化时间超过该阈值视为超时，单位为分钟",
-                    Config.maa_config.RunSet_RoutineTimeLimit,
-                )
-                self.RunTimesLimit = SpinBoxSettingCard(
-                    (1, 1024),
-                    FluentIcon.PAGE_RIGHT,
-                    "代理重试次数限制",
-                    "若超过该次数限制仍未完成代理，视为代理失败",
-                    Config.maa_config.RunSet_RunTimesLimit,
-                )
-
-                widget = QWidget()
-                Layout = QVBoxLayout(widget)
-                Layout.addWidget(self.card_TaskTransitionMethod)
-                Layout.addWidget(self.ProxyTimesLimit)
-                Layout.addWidget(self.AnnihilationTimeLimit)
-                Layout.addWidget(self.RoutineTimeLimit)
-                Layout.addWidget(self.RunTimesLimit)
-                self.viewLayout.setContentsMargins(0, 0, 0, 0)
-                self.viewLayout.setSpacing(0)
-                self.addGroupWidget(widget)
-
-    class UserSettingCard(HeaderCardWidget):
-
-        def __init__(self, parent=None, name: str = None):
-            super().__init__(parent)
-
-            self.setTitle("用户列表")
-
-            self.name = name
-
-            Layout = QVBoxLayout()
-
-            self.user_list = self.UserListBox(self.name, self)
-
-            self.tools = CommandBar()
-            self.tools.addActions(
-                [
-                    Action(
-                        FluentIcon.ADD, "新建用户", triggered=self.user_list.add_user
-                    ),
-                    Action(
-                        FluentIcon.REMOVE, "删除用户", triggered=self.user_list.del_user
-                    ),
-                ]
-            )
-            self.tools.addSeparator()
-            self.tools.addActions(
-                [
-                    Action(FluentIcon.UP, "向上移动", triggered=self.user_list.up_user),
-                    Action(
-                        FluentIcon.DOWN, "向下移动", triggered=self.user_list.down_user
-                    ),
-                ]
-            )
-            self.tools.addSeparator()
-            self.tools.addAction(
-                Action(
-                    FluentIcon.SCROLL, "模式转换", triggered=self.user_list.switch_user
-                )
-            )
-            self.tools.addSeparator()
-            self.tools.addAction(
-                Action(
-                    FluentIcon.DEVELOPER_TOOLS, "用户选项配置", triggered=self.set_more
-                )
-            )
-
-            Layout.addWidget(self.tools)
-            Layout.addWidget(self.user_list)
-
-            self.viewLayout.addLayout(Layout)
-
-        def set_more(self):
-            """用户选项配置"""
-
-            if len(Config.running_list) > 0:
-                logger.warning("配置用户选项时调度队列未停止运行")
-                MainInfoBar.push_info_bar(
-                    "warning", "调度中心正在执行任务", "请等待或手动中止任务", 5000
-                )
+            if index > len(Config.member_dict):
                 return None
 
-            Config.cur.execute("SELECT * FROM adminx WHERE True")
-            data = Config.cur.fetchall()
-            data = sorted(data, key=lambda x: (-len(x[15]), x[16]))
+            if if_chang_pivot:
+                self.pivot.setCurrentItem(self.script_list[index - 1].objectName())
+            self.stackedWidget.setCurrentWidget(self.script_list[index - 1])
+            self.script_list[index - 1].user_setting.user_manager.switch_SettingBox(
+                "用户仪表盘"
+            )
 
-            if self.user_list.pivot.currentRouteKey() == f"{self.name}_简洁用户列表":
+        def clear_SettingBox(self) -> None:
+            """清空所有子界面"""
 
-                user_list = [_[0] for _ in data if _[15] == "simple"]
-                set_list = ["自定义基建"]
+            for sub_interface in self.script_list:
+                self.stackedWidget.removeWidget(sub_interface)
+                sub_interface.deleteLater()
+            self.script_list.clear()
+            self.pivot.clear()
 
-                choice = ComboBoxMessageBox(
-                    self.window(),
-                    "用户选项配置",
-                    ["选择要配置的用户", "选择要配置的选项"],
-                    [user_list, set_list],
-                )
-                if (
-                    choice.exec()
-                    and choice.input[0].currentIndex() != -1
-                    and choice.input[1].currentIndex() != -1
-                ):
+        def add_MaaSettingBox(self, uid: int) -> None:
+            """添加一个MAA设置界面"""
 
-                    if choice.input[1].currentIndex() == 0:
-                        file_path, _ = QFileDialog.getOpenFileName(
-                            self,
-                            "选择自定义基建文件",
-                            ".",
-                            "JSON 文件 (*.json)",
-                        )
-                        if file_path != "":
-                            (
-                                Config.app_path
-                                / f"config/MaaConfig/{self.name}/simple/{choice.input[0].currentIndex()}/infrastructure"
-                            ).mkdir(parents=True, exist_ok=True)
-                            shutil.copy(
-                                file_path,
-                                Config.app_path
-                                / f"config/MaaConfig/{self.name}/simple/{choice.input[0].currentIndex()}/infrastructure/infrastructure.json",
-                            )
-                        else:
-                            logger.warning("未选择自定义基建文件")
-                            MainInfoBar.push_info_bar(
-                                "warning", "警告", "未选择自定义基建文件", 5000
-                            )
+            maa_setting_box = self.MaaSettingBox(uid, self)
 
-            elif self.user_list.pivot.currentRouteKey() == f"{self.name}_高级用户列表":
+            self.script_list.append(maa_setting_box)
 
-                user_list = [_[0] for _ in data if _[15] == "beta"]
-                set_list = ["MAA日常配置", "MAA剿灭配置"]
+            self.stackedWidget.addWidget(self.script_list[-1])
 
-                choice = ComboBoxMessageBox(
-                    self.window(),
-                    "用户选项配置",
-                    ["选择要配置的用户", "选择要配置的选项"],
-                    [user_list, set_list],
-                )
-                if (
-                    choice.exec()
-                    and choice.input[0].currentIndex() != -1
-                    and choice.input[1].currentIndex() != -1
-                ):
+            self.pivot.addItem(routeKey=f"脚本_{uid}", text=f"脚本 {uid}")
 
-                    set_book = ["routine", "annihilation"]
-                    TaskManager.add_task(
-                        "设置MAA_用户",
-                        self.name,
-                        {
-                            "SetMaaInfo": {
-                                "UserId": choice.input[0].currentIndex(),
-                                "SetType": set_book[choice.input[1].currentIndex()],
-                            }
-                        },
-                    )
+        class MaaSettingBox(QWidget):
+            """MAA类脚本设置界面"""
 
-        class UserListBox(QWidget):
-
-            def __init__(self, name: str, parent=None):
+            def __init__(self, uid: int, parent=None):
                 super().__init__(parent)
-                self.setObjectName(f"{name}_用户列表")
 
-                self.name = name
+                self.setObjectName(f"脚本_{uid}")
+                self.config = Config.member_dict[f"脚本_{uid}"]["Config"]
 
-                self.if_user_list_editable = True
-                self.if_update_database = True
-                self.if_update_config = True
+                layout = QVBoxLayout()
 
-                self.user_mode_list = ["simple", "beta"]
-                self.user_column = [
-                    "admin",
-                    "id",
-                    "server",
-                    "day",
-                    "status",
-                    "last",
-                    "game",
-                    "game_1",
-                    "game_2",
-                    "routine",
-                    "annihilation",
-                    "infrastructure",
-                    "password",
-                    "notes",
-                    "numb",
-                    "mode",
-                    "uid",
-                ]
-                self.userlist_simple_index = [
-                    0,
-                    1,
-                    2,
-                    3,
-                    4,
-                    5,
-                    6,
-                    7,
-                    8,
-                    "-",
-                    9,
-                    10,
-                    11,
-                    12,
-                    "-",
-                    "-",
-                    "-",
-                ]
-                self.userlist_beta_index = [
-                    0,
-                    "-",
-                    "-",
-                    1,
-                    2,
-                    3,
-                    "-",
-                    "-",
-                    "-",
-                    4,
-                    5,
-                    "-",
-                    6,
-                    7,
-                    "-",
-                    "-",
-                    "-",
-                ]
+                scrollArea = ScrollArea()
+                scrollArea.setWidgetResizable(True)
 
-                self.pivot = Pivot(self)
-                self.stackedWidget = QStackedWidget(self)
-                self.Layout = QVBoxLayout(self)
+                content_widget = QWidget()
+                content_layout = QVBoxLayout(content_widget)
 
-                self.user_list_simple = TableWidget()
-                self.user_list_simple.setObjectName(f"{self.name}_简洁用户列表")
-                self.user_list_simple.setColumnCount(13)
-                self.user_list_simple.setBorderVisible(True)
-                self.user_list_simple.setBorderRadius(10)
-                self.user_list_simple.setWordWrap(False)
-                self.user_list_simple.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-                self.user_list_simple.setHorizontalHeaderLabels(
-                    [
-                        "用户名",
-                        "账号ID",
-                        "服务器",
-                        "代理天数",
-                        "状态",
-                        "执行情况",
-                        "关卡",
-                        "备选关卡-1",
-                        "备选关卡-2",
-                        "剿灭",
-                        "自定义基建",
-                        "密码",
-                        "备注",
-                    ]
-                )
+                self.app_setting = self.AppSettingCard(f"脚本_{uid}", self.config, self)
+                self.user_setting = self.UserManager(f"脚本_{uid}", self)
 
-                self.user_list_beta = TableWidget()
-                self.user_list_beta.setObjectName(f"{name}_高级用户列表")
-                self.user_list_beta.setColumnCount(8)
-                self.user_list_beta.setBorderVisible(True)
-                self.user_list_beta.setBorderRadius(10)
-                self.user_list_beta.setWordWrap(False)
-                self.user_list_beta.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-                self.user_list_beta.setHorizontalHeaderLabels(
-                    [
-                        "用户名",
-                        "代理天数",
-                        "状态",
-                        "执行情况",
-                        "日常",
-                        "剿灭",
-                        "密码",
-                        "备注",
-                    ]
-                )
+                content_layout.addWidget(self.app_setting)
+                content_layout.addWidget(self.user_setting)
+                content_layout.addStretch(1)
 
-                self.user_list_simple.itemChanged.connect(
-                    lambda item: self.change_user_Item(item, "simple")
-                )
-                self.user_list_beta.itemChanged.connect(
-                    lambda item: self.change_user_Item(item, "beta")
-                )
+                scrollArea.setWidget(content_widget)
 
-                self.stackedWidget.addWidget(self.user_list_simple)
-                self.pivot.addItem(
-                    routeKey=f"{name}_简洁用户列表", text=f"简洁用户列表"
-                )
-                self.stackedWidget.addWidget(self.user_list_beta)
-                self.pivot.addItem(
-                    routeKey=f"{name}_高级用户列表", text=f"高级用户列表"
-                )
+                layout.addWidget(scrollArea)
 
-                self.Layout.addWidget(self.pivot, 0, Qt.AlignHCenter)
-                self.Layout.addWidget(self.stackedWidget)
-                self.Layout.setContentsMargins(0, 0, 0, 0)
+                self.setLayout(layout)
 
-                self.update_user_info("normal")
-                self.switch_SettingBox(f"{name}_简洁用户列表")
-                self.pivot.currentItemChanged.connect(
-                    lambda index: self.switch_SettingBox(index)
-                )
+            class AppSettingCard(HeaderCardWidget):
 
-            def switch_SettingBox(self, index: str) -> None:
-                """切换到指定的子界面"""
+                def __init__(self, name: str, config: MaaConfig, parent=None):
+                    super().__init__(parent)
 
-                self.pivot.setCurrentItem(index)
-                if "简洁用户列表" in index:
-                    self.stackedWidget.setCurrentWidget(self.user_list_simple)
-                elif "高级用户列表" in index:
-                    self.stackedWidget.setCurrentWidget(self.user_list_beta)
+                    self.setTitle("MAA实例")
 
-            def update_user_info(self, operation: str) -> None:
-                """将本地数据库中的用户配置同步至GUI的用户管理界面"""
+                    self.name = name
+                    self.config = config
 
-                # 读入本地数据库
-                Config.cur.execute("SELECT * FROM adminx WHERE True")
-                data = Config.cur.fetchall()
+                    Layout = QVBoxLayout()
 
-                # 处理部分模式调整
-                if operation == "read_only":
-                    self.if_user_list_editable = False
-                elif operation == "editable":
-                    self.if_user_list_editable = True
+                    self.card_Name = LineEditSettingCard(
+                        icon=FluentIcon.EDIT,
+                        title="实例名称",
+                        content="用于标识MAA实例的名称",
+                        text="请输入实例名称",
+                        qconfig=self.config,
+                        configItem=self.config.MaaSet_Name,
+                        parent=self,
+                    )
+                    self.card_Path = PushSettingCard(
+                        text="选择文件夹",
+                        icon=FluentIcon.FOLDER,
+                        title="MAA目录",
+                        content=self.config.get(self.config.MaaSet_Path),
+                        parent=self,
+                    )
+                    self.card_Set = PushSettingCard(
+                        text="设置",
+                        icon=FluentIcon.HOME,
+                        title="MAA全局配置",
+                        content="简洁模式下MAA将继承全局配置",
+                        parent=self,
+                    )
+                    self.RunSet = self.RunSetSettingCard(self.config, self)
 
-                # 阻止GUI用户数据被立即写入数据库形成死循环
-                self.if_update_database = False
-
-                # user_switch_list = ["转为高级", "转为简洁"]
-                # self.user_switch.setText(user_switch_list[index])
-
-                # 同步简洁用户配置列表
-                data_simple = [_ for _ in data if _[15] == "simple"]
-                self.user_list_simple.setRowCount(len(data_simple))
-                height = self.user_list_simple.horizontalHeader().height()
-
-                for i, row in enumerate(data_simple):
-
-                    height += self.user_list_simple.rowHeight(i)
-
-                    for j, value in enumerate(row):
-
-                        if self.userlist_simple_index[j] == "-":
-                            continue
-
-                        # 生成表格组件
-                        if j == 2:
-                            item = ComboBox()
-                            item.addItems(["官服", "B服"])
-                            if value == "Official":
-                                item.setCurrentIndex(0)
-                            elif value == "Bilibili":
-                                item.setCurrentIndex(1)
-                            item.currentIndexChanged.connect(
-                                partial(
-                                    self.change_user_CellWidget,
-                                    data_simple[i][16],
-                                    self.user_column[j],
-                                )
-                            )
-                        elif j in [4, 10, 11]:
-                            item = ComboBox()
-                            item.addItems(["启用", "禁用"])
-                            if value == "y":
-                                item.setCurrentIndex(0)
-                            elif value == "n":
-                                item.setCurrentIndex(1)
-                            item.currentIndexChanged.connect(
-                                partial(
-                                    self.change_user_CellWidget,
-                                    data_simple[i][16],
-                                    self.user_column[j],
-                                )
-                            )
-                        elif j == 3 and value == -1:
-                            item = QTableWidgetItem("无限")
-                        elif j == 5:
-                            curdate = server_date()
-                            if curdate != value:
-                                item = QTableWidgetItem("未代理")
-                            else:
-                                item = QTableWidgetItem(f"已代理{data_simple[i][14]}次")
-                            item.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
-                        elif j == 12:
-                            if Config.PASSWORD == "":
-                                item = QTableWidgetItem("******")
-                                item.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
-                            else:
-                                result = Crypto.AUTO_decryptor(value, Config.PASSWORD)
-                                item = QTableWidgetItem(result)
-                                if result == "管理密钥错误":
-                                    item.setFlags(
-                                        Qt.ItemIsSelectable | Qt.ItemIsEnabled
-                                    )
-                        else:
-                            item = QTableWidgetItem(str(value))
-
-                        # 组件录入表格
-                        if j in [2, 4, 10, 11]:
-                            if not self.if_user_list_editable:
-                                item.setEnabled(False)
-                            self.user_list_simple.setCellWidget(
-                                data_simple[i][16], self.userlist_simple_index[j], item
-                            )
-                        else:
-                            self.user_list_simple.setItem(
-                                data_simple[i][16], self.userlist_simple_index[j], item
-                            )
-                self.user_list_simple.setFixedHeight(
-                    height + self.user_list_simple.frameWidth() * 2 + 10
-                )
-
-                # 同步高级用户配置列表
-                data_beta = [_ for _ in data if _[15] == "beta"]
-                self.user_list_beta.setRowCount(len(data_beta))
-                height = self.user_list_beta.horizontalHeader().height()
-
-                for i, row in enumerate(data_beta):
-
-                    height += self.user_list_beta.rowHeight(i)
-
-                    for j, value in enumerate(row):
-
-                        if self.userlist_beta_index[j] == "-":
-                            continue
-
-                        # 生成表格组件
-                        if j in [4, 9, 10]:
-                            item = ComboBox()
-                            item.addItems(["启用", "禁用"])
-                            if value == "y":
-                                item.setCurrentIndex(0)
-                            elif value == "n":
-                                item.setCurrentIndex(1)
-                            item.currentIndexChanged.connect(
-                                partial(
-                                    self.change_user_CellWidget,
-                                    data_beta[i][16],
-                                    self.user_column[j],
-                                )
-                            )
-                        elif j == 3 and value == -1:
-                            item = QTableWidgetItem("无限")
-                        elif j == 5:
-                            curdate = server_date()
-                            if curdate != value:
-                                item = QTableWidgetItem("未代理")
-                            else:
-                                item = QTableWidgetItem(f"已代理{data_beta[i][14]}次")
-                            item.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
-                        elif j == 12:
-                            if Config.PASSWORD == "":
-                                item = QTableWidgetItem("******")
-                                item.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
-                            else:
-                                result = Crypto.AUTO_decryptor(value, Config.PASSWORD)
-                                item = QTableWidgetItem(result)
-                                if result == "管理密钥错误":
-                                    item.setFlags(
-                                        Qt.ItemIsSelectable | Qt.ItemIsEnabled
-                                    )
-                        else:
-                            item = QTableWidgetItem(str(value))
-
-                        # 组件录入表格
-                        if j in [4, 9, 10]:
-                            if not self.if_user_list_editable:
-                                item.setEnabled(False)
-                            self.user_list_beta.setCellWidget(
-                                data_beta[i][16], self.userlist_beta_index[j], item
-                            )
-                        else:
-                            self.user_list_beta.setItem(
-                                data_beta[i][16], self.userlist_beta_index[j], item
-                            )
-                self.user_list_beta.setFixedHeight(
-                    height + self.user_list_beta.frameWidth() * 2 + 10
-                )
-
-                # 设置列表可编辑状态
-                if self.if_user_list_editable:
-                    self.user_list_simple.setEditTriggers(TableWidget.AllEditTriggers)
-                    self.user_list_beta.setEditTriggers(TableWidget.AllEditTriggers)
-                else:
-                    self.user_list_simple.setEditTriggers(TableWidget.NoEditTriggers)
-                    self.user_list_beta.setEditTriggers(TableWidget.NoEditTriggers)
-
-                # 允许GUI改变被同步到本地数据库
-                self.if_update_database = True
-
-                # 设置用户配置列表的标题栏宽度
-                self.user_list_simple.horizontalHeader().setSectionResizeMode(
-                    QHeaderView.Stretch
-                )
-                self.user_list_beta.horizontalHeader().setSectionResizeMode(
-                    QHeaderView.Stretch
-                )
-
-            def change_user_Item(self, item: QTableWidgetItem, mode):
-                """将GUI中发生修改的用户配置表中的一般信息同步至本地数据库"""
-
-                # 验证能否写入本地数据库
-                if not self.if_update_database:
-                    return None
-
-                text = item.text()
-                # 简洁用户配置列表
-                if mode == "simple":
-                    # 待写入信息预处理
-                    if item.column() == 3:  # 代理天数
-                        try:
-                            text = max(int(text), -1)
-                        except ValueError:
-                            self.update_user_info("normal")
-                            return None
-                    if item.column() in [6, 7, 8]:  # 关卡号
-                        # 导入与应用特殊关卡规则
-                        games = {}
-                        with Config.gameid_path.open(mode="r", encoding="utf-8") as f:
-                            gameids = f.readlines()
-                            for line in gameids:
-                                if "：" in line:
-                                    game_in, game_out = line.split("：", 1)
-                                    games[game_in.strip()] = game_out.strip()
-                        text = games.get(text, text)
-                    if item.column() == 11:  # 密码
-                        text = Crypto.AUTO_encryptor(text)
-
-                    # 保存至本地数据库
-                    if text != "":
-                        Config.cur.execute(
-                            f"UPDATE adminx SET {self.user_column[self.userlist_simple_index.index(item.column())]} = ? WHERE mode = 'simple' AND uid = ?",
-                            (text, item.row()),
+                    self.card_Path.clicked.connect(self.PathClicked)
+                    self.config.MaaSet_Path.valueChanged.connect(
+                        lambda: self.card_Path.setContent(
+                            self.config.get(self.config.MaaSet_Path)
                         )
-                # 高级用户配置列表
-                elif mode == "beta":
-                    # 待写入信息预处理
-                    if item.column() == 1:  # 代理天数
-                        try:
-                            text = max(int(text), -1)
-                        except ValueError:
-                            self.update_user_info("normal")
-                            return None
-                    if item.column() == 6:  # 密码
-                        text = Crypto.AUTO_encryptor(text)
+                    )
+                    self.card_Set.clicked.connect(
+                        lambda: TaskManager.add_task("设置MAA_全局", self.name, None)
+                    )
 
-                    # 保存至本地数据库
-                    if text != "":
-                        Config.cur.execute(
-                            f"UPDATE adminx SET {self.user_column[self.userlist_beta_index.index(item.column())]} = ? WHERE mode = 'beta' AND uid = ?",
-                            (text, item.row()),
+                    Layout.addWidget(self.card_Name)
+                    Layout.addWidget(self.card_Path)
+                    Layout.addWidget(self.card_Set)
+                    Layout.addWidget(self.RunSet)
+
+                    self.viewLayout.addLayout(Layout)
+
+                def PathClicked(self):
+
+                    folder = QFileDialog.getExistingDirectory(
+                        self,
+                        "选择MAA目录",
+                        self.config.get(self.config.MaaSet_Path),
+                    )
+                    if not folder or self.config.get(self.config.MaaSet_Path) == folder:
+                        logger.warning("选择MAA目录时未选择文件夹或未更改文件夹")
+                        MainInfoBar.push_info_bar(
+                            "warning", "警告", "未选择文件夹或未更改文件夹", 5000
                         )
-                Config.db.commit()
+                        return None
+                    elif (
+                        not (Path(folder) / "config/gui.json").exists()
+                        or not (Path(folder) / "MAA.exe").exists()
+                    ):
+                        logger.warning("选择MAA目录时未找到MAA程序或配置文件")
+                        MainInfoBar.push_info_bar(
+                            "warning", "警告", "未找到MAA程序或配置文件", 5000
+                        )
+                        return None
 
-                # 同步一般用户信息更改到GUI
-                self.update_user_info("normal")
-
-            def change_user_CellWidget(self, row, column, index):
-                """将GUI中发生修改的用户配置表中的CellWidget类信息同步至本地数据库"""
-
-                # 验证能否写入本地数据库
-                if not self.if_update_database:
-                    return None
-
-                if "简洁用户列表" in self.pivot.currentRouteKey():
-                    mode = 0
-                elif "高级用户列表" in self.pivot.currentRouteKey():
-                    mode = 1
-
-                # 初次开启自定义MAA配置或选择修改MAA配置时调起MAA配置任务
-                # if (
-                #     mode == 1
-                #     and column in ["routine", "annihilation"]
-                #     and (
-                #         index == 2
-                #         or (
-                #             index == 0
-                #             and not (
-                #                 Config.app_path
-                #                 / f"data/MAAconfig/{self.user_mode_list[index]}/{row}/{column}/gui.json"
-                #             ).exists()
-                #         )
-                #     )
-                # ):
-                #     pass
-                # self.MaaManager.get_json_path = [
-                #     index,
-                #     row,
-                #     column,
-                # ]
-                # self.maa_starter("设置MAA_用户")
-
-                # 服务器
-                if mode == 0 and column == "server":
-                    server_list = ["Official", "Bilibili"]
-                    Config.cur.execute(
-                        f"UPDATE adminx SET server = ? WHERE mode = 'simple' AND uid = ?",
-                        (server_list[index], row),
+                    (Config.member_dict[self.name]["Path"] / "Default").mkdir(
+                        parents=True, exist_ok=True
                     )
-                # 其它(启用/禁用)
-                elif index in [0, 1]:
-                    index_list = ["y", "n"]
-                    Config.cur.execute(
-                        f"UPDATE adminx SET {column} = ? WHERE mode = ? AND uid = ?",
-                        (
-                            index_list[index],
-                            self.user_mode_list[mode],
-                            row,
-                        ),
+                    shutil.copy(
+                        Path(folder) / "config/gui.json",
+                        Config.member_dict[self.name]["Path"] / "Default/gui.json",
                     )
-                Config.db.commit()
+                    self.config.set(self.config.MaaSet_Path, folder)
 
-                # 同步用户组件信息修改到GUI
-                self.update_user_info("normal")
+                class RunSetSettingCard(ExpandGroupSettingCard):
 
-            def add_user(self):
-                """添加一位新用户"""
+                    def __init__(self, config: MaaConfig, parent=None):
+                        super().__init__(
+                            FluentIcon.SETTING, "运行", "MAA运行调控选项", parent
+                        )
+                        self.config = config
 
-                # 插入预设用户数据
-                if "简洁用户列表" in self.pivot.currentRouteKey():
-                    set_book = ["simple", self.user_list_simple.rowCount()]
-                elif "高级用户列表" in self.pivot.currentRouteKey():
-                    set_book = ["beta", self.user_list_beta.rowCount()]
-                Config.cur.execute(
-                    "INSERT INTO adminx VALUES('新用户','手机号码（官服）/B站ID（B服）','Official',-1,'y','2000-01-01','1-7','-','-','n','n','n',?,'无',0,?,?)",
-                    (
-                        Crypto.AUTO_encryptor("未设置"),
-                        set_book[0],
-                        set_book[1],
-                    ),
-                )
-                Config.db.commit(),
+                        self.card_TaskTransitionMethod = ComboBoxSettingCard(
+                            icon=FluentIcon.PAGE_RIGHT,
+                            title="任务切换方式",
+                            content="简洁用户列表下相邻两个任务间的切换方式",
+                            texts=["直接切换账号", "重启明日方舟", "重启模拟器"],
+                            qconfig=self.config,
+                            configItem=self.config.RunSet_TaskTransitionMethod,
+                            parent=self,
+                        )
+                        self.card_EnhanceTask = ComboBoxSettingCard(
+                            icon=FluentIcon.PAGE_RIGHT,
+                            title="自动代理增效任务",
+                            content="自动代理时的额外操作，此操作无法区分多开，可能会干扰其他任务，也可能关闭您正在使用的模拟器",
+                            texts=[
+                                "禁用",
+                                "强制关闭ADB",
+                                "强制关闭所有模拟器",
+                                "强制关闭ADB和所有模拟器",
+                            ],
+                            qconfig=self.config,
+                            configItem=self.config.RunSet_EnhanceTask,
+                            parent=self,
+                        )
+                        self.ProxyTimesLimit = SpinBoxSettingCard(
+                            icon=FluentIcon.PAGE_RIGHT,
+                            title="用户单日代理次数上限",
+                            content="当用户本日代理成功次数超过该阈值时跳过代理，阈值为“0”时视为无代理次数上限",
+                            range=(0, 1024),
+                            qconfig=self.config,
+                            configItem=self.config.RunSet_ProxyTimesLimit,
+                            parent=self,
+                        )
+                        self.AnnihilationTimeLimit = SpinBoxSettingCard(
+                            icon=FluentIcon.PAGE_RIGHT,
+                            title="剿灭代理超时限制",
+                            content="MAA日志无变化时间超过该阈值视为超时，单位为分钟",
+                            range=(1, 1024),
+                            qconfig=self.config,
+                            configItem=self.config.RunSet_AnnihilationTimeLimit,
+                            parent=self,
+                        )
+                        self.RoutineTimeLimit = SpinBoxSettingCard(
+                            icon=FluentIcon.PAGE_RIGHT,
+                            title="自动代理超时限制",
+                            content="MAA日志无变化时间超过该阈值视为超时，单位为分钟",
+                            range=(1, 1024),
+                            qconfig=self.config,
+                            configItem=self.config.RunSet_RoutineTimeLimit,
+                            parent=self,
+                        )
+                        self.RunTimesLimit = SpinBoxSettingCard(
+                            icon=FluentIcon.PAGE_RIGHT,
+                            title="代理重试次数限制",
+                            content="若超过该次数限制仍未完成代理，视为代理失败",
+                            range=(1, 1024),
+                            qconfig=self.config,
+                            configItem=self.config.RunSet_RunTimesLimit,
+                            parent=self,
+                        )
+                        self.AnnihilationWeeklyLimit = SwitchSettingCard(
+                            icon=FluentIcon.PAGE_RIGHT,
+                            title="每周剿灭仅执行到上限",
+                            content="每周剿灭模式执行到上限，本周剩下时间不再执行剿灭任务",
+                            qconfig=self.config,
+                            configItem=self.config.RunSet_AnnihilationWeeklyLimit,
+                            parent=self,
+                        )
 
-                # 同步新用户至GUI
-                self.update_user_info("normal")
+                        widget = QWidget()
+                        Layout = QVBoxLayout(widget)
+                        Layout.addWidget(self.card_TaskTransitionMethod)
+                        Layout.addWidget(self.card_EnhanceTask)
+                        Layout.addWidget(self.ProxyTimesLimit)
+                        Layout.addWidget(self.AnnihilationTimeLimit)
+                        Layout.addWidget(self.RoutineTimeLimit)
+                        Layout.addWidget(self.RunTimesLimit)
+                        Layout.addWidget(self.AnnihilationWeeklyLimit)
+                        self.viewLayout.setContentsMargins(0, 0, 0, 0)
+                        self.viewLayout.setSpacing(0)
+                        self.addGroupWidget(widget)
 
-            def del_user(self) -> None:
-                """删除选中的首位用户"""
+            class UserManager(HeaderCardWidget):
+                """用户管理父页面"""
 
-                if len(Config.running_list) > 0:
-                    logger.warning("删除用户时调度队列未停止运行")
+                def __init__(self, name: str, parent=None):
+                    super().__init__(parent)
+
+                    self.setObjectName(f"{name}_用户管理")
+                    self.setTitle("下属用户")
+                    self.name = name
+
+                    self.tools = CommandBar()
+                    self.user_manager = self.UserSettingBox(self.name, self)
+
+                    # 逐个添加动作
+                    self.tools.addActions(
+                        [
+                            Action(
+                                FluentIcon.ADD_TO, "新建用户", triggered=self.add_user
+                            ),
+                            Action(
+                                FluentIcon.REMOVE_FROM,
+                                "删除用户",
+                                triggered=self.del_user,
+                            ),
+                        ]
+                    )
+                    self.tools.addSeparator()
+                    self.tools.addActions(
+                        [
+                            Action(
+                                FluentIcon.LEFT_ARROW,
+                                "向前移动",
+                                triggered=self.left_user,
+                            ),
+                            Action(
+                                FluentIcon.RIGHT_ARROW,
+                                "向后移动",
+                                triggered=self.right_user,
+                            ),
+                        ]
+                    )
+
+                    layout = QVBoxLayout()
+                    layout.addWidget(self.tools)
+                    layout.addWidget(self.user_manager)
+                    self.viewLayout.addLayout(layout)
+
+                def add_user(self):
+                    """添加一个用户"""
+
+                    index = len(Config.member_dict[self.name]["UserData"]) + 1
+
+                    user_config = MaaUserConfig()
+                    user_config.load(
+                        Config.member_dict[self.name]["Path"]
+                        / f"UserData/用户_{index}/config.json",
+                        user_config,
+                    )
+                    user_config.save()
+
+                    Config.member_dict[self.name]["UserData"][f"用户_{index}"] = {
+                        "Path": Config.member_dict[self.name]["Path"]
+                        / f"UserData/用户_{index}",
+                        "Config": user_config,
+                    }
+
+                    self.user_manager.add_userSettingBox(index)
+                    self.user_manager.switch_SettingBox(f"用户_{index}")
+
+                    logger.success(f"{self.name} 用户_{index} 添加成功")
                     MainInfoBar.push_info_bar(
-                        "warning", "调度中心正在执行任务", "请等待或手动中止任务", 5000
+                        "success", "操作成功", f"{self.name} 添加 用户_{index}", 3000
                     )
-                    return None
 
-                # 获取对应的行索引
-                if "简洁用户列表" in self.pivot.currentRouteKey():
-                    row = self.user_list_simple.currentRow()
-                    current_numb = self.user_list_simple.rowCount()
-                    mode = 0
-                elif "高级用户列表" in self.pivot.currentRouteKey():
-                    row = self.user_list_beta.currentRow()
-                    current_numb = self.user_list_beta.rowCount()
-                    mode = 1
+                def del_user(self):
+                    """删除一个用户"""
 
-                # 判断选择合理性
-                if row == -1:
-                    logger.warning("删除用户时未选中用户")
-                    MainInfoBar.push_info_bar(
-                        "warning", "未选择用户", "请先选择一个用户", 5000
+                    name = self.user_manager.pivot.currentRouteKey()
+
+                    if name == None:
+                        logger.warning("未选择用户")
+                        MainInfoBar.push_info_bar(
+                            "warning", "未选择用户", "请先选择一个用户", 5000
+                        )
+                        return None
+                    if name == "用户仪表盘":
+                        logger.warning("试图删除用户仪表盘")
+                        MainInfoBar.push_info_bar(
+                            "warning", "未选择用户", "请勿尝试删除用户仪表盘", 5000
+                        )
+                        return None
+
+                    if self.name in Config.running_list:
+                        logger.warning("所属脚本正在运行")
+                        MainInfoBar.push_info_bar(
+                            "warning", "所属脚本正在运行", "请先停止任务", 5000
+                        )
+                        return None
+
+                    choice = MessageBox(
+                        "确认",
+                        f"确定要删除 {name} 吗？",
+                        self.window(),
                     )
-                    return None
+                    if choice.exec():
 
-                # 确认待删除用户信息
-                Config.cur.execute(
-                    "SELECT * FROM adminx WHERE mode = ? AND uid = ?",
-                    (
-                        self.user_mode_list[mode],
-                        row,
-                    ),
-                )
-                data = Config.cur.fetchall()
-                choice = MessageBox(
-                    "确认",
-                    f"确定要删除用户 {data[0][0]} 吗？",
-                    self.window(),
-                )
+                        self.user_manager.clear_SettingBox()
 
-                # 删除用户
-                if choice.exec():
-                    # 删除所选用户
-                    Config.cur.execute(
-                        "DELETE FROM adminx WHERE mode = ? AND uid = ?",
-                        (
-                            self.user_mode_list[mode],
-                            row,
-                        ),
-                    )
-                    Config.db.commit()
-
-                    if (
-                        Config.app_path
-                        / f"config/MaaConfig/{self.name}/{self.user_mode_list[mode]}/{row}"
-                    ).exists():
                         shutil.rmtree(
-                            Config.app_path
-                            / f"config/MaaConfig/{self.name}/{self.user_mode_list[mode]}/{row}"
+                            Config.member_dict[self.name]["UserData"][name]["Path"]
                         )
-                    # 后续用户补位
-                    for i in range(row + 1, current_numb):
-                        Config.cur.execute(
-                            "UPDATE adminx SET uid = ? WHERE mode = ? AND uid = ?",
-                            (
-                                i - 1,
-                                self.user_mode_list[mode],
-                                i,
-                            ),
+                        for i in range(
+                            int(name[3:]) + 1,
+                            len(Config.member_dict[self.name]["UserData"]) + 1,
+                        ):
+                            if Config.member_dict[self.name]["UserData"][f"用户_{i}"][
+                                "Path"
+                            ].exists():
+                                Config.member_dict[self.name]["UserData"][f"用户_{i}"][
+                                    "Path"
+                                ].rename(
+                                    Config.member_dict[self.name]["UserData"][
+                                        f"用户_{i}"
+                                    ]["Path"].with_name(f"用户_{i-1}")
+                                )
+
+                        self.user_manager.show_SettingBox(
+                            f"用户_{max(int(name[3:]) - 1, 1)}"
                         )
-                        Config.db.commit()
-                        if (
-                            Config.app_path
-                            / f"config/MaaConfig/{self.name}/{self.user_mode_list[mode]}/{i}"
-                        ).exists():
-                            (
-                                Config.app_path
-                                / f"config/MaaConfig/{self.name}/{self.user_mode_list[mode]}/{i}"
-                            ).rename(
-                                Config.app_path
-                                / f"config/MaaConfig/{self.name}/{self.user_mode_list[mode]}/{i}"
+
+                        logger.success(f"{self.name} {name} 删除成功")
+                        MainInfoBar.push_info_bar(
+                            "success", "操作成功", f"{self.name} 删除 {name}", 3000
+                        )
+
+                def left_user(self):
+                    """向前移动用户"""
+
+                    name = self.user_manager.pivot.currentRouteKey()
+
+                    if name == None:
+                        logger.warning("未选择用户")
+                        MainInfoBar.push_info_bar(
+                            "warning", "未选择用户", "请先选择一个用户", 5000
+                        )
+                        return None
+                    if name == "用户仪表盘":
+                        logger.warning("试图移动用户仪表盘")
+                        MainInfoBar.push_info_bar(
+                            "warning", "未选择用户", "请勿尝试移动用户仪表盘", 5000
+                        )
+                        return None
+
+                    index = int(name[3:])
+
+                    if index == 1:
+                        logger.warning("向前移动用户时已到达最左端")
+                        MainInfoBar.push_info_bar(
+                            "warning", "已经是第一个用户", "无法向前移动", 5000
+                        )
+                        return None
+
+                    if self.name in Config.running_list:
+                        logger.warning("所属脚本正在运行")
+                        MainInfoBar.push_info_bar(
+                            "warning", "所属脚本正在运行", "请先停止任务", 5000
+                        )
+                        return None
+
+                    self.user_manager.clear_SettingBox()
+
+                    Config.member_dict[self.name]["UserData"][name]["Path"].rename(
+                        Config.member_dict[self.name]["UserData"][name][
+                            "Path"
+                        ].with_name("用户_0")
+                    )
+                    Config.member_dict[self.name]["UserData"][f"用户_{index-1}"][
+                        "Path"
+                    ].rename(Config.member_dict[self.name]["UserData"][name]["Path"])
+                    Config.member_dict[self.name]["UserData"][name]["Path"].with_name(
+                        "用户_0"
+                    ).rename(
+                        Config.member_dict[self.name]["UserData"][f"用户_{index-1}"][
+                            "Path"
+                        ]
+                    )
+
+                    self.user_manager.show_SettingBox(f"用户_{index - 1}")
+
+                    logger.success(f"{self.name} {name} 前移成功")
+                    MainInfoBar.push_info_bar(
+                        "success", "操作成功", f"{self.name} 前移 {name}", 3000
+                    )
+
+                def right_user(self):
+                    """向后移动用户"""
+
+                    name = self.user_manager.pivot.currentRouteKey()
+
+                    if name == None:
+                        logger.warning("未选择用户")
+                        MainInfoBar.push_info_bar(
+                            "warning", "未选择用户", "请先选择一个用户", 5000
+                        )
+                        return None
+                    if name == "用户仪表盘":
+                        logger.warning("试图删除用户仪表盘")
+                        MainInfoBar.push_info_bar(
+                            "warning", "未选择用户", "请勿尝试移动用户仪表盘", 5000
+                        )
+                        return None
+
+                    index = int(name[3:])
+
+                    if index == len(Config.member_dict[self.name]["UserData"]):
+                        logger.warning("向后移动用户时已到达最右端")
+                        MainInfoBar.push_info_bar(
+                            "warning", "已经是最后一个用户", "无法向后移动", 5000
+                        )
+                        return None
+
+                    if self.name in Config.running_list:
+                        logger.warning("所属脚本正在运行")
+                        MainInfoBar.push_info_bar(
+                            "warning", "所属脚本正在运行", "请先停止任务", 5000
+                        )
+                        return None
+
+                    self.user_manager.clear_SettingBox()
+
+                    Config.member_dict[self.name]["UserData"][name]["Path"].rename(
+                        Config.member_dict[self.name]["UserData"][name][
+                            "Path"
+                        ].with_name("用户_0")
+                    )
+                    Config.member_dict[self.name]["UserData"][f"用户_{index+1}"][
+                        "Path"
+                    ].rename(Config.member_dict[self.name]["UserData"][name]["Path"])
+                    Config.member_dict[self.name]["UserData"][name]["Path"].with_name(
+                        "用户_0"
+                    ).rename(
+                        Config.member_dict[self.name]["UserData"][f"用户_{index+1}"][
+                            "Path"
+                        ]
+                    )
+
+                    self.user_manager.show_SettingBox(f"用户_{index + 1}")
+
+                    logger.success(f"{self.name} {name} 后移成功")
+                    MainInfoBar.push_info_bar(
+                        "success", "操作成功", f"{self.name} 后移 {name}", 3000
+                    )
+
+                class UserSettingBox(QWidget):
+                    """用户管理子页面组"""
+
+                    def __init__(self, name: str, parent=None):
+                        super().__init__(parent)
+
+                        self.setObjectName("用户管理")
+                        self.name = name
+
+                        self.pivot = Pivot(self)
+                        self.stackedWidget = QStackedWidget(self)
+                        self.Layout = QVBoxLayout(self)
+
+                        self.script_list: List[
+                            MemberManager.MemberSettingBox.MaaSettingBox.UserManager.UserSettingBox.UserMemberSettingBox
+                        ] = []
+
+                        self.user_dashboard = self.UserDashboard(self.name, self)
+                        self.user_dashboard.switch_to.connect(self.switch_SettingBox)
+                        self.stackedWidget.addWidget(self.user_dashboard)
+                        self.pivot.addItem(routeKey="用户仪表盘", text="用户仪表盘")
+
+                        self.Layout.addWidget(self.pivot, 0, Qt.AlignHCenter)
+                        self.Layout.addWidget(self.stackedWidget)
+                        self.Layout.setContentsMargins(0, 0, 0, 0)
+
+                        self.pivot.currentItemChanged.connect(
+                            lambda index: self.switch_SettingBox(
+                                index, if_change_pivot=False
+                            )
+                        )
+
+                        self.show_SettingBox("用户仪表盘")
+
+                    def show_SettingBox(self, index: str) -> None:
+                        """加载所有子界面"""
+
+                        Config.search_maa_user(self.name)
+
+                        for name in Config.member_dict[self.name]["UserData"].keys():
+                            self.add_userSettingBox(name[3:])
+
+                        self.switch_SettingBox(index)
+
+                    def switch_SettingBox(
+                        self, index: str, if_change_pivot: bool = True
+                    ) -> None:
+                        """切换到指定的子界面"""
+
+                        if len(Config.member_dict[self.name]["UserData"]) == 0:
+                            index = "用户仪表盘"
+
+                        if index != "用户仪表盘" and int(index[3:]) > len(
+                            Config.member_dict[self.name]["UserData"]
+                        ):
+                            return None
+
+                        if index == "用户仪表盘":
+                            self.user_dashboard.load_info()
+
+                        if if_change_pivot:
+                            self.pivot.setCurrentItem(index)
+                        self.stackedWidget.setCurrentWidget(
+                            self.user_dashboard
+                            if index == "用户仪表盘"
+                            else self.script_list[int(index[3:]) - 1]
+                        )
+
+                    def clear_SettingBox(self) -> None:
+                        """清空所有子界面"""
+
+                        for sub_interface in self.script_list:
+                            Config.gameid_refreshed.disconnect(
+                                sub_interface.refresh_gameid
+                            )
+                            Config.PASSWORD_refreshed.disconnect(
+                                sub_interface.refresh_password
+                            )
+                            self.stackedWidget.removeWidget(sub_interface)
+                            sub_interface.deleteLater()
+                        self.script_list.clear()
+                        self.pivot.clear()
+                        self.user_dashboard.dashboard.setRowCount(0)
+                        self.stackedWidget.addWidget(self.user_dashboard)
+                        self.pivot.addItem(routeKey="用户仪表盘", text="用户仪表盘")
+
+                    def add_userSettingBox(self, uid: int) -> None:
+                        """添加一个用户设置界面"""
+
+                        maa_setting_box = self.UserMemberSettingBox(
+                            self.name, uid, self
+                        )
+
+                        self.script_list.append(maa_setting_box)
+
+                        self.stackedWidget.addWidget(self.script_list[-1])
+
+                        self.pivot.addItem(routeKey=f"用户_{uid}", text=f"用户 {uid}")
+
+                    class UserDashboard(HeaderCardWidget):
+                        """用户仪表盘页面"""
+
+                        switch_to = Signal(str)
+
+                        def __init__(self, name: str, parent=None):
+                            super().__init__(parent)
+                            self.setObjectName("用户仪表盘")
+                            self.setTitle("用户仪表盘")
+                            self.name = name
+
+                            self.dashboard = TableWidget(self)
+                            self.dashboard.setColumnCount(10)
+                            self.dashboard.setHorizontalHeaderLabels(
+                                [
+                                    "用户名",
+                                    "账号ID",
+                                    "密码",
+                                    "状态",
+                                    "代理情况",
+                                    "给药量",
+                                    "关卡选择",
+                                    "备选关卡-1",
+                                    "备选关卡-2",
+                                    "详",
+                                ]
+                            )
+                            self.dashboard.setEditTriggers(TableWidget.NoEditTriggers)
+                            self.dashboard.verticalHeader().setVisible(False)
+                            for col in range(6):
+                                self.dashboard.horizontalHeader().setSectionResizeMode(
+                                    col, QHeaderView.ResizeMode.ResizeToContents
+                                )
+                            for col in range(6, 9):
+                                self.dashboard.horizontalHeader().setSectionResizeMode(
+                                    col, QHeaderView.ResizeMode.Stretch
+                                )
+                            self.dashboard.horizontalHeader().setSectionResizeMode(
+                                9, QHeaderView.ResizeMode.Fixed
+                            )
+                            self.dashboard.setColumnWidth(9, 32)
+
+                            self.viewLayout.addWidget(self.dashboard)
+                            self.viewLayout.setContentsMargins(3, 0, 3, 3)
+
+                            Config.PASSWORD_refreshed.connect(self.load_info)
+
+                        def load_info(self):
+
+                            self.user_data = Config.member_dict[self.name]["UserData"]
+
+                            self.dashboard.setRowCount(len(self.user_data))
+
+                            for name, info in self.user_data.items():
+
+                                config = info["Config"]
+
+                                text_list = []
+                                if not config.get(config.Data_IfPassCheck):
+                                    text_list.append("未通过人工排查")
+                                text_list.append(
+                                    f"今日已代理{config.get(config.Data_ProxyTimes)}次"
+                                    if Config.server_date()
+                                    == config.get(config.Data_LastProxyDate)
+                                    else "今日未进行代理"
+                                )
+                                text_list.append(
+                                    "本周剿灭已完成"
+                                    if datetime.strptime(
+                                        config.get(config.Data_LastAnnihilationDate),
+                                        "%Y-%m-%d",
+                                    ).isocalendar()[:2]
+                                    == datetime.strptime(
+                                        Config.server_date(), "%Y-%m-%d"
+                                    ).isocalendar()[:2]
+                                    else "本周剿灭未完成"
+                                )
+
+                                button = PrimaryToolButton(
+                                    FluentIcon.CHEVRON_RIGHT, self
+                                )
+                                button.setFixedSize(32, 32)
+                                button.clicked.connect(
+                                    partial(self.switch_to.emit, name)
+                                )
+
+                                self.dashboard.setItem(
+                                    int(name[3:]) - 1,
+                                    0,
+                                    QTableWidgetItem(config.get(config.Info_Name)),
+                                )
+                                self.dashboard.setItem(
+                                    int(name[3:]) - 1,
+                                    1,
+                                    QTableWidgetItem(config.get(config.Info_Id)),
+                                )
+                                self.dashboard.setItem(
+                                    int(name[3:]) - 1,
+                                    2,
+                                    QTableWidgetItem(
+                                        Crypto.AUTO_decryptor(
+                                            config.get(config.Info_Password),
+                                            Config.PASSWORD,
+                                        )
+                                        if Config.PASSWORD
+                                        else "******"
+                                    ),
+                                )
+                                self.dashboard.setItem(
+                                    int(name[3:]) - 1,
+                                    3,
+                                    QTableWidgetItem(
+                                        "启用"
+                                        if config.get(config.Info_Status)
+                                        and config.get(config.Info_RemainedDay) != 0
+                                        else "禁用"
+                                    ),
+                                )
+                                self.dashboard.setItem(
+                                    int(name[3:]) - 1,
+                                    4,
+                                    QTableWidgetItem(" | ".join(text_list)),
+                                )
+                                self.dashboard.setItem(
+                                    int(name[3:]) - 1,
+                                    5,
+                                    QTableWidgetItem(
+                                        str(config.get(config.Info_MedicineNumb))
+                                    ),
+                                )
+                                self.dashboard.setItem(
+                                    int(name[3:]) - 1,
+                                    6,
+                                    QTableWidgetItem(
+                                        Config.gameid_dict["ALL"]["text"][
+                                            Config.gameid_dict["ALL"]["value"].index(
+                                                config.get(config.Info_GameId)
+                                            )
+                                        ]
+                                        if config.get(config.Info_GameId)
+                                        in Config.gameid_dict["ALL"]["value"]
+                                        else config.get(config.Info_GameId)
+                                    ),
+                                )
+                                self.dashboard.setItem(
+                                    int(name[3:]) - 1,
+                                    7,
+                                    QTableWidgetItem(
+                                        Config.gameid_dict["ALL"]["text"][
+                                            Config.gameid_dict["ALL"]["value"].index(
+                                                config.get(config.Info_GameId_1)
+                                            )
+                                        ]
+                                        if config.get(config.Info_GameId_1)
+                                        in Config.gameid_dict["ALL"]["value"]
+                                        else config.get(config.Info_GameId_1)
+                                    ),
+                                )
+                                self.dashboard.setItem(
+                                    int(name[3:]) - 1,
+                                    8,
+                                    QTableWidgetItem(
+                                        Config.gameid_dict["ALL"]["text"][
+                                            Config.gameid_dict["ALL"]["value"].index(
+                                                config.get(config.Info_GameId_2)
+                                            )
+                                        ]
+                                        if config.get(config.Info_GameId_2)
+                                        in Config.gameid_dict["ALL"]["value"]
+                                        else config.get(config.Info_GameId_2)
+                                    ),
+                                )
+                                self.dashboard.setCellWidget(
+                                    int(name[3:]) - 1, 9, button
+                                )
+
+                    class UserMemberSettingBox(HeaderCardWidget):
+                        """用户管理子页面"""
+
+                        def __init__(self, name: str, uid: int, parent=None):
+                            super().__init__(parent)
+
+                            self.setObjectName(f"用户_{uid}")
+                            self.setTitle(f"用户 {uid}")
+                            self.name = name
+                            self.config = Config.member_dict[self.name]["UserData"][
+                                f"用户_{uid}"
+                            ]["Config"]
+                            self.user_path = Config.member_dict[self.name]["UserData"][
+                                f"用户_{uid}"
+                            ]["Path"]
+
+                            self.card_Name = LineEditSettingCard(
+                                icon=FluentIcon.PEOPLE,
+                                title="用户名",
+                                content="用户的昵称",
+                                text="请输入用户名",
+                                qconfig=self.config,
+                                configItem=self.config.Info_Name,
+                                parent=self,
+                            )
+                            self.card_Id = LineEditSettingCard(
+                                icon=FluentIcon.PEOPLE,
+                                title="账号ID",
+                                content="官服输入手机号，B服输入B站ID",
+                                text="请输入账号ID",
+                                qconfig=self.config,
+                                configItem=self.config.Info_Id,
+                                parent=self,
+                            )
+                            self.card_Mode = ComboBoxSettingCard(
+                                icon=FluentIcon.DICTIONARY,
+                                title="用户配置模式",
+                                content="用户信息配置模式",
+                                texts=["简洁", "详细"],
+                                qconfig=self.config,
+                                configItem=self.config.Info_Mode,
+                                parent=self,
+                            )
+                            self.card_GameIdMode = ComboBoxSettingCard(
+                                icon=FluentIcon.DICTIONARY,
+                                title="关卡配置模式",
+                                content="刷理智关卡号的配置模式",
+                                texts=["固定"],
+                                qconfig=self.config,
+                                configItem=self.config.Info_GameIdMode,
+                                parent=self,
+                            )
+                            self.card_Server = ComboBoxSettingCard(
+                                icon=FluentIcon.PROJECTOR,
+                                title="服务器",
+                                content="选择服务器类型",
+                                texts=["官服", "B服"],
+                                qconfig=self.config,
+                                configItem=self.config.Info_Server,
+                                parent=self,
+                            )
+                            self.card_Status = SwitchSettingCard(
+                                icon=FluentIcon.CHECKBOX,
+                                title="用户状态",
+                                content="启用或禁用该用户",
+                                qconfig=self.config,
+                                configItem=self.config.Info_Status,
+                                parent=self,
+                            )
+                            self.card_RemainedDay = SpinBoxSettingCard(
+                                icon=FluentIcon.CALENDAR,
+                                title="剩余天数",
+                                content="剩余代理天数，-1表示无限代理",
+                                range=(-1, 1024),
+                                qconfig=self.config,
+                                configItem=self.config.Info_RemainedDay,
+                                parent=self,
+                            )
+                            self.card_Annihilation = PushAndSwitchButtonSettingCard(
+                                icon=FluentIcon.CAFE,
+                                title="剿灭代理",
+                                content="剿灭代理子任务相关设置",
+                                text="设置具体配置",
+                                qconfig=self.config,
+                                configItem=self.config.Info_Annihilation,
+                                parent=self,
+                            )
+                            self.card_Routine = PushAndSwitchButtonSettingCard(
+                                icon=FluentIcon.CAFE,
+                                title="日常代理",
+                                content="日常代理子任务相关设置",
+                                text="设置具体配置",
+                                qconfig=self.config,
+                                configItem=self.config.Info_Routine,
+                                parent=self,
+                            )
+                            self.card_Infrastructure = PushAndSwitchButtonSettingCard(
+                                icon=FluentIcon.CAFE,
+                                title="自定义基建",
+                                content="自定义基建相关设置项",
+                                text="选择配置文件",
+                                qconfig=self.config,
+                                configItem=self.config.Info_Infrastructure,
+                                parent=self,
+                            )
+                            self.card_Password = PasswordLineEditSettingCard(
+                                icon=FluentIcon.VPN,
+                                title="密码",
+                                content="仅用于用户密码记录",
+                                text="请输入用户密码",
+                                algorithm="AUTO",
+                                qconfig=self.config,
+                                configItem=self.config.Info_Password,
+                                parent=self,
+                            )
+                            self.card_Notes = LineEditSettingCard(
+                                icon=FluentIcon.PENCIL_INK,
+                                title="备注",
+                                content="用户备注信息",
+                                text="请输入备注",
+                                qconfig=self.config,
+                                configItem=self.config.Info_Notes,
+                                parent=self,
+                            )
+                            self.card_MedicineNumb = SpinBoxSettingCard(
+                                icon=FluentIcon.GAME,
+                                title="吃理智药",
+                                content="吃理智药次数，输入0以关闭",
+                                range=(0, 1024),
+                                qconfig=self.config,
+                                configItem=self.config.Info_MedicineNumb,
+                                parent=self,
+                            )
+                            self.card_GameId = EditableComboBoxSettingCard(
+                                icon=FluentIcon.GAME,
+                                title="关卡选择",
+                                content="按下回车以添加自定义关卡号",
+                                value=Config.gameid_dict["ALL"]["value"],
+                                texts=Config.gameid_dict["ALL"]["text"],
+                                qconfig=self.config,
+                                configItem=self.config.Info_GameId,
+                                parent=self,
+                            )
+                            self.card_GameId_1 = EditableComboBoxSettingCard(
+                                icon=FluentIcon.GAME,
+                                title="备选关卡-1",
+                                content="按下回车以添加自定义关卡号",
+                                value=Config.gameid_dict["ALL"]["value"],
+                                texts=Config.gameid_dict["ALL"]["text"],
+                                qconfig=self.config,
+                                configItem=self.config.Info_GameId_1,
+                                parent=self,
+                            )
+                            self.card_GameId_2 = EditableComboBoxSettingCard(
+                                icon=FluentIcon.GAME,
+                                title="备选关卡-2",
+                                content="按下回车以添加自定义关卡号",
+                                value=Config.gameid_dict["ALL"]["value"],
+                                texts=Config.gameid_dict["ALL"]["text"],
+                                qconfig=self.config,
+                                configItem=self.config.Info_GameId_2,
+                                parent=self,
                             )
 
-                    # 同步最终结果至GUI
-                    self.update_user_info("normal")
-
-            def up_user(self):
-                """向上移动用户"""
-
-                if len(Config.running_list) > 0:
-                    logger.warning("向上移动用户时调度队列未停止运行")
-                    MainInfoBar.push_info_bar(
-                        "warning", "调度中心正在执行任务", "请等待或手动中止任务", 5000
-                    )
-                    return None
-
-                # 获取对应的行索引
-                if "简洁用户列表" in self.pivot.currentRouteKey():
-                    row = self.user_list_simple.currentRow()
-                    mode = 0
-                elif "高级用户列表" in self.pivot.currentRouteKey():
-                    row = self.user_list_beta.currentRow()
-                    mode = 1
-
-                # 判断选择合理性
-                if row == -1:
-                    logger.warning("向上移动用户时未选中用户")
-                    MainInfoBar.push_info_bar(
-                        "warning", "未选中用户", "请先选择一个用户", 5000
-                    )
-                    return None
-
-                if row == 0:
-                    logger.warning("向上移动用户时已到达最上端")
-                    MainInfoBar.push_info_bar(
-                        "warning", "已经是第一个用户", "无法向上移动", 5000
-                    )
-                    return None
-
-                Config.cur.execute(
-                    "UPDATE adminx SET uid = ? WHERE mode = ? AND uid = ?",
-                    (
-                        -1,
-                        self.user_mode_list[mode],
-                        row,
-                    ),
-                )
-                Config.cur.execute(
-                    "UPDATE adminx SET uid = ? WHERE mode = ? AND uid = ?",
-                    (
-                        row,
-                        self.user_mode_list[mode],
-                        row - 1,
-                    ),
-                )
-                Config.cur.execute(
-                    "UPDATE adminx SET uid = ? WHERE mode = ? AND uid = ?",
-                    (
-                        row - 1,
-                        self.user_mode_list[mode],
-                        -1,
-                    ),
-                )
-                Config.db.commit()
-
-                if (
-                    Config.app_path
-                    / f"config/MaaConfig/{self.name}/{self.user_mode_list[mode]}/{row}"
-                ).exists():
-                    (
-                        Config.app_path
-                        / f"config/MaaConfig/{self.name}/{self.user_mode_list[mode]}/{row}"
-                    ).rename(
-                        Config.app_path
-                        / f"config/MaaConfig/{self.name}/{self.user_mode_list[mode]}/{-1}"
-                    )
-                if (
-                    Config.app_path
-                    / f"config/MaaConfig/{self.name}/{self.user_mode_list[mode]}/{row - 1}"
-                ).exists():
-                    (
-                        Config.app_path
-                        / f"config/MaaConfig/{self.name}/{self.user_mode_list[mode]}/{row - 1}"
-                    ).rename(
-                        Config.app_path
-                        / f"config/MaaConfig/{self.name}/{self.user_mode_list[mode]}/{row}"
-                    )
-                if (
-                    Config.app_path
-                    / f"config/MaaConfig/{self.name}/{self.user_mode_list[mode]}/{-1}"
-                ).exists():
-                    (
-                        Config.app_path
-                        / f"config/MaaConfig/{self.name}/{self.user_mode_list[mode]}/{-1}"
-                    ).rename(
-                        Config.app_path
-                        / f"config/MaaConfig/{self.name}/{self.user_mode_list[mode]}/{row - 1}"
-                    )
-
-                self.update_user_info("normal")
-                if "简洁用户列表" in self.pivot.currentRouteKey():
-                    self.user_list_simple.selectRow(row - 1)
-                elif "高级用户列表" in self.pivot.currentRouteKey():
-                    self.user_list_beta.selectRow(row - 1)
-
-            def down_user(self):
-                """向下移动用户"""
-
-                if len(Config.running_list) > 0:
-                    logger.warning("向下移动用户时调度队列未停止运行")
-                    MainInfoBar.push_info_bar(
-                        "warning", "调度中心正在执行任务", "请等待或手动中止任务", 5000
-                    )
-                    return None
-
-                # 获取对应的行索引
-                if "简洁用户列表" in self.pivot.currentRouteKey():
-                    row = self.user_list_simple.currentRow()
-                    current_numb = self.user_list_simple.rowCount()
-                    mode = 0
-                elif "高级用户列表" in self.pivot.currentRouteKey():
-                    row = self.user_list_beta.currentRow()
-                    current_numb = self.user_list_beta.rowCount()
-                    mode = 1
-
-                # 判断选择合理性
-                if row == -1:
-                    logger.warning("向下移动用户时未选中用户")
-                    MainInfoBar.push_info_bar(
-                        "warning", "未选中用户", "请先选择一个用户", 5000
-                    )
-                    return None
-
-                if row == current_numb - 1:
-                    logger.warning("向下移动用户时已到达最下端")
-                    MainInfoBar.push_info_bar(
-                        "warning", "已经是最后一个用户", "无法向下移动", 5000
-                    )
-                    return None
-
-                Config.cur.execute(
-                    "UPDATE adminx SET uid = ? WHERE mode = ? AND uid = ?",
-                    (
-                        -1,
-                        self.user_mode_list[mode],
-                        row,
-                    ),
-                )
-                Config.cur.execute(
-                    "UPDATE adminx SET uid = ? WHERE mode = ? AND uid = ?",
-                    (
-                        row,
-                        self.user_mode_list[mode],
-                        row + 1,
-                    ),
-                )
-                Config.cur.execute(
-                    "UPDATE adminx SET uid = ? WHERE mode = ? AND uid = ?",
-                    (
-                        row + 1,
-                        self.user_mode_list[mode],
-                        -1,
-                    ),
-                )
-                Config.db.commit()
-
-                if (
-                    Config.app_path
-                    / f"config/MaaConfig/{self.name}/{self.user_mode_list[mode]}/{row}"
-                ).exists():
-                    (
-                        Config.app_path
-                        / f"config/MaaConfig/{self.name}/{self.user_mode_list[mode]}/{row}"
-                    ).rename(
-                        Config.app_path
-                        / f"config/MaaConfig/{self.name}/{self.user_mode_list[mode]}/{-1}"
-                    )
-                if (
-                    Config.app_path
-                    / f"config/MaaConfig/{self.name}/{self.user_mode_list[mode]}/{row + 1}"
-                ).exists():
-                    (
-                        Config.app_path
-                        / f"config/MaaConfig/{self.name}/{self.user_mode_list[mode]}/{row + 1}"
-                    ).rename(
-                        Config.app_path
-                        / f"config/MaaConfig/{self.name}/{self.user_mode_list[mode]}/{row}"
-                    )
-                if (
-                    Config.app_path
-                    / f"config/MaaConfig/{self.name}/{self.user_mode_list[mode]}/{-1}"
-                ).exists():
-                    (
-                        Config.app_path
-                        / f"config/MaaConfig/{self.name}/{self.user_mode_list[mode]}/{-1}"
-                    ).rename(
-                        Config.app_path
-                        / f"config/MaaConfig/{self.name}/{self.user_mode_list[mode]}/{row + 1}"
-                    )
-
-                self.update_user_info("normal")
-                if "简洁用户列表" in self.pivot.currentRouteKey():
-                    self.user_list_simple.selectRow(row + 1)
-                elif "高级用户列表" in self.pivot.currentRouteKey():
-                    self.user_list_beta.selectRow(row + 1)
-
-            def switch_user(self) -> None:
-                """切换用户配置模式"""
-
-                if len(Config.running_list) > 0:
-                    logger.warning("切换用户配置模式时调度队列未停止运行")
-                    MainInfoBar.push_info_bar(
-                        "warning", "调度中心正在执行任务", "请等待或手动中止任务", 5000
-                    )
-                    return None
-
-                # 获取当前用户配置模式信息
-                if "简洁用户列表" in self.pivot.currentRouteKey():
-                    row = self.user_list_simple.currentRow()
-                    mode = 0
-                elif "高级用户列表" in self.pivot.currentRouteKey():
-                    row = self.user_list_beta.currentRow()
-                    mode = 1
-
-                # 判断选择合理性
-                if row == -1:
-                    logger.warning("切换用户配置模式时未选中用户")
-                    MainInfoBar.push_info_bar(
-                        "warning", "未选中用户", "请先选择一个用户", 5000
-                    )
-                    return None
-
-                # 确认待切换用户信息
-                Config.cur.execute(
-                    "SELECT * FROM adminx WHERE mode = ? AND uid = ?",
-                    (
-                        self.user_mode_list[mode],
-                        row,
-                    ),
-                )
-                data = Config.cur.fetchall()
-
-                mode_list = ["简洁", "高级"]
-                choice = MessageBox(
-                    "确认",
-                    f"确定要将用户 {data[0][0]} 转为{mode_list[1 - mode]}配置模式吗？",
-                    self.window(),
-                )
-
-                # 切换用户
-                if choice.exec():
-                    Config.cur.execute("SELECT * FROM adminx WHERE True")
-                    data = Config.cur.fetchall()
-                    if mode == 0:
-                        current_numb = self.user_list_simple.rowCount()
-                    elif mode == 1:
-                        current_numb = self.user_list_beta.rowCount()
-                    # 切换所选用户
-                    other_numb = len(data) - current_numb
-                    Config.cur.execute(
-                        "UPDATE adminx SET mode = ?, uid = ? WHERE mode = ? AND uid = ?",
-                        (
-                            self.user_mode_list[1 - mode],
-                            other_numb,
-                            self.user_mode_list[mode],
-                            row,
-                        ),
-                    )
-                    Config.db.commit()
-                    if (
-                        Config.app_path
-                        / f"config/MaaConfig/{self.name}/{self.user_mode_list[mode]}/{row}"
-                    ).exists():
-                        shutil.move(
-                            Config.app_path
-                            / f"config/MaaConfig/{self.name}/{self.user_mode_list[mode]}/{row}",
-                            Config.app_path
-                            / f"config/MaaConfig/{self.name}/{self.user_mode_list[1 - mode]}/{other_numb}",
-                        )
-                    # 后续用户补位
-                    for i in range(row + 1, current_numb):
-                        Config.cur.execute(
-                            "UPDATE adminx SET uid = ? WHERE mode = ? AND uid = ?",
-                            (
-                                i - 1,
-                                self.user_mode_list[mode],
-                                i,
-                            ),
-                        )
-                        Config.db.commit(),
-                        if (
-                            Config.app_path
-                            / f"config/MaaConfig/{self.name}/{self.user_mode_list[mode]}/{i}"
-                        ).exists():
-                            (
-                                Config.app_path
-                                / f"config/MaaConfig/{self.name}/{self.user_mode_list[mode]}/{i}"
-                            ).rename(
-                                Config.app_path
-                                / f"config/MaaConfig/{self.name}/{self.user_mode_list[mode]}/{i - 1}"
+                            self.card_UserLable = UserLableSettingCard(
+                                icon=FluentIcon.INFO,
+                                title="状态信息",
+                                content="用户的代理情况汇总",
+                                qconfig=self.config,
+                                configItems={
+                                    "LastProxyDate": self.config.Data_LastProxyDate,
+                                    "LastAnnihilationDate": self.config.Data_LastAnnihilationDate,
+                                    "ProxyTimes": self.config.Data_ProxyTimes,
+                                    "IfPassCheck": self.config.Data_IfPassCheck,
+                                },
+                                parent=self,
                             )
 
-                    self.update_user_info("normal")
+                            h1_layout = QHBoxLayout()
+                            h1_layout.addWidget(self.card_Name)
+                            h1_layout.addWidget(self.card_Id)
+                            h2_layout = QHBoxLayout()
+                            h2_layout.addWidget(self.card_Mode)
+                            h2_layout.addWidget(self.card_GameIdMode)
+                            h2_layout.addWidget(self.card_Server)
+                            h3_layout = QHBoxLayout()
+                            h3_layout.addWidget(self.card_Status)
+                            h3_layout.addWidget(self.card_RemainedDay)
+                            h4_layout = QHBoxLayout()
+                            h4_layout.addWidget(self.card_Annihilation)
+                            h4_layout.addWidget(self.card_Routine)
+                            h4_layout.addWidget(self.card_Infrastructure)
+                            h5_layout = QHBoxLayout()
+                            h5_layout.addWidget(self.card_Password)
+                            h5_layout.addWidget(self.card_Notes)
+                            h6_layout = QHBoxLayout()
+                            h6_layout.addWidget(self.card_MedicineNumb)
+                            h6_layout.addWidget(self.card_GameId)
+                            h7_layout = QHBoxLayout()
+                            h7_layout.addWidget(self.card_GameId_1)
+                            h7_layout.addWidget(self.card_GameId_2)
 
+                            Layout = QVBoxLayout()
+                            Layout.addLayout(h1_layout)
+                            Layout.addLayout(h2_layout)
+                            Layout.addLayout(h3_layout)
+                            Layout.addWidget(self.card_UserLable)
+                            Layout.addLayout(h4_layout)
+                            Layout.addLayout(h5_layout)
+                            Layout.addLayout(h6_layout)
+                            Layout.addLayout(h7_layout)
 
-def server_date() -> str:
-    """获取当前的服务器日期"""
+                            self.viewLayout.addLayout(Layout)
+                            self.viewLayout.setContentsMargins(3, 0, 3, 3)
 
-    dt = datetime.now()
-    if dt.time() < datetime.min.time().replace(hour=4):
-        dt = dt - timedelta(days=1)
-    return dt.strftime("%Y-%m-%d")
+                            self.card_Mode.comboBox.currentIndexChanged.connect(
+                                self.switch_mode
+                            )
+                            self.card_Annihilation.clicked.connect(
+                                lambda: self.set_maa("Annihilation")
+                            )
+                            self.card_Routine.clicked.connect(
+                                lambda: self.set_maa("Routine")
+                            )
+                            self.card_Infrastructure.clicked.connect(
+                                self.set_infrastructure
+                            )
+                            Config.gameid_refreshed.connect(self.refresh_gameid)
+                            Config.PASSWORD_refreshed.connect(self.refresh_password)
+
+                            self.switch_mode()
+
+                        def switch_mode(self) -> None:
+
+                            if self.config.get(self.config.Info_Mode) == "简洁":
+
+                                self.card_Routine.setVisible(False)
+                                self.card_Server.setVisible(True)
+                                self.card_Annihilation.button.setVisible(False)
+                                self.card_Infrastructure.setVisible(True)
+
+                            elif self.config.get(self.config.Info_Mode) == "详细":
+
+                                self.card_Server.setVisible(False)
+                                self.card_Infrastructure.setVisible(False)
+                                self.card_Annihilation.button.setVisible(True)
+                                self.card_Routine.setVisible(True)
+
+                        def refresh_gameid(self):
+
+                            self.card_GameId.reLoadOptions(
+                                Config.gameid_dict["ALL"]["value"],
+                                Config.gameid_dict["ALL"]["text"],
+                            )
+                            self.card_GameId_1.reLoadOptions(
+                                Config.gameid_dict["ALL"]["value"],
+                                Config.gameid_dict["ALL"]["text"],
+                            )
+                            self.card_GameId_2.reLoadOptions(
+                                Config.gameid_dict["ALL"]["value"],
+                                Config.gameid_dict["ALL"]["text"],
+                            )
+
+                        def refresh_password(self):
+
+                            self.card_Password.setValue(
+                                self.card_Password.qconfig.get(
+                                    self.card_Password.configItem
+                                )
+                            )
+
+                        def set_infrastructure(self) -> None:
+                            """配置自定义基建"""
+
+                            if self.name in Config.running_list:
+                                logger.warning("所属脚本正在运行")
+                                MainInfoBar.push_info_bar(
+                                    "warning", "所属脚本正在运行", "请先停止任务", 5000
+                                )
+                                return None
+
+                            file_path, _ = QFileDialog.getOpenFileName(
+                                self,
+                                "选择自定义基建文件",
+                                ".",
+                                "JSON 文件 (*.json)",
+                            )
+                            if file_path != "":
+                                (self.user_path / "Infrastructure").mkdir(
+                                    parents=True, exist_ok=True
+                                )
+                                shutil.copy(
+                                    file_path,
+                                    self.user_path
+                                    / "Infrastructure/infrastructure.json",
+                                )
+                            else:
+                                logger.warning("未选择自定义基建文件")
+                                MainInfoBar.push_info_bar(
+                                    "warning", "警告", "未选择自定义基建文件", 5000
+                                )
+
+                        def set_maa(self, mode: str) -> None:
+                            """配置MAA子配置"""
+
+                            if self.name in Config.running_list:
+                                logger.warning("所属脚本正在运行")
+                                MainInfoBar.push_info_bar(
+                                    "warning", "所属脚本正在运行", "请先停止任务", 5000
+                                )
+                                return None
+
+                            TaskManager.add_task(
+                                "设置MAA_用户",
+                                self.name,
+                                {
+                                    "SetMaaInfo": {
+                                        "Path": self.user_path / mode,
+                                    }
+                                },
+                            )
