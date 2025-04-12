@@ -21,7 +21,7 @@
 """
 AUTO_MAA
 AUTO_MAA信息通知栏
-v4.2
+v4.3
 作者：DLmaster_361
 """
 
@@ -45,15 +45,15 @@ class _MainInfoBar:
         if self.main_window is None:
             logger.error("信息通知栏未设置父窗口")
             return None
-    
+
         # 定义模式到 InfoBar 方法的映射
         mode_mapping = {
             "success": InfoBar.success,
             "warning": InfoBar.warning,
             "error": InfoBar.error,
-            "info": InfoBar.info
+            "info": InfoBar.info,
         }
-    
+
         # 根据 mode 获取对应的 InfoBar 方法
         info_bar_method = mode_mapping.get(mode)
         if info_bar_method:
@@ -64,7 +64,7 @@ class _MainInfoBar:
                 isClosable=True,
                 position=InfoBarPosition.TOP_RIGHT,
                 duration=time,
-                parent=self.main_window
+                parent=self.main_window,
             )
         else:
             logger.error(f"未知的通知栏模式: {mode}")

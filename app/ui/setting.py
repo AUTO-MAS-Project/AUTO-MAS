@@ -21,7 +21,7 @@
 """
 AUTO_MAA
 AUTO_MAA设置界面
-v4.2
+v4.3
 作者：DLmaster_361
 """
 
@@ -1052,6 +1052,9 @@ class OtherSettingCard(HeaderCardWidget):
 
 def version_text(version_numb: list) -> str:
     """将版本号列表转为可读的文本信息"""
+
+    while len(version_numb) < 4:
+        version_numb.append(0)
 
     if version_numb[3] == 0:
         version = f"v{'.'.join(str(_) for _ in version_numb[0:3])}"

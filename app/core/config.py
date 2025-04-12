@@ -21,7 +21,7 @@
 """
 AUTO_MAA
 AUTO_MAA配置管理
-v4.2
+v4.3
 作者：DLmaster_361
 """
 
@@ -599,7 +599,7 @@ class MaaUserConfig(QConfig):
 
 class AppConfig(GlobalConfig):
 
-    VERSION = "4.2.5.10"
+    VERSION = "4.3.0.0"
 
     gameid_refreshed = Signal()
     PASSWORD_refreshed = Signal()

@@ -53,6 +53,9 @@ from typing import List, Dict, Union
 def version_text(version_numb: list) -> str:
     """将版本号列表转为可读的文本信息"""
 
+    while len(version_numb) < 4:
+        version_numb.append(0)
+
     if version_numb[3] == 0:
         version = f"v{'.'.join(str(_) for _ in version_numb[0:3])}"
     else:
