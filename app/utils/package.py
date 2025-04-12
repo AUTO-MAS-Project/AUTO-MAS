@@ -68,9 +68,8 @@ if __name__ == "__main__":
     print("Packaging AUTO_MAA main program ...")
 
     os.system(
-        "powershell -Command python -m nuitka --standalone --onefile --mingw64"
+        "powershell -Command python -m nuitka --standalone --mingw64"
         " --enable-plugins=pyside6 --windows-console-mode=disable"
-        " --onefile-tempdir-spec='{TEMP}\\AUTO_MAA'"
         " --windows-icon-from-ico=resources\\icons\\AUTO_MAA.ico"
         " --company-name='AUTO_MAA Team' --product-name=AUTO_MAA"
         f" --file-version={version["main_version"]}"
@@ -113,28 +112,22 @@ if __name__ == "__main__":
                 item, root_path / "AUTO_MAA" / item.name, dirs_exist_ok=True
             )
         else:
-            shutil.copy(item, root_path / "AUTO_MAA" / item.name)
+            shutil.copy(item, root_path / "AUTO_MAA/")
     shutil.rmtree(root_path / "main.dist")
 
     print("Start to copy AUTO_MAA update program ...")
 
-    for item in (root_path / "downloader.dist").iterdir():
-        if item.is_dir():
-            shutil.copytree(
-                item, root_path / "AUTO_MAA" / item.name, dirs_exist_ok=True
-            )
-        else:
-            shutil.copy(item, root_path / "AUTO_MAA" / item.name)
+    shutil.copy(root_path / "AUTO_Updater.exe", root_path / "AUTO_MAA/")
     shutil.rmtree(root_path / "downloader.dist")
 
     print("Start to copy rescourses ...")
 
     shutil.copytree(root_path / "app", root_path / "AUTO_MAA/app")
     shutil.copytree(root_path / "resources", root_path / "AUTO_MAA/resources")
-    shutil.copy(root_path / "main.py", root_path / "AUTO_MAA/main.py")
-    shutil.copy(root_path / "requirements.txt", root_path / "AUTO_MAA/requirements.txt")
-    shutil.copy(root_path / "README.md", root_path / "AUTO_MAA/README.md")
-    shutil.copy(root_path / "LICENSE", root_path / "AUTO_MAA/LICENSE")
+    shutil.copy(root_path / "main.py", root_path / "AUTO_MAA/")
+    shutil.copy(root_path / "requirements.txt", root_path / "AUTO_MAA/")
+    shutil.copy(root_path / "README.md", root_path / "AUTO_MAA/")
+    shutil.copy(root_path / "LICENSE", root_path / "AUTO_MAA/")
 
     print("Start to compress ...")
 
