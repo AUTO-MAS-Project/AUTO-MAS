@@ -369,11 +369,11 @@ class ButtonGroup(SimpleCardWidget):
         doc_button.clicked.connect(self.open_chat)
         layout.addWidget(doc_button)
 
-        # 创建 官方店铺 按钮 (当然没有)
+        # 创建 MirrorChyan 按钮
         doc_button = IconButton(
             FluentIcon.SHOPPING_CART.icon(color=QColor("#fff")),
-            tip_title="官方店铺",
-            tip_content="暂时没有官方店铺，但是可以加入官方群聊哦~",
+            tip_title="非官方店铺",
+            tip_content="购买 MirrorChyan CDK，更新快人一步",
             isTooltip=True,
         )
         doc_button.setIconSize(QSize(32, 32))
@@ -400,5 +400,5 @@ class ButtonGroup(SimpleCardWidget):
         QDesktopServices.openUrl(QUrl("https://clozya.github.io/AUTOMAA_docs"))
 
     def open_sales(self):
-        """其实还是打开 Q群 链接"""
-        QDesktopServices.openUrl(QUrl("https://qm.qq.com/q/bd9fISNoME"))
+        """打开 MirrorChyan 链接"""
+        QDesktopServices.openUrl(QUrl("https://mirrorchyan.com/"))
