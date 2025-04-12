@@ -969,7 +969,7 @@ class UpdaterSettingCard(HeaderCardWidget):
             parent=self,
         )
         mirrorchyan_url = HyperlinkButton(
-            "https://mirrorchyan.com/", "购买Mirror酱CDK", self
+            "https://mirrorchyan.com/", "获取Mirror酱CDK", self
         )
         self.card_MirrorChyanCDK.hBoxLayout.insertWidget(
             5, mirrorchyan_url, 0, Qt.AlignRight

@@ -666,7 +666,7 @@ class AppConfig(GlobalConfig):
         )
         logger.info("===================================")
         logger.info("AUTO_MAA 主程序")
-        logger.info("版本号： v4.2.1.1")
+        logger.info(f"版本号： v{self.VERSION}")
         logger.info(f"根目录： {self.app_path}")
         logger.info("===================================")
 

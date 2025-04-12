@@ -117,8 +117,7 @@ if __name__ == "__main__":
 
     print("Start to copy AUTO_MAA update program ...")
 
-    shutil.copy(root_path / "AUTO_Updater.exe", root_path / "AUTO_MAA/")
-    shutil.rmtree(root_path / "downloader.dist")
+    shutil.move(root_path / "AUTO_Updater.exe", root_path / "AUTO_MAA/")
 
     print("Start to copy rescourses ...")
 

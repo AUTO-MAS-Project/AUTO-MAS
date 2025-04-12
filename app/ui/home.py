@@ -373,7 +373,7 @@ class ButtonGroup(SimpleCardWidget):
         doc_button = IconButton(
             FluentIcon.SHOPPING_CART.icon(color=QColor("#fff")),
             tip_title="非官方店铺",
-            tip_content="购买 MirrorChyan CDK，更新快人一步",
+            tip_content="获取 MirrorChyan CDK，更新快人一步",
             isTooltip=True,
         )
         doc_button.setIconSize(QSize(32, 32))
