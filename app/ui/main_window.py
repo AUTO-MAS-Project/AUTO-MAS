@@ -241,7 +241,6 @@ class AUTO_MAA(MSFluentWindow):
         # 清理临时更新器
         if (Config.app_path / "AUTO_Updater.active.exe").exists():
             try:
-                System.kill_process(Config.app_path / "AUTO_Updater.active.exe")
                 (Config.app_path / "AUTO_Updater.active.exe").unlink()
             except Exception:
                 pass

@@ -507,16 +507,16 @@ class DownloadManager(QDialog):
         self.zip_loop.exec()
 
         self.update_info("正在删除已弃用的文件")
-        if (app_path / "changes.json").exists():
+        if (self.app_path / "changes.json").exists():
 
-            with (app_path / "changes.json").open(mode="r", encoding="utf-8") as f:
+            with (self.app_path / "changes.json").open(mode="r", encoding="utf-8") as f:
                 info: Dict[str, List[str]] = json.load(f)
 
             if "deleted" in info:
                 for file_path in info:
                     (self.app_path / file_path).unlink()
 
-            (app_path / "changes.json").unlink()
+            (self.app_path / "changes.json").unlink()
 
         self.update_info("正在删除临时文件")
         self.update_progress(0, 0, 0)
@@ -661,7 +661,7 @@ if __name__ == "__main__":
     for _ in range(3):
         try:
             response = requests.get(
-                f"https://mirrorchyan.com/api/resources/AUTO_MAA/latest?current_version={version_text(current_version)}&cdk={mirrorchyan_CDK}&channel={update_type}"
+                f"https://mirrorchyan.com/api/resources/AUTO_MAA/latest?user_agent=AutoMaaDownloader&current_version={version_text(current_version)}&cdk={mirrorchyan_CDK}&channel={update_type}"
             )
             version_info: Dict[str, Union[int, str, Dict[str, str]]] = response.json()
             break
