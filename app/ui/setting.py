@@ -271,7 +271,7 @@ class Setting(QWidget):
         for _ in range(3):
             try:
                 response = requests.get(
-                    f"https://mirrorchyan.com/api/resources/AUTO_MAA/latest?current_version={version_text(current_version)}&cdk={Crypto.win_decryptor(Config.get(Config.update_MirrorChyanCDK))}&channel={Config.get(Config.update_UpdateType)}"
+                    f"https://mirrorchyan.com/api/resources/AUTO_MAA/latest?user_agent=AutoMaaGui&current_version={version_text(current_version)}&cdk={Crypto.win_decryptor(Config.get(Config.update_MirrorChyanCDK))}&channel={Config.get(Config.update_UpdateType)}"
                 )
                 version_info: Dict[str, Union[int, str, Dict[str, str]]] = (
                     response.json()
@@ -404,8 +404,7 @@ class Setting(QWidget):
                     shell=True,
                     creationflags=subprocess.CREATE_NO_WINDOW,
                 )
-                self.close()
-                QApplication.quit()
+                self.window().close()
 
         # 无版本更新
         else:

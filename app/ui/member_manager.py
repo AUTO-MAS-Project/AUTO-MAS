@@ -340,7 +340,7 @@ class MemberManager(QWidget):
                 for _ in range(3):
                     try:
                         response = requests.get(
-                            "https://mirrorchyan.com/api/resources/MAA/latest?user_agent=MaaWpfGui&os=win&arch=x64&channel=stable"
+                            "https://mirrorchyan.com/api/resources/MAA/latest?user_agent=AutoMaaGui&os=win&arch=x64&channel=stable"
                         )
                         maa_info = response.json()
                         break
@@ -372,7 +372,10 @@ class MemberManager(QWidget):
                     Path(folder),
                     "MAA",
                     maa_version,
-                    {"thread_numb": Config.get(Config.update_ThreadNumb)},
+                    {
+                        "mode": "Proxy",
+                        "thread_numb": Config.get(Config.update_ThreadNumb),
+                    },
                 )
                 self.downloader.show()
                 self.downloader.run()

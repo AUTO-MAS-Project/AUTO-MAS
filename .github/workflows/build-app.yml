@@ -21,11 +21,7 @@
 name: Build AUTO_MAA
 
 on:
-  push:
-    branches: [ "main" ]
-    paths-ignore:
-      - '**.md'
-      - 'LICENSE'
+  workflow_dispatch:
 
 permissions:
   contents: write
