@@ -549,8 +549,8 @@ class FunctionSettingCard(HeaderCardWidget):
             self.card_BossKey = LineEditSettingCard(
                 icon=FluentIcon.PAGE_RIGHT,
                 title="模拟器老板键",
-                content="输入模拟器老板快捷键，以“+”分隔",
-                text="请输入安卓模拟器老板键",
+                content="请输入对应的模拟器老板键，请直接输入文字，多个键位之间请用“+”隔开。如：“Alt+Q”",
+                text="请以文字形式输入模拟器老板快捷键",
                 qconfig=Config,
                 configItem=Config.function_BossKey,
                 parent=self,
