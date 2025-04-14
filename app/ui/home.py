@@ -202,7 +202,8 @@ class Home(QWidget):
             for _ in range(3):
                 try:
                     response = requests.get(
-                        "https://gitee.com/DLmaster_361/AUTO_MAA/raw/server/theme_image.json"
+                        "https://gitee.com/DLmaster_361/AUTO_MAA/raw/server/theme_image.json",
+                        timeout=10,
                     )
                     theme_image = response.json()
                     break
@@ -238,7 +239,7 @@ class Home(QWidget):
                 > time_local
             ):
 
-                response = requests.get(theme_image["url"])
+                response = requests.get(theme_image["url"], timeout=10)
                 if response.status_code == 200:
 
                     with open(

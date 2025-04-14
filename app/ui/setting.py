@@ -271,7 +271,8 @@ class Setting(QWidget):
         for _ in range(3):
             try:
                 response = requests.get(
-                    f"https://mirrorchyan.com/api/resources/AUTO_MAA/latest?user_agent=AutoMaaGui&current_version={version_text(current_version)}&cdk={Crypto.win_decryptor(Config.get(Config.update_MirrorChyanCDK))}&channel={Config.get(Config.update_UpdateType)}"
+                    f"https://mirrorchyan.com/api/resources/AUTO_MAA/latest?user_agent=AutoMaaGui&current_version={version_text(current_version)}&cdk={Crypto.win_decryptor(Config.get(Config.update_MirrorChyanCDK))}&channel={Config.get(Config.update_UpdateType)}",
+                    timeout=10,
                 )
                 version_info: Dict[str, Union[int, str, Dict[str, str]]] = (
                     response.json()
@@ -417,7 +418,8 @@ class Setting(QWidget):
         for _ in range(3):
             try:
                 response = requests.get(
-                    "https://gitee.com/DLmaster_361/AUTO_MAA/raw/server/notice.json"
+                    "https://gitee.com/DLmaster_361/AUTO_MAA/raw/server/notice.json",
+                    timeout=10,
                 )
                 notice = response.json()
                 break
