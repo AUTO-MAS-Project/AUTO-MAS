@@ -51,6 +51,7 @@ import shutil
 import requests
 import subprocess
 from datetime import datetime
+from packaging import version
 from pathlib import Path
 from typing import Dict, List, Union
 
@@ -337,7 +338,9 @@ class Setting(QWidget):
         )
 
         # 有版本更新
-        if remote_version > current_version:
+        if version.parse(version_text(remote_version)) > version.parse(
+            version_text(current_version)
+        ):
 
             version_info_json: Dict[str, Dict[str, str]] = json.loads(
                 re.sub(
@@ -354,9 +357,11 @@ class Setting(QWidget):
             all_version_info = {}
             for v_i in [
                 info
-                for version, info in version_info_json.items()
-                if list(map(int, version.split("."))) > current_version
+                for ver, info in version_info_json.items()
+                if version.parse(version_text(list(map(int, ver.split(".")))))
+                > version.parse(version_text(current_version))
             ]:
+
                 for key, value in v_i.items():
                     if key in update_version_info:
                         update_version_info[key] += value.copy()
@@ -401,8 +406,7 @@ class Setting(QWidget):
                     return None
 
                 subprocess.Popen(
-                    str(Config.app_path / "AUTO_Updater.active.exe"),
-                    shell=True,
+                    [Config.app_path / "AUTO_Updater.active.exe"],
                     creationflags=subprocess.CREATE_NO_WINDOW,
                 )
                 self.window().close()

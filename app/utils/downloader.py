@@ -33,6 +33,7 @@ import subprocess
 import time
 import win32crypt
 import base64
+from packaging import version
 from functools import partial
 from pathlib import Path
 
@@ -529,14 +530,12 @@ class DownloadManager(QDialog):
         # 主程序更新完成后打开对应程序
         if not self.isInterruptionRequested and self.name == "AUTO_MAA":
             subprocess.Popen(
-                str(self.app_path / "AUTO_MAA.exe"),
-                shell=True,
+                [self.app_path / "AUTO_MAA.exe"],
                 creationflags=subprocess.CREATE_NO_WINDOW,
             )
         elif not self.isInterruptionRequested and self.name == "MAA":
             subprocess.Popen(
-                str(self.app_path / "MAA.exe"),
-                shell=True,
+                [self.app_path / "MAA.exe"],
                 creationflags=subprocess.CREATE_NO_WINDOW,
             )
 
@@ -720,7 +719,9 @@ if __name__ == "__main__":
         (app_path / "changes.json").unlink()
 
     # 启动更新线程
-    if remote_version > current_version:
+    if version.parse(version_text(remote_version)) > version.parse(
+        version_text(current_version)
+    ):
         app = AUTO_MAA_Downloader(
             app_path,
             "AUTO_MAA",
