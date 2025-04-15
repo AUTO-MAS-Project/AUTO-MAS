@@ -599,7 +599,7 @@ class MaaUserConfig(QConfig):
 
 class AppConfig(GlobalConfig):
 
-    VERSION = "4.3.3.0"
+    VERSION = "4.3.4.1"
 
     gameid_refreshed = Signal()
     PASSWORD_refreshed = Signal()
@@ -678,7 +678,8 @@ class AppConfig(GlobalConfig):
         for _ in range(3):
             try:
                 response = requests.get(
-                    "https://ota.maa.plus/MaaAssistantArknights/api/gui/StageActivity.json"
+                    "https://ota.maa.plus/MaaAssistantArknights/api/gui/StageActivity.json",
+                    timeout=10,
                 )
                 gameid_infos: List[
                     Dict[str, Union[str, Dict[str, Union[str, int]]]]

@@ -51,6 +51,7 @@ import shutil
 import requests
 import subprocess
 from datetime import datetime
+from packaging import version
 from pathlib import Path
 from typing import Dict, List, Union
 
@@ -271,7 +272,8 @@ class Setting(QWidget):
         for _ in range(3):
             try:
                 response = requests.get(
-                    f"https://mirrorchyan.com/api/resources/AUTO_MAA/latest?user_agent=AutoMaaGui&current_version={version_text(current_version)}&cdk={Crypto.win_decryptor(Config.get(Config.update_MirrorChyanCDK))}&channel={Config.get(Config.update_UpdateType)}"
+                    f"https://mirrorchyan.com/api/resources/AUTO_MAA/latest?user_agent=AutoMaaGui&current_version={version_text(current_version)}&cdk={Crypto.win_decryptor(Config.get(Config.update_MirrorChyanCDK))}&channel={Config.get(Config.update_UpdateType)}",
+                    timeout=10,
                 )
                 version_info: Dict[str, Union[int, str, Dict[str, str]]] = (
                     response.json()
@@ -336,7 +338,9 @@ class Setting(QWidget):
         )
 
         # 有版本更新
-        if remote_version > current_version:
+        if version.parse(version_text(remote_version)) > version.parse(
+            version_text(current_version)
+        ):
 
             version_info_json: Dict[str, Dict[str, str]] = json.loads(
                 re.sub(
@@ -353,9 +357,11 @@ class Setting(QWidget):
             all_version_info = {}
             for v_i in [
                 info
-                for version, info in version_info_json.items()
-                if list(map(int, version.split("."))) > current_version
+                for ver, info in version_info_json.items()
+                if version.parse(version_text(list(map(int, ver.split(".")))))
+                > version.parse(version_text(current_version))
             ]:
+
                 for key, value in v_i.items():
                     if key in update_version_info:
                         update_version_info[key] += value.copy()
@@ -400,8 +406,7 @@ class Setting(QWidget):
                     return None
 
                 subprocess.Popen(
-                    str(Config.app_path / "AUTO_Updater.active.exe"),
-                    shell=True,
+                    [Config.app_path / "AUTO_Updater.active.exe"],
                     creationflags=subprocess.CREATE_NO_WINDOW,
                 )
                 self.window().close()
@@ -417,7 +422,8 @@ class Setting(QWidget):
         for _ in range(3):
             try:
                 response = requests.get(
-                    "https://gitee.com/DLmaster_361/AUTO_MAA/raw/server/notice.json"
+                    "https://gitee.com/DLmaster_361/AUTO_MAA/raw/server/notice.json",
+                    timeout=10,
                 )
                 notice = response.json()
                 break
