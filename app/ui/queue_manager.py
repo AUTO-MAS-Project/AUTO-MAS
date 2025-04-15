@@ -421,7 +421,7 @@ class QueueManager(QWidget):
                     self.card_Enable = SwitchSettingCard(
                         icon=FluentIcon.HOME,
                         title="状态",
-                        content="调度队列状态",
+                        content="调度队列状态，仅启用时会执行定时任务",
                         qconfig=self.config,
                         configItem=self.config.queueSet_Enabled,
                         parent=self,

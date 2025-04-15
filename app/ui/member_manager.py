@@ -612,7 +612,7 @@ class MemberManager(QWidget):
                         self.card_TaskTransitionMethod = ComboBoxSettingCard(
                             icon=FluentIcon.PAGE_RIGHT,
                             title="任务切换方式",
-                            content="简洁用户列表下相邻两个任务间的切换方式",
+                            content="相邻两个任务间的切换方式，使用“详细”配置的用户固定为“重启模拟器”",
                             texts=["直接切换账号", "重启明日方舟", "重启模拟器"],
                             qconfig=self.config,
                             configItem=self.config.RunSet_TaskTransitionMethod,
@@ -621,7 +621,7 @@ class MemberManager(QWidget):
                         self.card_EnhanceTask = ComboBoxSettingCard(
                             icon=FluentIcon.PAGE_RIGHT,
                             title="自动代理增效任务",
-                            content="自动代理时的额外操作，此操作无法区分多开，可能会干扰其他任务，也可能关闭您正在使用的模拟器",
+                            content="自动代理时的额外操作，此操作无法区分多开模拟器，可能会干扰其他任务，也可能关闭您正在使用的模拟器",
                             texts=[
                                 "禁用",
                                 "强制关闭ADB",
@@ -635,7 +635,7 @@ class MemberManager(QWidget):
                         self.ProxyTimesLimit = SpinBoxSettingCard(
                             icon=FluentIcon.PAGE_RIGHT,
                             title="用户单日代理次数上限",
-                            content="当用户本日代理成功次数超过该阈值时跳过代理，阈值为“0”时视为无代理次数上限",
+                            content="当用户本日代理成功次数达到该阈值时跳过代理，阈值为“0”时视为无代理次数上限",
                             range=(0, 1024),
                             qconfig=self.config,
                             configItem=self.config.RunSet_ProxyTimesLimit,
