@@ -98,4 +98,4 @@ MAA多账号管理与自动化软件
 
 如果喜欢这个项目的话，给作者来杯咖啡吧！
 
-![payid](https://github.com/DLmaster361/AUTO_MAA/blob/main/resources/README/payid.png "payid")
+![payid](resources/images/README/payid.png "payid")
