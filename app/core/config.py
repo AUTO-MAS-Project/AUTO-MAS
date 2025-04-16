@@ -1368,7 +1368,7 @@ class AppConfig(GlobalConfig):
                 # 如果已经找到了关卡，处理掉落物
                 if current_stage:
                     item_match: List[str] = re.findall(
-                        r"^(?!\[)([\u4e00-\u9fa5A-Za-z0-9\-]+)\s*:\s*([\d,]+)(?:\s*\(\+[\d,]+\))?",
+                        r"^(?!\[)(\S+?)\s*:\s*([\d,]+)(?:\s*\(\+[\d,]+\))?",
                         line,
                         re.M,
                     )
