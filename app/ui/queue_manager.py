@@ -39,7 +39,6 @@ from qfluentwidgets import (
     FluentIcon,
     MessageBox,
     HeaderCardWidget,
-    TextBrowser,
     CommandBar,
 )
 from PySide6.QtCore import Qt
@@ -52,6 +51,7 @@ from .Widget import (
     LineEditSettingCard,
     TimeEditSettingCard,
     NoOptionComboBoxSettingCard,
+    HistoryCard,
 )
 
 
@@ -387,7 +387,11 @@ class QueueManager(QWidget):
                 self.queue_set = self.QueueSetSettingCard(self.config, self)
                 self.time = self.TimeSettingCard(self.config, self)
                 self.task = self.TaskSettingCard(self.config, self)
-                self.history = self.HistoryCard(f"调度队列_{uid}", self)
+                self.history = HistoryCard(
+                    qconfig=self.config,
+                    configItem=self.config.Data_LastProxyHistory,
+                    parent=self,
+                )
 
                 content_layout.addWidget(self.queue_set)
                 content_layout.addWidget(self.time)
@@ -704,16 +708,3 @@ class QueueManager(QWidget):
                     Layout.addWidget(self.card_Member_10)
 
                     self.viewLayout.addLayout(Layout)
-
-            class HistoryCard(HeaderCardWidget):
-
-                def __init__(self, name: str, parent=None):
-                    super().__init__(parent)
-                    self.setTitle("历史运行记录")
-
-                    self.text = TextBrowser()
-                    self.text.setMinimumHeight(300)
-                    history = Config.get_history(name)
-                    self.text.setPlainText(history["History"])
-
-                    self.viewLayout.addWidget(self.text)

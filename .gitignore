@@ -1,0 +1,8 @@
+__pycache__/
+config/
+data/
+debug/
+history/
+resources/notice.json
+resources/theme_image.json
+resources/images/Home/BannerTheme.jpg

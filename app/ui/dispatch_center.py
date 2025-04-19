@@ -143,9 +143,11 @@ class DispatchCenter(QWidget):
         task.update_log_text.connect(
             self.script_list["主调度台"].info.log_text.text.setText
         )
-        task.accomplish.connect(lambda: self.disconnect_main_board(task.name))
+        task.accomplish.connect(
+            lambda logs: self.disconnect_main_board(task.name, logs)
+        )
 
-    def disconnect_main_board(self, name: str) -> None:
+    def disconnect_main_board(self, name: str, logs: list) -> None:
         """断开主调度台"""
 
         self.script_list["主调度台"].top_bar.Lable.hide()
@@ -156,9 +158,15 @@ class DispatchCenter(QWidget):
         self.script_list["主调度台"].top_bar.button.clicked.connect(
             self.script_list["主调度台"].top_bar.start_task
         )
-        self.script_list["主调度台"].info.log_text.text.setText(
-            Config.get_history(name)["History"]
-        )
+        if len(logs) > 0:
+            history = ""
+            for log in logs:
+                history += (
+                    f"任务名称：{log[0]}，{log[1]["History"].replace("\n","\n    ")}\n"
+                )
+            self.script_list["主调度台"].info.log_text.text.setText(history)
+        else:
+            self.script_list["主调度台"].info.log_text.text.setText("没有任务被执行")
 
     def update_top_bar(self):
         """更新顶栏"""

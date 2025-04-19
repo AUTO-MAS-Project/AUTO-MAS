@@ -45,13 +45,11 @@ from qfluentwidgets import (
 )
 import re
 import shutil
-import requests
 import json
-import time
 from datetime import datetime
 from pathlib import Path
 
-from app.core import Config, MainInfoBar
+from app.core import Config, MainInfoBar, Network
 from .Widget import Banner, IconButton
 
 
@@ -199,24 +197,21 @@ class Home(QWidget):
         elif Config.get(Config.function_HomeImageMode) == "主题图像":
 
             # 从远程服务器获取最新主题图像
-            for _ in range(3):
-                try:
-                    response = requests.get(
-                        "https://gitee.com/DLmaster_361/AUTO_MAA/raw/server/theme_image.json",
-                        timeout=10,
-                    )
-                    theme_image = response.json()
-                    break
-                except Exception as e:
-                    err = e
-                    time.sleep(0.1)
+            Network.set_info(
+                mode="get",
+                url="https://gitee.com/DLmaster_361/AUTO_MAA/raw/server/theme_image.json",
+            )
+            Network.start()
+            Network.loop.exec()
+            if Network.stutus_code == 200:
+                theme_image = Network.response_json
             else:
-                logger.error(f"获取最新主题图像时出错：\n{err}")
+                logger.warning(f"获取最新主题图像时出错：{Network.error_message}")
                 MainInfoBar.push_info_bar(
-                    "error",
-                    "主题图像获取失败",
-                    f"获取最新主题图像信息时出错！",
-                    -1,
+                    "warning",
+                    "获取最新主题图像时出错",
+                    f"网络错误：{Network.stutus_code}",
+                    5000,
                 )
                 return None
 
@@ -239,15 +234,22 @@ class Home(QWidget):
                 > time_local
             ):
 
-                response = requests.get(theme_image["url"], timeout=10)
-                if response.status_code == 200:
+                Network.set_info(
+                    mode="get_file",
+                    url=theme_image["url"],
+                    path=Config.app_path / "resources/images/Home/BannerTheme.jpg",
+                )
+                Network.start()
+                Network.loop.exec()
 
-                    with open(
-                        Config.app_path / "resources/images/Home/BannerTheme.jpg", "wb"
-                    ) as file:
-                        file.write(response.content)
+                if Network.stutus_code == 200:
 
-                    logger.info(f"主题图像「{theme_image["name"]}」下载成功")
+                    with (Config.app_path / "resources/theme_image.json").open(
+                        mode="w", encoding="utf-8"
+                    ) as f:
+                        json.dump(theme_image, f, ensure_ascii=False, indent=4)
+
+                    logger.success(f"主题图像「{theme_image["name"]}」下载成功")
                     MainInfoBar.push_info_bar(
                         "success",
                         "主题图像下载成功",
@@ -257,18 +259,13 @@ class Home(QWidget):
 
                 else:
 
-                    logger.error("主题图像下载失败")
+                    logger.warning(f"下载最新主题图像时出错：{Network.error_message}")
                     MainInfoBar.push_info_bar(
-                        "error",
-                        "主题图像下载失败",
-                        f"主题图像下载失败：{response.status_code}",
-                        -1,
+                        "warning",
+                        "下载最新主题图像时出错",
+                        f"网络错误：{Network.stutus_code}",
+                        5000,
                     )
-
-                with (Config.app_path / "resources/theme_image.json").open(
-                    mode="w", encoding="utf-8"
-                ) as f:
-                    json.dump(theme_image, f, ensure_ascii=False, indent=4)
 
             else:
 

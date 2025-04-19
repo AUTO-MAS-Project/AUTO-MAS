@@ -27,10 +27,7 @@ v4.3
 
 from loguru import logger
 from PySide6.QtCore import Qt
-from qfluentwidgets import (
-    InfoBar,
-    InfoBarPosition,
-)
+from qfluentwidgets import InfoBar, InfoBarPosition
 
 
 class _MainInfoBar:

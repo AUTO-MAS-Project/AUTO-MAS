@@ -229,36 +229,32 @@ class _TaskManager(QObject):
             self.task_dict[name].quit()
             self.task_dict[name].wait()
 
-    def remove_task(self, mode: str, name: str, logs: str):
+    def remove_task(self, mode: str, name: str, logs: list):
         """任务结束后的处理"""
 
         logger.info(f"任务结束：{name}")
         MainInfoBar.push_info_bar("info", "任务结束", name, 3000)
 
         self.task_dict[name].deleteLater()
-
-        if len(logs) > 0:
-            time = logs[0][1]["Time"]
-            history = ""
-            for log in logs:
-                Config.save_history(log[0], log[1])
-                history += (
-                    f"任务名称：{log[0]}，{log[1]["History"].replace("\n","\n    ")}\n"
-                )
-            Config.save_history(name, {"Time": time, "History": history})
-        else:
-            Config.save_history(
-                name,
-                {
-                    "Time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    "History": "没有任务被执行",
-                },
-            )
-
         self.task_dict.pop(name)
         Config.running_list.remove(name)
 
         if "调度队列" in name and "人工排查" not in mode:
+
+            if len(logs) > 0:
+                time = logs[0][1]["Time"]
+                history = ""
+                for log in logs:
+                    history += f"任务名称：{log[0]}，{log[1]["History"].replace("\n","\n    ")}\n"
+                Config.save_history(name, {"Time": time, "History": history})
+            else:
+                Config.save_history(
+                    name,
+                    {
+                        "Time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        "History": "没有任务被执行",
+                    },
+                )
 
             if (
                 Config.queue_dict[name]["Config"].get(
