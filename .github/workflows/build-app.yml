@@ -102,20 +102,8 @@ jobs:
         with:
           name: version_info
           path: ./
-      - name: Check if release exists
-        id: check_if_release_exists
-        run: |
-          release_id=$(gh release view $(sed 's/\r$//g' <(head -n 1 version_info.txt)) --json id --jq .id || true)
-          if [[ -z $release_id ]]; then
-            echo "release_exists=false" >> $GITHUB_OUTPUT
-          else
-            echo "release_exists=true" >> $GITHUB_OUTPUT
-          fi
-        env:
-          GITHUB_TOKEN: ${{ secrets.WORKFLOW_TOKEN }}
       - name: Create release
         id: create_release
-        if: steps.check_if_release_exists.outputs.release_exists == 'false'
         run: |
           set -xe
           shopt -s nullglob
@@ -124,22 +112,12 @@ jobs:
           NOTES_MAIN="$(sed 's/\r$//g' <(tail -n +3 version_info.txt))"
           NOTES_TAIL="\`\`\`本release通过GitHub Actions自动构建\`\`\`"
           NOTES="$NOTES_MAIN<br><br>$NOTES_TAIL"
-          gh release create "$TAGNAME" --target "main" --title "$NAME" --notes "$NOTES" artifacts/*
-        env:
-          GITHUB_TOKEN: ${{ secrets.WORKFLOW_TOKEN }}
-      - name: Update release
-        id: update_release
-        if: steps.check_if_release_exists.outputs.release_exists == 'true'
-        run: |
-          set -xe
-          shopt -s nullglob
-          NAME="$(sed 's/\r$//g' <(head -n 1 version_info.txt))"
-          TAGNAME="$(sed 's/\r$//g' <(head -n 1 version_info.txt))"
-          NOTES_MAIN="$(sed 's/\r$//g' <(tail -n +3 version_info.txt))"
-          NOTES_TAIL="\`\`\`本release通过GitHub Actions自动构建\`\`\`"
-          NOTES="$NOTES_MAIN<br><br>$NOTES_TAIL"
-          gh release delete "$TAGNAME" --yes
-          gh release create "$TAGNAME" --target "main" --title "$NAME" --notes "$NOTES" artifacts/*
+          if [ "${{ github.ref_name }}" == "main" ]; then
+            PRERELEASE_FLAG=""
+          else
+            PRERELEASE_FLAG="--prerelease"
+          fi
+          gh release create "$TAGNAME" --target "main" --title "$NAME" --notes "$NOTES" $PRERELEASE_FLAG artifacts/*
         env:
           GITHUB_TOKEN: ${{ secrets.WORKFLOW_TOKEN }}
       - name: Trigger MirrorChyanUploading

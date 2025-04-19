@@ -597,6 +597,9 @@ class MaaManager(QObject):
             if self.isInterruptionRequested:
                 System.kill_process(self.maa_exe_path)
 
+            # 复原MAA配置文件
+            shutil.copy(self.config_path / "Default/gui.json", self.maa_set_path)
+
             # 更新用户数据
             updated_info = {_[2]: self.data[_[2]] for _ in self.user_list}
             self.update_user_info.emit(self.config_path.name, updated_info)

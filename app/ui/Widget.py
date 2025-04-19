@@ -870,6 +870,31 @@ class TimeEditSettingCard(SettingCard):
         self.TimeEdit.setTime(QTime.fromString(value, "HH:mm"))
 
 
+class HistoryCard(HeaderCardWidget):
+
+    def __init__(self, qconfig: QConfig, configItem: ConfigItem, parent=None):
+        super().__init__(parent)
+        self.setTitle("历史运行记录")
+
+        self.qconfig = qconfig
+        self.configItem = configItem
+
+        self.text = TextBrowser()
+        self.text.setMinimumHeight(300)
+
+        if configItem:
+            self.setValue(self.qconfig.get(configItem))
+            configItem.valueChanged.connect(self.setValue)
+
+        self.viewLayout.addWidget(self.text)
+
+    def setValue(self, content: str):
+        if self.configItem:
+            self.qconfig.set(self.configItem, content)
+
+        self.text.setPlainText(content)
+
+
 class UrlItem(QWidget):
     """Url item"""
 
