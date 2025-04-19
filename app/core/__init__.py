@@ -31,6 +31,7 @@ __license__ = "GPL-3.0 license"
 
 from .config import QueueConfig, MaaConfig, MaaUserConfig, Config
 from .main_info_bar import MainInfoBar
+from .network import Network
 from .task_manager import Task, TaskManager
 from .timer import MainTimer
 
@@ -40,6 +41,7 @@ __all__ = [
     "MaaConfig",
     "MaaUserConfig",
     "MainInfoBar",
+    "Network",
     "Task",
     "TaskManager",
     "MainTimer",

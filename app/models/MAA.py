@@ -186,7 +186,7 @@ class MaaManager(QObject):
 
                 logger.info(f"{self.name} | 开始代理用户: {user[0]}")
 
-                # 初始化代理情况记录和模式替换记录
+                # 初始化代理情况记录和模式替换表
                 run_book = {"Annihilation": False, "Routine": False}
                 mode_book = {
                     "Annihilation": "自动代理_剿灭",
@@ -196,92 +196,80 @@ class MaaManager(QObject):
                 # 简洁模式用户默认开启日常选项
                 if user_data["Info"]["Mode"] == "简洁":
                     user_data["Info"]["Routine"] = True
+                # 详细模式用户首次代理需打开模拟器
                 elif user_data["Info"]["Mode"] == "详细":
-                    check_book = {
-                        "Annihilation": True,
-                        "Routine": True,
-                    }
+                    self.if_open_emulator = True
 
                 user_logs_list = []
                 user_start_time = datetime.now()
 
-                # 尝试次数循环
-                for i in range(self.set["RunSet"]["RunTimesLimit"]):
+                # 剿灭-日常模式循环
+                for mode in ["Annihilation", "Routine"]:
 
                     if self.isInterruptionRequested:
                         break
 
-                    logger.info(
-                        f"{self.name} | 用户: {user[0]} - 尝试次数: {i + 1}/{self.set["RunSet"]["RunTimesLimit"]}"
+                    # 剿灭模式；满足条件跳过剿灭
+                    if (
+                        mode == "Annihilation"
+                        and self.set["RunSet"]["AnnihilationWeeklyLimit"]
+                        and datetime.strptime(
+                            user_data["Data"]["LastAnnihilationDate"], "%Y-%m-%d"
+                        ).isocalendar()[:2]
+                        == datetime.strptime(curdate, "%Y-%m-%d").isocalendar()[:2]
+                    ):
+                        logger.info(
+                            f"{self.name} | 用户: {user_data["Info"]["Name"]} - 本周剿灭模式已达上限，跳过执行剿灭任务"
+                        )
+                        run_book[mode] = True
+                        continue
+                    else:
+                        self.weekly_annihilation_limit_reached = False
+
+                    if not user_data["Info"][mode]:
+                        run_book[mode] = True
+                        continue
+
+                    if user_data["Info"]["Mode"] == "详细":
+
+                        if not (
+                            self.data[user[2]]["Path"] / f"{mode}/gui.json"
+                        ).exists():
+                            logger.error(
+                                f"{self.name} | 用户: {user[0]} - 未找到{mode_book[mode][5:7]}配置文件"
+                            )
+                            self.push_info_bar.emit(
+                                "error",
+                                "启动MAA代理进程失败",
+                                f"未找到{user[0]}的{mode_book[mode][5:7]}配置文件！",
+                                -1,
+                            )
+                            run_book[mode] = False
+                            continue
+
+                    # 更新当前模式到界面
+                    self.update_user_list.emit(
+                        [
+                            (
+                                [f"{_[0]} - {mode_book[mode][5:7]}", _[1], _[2]]
+                                if _[2] == user[2]
+                                else _
+                            )
+                            for _ in self.user_list
+                        ]
                     )
 
-                    # 剿灭-日常模式循环
-                    for mode in ["Annihilation", "Routine"]:
+                    # 尝试次数循环
+                    for i in range(self.set["RunSet"]["RunTimesLimit"]):
 
                         if self.isInterruptionRequested:
                             break
 
-                        # 剿灭模式；满足条件跳过剿灭
-                        if (
-                            mode == "Annihilation"
-                            and self.set["RunSet"]["AnnihilationWeeklyLimit"]
-                            and datetime.strptime(
-                                user_data["Data"]["LastAnnihilationDate"], "%Y-%m-%d"
-                            ).isocalendar()[:2]
-                            == datetime.strptime(curdate, "%Y-%m-%d").isocalendar()[:2]
-                        ):
-                            logger.info(
-                                f"{self.name} | 用户: {user_data["Info"]["Name"]} - 本周剿灭模式已达上限，跳过执行剿灭任务"
-                            )
-                            run_book[mode] = True
-                            continue
-                        else:
-                            self.weekly_annihilation_limit_reached = False
-
-                        if not user_data["Info"][mode]:
-                            run_book[mode] = True
-                            continue
                         if run_book[mode]:
-                            continue
+                            break
 
                         logger.info(
-                            f"{self.name} | 用户: {user[0]} - 模式: {mode_book[mode]}"
-                        )
-
-                        if user_data["Info"]["Mode"] == "详细":
-
-                            self.if_open_emulator = True
-
-                            if (
-                                check_book[mode]
-                                and not (
-                                    self.data[user[2]]["Path"] / f"{mode}/gui.json"
-                                ).exists()
-                            ):
-                                logger.error(
-                                    f"{self.name} | 用户: {user[0]} - 未找到{mode_book[mode][5:7]}配置文件"
-                                )
-                                self.push_info_bar.emit(
-                                    "error",
-                                    "启动MAA代理进程失败",
-                                    f"未找到{user[0]}的{mode_book[mode][5:7]}配置文件！",
-                                    -1,
-                                )
-                                check_book[mode] = False
-                                continue
-                            elif not check_book[mode]:
-                                continue
-
-                        # 更新当前模式到界面
-                        self.update_user_list.emit(
-                            [
-                                (
-                                    [f"{_[0]} - {mode_book[mode][5:7]}", _[1], _[2]]
-                                    if _[2] == user[2]
-                                    else _
-                                )
-                                for _ in self.user_list
-                            ]
+                            f"{self.name} | 用户: {user[0]} - 模式: {mode_book[mode]} - 尝试次数: {i + 1}/{self.set["RunSet"]["RunTimesLimit"]}"
                         )
 
                         # 配置MAA
@@ -293,12 +281,24 @@ class MaaManager(QObject):
                         self.emulator_path = Path(
                             set["Configurations"]["Default"]["Start.EmulatorPath"]
                         )
+                        self.emulator_arguments = set["Configurations"]["Default"][
+                            "Start.EmulatorAddCommand"
+                        ].split()
                         self.ADB_path = Path(
                             set["Configurations"]["Default"]["Connect.AdbPath"]
                         )
+                        self.ADB_address = set["Configurations"]["Default"][
+                            "Connect.Address"
+                        ]
                         self.if_kill_emulator = bool(
                             set["Configurations"]["Default"]["MainFunction.PostActions"]
                             == "12"
+                        )
+                        self.if_open_emulator_process = bool(
+                            set["Configurations"]["Default"][
+                                "Start.OpenEmulatorAfterLaunch"
+                            ]
+                            == "True"
                         )
                         # 添加静默进程标记
                         Config.silence_list.append(self.emulator_path)
@@ -306,11 +306,25 @@ class MaaManager(QObject):
                         # 增强任务：任务开始前强杀ADB
                         if "ADB" in self.set["RunSet"]["EnhanceTask"]:
                             System.kill_process(self.ADB_path)
+                        else:
+                            try:
+                                subprocess.run(
+                                    [self.ADB_path, "disconnect", self.ADB_address],
+                                    creationflags=subprocess.CREATE_NO_WINDOW,
+                                )
+                            except subprocess.CalledProcessError as e:
+                                # 忽略错误,因为可能本来就没有连接
+                                logger.warning(f"{self.name} | 释放ADB时出现异常：{e}")
+
+                        if self.if_open_emulator_process:
+                            self.emulator_process = subprocess.Popen(
+                                [self.emulator_path, *self.emulator_arguments],
+                                creationflags=subprocess.CREATE_NO_WINDOW,
+                            )
 
                         # 创建MAA任务
                         maa = subprocess.Popen(
                             [self.maa_exe_path],
-                            shell=True,
                             creationflags=subprocess.CREATE_NO_WINDOW,
                         )
                         # 监测MAA运行状态
@@ -339,8 +353,13 @@ class MaaManager(QObject):
                             )
                             # 无命令行中止MAA与其子程序
                             System.kill_process(self.maa_exe_path)
+
                             if "Emulator" in self.set["RunSet"]["EnhanceTask"]:
                                 System.kill_process(self.emulator_path)
+                            else:
+                                self.emulator_process.terminate()
+                                self.emulator_process.wait()
+
                             self.if_open_emulator = True
                             # 推送异常通知
                             Notify.push_plyer(
@@ -357,14 +376,25 @@ class MaaManager(QObject):
                         # 移除静默进程标记
                         Config.silence_list.remove(self.emulator_path)
 
-                        # 增强任务：任务结束后强杀ADB和模拟器
+                        # 增强任务：任务结束后强杀ADB和模拟器或释放进程
                         if "ADB" in self.set["RunSet"]["EnhanceTask"]:
                             System.kill_process(self.ADB_path)
-                        if (
-                            self.if_kill_emulator
-                            and "Emulator" in self.set["RunSet"]["EnhanceTask"]
-                        ):
-                            System.kill_process(self.emulator_path)
+                        else:
+                            try:
+                                subprocess.run(
+                                    [self.ADB_path, "disconnect", self.ADB_address],
+                                    creationflags=subprocess.CREATE_NO_WINDOW,
+                                )
+                            except subprocess.CalledProcessError as e:
+                                # 忽略错误,因为可能本来就没有连接
+                                logger.warning(f"{self.name} | 释放ADB时出现异常：{e}")
+                        if self.if_kill_emulator:
+                            if "Emulator" in self.set["RunSet"]["EnhanceTask"]:
+                                System.kill_process(self.emulator_path)
+                            else:
+                                self.emulator_process.terminate()
+                                self.emulator_process.wait()
+                            self.if_open_emulator = True
 
                         # 记录剿灭情况
                         if (
@@ -392,23 +422,6 @@ class MaaManager(QObject):
                                 {"user_name": user_data["Info"]["Name"]},
                             )
 
-                    # 成功完成代理的用户修改相关参数
-                    if run_book["Annihilation"] and run_book["Routine"]:
-                        if (
-                            user_data["Data"]["ProxyTimes"] == 0
-                            and user_data["Info"]["RemainedDay"] != -1
-                        ):
-                            user_data["Info"]["RemainedDay"] -= 1
-                        user_data["Data"]["ProxyTimes"] += 1
-                        user[1] = "完成"
-                        Notify.push_plyer(
-                            "成功完成一个自动代理任务！",
-                            f"已完成用户 {user[0].replace("_", " 今天的")}任务",
-                            f"已完成 {user[0].replace("_", " 的")}",
-                            3,
-                        )
-                        break
-
                 if Config.get(Config.notify_IfSendStatistic):
 
                     statistics = Config.merge_maa_logs("指定项", user_logs_list)
@@ -428,8 +441,23 @@ class MaaManager(QObject):
                         "统计信息", f"用户 {user[0]} 的自动代理统计报告", statistics
                     )
 
-                # 录入代理失败的用户
-                if not (run_book["Annihilation"] and run_book["Routine"]):
+                if run_book["Annihilation"] and run_book["Routine"]:
+                    # 成功完成代理的用户修改相关参数
+                    if (
+                        user_data["Data"]["ProxyTimes"] == 0
+                        and user_data["Info"]["RemainedDay"] != -1
+                    ):
+                        user_data["Info"]["RemainedDay"] -= 1
+                    user_data["Data"]["ProxyTimes"] += 1
+                    user[1] = "完成"
+                    Notify.push_plyer(
+                        "成功完成一个自动代理任务！",
+                        f"已完成用户 {user[0].replace("_", " 今天的")}任务",
+                        f"已完成 {user[0].replace("_", " 的")}",
+                        3,
+                    )
+                else:
+                    # 录入代理失败的用户
                     user[1] = "异常"
 
                 self.update_user_list.emit(self.user_list)
@@ -475,7 +503,6 @@ class MaaManager(QObject):
                     # 创建MAA任务
                     maa = subprocess.Popen(
                         [self.maa_exe_path],
-                        shell=True,
                         creationflags=subprocess.CREATE_NO_WINDOW,
                     )
 
@@ -545,7 +572,6 @@ class MaaManager(QObject):
             # 创建MAA任务
             maa = subprocess.Popen(
                 [self.maa_exe_path],
-                shell=True,
                 creationflags=subprocess.CREATE_NO_WINDOW,
             )
             # 记录当前时间
@@ -570,6 +596,9 @@ class MaaManager(QObject):
             # 关闭可能未正常退出的MAA进程
             if self.isInterruptionRequested:
                 System.kill_process(self.maa_exe_path)
+
+            # 复原MAA配置文件
+            shutil.copy(self.config_path / "Default/gui.json", self.maa_set_path)
 
             # 更新用户数据
             updated_info = {_[2]: self.data[_[2]] for _ in self.user_list}
@@ -1273,11 +1302,7 @@ class MaaManager(QObject):
                 ] = "False"  # 生息演算
 
         # 启动模拟器仅生效一次
-        if (
-            "设置MAA" not in mode
-            and self.if_open_emulator
-            and self.set["RunSet"]["TaskTransitionMethod"] != "ExitEmulator"
-        ):
+        if "设置MAA" not in mode and self.if_open_emulator:
             self.if_open_emulator = False
 
         # 覆写配置文件

@@ -38,6 +38,8 @@
 #设置
 "Start.ClientType": "Bilibili"、 "Official"        #服务器
 G"Timer.Timer1": "False"        #时间设置1
+"Connect.AdbPath"        #ADB路径
+"Connect.Address": "127.0.0.1:16448"        #连接地址
 G"VersionUpdate.ScheduledUpdateCheck": "True"        #定时检查更新
 G"VersionUpdate.AutoDownloadUpdatePackage": "True"        #自动下载更新包
 G"VersionUpdate.AutoInstallUpdatePackage": "True"        #自动安装更新包
@@ -47,4 +49,4 @@ G"Start.MinimizeDirectly": "True"        #启动MAA后直接最小化
 G"GUI.UseTray": "True"        #显示托盘图标
 G"GUI.MinimizeToTray": "False"        #最小化时隐藏至托盘
 "Start.EmulatorPath"        #模拟器路径
-"Connect.AdbPath"        #ADB路径
+"Start.EmulatorAddCommand": "-v 2"        #附加命令

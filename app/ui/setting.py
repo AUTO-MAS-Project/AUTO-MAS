@@ -26,11 +26,7 @@ v4.3
 """
 
 from loguru import logger
-from PySide6.QtWidgets import (
-    QWidget,
-    QApplication,
-    QVBoxLayout,
-)
+from PySide6.QtWidgets import QWidget, QVBoxLayout
 from PySide6.QtCore import Qt
 from qfluentwidgets import (
     ScrollArea,
@@ -48,13 +44,13 @@ import re
 import json
 import time
 import shutil
-import requests
 import subprocess
 from datetime import datetime
+from packaging import version
 from pathlib import Path
 from typing import Dict, List, Union
 
-from app.core import Config, MainInfoBar
+from app.core import Config, MainInfoBar, Network
 from app.services import Crypto, System, Notify
 from .Widget import (
     SwitchSettingCard,
@@ -92,7 +88,9 @@ class Setting(QWidget):
         )
         self.start.card_IfSelfStart.checkedChanged.connect(System.set_SelfStart)
         self.security.card_changePASSWORD.clicked.connect(self.change_PASSWORD)
-        self.updater.card_CheckUpdate.clicked.connect(self.check_update)
+        self.updater.card_CheckUpdate.clicked.connect(
+            lambda: self.check_update(if_click=True)
+        )
         self.other.card_Notice.clicked.connect(self.show_notice)
 
         content_layout.addWidget(self.function)
@@ -262,34 +260,36 @@ class Setting(QWidget):
                 if choice.exec():
                     break
 
-    def check_update(self) -> None:
+    def check_update(self, if_click: bool = False) -> None:
         """检查版本更新，调起文件下载进程"""
 
         current_version = list(map(int, Config.VERSION.split(".")))
 
-        # 从远程服务器获取最新版本信息
-        for _ in range(3):
-            try:
-                response = requests.get(
-                    f"https://mirrorchyan.com/api/resources/AUTO_MAA/latest?user_agent=AutoMaaGui&current_version={version_text(current_version)}&cdk={Crypto.win_decryptor(Config.get(Config.update_MirrorChyanCDK))}&channel={Config.get(Config.update_UpdateType)}"
-                )
-                version_info: Dict[str, Union[int, str, Dict[str, str]]] = (
-                    response.json()
-                )
-                break
-            except Exception as e:
-                err = e
-                time.sleep(0.1)
-        else:
-            choice = MessageBox(
-                "错误",
-                f"获取版本信息时出错：\n{err}",
-                self.window(),
+        if Network.if_running and if_click:
+            MainInfoBar.push_info_bar(
+                "warning", "请求速度过快", "上个网络请求还未结束，请稍等片刻", 5000
             )
-            choice.cancelButton.hide()
-            choice.buttonLayout.insertStretch(1)
-            if choice.exec():
-                return None
+            return None
+        # 从远程服务器获取最新版本信息
+        Network.set_info(
+            mode="get",
+            url=f"https://mirrorchyan.com/api/resources/AUTO_MAA/latest?user_agent=AutoMaaGui&current_version={version_text(current_version)}&cdk={Crypto.win_decryptor(Config.get(Config.update_MirrorChyanCDK))}&channel={Config.get(Config.update_UpdateType)}",
+        )
+        Network.start()
+        Network.loop.exec()
+        if Network.stutus_code == 200:
+            version_info: Dict[str, Union[int, str, Dict[str, str]]] = (
+                Network.response_json
+            )
+        else:
+            logger.warning(f"获取版本信息时出错：{Network.error_message}")
+            MainInfoBar.push_info_bar(
+                "warning",
+                "获取版本信息时出错",
+                f"网络错误：{Network.stutus_code}",
+                5000,
+            )
+            return None
 
         if version_info["code"] != 0:
 
@@ -336,7 +336,9 @@ class Setting(QWidget):
         )
 
         # 有版本更新
-        if remote_version > current_version:
+        if version.parse(version_text(remote_version)) > version.parse(
+            version_text(current_version)
+        ):
 
             version_info_json: Dict[str, Dict[str, str]] = json.loads(
                 re.sub(
@@ -353,9 +355,11 @@ class Setting(QWidget):
             all_version_info = {}
             for v_i in [
                 info
-                for version, info in version_info_json.items()
-                if list(map(int, version.split("."))) > current_version
+                for ver, info in version_info_json.items()
+                if version.parse(version_text(list(map(int, ver.split(".")))))
+                > version.parse(version_text(current_version))
             ]:
+
                 for key, value in v_i.items():
                     if key in update_version_info:
                         update_version_info[key] += value.copy()
@@ -400,8 +404,7 @@ class Setting(QWidget):
                     return None
 
                 subprocess.Popen(
-                    str(Config.app_path / "AUTO_Updater.active.exe"),
-                    shell=True,
+                    [Config.app_path / "AUTO_Updater.active.exe"],
                     creationflags=subprocess.CREATE_NO_WINDOW,
                 )
                 self.window().close()
@@ -410,31 +413,26 @@ class Setting(QWidget):
         else:
             MainInfoBar.push_info_bar("success", "更新检查", "已是最新版本~", 3000)
 
-    def show_notice(self, if_show: bool = True):
+    def show_notice(self, if_show: bool = True) -> None:
         """显示公告"""
 
         # 从远程服务器获取最新公告
-        for _ in range(3):
-            try:
-                response = requests.get(
-                    "https://gitee.com/DLmaster_361/AUTO_MAA/raw/server/notice.json"
-                )
-                notice = response.json()
-                break
-            except Exception as e:
-                err = e
-                time.sleep(0.1)
+        Network.set_info(
+            mode="get",
+            url="https://gitee.com/DLmaster_361/AUTO_MAA/raw/server/notice.json",
+        )
+        Network.start()
+        Network.loop.exec()
+        if Network.stutus_code == 200:
+            notice = Network.response_json
         else:
-            logger.warning(f"获取最新公告时出错：\n{err}")
-            if if_show:
-                choice = Dialog(
-                    "网络错误",
-                    f"获取最新公告时出错：\n{err}",
-                    self,
-                )
-                choice.cancelButton.hide()
-                choice.buttonLayout.insertStretch(1)
-                choice.exec()
+            logger.warning(f"获取最新公告时出错：{Network.error_message}")
+            MainInfoBar.push_info_bar(
+                "warning",
+                "获取最新公告时出错",
+                f"网络错误：{Network.stutus_code}",
+                5000,
+            )
             return None
 
         if (Config.app_path / "resources/notice.json").exists():
@@ -549,8 +547,8 @@ class FunctionSettingCard(HeaderCardWidget):
             self.card_BossKey = LineEditSettingCard(
                 icon=FluentIcon.PAGE_RIGHT,
                 title="模拟器老板键",
-                content="输入模拟器老板快捷键，以“+”分隔",
-                text="请输入安卓模拟器老板键",
+                content="请输入对应的模拟器老板键，请直接输入文字，多个键位之间请用“+”隔开。如：“Alt+Q”",
+                text="请以文字形式输入模拟器老板快捷键",
                 qconfig=Config,
                 configItem=Config.function_BossKey,
                 parent=self,

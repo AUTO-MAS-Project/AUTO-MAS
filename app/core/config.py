@@ -32,8 +32,6 @@ import json
 import sys
 import shutil
 import re
-import requests
-import time
 import base64
 from datetime import datetime, timedelta
 from collections import defaultdict
@@ -52,6 +50,8 @@ from qfluentwidgets import (
 )
 from urllib.parse import urlparse
 from typing import Union, Dict, List
+
+from .network import Network
 
 
 class UrlListValidator(ConfigValidator):
@@ -318,6 +318,13 @@ class QueueConfig(QConfig):
         self.queue_Member_8 = OptionsConfigItem("Queue", "Member_8", "禁用")
         self.queue_Member_9 = OptionsConfigItem("Queue", "Member_9", "禁用")
         self.queue_Member_10 = OptionsConfigItem("Queue", "Member_10", "禁用")
+
+        self.Data_LastProxyTime = ConfigItem(
+            "Data", "LastProxyTime", "2000-01-01 00:00:00"
+        )
+        self.Data_LastProxyHistory = ConfigItem(
+            "Data", "LastProxyHistory", "暂无历史运行记录"
+        )
 
     def toDict(self, serialize=True):
         """convert config items to `dict`"""
@@ -599,7 +606,7 @@ class MaaUserConfig(QConfig):
 
 class AppConfig(GlobalConfig):
 
-    VERSION = "4.3.3.0"
+    VERSION = "4.3.4.2"
 
     gameid_refreshed = Signal()
     PASSWORD_refreshed = Signal()
@@ -614,7 +621,6 @@ class AppConfig(GlobalConfig):
         self.log_path = self.app_path / "debug/AUTO_MAA.log"
         self.database_path = self.app_path / "data/data.db"
         self.config_path = self.app_path / "config/config.json"
-        self.history_path = self.app_path / "history/main.json"
         self.key_path = self.app_path / "data/key"
         self.gameid_path = self.app_path / "data/gameid.txt"
         self.version_path = self.app_path / "resources/version.json"
@@ -675,20 +681,18 @@ class AppConfig(GlobalConfig):
     def get_gameid(self) -> None:
 
         # 从MAA服务器获取活动关卡信息
-        for _ in range(3):
-            try:
-                response = requests.get(
-                    "https://ota.maa.plus/MaaAssistantArknights/api/gui/StageActivity.json"
-                )
-                gameid_infos: List[
-                    Dict[str, Union[str, Dict[str, Union[str, int]]]]
-                ] = response.json()["Official"]["sideStoryStage"]
-                break
-            except Exception as e:
-                err = e
-                time.sleep(0.1)
+        Network.set_info(
+            mode="get",
+            url="https://ota.maa.plus/MaaAssistantArknights/api/gui/StageActivity.json",
+        )
+        Network.start()
+        Network.loop.exec()
+        if Network.stutus_code == 200:
+            gameid_infos: List[Dict[str, Union[str, Dict[str, Union[str, int]]]]] = (
+                Network.response_json["Official"]["sideStoryStage"]
+            )
         else:
-            logger.warning(f"无法从MAA服务器获取活动关卡信息:{err}")
+            logger.warning(f"无法从MAA服务器获取活动关卡信息:{Network.error_message}")
             gameid_infos = []
 
         gameid_dict = {"value": [], "text": []}
@@ -1367,7 +1371,7 @@ class AppConfig(GlobalConfig):
                 # 如果已经找到了关卡，处理掉落物
                 if current_stage:
                     item_match: List[str] = re.findall(
-                        r"^(?!\[)([\u4e00-\u9fa5A-Za-z0-9\-]+)\s*:\s*([\d,]+)(?:\s*\(\+[\d,]+\))?",
+                        r"^(?!\[)(\S+?)\s*:\s*([\d,]+)(?:\s*\(\+[\d,]+\))?",
                         line,
                         re.M,
                     )
@@ -1539,24 +1543,15 @@ class AppConfig(GlobalConfig):
     def save_history(self, key: str, content: dict) -> None:
         """保存历史记录"""
 
-        history = {}
-        if self.history_path.exists():
-            with self.history_path.open(mode="r", encoding="utf-8") as f:
-                history = json.load(f)
-        history[key] = content
-        with self.history_path.open(mode="w", encoding="utf-8") as f:
-            json.dump(history, f, ensure_ascii=False, indent=4)
-
-    def get_history(self, key: str) -> dict:
-        """获取历史记录"""
-
-        history = {}
-        if self.history_path.exists():
-            with self.history_path.open(mode="r", encoding="utf-8") as f:
-                history = json.load(f)
-        return history.get(
-            key, {"Time": "0000-00-00 00:00", "History": "暂无历史运行记录"}
-        )
+        if key in self.queue_dict:
+            self.queue_dict[key]["Config"].set(
+                self.queue_dict[key]["Config"].Data_LastProxyTime, content["Time"]
+            )
+            self.queue_dict[key]["Config"].set(
+                self.queue_dict[key]["Config"].Data_LastProxyHistory, content["History"]
+            )
+        else:
+            logger.warning(f"保存历史记录时未找到调度队列: {key}")
 
 
 Config = AppConfig()

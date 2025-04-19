@@ -33,6 +33,7 @@ import subprocess
 import time
 import win32crypt
 import base64
+from packaging import version
 from functools import partial
 from pathlib import Path
 
@@ -302,7 +303,10 @@ class DownloadManager(QDialog):
 
                 elif self.config["mode"] == "MirrorChyan":
                     with requests.get(
-                        self.config["url"], allow_redirects=True, stream=True
+                        self.config["url"],
+                        allow_redirects=True,
+                        timeout=10,
+                        stream=True,
                     ) as response:
                         if response.status_code == 200:
                             return response.url
@@ -399,7 +403,7 @@ class DownloadManager(QDialog):
         url = self.get_download_url("下载")
         self.downloaded_size_list: List[List[int, bool]] = []
 
-        response = requests.head(url)
+        response = requests.head(url, timeout=10)
 
         self.file_size = int(response.headers.get("content-length", 0))
         part_size = self.file_size // self.config["thread_numb"]
@@ -526,14 +530,12 @@ class DownloadManager(QDialog):
         # 主程序更新完成后打开对应程序
         if not self.isInterruptionRequested and self.name == "AUTO_MAA":
             subprocess.Popen(
-                str(self.app_path / "AUTO_MAA.exe"),
-                shell=True,
+                [self.app_path / "AUTO_MAA.exe"],
                 creationflags=subprocess.CREATE_NO_WINDOW,
             )
         elif not self.isInterruptionRequested and self.name == "MAA":
             subprocess.Popen(
-                str(self.app_path / "MAA.exe"),
-                shell=True,
+                [self.app_path / "MAA.exe"],
                 creationflags=subprocess.CREATE_NO_WINDOW,
             )
 
@@ -661,7 +663,8 @@ if __name__ == "__main__":
     for _ in range(3):
         try:
             response = requests.get(
-                f"https://mirrorchyan.com/api/resources/AUTO_MAA/latest?user_agent=AutoMaaDownloader&current_version={version_text(current_version)}&cdk={mirrorchyan_CDK}&channel={update_type}"
+                f"https://mirrorchyan.com/api/resources/AUTO_MAA/latest?user_agent=AutoMaaDownloader&current_version={version_text(current_version)}&cdk={mirrorchyan_CDK}&channel={update_type}",
+                timeout=10,
             )
             version_info: Dict[str, Union[int, str, Dict[str, str]]] = response.json()
             break
@@ -696,7 +699,8 @@ if __name__ == "__main__":
         for _ in range(3):
             try:
                 response = requests.get(
-                    "https://gitee.com/DLmaster_361/AUTO_MAA/raw/server/download_info.json"
+                    "https://gitee.com/DLmaster_361/AUTO_MAA/raw/server/download_info.json",
+                    timeout=10,
                 )
                 download_info = response.json()
 
@@ -715,7 +719,9 @@ if __name__ == "__main__":
         (app_path / "changes.json").unlink()
 
     # 启动更新线程
-    if remote_version > current_version:
+    if version.parse(version_text(remote_version)) > version.parse(
+        version_text(current_version)
+    ):
         app = AUTO_MAA_Downloader(
             app_path,
             "AUTO_MAA",

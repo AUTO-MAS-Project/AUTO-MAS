@@ -28,6 +28,7 @@ v4.3
 from PySide6.QtWidgets import QWidget
 from PySide6.QtCore import Signal
 import requests
+import time
 from loguru import logger
 from plyer import notification
 import re
@@ -229,25 +230,41 @@ class Notification(QWidget):
 
             content = f"{title}\n{content}"
             data = {"msgtype": "text", "text": {"content": content}}
-            response = requests.post(
-                url=Config.get(Config.notify_CompanyWebHookBotUrl),
-                json=data,
-            )
-            if response.json()["errcode"] == 0:
-                logger.info("企业微信群机器人推送通知成功")
-                return True
+            # 从远程服务器获取最新主题图像
+            for _ in range(3):
+                try:
+                    response = requests.post(
+                        url=Config.get(Config.notify_CompanyWebHookBotUrl),
+                        json=data,
+                        timeout=10,
+                    )
+                    info = response.json()
+                    break
+                except Exception as e:
+                    err = e
+                    time.sleep(0.1)
             else:
-                logger.info("企业微信群机器人推送通知失败")
-                logger.error(response.json())
+                logger.error(f"推送企业微信群机器人时出错：{err}")
                 self.push_info_bar.emit(
                     "error",
                     "企业微信群机器人通知推送失败",
-                    f'使用企业微信群机器人推送通知时出错：\n{response.json()["errmsg"]}',
+                    f'使用企业微信群机器人推送通知时出错：{info["errmsg"]}',
                     -1,
                 )
-                return (
-                    f'使用企业微信群机器人推送通知时出错：\n{response.json()["errmsg"]}'
+                return None
+
+            if info["errcode"] == 0:
+                logger.info("企业微信群机器人推送通知成功")
+                return True
+            else:
+                logger.error(f"企业微信群机器人推送通知失败：{info}")
+                self.push_info_bar.emit(
+                    "error",
+                    "企业微信群机器人通知推送失败",
+                    f'使用企业微信群机器人推送通知时出错：{info["errmsg"]}',
+                    -1,
                 )
+                return f'使用企业微信群机器人推送通知时出错：{info["errmsg"]}'
 
     def send_test_notification(self):
         """发送测试通知到所有已启用的通知渠道"""

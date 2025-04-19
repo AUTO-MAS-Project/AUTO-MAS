@@ -64,8 +64,6 @@ class _MainTimer(QWidget):
             if not info["Config"].get(info["Config"].queueSet_Enabled):
                 continue
 
-            history = Config.get_history(name)
-
             data = info["Config"].toDict()
 
             time_set = [
@@ -77,7 +75,8 @@ class _MainTimer(QWidget):
             curtime = datetime.now().strftime("%Y-%m-%d %H:%M")
             if (
                 curtime[11:16] in time_set
-                and curtime != history["Time"][:16]
+                and curtime
+                != info["Config"].get(info["Config"].Data_LastProxyTime)[:16]
                 and name not in Config.running_list
             ):
 
