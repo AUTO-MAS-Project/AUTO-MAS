@@ -53,8 +53,6 @@ class _Network(QThread):
 
         self.if_running = True
 
-        print(self.url)
-
         if self.mode == "get":
             self.get_json(self.url)
         elif self.mode == "get_file":
@@ -94,7 +92,6 @@ class _Network(QThread):
                 time.sleep(self.backoff_factor)
 
         self.loop.quit()
-        print("quited")
 
     def get_file(self, url: str, path: Path) -> None:
         """通过get方法获取json数据"""
@@ -114,7 +111,6 @@ class _Network(QThread):
             self.error_message = str(e)
 
         self.loop.quit()
-        print("quited-----")
 
 
 Network = _Network()
