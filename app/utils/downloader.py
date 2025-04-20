@@ -517,7 +517,7 @@ class DownloadManager(QDialog):
                 info: Dict[str, List[str]] = json.load(f)
 
             if "deleted" in info:
-                for file_path in info:
+                for file_path in info["deleted"]:
                     (self.app_path / file_path).unlink()
 
             (self.app_path / "changes.json").unlink()
