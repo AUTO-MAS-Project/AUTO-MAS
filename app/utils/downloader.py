@@ -31,6 +31,7 @@ import zipfile
 import requests
 import subprocess
 import time
+import psutil
 import win32crypt
 import base64
 from packaging import version
@@ -180,7 +181,11 @@ class ZipExtractProcess(QThread):
                     self.accomplish.emit()
                     break
                 except PermissionError:
-                    self.info.emit(f"解压出错：{self.name}正在运行，正在等待其关闭")
+                    if self.name == "AUTO_MAA":
+                        self.info.emit(f"解压出错：AUTO_MAA正在运行，正在尝试将其关闭")
+                        self.kill_process(self.app_path / "AUTO_MAA.exe")
+                    else:
+                        self.info.emit(f"解压出错：{self.name}正在运行，正在等待其关闭")
                     time.sleep(1)
 
         except Exception as e:
@@ -189,6 +194,30 @@ class ZipExtractProcess(QThread):
             e = "\n".join([e[_ : _ + 75] for _ in range(0, len(e), 75)])
             self.info.emit(f"解压更新时出错：\n{e}")
             return None
+
+    def kill_process(self, path: Path) -> None:
+        """根据路径中止进程"""
+
+        for pid in self.search_pids(path):
+            killprocess = subprocess.Popen(
+                f"taskkill /F /PID {pid}",
+                shell=True,
+                creationflags=subprocess.CREATE_NO_WINDOW,
+            )
+            killprocess.wait()
+
+    def search_pids(self, path: Path) -> list:
+        """根据路径查找进程PID"""
+
+        pids = []
+        for proc in psutil.process_iter(["pid", "exe"]):
+            try:
+                if proc.info["exe"] and proc.info["exe"].lower() == str(path).lower():
+                    pids.append(proc.info["pid"])
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                # 进程可能在此期间已结束或无法访问，忽略这些异常
+                pass
+        return pids
 
 
 class DownloadManager(QDialog):
@@ -518,7 +547,8 @@ class DownloadManager(QDialog):
 
             if "deleted" in info:
                 for file_path in info["deleted"]:
-                    (self.app_path / file_path).unlink()
+                    if (self.app_path / file_path).exists():
+                        (self.app_path / file_path).unlink()
 
             (self.app_path / "changes.json").unlink()
 
@@ -531,12 +561,16 @@ class DownloadManager(QDialog):
         if not self.isInterruptionRequested and self.name == "AUTO_MAA":
             subprocess.Popen(
                 [self.app_path / "AUTO_MAA.exe"],
-                creationflags=subprocess.CREATE_NO_WINDOW,
+                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP
+                | subprocess.DETACHED_PROCESS
+                | subprocess.CREATE_NO_WINDOW,
             )
         elif not self.isInterruptionRequested and self.name == "MAA":
             subprocess.Popen(
                 [self.app_path / "MAA.exe"],
-                creationflags=subprocess.CREATE_NO_WINDOW,
+                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP
+                | subprocess.DETACHED_PROCESS
+                | subprocess.CREATE_NO_WINDOW,
             )
 
         self.update_info(f"{self.name}更新成功！")

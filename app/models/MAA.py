@@ -287,6 +287,11 @@ class MaaManager(QObject):
                         self.ADB_path = Path(
                             set["Configurations"]["Default"]["Connect.AdbPath"]
                         )
+                        self.ADB_path = (
+                            self.ADB_path
+                            if self.ADB_path.is_absolute()
+                            else self.maa_root_path / self.ADB_path
+                        )
                         self.ADB_address = set["Configurations"]["Default"][
                             "Connect.Address"
                         ]
@@ -300,8 +305,6 @@ class MaaManager(QObject):
                             ]
                             == "True"
                         )
-                        # 添加静默进程标记
-                        Config.silence_list.append(self.emulator_path)
 
                         # 增强任务：任务开始前强杀ADB
                         if "ADB" in self.set["RunSet"]["EnhanceTask"]:
@@ -315,12 +318,34 @@ class MaaManager(QObject):
                             except subprocess.CalledProcessError as e:
                                 # 忽略错误,因为可能本来就没有连接
                                 logger.warning(f"{self.name} | 释放ADB时出现异常：{e}")
+                            except Exception as e:
+                                logger.error(f"{self.name} | 释放ADB时出现异常：{e}")
+                                self.push_info_bar.emit(
+                                    "error",
+                                    "释放ADB时出现异常",
+                                    "请检查MAA中ADB路径设置",
+                                    -1,
+                                )
 
                         if self.if_open_emulator_process:
-                            self.emulator_process = subprocess.Popen(
-                                [self.emulator_path, *self.emulator_arguments],
-                                creationflags=subprocess.CREATE_NO_WINDOW,
-                            )
+                            try:
+                                self.emulator_process = subprocess.Popen(
+                                    [self.emulator_path, *self.emulator_arguments],
+                                    creationflags=subprocess.CREATE_NO_WINDOW,
+                                )
+                            except Exception as e:
+                                logger.error(f"{self.name} | 启动模拟器时出现异常：{e}")
+                                self.push_info_bar.emit(
+                                    "error",
+                                    "启动模拟器时出现异常",
+                                    "请检查MAA中模拟器路径设置",
+                                    -1,
+                                )
+                                self.if_open_emulator = True
+                                break
+
+                        # 添加静默进程标记
+                        Config.silence_list.append(self.emulator_path)
 
                         # 创建MAA任务
                         maa = subprocess.Popen(
@@ -388,6 +413,14 @@ class MaaManager(QObject):
                             except subprocess.CalledProcessError as e:
                                 # 忽略错误,因为可能本来就没有连接
                                 logger.warning(f"{self.name} | 释放ADB时出现异常：{e}")
+                            except Exception as e:
+                                logger.error(f"{self.name} | 释放ADB时出现异常：{e}")
+                                self.push_info_bar.emit(
+                                    "error",
+                                    "释放ADB时出现异常",
+                                    "请检查MAA中ADB路径设置",
+                                    -1,
+                                )
                         if self.if_kill_emulator:
                             if "Emulator" in self.set["RunSet"]["EnhanceTask"]:
                                 System.kill_process(self.emulator_path)

@@ -26,13 +26,12 @@ v4.3
 """
 
 from loguru import logger
-from PySide6.QtWidgets import QWidget, QVBoxLayout
+from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout
 from PySide6.QtCore import Qt
 from qfluentwidgets import (
     ScrollArea,
     FluentIcon,
     MessageBox,
-    Dialog,
     HyperlinkCard,
     HeaderCardWidget,
     ExpandGroupSettingCard,
@@ -42,13 +41,12 @@ from qfluentwidgets import (
 import os
 import re
 import json
-import time
 import shutil
 import subprocess
 from datetime import datetime
 from packaging import version
 from pathlib import Path
-from typing import Dict, List, Union
+from typing import Dict, Union
 
 from app.core import Config, MainInfoBar, Network
 from app.services import Crypto, System, Notify
@@ -405,9 +403,12 @@ class Setting(QWidget):
 
                 subprocess.Popen(
                     [Config.app_path / "AUTO_Updater.active.exe"],
-                    creationflags=subprocess.CREATE_NO_WINDOW,
+                    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP
+                    | subprocess.DETACHED_PROCESS
+                    | subprocess.CREATE_NO_WINDOW,
                 )
                 self.window().close()
+                QApplication.quit()
 
         # 无版本更新
         else:
