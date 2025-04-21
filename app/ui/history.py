@@ -38,9 +38,14 @@ from qfluentwidgets import (
     PushButton,
     ExpandGroupSettingCard,
     TextBrowser,
+    CardWidget,
+    ComboBox,
+    ZhDatePicker,
+    SubtitleLabel,
 )
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Signal, QDate
 import os
+from datetime import datetime
 from functools import partial
 from pathlib import Path
 from typing import List
@@ -58,20 +63,22 @@ class History(QWidget):
 
         content_widget = QWidget()
         self.content_layout = QVBoxLayout(content_widget)
+        self.history_top_bar = self.HistoryTopBar(self)
+
+        self.history_top_bar.search_history.connect(self.reload_history)
 
         scrollArea = ScrollArea()
         scrollArea.setWidgetResizable(True)
         scrollArea.setWidget(content_widget)
         layout = QVBoxLayout()
+        layout.addWidget(self.history_top_bar)
         layout.addWidget(scrollArea)
         self.setLayout(layout)
 
         self.history_card_list = []
 
-        self.refresh()
-
-    def refresh(self):
-        """刷新脚本实例界面"""
+    def reload_history(self, start_date: QDate, end_date: QDate, mode: str) -> None:
+        """加载历史记录界面"""
 
         while self.content_layout.count() > 0:
             item = self.content_layout.takeAt(0)
@@ -84,12 +91,60 @@ class History(QWidget):
 
         history_dict = Config.search_history()
 
-        for date, user_list in history_dict.items():
+        selected_history = filter(
+            lambda item: datetime(
+                start_date.year(), start_date.month(), start_date.day()
+            )
+            <= datetime.strptime(item[0], "%Y年 %m月 %d日")
+            <= datetime(end_date.year(), end_date.month(), end_date.day()),
+            history_dict.items(),
+        )
+        for date, user_list in selected_history:
 
             self.history_card_list.append(HistoryCard(date, user_list, self))
             self.content_layout.addWidget(self.history_card_list[-1])
 
         self.content_layout.addStretch(1)
+
+    class HistoryTopBar(CardWidget):
+        """历史记录顶部工具栏"""
+
+        search_history = Signal(QDate, QDate, str)
+
+        def __init__(self, parent=None, name: str = None):
+            super().__init__(parent)
+
+            Layout = QHBoxLayout(self)
+
+            self.lable_1 = SubtitleLabel("查询范围：")
+            self.start_date = ZhDatePicker()
+            self.start_date.setDate(QDate(2019, 5, 1))
+            self.lable_2 = SubtitleLabel("→")
+            self.end_date = ZhDatePicker()
+            server_date = Config.server_date()
+            self.end_date.setDate(
+                QDate(server_date.year, server_date.month, server_date.day)
+            )
+            self.mode = ComboBox()
+            self.mode.setPlaceholderText("请选择查询模式")
+            self.mode.addItems(["按日期分类"])
+
+            self.button = PushButton(FluentIcon.SEARCH, "查询")
+            self.button.clicked.connect(
+                lambda: self.search_history.emit(
+                    self.start_date.getDate(),
+                    self.end_date.getDate(),
+                    self.mode.currentText(),
+                )
+            )
+
+            Layout.addWidget(self.lable_1)
+            Layout.addWidget(self.start_date)
+            Layout.addWidget(self.lable_2)
+            Layout.addWidget(self.end_date)
+            Layout.addWidget(self.mode)
+            Layout.addStretch(1)
+            Layout.addWidget(self.button)
 
 
 class HistoryCard(ExpandGroupSettingCard):

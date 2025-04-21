@@ -27,7 +27,6 @@ v4.3
 
 from loguru import logger
 from PySide6.QtWidgets import QApplication
-from PySide6.QtCore import Qt
 from qfluentwidgets import FluentTranslator
 import sys
 
@@ -36,7 +35,6 @@ import sys
 def main():
 
     application = QApplication(sys.argv)
-    QApplication.setAttribute(Qt.AA_DontCreateNativeWidgetSiblings)
 
     translator = FluentTranslator()
     application.installTranslator(translator)

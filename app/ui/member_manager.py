@@ -1099,7 +1099,7 @@ class MemberManager(QWidget):
                                     text_list.append("未通过人工排查")
                                 text_list.append(
                                     f"今日已代理{config.get(config.Data_ProxyTimes)}次"
-                                    if Config.server_date()
+                                    if Config.server_date().strftime("%Y-%m-%d")
                                     == config.get(config.Data_LastProxyDate)
                                     else "今日未进行代理"
                                 )
@@ -1109,9 +1109,7 @@ class MemberManager(QWidget):
                                         config.get(config.Data_LastAnnihilationDate),
                                         "%Y-%m-%d",
                                     ).isocalendar()[:2]
-                                    == datetime.strptime(
-                                        Config.server_date(), "%Y-%m-%d"
-                                    ).isocalendar()[:2]
+                                    == Config.server_date().isocalendar()[:2]
                                     else "本周剿灭未完成"
                                 )
 

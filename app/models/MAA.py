@@ -112,7 +112,7 @@ class MaaManager(QObject):
     def run(self):
         """主进程，运行MAA代理进程"""
 
-        curdate = Config.server_date()
+        curdate = Config.server_date().strftime("%Y-%m-%d")
         begin_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         self.configure()

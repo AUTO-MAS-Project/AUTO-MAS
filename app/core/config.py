@@ -33,7 +33,7 @@ import sys
 import shutil
 import re
 import base64
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from collections import defaultdict
 from pathlib import Path
 from qfluentwidgets import (
@@ -606,7 +606,7 @@ class MaaUserConfig(QConfig):
 
 class AppConfig(GlobalConfig):
 
-    VERSION = "4.3.4.4"
+    VERSION = "4.3.4.5"
 
     gameid_refreshed = Signal()
     PASSWORD_refreshed = Signal()
@@ -752,7 +752,7 @@ class AppConfig(GlobalConfig):
         ]
 
         # 生成本日关卡信息
-        days = datetime.strptime(self.server_date(), "%Y-%m-%d").isoweekday()
+        days = self.server_date().isoweekday()
 
         gameid_list = [
             {"value": "-", "text": "当前/上次", "days": [1, 2, 3, 4, 5, 6, 7]},
@@ -787,13 +787,13 @@ class AppConfig(GlobalConfig):
 
         self.gameid_refreshed.emit()
 
-    def server_date(self) -> str:
+    def server_date(self) -> date:
         """获取当前的服务器日期"""
 
         dt = datetime.now()
         if dt.time() < datetime.min.time().replace(hour=4):
             dt = dt - timedelta(days=1)
-        return dt.strftime("%Y-%m-%d")
+        return dt.date()
 
     def check_data(self) -> None:
         """检查用户数据文件并处理数据文件版本更新"""
@@ -1478,9 +1478,21 @@ class AppConfig(GlobalConfig):
                 info: Dict[str, Dict[str, Union[int, dict]]] = json.load(f)
 
             data = {}
+            # 4点前的记录放在当日最后
+            sorted_maa_result = sorted(
+                info["maa_result"].items(),
+                key=lambda x: (
+                    (
+                        1
+                        if datetime.strptime(x[0], "%H:%M:%S").time()
+                        < datetime.min.time().replace(hour=4)
+                        else 0
+                    ),
+                    datetime.strptime(x[0], "%H:%M:%S"),
+                ),
+            )
             data["条目索引"] = [
-                [k, "完成" if v == "Success!" else "异常"]
-                for k, v in info["maa_result"].items()
+                [k, "完成" if v == "Success!" else "异常"] for k, v in sorted_maa_result
             ]
             data["条目索引"].insert(0, ["数据总览", "运行"])
             data["统计数据"] = {"公招统计": list(info["recruit_statistics"].items())}

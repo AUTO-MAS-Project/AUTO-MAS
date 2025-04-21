@@ -26,7 +26,7 @@ v4.3
 """
 
 from loguru import logger
-from PySide6.QtWidgets import QWidget
+from PySide6.QtWidgets import QApplication, QWidget
 import sys
 import ctypes
 import win32gui
@@ -113,6 +113,7 @@ class _SystemHandler:
             elif mode == "KillSelf":
 
                 self.main_window.close()
+                QApplication.quit()
 
         elif sys.platform.startswith("linux"):
 
@@ -138,6 +139,7 @@ class _SystemHandler:
             elif mode == "KillSelf":
 
                 self.main_window.close()
+                QApplication.quit()
 
     def is_startup(self) -> bool:
         """判断程序是否已经开机自启"""
