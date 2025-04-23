@@ -1,5 +1,5 @@
-#   <AUTO_MAA:A MAA Multi Account Management and Automation Tool>
-#   Copyright © <2024> <DLmaster361>
+#   AUTO_MAA:A MAA Multi Account Management and Automation Tool
+#   Copyright © 2024-2025 DLmaster361
 
 #   This file is part of AUTO_MAA.
 
@@ -16,7 +16,7 @@
 #   You should have received a copy of the GNU General Public License
 #   along with AUTO_MAA. If not, see <https://www.gnu.org/licenses/>.
 
-#   DLmaster_361@163.com
+#   Contact: DLmaster_361@163.com
 
 """
 AUTO_MAA
@@ -45,7 +45,7 @@ from qfluentwidgets import (
 )
 from PySide6.QtCore import Signal, QDate
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import partial
 from pathlib import Path
 from typing import List
@@ -129,8 +129,12 @@ class History(QWidget):
             self.mode.setPlaceholderText("请选择查询模式")
             self.mode.addItems(["按日期分类"])
 
-            self.button = PushButton(FluentIcon.SEARCH, "查询")
-            self.button.clicked.connect(
+            self.select_month = PushButton(FluentIcon.TAG, "选中最近一月")
+            self.select_week = PushButton(FluentIcon.TAG, "选中最近一周")
+            self.search = PushButton(FluentIcon.SEARCH, "查询")
+            self.select_month.clicked.connect(lambda: self.select_date("month"))
+            self.select_week.clicked.connect(lambda: self.select_date("week"))
+            self.search.clicked.connect(
                 lambda: self.search_history.emit(
                     self.start_date.getDate(),
                     self.end_date.getDate(),
@@ -144,7 +148,25 @@ class History(QWidget):
             Layout.addWidget(self.end_date)
             Layout.addWidget(self.mode)
             Layout.addStretch(1)
-            Layout.addWidget(self.button)
+            Layout.addWidget(self.select_month)
+            Layout.addWidget(self.select_week)
+            Layout.addWidget(self.search)
+
+        def select_date(self, date: str) -> None:
+            """选中最近一段时间"""
+
+            server_date = Config.server_date()
+            if date == "week":
+                begin_date = server_date - timedelta(weeks=1)
+            elif date == "month":
+                begin_date = server_date - timedelta(days=30)
+
+            self.start_date.setDate(
+                QDate(begin_date.year, begin_date.month, begin_date.day)
+            )
+            self.end_date.setDate(
+                QDate(server_date.year, server_date.month, server_date.day)
+            )
 
 
 class HistoryCard(ExpandGroupSettingCard):
