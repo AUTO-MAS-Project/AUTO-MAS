@@ -1289,8 +1289,21 @@ class AppConfig(GlobalConfig):
 
         self.user_info_changed.emit()
 
+    def save_history(self, key: str, content: dict) -> None:
+        """保存历史记录"""
+
+        if key in self.queue_dict:
+            self.queue_dict[key]["Config"].set(
+                self.queue_dict[key]["Config"].Data_LastProxyTime, content["Time"]
+            )
+            self.queue_dict[key]["Config"].set(
+                self.queue_dict[key]["Config"].Data_LastProxyHistory, content["History"]
+            )
+        else:
+            logger.warning(f"保存历史记录时未找到调度队列: {key}")
+
     def save_maa_log(self, log_path: Path, logs: list, maa_result: str) -> bool:
-        """保存MAA日志"""
+        """保存MAA日志并生成初步统计数据"""
 
         data: Dict[str, Union[str, Dict[str, Union[int, dict]]]] = {
             "recruit_statistics": defaultdict(int),
@@ -1453,9 +1466,9 @@ class AppConfig(GlobalConfig):
                         data["drop_statistics"][stage][item] = count
 
             # 合并MAA结果
-            data["maa_result"][
-                json_file.name.replace(".json", "").replace("-", ":")
-            ] = single_data["maa_result"]
+            data["maa_result"][json_file.stem.replace("-", ":")] = single_data[
+                "maa_result"
+            ]
 
         # 生成汇总 JSON 文件
         if mode == "所有项":
@@ -1523,7 +1536,9 @@ class AppConfig(GlobalConfig):
 
         return data
 
-    def search_history(self) -> dict:
+    def search_history(
+        self, mode: str, start_date: datetime, end_date: datetime
+    ) -> dict:
         """搜索所有历史记录"""
 
         history_dict = {}
@@ -1536,34 +1551,55 @@ class AppConfig(GlobalConfig):
 
                 date = datetime.strptime(date_folder.name, "%Y-%m-%d")
 
-                history_dict[date.strftime("%Y年 %m月 %d日")] = list(
-                    date_folder.glob("*.json")
-                )
+                if not (start_date <= date <= end_date):
+                    continue  # 只统计在范围内的日期
+
+                if mode == "按日合并":
+
+                    history_dict[date.strftime("%Y年 %m月 %d日")] = list(
+                        date_folder.glob("*.json")
+                    )
+
+                elif mode == "按周合并":
+
+                    year, week, _ = date.isocalendar()
+                    if f"{year}年 第{week}周" not in history_dict:
+                        history_dict[f"{year}年 第{week}周"] = {}
+
+                    for user in date_folder.glob("*.json"):
+
+                        if user.stem not in history_dict[f"{year}年 第{week}周"]:
+                            history_dict[f"{year}年 第{week}周"][user.stem] = list(
+                                user.with_suffix("").glob("*.json")
+                            )
+                        else:
+                            history_dict[f"{year}年 第{week}周"][user.stem] += list(
+                                user.with_suffix("").glob("*.json")
+                            )
+
+                elif mode == "按月合并":
+
+                    if date.strftime("%Y年 %m月") not in history_dict:
+                        history_dict[date.strftime("%Y年 %m月")] = {}
+
+                    for user in date_folder.glob("*.json"):
+
+                        if user.stem not in history_dict[date.strftime("%Y年 %m月")]:
+                            history_dict[date.strftime("%Y年 %m月")][user.stem] = list(
+                                user.with_suffix("").glob("*.json")
+                            )
+                        else:
+                            history_dict[date.strftime("%Y年 %m月")][user.stem] += list(
+                                user.with_suffix("").glob("*.json")
+                            )
 
             except ValueError:
                 logger.warning(f"非日期格式的目录: {date_folder}")
 
         return {
             k: v
-            for k, v in sorted(
-                history_dict.items(),
-                key=lambda x: datetime.strptime(x[0], "%Y年 %m月 %d日"),
-                reverse=True,
-            )
+            for k, v in sorted(history_dict.items(), key=lambda x: x[0], reverse=True)
         }
-
-    def save_history(self, key: str, content: dict) -> None:
-        """保存历史记录"""
-
-        if key in self.queue_dict:
-            self.queue_dict[key]["Config"].set(
-                self.queue_dict[key]["Config"].Data_LastProxyTime, content["Time"]
-            )
-            self.queue_dict[key]["Config"].set(
-                self.queue_dict[key]["Config"].Data_LastProxyHistory, content["History"]
-            )
-        else:
-            logger.warning(f"保存历史记录时未找到调度队列: {key}")
 
 
 Config = AppConfig()

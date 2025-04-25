@@ -36,7 +36,6 @@ from qfluentwidgets import (
     FluentIcon,
     HeaderCardWidget,
     PushButton,
-    ExpandGroupSettingCard,
     TextBrowser,
     CardWidget,
     ComboBox,
@@ -45,14 +44,15 @@ from qfluentwidgets import (
 )
 from PySide6.QtCore import Signal, QDate
 import os
+import subprocess
 from datetime import datetime, timedelta
 from functools import partial
 from pathlib import Path
-from typing import List
+from typing import Union, List, Dict
 
 
 from app.core import Config
-from .Widget import StatefulItemCard, QuantifiedItemCard
+from .Widget import StatefulItemCard, QuantifiedItemCard, QuickExpandGroupCard
 
 
 class History(QWidget):
@@ -77,7 +77,7 @@ class History(QWidget):
 
         self.history_card_list = []
 
-    def reload_history(self, start_date: QDate, end_date: QDate, mode: str) -> None:
+    def reload_history(self, mode: str, start_date: QDate, end_date: QDate) -> None:
         """加载历史记录界面"""
 
         while self.content_layout.count() > 0:
@@ -89,19 +89,15 @@ class History(QWidget):
 
         self.history_card_list = []
 
-        history_dict = Config.search_history()
-
-        selected_history = filter(
-            lambda item: datetime(
-                start_date.year(), start_date.month(), start_date.day()
-            )
-            <= datetime.strptime(item[0], "%Y年 %m月 %d日")
-            <= datetime(end_date.year(), end_date.month(), end_date.day()),
-            history_dict.items(),
+        history_dict = Config.search_history(
+            mode,
+            datetime(start_date.year(), start_date.month(), start_date.day()),
+            datetime(end_date.year(), end_date.month(), end_date.day()),
         )
-        for date, user_list in selected_history:
 
-            self.history_card_list.append(HistoryCard(date, user_list, self))
+        for date, user in history_dict.items():
+
+            self.history_card_list.append(self.HistoryCard(mode, date, user, self))
             self.content_layout.addWidget(self.history_card_list[-1])
 
         self.content_layout.addStretch(1)
@@ -109,9 +105,9 @@ class History(QWidget):
     class HistoryTopBar(CardWidget):
         """历史记录顶部工具栏"""
 
-        search_history = Signal(QDate, QDate, str)
+        search_history = Signal(str, QDate, QDate)
 
-        def __init__(self, parent=None, name: str = None):
+        def __init__(self, parent=None):
             super().__init__(parent)
 
             Layout = QHBoxLayout(self)
@@ -127,18 +123,18 @@ class History(QWidget):
             )
             self.mode = ComboBox()
             self.mode.setPlaceholderText("请选择查询模式")
-            self.mode.addItems(["按日期分类"])
+            self.mode.addItems(["按日合并", "按周合并", "按月合并"])
 
-            self.select_month = PushButton(FluentIcon.TAG, "选中最近一月")
-            self.select_week = PushButton(FluentIcon.TAG, "选中最近一周")
+            self.select_month = PushButton(FluentIcon.TAG, "最近一月")
+            self.select_week = PushButton(FluentIcon.TAG, "最近一周")
             self.search = PushButton(FluentIcon.SEARCH, "查询")
             self.select_month.clicked.connect(lambda: self.select_date("month"))
             self.select_week.clicked.connect(lambda: self.select_date("week"))
             self.search.clicked.connect(
                 lambda: self.search_history.emit(
+                    self.mode.currentText(),
                     self.start_date.getDate(),
                     self.end_date.getDate(),
-                    self.mode.currentText(),
                 )
             )
 
@@ -153,7 +149,7 @@ class History(QWidget):
             Layout.addWidget(self.search)
 
         def select_date(self, date: str) -> None:
-            """选中最近一段时间"""
+            """选中最近一段时间并启动查询"""
 
             server_date = Config.server_date()
             if date == "week":
@@ -168,168 +164,225 @@ class History(QWidget):
                 QDate(server_date.year, server_date.month, server_date.day)
             )
 
+            self.search.clicked.emit()
 
-class HistoryCard(ExpandGroupSettingCard):
-
-    def __init__(self, date: str, user_list: List[Path], parent=None):
-        super().__init__(
-            FluentIcon.HISTORY, date, f"{date}的历史运行记录与统计信息", parent
-        )
-
-        widget = QWidget()
-        Layout = QVBoxLayout(widget)
-        self.viewLayout.setContentsMargins(0, 0, 0, 0)
-        self.viewLayout.setSpacing(0)
-        self.addGroupWidget(widget)
-
-        self.user_history_card_list = []
-
-        for user_path in user_list:
-
-            self.user_history_card_list.append(self.UserHistoryCard(user_path, self))
-            Layout.addWidget(self.user_history_card_list[-1])
-
-    class UserHistoryCard(HeaderCardWidget):
+    class HistoryCard(QuickExpandGroupCard):
 
         def __init__(
             self,
-            user_history_path: Path,
+            mode: str,
+            date: str,
+            user: Union[List[Path], Dict[str, List[Path]]],
             parent=None,
         ):
-            super().__init__(parent)
+            super().__init__(
+                FluentIcon.HISTORY, date, f"{date}的历史运行记录与统计信息", parent
+            )
 
-            self.setTitle(user_history_path.name.replace(".json", ""))
-
-            self.user_history_path = user_history_path
-            self.main_history = Config.load_maa_logs("总览", user_history_path)
-
-            self.index_card = self.IndexCard(self.main_history["条目索引"], self)
-            self.statistics_card = QHBoxLayout()
-            self.log_card = self.LogCard(self)
-
-            self.index_card.index_changed.connect(self.update_info)
-
-            self.viewLayout.addWidget(self.index_card)
-            self.viewLayout.addLayout(self.statistics_card)
-            self.viewLayout.addWidget(self.log_card)
+            widget = QWidget()
+            Layout = QVBoxLayout(widget)
             self.viewLayout.setContentsMargins(0, 0, 0, 0)
             self.viewLayout.setSpacing(0)
-            self.viewLayout.setStretch(0, 1)
-            self.viewLayout.setStretch(2, 4)
+            self.addGroupWidget(widget)
 
-            self.update_info("数据总览")
+            self.user_history_card_list = []
 
-        def update_info(self, index: str) -> None:
-            """更新信息"""
+            if mode == "按日合并":
 
-            if index == "数据总览":
-
-                while self.statistics_card.count() > 0:
-                    item = self.statistics_card.takeAt(0)
-                    if item.spacerItem():
-                        self.statistics_card.removeItem(item.spacerItem())
-                    elif item.widget():
-                        item.widget().deleteLater()
-
-                for name, item_list in self.main_history["统计数据"].items():
-
-                    statistics_card = self.StatisticsCard(name, item_list, self)
-                    self.statistics_card.addWidget(statistics_card)
-
-                self.log_card.hide()
-
-            else:
-
-                single_history = Config.load_maa_logs(
-                    "单项",
-                    self.user_history_path.with_suffix("")
-                    / f"{index.replace(":","-")}.json",
-                )
-
-                while self.statistics_card.count() > 0:
-                    item = self.statistics_card.takeAt(0)
-                    if item.spacerItem():
-                        self.statistics_card.removeItem(item.spacerItem())
-                    elif item.widget():
-                        item.widget().deleteLater()
-
-                for name, item_list in single_history["统计数据"].items():
-
-                    statistics_card = self.StatisticsCard(name, item_list, self)
-                    self.statistics_card.addWidget(statistics_card)
-
-                self.log_card.text.setText(single_history["日志信息"])
-                self.log_card.button.clicked.disconnect()
-                self.log_card.button.clicked.connect(
-                    lambda: os.startfile(
-                        self.user_history_path.with_suffix("")
-                        / f"{index.replace(":","-")}.log"
+                for user_path in user:
+                    self.user_history_card_list.append(
+                        self.UserHistoryCard(mode, user_path.stem, user_path, self)
                     )
-                )
-                self.log_card.show()
+                    Layout.addWidget(self.user_history_card_list[-1])
 
-            self.viewLayout.setStretch(1, self.statistics_card.count())
+            elif mode in ["按周合并", "按月合并"]:
 
-            self.setMinimumHeight(300)
-
-        class IndexCard(HeaderCardWidget):
-
-            index_changed = Signal(str)
-
-            def __init__(self, index_list: list, parent=None):
-                super().__init__(parent)
-                self.setTitle("记录条目")
-
-                self.Layout = QVBoxLayout()
-                self.viewLayout.addLayout(self.Layout)
-                self.viewLayout.setContentsMargins(3, 0, 3, 3)
-
-                self.index_cards: List[StatefulItemCard] = []
-
-                for index in index_list:
-
-                    self.index_cards.append(StatefulItemCard(index))
-                    self.index_cards[-1].clicked.connect(
-                        partial(self.index_changed.emit, index[0])
+                for user, info in user.items():
+                    self.user_history_card_list.append(
+                        self.UserHistoryCard(mode, user, info, self)
                     )
-                    self.Layout.addWidget(self.index_cards[-1])
+                    Layout.addWidget(self.user_history_card_list[-1])
 
-                self.Layout.addStretch(1)
+        class UserHistoryCard(HeaderCardWidget):
+            """用户历史记录卡片"""
 
-        class StatisticsCard(HeaderCardWidget):
-
-            def __init__(self, name: str, item_list: list, parent=None):
+            def __init__(
+                self,
+                mode: str,
+                name: str,
+                user_history: Union[Path, List[Path]],
+                parent=None,
+            ):
                 super().__init__(parent)
+
                 self.setTitle(name)
 
-                self.Layout = QVBoxLayout()
-                self.viewLayout.addLayout(self.Layout)
-                self.viewLayout.setContentsMargins(3, 0, 3, 3)
+                if mode == "按日合并":
 
-                self.item_cards: List[QuantifiedItemCard] = []
+                    self.user_history_path = user_history
+                    self.main_history = Config.load_maa_logs("总览", user_history)
 
-                for item in item_list:
+                    self.index_card = self.IndexCard(
+                        self.main_history["条目索引"], self
+                    )
+                    self.index_card.index_changed.connect(self.update_info)
+                    self.viewLayout.addWidget(self.index_card)
 
-                    self.item_cards.append(QuantifiedItemCard(item))
-                    self.Layout.addWidget(self.item_cards[-1])
+                elif mode in ["按周合并", "按月合并"]:
 
-                if len(item_list) == 0:
-                    self.Layout.addWidget(QuantifiedItemCard(["暂无记录", ""]))
+                    history = Config.merge_maa_logs("指定项", user_history)
 
-                self.Layout.addStretch(1)
+                    self.main_history = {}
+                    self.main_history["统计数据"] = {
+                        "公招统计": list(history["recruit_statistics"].items())
+                    }
 
-        class LogCard(HeaderCardWidget):
+                    for game_id, drops in history["drop_statistics"].items():
+                        self.main_history["统计数据"][f"掉落统计：{game_id}"] = list(
+                            drops.items()
+                        )
 
-            def __init__(self, parent=None):
-                super().__init__(parent)
-                self.setTitle("日志")
+                self.statistics_card = QHBoxLayout()
+                self.log_card = self.LogCard(self)
 
-                self.text = TextBrowser(self)
-                self.button = PushButton("打开日志文件", self)
-                self.button.clicked.connect(lambda: print("打开日志文件"))
+                self.viewLayout.addLayout(self.statistics_card)
+                self.viewLayout.addWidget(self.log_card)
+                self.viewLayout.setContentsMargins(0, 0, 0, 0)
+                self.viewLayout.setSpacing(0)
+                self.viewLayout.setStretch(0, 1)
+                self.viewLayout.setStretch(2, 4)
 
-                Layout = QVBoxLayout()
-                Layout.addWidget(self.text)
-                Layout.addWidget(self.button)
-                self.viewLayout.setContentsMargins(3, 0, 3, 3)
-                self.viewLayout.addLayout(Layout)
+                self.update_info("数据总览")
+
+            def update_info(self, index: str) -> None:
+                """更新信息"""
+
+                if index == "数据总览":
+
+                    while self.statistics_card.count() > 0:
+                        item = self.statistics_card.takeAt(0)
+                        if item.spacerItem():
+                            self.statistics_card.removeItem(item.spacerItem())
+                        elif item.widget():
+                            item.widget().deleteLater()
+
+                    for name, item_list in self.main_history["统计数据"].items():
+
+                        statistics_card = self.StatisticsCard(name, item_list, self)
+                        self.statistics_card.addWidget(statistics_card)
+
+                    self.log_card.hide()
+
+                else:
+
+                    single_history = Config.load_maa_logs(
+                        "单项",
+                        self.user_history_path.with_suffix("")
+                        / f"{index.replace(":","-")}.json",
+                    )
+
+                    while self.statistics_card.count() > 0:
+                        item = self.statistics_card.takeAt(0)
+                        if item.spacerItem():
+                            self.statistics_card.removeItem(item.spacerItem())
+                        elif item.widget():
+                            item.widget().deleteLater()
+
+                    for name, item_list in single_history["统计数据"].items():
+
+                        statistics_card = self.StatisticsCard(name, item_list, self)
+                        self.statistics_card.addWidget(statistics_card)
+
+                    self.log_card.text.setText(single_history["日志信息"])
+                    self.log_card.open_file.clicked.disconnect()
+                    self.log_card.open_file.clicked.connect(
+                        lambda: os.startfile(
+                            self.user_history_path.with_suffix("")
+                            / f"{index.replace(":","-")}.log"
+                        )
+                    )
+                    self.log_card.open_dir.clicked.disconnect()
+                    self.log_card.open_dir.clicked.connect(
+                        lambda: subprocess.Popen(
+                            [
+                                "explorer",
+                                "/select,",
+                                str(
+                                    self.user_history_path.with_suffix("")
+                                    / f"{index.replace(":","-")}.log"
+                                ),
+                            ]
+                        )
+                    )
+                    self.log_card.show()
+
+                self.viewLayout.setStretch(1, self.statistics_card.count())
+
+                self.setMinimumHeight(300)
+
+            class IndexCard(HeaderCardWidget):
+
+                index_changed = Signal(str)
+
+                def __init__(self, index_list: list, parent=None):
+                    super().__init__(parent)
+                    self.setTitle("记录条目")
+
+                    self.Layout = QVBoxLayout()
+                    self.viewLayout.addLayout(self.Layout)
+                    self.viewLayout.setContentsMargins(3, 0, 3, 3)
+
+                    self.index_cards: List[StatefulItemCard] = []
+
+                    for index in index_list:
+
+                        self.index_cards.append(StatefulItemCard(index))
+                        self.index_cards[-1].clicked.connect(
+                            partial(self.index_changed.emit, index[0])
+                        )
+                        self.Layout.addWidget(self.index_cards[-1])
+
+                    self.Layout.addStretch(1)
+
+            class StatisticsCard(HeaderCardWidget):
+
+                def __init__(self, name: str, item_list: list, parent=None):
+                    super().__init__(parent)
+                    self.setTitle(name)
+
+                    self.Layout = QVBoxLayout()
+                    self.viewLayout.addLayout(self.Layout)
+                    self.viewLayout.setContentsMargins(3, 0, 3, 3)
+
+                    self.item_cards: List[QuantifiedItemCard] = []
+
+                    for item in item_list:
+
+                        self.item_cards.append(QuantifiedItemCard(item))
+                        self.Layout.addWidget(self.item_cards[-1])
+
+                    if len(item_list) == 0:
+                        self.Layout.addWidget(QuantifiedItemCard(["暂无记录", ""]))
+
+                    self.Layout.addStretch(1)
+
+            class LogCard(HeaderCardWidget):
+
+                def __init__(self, parent=None):
+                    super().__init__(parent)
+                    self.setTitle("日志")
+
+                    self.text = TextBrowser(self)
+                    self.open_file = PushButton("打开日志文件", self)
+                    self.open_file.clicked.connect(lambda: print("打开日志文件"))
+                    self.open_dir = PushButton("打开所在目录", self)
+                    self.open_dir.clicked.connect(lambda: print("打开所在文件"))
+
+                    Layout = QVBoxLayout()
+                    h_layout = QHBoxLayout()
+                    h_layout.addWidget(self.open_file)
+                    h_layout.addWidget(self.open_dir)
+                    Layout.addWidget(self.text)
+                    Layout.addLayout(h_layout)
+                    self.viewLayout.setContentsMargins(3, 0, 3, 3)
+                    self.viewLayout.addLayout(Layout)

@@ -26,6 +26,7 @@ v4.3
 """
 
 from PySide6.QtWidgets import (
+    QApplication,
     QWidget,
     QWidget,
     QLabel,
@@ -60,6 +61,7 @@ from qfluentwidgets import (
     TransparentToolButton,
     TeachingTipTailPosition,
     ExpandSettingCard,
+    ExpandGroupSettingCard,
     ToolButton,
     PushButton,
     PrimaryPushButton,
@@ -1066,6 +1068,41 @@ class QuantifiedItemCard(CardWidget):
         self.Layout.addWidget(self.Name)
         self.Layout.addStretch(1)
         self.Layout.addWidget(self.Numb)
+
+
+class QuickExpandGroupCard(ExpandGroupSettingCard):
+    """全局配置"""
+
+    def __init__(
+        self,
+        icon: Union[str, QIcon, FluentIcon],
+        title: str,
+        content: str = None,
+        parent=None,
+    ):
+        super().__init__(icon, title, content, parent)
+
+    def setExpand(self, isExpand: bool):
+        """set the expand status of card"""
+        if self.isExpand == isExpand:
+            return
+
+        # update style sheet
+        self.isExpand = isExpand
+        self.setProperty("isExpand", isExpand)
+        self.setStyle(QApplication.style())
+
+        # start expand animation
+        if isExpand:
+            h = self.viewLayout.sizeHint().height()
+            self.verticalScrollBar().setValue(h)
+            self.expandAni.setStartValue(h)
+            self.expandAni.setEndValue(0)
+            self.expandAni.start()
+        else:
+            self.setFixedHeight(self.viewportMargins().top())
+
+        self.card.expandButton.setExpand(isExpand)
 
 
 class IconButton(TransparentToolButton):
