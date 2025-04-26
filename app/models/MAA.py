@@ -1,5 +1,5 @@
-#   <AUTO_MAA:A MAA Multi Account Management and Automation Tool>
-#   Copyright © <2024> <DLmaster361>
+#   AUTO_MAA:A MAA Multi Account Management and Automation Tool
+#   Copyright © 2024-2025 DLmaster361
 
 #   This file is part of AUTO_MAA.
 
@@ -16,7 +16,7 @@
 #   You should have received a copy of the GNU General Public License
 #   along with AUTO_MAA. If not, see <https://www.gnu.org/licenses/>.
 
-#   DLmaster_361@163.com
+#   Contact: DLmaster_361@163.com
 
 """
 AUTO_MAA
@@ -32,6 +32,7 @@ from datetime import datetime, timedelta
 import subprocess
 import shutil
 import time
+import re
 from pathlib import Path
 from jinja2 import Environment, FileSystemLoader
 from typing import Union, List, Dict
@@ -43,6 +44,7 @@ from app.services import Notify, System
 class MaaManager(QObject):
     """MAA控制器"""
 
+    check_maa_version = Signal(str)
     question = Signal(str, str)
     question_response = Signal(bool)
     update_user_info = Signal(str, dict)
@@ -87,6 +89,7 @@ class MaaManager(QObject):
 
         self.interrupt.connect(self.quit_monitor)
 
+        self.maa_version = None
         self.set = config["Config"].toDict()
 
         self.data = {}
@@ -107,12 +110,12 @@ class MaaManager(QObject):
         self.maa_set_path = self.maa_root_path / "config/gui.json"
         self.maa_log_path = self.maa_root_path / "debug/gui.log"
         self.maa_exe_path = self.maa_root_path / "MAA.exe"
-        self.maa_tasks_path = self.maa_root_path / "resource/tasks.json"
+        self.maa_tasks_path = self.maa_root_path / "resource/tasks/tasks.json"
 
     def run(self):
         """主进程，运行MAA代理进程"""
 
-        curdate = Config.server_date()
+        curdate = Config.server_date().strftime("%Y-%m-%d")
         begin_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         self.configure()
@@ -287,6 +290,11 @@ class MaaManager(QObject):
                         self.ADB_path = Path(
                             set["Configurations"]["Default"]["Connect.AdbPath"]
                         )
+                        self.ADB_path = (
+                            self.ADB_path
+                            if self.ADB_path.is_absolute()
+                            else self.maa_root_path / self.ADB_path
+                        )
                         self.ADB_address = set["Configurations"]["Default"][
                             "Connect.Address"
                         ]
@@ -300,8 +308,6 @@ class MaaManager(QObject):
                             ]
                             == "True"
                         )
-                        # 添加静默进程标记
-                        Config.silence_list.append(self.emulator_path)
 
                         # 增强任务：任务开始前强杀ADB
                         if "ADB" in self.set["RunSet"]["EnhanceTask"]:
@@ -315,12 +321,34 @@ class MaaManager(QObject):
                             except subprocess.CalledProcessError as e:
                                 # 忽略错误,因为可能本来就没有连接
                                 logger.warning(f"{self.name} | 释放ADB时出现异常：{e}")
+                            except Exception as e:
+                                logger.error(f"{self.name} | 释放ADB时出现异常：{e}")
+                                self.push_info_bar.emit(
+                                    "error",
+                                    "释放ADB时出现异常",
+                                    "请检查MAA中ADB路径设置",
+                                    -1,
+                                )
 
                         if self.if_open_emulator_process:
-                            self.emulator_process = subprocess.Popen(
-                                [self.emulator_path, *self.emulator_arguments],
-                                creationflags=subprocess.CREATE_NO_WINDOW,
-                            )
+                            try:
+                                self.emulator_process = subprocess.Popen(
+                                    [self.emulator_path, *self.emulator_arguments],
+                                    creationflags=subprocess.CREATE_NO_WINDOW,
+                                )
+                            except Exception as e:
+                                logger.error(f"{self.name} | 启动模拟器时出现异常：{e}")
+                                self.push_info_bar.emit(
+                                    "error",
+                                    "启动模拟器时出现异常",
+                                    "请检查MAA中模拟器路径设置",
+                                    -1,
+                                )
+                                self.if_open_emulator = True
+                                break
+
+                        # 添加静默进程标记
+                        Config.silence_list.append(self.emulator_path)
 
                         # 创建MAA任务
                         maa = subprocess.Popen(
@@ -388,6 +416,14 @@ class MaaManager(QObject):
                             except subprocess.CalledProcessError as e:
                                 # 忽略错误,因为可能本来就没有连接
                                 logger.warning(f"{self.name} | 释放ADB时出现异常：{e}")
+                            except Exception as e:
+                                logger.error(f"{self.name} | 释放ADB时出现异常：{e}")
+                                self.push_info_bar.emit(
+                                    "error",
+                                    "释放ADB时出现异常",
+                                    "请检查MAA中ADB路径设置",
+                                    -1,
+                                )
                         if self.if_kill_emulator:
                             if "Emulator" in self.set["RunSet"]["EnhanceTask"]:
                                 System.kill_process(self.emulator_path)
@@ -710,6 +746,19 @@ class MaaManager(QObject):
         else:
             self.update_log_text.emit("".join(logs))
 
+        # 获取MAA版本号
+        if not self.maa_version:
+
+            section_match = re.search(r"={35}(.*?)={35}", log, re.DOTALL)
+            if section_match:
+
+                version_match = re.search(
+                    r"Version\s+v(\d+\.\d+\.\d+(?:-\w+\.\d+)?)", section_match.group(1)
+                )
+                if version_match:
+                    self.maa_version = f"v{version_match.group(1)}"
+                    self.check_maa_version.emit(self.maa_version)
+
         if "自动代理" in mode:
 
             # 获取最近一条日志的时间
@@ -732,22 +781,23 @@ class MaaManager(QObject):
                 self.weekly_annihilation_limit_reached = False
 
             if mode == "自动代理_日常" and "任务出错: Fight" in log:
-                self.maa_result = "检测到MAA未能实际执行任务"
+                self.maa_result = "MAA未能实际执行任务"
             elif "任务出错: StartUp" in log:
-                self.maa_result = "检测到MAA未能正确登录PRTS"
+                self.maa_result = "MAA未能正确登录PRTS"
             elif "任务已全部完成！" in log:
                 self.maa_result = "Success!"
-            elif (
-                ("请「检查连接设置」或「尝试重启模拟器与 ADB」或「重启电脑」" in log)
-                or ("未检测到任何模拟器" in log)
-                or ("已停止" in log)
-                or ("MaaAssistantArknights GUI exited" in log)
-            ):
-                self.maa_result = "检测到MAA进程异常"
+            elif "请「检查连接设置」或「尝试重启模拟器与 ADB」或「重启电脑」" in log:
+                self.maa_result = "MAA的ADB连接异常"
+            elif "未检测到任何模拟器" in log:
+                self.maa_result = "MAA未检测到任何模拟器"
+            elif "已停止" in log:
+                self.maa_result = "MAA在完成任务前中止"
+            elif "MaaAssistantArknights GUI exited" in log:
+                self.maa_result = "MAA在完成任务前退出"
             elif datetime.now() - latest_time > timedelta(
                 minutes=self.set["RunSet"][time_book[mode]]
             ):
-                self.maa_result = "检测到MAA进程超时"
+                self.maa_result = "MAA进程超时"
             elif self.isInterruptionRequested:
                 self.maa_result = "任务被手动中止"
             else:
@@ -756,13 +806,14 @@ class MaaManager(QObject):
         elif mode == "人工排查":
             if "完成任务: StartUp" in log:
                 self.maa_result = "Success!"
-            elif (
-                ("请「检查连接设置」或「尝试重启模拟器与 ADB」或「重启电脑」" in log)
-                or ("未检测到任何模拟器" in log)
-                or ("已停止" in log)
-                or ("MaaAssistantArknights GUI exited" in log)
-            ):
-                self.maa_result = "检测到MAA进程异常"
+            elif "请「检查连接设置」或「尝试重启模拟器与 ADB」或「重启电脑」" in log:
+                self.maa_result = "MAA的ADB连接异常"
+            elif "未检测到任何模拟器" in log:
+                self.maa_result = "MAA未检测到任何模拟器"
+            elif "已停止" in log:
+                self.maa_result = "MAA在完成任务前中止"
+            elif "MaaAssistantArknights GUI exited" in log:
+                self.maa_result = "MAA在完成任务前退出"
             elif self.isInterruptionRequested:
                 self.maa_result = "任务被手动中止"
             else:

@@ -1,5 +1,5 @@
-#   <AUTO_MAA:A MAA Multi Account Management and Automation Tool>
-#   Copyright © <2024> <DLmaster361>
+#   AUTO_MAA:A MAA Multi Account Management and Automation Tool
+#   Copyright © 2024-2025 DLmaster361
 
 #   This file is part of AUTO_MAA.
 
@@ -16,7 +16,7 @@
 #   You should have received a copy of the GNU General Public License
 #   along with AUTO_MAA. If not, see <https://www.gnu.org/licenses/>.
 
-#   DLmaster_361@163.com
+#   Contact: DLmaster_361@163.com
 
 """
 AUTO_MAA
@@ -79,7 +79,7 @@ if __name__ == "__main__":
         f" --file-version={version["main_version"]}"
         f" --product-version={version["main_version"]}"
         " --file-description='AUTO_MAA Component'"
-        " --copyright='Copyright © 2024 DLmaster361'"
+        " --copyright='Copyright © 2024-2025 DLmaster361'"
         " --assume-yes-for-downloads --output-filename=AUTO_MAA"
         " --remove-output main.py"
     )
@@ -98,7 +98,7 @@ if __name__ == "__main__":
         f" --file-version={version["updater_version"]}"
         f" --product-version={version["main_version"]}"
         " --file-description='AUTO_MAA Component'"
-        " --copyright='Copyright © 2024 DLmaster361'"
+        " --copyright='Copyright © 2024-2025 DLmaster361'"
         " --assume-yes-for-downloads --output-filename=AUTO_Updater"
         " --remove-output downloader.py"
     )

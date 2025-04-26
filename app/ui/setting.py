@@ -1,5 +1,5 @@
-#   <AUTO_MAA:A MAA Multi Account Management and Automation Tool>
-#   Copyright © <2024> <DLmaster361>
+#   AUTO_MAA:A MAA Multi Account Management and Automation Tool
+#   Copyright © 2024-2025 DLmaster361
 
 #   This file is part of AUTO_MAA.
 
@@ -16,7 +16,7 @@
 #   You should have received a copy of the GNU General Public License
 #   along with AUTO_MAA. If not, see <https://www.gnu.org/licenses/>.
 
-#   DLmaster_361@163.com
+#   Contact: DLmaster_361@163.com
 
 """
 AUTO_MAA
@@ -26,13 +26,12 @@ v4.3
 """
 
 from loguru import logger
-from PySide6.QtWidgets import QWidget, QVBoxLayout
+from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout
 from PySide6.QtCore import Qt
 from qfluentwidgets import (
     ScrollArea,
     FluentIcon,
     MessageBox,
-    Dialog,
     HyperlinkCard,
     HeaderCardWidget,
     ExpandGroupSettingCard,
@@ -42,13 +41,12 @@ from qfluentwidgets import (
 import os
 import re
 import json
-import time
 import shutil
 import subprocess
 from datetime import datetime
 from packaging import version
 from pathlib import Path
-from typing import Dict, List, Union
+from typing import Dict, Union
 
 from app.core import Config, MainInfoBar, Network
 from app.services import Crypto, System, Notify
@@ -301,7 +299,7 @@ class Setting(QWidget):
                 7002: "填入的 CDK 错误",
                 7003: "填入的 CDK 今日下载次数已达上限",
                 7004: "填入的 CDK 类型和待下载的资源不匹配",
-                7005: "填入的 CDK 不合法",
+                7005: "填入的 CDK 已被封禁",
                 8001: "对应架构和系统下的资源不存在",
                 8002: "错误的系统参数",
                 8003: "错误的架构参数",
@@ -405,9 +403,12 @@ class Setting(QWidget):
 
                 subprocess.Popen(
                     [Config.app_path / "AUTO_Updater.active.exe"],
-                    creationflags=subprocess.CREATE_NO_WINDOW,
+                    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP
+                    | subprocess.DETACHED_PROCESS
+                    | subprocess.CREATE_NO_WINDOW,
                 )
                 self.window().close()
+                QApplication.quit()
 
         # 无版本更新
         else:
@@ -486,7 +487,7 @@ class FunctionSettingCard(HeaderCardWidget):
             icon=FluentIcon.PAGE_RIGHT,
             title="历史记录保留时间",
             content="选择历史记录的保留时间，超期自动清理",
-            texts=["7 天", "15 天", "30 天", "60 天", "永久"],
+            texts=["7 天", "15 天", "30 天", "60 天", "90 天", "半年", "一年", "永久"],
             qconfig=Config,
             configItem=Config.function_HistoryRetentionTime,
             parent=self,

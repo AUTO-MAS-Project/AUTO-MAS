@@ -1,5 +1,5 @@
-#   <AUTO_MAA:A MAA Multi Account Management and Automation Tool>
-#   Copyright © <2024> <DLmaster361>
+#   AUTO_MAA:A MAA Multi Account Management and Automation Tool
+#   Copyright © 2024-2025 DLmaster361
 
 #   This file is part of AUTO_MAA.
 
@@ -16,7 +16,7 @@
 #   You should have received a copy of the GNU General Public License
 #   along with AUTO_MAA. If not, see <https://www.gnu.org/licenses/>.
 
-#   DLmaster_361@163.com
+#   Contact: DLmaster_361@163.com
 
 """
 AUTO_MAA
@@ -50,7 +50,7 @@ from typing import List, Dict
 
 
 from app.core import Config, TaskManager, Task, MainInfoBar
-from .Widget import StatefulItemCard
+from .Widget import StatefulItemCard, ComboBoxMessageBox
 
 
 class DispatchCenter(QWidget):
@@ -89,7 +89,7 @@ class DispatchCenter(QWidget):
 
         dispatch_box = DispatchBox(task.name, self)
 
-        dispatch_box.top_bar.button.clicked.connect(
+        dispatch_box.top_bar.main_button.clicked.connect(
             lambda: TaskManager.stop_task(task.name)
         )
 
@@ -123,9 +123,10 @@ class DispatchCenter(QWidget):
         self.script_list["主调度台"].top_bar.Lable.show()
         self.script_list["主调度台"].top_bar.object.hide()
         self.script_list["主调度台"].top_bar.mode.hide()
-        self.script_list["主调度台"].top_bar.button.clicked.disconnect()
-        self.script_list["主调度台"].top_bar.button.setText("中止任务")
-        self.script_list["主调度台"].top_bar.button.clicked.connect(
+        self.script_list["主调度台"].top_bar.multi_button.show()
+        self.script_list["主调度台"].top_bar.main_button.clicked.disconnect()
+        self.script_list["主调度台"].top_bar.main_button.setText("中止任务")
+        self.script_list["主调度台"].top_bar.main_button.clicked.connect(
             lambda: TaskManager.stop_task(task.name)
         )
         task.create_task_list.connect(
@@ -153,10 +154,11 @@ class DispatchCenter(QWidget):
         self.script_list["主调度台"].top_bar.Lable.hide()
         self.script_list["主调度台"].top_bar.object.show()
         self.script_list["主调度台"].top_bar.mode.show()
-        self.script_list["主调度台"].top_bar.button.clicked.disconnect()
-        self.script_list["主调度台"].top_bar.button.setText("开始任务")
-        self.script_list["主调度台"].top_bar.button.clicked.connect(
-            self.script_list["主调度台"].top_bar.start_task
+        self.script_list["主调度台"].top_bar.multi_button.hide()
+        self.script_list["主调度台"].top_bar.main_button.clicked.disconnect()
+        self.script_list["主调度台"].top_bar.main_button.setText("开始任务")
+        self.script_list["主调度台"].top_bar.main_button.clicked.connect(
+            self.script_list["主调度台"].top_bar.start_main_task
         )
         if len(logs) > 0:
             history = ""
@@ -250,25 +252,29 @@ class DispatchBox(QWidget):
                 self.mode = ComboBox()
                 self.mode.setPlaceholderText("请选择调度模式")
 
-                self.button = PushButton("开始任务")
-                self.button.clicked.connect(self.start_task)
+                self.multi_button = PushButton("添加任务")
+                self.multi_button.clicked.connect(self.start_multi_task)
+                self.main_button = PushButton("开始任务")
+                self.main_button.clicked.connect(self.start_main_task)
+                self.multi_button.hide()
 
                 Layout.addWidget(self.Lable)
                 Layout.addWidget(self.object)
                 Layout.addWidget(self.mode)
                 Layout.addStretch(1)
-                Layout.addWidget(self.button)
+                Layout.addWidget(self.multi_button)
+                Layout.addWidget(self.main_button)
 
             else:
 
                 self.Lable = SubtitleLabel(name, self)
-                self.button = PushButton("中止任务")
+                self.main_button = PushButton("中止任务")
 
                 Layout.addWidget(self.Lable)
                 Layout.addStretch(1)
-                Layout.addWidget(self.button)
+                Layout.addWidget(self.main_button)
 
-        def start_task(self):
+        def start_main_task(self):
             """开始任务"""
 
             if self.object.currentIndex() == -1:
@@ -311,6 +317,74 @@ class DispatchBox(QWidget):
                         "自定义队列",
                         {"Queue": {"Member_1": self.object.currentData()}},
                     )
+
+        def start_multi_task(self):
+            """开始任务"""
+
+            # 获取所有可用的队列和实例
+            text_list = []
+            data_list = []
+            for name, info in Config.queue_dict.items():
+                if name in Config.running_list:
+                    continue
+                text_list.append(
+                    "队列"
+                    if info["Config"].get(info["Config"].queueSet_Name) == ""
+                    else f"队列 - {info["Config"].get(info["Config"].queueSet_Name)}"
+                )
+                data_list.append(name)
+
+            for name, info in Config.member_dict.items():
+                if name in Config.running_list:
+                    continue
+                text_list.append(
+                    f"实例 - {info['Type']}"
+                    if info["Config"].get(info["Config"].MaaSet_Name) == ""
+                    else f"实例 - {info['Type']} - {info["Config"].get(info["Config"].MaaSet_Name)}"
+                )
+                data_list.append(name)
+
+            choice = ComboBoxMessageBox(
+                self.window(),
+                "选择一个对象以添加相应多开任务",
+                ["选择调度对象"],
+                [text_list],
+                [data_list],
+            )
+
+            if choice.exec() and choice.input[0].currentIndex() != -1:
+
+                if choice.input[0].currentData() in Config.running_list:
+                    logger.warning(f"任务已存在：{choice.input[0].currentData()}")
+                    MainInfoBar.push_info_bar(
+                        "warning", "任务已存在", choice.input[0].currentData(), 5000
+                    )
+                    return None
+
+                if "调度队列" in choice.input[0].currentData():
+
+                    logger.info(f"用户添加任务：{choice.input[0].currentData()}")
+                    TaskManager.add_task(
+                        "自动代理_新调度台",
+                        choice.input[0].currentData(),
+                        Config.queue_dict[choice.input[0].currentData()][
+                            "Config"
+                        ].toDict(),
+                    )
+
+                elif "脚本" in choice.input[0].currentData():
+
+                    if (
+                        Config.member_dict[choice.input[0].currentData()]["Type"]
+                        == "Maa"
+                    ):
+
+                        logger.info(f"用户添加任务：{choice.input[0].currentData()}")
+                        TaskManager.add_task(
+                            "自动代理_新调度台",
+                            f"自定义队列 - {choice.input[0].currentData()}",
+                            {"Queue": {"Member_1": choice.input[0].currentData()}},
+                        )
 
     class DispatchInfoCard(HeaderCardWidget):
 

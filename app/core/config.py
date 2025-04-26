@@ -1,5 +1,5 @@
-#   <AUTO_MAA:A MAA Multi Account Management and Automation Tool>
-#   Copyright © <2024> <DLmaster361>
+#   AUTO_MAA:A MAA Multi Account Management and Automation Tool
+#   Copyright © 2024-2025 DLmaster361
 
 #   This file is part of AUTO_MAA.
 
@@ -16,7 +16,7 @@
 #   You should have received a copy of the GNU General Public License
 #   along with AUTO_MAA. If not, see <https://www.gnu.org/licenses/>.
 
-#   DLmaster_361@163.com
+#   Contact: DLmaster_361@163.com
 
 """
 AUTO_MAA
@@ -33,7 +33,7 @@ import sys
 import shutil
 import re
 import base64
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from collections import defaultdict
 from pathlib import Path
 from qfluentwidgets import (
@@ -91,7 +91,10 @@ class GlobalConfig(QConfig):
             OptionsValidator(["默认", "自定义", "主题图像"]),
         )
         self.function_HistoryRetentionTime = OptionsConfigItem(
-            "Function", "HistoryRetentionTime", 0, OptionsValidator([7, 15, 30, 60, 0])
+            "Function",
+            "HistoryRetentionTime",
+            0,
+            OptionsValidator([7, 15, 30, 60, 90, 180, 365, 0]),
         )
         self.function_IfAllowSleep = ConfigItem(
             "Function", "IfAllowSleep", False, BoolValidator()
@@ -606,7 +609,7 @@ class MaaUserConfig(QConfig):
 
 class AppConfig(GlobalConfig):
 
-    VERSION = "4.3.4.2"
+    VERSION = "4.3.4.0"
 
     gameid_refreshed = Signal()
     PASSWORD_refreshed = Signal()
@@ -752,7 +755,7 @@ class AppConfig(GlobalConfig):
         ]
 
         # 生成本日关卡信息
-        days = datetime.strptime(self.server_date(), "%Y-%m-%d").isoweekday()
+        days = self.server_date().isoweekday()
 
         gameid_list = [
             {"value": "-", "text": "当前/上次", "days": [1, 2, 3, 4, 5, 6, 7]},
@@ -787,13 +790,13 @@ class AppConfig(GlobalConfig):
 
         self.gameid_refreshed.emit()
 
-    def server_date(self) -> str:
+    def server_date(self) -> date:
         """获取当前的服务器日期"""
 
         dt = datetime.now()
         if dt.time() < datetime.min.time().replace(hour=4):
             dt = dt - timedelta(days=1)
-        return dt.strftime("%Y-%m-%d")
+        return dt.date()
 
     def check_data(self) -> None:
         """检查用户数据文件并处理数据文件版本更新"""
@@ -1289,8 +1292,21 @@ class AppConfig(GlobalConfig):
 
         self.user_info_changed.emit()
 
+    def save_history(self, key: str, content: dict) -> None:
+        """保存历史记录"""
+
+        if key in self.queue_dict:
+            self.queue_dict[key]["Config"].set(
+                self.queue_dict[key]["Config"].Data_LastProxyTime, content["Time"]
+            )
+            self.queue_dict[key]["Config"].set(
+                self.queue_dict[key]["Config"].Data_LastProxyHistory, content["History"]
+            )
+        else:
+            logger.warning(f"保存历史记录时未找到调度队列: {key}")
+
     def save_maa_log(self, log_path: Path, logs: list, maa_result: str) -> bool:
-        """保存MAA日志"""
+        """保存MAA日志并生成初步统计数据"""
 
         data: Dict[str, Union[str, Dict[str, Union[int, dict]]]] = {
             "recruit_statistics": defaultdict(int),
@@ -1453,9 +1469,9 @@ class AppConfig(GlobalConfig):
                         data["drop_statistics"][stage][item] = count
 
             # 合并MAA结果
-            data["maa_result"][
-                json_file.name.replace(".json", "").replace("-", ":")
-            ] = single_data["maa_result"]
+            data["maa_result"][json_file.stem.replace("-", ":")] = single_data[
+                "maa_result"
+            ]
 
         # 生成汇总 JSON 文件
         if mode == "所有项":
@@ -1478,9 +1494,21 @@ class AppConfig(GlobalConfig):
                 info: Dict[str, Dict[str, Union[int, dict]]] = json.load(f)
 
             data = {}
+            # 4点前的记录放在当日最后
+            sorted_maa_result = sorted(
+                info["maa_result"].items(),
+                key=lambda x: (
+                    (
+                        1
+                        if datetime.strptime(x[0], "%H:%M:%S").time()
+                        < datetime.min.time().replace(hour=4)
+                        else 0
+                    ),
+                    datetime.strptime(x[0], "%H:%M:%S"),
+                ),
+            )
             data["条目索引"] = [
-                [k, "完成" if v == "Success!" else "异常"]
-                for k, v in info["maa_result"].items()
+                [k, "完成" if v == "Success!" else "异常"] for k, v in sorted_maa_result
             ]
             data["条目索引"].insert(0, ["数据总览", "运行"])
             data["统计数据"] = {"公招统计": list(info["recruit_statistics"].items())}
@@ -1511,7 +1539,9 @@ class AppConfig(GlobalConfig):
 
         return data
 
-    def search_history(self) -> dict:
+    def search_history(
+        self, mode: str, start_date: datetime, end_date: datetime
+    ) -> dict:
         """搜索所有历史记录"""
 
         history_dict = {}
@@ -1524,34 +1554,55 @@ class AppConfig(GlobalConfig):
 
                 date = datetime.strptime(date_folder.name, "%Y-%m-%d")
 
-                history_dict[date.strftime("%Y年 %m月 %d日")] = list(
-                    date_folder.glob("*.json")
-                )
+                if not (start_date <= date <= end_date):
+                    continue  # 只统计在范围内的日期
+
+                if mode == "按日合并":
+
+                    history_dict[date.strftime("%Y年 %m月 %d日")] = list(
+                        date_folder.glob("*.json")
+                    )
+
+                elif mode == "按周合并":
+
+                    year, week, _ = date.isocalendar()
+                    if f"{year}年 第{week}周" not in history_dict:
+                        history_dict[f"{year}年 第{week}周"] = {}
+
+                    for user in date_folder.glob("*.json"):
+
+                        if user.stem not in history_dict[f"{year}年 第{week}周"]:
+                            history_dict[f"{year}年 第{week}周"][user.stem] = list(
+                                user.with_suffix("").glob("*.json")
+                            )
+                        else:
+                            history_dict[f"{year}年 第{week}周"][user.stem] += list(
+                                user.with_suffix("").glob("*.json")
+                            )
+
+                elif mode == "按月合并":
+
+                    if date.strftime("%Y年 %m月") not in history_dict:
+                        history_dict[date.strftime("%Y年 %m月")] = {}
+
+                    for user in date_folder.glob("*.json"):
+
+                        if user.stem not in history_dict[date.strftime("%Y年 %m月")]:
+                            history_dict[date.strftime("%Y年 %m月")][user.stem] = list(
+                                user.with_suffix("").glob("*.json")
+                            )
+                        else:
+                            history_dict[date.strftime("%Y年 %m月")][user.stem] += list(
+                                user.with_suffix("").glob("*.json")
+                            )
 
             except ValueError:
                 logger.warning(f"非日期格式的目录: {date_folder}")
 
         return {
             k: v
-            for k, v in sorted(
-                history_dict.items(),
-                key=lambda x: datetime.strptime(x[0], "%Y年 %m月 %d日"),
-                reverse=True,
-            )
+            for k, v in sorted(history_dict.items(), key=lambda x: x[0], reverse=True)
         }
-
-    def save_history(self, key: str, content: dict) -> None:
-        """保存历史记录"""
-
-        if key in self.queue_dict:
-            self.queue_dict[key]["Config"].set(
-                self.queue_dict[key]["Config"].Data_LastProxyTime, content["Time"]
-            )
-            self.queue_dict[key]["Config"].set(
-                self.queue_dict[key]["Config"].Data_LastProxyHistory, content["History"]
-            )
-        else:
-            logger.warning(f"保存历史记录时未找到调度队列: {key}")
 
 
 Config = AppConfig()

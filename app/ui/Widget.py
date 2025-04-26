@@ -1,5 +1,5 @@
-#   <AUTO_MAA:A MAA Multi Account Management and Automation Tool>
-#   Copyright © <2024> <DLmaster361>
+#   AUTO_MAA:A MAA Multi Account Management and Automation Tool
+#   Copyright © 2024-2025 DLmaster361
 
 #   This file is part of AUTO_MAA.
 
@@ -16,7 +16,7 @@
 #   You should have received a copy of the GNU General Public License
 #   along with AUTO_MAA. If not, see <https://www.gnu.org/licenses/>.
 
-#   DLmaster_361@163.com
+#   Contact: DLmaster_361@163.com
 
 """
 AUTO_MAA
@@ -26,6 +26,7 @@ v4.3
 """
 
 from PySide6.QtWidgets import (
+    QApplication,
     QWidget,
     QWidget,
     QLabel,
@@ -60,6 +61,7 @@ from qfluentwidgets import (
     TransparentToolButton,
     TeachingTipTailPosition,
     ExpandSettingCard,
+    ExpandGroupSettingCard,
     ToolButton,
     PushButton,
     PrimaryPushButton,
@@ -107,7 +109,14 @@ class LineEditMessageBox(MessageBoxBase):
 class ComboBoxMessageBox(MessageBoxBase):
     """选择对话框"""
 
-    def __init__(self, parent, title: str, content: List[str], list: List[List[str]]):
+    def __init__(
+        self,
+        parent,
+        title: str,
+        content: List[str],
+        text_list: List[List[str]],
+        data_list: List[List[str]] = None,
+    ):
         super().__init__(parent)
         self.title = SubtitleLabel(title)
 
@@ -119,7 +128,11 @@ class ComboBoxMessageBox(MessageBoxBase):
         for i in range(len(content)):
 
             self.input.append(ComboBox())
-            self.input[i].addItems(list[i])
+            if data_list:
+                for j in range(len(text_list[i])):
+                    self.input[i].addItem(text_list[i][j], userData=data_list[i][j])
+            else:
+                self.input[i].addItems(text_list[i])
             self.input[i].setCurrentIndex(-1)
             self.input[i].setPlaceholderText(content[i])
             Layout.addWidget(self.input[i])
@@ -543,7 +556,7 @@ class UserLableSettingCard(SettingCard):
                 text_list.append("未通过人工排查")
             text_list.append(
                 f"今日已代理{self.qconfig.get(self.configItems["ProxyTimes"])}次"
-                if Config.server_date()
+                if Config.server_date().strftime("%Y-%m-%d")
                 == self.qconfig.get(self.configItems["LastProxyDate"])
                 else "今日未进行代理"
             )
@@ -553,7 +566,7 @@ class UserLableSettingCard(SettingCard):
                     self.qconfig.get(self.configItems["LastAnnihilationDate"]),
                     "%Y-%m-%d",
                 ).isocalendar()[:2]
-                == datetime.strptime(Config.server_date(), "%Y-%m-%d").isocalendar()[:2]
+                == Config.server_date().isocalendar()[:2]
                 else "本周剿灭未完成"
             )
 
@@ -1066,6 +1079,41 @@ class QuantifiedItemCard(CardWidget):
         self.Layout.addWidget(self.Name)
         self.Layout.addStretch(1)
         self.Layout.addWidget(self.Numb)
+
+
+class QuickExpandGroupCard(ExpandGroupSettingCard):
+    """全局配置"""
+
+    def __init__(
+        self,
+        icon: Union[str, QIcon, FluentIcon],
+        title: str,
+        content: str = None,
+        parent=None,
+    ):
+        super().__init__(icon, title, content, parent)
+
+    def setExpand(self, isExpand: bool):
+        """set the expand status of card"""
+        if self.isExpand == isExpand:
+            return
+
+        # update style sheet
+        self.isExpand = isExpand
+        self.setProperty("isExpand", isExpand)
+        self.setStyle(QApplication.style())
+
+        # start expand animation
+        if isExpand:
+            h = self.viewLayout.sizeHint().height()
+            self.verticalScrollBar().setValue(h)
+            self.expandAni.setStartValue(h)
+            self.expandAni.setEndValue(0)
+            self.expandAni.start()
+        else:
+            self.setFixedHeight(self.viewportMargins().top())
+
+        self.card.expandButton.setExpand(isExpand)
 
 
 class IconButton(TransparentToolButton):

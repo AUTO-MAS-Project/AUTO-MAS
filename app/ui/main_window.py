@@ -1,5 +1,5 @@
-#   <AUTO_MAA:A MAA Multi Account Management and Automation Tool>
-#   Copyright © <2024> <DLmaster361>
+#   AUTO_MAA:A MAA Multi Account Management and Automation Tool
+#   Copyright © 2024-2025 DLmaster361
 
 #   This file is part of AUTO_MAA.
 
@@ -16,7 +16,7 @@
 #   You should have received a copy of the GNU General Public License
 #   along with AUTO_MAA. If not, see <https://www.gnu.org/licenses/>.
 
-#   DLmaster_361@163.com
+#   Contact: DLmaster_361@163.com
 
 """
 AUTO_MAA
@@ -139,9 +139,6 @@ class AUTO_MAA(MSFluentWindow):
             lambda index: (
                 self.dispatch_center.update_top_bar() if index == 3 else None
             )
-        )
-        self.stackedWidget.currentChanged.connect(
-            lambda index: (self.history.refresh() if index == 4 else None)
         )
 
         # 创建系统托盘及其菜单
@@ -324,7 +321,7 @@ class AUTO_MAA(MSFluentWindow):
             logger.info("自动添加任务：调度队列_1")
             TaskManager.add_task(
                 "自动代理_主调度台",
-                "主任务队列",
+                "调度队列_1",
                 Config.queue_dict["调度队列_1"]["Config"].toDict(),
             )
 
@@ -332,7 +329,7 @@ class AUTO_MAA(MSFluentWindow):
 
             logger.info("自动添加任务：脚本_1")
             TaskManager.add_task(
-                "自动代理_主调度台", "主任务队列", {"Queue": {"Member_1": "脚本_1"}}
+                "自动代理_主调度台", "自定义队列", {"Queue": {"Member_1": "脚本_1"}}
             )
 
         else:

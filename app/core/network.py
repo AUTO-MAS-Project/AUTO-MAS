@@ -1,5 +1,5 @@
-#   <AUTO_MAA:A MAA Multi Account Management and Automation Tool>
-#   Copyright © <2024> <DLmaster361>
+#   AUTO_MAA:A MAA Multi Account Management and Automation Tool
+#   Copyright © 2024-2025 DLmaster361
 
 #   This file is part of AUTO_MAA.
 
@@ -16,7 +16,7 @@
 #   You should have received a copy of the GNU General Public License
 #   along with AUTO_MAA. If not, see <https://www.gnu.org/licenses/>.
 
-#   DLmaster_361@163.com
+#   Contact: DLmaster_361@163.com
 
 """
 AUTO_MAA
@@ -52,8 +52,6 @@ class _Network(QThread):
         """运行网络请求线程"""
 
         self.if_running = True
-
-        print(self.url)
 
         if self.mode == "get":
             self.get_json(self.url)
@@ -94,7 +92,6 @@ class _Network(QThread):
                 time.sleep(self.backoff_factor)
 
         self.loop.quit()
-        print("quited")
 
     def get_file(self, url: str, path: Path) -> None:
         """通过get方法获取json数据"""
@@ -114,7 +111,6 @@ class _Network(QThread):
             self.error_message = str(e)
 
         self.loop.quit()
-        print("quited-----")
 
 
 Network = _Network()

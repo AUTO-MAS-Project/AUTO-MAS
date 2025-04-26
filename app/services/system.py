@@ -1,5 +1,5 @@
-#   <AUTO_MAA:A MAA Multi Account Management and Automation Tool>
-#   Copyright © <2024> <DLmaster361>
+#   AUTO_MAA:A MAA Multi Account Management and Automation Tool
+#   Copyright © 2024-2025 DLmaster361
 
 #   This file is part of AUTO_MAA.
 
@@ -16,7 +16,7 @@
 #   You should have received a copy of the GNU General Public License
 #   along with AUTO_MAA. If not, see <https://www.gnu.org/licenses/>.
 
-#   DLmaster_361@163.com
+#   Contact: DLmaster_361@163.com
 
 """
 AUTO_MAA
@@ -26,7 +26,7 @@ v4.3
 """
 
 from loguru import logger
-from PySide6.QtWidgets import QWidget
+from PySide6.QtWidgets import QApplication, QWidget
 import sys
 import ctypes
 import win32gui
@@ -113,6 +113,7 @@ class _SystemHandler:
             elif mode == "KillSelf":
 
                 self.main_window.close()
+                QApplication.quit()
 
         elif sys.platform.startswith("linux"):
 
@@ -138,6 +139,7 @@ class _SystemHandler:
             elif mode == "KillSelf":
 
                 self.main_window.close()
+                QApplication.quit()
 
     def is_startup(self) -> bool:
         """判断程序是否已经开机自启"""

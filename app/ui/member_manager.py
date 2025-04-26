@@ -1,5 +1,5 @@
-#   <AUTO_MAA:A MAA Multi Account Management and Automation Tool>
-#   Copyright © <2024> <DLmaster361>
+#   AUTO_MAA:A MAA Multi Account Management and Automation Tool
+#   Copyright © 2024-2025 DLmaster361
 
 #   This file is part of AUTO_MAA.
 
@@ -16,7 +16,7 @@
 #   You should have received a copy of the GNU General Public License
 #   along with AUTO_MAA. If not, see <https://www.gnu.org/licenses/>.
 
-#   DLmaster_361@163.com
+#   Contact: DLmaster_361@163.com
 
 """
 AUTO_MAA
@@ -1099,7 +1099,7 @@ class MemberManager(QWidget):
                                     text_list.append("未通过人工排查")
                                 text_list.append(
                                     f"今日已代理{config.get(config.Data_ProxyTimes)}次"
-                                    if Config.server_date()
+                                    if Config.server_date().strftime("%Y-%m-%d")
                                     == config.get(config.Data_LastProxyDate)
                                     else "今日未进行代理"
                                 )
@@ -1109,9 +1109,7 @@ class MemberManager(QWidget):
                                         config.get(config.Data_LastAnnihilationDate),
                                         "%Y-%m-%d",
                                     ).isocalendar()[:2]
-                                    == datetime.strptime(
-                                        Config.server_date(), "%Y-%m-%d"
-                                    ).isocalendar()[:2]
+                                    == Config.server_date().isocalendar()[:2]
                                     else "本周剿灭未完成"
                                 )
 
