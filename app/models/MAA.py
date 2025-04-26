@@ -110,7 +110,7 @@ class MaaManager(QObject):
         self.maa_set_path = self.maa_root_path / "config/gui.json"
         self.maa_log_path = self.maa_root_path / "debug/gui.log"
         self.maa_exe_path = self.maa_root_path / "MAA.exe"
-        self.maa_tasks_path = self.maa_root_path / "resource/tasks.json"
+        self.maa_tasks_path = self.maa_root_path / "resource/tasks/tasks.json"
 
     def run(self):
         """主进程，运行MAA代理进程"""
