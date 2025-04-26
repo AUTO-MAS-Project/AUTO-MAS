@@ -91,7 +91,10 @@ class GlobalConfig(QConfig):
             OptionsValidator(["默认", "自定义", "主题图像"]),
         )
         self.function_HistoryRetentionTime = OptionsConfigItem(
-            "Function", "HistoryRetentionTime", 0, OptionsValidator([7, 15, 30, 60, 0])
+            "Function",
+            "HistoryRetentionTime",
+            0,
+            OptionsValidator([7, 15, 30, 60, 90, 180, 365, 0]),
         )
         self.function_IfAllowSleep = ConfigItem(
             "Function", "IfAllowSleep", False, BoolValidator()
@@ -606,7 +609,7 @@ class MaaUserConfig(QConfig):
 
 class AppConfig(GlobalConfig):
 
-    VERSION = "4.3.4.6"
+    VERSION = "4.3.4.7"
 
     gameid_refreshed = Signal()
     PASSWORD_refreshed = Signal()

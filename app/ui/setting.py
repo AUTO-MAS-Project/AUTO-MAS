@@ -487,7 +487,7 @@ class FunctionSettingCard(HeaderCardWidget):
             icon=FluentIcon.PAGE_RIGHT,
             title="历史记录保留时间",
             content="选择历史记录的保留时间，超期自动清理",
-            texts=["7 天", "15 天", "30 天", "60 天", "永久"],
+            texts=["7 天", "15 天", "30 天", "60 天", "90 天", "半年", "一年", "永久"],
             qconfig=Config,
             configItem=Config.function_HistoryRetentionTime,
             parent=self,

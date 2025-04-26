@@ -109,7 +109,14 @@ class LineEditMessageBox(MessageBoxBase):
 class ComboBoxMessageBox(MessageBoxBase):
     """选择对话框"""
 
-    def __init__(self, parent, title: str, content: List[str], list: List[List[str]]):
+    def __init__(
+        self,
+        parent,
+        title: str,
+        content: List[str],
+        text_list: List[List[str]],
+        data_list: List[List[str]] = None,
+    ):
         super().__init__(parent)
         self.title = SubtitleLabel(title)
 
@@ -121,7 +128,11 @@ class ComboBoxMessageBox(MessageBoxBase):
         for i in range(len(content)):
 
             self.input.append(ComboBox())
-            self.input[i].addItems(list[i])
+            if data_list:
+                for j in range(len(text_list[i])):
+                    self.input[i].addItem(text_list[i][j], userData=data_list[i][j])
+            else:
+                self.input[i].addItems(text_list[i])
             self.input[i].setCurrentIndex(-1)
             self.input[i].setPlaceholderText(content[i])
             Layout.addWidget(self.input[i])
