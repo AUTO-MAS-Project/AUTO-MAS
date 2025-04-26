@@ -29,10 +29,12 @@ from loguru import logger
 from PySide6.QtCore import QThread, QObject, Signal
 from qfluentwidgets import MessageBox
 from datetime import datetime
+from packaging import version
 from typing import Dict, Union
 
 from .config import Config
 from .main_info_bar import MainInfoBar
+from .network import Network
 from app.models import MaaManager
 from app.services import System
 
@@ -40,6 +42,7 @@ from app.services import System
 class Task(QThread):
     """业务线程"""
 
+    check_maa_version = Signal(str)
     push_info_bar = Signal(str, str, str, int)
     question = Signal(str, str)
     question_response = Signal(bool)
@@ -77,6 +80,7 @@ class Task(QThread):
                 Config.member_dict[self.name],
                 (None if "全局" in self.mode else self.info["SetMaaInfo"]["Path"]),
             )
+            self.task.check_maa_version.connect(self.check_maa_version.emit)
             self.task.push_info_bar.connect(self.push_info_bar.emit)
             self.task.accomplish.connect(lambda: self.accomplish.emit([]))
 
@@ -132,6 +136,7 @@ class Task(QThread):
                         Config.member_dict[task[2]],
                     )
 
+                    self.task.check_maa_version.connect(self.check_maa_version.emit)
                     self.task.question.connect(self.question.emit)
                     self.question_response.disconnect()
                     self.question_response.connect(self.task.question_response.emit)
@@ -166,7 +171,6 @@ class _TaskManager(QObject):
 
     create_gui = Signal(Task)
     connect_gui = Signal(Task)
-    push_info_bar = Signal(str, str, str, int)
 
     def __init__(self, main_window=None):
         super(_TaskManager, self).__init__()
@@ -190,6 +194,7 @@ class _TaskManager(QObject):
 
         Config.running_list.append(name)
         self.task_dict[name] = Task(mode, name, info)
+        self.task_dict[name].check_maa_version.connect(self.check_maa_version)
         self.task_dict[name].question.connect(
             lambda title, content: self.push_dialog(name, title, content)
         )
@@ -282,6 +287,39 @@ class _TaskManager(QObject):
                             Config.queue_dict[name]["Config"].queueSet_AfterAccomplish
                         )
                     )
+
+    def check_maa_version(self, v: str):
+        """检查MAA版本"""
+
+        Network.set_info(
+            mode="get",
+            url="https://mirrorchyan.com/api/resources/MAA/latest?user_agent=AutoMaaGui&os=win&arch=x64&channel=stable",
+        )
+        Network.start()
+        Network.loop.exec()
+        if Network.stutus_code == 200:
+            maa_info = Network.response_json
+        else:
+            logger.warning(f"获取MAA版本信息时出错：{Network.error_message}")
+            MainInfoBar.push_info_bar(
+                "warning",
+                "获取MAA版本信息时出错",
+                f"网络错误：{Network.stutus_code}",
+                5000,
+            )
+            return None
+
+        if version.parse(maa_info["data"]["version_name"]) > version.parse(v):
+
+            logger.info(
+                f"检测到MAA版本过低：{v}，最新版本：{maa_info['data']['version_name']}"
+            )
+            MainInfoBar.push_info_bar(
+                "info",
+                "MAA版本过低",
+                f"当前版本：{v}，最新稳定版：{maa_info['data']['version_name']}",
+                -1,
+            )
 
     def push_dialog(self, name: str, title: str, content: str):
         """推送对话框"""

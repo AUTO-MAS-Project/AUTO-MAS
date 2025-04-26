@@ -32,6 +32,7 @@ from datetime import datetime, timedelta
 import subprocess
 import shutil
 import time
+import re
 from pathlib import Path
 from jinja2 import Environment, FileSystemLoader
 from typing import Union, List, Dict
@@ -43,6 +44,7 @@ from app.services import Notify, System
 class MaaManager(QObject):
     """MAA控制器"""
 
+    check_maa_version = Signal(str)
     question = Signal(str, str)
     question_response = Signal(bool)
     update_user_info = Signal(str, dict)
@@ -87,6 +89,7 @@ class MaaManager(QObject):
 
         self.interrupt.connect(self.quit_monitor)
 
+        self.maa_version = None
         self.set = config["Config"].toDict()
 
         self.data = {}
@@ -743,6 +746,19 @@ class MaaManager(QObject):
         else:
             self.update_log_text.emit("".join(logs))
 
+        # 获取MAA版本号
+        if not self.maa_version:
+
+            section_match = re.search(r"={35}(.*?)={35}", log, re.DOTALL)
+            if section_match:
+
+                version_match = re.search(
+                    r"Version\s+v(\d+\.\d+\.\d+(?:-\w+\.\d+)?)", section_match.group(1)
+                )
+                if version_match:
+                    self.maa_version = f"v{version_match.group(1)}"
+                    self.check_maa_version.emit(self.maa_version)
+
         if "自动代理" in mode:
 
             # 获取最近一条日志的时间
@@ -765,22 +781,23 @@ class MaaManager(QObject):
                 self.weekly_annihilation_limit_reached = False
 
             if mode == "自动代理_日常" and "任务出错: Fight" in log:
-                self.maa_result = "检测到MAA未能实际执行任务"
+                self.maa_result = "MAA未能实际执行任务"
             elif "任务出错: StartUp" in log:
-                self.maa_result = "检测到MAA未能正确登录PRTS"
+                self.maa_result = "MAA未能正确登录PRTS"
             elif "任务已全部完成！" in log:
                 self.maa_result = "Success!"
-            elif (
-                ("请「检查连接设置」或「尝试重启模拟器与 ADB」或「重启电脑」" in log)
-                or ("未检测到任何模拟器" in log)
-                or ("已停止" in log)
-                or ("MaaAssistantArknights GUI exited" in log)
-            ):
-                self.maa_result = "检测到MAA进程异常"
+            elif "请「检查连接设置」或「尝试重启模拟器与 ADB」或「重启电脑」" in log:
+                self.maa_result = "MAA的ADB连接异常"
+            elif "未检测到任何模拟器" in log:
+                self.maa_result = "MAA未检测到任何模拟器"
+            elif "已停止" in log:
+                self.maa_result = "MAA在完成任务前中止"
+            elif "MaaAssistantArknights GUI exited" in log:
+                self.maa_result = "MAA在完成任务前退出"
             elif datetime.now() - latest_time > timedelta(
                 minutes=self.set["RunSet"][time_book[mode]]
             ):
-                self.maa_result = "检测到MAA进程超时"
+                self.maa_result = "MAA进程超时"
             elif self.isInterruptionRequested:
                 self.maa_result = "任务被手动中止"
             else:
@@ -789,13 +806,14 @@ class MaaManager(QObject):
         elif mode == "人工排查":
             if "完成任务: StartUp" in log:
                 self.maa_result = "Success!"
-            elif (
-                ("请「检查连接设置」或「尝试重启模拟器与 ADB」或「重启电脑」" in log)
-                or ("未检测到任何模拟器" in log)
-                or ("已停止" in log)
-                or ("MaaAssistantArknights GUI exited" in log)
-            ):
-                self.maa_result = "检测到MAA进程异常"
+            elif "请「检查连接设置」或「尝试重启模拟器与 ADB」或「重启电脑」" in log:
+                self.maa_result = "MAA的ADB连接异常"
+            elif "未检测到任何模拟器" in log:
+                self.maa_result = "MAA未检测到任何模拟器"
+            elif "已停止" in log:
+                self.maa_result = "MAA在完成任务前中止"
+            elif "MaaAssistantArknights GUI exited" in log:
+                self.maa_result = "MAA在完成任务前退出"
             elif self.isInterruptionRequested:
                 self.maa_result = "任务被手动中止"
             else:

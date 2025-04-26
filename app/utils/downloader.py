@@ -229,18 +229,12 @@ class DownloadManager(QDialog):
 
     isInterruptionRequested = False
 
-    def __init__(
-        self,
-        app_path: Path,
-        name: str,
-        main_version: list,
-        config: dict,
-    ) -> None:
+    def __init__(self, app_path: Path, name: str, version: list, config: dict) -> None:
         super().__init__()
 
         self.app_path = app_path
         self.name = name
-        self.main_version = main_version
+        self.version = version
         self.config = config
         self.download_path = app_path / "DOWNLOAD_TEMP.zip"  #  临时下载文件的路径
         self.version_path = app_path / "resources/version.json"
@@ -289,25 +283,25 @@ class DownloadManager(QDialog):
         if mode == "测速":
 
             url_dict["GitHub站"] = (
-                f"https://github.com/DLmaster361/AUTO_MAA/releases/download/{version_text(self.main_version)}/AUTO_MAA_{version_text(self.main_version)}.zip"
+                f"https://github.com/DLmaster361/AUTO_MAA/releases/download/{version_text(self.version)}/AUTO_MAA_{version_text(self.version)}.zip"
             )
             url_dict["官方镜像站"] = (
-                f"https://gitee.com/DLmaster_361/AUTO_MAA/releases/download/{version_text(self.main_version)}/AUTO_MAA_{version_text(self.main_version)}.zip"
+                f"https://gitee.com/DLmaster_361/AUTO_MAA/releases/download/{version_text(self.version)}/AUTO_MAA_{version_text(self.version)}.zip"
             )
             for name, download_url_head in self.config["download_dict"].items():
                 url_dict[name] = (
-                    f"{download_url_head}AUTO_MAA_{version_text(self.main_version)}.zip"
+                    f"{download_url_head}AUTO_MAA_{version_text(self.version)}.zip"
                 )
             for proxy_url in self.config["proxy_list"]:
                 url_dict[proxy_url] = (
-                    f"{proxy_url}https://github.com/DLmaster361/AUTO_MAA/releases/download/{version_text(self.main_version)}/AUTO_MAA_{version_text(self.main_version)}.zip"
+                    f"{proxy_url}https://github.com/DLmaster361/AUTO_MAA/releases/download/{version_text(self.version)}/AUTO_MAA_{version_text(self.version)}.zip"
                 )
             return url_dict
 
         elif mode == "下载":
 
             if self.name == "MAA":
-                return f"https://jp-download.fearr.xyz/MAA/MAA-{version_text(self.main_version)}-win-x64.zip"
+                return f"https://jp-download.fearr.xyz/MAA/MAA-{version_text(self.version)}-win-x64.zip"
 
             if self.name == "AUTO_MAA":
 
@@ -322,13 +316,13 @@ class DownloadManager(QDialog):
                         )
 
                     if selected_url == "GitHub站":
-                        return f"https://github.com/DLmaster361/AUTO_MAA/releases/download/{version_text(self.main_version)}/AUTO_MAA_{version_text(self.main_version)}.zip"
+                        return f"https://github.com/DLmaster361/AUTO_MAA/releases/download/{version_text(self.version)}/AUTO_MAA_{version_text(self.version)}.zip"
                     elif selected_url == "官方镜像站":
-                        return f"https://gitee.com/DLmaster_361/AUTO_MAA/releases/download/{version_text(self.main_version)}/AUTO_MAA_{version_text(self.main_version)}.zip"
+                        return f"https://gitee.com/DLmaster_361/AUTO_MAA/releases/download/{version_text(self.version)}/AUTO_MAA_{version_text(self.version)}.zip"
                     elif selected_url in self.config["download_dict"].keys():
-                        return f"{self.config["download_dict"][selected_url]}AUTO_MAA_{version_text(self.main_version)}.zip"
+                        return f"{self.config["download_dict"][selected_url]}AUTO_MAA_{version_text(self.version)}.zip"
                     else:
-                        return f"{selected_url}https://github.com/DLmaster361/AUTO_MAA/releases/download/{version_text(self.main_version)}/AUTO_MAA_{version_text(self.main_version)}.zip"
+                        return f"{selected_url}https://github.com/DLmaster361/AUTO_MAA/releases/download/{version_text(self.version)}/AUTO_MAA_{version_text(self.version)}.zip"
 
                 elif self.config["mode"] == "MirrorChyan":
                     with requests.get(
