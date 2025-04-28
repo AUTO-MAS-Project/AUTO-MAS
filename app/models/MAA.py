@@ -28,11 +28,12 @@ v4.3
 from loguru import logger
 from PySide6.QtCore import QObject, Signal, QEventLoop, QFileSystemWatcher, QTimer
 import json
-from datetime import datetime, timedelta
 import subprocess
 import shutil
 import time
 import re
+import win32com.client
+from datetime import datetime, timedelta
 from pathlib import Path
 from jinja2 import Environment, FileSystemLoader
 from typing import Union, List, Dict
@@ -287,6 +288,41 @@ class MaaManager(QObject):
                         self.emulator_arguments = set["Configurations"]["Default"][
                             "Start.EmulatorAddCommand"
                         ].split()
+                        # 如果是快捷方式，进行解析
+                        if (
+                            self.emulator_path.suffix == ".lnk"
+                            and self.emulator_path.exists()
+                        ):
+                            try:
+                                shell = win32com.client.Dispatch("WScript.Shell")
+                                shortcut = shell.CreateShortcut(str(self.emulator_path))
+                                self.emulator_path = Path(shortcut.TargetPath)
+                                self.emulator_arguments = shortcut.Arguments.split()
+                            except Exception as e:
+                                logger.error(
+                                    f"{self.name} | 解析快捷方式时出现异常：{e}"
+                                )
+                                self.push_info_bar.emit(
+                                    "error",
+                                    "解析快捷方式时出现异常",
+                                    "请检查快捷方式",
+                                    -1,
+                                )
+                                self.if_open_emulator = True
+                                break
+                        elif not self.emulator_path.exists():
+                            logger.error(
+                                f"{self.name} | 模拟器快捷方式不存在：{self.emulator_path}"
+                            )
+                            self.push_info_bar.emit(
+                                "error",
+                                "启动模拟器时出现异常",
+                                "模拟器快捷方式不存在",
+                                -1,
+                            )
+                            self.if_open_emulator = True
+                            break
+
                         self.ADB_path = Path(
                             set["Configurations"]["Default"]["Connect.AdbPath"]
                         )

@@ -609,7 +609,7 @@ class MaaUserConfig(QConfig):
 
 class AppConfig(GlobalConfig):
 
-    VERSION = "4.3.4.0"
+    VERSION = "4.3.5.1"
 
     gameid_refreshed = Signal()
     PASSWORD_refreshed = Signal()
