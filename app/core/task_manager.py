@@ -154,6 +154,7 @@ class Task(QThread):
                 Config.running_list.remove(task[2])
 
                 task[1] = "完成"
+                self.update_task_list.emit(self.task_list)
                 logger.info(f"任务完成：{task[0]}")
                 self.push_info_bar.emit("info", "任务完成", task[0], 3000)
 
