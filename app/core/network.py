@@ -78,6 +78,8 @@ class _Network(QThread):
     def get_json(self, url: str) -> None:
         """通过get方法获取json数据"""
 
+        response = None
+
         for _ in range(self.max_retries):
             try:
                 response = requests.get(url, timeout=self.timeout)
@@ -94,7 +96,9 @@ class _Network(QThread):
         self.loop.quit()
 
     def get_file(self, url: str, path: Path) -> None:
-        """通过get方法获取json数据"""
+        """通过get方法下载文件"""
+
+        response = None
 
         try:
             response = requests.get(url, timeout=10)
