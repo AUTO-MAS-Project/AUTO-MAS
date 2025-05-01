@@ -461,7 +461,6 @@ class MaaManager(QObject):
                                 self.maa_update_package = data["Global"][
                                     "VersionUpdate.package"
                                 ]
-                                print(self.maa_update_package)
 
                             # 推送异常通知
                             Notify.push_plyer(
@@ -1045,6 +1044,16 @@ class MaaManager(QObject):
                 self.if_open_emulator
             )  # 启动MAA后自动开启模拟器
 
+            data["Global"][
+                "VersionUpdate.ScheduledUpdateCheck"
+            ] = "False"  # 定时检查更新
+            data["Global"]["VersionUpdate.AutoDownloadUpdatePackage"] = str(
+                self.set["RunSet"]["AutoUpdateMaa"]
+            )  # 自动下载更新包
+            data["Global"][
+                "VersionUpdate.AutoInstallUpdatePackage"
+            ] = "False"  # 自动安装更新包
+
             if Config.get(Config.function_IfSilence):
                 data["Global"]["Start.MinimizeDirectly"] = "True"  # 启动MAA后直接最小化
                 data["Global"]["GUI.UseTray"] = "True"  # 显示托盘图标
@@ -1064,15 +1073,6 @@ class MaaManager(QObject):
 
             if user_data["Info"]["Mode"] == "简洁":
 
-                data["Global"][
-                    "VersionUpdate.ScheduledUpdateCheck"
-                ] = "False"  # 定时检查更新
-                data["Global"]["VersionUpdate.AutoDownloadUpdatePackage"] = str(
-                    self.set["RunSet"]["AutoUpdateMaa"]
-                )  # 自动下载更新包
-                data["Global"][
-                    "VersionUpdate.AutoInstallUpdatePackage"
-                ] = "False"  # 自动安装更新包
                 data["Configurations"]["Default"]["Start.ClientType"] = user_data[
                     "Info"
                 ][
