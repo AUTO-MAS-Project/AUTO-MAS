@@ -621,6 +621,53 @@ class PushAndSwitchButtonSettingCard(SettingCard):
         self.switchButton.setText("开" if isChecked else "关")
 
 
+class PushAndComboBoxSettingCard(SettingCard):
+    """Setting card with push & combo box"""
+
+    clicked = Signal()
+
+    def __init__(
+        self,
+        icon: Union[str, QIcon, FluentIconBase],
+        title: str,
+        content: Union[str, None],
+        text: str,
+        texts: List[str],
+        qconfig: QConfig,
+        configItem: OptionsConfigItem,
+        parent=None,
+    ):
+
+        super().__init__(icon, title, content, parent)
+        self.qconfig = qconfig
+        self.configItem = configItem
+        self.comboBox = ComboBox(self)
+        self.button = PushButton(text, self)
+        self.hBoxLayout.addWidget(self.button, 0, Qt.AlignRight)
+        self.hBoxLayout.addWidget(self.comboBox, 0, Qt.AlignRight)
+        self.hBoxLayout.addSpacing(16)
+        self.button.clicked.connect(self.clicked)
+
+        self.optionToText = {o: t for o, t in zip(configItem.options, texts)}
+        for text, option in zip(texts, configItem.options):
+            self.comboBox.addItem(text, userData=option)
+
+        self.comboBox.setCurrentText(self.optionToText[self.qconfig.get(configItem)])
+        self.comboBox.currentIndexChanged.connect(self._onCurrentIndexChanged)
+        configItem.valueChanged.connect(self.setValue)
+
+    def _onCurrentIndexChanged(self, index: int):
+
+        self.qconfig.set(self.configItem, self.comboBox.itemData(index))
+
+    def setValue(self, value):
+        if value not in self.optionToText:
+            return
+
+        self.comboBox.setCurrentText(self.optionToText[value])
+        self.qconfig.set(self.configItem, value)
+
+
 class SpinBoxSettingCard(SettingCard):
     """Setting card with SpinBox"""
 

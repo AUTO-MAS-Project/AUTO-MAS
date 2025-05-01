@@ -28,11 +28,12 @@ v4.3
 from loguru import logger
 from PySide6.QtCore import QObject, Signal, QEventLoop, QFileSystemWatcher, QTimer
 import json
-from datetime import datetime, timedelta
 import subprocess
 import shutil
 import time
 import re
+import win32com.client
+from datetime import datetime, timedelta
 from pathlib import Path
 from jinja2 import Environment, FileSystemLoader
 from typing import Union, List, Dict
@@ -90,6 +91,7 @@ class MaaManager(QObject):
         self.interrupt.connect(self.quit_monitor)
 
         self.maa_version = None
+        self.maa_update_package = ""
         self.set = config["Config"].toDict()
 
         self.data = {}
@@ -287,6 +289,41 @@ class MaaManager(QObject):
                         self.emulator_arguments = set["Configurations"]["Default"][
                             "Start.EmulatorAddCommand"
                         ].split()
+                        # 如果是快捷方式，进行解析
+                        if (
+                            self.emulator_path.suffix == ".lnk"
+                            and self.emulator_path.exists()
+                        ):
+                            try:
+                                shell = win32com.client.Dispatch("WScript.Shell")
+                                shortcut = shell.CreateShortcut(str(self.emulator_path))
+                                self.emulator_path = Path(shortcut.TargetPath)
+                                self.emulator_arguments = shortcut.Arguments.split()
+                            except Exception as e:
+                                logger.error(
+                                    f"{self.name} | 解析快捷方式时出现异常：{e}"
+                                )
+                                self.push_info_bar.emit(
+                                    "error",
+                                    "解析快捷方式时出现异常",
+                                    "请检查快捷方式",
+                                    -1,
+                                )
+                                self.if_open_emulator = True
+                                break
+                        elif not self.emulator_path.exists():
+                            logger.error(
+                                f"{self.name} | 模拟器快捷方式不存在：{self.emulator_path}"
+                            )
+                            self.push_info_bar.emit(
+                                "error",
+                                "启动模拟器时出现异常",
+                                "模拟器快捷方式不存在",
+                                -1,
+                            )
+                            self.if_open_emulator = True
+                            break
+
                         self.ADB_path = Path(
                             set["Configurations"]["Default"]["Connect.AdbPath"]
                         )
@@ -309,26 +346,23 @@ class MaaManager(QObject):
                             == "True"
                         )
 
-                        # 增强任务：任务开始前强杀ADB
-                        if "ADB" in self.set["RunSet"]["EnhanceTask"]:
-                            System.kill_process(self.ADB_path)
-                        else:
-                            try:
-                                subprocess.run(
-                                    [self.ADB_path, "disconnect", self.ADB_address],
-                                    creationflags=subprocess.CREATE_NO_WINDOW,
-                                )
-                            except subprocess.CalledProcessError as e:
-                                # 忽略错误,因为可能本来就没有连接
-                                logger.warning(f"{self.name} | 释放ADB时出现异常：{e}")
-                            except Exception as e:
-                                logger.error(f"{self.name} | 释放ADB时出现异常：{e}")
-                                self.push_info_bar.emit(
-                                    "error",
-                                    "释放ADB时出现异常",
-                                    "请检查MAA中ADB路径设置",
-                                    -1,
-                                )
+                        # 任务开始前释放ADB
+                        try:
+                            subprocess.run(
+                                [self.ADB_path, "disconnect", self.ADB_address],
+                                creationflags=subprocess.CREATE_NO_WINDOW,
+                            )
+                        except subprocess.CalledProcessError as e:
+                            # 忽略错误,因为可能本来就没有连接
+                            logger.warning(f"{self.name} | 释放ADB时出现异常：{e}")
+                        except Exception as e:
+                            logger.error(f"{self.name} | 释放ADB时出现异常：{e}")
+                            self.push_info_bar.emit(
+                                "error",
+                                "释放ADB时出现异常",
+                                "请检查MAA中ADB路径设置",
+                                -1,
+                            )
 
                         if self.if_open_emulator_process:
                             try:
@@ -359,13 +393,37 @@ class MaaManager(QObject):
                         self.start_monitor(start_time, mode_book[mode])
 
                         if self.maa_result == "Success!":
+
+                            # 标记任务完成
+                            run_book[mode] = True
+
+                            # 从配置文件中解析所需信息
+                            with self.maa_set_path.open(
+                                mode="r", encoding="utf-8"
+                            ) as f:
+                                data = json.load(f)
+                            user_data["Data"]["CustomInfrastPlanIndex"] = data[
+                                "Configurations"
+                            ]["Default"]["Infrast.CustomInfrastPlanIndex"]
+
+                            if (
+                                data["Global"]["VersionUpdate.package"]
+                                and (
+                                    self.maa_root_path
+                                    / data["Global"]["VersionUpdate.package"]
+                                ).exists()
+                            ):
+                                self.maa_update_package = data["Global"][
+                                    "VersionUpdate.package"
+                                ]
+
                             logger.info(
                                 f"{self.name} | 用户: {user[0]} - MAA进程完成代理任务"
                             )
-                            run_book[mode] = True
                             self.update_log_text.emit(
                                 "检测到MAA进程完成代理任务\n正在等待相关程序结束\n请等待10s"
                             )
+
                             for _ in range(10):
                                 if self.isInterruptionRequested:
                                     break
@@ -382,13 +440,28 @@ class MaaManager(QObject):
                             # 无命令行中止MAA与其子程序
                             System.kill_process(self.maa_exe_path)
 
-                            if "Emulator" in self.set["RunSet"]["EnhanceTask"]:
-                                System.kill_process(self.emulator_path)
-                            else:
-                                self.emulator_process.terminate()
-                                self.emulator_process.wait()
+                            # 中止模拟器进程
+                            self.emulator_process.terminate()
+                            self.emulator_process.wait()
 
                             self.if_open_emulator = True
+
+                            # 从配置文件中解析所需信息
+                            with self.maa_set_path.open(
+                                mode="r", encoding="utf-8"
+                            ) as f:
+                                data = json.load(f)
+                            if (
+                                data["Global"]["VersionUpdate.package"]
+                                and (
+                                    self.maa_root_path
+                                    / data["Global"]["VersionUpdate.package"]
+                                ).exists()
+                            ):
+                                self.maa_update_package = data["Global"][
+                                    "VersionUpdate.package"
+                                ]
+
                             # 推送异常通知
                             Notify.push_plyer(
                                 "用户自动代理出现异常！",
@@ -404,33 +477,51 @@ class MaaManager(QObject):
                         # 移除静默进程标记
                         Config.silence_list.remove(self.emulator_path)
 
-                        # 增强任务：任务结束后强杀ADB和模拟器或释放进程
-                        if "ADB" in self.set["RunSet"]["EnhanceTask"]:
-                            System.kill_process(self.ADB_path)
-                        else:
-                            try:
-                                subprocess.run(
-                                    [self.ADB_path, "disconnect", self.ADB_address],
-                                    creationflags=subprocess.CREATE_NO_WINDOW,
-                                )
-                            except subprocess.CalledProcessError as e:
-                                # 忽略错误,因为可能本来就没有连接
-                                logger.warning(f"{self.name} | 释放ADB时出现异常：{e}")
-                            except Exception as e:
-                                logger.error(f"{self.name} | 释放ADB时出现异常：{e}")
-                                self.push_info_bar.emit(
-                                    "error",
-                                    "释放ADB时出现异常",
-                                    "请检查MAA中ADB路径设置",
-                                    -1,
-                                )
+                        # 任务结束后释放ADB
+                        try:
+                            subprocess.run(
+                                [self.ADB_path, "disconnect", self.ADB_address],
+                                creationflags=subprocess.CREATE_NO_WINDOW,
+                            )
+                        except subprocess.CalledProcessError as e:
+                            # 忽略错误,因为可能本来就没有连接
+                            logger.warning(f"{self.name} | 释放ADB时出现异常：{e}")
+                        except Exception as e:
+                            logger.error(f"{self.name} | 释放ADB时出现异常：{e}")
+                            self.push_info_bar.emit(
+                                "error",
+                                "释放ADB时出现异常",
+                                "请检查MAA中ADB路径设置",
+                                -1,
+                            )
+                        # 任务结束后再次手动中止模拟器进程，防止退出不彻底
                         if self.if_kill_emulator:
-                            if "Emulator" in self.set["RunSet"]["EnhanceTask"]:
-                                System.kill_process(self.emulator_path)
-                            else:
-                                self.emulator_process.terminate()
-                                self.emulator_process.wait()
+                            self.emulator_process.terminate()
+                            self.emulator_process.wait()
                             self.if_open_emulator = True
+
+                        # 执行MAA解压更新动作
+                        if self.maa_update_package:
+
+                            logger.info(
+                                f"{self.name} | 检测到MAA更新，正在执行更新动作"
+                            )
+
+                            self.update_log_text.emit(
+                                f"检测到MAA存在更新\nMAA正在执行更新动作\n请等待10s"
+                            )
+                            self.set_maa("更新MAA", None)
+                            subprocess.Popen(
+                                [self.maa_exe_path],
+                                creationflags=subprocess.CREATE_NO_WINDOW,
+                            )
+                            for _ in range(10):
+                                if self.isInterruptionRequested:
+                                    break
+                                time.sleep(1)
+                            System.kill_process(self.maa_exe_path)
+
+                            logger.info(f"{self.name} | 更新动作结束")
 
                         # 记录剿灭情况
                         if (
@@ -747,7 +838,7 @@ class MaaManager(QObject):
             self.update_log_text.emit("".join(logs))
 
         # 获取MAA版本号
-        if not self.maa_version:
+        if not self.set["RunSet"]["AutoUpdateMaa"] and not self.maa_version:
 
             section_match = re.search(r"={35}(.*?)={35}", log, re.DOTALL)
             if section_match:
@@ -859,7 +950,7 @@ class MaaManager(QObject):
         """配置MAA运行参数"""
         logger.info(f"{self.name} | 配置MAA运行参数: {mode}/{index}")
 
-        if "设置MAA" not in self.mode:
+        if "设置MAA" not in self.mode and "更新MAA" not in mode:
             user_data = self.data[index]["Config"]
 
         # 配置MAA前关闭可能未正常退出的MAA进程
@@ -874,7 +965,7 @@ class MaaManager(QObject):
                     self.config_path / "Default/gui.json",
                     self.maa_set_path,
                 )
-        elif (mode == "设置MAA_全局") or (
+        elif (mode in ["设置MAA_全局", "更新MAA"]) or (
             ("自动代理" in mode or "人工排查" in mode)
             and user_data["Info"]["Mode"] == "简洁"
         ):
@@ -901,7 +992,7 @@ class MaaManager(QObject):
         with self.maa_set_path.open(mode="r", encoding="utf-8") as f:
             data = json.load(f)
 
-        if "设置MAA" not in mode and (
+        if ("设置MAA" not in self.mode and "更新MAA" not in mode) and (
             (
                 user_data["Info"]["Mode"] == "简洁"
                 and user_data["Info"]["Server"] == "Bilibili"
@@ -949,9 +1040,19 @@ class MaaManager(QObject):
             data["Configurations"]["Default"][
                 "Start.RunDirectly"
             ] = "True"  # 启动MAA后直接运行
-            data["Configurations"]["Default"]["Start.OpenEmulatorAfterLaunch"] = (
-                "True" if self.if_open_emulator else "False"
+            data["Configurations"]["Default"]["Start.OpenEmulatorAfterLaunch"] = str(
+                self.if_open_emulator
             )  # 启动MAA后自动开启模拟器
+
+            data["Global"][
+                "VersionUpdate.ScheduledUpdateCheck"
+            ] = "False"  # 定时检查更新
+            data["Global"]["VersionUpdate.AutoDownloadUpdatePackage"] = str(
+                self.set["RunSet"]["AutoUpdateMaa"]
+            )  # 自动下载更新包
+            data["Global"][
+                "VersionUpdate.AutoInstallUpdatePackage"
+            ] = "False"  # 自动安装更新包
 
             if Config.get(Config.function_IfSilence):
                 data["Global"]["Start.MinimizeDirectly"] = "True"  # 启动MAA后直接最小化
@@ -972,20 +1073,21 @@ class MaaManager(QObject):
 
             if user_data["Info"]["Mode"] == "简洁":
 
-                data["Global"][
-                    "VersionUpdate.ScheduledUpdateCheck"
-                ] = "False"  # 定时检查更新
-                data["Global"][
-                    "VersionUpdate.AutoDownloadUpdatePackage"
-                ] = "False"  # 自动下载更新包
-                data["Global"][
-                    "VersionUpdate.AutoInstallUpdatePackage"
-                ] = "False"  # 自动安装更新包
                 data["Configurations"]["Default"]["Start.ClientType"] = user_data[
                     "Info"
                 ][
                     "Server"
                 ]  # 客户端类型
+
+                # 整理任务顺序
+                data["Configurations"]["Default"]["TaskQueue.Order.WakeUp"] = "0"
+                data["Configurations"]["Default"]["TaskQueue.Order.Recruiting"] = "1"
+                data["Configurations"]["Default"]["TaskQueue.Order.Base"] = "2"
+                data["Configurations"]["Default"]["TaskQueue.Order.Combat"] = "3"
+                data["Configurations"]["Default"]["TaskQueue.Order.Mall"] = "4"
+                data["Configurations"]["Default"]["TaskQueue.Order.Mission"] = "5"
+                data["Configurations"]["Default"]["TaskQueue.Order.AutoRoguelike"] = "6"
+                data["Configurations"]["Default"]["TaskQueue.Order.Reclamation"] = "7"
 
                 if "剿灭" in mode:
 
@@ -1097,55 +1199,47 @@ class MaaManager(QObject):
                         if user_data["Info"]["GameId_2"] != "-"
                         else ""
                     )  # 备选关卡2
+                    data["Configurations"]["Default"]["Fight.RemainingSanityStage"] = (
+                        user_data["Info"]["GameId_Remain"]
+                        if user_data["Info"]["GameId_Remain"] != "-"
+                        else ""
+                    )  # 剩余理智关卡
                     data["Configurations"]["Default"][
-                        "Fight.RemainingSanityStage"
-                    ] = ""  # 剩余理智关卡
-                    # 连战次数
-                    if user_data["Info"]["GameId"] == "1-7":
-                        data["Configurations"]["Default"][
-                            "MainFunction.Series.Quantity"
-                        ] = "6"
-                    else:
-                        data["Configurations"]["Default"][
-                            "MainFunction.Series.Quantity"
-                        ] = "1"
+                        "MainFunction.Series.Quantity"
+                    ] = str(
+                        user_data["Info"]["SeriesNumb"]
+                    )  # 连战次数
                     data["Configurations"]["Default"][
                         "Penguin.IsDrGrandet"
                     ] = "False"  # 博朗台模式
                     data["Configurations"]["Default"][
                         "GUI.CustomStageCode"
                     ] = "True"  # 手动输入关卡名
-                    # 备选关卡
-                    if (
-                        user_data["Info"]["GameId_1"] == "-"
-                        and user_data["Info"]["GameId_2"] == "-"
-                    ):
-                        data["Configurations"]["Default"][
-                            "GUI.UseAlternateStage"
-                        ] = "False"
-                    else:
-                        data["Configurations"]["Default"][
-                            "GUI.UseAlternateStage"
-                        ] = "True"
+                    data["Configurations"]["Default"][
+                        "GUI.UseAlternateStage"
+                    ] = "True"  # 备选关卡
                     data["Configurations"]["Default"][
                         "Fight.UseRemainingSanityStage"
-                    ] = "False"  # 使用剩余理智
+                    ] = "True"  # 使用剩余理智
                     data["Configurations"]["Default"][
                         "Fight.UseExpiringMedicine"
                     ] = "True"  # 无限吃48小时内过期的理智药
                     # 自定义基建配置
-                    if user_data["Info"]["Infrastructure"]:
+                    if user_data["Info"]["InfrastMode"] == "Custom":
 
                         if (
                             self.data[index]["Path"]
                             / "Infrastructure/infrastructure.json"
                         ).exists():
+
                             data["Configurations"]["Default"][
-                                "Infrast.CustomInfrastEnabled"
-                            ] = "True"  # 启用自定义基建配置
+                                "Infrast.InfrastMode"
+                            ] = "Custom"  # 基建模式
                             data["Configurations"]["Default"][
                                 "Infrast.CustomInfrastPlanIndex"
-                            ] = "1"  # 自定义基建配置索引
+                            ] = user_data["Data"][
+                                "CustomInfrastPlanIndex"
+                            ]  # 自定义基建配置索引
                             data["Configurations"]["Default"][
                                 "Infrast.DefaultInfrast"
                             ] = "user_defined"  # 内置配置
@@ -1170,11 +1264,13 @@ class MaaManager(QObject):
                             )
                             data["Configurations"]["Default"][
                                 "Infrast.CustomInfrastEnabled"
-                            ] = "False"  # 禁用自定义基建配置
+                            ] = "Normal"  # 基建模式
                     else:
                         data["Configurations"]["Default"][
-                            "Infrast.CustomInfrastEnabled"
-                        ] = "False"  # 禁用自定义基建配置
+                            "Infrast.InfrastMode"
+                        ] = user_data["Info"][
+                            "InfrastMode"
+                        ]  # 基建模式
 
             elif user_data["Info"]["Mode"] == "详细":
 
@@ -1207,19 +1303,22 @@ class MaaManager(QObject):
                         if user_data["Info"]["GameId_2"] != "-"
                         else ""
                     )  # 备选关卡2
-
-                    # 备选关卡
-                    if (
-                        user_data["Info"]["GameId_1"] == "-"
-                        and user_data["Info"]["GameId_2"] == "-"
-                    ):
-                        data["Configurations"]["Default"][
-                            "GUI.UseAlternateStage"
-                        ] = "False"
-                    else:
-                        data["Configurations"]["Default"][
-                            "GUI.UseAlternateStage"
-                        ] = "True"
+                    data["Configurations"]["Default"]["Fight.RemainingSanityStage"] = (
+                        user_data["Info"]["GameId_Remain"]
+                        if user_data["Info"]["GameId_Remain"] != "-"
+                        else ""
+                    )  # 剩余理智关卡
+                    data["Configurations"]["Default"][
+                        "MainFunction.Series.Quantity"
+                    ] = str(
+                        user_data["Info"]["SeriesNumb"]
+                    )  # 连战次数
+                    data["Configurations"]["Default"][
+                        "GUI.UseAlternateStage"
+                    ] = "True"  # 备选关卡
+                    data["Configurations"]["Default"][
+                        "Fight.UseRemainingSanityStage"
+                    ] = "True"  # 使用剩余理智
 
         # 人工排查配置
         elif "人工排查" in mode:
@@ -1237,8 +1336,8 @@ class MaaManager(QObject):
 
             data["Global"]["GUI.UseTray"] = "True"  # 显示托盘图标
             data["Global"]["GUI.MinimizeToTray"] = "True"  # 最小化时隐藏至托盘
-            data["Configurations"]["Default"]["Start.OpenEmulatorAfterLaunch"] = (
-                "True" if self.if_open_emulator else "False"
+            data["Configurations"]["Default"]["Start.OpenEmulatorAfterLaunch"] = str(
+                self.if_open_emulator
             )  # 启动MAA后自动开启模拟器
 
             # 账号切换
@@ -1352,8 +1451,63 @@ class MaaManager(QObject):
                     "TaskQueue.Reclamation.IsChecked"
                 ] = "False"  # 生息演算
 
+        elif mode == "更新MAA":
+
+            data["Current"] = "Default"  # 切换配置
+            for i in range(1, 9):
+                data["Global"][f"Timer.Timer{i}"] = "False"  # 时间设置
+            data["Configurations"]["Default"][
+                "MainFunction.PostActions"
+            ] = "0"  # 完成后无动作
+            data["Configurations"]["Default"][
+                "Start.RunDirectly"
+            ] = "False"  # 启动MAA后直接运行
+            data["Configurations"]["Default"][
+                "Start.OpenEmulatorAfterLaunch"
+            ] = "False"  # 启动MAA后自动开启模拟器
+            data["Global"]["Start.MinimizeDirectly"] = "True"  # 启动MAA后直接最小化
+            data["Global"]["GUI.UseTray"] = "True"  # 显示托盘图标
+            data["Global"]["GUI.MinimizeToTray"] = "True"  # 最小化时隐藏至托盘
+            data["Global"][
+                "VersionUpdate.package"
+            ] = self.maa_update_package  # 更新包路径
+
+            data["Global"][
+                "VersionUpdate.ScheduledUpdateCheck"
+            ] = "False"  # 定时检查更新
+            data["Global"][
+                "VersionUpdate.AutoDownloadUpdatePackage"
+            ] = "False"  # 自动下载更新包
+            data["Global"][
+                "VersionUpdate.AutoInstallUpdatePackage"
+            ] = "True"  # 自动安装更新包
+            data["Configurations"]["Default"][
+                "TaskQueue.WakeUp.IsChecked"
+            ] = "False"  # 开始唤醒
+            data["Configurations"]["Default"][
+                "TaskQueue.Recruiting.IsChecked"
+            ] = "False"  # 自动公招
+            data["Configurations"]["Default"][
+                "TaskQueue.Base.IsChecked"
+            ] = "False"  # 基建换班
+            data["Configurations"]["Default"][
+                "TaskQueue.Combat.IsChecked"
+            ] = "False"  # 刷理智
+            data["Configurations"]["Default"][
+                "TaskQueue.Mission.IsChecked"
+            ] = "False"  # 领取奖励
+            data["Configurations"]["Default"][
+                "TaskQueue.Mall.IsChecked"
+            ] = "False"  # 获取信用及购物
+            data["Configurations"]["Default"][
+                "TaskQueue.AutoRoguelike.IsChecked"
+            ] = "False"  # 自动肉鸽
+            data["Configurations"]["Default"][
+                "TaskQueue.Reclamation.IsChecked"
+            ] = "False"  # 生息演算
+
         # 启动模拟器仅生效一次
-        if "设置MAA" not in mode and self.if_open_emulator:
+        if "设置MAA" not in mode and "更新MAA" not in mode and self.if_open_emulator:
             self.if_open_emulator = False
 
         # 覆写配置文件

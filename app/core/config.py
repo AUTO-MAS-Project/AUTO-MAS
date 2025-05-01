@@ -409,14 +409,11 @@ class MaaConfig(QConfig):
             "ExitEmulator",
             OptionsValidator(["NoAction", "ExitGame", "ExitEmulator"]),
         )
-        self.RunSet_EnhanceTask = OptionsConfigItem(
-            "RunSet",
-            "EnhanceTask",
-            "None",
-            OptionsValidator(["None", "KillADB", "KillEmulator", "KillADB&Emulator"]),
-        )
         self.RunSet_ProxyTimesLimit = RangeConfigItem(
             "RunSet", "ProxyTimesLimit", 0, RangeValidator(0, 1024)
+        )
+        self.RunSet_RunTimesLimit = RangeConfigItem(
+            "RunSet", "RunTimesLimit", 3, RangeValidator(1, 1024)
         )
         self.RunSet_AnnihilationTimeLimit = RangeConfigItem(
             "RunSet", "AnnihilationTimeLimit", 40, RangeValidator(1, 1024)
@@ -424,11 +421,11 @@ class MaaConfig(QConfig):
         self.RunSet_RoutineTimeLimit = RangeConfigItem(
             "RunSet", "RoutineTimeLimit", 10, RangeValidator(1, 1024)
         )
-        self.RunSet_RunTimesLimit = RangeConfigItem(
-            "RunSet", "RunTimesLimit", 3, RangeValidator(1, 1024)
-        )
         self.RunSet_AnnihilationWeeklyLimit = ConfigItem(
             "RunSet", "AnnihilationWeeklyLimit", False, BoolValidator()
+        )
+        self.RunSet_AutoUpdateMaa = ConfigItem(
+            "RunSet", "AutoUpdateMaa", False, BoolValidator()
         )
 
     def toDict(self, serialize=True):
@@ -521,17 +518,22 @@ class MaaUserConfig(QConfig):
             "Info", "Annihilation", False, BoolValidator()
         )
         self.Info_Routine = ConfigItem("Info", "Routine", False, BoolValidator())
-        self.Info_Infrastructure = ConfigItem(
-            "Info", "Infrastructure", False, BoolValidator()
+        self.Info_InfrastMode = OptionsConfigItem(
+            "Info",
+            "InfrastMode",
+            "Normal",
+            OptionsValidator(["Normal", "Rotation", "Custom"]),
         )
         self.Info_Password = ConfigItem("Info", "Password", "")
         self.Info_Notes = ConfigItem("Info", "Notes", "无")
         self.Info_MedicineNumb = ConfigItem(
             "Info", "MedicineNumb", 0, RangeValidator(0, 1024)
         )
+        self.Info_SeriesNumb = ConfigItem("Info", "SeriesNumb", 1, RangeValidator(1, 6))
         self.Info_GameId = ConfigItem("Info", "GameId", "-")
         self.Info_GameId_1 = ConfigItem("Info", "GameId_1", "-")
         self.Info_GameId_2 = ConfigItem("Info", "GameId_2", "-")
+        self.Info_GameId_Remain = ConfigItem("Info", "GameId_Remain", "-")
 
         self.Data_LastProxyDate = ConfigItem("Data", "LastProxyDate", "2000-01-01")
         self.Data_LastAnnihilationDate = ConfigItem(
@@ -541,6 +543,9 @@ class MaaUserConfig(QConfig):
             "Data", "ProxyTimes", 0, RangeValidator(0, 1024)
         )
         self.Data_IfPassCheck = ConfigItem("Data", "IfPassCheck", True, BoolValidator())
+        self.Data_CustomInfrastPlanIndex = ConfigItem(
+            "Data", "CustomInfrastPlanIndex", "0"
+        )
 
     def toDict(self, serialize=True):
         """convert config items to `dict`"""
@@ -609,7 +614,7 @@ class MaaUserConfig(QConfig):
 
 class AppConfig(GlobalConfig):
 
-    VERSION = "4.3.4.0"
+    VERSION = "4.3.5.0"
 
     gameid_refreshed = Signal()
     PASSWORD_refreshed = Signal()
@@ -1288,6 +1293,10 @@ class AppConfig(GlobalConfig):
             )
             user_config.set(
                 user_config.Data_IfPassCheck, info["Config"]["Data"]["IfPassCheck"]
+            )
+            user_config.set(
+                user_config.Data_CustomInfrastPlanIndex,
+                info["Config"]["Data"]["CustomInfrastPlanIndex"],
             )
 
         self.user_info_changed.emit()
