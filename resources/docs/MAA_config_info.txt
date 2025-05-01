@@ -10,6 +10,14 @@
 "TaskQueue.Mall.IsChecked": "True"       #获取信用及购物
 "TaskQueue.AutoRoguelike.IsChecked": "False"        #自动肉鸽
 "TaskQueue.Reclamation.IsChecked": "False"      #生息演算
+"TaskQueue.Order.WakeUp": "0"
+"TaskQueue.Order.Recruiting": "1"
+"TaskQueue.Order.Base": "2"
+"TaskQueue.Order.Combat": "3"
+"TaskQueue.Order.Mall": "4"
+"TaskQueue.Order.Mission": "5"
+"TaskQueue.Order.AutoRoguelike": "6"
+"TaskQueue.Order.Reclamation": "7"
 #刷理智
 "MainFunction.UseMedicine": "True"        #吃理智药
 "MainFunction.UseMedicine.Quantity": "999"        #吃理智药数量
@@ -30,8 +38,8 @@
 "Penguin.EnablePenguin": "True"        #上报企鹅物流
 "Yituliu.EnableYituliu": "True"        #上报一图流
 #基建换班
-"Infrast.CustomInfrastEnabled": "True"        #启用自定义基建配置
-"Infrast.CustomInfrastPlanIndex": "1"        #自定义基建配置索引
+"Infrast.InfrastMode": "Normal"、"Rotation"、"Custom"        #基建模式
+"Infrast.CustomInfrastPlanIndex": "1"        #自定义基建配置索引号
 "Infrast.DefaultInfrast": "user_defined"        #内置配置
 "Infrast.IsCustomInfrastFileReadOnly": "False"        #自定义基建配置文件只读
 "Infrast.CustomInfrastFile": ""        #自定义基建配置文件地址
@@ -50,3 +58,4 @@ G"GUI.UseTray": "True"        #显示托盘图标
 G"GUI.MinimizeToTray": "False"        #最小化时隐藏至托盘
 "Start.EmulatorPath"        #模拟器路径
 "Start.EmulatorAddCommand": "-v 2"        #附加命令
+G"VersionUpdate.package": "MirrorChyanAppv5.15.6.zip"        #更新包标识

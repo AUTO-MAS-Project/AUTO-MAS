@@ -69,6 +69,7 @@ from .Widget import (
     ComboBoxSettingCard,
     SwitchSettingCard,
     PushAndSwitchButtonSettingCard,
+    PushAndComboBoxSettingCard,
 )
 
 
@@ -613,21 +614,7 @@ class MemberManager(QWidget):
                             configItem=self.config.RunSet_TaskTransitionMethod,
                             parent=self,
                         )
-                        self.card_EnhanceTask = ComboBoxSettingCard(
-                            icon=FluentIcon.PAGE_RIGHT,
-                            title="自动代理增效任务",
-                            content="自动代理时的额外操作，此操作无法区分多开模拟器，可能会干扰其他任务，也可能关闭您正在使用的模拟器",
-                            texts=[
-                                "禁用",
-                                "强制关闭ADB",
-                                "强制关闭所有模拟器",
-                                "强制关闭ADB和所有模拟器",
-                            ],
-                            qconfig=self.config,
-                            configItem=self.config.RunSet_EnhanceTask,
-                            parent=self,
-                        )
-                        self.ProxyTimesLimit = SpinBoxSettingCard(
+                        self.card_ProxyTimesLimit = SpinBoxSettingCard(
                             icon=FluentIcon.PAGE_RIGHT,
                             title="用户单日代理次数上限",
                             content="当用户本日代理成功次数达到该阈值时跳过代理，阈值为“0”时视为无代理次数上限",
@@ -636,25 +623,7 @@ class MemberManager(QWidget):
                             configItem=self.config.RunSet_ProxyTimesLimit,
                             parent=self,
                         )
-                        self.AnnihilationTimeLimit = SpinBoxSettingCard(
-                            icon=FluentIcon.PAGE_RIGHT,
-                            title="剿灭代理超时限制",
-                            content="MAA日志无变化时间超过该阈值视为超时，单位为分钟",
-                            range=(1, 1024),
-                            qconfig=self.config,
-                            configItem=self.config.RunSet_AnnihilationTimeLimit,
-                            parent=self,
-                        )
-                        self.RoutineTimeLimit = SpinBoxSettingCard(
-                            icon=FluentIcon.PAGE_RIGHT,
-                            title="自动代理超时限制",
-                            content="MAA日志无变化时间超过该阈值视为超时，单位为分钟",
-                            range=(1, 1024),
-                            qconfig=self.config,
-                            configItem=self.config.RunSet_RoutineTimeLimit,
-                            parent=self,
-                        )
-                        self.RunTimesLimit = SpinBoxSettingCard(
+                        self.card_RunTimesLimit = SpinBoxSettingCard(
                             icon=FluentIcon.PAGE_RIGHT,
                             title="代理重试次数限制",
                             content="若超过该次数限制仍未完成代理，视为代理失败",
@@ -663,7 +632,25 @@ class MemberManager(QWidget):
                             configItem=self.config.RunSet_RunTimesLimit,
                             parent=self,
                         )
-                        self.AnnihilationWeeklyLimit = SwitchSettingCard(
+                        self.card_AnnihilationTimeLimit = SpinBoxSettingCard(
+                            icon=FluentIcon.PAGE_RIGHT,
+                            title="剿灭代理超时限制",
+                            content="MAA日志无变化时间超过该阈值视为超时，单位为分钟",
+                            range=(1, 1024),
+                            qconfig=self.config,
+                            configItem=self.config.RunSet_AnnihilationTimeLimit,
+                            parent=self,
+                        )
+                        self.card_RoutineTimeLimit = SpinBoxSettingCard(
+                            icon=FluentIcon.PAGE_RIGHT,
+                            title="自动代理超时限制",
+                            content="MAA日志无变化时间超过该阈值视为超时，单位为分钟",
+                            range=(1, 1024),
+                            qconfig=self.config,
+                            configItem=self.config.RunSet_RoutineTimeLimit,
+                            parent=self,
+                        )
+                        self.card_AnnihilationWeeklyLimit = SwitchSettingCard(
                             icon=FluentIcon.PAGE_RIGHT,
                             title="每周剿灭仅执行到上限",
                             content="每周剿灭模式执行到上限，本周剩下时间不再执行剿灭任务",
@@ -671,16 +658,24 @@ class MemberManager(QWidget):
                             configItem=self.config.RunSet_AnnihilationWeeklyLimit,
                             parent=self,
                         )
+                        self.card_AutoUpdateMaa = SwitchSettingCard(
+                            icon=FluentIcon.PAGE_RIGHT,
+                            title="自动代理时自动更新MAA",
+                            content="执行自动代理任务时自动更新MAA，关闭后仍会进行MAA版本检查",
+                            qconfig=self.config,
+                            configItem=self.config.RunSet_AutoUpdateMaa,
+                            parent=self,
+                        )
 
                         widget = QWidget()
                         Layout = QVBoxLayout(widget)
                         Layout.addWidget(self.card_TaskTransitionMethod)
-                        Layout.addWidget(self.card_EnhanceTask)
-                        Layout.addWidget(self.ProxyTimesLimit)
-                        Layout.addWidget(self.AnnihilationTimeLimit)
-                        Layout.addWidget(self.RoutineTimeLimit)
-                        Layout.addWidget(self.RunTimesLimit)
-                        Layout.addWidget(self.AnnihilationWeeklyLimit)
+                        Layout.addWidget(self.card_ProxyTimesLimit)
+                        Layout.addWidget(self.card_RunTimesLimit)
+                        Layout.addWidget(self.card_AnnihilationTimeLimit)
+                        Layout.addWidget(self.card_RoutineTimeLimit)
+                        Layout.addWidget(self.card_AnnihilationWeeklyLimit)
+                        Layout.addWidget(self.card_AutoUpdateMaa)
                         self.viewLayout.setContentsMargins(0, 0, 0, 0)
                         self.viewLayout.setSpacing(0)
                         self.addGroupWidget(widget)
@@ -1049,7 +1044,7 @@ class MemberManager(QWidget):
                             self.name = name
 
                             self.dashboard = TableWidget(self)
-                            self.dashboard.setColumnCount(10)
+                            self.dashboard.setColumnCount(11)
                             self.dashboard.setHorizontalHeaderLabels(
                                 [
                                     "用户名",
@@ -1059,8 +1054,9 @@ class MemberManager(QWidget):
                                     "代理情况",
                                     "给药量",
                                     "关卡选择",
-                                    "备选关卡-1",
-                                    "备选关卡-2",
+                                    "备选 - 1",
+                                    "备选 - 2",
+                                    "剩余理智",
                                     "详",
                                 ]
                             )
@@ -1070,14 +1066,14 @@ class MemberManager(QWidget):
                                 self.dashboard.horizontalHeader().setSectionResizeMode(
                                     col, QHeaderView.ResizeMode.ResizeToContents
                                 )
-                            for col in range(6, 9):
+                            for col in range(6, 10):
                                 self.dashboard.horizontalHeader().setSectionResizeMode(
                                     col, QHeaderView.ResizeMode.Stretch
                                 )
                             self.dashboard.horizontalHeader().setSectionResizeMode(
-                                9, QHeaderView.ResizeMode.Fixed
+                                10, QHeaderView.ResizeMode.Fixed
                             )
-                            self.dashboard.setColumnWidth(9, 32)
+                            self.dashboard.setColumnWidth(10, 32)
 
                             self.viewLayout.addWidget(self.dashboard)
                             self.viewLayout.setContentsMargins(3, 0, 3, 3)
@@ -1207,8 +1203,22 @@ class MemberManager(QWidget):
                                         else config.get(config.Info_GameId_2)
                                     ),
                                 )
+                                self.dashboard.setItem(
+                                    int(name[3:]) - 1,
+                                    9,
+                                    QTableWidgetItem(
+                                        Config.gameid_dict["ALL"]["text"][
+                                            Config.gameid_dict["ALL"]["value"].index(
+                                                config.get(config.Info_GameId_Remain)
+                                            )
+                                        ]
+                                        if config.get(config.Info_GameId_Remain)
+                                        in Config.gameid_dict["ALL"]["value"]
+                                        else config.get(config.Info_GameId_Remain)
+                                    ),
+                                )
                                 self.dashboard.setCellWidget(
-                                    int(name[3:]) - 1, 9, button
+                                    int(name[3:]) - 1, 10, button
                                 )
 
                     class UserMemberSettingBox(HeaderCardWidget):
@@ -1307,13 +1317,18 @@ class MemberManager(QWidget):
                                 configItem=self.config.Info_Routine,
                                 parent=self,
                             )
-                            self.card_Infrastructure = PushAndSwitchButtonSettingCard(
+                            self.card_InfrastMode = PushAndComboBoxSettingCard(
                                 icon=FluentIcon.CAFE,
-                                title="自定义基建",
-                                content="自定义基建相关设置项",
+                                title="基建模式",
+                                content="配置文件仅在自定义基建中生效",
                                 text="选择配置文件",
+                                texts=[
+                                    "常规模式",
+                                    "一键轮休",
+                                    "自定义基建",
+                                ],
                                 qconfig=self.config,
-                                configItem=self.config.Info_Infrastructure,
+                                configItem=self.config.Info_InfrastMode,
                                 parent=self,
                             )
                             self.card_Password = PasswordLineEditSettingCard(
@@ -1344,6 +1359,15 @@ class MemberManager(QWidget):
                                 configItem=self.config.Info_MedicineNumb,
                                 parent=self,
                             )
+                            self.card_SeriesNumb = SpinBoxSettingCard(
+                                icon=FluentIcon.GAME,
+                                title="连战次数",
+                                content="连战次数较大时建议搭配剩余理智关卡使用",
+                                range=(1, 6),
+                                qconfig=self.config,
+                                configItem=self.config.Info_SeriesNumb,
+                                parent=self,
+                            )
                             self.card_GameId = EditableComboBoxSettingCard(
                                 icon=FluentIcon.GAME,
                                 title="关卡选择",
@@ -1356,7 +1380,7 @@ class MemberManager(QWidget):
                             )
                             self.card_GameId_1 = EditableComboBoxSettingCard(
                                 icon=FluentIcon.GAME,
-                                title="备选关卡-1",
+                                title="备选关卡 - 1",
                                 content="按下回车以添加自定义关卡号",
                                 value=Config.gameid_dict["ALL"]["value"],
                                 texts=Config.gameid_dict["ALL"]["text"],
@@ -1366,12 +1390,22 @@ class MemberManager(QWidget):
                             )
                             self.card_GameId_2 = EditableComboBoxSettingCard(
                                 icon=FluentIcon.GAME,
-                                title="备选关卡-2",
+                                title="备选关卡 - 2",
                                 content="按下回车以添加自定义关卡号",
                                 value=Config.gameid_dict["ALL"]["value"],
                                 texts=Config.gameid_dict["ALL"]["text"],
                                 qconfig=self.config,
                                 configItem=self.config.Info_GameId_2,
+                                parent=self,
+                            )
+                            self.card_GameId_Remain = EditableComboBoxSettingCard(
+                                icon=FluentIcon.GAME,
+                                title="剩余理智关卡",
+                                content="按下回车以添加自定义关卡号",
+                                value=Config.gameid_dict["ALL"]["value"],
+                                texts=Config.gameid_dict["ALL"]["text"],
+                                qconfig=self.config,
+                                configItem=self.config.Info_GameId_Remain,
                                 parent=self,
                             )
 
@@ -1402,16 +1436,19 @@ class MemberManager(QWidget):
                             h4_layout = QHBoxLayout()
                             h4_layout.addWidget(self.card_Annihilation)
                             h4_layout.addWidget(self.card_Routine)
-                            h4_layout.addWidget(self.card_Infrastructure)
+                            h4_layout.addWidget(self.card_InfrastMode)
                             h5_layout = QHBoxLayout()
                             h5_layout.addWidget(self.card_Password)
                             h5_layout.addWidget(self.card_Notes)
                             h6_layout = QHBoxLayout()
                             h6_layout.addWidget(self.card_MedicineNumb)
-                            h6_layout.addWidget(self.card_GameId)
+                            h6_layout.addWidget(self.card_SeriesNumb)
                             h7_layout = QHBoxLayout()
+                            h7_layout.addWidget(self.card_GameId)
                             h7_layout.addWidget(self.card_GameId_1)
-                            h7_layout.addWidget(self.card_GameId_2)
+                            h8_layout = QHBoxLayout()
+                            h8_layout.addWidget(self.card_GameId_2)
+                            h8_layout.addWidget(self.card_GameId_Remain)
 
                             Layout = QVBoxLayout()
                             Layout.addLayout(h1_layout)
@@ -1422,6 +1459,7 @@ class MemberManager(QWidget):
                             Layout.addLayout(h5_layout)
                             Layout.addLayout(h6_layout)
                             Layout.addLayout(h7_layout)
+                            Layout.addLayout(h8_layout)
 
                             self.viewLayout.addLayout(Layout)
                             self.viewLayout.setContentsMargins(3, 0, 3, 3)
@@ -1435,7 +1473,7 @@ class MemberManager(QWidget):
                             self.card_Routine.clicked.connect(
                                 lambda: self.set_maa("Routine")
                             )
-                            self.card_Infrastructure.clicked.connect(
+                            self.card_InfrastMode.clicked.connect(
                                 self.set_infrastructure
                             )
                             Config.gameid_refreshed.connect(self.refresh_gameid)
@@ -1450,12 +1488,12 @@ class MemberManager(QWidget):
                                 self.card_Routine.setVisible(False)
                                 self.card_Server.setVisible(True)
                                 self.card_Annihilation.button.setVisible(False)
-                                self.card_Infrastructure.setVisible(True)
+                                self.card_InfrastMode.setVisible(True)
 
                             elif self.config.get(self.config.Info_Mode) == "详细":
 
                                 self.card_Server.setVisible(False)
-                                self.card_Infrastructure.setVisible(False)
+                                self.card_InfrastMode.setVisible(False)
                                 self.card_Annihilation.button.setVisible(True)
                                 self.card_Routine.setVisible(True)
 
@@ -1470,6 +1508,10 @@ class MemberManager(QWidget):
                                 Config.gameid_dict["ALL"]["text"],
                             )
                             self.card_GameId_2.reLoadOptions(
+                                Config.gameid_dict["ALL"]["value"],
+                                Config.gameid_dict["ALL"]["text"],
+                            )
+                            self.card_GameId_Remain.reLoadOptions(
                                 Config.gameid_dict["ALL"]["value"],
                                 Config.gameid_dict["ALL"]["text"],
                             )
