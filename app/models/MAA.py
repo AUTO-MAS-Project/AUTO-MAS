@@ -92,6 +92,7 @@ class MaaManager(QObject):
 
         self.maa_version = None
         self.maa_update_package = ""
+        self.task_dict = {}
         self.set = config["Config"].toDict()
 
         self.data = {}
@@ -264,6 +265,67 @@ class MaaManager(QObject):
                         ]
                     )
 
+                    # 解析任务构成
+                    if user_data["Info"]["Mode"] == "简洁":
+
+                        if mode == "Annihilation":
+                            self.task_dict = {
+                                "WakeUp": "True",
+                                "Recruiting": "False",
+                                "Base": "False",
+                                "Combat": "True",
+                                "Mission": "False",
+                                "Mall": "False",
+                                "AutoRoguelike": "False",
+                                "Reclamation": "False",
+                            }
+
+                        elif mode == "Routine":
+                            self.task_dict = {
+                                "WakeUp": "True",
+                                "Recruiting": "True",
+                                "Base": "True",
+                                "Combat": "True",
+                                "Mission": "True",
+                                "Mall": "True",
+                                "AutoRoguelike": "False",
+                                "Reclamation": "False",
+                            }
+
+                    elif user_data["Info"]["Mode"] == "详细":
+
+                        with (self.data[user[2]]["Path"] / f"{mode}/gui.json").open(
+                            mode="r", encoding="utf-8"
+                        ) as f:
+                            data = json.load(f)
+
+                        self.task_dict = {
+                            "WakeUp": data["Configurations"]["Default"][
+                                "TaskQueue.WakeUp.IsChecked"
+                            ],
+                            "Recruiting": data["Configurations"]["Default"][
+                                "TaskQueue.Recruiting.IsChecked"
+                            ],
+                            "Base": data["Configurations"]["Default"][
+                                "TaskQueue.Base.IsChecked"
+                            ],
+                            "Combat": data["Configurations"]["Default"][
+                                "TaskQueue.Combat.IsChecked"
+                            ],
+                            "Mission": data["Configurations"]["Default"][
+                                "TaskQueue.Mission.IsChecked"
+                            ],
+                            "Mall": data["Configurations"]["Default"][
+                                "TaskQueue.Mall.IsChecked"
+                            ],
+                            "AutoRoguelike": data["Configurations"]["Default"][
+                                "TaskQueue.AutoRoguelike.IsChecked"
+                            ],
+                            "Reclamation": data["Configurations"]["Default"][
+                                "TaskQueue.Reclamation.IsChecked"
+                            ],
+                        }
+
                     # 尝试次数循环
                     for i in range(self.set["RunSet"]["RunTimesLimit"]):
 
@@ -402,10 +464,13 @@ class MaaManager(QObject):
                                 mode="r", encoding="utf-8"
                             ) as f:
                                 data = json.load(f)
+
+                            # 记录自定义基建索引
                             user_data["Data"]["CustomInfrastPlanIndex"] = data[
                                 "Configurations"
                             ]["Default"]["Infrast.CustomInfrastPlanIndex"]
 
+                            # 记录更新包路径
                             if (
                                 data["Global"]["VersionUpdate.package"]
                                 and (
@@ -451,6 +516,8 @@ class MaaManager(QObject):
                                 mode="r", encoding="utf-8"
                             ) as f:
                                 data = json.load(f)
+
+                            # 记录更新包路径
                             if (
                                 data["Global"]["VersionUpdate.package"]
                                 and (
@@ -871,26 +938,53 @@ class MaaManager(QObject):
             else:
                 self.weekly_annihilation_limit_reached = False
 
-            if mode == "自动代理_日常" and "任务出错: Fight" in log:
-                self.maa_result = "MAA未能实际执行任务"
-            elif "任务出错: StartUp" in log:
+            if "任务出错: StartUp" in log:
                 self.maa_result = "MAA未能正确登录PRTS"
+
             elif "任务已全部完成！" in log:
-                self.maa_result = "Success!"
+
+                if "完成任务: StartUp" in log:
+                    self.task_dict["WakeUp"] = "False"
+                if "完成任务: Recruit" in log:
+                    self.task_dict["Recruiting"] = "False"
+                if "完成任务: Infrast" in log:
+                    self.task_dict["Base"] = "False"
+                if "完成任务: Fight" in log or "剿灭任务失败" in log:
+                    self.task_dict["Combat"] = "False"
+                if "完成任务: Mall" in log:
+                    self.task_dict["Mall"] = "False"
+                if "完成任务: Award" in log:
+                    self.task_dict["Mission"] = "False"
+                if "完成任务: Roguelike" in log:
+                    self.task_dict["AutoRoguelike"] = "False"
+                if "完成任务: Reclamation" in log:
+                    self.task_dict["Reclamation"] = "False"
+
+                if all(v == "False" for v in self.task_dict.values()):
+                    self.maa_result = "Success!"
+                else:
+                    self.maa_result = "MAA部分任务执行失败"
+
             elif "请「检查连接设置」或「尝试重启模拟器与 ADB」或「重启电脑」" in log:
                 self.maa_result = "MAA的ADB连接异常"
+
             elif "未检测到任何模拟器" in log:
                 self.maa_result = "MAA未检测到任何模拟器"
+
             elif "已停止" in log:
                 self.maa_result = "MAA在完成任务前中止"
+
             elif "MaaAssistantArknights GUI exited" in log:
                 self.maa_result = "MAA在完成任务前退出"
+
             elif datetime.now() - latest_time > timedelta(
                 minutes=self.set["RunSet"][time_book[mode]]
             ):
                 self.maa_result = "MAA进程超时"
+
             elif self.isInterruptionRequested:
                 self.maa_result = "任务被手动中止"
+
             else:
                 self.maa_result = "Wait"
 
@@ -1071,7 +1165,34 @@ class MaaManager(QObject):
                     "Info"
                 ]["Id"]
 
+            # 按预设设定任务
+            data["Configurations"]["Default"]["TaskQueue.Recruiting.IsChecked"] = (
+                self.task_dict["Recruiting"]
+            )  # 自动公招
+            data["Configurations"]["Default"]["TaskQueue.Base.IsChecked"] = (
+                self.task_dict["Base"]
+            )  # 基建换班
+            data["Configurations"]["Default"]["TaskQueue.Combat.IsChecked"] = (
+                self.task_dict["Combat"]
+            )  # 刷理智
+            data["Configurations"]["Default"]["TaskQueue.Mission.IsChecked"] = (
+                self.task_dict["Mission"]
+            )  # 领取奖励
+            data["Configurations"]["Default"]["TaskQueue.Mall.IsChecked"] = (
+                self.task_dict["Mall"]
+            )  # 获取信用及购物
+            data["Configurations"]["Default"]["TaskQueue.AutoRoguelike.IsChecked"] = (
+                self.task_dict["AutoRoguelike"]
+            )  # 自动肉鸽
+            data["Configurations"]["Default"]["TaskQueue.Reclamation.IsChecked"] = (
+                self.task_dict["Reclamation"]
+            )  # 生息演算
+
             if user_data["Info"]["Mode"] == "简洁":
+
+                data["Configurations"]["Default"][
+                    "TaskQueue.WakeUp.IsChecked"
+                ] = "True"  # 开始唤醒
 
                 data["Configurations"]["Default"]["Start.ClientType"] = user_data[
                     "Info"
@@ -1091,30 +1212,6 @@ class MaaManager(QObject):
 
                 if "剿灭" in mode:
 
-                    data["Configurations"]["Default"][
-                        "TaskQueue.WakeUp.IsChecked"
-                    ] = "True"  # 开始唤醒
-                    data["Configurations"]["Default"][
-                        "TaskQueue.Recruiting.IsChecked"
-                    ] = "False"  # 自动公招
-                    data["Configurations"]["Default"][
-                        "TaskQueue.Base.IsChecked"
-                    ] = "False"  # 基建换班
-                    data["Configurations"]["Default"][
-                        "TaskQueue.Combat.IsChecked"
-                    ] = "True"  # 刷理智
-                    data["Configurations"]["Default"][
-                        "TaskQueue.Mission.IsChecked"
-                    ] = "False"  # 领取奖励
-                    data["Configurations"]["Default"][
-                        "TaskQueue.Mall.IsChecked"
-                    ] = "False"  # 获取信用及购物
-                    data["Configurations"]["Default"][
-                        "TaskQueue.AutoRoguelike.IsChecked"
-                    ] = "False"  # 自动肉鸽
-                    data["Configurations"]["Default"][
-                        "TaskQueue.Reclamation.IsChecked"
-                    ] = "False"  # 生息演算
                     data["Configurations"]["Default"][
                         "MainFunction.Stage1"
                     ] = "Annihilation"  # 主关卡
@@ -1150,31 +1247,6 @@ class MaaManager(QObject):
                     ] = "False"  # 隐藏连战次数
 
                 elif "日常" in mode:
-
-                    data["Configurations"]["Default"][
-                        "TaskQueue.WakeUp.IsChecked"
-                    ] = "True"  # 开始唤醒
-                    data["Configurations"]["Default"][
-                        "TaskQueue.Recruiting.IsChecked"
-                    ] = "True"  # 自动公招
-                    data["Configurations"]["Default"][
-                        "TaskQueue.Base.IsChecked"
-                    ] = "True"  # 基建换班
-                    data["Configurations"]["Default"][
-                        "TaskQueue.Combat.IsChecked"
-                    ] = "True"  # 刷理智
-                    data["Configurations"]["Default"][
-                        "TaskQueue.Mission.IsChecked"
-                    ] = "True"  # 领取奖励
-                    data["Configurations"]["Default"][
-                        "TaskQueue.Mall.IsChecked"
-                    ] = "True"  # 获取信用及购物
-                    data["Configurations"]["Default"][
-                        "TaskQueue.AutoRoguelike.IsChecked"
-                    ] = "False"  # 自动肉鸽
-                    data["Configurations"]["Default"][
-                        "TaskQueue.Reclamation.IsChecked"
-                    ] = "False"  # 生息演算
 
                     data["Configurations"]["Default"]["MainFunction.UseMedicine"] = (
                         "False" if user_data["Info"]["MedicineNumb"] == 0 else "True"
