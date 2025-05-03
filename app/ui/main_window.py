@@ -26,7 +26,7 @@ v4.3
 """
 
 from loguru import logger
-from PySide6.QtWidgets import QSystemTrayIcon
+from PySide6.QtWidgets import QApplication, QSystemTrayIcon
 from qfluentwidgets import (
     qconfig,
     Action,
@@ -62,7 +62,15 @@ class AUTO_MAA(MSFluentWindow):
         super().__init__()
 
         self.setWindowIcon(QIcon(str(Config.app_path / "resources/icons/AUTO_MAA.ico")))
-        self.setWindowTitle("AUTO_MAA")
+
+        version_numb = list(map(int, Config.VERSION.split(".")))
+        version_text = (
+            f"v{'.'.join(str(_) for _ in version_numb[0:3])}"
+            if version_numb[3] == 0
+            else f"v{'.'.join(str(_) for _ in version_numb[0:3])}-beta.{version_numb[3]}"
+        )
+
+        self.setWindowTitle(f"AUTO_MAA - {version_text}")
 
         self.switch_theme()
 
@@ -179,6 +187,8 @@ class AUTO_MAA(MSFluentWindow):
         # 设置托盘菜单
         self.tray.setContextMenu(self.tray_menu)
         self.tray.activated.connect(self.on_tray_activated)
+
+        self.set_min_method()
 
         Config.user_info_changed.connect(self.member_manager.refresh_dashboard)
         TaskManager.create_gui.connect(self.dispatch_center.add_board)
@@ -347,27 +357,37 @@ class AUTO_MAA(MSFluentWindow):
         if mode == "显示主窗口":
 
             # 配置主窗口
-            size = list(
-                map(
-                    int,
-                    Config.get(Config.ui_size).split("x"),
+            if not self.window().isVisible():
+                size = list(
+                    map(
+                        int,
+                        Config.get(Config.ui_size).split("x"),
+                    )
                 )
-            )
-            location = list(
-                map(
-                    int,
-                    Config.get(Config.ui_location).split("x"),
+                location = list(
+                    map(
+                        int,
+                        Config.get(Config.ui_location).split("x"),
+                    )
                 )
-            )
-            self.window().setGeometry(location[0], location[1], size[0], size[1])
-            self.window().show()
+                if self.window().isMaximized():
+                    self.window().showNormal()
+                self.window().setGeometry(location[0], location[1], size[0], size[1])
+                self.window().show()
+                if not if_quick:
+                    if Config.get(Config.ui_maximized):
+                        self.titleBar.maxBtn.click()
+                    self.show_ui("配置托盘")
+
+            if not any(
+                self.window().geometry().intersects(screen.availableGeometry())
+                for screen in QApplication.screens()
+            ):
+                self.window().showNormal()
+                self.window().setGeometry(100, 100, 1200, 700)
+
             self.window().raise_()
             self.window().activateWindow()
-            if not if_quick:
-                if Config.get(Config.ui_maximized):
-                    self.window().showMaximized()
-                self.set_min_method()
-                self.show_ui("配置托盘")
 
         elif mode == "配置托盘":
 
@@ -389,6 +409,7 @@ class AUTO_MAA(MSFluentWindow):
                     Config.ui_location,
                     f"{self.geometry().x()}x{self.geometry().y()}",
                 )
+
             Config.set(Config.ui_maximized, self.window().isMaximized())
             Config.save()
 
