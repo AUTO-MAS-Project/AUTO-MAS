@@ -1,21 +1,20 @@
-# AUTO_MAA
-
-MAA多账号管理与自动化软件
-
-!["软件图标"](https://github.com/DLmaster361/AUTO_MAA/blob/main/resources/images/AUTO_MAA.png "软件图标")
+<h1 align="center">AUTO_MAA</h1>
+<p align="center">
+  MAA多账号管理与自动化软件<br><br>
+  <img alt="软件图标" src="https://github.com/DLmaster361/AUTO_MAA/blob/main/resources/images/AUTO_MAA.png">
+</p>
 
 ---
 
-</h1>
-
-[![GitHub Stars](https://img.shields.io/github/stars/DLmaster361/AUTO_MAA?style=flat-square)](https://github.com/DLmaster361/AUTO_MAA/stargazers)
-[![GitHub Forks](https://img.shields.io/github/forks/DLmaster361/AUTO_MAA?style=flat-square)](https://github.com/DLmaster361/AUTO_MAA/network)
-[![GitHub Downloads](https://img.shields.io/github/downloads/DLmaster361/AUTO_MAA/total?style=flat-square)](https://github.com/DLmaster361/AUTO_MAA/releases/latest)
-[![GitHub Issues](https://img.shields.io/github/issues/DLmaster361/AUTO_MAA?style=flat-square)](https://github.com/DLmaster361/AUTO_MAA/issues)
-[![GitHub Contributors](https://img.shields.io/github/contributors/DLmaster361/AUTO_MAA?style=flat-square)](https://github.com/DLmaster361/AUTO_MAA/graphs/contributors)
-[![GitHub License](https://img.shields.io/github/license/DLmaster361/AUTO_MAA?style=flat-square)](https://github.com/DLmaster361/AUTO_MAA/blob/main/LICENSE)
-[![mirrorc](https://img.shields.io/badge/Mirror%E9%85%B1-%239af3f6?logo=countingworkspro&logoColor=4f46e5)](https://mirrorchyan.com/zh/projects?rid=AUTO_MAA)
-</div>
+<p align="center">
+  <a href="https://github.com/DLmaster361/AUTO_MAA/stargazers"><img alt="GitHub Stars" src="https://img.shields.io/github/stars/DLmaster361/AUTO_MAA?style=flat-square"></a>
+  <a href="https://github.com/DLmaster361/AUTO_MAA/network"><img alt="GitHub Forks" src="https://img.shields.io/github/forks/DLmaster361/AUTO_MAA?style=flat-square"></a>
+  <a href="https://github.com/DLmaster361/AUTO_MAA/releases/latest"><img alt="GitHub Downloads" src="https://img.shields.io/github/downloads/DLmaster361/AUTO_MAA/total?style=flat-square"></a>
+  <a href="https://github.com/DLmaster361/AUTO_MAA/issues"><img alt="GitHub Issues" src="https://img.shields.io/github/issues/DLmaster361/AUTO_MAA?style=flat-square"></a>
+  <a href="https://github.com/DLmaster361/AUTO_MAA/graphs/contributors"><img alt="GitHub Contributors" src="https://img.shields.io/github/contributors/DLmaster361/AUTO_MAA?style=flat-square"></a>
+  <a href="https://github.com/DLmaster361/AUTO_MAA/blob/main/LICENSE"><img alt="GitHub License" src="https://img.shields.io/github/license/DLmaster361/AUTO_MAA?style=flat-square"></a>
+  <a href="https://mirrorchyan.com/zh/projects?rid=AUTO_MAA"><img alt="mirrorc" src="https://img.shields.io/badge/Mirror%E9%85%B1-%239af3f6?logo=countingworkspro&logoColor=4f46e5"></a>
+</p>
 
 ## 软件介绍
 
