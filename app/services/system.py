@@ -44,9 +44,7 @@ class _SystemHandler:
     ES_CONTINUOUS = 0x80000000
     ES_SYSTEM_REQUIRED = 0x00000001
 
-    def __init__(self, main_window: QWidget = None):
-
-        self.main_window = main_window
+    def __init__(self):
 
         self.set_Sleep()
         self.set_SelfStart()
@@ -112,7 +110,7 @@ class _SystemHandler:
 
             elif mode == "KillSelf":
 
-                self.main_window.close()
+                Config.main_window.close()
                 QApplication.quit()
 
         elif sys.platform.startswith("linux"):
@@ -138,7 +136,7 @@ class _SystemHandler:
 
             elif mode == "KillSelf":
 
-                self.main_window.close()
+                Config.main_window.close()
                 QApplication.quit()
 
     def is_startup(self) -> bool:

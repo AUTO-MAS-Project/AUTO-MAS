@@ -77,9 +77,7 @@ class AUTO_MAA(MSFluentWindow):
         self.splashScreen = SplashScreen(self.windowIcon(), self)
         self.show_ui("显示主窗口", if_quick=True)
 
-        TaskManager.main_window = self.window()
-        MainInfoBar.main_window = self.window()
-        System.main_window = self.window()
+        Config.main_window = self.window()
 
         # 创建主窗口
         self.home = Home(self)
@@ -269,11 +267,11 @@ class AUTO_MAA(MSFluentWindow):
             self.start_main_task()
 
         # 获取公告
-        self.setting.show_notice(if_show=False)
+        self.setting.show_notice(if_first=True)
 
         # 检查更新
         if Config.get(Config.update_IfAutoUpdate):
-            self.setting.check_update()
+            self.setting.check_update(if_first=True)
 
         # 直接最小化
         if Config.get(Config.start_IfMinimizeDirectly):

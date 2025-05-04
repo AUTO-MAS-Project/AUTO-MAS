@@ -87,9 +87,9 @@ class Setting(QWidget):
         self.start.card_IfSelfStart.checkedChanged.connect(System.set_SelfStart)
         self.security.card_changePASSWORD.clicked.connect(self.change_PASSWORD)
         self.updater.card_CheckUpdate.clicked.connect(
-            lambda: self.check_update(if_click=True)
+            lambda: self.check_update(if_show=True)
         )
-        self.other.card_Notice.clicked.connect(self.show_notice)
+        self.other.card_Notice.clicked.connect(lambda: self.show_notice(if_show=True))
 
         content_layout.addWidget(self.function)
         content_layout.addWidget(self.start)
@@ -255,12 +255,12 @@ class Setting(QWidget):
                 if choice.exec():
                     break
 
-    def check_update(self, if_click: bool = False) -> None:
+    def check_update(self, if_show: bool = False, if_first: bool = False) -> None:
         """检查版本更新，调起文件下载进程"""
 
         current_version = list(map(int, Config.VERSION.split(".")))
 
-        if Network.if_running and if_click:
+        if Network.if_running and if_show:
             MainInfoBar.push_info_bar(
                 "warning", "请求速度过快", "上个网络请求还未结束，请稍等片刻", 5000
             )
@@ -330,8 +330,14 @@ class Setting(QWidget):
             )
         )
 
-        # 有版本更新
-        if version.parse(version_text(remote_version)) > version.parse(
+        if (
+            if_show
+            or (
+                not if_show
+                and if_first
+                and not Config.get(Config.function_UnattendedMode)
+            )
+        ) and version.parse(version_text(remote_version)) > version.parse(
             version_text(current_version)
         ):
 
@@ -407,11 +413,26 @@ class Setting(QWidget):
                 self.window().close()
                 QApplication.quit()
 
-        # 无版本更新
-        else:
-            MainInfoBar.push_info_bar("success", "更新检查", "已是最新版本~", 3000)
+        elif (
+            if_show
+            or if_first
+            or version.parse(version_text(remote_version))
+            > version.parse(version_text(current_version))
+        ):
 
-    def show_notice(self, if_show: bool = True) -> None:
+            if version.parse(version_text(remote_version)) > version.parse(
+                version_text(current_version)
+            ):
+                MainInfoBar.push_info_bar(
+                    "info",
+                    "发现新版本",
+                    f"{version_text(current_version)} --> {version_text(remote_version)}",
+                    3600000,
+                )
+            else:
+                MainInfoBar.push_info_bar("success", "更新检查", "已是最新版本~", 3000)
+
+    def show_notice(self, if_show: bool = False, if_first: bool = False) -> None:
         """显示公告"""
 
         # 从远程服务器获取最新公告
@@ -450,9 +471,11 @@ class Setting(QWidget):
         }
 
         if if_show or (
-            datetime.now()
+            if_first
+            and datetime.now()
             > datetime.strptime(notice["time"], "%Y-%m-%d %H:%M")
             > time_local
+            and not Config.get(Config.function_UnattendedMode)
         ):
 
             choice = NoticeMessageBox(self.window(), "公告", notice["notice_dict"])
@@ -463,6 +486,17 @@ class Setting(QWidget):
                     mode="w", encoding="utf-8"
                 ) as f:
                     json.dump(notice, f, ensure_ascii=False, indent=4)
+
+        elif (
+            datetime.now()
+            > datetime.strptime(notice["time"], "%Y-%m-%d %H:%M")
+            > time_local
+        ):
+
+            MainInfoBar.push_info_bar(
+                "info", "有新公告", "请前往设置界面查看公告", 3600000
+            )
+            return None
 
 
 class FunctionSettingCard(HeaderCardWidget):
@@ -498,6 +532,14 @@ class FunctionSettingCard(HeaderCardWidget):
             parent=self,
         )
         self.card_IfSilence = self.SilenceSettingCard(self)
+        self.card_UnattendedMode = SwitchSettingCard(
+            icon=FluentIcon.PAGE_RIGHT,
+            title="无人值守模式",
+            content="开启后AUTO_MAA不再主动弹出对话框，以免影响代理任务运行",
+            qconfig=Config,
+            configItem=Config.function_UnattendedMode,
+            parent=self,
+        )
         self.card_IfAgreeBilibili = SwitchSettingCard(
             icon=FluentIcon.PAGE_RIGHT,
             title="托管bilibili游戏隐私政策",
@@ -520,6 +562,7 @@ class FunctionSettingCard(HeaderCardWidget):
         Layout.addWidget(self.card_HistoryRetentionTime)
         Layout.addWidget(self.card_IfAllowSleep)
         Layout.addWidget(self.card_IfSilence)
+        Layout.addWidget(self.card_UnattendedMode)
         Layout.addWidget(self.card_IfAgreeBilibili)
         Layout.addWidget(self.card_IfSkipMumuSplashAds)
         self.viewLayout.addLayout(Layout)

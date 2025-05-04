@@ -55,6 +55,9 @@ class _MainTimer(QWidget):
         """长时间定期检定任务"""
 
         Config.get_gameid()
+        Config.main_window.setting.show_notice()
+        if Config.get(Config.update_IfAutoUpdate):
+            Config.main_window.setting.check_update()
 
     def timed_start(self):
         """定时启动代理任务"""

@@ -613,11 +613,7 @@ class DownloadManager(QDialog):
 
 class AUTO_MAA_Downloader(QApplication):
     def __init__(
-        self,
-        app_path: Path,
-        name: str,
-        main_version: list,
-        config: dict,
+        self, app_path: Path, name: str, main_version: list, config: dict
     ) -> None:
         super().__init__()
 
