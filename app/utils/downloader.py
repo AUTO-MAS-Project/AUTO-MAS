@@ -301,7 +301,21 @@ class DownloadManager(QDialog):
         elif mode == "下载":
 
             if self.name == "MAA":
-                return f"https://jp-download.fearr.xyz/MAA/MAA-{version_text(self.version)}-win-x64.zip"
+
+                if self.config["mode"] == "Proxy":
+
+                    return f"https://jp-download.fearr.xyz/MAA/MAA-{version_text(self.version)}-win-x64.zip"
+
+                elif self.config["mode"] == "MirrorChyan":
+
+                    with requests.get(
+                        self.config["url"],
+                        allow_redirects=True,
+                        timeout=10,
+                        stream=True,
+                    ) as response:
+                        if response.status_code == 200:
+                            return response.url
 
             if self.name == "AUTO_MAA":
 
@@ -325,6 +339,7 @@ class DownloadManager(QDialog):
                         return f"{selected_url}https://github.com/DLmaster361/AUTO_MAA/releases/download/{version_text(self.version)}/AUTO_MAA_{version_text(self.version)}.zip"
 
                 elif self.config["mode"] == "MirrorChyan":
+
                     with requests.get(
                         self.config["url"],
                         allow_redirects=True,
@@ -746,10 +761,5 @@ if __name__ == "__main__":
     if version.parse(version_text(remote_version)) > version.parse(
         version_text(current_version)
     ):
-        app = AUTO_MAA_Downloader(
-            app_path,
-            "AUTO_MAA",
-            remote_version,
-            download_config,
-        )
+        app = AUTO_MAA_Downloader(app_path, "AUTO_MAA", remote_version, download_config)
         sys.exit(app.exec())

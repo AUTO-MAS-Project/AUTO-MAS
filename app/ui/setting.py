@@ -277,6 +277,46 @@ class Setting(QWidget):
                 Network.response_json
             )
         else:
+
+            if Network.response_json:
+
+                version_info = Network.response_json
+
+                if version_info["code"] != 0:
+
+                    logger.error(f"获取版本信息时出错：{version_info["msg"]}")
+
+                    error_remark_dict = {
+                        1001: "获取版本信息的URL参数不正确",
+                        7001: "填入的 CDK 已过期",
+                        7002: "填入的 CDK 错误",
+                        7003: "填入的 CDK 今日下载次数已达上限",
+                        7004: "填入的 CDK 类型和待下载的资源不匹配",
+                        7005: "填入的 CDK 已被封禁",
+                        8001: "对应架构和系统下的资源不存在",
+                        8002: "错误的系统参数",
+                        8003: "错误的架构参数",
+                        8004: "错误的更新通道参数",
+                        1: version_info["msg"],
+                    }
+
+                    if version_info["code"] in error_remark_dict:
+                        MainInfoBar.push_info_bar(
+                            "error",
+                            "获取版本信息时出错",
+                            error_remark_dict[version_info["code"]],
+                            -1,
+                        )
+                    else:
+                        MainInfoBar.push_info_bar(
+                            "error",
+                            "获取版本信息时出错",
+                            "意料之外的错误，请及时联系项目组以获取来自 Mirror 酱的技术支持",
+                            -1,
+                        )
+
+                    return None
+
             logger.warning(f"获取版本信息时出错：{Network.error_message}")
             MainInfoBar.push_info_bar(
                 "warning",
@@ -284,41 +324,6 @@ class Setting(QWidget):
                 f"网络错误：{Network.stutus_code}",
                 5000,
             )
-            return None
-
-        if version_info["code"] != 0:
-
-            logger.error(f"获取版本信息时出错：{version_info["msg"]}")
-
-            error_remark_dict = {
-                1001: "获取版本信息的URL参数不正确",
-                7001: "填入的 CDK 已过期",
-                7002: "填入的 CDK 错误",
-                7003: "填入的 CDK 今日下载次数已达上限",
-                7004: "填入的 CDK 类型和待下载的资源不匹配",
-                7005: "填入的 CDK 已被封禁",
-                8001: "对应架构和系统下的资源不存在",
-                8002: "错误的系统参数",
-                8003: "错误的架构参数",
-                8004: "错误的更新通道参数",
-                1: version_info["msg"],
-            }
-
-            if version_info["code"] in error_remark_dict:
-                MainInfoBar.push_info_bar(
-                    "error",
-                    "获取版本信息时出错",
-                    error_remark_dict[version_info["code"]],
-                    -1,
-                )
-            else:
-                MainInfoBar.push_info_bar(
-                    "error",
-                    "获取版本信息时出错",
-                    "意料之外的错误，请及时联系项目组以获取来自 Mirror 酱的技术支持",
-                    -1,
-                )
-
             return None
 
         remote_version = list(
