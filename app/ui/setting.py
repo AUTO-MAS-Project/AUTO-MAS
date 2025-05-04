@@ -177,10 +177,7 @@ class Setting(QWidget):
         while True:
 
             choice = LineEditMessageBox(
-                self.window(),
-                "未检测到管理密钥，请设置您的管理密钥",
-                "管理密钥",
-                "密码",
+                self.window(), "请设置您的管理密钥", "管理密钥", "密码"
             )
             if choice.exec() and choice.input.text() != "":
                 Crypto.get_PASSWORD(choice.input.text())

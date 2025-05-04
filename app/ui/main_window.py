@@ -181,7 +181,11 @@ class AUTO_MAA(MSFluentWindow):
 
         # 退出主程序菜单项
         self.tray_menu.addAction(
-            Action(FluentIcon.POWER_BUTTON, "退出主程序", triggered=self.window().close)
+            Action(
+                FluentIcon.POWER_BUTTON,
+                "退出主程序",
+                triggered=lambda: (self.window().close(), QApplication.quit()),
+            )
         )
 
         # 设置托盘菜单
