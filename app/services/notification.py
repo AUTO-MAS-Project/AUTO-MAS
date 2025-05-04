@@ -37,9 +37,6 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.header import Header
 from email.utils import formataddr
-
-from serverchan_sdk import sc_send
-
 from app.core import Config
 from app.services.security import Crypto
 
@@ -143,76 +140,93 @@ class Notification(QWidget):
                 self.push_info_bar.emit("error", "发送邮件时出错", f"{e}", -1)
 
     def ServerChanPush(self, title, content):
-        """使用Server酱推送通知"""
-
+        """使用Server酱推送通知（支持 tag 和 channel，避免使用SDK）"""
         if Config.get(Config.notify_IfServerChan):
+            send_key = Config.get(Config.notify_ServerChanKey)
 
-            if Config.get(Config.notify_ServerChanKey) == "":
+            if not send_key:
                 logger.error("请正确设置Server酱的SendKey")
                 self.push_info_bar.emit(
-                    "error",
-                    "Server酱通知推送异常",
-                    "请正确设置Server酱的SendKey",
-                    -1,
+                    "error", "Server酱通知推送异常", "请正确设置Server酱的SendKey", -1
                 )
                 return None
-            else:
-                send_key = Config.get(Config.notify_ServerChanKey)
 
-            option = {}
-            is_valid = lambda s: s == "" or (
-                s == "|".join(s.split("|")) and (s.count("|") == 0 or all(s.split("|")))
-            )
-            """
-            is_valid => True, 如果启用的话需要正确设置Tag和Channel。
-            允许空的Tag和Channel即不启用，但不允许例如a||b，|a|b，a|b|，||||
-            """
-            send_tag = "|".join(
-                _.strip() for _ in Config.get(Config.notify_ServerChanTag).split("|")
-            )
-            send_channel = "|".join(
-                _.strip()
-                for _ in Config.get(Config.notify_ServerChanChannel).split("|")
-            )
+            try:
+                import re
 
-            if is_valid(send_tag):
-                option["tags"] = send_tag
-            else:
-                option["tags"] = ""
-                logger.warning("请正确设置Auto_MAA中ServerChan的Tag。")
-                self.push_info_bar.emit(
-                    "warning",
-                    "Server酱通知推送异常",
-                    "请正确设置Auto_MAA中ServerChan的Tag。",
-                    -1,
+                # 构造 URL
+                if send_key.startswith("sctp"):
+                    match = re.match(r"^sctp(\d+)t", send_key)
+                    if match:
+                        url = f"https://{match.group(1)}.push.ft07.com/send/{send_key}.send"
+                    else:
+                        raise ValueError("SendKey 格式错误（sctp）")
+                else:
+                    url = f"https://sctapi.ftqq.com/{send_key}.send"
+
+                # 构建 tags 和 channel
+                def is_valid(s):
+                    return s == "" or (
+                        s == "|".join(s.split("|"))
+                        and (s.count("|") == 0 or all(s.split("|")))
+                    )
+
+                tags = "|".join(
+                    _.strip()
+                    for _ in Config.get(Config.notify_ServerChanTag).split("|")
+                )
+                channels = "|".join(
+                    _.strip()
+                    for _ in Config.get(Config.notify_ServerChanChannel).split("|")
                 )
 
-            if is_valid(send_channel):
-                option["channel"] = send_channel
-            else:
-                option["channel"] = ""
-                logger.warning("请正确设置Auto_MAA中ServerChan的Channel。")
-                self.push_info_bar.emit(
-                    "warning",
-                    "Server酱通知推送异常",
-                    "请正确设置Auto_MAA中ServerChan的Channel。",
-                    -1,
-                )
+                options = {}
+                if is_valid(tags):
+                    options["tags"] = tags
+                else:
+                    logger.warning("Server酱 Tag 配置不正确，将被忽略")
+                    self.push_info_bar.emit(
+                        "warning",
+                        "Server酱通知推送异常",
+                        "请正确设置 ServerChan 的 Tag",
+                        -1,
+                    )
 
-            response = sc_send(send_key, title, content, option)
-            if response["code"] == 0:
-                logger.info("Server酱推送通知成功")
-                return True
-            else:
-                logger.info("Server酱推送通知失败")
-                logger.error(response)
+                if is_valid(channels):
+                    options["channel"] = channels
+                else:
+                    logger.warning("Server酱 Channel 配置不正确，将被忽略")
+                    self.push_info_bar.emit(
+                        "warning",
+                        "Server酱通知推送异常",
+                        "请正确设置 ServerChan 的 Channel",
+                        -1,
+                    )
+
+                # 请求发送
+                params = {"title": title, "desp": content, **options}
+                headers = {"Content-Type": "application/json;charset=utf-8"}
+
+                response = requests.post(url, json=params, headers=headers, timeout=10)
+                result = response.json()
+
+                if result.get("code") == 0:
+                    logger.info("Server酱推送通知成功")
+                    return True
+                else:
+                    error_code = result.get("code", "-1")
+                    logger.error(f"Server酱通知推送失败：响应码：{error_code}")
+                    self.push_info_bar.emit(
+                        "error", "Server酱通知推送失败", f"响应码：{error_code}", -1
+                    )
+                    return f"Server酱通知推送失败：{error_code}"
+
+            except Exception as e:
+                logger.exception("Server酱通知推送异常")
                 self.push_info_bar.emit(
-                    "error",
-                    "Server酱通知推送失败",
-                    f'使用Server酱推送通知时出错：\n{response["data"]['error']}',
-                    -1,
+                    "error", "Server酱通知推送异常", f"请检查相关设置，如还有问题可联系开发者", -1
                 )
-                return f'使用Server酱推送通知时出错：\n{response["data"]['error']}'
+                return f"Server酱通知推送异常：{str(e)}"
 
     def CompanyWebHookBotPush(self, title, content):
         """使用企业微信群机器人推送通知"""
