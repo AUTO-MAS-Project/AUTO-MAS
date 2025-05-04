@@ -152,8 +152,6 @@ class Notification(QWidget):
                 return None
 
             try:
-                import re
-
                 # 构造 URL
                 if send_key.startswith("sctp"):
                     match = re.match(r"^sctp(\d+)t", send_key)
