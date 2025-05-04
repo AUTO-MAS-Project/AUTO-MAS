@@ -103,6 +103,9 @@ class GlobalConfig(QConfig):
             "Function", "IfSilence", False, BoolValidator()
         )
         self.function_BossKey = ConfigItem("Function", "BossKey", "")
+        self.function_UnattendedMode = ConfigItem(
+            "Function", "UnattendedMode", False, BoolValidator()
+        )
         self.function_IfAgreeBilibili = ConfigItem(
             "Function", "IfAgreeBilibili", False, BoolValidator()
         )
@@ -614,7 +617,7 @@ class MaaUserConfig(QConfig):
 
 class AppConfig(GlobalConfig):
 
-    VERSION = "4.3.5.0"
+    VERSION = "4.3.6.2"
 
     gameid_refreshed = Signal()
     PASSWORD_refreshed = Signal()
@@ -633,6 +636,7 @@ class AppConfig(GlobalConfig):
         self.gameid_path = self.app_path / "data/gameid.txt"
         self.version_path = self.app_path / "resources/version.json"
 
+        self.main_window = None
         self.PASSWORD = ""
         self.running_list = []
         self.silence_list = []

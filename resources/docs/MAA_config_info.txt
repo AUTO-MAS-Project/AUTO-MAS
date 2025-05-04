@@ -6,8 +6,8 @@
 "TaskQueue.Recruiting.IsChecked": "True"        #自动公招
 "TaskQueue.Base.IsChecked": "True"      #基建换班
 "TaskQueue.Combat.IsChecked": "True"        #刷理智
-"TaskQueue.Mission.IsChecked": "True"       #领取奖励
 "TaskQueue.Mall.IsChecked": "True"       #获取信用及购物
+"TaskQueue.Mission.IsChecked": "True"       #领取奖励
 "TaskQueue.AutoRoguelike.IsChecked": "False"        #自动肉鸽
 "TaskQueue.Reclamation.IsChecked": "False"      #生息演算
 "TaskQueue.Order.WakeUp": "0"

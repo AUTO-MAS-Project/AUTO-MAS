@@ -173,10 +173,9 @@ class _TaskManager(QObject):
     create_gui = Signal(Task)
     connect_gui = Signal(Task)
 
-    def __init__(self, main_window=None):
+    def __init__(self):
         super(_TaskManager, self).__init__()
 
-        self.main_window = main_window
         self.task_dict: Dict[str, Task] = {}
 
     def add_task(
@@ -279,7 +278,7 @@ class _TaskManager(QObject):
                 }
 
                 choice = ProgressRingMessageBox(
-                    self.main_window,
+                    Config.main_window,
                     f"{mode_book[Config.queue_dict[name]["Config"].get(Config.queue_dict[name]["Config"].queueSet_AfterAccomplish)]}倒计时",
                 )
                 if choice.exec():
@@ -325,7 +324,7 @@ class _TaskManager(QObject):
     def push_dialog(self, name: str, title: str, content: str):
         """推送对话框"""
 
-        choice = MessageBox(title, content, self.main_window)
+        choice = MessageBox(title, content, Config.main_window)
         choice.yesButton.setText("是")
         choice.cancelButton.setText("否")
 

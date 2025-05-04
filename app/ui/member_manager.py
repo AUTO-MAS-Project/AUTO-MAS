@@ -1207,14 +1207,24 @@ class MemberManager(QWidget):
                                     int(name[3:]) - 1,
                                     9,
                                     QTableWidgetItem(
-                                        Config.gameid_dict["ALL"]["text"][
-                                            Config.gameid_dict["ALL"]["value"].index(
-                                                config.get(config.Info_GameId_Remain)
+                                        "不使用"
+                                        if config.get(config.Info_GameId_Remain) == "-"
+                                        else (
+                                            (
+                                                Config.gameid_dict["ALL"]["text"][
+                                                    Config.gameid_dict["ALL"][
+                                                        "value"
+                                                    ].index(
+                                                        config.get(
+                                                            config.Info_GameId_Remain
+                                                        )
+                                                    )
+                                                ]
                                             )
-                                        ]
-                                        if config.get(config.Info_GameId_Remain)
-                                        in Config.gameid_dict["ALL"]["value"]
-                                        else config.get(config.Info_GameId_Remain)
+                                            if config.get(config.Info_GameId_Remain)
+                                            in Config.gameid_dict["ALL"]["value"]
+                                            else config.get(config.Info_GameId_Remain)
+                                        )
                                     ),
                                 )
                                 self.dashboard.setCellWidget(
@@ -1403,7 +1413,10 @@ class MemberManager(QWidget):
                                 title="剩余理智关卡",
                                 content="按下回车以添加自定义关卡号",
                                 value=Config.gameid_dict["ALL"]["value"],
-                                texts=Config.gameid_dict["ALL"]["text"],
+                                texts=[
+                                    "不使用" if _ == "当前/上次" else _
+                                    for _ in Config.gameid_dict["ALL"]["text"]
+                                ],
                                 qconfig=self.config,
                                 configItem=self.config.Info_GameId_Remain,
                                 parent=self,
@@ -1513,7 +1526,10 @@ class MemberManager(QWidget):
                             )
                             self.card_GameId_Remain.reLoadOptions(
                                 Config.gameid_dict["ALL"]["value"],
-                                Config.gameid_dict["ALL"]["text"],
+                                [
+                                    "不使用" if _ == "当前/上次" else _
+                                    for _ in Config.gameid_dict["ALL"]["text"]
+                                ],
                             )
 
                         def refresh_password(self):

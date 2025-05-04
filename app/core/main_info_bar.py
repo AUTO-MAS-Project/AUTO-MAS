@@ -29,17 +29,15 @@ from loguru import logger
 from PySide6.QtCore import Qt
 from qfluentwidgets import InfoBar, InfoBarPosition
 
+from .config import Config
+
 
 class _MainInfoBar:
     """信息通知栏"""
 
-    def __init__(self, main_window=None):
-
-        self.main_window = main_window
-
     def push_info_bar(self, mode: str, title: str, content: str, time: int):
         """推送到信息通知栏"""
-        if self.main_window is None:
+        if Config.main_window is None:
             logger.error("信息通知栏未设置父窗口")
             return None
 
@@ -61,7 +59,7 @@ class _MainInfoBar:
                 isClosable=True,
                 position=InfoBarPosition.TOP_RIGHT,
                 duration=time,
-                parent=self.main_window,
+                parent=Config.main_window,
             )
         else:
             logger.error(f"未知的通知栏模式: {mode}")
