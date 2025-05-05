@@ -141,6 +141,6 @@ jobs:
           mkdir -p ~/.ssh
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts
+          ssh-keyscan -p ${{ secrets.SSH_PORT }} -H ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts
       - name: Upload Release to Server
-        run: scp -r artifacts/*.zip ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:/home/user/files/AUTO_MAA/
+        run: scp -P ${{ secrets.SSH_PORT }} -r artifacts/* ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:/mnt/data/AUTO_MAA/
