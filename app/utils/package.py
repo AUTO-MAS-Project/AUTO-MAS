@@ -146,3 +146,20 @@ if __name__ == "__main__":
         f"{version_text(main_version_numb)}\n{version_text(updater_version_numb)}\n<!--{json.dumps(version["version_info"], ensure_ascii=False)}-->\n{version_info_markdown(all_version_info)}",
         encoding="utf-8",
     )
+
+    with (root_path / "app/utils/AUTO_MAA.iss").open(mode="r", encoding="utf-8") as f:
+        iss = f.read()
+
+    iss = (
+        iss.replace(
+            '#define MyAppVersion ""',
+            f'#define MyAppVersion "{version["main_version"]}"',
+        )
+        .replace(
+            '#define MyAppPath ""', f'#define MyAppPath "{root_path / "AUTO_MAA"}"'
+        )
+        .replace('#define OutputDir ""', f'#define OutputDir "{root_path}"')
+    )
+
+    with (root_path / "AUTO_MAA.iss").open(mode="w", encoding="utf-8") as f:
+        f.write(iss)
