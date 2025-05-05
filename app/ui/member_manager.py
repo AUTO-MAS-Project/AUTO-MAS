@@ -35,6 +35,7 @@ from PySide6.QtWidgets import (
     QTableWidgetItem,
     QHeaderView,
 )
+from PySide6.QtGui import QIcon
 from qfluentwidgets import (
     Action,
     Pivot,
@@ -338,22 +339,62 @@ class MemberManager(QWidget):
                 # 从mirrorc服务器获取最新版本信息
                 Network.set_info(
                     mode="get",
-                    url="https://mirrorchyan.com/api/resources/MAA/latest?user_agent=AutoMaaGui&os=win&arch=x64&channel=stable",
+                    url=f"https://mirrorchyan.com/api/resources/MAA/latest?user_agent=AutoMaaGui&cdk={Crypto.win_decryptor(Config.get(Config.update_MirrorChyanCDK))}&os=win&arch=x64&channel=stable",
                 )
                 Network.start()
                 Network.loop.exec()
                 if Network.stutus_code == 200:
                     maa_info = Network.response_json
                 else:
-                    choice = MessageBox(
-                        "错误",
-                        f"获取版本信息时出错：\n{Network.error_message}",
-                        self.window(),
+
+                    if Network.response_json:
+
+                        maa_info = Network.response_json
+
+                        if maa_info["code"] != 0:
+
+                            logger.error(f"获取版本信息时出错：{maa_info["msg"]}")
+
+                            error_remark_dict = {
+                                1001: "获取版本信息的URL参数不正确",
+                                7001: "填入的 CDK 已过期",
+                                7002: "填入的 CDK 错误",
+                                7003: "填入的 CDK 今日下载次数已达上限",
+                                7004: "填入的 CDK 类型和待下载的资源不匹配",
+                                7005: "填入的 CDK 已被封禁",
+                                8001: "对应架构和系统下的资源不存在",
+                                8002: "错误的系统参数",
+                                8003: "错误的架构参数",
+                                8004: "错误的更新通道参数",
+                                1: maa_info["msg"],
+                            }
+
+                            if maa_info["code"] in error_remark_dict:
+                                MainInfoBar.push_info_bar(
+                                    "error",
+                                    "获取版本信息时出错",
+                                    error_remark_dict[maa_info["code"]],
+                                    -1,
+                                )
+                            else:
+                                MainInfoBar.push_info_bar(
+                                    "error",
+                                    "获取版本信息时出错",
+                                    "意料之外的错误，请及时联系项目组以获取来自 Mirror 酱的技术支持",
+                                    -1,
+                                )
+
+                            return None
+
+                    logger.warning(f"获取版本信息时出错：{Network.error_message}")
+                    MainInfoBar.push_info_bar(
+                        "warning",
+                        "获取版本信息时出错",
+                        f"网络错误：{Network.stutus_code}",
+                        5000,
                     )
-                    choice.cancelButton.hide()
-                    choice.buttonLayout.insertStretch(1)
-                    if choice.exec():
-                        return None
+                    return None
+
                 maa_version = list(
                     map(
                         int,
@@ -369,10 +410,21 @@ class MemberManager(QWidget):
                     Path(folder),
                     "MAA",
                     maa_version,
-                    {
-                        "mode": "Proxy",
-                        "thread_numb": Config.get(Config.update_ThreadNumb),
-                    },
+                    (
+                        {
+                            "mode": "MirrorChyan",
+                            "thread_numb": 1,
+                            "url": maa_info["data"]["url"],
+                        }
+                        if "url" in maa_info["data"]
+                        else {
+                            "mode": "Proxy",
+                            "thread_numb": Config.get(Config.update_ThreadNumb),
+                        }
+                    ),
+                )
+                self.downloader.setWindowIcon(
+                    QIcon(str(Config.app_path / "resources/icons/AUTO_MAA_Updater.ico"))
                 )
                 self.downloader.show()
                 self.downloader.run()

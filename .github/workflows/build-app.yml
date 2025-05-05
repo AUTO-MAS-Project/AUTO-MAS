@@ -77,13 +77,23 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: AUTO_MAA_${{ env.AUTO_MAA_version }}
-          path: |
-            AUTO_MAA_${{ env.AUTO_MAA_version }}.zip
+          path: AUTO_MAA_${{ env.AUTO_MAA_version }}.zip
       - name: Upload Version_Info Artifact
         uses: actions/upload-artifact@v4
         with:
           name: version_info
           path: version_info.txt
+      - name: Compile Inno Setup Script
+        run: |
+          choco install innosetup
+          echo "C:\Program Files (x86)\Inno Setup 6" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          Expand-Archive -Path AUTO_MAA_${{ env.AUTO_MAA_version }}.zip -DestinationPath AUTO_MAA -Force
+          ISCC.exe "AUTO_MAA.iss"
+      - name: Upload Setup Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AUTO_MAA_Setup
+          path: AUTO_MAA-Setup.exe
   publish_release:
     name: Publish release
     needs: build_AUTO_MAA
@@ -133,5 +143,4 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts
       - name: Upload Release to Server
-        run: |
-          scp -r artifacts/* ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:/home/user/files/AUTO_MAA/
+        run: scp -r artifacts/*.zip ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:/home/user/files/AUTO_MAA/

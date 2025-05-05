@@ -10,5 +10,4 @@ pycryptodome
 requests
 markdown
 Jinja2
-serverchan_sdk
 nuitka
