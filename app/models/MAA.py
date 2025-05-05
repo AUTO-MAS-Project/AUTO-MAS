@@ -1392,6 +1392,17 @@ class MaaManager(QObject):
                         "Fight.UseRemainingSanityStage"
                     ] = "True"  # 使用剩余理智
 
+                    # 基建模式
+                    if (
+                        data["Configurations"]["Default"]["Infrast.InfrastMode"]
+                        == "Custom"
+                    ):
+                        data["Configurations"]["Default"][
+                            "Infrast.CustomInfrastPlanIndex"
+                        ] = user_data["Data"][
+                            "CustomInfrastPlanIndex"
+                        ]  # 自定义基建配置索引
+
         # 人工排查配置
         elif "人工排查" in mode:
 
