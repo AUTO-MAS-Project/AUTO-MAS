@@ -266,14 +266,14 @@ class DownloadManager(QDialog):
 
     def run(self) -> None:
 
-        if self.name == "MAA":
-            self.download_task1()
-        elif self.name == "AUTO_MAA":
+        if self.name == "AUTO_MAA":
             if self.config["mode"] == "Proxy":
                 self.test_speed_task1()
                 self.speed_test_accomplish.connect(self.download_task1)
             elif self.config["mode"] == "MirrorChyan":
                 self.download_task1()
+        elif self.config["mode"] == "MirrorChyan":
+            self.download_task1()
 
     def get_download_url(self, mode: str) -> Union[str, Dict[str, str]]:
         """获取下载链接"""
@@ -299,23 +299,6 @@ class DownloadManager(QDialog):
             return url_dict
 
         elif mode == "下载":
-
-            if self.name == "MAA":
-
-                if self.config["mode"] == "Proxy":
-
-                    return f"https://jp-download.fearr.xyz/MAA/MAA-{version_text(self.version)}-win-x64.zip"
-
-                elif self.config["mode"] == "MirrorChyan":
-
-                    with requests.get(
-                        self.config["url"],
-                        allow_redirects=True,
-                        timeout=10,
-                        stream=True,
-                    ) as response:
-                        if response.status_code == 200:
-                            return response.url
 
             if self.name == "AUTO_MAA":
 
@@ -348,6 +331,14 @@ class DownloadManager(QDialog):
                     ) as response:
                         if response.status_code == 200:
                             return response.url
+
+            elif self.config["mode"] == "MirrorChyan":
+
+                with requests.get(
+                    self.config["url"], allow_redirects=True, timeout=10, stream=True
+                ) as response:
+                    if response.status_code == 200:
+                        return response.url
 
     def test_speed_task1(self) -> None:
 

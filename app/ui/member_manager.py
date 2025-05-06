@@ -315,119 +315,120 @@ class MemberManager(QWidget):
     def member_downloader(self):
         """脚本下载器"""
 
+        if not Config.get(Config.update_MirrorChyanCDK):
+
+            logger.warning("脚本下载器未设置CDK")
+            MainInfoBar.push_info_bar(
+                "warning",
+                "未设置Mirror酱CDK",
+                "下载器依赖于Mirror酱，未设置CDK时无法使用",
+                5000,
+            )
+            return None
+
         choice = ComboBoxMessageBox(
             self.window(),
             "选择一个脚本类型以下载相应脚本",
             ["选择脚本类型"],
-            [["MAA"]],
+            [["MAA", "StarRailAssistant"]],
         )
         if choice.exec() and choice.input[0].currentIndex() != -1:
 
-            if choice.input[0].currentText() == "MAA":
+            app_name = choice.input[0].currentText()
 
-                (Config.app_path / "script/MAA").mkdir(parents=True, exist_ok=True)
-                folder = QFileDialog.getExistingDirectory(
-                    self, "选择MAA下载目录", str(Config.app_path / "script/MAA")
+            (Config.app_path / f"script/{app_name}").mkdir(parents=True, exist_ok=True)
+            folder = QFileDialog.getExistingDirectory(
+                self,
+                f"选择{app_name}下载目录",
+                str(Config.app_path / f"script/{app_name}"),
+            )
+            if not folder:
+                logger.warning(f"选择{app_name}下载目录时未选择文件夹")
+                MainInfoBar.push_info_bar(
+                    "warning", "警告", f"未选择{app_name}下载目录", 5000
                 )
-                if not folder:
-                    logger.warning("选择MAA下载目录时未选择文件夹")
-                    MainInfoBar.push_info_bar(
-                        "warning", "警告", "未选择MAA下载目录", 5000
-                    )
-                    return None
+                return None
 
-                # 从mirrorc服务器获取最新版本信息
-                Network.set_info(
-                    mode="get",
-                    url=f"https://mirrorchyan.com/api/resources/MAA/latest?user_agent=AutoMaaGui&cdk={Crypto.win_decryptor(Config.get(Config.update_MirrorChyanCDK))}&os=win&arch=x64&channel=stable",
-                )
-                Network.start()
-                Network.loop.exec()
-                if Network.stutus_code == 200:
-                    maa_info = Network.response_json
-                else:
+            if app_name in ["MAA"]:
 
-                    if Network.response_json:
+                url = f"https://mirrorchyan.com/api/resources/{app_name}/latest?user_agent=AutoMaaGui&cdk={Crypto.win_decryptor(Config.get(Config.update_MirrorChyanCDK))}&os=win&arch=x64&channel=stable"
 
-                        maa_info = Network.response_json
+            elif app_name in ["StarRailAssistant"]:
 
-                        if maa_info["code"] != 0:
+                url = f"https://mirrorchyan.com/api/resources/{app_name}/latest?user_agent=AutoMaaGui&cdk={Crypto.win_decryptor(Config.get(Config.update_MirrorChyanCDK))}&channel=stable"
 
-                            logger.error(f"获取版本信息时出错：{maa_info["msg"]}")
+            # 从mirrorc服务器获取最新版本信息
+            Network.set_info(mode="get", url=url)
+            Network.start()
+            Network.loop.exec()
+            if Network.stutus_code == 200:
+                app_info = Network.response_json
+            else:
 
-                            error_remark_dict = {
-                                1001: "获取版本信息的URL参数不正确",
-                                7001: "填入的 CDK 已过期",
-                                7002: "填入的 CDK 错误",
-                                7003: "填入的 CDK 今日下载次数已达上限",
-                                7004: "填入的 CDK 类型和待下载的资源不匹配",
-                                7005: "填入的 CDK 已被封禁",
-                                8001: "对应架构和系统下的资源不存在",
-                                8002: "错误的系统参数",
-                                8003: "错误的架构参数",
-                                8004: "错误的更新通道参数",
-                                1: maa_info["msg"],
-                            }
+                if Network.response_json:
 
-                            if maa_info["code"] in error_remark_dict:
-                                MainInfoBar.push_info_bar(
-                                    "error",
-                                    "获取版本信息时出错",
-                                    error_remark_dict[maa_info["code"]],
-                                    -1,
-                                )
-                            else:
-                                MainInfoBar.push_info_bar(
-                                    "error",
-                                    "获取版本信息时出错",
-                                    "意料之外的错误，请及时联系项目组以获取来自 Mirror 酱的技术支持",
-                                    -1,
-                                )
+                    app_info = Network.response_json
 
-                            return None
+                    if app_info["code"] != 0:
 
-                    logger.warning(f"获取版本信息时出错：{Network.error_message}")
-                    MainInfoBar.push_info_bar(
-                        "warning",
-                        "获取版本信息时出错",
-                        f"网络错误：{Network.stutus_code}",
-                        5000,
-                    )
-                    return None
+                        logger.error(f"获取版本信息时出错：{app_info["msg"]}")
 
-                maa_version = list(
-                    map(
-                        int,
-                        maa_info["data"]["version_name"][1:]
-                        .replace("-beta", "")
-                        .split("."),
-                    )
-                )
-                while len(maa_version) < 4:
-                    maa_version.append(0)
-
-                self.downloader = DownloadManager(
-                    Path(folder),
-                    "MAA",
-                    maa_version,
-                    (
-                        {
-                            "mode": "MirrorChyan",
-                            "thread_numb": 1,
-                            "url": maa_info["data"]["url"],
+                        error_remark_dict = {
+                            1001: "获取版本信息的URL参数不正确",
+                            7001: "填入的 CDK 已过期",
+                            7002: "填入的 CDK 错误",
+                            7003: "填入的 CDK 今日下载次数已达上限",
+                            7004: "填入的 CDK 类型和待下载的资源不匹配",
+                            7005: "填入的 CDK 已被封禁",
+                            8001: "对应架构和系统下的资源不存在",
+                            8002: "错误的系统参数",
+                            8003: "错误的架构参数",
+                            8004: "错误的更新通道参数",
+                            1: app_info["msg"],
                         }
-                        if "url" in maa_info["data"]
-                        else {
-                            "mode": "Proxy",
-                            "thread_numb": Config.get(Config.update_ThreadNumb),
-                        }
-                    ),
+
+                        if app_info["code"] in error_remark_dict:
+                            MainInfoBar.push_info_bar(
+                                "error",
+                                "获取版本信息时出错",
+                                error_remark_dict[app_info["code"]],
+                                -1,
+                            )
+                        else:
+                            MainInfoBar.push_info_bar(
+                                "error",
+                                "获取版本信息时出错",
+                                "意料之外的错误，请及时联系项目组以获取来自 Mirror 酱的技术支持",
+                                -1,
+                            )
+
+                        return None
+
+                logger.warning(f"获取版本信息时出错：{Network.error_message}")
+                MainInfoBar.push_info_bar(
+                    "warning",
+                    "获取版本信息时出错",
+                    f"网络错误：{Network.stutus_code}",
+                    5000,
                 )
-                self.downloader.setWindowIcon(
-                    QIcon(str(Config.app_path / "resources/icons/AUTO_MAA_Updater.ico"))
-                )
-                self.downloader.show()
-                self.downloader.run()
+                return None
+
+            self.downloader = DownloadManager(
+                Path(folder),
+                app_name,
+                None,
+                {
+                    "mode": "MirrorChyan",
+                    "thread_numb": 1,
+                    "url": app_info["data"]["url"],
+                },
+            )
+            self.downloader.setWindowTitle("AUTO_MAA下载器 - Mirror酱渠道")
+            self.downloader.setWindowIcon(
+                QIcon(str(Config.app_path / "resources/icons/MirrorChyan.ico"))
+            )
+            self.downloader.show()
+            self.downloader.run()
 
     def show_password(self):
 
@@ -1425,7 +1426,7 @@ class MemberManager(QWidget):
                                 icon=FluentIcon.GAME,
                                 title="连战次数",
                                 content="连战次数较大时建议搭配剩余理智关卡使用",
-                                texts=["AUTO", "6", "5", "4", "3", "2", "1"],
+                                texts=["AUTO", "6", "5", "4", "3", "2", "1", "不选择"],
                                 qconfig=self.config,
                                 configItem=self.config.Info_SeriesNumb,
                                 parent=self,

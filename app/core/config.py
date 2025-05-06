@@ -536,7 +536,7 @@ class MaaUserConfig(QConfig):
             "Info",
             "SeriesNumb",
             "1",
-            OptionsValidator(["1000", "6", "5", "4", "3", "2", "1"]),
+            OptionsValidator(["1000", "6", "5", "4", "3", "2", "1", "-1"]),
         )
         self.Info_GameId = ConfigItem("Info", "GameId", "-")
         self.Info_GameId_1 = ConfigItem("Info", "GameId_1", "-")

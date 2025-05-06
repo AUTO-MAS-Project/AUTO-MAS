@@ -136,11 +136,3 @@ jobs:
           gh workflow run --repo $GITHUB_REPOSITORY mirrorchyan_release_note
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Setup SSH Key
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -p ${{ secrets.SSH_PORT }} -H ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts
-      - name: Upload Release to Server
-        run: scp -P ${{ secrets.SSH_PORT }} -r artifacts/* ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:/mnt/data/AUTO_MAA/
