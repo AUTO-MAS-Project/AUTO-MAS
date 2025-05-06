@@ -23,31 +23,18 @@ name: ssh-test
 on:
   workflow_dispatch:
 
-permissions:
-  contents: write
-  actions: write
-
 jobs:
-  pre_check:
-    name: Pre Checks
-    runs-on: ubuntu-latest
-    steps:
-      - name: Repo Check
-        id: repo_check
-        run: |
-          if [[ "$GITHUB_REPOSITORY" != "DLmaster361/AUTO_MAA" ]]; then
-            echo "When forking this repository to make your own builds, you have to adjust this check."
-            exit 1
-          fi
-          exit 0
   publish_release:
     name: Publish release
-    needs: pre_check
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
       - name: Setup SSH Key
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -p ${{ secrets.SSH_PORT }} -H ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts
+      - name: Upload Release to Server
+        run: scp -P ${{ secrets.SSH_PORT }} -r artifacts/* ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:/mnt/data/AUTO_MAA/
