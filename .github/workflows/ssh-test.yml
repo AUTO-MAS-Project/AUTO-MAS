@@ -18,7 +18,7 @@
 
 #   Contact: DLmaster_361@163.com
 
-name: Build AUTO_MAA
+name: ssh-test
 
 on:
   workflow_dispatch:
@@ -42,7 +42,7 @@ jobs:
           exit 0
   publish_release:
     name: Publish release
-    needs: build_AUTO_MAA
+    needs: pre_check
     runs-on: ubuntu-20.04
     steps:
       - name: Setup SSH Key
