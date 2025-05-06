@@ -15,7 +15,7 @@
 AppId={{D116A92A-E174-4699-B777-61C5FD837B19}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
-AppVerName={#MyAppName} {#MyAppVersion}
+AppVerName={#MyAppName}
 AppPublisher={#MyAppPublisher}
 AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}
@@ -71,7 +71,7 @@ var
 
 function InitializeUninstall: Boolean;
 begin
-  DeleteDataQuestion := MsgBox('您是否要移除所有用户数据文件与子组件？', mbConfirmation, MB_YESNO) = IDYES;
+  DeleteDataQuestion := MsgBox('您确认要完全移除 AUTO_MAA 的所有用户数据文件与子组件吗？', mbConfirmation, MB_YESNO) = IDYES;
   Result := True;
 end;
 
@@ -79,15 +79,11 @@ procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
   if CurUninstallStep = usPostUninstall then
   begin
-    if DeleteDataQuestion then
-    begin
-      DelTree(ExpandConstant('{app}\config'), True, True, True);
-      DelTree(ExpandConstant('{app}\data'), True, True, True);
-      DelTree(ExpandConstant('{app}\debug'), True, True, True);
-      DelTree(ExpandConstant('{app}\history'), True, True, True);
-      DelTree(ExpandConstant('{app}\script'), True, True, True);
-    end;
     DelTree(ExpandConstant('{app}\app'), True, True, True);
     DelTree(ExpandConstant('{app}\resources'), True, True, True);
+    if DeleteDataQuestion then
+    begin
+      DelTree(ExpandConstant('{app}'), True, True, True);
+    end;
   end;
 end;

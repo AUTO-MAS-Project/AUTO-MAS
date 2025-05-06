@@ -1278,9 +1278,9 @@ class MaaManager(QObject):
                     )  # 剩余理智关卡
                     data["Configurations"]["Default"][
                         "MainFunction.Series.Quantity"
-                    ] = str(
-                        user_data["Info"]["SeriesNumb"]
-                    )  # 连战次数
+                    ] = user_data["Info"][
+                        "SeriesNumb"
+                    ]  # 连战次数
                     data["Configurations"]["Default"][
                         "Penguin.IsDrGrandet"
                     ] = "False"  # 博朗台模式
@@ -1382,9 +1382,9 @@ class MaaManager(QObject):
                     )  # 剩余理智关卡
                     data["Configurations"]["Default"][
                         "MainFunction.Series.Quantity"
-                    ] = str(
-                        user_data["Info"]["SeriesNumb"]
-                    )  # 连战次数
+                    ] = user_data["Info"][
+                        "SeriesNumb"
+                    ]  # 连战次数
                     data["Configurations"]["Default"][
                         "GUI.UseAlternateStage"
                     ] = "True"  # 备选关卡
