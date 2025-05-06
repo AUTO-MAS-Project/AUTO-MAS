@@ -532,7 +532,12 @@ class MaaUserConfig(QConfig):
         self.Info_MedicineNumb = ConfigItem(
             "Info", "MedicineNumb", 0, RangeValidator(0, 1024)
         )
-        self.Info_SeriesNumb = ConfigItem("Info", "SeriesNumb", 1, RangeValidator(1, 6))
+        self.Info_SeriesNumb = OptionsConfigItem(
+            "Info",
+            "SeriesNumb",
+            "1",
+            OptionsValidator(["1000", "6", "5", "4", "3", "2", "1"]),
+        )
         self.Info_GameId = ConfigItem("Info", "GameId", "-")
         self.Info_GameId_1 = ConfigItem("Info", "GameId_1", "-")
         self.Info_GameId_2 = ConfigItem("Info", "GameId_2", "-")
@@ -617,7 +622,7 @@ class MaaUserConfig(QConfig):
 
 class AppConfig(GlobalConfig):
 
-    VERSION = "4.3.6.5"
+    VERSION = "4.3.6.0"
 
     gameid_refreshed = Signal()
     PASSWORD_refreshed = Signal()

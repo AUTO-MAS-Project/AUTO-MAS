@@ -1421,15 +1421,16 @@ class MemberManager(QWidget):
                                 configItem=self.config.Info_MedicineNumb,
                                 parent=self,
                             )
-                            self.card_SeriesNumb = SpinBoxSettingCard(
+                            self.card_SeriesNumb = ComboBoxSettingCard(
                                 icon=FluentIcon.GAME,
                                 title="连战次数",
                                 content="连战次数较大时建议搭配剩余理智关卡使用",
-                                range=(1, 6),
+                                texts=["AUTO", "6", "5", "4", "3", "2", "1"],
                                 qconfig=self.config,
                                 configItem=self.config.Info_SeriesNumb,
                                 parent=self,
                             )
+                            self.card_SeriesNumb.comboBox.setMinimumWidth(150)
                             self.card_GameId = EditableComboBoxSettingCard(
                                 icon=FluentIcon.GAME,
                                 title="关卡选择",
