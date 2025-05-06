@@ -1,0 +1,53 @@
+#   AUTO_MAA:A MAA Multi Account Management and Automation Tool
+#   Copyright © 2024-2025 DLmaster361
+
+#   This file is part of AUTO_MAA.
+
+#   AUTO_MAA is free software: you can redistribute it and/or modify
+#   it under the terms of the GNU General Public License as published
+#   by the Free Software Foundation, either version 3 of the License,
+#   or (at your option) any later version.
+
+#   AUTO_MAA is distributed in the hope that it will be useful,
+#   but WITHOUT ANY WARRANTY; without even the implied warranty
+#   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
+#   the GNU General Public License for more details.
+
+#   You should have received a copy of the GNU General Public License
+#   along with AUTO_MAA. If not, see <https://www.gnu.org/licenses/>.
+
+#   Contact: DLmaster_361@163.com
+
+name: Build AUTO_MAA
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  pre_check:
+    name: Pre Checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Repo Check
+        id: repo_check
+        run: |
+          if [[ "$GITHUB_REPOSITORY" != "DLmaster361/AUTO_MAA" ]]; then
+            echo "When forking this repository to make your own builds, you have to adjust this check."
+            exit 1
+          fi
+          exit 0
+  publish_release:
+    name: Publish release
+    needs: build_AUTO_MAA
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Setup SSH Key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -p ${{ secrets.SSH_PORT }} -H ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts
