@@ -86,35 +86,10 @@ if __name__ == "__main__":
 
     print("AUTO_MAA main program packaging completed !")
 
-    print("Packaging AUTO_MAA update program ...")
-
-    shutil.copy(root_path / "app/utils/downloader.py", root_path)
-    os.system(
-        "powershell -Command python -m nuitka --standalone --onefile --mingw64"
-        " --enable-plugins=pyside6 --windows-console-mode=disable"
-        " --onefile-tempdir-spec='{TEMP}\\AUTO_MAA_Updater'"
-        " --windows-icon-from-ico=resources\\icons\\AUTO_MAA_Updater.ico"
-        " --company-name='AUTO_MAA Team' --product-name=AUTO_MAA"
-        f" --file-version={version["updater_version"]}"
-        f" --product-version={version["main_version"]}"
-        " --file-description='AUTO_MAA Component'"
-        " --copyright='Copyright © 2024-2025 DLmaster361'"
-        " --assume-yes-for-downloads --output-filename=AUTO_Updater"
-        " --remove-output downloader.py"
-    )
-    (root_path / "downloader.py").unlink()
-
-    print("AUTO_MAA update program packaging completed !")
+    print("start to create setup program ...")
 
     (root_path / "AUTO_MAA").mkdir(parents=True, exist_ok=True)
-
-    print("Start to move AUTO_MAA program ...")
-
     shutil.move(root_path / "AUTO_MAA.exe", root_path / "AUTO_MAA/")
-    shutil.move(root_path / "AUTO_Updater.exe", root_path / "AUTO_MAA/")
-
-    print("Start to copy rescourses ...")
-
     shutil.copytree(root_path / "app", root_path / "AUTO_MAA/app")
     shutil.copytree(root_path / "resources", root_path / "AUTO_MAA/resources")
     shutil.copy(root_path / "main.py", root_path / "AUTO_MAA/")
@@ -122,7 +97,25 @@ if __name__ == "__main__":
     shutil.copy(root_path / "README.md", root_path / "AUTO_MAA/")
     shutil.copy(root_path / "LICENSE", root_path / "AUTO_MAA/")
 
-    print("Start to compress ...")
+    with (root_path / "app/utils/AUTO_MAA.iss").open(mode="r", encoding="utf-8") as f:
+        iss = f.read()
+    iss = (
+        iss.replace(
+            '#define MyAppVersion ""',
+            f'#define MyAppVersion "{version["main_version"]}"',
+        )
+        .replace(
+            '#define MyAppPath ""', f'#define MyAppPath "{root_path / "AUTO_MAA"}"'
+        )
+        .replace('#define OutputDir ""', f'#define OutputDir "{root_path}"')
+    )
+    with (root_path / "AUTO_MAA.iss").open(mode="w", encoding="utf-8") as f:
+        f.write(iss)
+
+    os.system(f'ISCC "{root_path / "AUTO_MAA.iss"}"')
+
+    (root_path / "AUTO_MAA_Setup").mkdir(parents=True, exist_ok=True)
+    shutil.move(root_path / "AUTO_MAA-Setup.exe", root_path / "AUTO_MAA_Setup")
 
     shutil.make_archive(
         base_name=root_path / f"AUTO_MAA_{version_text(main_version_numb)}",
@@ -130,9 +123,12 @@ if __name__ == "__main__":
         root_dir=root_path / "AUTO_MAA",
         base_dir=".",
     )
-    shutil.rmtree(root_path / "AUTO_MAA")
 
-    print("compress completed !")
+    print("setup program created !")
+
+    (root_path / "AUTO_MAA.iss").unlink(missing_ok=True)
+    shutil.rmtree(root_path / "AUTO_MAA")
+    shutil.rmtree(root_path / "AUTO_MAA_Setup")
 
     all_version_info = {}
     for v_i in version["version_info"].values():
@@ -146,20 +142,3 @@ if __name__ == "__main__":
         f"{version_text(main_version_numb)}\n{version_text(updater_version_numb)}\n<!--{json.dumps(version["version_info"], ensure_ascii=False)}-->\n{version_info_markdown(all_version_info)}",
         encoding="utf-8",
     )
-
-    with (root_path / "app/utils/AUTO_MAA.iss").open(mode="r", encoding="utf-8") as f:
-        iss = f.read()
-
-    iss = (
-        iss.replace(
-            '#define MyAppVersion ""',
-            f'#define MyAppVersion "{version["main_version"]}"',
-        )
-        .replace(
-            '#define MyAppPath ""', f'#define MyAppPath "{root_path / "AUTO_MAA"}"'
-        )
-        .replace('#define OutputDir ""', f'#define OutputDir "{root_path}"')
-    )
-
-    with (root_path / "AUTO_MAA.iss").open(mode="w", encoding="utf-8") as f:
-        f.write(iss)

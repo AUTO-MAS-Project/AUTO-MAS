@@ -55,6 +55,8 @@ jobs:
           python -m pip install --upgrade pip
           pip install flake8 pytest
           pip install -r requirements.txt
+          choco install innosetup
+          echo "C:\Program Files (x86)\Inno Setup 6" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
       - name: Lint with flake8
         run: |
           # stop the build if there are Python syntax errors or undefined names
@@ -83,17 +85,6 @@ jobs:
         with:
           name: version_info
           path: version_info.txt
-      - name: Compile Inno Setup Script
-        run: |
-          choco install innosetup
-          echo "C:\Program Files (x86)\Inno Setup 6" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-          Expand-Archive -Path AUTO_MAA_${{ env.AUTO_MAA_version }}.zip -DestinationPath AUTO_MAA -Force
-          ISCC.exe "AUTO_MAA.iss"
-      - name: Upload Setup Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: AUTO_MAA_Setup
-          path: AUTO_MAA-Setup.exe
   publish_release:
     name: Publish release
     needs: build_AUTO_MAA

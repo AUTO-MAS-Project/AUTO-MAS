@@ -58,7 +58,7 @@ import shutil
 
 from app.core import Config, MainInfoBar, TaskManager, MaaConfig, MaaUserConfig, Network
 from app.services import Crypto
-from app.utils import DownloadManager
+from .downloader import DownloadManager
 from .Widget import (
     LineEditMessageBox,
     LineEditSettingCard,
@@ -326,21 +326,41 @@ class MemberManager(QWidget):
             )
             return None
 
+        # 从远程服务器获取应用列表
+        Network.set_info(
+            mode="get",
+            url="https://gitee.com/DLmaster_361/AUTO_MAA/raw/server/apps_info.json",
+        )
+        Network.start()
+        Network.loop.exec()
+        if Network.stutus_code == 200:
+            apps_info = Network.response_json
+        else:
+            logger.warning(f"获取应用列表时出错：{Network.error_message}")
+            MainInfoBar.push_info_bar(
+                "warning",
+                "获取应用列表时出错",
+                f"网络错误：{Network.stutus_code}",
+                5000,
+            )
+            return None
+
         choice = ComboBoxMessageBox(
             self.window(),
             "选择一个脚本类型以下载相应脚本",
             ["选择脚本类型"],
-            [["MAA", "StarRailAssistant"]],
+            [list(apps_info.keys())],
         )
         if choice.exec() and choice.input[0].currentIndex() != -1:
 
             app_name = choice.input[0].currentText()
+            app_rid = apps_info[app_name]["rid"]
 
-            (Config.app_path / f"script/{app_name}").mkdir(parents=True, exist_ok=True)
+            (Config.app_path / f"script/{app_rid}").mkdir(parents=True, exist_ok=True)
             folder = QFileDialog.getExistingDirectory(
                 self,
                 f"选择{app_name}下载目录",
-                str(Config.app_path / f"script/{app_name}"),
+                str(Config.app_path / f"script/{app_rid}"),
             )
             if not folder:
                 logger.warning(f"选择{app_name}下载目录时未选择文件夹")
@@ -349,16 +369,11 @@ class MemberManager(QWidget):
                 )
                 return None
 
-            if app_name in ["MAA"]:
-
-                url = f"https://mirrorchyan.com/api/resources/{app_name}/latest?user_agent=AutoMaaGui&cdk={Crypto.win_decryptor(Config.get(Config.update_MirrorChyanCDK))}&os=win&arch=x64&channel=stable"
-
-            elif app_name in ["StarRailAssistant"]:
-
-                url = f"https://mirrorchyan.com/api/resources/{app_name}/latest?user_agent=AutoMaaGui&cdk={Crypto.win_decryptor(Config.get(Config.update_MirrorChyanCDK))}&channel=stable"
-
             # 从mirrorc服务器获取最新版本信息
-            Network.set_info(mode="get", url=url)
+            Network.set_info(
+                mode="get",
+                url=f"https://mirrorchyan.com/api/resources/{app_rid}/latest?user_agent=AutoMaaGui&cdk={Crypto.win_decryptor(Config.get(Config.update_MirrorChyanCDK))}&os={apps_info[app_name]["os"]}&arch={apps_info[app_name]["arch"]}&channel=stable",
+            )
             Network.start()
             Network.loop.exec()
             if Network.stutus_code == 200:
@@ -415,7 +430,7 @@ class MemberManager(QWidget):
 
             self.downloader = DownloadManager(
                 Path(folder),
-                app_name,
+                app_rid,
                 None,
                 {
                     "mode": "MirrorChyan",

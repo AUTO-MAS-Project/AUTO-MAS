@@ -25,20 +25,16 @@ v1.2
 作者：DLmaster_361
 """
 
-import sys
 import json
 import zipfile
 import requests
 import subprocess
 import time
 import psutil
-import win32crypt
-import base64
-from packaging import version
 from functools import partial
 from pathlib import Path
 
-from PySide6.QtWidgets import QApplication, QDialog, QVBoxLayout
+from PySide6.QtWidgets import QDialog, QVBoxLayout
 from qfluentwidgets import (
     ProgressBar,
     IndeterminateProgressBar,
@@ -46,7 +42,7 @@ from qfluentwidgets import (
     setTheme,
     Theme,
 )
-from PySide6.QtGui import QIcon, QCloseEvent
+from PySide6.QtGui import QCloseEvent
 from PySide6.QtCore import QThread, Signal, QTimer, QEventLoop
 
 from typing import List, Dict, Union
@@ -237,14 +233,9 @@ class DownloadManager(QDialog):
         self.version = version
         self.config = config
         self.download_path = app_path / "DOWNLOAD_TEMP.zip"  #  临时下载文件的路径
-        self.version_path = app_path / "resources/version.json"
         self.download_process_dict: Dict[str, DownloadProcess] = {}
         self.timer_dict: Dict[str, QTimer] = {}
 
-        self.setWindowTitle("AUTO_MAA更新器")
-        self.setWindowIcon(
-            QIcon(str(app_path / "resources/icons/AUTO_MAA_Updater.ico"))
-        )
         self.resize(700, 70)
 
         setTheme(Theme.AUTO, lazy=True)
@@ -539,41 +530,25 @@ class DownloadManager(QDialog):
         self.zip_extract.start()
         self.zip_loop.exec()
 
-        self.update_info("正在删除已弃用的文件")
-        if (self.app_path / "changes.json").exists():
-
-            with (self.app_path / "changes.json").open(mode="r", encoding="utf-8") as f:
-                info: Dict[str, List[str]] = json.load(f)
-
-            if "deleted" in info:
-                for file_path in info["deleted"]:
-                    if (self.app_path / file_path).exists():
-                        (self.app_path / file_path).unlink()
-
-            (self.app_path / "changes.json").unlink()
-
         self.update_info("正在删除临时文件")
         self.update_progress(0, 0, 0)
+        if (self.app_path / "changes.json").exists():
+            (self.app_path / "changes.json").unlink()
         if self.download_path.exists():
             self.download_path.unlink()
 
-        # 主程序更新完成后打开对应程序
-        if not self.isInterruptionRequested and self.name == "AUTO_MAA":
-            subprocess.Popen(
-                [self.app_path / "AUTO_MAA.exe"],
-                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP
-                | subprocess.DETACHED_PROCESS
-                | subprocess.CREATE_NO_WINDOW,
-            )
-        elif not self.isInterruptionRequested and self.name == "MAA":
+        # 下载完成后打开对应程序
+        if not self.isInterruptionRequested and self.name == "MAA":
             subprocess.Popen(
                 [self.app_path / "MAA.exe"],
                 creationflags=subprocess.CREATE_NEW_PROCESS_GROUP
                 | subprocess.DETACHED_PROCESS
                 | subprocess.CREATE_NO_WINDOW,
             )
-
-        self.update_info(f"{self.name}更新成功！")
+        if self.name == "AUTO_MAA":
+            self.update_info(f"即将安装{self.name}")
+        else:
+            self.update_info(f"{self.name}下载成功！")
         self.update_progress(0, 100, 100)
         self.download_accomplish.emit()
 
@@ -615,142 +590,3 @@ class DownloadManager(QDialog):
         self.requestInterruption()
 
         event.accept()
-
-
-class AUTO_MAA_Downloader(QApplication):
-    def __init__(
-        self, app_path: Path, name: str, main_version: list, config: dict
-    ) -> None:
-        super().__init__()
-
-        self.main = DownloadManager(app_path, name, main_version, config)
-        self.main.show()
-        self.main.run()
-
-
-if __name__ == "__main__":
-
-    # 获取软件自身的路径
-    app_path = Path(sys.argv[0]).resolve().parent
-
-    # 从本地版本信息文件获取当前版本信息
-    if (app_path / "resources/version.json").exists():
-        with (app_path / "resources/version.json").open(
-            mode="r", encoding="utf-8"
-        ) as f:
-            current_version_info = json.load(f)
-        current_version = list(
-            map(int, current_version_info["main_version"].split("."))
-        )
-    else:
-        current_version = [0, 0, 0, 0]
-
-    # 从本地配置文件获取更新信息
-    if (app_path / "config/config.json").exists():
-        with (app_path / "config/config.json").open(mode="r", encoding="utf-8") as f:
-            config = json.load(f)
-        if "Update" in config:
-
-            if "UpdateType" in config["Update"]:
-                update_type = config["Update"]["UpdateType"]
-            else:
-                update_type = "stable"
-            if "ProxyUrlList" in config["Update"]:
-                proxy_list = config["Update"]["ProxyUrlList"]
-            else:
-                proxy_list = []
-            if "ThreadNumb" in config["Update"]:
-                thread_numb = config["Update"]["ThreadNumb"]
-            else:
-                thread_numb = 8
-            if "MirrorChyanCDK" in config["Update"]:
-                mirrorchyan_CDK = (
-                    win32crypt.CryptUnprotectData(
-                        base64.b64decode(config["Update"]["MirrorChyanCDK"]),
-                        None,
-                        None,
-                        None,
-                        0,
-                    )[1].decode("utf-8")
-                    if config["Update"]["MirrorChyanCDK"]
-                    else ""
-                )
-            else:
-                mirrorchyan_CDK = ""
-
-        else:
-            update_type = "stable"
-            proxy_list = []
-            thread_numb = 8
-            mirrorchyan_CDK = ""
-    else:
-        update_type = "stable"
-        proxy_list = []
-        thread_numb = 8
-        mirrorchyan_CDK = ""
-
-    # 从远程服务器获取最新版本信息
-    for _ in range(3):
-        try:
-            response = requests.get(
-                f"https://mirrorchyan.com/api/resources/AUTO_MAA/latest?user_agent=AutoMaaDownloader&current_version={version_text(current_version)}&cdk={mirrorchyan_CDK}&channel={update_type}",
-                timeout=10,
-            )
-            version_info: Dict[str, Union[int, str, Dict[str, str]]] = response.json()
-            break
-        except Exception as e:
-            err = e
-            time.sleep(0.1)
-    else:
-        sys.exit(f"获取版本信息时出错：\n{err}")
-
-    if version_info["code"] == 0:
-
-        if "url" in version_info["data"]:
-            download_config = {
-                "mode": "MirrorChyan",
-                "thread_numb": 1,
-                "url": version_info["data"]["url"],
-            }
-        else:
-
-            download_config = {"mode": "Proxy", "thread_numb": thread_numb}
-    else:
-        sys.exit(f"获取版本信息时出错：{version_info["msg"]}")
-
-    remote_version = list(
-        map(
-            int,
-            version_info["data"]["version_name"][1:].replace("-beta", "").split("."),
-        )
-    )
-
-    if download_config["mode"] == "Proxy":
-        for _ in range(3):
-            try:
-                response = requests.get(
-                    "https://gitee.com/DLmaster_361/AUTO_MAA/raw/server/download_info.json",
-                    timeout=10,
-                )
-                download_info = response.json()
-
-                download_config["proxy_list"] = list(
-                    set(proxy_list + download_info["proxy_list"])
-                )
-                download_config["download_dict"] = download_info["download_dict"]
-                break
-            except Exception as e:
-                err = e
-                time.sleep(0.1)
-        else:
-            sys.exit(f"获取代理信息时出错：{err}")
-
-    if (app_path / "changes.json").exists():
-        (app_path / "changes.json").unlink()
-
-    # 启动更新线程
-    if version.parse(version_text(remote_version)) > version.parse(
-        version_text(current_version)
-    ):
-        app = AUTO_MAA_Downloader(app_path, "AUTO_MAA", remote_version, download_config)
-        sys.exit(app.exec())

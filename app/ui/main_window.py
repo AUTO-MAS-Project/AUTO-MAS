@@ -28,7 +28,6 @@ v4.3
 from loguru import logger
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon
 from qfluentwidgets import (
-    qconfig,
     Action,
     SystemTrayMenu,
     SplashScreen,
@@ -182,7 +181,7 @@ class AUTO_MAA(MSFluentWindow):
             Action(
                 FluentIcon.POWER_BUTTON,
                 "退出主程序",
-                triggered=lambda: (self.window().close(), QApplication.quit()),
+                triggered=lambda: System.set_power("KillSelf"),
             )
         )
 
@@ -247,10 +246,10 @@ class AUTO_MAA(MSFluentWindow):
         # 清理旧日志
         self.clean_old_logs()
 
-        # 清理临时更新器
-        if (Config.app_path / "AUTO_Updater.active.exe").exists():
+        # 清理安装包
+        if (Config.app_path / "AUTO_MAA-Setup.exe").exists():
             try:
-                (Config.app_path / "AUTO_Updater.active.exe").unlink()
+                (Config.app_path / "AUTO_MAA-Setup.exe").unlink()
             except Exception:
                 pass
 

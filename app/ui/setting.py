@@ -26,7 +26,8 @@ v4.3
 """
 
 from loguru import logger
-from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout
+from PySide6.QtWidgets import QWidget, QVBoxLayout
+from PySide6.QtGui import QIcon
 from PySide6.QtCore import Qt
 from qfluentwidgets import (
     ScrollArea,
@@ -50,6 +51,7 @@ from typing import Dict, Union
 
 from app.core import Config, MainInfoBar, Network
 from app.services import Crypto, System, Notify
+from .downloader import DownloadManager
 from .Widget import (
     SwitchSettingCard,
     RangeSettingCard,
@@ -378,45 +380,72 @@ class Setting(QWidget):
                     else:
                         all_version_info[key] = value.copy()
 
-            version_info = {
-                "更新总览": f"{main_version_info}\n\n{version_info_markdown(update_version_info)}",
-                "ALL~版本信息": version_info_markdown(all_version_info),
-                **{
-                    version_text(list(map(int, k.split(".")))): version_info_markdown(v)
-                    for k, v in version_info_json.items()
-                },
-            }
-
             # 询问是否开始版本更新
-            choice = NoticeMessageBox(self.window(), "版本更新", version_info)
+            choice = NoticeMessageBox(
+                self.window(),
+                "版本更新",
+                {
+                    "更新总览": f"{main_version_info}\n\n{version_info_markdown(update_version_info)}",
+                    "ALL~版本信息": version_info_markdown(all_version_info),
+                    **{
+                        version_text(
+                            list(map(int, k.split(".")))
+                        ): version_info_markdown(v)
+                        for k, v in version_info_json.items()
+                    },
+                },
+            )
             if choice.exec():
 
-                with Config.version_path.open(mode="r", encoding="utf-8") as f:
-                    version_info = json.load(f)
-                version_info["main_version"] = Config.VERSION
-                with Config.version_path.open(mode="w", encoding="utf-8") as f:
-                    json.dump(version_info, f, ensure_ascii=False, indent=4)
-
-                if (Config.app_path / "AUTO_Updater.exe").exists():
-                    shutil.copy(
-                        Config.app_path / "AUTO_Updater.exe",
-                        Config.app_path / "AUTO_Updater.active.exe",
-                    )
+                if "url" in version_info["data"]:
+                    download_config = {
+                        "mode": "MirrorChyan",
+                        "thread_numb": 1,
+                        "url": version_info["data"]["url"],
+                    }
                 else:
-                    logger.error("更新器文件不存在")
-                    MainInfoBar.push_info_bar(
-                        "error", "更新器不存在", "请手动前往 GitHub 获取最新版本", -1
-                    )
-                    return None
 
-                subprocess.Popen(
-                    [Config.app_path / "AUTO_Updater.active.exe"],
-                    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP
-                    | subprocess.DETACHED_PROCESS
-                    | subprocess.CREATE_NO_WINDOW,
+                    # 从远程服务器获取代理信息
+                    Network.set_info(
+                        mode="get",
+                        url="https://gitee.com/DLmaster_361/AUTO_MAA/raw/server/download_info.json",
+                    )
+                    Network.start()
+                    Network.loop.exec()
+                    if Network.stutus_code == 200:
+                        download_info = Network.response_json
+                    else:
+                        logger.warning(f"获取应用列表时出错：{Network.error_message}")
+                        MainInfoBar.push_info_bar(
+                            "warning",
+                            "获取应用列表时出错",
+                            f"网络错误：{Network.stutus_code}",
+                            5000,
+                        )
+                        return None
+
+                    download_config = {
+                        "mode": "Proxy",
+                        "thread_numb": Config.get(Config.update_ThreadNumb),
+                        "proxy_list": list(
+                            set(
+                                Config.get(Config.update_ProxyUrlList)
+                                + download_info["proxy_list"]
+                            )
+                        ),
+                        "download_dict": download_info["download_dict"],
+                    }
+
+                self.downloader = DownloadManager(
+                    Config.app_path, "AUTO_MAA", remote_version, download_config
                 )
-                self.window().close()
-                QApplication.quit()
+                self.downloader.setWindowTitle("AUTO_MAA更新器")
+                self.downloader.setWindowIcon(
+                    QIcon(str(Config.app_path / "resources/icons/AUTO_MAA_Updater.ico"))
+                )
+                self.downloader.download_accomplish.connect(self.start_setup)
+                self.downloader.show()
+                self.downloader.run()
 
         elif (
             if_show
@@ -436,6 +465,23 @@ class Setting(QWidget):
                 )
             else:
                 MainInfoBar.push_info_bar("success", "更新检查", "已是最新版本~", 3000)
+
+    def start_setup(self) -> None:
+        subprocess.Popen(
+            [
+                Config.app_path / "AUTO_MAA-Setup.exe",
+                "/SP-",
+                "/SILENT",
+                "/NOCANCEL",
+                "/FORCECLOSEAPPLICATIONS",
+                "/LANG=Chinese",
+                f"/DIR={Config.app_path}",
+            ],
+            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP
+            | subprocess.DETACHED_PROCESS
+            | subprocess.CREATE_NO_WINDOW,
+        )
+        System.set_power("KillSelf")
 
     def show_notice(self, if_show: bool = False, if_first: bool = False) -> None:
         """显示公告"""
