@@ -649,6 +649,7 @@ class AppConfig(GlobalConfig):
             "ALL": {"value": [], "text": []},
             "Today": {"value": [], "text": []},
         }
+        self.power_signal = None
         self.if_ignore_silence = False
         self.if_database_opened = False
 
