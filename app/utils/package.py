@@ -120,7 +120,7 @@ if __name__ == "__main__":
     shutil.make_archive(
         base_name=root_path / f"AUTO_MAA_{version_text(main_version_numb)}",
         format="zip",
-        root_dir=root_path / "AUTO_MAA",
+        root_dir=root_path / "AUTO_MAA_Setup",
         base_dir=".",
     )
 

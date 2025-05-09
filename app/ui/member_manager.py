@@ -55,6 +55,7 @@ from functools import partial
 from pathlib import Path
 from typing import List
 import shutil
+import json
 
 from app.core import Config, MainInfoBar, TaskManager, MaaConfig, MaaUserConfig, Network
 from app.services import Crypto
@@ -1398,7 +1399,7 @@ class MemberManager(QWidget):
                             self.card_InfrastMode = PushAndComboBoxSettingCard(
                                 icon=FluentIcon.CAFE,
                                 title="基建模式",
-                                content="配置文件仅在自定义基建中生效",
+                                content="自定义基建配置文件未生效",
                                 text="选择配置文件",
                                 texts=[
                                     "常规模式",
@@ -1549,6 +1550,9 @@ class MemberManager(QWidget):
                             self.card_Mode.comboBox.currentIndexChanged.connect(
                                 self.switch_mode
                             )
+                            self.card_InfrastMode.comboBox.currentIndexChanged.connect(
+                                self.switch_infrastructure
+                            )
                             self.card_Annihilation.clicked.connect(
                                 lambda: self.set_maa("Annihilation")
                             )
@@ -1562,6 +1566,7 @@ class MemberManager(QWidget):
                             Config.PASSWORD_refreshed.connect(self.refresh_password)
 
                             self.switch_mode()
+                            self.switch_infrastructure()
 
                         def switch_mode(self) -> None:
 
@@ -1578,6 +1583,27 @@ class MemberManager(QWidget):
                                 self.card_InfrastMode.setVisible(False)
                                 self.card_Annihilation.button.setVisible(True)
                                 self.card_Routine.setVisible(True)
+
+                        def switch_infrastructure(self) -> None:
+
+                            if (
+                                self.config.get(self.config.Info_InfrastMode)
+                                == "Custom"
+                            ):
+                                self.card_InfrastMode.button.setVisible(True)
+                                with (
+                                    self.user_path
+                                    / "Infrastructure/infrastructure.json"
+                                ).open(mode="r", encoding="utf-8") as f:
+                                    infrastructure = json.load(f)
+                                self.card_InfrastMode.setContent(
+                                    f"当前基建配置：{infrastructure.get("title","未命名")}"
+                                )
+                            else:
+                                self.card_InfrastMode.button.setVisible(False)
+                                self.card_InfrastMode.setContent(
+                                    "自定义基建配置文件未生效"
+                                )
 
                         def refresh_gameid(self):
 
@@ -1634,6 +1660,7 @@ class MemberManager(QWidget):
                                     self.user_path
                                     / "Infrastructure/infrastructure.json",
                                 )
+                                self.switch_infrastructure()
                             else:
                                 logger.warning("未选择自定义基建文件")
                                 MainInfoBar.push_info_bar(
