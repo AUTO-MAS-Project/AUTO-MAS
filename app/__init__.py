@@ -33,7 +33,6 @@ from .core import QueueConfig, MaaConfig, MaaUserConfig, Task, TaskManager, Main
 from .models import MaaManager
 from .services import Notify, Crypto, System
 from .ui import AUTO_MAA
-from .utils import DownloadManager
 
 __all__ = [
     "QueueConfig",
@@ -47,5 +46,4 @@ __all__ = [
     "Crypto",
     "System",
     "AUTO_MAA",
-    "DownloadManager",
 ]

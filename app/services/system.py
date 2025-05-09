@@ -26,7 +26,7 @@ v4.3
 """
 
 from loguru import logger
-from PySide6.QtWidgets import QApplication, QWidget
+from PySide6.QtWidgets import QApplication
 import sys
 import ctypes
 import win32gui

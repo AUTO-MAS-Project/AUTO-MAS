@@ -29,6 +29,4 @@ __version__ = "4.2.0"
 __author__ = "DLmaster361 <DLmaster_361@163.com>"
 __license__ = "GPL-3.0 license"
 
-from .downloader import DownloadManager
-
-__all__ = ["DownloadManager"]
+__all__ = []
