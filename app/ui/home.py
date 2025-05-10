@@ -149,6 +149,8 @@ class Home(QWidget):
         layout = QVBoxLayout()
         scrollArea = ScrollArea()
         scrollArea.setWidgetResizable(True)
+        scrollArea.setContentsMargins(0, 0, 0, 0)
+        scrollArea.setStyleSheet("background: transparent; border: none;")
         scrollArea.setWidget(widget)
         layout.addWidget(scrollArea)
         self.setLayout(layout)

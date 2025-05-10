@@ -21,11 +21,10 @@
 """
 AUTO_MAA
 AUTO_MAA更新器
-v1.2
+v4.3
 作者：DLmaster_361
 """
 
-import json
 import zipfile
 import requests
 import subprocess

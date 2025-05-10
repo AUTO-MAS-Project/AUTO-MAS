@@ -116,25 +116,25 @@ class _MainTimer(QWidget):
 
     def check_power(self):
 
-        if Config.power_signal and not Config.running_list:
+        if Config.power_sign != "NoAction" and not Config.running_list:
 
             from app.ui import ProgressRingMessageBox
 
             mode_book = {
-                "Shutdown": "关机",
-                "Hibernate": "休眠",
+                "KillSelf": "退出软件",
                 "Sleep": "睡眠",
-                "KillSelf": "关闭AUTO_MAA",
+                "Hibernate": "休眠",
+                "Shutdown": "关机",
             }
 
             choice = ProgressRingMessageBox(
-                Config.main_window, f"{mode_book[Config.power_signal]}倒计时"
+                Config.main_window, f"{mode_book[Config.power_sign]}倒计时"
             )
             if choice.exec():
-                System.set_power(Config.power_signal)
-                Config.power_signal = None
+                System.set_power(Config.power_sign)
+                Config.set_power_sign("NoAction")
             else:
-                Config.power_signal = None
+                Config.set_power_sign("NoAction")
 
 
 MainTimer = _MainTimer()

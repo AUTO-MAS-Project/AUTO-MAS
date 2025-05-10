@@ -38,7 +38,6 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui import QIcon
 from qfluentwidgets import (
     Action,
-    Pivot,
     ScrollArea,
     FluentIcon,
     MessageBox,
@@ -49,7 +48,7 @@ from qfluentwidgets import (
     TableWidget,
     PrimaryToolButton,
 )
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Signal
 from datetime import datetime
 from functools import partial
 from pathlib import Path
@@ -72,6 +71,7 @@ from .Widget import (
     SwitchSettingCard,
     PushAndSwitchButtonSettingCard,
     PushAndComboBoxSettingCard,
+    PivotArea,
 )
 
 
@@ -485,13 +485,17 @@ class MemberManager(QWidget):
 
             self.setObjectName("脚本管理页面组")
 
-            self.pivot = Pivot(self)
+            self.pivotArea = PivotArea(self)
+            self.pivot = self.pivotArea.pivot
+
             self.stackedWidget = QStackedWidget(self)
-            self.Layout = QVBoxLayout(self)
+            self.stackedWidget.setContentsMargins(0, 0, 0, 0)
+            self.stackedWidget.setStyleSheet("background: transparent; border: none;")
 
             self.script_list: List[MemberManager.MemberSettingBox.MaaSettingBox] = []
 
-            self.Layout.addWidget(self.pivot, 0, Qt.AlignHCenter)
+            self.Layout = QVBoxLayout(self)
+            self.Layout.addWidget(self.pivotArea)
             self.Layout.addWidget(self.stackedWidget)
             self.Layout.setContentsMargins(0, 0, 0, 0)
 
@@ -563,6 +567,8 @@ class MemberManager(QWidget):
 
                 scrollArea = ScrollArea()
                 scrollArea.setWidgetResizable(True)
+                scrollArea.setContentsMargins(0, 0, 0, 0)
+                scrollArea.setStyleSheet("background: transparent; border: none;")
 
                 content_widget = QWidget()
                 content_layout = QVBoxLayout(content_widget)
@@ -1011,9 +1017,14 @@ class MemberManager(QWidget):
                         self.setObjectName("用户管理")
                         self.name = name
 
-                        self.pivot = Pivot(self)
+                        self.pivotArea = PivotArea(self)
+                        self.pivot = self.pivotArea.pivot
+
                         self.stackedWidget = QStackedWidget(self)
-                        self.Layout = QVBoxLayout(self)
+                        self.stackedWidget.setContentsMargins(0, 0, 0, 0)
+                        self.stackedWidget.setStyleSheet(
+                            "background: transparent; border: none;"
+                        )
 
                         self.script_list: List[
                             MemberManager.MemberSettingBox.MaaSettingBox.UserManager.UserSettingBox.UserMemberSettingBox
@@ -1024,7 +1035,8 @@ class MemberManager(QWidget):
                         self.stackedWidget.addWidget(self.user_dashboard)
                         self.pivot.addItem(routeKey="用户仪表盘", text="用户仪表盘")
 
-                        self.Layout.addWidget(self.pivot, 0, Qt.AlignHCenter)
+                        self.Layout = QVBoxLayout(self)
+                        self.Layout.addWidget(self.pivotArea)
                         self.Layout.addWidget(self.stackedWidget)
                         self.Layout.setContentsMargins(0, 0, 0, 0)
 

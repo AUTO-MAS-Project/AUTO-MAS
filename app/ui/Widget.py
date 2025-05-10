@@ -71,6 +71,9 @@ from qfluentwidgets import (
     SwitchButton,
     IndicatorPosition,
     Slider,
+    ScrollArea,
+    Pivot,
+    PivotItem,
 )
 from qfluentwidgets.common.overload import singledispatchmethod
 import os
@@ -1126,6 +1129,84 @@ class QuantifiedItemCard(CardWidget):
         self.Layout.addWidget(self.Name)
         self.Layout.addStretch(1)
         self.Layout.addWidget(self.Numb)
+
+
+class PivotArea(ScrollArea):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+        # 创建中间容器并设置布局
+        self.center_container = QWidget()
+        self.center_layout = QHBoxLayout(self.center_container)
+        self.center_layout.setContentsMargins(0, 0, 0, 0)
+        self.center_layout.setSpacing(0)
+        self.center_container.setStyleSheet("background: transparent; border: none;")
+        self.center_container.setFixedHeight(45)
+
+        self.pivot = self._Pivot(self)
+        self.pivot.ItemNumbChanged.connect(
+            lambda: QTimer.singleShot(
+                100,
+                lambda: (
+                    self.center_container.setFixedWidth(
+                        max(self.width() - 2, self.pivot.width())
+                    )
+                ),
+            )
+        )
+
+        self.center_layout.addStretch(1)
+        self.center_layout.addWidget(self.pivot)
+        self.center_layout.addStretch(1)
+
+        self.setWidgetResizable(False)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.viewport().setCursor(Qt.ArrowCursor)
+        self.setStyleSheet("background: transparent; border: none;")
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.setWidget(self.center_container)
+
+    def wheelEvent(self, event):
+        scroll_bar = self.horizontalScrollBar()
+        if scroll_bar.maximum() > 0:
+            delta = event.angleDelta().y()
+            scroll_bar.setValue(scroll_bar.value() - delta // 15)
+        event.ignore()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+
+        self.center_container.setFixedWidth(max(self.width() - 2, self.pivot.width()))
+        QTimer.singleShot(
+            100,
+            lambda: (
+                self.center_container.setFixedWidth(
+                    max(self.width() - 2, self.pivot.width())
+                )
+            ),
+        )
+
+    class _Pivot(Pivot):
+
+        ItemNumbChanged = Signal()
+
+        def __init__(self, parent=None):
+            super().__init__(parent)
+
+        def insertWidget(
+            self, index: int, routeKey: str, widget: PivotItem, onClick=None
+        ):
+            super().insertWidget(index, routeKey, widget, onClick)
+            self.ItemNumbChanged.emit()
+
+        def removeWidget(self, routeKey: str):
+            super().removeWidget(routeKey)
+            self.ItemNumbChanged.emit()
+
+        def clear(self):
+            super().clear()
+            self.ItemNumbChanged.emit()
 
 
 class QuickExpandGroupCard(ExpandGroupSettingCard):

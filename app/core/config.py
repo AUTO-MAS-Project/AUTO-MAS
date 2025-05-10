@@ -260,8 +260,10 @@ class QueueConfig(QConfig):
         self.queueSet_AfterAccomplish = OptionsConfigItem(
             "QueueSet",
             "AfterAccomplish",
-            "None",
-            OptionsValidator(["None", "KillSelf", "Sleep", "Hibernate", "Shutdown"]),
+            "NoAction",
+            OptionsValidator(
+                ["NoAction", "KillSelf", "Sleep", "Hibernate", "Shutdown"]
+            ),
         )
 
         self.time_TimeEnabled_0 = ConfigItem(
@@ -627,6 +629,7 @@ class AppConfig(GlobalConfig):
     gameid_refreshed = Signal()
     PASSWORD_refreshed = Signal()
     user_info_changed = Signal()
+    power_sign_changed = Signal()
 
     def __init__(self) -> None:
         super().__init__()
@@ -649,7 +652,7 @@ class AppConfig(GlobalConfig):
             "ALL": {"value": [], "text": []},
             "Today": {"value": [], "text": []},
         }
-        self.power_signal = None
+        self.power_sign = "NoAction"
         self.if_ignore_silence = False
         self.if_database_opened = False
 
@@ -1310,6 +1313,12 @@ class AppConfig(GlobalConfig):
             )
 
         self.user_info_changed.emit()
+
+    def set_power_sign(self, sign: str) -> None:
+        """设置当前电源状态"""
+
+        self.power_sign = sign
+        self.power_sign_changed.emit()
 
     def save_history(self, key: str, content: dict) -> None:
         """保存历史记录"""

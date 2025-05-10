@@ -87,7 +87,7 @@ class _SystemHandler:
 
         if sys.platform.startswith("win"):
 
-            if mode == "None":
+            if mode == "NoAction":
 
                 logger.info("不执行系统电源操作")
 
@@ -115,7 +115,7 @@ class _SystemHandler:
 
         elif sys.platform.startswith("linux"):
 
-            if mode == "None":
+            if mode == "NoAction":
 
                 logger.info("不执行系统电源操作")
 

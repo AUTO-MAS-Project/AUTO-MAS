@@ -265,11 +265,13 @@ class _TaskManager(QObject):
                 Config.queue_dict[name]["Config"].get(
                     Config.queue_dict[name]["Config"].queueSet_AfterAccomplish
                 )
-                != "None"
-                and not Config.power_signal
+                != "NoAction"
+                and Config.power_sign == "NoAction"
             ):
-                Config.power_signal = Config.queue_dict[name]["Config"].get(
-                    Config.queue_dict[name]["Config"].queueSet_AfterAccomplish
+                Config.set_power_sign(
+                    Config.queue_dict[name]["Config"].get(
+                        Config.queue_dict[name]["Config"].queueSet_AfterAccomplish
+                    )
                 )
 
     def check_maa_version(self, v: str):
