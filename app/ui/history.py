@@ -69,6 +69,8 @@ class History(QWidget):
 
         scrollArea = ScrollArea()
         scrollArea.setWidgetResizable(True)
+        scrollArea.setContentsMargins(0, 0, 0, 0)
+        scrollArea.setStyleSheet("background: transparent; border: none;")
         scrollArea.setWidget(content_widget)
         layout = QVBoxLayout()
         layout.addWidget(self.history_top_bar)

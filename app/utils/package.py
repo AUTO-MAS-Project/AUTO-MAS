@@ -66,7 +66,6 @@ if __name__ == "__main__":
         version = json.load(f)
 
     main_version_numb = list(map(int, version["main_version"].split(".")))
-    updater_version_numb = list(map(int, version["updater_version"].split(".")))
 
     print("Packaging AUTO_MAA main program ...")
 
@@ -120,7 +119,7 @@ if __name__ == "__main__":
     shutil.make_archive(
         base_name=root_path / f"AUTO_MAA_{version_text(main_version_numb)}",
         format="zip",
-        root_dir=root_path / "AUTO_MAA",
+        root_dir=root_path / "AUTO_MAA_Setup",
         base_dir=".",
     )
 
@@ -139,6 +138,6 @@ if __name__ == "__main__":
                 all_version_info[key] = value.copy()
 
     (root_path / "version_info.txt").write_text(
-        f"{version_text(main_version_numb)}\n{version_text(updater_version_numb)}\n<!--{json.dumps(version["version_info"], ensure_ascii=False)}-->\n{version_info_markdown(all_version_info)}",
+        f"{version_text(main_version_numb)}\n\n<!--{json.dumps(version["version_info"], ensure_ascii=False)}-->\n{version_info_markdown(all_version_info)}",
         encoding="utf-8",
     )

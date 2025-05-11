@@ -38,7 +38,6 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui import QIcon
 from qfluentwidgets import (
     Action,
-    Pivot,
     ScrollArea,
     FluentIcon,
     MessageBox,
@@ -49,12 +48,13 @@ from qfluentwidgets import (
     TableWidget,
     PrimaryToolButton,
 )
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Signal
 from datetime import datetime
 from functools import partial
 from pathlib import Path
 from typing import List
 import shutil
+import json
 
 from app.core import Config, MainInfoBar, TaskManager, MaaConfig, MaaUserConfig, Network
 from app.services import Crypto
@@ -71,6 +71,7 @@ from .Widget import (
     SwitchSettingCard,
     PushAndSwitchButtonSettingCard,
     PushAndComboBoxSettingCard,
+    PivotArea,
 )
 
 
@@ -484,13 +485,17 @@ class MemberManager(QWidget):
 
             self.setObjectName("脚本管理页面组")
 
-            self.pivot = Pivot(self)
+            self.pivotArea = PivotArea(self)
+            self.pivot = self.pivotArea.pivot
+
             self.stackedWidget = QStackedWidget(self)
-            self.Layout = QVBoxLayout(self)
+            self.stackedWidget.setContentsMargins(0, 0, 0, 0)
+            self.stackedWidget.setStyleSheet("background: transparent; border: none;")
 
             self.script_list: List[MemberManager.MemberSettingBox.MaaSettingBox] = []
 
-            self.Layout.addWidget(self.pivot, 0, Qt.AlignHCenter)
+            self.Layout = QVBoxLayout(self)
+            self.Layout.addWidget(self.pivotArea)
             self.Layout.addWidget(self.stackedWidget)
             self.Layout.setContentsMargins(0, 0, 0, 0)
 
@@ -562,6 +567,8 @@ class MemberManager(QWidget):
 
                 scrollArea = ScrollArea()
                 scrollArea.setWidgetResizable(True)
+                scrollArea.setContentsMargins(0, 0, 0, 0)
+                scrollArea.setStyleSheet("background: transparent; border: none;")
 
                 content_widget = QWidget()
                 content_layout = QVBoxLayout(content_widget)
@@ -1010,9 +1017,14 @@ class MemberManager(QWidget):
                         self.setObjectName("用户管理")
                         self.name = name
 
-                        self.pivot = Pivot(self)
+                        self.pivotArea = PivotArea(self)
+                        self.pivot = self.pivotArea.pivot
+
                         self.stackedWidget = QStackedWidget(self)
-                        self.Layout = QVBoxLayout(self)
+                        self.stackedWidget.setContentsMargins(0, 0, 0, 0)
+                        self.stackedWidget.setStyleSheet(
+                            "background: transparent; border: none;"
+                        )
 
                         self.script_list: List[
                             MemberManager.MemberSettingBox.MaaSettingBox.UserManager.UserSettingBox.UserMemberSettingBox
@@ -1023,7 +1035,8 @@ class MemberManager(QWidget):
                         self.stackedWidget.addWidget(self.user_dashboard)
                         self.pivot.addItem(routeKey="用户仪表盘", text="用户仪表盘")
 
-                        self.Layout.addWidget(self.pivot, 0, Qt.AlignHCenter)
+                        self.Layout = QVBoxLayout(self)
+                        self.Layout.addWidget(self.pivotArea)
                         self.Layout.addWidget(self.stackedWidget)
                         self.Layout.setContentsMargins(0, 0, 0, 0)
 
@@ -1398,7 +1411,7 @@ class MemberManager(QWidget):
                             self.card_InfrastMode = PushAndComboBoxSettingCard(
                                 icon=FluentIcon.CAFE,
                                 title="基建模式",
-                                content="配置文件仅在自定义基建中生效",
+                                content="自定义基建配置文件未生效",
                                 text="选择配置文件",
                                 texts=[
                                     "常规模式",
@@ -1549,6 +1562,9 @@ class MemberManager(QWidget):
                             self.card_Mode.comboBox.currentIndexChanged.connect(
                                 self.switch_mode
                             )
+                            self.card_InfrastMode.comboBox.currentIndexChanged.connect(
+                                self.switch_infrastructure
+                            )
                             self.card_Annihilation.clicked.connect(
                                 lambda: self.set_maa("Annihilation")
                             )
@@ -1562,6 +1578,7 @@ class MemberManager(QWidget):
                             Config.PASSWORD_refreshed.connect(self.refresh_password)
 
                             self.switch_mode()
+                            self.switch_infrastructure()
 
                         def switch_mode(self) -> None:
 
@@ -1578,6 +1595,27 @@ class MemberManager(QWidget):
                                 self.card_InfrastMode.setVisible(False)
                                 self.card_Annihilation.button.setVisible(True)
                                 self.card_Routine.setVisible(True)
+
+                        def switch_infrastructure(self) -> None:
+
+                            if (
+                                self.config.get(self.config.Info_InfrastMode)
+                                == "Custom"
+                            ):
+                                self.card_InfrastMode.button.setVisible(True)
+                                with (
+                                    self.user_path
+                                    / "Infrastructure/infrastructure.json"
+                                ).open(mode="r", encoding="utf-8") as f:
+                                    infrastructure = json.load(f)
+                                self.card_InfrastMode.setContent(
+                                    f"当前基建配置：{infrastructure.get("title","未命名")}"
+                                )
+                            else:
+                                self.card_InfrastMode.button.setVisible(False)
+                                self.card_InfrastMode.setContent(
+                                    "自定义基建配置文件未生效"
+                                )
 
                         def refresh_gameid(self):
 
@@ -1634,6 +1672,7 @@ class MemberManager(QWidget):
                                     self.user_path
                                     / "Infrastructure/infrastructure.json",
                                 )
+                                self.switch_infrastructure()
                             else:
                                 logger.warning("未选择自定义基建文件")
                                 MainInfoBar.push_info_bar(

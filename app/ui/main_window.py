@@ -192,6 +192,7 @@ class AUTO_MAA(MSFluentWindow):
         self.set_min_method()
 
         Config.user_info_changed.connect(self.member_manager.refresh_dashboard)
+        Config.power_sign_changed.connect(self.dispatch_center.update_power_sign)
         TaskManager.create_gui.connect(self.dispatch_center.add_board)
         TaskManager.connect_gui.connect(self.dispatch_center.connect_main_board)
         Notify.push_info_bar.connect(MainInfoBar.push_info_bar)

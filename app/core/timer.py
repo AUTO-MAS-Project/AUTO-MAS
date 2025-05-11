@@ -46,6 +46,7 @@ class _MainTimer(QWidget):
         self.Timer = QTimer()
         self.Timer.timeout.connect(self.timed_start)
         self.Timer.timeout.connect(self.set_silence)
+        self.Timer.timeout.connect(self.check_power)
         self.Timer.start(1000)
         self.LongTimer = QTimer()
         self.LongTimer.timeout.connect(self.long_timed_task)
@@ -112,6 +113,28 @@ class _MainTimer(QWidget):
                     if not self.if_FailSafeException:
                         logger.warning(f"FailSafeException: {e}")
                         self.if_FailSafeException = True
+
+    def check_power(self):
+
+        if Config.power_sign != "NoAction" and not Config.running_list:
+
+            from app.ui import ProgressRingMessageBox
+
+            mode_book = {
+                "KillSelf": "退出软件",
+                "Sleep": "睡眠",
+                "Hibernate": "休眠",
+                "Shutdown": "关机",
+            }
+
+            choice = ProgressRingMessageBox(
+                Config.main_window, f"{mode_book[Config.power_sign]}倒计时"
+            )
+            if choice.exec():
+                System.set_power(Config.power_sign)
+                Config.set_power_sign("NoAction")
+            else:
+                Config.set_power_sign("NoAction")
 
 
 MainTimer = _MainTimer()

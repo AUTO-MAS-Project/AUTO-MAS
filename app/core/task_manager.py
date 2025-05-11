@@ -265,28 +265,14 @@ class _TaskManager(QObject):
                 Config.queue_dict[name]["Config"].get(
                     Config.queue_dict[name]["Config"].queueSet_AfterAccomplish
                 )
-                != "None"
+                != "NoAction"
+                and Config.power_sign == "NoAction"
             ):
-
-                from app.ui import ProgressRingMessageBox
-
-                mode_book = {
-                    "Shutdown": "关机",
-                    "Hibernate": "休眠",
-                    "Sleep": "睡眠",
-                    "KillSelf": "关闭AUTO_MAA",
-                }
-
-                choice = ProgressRingMessageBox(
-                    Config.main_window,
-                    f"{mode_book[Config.queue_dict[name]["Config"].get(Config.queue_dict[name]["Config"].queueSet_AfterAccomplish)]}倒计时",
-                )
-                if choice.exec():
-                    System.set_power(
-                        Config.queue_dict[name]["Config"].get(
-                            Config.queue_dict[name]["Config"].queueSet_AfterAccomplish
-                        )
+                Config.set_power_sign(
+                    Config.queue_dict[name]["Config"].get(
+                        Config.queue_dict[name]["Config"].queueSet_AfterAccomplish
                     )
+                )
 
     def check_maa_version(self, v: str):
         """检查MAA版本"""

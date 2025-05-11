@@ -34,14 +34,12 @@ from PySide6.QtWidgets import (
 )
 from qfluentwidgets import (
     Action,
-    Pivot,
     ScrollArea,
     FluentIcon,
     MessageBox,
     HeaderCardWidget,
     CommandBar,
 )
-from PySide6.QtCore import Qt
 from typing import List
 
 from app.core import QueueConfig, Config, MainInfoBar
@@ -52,6 +50,7 @@ from .Widget import (
     TimeEditSettingCard,
     NoOptionComboBoxSettingCard,
     HistoryCard,
+    PivotArea,
 )
 
 
@@ -305,15 +304,19 @@ class QueueManager(QWidget):
 
             self.setObjectName("调度队列管理")
 
-            self.pivot = Pivot(self)
+            self.pivotArea = PivotArea()
+            self.pivot = self.pivotArea.pivot
+
             self.stackedWidget = QStackedWidget(self)
-            self.Layout = QVBoxLayout(self)
+            self.stackedWidget.setContentsMargins(0, 0, 0, 0)
+            self.stackedWidget.setStyleSheet("background: transparent; border: none;")
 
             self.script_list: List[
                 QueueManager.QueueSettingBox.QueueMemberSettingBox
             ] = []
 
-            self.Layout.addWidget(self.pivot, 0, Qt.AlignHCenter)
+            self.Layout = QVBoxLayout(self)
+            self.Layout.addWidget(self.pivotArea)
             self.Layout.addWidget(self.stackedWidget)
             self.Layout.setContentsMargins(0, 0, 0, 0)
 
@@ -380,6 +383,8 @@ class QueueManager(QWidget):
 
                 scrollArea = ScrollArea()
                 scrollArea.setWidgetResizable(True)
+                scrollArea.setContentsMargins(0, 0, 0, 0)
+                scrollArea.setStyleSheet("background: transparent; border: none;")
 
                 content_widget = QWidget()
                 content_layout = QVBoxLayout(content_widget)
