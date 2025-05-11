@@ -965,7 +965,7 @@ class MaaManager(QObject):
                 else:
                     self.maa_result = "MAA部分任务执行失败"
 
-            elif "请「检查连接设置」或「尝试重启模拟器与 ADB」或「重启电脑」" in log:
+            elif "请 ｢检查连接设置｣ → ｢尝试重启模拟器与 ADB｣ → ｢重启电脑｣" in log:
                 self.maa_result = "MAA的ADB连接异常"
 
             elif "未检测到任何模拟器" in log:
@@ -991,7 +991,7 @@ class MaaManager(QObject):
         elif mode == "人工排查":
             if "完成任务: StartUp" in log:
                 self.maa_result = "Success!"
-            elif "请「检查连接设置」或「尝试重启模拟器与 ADB」或「重启电脑」" in log:
+            elif "请 ｢检查连接设置｣ → ｢尝试重启模拟器与 ADB｣ → ｢重启电脑｣" in log:
                 self.maa_result = "MAA的ADB连接异常"
             elif "未检测到任何模拟器" in log:
                 self.maa_result = "MAA未检测到任何模拟器"

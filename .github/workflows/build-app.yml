@@ -73,8 +73,6 @@ jobs:
         run: |
           $MAIN_VERSION=(Get-Content -Path "version_info.txt" -TotalCount 1).Trim()
           "AUTO_MAA_version=$MAIN_VERSION" | Out-File -FilePath $env:GITHUB_ENV -Append
-          $UPDATER_VERSION=(Get-Content -Path "version_info.txt" -TotalCount 2 | Select-Object -Index 1).Trim()
-          "updater_version=$UPDATER_VERSION" | Out-File -FilePath $env:GITHUB_ENV -Append
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
@@ -111,8 +109,11 @@ jobs:
           NAME="$(sed 's/\r$//g' <(head -n 1 version_info.txt))"
           TAGNAME="$(sed 's/\r$//g' <(head -n 1 version_info.txt))"
           NOTES_MAIN="$(sed 's/\r$//g' <(tail -n +3 version_info.txt))"
-          NOTES_TAIL="\`\`\`本release通过GitHub Actions自动构建\`\`\`"
-          NOTES="$NOTES_MAIN<br><br>$NOTES_TAIL"
+          NOTES="$NOTES_MAIN
+          
+          [已有 Mirror酱 CDK ？前往 Mirror酱 高速下载](https://mirrorchyan.com/zh/projects?rid=AUTO_MAA)
+
+          \`\`\`本release通过GitHub Actions自动构建\`\`\`"
           if [ "${{ github.ref_name }}" == "main" ]; then
             PRERELEASE_FLAG=""
           else
