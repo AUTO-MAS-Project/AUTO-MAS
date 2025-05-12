@@ -923,6 +923,8 @@ class MaaManager(QObject):
             latest_time = start_time
             for _ in logs[::-1]:
                 try:
+                    if "如果长时间无进一步日志更新，可能需要手动干预。" in _:
+                        continue
                     latest_time = datetime.strptime(_[1:20], "%Y-%m-%d %H:%M:%S")
                     break
                 except ValueError:
