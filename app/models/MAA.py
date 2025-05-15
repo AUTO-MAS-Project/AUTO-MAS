@@ -631,8 +631,9 @@ class MaaManager(QObject):
                         if (run_book["Annihilation"] and run_book["Routine"])
                         else "代理任务未全部完成"
                     )
+                    current_date = datetime.now().strftime("%m-%d")
                     self.push_notification(
-                        "统计信息", f"用户 {user[0]} 的自动代理统计报告", statistics
+                        "统计信息", f"{current_date} | 用户 {user[0]} 的自动代理统计报告", statistics
                     )
 
                 if run_book["Annihilation"] and run_book["Routine"]:
