@@ -1178,6 +1178,7 @@ class MemberManager(QWidget):
                                 def handler(checked):
                                     # 使用配置项的set方法自动触发信号
                                     config_obj.set(config_obj.Info_Status, checked)
+
                                 return handler
 
                             self.user_data = Config.member_dict[self.name]["UserData"]
@@ -1221,7 +1222,11 @@ class MemberManager(QWidget):
                                 switch_button = SwitchButton()
                                 switch_button.setOffText("")
                                 switch_button.setOnText("")
-                                switch_button.setChecked(config.get(config.Info_Status))# 初始化开关状态
+                                # 初始化开关状态
+                                switch_button.setChecked(config.get(config.Info_Status))
+                                switch_button.setEnabled(
+                                    config.get(config.Info_RemainedDay) != 0
+                                )
                                 # 将开关的bool同步
                                 switch_button.checkedChanged.connect(handler)
 
@@ -1248,9 +1253,7 @@ class MemberManager(QWidget):
                                     ),
                                 )
                                 self.dashboard.setCellWidget(
-                                    int(name[3:]) - 1, 
-                                    3, 
-                                    switch_button
+                                    int(name[3:]) - 1, 3, switch_button
                                 )
                                 self.dashboard.setItem(
                                     int(name[3:]) - 1,

@@ -311,16 +311,12 @@ class SwitchSettingCard(SettingCard):
 
         self.switchButton.setChecked(isChecked)
         self.switchButton.setText(self.tr("On") if isChecked else self.tr("Off"))
-    
-    # 这两个函数似乎没用？我注释掉仍能运行。
-    # setChecked是qfluentw中SwitchButton类的内置方法，
-    # Example：switchButton.setChecked(True)# 更改按钮状态为打开
 
-    # def setChecked(self, isChecked: bool):
-    #     self.setValue(isChecked)
+    def setChecked(self, isChecked: bool):
+        self.setValue(isChecked)
 
-    # def isChecked(self):
-    #     return self.switchButton.isChecked()
+    def isChecked(self):
+        return self.switchButton.isChecked()
 
 
 class RangeSettingCard(SettingCard):
