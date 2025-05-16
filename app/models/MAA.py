@@ -656,7 +656,9 @@ class MaaManager(QObject):
                     )
                     current_date = datetime.now().strftime("%m-%d")
                     self.push_notification(
-                        "统计信息", f"{current_date} | 用户 {user[0]} 的自动代理统计报告", statistics
+                        "统计信息",
+                        f"{current_date} | 用户 {user[0]} 的自动代理统计报告",
+                        statistics,
                     )
 
                 if run_book["Annihilation"] and run_book["Routine"]:
@@ -897,7 +899,10 @@ class MaaManager(QObject):
             f"即将搜索ADB实际地址\n正在等待模拟器完成启动\n请等待{self.wait_time}s"
         )
 
-        time.sleep(self.wait_time)
+        for _ in range(self.wait_time):
+            if self.isInterruptionRequested:
+                break
+            time.sleep(1)
 
         if "-" in self.ADB_address:
             ADB_ip = f"{self.ADB_address.split("-")[0]}-"
