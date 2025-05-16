@@ -71,6 +71,7 @@ from .Widget import (
     SwitchSettingCard,
     PushAndSwitchButtonSettingCard,
     PushAndComboBoxSettingCard,
+    StatusSwitchSetting,
     PivotArea,
 )
 
@@ -1230,14 +1231,14 @@ class MemberManager(QWidget):
                                         else "******"
                                     ),
                                 )
-                                self.dashboard.setItem(
+                                self.dashboard.setCellWidget(
                                     int(name[3:]) - 1,
                                     3,
-                                    QTableWidgetItem(
-                                        "启用"
-                                        if config.get(config.Info_Status)
-                                        and config.get(config.Info_RemainedDay) != 0
-                                        else "禁用"
+                                    StatusSwitchSetting(
+                                        qconfig=config,
+                                        configItem_check=config.Info_Status,
+                                        configItem_enable=config.Info_RemainedDay,
+                                        parent=self,
                                     ),
                                 )
                                 self.dashboard.setItem(
