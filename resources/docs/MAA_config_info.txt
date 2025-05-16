@@ -58,4 +58,5 @@ G"GUI.UseTray": "True"        #显示托盘图标
 G"GUI.MinimizeToTray": "False"        #最小化时隐藏至托盘
 "Start.EmulatorPath"        #模拟器路径
 "Start.EmulatorAddCommand": "-v 2"        #附加命令
+"Start.EmulatorWaitSeconds": "10"        #等待模拟器启动时间
 G"VersionUpdate.package": "MirrorChyanAppv5.15.6.zip"        #更新包标识

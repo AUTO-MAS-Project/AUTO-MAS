@@ -698,6 +698,15 @@ class MemberManager(QWidget):
                             configItem=self.config.RunSet_ProxyTimesLimit,
                             parent=self,
                         )
+                        self.card_ADBSearchRange = SpinBoxSettingCard(
+                            icon=FluentIcon.PAGE_RIGHT,
+                            title="ADB端口号搜索范围",
+                            content="在【±端口号范围】内搜索实际ADB端口号",
+                            range=(0, 3),
+                            qconfig=self.config,
+                            configItem=self.config.RunSet_ADBSearchRange,
+                            parent=self,
+                        )
                         self.card_RunTimesLimit = SpinBoxSettingCard(
                             icon=FluentIcon.PAGE_RIGHT,
                             title="代理重试次数限制",
@@ -746,6 +755,7 @@ class MemberManager(QWidget):
                         Layout = QVBoxLayout(widget)
                         Layout.addWidget(self.card_TaskTransitionMethod)
                         Layout.addWidget(self.card_ProxyTimesLimit)
+                        Layout.addWidget(self.card_ADBSearchRange)
                         Layout.addWidget(self.card_RunTimesLimit)
                         Layout.addWidget(self.card_AnnihilationTimeLimit)
                         Layout.addWidget(self.card_RoutineTimeLimit)

@@ -29,7 +29,7 @@ __version__ = "4.2.0"
 __author__ = "DLmaster361 <DLmaster_361@163.com>"
 __license__ = "GPL-3.0 license"
 
-from .config import QueueConfig, MaaConfig, MaaUserConfig, Config
+from .config import QueueConfig, MaaConfig, MaaUserConfig, MaaPlanConfig, Config
 from .main_info_bar import MainInfoBar
 from .network import Network
 from .task_manager import Task, TaskManager
@@ -40,6 +40,7 @@ __all__ = [
     "QueueConfig",
     "MaaConfig",
     "MaaUserConfig",
+    "MaaPlanConfig",
     "MainInfoBar",
     "Network",
     "Task",

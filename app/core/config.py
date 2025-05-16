@@ -78,7 +78,78 @@ class UrlListValidator(ConfigValidator):
         return list(set([_ for _ in urls if self.validate(_)]))
 
 
-class GlobalConfig(QConfig):
+class LQConfig(QConfig):
+    """局域配置类"""
+
+    def __init__(self) -> None:
+        super().__init__()
+
+    def toDict(self, serialize=True):
+        """convert config items to `dict`"""
+        items = {}
+        for name in dir(self._cfg):
+            item = getattr(self._cfg, name)
+            if not isinstance(item, ConfigItem):
+                continue
+
+            value = item.serialize() if serialize else item.value
+            if not items.get(item.group):
+                if not item.name:
+                    items[item.group] = value
+                else:
+                    items[item.group] = {}
+
+            if item.name:
+                items[item.group][item.name] = value
+
+        return items
+
+    @exceptionHandler()
+    def load(self, file=None, config=None):
+        """load config
+
+        Parameters
+        ----------
+        file: str or Path
+            the path of json config file
+
+        config: Config
+            config object to be initialized
+        """
+        if isinstance(config, QConfig):
+            self._cfg = config
+            self._cfg.themeChanged.connect(self.themeChanged)
+
+        if isinstance(file, (str, Path)):
+            self._cfg.file = Path(file)
+
+        try:
+            with open(self._cfg.file, encoding="utf-8") as f:
+                cfg = json.load(f)
+        except:
+            cfg = {}
+
+        # map config items'key to item
+        items = {}
+        for name in dir(self._cfg):
+            item = getattr(self._cfg, name)
+            if isinstance(item, ConfigItem):
+                items[item.key] = item
+
+        # update the value of config item
+        for k, v in cfg.items():
+            if not isinstance(v, dict) and items.get(k) is not None:
+                items[k].deserializeFrom(v)
+            elif isinstance(v, dict):
+                for key, value in v.items():
+                    key = k + "." + key
+                    if items.get(key) is not None:
+                        items[key].deserializeFrom(value)
+
+        self.theme = self.get(self._cfg.themeMode)
+
+
+class GlobalConfig(LQConfig):
     """全局配置"""
 
     def __init__(self) -> None:
@@ -182,72 +253,8 @@ class GlobalConfig(QConfig):
         )
         self.update_MirrorChyanCDK = ConfigItem("Update", "MirrorChyanCDK", "")
 
-    def toDict(self, serialize=True):
-        """convert config items to `dict`"""
-        items = {}
-        for name in dir(self._cfg):
-            item = getattr(self._cfg, name)
-            if not isinstance(item, ConfigItem):
-                continue
 
-            value = item.serialize() if serialize else item.value
-            if not items.get(item.group):
-                if not item.name:
-                    items[item.group] = value
-                else:
-                    items[item.group] = {}
-
-            if item.name:
-                items[item.group][item.name] = value
-
-        return items
-
-    @exceptionHandler()
-    def load(self, file=None, config=None):
-        """load config
-
-        Parameters
-        ----------
-        file: str or Path
-            the path of json config file
-
-        config: Config
-            config object to be initialized
-        """
-        if isinstance(config, QConfig):
-            self._cfg = config
-            self._cfg.themeChanged.connect(self.themeChanged)
-
-        if isinstance(file, (str, Path)):
-            self._cfg.file = Path(file)
-
-        try:
-            with open(self._cfg.file, encoding="utf-8") as f:
-                cfg = json.load(f)
-        except:
-            cfg = {}
-
-        # map config items'key to item
-        items = {}
-        for name in dir(self._cfg):
-            item = getattr(self._cfg, name)
-            if isinstance(item, ConfigItem):
-                items[item.key] = item
-
-        # update the value of config item
-        for k, v in cfg.items():
-            if not isinstance(v, dict) and items.get(k) is not None:
-                items[k].deserializeFrom(v)
-            elif isinstance(v, dict):
-                for key, value in v.items():
-                    key = k + "." + key
-                    if items.get(key) is not None:
-                        items[key].deserializeFrom(value)
-
-        self.theme = self.get(self._cfg.themeMode)
-
-
-class QueueConfig(QConfig):
+class QueueConfig(LQConfig):
     """队列配置"""
 
     def __init__(self) -> None:
@@ -334,72 +341,8 @@ class QueueConfig(QConfig):
             "Data", "LastProxyHistory", "暂无历史运行记录"
         )
 
-    def toDict(self, serialize=True):
-        """convert config items to `dict`"""
-        items = {}
-        for name in dir(self._cfg):
-            item = getattr(self._cfg, name)
-            if not isinstance(item, ConfigItem):
-                continue
 
-            value = item.serialize() if serialize else item.value
-            if not items.get(item.group):
-                if not item.name:
-                    items[item.group] = value
-                else:
-                    items[item.group] = {}
-
-            if item.name:
-                items[item.group][item.name] = value
-
-        return items
-
-    @exceptionHandler()
-    def load(self, file=None, config=None):
-        """load config
-
-        Parameters
-        ----------
-        file: str or Path
-            the path of json config file
-
-        config: Config
-            config object to be initialized
-        """
-        if isinstance(config, QConfig):
-            self._cfg = config
-            self._cfg.themeChanged.connect(self.themeChanged)
-
-        if isinstance(file, (str, Path)):
-            self._cfg.file = Path(file)
-
-        try:
-            with open(self._cfg.file, encoding="utf-8") as f:
-                cfg = json.load(f)
-        except:
-            cfg = {}
-
-        # map config items'key to item
-        items = {}
-        for name in dir(self._cfg):
-            item = getattr(self._cfg, name)
-            if isinstance(item, ConfigItem):
-                items[item.key] = item
-
-        # update the value of config item
-        for k, v in cfg.items():
-            if not isinstance(v, dict) and items.get(k) is not None:
-                items[k].deserializeFrom(v)
-            elif isinstance(v, dict):
-                for key, value in v.items():
-                    key = k + "." + key
-                    if items.get(key) is not None:
-                        items[key].deserializeFrom(value)
-
-        self.theme = self.get(self._cfg.themeMode)
-
-
-class MaaConfig(QConfig):
+class MaaConfig(LQConfig):
     """MAA配置"""
 
     def __init__(self) -> None:
@@ -417,6 +360,9 @@ class MaaConfig(QConfig):
         self.RunSet_ProxyTimesLimit = RangeConfigItem(
             "RunSet", "ProxyTimesLimit", 0, RangeValidator(0, 1024)
         )
+        self.RunSet_ADBSearchRange = RangeConfigItem(
+            "RunSet", "ADBSearchRange", 0, RangeValidator(0, 3)
+        )
         self.RunSet_RunTimesLimit = RangeConfigItem(
             "RunSet", "RunTimesLimit", 3, RangeValidator(1, 1024)
         )
@@ -433,72 +379,8 @@ class MaaConfig(QConfig):
             "RunSet", "AutoUpdateMaa", False, BoolValidator()
         )
 
-    def toDict(self, serialize=True):
-        """convert config items to `dict`"""
-        items = {}
-        for name in dir(self._cfg):
-            item = getattr(self._cfg, name)
-            if not isinstance(item, ConfigItem):
-                continue
 
-            value = item.serialize() if serialize else item.value
-            if not items.get(item.group):
-                if not item.name:
-                    items[item.group] = value
-                else:
-                    items[item.group] = {}
-
-            if item.name:
-                items[item.group][item.name] = value
-
-        return items
-
-    @exceptionHandler()
-    def load(self, file=None, config=None):
-        """load config
-
-        Parameters
-        ----------
-        file: str or Path
-            the path of json config file
-
-        config: Config
-            config object to be initialized
-        """
-        if isinstance(config, QConfig):
-            self._cfg = config
-            self._cfg.themeChanged.connect(self.themeChanged)
-
-        if isinstance(file, (str, Path)):
-            self._cfg.file = Path(file)
-
-        try:
-            with open(self._cfg.file, encoding="utf-8") as f:
-                cfg = json.load(f)
-        except:
-            cfg = {}
-
-        # map config items'key to item
-        items = {}
-        for name in dir(self._cfg):
-            item = getattr(self._cfg, name)
-            if isinstance(item, ConfigItem):
-                items[item.key] = item
-
-        # update the value of config item
-        for k, v in cfg.items():
-            if not isinstance(v, dict) and items.get(k) is not None:
-                items[k].deserializeFrom(v)
-            elif isinstance(v, dict):
-                for key, value in v.items():
-                    key = k + "." + key
-                    if items.get(key) is not None:
-                        items[key].deserializeFrom(value)
-
-        self.theme = self.get(self._cfg.themeMode)
-
-
-class MaaUserConfig(QConfig):
+class MaaUserConfig(LQConfig):
     """MAA用户配置"""
 
     def __init__(self) -> None:
@@ -537,8 +419,8 @@ class MaaUserConfig(QConfig):
         self.Info_SeriesNumb = OptionsConfigItem(
             "Info",
             "SeriesNumb",
-            "1",
-            OptionsValidator(["1000", "6", "5", "4", "3", "2", "1", "-1"]),
+            "0",
+            OptionsValidator(["0", "6", "5", "4", "3", "2", "1", "-1"]),
         )
         self.Info_GameId = ConfigItem("Info", "GameId", "-")
         self.Info_GameId_1 = ConfigItem("Info", "GameId_1", "-")
@@ -557,69 +439,126 @@ class MaaUserConfig(QConfig):
             "Data", "CustomInfrastPlanIndex", "0"
         )
 
-    def toDict(self, serialize=True):
-        """convert config items to `dict`"""
-        items = {}
-        for name in dir(self._cfg):
-            item = getattr(self._cfg, name)
-            if not isinstance(item, ConfigItem):
-                continue
 
-            value = item.serialize() if serialize else item.value
-            if not items.get(item.group):
-                if not item.name:
-                    items[item.group] = value
-                else:
-                    items[item.group] = {}
+class MaaPlanConfig(LQConfig):
+    """MAA计划表配置"""
 
-            if item.name:
-                items[item.group][item.name] = value
+    def __init__(self) -> None:
+        super().__init__()
 
-        return items
+        self.Info_Name = ConfigItem("Info", "Name", "新表格")
 
-    @exceptionHandler()
-    def load(self, file=None, config=None):
-        """load config
+        self.Global_MedicineNumb = ConfigItem(
+            "Global", "MedicineNumb", 0, RangeValidator(0, 1024)
+        )
+        self.Global_SeriesNumb = OptionsConfigItem(
+            "Global",
+            "SeriesNumb",
+            "0",
+            OptionsValidator(["0", "6", "5", "4", "3", "2", "1", "-1"]),
+        )
+        self.Global_GameId = ConfigItem("Global", "GameId", "-")
+        self.Global_GameId_1 = ConfigItem("Global", "GameId_1", "-")
+        self.Global_GameId_2 = ConfigItem("Global", "GameId_2", "-")
+        self.Global_GameId_Remain = ConfigItem("Global", "GameId_Remain", "-")
 
-        Parameters
-        ----------
-        file: str or Path
-            the path of json config file
+        self.Monday_MedicineNumb = ConfigItem(
+            "Monday", "MedicineNumb", 0, RangeValidator(0, 1024)
+        )
+        self.Monday_SeriesNumb = OptionsConfigItem(
+            "Monday",
+            "SeriesNumb",
+            "0",
+            OptionsValidator(["0", "6", "5", "4", "3", "2", "1", "-1"]),
+        )
+        self.Monday_GameId = ConfigItem("Monday", "GameId", "-")
+        self.Monday_GameId_1 = ConfigItem("Monday", "GameId_1", "-")
+        self.Monday_GameId_2 = ConfigItem("Monday", "GameId_2", "-")
+        self.Monday_GameId_Remain = ConfigItem("Monday", "GameId_Remain", "-")
 
-        config: Config
-            config object to be initialized
-        """
-        if isinstance(config, QConfig):
-            self._cfg = config
-            self._cfg.themeChanged.connect(self.themeChanged)
+        self.Tuesday_MedicineNumb = ConfigItem(
+            "Tuesday", "MedicineNumb", 0, RangeValidator(0, 1024)
+        )
+        self.Tuesday_SeriesNumb = OptionsConfigItem(
+            "Tuesday",
+            "SeriesNumb",
+            "0",
+            OptionsValidator(["0", "6", "5", "4", "3", "2", "1", "-1"]),
+        )
+        self.Tuesday_GameId = ConfigItem("Tuesday", "GameId", "-")
+        self.Tuesday_GameId_1 = ConfigItem("Tuesday", "GameId_1", "-")
+        self.Tuesday_GameId_2 = ConfigItem("Tuesday", "GameId_2", "-")
+        self.Tuesday_GameId_Remain = ConfigItem("Tuesday", "GameId_Remain", "-")
 
-        if isinstance(file, (str, Path)):
-            self._cfg.file = Path(file)
+        self.Wednesday_MedicineNumb = ConfigItem(
+            "Wednesday", "MedicineNumb", 0, RangeValidator(0, 1024)
+        )
+        self.Wednesday_SeriesNumb = OptionsConfigItem(
+            "Wednesday",
+            "SeriesNumb",
+            "0",
+            OptionsValidator(["0", "6", "5", "4", "3", "2", "1", "-1"]),
+        )
+        self.Wednesday_GameId = ConfigItem("Wednesday", "GameId", "-")
+        self.Wednesday_GameId_1 = ConfigItem("Wednesday", "GameId_1", "-")
+        self.Wednesday_GameId_2 = ConfigItem("Wednesday", "GameId_2", "-")
+        self.Wednesday_GameId_Remain = ConfigItem("Wednesday", "GameId_Remain", "-")
 
-        try:
-            with open(self._cfg.file, encoding="utf-8") as f:
-                cfg = json.load(f)
-        except:
-            cfg = {}
+        self.Thursday_MedicineNumb = ConfigItem(
+            "Thursday", "MedicineNumb", 0, RangeValidator(0, 1024)
+        )
+        self.Thursday_SeriesNumb = OptionsConfigItem(
+            "Thursday",
+            "SeriesNumb",
+            "0",
+            OptionsValidator(["0", "6", "5", "4", "3", "2", "1", "-1"]),
+        )
+        self.Thursday_GameId = ConfigItem("Thursday", "GameId", "-")
+        self.Thursday_GameId_1 = ConfigItem("Thursday", "GameId_1", "-")
+        self.Thursday_GameId_2 = ConfigItem("Thursday", "GameId_2", "-")
+        self.Thursday_GameId_Remain = ConfigItem("Thursday", "GameId_Remain", "-")
 
-        # map config items'key to item
-        items = {}
-        for name in dir(self._cfg):
-            item = getattr(self._cfg, name)
-            if isinstance(item, ConfigItem):
-                items[item.key] = item
+        self.Friday_MedicineNumb = ConfigItem(
+            "Friday", "MedicineNumb", 0, RangeValidator(0, 1024)
+        )
+        self.Friday_SeriesNumb = OptionsConfigItem(
+            "Friday",
+            "SeriesNumb",
+            "0",
+            OptionsValidator(["0", "6", "5", "4", "3", "2", "1", "-1"]),
+        )
+        self.Friday_GameId = ConfigItem("Friday", "GameId", "-")
+        self.Friday_GameId_1 = ConfigItem("Friday", "GameId_1", "-")
+        self.Friday_GameId_2 = ConfigItem("Friday", "GameId_2", "-")
+        self.Friday_GameId_Remain = ConfigItem("Friday", "GameId_Remain", "-")
 
-        # update the value of config item
-        for k, v in cfg.items():
-            if not isinstance(v, dict) and items.get(k) is not None:
-                items[k].deserializeFrom(v)
-            elif isinstance(v, dict):
-                for key, value in v.items():
-                    key = k + "." + key
-                    if items.get(key) is not None:
-                        items[key].deserializeFrom(value)
+        self.Saturday_MedicineNumb = ConfigItem(
+            "Saturday", "MedicineNumb", 0, RangeValidator(0, 1024)
+        )
+        self.Saturday_SeriesNumb = OptionsConfigItem(
+            "Saturday",
+            "SeriesNumb",
+            "0",
+            OptionsValidator(["0", "6", "5", "4", "3", "2", "1", "-1"]),
+        )
+        self.Saturday_GameId = ConfigItem("Saturday", "GameId", "-")
+        self.Saturday_GameId_1 = ConfigItem("Saturday", "GameId_1", "-")
+        self.Saturday_GameId_2 = ConfigItem("Saturday", "GameId_2", "-")
+        self.Saturday_GameId_Remain = ConfigItem("Saturday", "GameId_Remain", "-")
 
-        self.theme = self.get(self._cfg.themeMode)
+        self.Sunday_MedicineNumb = ConfigItem(
+            "Sunday", "MedicineNumb", 0, RangeValidator(0, 1024)
+        )
+        self.Sunday_SeriesNumb = OptionsConfigItem(
+            "Sunday",
+            "SeriesNumb",
+            "0",
+            OptionsValidator(["0", "6", "5", "4", "3", "2", "1", "-1"]),
+        )
+        self.Sunday_GameId = ConfigItem("Sunday", "GameId", "-")
+        self.Sunday_GameId_1 = ConfigItem("Sunday", "GameId_1", "-")
+        self.Sunday_GameId_2 = ConfigItem("Sunday", "GameId_2", "-")
+        self.Sunday_GameId_Remain = ConfigItem("Sunday", "GameId_Remain", "-")
 
 
 class AppConfig(GlobalConfig):
@@ -704,7 +643,7 @@ class AppConfig(GlobalConfig):
         # 从MAA服务器获取活动关卡信息
         Network.set_info(
             mode="get",
-            url="https://ota.maa.plus/MaaAssistantArknights/api/gui/StageActivity.json",
+            url="https://api.maa.plus/MaaAssistantArknights/api/gui/StageActivity.json",
         )
         Network.start()
         Network.loop.exec()
@@ -1233,6 +1172,28 @@ class AppConfig(GlobalConfig):
 
         self.member_dict[name]["UserData"] = dict(
             sorted(user_dict.items(), key=lambda x: int(x[0][3:]))
+        )
+
+    def search_plan(self) -> None:
+        """搜索所有计划表"""
+
+        self.plan_dict: Dict[str, Dict[str, Union[str, Path, MaaPlanConfig]]] = {}
+        if (self.app_path / "config/MaaPlanConfig").exists():
+            for maa_plan_dir in (self.app_path / "config/MaaPlanConfig").iterdir():
+                if maa_plan_dir.is_dir():
+
+                    maa_plan_config = MaaPlanConfig()
+                    maa_plan_config.load(maa_plan_dir / "config.json", maa_plan_config)
+                    maa_plan_config.save()
+
+                    self.member_dict[maa_plan_dir.name] = {
+                        "Type": "Maa",
+                        "Path": maa_plan_dir,
+                        "Config": maa_plan_config,
+                    }
+
+        self.plan_dict = dict(
+            sorted(self.plan_dict.items(), key=lambda x: int(x[0][3:]))
         )
 
     def search_queue(self):
