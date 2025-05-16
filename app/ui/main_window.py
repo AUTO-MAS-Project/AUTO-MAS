@@ -351,7 +351,9 @@ class AUTO_MAA(MSFluentWindow):
                 "warning", "启动主任务失败", "“调度队列_1”与“脚本_1”均不存在", -1
             )
 
-    def show_ui(self, mode: str, if_quick: bool = False) -> None:
+    def show_ui(
+        self, mode: str, if_quick: bool = False, if_start: bool = False
+    ) -> None:
         """配置窗口状态"""
 
         self.switch_theme()
@@ -378,8 +380,12 @@ class AUTO_MAA(MSFluentWindow):
                 self.window().show()
                 if not if_quick:
                     if Config.get(Config.ui_maximized):
-                        self.titleBar.maxBtn.click()
+                        self.window().showMaximized()
                     self.show_ui("配置托盘")
+            elif if_start:
+                if Config.get(Config.ui_maximized):
+                    self.window().showMaximized()
+                self.show_ui("配置托盘")
 
             if not any(
                 self.window().geometry().intersects(screen.availableGeometry())

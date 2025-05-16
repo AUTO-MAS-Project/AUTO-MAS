@@ -42,8 +42,7 @@ def main():
     from app.ui.main_window import AUTO_MAA
 
     window = AUTO_MAA()
-    window.show_ui("显示主窗口")
-    window.show_ui("配置托盘")
+    window.show_ui("显示主窗口", if_start=True)
     window.start_up_task()
     sys.exit(application.exec())
 

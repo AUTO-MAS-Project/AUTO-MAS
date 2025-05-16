@@ -114,6 +114,10 @@ class MaaManager(QObject):
         self.maa_log_path = self.maa_root_path / "debug/gui.log"
         self.maa_exe_path = self.maa_root_path / "MAA.exe"
         self.maa_tasks_path = self.maa_root_path / "resource/tasks/tasks.json"
+        self.port_range = [0] + [
+            (i // 2 + 1) * (-1 if i % 2 else 1)
+            for i in range(0, 2 * self.set["RunSet"]["ADBSearchRange"])
+        ]
 
     def run(self):
         """主进程，运行MAA代理进程"""
@@ -386,6 +390,12 @@ class MaaManager(QObject):
                             self.if_open_emulator = True
                             break
 
+                        self.wait_time = int(
+                            set["Configurations"]["Default"][
+                                "Start.EmulatorWaitSeconds"
+                            ]
+                        )
+
                         self.ADB_path = Path(
                             set["Configurations"]["Default"]["Connect.AdbPath"]
                         )
@@ -414,6 +424,7 @@ class MaaManager(QObject):
                                 [self.ADB_path, "disconnect", self.ADB_address],
                                 creationflags=subprocess.CREATE_NO_WINDOW,
                             )
+                            logger.info(f"{self.name} | 释放ADB：{self.ADB_address}")
                         except subprocess.CalledProcessError as e:
                             # 忽略错误,因为可能本来就没有连接
                             logger.warning(f"{self.name} | 释放ADB时出现异常：{e}")
@@ -432,6 +443,9 @@ class MaaManager(QObject):
                                     [self.emulator_path, *self.emulator_arguments],
                                     creationflags=subprocess.CREATE_NO_WINDOW,
                                 )
+                                logger.info(
+                                    f"{self.name} | 启动模拟器：{self.emulator_path}，参数：{self.emulator_arguments}"
+                                )
                             except Exception as e:
                                 logger.error(f"{self.name} | 启动模拟器时出现异常：{e}")
                                 self.push_info_bar.emit(
@@ -445,6 +459,8 @@ class MaaManager(QObject):
 
                         # 添加静默进程标记
                         Config.silence_list.append(self.emulator_path)
+
+                        self.search_ADB_address()
 
                         # 创建MAA任务
                         maa = subprocess.Popen(
@@ -517,6 +533,12 @@ class MaaManager(QObject):
                             ) as f:
                                 data = json.load(f)
 
+                            # 记录自定义基建索引
+                            if self.task_dict["Base"] == "False":
+                                user_data["Data"]["CustomInfrastPlanIndex"] = data[
+                                    "Configurations"
+                                ]["Default"]["Infrast.CustomInfrastPlanIndex"]
+
                             # 记录更新包路径
                             if (
                                 data["Global"]["VersionUpdate.package"]
@@ -550,6 +572,7 @@ class MaaManager(QObject):
                                 [self.ADB_path, "disconnect", self.ADB_address],
                                 creationflags=subprocess.CREATE_NO_WINDOW,
                             )
+                            logger.info(f"{self.name} | 释放ADB：{self.ADB_address}")
                         except subprocess.CalledProcessError as e:
                             # 忽略错误,因为可能本来就没有连接
                             logger.warning(f"{self.name} | 释放ADB时出现异常：{e}")
@@ -566,29 +589,6 @@ class MaaManager(QObject):
                             self.emulator_process.terminate()
                             self.emulator_process.wait()
                             self.if_open_emulator = True
-
-                        # 执行MAA解压更新动作
-                        if self.maa_update_package:
-
-                            logger.info(
-                                f"{self.name} | 检测到MAA更新，正在执行更新动作"
-                            )
-
-                            self.update_log_text.emit(
-                                f"检测到MAA存在更新\nMAA正在执行更新动作\n请等待10s"
-                            )
-                            self.set_maa("更新MAA", None)
-                            subprocess.Popen(
-                                [self.maa_exe_path],
-                                creationflags=subprocess.CREATE_NO_WINDOW,
-                            )
-                            for _ in range(10):
-                                if self.isInterruptionRequested:
-                                    break
-                                time.sleep(1)
-                            System.kill_process(self.maa_exe_path)
-
-                            logger.info(f"{self.name} | 更新动作结束")
 
                         # 记录剿灭情况
                         if (
@@ -615,6 +615,29 @@ class MaaManager(QObject):
                                 f"喜报：用户 {user[0]} 公招出六星啦！",
                                 {"user_name": user_data["Info"]["Name"]},
                             )
+
+                        # 执行MAA解压更新动作
+                        if self.maa_update_package:
+
+                            logger.info(
+                                f"{self.name} | 检测到MAA更新，正在执行更新动作"
+                            )
+
+                            self.update_log_text.emit(
+                                f"检测到MAA存在更新\nMAA正在执行更新动作\n请等待10s"
+                            )
+                            self.set_maa("更新MAA", None)
+                            subprocess.Popen(
+                                [self.maa_exe_path],
+                                creationflags=subprocess.CREATE_NO_WINDOW,
+                            )
+                            for _ in range(10):
+                                if self.isInterruptionRequested:
+                                    break
+                                time.sleep(1)
+                            System.kill_process(self.maa_exe_path)
+
+                            logger.info(f"{self.name} | 更新动作结束")
 
                 if Config.get(Config.notify_IfSendStatistic):
 
@@ -866,6 +889,80 @@ class MaaManager(QObject):
 
     def __capture_response(self, response: bool) -> None:
         self.response = response
+
+    def search_ADB_address(self) -> None:
+        """搜索ADB实际地址"""
+
+        self.update_log_text.emit(
+            f"即将搜索ADB实际地址\n正在等待模拟器完成启动\n请等待{self.wait_time}s"
+        )
+
+        time.sleep(self.wait_time)
+
+        if "-" in self.ADB_address:
+            ADB_ip = f"{self.ADB_address.split("-")[0]}-"
+            ADB_port = self.ADB_address.split("-")[1]
+
+        elif ":" in self.ADB_address:
+            ADB_ip = f"{self.ADB_address.split(':')[0]}:"
+            ADB_port = int(self.ADB_address.split(":")[1])
+
+        logger.info(
+            f"{self.name} | 正在搜索ADB实际地址，ADB前缀：{ADB_ip}，初始端口：{ADB_port}，搜索范围：{self.port_range}"
+        )
+
+        for port in self.port_range:
+
+            ADB_address = f"{ADB_ip}{ADB_port + port}"
+
+            # 尝试通过ADB连接到指定地址
+            connect_result = subprocess.run(
+                [self.ADB_path, "connect", ADB_address],
+                creationflags=subprocess.CREATE_NO_WINDOW,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+            )
+
+            if "connected" in connect_result.stdout:
+
+                # 检查连接状态
+                devices_result = subprocess.run(
+                    [self.ADB_path, "devices"],
+                    creationflags=subprocess.CREATE_NO_WINDOW,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                )
+                if ADB_address in devices_result.stdout:
+
+                    logger.info(f"{self.name} | ADB实际地址：{ADB_address}")
+
+                    # 断开连接
+                    subprocess.run(
+                        [self.ADB_path, "disconnect", ADB_address],
+                        creationflags=subprocess.CREATE_NO_WINDOW,
+                    )
+
+                    self.ADB_address = ADB_address
+
+                    # 覆写当前ADB地址
+                    System.kill_process(self.maa_exe_path)
+                    with self.maa_set_path.open(mode="r", encoding="utf-8") as f:
+                        data = json.load(f)
+                    data["Configurations"]["Default"][
+                        "Connect.Address"
+                    ] = self.ADB_address
+                    data["Configurations"]["Default"]["Start.EmulatorWaitSeconds"] = "0"
+                    with self.maa_set_path.open(mode="w", encoding="utf-8") as f:
+                        json.dump(data, f, ensure_ascii=False, indent=4)
+
+                    return None
+
+                else:
+                    logger.info(f"{self.name} | 无法连接到ADB地址：{ADB_address}")
+            else:
+                logger.info(f"{self.name} | 无法连接到ADB地址：{ADB_address}")
 
     def refresh_maa_log(self) -> None:
         """刷新MAA日志"""
@@ -1419,12 +1516,20 @@ class MaaManager(QObject):
                 "Start.RunDirectly"
             ] = "True"  # 启动MAA后直接运行
             data["Global"]["Start.MinimizeDirectly"] = "True"  # 启动MAA后直接最小化
-
             data["Global"]["GUI.UseTray"] = "True"  # 显示托盘图标
             data["Global"]["GUI.MinimizeToTray"] = "True"  # 最小化时隐藏至托盘
             data["Configurations"]["Default"]["Start.OpenEmulatorAfterLaunch"] = str(
                 self.if_open_emulator
             )  # 启动MAA后自动开启模拟器
+            data["Global"][
+                "VersionUpdate.ScheduledUpdateCheck"
+            ] = "False"  # 定时检查更新
+            data["Global"][
+                "VersionUpdate.AutoDownloadUpdatePackage"
+            ] = "False"  # 自动下载更新包
+            data["Global"][
+                "VersionUpdate.AutoInstallUpdatePackage"
+            ] = "False"  # 自动安装更新包
 
             # 账号切换
             if user_data["Info"]["Server"] == "Official":
@@ -1440,15 +1545,6 @@ class MaaManager(QObject):
 
             if user_data["Info"]["Mode"] == "简洁":
 
-                data["Global"][
-                    "VersionUpdate.ScheduledUpdateCheck"
-                ] = "False"  # 定时检查更新
-                data["Global"][
-                    "VersionUpdate.AutoDownloadUpdatePackage"
-                ] = "False"  # 自动下载更新包
-                data["Global"][
-                    "VersionUpdate.AutoInstallUpdatePackage"
-                ] = "False"  # 自动安装更新包
                 data["Configurations"]["Default"]["Start.ClientType"] = user_data[
                     "Info"
                 ][
