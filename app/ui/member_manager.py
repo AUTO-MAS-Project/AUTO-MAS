@@ -47,7 +47,6 @@ from qfluentwidgets import (
     PushSettingCard,
     TableWidget,
     PrimaryToolButton,
-    SwitchButton,
 )
 from PySide6.QtCore import Signal
 from datetime import datetime
@@ -72,6 +71,7 @@ from .Widget import (
     SwitchSettingCard,
     PushAndSwitchButtonSettingCard,
     PushAndComboBoxSettingCard,
+    StatusSwitchSetting,
     PivotArea,
 )
 
@@ -1173,13 +1173,6 @@ class MemberManager(QWidget):
                             Config.PASSWORD_refreshed.connect(self.load_info)
 
                         def load_info(self):
-                            # 使用闭包工厂函数捕获当前config：
-                            def create_handler(config_obj):
-                                def handler(checked):
-                                    # 使用配置项的set方法自动触发信号
-                                    config_obj.set(config_obj.Info_Status, checked)
-
-                                return handler
 
                             self.user_data = Config.member_dict[self.name]["UserData"]
 
@@ -1188,7 +1181,6 @@ class MemberManager(QWidget):
                             for name, info in self.user_data.items():
 
                                 config = info["Config"]
-                                handler = create_handler(config)
 
                                 text_list = []
                                 if not config.get(config.Data_IfPassCheck):
@@ -1209,7 +1201,6 @@ class MemberManager(QWidget):
                                     else "本周剿灭未完成"
                                 )
 
-                                # 跳转按钮
                                 button = PrimaryToolButton(
                                     FluentIcon.CHEVRON_RIGHT, self
                                 )
@@ -1217,18 +1208,6 @@ class MemberManager(QWidget):
                                 button.clicked.connect(
                                     partial(self.switch_to.emit, name)
                                 )
-
-                                # 状态开关
-                                switch_button = SwitchButton()
-                                switch_button.setOffText("")
-                                switch_button.setOnText("")
-                                # 初始化开关状态
-                                switch_button.setChecked(config.get(config.Info_Status))
-                                switch_button.setEnabled(
-                                    config.get(config.Info_RemainedDay) != 0
-                                )
-                                # 将开关的bool同步
-                                switch_button.checkedChanged.connect(handler)
 
                                 self.dashboard.setItem(
                                     int(name[3:]) - 1,
@@ -1253,7 +1232,14 @@ class MemberManager(QWidget):
                                     ),
                                 )
                                 self.dashboard.setCellWidget(
-                                    int(name[3:]) - 1, 3, switch_button
+                                    int(name[3:]) - 1,
+                                    3,
+                                    StatusSwitchSetting(
+                                        qconfig=config,
+                                        configItem_check=config.Info_Status,
+                                        configItem_enable=config.Info_RemainedDay,
+                                        parent=self,
+                                    ),
                                 )
                                 self.dashboard.setItem(
                                     int(name[3:]) - 1,

@@ -933,6 +933,38 @@ class TimeEditSettingCard(SettingCard):
         self.TimeEdit.setTime(QTime.fromString(value, "HH:mm"))
 
 
+class StatusSwitchSetting(SwitchButton):
+
+    def __init__(
+        self,
+        qconfig: QConfig,
+        configItem_check: ConfigItem,
+        configItem_enable: ConfigItem,
+        parent=None,
+    ):
+        super().__init__(parent)
+        self.qconfig = qconfig
+        self.configItem_check = configItem_check
+        self.configItem_enable = configItem_enable
+        self.setOffText("")
+        self.setOnText("")
+
+        if configItem_check:
+            self.setValue(self.qconfig.get(configItem_check))
+            configItem_check.valueChanged.connect(self.setValue)
+        if configItem_enable:
+            self.setEnabled(self.qconfig.get(configItem_enable))
+            configItem_enable.valueChanged.connect(self.setEnabled)
+
+        self.checkedChanged.connect(self.setValue)
+
+    def setValue(self, isChecked: bool):
+        if self.configItem_check:
+            self.qconfig.set(self.configItem_check, isChecked)
+
+        self.setChecked(isChecked)
+
+
 class HistoryCard(HeaderCardWidget):
 
     def __init__(self, qconfig: QConfig, configItem: ConfigItem, parent=None):
