@@ -1211,8 +1211,7 @@ class MemberManager(QWidget):
                                 switch_button = SwitchButton()
                                 switch_button.setOffText("")
                                 switch_button.setOnText("")
-                                switch_button.setChecked(True if config.get(config.Info_Status)
-                                         and config.get(config.Info_RemainedDay) != 0 else False )# 初始化开关状态
+                                switch_button.setChecked(config.get(config.Info_Status))# 初始化开关状态
                                 # 将开关的bool同步
                                 switch_button.checkedChanged.connect(handler)
 
