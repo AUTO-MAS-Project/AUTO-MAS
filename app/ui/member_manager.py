@@ -49,7 +49,7 @@ from qfluentwidgets import (
     PrimaryToolButton,
     SwitchButton,
 )
-from PySide6.QtCore import Signal,Qt
+from PySide6.QtCore import Signal
 from datetime import datetime
 from functools import partial
 from pathlib import Path
