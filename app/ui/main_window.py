@@ -379,14 +379,18 @@ class AUTO_MAA(MSFluentWindow):
                 self.window().setGeometry(location[0], location[1], size[0], size[1])
                 self.window().show()
                 if not if_quick:
-                    if Config.get(Config.ui_maximized):
-                        self.window().showMaximized()
+                    if (
+                        Config.get(Config.ui_maximized)
+                        and not self.window().isMaximized()
+                    ):
+                        self.titleBar.maxBtn.click()
                     self.show_ui("配置托盘")
             elif if_start:
-                if Config.get(Config.ui_maximized):
-                    self.window().showMaximized()
+                if Config.get(Config.ui_maximized) and not self.window().isMaximized():
+                    self.titleBar.maxBtn.click()
                 self.show_ui("配置托盘")
 
+            # 如果窗口不在屏幕内，则重置窗口位置
             if not any(
                 self.window().geometry().intersects(screen.availableGeometry())
                 for screen in QApplication.screens()
