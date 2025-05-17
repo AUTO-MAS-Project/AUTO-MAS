@@ -122,6 +122,7 @@ class MaaManager(QObject):
     def run(self):
         """主进程，运行MAA代理进程"""
 
+        current_date = datetime.now().strftime("%m-%d")
         curdate = Config.server_date().strftime("%Y-%m-%d")
         begin_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -654,7 +655,6 @@ class MaaManager(QObject):
                         if (run_book["Annihilation"] and run_book["Routine"])
                         else "代理任务未全部完成"
                     )
-                    current_date = datetime.now().strftime("%m-%d")
                     self.push_notification(
                         "统计信息",
                         f"{current_date} | 用户 {user[0]} 的自动代理统计报告",
@@ -830,9 +830,9 @@ class MaaManager(QObject):
 
             # 保存运行日志
             title = (
-                f"{self.set["MaaSet"]["Name"]}的{self.mode[:4]}任务报告"
+                f"{current_date} | {self.set["MaaSet"]["Name"]}的{self.mode[:4]}任务报告"
                 if self.set["MaaSet"]["Name"] != ""
-                else f"{self.mode[:4]}任务报告"
+                else f"{current_date} | {self.mode[:4]}任务报告"
             )
             result = {
                 "title": f"{self.mode[:4]}任务报告",
