@@ -40,6 +40,7 @@ from typing import Union, List, Dict
 
 from app.core import Config, MaaConfig, MaaUserConfig
 from app.services import Notify, System
+from app.services.notification import Notification, UserNotification
 
 
 class MaaManager(QObject):
@@ -1746,7 +1747,6 @@ class MaaManager(QObject):
         )
 
         if mode == "代理结果":
-
             # 生成文本通知内容
             message_text = (
                 f"任务开始时间：{message["start_time"]}，结束时间：{message["end_time"]}\n"
@@ -1768,14 +1768,26 @@ class MaaManager(QObject):
             template = env.get_template("MAA_result.html")
             message_html = template.render(message)
 
+            # 发送全局通知
             Notify.send_mail("网页", title, message_html)
             Notify.ServerChanPush(title, f"{message_text}\n\nAUTO_MAA 敬上")
             Notify.CompanyWebHookBotPush(title, f"{message_text}\n\nAUTO_MAA 敬上")
 
+            # 发送用户单独通知
+            for user_name in message["failed_user"].split("、") + message["waiting_user"].split("、"):
+                if not user_name:  # 跳过空字符串
+                    continue
+                user_config = Config.member_dict.get(user_name)
+                if user_config and user_config.get(user_config.Notify_Enable):
+                    user_notify = UserNotification(user_config)
+                    user_notify.send_notification(
+                        f"{self.mode[2:4]}任务未完成通知",
+                        f"您的{self.mode[2:4]}任务未完成,请检查相关设置。\n\n{message_text}"
+                    )
+
             return message_text
 
         elif mode == "统计信息":
-
             # 生成文本通知内容
             formatted = []
             for stage, items in message["drop_statistics"].items():
@@ -1801,18 +1813,41 @@ class MaaManager(QObject):
             template = env.get_template("MAA_statistics.html")
             message_html = template.render(message)
 
+            # 发送全局通知
             Notify.send_mail("网页", title, message_html)
             # ServerChan的换行是两个换行符。故而将\n替换为\n\n
             serverchan_message = message_text.replace("\n", "\n\n")
             Notify.ServerChanPush(title, f"{serverchan_message}\n\nAUTO_MAA 敬上")
             Notify.CompanyWebHookBotPush(title, f"{message_text}\n\nAUTO_MAA 敬上")
 
-        elif mode == "公招六星":
+            # 发送用户单独通知
+            user_name = message.get("user_info")
+            if user_name:
+                user_config = Config.member_dict.get(user_name)
+                if user_config and user_config.get(user_config.Notify_Enable):
+                    user_notify = UserNotification(user_config)
+                    user_notify.send_notification(
+                        f"{self.mode[2:4]}任务统计报告",
+                        f"您的{self.mode[2:4]}任务统计报告如下:\n\n{message_text}"
+                    )
 
+        elif mode == "公招六星":
             # 生成HTML通知内容
             template = env.get_template("MAA_six_star.html")
             message_html = template.render(message)
 
+            # 发送全局通知
             Notify.send_mail("网页", title, message_html)
             Notify.ServerChanPush(title, "好羡慕~\n\nAUTO_MAA 敬上")
             Notify.CompanyWebHookBotPush(title, "好羡慕~\n\nAUTO_MAA 敬上")
+
+            # 发送用户单独通知
+            user_name = message.get("user_name")
+            if user_name:
+                user_config = Config.member_dict.get(user_name)
+                if user_config and user_config.get(user_config.Notify_Enable):
+                    user_notify = UserNotification(user_config)
+                    user_notify.send_notification(
+                        "公招六星通知",
+                        "恭喜您在公招中获得了六星干员!"
+                    )

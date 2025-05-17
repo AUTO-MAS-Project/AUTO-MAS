@@ -1529,6 +1529,140 @@ class MemberManager(QWidget):
                                 parent=self,
                             )
 
+                            # 新增单独通知卡片
+                            self.card_NotifyEnable = SwitchSettingCard(
+                                icon=FluentIcon.INFO,
+                                title="启用单独通知",
+                                content="启用后，任务结束将向该用户单独推送通知",
+                                qconfig=self.config,
+                                configItem=self.config.Notify_Enable,
+                                parent=self
+                            )
+                            self.card_NotifyIfSMTP = SwitchSettingCard(
+                                icon=FluentIcon.INFO,
+                                title="启用SMTP通知",
+                                content="是否启用单独通知的SMTP邮件推送",
+                                qconfig=self.config,
+                                configItem=self.config.Notify_IfSMTP,
+                                parent=self
+                            )
+                            self.card_NotifySMTP = LineEditSettingCard(
+                                icon=FluentIcon.INFO,
+                                title="SMTP服务器地址",
+                                content="单独通知的SMTP服务器地址",
+                                text="请输入SMTP服务器地址",
+                                qconfig=self.config,
+                                configItem=self.config.Notify_SMTPServerAddress,
+                                parent=self
+                            )
+                            self.card_NotifyAuthCode = PasswordLineEditSettingCard(
+                                icon=FluentIcon.INFO,
+                                title="授权码",
+                                content="单独通知的邮箱授权码",
+                                text="请输入授权码",
+                                algorithm="AUTO",
+                                qconfig=self.config,
+                                configItem=self.config.Notify_AuthorizationCode,
+                                parent=self
+                            )
+                            self.card_NotifyFrom = LineEditSettingCard(
+                                icon=FluentIcon.INFO,
+                                title="发件人邮箱",
+                                content="单独通知的发件人邮箱",
+                                text="请输入发件人邮箱",
+                                qconfig=self.config,
+                                configItem=self.config.Notify_FromAddress,
+                                parent=self
+                            )
+                            self.card_NotifyTo = LineEditSettingCard(
+                                icon=FluentIcon.INFO,
+                                title="收件人邮箱",
+                                content="单独通知的收件人邮箱",
+                                text="请输入收件人邮箱",
+                                qconfig=self.config,
+                                configItem=self.config.Notify_ToAddress,
+                                parent=self
+                            )
+                            self.card_NotifyIfServerChan = SwitchSettingCard(
+                                icon=FluentIcon.INFO,
+                                title="启用ServerChan",
+                                content="是否启用单独通知的ServerChan推送",
+                                qconfig=self.config,
+                                configItem=self.config.Notify_IfServerChan,
+                                parent=self
+                            )
+                            self.card_NotifyServerChanKey = LineEditSettingCard(
+                                icon=FluentIcon.INFO,
+                                title="ServerChanKey",
+                                content="单独通知的ServerChan SendKey",
+                                text="请输入ServerChanKey",
+                                qconfig=self.config,
+                                configItem=self.config.Notify_ServerChanKey,
+                                parent=self
+                            )
+                            self.card_NotifyServerChanChannel = LineEditSettingCard(
+                                icon=FluentIcon.INFO,
+                                title="ServerChanChannel",
+                                content="单独通知的ServerChan Channel",
+                                text="请输入ServerChanChannel",
+                                qconfig=self.config,
+                                configItem=self.config.Notify_ServerChanChannel,
+                                parent=self
+                            )
+                            self.card_NotifyServerChanTag = LineEditSettingCard(
+                                icon=FluentIcon.INFO,
+                                title="ServerChanTag",
+                                content="单独通知的ServerChan Tag",
+                                text="请输入ServerChanTag",
+                                qconfig=self.config,
+                                configItem=self.config.Notify_ServerChanTag,
+                                parent=self
+                            )
+                            self.card_NotifyIfCompanyWebHookBot = SwitchSettingCard(
+                                icon=FluentIcon.INFO,
+                                title="启用企业微信机器人",
+                                content="是否启用单独通知的企业微信机器人推送",
+                                qconfig=self.config,
+                                configItem=self.config.Notify_IfCompanyWebHookBot,
+                                parent=self
+                            )
+                            self.card_NotifyCompanyWebHookBotUrl = LineEditSettingCard(
+                                icon=FluentIcon.INFO,
+                                title="企业微信机器人WebhookUrl",
+                                content="单独通知的企业微信机器人Webhook地址",
+                                text="请输入WebhookUrl",
+                                qconfig=self.config,
+                                configItem=self.config.Notify_CompanyWebHookBotUrl,
+                                parent=self
+                            )
+
+                            # 设置通知卡片默认隐藏
+                            self.card_NotifyIfSMTP.setVisible(False)
+                            self.card_NotifySMTP.setVisible(False)
+                            self.card_NotifyAuthCode.setVisible(False) 
+                            self.card_NotifyFrom.setVisible(False)
+                            self.card_NotifyTo.setVisible(False)
+                            self.card_NotifyIfServerChan.setVisible(False)
+                            self.card_NotifyServerChanKey.setVisible(False)
+                            self.card_NotifyServerChanChannel.setVisible(False)
+                            self.card_NotifyServerChanTag.setVisible(False)
+                            self.card_NotifyIfCompanyWebHookBot.setVisible(False)
+                            self.card_NotifyCompanyWebHookBotUrl.setVisible(False)
+
+                            # 连接通知启用开关的信号
+                            self.card_NotifyEnable.checkedChanged.connect(self.toggle_notify_settings)
+                            self.card_NotifyIfSMTP.checkedChanged.connect(self.toggle_smtp_settings)
+
+                            # 根据配置状态初始化显示
+                            if self.config.get(self.config.Notify_Enable):
+                                self.toggle_notify_settings(True)
+                                if self.config.get(self.config.Notify_IfSMTP):
+                                    self.toggle_smtp_settings(True)
+                                if self.config.get(self.config.Notify_IfServerChan):
+                                    self.toggle_serverchan_settings(True)
+                                if self.config.get(self.config.Notify_IfCompanyWebHookBot):
+                                    self.toggle_webhook_settings(True)
+
                             h1_layout = QHBoxLayout()
                             h1_layout.addWidget(self.card_Name)
                             h1_layout.addWidget(self.card_Id)
@@ -1566,6 +1700,27 @@ class MemberManager(QWidget):
                             Layout.addLayout(h6_layout)
                             Layout.addLayout(h7_layout)
                             Layout.addLayout(h8_layout)
+                            
+                            # 创建通知设置容器
+                            notify_container = QWidget()
+                            notify_layout = QVBoxLayout(notify_container)
+                            notify_layout.setContentsMargins(0, 0, 0, 0)
+                            notify_layout.setSpacing(0)
+                            
+                            notify_layout.addWidget(self.card_NotifyEnable)
+                            notify_layout.addWidget(self.card_NotifyIfSMTP)
+                            notify_layout.addWidget(self.card_NotifySMTP)
+                            notify_layout.addWidget(self.card_NotifyAuthCode)
+                            notify_layout.addWidget(self.card_NotifyFrom)
+                            notify_layout.addWidget(self.card_NotifyTo)
+                            notify_layout.addWidget(self.card_NotifyIfServerChan)
+                            notify_layout.addWidget(self.card_NotifyServerChanKey)
+                            notify_layout.addWidget(self.card_NotifyServerChanChannel)
+                            notify_layout.addWidget(self.card_NotifyServerChanTag)
+                            notify_layout.addWidget(self.card_NotifyIfCompanyWebHookBot)
+                            notify_layout.addWidget(self.card_NotifyCompanyWebHookBotUrl)
+                            
+                            Layout.addWidget(notify_container)
 
                             self.viewLayout.addLayout(Layout)
                             self.viewLayout.setContentsMargins(3, 0, 3, 3)
@@ -1587,6 +1742,14 @@ class MemberManager(QWidget):
                             )
                             Config.gameid_refreshed.connect(self.refresh_gameid)
                             Config.PASSWORD_refreshed.connect(self.refresh_password)
+
+                            # 连接ServerChan和企业微信机器人的开关信号
+                            self.card_NotifyIfServerChan.checkedChanged.connect(
+                                lambda checked: self.toggle_serverchan_settings(checked)
+                            )
+                            self.card_NotifyIfCompanyWebHookBot.checkedChanged.connect(
+                                lambda checked: self.toggle_webhook_settings(checked)
+                            )
 
                             self.switch_mode()
                             self.switch_infrastructure()
@@ -1709,3 +1872,47 @@ class MemberManager(QWidget):
                                     }
                                 },
                             )
+
+                        def toggle_notify_settings(self, checked: bool):
+                            """切换通知设置卡片的显示状态"""
+                            self.card_NotifyIfSMTP.setVisible(checked)
+                            self.card_NotifyIfServerChan.setVisible(checked)
+                            self.card_NotifyIfCompanyWebHookBot.setVisible(checked)
+                            
+                            # 根据SMTP开关状态控制相关设置
+                            if checked and self.config.get(self.config.Notify_IfSMTP):
+                                self.toggle_smtp_settings(True)
+                            else:
+                                self.toggle_smtp_settings(False)
+                                
+                            # 根据ServerChan开关状态控制相关设置
+                            if checked and self.config.get(self.config.Notify_IfServerChan):
+                                self.toggle_serverchan_settings(True)
+                            else:
+                                self.toggle_serverchan_settings(False)
+                                
+                            # 根据企业微信机器人开关状态控制相关设置
+                            if checked and self.config.get(self.config.Notify_IfCompanyWebHookBot):
+                                self.toggle_webhook_settings(True)
+                            else:
+                                self.toggle_webhook_settings(False)
+
+                        def toggle_smtp_settings(self, checked: bool):
+                            """切换SMTP相关设置的显示状态"""
+                            if self.config.get(self.config.Notify_Enable):
+                                self.card_NotifySMTP.setVisible(checked)
+                                self.card_NotifyAuthCode.setVisible(checked)
+                                self.card_NotifyFrom.setVisible(checked)
+                                self.card_NotifyTo.setVisible(checked)
+
+                        def toggle_serverchan_settings(self, checked: bool):
+                            """切换ServerChan相关设置的显示状态"""
+                            if self.config.get(self.config.Notify_Enable):
+                                self.card_NotifyServerChanKey.setVisible(checked)
+                                self.card_NotifyServerChanChannel.setVisible(checked)
+                                self.card_NotifyServerChanTag.setVisible(checked)
+
+                        def toggle_webhook_settings(self, checked: bool):
+                            """切换企业微信机器人相关设置的显示状态"""
+                            if self.config.get(self.config.Notify_Enable):
+                                self.card_NotifyCompanyWebHookBotUrl.setVisible(checked)

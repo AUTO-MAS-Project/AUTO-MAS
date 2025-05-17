@@ -439,6 +439,20 @@ class MaaUserConfig(LQConfig):
             "Data", "CustomInfrastPlanIndex", "0"
         )
 
+        # 新增用户单独通知字段
+        self.Notify_Enable = ConfigItem("Notify_Enable", False, False)
+        self.Notify_IfSMTP = ConfigItem("Notify_IfSMTP", False, False)
+        self.Notify_SMTPServerAddress = ConfigItem("Notify_SMTPServerAddress", "", "")
+        self.Notify_AuthorizationCode = ConfigItem("Notify_AuthorizationCode", "", "")
+        self.Notify_FromAddress = ConfigItem("Notify_FromAddress", "", "")
+        self.Notify_ToAddress = ConfigItem("Notify_ToAddress", "", "")
+        self.Notify_IfServerChan = ConfigItem("Notify_IfServerChan", False, False)
+        self.Notify_ServerChanKey = ConfigItem("Notify_ServerChanKey", "", "")
+        self.Notify_ServerChanChannel = ConfigItem("Notify_ServerChanChannel", "", "")
+        self.Notify_ServerChanTag = ConfigItem("Notify_ServerChanTag", "", "")
+        self.Notify_IfCompanyWebHookBot = ConfigItem("Notify_IfCompanyWebHookBot", False, False)
+        self.Notify_CompanyWebHookBotUrl = ConfigItem("Notify_CompanyWebHookBotUrl", "", "")
+
 
 class MaaPlanConfig(LQConfig):
     """MAA计划表配置"""
