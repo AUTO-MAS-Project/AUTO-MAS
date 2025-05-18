@@ -906,7 +906,7 @@ class MaaManager(QObject):
 
         if "-" in self.ADB_address:
             ADB_ip = f"{self.ADB_address.split("-")[0]}-"
-            ADB_port = self.ADB_address.split("-")[1]
+            ADB_port = int(self.ADB_address.split("-")[1])
 
         elif ":" in self.ADB_address:
             ADB_ip = f"{self.ADB_address.split(':')[0]}:"
