@@ -25,18 +25,20 @@ v4.3
 作者：DLmaster_361
 """
 
-from PySide6.QtWidgets import QWidget
-from PySide6.QtCore import Signal
-import requests
-import time
-from loguru import logger
-from plyer import notification
 import re
 import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
+import time
 from email.header import Header
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 from email.utils import formataddr
+
+import requests
+from PySide6.QtCore import Signal
+from PySide6.QtWidgets import QWidget
+from loguru import logger
+from plyer import notification
+
 from app.core import Config
 from app.services.security import Crypto
 
@@ -315,51 +317,57 @@ class Notification(QWidget):
 
 class UserNotification:
     """用户单独通知服务"""
-    
+
     def __init__(self, user_config):
         self.config = user_config
-        
+
     def send_notification(self, title: str, content: str) -> bool:
-        """发送用户通知
-        
-        Args:
-            title: 通知标题
-            content: 通知内容
-            
-        Returns:
-            bool: 是否发送成功
-        """
+        """发送用户通知"""
+        logger.info(f"单独通知-准备发送用户通知，标题: {title}")
+
         if not self.config.get(self.config.Notify_Enable):
+            logger.warning("单独通知-用户通知功能未启用，跳过发送")
             return False
-            
+
         success = False
-        
-        # 发送邮件通知
+
+        # 邮件通知
         if self._check_smtp_config():
             try:
                 self._send_email(title, content)
                 success = True
             except Exception as e:
-                logger.error(f"发送邮件通知失败: {str(e)}")
-                
-        # 发送ServerChan通知
-        if self.config.get(self.config.Notify_IfServerChan) and self._check_serverchan_config():
+                logger.error(f"单独通知-发送邮件通知失败: {str(e)}")
+
+        # Server酱通知
+        if (
+            self.config.get(self.config.Notify_IfServerChan)
+            and self._check_serverchan_config()
+        ):
             try:
                 self._send_serverchan(title, content)
                 success = True
             except Exception as e:
-                logger.error(f"发送ServerChan通知失败: {str(e)}")
-                
-        # 发送企业微信机器人通知
-        if self.config.get(self.config.Notify_IfCompanyWebHookBot) and self._check_webhook_config():
+                logger.error(f"单独通知-发送 Server酱 通知失败: {str(e)}")
+
+        # 企业微信群机器人
+        if (
+            self.config.get(self.config.Notify_IfCompanyWebHookBot)
+            and self._check_webhook_config()
+        ):
             try:
                 self._send_webhook(title, content)
                 success = True
             except Exception as e:
-                logger.error(f"发送企业微信机器人通知失败: {str(e)}")
-                
+                logger.error(f"单独通知-发送企业微信机器人通知失败: {str(e)}")
+
+        if success:
+            logger.info("单独通知-用户通知发送完成")
+        else:
+            logger.warning("单独通知-所有通知方式均发送失败")
+
         return success
-        
+
     def _check_smtp_config(self) -> bool:
         """检查SMTP配置是否完整"""
         return all([
@@ -369,26 +377,27 @@ class UserNotification:
             self.config.get(self.config.Notify_FromAddress),
             self.config.get(self.config.Notify_ToAddress)
         ])
-        
+
     def _check_serverchan_config(self) -> bool:
         """检查ServerChan配置是否完整"""
         return bool(self.config.get(self.config.Notify_ServerChanKey))
-        
+
     def _check_webhook_config(self) -> bool:
         """检查企业微信机器人配置是否完整"""
         return bool(self.config.get(self.config.Notify_CompanyWebHookBotUrl))
-        
+
     def _send_email(self, title: str, content: str):
         """发送邮件通知"""
+        logger.debug("单独通知-开始发送邮件通知")
         import smtplib
         from email.mime.text import MIMEText
         from email.header import Header
-        
+
         msg = MIMEText(content, 'plain', 'utf-8')
         msg['Subject'] = Header(title, 'utf-8')
         msg['From'] = self.config.get(self.config.Notify_FromAddress)
         msg['To'] = self.config.get(self.config.Notify_ToAddress)
-        
+
         server = smtplib.SMTP_SSL(self.config.get(self.config.Notify_SMTPServerAddress))
         server.login(
             self.config.get(self.config.Notify_FromAddress),
@@ -396,32 +405,77 @@ class UserNotification:
         )
         server.send_message(msg)
         server.quit()
-        
+        logger.success("单独通知-邮件通知发送成功")
+
     def _send_serverchan(self, title: str, content: str):
-        """发送ServerChan通知"""
+        """发送 ServerChan 通知，支持 SCT、SC3、自定义域名等"""
+        logger.debug("单独通知-开始发送 ServerChan 通知")
         import requests
-        
+        import re
+
         key = self.config.get(self.config.Notify_ServerChanKey)
-        channel = self.config.get(self.config.Notify_ServerChanChannel)
         tag = self.config.get(self.config.Notify_ServerChanTag)
-        
-        url = f"https://sctapi.ftqq.com/{key}.send"
-        data = {
-            "title": title,
-            "desp": content,
-            "channel": channel if channel else 9,  # 默认使用企业微信通道
-            "tag": tag if tag else ""
-        }
-        
-        response = requests.post(url, data=data)
-        if response.status_code != 200:
-            raise Exception(f"ServerChan API返回错误: {response.text}")
-            
+        channel = self.config.get(self.config.Notify_ServerChanChannel)
+
+        if not key:
+            raise Exception("ServerChan SendKey 未设置")
+
+        # 1. 构造 URL（支持 sctpN 和 sct 开头的）
+        if key.startswith("sctp"):
+            match = re.match(r"^sctp(\d+)t", key)
+            if match:
+                url = f"https://{match.group(1)}.push.ft07.com/send/{key}.send"
+            else:
+                raise ValueError("SendKey 格式错误，sctp 开头但不符合规范")
+        else:
+            url = f"https://sctapi.ftqq.com/{key}.send"
+
+        logger.debug(f"单独通知-Server酱推送URL: {url}")
+
+        # 2. 校验 tag 和 channel 格式
+        def is_valid(s):
+            return s == "" or (
+                s == "|".join(s.split("|")) and (s.count("|") == 0 or all(s.split("|")))
+            )
+
+        tags = "|".join([_.strip() for _ in tag.split("|")]) if tag else ""
+        channels = "|".join([_.strip() for _ in channel.split("|")]) if channel else ""
+
+        options = {}
+        if is_valid(tags):
+            options["tags"] = tags
+        else:
+            logger.warning("单独通知-ServerChan Tag 格式不正确，已忽略")
+
+        if is_valid(channels):
+            options["channel"] = channels
+        else:
+            logger.warning("单独通知-ServerChan Channel 格式不正确，已忽略")
+
+        # 3. 构造 payload
+        payload = {"title": title, "desp": content, **options}
+
+        headers = {"Content-Type": "application/json;charset=utf-8"}
+        logger.info(f"单独通知-发送 Server酱通知: {payload}")
+
+        try:
+            response = requests.post(url, json=payload, headers=headers, timeout=10)
+            result = response.json()
+
+            if result.get("code") == 0:
+                logger.success("Server酱通知推送成功")
+            else:
+                raise Exception(
+                    f"推送失败，响应码：{result.get('code')}, 信息：{result}"
+                )
+        except Exception as e:
+            raise Exception(f"Server酱推送失败: {e}")
+
     def _send_webhook(self, title: str, content: str):
         """发送企业微信机器人通知"""
+        logger.debug("单独通知-开始发送企业微信机器人通知")
         import requests
-        import json
-        
+
         url = self.config.get(self.config.Notify_CompanyWebHookBotUrl)
         data = {
             "msgtype": "markdown",
@@ -429,10 +483,11 @@ class UserNotification:
                 "content": f"### {title}\n{content}"
             }
         }
-        
+
         response = requests.post(url, json=data)
         if response.status_code != 200:
             raise Exception(f"企业微信机器人API返回错误: {response.text}")
-            
+        logger.success("单独通知-企业微信机器人通知发送成功")
+
 
 Notify = Notification()
