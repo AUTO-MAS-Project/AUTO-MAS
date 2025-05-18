@@ -907,7 +907,7 @@ class MaaManager(QObject):
 
         if "-" in self.ADB_address:
             ADB_ip = f"{self.ADB_address.split("-")[0]}-"
-            ADB_port = self.ADB_address.split("-")[1]
+            ADB_port = int(self.ADB_address.split("-")[1])
 
         elif ":" in self.ADB_address:
             ADB_ip = f"{self.ADB_address.split(':')[0]}:"
@@ -1398,7 +1398,9 @@ class MaaManager(QObject):
                     ] = "True"  # 备选关卡
                     data["Configurations"]["Default"][
                         "Fight.UseRemainingSanityStage"
-                    ] = "True"  # 使用剩余理智
+                    ] = (
+                        "True" if user_data["Info"]["GameId_Remain"] != "-" else "False"
+                    )  # 使用剩余理智
                     data["Configurations"]["Default"][
                         "Fight.UseExpiringMedicine"
                     ] = "True"  # 无限吃48小时内过期的理智药
@@ -1496,7 +1498,9 @@ class MaaManager(QObject):
                     ] = "True"  # 备选关卡
                     data["Configurations"]["Default"][
                         "Fight.UseRemainingSanityStage"
-                    ] = "True"  # 使用剩余理智
+                    ] = (
+                        "True" if user_data["Info"]["GameId_Remain"] != "-" else "False"
+                    )  # 使用剩余理智
 
                     # 基建模式
                     if (
@@ -1597,6 +1601,15 @@ class MaaManager(QObject):
             data["Configurations"]["Default"][
                 "Start.OpenEmulatorAfterLaunch"
             ] = "False"  # 启动MAA后自动开启模拟器
+            data["Global"][
+                "VersionUpdate.ScheduledUpdateCheck"
+            ] = "False"  # 定时检查更新
+            data["Global"][
+                "VersionUpdate.AutoDownloadUpdatePackage"
+            ] = "False"  # 自动下载更新包
+            data["Global"][
+                "VersionUpdate.AutoInstallUpdatePackage"
+            ] = "False"  # 自动安装更新包
 
             if Config.get(Config.function_IfSilence):
                 data["Global"][
@@ -1605,15 +1618,6 @@ class MaaManager(QObject):
 
             if "全局" in mode:
 
-                data["Global"][
-                    "VersionUpdate.ScheduledUpdateCheck"
-                ] = "False"  # 定时检查更新
-                data["Global"][
-                    "VersionUpdate.AutoDownloadUpdatePackage"
-                ] = "False"  # 自动下载更新包
-                data["Global"][
-                    "VersionUpdate.AutoInstallUpdatePackage"
-                ] = "False"  # 自动安装更新包
                 data["Configurations"]["Default"][
                     "TaskQueue.WakeUp.IsChecked"
                 ] = "False"  # 开始唤醒
