@@ -1534,11 +1534,14 @@ class MemberManager(QWidget):
                             self.card_NotifySet = PushAndSwitchButtonSettingCard(
                                 icon=FluentIcon.MAIL,
                                 title="用户单独通知设置",
-                                content="",
+                                content="未启用任何通知项",
                                 text="设置",
                                 qconfig=self.config,
                                 configItem=self.config.Notify_Enabled,
                                 parent=self,
+                            )
+                            self.card_NotifyContent = self.NotifyContentSettingCard(
+                                self.config, self
                             )
                             self.card_EMail = self.EMailSettingCard(self.config, self)
                             self.card_ServerChan = self.ServerChanSettingCard(
@@ -1549,6 +1552,7 @@ class MemberManager(QWidget):
                             )
 
                             self.card_NotifySet_list = [
+                                self.card_NotifyContent,
                                 self.card_EMail,
                                 self.card_ServerChan,
                                 self.card_CompanyWebhookBot,
@@ -1615,14 +1619,13 @@ class MemberManager(QWidget):
                             self.card_InfrastMode.clicked.connect(
                                 self.set_infrastructure
                             )
-                            self.card_NotifySet.clicked.connect(
-                                self.NotifySetCard.exec_
-                            )
+                            self.card_NotifySet.clicked.connect(self.set_notify)
                             Config.gameid_refreshed.connect(self.refresh_gameid)
                             Config.PASSWORD_refreshed.connect(self.refresh_password)
 
                             self.switch_mode()
                             self.switch_infrastructure()
+                            self.set_notify(if_show=False)
 
                         def switch_mode(self) -> None:
 
@@ -1742,6 +1745,76 @@ class MemberManager(QWidget):
                                     }
                                 },
                             )
+
+                        def set_notify(self, if_show: bool = True) -> None:
+                            """设置用户通知相关配置"""
+
+                            def short_str(s: str) -> str:
+                                if len(s) <= 10:
+                                    return s
+                                return s[:7] + "..."
+
+                            if if_show:
+                                self.NotifySetCard.exec_()
+
+                            content_list = []
+
+                            if not (
+                                self.config.get(self.config.Notify_IfSendStatistic)
+                                or self.config.get(self.config.Notify_IfSendSixStar)
+                            ):
+                                content_list.append("未启用任何通知项")
+
+                            if self.config.get(self.config.Notify_IfSendStatistic):
+                                content_list.append("统计信息已启用")
+                            if self.config.get(self.config.Notify_IfSendSixStar):
+                                content_list.append("六星喜报已启用")
+
+                            if self.config.get(self.config.Notify_IfSendMail):
+                                content_list.append(
+                                    f"邮箱通知：{short_str(self.config.get(self.config.Notify_ToAddress))}"
+                                )
+                            if self.config.get(self.config.Notify_IfServerChan):
+                                content_list.append(
+                                    f"Server酱通知：{short_str(self.config.get(self.config.Notify_ServerChanKey))}"
+                                )
+                            if self.config.get(self.config.Notify_IfCompanyWebHookBot):
+                                content_list.append(
+                                    f"企业微信通知：{short_str(self.config.get(self.config.Notify_CompanyWebHookBotUrl))}"
+                                )
+
+                            self.card_NotifySet.setContent(" | ".join(content_list))
+
+                        class NotifyContentSettingCard(HeaderCardWidget):
+
+                            def __init__(self, config: MaaUserConfig, parent=None):
+                                super().__init__(parent)
+                                self.setTitle("用户通知内容选项")
+
+                                self.config = config
+
+                                self.card_IfSendStatistic = SwitchSettingCard(
+                                    icon=FluentIcon.PAGE_RIGHT,
+                                    title="推送统计信息",
+                                    content="推送自动代理统计信息的通知",
+                                    qconfig=self.config,
+                                    configItem=self.config.Notify_IfSendStatistic,
+                                    parent=self,
+                                )
+                                self.card_IfSendSixStar = SwitchSettingCard(
+                                    icon=FluentIcon.PAGE_RIGHT,
+                                    title="推送公招高资喜报",
+                                    content="公招出现六星词条时推送喜报",
+                                    qconfig=self.config,
+                                    configItem=self.config.Notify_IfSendSixStar,
+                                    parent=self,
+                                )
+
+                                Layout = QVBoxLayout()
+                                Layout.addWidget(self.card_IfSendStatistic)
+                                Layout.addWidget(self.card_IfSendSixStar)
+                                self.viewLayout.addLayout(Layout)
+                                self.viewLayout.setContentsMargins(3, 0, 3, 3)
 
                         class EMailSettingCard(HeaderCardWidget):
 
