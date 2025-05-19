@@ -234,10 +234,6 @@ class GlobalConfig(LQConfig):
         self.notify_CompanyWebHookBotUrl = ConfigItem(
             "Notify", "CompanyWebHookBotUrl", ""
         )
-        self.notify_IfPushDeer = ConfigItem(
-            "Notify", "IfPushDeer", False, BoolValidator()
-        )
-        self.notify_IfPushDeerKey = ConfigItem("Notify", "PushDeerKey", "")
 
         self.update_IfAutoUpdate = ConfigItem(
             "Update", "IfAutoUpdate", False, BoolValidator()
@@ -440,18 +436,29 @@ class MaaUserConfig(LQConfig):
         )
 
         # 新增用户单独通知字段
-        self.Notify_Enable = ConfigItem("Notify_Enable", False, False)
-        self.Notify_IfSMTP = ConfigItem("Notify_IfSMTP", False, False)
-        self.Notify_SMTPServerAddress = ConfigItem("Notify_SMTPServerAddress", "", "")
-        self.Notify_AuthorizationCode = ConfigItem("Notify_AuthorizationCode", "", "")
-        self.Notify_FromAddress = ConfigItem("Notify_FromAddress", "", "")
-        self.Notify_ToAddress = ConfigItem("Notify_ToAddress", "", "")
-        self.Notify_IfServerChan = ConfigItem("Notify_IfServerChan", False, False)
-        self.Notify_ServerChanKey = ConfigItem("Notify_ServerChanKey", "", "")
-        self.Notify_ServerChanChannel = ConfigItem("Notify_ServerChanChannel", "", "")
-        self.Notify_ServerChanTag = ConfigItem("Notify_ServerChanTag", "", "")
-        self.Notify_IfCompanyWebHookBot = ConfigItem("Notify_IfCompanyWebHookBot", False, False)
-        self.Notify_CompanyWebHookBotUrl = ConfigItem("Notify_CompanyWebHookBotUrl", "", "")
+        self.Notify_Enabled = ConfigItem("Notify", "Enabled", False, BoolValidator())
+        self.Notify_IfSendStatistic = ConfigItem(
+            "Notify", "IfSendStatistic", False, BoolValidator()
+        )
+        self.Notify_IfSendSixStar = ConfigItem(
+            "Notify", "IfSendSixStar", False, BoolValidator()
+        )
+        self.Notify_IfSendMail = ConfigItem(
+            "Notify", "IfSendMail", False, BoolValidator()
+        )
+        self.Notify_ToAddress = ConfigItem("Notify", "ToAddress", "")
+        self.Notify_IfServerChan = ConfigItem(
+            "Notify", "IfServerChan", False, BoolValidator()
+        )
+        self.Notify_ServerChanKey = ConfigItem("Notify", "ServerChanKey", "")
+        self.Notify_ServerChanChannel = ConfigItem("Notify", "ServerChanChannel", "")
+        self.Notify_ServerChanTag = ConfigItem("Notify", "ServerChanTag", "")
+        self.Notify_IfCompanyWebHookBot = ConfigItem(
+            "Notify", "IfCompanyWebHookBot", False, BoolValidator()
+        )
+        self.Notify_CompanyWebHookBotUrl = ConfigItem(
+            "Notify", "CompanyWebHookBotUrl", ""
+        )
 
 
 class MaaPlanConfig(LQConfig):

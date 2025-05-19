@@ -191,6 +191,44 @@ class ProgressRingMessageBox(MessageBoxBase):
         self.timer.deleteLater()
 
 
+class SettingMessageBox(MessageBoxBase):
+    """设置二级菜单对话框"""
+
+    def __init__(
+        self,
+        parent,
+        title: str,
+        setting_cards: List[Union[SettingCard, HeaderCardWidget]],
+    ):
+        super().__init__(parent)
+
+        self.title = SubtitleLabel(title)
+        self.button_yes = PrimaryPushButton("确认", self)
+        self.v_layout = QVBoxLayout()
+        self.v_layout.addStretch()
+        self.v_layout.addWidget(self.button_yes)
+
+        self.buttonGroup.hide()
+
+        scrollArea = ScrollArea()
+        scrollArea.setWidgetResizable(True)
+        scrollArea.setContentsMargins(0, 0, 0, 0)
+        scrollArea.setStyleSheet("background: transparent; border: none;")
+
+        content_widget = QWidget()
+        content_layout = QVBoxLayout(content_widget)
+        for setting_card in setting_cards:
+            content_layout.addWidget(setting_card)
+        scrollArea.setWidget(content_widget)
+
+        # 将组件添加到布局中
+        self.viewLayout.addWidget(self.title)
+        self.viewLayout.addWidget(scrollArea)
+        self.viewLayout.addLayout(self.v_layout)
+
+        self.button_yes.clicked.connect(self.yesButton.click)
+
+
 class NoticeMessageBox(MessageBoxBase):
     """公告对话框"""
 
