@@ -70,9 +70,6 @@ class Setting(QWidget):
         super().__init__(parent)
         self.setObjectName("设置")
 
-        content_widget = QWidget()
-        content_layout = QVBoxLayout(content_widget)
-
         self.function = FunctionSettingCard(self)
         self.start = StartSettingCard(self)
         self.ui = UiSettingCard(self)
@@ -93,6 +90,9 @@ class Setting(QWidget):
         )
         self.other.card_Notice.clicked.connect(lambda: self.show_notice(if_show=True))
 
+        content_widget = QWidget()
+        content_layout = QVBoxLayout(content_widget)
+        content_layout.setContentsMargins(0, 0, 11, 0)
         content_layout.addWidget(self.function)
         content_layout.addWidget(self.start)
         content_layout.addWidget(self.ui)
@@ -106,9 +106,9 @@ class Setting(QWidget):
         scrollArea.setContentsMargins(0, 0, 0, 0)
         scrollArea.setStyleSheet("background: transparent; border: none;")
         scrollArea.setWidget(content_widget)
-        layout = QVBoxLayout()
+
+        layout = QVBoxLayout(self)
         layout.addWidget(scrollArea)
-        self.setLayout(layout)
 
     def agree_bilibili(self) -> None:
         """授权bilibili游戏隐私政策"""

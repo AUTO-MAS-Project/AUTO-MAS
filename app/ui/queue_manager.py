@@ -379,16 +379,6 @@ class QueueManager(QWidget):
                 self.setObjectName(f"调度队列_{uid}")
                 self.config = Config.queue_dict[f"调度队列_{uid}"]["Config"]
 
-                layout = QVBoxLayout()
-
-                scrollArea = ScrollArea()
-                scrollArea.setWidgetResizable(True)
-                scrollArea.setContentsMargins(0, 0, 0, 0)
-                scrollArea.setStyleSheet("background: transparent; border: none;")
-
-                content_widget = QWidget()
-                content_layout = QVBoxLayout(content_widget)
-
                 self.queue_set = self.QueueSetSettingCard(self.config, self)
                 self.time = self.TimeSettingCard(self.config, self)
                 self.task = self.TaskSettingCard(self.config, self)
@@ -398,17 +388,23 @@ class QueueManager(QWidget):
                     parent=self,
                 )
 
+                content_widget = QWidget()
+                content_layout = QVBoxLayout(content_widget)
+                content_layout.setContentsMargins(0, 0, 11, 0)
                 content_layout.addWidget(self.queue_set)
                 content_layout.addWidget(self.time)
                 content_layout.addWidget(self.task)
                 content_layout.addWidget(self.history)
                 content_layout.addStretch(1)
 
+                scrollArea = ScrollArea()
+                scrollArea.setWidgetResizable(True)
+                scrollArea.setContentsMargins(0, 0, 0, 0)
+                scrollArea.setStyleSheet("background: transparent; border: none;")
                 scrollArea.setWidget(content_widget)
 
+                layout = QVBoxLayout(self)
                 layout.addWidget(scrollArea)
-
-                self.setLayout(layout)
 
             class QueueSetSettingCard(HeaderCardWidget):
 

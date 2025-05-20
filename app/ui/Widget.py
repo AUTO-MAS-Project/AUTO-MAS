@@ -74,6 +74,7 @@ from qfluentwidgets import (
     ScrollArea,
     Pivot,
     PivotItem,
+    FlyoutViewBase,
 )
 from qfluentwidgets.common.overload import singledispatchmethod
 import os
@@ -191,44 +192,6 @@ class ProgressRingMessageBox(MessageBoxBase):
         self.timer.deleteLater()
 
 
-class SettingMessageBox(MessageBoxBase):
-    """设置二级菜单对话框"""
-
-    def __init__(
-        self,
-        parent,
-        title: str,
-        setting_cards: List[Union[SettingCard, HeaderCardWidget]],
-    ):
-        super().__init__(parent)
-
-        self.title = SubtitleLabel(title)
-        self.button_yes = PrimaryPushButton("确认", self)
-        self.v_layout = QVBoxLayout()
-        self.v_layout.addStretch()
-        self.v_layout.addWidget(self.button_yes)
-
-        self.buttonGroup.hide()
-
-        scrollArea = ScrollArea()
-        scrollArea.setWidgetResizable(True)
-        scrollArea.setContentsMargins(0, 0, 0, 0)
-        scrollArea.setStyleSheet("background: transparent; border: none;")
-
-        content_widget = QWidget()
-        content_layout = QVBoxLayout(content_widget)
-        for setting_card in setting_cards:
-            content_layout.addWidget(setting_card)
-        scrollArea.setWidget(content_widget)
-
-        # 将组件添加到布局中
-        self.viewLayout.addWidget(self.title)
-        self.viewLayout.addWidget(scrollArea)
-        self.viewLayout.addLayout(self.v_layout)
-
-        self.button_yes.clicked.connect(self.yesButton.click)
-
-
 class NoticeMessageBox(MessageBoxBase):
     """公告对话框"""
 
@@ -307,6 +270,39 @@ class NoticeMessageBox(MessageBoxBase):
                 self.Layout.addWidget(QuantifiedItemCard(["暂无信息", ""]))
 
             self.Layout.addStretch(1)
+
+
+class SettingFlyoutView(FlyoutViewBase):
+    """设置卡二级菜单弹出组件"""
+
+    def __init__(
+        self,
+        parent,
+        title: str,
+        setting_cards: List[Union[SettingCard, HeaderCardWidget]],
+    ):
+        super().__init__(parent)
+
+        self.title = SubtitleLabel(title)
+
+        content_widget = QWidget()
+        content_layout = QVBoxLayout(content_widget)
+        content_layout.setSpacing(0)
+        content_layout.setContentsMargins(0, 0, 11, 0)
+        for setting_card in setting_cards:
+            content_layout.addWidget(setting_card)
+
+        scrollArea = ScrollArea()
+        scrollArea.setWidgetResizable(True)
+        scrollArea.setContentsMargins(0, 0, 0, 0)
+        scrollArea.setStyleSheet("background: transparent; border: none;")
+        scrollArea.setWidget(content_widget)
+
+        self.viewLayout = QVBoxLayout(self)
+        self.viewLayout.setSpacing(12)
+        self.viewLayout.setContentsMargins(20, 16, 9, 16)
+        self.viewLayout.addWidget(self.title)
+        self.viewLayout.addWidget(scrollArea)
 
 
 class SwitchSettingCard(SettingCard):
@@ -969,6 +965,72 @@ class TimeEditSettingCard(SettingCard):
             self.qconfig.set(self.configItem_time, value)
 
         self.TimeEdit.setTime(QTime.fromString(value, "HH:mm"))
+
+
+class UserNoticeSettingCard(PushAndSwitchButtonSettingCard):
+    """Setting card with User's Notice"""
+
+    def __init__(
+        self,
+        icon: Union[str, QIcon, FluentIconBase],
+        title: str,
+        content: Union[str, None],
+        text: str,
+        qconfig: QConfig,
+        configItem: ConfigItem,
+        configItems: Dict[str, ConfigItem],
+        parent=None,
+    ):
+
+        super().__init__(icon, title, content, text, qconfig, configItem, parent)
+        self.qconfig = qconfig
+        self.configItems = configItems
+        self.Lable = SubtitleLabel(self)
+
+        if configItems:
+            for config_item in configItems.values():
+                config_item.valueChanged.connect(self.setValues)
+            self.setValues()
+
+        self.hBoxLayout.addWidget(self.Lable, 0, Qt.AlignRight)
+        self.hBoxLayout.addSpacing(16)
+
+    def setValues(self):
+
+        def short_str(s: str) -> str:
+            if len(s) <= 10:
+                return s
+            return s[:10] + "..."
+
+        content_list = []
+
+        if self.configItems:
+
+            if not (
+                self.qconfig.get(self.configItems["IfSendStatistic"])
+                or self.qconfig.get(self.configItems["IfSendSixStar"])
+            ):
+                content_list.append("未启用任何通知项")
+
+            if self.qconfig.get(self.configItems["IfSendStatistic"]):
+                content_list.append("统计信息已启用")
+            if self.qconfig.get(self.configItems["IfSendSixStar"]):
+                content_list.append("六星喜报已启用")
+
+            if self.qconfig.get(self.configItems["IfSendMail"]):
+                content_list.append(
+                    f"邮箱通知：{short_str(self.qconfig.get(self.configItems["ToAddress"]))}"
+                )
+            if self.qconfig.get(self.configItems["IfServerChan"]):
+                content_list.append(
+                    f"Server酱通知：{short_str(self.qconfig.get(self.configItems["ServerChanKey"]))}"
+                )
+            if self.qconfig.get(self.configItems["IfCompanyWebHookBot"]):
+                content_list.append(
+                    f"企业微信通知：{short_str(self.qconfig.get(self.configItems["CompanyWebHookBotUrl"]))}"
+                )
+
+        self.setContent(" | ".join(content_list))
 
 
 class StatusSwitchSetting(SwitchButton):

@@ -47,6 +47,8 @@ from qfluentwidgets import (
     PushSettingCard,
     TableWidget,
     PrimaryToolButton,
+    Flyout,
+    FlyoutAnimationType,
 )
 from PySide6.QtCore import Signal
 from datetime import datetime
@@ -64,7 +66,7 @@ from .Widget import (
     LineEditSettingCard,
     SpinBoxSettingCard,
     ComboBoxMessageBox,
-    SettingMessageBox,
+    SettingFlyoutView,
     EditableComboBoxSettingCard,
     PasswordLineEditSettingCard,
     UserLableSettingCard,
@@ -73,6 +75,7 @@ from .Widget import (
     PushAndSwitchButtonSettingCard,
     PushAndComboBoxSettingCard,
     StatusSwitchSetting,
+    UserNoticeSettingCard,
     PivotArea,
 )
 
@@ -565,28 +568,24 @@ class MemberManager(QWidget):
                 self.setObjectName(f"脚本_{uid}")
                 self.config = Config.member_dict[f"脚本_{uid}"]["Config"]
 
-                layout = QVBoxLayout()
+                self.app_setting = self.AppSettingCard(f"脚本_{uid}", self.config, self)
+                self.user_setting = self.UserManager(f"脚本_{uid}", self)
+
+                content_widget = QWidget()
+                content_layout = QVBoxLayout(content_widget)
+                content_layout.setContentsMargins(0, 0, 11, 0)
+                content_layout.addWidget(self.app_setting)
+                content_layout.addWidget(self.user_setting)
+                content_layout.addStretch(1)
 
                 scrollArea = ScrollArea()
                 scrollArea.setWidgetResizable(True)
                 scrollArea.setContentsMargins(0, 0, 0, 0)
                 scrollArea.setStyleSheet("background: transparent; border: none;")
-
-                content_widget = QWidget()
-                content_layout = QVBoxLayout(content_widget)
-
-                self.app_setting = self.AppSettingCard(f"脚本_{uid}", self.config, self)
-                self.user_setting = self.UserManager(f"脚本_{uid}", self)
-
-                content_layout.addWidget(self.app_setting)
-                content_layout.addWidget(self.user_setting)
-                content_layout.addStretch(1)
-
                 scrollArea.setWidget(content_widget)
 
+                layout = QVBoxLayout(self)
                 layout.addWidget(scrollArea)
-
-                self.setLayout(layout)
 
             class AppSettingCard(HeaderCardWidget):
 
@@ -1531,13 +1530,23 @@ class MemberManager(QWidget):
                             )
 
                             # 新增单独通知卡片
-                            self.card_NotifySet = PushAndSwitchButtonSettingCard(
+                            self.card_NotifySet = UserNoticeSettingCard(
                                 icon=FluentIcon.MAIL,
                                 title="用户单独通知设置",
                                 content="未启用任何通知项",
                                 text="设置",
                                 qconfig=self.config,
                                 configItem=self.config.Notify_Enabled,
+                                configItems={
+                                    "IfSendStatistic": self.config.Notify_IfSendStatistic,
+                                    "IfSendSixStar": self.config.Notify_IfSendSixStar,
+                                    "IfSendMail": self.config.Notify_IfSendMail,
+                                    "ToAddress": self.config.Notify_ToAddress,
+                                    "IfServerChan": self.config.Notify_IfServerChan,
+                                    "ServerChanKey": self.config.Notify_ServerChanKey,
+                                    "IfCompanyWebHookBot": self.config.Notify_IfCompanyWebHookBot,
+                                    "CompanyWebHookBotUrl": self.config.Notify_CompanyWebHookBotUrl,
+                                },
                                 parent=self,
                             )
                             self.card_NotifyContent = self.NotifyContentSettingCard(
@@ -1558,9 +1567,10 @@ class MemberManager(QWidget):
                                 self.card_CompanyWebhookBot,
                             ]
 
-                            self.NotifySetCard = SettingMessageBox(
-                                self.window(), "用户通知设置", self.card_NotifySet_list
+                            self.NotifySetCard = SettingFlyoutView(
+                                self, "用户通知设置", self.card_NotifySet_list
                             )
+                            self.NotifySetCard.setVisible(False)
 
                             h1_layout = QHBoxLayout()
                             h1_layout.addWidget(self.card_Name)
@@ -1625,7 +1635,6 @@ class MemberManager(QWidget):
 
                             self.switch_mode()
                             self.switch_infrastructure()
-                            self.set_notify(if_show=False)
 
                         def switch_mode(self) -> None:
 
@@ -1746,44 +1755,17 @@ class MemberManager(QWidget):
                                 },
                             )
 
-                        def set_notify(self, if_show: bool = True) -> None:
+                        def set_notify(self) -> None:
                             """设置用户通知相关配置"""
 
-                            def short_str(s: str) -> str:
-                                if len(s) <= 10:
-                                    return s
-                                return s[:7] + "..."
-
-                            if if_show:
-                                self.NotifySetCard.exec_()
-
-                            content_list = []
-
-                            if not (
-                                self.config.get(self.config.Notify_IfSendStatistic)
-                                or self.config.get(self.config.Notify_IfSendSixStar)
-                            ):
-                                content_list.append("未启用任何通知项")
-
-                            if self.config.get(self.config.Notify_IfSendStatistic):
-                                content_list.append("统计信息已启用")
-                            if self.config.get(self.config.Notify_IfSendSixStar):
-                                content_list.append("六星喜报已启用")
-
-                            if self.config.get(self.config.Notify_IfSendMail):
-                                content_list.append(
-                                    f"邮箱通知：{short_str(self.config.get(self.config.Notify_ToAddress))}"
-                                )
-                            if self.config.get(self.config.Notify_IfServerChan):
-                                content_list.append(
-                                    f"Server酱通知：{short_str(self.config.get(self.config.Notify_ServerChanKey))}"
-                                )
-                            if self.config.get(self.config.Notify_IfCompanyWebHookBot):
-                                content_list.append(
-                                    f"企业微信通知：{short_str(self.config.get(self.config.Notify_CompanyWebHookBotUrl))}"
-                                )
-
-                            self.card_NotifySet.setContent(" | ".join(content_list))
+                            self.NotifySetCard.setVisible(True)
+                            Flyout.make(
+                                self.NotifySetCard,
+                                self.card_NotifySet,
+                                self,
+                                aniType=FlyoutAnimationType.PULL_UP,
+                                isDeleteOnClose=False,
+                            )
 
                         class NotifyContentSettingCard(HeaderCardWidget):
 
@@ -1814,6 +1796,7 @@ class MemberManager(QWidget):
                                 Layout.addWidget(self.card_IfSendStatistic)
                                 Layout.addWidget(self.card_IfSendSixStar)
                                 self.viewLayout.addLayout(Layout)
+                                self.viewLayout.setSpacing(3)
                                 self.viewLayout.setContentsMargins(3, 0, 3, 3)
 
                         class EMailSettingCard(HeaderCardWidget):
@@ -1846,6 +1829,7 @@ class MemberManager(QWidget):
                                 Layout.addWidget(self.card_IfSendMail)
                                 Layout.addWidget(self.card_ToAddress)
                                 self.viewLayout.addLayout(Layout)
+                                self.viewLayout.setSpacing(3)
                                 self.viewLayout.setContentsMargins(3, 0, 3, 3)
 
                         class ServerChanSettingCard(HeaderCardWidget):
@@ -1898,6 +1882,7 @@ class MemberManager(QWidget):
                                 Layout.addWidget(self.card_ServerChanChannel)
                                 Layout.addWidget(self.card_ServerChanTag)
                                 self.viewLayout.addLayout(Layout)
+                                self.viewLayout.setSpacing(3)
                                 self.viewLayout.setContentsMargins(3, 0, 3, 3)
 
                         class CompanyWechatPushSettingCard(HeaderCardWidget):
@@ -1908,7 +1893,7 @@ class MemberManager(QWidget):
 
                                 self.config = config
 
-                                self.card_IfCompanyWechat = SwitchSettingCard(
+                                self.card_IfCompanyWebHookBot = SwitchSettingCard(
                                     icon=FluentIcon.PAGE_RIGHT,
                                     title="推送用户企业微信机器人通知",
                                     content="是否启用用户企微机器人通知功能",
@@ -1927,7 +1912,8 @@ class MemberManager(QWidget):
                                 )
 
                                 Layout = QVBoxLayout()
-                                Layout.addWidget(self.card_IfCompanyWechat)
+                                Layout.addWidget(self.card_IfCompanyWebHookBot)
                                 Layout.addWidget(self.card_CompanyWebHookBotUrl)
                                 self.viewLayout.addLayout(Layout)
+                                self.viewLayout.setSpacing(3)
                                 self.viewLayout.setContentsMargins(3, 0, 3, 3)
