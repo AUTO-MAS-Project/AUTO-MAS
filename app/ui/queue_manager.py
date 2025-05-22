@@ -136,11 +136,7 @@ class QueueManager(QWidget):
             )
             return None
 
-        choice = MessageBox(
-            "确认",
-            f"确定要删除 {name} 吗？",
-            self.window(),
-        )
+        choice = MessageBox("确认", f"确定要删除 {name} 吗？", self.window())
         if choice.exec():
 
             self.queue_manager.clear_SettingBox()

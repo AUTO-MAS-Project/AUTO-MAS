@@ -197,11 +197,7 @@ class MemberManager(QWidget):
             )
             return None
 
-        choice = MessageBox(
-            "确认",
-            f"确定要删除 {name} 实例吗？",
-            self.window(),
-        )
+        choice = MessageBox("确认", f"确定要删除 {name} 实例吗？", self.window())
         if choice.exec():
 
             self.member_manager.clear_SettingBox()
@@ -866,9 +862,7 @@ class MemberManager(QWidget):
                         return None
 
                     choice = MessageBox(
-                        "确认",
-                        f"确定要删除 {name} 吗？",
-                        self.window(),
+                        "确认", f"确定要删除 {name} 吗？", self.window()
                     )
                     if choice.exec():
 

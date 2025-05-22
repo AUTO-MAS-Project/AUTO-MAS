@@ -49,6 +49,7 @@ from app.core import Config, TaskManager, MainTimer, MainInfoBar
 from app.services import Notify, Crypto, System
 from .home import Home
 from .member_manager import MemberManager
+from .plan_manager import PlanManager
 from .queue_manager import QueueManager
 from .dispatch_center import DispatchCenter
 from .history import History
@@ -81,6 +82,7 @@ class AUTO_MAA(MSFluentWindow):
         # 创建主窗口
         self.home = Home(self)
         self.member_manager = MemberManager(self)
+        self.plan_manager = PlanManager(self)
         self.queue_manager = QueueManager(self)
         self.dispatch_center = DispatchCenter(self)
         self.history = History(self)
@@ -98,6 +100,13 @@ class AUTO_MAA(MSFluentWindow):
             FluentIcon.ROBOT,
             "脚本管理",
             FluentIcon.ROBOT,
+            NavigationItemPosition.TOP,
+        )
+        self.addSubInterface(
+            self.plan_manager,
+            FluentIcon.CALENDAR,
+            "计划管理",
+            FluentIcon.CALENDAR,
             NavigationItemPosition.TOP,
         )
         self.addSubInterface(

@@ -33,6 +33,7 @@ import sys
 import shutil
 import re
 import base64
+import calendar
 from datetime import datetime, timedelta, date
 from collections import defaultdict
 from pathlib import Path
@@ -469,117 +470,49 @@ class MaaPlanConfig(LQConfig):
 
         self.Info_Name = ConfigItem("Info", "Name", "新表格")
 
-        self.Global_MedicineNumb = ConfigItem(
-            "Global", "MedicineNumb", 0, RangeValidator(0, 1024)
-        )
-        self.Global_SeriesNumb = OptionsConfigItem(
-            "Global",
-            "SeriesNumb",
-            "0",
-            OptionsValidator(["0", "6", "5", "4", "3", "2", "1", "-1"]),
-        )
-        self.Global_GameId = ConfigItem("Global", "GameId", "-")
-        self.Global_GameId_1 = ConfigItem("Global", "GameId_1", "-")
-        self.Global_GameId_2 = ConfigItem("Global", "GameId_2", "-")
-        self.Global_GameId_Remain = ConfigItem("Global", "GameId_Remain", "-")
+        self.config_item_dict: dict[str, Dict[str, ConfigItem]] = {}
 
-        self.Monday_MedicineNumb = ConfigItem(
-            "Monday", "MedicineNumb", 0, RangeValidator(0, 1024)
-        )
-        self.Monday_SeriesNumb = OptionsConfigItem(
+        for group in [
+            "ALL",
             "Monday",
-            "SeriesNumb",
-            "0",
-            OptionsValidator(["0", "6", "5", "4", "3", "2", "1", "-1"]),
-        )
-        self.Monday_GameId = ConfigItem("Monday", "GameId", "-")
-        self.Monday_GameId_1 = ConfigItem("Monday", "GameId_1", "-")
-        self.Monday_GameId_2 = ConfigItem("Monday", "GameId_2", "-")
-        self.Monday_GameId_Remain = ConfigItem("Monday", "GameId_Remain", "-")
-
-        self.Tuesday_MedicineNumb = ConfigItem(
-            "Tuesday", "MedicineNumb", 0, RangeValidator(0, 1024)
-        )
-        self.Tuesday_SeriesNumb = OptionsConfigItem(
             "Tuesday",
-            "SeriesNumb",
-            "0",
-            OptionsValidator(["0", "6", "5", "4", "3", "2", "1", "-1"]),
-        )
-        self.Tuesday_GameId = ConfigItem("Tuesday", "GameId", "-")
-        self.Tuesday_GameId_1 = ConfigItem("Tuesday", "GameId_1", "-")
-        self.Tuesday_GameId_2 = ConfigItem("Tuesday", "GameId_2", "-")
-        self.Tuesday_GameId_Remain = ConfigItem("Tuesday", "GameId_Remain", "-")
-
-        self.Wednesday_MedicineNumb = ConfigItem(
-            "Wednesday", "MedicineNumb", 0, RangeValidator(0, 1024)
-        )
-        self.Wednesday_SeriesNumb = OptionsConfigItem(
             "Wednesday",
-            "SeriesNumb",
-            "0",
-            OptionsValidator(["0", "6", "5", "4", "3", "2", "1", "-1"]),
-        )
-        self.Wednesday_GameId = ConfigItem("Wednesday", "GameId", "-")
-        self.Wednesday_GameId_1 = ConfigItem("Wednesday", "GameId_1", "-")
-        self.Wednesday_GameId_2 = ConfigItem("Wednesday", "GameId_2", "-")
-        self.Wednesday_GameId_Remain = ConfigItem("Wednesday", "GameId_Remain", "-")
-
-        self.Thursday_MedicineNumb = ConfigItem(
-            "Thursday", "MedicineNumb", 0, RangeValidator(0, 1024)
-        )
-        self.Thursday_SeriesNumb = OptionsConfigItem(
             "Thursday",
-            "SeriesNumb",
-            "0",
-            OptionsValidator(["0", "6", "5", "4", "3", "2", "1", "-1"]),
-        )
-        self.Thursday_GameId = ConfigItem("Thursday", "GameId", "-")
-        self.Thursday_GameId_1 = ConfigItem("Thursday", "GameId_1", "-")
-        self.Thursday_GameId_2 = ConfigItem("Thursday", "GameId_2", "-")
-        self.Thursday_GameId_Remain = ConfigItem("Thursday", "GameId_Remain", "-")
-
-        self.Friday_MedicineNumb = ConfigItem(
-            "Friday", "MedicineNumb", 0, RangeValidator(0, 1024)
-        )
-        self.Friday_SeriesNumb = OptionsConfigItem(
             "Friday",
-            "SeriesNumb",
-            "0",
-            OptionsValidator(["0", "6", "5", "4", "3", "2", "1", "-1"]),
-        )
-        self.Friday_GameId = ConfigItem("Friday", "GameId", "-")
-        self.Friday_GameId_1 = ConfigItem("Friday", "GameId_1", "-")
-        self.Friday_GameId_2 = ConfigItem("Friday", "GameId_2", "-")
-        self.Friday_GameId_Remain = ConfigItem("Friday", "GameId_Remain", "-")
-
-        self.Saturday_MedicineNumb = ConfigItem(
-            "Saturday", "MedicineNumb", 0, RangeValidator(0, 1024)
-        )
-        self.Saturday_SeriesNumb = OptionsConfigItem(
             "Saturday",
-            "SeriesNumb",
-            "0",
-            OptionsValidator(["0", "6", "5", "4", "3", "2", "1", "-1"]),
-        )
-        self.Saturday_GameId = ConfigItem("Saturday", "GameId", "-")
-        self.Saturday_GameId_1 = ConfigItem("Saturday", "GameId_1", "-")
-        self.Saturday_GameId_2 = ConfigItem("Saturday", "GameId_2", "-")
-        self.Saturday_GameId_Remain = ConfigItem("Saturday", "GameId_Remain", "-")
-
-        self.Sunday_MedicineNumb = ConfigItem(
-            "Sunday", "MedicineNumb", 0, RangeValidator(0, 1024)
-        )
-        self.Sunday_SeriesNumb = OptionsConfigItem(
             "Sunday",
-            "SeriesNumb",
-            "0",
-            OptionsValidator(["0", "6", "5", "4", "3", "2", "1", "-1"]),
-        )
-        self.Sunday_GameId = ConfigItem("Sunday", "GameId", "-")
-        self.Sunday_GameId_1 = ConfigItem("Sunday", "GameId_1", "-")
-        self.Sunday_GameId_2 = ConfigItem("Sunday", "GameId_2", "-")
-        self.Sunday_GameId_Remain = ConfigItem("Sunday", "GameId_Remain", "-")
+        ]:
+            self.config_item_dict[group] = {}
+
+            self.config_item_dict[group]["MedicineNumb"] = ConfigItem(
+                group, "MedicineNumb", 0, RangeValidator(0, 1024)
+            )
+            self.config_item_dict[group]["SeriesNumb"] = OptionsConfigItem(
+                group,
+                "SeriesNumb",
+                "0",
+                OptionsValidator(["0", "6", "5", "4", "3", "2", "1", "-1"]),
+            )
+            self.config_item_dict[group]["GameId"] = ConfigItem(group, "GameId", "-")
+            self.config_item_dict[group]["GameId_1"] = ConfigItem(
+                group, "GameId_1", "-"
+            )
+            self.config_item_dict[group]["GameId_2"] = ConfigItem(
+                group, "GameId_2", "-"
+            )
+            self.config_item_dict[group]["GameId_Remain"] = ConfigItem(
+                group, "GameId_Remain", "-"
+            )
+
+            for name in [
+                "MedicineNumb",
+                "SeriesNumb",
+                "GameId",
+                "GameId_1",
+                "GameId_2",
+                "GameId_Remain",
+            ]:
+                setattr(self, f"{group}_{name}", self.config_item_dict[group][name])
 
 
 class AppConfig(GlobalConfig):
@@ -610,7 +543,13 @@ class AppConfig(GlobalConfig):
         self.silence_list = []
         self.gameid_dict = {
             "ALL": {"value": [], "text": []},
-            "Today": {"value": [], "text": []},
+            "Monday": {"value": [], "text": []},
+            "Tuesday": {"value": [], "text": []},
+            "Wednesday": {"value": [], "text": []},
+            "Thursday": {"value": [], "text": []},
+            "Friday": {"value": [], "text": []},
+            "Saturday": {"value": [], "text": []},
+            "Sunday": {"value": [], "text": []},
         }
         self.power_sign = "NoAction"
         self.if_ignore_silence = False
@@ -732,39 +671,42 @@ class AppConfig(GlobalConfig):
             "近/特芯片组",
         ]
 
-        # 生成本日关卡信息
-        days = self.server_date().isoweekday()
+        # # 生成本日关卡信息
+        # days = self.server_date().isoweekday()
 
-        gameid_list = [
-            {"value": "-", "text": "当前/上次", "days": [1, 2, 3, 4, 5, 6, 7]},
-            {"value": "1-7", "text": "1-7", "days": [1, 2, 3, 4, 5, 6, 7]},
-            {"value": "R8-11", "text": "R8-11", "days": [1, 2, 3, 4, 5, 6, 7]},
-            {
-                "value": "12-17-HARD",
-                "text": "12-17-HARD",
-                "days": [1, 2, 3, 4, 5, 6, 7],
-            },
-            {"value": "CE-6", "text": "龙门币-6/5", "days": [2, 4, 6, 7]},
-            {"value": "AP-5", "text": "红票-5", "days": [1, 4, 6, 7]},
-            {"value": "CA-5", "text": "技能-5", "days": [2, 3, 5, 7]},
-            {"value": "LS-6", "text": "经验-6/5", "days": [1, 2, 3, 4, 5, 6, 7]},
-            {"value": "SK-5", "text": "碳-5", "days": [1, 3, 5, 6]},
-            {"value": "PR-A-1", "text": "奶/盾芯片", "days": [1, 4, 5, 7]},
-            {"value": "PR-A-2", "text": "奶/盾芯片组", "days": [1, 4, 5, 7]},
-            {"value": "PR-B-1", "text": "术/狙芯片", "days": [1, 2, 5, 6]},
-            {"value": "PR-B-2", "text": "术/狙芯片组", "days": [1, 2, 5, 6]},
-            {"value": "PR-C-1", "text": "先/辅芯片", "days": [3, 4, 6, 7]},
-            {"value": "PR-C-2", "text": "先/辅芯片组", "days": [3, 4, 6, 7]},
-            {"value": "PR-D-1", "text": "近/特芯片", "days": [2, 3, 6, 7]},
-            {"value": "PR-D-2", "text": "近/特芯片组", "days": [2, 3, 6, 7]},
-        ]
+        # 生成每日关卡信息
+        for day in range(1, 8):
 
-        for gameid_info in gameid_list:
-            if days in gameid_info["days"]:
-                gameid_dict["value"].append(gameid_info["value"])
-                gameid_dict["text"].append(gameid_info["text"])
+            gameid_list = [
+                {"value": "-", "text": "当前/上次", "days": [1, 2, 3, 4, 5, 6, 7]},
+                {"value": "1-7", "text": "1-7", "days": [1, 2, 3, 4, 5, 6, 7]},
+                {"value": "R8-11", "text": "R8-11", "days": [1, 2, 3, 4, 5, 6, 7]},
+                {
+                    "value": "12-17-HARD",
+                    "text": "12-17-HARD",
+                    "days": [1, 2, 3, 4, 5, 6, 7],
+                },
+                {"value": "CE-6", "text": "龙门币-6/5", "days": [2, 4, 6, 7]},
+                {"value": "AP-5", "text": "红票-5", "days": [1, 4, 6, 7]},
+                {"value": "CA-5", "text": "技能-5", "days": [2, 3, 5, 7]},
+                {"value": "LS-6", "text": "经验-6/5", "days": [1, 2, 3, 4, 5, 6, 7]},
+                {"value": "SK-5", "text": "碳-5", "days": [1, 3, 5, 6]},
+                {"value": "PR-A-1", "text": "奶/盾芯片", "days": [1, 4, 5, 7]},
+                {"value": "PR-A-2", "text": "奶/盾芯片组", "days": [1, 4, 5, 7]},
+                {"value": "PR-B-1", "text": "术/狙芯片", "days": [1, 2, 5, 6]},
+                {"value": "PR-B-2", "text": "术/狙芯片组", "days": [1, 2, 5, 6]},
+                {"value": "PR-C-1", "text": "先/辅芯片", "days": [3, 4, 6, 7]},
+                {"value": "PR-C-2", "text": "先/辅芯片组", "days": [3, 4, 6, 7]},
+                {"value": "PR-D-1", "text": "近/特芯片", "days": [2, 3, 6, 7]},
+                {"value": "PR-D-2", "text": "近/特芯片组", "days": [2, 3, 6, 7]},
+            ]
 
-        self.gameid_dict["Today"] = gameid_dict
+            for gameid_info in gameid_list:
+                if day in gameid_info["days"]:
+                    gameid_dict["value"].append(gameid_info["value"])
+                    gameid_dict["text"].append(gameid_info["text"])
+
+            self.gameid_dict[calendar.day_name[day - 1]] = gameid_dict
 
         self.gameid_refreshed.emit()
 
@@ -1207,7 +1149,7 @@ class AppConfig(GlobalConfig):
                     maa_plan_config.load(maa_plan_dir / "config.json", maa_plan_config)
                     maa_plan_config.save()
 
-                    self.member_dict[maa_plan_dir.name] = {
+                    self.plan_dict[maa_plan_dir.name] = {
                         "Type": "Maa",
                         "Path": maa_plan_dir,
                         "Config": maa_plan_config,
@@ -1263,6 +1205,16 @@ class AppConfig(GlobalConfig):
                 queue["Config"].set(queue["Config"].queue_Member_9, new)
             if queue["Config"].get(queue["Config"].queue_Member_10) == old:
                 queue["Config"].set(queue["Config"].queue_Member_10, new)
+
+    def change_plan(self, old: str, new: str) -> None:
+        """修改脚本管理所有下属用户的计划表配置参数"""
+
+        for member in self.member_dict.values():
+
+            for user in member["UserData"].values():
+
+                if user["Config"].get(user["Config"].Info_GameIdMode) == old:
+                    user["Config"].set(user["Config"].Info_GameIdMode, new)
 
     def change_user_info(
         self, name: str, user_data: Dict[str, Dict[str, Union[str, Path, dict]]]
