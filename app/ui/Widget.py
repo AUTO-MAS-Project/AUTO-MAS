@@ -1003,22 +1003,27 @@ class UserNoticeSettingCard(PushAndSwitchButtonSettingCard):
                 return f"{s[:4]}***{s[-4:]}" if len(s) > 8 else s
 
             elif s.startswith(("http://", "https://")):
-                # Webhook URL：域名 + 路径尾4
+                # Webhook URL：域名前5 + 路径尾5
                 parsed_url = urlparse(s)
-                domain = parsed_url.netloc
+                domain = (
+                    parsed_url.netloc[:5]
+                    if len(parsed_url.netloc) > 5
+                    else parsed_url.netloc
+                )
                 path_tail = (
-                    parsed_url.path[-4:]
-                    if len(parsed_url.path) > 4
+                    parsed_url.path[-5:]
+                    if len(parsed_url.path) > 5
                     else parsed_url.path
                 )
-                return f"{domain}"
+                return f"{domain}......{path_tail}"
 
             elif "@" in s:
-                # # 邮箱：显示@前最多3字符 + 域名
-                # username, domain = s.split("@", 1)
-                # displayed_name = username[-3:] if len(username) > 3 else username
-                # 邮箱展示全部
-                return f"{s}"
+                # 邮箱：@前4/7 + 域名
+                username, domain = s.split("@", 1)
+                displayed_name = (
+                    f"{username[:4]}......" if len(username) > 7 else username
+                )
+                return f"{displayed_name}@{domain}"
 
             else:
                 # 普通字符串：末尾3字符
