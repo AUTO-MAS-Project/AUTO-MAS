@@ -25,17 +25,24 @@ v4.3
 作者：DLmaster_361
 """
 
+import os
+import re
+from datetime import datetime
+from functools import partial
+from typing import Optional, Union, List, Dict
+from urllib.parse import urlparse
+
+import markdown
+from PySide6.QtCore import Qt, QTime, QTimer, QEvent, QSize
+from PySide6.QtGui import QIcon, QPixmap, QPainter, QPainterPath
 from PySide6.QtWidgets import (
     QApplication,
-    QWidget,
     QWidget,
     QLabel,
     QHBoxLayout,
     QVBoxLayout,
     QSizePolicy,
 )
-from PySide6.QtCore import Qt, QTime, QTimer, QEvent, QSize
-from PySide6.QtGui import QIcon, QPixmap, QPainter, QPainterPath
 from qfluentwidgets import (
     LineEdit,
     PasswordLineEdit,
@@ -77,13 +84,6 @@ from qfluentwidgets import (
     FlyoutViewBase,
 )
 from qfluentwidgets.common.overload import singledispatchmethod
-import os
-import re
-import markdown
-from datetime import datetime
-from urllib.parse import urlparse
-from functools import partial
-from typing import Optional, Union, List, Dict
 
 from app.core import Config
 from app.services import Crypto
@@ -998,9 +998,31 @@ class UserNoticeSettingCard(PushAndSwitchButtonSettingCard):
     def setValues(self):
 
         def short_str(s: str) -> str:
-            if len(s) <= 10:
-                return s
-            return s[:10] + "..."
+            if s.startswith(("SC", "sc")):
+                # SendKey：首4 + 末4
+                return f"{s[:4]}***{s[-4:]}" if len(s) > 8 else s
+
+            elif s.startswith(("http://", "https://")):
+                # Webhook URL：域名 + 路径尾4
+                parsed_url = urlparse(s)
+                domain = parsed_url.netloc
+                path_tail = (
+                    parsed_url.path[-4:]
+                    if len(parsed_url.path) > 4
+                    else parsed_url.path
+                )
+                return f"{domain}"
+
+            elif "@" in s:
+                # # 邮箱：显示@前最多3字符 + 域名
+                # username, domain = s.split("@", 1)
+                # displayed_name = username[-3:] if len(username) > 3 else username
+                # 邮箱展示全部
+                return f"{s}"
+
+            else:
+                # 普通字符串：末尾3字符
+                return f"***{s[-3:]}" if len(s) > 3 else s
 
         content_list = []
 
