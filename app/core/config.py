@@ -234,10 +234,6 @@ class GlobalConfig(LQConfig):
         self.notify_CompanyWebHookBotUrl = ConfigItem(
             "Notify", "CompanyWebHookBotUrl", ""
         )
-        self.notify_IfPushDeer = ConfigItem(
-            "Notify", "IfPushDeer", False, BoolValidator()
-        )
-        self.notify_IfPushDeerKey = ConfigItem("Notify", "PushDeerKey", "")
 
         self.update_IfAutoUpdate = ConfigItem(
             "Update", "IfAutoUpdate", False, BoolValidator()
@@ -439,6 +435,31 @@ class MaaUserConfig(LQConfig):
             "Data", "CustomInfrastPlanIndex", "0"
         )
 
+        # 新增用户单独通知字段
+        self.Notify_Enabled = ConfigItem("Notify", "Enabled", False, BoolValidator())
+        self.Notify_IfSendStatistic = ConfigItem(
+            "Notify", "IfSendStatistic", False, BoolValidator()
+        )
+        self.Notify_IfSendSixStar = ConfigItem(
+            "Notify", "IfSendSixStar", False, BoolValidator()
+        )
+        self.Notify_IfSendMail = ConfigItem(
+            "Notify", "IfSendMail", False, BoolValidator()
+        )
+        self.Notify_ToAddress = ConfigItem("Notify", "ToAddress", "")
+        self.Notify_IfServerChan = ConfigItem(
+            "Notify", "IfServerChan", False, BoolValidator()
+        )
+        self.Notify_ServerChanKey = ConfigItem("Notify", "ServerChanKey", "")
+        self.Notify_ServerChanChannel = ConfigItem("Notify", "ServerChanChannel", "")
+        self.Notify_ServerChanTag = ConfigItem("Notify", "ServerChanTag", "")
+        self.Notify_IfCompanyWebHookBot = ConfigItem(
+            "Notify", "IfCompanyWebHookBot", False, BoolValidator()
+        )
+        self.Notify_CompanyWebHookBotUrl = ConfigItem(
+            "Notify", "CompanyWebHookBotUrl", ""
+        )
+
 
 class MaaPlanConfig(LQConfig):
     """MAA计划表配置"""
@@ -563,7 +584,7 @@ class MaaPlanConfig(LQConfig):
 
 class AppConfig(GlobalConfig):
 
-    VERSION = "4.3.8.3"
+    VERSION = "4.3.8.4"
 
     gameid_refreshed = Signal()
     PASSWORD_refreshed = Signal()

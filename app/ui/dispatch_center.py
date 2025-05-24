@@ -333,27 +333,23 @@ class DispatchCenter(QWidget):
 
             self.setObjectName(name)
 
-            layout = QVBoxLayout()
+            self.top_bar = self.DispatchTopBar(self, name)
+            self.info = self.DispatchInfoCard(self)
+
+            content_widget = QWidget()
+            content_layout = QVBoxLayout(content_widget)
+            content_layout.setContentsMargins(0, 0, 0, 0)
+            content_layout.addWidget(self.top_bar)
+            content_layout.addWidget(self.info)
 
             scrollArea = ScrollArea()
             scrollArea.setWidgetResizable(True)
             scrollArea.setContentsMargins(0, 0, 0, 0)
             scrollArea.setStyleSheet("background: transparent; border: none;")
-
-            content_widget = QWidget()
-            content_layout = QVBoxLayout(content_widget)
-
-            self.top_bar = self.DispatchTopBar(self, name)
-            self.info = self.DispatchInfoCard(self)
-
-            content_layout.addWidget(self.top_bar)
-            content_layout.addWidget(self.info)
-
             scrollArea.setWidget(content_widget)
 
+            layout = QVBoxLayout(self)
             layout.addWidget(scrollArea)
-
-            self.setLayout(layout)
 
         class DispatchTopBar(CardWidget):
 

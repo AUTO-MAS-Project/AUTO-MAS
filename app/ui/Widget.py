@@ -25,17 +25,24 @@ v4.3
 作者：DLmaster_361
 """
 
+import os
+import re
+from datetime import datetime
+from functools import partial
+from typing import Optional, Union, List, Dict
+from urllib.parse import urlparse
+
+import markdown
+from PySide6.QtCore import Qt, QTime, QTimer, QEvent, QSize
+from PySide6.QtGui import QIcon, QPixmap, QPainter, QPainterPath
 from PySide6.QtWidgets import (
     QApplication,
-    QWidget,
     QWidget,
     QLabel,
     QHBoxLayout,
     QVBoxLayout,
     QSizePolicy,
 )
-from PySide6.QtCore import Qt, QTime, QTimer, QEvent, QSize
-from PySide6.QtGui import QIcon, QPixmap, QPainter, QPainterPath
 from qfluentwidgets import (
     LineEdit,
     PasswordLineEdit,
@@ -74,15 +81,9 @@ from qfluentwidgets import (
     ScrollArea,
     Pivot,
     PivotItem,
+    FlyoutViewBase,
 )
 from qfluentwidgets.common.overload import singledispatchmethod
-import os
-import re
-import markdown
-from datetime import datetime
-from urllib.parse import urlparse
-from functools import partial
-from typing import Optional, Union, List, Dict
 
 from app.core import Config
 from app.services import Crypto
@@ -269,6 +270,39 @@ class NoticeMessageBox(MessageBoxBase):
                 self.Layout.addWidget(QuantifiedItemCard(["暂无信息", ""]))
 
             self.Layout.addStretch(1)
+
+
+class SettingFlyoutView(FlyoutViewBase):
+    """设置卡二级菜单弹出组件"""
+
+    def __init__(
+        self,
+        parent,
+        title: str,
+        setting_cards: List[Union[SettingCard, HeaderCardWidget]],
+    ):
+        super().__init__(parent)
+
+        self.title = SubtitleLabel(title)
+
+        content_widget = QWidget()
+        content_layout = QVBoxLayout(content_widget)
+        content_layout.setSpacing(0)
+        content_layout.setContentsMargins(0, 0, 11, 0)
+        for setting_card in setting_cards:
+            content_layout.addWidget(setting_card)
+
+        scrollArea = ScrollArea()
+        scrollArea.setWidgetResizable(True)
+        scrollArea.setContentsMargins(0, 0, 0, 0)
+        scrollArea.setStyleSheet("background: transparent; border: none;")
+        scrollArea.setWidget(content_widget)
+
+        self.viewLayout = QVBoxLayout(self)
+        self.viewLayout.setSpacing(12)
+        self.viewLayout.setContentsMargins(20, 16, 9, 16)
+        self.viewLayout.addWidget(self.title)
+        self.viewLayout.addWidget(scrollArea)
 
 
 class SwitchSettingCard(SettingCard):
@@ -931,6 +965,93 @@ class TimeEditSettingCard(SettingCard):
             self.qconfig.set(self.configItem_time, value)
 
         self.TimeEdit.setTime(QTime.fromString(value, "HH:mm"))
+
+
+class UserNoticeSettingCard(PushAndSwitchButtonSettingCard):
+    """Setting card with User's Notice"""
+
+    def __init__(
+        self,
+        icon: Union[str, QIcon, FluentIconBase],
+        title: str,
+        content: Union[str, None],
+        text: str,
+        qconfig: QConfig,
+        configItem: ConfigItem,
+        configItems: Dict[str, ConfigItem],
+        parent=None,
+    ):
+
+        super().__init__(icon, title, content, text, qconfig, configItem, parent)
+        self.qconfig = qconfig
+        self.configItems = configItems
+        self.Lable = SubtitleLabel(self)
+
+        if configItems:
+            for config_item in configItems.values():
+                config_item.valueChanged.connect(self.setValues)
+            self.setValues()
+
+        self.hBoxLayout.addWidget(self.Lable, 0, Qt.AlignRight)
+        self.hBoxLayout.addSpacing(16)
+
+    def setValues(self):
+
+        def short_str(s: str) -> str:
+            if s.startswith(("SC", "sc")):
+                # SendKey：首4 + 末4
+                return f"{s[:4]}***{s[-4:]}" if len(s) > 8 else s
+
+            elif s.startswith(("http://", "https://")):
+                # Webhook URL：域名 + 路径尾3
+                parsed_url = urlparse(s)
+                domain = parsed_url.netloc
+                path_tail = (
+                    parsed_url.path[-3:]
+                    if len(parsed_url.path) > 3
+                    else parsed_url.path
+                )
+                return f"{domain}***{path_tail}"
+
+            elif "@" in s:
+                # 邮箱：@前3/6 + 域名
+                username, domain = s.split("@", 1)
+                displayed_name = f"{username[:3]}***" if len(username) > 6 else username
+                return f"{displayed_name}@{domain}"
+
+            else:
+                # 普通字符串：末尾3字符
+                return f"***{s[-3:]}" if len(s) > 3 else s
+
+        content_list = []
+
+        if self.configItems:
+
+            if not (
+                self.qconfig.get(self.configItems["IfSendStatistic"])
+                or self.qconfig.get(self.configItems["IfSendSixStar"])
+            ):
+                content_list.append("未启用任何通知项")
+
+            if self.qconfig.get(self.configItems["IfSendStatistic"]):
+                content_list.append("统计信息已启用")
+            if self.qconfig.get(self.configItems["IfSendSixStar"]):
+                content_list.append("六星喜报已启用")
+
+            if self.qconfig.get(self.configItems["IfSendMail"]):
+                content_list.append(
+                    f"邮箱通知：{short_str(self.qconfig.get(self.configItems["ToAddress"]))}"
+                )
+            if self.qconfig.get(self.configItems["IfServerChan"]):
+                content_list.append(
+                    f"Server酱通知：{short_str(self.qconfig.get(self.configItems["ServerChanKey"]))}"
+                )
+            if self.qconfig.get(self.configItems["IfCompanyWebHookBot"]):
+                content_list.append(
+                    f"企业微信通知：{short_str(self.qconfig.get(self.configItems["CompanyWebHookBotUrl"]))}"
+                )
+
+        self.setContent(" | ".join(content_list))
 
 
 class StatusSwitchSetting(SwitchButton):

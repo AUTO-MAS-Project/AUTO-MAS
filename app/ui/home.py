@@ -62,14 +62,6 @@ class Home(QWidget):
         self.banner = Banner()
         self.banner_text = TextBrowser()
 
-        widget = QWidget()
-        Layout = QVBoxLayout(widget)
-
-        Layout.addWidget(self.banner)
-        Layout.addWidget(self.banner_text)
-        Layout.setStretch(0, 2)
-        Layout.setStretch(1, 3)
-
         v_layout = QVBoxLayout(self.banner)
         v_layout.setContentsMargins(0, 0, 0, 15)
         v_layout.setSpacing(5)
@@ -146,14 +138,22 @@ class Home(QWidget):
         # 将底部水平布局添加到垂直布局
         v_layout.addLayout(h2_layout)
 
-        layout = QVBoxLayout()
+        content_widget = QWidget()
+        content_layout = QVBoxLayout(content_widget)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.addWidget(self.banner)
+        content_layout.addWidget(self.banner_text)
+        content_layout.setStretch(0, 2)
+        content_layout.setStretch(1, 3)
+
         scrollArea = ScrollArea()
         scrollArea.setWidgetResizable(True)
         scrollArea.setContentsMargins(0, 0, 0, 0)
         scrollArea.setStyleSheet("background: transparent; border: none;")
-        scrollArea.setWidget(widget)
+        scrollArea.setWidget(content_widget)
+
+        layout = QVBoxLayout(self)
         layout.addWidget(scrollArea)
-        self.setLayout(layout)
 
         self.set_banner()
 
