@@ -109,6 +109,8 @@ class LineEditMessageBox(MessageBoxBase):
         self.viewLayout.addWidget(self.title)
         self.viewLayout.addWidget(self.input)
 
+        self.input.setFocus()
+
 
 class ComboBoxMessageBox(MessageBoxBase):
     """选择对话框"""
@@ -465,24 +467,27 @@ class LineEditSettingCard(SettingCard):
         self.LineEdit.setMinimumWidth(250)
         self.LineEdit.setPlaceholderText(text)
 
-        if configItem:
-            self.setValue(self.qconfig.get(configItem))
-            configItem.valueChanged.connect(self.setValue)
-
         self.hBoxLayout.addWidget(self.LineEdit, 0, Qt.AlignRight)
         self.hBoxLayout.addSpacing(16)
 
+        self.configItem.valueChanged.connect(self.setValue)
         self.LineEdit.textChanged.connect(self.__textChanged)
 
+        self.setValue(self.qconfig.get(configItem))
+
     def __textChanged(self, content: str):
-        self.setValue(content.strip())
+
+        self.configItem.valueChanged.disconnect()
+        self.qconfig.set(self.configItem, content.strip())
+        self.configItem.valueChanged.connect(self.setValue)
+
         self.textChanged.emit(content.strip())
 
     def setValue(self, content: str):
-        if self.configItem:
-            self.qconfig.set(self.configItem, content.strip())
 
+        self.LineEdit.textChanged.disconnect()
         self.LineEdit.setText(content.strip())
+        self.LineEdit.textChanged.connect(self.__textChanged)
 
 
 class PasswordLineEditSettingCard(SettingCard):
@@ -511,35 +516,29 @@ class PasswordLineEditSettingCard(SettingCard):
         self.LineEdit.setPlaceholderText(text)
         if algorithm == "AUTO":
             self.LineEdit.setViewPasswordButtonVisible(False)
-        self.if_setValue = False
-
-        if configItem:
-            self.setValue(self.qconfig.get(configItem))
-            configItem.valueChanged.connect(self.setValue)
 
         self.hBoxLayout.addWidget(self.LineEdit, 0, Qt.AlignRight)
         self.hBoxLayout.addSpacing(16)
 
+        self.configItem.valueChanged.connect(self.setValue)
         self.LineEdit.textChanged.connect(self.__textChanged)
+
+        self.setValue(self.qconfig.get(configItem))
 
     def __textChanged(self, content: str):
 
-        if self.if_setValue:
-            return None
-
+        self.configItem.valueChanged.disconnect()
         if self.algorithm == "DPAPI":
-            self.setValue(Crypto.win_encryptor(content))
+            self.qconfig.set(self.configItem, Crypto.win_encryptor(content))
         elif self.algorithm == "AUTO":
-            self.setValue(Crypto.AUTO_encryptor(content))
+            self.qconfig.set(self.configItem, Crypto.AUTO_encryptor(content))
+        self.configItem.valueChanged.connect(self.setValue)
+
         self.textChanged.emit()
 
     def setValue(self, content: str):
 
-        self.if_setValue = True
-
-        if self.configItem:
-            self.qconfig.set(self.configItem, content)
-
+        self.LineEdit.textChanged.disconnect()
         if self.algorithm == "DPAPI":
             self.LineEdit.setText(Crypto.win_decryptor(content))
         elif self.algorithm == "AUTO":
@@ -555,8 +554,7 @@ class PasswordLineEditSettingCard(SettingCard):
                 self.LineEdit.setText("************")
                 self.LineEdit.setPasswordVisible(False)
                 self.LineEdit.setReadOnly(True)
-
-        self.if_setValue = False
+        self.LineEdit.textChanged.connect(self.__textChanged)
 
 
 class UserLableSettingCard(SettingCard):
