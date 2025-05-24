@@ -25,17 +25,24 @@ v4.3
 作者：DLmaster_361
 """
 
+import os
+import re
+from datetime import datetime
+from functools import partial
+from typing import Optional, Union, List, Dict
+from urllib.parse import urlparse
+
+import markdown
+from PySide6.QtCore import Qt, QTime, QTimer, QEvent, QSize
+from PySide6.QtGui import QIcon, QPixmap, QPainter, QPainterPath
 from PySide6.QtWidgets import (
     QApplication,
-    QWidget,
     QWidget,
     QLabel,
     QHBoxLayout,
     QVBoxLayout,
     QSizePolicy,
 )
-from PySide6.QtCore import Qt, QTime, QTimer, QEvent, QSize
-from PySide6.QtGui import QIcon, QPixmap, QPainter, QPainterPath
 from qfluentwidgets import (
     LineEdit,
     PasswordLineEdit,
@@ -77,13 +84,6 @@ from qfluentwidgets import (
     FlyoutViewBase,
 )
 from qfluentwidgets.common.overload import singledispatchmethod
-import os
-import re
-import markdown
-from datetime import datetime
-from urllib.parse import urlparse
-from functools import partial
-from typing import Optional, Union, List, Dict
 
 from app.core import Config
 from app.services import Crypto
@@ -108,6 +108,8 @@ class LineEditMessageBox(MessageBoxBase):
         # 将组件添加到布局中
         self.viewLayout.addWidget(self.title)
         self.viewLayout.addWidget(self.input)
+
+        self.input.setFocus()
 
 
 class ComboBoxMessageBox(MessageBoxBase):
@@ -465,24 +467,27 @@ class LineEditSettingCard(SettingCard):
         self.LineEdit.setMinimumWidth(250)
         self.LineEdit.setPlaceholderText(text)
 
-        if configItem:
-            self.setValue(self.qconfig.get(configItem))
-            configItem.valueChanged.connect(self.setValue)
-
         self.hBoxLayout.addWidget(self.LineEdit, 0, Qt.AlignRight)
         self.hBoxLayout.addSpacing(16)
 
+        self.configItem.valueChanged.connect(self.setValue)
         self.LineEdit.textChanged.connect(self.__textChanged)
 
+        self.setValue(self.qconfig.get(configItem))
+
     def __textChanged(self, content: str):
-        self.setValue(content.strip())
+
+        self.configItem.valueChanged.disconnect()
+        self.qconfig.set(self.configItem, content.strip())
+        self.configItem.valueChanged.connect(self.setValue)
+
         self.textChanged.emit(content.strip())
 
     def setValue(self, content: str):
-        if self.configItem:
-            self.qconfig.set(self.configItem, content.strip())
 
+        self.LineEdit.textChanged.disconnect()
         self.LineEdit.setText(content.strip())
+        self.LineEdit.textChanged.connect(self.__textChanged)
 
 
 class PasswordLineEditSettingCard(SettingCard):
@@ -511,35 +516,29 @@ class PasswordLineEditSettingCard(SettingCard):
         self.LineEdit.setPlaceholderText(text)
         if algorithm == "AUTO":
             self.LineEdit.setViewPasswordButtonVisible(False)
-        self.if_setValue = False
-
-        if configItem:
-            self.setValue(self.qconfig.get(configItem))
-            configItem.valueChanged.connect(self.setValue)
 
         self.hBoxLayout.addWidget(self.LineEdit, 0, Qt.AlignRight)
         self.hBoxLayout.addSpacing(16)
 
+        self.configItem.valueChanged.connect(self.setValue)
         self.LineEdit.textChanged.connect(self.__textChanged)
+
+        self.setValue(self.qconfig.get(configItem))
 
     def __textChanged(self, content: str):
 
-        if self.if_setValue:
-            return None
-
+        self.configItem.valueChanged.disconnect()
         if self.algorithm == "DPAPI":
-            self.setValue(Crypto.win_encryptor(content))
+            self.qconfig.set(self.configItem, Crypto.win_encryptor(content))
         elif self.algorithm == "AUTO":
-            self.setValue(Crypto.AUTO_encryptor(content))
+            self.qconfig.set(self.configItem, Crypto.AUTO_encryptor(content))
+        self.configItem.valueChanged.connect(self.setValue)
+
         self.textChanged.emit()
 
     def setValue(self, content: str):
 
-        self.if_setValue = True
-
-        if self.configItem:
-            self.qconfig.set(self.configItem, content)
-
+        self.LineEdit.textChanged.disconnect()
         if self.algorithm == "DPAPI":
             self.LineEdit.setText(Crypto.win_decryptor(content))
         elif self.algorithm == "AUTO":
@@ -555,8 +554,7 @@ class PasswordLineEditSettingCard(SettingCard):
                 self.LineEdit.setText("************")
                 self.LineEdit.setPasswordVisible(False)
                 self.LineEdit.setReadOnly(True)
-
-        self.if_setValue = False
+        self.LineEdit.textChanged.connect(self.__textChanged)
 
 
 class UserLableSettingCard(SettingCard):
@@ -998,9 +996,30 @@ class UserNoticeSettingCard(PushAndSwitchButtonSettingCard):
     def setValues(self):
 
         def short_str(s: str) -> str:
-            if len(s) <= 10:
-                return s
-            return s[:10] + "..."
+            if s.startswith(("SC", "sc")):
+                # SendKey：首4 + 末4
+                return f"{s[:4]}***{s[-4:]}" if len(s) > 8 else s
+
+            elif s.startswith(("http://", "https://")):
+                # Webhook URL：域名 + 路径尾3
+                parsed_url = urlparse(s)
+                domain = parsed_url.netloc
+                path_tail = (
+                    parsed_url.path[-3:]
+                    if len(parsed_url.path) > 3
+                    else parsed_url.path
+                )
+                return f"{domain}***{path_tail}"
+
+            elif "@" in s:
+                # 邮箱：@前3/6 + 域名
+                username, domain = s.split("@", 1)
+                displayed_name = f"{username[:3]}***" if len(username) > 6 else username
+                return f"{displayed_name}@{domain}"
+
+            else:
+                # 普通字符串：末尾3字符
+                return f"***{s[-3:]}" if len(s) > 3 else s
 
         content_list = []
 

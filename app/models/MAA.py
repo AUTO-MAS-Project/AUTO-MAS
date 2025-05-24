@@ -608,13 +608,14 @@ class MaaManager(QObject):
                             Config.app_path
                             / f"history/{curdate}/{user_data["Info"]["Name"]}/{start_time.strftime("%H-%M-%S")}.json",
                         )
-
-                        if Config.get(Config.notify_IfSendSixStar) and if_six_star:
-
+                        if if_six_star:
                             self.push_notification(
                                 "公招六星",
                                 f"喜报：用户 {user[0]} 公招出六星啦！",
-                                {"user_name": user_data["Info"]["Name"]},
+                                {
+                                    "user_name": user_data["Info"]["Name"],
+                                },
+                                user_data,
                             )
 
                         # 执行MAA解压更新动作
@@ -640,26 +641,23 @@ class MaaManager(QObject):
 
                             logger.info(f"{self.name} | 更新动作结束")
 
-                if Config.get(Config.notify_IfSendStatistic):
-
-                    statistics = Config.merge_maa_logs("指定项", user_logs_list)
-                    statistics["user_info"] = user[0]
-                    statistics["start_time"] = user_start_time.strftime(
-                        "%Y-%m-%d %H:%M:%S"
-                    )
-                    statistics["end_time"] = datetime.now().strftime(
-                        "%Y-%m-%d %H:%M:%S"
-                    )
-                    statistics["maa_result"] = (
-                        "代理任务全部完成"
-                        if (run_book["Annihilation"] and run_book["Routine"])
-                        else "代理任务未全部完成"
-                    )
-                    self.push_notification(
-                        "统计信息",
-                        f"{current_date} | 用户 {user[0]} 的自动代理统计报告",
-                        statistics,
-                    )
+                # 发送统计信息
+                statistics = Config.merge_maa_logs("指定项", user_logs_list)
+                statistics["user_index"] = user[2]
+                statistics["user_info"] = user[0]
+                statistics["start_time"] = user_start_time.strftime("%Y-%m-%d %H:%M:%S")
+                statistics["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                statistics["maa_result"] = (
+                    "代理任务全部完成"
+                    if (run_book["Annihilation"] and run_book["Routine"])
+                    else "代理任务未全部完成"
+                )
+                self.push_notification(
+                    "统计信息",
+                    f"{current_date} | 用户 {user[0]} 的自动代理统计报告",
+                    statistics,
+                    user_data,
+                )
 
                 if run_book["Annihilation"] and run_book["Routine"]:
                     # 成功完成代理的用户修改相关参数
@@ -852,6 +850,17 @@ class MaaManager(QObject):
                     self.data[_]["Config"]["Info"]["Name"] for _ in wait_index
                 ],
             }
+
+            # 生成结果文本
+            result_text = (
+                f"任务开始时间：{result["start_time"]}，结束时间：{result["end_time"]}\n"
+                f"已完成数：{result["completed_count"]}，未完成数：{result["uncompleted_count"]}\n\n"
+            )
+            if len(result["failed_user"]) > 0:
+                result_text += f"{self.mode[2:4]}未成功的用户：\n{"\n".join(result["failed_user"])}\n"
+            if len(result["waiting_user"]) > 0:
+                result_text += f"\n未开始{self.mode[2:4]}的用户：\n{"\n".join(result["waiting_user"])}\n"
+
             # 推送代理结果通知
             Notify.push_plyer(
                 title.replace("报告", "已完成！"),
@@ -859,15 +868,7 @@ class MaaManager(QObject):
                 f"已完成用户数：{len(over_index)}，未完成用户数：{len(error_index) + len(wait_index)}",
                 10,
             )
-            if Config.get(Config.notify_SendTaskResultTime) == "任何时刻" or (
-                Config.get(Config.notify_SendTaskResultTime) == "仅失败时"
-                and len(error_index) + len(wait_index) != 0
-            ):
-                result_text = self.push_notification("代理结果", title, result)
-            else:
-                result_text = self.push_notification(
-                    "代理结果", title, result, if_get_text_only=True
-                )
+            self.push_notification("代理结果", title, result)
 
         self.agree_bilibili(False)
         self.log_monitor.deleteLater()
@@ -1741,15 +1742,21 @@ class MaaManager(QObject):
         mode: str,
         title: str,
         message: Union[str, dict],
-        if_get_text_only: bool = False,
-    ) -> str:
+        user_data: Dict[str, Dict[str, Union[str, int, bool]]] = None,
+    ) -> None:
         """通过所有渠道推送通知"""
 
         env = Environment(
             loader=FileSystemLoader(str(Config.app_path / "resources/html"))
         )
 
-        if mode == "代理结果":
+        if mode == "代理结果" and (
+            Config.get(Config.notify_SendTaskResultTime) == "任何时刻"
+            or (
+                Config.get(Config.notify_SendTaskResultTime) == "仅失败时"
+                and message["uncompleted_count"] != 0
+            )
+        ):
             # 生成文本通知内容
             message_text = (
                 f"任务开始时间：{message["start_time"]}，结束时间：{message["end_time"]}\n"
@@ -1761,9 +1768,6 @@ class MaaManager(QObject):
             if len(message["waiting_user"]) > 0:
                 message_text += f"\n未开始{self.mode[2:4]}的用户：\n{"\n".join(message["waiting_user"])}\n"
 
-            if if_get_text_only:
-                return message_text
-
             # 生成HTML通知内容
             message["failed_user"] = "、".join(message["failed_user"])
             message["waiting_user"] = "、".join(message["waiting_user"])
@@ -1771,27 +1775,34 @@ class MaaManager(QObject):
             template = env.get_template("MAA_result.html")
             message_html = template.render(message)
 
-            # 发送全局通知
-            Notify.send_mail("网页", title, message_html,Config.get(Config.notify_ToAddress))
+            # ServerChan的换行是两个换行符。故而将\n替换为\n\n
             serverchan_message = message_text.replace("\n", "\n\n")
-            Notify.ServerChanPush(title, f"{serverchan_message}\n\nAUTO_MAA 敬上",Config.get(Config.notify_ServerChanKey),Config.get(Config.notify_ServerChanTag),Config.get(Config.notify_ServerChanChannel))
-            Notify.CompanyWebHookBotPush(title, f"{message_text}\n\nAUTO_MAA 敬上",Config.get(Config.notify_CompanyWebHookBotUrl))
 
-            # # 发送用户单独通知
-            # for user_name in message["failed_user"].split("、") + message["waiting_user"].split("、"):
-            #     if not user_name:  # 跳过空字符串
-            #         continue
-            #     user_config = Config.member_dict.get(user_name)
-            #     if user_config and user_config.get(user_config.Notify_Enable):
-            #         user_notify = UserNotification(user_config)
-            #         user_notify.send_notification(
-            #             f"{self.mode[2:4]}任务未完成通知",
-            #             f"您的{self.mode[2:4]}任务未完成,请检查相关设置。\n\n{message_text}"
-            #         )
+            # 发送全局通知
 
-            return message_text
+            if Config.get(Config.notify_IfSendMail):
+                Notify.send_mail(
+                    "网页", title, message_html, Config.get(Config.notify_ToAddress)
+                )
+
+            if Config.get(Config.notify_IfServerChan):
+                Notify.ServerChanPush(
+                    title,
+                    f"{serverchan_message}\n\nAUTO_MAA 敬上",
+                    Config.get(Config.notify_ServerChanKey),
+                    Config.get(Config.notify_ServerChanTag),
+                    Config.get(Config.notify_ServerChanChannel),
+                )
+
+            if Config.get(Config.notify_IfCompanyWebHookBot):
+                Notify.CompanyWebHookBotPush(
+                    title,
+                    f"{message_text}\n\nAUTO_MAA 敬上",
+                    Config.get(Config.notify_CompanyWebHookBotUrl),
+                )
 
         elif mode == "统计信息":
+
             # 生成文本通知内容
             formatted = []
             for stage, items in message["drop_statistics"].items():
@@ -1817,41 +1828,155 @@ class MaaManager(QObject):
             template = env.get_template("MAA_statistics.html")
             message_html = template.render(message)
 
-            # 发送全局通知
-            Notify.send_mail("网页", title, message_html,Config.get(Config.notify_ToAddress))
             # ServerChan的换行是两个换行符。故而将\n替换为\n\n
             serverchan_message = message_text.replace("\n", "\n\n")
-            Notify.ServerChanPush(title, f"{serverchan_message}\n\nAUTO_MAA 敬上",Config.get(Config.notify_ServerChanKey),Config.get(Config.notify_ServerChanTag),Config.get(Config.notify_ServerChanChannel))
-            Notify.CompanyWebHookBotPush(title, f"{message_text}\n\nAUTO_MAA 敬上",Config.get(Config.notify_CompanyWebHookBotUrl))
 
-            # # 发送用户单独通知
-            # user_name = message.get("user_info")
-            # if user_name:
-            #     user_config = Config.member_dict.get(user_name)
-            #     if user_config and user_config.get(user_config.Notify_Enable):
-            #         user_notify = UserNotification(user_config)
-            #         user_notify.send_notification(
-            #             f"{self.mode[2:4]}任务统计报告",
-            #             f"您的{self.mode[2:4]}任务统计报告如下:\n\n{message_text}"
-            #         )
+            # 发送全局通知
+            if Config.get(Config.notify_IfSendStatistic):
+
+                if Config.get(Config.notify_IfSendMail):
+                    Notify.send_mail(
+                        "网页", title, message_html, Config.get(Config.notify_ToAddress)
+                    )
+
+                if Config.get(Config.notify_IfServerChan):
+                    Notify.ServerChanPush(
+                        title,
+                        f"{serverchan_message}\n\nAUTO_MAA 敬上",
+                        Config.get(Config.notify_ServerChanKey),
+                        Config.get(Config.notify_ServerChanTag),
+                        Config.get(Config.notify_ServerChanChannel),
+                    )
+
+                if Config.get(Config.notify_IfCompanyWebHookBot):
+                    Notify.CompanyWebHookBotPush(
+                        title,
+                        f"{message_text}\n\nAUTO_MAA 敬上",
+                        Config.get(Config.notify_CompanyWebHookBotUrl),
+                    )
+
+            # 发送用户单独通知
+            if (
+                user_data["Notify"]["Enabled"]
+                and user_data["Notify"]["IfSendStatistic"]
+            ):
+
+                # 发送邮件通知
+                if user_data["Notify"]["IfSendMail"]:
+                    if user_data["Notify"]["ToAddress"]:
+                        Notify.send_mail(
+                            "网页",
+                            title,
+                            message_html,
+                            user_data["Notify"]["ToAddress"],
+                        )
+                    else:
+                        logger.error(
+                            f"{self.name} | 用户邮箱地址为空，无法发送用户单独的邮件通知"
+                        )
+
+                # 发送ServerChan通知
+                if user_data["Notify"]["IfServerChan"]:
+                    if user_data["Notify"]["ServerChanKey"]:
+                        Notify.ServerChanPush(
+                            title,
+                            f"{serverchan_message}\n\nAUTO_MAA 敬上",
+                            user_data["Notify"]["ServerChanKey"],
+                            user_data["Notify"]["ServerChanTag"],
+                            user_data["Notify"]["ServerChanChannel"],
+                        )
+                    else:
+                        logger.error(
+                            f"{self.name} |用户ServerChan密钥为空，无法发送用户单独的ServerChan通知"
+                        )
+
+                # 推送CompanyWebHookBot通知
+                if user_data["Notify"]["IfCompanyWebHookBot"]:
+                    if user_data["Notify"]["CompanyWebHookBotUrl"]:
+                        Notify.CompanyWebHookBotPush(
+                            title,
+                            f"{message_text}\n\nAUTO_MAA 敬上",
+                            user_data["Notify"]["CompanyWebHookBotUrl"],
+                        )
+                    else:
+                        logger.error(
+                            f"{self.name} |用户CompanyWebHookBot密钥为空，无法发送用户单独的CompanyWebHookBot通知"
+                        )
 
         elif mode == "公招六星":
+
             # 生成HTML通知内容
             template = env.get_template("MAA_six_star.html")
+
             message_html = template.render(message)
 
             # 发送全局通知
-            Notify.send_mail("网页", title, message_html,Config.get(Config.notify_ToAddress))
-            Notify.ServerChanPush(title, "好羡慕~\n\nAUTO_MAA 敬上",Config.get(Config.notify_ServerChanKey),Config.get(Config.notify_ServerChanTag),Config.get(Config.notify_ServerChanChannel))
-            Notify.CompanyWebHookBotPush(title, "好羡慕~\n\nAUTO_MAA 敬上",Config.get(Config.notify_CompanyWebHookBotUrl))
+            if Config.get(Config.notify_IfSendSixStar):
 
-            # # 发送用户单独通知
-            # user_name = message.get("user_name")
-            # if user_name:
-            #     user_config = Config.member_dict.get(user_name)
-            #     if user_config and user_config.get(user_config.Notify_Enable):
-            #         user_notify = UserNotification(user_config)
-            #         user_notify.send_notification(
-            #             "公招六星通知",
-            #             "恭喜您在公招中获得了六星干员!"
-            #         )
+                if Config.get(Config.notify_IfSendMail):
+                    Notify.send_mail(
+                        "网页", title, message_html, Config.get(Config.notify_ToAddress)
+                    )
+
+                if Config.get(Config.notify_IfServerChan):
+                    Notify.ServerChanPush(
+                        title,
+                        "好羡慕~\n\nAUTO_MAA 敬上",
+                        Config.get(Config.notify_ServerChanKey),
+                        Config.get(Config.notify_ServerChanTag),
+                        Config.get(Config.notify_ServerChanChannel),
+                    )
+
+                if Config.get(Config.notify_IfCompanyWebHookBot):
+                    Notify.CompanyWebHookBotPush(
+                        title,
+                        "好羡慕~\n\nAUTO_MAA 敬上",
+                        Config.get(Config.notify_CompanyWebHookBotUrl),
+                    )
+
+            # 发送用户单独通知
+            if user_data["Notify"]["Enabled"] and user_data["Notify"]["IfSendSixStar"]:
+
+                # 发送邮件通知
+                if user_data["Notify"]["IfSendMail"]:
+                    if user_data["Notify"]["ToAddress"]:
+                        Notify.send_mail(
+                            "网页",
+                            title,
+                            message_html,
+                            user_data["Notify"]["ToAddress"],
+                        )
+                    else:
+                        logger.error(
+                            f"{self.name} | 用户邮箱地址为空，无法发送用户单独的邮件通知"
+                        )
+
+                # 发送ServerChan通知
+                if user_data["Notify"]["IfServerChan"]:
+
+                    if user_data["Notify"]["ServerChanKey"]:
+                        Notify.ServerChanPush(
+                            title,
+                            "好羡慕~\n\nAUTO_MAA 敬上",
+                            user_data["Notify"]["ServerChanKey"],
+                            user_data["Notify"]["ServerChanTag"],
+                            user_data["Notify"]["ServerChanChannel"],
+                        )
+                    else:
+                        logger.error(
+                            f"{self.name} |用户ServerChan密钥为空，无法发送用户单独的ServerChan通知"
+                        )
+
+                # 推送CompanyWebHookBot通知
+                if user_data["Notify"]["IfCompanyWebHookBot"]:
+                    if user_data["Notify"]["CompanyWebHookBotUrl"]:
+                        Notify.CompanyWebHookBotPush(
+                            title,
+                            "好羡慕~\n\nAUTO_MAA 敬上",
+                            user_data["Notify"]["CompanyWebHookBotUrl"],
+                        )
+                    else:
+                        logger.error(
+                            f"{self.name} |用户CompanyWebHookBot密钥为空，无法发送用户单独的CompanyWebHookBot通知"
+                        )
+        return None
