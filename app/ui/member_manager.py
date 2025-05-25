@@ -67,7 +67,10 @@ from .Widget import (
     SpinBoxSettingCard,
     ComboBoxMessageBox,
     SettingFlyoutView,
-    EditableComboBoxSettingCard,
+    NoOptionComboBoxSettingCard,
+    ComboBoxWithPlanSettingCard,
+    EditableComboBoxWithPlanSettingCard,
+    SpinBoxWithPlanSettingCard,
     PasswordLineEditSettingCard,
     UserLableSettingCard,
     ComboBoxSettingCard,
@@ -183,7 +186,7 @@ class MemberManager(QWidget):
 
         name = self.member_manager.pivot.currentRouteKey()
 
-        if name == None:
+        if name is None:
             logger.warning("删除脚本实例时未选择脚本实例")
             MainInfoBar.push_info_bar(
                 "warning", "未选择脚本实例", "请选择一个脚本实例", 5000
@@ -223,7 +226,7 @@ class MemberManager(QWidget):
 
         name = self.member_manager.pivot.currentRouteKey()
 
-        if name == None:
+        if name is None:
             logger.warning("向左移动脚本实例时未选择脚本实例")
             MainInfoBar.push_info_bar(
                 "warning", "未选择脚本实例", "请选择一个脚本实例", 5000
@@ -271,7 +274,7 @@ class MemberManager(QWidget):
 
         name = self.member_manager.pivot.currentRouteKey()
 
-        if name == None:
+        if name is None:
             logger.warning("向右移动脚本实例时未选择脚本实例")
             MainInfoBar.push_info_bar(
                 "warning", "未选择脚本实例", "请选择一个脚本实例", 5000
@@ -472,11 +475,57 @@ class MemberManager(QWidget):
             self.key.setIcon(FluentIcon.HIDE)
             self.key.setChecked(False)
 
+    def reload_plan_name(self):
+        """刷新计划表名称"""
+
+        plan_list = [
+            ["固定"] + [_ for _ in Config.plan_dict.keys()],
+            ["固定"]
+            + [
+                (
+                    k
+                    if v["Config"].get(v["Config"].Info_Name) == ""
+                    else f"{k} - {v["Config"].get(v["Config"].Info_Name)}"
+                )
+                for k, v in Config.plan_dict.items()
+            ],
+        ]
+        for member in self.member_manager.script_list:
+
+            if isinstance(member, MemberManager.MemberSettingBox.MaaSettingBox):
+
+                for user_setting in member.user_setting.user_manager.script_list:
+
+                    user_setting.card_GameIdMode.comboBox.currentIndexChanged.disconnect(
+                        user_setting.switch_gameid_mode
+                    )
+                    user_setting.card_GameIdMode.reLoadOptions(
+                        plan_list[0], plan_list[1]
+                    )
+                    user_setting.card_GameIdMode.comboBox.currentIndexChanged.connect(
+                        user_setting.switch_gameid_mode
+                    )
+
+        self.refresh_plan_info()
+
     def refresh_dashboard(self):
         """刷新所有脚本实例的用户仪表盘"""
 
-        for script in self.member_manager.script_list:
-            script.user_setting.user_manager.user_dashboard.load_info()
+        for member in self.member_manager.script_list:
+
+            if isinstance(member, MemberManager.MemberSettingBox.MaaSettingBox):
+                member.user_setting.user_manager.user_dashboard.load_info()
+
+    def refresh_plan_info(self):
+        """刷新所有计划信息"""
+
+        for member in self.member_manager.script_list:
+
+            if isinstance(member, MemberManager.MemberSettingBox.MaaSettingBox):
+
+                member.user_setting.user_manager.user_dashboard.load_info()
+                for user_setting in member.user_setting.user_manager.script_list:
+                    user_setting.switch_gameid_mode()
 
     class MemberSettingBox(QWidget):
         """脚本管理子页面组"""
@@ -841,7 +890,7 @@ class MemberManager(QWidget):
 
                     name = self.user_manager.pivot.currentRouteKey()
 
-                    if name == None:
+                    if name is None:
                         logger.warning("未选择用户")
                         MainInfoBar.push_info_bar(
                             "warning", "未选择用户", "请先选择一个用户", 5000
@@ -900,7 +949,7 @@ class MemberManager(QWidget):
 
                     name = self.user_manager.pivot.currentRouteKey()
 
-                    if name == None:
+                    if name is None:
                         logger.warning("未选择用户")
                         MainInfoBar.push_info_bar(
                             "warning", "未选择用户", "请先选择一个用户", 5000
@@ -959,7 +1008,7 @@ class MemberManager(QWidget):
 
                     name = self.user_manager.pivot.currentRouteKey()
 
-                    if name == None:
+                    if name is None:
                         logger.warning("未选择用户")
                         MainInfoBar.push_info_bar(
                             "warning", "未选择用户", "请先选择一个用户", 5000
@@ -1195,6 +1244,8 @@ class MemberManager(QWidget):
                                     else "本周剿灭未完成"
                                 )
 
+                                gameid_info = config.get_plan_info()
+
                                 button = PrimaryToolButton(
                                     FluentIcon.CHEVRON_RIGHT, self
                                 )
@@ -1243,9 +1294,7 @@ class MemberManager(QWidget):
                                 self.dashboard.setItem(
                                     int(name[3:]) - 1,
                                     5,
-                                    QTableWidgetItem(
-                                        str(config.get(config.Info_MedicineNumb))
-                                    ),
+                                    QTableWidgetItem(str(gameid_info["MedicineNumb"])),
                                 )
                                 self.dashboard.setItem(
                                     int(name[3:]) - 1,
@@ -1253,12 +1302,12 @@ class MemberManager(QWidget):
                                     QTableWidgetItem(
                                         Config.gameid_dict["ALL"]["text"][
                                             Config.gameid_dict["ALL"]["value"].index(
-                                                config.get(config.Info_GameId)
+                                                gameid_info["GameId"]
                                             )
                                         ]
-                                        if config.get(config.Info_GameId)
+                                        if gameid_info["GameId"]
                                         in Config.gameid_dict["ALL"]["value"]
-                                        else config.get(config.Info_GameId)
+                                        else gameid_info["GameId"]
                                     ),
                                 )
                                 self.dashboard.setItem(
@@ -1267,12 +1316,12 @@ class MemberManager(QWidget):
                                     QTableWidgetItem(
                                         Config.gameid_dict["ALL"]["text"][
                                             Config.gameid_dict["ALL"]["value"].index(
-                                                config.get(config.Info_GameId_1)
+                                                gameid_info["GameId_1"]
                                             )
                                         ]
-                                        if config.get(config.Info_GameId_1)
+                                        if gameid_info["GameId_1"]
                                         in Config.gameid_dict["ALL"]["value"]
-                                        else config.get(config.Info_GameId_1)
+                                        else gameid_info["GameId_1"]
                                     ),
                                 )
                                 self.dashboard.setItem(
@@ -1281,12 +1330,12 @@ class MemberManager(QWidget):
                                     QTableWidgetItem(
                                         Config.gameid_dict["ALL"]["text"][
                                             Config.gameid_dict["ALL"]["value"].index(
-                                                config.get(config.Info_GameId_2)
+                                                gameid_info["GameId_2"]
                                             )
                                         ]
-                                        if config.get(config.Info_GameId_2)
+                                        if gameid_info["GameId_2"]
                                         in Config.gameid_dict["ALL"]["value"]
-                                        else config.get(config.Info_GameId_2)
+                                        else gameid_info["GameId_2"]
                                     ),
                                 )
                                 self.dashboard.setItem(
@@ -1294,22 +1343,20 @@ class MemberManager(QWidget):
                                     9,
                                     QTableWidgetItem(
                                         "不使用"
-                                        if config.get(config.Info_GameId_Remain) == "-"
+                                        if gameid_info["GameId_Remain"] == "-"
                                         else (
                                             (
                                                 Config.gameid_dict["ALL"]["text"][
                                                     Config.gameid_dict["ALL"][
                                                         "value"
                                                     ].index(
-                                                        config.get(
-                                                            config.Info_GameId_Remain
-                                                        )
+                                                        gameid_info["GameId_Remain"]
                                                     )
                                                 ]
                                             )
-                                            if config.get(config.Info_GameId_Remain)
+                                            if gameid_info["GameId_Remain"]
                                             in Config.gameid_dict["ALL"]["value"]
-                                            else config.get(config.Info_GameId_Remain)
+                                            else gameid_info["GameId_Remain"]
                                         )
                                     ),
                                 )
@@ -1332,6 +1379,19 @@ class MemberManager(QWidget):
                             self.user_path = Config.member_dict[self.name]["UserData"][
                                 f"用户_{uid}"
                             ]["Path"]
+
+                            plan_list = [
+                                ["固定"] + [_ for _ in Config.plan_dict.keys()],
+                                ["固定"]
+                                + [
+                                    (
+                                        k
+                                        if v["Config"].get(v["Config"].Info_Name) == ""
+                                        else f"{k} - {v["Config"].get(v["Config"].Info_Name)}"
+                                    )
+                                    for k, v in Config.plan_dict.items()
+                                ],
+                            ]
 
                             self.card_Name = LineEditSettingCard(
                                 icon=FluentIcon.PEOPLE,
@@ -1360,15 +1420,17 @@ class MemberManager(QWidget):
                                 configItem=self.config.Info_Mode,
                                 parent=self,
                             )
-                            self.card_GameIdMode = ComboBoxSettingCard(
+                            self.card_GameIdMode = NoOptionComboBoxSettingCard(
                                 icon=FluentIcon.DICTIONARY,
                                 title="关卡配置模式",
                                 content="刷理智关卡号的配置模式",
-                                texts=["固定"],
+                                value=plan_list[0],
+                                texts=plan_list[1],
                                 qconfig=self.config,
                                 configItem=self.config.Info_GameIdMode,
                                 parent=self,
                             )
+                            self.card_GameIdMode.comboBox.setMinimumWidth(0)
                             self.card_Server = ComboBoxSettingCard(
                                 icon=FluentIcon.PROJECTOR,
                                 title="服务器",
@@ -1446,7 +1508,7 @@ class MemberManager(QWidget):
                                 configItem=self.config.Info_Notes,
                                 parent=self,
                             )
-                            self.card_MedicineNumb = SpinBoxSettingCard(
+                            self.card_MedicineNumb = SpinBoxWithPlanSettingCard(
                                 icon=FluentIcon.GAME,
                                 title="吃理智药",
                                 content="吃理智药次数，输入0以关闭",
@@ -1455,7 +1517,7 @@ class MemberManager(QWidget):
                                 configItem=self.config.Info_MedicineNumb,
                                 parent=self,
                             )
-                            self.card_SeriesNumb = ComboBoxSettingCard(
+                            self.card_SeriesNumb = ComboBoxWithPlanSettingCard(
                                 icon=FluentIcon.GAME,
                                 title="连战次数",
                                 content="连战次数较大时建议搭配剩余理智关卡使用",
@@ -1465,7 +1527,7 @@ class MemberManager(QWidget):
                                 parent=self,
                             )
                             self.card_SeriesNumb.comboBox.setMinimumWidth(150)
-                            self.card_GameId = EditableComboBoxSettingCard(
+                            self.card_GameId = EditableComboBoxWithPlanSettingCard(
                                 icon=FluentIcon.GAME,
                                 title="关卡选择",
                                 content="按下回车以添加自定义关卡号",
@@ -1475,7 +1537,7 @@ class MemberManager(QWidget):
                                 configItem=self.config.Info_GameId,
                                 parent=self,
                             )
-                            self.card_GameId_1 = EditableComboBoxSettingCard(
+                            self.card_GameId_1 = EditableComboBoxWithPlanSettingCard(
                                 icon=FluentIcon.GAME,
                                 title="备选关卡 - 1",
                                 content="按下回车以添加自定义关卡号",
@@ -1485,7 +1547,7 @@ class MemberManager(QWidget):
                                 configItem=self.config.Info_GameId_1,
                                 parent=self,
                             )
-                            self.card_GameId_2 = EditableComboBoxSettingCard(
+                            self.card_GameId_2 = EditableComboBoxWithPlanSettingCard(
                                 icon=FluentIcon.GAME,
                                 title="备选关卡 - 2",
                                 content="按下回车以添加自定义关卡号",
@@ -1495,18 +1557,20 @@ class MemberManager(QWidget):
                                 configItem=self.config.Info_GameId_2,
                                 parent=self,
                             )
-                            self.card_GameId_Remain = EditableComboBoxSettingCard(
-                                icon=FluentIcon.GAME,
-                                title="剩余理智关卡",
-                                content="按下回车以添加自定义关卡号",
-                                value=Config.gameid_dict["ALL"]["value"],
-                                texts=[
-                                    "不使用" if _ == "当前/上次" else _
-                                    for _ in Config.gameid_dict["ALL"]["text"]
-                                ],
-                                qconfig=self.config,
-                                configItem=self.config.Info_GameId_Remain,
-                                parent=self,
+                            self.card_GameId_Remain = (
+                                EditableComboBoxWithPlanSettingCard(
+                                    icon=FluentIcon.GAME,
+                                    title="剩余理智关卡",
+                                    content="按下回车以添加自定义关卡号",
+                                    value=Config.gameid_dict["ALL"]["value"],
+                                    texts=[
+                                        "不使用" if _ == "当前/上次" else _
+                                        for _ in Config.gameid_dict["ALL"]["text"]
+                                    ],
+                                    qconfig=self.config,
+                                    configItem=self.config.Info_GameId_Remain,
+                                    parent=self,
+                                )
                             )
 
                             self.card_UserLable = UserLableSettingCard(
@@ -1624,10 +1688,14 @@ class MemberManager(QWidget):
                                 self.set_infrastructure
                             )
                             self.card_NotifySet.clicked.connect(self.set_notify)
+                            self.card_GameIdMode.comboBox.currentIndexChanged.connect(
+                                self.switch_gameid_mode
+                            )
                             Config.gameid_refreshed.connect(self.refresh_gameid)
                             Config.PASSWORD_refreshed.connect(self.refresh_password)
 
                             self.switch_mode()
+                            self.switch_gameid_mode()
                             self.switch_infrastructure()
 
                         def switch_mode(self) -> None:
@@ -1645,6 +1713,40 @@ class MemberManager(QWidget):
                                 self.card_InfrastMode.setVisible(False)
                                 self.card_Annihilation.button.setVisible(True)
                                 self.card_Routine.setVisible(True)
+
+                        def switch_gameid_mode(self) -> None:
+
+                            for card, name in zip(
+                                [
+                                    self.card_MedicineNumb,
+                                    self.card_SeriesNumb,
+                                    self.card_GameId,
+                                    self.card_GameId_1,
+                                    self.card_GameId_2,
+                                    self.card_GameId_Remain,
+                                ],
+                                [
+                                    "MedicineNumb",
+                                    "SeriesNumb",
+                                    "GameId",
+                                    "GameId_1",
+                                    "GameId_2",
+                                    "GameId_Remain",
+                                ],
+                            ):
+
+                                card.switch_mode(
+                                    self.config.get(self.config.Info_GameIdMode)[:2]
+                                )
+                                if (
+                                    self.config.get(self.config.Info_GameIdMode)
+                                    != "固定"
+                                ):
+                                    card.change_plan(
+                                        Config.plan_dict[
+                                            self.config.get(self.config.Info_GameIdMode)
+                                        ]["Config"].get_current_info(name)
+                                    )
 
                         def switch_infrastructure(self) -> None:
 

@@ -81,8 +81,8 @@ class AUTO_MAA(MSFluentWindow):
 
         # 创建主窗口
         self.home = Home(self)
-        self.member_manager = MemberManager(self)
         self.plan_manager = PlanManager(self)
+        self.member_manager = MemberManager(self)
         self.queue_manager = QueueManager(self)
         self.dispatch_center = DispatchCenter(self)
         self.history = History(self)
@@ -137,23 +137,7 @@ class AUTO_MAA(MSFluentWindow):
             FluentIcon.SETTING,
             NavigationItemPosition.BOTTOM,
         )
-        self.stackedWidget.currentChanged.connect(
-            lambda index: (
-                self.queue_manager.reload_member_name() if index == 2 else None
-            )
-        )
-        self.stackedWidget.currentChanged.connect(
-            lambda index: (
-                self.dispatch_center.pivot.setCurrentItem("主调度台")
-                if index == 3
-                else None
-            )
-        )
-        self.stackedWidget.currentChanged.connect(
-            lambda index: (
-                self.dispatch_center.update_top_bar() if index == 3 else None
-            )
-        )
+        self.stackedWidget.currentChanged.connect(self.__currentChanged)
 
         # 创建系统托盘及其菜单
         self.tray = QSystemTrayIcon(
@@ -250,43 +234,6 @@ class AUTO_MAA(MSFluentWindow):
             else:
                 self.setStyleSheet("background-color: #ffffff;")
 
-    def start_up_task(self) -> None:
-        """启动时任务"""
-
-        # 清理旧日志
-        self.clean_old_logs()
-
-        # 清理安装包
-        if (Config.app_path / "AUTO_MAA-Setup.exe").exists():
-            try:
-                (Config.app_path / "AUTO_MAA-Setup.exe").unlink()
-            except Exception:
-                pass
-
-        # 检查密码
-        self.setting.check_PASSWORD()
-
-        # 获取主题图像
-        if Config.get(Config.function_HomeImageMode) == "主题图像":
-            self.home.get_home_image()
-
-        # 直接运行主任务
-        if Config.get(Config.start_IfRunDirectly):
-
-            self.start_main_task()
-
-        # 获取公告
-        self.setting.show_notice(if_first=True)
-
-        # 检查更新
-        if Config.get(Config.update_IfAutoUpdate):
-            self.setting.check_update(if_first=True)
-
-        # 直接最小化
-        if Config.get(Config.start_IfMinimizeDirectly):
-
-            self.titleBar.minBtn.click()
-
     def set_min_method(self) -> None:
         """设置最小化方法"""
 
@@ -304,61 +251,6 @@ class AUTO_MAA(MSFluentWindow):
         """双击返回主界面"""
         if reason == QSystemTrayIcon.DoubleClick:
             self.show_ui("显示主窗口")
-
-    def clean_old_logs(self):
-        """
-        删除超过用户设定天数的日志文件（基于目录日期）
-        """
-
-        if Config.get(Config.function_HistoryRetentionTime) == 0:
-            logger.info("由于用户设置日志永久保留，跳过日志清理")
-            return
-
-        deleted_count = 0
-
-        for date_folder in (Config.app_path / "history").iterdir():
-            if not date_folder.is_dir():
-                continue  # 只处理日期文件夹
-
-            try:
-                # 只检查 `YYYY-MM-DD` 格式的文件夹
-                folder_date = datetime.strptime(date_folder.name, "%Y-%m-%d")
-                if datetime.now() - folder_date > timedelta(
-                    days=Config.get(Config.function_HistoryRetentionTime)
-                ):
-                    shutil.rmtree(date_folder, ignore_errors=True)
-                    deleted_count += 1
-                    logger.info(f"已删除超期日志目录: {date_folder}")
-            except ValueError:
-                logger.warning(f"非日期格式的目录: {date_folder}")
-
-        logger.info(f"清理完成: {deleted_count} 个日期目录")
-
-    def start_main_task(self) -> None:
-        """启动主任务"""
-
-        if "调度队列_1" in Config.queue_dict:
-
-            logger.info("自动添加任务：调度队列_1")
-            TaskManager.add_task(
-                "自动代理_主调度台",
-                "调度队列_1",
-                Config.queue_dict["调度队列_1"]["Config"].toDict(),
-            )
-
-        elif "脚本_1" in Config.member_dict:
-
-            logger.info("自动添加任务：脚本_1")
-            TaskManager.add_task(
-                "自动代理_主调度台", "自定义队列", {"Queue": {"Member_1": "脚本_1"}}
-            )
-
-        else:
-
-            logger.warning("启动主任务失败：未找到有效的主任务配置文件")
-            MainInfoBar.push_info_bar(
-                "warning", "启动主任务失败", "“调度队列_1”与“脚本_1”均不存在", -1
-            )
 
     def show_ui(
         self, mode: str, if_quick: bool = False, if_start: bool = False
@@ -439,6 +331,109 @@ class AUTO_MAA(MSFluentWindow):
 
                 self.window().hide()
                 self.tray.show()
+
+    def start_up_task(self) -> None:
+        """启动时任务"""
+
+        # 清理旧日志
+        self.clean_old_logs()
+
+        # 清理安装包
+        if (Config.app_path / "AUTO_MAA-Setup.exe").exists():
+            try:
+                (Config.app_path / "AUTO_MAA-Setup.exe").unlink()
+            except Exception:
+                pass
+
+        # 检查密码
+        self.setting.check_PASSWORD()
+
+        # 获取主题图像
+        if Config.get(Config.function_HomeImageMode) == "主题图像":
+            self.home.get_home_image()
+
+        # 直接运行主任务
+        if Config.get(Config.start_IfRunDirectly):
+
+            self.start_main_task()
+
+        # 获取公告
+        self.setting.show_notice(if_first=True)
+
+        # 检查更新
+        if Config.get(Config.update_IfAutoUpdate):
+            self.setting.check_update(if_first=True)
+
+        # 直接最小化
+        if Config.get(Config.start_IfMinimizeDirectly):
+
+            self.titleBar.minBtn.click()
+
+    def clean_old_logs(self):
+        """
+        删除超过用户设定天数的日志文件（基于目录日期）
+        """
+
+        if Config.get(Config.function_HistoryRetentionTime) == 0:
+            logger.info("由于用户设置日志永久保留，跳过日志清理")
+            return
+
+        deleted_count = 0
+
+        for date_folder in (Config.app_path / "history").iterdir():
+            if not date_folder.is_dir():
+                continue  # 只处理日期文件夹
+
+            try:
+                # 只检查 `YYYY-MM-DD` 格式的文件夹
+                folder_date = datetime.strptime(date_folder.name, "%Y-%m-%d")
+                if datetime.now() - folder_date > timedelta(
+                    days=Config.get(Config.function_HistoryRetentionTime)
+                ):
+                    shutil.rmtree(date_folder, ignore_errors=True)
+                    deleted_count += 1
+                    logger.info(f"已删除超期日志目录: {date_folder}")
+            except ValueError:
+                logger.warning(f"非日期格式的目录: {date_folder}")
+
+        logger.info(f"清理完成: {deleted_count} 个日期目录")
+
+    def start_main_task(self) -> None:
+        """启动主任务"""
+
+        if "调度队列_1" in Config.queue_dict:
+
+            logger.info("自动添加任务：调度队列_1")
+            TaskManager.add_task(
+                "自动代理_主调度台",
+                "调度队列_1",
+                Config.queue_dict["调度队列_1"]["Config"].toDict(),
+            )
+
+        elif "脚本_1" in Config.member_dict:
+
+            logger.info("自动添加任务：脚本_1")
+            TaskManager.add_task(
+                "自动代理_主调度台", "自定义队列", {"Queue": {"Member_1": "脚本_1"}}
+            )
+
+        else:
+
+            logger.warning("启动主任务失败：未找到有效的主任务配置文件")
+            MainInfoBar.push_info_bar(
+                "warning", "启动主任务失败", "“调度队列_1”与“脚本_1”均不存在", -1
+            )
+
+    def __currentChanged(self, index: int) -> None:
+        """切换界面时任务"""
+
+        if index == 1:
+            self.member_manager.reload_plan_name()
+        elif index == 3:
+            self.queue_manager.reload_member_name()
+        elif index == 4:
+            self.dispatch_center.pivot.setCurrentItem("主调度台")
+            self.dispatch_center.update_top_bar()
 
     def closeEvent(self, event: QCloseEvent):
         """清理残余进程"""

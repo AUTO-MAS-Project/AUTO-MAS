@@ -40,13 +40,14 @@ from qfluentwidgets import (
     CommandBar,
     TableWidget,
 )
-from typing import List
+from typing import List, Dict, Union
 import shutil
 
 from app.core import Config, MainInfoBar, MaaPlanConfig
-from app.services import Crypto
 from .Widget import (
     ComboBoxMessageBox,
+    LineEditSettingCard,
+    ComboBoxSettingCard,
     SpinBoxSetting,
     EditableComboBoxSetting,
     ComboBoxSetting,
@@ -134,7 +135,7 @@ class PlanManager(QWidget):
 
         name = self.plan_manager.pivot.currentRouteKey()
 
-        if name == None:
+        if name is None:
             logger.warning("删除计划表时未选择计划表")
             MainInfoBar.push_info_bar(
                 "warning", "未选择计划表", "请选择一个计划表", 5000
@@ -172,7 +173,7 @@ class PlanManager(QWidget):
 
         name = self.plan_manager.pivot.currentRouteKey()
 
-        if name == None:
+        if name is None:
             logger.warning("向左移动计划表时未选择计划表")
             MainInfoBar.push_info_bar(
                 "warning", "未选择计划表", "请选择一个计划表", 5000
@@ -220,7 +221,7 @@ class PlanManager(QWidget):
 
         name = self.plan_manager.pivot.currentRouteKey()
 
-        if name == None:
+        if name is None:
             logger.warning("向右移动计划表时未选择计划表")
             MainInfoBar.push_info_bar(
                 "warning", "未选择计划表", "请选择一个计划表", 5000
@@ -321,6 +322,7 @@ class PlanManager(QWidget):
             """清空所有子界面"""
 
             for sub_interface in self.script_list:
+                Config.gameid_refreshed.disconnect(sub_interface.refresh_gameid)
                 self.stackedWidget.removeWidget(sub_interface)
                 sub_interface.deleteLater()
             self.script_list.clear()
@@ -344,15 +346,35 @@ class PlanManager(QWidget):
                 super().__init__(parent)
 
                 self.setObjectName(f"计划_{uid}")
+                self.setTitle("MAA计划表")
                 self.config = Config.plan_dict[f"计划_{uid}"]["Config"]
 
-                self.dashboard = TableWidget(self)
-                self.dashboard.setColumnCount(8)
-                self.dashboard.setRowCount(6)
-                self.dashboard.setHorizontalHeaderLabels(
+                self.card_Name = LineEditSettingCard(
+                    icon=FluentIcon.EDIT,
+                    title="计划表名称",
+                    content="用于标识计划表的名称",
+                    text="请输入计划表名称",
+                    qconfig=self.config,
+                    configItem=self.config.Info_Name,
+                    parent=self,
+                )
+                self.card_Mode = ComboBoxSettingCard(
+                    icon=FluentIcon.DICTIONARY,
+                    title="计划模式",
+                    content="全局模式下计划内容固定，周计划模式下计划按周一到周日切换",
+                    texts=["全局", "周计划"],
+                    qconfig=self.config,
+                    configItem=self.config.Info_Mode,
+                    parent=self,
+                )
+
+                self.table = TableWidget(self)
+                self.table.setColumnCount(8)
+                self.table.setRowCount(6)
+                self.table.setHorizontalHeaderLabels(
                     ["全局", "周一", "周二", "周三", "周四", "周五", "周六", "周日"]
                 )
-                self.dashboard.setVerticalHeaderLabels(
+                self.table.setVerticalHeaderLabels(
                     [
                         "吃理智药",
                         "连战次数",
@@ -362,37 +384,60 @@ class PlanManager(QWidget):
                         "剩余理智",
                     ]
                 )
-                self.dashboard.setEditTriggers(TableWidget.NoEditTriggers)
+                self.table.setAlternatingRowColors(False)
+                self.table.setEditTriggers(TableWidget.NoEditTriggers)
                 for col in range(8):
-                    self.dashboard.horizontalHeader().setSectionResizeMode(
+                    self.table.horizontalHeader().setSectionResizeMode(
                         col, QHeaderView.ResizeMode.Stretch
                     )
+                for row in range(6):
+                    self.table.verticalHeader().setSectionResizeMode(
+                        row, QHeaderView.ResizeMode.ResizeToContents
+                    )
 
-                self.viewLayout.addWidget(self.dashboard)
-                self.viewLayout.setContentsMargins(3, 0, 3, 3)
+                self.item_dict: Dict[
+                    str,
+                    Dict[
+                        str,
+                        Union[SpinBoxSetting, ComboBoxSetting, EditableComboBoxSetting],
+                    ],
+                ] = {}
 
                 for col, (group, name_dict) in enumerate(
                     self.config.config_item_dict.items()
                 ):
 
+                    self.item_dict[group] = {}
+
                     for row, (name, configItem) in enumerate(name_dict.items()):
 
                         if name == "MedicineNumb":
-                            setting_item = SpinBoxSetting(
+                            self.item_dict[group][name] = SpinBoxSetting(
                                 range=(0, 1024),
                                 qconfig=self.config,
                                 configItem=configItem,
                                 parent=self,
                             )
                         elif name == "SeriesNumb":
-                            setting_item = ComboBoxSetting(
+                            self.item_dict[group][name] = ComboBoxSetting(
                                 texts=["AUTO", "6", "5", "4", "3", "2", "1", "不选择"],
                                 qconfig=self.config,
                                 configItem=configItem,
                                 parent=self,
                             )
+                        elif name == "GameId_Remain":
+                            self.item_dict[group][name] = EditableComboBoxSetting(
+                                value=Config.gameid_dict[group]["value"],
+                                texts=[
+                                    "不使用" if _ == "当前/上次" else _
+                                    for _ in Config.gameid_dict[group]["text"]
+                                ],
+                                qconfig=self.config,
+                                configItem=configItem,
+                                parent=self,
+                            )
                         elif "GameId" in name:
-                            setting_item = EditableComboBoxSetting(
+                            self.item_dict[group][name] = EditableComboBoxSetting(
                                 value=Config.gameid_dict[group]["value"],
                                 texts=Config.gameid_dict[group]["text"],
                                 qconfig=self.config,
@@ -400,4 +445,51 @@ class PlanManager(QWidget):
                                 parent=self,
                             )
 
-                        self.dashboard.setCellWidget(row, col, setting_item)
+                        self.table.setCellWidget(row, col, self.item_dict[group][name])
+
+                Layout = QVBoxLayout()
+                Layout.addWidget(self.card_Name)
+                Layout.addWidget(self.card_Mode)
+                Layout.addWidget(self.table)
+
+                self.viewLayout.addLayout(Layout)
+                self.viewLayout.setSpacing(3)
+                self.viewLayout.setContentsMargins(3, 0, 3, 3)
+
+                self.card_Mode.comboBox.currentIndexChanged.connect(self.switch_mode)
+                Config.gameid_refreshed.connect(self.refresh_gameid)
+
+                self.switch_mode()
+
+            def switch_mode(self) -> None:
+                """切换计划模式"""
+
+                for group, name_dict in self.item_dict.items():
+                    for name, setting_item in name_dict.items():
+                        setting_item.setEnabled(
+                            (group == "ALL")
+                            == (self.config.get(self.config.Info_Mode) == "ALL")
+                        )
+
+            def refresh_gameid(self):
+
+                for group, name_dict in self.item_dict.items():
+
+                    for name, setting_item in name_dict.items():
+
+                        if name == "GameId_Remain":
+
+                            setting_item.reLoadOptions(
+                                Config.gameid_dict[group]["value"],
+                                [
+                                    "不使用" if _ == "当前/上次" else _
+                                    for _ in Config.gameid_dict[group]["text"]
+                                ],
+                            )
+
+                        elif "GameId" in name:
+
+                            setting_item.reLoadOptions(
+                                Config.gameid_dict[group]["value"],
+                                Config.gameid_dict[group]["text"],
+                            )

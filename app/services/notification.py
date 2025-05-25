@@ -254,7 +254,7 @@ class Notification(QWidget):
             self.push_info_bar.emit(
                 "error",
                 "企业微信群机器人通知推送失败",
-                f'使用企业微信群机器人推送通知时出错：{info["errmsg"]}',
+                f"使用企业微信群机器人推送通知时出错：{err}",
                 -1,
             )
             return None
@@ -267,10 +267,10 @@ class Notification(QWidget):
             self.push_info_bar.emit(
                 "error",
                 "企业微信群机器人通知推送失败",
-                f'使用企业微信群机器人推送通知时出错：{info["errmsg"]}',
+                f"使用企业微信群机器人推送通知时出错：{err}",
                 -1,
             )
-            return f'使用企业微信群机器人推送通知时出错：{info["errmsg"]}'
+            return f"使用企业微信群机器人推送通知时出错：{err}"
 
     def send_test_notification(self):
         """发送测试通知到所有已启用的通知渠道"""

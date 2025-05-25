@@ -477,7 +477,7 @@ class LineEditSettingCard(SettingCard):
 
     def __textChanged(self, content: str):
 
-        self.configItem.valueChanged.disconnect()
+        self.configItem.valueChanged.disconnect(self.setValue)
         self.qconfig.set(self.configItem, content.strip())
         self.configItem.valueChanged.connect(self.setValue)
 
@@ -485,7 +485,7 @@ class LineEditSettingCard(SettingCard):
 
     def setValue(self, content: str):
 
-        self.LineEdit.textChanged.disconnect()
+        self.LineEdit.textChanged.disconnect(self.__textChanged)
         self.LineEdit.setText(content.strip())
         self.LineEdit.textChanged.connect(self.__textChanged)
 
@@ -527,7 +527,7 @@ class PasswordLineEditSettingCard(SettingCard):
 
     def __textChanged(self, content: str):
 
-        self.configItem.valueChanged.disconnect()
+        self.configItem.valueChanged.disconnect(self.setValue)
         if self.algorithm == "DPAPI":
             self.qconfig.set(self.configItem, Crypto.win_encryptor(content))
         elif self.algorithm == "AUTO":
@@ -538,7 +538,7 @@ class PasswordLineEditSettingCard(SettingCard):
 
     def setValue(self, content: str):
 
-        self.LineEdit.textChanged.disconnect()
+        self.LineEdit.textChanged.disconnect(self.__textChanged)
         if self.algorithm == "DPAPI":
             self.LineEdit.setText(Crypto.win_decryptor(content))
         elif self.algorithm == "AUTO":
@@ -756,7 +756,7 @@ class NoOptionComboBoxSettingCard(SettingCard):
         value: List[str],
         texts: List[str],
         qconfig: QConfig,
-        configItem: OptionsConfigItem,
+        configItem: ConfigItem,
         parent=None,
     ):
 
@@ -789,7 +789,7 @@ class NoOptionComboBoxSettingCard(SettingCard):
 
     def reLoadOptions(self, value: List[str], texts: List[str]):
 
-        self.comboBox.currentIndexChanged.disconnect()
+        self.comboBox.currentIndexChanged.disconnect(self._onCurrentIndexChanged)
         self.comboBox.clear()
         self.optionToText = {o: t for o, t in zip(value, texts)}
         for text, option in zip(texts, value):
@@ -811,7 +811,7 @@ class EditableComboBoxSettingCard(SettingCard):
         value: List[str],
         texts: List[str],
         qconfig: QConfig,
-        configItem: OptionsConfigItem,
+        configItem: ConfigItem,
         parent=None,
     ):
 
@@ -861,7 +861,7 @@ class EditableComboBoxSettingCard(SettingCard):
 
     def reLoadOptions(self, value: List[str], texts: List[str]):
 
-        self.comboBox.currentIndexChanged.disconnect()
+        self.comboBox.currentIndexChanged.disconnect(self._onCurrentIndexChanged)
         self.comboBox.clear()
         self.optionToText = {o: t for o, t in zip(value, texts)}
         for text, option in zip(texts, value):
@@ -897,6 +897,169 @@ class EditableComboBoxSettingCard(SettingCard):
                 self.addItem(self.text())
                 self.setCurrentIndex(self.count() - 1)
                 self.currentIndexChanged.emit(self.count() - 1)
+
+
+class SpinBoxWithPlanSettingCard(SpinBoxSettingCard):
+
+    textChanged = Signal(int)
+
+    def __init__(
+        self,
+        icon: Union[str, QIcon, FluentIconBase],
+        title: str,
+        content: Union[str, None],
+        range: tuple[int, int],
+        qconfig: QConfig,
+        configItem: ConfigItem,
+        parent=None,
+    ):
+
+        super().__init__(icon, title, content, range, qconfig, configItem, parent)
+
+        self.configItem_plan = None
+
+        self.LineEdit = LineEdit(self)
+        self.LineEdit.setMinimumWidth(150)
+        self.LineEdit.setReadOnly(True)
+        self.LineEdit.setVisible(False)
+
+        self.hBoxLayout.insertWidget(5, self.LineEdit, 0, Qt.AlignRight)
+
+    def setText(self, value: int) -> None:
+        self.LineEdit.setText(str(value))
+
+    def switch_mode(self, mode: str) -> None:
+        """切换模式"""
+
+        if mode == "固定":
+
+            self.LineEdit.setVisible(False)
+            self.SpinBox.setVisible(True)
+
+        elif mode == "计划":
+
+            self.SpinBox.setVisible(False)
+            self.LineEdit.setVisible(True)
+
+    def change_plan(self, configItem_plan: ConfigItem) -> None:
+        """切换计划"""
+
+        if self.configItem_plan is not None:
+            self.configItem_plan.valueChanged.disconnect(self.setText)
+        self.configItem_plan = configItem_plan
+        self.configItem_plan.valueChanged.connect(self.setText)
+        self.setText(self.qconfig.get(self.configItem_plan))
+
+
+class ComboBoxWithPlanSettingCard(ComboBoxSettingCard):
+
+    def __init__(
+        self,
+        icon: Union[str, QIcon, FluentIconBase],
+        title: str,
+        content: Union[str, None],
+        texts: List[str],
+        qconfig: QConfig,
+        configItem: OptionsConfigItem,
+        parent=None,
+    ):
+
+        super().__init__(icon, title, content, texts, qconfig, configItem, parent)
+
+        self.configItem_plan = None
+
+        self.LineEdit = LineEdit(self)
+        self.LineEdit.setMinimumWidth(150)
+        self.LineEdit.setReadOnly(True)
+        self.LineEdit.setVisible(False)
+
+        self.hBoxLayout.insertWidget(5, self.LineEdit, 0, Qt.AlignRight)
+
+    def setText(self, value: str) -> None:
+
+        if value not in self.optionToText:
+            self.optionToText[value] = value
+
+        self.LineEdit.setText(self.optionToText[value])
+
+    def switch_mode(self, mode: str) -> None:
+        """切换模式"""
+
+        if mode == "固定":
+
+            self.LineEdit.setVisible(False)
+            self.comboBox.setVisible(True)
+
+        elif mode == "计划":
+
+            self.comboBox.setVisible(False)
+            self.LineEdit.setVisible(True)
+
+    def change_plan(self, configItem_plan: ConfigItem) -> None:
+        """切换计划"""
+
+        if self.configItem_plan is not None:
+            self.configItem_plan.valueChanged.disconnect(self.setText)
+        self.configItem_plan = configItem_plan
+        self.configItem_plan.valueChanged.connect(self.setText)
+        self.setText(self.qconfig.get(self.configItem_plan))
+
+
+class EditableComboBoxWithPlanSettingCard(EditableComboBoxSettingCard):
+
+    def __init__(
+        self,
+        icon: Union[str, QIcon, FluentIconBase],
+        title: str,
+        content: Union[str, None],
+        value: List[str],
+        texts: List[str],
+        qconfig: QConfig,
+        configItem: ConfigItem,
+        parent=None,
+    ):
+
+        super().__init__(
+            icon, title, content, value, texts, qconfig, configItem, parent
+        )
+
+        self.configItem_plan = None
+
+        self.LineEdit = LineEdit(self)
+        self.LineEdit.setMinimumWidth(150)
+        self.LineEdit.setReadOnly(True)
+        self.LineEdit.setVisible(False)
+
+        self.hBoxLayout.insertWidget(5, self.LineEdit, 0, Qt.AlignRight)
+
+    def setText(self, value: str) -> None:
+
+        if value not in self.optionToText:
+            self.optionToText[value] = value
+
+        self.LineEdit.setText(self.optionToText[value])
+
+    def switch_mode(self, mode: str) -> None:
+        """切换模式"""
+
+        if mode == "固定":
+
+            self.LineEdit.setVisible(False)
+            self.comboBox.setVisible(True)
+
+        elif mode == "计划":
+
+            self.comboBox.setVisible(False)
+            self.LineEdit.setVisible(True)
+
+    def change_plan(self, configItem_plan: ConfigItem) -> None:
+        """切换计划"""
+
+        if self.configItem_plan is not None:
+            self.configItem_plan.valueChanged.disconnect(self.setText)
+        self.configItem_plan = configItem_plan
+        self.configItem_plan.valueChanged.connect(self.setText)
+        self.setText(self.qconfig.get(self.configItem_plan))
 
 
 class TimeEditSettingCard(SettingCard):
@@ -1154,7 +1317,7 @@ class NoOptionComboBoxSetting(ComboBox):
 
     def reLoadOptions(self, value: List[str], texts: List[str]):
 
-        self.currentIndexChanged.disconnect()
+        self.currentIndexChanged.disconnect(self._onCurrentIndexChanged)
         self.clear()
         self.optionToText = {o: t for o, t in zip(value, texts)}
         for text, option in zip(texts, value):
@@ -1210,7 +1373,7 @@ class EditableComboBoxSetting(EditableComboBox):
 
     def reLoadOptions(self, value: List[str], texts: List[str]):
 
-        self.currentIndexChanged.disconnect()
+        self.currentIndexChanged.disconnect(self._onCurrentIndexChanged)
         self.clear()
         self.optionToText = {o: t for o, t in zip(value, texts)}
         for text, option in zip(texts, value):

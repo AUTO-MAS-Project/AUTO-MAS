@@ -388,9 +388,7 @@ class MaaUserConfig(LQConfig):
         self.Info_Mode = OptionsConfigItem(
             "Info", "Mode", "简洁", OptionsValidator(["简洁", "详细"])
         )
-        self.Info_GameIdMode = OptionsConfigItem(
-            "Info", "GameIdMode", "固定", OptionsValidator(["固定"])
-        )
+        self.Info_GameIdMode = ConfigItem("Info", "GameIdMode", "固定")
         self.Info_Server = OptionsConfigItem(
             "Info", "Server", "Official", OptionsValidator(["Official", "Bilibili"])
         )
@@ -461,6 +459,29 @@ class MaaUserConfig(LQConfig):
             "Notify", "CompanyWebHookBotUrl", ""
         )
 
+    def get_plan_info(self) -> Dict[str, Union[str, int]]:
+        """获取当前的计划下信息"""
+
+        if self.get(self.Info_GameIdMode) == "固定":
+            return {
+                "MedicineNumb": self.get(self.Info_MedicineNumb),
+                "SeriesNumb": self.get(self.Info_SeriesNumb),
+                "GameId": self.get(self.Info_GameId),
+                "GameId_1": self.get(self.Info_GameId_1),
+                "GameId_2": self.get(self.Info_GameId_2),
+                "GameId_Remain": self.get(self.Info_GameId_Remain),
+            }
+        elif "计划" in self.get(self.Info_GameIdMode):
+            plan = Config.plan_dict[self.get(self.Info_GameIdMode)]["Config"]
+            return {
+                "MedicineNumb": plan.get(plan.get_current_info("MedicineNumb")),
+                "SeriesNumb": plan.get(plan.get_current_info("SeriesNumb")),
+                "GameId": plan.get(plan.get_current_info("GameId")),
+                "GameId_1": plan.get(plan.get_current_info("GameId_1")),
+                "GameId_2": plan.get(plan.get_current_info("GameId_2")),
+                "GameId_Remain": plan.get(plan.get_current_info("GameId_Remain")),
+            }
+
 
 class MaaPlanConfig(LQConfig):
     """MAA计划表配置"""
@@ -468,7 +489,10 @@ class MaaPlanConfig(LQConfig):
     def __init__(self) -> None:
         super().__init__()
 
-        self.Info_Name = ConfigItem("Info", "Name", "新表格")
+        self.Info_Name = ConfigItem("Info", "Name", "")
+        self.Info_Mode = OptionsConfigItem(
+            "Info", "Mode", "ALL", OptionsValidator(["ALL", "Weekly"])
+        )
 
         self.config_item_dict: dict[str, Dict[str, ConfigItem]] = {}
 
@@ -513,6 +537,18 @@ class MaaPlanConfig(LQConfig):
                 "GameId_Remain",
             ]:
                 setattr(self, f"{group}_{name}", self.config_item_dict[group][name])
+
+    def get_current_info(self, name: str) -> ConfigItem:
+        """获取当前的计划表配置项"""
+
+        if self.get(self.Info_Mode) == "ALL":
+            return self.config_item_dict["ALL"][name]
+        elif self.get(self.Info_Mode) == "Weekly":
+            today = datetime.now().strftime("%A")
+            if today in self.config_item_dict:
+                return self.config_item_dict[today][name]
+            else:
+                return self.config_item_dict["ALL"][name]
 
 
 class AppConfig(GlobalConfig):
@@ -615,7 +651,7 @@ class AppConfig(GlobalConfig):
             logger.warning(f"无法从MAA服务器获取活动关卡信息:{Network.error_message}")
             gameid_infos = []
 
-        gameid_dict = {"value": [], "text": []}
+        ss_gameid_dict = {"value": [], "text": []}
 
         for gameid_info in gameid_infos:
 
@@ -628,85 +664,48 @@ class AppConfig(GlobalConfig):
                     gameid_info["Activity"]["UtcExpireTime"], "%Y/%m/%d %H:%M:%S"
                 )
             ):
-                gameid_dict["value"].append(gameid_info["Value"])
-                gameid_dict["text"].append(gameid_info["Value"])
-
-        # 生成全部关卡信息
-        self.gameid_dict["ALL"]["value"] = gameid_dict["value"] + [
-            "-",
-            "1-7",
-            "R8-11",
-            "12-17-HARD",
-            "CE-6",
-            "AP-5",
-            "CA-5",
-            "LS-6",
-            "SK-5",
-            "PR-A-1",
-            "PR-A-2",
-            "PR-B-1",
-            "PR-B-2",
-            "PR-C-1",
-            "PR-C-2",
-            "PR-D-1",
-            "PR-D-2",
-        ]
-        self.gameid_dict["ALL"]["text"] = gameid_dict["text"] + [
-            "当前/上次",
-            "1-7",
-            "R8-11",
-            "12-17-HARD",
-            "龙门币-6/5",
-            "红票-5",
-            "技能-5",
-            "经验-6/5",
-            "碳-5",
-            "奶/盾芯片",
-            "奶/盾芯片组",
-            "术/狙芯片",
-            "术/狙芯片组",
-            "先/辅芯片",
-            "先/辅芯片组",
-            "近/特芯片",
-            "近/特芯片组",
-        ]
-
-        # # 生成本日关卡信息
-        # days = self.server_date().isoweekday()
+                ss_gameid_dict["value"].append(gameid_info["Value"])
+                ss_gameid_dict["text"].append(gameid_info["Value"])
 
         # 生成每日关卡信息
-        for day in range(1, 8):
+        gameid_daily_info = [
+            {"value": "-", "text": "当前/上次", "days": [1, 2, 3, 4, 5, 6, 7]},
+            {"value": "1-7", "text": "1-7", "days": [1, 2, 3, 4, 5, 6, 7]},
+            {"value": "R8-11", "text": "R8-11", "days": [1, 2, 3, 4, 5, 6, 7]},
+            {
+                "value": "12-17-HARD",
+                "text": "12-17-HARD",
+                "days": [1, 2, 3, 4, 5, 6, 7],
+            },
+            {"value": "CE-6", "text": "龙门币-6/5", "days": [2, 4, 6, 7]},
+            {"value": "AP-5", "text": "红票-5", "days": [1, 4, 6, 7]},
+            {"value": "CA-5", "text": "技能-5", "days": [2, 3, 5, 7]},
+            {"value": "LS-6", "text": "经验-6/5", "days": [1, 2, 3, 4, 5, 6, 7]},
+            {"value": "SK-5", "text": "碳-5", "days": [1, 3, 5, 6]},
+            {"value": "PR-A-1", "text": "奶/盾芯片", "days": [1, 4, 5, 7]},
+            {"value": "PR-A-2", "text": "奶/盾芯片组", "days": [1, 4, 5, 7]},
+            {"value": "PR-B-1", "text": "术/狙芯片", "days": [1, 2, 5, 6]},
+            {"value": "PR-B-2", "text": "术/狙芯片组", "days": [1, 2, 5, 6]},
+            {"value": "PR-C-1", "text": "先/辅芯片", "days": [3, 4, 6, 7]},
+            {"value": "PR-C-2", "text": "先/辅芯片组", "days": [3, 4, 6, 7]},
+            {"value": "PR-D-1", "text": "近/特芯片", "days": [2, 3, 6, 7]},
+            {"value": "PR-D-2", "text": "近/特芯片组", "days": [2, 3, 6, 7]},
+        ]
 
-            gameid_list = [
-                {"value": "-", "text": "当前/上次", "days": [1, 2, 3, 4, 5, 6, 7]},
-                {"value": "1-7", "text": "1-7", "days": [1, 2, 3, 4, 5, 6, 7]},
-                {"value": "R8-11", "text": "R8-11", "days": [1, 2, 3, 4, 5, 6, 7]},
-                {
-                    "value": "12-17-HARD",
-                    "text": "12-17-HARD",
-                    "days": [1, 2, 3, 4, 5, 6, 7],
-                },
-                {"value": "CE-6", "text": "龙门币-6/5", "days": [2, 4, 6, 7]},
-                {"value": "AP-5", "text": "红票-5", "days": [1, 4, 6, 7]},
-                {"value": "CA-5", "text": "技能-5", "days": [2, 3, 5, 7]},
-                {"value": "LS-6", "text": "经验-6/5", "days": [1, 2, 3, 4, 5, 6, 7]},
-                {"value": "SK-5", "text": "碳-5", "days": [1, 3, 5, 6]},
-                {"value": "PR-A-1", "text": "奶/盾芯片", "days": [1, 4, 5, 7]},
-                {"value": "PR-A-2", "text": "奶/盾芯片组", "days": [1, 4, 5, 7]},
-                {"value": "PR-B-1", "text": "术/狙芯片", "days": [1, 2, 5, 6]},
-                {"value": "PR-B-2", "text": "术/狙芯片组", "days": [1, 2, 5, 6]},
-                {"value": "PR-C-1", "text": "先/辅芯片", "days": [3, 4, 6, 7]},
-                {"value": "PR-C-2", "text": "先/辅芯片组", "days": [3, 4, 6, 7]},
-                {"value": "PR-D-1", "text": "近/特芯片", "days": [2, 3, 6, 7]},
-                {"value": "PR-D-2", "text": "近/特芯片组", "days": [2, 3, 6, 7]},
-            ]
+        for day in range(0, 8):
 
-            for gameid_info in gameid_list:
-                if day in gameid_info["days"]:
-                    gameid_dict["value"].append(gameid_info["value"])
-                    gameid_dict["text"].append(gameid_info["text"])
+            today_gameid_dict = {"value": [], "text": []}
 
-            self.gameid_dict[calendar.day_name[day - 1]] = gameid_dict
+            for gameid_info in gameid_daily_info:
+
+                if day in gameid_info["days"] or day == 0:
+                    today_gameid_dict["value"].append(gameid_info["value"])
+                    today_gameid_dict["text"].append(gameid_info["text"])
+
+            self.gameid_dict[calendar.day_name[day - 1] if day > 0 else "ALL"] = {
+                "value": today_gameid_dict["value"] + ss_gameid_dict["value"],
+                "text": today_gameid_dict["text"] + ss_gameid_dict["text"],
+            }
 
         self.gameid_refreshed.emit()
 

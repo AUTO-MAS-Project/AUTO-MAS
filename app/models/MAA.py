@@ -102,6 +102,9 @@ class MaaManager(QObject):
                     "Path": info["Path"],
                     "Config": info["Config"].toDict(),
                 }
+                planed_info = info["Config"].get_plan_info()
+                for key, value in planed_info.items():
+                    self.data[name]["Config"]["Info"][key] = value
 
             self.data = dict(sorted(self.data.items(), key=lambda x: int(x[0][3:])))
 
