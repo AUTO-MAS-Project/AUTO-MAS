@@ -567,9 +567,6 @@ class MaaManager(QObject):
                                     break
                                 time.sleep(1)
 
-                        # 移除静默进程标记
-                        Config.silence_list.remove(self.emulator_path)
-
                         # 任务结束后释放ADB
                         try:
                             subprocess.run(
@@ -907,6 +904,9 @@ class MaaManager(QObject):
             if self.isInterruptionRequested:
                 break
             time.sleep(1)
+
+        # 移除静默进程标记
+        Config.silence_list.remove(self.emulator_path)
 
         if "-" in self.ADB_address:
             ADB_ip = f"{self.ADB_address.split("-")[0]}-"
