@@ -274,9 +274,23 @@ class MaaManager(QObject):
                     )
 
                     # 解析任务构成
-                    if user_data["Info"]["Mode"] == "简洁":
+                    if mode == "Routine":
 
-                        if mode == "Annihilation":
+                        self.task_dict = {
+                            "WakeUp": str(user_data["Task"]["IfWakeUp"]),
+                            "Recruiting": str(user_data["Task"]["IfRecruiting"]),
+                            "Base": str(user_data["Task"]["IfBase"]),
+                            "Combat": str(user_data["Task"]["IfCombat"]),
+                            "Mission": str(user_data["Task"]["IfMission"]),
+                            "Mall": str(user_data["Task"]["IfMall"]),
+                            "AutoRoguelike": str(user_data["Task"]["IfAutoRoguelike"]),
+                            "Reclamation": str(user_data["Task"]["IfReclamation"]),
+                        }
+
+                    elif mode == "Annihilation":
+
+                        if user_data["Info"]["Mode"] == "简洁":
+
                             self.task_dict = {
                                 "WakeUp": "True",
                                 "Recruiting": "False",
@@ -288,51 +302,39 @@ class MaaManager(QObject):
                                 "Reclamation": "False",
                             }
 
-                        elif mode == "Routine":
+                        elif user_data["Info"]["Mode"] == "详细":
+
+                            with (self.data[user[2]]["Path"] / f"{mode}/gui.json").open(
+                                mode="r", encoding="utf-8"
+                            ) as f:
+                                data = json.load(f)
+
                             self.task_dict = {
-                                "WakeUp": "True",
-                                "Recruiting": "True",
-                                "Base": "True",
-                                "Combat": "True",
-                                "Mission": "True",
-                                "Mall": "True",
-                                "AutoRoguelike": "False",
-                                "Reclamation": "False",
+                                "WakeUp": data["Configurations"]["Default"][
+                                    "TaskQueue.WakeUp.IsChecked"
+                                ],
+                                "Recruiting": data["Configurations"]["Default"][
+                                    "TaskQueue.Recruiting.IsChecked"
+                                ],
+                                "Base": data["Configurations"]["Default"][
+                                    "TaskQueue.Base.IsChecked"
+                                ],
+                                "Combat": data["Configurations"]["Default"][
+                                    "TaskQueue.Combat.IsChecked"
+                                ],
+                                "Mission": data["Configurations"]["Default"][
+                                    "TaskQueue.Mission.IsChecked"
+                                ],
+                                "Mall": data["Configurations"]["Default"][
+                                    "TaskQueue.Mall.IsChecked"
+                                ],
+                                "AutoRoguelike": data["Configurations"]["Default"][
+                                    "TaskQueue.AutoRoguelike.IsChecked"
+                                ],
+                                "Reclamation": data["Configurations"]["Default"][
+                                    "TaskQueue.Reclamation.IsChecked"
+                                ],
                             }
-
-                    elif user_data["Info"]["Mode"] == "详细":
-
-                        with (self.data[user[2]]["Path"] / f"{mode}/gui.json").open(
-                            mode="r", encoding="utf-8"
-                        ) as f:
-                            data = json.load(f)
-
-                        self.task_dict = {
-                            "WakeUp": data["Configurations"]["Default"][
-                                "TaskQueue.WakeUp.IsChecked"
-                            ],
-                            "Recruiting": data["Configurations"]["Default"][
-                                "TaskQueue.Recruiting.IsChecked"
-                            ],
-                            "Base": data["Configurations"]["Default"][
-                                "TaskQueue.Base.IsChecked"
-                            ],
-                            "Combat": data["Configurations"]["Default"][
-                                "TaskQueue.Combat.IsChecked"
-                            ],
-                            "Mission": data["Configurations"]["Default"][
-                                "TaskQueue.Mission.IsChecked"
-                            ],
-                            "Mall": data["Configurations"]["Default"][
-                                "TaskQueue.Mall.IsChecked"
-                            ],
-                            "AutoRoguelike": data["Configurations"]["Default"][
-                                "TaskQueue.AutoRoguelike.IsChecked"
-                            ],
-                            "Reclamation": data["Configurations"]["Default"][
-                                "TaskQueue.Reclamation.IsChecked"
-                            ],
-                        }
 
                     # 尝试次数循环
                     for i in range(self.set["RunSet"]["RunTimesLimit"]):
@@ -1275,6 +1277,9 @@ class MaaManager(QObject):
                 ]["Id"]
 
             # 按预设设定任务
+            data["Configurations"]["Default"][
+                "TaskQueue.WakeUp.IsChecked"
+            ] = "True"  # 开始唤醒
             data["Configurations"]["Default"]["TaskQueue.Recruiting.IsChecked"] = (
                 self.task_dict["Recruiting"]
             )  # 自动公招
@@ -1298,10 +1303,6 @@ class MaaManager(QObject):
             )  # 生息演算
 
             if user_data["Info"]["Mode"] == "简洁":
-
-                data["Configurations"]["Default"][
-                    "TaskQueue.WakeUp.IsChecked"
-                ] = "True"  # 开始唤醒
 
                 data["Configurations"]["Default"]["Start.ClientType"] = user_data[
                     "Info"

@@ -73,6 +73,7 @@ from .Widget import (
     SpinBoxWithPlanSettingCard,
     PasswordLineEditSettingCard,
     UserLableSettingCard,
+    UserTaskSettingCard,
     ComboBoxSettingCard,
     SwitchSettingCard,
     PushAndSwitchButtonSettingCard,
@@ -1587,7 +1588,106 @@ class MemberManager(QWidget):
                                 parent=self,
                             )
 
-                            # 新增单独通知卡片
+                            # 单独任务卡片
+                            self.card_TaskSet = UserTaskSettingCard(
+                                icon=FluentIcon.LIBRARY,
+                                title="自动日常代理任务序列",
+                                content="未启用任何任务项",
+                                text="设置",
+                                qconfig=self.config,
+                                configItems={
+                                    "IfWakeUp": self.config.Task_IfWakeUp,
+                                    "IfRecruiting": self.config.Task_IfRecruiting,
+                                    "IfBase": self.config.Task_IfBase,
+                                    "IfCombat": self.config.Task_IfCombat,
+                                    "IfMall": self.config.Task_IfMall,
+                                    "IfMission": self.config.Task_IfMission,
+                                    "IfAutoRoguelike": self.config.Task_IfAutoRoguelike,
+                                    "IfReclamation": self.config.Task_IfReclamation,
+                                },
+                                parent=self,
+                            )
+                            self.card_IfWakeUp = SwitchSettingCard(
+                                icon=FluentIcon.TILES,
+                                title="开始唤醒",
+                                content="",
+                                qconfig=self.config,
+                                configItem=self.config.Task_IfWakeUp,
+                                parent=self,
+                            )
+                            self.card_IfRecruiting = SwitchSettingCard(
+                                icon=FluentIcon.TILES,
+                                title="自动公招",
+                                content="",
+                                qconfig=self.config,
+                                configItem=self.config.Task_IfRecruiting,
+                                parent=self,
+                            )
+                            self.card_IfBase = SwitchSettingCard(
+                                icon=FluentIcon.TILES,
+                                title="基建换班",
+                                content="",
+                                qconfig=self.config,
+                                configItem=self.config.Task_IfBase,
+                                parent=self,
+                            )
+                            self.card_IfCombat = SwitchSettingCard(
+                                icon=FluentIcon.TILES,
+                                title="刷理智",
+                                content="",
+                                qconfig=self.config,
+                                configItem=self.config.Task_IfCombat,
+                                parent=self,
+                            )
+                            self.card_IfMall = SwitchSettingCard(
+                                icon=FluentIcon.TILES,
+                                title="获取信用及购物",
+                                content="",
+                                qconfig=self.config,
+                                configItem=self.config.Task_IfMall,
+                                parent=self,
+                            )
+                            self.card_IfMission = SwitchSettingCard(
+                                icon=FluentIcon.TILES,
+                                title="领取奖励",
+                                content="",
+                                qconfig=self.config,
+                                configItem=self.config.Task_IfMission,
+                                parent=self,
+                            )
+                            self.card_IfAutoRoguelike = SwitchSettingCard(
+                                icon=FluentIcon.TILES,
+                                title="自动肉鸽",
+                                content="",
+                                qconfig=self.config,
+                                configItem=self.config.Task_IfAutoRoguelike,
+                                parent=self,
+                            )
+                            self.card_IfReclamation = SwitchSettingCard(
+                                icon=FluentIcon.TILES,
+                                title="生息演算",
+                                content="",
+                                qconfig=self.config,
+                                configItem=self.config.Task_IfReclamation,
+                                parent=self,
+                            )
+
+                            self.TaskSetCard = SettingFlyoutView(
+                                self,
+                                "自动日常代理任务序列设置",
+                                [
+                                    self.card_IfWakeUp,
+                                    self.card_IfRecruiting,
+                                    self.card_IfBase,
+                                    self.card_IfCombat,
+                                    self.card_IfMall,
+                                    self.card_IfMission,
+                                    self.card_IfAutoRoguelike,
+                                    self.card_IfReclamation,
+                                ],
+                            )
+
+                            # 单独通知卡片
                             self.card_NotifySet = UserNoticeSettingCard(
                                 icon=FluentIcon.MAIL,
                                 title="用户单独通知设置",
@@ -1618,17 +1718,16 @@ class MemberManager(QWidget):
                                 self.CompanyWechatPushSettingCard(self.config, self)
                             )
 
-                            self.card_NotifySet_list = [
-                                self.card_NotifyContent,
-                                self.card_EMail,
-                                self.card_ServerChan,
-                                self.card_CompanyWebhookBot,
-                            ]
-
                             self.NotifySetCard = SettingFlyoutView(
-                                self, "用户通知设置", self.card_NotifySet_list
+                                self,
+                                "用户通知设置",
+                                [
+                                    self.card_NotifyContent,
+                                    self.card_EMail,
+                                    self.card_ServerChan,
+                                    self.card_CompanyWebhookBot,
+                                ],
                             )
-                            self.NotifySetCard.setVisible(False)
 
                             h1_layout = QHBoxLayout()
                             h1_layout.addWidget(self.card_Name)
@@ -1667,6 +1766,7 @@ class MemberManager(QWidget):
                             Layout.addLayout(h6_layout)
                             Layout.addLayout(h7_layout)
                             Layout.addLayout(h8_layout)
+                            Layout.addWidget(self.card_TaskSet)
                             Layout.addWidget(self.card_NotifySet)
 
                             self.viewLayout.addLayout(Layout)
@@ -1687,6 +1787,7 @@ class MemberManager(QWidget):
                             self.card_InfrastMode.clicked.connect(
                                 self.set_infrastructure
                             )
+                            self.card_TaskSet.clicked.connect(self.set_task)
                             self.card_NotifySet.clicked.connect(self.set_notify)
                             self.card_GameIdMode.comboBox.currentIndexChanged.connect(
                                 self.switch_gameid_mode
@@ -1849,6 +1950,18 @@ class MemberManager(QWidget):
                                         "Path": self.user_path / mode,
                                     }
                                 },
+                            )
+
+                        def set_task(self) -> None:
+                            """设置用户任务序列相关配置"""
+
+                            self.TaskSetCard.setVisible(True)
+                            Flyout.make(
+                                self.TaskSetCard,
+                                self.card_TaskSet,
+                                self,
+                                aniType=FlyoutAnimationType.PULL_UP,
+                                isDeleteOnClose=False,
                             )
 
                         def set_notify(self) -> None:

@@ -434,7 +434,21 @@ class MaaUserConfig(LQConfig):
             "Data", "CustomInfrastPlanIndex", "0"
         )
 
-        # 新增用户单独通知字段
+        self.Task_IfWakeUp = ConfigItem("Task", "IfWakeUp", True, BoolValidator())
+        self.Task_IfRecruiting = ConfigItem(
+            "Task", "IfRecruiting", True, BoolValidator()
+        )
+        self.Task_IfBase = ConfigItem("Task", "IfBase", True, BoolValidator())
+        self.Task_IfCombat = ConfigItem("Task", "IfCombat", True, BoolValidator())
+        self.Task_IfMall = ConfigItem("Task", "IfMall", True, BoolValidator())
+        self.Task_IfMission = ConfigItem("Task", "IfMission", True, BoolValidator())
+        self.Task_IfAutoRoguelike = ConfigItem(
+            "Task", "IfAutoRoguelike", False, BoolValidator()
+        )
+        self.Task_IfReclamation = ConfigItem(
+            "Task", "IfReclamation", False, BoolValidator()
+        )
+
         self.Notify_Enabled = ConfigItem("Notify", "Enabled", False, BoolValidator())
         self.Notify_IfSendStatistic = ConfigItem(
             "Notify", "IfSendStatistic", False, BoolValidator()

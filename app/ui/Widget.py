@@ -82,6 +82,7 @@ from qfluentwidgets import (
     Pivot,
     PivotItem,
     FlyoutViewBase,
+    PushSettingCard,
 )
 from qfluentwidgets.common.overload import singledispatchmethod
 
@@ -305,6 +306,8 @@ class SettingFlyoutView(FlyoutViewBase):
         self.viewLayout.setContentsMargins(20, 16, 9, 16)
         self.viewLayout.addWidget(self.title)
         self.viewLayout.addWidget(scrollArea)
+
+        self.setVisible(False)
 
 
 class SwitchSettingCard(SettingCard):
@@ -555,57 +558,6 @@ class PasswordLineEditSettingCard(SettingCard):
                 self.LineEdit.setPasswordVisible(False)
                 self.LineEdit.setReadOnly(True)
         self.LineEdit.textChanged.connect(self.__textChanged)
-
-
-class UserLableSettingCard(SettingCard):
-    """Setting card with User's Lable"""
-
-    def __init__(
-        self,
-        icon: Union[str, QIcon, FluentIconBase],
-        title: str,
-        content: Union[str, None],
-        qconfig: QConfig,
-        configItems: Dict[str, ConfigItem],
-        parent=None,
-    ):
-
-        super().__init__(icon, title, content, parent)
-        self.qconfig = qconfig
-        self.configItems = configItems
-        self.Lable = SubtitleLabel(self)
-
-        if configItems:
-            for configItem in configItems.values():
-                configItem.valueChanged.connect(self.setValue)
-            self.setValue()
-
-        self.hBoxLayout.addWidget(self.Lable, 0, Qt.AlignRight)
-        self.hBoxLayout.addSpacing(16)
-
-    def setValue(self):
-        if self.configItems:
-
-            text_list = []
-            if not self.qconfig.get(self.configItems["IfPassCheck"]):
-                text_list.append("未通过人工排查")
-            text_list.append(
-                f"今日已代理{self.qconfig.get(self.configItems["ProxyTimes"])}次"
-                if Config.server_date().strftime("%Y-%m-%d")
-                == self.qconfig.get(self.configItems["LastProxyDate"])
-                else "今日未进行代理"
-            )
-            text_list.append(
-                "本周剿灭已完成"
-                if datetime.strptime(
-                    self.qconfig.get(self.configItems["LastAnnihilationDate"]),
-                    "%Y-%m-%d",
-                ).isocalendar()[:2]
-                == Config.server_date().isocalendar()[:2]
-                else "本周剿灭未完成"
-            )
-
-        self.Lable.setText(" | ".join(text_list))
 
 
 class PushAndSwitchButtonSettingCard(SettingCard):
@@ -1128,6 +1080,115 @@ class TimeEditSettingCard(SettingCard):
         self.TimeEdit.setTime(QTime.fromString(value, "HH:mm"))
 
 
+class UserLableSettingCard(SettingCard):
+    """Setting card with User's Lable"""
+
+    def __init__(
+        self,
+        icon: Union[str, QIcon, FluentIconBase],
+        title: str,
+        content: Union[str, None],
+        qconfig: QConfig,
+        configItems: Dict[str, ConfigItem],
+        parent=None,
+    ):
+
+        super().__init__(icon, title, content, parent)
+        self.qconfig = qconfig
+        self.configItems = configItems
+        self.Lable = SubtitleLabel(self)
+
+        if configItems:
+            for configItem in configItems.values():
+                configItem.valueChanged.connect(self.setValue)
+            self.setValue()
+
+        self.hBoxLayout.addWidget(self.Lable, 0, Qt.AlignRight)
+        self.hBoxLayout.addSpacing(16)
+
+    def setValue(self):
+
+        text_list = []
+
+        if self.configItems:
+
+            if not self.qconfig.get(self.configItems["IfPassCheck"]):
+                text_list.append("未通过人工排查")
+            text_list.append(
+                f"今日已代理{self.qconfig.get(self.configItems["ProxyTimes"])}次"
+                if Config.server_date().strftime("%Y-%m-%d")
+                == self.qconfig.get(self.configItems["LastProxyDate"])
+                else "今日未进行代理"
+            )
+            text_list.append(
+                "本周剿灭已完成"
+                if datetime.strptime(
+                    self.qconfig.get(self.configItems["LastAnnihilationDate"]),
+                    "%Y-%m-%d",
+                ).isocalendar()[:2]
+                == Config.server_date().isocalendar()[:2]
+                else "本周剿灭未完成"
+            )
+
+        self.Lable.setText(" | ".join(text_list))
+
+
+class UserTaskSettingCard(PushSettingCard):
+    """Setting card with User's Task"""
+
+    def __init__(
+        self,
+        icon: Union[str, QIcon, FluentIconBase],
+        title: str,
+        content: Union[str, None],
+        text: str,
+        qconfig: QConfig,
+        configItems: Dict[str, ConfigItem],
+        parent=None,
+    ):
+
+        super().__init__(text, icon, title, content, parent)
+        self.qconfig = qconfig
+        self.configItems = configItems
+        self.Lable = SubtitleLabel(self)
+
+        if configItems:
+            for config_item in configItems.values():
+                config_item.valueChanged.connect(self.setValues)
+            self.setValues()
+
+        self.hBoxLayout.addWidget(self.Lable, 0, Qt.AlignRight)
+        self.hBoxLayout.addSpacing(16)
+
+    def setValues(self):
+
+        text_list = []
+
+        if self.configItems:
+
+            if self.qconfig.get(self.configItems["IfWakeUp"]):
+                text_list.append("开始唤醒")
+            if self.qconfig.get(self.configItems["IfRecruiting"]):
+                text_list.append("自动公招")
+            if self.qconfig.get(self.configItems["IfBase"]):
+                text_list.append("基建换班")
+            if self.qconfig.get(self.configItems["IfCombat"]):
+                text_list.append("刷理智")
+            if self.qconfig.get(self.configItems["IfMall"]):
+                text_list.append("获取信用及购物")
+            if self.qconfig.get(self.configItems["IfMission"]):
+                text_list.append("领取奖励")
+            if self.qconfig.get(self.configItems["IfAutoRoguelike"]):
+                text_list.append("自动肉鸽")
+            if self.qconfig.get(self.configItems["IfReclamation"]):
+                text_list.append("生息演算")
+
+        if text_list:
+            self.setContent(f"任务序列：{" - ".join(text_list)}")
+        else:
+            self.setContent("未启用任何任务项")
+
+
 class UserNoticeSettingCard(PushAndSwitchButtonSettingCard):
     """Setting card with User's Notice"""
 
@@ -1184,7 +1245,7 @@ class UserNoticeSettingCard(PushAndSwitchButtonSettingCard):
                 # 普通字符串：末尾3字符
                 return f"***{s[-3:]}" if len(s) > 3 else s
 
-        content_list = []
+        text_list = []
 
         if self.configItems:
 
@@ -1192,27 +1253,27 @@ class UserNoticeSettingCard(PushAndSwitchButtonSettingCard):
                 self.qconfig.get(self.configItems["IfSendStatistic"])
                 or self.qconfig.get(self.configItems["IfSendSixStar"])
             ):
-                content_list.append("未启用任何通知项")
+                text_list.append("未启用任何通知项")
 
             if self.qconfig.get(self.configItems["IfSendStatistic"]):
-                content_list.append("统计信息已启用")
+                text_list.append("统计信息已启用")
             if self.qconfig.get(self.configItems["IfSendSixStar"]):
-                content_list.append("六星喜报已启用")
+                text_list.append("六星喜报已启用")
 
             if self.qconfig.get(self.configItems["IfSendMail"]):
-                content_list.append(
+                text_list.append(
                     f"邮箱通知：{short_str(self.qconfig.get(self.configItems["ToAddress"]))}"
                 )
             if self.qconfig.get(self.configItems["IfServerChan"]):
-                content_list.append(
+                text_list.append(
                     f"Server酱通知：{short_str(self.qconfig.get(self.configItems["ServerChanKey"]))}"
                 )
             if self.qconfig.get(self.configItems["IfCompanyWebHookBot"]):
-                content_list.append(
+                text_list.append(
                     f"企业微信通知：{short_str(self.qconfig.get(self.configItems["CompanyWebHookBotUrl"]))}"
                 )
 
-        self.setContent(" | ".join(content_list))
+        self.setContent(" | ".join(text_list))
 
 
 class StatusSwitchSetting(SwitchButton):
