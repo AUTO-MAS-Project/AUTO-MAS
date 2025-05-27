@@ -122,7 +122,7 @@ class QueueManager(QWidget):
 
         name = self.queue_manager.pivot.currentRouteKey()
 
-        if name == None:
+        if name is None:
             logger.warning("未选择调度队列")
             MainInfoBar.push_info_bar(
                 "warning", "未选择调度队列", "请先选择一个调度队列", 5000
@@ -136,11 +136,7 @@ class QueueManager(QWidget):
             )
             return None
 
-        choice = MessageBox(
-            "确认",
-            f"确定要删除 {name} 吗？",
-            self.window(),
-        )
+        choice = MessageBox("确认", f"确定要删除 {name} 吗？", self.window())
         if choice.exec():
 
             self.queue_manager.clear_SettingBox()
@@ -164,7 +160,7 @@ class QueueManager(QWidget):
 
         name = self.queue_manager.pivot.currentRouteKey()
 
-        if name == None:
+        if name is None:
             logger.warning("未选择调度队列")
             MainInfoBar.push_info_bar(
                 "warning", "未选择调度队列", "请先选择一个调度队列", 5000
@@ -209,7 +205,7 @@ class QueueManager(QWidget):
 
         name = self.queue_manager.pivot.currentRouteKey()
 
-        if name == None:
+        if name is None:
             logger.warning("未选择调度队列")
             MainInfoBar.push_info_bar(
                 "warning", "未选择调度队列", "请先选择一个调度队列", 5000

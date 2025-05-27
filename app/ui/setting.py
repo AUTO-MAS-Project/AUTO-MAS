@@ -252,9 +252,7 @@ class Setting(QWidget):
                     choice.exec()
             else:
                 choice = MessageBox(
-                    "确认",
-                    "您没有输入管理密钥，是否取消修改管理密钥？",
-                    self.window(),
+                    "确认", "您没有输入管理密钥，是否取消修改管理密钥？", self.window()
                 )
                 if choice.exec():
                     break

@@ -82,6 +82,7 @@ from qfluentwidgets import (
     Pivot,
     PivotItem,
     FlyoutViewBase,
+    PushSettingCard,
 )
 from qfluentwidgets.common.overload import singledispatchmethod
 
@@ -306,6 +307,8 @@ class SettingFlyoutView(FlyoutViewBase):
         self.viewLayout.addWidget(self.title)
         self.viewLayout.addWidget(scrollArea)
 
+        self.setVisible(False)
+
 
 class SwitchSettingCard(SettingCard):
     """Setting card with switch button"""
@@ -477,7 +480,7 @@ class LineEditSettingCard(SettingCard):
 
     def __textChanged(self, content: str):
 
-        self.configItem.valueChanged.disconnect()
+        self.configItem.valueChanged.disconnect(self.setValue)
         self.qconfig.set(self.configItem, content.strip())
         self.configItem.valueChanged.connect(self.setValue)
 
@@ -485,7 +488,7 @@ class LineEditSettingCard(SettingCard):
 
     def setValue(self, content: str):
 
-        self.LineEdit.textChanged.disconnect()
+        self.LineEdit.textChanged.disconnect(self.__textChanged)
         self.LineEdit.setText(content.strip())
         self.LineEdit.textChanged.connect(self.__textChanged)
 
@@ -527,7 +530,7 @@ class PasswordLineEditSettingCard(SettingCard):
 
     def __textChanged(self, content: str):
 
-        self.configItem.valueChanged.disconnect()
+        self.configItem.valueChanged.disconnect(self.setValue)
         if self.algorithm == "DPAPI":
             self.qconfig.set(self.configItem, Crypto.win_encryptor(content))
         elif self.algorithm == "AUTO":
@@ -538,7 +541,7 @@ class PasswordLineEditSettingCard(SettingCard):
 
     def setValue(self, content: str):
 
-        self.LineEdit.textChanged.disconnect()
+        self.LineEdit.textChanged.disconnect(self.__textChanged)
         if self.algorithm == "DPAPI":
             self.LineEdit.setText(Crypto.win_decryptor(content))
         elif self.algorithm == "AUTO":
@@ -555,57 +558,6 @@ class PasswordLineEditSettingCard(SettingCard):
                 self.LineEdit.setPasswordVisible(False)
                 self.LineEdit.setReadOnly(True)
         self.LineEdit.textChanged.connect(self.__textChanged)
-
-
-class UserLableSettingCard(SettingCard):
-    """Setting card with User's Lable"""
-
-    def __init__(
-        self,
-        icon: Union[str, QIcon, FluentIconBase],
-        title: str,
-        content: Union[str, None],
-        qconfig: QConfig,
-        configItems: Dict[str, ConfigItem],
-        parent=None,
-    ):
-
-        super().__init__(icon, title, content, parent)
-        self.qconfig = qconfig
-        self.configItems = configItems
-        self.Lable = SubtitleLabel(self)
-
-        if configItems:
-            for configItem in configItems.values():
-                configItem.valueChanged.connect(self.setValue)
-            self.setValue()
-
-        self.hBoxLayout.addWidget(self.Lable, 0, Qt.AlignRight)
-        self.hBoxLayout.addSpacing(16)
-
-    def setValue(self):
-        if self.configItems:
-
-            text_list = []
-            if not self.qconfig.get(self.configItems["IfPassCheck"]):
-                text_list.append("未通过人工排查")
-            text_list.append(
-                f"今日已代理{self.qconfig.get(self.configItems["ProxyTimes"])}次"
-                if Config.server_date().strftime("%Y-%m-%d")
-                == self.qconfig.get(self.configItems["LastProxyDate"])
-                else "今日未进行代理"
-            )
-            text_list.append(
-                "本周剿灭已完成"
-                if datetime.strptime(
-                    self.qconfig.get(self.configItems["LastAnnihilationDate"]),
-                    "%Y-%m-%d",
-                ).isocalendar()[:2]
-                == Config.server_date().isocalendar()[:2]
-                else "本周剿灭未完成"
-            )
-
-        self.Lable.setText(" | ".join(text_list))
 
 
 class PushAndSwitchButtonSettingCard(SettingCard):
@@ -756,7 +708,7 @@ class NoOptionComboBoxSettingCard(SettingCard):
         value: List[str],
         texts: List[str],
         qconfig: QConfig,
-        configItem: OptionsConfigItem,
+        configItem: ConfigItem,
         parent=None,
     ):
 
@@ -789,7 +741,7 @@ class NoOptionComboBoxSettingCard(SettingCard):
 
     def reLoadOptions(self, value: List[str], texts: List[str]):
 
-        self.comboBox.currentIndexChanged.disconnect()
+        self.comboBox.currentIndexChanged.disconnect(self._onCurrentIndexChanged)
         self.comboBox.clear()
         self.optionToText = {o: t for o, t in zip(value, texts)}
         for text, option in zip(texts, value):
@@ -811,7 +763,7 @@ class EditableComboBoxSettingCard(SettingCard):
         value: List[str],
         texts: List[str],
         qconfig: QConfig,
-        configItem: OptionsConfigItem,
+        configItem: ConfigItem,
         parent=None,
     ):
 
@@ -861,7 +813,7 @@ class EditableComboBoxSettingCard(SettingCard):
 
     def reLoadOptions(self, value: List[str], texts: List[str]):
 
-        self.comboBox.currentIndexChanged.disconnect()
+        self.comboBox.currentIndexChanged.disconnect(self._onCurrentIndexChanged)
         self.comboBox.clear()
         self.optionToText = {o: t for o, t in zip(value, texts)}
         for text, option in zip(texts, value):
@@ -897,6 +849,169 @@ class EditableComboBoxSettingCard(SettingCard):
                 self.addItem(self.text())
                 self.setCurrentIndex(self.count() - 1)
                 self.currentIndexChanged.emit(self.count() - 1)
+
+
+class SpinBoxWithPlanSettingCard(SpinBoxSettingCard):
+
+    textChanged = Signal(int)
+
+    def __init__(
+        self,
+        icon: Union[str, QIcon, FluentIconBase],
+        title: str,
+        content: Union[str, None],
+        range: tuple[int, int],
+        qconfig: QConfig,
+        configItem: ConfigItem,
+        parent=None,
+    ):
+
+        super().__init__(icon, title, content, range, qconfig, configItem, parent)
+
+        self.configItem_plan = None
+
+        self.LineEdit = LineEdit(self)
+        self.LineEdit.setMinimumWidth(150)
+        self.LineEdit.setReadOnly(True)
+        self.LineEdit.setVisible(False)
+
+        self.hBoxLayout.insertWidget(5, self.LineEdit, 0, Qt.AlignRight)
+
+    def setText(self, value: int) -> None:
+        self.LineEdit.setText(str(value))
+
+    def switch_mode(self, mode: str) -> None:
+        """切换模式"""
+
+        if mode == "固定":
+
+            self.LineEdit.setVisible(False)
+            self.SpinBox.setVisible(True)
+
+        elif mode == "计划":
+
+            self.SpinBox.setVisible(False)
+            self.LineEdit.setVisible(True)
+
+    def change_plan(self, configItem_plan: ConfigItem) -> None:
+        """切换计划"""
+
+        if self.configItem_plan is not None:
+            self.configItem_plan.valueChanged.disconnect(self.setText)
+        self.configItem_plan = configItem_plan
+        self.configItem_plan.valueChanged.connect(self.setText)
+        self.setText(self.qconfig.get(self.configItem_plan))
+
+
+class ComboBoxWithPlanSettingCard(ComboBoxSettingCard):
+
+    def __init__(
+        self,
+        icon: Union[str, QIcon, FluentIconBase],
+        title: str,
+        content: Union[str, None],
+        texts: List[str],
+        qconfig: QConfig,
+        configItem: OptionsConfigItem,
+        parent=None,
+    ):
+
+        super().__init__(icon, title, content, texts, qconfig, configItem, parent)
+
+        self.configItem_plan = None
+
+        self.LineEdit = LineEdit(self)
+        self.LineEdit.setMinimumWidth(150)
+        self.LineEdit.setReadOnly(True)
+        self.LineEdit.setVisible(False)
+
+        self.hBoxLayout.insertWidget(5, self.LineEdit, 0, Qt.AlignRight)
+
+    def setText(self, value: str) -> None:
+
+        if value not in self.optionToText:
+            self.optionToText[value] = value
+
+        self.LineEdit.setText(self.optionToText[value])
+
+    def switch_mode(self, mode: str) -> None:
+        """切换模式"""
+
+        if mode == "固定":
+
+            self.LineEdit.setVisible(False)
+            self.comboBox.setVisible(True)
+
+        elif mode == "计划":
+
+            self.comboBox.setVisible(False)
+            self.LineEdit.setVisible(True)
+
+    def change_plan(self, configItem_plan: ConfigItem) -> None:
+        """切换计划"""
+
+        if self.configItem_plan is not None:
+            self.configItem_plan.valueChanged.disconnect(self.setText)
+        self.configItem_plan = configItem_plan
+        self.configItem_plan.valueChanged.connect(self.setText)
+        self.setText(self.qconfig.get(self.configItem_plan))
+
+
+class EditableComboBoxWithPlanSettingCard(EditableComboBoxSettingCard):
+
+    def __init__(
+        self,
+        icon: Union[str, QIcon, FluentIconBase],
+        title: str,
+        content: Union[str, None],
+        value: List[str],
+        texts: List[str],
+        qconfig: QConfig,
+        configItem: ConfigItem,
+        parent=None,
+    ):
+
+        super().__init__(
+            icon, title, content, value, texts, qconfig, configItem, parent
+        )
+
+        self.configItem_plan = None
+
+        self.LineEdit = LineEdit(self)
+        self.LineEdit.setMinimumWidth(150)
+        self.LineEdit.setReadOnly(True)
+        self.LineEdit.setVisible(False)
+
+        self.hBoxLayout.insertWidget(5, self.LineEdit, 0, Qt.AlignRight)
+
+    def setText(self, value: str) -> None:
+
+        if value not in self.optionToText:
+            self.optionToText[value] = value
+
+        self.LineEdit.setText(self.optionToText[value])
+
+    def switch_mode(self, mode: str) -> None:
+        """切换模式"""
+
+        if mode == "固定":
+
+            self.LineEdit.setVisible(False)
+            self.comboBox.setVisible(True)
+
+        elif mode == "计划":
+
+            self.comboBox.setVisible(False)
+            self.LineEdit.setVisible(True)
+
+    def change_plan(self, configItem_plan: ConfigItem) -> None:
+        """切换计划"""
+
+        if self.configItem_plan is not None:
+            self.configItem_plan.valueChanged.disconnect(self.setText)
+        self.configItem_plan = configItem_plan
+        self.configItem_plan.valueChanged.connect(self.setText)
+        self.setText(self.qconfig.get(self.configItem_plan))
 
 
 class TimeEditSettingCard(SettingCard):
@@ -965,6 +1080,115 @@ class TimeEditSettingCard(SettingCard):
         self.TimeEdit.setTime(QTime.fromString(value, "HH:mm"))
 
 
+class UserLableSettingCard(SettingCard):
+    """Setting card with User's Lable"""
+
+    def __init__(
+        self,
+        icon: Union[str, QIcon, FluentIconBase],
+        title: str,
+        content: Union[str, None],
+        qconfig: QConfig,
+        configItems: Dict[str, ConfigItem],
+        parent=None,
+    ):
+
+        super().__init__(icon, title, content, parent)
+        self.qconfig = qconfig
+        self.configItems = configItems
+        self.Lable = SubtitleLabel(self)
+
+        if configItems:
+            for configItem in configItems.values():
+                configItem.valueChanged.connect(self.setValue)
+            self.setValue()
+
+        self.hBoxLayout.addWidget(self.Lable, 0, Qt.AlignRight)
+        self.hBoxLayout.addSpacing(16)
+
+    def setValue(self):
+
+        text_list = []
+
+        if self.configItems:
+
+            if not self.qconfig.get(self.configItems["IfPassCheck"]):
+                text_list.append("未通过人工排查")
+            text_list.append(
+                f"今日已代理{self.qconfig.get(self.configItems["ProxyTimes"])}次"
+                if Config.server_date().strftime("%Y-%m-%d")
+                == self.qconfig.get(self.configItems["LastProxyDate"])
+                else "今日未进行代理"
+            )
+            text_list.append(
+                "本周剿灭已完成"
+                if datetime.strptime(
+                    self.qconfig.get(self.configItems["LastAnnihilationDate"]),
+                    "%Y-%m-%d",
+                ).isocalendar()[:2]
+                == Config.server_date().isocalendar()[:2]
+                else "本周剿灭未完成"
+            )
+
+        self.Lable.setText(" | ".join(text_list))
+
+
+class UserTaskSettingCard(PushSettingCard):
+    """Setting card with User's Task"""
+
+    def __init__(
+        self,
+        icon: Union[str, QIcon, FluentIconBase],
+        title: str,
+        content: Union[str, None],
+        text: str,
+        qconfig: QConfig,
+        configItems: Dict[str, ConfigItem],
+        parent=None,
+    ):
+
+        super().__init__(text, icon, title, content, parent)
+        self.qconfig = qconfig
+        self.configItems = configItems
+        self.Lable = SubtitleLabel(self)
+
+        if configItems:
+            for config_item in configItems.values():
+                config_item.valueChanged.connect(self.setValues)
+            self.setValues()
+
+        self.hBoxLayout.addWidget(self.Lable, 0, Qt.AlignRight)
+        self.hBoxLayout.addSpacing(16)
+
+    def setValues(self):
+
+        text_list = []
+
+        if self.configItems:
+
+            if self.qconfig.get(self.configItems["IfWakeUp"]):
+                text_list.append("开始唤醒")
+            if self.qconfig.get(self.configItems["IfRecruiting"]):
+                text_list.append("自动公招")
+            if self.qconfig.get(self.configItems["IfBase"]):
+                text_list.append("基建换班")
+            if self.qconfig.get(self.configItems["IfCombat"]):
+                text_list.append("刷理智")
+            if self.qconfig.get(self.configItems["IfMall"]):
+                text_list.append("获取信用及购物")
+            if self.qconfig.get(self.configItems["IfMission"]):
+                text_list.append("领取奖励")
+            if self.qconfig.get(self.configItems["IfAutoRoguelike"]):
+                text_list.append("自动肉鸽")
+            if self.qconfig.get(self.configItems["IfReclamation"]):
+                text_list.append("生息演算")
+
+        if text_list:
+            self.setContent(f"任务序列：{" - ".join(text_list)}")
+        else:
+            self.setContent("未启用任何任务项")
+
+
 class UserNoticeSettingCard(PushAndSwitchButtonSettingCard):
     """Setting card with User's Notice"""
 
@@ -1021,7 +1245,7 @@ class UserNoticeSettingCard(PushAndSwitchButtonSettingCard):
                 # 普通字符串：末尾3字符
                 return f"***{s[-3:]}" if len(s) > 3 else s
 
-        content_list = []
+        text_list = []
 
         if self.configItems:
 
@@ -1029,27 +1253,27 @@ class UserNoticeSettingCard(PushAndSwitchButtonSettingCard):
                 self.qconfig.get(self.configItems["IfSendStatistic"])
                 or self.qconfig.get(self.configItems["IfSendSixStar"])
             ):
-                content_list.append("未启用任何通知项")
+                text_list.append("未启用任何通知项")
 
             if self.qconfig.get(self.configItems["IfSendStatistic"]):
-                content_list.append("统计信息已启用")
+                text_list.append("统计信息已启用")
             if self.qconfig.get(self.configItems["IfSendSixStar"]):
-                content_list.append("六星喜报已启用")
+                text_list.append("六星喜报已启用")
 
             if self.qconfig.get(self.configItems["IfSendMail"]):
-                content_list.append(
+                text_list.append(
                     f"邮箱通知：{short_str(self.qconfig.get(self.configItems["ToAddress"]))}"
                 )
             if self.qconfig.get(self.configItems["IfServerChan"]):
-                content_list.append(
+                text_list.append(
                     f"Server酱通知：{short_str(self.qconfig.get(self.configItems["ServerChanKey"]))}"
                 )
             if self.qconfig.get(self.configItems["IfCompanyWebHookBot"]):
-                content_list.append(
+                text_list.append(
                     f"企业微信通知：{short_str(self.qconfig.get(self.configItems["CompanyWebHookBotUrl"]))}"
                 )
 
-        self.setContent(" | ".join(content_list))
+        self.setContent(" | ".join(text_list))
 
 
 class StatusSwitchSetting(SwitchButton):
@@ -1082,6 +1306,190 @@ class StatusSwitchSetting(SwitchButton):
             self.qconfig.set(self.configItem_check, isChecked)
 
         self.setChecked(isChecked)
+
+
+class ComboBoxSetting(ComboBox):
+
+    def __init__(
+        self,
+        texts: List[str],
+        qconfig: QConfig,
+        configItem: OptionsConfigItem,
+        parent=None,
+    ):
+
+        super().__init__(parent)
+        self.qconfig = qconfig
+        self.configItem = configItem
+
+        self.optionToText = {o: t for o, t in zip(configItem.options, texts)}
+        for text, option in zip(texts, configItem.options):
+            self.addItem(text, userData=option)
+
+        self.setCurrentText(self.optionToText[self.qconfig.get(configItem)])
+        self.currentIndexChanged.connect(self._onCurrentIndexChanged)
+        configItem.valueChanged.connect(self.setValue)
+
+    def _onCurrentIndexChanged(self, index: int):
+
+        self.qconfig.set(self.configItem, self.itemData(index))
+
+    def setValue(self, value):
+        if value not in self.optionToText:
+            return
+
+        self.setCurrentText(self.optionToText[value])
+        self.qconfig.set(self.configItem, value)
+
+
+class NoOptionComboBoxSetting(ComboBox):
+
+    def __init__(
+        self,
+        value: List[str],
+        texts: List[str],
+        qconfig: QConfig,
+        configItem: OptionsConfigItem,
+        parent=None,
+    ):
+
+        super().__init__(parent)
+        self.qconfig = qconfig
+        self.configItem = configItem
+
+        self.optionToText = {o: t for o, t in zip(value, texts)}
+        for text, option in zip(texts, value):
+            self.addItem(text, userData=option)
+
+        self.setCurrentText(self.optionToText[self.qconfig.get(configItem)])
+        self.currentIndexChanged.connect(self._onCurrentIndexChanged)
+        configItem.valueChanged.connect(self.setValue)
+
+    def _onCurrentIndexChanged(self, index: int):
+
+        self.qconfig.set(self.configItem, self.itemData(index))
+
+    def setValue(self, value):
+        if value not in self.optionToText:
+            return
+
+        self.setCurrentText(self.optionToText[value])
+        self.qconfig.set(self.configItem, value)
+
+    def reLoadOptions(self, value: List[str], texts: List[str]):
+
+        self.currentIndexChanged.disconnect(self._onCurrentIndexChanged)
+        self.clear()
+        self.optionToText = {o: t for o, t in zip(value, texts)}
+        for text, option in zip(texts, value):
+            self.addItem(text, userData=option)
+        self.setCurrentText(self.optionToText[self.qconfig.get(self.configItem)])
+        self.currentIndexChanged.connect(self._onCurrentIndexChanged)
+
+
+class EditableComboBoxSetting(EditableComboBox):
+
+    def __init__(
+        self,
+        value: List[str],
+        texts: List[str],
+        qconfig: QConfig,
+        configItem: OptionsConfigItem,
+        parent=None,
+    ):
+
+        super().__init__(parent)
+        self.qconfig = qconfig
+        self.configItem = configItem
+
+        self.optionToText = {o: t for o, t in zip(value, texts)}
+        for text, option in zip(texts, value):
+            self.addItem(text, userData=option)
+
+        if qconfig.get(configItem) not in self.optionToText:
+            self.optionToText[qconfig.get(configItem)] = qconfig.get(configItem)
+            self.addItem(qconfig.get(configItem), userData=qconfig.get(configItem))
+
+        self.setCurrentText(self.optionToText[qconfig.get(configItem)])
+        self.currentIndexChanged.connect(self._onCurrentIndexChanged)
+        configItem.valueChanged.connect(self.setValue)
+
+    def _onCurrentIndexChanged(self, index: int):
+
+        self.qconfig.set(
+            self.configItem,
+            (self.itemData(index) if self.itemData(index) else self.itemText(index)),
+        )
+
+    def setValue(self, value):
+        if value not in self.optionToText:
+            self.optionToText[value] = value
+            if self.findText(value) == -1:
+                self.addItem(value, userData=value)
+            else:
+                self.setItemData(self.findText(value), value)
+
+        self.setCurrentText(self.optionToText[value])
+        self.qconfig.set(self.configItem, value)
+
+    def reLoadOptions(self, value: List[str], texts: List[str]):
+
+        self.currentIndexChanged.disconnect(self._onCurrentIndexChanged)
+        self.clear()
+        self.optionToText = {o: t for o, t in zip(value, texts)}
+        for text, option in zip(texts, value):
+            self.addItem(text, userData=option)
+        if self.qconfig.get(self.configItem) not in self.optionToText:
+            self.optionToText[self.qconfig.get(self.configItem)] = self.qconfig.get(
+                self.configItem
+            )
+            self.addItem(
+                self.qconfig.get(self.configItem),
+                userData=self.qconfig.get(self.configItem),
+            )
+        self.setCurrentText(self.optionToText[self.qconfig.get(self.configItem)])
+        self.currentIndexChanged.connect(self._onCurrentIndexChanged)
+
+    def _onReturnPressed(self):
+        if not self.text():
+            return
+
+        index = self.findText(self.text())
+        if index >= 0 and index != self.currentIndex():
+            self._currentIndex = index
+            self.currentIndexChanged.emit(index)
+        elif index == -1:
+            self.addItem(self.text())
+            self.setCurrentIndex(self.count() - 1)
+            self.currentIndexChanged.emit(self.count() - 1)
+
+
+class SpinBoxSetting(SpinBox):
+
+    def __init__(
+        self,
+        range: tuple[int, int],
+        qconfig: QConfig,
+        configItem: ConfigItem,
+        parent=None,
+    ):
+
+        super().__init__(parent)
+        self.qconfig = qconfig
+        self.configItem = configItem
+        self.setRange(range[0], range[1])
+
+        if configItem:
+            self.set_value(qconfig.get(configItem))
+            configItem.valueChanged.connect(self.set_value)
+
+        self.valueChanged.connect(self.set_value)
+
+    def set_value(self, value: int):
+        if self.configItem:
+            self.qconfig.set(self.configItem, value)
+
+        self.setValue(value)
 
 
 class HistoryCard(HeaderCardWidget):
@@ -1203,9 +1611,7 @@ class UrlListSettingCard(ExpandSettingCard):
         """show confirm dialog"""
 
         choice = MessageBox(
-            "确认",
-            f"确定要删除 {item.url} 代理网址吗？",
-            self.window(),
+            "确认", f"确定要删除 {item.url} 代理网址吗？", self.window()
         )
         if choice.exec():
             self.__removeUrl(item)

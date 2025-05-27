@@ -33,6 +33,7 @@ import sys
 import shutil
 import re
 import base64
+import calendar
 from datetime import datetime, timedelta, date
 from collections import defaultdict
 from pathlib import Path
@@ -387,9 +388,7 @@ class MaaUserConfig(LQConfig):
         self.Info_Mode = OptionsConfigItem(
             "Info", "Mode", "简洁", OptionsValidator(["简洁", "详细"])
         )
-        self.Info_GameIdMode = OptionsConfigItem(
-            "Info", "GameIdMode", "固定", OptionsValidator(["固定"])
-        )
+        self.Info_GameIdMode = ConfigItem("Info", "GameIdMode", "固定")
         self.Info_Server = OptionsConfigItem(
             "Info", "Server", "Official", OptionsValidator(["Official", "Bilibili"])
         )
@@ -435,7 +434,21 @@ class MaaUserConfig(LQConfig):
             "Data", "CustomInfrastPlanIndex", "0"
         )
 
-        # 新增用户单独通知字段
+        self.Task_IfWakeUp = ConfigItem("Task", "IfWakeUp", True, BoolValidator())
+        self.Task_IfRecruiting = ConfigItem(
+            "Task", "IfRecruiting", True, BoolValidator()
+        )
+        self.Task_IfBase = ConfigItem("Task", "IfBase", True, BoolValidator())
+        self.Task_IfCombat = ConfigItem("Task", "IfCombat", True, BoolValidator())
+        self.Task_IfMall = ConfigItem("Task", "IfMall", True, BoolValidator())
+        self.Task_IfMission = ConfigItem("Task", "IfMission", True, BoolValidator())
+        self.Task_IfAutoRoguelike = ConfigItem(
+            "Task", "IfAutoRoguelike", False, BoolValidator()
+        )
+        self.Task_IfReclamation = ConfigItem(
+            "Task", "IfReclamation", False, BoolValidator()
+        )
+
         self.Notify_Enabled = ConfigItem("Notify", "Enabled", False, BoolValidator())
         self.Notify_IfSendStatistic = ConfigItem(
             "Notify", "IfSendStatistic", False, BoolValidator()
@@ -460,6 +473,29 @@ class MaaUserConfig(LQConfig):
             "Notify", "CompanyWebHookBotUrl", ""
         )
 
+    def get_plan_info(self) -> Dict[str, Union[str, int]]:
+        """获取当前的计划下信息"""
+
+        if self.get(self.Info_GameIdMode) == "固定":
+            return {
+                "MedicineNumb": self.get(self.Info_MedicineNumb),
+                "SeriesNumb": self.get(self.Info_SeriesNumb),
+                "GameId": self.get(self.Info_GameId),
+                "GameId_1": self.get(self.Info_GameId_1),
+                "GameId_2": self.get(self.Info_GameId_2),
+                "GameId_Remain": self.get(self.Info_GameId_Remain),
+            }
+        elif "计划" in self.get(self.Info_GameIdMode):
+            plan = Config.plan_dict[self.get(self.Info_GameIdMode)]["Config"]
+            return {
+                "MedicineNumb": plan.get(plan.get_current_info("MedicineNumb")),
+                "SeriesNumb": plan.get(plan.get_current_info("SeriesNumb")),
+                "GameId": plan.get(plan.get_current_info("GameId")),
+                "GameId_1": plan.get(plan.get_current_info("GameId_1")),
+                "GameId_2": plan.get(plan.get_current_info("GameId_2")),
+                "GameId_Remain": plan.get(plan.get_current_info("GameId_Remain")),
+            }
+
 
 class MaaPlanConfig(LQConfig):
     """MAA计划表配置"""
@@ -467,119 +503,66 @@ class MaaPlanConfig(LQConfig):
     def __init__(self) -> None:
         super().__init__()
 
-        self.Info_Name = ConfigItem("Info", "Name", "新表格")
+        self.Info_Name = ConfigItem("Info", "Name", "")
+        self.Info_Mode = OptionsConfigItem(
+            "Info", "Mode", "ALL", OptionsValidator(["ALL", "Weekly"])
+        )
 
-        self.Global_MedicineNumb = ConfigItem(
-            "Global", "MedicineNumb", 0, RangeValidator(0, 1024)
-        )
-        self.Global_SeriesNumb = OptionsConfigItem(
-            "Global",
-            "SeriesNumb",
-            "0",
-            OptionsValidator(["0", "6", "5", "4", "3", "2", "1", "-1"]),
-        )
-        self.Global_GameId = ConfigItem("Global", "GameId", "-")
-        self.Global_GameId_1 = ConfigItem("Global", "GameId_1", "-")
-        self.Global_GameId_2 = ConfigItem("Global", "GameId_2", "-")
-        self.Global_GameId_Remain = ConfigItem("Global", "GameId_Remain", "-")
+        self.config_item_dict: dict[str, Dict[str, ConfigItem]] = {}
 
-        self.Monday_MedicineNumb = ConfigItem(
-            "Monday", "MedicineNumb", 0, RangeValidator(0, 1024)
-        )
-        self.Monday_SeriesNumb = OptionsConfigItem(
+        for group in [
+            "ALL",
             "Monday",
-            "SeriesNumb",
-            "0",
-            OptionsValidator(["0", "6", "5", "4", "3", "2", "1", "-1"]),
-        )
-        self.Monday_GameId = ConfigItem("Monday", "GameId", "-")
-        self.Monday_GameId_1 = ConfigItem("Monday", "GameId_1", "-")
-        self.Monday_GameId_2 = ConfigItem("Monday", "GameId_2", "-")
-        self.Monday_GameId_Remain = ConfigItem("Monday", "GameId_Remain", "-")
-
-        self.Tuesday_MedicineNumb = ConfigItem(
-            "Tuesday", "MedicineNumb", 0, RangeValidator(0, 1024)
-        )
-        self.Tuesday_SeriesNumb = OptionsConfigItem(
             "Tuesday",
-            "SeriesNumb",
-            "0",
-            OptionsValidator(["0", "6", "5", "4", "3", "2", "1", "-1"]),
-        )
-        self.Tuesday_GameId = ConfigItem("Tuesday", "GameId", "-")
-        self.Tuesday_GameId_1 = ConfigItem("Tuesday", "GameId_1", "-")
-        self.Tuesday_GameId_2 = ConfigItem("Tuesday", "GameId_2", "-")
-        self.Tuesday_GameId_Remain = ConfigItem("Tuesday", "GameId_Remain", "-")
-
-        self.Wednesday_MedicineNumb = ConfigItem(
-            "Wednesday", "MedicineNumb", 0, RangeValidator(0, 1024)
-        )
-        self.Wednesday_SeriesNumb = OptionsConfigItem(
             "Wednesday",
-            "SeriesNumb",
-            "0",
-            OptionsValidator(["0", "6", "5", "4", "3", "2", "1", "-1"]),
-        )
-        self.Wednesday_GameId = ConfigItem("Wednesday", "GameId", "-")
-        self.Wednesday_GameId_1 = ConfigItem("Wednesday", "GameId_1", "-")
-        self.Wednesday_GameId_2 = ConfigItem("Wednesday", "GameId_2", "-")
-        self.Wednesday_GameId_Remain = ConfigItem("Wednesday", "GameId_Remain", "-")
-
-        self.Thursday_MedicineNumb = ConfigItem(
-            "Thursday", "MedicineNumb", 0, RangeValidator(0, 1024)
-        )
-        self.Thursday_SeriesNumb = OptionsConfigItem(
             "Thursday",
-            "SeriesNumb",
-            "0",
-            OptionsValidator(["0", "6", "5", "4", "3", "2", "1", "-1"]),
-        )
-        self.Thursday_GameId = ConfigItem("Thursday", "GameId", "-")
-        self.Thursday_GameId_1 = ConfigItem("Thursday", "GameId_1", "-")
-        self.Thursday_GameId_2 = ConfigItem("Thursday", "GameId_2", "-")
-        self.Thursday_GameId_Remain = ConfigItem("Thursday", "GameId_Remain", "-")
-
-        self.Friday_MedicineNumb = ConfigItem(
-            "Friday", "MedicineNumb", 0, RangeValidator(0, 1024)
-        )
-        self.Friday_SeriesNumb = OptionsConfigItem(
             "Friday",
-            "SeriesNumb",
-            "0",
-            OptionsValidator(["0", "6", "5", "4", "3", "2", "1", "-1"]),
-        )
-        self.Friday_GameId = ConfigItem("Friday", "GameId", "-")
-        self.Friday_GameId_1 = ConfigItem("Friday", "GameId_1", "-")
-        self.Friday_GameId_2 = ConfigItem("Friday", "GameId_2", "-")
-        self.Friday_GameId_Remain = ConfigItem("Friday", "GameId_Remain", "-")
-
-        self.Saturday_MedicineNumb = ConfigItem(
-            "Saturday", "MedicineNumb", 0, RangeValidator(0, 1024)
-        )
-        self.Saturday_SeriesNumb = OptionsConfigItem(
             "Saturday",
-            "SeriesNumb",
-            "0",
-            OptionsValidator(["0", "6", "5", "4", "3", "2", "1", "-1"]),
-        )
-        self.Saturday_GameId = ConfigItem("Saturday", "GameId", "-")
-        self.Saturday_GameId_1 = ConfigItem("Saturday", "GameId_1", "-")
-        self.Saturday_GameId_2 = ConfigItem("Saturday", "GameId_2", "-")
-        self.Saturday_GameId_Remain = ConfigItem("Saturday", "GameId_Remain", "-")
-
-        self.Sunday_MedicineNumb = ConfigItem(
-            "Sunday", "MedicineNumb", 0, RangeValidator(0, 1024)
-        )
-        self.Sunday_SeriesNumb = OptionsConfigItem(
             "Sunday",
-            "SeriesNumb",
-            "0",
-            OptionsValidator(["0", "6", "5", "4", "3", "2", "1", "-1"]),
-        )
-        self.Sunday_GameId = ConfigItem("Sunday", "GameId", "-")
-        self.Sunday_GameId_1 = ConfigItem("Sunday", "GameId_1", "-")
-        self.Sunday_GameId_2 = ConfigItem("Sunday", "GameId_2", "-")
-        self.Sunday_GameId_Remain = ConfigItem("Sunday", "GameId_Remain", "-")
+        ]:
+            self.config_item_dict[group] = {}
+
+            self.config_item_dict[group]["MedicineNumb"] = ConfigItem(
+                group, "MedicineNumb", 0, RangeValidator(0, 1024)
+            )
+            self.config_item_dict[group]["SeriesNumb"] = OptionsConfigItem(
+                group,
+                "SeriesNumb",
+                "0",
+                OptionsValidator(["0", "6", "5", "4", "3", "2", "1", "-1"]),
+            )
+            self.config_item_dict[group]["GameId"] = ConfigItem(group, "GameId", "-")
+            self.config_item_dict[group]["GameId_1"] = ConfigItem(
+                group, "GameId_1", "-"
+            )
+            self.config_item_dict[group]["GameId_2"] = ConfigItem(
+                group, "GameId_2", "-"
+            )
+            self.config_item_dict[group]["GameId_Remain"] = ConfigItem(
+                group, "GameId_Remain", "-"
+            )
+
+            for name in [
+                "MedicineNumb",
+                "SeriesNumb",
+                "GameId",
+                "GameId_1",
+                "GameId_2",
+                "GameId_Remain",
+            ]:
+                setattr(self, f"{group}_{name}", self.config_item_dict[group][name])
+
+    def get_current_info(self, name: str) -> ConfigItem:
+        """获取当前的计划表配置项"""
+
+        if self.get(self.Info_Mode) == "ALL":
+            return self.config_item_dict["ALL"][name]
+        elif self.get(self.Info_Mode) == "Weekly":
+            today = datetime.now().strftime("%A")
+            if today in self.config_item_dict:
+                return self.config_item_dict[today][name]
+            else:
+                return self.config_item_dict["ALL"][name]
 
 
 class AppConfig(GlobalConfig):
@@ -610,7 +593,13 @@ class AppConfig(GlobalConfig):
         self.silence_list = []
         self.gameid_dict = {
             "ALL": {"value": [], "text": []},
-            "Today": {"value": [], "text": []},
+            "Monday": {"value": [], "text": []},
+            "Tuesday": {"value": [], "text": []},
+            "Wednesday": {"value": [], "text": []},
+            "Thursday": {"value": [], "text": []},
+            "Friday": {"value": [], "text": []},
+            "Saturday": {"value": [], "text": []},
+            "Sunday": {"value": [], "text": []},
         }
         self.power_sign = "NoAction"
         self.if_ignore_silence = False
@@ -676,7 +665,7 @@ class AppConfig(GlobalConfig):
             logger.warning(f"无法从MAA服务器获取活动关卡信息:{Network.error_message}")
             gameid_infos = []
 
-        gameid_dict = {"value": [], "text": []}
+        ss_gameid_dict = {"value": [], "text": []}
 
         for gameid_info in gameid_infos:
 
@@ -689,53 +678,11 @@ class AppConfig(GlobalConfig):
                     gameid_info["Activity"]["UtcExpireTime"], "%Y/%m/%d %H:%M:%S"
                 )
             ):
-                gameid_dict["value"].append(gameid_info["Value"])
-                gameid_dict["text"].append(gameid_info["Value"])
+                ss_gameid_dict["value"].append(gameid_info["Value"])
+                ss_gameid_dict["text"].append(gameid_info["Value"])
 
-        # 生成全部关卡信息
-        self.gameid_dict["ALL"]["value"] = gameid_dict["value"] + [
-            "-",
-            "1-7",
-            "R8-11",
-            "12-17-HARD",
-            "CE-6",
-            "AP-5",
-            "CA-5",
-            "LS-6",
-            "SK-5",
-            "PR-A-1",
-            "PR-A-2",
-            "PR-B-1",
-            "PR-B-2",
-            "PR-C-1",
-            "PR-C-2",
-            "PR-D-1",
-            "PR-D-2",
-        ]
-        self.gameid_dict["ALL"]["text"] = gameid_dict["text"] + [
-            "当前/上次",
-            "1-7",
-            "R8-11",
-            "12-17-HARD",
-            "龙门币-6/5",
-            "红票-5",
-            "技能-5",
-            "经验-6/5",
-            "碳-5",
-            "奶/盾芯片",
-            "奶/盾芯片组",
-            "术/狙芯片",
-            "术/狙芯片组",
-            "先/辅芯片",
-            "先/辅芯片组",
-            "近/特芯片",
-            "近/特芯片组",
-        ]
-
-        # 生成本日关卡信息
-        days = self.server_date().isoweekday()
-
-        gameid_list = [
+        # 生成每日关卡信息
+        gameid_daily_info = [
             {"value": "-", "text": "当前/上次", "days": [1, 2, 3, 4, 5, 6, 7]},
             {"value": "1-7", "text": "1-7", "days": [1, 2, 3, 4, 5, 6, 7]},
             {"value": "R8-11", "text": "R8-11", "days": [1, 2, 3, 4, 5, 6, 7]},
@@ -759,12 +706,20 @@ class AppConfig(GlobalConfig):
             {"value": "PR-D-2", "text": "近/特芯片组", "days": [2, 3, 6, 7]},
         ]
 
-        for gameid_info in gameid_list:
-            if days in gameid_info["days"]:
-                gameid_dict["value"].append(gameid_info["value"])
-                gameid_dict["text"].append(gameid_info["text"])
+        for day in range(0, 8):
 
-        self.gameid_dict["Today"] = gameid_dict
+            today_gameid_dict = {"value": [], "text": []}
+
+            for gameid_info in gameid_daily_info:
+
+                if day in gameid_info["days"] or day == 0:
+                    today_gameid_dict["value"].append(gameid_info["value"])
+                    today_gameid_dict["text"].append(gameid_info["text"])
+
+            self.gameid_dict[calendar.day_name[day - 1] if day > 0 else "ALL"] = {
+                "value": today_gameid_dict["value"] + ss_gameid_dict["value"],
+                "text": today_gameid_dict["text"] + ss_gameid_dict["text"],
+            }
 
         self.gameid_refreshed.emit()
 
@@ -1207,7 +1162,7 @@ class AppConfig(GlobalConfig):
                     maa_plan_config.load(maa_plan_dir / "config.json", maa_plan_config)
                     maa_plan_config.save()
 
-                    self.member_dict[maa_plan_dir.name] = {
+                    self.plan_dict[maa_plan_dir.name] = {
                         "Type": "Maa",
                         "Path": maa_plan_dir,
                         "Config": maa_plan_config,
@@ -1263,6 +1218,16 @@ class AppConfig(GlobalConfig):
                 queue["Config"].set(queue["Config"].queue_Member_9, new)
             if queue["Config"].get(queue["Config"].queue_Member_10) == old:
                 queue["Config"].set(queue["Config"].queue_Member_10, new)
+
+    def change_plan(self, old: str, new: str) -> None:
+        """修改脚本管理所有下属用户的计划表配置参数"""
+
+        for member in self.member_dict.values():
+
+            for user in member["UserData"].values():
+
+                if user["Config"].get(user["Config"].Info_GameIdMode) == old:
+                    user["Config"].set(user["Config"].Info_GameIdMode, new)
 
     def change_user_info(
         self, name: str, user_data: Dict[str, Dict[str, Union[str, Path, dict]]]

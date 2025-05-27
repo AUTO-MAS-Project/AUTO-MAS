@@ -29,6 +29,7 @@ from loguru import logger
 from PySide6.QtWidgets import QWidget
 from PySide6.QtCore import QTimer
 from datetime import datetime
+from pathlib import Path
 import pyautogui
 
 from .config import Config
@@ -97,6 +98,16 @@ class _MainTimer(QWidget):
         ):
 
             windows = System.get_window_info()
+
+            # 排除雷电名为新通知的窗口
+            windows = [
+                window
+                for window in windows
+                if not (
+                    window[0] == "新通知" and Path(window[1]) in Config.silence_list
+                )
+            ]
+
             if any(
                 str(emulator_path) in window
                 for window in windows
