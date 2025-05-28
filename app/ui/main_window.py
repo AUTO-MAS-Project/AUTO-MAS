@@ -302,6 +302,15 @@ class AUTO_MAA(MSFluentWindow):
             self.window().raise_()
             self.window().activateWindow()
 
+            while Config.info_bar_list:
+                info_bar_item = Config.info_bar_list.pop(0)
+                MainInfoBar.push_info_bar(
+                    info_bar_item["mode"],
+                    info_bar_item["title"],
+                    info_bar_item["content"],
+                    info_bar_item["time"],
+                )
+
         elif mode == "配置托盘":
 
             if Config.get(Config.ui_IfShowTray):

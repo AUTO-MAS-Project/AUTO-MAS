@@ -567,7 +567,7 @@ class MaaPlanConfig(LQConfig):
 
 class AppConfig(GlobalConfig):
 
-    VERSION = "4.3.8.4"
+    VERSION = "4.3.8.0"
 
     gameid_refreshed = Signal()
     PASSWORD_refreshed = Signal()
@@ -591,6 +591,7 @@ class AppConfig(GlobalConfig):
         self.PASSWORD = ""
         self.running_list = []
         self.silence_list = []
+        self.info_bar_list = []
         self.gameid_dict = {
             "ALL": {"value": [], "text": []},
             "Monday": {"value": [], "text": []},

@@ -462,6 +462,7 @@ class Setting(QWidget):
                     "发现新版本",
                     f"{version_text(current_version)} --> {version_text(remote_version)}",
                     3600000,
+                    if_force=True,
                 )
             else:
                 MainInfoBar.push_info_bar("success", "更新检查", "已是最新版本~", 3000)
@@ -545,7 +546,7 @@ class Setting(QWidget):
         ):
 
             MainInfoBar.push_info_bar(
-                "info", "有新公告", "请前往设置界面查看公告", 3600000
+                "info", "有新公告", "请前往设置界面查看公告", 3600000, if_force=True
             )
             return None
 

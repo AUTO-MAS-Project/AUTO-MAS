@@ -35,23 +35,30 @@ from .config import Config
 class _MainInfoBar:
     """信息通知栏"""
 
-    def push_info_bar(self, mode: str, title: str, content: str, time: int):
+    # 模式到 InfoBar 方法的映射
+    mode_mapping = {
+        "success": InfoBar.success,
+        "warning": InfoBar.warning,
+        "error": InfoBar.error,
+        "info": InfoBar.info,
+    }
+
+    def push_info_bar(
+        self, mode: str, title: str, content: str, time: int, if_force: bool = False
+    ):
         """推送到信息通知栏"""
         if Config.main_window is None:
             logger.error("信息通知栏未设置父窗口")
             return None
 
-        # 定义模式到 InfoBar 方法的映射
-        mode_mapping = {
-            "success": InfoBar.success,
-            "warning": InfoBar.warning,
-            "error": InfoBar.error,
-            "info": InfoBar.info,
-        }
-
         # 根据 mode 获取对应的 InfoBar 方法
-        info_bar_method = mode_mapping.get(mode)
-        if info_bar_method:
+        info_bar_method = self.mode_mapping.get(mode)
+
+        if not info_bar_method:
+            logger.error(f"未知的通知栏模式: {mode}")
+            return None
+
+        if Config.main_window.isVisible():
             info_bar_method(
                 title=title,
                 content=content,
@@ -61,8 +68,16 @@ class _MainInfoBar:
                 duration=time,
                 parent=Config.main_window,
             )
-        else:
-            logger.error(f"未知的通知栏模式: {mode}")
+        elif if_force:
+            # 如果主窗口不可见且强制推送，则录入消息队列等待窗口显示后推送
+            info_bar_item = {
+                "mode": mode,
+                "title": title,
+                "content": content,
+                "time": time,
+            }
+            if info_bar_item not in Config.info_bar_list:
+                Config.info_bar_list.append(info_bar_item)
 
 
 MainInfoBar = _MainInfoBar()
