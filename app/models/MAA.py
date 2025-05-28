@@ -102,6 +102,9 @@ class MaaManager(QObject):
                     "Path": info["Path"],
                     "Config": info["Config"].toDict(),
                 }
+                planed_info = info["Config"].get_plan_info()
+                for key, value in planed_info.items():
+                    self.data[name]["Config"]["Info"][key] = value
 
             self.data = dict(sorted(self.data.items(), key=lambda x: int(x[0][3:])))
 
@@ -114,10 +117,15 @@ class MaaManager(QObject):
         self.maa_log_path = self.maa_root_path / "debug/gui.log"
         self.maa_exe_path = self.maa_root_path / "MAA.exe"
         self.maa_tasks_path = self.maa_root_path / "resource/tasks/tasks.json"
+        self.port_range = [0] + [
+            (i // 2 + 1) * (-1 if i % 2 else 1)
+            for i in range(0, 2 * self.set["RunSet"]["ADBSearchRange"])
+        ]
 
     def run(self):
         """主进程，运行MAA代理进程"""
 
+        current_date = datetime.now().strftime("%m-%d")
         curdate = Config.server_date().strftime("%Y-%m-%d")
         begin_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -266,9 +274,23 @@ class MaaManager(QObject):
                     )
 
                     # 解析任务构成
-                    if user_data["Info"]["Mode"] == "简洁":
+                    if mode == "Routine":
 
-                        if mode == "Annihilation":
+                        self.task_dict = {
+                            "WakeUp": str(user_data["Task"]["IfWakeUp"]),
+                            "Recruiting": str(user_data["Task"]["IfRecruiting"]),
+                            "Base": str(user_data["Task"]["IfBase"]),
+                            "Combat": str(user_data["Task"]["IfCombat"]),
+                            "Mission": str(user_data["Task"]["IfMission"]),
+                            "Mall": str(user_data["Task"]["IfMall"]),
+                            "AutoRoguelike": str(user_data["Task"]["IfAutoRoguelike"]),
+                            "Reclamation": str(user_data["Task"]["IfReclamation"]),
+                        }
+
+                    elif mode == "Annihilation":
+
+                        if user_data["Info"]["Mode"] == "简洁":
+
                             self.task_dict = {
                                 "WakeUp": "True",
                                 "Recruiting": "False",
@@ -280,51 +302,39 @@ class MaaManager(QObject):
                                 "Reclamation": "False",
                             }
 
-                        elif mode == "Routine":
+                        elif user_data["Info"]["Mode"] == "详细":
+
+                            with (self.data[user[2]]["Path"] / f"{mode}/gui.json").open(
+                                mode="r", encoding="utf-8"
+                            ) as f:
+                                data = json.load(f)
+
                             self.task_dict = {
-                                "WakeUp": "True",
-                                "Recruiting": "True",
-                                "Base": "True",
-                                "Combat": "True",
-                                "Mission": "True",
-                                "Mall": "True",
-                                "AutoRoguelike": "False",
-                                "Reclamation": "False",
+                                "WakeUp": data["Configurations"]["Default"][
+                                    "TaskQueue.WakeUp.IsChecked"
+                                ],
+                                "Recruiting": data["Configurations"]["Default"][
+                                    "TaskQueue.Recruiting.IsChecked"
+                                ],
+                                "Base": data["Configurations"]["Default"][
+                                    "TaskQueue.Base.IsChecked"
+                                ],
+                                "Combat": data["Configurations"]["Default"][
+                                    "TaskQueue.Combat.IsChecked"
+                                ],
+                                "Mission": data["Configurations"]["Default"][
+                                    "TaskQueue.Mission.IsChecked"
+                                ],
+                                "Mall": data["Configurations"]["Default"][
+                                    "TaskQueue.Mall.IsChecked"
+                                ],
+                                "AutoRoguelike": data["Configurations"]["Default"][
+                                    "TaskQueue.AutoRoguelike.IsChecked"
+                                ],
+                                "Reclamation": data["Configurations"]["Default"][
+                                    "TaskQueue.Reclamation.IsChecked"
+                                ],
                             }
-
-                    elif user_data["Info"]["Mode"] == "详细":
-
-                        with (self.data[user[2]]["Path"] / f"{mode}/gui.json").open(
-                            mode="r", encoding="utf-8"
-                        ) as f:
-                            data = json.load(f)
-
-                        self.task_dict = {
-                            "WakeUp": data["Configurations"]["Default"][
-                                "TaskQueue.WakeUp.IsChecked"
-                            ],
-                            "Recruiting": data["Configurations"]["Default"][
-                                "TaskQueue.Recruiting.IsChecked"
-                            ],
-                            "Base": data["Configurations"]["Default"][
-                                "TaskQueue.Base.IsChecked"
-                            ],
-                            "Combat": data["Configurations"]["Default"][
-                                "TaskQueue.Combat.IsChecked"
-                            ],
-                            "Mission": data["Configurations"]["Default"][
-                                "TaskQueue.Mission.IsChecked"
-                            ],
-                            "Mall": data["Configurations"]["Default"][
-                                "TaskQueue.Mall.IsChecked"
-                            ],
-                            "AutoRoguelike": data["Configurations"]["Default"][
-                                "TaskQueue.AutoRoguelike.IsChecked"
-                            ],
-                            "Reclamation": data["Configurations"]["Default"][
-                                "TaskQueue.Reclamation.IsChecked"
-                            ],
-                        }
 
                     # 尝试次数循环
                     for i in range(self.set["RunSet"]["RunTimesLimit"]):
@@ -386,6 +396,12 @@ class MaaManager(QObject):
                             self.if_open_emulator = True
                             break
 
+                        self.wait_time = int(
+                            set["Configurations"]["Default"][
+                                "Start.EmulatorWaitSeconds"
+                            ]
+                        )
+
                         self.ADB_path = Path(
                             set["Configurations"]["Default"]["Connect.AdbPath"]
                         )
@@ -414,6 +430,7 @@ class MaaManager(QObject):
                                 [self.ADB_path, "disconnect", self.ADB_address],
                                 creationflags=subprocess.CREATE_NO_WINDOW,
                             )
+                            logger.info(f"{self.name} | 释放ADB：{self.ADB_address}")
                         except subprocess.CalledProcessError as e:
                             # 忽略错误,因为可能本来就没有连接
                             logger.warning(f"{self.name} | 释放ADB时出现异常：{e}")
@@ -432,6 +449,9 @@ class MaaManager(QObject):
                                     [self.emulator_path, *self.emulator_arguments],
                                     creationflags=subprocess.CREATE_NO_WINDOW,
                                 )
+                                logger.info(
+                                    f"{self.name} | 启动模拟器：{self.emulator_path}，参数：{self.emulator_arguments}"
+                                )
                             except Exception as e:
                                 logger.error(f"{self.name} | 启动模拟器时出现异常：{e}")
                                 self.push_info_bar.emit(
@@ -445,6 +465,8 @@ class MaaManager(QObject):
 
                         # 添加静默进程标记
                         Config.silence_list.append(self.emulator_path)
+
+                        self.search_ADB_address()
 
                         # 创建MAA任务
                         maa = subprocess.Popen(
@@ -517,6 +539,12 @@ class MaaManager(QObject):
                             ) as f:
                                 data = json.load(f)
 
+                            # 记录自定义基建索引
+                            if self.task_dict["Base"] == "False":
+                                user_data["Data"]["CustomInfrastPlanIndex"] = data[
+                                    "Configurations"
+                                ]["Default"]["Infrast.CustomInfrastPlanIndex"]
+
                             # 记录更新包路径
                             if (
                                 data["Global"]["VersionUpdate.package"]
@@ -541,15 +569,13 @@ class MaaManager(QObject):
                                     break
                                 time.sleep(1)
 
-                        # 移除静默进程标记
-                        Config.silence_list.remove(self.emulator_path)
-
                         # 任务结束后释放ADB
                         try:
                             subprocess.run(
                                 [self.ADB_path, "disconnect", self.ADB_address],
                                 creationflags=subprocess.CREATE_NO_WINDOW,
                             )
+                            logger.info(f"{self.name} | 释放ADB：{self.ADB_address}")
                         except subprocess.CalledProcessError as e:
                             # 忽略错误,因为可能本来就没有连接
                             logger.warning(f"{self.name} | 释放ADB时出现异常：{e}")
@@ -566,6 +592,33 @@ class MaaManager(QObject):
                             self.emulator_process.terminate()
                             self.emulator_process.wait()
                             self.if_open_emulator = True
+
+                        # 记录剿灭情况
+                        if (
+                            mode == "Annihilation"
+                            and self.weekly_annihilation_limit_reached
+                        ):
+                            user_data["Data"]["LastAnnihilationDate"] = curdate
+                        # 保存运行日志以及统计信息
+                        if_six_star = Config.save_maa_log(
+                            Config.app_path
+                            / f"history/{curdate}/{user_data["Info"]["Name"]}/{start_time.strftime("%H-%M-%S")}.log",
+                            self.check_maa_log(start_time, mode_book[mode]),
+                            self.maa_result,
+                        )
+                        user_logs_list.append(
+                            Config.app_path
+                            / f"history/{curdate}/{user_data["Info"]["Name"]}/{start_time.strftime("%H-%M-%S")}.json",
+                        )
+                        if if_six_star:
+                            self.push_notification(
+                                "公招六星",
+                                f"喜报：用户 {user[0]} 公招出六星啦！",
+                                {
+                                    "user_name": user_data["Info"]["Name"],
+                                },
+                                user_data,
+                            )
 
                         # 执行MAA解压更新动作
                         if self.maa_update_package:
@@ -590,50 +643,23 @@ class MaaManager(QObject):
 
                             logger.info(f"{self.name} | 更新动作结束")
 
-                        # 记录剿灭情况
-                        if (
-                            mode == "Annihilation"
-                            and self.weekly_annihilation_limit_reached
-                        ):
-                            user_data["Data"]["LastAnnihilationDate"] = curdate
-                        # 保存运行日志以及统计信息
-                        if_six_star = Config.save_maa_log(
-                            Config.app_path
-                            / f"history/{curdate}/{user_data["Info"]["Name"]}/{start_time.strftime("%H-%M-%S")}.log",
-                            self.check_maa_log(start_time, mode_book[mode]),
-                            self.maa_result,
-                        )
-                        user_logs_list.append(
-                            Config.app_path
-                            / f"history/{curdate}/{user_data["Info"]["Name"]}/{start_time.strftime("%H-%M-%S")}.json",
-                        )
-
-                        if Config.get(Config.notify_IfSendSixStar) and if_six_star:
-
-                            self.push_notification(
-                                "公招六星",
-                                f"喜报：用户 {user[0]} 公招出六星啦！",
-                                {"user_name": user_data["Info"]["Name"]},
-                            )
-
-                if Config.get(Config.notify_IfSendStatistic):
-
-                    statistics = Config.merge_maa_logs("指定项", user_logs_list)
-                    statistics["user_info"] = user[0]
-                    statistics["start_time"] = user_start_time.strftime(
-                        "%Y-%m-%d %H:%M:%S"
-                    )
-                    statistics["end_time"] = datetime.now().strftime(
-                        "%Y-%m-%d %H:%M:%S"
-                    )
-                    statistics["maa_result"] = (
-                        "代理任务全部完成"
-                        if (run_book["Annihilation"] and run_book["Routine"])
-                        else "代理任务未全部完成"
-                    )
-                    self.push_notification(
-                        "统计信息", f"用户 {user[0]} 的自动代理统计报告", statistics
-                    )
+                # 发送统计信息
+                statistics = Config.merge_maa_logs("指定项", user_logs_list)
+                statistics["user_index"] = user[2]
+                statistics["user_info"] = user[0]
+                statistics["start_time"] = user_start_time.strftime("%Y-%m-%d %H:%M:%S")
+                statistics["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                statistics["maa_result"] = (
+                    "代理任务全部完成"
+                    if (run_book["Annihilation"] and run_book["Routine"])
+                    else "代理任务未全部完成"
+                )
+                self.push_notification(
+                    "统计信息",
+                    f"{current_date} | 用户 {user[0]} 的自动代理统计报告",
+                    statistics,
+                    user_data,
+                )
 
                 if run_book["Annihilation"] and run_book["Routine"]:
                     # 成功完成代理的用户修改相关参数
@@ -804,9 +830,9 @@ class MaaManager(QObject):
 
             # 保存运行日志
             title = (
-                f"{self.set["MaaSet"]["Name"]}的{self.mode[:4]}任务报告"
+                f"{current_date} | {self.set["MaaSet"]["Name"]}的{self.mode[:4]}任务报告"
                 if self.set["MaaSet"]["Name"] != ""
-                else f"{self.mode[:4]}任务报告"
+                else f"{current_date} | {self.mode[:4]}任务报告"
             )
             result = {
                 "title": f"{self.mode[:4]}任务报告",
@@ -826,6 +852,17 @@ class MaaManager(QObject):
                     self.data[_]["Config"]["Info"]["Name"] for _ in wait_index
                 ],
             }
+
+            # 生成结果文本
+            result_text = (
+                f"任务开始时间：{result["start_time"]}，结束时间：{result["end_time"]}\n"
+                f"已完成数：{result["completed_count"]}，未完成数：{result["uncompleted_count"]}\n\n"
+            )
+            if len(result["failed_user"]) > 0:
+                result_text += f"{self.mode[2:4]}未成功的用户：\n{"\n".join(result["failed_user"])}\n"
+            if len(result["waiting_user"]) > 0:
+                result_text += f"\n未开始{self.mode[2:4]}的用户：\n{"\n".join(result["waiting_user"])}\n"
+
             # 推送代理结果通知
             Notify.push_plyer(
                 title.replace("报告", "已完成！"),
@@ -833,15 +870,7 @@ class MaaManager(QObject):
                 f"已完成用户数：{len(over_index)}，未完成用户数：{len(error_index) + len(wait_index)}",
                 10,
             )
-            if Config.get(Config.notify_SendTaskResultTime) == "任何时刻" or (
-                Config.get(Config.notify_SendTaskResultTime) == "仅失败时"
-                and len(error_index) + len(wait_index) != 0
-            ):
-                result_text = self.push_notification("代理结果", title, result)
-            else:
-                result_text = self.push_notification(
-                    "代理结果", title, result, if_get_text_only=True
-                )
+            self.push_notification("代理结果", title, result)
 
         self.agree_bilibili(False)
         self.log_monitor.deleteLater()
@@ -865,6 +894,86 @@ class MaaManager(QObject):
 
     def __capture_response(self, response: bool) -> None:
         self.response = response
+
+    def search_ADB_address(self) -> None:
+        """搜索ADB实际地址"""
+
+        self.update_log_text.emit(
+            f"即将搜索ADB实际地址\n正在等待模拟器完成启动\n请等待{self.wait_time}s"
+        )
+
+        for _ in range(self.wait_time):
+            if self.isInterruptionRequested:
+                break
+            time.sleep(1)
+
+        # 移除静默进程标记
+        Config.silence_list.remove(self.emulator_path)
+
+        if "-" in self.ADB_address:
+            ADB_ip = f"{self.ADB_address.split("-")[0]}-"
+            ADB_port = int(self.ADB_address.split("-")[1])
+
+        elif ":" in self.ADB_address:
+            ADB_ip = f"{self.ADB_address.split(':')[0]}:"
+            ADB_port = int(self.ADB_address.split(":")[1])
+
+        logger.info(
+            f"{self.name} | 正在搜索ADB实际地址，ADB前缀：{ADB_ip}，初始端口：{ADB_port}，搜索范围：{self.port_range}"
+        )
+
+        for port in self.port_range:
+
+            ADB_address = f"{ADB_ip}{ADB_port + port}"
+
+            # 尝试通过ADB连接到指定地址
+            connect_result = subprocess.run(
+                [self.ADB_path, "connect", ADB_address],
+                creationflags=subprocess.CREATE_NO_WINDOW,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+            )
+
+            if "connected" in connect_result.stdout:
+
+                # 检查连接状态
+                devices_result = subprocess.run(
+                    [self.ADB_path, "devices"],
+                    creationflags=subprocess.CREATE_NO_WINDOW,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                )
+                if ADB_address in devices_result.stdout:
+
+                    logger.info(f"{self.name} | ADB实际地址：{ADB_address}")
+
+                    # 断开连接
+                    subprocess.run(
+                        [self.ADB_path, "disconnect", ADB_address],
+                        creationflags=subprocess.CREATE_NO_WINDOW,
+                    )
+
+                    self.ADB_address = ADB_address
+
+                    # 覆写当前ADB地址
+                    System.kill_process(self.maa_exe_path)
+                    with self.maa_set_path.open(mode="r", encoding="utf-8") as f:
+                        data = json.load(f)
+                    data["Configurations"]["Default"][
+                        "Connect.Address"
+                    ] = self.ADB_address
+                    data["Configurations"]["Default"]["Start.EmulatorWaitSeconds"] = "0"
+                    with self.maa_set_path.open(mode="w", encoding="utf-8") as f:
+                        json.dump(data, f, ensure_ascii=False, indent=4)
+
+                    return None
+
+                else:
+                    logger.info(f"{self.name} | 无法连接到ADB地址：{ADB_address}")
+            else:
+                logger.info(f"{self.name} | 无法连接到ADB地址：{ADB_address}")
 
     def refresh_maa_log(self) -> None:
         """刷新MAA日志"""
@@ -1168,6 +1277,9 @@ class MaaManager(QObject):
                 ]["Id"]
 
             # 按预设设定任务
+            data["Configurations"]["Default"][
+                "TaskQueue.WakeUp.IsChecked"
+            ] = "True"  # 开始唤醒
             data["Configurations"]["Default"]["TaskQueue.Recruiting.IsChecked"] = (
                 self.task_dict["Recruiting"]
             )  # 自动公招
@@ -1191,10 +1303,6 @@ class MaaManager(QObject):
             )  # 生息演算
 
             if user_data["Info"]["Mode"] == "简洁":
-
-                data["Configurations"]["Default"][
-                    "TaskQueue.WakeUp.IsChecked"
-                ] = "True"  # 开始唤醒
 
                 data["Configurations"]["Default"]["Start.ClientType"] = user_data[
                     "Info"
@@ -1294,7 +1402,9 @@ class MaaManager(QObject):
                     ] = "True"  # 备选关卡
                     data["Configurations"]["Default"][
                         "Fight.UseRemainingSanityStage"
-                    ] = "True"  # 使用剩余理智
+                    ] = (
+                        "True" if user_data["Info"]["GameId_Remain"] != "-" else "False"
+                    )  # 使用剩余理智
                     data["Configurations"]["Default"][
                         "Fight.UseExpiringMedicine"
                     ] = "True"  # 无限吃48小时内过期的理智药
@@ -1392,7 +1502,9 @@ class MaaManager(QObject):
                     ] = "True"  # 备选关卡
                     data["Configurations"]["Default"][
                         "Fight.UseRemainingSanityStage"
-                    ] = "True"  # 使用剩余理智
+                    ] = (
+                        "True" if user_data["Info"]["GameId_Remain"] != "-" else "False"
+                    )  # 使用剩余理智
 
                     # 基建模式
                     if (
@@ -1418,12 +1530,20 @@ class MaaManager(QObject):
                 "Start.RunDirectly"
             ] = "True"  # 启动MAA后直接运行
             data["Global"]["Start.MinimizeDirectly"] = "True"  # 启动MAA后直接最小化
-
             data["Global"]["GUI.UseTray"] = "True"  # 显示托盘图标
             data["Global"]["GUI.MinimizeToTray"] = "True"  # 最小化时隐藏至托盘
             data["Configurations"]["Default"]["Start.OpenEmulatorAfterLaunch"] = str(
                 self.if_open_emulator
             )  # 启动MAA后自动开启模拟器
+            data["Global"][
+                "VersionUpdate.ScheduledUpdateCheck"
+            ] = "False"  # 定时检查更新
+            data["Global"][
+                "VersionUpdate.AutoDownloadUpdatePackage"
+            ] = "False"  # 自动下载更新包
+            data["Global"][
+                "VersionUpdate.AutoInstallUpdatePackage"
+            ] = "False"  # 自动安装更新包
 
             # 账号切换
             if user_data["Info"]["Server"] == "Official":
@@ -1439,15 +1559,6 @@ class MaaManager(QObject):
 
             if user_data["Info"]["Mode"] == "简洁":
 
-                data["Global"][
-                    "VersionUpdate.ScheduledUpdateCheck"
-                ] = "False"  # 定时检查更新
-                data["Global"][
-                    "VersionUpdate.AutoDownloadUpdatePackage"
-                ] = "False"  # 自动下载更新包
-                data["Global"][
-                    "VersionUpdate.AutoInstallUpdatePackage"
-                ] = "False"  # 自动安装更新包
                 data["Configurations"]["Default"]["Start.ClientType"] = user_data[
                     "Info"
                 ][
@@ -1494,6 +1605,15 @@ class MaaManager(QObject):
             data["Configurations"]["Default"][
                 "Start.OpenEmulatorAfterLaunch"
             ] = "False"  # 启动MAA后自动开启模拟器
+            data["Global"][
+                "VersionUpdate.ScheduledUpdateCheck"
+            ] = "False"  # 定时检查更新
+            data["Global"][
+                "VersionUpdate.AutoDownloadUpdatePackage"
+            ] = "False"  # 自动下载更新包
+            data["Global"][
+                "VersionUpdate.AutoInstallUpdatePackage"
+            ] = "False"  # 自动安装更新包
 
             if Config.get(Config.function_IfSilence):
                 data["Global"][
@@ -1502,15 +1622,6 @@ class MaaManager(QObject):
 
             if "全局" in mode:
 
-                data["Global"][
-                    "VersionUpdate.ScheduledUpdateCheck"
-                ] = "False"  # 定时检查更新
-                data["Global"][
-                    "VersionUpdate.AutoDownloadUpdatePackage"
-                ] = "False"  # 自动下载更新包
-                data["Global"][
-                    "VersionUpdate.AutoInstallUpdatePackage"
-                ] = "False"  # 自动安装更新包
                 data["Configurations"]["Default"][
                     "TaskQueue.WakeUp.IsChecked"
                 ] = "False"  # 开始唤醒
@@ -1635,16 +1746,21 @@ class MaaManager(QObject):
         mode: str,
         title: str,
         message: Union[str, dict],
-        if_get_text_only: bool = False,
-    ) -> str:
+        user_data: Dict[str, Dict[str, Union[str, int, bool]]] = None,
+    ) -> None:
         """通过所有渠道推送通知"""
 
         env = Environment(
             loader=FileSystemLoader(str(Config.app_path / "resources/html"))
         )
 
-        if mode == "代理结果":
-
+        if mode == "代理结果" and (
+            Config.get(Config.notify_SendTaskResultTime) == "任何时刻"
+            or (
+                Config.get(Config.notify_SendTaskResultTime) == "仅失败时"
+                and message["uncompleted_count"] != 0
+            )
+        ):
             # 生成文本通知内容
             message_text = (
                 f"任务开始时间：{message["start_time"]}，结束时间：{message["end_time"]}\n"
@@ -1656,9 +1772,6 @@ class MaaManager(QObject):
             if len(message["waiting_user"]) > 0:
                 message_text += f"\n未开始{self.mode[2:4]}的用户：\n{"\n".join(message["waiting_user"])}\n"
 
-            if if_get_text_only:
-                return message_text
-
             # 生成HTML通知内容
             message["failed_user"] = "、".join(message["failed_user"])
             message["waiting_user"] = "、".join(message["waiting_user"])
@@ -1666,11 +1779,31 @@ class MaaManager(QObject):
             template = env.get_template("MAA_result.html")
             message_html = template.render(message)
 
-            Notify.send_mail("网页", title, message_html)
-            Notify.ServerChanPush(title, f"{message_text}\n\nAUTO_MAA 敬上")
-            Notify.CompanyWebHookBotPush(title, f"{message_text}\n\nAUTO_MAA 敬上")
+            # ServerChan的换行是两个换行符。故而将\n替换为\n\n
+            serverchan_message = message_text.replace("\n", "\n\n")
 
-            return message_text
+            # 发送全局通知
+
+            if Config.get(Config.notify_IfSendMail):
+                Notify.send_mail(
+                    "网页", title, message_html, Config.get(Config.notify_ToAddress)
+                )
+
+            if Config.get(Config.notify_IfServerChan):
+                Notify.ServerChanPush(
+                    title,
+                    f"{serverchan_message}\n\nAUTO_MAA 敬上",
+                    Config.get(Config.notify_ServerChanKey),
+                    Config.get(Config.notify_ServerChanTag),
+                    Config.get(Config.notify_ServerChanChannel),
+                )
+
+            if Config.get(Config.notify_IfCompanyWebHookBot):
+                Notify.CompanyWebHookBotPush(
+                    title,
+                    f"{message_text}\n\nAUTO_MAA 敬上",
+                    Config.get(Config.notify_CompanyWebHookBotUrl),
+                )
 
         elif mode == "统计信息":
 
@@ -1699,18 +1832,155 @@ class MaaManager(QObject):
             template = env.get_template("MAA_statistics.html")
             message_html = template.render(message)
 
-            Notify.send_mail("网页", title, message_html)
             # ServerChan的换行是两个换行符。故而将\n替换为\n\n
             serverchan_message = message_text.replace("\n", "\n\n")
-            Notify.ServerChanPush(title, f"{serverchan_message}\n\nAUTO_MAA 敬上")
-            Notify.CompanyWebHookBotPush(title, f"{message_text}\n\nAUTO_MAA 敬上")
+
+            # 发送全局通知
+            if Config.get(Config.notify_IfSendStatistic):
+
+                if Config.get(Config.notify_IfSendMail):
+                    Notify.send_mail(
+                        "网页", title, message_html, Config.get(Config.notify_ToAddress)
+                    )
+
+                if Config.get(Config.notify_IfServerChan):
+                    Notify.ServerChanPush(
+                        title,
+                        f"{serverchan_message}\n\nAUTO_MAA 敬上",
+                        Config.get(Config.notify_ServerChanKey),
+                        Config.get(Config.notify_ServerChanTag),
+                        Config.get(Config.notify_ServerChanChannel),
+                    )
+
+                if Config.get(Config.notify_IfCompanyWebHookBot):
+                    Notify.CompanyWebHookBotPush(
+                        title,
+                        f"{message_text}\n\nAUTO_MAA 敬上",
+                        Config.get(Config.notify_CompanyWebHookBotUrl),
+                    )
+
+            # 发送用户单独通知
+            if (
+                user_data["Notify"]["Enabled"]
+                and user_data["Notify"]["IfSendStatistic"]
+            ):
+
+                # 发送邮件通知
+                if user_data["Notify"]["IfSendMail"]:
+                    if user_data["Notify"]["ToAddress"]:
+                        Notify.send_mail(
+                            "网页",
+                            title,
+                            message_html,
+                            user_data["Notify"]["ToAddress"],
+                        )
+                    else:
+                        logger.error(
+                            f"{self.name} | 用户邮箱地址为空，无法发送用户单独的邮件通知"
+                        )
+
+                # 发送ServerChan通知
+                if user_data["Notify"]["IfServerChan"]:
+                    if user_data["Notify"]["ServerChanKey"]:
+                        Notify.ServerChanPush(
+                            title,
+                            f"{serverchan_message}\n\nAUTO_MAA 敬上",
+                            user_data["Notify"]["ServerChanKey"],
+                            user_data["Notify"]["ServerChanTag"],
+                            user_data["Notify"]["ServerChanChannel"],
+                        )
+                    else:
+                        logger.error(
+                            f"{self.name} |用户ServerChan密钥为空，无法发送用户单独的ServerChan通知"
+                        )
+
+                # 推送CompanyWebHookBot通知
+                if user_data["Notify"]["IfCompanyWebHookBot"]:
+                    if user_data["Notify"]["CompanyWebHookBotUrl"]:
+                        Notify.CompanyWebHookBotPush(
+                            title,
+                            f"{message_text}\n\nAUTO_MAA 敬上",
+                            user_data["Notify"]["CompanyWebHookBotUrl"],
+                        )
+                    else:
+                        logger.error(
+                            f"{self.name} |用户CompanyWebHookBot密钥为空，无法发送用户单独的CompanyWebHookBot通知"
+                        )
 
         elif mode == "公招六星":
 
             # 生成HTML通知内容
             template = env.get_template("MAA_six_star.html")
+
             message_html = template.render(message)
 
-            Notify.send_mail("网页", title, message_html)
-            Notify.ServerChanPush(title, "好羡慕~\n\nAUTO_MAA 敬上")
-            Notify.CompanyWebHookBotPush(title, "好羡慕~\n\nAUTO_MAA 敬上")
+            # 发送全局通知
+            if Config.get(Config.notify_IfSendSixStar):
+
+                if Config.get(Config.notify_IfSendMail):
+                    Notify.send_mail(
+                        "网页", title, message_html, Config.get(Config.notify_ToAddress)
+                    )
+
+                if Config.get(Config.notify_IfServerChan):
+                    Notify.ServerChanPush(
+                        title,
+                        "好羡慕~\n\nAUTO_MAA 敬上",
+                        Config.get(Config.notify_ServerChanKey),
+                        Config.get(Config.notify_ServerChanTag),
+                        Config.get(Config.notify_ServerChanChannel),
+                    )
+
+                if Config.get(Config.notify_IfCompanyWebHookBot):
+                    Notify.CompanyWebHookBotPush(
+                        title,
+                        "好羡慕~\n\nAUTO_MAA 敬上",
+                        Config.get(Config.notify_CompanyWebHookBotUrl),
+                    )
+
+            # 发送用户单独通知
+            if user_data["Notify"]["Enabled"] and user_data["Notify"]["IfSendSixStar"]:
+
+                # 发送邮件通知
+                if user_data["Notify"]["IfSendMail"]:
+                    if user_data["Notify"]["ToAddress"]:
+                        Notify.send_mail(
+                            "网页",
+                            title,
+                            message_html,
+                            user_data["Notify"]["ToAddress"],
+                        )
+                    else:
+                        logger.error(
+                            f"{self.name} | 用户邮箱地址为空，无法发送用户单独的邮件通知"
+                        )
+
+                # 发送ServerChan通知
+                if user_data["Notify"]["IfServerChan"]:
+
+                    if user_data["Notify"]["ServerChanKey"]:
+                        Notify.ServerChanPush(
+                            title,
+                            "好羡慕~\n\nAUTO_MAA 敬上",
+                            user_data["Notify"]["ServerChanKey"],
+                            user_data["Notify"]["ServerChanTag"],
+                            user_data["Notify"]["ServerChanChannel"],
+                        )
+                    else:
+                        logger.error(
+                            f"{self.name} |用户ServerChan密钥为空，无法发送用户单独的ServerChan通知"
+                        )
+
+                # 推送CompanyWebHookBot通知
+                if user_data["Notify"]["IfCompanyWebHookBot"]:
+                    if user_data["Notify"]["CompanyWebHookBotUrl"]:
+                        Notify.CompanyWebHookBotPush(
+                            title,
+                            "好羡慕~\n\nAUTO_MAA 敬上",
+                            user_data["Notify"]["CompanyWebHookBotUrl"],
+                        )
+                    else:
+                        logger.error(
+                            f"{self.name} |用户CompanyWebHookBot密钥为空，无法发送用户单独的CompanyWebHookBot通知"
+                        )
+        return None

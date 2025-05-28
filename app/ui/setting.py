@@ -70,9 +70,6 @@ class Setting(QWidget):
         super().__init__(parent)
         self.setObjectName("设置")
 
-        content_widget = QWidget()
-        content_layout = QVBoxLayout(content_widget)
-
         self.function = FunctionSettingCard(self)
         self.start = StartSettingCard(self)
         self.ui = UiSettingCard(self)
@@ -93,6 +90,9 @@ class Setting(QWidget):
         )
         self.other.card_Notice.clicked.connect(lambda: self.show_notice(if_show=True))
 
+        content_widget = QWidget()
+        content_layout = QVBoxLayout(content_widget)
+        content_layout.setContentsMargins(0, 0, 11, 0)
         content_layout.addWidget(self.function)
         content_layout.addWidget(self.start)
         content_layout.addWidget(self.ui)
@@ -106,9 +106,9 @@ class Setting(QWidget):
         scrollArea.setContentsMargins(0, 0, 0, 0)
         scrollArea.setStyleSheet("background: transparent; border: none;")
         scrollArea.setWidget(content_widget)
-        layout = QVBoxLayout()
+
+        layout = QVBoxLayout(self)
         layout.addWidget(scrollArea)
-        self.setLayout(layout)
 
     def agree_bilibili(self) -> None:
         """授权bilibili游戏隐私政策"""
@@ -252,9 +252,7 @@ class Setting(QWidget):
                     choice.exec()
             else:
                 choice = MessageBox(
-                    "确认",
-                    "您没有输入管理密钥，是否取消修改管理密钥？",
-                    self.window(),
+                    "确认", "您没有输入管理密钥，是否取消修改管理密钥？", self.window()
                 )
                 if choice.exec():
                     break
@@ -464,6 +462,7 @@ class Setting(QWidget):
                     "发现新版本",
                     f"{version_text(current_version)} --> {version_text(remote_version)}",
                     3600000,
+                    if_force=True,
                 )
             else:
                 MainInfoBar.push_info_bar("success", "更新检查", "已是最新版本~", 3000)
@@ -547,7 +546,7 @@ class Setting(QWidget):
         ):
 
             MainInfoBar.push_info_bar(
-                "info", "有新公告", "请前往设置界面查看公告", 3600000
+                "info", "有新公告", "请前往设置界面查看公告", 3600000, if_force=True
             )
             return None
 

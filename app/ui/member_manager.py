@@ -47,6 +47,8 @@ from qfluentwidgets import (
     PushSettingCard,
     TableWidget,
     PrimaryToolButton,
+    Flyout,
+    FlyoutAnimationType,
 )
 from PySide6.QtCore import Signal
 from datetime import datetime
@@ -64,13 +66,20 @@ from .Widget import (
     LineEditSettingCard,
     SpinBoxSettingCard,
     ComboBoxMessageBox,
-    EditableComboBoxSettingCard,
+    SettingFlyoutView,
+    NoOptionComboBoxSettingCard,
+    ComboBoxWithPlanSettingCard,
+    EditableComboBoxWithPlanSettingCard,
+    SpinBoxWithPlanSettingCard,
     PasswordLineEditSettingCard,
     UserLableSettingCard,
+    UserTaskSettingCard,
     ComboBoxSettingCard,
     SwitchSettingCard,
     PushAndSwitchButtonSettingCard,
     PushAndComboBoxSettingCard,
+    StatusSwitchSetting,
+    UserNoticeSettingCard,
     PivotArea,
 )
 
@@ -178,7 +187,7 @@ class MemberManager(QWidget):
 
         name = self.member_manager.pivot.currentRouteKey()
 
-        if name == None:
+        if name is None:
             logger.warning("删除脚本实例时未选择脚本实例")
             MainInfoBar.push_info_bar(
                 "warning", "未选择脚本实例", "请选择一个脚本实例", 5000
@@ -192,11 +201,7 @@ class MemberManager(QWidget):
             )
             return None
 
-        choice = MessageBox(
-            "确认",
-            f"确定要删除 {name} 实例吗？",
-            self.window(),
-        )
+        choice = MessageBox("确认", f"确定要删除 {name} 实例吗？", self.window())
         if choice.exec():
 
             self.member_manager.clear_SettingBox()
@@ -222,7 +227,7 @@ class MemberManager(QWidget):
 
         name = self.member_manager.pivot.currentRouteKey()
 
-        if name == None:
+        if name is None:
             logger.warning("向左移动脚本实例时未选择脚本实例")
             MainInfoBar.push_info_bar(
                 "warning", "未选择脚本实例", "请选择一个脚本实例", 5000
@@ -270,7 +275,7 @@ class MemberManager(QWidget):
 
         name = self.member_manager.pivot.currentRouteKey()
 
-        if name == None:
+        if name is None:
             logger.warning("向右移动脚本实例时未选择脚本实例")
             MainInfoBar.push_info_bar(
                 "warning", "未选择脚本实例", "请选择一个脚本实例", 5000
@@ -471,11 +476,57 @@ class MemberManager(QWidget):
             self.key.setIcon(FluentIcon.HIDE)
             self.key.setChecked(False)
 
+    def reload_plan_name(self):
+        """刷新计划表名称"""
+
+        plan_list = [
+            ["固定"] + [_ for _ in Config.plan_dict.keys()],
+            ["固定"]
+            + [
+                (
+                    k
+                    if v["Config"].get(v["Config"].Info_Name) == ""
+                    else f"{k} - {v["Config"].get(v["Config"].Info_Name)}"
+                )
+                for k, v in Config.plan_dict.items()
+            ],
+        ]
+        for member in self.member_manager.script_list:
+
+            if isinstance(member, MemberManager.MemberSettingBox.MaaSettingBox):
+
+                for user_setting in member.user_setting.user_manager.script_list:
+
+                    user_setting.card_GameIdMode.comboBox.currentIndexChanged.disconnect(
+                        user_setting.switch_gameid_mode
+                    )
+                    user_setting.card_GameIdMode.reLoadOptions(
+                        plan_list[0], plan_list[1]
+                    )
+                    user_setting.card_GameIdMode.comboBox.currentIndexChanged.connect(
+                        user_setting.switch_gameid_mode
+                    )
+
+        self.refresh_plan_info()
+
     def refresh_dashboard(self):
         """刷新所有脚本实例的用户仪表盘"""
 
-        for script in self.member_manager.script_list:
-            script.user_setting.user_manager.user_dashboard.load_info()
+        for member in self.member_manager.script_list:
+
+            if isinstance(member, MemberManager.MemberSettingBox.MaaSettingBox):
+                member.user_setting.user_manager.user_dashboard.load_info()
+
+    def refresh_plan_info(self):
+        """刷新所有计划信息"""
+
+        for member in self.member_manager.script_list:
+
+            if isinstance(member, MemberManager.MemberSettingBox.MaaSettingBox):
+
+                member.user_setting.user_manager.user_dashboard.load_info()
+                for user_setting in member.user_setting.user_manager.script_list:
+                    user_setting.switch_gameid_mode()
 
     class MemberSettingBox(QWidget):
         """脚本管理子页面组"""
@@ -563,28 +614,24 @@ class MemberManager(QWidget):
                 self.setObjectName(f"脚本_{uid}")
                 self.config = Config.member_dict[f"脚本_{uid}"]["Config"]
 
-                layout = QVBoxLayout()
+                self.app_setting = self.AppSettingCard(f"脚本_{uid}", self.config, self)
+                self.user_setting = self.UserManager(f"脚本_{uid}", self)
+
+                content_widget = QWidget()
+                content_layout = QVBoxLayout(content_widget)
+                content_layout.setContentsMargins(0, 0, 11, 0)
+                content_layout.addWidget(self.app_setting)
+                content_layout.addWidget(self.user_setting)
+                content_layout.addStretch(1)
 
                 scrollArea = ScrollArea()
                 scrollArea.setWidgetResizable(True)
                 scrollArea.setContentsMargins(0, 0, 0, 0)
                 scrollArea.setStyleSheet("background: transparent; border: none;")
-
-                content_widget = QWidget()
-                content_layout = QVBoxLayout(content_widget)
-
-                self.app_setting = self.AppSettingCard(f"脚本_{uid}", self.config, self)
-                self.user_setting = self.UserManager(f"脚本_{uid}", self)
-
-                content_layout.addWidget(self.app_setting)
-                content_layout.addWidget(self.user_setting)
-                content_layout.addStretch(1)
-
                 scrollArea.setWidget(content_widget)
 
+                layout = QVBoxLayout(self)
                 layout.addWidget(scrollArea)
-
-                self.setLayout(layout)
 
             class AppSettingCard(HeaderCardWidget):
 
@@ -698,6 +745,15 @@ class MemberManager(QWidget):
                             configItem=self.config.RunSet_ProxyTimesLimit,
                             parent=self,
                         )
+                        self.card_ADBSearchRange = SpinBoxSettingCard(
+                            icon=FluentIcon.PAGE_RIGHT,
+                            title="ADB端口号搜索范围",
+                            content="在【±端口号范围】内搜索实际ADB端口号",
+                            range=(0, 3),
+                            qconfig=self.config,
+                            configItem=self.config.RunSet_ADBSearchRange,
+                            parent=self,
+                        )
                         self.card_RunTimesLimit = SpinBoxSettingCard(
                             icon=FluentIcon.PAGE_RIGHT,
                             title="代理重试次数限制",
@@ -746,6 +802,7 @@ class MemberManager(QWidget):
                         Layout = QVBoxLayout(widget)
                         Layout.addWidget(self.card_TaskTransitionMethod)
                         Layout.addWidget(self.card_ProxyTimesLimit)
+                        Layout.addWidget(self.card_ADBSearchRange)
                         Layout.addWidget(self.card_RunTimesLimit)
                         Layout.addWidget(self.card_AnnihilationTimeLimit)
                         Layout.addWidget(self.card_RoutineTimeLimit)
@@ -834,7 +891,7 @@ class MemberManager(QWidget):
 
                     name = self.user_manager.pivot.currentRouteKey()
 
-                    if name == None:
+                    if name is None:
                         logger.warning("未选择用户")
                         MainInfoBar.push_info_bar(
                             "warning", "未选择用户", "请先选择一个用户", 5000
@@ -855,9 +912,7 @@ class MemberManager(QWidget):
                         return None
 
                     choice = MessageBox(
-                        "确认",
-                        f"确定要删除 {name} 吗？",
-                        self.window(),
+                        "确认", f"确定要删除 {name} 吗？", self.window()
                     )
                     if choice.exec():
 
@@ -895,7 +950,7 @@ class MemberManager(QWidget):
 
                     name = self.user_manager.pivot.currentRouteKey()
 
-                    if name == None:
+                    if name is None:
                         logger.warning("未选择用户")
                         MainInfoBar.push_info_bar(
                             "warning", "未选择用户", "请先选择一个用户", 5000
@@ -954,7 +1009,7 @@ class MemberManager(QWidget):
 
                     name = self.user_manager.pivot.currentRouteKey()
 
-                    if name == None:
+                    if name is None:
                         logger.warning("未选择用户")
                         MainInfoBar.push_info_bar(
                             "warning", "未选择用户", "请先选择一个用户", 5000
@@ -1190,6 +1245,8 @@ class MemberManager(QWidget):
                                     else "本周剿灭未完成"
                                 )
 
+                                gameid_info = config.get_plan_info()
+
                                 button = PrimaryToolButton(
                                     FluentIcon.CHEVRON_RIGHT, self
                                 )
@@ -1220,14 +1277,14 @@ class MemberManager(QWidget):
                                         else "******"
                                     ),
                                 )
-                                self.dashboard.setItem(
+                                self.dashboard.setCellWidget(
                                     int(name[3:]) - 1,
                                     3,
-                                    QTableWidgetItem(
-                                        "启用"
-                                        if config.get(config.Info_Status)
-                                        and config.get(config.Info_RemainedDay) != 0
-                                        else "禁用"
+                                    StatusSwitchSetting(
+                                        qconfig=config,
+                                        configItem_check=config.Info_Status,
+                                        configItem_enable=config.Info_RemainedDay,
+                                        parent=self,
                                     ),
                                 )
                                 self.dashboard.setItem(
@@ -1238,9 +1295,7 @@ class MemberManager(QWidget):
                                 self.dashboard.setItem(
                                     int(name[3:]) - 1,
                                     5,
-                                    QTableWidgetItem(
-                                        str(config.get(config.Info_MedicineNumb))
-                                    ),
+                                    QTableWidgetItem(str(gameid_info["MedicineNumb"])),
                                 )
                                 self.dashboard.setItem(
                                     int(name[3:]) - 1,
@@ -1248,12 +1303,12 @@ class MemberManager(QWidget):
                                     QTableWidgetItem(
                                         Config.gameid_dict["ALL"]["text"][
                                             Config.gameid_dict["ALL"]["value"].index(
-                                                config.get(config.Info_GameId)
+                                                gameid_info["GameId"]
                                             )
                                         ]
-                                        if config.get(config.Info_GameId)
+                                        if gameid_info["GameId"]
                                         in Config.gameid_dict["ALL"]["value"]
-                                        else config.get(config.Info_GameId)
+                                        else gameid_info["GameId"]
                                     ),
                                 )
                                 self.dashboard.setItem(
@@ -1262,12 +1317,12 @@ class MemberManager(QWidget):
                                     QTableWidgetItem(
                                         Config.gameid_dict["ALL"]["text"][
                                             Config.gameid_dict["ALL"]["value"].index(
-                                                config.get(config.Info_GameId_1)
+                                                gameid_info["GameId_1"]
                                             )
                                         ]
-                                        if config.get(config.Info_GameId_1)
+                                        if gameid_info["GameId_1"]
                                         in Config.gameid_dict["ALL"]["value"]
-                                        else config.get(config.Info_GameId_1)
+                                        else gameid_info["GameId_1"]
                                     ),
                                 )
                                 self.dashboard.setItem(
@@ -1276,12 +1331,12 @@ class MemberManager(QWidget):
                                     QTableWidgetItem(
                                         Config.gameid_dict["ALL"]["text"][
                                             Config.gameid_dict["ALL"]["value"].index(
-                                                config.get(config.Info_GameId_2)
+                                                gameid_info["GameId_2"]
                                             )
                                         ]
-                                        if config.get(config.Info_GameId_2)
+                                        if gameid_info["GameId_2"]
                                         in Config.gameid_dict["ALL"]["value"]
-                                        else config.get(config.Info_GameId_2)
+                                        else gameid_info["GameId_2"]
                                     ),
                                 )
                                 self.dashboard.setItem(
@@ -1289,22 +1344,20 @@ class MemberManager(QWidget):
                                     9,
                                     QTableWidgetItem(
                                         "不使用"
-                                        if config.get(config.Info_GameId_Remain) == "-"
+                                        if gameid_info["GameId_Remain"] == "-"
                                         else (
                                             (
                                                 Config.gameid_dict["ALL"]["text"][
                                                     Config.gameid_dict["ALL"][
                                                         "value"
                                                     ].index(
-                                                        config.get(
-                                                            config.Info_GameId_Remain
-                                                        )
+                                                        gameid_info["GameId_Remain"]
                                                     )
                                                 ]
                                             )
-                                            if config.get(config.Info_GameId_Remain)
+                                            if gameid_info["GameId_Remain"]
                                             in Config.gameid_dict["ALL"]["value"]
-                                            else config.get(config.Info_GameId_Remain)
+                                            else gameid_info["GameId_Remain"]
                                         )
                                     ),
                                 )
@@ -1327,6 +1380,19 @@ class MemberManager(QWidget):
                             self.user_path = Config.member_dict[self.name]["UserData"][
                                 f"用户_{uid}"
                             ]["Path"]
+
+                            plan_list = [
+                                ["固定"] + [_ for _ in Config.plan_dict.keys()],
+                                ["固定"]
+                                + [
+                                    (
+                                        k
+                                        if v["Config"].get(v["Config"].Info_Name) == ""
+                                        else f"{k} - {v["Config"].get(v["Config"].Info_Name)}"
+                                    )
+                                    for k, v in Config.plan_dict.items()
+                                ],
+                            ]
 
                             self.card_Name = LineEditSettingCard(
                                 icon=FluentIcon.PEOPLE,
@@ -1355,15 +1421,17 @@ class MemberManager(QWidget):
                                 configItem=self.config.Info_Mode,
                                 parent=self,
                             )
-                            self.card_GameIdMode = ComboBoxSettingCard(
+                            self.card_GameIdMode = NoOptionComboBoxSettingCard(
                                 icon=FluentIcon.DICTIONARY,
                                 title="关卡配置模式",
                                 content="刷理智关卡号的配置模式",
-                                texts=["固定"],
+                                value=plan_list[0],
+                                texts=plan_list[1],
                                 qconfig=self.config,
                                 configItem=self.config.Info_GameIdMode,
                                 parent=self,
                             )
+                            self.card_GameIdMode.comboBox.setMinimumWidth(0)
                             self.card_Server = ComboBoxSettingCard(
                                 icon=FluentIcon.PROJECTOR,
                                 title="服务器",
@@ -1441,7 +1509,7 @@ class MemberManager(QWidget):
                                 configItem=self.config.Info_Notes,
                                 parent=self,
                             )
-                            self.card_MedicineNumb = SpinBoxSettingCard(
+                            self.card_MedicineNumb = SpinBoxWithPlanSettingCard(
                                 icon=FluentIcon.GAME,
                                 title="吃理智药",
                                 content="吃理智药次数，输入0以关闭",
@@ -1450,7 +1518,7 @@ class MemberManager(QWidget):
                                 configItem=self.config.Info_MedicineNumb,
                                 parent=self,
                             )
-                            self.card_SeriesNumb = ComboBoxSettingCard(
+                            self.card_SeriesNumb = ComboBoxWithPlanSettingCard(
                                 icon=FluentIcon.GAME,
                                 title="连战次数",
                                 content="连战次数较大时建议搭配剩余理智关卡使用",
@@ -1460,7 +1528,7 @@ class MemberManager(QWidget):
                                 parent=self,
                             )
                             self.card_SeriesNumb.comboBox.setMinimumWidth(150)
-                            self.card_GameId = EditableComboBoxSettingCard(
+                            self.card_GameId = EditableComboBoxWithPlanSettingCard(
                                 icon=FluentIcon.GAME,
                                 title="关卡选择",
                                 content="按下回车以添加自定义关卡号",
@@ -1470,7 +1538,7 @@ class MemberManager(QWidget):
                                 configItem=self.config.Info_GameId,
                                 parent=self,
                             )
-                            self.card_GameId_1 = EditableComboBoxSettingCard(
+                            self.card_GameId_1 = EditableComboBoxWithPlanSettingCard(
                                 icon=FluentIcon.GAME,
                                 title="备选关卡 - 1",
                                 content="按下回车以添加自定义关卡号",
@@ -1480,7 +1548,7 @@ class MemberManager(QWidget):
                                 configItem=self.config.Info_GameId_1,
                                 parent=self,
                             )
-                            self.card_GameId_2 = EditableComboBoxSettingCard(
+                            self.card_GameId_2 = EditableComboBoxWithPlanSettingCard(
                                 icon=FluentIcon.GAME,
                                 title="备选关卡 - 2",
                                 content="按下回车以添加自定义关卡号",
@@ -1490,18 +1558,20 @@ class MemberManager(QWidget):
                                 configItem=self.config.Info_GameId_2,
                                 parent=self,
                             )
-                            self.card_GameId_Remain = EditableComboBoxSettingCard(
-                                icon=FluentIcon.GAME,
-                                title="剩余理智关卡",
-                                content="按下回车以添加自定义关卡号",
-                                value=Config.gameid_dict["ALL"]["value"],
-                                texts=[
-                                    "不使用" if _ == "当前/上次" else _
-                                    for _ in Config.gameid_dict["ALL"]["text"]
-                                ],
-                                qconfig=self.config,
-                                configItem=self.config.Info_GameId_Remain,
-                                parent=self,
+                            self.card_GameId_Remain = (
+                                EditableComboBoxWithPlanSettingCard(
+                                    icon=FluentIcon.GAME,
+                                    title="剩余理智关卡",
+                                    content="按下回车以添加自定义关卡号",
+                                    value=Config.gameid_dict["ALL"]["value"],
+                                    texts=[
+                                        "不使用" if _ == "当前/上次" else _
+                                        for _ in Config.gameid_dict["ALL"]["text"]
+                                    ],
+                                    qconfig=self.config,
+                                    configItem=self.config.Info_GameId_Remain,
+                                    parent=self,
+                                )
                             )
 
                             self.card_UserLable = UserLableSettingCard(
@@ -1516,6 +1586,147 @@ class MemberManager(QWidget):
                                     "IfPassCheck": self.config.Data_IfPassCheck,
                                 },
                                 parent=self,
+                            )
+
+                            # 单独任务卡片
+                            self.card_TaskSet = UserTaskSettingCard(
+                                icon=FluentIcon.LIBRARY,
+                                title="自动日常代理任务序列",
+                                content="未启用任何任务项",
+                                text="设置",
+                                qconfig=self.config,
+                                configItems={
+                                    "IfWakeUp": self.config.Task_IfWakeUp,
+                                    "IfRecruiting": self.config.Task_IfRecruiting,
+                                    "IfBase": self.config.Task_IfBase,
+                                    "IfCombat": self.config.Task_IfCombat,
+                                    "IfMall": self.config.Task_IfMall,
+                                    "IfMission": self.config.Task_IfMission,
+                                    "IfAutoRoguelike": self.config.Task_IfAutoRoguelike,
+                                    "IfReclamation": self.config.Task_IfReclamation,
+                                },
+                                parent=self,
+                            )
+                            self.card_IfWakeUp = SwitchSettingCard(
+                                icon=FluentIcon.TILES,
+                                title="开始唤醒",
+                                content="",
+                                qconfig=self.config,
+                                configItem=self.config.Task_IfWakeUp,
+                                parent=self,
+                            )
+                            self.card_IfRecruiting = SwitchSettingCard(
+                                icon=FluentIcon.TILES,
+                                title="自动公招",
+                                content="",
+                                qconfig=self.config,
+                                configItem=self.config.Task_IfRecruiting,
+                                parent=self,
+                            )
+                            self.card_IfBase = SwitchSettingCard(
+                                icon=FluentIcon.TILES,
+                                title="基建换班",
+                                content="",
+                                qconfig=self.config,
+                                configItem=self.config.Task_IfBase,
+                                parent=self,
+                            )
+                            self.card_IfCombat = SwitchSettingCard(
+                                icon=FluentIcon.TILES,
+                                title="刷理智",
+                                content="",
+                                qconfig=self.config,
+                                configItem=self.config.Task_IfCombat,
+                                parent=self,
+                            )
+                            self.card_IfMall = SwitchSettingCard(
+                                icon=FluentIcon.TILES,
+                                title="获取信用及购物",
+                                content="",
+                                qconfig=self.config,
+                                configItem=self.config.Task_IfMall,
+                                parent=self,
+                            )
+                            self.card_IfMission = SwitchSettingCard(
+                                icon=FluentIcon.TILES,
+                                title="领取奖励",
+                                content="",
+                                qconfig=self.config,
+                                configItem=self.config.Task_IfMission,
+                                parent=self,
+                            )
+                            self.card_IfAutoRoguelike = SwitchSettingCard(
+                                icon=FluentIcon.TILES,
+                                title="自动肉鸽",
+                                content="",
+                                qconfig=self.config,
+                                configItem=self.config.Task_IfAutoRoguelike,
+                                parent=self,
+                            )
+                            self.card_IfReclamation = SwitchSettingCard(
+                                icon=FluentIcon.TILES,
+                                title="生息演算",
+                                content="",
+                                qconfig=self.config,
+                                configItem=self.config.Task_IfReclamation,
+                                parent=self,
+                            )
+
+                            self.TaskSetCard = SettingFlyoutView(
+                                self,
+                                "自动日常代理任务序列设置",
+                                [
+                                    self.card_IfWakeUp,
+                                    self.card_IfRecruiting,
+                                    self.card_IfBase,
+                                    self.card_IfCombat,
+                                    self.card_IfMall,
+                                    self.card_IfMission,
+                                    self.card_IfAutoRoguelike,
+                                    self.card_IfReclamation,
+                                ],
+                            )
+
+                            # 单独通知卡片
+                            self.card_NotifySet = UserNoticeSettingCard(
+                                icon=FluentIcon.MAIL,
+                                title="用户单独通知设置",
+                                content="未启用任何通知项",
+                                text="设置",
+                                qconfig=self.config,
+                                configItem=self.config.Notify_Enabled,
+                                configItems={
+                                    "IfSendStatistic": self.config.Notify_IfSendStatistic,
+                                    "IfSendSixStar": self.config.Notify_IfSendSixStar,
+                                    "IfSendMail": self.config.Notify_IfSendMail,
+                                    "ToAddress": self.config.Notify_ToAddress,
+                                    "IfServerChan": self.config.Notify_IfServerChan,
+                                    "ServerChanKey": self.config.Notify_ServerChanKey,
+                                    "IfCompanyWebHookBot": self.config.Notify_IfCompanyWebHookBot,
+                                    "CompanyWebHookBotUrl": self.config.Notify_CompanyWebHookBotUrl,
+                                },
+                                parent=self,
+                            )
+                            self.card_NotifyContent = self.NotifyContentSettingCard(
+                                self.config, self
+                            )
+                            self.card_EMail = self.EMailSettingCard(self.config, self)
+                            self.card_ServerChan = self.ServerChanSettingCard(
+                                self.config, self
+                            )
+                            self.card_CompanyWebhookBot = (
+                                self.CompanyWechatPushSettingCard(self.config, self)
+                            )
+
+                            self.NotifySetCard = SettingFlyoutView(
+                                self,
+                                "用户通知设置",
+                                [
+                                    self.card_NotifyContent,
+                                    self.card_EMail,
+                                    self.card_ServerChan,
+                                    self.card_CompanyWebhookBot,
+                                ],
                             )
 
                             h1_layout = QHBoxLayout()
@@ -1555,6 +1766,8 @@ class MemberManager(QWidget):
                             Layout.addLayout(h6_layout)
                             Layout.addLayout(h7_layout)
                             Layout.addLayout(h8_layout)
+                            Layout.addWidget(self.card_TaskSet)
+                            Layout.addWidget(self.card_NotifySet)
 
                             self.viewLayout.addLayout(Layout)
                             self.viewLayout.setContentsMargins(3, 0, 3, 3)
@@ -1574,10 +1787,16 @@ class MemberManager(QWidget):
                             self.card_InfrastMode.clicked.connect(
                                 self.set_infrastructure
                             )
+                            self.card_TaskSet.clicked.connect(self.set_task)
+                            self.card_NotifySet.clicked.connect(self.set_notify)
+                            self.card_GameIdMode.comboBox.currentIndexChanged.connect(
+                                self.switch_gameid_mode
+                            )
                             Config.gameid_refreshed.connect(self.refresh_gameid)
                             Config.PASSWORD_refreshed.connect(self.refresh_password)
 
                             self.switch_mode()
+                            self.switch_gameid_mode()
                             self.switch_infrastructure()
 
                         def switch_mode(self) -> None:
@@ -1595,6 +1814,40 @@ class MemberManager(QWidget):
                                 self.card_InfrastMode.setVisible(False)
                                 self.card_Annihilation.button.setVisible(True)
                                 self.card_Routine.setVisible(True)
+
+                        def switch_gameid_mode(self) -> None:
+
+                            for card, name in zip(
+                                [
+                                    self.card_MedicineNumb,
+                                    self.card_SeriesNumb,
+                                    self.card_GameId,
+                                    self.card_GameId_1,
+                                    self.card_GameId_2,
+                                    self.card_GameId_Remain,
+                                ],
+                                [
+                                    "MedicineNumb",
+                                    "SeriesNumb",
+                                    "GameId",
+                                    "GameId_1",
+                                    "GameId_2",
+                                    "GameId_Remain",
+                                ],
+                            ):
+
+                                card.switch_mode(
+                                    self.config.get(self.config.Info_GameIdMode)[:2]
+                                )
+                                if (
+                                    self.config.get(self.config.Info_GameIdMode)
+                                    != "固定"
+                                ):
+                                    card.change_plan(
+                                        Config.plan_dict[
+                                            self.config.get(self.config.Info_GameIdMode)
+                                        ]["Config"].get_current_info(name)
+                                    )
 
                         def switch_infrastructure(self) -> None:
 
@@ -1698,3 +1951,178 @@ class MemberManager(QWidget):
                                     }
                                 },
                             )
+
+                        def set_task(self) -> None:
+                            """设置用户任务序列相关配置"""
+
+                            self.TaskSetCard.setVisible(True)
+                            Flyout.make(
+                                self.TaskSetCard,
+                                self.card_TaskSet,
+                                self,
+                                aniType=FlyoutAnimationType.PULL_UP,
+                                isDeleteOnClose=False,
+                            )
+
+                        def set_notify(self) -> None:
+                            """设置用户通知相关配置"""
+
+                            self.NotifySetCard.setVisible(True)
+                            Flyout.make(
+                                self.NotifySetCard,
+                                self.card_NotifySet,
+                                self,
+                                aniType=FlyoutAnimationType.PULL_UP,
+                                isDeleteOnClose=False,
+                            )
+
+                        class NotifyContentSettingCard(HeaderCardWidget):
+
+                            def __init__(self, config: MaaUserConfig, parent=None):
+                                super().__init__(parent)
+                                self.setTitle("用户通知内容选项")
+
+                                self.config = config
+
+                                self.card_IfSendStatistic = SwitchSettingCard(
+                                    icon=FluentIcon.PAGE_RIGHT,
+                                    title="推送统计信息",
+                                    content="推送自动代理统计信息的通知",
+                                    qconfig=self.config,
+                                    configItem=self.config.Notify_IfSendStatistic,
+                                    parent=self,
+                                )
+                                self.card_IfSendSixStar = SwitchSettingCard(
+                                    icon=FluentIcon.PAGE_RIGHT,
+                                    title="推送公招高资喜报",
+                                    content="公招出现六星词条时推送喜报",
+                                    qconfig=self.config,
+                                    configItem=self.config.Notify_IfSendSixStar,
+                                    parent=self,
+                                )
+
+                                Layout = QVBoxLayout()
+                                Layout.addWidget(self.card_IfSendStatistic)
+                                Layout.addWidget(self.card_IfSendSixStar)
+                                self.viewLayout.addLayout(Layout)
+                                self.viewLayout.setSpacing(3)
+                                self.viewLayout.setContentsMargins(3, 0, 3, 3)
+
+                        class EMailSettingCard(HeaderCardWidget):
+
+                            def __init__(self, config: MaaUserConfig, parent=None):
+                                super().__init__(parent)
+                                self.setTitle("用户邮箱通知")
+
+                                self.config = config
+
+                                self.card_IfSendMail = SwitchSettingCard(
+                                    icon=FluentIcon.PAGE_RIGHT,
+                                    title="推送用户邮件通知",
+                                    content="是否启用用户邮件通知功能",
+                                    qconfig=self.config,
+                                    configItem=self.config.Notify_IfSendMail,
+                                    parent=self,
+                                )
+                                self.card_ToAddress = LineEditSettingCard(
+                                    icon=FluentIcon.PAGE_RIGHT,
+                                    title="用户收信邮箱地址",
+                                    content="接收用户通知的邮箱地址",
+                                    text="请输入用户收信邮箱地址",
+                                    qconfig=self.config,
+                                    configItem=self.config.Notify_ToAddress,
+                                    parent=self,
+                                )
+
+                                Layout = QVBoxLayout()
+                                Layout.addWidget(self.card_IfSendMail)
+                                Layout.addWidget(self.card_ToAddress)
+                                self.viewLayout.addLayout(Layout)
+                                self.viewLayout.setSpacing(3)
+                                self.viewLayout.setContentsMargins(3, 0, 3, 3)
+
+                        class ServerChanSettingCard(HeaderCardWidget):
+
+                            def __init__(self, config: MaaUserConfig, parent=None):
+                                super().__init__(parent)
+                                self.setTitle("用户ServerChan通知")
+
+                                self.config = config
+
+                                self.card_IfServerChan = SwitchSettingCard(
+                                    icon=FluentIcon.PAGE_RIGHT,
+                                    title="推送用户Server酱通知",
+                                    content="是否启用用户Server酱通知功能",
+                                    qconfig=self.config,
+                                    configItem=self.config.Notify_IfServerChan,
+                                    parent=self,
+                                )
+                                self.card_ServerChanKey = LineEditSettingCard(
+                                    icon=FluentIcon.PAGE_RIGHT,
+                                    title="用户SendKey",
+                                    content="SC3与SCT均须填写",
+                                    text="请输入用户SendKey",
+                                    qconfig=self.config,
+                                    configItem=self.config.Notify_ServerChanKey,
+                                    parent=self,
+                                )
+                                self.card_ServerChanChannel = LineEditSettingCard(
+                                    icon=FluentIcon.PAGE_RIGHT,
+                                    title="用户ServerChanChannel代码",
+                                    content="留空则默认，多个请使用“|”隔开",
+                                    text="请输入Channel代码，仅SCT生效",
+                                    qconfig=self.config,
+                                    configItem=self.config.Notify_ServerChanChannel,
+                                    parent=self,
+                                )
+                                self.card_ServerChanTag = LineEditSettingCard(
+                                    icon=FluentIcon.PAGE_RIGHT,
+                                    title="用户Tag内容",
+                                    content="留空则默认，多个请使用“|”隔开",
+                                    text="请输入加入推送的Tag，仅SC3生效",
+                                    qconfig=self.config,
+                                    configItem=self.config.Notify_ServerChanTag,
+                                    parent=self,
+                                )
+
+                                Layout = QVBoxLayout()
+                                Layout.addWidget(self.card_IfServerChan)
+                                Layout.addWidget(self.card_ServerChanKey)
+                                Layout.addWidget(self.card_ServerChanChannel)
+                                Layout.addWidget(self.card_ServerChanTag)
+                                self.viewLayout.addLayout(Layout)
+                                self.viewLayout.setSpacing(3)
+                                self.viewLayout.setContentsMargins(3, 0, 3, 3)
+
+                        class CompanyWechatPushSettingCard(HeaderCardWidget):
+
+                            def __init__(self, config: MaaUserConfig, parent=None):
+                                super().__init__(parent)
+                                self.setTitle("用户企业微信推送")
+
+                                self.config = config
+
+                                self.card_IfCompanyWebHookBot = SwitchSettingCard(
+                                    icon=FluentIcon.PAGE_RIGHT,
+                                    title="推送用户企业微信机器人通知",
+                                    content="是否启用用户企微机器人通知功能",
+                                    qconfig=self.config,
+                                    configItem=self.config.Notify_IfCompanyWebHookBot,
+                                    parent=self,
+                                )
+                                self.card_CompanyWebHookBotUrl = LineEditSettingCard(
+                                    icon=FluentIcon.PAGE_RIGHT,
+                                    title="WebhookUrl",
+                                    content="用户企微群机器人Webhook地址",
+                                    text="请输入用户Webhook的Url",
+                                    qconfig=self.config,
+                                    configItem=self.config.Notify_CompanyWebHookBotUrl,
+                                    parent=self,
+                                )
+
+                                Layout = QVBoxLayout()
+                                Layout.addWidget(self.card_IfCompanyWebHookBot)
+                                Layout.addWidget(self.card_CompanyWebHookBotUrl)
+                                self.viewLayout.addLayout(Layout)
+                                self.viewLayout.setSpacing(3)
+                                self.viewLayout.setContentsMargins(3, 0, 3, 3)

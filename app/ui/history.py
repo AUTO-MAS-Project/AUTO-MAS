@@ -61,21 +61,22 @@ class History(QWidget):
         super().__init__(parent)
         self.setObjectName("历史记录")
 
+        self.history_top_bar = self.HistoryTopBar(self)
+        self.history_top_bar.search_history.connect(self.reload_history)
+
         content_widget = QWidget()
         self.content_layout = QVBoxLayout(content_widget)
-        self.history_top_bar = self.HistoryTopBar(self)
-
-        self.history_top_bar.search_history.connect(self.reload_history)
+        self.content_layout.setContentsMargins(0, 0, 11, 0)
 
         scrollArea = ScrollArea()
         scrollArea.setWidgetResizable(True)
         scrollArea.setContentsMargins(0, 0, 0, 0)
         scrollArea.setStyleSheet("background: transparent; border: none;")
         scrollArea.setWidget(content_widget)
-        layout = QVBoxLayout()
+
+        layout = QVBoxLayout(self)
         layout.addWidget(self.history_top_bar)
         layout.addWidget(scrollArea)
-        self.setLayout(layout)
 
         self.history_card_list = []
 

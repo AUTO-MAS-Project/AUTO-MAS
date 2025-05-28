@@ -49,6 +49,7 @@ from app.core import Config, TaskManager, MainTimer, MainInfoBar
 from app.services import Notify, Crypto, System
 from .home import Home
 from .member_manager import MemberManager
+from .plan_manager import PlanManager
 from .queue_manager import QueueManager
 from .dispatch_center import DispatchCenter
 from .history import History
@@ -80,6 +81,7 @@ class AUTO_MAA(MSFluentWindow):
 
         # 创建主窗口
         self.home = Home(self)
+        self.plan_manager = PlanManager(self)
         self.member_manager = MemberManager(self)
         self.queue_manager = QueueManager(self)
         self.dispatch_center = DispatchCenter(self)
@@ -98,6 +100,13 @@ class AUTO_MAA(MSFluentWindow):
             FluentIcon.ROBOT,
             "脚本管理",
             FluentIcon.ROBOT,
+            NavigationItemPosition.TOP,
+        )
+        self.addSubInterface(
+            self.plan_manager,
+            FluentIcon.CALENDAR,
+            "计划管理",
+            FluentIcon.CALENDAR,
             NavigationItemPosition.TOP,
         )
         self.addSubInterface(
@@ -128,23 +137,7 @@ class AUTO_MAA(MSFluentWindow):
             FluentIcon.SETTING,
             NavigationItemPosition.BOTTOM,
         )
-        self.stackedWidget.currentChanged.connect(
-            lambda index: (
-                self.queue_manager.reload_member_name() if index == 2 else None
-            )
-        )
-        self.stackedWidget.currentChanged.connect(
-            lambda index: (
-                self.dispatch_center.pivot.setCurrentItem("主调度台")
-                if index == 3
-                else None
-            )
-        )
-        self.stackedWidget.currentChanged.connect(
-            lambda index: (
-                self.dispatch_center.update_top_bar() if index == 3 else None
-            )
-        )
+        self.stackedWidget.currentChanged.connect(self.__currentChanged)
 
         # 创建系统托盘及其菜单
         self.tray = QSystemTrayIcon(
@@ -241,6 +234,113 @@ class AUTO_MAA(MSFluentWindow):
             else:
                 self.setStyleSheet("background-color: #ffffff;")
 
+    def set_min_method(self) -> None:
+        """设置最小化方法"""
+
+        if Config.get(Config.ui_IfToTray):
+
+            self.titleBar.minBtn.clicked.disconnect()
+            self.titleBar.minBtn.clicked.connect(lambda: self.show_ui("隐藏到托盘"))
+
+        else:
+
+            self.titleBar.minBtn.clicked.disconnect()
+            self.titleBar.minBtn.clicked.connect(self.window().showMinimized)
+
+    def on_tray_activated(self, reason):
+        """双击返回主界面"""
+        if reason == QSystemTrayIcon.DoubleClick:
+            self.show_ui("显示主窗口")
+
+    def show_ui(
+        self, mode: str, if_quick: bool = False, if_start: bool = False
+    ) -> None:
+        """配置窗口状态"""
+
+        self.switch_theme()
+
+        if mode == "显示主窗口":
+
+            # 配置主窗口
+            if not self.window().isVisible():
+                size = list(
+                    map(
+                        int,
+                        Config.get(Config.ui_size).split("x"),
+                    )
+                )
+                location = list(
+                    map(
+                        int,
+                        Config.get(Config.ui_location).split("x"),
+                    )
+                )
+                if self.window().isMaximized():
+                    self.window().showNormal()
+                self.window().setGeometry(location[0], location[1], size[0], size[1])
+                self.window().show()
+                if not if_quick:
+                    if (
+                        Config.get(Config.ui_maximized)
+                        and not self.window().isMaximized()
+                    ):
+                        self.titleBar.maxBtn.click()
+                    self.show_ui("配置托盘")
+            elif if_start:
+                if Config.get(Config.ui_maximized) and not self.window().isMaximized():
+                    self.titleBar.maxBtn.click()
+                self.show_ui("配置托盘")
+
+            # 如果窗口不在屏幕内，则重置窗口位置
+            if not any(
+                self.window().geometry().intersects(screen.availableGeometry())
+                for screen in QApplication.screens()
+            ):
+                self.window().showNormal()
+                self.window().setGeometry(100, 100, 1200, 700)
+
+            self.window().raise_()
+            self.window().activateWindow()
+
+            while Config.info_bar_list:
+                info_bar_item = Config.info_bar_list.pop(0)
+                MainInfoBar.push_info_bar(
+                    info_bar_item["mode"],
+                    info_bar_item["title"],
+                    info_bar_item["content"],
+                    info_bar_item["time"],
+                )
+
+        elif mode == "配置托盘":
+
+            if Config.get(Config.ui_IfShowTray):
+                self.tray.show()
+            else:
+                self.tray.hide()
+
+        elif mode == "隐藏到托盘":
+
+            # 保存窗口相关属性
+            if not self.window().isMaximized():
+
+                Config.set(
+                    Config.ui_size,
+                    f"{self.geometry().width()}x{self.geometry().height()}",
+                )
+                Config.set(
+                    Config.ui_location,
+                    f"{self.geometry().x()}x{self.geometry().y()}",
+                )
+
+            Config.set(Config.ui_maximized, self.window().isMaximized())
+            Config.save()
+
+            # 隐藏主窗口
+            if not if_quick:
+
+                self.window().hide()
+                self.tray.show()
+
     def start_up_task(self) -> None:
         """启动时任务"""
 
@@ -277,24 +377,6 @@ class AUTO_MAA(MSFluentWindow):
         if Config.get(Config.start_IfMinimizeDirectly):
 
             self.titleBar.minBtn.click()
-
-    def set_min_method(self) -> None:
-        """设置最小化方法"""
-
-        if Config.get(Config.ui_IfToTray):
-
-            self.titleBar.minBtn.clicked.disconnect()
-            self.titleBar.minBtn.clicked.connect(lambda: self.show_ui("隐藏到托盘"))
-
-        else:
-
-            self.titleBar.minBtn.clicked.disconnect()
-            self.titleBar.minBtn.clicked.connect(self.window().showMinimized)
-
-    def on_tray_activated(self, reason):
-        """双击返回主界面"""
-        if reason == QSystemTrayIcon.DoubleClick:
-            self.show_ui("显示主窗口")
 
     def clean_old_logs(self):
         """
@@ -351,75 +433,16 @@ class AUTO_MAA(MSFluentWindow):
                 "warning", "启动主任务失败", "“调度队列_1”与“脚本_1”均不存在", -1
             )
 
-    def show_ui(self, mode: str, if_quick: bool = False) -> None:
-        """配置窗口状态"""
+    def __currentChanged(self, index: int) -> None:
+        """切换界面时任务"""
 
-        self.switch_theme()
-
-        if mode == "显示主窗口":
-
-            # 配置主窗口
-            if not self.window().isVisible():
-                size = list(
-                    map(
-                        int,
-                        Config.get(Config.ui_size).split("x"),
-                    )
-                )
-                location = list(
-                    map(
-                        int,
-                        Config.get(Config.ui_location).split("x"),
-                    )
-                )
-                if self.window().isMaximized():
-                    self.window().showNormal()
-                self.window().setGeometry(location[0], location[1], size[0], size[1])
-                self.window().show()
-                if not if_quick:
-                    if Config.get(Config.ui_maximized):
-                        self.titleBar.maxBtn.click()
-                    self.show_ui("配置托盘")
-
-            if not any(
-                self.window().geometry().intersects(screen.availableGeometry())
-                for screen in QApplication.screens()
-            ):
-                self.window().showNormal()
-                self.window().setGeometry(100, 100, 1200, 700)
-
-            self.window().raise_()
-            self.window().activateWindow()
-
-        elif mode == "配置托盘":
-
-            if Config.get(Config.ui_IfShowTray):
-                self.tray.show()
-            else:
-                self.tray.hide()
-
-        elif mode == "隐藏到托盘":
-
-            # 保存窗口相关属性
-            if not self.window().isMaximized():
-
-                Config.set(
-                    Config.ui_size,
-                    f"{self.geometry().width()}x{self.geometry().height()}",
-                )
-                Config.set(
-                    Config.ui_location,
-                    f"{self.geometry().x()}x{self.geometry().y()}",
-                )
-
-            Config.set(Config.ui_maximized, self.window().isMaximized())
-            Config.save()
-
-            # 隐藏主窗口
-            if not if_quick:
-
-                self.window().hide()
-                self.tray.show()
+        if index == 1:
+            self.member_manager.reload_plan_name()
+        elif index == 3:
+            self.queue_manager.reload_member_name()
+        elif index == 4:
+            self.dispatch_center.pivot.setCurrentItem("主调度台")
+            self.dispatch_center.update_top_bar()
 
     def closeEvent(self, event: QCloseEvent):
         """清理残余进程"""
