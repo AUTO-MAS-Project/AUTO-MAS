@@ -34,8 +34,7 @@ from email.mime.text import MIMEText
 from email.utils import formataddr
 
 import requests
-from PySide6.QtCore import Signal
-from PySide6.QtWidgets import QWidget
+from PySide6.QtCore import QObject, Signal
 from loguru import logger
 from plyer import notification
 
@@ -43,7 +42,7 @@ from app.core import Config
 from app.services.security import Crypto
 
 
-class Notification(QWidget):
+class Notification(QObject):
 
     push_info_bar = Signal(str, str, str, int)
 
