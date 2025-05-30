@@ -262,31 +262,26 @@ class Setting(QWidget):
 
         current_version = list(map(int, Config.VERSION.split(".")))
 
-        if Network.if_running and if_show:
-            MainInfoBar.push_info_bar(
-                "warning", "请求速度过快", "上个网络请求还未结束，请稍等片刻", 5000
-            )
-            return None
         # 从远程服务器获取最新版本信息
-        Network.set_info(
+        network = Network.add_task(
             mode="get",
             url=f"https://mirrorchyan.com/api/resources/AUTO_MAA/latest?user_agent=AutoMaaGui&current_version={version_text(current_version)}&cdk={Crypto.win_decryptor(Config.get(Config.update_MirrorChyanCDK))}&channel={Config.get(Config.update_UpdateType)}",
         )
-        Network.start()
-        Network.loop.exec()
-        if Network.stutus_code == 200:
-            version_info: Dict[str, Union[int, str, Dict[str, str]]] = (
-                Network.response_json
-            )
+        network.loop.exec()
+        network_result = Network.get_result(network)
+        if network_result["status_code"] == 200:
+            version_info: Dict[str, Union[int, str, Dict[str, str]]] = network_result[
+                "response_json"
+            ]
         else:
 
-            if Network.response_json:
+            if network_result["response_json"]:
 
-                version_info = Network.response_json
+                version_info = network_result["response_json"]
 
                 if version_info["code"] != 0:
 
-                    logger.error(f"获取版本信息时出错：{version_info["msg"]}")
+                    logger.error(f"获取版本信息时出错：{version_info['msg']}")
 
                     error_remark_dict = {
                         1001: "获取版本信息的URL参数不正确",
@@ -319,11 +314,11 @@ class Setting(QWidget):
 
                     return None
 
-            logger.warning(f"获取版本信息时出错：{Network.error_message}")
+            logger.warning(f"获取版本信息时出错：{network_result['error_message']}")
             MainInfoBar.push_info_bar(
                 "warning",
                 "获取版本信息时出错",
-                f"网络错误：{Network.stutus_code}",
+                f"网络错误：{network_result['status_code']}",
                 5000,
             )
             return None
@@ -406,20 +401,22 @@ class Setting(QWidget):
                 else:
 
                     # 从远程服务器获取代理信息
-                    Network.set_info(
+                    network = Network.add_task(
                         mode="get",
                         url="https://gitee.com/DLmaster_361/AUTO_MAA/raw/server/download_info.json",
                     )
-                    Network.start()
-                    Network.loop.exec()
-                    if Network.stutus_code == 200:
-                        download_info = Network.response_json
+                    network.loop.exec()
+                    network_result = Network.get_result(network)
+                    if network_result["status_code"] == 200:
+                        download_info = network_result["response_json"]
                     else:
-                        logger.warning(f"获取应用列表时出错：{Network.error_message}")
+                        logger.warning(
+                            f"获取应用列表时出错：{network_result['error_message']}"
+                        )
                         MainInfoBar.push_info_bar(
                             "warning",
                             "获取应用列表时出错",
-                            f"网络错误：{Network.stutus_code}",
+                            f"网络错误：{network_result['status_code']}",
                             5000,
                         )
                         return None
@@ -488,20 +485,20 @@ class Setting(QWidget):
         """显示公告"""
 
         # 从远程服务器获取最新公告
-        Network.set_info(
+        network = Network.add_task(
             mode="get",
             url="https://gitee.com/DLmaster_361/AUTO_MAA/raw/server/notice.json",
         )
-        Network.start()
-        Network.loop.exec()
-        if Network.stutus_code == 200:
-            notice = Network.response_json
+        network.loop.exec()
+        network_result = Network.get_result(network)
+        if network_result["status_code"] == 200:
+            notice = network_result["response_json"]
         else:
-            logger.warning(f"获取最新公告时出错：{Network.error_message}")
+            logger.warning(f"获取最新公告时出错：{network_result['error_message']}")
             MainInfoBar.push_info_bar(
                 "warning",
                 "获取最新公告时出错",
-                f"网络错误：{Network.stutus_code}",
+                f"网络错误：{network_result['status_code']}",
                 5000,
             )
             return None

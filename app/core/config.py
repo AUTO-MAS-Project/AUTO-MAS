@@ -567,7 +567,7 @@ class MaaPlanConfig(LQConfig):
 
 class AppConfig(GlobalConfig):
 
-    VERSION = "4.3.8.0"
+    VERSION = "4.3.9.1"
 
     gameid_refreshed = Signal()
     PASSWORD_refreshed = Signal()
@@ -652,18 +652,20 @@ class AppConfig(GlobalConfig):
     def get_gameid(self) -> None:
 
         # 从MAA服务器获取活动关卡信息
-        Network.set_info(
+        network = Network.add_task(
             mode="get",
             url="https://api.maa.plus/MaaAssistantArknights/api/gui/StageActivity.json",
         )
-        Network.start()
-        Network.loop.exec()
-        if Network.stutus_code == 200:
+        network.loop.exec()
+        network_result = Network.get_result(network)
+        if network_result["status_code"] == 200:
             gameid_infos: List[Dict[str, Union[str, Dict[str, Union[str, int]]]]] = (
-                Network.response_json["Official"]["sideStoryStage"]
+                network_result["response_json"]["Official"]["sideStoryStage"]
             )
         else:
-            logger.warning(f"无法从MAA服务器获取活动关卡信息:{Network.error_message}")
+            logger.warning(
+                f"无法从MAA服务器获取活动关卡信息:{network_result['error_message']}"
+            )
             gameid_infos = []
 
         ss_gameid_dict = {"value": [], "text": []}

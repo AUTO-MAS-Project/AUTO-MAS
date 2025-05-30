@@ -277,20 +277,20 @@ class _TaskManager(QObject):
     def check_maa_version(self, v: str):
         """检查MAA版本"""
 
-        Network.set_info(
+        network = Network.add_task(
             mode="get",
             url="https://mirrorchyan.com/api/resources/MAA/latest?user_agent=AutoMaaGui&os=win&arch=x64&channel=stable",
         )
-        Network.start()
-        Network.loop.exec()
-        if Network.stutus_code == 200:
-            maa_info = Network.response_json
+        network.loop.exec()
+        network_result = Network.get_result(network)
+        if network_result["status_code"] == 200:
+            maa_info = network_result["response_json"]
         else:
-            logger.warning(f"获取MAA版本信息时出错：{Network.error_message}")
+            logger.warning(f"获取MAA版本信息时出错：{network_result['error_message']}")
             MainInfoBar.push_info_bar(
                 "warning",
                 "获取MAA版本信息时出错",
-                f"网络错误：{Network.stutus_code}",
+                f"网络错误：{network_result['status_code']}",
                 5000,
             )
             return None

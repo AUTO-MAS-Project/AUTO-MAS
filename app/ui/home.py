@@ -199,20 +199,22 @@ class Home(QWidget):
         elif Config.get(Config.function_HomeImageMode) == "主题图像":
 
             # 从远程服务器获取最新主题图像
-            Network.set_info(
+            network = Network.add_task(
                 mode="get",
                 url="https://gitee.com/DLmaster_361/AUTO_MAA/raw/server/theme_image.json",
             )
-            Network.start()
-            Network.loop.exec()
-            if Network.stutus_code == 200:
-                theme_image = Network.response_json
+            network.loop.exec()
+            network_result = Network.get_result(network)
+            if network_result["status_code"] == 200:
+                theme_image = network_result["response_json"]
             else:
-                logger.warning(f"获取最新主题图像时出错：{Network.error_message}")
+                logger.warning(
+                    f"获取最新主题图像时出错：{network_result['error_message']}"
+                )
                 MainInfoBar.push_info_bar(
                     "warning",
                     "获取最新主题图像时出错",
-                    f"网络错误：{Network.stutus_code}",
+                    f"网络错误：{network_result['status_code']}",
                     5000,
                 )
                 return None
@@ -236,15 +238,15 @@ class Home(QWidget):
                 > time_local
             ):
 
-                Network.set_info(
+                network = Network.add_task(
                     mode="get_file",
                     url=theme_image["url"],
                     path=Config.app_path / "resources/images/Home/BannerTheme.jpg",
                 )
-                Network.start()
-                Network.loop.exec()
+                network.loop.exec()
+                network_result = Network.get_result(network)
 
-                if Network.stutus_code == 200:
+                if network_result["status_code"] == 200:
 
                     with (Config.app_path / "resources/theme_image.json").open(
                         mode="w", encoding="utf-8"
@@ -261,11 +263,13 @@ class Home(QWidget):
 
                 else:
 
-                    logger.warning(f"下载最新主题图像时出错：{Network.error_message}")
+                    logger.warning(
+                        f"下载最新主题图像时出错：{network_result['error_message']}"
+                    )
                     MainInfoBar.push_info_bar(
                         "warning",
                         "下载最新主题图像时出错",
-                        f"网络错误：{Network.stutus_code}",
+                        f"网络错误：{network_result['status_code']}",
                         5000,
                     )
 

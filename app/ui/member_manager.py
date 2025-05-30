@@ -333,20 +333,20 @@ class MemberManager(QWidget):
             return None
 
         # 从远程服务器获取应用列表
-        Network.set_info(
+        network = Network.add_task(
             mode="get",
             url="https://gitee.com/DLmaster_361/AUTO_MAA/raw/server/apps_info.json",
         )
-        Network.start()
-        Network.loop.exec()
-        if Network.stutus_code == 200:
-            apps_info = Network.response_json
+        network.loop.exec()
+        network_result = Network.get_result(network)
+        if network_result["status_code"] == 200:
+            apps_info = network_result["response_json"]
         else:
-            logger.warning(f"获取应用列表时出错：{Network.error_message}")
+            logger.warning(f"获取应用列表时出错：{network_result['error_message']}")
             MainInfoBar.push_info_bar(
                 "warning",
                 "获取应用列表时出错",
-                f"网络错误：{Network.stutus_code}",
+                f"网络错误：{network_result['status_code']}",
                 5000,
             )
             return None
@@ -376,19 +376,19 @@ class MemberManager(QWidget):
                 return None
 
             # 从mirrorc服务器获取最新版本信息
-            Network.set_info(
+            network = Network.add_task(
                 mode="get",
                 url=f"https://mirrorchyan.com/api/resources/{app_rid}/latest?user_agent=AutoMaaGui&cdk={Crypto.win_decryptor(Config.get(Config.update_MirrorChyanCDK))}&os={apps_info[app_name]["os"]}&arch={apps_info[app_name]["arch"]}&channel=stable",
             )
-            Network.start()
-            Network.loop.exec()
-            if Network.stutus_code == 200:
-                app_info = Network.response_json
+            network.loop.exec()
+            network_result = Network.get_result(network)
+            if network_result["status_code"] == 200:
+                app_info = network_result["response_json"]
             else:
 
-                if Network.response_json:
+                if network_result["response_json"]:
 
-                    app_info = Network.response_json
+                    app_info = network_result["response_json"]
 
                     if app_info["code"] != 0:
 
@@ -425,11 +425,11 @@ class MemberManager(QWidget):
 
                         return None
 
-                logger.warning(f"获取版本信息时出错：{Network.error_message}")
+                logger.warning(f"获取版本信息时出错：{network_result['error_message']}")
                 MainInfoBar.push_info_bar(
                     "warning",
                     "获取版本信息时出错",
-                    f"网络错误：{Network.stutus_code}",
+                    f"网络错误：{network_result['status_code']}",
                     5000,
                 )
                 return None
