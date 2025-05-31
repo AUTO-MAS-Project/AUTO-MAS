@@ -43,7 +43,7 @@ from qfluentwidgets import (
 from typing import List, Dict, Union
 import shutil
 
-from app.core import Config, MainInfoBar, MaaPlanConfig
+from app.core import Config, MainInfoBar, MaaPlanConfig, SoundPlayer
 from .Widget import (
     ComboBoxMessageBox,
     LineEditSettingCard,
@@ -129,6 +129,7 @@ class PlanManager(QWidget):
                 MainInfoBar.push_info_bar(
                     "success", "操作成功", f"添加计划表 计划_{index}", 3000
                 )
+                SoundPlayer.play("添加计划表")
 
     def del_setting_box(self):
         """删除一个计划表"""
@@ -167,6 +168,7 @@ class PlanManager(QWidget):
 
             logger.success(f"计划表 {name} 删除成功")
             MainInfoBar.push_info_bar("success", "操作成功", f"删除计划表 {name}", 3000)
+            SoundPlayer.play("删除计划表")
 
     def left_setting_box(self):
         """向左移动计划表"""

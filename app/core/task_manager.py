@@ -35,6 +35,7 @@ from typing import Dict, Union
 from .config import Config
 from .main_info_bar import MainInfoBar
 from .network import Network
+from .sound_player import SoundPlayer
 from app.models import MaaManager
 from app.services import System
 
@@ -191,6 +192,7 @@ class _TaskManager(QObject):
 
         logger.info(f"任务开始：{name}")
         MainInfoBar.push_info_bar("info", "任务开始", name, 3000)
+        SoundPlayer.play("任务开始")
 
         Config.running_list.append(name)
         self.task_dict[name] = Task(mode, name, info)
@@ -239,6 +241,7 @@ class _TaskManager(QObject):
 
         logger.info(f"任务结束：{name}")
         MainInfoBar.push_info_bar("info", "任务结束", name, 3000)
+        SoundPlayer.play("任务结束")
 
         self.task_dict[name].deleteLater()
         self.task_dict.pop(name)

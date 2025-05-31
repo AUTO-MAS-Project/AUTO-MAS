@@ -45,7 +45,7 @@ from datetime import datetime, timedelta
 import shutil
 import darkdetect
 
-from app.core import Config, TaskManager, MainTimer, MainInfoBar
+from app.core import Config, TaskManager, MainTimer, MainInfoBar, SoundPlayer
 from app.services import Notify, Crypto, System
 from .home import Home
 from .member_manager import MemberManager
@@ -285,6 +285,7 @@ class AUTO_MAA(MSFluentWindow):
                         and not self.window().isMaximized()
                     ):
                         self.titleBar.maxBtn.click()
+                    SoundPlayer.play("欢迎回来")
                     self.show_ui("配置托盘")
             elif if_start:
                 if Config.get(Config.ui_maximized) and not self.window().isMaximized():
@@ -377,6 +378,8 @@ class AUTO_MAA(MSFluentWindow):
         if Config.get(Config.start_IfMinimizeDirectly):
 
             self.titleBar.minBtn.click()
+
+        SoundPlayer.play("MAA在完成任务前退出")
 
     def clean_old_logs(self):
         """

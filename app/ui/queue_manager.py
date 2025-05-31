@@ -42,7 +42,7 @@ from qfluentwidgets import (
 )
 from typing import List
 
-from app.core import QueueConfig, Config, MainInfoBar
+from app.core import QueueConfig, Config, MainInfoBar, SoundPlayer
 from .Widget import (
     SwitchSettingCard,
     ComboBoxSettingCard,
@@ -116,6 +116,7 @@ class QueueManager(QWidget):
 
         logger.success(f"调度队列_{index} 添加成功")
         MainInfoBar.push_info_bar("success", "操作成功", f"添加 调度队列_{index}", 3000)
+        SoundPlayer.play("添加调度队列")
 
     def del_setting_box(self):
         """删除一个调度队列实例"""
@@ -154,6 +155,7 @@ class QueueManager(QWidget):
 
             logger.success(f"{name} 删除成功")
             MainInfoBar.push_info_bar("success", "操作成功", f"删除 {name}", 3000)
+            SoundPlayer.play("删除调度队列")
 
     def left_setting_box(self):
         """向左移动调度队列实例"""

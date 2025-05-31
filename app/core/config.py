@@ -185,6 +185,11 @@ class GlobalConfig(LQConfig):
             "Function", "IfSkipMumuSplashAds", False, BoolValidator()
         )
 
+        self.voice_Enabled = ConfigItem("Voice", "Enabled", False, BoolValidator())
+        self.voice_Type = OptionsConfigItem(
+            "Voice", "Type", "simple", OptionsValidator(["simple", "noisy"])
+        )
+
         self.start_IfSelfStart = ConfigItem(
             "Start", "IfSelfStart", False, BoolValidator()
         )
