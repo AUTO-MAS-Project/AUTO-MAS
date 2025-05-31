@@ -379,8 +379,6 @@ class AUTO_MAA(MSFluentWindow):
 
             self.titleBar.minBtn.click()
 
-        SoundPlayer.play("MAA在完成任务前退出")
-
     def clean_old_logs(self):
         """
         删除超过用户设定天数的日志文件（基于目录日期）
