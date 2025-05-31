@@ -30,6 +30,7 @@ from PySide6.QtCore import Qt
 from qfluentwidgets import InfoBar, InfoBarPosition
 
 from .config import Config
+from .sound_player import SoundPlayer
 
 
 class _MainInfoBar:
@@ -78,6 +79,11 @@ class _MainInfoBar:
             }
             if info_bar_item not in Config.info_bar_list:
                 Config.info_bar_list.append(info_bar_item)
+
+        if mode == "warning":
+            SoundPlayer.play("发生异常")
+        if mode == "error":
+            SoundPlayer.play("发生错误")
 
 
 MainInfoBar = _MainInfoBar()

@@ -51,7 +51,7 @@ from pathlib import Path
 from typing import Union, List, Dict
 
 
-from app.core import Config
+from app.core import Config, SoundPlayer
 from .Widget import StatefulItemCard, QuantifiedItemCard, QuickExpandGroupCard
 
 
@@ -82,6 +82,8 @@ class History(QWidget):
 
     def reload_history(self, mode: str, start_date: QDate, end_date: QDate) -> None:
         """加载历史记录界面"""
+
+        SoundPlayer.play("历史记录查询")
 
         while self.content_layout.count() > 0:
             item = self.content_layout.takeAt(0)

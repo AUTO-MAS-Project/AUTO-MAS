@@ -49,7 +49,7 @@ from packaging import version
 from pathlib import Path
 from typing import Dict, Union
 
-from app.core import Config, MainInfoBar, Network
+from app.core import Config, MainInfoBar, Network, SoundPlayer
 from app.services import Crypto, System, Notify
 from .downloader import DownloadManager
 from .Widget import (
@@ -71,6 +71,7 @@ class Setting(QWidget):
         self.setObjectName("设置")
 
         self.function = FunctionSettingCard(self)
+        self.voice = VoiceSettingCard(self)
         self.start = StartSettingCard(self)
         self.ui = UiSettingCard(self)
         self.notification = NotifySettingCard(self)
@@ -94,6 +95,7 @@ class Setting(QWidget):
         content_layout = QVBoxLayout(content_widget)
         content_layout.setContentsMargins(0, 0, 11, 0)
         content_layout.addWidget(self.function)
+        content_layout.addWidget(self.voice)
         content_layout.addWidget(self.start)
         content_layout.addWidget(self.ui)
         content_layout.addWidget(self.notification)
@@ -376,6 +378,7 @@ class Setting(QWidget):
                         all_version_info[key] = value.copy()
 
             # 询问是否开始版本更新
+            SoundPlayer.play("有新版本")
             choice = NoticeMessageBox(
                 self.window(),
                 "版本更新",
@@ -461,8 +464,10 @@ class Setting(QWidget):
                     3600000,
                     if_force=True,
                 )
+                SoundPlayer.play("有新版本")
             else:
                 MainInfoBar.push_info_bar("success", "更新检查", "已是最新版本~", 3000)
+                SoundPlayer.play("无新版本")
 
     def start_setup(self) -> None:
         subprocess.Popen(
@@ -530,6 +535,7 @@ class Setting(QWidget):
             choice = NoticeMessageBox(self.window(), "公告", notice["notice_dict"])
             choice.button_cancel.hide()
             choice.button_layout.insertStretch(0, 1)
+            SoundPlayer.play("公告展示")
             if choice.exec():
                 with (Config.app_path / "resources/notice.json").open(
                     mode="w", encoding="utf-8"
@@ -545,6 +551,7 @@ class Setting(QWidget):
             MainInfoBar.push_info_bar(
                 "info", "有新公告", "请前往设置界面查看公告", 3600000, if_force=True
             )
+            SoundPlayer.play("公告通知")
             return None
 
 
@@ -651,6 +658,36 @@ class FunctionSettingCard(HeaderCardWidget):
             self.viewLayout.setContentsMargins(0, 0, 0, 0)
             self.viewLayout.setSpacing(0)
             self.addGroupWidget(widget)
+
+
+class VoiceSettingCard(HeaderCardWidget):
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setTitle("音效")
+
+        self.card_Enabled = SwitchSettingCard(
+            icon=FluentIcon.PAGE_RIGHT,
+            title="音效开关",
+            content="是否启用音效",
+            qconfig=Config,
+            configItem=Config.voice_Enabled,
+            parent=self,
+        )
+        self.card_Type = ComboBoxSettingCard(
+            icon=FluentIcon.PAGE_RIGHT,
+            title="音效模式",
+            content="选择音效的播放模式",
+            texts=["简洁", "聒噪"],
+            qconfig=Config,
+            configItem=Config.voice_Type,
+            parent=self,
+        )
+
+        Layout = QVBoxLayout()
+        Layout.addWidget(self.card_Enabled)
+        Layout.addWidget(self.card_Type)
+        self.viewLayout.addLayout(Layout)
 
 
 class StartSettingCard(HeaderCardWidget):

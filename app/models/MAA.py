@@ -38,7 +38,7 @@ from pathlib import Path
 from jinja2 import Environment, FileSystemLoader
 from typing import Union, List, Dict
 
-from app.core import Config, MaaConfig, MaaUserConfig
+from app.core import Config, MaaConfig, MaaUserConfig, SoundPlayer
 from app.services import Notify, System
 
 
@@ -87,6 +87,8 @@ class MaaManager(QObject):
         self.question_loop = QEventLoop()
         self.question_response.connect(self.__capture_response)
         self.question_response.connect(self.question_loop.quit)
+
+        self.wait_loop = QEventLoop()
 
         self.interrupt.connect(self.quit_monitor)
 
@@ -511,10 +513,7 @@ class MaaManager(QObject):
                                 "检测到MAA进程完成代理任务\n正在等待相关程序结束\n请等待10s"
                             )
 
-                            for _ in range(10):
-                                if self.isInterruptionRequested:
-                                    break
-                                time.sleep(1)
+                            self.sleep(10)
                         else:
                             logger.error(
                                 f"{self.name} | 用户: {user[0]} - 代理任务异常: {self.maa_result}"
@@ -564,10 +563,11 @@ class MaaManager(QObject):
                                 f"{user[0].replace("_", " ")}的{mode_book[mode][5:7]}出现异常",
                                 1,
                             )
-                            for _ in range(10):
-                                if self.isInterruptionRequested:
-                                    break
-                                time.sleep(1)
+                            if i == self.set["RunSet"]["RunTimesLimit"] - 1:
+                                SoundPlayer.play("子任务失败", self)
+                            else:
+                                SoundPlayer.play(self.maa_result, self)
+                            self.sleep(10)
 
                         # 任务结束后释放ADB
                         try:
@@ -619,6 +619,7 @@ class MaaManager(QObject):
                                 },
                                 user_data,
                             )
+                            SoundPlayer.play("六星喜报", self)
 
                         # 执行MAA解压更新动作
                         if self.maa_update_package:
@@ -630,15 +631,13 @@ class MaaManager(QObject):
                             self.update_log_text.emit(
                                 f"检测到MAA存在更新\nMAA正在执行更新动作\n请等待10s"
                             )
+                            SoundPlayer.play("MAA更新", self)
                             self.set_maa("更新MAA", None)
                             subprocess.Popen(
                                 [self.maa_exe_path],
                                 creationflags=subprocess.CREATE_NO_WINDOW,
                             )
-                            for _ in range(10):
-                                if self.isInterruptionRequested:
-                                    break
-                                time.sleep(1)
+                            self.sleep(10)
                             System.kill_process(self.maa_exe_path)
 
                             logger.info(f"{self.name} | 更新动作结束")
@@ -745,10 +744,7 @@ class MaaManager(QObject):
                         # 无命令行中止MAA与其子程序
                         System.kill_process(self.maa_exe_path)
                         self.if_open_emulator = True
-                        for _ in range(10):
-                            if self.isInterruptionRequested:
-                                break
-                            time.sleep(1)
+                        self.sleep(10)
 
                     # 登录成功，结束循环
                     if run_book[0]:
@@ -756,6 +752,7 @@ class MaaManager(QObject):
                     # 登录失败，询问是否结束循环
                     elif not self.isInterruptionRequested:
 
+                        SoundPlayer.play("排查重试", self)
                         if not self.push_question(
                             "操作提示", "MAA未能正确登录到PRTS，是否重试？"
                         ):
@@ -764,6 +761,7 @@ class MaaManager(QObject):
                 # 登录成功，录入人工排查情况
                 if run_book[0] and not self.isInterruptionRequested:
 
+                    SoundPlayer.play("排查录入", self)
                     if self.push_question(
                         "操作提示", "请检查用户代理情况，该用户是否正确完成代理任务？"
                     ):
@@ -885,6 +883,7 @@ class MaaManager(QObject):
 
         self.maa_result = "任务被手动中止"
         self.isInterruptionRequested = True
+        self.wait_loop.quit()
 
     def push_question(self, title: str, message: str) -> bool:
 
@@ -895,6 +894,12 @@ class MaaManager(QObject):
     def __capture_response(self, response: bool) -> None:
         self.response = response
 
+    def sleep(self, time: int) -> None:
+        """非阻塞型等待"""
+
+        QTimer.singleShot(time * 1000, self.wait_loop.quit)
+        self.wait_loop.exec()
+
     def search_ADB_address(self) -> None:
         """搜索ADB实际地址"""
 
@@ -902,10 +907,7 @@ class MaaManager(QObject):
             f"即将搜索ADB实际地址\n正在等待模拟器完成启动\n请等待{self.wait_time}s"
         )
 
-        for _ in range(self.wait_time):
-            if self.isInterruptionRequested:
-                break
-            time.sleep(1)
+        self.sleep(self.wait_time)
 
         # 移除静默进程标记
         Config.silence_list.remove(self.emulator_path)
@@ -968,12 +970,15 @@ class MaaManager(QObject):
                     with self.maa_set_path.open(mode="w", encoding="utf-8") as f:
                         json.dump(data, f, ensure_ascii=False, indent=4)
 
+                    SoundPlayer.play("ADB成功", self)
                     return None
 
                 else:
                     logger.info(f"{self.name} | 无法连接到ADB地址：{ADB_address}")
             else:
                 logger.info(f"{self.name} | 无法连接到ADB地址：{ADB_address}")
+
+        SoundPlayer.play("ADB失败", self)
 
     def refresh_maa_log(self) -> None:
         """刷新MAA日志"""

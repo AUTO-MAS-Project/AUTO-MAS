@@ -48,7 +48,7 @@ from PySide6.QtGui import QTextCursor
 from typing import List, Dict
 
 
-from app.core import Config, TaskManager, Task, MainInfoBar
+from app.core import Config, TaskManager, Task, MainInfoBar, SoundPlayer
 from .Widget import StatefulItemCard, ComboBoxMessageBox, PivotArea
 
 

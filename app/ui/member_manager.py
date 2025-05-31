@@ -58,7 +58,15 @@ from typing import List
 import shutil
 import json
 
-from app.core import Config, MainInfoBar, TaskManager, MaaConfig, MaaUserConfig, Network
+from app.core import (
+    Config,
+    MainInfoBar,
+    TaskManager,
+    MaaConfig,
+    MaaUserConfig,
+    Network,
+    SoundPlayer,
+)
 from app.services import Crypto
 from .downloader import DownloadManager
 from .Widget import (
@@ -181,6 +189,7 @@ class MemberManager(QWidget):
                 MainInfoBar.push_info_bar(
                     "success", "操作成功", f"添加脚本实例 脚本_{index}", 3000
                 )
+                SoundPlayer.play("添加脚本实例")
 
     def del_setting_box(self):
         """删除一个脚本实例"""
@@ -221,6 +230,7 @@ class MemberManager(QWidget):
             MainInfoBar.push_info_bar(
                 "success", "操作成功", f"删除脚本实例 {name}", 3000
             )
+            SoundPlayer.play("删除脚本实例")
 
     def left_setting_box(self):
         """向左移动脚本实例"""
@@ -885,6 +895,7 @@ class MemberManager(QWidget):
                     MainInfoBar.push_info_bar(
                         "success", "操作成功", f"{self.name} 添加 用户_{index}", 3000
                     )
+                    SoundPlayer.play("添加用户")
 
                 def del_user(self):
                     """删除一个用户"""
@@ -944,6 +955,7 @@ class MemberManager(QWidget):
                         MainInfoBar.push_info_bar(
                             "success", "操作成功", f"{self.name} 删除 {name}", 3000
                         )
+                        SoundPlayer.play("删除用户")
 
                 def left_user(self):
                     """向前移动用户"""
