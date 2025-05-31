@@ -26,8 +26,7 @@ v4.3
 """
 
 from loguru import logger
-from PySide6.QtWidgets import QWidget
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import QObject, QTimer
 from datetime import datetime
 from pathlib import Path
 import pyautogui
@@ -37,7 +36,7 @@ from .task_manager import TaskManager
 from app.services import System
 
 
-class _MainTimer(QWidget):
+class _MainTimer(QObject):
 
     def __init__(self, parent=None):
         super().__init__(parent)

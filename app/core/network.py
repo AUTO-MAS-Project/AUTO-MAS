@@ -26,54 +26,40 @@ v4.3
 """
 
 from loguru import logger
-from PySide6.QtCore import QThread, QEventLoop, QTimer
+from PySide6.QtCore import QObject, QThread, QEventLoop
 import time
 import requests
 from pathlib import Path
 
 
-class _Network(QThread):
+class NetworkThread(QThread):
+    """网络请求线程类"""
 
     max_retries = 3
     timeout = 10
     backoff_factor = 0.1
 
-    def __init__(self) -> None:
+    def __init__(self, mode: str, url: str, path: Path = None) -> None:
         super().__init__()
-
-        self.if_running = False
-        self.mode = None
-        self.url = None
-        self.loop = QEventLoop()
-        self.wait_loop = QEventLoop()
-
-    @logger.catch
-    def run(self) -> None:
-        """运行网络请求线程"""
-
-        self.if_running = True
-
-        if self.mode == "get":
-            self.get_json(self.url)
-        elif self.mode == "get_file":
-            self.get_file(self.url, self.path)
-
-        self.if_running = False
-
-    def set_info(self, mode: str, url: str, path: Path = None) -> None:
-        """设置网络请求信息"""
-
-        while self.if_running:
-            QTimer.singleShot(self.backoff_factor * 1000, self.wait_loop.quit)
-            self.wait_loop.exec()
 
         self.mode = mode
         self.url = url
         self.path = path
 
-        self.stutus_code = None
+        self.status_code = None
         self.response_json = None
         self.error_message = None
+
+        self.loop = QEventLoop()
+
+    @logger.catch
+    def run(self) -> None:
+        """运行网络请求线程"""
+
+        if self.mode == "get":
+            self.get_json(self.url)
+        elif self.mode == "get_file":
+            self.get_file(self.url, self.path)
 
     def get_json(self, url: str) -> None:
         """通过get方法获取json数据"""
@@ -83,12 +69,12 @@ class _Network(QThread):
         for _ in range(self.max_retries):
             try:
                 response = requests.get(url, timeout=self.timeout)
-                self.stutus_code = response.status_code
+                self.status_code = response.status_code
                 self.response_json = response.json()
                 self.error_message = None
                 break
             except Exception as e:
-                self.stutus_code = response.status_code if response else None
+                self.status_code = response.status_code if response else None
                 self.response_json = None
                 self.error_message = str(e)
                 time.sleep(self.backoff_factor)
@@ -105,16 +91,47 @@ class _Network(QThread):
             if response.status_code == 200:
                 with open(path, "wb") as file:
                     file.write(response.content)
-                self.stutus_code = response.status_code
+                self.status_code = response.status_code
             else:
-                self.stutus_code = response.status_code
+                self.status_code = response.status_code
                 self.error_message = "下载失败"
 
         except Exception as e:
-            self.stutus_code = response.status_code if response else None
+            self.status_code = response.status_code if response else None
             self.error_message = str(e)
 
         self.loop.quit()
+
+
+class _Network(QObject):
+    """网络请求线程类"""
+
+    def __init__(self) -> None:
+        super().__init__()
+
+        self.task_queue = []
+
+    def add_task(self, mode: str, url: str, path: Path = None) -> NetworkThread:
+        """添加网络请求任务"""
+
+        network_thread = NetworkThread(mode, url, path)
+
+        self.task_queue.append(network_thread)
+
+        network_thread.start()
+
+        return network_thread
+
+    def get_result(self, network_thread: NetworkThread) -> dict:
+        """获取网络请求结果"""
+
+        self.task_queue.remove(network_thread)
+
+        return {
+            "status_code": network_thread.status_code,
+            "response_json": network_thread.response_json,
+            "error_message": network_thread.error_message,
+        }
 
 
 Network = _Network()

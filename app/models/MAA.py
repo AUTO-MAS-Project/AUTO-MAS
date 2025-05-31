@@ -426,11 +426,11 @@ class MaaManager(QObject):
 
                         # 任务开始前释放ADB
                         try:
+                            logger.info(f"{self.name} | 释放ADB：{self.ADB_address}")
                             subprocess.run(
                                 [self.ADB_path, "disconnect", self.ADB_address],
                                 creationflags=subprocess.CREATE_NO_WINDOW,
                             )
-                            logger.info(f"{self.name} | 释放ADB：{self.ADB_address}")
                         except subprocess.CalledProcessError as e:
                             # 忽略错误,因为可能本来就没有连接
                             logger.warning(f"{self.name} | 释放ADB时出现异常：{e}")
@@ -445,12 +445,12 @@ class MaaManager(QObject):
 
                         if self.if_open_emulator_process:
                             try:
+                                logger.info(
+                                    f"{self.name} | 启动模拟器：{self.emulator_path}，参数：{self.emulator_arguments}"
+                                )
                                 self.emulator_process = subprocess.Popen(
                                     [self.emulator_path, *self.emulator_arguments],
                                     creationflags=subprocess.CREATE_NO_WINDOW,
-                                )
-                                logger.info(
-                                    f"{self.name} | 启动模拟器：{self.emulator_path}，参数：{self.emulator_arguments}"
                                 )
                             except Exception as e:
                                 logger.error(f"{self.name} | 启动模拟器时出现异常：{e}")
@@ -571,11 +571,11 @@ class MaaManager(QObject):
 
                         # 任务结束后释放ADB
                         try:
+                            logger.info(f"{self.name} | 释放ADB：{self.ADB_address}")
                             subprocess.run(
                                 [self.ADB_path, "disconnect", self.ADB_address],
                                 creationflags=subprocess.CREATE_NO_WINDOW,
                             )
-                            logger.info(f"{self.name} | 释放ADB：{self.ADB_address}")
                         except subprocess.CalledProcessError as e:
                             # 忽略错误,因为可能本来就没有连接
                             logger.warning(f"{self.name} | 释放ADB时出现异常：{e}")
