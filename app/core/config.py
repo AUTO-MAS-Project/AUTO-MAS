@@ -426,11 +426,14 @@ class MaaUserConfig(LQConfig):
         self.Info_GameId_1 = ConfigItem("Info", "GameId_1", "-")
         self.Info_GameId_2 = ConfigItem("Info", "GameId_2", "-")
         self.Info_GameId_Remain = ConfigItem("Info", "GameId_Remain", "-")
+        self.Info_IfSkland = ConfigItem("Info", "IfSkland", False, BoolValidator())
+        self.Info_SklandToken = ConfigItem("Info", "SklandToken", "")
 
         self.Data_LastProxyDate = ConfigItem("Data", "LastProxyDate", "2000-01-01")
         self.Data_LastAnnihilationDate = ConfigItem(
             "Data", "LastAnnihilationDate", "2000-01-01"
         )
+        self.Data_LastSklandDate = ConfigItem("Data", "LastSklandDate", "2000-01-01")
         self.Data_ProxyTimes = ConfigItem(
             "Data", "ProxyTimes", 0, RangeValidator(0, 1024)
         )
@@ -572,7 +575,7 @@ class MaaPlanConfig(LQConfig):
 
 class AppConfig(GlobalConfig):
 
-    VERSION = "4.3.9.0"
+    VERSION = "4.3.10.1"
 
     gameid_refreshed = Signal()
     PASSWORD_refreshed = Signal()
@@ -1255,6 +1258,10 @@ class AppConfig(GlobalConfig):
             user_config.set(
                 user_config.Data_LastAnnihilationDate,
                 info["Config"]["Data"]["LastAnnihilationDate"],
+            )
+            user_config.set(
+                user_config.Data_LastSklandDate,
+                info["Config"]["Data"]["LastSklandDate"],
             )
             user_config.set(
                 user_config.Data_ProxyTimes, info["Config"]["Data"]["ProxyTimes"]
