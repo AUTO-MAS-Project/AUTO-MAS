@@ -27,6 +27,7 @@ v4.3
 
 from loguru import logger
 from PySide6.QtCore import QObject, QThread, QEventLoop
+import re
 import time
 import requests
 from pathlib import Path
@@ -41,6 +42,10 @@ class NetworkThread(QThread):
 
     def __init__(self, mode: str, url: str, path: Path = None) -> None:
         super().__init__()
+
+        self.setObjectName(
+            f"NetworkThread-{mode}-{re.sub(r'(&cdk=)[^&]+(&)', r'\1******\2', url)}"
+        )
 
         self.mode = mode
         self.url = url
@@ -125,13 +130,22 @@ class _Network(QObject):
     def get_result(self, network_thread: NetworkThread) -> dict:
         """获取网络请求结果"""
 
-        self.task_queue.remove(network_thread)
-
-        return {
+        result = {
             "status_code": network_thread.status_code,
             "response_json": network_thread.response_json,
-            "error_message": network_thread.error_message,
+            "error_message": (
+                re.sub(r"(&cdk=)[^&]+(&)", r"\1******\2", network_thread.error_message)
+                if network_thread.error_message
+                else None
+            ),
         }
+
+        network_thread.quit()
+        network_thread.wait()
+        self.task_queue.remove(network_thread)
+        network_thread.deleteLater()
+
+        return result
 
 
 Network = _Network()

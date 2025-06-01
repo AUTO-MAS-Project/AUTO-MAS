@@ -45,6 +45,7 @@ class Task(QThread):
 
     check_maa_version = Signal(str)
     push_info_bar = Signal(str, str, str, int)
+    play_sound = Signal(str)
     question = Signal(str, str)
     question_response = Signal(bool)
     update_user_info = Signal(str, dict)
@@ -59,6 +60,8 @@ class Task(QThread):
         self, mode: str, name: str, info: Dict[str, Dict[str, Union[str, int, bool]]]
     ):
         super(Task, self).__init__()
+
+        self.setObjectName(f"Task-{mode}-{name}")
 
         self.mode = mode
         self.name = name
@@ -83,6 +86,7 @@ class Task(QThread):
             )
             self.task.check_maa_version.connect(self.check_maa_version.emit)
             self.task.push_info_bar.connect(self.push_info_bar.emit)
+            self.task.play_sound.connect(self.play_sound.emit)
             self.task.accomplish.connect(lambda: self.accomplish.emit([]))
 
             self.task.run()
@@ -142,6 +146,7 @@ class Task(QThread):
                     self.question_response.disconnect()
                     self.question_response.connect(self.task.question_response.emit)
                     self.task.push_info_bar.connect(self.push_info_bar.emit)
+                    self.task.play_sound.connect(self.play_sound.emit)
                     self.task.create_user_list.connect(self.create_user_list.emit)
                     self.task.update_user_list.connect(self.update_user_list.emit)
                     self.task.update_log_text.connect(self.update_log_text.emit)
@@ -201,6 +206,7 @@ class _TaskManager(QObject):
             lambda title, content: self.push_dialog(name, title, content)
         )
         self.task_dict[name].push_info_bar.connect(MainInfoBar.push_info_bar)
+        self.task_dict[name].play_sound.connect(SoundPlayer.play)
         self.task_dict[name].update_user_info.connect(Config.change_user_info)
         self.task_dict[name].accomplish.connect(
             lambda logs: self.remove_task(mode, name, logs)
