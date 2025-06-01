@@ -78,6 +78,8 @@ class DownloadProcess(QThread):
     ) -> None:
         super(DownloadProcess, self).__init__()
 
+        self.setObjectName(f"DownloadProcess-{url}-{start_byte}-{end_byte}")
+
         self.url = url
         self.start_byte = start_byte
         self.end_byte = end_byte
@@ -156,6 +158,8 @@ class ZipExtractProcess(QThread):
 
     def __init__(self, name: str, app_path: Path, download_path: Path) -> None:
         super(ZipExtractProcess, self).__init__()
+
+        self.setObjectName(f"ZipExtractProcess-{name}")
 
         self.name = name
         self.app_path = app_path

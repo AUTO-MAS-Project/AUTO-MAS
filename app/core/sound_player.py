@@ -41,27 +41,26 @@ class _SoundPlayer(QObject):
 
         self.sounds_path = Config.app_path / "resources/sounds"
 
-    def play(self, sound_name: str, parent: QObject = None):
+    def play(self, sound_name: str):
 
         if not Config.get(Config.voice_Enabled):
             return
 
         if (self.sounds_path / f"both/{sound_name}.wav").exists():
 
-            self.play_voice(self.sounds_path / f"both/{sound_name}.wav", parent)
+            self.play_voice(self.sounds_path / f"both/{sound_name}.wav")
 
         elif (
             self.sounds_path / Config.get(Config.voice_Type) / f"{sound_name}.wav"
         ).exists():
 
             self.play_voice(
-                self.sounds_path / Config.get(Config.voice_Type) / f"{sound_name}.wav",
-                parent,
+                self.sounds_path / Config.get(Config.voice_Type) / f"{sound_name}.wav"
             )
 
-    def play_voice(self, sound_path: Path, parent: QObject):
+    def play_voice(self, sound_path: Path):
 
-        effect = QSoundEffect(self if parent is None else parent)
+        effect = QSoundEffect(self)
         effect.setVolume(1)
         effect.setSource(QUrl.fromLocalFile(sound_path))
         effect.play()
