@@ -1,6 +1,12 @@
 #   AUTO_MAA:A MAA Multi Account Management and Automation Tool
 #   Copyright © 2024-2025 DLmaster361
 
+#   This file incorporates work covered by the following copyright and
+#   permission notice:
+#
+#       ZenlessZoneZero-OneDragon Copyright © 2024-2025 DoctorReid
+#       https://github.com/DoctorReid/ZenlessZoneZero-OneDragon
+
 #   This file is part of AUTO_MAA.
 
 #   AUTO_MAA is free software: you can redistribute it and/or modify
