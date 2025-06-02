@@ -1589,7 +1589,7 @@ class MemberManager(QWidget):
                             self.card_Skland = PasswordLineAndSwitchButtonSettingCard(
                                 icon=FluentIcon.CERTIFICATE,
                                 title="森空岛签到",
-                                content="此功能具有一定风险，请谨慎使用",
+                                content="此功能具有一定风险，请谨慎使用！获取登录凭证请查阅「文档-进阶功能」。",
                                 text="鹰角网络通行证登录凭证",
                                 algorithm="DPAPI",
                                 qconfig=self.config,
