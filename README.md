@@ -14,7 +14,7 @@
   <a href="https://github.com/DLmaster361/AUTO_MAA/graphs/contributors"><img alt="GitHub Contributors" src="https://img.shields.io/github/contributors/DLmaster361/AUTO_MAA?style=flat-square"></a>
   <a href="https://github.com/DLmaster361/AUTO_MAA/blob/main/LICENSE"><img alt="GitHub License" src="https://img.shields.io/github/license/DLmaster361/AUTO_MAA?style=flat-square"></a>
   <a href="https://deepwiki.com/DLmaster361/AUTO_MAA"><img alt="DeepWiki" src="https://deepwiki.com/badge.svg"></a>
-  <a href="https://mirrorchyan.com/zh/projects?rid=AUTO_MAA"><img alt="mirrorc" src="https://img.shields.io/badge/Mirror%E9%85%B1-%239af3f6?logo=countingworkspro&logoColor=4f46e5"></a>
+  <a href="https://mirrorchyan.com/zh/projects?rid=AUTO_MAA&source=auto_maa-readme"><img alt="mirrorc" src="https://img.shields.io/badge/Mirror%E9%85%B1-%239af3f6?logo=countingworkspro&logoColor=4f46e5"></a>
 </p>
 
 ## 软件介绍
