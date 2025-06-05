@@ -18,7 +18,7 @@
 
 #   Contact: DLmaster_361@163.com
 
-name: Build AUTO_MAA Test
+name: Build AUTO_MAA Test b
 
 on:
   workflow_dispatch:
