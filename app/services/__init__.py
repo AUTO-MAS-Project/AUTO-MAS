@@ -32,5 +32,6 @@ __license__ = "GPL-3.0 license"
 from .notification import Notify
 from .security import Crypto
 from .system import System
+from .skland import skland_sign_in
 
-__all__ = ["Notify", "Crypto", "System"]
+__all__ = ["Notify", "Crypto", "System", "skland_sign_in"]

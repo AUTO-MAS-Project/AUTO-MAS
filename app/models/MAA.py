@@ -30,7 +30,6 @@ from PySide6.QtCore import QObject, Signal, QEventLoop, QFileSystemWatcher, QTim
 import json
 import subprocess
 import shutil
-import time
 import re
 import win32com.client
 from datetime import datetime, timedelta
@@ -39,7 +38,7 @@ from jinja2 import Environment, FileSystemLoader
 from typing import Union, List, Dict
 
 from app.core import Config, MaaConfig, MaaUserConfig
-from app.services import Notify, System
+from app.services import Notify, Crypto, System, skland_sign_in
 
 
 class MaaManager(QObject):
@@ -219,6 +218,51 @@ class MaaManager(QObject):
 
                 user_logs_list = []
                 user_start_time = datetime.now()
+
+                if user_data["Info"]["IfSkland"] and user_data["Info"]["SklandToken"]:
+
+                    if user_data["Data"]["LastSklandDate"] != datetime.now().strftime(
+                        "%Y-%m-%d"
+                    ):
+
+                        self.update_log_text.emit("正在执行森空岛签到中\n请稍候~")
+
+                        skland_result = skland_sign_in(
+                            Crypto.win_decryptor(user_data["Info"]["SklandToken"])
+                        )
+
+                        for type, user_list in skland_result.items():
+
+                            if type != "总计" and len(user_list) > 0:
+
+                                logger.info(
+                                    f"{self.name} | 用户: {user[0]} - 森空岛签到{type}: {'、'.join(user_list)}"
+                                )
+                                self.push_info_bar.emit(
+                                    "info",
+                                    f"森空岛签到{type}",
+                                    "、".join(user_list),
+                                    -1,
+                                )
+
+                        if (
+                            skland_result["总计"] > 0
+                            and len(skland_result["失败"]) == 0
+                        ):
+                            user_data["Data"][
+                                "LastSklandDate"
+                            ] = datetime.now().strftime("%Y-%m-%d")
+                            self.play_sound.emit("森空岛签到成功")
+                        else:
+                            self.play_sound.emit("森空岛签到失败")
+
+                elif user_data["Info"]["IfSkland"]:
+                    logger.warning(
+                        f"{self.name} | 用户: {user[0]} - 未配置森空岛签到Token，跳过森空岛签到"
+                    )
+                    self.push_info_bar.emit(
+                        "warning", "森空岛签到失败", "未配置鹰角网络通行证登录凭证", -1
+                    )
 
                 # 剿灭-日常模式循环
                 for mode in ["Annihilation", "Routine"]:
@@ -910,6 +954,9 @@ class MaaManager(QObject):
 
         self.sleep(self.wait_time)
 
+        if self.isInterruptionRequested:
+            return None
+
         # 移除静默进程标记
         Config.silence_list.remove(self.emulator_path)
 
@@ -979,7 +1026,8 @@ class MaaManager(QObject):
             else:
                 logger.info(f"{self.name} | 无法连接到ADB地址：{ADB_address}")
 
-        self.play_sound.emit("ADB失败")
+        if not self.isInterruptionRequested:
+            self.play_sound.emit("ADB失败")
 
     def refresh_maa_log(self) -> None:
         """刷新MAA日志"""

@@ -80,6 +80,7 @@ from .Widget import (
     EditableComboBoxWithPlanSettingCard,
     SpinBoxWithPlanSettingCard,
     PasswordLineEditSettingCard,
+    PasswordLineAndSwitchButtonSettingCard,
     UserLableSettingCard,
     UserTaskSettingCard,
     ComboBoxSettingCard,
@@ -1585,6 +1586,18 @@ class MemberManager(QWidget):
                                     parent=self,
                                 )
                             )
+                            self.card_Skland = PasswordLineAndSwitchButtonSettingCard(
+                                icon=FluentIcon.CERTIFICATE,
+                                title="森空岛签到",
+                                content="此功能具有一定风险，请谨慎使用！获取登录凭证请查阅「文档-进阶功能」。",
+                                text="鹰角网络通行证登录凭证",
+                                algorithm="DPAPI",
+                                qconfig=self.config,
+                                configItem_bool=self.config.Info_IfSkland,
+                                configItem_info=self.config.Info_SklandToken,
+                                parent=self,
+                            )
+                            self.card_Skland.LineEdit.setMinimumWidth(250)
 
                             self.card_UserLable = UserLableSettingCard(
                                 icon=FluentIcon.INFO,
@@ -1596,6 +1609,8 @@ class MemberManager(QWidget):
                                     "LastAnnihilationDate": self.config.Data_LastAnnihilationDate,
                                     "ProxyTimes": self.config.Data_ProxyTimes,
                                     "IfPassCheck": self.config.Data_IfPassCheck,
+                                    "IfSkland": self.config.Info_IfSkland,
+                                    "LastSklandDate": self.config.Data_LastSklandDate,
                                 },
                                 parent=self,
                             )
@@ -1778,6 +1793,7 @@ class MemberManager(QWidget):
                             Layout.addLayout(h6_layout)
                             Layout.addLayout(h7_layout)
                             Layout.addLayout(h8_layout)
+                            Layout.addWidget(self.card_Skland)
                             Layout.addWidget(self.card_TaskSet)
                             Layout.addWidget(self.card_NotifySet)
 

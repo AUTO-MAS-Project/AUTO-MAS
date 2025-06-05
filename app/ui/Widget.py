@@ -1,6 +1,12 @@
 #   AUTO_MAA:A MAA Multi Account Management and Automation Tool
 #   Copyright © 2024-2025 DLmaster361
 
+#   This file incorporates work covered by the following copyright and
+#   permission notice:
+#
+#       ZenlessZoneZero-OneDragon Copyright © 2024-2025 DoctorReid
+#       https://github.com/DoctorReid/ZenlessZoneZero-OneDragon
+
 #   This file is part of AUTO_MAA.
 
 #   AUTO_MAA is free software: you can redistribute it and/or modify
@@ -608,6 +614,83 @@ class PushAndSwitchButtonSettingCard(SettingCard):
         self.switchButton.setText("开" if isChecked else "关")
 
 
+class PasswordLineAndSwitchButtonSettingCard(SettingCard):
+    """Setting card with PasswordLineEdit and SwitchButton"""
+
+    textChanged = Signal()
+
+    def __init__(
+        self,
+        icon: Union[str, QIcon, FluentIconBase],
+        title: str,
+        content: Union[str, None],
+        text: str,
+        algorithm: str,
+        qconfig: QConfig,
+        configItem_bool: ConfigItem,
+        configItem_info: ConfigItem,
+        parent=None,
+    ):
+
+        super().__init__(icon, title, content, parent)
+        self.algorithm = algorithm
+        self.qconfig = qconfig
+        self.configItem_bool = configItem_bool
+        self.configItem_info = configItem_info
+        self.LineEdit = PasswordLineEdit(self)
+        self.LineEdit.setMinimumWidth(200)
+        self.LineEdit.setPlaceholderText(text)
+        if algorithm == "AUTO":
+            self.LineEdit.setViewPasswordButtonVisible(False)
+        self.SwitchButton = SwitchButton(self)
+
+        self.hBoxLayout.addWidget(self.LineEdit, 0, Qt.AlignRight)
+        self.hBoxLayout.addSpacing(16)
+        self.hBoxLayout.addWidget(self.SwitchButton, 0, Qt.AlignRight)
+        self.hBoxLayout.addSpacing(16)
+
+        self.configItem_info.valueChanged.connect(self.setInfo)
+        self.LineEdit.textChanged.connect(self.__textChanged)
+        self.configItem_bool.valueChanged.connect(self.SwitchButton.setChecked)
+        self.SwitchButton.checkedChanged.connect(
+            lambda isChecked: self.qconfig.set(self.configItem_bool, isChecked)
+        )
+
+        self.setInfo(self.qconfig.get(configItem_info))
+        self.SwitchButton.setChecked(self.qconfig.get(configItem_bool))
+
+    def __textChanged(self, content: str):
+
+        self.configItem_info.valueChanged.disconnect(self.setInfo)
+        if self.algorithm == "DPAPI":
+            self.qconfig.set(self.configItem_info, Crypto.win_encryptor(content))
+        elif self.algorithm == "AUTO":
+            self.qconfig.set(self.configItem_info, Crypto.AUTO_encryptor(content))
+        self.configItem_info.valueChanged.connect(self.setInfo)
+
+        self.textChanged.emit()
+
+    def setInfo(self, content: str):
+
+        self.LineEdit.textChanged.disconnect(self.__textChanged)
+        if self.algorithm == "DPAPI":
+            self.LineEdit.setText(Crypto.win_decryptor(content))
+        elif self.algorithm == "AUTO":
+            if Crypto.check_PASSWORD(Config.PASSWORD):
+                self.LineEdit.setText(Crypto.AUTO_decryptor(content, Config.PASSWORD))
+                self.LineEdit.setPasswordVisible(True)
+                self.LineEdit.setReadOnly(False)
+            elif Config.PASSWORD:
+                self.LineEdit.setText("管理密钥错误")
+                self.LineEdit.setPasswordVisible(True)
+                self.LineEdit.setReadOnly(True)
+            else:
+                self.LineEdit.setText("************")
+                self.LineEdit.setPasswordVisible(False)
+                self.LineEdit.setReadOnly(True)
+        self.LineEdit.textChanged.connect(self.__textChanged)
+
+
 class PushAndComboBoxSettingCard(SettingCard):
     """Setting card with push & combo box"""
 
@@ -1129,6 +1212,13 @@ class UserLableSettingCard(SettingCard):
                 == Config.server_date().isocalendar()[:2]
                 else "本周剿灭未完成"
             )
+            if self.qconfig.get(self.configItems["IfSkland"]):
+                text_list.append(
+                    "森空岛已签到"
+                    if datetime.now().strftime("%Y-%m-%d")
+                    == self.qconfig.get(self.configItems["LastSklandDate"])
+                    else "森空岛未签到"
+                )
 
         self.Lable.setText(" | ".join(text_list))
 

@@ -405,4 +405,6 @@ class ButtonGroup(SimpleCardWidget):
 
     def open_sales(self):
         """打开 MirrorChyan 链接"""
-        QDesktopServices.openUrl(QUrl("https://mirrorchyan.com/"))
+        QDesktopServices.openUrl(
+            QUrl("https://mirrorchyan.com/zh/get-start?source=auto_maa-home")
+        )
