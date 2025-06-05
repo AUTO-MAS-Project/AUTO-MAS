@@ -41,4 +41,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with: 
             name: AUTO_MAA
-            path: AUTO_MAA/AUTO_MAA.exe
+            path: AUTO_MAA.exe
