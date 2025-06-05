@@ -108,7 +108,6 @@ jobs:
             organization-id: '787a1d5f-6177-4f30-9559-d2646473584a'
             project-slug: 'AUTO_MAA_'
             signing-policy-slug: 'test-signing'
-            artifact-configuration-slug: "single-exe"
             github-artifact-id: '${{ steps.upload-unsigned-artifact.outputs.artifact-id }}'
             wait-for-completion: true
             output-artifact-directory: 'AUTO_MAA'
