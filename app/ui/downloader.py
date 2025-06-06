@@ -25,6 +25,7 @@ v4.3
 作者：DLmaster_361
 """
 
+from loguru import logger
 import zipfile
 import requests
 import subprocess
@@ -86,6 +87,7 @@ class DownloadProcess(QThread):
         self.download_path = download_path
         self.check_times = check_times
 
+    @logger.catch
     def run(self) -> None:
 
         # 清理可能存在的临时文件
@@ -165,6 +167,7 @@ class ZipExtractProcess(QThread):
         self.app_path = app_path
         self.download_path = download_path
 
+    @logger.catch
     def run(self) -> None:
 
         try:
@@ -238,6 +241,7 @@ class DownloadManager(QDialog):
         self.download_path = app_path / "DOWNLOAD_TEMP.zip"  #  临时下载文件的路径
         self.download_process_dict: Dict[str, DownloadProcess] = {}
         self.timer_dict: Dict[str, QTimer] = {}
+        self.if_speed_test_accomplish = False
 
         self.resize(700, 70)
 
@@ -408,6 +412,15 @@ class DownloadManager(QDialog):
         self.download_process_dict.pop(name)
         if not self.download_process_dict:
             self.download_process_clear.emit()
+
+        # 当有速度大于1 MB/s的链接或存在3个即以上链接测速完成时，停止其他测速
+        if not self.if_speed_test_accomplish and (
+            sum(1 for speed in self.test_speed_result.values() if speed > 0) >= 3
+            or any(speed > 1 for speed in self.test_speed_result.values())
+        ):
+            self.if_speed_test_accomplish = True
+            for timer in self.timer_dict.values():
+                timer.timeout.emit()
 
         if any(speed == -1 for _, speed in self.test_speed_result.items()):
             return None
