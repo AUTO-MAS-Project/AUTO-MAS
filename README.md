@@ -75,6 +75,12 @@
 
 可在[《AUTO_MAA开发者协作文档》](https://docs.qq.com/aio/DQ3Z5eHNxdmxFQmZX)的`开发任务`页面中查看开发进度。
 
+## 特别鸣谢
+
+- 下载服务器：由[AoXuan (@ClozyA)](https://github.com/ClozyA) 个人为项目赞助。
+
+- EXE签名: Free code signing provided by [SignPath.io](https://signpath.io/), certificate by [SignPath Foundation](https://signpath.org/)
+
 ## 贡献者
 
 感谢以下贡献者对本项目做出的贡献
@@ -86,8 +92,6 @@
 </a>
 
 ![Alt](https://repobeats.axiom.co/api/embed/6c2f834141eff1ac297db70d12bd11c6236a58a5.svg "Repobeats analytics image")
-
-感谢 [AoXuan (@ClozyA)](https://github.com/ClozyA) 为本项目提供的下载服务器
 
 ## Star History
 

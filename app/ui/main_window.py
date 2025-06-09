@@ -257,6 +257,9 @@ class AUTO_MAA(MSFluentWindow):
     ) -> None:
         """配置窗口状态"""
 
+        if Config.args.mode != "gui":
+            return None
+
         self.switch_theme()
 
         if mode == "显示主窗口":
@@ -378,6 +381,41 @@ class AUTO_MAA(MSFluentWindow):
         if Config.get(Config.start_IfMinimizeDirectly):
 
             self.titleBar.minBtn.click()
+
+        if Config.args.config:
+
+            for config in [_ for _ in Config.args.config if _ in Config.queue_dict]:
+
+                TaskManager.add_task(
+                    "自动代理_新调度台",
+                    config,
+                    Config.queue_dict["调度队列_1"]["Config"].toDict(),
+                )
+
+            for config in [_ for _ in Config.args.config if _ in Config.member_dict]:
+
+                TaskManager.add_task(
+                    "自动代理_新调度台",
+                    "自定义队列",
+                    {"Queue": {"Member_1": config}},
+                )
+
+            if not any(
+                _ in (list(Config.member_dict.keys()) + list(Config.queue_dict.keys()))
+                for _ in Config.args.config
+            ):
+
+                logger.warning(
+                    "当前运行模式为命令行模式，由于您使用了错误的 --config 参数进行配置，程序自动退出"
+                )
+                System.set_power("KillSelf")
+
+        elif Config.args.mode == "cli":
+
+            logger.warning(
+                "当前运行模式为命令行模式，由于您未使用 --config 参数进行配置，程序自动退出"
+            )
+            System.set_power("KillSelf")
 
     def clean_old_logs(self):
         """

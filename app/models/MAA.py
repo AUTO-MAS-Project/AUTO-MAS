@@ -685,6 +685,8 @@ class MaaManager(QObject):
                             self.sleep(10)
                             System.kill_process(self.maa_exe_path)
 
+                            self.maa_update_package = ""
+
                             logger.info(f"{self.name} | 更新动作结束")
 
                 # 发送统计信息

@@ -283,6 +283,9 @@ class _TaskManager(QObject):
                     )
                 )
 
+        if Config.args.mode == "cli" and Config.power_sign == "NoAction":
+            Config.set_power_sign("KillSelf")
+
     def check_maa_version(self, v: str):
         """检查MAA版本"""
 

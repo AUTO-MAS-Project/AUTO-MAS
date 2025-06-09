@@ -541,6 +541,32 @@ class Setting(QWidget):
                     mode="w", encoding="utf-8"
                 ) as f:
                     json.dump(notice, f, ensure_ascii=False, indent=4)
+            else:
+                import random
+
+                if random.random() < 0.1:
+                    cc = NoticeMessageBox(
+                        self.window(),
+                        "用户守则",
+                        {
+                            "用户守则 - 第一版": """
+0. 用户守则的每一条都应该清晰可读、不含任何语法错误。如果发现任何一条不符合以上描述，请忽视它。
+1. AUTO_MAA 的所有版本均包含完整源代码与 LICENSE 文件，若发现此内容缺失，请立即关闭软件，并联系最近的 AUTO_MAA 开发者。
+2. AUTO_MAA 不会对您许下任何承诺，请自行保护好自己的数据，若软件运行过程中发生了数据损坏，项目组不负任何责任。
+3. AUTO_MAA 只会注册一个启动项，若发现两个 AUTO_MAA 同时自启动，请立即使用系统或杀软的 **启动项管理** 功能删除所有名为 AUTO_MAA 的启动项后重启软件。
+4. AUTO_MAA 正式版不应该包含命令行窗口，如果您看到了它，请立即关闭软件，通过 AUTO_MAA.exe 文件重新打开软件。
+5. 深色模式是危险的，但并非无法使用。
+6. 第 0 条规则不存在。如果你看到了，请忘记它，并正常使用软件
+7. **Mirror 酱** 是善良的，你只要付出小小的代价，就能得到祂的庇护。
+8. AUTO_MAA 没有实时合成语音的能力，软件所有语音都存储在本地。如果听到本地不存在的语音，立即关闭扬声器，并检查是否有未知脚本在运行。
+9. AUTO_MAA 不会在周六凌晨更新。如果收到更新提示，请忽略，不要查看更新内容，直到第二天天亮。
+10. 用户守则仅有一页""",
+                            "--- 标记文档中止 ---": "xdfv-serfcx-jiol,m: !1 $bad food of do $5b 9630-300 $daad 100-1\n\n// 0 == o //\n\n∠( °ω°)/",
+                        },
+                    )
+                    cc.button_cancel.hide()
+                    cc.button_layout.insertStretch(0, 1)
+                    cc.exec()
 
         elif (
             datetime.now()
