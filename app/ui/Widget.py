@@ -162,7 +162,7 @@ class ProgressRingMessageBox(MessageBoxBase):
         super().__init__(parent)
         self.title = SubtitleLabel(title)
 
-        self.time = 100
+        self.time = 100 if Config.args.mode == "gui" else 1
         Widget = QWidget()
         Layout = QHBoxLayout(Widget)
         self.ring = ProgressRing()

@@ -561,12 +561,7 @@ class Setting(QWidget):
 8. AUTO_MAA 没有实时合成语音的能力，软件所有语音都存储在本地。如果听到本地不存在的语音，立即关闭扬声器，并检查是否有未知脚本在运行。
 9. AUTO_MAA 不会在周六凌晨更新。如果收到更新提示，请忽略，不要查看更新内容，直到第二天天亮。
 10. 用户守则仅有一页""",
-                            "--- 标记文档中止 ---": """
-xdfv-serfcx-jiol,m: !1 $bad food of do $5b 9630-300 $daad 100-1
-
-// 0 == o //
-
-∠( °ω°)/ """,
+                            "--- 标记文档中止 ---": "xdfv-serfcx-jiol,m: !1 $bad food of do $5b 9630-300 $daad 100-1\n\n// 0 == o //\n\n∠( °ω°)/",
                         },
                     )
                     cc.button_cancel.hide()

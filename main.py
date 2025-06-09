@@ -25,6 +25,23 @@ v4.3
 作者：DLmaster_361
 """
 
+# 屏蔽广告
+import builtins
+
+
+def no_print(*args, **kwargs):
+    if (
+        args
+        and isinstance(args[0], str)
+        and "QFluentWidgets Pro is now released." in args[0]
+    ):
+        return
+    return __builtins__.print(*args, **kwargs)
+
+
+builtins.print = no_print
+
+
 from loguru import logger
 from PySide6.QtWidgets import QApplication
 from qfluentwidgets import FluentTranslator
