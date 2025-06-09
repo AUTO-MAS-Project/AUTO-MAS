@@ -27,6 +27,7 @@ v4.3
 
 from loguru import logger
 from PySide6.QtCore import Signal
+import argparse
 import sqlite3
 import json
 import sys
@@ -614,6 +615,27 @@ class AppConfig(GlobalConfig):
         self.if_ignore_silence = False
         self.if_database_opened = False
 
+        self.search_member()
+        self.search_queue()
+
+        parser = argparse.ArgumentParser(
+            prog="AUTO_MAA",
+            description="A MAA Multi Account Management and Automation Tool",
+        )
+        parser.add_argument(
+            "--mode",
+            choices=["gui", "cli"],
+            default="gui",
+            help="使用UI界面或命令行模式运行程序",
+        )
+        parser.add_argument(
+            "--config",
+            nargs="+",
+            choices=list(self.member_dict.keys()) + list(self.queue_dict.keys()),
+            help="指定需要运行哪些配置项",
+        )
+        self.args = parser.parse_args()
+
         self.initialize()
 
     def initialize(self) -> None:
@@ -636,7 +658,8 @@ class AppConfig(GlobalConfig):
     def init_logger(self) -> None:
         """初始化日志记录器"""
 
-        logger.remove(0)
+        if self.args.mode != "cli":
+            logger.remove(0)
 
         logger.add(
             sink=self.log_path,
@@ -649,10 +672,14 @@ class AppConfig(GlobalConfig):
             retention="1 month",
             compression="zip",
         )
+        logger.info("")
         logger.info("===================================")
         logger.info("AUTO_MAA 主程序")
         logger.info(f"版本号： v{self.VERSION}")
         logger.info(f"根目录： {self.app_path}")
+        logger.info(
+            f"运行模式： {'图形化界面' if self.args.mode == 'gui' else '命令行界面'}"
+        )
         logger.info("===================================")
 
         logger.info("日志记录器初始化完成")
