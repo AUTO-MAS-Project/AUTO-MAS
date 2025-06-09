@@ -112,6 +112,7 @@ class _SystemHandler:
 
                 Config.main_window.close()
                 QApplication.quit()
+                sys.exit(0)
 
         elif sys.platform.startswith("linux"):
 
@@ -138,6 +139,7 @@ class _SystemHandler:
 
                 Config.main_window.close()
                 QApplication.quit()
+                sys.exit(0)
 
     def is_startup(self) -> bool:
         """判断程序是否已经开机自启"""

@@ -71,7 +71,7 @@ if __name__ == "__main__":
 
     os.system(
         "powershell -Command python -m nuitka --standalone --onefile --mingw64"
-        " --enable-plugins=pyside6 --windows-console-mode=disable"
+        " --enable-plugins=pyside6 --windows-console-mode=attach"
         " --onefile-tempdir-spec='{TEMP}\\AUTO_MAA'"
         " --windows-icon-from-ico=resources\\icons\\AUTO_MAA.ico"
         " --company-name='AUTO_MAA Team' --product-name=AUTO_MAA"
