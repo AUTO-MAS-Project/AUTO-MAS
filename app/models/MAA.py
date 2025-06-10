@@ -982,6 +982,7 @@ class MaaManager(QObject):
             connect_result = subprocess.run(
                 [self.ADB_path, "connect", ADB_address],
                 creationflags=subprocess.CREATE_NO_WINDOW,
+                stdin=subprocess.DEVNULL,
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -993,6 +994,7 @@ class MaaManager(QObject):
                 devices_result = subprocess.run(
                     [self.ADB_path, "devices"],
                     creationflags=subprocess.CREATE_NO_WINDOW,
+                    stdin=subprocess.DEVNULL,
                     capture_output=True,
                     text=True,
                     encoding="utf-8",
