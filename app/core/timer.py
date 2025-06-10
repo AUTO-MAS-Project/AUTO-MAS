@@ -29,7 +29,7 @@ from loguru import logger
 from PySide6.QtCore import QObject, QTimer
 from datetime import datetime
 from pathlib import Path
-import pyautogui
+import keyboard
 
 from .config import Config
 from .task_manager import TaskManager
@@ -40,8 +40,6 @@ class _MainTimer(QObject):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-
-        self.if_FailSafeException = False
 
         self.Timer = QTimer()
         self.Timer.timeout.connect(self.timed_start)
@@ -113,16 +111,14 @@ class _MainTimer(QObject):
                 for emulator_path in Config.silence_list
             ):
                 try:
-                    pyautogui.hotkey(
-                        *[
+                    keyboard.press_and_release(
+                        "+".join(
                             _.strip().lower()
                             for _ in Config.get(Config.function_BossKey).split("+")
-                        ]
+                        )
                     )
-                except pyautogui.FailSafeException as e:
-                    if not self.if_FailSafeException:
-                        logger.warning(f"FailSafeException: {e}")
-                        self.if_FailSafeException = True
+                except Exception as e:
+                    logger.error(f"模拟按键时出错：{e}")
 
     def check_power(self):
 
