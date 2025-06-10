@@ -576,7 +576,7 @@ class MaaPlanConfig(LQConfig):
 
 class AppConfig(GlobalConfig):
 
-    VERSION = "4.3.10.2"
+    VERSION = "4.3.10.3"
 
     gameid_refreshed = Signal()
     PASSWORD_refreshed = Signal()

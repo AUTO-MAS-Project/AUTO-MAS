@@ -81,7 +81,6 @@ jobs:
           script-name: main.py
           mode: app
           enable-plugins: pyside6
-          nofollow-import-to: pyscreeze
           onefile-tempdir-spec: "{TEMP}/AUTO_MAA"
           windows-console-mode: attach
           windows-icon-from-ico: resources/icons/AUTO_MAA.ico

@@ -28,6 +28,8 @@ v4.3
 # 屏蔽广告
 import builtins
 
+original_print = builtins.print
+
 
 def no_print(*args, **kwargs):
     if (
@@ -36,7 +38,7 @@ def no_print(*args, **kwargs):
         and "QFluentWidgets Pro is now released." in args[0]
     ):
         return
-    return __builtins__.print(*args, **kwargs)
+    return original_print(*args, **kwargs)
 
 
 builtins.print = no_print
