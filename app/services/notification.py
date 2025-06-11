@@ -32,6 +32,7 @@ from email.header import Header
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import formataddr
+from pathlib import Path
 
 import requests
 from PySide6.QtCore import QObject, Signal
@@ -386,15 +387,25 @@ class Notification(QObject):
                 Config.get(Config.notify_CompanyWebHookBotUrl),
             )
             app_path = Config.app_path
-            # 拼接图片路径
             image_path = app_path / "resources/images/notification/test_notify.png"
-            image_base64 = ImageUtils.get_base64_from_file(image_path)
-            image_md5 = ImageUtils.calculate_md5_from_file(image_path)
-            self.CompanyWebHookBotPushImage(
-                image_base64,
-                image_md5,
-                Config.get(Config.notify_CompanyWebHookBotUrl),
-            )
+
+            # 压缩后得到的仍然是字符串路径
+            final_image_path = ImageUtils.compress_image_if_needed(str(image_path))
+            # 转回Path对象，方便exists判断
+            final_image_path = Path(final_image_path)
+
+            if final_image_path.exists():
+                image_base64 = ImageUtils.get_base64_from_file(str(final_image_path))
+                image_md5 = ImageUtils.calculate_md5_from_file(str(final_image_path))
+                Notify.CompanyWebHookBotPushImage(
+                    image_base64,
+                    image_md5,
+                    Config.get(Config.notify_CompanyWebHookBotUrl),
+                )
+            else:
+                logger.error(
+                    f"通知测试 | 图片不存在或者压缩失败，请检查图片路径是否正确"
+                )
 
         return True
 

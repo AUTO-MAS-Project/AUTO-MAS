@@ -1999,13 +1999,34 @@ class MaaManager(QObject):
                         "好羡慕~\n\nAUTO_MAA 敬上",
                         Config.get(Config.notify_CompanyWebHookBotUrl),
                     )
-                    app_path = Config.apppath
+                    app_path = Config.app_path
                     image_path = app_path / "resources/images/notification/six_star.png"
-                    image_base64 = ImageUtils.get_base64_from_file(image_path)
-                    image_md5 = ImageUtils.calculate_md5_from_file(image_path)
-                    Notify.CompanyWebHookBotPushImage(
-                        image_base64, image_md5, user_data["Notify"]["CompanyWebHookBotUrl"]
+
+                    # 压缩后得到的仍然是字符串路径
+                    final_image_path = ImageUtils.compress_image_if_needed(
+                        str(image_path)
                     )
+                    # 转回Path对象，方便exists判断
+                    final_image_path = Path(
+                        final_image_path
+                    )
+
+                    if final_image_path.exists():
+                        image_base64 = ImageUtils.get_base64_from_file(
+                            str(final_image_path)
+                        )
+                        image_md5 = ImageUtils.calculate_md5_from_file(
+                            str(final_image_path)
+                        )
+                        Notify.CompanyWebHookBotPushImage(
+                            image_base64,
+                            image_md5,
+                            user_data["Notify"]["CompanyWebHookBotUrl"],
+                        )
+                    else:
+                        logger.error(
+                            f"{self.name} | 图片不存在或者压缩失败，请检查图片路径是否正确"
+                        )
 
             # 发送用户单独通知
             if user_data["Notify"]["Enabled"] and user_data["Notify"]["IfSendSixStar"]:
@@ -2052,4 +2073,5 @@ class MaaManager(QObject):
                         logger.error(
                             f"{self.name} |用户CompanyWebHookBot密钥为空，无法发送用户单独的CompanyWebHookBot通知"
                         )
+
         return None
