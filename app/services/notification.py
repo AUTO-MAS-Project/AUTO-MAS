@@ -277,10 +277,10 @@ class Notification(QObject):
         """使用企业微信群机器人推送图片通知"""
         try:
             # 压缩图片
-            final_image_path = ImageUtils.compress_image_if_needed(image_path)
+            ImageUtils.compress_image_if_needed(image_path)
 
             # 检查图片是否存在
-            if not final_image_path.exists():
+            if not image_path.exists():
                 logger.error(
                     "图片推送异常 | 图片不存在或者压缩失败，请检查图片路径是否正确"
                 )
@@ -304,8 +304,8 @@ class Notification(QObject):
 
             # 获取图片base64和md5
             try:
-                image_base64 = ImageUtils.get_base64_from_file(str(final_image_path))
-                image_md5 = ImageUtils.calculate_md5_from_file(str(final_image_path))
+                image_base64 = ImageUtils.get_base64_from_file(str(image_path))
+                image_md5 = ImageUtils.calculate_md5_from_file(str(image_path))
             except Exception as e:
                 logger.error(f"图片编码或MD5计算失败：{e}")
                 self.push_info_bar.emit(
