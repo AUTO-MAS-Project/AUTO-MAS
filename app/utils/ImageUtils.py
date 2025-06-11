@@ -1,6 +1,7 @@
 import base64
 import hashlib
-import os
+from pathlib import Path
+
 from PIL import Image
 
 class ImageUtils:
@@ -23,44 +24,39 @@ class ImageUtils:
         return hashlib.md5(image_data).hexdigest()
 
     @staticmethod
-    def compress_image_if_needed(image_path, max_size_mb=2):
+    def compress_image_if_needed(image_path: Path, max_size_mb=2) -> Path:
         """
-        如果图片大于max_size_mb（默认2MB），则压缩到max_size_mb以内，
-        返回压缩后文件路径（压缩文件与原图同目录，命名为xxx_compressed.xxx），
-        如果不超过则返回原文件路径
+        如果图片大于max_size_mb，则压缩并覆盖原文件，返回原始路径（Path对象）
         """
-
         if hasattr(Image, "Resampling"):  # Pillow 9.1.0及以后
             RESAMPLE = Image.Resampling.LANCZOS
-        else:  # Pillow 老版本
+        else:
             RESAMPLE = Image.ANTIALIAS
 
         max_size = max_size_mb * 1024 * 1024
-        file_size = os.path.getsize(image_path)
-        if file_size <= max_size:
-            return image_path  # 小于2MB，直接返回原路径
-
-        # 只支持JPEG、PNG压缩
-        file_root, file_ext = os.path.splitext(image_path)
-        compressed_path = f"{file_root}_compressed{file_ext}"
+        if image_path.stat().st_size <= max_size:
+            return image_path
 
         img = Image.open(image_path)
-        quality = 90 if file_ext.lower() in ['.jpg', '.jpeg'] else None
-        step = 5  # 每次降低5质量或5%尺寸
+        suffix = image_path.suffix.lower()
+        quality = 90 if suffix in [".jpg", ".jpeg"] else None
+        step = 5
 
-        # 如果是JPG/JPEG
-        if file_ext.lower() in ['.jpg', '.jpeg']:
+        if suffix in [".jpg", ".jpeg"]:
             while True:
-                img.save(compressed_path, quality=quality, optimize=True)
-                if os.path.getsize(compressed_path) <= max_size or quality <= 10:
+                img.save(image_path, quality=quality, optimize=True)
+                if image_path.stat().st_size <= max_size or quality <= 10:
                     break
                 quality -= step
-        # PNG 只能调整尺寸来压缩
-        elif file_ext.lower() == '.png':
+        elif suffix == ".png":
             width, height = img.size
             while True:
-                img.save(compressed_path, optimize=True)
-                if os.path.getsize(compressed_path) <= max_size or width <= 200 or height <= 200:
+                img.save(image_path, optimize=True)
+                if (
+                    image_path.stat().st_size <= max_size
+                    or width <= 200
+                    or height <= 200
+                ):
                     break
                 width = int(width * 0.95)
                 height = int(height * 0.95)
@@ -68,4 +64,4 @@ class ImageUtils:
         else:
             raise ValueError("仅支持JPG/JPEG和PNG格式图片的压缩。")
 
-        return compressed_path
+        return image_path
