@@ -404,8 +404,7 @@ class Notification(QObject):
                 Config.get(Config.notify_CompanyWebHookBotUrl),
             )
 
-            app_path = Config.app_path
-            image_path = app_path / "resources/images/notification/test_notify.png"
+            image_path = Config.app_path / "resources/images/notification/test_notify.png"
             Notify.CompanyWebHookBotPushImage(
                 image_path,
                 Config.get(Config.notify_CompanyWebHookBotUrl),
