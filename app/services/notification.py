@@ -273,38 +273,55 @@ class Notification(QObject):
             )
             return f"使用企业微信群机器人推送通知时出错：{err}"
 
-    def CompanyWebHookBotPushImage(self, base64_content, md5_content, webhook_url):
-        """使用企业微信群机器人推送图片通知
-        
-        Args:
-            base64_content (str): 图片的base64编码字符串
-            md5_content (str): 图片的MD5值
-            webhook_url (str): 群组机器人WebHook地址
-            
-        Returns:
-            bool: 推送是否成功
-        """
-        if webhook_url == "":
-            logger.error("请正确设置企业微信群机器人的WebHook地址")
-            self.push_info_bar.emit(
-                "error",
-                "企业微信群机器人通知推送异常",
-                "请正确设置企业微信群机器人的WebHook地址",
-                -1,
-            )
-            return False
-
+    def CompanyWebHookBotPushImage(self, image_path: str, webhook_url: str) -> bool:
+        """使用企业微信群机器人推送图片通知"""
         try:
-            # 构造请求数据
+            # 压缩图片
+            final_image_path = ImageUtils.compress_image_if_needed(str(image_path))
+            final_image_path = Path(final_image_path)
+
+            # 检查图片是否存在
+            if not final_image_path.exists():
+                logger.error(
+                    "图片推送异常 | 图片不存在或者压缩失败，请检查图片路径是否正确"
+                )
+                self.push_info_bar.emit(
+                    "error",
+                    "企业微信群机器人通知推送异常",
+                    "图片不存在或者压缩失败，请检查图片路径是否正确",
+                    -1,
+                )
+                return False
+
+            if not webhook_url:
+                logger.error("请正确设置企业微信群机器人的WebHook地址")
+                self.push_info_bar.emit(
+                    "error",
+                    "企业微信群机器人通知推送异常",
+                    "请正确设置企业微信群机器人的WebHook地址",
+                    -1,
+                )
+                return False
+
+            # 获取图片base64和md5
+            try:
+                image_base64 = ImageUtils.get_base64_from_file(str(final_image_path))
+                image_md5 = ImageUtils.calculate_md5_from_file(str(final_image_path))
+            except Exception as e:
+                logger.error(f"图片编码或MD5计算失败：{e}")
+                self.push_info_bar.emit(
+                    "error",
+                    "企业微信群机器人通知推送异常",
+                    f"图片编码或MD5计算失败：{e}",
+                    -1,
+                )
+                return False
+
             data = {
                 "msgtype": "image",
-                "image": {
-                    "base64": base64_content,
-                    "md5": md5_content
-                }
+                "image": {"base64": image_base64, "md5": image_md5},
             }
 
-            # 发送请求
             for _ in range(3):
                 try:
                     response = requests.post(
@@ -314,8 +331,9 @@ class Notification(QObject):
                     )
                     info = response.json()
                     break
-                except Exception as e:
+                except requests.RequestException as e:
                     err = e
+                    logger.warning(f"推送企业微信群机器人图片第{_+1}次失败：{e}")
                     time.sleep(0.1)
             else:
                 logger.error(f"推送企业微信群机器人图片时出错：{err}")
@@ -327,7 +345,7 @@ class Notification(QObject):
                 )
                 return False
 
-            if info["errcode"] == 0:
+            if info.get("errcode") == 0:
                 logger.info("企业微信群机器人推送图片成功")
                 return True
             else:
@@ -341,11 +359,11 @@ class Notification(QObject):
                 return False
 
         except Exception as e:
-            logger.error(f"推送企业微信群机器人图片时出错：{e}")
+            logger.error(f"推送企业微信群机器人图片时发生未知异常：{e}")
             self.push_info_bar.emit(
                 "error",
                 "企业微信群机器人图片推送失败",
-                f"使用企业微信群机器人推送图片时出错：{e}",
+                f"发生未知异常：{e}",
                 -1,
             )
             return False
@@ -386,26 +404,13 @@ class Notification(QObject):
                 "这是 AUTO_MAA 外部通知测试信息。如果你看到了这段内容，说明 AUTO_MAA 的通知功能已经正确配置且可以正常工作！",
                 Config.get(Config.notify_CompanyWebHookBotUrl),
             )
+
             app_path = Config.app_path
             image_path = app_path / "resources/images/notification/test_notify.png"
-
-            # 压缩后得到的仍然是字符串路径
-            final_image_path = ImageUtils.compress_image_if_needed(str(image_path))
-            # 转回Path对象，方便exists判断
-            final_image_path = Path(final_image_path)
-
-            if final_image_path.exists():
-                image_base64 = ImageUtils.get_base64_from_file(str(final_image_path))
-                image_md5 = ImageUtils.calculate_md5_from_file(str(final_image_path))
-                Notify.CompanyWebHookBotPushImage(
-                    image_base64,
-                    image_md5,
-                    Config.get(Config.notify_CompanyWebHookBotUrl),
-                )
-            else:
-                logger.error(
-                    f"通知测试 | 图片不存在或者压缩失败，请检查图片路径是否正确"
-                )
+            Notify.CompanyWebHookBotPushImage(
+                image_path,
+                Config.get(Config.notify_CompanyWebHookBotUrl),
+            )
 
         return True
 
