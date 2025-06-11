@@ -40,6 +40,7 @@ from typing import Union, List, Dict
 
 from app.core import Config, MaaConfig, MaaUserConfig
 from app.services import Notify, Crypto, System, skland_sign_in
+from app.utils.ImageUtils import ImageUtils
 
 
 class MaaManager(QObject):
@@ -1998,6 +1999,10 @@ class MaaManager(QObject):
                         "好羡慕~\n\nAUTO_MAA 敬上",
                         Config.get(Config.notify_CompanyWebHookBotUrl),
                     )
+                    Notify.CompanyWebHookBotPushImage(
+                        Config.app_path / "resources/images/notification/six_star.png",
+                        Config.get(Config.notify_CompanyWebHookBotUrl),
+                    )
 
             # 发送用户单独通知
             if user_data["Notify"]["Enabled"] and user_data["Notify"]["IfSendSixStar"]:
@@ -2040,8 +2045,14 @@ class MaaManager(QObject):
                             "好羡慕~\n\nAUTO_MAA 敬上",
                             user_data["Notify"]["CompanyWebHookBotUrl"],
                         )
+                        Notify.CompanyWebHookBotPushImage(
+                            Config.app_path
+                            / "resources/images/notification/six_star.png",
+                            Config.get(Config.notify_CompanyWebHookBotUrl),
+                        )
                     else:
                         logger.error(
                             f"{self.name} |用户CompanyWebHookBot密钥为空，无法发送用户单独的CompanyWebHookBot通知"
                         )
+
         return None
