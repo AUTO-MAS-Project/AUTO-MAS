@@ -1999,10 +1999,8 @@ class MaaManager(QObject):
                         "好羡慕~\n\nAUTO_MAA 敬上",
                         Config.get(Config.notify_CompanyWebHookBotUrl),
                     )
-
-                    image_path = Config.app_path / "resources/images/notification/six_star.png"
                     Notify.CompanyWebHookBotPushImage(
-                        image_path,
+                        Config.app_path / "resources/images/notification/six_star.png",
                         Config.get(Config.notify_CompanyWebHookBotUrl),
                     )
 
@@ -2047,11 +2045,9 @@ class MaaManager(QObject):
                             "好羡慕~\n\nAUTO_MAA 敬上",
                             user_data["Notify"]["CompanyWebHookBotUrl"],
                         )
-
-                        image_path = Config.app_path / "resources/images/notification/six_star.png"
-
                         Notify.CompanyWebHookBotPushImage(
-                            image_path,
+                            Config.app_path
+                            / "resources/images/notification/six_star.png",
                             Config.get(Config.notify_CompanyWebHookBotUrl),
                         )
                     else:

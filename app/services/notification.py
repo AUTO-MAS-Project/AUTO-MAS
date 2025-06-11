@@ -403,10 +403,8 @@ class Notification(QObject):
                 "这是 AUTO_MAA 外部通知测试信息。如果你看到了这段内容，说明 AUTO_MAA 的通知功能已经正确配置且可以正常工作！",
                 Config.get(Config.notify_CompanyWebHookBotUrl),
             )
-
-            image_path = Config.app_path / "resources/images/notification/test_notify.png"
             Notify.CompanyWebHookBotPushImage(
-                image_path,
+                Config.app_path / "resources/images/notification/test_notify.png",
                 Config.get(Config.notify_CompanyWebHookBotUrl),
             )
 
