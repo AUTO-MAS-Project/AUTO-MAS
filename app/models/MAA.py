@@ -40,6 +40,7 @@ from typing import Union, List, Dict
 
 from app.core import Config, MaaConfig, MaaUserConfig
 from app.services import Notify, Crypto, System, skland_sign_in
+from app.utils.ImageUtils import ImageUtils
 
 
 class MaaManager(QObject):
@@ -1997,6 +1998,13 @@ class MaaManager(QObject):
                         title,
                         "好羡慕~\n\nAUTO_MAA 敬上",
                         Config.get(Config.notify_CompanyWebHookBotUrl),
+                    )
+                    app_path = Config.apppath
+                    image_path = app_path / "resources/images/notification/six_star.png"
+                    image_base64 = ImageUtils.get_base64_from_file(image_path)
+                    image_md5 = ImageUtils.calculate_md5_from_file(image_path)
+                    Notify.CompanyWebHookBotPushImage(
+                        image_base64, image_md5, user_data["Notify"]["CompanyWebHookBotUrl"]
                     )
 
             # 发送用户单独通知

@@ -40,6 +40,7 @@ from plyer import notification
 
 from app.core import Config
 from app.services.security import Crypto
+from app.utils.ImageUtils import ImageUtils
 
 
 class Notification(QObject):
@@ -271,6 +272,83 @@ class Notification(QObject):
             )
             return f"使用企业微信群机器人推送通知时出错：{err}"
 
+    def CompanyWebHookBotPushImage(self, base64_content, md5_content, webhook_url):
+        """使用企业微信群机器人推送图片通知
+        
+        Args:
+            base64_content (str): 图片的base64编码字符串
+            md5_content (str): 图片的MD5值
+            webhook_url (str): 群组机器人WebHook地址
+            
+        Returns:
+            bool: 推送是否成功
+        """
+        if webhook_url == "":
+            logger.error("请正确设置企业微信群机器人的WebHook地址")
+            self.push_info_bar.emit(
+                "error",
+                "企业微信群机器人通知推送异常",
+                "请正确设置企业微信群机器人的WebHook地址",
+                -1,
+            )
+            return False
+
+        try:
+            # 构造请求数据
+            data = {
+                "msgtype": "image",
+                "image": {
+                    "base64": base64_content,
+                    "md5": md5_content
+                }
+            }
+
+            # 发送请求
+            for _ in range(3):
+                try:
+                    response = requests.post(
+                        url=webhook_url,
+                        json=data,
+                        timeout=10,
+                    )
+                    info = response.json()
+                    break
+                except Exception as e:
+                    err = e
+                    time.sleep(0.1)
+            else:
+                logger.error(f"推送企业微信群机器人图片时出错：{err}")
+                self.push_info_bar.emit(
+                    "error",
+                    "企业微信群机器人图片推送失败",
+                    f"使用企业微信群机器人推送图片时出错：{err}",
+                    -1,
+                )
+                return False
+
+            if info["errcode"] == 0:
+                logger.info("企业微信群机器人推送图片成功")
+                return True
+            else:
+                logger.error(f"企业微信群机器人推送图片失败：{info}")
+                self.push_info_bar.emit(
+                    "error",
+                    "企业微信群机器人图片推送失败",
+                    f"使用企业微信群机器人推送图片时出错：{info}",
+                    -1,
+                )
+                return False
+
+        except Exception as e:
+            logger.error(f"推送企业微信群机器人图片时出错：{e}")
+            self.push_info_bar.emit(
+                "error",
+                "企业微信群机器人图片推送失败",
+                f"使用企业微信群机器人推送图片时出错：{e}",
+                -1,
+            )
+            return False
+
     def send_test_notification(self):
         """发送测试通知到所有已启用的通知渠道"""
         # 发送系统通知
@@ -305,6 +383,16 @@ class Notification(QObject):
             self.CompanyWebHookBotPush(
                 "AUTO_MAA测试通知",
                 "这是 AUTO_MAA 外部通知测试信息。如果你看到了这段内容，说明 AUTO_MAA 的通知功能已经正确配置且可以正常工作！",
+                Config.get(Config.notify_CompanyWebHookBotUrl),
+            )
+            app_path = Config.app_path
+            # 拼接图片路径
+            image_path = app_path / "resources/images/notification/test_notify.png"
+            image_base64 = ImageUtils.get_base64_from_file(image_path)
+            image_md5 = ImageUtils.calculate_md5_from_file(image_path)
+            self.CompanyWebHookBotPushImage(
+                image_base64,
+                image_md5,
                 Config.get(Config.notify_CompanyWebHookBotUrl),
             )
 
