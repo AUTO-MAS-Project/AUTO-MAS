@@ -273,12 +273,11 @@ class Notification(QObject):
             )
             return f"使用企业微信群机器人推送通知时出错：{err}"
 
-    def CompanyWebHookBotPushImage(self, image_path: str, webhook_url: str) -> bool:
+    def CompanyWebHookBotPushImage(self, image_path: Path, webhook_url: str) -> bool:
         """使用企业微信群机器人推送图片通知"""
         try:
             # 压缩图片
-            final_image_path = ImageUtils.compress_image_if_needed(str(image_path))
-            final_image_path = Path(final_image_path)
+            final_image_path = ImageUtils.compress_image_if_needed(image_path)
 
             # 检查图片是否存在
             if not final_image_path.exists():
