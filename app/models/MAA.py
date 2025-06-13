@@ -244,8 +244,16 @@ class MaaManager(QObject):
                                     "info",
                                     f"森空岛签到{type}",
                                     "、".join(user_list),
-                                    -1,
+                                    -1 if type == "失败" else 5000,
                                 )
+
+                        if skland_result["总计"] == 0:
+                            self.push_info_bar.emit(
+                                "info",
+                                "森空岛签到失败",
+                                user[0],
+                                -1,
+                            )
 
                         if (
                             skland_result["总计"] > 0
