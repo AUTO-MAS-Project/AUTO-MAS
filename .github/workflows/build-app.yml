@@ -107,7 +107,7 @@ jobs:
         with:
             api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
             organization-id: '787a1d5f-6177-4f30-9559-d2646473584a'
-            project-slug: 'AUTO_MAA_'
+            project-slug: 'AUTO_MAA'
             signing-policy-slug: 'release-signing'
             artifact-configuration-slug: "AUTO_MAA"
             github-artifact-id: '${{ steps.upload-unsigned-main-program.outputs.artifact-id }}'
@@ -155,7 +155,7 @@ jobs:
         with:
             api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
             organization-id: '787a1d5f-6177-4f30-9559-d2646473584a'
-            project-slug: 'AUTO_MAA_'
+            project-slug: 'AUTO_MAA'
             signing-policy-slug: 'release-signing'
             artifact-configuration-slug: "AUTO_MAA-Setup"
             github-artifact-id: '${{ steps.upload-unsigned-setup-program.outputs.artifact-id }}'
