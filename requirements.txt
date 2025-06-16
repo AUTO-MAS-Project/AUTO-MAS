@@ -9,5 +9,4 @@ pycryptodome
 requests
 markdown
 Jinja2
-nuitka
 pillow
