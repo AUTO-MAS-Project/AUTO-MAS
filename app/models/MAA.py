@@ -1281,10 +1281,15 @@ class MaaManager(QObject):
         else:
             self.agree_bilibili(False)
 
+        # 切换配置
+        if data["Current"] != "Default":
+
+            data["Configurations"]["Default"] = data["Configurations"][data["Current"]]
+            data["Current"] = "Default"
+
         # 自动代理配置
         if "自动代理" in mode:
 
-            data["Current"] = "Default"  # 切换配置
             for i in range(1, 9):
                 data["Global"][f"Timer.Timer{i}"] = "False"  # 时间设置
 
@@ -1590,7 +1595,6 @@ class MaaManager(QObject):
         # 人工排查配置
         elif "人工排查" in mode:
 
-            data["Current"] = "Default"  # 切换配置
             for i in range(1, 9):
                 data["Global"][f"Timer.Timer{i}"] = "False"  # 时间设置
             data["Configurations"]["Default"][
@@ -1663,7 +1667,6 @@ class MaaManager(QObject):
         # 设置MAA配置
         elif "设置MAA" in mode:
 
-            data["Current"] = "Default"  # 切换配置
             for i in range(1, 9):
                 data["Global"][f"Timer.Timer{i}"] = "False"  # 时间设置
             data["Configurations"]["Default"][
@@ -1719,7 +1722,6 @@ class MaaManager(QObject):
 
         elif mode == "更新MAA":
 
-            data["Current"] = "Default"  # 切换配置
             for i in range(1, 9):
                 data["Global"][f"Timer.Timer{i}"] = "False"  # 时间设置
             data["Configurations"]["Default"][
