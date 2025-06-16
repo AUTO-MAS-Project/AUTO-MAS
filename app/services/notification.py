@@ -32,6 +32,7 @@ from email.header import Header
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import formataddr
+from pathlib import Path
 
 import requests
 from PySide6.QtCore import QObject, Signal
@@ -40,6 +41,7 @@ from plyer import notification
 
 from app.core import Config
 from app.services.security import Crypto
+from app.utils.ImageUtils import ImageUtils
 
 
 class Notification(QObject):
@@ -271,6 +273,100 @@ class Notification(QObject):
             )
             return f"使用企业微信群机器人推送通知时出错：{err}"
 
+    def CompanyWebHookBotPushImage(self, image_path: Path, webhook_url: str) -> bool:
+        """使用企业微信群机器人推送图片通知"""
+        try:
+            # 压缩图片
+            ImageUtils.compress_image_if_needed(image_path)
+
+            # 检查图片是否存在
+            if not image_path.exists():
+                logger.error(
+                    "图片推送异常 | 图片不存在或者压缩失败，请检查图片路径是否正确"
+                )
+                self.push_info_bar.emit(
+                    "error",
+                    "企业微信群机器人通知推送异常",
+                    "图片不存在或者压缩失败，请检查图片路径是否正确",
+                    -1,
+                )
+                return False
+
+            if not webhook_url:
+                logger.error("请正确设置企业微信群机器人的WebHook地址")
+                self.push_info_bar.emit(
+                    "error",
+                    "企业微信群机器人通知推送异常",
+                    "请正确设置企业微信群机器人的WebHook地址",
+                    -1,
+                )
+                return False
+
+            # 获取图片base64和md5
+            try:
+                image_base64 = ImageUtils.get_base64_from_file(str(image_path))
+                image_md5 = ImageUtils.calculate_md5_from_file(str(image_path))
+            except Exception as e:
+                logger.error(f"图片编码或MD5计算失败：{e}")
+                self.push_info_bar.emit(
+                    "error",
+                    "企业微信群机器人通知推送异常",
+                    f"图片编码或MD5计算失败：{e}",
+                    -1,
+                )
+                return False
+
+            data = {
+                "msgtype": "image",
+                "image": {"base64": image_base64, "md5": image_md5},
+            }
+
+            for _ in range(3):
+                try:
+                    response = requests.post(
+                        url=webhook_url,
+                        json=data,
+                        timeout=10,
+                    )
+                    info = response.json()
+                    break
+                except requests.RequestException as e:
+                    err = e
+                    logger.warning(f"推送企业微信群机器人图片第{_+1}次失败：{e}")
+                    time.sleep(0.1)
+            else:
+                logger.error(f"推送企业微信群机器人图片时出错：{err}")
+                self.push_info_bar.emit(
+                    "error",
+                    "企业微信群机器人图片推送失败",
+                    f"使用企业微信群机器人推送图片时出错：{err}",
+                    -1,
+                )
+                return False
+
+            if info.get("errcode") == 0:
+                logger.info("企业微信群机器人推送图片成功")
+                return True
+            else:
+                logger.error(f"企业微信群机器人推送图片失败：{info}")
+                self.push_info_bar.emit(
+                    "error",
+                    "企业微信群机器人图片推送失败",
+                    f"使用企业微信群机器人推送图片时出错：{info}",
+                    -1,
+                )
+                return False
+
+        except Exception as e:
+            logger.error(f"推送企业微信群机器人图片时发生未知异常：{e}")
+            self.push_info_bar.emit(
+                "error",
+                "企业微信群机器人图片推送失败",
+                f"发生未知异常：{e}",
+                -1,
+            )
+            return False
+
     def send_test_notification(self):
         """发送测试通知到所有已启用的通知渠道"""
         # 发送系统通知
@@ -305,6 +401,10 @@ class Notification(QObject):
             self.CompanyWebHookBotPush(
                 "AUTO_MAA测试通知",
                 "这是 AUTO_MAA 外部通知测试信息。如果你看到了这段内容，说明 AUTO_MAA 的通知功能已经正确配置且可以正常工作！",
+                Config.get(Config.notify_CompanyWebHookBotUrl),
+            )
+            Notify.CompanyWebHookBotPushImage(
+                Config.app_path / "resources/images/notification/test_notify.png",
                 Config.get(Config.notify_CompanyWebHookBotUrl),
             )
 
