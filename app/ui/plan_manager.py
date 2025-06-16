@@ -156,7 +156,7 @@ class PlanManager(QWidget):
             self.plan_manager.clear_SettingBox()
 
             shutil.rmtree(Config.plan_dict[name]["Path"])
-            Config.change_plan(name, "禁用")
+            Config.change_plan(name, "固定")
             for i in range(int(name[3:]) + 1, len(Config.plan_dict) + 1):
                 if Config.plan_dict[f"计划_{i}"]["Path"].exists():
                     Config.plan_dict[f"计划_{i}"]["Path"].rename(
