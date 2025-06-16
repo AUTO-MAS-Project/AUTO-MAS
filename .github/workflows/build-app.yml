@@ -78,6 +78,7 @@ jobs:
       - name: Nuitka build main program
         uses: Nuitka/Nuitka-Action@main
         with:
+          nuitka-version: 2.7.6
           script-name: main.py
           mode: app
           enable-plugins: pyside6
