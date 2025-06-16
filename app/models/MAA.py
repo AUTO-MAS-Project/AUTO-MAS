@@ -32,6 +32,7 @@ import subprocess
 import shutil
 import re
 import win32com.client
+from functools import partial
 from datetime import datetime, timedelta
 from pathlib import Path
 from jinja2 import Environment, FileSystemLoader
@@ -39,6 +40,7 @@ from typing import Union, List, Dict
 
 from app.core import Config, MaaConfig, MaaUserConfig
 from app.services import Notify, Crypto, System, skland_sign_in
+from app.utils.ImageUtils import ImageUtils
 
 
 class MaaManager(QObject):
@@ -242,8 +244,16 @@ class MaaManager(QObject):
                                     "info",
                                     f"森空岛签到{type}",
                                     "、".join(user_list),
-                                    -1,
+                                    -1 if type == "失败" else 5000,
                                 )
+
+                        if skland_result["总计"] == 0:
+                            self.push_info_bar.emit(
+                                "info",
+                                "森空岛签到失败",
+                                user[0],
+                                -1,
+                            )
 
                         if (
                             skland_result["总计"] > 0
@@ -959,8 +969,10 @@ class MaaManager(QObject):
         if self.isInterruptionRequested:
             return None
 
-        # 移除静默进程标记
-        Config.silence_list.remove(self.emulator_path)
+        # 10s后移除静默进程标记
+        QTimer.singleShot(
+            10000, partial(Config.silence_list.remove, self.emulator_path)
+        )
 
         if "-" in self.ADB_address:
             ADB_ip = f"{self.ADB_address.split("-")[0]}-"
@@ -1269,10 +1281,15 @@ class MaaManager(QObject):
         else:
             self.agree_bilibili(False)
 
+        # 切换配置
+        if data["Current"] != "Default":
+
+            data["Configurations"]["Default"] = data["Configurations"][data["Current"]]
+            data["Current"] = "Default"
+
         # 自动代理配置
         if "自动代理" in mode:
 
-            data["Current"] = "Default"  # 切换配置
             for i in range(1, 9):
                 data["Global"][f"Timer.Timer{i}"] = "False"  # 时间设置
 
@@ -1578,7 +1595,6 @@ class MaaManager(QObject):
         # 人工排查配置
         elif "人工排查" in mode:
 
-            data["Current"] = "Default"  # 切换配置
             for i in range(1, 9):
                 data["Global"][f"Timer.Timer{i}"] = "False"  # 时间设置
             data["Configurations"]["Default"][
@@ -1651,7 +1667,6 @@ class MaaManager(QObject):
         # 设置MAA配置
         elif "设置MAA" in mode:
 
-            data["Current"] = "Default"  # 切换配置
             for i in range(1, 9):
                 data["Global"][f"Timer.Timer{i}"] = "False"  # 时间设置
             data["Configurations"]["Default"][
@@ -1707,7 +1722,6 @@ class MaaManager(QObject):
 
         elif mode == "更新MAA":
 
-            data["Current"] = "Default"  # 切换配置
             for i in range(1, 9):
                 data["Global"][f"Timer.Timer{i}"] = "False"  # 时间设置
             data["Configurations"]["Default"][
@@ -1995,6 +2009,10 @@ class MaaManager(QObject):
                         "好羡慕~\n\nAUTO_MAA 敬上",
                         Config.get(Config.notify_CompanyWebHookBotUrl),
                     )
+                    Notify.CompanyWebHookBotPushImage(
+                        Config.app_path / "resources/images/notification/six_star.png",
+                        Config.get(Config.notify_CompanyWebHookBotUrl),
+                    )
 
             # 发送用户单独通知
             if user_data["Notify"]["Enabled"] and user_data["Notify"]["IfSendSixStar"]:
@@ -2037,8 +2055,14 @@ class MaaManager(QObject):
                             "好羡慕~\n\nAUTO_MAA 敬上",
                             user_data["Notify"]["CompanyWebHookBotUrl"],
                         )
+                        Notify.CompanyWebHookBotPushImage(
+                            Config.app_path
+                            / "resources/images/notification/six_star.png",
+                            Config.get(Config.notify_CompanyWebHookBotUrl),
+                        )
                     else:
                         logger.error(
                             f"{self.name} |用户CompanyWebHookBot密钥为空，无法发送用户单独的CompanyWebHookBot通知"
                         )
+
         return None

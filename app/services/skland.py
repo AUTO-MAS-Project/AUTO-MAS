@@ -153,7 +153,9 @@ def skland_sign_in(token) -> dict:
             headers=header_login,
         ).json()
         if rsp["status"] != 0:
-            raise Exception(f'使用token: {token} 获得认证代码失败：{rsp.get("msg")}')
+            raise Exception(
+                f'使用token: {token[:3]}******{token[-3:]} 获得认证代码失败：{rsp.get("msg")}'
+            )
         return rsp["data"]["code"]
 
     # 获取已绑定的角色列表

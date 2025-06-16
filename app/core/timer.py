@@ -96,17 +96,9 @@ class _MainTimer(QObject):
 
             windows = System.get_window_info()
 
-            # 排除雷电名为新通知的窗口
-            windows = [
-                window
-                for window in windows
-                if not (
-                    window[0] == "新通知" and Path(window[1]) in Config.silence_list
-                )
-            ]
-
+            # 此处排除雷电名为新通知的窗口
             if any(
-                str(emulator_path) in window
+                str(emulator_path) in window and window[0] != "新通知"
                 for window in windows
                 for emulator_path in Config.silence_list
             ):
