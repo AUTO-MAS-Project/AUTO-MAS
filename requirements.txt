@@ -6,7 +6,9 @@ psutil
 pywin32
 keyboard
 pycryptodome
+certifi==2025.4.26
 requests
 markdown
 Jinja2
+nuitka
 pillow
