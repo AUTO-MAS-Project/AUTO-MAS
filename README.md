@@ -72,11 +72,23 @@
 
 可在[《AUTO_MAA开发者协作文档》](https://docs.qq.com/aio/DQ3Z5eHNxdmxFQmZX)的`开发任务`页面中查看开发进度。
 
+## 代码签名策略（Code signing policy）
+
+Free code signing provided by [SignPath.io](https://signpath.io/), certificate by [SignPath Foundation](https://signpath.org/)
+
+- 审批人（Approvers）: [DLmaster (@DLmaster361)](https://github.com/DLmaster361)
+
+## 隐私政策（Privacy policy）
+
+除非用户、安装者或使用者特别要求，否则本程序不会将任何信息传输到其他网络系统。
+
+This program will not transfer any information to other networked systems unless specifically requested by the user or the person installing or operating it.
+
 ## 特别鸣谢
 
 - 下载服务器：由[AoXuan (@ClozyA)](https://github.com/ClozyA) 个人为项目赞助。
 
-- EXE签名: Free code signing provided by [SignPath.io](https://signpath.io/), certificate by [SignPath Foundation](https://signpath.org/)
+- EXE签名: 由 [SignPath.io](https://signpath.io/)提供免费代码签名，签名来自[SignPath Foundation](https://signpath.org/)。
 
 ## 贡献者
 

@@ -107,7 +107,7 @@ jobs:
         with:
             api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
             organization-id: '787a1d5f-6177-4f30-9559-d2646473584a'
-            project-slug: 'AUTO_MAA_'
+            project-slug: 'AUTO_MAA'
             signing-policy-slug: 'release-signing'
             artifact-configuration-slug: "AUTO_MAA"
             github-artifact-id: '${{ steps.upload-unsigned-main-program.outputs.artifact-id }}'
@@ -155,7 +155,7 @@ jobs:
         with:
             api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
             organization-id: '787a1d5f-6177-4f30-9559-d2646473584a'
-            project-slug: 'AUTO_MAA_'
+            project-slug: 'AUTO_MAA'
             signing-policy-slug: 'release-signing'
             artifact-configuration-slug: "AUTO_MAA-Setup"
             github-artifact-id: '${{ steps.upload-unsigned-setup-program.outputs.artifact-id }}'
@@ -243,7 +243,19 @@ jobs:
           TAGNAME="$(sed 's/\r$//g' <(head -n 1 version_info.txt))"
           NOTES_MAIN="$(sed 's/\r$//g' <(tail -n +3 version_info.txt))"
           NOTES="$NOTES_MAIN
-          
+
+          ## 代码签名策略（Code signing policy）
+
+          Free code signing provided by [SignPath.io](https://signpath.io/), certificate by [SignPath Foundation](https://signpath.org/)
+
+          - 审批人（Approvers）: [DLmaster (@DLmaster361)](https://github.com/DLmaster361)
+
+          ## 隐私政策（Privacy policy）
+
+          除非用户、安装者或使用者特别要求，否则本程序不会将任何信息传输到其他网络系统。
+
+          This program will not transfer any information to other networked systems unless specifically requested by the user or the person installing or operating it.
+
           [已有 Mirror酱 CDK ？前往 Mirror酱 高速下载](https://mirrorchyan.com/zh/projects?rid=AUTO_MAA&source=auto_maa-release)
 
           \`\`\`本release通过GitHub Actions自动构建\`\`\`"
