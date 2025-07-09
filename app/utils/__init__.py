@@ -29,4 +29,7 @@ __version__ = "4.2.0"
 __author__ = "DLmaster361 <DLmaster_361@163.com>"
 __license__ = "GPL-3.0 license"
 
-__all__ = []
+from .ImageUtils import ImageUtils
+from .ProcessManager import ProcessManager
+
+__all__ = ["ImageUtils", "ProcessManager"]
