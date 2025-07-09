@@ -61,27 +61,67 @@ class _SystemHandler:
             # 恢复系统电源状态
             ctypes.windll.kernel32.SetThreadExecutionState(self.ES_CONTINUOUS)
 
-    def set_SelfStart(self) -> None:
+    def set_SelfStart(self) -> bool:
         """同步开机自启"""
 
         if Config.get(Config.start_IfSelfStart) and not self.is_startup():
-            key = winreg.OpenKey(
-                winreg.HKEY_CURRENT_USER,
-                r"Software\Microsoft\Windows\CurrentVersion\Run",
-                winreg.KEY_SET_VALUE,
-                winreg.KEY_ALL_ACCESS | winreg.KEY_WRITE | winreg.KEY_CREATE_SUB_KEY,
-            )
-            winreg.SetValueEx(key, "AUTO_MAA", 0, winreg.REG_SZ, Config.app_path_sys)
-            winreg.CloseKey(key)
+
+            try:
+
+                # 创建任务计划
+                result = subprocess.run(
+                    [
+                        "schtasks",
+                        "/create",
+                        "/tn",
+                        "AUTO_MAA_AutoStart",
+                        "/tr",
+                        Config.app_path_sys,
+                        "/sc",
+                        "onlogon",
+                        "/rl",
+                        "highest",  # 以最高权限运行
+                        "/f",  # 强制创建（覆盖现有任务）
+                    ],
+                    creationflags=subprocess.CREATE_NO_WINDOW,
+                    stdin=subprocess.DEVNULL,
+                    capture_output=True,
+                    text=True,
+                )
+
+                if result.returncode == 0:
+                    logger.info(f"任务计划程序自启动已创建: {Config.app_path_sys}")
+                    return True
+                else:
+                    logger.error(f"创建任务计划失败: {result.stderr}")
+                    return False
+
+            except Exception as e:
+                logger.error(f"设置任务计划程序自启动失败: {e}")
+                return False
+
         elif not Config.get(Config.start_IfSelfStart) and self.is_startup():
-            key = winreg.OpenKey(
-                winreg.HKEY_CURRENT_USER,
-                r"Software\Microsoft\Windows\CurrentVersion\Run",
-                winreg.KEY_SET_VALUE,
-                winreg.KEY_ALL_ACCESS | winreg.KEY_WRITE | winreg.KEY_CREATE_SUB_KEY,
-            )
-            winreg.DeleteValue(key, "AUTO_MAA")
-            winreg.CloseKey(key)
+
+            try:
+
+                result = subprocess.run(
+                    ["schtasks", "/delete", "/tn", "AUTO_MAA_AutoStart", "/f"],
+                    creationflags=subprocess.CREATE_NO_WINDOW,
+                    stdin=subprocess.DEVNULL,
+                    capture_output=True,
+                    text=True,
+                )
+
+                if result.returncode == 0:
+                    logger.info("任务计划程序自启动已删除")
+                    return True
+                else:
+                    logger.error(f"删除任务计划失败: {result.stderr}")
+                    return False
+
+            except Exception as e:
+                logger.error(f"删除任务计划程序自启动失败: {e}")
+                return False
 
     def set_power(self, mode) -> None:
 
@@ -144,19 +184,17 @@ class _SystemHandler:
     def is_startup(self) -> bool:
         """判断程序是否已经开机自启"""
 
-        key = winreg.OpenKey(
-            winreg.HKEY_CURRENT_USER,
-            r"Software\Microsoft\Windows\CurrentVersion\Run",
-            0,
-            winreg.KEY_READ,
-        )
-
         try:
-            value, _ = winreg.QueryValueEx(key, "AUTO_MAA")
-            winreg.CloseKey(key)
-            return True
-        except FileNotFoundError:
-            winreg.CloseKey(key)
+            result = subprocess.run(
+                ["schtasks", "/query", "/tn", "AUTO_MAA_AutoStart"],
+                creationflags=subprocess.CREATE_NO_WINDOW,
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                text=True,
+            )
+            return result.returncode == 0
+        except Exception as e:
+            logger.error(f"检查任务计划程序失败: {e}")
             return False
 
     def get_window_info(self) -> list:
