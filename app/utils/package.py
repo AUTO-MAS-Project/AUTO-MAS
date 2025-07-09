@@ -70,7 +70,7 @@ if __name__ == "__main__":
     print("Packaging AUTO_MAA main program ...")
 
     os.system(
-        "powershell -Command python -m nuitka --standalone --onefile --mingw64"
+        "powershell -Command python -m nuitka --standalone --onefile --mingw64 --windows-uac-admin"
         " --enable-plugins=pyside6 --windows-console-mode=attach"
         " --onefile-tempdir-spec='{TEMP}\\AUTO_MAA'"
         " --windows-icon-from-ico=resources\\icons\\AUTO_MAA.ico"

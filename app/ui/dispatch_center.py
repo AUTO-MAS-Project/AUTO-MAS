@@ -210,8 +210,8 @@ class DispatchCenter(QWidget):
             self.script_list["主调度台"].top_bar.object.addItem(
                 (
                     f"实例 - {info['Type']}"
-                    if info["Config"].get(info["Config"].MaaSet_Name) == ""
-                    else f"实例 - {info['Type']} - {info["Config"].get(info["Config"].MaaSet_Name)}"
+                    if info["Config"].get_name() == ""
+                    else f"实例 - {info['Type']} - {info['Config'].get_name()}"
                 ),
                 userData=name,
             )
@@ -284,8 +284,8 @@ class DispatchCenter(QWidget):
                 continue
             text_list.append(
                 f"实例 - {info['Type']}"
-                if info["Config"].get(info["Config"].MaaSet_Name) == ""
-                else f"实例 - {info['Type']} - {info["Config"].get(info["Config"].MaaSet_Name)}"
+                if info["Config"].get_name() == ""
+                else f"实例 - {info['Type']} - {info['Config'].get_name()}"
             )
             data_list.append(name)
 
@@ -317,14 +317,12 @@ class DispatchCenter(QWidget):
 
             elif "脚本" in choice.input[0].currentData():
 
-                if Config.member_dict[choice.input[0].currentData()]["Type"] == "Maa":
-
-                    logger.info(f"用户添加任务：{choice.input[0].currentData()}")
-                    TaskManager.add_task(
-                        "自动代理_新调度台",
-                        f"自定义队列 - {choice.input[0].currentData()}",
-                        {"Queue": {"Member_1": choice.input[0].currentData()}},
-                    )
+                logger.info(f"用户添加任务：{choice.input[0].currentData()}")
+                TaskManager.add_task(
+                    "自动代理_新调度台",
+                    f"自定义队列 - {choice.input[0].currentData()}",
+                    {"Queue": {"Member_1": choice.input[0].currentData()}},
+                )
 
     class DispatchBox(QWidget):
 
@@ -409,6 +407,18 @@ class DispatchCenter(QWidget):
                     )
                     return None
 
+                if (
+                    "脚本" in self.object.currentData()
+                    and Config.member_dict[self.object.currentData()]["Type"]
+                    == "General"
+                    and self.mode.currentData() == "人工排查"
+                ):
+                    logger.warning("通用脚本类型不存在人工排查功能")
+                    MainInfoBar.push_info_bar(
+                        "warning", "不支持的任务", "通用脚本无人工排查功能", 5000
+                    )
+                    return None
+
                 if "调度队列" in self.object.currentData():
 
                     logger.info(f"用户添加任务：{self.object.currentData()}")
@@ -420,14 +430,12 @@ class DispatchCenter(QWidget):
 
                 elif "脚本" in self.object.currentData():
 
-                    if Config.member_dict[self.object.currentData()]["Type"] == "Maa":
-
-                        logger.info(f"用户添加任务：{self.object.currentData()}")
-                        TaskManager.add_task(
-                            f"{self.mode.currentText()}_主调度台",
-                            "自定义队列",
-                            {"Queue": {"Member_1": self.object.currentData()}},
-                        )
+                    logger.info(f"用户添加任务：{self.object.currentData()}")
+                    TaskManager.add_task(
+                        f"{self.mode.currentText()}_主调度台",
+                        "自定义队列",
+                        {"Queue": {"Member_1": self.object.currentData()}},
+                    )
 
         class DispatchInfoCard(HeaderCardWidget):
 
