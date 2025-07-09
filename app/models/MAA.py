@@ -40,7 +40,7 @@ from typing import Union, List, Dict
 
 from app.core import Config, MaaConfig, MaaUserConfig
 from app.services import Notify, Crypto, System, skland_sign_in
-from app.utils.ImageUtils import ImageUtils
+from app.utils import ProcessManager
 
 
 class MaaManager(QObject):
@@ -57,8 +57,6 @@ class MaaManager(QObject):
     update_log_text = Signal(str)
     interrupt = Signal()
     accomplish = Signal(dict)
-
-    isInterruptionRequested = False
 
     def __init__(
         self,
@@ -81,10 +79,17 @@ class MaaManager(QObject):
         self.config_path = config["Path"]
         self.user_config_path = user_config_path
 
+        self.emulator_process_manager = ProcessManager()
+        self.maa_process_manager = ProcessManager()
+
         self.log_monitor = QFileSystemWatcher()
         self.log_monitor_timer = QTimer()
         self.log_monitor_timer.timeout.connect(self.refresh_maa_log)
         self.monitor_loop = QEventLoop()
+
+        self.maa_process_manager.processClosed.connect(
+            lambda: self.log_monitor.fileChanged.emit("进程结束检查")
+        )
 
         self.question_loop = QEventLoop()
         self.question_response.connect(self.__capture_response)
@@ -92,6 +97,7 @@ class MaaManager(QObject):
 
         self.wait_loop = QEventLoop()
 
+        self.isInterruptionRequested = False
         self.interrupt.connect(self.quit_monitor)
 
         self.maa_version = None
@@ -505,9 +511,8 @@ class MaaManager(QObject):
                                 logger.info(
                                     f"{self.name} | 启动模拟器：{self.emulator_path}，参数：{self.emulator_arguments}"
                                 )
-                                self.emulator_process = subprocess.Popen(
-                                    [self.emulator_path, *self.emulator_arguments],
-                                    creationflags=subprocess.CREATE_NO_WINDOW,
+                                self.emulator_process_manager.open_process(
+                                    self.emulator_path, self.emulator_arguments, 0
                                 )
                             except Exception as e:
                                 logger.error(f"{self.name} | 启动模拟器时出现异常：{e}")
@@ -526,10 +531,7 @@ class MaaManager(QObject):
                         self.search_ADB_address()
 
                         # 创建MAA任务
-                        maa = subprocess.Popen(
-                            [self.maa_exe_path],
-                            creationflags=subprocess.CREATE_NO_WINDOW,
-                        )
+                        self.maa_process_manager.open_process(self.maa_exe_path, [], 10)
                         # 监测MAA运行状态
                         self.start_monitor(start_time, mode_book[mode])
 
@@ -579,11 +581,11 @@ class MaaManager(QObject):
                                 f"{self.maa_result}\n正在中止相关程序\n请等待10s"
                             )
                             # 无命令行中止MAA与其子程序
+                            self.maa_process_manager.kill(if_force=True)
                             System.kill_process(self.maa_exe_path)
 
                             # 中止模拟器进程
-                            self.emulator_process.terminate()
-                            self.emulator_process.wait()
+                            self.emulator_process_manager.kill()
 
                             self.if_open_emulator = True
 
@@ -644,8 +646,7 @@ class MaaManager(QObject):
                             )
                         # 任务结束后再次手动中止模拟器进程，防止退出不彻底
                         if self.if_kill_emulator:
-                            self.emulator_process.terminate()
-                            self.emulator_process.wait()
+                            self.emulator_process_manager.kill()
                             self.if_open_emulator = True
 
                         # 记录剿灭情况
@@ -777,10 +778,7 @@ class MaaManager(QObject):
                     # 记录当前时间
                     start_time = datetime.now()
                     # 创建MAA任务
-                    maa = subprocess.Popen(
-                        [self.maa_exe_path],
-                        creationflags=subprocess.CREATE_NO_WINDOW,
-                    )
+                    self.maa_process_manager.open_process(self.maa_exe_path, [], 10)
 
                     # 监测MAA运行状态
                     self.start_monitor(start_time, "人工排查")
@@ -799,6 +797,7 @@ class MaaManager(QObject):
                             f"{self.maa_result}\n正在中止相关程序\n请等待10s"
                         )
                         # 无命令行中止MAA与其子程序
+                        self.maa_process_manager.kill(if_force=True)
                         System.kill_process(self.maa_exe_path)
                         self.if_open_emulator = True
                         self.sleep(10)
@@ -845,10 +844,7 @@ class MaaManager(QObject):
             # 配置MAA
             self.set_maa(self.mode, "")
             # 创建MAA任务
-            maa = subprocess.Popen(
-                [self.maa_exe_path],
-                creationflags=subprocess.CREATE_NO_WINDOW,
-            )
+            self.maa_process_manager.open_process(self.maa_exe_path, [], 10)
             # 记录当前时间
             start_time = datetime.now()
 
@@ -870,6 +866,7 @@ class MaaManager(QObject):
 
             # 关闭可能未正常退出的MAA进程
             if self.isInterruptionRequested:
+                self.maa_process_manager.kill(if_force=True)
                 System.kill_process(self.maa_exe_path)
 
             # 复原MAA配置文件
@@ -1024,6 +1021,7 @@ class MaaManager(QObject):
                     self.ADB_address = ADB_address
 
                     # 覆写当前ADB地址
+                    self.maa_process_manager.kill(if_force=True)
                     System.kill_process(self.maa_exe_path)
                     with self.maa_set_path.open(mode="r", encoding="utf-8") as f:
                         data = json.load(f)
@@ -1053,7 +1051,7 @@ class MaaManager(QObject):
 
         # 一分钟内未执行日志变化检查，强制检查一次
         if datetime.now() - self.last_check_time > timedelta(minutes=1):
-            self.log_monitor.fileChanged.emit(self.log_monitor.files()[0])
+            self.log_monitor.fileChanged.emit("1分钟超时检查")
 
     def check_maa_log(self, start_time: datetime, mode: str) -> list:
         """获取MAA日志并检查以判断MAA程序运行状态"""
@@ -1155,7 +1153,10 @@ class MaaManager(QObject):
             elif "已停止" in log:
                 self.maa_result = "MAA在完成任务前中止"
 
-            elif "MaaAssistantArknights GUI exited" in log:
+            elif (
+                "MaaAssistantArknights GUI exited" in log
+                or not self.maa_process_manager.is_running()
+            ):
                 self.maa_result = "MAA在完成任务前退出"
 
             elif datetime.now() - latest_time > timedelta(
@@ -1178,7 +1179,10 @@ class MaaManager(QObject):
                 self.maa_result = "MAA未检测到任何模拟器"
             elif "已停止" in log:
                 self.maa_result = "MAA在完成任务前中止"
-            elif "MaaAssistantArknights GUI exited" in log:
+            elif (
+                "MaaAssistantArknights GUI exited" in log
+                or not self.maa_process_manager.is_running()
+            ):
                 self.maa_result = "MAA在完成任务前退出"
             elif self.isInterruptionRequested:
                 self.maa_result = "任务被手动中止"
@@ -1186,7 +1190,10 @@ class MaaManager(QObject):
                 self.maa_result = "Wait"
 
         elif mode == "设置MAA":
-            if "MaaAssistantArknights GUI exited" in log:
+            if (
+                "MaaAssistantArknights GUI exited" in log
+                or not self.maa_process_manager.is_running()
+            ):
                 self.maa_result = "Success!"
             else:
                 self.maa_result = "Wait"
@@ -1229,6 +1236,7 @@ class MaaManager(QObject):
             user_data = self.data[index]["Config"]
 
         # 配置MAA前关闭可能未正常退出的MAA进程
+        self.maa_process_manager.kill(if_force=True)
         System.kill_process(self.maa_exe_path)
 
         # 预导入MAA配置文件

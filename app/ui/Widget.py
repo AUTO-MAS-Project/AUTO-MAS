@@ -33,6 +33,8 @@ v4.3
 
 import os
 import re
+import win32com.client
+from pathlib import Path
 from datetime import datetime
 from functools import partial
 from typing import Optional, Union, List, Dict
@@ -48,6 +50,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QVBoxLayout,
     QSizePolicy,
+    QFileDialog,
 )
 from qfluentwidgets import (
     LineEdit,
@@ -564,6 +567,73 @@ class PasswordLineEditSettingCard(SettingCard):
                 self.LineEdit.setPasswordVisible(False)
                 self.LineEdit.setReadOnly(True)
         self.LineEdit.textChanged.connect(self.__textChanged)
+
+
+class PathSettingCard(PushSettingCard):
+
+    pathChanged = Signal(Path, Path)
+
+    def __init__(
+        self,
+        icon: Union[str, QIcon, FluentIconBase],
+        title: str,
+        mode: str,
+        text: str,
+        qconfig: QConfig,
+        configItem: ConfigItem,
+        parent=None,
+    ):
+        super().__init__(text, icon, title, "未设置", parent)
+
+        self.title = title
+        self.mode = mode
+        self.qconfig = qconfig
+        self.configItem = configItem
+
+        self.setContent(self.qconfig.get(self.configItem))
+
+        self.clicked.connect(self.ChoosePath)
+        self.configItem.valueChanged.connect(
+            lambda: self.setContent(self.qconfig.get(self.configItem))
+        )
+
+    def ChoosePath(self):
+        """选择文件或文件夹路径"""
+
+        old_path = Path(self.qconfig.get(self.configItem))
+
+        if self.mode == "文件夹":
+
+            folder = QFileDialog.getExistingDirectory(
+                self, "选择文件夹", self.qconfig.get(self.configItem)
+            )
+            if folder:
+                self.qconfig.set(self.configItem, folder)
+                self.pathChanged.emit(old_path, Path(folder))
+
+        else:
+
+            file_path, _ = QFileDialog.getOpenFileName(
+                self, "打开文件", self.qconfig.get(self.configItem), self.mode
+            )
+            if file_path:
+                file_path = self.analysis_lnk(file_path)
+                self.qconfig.set(self.configItem, str(file_path))
+                self.pathChanged.emit(old_path, file_path)
+
+    def analysis_lnk(self, path: str) -> Path:
+        """快捷方式解析"""
+
+        lnk_path = Path(path)
+        if lnk_path.suffix == ".lnk":
+            try:
+                shell = win32com.client.Dispatch("WScript.Shell")
+                shortcut = shell.CreateShortcut(str(lnk_path))
+                return Path(shortcut.TargetPath)
+            except Exception as e:
+                return lnk_path
+        else:
+            return lnk_path
 
 
 class PushAndSwitchButtonSettingCard(SettingCard):
@@ -1163,6 +1233,48 @@ class TimeEditSettingCard(SettingCard):
         self.TimeEdit.setTime(QTime.fromString(value, "HH:mm"))
 
 
+class SubLableSettingCard(SettingCard):
+    """Setting card with Sub's Lable"""
+
+    def __init__(
+        self,
+        icon: Union[str, QIcon, FluentIconBase],
+        title: str,
+        content: Union[str, None],
+        qconfig: QConfig,
+        configItems: Dict[str, ConfigItem],
+        parent=None,
+    ):
+
+        super().__init__(icon, title, content, parent)
+        self.qconfig = qconfig
+        self.configItems = configItems
+        self.Lable = SubtitleLabel(self)
+
+        if configItems:
+            for configItem in configItems.values():
+                configItem.valueChanged.connect(self.setValue)
+            self.setValue()
+
+        self.hBoxLayout.addWidget(self.Lable, 0, Qt.AlignRight)
+        self.hBoxLayout.addSpacing(16)
+
+    def setValue(self):
+
+        text_list = []
+
+        if self.configItems:
+
+            text_list.append(
+                f"今日已代理{self.qconfig.get(self.configItems["ProxyTimes"])}次"
+                if Config.server_date().strftime("%Y-%m-%d")
+                == self.qconfig.get(self.configItems["LastProxyDate"])
+                else "今日未进行代理"
+            )
+
+        self.Lable.setText(" | ".join(text_list))
+
+
 class UserLableSettingCard(SettingCard):
     """Setting card with User's Lable"""
 
@@ -1341,13 +1453,18 @@ class UserNoticeSettingCard(PushAndSwitchButtonSettingCard):
 
             if not (
                 self.qconfig.get(self.configItems["IfSendStatistic"])
-                or self.qconfig.get(self.configItems["IfSendSixStar"])
+                or (
+                    "IfSendSixStar" in self.configItems
+                    and self.qconfig.get(self.configItems["IfSendSixStar"])
+                )
             ):
                 text_list.append("未启用任何通知项")
 
             if self.qconfig.get(self.configItems["IfSendStatistic"]):
                 text_list.append("统计信息已启用")
-            if self.qconfig.get(self.configItems["IfSendSixStar"]):
+            if "IfSendSixStar" in self.configItems and self.qconfig.get(
+                self.configItems["IfSendSixStar"]
+            ):
                 text_list.append("六星喜报已启用")
 
             if self.qconfig.get(self.configItems["IfSendMail"]):

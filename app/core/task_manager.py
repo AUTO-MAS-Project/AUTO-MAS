@@ -36,7 +36,7 @@ from .config import Config
 from .main_info_bar import MainInfoBar
 from .network import Network
 from .sound_player import SoundPlayer
-from app.models import MaaManager
+from app.models import MaaManager, GeneralManager
 from app.services import System
 
 
@@ -48,7 +48,8 @@ class Task(QThread):
     play_sound = Signal(str)
     question = Signal(str, str)
     question_response = Signal(bool)
-    update_user_info = Signal(str, dict)
+    update_maa_user_info = Signal(str, dict)
+    update_general_sub_info = Signal(str, dict)
     create_task_list = Signal(list)
     create_user_list = Signal(list)
     update_task_list = Signal(list)
@@ -89,7 +90,31 @@ class Task(QThread):
             self.task.play_sound.connect(self.play_sound.emit)
             self.task.accomplish.connect(lambda: self.accomplish.emit([]))
 
-            self.task.run()
+            try:
+                self.task.run()
+            except Exception as e:
+                logger.exception(f"任务异常：{self.name}，错误信息：{e}")
+                self.push_info_bar.emit("error", "任务异常", self.name, -1)
+
+        elif self.mode == "设置通用脚本":
+
+            logger.info(f"任务开始：设置{self.name}")
+            self.push_info_bar.emit("info", "设置通用脚本", self.name, 3000)
+
+            self.task = GeneralManager(
+                self.mode,
+                Config.member_dict[self.name],
+                self.info["SetSubInfo"]["Path"],
+            )
+            self.task.push_info_bar.connect(self.push_info_bar.emit)
+            self.task.play_sound.connect(self.play_sound.emit)
+            self.task.accomplish.connect(lambda: self.accomplish.emit([]))
+
+            try:
+                self.task.run()
+            except Exception as e:
+                logger.exception(f"任务异常：{self.name}，错误信息：{e}")
+                self.push_info_bar.emit("error", "任务异常", self.name, -1)
 
         else:
 
@@ -97,11 +122,8 @@ class Task(QThread):
                 [
                     (
                         value
-                        if Config.member_dict[value]["Config"].get(
-                            Config.member_dict[value]["Config"].MaaSet_Name
-                        )
-                        == ""
-                        else f"{value} - {Config.member_dict[value]["Config"].get(Config.member_dict[value]["Config"].MaaSet_Name)}"
+                        if Config.member_dict[value]["Config"].get_name() == ""
+                        else f"{value} - {Config.member_dict[value]["Config"].get_name()}"
                     ),
                     "等待",
                     value,
@@ -150,24 +172,60 @@ class Task(QThread):
                     self.task.create_user_list.connect(self.create_user_list.emit)
                     self.task.update_user_list.connect(self.update_user_list.emit)
                     self.task.update_log_text.connect(self.update_log_text.emit)
-                    self.task.update_user_info.connect(self.update_user_info.emit)
+                    self.task.update_user_info.connect(self.update_maa_user_info.emit)
                     self.task.accomplish.connect(
                         lambda log: self.task_accomplish(task[2], log)
                     )
 
+                elif Config.member_dict[task[2]]["Type"] == "General":
+
+                    self.task = GeneralManager(
+                        self.mode[0:4],
+                        Config.member_dict[task[2]],
+                    )
+
+                    self.task.question.connect(self.question.emit)
+                    self.question_response.disconnect()
+                    self.question_response.connect(self.task.question_response.emit)
+                    self.task.push_info_bar.connect(self.push_info_bar.emit)
+                    self.task.play_sound.connect(self.play_sound.emit)
+                    self.task.create_user_list.connect(self.create_user_list.emit)
+                    self.task.update_user_list.connect(self.update_user_list.emit)
+                    self.task.update_log_text.connect(self.update_log_text.emit)
+                    self.task.update_sub_info.connect(self.update_general_sub_info.emit)
+                    self.task.accomplish.connect(
+                        lambda log: self.task_accomplish(task[2], log)
+                    )
+
+                try:
                     self.task.run()
 
-                Config.running_list.remove(task[2])
+                    task[1] = "完成"
+                    self.update_task_list.emit(self.task_list)
+                    logger.info(f"任务完成：{task[0]}")
+                    self.push_info_bar.emit("info", "任务完成", task[0], 3000)
 
-                task[1] = "完成"
-                self.update_task_list.emit(self.task_list)
-                logger.info(f"任务完成：{task[0]}")
-                self.push_info_bar.emit("info", "任务完成", task[0], 3000)
+                except Exception as e:
+
+                    self.task_accomplish(
+                        task[2],
+                        {
+                            "Time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                            "History": f"任务异常，异常简报：{e}",
+                        },
+                    )
+
+                    task[1] = "异常"
+                    self.update_task_list.emit(self.task_list)
+                    logger.exception(f"任务异常：{task[0]}，错误信息：{e}")
+                    self.push_info_bar.emit("error", "任务异常", task[0], -1)
+
+                Config.running_list.remove(task[2])
 
             self.accomplish.emit(self.logs)
 
     def task_accomplish(self, name: str, log: dict):
-        """保存保存任务结果"""
+        """保存任务结果"""
 
         self.logs.append([name, log])
         self.task.deleteLater()
@@ -207,7 +265,10 @@ class _TaskManager(QObject):
         )
         self.task_dict[name].push_info_bar.connect(MainInfoBar.push_info_bar)
         self.task_dict[name].play_sound.connect(SoundPlayer.play)
-        self.task_dict[name].update_user_info.connect(Config.change_user_info)
+        self.task_dict[name].update_maa_user_info.connect(Config.change_maa_user_info)
+        self.task_dict[name].update_general_sub_info.connect(
+            Config.change_general_sub_info
+        )
         self.task_dict[name].accomplish.connect(
             lambda logs: self.remove_task(mode, name, logs)
         )
