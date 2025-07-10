@@ -695,7 +695,7 @@ class GeneralSubConfig(LQConfig):
 
 class AppConfig(GlobalConfig):
 
-    VERSION = "4.4.0.1"
+    VERSION = "4.4.0.2"
 
     gameid_refreshed = Signal()
     PASSWORD_refreshed = Signal()
