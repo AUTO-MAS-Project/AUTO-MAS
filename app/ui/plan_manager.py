@@ -21,7 +21,7 @@
 """
 AUTO_MAA
 AUTO_MAA计划管理界面
-v4.3
+v4.4
 作者：DLmaster_361
 """
 

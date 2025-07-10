@@ -21,7 +21,7 @@
 """
 AUTO_MAA
 AUTO_MAA更新器
-v4.3
+v4.4
 作者：DLmaster_361
 """
 
@@ -46,6 +46,8 @@ from PySide6.QtGui import QCloseEvent
 from PySide6.QtCore import QThread, Signal, QTimer, QEventLoop
 
 from typing import List, Dict, Union
+
+from app.services import System
 
 
 def version_text(version_numb: list) -> str:
@@ -94,7 +96,15 @@ class DownloadProcess(QThread):
         if self.download_path.exists():
             self.download_path.unlink()
 
-        headers = {"Range": f"bytes={self.start_byte}-{self.end_byte}"}
+        logger.info(
+            f"开始下载：{self.url}，范围：{self.start_byte}-{self.end_byte}，存储地址：{self.download_path}"
+        )
+
+        headers = (
+            {"Range": f"bytes={self.start_byte}-{self.end_byte}"}
+            if not (self.start_byte == -1 or self.end_byte == -1)
+            else None
+        )
 
         while not self.isInterruptionRequested() and self.check_times != 0:
 
@@ -106,13 +116,19 @@ class DownloadProcess(QThread):
                     self.url, headers=headers, timeout=10, stream=True
                 )
 
-                if response.status_code != 206:
+                if response.status_code not in [200, 206]:
 
                     if self.check_times != -1:
                         self.check_times -= 1
 
+                    logger.error(
+                        f"连接失败：{self.url}，状态码：{response.status_code}，剩余重试次数：{self.check_times}"
+                    )
+
                     time.sleep(1)
                     continue
+
+                logger.info(f"连接成功：{self.url}，状态码：{response.status_code}")
 
                 downloaded_size = 0
                 with self.download_path.open(mode="wb") as f:
@@ -132,10 +148,14 @@ class DownloadProcess(QThread):
                     if self.download_path.exists():
                         self.download_path.unlink()
                     self.accomplish.emit(0)
+                    logger.info(f"下载中止：{self.url}")
 
                 else:
 
                     self.accomplish.emit(time.time() - start_time)
+                    logger.success(
+                        f"下载完成：{self.url}，实际下载大小：{downloaded_size} 字节，耗时：{time.time() - start_time:.2f} 秒"
+                    )
 
                 break
 
@@ -143,6 +163,10 @@ class DownloadProcess(QThread):
 
                 if self.check_times != -1:
                     self.check_times -= 1
+
+                logger.exception(
+                    f"下载出错：{self.url}，错误信息：{e}，剩余重试次数：{self.check_times}"
+                )
                 time.sleep(1)
 
         else:
@@ -150,6 +174,7 @@ class DownloadProcess(QThread):
             if self.download_path.exists():
                 self.download_path.unlink()
             self.accomplish.emit(0)
+            logger.error(f"下载失败：{self.url}")
 
 
 class ZipExtractProcess(QThread):
@@ -172,6 +197,8 @@ class ZipExtractProcess(QThread):
 
         try:
 
+            logger.info(f"开始解压：{self.download_path} 到 {self.app_path}")
+
             while True:
 
                 if self.isInterruptionRequested():
@@ -181,13 +208,15 @@ class ZipExtractProcess(QThread):
                     with zipfile.ZipFile(self.download_path, "r") as zip_ref:
                         zip_ref.extractall(self.app_path)
                     self.accomplish.emit()
+                    logger.success(f"解压完成：{self.download_path} 到 {self.app_path}")
                     break
                 except PermissionError:
                     if self.name == "AUTO_MAA":
                         self.info.emit(f"解压出错：AUTO_MAA正在运行，正在尝试将其关闭")
-                        self.kill_process(self.app_path / "AUTO_MAA.exe")
+                        System.kill_process(self.app_path / "AUTO_MAA.exe")
                     else:
                         self.info.emit(f"解压出错：{self.name}正在运行，正在等待其关闭")
+                    logger.warning(f"解压出错：{self.name}正在运行，正在等待其关闭")
                     time.sleep(1)
 
         except Exception as e:
@@ -195,31 +224,8 @@ class ZipExtractProcess(QThread):
             e = str(e)
             e = "\n".join([e[_ : _ + 75] for _ in range(0, len(e), 75)])
             self.info.emit(f"解压更新时出错：\n{e}")
+            logger.exception(f"解压更新时出错：{e}")
             return None
-
-    def kill_process(self, path: Path) -> None:
-        """根据路径中止进程"""
-
-        for pid in self.search_pids(path):
-            killprocess = subprocess.Popen(
-                f"taskkill /F /PID {pid}",
-                shell=True,
-                creationflags=subprocess.CREATE_NO_WINDOW,
-            )
-            killprocess.wait()
-
-    def search_pids(self, path: Path) -> list:
-        """根据路径查找进程PID"""
-
-        pids = []
-        for proc in psutil.process_iter(["pid", "exe"]):
-            try:
-                if proc.info["exe"] and proc.info["exe"].lower() == str(path).lower():
-                    pids.append(proc.info["pid"])
-            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-                # 进程可能在此期间已结束或无法访问，忽略这些异常
-                pass
-        return pids
 
 
 class DownloadManager(QDialog):
@@ -346,6 +352,8 @@ class DownloadManager(QDialog):
         url_dict = self.get_download_url("测速")
         self.test_speed_result: Dict[str, float] = {}
 
+        logger.info(f"测速链接：{url_dict}")
+
         for name, url in url_dict.items():
 
             if self.isInterruptionRequested:
@@ -427,6 +435,7 @@ class DownloadManager(QDialog):
 
         # 保存测速结果
         self.config["speed_result"] = self.test_speed_result
+        logger.info(f"测速结果：{self.test_speed_result}")
 
         self.update_info("测速完成！")
         self.speed_test_accomplish.emit()
@@ -465,8 +474,8 @@ class DownloadManager(QDialog):
             # 创建下载子线程
             self.download_process_dict[f"part{i}"] = DownloadProcess(
                 url,
-                start_byte,
-                end_byte,
+                -1 if self.config["mode"] == "MirrorChyan" else start_byte,
+                -1 if self.config["mode"] == "MirrorChyan" else end_byte,
                 self.download_path.with_suffix(f".part{i}"),
                 1 if self.config["mode"] == "MirrorChyan" else -1,
             )
@@ -525,6 +534,9 @@ class DownloadManager(QDialog):
             return None
 
         # 合并下载的分段文件
+        logger.info(
+            f"所有分段下载完成：{self.name}，开始合并分段文件到 {self.download_path}"
+        )
         with self.download_path.open(mode="wb") as outfile:
             for i in range(self.config["thread_numb"]):
                 with self.download_path.with_suffix(f".part{i}").open(
@@ -532,6 +544,10 @@ class DownloadManager(QDialog):
                 ) as infile:
                     outfile.write(infile.read())
                 self.download_path.with_suffix(f".part{i}").unlink()
+
+        logger.success(
+            f"合并完成：{self.name}，下载文件大小：{self.download_path.stat().st_size} 字节"
+        )
 
         self.update_info("正在解压更新文件")
         self.update_progress(0, 0, 0)
@@ -583,6 +599,9 @@ class DownloadManager(QDialog):
             self.progress_2.setValue(current)
 
     def requestInterruption(self) -> None:
+        """请求中断下载任务"""
+
+        logger.info("收到下载任务中止请求")
 
         self.isInterruptionRequested = True
 

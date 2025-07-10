@@ -27,7 +27,7 @@
 """
 AUTO_MAA
 AUTO_MAA组件
-v4.3
+v4.4
 作者：DLmaster_361
 """
 
@@ -577,7 +577,7 @@ class PathSettingCard(PushSettingCard):
         self,
         icon: Union[str, QIcon, FluentIconBase],
         title: str,
-        mode: str,
+        mode: Union[str, OptionsConfigItem],
         text: str,
         qconfig: QConfig,
         configItem: ConfigItem,
@@ -589,6 +589,18 @@ class PathSettingCard(PushSettingCard):
         self.mode = mode
         self.qconfig = qconfig
         self.configItem = configItem
+
+        if isinstance(mode, OptionsConfigItem):
+
+            self.ComboBox = ComboBox(self)
+            self.hBoxLayout.insertWidget(5, self.ComboBox, 0, Qt.AlignRight)
+
+            for option in mode.options:
+                self.ComboBox.addItem(option, userData=option)
+
+            self.ComboBox.setCurrentText(self.qconfig.get(mode))
+            self.ComboBox.currentIndexChanged.connect(self._onCurrentIndexChanged)
+            mode.valueChanged.connect(self.setValue)
 
         self.setContent(self.qconfig.get(self.configItem))
 
@@ -602,7 +614,7 @@ class PathSettingCard(PushSettingCard):
 
         old_path = Path(self.qconfig.get(self.configItem))
 
-        if self.mode == "文件夹":
+        if self.get_mode() == "文件夹":
 
             folder = QFileDialog.getExistingDirectory(
                 self, "选择文件夹", self.qconfig.get(self.configItem)
@@ -614,7 +626,7 @@ class PathSettingCard(PushSettingCard):
         else:
 
             file_path, _ = QFileDialog.getOpenFileName(
-                self, "打开文件", self.qconfig.get(self.configItem), self.mode
+                self, "打开文件", self.qconfig.get(self.configItem), self.get_mode()
             )
             if file_path:
                 file_path = self.analysis_lnk(file_path)
@@ -634,6 +646,21 @@ class PathSettingCard(PushSettingCard):
                 return lnk_path
         else:
             return lnk_path
+
+    def get_mode(self) -> str:
+        """获取当前模式"""
+        if isinstance(self.mode, OptionsConfigItem):
+            return self.qconfig.get(self.mode)
+        return self.mode
+
+    def _onCurrentIndexChanged(self, index: int):
+
+        self.qconfig.set(self.mode, self.ComboBox.itemData(index))
+
+    def setValue(self, value):
+
+        self.ComboBox.setCurrentText(value)
+        self.qconfig.set(self.mode, value)
 
 
 class PushAndSwitchButtonSettingCard(SettingCard):
