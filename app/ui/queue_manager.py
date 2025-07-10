@@ -21,7 +21,7 @@
 """
 AUTO_MAA
 AUTO_MAA调度队列界面
-v4.3
+v4.4
 作者：DLmaster_361
 """
 

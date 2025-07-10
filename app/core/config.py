@@ -21,7 +21,7 @@
 """
 AUTO_MAA
 AUTO_MAA配置管理
-v4.3
+v4.4
 作者：DLmaster_361
 """
 
@@ -601,14 +601,21 @@ class GeneralConfig(LQConfig):
         )
         self.Script_Arguments = ConfigItem("Script", "Arguments", "")
         self.Script_ConfigPath = ConfigItem(
-            "Script", "ConfigPath", ".", FolderValidator()
+            "Script", "ConfigPath", ".", FileValidator()
+        )
+        self.Script_ConfigPathMode = OptionsConfigItem(
+            "Script",
+            "ConfigPathMode",
+            "所有文件 (*)",
+            OptionsValidator(["所有文件 (*)", "文件夹"]),
         )
         self.Script_LogPath = ConfigItem("Script", "LogPath", ".", FileValidator())
+        self.Script_LogPathFormat = ConfigItem("Script", "LogPathFormat", "%Y-%m-%d")
         self.Script_LogTimeStart = ConfigItem(
-            "Script", "LogTimeStart", 0, RangeValidator(0, 1024)
+            "Script", "LogTimeStart", 1, RangeValidator(1, 1024)
         )
         self.Script_LogTimeEnd = ConfigItem(
-            "Script", "LogTimeEnd", 0, RangeValidator(0, 1024)
+            "Script", "LogTimeEnd", 1, RangeValidator(1, 1024)
         )
         self.Script_LogTimeFormat = ConfigItem(
             "Script", "LogTimeFormat", "%Y-%m-%d %H:%M:%S"
@@ -616,7 +623,7 @@ class GeneralConfig(LQConfig):
         self.Script_SuccessLog = ConfigItem("Script", "SuccessLog", "")
         self.Script_ErrorLog = ConfigItem("Script", "ErrorLog", "")
 
-        self.Game_Enabled = ConfigItem("Game", "Enabled", True, BoolValidator())
+        self.Game_Enabled = ConfigItem("Game", "Enabled", False, BoolValidator())
         self.Game_Style = OptionsConfigItem(
             "Game", "Style", "Emulator", OptionsValidator(["Emulator", "Client"])
         )

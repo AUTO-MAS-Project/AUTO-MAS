@@ -21,7 +21,7 @@
 """
 AUTO_MAA
 AUTO_MAA系统服务
-v4.3
+v4.4
 作者：DLmaster_361
 """
 
