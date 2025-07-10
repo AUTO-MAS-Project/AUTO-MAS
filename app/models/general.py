@@ -21,7 +21,7 @@
 """
 AUTO_MAA
 通用功能组件
-v4.3
+v4.4
 作者：DLmaster_361
 """
 
@@ -118,7 +118,7 @@ class GeneralManager(QObject):
             Path(self.set["Script"]["RootPath"]).exists()
             and Path(self.set["Script"]["ScriptPath"]).exists()
             and Path(self.set["Script"]["ConfigPath"]).exists()
-            and Path(self.set["Script"]["LogPath"]).exists()
+            and Path(self.set["Script"]["LogPath"]).parent.exists()
             and self.set["Script"]["LogTimeFormat"]
             and self.set["Script"]["ErrorLog"]
         ) or (
@@ -137,16 +137,24 @@ class GeneralManager(QObject):
         self.script_root_path = Path(self.set["Script"]["RootPath"])
         self.script_exe_path = Path(self.set["Script"]["ScriptPath"])
         self.script_config_path = Path(self.set["Script"]["ConfigPath"])
-        self.script_log_path = Path(self.set["Script"]["LogPath"])
+        self.script_log_path = (
+            Path(self.set["Script"]["LogPath"]).with_stem(
+                datetime.now().strftime(self.set["Script"]["LogPathFormat"])
+            )
+            if self.set["Script"]["LogPathFormat"]
+            else Path(self.set["Script"]["LogPath"])
+        )
+        if not self.script_log_path.exists():
+            self.script_log_path.parent.mkdir(parents=True, exist_ok=True)
+            self.script_log_path.touch(exist_ok=True)
         self.game_path = Path(self.set["Game"]["Path"])
         self.log_time_range = [
-            self.set["Script"]["LogTimeStart"],
+            self.set["Script"]["LogTimeStart"] - 1,
             self.set["Script"]["LogTimeEnd"],
         ]
         self.success_log = [
             _.strip() for _ in self.set["Script"]["SuccessLog"].split("|")
         ]
-        print(f"Success Log: {self.success_log}")
         self.error_log = [_.strip() for _ in self.set["Script"]["ErrorLog"].split("|")]
 
     def run(self):
@@ -431,9 +439,14 @@ class GeneralManager(QObject):
                 self.start_monitor(start_time)
 
                 self.sub_config_path.mkdir(parents=True, exist_ok=True)
-                shutil.copytree(
-                    self.script_config_path, self.sub_config_path, dirs_exist_ok=True
-                )
+                if self.set["Script"]["ConfigPathMode"] == "文件夹":
+                    shutil.copytree(
+                        self.script_config_path,
+                        self.sub_config_path,
+                        dirs_exist_ok=True,
+                    )
+                else:
+                    shutil.copy(self.script_config_path, self.sub_config_path)
 
             except Exception as e:
                 logger.error(f"{self.name} | 启动通用脚本时出现异常：{e}")
@@ -690,15 +703,31 @@ class GeneralManager(QObject):
         # 预导入配置文件
         if self.mode == "设置通用脚本":
             if self.sub_config_path.exists():
-                shutil.copytree(
-                    self.sub_config_path, self.script_config_path, dirs_exist_ok=True
-                )
+                if self.set["Script"]["ConfigPathMode"] == "文件夹":
+                    shutil.copytree(
+                        self.sub_config_path,
+                        self.script_config_path,
+                        dirs_exist_ok=True,
+                    )
+                elif (self.sub_config_path / self.script_config_path.name).exists():
+                    shutil.copy(
+                        self.sub_config_path / self.script_config_path.name,
+                        self.script_config_path,
+                    )
         else:
-            shutil.copytree(
-                self.data[index]["Path"] / "ConfigFiles",
-                self.script_config_path,
-                dirs_exist_ok=True,
-            )
+            if self.set["Script"]["ConfigPathMode"] == "文件夹":
+                shutil.copytree(
+                    self.data[index]["Path"] / "ConfigFiles",
+                    self.script_config_path,
+                    dirs_exist_ok=True,
+                )
+            else:
+                shutil.copy(
+                    self.data[index]["Path"]
+                    / "ConfigFiles"
+                    / self.script_config_path.name,
+                    self.script_config_path,
+                )
 
     def execute_script_task(self, script_path: Path, task_name: str) -> bool:
         """执行脚本任务并等待结束"""
