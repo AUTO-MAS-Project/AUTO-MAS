@@ -21,7 +21,7 @@
 """
 AUTO_MAA
 AUTO_MAA脚本管理界面
-v4.3
+v4.4
 作者：DLmaster_361
 """
 
@@ -2312,27 +2312,36 @@ class MemberManager(QWidget):
                         )
                         self.card_ConfigPath = PathSettingCard(
                             icon=FluentIcon.FOLDER,
-                            title="脚本配置文件目录 - [必填]",
-                            mode="文件夹",
-                            text="选择文件夹",
+                            title="脚本配置文件路径 - [必填]",
+                            mode=self.config.Script_ConfigPathMode,
+                            text="选择路径",
                             qconfig=self.config,
                             configItem=self.config.Script_ConfigPath,
                             parent=self,
                         )
                         self.card_LogPath = PathSettingCard(
                             icon=FluentIcon.FOLDER,
-                            title="脚本日志文件目录 - [必填]",
+                            title="脚本日志文件路径 - [必填]",
                             mode="所有文件 (*)",
                             text="选择文件",
                             qconfig=self.config,
                             configItem=self.config.Script_LogPath,
                             parent=self,
                         )
+                        self.card_LogPathFormat = LineEditSettingCard(
+                            icon=FluentIcon.PAGE_RIGHT,
+                            title="脚本日志文件名格式",
+                            content="若脚本日志文件名中随时间变化，请填入时间格式，留空则不启用",
+                            text="请输入脚本日志文件名格式",
+                            qconfig=self.config,
+                            configItem=self.config.Script_LogPathFormat,
+                            parent=self,
+                        )
                         self.card_LogTimeStart = SpinBoxSettingCard(
                             icon=FluentIcon.PAGE_RIGHT,
                             title="脚本日志时间起始位置 - [必填]",
                             content="脚本日志中时间的起始位置，单位为字符",
-                            range=(0, 1024),
+                            range=(1, 1024),
                             qconfig=self.config,
                             configItem=self.config.Script_LogTimeStart,
                             parent=self,
@@ -2341,7 +2350,7 @@ class MemberManager(QWidget):
                             icon=FluentIcon.PAGE_RIGHT,
                             title="脚本日志时间结束位置 - [必填]",
                             content="脚本日志中时间的结束位置，单位为字符",
-                            range=(0, 1024),
+                            range=(1, 1024),
                             qconfig=self.config,
                             configItem=self.config.Script_LogTimeEnd,
                             parent=self,
@@ -2402,6 +2411,7 @@ class MemberManager(QWidget):
                         Layout.addWidget(self.card_Arguments)
                         Layout.addWidget(self.card_ConfigPath)
                         Layout.addWidget(self.card_LogPath)
+                        Layout.addWidget(self.card_LogPathFormat)
                         Layout.addLayout(h_layout)
                         Layout.addWidget(self.card_LogTimeFormat)
                         Layout.addWidget(self.card_SuccessLog)
@@ -3066,7 +3076,7 @@ class MemberManager(QWidget):
                             self.card_ScriptBeforeTask = PathSettingCard(
                                 icon=FluentIcon.FOLDER,
                                 title="脚本前置任务",
-                                mode="脚本文件 (*.py *.bat *.exe)",
+                                mode="脚本文件 (*.py *.bat *.cmd *.exe)",
                                 text="选择脚本文件",
                                 qconfig=self.config,
                                 configItem=self.config.Info_ScriptBeforeTask,
@@ -3081,7 +3091,7 @@ class MemberManager(QWidget):
                             self.card_ScriptAfterTask = PathSettingCard(
                                 icon=FluentIcon.FOLDER,
                                 title="脚本后置任务",
-                                mode="脚本文件 (*.py *.bat *.exe)",
+                                mode="脚本文件 (*.py *.bat *.cmd *.exe)",
                                 text="选择脚本文件",
                                 qconfig=self.config,
                                 configItem=self.config.Info_ScriptAfterTask,
