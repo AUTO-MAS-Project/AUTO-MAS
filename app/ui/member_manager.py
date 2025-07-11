@@ -547,14 +547,14 @@ class MemberManager(QWidget):
 
                 for user_setting in member.user_setting.user_manager.script_list:
 
-                    user_setting.card_GameIdMode.comboBox.currentIndexChanged.disconnect(
-                        user_setting.switch_gameid_mode
+                    user_setting.card_StageMode.comboBox.currentIndexChanged.disconnect(
+                        user_setting.switch_stage_mode
                     )
-                    user_setting.card_GameIdMode.reLoadOptions(
+                    user_setting.card_StageMode.reLoadOptions(
                         plan_list[0], plan_list[1]
                     )
-                    user_setting.card_GameIdMode.comboBox.currentIndexChanged.connect(
-                        user_setting.switch_gameid_mode
+                    user_setting.card_StageMode.comboBox.currentIndexChanged.connect(
+                        user_setting.switch_stage_mode
                     )
 
         self.refresh_plan_info()
@@ -578,7 +578,7 @@ class MemberManager(QWidget):
 
                 member.user_setting.user_manager.user_dashboard.load_info()
                 for user_setting in member.user_setting.user_manager.script_list:
-                    user_setting.switch_gameid_mode()
+                    user_setting.switch_stage_mode()
 
     class MemberSettingBox(QWidget):
         """脚本管理子页面组"""
@@ -1217,8 +1217,8 @@ class MemberManager(QWidget):
                         """清空所有子界面"""
 
                         for sub_interface in self.script_list:
-                            Config.gameid_refreshed.disconnect(
-                                sub_interface.refresh_gameid
+                            Config.stage_refreshed.disconnect(
+                                sub_interface.refresh_stage
                             )
                             Config.PASSWORD_refreshed.disconnect(
                                 sub_interface.refresh_password
@@ -1254,7 +1254,7 @@ class MemberManager(QWidget):
                             self.name = name
 
                             self.dashboard = TableWidget(self)
-                            self.dashboard.setColumnCount(11)
+                            self.dashboard.setColumnCount(12)
                             self.dashboard.setHorizontalHeaderLabels(
                                 [
                                     "用户名",
@@ -1266,6 +1266,7 @@ class MemberManager(QWidget):
                                     "关卡选择",
                                     "备选 - 1",
                                     "备选 - 2",
+                                    "备选 - 3",
                                     "剩余理智",
                                     "详",
                                 ]
@@ -1276,14 +1277,14 @@ class MemberManager(QWidget):
                                 self.dashboard.horizontalHeader().setSectionResizeMode(
                                     col, QHeaderView.ResizeMode.ResizeToContents
                                 )
-                            for col in range(6, 10):
+                            for col in range(6, 11):
                                 self.dashboard.horizontalHeader().setSectionResizeMode(
                                     col, QHeaderView.ResizeMode.Stretch
                                 )
                             self.dashboard.horizontalHeader().setSectionResizeMode(
-                                10, QHeaderView.ResizeMode.Fixed
+                                11, QHeaderView.ResizeMode.Fixed
                             )
-                            self.dashboard.setColumnWidth(10, 32)
+                            self.dashboard.setColumnWidth(11, 32)
 
                             self.viewLayout.addWidget(self.dashboard)
                             self.viewLayout.setContentsMargins(3, 0, 3, 3)
@@ -1319,7 +1320,7 @@ class MemberManager(QWidget):
                                     else "本周剿灭未完成"
                                 )
 
-                                gameid_info = config.get_plan_info()
+                                stage_info = config.get_plan_info()
 
                                 button = PrimaryToolButton(
                                     FluentIcon.CHEVRON_RIGHT, self
@@ -1369,74 +1370,86 @@ class MemberManager(QWidget):
                                 self.dashboard.setItem(
                                     int(name[3:]) - 1,
                                     5,
-                                    QTableWidgetItem(str(gameid_info["MedicineNumb"])),
+                                    QTableWidgetItem(str(stage_info["MedicineNumb"])),
                                 )
                                 self.dashboard.setItem(
                                     int(name[3:]) - 1,
                                     6,
                                     QTableWidgetItem(
-                                        Config.gameid_dict["ALL"]["text"][
-                                            Config.gameid_dict["ALL"]["value"].index(
-                                                gameid_info["GameId"]
+                                        Config.stage_dict["ALL"]["text"][
+                                            Config.stage_dict["ALL"]["value"].index(
+                                                stage_info["Stage"]
                                             )
                                         ]
-                                        if gameid_info["GameId"]
-                                        in Config.gameid_dict["ALL"]["value"]
-                                        else gameid_info["GameId"]
+                                        if stage_info["Stage"]
+                                        in Config.stage_dict["ALL"]["value"]
+                                        else stage_info["Stage"]
                                     ),
                                 )
                                 self.dashboard.setItem(
                                     int(name[3:]) - 1,
                                     7,
                                     QTableWidgetItem(
-                                        Config.gameid_dict["ALL"]["text"][
-                                            Config.gameid_dict["ALL"]["value"].index(
-                                                gameid_info["GameId_1"]
+                                        Config.stage_dict["ALL"]["text"][
+                                            Config.stage_dict["ALL"]["value"].index(
+                                                stage_info["Stage"]
                                             )
                                         ]
-                                        if gameid_info["GameId_1"]
-                                        in Config.gameid_dict["ALL"]["value"]
-                                        else gameid_info["GameId_1"]
+                                        if stage_info["Stage"]
+                                        in Config.stage_dict["ALL"]["value"]
+                                        else stage_info["Stage"]
                                     ),
                                 )
                                 self.dashboard.setItem(
                                     int(name[3:]) - 1,
                                     8,
                                     QTableWidgetItem(
-                                        Config.gameid_dict["ALL"]["text"][
-                                            Config.gameid_dict["ALL"]["value"].index(
-                                                gameid_info["GameId_2"]
+                                        Config.stage_dict["ALL"]["text"][
+                                            Config.stage_dict["ALL"]["value"].index(
+                                                stage_info["Stage_2"]
                                             )
                                         ]
-                                        if gameid_info["GameId_2"]
-                                        in Config.gameid_dict["ALL"]["value"]
-                                        else gameid_info["GameId_2"]
+                                        if stage_info["Stage_2"]
+                                        in Config.stage_dict["ALL"]["value"]
+                                        else stage_info["Stage_2"]
                                     ),
                                 )
                                 self.dashboard.setItem(
                                     int(name[3:]) - 1,
                                     9,
                                     QTableWidgetItem(
+                                        Config.stage_dict["ALL"]["text"][
+                                            Config.stage_dict["ALL"]["value"].index(
+                                                stage_info["Stage_3"]
+                                            )
+                                        ]
+                                        if stage_info["Stage_3"]
+                                        in Config.stage_dict["ALL"]["value"]
+                                        else stage_info["Stage_3"]
+                                    ),
+                                )
+                                self.dashboard.setItem(
+                                    int(name[3:]) - 1,
+                                    10,
+                                    QTableWidgetItem(
                                         "不使用"
-                                        if gameid_info["GameId_Remain"] == "-"
+                                        if stage_info["Stage_Remain"] == "-"
                                         else (
                                             (
-                                                Config.gameid_dict["ALL"]["text"][
-                                                    Config.gameid_dict["ALL"][
+                                                Config.stage_dict["ALL"]["text"][
+                                                    Config.stage_dict["ALL"][
                                                         "value"
-                                                    ].index(
-                                                        gameid_info["GameId_Remain"]
-                                                    )
+                                                    ].index(stage_info["Stage_Remain"])
                                                 ]
                                             )
-                                            if gameid_info["GameId_Remain"]
-                                            in Config.gameid_dict["ALL"]["value"]
-                                            else gameid_info["GameId_Remain"]
+                                            if stage_info["Stage_Remain"]
+                                            in Config.stage_dict["ALL"]["value"]
+                                            else stage_info["Stage_Remain"]
                                         )
                                     ),
                                 )
                                 self.dashboard.setCellWidget(
-                                    int(name[3:]) - 1, 10, button
+                                    int(name[3:]) - 1, 11, button
                                 )
 
                     class UserMemberSettingBox(HeaderCardWidget):
@@ -1495,17 +1508,6 @@ class MemberManager(QWidget):
                                 configItem=self.config.Info_Mode,
                                 parent=self,
                             )
-                            self.card_GameIdMode = NoOptionComboBoxSettingCard(
-                                icon=FluentIcon.DICTIONARY,
-                                title="关卡配置模式",
-                                content="刷理智关卡号的配置模式",
-                                value=plan_list[0],
-                                texts=plan_list[1],
-                                qconfig=self.config,
-                                configItem=self.config.Info_GameIdMode,
-                                parent=self,
-                            )
-                            self.card_GameIdMode.comboBox.setMinimumWidth(0)
                             self.card_Server = ComboBoxSettingCard(
                                 icon=FluentIcon.PROJECTOR,
                                 title="服务器",
@@ -1602,48 +1604,69 @@ class MemberManager(QWidget):
                                 parent=self,
                             )
                             self.card_SeriesNumb.comboBox.setMinimumWidth(150)
-                            self.card_GameId = EditableComboBoxWithPlanSettingCard(
+                            self.card_StageMode = NoOptionComboBoxSettingCard(
+                                icon=FluentIcon.DICTIONARY,
+                                title="关卡配置模式",
+                                content="刷理智关卡号的配置模式",
+                                value=plan_list[0],
+                                texts=plan_list[1],
+                                qconfig=self.config,
+                                configItem=self.config.Info_StageMode,
+                                parent=self,
+                            )
+                            self.card_StageMode.comboBox.setMinimumWidth(150)
+                            self.card_Stage = EditableComboBoxWithPlanSettingCard(
                                 icon=FluentIcon.GAME,
                                 title="关卡选择",
                                 content="按下回车以添加自定义关卡号",
-                                value=Config.gameid_dict["ALL"]["value"],
-                                texts=Config.gameid_dict["ALL"]["text"],
+                                value=Config.stage_dict["ALL"]["value"],
+                                texts=Config.stage_dict["ALL"]["text"],
                                 qconfig=self.config,
-                                configItem=self.config.Info_GameId,
+                                configItem=self.config.Info_Stage,
                                 parent=self,
                             )
-                            self.card_GameId_1 = EditableComboBoxWithPlanSettingCard(
+                            self.card_Stage_1 = EditableComboBoxWithPlanSettingCard(
                                 icon=FluentIcon.GAME,
                                 title="备选关卡 - 1",
                                 content="按下回车以添加自定义关卡号",
-                                value=Config.gameid_dict["ALL"]["value"],
-                                texts=Config.gameid_dict["ALL"]["text"],
+                                value=Config.stage_dict["ALL"]["value"],
+                                texts=Config.stage_dict["ALL"]["text"],
                                 qconfig=self.config,
-                                configItem=self.config.Info_GameId_1,
+                                configItem=self.config.Info_Stage_1,
                                 parent=self,
                             )
-                            self.card_GameId_2 = EditableComboBoxWithPlanSettingCard(
+                            self.card_Stage_2 = EditableComboBoxWithPlanSettingCard(
                                 icon=FluentIcon.GAME,
                                 title="备选关卡 - 2",
                                 content="按下回车以添加自定义关卡号",
-                                value=Config.gameid_dict["ALL"]["value"],
-                                texts=Config.gameid_dict["ALL"]["text"],
+                                value=Config.stage_dict["ALL"]["value"],
+                                texts=Config.stage_dict["ALL"]["text"],
                                 qconfig=self.config,
-                                configItem=self.config.Info_GameId_2,
+                                configItem=self.config.Info_Stage_2,
                                 parent=self,
                             )
-                            self.card_GameId_Remain = (
+                            self.card_Stage_3 = EditableComboBoxWithPlanSettingCard(
+                                icon=FluentIcon.GAME,
+                                title="备选关卡 - 3",
+                                content="按下回车以添加自定义关卡号",
+                                value=Config.stage_dict["ALL"]["value"],
+                                texts=Config.stage_dict["ALL"]["text"],
+                                qconfig=self.config,
+                                configItem=self.config.Info_Stage_3,
+                                parent=self,
+                            )
+                            self.card_Stage_Remain = (
                                 EditableComboBoxWithPlanSettingCard(
                                     icon=FluentIcon.GAME,
                                     title="剩余理智关卡",
                                     content="按下回车以添加自定义关卡号",
-                                    value=Config.gameid_dict["ALL"]["value"],
+                                    value=Config.stage_dict["ALL"]["value"],
                                     texts=[
                                         "不使用" if _ == "当前/上次" else _
-                                        for _ in Config.gameid_dict["ALL"]["text"]
+                                        for _ in Config.stage_dict["ALL"]["text"]
                                     ],
                                     qconfig=self.config,
-                                    configItem=self.config.Info_GameId_Remain,
+                                    configItem=self.config.Info_Stage_Remain,
                                     parent=self,
                                 )
                             )
@@ -1822,7 +1845,6 @@ class MemberManager(QWidget):
                             h1_layout.addWidget(self.card_Id)
                             h2_layout = QHBoxLayout()
                             h2_layout.addWidget(self.card_Mode)
-                            h2_layout.addWidget(self.card_GameIdMode)
                             h2_layout.addWidget(self.card_Server)
                             h3_layout = QHBoxLayout()
                             h3_layout.addWidget(self.card_Status)
@@ -1838,11 +1860,14 @@ class MemberManager(QWidget):
                             h6_layout.addWidget(self.card_MedicineNumb)
                             h6_layout.addWidget(self.card_SeriesNumb)
                             h7_layout = QHBoxLayout()
-                            h7_layout.addWidget(self.card_GameId)
-                            h7_layout.addWidget(self.card_GameId_1)
+                            h7_layout.addWidget(self.card_StageMode)
+                            h7_layout.addWidget(self.card_Stage)
                             h8_layout = QHBoxLayout()
-                            h8_layout.addWidget(self.card_GameId_2)
-                            h8_layout.addWidget(self.card_GameId_Remain)
+                            h8_layout.addWidget(self.card_Stage_1)
+                            h8_layout.addWidget(self.card_Stage_2)
+                            h9_layout = QHBoxLayout()
+                            h9_layout.addWidget(self.card_Stage_3)
+                            h9_layout.addWidget(self.card_Stage_Remain)
 
                             Layout = QVBoxLayout()
                             Layout.addLayout(h1_layout)
@@ -1854,6 +1879,7 @@ class MemberManager(QWidget):
                             Layout.addLayout(h6_layout)
                             Layout.addLayout(h7_layout)
                             Layout.addLayout(h8_layout)
+                            Layout.addLayout(h9_layout)
                             Layout.addWidget(self.card_Skland)
                             Layout.addWidget(self.card_TaskSet)
                             Layout.addWidget(self.card_NotifySet)
@@ -1878,14 +1904,14 @@ class MemberManager(QWidget):
                             )
                             self.card_TaskSet.clicked.connect(self.set_task)
                             self.card_NotifySet.clicked.connect(self.set_notify)
-                            self.card_GameIdMode.comboBox.currentIndexChanged.connect(
-                                self.switch_gameid_mode
+                            self.card_StageMode.comboBox.currentIndexChanged.connect(
+                                self.switch_stage_mode
                             )
-                            Config.gameid_refreshed.connect(self.refresh_gameid)
+                            Config.stage_refreshed.connect(self.refresh_stage)
                             Config.PASSWORD_refreshed.connect(self.refresh_password)
 
                             self.switch_mode()
-                            self.switch_gameid_mode()
+                            self.switch_stage_mode()
                             self.switch_infrastructure()
 
                         def switch_mode(self) -> None:
@@ -1904,37 +1930,39 @@ class MemberManager(QWidget):
                                 self.card_Annihilation.button.setVisible(True)
                                 self.card_Routine.setVisible(True)
 
-                        def switch_gameid_mode(self) -> None:
+                        def switch_stage_mode(self) -> None:
 
                             for card, name in zip(
                                 [
                                     self.card_MedicineNumb,
                                     self.card_SeriesNumb,
-                                    self.card_GameId,
-                                    self.card_GameId_1,
-                                    self.card_GameId_2,
-                                    self.card_GameId_Remain,
+                                    self.card_Stage,
+                                    self.card_Stage_1,
+                                    self.card_Stage_2,
+                                    self.card_Stage_3,
+                                    self.card_Stage_Remain,
                                 ],
                                 [
                                     "MedicineNumb",
                                     "SeriesNumb",
-                                    "GameId",
-                                    "GameId_1",
-                                    "GameId_2",
-                                    "GameId_Remain",
+                                    "Stage",
+                                    "Stage_1",
+                                    "Stage_2",
+                                    "Stage_3",
+                                    "Stage_Remain",
                                 ],
                             ):
 
                                 card.switch_mode(
-                                    self.config.get(self.config.Info_GameIdMode)[:2]
+                                    self.config.get(self.config.Info_StageMode)[:2]
                                 )
                                 if (
-                                    self.config.get(self.config.Info_GameIdMode)
+                                    self.config.get(self.config.Info_StageMode)
                                     != "固定"
                                 ):
                                     card.change_plan(
                                         Config.plan_dict[
-                                            self.config.get(self.config.Info_GameIdMode)
+                                            self.config.get(self.config.Info_StageMode)
                                         ]["Config"].get_current_info(name)
                                     )
 
@@ -1959,26 +1987,27 @@ class MemberManager(QWidget):
                                     "自定义基建配置文件未生效"
                                 )
 
-                        def refresh_gameid(self):
+                        def refresh_stage(self):
 
-                            self.card_GameId.reLoadOptions(
-                                Config.gameid_dict["ALL"]["value"],
-                                Config.gameid_dict["ALL"]["text"],
+                            self.card_Stage.reLoadOptions(
+                                Config.stage_dict["ALL"]["value"],
+                                Config.stage_dict["ALL"]["text"],
                             )
-                            self.card_GameId_1.reLoadOptions(
-                                Config.gameid_dict["ALL"]["value"],
-                                Config.gameid_dict["ALL"]["text"],
+                            self.card_Stage_1.reLoadOptions(
+                                Config.stage_dict["ALL"]["value"],
+                                Config.stage_dict["ALL"]["text"],
                             )
-                            self.card_GameId_2.reLoadOptions(
-                                Config.gameid_dict["ALL"]["value"],
-                                Config.gameid_dict["ALL"]["text"],
+                            self.card_Stage_2.reLoadOptions(
+                                Config.stage_dict["ALL"]["value"],
+                                Config.stage_dict["ALL"]["text"],
                             )
-                            self.card_GameId_Remain.reLoadOptions(
-                                Config.gameid_dict["ALL"]["value"],
-                                [
-                                    "不使用" if _ == "当前/上次" else _
-                                    for _ in Config.gameid_dict["ALL"]["text"]
-                                ],
+                            self.card_Stage_3.reLoadOptions(
+                                Config.stage_dict["ALL"]["value"],
+                                Config.stage_dict["ALL"]["text"],
+                            )
+                            self.card_Stage_Remain.reLoadOptions(
+                                Config.stage_dict["ALL"]["value"],
+                                Config.stage_dict["ALL"]["text"],
                             )
 
                         def refresh_password(self):

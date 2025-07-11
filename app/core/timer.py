@@ -53,7 +53,7 @@ class _MainTimer(QObject):
     def long_timed_task(self):
         """长时间定期检定任务"""
 
-        Config.get_gameid()
+        Config.get_stage()
         Config.main_window.setting.show_notice()
         if Config.get(Config.update_IfAutoUpdate):
             Config.main_window.setting.check_update()

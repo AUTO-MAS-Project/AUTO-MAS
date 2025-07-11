@@ -1450,23 +1450,28 @@ class MaaManager(QObject):
                         user_data["Info"]["MedicineNumb"]
                     )  # 吃理智药数量
                     data["Configurations"]["Default"]["MainFunction.Stage1"] = (
-                        user_data["Info"]["GameId"]
-                        if user_data["Info"]["GameId"] != "-"
+                        user_data["Info"]["Stage"]
+                        if user_data["Info"]["Stage"] != "-"
                         else ""
                     )  # 主关卡
                     data["Configurations"]["Default"]["MainFunction.Stage2"] = (
-                        user_data["Info"]["GameId_1"]
-                        if user_data["Info"]["GameId_1"] != "-"
+                        user_data["Info"]["Stage_1"]
+                        if user_data["Info"]["Stage_1"] != "-"
                         else ""
                     )  # 备选关卡1
                     data["Configurations"]["Default"]["MainFunction.Stage3"] = (
-                        user_data["Info"]["GameId_2"]
-                        if user_data["Info"]["GameId_2"] != "-"
+                        user_data["Info"]["Stage_2"]
+                        if user_data["Info"]["Stage_2"] != "-"
                         else ""
                     )  # 备选关卡2
+                    data["Configurations"]["Default"]["MainFunction.Stage4"] = (
+                        user_data["Info"]["Stage_3"]
+                        if user_data["Info"]["Stage_3"] != "-"
+                        else ""
+                    )  # 备选关卡3
                     data["Configurations"]["Default"]["Fight.RemainingSanityStage"] = (
-                        user_data["Info"]["GameId_Remain"]
-                        if user_data["Info"]["GameId_Remain"] != "-"
+                        user_data["Info"]["Stage_Remain"]
+                        if user_data["Info"]["Stage_Remain"] != "-"
                         else ""
                     )  # 剩余理智关卡
                     data["Configurations"]["Default"][
@@ -1486,7 +1491,7 @@ class MaaManager(QObject):
                     data["Configurations"]["Default"][
                         "Fight.UseRemainingSanityStage"
                     ] = (
-                        "True" if user_data["Info"]["GameId_Remain"] != "-" else "False"
+                        "True" if user_data["Info"]["Stage_Remain"] != "-" else "False"
                     )  # 使用剩余理智
                     data["Configurations"]["Default"][
                         "Fight.UseExpiringMedicine"
@@ -1556,23 +1561,28 @@ class MaaManager(QObject):
                         user_data["Info"]["MedicineNumb"]
                     )  # 吃理智药数量
                     data["Configurations"]["Default"]["MainFunction.Stage1"] = (
-                        user_data["Info"]["GameId"]
-                        if user_data["Info"]["GameId"] != "-"
+                        user_data["Info"]["Stage"]
+                        if user_data["Info"]["Stage"] != "-"
                         else ""
                     )  # 主关卡
                     data["Configurations"]["Default"]["MainFunction.Stage2"] = (
-                        user_data["Info"]["GameId_1"]
-                        if user_data["Info"]["GameId_1"] != "-"
+                        user_data["Info"]["Stage_1"]
+                        if user_data["Info"]["Stage_1"] != "-"
                         else ""
                     )  # 备选关卡1
                     data["Configurations"]["Default"]["MainFunction.Stage3"] = (
-                        user_data["Info"]["GameId_2"]
-                        if user_data["Info"]["GameId_2"] != "-"
+                        user_data["Info"]["Stage_2"]
+                        if user_data["Info"]["Stage_2"] != "-"
                         else ""
                     )  # 备选关卡2
+                    data["Configurations"]["Default"]["MainFunction.Stage4"] = (
+                        user_data["Info"]["Stage_3"]
+                        if user_data["Info"]["Stage_3"] != "-"
+                        else ""
+                    )  # 备选关卡3
                     data["Configurations"]["Default"]["Fight.RemainingSanityStage"] = (
-                        user_data["Info"]["GameId_Remain"]
-                        if user_data["Info"]["GameId_Remain"] != "-"
+                        user_data["Info"]["Stage_Remain"]
+                        if user_data["Info"]["Stage_Remain"] != "-"
                         else ""
                     )  # 剩余理智关卡
                     data["Configurations"]["Default"][
@@ -1586,7 +1596,7 @@ class MaaManager(QObject):
                     data["Configurations"]["Default"][
                         "Fight.UseRemainingSanityStage"
                     ] = (
-                        "True" if user_data["Info"]["GameId_Remain"] != "-" else "False"
+                        "True" if user_data["Info"]["Stage_Remain"] != "-" else "False"
                     )  # 使用剩余理智
 
                     # 基建模式
