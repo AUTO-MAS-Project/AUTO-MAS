@@ -65,6 +65,7 @@ class ProcessManager(QObject):
 
         process = subprocess.Popen(
             [path, *args],
+            cwd=path.parent,
             creationflags=subprocess.CREATE_NO_WINDOW,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
@@ -93,8 +94,9 @@ class ProcessManager(QObject):
             self.tracked_pids.add(self.main_pid)
 
             # 递归获取所有子进程
-            for child in main_proc.children(recursive=True):
-                self.tracked_pids.add(child.pid)
+            if tracking_time:
+                for child in main_proc.children(recursive=True):
+                    self.tracked_pids.add(child.pid)
 
         except psutil.NoSuchProcess:
             pass
