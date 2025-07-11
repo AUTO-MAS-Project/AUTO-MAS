@@ -706,7 +706,7 @@ class GeneralSubConfig(LQConfig):
 
 class AppConfig(GlobalConfig):
 
-    VERSION = "4.4.0.3"
+    VERSION = "4.4.0.4"
 
     stage_refreshed = Signal()
     PASSWORD_refreshed = Signal()
@@ -1081,57 +1081,66 @@ class AppConfig(GlobalConfig):
                 logger.info("数据文件版本更新：v1.6-->v1.7")
                 if_streaming = True
 
-                for MaaConfig in (self.app_path / "config/MaaConfig").iterdir():
-                    if MaaConfig.is_dir():
-                        for user in (MaaConfig / "UserData").iterdir():
-                            if user.is_dir():
-                                if (user / "config.json").exists():
-                                    with (user / "config.json").open(
-                                        encoding="utf-8"
-                                    ) as f:
-                                        user_config = json.load(f)
-                                    user_config["Info"]["Stage"] = user_config["Info"][
-                                        "GameId"
-                                    ]
-                                    user_config["Info"]["StageMode"] = user_config[
-                                        "Info"
-                                    ]["GameIdMode"]
-                                    user_config["Info"]["Stage_1"] = user_config[
-                                        "Info"
-                                    ]["GameId_1"]
-                                    user_config["Info"]["Stage_2"] = user_config[
-                                        "Info"
-                                    ]["GameId_2"]
-                                    user_config["Info"]["Stage_Remain"] = user_config[
-                                        "Info"
-                                    ]["GameId_Remain"]
-                                    with (user / "config.json").open(
-                                        "w", encoding="utf-8"
-                                    ) as f:
-                                        json.dump(
-                                            user_config, f, ensure_ascii=False, indent=4
-                                        )
-                for MaaPlanConfig in (self.app_path / "config/MaaPlanConfig").iterdir():
-                    if (
-                        MaaPlanConfig.is_dir()
-                        and (MaaPlanConfig / "config.json").exists()
-                    ):
-                        with (MaaPlanConfig / "config.json").open(
-                            encoding="utf-8"
-                        ) as f:
-                            plan_config = json.load(f)
+                if (self.app_path / "config/MaaConfig").exists():
 
-                        for k in self.stage_dict.keys():
-                            plan_config[k]["Stage"] = plan_config[k]["GameId"]
-                            plan_config[k]["Stage_1"] = plan_config[k]["GameId_1"]
-                            plan_config[k]["Stage_2"] = plan_config[k]["GameId_2"]
-                            plan_config[k]["Stage_Remain"] = plan_config[k][
-                                "GameId_Remain"
-                            ]
-                        with (MaaPlanConfig / "config.json").open(
-                            "w", encoding="utf-8"
-                        ) as f:
-                            json.dump(plan_config, f, ensure_ascii=False, indent=4)
+                    for MaaConfig in (self.app_path / "config/MaaConfig").iterdir():
+                        if MaaConfig.is_dir():
+                            for user in (MaaConfig / "UserData").iterdir():
+                                if user.is_dir():
+                                    if (user / "config.json").exists():
+                                        with (user / "config.json").open(
+                                            encoding="utf-8"
+                                        ) as f:
+                                            user_config = json.load(f)
+                                        user_config["Info"]["Stage"] = user_config[
+                                            "Info"
+                                        ]["GameId"]
+                                        user_config["Info"]["StageMode"] = user_config[
+                                            "Info"
+                                        ]["GameIdMode"]
+                                        user_config["Info"]["Stage_1"] = user_config[
+                                            "Info"
+                                        ]["GameId_1"]
+                                        user_config["Info"]["Stage_2"] = user_config[
+                                            "Info"
+                                        ]["GameId_2"]
+                                        user_config["Info"]["Stage_Remain"] = (
+                                            user_config["Info"]["GameId_Remain"]
+                                        )
+                                        with (user / "config.json").open(
+                                            "w", encoding="utf-8"
+                                        ) as f:
+                                            json.dump(
+                                                user_config,
+                                                f,
+                                                ensure_ascii=False,
+                                                indent=4,
+                                            )
+
+                if (self.app_path / "config/MaaPlanConfig").exists():
+                    for MaaPlanConfig in (
+                        self.app_path / "config/MaaPlanConfig"
+                    ).iterdir():
+                        if (
+                            MaaPlanConfig.is_dir()
+                            and (MaaPlanConfig / "config.json").exists()
+                        ):
+                            with (MaaPlanConfig / "config.json").open(
+                                encoding="utf-8"
+                            ) as f:
+                                plan_config = json.load(f)
+
+                            for k in self.stage_dict.keys():
+                                plan_config[k]["Stage"] = plan_config[k]["GameId"]
+                                plan_config[k]["Stage_1"] = plan_config[k]["GameId_1"]
+                                plan_config[k]["Stage_2"] = plan_config[k]["GameId_2"]
+                                plan_config[k]["Stage_Remain"] = plan_config[k][
+                                    "GameId_Remain"
+                                ]
+                            with (MaaPlanConfig / "config.json").open(
+                                "w", encoding="utf-8"
+                            ) as f:
+                                json.dump(plan_config, f, ensure_ascii=False, indent=4)
 
                 cur.execute("DELETE FROM version WHERE v = ?", ("v1.6",))
                 cur.execute("INSERT INTO version VALUES(?)", ("v1.7",))
