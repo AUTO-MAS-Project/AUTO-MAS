@@ -2339,6 +2339,14 @@ class MemberManager(QWidget):
                             configItem=self.config.Script_Arguments,
                             parent=self,
                         )
+                        self.card_IfTrackProcess = SwitchSettingCard(
+                            icon=FluentIcon.PAGE_RIGHT,
+                            title="追踪脚本子进程",
+                            content="启用后将在脚本启动后 60s 内追踪其子进程，并仅在所有子进程结束后判定脚本中止",
+                            qconfig=self.config,
+                            configItem=self.config.Script_IfTrackProcess,
+                            parent=self,
+                        )
                         self.card_ConfigPath = PathSettingCard(
                             icon=FluentIcon.FOLDER,
                             title="脚本配置文件路径 - [必填]",
@@ -2438,6 +2446,7 @@ class MemberManager(QWidget):
                         Layout.addWidget(self.card_RootPath)
                         Layout.addWidget(self.card_ScriptPath)
                         Layout.addWidget(self.card_Arguments)
+                        Layout.addWidget(self.card_IfTrackProcess)
                         Layout.addWidget(self.card_ConfigPath)
                         Layout.addWidget(self.card_LogPath)
                         Layout.addWidget(self.card_LogPathFormat)
