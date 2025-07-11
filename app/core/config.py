@@ -408,7 +408,7 @@ class MaaUserConfig(LQConfig):
         self.Info_Mode = OptionsConfigItem(
             "Info", "Mode", "简洁", OptionsValidator(["简洁", "详细"])
         )
-        self.Info_GameIdMode = ConfigItem("Info", "GameIdMode", "固定")
+        self.Info_StageMode = ConfigItem("Info", "StageMode", "固定")
         self.Info_Server = OptionsConfigItem(
             "Info", "Server", "Official", OptionsValidator(["Official", "Bilibili"])
         )
@@ -437,10 +437,11 @@ class MaaUserConfig(LQConfig):
             "0",
             OptionsValidator(["0", "6", "5", "4", "3", "2", "1", "-1"]),
         )
-        self.Info_GameId = ConfigItem("Info", "GameId", "-")
-        self.Info_GameId_1 = ConfigItem("Info", "GameId_1", "-")
-        self.Info_GameId_2 = ConfigItem("Info", "GameId_2", "-")
-        self.Info_GameId_Remain = ConfigItem("Info", "GameId_Remain", "-")
+        self.Info_Stage = ConfigItem("Info", "Stage", "-")
+        self.Info_Stage_1 = ConfigItem("Info", "Stage_1", "-")
+        self.Info_Stage_2 = ConfigItem("Info", "Stage_2", "-")
+        self.Info_Stage_3 = ConfigItem("Info", "Stage_3", "-")
+        self.Info_Stage_Remain = ConfigItem("Info", "Stage_Remain", "-")
         self.Info_IfSkland = ConfigItem("Info", "IfSkland", False, BoolValidator())
         self.Info_SklandToken = ConfigItem("Info", "SklandToken", "")
 
@@ -499,24 +500,26 @@ class MaaUserConfig(LQConfig):
     def get_plan_info(self) -> Dict[str, Union[str, int]]:
         """获取当前的计划下信息"""
 
-        if self.get(self.Info_GameIdMode) == "固定":
+        if self.get(self.Info_StageMode) == "固定":
             return {
                 "MedicineNumb": self.get(self.Info_MedicineNumb),
                 "SeriesNumb": self.get(self.Info_SeriesNumb),
-                "GameId": self.get(self.Info_GameId),
-                "GameId_1": self.get(self.Info_GameId_1),
-                "GameId_2": self.get(self.Info_GameId_2),
-                "GameId_Remain": self.get(self.Info_GameId_Remain),
+                "Stage": self.get(self.Info_Stage),
+                "Stage_1": self.get(self.Info_Stage_1),
+                "Stage_2": self.get(self.Info_Stage_2),
+                "Stage_3": self.get(self.Info_Stage_3),
+                "Stage_Remain": self.get(self.Info_Stage_Remain),
             }
-        elif "计划" in self.get(self.Info_GameIdMode):
-            plan = Config.plan_dict[self.get(self.Info_GameIdMode)]["Config"]
+        elif "计划" in self.get(self.Info_StageMode):
+            plan = Config.plan_dict[self.get(self.Info_StageMode)]["Config"]
             return {
                 "MedicineNumb": plan.get(plan.get_current_info("MedicineNumb")),
                 "SeriesNumb": plan.get(plan.get_current_info("SeriesNumb")),
-                "GameId": plan.get(plan.get_current_info("GameId")),
-                "GameId_1": plan.get(plan.get_current_info("GameId_1")),
-                "GameId_2": plan.get(plan.get_current_info("GameId_2")),
-                "GameId_Remain": plan.get(plan.get_current_info("GameId_Remain")),
+                "Stage": plan.get(plan.get_current_info("Stage")),
+                "Stage_1": plan.get(plan.get_current_info("Stage_1")),
+                "Stage_2": plan.get(plan.get_current_info("Stage_2")),
+                "Stage_3": plan.get(plan.get_current_info("Stage_3")),
+                "Stage_Remain": plan.get(plan.get_current_info("Stage_Remain")),
             }
 
 
@@ -554,24 +557,22 @@ class MaaPlanConfig(LQConfig):
                 "0",
                 OptionsValidator(["0", "6", "5", "4", "3", "2", "1", "-1"]),
             )
-            self.config_item_dict[group]["GameId"] = ConfigItem(group, "GameId", "-")
-            self.config_item_dict[group]["GameId_1"] = ConfigItem(
-                group, "GameId_1", "-"
-            )
-            self.config_item_dict[group]["GameId_2"] = ConfigItem(
-                group, "GameId_2", "-"
-            )
-            self.config_item_dict[group]["GameId_Remain"] = ConfigItem(
-                group, "GameId_Remain", "-"
+            self.config_item_dict[group]["Stage"] = ConfigItem(group, "Stage", "-")
+            self.config_item_dict[group]["Stage_1"] = ConfigItem(group, "Stage_1", "-")
+            self.config_item_dict[group]["Stage_2"] = ConfigItem(group, "Stage_2", "-")
+            self.config_item_dict[group]["Stage_3"] = ConfigItem(group, "Stage_3", "-")
+            self.config_item_dict[group]["Stage_Remain"] = ConfigItem(
+                group, "Stage_Remain", "-"
             )
 
             for name in [
                 "MedicineNumb",
                 "SeriesNumb",
-                "GameId",
-                "GameId_1",
-                "GameId_2",
-                "GameId_Remain",
+                "Stage",
+                "Stage_1",
+                "Stage_2",
+                "Stage_3",
+                "Stage_Remain",
             ]:
                 setattr(self, f"{group}_{name}", self.config_item_dict[group][name])
 
@@ -702,9 +703,9 @@ class GeneralSubConfig(LQConfig):
 
 class AppConfig(GlobalConfig):
 
-    VERSION = "4.4.0.2"
+    VERSION = "4.4.0.3"
 
-    gameid_refreshed = Signal()
+    stage_refreshed = Signal()
     PASSWORD_refreshed = Signal()
     sub_info_changed = Signal()
     power_sign_changed = Signal()
@@ -719,15 +720,13 @@ class AppConfig(GlobalConfig):
         self.database_path = self.app_path / "data/data.db"
         self.config_path = self.app_path / "config/config.json"
         self.key_path = self.app_path / "data/key"
-        self.gameid_path = self.app_path / "data/gameid.txt"
-        self.version_path = self.app_path / "resources/version.json"
 
         self.main_window = None
         self.PASSWORD = ""
         self.running_list = []
         self.silence_list = []
         self.info_bar_list = []
-        self.gameid_dict = {
+        self.stage_dict = {
             "ALL": {"value": [], "text": []},
             "Monday": {"value": [], "text": []},
             "Tuesday": {"value": [], "text": []},
@@ -778,14 +777,11 @@ class AppConfig(GlobalConfig):
 
         self.init_logger()
         self.check_data()
-        self.get_gameid()
+        self.get_stage()
         logger.info("程序初始化完成")
 
     def init_logger(self) -> None:
         """初始化日志记录器"""
-
-        if self.args.mode != "cli":
-            logger.remove(0)
 
         logger.add(
             sink=self.log_path,
@@ -810,7 +806,7 @@ class AppConfig(GlobalConfig):
 
         logger.info("日志记录器初始化完成")
 
-    def get_gameid(self) -> None:
+    def get_stage(self) -> None:
 
         # 从MAA服务器获取活动关卡信息
         network = Network.add_task(
@@ -820,33 +816,33 @@ class AppConfig(GlobalConfig):
         network.loop.exec()
         network_result = Network.get_result(network)
         if network_result["status_code"] == 200:
-            gameid_infos: List[Dict[str, Union[str, Dict[str, Union[str, int]]]]] = (
+            stage_infos: List[Dict[str, Union[str, Dict[str, Union[str, int]]]]] = (
                 network_result["response_json"]["Official"]["sideStoryStage"]
             )
         else:
             logger.warning(
                 f"无法从MAA服务器获取活动关卡信息:{network_result['error_message']}"
             )
-            gameid_infos = []
+            stage_infos = []
 
-        ss_gameid_dict = {"value": [], "text": []}
+        ss_stage_dict = {"value": [], "text": []}
 
-        for gameid_info in gameid_infos:
+        for stage_info in stage_infos:
 
             if (
                 datetime.strptime(
-                    gameid_info["Activity"]["UtcStartTime"], "%Y/%m/%d %H:%M:%S"
+                    stage_info["Activity"]["UtcStartTime"], "%Y/%m/%d %H:%M:%S"
                 )
                 < datetime.now()
                 < datetime.strptime(
-                    gameid_info["Activity"]["UtcExpireTime"], "%Y/%m/%d %H:%M:%S"
+                    stage_info["Activity"]["UtcExpireTime"], "%Y/%m/%d %H:%M:%S"
                 )
             ):
-                ss_gameid_dict["value"].append(gameid_info["Value"])
-                ss_gameid_dict["text"].append(gameid_info["Value"])
+                ss_stage_dict["value"].append(stage_info["Value"])
+                ss_stage_dict["text"].append(stage_info["Value"])
 
         # 生成每日关卡信息
-        gameid_daily_info = [
+        stage_daily_info = [
             {"value": "-", "text": "当前/上次", "days": [1, 2, 3, 4, 5, 6, 7]},
             {"value": "1-7", "text": "1-7", "days": [1, 2, 3, 4, 5, 6, 7]},
             {"value": "R8-11", "text": "R8-11", "days": [1, 2, 3, 4, 5, 6, 7]},
@@ -872,20 +868,20 @@ class AppConfig(GlobalConfig):
 
         for day in range(0, 8):
 
-            today_gameid_dict = {"value": [], "text": []}
+            today_stage_dict = {"value": [], "text": []}
 
-            for gameid_info in gameid_daily_info:
+            for stage_info in stage_daily_info:
 
-                if day in gameid_info["days"] or day == 0:
-                    today_gameid_dict["value"].append(gameid_info["value"])
-                    today_gameid_dict["text"].append(gameid_info["text"])
+                if day in stage_info["days"] or day == 0:
+                    today_stage_dict["value"].append(stage_info["value"])
+                    today_stage_dict["text"].append(stage_info["text"])
 
-            self.gameid_dict[calendar.day_name[day - 1] if day > 0 else "ALL"] = {
-                "value": today_gameid_dict["value"] + ss_gameid_dict["value"],
-                "text": today_gameid_dict["text"] + ss_gameid_dict["text"],
+            self.stage_dict[calendar.day_name[day - 1] if day > 0 else "ALL"] = {
+                "value": today_stage_dict["value"] + ss_stage_dict["value"],
+                "text": today_stage_dict["text"] + ss_stage_dict["text"],
             }
 
-        self.gameid_refreshed.emit()
+        self.stage_refreshed.emit()
 
     def server_date(self) -> date:
         """获取当前的服务器日期"""
@@ -903,7 +899,7 @@ class AppConfig(GlobalConfig):
             db = sqlite3.connect(self.database_path)
             cur = db.cursor()
             cur.execute("CREATE TABLE version(v text)")
-            cur.execute("INSERT INTO version VALUES(?)", ("v1.6",))
+            cur.execute("INSERT INTO version VALUES(?)", ("v1.7",))
             db.commit()
             cur.close()
             db.close()
@@ -914,17 +910,13 @@ class AppConfig(GlobalConfig):
         cur.execute("SELECT * FROM version WHERE True")
         version = cur.fetchall()
 
-        if version[0][0] != "v1.6":
+        if version[0][0] != "v1.7":
             logger.info("数据文件版本更新开始")
             if_streaming = False
             # v1.4-->v1.5
             if version[0][0] == "v1.4" or if_streaming:
                 logger.info("数据文件版本更新：v1.4-->v1.5")
                 if_streaming = True
-
-                cur.execute("DELETE FROM version WHERE v = ?", ("v1.4",))
-                cur.execute("INSERT INTO version VALUES(?)", ("v1.5",))
-                db.commit()
 
                 member_dict: Dict[str, Dict[str, Union[str, Path]]] = {}
                 if (self.app_path / "config/MaaConfig").exists():
@@ -1044,6 +1036,11 @@ class AppConfig(GlobalConfig):
                             shutil.rmtree(config["Path"] / f"simple")
                         if (config["Path"] / f"beta").exists():
                             shutil.rmtree(config["Path"] / f"beta")
+
+                cur.execute("DELETE FROM version WHERE v = ?", ("v1.4",))
+                cur.execute("INSERT INTO version VALUES(?)", ("v1.5",))
+                db.commit()
+
             # v1.5-->v1.6
             if version[0][0] == "v1.5" or if_streaming:
                 logger.info("数据文件版本更新：v1.5-->v1.6")
@@ -1076,6 +1073,67 @@ class AppConfig(GlobalConfig):
                     winreg.CloseKey(key)
                 except FileNotFoundError:
                     pass
+            # v1.6-->v1.7
+            if version[0][0] == "v1.6" or if_streaming:
+                logger.info("数据文件版本更新：v1.6-->v1.7")
+                if_streaming = True
+
+                for MaaConfig in (self.app_path / "config/MaaConfig").iterdir():
+                    if MaaConfig.is_dir():
+                        for user in (MaaConfig / "UserData").iterdir():
+                            if user.is_dir():
+                                if (user / "config.json").exists():
+                                    with (user / "config.json").open(
+                                        encoding="utf-8"
+                                    ) as f:
+                                        user_config = json.load(f)
+                                    user_config["Info"]["Stage"] = user_config["Info"][
+                                        "GameId"
+                                    ]
+                                    user_config["Info"]["StageMode"] = user_config[
+                                        "Info"
+                                    ]["GameIdMode"]
+                                    user_config["Info"]["Stage_1"] = user_config[
+                                        "Info"
+                                    ]["GameId_1"]
+                                    user_config["Info"]["Stage_2"] = user_config[
+                                        "Info"
+                                    ]["GameId_2"]
+                                    user_config["Info"]["Stage_Remain"] = user_config[
+                                        "Info"
+                                    ]["GameId_Remain"]
+                                    with (user / "config.json").open(
+                                        "w", encoding="utf-8"
+                                    ) as f:
+                                        json.dump(
+                                            user_config, f, ensure_ascii=False, indent=4
+                                        )
+                for MaaPlanConfig in (self.app_path / "config/MaaPlanConfig").iterdir():
+                    if (
+                        MaaPlanConfig.is_dir()
+                        and (MaaPlanConfig / "config.json").exists()
+                    ):
+                        with (MaaPlanConfig / "config.json").open(
+                            encoding="utf-8"
+                        ) as f:
+                            plan_config = json.load(f)
+
+                        for k in self.stage_dict.keys():
+                            plan_config[k]["Stage"] = plan_config[k]["GameId"]
+                            plan_config[k]["Stage_1"] = plan_config[k]["GameId_1"]
+                            plan_config[k]["Stage_2"] = plan_config[k]["GameId_2"]
+                            plan_config[k]["Stage_Remain"] = plan_config[k][
+                                "GameId_Remain"
+                            ]
+                        with (MaaPlanConfig / "config.json").open(
+                            "w", encoding="utf-8"
+                        ) as f:
+                            json.dump(plan_config, f, ensure_ascii=False, indent=4)
+
+                cur.execute("DELETE FROM version WHERE v = ?", ("v1.6",))
+                cur.execute("INSERT INTO version VALUES(?)", ("v1.7",))
+                db.commit()
+
             cur.close()
             db.close()
             logger.info("数据文件版本更新完成")
@@ -1236,8 +1294,8 @@ class AppConfig(GlobalConfig):
 
             for user in member["UserData"].values():
 
-                if user["Config"].get(user["Config"].Info_GameIdMode) == old:
-                    user["Config"].set(user["Config"].Info_GameIdMode, new)
+                if user["Config"].get(user["Config"].Info_StageMode) == old:
+                    user["Config"].set(user["Config"].Info_StageMode, new)
 
     def change_maa_user_info(
         self, name: str, user_data: Dict[str, Dict[str, Union[str, Path, dict]]]
