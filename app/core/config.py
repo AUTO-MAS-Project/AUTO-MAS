@@ -601,6 +601,9 @@ class GeneralConfig(LQConfig):
             "Script", "ScriptPath", ".", FileValidator()
         )
         self.Script_Arguments = ConfigItem("Script", "Arguments", "")
+        self.Script_IfTrackProcess = ConfigItem(
+            "Script", "IfTrackProcess", False, BoolValidator()
+        )
         self.Script_ConfigPath = ConfigItem(
             "Script", "ConfigPath", ".", FileValidator()
         )

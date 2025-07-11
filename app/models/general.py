@@ -152,9 +152,11 @@ class GeneralManager(QObject):
             self.set["Script"]["LogTimeStart"] - 1,
             self.set["Script"]["LogTimeEnd"],
         ]
-        self.success_log = [
-            _.strip() for _ in self.set["Script"]["SuccessLog"].split("|")
-        ]
+        self.success_log = (
+            [_.strip() for _ in self.set["Script"]["SuccessLog"].split("|")]
+            if self.set["Script"]["SuccessLog"]
+            else []
+        )
         self.error_log = [_.strip() for _ in self.set["Script"]["ErrorLog"].split("|")]
 
     def run(self):
@@ -304,9 +306,13 @@ class GeneralManager(QObject):
                             )
 
                     # 运行脚本任务
+                    logger.info(
+                        f"{self.name} | 运行脚本任务：{self.script_exe_path}，参数：{self.set['Script']['Arguments']}"
+                    )
                     self.script_process_manager.open_process(
                         self.script_exe_path,
                         str(self.set["Script"]["Arguments"]).split(" "),
+                        tracking_time=60 if self.set["Script"]["IfTrackProcess"] else 0,
                     )
 
                     # 监测运行状态
@@ -430,7 +436,10 @@ class GeneralManager(QObject):
             try:
                 # 创建通用脚本任务
                 logger.info(f"{self.name} | 无参数启动通用脚本：{self.script_exe_path}")
-                self.script_process_manager.open_process(self.script_exe_path)
+                self.script_process_manager.open_process(
+                    self.script_exe_path,
+                    tracking_time=60 if self.set["Script"]["IfTrackProcess"] else 0,
+                )
 
                 # 记录当前时间
                 start_time = datetime.now()
