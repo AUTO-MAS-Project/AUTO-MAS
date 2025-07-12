@@ -804,7 +804,7 @@ class MemberManager(QWidget):
                         self.card_TaskTransitionMethod = ComboBoxSettingCard(
                             icon=FluentIcon.PAGE_RIGHT,
                             title="任务切换方式",
-                            content="相邻两个任务间的切换方式，使用“详细”配置的用户固定为“重启模拟器”",
+                            content="相邻两个任务间的切换方式，使用「详细」配置的用户固定为「重启模拟器」",
                             texts=["直接切换账号", "重启明日方舟", "重启模拟器"],
                             qconfig=self.config,
                             configItem=self.config.RunSet_TaskTransitionMethod,
@@ -813,7 +813,7 @@ class MemberManager(QWidget):
                         self.card_ProxyTimesLimit = SpinBoxSettingCard(
                             icon=FluentIcon.PAGE_RIGHT,
                             title="用户单日代理次数上限",
-                            content="当用户本日代理成功次数达到该阈值时跳过代理，阈值为“0”时视为无代理次数上限",
+                            content="当用户本日代理成功次数达到该阈值时跳过代理，阈值为「0」时视为无代理次数上限",
                             range=(0, 1024),
                             qconfig=self.config,
                             configItem=self.config.RunSet_ProxyTimesLimit,
@@ -2187,7 +2187,7 @@ class MemberManager(QWidget):
                                 self.card_ServerChanChannel = LineEditSettingCard(
                                     icon=FluentIcon.PAGE_RIGHT,
                                     title="用户ServerChanChannel代码",
-                                    content="留空则默认，多个请使用“|”隔开",
+                                    content="留空则默认，多个请使用「|」隔开",
                                     text="请输入Channel代码，仅SCT生效",
                                     qconfig=self.config,
                                     configItem=self.config.Notify_ServerChanChannel,
@@ -2196,7 +2196,7 @@ class MemberManager(QWidget):
                                 self.card_ServerChanTag = LineEditSettingCard(
                                     icon=FluentIcon.PAGE_RIGHT,
                                     title="用户Tag内容",
-                                    content="留空则默认，多个请使用“|”隔开",
+                                    content="留空则默认，多个请使用「|」隔开",
                                     text="请输入加入推送的Tag，仅SC3生效",
                                     qconfig=self.config,
                                     configItem=self.config.Notify_ServerChanTag,
@@ -2404,7 +2404,7 @@ class MemberManager(QWidget):
                         self.card_SuccessLog = LineEditSettingCard(
                             icon=FluentIcon.PAGE_RIGHT,
                             title="脚本成功日志",
-                            content="任务成功完成时出现的日志，多条请使用“|”隔开",
+                            content="任务成功完成时出现的日志，多条请使用「|」隔开",
                             text="请输入脚本成功日志内容",
                             qconfig=self.config,
                             configItem=self.config.Script_SuccessLog,
@@ -2413,7 +2413,7 @@ class MemberManager(QWidget):
                         self.card_ErrorLog = LineEditSettingCard(
                             icon=FluentIcon.PAGE_RIGHT,
                             title="脚本异常日志 - [必填]",
-                            content="脚本运行异常时的日志内容，多条请使用“|”隔开",
+                            content="脚本运行异常时的日志内容，多条请使用「|」隔开",
                             text="请输入脚本异常日志内容",
                             qconfig=self.config,
                             configItem=self.config.Script_ErrorLog,
@@ -2580,7 +2580,7 @@ class MemberManager(QWidget):
                         self.card_ProxyTimesLimit = SpinBoxSettingCard(
                             icon=FluentIcon.PAGE_RIGHT,
                             title="子配置单日代理次数上限",
-                            content="当子配置本日代理成功次数达到该阈值时跳过代理，阈值为“0”时视为无代理次数上限",
+                            content="当子配置本日代理成功次数达到该阈值时跳过代理，阈值为「0」时视为无代理次数上限",
                             range=(0, 1024),
                             qconfig=self.config,
                             configItem=self.config.Run_ProxyTimesLimit,
@@ -3339,7 +3339,7 @@ class MemberManager(QWidget):
                                 self.card_ServerChanChannel = LineEditSettingCard(
                                     icon=FluentIcon.PAGE_RIGHT,
                                     title="用户ServerChanChannel代码",
-                                    content="留空则默认，多个请使用“|”隔开",
+                                    content="留空则默认，多个请使用「|」隔开",
                                     text="请输入Channel代码，仅SCT生效",
                                     qconfig=self.config,
                                     configItem=self.config.Notify_ServerChanChannel,
@@ -3348,7 +3348,7 @@ class MemberManager(QWidget):
                                 self.card_ServerChanTag = LineEditSettingCard(
                                     icon=FluentIcon.PAGE_RIGHT,
                                     title="用户Tag内容",
-                                    content="留空则默认，多个请使用“|”隔开",
+                                    content="留空则默认，多个请使用「|」隔开",
                                     text="请输入加入推送的Tag，仅SC3生效",
                                     qconfig=self.config,
                                     configItem=self.config.Notify_ServerChanTag,
