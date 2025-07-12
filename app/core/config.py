@@ -706,7 +706,7 @@ class GeneralSubConfig(LQConfig):
 
 class AppConfig(GlobalConfig):
 
-    VERSION = "4.4.0.4"
+    VERSION = "4.4.0.5"
 
     stage_refreshed = Signal()
     PASSWORD_refreshed = Signal()
@@ -717,7 +717,7 @@ class AppConfig(GlobalConfig):
         super().__init__()
 
         self.app_path = Path(sys.argv[0]).resolve().parent  # 获取软件根目录
-        self.app_path_sys = str(Path(sys.argv[0]).resolve())  # 获取软件自身的路径
+        self.app_path_sys = Path(sys.argv[0]).resolve()  # 获取软件自身的路径
 
         self.log_path = self.app_path / "debug/AUTO_MAA.log"
         self.database_path = self.app_path / "data/data.db"
