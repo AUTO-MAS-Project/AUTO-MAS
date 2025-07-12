@@ -2297,11 +2297,15 @@ class MemberManager(QWidget):
                     self.card_Script = self.ScriptSettingCard(self.config, self)
                     self.card_Game = self.GameSettingCard(self.config, self)
                     self.card_Run = self.RunSettingCard(self.config, self)
+                    self.card_Config = self.ConfigSettingCard(
+                        self.name, self.config, self
+                    )
 
                     Layout.addWidget(self.card_Name)
                     Layout.addWidget(self.card_Script)
                     Layout.addWidget(self.card_Game)
                     Layout.addWidget(self.card_Run)
+                    Layout.addWidget(self.card_Config)
                     self.viewLayout.addLayout(Layout)
 
                 class ScriptSettingCard(ExpandGroupSettingCard):
@@ -2614,6 +2618,73 @@ class MemberManager(QWidget):
                         self.viewLayout.setContentsMargins(0, 0, 0, 0)
                         self.viewLayout.setSpacing(0)
                         self.addGroupWidget(widget)
+
+                class ConfigSettingCard(ExpandGroupSettingCard):
+
+                    def __init__(self, name: str, config: GeneralConfig, parent=None):
+                        super().__init__(
+                            FluentIcon.SETTING,
+                            "配置管理",
+                            "使用配置模板文件快速设置脚本",
+                            parent,
+                        )
+                        self.name = name
+                        self.config = config
+
+                        self.card_ImportFromFile = PushSettingCard(
+                            text="从文件导入",
+                            icon=FluentIcon.PAGE_RIGHT,
+                            title="从文件导入通用配置",
+                            content="选择一个配置文件，导入其中的配置信息",
+                            parent=self,
+                        )
+                        self.card_ExportToFile = PushSettingCard(
+                            text="导出到文件",
+                            icon=FluentIcon.PAGE_RIGHT,
+                            title="导出通用配置到文件",
+                            content="选择一个保存路径，将当前配置信息导出到文件",
+                            parent=self,
+                        )
+
+                        self.card_ImportFromFile.clicked.connect(self.import_from_file)
+                        self.card_ExportToFile.clicked.connect(self.export_to_file)
+
+                        widget = QWidget()
+                        Layout = QVBoxLayout(widget)
+                        Layout.addWidget(self.card_ImportFromFile)
+                        Layout.addWidget(self.card_ExportToFile)
+                        self.viewLayout.setContentsMargins(0, 0, 0, 0)
+                        self.viewLayout.setSpacing(0)
+                        self.addGroupWidget(widget)
+
+                    def import_from_file(self):
+                        """从文件导入配置"""
+
+                        file_path, _ = QFileDialog.getOpenFileName(
+                            self, "选择配置文件", "", "JSON Files (*.json)"
+                        )
+                        if file_path:
+
+                            shutil.copy(
+                                file_path,
+                                Config.member_dict[self.name]["Path"] / "config.json",
+                            )
+                            self.config.load(
+                                Config.member_dict[self.name]["Path"] / "config.json"
+                            )
+
+                    def export_to_file(self):
+                        """导出配置到文件"""
+
+                        file_path, _ = QFileDialog.getSaveFileName(
+                            self, "选择保存路径", "", "JSON Files (*.json)"
+                        )
+                        if file_path:
+
+                            temp = self.config.toDict()
+                            temp["Script"]["Name"] = Path(file_path).stem
+                            with open(file_path, "w", encoding="utf-8") as file:
+                                json.dump(temp, file, ensure_ascii=False, indent=4)
 
             class BranchManager(HeaderCardWidget):
                 """分支管理父页面"""
