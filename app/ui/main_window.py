@@ -469,7 +469,7 @@ class AUTO_MAA(MSFluentWindow):
 
             logger.warning("启动主任务失败：未找到有效的主任务配置文件")
             MainInfoBar.push_info_bar(
-                "warning", "启动主任务失败", "“调度队列_1”与“脚本_1”均不存在", -1
+                "warning", "启动主任务失败", "「调度队列_1」与「脚本_1」均不存在", -1
             )
 
     def __currentChanged(self, index: int) -> None:
