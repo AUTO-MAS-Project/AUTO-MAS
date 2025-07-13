@@ -361,6 +361,9 @@ class AUTO_MAA(MSFluentWindow):
         # 检查密码
         self.setting.check_PASSWORD()
 
+        # 获取关卡号信息
+        Config.get_stage()
+
         # 获取主题图像
         if Config.get(Config.function_HomeImageMode) == "主题图像":
             self.home.get_home_image()

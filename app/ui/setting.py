@@ -1164,6 +1164,15 @@ class UpdaterSettingCard(HeaderCardWidget):
             configItem=Config.update_ThreadNumb,
             parent=self,
         )
+        self.card_ProxyAddress = LineEditSettingCard(
+            icon=FluentIcon.PAGE_RIGHT,
+            title="网络代理地址",
+            content="使用网络代理软件时，若出现网络连接问题，请尝试设置代理地址，此设置全局生效",
+            text="请输入代理地址",
+            qconfig=Config,
+            configItem=Config.update_ProxyAddress,
+            parent=self,
+        )
         self.card_ProxyUrlList = UrlListSettingCard(
             icon=FluentIcon.SETTING,
             title="代理地址列表",
@@ -1196,6 +1205,7 @@ class UpdaterSettingCard(HeaderCardWidget):
         Layout.addWidget(self.card_IfAutoUpdate)
         Layout.addWidget(self.card_UpdateType)
         Layout.addWidget(self.card_ThreadNumb)
+        Layout.addWidget(self.card_ProxyAddress)
         Layout.addWidget(self.card_ProxyUrlList)
         Layout.addWidget(self.card_MirrorChyanCDK)
         self.viewLayout.addLayout(Layout)
