@@ -30,7 +30,6 @@ import zipfile
 import requests
 import subprocess
 import time
-import psutil
 from functools import partial
 from pathlib import Path
 
@@ -47,6 +46,7 @@ from PySide6.QtCore import QThread, Signal, QTimer, QEventLoop
 
 from typing import List, Dict, Union
 
+from app.core import Config
 from app.services import System
 
 
@@ -113,7 +113,14 @@ class DownloadProcess(QThread):
                 start_time = time.time()
 
                 response = requests.get(
-                    self.url, headers=headers, timeout=10, stream=True
+                    self.url,
+                    headers=headers,
+                    timeout=10,
+                    stream=True,
+                    proxies={
+                        "http": Config.get(Config.update_ProxyAddress),
+                        "https": Config.get(Config.update_ProxyAddress),
+                    },
                 )
 
                 if response.status_code not in [200, 206]:
@@ -332,6 +339,10 @@ class DownloadManager(QDialog):
                         allow_redirects=True,
                         timeout=10,
                         stream=True,
+                        proxies={
+                            "http": Config.get(Config.update_ProxyAddress),
+                            "https": Config.get(Config.update_ProxyAddress),
+                        },
                     ) as response:
                         if response.status_code == 200:
                             return response.url
@@ -339,7 +350,14 @@ class DownloadManager(QDialog):
             elif self.config["mode"] == "MirrorChyan":
 
                 with requests.get(
-                    self.config["url"], allow_redirects=True, timeout=10, stream=True
+                    self.config["url"],
+                    allow_redirects=True,
+                    timeout=10,
+                    stream=True,
+                    proxies={
+                        "http": Config.get(Config.update_ProxyAddress),
+                        "https": Config.get(Config.update_ProxyAddress),
+                    },
                 ) as response:
                     if response.status_code == 200:
                         return response.url
@@ -448,7 +466,14 @@ class DownloadManager(QDialog):
         url = self.get_download_url("下载")
         self.downloaded_size_list: List[List[int, bool]] = []
 
-        response = requests.head(url, timeout=10)
+        response = requests.head(
+            url,
+            timeout=10,
+            proxies={
+                "http": Config.get(Config.update_ProxyAddress),
+                "https": Config.get(Config.update_ProxyAddress),
+            },
+        )
 
         self.file_size = int(response.headers.get("content-length", 0))
         part_size = self.file_size // self.config["thread_numb"]

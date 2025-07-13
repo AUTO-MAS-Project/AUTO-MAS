@@ -262,6 +262,7 @@ class GlobalConfig(LQConfig):
         self.update_ThreadNumb = RangeConfigItem(
             "Update", "ThreadNumb", 8, RangeValidator(1, 32)
         )
+        self.update_ProxyAddress = ConfigItem("Update", "ProxyAddress", "")
         self.update_ProxyUrlList = ConfigItem(
             "Update", "ProxyUrlList", [], UrlListValidator()
         )
@@ -706,7 +707,7 @@ class GeneralSubConfig(LQConfig):
 
 class AppConfig(GlobalConfig):
 
-    VERSION = "4.4.0.5"
+    VERSION = "4.4.0.6"
 
     stage_refreshed = Signal()
     PASSWORD_refreshed = Signal()
@@ -780,7 +781,6 @@ class AppConfig(GlobalConfig):
 
         self.init_logger()
         self.check_data()
-        self.get_stage()
         logger.info("程序初始化完成")
 
     def init_logger(self) -> None:
@@ -810,8 +810,8 @@ class AppConfig(GlobalConfig):
         logger.info("日志记录器初始化完成")
 
     def get_stage(self) -> None:
+        """从MAA服务器获取活动关卡信息"""
 
-        # 从MAA服务器获取活动关卡信息
         network = Network.add_task(
             mode="get",
             url="https://api.maa.plus/MaaAssistantArknights/api/gui/StageActivity.json",
