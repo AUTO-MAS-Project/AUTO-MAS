@@ -1509,6 +1509,20 @@ class AppConfig(GlobalConfig):
 
         return if_six_star
 
+    def save_general_log(self, log_path: Path, logs: list, general_result: str) -> None:
+        """保存通用日志并生成对应统计数据"""
+
+        data: Dict[str, str] = {"general_result": general_result}
+
+        # 保存日志
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        with log_path.with_suffix(".log").open("w", encoding="utf-8") as f:
+            f.writelines(logs)
+        with log_path.with_suffix(".json").open("w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=4)
+
+        logger.info(f"处理完成：{log_path}")
+
     def merge_statistic_info(self, statistic_path_list: List[Path]) -> dict:
         """合并指定数据统计信息文件"""
 
@@ -1535,7 +1549,7 @@ class AppConfig(GlobalConfig):
                         data[key][star_level] += count
 
                 # 合并掉落统计
-                if key == "drop_statistics":
+                elif key == "drop_statistics":
 
                     for stage, drops in single_data[key].items():
                         if stage not in data[key]:
@@ -1547,8 +1561,8 @@ class AppConfig(GlobalConfig):
                                 data[key][stage][item] = 0
                             data[key][stage][item] += count
 
-                # 录入MAA结果
-                if key == "maa_result":
+                # 录入运行结果
+                elif key in ["maa_result", "general_result"]:
 
                     actual_date = datetime.strptime(
                         f"{json_file.parent.parent.name} {json_file.stem}",
@@ -1571,7 +1585,7 @@ class AppConfig(GlobalConfig):
 
                     data["index"][actual_date] = [
                         actual_date.strftime("%d日 %H:%M:%S"),
-                        ("完成" if single_data["maa_result"] == "Success!" else "异常"),
+                        ("完成" if single_data[key] == "Success!" else "异常"),
                         json_file,
                     ]
 

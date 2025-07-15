@@ -1903,15 +1903,17 @@ class MaaManager(QObject):
 
             # 生成文本通知内容
             formatted = []
-            for stage, items in message["drop_statistics"].items():
-                formatted.append(f"掉落统计（{stage}）:")
-                for item, quantity in items.items():
-                    formatted.append(f"  {item}: {quantity}")
+            if "drop_statistics" in message:
+                for stage, items in message["drop_statistics"].items():
+                    formatted.append(f"掉落统计（{stage}）:")
+                    for item, quantity in items.items():
+                        formatted.append(f"  {item}: {quantity}")
             drop_text = "\n".join(formatted)
 
             formatted = ["招募统计:"]
-            for star, count in message["recruit_statistics"].items():
-                formatted.append(f"  {star}: {count}")
+            if "recruit_statistics" in message:
+                for star, count in message["recruit_statistics"].items():
+                    formatted.append(f"  {star}: {count}")
             recruit_text = "\n".join(formatted)
 
             message_text = (
