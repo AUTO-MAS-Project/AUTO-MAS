@@ -21,7 +21,7 @@
 """
 AUTO_MAA
 AUTO_MAA设置界面
-v4.3
+v4.4
 作者：DLmaster_361
 """
 
@@ -86,6 +86,7 @@ class Setting(QWidget):
         )
         self.start.card_IfSelfStart.checkedChanged.connect(System.set_SelfStart)
         self.security.card_changePASSWORD.clicked.connect(self.change_PASSWORD)
+        self.security.card_resetPASSWORD.clicked.connect(self.reset_PASSWORD)
         self.updater.card_CheckUpdate.clicked.connect(
             lambda: self.check_update(if_show=True)
         )
@@ -119,7 +120,7 @@ class Setting(QWidget):
 
             choice = MessageBox(
                 "授权声明",
-                "开启“托管bilibili游戏隐私政策”功能，即代表您已完整阅读并同意《哔哩哔哩弹幕网用户使用协议》、《哔哩哔哩隐私政策》和《哔哩哔哩游戏中心用户协议》，并授权AUTO_MAA在其认定需要时以其认定合适的方法替您处理相关弹窗\n\n是否同意授权？",
+                "开启「托管bilibili游戏隐私政策」功能，即代表您已完整阅读并同意《哔哩哔哩弹幕网用户使用协议》、《哔哩哔哩隐私政策》和《哔哩哔哩游戏中心用户协议》，并授权AUTO_MAA在其认定需要时以其认定合适的方法替您处理相关弹窗\n\n是否同意授权？",
                 self.window(),
             )
             if choice.exec():
@@ -147,7 +148,7 @@ class Setting(QWidget):
 
             choice = MessageBox(
                 "风险声明",
-                "开启“跳过MuMu启动广告”功能，即代表您已安装MuMu模拟器-12且允许AUTO_MAA以其认定合适的方法屏蔽MuMu启动广告，并接受此操作带来的风险\n\n此功能即时生效，是否仍要开启此功能？",
+                "开启「跳过MuMu启动广告」功能，即代表您已安装MuMu模拟器-12且允许AUTO_MAA以其认定合适的方法屏蔽MuMu启动广告，并接受此操作带来的风险\n\n此功能即时生效，是否仍要开启此功能？",
                 self.window(),
             )
             if choice.exec():
@@ -258,6 +259,61 @@ class Setting(QWidget):
                 )
                 if choice.exec():
                     break
+
+    def reset_PASSWORD(self) -> None:
+        """重置管理密钥"""
+
+        choice = MessageBox(
+            "确认",
+            "重置管理密钥将清空所有使用管理密钥加密的数据，您确认要重置管理密钥吗？",
+            self.window(),
+        )
+        if choice.exec():
+            choice = LineEditMessageBox(
+                self.window(),
+                "请输入文本提示框内的验证信息",
+                "AUTO_MAA绝赞DeBug中！",
+                "明文",
+            )
+
+            if choice.exec() and choice.input.text() in [
+                "AUTO_MAA绝赞DeBug中！",
+                "AUTO_MAA绝赞DeBug中!",
+            ]:
+
+                # 获取新的管理密钥
+                while True:
+
+                    choice = LineEditMessageBox(
+                        self.window(), "请输入新的管理密钥", "新管理密钥", "密码"
+                    )
+                    if choice.exec() and choice.input.text() != "":
+
+                        # 重置管理密钥
+                        Crypto.reset_PASSWORD(choice.input.text())
+                        MainInfoBar.push_info_bar(
+                            "success", "操作成功", "管理密钥重置成功", 3000
+                        )
+                        break
+
+                    else:
+
+                        choice = MessageBox(
+                            "确认",
+                            "您没有输入新的管理密钥，是否取消修改管理密钥？",
+                            self.window(),
+                        )
+                        if choice.exec():
+                            break
+
+            else:
+
+                MainInfoBar.push_info_bar(
+                    "info",
+                    "验证未通过",
+                    "请输入「AUTO_MAA绝赞DeBug中！」后单击确认键",
+                    3000,
+                )
 
     def check_update(self, if_show: bool = False, if_first: bool = False) -> None:
         """检查版本更新，调起文件下载进程"""
@@ -670,7 +726,7 @@ class FunctionSettingCard(HeaderCardWidget):
             self.card_BossKey = LineEditSettingCard(
                 icon=FluentIcon.PAGE_RIGHT,
                 title="模拟器老板键",
-                content="请输入对应的模拟器老板键，请直接输入文字，多个键位之间请用“+”隔开。如：“Alt+Q”",
+                content="请输入对应的模拟器老板键，请直接输入文字，多个键位之间请用「+」隔开。如：「Alt+Q」",
                 text="请以文字形式输入模拟器老板快捷键",
                 qconfig=Config,
                 configItem=Config.function_BossKey,
@@ -981,7 +1037,7 @@ class NotifySettingCard(HeaderCardWidget):
             self.card_ServerChanChannel = LineEditSettingCard(
                 icon=FluentIcon.PAGE_RIGHT,
                 title="ServerChanChannel代码",
-                content="可以留空，留空则默认。可以多个，请使用“|”隔开",
+                content="可以留空，留空则默认。可以多个，请使用「|」隔开",
                 text="请输入需要推送的Channel代码（SCT生效）",
                 qconfig=Config,
                 configItem=Config.notify_ServerChanChannel,
@@ -990,7 +1046,7 @@ class NotifySettingCard(HeaderCardWidget):
             self.card_ServerChanTag = LineEditSettingCard(
                 icon=FluentIcon.PAGE_RIGHT,
                 title="Tag内容",
-                content="可以留空，留空则默认。可以多个，请使用“|”隔开",
+                content="可以留空，留空则默认。可以多个，请使用「|」隔开",
                 text="请输入加入推送的Tag（SC3生效）",
                 qconfig=Config,
                 configItem=Config.notify_ServerChanTag,
@@ -1056,9 +1112,17 @@ class SecuritySettingCard(HeaderCardWidget):
             content="修改用于解密用户密码的管理密钥",
             parent=self,
         )
+        self.card_resetPASSWORD = PushSettingCard(
+            text="重置",
+            icon=FluentIcon.VPN,
+            title="重置管理密钥",
+            content="重置用于解密用户密码的管理密钥",
+            parent=self,
+        )
 
         Layout = QVBoxLayout()
         Layout.addWidget(self.card_changePASSWORD)
+        Layout.addWidget(self.card_resetPASSWORD)
         self.viewLayout.addLayout(Layout)
 
 
@@ -1100,6 +1164,15 @@ class UpdaterSettingCard(HeaderCardWidget):
             configItem=Config.update_ThreadNumb,
             parent=self,
         )
+        self.card_ProxyAddress = LineEditSettingCard(
+            icon=FluentIcon.PAGE_RIGHT,
+            title="网络代理地址",
+            content="使用网络代理软件时，若出现网络连接问题，请尝试设置代理地址，此设置全局生效",
+            text="请输入代理地址",
+            qconfig=Config,
+            configItem=Config.update_ProxyAddress,
+            parent=self,
+        )
         self.card_ProxyUrlList = UrlListSettingCard(
             icon=FluentIcon.SETTING,
             title="代理地址列表",
@@ -1132,6 +1205,7 @@ class UpdaterSettingCard(HeaderCardWidget):
         Layout.addWidget(self.card_IfAutoUpdate)
         Layout.addWidget(self.card_UpdateType)
         Layout.addWidget(self.card_ThreadNumb)
+        Layout.addWidget(self.card_ProxyAddress)
         Layout.addWidget(self.card_ProxyUrlList)
         Layout.addWidget(self.card_MirrorChyanCDK)
         self.viewLayout.addLayout(Layout)

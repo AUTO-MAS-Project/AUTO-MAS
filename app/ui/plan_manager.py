@@ -21,7 +21,7 @@
 """
 AUTO_MAA
 AUTO_MAA计划管理界面
-v4.3
+v4.4
 作者：DLmaster_361
 """
 
@@ -324,7 +324,7 @@ class PlanManager(QWidget):
             """清空所有子界面"""
 
             for sub_interface in self.script_list:
-                Config.gameid_refreshed.disconnect(sub_interface.refresh_gameid)
+                Config.stage_refreshed.disconnect(sub_interface.refresh_stage)
                 self.stackedWidget.removeWidget(sub_interface)
                 sub_interface.deleteLater()
             self.script_list.clear()
@@ -372,7 +372,7 @@ class PlanManager(QWidget):
 
                 self.table = TableWidget(self)
                 self.table.setColumnCount(8)
-                self.table.setRowCount(6)
+                self.table.setRowCount(7)
                 self.table.setHorizontalHeaderLabels(
                     ["全局", "周一", "周二", "周三", "周四", "周五", "周六", "周日"]
                 )
@@ -383,6 +383,7 @@ class PlanManager(QWidget):
                         "关卡选择",
                         "备选 - 1",
                         "备选 - 2",
+                        "备选 - 3",
                         "剩余理智",
                     ]
                 )
@@ -392,7 +393,7 @@ class PlanManager(QWidget):
                     self.table.horizontalHeader().setSectionResizeMode(
                         col, QHeaderView.ResizeMode.Stretch
                     )
-                for row in range(6):
+                for row in range(7):
                     self.table.verticalHeader().setSectionResizeMode(
                         row, QHeaderView.ResizeMode.ResizeToContents
                     )
@@ -427,21 +428,21 @@ class PlanManager(QWidget):
                                 configItem=configItem,
                                 parent=self,
                             )
-                        elif name == "GameId_Remain":
+                        elif name == "Stage_Remain":
                             self.item_dict[group][name] = EditableComboBoxSetting(
-                                value=Config.gameid_dict[group]["value"],
+                                value=Config.stage_dict[group]["value"],
                                 texts=[
                                     "不使用" if _ == "当前/上次" else _
-                                    for _ in Config.gameid_dict[group]["text"]
+                                    for _ in Config.stage_dict[group]["text"]
                                 ],
                                 qconfig=self.config,
                                 configItem=configItem,
                                 parent=self,
                             )
-                        elif "GameId" in name:
+                        elif "Stage" in name:
                             self.item_dict[group][name] = EditableComboBoxSetting(
-                                value=Config.gameid_dict[group]["value"],
-                                texts=Config.gameid_dict[group]["text"],
+                                value=Config.stage_dict[group]["value"],
+                                texts=Config.stage_dict[group]["text"],
                                 qconfig=self.config,
                                 configItem=configItem,
                                 parent=self,
@@ -459,7 +460,7 @@ class PlanManager(QWidget):
                 self.viewLayout.setContentsMargins(3, 0, 3, 3)
 
                 self.card_Mode.comboBox.currentIndexChanged.connect(self.switch_mode)
-                Config.gameid_refreshed.connect(self.refresh_gameid)
+                Config.stage_refreshed.connect(self.refresh_stage)
 
                 self.switch_mode()
 
@@ -473,25 +474,25 @@ class PlanManager(QWidget):
                             == (self.config.get(self.config.Info_Mode) == "ALL")
                         )
 
-            def refresh_gameid(self):
+            def refresh_stage(self):
 
                 for group, name_dict in self.item_dict.items():
 
                     for name, setting_item in name_dict.items():
 
-                        if name == "GameId_Remain":
+                        if name == "Stage_Remain":
 
                             setting_item.reLoadOptions(
-                                Config.gameid_dict[group]["value"],
+                                Config.stage_dict[group]["value"],
                                 [
                                     "不使用" if _ == "当前/上次" else _
-                                    for _ in Config.gameid_dict[group]["text"]
+                                    for _ in Config.stage_dict[group]["text"]
                                 ],
                             )
 
-                        elif "GameId" in name:
+                        elif "Stage" in name:
 
                             setting_item.reLoadOptions(
-                                Config.gameid_dict[group]["value"],
-                                Config.gameid_dict[group]["text"],
+                                Config.stage_dict[group]["value"],
+                                Config.stage_dict[group]["text"],
                             )

@@ -21,7 +21,7 @@
 """
 AUTO_MAA
 AUTO_MAA主界面
-v4.3
+v4.4
 作者：DLmaster_361
 """
 
@@ -184,7 +184,7 @@ class AUTO_MAA(MSFluentWindow):
 
         self.set_min_method()
 
-        Config.user_info_changed.connect(self.member_manager.refresh_dashboard)
+        Config.sub_info_changed.connect(self.member_manager.refresh_dashboard)
         Config.power_sign_changed.connect(self.dispatch_center.update_power_sign)
         TaskManager.create_gui.connect(self.dispatch_center.add_board)
         TaskManager.connect_gui.connect(self.dispatch_center.connect_main_board)
@@ -361,6 +361,9 @@ class AUTO_MAA(MSFluentWindow):
         # 检查密码
         self.setting.check_PASSWORD()
 
+        # 获取关卡号信息
+        Config.get_stage()
+
         # 获取主题图像
         if Config.get(Config.function_HomeImageMode) == "主题图像":
             self.home.get_home_image()
@@ -469,7 +472,7 @@ class AUTO_MAA(MSFluentWindow):
 
             logger.warning("启动主任务失败：未找到有效的主任务配置文件")
             MainInfoBar.push_info_bar(
-                "warning", "启动主任务失败", "“调度队列_1”与“脚本_1”均不存在", -1
+                "warning", "启动主任务失败", "「调度队列_1」与「脚本_1」均不存在", -1
             )
 
     def __currentChanged(self, index: int) -> None:

@@ -21,7 +21,7 @@
 """
 AUTO_MAA
 AUTO_MAA通知服务
-v4.3
+v4.4
 作者：DLmaster_361
 """
 
@@ -199,7 +199,16 @@ class Notification(QObject):
             params = {"title": title, "desp": content, **options}
             headers = {"Content-Type": "application/json;charset=utf-8"}
 
-            response = requests.post(url, json=params, headers=headers, timeout=10)
+            response = requests.post(
+                url,
+                json=params,
+                headers=headers,
+                timeout=10,
+                proxies={
+                    "http": Config.get(Config.update_ProxyAddress),
+                    "https": Config.get(Config.update_ProxyAddress),
+                },
+            )
             result = response.json()
 
             if result.get("code") == 0:
@@ -244,6 +253,10 @@ class Notification(QObject):
                     url=webhook_url,
                     json=data,
                     timeout=10,
+                    proxies={
+                        "http": Config.get(Config.update_ProxyAddress),
+                        "https": Config.get(Config.update_ProxyAddress),
+                    },
                 )
                 info = response.json()
                 break
@@ -307,7 +320,7 @@ class Notification(QObject):
                 image_base64 = ImageUtils.get_base64_from_file(str(image_path))
                 image_md5 = ImageUtils.calculate_md5_from_file(str(image_path))
             except Exception as e:
-                logger.error(f"图片编码或MD5计算失败：{e}")
+                logger.exception(f"图片编码或MD5计算失败：{e}")
                 self.push_info_bar.emit(
                     "error",
                     "企业微信群机器人通知推送异常",
@@ -327,6 +340,10 @@ class Notification(QObject):
                         url=webhook_url,
                         json=data,
                         timeout=10,
+                        proxies={
+                            "http": Config.get(Config.update_ProxyAddress),
+                            "https": Config.get(Config.update_ProxyAddress),
+                        },
                     )
                     info = response.json()
                     break
