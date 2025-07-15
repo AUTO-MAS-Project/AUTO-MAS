@@ -1122,21 +1122,25 @@ class MaaManager(QObject):
 
             elif "任务已全部完成！" in log:
 
-                if "完成任务: StartUp" in log:
+                if "完成任务: StartUp" in log or "完成任务: 开始唤醒" in log:
                     self.task_dict["WakeUp"] = "False"
-                if "完成任务: Recruit" in log:
+                if "完成任务: Recruit" in log or "完成任务: 自动公招" in log:
                     self.task_dict["Recruiting"] = "False"
-                if "完成任务: Infrast" in log:
+                if "完成任务: Infrast" in log or "完成任务: 基建换班" in log:
                     self.task_dict["Base"] = "False"
-                if "完成任务: Fight" in log or "剿灭任务失败" in log:
+                if (
+                    "完成任务: Fight" in log
+                    or "完成任务: 刷理智" in log
+                    or "剿灭任务失败" in log
+                ):
                     self.task_dict["Combat"] = "False"
-                if "完成任务: Mall" in log:
+                if "完成任务: Mall" in log or "完成任务: 获取信用及购物" in log:
                     self.task_dict["Mall"] = "False"
-                if "完成任务: Award" in log:
+                if "完成任务: Award" in log or "完成任务: 领取奖励" in log:
                     self.task_dict["Mission"] = "False"
-                if "完成任务: Roguelike" in log:
+                if "完成任务: Roguelike" in log or "完成任务: 自动肉鸽" in log:
                     self.task_dict["AutoRoguelike"] = "False"
-                if "完成任务: Reclamation" in log:
+                if "完成任务: Reclamation" in log or "完成任务: 生息演算" in log:
                     self.task_dict["Reclamation"] = "False"
 
                 if all(v == "False" for v in self.task_dict.values()):
@@ -1171,7 +1175,7 @@ class MaaManager(QObject):
                 self.maa_result = "Wait"
 
         elif mode == "人工排查":
-            if "完成任务: StartUp" in log:
+            if "完成任务: StartUp" in log or "完成任务: 开始唤醒" in log:
                 self.maa_result = "Success!"
             elif "请 ｢检查连接设置｣ → ｢尝试重启模拟器与 ADB｣ → ｢重启电脑｣" in log:
                 self.maa_result = "MAA的ADB连接异常"
