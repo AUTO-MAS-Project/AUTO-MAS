@@ -21,7 +21,7 @@
 """
 AUTO_MAA
 AUTO_MAA主程序
-v4.3
+v4.4
 作者：DLmaster_361
 """
 
@@ -45,9 +45,19 @@ builtins.print = no_print
 
 
 from loguru import logger
+import os
+import sys
+import ctypes
 from PySide6.QtWidgets import QApplication
 from qfluentwidgets import FluentTranslator
-import sys
+
+
+def is_admin() -> bool:
+    """检查当前程序是否以管理员身份运行"""
+    try:
+        return ctypes.windll.shell32.IsUserAnAdmin()
+    except:
+        return False
 
 
 @logger.catch
@@ -68,4 +78,10 @@ def main():
 
 if __name__ == "__main__":
 
-    main()
+    if is_admin():
+        main()
+    else:
+        ctypes.windll.shell32.ShellExecuteW(
+            None, "runas", sys.executable, os.path.realpath(sys.argv[0]), None, 1
+        )
+        sys.exit(0)

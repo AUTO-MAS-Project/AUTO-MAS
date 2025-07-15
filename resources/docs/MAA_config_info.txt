@@ -24,6 +24,7 @@
 "MainFunction.Stage1": ""        #主关卡
 "MainFunction.Stage2": ""        #备选关卡1
 "MainFunction.Stage3": ""        #备选关卡2
+"MainFunction.Stage4": ""        #备选关卡3
 "Fight.RemainingSanityStage": "Annihilation"        #剩余理智关卡
 "MainFunction.Series.Quantity": "1"        #连战次数
 "Penguin.IsDrGrandet": "True"        #博朗台模式

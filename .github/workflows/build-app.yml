@@ -84,6 +84,7 @@ jobs:
           onefile-tempdir-spec: "{TEMP}/AUTO_MAA"
           windows-console-mode: attach
           windows-icon-from-ico: resources/icons/AUTO_MAA.ico
+          windows-uac-admin: true
           company-name: AUTO_MAA Team
           product-name: AUTO_MAA
           file-version: ${{ steps.get_version.outputs.main_version }}

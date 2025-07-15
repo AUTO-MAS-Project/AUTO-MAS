@@ -3,6 +3,7 @@ config/
 data/
 debug/
 history/
+script/
 resources/notice.json
 resources/theme_image.json
 resources/images/Home/BannerTheme.jpg

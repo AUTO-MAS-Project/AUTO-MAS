@@ -21,7 +21,7 @@
 """
 AUTO_MAA
 AUTO_MAA安全服务
-v4.3
+v4.4
 作者：DLmaster_361
 """
 
@@ -147,22 +147,36 @@ class CryptoHandler:
         for member in Config.member_dict.values():
 
             # 使用旧管理密钥解密
-            for user in member["UserData"].values():
-                user["Password"] = self.AUTO_decryptor(
-                    user["Config"].get(user["Config"].Info_Password), PASSWORD_old
-                )
+            if member["Type"] == "Maa":
+                for user in member["UserData"].values():
+                    user["Password"] = self.AUTO_decryptor(
+                        user["Config"].get(user["Config"].Info_Password), PASSWORD_old
+                    )
 
         self.get_PASSWORD(PASSWORD_new)
 
         for member in Config.member_dict.values():
 
             # 使用新管理密钥重新加密
-            for user in member["UserData"].values():
-                user["Config"].set(
-                    user["Config"].Info_Password, self.AUTO_encryptor(user["Password"])
-                )
-                user["Password"] = None
-                del user["Password"]
+            if member["Type"] == "Maa":
+                for user in member["UserData"].values():
+                    user["Config"].set(
+                        user["Config"].Info_Password,
+                        self.AUTO_encryptor(user["Password"]),
+                    )
+                    user["Password"] = None
+                    del user["Password"]
+
+    def reset_PASSWORD(self, PASSWORD_new: str) -> None:
+        """重置管理密钥"""
+
+        self.get_PASSWORD(PASSWORD_new)
+
+        for member in Config.member_dict.values():
+
+            if member["Type"] == "Maa":
+                for user in member["UserData"].values():
+                    user["Config"].set(user["Config"].Info_Password, "")
 
     def win_encryptor(
         self, note: str, description: str = None, entropy: bytes = None

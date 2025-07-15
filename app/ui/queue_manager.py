@@ -21,7 +21,7 @@
 """
 AUTO_MAA
 AUTO_MAA调度队列界面
-v4.3
+v4.4
 作者：DLmaster_361
 """
 
@@ -111,7 +111,7 @@ class QueueManager(QWidget):
             "Config": queue_config,
         }
 
-        self.queue_manager.add_QueueSettingBox(index)
+        self.queue_manager.add_SettingBox(index)
         self.queue_manager.switch_SettingBox(index)
 
         logger.success(f"调度队列_{index} 添加成功")
@@ -256,8 +256,8 @@ class QueueManager(QWidget):
             + [
                 (
                     k
-                    if v["Config"].get(v["Config"].MaaSet_Name) == ""
-                    else f"{k} - {v["Config"].get(v["Config"].MaaSet_Name)}"
+                    if v["Config"].get_name() == ""
+                    else f"{k} - {v["Config"].get_name()}"
                 )
                 for k, v in Config.member_dict.items()
             ],
@@ -332,7 +332,7 @@ class QueueManager(QWidget):
             Config.search_queue()
 
             for name in Config.queue_dict.keys():
-                self.add_QueueSettingBox(int(name[5:]))
+                self.add_SettingBox(int(name[5:]))
 
             self.switch_SettingBox(index)
 
@@ -358,12 +358,12 @@ class QueueManager(QWidget):
             self.script_list.clear()
             self.pivot.clear()
 
-        def add_QueueSettingBox(self, uid: int) -> None:
+        def add_SettingBox(self, uid: int) -> None:
             """添加一个调度队列设置界面"""
 
-            maa_setting_box = self.QueueMemberSettingBox(uid, self)
+            setting_box = self.QueueMemberSettingBox(uid, self)
 
-            self.script_list.append(maa_setting_box)
+            self.script_list.append(setting_box)
 
             self.stackedWidget.addWidget(self.script_list[-1])
 
@@ -586,8 +586,8 @@ class QueueManager(QWidget):
                         + [
                             (
                                 k
-                                if v["Config"].get(v["Config"].MaaSet_Name) == ""
-                                else f"{k} - {v["Config"].get(v["Config"].MaaSet_Name)}"
+                                if v["Config"].get_name() == ""
+                                else f"{k} - {v["Config"].get_name()}"
                             )
                             for k, v in Config.member_dict.items()
                         ],

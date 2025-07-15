@@ -21,7 +21,7 @@
 """
 AUTO_MAA
 AUTO_MAA网络请求线程
-v4.3
+v4.4
 作者：DLmaster_361
 """
 
@@ -30,6 +30,7 @@ from PySide6.QtCore import QObject, QThread, QEventLoop
 import re
 import time
 import requests
+import truststore
 from pathlib import Path
 
 
@@ -51,11 +52,20 @@ class NetworkThread(QThread):
         self.url = url
         self.path = path
 
+        from .config import Config
+
+        self.proxies = {
+            "http": Config.get(Config.update_ProxyAddress),
+            "https": Config.get(Config.update_ProxyAddress),
+        }
+
         self.status_code = None
         self.response_json = None
         self.error_message = None
 
         self.loop = QEventLoop()
+
+        truststore.inject_into_ssl()
 
     @logger.catch
     def run(self) -> None:
@@ -73,7 +83,7 @@ class NetworkThread(QThread):
 
         for _ in range(self.max_retries):
             try:
-                response = requests.get(url, timeout=self.timeout)
+                response = requests.get(url, timeout=self.timeout, proxies=self.proxies)
                 self.status_code = response.status_code
                 self.response_json = response.json()
                 self.error_message = None
@@ -92,7 +102,7 @@ class NetworkThread(QThread):
         response = None
 
         try:
-            response = requests.get(url, timeout=10)
+            response = requests.get(url, timeout=10, proxies=self.proxies)
             if response.status_code == 200:
                 with open(path, "wb") as file:
                     file.write(response.content)

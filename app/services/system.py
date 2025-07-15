@@ -21,7 +21,7 @@
 """
 AUTO_MAA
 AUTO_MAA系统服务
-v4.3
+v4.4
 作者：DLmaster_361
 """
 
@@ -31,9 +31,11 @@ import sys
 import ctypes
 import win32gui
 import win32process
-import winreg
 import psutil
 import subprocess
+import tempfile
+import getpass
+from datetime import datetime
 from pathlib import Path
 
 from app.core import Config
@@ -65,23 +67,119 @@ class _SystemHandler:
         """同步开机自启"""
 
         if Config.get(Config.start_IfSelfStart) and not self.is_startup():
-            key = winreg.OpenKey(
-                winreg.HKEY_CURRENT_USER,
-                r"Software\Microsoft\Windows\CurrentVersion\Run",
-                winreg.KEY_SET_VALUE,
-                winreg.KEY_ALL_ACCESS | winreg.KEY_WRITE | winreg.KEY_CREATE_SUB_KEY,
-            )
-            winreg.SetValueEx(key, "AUTO_MAA", 0, winreg.REG_SZ, Config.app_path_sys)
-            winreg.CloseKey(key)
+
+            # 创建任务计划
+            try:
+
+                # 获取当前用户和时间
+                current_user = getpass.getuser()
+                current_time = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+
+                # XML 模板
+                xml_content = f"""<?xml version="1.0" encoding="UTF-16"?>
+                <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+                    <RegistrationInfo>
+                        <Date>{current_time}</Date>
+                        <Author>{current_user}</Author>
+                        <Description>AUTO_MAA自启动服务</Description>
+                        <URI>\\AUTO_MAA_AutoStart</URI>
+                    </RegistrationInfo>
+                    <Triggers>
+                        <LogonTrigger>
+                            <StartBoundary>{current_time}</StartBoundary>
+                            <Enabled>true</Enabled>
+                        </LogonTrigger>
+                    </Triggers>
+                    <Principals>
+                        <Principal id="Author">
+                            <LogonType>InteractiveToken</LogonType>
+                            <RunLevel>HighestAvailable</RunLevel>
+                        </Principal>
+                    </Principals>
+                    <Settings>
+                        <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+                        <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+                        <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+                        <AllowHardTerminate>false</AllowHardTerminate>
+                        <StartWhenAvailable>true</StartWhenAvailable>
+                        <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
+                        <IdleSettings>
+                            <StopOnIdleEnd>false</StopOnIdleEnd>
+                            <RestartOnIdle>false</RestartOnIdle>
+                        </IdleSettings>
+                        <AllowStartOnDemand>true</AllowStartOnDemand>
+                        <Enabled>true</Enabled>
+                        <Hidden>false</Hidden>
+                        <RunOnlyIfIdle>false</RunOnlyIfIdle>
+                        <WakeToRun>false</WakeToRun>
+                        <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+                        <Priority>7</Priority>
+                    </Settings>
+                    <Actions Context="Author">
+                        <Exec>
+                            <Command>"{Config.app_path_sys}"</Command>
+                        </Exec>
+                    </Actions>
+                </Task>"""
+
+                # 创建临时 XML 文件并执行
+                with tempfile.NamedTemporaryFile(
+                    mode="w", suffix=".xml", delete=False, encoding="utf-16"
+                ) as f:
+                    f.write(xml_content)
+                    xml_file = f.name
+
+                try:
+                    result = subprocess.run(
+                        [
+                            "schtasks",
+                            "/create",
+                            "/tn",
+                            "AUTO_MAA_AutoStart",
+                            "/xml",
+                            xml_file,
+                            "/f",
+                        ],
+                        creationflags=subprocess.CREATE_NO_WINDOW,
+                        stdin=subprocess.DEVNULL,
+                        capture_output=True,
+                        text=True,
+                    )
+
+                    if result.returncode == 0:
+                        logger.info(f"任务计划程序自启动已创建: {Config.app_path_sys}")
+                    else:
+                        logger.error(f"创建任务计划失败: {result.stderr}")
+
+                finally:
+                    # 删除临时文件
+                    try:
+                        Path(xml_file).unlink()
+                    except:
+                        pass
+
+            except Exception as e:
+                logger.exception(f"设置任务计划程序自启动失败: {e}")
+
         elif not Config.get(Config.start_IfSelfStart) and self.is_startup():
-            key = winreg.OpenKey(
-                winreg.HKEY_CURRENT_USER,
-                r"Software\Microsoft\Windows\CurrentVersion\Run",
-                winreg.KEY_SET_VALUE,
-                winreg.KEY_ALL_ACCESS | winreg.KEY_WRITE | winreg.KEY_CREATE_SUB_KEY,
-            )
-            winreg.DeleteValue(key, "AUTO_MAA")
-            winreg.CloseKey(key)
+
+            try:
+
+                result = subprocess.run(
+                    ["schtasks", "/delete", "/tn", "AUTO_MAA_AutoStart", "/f"],
+                    creationflags=subprocess.CREATE_NO_WINDOW,
+                    stdin=subprocess.DEVNULL,
+                    capture_output=True,
+                    text=True,
+                )
+
+                if result.returncode == 0:
+                    logger.info("任务计划程序自启动已删除")
+                else:
+                    logger.error(f"删除任务计划失败: {result.stderr}")
+
+            except Exception as e:
+                logger.exception(f"删除任务计划程序自启动失败: {e}")
 
     def set_power(self, mode) -> None:
 
@@ -144,19 +242,17 @@ class _SystemHandler:
     def is_startup(self) -> bool:
         """判断程序是否已经开机自启"""
 
-        key = winreg.OpenKey(
-            winreg.HKEY_CURRENT_USER,
-            r"Software\Microsoft\Windows\CurrentVersion\Run",
-            0,
-            winreg.KEY_READ,
-        )
-
         try:
-            value, _ = winreg.QueryValueEx(key, "AUTO_MAA")
-            winreg.CloseKey(key)
-            return True
-        except FileNotFoundError:
-            winreg.CloseKey(key)
+            result = subprocess.run(
+                ["schtasks", "/query", "/tn", "AUTO_MAA_AutoStart"],
+                creationflags=subprocess.CREATE_NO_WINDOW,
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                text=True,
+            )
+            return result.returncode == 0
+        except Exception as e:
+            logger.error(f"检查任务计划程序失败: {e}")
             return False
 
     def get_window_info(self) -> list:

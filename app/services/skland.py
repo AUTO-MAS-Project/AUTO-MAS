@@ -28,7 +28,7 @@
 """
 AUTO_MAA
 AUTO_MAA森空岛服务
-v4.3
+v4.4
 作者：DLmaster_361、ClozyA
 """
 
@@ -39,6 +39,8 @@ import hmac
 import hashlib
 import requests
 from urllib import parse
+
+from app.core import Config
 
 
 def skland_sign_in(token) -> dict:
@@ -137,7 +139,13 @@ def skland_sign_in(token) -> dict:
     # 通过grant code换cred和sign_token
     def get_cred(grant):
         rsp = requests.post(
-            cred_code_url, json={"code": grant, "kind": 1}, headers=header_login
+            cred_code_url,
+            json={"code": grant, "kind": 1},
+            headers=header_login,
+            proxies={
+                "http": Config.get(Config.update_ProxyAddress),
+                "https": Config.get(Config.update_ProxyAddress),
+            },
         ).json()
         if rsp["code"] != 0:
             raise Exception(f'获得cred失败：{rsp.get("messgae")}')
@@ -151,6 +159,10 @@ def skland_sign_in(token) -> dict:
             grant_code_url,
             json={"appCode": app_code, "token": token, "type": 0},
             headers=header_login,
+            proxies={
+                "http": Config.get(Config.update_ProxyAddress),
+                "https": Config.get(Config.update_ProxyAddress),
+            },
         ).json()
         if rsp["status"] != 0:
             raise Exception(
@@ -172,6 +184,10 @@ def skland_sign_in(token) -> dict:
             headers=get_sign_header(
                 binding_url, "get", None, copy_header(cred), sign_token
             ),
+            proxies={
+                "http": Config.get(Config.update_ProxyAddress),
+                "https": Config.get(Config.update_ProxyAddress),
+            },
         ).json()
         if rsp["code"] != 0:
             logger.error(f"森空岛服务 | 请求角色列表出现问题：{rsp['message']}")
@@ -209,6 +225,10 @@ def skland_sign_in(token) -> dict:
                     sign_url, "post", body, copy_header(cred), sign_token
                 ),
                 json=body,
+                proxies={
+                    "http": Config.get(Config.update_ProxyAddress),
+                    "https": Config.get(Config.update_ProxyAddress),
+                },
             ).json()
 
             if rsp["code"] != 0:

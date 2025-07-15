@@ -21,7 +21,7 @@
 """
 AUTO_MAA
 AUTO_MAA核心组件包
-v4.3
+v4.4
 作者：DLmaster_361
 """
 
@@ -29,7 +29,15 @@ __version__ = "4.2.0"
 __author__ = "DLmaster361 <DLmaster_361@163.com>"
 __license__ = "GPL-3.0 license"
 
-from .config import QueueConfig, MaaConfig, MaaUserConfig, MaaPlanConfig, Config
+from .config import (
+    QueueConfig,
+    MaaConfig,
+    MaaUserConfig,
+    MaaPlanConfig,
+    GeneralConfig,
+    GeneralSubConfig,
+    Config,
+)
 from .main_info_bar import MainInfoBar
 from .network import Network
 from .sound_player import SoundPlayer
@@ -42,6 +50,8 @@ __all__ = [
     "MaaConfig",
     "MaaUserConfig",
     "MaaPlanConfig",
+    "GeneralConfig",
+    "GeneralSubConfig",
     "MainInfoBar",
     "Network",
     "SoundPlayer",
