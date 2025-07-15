@@ -701,7 +701,7 @@ class MaaManager(QObject):
                             logger.info(f"{self.name} | 更新动作结束")
 
                 # 发送统计信息
-                statistics = Config.merge_maa_logs("指定项", user_logs_list)
+                statistics = Config.merge_statistic_info(user_logs_list)
                 statistics["user_index"] = user[2]
                 statistics["user_info"] = user[0]
                 statistics["start_time"] = user_start_time.strftime("%Y-%m-%d %H:%M:%S")
