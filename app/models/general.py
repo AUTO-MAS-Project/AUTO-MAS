@@ -224,7 +224,6 @@ class GeneralManager(QObject):
 
                 logger.info(f"{self.name} | 开始代理配置: {sub[0]}")
 
-                sub_logs_list = []
                 sub_start_time = datetime.now()
 
                 run_book = False
@@ -378,20 +377,15 @@ class GeneralManager(QObject):
                             Path(sub_data["Info"]["ScriptAfterTask"]), "脚本后任务"
                         )
 
-                    # # 保存运行日志以及统计信息
-                    # Config.save_maa_log(
-                    #     Config.app_path
-                    #     / f"history/{curdate}/{sub_data['Info']['Name']}/{start_time.strftime("%H-%M-%S")}.log",
-                    #     self.check_script_log(start_time, mode_book[mode]),
-                    #     self.maa_result,
-                    # )
-                    sub_logs_list.append(
+                    # 保存运行日志以及统计信息
+                    Config.save_general_log(
                         Config.app_path
-                        / f"history/{curdate}/{sub_data['Info']['Name']}/{start_time.strftime("%H-%M-%S")}.json",
+                        / f"history/{curdate}/{sub_data['Info']['Name']}/{start_time.strftime("%H-%M-%S")}.log",
+                        self.check_script_log(start_time),
+                        self.script_result,
                     )
 
                 # 发送统计信息
-                # statistics = Config.merge_maa_logs("指定项", sub_logs_list)
                 statistics = {
                     "sub_index": sub[2],
                     "sub_info": sub[0],
@@ -658,7 +652,7 @@ class GeneralManager(QObject):
                 else:
                     for error_sign in self.error_log:
                         if error_sign in log:
-                            self.script_result = error_sign
+                            self.script_result = f"异常日志：{error_sign}"
                             break
                     else:
                         if self.script_process_manager.is_running():
