@@ -1392,12 +1392,12 @@ class MemberManager(QWidget):
                                     QTableWidgetItem(
                                         Config.stage_dict["ALL"]["text"][
                                             Config.stage_dict["ALL"]["value"].index(
-                                                stage_info["Stage"]
+                                                stage_info["Stage_1"]
                                             )
                                         ]
-                                        if stage_info["Stage"]
+                                        if stage_info["Stage_1"]
                                         in Config.stage_dict["ALL"]["value"]
-                                        else stage_info["Stage"]
+                                        else stage_info["Stage_1"]
                                     ),
                                 )
                                 self.dashboard.setItem(
