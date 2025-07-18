@@ -280,8 +280,16 @@ class MaaManager(QObject):
                             user_data["Data"][
                                 "LastSklandDate"
                             ] = datetime.now().strftime("%Y-%m-%d")
+                            logger.success(
+                                f"用户: {user[0]} - 森空岛签到成功",
+                                module=f"MAA调度器-{self.name}",
+                            )
                             self.play_sound.emit("森空岛签到成功")
                         else:
+                            logger.warning(
+                                f"用户: {user[0]} - 森空岛签到失败",
+                                module=f"MAA调度器-{self.name}",
+                            )
                             self.play_sound.emit("森空岛签到失败")
 
                 elif user_data["Info"]["IfSkland"]:
@@ -580,43 +588,11 @@ class MaaManager(QObject):
                         self.log_check_mode = mode_book[mode]
                         self.start_monitor()
 
+                        # 处理MAA结果
                         if self.maa_result == "Success!":
 
                             # 标记任务完成
                             run_book[mode] = True
-
-                            # 从配置文件中解析所需信息
-                            while not self.isInterruptionRequested:
-                                try:
-                                    with self.maa_set_path.open(
-                                        mode="r", encoding="utf-8"
-                                    ) as f:
-                                        data = json.load(f)
-                                    break
-                                except Exception as e:
-                                    logger.exception(
-                                        f"解析MAA配置文件时出现异常：{e}",
-                                        module=f"MAA调度器-{self.name}",
-                                    )
-                                    self.sleep(1)
-
-                            if not self.isInterruptionRequested:
-                                # 记录自定义基建索引
-                                user_data["Data"]["CustomInfrastPlanIndex"] = data[
-                                    "Configurations"
-                                ]["Default"]["Infrast.CustomInfrastPlanIndex"]
-
-                                # 记录更新包路径
-                                if (
-                                    data["Global"]["VersionUpdate.package"]
-                                    and (
-                                        self.maa_root_path
-                                        / data["Global"]["VersionUpdate.package"]
-                                    ).exists()
-                                ):
-                                    self.maa_update_package = data["Global"][
-                                        "VersionUpdate.package"
-                                    ]
 
                             logger.info(
                                 f"用户: {user[0]} - MAA进程完成代理任务",
@@ -626,7 +602,6 @@ class MaaManager(QObject):
                                 "检测到MAA进程完成代理任务\n正在等待相关程序结束\n请等待10s"
                             )
 
-                            self.sleep(10)
                         else:
                             logger.error(
                                 f"用户: {user[0]} - 代理任务异常: {self.maa_result}",
@@ -654,40 +629,6 @@ class MaaManager(QObject):
 
                             self.if_open_emulator = True
 
-                            # 从配置文件中解析所需信息
-                            while not self.isInterruptionRequested:
-                                try:
-                                    with self.maa_set_path.open(
-                                        mode="r", encoding="utf-8"
-                                    ) as f:
-                                        data = json.load(f)
-                                    break
-                                except Exception as e:
-                                    logger.exception(
-                                        f"解析MAA配置文件时出现异常：{e}",
-                                        module=f"MAA调度器-{self.name}",
-                                    )
-                                    self.sleep(1)
-
-                            if not self.isInterruptionRequested:
-                                # 记录自定义基建索引
-                                if self.task_dict["Base"] == "False":
-                                    user_data["Data"]["CustomInfrastPlanIndex"] = data[
-                                        "Configurations"
-                                    ]["Default"]["Infrast.CustomInfrastPlanIndex"]
-
-                                # 记录更新包路径
-                                if (
-                                    data["Global"]["VersionUpdate.package"]
-                                    and (
-                                        self.maa_root_path
-                                        / data["Global"]["VersionUpdate.package"]
-                                    ).exists()
-                                ):
-                                    self.maa_update_package = data["Global"][
-                                        "VersionUpdate.package"
-                                    ]
-
                             # 推送异常通知
                             Notify.push_plyer(
                                 "用户自动代理出现异常！",
@@ -699,7 +640,8 @@ class MaaManager(QObject):
                                 self.play_sound.emit("子任务失败")
                             else:
                                 self.play_sound.emit(self.maa_result)
-                            self.sleep(10)
+
+                        self.sleep(10)
 
                         # 任务结束后释放ADB
                         try:
@@ -736,6 +678,27 @@ class MaaManager(QObject):
                             )
                             self.emulator_process_manager.kill()
                             self.if_open_emulator = True
+
+                        # 从配置文件中解析所需信息
+                        with self.maa_set_path.open(mode="r", encoding="utf-8") as f:
+                            data = json.load(f)
+
+                        # 记录自定义基建索引
+                        user_data["Data"]["CustomInfrastPlanIndex"] = data[
+                            "Configurations"
+                        ]["Default"]["Infrast.CustomInfrastPlanIndex"]
+
+                        # 记录更新包路径
+                        if (
+                            data["Global"]["VersionUpdate.package"]
+                            and (
+                                self.maa_root_path
+                                / data["Global"]["VersionUpdate.package"]
+                            ).exists()
+                        ):
+                            self.maa_update_package = data["Global"][
+                                "VersionUpdate.package"
+                            ]
 
                         # 记录剿灭情况
                         if (

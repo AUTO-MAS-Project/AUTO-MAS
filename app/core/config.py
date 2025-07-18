@@ -614,6 +614,12 @@ class GeneralConfig(LQConfig):
             "所有文件 (*)",
             OptionsValidator(["所有文件 (*)", "文件夹"]),
         )
+        self.Script_UpdateConfigMode = OptionsConfigItem(
+            "Script",
+            "UpdateConfigMode",
+            "Never",
+            OptionsValidator(["Never", "Success", "Failure", "Always"]),
+        )
         self.Script_LogPath = ConfigItem("Script", "LogPath", ".", FileValidator())
         self.Script_LogPathFormat = ConfigItem("Script", "LogPathFormat", "%Y-%m-%d")
         self.Script_LogTimeStart = ConfigItem(
