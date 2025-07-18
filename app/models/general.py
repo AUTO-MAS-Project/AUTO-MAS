@@ -25,7 +25,6 @@ v4.4
 作者：DLmaster_361
 """
 
-from loguru import logger
 from PySide6.QtCore import QObject, Signal, QEventLoop, QFileSystemWatcher, QTimer
 import os
 import sys
@@ -37,7 +36,7 @@ from pathlib import Path
 from jinja2 import Environment, FileSystemLoader
 from typing import Union, List, Dict
 
-from app.core import Config, GeneralConfig, GeneralSubConfig
+from app.core import Config, GeneralConfig, GeneralSubConfig, logger
 from app.services import Notify, System
 from app.utils import ProcessManager
 
@@ -75,19 +74,20 @@ class GeneralManager(QObject):
         self.sub_list = []
         self.mode = mode
         self.config_path = config["Path"]
+        self.name = config["Config"].get(config["Config"].Script_Name)
         self.sub_config_path = sub_config_path
 
         self.game_process_manager = ProcessManager()
         self.script_process_manager = ProcessManager()
 
         self.log_monitor = QFileSystemWatcher()
+        self.log_monitor.fileChanged.connect(self.check_script_log)
         self.log_monitor_timer = QTimer()
         self.log_monitor_timer.timeout.connect(self.refresh_log)
         self.monitor_loop = QEventLoop()
+        self.loge_start_time = datetime.now()
 
-        self.script_process_manager.processClosed.connect(
-            lambda: self.log_monitor.fileChanged.emit("进程结束检查")
-        )
+        self.script_process_manager.processClosed.connect(self.check_script_log)
 
         self.question_loop = QEventLoop()
         self.question_response.connect(self.__capture_response)
@@ -111,6 +111,10 @@ class GeneralManager(QObject):
 
             self.data = dict(sorted(self.data.items(), key=lambda x: int(x[0][3:])))
 
+        logger.success(
+            f"初始化通用调度器，模式：{self.mode}", module=f"通用调度器-{self.name}"
+        )
+
     def check_config_info(self) -> bool:
         """检查配置完整性"""
 
@@ -124,7 +128,7 @@ class GeneralManager(QObject):
         ) or (
             self.set["Game"]["Enabled"] and not Path(self.set["Game"]["Path"]).exists()
         ):
-            logger.error("脚本配置缺失")
+            logger.error("脚本配置缺失", module=f"通用调度器-{self.name}")
             self.push_info_bar.emit("error", "脚本配置缺失", "请检查脚本配置！", -1)
             return False
 
@@ -133,7 +137,6 @@ class GeneralManager(QObject):
     def configure(self):
         """提取配置信息"""
 
-        self.name = self.set["Script"]["Name"]
         self.script_root_path = Path(self.set["Script"]["RootPath"])
         self.script_exe_path = Path(self.set["Script"]["ScriptPath"])
         self.script_config_path = Path(self.set["Script"]["ConfigPath"])
@@ -166,9 +169,23 @@ class GeneralManager(QObject):
         curdate = Config.server_date().strftime("%Y-%m-%d")
         begin_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+        if self.mode == "人工排查":
+
+            logger.error("通用脚本不支持人工排查模式", module=f"通用调度器-{self.name}")
+            self.accomplish.emit(
+                {
+                    "Time": begin_time,
+                    "History": "通用脚本不支持人工排查模式，通用代理进程中止",
+                }
+            )
+            return None
+
         # 检查配置完整性
         if not self.check_config_info():
 
+            logger.error(
+                "配置不完整，无法启动通用代理进程", module=f"通用调度器-{self.name}"
+            )
             self.accomplish.emit(
                 {"Time": begin_time, "History": "由于配置不完整，通用代理进程中止"}
             )
@@ -189,6 +206,11 @@ class GeneralManager(QObject):
                 )
             ]
             self.create_user_list.emit(self.sub_list)
+
+            logger.info(
+                f"配置列表创建完成，已筛选子配置数：{len(self.sub_list)}",
+                module=f"通用调度器-{self.name}",
+            )
 
         # 自动代理模式
         if self.mode == "自动代理":
@@ -222,14 +244,17 @@ class GeneralManager(QObject):
                     self.update_user_list.emit(self.sub_list)
                     continue
 
-                logger.info(f"{self.name} | 开始代理配置: {sub[0]}")
+                logger.info(f"开始代理配置: {sub[0]}", module=f"通用调度器-{self.name}")
 
                 sub_start_time = datetime.now()
 
                 run_book = False
 
                 if not (self.data[sub[2]]["Path"] / "ConfigFiles").exists():
-                    logger.error(f"{self.name} | 配置: {sub[0]} - 未找到配置文件")
+                    logger.error(
+                        f"配置: {sub[0]} - 未找到配置文件",
+                        module=f"通用调度器-{self.name}",
+                    )
                     self.push_info_bar.emit(
                         "error",
                         "启动通用代理进程失败",
@@ -246,11 +271,12 @@ class GeneralManager(QObject):
                         break
 
                     logger.info(
-                        f"{self.name} | 用户: {sub[0]} - 尝试次数: {i + 1}/{self.set['Run']['RunTimesLimit']}"
+                        f"用户: {sub[0]} - 尝试次数: {i + 1}/{self.set['Run']['RunTimesLimit']}",
+                        module=f"通用调度器-{self.name}",
                     )
 
                     # 记录当前时间
-                    start_time = datetime.now()
+                    self.log_start_time = datetime.now()
                     # 配置脚本
                     self.set_sub(sub[2])
                     # 执行任务前脚本
@@ -267,7 +293,8 @@ class GeneralManager(QObject):
 
                         try:
                             logger.info(
-                                f"{self.name} | 启动游戏/模拟器：{self.game_path}，参数：{self.set['Game']['Arguments']}"
+                                f"启动游戏/模拟器：{self.game_path}，参数：{self.set['Game']['Arguments']}",
+                                module=f"通用调度器-{self.name}",
                             )
                             self.game_process_manager.open_process(
                                 self.game_path,
@@ -275,8 +302,9 @@ class GeneralManager(QObject):
                                 0,
                             )
                         except Exception as e:
-                            logger.error(
-                                f"{self.name} | 启动游戏/模拟器时出现异常：{e}"
+                            logger.exception(
+                                f"启动游戏/模拟器时出现异常：{e}",
+                                module=f"通用调度器-{self.name}",
                             )
                             self.push_info_bar.emit(
                                 "error",
@@ -289,6 +317,10 @@ class GeneralManager(QObject):
 
                         # 添加静默进程标记
                         if self.set["Game"]["Style"] == "Emulator":
+                            logger.info(
+                                f"添加静默进程标记：{self.game_path}",
+                                module=f"通用调度器-{self.name}",
+                            )
                             Config.silence_list.append(self.game_path)
 
                         self.update_log_text.emit(
@@ -299,6 +331,10 @@ class GeneralManager(QObject):
 
                         # 10s后移除静默进程标记
                         if self.set["Game"]["Style"] == "Emulator":
+                            logger.info(
+                                f"10s后移除静默进程标记：{self.game_path}",
+                                module=f"通用调度器-{self.name}",
+                            )
                             QTimer.singleShot(
                                 10000,
                                 partial(Config.silence_list.remove, self.game_path),
@@ -306,7 +342,8 @@ class GeneralManager(QObject):
 
                     # 运行脚本任务
                     logger.info(
-                        f"{self.name} | 运行脚本任务：{self.script_exe_path}，参数：{self.set['Script']['Arguments']}"
+                        f"运行脚本任务：{self.script_exe_path}，参数：{self.set['Script']['Arguments']}",
+                        module=f"通用调度器-{self.name}",
                     )
                     self.script_process_manager.open_process(
                         self.script_exe_path,
@@ -315,7 +352,7 @@ class GeneralManager(QObject):
                     )
 
                     # 监测运行状态
-                    self.start_monitor(start_time)
+                    self.start_monitor()
 
                     if self.script_result == "Success!":
 
@@ -323,15 +360,24 @@ class GeneralManager(QObject):
                         run_book = True
 
                         # 中止相关程序
+                        logger.info(
+                            f"中止相关程序：{self.script_exe_path}",
+                            module=f"通用调度器-{self.name}",
+                        )
                         self.script_process_manager.kill()
                         System.kill_process(self.script_exe_path)
                         if self.set["Game"]["Enabled"]:
+                            logger.info(
+                                f"中止游戏/模拟器进程：{list(self.game_process_manager.tracked_pids)}",
+                                module=f"通用调度器-{self.name}",
+                            )
                             self.game_process_manager.kill()
                             if self.set["Game"]["IfForceClose"]:
                                 System.kill_process(self.game_path)
 
                         logger.info(
-                            f"{self.name} | 配置: {sub[0]} - 通用脚本进程完成代理任务"
+                            f"配置: {sub[0]} - 通用脚本进程完成代理任务",
+                            module=f"通用调度器-{self.name}",
                         )
                         self.update_log_text.emit(
                             "检测到通用脚本进程完成代理任务\n正在等待相关程序结束\n请等待10s"
@@ -340,7 +386,8 @@ class GeneralManager(QObject):
                         self.sleep(10)
                     else:
                         logger.error(
-                            f"{self.name} | 配置: {sub[0]} - 代理任务异常: {self.script_result}"
+                            f"配置: {sub[0]} - 代理任务异常: {self.script_result}",
+                            module=f"通用调度器-{self.name}",
                         )
                         # 打印中止信息
                         # 此时，log变量内存储的就是出现异常的日志信息，可以保存或发送用于问题排查
@@ -349,8 +396,16 @@ class GeneralManager(QObject):
                         )
 
                         # 中止相关程序
+                        logger.info(
+                            f"中止相关程序：{self.script_exe_path}",
+                            module=f"通用调度器-{self.name}",
+                        )
                         self.script_process_manager.kill()
                         if self.set["Game"]["Enabled"]:
+                            logger.info(
+                                f"中止游戏/模拟器进程：{list(self.game_process_manager.tracked_pids)}",
+                                module=f"通用调度器-{self.name}",
+                            )
                             self.game_process_manager.kill()
                             if self.set["Game"]["IfForceClose"]:
                                 System.kill_process(self.game_path)
@@ -380,8 +435,8 @@ class GeneralManager(QObject):
                     # 保存运行日志以及统计信息
                     Config.save_general_log(
                         Config.app_path
-                        / f"history/{curdate}/{sub_data['Info']['Name']}/{start_time.strftime("%H-%M-%S")}.log",
-                        self.check_script_log(start_time),
+                        / f"history/{curdate}/{sub_data['Info']['Name']}/{self.log_start_time.strftime("%H-%M-%S")}.log",
+                        self.check_script_log(),
                         self.script_result,
                     )
 
@@ -409,6 +464,10 @@ class GeneralManager(QObject):
                         sub_data["Info"]["RemainedDay"] -= 1
                     sub_data["Data"]["ProxyTimes"] += 1
                     sub[1] = "完成"
+                    logger.success(
+                        f"配置: {sub[0]} - 代理任务完成",
+                        module=f"通用调度器-{self.name}",
+                    )
                     Notify.push_plyer(
                         "成功完成一个自动代理任务！",
                         f"已完成配置 {sub[0].replace("_", " 今天的")}任务",
@@ -418,6 +477,10 @@ class GeneralManager(QObject):
                 else:
                     # 录入代理失败的用户
                     sub[1] = "异常"
+                    logger.error(
+                        f"配置: {sub[0]} - 代理任务异常: {self.script_result}",
+                        module=f"通用调度器-{self.name}",
+                    )
 
                 self.update_user_list.emit(self.sub_list)
 
@@ -429,17 +492,20 @@ class GeneralManager(QObject):
 
             try:
                 # 创建通用脚本任务
-                logger.info(f"{self.name} | 无参数启动通用脚本：{self.script_exe_path}")
+                logger.info(
+                    f"无参数启动通用脚本：{self.script_exe_path}",
+                    module=f"通用调度器-{self.name}",
+                )
                 self.script_process_manager.open_process(
                     self.script_exe_path,
                     tracking_time=60 if self.set["Script"]["IfTrackProcess"] else 0,
                 )
 
                 # 记录当前时间
-                start_time = datetime.now()
+                self.log_start_time = datetime.now()
 
                 # 监测通用脚本运行状态
-                self.start_monitor(start_time)
+                self.start_monitor()
 
                 self.sub_config_path.mkdir(parents=True, exist_ok=True)
                 if self.set["Script"]["ConfigPathMode"] == "文件夹":
@@ -448,16 +514,23 @@ class GeneralManager(QObject):
                         self.sub_config_path,
                         dirs_exist_ok=True,
                     )
+                    logger.success(
+                        f"通用脚本配置已保存到：{self.sub_config_path}",
+                        module=f"通用调度器-{self.name}",
+                    )
                 else:
                     shutil.copy(self.script_config_path, self.sub_config_path)
+                    logger.success(
+                        f"通用脚本配置已保存到：{self.sub_config_path}",
+                        module=f"通用调度器-{self.name}",
+                    )
 
             except Exception as e:
-                logger.error(f"{self.name} | 启动通用脚本时出现异常：{e}")
+                logger.exception(
+                    f"启动通用脚本时出现异常：{e}", module=f"通用调度器-{self.name}"
+                )
                 self.push_info_bar.emit(
-                    "error",
-                    "启动通用脚本时出现异常",
-                    "请检查相关设置",
-                    -1,
+                    "error", "启动通用脚本时出现异常", "请检查相关设置", -1
                 )
 
             result_text = ""
@@ -467,9 +540,17 @@ class GeneralManager(QObject):
 
             # 关闭可能未正常退出的通用脚本进程
             if self.isInterruptionRequested:
+                logger.info(
+                    f"关闭可能未正常退出的通用脚本进程：{self.script_exe_path}",
+                    module=f"通用调度器-{self.name}",
+                )
                 self.script_process_manager.kill(if_force=True)
                 System.kill_process(self.script_exe_path)
                 if self.set["Game"]["Enabled"]:
+                    logger.info(
+                        f"关闭可能未正常退出的游戏/模拟器进程：{list(self.game_process_manager.tracked_pids)}",
+                        module=f"通用调度器-{self.name}",
+                    )
                     self.game_process_manager.kill(if_force=True)
                     if self.set["Game"]["IfForceClose"]:
                         System.kill_process(self.game_path)
@@ -527,7 +608,9 @@ class GeneralManager(QObject):
         self.accomplish.emit({"Time": begin_time, "History": result_text})
 
     def requestInterruption(self) -> None:
-        logger.info(f"{self.name} | 收到任务中止申请")
+        """请求中止通用脚本任务"""
+
+        logger.info(f"收到任务中止申请", module=f"通用调度器-{self.name}")
 
         if len(self.log_monitor.files()) != 0:
             self.interrupt.emit()
@@ -537,16 +620,26 @@ class GeneralManager(QObject):
         self.wait_loop.quit()
 
     def push_question(self, title: str, message: str) -> bool:
+        """推送问题询问"""
+
+        logger.info(
+            f"推送问题询问：{title} - {message}", module=f"通用调度器-{self.name}"
+        )
 
         self.question.emit(title, message)
         self.question_loop.exec()
         return self.response
 
     def __capture_response(self, response: bool) -> None:
+        """捕获问题询问的响应"""
+
+        logger.info(f"捕获问题询问的响应：{response}", module=f"通用调度器-{self.name}")
         self.response = response
 
     def sleep(self, time: int) -> None:
         """非阻塞型等待"""
+
+        logger.info(f"等待 {time} 秒", module=f"通用调度器-{self.name}")
 
         QTimer.singleShot(time * 1000, self.wait_loop.quit)
         self.wait_loop.exec()
@@ -554,12 +647,18 @@ class GeneralManager(QObject):
     def refresh_log(self) -> None:
         """刷新脚本日志"""
 
+        logger.debug(
+            f"刷新通用脚本日志：{self.script_log_path}",
+            module=f"通用调度器-{self.name}",
+        )
+
         with self.script_log_path.open(mode="r", encoding="utf-8") as f:
             pass
 
         # 一分钟内未执行日志变化检查，强制检查一次
         if (datetime.now() - self.last_check_time).total_seconds() > 60:
-            self.log_monitor.fileChanged.emit("1分钟超时检查")
+            logger.info("触发 1 分钟超时检查", module=f"通用调度器-{self.name}")
+            self.check_script_log()
 
     def strptime(
         self, date_string: str, format: str, default_date: datetime
@@ -589,7 +688,7 @@ class GeneralManager(QObject):
 
         return datetime(**datetime_kwargs)
 
-    def check_script_log(self, start_time: datetime) -> list:
+    def check_script_log(self) -> list:
         """获取脚本日志并检查以判断脚本程序运行状态"""
 
         self.last_check_time = datetime.now()
@@ -607,7 +706,7 @@ class GeneralManager(QObject):
                             self.last_check_time,
                         )
 
-                        if entry_time > start_time:
+                        if entry_time > self.log_start_time:
                             if_log_start = True
                             logs.append(entry)
                     except ValueError:
@@ -625,7 +724,7 @@ class GeneralManager(QObject):
         if "自动代理" in self.mode:
 
             # 获取最近一条日志的时间
-            latest_time = start_time
+            latest_time = self.log_start_time
             for _ in logs[::-1]:
                 try:
                     latest_time = self.strptime(
@@ -636,6 +735,11 @@ class GeneralManager(QObject):
                     break
                 except ValueError:
                     pass
+
+            logger.info(
+                f"通用脚本最近一条日志时间：{latest_time}",
+                module=f"通用调度器-{self.name}",
+            )
 
             for success_sign in self.success_log:
                 if success_sign in log:
@@ -668,18 +772,25 @@ class GeneralManager(QObject):
             else:
                 self.script_result = "Success!"
 
+        logger.info(
+            f"通用脚本日志分析结果：{self.script_result}",
+            module=f"通用调度器-{self.name}",
+        )
+
         if self.script_result != "Wait":
 
             self.quit_monitor()
 
         return logs
 
-    def start_monitor(self, start_time: datetime) -> None:
+    def start_monitor(self) -> None:
         """开始监视通用脚本日志"""
 
-        logger.info(f"{self.name} | 开始监视通用脚本日志")
+        logger.info(
+            f"开始监视通用脚本日志，路径：{self.script_log_path}，日志起始时间：{self.log_start_time}",
+            module=f"通用调度器-{self.name}",
+        )
         self.log_monitor.addPath(str(self.script_log_path))
-        self.log_monitor.fileChanged.connect(lambda: self.check_script_log(start_time))
         self.log_monitor_timer.start(1000)
         self.last_check_time = datetime.now()
         self.monitor_loop.exec()
@@ -689,16 +800,27 @@ class GeneralManager(QObject):
 
         if len(self.log_monitor.files()) != 0:
 
-            logger.info(f"{self.name} | 退出通用脚本日志监视")
+            logger.info(
+                f"通用脚本日志监视器移除路径：{self.script_log_path}",
+                module=f"通用调度器-{self.name}",
+            )
             self.log_monitor.removePath(str(self.script_log_path))
-            self.log_monitor.fileChanged.disconnect()
-            self.log_monitor_timer.stop()
-            self.last_check_time = None
-            self.monitor_loop.quit()
+
+        else:
+            logger.warning(
+                f"通用脚本日志监视器没有正在监看的路径：{self.log_monitor.files()}",
+                module=f"通用调度器-{self.name}",
+            )
+
+        self.log_monitor_timer.stop()
+        self.last_check_time = None
+        self.monitor_loop.quit()
+
+        logger.info("通用脚本日志监视锁已释放", module=f"通用调度器-{self.name}")
 
     def set_sub(self, index: str = "") -> dict:
         """配置通用脚本运行参数"""
-        logger.info(f"{self.name} | 配置脚本运行参数: {index}")
+        logger.info(f"开始配置脚本运行参数：{index}", module=f"通用调度器-{self.name}")
 
         # 配置前关闭可能未正常退出的脚本进程
         System.kill_process(self.script_exe_path)
@@ -732,11 +854,15 @@ class GeneralManager(QObject):
                     self.script_config_path,
                 )
 
+        logger.info(f"脚本运行参数配置完成：{index}", module=f"通用调度器-{self.name}")
+
     def execute_script_task(self, script_path: Path, task_name: str) -> bool:
         """执行脚本任务并等待结束"""
 
         try:
-            logger.info(f"{self.name} | 开始执行{task_name}: {script_path}")
+            logger.info(
+                f"开始执行{task_name}: {script_path}", module=f"通用调度器-{self.name}"
+            )
 
             # 根据文件类型选择执行方式
             if script_path.suffix.lower() == ".py":
@@ -744,7 +870,10 @@ class GeneralManager(QObject):
             elif script_path.suffix.lower() in [".bat", ".cmd", ".exe"]:
                 cmd = [str(script_path)]
             elif script_path.suffix.lower() == "":
-                logger.warning(f"{self.name} | {task_name}脚本没有指定后缀名，无法执行")
+                logger.warning(
+                    f"{task_name}脚本没有指定后缀名，无法执行",
+                    module=f"通用调度器-{self.name}",
+                )
                 return False
             else:
                 # 使用系统默认程序打开
@@ -767,23 +896,32 @@ class GeneralManager(QObject):
             )
 
             if result.returncode == 0:
-                logger.info(f"{self.name} | {task_name}执行成功")
+                logger.info(f"{task_name}执行成功", module=f"通用调度器-{self.name}")
                 if result.stdout.strip():
-                    logger.info(f"{self.name} | {task_name}输出: {result.stdout}")
+                    logger.info(
+                        f"{task_name}输出: {result.stdout}",
+                        module=f"通用调度器-{self.name}",
+                    )
                 return True
             else:
                 logger.error(
-                    f"{self.name} | {task_name}执行失败，返回码: {result.returncode}"
+                    f"{task_name}执行失败，返回码: {result.returncode}",
+                    module=f"通用调度器-{self.name}",
                 )
                 if result.stderr.strip():
-                    logger.error(f"{self.name} | {task_name}错误输出: {result.stderr}")
+                    logger.error(
+                        f"{task_name}错误输出: {result.stderr}",
+                        module=f"通用调度器-{self.name}",
+                    )
                 return False
 
         except subprocess.TimeoutExpired:
-            logger.error(f"{self.name} | {task_name}执行超时")
+            logger.error(f"{task_name}执行超时", module=f"通用调度器-{self.name}")
             return False
         except Exception as e:
-            logger.exception(f"{self.name} | 执行{task_name}时出现异常: {e}")
+            logger.exception(
+                f"执行{task_name}时出现异常: {e}", module=f"通用调度器-{self.name}"
+            )
             return False
 
     def push_notification(
@@ -794,6 +932,11 @@ class GeneralManager(QObject):
         sub_data: Dict[str, Dict[str, Union[str, int, bool]]] = None,
     ) -> None:
         """通过所有渠道推送通知"""
+
+        logger.info(
+            f"开始推送通知，模式：{mode}，标题：{title}",
+            module=f"通用调度器-{self.name}",
+        )
 
         env = Environment(
             loader=FileSystemLoader(str(Config.app_path / "resources/html"))
@@ -902,9 +1045,7 @@ class GeneralManager(QObject):
                             sub_data["Notify"]["ToAddress"],
                         )
                     else:
-                        logger.error(
-                            f"{self.name} | 用户邮箱地址为空，无法发送用户单独的邮件通知"
-                        )
+                        logger.error(f"用户邮箱地址为空，无法发送用户单独的邮件通知")
 
                 # 发送ServerChan通知
                 if sub_data["Notify"]["IfServerChan"]:

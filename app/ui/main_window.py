@@ -25,7 +25,6 @@ v4.4
 作者：DLmaster_361
 """
 
-from loguru import logger
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon
 from qfluentwidgets import (
     Action,
@@ -45,7 +44,7 @@ from datetime import datetime, timedelta
 import shutil
 import darkdetect
 
-from app.core import Config, TaskManager, MainTimer, MainInfoBar, SoundPlayer
+from app.core import Config, logger, TaskManager, MainTimer, MainInfoBar, SoundPlayer
 from app.services import Notify, Crypto, System
 from .home import Home
 from .member_manager import MemberManager
@@ -57,6 +56,7 @@ from .setting import Setting
 
 
 class AUTO_MAA(MSFluentWindow):
+    """AUTO_MAA主界面"""
 
     def __init__(self):
         super().__init__()
@@ -77,9 +77,11 @@ class AUTO_MAA(MSFluentWindow):
         self.splashScreen = SplashScreen(self.windowIcon(), self)
         self.show_ui("显示主窗口", if_quick=True)
 
+        # 设置主窗口的引用，便于各组件访问
         Config.main_window = self.window()
 
-        # 创建主窗口
+        # 创建各子窗口
+        logger.info("正在创建各子窗口", module="主窗口")
         self.home = Home(self)
         self.plan_manager = PlanManager(self)
         self.member_manager = MemberManager(self)
@@ -138,8 +140,10 @@ class AUTO_MAA(MSFluentWindow):
             NavigationItemPosition.BOTTOM,
         )
         self.stackedWidget.currentChanged.connect(self.__currentChanged)
+        logger.success("各子窗口创建完成", module="主窗口")
 
         # 创建系统托盘及其菜单
+        logger.info("正在创建系统托盘", module="主窗口")
         self.tray = QSystemTrayIcon(
             QIcon(str(Config.app_path / "resources/icons/AUTO_MAA.ico")), self
         )
@@ -181,9 +185,11 @@ class AUTO_MAA(MSFluentWindow):
         # 设置托盘菜单
         self.tray.setContextMenu(self.tray_menu)
         self.tray.activated.connect(self.on_tray_activated)
+        logger.success("系统托盘创建完成", module="主窗口")
 
         self.set_min_method()
 
+        # 绑定各组件信号
         Config.sub_info_changed.connect(self.member_manager.refresh_dashboard)
         Config.power_sign_changed.connect(self.dispatch_center.update_power_sign)
         TaskManager.create_gui.connect(self.dispatch_center.add_board)
@@ -204,6 +210,8 @@ class AUTO_MAA(MSFluentWindow):
         self.themeListener = SystemThemeListener(self)
         self.themeListener.systemThemeChanged.connect(self.switch_theme)
         self.themeListener.start()
+
+        logger.success("AUTO_MAA主程序初始化完成", module="主窗口")
 
     def switch_theme(self) -> None:
         """切换主题"""
@@ -348,8 +356,10 @@ class AUTO_MAA(MSFluentWindow):
     def start_up_task(self) -> None:
         """启动时任务"""
 
-        # 清理旧日志
-        self.clean_old_logs()
+        logger.info("开始执行启动时任务", module="主窗口")
+
+        # 清理旧历史记录
+        Config.clean_old_history()
 
         # 清理安装包
         if (Config.app_path / "AUTO_MAA-Setup.exe").exists():
@@ -372,6 +382,9 @@ class AUTO_MAA(MSFluentWindow):
         if Config.get(Config.start_IfRunDirectly):
 
             self.start_main_task()
+
+        # 启动定时器
+        MainTimer.start()
 
         # 获取公告
         self.setting.show_notice(if_first=True)
@@ -420,41 +433,16 @@ class AUTO_MAA(MSFluentWindow):
             )
             System.set_power("KillSelf")
 
-    def clean_old_logs(self):
-        """
-        删除超过用户设定天数的日志文件（基于目录日期）
-        """
-
-        if Config.get(Config.function_HistoryRetentionTime) == 0:
-            logger.info("由于用户设置日志永久保留，跳过日志清理")
-            return
-
-        deleted_count = 0
-
-        for date_folder in (Config.app_path / "history").iterdir():
-            if not date_folder.is_dir():
-                continue  # 只处理日期文件夹
-
-            try:
-                # 只检查 `YYYY-MM-DD` 格式的文件夹
-                folder_date = datetime.strptime(date_folder.name, "%Y-%m-%d")
-                if datetime.now() - folder_date > timedelta(
-                    days=Config.get(Config.function_HistoryRetentionTime)
-                ):
-                    shutil.rmtree(date_folder, ignore_errors=True)
-                    deleted_count += 1
-                    logger.info(f"已删除超期日志目录: {date_folder}")
-            except ValueError:
-                logger.warning(f"非日期格式的目录: {date_folder}")
-
-        logger.info(f"清理完成: {deleted_count} 个日期目录")
+        logger.success("启动时任务执行完成", module="主窗口")
 
     def start_main_task(self) -> None:
         """启动主任务"""
 
+        logger.info("正在启动主任务", module="主窗口")
+
         if "调度队列_1" in Config.queue_dict:
 
-            logger.info("自动添加任务：调度队列_1")
+            logger.info("自动添加任务：调度队列_1", module="主窗口")
             TaskManager.add_task(
                 "自动代理_主调度台",
                 "调度队列_1",
@@ -463,17 +451,21 @@ class AUTO_MAA(MSFluentWindow):
 
         elif "脚本_1" in Config.member_dict:
 
-            logger.info("自动添加任务：脚本_1")
+            logger.info("自动添加任务：脚本_1", module="主窗口")
             TaskManager.add_task(
                 "自动代理_主调度台", "自定义队列", {"Queue": {"Member_1": "脚本_1"}}
             )
 
         else:
 
-            logger.warning("启动主任务失败：未找到有效的主任务配置文件")
+            logger.warning(
+                "启动主任务失败：未找到有效的主任务配置文件", module="主窗口"
+            )
             MainInfoBar.push_info_bar(
                 "warning", "启动主任务失败", "「调度队列_1」与「脚本_1」均不存在", -1
             )
+
+        logger.success("主任务启动完成", module="主窗口")
 
     def __currentChanged(self, index: int) -> None:
         """切换界面时任务"""
@@ -489,20 +481,18 @@ class AUTO_MAA(MSFluentWindow):
     def closeEvent(self, event: QCloseEvent):
         """清理残余进程"""
 
+        logger.info("保存窗口位置与大小信息", module="主窗口")
         self.show_ui("隐藏到托盘", if_quick=True)
 
         # 清理各功能线程
-        MainTimer.Timer.stop()
-        MainTimer.Timer.deleteLater()
-        MainTimer.LongTimer.stop()
-        MainTimer.LongTimer.deleteLater()
+        MainTimer.stop()
         TaskManager.stop_task("ALL")
 
         # 关闭主题监听
         self.themeListener.terminate()
         self.themeListener.deleteLater()
 
-        logger.info("AUTO_MAA主程序关闭")
-        logger.info("----------------END----------------")
+        logger.info("AUTO_MAA主程序关闭", module="主窗口")
+        logger.info("----------------END----------------", module="主窗口")
 
         event.accept()

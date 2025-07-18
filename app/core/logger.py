@@ -20,44 +20,15 @@
 
 """
 AUTO_MAA
-AUTO_MAA核心组件包
+AUTO_MAA日志组件
 v4.4
 作者：DLmaster_361
 """
 
-__version__ = "4.2.0"
-__author__ = "DLmaster361 <DLmaster_361@163.com>"
-__license__ = "GPL-3.0 license"
+from loguru import logger as _logger
 
-from .config import (
-    QueueConfig,
-    MaaConfig,
-    MaaUserConfig,
-    MaaPlanConfig,
-    GeneralConfig,
-    GeneralSubConfig,
-    Config,
+# 设置日志 module 字段默认值
+logger = _logger.patch(
+    lambda record: record["extra"].setdefault("module", "未知模块") or True
 )
-from .logger import logger
-from .main_info_bar import MainInfoBar
-from .network import Network
-from .sound_player import SoundPlayer
-from .task_manager import Task, TaskManager
-from .timer import MainTimer
-
-__all__ = [
-    "Config",
-    "QueueConfig",
-    "MaaConfig",
-    "MaaUserConfig",
-    "MaaPlanConfig",
-    "GeneralConfig",
-    "GeneralSubConfig",
-    "logger",
-    "MainInfoBar",
-    "Network",
-    "SoundPlayer",
-    "Task",
-    "TaskManager",
-    "MainTimer",
-]
+logger.remove(0)

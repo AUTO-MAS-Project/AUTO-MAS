@@ -25,7 +25,6 @@ v4.4
 作者：DLmaster_361
 """
 
-from loguru import logger
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -51,11 +50,12 @@ from pathlib import Path
 from typing import List, Dict
 
 
-from app.core import Config, SoundPlayer
+from app.core import Config, SoundPlayer, logger
 from .Widget import StatefulItemCard, QuantifiedItemCard, QuickExpandGroupCard
 
 
 class History(QWidget):
+    """历史记录界面"""
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -81,10 +81,21 @@ class History(QWidget):
         self.history_card_list = []
 
     def reload_history(self, mode: str, start_date: QDate, end_date: QDate) -> None:
-        """加载历史记录界面"""
+        """
+        加载历史记录界面
 
+        :param mode: 查询模式
+        :param start_date: 查询范围起始日期
+        :param end_date: 查询范围结束日期
+        """
+
+        logger.info(
+            f"查询历史记录: {mode}, {start_date.toString()}, {end_date.toString()}",
+            module="历史记录",
+        )
         SoundPlayer.play("历史记录查询")
 
+        # 清空已有的历史记录卡片
         while self.content_layout.count() > 0:
             item = self.content_layout.takeAt(0)
             if item.spacerItem():
@@ -100,6 +111,7 @@ class History(QWidget):
             datetime(end_date.year(), end_date.month(), end_date.day()),
         )
 
+        # 生成历史记录卡片并添加到布局中
         for date, user_dict in history_dict.items():
 
             self.history_card_list.append(self.HistoryCard(date, user_dict, self))
@@ -154,7 +166,13 @@ class History(QWidget):
             Layout.addWidget(self.search)
 
         def select_date(self, date: str) -> None:
-            """选中最近一段时间并启动查询"""
+            """
+            选中最近一段时间并启动查询
+
+            :param date: 选择的时间段（"week" 或 "month"）
+            """
+
+            logger.info(f"选择最近{date}的记录并开始查询", module="历史记录")
 
             server_date = Config.server_date()
             if date == "week":
@@ -187,6 +205,7 @@ class History(QWidget):
 
             self.user_history_card_list = []
 
+            # 生成用户历史记录卡片并添加到布局中
             for user, info in user_dict.items():
                 self.user_history_card_list.append(
                     self.UserHistoryCard(user, info, self)
@@ -219,7 +238,12 @@ class History(QWidget):
                 self.update_info("数据总览")
 
             def get_statistics(self, mode: str) -> dict:
-                """生成GUI相应结构化统计数据"""
+                """
+                生成GUI相应结构化统计数据
+
+                :param mode: 查询模式
+                :return: 结构化统计数据
+                """
 
                 history_info = Config.merge_statistic_info(
                     self.user_history if mode == "数据总览" else [Path(mode)]
@@ -244,7 +268,11 @@ class History(QWidget):
                 return statistics_info
 
             def update_info(self, index: str) -> None:
-                """更新信息"""
+                """
+                更新信息到UI界面
+
+                :param index: 选择的索引
+                """
 
                 # 移除已有统计信息UI组件
                 while self.statistics_card.count() > 0:
@@ -254,8 +282,10 @@ class History(QWidget):
                     elif item.widget():
                         item.widget().deleteLater()
 
+                # 统计信息上传至 UI
                 if index == "数据总览":
 
+                    # 生成数据统计信息卡片组
                     for name, item_list in self.get_statistics("数据总览").items():
 
                         statistics_card = self.StatisticsCard(name, item_list, self)
@@ -268,10 +298,12 @@ class History(QWidget):
                     single_history = self.get_statistics(index)
                     log_path = Path(index).with_suffix(".log")
 
+                    # 生成单个历史记录的统计信息卡片组
                     for name, item_list in single_history.items():
                         statistics_card = self.StatisticsCard(name, item_list, self)
                         self.statistics_card.addWidget(statistics_card)
 
+                    # 显示日志信息并绑定点击事件
                     with log_path.open("r", encoding="utf-8") as f:
                         log = f.read()
 
@@ -291,6 +323,7 @@ class History(QWidget):
                 self.setMinimumHeight(300)
 
             class IndexCard(HeaderCardWidget):
+                """历史记录索引卡片组"""
 
                 index_changed = Signal(str)
 
@@ -304,9 +337,11 @@ class History(QWidget):
 
                     self.index_cards: List[StatefulItemCard] = []
 
+                    # 生成索引卡片信息
                     index_list = Config.merge_statistic_info(history_list)["index"]
                     index_list.insert(0, ["数据总览", "运行", "数据总览"])
 
+                    # 生成索引卡片组件并绑定点击事件
                     for index in index_list:
 
                         self.index_cards.append(StatefulItemCard(index[:2]))
@@ -318,6 +353,7 @@ class History(QWidget):
                     self.Layout.addStretch(1)
 
             class StatisticsCard(HeaderCardWidget):
+                """历史记录统计信息卡片组"""
 
                 def __init__(self, name: str, item_list: list, parent=None):
                     super().__init__(parent)
@@ -340,6 +376,7 @@ class History(QWidget):
                     self.Layout.addStretch(1)
 
             class LogCard(HeaderCardWidget):
+                """历史记录日志卡片"""
 
                 def __init__(self, parent=None):
                     super().__init__(parent)

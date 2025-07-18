@@ -48,12 +48,7 @@ class ProcessManager(QObject):
         self.check_timer = QTimer()
         self.check_timer.timeout.connect(self.check_processes)
 
-    def open_process(
-        self,
-        path: Path,
-        args: list = [],
-        tracking_time: int = 60,
-    ) -> int:
+    def open_process(self, path: Path, args: list = [], tracking_time: int = 60) -> int:
         """
         启动一个新进程并返回其pid，并开始监视该进程
 
@@ -89,7 +84,7 @@ class ProcessManager(QObject):
 
         # 扫描并记录所有相关进程
         try:
-            # 获取主进程及其子进程
+            # 获取主进程
             main_proc = psutil.Process(self.main_pid)
             self.tracked_pids.add(self.main_pid)
 
