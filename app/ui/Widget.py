@@ -59,7 +59,6 @@ from qfluentwidgets import (
     MessageBox,
     SubtitleLabel,
     SettingCard,
-    SpinBox,
     FluentIconBase,
     Signal,
     ComboBox,
@@ -71,7 +70,6 @@ from qfluentwidgets import (
     BodyLabel,
     QConfig,
     ConfigItem,
-    TimeEdit,
     OptionsConfigItem,
     TeachingTip,
     TransparentToolButton,
@@ -97,6 +95,23 @@ from qfluentwidgets.common.overload import singledispatchmethod
 
 from app.core import Config
 from app.services import Crypto
+
+from qfluentwidgets import SpinBox as SpinBoxBase
+from qfluentwidgets import TimeEdit as TimeEditBase
+
+
+class SpinBox(SpinBoxBase):
+    """忽视滚轮事件的SpinBox"""
+
+    def wheelEvent(self, event):
+        event.ignore()
+
+
+class TimeEdit(TimeEditBase):
+    """忽视滚轮事件的TimeEdit"""
+
+    def wheelEvent(self, event):
+        event.ignore()
 
 
 class LineEditMessageBox(MessageBoxBase):
