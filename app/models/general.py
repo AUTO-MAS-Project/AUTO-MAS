@@ -384,6 +384,31 @@ class GeneralManager(QObject):
                         )
 
                         self.sleep(10)
+
+                        # 更新脚本配置文件
+                        if self.set["Script"]["UpdateConfigMode"] in [
+                            "Success",
+                            "Always",
+                        ]:
+
+                            if self.set["Script"]["ConfigPathMode"] == "文件夹":
+                                shutil.copytree(
+                                    self.script_config_path,
+                                    self.data[sub[2]]["Path"] / "ConfigFiles",
+                                    dirs_exist_ok=True,
+                                )
+                            else:
+                                shutil.copy(
+                                    self.script_config_path,
+                                    self.data[sub[2]]["Path"]
+                                    / "ConfigFiles"
+                                    / self.script_config_path.name,
+                                )
+                            logger.success(
+                                "通用脚本配置文件已更新",
+                                module=f"通用调度器-{self.name}",
+                            )
+
                     else:
                         logger.error(
                             f"配置: {sub[0]} - 代理任务异常: {self.script_result}",
@@ -421,7 +446,32 @@ class GeneralManager(QObject):
                             self.play_sound.emit("子任务失败")
                         else:
                             self.play_sound.emit(self.script_result)
+
                         self.sleep(10)
+
+                        # 更新脚本配置文件
+                        if self.set["Script"]["UpdateConfigMode"] in [
+                            "Failure",
+                            "Always",
+                        ]:
+
+                            if self.set["Script"]["ConfigPathMode"] == "文件夹":
+                                shutil.copytree(
+                                    self.script_config_path,
+                                    self.data[sub[2]]["Path"] / "ConfigFiles",
+                                    dirs_exist_ok=True,
+                                )
+                            else:
+                                shutil.copy(
+                                    self.script_config_path,
+                                    self.data[sub[2]]["Path"]
+                                    / "ConfigFiles"
+                                    / self.script_config_path.name,
+                                )
+                            logger.success(
+                                "通用脚本配置文件已更新",
+                                module=f"通用调度器-{self.name}",
+                            )
 
                     # 执行任务后脚本
                     if (

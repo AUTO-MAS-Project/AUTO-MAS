@@ -2457,6 +2457,20 @@ class MemberManager(QWidget):
                             configItem=self.config.Script_ConfigPath,
                             parent=self,
                         )
+                        self.card_UpdateConfigMode = ComboBoxSettingCard(
+                            icon=FluentIcon.PAGE_RIGHT,
+                            title="脚本配置文件更新时机",
+                            content="在选定的时机自动更新配置文件",
+                            texts=[
+                                "从不",
+                                "仅任务成功后",
+                                "仅任务失败后",
+                                "任务完成后",
+                            ],
+                            qconfig=self.config,
+                            configItem=self.config.Script_UpdateConfigMode,
+                            parent=self,
+                        )
                         self.card_LogPath = PathSettingCard(
                             icon=FluentIcon.FOLDER,
                             title="脚本日志文件路径 - [必填]",
@@ -2549,6 +2563,7 @@ class MemberManager(QWidget):
                         Layout.addWidget(self.card_Arguments)
                         Layout.addWidget(self.card_IfTrackProcess)
                         Layout.addWidget(self.card_ConfigPath)
+                        Layout.addWidget(self.card_UpdateConfigMode)
                         Layout.addWidget(self.card_LogPath)
                         Layout.addWidget(self.card_LogPathFormat)
                         Layout.addLayout(h_layout)
