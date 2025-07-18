@@ -25,7 +25,6 @@ v4.4
 作者：DLmaster_361
 """
 
-from loguru import logger
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -42,7 +41,7 @@ from qfluentwidgets import (
 )
 from typing import List
 
-from app.core import QueueConfig, Config, MainInfoBar, SoundPlayer
+from app.core import QueueConfig, Config, MainInfoBar, SoundPlayer, logger
 from .Widget import (
     SwitchSettingCard,
     ComboBoxSettingCard,
@@ -70,36 +69,31 @@ class QueueManager(QWidget):
         # 逐个添加动作
         self.tools.addActions(
             [
+                Action(FluentIcon.ADD_TO, "新建调度队列", triggered=self.add_queue),
                 Action(
-                    FluentIcon.ADD_TO, "新建调度队列", triggered=self.add_setting_box
-                ),
-                Action(
-                    FluentIcon.REMOVE_FROM,
-                    "删除调度队列",
-                    triggered=self.del_setting_box,
+                    FluentIcon.REMOVE_FROM, "删除调度队列", triggered=self.del_queue
                 ),
             ]
         )
         self.tools.addSeparator()
         self.tools.addActions(
             [
-                Action(
-                    FluentIcon.LEFT_ARROW, "向左移动", triggered=self.left_setting_box
-                ),
-                Action(
-                    FluentIcon.RIGHT_ARROW, "向右移动", triggered=self.right_setting_box
-                ),
+                Action(FluentIcon.LEFT_ARROW, "向左移动", triggered=self.left_queue),
+                Action(FluentIcon.RIGHT_ARROW, "向右移动", triggered=self.right_queue),
             ]
         )
 
         layout.addWidget(self.tools)
         layout.addWidget(self.queue_manager)
 
-    def add_setting_box(self):
+    def add_queue(self):
         """添加一个调度队列"""
 
         index = len(Config.queue_dict) + 1
 
+        logger.info(f"正在添加调度队列_{index}", module="队列管理")
+
+        # 初始化队列配置
         queue_config = QueueConfig()
         queue_config.load(
             Config.app_path / f"config/QueueConfig/调度队列_{index}.json", queue_config
@@ -111,27 +105,28 @@ class QueueManager(QWidget):
             "Config": queue_config,
         }
 
+        # 添加到配置界面
         self.queue_manager.add_SettingBox(index)
         self.queue_manager.switch_SettingBox(index)
 
-        logger.success(f"调度队列_{index} 添加成功")
+        logger.success(f"调度队列_{index} 添加成功", module="队列管理")
         MainInfoBar.push_info_bar("success", "操作成功", f"添加 调度队列_{index}", 3000)
         SoundPlayer.play("添加调度队列")
 
-    def del_setting_box(self):
+    def del_queue(self):
         """删除一个调度队列实例"""
 
         name = self.queue_manager.pivot.currentRouteKey()
 
         if name is None:
-            logger.warning("未选择调度队列")
+            logger.warning("未选择调度队列", module="队列管理")
             MainInfoBar.push_info_bar(
                 "warning", "未选择调度队列", "请先选择一个调度队列", 5000
             )
             return None
 
         if name in Config.running_list:
-            logger.warning("调度队列正在运行")
+            logger.warning("调度队列正在运行", module="队列管理")
             MainInfoBar.push_info_bar(
                 "warning", "调度队列正在运行", "请先停止调度队列", 5000
             )
@@ -140,8 +135,11 @@ class QueueManager(QWidget):
         choice = MessageBox("确认", f"确定要删除 {name} 吗？", self.window())
         if choice.exec():
 
+            logger.info(f"正在删除调度队列 {name}", module="队列管理")
+
             self.queue_manager.clear_SettingBox()
 
+            # 删除队列配置文件并同步到相关配置项
             Config.queue_dict[name]["Path"].unlink()
             for i in range(int(name[5:]) + 1, len(Config.queue_dict) + 1):
                 if Config.queue_dict[f"调度队列_{i}"]["Path"].exists():
@@ -153,17 +151,17 @@ class QueueManager(QWidget):
 
             self.queue_manager.show_SettingBox(max(int(name[5:]) - 1, 1))
 
-            logger.success(f"{name} 删除成功")
+            logger.success(f"{name} 删除成功", module="队列管理")
             MainInfoBar.push_info_bar("success", "操作成功", f"删除 {name}", 3000)
             SoundPlayer.play("删除调度队列")
 
-    def left_setting_box(self):
+    def left_queue(self):
         """向左移动调度队列实例"""
 
         name = self.queue_manager.pivot.currentRouteKey()
 
         if name is None:
-            logger.warning("未选择调度队列")
+            logger.warning("未选择调度队列", module="队列管理")
             MainInfoBar.push_info_bar(
                 "warning", "未选择调度队列", "请先选择一个调度队列", 5000
             )
@@ -172,21 +170,24 @@ class QueueManager(QWidget):
         index = int(name[5:])
 
         if index == 1:
-            logger.warning("向左移动调度队列时已到达最左端")
+            logger.warning("向左移动调度队列时已到达最左端", module="队列管理")
             MainInfoBar.push_info_bar(
                 "warning", "已经是第一个调度队列", "无法向左移动", 5000
             )
             return None
 
         if name in Config.running_list or f"调度队列_{index-1}" in Config.running_list:
-            logger.warning("相关调度队列正在运行")
+            logger.warning("相关调度队列正在运行", module="队列管理")
             MainInfoBar.push_info_bar(
                 "warning", "相关调度队列正在运行", "请先停止调度队列", 5000
             )
             return None
 
+        logger.info(f"正在左移调度队列 {name}", module="队列管理")
+
         self.queue_manager.clear_SettingBox()
 
+        # 移动配置文件并同步到相关配置项
         Config.queue_dict[name]["Path"].rename(
             Config.queue_dict[name]["Path"].with_name("调度队列_0.json")
         )
@@ -199,16 +200,16 @@ class QueueManager(QWidget):
 
         self.queue_manager.show_SettingBox(index - 1)
 
-        logger.success(f"{name} 左移成功")
+        logger.success(f"{name} 左移成功", module="队列管理")
         MainInfoBar.push_info_bar("success", "操作成功", f"左移 {name}", 3000)
 
-    def right_setting_box(self):
+    def right_queue(self):
         """向右移动调度队列实例"""
 
         name = self.queue_manager.pivot.currentRouteKey()
 
         if name is None:
-            logger.warning("未选择调度队列")
+            logger.warning("未选择调度队列", module="队列管理")
             MainInfoBar.push_info_bar(
                 "warning", "未选择调度队列", "请先选择一个调度队列", 5000
             )
@@ -217,21 +218,24 @@ class QueueManager(QWidget):
         index = int(name[5:])
 
         if index == len(Config.queue_dict):
-            logger.warning("向右移动调度队列时已到达最右端")
+            logger.warning("向右移动调度队列时已到达最右端", module="队列管理")
             MainInfoBar.push_info_bar(
                 "warning", "已经是最后一个调度队列", "无法向右移动", 5000
             )
             return None
 
         if name in Config.running_list or f"调度队列_{index+1}" in Config.running_list:
-            logger.warning("相关调度队列正在运行")
+            logger.warning("相关调度队列正在运行", module="队列管理")
             MainInfoBar.push_info_bar(
                 "warning", "相关调度队列正在运行", "请先停止调度队列", 5000
             )
             return None
 
+        logger.info(f"正在右移调度队列 {name}", module="队列管理")
+
         self.queue_manager.clear_SettingBox()
 
+        # 移动配置文件并同步到相关配置项
         Config.queue_dict[name]["Path"].rename(
             Config.queue_dict[name]["Path"].with_name("调度队列_0.json")
         )
@@ -244,12 +248,13 @@ class QueueManager(QWidget):
 
         self.queue_manager.show_SettingBox(index + 1)
 
-        logger.success(f"{name} 右移成功")
+        logger.success(f"{name} 右移成功", module="队列管理")
         MainInfoBar.push_info_bar("success", "操作成功", f"右移 {name}", 3000)
 
     def reload_member_name(self):
         """刷新调度队列成员"""
 
+        # 获取成员列表
         member_list = [
             ["禁用"] + [_ for _ in Config.member_dict.keys()],
             ["未启用"]
@@ -337,7 +342,12 @@ class QueueManager(QWidget):
             self.switch_SettingBox(index)
 
         def switch_SettingBox(self, index: int, if_change_pivot: bool = True) -> None:
-            """切换到指定的子界面"""
+            """
+            切换到指定的子界面并切换到指定的子页面
+
+            :param index: 要切换到的子界面索引
+            :param if_change_pivot: 是否更改导航栏当前项
+            """
 
             if len(Config.queue_dict) == 0:
                 return None

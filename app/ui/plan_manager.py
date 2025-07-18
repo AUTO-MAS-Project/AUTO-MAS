@@ -25,7 +25,6 @@ v4.4
 作者：DLmaster_361
 """
 
-from loguru import logger
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -43,7 +42,7 @@ from qfluentwidgets import (
 from typing import List, Dict, Union
 import shutil
 
-from app.core import Config, MainInfoBar, MaaPlanConfig, SoundPlayer
+from app.core import Config, MainInfoBar, MaaPlanConfig, SoundPlayer, logger
 from .Widget import (
     ComboBoxMessageBox,
     LineEditSettingCard,
@@ -66,27 +65,20 @@ class PlanManager(QWidget):
         layout = QVBoxLayout(self)
 
         self.tools = CommandBar()
-
         self.plan_manager = self.PlanSettingBox(self)
 
         # 逐个添加动作
         self.tools.addActions(
             [
-                Action(FluentIcon.ADD_TO, "新建计划表", triggered=self.add_setting_box),
-                Action(
-                    FluentIcon.REMOVE_FROM, "删除计划表", triggered=self.del_setting_box
-                ),
+                Action(FluentIcon.ADD_TO, "新建计划表", triggered=self.add_plan),
+                Action(FluentIcon.REMOVE_FROM, "删除计划表", triggered=self.del_plan),
             ]
         )
         self.tools.addSeparator()
         self.tools.addActions(
             [
-                Action(
-                    FluentIcon.LEFT_ARROW, "向左移动", triggered=self.left_setting_box
-                ),
-                Action(
-                    FluentIcon.RIGHT_ARROW, "向右移动", triggered=self.right_setting_box
-                ),
+                Action(FluentIcon.LEFT_ARROW, "向左移动", triggered=self.left_plan),
+                Action(FluentIcon.RIGHT_ARROW, "向右移动", triggered=self.right_plan),
             ]
         )
         self.tools.addSeparator()
@@ -94,7 +86,7 @@ class PlanManager(QWidget):
         layout.addWidget(self.tools)
         layout.addWidget(self.plan_manager)
 
-    def add_setting_box(self):
+    def add_plan(self):
         """添加一个计划表"""
 
         choice = ComboBoxMessageBox(
@@ -109,6 +101,7 @@ class PlanManager(QWidget):
 
                 index = len(Config.plan_dict) + 1
 
+                # 初始化 MaaPlanConfig
                 maa_plan_config = MaaPlanConfig()
                 maa_plan_config.load(
                     Config.app_path / f"config/MaaPlanConfig/计划_{index}/config.json",
@@ -122,29 +115,30 @@ class PlanManager(QWidget):
                     "Config": maa_plan_config,
                 }
 
+                # 添加计划表到界面
                 self.plan_manager.add_MaaPlanSettingBox(index)
                 self.plan_manager.switch_SettingBox(index)
 
-                logger.success(f"计划管理 计划_{index} 添加成功")
+                logger.success(f"计划管理 计划_{index} 添加成功", module="计划管理")
                 MainInfoBar.push_info_bar(
                     "success", "操作成功", f"添加计划表 计划_{index}", 3000
                 )
                 SoundPlayer.play("添加计划表")
 
-    def del_setting_box(self):
+    def del_plan(self):
         """删除一个计划表"""
 
         name = self.plan_manager.pivot.currentRouteKey()
 
         if name is None:
-            logger.warning("删除计划表时未选择计划表")
+            logger.warning("删除计划表时未选择计划表", module="计划管理")
             MainInfoBar.push_info_bar(
                 "warning", "未选择计划表", "请选择一个计划表", 5000
             )
             return None
 
         if len(Config.running_list) > 0:
-            logger.warning("删除计划表时调度队列未停止运行")
+            logger.warning("删除计划表时调度队列未停止运行", module="计划管理")
             MainInfoBar.push_info_bar(
                 "warning", "调度中心正在执行任务", "请等待或手动中止任务", 5000
             )
@@ -153,8 +147,11 @@ class PlanManager(QWidget):
         choice = MessageBox("确认", f"确定要删除 {name} 吗？", self.window())
         if choice.exec():
 
+            logger.info(f"正在删除计划表 {name}", module="计划管理")
+
             self.plan_manager.clear_SettingBox()
 
+            # 删除计划表配置文件并同步到相关配置项
             shutil.rmtree(Config.plan_dict[name]["Path"])
             Config.change_plan(name, "固定")
             for i in range(int(name[3:]) + 1, len(Config.plan_dict) + 1):
@@ -166,17 +163,17 @@ class PlanManager(QWidget):
 
             self.plan_manager.show_SettingBox(max(int(name[3:]) - 1, 1))
 
-            logger.success(f"计划表 {name} 删除成功")
+            logger.success(f"计划表 {name} 删除成功", module="计划管理")
             MainInfoBar.push_info_bar("success", "操作成功", f"删除计划表 {name}", 3000)
             SoundPlayer.play("删除计划表")
 
-    def left_setting_box(self):
+    def left_plan(self):
         """向左移动计划表"""
 
         name = self.plan_manager.pivot.currentRouteKey()
 
         if name is None:
-            logger.warning("向左移动计划表时未选择计划表")
+            logger.warning("向左移动计划表时未选择计划表", module="计划管理")
             MainInfoBar.push_info_bar(
                 "warning", "未选择计划表", "请选择一个计划表", 5000
             )
@@ -185,21 +182,24 @@ class PlanManager(QWidget):
         index = int(name[3:])
 
         if index == 1:
-            logger.warning("向左移动计划表时已到达最左端")
+            logger.warning("向左移动计划表时已到达最左端", module="计划管理")
             MainInfoBar.push_info_bar(
                 "warning", "已经是第一个计划表", "无法向左移动", 5000
             )
             return None
 
         if len(Config.running_list) > 0:
-            logger.warning("向左移动计划表时调度队列未停止运行")
+            logger.warning("向左移动计划表时调度队列未停止运行", module="计划管理")
             MainInfoBar.push_info_bar(
                 "warning", "调度中心正在执行任务", "请等待或手动中止任务", 5000
             )
             return None
 
+        logger.info(f"正在左移计划表 {name}", module="计划管理")
+
         self.plan_manager.clear_SettingBox()
 
+        # 移动配置文件并同步到相关配置项
         Config.plan_dict[name]["Path"].rename(
             Config.plan_dict[name]["Path"].with_name("计划_0")
         )
@@ -215,16 +215,16 @@ class PlanManager(QWidget):
 
         self.plan_manager.show_SettingBox(index - 1)
 
-        logger.success(f"计划表 {name} 左移成功")
+        logger.success(f"计划表 {name} 左移成功", module="计划管理")
         MainInfoBar.push_info_bar("success", "操作成功", f"左移计划表 {name}", 3000)
 
-    def right_setting_box(self):
+    def right_plan(self):
         """向右移动计划表"""
 
         name = self.plan_manager.pivot.currentRouteKey()
 
         if name is None:
-            logger.warning("向右移动计划表时未选择计划表")
+            logger.warning("向右移动计划表时未选择计划表", module="计划管理")
             MainInfoBar.push_info_bar(
                 "warning", "未选择计划表", "请选择一个计划表", 5000
             )
@@ -233,21 +233,24 @@ class PlanManager(QWidget):
         index = int(name[3:])
 
         if index == len(Config.plan_dict):
-            logger.warning("向右移动计划表时已到达最右端")
+            logger.warning("向右移动计划表时已到达最右端", module="计划管理")
             MainInfoBar.push_info_bar(
                 "warning", "已经是最后一个计划表", "无法向右移动", 5000
             )
             return None
 
         if len(Config.running_list) > 0:
-            logger.warning("向右移动计划表时调度队列未停止运行")
+            logger.warning("向右移动计划表时调度队列未停止运行", module="计划管理")
             MainInfoBar.push_info_bar(
                 "warning", "调度中心正在执行任务", "请等待或手动中止任务", 5000
             )
             return None
 
+        logger.info(f"正在右移计划表 {name}", module="计划管理")
+
         self.plan_manager.clear_SettingBox()
 
+        # 移动配置文件并同步到相关配置项
         Config.plan_dict[name]["Path"].rename(
             Config.plan_dict[name]["Path"].with_name("计划_0")
         )
@@ -263,7 +266,7 @@ class PlanManager(QWidget):
 
         self.plan_manager.show_SettingBox(index + 1)
 
-        logger.success(f"计划表 {name} 右移成功")
+        logger.success(f"计划表 {name} 右移成功", module="计划管理")
         MainInfoBar.push_info_bar("success", "操作成功", f"右移计划表 {name}", 3000)
 
     class PlanSettingBox(QWidget):
@@ -297,7 +300,11 @@ class PlanManager(QWidget):
             self.show_SettingBox(1)
 
         def show_SettingBox(self, index) -> None:
-            """加载所有子界面"""
+            """
+            加载所有子界面并切换到指定的子界面
+
+            :param index: 要显示的子界面索引
+            """
 
             Config.search_plan()
 
@@ -308,7 +315,12 @@ class PlanManager(QWidget):
             self.switch_SettingBox(index)
 
         def switch_SettingBox(self, index: int, if_chang_pivot: bool = True) -> None:
-            """切换到指定的子界面"""
+            """
+            切换到指定的子界面
+
+            :param index: 要切换到的子界面索引
+            :param if_chang_pivot: 是否更改 pivot 的当前项
+            """
 
             if len(Config.plan_dict) == 0:
                 return None
@@ -331,7 +343,11 @@ class PlanManager(QWidget):
             self.pivot.clear()
 
         def add_MaaPlanSettingBox(self, uid: int) -> None:
-            """添加一个MAA设置界面"""
+            """
+            添加一个MAA设置界面
+
+            :param uid: MAA计划表的唯一标识符
+            """
 
             maa_plan_setting_box = self.MaaPlanSettingBox(uid, self)
 
@@ -475,6 +491,7 @@ class PlanManager(QWidget):
                         )
 
             def refresh_stage(self):
+                """刷新关卡列表"""
 
                 for group, name_dict in self.item_dict.items():
 

@@ -25,7 +25,6 @@ v4.4
 作者：DLmaster_361
 """
 
-from loguru import logger
 from PySide6.QtWidgets import QWidget, QVBoxLayout
 from PySide6.QtGui import QIcon
 from PySide6.QtCore import Qt
@@ -49,7 +48,7 @@ from packaging import version
 from pathlib import Path
 from typing import Dict, Union
 
-from app.core import Config, MainInfoBar, Network, SoundPlayer
+from app.core import Config, MainInfoBar, Network, SoundPlayer, logger
 from app.services import Crypto, System, Notify
 from .downloader import DownloadManager
 from .Widget import (
@@ -124,7 +123,7 @@ class Setting(QWidget):
                 self.window(),
             )
             if choice.exec():
-                logger.success("确认授权bilibili游戏隐私政策")
+                logger.success("确认授权bilibili游戏隐私政策", module="设置界面")
                 MainInfoBar.push_info_bar(
                     "success", "操作成功", "已确认授权bilibili游戏隐私政策", 3000
                 )
@@ -132,7 +131,7 @@ class Setting(QWidget):
                 Config.set(Config.function_IfAgreeBilibili, False)
         else:
 
-            logger.info("取消授权bilibili游戏隐私政策")
+            logger.info("取消授权bilibili游戏隐私政策", module="设置界面")
             MainInfoBar.push_info_bar(
                 "info", "操作成功", "已取消授权bilibili游戏隐私政策", 3000
             )
@@ -158,7 +157,7 @@ class Setting(QWidget):
 
                 MuMu_splash_ads_path.touch()
 
-                logger.success("开启跳过MuMu启动广告功能")
+                logger.success("开启跳过MuMu启动广告功能", module="设置界面")
                 MainInfoBar.push_info_bar(
                     "success", "操作成功", "已开启跳过MuMu启动广告功能", 3000
                 )
@@ -170,7 +169,7 @@ class Setting(QWidget):
             if MuMu_splash_ads_path.exists() and MuMu_splash_ads_path.is_file():
                 MuMu_splash_ads_path.unlink()
 
-            logger.info("关闭跳过MuMu启动广告功能")
+            logger.info("关闭跳过MuMu启动广告功能", module="设置界面")
             MainInfoBar.push_info_bar(
                 "info", "操作成功", "已关闭跳过MuMu启动广告功能", 3000
             )
@@ -181,6 +180,8 @@ class Setting(QWidget):
         if Config.key_path.exists():
             return None
 
+        logger.info("未设置管理密钥，开始要求用户进行设置", module="设置界面")
+
         while True:
 
             choice = LineEditMessageBox(
@@ -188,6 +189,7 @@ class Setting(QWidget):
             )
             if choice.exec() and choice.input.text() != "":
                 Crypto.get_PASSWORD(choice.input.text())
+                logger.success("成功设置管理密钥", module="设置界面")
                 break
             else:
                 choice = MessageBox(
@@ -207,10 +209,7 @@ class Setting(QWidget):
         while if_change:
 
             choice = LineEditMessageBox(
-                self.window(),
-                "请输入旧的管理密钥",
-                "旧管理密钥",
-                "密码",
+                self.window(), "请输入旧的管理密钥", "旧管理密钥", "密码"
             )
             if choice.exec() and choice.input.text() != "":
 
@@ -231,6 +230,7 @@ class Setting(QWidget):
 
                             # 修改管理密钥
                             Crypto.change_PASSWORD(PASSWORD_old, choice.input.text())
+                            logger.success("成功修改管理密钥", module="设置界面")
                             MainInfoBar.push_info_bar(
                                 "success", "操作成功", "管理密钥修改成功", 3000
                             )
@@ -291,6 +291,7 @@ class Setting(QWidget):
 
                         # 重置管理密钥
                         Crypto.reset_PASSWORD(choice.input.text())
+                        logger.success("成功重置管理密钥", module="设置界面")
                         MainInfoBar.push_info_bar(
                             "success", "操作成功", "管理密钥重置成功", 3000
                         )
@@ -316,7 +317,12 @@ class Setting(QWidget):
                 )
 
     def check_update(self, if_show: bool = False, if_first: bool = False) -> None:
-        """检查版本更新，调起文件下载进程"""
+        """
+        检查版本更新，调起更新线程
+
+        :param if_show: 是否显示更新信息
+        :param if_first: 是否为启动时检查更新
+        """
 
         current_version = list(map(int, Config.VERSION.split(".")))
 
@@ -339,7 +345,9 @@ class Setting(QWidget):
 
                 if version_info["code"] != 0:
 
-                    logger.error(f"获取版本信息时出错：{version_info['msg']}")
+                    logger.error(
+                        f"获取版本信息时出错：{version_info['msg']}", module="设置界面"
+                    )
 
                     error_remark_dict = {
                         1001: "获取版本信息的URL参数不正确",
@@ -372,7 +380,10 @@ class Setting(QWidget):
 
                     return None
 
-            logger.warning(f"获取版本信息时出错：{network_result['error_message']}")
+            logger.warning(
+                f"获取版本信息时出错：{network_result['error_message']}",
+                module="设置界面",
+            )
             MainInfoBar.push_info_bar(
                 "warning",
                 "获取版本信息时出错",
@@ -470,11 +481,12 @@ class Setting(QWidget):
                         download_info = network_result["response_json"]
                     else:
                         logger.warning(
-                            f"获取应用列表时出错：{network_result['error_message']}"
+                            f"获取下载信息时出错：{network_result['error_message']}",
+                            module="设置界面",
                         )
                         MainInfoBar.push_info_bar(
                             "warning",
-                            "获取应用列表时出错",
+                            "获取下载信息时出错",
                             f"网络错误：{network_result['status_code']}",
                             5000,
                         )
@@ -491,6 +503,8 @@ class Setting(QWidget):
                         ),
                         "download_dict": download_info["download_dict"],
                     }
+
+                logger.info("开始执行更新任务", module="设置界面")
 
                 self.downloader = DownloadManager(
                     Config.app_path, "AUTO_MAA", remote_version, download_config
@@ -526,6 +540,9 @@ class Setting(QWidget):
                 SoundPlayer.play("无新版本")
 
     def start_setup(self) -> None:
+        """启动安装程序"""
+
+        logger.info("启动安装程序", module="设置界面")
         subprocess.Popen(
             [
                 Config.app_path / "AUTO_MAA-Setup.exe",
@@ -555,7 +572,10 @@ class Setting(QWidget):
         if network_result["status_code"] == 200:
             notice = network_result["response_json"]
         else:
-            logger.warning(f"获取最新公告时出错：{network_result['error_message']}")
+            logger.warning(
+                f"获取最新公告时出错：{network_result['error_message']}",
+                module="设置界面",
+            )
             MainInfoBar.push_info_bar(
                 "warning",
                 "获取最新公告时出错",
