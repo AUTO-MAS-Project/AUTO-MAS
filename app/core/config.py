@@ -597,7 +597,7 @@ class GeneralConfig(LQConfig):
         super().__init__()
 
         self.Script_Name = ConfigItem("Script", "Name", "")
-        self.Script_RootPath = ConfigItem("Script", "RootPath", ".", FolderValidator())
+        self.Script_RootPath = ConfigItem("Script", "RootPath", ".", FileValidator())
         self.Script_ScriptPath = ConfigItem(
             "Script", "ScriptPath", ".", FileValidator()
         )

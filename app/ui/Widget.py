@@ -255,7 +255,9 @@ class NoticeMessageBox(MessageBoxBase):
         self.button_cancel.clicked.connect(self.cancelButton.click)
         self.index.index_cards[0].clicked.emit()
 
-    def __update_text(self, text: str):
+    def __update_text(self, index: int, text: str):
+
+        self.currentIndex = index
 
         html = markdown.markdown(text).replace("\n", "")
         html = re.sub(
@@ -273,7 +275,7 @@ class NoticeMessageBox(MessageBoxBase):
 
     class NoticeIndexCard(HeaderCardWidget):
 
-        index_changed = Signal(str)
+        index_changed = Signal(int, str)
 
         def __init__(self, title: str, content: Dict[str, str], parent=None):
             super().__init__(parent)
@@ -289,12 +291,13 @@ class NoticeMessageBox(MessageBoxBase):
 
                 self.index_cards.append(QuantifiedItemCard([index, ""]))
                 self.index_cards[-1].clicked.connect(
-                    partial(self.index_changed.emit, text)
+                    partial(self.index_changed.emit, len(self.index_cards), text)
                 )
                 self.Layout.addWidget(self.index_cards[-1])
 
             if not content:
                 self.Layout.addWidget(QuantifiedItemCard(["暂无信息", ""]))
+                self.currentIndex = 0
 
             self.Layout.addStretch(1)
 

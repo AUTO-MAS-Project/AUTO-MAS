@@ -54,7 +54,7 @@ from PySide6.QtCore import Signal
 from datetime import datetime
 from functools import partial
 from pathlib import Path
-from typing import List, Union, Type
+from typing import List, Dict, Union, Type
 import shutil
 import json
 
@@ -94,6 +94,7 @@ from .Widget import (
     PushAndComboBoxSettingCard,
     StatusSwitchSetting,
     UserNoticeSettingCard,
+    NoticeMessageBox,
     PivotArea,
 )
 
@@ -393,7 +394,7 @@ class MemberManager(QWidget):
         # 从远程服务器获取应用列表
         network = Network.add_task(
             mode="get",
-            url="https://gitee.com/DLmaster_361/AUTO_MAA/raw/server/apps_info.json",
+            url="http://221.236.27.82:10197/d/AUTO_MAA/Server/apps_info.json",
         )
         network.loop.exec()
         network_result = Network.get_result(network)
@@ -2763,14 +2764,32 @@ class MemberManager(QWidget):
                             content="选择一个保存路径，将当前配置信息导出到文件",
                             parent=self,
                         )
+                        self.card_ImportFromWeb = PushSettingCard(
+                            text="查看",
+                            icon=FluentIcon.PAGE_RIGHT,
+                            title="从「AUTO_MAA 配置分享中心」导入",
+                            content="从「AUTO_MAA 配置分享中心」选择一个用户分享的通用配置模板，导入其中的配置信息",
+                            parent=self,
+                        )
+                        self.card_UploadToWeb = PushSettingCard(
+                            text="上传",
+                            icon=FluentIcon.PAGE_RIGHT,
+                            title="上传到「AUTO_MAA 配置分享中心」",
+                            content="将当前通用配置分享到「AUTO_MAA 配置分享中心」，通过审核后可供其他用户下载使用",
+                            parent=self,
+                        )
 
                         self.card_ImportFromFile.clicked.connect(self.import_from_file)
                         self.card_ExportToFile.clicked.connect(self.export_to_file)
+                        self.card_ImportFromWeb.clicked.connect(self.import_from_web)
+                        self.card_UploadToWeb.clicked.connect(self.upload_to_web)
 
                         widget = QWidget()
                         Layout = QVBoxLayout(widget)
                         Layout.addWidget(self.card_ImportFromFile)
                         Layout.addWidget(self.card_ExportToFile)
+                        Layout.addWidget(self.card_ImportFromWeb)
+                        Layout.addWidget(self.card_UploadToWeb)
                         self.viewLayout.setContentsMargins(0, 0, 0, 0)
                         self.viewLayout.setSpacing(0)
                         self.addGroupWidget(widget)
@@ -2791,6 +2810,16 @@ class MemberManager(QWidget):
                                 Config.member_dict[self.name]["Path"] / "config.json"
                             )
 
+                            logger.success(
+                                f"{self.name} 配置导入成功", module="脚本管理"
+                            )
+                            MainInfoBar.push_info_bar(
+                                "success",
+                                "操作成功",
+                                f"{self.name} 配置导入成功",
+                                3000,
+                            )
+
                     def export_to_file(self):
                         """导出配置到文件"""
 
@@ -2800,9 +2829,224 @@ class MemberManager(QWidget):
                         if file_path:
 
                             temp = self.config.toDict()
+
+                            # 移除配置中可能存在的隐私信息
                             temp["Script"]["Name"] = Path(file_path).stem
+                            for path in ["ScriptPath", "ConfigPath", "LogPath"]:
+
+                                if Path(temp["Script"][path]).is_relative_to(
+                                    Path(temp["Script"]["RootPath"])
+                                ):
+
+                                    temp["Script"][path] = str(
+                                        Path(r"C:/脚本根目录")
+                                        / Path(temp["Script"][path]).relative_to(
+                                            Path(temp["Script"]["RootPath"])
+                                        )
+                                    )
+                            temp["Script"]["RootPath"] = str(Path(r"C:/脚本根目录"))
+
                             with open(file_path, "w", encoding="utf-8") as file:
                                 json.dump(temp, file, ensure_ascii=False, indent=4)
+
+                            logger.success(
+                                f"{self.name} 配置导出成功", module="脚本管理"
+                            )
+                            MainInfoBar.push_info_bar(
+                                "success",
+                                "操作成功",
+                                f"{self.name} 配置导出成功",
+                                3000,
+                            )
+
+                    def import_from_web(self):
+                        """从「AUTO_MAA 配置分享中心」导入配置"""
+
+                        # 从远程服务器获取配置列表
+                        network = Network.add_task(
+                            mode="get",
+                            url="http://221.236.27.82:10023/api/list/config/general",
+                        )
+                        network.loop.exec()
+                        network_result = Network.get_result(network)
+                        if network_result["status_code"] == 200:
+                            config_info: List[Dict[str, str]] = network_result[
+                                "response_json"
+                            ]
+                        else:
+                            logger.warning(
+                                f"获取配置列表时出错：{network_result['error_message']}",
+                                module="脚本管理",
+                            )
+                            MainInfoBar.push_info_bar(
+                                "warning",
+                                "获取配置列表时出错",
+                                f"网络错误：{network_result['status_code']}",
+                                5000,
+                            )
+                            return None
+
+                        choice = NoticeMessageBox(
+                            self.window(),
+                            "配置分享中心",
+                            {
+                                _[
+                                    "configName"
+                                ]: f"""
+# {_['configName']}
+
+- **作者**: {_['author']}
+
+- **发布时间**：{_['createTime']}
+
+- **描述**：{_['description']}
+"""
+                                for _ in config_info
+                            },
+                        )
+                        if choice.exec() and choice.currentIndex != 0:
+
+                            # 从远程服务器获取具体配置
+                            network = Network.add_task(
+                                mode="get",
+                                url=config_info[choice.currentIndex - 1]["downloadUrl"],
+                            )
+                            network.loop.exec()
+                            network_result = Network.get_result(network)
+                            if network_result["status_code"] == 200:
+                                config_data = network_result["response_json"]
+                            else:
+                                logger.warning(
+                                    f"获取配置列表时出错：{network_result['error_message']}",
+                                    module="脚本管理",
+                                )
+                                MainInfoBar.push_info_bar(
+                                    "warning",
+                                    "获取配置列表时出错",
+                                    f"网络错误：{network_result['status_code']}",
+                                    5000,
+                                )
+                                return None
+
+                            with (
+                                Config.member_dict[self.name]["Path"] / "config.json"
+                            ).open("w", encoding="utf-8") as file:
+                                json.dump(
+                                    config_data, file, ensure_ascii=False, indent=4
+                                )
+                            self.config.load(
+                                Config.member_dict[self.name]["Path"] / "config.json"
+                            )
+
+                            logger.success(
+                                f"{self.name} 配置导入成功", module="脚本管理"
+                            )
+                            MainInfoBar.push_info_bar(
+                                "success",
+                                "操作成功",
+                                f"{self.name} 配置导入成功",
+                                3000,
+                            )
+
+                    def upload_to_web(self):
+                        """上传配置到「AUTO_MAA 配置分享中心」"""
+
+                        choice = LineEditMessageBox(
+                            self.window(), "请输入你的用户名", "用户名", "明文"
+                        )
+                        choice.input.setMinimumWidth(200)
+                        if choice.exec() and choice.input.text() != "":
+
+                            author = choice.input.text()
+
+                            choice = LineEditMessageBox(
+                                self.window(), "请输入配置名称", "配置名称", "明文"
+                            )
+                            choice.input.setMinimumWidth(200)
+                            if choice.exec() and choice.input.text() != "":
+
+                                config_name = choice.input.text()
+
+                                choice = LineEditMessageBox(
+                                    self.window(),
+                                    "请描述一下您要分享的配置",
+                                    "配置描述",
+                                    "明文",
+                                )
+                                choice.input.setMinimumWidth(300)
+                                if choice.exec() and choice.input.text() != "":
+
+                                    description = choice.input.text()
+
+                                    temp = self.config.toDict()
+
+                                    # 移除配置中可能存在的隐私信息
+                                    temp["Script"]["Name"] = config_name
+                                    for path in ["ScriptPath", "ConfigPath", "LogPath"]:
+                                        if Path(temp["Script"][path]).is_relative_to(
+                                            Path(temp["Script"]["RootPath"])
+                                        ):
+                                            temp["Script"][path] = str(
+                                                Path(r"C:/脚本根目录")
+                                                / Path(
+                                                    temp["Script"][path]
+                                                ).relative_to(
+                                                    Path(temp["Script"]["RootPath"])
+                                                )
+                                            )
+                                    temp["Script"]["RootPath"] = str(
+                                        Path(r"C:/脚本根目录")
+                                    )
+
+                                    files = {
+                                        "file": (
+                                            f"{config_name}&&{author}&&{description}&&{int(datetime.now().timestamp() * 1000)}.json",
+                                            json.dumps(temp, ensure_ascii=False),
+                                            "application/json",
+                                        )
+                                    }
+                                    data = {
+                                        "username": author,
+                                        "description": description,
+                                    }
+
+                                    # 配置上传至远程服务器
+                                    network = Network.add_task(
+                                        "upload_file",
+                                        "http://221.236.27.82:10023/api/upload/share",
+                                        files=files,
+                                        data=data,
+                                    )
+                                    network.loop.exec()
+                                    network_result = Network.get_result(network)
+                                    if network_result["status_code"] == 200:
+                                        response = network_result["response_json"]
+                                    else:
+                                        logger.warning(
+                                            f"上传配置时出错：{network_result['error_message']}",
+                                            module="脚本管理",
+                                        )
+                                        MainInfoBar.push_info_bar(
+                                            "warning",
+                                            "上传配置时出错",
+                                            f"网络错误：{network_result['status_code']}",
+                                            5000,
+                                        )
+                                        return None
+
+                                    logger.success(
+                                        f"{self.name} 配置上传成功", module="脚本管理"
+                                    )
+                                    MainInfoBar.push_info_bar(
+                                        "success",
+                                        "上传配置成功",
+                                        (
+                                            response["message"]
+                                            if "message" in response
+                                            else response["text"]
+                                        ),
+                                        5000,
+                                    )
 
             class BranchManager(HeaderCardWidget):
                 """分支管理父页面"""
