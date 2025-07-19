@@ -25,6 +25,46 @@ v4.4
 作者：DLmaster_361
 """
 
+
+# Nuitka环境检测和修复
+def setup_nuitka_compatibility():
+    """设置Nuitka打包环境的兼容性"""
+
+    # 检测打包环境
+    is_nuitka = (
+        hasattr(sys, "frozen")
+        or "nuitka" in sys.modules
+        or "Temp\\AUTO_MAA" in str(sys.executable)
+        or os.path.basename(sys.executable) == "AUTO_MAA.exe"
+    )
+
+    if is_nuitka:
+
+        # 修复PySide6 QTimer问题
+        try:
+            from PySide6.QtCore import QTimer
+
+            original_singleShot = QTimer.singleShot
+
+            @staticmethod
+            def safe_singleShot(*args, **kwargs):
+                if len(args) >= 2:
+                    msec = args[0]
+                    callback = args[-1]
+                    # 确保使用正确的调用签名
+                    return original_singleShot(msec, callback)
+                return original_singleShot(*args, **kwargs)
+
+            QTimer.singleShot = safe_singleShot
+
+        except Exception as e:
+
+            pass
+
+
+# 立即应用兼容性修复
+setup_nuitka_compatibility()
+
 # 屏蔽广告
 import builtins
 
