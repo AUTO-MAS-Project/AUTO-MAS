@@ -86,6 +86,8 @@ class GeneralManager(QObject):
         self.log_monitor_timer.timeout.connect(self.refresh_log)
         self.monitor_loop = QEventLoop()
         self.loge_start_time = datetime.now()
+        self.script_logs = []
+        self.script_result = "Wait"
 
         self.script_process_manager.processClosed.connect(self.check_script_log)
 
@@ -486,7 +488,7 @@ class GeneralManager(QObject):
                     Config.save_general_log(
                         Config.app_path
                         / f"history/{curdate}/{sub_data['Info']['Name']}/{self.log_start_time.strftime("%H-%M-%S")}.log",
-                        self.check_script_log(),
+                        self.script_logs,
                         self.script_result,
                     )
 
@@ -702,8 +704,17 @@ class GeneralManager(QObject):
             module=f"通用调度器-{self.name}",
         )
 
-        with self.script_log_path.open(mode="r", encoding="utf-8") as f:
-            pass
+        try:
+            with self.script_log_path.open(mode="r", encoding="utf-8") as f:
+                pass
+
+        except FileNotFoundError:
+            logger.error(
+                f"脚本日志文件不存在：{self.script_log_path}",
+                module=f"通用调度器-{self.name}",
+            )
+        except Exception as e:
+            logger.exception(f"刷新脚本日志失败：{e}", module=f"通用调度器-{self.name}")
 
         # 一分钟内未执行日志变化检查，强制检查一次
         if (datetime.now() - self.last_check_time).total_seconds() > 60:
@@ -738,44 +749,61 @@ class GeneralManager(QObject):
 
         return datetime(**datetime_kwargs)
 
-    def check_script_log(self) -> list:
+    def check_script_log(self) -> None:
         """获取脚本日志并检查以判断脚本程序运行状态"""
 
         self.last_check_time = datetime.now()
 
         # 获取日志
-        logs = []
+        self.script_logs = []
         if_log_start = False
-        with self.script_log_path.open(mode="r", encoding="utf-8") as f:
-            for entry in f:
-                if not if_log_start:
-                    try:
-                        entry_time = self.strptime(
-                            entry[self.log_time_range[0] : self.log_time_range[1]],
-                            self.set["Script"]["LogTimeFormat"],
-                            self.last_check_time,
-                        )
 
-                        if entry_time > self.log_start_time:
-                            if_log_start = True
-                            logs.append(entry)
-                    except ValueError:
-                        pass
-                else:
-                    logs.append(entry)
-        log = "".join(logs)
+        try:
+            with self.script_log_path.open(mode="r", encoding="utf-8") as f:
+                for entry in f:
+                    if not if_log_start:
+                        try:
+                            entry_time = self.strptime(
+                                entry[self.log_time_range[0] : self.log_time_range[1]],
+                                self.set["Script"]["LogTimeFormat"],
+                                self.last_check_time,
+                            )
+
+                            if entry_time > self.log_start_time:
+                                if_log_start = True
+                                self.script_logs.append(entry)
+                        except ValueError:
+                            pass
+                    else:
+                        self.script_logs.append(entry)
+
+        except FileNotFoundError:
+            logger.error(
+                f"脚本日志文件不存在：{self.script_log_path}",
+                module=f"通用调度器-{self.name}",
+            )
+            self.update_log_text.emit("脚本日志文件不存在")
+            return None
+        except Exception as e:
+            logger.exception(
+                f"读取脚本日志文件失败：{e}", module=f"通用调度器-{self.name}"
+            )
+            self.update_log_text.emit(f"读取脚本日志文件失败：{e}")
+            return None
+
+        log = "".join(self.script_logs)
 
         # 更新日志
-        if len(logs) > 100:
-            self.update_log_text.emit("".join(logs[-100:]))
+        if len(self.script_logs) > 100:
+            self.update_log_text.emit("".join(self.script_logs[-100:]))
         else:
-            self.update_log_text.emit("".join(logs))
+            self.update_log_text.emit("".join(self.script_logs))
 
         if "自动代理" in self.mode:
 
             # 获取最近一条日志的时间
             latest_time = self.log_start_time
-            for _ in logs[::-1]:
+            for _ in self.script_logs[::-1]:
                 try:
                     latest_time = self.strptime(
                         _[self.log_time_range[0] : self.log_time_range[1]],
@@ -830,8 +858,6 @@ class GeneralManager(QObject):
         if self.script_result != "Wait":
 
             self.quit_monitor()
-
-        return logs
 
     def start_monitor(self) -> None:
         """开始监视通用脚本日志"""

@@ -89,6 +89,8 @@ class MaaManager(QObject):
         self.monitor_loop = QEventLoop()
         self.log_start_time = datetime.now()
         self.log_check_mode = None
+        self.maa_logs = []
+        self.maa_result = "Wait"
 
         self.maa_process_manager.processClosed.connect(self.check_maa_log)
 
@@ -710,7 +712,7 @@ class MaaManager(QObject):
                         if_six_star = Config.save_maa_log(
                             Config.app_path
                             / f"history/{curdate}/{user_data["Info"]["Name"]}/{self.log_start_time.strftime("%H-%M-%S")}.log",
-                            self.check_maa_log(),
+                            self.maa_logs,
                             self.maa_result,
                         )
                         user_logs_list.append(
@@ -1191,33 +1193,52 @@ class MaaManager(QObject):
             logger.info("触发 1 分钟超时检查", module=f"MAA调度器-{self.name}")
             self.check_maa_log()
 
-    def check_maa_log(self) -> list:
+    def check_maa_log(self) -> None:
         """获取MAA日志并检查以判断MAA程序运行状态"""
 
         self.last_check_time = datetime.now()
 
         # 获取日志
-        logs = []
+        self.maa_logs = []
         if_log_start = False
-        with self.maa_log_path.open(mode="r", encoding="utf-8") as f:
-            for entry in f:
-                if not if_log_start:
-                    try:
-                        entry_time = datetime.strptime(entry[1:20], "%Y-%m-%d %H:%M:%S")
-                        if entry_time > self.log_start_time:
-                            if_log_start = True
-                            logs.append(entry)
-                    except ValueError:
-                        pass
-                else:
-                    logs.append(entry)
-        log = "".join(logs)
+
+        try:
+            with self.maa_log_path.open(mode="r", encoding="utf-8") as f:
+                for entry in f:
+                    if not if_log_start:
+                        try:
+                            entry_time = datetime.strptime(
+                                entry[1:20], "%Y-%m-%d %H:%M:%S"
+                            )
+                            if entry_time > self.log_start_time:
+                                if_log_start = True
+                                self.maa_logs.append(entry)
+                        except ValueError:
+                            pass
+                    else:
+                        self.maa_logs.append(entry)
+        except FileNotFoundError:
+            logger.error(
+                f"MAA日志文件不存在：{self.maa_log_path}",
+                module=f"MAA调度器-{self.name}",
+            )
+            self.update_log_text.emit("MAA日志文件不存在")
+            return None
+        except Exception as e:
+            logger.exception(
+                f"读取MAA日志文件时出现异常：{e}",
+                module=f"MAA调度器-{self.name}",
+            )
+            self.update_log_text.emit(f"读取MAA日志文件时出现异常：{e}")
+            return None
+
+        log = "".join(self.maa_logs)
 
         # 更新MAA日志
-        if len(logs) > 100:
-            self.update_log_text.emit("".join(logs[-100:]))
+        if len(self.maa_logs) > 100:
+            self.update_log_text.emit("".join(self.maa_logs[-100:]))
         else:
-            self.update_log_text.emit("".join(logs))
+            self.update_log_text.emit("".join(self.maa_logs))
 
         # 获取MAA版本号
         if not self.set["RunSet"]["AutoUpdateMaa"] and not self.maa_version:
@@ -1240,7 +1261,7 @@ class MaaManager(QObject):
 
             # 获取最近一条日志的时间
             latest_time = self.log_start_time
-            for _ in logs[::-1]:
+            for _ in self.maa_logs[::-1]:
                 try:
                     if "如果长时间无进一步日志更新，可能需要手动干预。" in _:
                         continue
@@ -1355,8 +1376,6 @@ class MaaManager(QObject):
         if self.maa_result != "Wait":
 
             self.quit_monitor()
-
-        return logs
 
     def start_monitor(self) -> None:
         """开始监视MAA日志"""
