@@ -204,7 +204,7 @@ class Home(QWidget):
             # 从远程服务器获取最新主题图像信息
             network = Network.add_task(
                 mode="get",
-                url="https://gitee.com/DLmaster_361/AUTO_MAA/raw/server/theme_image.json",
+                url="http://221.236.27.82:10197/d/AUTO_MAA/Server/theme_image.json",
             )
             network.loop.exec()
             network_result = Network.get_result(network)

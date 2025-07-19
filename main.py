@@ -26,6 +26,10 @@ v4.4
 """
 
 
+import os
+import sys
+
+
 # Nuitka环境检测和修复
 def setup_nuitka_compatibility():
     """设置Nuitka打包环境的兼容性"""
@@ -84,8 +88,6 @@ def no_print(*args, **kwargs):
 builtins.print = no_print
 
 
-import os
-import sys
 import ctypes
 import traceback
 from PySide6.QtWidgets import QApplication
