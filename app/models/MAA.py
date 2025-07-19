@@ -1181,12 +1181,16 @@ class MaaManager(QObject):
     def refresh_maa_log(self) -> None:
         """刷新MAA日志"""
 
-        logger.debug(
-            f"刷新MAA日志：{self.maa_log_path}", module=f"MAA调度器-{self.name}"
-        )
-
-        with self.maa_log_path.open(mode="r", encoding="utf-8") as f:
-            pass
+        if self.maa_log_path.exists():
+            with self.maa_log_path.open(mode="r", encoding="utf-8") as f:
+                logger.debug(
+                    f"刷新MAA日志：{self.maa_log_path}", module=f"MAA调度器-{self.name}"
+                )
+        else:
+            logger.warning(
+                f"MAA日志文件不存在：{self.maa_log_path}",
+                module=f"MAA调度器-{self.name}",
+            )
 
         # 一分钟内未执行日志变化检查，强制检查一次
         if datetime.now() - self.last_check_time > timedelta(minutes=1):
@@ -1199,10 +1203,9 @@ class MaaManager(QObject):
         self.last_check_time = datetime.now()
 
         # 获取日志
-        self.maa_logs = []
-        if_log_start = False
-
-        try:
+        if self.maa_log_path.exists():
+            self.maa_logs = []
+            if_log_start = False
             with self.maa_log_path.open(mode="r", encoding="utf-8") as f:
                 for entry in f:
                     if not if_log_start:
@@ -1217,19 +1220,11 @@ class MaaManager(QObject):
                             pass
                     else:
                         self.maa_logs.append(entry)
-        except FileNotFoundError:
-            logger.error(
+        else:
+            logger.warning(
                 f"MAA日志文件不存在：{self.maa_log_path}",
                 module=f"MAA调度器-{self.name}",
             )
-            self.update_log_text.emit("MAA日志文件不存在")
-            return None
-        except Exception as e:
-            logger.exception(
-                f"读取MAA日志文件时出现异常：{e}",
-                module=f"MAA调度器-{self.name}",
-            )
-            self.update_log_text.emit(f"读取MAA日志文件时出现异常：{e}")
             return None
 
         log = "".join(self.maa_logs)

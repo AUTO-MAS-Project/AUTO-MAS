@@ -699,22 +699,17 @@ class GeneralManager(QObject):
     def refresh_log(self) -> None:
         """刷新脚本日志"""
 
-        logger.debug(
-            f"刷新通用脚本日志：{self.script_log_path}",
-            module=f"通用调度器-{self.name}",
-        )
-
-        try:
+        if self.script_log_path.exists():
             with self.script_log_path.open(mode="r", encoding="utf-8") as f:
-                pass
-
-        except FileNotFoundError:
-            logger.error(
-                f"脚本日志文件不存在：{self.script_log_path}",
+                logger.debug(
+                    f"刷新通用脚本日志：{self.script_log_path}",
+                    module=f"通用调度器-{self.name}",
+                )
+        else:
+            logger.warning(
+                f"通用脚本日志文件不存在：{self.script_log_path}",
                 module=f"通用调度器-{self.name}",
             )
-        except Exception as e:
-            logger.exception(f"刷新脚本日志失败：{e}", module=f"通用调度器-{self.name}")
 
         # 一分钟内未执行日志变化检查，强制检查一次
         if (datetime.now() - self.last_check_time).total_seconds() > 60:
@@ -755,10 +750,9 @@ class GeneralManager(QObject):
         self.last_check_time = datetime.now()
 
         # 获取日志
-        self.script_logs = []
-        if_log_start = False
-
-        try:
+        if self.script_log_path.exists():
+            self.script_logs = []
+            if_log_start = False
             with self.script_log_path.open(mode="r", encoding="utf-8") as f:
                 for entry in f:
                     if not if_log_start:
@@ -776,19 +770,11 @@ class GeneralManager(QObject):
                             pass
                     else:
                         self.script_logs.append(entry)
-
-        except FileNotFoundError:
-            logger.error(
-                f"脚本日志文件不存在：{self.script_log_path}",
+        else:
+            logger.warning(
+                f"通用脚本日志文件不存在：{self.script_log_path}",
                 module=f"通用调度器-{self.name}",
             )
-            self.update_log_text.emit("脚本日志文件不存在")
-            return None
-        except Exception as e:
-            logger.exception(
-                f"读取脚本日志文件失败：{e}", module=f"通用调度器-{self.name}"
-            )
-            self.update_log_text.emit(f"读取脚本日志文件失败：{e}")
             return None
 
         log = "".join(self.script_logs)
