@@ -1,0 +1,8 @@
+resource_id: "AUTO_MAA"
+current_version: "v1.0.0"
+cdk: ""  # Will be encrypted when saved
+user_agent: "AUTO_MAA_Go_Updater/1.0"
+backup_url: "https://backup-download-site.com/releases"
+log_level: "info"
+auto_check: true
+check_interval: 3600  # seconds
