@@ -6,14 +6,13 @@ echo AUTO_MAA_Go_Updater Build Script
 echo ========================================
 
 :: Set build variables
-set VERSION=1.0.0
 set OUTPUT_NAME=AUTO_MAA_Go_Updater.exe
 set BUILD_DIR=build
 set DIST_DIR=dist
 
-:: Get current timestamp
+:: Get current datetime for build time
 for /f "tokens=2 delims==" %%a in ('wmic OS Get localdatetime /value') do set "dt=%%a"
-set "YY=%dt:~2,2%" & set "YYYY=%dt:~0,4%" & set "MM=%dt:~4,2%" & set "DD=%dt:~6,2%"
+set "YYYY=%dt:~0,4%" & set "MM=%dt:~4,2%" & set "DD=%dt:~6,2%"
 set "HH=%dt:~8,2%" & set "Min=%dt:~10,2%" & set "Sec=%dt:~12,2%"
 set "BUILD_TIME=%YYYY%-%MM%-%DD%T%HH%:%Min%:%Sec%Z"
 
@@ -25,6 +24,9 @@ if exist temp_commit.txt (
 ) else (
     set GIT_COMMIT=unknown
 )
+
+:: Use commit hash as version
+set VERSION=%GIT_COMMIT%
 
 echo Build Information:
 echo - Version: %VERSION%
@@ -38,7 +40,7 @@ if not exist %BUILD_DIR% mkdir %BUILD_DIR%
 if not exist %DIST_DIR% mkdir %DIST_DIR%
 
 :: Set build flags
-set LDFLAGS=-s -w -X lightweight-updater/version.Version=%VERSION% -X lightweight-updater/version.BuildTime=%BUILD_TIME% -X lightweight-updater/version.GitCommit=%GIT_COMMIT%
+set LDFLAGS=-s -w -X AUTO_MAA_Go_Updater/version.Version=%VERSION% -X AUTO_MAA_Go_Updater/version.BuildTime=%BUILD_TIME% -X AUTO_MAA_Go_Updater/version.GitCommit=%GIT_COMMIT%
 
 echo Building application...
 
@@ -58,6 +60,7 @@ if not exist app.syso (
     )
 )
 
+:: Set environment variables for Go build
 set GOOS=windows
 set GOARCH=amd64
 set CGO_ENABLED=1
@@ -74,21 +77,12 @@ echo Build completed successfully!
 
 :: Get file size
 for %%A in (%BUILD_DIR%\%OUTPUT_NAME%) do set FILE_SIZE=%%~zA
-
-:: Convert bytes to MB
 set /a FILE_SIZE_MB=%FILE_SIZE%/1024/1024
 
 echo.
 echo Build Results:
 echo - Output: %BUILD_DIR%\%OUTPUT_NAME%
 echo - Size: %FILE_SIZE% bytes (~%FILE_SIZE_MB% MB)
-
-:: Check if file size is within requirements (<10MB)
-if %FILE_SIZE_MB% gtr 10 (
-    echo WARNING: File size exceeds 10MB requirement!
-) else (
-    echo File size meets requirements (^<10MB)
-)
 
 :: Copy to dist directory
 copy %BUILD_DIR%\%OUTPUT_NAME% %DIST_DIR%\%OUTPUT_NAME% >nul

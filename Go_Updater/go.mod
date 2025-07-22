@@ -1,4 +1,4 @@
-module lightweight-updater
+module AUTO_MAA_Go_Updater
 
 go 1.24.5
 

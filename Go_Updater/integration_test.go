@@ -4,9 +4,9 @@ import (
 	"testing"
 )
 
-// Integration tests will be implemented here
-// This file is currently a placeholder
+// 集成测试将在此处实现
+// 此文件目前是占位符
 
 func TestIntegrationPlaceholder(t *testing.T) {
-	t.Skip("Integration tests not yet implemented")
+	t.Skip("集成测试尚未实现")
 }

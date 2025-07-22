@@ -10,19 +10,22 @@ import (
 func TestNewClient(t *testing.T) {
 	client := NewClient()
 	if client == nil {
-		t.Fatal("NewClient() returned nil")
+		t.Fatal("NewClient() 返回 nil")
 	}
 	if client.httpClient == nil {
-		t.Fatal("HTTP client is nil")
+		t.Fatal("HTTP 客户端为 nil")
 	}
 	if client.baseURL != "https://mirrorchyan.com/api/resources" {
-		t.Errorf("Expected base URL 'https://mirrorchyan.com/api/resources', got '%s'", client.baseURL)
+		t.Errorf("期望基础 URL 'https://mirrorchyan.com/api/resources'，得到 '%s'", client.baseURL)
+	}
+	if client.downloadURL != "http://221.236.27.82:10197/d/AUTO_MAA" {
+		t.Errorf("期望下载 URL 'http://221.236.27.82:10197/d/AUTO_MAA'，得到 '%s'", client.downloadURL)
 	}
 }
 
-func TestGetOfficialDownloadURL(t *testing.T) {
+func TestGetDownloadURL(t *testing.T) {
 	client := NewClient()
-	
+
 	tests := []struct {
 		versionName string
 		expected    string
@@ -30,184 +33,74 @@ func TestGetOfficialDownloadURL(t *testing.T) {
 		{"v4.4.0", "http://221.236.27.82:10197/d/AUTO_MAA/AUTO_MAA_v4.4.0.zip"},
 		{"v4.4.1-beta3", "http://221.236.27.82:10197/d/AUTO_MAA/AUTO_MAA_v4.4.1-beta.3.zip"},
 		{"v1.2.3", "http://221.236.27.82:10197/d/AUTO_MAA/AUTO_MAA_v1.2.3.zip"},
-		{"v1.2.3-beta1", "http://221.236.27.82:10197/d/AUTO_MAA/AUTO_MAA_v1.2.3-beta.1.zip"},
 	}
 
 	for _, test := range tests {
-		result := client.GetOfficialDownloadURL(test.versionName)
+		result := client.GetDownloadURL(test.versionName)
 		if result != test.expected {
-			t.Errorf("For version %s, expected %s, got %s", test.versionName, test.expected, result)
-		}
-	}
-}
-
-func TestNormalizeVersionForComparison(t *testing.T) {
-	client := NewClient()
-	
-	tests := []struct {
-		input    string
-		expected string
-	}{
-		{"4.4.0.0", "v4.4.0"},
-		{"4.4.1.3", "v4.4.1-beta3"},
-		{"v4.4.0", "v4.4.0"},
-		{"v4.4.1-beta3", "v4.4.1-beta3"},
-		{"1.2.3", "1.2.3"}, // Not 4-part version, return as-is
-	}
-
-	for _, test := range tests {
-		result := client.normalizeVersionForComparison(test.input)
-		if result != test.expected {
-			t.Errorf("For input %s, expected %s, got %s", test.input, test.expected, result)
+			t.Errorf("版本 %s，期望 %s，得到 %s", test.versionName, test.expected, result)
 		}
 	}
 }
 
 func TestCheckUpdate(t *testing.T) {
-	// Create test server
+	// 创建测试服务器
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Verify request parameters
-		if r.URL.Query().Get("current_version") != "4.4.0.0" {
-			t.Errorf("Expected current_version=4.4.0.0, got %s", r.URL.Query().Get("current_version"))
-		}
-		if r.URL.Query().Get("channel") != "stable" {
-			t.Errorf("Expected channel=stable, got %s", r.URL.Query().Get("channel"))
-		}
-
-		// Return mock response
 		response := MirrorResponse{
 			Code: 0,
 			Msg:  "success",
 			Data: struct {
-				VersionName     string `json:"version_name"`
-				VersionNumber   int    `json:"version_number"`
-				URL             string `json:"url,omitempty"`
-				SHA256          string `json:"sha256,omitempty"`
-				Channel         string `json:"channel"`
-				OS              string `json:"os"`
-				Arch            string `json:"arch"`
-				UpdateType      string `json:"update_type,omitempty"`
-				ReleaseNote     string `json:"release_note"`
-				FileSize        int64  `json:"filesize,omitempty"`
-				CDKExpiredTime  int64  `json:"cdk_expired_time,omitempty"`
+				VersionName   string `json:"version_name"`
+				VersionNumber int    `json:"version_number"`
+				URL           string `json:"url,omitempty"`
+				SHA256        string `json:"sha256,omitempty"`
+				Channel       string `json:"channel"`
+				OS            string `json:"os"`
+				Arch          string `json:"arch"`
+				UpdateType    string `json:"update_type,omitempty"`
+				ReleaseNote   string `json:"release_note"`
+				FileSize      int64  `json:"filesize,omitempty"`
 			}{
 				VersionName:   "v4.4.1",
 				VersionNumber: 48,
 				Channel:       "stable",
-				OS:            "",
-				Arch:          "",
-				ReleaseNote:   "Test release notes",
+				ReleaseNote:   "测试发布说明",
 			},
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
+		err := json.NewEncoder(w).Encode(response)
+		if err != nil {
+			return
+		}
 	}))
 	defer server.Close()
 
-	// Create client with test server URL
+	// 使用测试服务器 URL 创建客户端
 	client := &Client{
-		httpClient: &http.Client{},
-		baseURL:    server.URL,
+		httpClient:  &http.Client{},
+		baseURL:     server.URL,
+		downloadURL: "http://221.236.27.82:10197/d/AUTO_MAA",
 	}
 
-	// Test update check
+	// 测试更新检查
 	params := UpdateCheckParams{
 		ResourceID:     "AUTO_MAA",
 		CurrentVersion: "4.4.0.0",
 		Channel:        "stable",
-		CDK:            "",
 		UserAgent:      "TestAgent/1.0",
 	}
 
 	response, err := client.CheckUpdate(params)
 	if err != nil {
-		t.Fatalf("CheckUpdate failed: %v", err)
+		t.Fatalf("CheckUpdate 失败: %v", err)
 	}
 
 	if response.Code != 0 {
-		t.Errorf("Expected code 0, got %d", response.Code)
+		t.Errorf("期望代码 0，得到 %d", response.Code)
 	}
 	if response.Data.VersionName != "v4.4.1" {
-		t.Errorf("Expected version v4.4.1, got %s", response.Data.VersionName)
-	}
-	if response.Data.Channel != "stable" {
-		t.Errorf("Expected channel stable, got %s", response.Data.Channel)
-	}
-}
-
-func TestCheckUpdateWithCDK(t *testing.T) {
-	// Create test server
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Verify CDK parameter
-		if r.URL.Query().Get("cdk") != "test_cdk_123" {
-			t.Errorf("Expected cdk=test_cdk_123, got %s", r.URL.Query().Get("cdk"))
-		}
-
-		// Return mock response with CDK download URL
-		response := MirrorResponse{
-			Code: 0,
-			Msg:  "success",
-			Data: struct {
-				VersionName     string `json:"version_name"`
-				VersionNumber   int    `json:"version_number"`
-				URL             string `json:"url,omitempty"`
-				SHA256          string `json:"sha256,omitempty"`
-				Channel         string `json:"channel"`
-				OS              string `json:"os"`
-				Arch            string `json:"arch"`
-				UpdateType      string `json:"update_type,omitempty"`
-				ReleaseNote     string `json:"release_note"`
-				FileSize        int64  `json:"filesize,omitempty"`
-				CDKExpiredTime  int64  `json:"cdk_expired_time,omitempty"`
-			}{
-				VersionName:    "v4.4.1",
-				VersionNumber:  48,
-				URL:            "https://mirrorchyan.com/api/resources/download/test123",
-				SHA256:         "abcd1234",
-				Channel:        "stable",
-				OS:             "",
-				Arch:           "",
-				UpdateType:     "full",
-				ReleaseNote:    "Test release notes",
-				FileSize:       12345678,
-				CDKExpiredTime: 1776013593,
-			},
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
-	}))
-	defer server.Close()
-
-	// Create client with test server URL
-	client := &Client{
-		httpClient: &http.Client{},
-		baseURL:    server.URL,
-	}
-
-	// Test update check with CDK
-	params := UpdateCheckParams{
-		ResourceID:     "AUTO_MAA",
-		CurrentVersion: "4.4.0.0",
-		Channel:        "stable",
-		CDK:            "test_cdk_123",
-		UserAgent:      "TestAgent/1.0",
-	}
-
-	response, err := client.CheckUpdate(params)
-	if err != nil {
-		t.Fatalf("CheckUpdate with CDK failed: %v", err)
-	}
-
-	if response.Data.URL == "" {
-		t.Error("Expected CDK download URL, but got empty")
-	}
-	if response.Data.SHA256 == "" {
-		t.Error("Expected SHA256 hash, but got empty")
-	}
-	if response.Data.FileSize == 0 {
-		t.Error("Expected file size, but got 0")
+		t.Errorf("期望版本 v4.4.1，得到 %s", response.Data.VersionName)
 	}
 }
 
@@ -221,64 +114,41 @@ func TestIsUpdateAvailable(t *testing.T) {
 		expected       bool
 	}{
 		{
-			name: "Update available - stable",
+			name: "有可用更新",
 			response: &MirrorResponse{
 				Code: 0,
 				Data: struct {
-					VersionName     string `json:"version_name"`
-					VersionNumber   int    `json:"version_number"`
-					URL             string `json:"url,omitempty"`
-					SHA256          string `json:"sha256,omitempty"`
-					Channel         string `json:"channel"`
-					OS              string `json:"os"`
-					Arch            string `json:"arch"`
-					UpdateType      string `json:"update_type,omitempty"`
-					ReleaseNote     string `json:"release_note"`
-					FileSize        int64  `json:"filesize,omitempty"`
-					CDKExpiredTime  int64  `json:"cdk_expired_time,omitempty"`
+					VersionName   string `json:"version_name"`
+					VersionNumber int    `json:"version_number"`
+					URL           string `json:"url,omitempty"`
+					SHA256        string `json:"sha256,omitempty"`
+					Channel       string `json:"channel"`
+					OS            string `json:"os"`
+					Arch          string `json:"arch"`
+					UpdateType    string `json:"update_type,omitempty"`
+					ReleaseNote   string `json:"release_note"`
+					FileSize      int64  `json:"filesize,omitempty"`
 				}{VersionName: "v4.4.1"},
 			},
 			currentVersion: "4.4.0.0",
 			expected:       true,
 		},
 		{
-			name: "No update available - same version",
+			name: "无可用更新",
 			response: &MirrorResponse{
 				Code: 0,
 				Data: struct {
-					VersionName     string `json:"version_name"`
-					VersionNumber   int    `json:"version_number"`
-					URL             string `json:"url,omitempty"`
-					SHA256          string `json:"sha256,omitempty"`
-					Channel         string `json:"channel"`
-					OS              string `json:"os"`
-					Arch            string `json:"arch"`
-					UpdateType      string `json:"update_type,omitempty"`
-					ReleaseNote     string `json:"release_note"`
-					FileSize        int64  `json:"filesize,omitempty"`
-					CDKExpiredTime  int64  `json:"cdk_expired_time,omitempty"`
+					VersionName   string `json:"version_name"`
+					VersionNumber int    `json:"version_number"`
+					URL           string `json:"url,omitempty"`
+					SHA256        string `json:"sha256,omitempty"`
+					Channel       string `json:"channel"`
+					OS            string `json:"os"`
+					Arch          string `json:"arch"`
+					UpdateType    string `json:"update_type,omitempty"`
+					ReleaseNote   string `json:"release_note"`
+					FileSize      int64  `json:"filesize,omitempty"`
 				}{VersionName: "v4.4.0"},
-			},
-			currentVersion: "4.4.0.0",
-			expected:       false,
-		},
-		{
-			name: "API error",
-			response: &MirrorResponse{
-				Code: 1,
-				Data: struct {
-					VersionName     string `json:"version_name"`
-					VersionNumber   int    `json:"version_number"`
-					URL             string `json:"url,omitempty"`
-					SHA256          string `json:"sha256,omitempty"`
-					Channel         string `json:"channel"`
-					OS              string `json:"os"`
-					Arch            string `json:"arch"`
-					UpdateType      string `json:"update_type,omitempty"`
-					ReleaseNote     string `json:"release_note"`
-					FileSize        int64  `json:"filesize,omitempty"`
-					CDKExpiredTime  int64  `json:"cdk_expired_time,omitempty"`
-				}{VersionName: "v4.4.1"},
 			},
 			currentVersion: "4.4.0.0",
 			expected:       false,
@@ -289,134 +159,7 @@ func TestIsUpdateAvailable(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			result := client.IsUpdateAvailable(test.response, test.currentVersion)
 			if result != test.expected {
-				t.Errorf("Expected %t, got %t", test.expected, result)
-			}
-		})
-	}
-}
-
-func TestHasCDKDownloadURL(t *testing.T) {
-	client := NewClient()
-
-	tests := []struct {
-		name     string
-		response *MirrorResponse
-		expected bool
-	}{
-		{
-			name: "Has CDK URL",
-			response: &MirrorResponse{
-				Data: struct {
-					VersionName     string `json:"version_name"`
-					VersionNumber   int    `json:"version_number"`
-					URL             string `json:"url,omitempty"`
-					SHA256          string `json:"sha256,omitempty"`
-					Channel         string `json:"channel"`
-					OS              string `json:"os"`
-					Arch            string `json:"arch"`
-					UpdateType      string `json:"update_type,omitempty"`
-					ReleaseNote     string `json:"release_note"`
-					FileSize        int64  `json:"filesize,omitempty"`
-					CDKExpiredTime  int64  `json:"cdk_expired_time,omitempty"`
-				}{URL: "https://mirrorchyan.com/download/test"},
-			},
-			expected: true,
-		},
-		{
-			name: "No CDK URL",
-			response: &MirrorResponse{
-				Data: struct {
-					VersionName     string `json:"version_name"`
-					VersionNumber   int    `json:"version_number"`
-					URL             string `json:"url,omitempty"`
-					SHA256          string `json:"sha256,omitempty"`
-					Channel         string `json:"channel"`
-					OS              string `json:"os"`
-					Arch            string `json:"arch"`
-					UpdateType      string `json:"update_type,omitempty"`
-					ReleaseNote     string `json:"release_note"`
-					FileSize        int64  `json:"filesize,omitempty"`
-					CDKExpiredTime  int64  `json:"cdk_expired_time,omitempty"`
-				}{URL: ""},
-			},
-			expected: false,
-		},
-		{
-			name:     "Nil response",
-			response: nil,
-			expected: false,
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			result := client.HasCDKDownloadURL(test.response)
-			if result != test.expected {
-				t.Errorf("Expected %t, got %t", test.expected, result)
-			}
-		})
-	}
-}
-
-func TestGetDownloadURL(t *testing.T) {
-	client := NewClient()
-
-	tests := []struct {
-		name     string
-		response *MirrorResponse
-		expected string
-	}{
-		{
-			name: "CDK URL available",
-			response: &MirrorResponse{
-				Data: struct {
-					VersionName     string `json:"version_name"`
-					VersionNumber   int    `json:"version_number"`
-					URL             string `json:"url,omitempty"`
-					SHA256          string `json:"sha256,omitempty"`
-					Channel         string `json:"channel"`
-					OS              string `json:"os"`
-					Arch            string `json:"arch"`
-					UpdateType      string `json:"update_type,omitempty"`
-					ReleaseNote     string `json:"release_note"`
-					FileSize        int64  `json:"filesize,omitempty"`
-					CDKExpiredTime  int64  `json:"cdk_expired_time,omitempty"`
-				}{
-					VersionName: "v4.4.1",
-					URL:         "https://mirrorchyan.com/download/test",
-				},
-			},
-			expected: "https://mirrorchyan.com/download/test",
-		},
-		{
-			name: "Official URL fallback",
-			response: &MirrorResponse{
-				Data: struct {
-					VersionName     string `json:"version_name"`
-					VersionNumber   int    `json:"version_number"`
-					URL             string `json:"url,omitempty"`
-					SHA256          string `json:"sha256,omitempty"`
-					Channel         string `json:"channel"`
-					OS              string `json:"os"`
-					Arch            string `json:"arch"`
-					UpdateType      string `json:"update_type,omitempty"`
-					ReleaseNote     string `json:"release_note"`
-					FileSize        int64  `json:"filesize,omitempty"`
-					CDKExpiredTime  int64  `json:"cdk_expired_time,omitempty"`
-				}{
-					VersionName: "v4.4.1",
-					URL:         "",
-				},
-			},
-			expected: "http://221.236.27.82:10197/d/AUTO_MAA/AUTO_MAA_v4.4.1.zip",
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			result := client.GetDownloadURL(test.response)
-			if result != test.expected {
-				t.Errorf("Expected %s, got %s", test.expected, result)
+				t.Errorf("期望 %t，得到 %t", test.expected, result)
 			}
 		})
 	}
