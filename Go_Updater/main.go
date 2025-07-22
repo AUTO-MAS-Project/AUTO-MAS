@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"AUTO_MAA_Go_Updater/api"
 	"AUTO_MAA_Go_Updater/config"
@@ -576,6 +577,11 @@ func (app *Application) executeCheckingState() (UpdateState, error) {
 	if !isUpdateAvailable {
 		app.logger.Info("无可用更新")
 		fmt.Println("当前已是最新版本")
+
+		// 延迟 5 秒再退出
+		fmt.Println("5 秒后自动退出...")
+		time.Sleep(5 * time.Second)
+
 		return StateCompleted, nil
 	}
 
