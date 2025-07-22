@@ -44,7 +44,6 @@
     },
     "Update": {
         "IfAutoUpdate": false,
-        "MirrorChyanCDK": "",
         "ProxyUrlList": [],
         "ThreadNumb": 8,
         "UpdateType": "stable"

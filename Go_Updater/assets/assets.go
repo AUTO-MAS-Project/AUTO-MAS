@@ -8,17 +8,17 @@ import (
 //go:embed config_template.yaml
 var EmbeddedAssets embed.FS
 
-// GetConfigTemplate returns the embedded config template
+// GetConfigTemplate 返回嵌入的配置模板
 func GetConfigTemplate() ([]byte, error) {
 	return EmbeddedAssets.ReadFile("config_template.yaml")
 }
 
-// GetAssetFS returns the embedded filesystem
+// GetAssetFS 返回嵌入的文件系统
 func GetAssetFS() fs.FS {
 	return EmbeddedAssets
 }
 
-// ListAssets returns a list of all embedded assets
+// ListAssets 返回所有嵌入资源的列表
 func ListAssets() ([]string, error) {
 	var assets []string
 	err := fs.WalkDir(EmbeddedAssets, ".", func(path string, d fs.DirEntry, err error) error {

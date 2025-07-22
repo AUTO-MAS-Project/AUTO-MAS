@@ -64,8 +64,8 @@ type LoggerConfig struct {
 	Level      LogLevel
 	MaxSize    int64  // 最大文件大小（字节），默认10MB
 	MaxBackups int    // 最大备份文件数，默认5
-	LogDir     string // 日志目录，默认%APPDATA%/LightweightUpdater/logs
-	Filename   string // 日志文件名，默认updater.log
+	LogDir     string // 日志目录
+	Filename   string // 日志文件名
 }
 
 // DefaultLoggerConfig 默认日志配置
@@ -101,7 +101,7 @@ func NewFileLogger(config *LoggerConfig) (*FileLogger, error) {
 	}
 
 	logPath := filepath.Join(config.LogDir, config.Filename)
-	
+
 	// 打开或创建日志文件
 	file, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
@@ -132,11 +132,11 @@ func NewFileLogger(config *LoggerConfig) (*FileLogger, error) {
 // formatMessage 格式化日志消息
 func (fl *FileLogger) formatMessage(level LogLevel, msg string, fields ...interface{}) string {
 	timestamp := time.Now().Format("2006-01-02 15:04:05.000")
-	
+
 	if len(fields) > 0 {
 		msg = fmt.Sprintf(msg, fields...)
 	}
-	
+
 	return fmt.Sprintf("[%s] %s %s\n", timestamp, level.String(), msg)
 }
 
@@ -151,7 +151,7 @@ func (fl *FileLogger) writeLog(level LogLevel, msg string, fields ...interface{}
 	}
 
 	formattedMsg := fl.formatMessage(level, msg, fields...)
-	
+
 	// 检查是否需要轮转
 	if fl.currentSize+int64(len(formattedMsg)) > fl.maxSize {
 		if err := fl.rotate(); err != nil {
@@ -166,7 +166,7 @@ func (fl *FileLogger) writeLog(level LogLevel, msg string, fields ...interface{}
 		fmt.Fprintf(os.Stderr, "Failed to write log: %v\n", err)
 		return
 	}
-	
+
 	fl.currentSize += int64(n)
 	fl.file.Sync() // 确保写入磁盘
 }
@@ -200,7 +200,7 @@ func (fl *FileLogger) rotate() error {
 // rotateBackups 轮转备份文件
 func (fl *FileLogger) rotateBackups() error {
 	basePath := filepath.Join(fl.logDir, fl.filename)
-	
+
 	// 删除最老的备份文件
 	if fl.maxBackups > 0 {
 		oldestBackup := fmt.Sprintf("%s.%d", basePath, fl.maxBackups)
@@ -254,7 +254,7 @@ func (fl *FileLogger) SetLevel(level LogLevel) {
 func (fl *FileLogger) Close() error {
 	fl.mu.Lock()
 	defer fl.mu.Unlock()
-	
+
 	if fl.file != nil {
 		return fl.file.Close()
 	}
@@ -342,11 +342,11 @@ func NewConsoleLogger(writer io.Writer) *ConsoleLogger {
 // formatMessage 格式化控制台日志消息
 func (cl *ConsoleLogger) formatMessage(level LogLevel, msg string, fields ...interface{}) string {
 	timestamp := time.Now().Format("15:04:05")
-	
+
 	if len(fields) > 0 {
 		msg = fmt.Sprintf(msg, fields...)
 	}
-	
+
 	return fmt.Sprintf("[%s] %s %s\n", timestamp, level.String(), msg)
 }
 
@@ -355,7 +355,7 @@ func (cl *ConsoleLogger) writeLog(level LogLevel, msg string, fields ...interfac
 	if level < cl.level {
 		return
 	}
-	
+
 	formattedMsg := cl.formatMessage(level, msg, fields...)
 	fmt.Fprint(cl.writer, formattedMsg)
 }

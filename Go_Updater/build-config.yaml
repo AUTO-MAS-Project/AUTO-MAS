@@ -1,9 +1,9 @@
-# Build Configuration for Lightweight Updater
+# Build Configuration for AUTO_MAA_Go_Updater
 
 project:
-  name: "Lightweight Updater"
-  module: "lightweight-updater"
-  description: "轻量级自动更新器"
+  name: "AUTO_MAA_Go_Updater"
+  module: "AUTO_MAA_Go_Updater"
+  description: "AUTO_MAA_Go版本更新器"
 
 version:
   default: "1.0.0"
@@ -14,7 +14,7 @@ targets:
     goos: "windows"
     goarch: "amd64"
     cgo_enabled: true
-    output: "lightweight-updater.exe"
+    output: "AUTO_MAA_Go_Updater.exe"
     
 build:
   flags:
@@ -40,7 +40,7 @@ directories:
   temp: "temp"
 
 version_injection:
-  package: "lightweight-updater/version"
+  package: "AUTO_MAA_Go_Updater/version"
   variables:
     - name: "Version"
       source: "version"

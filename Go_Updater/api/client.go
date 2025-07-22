@@ -10,204 +10,140 @@ import (
 	"time"
 )
 
-// MirrorResponse represents the response from MirrorChyan API
+// MirrorResponse 表示 MirrorChyan API 的响应结构
 type MirrorResponse struct {
 	Code int    `json:"code"`
 	Msg  string `json:"msg"`
 	Data struct {
-		VersionName    string `json:"version_name"`
-		VersionNumber  int    `json:"version_number"`
-		URL            string `json:"url,omitempty"`    // Only present when using CDK
-		SHA256         string `json:"sha256,omitempty"` // Only present when using CDK
-		Channel        string `json:"channel"`
-		OS             string `json:"os"`
-		Arch           string `json:"arch"`
-		UpdateType     string `json:"update_type,omitempty"` // Only present when using CDK
-		ReleaseNote    string `json:"release_note"`
-		FileSize       int64  `json:"filesize,omitempty"`         // Only present when using CDK
-		CDKExpiredTime int64  `json:"cdk_expired_time,omitempty"` // Only present when using CDK
+		VersionName   string `json:"version_name"`
+		VersionNumber int    `json:"version_number"`
+		URL           string `json:"url,omitempty"`
+		SHA256        string `json:"sha256,omitempty"`
+		Channel       string `json:"channel"`
+		OS            string `json:"os"`
+		Arch          string `json:"arch"`
+		UpdateType    string `json:"update_type,omitempty"`
+		ReleaseNote   string `json:"release_note"`
+		FileSize      int64  `json:"filesize,omitempty"`
 	} `json:"data"`
 }
 
-// UpdateCheckParams represents parameters for update checking
+// UpdateCheckParams 表示更新检查的参数
 type UpdateCheckParams struct {
 	ResourceID     string
 	CurrentVersion string
 	Channel        string
-	CDK            string
 	UserAgent      string
 }
 
-// MirrorClient interface defines the methods for Mirror API client
+// MirrorClient 定义 Mirror API 客户端的接口方法
 type MirrorClient interface {
 	CheckUpdate(params UpdateCheckParams) (*MirrorResponse, error)
-	CheckUpdateLegacy(resourceID, currentVersion, cdk, userAgent string) (*MirrorResponse, error)
 	IsUpdateAvailable(response *MirrorResponse, currentVersion string) bool
-	GetOfficialDownloadURL(versionName string) string
+	GetDownloadURL(versionName string) string
 }
 
-// Client implements MirrorClient interface
+// Client 实现 MirrorClient 接口
 type Client struct {
-	httpClient *http.Client
-	baseURL    string
+	httpClient  *http.Client
+	baseURL     string
+	downloadURL string
 }
 
-// NewClient creates a new Mirror API client
+// NewClient 创建新的 Mirror API 客户端
 func NewClient() *Client {
 	return &Client{
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
-		baseURL: "https://mirrorchyan.com/api/resources",
+		baseURL:     "https://mirrorchyan.com/api/resources",
+		downloadURL: "http://221.236.27.82:10197/d/AUTO_MAA",
 	}
 }
 
-// CheckUpdate calls MirrorChyan API to check for updates with new parameter structure
+// CheckUpdate 调用 MirrorChyan API 检查更新
 func (c *Client) CheckUpdate(params UpdateCheckParams) (*MirrorResponse, error) {
-	// Construct the API URL
+	// 构建 API URL
 	apiURL := fmt.Sprintf("%s/%s/latest", c.baseURL, params.ResourceID)
 
-	// Parse URL to add query parameters
+	// 解析 URL 并添加查询参数
 	u, err := url.Parse(apiURL)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse API URL: %w", err)
+		return nil, fmt.Errorf("解析 API URL 失败: %w", err)
 	}
 
-	// Add query parameters
+	// 添加查询参数
 	q := u.Query()
 	q.Set("current_version", params.CurrentVersion)
 	q.Set("channel", params.Channel)
-	q.Set("os", "")   // Empty for cross-platform
-	q.Set("arch", "") // Empty for cross-platform
-
-	if params.CDK != "" {
-		q.Set("cdk", params.CDK)
-	}
+	q.Set("os", "")   // 跨平台为空
+	q.Set("arch", "") // 跨平台为空
 	u.RawQuery = q.Encode()
 
-	// Create HTTP request
+	// 创建 HTTP 请求
 	req, err := http.NewRequest("GET", u.String(), nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
+		return nil, fmt.Errorf("创建 HTTP 请求失败: %w", err)
 	}
 
-	// Set User-Agent header
+	// 设置 User-Agent 头
 	if params.UserAgent != "" {
 		req.Header.Set("User-Agent", params.UserAgent)
 	} else {
 		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36")
 	}
 
-	// Make HTTP request
+	// 发送 HTTP 请求
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to make HTTP request: %w", err)
+		return nil, fmt.Errorf("发送 HTTP 请求失败: %w", err)
 	}
 	defer resp.Body.Close()
 
-	// Check HTTP status code
+	// 检查 HTTP 状态码
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API returned non-200 status code: %d", resp.StatusCode)
+		return nil, fmt.Errorf("API 返回非 200 状态码: %d", resp.StatusCode)
 	}
 
-	// Read response body
+	// 读取响应体
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
+		return nil, fmt.Errorf("读取响应体失败: %w", err)
 	}
 
-	// Parse JSON response
+	// 解析 JSON 响应
 	var mirrorResp MirrorResponse
 	if err := json.Unmarshal(body, &mirrorResp); err != nil {
-		return nil, fmt.Errorf("failed to parse JSON response: %w", err)
+		return nil, fmt.Errorf("解析 JSON 响应失败: %w", err)
 	}
 
 	return &mirrorResp, nil
 }
 
-// CheckUpdateLegacy calls Mirror API to check for updates (legacy method for backward compatibility)
-func (c *Client) CheckUpdateLegacy(resourceID, currentVersion, cdk, userAgent string) (*MirrorResponse, error) {
-	// Construct the API URL
-	apiURL := fmt.Sprintf("%s/%s/latest", c.baseURL, resourceID)
-
-	// Parse URL to add query parameters
-	u, err := url.Parse(apiURL)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse API URL: %w", err)
-	}
-
-	// Add query parameters
-	q := u.Query()
-	q.Set("current_version", currentVersion)
-	if cdk != "" {
-		q.Set("cdk", cdk)
-	}
-	u.RawQuery = q.Encode()
-
-	// Create HTTP request
-	req, err := http.NewRequest("GET", u.String(), nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
-	}
-
-	// Set User-Agent header
-	if userAgent != "" {
-		req.Header.Set("User-Agent", userAgent)
-	} else {
-		req.Header.Set("User-Agent", "LightweightUpdater/1.0")
-	}
-
-	// Make HTTP request
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to make HTTP request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	// Check HTTP status code
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API returned non-200 status code: %d", resp.StatusCode)
-	}
-
-	// Read response body
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	// Parse JSON response
-	var mirrorResp MirrorResponse
-	if err := json.Unmarshal(body, &mirrorResp); err != nil {
-		return nil, fmt.Errorf("failed to parse JSON response: %w", err)
-	}
-
-	return &mirrorResp, nil
-}
-
-// IsUpdateAvailable compares current version with the latest version from API response
+// IsUpdateAvailable 比较当前版本与 API 响应中的最新版本
 func (c *Client) IsUpdateAvailable(response *MirrorResponse, currentVersion string) bool {
-	// Check if API response is successful
+	// 检查 API 响应是否成功
 	if response.Code != 0 {
 		return false
 	}
 
-	// Get latest version from response
+	// 从响应中获取最新版本
 	latestVersion := response.Data.VersionName
 	if latestVersion == "" {
 		return false
 	}
 
-	// Convert version formats for comparison
+	// 转换版本格式以便比较
 	currentVersionNormalized := c.normalizeVersionForComparison(currentVersion)
 	latestVersionNormalized := c.normalizeVersionForComparison(latestVersion)
 
-	// Compare versions using semantic version comparison
+	// 使用语义版本比较
 	return compareVersions(currentVersionNormalized, latestVersionNormalized) < 0
 }
 
-// normalizeVersionForComparison converts different version formats to comparable format
+// normalizeVersionForComparison 将不同版本格式转换为可比较格式
 func (c *Client) normalizeVersionForComparison(version string) string {
-	// Handle AUTO_MAA version format: "4.4.1.3" -> "v4.4.1-beta3"
+	// 处理 AUTO_MAA 版本格式: "4.4.1.3" -> "v4.4.1-beta3"
 	if !strings.HasPrefix(version, "v") && strings.Count(version, ".") == 3 {
 		parts := strings.Split(version, ".")
 		if len(parts) == 4 {
@@ -220,22 +156,22 @@ func (c *Client) normalizeVersionForComparison(version string) string {
 		}
 	}
 
-	// Return as-is if already in standard format
+	// 如果已经是标准格式则直接返回
 	return version
 }
 
-// compareVersions compares two semantic version strings
-// Returns: -1 if v1 < v2, 0 if v1 == v2, 1 if v1 > v2
+// compareVersions 比较两个语义版本字符串
+// 返回值: -1 如果 v1 < v2, 0 如果 v1 == v2, 1 如果 v1 > v2
 func compareVersions(v1, v2 string) int {
-	// Normalize versions by removing 'v' prefix if present
+	// 通过移除 'v' 前缀来标准化版本
 	v1 = normalizeVersion(v1)
 	v2 = normalizeVersion(v2)
 
-	// Parse version components
+	// 解析版本组件
 	parts1 := parseVersionParts(v1)
 	parts2 := parseVersionParts(v2)
 
-	// Compare each component
+	// 比较每个组件
 	maxLen := len(parts1)
 	if len(parts2) > maxLen {
 		maxLen = len(parts2)
@@ -260,7 +196,7 @@ func compareVersions(v1, v2 string) int {
 	return 0
 }
 
-// normalizeVersion removes 'v' prefix and handles common version formats
+// normalizeVersion 移除 'v' 前缀并处理常见版本格式
 func normalizeVersion(version string) string {
 	if len(version) > 0 && (version[0] == 'v' || version[0] == 'V') {
 		return version[1:]
@@ -268,7 +204,7 @@ func normalizeVersion(version string) string {
 	return version
 }
 
-// parseVersionParts parses version string into numeric components
+// parseVersionParts 将版本字符串解析为数字组件
 func parseVersionParts(version string) []int {
 	if version == "" {
 		return []int{0}
@@ -284,15 +220,15 @@ func parseVersionParts(version string) []int {
 			parts = append(parts, current)
 			current = 0
 		} else {
-			// Stop parsing at non-numeric, non-dot characters (like pre-release identifiers)
+			// 在非数字、非点字符处停止解析（如预发布标识符）
 			break
 		}
 	}
 
-	// Add the last component
+	// 添加最后一个组件
 	parts = append(parts, current)
 
-	// Ensure at least 3 components (major.minor.patch)
+	// 确保至少有 3 个组件 (major.minor.patch)
 	for len(parts) < 3 {
 		parts = append(parts, 0)
 	}
@@ -300,33 +236,17 @@ func parseVersionParts(version string) []int {
 	return parts
 }
 
-// GetOfficialDownloadURL generates the official download URL based on version name
-func (c *Client) GetOfficialDownloadURL(versionName string) string {
-	// Official download site base URL
-	baseURL := "http://221.236.27.82:10197/d/AUTO_MAA"
-
-	// Convert version name to filename format
-	// e.g., "v4.4.0" -> "AUTO_MAA_v4.4.0.zip"
-	// e.g., "v4.4.1-beta3" -> "AUTO_MAA_v4.4.1-beta.3.zip"
+// GetDownloadURL 根据版本名生成下载站的下载 URL
+func (c *Client) GetDownloadURL(versionName string) string {
+	// 将版本名转换为文件名格式
+	// 例如: "v4.4.0" -> "AUTO_MAA_v4.4.0.zip"
+	// 例如: "v4.4.1-beta3" -> "AUTO_MAA_v4.4.1-beta.3.zip"
 	filename := fmt.Sprintf("AUTO_MAA_%s.zip", versionName)
 
-	// Handle beta versions: convert "beta3" to "beta.3"
+	// 处理 beta 版本: 将 "beta3" 转换为 "beta.3"
 	if strings.Contains(filename, "-beta") && !strings.Contains(filename, "-beta.") {
 		filename = strings.Replace(filename, "-beta", "-beta.", 1)
 	}
 
-	return fmt.Sprintf("%s/%s", baseURL, filename)
-}
-
-// HasCDKDownloadURL checks if the response contains a CDK download URL
-func (c *Client) HasCDKDownloadURL(response *MirrorResponse) bool {
-	return response != nil && response.Data.URL != ""
-}
-
-// GetDownloadURL returns the appropriate download URL based on available options
-func (c *Client) GetDownloadURL(response *MirrorResponse) string {
-	if c.HasCDKDownloadURL(response) {
-		return response.Data.URL
-	}
-	return c.GetOfficialDownloadURL(response.Data.VersionName)
+	return fmt.Sprintf("%s/%s", c.downloadURL, filename)
 }

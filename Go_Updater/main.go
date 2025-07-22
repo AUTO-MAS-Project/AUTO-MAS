@@ -13,16 +13,16 @@ import (
 	"sync"
 	"syscall"
 
-	"lightweight-updater/api"
-	"lightweight-updater/config"
-	"lightweight-updater/download"
-	"lightweight-updater/errors"
-	"lightweight-updater/install"
-	"lightweight-updater/logger"
-	appversion "lightweight-updater/version"
+	"AUTO_MAA_Go_Updater/api"
+	"AUTO_MAA_Go_Updater/config"
+	"AUTO_MAA_Go_Updater/download"
+	"AUTO_MAA_Go_Updater/errors"
+	"AUTO_MAA_Go_Updater/install"
+	"AUTO_MAA_Go_Updater/logger"
+	appversion "AUTO_MAA_Go_Updater/version"
 )
 
-// UpdateState represents the current state of the update process
+// UpdateState 表示更新过程的当前状态
 type UpdateState int
 
 const (
@@ -35,7 +35,7 @@ const (
 	StateError
 )
 
-// String returns the string representation of the update state
+// String 返回更新状态的字符串表示
 func (s UpdateState) String() string {
 	switch s {
 	case StateIdle:
@@ -57,7 +57,7 @@ func (s UpdateState) String() string {
 	}
 }
 
-// GUIManager interface for optional GUI functionality
+// GUIManager 可选 GUI 功能的接口
 type GUIManager interface {
 	ShowMainWindow()
 	UpdateStatus(status int, message string)
@@ -66,7 +66,7 @@ type GUIManager interface {
 	Close()
 }
 
-// UpdateInfo contains information about an available update
+// UpdateInfo 包含可用更新的信息
 type UpdateInfo struct {
 	CurrentVersion string
 	NewVersion     string
@@ -75,28 +75,28 @@ type UpdateInfo struct {
 	IsAvailable    bool
 }
 
-// Application represents the main application instance
+// Application 表示主应用程序实例
 type Application struct {
-	config         *config.Config
-	configManager  config.ConfigManager
-	apiClient      api.MirrorClient
+	config          *config.Config
+	configManager   config.ConfigManager
+	apiClient       api.MirrorClient
 	downloadManager download.DownloadManager
-	installManager install.InstallManager
-	guiManager     GUIManager
-	logger         logger.Logger
-	errorHandler   errors.ErrorHandler
-	ctx            context.Context
-	cancel         context.CancelFunc
-	wg             sync.WaitGroup
-	
-	// Update flow state
-	currentState   UpdateState
-	stateMutex     sync.RWMutex
-	updateInfo     *UpdateInfo
-	userConfirmed  chan bool
+	installManager  install.InstallManager
+	guiManager      GUIManager
+	logger          logger.Logger
+	errorHandler    errors.ErrorHandler
+	ctx             context.Context
+	cancel          context.CancelFunc
+	wg              sync.WaitGroup
+
+	// 更新流程状态
+	currentState  UpdateState
+	stateMutex    sync.RWMutex
+	updateInfo    *UpdateInfo
+	userConfirmed chan bool
 }
 
-// Command line flags
+// 命令行标志
 var (
 	configPath     = flag.String("config", "", "Path to configuration file")
 	logLevel       = flag.String("log-level", "info", "Log level (debug, info, warn, error)")
@@ -105,65 +105,64 @@ var (
 	help           = flag.Bool("help", false, "Show help information")
 	channel        = flag.String("channel", "", "Update channel (stable or beta)")
 	currentVersion = flag.String("current-version", "", "Current version to check against")
-	cdk            = flag.String("cdk", "", "CDK for MirrorChyan download")
 )
 
-// Version information is now handled by the version package
+// 版本信息现在由 version 包处理
 
 func main() {
-	// Parse command line arguments
+	// 解析命令行参数
 	flag.Parse()
 
-	// Show version information
+	// 显示版本信息
 	if *version {
 		showVersion()
 		return
 	}
 
-	// Show help information
+	// 显示帮助信息
 	if *help {
 		showHelp()
 		return
 	}
 
-	// Check for single instance
+	// 检查单实例运行
 	if err := ensureSingleInstance(); err != nil {
-		fmt.Fprintf(os.Stderr, "Another instance is already running: %v\n", err)
+		fmt.Fprintf(os.Stderr, "另一个实例已在运行: %v\n", err)
 		os.Exit(1)
 	}
 
-	// Initialize application
+	// 初始化应用程序
 	app, err := initializeApplication()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to initialize application: %v\n", err)
+		fmt.Fprintf(os.Stderr, "初始化应用程序失败: %v\n", err)
 		os.Exit(1)
 	}
 	defer app.cleanup()
 
-	// Handle cleanup on process marked files on startup
+	// 处理启动时标记删除的文件清理
 	if err := app.handleStartupCleanup(); err != nil {
-		app.logger.Warn("Failed to cleanup marked files: %v", err)
+		app.logger.Warn("清理标记文件失败: %v", err)
 	}
 
-	// Setup signal handling
+	// 设置信号处理
 	app.setupSignalHandling()
 
-	// Start the application
+	// 启动应用程序
 	if err := app.run(); err != nil {
-		app.logger.Error("Application error: %v", err)
+		app.logger.Error("应用程序错误: %v", err)
 		os.Exit(1)
 	}
 }
 
-// initializeApplication initializes all application components
+// initializeApplication 初始化所有应用程序组件
 func initializeApplication() (*Application, error) {
-	// Create context for graceful shutdown
+	// 创建优雅关闭的上下文
 	ctx, cancel := context.WithCancel(context.Background())
 
-	// Initialize logger first
+	// 首先初始化日志记录器
 	loggerConfig := logger.DefaultLoggerConfig()
-	
-	// Set log level from command line
+
+	// 从命令行设置日志级别
 	switch *logLevel {
 	case "debug":
 		loggerConfig.Level = logger.DEBUG
@@ -178,54 +177,54 @@ func initializeApplication() (*Application, error) {
 	var appLogger logger.Logger
 	fileLogger, err := logger.NewFileLogger(loggerConfig)
 	if err != nil {
-		// Fallback to console logger
+		// 回退到控制台日志记录器
 		appLogger = logger.NewConsoleLogger(os.Stdout)
 	} else {
 		appLogger = fileLogger
 	}
 
-	appLogger.Info("Initializing AUTO_MAA_Go_Updater v%s", appversion.Version)
+	appLogger.Info("正在初始化 AUTO_MAA_Go_Updater v%s", appversion.Version)
 
-	// Initialize configuration manager
+	// 初始化配置管理器
 	var configManager config.ConfigManager
 	if *configPath != "" {
-		// Custom config path not implemented in the config package yet
-		// For now, use default manager
+		// 自定义配置路径尚未在配置包中实现
+		// 目前使用默认管理器
 		configManager = config.NewConfigManager()
-		appLogger.Warn("Custom config path not fully supported yet, using default")
+		appLogger.Warn("自定义配置路径尚未完全支持，使用默认配置")
 	} else {
 		configManager = config.NewConfigManager()
 	}
 
-	// Load configuration
+	// 加载配置
 	cfg, err := configManager.Load()
 	if err != nil {
-		appLogger.Error("Failed to load configuration: %v", err)
-		return nil, fmt.Errorf("failed to load configuration: %w", err)
+		appLogger.Error("加载配置失败: %v", err)
+		return nil, fmt.Errorf("加载配置失败: %w", err)
 	}
 
-	appLogger.Info("Configuration loaded successfully")
+	appLogger.Info("配置加载成功")
 
-	// Initialize API client
+	// 初始化 API 客户端
 	apiClient := api.NewClient()
 
-	// Initialize download manager
+	// 初始化下载管理器
 	downloadManager := download.NewManager()
 
-	// Initialize install manager
+	// 初始化安装管理器
 	installManager := install.NewManager()
 
-	// Initialize error handler
+	// 初始化错误处理器
 	errorHandler := errors.NewDefaultErrorHandler()
 
-	// Initialize GUI manager (if not in no-gui mode)
+	// 初始化 GUI 管理器（如果不是无 GUI 模式）
 	var guiManager GUIManager
 	if !*noGUI {
-		// GUI will be implemented when GUI dependencies are available
-		appLogger.Info("GUI mode requested but not available in this build")
+		// GUI 将在 GUI 依赖项可用时实现
+		appLogger.Info("请求 GUI 模式但此构建中不可用")
 		guiManager = nil
 	} else {
-		appLogger.Info("Running in no-GUI mode")
+		appLogger.Info("运行在无 GUI 模式")
 	}
 
 	app := &Application{
@@ -243,179 +242,179 @@ func initializeApplication() (*Application, error) {
 		userConfirmed:   make(chan bool, 1),
 	}
 
-	appLogger.Info("Application initialized successfully")
+	appLogger.Info("应用程序初始化成功")
 	return app, nil
 }
 
-// run starts the main application logic
+// run 启动主应用程序逻辑
 func (app *Application) run() error {
-	app.logger.Info("Starting application")
+	app.logger.Info("启动应用程序")
 
 	if app.guiManager != nil {
-		// Run with GUI
+		// 使用 GUI 运行
 		return app.runWithGUI()
 	} else {
-		// Run in command line mode
+		// 在命令行模式下运行
 		return app.runCommandLine()
 	}
 }
 
-// runWithGUI runs the application with GUI
+// runWithGUI 使用 GUI 运行应用程序
 func (app *Application) runWithGUI() error {
-	app.logger.Info("Starting GUI mode")
-	
-	// Set up GUI callbacks
+	app.logger.Info("启动 GUI 模式")
+
+	// 设置 GUI 回调
 	app.setupGUICallbacks()
-	
-	// Show main window (this will block until window is closed)
+
+	// 显示主窗口（这将阻塞直到窗口关闭）
 	app.guiManager.ShowMainWindow()
-	
+
 	return nil
 }
 
-// runCommandLine runs the application in command line mode
+// runCommandLine 在命令行模式下运行应用程序
 func (app *Application) runCommandLine() error {
-	app.logger.Info("Starting command line mode")
-	
-	// Start the complete update flow
+	app.logger.Info("启动命令行模式")
+
+	// 开始完整的更新流程
 	return app.executeUpdateFlow()
 }
 
-// setupGUICallbacks sets up callbacks for GUI interactions
+// setupGUICallbacks 为 GUI 交互设置回调
 func (app *Application) setupGUICallbacks() {
 	if app.guiManager == nil {
 		return
 	}
 
-	// GUI callbacks will be implemented when GUI is available
-	app.logger.Info("GUI callbacks setup requested but GUI not available")
-	
-	// For now, we'll set up basic interaction handling
-	// The actual GUI integration will be completed when GUI dependencies are resolved
+	// GUI 回调将在 GUI 可用时实现
+	app.logger.Info("请求 GUI 回调设置但 GUI 不可用")
+
+	// 目前，我们将设置基本的交互处理
+	// 实际的 GUI 集成将在 GUI 依赖项解决后完成
 }
 
-// handleStartupCleanup handles cleanup of files marked for deletion on startup
+// handleStartupCleanup 处理启动时标记删除的文件清理
 func (app *Application) handleStartupCleanup() error {
-	app.logger.Info("Performing startup cleanup")
-	
-	// Get current executable directory
+	app.logger.Info("执行启动清理")
+
+	// 获取当前可执行文件目录
 	exePath, err := os.Executable()
 	if err != nil {
-		return fmt.Errorf("failed to get executable path: %w", err)
+		return fmt.Errorf("获取可执行文件路径失败: %w", err)
 	}
-	
+
 	exeDir := filepath.Dir(exePath)
-	
-	// Delete files marked for deletion
+
+	// 删除标记删除的文件
 	if installMgr, ok := app.installManager.(*install.Manager); ok {
 		if err := installMgr.DeleteMarkedFiles(exeDir); err != nil {
-			return fmt.Errorf("failed to delete marked files: %w", err)
+			return fmt.Errorf("删除标记文件失败: %w", err)
 		}
 	}
-	
-	app.logger.Info("Startup cleanup completed")
+
+	app.logger.Info("启动清理完成")
 	return nil
 }
 
-// setupSignalHandling sets up graceful shutdown on system signals
+// setupSignalHandling 设置系统信号的优雅关闭
 func (app *Application) setupSignalHandling() {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-	
+
 	go func() {
 		sig := <-sigChan
-		app.logger.Info("Received signal: %v", sig)
-		app.logger.Info("Initiating graceful shutdown...")
+		app.logger.Info("接收到信号: %v", sig)
+		app.logger.Info("启动优雅关闭...")
 		app.cancel()
 	}()
 }
 
-// cleanup performs application cleanup
+// cleanup 执行应用程序清理
 func (app *Application) cleanup() {
-	app.logger.Info("Cleaning up application resources")
-	
-	// Cancel context to stop all operations
+	app.logger.Info("清理应用程序资源")
+
+	// 取消上下文以停止所有操作
 	app.cancel()
-	
-	// Wait for all goroutines to finish
+
+	// 等待所有 goroutine 完成
 	app.wg.Wait()
-	
-	// Cleanup install manager temporary directories
+
+	// 清理安装管理器临时目录
 	if installMgr, ok := app.installManager.(*install.Manager); ok {
 		if err := installMgr.CleanupAllTempDirs(); err != nil {
-			app.logger.Error("Failed to cleanup temp directories: %v", err)
+			app.logger.Error("清理临时目录失败: %v", err)
 		}
 	}
-	
-	app.logger.Info("Application cleanup completed")
-	
-	// Close logger last
+
+	app.logger.Info("应用程序清理完成")
+
+	// 最后关闭日志记录器
 	if err := app.logger.Close(); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to close logger: %v\n", err)
+		fmt.Fprintf(os.Stderr, "关闭日志记录器失败: %v\n", err)
 	}
 }
 
-// ensureSingleInstance ensures only one instance of the application is running
+// ensureSingleInstance 确保应用程序只有一个实例在运行
 func ensureSingleInstance() error {
-	// Create a lock file in temp directory
+	// 在临时目录中创建锁文件
 	tempDir := os.TempDir()
-	lockFile := filepath.Join(tempDir, "lightweight-updater.lock")
-	
-	// Try to create the lock file exclusively
+	lockFile := filepath.Join(tempDir, "AUTO_MAA_Go_Updater.lock")
+
+	// 尝试独占创建锁文件
 	file, err := os.OpenFile(lockFile, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)
 	if err != nil {
 		if os.IsExist(err) {
-			// Check if the process is still running
+			// 检查进程是否仍在运行
 			if isProcessRunning(lockFile) {
-				return fmt.Errorf("another instance is already running")
+				return fmt.Errorf("另一个实例已在运行")
 			}
-			// Remove stale lock file and try again
+			// 删除过期的锁文件并重试
 			os.Remove(lockFile)
 			return ensureSingleInstance()
 		}
-		return fmt.Errorf("failed to create lock file: %w", err)
+		return fmt.Errorf("创建锁文件失败: %w", err)
 	}
-	
-	// Write current process ID to lock file
+
+	// 将当前进程 ID 写入锁文件
 	fmt.Fprintf(file, "%d", os.Getpid())
 	file.Close()
-	
-	// Remove lock file on exit
+
+	// 退出时删除锁文件
 	go func() {
 		sigChan := make(chan os.Signal, 1)
 		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 		<-sigChan
 		os.Remove(lockFile)
 	}()
-	
+
 	return nil
 }
 
-// isProcessRunning checks if the process in the lock file is still running
+// isProcessRunning 检查锁文件中的进程是否仍在运行
 func isProcessRunning(lockFile string) bool {
 	data, err := os.ReadFile(lockFile)
 	if err != nil {
 		return false
 	}
-	
+
 	var pid int
 	if _, err := fmt.Sscanf(string(data), "%d", &pid); err != nil {
 		return false
 	}
-	
-	// Check if process exists (Windows specific)
+
+	// 检查进程是否存在（Windows 特定）
 	process, err := os.FindProcess(pid)
 	if err != nil {
 		return false
 	}
-	
-	// On Windows, FindProcess always succeeds, so we need to check differently
-	// Try to send signal 0 to check if process exists
+
+	// 在 Windows 上，FindProcess 总是成功，所以我们需要不同的检查方式
+	// 尝试发送信号 0 来检查进程是否存在
 	err = process.Signal(syscall.Signal(0))
 	return err == nil
 }
 
-// showVersion displays version information
+// showVersion 显示版本信息
 func showVersion() {
 	fmt.Printf("AUTO_MAA_Go_Updater\n")
 	fmt.Printf("Version: %s\n", appversion.Version)
@@ -423,65 +422,65 @@ func showVersion() {
 	fmt.Printf("Git Commit: %s\n", appversion.GitCommit)
 }
 
-// showHelp displays help information
+// showHelp 显示帮助信息
 func showHelp() {
-	fmt.Printf("AUTO_MAA_Go_Updater - AUTO_MAA 轻量级更新器\n\n")
+	fmt.Printf("AUTO_MAA_Go_Updater\n\n")
 	fmt.Printf("Usage: %s [options]\n\n", os.Args[0])
 	fmt.Printf("Options:\n")
 	flag.PrintDefaults()
 	fmt.Printf("\nExamples:\n")
-	fmt.Printf("  %s                    # Run with GUI\n", os.Args[0])
-	fmt.Printf("  %s -no-gui           # Run in command line mode\n", os.Args[0])
-	fmt.Printf("  %s -log-level debug  # Run with debug logging\n", os.Args[0])
-	fmt.Printf("  %s -version          # Show version information\n", os.Args[0])
+	fmt.Printf("  %s                    # 使用 GUI 运行\n", os.Args[0])
+	fmt.Printf("  %s -no-gui           # 在命令行模式下运行\n", os.Args[0])
+	fmt.Printf("  %s -log-level debug  # 使用调试日志运行\n", os.Args[0])
+	fmt.Printf("  %s -version          # 显示版本信息\n", os.Args[0])
 }
 
-// executeUpdateFlow executes the complete update flow with state machine management
+// executeUpdateFlow 执行完整的更新流程和状态机管理
 func (app *Application) executeUpdateFlow() error {
-	app.logger.Info("Starting update flow execution")
-	
-	// Execute the state machine
+	app.logger.Info("开始执行更新流程")
+
+	// 执行状态机
 	for {
 		select {
 		case <-app.ctx.Done():
-			app.logger.Info("Update flow cancelled")
+			app.logger.Info("更新流程已取消")
 			return app.ctx.Err()
 		default:
 		}
-		
-		// Get current state
+
+		// 获取当前状态
 		state := app.getCurrentState()
-		app.logger.Debug("Current state: %s", state.String())
-		
-		// Execute state logic
+		app.logger.Debug("当前状态: %s", state.String())
+
+		// 执行状态逻辑
 		nextState, err := app.executeState(state)
 		if err != nil {
-			app.logger.Error("State execution failed: %v", err)
+			app.logger.Error("状态执行失败: %v", err)
 			app.setState(StateError)
 			return err
 		}
-		
-		// Check if we're done
+
+		// 检查是否完成
 		if nextState == StateCompleted || nextState == StateError {
 			app.setState(nextState)
 			break
 		}
-		
-		// Transition to next state
+
+		// 转换到下一个状态
 		app.setState(nextState)
 	}
-	
+
 	finalState := app.getCurrentState()
-	app.logger.Info("Update flow completed with state: %s", finalState.String())
-	
+	app.logger.Info("更新流程完成，状态: %s", finalState.String())
+
 	if finalState == StateError {
-		return fmt.Errorf("update flow failed")
+		return fmt.Errorf("更新流程失败")
 	}
-	
+
 	return nil
 }
 
-// executeState executes the logic for the current state and returns the next state
+// executeState 执行当前状态的逻辑并返回下一个状态
 func (app *Application) executeState(state UpdateState) (UpdateState, error) {
 	switch state {
 	case StateIdle:
@@ -499,104 +498,92 @@ func (app *Application) executeState(state UpdateState) (UpdateState, error) {
 	case StateError:
 		return StateError, nil
 	default:
-		return StateError, fmt.Errorf("unknown state: %s", state.String())
+		return StateError, fmt.Errorf("未知状态: %s", state.String())
 	}
 }
 
-// executeIdleState handles the idle state
+// executeIdleState 处理空闲状态
 func (app *Application) executeIdleState() (UpdateState, error) {
-	app.logger.Info("Starting update check...")
+	app.logger.Info("开始更新检查...")
 	fmt.Println("正在检查更新...")
 	return StateChecking, nil
 }
 
-// executeCheckingState handles the checking state
+// executeCheckingState 处理检查状态
 func (app *Application) executeCheckingState() (UpdateState, error) {
-	app.logger.Info("Checking for updates")
-	
-	// Determine version and channel to use
-	var currentVer, updateChannel, cdkToUse string
+	app.logger.Info("检查更新中")
+
+	// 确定要使用的版本和渠道
+	var currentVer, updateChannel string
 	var err error
-	
-	// Priority: command line args > version file > config
+
+	// 优先级: 命令行参数 > 版本文件 > 配置
 	if *currentVersion != "" {
 		currentVer = *currentVersion
-		app.logger.Info("Using current version from command line: %s", currentVer)
+		app.logger.Info("使用命令行当前版本: %s", currentVer)
 	} else {
-		// Try to load version from resources/version.json
+		// 尝试从 resources/version.json 加载版本
 		versionManager := appversion.NewVersionManager()
 		versionInfo, err := versionManager.LoadVersionFromFile()
 		if err != nil {
-			app.logger.Warn("Failed to load version from file: %v, using config version", err)
+			app.logger.Warn("从文件加载版本失败: %v，使用配置版本", err)
 			currentVer = app.config.CurrentVersion
 		} else {
 			currentVer = versionInfo.MainVersion
-			app.logger.Info("Using current version from version file: %s", currentVer)
+			app.logger.Info("使用版本文件中的当前版本: %s", currentVer)
 		}
 	}
-	
-	// Determine channel
+
+	// 确定渠道
 	if *channel != "" {
 		updateChannel = *channel
-		app.logger.Info("Using channel from command line: %s", updateChannel)
+		app.logger.Info("使用命令行渠道: %s", updateChannel)
 	} else {
-		// Try to load channel from config.json
+		// 尝试从 config.json 加载渠道
 		updateChannel = app.loadChannelFromConfig()
-		app.logger.Info("Using channel from config: %s", updateChannel)
+		app.logger.Info("使用配置中的渠道: %s", updateChannel)
 	}
-	
-	// Determine CDK to use
-	if *cdk != "" {
-		cdkToUse = *cdk
-		app.logger.Info("Using CDK from command line")
-	} else {
-		// Get CDK from config
-		cdkToUse, err = app.config.GetCDK()
-		if err != nil {
-			app.logger.Warn("Failed to get CDK from config: %v", err)
-			cdkToUse = "" // Continue without CDK
-		}
-	}
-	
-	// Prepare API parameters
+
+	// 准备 API 参数
 	params := api.UpdateCheckParams{
-		ResourceID:     "AUTO_MAA", // Fixed resource ID for AUTO_MAA
+		ResourceID:     "AUTO_MAA", // AUTO_MAA 的固定资源 ID
 		CurrentVersion: currentVer,
 		Channel:        updateChannel,
-		CDK:            cdkToUse,
 		UserAgent:      app.config.UserAgent,
 	}
-	
-	// Call MirrorChyan API to check for updates
+
+	// 调用 MirrorChyan API 检查更新
 	response, err := app.apiClient.CheckUpdate(params)
-	if err != nil {
-		app.logger.Error("Failed to check for updates: %v", err)
-		fmt.Printf("检查更新失败: %v\n", err)
-		return StateError, fmt.Errorf("failed to check for updates: %w", err)
+	switch updateChannel {
+	case "beta":
+		fmt.Println("检查更新类别：公测版")
+	case "stable":
+		fmt.Println("检查更新类别：稳定版")
+	default:
+		fmt.Printf("检查更新类别：%v\n", updateChannel)
 	}
-	
-	// Check if update is available
+	fmt.Printf("当前版本：%v", currentVer)
+	app.logger.Info("当前更新类别：" + updateChannel + "；当前版本：" + currentVer)
+	if err != nil {
+		app.logger.Error("检查更新失败: %v", err)
+		fmt.Printf("检查更新失败: %v\n", err)
+		return StateError, fmt.Errorf("检查更新失败: %w", err)
+	}
+
+	// 检查是否有可用更新
 	isUpdateAvailable := app.apiClient.IsUpdateAvailable(response, currentVer)
-	
+
 	if !isUpdateAvailable {
-		app.logger.Info("No update available")
+		app.logger.Info("无可用更新")
 		fmt.Println("当前已是最新版本")
 		return StateCompleted, nil
 	}
-	
-	// Determine download URL
-	var downloadURL string
-	if response.Data.URL != "" {
-		// Use CDK download URL from MirrorChyan
-		downloadURL = response.Data.URL
-		app.logger.Info("Using CDK download URL from MirrorChyan")
-	} else {
-		// Use official download site
-		downloadURL = app.apiClient.GetOfficialDownloadURL(response.Data.VersionName)
-		app.logger.Info("Using official download URL: %s", downloadURL)
-	}
-	
-	// Store update information
+
+	// 使用下载站获取下载链接
+	downloadURL := app.apiClient.GetDownloadURL(response.Data.VersionName)
+	app.logger.Info("使用下载站 URL: %s", downloadURL)
+
+	// 存储更新信息
 	app.updateInfo = &UpdateInfo{
 		CurrentVersion: currentVer,
 		NewVersion:     response.Data.VersionName,
@@ -604,191 +591,187 @@ func (app *Application) executeCheckingState() (UpdateState, error) {
 		ReleaseNotes:   response.Data.ReleaseNote,
 		IsAvailable:    true,
 	}
-	
-	app.logger.Info("Update available: %s -> %s", currentVer, response.Data.VersionName)
+
+	app.logger.Info("有可用更新: %s -> %s", currentVer, response.Data.VersionName)
 	fmt.Printf("发现新版本: %s -> %s\n", currentVer, response.Data.VersionName)
-	
-	// if response.Data.ReleaseNote != "" {
-	// 	fmt.Printf("更新内容: %s\n", response.Data.ReleaseNote)
-	// }
-	
+
 	return StateUpdateAvailable, nil
 }
 
-// executeUpdateAvailableState handles the update available state
+// executeUpdateAvailableState 处理更新可用状态
 func (app *Application) executeUpdateAvailableState() (UpdateState, error) {
-	app.logger.Info("Update available, starting download automatically")
-	
-	// Automatically start download without user confirmation
+	app.logger.Info("有可用更新，自动开始下载")
+
+	// 自动开始下载，无需用户确认
 	fmt.Println("开始下载更新...")
 	return StateDownloading, nil
 }
 
-// executeDownloadingState handles the downloading state
+// executeDownloadingState 处理下载状态
 func (app *Application) executeDownloadingState() (UpdateState, error) {
-	app.logger.Info("Starting download")
-	
+	app.logger.Info("开始下载")
+
 	if app.updateInfo == nil || app.updateInfo.DownloadURL == "" {
-		return StateError, fmt.Errorf("no download URL available")
+		return StateError, fmt.Errorf("无可用下载 URL")
 	}
-	
-	// Get current executable directory
+
+	// 获取当前可执行文件目录
 	exePath, err := os.Executable()
 	if err != nil {
-		return StateError, fmt.Errorf("failed to get executable path: %w", err)
+		return StateError, fmt.Errorf("获取可执行文件路径失败: %w", err)
 	}
 	exeDir := filepath.Dir(exePath)
-	
-	// Create AUTOMAA_UPDATE_TEMP directory for download
+
+	// 为下载创建 AUTOMAA_UPDATE_TEMP 目录
 	tempDir := filepath.Join(exeDir, "AUTOMAA_UPDATE_TEMP")
 	if err := os.MkdirAll(tempDir, 0755); err != nil {
-		return StateError, fmt.Errorf("failed to create temp directory: %w", err)
+		return StateError, fmt.Errorf("创建临时目录失败: %w", err)
 	}
-	
-	// Download file
+
+	// 下载文件
 	downloadPath := filepath.Join(tempDir, "update.zip")
-	
+
 	fmt.Println("正在下载更新包...")
-	
-	// Create progress callback
+
+	// 创建进度回调
 	progressCallback := func(progress download.DownloadProgress) {
 		if progress.TotalBytes > 0 {
-			fmt.Printf("\r下载进度: %.1f%% (%s/s)", 
-				progress.Percentage, 
+			fmt.Printf("\r下载进度: %.1f%% (%s/s)",
+				progress.Percentage,
 				app.formatBytes(progress.Speed))
 		}
 	}
-	
-	// Download the update file
+
+	// 下载更新文件
 	downloadErr := app.downloadManager.Download(app.updateInfo.DownloadURL, downloadPath, progressCallback)
-	
-	fmt.Println() // New line after progress
-	
+
+	fmt.Println() // 进度后换行
+
 	if downloadErr != nil {
-		app.logger.Error("Download failed: %v", downloadErr)
+		app.logger.Error("下载失败: %v", downloadErr)
 		fmt.Printf("下载失败: %v\n", downloadErr)
-		return StateError, fmt.Errorf("download failed: %w", downloadErr)
+		return StateError, fmt.Errorf("下载失败: %w", downloadErr)
 	}
-	
-	app.logger.Info("Download completed successfully")
+
+	app.logger.Info("下载成功完成")
 	fmt.Println("下载完成")
-	
-	// Store download path for installation
+
+	// 存储下载路径用于安装
 	app.updateInfo.DownloadURL = downloadPath
-	
+
 	return StateInstalling, nil
 }
 
-// executeInstallingState handles the installing state
+// executeInstallingState 处理安装状态
 func (app *Application) executeInstallingState() (UpdateState, error) {
-	app.logger.Info("Starting installation")
+	app.logger.Info("开始安装")
 	fmt.Println("正在安装更新...")
-	
+
 	if app.updateInfo == nil || app.updateInfo.DownloadURL == "" {
-		return StateError, fmt.Errorf("no download file available")
+		return StateError, fmt.Errorf("无可用下载文件")
 	}
-	
+
 	downloadPath := app.updateInfo.DownloadURL
-	
-	// Create temporary directory for extraction
+
+	// 为解压创建临时目录
 	tempDir, err := app.installManager.CreateTempDir()
 	if err != nil {
-		return StateError, fmt.Errorf("failed to create temp directory: %w", err)
+		return StateError, fmt.Errorf("创建临时目录失败: %w", err)
 	}
-	
-	// Extract the downloaded zip file
-	app.logger.Info("Extracting update package")
+
+	// 解压下载的 zip 文件
+	app.logger.Info("解压更新包")
 	if err := app.installManager.ExtractZip(downloadPath, tempDir); err != nil {
-		app.logger.Error("Failed to extract zip: %v", err)
-		return StateError, fmt.Errorf("failed to extract update package: %w", err)
+		app.logger.Error("解压 zip 失败: %v", err)
+		return StateError, fmt.Errorf("解压更新包失败: %w", err)
 	}
-	
-	// Process changes.json if it exists (for future use)
+
+	// 如果存在 changes.json 则处理（供将来使用）
 	changesPath := filepath.Join(tempDir, "changes.json")
 	_, err = app.installManager.ProcessChanges(changesPath)
 	if err != nil {
-		app.logger.Warn("Failed to process changes (not critical): %v", err)
-		// This is not critical for AUTO_MAA-Setup.exe installation
+		app.logger.Warn("处理变更失败（非关键）: %v", err)
+		// 这对于 AUTO_MAA-Setup.exe 安装不是关键的
 	}
-	
-	// Get current executable directory
+
+	// 获取当前可执行文件目录
 	exePath, err := os.Executable()
 	if err != nil {
-		return StateError, fmt.Errorf("failed to get executable path: %w", err)
+		return StateError, fmt.Errorf("获取可执行文件路径失败: %w", err)
 	}
 	targetDir := filepath.Dir(exePath)
-	
-	// Handle running processes (but skip the updater itself)
+
+	// 处理正在运行的进程（但跳过更新器本身）
 	updaterName := filepath.Base(exePath)
 	if err := app.handleRunningProcesses(targetDir, updaterName); err != nil {
-		app.logger.Warn("Failed to handle running processes: %v", err)
-		// Continue with installation, this is not critical
+		app.logger.Warn("处理正在运行的进程失败: %v", err)
+		// 继续安装，这不是关键的
 	}
-	
-	// Look for AUTO_MAA-Setup.exe in the extracted files
+
+	// 在解压的文件中查找 AUTO_MAA-Setup.exe
 	setupExePath := filepath.Join(tempDir, "AUTO_MAA-Setup.exe")
 	if _, err := os.Stat(setupExePath); err != nil {
-		app.logger.Error("AUTO_MAA-Setup.exe not found in update package: %v", err)
-		return StateError, fmt.Errorf("AUTO_MAA-Setup.exe not found in update package: %w", err)
+		app.logger.Error("在更新包中未找到 AUTO_MAA-Setup.exe: %v", err)
+		return StateError, fmt.Errorf("在更新包中未找到 AUTO_MAA-Setup.exe: %w", err)
 	}
-	
-	// Run the setup executable
-	app.logger.Info("Running AUTO_MAA-Setup.exe")
+
+	// 运行安装可执行文件
+	app.logger.Info("运行 AUTO_MAA-Setup.exe")
 	fmt.Println("正在运行安装程序...")
-	
+
 	if err := app.runSetupExecutable(setupExePath); err != nil {
-		app.logger.Error("Failed to run setup executable: %v", err)
-		return StateError, fmt.Errorf("failed to run setup executable: %w", err)
+		app.logger.Error("运行安装可执行文件失败: %v", err)
+		return StateError, fmt.Errorf("运行安装可执行文件失败: %w", err)
 	}
-	
-	// Update the version.json file with new version
+
+	// 使用新版本更新 version.json 文件
 	if err := app.updateVersionFile(app.updateInfo.NewVersion); err != nil {
-		app.logger.Warn("Failed to update version file: %v", err)
-		// This is not critical, continue
+		app.logger.Warn("更新版本文件失败: %v", err)
+		// 这不是关键的，继续
 	}
-	
-	// Clean up AUTOMAA_UPDATE_TEMP directory after installation
+
+	// 安装后清理 AUTOMAA_UPDATE_TEMP 目录
 	if err := os.RemoveAll(tempDir); err != nil {
-		app.logger.Warn("Failed to cleanup temp directory: %v", err)
-		// This is not critical, continue
+		app.logger.Warn("清理临时目录失败: %v", err)
+		// 这不是关键的，继续
 	} else {
-		app.logger.Info("Cleaned up temp directory: %s", tempDir)
+		app.logger.Info("清理临时目录: %s", tempDir)
 	}
-	
-	app.logger.Info("Installation completed successfully")
+
+	app.logger.Info("安装成功完成")
 	fmt.Println("安装完成")
 	fmt.Printf("已更新到版本: %s\n", app.updateInfo.NewVersion)
-	
+
 	return StateCompleted, nil
 }
 
-// getCurrentState returns the current state thread-safely
+// getCurrentState 线程安全地返回当前状态
 func (app *Application) getCurrentState() UpdateState {
 	app.stateMutex.RLock()
 	defer app.stateMutex.RUnlock()
 	return app.currentState
 }
 
-// setState sets the current state thread-safely
+// setState 线程安全地设置当前状态
 func (app *Application) setState(state UpdateState) {
 	app.stateMutex.Lock()
 	defer app.stateMutex.Unlock()
-	
-	app.logger.Debug("State transition: %s -> %s", app.currentState.String(), state.String())
+
+	app.logger.Debug("状态转换: %s -> %s", app.currentState.String(), state.String())
 	app.currentState = state
-	
-	// Update GUI if available
+
+	// 如果可用则更新 GUI
 	if app.guiManager != nil {
 		app.updateGUIStatus(state)
 	}
 }
 
-// updateGUIStatus updates the GUI based on the current state
+// updateGUIStatus 根据当前状态更新 GUI
 func (app *Application) updateGUIStatus(state UpdateState) {
 	if app.guiManager == nil {
 		return
 	}
-	
+
 	switch state {
 	case StateIdle:
 		app.guiManager.UpdateStatus(0, "准备检查更新...")
@@ -810,7 +793,7 @@ func (app *Application) updateGUIStatus(state UpdateState) {
 	}
 }
 
-// formatBytes formats bytes into human readable format
+// formatBytes 将字节格式化为人类可读格式
 func (app *Application) formatBytes(bytes int64) string {
 	const unit = 1024
 	if bytes < unit {
@@ -824,7 +807,7 @@ func (app *Application) formatBytes(bytes int64) string {
 	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
 }
 
-// handleUserInteraction handles user interaction for GUI mode
+// handleUserInteraction 处理 GUI 模式的用户交互
 func (app *Application) handleUserInteraction(action string) {
 	switch action {
 	case "confirm_update":
@@ -838,47 +821,47 @@ func (app *Application) handleUserInteraction(action string) {
 		default:
 		}
 	case "check_update":
-		// Start update flow in a goroutine
+		// 在 goroutine 中启动更新流程
 		app.wg.Add(1)
 		go func() {
 			defer app.wg.Done()
 			if err := app.executeUpdateFlow(); err != nil {
-				app.logger.Error("Update flow failed: %v", err)
+				app.logger.Error("更新流程失败: %v", err)
 			}
 		}()
 	}
 }
 
-// updateVersionFile updates the target software's version.json file with the new version
+// updateVersionFile 使用新版本更新目标软件的 version.json 文件
 func (app *Application) updateVersionFile(newVersion string) error {
-	// Get current executable directory (where the target software is located)
+	// 获取当前可执行文件目录（目标软件所在位置）
 	exePath, err := os.Executable()
 	if err != nil {
-		return fmt.Errorf("failed to get executable path: %w", err)
+		return fmt.Errorf("获取可执行文件路径失败: %w", err)
 	}
 	targetDir := filepath.Dir(exePath)
-	
-	// Path to the target software's version file
+
+	// 目标软件版本文件的路径
 	versionFilePath := filepath.Join(targetDir, "resources", "version.json")
-	
-	// Try to load existing version file
+
+	// 尝试加载现有版本文件
 	versionManager := appversion.NewVersionManager()
 	versionInfo, err := versionManager.LoadVersionFromFile()
 	if err != nil {
-		app.logger.Warn("Could not load existing version file, creating new one: %v", err)
-		// Create a basic version info structure
+		app.logger.Warn("无法加载现有版本文件，创建新文件: %v", err)
+		// 创建基本版本信息结构
 		versionInfo = &appversion.VersionInfo{
 			MainVersion: newVersion,
 			VersionInfo: make(map[string]map[string][]string),
 		}
 	}
-	
-	// Parse the new version to get the proper format
+
+	// 解析新版本以获取正确格式
 	parsedVersion, err := appversion.ParseVersion(newVersion)
 	if err != nil {
-		// If we can't parse the version from API response, try to extract from display format
+		// 如果无法从 API 响应解析版本，尝试从显示格式提取
 		if strings.HasPrefix(newVersion, "v") {
-			// Convert "v4.4.1-beta3" to "4.4.1.3" format
+			// 将 "v4.4.1-beta3" 转换为 "4.4.1.3" 格式
 			versionStr := strings.TrimPrefix(newVersion, "v")
 			if strings.Contains(versionStr, "-beta") {
 				parts := strings.Split(versionStr, "-beta")
@@ -896,151 +879,151 @@ func (app *Application) updateVersionFile(newVersion string) error {
 			versionInfo.MainVersion = newVersion
 		}
 	} else {
-		// Use the parsed version to create the proper format
+		// 使用解析的版本创建正确格式
 		versionInfo.MainVersion = parsedVersion.ToVersionString()
 	}
-	
-	// Create resources directory if it doesn't exist
+
+	// 如果 resources 目录不存在则创建
 	resourcesDir := filepath.Join(targetDir, "resources")
 	if err := os.MkdirAll(resourcesDir, 0755); err != nil {
-		return fmt.Errorf("failed to create resources directory: %w", err)
+		return fmt.Errorf("创建 resources 目录失败: %w", err)
 	}
-	
-	// Write updated version file
+
+	// 写入更新的版本文件
 	data, err := json.MarshalIndent(versionInfo, "", "    ")
 	if err != nil {
-		return fmt.Errorf("failed to marshal version info: %w", err)
+		return fmt.Errorf("序列化版本信息失败: %w", err)
 	}
-	
+
 	if err := os.WriteFile(versionFilePath, data, 0644); err != nil {
-		return fmt.Errorf("failed to write version file: %w", err)
+		return fmt.Errorf("写入版本文件失败: %w", err)
 	}
-	
-	app.logger.Info("Updated version file: %s -> %s", versionFilePath, versionInfo.MainVersion)
+
+	app.logger.Info("更新版本文件: %s -> %s", versionFilePath, versionInfo.MainVersion)
 	return nil
 }
 
-// handleRunningProcesses handles running processes but excludes the updater itself
+// handleRunningProcesses 处理正在运行的进程但排除更新器本身
 func (app *Application) handleRunningProcesses(targetDir, updaterName string) error {
-	app.logger.Info("Handling running processes, excluding updater: %s", updaterName)
-	
-	// Get list of executable files in the target directory
+	app.logger.Info("处理正在运行的进程，排除更新器: %s", updaterName)
+
+	// 获取目标目录中的可执行文件列表
 	files, err := os.ReadDir(targetDir)
 	if err != nil {
-		return fmt.Errorf("failed to read target directory: %w", err)
+		return fmt.Errorf("读取目标目录失败: %w", err)
 	}
-	
+
 	for _, file := range files {
 		if file.IsDir() {
 			continue
 		}
-		
+
 		fileName := file.Name()
-		
-		// Skip the updater itself
+
+		// 跳过更新器本身
 		if fileName == updaterName {
-			app.logger.Info("Skipping updater file: %s", fileName)
+			app.logger.Info("跳过更新器文件: %s", fileName)
 			continue
 		}
-		
-		// Only handle .exe files
+
+		// 只处理 .exe 文件
 		if !strings.HasSuffix(strings.ToLower(fileName), ".exe") {
 			continue
 		}
-		
-		// Handle this executable
+
+		// 处理此可执行文件
 		if err := app.installManager.HandleRunningProcess(fileName); err != nil {
-			app.logger.Warn("Failed to handle running process %s: %v", fileName, err)
-			// Continue with other files, don't fail the entire process
+			app.logger.Warn("处理正在运行的进程 %s 失败: %v", fileName, err)
+			// 继续处理其他文件，不要让整个过程失败
 		}
 	}
-	
+
 	return nil
 }
 
-// runSetupExecutable runs the setup executable with proper parameters
+// runSetupExecutable 使用适当参数运行安装可执行文件
 func (app *Application) runSetupExecutable(setupExePath string) error {
-	app.logger.Info("Executing setup file: %s", setupExePath)
-	
-	// Get current executable directory as installation directory
+	app.logger.Info("执行安装文件: %s", setupExePath)
+
+	// 获取当前可执行文件目录作为安装目录
 	exePath, err := os.Executable()
 	if err != nil {
-		return fmt.Errorf("failed to get executable path: %w", err)
+		return fmt.Errorf("获取可执行文件路径失败: %w", err)
 	}
 	installDir := filepath.Dir(exePath)
-	
-	// Setup command with parameters matching Python implementation
+
+	// 设置与 Python 实现匹配的命令参数
 	args := []string{
-		"/SP-",                           // Skip welcome page
-		"/SILENT",                        // Silent installation
-		"/NOCANCEL",                      // No cancel button
-		"/FORCECLOSEAPPLICATIONS",        // Force close applications
-		"/LANG=Chinese",                  // Chinese language
-		fmt.Sprintf("/DIR=%s", installDir), // Installation directory
+		"/SP-",                             // 跳过欢迎页面
+		"/SILENT",                          // 静默安装
+		"/NOCANCEL",                        // 无取消按钮
+		"/FORCECLOSEAPPLICATIONS",          // 强制关闭应用程序
+		"/LANG=Chinese",                    // 中文语言
+		fmt.Sprintf("/DIR=%s", installDir), // 安装目录
 	}
-	
-	app.logger.Info("Running setup with args: %v", args)
-	
-	// Create command with arguments
+
+	app.logger.Info("使用参数运行安装程序: %v", args)
+
+	// 使用参数创建命令
 	cmd := exec.Command(setupExePath, args...)
-	
-	// Set working directory to the setup file's directory
+
+	// 设置工作目录为安装文件的目录
 	cmd.Dir = filepath.Dir(setupExePath)
-	
-	// Run the command and wait for it to complete
+
+	// 运行命令并等待完成
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to execute setup: %w", err)
+		return fmt.Errorf("执行安装程序失败: %w", err)
 	}
-	
-	app.logger.Info("Setup executable completed successfully")
+
+	app.logger.Info("安装可执行文件成功完成")
 	return nil
 }
 
-// AutoMAAConfig represents the structure of config/config.json
+// AutoMAAConfig 表示 config/config.json 的结构
 type AutoMAAConfig struct {
 	Update struct {
 		UpdateType string `json:"UpdateType"`
 	} `json:"Update"`
 }
 
-// loadChannelFromConfig loads the update channel from config/config.json
+// loadChannelFromConfig 从 config/config.json 加载更新渠道
 func (app *Application) loadChannelFromConfig() string {
-	// Get current executable directory
+	// 获取当前可执行文件目录
 	exePath, err := os.Executable()
 	if err != nil {
-		app.logger.Warn("Failed to get executable path: %v", err)
+		app.logger.Warn("获取可执行文件路径失败: %v", err)
 		return "stable"
 	}
-	
+
 	configPath := filepath.Join(filepath.Dir(exePath), "config", "config.json")
-	
-	// Check if config file exists
+
+	// 检查配置文件是否存在
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		app.logger.Info("Config file not found: %s, using default channel", configPath)
+		app.logger.Info("配置文件未找到: %s，使用默认渠道", configPath)
 		return "stable"
 	}
-	
-	// Read config file
+
+	// 读取配置文件
 	data, err := os.ReadFile(configPath)
 	if err != nil {
-		app.logger.Warn("Failed to read config file: %v, using default channel", err)
+		app.logger.Warn("读取配置文件失败: %v，使用默认渠道", err)
 		return "stable"
 	}
-	
-	// Parse JSON
+
+	// 解析 JSON
 	var config AutoMAAConfig
 	if err := json.Unmarshal(data, &config); err != nil {
-		app.logger.Warn("Failed to parse config file: %v, using default channel", err)
+		app.logger.Warn("解析配置文件失败: %v，使用默认渠道", err)
 		return "stable"
 	}
-	
-	// Get update channel
+
+	// 获取更新渠道
 	updateType := config.Update.UpdateType
 	if updateType == "" {
-		app.logger.Info("UpdateType not found in config, using default channel")
+		app.logger.Info("配置中未找到 UpdateType，使用默认渠道")
 		return "stable"
 	}
-	
-	app.logger.Info("Loaded update channel from config: %s", updateType)
+
+	app.logger.Info("从配置加载更新渠道: %s", updateType)
 	return updateType
 }

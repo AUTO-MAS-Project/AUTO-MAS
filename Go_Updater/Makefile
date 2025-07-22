@@ -9,7 +9,7 @@ BUILD_DIR := build
 DIST_DIR := dist
 
 # Go build flags
-LDFLAGS := -s -w -X lightweight-updater/version.Version=$(VERSION) -X lightweight-updater/version.BuildTime=$(BUILD_TIME) -X lightweight-updater/version.GitCommit=$(GIT_COMMIT)
+LDFLAGS := -s -w -X AUTO_MAA_Go_Updater/version.Version=$(VERSION) -X AUTO_MAA_Go_Updater/version.BuildTime=$(BUILD_TIME) -X AUTO_MAA_Go_Updater/version.GitCommit=$(GIT_COMMIT)
 
 # Default target
 .PHONY: all

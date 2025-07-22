@@ -13,18 +13,18 @@ import (
 	"time"
 )
 
-// DownloadProgress represents the current download progress
+// DownloadProgress 表示当前下载进度
 type DownloadProgress struct {
 	BytesDownloaded int64
 	TotalBytes      int64
 	Percentage      float64
-	Speed           int64 // bytes per second
+	Speed           int64 // 每秒字节数
 }
 
-// ProgressCallback is called during download to report progress
+// ProgressCallback 在下载过程中调用以报告进度
 type ProgressCallback func(DownloadProgress)
 
-// DownloadManager interface defines download operations
+// DownloadManager 定义下载操作的接口
 type DownloadManager interface {
 	Download(url, destination string, progressCallback ProgressCallback) error
 	DownloadWithResume(url, destination string, progressCallback ProgressCallback) error
@@ -32,13 +32,13 @@ type DownloadManager interface {
 	SetTimeout(timeout time.Duration)
 }
 
-// Manager implements DownloadManager interface
+// Manager 实现 DownloadManager 接口
 type Manager struct {
 	client  *http.Client
 	timeout time.Duration
 }
 
-// NewManager creates a new download manager
+// NewManager 创建新的下载管理器
 func NewManager() *Manager {
 	return &Manager{
 		client: &http.Client{
@@ -48,24 +48,24 @@ func NewManager() *Manager {
 	}
 }
 
-// Download downloads a file from the given URL to the destination path
+// Download 从给定 URL 下载文件到目标路径
 func (m *Manager) Download(url, destination string, progressCallback ProgressCallback) error {
 	return m.downloadWithContext(context.Background(), url, destination, progressCallback, false)
 }
 
-// DownloadWithResume downloads a file with resume capability
+// DownloadWithResume 下载文件并支持断点续传
 func (m *Manager) DownloadWithResume(url, destination string, progressCallback ProgressCallback) error {
 	return m.downloadWithContext(context.Background(), url, destination, progressCallback, true)
 }
 
-// downloadWithContext performs the actual download with context support
+// downloadWithContext 执行实际的下载并支持上下文
 func (m *Manager) downloadWithContext(ctx context.Context, url, destination string, progressCallback ProgressCallback, resume bool) error {
-	// Create destination directory if it doesn't exist
+	// 如果目标目录不存在则创建
 	if err := os.MkdirAll(filepath.Dir(destination), 0755); err != nil {
-		return fmt.Errorf("failed to create destination directory: %w", err)
+		return fmt.Errorf("创建目标目录失败: %w", err)
 	}
 
-	// Check if file exists for resume
+	// 检查文件是否存在以支持断点续传
 	var existingSize int64
 	if resume {
 		if stat, err := os.Stat(destination); err == nil {
@@ -73,30 +73,30 @@ func (m *Manager) downloadWithContext(ctx context.Context, url, destination stri
 		}
 	}
 
-	// Create HTTP request
+	// 创建 HTTP 请求
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
+		return fmt.Errorf("创建请求失败: %w", err)
 	}
 
-	// Add range header for resume
+	// 为断点续传添加范围头
 	if resume && existingSize > 0 {
 		req.Header.Set("Range", fmt.Sprintf("bytes=%d-", existingSize))
 	}
 
-	// Execute request
+	// 执行请求
 	resp, err := m.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("failed to execute request: %w", err)
+		return fmt.Errorf("执行请求失败: %w", err)
 	}
 	defer resp.Body.Close()
 
-	// Check response status
+	// 检查响应状态
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
-		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		return fmt.Errorf("意外的状态码: %d", resp.StatusCode)
 	}
 
-	// Get total size
+	// 获取总大小
 	totalSize := existingSize
 	if contentLength := resp.Header.Get("Content-Length"); contentLength != "" {
 		if size, err := strconv.ParseInt(contentLength, 10, 64); err == nil {
@@ -104,7 +104,7 @@ func (m *Manager) downloadWithContext(ctx context.Context, url, destination stri
 		}
 	}
 
-	// Open destination file
+	// 打开目标文件
 	var file *os.File
 	if resume && existingSize > 0 {
 		file, err = os.OpenFile(destination, os.O_WRONLY|os.O_APPEND, 0644)
@@ -113,17 +113,17 @@ func (m *Manager) downloadWithContext(ctx context.Context, url, destination stri
 		existingSize = 0
 	}
 	if err != nil {
-		return fmt.Errorf("failed to create destination file: %w", err)
+		return fmt.Errorf("创建目标文件失败: %w", err)
 	}
 	defer file.Close()
 
-	// Download with progress tracking
+	// 下载并跟踪进度
 	return m.copyWithProgress(resp.Body, file, existingSize, totalSize, progressCallback)
 }
 
-// copyWithProgress copies data while tracking progress
+// copyWithProgress 复制数据并跟踪进度
 func (m *Manager) copyWithProgress(src io.Reader, dst io.Writer, startBytes, totalBytes int64, progressCallback ProgressCallback) error {
-	buffer := make([]byte, 32*1024) // 32KB buffer
+	buffer := make([]byte, 32*1024) // 32KB 缓冲区
 	downloaded := startBytes
 	startTime := time.Now()
 	lastUpdate := startTime
@@ -132,11 +132,11 @@ func (m *Manager) copyWithProgress(src io.Reader, dst io.Writer, startBytes, tot
 		n, err := src.Read(buffer)
 		if n > 0 {
 			if _, writeErr := dst.Write(buffer[:n]); writeErr != nil {
-				return fmt.Errorf("failed to write to destination: %w", writeErr)
+				return fmt.Errorf("写入目标失败: %w", writeErr)
 			}
 			downloaded += int64(n)
 
-			// Update progress every 100ms
+			// 每 100ms 更新一次进度
 			now := time.Now()
 			if progressCallback != nil && now.Sub(lastUpdate) >= 100*time.Millisecond {
 				elapsed := now.Sub(startTime).Seconds()
@@ -164,11 +164,11 @@ func (m *Manager) copyWithProgress(src io.Reader, dst io.Writer, startBytes, tot
 			break
 		}
 		if err != nil {
-			return fmt.Errorf("failed to read from source: %w", err)
+			return fmt.Errorf("从源读取失败: %w", err)
 		}
 	}
 
-	// Final progress update
+	// 最终进度更新
 	if progressCallback != nil {
 		elapsed := time.Since(startTime).Seconds()
 		speed := int64(0)
@@ -192,32 +192,32 @@ func (m *Manager) copyWithProgress(src io.Reader, dst io.Writer, startBytes, tot
 	return nil
 }
 
-// ValidateChecksum validates the SHA256 checksum of a file
+// ValidateChecksum 验证文件的 SHA256 校验和
 func (m *Manager) ValidateChecksum(filePath, expectedChecksum string) error {
 	if expectedChecksum == "" {
-		return nil // No checksum to validate
+		return nil // 没有校验和需要验证
 	}
 
 	file, err := os.Open(filePath)
 	if err != nil {
-		return fmt.Errorf("failed to open file for checksum validation: %w", err)
+		return fmt.Errorf("打开文件进行校验和验证失败: %w", err)
 	}
 	defer file.Close()
 
 	hash := sha256.New()
 	if _, err := io.Copy(hash, file); err != nil {
-		return fmt.Errorf("failed to calculate checksum: %w", err)
+		return fmt.Errorf("计算校验和失败: %w", err)
 	}
 
 	actualChecksum := hex.EncodeToString(hash.Sum(nil))
 	if actualChecksum != expectedChecksum {
-		return fmt.Errorf("checksum mismatch: expected %s, got %s", expectedChecksum, actualChecksum)
+		return fmt.Errorf("校验和不匹配: 期望 %s，得到 %s", expectedChecksum, actualChecksum)
 	}
 
 	return nil
 }
 
-// SetTimeout sets the timeout for download operations
+// SetTimeout 设置下载操作的超时时间
 func (m *Manager) SetTimeout(timeout time.Duration) {
 	m.timeout = timeout
 	m.client.Timeout = timeout

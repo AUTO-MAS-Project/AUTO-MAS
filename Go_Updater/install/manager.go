@@ -11,14 +11,14 @@ import (
 	"syscall"
 )
 
-// ChangesInfo represents the structure of changes.json file
+// ChangesInfo 表示 changes.json 文件的结构
 type ChangesInfo struct {
 	Deleted  []string `json:"deleted"`
 	Added    []string `json:"added"`
 	Modified []string `json:"modified"`
 }
 
-// InstallManager interface defines the contract for installation operations
+// InstallManager 定义安装操作的接口契约
 type InstallManager interface {
 	ExtractZip(zipPath, destPath string) error
 	ProcessChanges(changesPath string) (*ChangesInfo, error)
@@ -28,31 +28,31 @@ type InstallManager interface {
 	CleanupTempDir(tempDir string) error
 }
 
-// Manager implements the InstallManager interface
+// Manager 实现 InstallManager 接口
 type Manager struct {
-	tempDirs []string // Track temporary directories for cleanup
+	tempDirs []string // 跟踪临时目录以便清理
 }
 
-// NewManager creates a new install manager instance
+// NewManager 创建新的安装管理器实例
 func NewManager() *Manager {
 	return &Manager{
 		tempDirs: make([]string, 0),
 	}
 }
 
-// CreateTempDir creates a temporary directory for extraction
+// CreateTempDir 为解压创建临时目录
 func (m *Manager) CreateTempDir() (string, error) {
 	tempDir, err := os.MkdirTemp("", "updater_*")
 	if err != nil {
-		return "", fmt.Errorf("failed to create temp directory: %w", err)
+		return "", fmt.Errorf("创建临时目录失败: %w", err)
 	}
 
-	// Track temp directory for cleanup
+	// 跟踪临时目录以便清理
 	m.tempDirs = append(m.tempDirs, tempDir)
 	return tempDir, nil
 }
 
-// CleanupTempDir removes a temporary directory and its contents
+// CleanupTempDir 删除临时目录及其内容
 func (m *Manager) CleanupTempDir(tempDir string) error {
 	if tempDir == "" {
 		return nil
@@ -60,10 +60,10 @@ func (m *Manager) CleanupTempDir(tempDir string) error {
 
 	err := os.RemoveAll(tempDir)
 	if err != nil {
-		return fmt.Errorf("failed to cleanup temp directory %s: %w", tempDir, err)
+		return fmt.Errorf("清理临时目录 %s 失败: %w", tempDir, err)
 	}
 
-	// Remove from tracking list
+	// 从跟踪列表中删除
 	for i, dir := range m.tempDirs {
 		if dir == tempDir {
 			m.tempDirs = append(m.tempDirs[:i], m.tempDirs[i+1:]...)
@@ -74,98 +74,98 @@ func (m *Manager) CleanupTempDir(tempDir string) error {
 	return nil
 }
 
-// CleanupAllTempDirs removes all tracked temporary directories
+// CleanupAllTempDirs 删除所有跟踪的临时目录
 func (m *Manager) CleanupAllTempDirs() error {
 	var errors []string
 
 	for _, tempDir := range m.tempDirs {
 		if err := os.RemoveAll(tempDir); err != nil {
-			errors = append(errors, fmt.Sprintf("failed to cleanup %s: %v", tempDir, err))
+			errors = append(errors, fmt.Sprintf("清理 %s 失败: %v", tempDir, err))
 		}
 	}
 
-	m.tempDirs = m.tempDirs[:0] // Clear the slice
+	m.tempDirs = m.tempDirs[:0] // 清空切片
 
 	if len(errors) > 0 {
-		return fmt.Errorf("cleanup errors: %s", strings.Join(errors, "; "))
+		return fmt.Errorf("清理错误: %s", strings.Join(errors, "; "))
 	}
 
 	return nil
 }
 
-// ExtractZip extracts a ZIP file to the specified destination directory
+// ExtractZip 将 ZIP 文件解压到指定的目标目录
 func (m *Manager) ExtractZip(zipPath, destPath string) error {
-	// Open ZIP file for reading
+	// 打开 ZIP 文件进行读取
 	reader, err := zip.OpenReader(zipPath)
 	if err != nil {
-		return fmt.Errorf("failed to open ZIP file %s: %w", zipPath, err)
+		return fmt.Errorf("打开 ZIP 文件 %s 失败: %w", zipPath, err)
 	}
 	defer reader.Close()
 
-	// Create destination directory if it doesn't exist
+	// 如果目标目录不存在则创建
 	if err := os.MkdirAll(destPath, 0755); err != nil {
-		return fmt.Errorf("failed to create destination directory %s: %w", destPath, err)
+		return fmt.Errorf("创建目标目录 %s 失败: %w", destPath, err)
 	}
 
-	// Extract files
+	// 解压文件
 	for _, file := range reader.File {
 		if err := m.extractFile(file, destPath); err != nil {
-			return fmt.Errorf("failed to extract file %s: %w", file.Name, err)
+			return fmt.Errorf("解压文件 %s 失败: %w", file.Name, err)
 		}
 	}
 
 	return nil
 }
 
-// extractFile extracts a single file from the ZIP archive
+// extractFile 从 ZIP 归档中解压单个文件
 func (m *Manager) extractFile(file *zip.File, destPath string) error {
-	// Clean the file path to prevent directory traversal attacks
+	// 清理文件路径以防止目录遍历攻击
 	cleanPath := filepath.Clean(file.Name)
 	if strings.Contains(cleanPath, "..") {
-		return fmt.Errorf("invalid file path: %s", file.Name)
+		return fmt.Errorf("无效的文件路径: %s", file.Name)
 	}
 
-	// Create full destination path
+	// 创建完整的目标路径
 	destFile := filepath.Join(destPath, cleanPath)
 
-	// Create directory structure if needed
+	// 如果需要则创建目录结构
 	if file.FileInfo().IsDir() {
 		return os.MkdirAll(destFile, file.FileInfo().Mode())
 	}
 
-	// Create parent directories
+	// 创建父目录
 	if err := os.MkdirAll(filepath.Dir(destFile), 0755); err != nil {
-		return fmt.Errorf("failed to create parent directory: %w", err)
+		return fmt.Errorf("创建父目录失败: %w", err)
 	}
 
-	// Open file in ZIP archive
+	// 打开 ZIP 归档中的文件
 	rc, err := file.Open()
 	if err != nil {
-		return fmt.Errorf("failed to open file in archive: %w", err)
+		return fmt.Errorf("打开归档中的文件失败: %w", err)
 	}
 	defer rc.Close()
 
-	// Create destination file
+	// 创建目标文件
 	outFile, err := os.OpenFile(destFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, file.FileInfo().Mode())
 	if err != nil {
-		return fmt.Errorf("failed to create destination file: %w", err)
+		return fmt.Errorf("创建目标文件失败: %w", err)
 	}
 	defer outFile.Close()
 
-	// Copy file contents
+	// 复制文件内容
 	_, err = io.Copy(outFile, rc)
 	if err != nil {
-		return fmt.Errorf("failed to copy file contents: %w", err)
+		return fmt.Errorf("复制文件内容失败: %w", err)
 	}
 
 	return nil
 }
 
-// ProcessChanges reads and parses the changes.json file
+// ProcessChanges 读取并解析 changes.json 文件
 func (m *Manager) ProcessChanges(changesPath string) (*ChangesInfo, error) {
-	// Check if changes.json exists
+	// 检查 changes.json 是否存在
 	if _, err := os.Stat(changesPath); os.IsNotExist(err) {
-		// If changes.json doesn't exist, return empty changes info
+		// 如果 changes.json 不存在，返回空的变更信息
 		return &ChangesInfo{
 			Deleted:  []string{},
 			Added:    []string{},
@@ -173,72 +173,72 @@ func (m *Manager) ProcessChanges(changesPath string) (*ChangesInfo, error) {
 		}, nil
 	}
 
-	// Read the changes.json file
+	// 读取 changes.json 文件
 	data, err := os.ReadFile(changesPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read changes file %s: %w", changesPath, err)
+		return nil, fmt.Errorf("读取变更文件 %s 失败: %w", changesPath, err)
 	}
 
-	// Parse JSON
+	// 解析 JSON
 	var changes ChangesInfo
 	if err := json.Unmarshal(data, &changes); err != nil {
-		return nil, fmt.Errorf("failed to parse changes JSON: %w", err)
+		return nil, fmt.Errorf("解析变更 JSON 失败: %w", err)
 	}
 
 	return &changes, nil
 }
 
-// HandleRunningProcess handles running processes by renaming files that are in use
+// HandleRunningProcess 通过重命名正在使用的文件来处理正在运行的进程
 func (m *Manager) HandleRunningProcess(processName string) error {
-	// Get the current executable path
+	// 获取当前可执行文件路径
 	exePath, err := os.Executable()
 	if err != nil {
-		return fmt.Errorf("failed to get executable path: %w", err)
+		return fmt.Errorf("获取可执行文件路径失败: %w", err)
 	}
 
 	exeDir := filepath.Dir(exePath)
 	targetFile := filepath.Join(exeDir, processName)
 
-	// Check if the target file exists
+	// 检查目标文件是否存在
 	if _, err := os.Stat(targetFile); os.IsNotExist(err) {
-		// File doesn't exist, nothing to handle
+		// 文件不存在，无需处理
 		return nil
 	}
 
-	// Try to rename the file to indicate it should be deleted on next startup
+	// 尝试重命名文件以指示应在下次启动时删除
 	oldFile := targetFile + ".old"
 
-	// Remove existing .old file if it exists
+	// 如果存在现有的 .old 文件则删除
 	if _, err := os.Stat(oldFile); err == nil {
 		if err := os.Remove(oldFile); err != nil {
-			return fmt.Errorf("failed to remove existing old file %s: %w", oldFile, err)
+			return fmt.Errorf("删除现有旧文件 %s 失败: %w", oldFile, err)
 		}
 	}
 
-	// Rename the current file to .old
+	// 将当前文件重命名为 .old
 	if err := os.Rename(targetFile, oldFile); err != nil {
-		// If rename fails, the process might be running
-		// On Windows, we can't rename a running executable
+		// 如果重命名失败，进程可能正在运行
+		// 在 Windows 上，我们无法重命名正在运行的可执行文件
 		if isFileInUse(err) {
-			// Mark the file for deletion on next reboot (Windows specific)
+			// 标记文件在下次重启时删除（Windows 特定）
 			return m.markFileForDeletion(targetFile)
 		}
-		return fmt.Errorf("failed to rename running process file %s: %w", targetFile, err)
+		return fmt.Errorf("重命名正在运行的进程文件 %s 失败: %w", targetFile, err)
 	}
 
 	return nil
 }
 
-// isFileInUse checks if the error indicates the file is in use
+// isFileInUse 检查错误是否表示文件正在使用中
 func isFileInUse(err error) bool {
 	if err == nil {
 		return false
 	}
 
-	// Check for Windows-specific "file in use" errors
+	// 检查 Windows 特定的"文件正在使用"错误
 	if pathErr, ok := err.(*os.PathError); ok {
 		if errno, ok := pathErr.Err.(syscall.Errno); ok {
-			// ERROR_SHARING_VIOLATION (32) or ERROR_ACCESS_DENIED (5)
+			// ERROR_SHARING_VIOLATION (32) 或 ERROR_ACCESS_DENIED (5)
 			return errno == syscall.Errno(32) || errno == syscall.Errno(5)
 		}
 	}
@@ -247,226 +247,226 @@ func isFileInUse(err error) bool {
 		strings.Contains(err.Error(), "access is denied")
 }
 
-// markFileForDeletion marks a file for deletion on next system reboot (Windows specific)
+// markFileForDeletion 标记文件在下次系统重启时删除（Windows 特定）
 func (m *Manager) markFileForDeletion(filePath string) error {
-	// This is a Windows-specific implementation
-	// For now, we'll create a marker file that can be handled by the main application
+	// 这是 Windows 特定的实现
+	// 目前，我们将创建一个可由主应用程序处理的标记文件
 	markerFile := filePath + ".delete_on_restart"
 
-	// Create a marker file
+	// 创建标记文件
 	file, err := os.Create(markerFile)
 	if err != nil {
-		return fmt.Errorf("failed to create deletion marker file: %w", err)
+		return fmt.Errorf("创建删除标记文件失败: %w", err)
 	}
 	defer file.Close()
 
-	// Write the target file path to the marker
+	// 将目标文件路径写入标记文件
 	_, err = file.WriteString(filePath)
 	if err != nil {
-		return fmt.Errorf("failed to write to marker file: %w", err)
+		return fmt.Errorf("写入标记文件失败: %w", err)
 	}
 
 	return nil
 }
 
-// DeleteMarkedFiles removes files that were marked for deletion
+// DeleteMarkedFiles 删除标记为删除的文件
 func (m *Manager) DeleteMarkedFiles(directory string) error {
-	// Find all .delete_on_restart files
+	// 查找所有 .delete_on_restart 文件
 	pattern := filepath.Join(directory, "*.delete_on_restart")
 	matches, err := filepath.Glob(pattern)
 	if err != nil {
-		return fmt.Errorf("failed to find marker files: %w", err)
+		return fmt.Errorf("查找标记文件失败: %w", err)
 	}
 
 	var errors []string
 	for _, markerFile := range matches {
-		// Read the target file path
+		// 读取目标文件路径
 		data, err := os.ReadFile(markerFile)
 		if err != nil {
-			errors = append(errors, fmt.Sprintf("failed to read marker file %s: %v", markerFile, err))
+			errors = append(errors, fmt.Sprintf("读取标记文件 %s 失败: %v", markerFile, err))
 			continue
 		}
 
 		targetFile := strings.TrimSpace(string(data))
 
-		// Try to delete the target file
+		// 尝试删除目标文件
 		if err := os.Remove(targetFile); err != nil && !os.IsNotExist(err) {
-			errors = append(errors, fmt.Sprintf("failed to delete marked file %s: %v", targetFile, err))
+			errors = append(errors, fmt.Sprintf("删除标记文件 %s 失败: %v", targetFile, err))
 		}
 
-		// Remove the marker file
+		// 删除标记文件
 		if err := os.Remove(markerFile); err != nil {
-			errors = append(errors, fmt.Sprintf("failed to remove marker file %s: %v", markerFile, err))
+			errors = append(errors, fmt.Sprintf("删除标记文件 %s 失败: %v", markerFile, err))
 		}
 	}
 
 	if len(errors) > 0 {
-		return fmt.Errorf("deletion errors: %s", strings.Join(errors, "; "))
+		return fmt.Errorf("删除错误: %s", strings.Join(errors, "; "))
 	}
 
 	return nil
 }
 
-// ApplyUpdate applies the update by copying files from source to target directory
+// ApplyUpdate 通过从源目录复制文件到目标目录来应用更新
 func (m *Manager) ApplyUpdate(sourcePath, targetPath string, changes *ChangesInfo) error {
-	// Create backup directory
+	// 创建备份目录
 	backupDir, err := m.createBackupDir(targetPath)
 	if err != nil {
-		return fmt.Errorf("failed to create backup directory: %w", err)
+		return fmt.Errorf("创建备份目录失败: %w", err)
 	}
 
-	// Backup existing files before applying update
+	// 在应用更新前备份现有文件
 	if err := m.backupFiles(targetPath, backupDir, changes); err != nil {
-		return fmt.Errorf("failed to backup files: %w", err)
+		return fmt.Errorf("备份文件失败: %w", err)
 	}
 
-	// Apply the update
+	// 应用更新
 	if err := m.applyUpdateFiles(sourcePath, targetPath, changes); err != nil {
-		// Rollback on failure
+		// 失败时回滚
 		if rollbackErr := m.rollbackUpdate(targetPath, backupDir); rollbackErr != nil {
-			return fmt.Errorf("update failed and rollback failed: update error: %w, rollback error: %v", err, rollbackErr)
+			return fmt.Errorf("更新失败且回滚失败: 更新错误: %w, 回滚错误: %v", err, rollbackErr)
 		}
-		return fmt.Errorf("update failed and was rolled back: %w", err)
+		return fmt.Errorf("更新失败已回滚: %w", err)
 	}
 
-	// Clean up backup directory after successful update
+	// 成功更新后清理备份目录
 	if err := os.RemoveAll(backupDir); err != nil {
-		// Log warning but don't fail the update
-		fmt.Printf("Warning: failed to cleanup backup directory %s: %v\n", backupDir, err)
+		// 记录警告但不让更新失败
+		fmt.Printf("警告: 清理备份目录 %s 失败: %v\n", backupDir, err)
 	}
 
 	return nil
 }
 
-// createBackupDir creates a backup directory for the update
+// createBackupDir 为更新创建备份目录
 func (m *Manager) createBackupDir(targetPath string) (string, error) {
 	backupDir := filepath.Join(targetPath, ".backup_"+fmt.Sprintf("%d", os.Getpid()))
 
 	if err := os.MkdirAll(backupDir, 0755); err != nil {
-		return "", fmt.Errorf("failed to create backup directory: %w", err)
+		return "", fmt.Errorf("创建备份目录失败: %w", err)
 	}
 
 	return backupDir, nil
 }
 
-// backupFiles creates backups of files that will be modified or deleted
+// backupFiles 创建将被修改或删除的文件的备份
 func (m *Manager) backupFiles(targetPath, backupDir string, changes *ChangesInfo) error {
-	// Backup files that will be modified
+	// 备份将被修改的文件
 	for _, file := range changes.Modified {
 		srcFile := filepath.Join(targetPath, file)
 		if _, err := os.Stat(srcFile); os.IsNotExist(err) {
-			continue // File doesn't exist, skip backup
+			continue // 文件不存在，跳过备份
 		}
 
 		backupFile := filepath.Join(backupDir, file)
 		if err := m.copyFileWithDirs(srcFile, backupFile); err != nil {
-			return fmt.Errorf("failed to backup modified file %s: %w", file, err)
+			return fmt.Errorf("备份修改文件 %s 失败: %w", file, err)
 		}
 	}
 
-	// Backup files that will be deleted
+	// 备份将被删除的文件
 	for _, file := range changes.Deleted {
 		srcFile := filepath.Join(targetPath, file)
 		if _, err := os.Stat(srcFile); os.IsNotExist(err) {
-			continue // File doesn't exist, skip backup
+			continue // 文件不存在，跳过备份
 		}
 
 		backupFile := filepath.Join(backupDir, file)
 		if err := m.copyFileWithDirs(srcFile, backupFile); err != nil {
-			return fmt.Errorf("failed to backup deleted file %s: %w", file, err)
+			return fmt.Errorf("备份删除文件 %s 失败: %w", file, err)
 		}
 	}
 
 	return nil
 }
 
-// applyUpdateFiles applies the actual file changes
+// applyUpdateFiles 应用实际的文件更改
 func (m *Manager) applyUpdateFiles(sourcePath, targetPath string, changes *ChangesInfo) error {
-	// Delete files marked for deletion
+	// 删除标记为删除的文件
 	for _, file := range changes.Deleted {
 		targetFile := filepath.Join(targetPath, file)
 		if err := os.Remove(targetFile); err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("failed to delete file %s: %w", file, err)
+			return fmt.Errorf("删除文件 %s 失败: %w", file, err)
 		}
 	}
 
-	// Copy new and modified files
+	// 复制新文件和修改的文件
 	filesToCopy := append(changes.Added, changes.Modified...)
 	for _, file := range filesToCopy {
 		srcFile := filepath.Join(sourcePath, file)
 		targetFile := filepath.Join(targetPath, file)
 
-		// Check if source file exists
+		// 检查源文件是否存在
 		if _, err := os.Stat(srcFile); os.IsNotExist(err) {
-			continue // Source file doesn't exist, skip
+			continue // 源文件不存在，跳过
 		}
 
 		if err := m.copyFileWithDirs(srcFile, targetFile); err != nil {
-			return fmt.Errorf("failed to copy file %s: %w", file, err)
+			return fmt.Errorf("复制文件 %s 失败: %w", file, err)
 		}
 	}
 
 	return nil
 }
 
-// copyFileWithDirs copies a file and creates necessary directories
+// copyFileWithDirs 复制文件并创建必要的目录
 func (m *Manager) copyFileWithDirs(src, dst string) error {
-	// Create parent directories
+	// 创建父目录
 	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
-		return fmt.Errorf("failed to create parent directories: %w", err)
+		return fmt.Errorf("创建父目录失败: %w", err)
 	}
 
-	// Open source file
+	// 打开源文件
 	srcFile, err := os.Open(src)
 	if err != nil {
-		return fmt.Errorf("failed to open source file: %w", err)
+		return fmt.Errorf("打开源文件失败: %w", err)
 	}
 	defer srcFile.Close()
 
-	// Get source file info
+	// 获取源文件信息
 	srcInfo, err := srcFile.Stat()
 	if err != nil {
-		return fmt.Errorf("failed to get source file info: %w", err)
+		return fmt.Errorf("获取源文件信息失败: %w", err)
 	}
 
-	// Create destination file
+	// 创建目标文件
 	dstFile, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, srcInfo.Mode())
 	if err != nil {
-		return fmt.Errorf("failed to create destination file: %w", err)
+		return fmt.Errorf("创建目标文件失败: %w", err)
 	}
 	defer dstFile.Close()
 
-	// Copy file contents
+	// 复制文件内容
 	_, err = io.Copy(dstFile, srcFile)
 	if err != nil {
-		return fmt.Errorf("failed to copy file contents: %w", err)
+		return fmt.Errorf("复制文件内容失败: %w", err)
 	}
 
 	return nil
 }
 
-// rollbackUpdate restores files from backup in case of update failure
+// rollbackUpdate 在更新失败时从备份恢复文件
 func (m *Manager) rollbackUpdate(targetPath, backupDir string) error {
-	// Walk through backup directory and restore files
+	// 遍历备份目录并恢复文件
 	return filepath.Walk(backupDir, func(backupFile string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
 
 		if info.IsDir() {
-			return nil // Skip directories
+			return nil // 跳过目录
 		}
 
-		// Calculate relative path
+		// 计算相对路径
 		relPath, err := filepath.Rel(backupDir, backupFile)
 		if err != nil {
-			return fmt.Errorf("failed to calculate relative path: %w", err)
+			return fmt.Errorf("计算相对路径失败: %w", err)
 		}
 
-		// Restore file to target location
+		// 将文件恢复到目标位置
 		targetFile := filepath.Join(targetPath, relPath)
 		if err := m.copyFileWithDirs(backupFile, targetFile); err != nil {
-			return fmt.Errorf("failed to restore file %s: %w", relPath, err)
+			return fmt.Errorf("恢复文件 %s 失败: %w", relPath, err)
 		}
 
 		return nil

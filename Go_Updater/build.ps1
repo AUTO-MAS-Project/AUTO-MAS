@@ -1,6 +1,5 @@
-# Lightweight Updater Build Script (PowerShell)
+# AUTO_MAA_Go_Updater Build Script (PowerShell)
 param(
-    [string]$Version = "1.0.0",
     [string]$OutputName = "AUTO_MAA_Go_Updater.exe",
     [switch]$Compress = $false
 )
@@ -14,6 +13,7 @@ $BuildDir = "build"
 $DistDir = "dist"
 $BuildTime = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ssZ")
 
+
 # Get git commit hash
 try {
     $GitCommit = (git rev-parse --short HEAD 2>$null).Trim()
@@ -23,7 +23,7 @@ try {
 }
 
 Write-Host "Build Information:" -ForegroundColor Yellow
-Write-Host "- Version: $Version"
+Write-Host "- Version: $GitCommit"
 Write-Host "- Build Time: $BuildTime"
 Write-Host "- Git Commit: $GitCommit"
 Write-Host "- Target: Windows 64-bit"
@@ -39,7 +39,7 @@ $env:GOARCH = "amd64"
 $env:CGO_ENABLED = "1"
 
 # Set build flags
-$LdFlags = "-s -w -X lightweight-updater/version.Version=$Version -X lightweight-updater/version.BuildTime=$BuildTime -X lightweight-updater/version.GitCommit=$GitCommit"
+$LdFlags = "-s -w -X AUTO_MAA_Go_Updater/version.Version=$Version -X AUTO_MAA_Go_Updater/version.BuildTime=$BuildTime -X AUTO_MAA_Go_Updater/version.GitCommit=$GitCommit"
 
 Write-Host "Building application..." -ForegroundColor Green
 
@@ -78,12 +78,6 @@ Write-Host "Build Results:" -ForegroundColor Yellow
 Write-Host "- Output: $($OutputFile.FullName)"
 Write-Host "- Size: $($OutputFile.Length) bytes (~$FileSizeMB MB)"
 
-# Check file size requirement
-if ($FileSizeMB -gt 10) {
-    Write-Host "WARNING: File size exceeds 10MB requirement!" -ForegroundColor Red
-} else {
-    Write-Host "File size meets requirements (<10MB)" -ForegroundColor Green
-}
 
 # Optional UPX compression
 if ($Compress) {
