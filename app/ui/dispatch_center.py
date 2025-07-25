@@ -70,6 +70,7 @@ class DispatchCenter(QWidget):
         self.power_combox.addItem("睡眠", userData="Sleep")
         self.power_combox.addItem("休眠", userData="Hibernate")
         self.power_combox.addItem("关机", userData="Shutdown")
+        self.power_combox.addItem("关机（强制）", userData="ShutdownForce")
         self.power_combox.setCurrentText("无动作")
         self.power_combox.currentIndexChanged.connect(self.set_power_sign)
 
@@ -277,6 +278,7 @@ class DispatchCenter(QWidget):
             "Sleep": "睡眠",
             "Hibernate": "休眠",
             "Shutdown": "关机",
+            "ShutdownForce": "关机（强制）"
         }
         self.power_combox.currentIndexChanged.disconnect()
         self.power_combox.setCurrentText(mode_book[Config.power_sign])

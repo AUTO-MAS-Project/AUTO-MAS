@@ -193,7 +193,7 @@ class _SystemHandler:
         """
         执行系统电源操作
 
-        :param mode: 电源操作模式，支持 "NoAction", "Shutdown", "Hibernate", "Sleep", "KillSelf"
+        :param mode: 电源操作模式，支持 "NoAction", "Shutdown", "Hibernate", "Sleep", "KillSelf", "ShutdownForce"
         """
 
         if sys.platform.startswith("win"):
@@ -205,7 +205,14 @@ class _SystemHandler:
             elif mode == "Shutdown":
 
                 logger.info("执行关机操作", module="系统服务")
+                logger.info("正在清除模拟器进程",module="系统服务")
+                self.kill_emulator_processes()
+                logger.info("清除模拟器进程完成,正在关机",module="系统服务")
                 subprocess.run(["shutdown", "/s", "/t", "0"])
+
+            elif mode == "ShutdownForce":
+                logger.info("执行强制关机操作", module="系统服务")
+                subprocess.run(["shutdown", "/s", "/t", "0", "/f"])
 
             elif mode == "Hibernate":
 
@@ -254,6 +261,17 @@ class _SystemHandler:
                 QApplication.quit()
                 sys.exit(0)
 
+    def kill_emulator_processes(self):
+        # 这里暂时仅支持 MuMu 模拟器
+        keywords = ["Nemu", "nemu", "emulator","MuMu"]
+        for proc in psutil.process_iter(["pid", "name"]):
+            try:
+                pname = proc.info["name"].lower()
+                if any(keyword.lower() in pname for keyword in keywords):
+                    proc.kill()
+                    logger.info(f"已关闭 MuMu 模拟器进程: {proc.info['name']}", module="系统服务")
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
     def is_startup(self) -> bool:
         """判断程序是否已经开机自启"""
 
