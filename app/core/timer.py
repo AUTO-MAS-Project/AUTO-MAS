@@ -146,6 +146,7 @@ class _MainTimer(QObject):
                 "Sleep": "睡眠",
                 "Hibernate": "休眠",
                 "Shutdown": "关机",
+                "ShutdownForce": "关机（强制）"
             }
 
             choice = ProgressRingMessageBox(
