@@ -1212,7 +1212,7 @@ class UpdaterSettingCard(HeaderCardWidget):
             parent=self,
         )
         mirrorchyan_url = HyperlinkButton(
-            "https://mirrorchyan.com/zh/get-start?source=auto_maa-setting_card",
+            "https://mirrorchyan.com/zh/get-start?source=auto_maa-setting",
             "获取Mirror酱CDK",
             self,
         )

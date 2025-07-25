@@ -177,8 +177,6 @@ class NetworkThread(QThread):
                 )
                 self.status_code = response.status_code
 
-                print(response.text)
-
                 # 尝试解析JSON响应
                 try:
                     self.response_json = response.json()
