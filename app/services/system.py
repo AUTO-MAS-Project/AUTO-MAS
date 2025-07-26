@@ -204,10 +204,8 @@ class _SystemHandler:
 
             elif mode == "Shutdown":
 
-                logger.info("执行关机操作", module="系统服务")
-                logger.info("正在清除模拟器进程",module="系统服务")
                 self.kill_emulator_processes()
-                logger.info("清除模拟器进程完成,正在关机",module="系统服务")
+                logger.info("执行关机操作", module="系统服务")
                 subprocess.run(["shutdown", "/s", "/t", "0"])
 
             elif mode == "ShutdownForce":
@@ -262,16 +260,25 @@ class _SystemHandler:
                 sys.exit(0)
 
     def kill_emulator_processes(self):
-        # 这里暂时仅支持 MuMu 模拟器
-        keywords = ["Nemu", "nemu", "emulator","MuMu"]
+        """这里暂时仅支持 MuMu 模拟器"""
+
+        logger.info("正在清除模拟器进程", module="系统服务")
+
+        keywords = ["Nemu", "nemu", "emulator", "MuMu"]
         for proc in psutil.process_iter(["pid", "name"]):
             try:
                 pname = proc.info["name"].lower()
                 if any(keyword.lower() in pname for keyword in keywords):
                     proc.kill()
-                    logger.info(f"已关闭 MuMu 模拟器进程: {proc.info['name']}", module="系统服务")
+                    logger.info(
+                        f"已关闭 MuMu 模拟器进程: {proc.info['name']}",
+                        module="系统服务",
+                    )
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 continue
+
+        logger.success("模拟器进程清除完成", module="系统服务")
+
     def is_startup(self) -> bool:
         """判断程序是否已经开机自启"""
 

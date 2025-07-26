@@ -112,12 +112,18 @@ class _MainTimer(QObject):
 
             windows = System.get_window_info()
 
-            # 此处排除雷电名为新通知的窗口
-            if any(
-                str(emulator_path) in window and window[0] != "新通知"
-                for window in windows
-                for emulator_path in Config.silence_list
-            ):
+            emulator_windows = []
+            for window in windows:
+                for emulator_path in Config.silence_list:
+                    # 此处排除雷电名为新通知的窗口
+                    if str(emulator_path) in window and window[0] != "新通知":
+                        emulator_windows.append(window)
+
+            if emulator_windows:
+
+                logger.info(
+                    f"检测到模拟器窗口：{emulator_windows}", module="主业务定时器"
+                )
                 try:
                     keyboard.press_and_release(
                         "+".join(
@@ -146,7 +152,7 @@ class _MainTimer(QObject):
                 "Sleep": "睡眠",
                 "Hibernate": "休眠",
                 "Shutdown": "关机",
-                "ShutdownForce": "关机（强制）"
+                "ShutdownForce": "关机（强制）",
             }
 
             choice = ProgressRingMessageBox(
