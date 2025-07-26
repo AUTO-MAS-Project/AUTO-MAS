@@ -400,7 +400,9 @@ class DownloadManager(QDialog):
         url_dict = self.get_download_url("测速")
         self.test_speed_result: Dict[str, float] = {}
 
-        logger.info(f"开始测速任务，链接：{url_dict}", module="下载管理器")
+        logger.info(
+            f"开始测速任务，链接：{list(url_dict.items())}", module="下载管理器"
+        )
 
         for name, url in url_dict.items():
 
@@ -495,7 +497,10 @@ class DownloadManager(QDialog):
 
         # 保存测速结果
         self.config["speed_result"] = self.test_speed_result
-        logger.success(f"测速完成，结果：{self.test_speed_result}", module="下载管理器")
+        logger.success(
+            f"测速完成，结果：{list(self.test_speed_result.items())}",
+            module="下载管理器",
+        )
 
         self.update_info("测速完成！")
         self.speed_test_accomplish.emit()
