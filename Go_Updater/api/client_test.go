@@ -153,6 +153,26 @@ func TestIsUpdateAvailable(t *testing.T) {
 			currentVersion: "4.4.0.0",
 			expected:       false,
 		},
+		{
+			name: "beta版本有更新",
+			response: &MirrorResponse{
+				Code: 0,
+				Data: struct {
+					VersionName   string `json:"version_name"`
+					VersionNumber int    `json:"version_number"`
+					URL           string `json:"url,omitempty"`
+					SHA256        string `json:"sha256,omitempty"`
+					Channel       string `json:"channel"`
+					OS            string `json:"os"`
+					Arch          string `json:"arch"`
+					UpdateType    string `json:"update_type,omitempty"`
+					ReleaseNote   string `json:"release_note"`
+					FileSize      int64  `json:"filesize,omitempty"`
+				}{VersionName: "v4.4.1-beta.4"},
+			},
+			currentVersion: "4.4.1.3",
+			expected:       true,
+		},
 	}
 
 	for _, test := range tests {

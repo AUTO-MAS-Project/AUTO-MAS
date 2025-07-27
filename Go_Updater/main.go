@@ -563,7 +563,7 @@ func (app *Application) executeCheckingState() (UpdateState, error) {
 	default:
 		fmt.Printf("检查更新类别：%v\n", updateChannel)
 	}
-	fmt.Printf("当前版本：%v", currentVer)
+	fmt.Printf("当前版本：%v\n", currentVer)
 	app.logger.Info("当前更新类别：" + updateChannel + "；当前版本：" + currentVer)
 	if err != nil {
 		app.logger.Error("检查更新失败: %v", err)
