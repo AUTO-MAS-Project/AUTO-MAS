@@ -137,6 +137,11 @@ func (c *Client) IsUpdateAvailable(response *MirrorResponse, currentVersion stri
 	currentVersionNormalized := c.normalizeVersionForComparison(currentVersion)
 	latestVersionNormalized := c.normalizeVersionForComparison(latestVersion)
 
+	// 调试输出
+	// fmt.Printf("Current: %s -> %s\n", currentVersion, currentVersionNormalized)
+	// fmt.Printf("Latest: %s -> %s\n", latestVersion, latestVersionNormalized)
+	// fmt.Printf("Compare result: %d\n", compareVersions(currentVersionNormalized, latestVersionNormalized))
+
 	// 使用语义版本比较
 	return compareVersions(currentVersionNormalized, latestVersionNormalized) < 0
 }
@@ -204,32 +209,65 @@ func normalizeVersion(version string) string {
 	return version
 }
 
-// parseVersionParts 将版本字符串解析为数字组件
+// parseVersionParts 将版本字符串解析为数字组件，包括beta版本号
 func parseVersionParts(version string) []int {
 	if version == "" {
 		return []int{0}
 	}
 
-	parts := make([]int, 0, 3)
+	parts := make([]int, 0, 4)
 	current := 0
 
-	for _, char := range version {
+	// 先检查是否包含 -beta
+	betaIndex := strings.Index(version, "-beta")
+	var mainVersion, betaVersion string
+	
+	if betaIndex != -1 {
+		mainVersion = version[:betaIndex]
+		betaVersion = version[betaIndex+5:] // 跳过 "-beta"
+	} else {
+		mainVersion = version
+		betaVersion = ""
+	}
+
+	// 解析主版本号 (major.minor.patch)
+	for _, char := range mainVersion {
 		if char >= '0' && char <= '9' {
 			current = current*10 + int(char-'0')
 		} else if char == '.' {
 			parts = append(parts, current)
 			current = 0
 		} else {
-			// 在非数字、非点字符处停止解析（如预发布标识符）
+			// 遇到非数字非点字符，停止解析
 			break
 		}
 	}
-
-	// 添加最后一个组件
+	// 添加最后一个主版本组件
 	parts = append(parts, current)
 
 	// 确保至少有 3 个组件 (major.minor.patch)
 	for len(parts) < 3 {
+		parts = append(parts, 0)
+	}
+
+	// 解析beta版本号
+	if betaVersion != "" {
+		// 跳过可能的点号
+		if strings.HasPrefix(betaVersion, ".") {
+			betaVersion = betaVersion[1:]
+		}
+		
+		betaNum := 0
+		for _, char := range betaVersion {
+			if char >= '0' && char <= '9' {
+				betaNum = betaNum*10 + int(char-'0')
+			} else {
+				break
+			}
+		}
+		parts = append(parts, betaNum)
+	} else {
+		// 非beta版本，添加0作为beta版本号
 		parts = append(parts, 0)
 	}
 
