@@ -509,7 +509,7 @@ class MemberManager(QWidget):
             self.downloader = DownloadManager(
                 Path(folder),
                 app_rid,
-                None,
+                [],
                 {
                     "mode": "MirrorChyan",
                     "thread_numb": 1,
