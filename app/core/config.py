@@ -276,78 +276,49 @@ class QueueConfig(LQConfig):
         super().__init__()
 
         self.queueSet_Name = ConfigItem("QueueSet", "Name", "")
-        self.queueSet_Enabled = ConfigItem(
-            "QueueSet", "Enabled", False, BoolValidator()
+        self.queueSet_TimeEnabled = ConfigItem(
+            "QueueSet", "TimeEnabled", False, BoolValidator()
         )
         self.queueSet_AfterAccomplish = OptionsConfigItem(
             "QueueSet",
             "AfterAccomplish",
             "NoAction",
             OptionsValidator(
-                ["NoAction", "KillSelf", "Sleep", "Hibernate", "Shutdown"]
+                [
+                    "NoAction",
+                    "KillSelf",
+                    "Sleep",
+                    "Hibernate",
+                    "Shutdown",
+                    "ShutdownForce",
+                ]
             ),
         )
 
-        self.time_TimeEnabled_0 = ConfigItem(
-            "Time", "TimeEnabled_0", False, BoolValidator()
-        )
-        self.time_TimeSet_0 = ConfigItem("Time", "TimeSet_0", "00:00")
+        self.config_item_dict: dict[str, Dict[str, ConfigItem]] = {
+            "Queue": {},
+            "Time": {},
+        }
 
-        self.time_TimeEnabled_1 = ConfigItem(
-            "Time", "TimeEnabled_1", False, BoolValidator()
-        )
-        self.time_TimeSet_1 = ConfigItem("Time", "TimeSet_1", "00:00")
+        for i in range(10):
 
-        self.time_TimeEnabled_2 = ConfigItem(
-            "Time", "TimeEnabled_2", False, BoolValidator()
-        )
-        self.time_TimeSet_2 = ConfigItem("Time", "TimeSet_2", "00:00")
+            self.config_item_dict["Time"][f"Enabled_{i}"] = ConfigItem(
+                "Time", f"Enabled_{i}", False, BoolValidator()
+            )
+            self.config_item_dict["Time"][f"Set_{i}"] = ConfigItem(
+                "Time", f"Set_{i}", "00:00"
+            )
+            self.config_item_dict["Queue"][f"Script_{i}"] = OptionsConfigItem(
+                "Queue", f"Script_{i}", "禁用"
+            )
 
-        self.time_TimeEnabled_3 = ConfigItem(
-            "Time", "TimeEnabled_3", False, BoolValidator()
-        )
-        self.time_TimeSet_3 = ConfigItem("Time", "TimeSet_3", "00:00")
-
-        self.time_TimeEnabled_4 = ConfigItem(
-            "Time", "TimeEnabled_4", False, BoolValidator()
-        )
-        self.time_TimeSet_4 = ConfigItem("Time", "TimeSet_4", "00:00")
-
-        self.time_TimeEnabled_5 = ConfigItem(
-            "Time", "TimeEnabled_5", False, BoolValidator()
-        )
-        self.time_TimeSet_5 = ConfigItem("Time", "TimeSet_5", "00:00")
-
-        self.time_TimeEnabled_6 = ConfigItem(
-            "Time", "TimeEnabled_6", False, BoolValidator()
-        )
-        self.time_TimeSet_6 = ConfigItem("Time", "TimeSet_6", "00:00")
-
-        self.time_TimeEnabled_7 = ConfigItem(
-            "Time", "TimeEnabled_7", False, BoolValidator()
-        )
-        self.time_TimeSet_7 = ConfigItem("Time", "TimeSet_7", "00:00")
-
-        self.time_TimeEnabled_8 = ConfigItem(
-            "Time", "TimeEnabled_8", False, BoolValidator()
-        )
-        self.time_TimeSet_8 = ConfigItem("Time", "TimeSet_8", "00:00")
-
-        self.time_TimeEnabled_9 = ConfigItem(
-            "Time", "TimeEnabled_9", False, BoolValidator()
-        )
-        self.time_TimeSet_9 = ConfigItem("Time", "TimeSet_9", "00:00")
-
-        self.queue_Member_1 = OptionsConfigItem("Queue", "Member_1", "禁用")
-        self.queue_Member_2 = OptionsConfigItem("Queue", "Member_2", "禁用")
-        self.queue_Member_3 = OptionsConfigItem("Queue", "Member_3", "禁用")
-        self.queue_Member_4 = OptionsConfigItem("Queue", "Member_4", "禁用")
-        self.queue_Member_5 = OptionsConfigItem("Queue", "Member_5", "禁用")
-        self.queue_Member_6 = OptionsConfigItem("Queue", "Member_6", "禁用")
-        self.queue_Member_7 = OptionsConfigItem("Queue", "Member_7", "禁用")
-        self.queue_Member_8 = OptionsConfigItem("Queue", "Member_8", "禁用")
-        self.queue_Member_9 = OptionsConfigItem("Queue", "Member_9", "禁用")
-        self.queue_Member_10 = OptionsConfigItem("Queue", "Member_10", "禁用")
+            setattr(
+                self, f"Time_Enabled_{i}", self.config_item_dict["Time"][f"Enabled_{i}"]
+            )
+            setattr(self, f"Time_Set_{i}", self.config_item_dict["Time"][f"Set_{i}"])
+            setattr(
+                self, f"Queue_Script_{i}", self.config_item_dict["Queue"][f"Script_{i}"]
+            )
 
         self.Data_LastProxyTime = ConfigItem(
             "Data", "LastProxyTime", "2000-01-01 00:00:00"
@@ -713,7 +684,7 @@ class GeneralSubConfig(LQConfig):
 
 class AppConfig(GlobalConfig):
 
-    VERSION = "4.4.1.4"
+    VERSION = "4.4.1.5"
 
     stage_refreshed = Signal()
     PASSWORD_refreshed = Signal()
@@ -750,7 +721,9 @@ class AppConfig(GlobalConfig):
         self.if_ignore_silence = False
         self.if_database_opened = False
 
-        self.search_member()
+        self.initialize()
+
+        self.search_script()
         self.search_queue()
 
         parser = argparse.ArgumentParser(
@@ -766,12 +739,15 @@ class AppConfig(GlobalConfig):
         parser.add_argument(
             "--config",
             nargs="+",
-            choices=list(self.member_dict.keys()) + list(self.queue_dict.keys()),
+            choices=list(self.script_dict.keys()) + list(self.queue_dict.keys()),
             help="指定需要运行哪些配置项",
         )
         self.args = parser.parse_args()
 
-        self.initialize()
+        logger.info(
+            f"运行模式： {'图形化界面' if self.args.mode == 'gui' else '命令行界面'}，配置项： {self.args.config if self.args.config else '启动时运行的调度队列'}",
+            module="配置管理",
+        )
 
     def initialize(self) -> None:
         """初始化程序配置管理模块"""
@@ -818,13 +794,7 @@ class AppConfig(GlobalConfig):
         logger.info("AUTO_MAA 主程序", module="配置管理")
         logger.info(f"版本号： v{self.VERSION}", module="配置管理")
         logger.info(f"根目录： {self.app_path}", module="配置管理")
-        logger.info(
-            f"运行模式： {'图形化界面' if self.args.mode == 'gui' else '命令行界面'}",
-            module="配置管理",
-        )
         logger.info("===================================", module="配置管理")
-
-        logger.info("日志记录器初始化完成", module="配置管理")
 
     def check_data(self) -> None:
         """检查用户数据文件并处理数据文件版本更新"""
@@ -834,7 +804,7 @@ class AppConfig(GlobalConfig):
             db = sqlite3.connect(self.database_path)
             cur = db.cursor()
             cur.execute("CREATE TABLE version(v text)")
-            cur.execute("INSERT INTO version VALUES(?)", ("v1.7",))
+            cur.execute("INSERT INTO version VALUES(?)", ("v1.8",))
             db.commit()
             cur.close()
             db.close()
@@ -845,7 +815,7 @@ class AppConfig(GlobalConfig):
         cur.execute("SELECT * FROM version WHERE True")
         version = cur.fetchall()
 
-        if version[0][0] != "v1.7":
+        if version[0][0] != "v1.8":
             logger.info("数据文件版本更新开始", module="配置管理")
             if_streaming = False
             # v1.4-->v1.5
@@ -975,7 +945,6 @@ class AppConfig(GlobalConfig):
                 cur.execute("DELETE FROM version WHERE v = ?", ("v1.4",))
                 cur.execute("INSERT INTO version VALUES(?)", ("v1.5",))
                 db.commit()
-
             # v1.5-->v1.6
             if version[0][0] == "v1.5" or if_streaming:
                 logger.info("数据文件版本更新：v1.5-->v1.6", module="配置管理")
@@ -1077,6 +1046,39 @@ class AppConfig(GlobalConfig):
                 cur.execute("DELETE FROM version WHERE v = ?", ("v1.6",))
                 cur.execute("INSERT INTO version VALUES(?)", ("v1.7",))
                 db.commit()
+            # v1.7-->v1.8
+            if version[0][0] == "v1.7" or if_streaming:
+                logger.info("数据文件版本更新：v1.7-->v1.8", module="配置管理")
+                if_streaming = True
+
+                if (self.app_path / "config/QueueConfig").exists():
+                    for QueueConfig in (self.app_path / "config/QueueConfig").glob(
+                        "*.json"
+                    ):
+                        with QueueConfig.open(encoding="utf-8") as f:
+                            queue_config = json.load(f)
+
+                        queue_config["QueueSet"]["TimeEnabled"] = queue_config[
+                            "QueueSet"
+                        ]["Enabled"]
+
+                        for i in range(10):
+                            queue_config["Queue"][f"Script_{i}"] = queue_config[
+                                "Queue"
+                            ][f"Member_{i + 1}"]
+                            queue_config["Time"][f"Enabled_{i}"] = queue_config["Time"][
+                                f"TimeEnabled_{i}"
+                            ]
+                            queue_config["Time"][f"Set_{i}"] = queue_config["Time"][
+                                f"TimeSet_{i}"
+                            ]
+
+                        with QueueConfig.open("w", encoding="utf-8") as f:
+                            json.dump(queue_config, f, ensure_ascii=False, indent=4)
+
+                cur.execute("DELETE FROM version WHERE v = ?", ("v1.7",))
+                cur.execute("INSERT INTO version VALUES(?)", ("v1.8",))
+                db.commit()
 
             cur.close()
             db.close()
@@ -1176,11 +1178,11 @@ class AppConfig(GlobalConfig):
             dt = dt - timedelta(days=1)
         return dt.date()
 
-    def search_member(self) -> None:
+    def search_script(self) -> None:
         """更新脚本实例配置信息"""
 
         logger.info("开始搜索并读入脚本实例配置", module="配置管理")
-        self.member_dict: Dict[
+        self.script_dict: Dict[
             str,
             Dict[
                 str,
@@ -1200,7 +1202,7 @@ class AppConfig(GlobalConfig):
                     maa_config.load(maa_dir / "config.json", maa_config)
                     maa_config.save()
 
-                    self.member_dict[maa_dir.name] = {
+                    self.script_dict[maa_dir.name] = {
                         "Type": "Maa",
                         "Path": maa_dir,
                         "Config": maa_config,
@@ -1214,19 +1216,19 @@ class AppConfig(GlobalConfig):
                     general_config.load(general_dir / "config.json", general_config)
                     general_config.save()
 
-                    self.member_dict[general_dir.name] = {
+                    self.script_dict[general_dir.name] = {
                         "Type": "General",
                         "Path": general_dir,
                         "Config": general_config,
                         "SubData": None,
                     }
 
-        self.member_dict = dict(
-            sorted(self.member_dict.items(), key=lambda x: int(x[0][3:]))
+        self.script_dict = dict(
+            sorted(self.script_dict.items(), key=lambda x: int(x[0][3:]))
         )
 
         logger.success(
-            f"脚本实例配置搜索完成，共找到 {len(self.member_dict)} 个实例",
+            f"脚本实例配置搜索完成，共找到 {len(self.script_dict)} 个实例",
             module="配置管理",
         )
 
@@ -1241,7 +1243,7 @@ class AppConfig(GlobalConfig):
         logger.info(f"开始搜索并读入 MAA 脚本实例 {name} 的用户信息", module="配置管理")
 
         user_dict: Dict[str, Dict[str, Union[Path, MaaUserConfig]]] = {}
-        for user_dir in (Config.member_dict[name]["Path"] / "UserData").iterdir():
+        for user_dir in (Config.script_dict[name]["Path"] / "UserData").iterdir():
             if user_dir.is_dir():
 
                 user_config = MaaUserConfig()
@@ -1250,7 +1252,7 @@ class AppConfig(GlobalConfig):
 
                 user_dict[user_dir.stem] = {"Path": user_dir, "Config": user_config}
 
-        self.member_dict[name]["UserData"] = dict(
+        self.script_dict[name]["UserData"] = dict(
             sorted(user_dict.items(), key=lambda x: int(x[0][3:]))
         )
 
@@ -1272,7 +1274,7 @@ class AppConfig(GlobalConfig):
         )
 
         user_dict: Dict[str, Dict[str, Union[Path, GeneralSubConfig]]] = {}
-        for sub_dir in (Config.member_dict[name]["Path"] / "SubData").iterdir():
+        for sub_dir in (Config.script_dict[name]["Path"] / "SubData").iterdir():
             if sub_dir.is_dir():
 
                 sub_config = GeneralSubConfig()
@@ -1281,7 +1283,7 @@ class AppConfig(GlobalConfig):
 
                 user_dict[sub_dir.stem] = {"Path": sub_dir, "Config": sub_config}
 
-        self.member_dict[name]["SubData"] = dict(
+        self.script_dict[name]["SubData"] = dict(
             sorted(user_dict.items(), key=lambda x: int(x[0][3:]))
         )
 
@@ -1359,26 +1361,17 @@ class AppConfig(GlobalConfig):
 
         for queue in self.queue_dict.values():
 
-            if queue["Config"].get(queue["Config"].queue_Member_1) == old:
-                queue["Config"].set(queue["Config"].queue_Member_1, new)
-            if queue["Config"].get(queue["Config"].queue_Member_2) == old:
-                queue["Config"].set(queue["Config"].queue_Member_2, new)
-            if queue["Config"].get(queue["Config"].queue_Member_3) == old:
-                queue["Config"].set(queue["Config"].queue_Member_3, new)
-            if queue["Config"].get(queue["Config"].queue_Member_4) == old:
-                queue["Config"].set(queue["Config"].queue_Member_4, new)
-            if queue["Config"].get(queue["Config"].queue_Member_5) == old:
-                queue["Config"].set(queue["Config"].queue_Member_5, new)
-            if queue["Config"].get(queue["Config"].queue_Member_6) == old:
-                queue["Config"].set(queue["Config"].queue_Member_6, new)
-            if queue["Config"].get(queue["Config"].queue_Member_7) == old:
-                queue["Config"].set(queue["Config"].queue_Member_7, new)
-            if queue["Config"].get(queue["Config"].queue_Member_8) == old:
-                queue["Config"].set(queue["Config"].queue_Member_8, new)
-            if queue["Config"].get(queue["Config"].queue_Member_9) == old:
-                queue["Config"].set(queue["Config"].queue_Member_9, new)
-            if queue["Config"].get(queue["Config"].queue_Member_10) == old:
-                queue["Config"].set(queue["Config"].queue_Member_10, new)
+            for i in range(10):
+
+                if (
+                    queue["Config"].get(
+                        queue["Config"].config_item_dict["Queue"][f"Script_{i}"]
+                    )
+                    == old
+                ):
+                    queue["Config"].set(
+                        queue["Config"].config_item_dict["Queue"][f"Script_{i}"], new
+                    )
 
         logger.success(f"调度队列参数修改完成：{old} -> {new}", module="配置管理")
 
@@ -1392,9 +1385,9 @@ class AppConfig(GlobalConfig):
 
         logger.info(f"开始修改计划表参数：{old} -> {new}", module="配置管理")
 
-        for member in self.member_dict.values():
+        for script in self.script_dict.values():
 
-            for user in member["UserData"].values():
+            for user in script["UserData"].values():
 
                 if user["Config"].get(user["Config"].Info_StageMode) == old:
                     user["Config"].set(user["Config"].Info_StageMode, new)
@@ -1417,7 +1410,7 @@ class AppConfig(GlobalConfig):
 
         for user, info in user_data.items():
 
-            user_config = self.member_dict[name]["UserData"][user]["Config"]
+            user_config = self.script_dict[name]["UserData"][user]["Config"]
 
             user_config.set(
                 user_config.Info_RemainedDay, info["Config"]["Info"]["RemainedDay"]
@@ -1464,7 +1457,7 @@ class AppConfig(GlobalConfig):
 
         for sub, info in sub_data.items():
 
-            sub_config = self.member_dict[name]["SubData"][sub]["Config"]
+            sub_config = self.script_dict[name]["SubData"][sub]["Config"]
 
             sub_config.set(
                 sub_config.Info_RemainedDay, info["Config"]["Info"]["RemainedDay"]

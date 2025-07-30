@@ -81,7 +81,7 @@ class Task(QThread):
 
             self.task = MaaManager(
                 self.mode,
-                Config.member_dict[self.name],
+                Config.script_dict[self.name],
                 (None if "全局" in self.mode else self.info["SetMaaInfo"]["Path"]),
             )
             self.task.check_maa_version.connect(self.check_maa_version.emit)
@@ -104,7 +104,7 @@ class Task(QThread):
 
             self.task = GeneralManager(
                 self.mode,
-                Config.member_dict[self.name],
+                Config.script_dict[self.name],
                 self.info["SetSubInfo"]["Path"],
             )
             self.task.push_info_bar.connect(self.push_info_bar.emit)
@@ -126,8 +126,8 @@ class Task(QThread):
                 [
                     (
                         value
-                        if Config.member_dict[value]["Config"].get_name() == ""
-                        else f"{value} - {Config.member_dict[value]["Config"].get_name()}"
+                        if Config.script_dict[value]["Config"].get_name() == ""
+                        else f"{value} - {Config.script_dict[value]["Config"].get_name()}"
                     ),
                     "等待",
                     value,
@@ -165,11 +165,11 @@ class Task(QThread):
                 logger.info(f"任务开始：{task[0]}", module=f"业务 {self.name}")
                 self.push_info_bar.emit("info", "任务开始", task[0], 3000)
 
-                if Config.member_dict[task[2]]["Type"] == "Maa":
+                if Config.script_dict[task[2]]["Type"] == "Maa":
 
                     self.task = MaaManager(
                         self.mode[0:4],
-                        Config.member_dict[task[2]],
+                        Config.script_dict[task[2]],
                     )
 
                     self.task.check_maa_version.connect(self.check_maa_version.emit)
@@ -186,11 +186,11 @@ class Task(QThread):
                         lambda log: self.task_accomplish(task[2], log)
                     )
 
-                elif Config.member_dict[task[2]]["Type"] == "General":
+                elif Config.script_dict[task[2]]["Type"] == "General":
 
                     self.task = GeneralManager(
                         self.mode[0:4],
-                        Config.member_dict[task[2]],
+                        Config.script_dict[task[2]],
                     )
 
                     self.task.question.connect(self.question.emit)

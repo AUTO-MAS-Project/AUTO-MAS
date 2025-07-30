@@ -79,15 +79,15 @@ class _MainTimer(QObject):
 
         for name, info in Config.queue_dict.items():
 
-            if not info["Config"].get(info["Config"].queueSet_Enabled):
+            if not info["Config"].get(info["Config"].queueSet_TimeEnabled):
                 continue
 
             data = info["Config"].toDict()
 
             time_set = [
-                data["Time"][f"TimeSet_{_}"]
+                data["Time"][f"Set_{_}"]
                 for _ in range(10)
-                if data["Time"][f"TimeEnabled_{_}"]
+                if data["Time"][f"Enabled_{_}"]
             ]
             # 按时间调起代理任务
             curtime = datetime.now().strftime("%Y-%m-%d %H:%M")

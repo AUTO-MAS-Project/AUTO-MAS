@@ -246,7 +246,7 @@ class DispatchCenter(QWidget):
                 userData=name,
             )
 
-        for name, info in Config.member_dict.items():
+        for name, info in Config.script_dict.items():
             self.script_list["主调度台"].top_bar.object.addItem(
                 (
                     f"实例 - {info['Type']}"
@@ -258,7 +258,7 @@ class DispatchCenter(QWidget):
 
         if len(Config.queue_dict) == 1:
             self.script_list["主调度台"].top_bar.object.setCurrentIndex(0)
-        elif len(Config.member_dict) == 1:
+        elif len(Config.script_dict) == 1:
             self.script_list["主调度台"].top_bar.object.setCurrentIndex(
                 len(Config.queue_dict)
             )
@@ -278,7 +278,7 @@ class DispatchCenter(QWidget):
             "Sleep": "睡眠",
             "Hibernate": "休眠",
             "Shutdown": "关机",
-            "ShutdownForce": "关机（强制）"
+            "ShutdownForce": "关机（强制）",
         }
         self.power_combox.currentIndexChanged.disconnect()
         self.power_combox.setCurrentText(mode_book[Config.power_sign])
@@ -317,7 +317,7 @@ class DispatchCenter(QWidget):
             )
             data_list.append(name)
 
-        for name, info in Config.member_dict.items():
+        for name, info in Config.script_dict.items():
             if name in Config.running_list:
                 continue
             text_list.append(
@@ -365,7 +365,7 @@ class DispatchCenter(QWidget):
                 TaskManager.add_task(
                     "自动代理_新调度台",
                     f"自定义队列 - {choice.input[0].currentData()}",
-                    {"Queue": {"Member_1": choice.input[0].currentData()}},
+                    {"Queue": {"Script_0": choice.input[0].currentData()}},
                 )
 
     class DispatchBox(QWidget):
@@ -455,7 +455,7 @@ class DispatchCenter(QWidget):
 
                 if (
                     "脚本" in self.object.currentData()
-                    and Config.member_dict[self.object.currentData()]["Type"]
+                    and Config.script_dict[self.object.currentData()]["Type"]
                     == "General"
                     and self.mode.currentData() == "人工排查"
                 ):
@@ -484,7 +484,7 @@ class DispatchCenter(QWidget):
                     TaskManager.add_task(
                         f"{self.mode.currentText()}_主调度台",
                         "自定义队列",
-                        {"Queue": {"Member_1": self.object.currentData()}},
+                        {"Queue": {"Script_0": self.object.currentData()}},
                     )
 
         class DispatchInfoCard(HeaderCardWidget):

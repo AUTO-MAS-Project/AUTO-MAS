@@ -39,7 +39,7 @@ from qfluentwidgets import (
     HeaderCardWidget,
     CommandBar,
 )
-from typing import List
+from typing import List, Dict
 
 from app.core import QueueConfig, Config, MainInfoBar, SoundPlayer, logger
 from .Widget import (
@@ -251,12 +251,12 @@ class QueueManager(QWidget):
         logger.success(f"{name} 右移成功", module="队列管理")
         MainInfoBar.push_info_bar("success", "操作成功", f"右移 {name}", 3000)
 
-    def reload_member_name(self):
-        """刷新调度队列成员"""
+    def reload_script_name(self):
+        """刷新调度队列脚本成员名称"""
 
-        # 获取成员列表
-        member_list = [
-            ["禁用"] + [_ for _ in Config.member_dict.keys()],
+        # 获取脚本成员列表
+        script_list = [
+            ["禁用"] + [_ for _ in Config.script_dict.keys()],
             ["未启用"]
             + [
                 (
@@ -264,41 +264,12 @@ class QueueManager(QWidget):
                     if v["Config"].get_name() == ""
                     else f"{k} - {v["Config"].get_name()}"
                 )
-                for k, v in Config.member_dict.items()
+                for k, v in Config.script_dict.items()
             ],
         ]
         for script in self.queue_manager.script_list:
-
-            script.task.card_Member_1.reLoadOptions(
-                value=member_list[0], texts=member_list[1]
-            )
-            script.task.card_Member_2.reLoadOptions(
-                value=member_list[0], texts=member_list[1]
-            )
-            script.task.card_Member_3.reLoadOptions(
-                value=member_list[0], texts=member_list[1]
-            )
-            script.task.card_Member_4.reLoadOptions(
-                value=member_list[0], texts=member_list[1]
-            )
-            script.task.card_Member_5.reLoadOptions(
-                value=member_list[0], texts=member_list[1]
-            )
-            script.task.card_Member_6.reLoadOptions(
-                value=member_list[0], texts=member_list[1]
-            )
-            script.task.card_Member_7.reLoadOptions(
-                value=member_list[0], texts=member_list[1]
-            )
-            script.task.card_Member_8.reLoadOptions(
-                value=member_list[0], texts=member_list[1]
-            )
-            script.task.card_Member_9.reLoadOptions(
-                value=member_list[0], texts=member_list[1]
-            )
-            script.task.card_Member_10.reLoadOptions(
-                value=member_list[0], texts=member_list[1]
-            )
+            for card in script.task.card_dict.values():
+                card.reLoadOptions(value=script_list[0], texts=script_list[1])
 
     class QueueSettingBox(QWidget):
 
@@ -432,11 +403,11 @@ class QueueManager(QWidget):
                         parent=self,
                     )
                     self.card_Enable = SwitchSettingCard(
-                        icon=FluentIcon.HOME,
-                        title="状态",
-                        content="调度队列状态，仅启用时会执行定时任务",
+                        icon=FluentIcon.CHECKBOX,
+                        title="定时运行状态",
+                        content="调度队列定时运行状态，仅启用时会执行定时任务",
                         qconfig=self.config,
-                        configItem=self.config.queueSet_Enabled,
+                        configItem=self.config.queueSet_TimeEnabled,
                         parent=self,
                     )
                     self.card_AfterAccomplish = ComboBoxSettingCard(
@@ -449,6 +420,7 @@ class QueueManager(QWidget):
                             "睡眠（win系统需禁用休眠）",
                             "休眠",
                             "关机",
+                            "关机（强制）",
                         ],
                         qconfig=self.config,
                         configItem=self.config.queueSet_AfterAccomplish,
@@ -476,107 +448,29 @@ class QueueManager(QWidget):
                     Layout_2 = QVBoxLayout(widget_2)
                     Layout = QHBoxLayout()
 
-                    self.card_Time_0 = TimeEditSettingCard(
-                        icon=FluentIcon.STOP_WATCH,
-                        title="定时 1",
-                        content=None,
-                        qconfig=self.config,
-                        configItem_bool=self.config.time_TimeEnabled_0,
-                        configItem_time=self.config.time_TimeSet_0,
-                        parent=self,
-                    )
-                    self.card_Time_1 = TimeEditSettingCard(
-                        icon=FluentIcon.STOP_WATCH,
-                        title="定时 2",
-                        content=None,
-                        qconfig=self.config,
-                        configItem_bool=self.config.time_TimeEnabled_1,
-                        configItem_time=self.config.time_TimeSet_1,
-                        parent=self,
-                    )
-                    self.card_Time_2 = TimeEditSettingCard(
-                        icon=FluentIcon.STOP_WATCH,
-                        title="定时 3",
-                        content=None,
-                        qconfig=self.config,
-                        configItem_bool=self.config.time_TimeEnabled_2,
-                        configItem_time=self.config.time_TimeSet_2,
-                        parent=self,
-                    )
-                    self.card_Time_3 = TimeEditSettingCard(
-                        icon=FluentIcon.STOP_WATCH,
-                        title="定时 4",
-                        content=None,
-                        qconfig=self.config,
-                        configItem_bool=self.config.time_TimeEnabled_3,
-                        configItem_time=self.config.time_TimeSet_3,
-                        parent=self,
-                    )
-                    self.card_Time_4 = TimeEditSettingCard(
-                        icon=FluentIcon.STOP_WATCH,
-                        title="定时 5",
-                        content=None,
-                        qconfig=self.config,
-                        configItem_bool=self.config.time_TimeEnabled_4,
-                        configItem_time=self.config.time_TimeSet_4,
-                        parent=self,
-                    )
-                    self.card_Time_5 = TimeEditSettingCard(
-                        icon=FluentIcon.STOP_WATCH,
-                        title="定时 6",
-                        content=None,
-                        qconfig=self.config,
-                        configItem_bool=self.config.time_TimeEnabled_5,
-                        configItem_time=self.config.time_TimeSet_5,
-                        parent=self,
-                    )
-                    self.card_Time_6 = TimeEditSettingCard(
-                        icon=FluentIcon.STOP_WATCH,
-                        title="定时 7",
-                        content=None,
-                        qconfig=self.config,
-                        configItem_bool=self.config.time_TimeEnabled_6,
-                        configItem_time=self.config.time_TimeSet_6,
-                        parent=self,
-                    )
-                    self.card_Time_7 = TimeEditSettingCard(
-                        icon=FluentIcon.STOP_WATCH,
-                        title="定时 8",
-                        content=None,
-                        qconfig=self.config,
-                        configItem_bool=self.config.time_TimeEnabled_7,
-                        configItem_time=self.config.time_TimeSet_7,
-                        parent=self,
-                    )
-                    self.card_Time_8 = TimeEditSettingCard(
-                        icon=FluentIcon.STOP_WATCH,
-                        title="定时 9",
-                        content=None,
-                        qconfig=self.config,
-                        configItem_bool=self.config.time_TimeEnabled_8,
-                        configItem_time=self.config.time_TimeSet_8,
-                        parent=self,
-                    )
-                    self.card_Time_9 = TimeEditSettingCard(
-                        icon=FluentIcon.STOP_WATCH,
-                        title="定时 10",
-                        content=None,
-                        qconfig=self.config,
-                        configItem_bool=self.config.time_TimeEnabled_9,
-                        configItem_time=self.config.time_TimeSet_9,
-                        parent=self,
-                    )
+                    self.card_dict: Dict[str, TimeEditSettingCard] = {}
 
-                    Layout_1.addWidget(self.card_Time_0)
-                    Layout_1.addWidget(self.card_Time_1)
-                    Layout_1.addWidget(self.card_Time_2)
-                    Layout_1.addWidget(self.card_Time_3)
-                    Layout_1.addWidget(self.card_Time_4)
-                    Layout_2.addWidget(self.card_Time_5)
-                    Layout_2.addWidget(self.card_Time_6)
-                    Layout_2.addWidget(self.card_Time_7)
-                    Layout_2.addWidget(self.card_Time_8)
-                    Layout_2.addWidget(self.card_Time_9)
+                    for i in range(10):
+
+                        self.card_dict[f"Time_{i}"] = TimeEditSettingCard(
+                            icon=FluentIcon.STOP_WATCH,
+                            title=f"定时 {i + 1}",
+                            content=None,
+                            qconfig=self.config,
+                            configItem_bool=self.config.config_item_dict["Time"][
+                                f"Enabled_{i}"
+                            ],
+                            configItem_time=self.config.config_item_dict["Time"][
+                                f"Set_{i}"
+                            ],
+                            parent=self,
+                        )
+
+                        if i < 5:
+                            Layout_1.addWidget(self.card_dict[f"Time_{i}"])
+                        else:
+                            Layout_2.addWidget(self.card_dict[f"Time_{i}"])
+
                     Layout.addWidget(widget_1)
                     Layout.addWidget(widget_2)
 
@@ -590,8 +484,8 @@ class QueueManager(QWidget):
                     self.setTitle("任务队列")
                     self.config = config
 
-                    member_list = [
-                        ["禁用"] + [_ for _ in Config.member_dict.keys()],
+                    script_list = [
+                        ["禁用"] + [_ for _ in Config.script_dict.keys()],
                         ["未启用"]
                         + [
                             (
@@ -599,121 +493,32 @@ class QueueManager(QWidget):
                                 if v["Config"].get_name() == ""
                                 else f"{k} - {v["Config"].get_name()}"
                             )
-                            for k, v in Config.member_dict.items()
+                            for k, v in Config.script_dict.items()
                         ],
                     ]
 
-                    self.card_Member_1 = NoOptionComboBoxSettingCard(
-                        icon=FluentIcon.APPLICATION,
-                        title="任务实例 1",
-                        content="第一个调起的脚本任务实例",
-                        value=member_list[0],
-                        texts=member_list[1],
-                        qconfig=self.config,
-                        configItem=self.config.queue_Member_1,
-                        parent=self,
-                    )
-                    self.card_Member_2 = NoOptionComboBoxSettingCard(
-                        icon=FluentIcon.APPLICATION,
-                        title="任务实例 2",
-                        content="第二个调起的脚本任务实例",
-                        value=member_list[0],
-                        texts=member_list[1],
-                        qconfig=self.config,
-                        configItem=self.config.queue_Member_2,
-                        parent=self,
-                    )
-                    self.card_Member_3 = NoOptionComboBoxSettingCard(
-                        icon=FluentIcon.APPLICATION,
-                        title="任务实例 3",
-                        content="第三个调起的脚本任务实例",
-                        value=member_list[0],
-                        texts=member_list[1],
-                        qconfig=self.config,
-                        configItem=self.config.queue_Member_3,
-                        parent=self,
-                    )
-                    self.card_Member_4 = NoOptionComboBoxSettingCard(
-                        icon=FluentIcon.APPLICATION,
-                        title="任务实例 4",
-                        content="第四个调起的脚本任务实例",
-                        value=member_list[0],
-                        texts=member_list[1],
-                        qconfig=self.config,
-                        configItem=self.config.queue_Member_4,
-                        parent=self,
-                    )
-                    self.card_Member_5 = NoOptionComboBoxSettingCard(
-                        icon=FluentIcon.APPLICATION,
-                        title="任务实例 5",
-                        content="第五个调起的脚本任务实例",
-                        value=member_list[0],
-                        texts=member_list[1],
-                        qconfig=self.config,
-                        configItem=self.config.queue_Member_5,
-                        parent=self,
-                    )
-                    self.card_Member_6 = NoOptionComboBoxSettingCard(
-                        icon=FluentIcon.APPLICATION,
-                        title="任务实例 6",
-                        content="第六个调起的脚本任务实例",
-                        value=member_list[0],
-                        texts=member_list[1],
-                        qconfig=self.config,
-                        configItem=self.config.queue_Member_6,
-                        parent=self,
-                    )
-                    self.card_Member_7 = NoOptionComboBoxSettingCard(
-                        icon=FluentIcon.APPLICATION,
-                        title="任务实例 7",
-                        content="第七个调起的脚本任务实例",
-                        value=member_list[0],
-                        texts=member_list[1],
-                        qconfig=self.config,
-                        configItem=self.config.queue_Member_7,
-                        parent=self,
-                    )
-                    self.card_Member_8 = NoOptionComboBoxSettingCard(
-                        icon=FluentIcon.APPLICATION,
-                        title="任务实例 8",
-                        content="第八个调起的脚本任务实例",
-                        value=member_list[0],
-                        texts=member_list[1],
-                        qconfig=self.config,
-                        configItem=self.config.queue_Member_8,
-                        parent=self,
-                    )
-                    self.card_Member_9 = NoOptionComboBoxSettingCard(
-                        icon=FluentIcon.APPLICATION,
-                        title="任务实例 9",
-                        content="第九个调起的脚本任务实例",
-                        value=member_list[0],
-                        texts=member_list[1],
-                        qconfig=self.config,
-                        configItem=self.config.queue_Member_9,
-                        parent=self,
-                    )
-                    self.card_Member_10 = NoOptionComboBoxSettingCard(
-                        icon=FluentIcon.APPLICATION,
-                        title="任务实例 10",
-                        content="第十个调起的脚本任务实例",
-                        value=member_list[0],
-                        texts=member_list[1],
-                        qconfig=self.config,
-                        configItem=self.config.queue_Member_10,
-                        parent=self,
-                    )
+                    self.card_dict: Dict[
+                        str,
+                        NoOptionComboBoxSettingCard,
+                    ] = {}
 
                     Layout = QVBoxLayout()
-                    Layout.addWidget(self.card_Member_1)
-                    Layout.addWidget(self.card_Member_2)
-                    Layout.addWidget(self.card_Member_3)
-                    Layout.addWidget(self.card_Member_4)
-                    Layout.addWidget(self.card_Member_5)
-                    Layout.addWidget(self.card_Member_6)
-                    Layout.addWidget(self.card_Member_7)
-                    Layout.addWidget(self.card_Member_8)
-                    Layout.addWidget(self.card_Member_9)
-                    Layout.addWidget(self.card_Member_10)
+
+                    for i in range(10):
+
+                        self.card_dict[f"Script_{i}"] = NoOptionComboBoxSettingCard(
+                            icon=FluentIcon.APPLICATION,
+                            title=f"任务实例 {i + 1}",
+                            content=f"第{i + 1}个调起的脚本任务实例",
+                            value=script_list[0],
+                            texts=script_list[1],
+                            qconfig=self.config,
+                            configItem=self.config.config_item_dict["Queue"][
+                                f"Script_{i}"
+                            ],
+                            parent=self,
+                        )
+
+                        Layout.addWidget(self.card_dict[f"Script_{i}"])
 
                     self.viewLayout.addLayout(Layout)
