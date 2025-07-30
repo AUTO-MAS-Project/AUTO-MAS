@@ -167,22 +167,22 @@ class CryptoHandler:
         :type PASSWORD_new: str
         """
 
-        for member in Config.member_dict.values():
+        for script in Config.script_dict.values():
 
             # 使用旧管理密钥解密
-            if member["Type"] == "Maa":
-                for user in member["UserData"].values():
+            if script["Type"] == "Maa":
+                for user in script["UserData"].values():
                     user["Password"] = self.AUTO_decryptor(
                         user["Config"].get(user["Config"].Info_Password), PASSWORD_old
                     )
 
         self.get_PASSWORD(PASSWORD_new)
 
-        for member in Config.member_dict.values():
+        for script in Config.script_dict.values():
 
             # 使用新管理密钥重新加密
-            if member["Type"] == "Maa":
-                for user in member["UserData"].values():
+            if script["Type"] == "Maa":
+                for user in script["UserData"].values():
                     user["Config"].set(
                         user["Config"].Info_Password,
                         self.AUTO_encryptor(user["Password"]),
@@ -200,10 +200,10 @@ class CryptoHandler:
 
         self.get_PASSWORD(PASSWORD_new)
 
-        for member in Config.member_dict.values():
+        for script in Config.script_dict.values():
 
-            if member["Type"] == "Maa":
-                for user in member["UserData"].values():
+            if script["Type"] == "Maa":
+                for user in script["UserData"].values():
                     user["Config"].set(
                         user["Config"].Info_Password, self.AUTO_encryptor("数据已重置")
                     )

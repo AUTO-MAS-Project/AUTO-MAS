@@ -40,14 +40,12 @@ from qfluentwidgets import (
 )
 from PySide6.QtGui import QIcon, QCloseEvent
 from PySide6.QtCore import QTimer
-from datetime import datetime, timedelta
-import shutil
 import darkdetect
 
 from app.core import Config, logger, TaskManager, MainTimer, MainInfoBar, SoundPlayer
 from app.services import Notify, Crypto, System
 from .home import Home
-from .member_manager import MemberManager
+from .script_manager import ScriptManager
 from .plan_manager import PlanManager
 from .queue_manager import QueueManager
 from .dispatch_center import DispatchCenter
@@ -84,7 +82,7 @@ class AUTO_MAA(MSFluentWindow):
         logger.info("正在创建各子窗口", module="主窗口")
         self.home = Home(self)
         self.plan_manager = PlanManager(self)
-        self.member_manager = MemberManager(self)
+        self.script_manager = ScriptManager(self)
         self.queue_manager = QueueManager(self)
         self.dispatch_center = DispatchCenter(self)
         self.history = History(self)
@@ -98,7 +96,7 @@ class AUTO_MAA(MSFluentWindow):
             NavigationItemPosition.TOP,
         )
         self.addSubInterface(
-            self.member_manager,
+            self.script_manager,
             FluentIcon.ROBOT,
             "脚本管理",
             FluentIcon.ROBOT,
@@ -190,7 +188,7 @@ class AUTO_MAA(MSFluentWindow):
         self.set_min_method()
 
         # 绑定各组件信号
-        Config.sub_info_changed.connect(self.member_manager.refresh_dashboard)
+        Config.sub_info_changed.connect(self.script_manager.refresh_dashboard)
         Config.power_sign_changed.connect(self.dispatch_center.update_power_sign)
         TaskManager.create_gui.connect(self.dispatch_center.add_board)
         TaskManager.connect_gui.connect(self.dispatch_center.connect_main_board)
@@ -408,16 +406,16 @@ class AUTO_MAA(MSFluentWindow):
                     Config.queue_dict["调度队列_1"]["Config"].toDict(),
                 )
 
-            for config in [_ for _ in Config.args.config if _ in Config.member_dict]:
+            for config in [_ for _ in Config.args.config if _ in Config.script_dict]:
 
                 TaskManager.add_task(
                     "自动代理_新调度台",
                     "自定义队列",
-                    {"Queue": {"Member_1": config}},
+                    {"Queue": {"Script_0": config}},
                 )
 
             if not any(
-                _ in (list(Config.member_dict.keys()) + list(Config.queue_dict.keys()))
+                _ in (list(Config.script_dict.keys()) + list(Config.queue_dict.keys()))
                 for _ in Config.args.config
             ):
 
@@ -449,11 +447,11 @@ class AUTO_MAA(MSFluentWindow):
                 Config.queue_dict["调度队列_1"]["Config"].toDict(),
             )
 
-        elif "脚本_1" in Config.member_dict:
+        elif "脚本_1" in Config.script_dict:
 
             logger.info("自动添加任务：脚本_1", module="主窗口")
             TaskManager.add_task(
-                "自动代理_主调度台", "自定义队列", {"Queue": {"Member_1": "脚本_1"}}
+                "自动代理_主调度台", "自定义队列", {"Queue": {"Script_0": "脚本_1"}}
             )
 
         else:
@@ -471,9 +469,9 @@ class AUTO_MAA(MSFluentWindow):
         """切换界面时任务"""
 
         if index == 1:
-            self.member_manager.reload_plan_name()
+            self.script_manager.reload_plan_name()
         elif index == 3:
-            self.queue_manager.reload_member_name()
+            self.queue_manager.reload_script_name()
         elif index == 4:
             self.dispatch_center.pivot.setCurrentItem("主调度台")
             self.dispatch_center.update_top_bar()
