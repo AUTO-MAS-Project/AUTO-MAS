@@ -317,30 +317,23 @@ class GeneralManager(QObject):
                             self.script_result = "游戏/模拟器启动失败"
                             break
 
-                        # 添加静默进程标记
+                        # 更新静默进程标记
                         if self.set["Game"]["Style"] == "Emulator":
                             logger.info(
-                                f"添加静默进程标记：{self.game_path}",
+                                f"更新静默进程标记：{self.game_path}，标记有效时间：{datetime.now() + timedelta(seconds=self.set['Game']['WaitTime'] + 10)}",
                                 module=f"通用调度器-{self.name}",
                             )
-                            Config.silence_list.append(self.game_path)
+                            Config.silence_dict[
+                                self.game_path
+                            ] = datetime.now() + timedelta(
+                                seconds=self.set["Game"]["WaitTime"] + 10
+                            )
 
                         self.update_log_text.emit(
                             f"正在等待游戏/模拟器完成启动\n请等待{self.set['Game']['WaitTime']}s"
                         )
 
                         self.sleep(self.set["Game"]["WaitTime"])
-
-                        # 10s后移除静默进程标记
-                        if self.set["Game"]["Style"] == "Emulator":
-                            logger.info(
-                                f"10s后移除静默进程标记：{self.game_path}",
-                                module=f"通用调度器-{self.name}",
-                            )
-                            QTimer.singleShot(
-                                10000,
-                                partial(Config.silence_list.remove, self.game_path),
-                            )
 
                     # 运行脚本任务
                     logger.info(

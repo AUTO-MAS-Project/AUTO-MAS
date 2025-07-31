@@ -275,11 +275,11 @@ class QueueConfig(LQConfig):
     def __init__(self) -> None:
         super().__init__()
 
-        self.queueSet_Name = ConfigItem("QueueSet", "Name", "")
-        self.queueSet_TimeEnabled = ConfigItem(
+        self.QueueSet_Name = ConfigItem("QueueSet", "Name", "")
+        self.QueueSet_TimeEnabled = ConfigItem(
             "QueueSet", "TimeEnabled", False, BoolValidator()
         )
-        self.queueSet_AfterAccomplish = OptionsConfigItem(
+        self.QueueSet_AfterAccomplish = OptionsConfigItem(
             "QueueSet",
             "AfterAccomplish",
             "NoAction",
@@ -705,7 +705,7 @@ class AppConfig(GlobalConfig):
         self.main_window = None
         self.PASSWORD = ""
         self.running_list = []
-        self.silence_list = []
+        self.silence_dict: Dict[Path, datetime] = {}
         self.info_bar_list = []
         self.stage_dict = {
             "ALL": {"value": [], "text": []},

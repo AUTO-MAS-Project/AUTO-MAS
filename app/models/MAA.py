@@ -570,12 +570,14 @@ class MaaManager(QObject):
                                 self.if_open_emulator = True
                                 break
 
-                        # 添加静默进程标记
+                        # 更新静默进程标记有效时间
                         logger.info(
-                            f"添加静默进程标记：{self.emulator_path}",
+                            f"更新静默进程标记：{self.emulator_path}，标记有效时间：{datetime.now() + timedelta(seconds=self.wait_time + 10)}",
                             module=f"MAA调度器-{self.name}",
                         )
-                        Config.silence_list.append(self.emulator_path)
+                        Config.silence_dict[self.emulator_path] = (
+                            datetime.now() + timedelta(seconds=self.wait_time + 10)
+                        )
 
                         self.search_ADB_address()
 
@@ -1081,15 +1083,6 @@ class MaaManager(QObject):
 
         if self.isInterruptionRequested:
             return None
-
-        # 10s后移除静默进程标记
-        QTimer.singleShot(
-            10000, partial(Config.silence_list.remove, self.emulator_path)
-        )
-        logger.info(
-            f"10s后移除静默进程标记：{self.emulator_path}",
-            module=f"MAA调度器-{self.name}",
-        )
 
         if "-" in self.ADB_address:
             ADB_ip = f"{self.ADB_address.split("-")[0]}-"

@@ -399,7 +399,7 @@ class QueueManager(QWidget):
                         content="用于标识调度队列的名称",
                         text="请输入调度队列名称",
                         qconfig=self.config,
-                        configItem=self.config.queueSet_Name,
+                        configItem=self.config.QueueSet_Name,
                         parent=self,
                     )
                     self.card_Enable = SwitchSettingCard(
@@ -407,7 +407,7 @@ class QueueManager(QWidget):
                         title="定时运行状态",
                         content="调度队列定时运行状态，仅启用时会执行定时任务",
                         qconfig=self.config,
-                        configItem=self.config.queueSet_TimeEnabled,
+                        configItem=self.config.QueueSet_TimeEnabled,
                         parent=self,
                     )
                     self.card_AfterAccomplish = ComboBoxSettingCard(
@@ -423,7 +423,7 @@ class QueueManager(QWidget):
                             "关机（强制）",
                         ],
                         qconfig=self.config,
-                        configItem=self.config.queueSet_AfterAccomplish,
+                        configItem=self.config.QueueSet_AfterAccomplish,
                         parent=self,
                     )
 

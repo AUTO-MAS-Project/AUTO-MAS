@@ -79,7 +79,7 @@ class _MainTimer(QObject):
 
         for name, info in Config.queue_dict.items():
 
-            if not info["Config"].get(info["Config"].queueSet_TimeEnabled):
+            if not info["Config"].get(info["Config"].QueueSet_TimeEnabled):
                 continue
 
             data = info["Config"].toDict()
@@ -114,9 +114,12 @@ class _MainTimer(QObject):
 
             emulator_windows = []
             for window in windows:
-                for emulator_path in Config.silence_list:
-                    # 此处排除雷电名为新通知的窗口
-                    if str(emulator_path) in window and window[0] != "新通知":
+                for emulator_path, endtime in Config.silence_dict.items():
+                    if (
+                        datetime.now() < endtime
+                        and str(emulator_path) in window
+                        and window[0] != "新通知"  # 此处排除雷电名为新通知的窗口
+                    ):
                         emulator_windows.append(window)
 
             if emulator_windows:
