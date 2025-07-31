@@ -359,10 +359,7 @@ class MaaConfig(LQConfig):
             "RunSet", "RoutineTimeLimit", 10, RangeValidator(1, 1024)
         )
         self.RunSet_AnnihilationWeeklyLimit = ConfigItem(
-            "RunSet", "AnnihilationWeeklyLimit", False, BoolValidator()
-        )
-        self.RunSet_AutoUpdateMaa = ConfigItem(
-            "RunSet", "AutoUpdateMaa", False, BoolValidator()
+            "RunSet", "AnnihilationWeeklyLimit", True, BoolValidator()
         )
 
     def get_name(self) -> str:

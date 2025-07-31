@@ -913,14 +913,6 @@ class ScriptManager(QWidget):
                             configItem=self.config.RunSet_AnnihilationWeeklyLimit,
                             parent=self,
                         )
-                        self.card_AutoUpdateMaa = SwitchSettingCard(
-                            icon=FluentIcon.PAGE_RIGHT,
-                            title="自动代理时自动更新MAA",
-                            content="执行自动代理任务时自动更新MAA，关闭后仍会进行MAA版本检查",
-                            qconfig=self.config,
-                            configItem=self.config.RunSet_AutoUpdateMaa,
-                            parent=self,
-                        )
 
                         widget = QWidget()
                         Layout = QVBoxLayout(widget)
@@ -931,7 +923,6 @@ class ScriptManager(QWidget):
                         Layout.addWidget(self.card_AnnihilationTimeLimit)
                         Layout.addWidget(self.card_RoutineTimeLimit)
                         Layout.addWidget(self.card_AnnihilationWeeklyLimit)
-                        Layout.addWidget(self.card_AutoUpdateMaa)
                         self.viewLayout.setContentsMargins(0, 0, 0, 0)
                         self.viewLayout.setSpacing(0)
                         self.addGroupWidget(widget)
