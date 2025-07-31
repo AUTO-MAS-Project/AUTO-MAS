@@ -1596,7 +1596,14 @@ class ScriptManager(QWidget):
                                 icon=FluentIcon.PROJECTOR,
                                 title="服务器",
                                 content="选择服务器类型",
-                                texts=["官服", "B服"],
+                                texts=[
+                                    "官服",
+                                    "B服",
+                                    "悠星国际服",
+                                    "悠星日服",
+                                    "悠星韩服",
+                                    "繁中服",
+                                ],
                                 qconfig=self.config,
                                 configItem=self.config.Info_Server,
                                 parent=self,
@@ -1618,11 +1625,17 @@ class ScriptManager(QWidget):
                                 configItem=self.config.Info_RemainedDay,
                                 parent=self,
                             )
-                            self.card_Annihilation = PushAndSwitchButtonSettingCard(
+                            self.card_Annihilation = ComboBoxSettingCard(
                                 icon=FluentIcon.CAFE,
                                 title="剿灭代理",
                                 content="剿灭代理子任务相关设置",
-                                text="设置具体配置",
+                                texts=[
+                                    "关闭",
+                                    "当期剿灭",
+                                    "切尔诺伯格",
+                                    "龙门外环",
+                                    "龙门市区",
+                                ],
                                 qconfig=self.config,
                                 configItem=self.config.Info_Annihilation,
                                 parent=self,
@@ -1977,9 +1990,6 @@ class ScriptManager(QWidget):
                             self.card_InfrastMode.comboBox.currentIndexChanged.connect(
                                 self.switch_infrastructure
                             )
-                            self.card_Annihilation.clicked.connect(
-                                lambda: self.set_maa("Annihilation")
-                            )
                             self.card_Routine.clicked.connect(
                                 lambda: self.set_maa("Routine")
                             )
@@ -2004,15 +2014,11 @@ class ScriptManager(QWidget):
                             if self.config.get(self.config.Info_Mode) == "简洁":
 
                                 self.card_Routine.setVisible(False)
-                                self.card_Server.setVisible(True)
-                                self.card_Annihilation.button.setVisible(False)
                                 self.card_InfrastMode.setVisible(True)
 
                             elif self.config.get(self.config.Info_Mode) == "详细":
 
-                                self.card_Server.setVisible(False)
                                 self.card_InfrastMode.setVisible(False)
-                                self.card_Annihilation.button.setVisible(True)
                                 self.card_Routine.setVisible(True)
 
                         def switch_stage_mode(self) -> None:

@@ -773,10 +773,13 @@ class GeneralManager(QObject):
         log = "".join(self.script_logs)
 
         # 更新日志
-        if len(self.script_logs) > 100:
-            self.update_log_text.emit("".join(self.script_logs[-100:]))
-        else:
-            self.update_log_text.emit("".join(self.script_logs))
+        if self.script_process_manager.is_running():
+
+            self.update_log_text.emit(
+                "".join(self.script_logs)
+                if len(self.script_logs) < 100
+                else "".join(self.script_logs[-100:])
+            )
 
         if "自动代理" in self.mode:
 

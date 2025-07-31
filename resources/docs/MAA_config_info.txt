@@ -27,6 +27,8 @@
 "MainFunction.Stage4": ""        #备选关卡3
 "Fight.RemainingSanityStage": "Annihilation"        #剩余理智关卡
 "MainFunction.Series.Quantity": "1"        #连战次数
+"MainFunction.Annihilation.UseCustom": "True"        #自定义剿灭关卡
+"MainFunction.Annihilation.Stage": "Annihilation"、"Chernobog@Annihilation"、"LungmenOutskirts@Annihilation"、"LungmenDowntown@Annihilation"        #自定义剿灭关卡号
 "Penguin.IsDrGrandet": "True"        #博朗台模式
 "GUI.CustomStageCode": "False"        #手动输入关卡名
 "GUI.UseAlternateStage": "False"        #使用备选关卡
@@ -45,7 +47,7 @@
 "Infrast.IsCustomInfrastFileReadOnly": "False"        #自定义基建配置文件只读
 "Infrast.CustomInfrastFile": ""        #自定义基建配置文件地址
 #设置
-"Start.ClientType": "Bilibili"、 "Official"        #服务器
+"Start.ClientType": "Official"、"Bilibili"、"YoStarEN"、"YoStarJP"、"YoStarKR"、"txwy"        #服务器
 G"Timer.Timer1": "False"        #时间设置1
 "Connect.AdbPath"        #ADB路径
 "Connect.Address": "127.0.0.1:16448"        #连接地址

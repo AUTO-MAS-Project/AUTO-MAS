@@ -379,16 +379,32 @@ class MaaUserConfig(LQConfig):
         )
         self.Info_StageMode = ConfigItem("Info", "StageMode", "固定")
         self.Info_Server = OptionsConfigItem(
-            "Info", "Server", "Official", OptionsValidator(["Official", "Bilibili"])
+            "Info",
+            "Server",
+            "Official",
+            OptionsValidator(
+                ["Official", "Bilibili", "YoStarEN", "YoStarJP", "YoStarKR", "txwy"]
+            ),
         )
         self.Info_Status = ConfigItem("Info", "Status", True, BoolValidator())
         self.Info_RemainedDay = ConfigItem(
             "Info", "RemainedDay", -1, RangeValidator(-1, 1024)
         )
-        self.Info_Annihilation = ConfigItem(
-            "Info", "Annihilation", False, BoolValidator()
+        self.Info_Annihilation = OptionsConfigItem(
+            "Info",
+            "Annihilation",
+            "Annihilation",
+            OptionsValidator(
+                [
+                    "Close",
+                    "Annihilation",
+                    "Chernobog@Annihilation",
+                    "LungmenOutskirts@Annihilation",
+                    "LungmenDowntown@Annihilation",
+                ]
+            ),
         )
-        self.Info_Routine = ConfigItem("Info", "Routine", False, BoolValidator())
+        self.Info_Routine = ConfigItem("Info", "Routine", True, BoolValidator())
         self.Info_InfrastMode = OptionsConfigItem(
             "Info",
             "InfrastMode",

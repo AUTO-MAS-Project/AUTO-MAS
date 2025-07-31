@@ -226,19 +226,22 @@ class MaaManager(QObject):
 
                 logger.info(f"开始代理用户: {user[0]}", module=f"MAA调度器-{self.name}")
 
-                # 初始化代理情况记录和模式替换表
-                run_book = {"Annihilation": False, "Routine": False}
-                mode_book = {
-                    "Annihilation": "自动代理_剿灭",
-                    "Routine": "自动代理_日常",
-                }
-
                 # 简洁模式用户默认开启日常选项
                 if user_data["Info"]["Mode"] == "简洁":
                     user_data["Info"]["Routine"] = True
                 # 详细模式用户首次代理需打开模拟器
                 elif user_data["Info"]["Mode"] == "详细":
                     self.if_open_emulator = True
+
+                # 初始化代理情况记录和模式替换表
+                run_book = {
+                    "Annihilation": bool(user_data["Info"]["Annihilation"] == "Close"),
+                    "Routine": not user_data["Info"]["Routine"],
+                }
+                mode_book = {
+                    "Annihilation": "自动代理_剿灭",
+                    "Routine": "自动代理_日常",
+                }
 
                 user_logs_list = []
                 user_start_time = datetime.now()
@@ -309,6 +312,9 @@ class MaaManager(QObject):
                     if self.isInterruptionRequested:
                         break
 
+                    if run_book[mode]:
+                        continue
+
                     # 剿灭模式；满足条件跳过剿灭
                     if (
                         mode == "Annihilation"
@@ -327,27 +333,24 @@ class MaaManager(QObject):
                     else:
                         self.weekly_annihilation_limit_reached = False
 
-                    if not user_data["Info"][mode]:
-                        run_book[mode] = True
-                        continue
-
-                    if user_data["Info"]["Mode"] == "详细":
-
-                        if not (
-                            self.data[user[2]]["Path"] / f"{mode}/gui.json"
-                        ).exists():
-                            logger.error(
-                                f"用户: {user[0]} - 未找到{mode_book[mode][5:7]}配置文件",
-                                module=f"MAA调度器-{self.name}",
-                            )
-                            self.push_info_bar.emit(
-                                "error",
-                                "启动MAA代理进程失败",
-                                f"未找到{user[0]}的{mode_book[mode][5:7]}配置文件！",
-                                -1,
-                            )
-                            run_book[mode] = False
-                            continue
+                    if (
+                        user_data["Info"]["Mode"] == "详细"
+                        and not (
+                            self.data[user[2]]["Path"] / "Routine/gui.json"
+                        ).exists()
+                    ):
+                        logger.error(
+                            f"用户: {user[0]} - 未找到日常详细配置文件",
+                            module=f"MAA调度器-{self.name}",
+                        )
+                        self.push_info_bar.emit(
+                            "error",
+                            "启动MAA代理进程失败",
+                            f"未找到{user[0]}的详细配置文件！",
+                            -1,
+                        )
+                        run_book[mode] = False
+                        break
 
                     # 更新当前模式到界面
                     self.update_user_list.emit(
@@ -377,55 +380,19 @@ class MaaManager(QObject):
 
                     elif mode == "Annihilation":
 
-                        if user_data["Info"]["Mode"] == "简洁":
-
-                            self.task_dict = {
-                                "WakeUp": "True",
-                                "Recruiting": "False",
-                                "Base": "False",
-                                "Combat": "True",
-                                "Mission": "False",
-                                "Mall": "False",
-                                "AutoRoguelike": "False",
-                                "Reclamation": "False",
-                            }
-
-                        elif user_data["Info"]["Mode"] == "详细":
-
-                            with (self.data[user[2]]["Path"] / f"{mode}/gui.json").open(
-                                mode="r", encoding="utf-8"
-                            ) as f:
-                                data = json.load(f)
-
-                            self.task_dict = {
-                                "WakeUp": data["Configurations"]["Default"][
-                                    "TaskQueue.WakeUp.IsChecked"
-                                ],
-                                "Recruiting": data["Configurations"]["Default"][
-                                    "TaskQueue.Recruiting.IsChecked"
-                                ],
-                                "Base": data["Configurations"]["Default"][
-                                    "TaskQueue.Base.IsChecked"
-                                ],
-                                "Combat": data["Configurations"]["Default"][
-                                    "TaskQueue.Combat.IsChecked"
-                                ],
-                                "Mission": data["Configurations"]["Default"][
-                                    "TaskQueue.Mission.IsChecked"
-                                ],
-                                "Mall": data["Configurations"]["Default"][
-                                    "TaskQueue.Mall.IsChecked"
-                                ],
-                                "AutoRoguelike": data["Configurations"]["Default"][
-                                    "TaskQueue.AutoRoguelike.IsChecked"
-                                ],
-                                "Reclamation": data["Configurations"]["Default"][
-                                    "TaskQueue.Reclamation.IsChecked"
-                                ],
-                            }
+                        self.task_dict = {
+                            "WakeUp": "True",
+                            "Recruiting": "False",
+                            "Base": "False",
+                            "Combat": "True",
+                            "Mission": "False",
+                            "Mall": "False",
+                            "AutoRoguelike": "False",
+                            "Reclamation": "False",
+                        }
 
                     logger.info(
-                        f"用户: {user[0]} - 模式: {mode_book[mode]} - 任务列表: {list(self.task_dict.values())}",
+                        f"用户: {user[0]} - 模式: {mode_book[mode]} - 任务列表: {self.task_dict.values()}",
                         module=f"MAA调度器-{self.name}",
                     )
 
@@ -439,7 +406,8 @@ class MaaManager(QObject):
                             break
 
                         logger.info(
-                            f"用户: {user[0]} - 模式: {mode_book[mode]} - 尝试次数: {i + 1}/{self.set["RunSet"]["RunTimesLimit"]}"
+                            f"用户: {user[0]} - 模式: {mode_book[mode]} - 尝试次数: {i + 1}/{self.set["RunSet"]["RunTimesLimit"]}",
+                            module=f"MAA调度器-{self.name}",
                         )
 
                         # 配置MAA
@@ -1223,10 +1191,13 @@ class MaaManager(QObject):
         log = "".join(self.maa_logs)
 
         # 更新MAA日志
-        if len(self.maa_logs) > 100:
-            self.update_log_text.emit("".join(self.maa_logs[-100:]))
-        else:
-            self.update_log_text.emit("".join(self.maa_logs))
+        if self.maa_process_manager.is_running():
+
+            self.update_log_text.emit(
+                "".join(self.maa_logs)
+                if len(self.maa_logs) < 100
+                else "".join(self.maa_logs[-100:])
+            )
 
         if "自动代理" in self.log_check_mode:
 
@@ -1390,7 +1361,13 @@ class MaaManager(QObject):
         )
 
         if "设置MAA" not in self.mode and "更新MAA" not in mode:
+
             user_data = self.data[index]["Config"]
+
+            if user_data["Info"]["Server"] == "Bilibili":
+                self.agree_bilibili(True)
+            else:
+                self.agree_bilibili(False)
 
         # 配置MAA前关闭可能未正常退出的MAA进程
         self.maa_process_manager.kill(if_force=True)
@@ -1414,16 +1391,9 @@ class MaaManager(QObject):
                 self.maa_set_path,
             )
         elif "自动代理" in mode and user_data["Info"]["Mode"] == "详细":
-            if mode == "自动代理_剿灭":
-                shutil.copy(
-                    self.data[index]["Path"] / "Annihilation/gui.json",
-                    self.maa_set_path,
-                )
-            elif mode == "自动代理_日常":
-                shutil.copy(
-                    self.data[index]["Path"] / "Routine/gui.json",
-                    self.maa_set_path,
-                )
+            shutil.copy(
+                self.data[index]["Path"] / "Routine/gui.json", self.maa_set_path
+            )
         elif "人工排查" in mode and user_data["Info"]["Mode"] == "详细":
             shutil.copy(
                 self.data[index]["Path"] / "Routine/gui.json",
@@ -1432,31 +1402,18 @@ class MaaManager(QObject):
         with self.maa_set_path.open(mode="r", encoding="utf-8") as f:
             data = json.load(f)
 
-        if ("设置MAA" not in self.mode and "更新MAA" not in mode) and (
-            (
-                user_data["Info"]["Mode"] == "简洁"
-                and user_data["Info"]["Server"] == "Bilibili"
-            )
-            or (
-                user_data["Info"]["Mode"] == "详细"
-                and data["Configurations"]["Default"]["Start.ClientType"] == "Bilibili"
-            )
-        ):
-            self.agree_bilibili(True)
-        else:
-            self.agree_bilibili(False)
-
         # 切换配置
         if data["Current"] != "Default":
 
             data["Configurations"]["Default"] = data["Configurations"][data["Current"]]
             data["Current"] = "Default"
 
+        # 时间设置
+        for i in range(1, 9):
+            data["Global"][f"Timer.Timer{i}"] = "False"
+
         # 自动代理配置
         if "自动代理" in mode:
-
-            for i in range(1, 9):
-                data["Global"][f"Timer.Timer{i}"] = "False"  # 时间设置
 
             if (
                 next((i for i, _ in enumerate(self.user_list) if _[2] == index), None)
@@ -1504,6 +1461,11 @@ class MaaManager(QObject):
                 data["Global"]["GUI.UseTray"] = "True"  # 显示托盘图标
                 data["Global"]["GUI.MinimizeToTray"] = "True"  # 最小化时隐藏至托盘
 
+            # 客户端类型
+            data["Configurations"]["Default"]["Start.ClientType"] = user_data["Info"][
+                "Server"
+            ]
+
             # 账号切换
             if user_data["Info"]["Server"] == "Official":
                 data["Configurations"]["Default"]["Start.AccountName"] = (
@@ -1542,15 +1504,9 @@ class MaaManager(QObject):
                 self.task_dict["Reclamation"]
             )  # 生息演算
 
-            if user_data["Info"]["Mode"] == "简洁":
+            # 整理任务顺序
+            if "剿灭" in mode or user_data["Info"]["Mode"] == "简洁":
 
-                data["Configurations"]["Default"]["Start.ClientType"] = user_data[
-                    "Info"
-                ][
-                    "Server"
-                ]  # 客户端类型
-
-                # 整理任务顺序
                 data["Configurations"]["Default"]["TaskQueue.Order.WakeUp"] = "0"
                 data["Configurations"]["Default"]["TaskQueue.Order.Recruiting"] = "1"
                 data["Configurations"]["Default"]["TaskQueue.Order.Base"] = "2"
@@ -1560,96 +1516,104 @@ class MaaManager(QObject):
                 data["Configurations"]["Default"]["TaskQueue.Order.AutoRoguelike"] = "6"
                 data["Configurations"]["Default"]["TaskQueue.Order.Reclamation"] = "7"
 
-                if "剿灭" in mode:
+            data["Configurations"]["Default"]["MainFunction.UseMedicine"] = (
+                "False" if user_data["Info"]["MedicineNumb"] == 0 else "True"
+            )  # 吃理智药
+            data["Configurations"]["Default"]["MainFunction.UseMedicine.Quantity"] = (
+                str(user_data["Info"]["MedicineNumb"])
+            )  # 吃理智药数量
+            data["Configurations"]["Default"][
+                "MainFunction.Series.Quantity"
+            ] = user_data["Info"][
+                "SeriesNumb"
+            ]  # 连战次数
 
-                    data["Configurations"]["Default"][
-                        "MainFunction.Stage1"
-                    ] = "Annihilation"  # 主关卡
-                    data["Configurations"]["Default"][
-                        "MainFunction.Stage2"
-                    ] = ""  # 备选关卡1
-                    data["Configurations"]["Default"][
-                        "MainFunction.Stage3"
-                    ] = ""  # 备选关卡2
-                    data["Configurations"]["Default"][
-                        "Fight.RemainingSanityStage"
-                    ] = ""  # 剩余理智关卡
-                    data["Configurations"]["Default"][
-                        "MainFunction.Series.Quantity"
-                    ] = "1"  # 连战次数
+            if "剿灭" in mode:
+
+                data["Configurations"]["Default"][
+                    "MainFunction.Stage1"
+                ] = "Annihilation"  # 主关卡
+                data["Configurations"]["Default"][
+                    "MainFunction.Stage2"
+                ] = ""  # 备选关卡1
+                data["Configurations"]["Default"][
+                    "MainFunction.Stage3"
+                ] = ""  # 备选关卡2
+                data["Configurations"]["Default"][
+                    "Fight.RemainingSanityStage"
+                ] = ""  # 剩余理智关卡
+                data["Configurations"]["Default"][
+                    "MainFunction.Series.Quantity"
+                ] = "1"  # 连战次数
+                data["Configurations"]["Default"][
+                    "MainFunction.Annihilation.UseCustom"
+                ] = "True"  #   自定义剿灭关卡
+                data["Configurations"]["Default"][
+                    "MainFunction.Annihilation.Stage"
+                ] = user_data["Info"][
+                    "Annihilation"
+                ]  #   自定义剿灭关卡号
+                data["Configurations"]["Default"][
+                    "Penguin.IsDrGrandet"
+                ] = "False"  # 博朗台模式
+                data["Configurations"]["Default"][
+                    "GUI.CustomStageCode"
+                ] = "True"  # 手动输入关卡名
+                data["Configurations"]["Default"][
+                    "GUI.UseAlternateStage"
+                ] = "False"  # 使用备选关卡
+                data["Configurations"]["Default"][
+                    "Fight.UseRemainingSanityStage"
+                ] = "False"  # 使用剩余理智
+                data["Configurations"]["Default"][
+                    "Fight.UseExpiringMedicine"
+                ] = "True"  # 无限吃48小时内过期的理智药
+                data["Configurations"]["Default"][
+                    "GUI.HideSeries"
+                ] = "False"  # 隐藏连战次数
+
+            elif "日常" in mode:
+
+                data["Configurations"]["Default"]["MainFunction.Stage1"] = (
+                    user_data["Info"]["Stage"]
+                    if user_data["Info"]["Stage"] != "-"
+                    else ""
+                )  # 主关卡
+                data["Configurations"]["Default"]["MainFunction.Stage2"] = (
+                    user_data["Info"]["Stage_1"]
+                    if user_data["Info"]["Stage_1"] != "-"
+                    else ""
+                )  # 备选关卡1
+                data["Configurations"]["Default"]["MainFunction.Stage3"] = (
+                    user_data["Info"]["Stage_2"]
+                    if user_data["Info"]["Stage_2"] != "-"
+                    else ""
+                )  # 备选关卡2
+                data["Configurations"]["Default"]["MainFunction.Stage4"] = (
+                    user_data["Info"]["Stage_3"]
+                    if user_data["Info"]["Stage_3"] != "-"
+                    else ""
+                )  # 备选关卡3
+                data["Configurations"]["Default"]["Fight.RemainingSanityStage"] = (
+                    user_data["Info"]["Stage_Remain"]
+                    if user_data["Info"]["Stage_Remain"] != "-"
+                    else ""
+                )  # 剩余理智关卡
+                data["Configurations"]["Default"][
+                    "GUI.UseAlternateStage"
+                ] = "True"  # 备选关卡
+                data["Configurations"]["Default"]["Fight.UseRemainingSanityStage"] = (
+                    "True" if user_data["Info"]["Stage_Remain"] != "-" else "False"
+                )  # 使用剩余理智
+
+                if user_data["Info"]["Mode"] == "简洁":
+
                     data["Configurations"]["Default"][
                         "Penguin.IsDrGrandet"
                     ] = "False"  # 博朗台模式
                     data["Configurations"]["Default"][
                         "GUI.CustomStageCode"
                     ] = "True"  # 手动输入关卡名
-                    data["Configurations"]["Default"][
-                        "GUI.UseAlternateStage"
-                    ] = "False"  # 使用备选关卡
-                    data["Configurations"]["Default"][
-                        "Fight.UseRemainingSanityStage"
-                    ] = "False"  # 使用剩余理智
-                    data["Configurations"]["Default"][
-                        "Fight.UseExpiringMedicine"
-                    ] = "True"  # 无限吃48小时内过期的理智药
-                    data["Configurations"]["Default"][
-                        "GUI.HideSeries"
-                    ] = "False"  # 隐藏连战次数
-
-                elif "日常" in mode:
-
-                    data["Configurations"]["Default"]["MainFunction.UseMedicine"] = (
-                        "False" if user_data["Info"]["MedicineNumb"] == 0 else "True"
-                    )  # 吃理智药
-                    data["Configurations"]["Default"][
-                        "MainFunction.UseMedicine.Quantity"
-                    ] = str(
-                        user_data["Info"]["MedicineNumb"]
-                    )  # 吃理智药数量
-                    data["Configurations"]["Default"]["MainFunction.Stage1"] = (
-                        user_data["Info"]["Stage"]
-                        if user_data["Info"]["Stage"] != "-"
-                        else ""
-                    )  # 主关卡
-                    data["Configurations"]["Default"]["MainFunction.Stage2"] = (
-                        user_data["Info"]["Stage_1"]
-                        if user_data["Info"]["Stage_1"] != "-"
-                        else ""
-                    )  # 备选关卡1
-                    data["Configurations"]["Default"]["MainFunction.Stage3"] = (
-                        user_data["Info"]["Stage_2"]
-                        if user_data["Info"]["Stage_2"] != "-"
-                        else ""
-                    )  # 备选关卡2
-                    data["Configurations"]["Default"]["MainFunction.Stage4"] = (
-                        user_data["Info"]["Stage_3"]
-                        if user_data["Info"]["Stage_3"] != "-"
-                        else ""
-                    )  # 备选关卡3
-                    data["Configurations"]["Default"]["Fight.RemainingSanityStage"] = (
-                        user_data["Info"]["Stage_Remain"]
-                        if user_data["Info"]["Stage_Remain"] != "-"
-                        else ""
-                    )  # 剩余理智关卡
-                    data["Configurations"]["Default"][
-                        "MainFunction.Series.Quantity"
-                    ] = user_data["Info"][
-                        "SeriesNumb"
-                    ]  # 连战次数
-                    data["Configurations"]["Default"][
-                        "Penguin.IsDrGrandet"
-                    ] = "False"  # 博朗台模式
-                    data["Configurations"]["Default"][
-                        "GUI.CustomStageCode"
-                    ] = "True"  # 手动输入关卡名
-                    data["Configurations"]["Default"][
-                        "GUI.UseAlternateStage"
-                    ] = "True"  # 备选关卡
-                    data["Configurations"]["Default"][
-                        "Fight.UseRemainingSanityStage"
-                    ] = (
-                        "True" if user_data["Info"]["Stage_Remain"] != "-" else "False"
-                    )  # 使用剩余理智
                     data["Configurations"]["Default"][
                         "Fight.UseExpiringMedicine"
                     ] = "True"  # 无限吃48小时内过期的理智药
@@ -1701,60 +1665,7 @@ class MaaManager(QObject):
                             "InfrastMode"
                         ]  # 基建模式
 
-            elif user_data["Info"]["Mode"] == "详细":
-
-                if "剿灭" in mode:
-
-                    pass
-
-                elif "日常" in mode:
-
-                    data["Configurations"]["Default"]["MainFunction.UseMedicine"] = (
-                        "False" if user_data["Info"]["MedicineNumb"] == 0 else "True"
-                    )  # 吃理智药
-                    data["Configurations"]["Default"][
-                        "MainFunction.UseMedicine.Quantity"
-                    ] = str(
-                        user_data["Info"]["MedicineNumb"]
-                    )  # 吃理智药数量
-                    data["Configurations"]["Default"]["MainFunction.Stage1"] = (
-                        user_data["Info"]["Stage"]
-                        if user_data["Info"]["Stage"] != "-"
-                        else ""
-                    )  # 主关卡
-                    data["Configurations"]["Default"]["MainFunction.Stage2"] = (
-                        user_data["Info"]["Stage_1"]
-                        if user_data["Info"]["Stage_1"] != "-"
-                        else ""
-                    )  # 备选关卡1
-                    data["Configurations"]["Default"]["MainFunction.Stage3"] = (
-                        user_data["Info"]["Stage_2"]
-                        if user_data["Info"]["Stage_2"] != "-"
-                        else ""
-                    )  # 备选关卡2
-                    data["Configurations"]["Default"]["MainFunction.Stage4"] = (
-                        user_data["Info"]["Stage_3"]
-                        if user_data["Info"]["Stage_3"] != "-"
-                        else ""
-                    )  # 备选关卡3
-                    data["Configurations"]["Default"]["Fight.RemainingSanityStage"] = (
-                        user_data["Info"]["Stage_Remain"]
-                        if user_data["Info"]["Stage_Remain"] != "-"
-                        else ""
-                    )  # 剩余理智关卡
-                    data["Configurations"]["Default"][
-                        "MainFunction.Series.Quantity"
-                    ] = user_data["Info"][
-                        "SeriesNumb"
-                    ]  # 连战次数
-                    data["Configurations"]["Default"][
-                        "GUI.UseAlternateStage"
-                    ] = "True"  # 备选关卡
-                    data["Configurations"]["Default"][
-                        "Fight.UseRemainingSanityStage"
-                    ] = (
-                        "True" if user_data["Info"]["Stage_Remain"] != "-" else "False"
-                    )  # 使用剩余理智
+                elif user_data["Info"]["Mode"] == "详细":
 
                     # 基建模式
                     if (
@@ -1770,8 +1681,6 @@ class MaaManager(QObject):
         # 人工排查配置
         elif "人工排查" in mode:
 
-            for i in range(1, 9):
-                data["Global"][f"Timer.Timer{i}"] = "False"  # 时间设置
             data["Configurations"]["Default"][
                 "MainFunction.PostActions"
             ] = "8"  # 完成后退出MAA
@@ -1794,6 +1703,11 @@ class MaaManager(QObject):
                 "VersionUpdate.AutoInstallUpdatePackage"
             ] = "False"  # 自动安装更新包
 
+            # 客户端类型
+            data["Configurations"]["Default"]["Start.ClientType"] = user_data["Info"][
+                "Server"
+            ]
+
             # 账号切换
             if user_data["Info"]["Server"] == "Official":
                 data["Configurations"]["Default"]["Start.AccountName"] = (
@@ -1805,14 +1719,6 @@ class MaaManager(QObject):
                 data["Configurations"]["Default"]["Start.AccountName"] = user_data[
                     "Info"
                 ]["Id"]
-
-            if user_data["Info"]["Mode"] == "简洁":
-
-                data["Configurations"]["Default"]["Start.ClientType"] = user_data[
-                    "Info"
-                ][
-                    "Server"
-                ]  # 客户端类型
 
             data["Configurations"]["Default"][
                 "TaskQueue.WakeUp.IsChecked"
@@ -1842,8 +1748,6 @@ class MaaManager(QObject):
         # 设置MAA配置
         elif "设置MAA" in mode:
 
-            for i in range(1, 9):
-                data["Global"][f"Timer.Timer{i}"] = "False"  # 时间设置
             data["Configurations"]["Default"][
                 "MainFunction.PostActions"
             ] = "0"  # 完成后无动作
@@ -1868,37 +1772,33 @@ class MaaManager(QObject):
                     "Start.MinimizeDirectly"
                 ] = "False"  # 启动MAA后直接最小化
 
-            if "全局" in mode:
-
-                data["Configurations"]["Default"][
-                    "TaskQueue.WakeUp.IsChecked"
-                ] = "False"  # 开始唤醒
-                data["Configurations"]["Default"][
-                    "TaskQueue.Recruiting.IsChecked"
-                ] = "False"  # 自动公招
-                data["Configurations"]["Default"][
-                    "TaskQueue.Base.IsChecked"
-                ] = "False"  # 基建换班
-                data["Configurations"]["Default"][
-                    "TaskQueue.Combat.IsChecked"
-                ] = "False"  # 刷理智
-                data["Configurations"]["Default"][
-                    "TaskQueue.Mission.IsChecked"
-                ] = "False"  # 领取奖励
-                data["Configurations"]["Default"][
-                    "TaskQueue.Mall.IsChecked"
-                ] = "False"  # 获取信用及购物
-                data["Configurations"]["Default"][
-                    "TaskQueue.AutoRoguelike.IsChecked"
-                ] = "False"  # 自动肉鸽
-                data["Configurations"]["Default"][
-                    "TaskQueue.Reclamation.IsChecked"
-                ] = "False"  # 生息演算
+            data["Configurations"]["Default"][
+                "TaskQueue.WakeUp.IsChecked"
+            ] = "False"  # 开始唤醒
+            data["Configurations"]["Default"][
+                "TaskQueue.Recruiting.IsChecked"
+            ] = "False"  # 自动公招
+            data["Configurations"]["Default"][
+                "TaskQueue.Base.IsChecked"
+            ] = "False"  # 基建换班
+            data["Configurations"]["Default"][
+                "TaskQueue.Combat.IsChecked"
+            ] = "False"  # 刷理智
+            data["Configurations"]["Default"][
+                "TaskQueue.Mission.IsChecked"
+            ] = "False"  # 领取奖励
+            data["Configurations"]["Default"][
+                "TaskQueue.Mall.IsChecked"
+            ] = "False"  # 获取信用及购物
+            data["Configurations"]["Default"][
+                "TaskQueue.AutoRoguelike.IsChecked"
+            ] = "False"  # 自动肉鸽
+            data["Configurations"]["Default"][
+                "TaskQueue.Reclamation.IsChecked"
+            ] = "False"  # 生息演算
 
         elif mode == "更新MAA":
 
-            for i in range(1, 9):
-                data["Global"][f"Timer.Timer{i}"] = "False"  # 时间设置
             data["Configurations"]["Default"][
                 "MainFunction.PostActions"
             ] = "0"  # 完成后无动作
