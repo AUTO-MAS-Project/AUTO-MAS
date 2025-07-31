@@ -51,6 +51,18 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.24'
+
+      - name: Build go updater
+        shell: pwsh
+        run: |
+          go moudel init
+          go install github.com/akavel/rsrc@latest
+          Go_Updater/build.ps1
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -94,17 +106,6 @@ jobs:
           assume-yes-for-downloads: true
           output-file: AUTO_MAA
           output-dir: AUTO_MAA
-
-      - name: Set up Go
-        uses: actions/setup-go@v4
-        with:
-          go-version: '1.24'
-      
-      - name: Build go updater
-        shell: pwsh
-        run: |
-          go install github.com/akavel/rsrc@latest
-          Go_Updater/build.ps1
 
       - name: Upload unsigned main program
         id: upload-unsigned-main-program
