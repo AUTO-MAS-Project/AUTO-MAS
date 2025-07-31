@@ -59,9 +59,10 @@ jobs:
       - name: Build go updater
         shell: pwsh
         run: |
+          cd Go_Updater
           go mod init
           go install github.com/akavel/rsrc@latest
-          Go_Updater/build.ps1
+          .\build.ps1
 
       - name: Set up Python
         uses: actions/setup-python@v5
