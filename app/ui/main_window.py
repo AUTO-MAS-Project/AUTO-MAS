@@ -366,6 +366,15 @@ class AUTO_MAA(MSFluentWindow):
             except Exception:
                 pass
 
+        # 恢复Go_Updater独立更新器
+        if (Config.app_path / "AUTO_MAA_Go_Updater_install.exe").exists():
+            try:
+                (Config.app_path / "AUTO_MAA_Go_Updater_install.exe").rename(
+                    "AUTO_MAA_Go_Updater.exe"
+                )
+            except Exception:
+                pass
+
         # 检查密码
         self.setting.check_PASSWORD()
 
