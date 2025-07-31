@@ -1228,23 +1228,6 @@ class MaaManager(QObject):
         else:
             self.update_log_text.emit("".join(self.maa_logs))
 
-        # 获取MAA版本号
-        if not self.set["RunSet"]["AutoUpdateMaa"] and not self.maa_version:
-
-            section_match = re.search(r"={35}(.*?)={35}", log, re.DOTALL)
-            if section_match:
-
-                version_match = re.search(
-                    r"Version\s+v(\d+\.\d+\.\d+(?:-\w+\.\d+)?)", section_match.group(1)
-                )
-                if version_match:
-                    self.maa_version = f"v{version_match.group(1)}"
-                    self.check_maa_version.emit(self.maa_version)
-                    logger.info(
-                        f"检测到MAA版本：{self.maa_version}",
-                        module=f"MAA调度器-{self.name}",
-                    )
-
         if "自动代理" in self.log_check_mode:
 
             # 获取最近一条日志的时间
@@ -1509,9 +1492,9 @@ class MaaManager(QObject):
             data["Global"][
                 "VersionUpdate.ScheduledUpdateCheck"
             ] = "False"  # 定时检查更新
-            data["Global"]["VersionUpdate.AutoDownloadUpdatePackage"] = str(
-                self.set["RunSet"]["AutoUpdateMaa"]
-            )  # 自动下载更新包
+            data["Global"][
+                "VersionUpdate.AutoDownloadUpdatePackage"
+            ] = "True"  # 自动下载更新包
             data["Global"][
                 "VersionUpdate.AutoInstallUpdatePackage"
             ] = "False"  # 自动安装更新包
