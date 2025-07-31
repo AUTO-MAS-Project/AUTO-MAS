@@ -161,7 +161,7 @@ class AUTO_MAA(MSFluentWindow):
         # 开始任务菜单项
         self.tray_menu.addActions(
             [
-                Action(FluentIcon.PLAY, "运行自动代理", triggered=self.start_main_task),
+                Action(FluentIcon.PLAY, "运行启动时队列", triggered=self.start_up_task),
                 Action(
                     FluentIcon.PAUSE,
                     "中止所有任务",
@@ -385,11 +385,6 @@ class AUTO_MAA(MSFluentWindow):
         if Config.get(Config.function_HomeImageMode) == "主题图像":
             self.home.get_home_image()
 
-        # 直接运行主任务
-        if Config.get(Config.start_IfRunDirectly):
-
-            self.start_main_task()
-
         # 启动定时器
         MainTimer.start()
 
@@ -440,39 +435,27 @@ class AUTO_MAA(MSFluentWindow):
             )
             System.set_power("KillSelf")
 
+        elif Config.args.mode == "gui":
+
+            self.start_up_queue()
+
         logger.success("启动时任务执行完成", module="主窗口")
 
-    def start_main_task(self) -> None:
-        """启动主任务"""
+    def start_up_queue(self) -> None:
+        """启动时运行的调度队列"""
 
-        logger.info("正在启动主任务", module="主窗口")
+        logger.info("开始调度启动时运行的调度队列", module="主窗口")
 
-        if "调度队列_1" in Config.queue_dict:
+        for name, queue in Config.queue_dict.items():
 
-            logger.info("自动添加任务：调度队列_1", module="主窗口")
-            TaskManager.add_task(
-                "自动代理_主调度台",
-                "调度队列_1",
-                Config.queue_dict["调度队列_1"]["Config"].toDict(),
-            )
+            if queue["Config"].get(queue["Config"].QueueSet_StartUpEnabled):
 
-        elif "脚本_1" in Config.script_dict:
+                logger.info(f"自动添加任务：{name}", module="主窗口")
+                TaskManager.add_task(
+                    "自动代理_新调度台", name, queue["Config"].toDict()
+                )
 
-            logger.info("自动添加任务：脚本_1", module="主窗口")
-            TaskManager.add_task(
-                "自动代理_主调度台", "自定义队列", {"Queue": {"Script_0": "脚本_1"}}
-            )
-
-        else:
-
-            logger.warning(
-                "启动主任务失败：未找到有效的主任务配置文件", module="主窗口"
-            )
-            MainInfoBar.push_info_bar(
-                "warning", "启动主任务失败", "「调度队列_1」与「脚本_1」均不存在", -1
-            )
-
-        logger.success("主任务启动完成", module="主窗口")
+        logger.success("开始调度启动时运行的调度队列启动完成", module="主窗口")
 
     def __currentChanged(self, index: int) -> None:
         """切换界面时任务"""

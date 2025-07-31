@@ -205,9 +205,6 @@ class GlobalConfig(LQConfig):
         self.start_IfSelfStart = ConfigItem(
             "Start", "IfSelfStart", False, BoolValidator()
         )
-        self.start_IfRunDirectly = ConfigItem(
-            "Start", "IfRunDirectly", False, BoolValidator()
-        )
         self.start_IfMinimizeDirectly = ConfigItem(
             "Start", "IfMinimizeDirectly", False, BoolValidator()
         )
@@ -278,6 +275,9 @@ class QueueConfig(LQConfig):
         self.QueueSet_Name = ConfigItem("QueueSet", "Name", "")
         self.QueueSet_TimeEnabled = ConfigItem(
             "QueueSet", "TimeEnabled", False, BoolValidator()
+        )
+        self.QueueSet_StartUpEnabled = ConfigItem(
+            "QueueSet", "StartUpEnabled", False, BoolValidator()
         )
         self.QueueSet_AfterAccomplish = OptionsConfigItem(
             "QueueSet",
@@ -697,7 +697,7 @@ class GeneralSubConfig(LQConfig):
 
 class AppConfig(GlobalConfig):
 
-    VERSION = "4.4.1.5"
+    VERSION = "4.4.1.6"
 
     stage_refreshed = Signal()
     PASSWORD_refreshed = Signal()

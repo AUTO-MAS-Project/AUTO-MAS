@@ -806,14 +806,6 @@ class StartSettingCard(HeaderCardWidget):
             configItem=Config.start_IfSelfStart,
             parent=self,
         )
-        self.card_IfRunDirectly = SwitchSettingCard(
-            icon=FluentIcon.PAGE_RIGHT,
-            title="启动后直接运行主任务",
-            content="启动AUTO_MAA后自动运行自动代理任务，优先级：调度队列 1 > 脚本 1",
-            qconfig=Config,
-            configItem=Config.start_IfRunDirectly,
-            parent=self,
-        )
         self.card_IfMinimizeDirectly = SwitchSettingCard(
             icon=FluentIcon.PAGE_RIGHT,
             title="启动后直接最小化",
@@ -825,7 +817,6 @@ class StartSettingCard(HeaderCardWidget):
 
         Layout = QVBoxLayout()
         Layout.addWidget(self.card_IfSelfStart)
-        Layout.addWidget(self.card_IfRunDirectly)
         Layout.addWidget(self.card_IfMinimizeDirectly)
         self.viewLayout.addLayout(Layout)
 
