@@ -59,7 +59,7 @@ jobs:
       - name: Build go updater
         shell: pwsh
         run: |
-          go moudel init
+          go mod init
           go install github.com/akavel/rsrc@latest
           Go_Updater/build.ps1
 
