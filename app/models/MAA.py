@@ -166,6 +166,15 @@ class MaaManager(QObject):
             )
             return None
 
+        # 记录 MAA 配置文件
+        logger.info(
+            f"记录 MAA 配置文件：{self.maa_set_path}",
+            module=f"MAA调度器-{self.name}",
+        )
+        (self.config_path / "Temp").mkdir(parents=True, exist_ok=True)
+        if self.maa_set_path.exists():
+            shutil.copy(self.maa_set_path, self.config_path / "Temp/gui.json")
+
         # 整理用户数据，筛选需代理的用户
         if "设置MAA" not in self.mode:
 
@@ -941,13 +950,6 @@ class MaaManager(QObject):
                 self.maa_process_manager.kill(if_force=True)
                 System.kill_process(self.maa_exe_path)
 
-            # 复原MAA配置文件
-            logger.info(
-                f"复原MAA配置文件：{self.maa_set_path}",
-                module=f"MAA调度器-{self.name}",
-            )
-            shutil.copy(self.config_path / "Default/gui.json", self.maa_set_path)
-
             # 更新用户数据
             updated_info = {_[2]: self.data[_[2]] for _ in self.user_list}
             self.update_user_info.emit(self.config_path.name, updated_info)
@@ -999,6 +1001,15 @@ class MaaManager(QObject):
                 10,
             )
             self.push_notification("代理结果", title, result)
+
+        # 复原 MAA 配置文件
+        logger.info(
+            f"复原 MAA 配置文件：{self.config_path / 'Temp/gui.json'}",
+            module=f"MAA调度器-{self.name}",
+        )
+        if (self.config_path / "Temp/gui.json").exists():
+            shutil.copy(self.config_path / "Temp/gui.json", self.maa_set_path)
+        shutil.rmtree(self.config_path / "Temp")
 
         self.agree_bilibili(False)
         self.log_monitor.deleteLater()

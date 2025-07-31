@@ -195,6 +195,22 @@ class GeneralManager(QObject):
 
         self.configure()
 
+        # 记录配置文件
+        logger.info(
+            f"记录通用脚本配置文件：{self.script_config_path}",
+            module=f"通用调度器-{self.name}",
+        )
+        (self.config_path / "Temp").mkdir(parents=True, exist_ok=True)
+        if self.set["Script"]["ConfigPathMode"] == "文件夹":
+            if self.script_config_path.exists():
+                shutil.copytree(
+                    self.script_config_path,
+                    self.config_path / "Temp",
+                    dirs_exist_ok=True,
+                )
+        elif self.script_config_path.exists():
+            shutil.copy(self.script_config_path, self.config_path / "Temp/config.temp")
+
         # 整理用户数据，筛选需代理的用户
         if self.mode != "设置通用脚本":
 
@@ -647,6 +663,22 @@ class GeneralManager(QObject):
                 10,
             )
             self.push_notification("代理结果", title, result)
+
+        # 复原通用脚本配置文件
+        logger.info(
+            f"复原通用脚本配置文件：{self.config_path / 'Temp'}",
+            module=f"通用调度器-{self.name}",
+        )
+        if self.set["Script"]["ConfigPathMode"] == "文件夹":
+            if (self.config_path / "Temp").exists():
+                shutil.copytree(
+                    self.config_path / "Temp",
+                    self.script_config_path,
+                    dirs_exist_ok=True,
+                )
+        elif (self.config_path / "Temp/config.temp").exists():
+            shutil.copy(self.config_path / "Temp/config.temp", self.script_config_path)
+        shutil.rmtree(self.config_path / "Temp")
 
         self.log_monitor.deleteLater()
         self.log_monitor_timer.deleteLater()
