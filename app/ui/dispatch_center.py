@@ -240,8 +240,8 @@ class DispatchCenter(QWidget):
             self.script_list["主调度台"].top_bar.object.addItem(
                 (
                     "队列"
-                    if info["Config"].get(info["Config"].queueSet_Name) == ""
-                    else f"队列 - {info["Config"].get(info["Config"].queueSet_Name)}"
+                    if info["Config"].get(info["Config"].QueueSet_Name) == ""
+                    else f"队列 - {info["Config"].get(info["Config"].QueueSet_Name)}"
                 ),
                 userData=name,
             )
@@ -312,8 +312,8 @@ class DispatchCenter(QWidget):
                 continue
             text_list.append(
                 "队列"
-                if info["Config"].get(info["Config"].queueSet_Name) == ""
-                else f"队列 - {info["Config"].get(info["Config"].queueSet_Name)}"
+                if info["Config"].get(info["Config"].QueueSet_Name) == ""
+                else f"队列 - {info["Config"].get(info["Config"].QueueSet_Name)}"
             )
             data_list.append(name)
 

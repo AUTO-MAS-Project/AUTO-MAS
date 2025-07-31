@@ -380,14 +380,14 @@ class _TaskManager(QObject):
             # 根据调度队列情况设置电源状态
             if (
                 Config.queue_dict[name]["Config"].get(
-                    Config.queue_dict[name]["Config"].queueSet_AfterAccomplish
+                    Config.queue_dict[name]["Config"].QueueSet_AfterAccomplish
                 )
                 != "NoAction"
                 and Config.power_sign == "NoAction"
             ):
                 Config.set_power_sign(
                     Config.queue_dict[name]["Config"].get(
-                        Config.queue_dict[name]["Config"].queueSet_AfterAccomplish
+                        Config.queue_dict[name]["Config"].QueueSet_AfterAccomplish
                     )
                 )
 
