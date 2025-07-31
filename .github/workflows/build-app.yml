@@ -95,6 +95,17 @@ jobs:
           output-file: AUTO_MAA
           output-dir: AUTO_MAA
 
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.24'
+      
+      - name: Build go updater
+        shell: pwsh
+        run: |
+          go install github.com/akavel/rsrc@latest
+          Go_Updater/build.ps1
+
       - name: Upload unsigned main program
         id: upload-unsigned-main-program
         uses: actions/upload-artifact@v4
@@ -122,6 +133,8 @@ jobs:
           $ver = "${{ steps.get_version.outputs.main_version }}"
           Copy-Item "$root/app" "$root/AUTO_MAA/app" -Recurse
           Copy-Item "$root/resources" "$root/AUTO_MAA/resources" -Recurse
+          Copy-Item "$root/Go_Updater" "$root/AUTO_MAA/Go_Updater" -Recurse
+          Move-Item "$root/AUTO_MAA/Go_Updater/build/AUTO_MAA_Go_Updater.exe" "$root/AUTO_MAA/AUTO_MAA_Go_Updater_install.exe"
           Copy-Item "$root/main.py" "$root/AUTO_MAA/"
           Copy-Item "$root/requirements.txt" "$root/AUTO_MAA/"
           Copy-Item "$root/README.md" "$root/AUTO_MAA/"
