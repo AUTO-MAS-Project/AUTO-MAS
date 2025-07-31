@@ -2458,7 +2458,7 @@ class ScriptManager(QWidget):
                         self.card_UpdateConfigMode = ComboBoxSettingCard(
                             icon=FluentIcon.PAGE_RIGHT,
                             title="脚本配置文件更新时机",
-                            content="在选定的时机自动更新配置文件",
+                            content="在选定的时机自动更新程序保存的配置文件",
                             texts=[
                                 "从不",
                                 "仅任务成功后",
@@ -2481,7 +2481,7 @@ class ScriptManager(QWidget):
                         self.card_LogPathFormat = LineEditSettingCard(
                             icon=FluentIcon.PAGE_RIGHT,
                             title="脚本日志文件名格式",
-                            content="若脚本日志文件名中随时间变化，请填入时间格式，留空则不启用",
+                            content="若脚本日志文件名中随时间变化，请填入时间格式文本，留空则不启用",
                             text="请输入脚本日志文件名格式",
                             qconfig=self.config,
                             configItem=self.config.Script_LogPathFormat,
@@ -2489,8 +2489,8 @@ class ScriptManager(QWidget):
                         )
                         self.card_LogTimeStart = SpinBoxSettingCard(
                             icon=FluentIcon.PAGE_RIGHT,
-                            title="脚本日志时间起始位置 - [必填]",
-                            content="脚本日志中时间的起始位置，单位为字符",
+                            title="脚本日志时间戳起始位置 - [必填]",
+                            content="脚本日志中时间戳的起始位置，单位为字符",
                             range=(1, 1024),
                             qconfig=self.config,
                             configItem=self.config.Script_LogTimeStart,
@@ -2498,8 +2498,8 @@ class ScriptManager(QWidget):
                         )
                         self.card_LogTimeEnd = SpinBoxSettingCard(
                             icon=FluentIcon.PAGE_RIGHT,
-                            title="脚本日志时间结束位置 - [必填]",
-                            content="脚本日志中时间的结束位置，单位为字符",
+                            title="脚本日志时间戳结束位置 - [必填]",
+                            content="脚本日志中时间戳的结束位置，单位为字符",
                             range=(1, 1024),
                             qconfig=self.config,
                             configItem=self.config.Script_LogTimeEnd,
@@ -2507,8 +2507,8 @@ class ScriptManager(QWidget):
                         )
                         self.card_LogTimeFormat = LineEditSettingCard(
                             icon=FluentIcon.PAGE_RIGHT,
-                            title="脚本日志时间格式 - [必填]",
-                            content="脚本日志中时间的格式",
+                            title="脚本日志时间戳格式 - [必填]",
+                            content="脚本日志中时间戳的格式",
                             text="请输入脚本日志时间格式",
                             qconfig=self.config,
                             configItem=self.config.Script_LogTimeFormat,

@@ -140,7 +140,35 @@ class GeneralManager(QObject):
         """提取配置信息"""
 
         self.script_root_path = Path(self.set["Script"]["RootPath"])
-        self.script_exe_path = Path(self.set["Script"]["ScriptPath"])
+        self.script_path = Path(self.set["Script"]["ScriptPath"])
+
+        arguments_list = []
+        path_list = []
+
+        for argument in [
+            _.strip()
+            for _ in str(self.set["Script"]["Arguments"]).split("|")
+            if _.strip()
+        ]:
+            arg = [_.strip() for _ in argument.split("%") if _.strip()]
+            if len(arg) > 1:
+                path_list.append((self.script_path / arg[0]).resolve())
+                arguments_list.append(
+                    [_.strip() for _ in arg[1].split(" ") if _.strip()]
+                )
+            elif len(arg) > 0:
+                path_list.append(self.script_path)
+                arguments_list.append(
+                    [_.strip() for _ in arg[0].split(" ") if _.strip()]
+                )
+
+        self.script_exe_path = path_list[0] if len(path_list) > 0 else self.script_path
+        self.script_arguments = arguments_list[0] if len(arguments_list) > 0 else []
+        self.script_set_exe_path = (
+            path_list[1] if len(path_list) > 1 else self.script_path
+        )
+        self.script_set_arguments = arguments_list[1] if len(arguments_list) > 1 else []
+
         self.script_config_path = Path(self.set["Script"]["ConfigPath"])
         self.script_log_path = (
             Path(self.set["Script"]["LogPath"]).with_stem(
@@ -353,12 +381,12 @@ class GeneralManager(QObject):
 
                     # 运行脚本任务
                     logger.info(
-                        f"运行脚本任务：{self.script_exe_path}，参数：{self.set['Script']['Arguments']}",
+                        f"运行脚本任务：{self.script_exe_path}，参数：{self.script_arguments}",
                         module=f"通用调度器-{self.name}",
                     )
                     self.script_process_manager.open_process(
                         self.script_exe_path,
-                        str(self.set["Script"]["Arguments"]).split(" "),
+                        self.script_arguments,
                         tracking_time=60 if self.set["Script"]["IfTrackProcess"] else 0,
                     )
 
@@ -437,6 +465,7 @@ class GeneralManager(QObject):
                             module=f"通用调度器-{self.name}",
                         )
                         self.script_process_manager.kill()
+                        System.kill_process(self.script_exe_path)
                         if self.set["Game"]["Enabled"]:
                             logger.info(
                                 f"中止游戏/模拟器进程：{list(self.game_process_manager.tracked_pids)}",
@@ -554,11 +583,12 @@ class GeneralManager(QObject):
             try:
                 # 创建通用脚本任务
                 logger.info(
-                    f"无参数启动通用脚本：{self.script_exe_path}",
+                    f"运行脚本任务：{self.script_set_exe_path}，参数：{self.script_set_arguments}",
                     module=f"通用调度器-{self.name}",
                 )
                 self.script_process_manager.open_process(
-                    self.script_exe_path,
+                    self.script_set_exe_path,
+                    self.script_set_arguments,
                     tracking_time=60 if self.set["Script"]["IfTrackProcess"] else 0,
                 )
 
@@ -913,7 +943,10 @@ class GeneralManager(QObject):
         logger.info(f"开始配置脚本运行参数：{index}", module=f"通用调度器-{self.name}")
 
         # 配置前关闭可能未正常退出的脚本进程
-        System.kill_process(self.script_exe_path)
+        if self.mode == "自动代理":
+            System.kill_process(self.script_exe_path)
+        elif self.mode == "设置通用脚本":
+            System.kill_process(self.script_set_exe_path)
 
         # 预导入配置文件
         if self.mode == "设置通用脚本":
