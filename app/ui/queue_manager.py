@@ -404,7 +404,7 @@ class QueueManager(QWidget):
                     )
                     self.card_StartUpEnabled = SwitchSettingCard(
                         icon=FluentIcon.CHECKBOX,
-                        title="启动时运行状态",
+                        title="启动时运行",
                         content="调度队列启动时运行状态，启用后将在软件启动时自动运行本队列",
                         qconfig=self.config,
                         configItem=self.config.QueueSet_StartUpEnabled,
@@ -412,7 +412,7 @@ class QueueManager(QWidget):
                     )
                     self.card_TimeEnable = SwitchSettingCard(
                         icon=FluentIcon.CHECKBOX,
-                        title="定时运行状态",
+                        title="定时运行",
                         content="调度队列定时运行状态，启用时会执行定时任务",
                         qconfig=self.config,
                         configItem=self.config.QueueSet_TimeEnabled,
