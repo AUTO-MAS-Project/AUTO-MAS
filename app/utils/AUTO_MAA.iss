@@ -51,6 +51,8 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Source: "{#MyAppPath}\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#MyAppPath}\app\*"; DestDir: "{app}\app"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "{#MyAppPath}\resources\*"; DestDir: "{app}\resources"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#MyAppPath}\Go_Updater\*"; DestDir: "{app}\Go_Updater"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#MyAppPath}\AUTO_MAA_Go_Updater_install.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#MyAppPath}\main.py"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#MyAppPath}\requirements.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#MyAppPath}\README.md"; DestDir: "{app}"; Flags: ignoreversion
