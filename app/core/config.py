@@ -565,9 +565,16 @@ class MaaPlanConfig(LQConfig):
         """获取当前的计划表配置项"""
 
         if self.get(self.Info_Mode) == "ALL":
+
             return self.config_item_dict["ALL"][name]
+
         elif self.get(self.Info_Mode) == "Weekly":
-            today = datetime.now().strftime("%A")
+
+            dt = datetime.now()
+            if dt.time() < datetime.min.time().replace(hour=4):
+                dt = dt - timedelta(days=1)
+            today = dt.strftime("%A")
+
             if today in self.config_item_dict:
                 return self.config_item_dict[today][name]
             else:
