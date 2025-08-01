@@ -25,10 +25,10 @@ v4.4
 作者：DLmaster_361
 """
 
-from loguru import logger
 from PySide6.QtCore import Qt
 from qfluentwidgets import InfoBar, InfoBarPosition
 
+from .logger import logger
 from .config import Config
 from .sound_player import SoundPlayer
 
@@ -46,20 +46,34 @@ class _MainInfoBar:
 
     def push_info_bar(
         self, mode: str, title: str, content: str, time: int, if_force: bool = False
-    ):
-        """推送到信息通知栏"""
+    ) -> None:
+        """
+        推送消息到吐司通知栏
+
+        :param mode: 通知栏模式，支持 "success", "warning", "error", "info"
+        :param title: 通知栏标题
+        :type title: str
+        :param content: 通知栏内容
+        :type content: str
+        :param time: 显示时长，单位为毫秒
+        :type time: int
+        :param if_force: 是否强制推送
+        :type if_force: bool
+        """
+
         if Config.main_window is None:
-            logger.error("信息通知栏未设置父窗口")
+            logger.error("信息通知栏未设置父窗口", module="吐司通知栏")
             return None
 
         # 根据 mode 获取对应的 InfoBar 方法
         info_bar_method = self.mode_mapping.get(mode)
 
         if not info_bar_method:
-            logger.error(f"未知的通知栏模式: {mode}")
+            logger.error(f"未知的通知栏模式: {mode}", module="吐司通知栏")
             return None
 
         if Config.main_window.isVisible():
+            # 主窗口可见时直接推送通知
             info_bar_method(
                 title=title,
                 content=content,
@@ -69,6 +83,7 @@ class _MainInfoBar:
                 duration=time,
                 parent=Config.main_window,
             )
+
         elif if_force:
             # 如果主窗口不可见且强制推送，则录入消息队列等待窗口显示后推送
             info_bar_item = {
@@ -79,6 +94,11 @@ class _MainInfoBar:
             }
             if info_bar_item not in Config.info_bar_list:
                 Config.info_bar_list.append(info_bar_item)
+
+            logger.info(
+                f"主窗口不可见，已将通知栏消息录入队列: {info_bar_item}",
+                module="吐司通知栏",
+            )
 
         if mode == "warning":
             SoundPlayer.play("发生异常")

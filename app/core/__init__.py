@@ -38,6 +38,7 @@ from .config import (
     GeneralSubConfig,
     Config,
 )
+from .logger import logger
 from .main_info_bar import MainInfoBar
 from .network import Network
 from .sound_player import SoundPlayer
@@ -52,6 +53,7 @@ __all__ = [
     "MaaPlanConfig",
     "GeneralConfig",
     "GeneralSubConfig",
+    "logger",
     "MainInfoBar",
     "Network",
     "SoundPlayer",

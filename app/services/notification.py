@@ -33,13 +33,14 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import formataddr
 from pathlib import Path
+from typing import Union
 
 import requests
 from PySide6.QtCore import QObject, Signal
-from loguru import logger
+
 from plyer import notification
 
-from app.core import Config
+from app.core import Config, logger
 from app.services.security import Crypto
 from app.utils.ImageUtils import ImageUtils
 
@@ -51,10 +52,20 @@ class Notification(QObject):
     def __init__(self, parent=None):
         super().__init__(parent)
 
-    def push_plyer(self, title, message, ticker, t):
-        """推送系统通知"""
+    def push_plyer(self, title, message, ticker, t) -> bool:
+        """
+        推送系统通知
+
+        :param title: 通知标题
+        :param message: 通知内容
+        :param ticker: 通知横幅
+        :param t: 通知持续时间
+        :return: bool
+        """
 
         if Config.get(Config.notify_IfPushPlyer):
+
+            logger.info(f"推送系统通知：{title}", module="通知服务")
 
             notification.notify(
                 title=title,
@@ -69,7 +80,15 @@ class Notification(QObject):
         return True
 
     def send_mail(self, mode, title, content, to_address) -> None:
-        """推送邮件通知"""
+        """
+        推送邮件通知
+
+        :param mode: 邮件内容模式，支持 "文本" 和 "网页"
+        :param title: 邮件标题
+        :param content: 邮件内容
+        :param to_address: 收件人地址
+        """
+
         if (
             Config.get(Config.notify_SMTPServerAddress) == ""
             or Config.get(Config.notify_AuthorizationCode) == ""
@@ -87,7 +106,8 @@ class Notification(QObject):
             )
         ):
             logger.error(
-                "请正确设置邮件通知的SMTP服务器地址、授权码、发件人地址和收件人地址"
+                "请正确设置邮件通知的SMTP服务器地址、授权码、发件人地址和收件人地址",
+                module="通知服务",
             )
             self.push_info_bar.emit(
                 "error",
@@ -110,42 +130,43 @@ class Notification(QObject):
                 )
             )  # 发件人显示的名字
             message["To"] = formataddr(
-                (
-                    Header("AUTO_MAA用户", "utf-8").encode(),
-                    to_address,
-                )
+                (Header("AUTO_MAA用户", "utf-8").encode(), to_address)
             )  # 收件人显示的名字
             message["Subject"] = Header(title, "utf-8")
 
             if mode == "网页":
                 message.attach(MIMEText(content, "html", "utf-8"))
 
-            smtpObj = smtplib.SMTP_SSL(
-                Config.get(Config.notify_SMTPServerAddress),
-                465,
-            )
+            smtpObj = smtplib.SMTP_SSL(Config.get(Config.notify_SMTPServerAddress), 465)
             smtpObj.login(
                 Config.get(Config.notify_FromAddress),
                 Crypto.win_decryptor(Config.get(Config.notify_AuthorizationCode)),
             )
             smtpObj.sendmail(
-                Config.get(Config.notify_FromAddress),
-                to_address,
-                message.as_string(),
+                Config.get(Config.notify_FromAddress), to_address, message.as_string()
             )
             smtpObj.quit()
-            logger.success("邮件发送成功")
-            return None
+            logger.success(f"邮件发送成功：{title}", module="通知服务")
         except Exception as e:
-            logger.error(f"发送邮件时出错：\n{e}")
+            logger.exception(f"发送邮件时出错：{e}", module="通知服务")
             self.push_info_bar.emit("error", "发送邮件时出错", f"{e}", -1)
-            return None
-        return None
 
-    def ServerChanPush(self, title, content, send_key, tag, channel):
-        """使用Server酱推送通知"""
+    def ServerChanPush(
+        self, title, content, send_key, tag, channel
+    ) -> Union[bool, str]:
+        """
+        使用Server酱推送通知
+
+        :param title: 通知标题
+        :param content: 通知内容
+        :param send_key: Server酱的SendKey
+        :param tag: 通知标签
+        :param channel: 通知频道
+        :return: bool or str
+        """
+
         if not send_key:
-            logger.error("请正确设置Server酱的SendKey")
+            logger.error("请正确设置Server酱的SendKey", module="通知服务")
             self.push_info_bar.emit(
                 "error", "Server酱通知推送异常", "请正确设置Server酱的SendKey", -1
             )
@@ -176,7 +197,7 @@ class Notification(QObject):
             if is_valid(tags):
                 options["tags"] = tags
             else:
-                logger.warning("Server酱 Tag 配置不正确，将被忽略")
+                logger.warning("Server酱 Tag 配置不正确，将被忽略", module="通知服务")
                 self.push_info_bar.emit(
                     "warning",
                     "Server酱通知推送异常",
@@ -187,7 +208,9 @@ class Notification(QObject):
             if is_valid(channels):
                 options["channel"] = channels
             else:
-                logger.warning("Server酱 Channel 配置不正确，将被忽略")
+                logger.warning(
+                    "Server酱 Channel 配置不正确，将被忽略", module="通知服务"
+                )
                 self.push_info_bar.emit(
                     "warning",
                     "Server酱通知推送异常",
@@ -212,18 +235,20 @@ class Notification(QObject):
             result = response.json()
 
             if result.get("code") == 0:
-                logger.info("Server酱推送通知成功")
+                logger.success(f"Server酱推送通知成功：{title}", module="通知服务")
                 return True
             else:
                 error_code = result.get("code", "-1")
-                logger.error(f"Server酱通知推送失败：响应码：{error_code}")
+                logger.exception(
+                    f"Server酱通知推送失败：响应码：{error_code}", module="通知服务"
+                )
                 self.push_info_bar.emit(
                     "error", "Server酱通知推送失败", f"响应码：{error_code}", -1
                 )
                 return f"Server酱通知推送失败：{error_code}"
 
         except Exception as e:
-            logger.exception("Server酱通知推送异常")
+            logger.exception(f"Server酱通知推送异常：{e}", module="通知服务")
             self.push_info_bar.emit(
                 "error",
                 "Server酱通知推送异常",
@@ -232,10 +257,18 @@ class Notification(QObject):
             )
             return f"Server酱通知推送异常：{str(e)}"
 
-    def CompanyWebHookBotPush(self, title, content, webhook_url):
-        """使用企业微信群机器人推送通知"""
+    def CompanyWebHookBotPush(self, title, content, webhook_url) -> Union[bool, str]:
+        """
+        使用企业微信群机器人推送通知
+
+        :param title: 通知标题
+        :param content: 通知内容
+        :param webhook_url: 企业微信群机器人的WebHook地址
+        :return: bool or str
+        """
+
         if webhook_url == "":
-            logger.error("请正确设置企业微信群机器人的WebHook地址")
+            logger.error("请正确设置企业微信群机器人的WebHook地址", module="通知服务")
             self.push_info_bar.emit(
                 "error",
                 "企业微信群机器人通知推送异常",
@@ -264,7 +297,7 @@ class Notification(QObject):
                 err = e
                 time.sleep(0.1)
         else:
-            logger.error(f"推送企业微信群机器人时出错：{err}")
+            logger.error(f"推送企业微信群机器人时出错：{err}", module="通知服务")
             self.push_info_bar.emit(
                 "error",
                 "企业微信群机器人通知推送失败",
@@ -274,10 +307,10 @@ class Notification(QObject):
             return None
 
         if info["errcode"] == 0:
-            logger.info("企业微信群机器人推送通知成功")
+            logger.success(f"企业微信群机器人推送通知成功：{title}", module="通知服务")
             return True
         else:
-            logger.error(f"企业微信群机器人推送通知失败：{info}")
+            logger.error(f"企业微信群机器人推送通知失败：{info}", module="通知服务")
             self.push_info_bar.emit(
                 "error",
                 "企业微信群机器人通知推送失败",
@@ -287,7 +320,14 @@ class Notification(QObject):
             return f"使用企业微信群机器人推送通知时出错：{err}"
 
     def CompanyWebHookBotPushImage(self, image_path: Path, webhook_url: str) -> bool:
-        """使用企业微信群机器人推送图片通知"""
+        """
+        使用企业微信群机器人推送图片通知
+
+        :param image_path: 图片文件路径
+        :param webhook_url: 企业微信群机器人的WebHook地址
+        :return: bool
+        """
+
         try:
             # 压缩图片
             ImageUtils.compress_image_if_needed(image_path)
@@ -295,7 +335,8 @@ class Notification(QObject):
             # 检查图片是否存在
             if not image_path.exists():
                 logger.error(
-                    "图片推送异常 | 图片不存在或者压缩失败，请检查图片路径是否正确"
+                    "图片推送异常 | 图片不存在或者压缩失败，请检查图片路径是否正确",
+                    module="通知服务",
                 )
                 self.push_info_bar.emit(
                     "error",
@@ -306,7 +347,9 @@ class Notification(QObject):
                 return False
 
             if not webhook_url:
-                logger.error("请正确设置企业微信群机器人的WebHook地址")
+                logger.error(
+                    "请正确设置企业微信群机器人的WebHook地址", module="通知服务"
+                )
                 self.push_info_bar.emit(
                     "error",
                     "企业微信群机器人通知推送异常",
@@ -320,7 +363,7 @@ class Notification(QObject):
                 image_base64 = ImageUtils.get_base64_from_file(str(image_path))
                 image_md5 = ImageUtils.calculate_md5_from_file(str(image_path))
             except Exception as e:
-                logger.exception(f"图片编码或MD5计算失败：{e}")
+                logger.exception(f"图片编码或MD5计算失败：{e}", module="通知服务")
                 self.push_info_bar.emit(
                     "error",
                     "企业微信群机器人通知推送异常",
@@ -349,10 +392,12 @@ class Notification(QObject):
                     break
                 except requests.RequestException as e:
                     err = e
-                    logger.warning(f"推送企业微信群机器人图片第{_+1}次失败：{e}")
+                    logger.exception(
+                        f"推送企业微信群机器人图片第{_+1}次失败：{e}", module="通知服务"
+                    )
                     time.sleep(0.1)
             else:
-                logger.error(f"推送企业微信群机器人图片时出错：{err}")
+                logger.error("推送企业微信群机器人图片时出错", module="通知服务")
                 self.push_info_bar.emit(
                     "error",
                     "企业微信群机器人图片推送失败",
@@ -362,10 +407,13 @@ class Notification(QObject):
                 return False
 
             if info.get("errcode") == 0:
-                logger.info("企业微信群机器人推送图片成功")
+                logger.success(
+                    f"企业微信群机器人推送图片成功：{image_path.name}",
+                    module="通知服务",
+                )
                 return True
             else:
-                logger.error(f"企业微信群机器人推送图片失败：{info}")
+                logger.error(f"企业微信群机器人推送图片失败：{info}", module="通知服务")
                 self.push_info_bar.emit(
                     "error",
                     "企业微信群机器人图片推送失败",
@@ -386,6 +434,9 @@ class Notification(QObject):
 
     def send_test_notification(self):
         """发送测试通知到所有已启用的通知渠道"""
+
+        logger.info("发送测试通知到所有已启用的通知渠道", module="通知服务")
+
         # 发送系统通知
         self.push_plyer(
             "测试通知",
@@ -424,6 +475,8 @@ class Notification(QObject):
                 Config.app_path / "resources/images/notification/test_notify.png",
                 Config.get(Config.notify_CompanyWebHookBotUrl),
             )
+
+        logger.info("测试通知发送完成", module="通知服务")
 
         return True
 

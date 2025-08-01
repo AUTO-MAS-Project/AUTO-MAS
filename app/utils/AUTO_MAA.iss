@@ -20,7 +20,7 @@ AppPublisher={#MyAppPublisher}
 AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}
 AppUpdatesURL={#MyAppURL}
-DefaultDirName=D:\{#MyAppName}
+DefaultDirName={autopf}\{#MyAppName}
 UninstallDisplayIcon={app}\{#MyAppExeName}
 ; "ArchitecturesAllowed=x64compatible" specifies that Setup cannot run
 ; on anything but x64 and Windows 11 on Arm.
@@ -32,13 +32,13 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 DisableProgramGroupPage=yes
 LicenseFile={#MyAppPath}\LICENSE
-; Remove the following line to run in administrative install mode (install for all users).
-PrivilegesRequired=lowest
+PrivilegesRequired=admin
 OutputDir={#OutputDir}
 OutputBaseFilename=AUTO_MAA-Setup
 SetupIconFile={#MyAppPath}\resources\icons\AUTO_MAA.ico
 SolidCompression=yes
 WizardStyle=modern
+AppMutex=AUTO_MAA_Installer_Mutex
 
 [Languages]
 Name: "Chinese"; MessagesFile: "{#MyAppPath}\resources\docs\ChineseSimplified.isl"
@@ -51,6 +51,8 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Source: "{#MyAppPath}\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#MyAppPath}\app\*"; DestDir: "{app}\app"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "{#MyAppPath}\resources\*"; DestDir: "{app}\resources"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#MyAppPath}\Go_Updater\*"; DestDir: "{app}\Go_Updater"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#MyAppPath}\AUTO_MAA_Go_Updater_install.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#MyAppPath}\main.py"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#MyAppPath}\requirements.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#MyAppPath}\README.md"; DestDir: "{app}"; Flags: ignoreversion
@@ -62,7 +64,7 @@ Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall
+Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall runascurrentuser
 
 [Code]
 var
@@ -70,7 +72,10 @@ var
 
 function InitializeUninstall: Boolean;
 begin
-  DeleteDataQuestion := MsgBox('您确认要完全移除 AUTO_MAA 的所有用户数据文件与子组件吗？', mbConfirmation, MB_YESNO) = IDYES;
+  DeleteDataQuestion := MsgBox('您确认要完全移除 AUTO_MAA 的所有配置、用户数据与子组件吗？' + #13#10 + 
+                              '选择"是"将删除所有配置文件、数据与子组件程序。' + #13#10 +
+                              '选择"否"将保留数据文件与子组件。', 
+                              mbConfirmation, MB_YESNO) = IDYES;
   Result := True;
 end;
 

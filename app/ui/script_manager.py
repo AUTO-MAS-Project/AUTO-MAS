@@ -25,7 +25,6 @@ v4.4
 作者：DLmaster_361
 """
 
-from loguru import logger
 from PySide6.QtWidgets import (
     QWidget,
     QFileDialog,
@@ -55,12 +54,13 @@ from PySide6.QtCore import Signal
 from datetime import datetime
 from functools import partial
 from pathlib import Path
-from typing import List, Union, Type
+from typing import List, Dict, Union, Type
 import shutil
 import json
 
 from app.core import (
     Config,
+    logger,
     MainInfoBar,
     TaskManager,
     MaaConfig,
@@ -94,11 +94,12 @@ from .Widget import (
     PushAndComboBoxSettingCard,
     StatusSwitchSetting,
     UserNoticeSettingCard,
+    NoticeMessageBox,
     PivotArea,
 )
 
 
-class MemberManager(QWidget):
+class ScriptManager(QWidget):
     """脚本管理父界面"""
 
     def __init__(self, parent=None):
@@ -109,31 +110,22 @@ class MemberManager(QWidget):
         layout = QVBoxLayout(self)
 
         self.tools = CommandBar()
-
-        self.member_manager = self.MemberSettingBox(self)
+        self.script_manager = self.ScriptSettingBox(self)
 
         # 逐个添加动作
         self.tools.addActions(
             [
+                Action(FluentIcon.ADD_TO, "新建脚本实例", triggered=self.add_script),
                 Action(
-                    FluentIcon.ADD_TO, "新建脚本实例", triggered=self.add_setting_box
-                ),
-                Action(
-                    FluentIcon.REMOVE_FROM,
-                    "删除脚本实例",
-                    triggered=self.del_setting_box,
+                    FluentIcon.REMOVE_FROM, "删除脚本实例", triggered=self.del_script
                 ),
             ]
         )
         self.tools.addSeparator()
         self.tools.addActions(
             [
-                Action(
-                    FluentIcon.LEFT_ARROW, "向左移动", triggered=self.left_setting_box
-                ),
-                Action(
-                    FluentIcon.RIGHT_ARROW, "向右移动", triggered=self.right_setting_box
-                ),
+                Action(FluentIcon.LEFT_ARROW, "向左移动", triggered=self.left_script),
+                Action(FluentIcon.RIGHT_ARROW, "向右移动", triggered=self.right_script),
             ]
         )
         self.tools.addSeparator()
@@ -141,7 +133,7 @@ class MemberManager(QWidget):
             Action(
                 FluentIcon.DOWNLOAD,
                 "脚本下载器",
-                triggered=self.member_downloader,
+                triggered=self.script_downloader,
             )
         )
         self.tools.addSeparator()
@@ -154,9 +146,9 @@ class MemberManager(QWidget):
         self.tools.addAction(self.key)
 
         layout.addWidget(self.tools)
-        layout.addWidget(self.member_manager)
+        layout.addWidget(self.script_manager)
 
-    def add_setting_box(self):
+    def add_script(self):
         """添加一个脚本实例"""
 
         choice = ComboBoxMessageBox(
@@ -167,10 +159,15 @@ class MemberManager(QWidget):
         )
         if choice.exec() and choice.input[0].currentIndex() != -1:
 
+            logger.info(
+                f"添加脚本实例: {choice.input[0].currentText()}", module="脚本管理"
+            )
+
             if choice.input[0].currentText() == "MAA":
 
-                index = len(Config.member_dict) + 1
+                index = len(Config.script_dict) + 1
 
+                # 初始化 MAA 配置
                 maa_config = MaaConfig()
                 maa_config.load(
                     Config.app_path / f"config/MaaConfig/脚本_{index}/config.json",
@@ -181,19 +178,20 @@ class MemberManager(QWidget):
                     parents=True, exist_ok=True
                 )
 
-                Config.member_dict[f"脚本_{index}"] = {
+                Config.script_dict[f"脚本_{index}"] = {
                     "Type": "Maa",
                     "Path": Config.app_path / f"config/MaaConfig/脚本_{index}",
                     "Config": maa_config,
                     "UserData": {},
                 }
 
-                self.member_manager.add_SettingBox(
-                    index, self.MemberSettingBox.MaaSettingBox
+                # 添加 MAA 实例设置界面
+                self.script_manager.add_SettingBox(
+                    index, self.ScriptSettingBox.MaaSettingBox
                 )
-                self.member_manager.switch_SettingBox(index)
+                self.script_manager.switch_SettingBox(index)
 
-                logger.success(f"MAA实例 脚本_{index} 添加成功")
+                logger.success(f"MAA实例 脚本_{index} 添加成功", module="脚本管理")
                 MainInfoBar.push_info_bar(
                     "success", "操作成功", f"添加 MAA 实例 脚本_{index}", 3000
                 )
@@ -201,8 +199,9 @@ class MemberManager(QWidget):
 
             elif choice.input[0].currentText() == "通用":
 
-                index = len(Config.member_dict) + 1
+                index = len(Config.script_dict) + 1
 
+                # 初始化通用配置
                 general_config = GeneralConfig()
                 general_config.load(
                     Config.app_path / f"config/GeneralConfig/脚本_{index}/config.json",
@@ -213,38 +212,39 @@ class MemberManager(QWidget):
                     parents=True, exist_ok=True
                 )
 
-                Config.member_dict[f"脚本_{index}"] = {
+                Config.script_dict[f"脚本_{index}"] = {
                     "Type": "General",
                     "Path": Config.app_path / f"config/GeneralConfig/脚本_{index}",
                     "Config": general_config,
                     "SubData": {},
                 }
 
-                self.member_manager.add_SettingBox(
-                    index, self.MemberSettingBox.GeneralSettingBox
+                # 添加通用实例设置界面
+                self.script_manager.add_SettingBox(
+                    index, self.ScriptSettingBox.GeneralSettingBox
                 )
-                self.member_manager.switch_SettingBox(index)
+                self.script_manager.switch_SettingBox(index)
 
-                logger.success(f"通用实例 脚本_{index} 添加成功")
+                logger.success(f"通用实例 脚本_{index} 添加成功", module="脚本管理")
                 MainInfoBar.push_info_bar(
                     "success", "操作成功", f"添加通用实例 脚本_{index}", 3000
                 )
                 SoundPlayer.play("添加脚本实例")
 
-    def del_setting_box(self):
+    def del_script(self):
         """删除一个脚本实例"""
 
-        name = self.member_manager.pivot.currentRouteKey()
+        name = self.script_manager.pivot.currentRouteKey()
 
         if name is None:
-            logger.warning("删除脚本实例时未选择脚本实例")
+            logger.warning("删除脚本实例时未选择脚本实例", module="脚本管理")
             MainInfoBar.push_info_bar(
                 "warning", "未选择脚本实例", "请选择一个脚本实例", 5000
             )
             return None
 
         if len(Config.running_list) > 0:
-            logger.warning("删除脚本实例时调度队列未停止运行")
+            logger.warning("删除脚本实例时调度队列未停止运行", module="脚本管理")
             MainInfoBar.push_info_bar(
                 "warning", "调度中心正在执行任务", "请等待或手动中止任务", 5000
             )
@@ -253,32 +253,35 @@ class MemberManager(QWidget):
         choice = MessageBox("确认", f"确定要删除 {name} 实例吗？", self.window())
         if choice.exec():
 
-            self.member_manager.clear_SettingBox()
+            logger.info(f"正在删除脚本实例: {name}", module="脚本管理")
 
-            shutil.rmtree(Config.member_dict[name]["Path"])
+            self.script_manager.clear_SettingBox()
+
+            # 删除脚本实例的配置文件并同步修改相应配置项
+            shutil.rmtree(Config.script_dict[name]["Path"])
             Config.change_queue(name, "禁用")
-            for i in range(int(name[3:]) + 1, len(Config.member_dict) + 1):
-                if Config.member_dict[f"脚本_{i}"]["Path"].exists():
-                    Config.member_dict[f"脚本_{i}"]["Path"].rename(
-                        Config.member_dict[f"脚本_{i}"]["Path"].with_name(f"脚本_{i-1}")
+            for i in range(int(name[3:]) + 1, len(Config.script_dict) + 1):
+                if Config.script_dict[f"脚本_{i}"]["Path"].exists():
+                    Config.script_dict[f"脚本_{i}"]["Path"].rename(
+                        Config.script_dict[f"脚本_{i}"]["Path"].with_name(f"脚本_{i-1}")
                     )
                 Config.change_queue(f"脚本_{i}", f"脚本_{i-1}")
 
-            self.member_manager.show_SettingBox(max(int(name[3:]) - 1, 1))
+            self.script_manager.show_SettingBox(max(int(name[3:]) - 1, 1))
 
-            logger.success(f"脚本实例 {name} 删除成功")
+            logger.success(f"脚本实例 {name} 删除成功", module="脚本管理")
             MainInfoBar.push_info_bar(
                 "success", "操作成功", f"删除脚本实例 {name}", 3000
             )
             SoundPlayer.play("删除脚本实例")
 
-    def left_setting_box(self):
+    def left_script(self):
         """向左移动脚本实例"""
 
-        name = self.member_manager.pivot.currentRouteKey()
+        name = self.script_manager.pivot.currentRouteKey()
 
         if name is None:
-            logger.warning("向左移动脚本实例时未选择脚本实例")
+            logger.warning("向左移动脚本实例时未选择脚本实例", module="脚本管理")
             MainInfoBar.push_info_bar(
                 "warning", "未选择脚本实例", "请选择一个脚本实例", 5000
             )
@@ -287,46 +290,49 @@ class MemberManager(QWidget):
         index = int(name[3:])
 
         if index == 1:
-            logger.warning("向左移动脚本实例时已到达最左端")
+            logger.warning("向左移动脚本实例时已到达最左端", module="脚本管理")
             MainInfoBar.push_info_bar(
                 "warning", "已经是第一个脚本实例", "无法向左移动", 5000
             )
             return None
 
         if len(Config.running_list) > 0:
-            logger.warning("向左移动脚本实例时调度队列未停止运行")
+            logger.warning("向左移动脚本实例时调度队列未停止运行", module="脚本管理")
             MainInfoBar.push_info_bar(
                 "warning", "调度中心正在执行任务", "请等待或手动中止任务", 5000
             )
             return None
 
-        self.member_manager.clear_SettingBox()
+        logger.info(f"正在向左移动脚本实例: {name}", module="脚本管理")
 
-        Config.member_dict[name]["Path"].rename(
-            Config.member_dict[name]["Path"].with_name("脚本_0")
+        self.script_manager.clear_SettingBox()
+
+        # 移动脚本实例配置文件并同步修改配置项
+        Config.script_dict[name]["Path"].rename(
+            Config.script_dict[name]["Path"].with_name("脚本_0")
         )
         Config.change_queue(name, "脚本_0")
-        Config.member_dict[f"脚本_{index-1}"]["Path"].rename(
-            Config.member_dict[f"脚本_{index-1}"]["Path"].with_name(name)
+        Config.script_dict[f"脚本_{index-1}"]["Path"].rename(
+            Config.script_dict[f"脚本_{index-1}"]["Path"].with_name(name)
         )
         Config.change_queue(f"脚本_{index-1}", name)
-        Config.member_dict[name]["Path"].with_name("脚本_0").rename(
-            Config.member_dict[name]["Path"].with_name(f"脚本_{index-1}")
+        Config.script_dict[name]["Path"].with_name("脚本_0").rename(
+            Config.script_dict[name]["Path"].with_name(f"脚本_{index-1}")
         )
         Config.change_queue("脚本_0", f"脚本_{index-1}")
 
-        self.member_manager.show_SettingBox(index - 1)
+        self.script_manager.show_SettingBox(index - 1)
 
-        logger.success(f"脚本实例 {name} 左移成功")
+        logger.success(f"脚本实例 {name} 左移成功", module="脚本管理")
         MainInfoBar.push_info_bar("success", "操作成功", f"左移脚本实例 {name}", 3000)
 
-    def right_setting_box(self):
+    def right_script(self):
         """向右移动脚本实例"""
 
-        name = self.member_manager.pivot.currentRouteKey()
+        name = self.script_manager.pivot.currentRouteKey()
 
         if name is None:
-            logger.warning("向右移动脚本实例时未选择脚本实例")
+            logger.warning("向右移动脚本实例时未选择脚本实例", module="脚本管理")
             MainInfoBar.push_info_bar(
                 "warning", "未选择脚本实例", "请选择一个脚本实例", 5000
             )
@@ -334,46 +340,49 @@ class MemberManager(QWidget):
 
         index = int(name[3:])
 
-        if index == len(Config.member_dict):
-            logger.warning("向右移动脚本实例时已到达最右端")
+        if index == len(Config.script_dict):
+            logger.warning("向右移动脚本实例时已到达最右端", module="脚本管理")
             MainInfoBar.push_info_bar(
                 "warning", "已经是最后一个脚本实例", "无法向右移动", 5000
             )
             return None
 
         if len(Config.running_list) > 0:
-            logger.warning("向右移动脚本实例时调度队列未停止运行")
+            logger.warning("向右移动脚本实例时调度队列未停止运行", module="脚本管理")
             MainInfoBar.push_info_bar(
                 "warning", "调度中心正在执行任务", "请等待或手动中止任务", 5000
             )
             return None
 
-        self.member_manager.clear_SettingBox()
+        logger.info(f"正在向右移动脚本实例: {name}", module="脚本管理")
 
-        Config.member_dict[name]["Path"].rename(
-            Config.member_dict[name]["Path"].with_name("脚本_0")
+        self.script_manager.clear_SettingBox()
+
+        # 移动脚本实例配置文件并同步修改配置项
+        Config.script_dict[name]["Path"].rename(
+            Config.script_dict[name]["Path"].with_name("脚本_0")
         )
         Config.change_queue(name, "脚本_0")
-        Config.member_dict[f"脚本_{index+1}"]["Path"].rename(
-            Config.member_dict[f"脚本_{index+1}"]["Path"].with_name(name)
+        Config.script_dict[f"脚本_{index+1}"]["Path"].rename(
+            Config.script_dict[f"脚本_{index+1}"]["Path"].with_name(name)
         )
         Config.change_queue(f"脚本_{index+1}", name)
-        Config.member_dict[name]["Path"].with_name("脚本_0").rename(
-            Config.member_dict[name]["Path"].with_name(f"脚本_{index+1}")
+        Config.script_dict[name]["Path"].with_name("脚本_0").rename(
+            Config.script_dict[name]["Path"].with_name(f"脚本_{index+1}")
         )
         Config.change_queue("脚本_0", f"脚本_{index+1}")
 
-        self.member_manager.show_SettingBox(index + 1)
+        self.script_manager.show_SettingBox(index + 1)
 
-        logger.success(f"脚本实例 {name} 右移成功")
+        logger.success(f"脚本实例 {name} 右移成功", module="脚本管理")
         MainInfoBar.push_info_bar("success", "操作成功", f"右移脚本实例 {name}", 3000)
 
-    def member_downloader(self):
+    def script_downloader(self):
         """脚本下载器"""
 
         if not Config.get(Config.update_MirrorChyanCDK):
 
-            logger.warning("脚本下载器未设置CDK")
+            logger.warning("脚本下载器未设置CDK", module="脚本管理")
             MainInfoBar.push_info_bar(
                 "warning",
                 "未设置Mirror酱CDK",
@@ -385,14 +394,17 @@ class MemberManager(QWidget):
         # 从远程服务器获取应用列表
         network = Network.add_task(
             mode="get",
-            url="https://gitee.com/DLmaster_361/AUTO_MAA/raw/server/apps_info.json",
+            url="http://221.236.27.82:10197/d/AUTO_MAA/Server/apps_info.json",
         )
         network.loop.exec()
         network_result = Network.get_result(network)
         if network_result["status_code"] == 200:
             apps_info = network_result["response_json"]
         else:
-            logger.warning(f"获取应用列表时出错：{network_result['error_message']}")
+            logger.warning(
+                f"获取应用列表时出错：{network_result['error_message']}",
+                module="脚本管理",
+            )
             MainInfoBar.push_info_bar(
                 "warning",
                 "获取应用列表时出错",
@@ -419,7 +431,9 @@ class MemberManager(QWidget):
                 str(Config.app_path / f"script/{app_rid}"),
             )
             if not folder:
-                logger.warning(f"选择{app_name}下载目录时未选择文件夹")
+                logger.warning(
+                    f"选择{app_name}下载目录时未选择文件夹", module="脚本管理"
+                )
                 MainInfoBar.push_info_bar(
                     "warning", "警告", f"未选择{app_name}下载目录", 5000
                 )
@@ -442,7 +456,10 @@ class MemberManager(QWidget):
 
                     if app_info["code"] != 0:
 
-                        logger.error(f"获取版本信息时出错：{app_info["msg"]}")
+                        logger.error(
+                            f"获取应用版本信息时出错：{app_info["msg"]}",
+                            module="脚本管理",
+                        )
 
                         error_remark_dict = {
                             1001: "获取版本信息的URL参数不正确",
@@ -475,7 +492,10 @@ class MemberManager(QWidget):
 
                         return None
 
-                logger.warning(f"获取版本信息时出错：{network_result['error_message']}")
+                logger.warning(
+                    f"获取版本信息时出错：{network_result['error_message']}",
+                    module="脚本管理",
+                )
                 MainInfoBar.push_info_bar(
                     "warning",
                     "获取版本信息时出错",
@@ -484,10 +504,12 @@ class MemberManager(QWidget):
                 )
                 return None
 
+            # 创建下载管理器并开始下载
+            logger.info(f"开始下载{app_name}，下载目录：{folder}", module="脚本管理")
             self.downloader = DownloadManager(
                 Path(folder),
                 app_rid,
-                None,
+                [],
                 {
                     "mode": "MirrorChyan",
                     "thread_numb": 1,
@@ -502,6 +524,7 @@ class MemberManager(QWidget):
             self.downloader.run()
 
     def show_password(self):
+        """显示或隐藏密码"""
 
         if Config.PASSWORD == "":
             choice = LineEditMessageBox(
@@ -529,6 +552,7 @@ class MemberManager(QWidget):
     def reload_plan_name(self):
         """刷新计划表名称"""
 
+        # 生成计划列表信息
         plan_list = [
             ["固定"] + [_ for _ in Config.plan_dict.keys()],
             ["固定"]
@@ -541,11 +565,13 @@ class MemberManager(QWidget):
                 for k, v in Config.plan_dict.items()
             ],
         ]
-        for member in self.member_manager.script_list:
 
-            if isinstance(member, MemberManager.MemberSettingBox.MaaSettingBox):
+        # 刷新所有脚本实例的计划表名称
+        for script in self.script_manager.script_list:
 
-                for user_setting in member.user_setting.user_manager.script_list:
+            if isinstance(script, ScriptManager.ScriptSettingBox.MaaSettingBox):
+
+                for user_setting in script.user_setting.user_manager.script_list:
 
                     user_setting.card_StageMode.comboBox.currentIndexChanged.disconnect(
                         user_setting.switch_stage_mode
@@ -562,25 +588,25 @@ class MemberManager(QWidget):
     def refresh_dashboard(self):
         """刷新所有脚本实例的仪表盘"""
 
-        for member in self.member_manager.script_list:
+        for script in self.script_manager.script_list:
 
-            if isinstance(member, MemberManager.MemberSettingBox.MaaSettingBox):
-                member.user_setting.user_manager.user_dashboard.load_info()
-            elif isinstance(member, MemberManager.MemberSettingBox.GeneralSettingBox):
-                member.branch_manager.sub_manager.sub_dashboard.load_info()
+            if isinstance(script, ScriptManager.ScriptSettingBox.MaaSettingBox):
+                script.user_setting.user_manager.user_dashboard.load_info()
+            elif isinstance(script, ScriptManager.ScriptSettingBox.GeneralSettingBox):
+                script.branch_manager.sub_manager.sub_dashboard.load_info()
 
     def refresh_plan_info(self):
         """刷新所有计划信息"""
 
-        for member in self.member_manager.script_list:
+        for script in self.script_manager.script_list:
 
-            if isinstance(member, MemberManager.MemberSettingBox.MaaSettingBox):
+            if isinstance(script, ScriptManager.ScriptSettingBox.MaaSettingBox):
 
-                member.user_setting.user_manager.user_dashboard.load_info()
-                for user_setting in member.user_setting.user_manager.script_list:
+                script.user_setting.user_manager.user_dashboard.load_info()
+                for user_setting in script.user_setting.user_manager.script_list:
                     user_setting.switch_stage_mode()
 
-    class MemberSettingBox(QWidget):
+    class ScriptSettingBox(QWidget):
         """脚本管理子页面组"""
 
         def __init__(self, parent=None):
@@ -597,8 +623,8 @@ class MemberManager(QWidget):
 
             self.script_list: List[
                 Union[
-                    MemberManager.MemberSettingBox.MaaSettingBox,
-                    MemberManager.MemberSettingBox.GeneralSettingBox,
+                    ScriptManager.ScriptSettingBox.MaaSettingBox,
+                    ScriptManager.ScriptSettingBox.GeneralSettingBox,
                 ]
             ] = []
 
@@ -616,11 +642,16 @@ class MemberManager(QWidget):
             self.show_SettingBox(1)
 
         def show_SettingBox(self, index) -> None:
-            """加载所有子界面"""
+            """
+            加载所有子界面并切换到指定子界面
 
-            Config.search_member()
+            :param index: 要切换到的子界面索引
+            :type index: int
+            """
 
-            for name, info in Config.member_dict.items():
+            Config.search_script()
+
+            for name, info in Config.script_dict.items():
                 if info["Type"] == "Maa":
                     self.add_SettingBox(int(name[3:]), self.MaaSettingBox)
                 elif info["Type"] == "General":
@@ -629,12 +660,19 @@ class MemberManager(QWidget):
             self.switch_SettingBox(index)
 
         def switch_SettingBox(self, index: int, if_chang_pivot: bool = True) -> None:
-            """切换到指定的子界面"""
+            """
+            切换到指定的子界面
 
-            if len(Config.member_dict) == 0:
+            :param index: 要切换到的子界面索引
+            :type index: int
+            :param if_chang_pivot: 是否更改导航栏的当前项
+            :type if_chang_pivot: bool
+            """
+
+            if len(Config.script_dict) == 0:
                 return None
 
-            if index > len(Config.member_dict):
+            if index > len(Config.script_dict):
                 return None
 
             if if_chang_pivot:
@@ -643,14 +681,14 @@ class MemberManager(QWidget):
 
             if isinstance(
                 self.script_list[index - 1],
-                MemberManager.MemberSettingBox.MaaSettingBox,
+                ScriptManager.ScriptSettingBox.MaaSettingBox,
             ):
                 self.script_list[index - 1].user_setting.user_manager.switch_SettingBox(
                     "用户仪表盘"
                 )
             elif isinstance(
                 self.script_list[index - 1],
-                MemberManager.MemberSettingBox.GeneralSettingBox,
+                ScriptManager.ScriptSettingBox.GeneralSettingBox,
             ):
                 self.script_list[
                     index - 1
@@ -666,7 +704,14 @@ class MemberManager(QWidget):
             self.pivot.clear()
 
         def add_SettingBox(self, uid: int, type: Type) -> None:
-            """添加指定类型设置子界面"""
+            """
+            添加指定类型设置子界面
+
+            :param uid: 脚本实例的唯一标识符
+            :type uid: int
+            :param type: 要添加的设置子界面类型
+            :type type: Type
+            """
 
             if type == self.MaaSettingBox:
                 setting_box = self.MaaSettingBox(uid, self)
@@ -686,7 +731,7 @@ class MemberManager(QWidget):
                 super().__init__(parent)
 
                 self.setObjectName(f"脚本_{uid}")
-                self.config = Config.member_dict[f"脚本_{uid}"]["Config"]
+                self.config = Config.script_dict[f"脚本_{uid}"]["Config"]
 
                 self.app_setting = self.AppSettingCard(f"脚本_{uid}", self.config, self)
                 self.user_setting = self.UserManager(f"脚本_{uid}", self)
@@ -762,6 +807,7 @@ class MemberManager(QWidget):
                     self.viewLayout.addLayout(Layout)
 
                 def PathClicked(self):
+                    """选择MAA目录并验证"""
 
                     folder = QFileDialog.getExistingDirectory(
                         self,
@@ -769,7 +815,9 @@ class MemberManager(QWidget):
                         self.config.get(self.config.MaaSet_Path),
                     )
                     if not folder or self.config.get(self.config.MaaSet_Path) == folder:
-                        logger.warning("选择MAA目录时未选择文件夹或未更改文件夹")
+                        logger.warning(
+                            "选择MAA目录时未选择文件夹或未更改文件夹", module="脚本管理"
+                        )
                         MainInfoBar.push_info_bar(
                             "warning", "警告", "未选择文件夹或未更改文件夹", 5000
                         )
@@ -778,18 +826,20 @@ class MemberManager(QWidget):
                         not (Path(folder) / "config/gui.json").exists()
                         or not (Path(folder) / "MAA.exe").exists()
                     ):
-                        logger.warning("选择MAA目录时未找到MAA程序或配置文件")
+                        logger.warning(
+                            "选择MAA目录时未找到MAA程序或配置文件", module="脚本管理"
+                        )
                         MainInfoBar.push_info_bar(
                             "warning", "警告", "未找到MAA程序或配置文件", 5000
                         )
                         return None
 
-                    (Config.member_dict[self.name]["Path"] / "Default").mkdir(
+                    (Config.script_dict[self.name]["Path"] / "Default").mkdir(
                         parents=True, exist_ok=True
                     )
                     shutil.copy(
                         Path(folder) / "config/gui.json",
-                        Config.member_dict[self.name]["Path"] / "Default/gui.json",
+                        Config.script_dict[self.name]["Path"] / "Default/gui.json",
                     )
                     self.config.set(self.config.MaaSet_Path, folder)
 
@@ -863,14 +913,6 @@ class MemberManager(QWidget):
                             configItem=self.config.RunSet_AnnihilationWeeklyLimit,
                             parent=self,
                         )
-                        self.card_AutoUpdateMaa = SwitchSettingCard(
-                            icon=FluentIcon.PAGE_RIGHT,
-                            title="自动代理时自动更新MAA",
-                            content="执行自动代理任务时自动更新MAA，关闭后仍会进行MAA版本检查",
-                            qconfig=self.config,
-                            configItem=self.config.RunSet_AutoUpdateMaa,
-                            parent=self,
-                        )
 
                         widget = QWidget()
                         Layout = QVBoxLayout(widget)
@@ -881,7 +923,6 @@ class MemberManager(QWidget):
                         Layout.addWidget(self.card_AnnihilationTimeLimit)
                         Layout.addWidget(self.card_RoutineTimeLimit)
                         Layout.addWidget(self.card_AnnihilationWeeklyLimit)
-                        Layout.addWidget(self.card_AutoUpdateMaa)
                         self.viewLayout.setContentsMargins(0, 0, 0, 0)
                         self.viewLayout.setSpacing(0)
                         self.addGroupWidget(widget)
@@ -936,26 +977,32 @@ class MemberManager(QWidget):
                 def add_user(self):
                     """添加一个用户"""
 
-                    index = len(Config.member_dict[self.name]["UserData"]) + 1
+                    index = len(Config.script_dict[self.name]["UserData"]) + 1
 
+                    logger.info(f"正在添加 {self.name} 用户_{index}", module="脚本管理")
+
+                    # 初始化用户配置信息
                     user_config = MaaUserConfig()
                     user_config.load(
-                        Config.member_dict[self.name]["Path"]
+                        Config.script_dict[self.name]["Path"]
                         / f"UserData/用户_{index}/config.json",
                         user_config,
                     )
                     user_config.save()
 
-                    Config.member_dict[self.name]["UserData"][f"用户_{index}"] = {
-                        "Path": Config.member_dict[self.name]["Path"]
+                    Config.script_dict[self.name]["UserData"][f"用户_{index}"] = {
+                        "Path": Config.script_dict[self.name]["Path"]
                         / f"UserData/用户_{index}",
                         "Config": user_config,
                     }
 
+                    # 添加用户设置面板
                     self.user_manager.add_userSettingBox(index)
                     self.user_manager.switch_SettingBox(f"用户_{index}")
 
-                    logger.success(f"{self.name} 用户_{index} 添加成功")
+                    logger.success(
+                        f"{self.name} 用户_{index} 添加成功", module="脚本管理"
+                    )
                     MainInfoBar.push_info_bar(
                         "success", "操作成功", f"{self.name} 添加 用户_{index}", 3000
                     )
@@ -967,20 +1014,20 @@ class MemberManager(QWidget):
                     name = self.user_manager.pivot.currentRouteKey()
 
                     if name is None:
-                        logger.warning("未选择用户")
+                        logger.warning("未选择用户", module="脚本管理")
                         MainInfoBar.push_info_bar(
                             "warning", "未选择用户", "请先选择一个用户", 5000
                         )
                         return None
                     if name == "用户仪表盘":
-                        logger.warning("试图删除用户仪表盘")
+                        logger.warning("试图删除用户仪表盘", module="脚本管理")
                         MainInfoBar.push_info_bar(
                             "warning", "未选择用户", "请勿尝试删除用户仪表盘", 5000
                         )
                         return None
 
                     if self.name in Config.running_list:
-                        logger.warning("所属脚本正在运行")
+                        logger.warning("所属脚本正在运行", module="脚本管理")
                         MainInfoBar.push_info_bar(
                             "warning", "所属脚本正在运行", "请先停止任务", 5000
                         )
@@ -991,22 +1038,25 @@ class MemberManager(QWidget):
                     )
                     if choice.exec():
 
+                        logger.info(f"正在删除 {self.name} {name}", module="脚本管理")
+
                         self.user_manager.clear_SettingBox()
 
+                        # 删除用户配置文件并同步修改相应配置项
                         shutil.rmtree(
-                            Config.member_dict[self.name]["UserData"][name]["Path"]
+                            Config.script_dict[self.name]["UserData"][name]["Path"]
                         )
                         for i in range(
                             int(name[3:]) + 1,
-                            len(Config.member_dict[self.name]["UserData"]) + 1,
+                            len(Config.script_dict[self.name]["UserData"]) + 1,
                         ):
-                            if Config.member_dict[self.name]["UserData"][f"用户_{i}"][
+                            if Config.script_dict[self.name]["UserData"][f"用户_{i}"][
                                 "Path"
                             ].exists():
-                                Config.member_dict[self.name]["UserData"][f"用户_{i}"][
+                                Config.script_dict[self.name]["UserData"][f"用户_{i}"][
                                     "Path"
                                 ].rename(
-                                    Config.member_dict[self.name]["UserData"][
+                                    Config.script_dict[self.name]["UserData"][
                                         f"用户_{i}"
                                     ]["Path"].with_name(f"用户_{i-1}")
                                 )
@@ -1015,7 +1065,9 @@ class MemberManager(QWidget):
                             f"用户_{max(int(name[3:]) - 1, 1)}"
                         )
 
-                        logger.success(f"{self.name} {name} 删除成功")
+                        logger.success(
+                            f"{self.name} {name} 删除成功", module="脚本管理"
+                        )
                         MainInfoBar.push_info_bar(
                             "success", "操作成功", f"{self.name} 删除 {name}", 3000
                         )
@@ -1027,13 +1079,13 @@ class MemberManager(QWidget):
                     name = self.user_manager.pivot.currentRouteKey()
 
                     if name is None:
-                        logger.warning("未选择用户")
+                        logger.warning("未选择用户", module="脚本管理")
                         MainInfoBar.push_info_bar(
                             "warning", "未选择用户", "请先选择一个用户", 5000
                         )
                         return None
                     if name == "用户仪表盘":
-                        logger.warning("试图移动用户仪表盘")
+                        logger.warning("试图移动用户仪表盘", module="脚本管理")
                         MainInfoBar.push_info_bar(
                             "warning", "未选择用户", "请勿尝试移动用户仪表盘", 5000
                         )
@@ -1042,40 +1094,43 @@ class MemberManager(QWidget):
                     index = int(name[3:])
 
                     if index == 1:
-                        logger.warning("向前移动用户时已到达最左端")
+                        logger.warning("向前移动用户时已到达最左端", module="脚本管理")
                         MainInfoBar.push_info_bar(
                             "warning", "已经是第一个用户", "无法向前移动", 5000
                         )
                         return None
 
                     if self.name in Config.running_list:
-                        logger.warning("所属脚本正在运行")
+                        logger.warning("所属脚本正在运行", module="脚本管理")
                         MainInfoBar.push_info_bar(
                             "warning", "所属脚本正在运行", "请先停止任务", 5000
                         )
                         return None
 
+                    logger.info(f"正在向前移动 {self.name} {name}", module="脚本管理")
+
                     self.user_manager.clear_SettingBox()
 
-                    Config.member_dict[self.name]["UserData"][name]["Path"].rename(
-                        Config.member_dict[self.name]["UserData"][name][
+                    # 移动用户配置文件并同步修改配置项
+                    Config.script_dict[self.name]["UserData"][name]["Path"].rename(
+                        Config.script_dict[self.name]["UserData"][name][
                             "Path"
                         ].with_name("用户_0")
                     )
-                    Config.member_dict[self.name]["UserData"][f"用户_{index-1}"][
+                    Config.script_dict[self.name]["UserData"][f"用户_{index-1}"][
                         "Path"
-                    ].rename(Config.member_dict[self.name]["UserData"][name]["Path"])
-                    Config.member_dict[self.name]["UserData"][name]["Path"].with_name(
+                    ].rename(Config.script_dict[self.name]["UserData"][name]["Path"])
+                    Config.script_dict[self.name]["UserData"][name]["Path"].with_name(
                         "用户_0"
                     ).rename(
-                        Config.member_dict[self.name]["UserData"][f"用户_{index-1}"][
+                        Config.script_dict[self.name]["UserData"][f"用户_{index-1}"][
                             "Path"
                         ]
                     )
 
                     self.user_manager.show_SettingBox(f"用户_{index - 1}")
 
-                    logger.success(f"{self.name} {name} 前移成功")
+                    logger.success(f"{self.name} {name} 前移成功", module="脚本管理")
                     MainInfoBar.push_info_bar(
                         "success", "操作成功", f"{self.name} 前移 {name}", 3000
                     )
@@ -1086,13 +1141,13 @@ class MemberManager(QWidget):
                     name = self.user_manager.pivot.currentRouteKey()
 
                     if name is None:
-                        logger.warning("未选择用户")
+                        logger.warning("未选择用户", module="脚本管理")
                         MainInfoBar.push_info_bar(
                             "warning", "未选择用户", "请先选择一个用户", 5000
                         )
                         return None
                     if name == "用户仪表盘":
-                        logger.warning("试图删除用户仪表盘")
+                        logger.warning("试图删除用户仪表盘", module="脚本管理")
                         MainInfoBar.push_info_bar(
                             "warning", "未选择用户", "请勿尝试移动用户仪表盘", 5000
                         )
@@ -1100,41 +1155,43 @@ class MemberManager(QWidget):
 
                     index = int(name[3:])
 
-                    if index == len(Config.member_dict[self.name]["UserData"]):
-                        logger.warning("向后移动用户时已到达最右端")
+                    if index == len(Config.script_dict[self.name]["UserData"]):
+                        logger.warning("向后移动用户时已到达最右端", module="脚本管理")
                         MainInfoBar.push_info_bar(
                             "warning", "已经是最后一个用户", "无法向后移动", 5000
                         )
                         return None
 
                     if self.name in Config.running_list:
-                        logger.warning("所属脚本正在运行")
+                        logger.warning("所属脚本正在运行", module="脚本管理")
                         MainInfoBar.push_info_bar(
                             "warning", "所属脚本正在运行", "请先停止任务", 5000
                         )
                         return None
 
+                    logger.info(f"正在向后移动 {self.name} {name}", module="脚本管理")
+
                     self.user_manager.clear_SettingBox()
 
-                    Config.member_dict[self.name]["UserData"][name]["Path"].rename(
-                        Config.member_dict[self.name]["UserData"][name][
+                    Config.script_dict[self.name]["UserData"][name]["Path"].rename(
+                        Config.script_dict[self.name]["UserData"][name][
                             "Path"
                         ].with_name("用户_0")
                     )
-                    Config.member_dict[self.name]["UserData"][f"用户_{index+1}"][
+                    Config.script_dict[self.name]["UserData"][f"用户_{index+1}"][
                         "Path"
-                    ].rename(Config.member_dict[self.name]["UserData"][name]["Path"])
-                    Config.member_dict[self.name]["UserData"][name]["Path"].with_name(
+                    ].rename(Config.script_dict[self.name]["UserData"][name]["Path"])
+                    Config.script_dict[self.name]["UserData"][name]["Path"].with_name(
                         "用户_0"
                     ).rename(
-                        Config.member_dict[self.name]["UserData"][f"用户_{index+1}"][
+                        Config.script_dict[self.name]["UserData"][f"用户_{index+1}"][
                             "Path"
                         ]
                     )
 
                     self.user_manager.show_SettingBox(f"用户_{index + 1}")
 
-                    logger.success(f"{self.name} {name} 后移成功")
+                    logger.success(f"{self.name} {name} 后移成功", module="脚本管理")
                     MainInfoBar.push_info_bar(
                         "success", "操作成功", f"{self.name} 后移 {name}", 3000
                     )
@@ -1158,7 +1215,7 @@ class MemberManager(QWidget):
                         )
 
                         self.script_list: List[
-                            MemberManager.MemberSettingBox.MaaSettingBox.UserManager.UserSettingBox.UserMemberSettingBox
+                            ScriptManager.ScriptSettingBox.MaaSettingBox.UserManager.UserSettingBox.UserMemberSettingBox
                         ] = []
 
                         self.user_dashboard = self.UserDashboard(self.name, self)
@@ -1180,11 +1237,16 @@ class MemberManager(QWidget):
                         self.show_SettingBox("用户仪表盘")
 
                     def show_SettingBox(self, index: str) -> None:
-                        """加载所有子界面"""
+                        """
+                        加载所有子界面并切换到指定子界面
+
+                        :param index: 要切换到的子界面索引或名称
+                        :type index: str
+                        """
 
                         Config.search_maa_user(self.name)
 
-                        for name in Config.member_dict[self.name]["UserData"].keys():
+                        for name in Config.script_dict[self.name]["UserData"].keys():
                             self.add_userSettingBox(name[3:])
 
                         self.switch_SettingBox(index)
@@ -1192,13 +1254,20 @@ class MemberManager(QWidget):
                     def switch_SettingBox(
                         self, index: str, if_change_pivot: bool = True
                     ) -> None:
-                        """切换到指定的子界面"""
+                        """
+                        切换到指定的子界面
 
-                        if len(Config.member_dict[self.name]["UserData"]) == 0:
+                        :param index: 要切换到的子界面索引或名称
+                        :type index: str
+                        :param if_change_pivot: 是否更改导航栏的当前项
+                        :type if_change_pivot: bool
+                        """
+
+                        if len(Config.script_dict[self.name]["UserData"]) == 0:
                             index = "用户仪表盘"
 
                         if index != "用户仪表盘" and int(index[3:]) > len(
-                            Config.member_dict[self.name]["UserData"]
+                            Config.script_dict[self.name]["UserData"]
                         ):
                             return None
 
@@ -1214,7 +1283,7 @@ class MemberManager(QWidget):
                         )
 
                     def clear_SettingBox(self) -> None:
-                        """清空所有子界面"""
+                        """清空除用户仪表盘外所有子界面"""
 
                         for sub_interface in self.script_list:
                             Config.stage_refreshed.disconnect(
@@ -1232,7 +1301,12 @@ class MemberManager(QWidget):
                         self.pivot.addItem(routeKey="用户仪表盘", text="用户仪表盘")
 
                     def add_userSettingBox(self, uid: int) -> None:
-                        """添加一个用户设置界面"""
+                        """
+                        添加一个用户设置界面
+
+                        :param uid: 用户的唯一标识符
+                        :type uid: int
+                        """
 
                         setting_box = self.UserMemberSettingBox(self.name, uid, self)
 
@@ -1292,8 +1366,14 @@ class MemberManager(QWidget):
                             Config.PASSWORD_refreshed.connect(self.load_info)
 
                         def load_info(self):
+                            """加载用户信息到仪表盘"""
 
-                            self.user_data = Config.member_dict[self.name]["UserData"]
+                            logger.info(
+                                f"正在加载 {self.name} 用户信息到仪表盘",
+                                module="脚本管理",
+                            )
+
+                            self.user_data = Config.script_dict[self.name]["UserData"]
 
                             self.dashboard.setRowCount(len(self.user_data))
 
@@ -1452,6 +1532,10 @@ class MemberManager(QWidget):
                                     int(name[3:]) - 1, 11, button
                                 )
 
+                            logger.success(
+                                f"{self.name} 用户仪表盘成功加载信息", module="脚本管理"
+                            )
+
                     class UserMemberSettingBox(HeaderCardWidget):
                         """用户管理子页面"""
 
@@ -1461,10 +1545,10 @@ class MemberManager(QWidget):
                             self.setObjectName(f"用户_{uid}")
                             self.setTitle(f"用户 {uid}")
                             self.name = name
-                            self.config = Config.member_dict[self.name]["UserData"][
+                            self.config = Config.script_dict[self.name]["UserData"][
                                 f"用户_{uid}"
                             ]["Config"]
-                            self.user_path = Config.member_dict[self.name]["UserData"][
+                            self.user_path = Config.script_dict[self.name]["UserData"][
                                 f"用户_{uid}"
                             ]["Path"]
 
@@ -1512,7 +1596,14 @@ class MemberManager(QWidget):
                                 icon=FluentIcon.PROJECTOR,
                                 title="服务器",
                                 content="选择服务器类型",
-                                texts=["官服", "B服"],
+                                texts=[
+                                    "官服",
+                                    "B服",
+                                    "悠星国际服",
+                                    "悠星日服",
+                                    "悠星韩服",
+                                    "繁中服",
+                                ],
                                 qconfig=self.config,
                                 configItem=self.config.Info_Server,
                                 parent=self,
@@ -1534,11 +1625,17 @@ class MemberManager(QWidget):
                                 configItem=self.config.Info_RemainedDay,
                                 parent=self,
                             )
-                            self.card_Annihilation = PushAndSwitchButtonSettingCard(
+                            self.card_Annihilation = ComboBoxSettingCard(
                                 icon=FluentIcon.CAFE,
                                 title="剿灭代理",
                                 content="剿灭代理子任务相关设置",
-                                text="设置具体配置",
+                                texts=[
+                                    "关闭",
+                                    "当期剿灭",
+                                    "切尔诺伯格",
+                                    "龙门外环",
+                                    "龙门市区",
+                                ],
                                 qconfig=self.config,
                                 configItem=self.config.Info_Annihilation,
                                 parent=self,
@@ -1893,9 +1990,6 @@ class MemberManager(QWidget):
                             self.card_InfrastMode.comboBox.currentIndexChanged.connect(
                                 self.switch_infrastructure
                             )
-                            self.card_Annihilation.clicked.connect(
-                                lambda: self.set_maa("Annihilation")
-                            )
                             self.card_Routine.clicked.connect(
                                 lambda: self.set_maa("Routine")
                             )
@@ -1915,22 +2009,20 @@ class MemberManager(QWidget):
                             self.switch_infrastructure()
 
                         def switch_mode(self) -> None:
+                            """切换用户配置模式"""
 
                             if self.config.get(self.config.Info_Mode) == "简洁":
 
                                 self.card_Routine.setVisible(False)
-                                self.card_Server.setVisible(True)
-                                self.card_Annihilation.button.setVisible(False)
                                 self.card_InfrastMode.setVisible(True)
 
                             elif self.config.get(self.config.Info_Mode) == "详细":
 
-                                self.card_Server.setVisible(False)
                                 self.card_InfrastMode.setVisible(False)
-                                self.card_Annihilation.button.setVisible(True)
                                 self.card_Routine.setVisible(True)
 
                         def switch_stage_mode(self) -> None:
+                            """切换关卡配置模式"""
 
                             for card, name in zip(
                                 [
@@ -1967,6 +2059,7 @@ class MemberManager(QWidget):
                                     )
 
                         def switch_infrastructure(self) -> None:
+                            """切换基建配置模式"""
 
                             if (
                                 self.config.get(self.config.Info_InfrastMode)
@@ -1988,6 +2081,7 @@ class MemberManager(QWidget):
                                 )
 
                         def refresh_stage(self):
+                            """刷新关卡配置"""
 
                             self.card_Stage.reLoadOptions(
                                 Config.stage_dict["ALL"]["value"],
@@ -2011,6 +2105,7 @@ class MemberManager(QWidget):
                             )
 
                         def refresh_password(self):
+                            """刷新密码配置"""
 
                             self.card_Password.setValue(
                                 self.card_Password.qconfig.get(
@@ -2054,7 +2149,7 @@ class MemberManager(QWidget):
                             """配置MAA子配置"""
 
                             if self.name in Config.running_list:
-                                logger.warning("所属脚本正在运行")
+                                logger.warning("所属脚本正在运行", module="脚本管理")
                                 MainInfoBar.push_info_bar(
                                     "warning", "所属脚本正在运行", "请先停止任务", 5000
                                 )
@@ -2252,7 +2347,7 @@ class MemberManager(QWidget):
                 super().__init__(parent)
 
                 self.setObjectName(f"脚本_{uid}")
-                self.config = Config.member_dict[f"脚本_{uid}"]["Config"]
+                self.config = Config.script_dict[f"脚本_{uid}"]["Config"]
 
                 self.app_setting = self.AppSettingCard(f"脚本_{uid}", self.config, self)
                 self.branch_manager = self.BranchManager(f"脚本_{uid}", self)
@@ -2360,6 +2455,20 @@ class MemberManager(QWidget):
                             configItem=self.config.Script_ConfigPath,
                             parent=self,
                         )
+                        self.card_UpdateConfigMode = ComboBoxSettingCard(
+                            icon=FluentIcon.PAGE_RIGHT,
+                            title="脚本配置文件更新时机",
+                            content="在选定的时机自动更新程序保存的配置文件",
+                            texts=[
+                                "从不",
+                                "仅任务成功后",
+                                "仅任务失败后",
+                                "任务完成后",
+                            ],
+                            qconfig=self.config,
+                            configItem=self.config.Script_UpdateConfigMode,
+                            parent=self,
+                        )
                         self.card_LogPath = PathSettingCard(
                             icon=FluentIcon.FOLDER,
                             title="脚本日志文件路径 - [必填]",
@@ -2372,7 +2481,7 @@ class MemberManager(QWidget):
                         self.card_LogPathFormat = LineEditSettingCard(
                             icon=FluentIcon.PAGE_RIGHT,
                             title="脚本日志文件名格式",
-                            content="若脚本日志文件名中随时间变化，请填入时间格式，留空则不启用",
+                            content="若脚本日志文件名中随时间变化，请填入时间格式文本，留空则不启用",
                             text="请输入脚本日志文件名格式",
                             qconfig=self.config,
                             configItem=self.config.Script_LogPathFormat,
@@ -2380,8 +2489,8 @@ class MemberManager(QWidget):
                         )
                         self.card_LogTimeStart = SpinBoxSettingCard(
                             icon=FluentIcon.PAGE_RIGHT,
-                            title="脚本日志时间起始位置 - [必填]",
-                            content="脚本日志中时间的起始位置，单位为字符",
+                            title="脚本日志时间戳起始位置 - [必填]",
+                            content="脚本日志中时间戳的起始位置，单位为字符",
                             range=(1, 1024),
                             qconfig=self.config,
                             configItem=self.config.Script_LogTimeStart,
@@ -2389,8 +2498,8 @@ class MemberManager(QWidget):
                         )
                         self.card_LogTimeEnd = SpinBoxSettingCard(
                             icon=FluentIcon.PAGE_RIGHT,
-                            title="脚本日志时间结束位置 - [必填]",
-                            content="脚本日志中时间的结束位置，单位为字符",
+                            title="脚本日志时间戳结束位置 - [必填]",
+                            content="脚本日志中时间戳的结束位置，单位为字符",
                             range=(1, 1024),
                             qconfig=self.config,
                             configItem=self.config.Script_LogTimeEnd,
@@ -2398,8 +2507,8 @@ class MemberManager(QWidget):
                         )
                         self.card_LogTimeFormat = LineEditSettingCard(
                             icon=FluentIcon.PAGE_RIGHT,
-                            title="脚本日志时间格式 - [必填]",
-                            content="脚本日志中时间的格式",
+                            title="脚本日志时间戳格式 - [必填]",
+                            content="脚本日志中时间戳的格式",
                             text="请输入脚本日志时间格式",
                             qconfig=self.config,
                             configItem=self.config.Script_LogTimeFormat,
@@ -2452,6 +2561,7 @@ class MemberManager(QWidget):
                         Layout.addWidget(self.card_Arguments)
                         Layout.addWidget(self.card_IfTrackProcess)
                         Layout.addWidget(self.card_ConfigPath)
+                        Layout.addWidget(self.card_UpdateConfigMode)
                         Layout.addWidget(self.card_LogPath)
                         Layout.addWidget(self.card_LogPathFormat)
                         Layout.addLayout(h_layout)
@@ -2463,7 +2573,12 @@ class MemberManager(QWidget):
                         self.addGroupWidget(widget)
 
                     def change_path(self, old_path: Path, new_path: Path) -> None:
-                        """根据脚本根目录重新计算配置文件路径"""
+                        """
+                        根据脚本根目录重新计算配置文件路径
+
+                        :param old_path: 旧路径
+                        :param new_path: 新路径
+                        """
 
                         path_list = [
                             self.config.Script_ScriptPath,
@@ -2491,7 +2606,8 @@ class MemberManager(QWidget):
 
                             self.config.set(configItem, str(old_path))
                             logger.warning(
-                                f"配置路径 {new_path} 不在脚本根目录下，已重置为 {old_path}"
+                                f"配置路径 {new_path} 不在脚本根目录下，已重置为 {old_path}",
+                                module="脚本管理",
                             )
                             MainInfoBar.push_info_bar(
                                 "warning", "路径异常", "所选路径不在脚本根目录下", 5000
@@ -2645,14 +2761,32 @@ class MemberManager(QWidget):
                             content="选择一个保存路径，将当前配置信息导出到文件",
                             parent=self,
                         )
+                        self.card_ImportFromWeb = PushSettingCard(
+                            text="查看",
+                            icon=FluentIcon.PAGE_RIGHT,
+                            title="从「AUTO_MAA 配置分享中心」导入",
+                            content="从「AUTO_MAA 配置分享中心」选择一个用户分享的通用配置模板，导入其中的配置信息",
+                            parent=self,
+                        )
+                        self.card_UploadToWeb = PushSettingCard(
+                            text="上传",
+                            icon=FluentIcon.PAGE_RIGHT,
+                            title="上传到「AUTO_MAA 配置分享中心」",
+                            content="将当前通用配置分享到「AUTO_MAA 配置分享中心」，通过审核后可供其他用户下载使用",
+                            parent=self,
+                        )
 
                         self.card_ImportFromFile.clicked.connect(self.import_from_file)
                         self.card_ExportToFile.clicked.connect(self.export_to_file)
+                        self.card_ImportFromWeb.clicked.connect(self.import_from_web)
+                        self.card_UploadToWeb.clicked.connect(self.upload_to_web)
 
                         widget = QWidget()
                         Layout = QVBoxLayout(widget)
                         Layout.addWidget(self.card_ImportFromFile)
                         Layout.addWidget(self.card_ExportToFile)
+                        Layout.addWidget(self.card_ImportFromWeb)
+                        Layout.addWidget(self.card_UploadToWeb)
                         self.viewLayout.setContentsMargins(0, 0, 0, 0)
                         self.viewLayout.setSpacing(0)
                         self.addGroupWidget(widget)
@@ -2667,10 +2801,20 @@ class MemberManager(QWidget):
 
                             shutil.copy(
                                 file_path,
-                                Config.member_dict[self.name]["Path"] / "config.json",
+                                Config.script_dict[self.name]["Path"] / "config.json",
                             )
                             self.config.load(
-                                Config.member_dict[self.name]["Path"] / "config.json"
+                                Config.script_dict[self.name]["Path"] / "config.json"
+                            )
+
+                            logger.success(
+                                f"{self.name} 配置导入成功", module="脚本管理"
+                            )
+                            MainInfoBar.push_info_bar(
+                                "success",
+                                "操作成功",
+                                f"{self.name} 配置导入成功",
+                                3000,
                             )
 
                     def export_to_file(self):
@@ -2682,9 +2826,224 @@ class MemberManager(QWidget):
                         if file_path:
 
                             temp = self.config.toDict()
+
+                            # 移除配置中可能存在的隐私信息
                             temp["Script"]["Name"] = Path(file_path).stem
+                            for path in ["ScriptPath", "ConfigPath", "LogPath"]:
+
+                                if Path(temp["Script"][path]).is_relative_to(
+                                    Path(temp["Script"]["RootPath"])
+                                ):
+
+                                    temp["Script"][path] = str(
+                                        Path(r"C:/脚本根目录")
+                                        / Path(temp["Script"][path]).relative_to(
+                                            Path(temp["Script"]["RootPath"])
+                                        )
+                                    )
+                            temp["Script"]["RootPath"] = str(Path(r"C:/脚本根目录"))
+
                             with open(file_path, "w", encoding="utf-8") as file:
                                 json.dump(temp, file, ensure_ascii=False, indent=4)
+
+                            logger.success(
+                                f"{self.name} 配置导出成功", module="脚本管理"
+                            )
+                            MainInfoBar.push_info_bar(
+                                "success",
+                                "操作成功",
+                                f"{self.name} 配置导出成功",
+                                3000,
+                            )
+
+                    def import_from_web(self):
+                        """从「AUTO_MAA 配置分享中心」导入配置"""
+
+                        # 从远程服务器获取配置列表
+                        network = Network.add_task(
+                            mode="get",
+                            url="http://221.236.27.82:10023/api/list/config/general",
+                        )
+                        network.loop.exec()
+                        network_result = Network.get_result(network)
+                        if network_result["status_code"] == 200:
+                            config_info: List[Dict[str, str]] = network_result[
+                                "response_json"
+                            ]
+                        else:
+                            logger.warning(
+                                f"获取配置列表时出错：{network_result['error_message']}",
+                                module="脚本管理",
+                            )
+                            MainInfoBar.push_info_bar(
+                                "warning",
+                                "获取配置列表时出错",
+                                f"网络错误：{network_result['status_code']}",
+                                5000,
+                            )
+                            return None
+
+                        choice = NoticeMessageBox(
+                            self.window(),
+                            "配置分享中心",
+                            {
+                                _[
+                                    "configName"
+                                ]: f"""
+# {_['configName']}
+
+- **作者**: {_['author']}
+
+- **发布时间**：{_['createTime']}
+
+- **描述**：{_['description']}
+"""
+                                for _ in config_info
+                            },
+                        )
+                        if choice.exec() and choice.currentIndex != 0:
+
+                            # 从远程服务器获取具体配置
+                            network = Network.add_task(
+                                mode="get",
+                                url=config_info[choice.currentIndex - 1]["downloadUrl"],
+                            )
+                            network.loop.exec()
+                            network_result = Network.get_result(network)
+                            if network_result["status_code"] == 200:
+                                config_data = network_result["response_json"]
+                            else:
+                                logger.warning(
+                                    f"获取配置列表时出错：{network_result['error_message']}",
+                                    module="脚本管理",
+                                )
+                                MainInfoBar.push_info_bar(
+                                    "warning",
+                                    "获取配置列表时出错",
+                                    f"网络错误：{network_result['status_code']}",
+                                    5000,
+                                )
+                                return None
+
+                            with (
+                                Config.script_dict[self.name]["Path"] / "config.json"
+                            ).open("w", encoding="utf-8") as file:
+                                json.dump(
+                                    config_data, file, ensure_ascii=False, indent=4
+                                )
+                            self.config.load(
+                                Config.script_dict[self.name]["Path"] / "config.json"
+                            )
+
+                            logger.success(
+                                f"{self.name} 配置导入成功", module="脚本管理"
+                            )
+                            MainInfoBar.push_info_bar(
+                                "success",
+                                "操作成功",
+                                f"{self.name} 配置导入成功",
+                                3000,
+                            )
+
+                    def upload_to_web(self):
+                        """上传配置到「AUTO_MAA 配置分享中心」"""
+
+                        choice = LineEditMessageBox(
+                            self.window(), "请输入你的用户名", "用户名", "明文"
+                        )
+                        choice.input.setMinimumWidth(200)
+                        if choice.exec() and choice.input.text() != "":
+
+                            author = choice.input.text()
+
+                            choice = LineEditMessageBox(
+                                self.window(), "请输入配置名称", "配置名称", "明文"
+                            )
+                            choice.input.setMinimumWidth(200)
+                            if choice.exec() and choice.input.text() != "":
+
+                                config_name = choice.input.text()
+
+                                choice = LineEditMessageBox(
+                                    self.window(),
+                                    "请描述一下您要分享的配置",
+                                    "配置描述",
+                                    "明文",
+                                )
+                                choice.input.setMinimumWidth(300)
+                                if choice.exec() and choice.input.text() != "":
+
+                                    description = choice.input.text()
+
+                                    temp = self.config.toDict()
+
+                                    # 移除配置中可能存在的隐私信息
+                                    temp["Script"]["Name"] = config_name
+                                    for path in ["ScriptPath", "ConfigPath", "LogPath"]:
+                                        if Path(temp["Script"][path]).is_relative_to(
+                                            Path(temp["Script"]["RootPath"])
+                                        ):
+                                            temp["Script"][path] = str(
+                                                Path(r"C:/脚本根目录")
+                                                / Path(
+                                                    temp["Script"][path]
+                                                ).relative_to(
+                                                    Path(temp["Script"]["RootPath"])
+                                                )
+                                            )
+                                    temp["Script"]["RootPath"] = str(
+                                        Path(r"C:/脚本根目录")
+                                    )
+
+                                    files = {
+                                        "file": (
+                                            f"{config_name}&&{author}&&{description}&&{int(datetime.now().timestamp() * 1000)}.json",
+                                            json.dumps(temp, ensure_ascii=False),
+                                            "application/json",
+                                        )
+                                    }
+                                    data = {
+                                        "username": author,
+                                        "description": description,
+                                    }
+
+                                    # 配置上传至远程服务器
+                                    network = Network.add_task(
+                                        "upload_file",
+                                        "http://221.236.27.82:10023/api/upload/share",
+                                        files=files,
+                                        data=data,
+                                    )
+                                    network.loop.exec()
+                                    network_result = Network.get_result(network)
+                                    if network_result["status_code"] == 200:
+                                        response = network_result["response_json"]
+                                    else:
+                                        logger.warning(
+                                            f"上传配置时出错：{network_result['error_message']}",
+                                            module="脚本管理",
+                                        )
+                                        MainInfoBar.push_info_bar(
+                                            "warning",
+                                            "上传配置时出错",
+                                            f"网络错误：{network_result['status_code']}",
+                                            5000,
+                                        )
+                                        return None
+
+                                    logger.success(
+                                        f"{self.name} 配置上传成功", module="脚本管理"
+                                    )
+                                    MainInfoBar.push_info_bar(
+                                        "success",
+                                        "上传配置成功",
+                                        (
+                                            response["message"]
+                                            if "message" in response
+                                            else response["text"]
+                                        ),
+                                        5000,
+                                    )
 
             class BranchManager(HeaderCardWidget):
                 """分支管理父页面"""
@@ -2736,26 +3095,34 @@ class MemberManager(QWidget):
                 def add_sub(self):
                     """添加一个配置"""
 
-                    index = len(Config.member_dict[self.name]["SubData"]) + 1
+                    index = len(Config.script_dict[self.name]["SubData"]) + 1
 
+                    logger.info(
+                        f"正在添加 {self.name} 的配置_{index}", module="脚本管理"
+                    )
+
+                    # 初始化通用配置
                     sub_config = GeneralSubConfig()
                     sub_config.load(
-                        Config.member_dict[self.name]["Path"]
+                        Config.script_dict[self.name]["Path"]
                         / f"SubData/配置_{index}/config.json",
                         sub_config,
                     )
                     sub_config.save()
 
-                    Config.member_dict[self.name]["SubData"][f"配置_{index}"] = {
-                        "Path": Config.member_dict[self.name]["Path"]
+                    Config.script_dict[self.name]["SubData"][f"配置_{index}"] = {
+                        "Path": Config.script_dict[self.name]["Path"]
                         / f"SubData/配置_{index}",
                         "Config": sub_config,
                     }
 
+                    # 添加通用配置页面
                     self.sub_manager.add_SettingBox(index)
                     self.sub_manager.switch_SettingBox(f"配置_{index}")
 
-                    logger.success(f"{self.name} 配置_{index} 添加成功")
+                    logger.success(
+                        f"{self.name} 配置_{index} 添加成功", module="脚本管理"
+                    )
                     MainInfoBar.push_info_bar(
                         "success", "操作成功", f"{self.name} 添加 配置_{index}", 3000
                     )
@@ -2767,20 +3134,20 @@ class MemberManager(QWidget):
                     name = self.sub_manager.pivot.currentRouteKey()
 
                     if name is None:
-                        logger.warning("未选择配置")
+                        logger.warning("未选择配置", module="脚本管理")
                         MainInfoBar.push_info_bar(
                             "warning", "未选择配置", "请先选择一个配置", 5000
                         )
                         return None
                     if name == "配置仪表盘":
-                        logger.warning("试图删除配置仪表盘")
+                        logger.warning("试图删除配置仪表盘", module="脚本管理")
                         MainInfoBar.push_info_bar(
                             "warning", "未选择配置", "请勿尝试删除配置仪表盘", 5000
                         )
                         return None
 
                     if self.name in Config.running_list:
-                        logger.warning("所属脚本正在运行")
+                        logger.warning("所属脚本正在运行", module="脚本管理")
                         MainInfoBar.push_info_bar(
                             "warning", "所属脚本正在运行", "请先停止任务", 5000
                         )
@@ -2791,22 +3158,27 @@ class MemberManager(QWidget):
                     )
                     if choice.exec():
 
+                        logger.info(
+                            f"正在删除 {self.name} 的配置_{name}", module="脚本管理"
+                        )
+
                         self.sub_manager.clear_SettingBox()
 
+                        # 删除配置文件并同步到相关配置项
                         shutil.rmtree(
-                            Config.member_dict[self.name]["SubData"][name]["Path"]
+                            Config.script_dict[self.name]["SubData"][name]["Path"]
                         )
                         for i in range(
                             int(name[3:]) + 1,
-                            len(Config.member_dict[self.name]["SubData"]) + 1,
+                            len(Config.script_dict[self.name]["SubData"]) + 1,
                         ):
-                            if Config.member_dict[self.name]["SubData"][f"配置_{i}"][
+                            if Config.script_dict[self.name]["SubData"][f"配置_{i}"][
                                 "Path"
                             ].exists():
-                                Config.member_dict[self.name]["SubData"][f"配置_{i}"][
+                                Config.script_dict[self.name]["SubData"][f"配置_{i}"][
                                     "Path"
                                 ].rename(
-                                    Config.member_dict[self.name]["SubData"][
+                                    Config.script_dict[self.name]["SubData"][
                                         f"配置_{i}"
                                     ]["Path"].with_name(f"配置_{i-1}")
                                 )
@@ -2815,7 +3187,9 @@ class MemberManager(QWidget):
                             f"配置_{max(int(name[3:]) - 1, 1)}"
                         )
 
-                        logger.success(f"{self.name} {name} 删除成功")
+                        logger.success(
+                            f"{self.name} {name} 删除成功", module="脚本管理"
+                        )
                         MainInfoBar.push_info_bar(
                             "success", "操作成功", f"{self.name} 删除 {name}", 3000
                         )
@@ -2827,13 +3201,13 @@ class MemberManager(QWidget):
                     name = self.sub_manager.pivot.currentRouteKey()
 
                     if name is None:
-                        logger.warning("未选择配置")
+                        logger.warning("未选择配置", module="脚本管理")
                         MainInfoBar.push_info_bar(
                             "warning", "未选择配置", "请先选择一个配置", 5000
                         )
                         return None
                     if name == "配置仪表盘":
-                        logger.warning("试图移动配置仪表盘")
+                        logger.warning("试图移动配置仪表盘", module="脚本管理")
                         MainInfoBar.push_info_bar(
                             "warning", "未选择配置", "请勿尝试移动配置仪表盘", 5000
                         )
@@ -2842,40 +3216,45 @@ class MemberManager(QWidget):
                     index = int(name[3:])
 
                     if index == 1:
-                        logger.warning("向前移动配置时已到达最左端")
+                        logger.warning("向前移动配置时已到达最左端", module="脚本管理")
                         MainInfoBar.push_info_bar(
                             "warning", "已经是第一个配置", "无法向前移动", 5000
                         )
                         return None
 
                     if self.name in Config.running_list:
-                        logger.warning("所属脚本正在运行")
+                        logger.warning("所属脚本正在运行", module="脚本管理")
                         MainInfoBar.push_info_bar(
                             "warning", "所属脚本正在运行", "请先停止任务", 5000
                         )
                         return None
 
+                    logger.info(
+                        f"正在将 {self.name} 的配置_{name} 前移", module="脚本管理"
+                    )
+
                     self.sub_manager.clear_SettingBox()
 
-                    Config.member_dict[self.name]["SubData"][name]["Path"].rename(
-                        Config.member_dict[self.name]["SubData"][name][
+                    # 移动配置文件并同步到相关配置项
+                    Config.script_dict[self.name]["SubData"][name]["Path"].rename(
+                        Config.script_dict[self.name]["SubData"][name][
                             "Path"
                         ].with_name("配置_0")
                     )
-                    Config.member_dict[self.name]["SubData"][f"配置_{index-1}"][
+                    Config.script_dict[self.name]["SubData"][f"配置_{index-1}"][
                         "Path"
-                    ].rename(Config.member_dict[self.name]["SubData"][name]["Path"])
-                    Config.member_dict[self.name]["SubData"][name]["Path"].with_name(
+                    ].rename(Config.script_dict[self.name]["SubData"][name]["Path"])
+                    Config.script_dict[self.name]["SubData"][name]["Path"].with_name(
                         "配置_0"
                     ).rename(
-                        Config.member_dict[self.name]["SubData"][f"配置_{index-1}"][
+                        Config.script_dict[self.name]["SubData"][f"配置_{index-1}"][
                             "Path"
                         ]
                     )
 
                     self.sub_manager.show_SettingBox(f"配置_{index - 1}")
 
-                    logger.success(f"{self.name} {name} 前移成功")
+                    logger.success(f"{self.name} {name} 前移成功", module="脚本管理")
                     MainInfoBar.push_info_bar(
                         "success", "操作成功", f"{self.name} 前移 {name}", 3000
                     )
@@ -2886,13 +3265,13 @@ class MemberManager(QWidget):
                     name = self.sub_manager.pivot.currentRouteKey()
 
                     if name is None:
-                        logger.warning("未选择配置")
+                        logger.warning("未选择配置", module="脚本管理")
                         MainInfoBar.push_info_bar(
                             "warning", "未选择配置", "请先选择一个配置", 5000
                         )
                         return None
                     if name == "配置仪表盘":
-                        logger.warning("试图删除配置仪表盘")
+                        logger.warning("试图删除配置仪表盘", module="脚本管理")
                         MainInfoBar.push_info_bar(
                             "warning", "未选择配置", "请勿尝试移动配置仪表盘", 5000
                         )
@@ -2900,41 +3279,46 @@ class MemberManager(QWidget):
 
                     index = int(name[3:])
 
-                    if index == len(Config.member_dict[self.name]["SubData"]):
-                        logger.warning("向后移动配置时已到达最右端")
+                    if index == len(Config.script_dict[self.name]["SubData"]):
+                        logger.warning("向后移动配置时已到达最右端", module="脚本管理")
                         MainInfoBar.push_info_bar(
                             "warning", "已经是最后一个配置", "无法向后移动", 5000
                         )
                         return None
 
                     if self.name in Config.running_list:
-                        logger.warning("所属脚本正在运行")
+                        logger.warning("所属脚本正在运行", module="脚本管理")
                         MainInfoBar.push_info_bar(
                             "warning", "所属脚本正在运行", "请先停止任务", 5000
                         )
                         return None
 
+                    logger.info(
+                        f"正在将 {self.name} 的配置_{name} 后移", module="脚本管理"
+                    )
+
                     self.sub_manager.clear_SettingBox()
 
-                    Config.member_dict[self.name]["SubData"][name]["Path"].rename(
-                        Config.member_dict[self.name]["SubData"][name][
+                    # 移动配置文件并同步到相关配置项
+                    Config.script_dict[self.name]["SubData"][name]["Path"].rename(
+                        Config.script_dict[self.name]["SubData"][name][
                             "Path"
                         ].with_name("配置_0")
                     )
-                    Config.member_dict[self.name]["SubData"][f"配置_{index+1}"][
+                    Config.script_dict[self.name]["SubData"][f"配置_{index+1}"][
                         "Path"
-                    ].rename(Config.member_dict[self.name]["SubData"][name]["Path"])
-                    Config.member_dict[self.name]["SubData"][name]["Path"].with_name(
+                    ].rename(Config.script_dict[self.name]["SubData"][name]["Path"])
+                    Config.script_dict[self.name]["SubData"][name]["Path"].with_name(
                         "配置_0"
                     ).rename(
-                        Config.member_dict[self.name]["SubData"][f"配置_{index+1}"][
+                        Config.script_dict[self.name]["SubData"][f"配置_{index+1}"][
                             "Path"
                         ]
                     )
 
                     self.sub_manager.show_SettingBox(f"配置_{index + 1}")
 
-                    logger.success(f"{self.name} {name} 后移成功")
+                    logger.success(f"{self.name} {name} 后移成功", module="脚本管理")
                     MainInfoBar.push_info_bar(
                         "success", "操作成功", f"{self.name} 后移 {name}", 3000
                     )
@@ -2958,7 +3342,7 @@ class MemberManager(QWidget):
                         )
 
                         self.script_list: List[
-                            MemberManager.MemberSettingBox.GeneralSettingBox.BranchManager.SubConfigSettingBox.SubMemberSettingBox
+                            ScriptManager.ScriptSettingBox.GeneralSettingBox.BranchManager.SubConfigSettingBox.SubMemberSettingBox
                         ] = []
 
                         self.sub_dashboard = self.SubDashboard(self.name, self)
@@ -2980,11 +3364,15 @@ class MemberManager(QWidget):
                         self.show_SettingBox("配置仪表盘")
 
                     def show_SettingBox(self, index: str) -> None:
-                        """加载所有子界面"""
+                        """
+                        加载所有子界面
+
+                        :param index: 要显示的子界面索引
+                        """
 
                         Config.search_general_sub(self.name)
 
-                        for name in Config.member_dict[self.name]["SubData"].keys():
+                        for name in Config.script_dict[self.name]["SubData"].keys():
                             self.add_SettingBox(name[3:])
 
                         self.switch_SettingBox(index)
@@ -2992,13 +3380,18 @@ class MemberManager(QWidget):
                     def switch_SettingBox(
                         self, index: str, if_change_pivot: bool = True
                     ) -> None:
-                        """切换到指定的子界面"""
+                        """
+                        切换到指定的子界面
 
-                        if len(Config.member_dict[self.name]["SubData"]) == 0:
+                        :param index: 要切换到的子界面索引
+                        :param if_change_pivot: 是否更改 pivot 的当前项
+                        """
+
+                        if len(Config.script_dict[self.name]["SubData"]) == 0:
                             index = "配置仪表盘"
 
                         if index != "配置仪表盘" and int(index[3:]) > len(
-                            Config.member_dict[self.name]["SubData"]
+                            Config.script_dict[self.name]["SubData"]
                         ):
                             return None
 
@@ -3026,7 +3419,11 @@ class MemberManager(QWidget):
                         self.pivot.addItem(routeKey="配置仪表盘", text="配置仪表盘")
 
                     def add_SettingBox(self, uid: int) -> None:
-                        """添加一个配置设置界面"""
+                        """
+                        添加一个配置设置界面
+
+                        :param uid: 配置的唯一标识符
+                        """
 
                         setting_box = self.SubMemberSettingBox(self.name, uid, self)
 
@@ -3073,8 +3470,14 @@ class MemberManager(QWidget):
                             Config.PASSWORD_refreshed.connect(self.load_info)
 
                         def load_info(self):
+                            """加载配置仪表盘信息"""
 
-                            self.sub_data = Config.member_dict[self.name]["SubData"]
+                            logger.info(
+                                f"正在加载 {self.name} 的配置仪表盘信息",
+                                module="脚本管理",
+                            )
+
+                            self.sub_data = Config.script_dict[self.name]["SubData"]
 
                             self.dashboard.setRowCount(len(self.sub_data))
 
@@ -3127,6 +3530,10 @@ class MemberManager(QWidget):
                                     int(name[3:]) - 1, 4, button
                                 )
 
+                            logger.success(
+                                f"{self.name} 配置仪表盘信息加载成功", module="脚本管理"
+                            )
+
                     class SubMemberSettingBox(HeaderCardWidget):
                         """配置管理子页面"""
 
@@ -3136,10 +3543,10 @@ class MemberManager(QWidget):
                             self.setObjectName(f"配置_{uid}")
                             self.setTitle(f"配置 {uid}")
                             self.name = name
-                            self.config = Config.member_dict[self.name]["SubData"][
+                            self.config = Config.script_dict[self.name]["SubData"][
                                 f"配置_{uid}"
                             ]["Config"]
-                            self.sub_path = Config.member_dict[self.name]["SubData"][
+                            self.sub_path = Config.script_dict[self.name]["SubData"][
                                 f"配置_{uid}"
                             ]["Path"]
 
@@ -3302,7 +3709,7 @@ class MemberManager(QWidget):
                             """配置子配置"""
 
                             if self.name in Config.running_list:
-                                logger.warning("所属脚本正在运行")
+                                logger.warning("所属脚本正在运行", module="脚本管理")
                                 MainInfoBar.push_info_bar(
                                     "warning", "所属脚本正在运行", "请先停止任务", 5000
                                 )

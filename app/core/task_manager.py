@@ -25,19 +25,18 @@ v4.4
 作者：DLmaster_361
 """
 
-from loguru import logger
 from PySide6.QtCore import QThread, QObject, Signal
 from qfluentwidgets import MessageBox
 from datetime import datetime
 from packaging import version
 from typing import Dict, Union
 
+from .logger import logger
 from .config import Config
 from .main_info_bar import MainInfoBar
 from .network import Network
 from .sound_player import SoundPlayer
 from app.models import MaaManager, GeneralManager
-from app.services import System
 
 
 class Task(QThread):
@@ -77,12 +76,12 @@ class Task(QThread):
 
         if "设置MAA" in self.mode:
 
-            logger.info(f"任务开始：设置{self.name}")
+            logger.info(f"任务开始：设置{self.name}", module=f"业务 {self.name}")
             self.push_info_bar.emit("info", "设置MAA", self.name, 3000)
 
             self.task = MaaManager(
                 self.mode,
-                Config.member_dict[self.name],
+                Config.script_dict[self.name],
                 (None if "全局" in self.mode else self.info["SetMaaInfo"]["Path"]),
             )
             self.task.check_maa_version.connect(self.check_maa_version.emit)
@@ -93,17 +92,19 @@ class Task(QThread):
             try:
                 self.task.run()
             except Exception as e:
-                logger.exception(f"任务异常：{self.name}，错误信息：{e}")
+                logger.exception(
+                    f"任务异常：{self.name}，错误信息：{e}", module=f"业务 {self.name}"
+                )
                 self.push_info_bar.emit("error", "任务异常", self.name, -1)
 
         elif self.mode == "设置通用脚本":
 
-            logger.info(f"任务开始：设置{self.name}")
+            logger.info(f"任务开始：设置{self.name}", module=f"业务 {self.name}")
             self.push_info_bar.emit("info", "设置通用脚本", self.name, 3000)
 
             self.task = GeneralManager(
                 self.mode,
-                Config.member_dict[self.name],
+                Config.script_dict[self.name],
                 self.info["SetSubInfo"]["Path"],
             )
             self.task.push_info_bar.connect(self.push_info_bar.emit)
@@ -113,17 +114,20 @@ class Task(QThread):
             try:
                 self.task.run()
             except Exception as e:
-                logger.exception(f"任务异常：{self.name}，错误信息：{e}")
+                logger.exception(
+                    f"任务异常：{self.name}，错误信息：{e}", module=f"业务 {self.name}"
+                )
                 self.push_info_bar.emit("error", "任务异常", self.name, -1)
 
         else:
 
+            logger.info(f"任务开始：{self.name}", module=f"业务 {self.name}")
             self.task_list = [
                 [
                     (
                         value
-                        if Config.member_dict[value]["Config"].get_name() == ""
-                        else f"{value} - {Config.member_dict[value]["Config"].get_name()}"
+                        if Config.script_dict[value]["Config"].get_name() == ""
+                        else f"{value} - {Config.script_dict[value]["Config"].get_name()}"
                     ),
                     "等待",
                     value,
@@ -144,23 +148,28 @@ class Task(QThread):
                 task[1] = "运行"
                 self.update_task_list.emit(self.task_list)
 
+                # 检查任务是否在运行列表中
                 if task[2] in Config.running_list:
 
                     task[1] = "跳过"
                     self.update_task_list.emit(self.task_list)
-                    logger.info(f"跳过任务：{task[0]}")
+                    logger.info(
+                        f"跳过任务：{task[0]}，该任务已在运行列表中",
+                        module=f"业务 {self.name}",
+                    )
                     self.push_info_bar.emit("info", "跳过任务", task[0], 3000)
                     continue
 
+                # 标记为运行中
                 Config.running_list.append(task[2])
-                logger.info(f"任务开始：{task[0]}")
+                logger.info(f"任务开始：{task[0]}", module=f"业务 {self.name}")
                 self.push_info_bar.emit("info", "任务开始", task[0], 3000)
 
-                if Config.member_dict[task[2]]["Type"] == "Maa":
+                if Config.script_dict[task[2]]["Type"] == "Maa":
 
                     self.task = MaaManager(
                         self.mode[0:4],
-                        Config.member_dict[task[2]],
+                        Config.script_dict[task[2]],
                     )
 
                     self.task.check_maa_version.connect(self.check_maa_version.emit)
@@ -177,11 +186,11 @@ class Task(QThread):
                         lambda log: self.task_accomplish(task[2], log)
                     )
 
-                elif Config.member_dict[task[2]]["Type"] == "General":
+                elif Config.script_dict[task[2]]["Type"] == "General":
 
                     self.task = GeneralManager(
                         self.mode[0:4],
-                        Config.member_dict[task[2]],
+                        Config.script_dict[task[2]],
                     )
 
                     self.task.question.connect(self.question.emit)
@@ -198,11 +207,11 @@ class Task(QThread):
                     )
 
                 try:
-                    self.task.run()
+                    self.task.run()  # 运行任务业务
 
                     task[1] = "完成"
                     self.update_task_list.emit(self.task_list)
-                    logger.info(f"任务完成：{task[0]}")
+                    logger.info(f"任务完成：{task[0]}", module=f"业务 {self.name}")
                     self.push_info_bar.emit("info", "任务完成", task[0], 3000)
 
                 except Exception as e:
@@ -217,15 +226,29 @@ class Task(QThread):
 
                     task[1] = "异常"
                     self.update_task_list.emit(self.task_list)
-                    logger.exception(f"任务异常：{task[0]}，错误信息：{e}")
+                    logger.exception(
+                        f"任务异常：{task[0]}，错误信息：{e}",
+                        module=f"业务 {self.name}",
+                    )
                     self.push_info_bar.emit("error", "任务异常", task[0], -1)
 
+                # 任务结束后从运行列表中移除
                 Config.running_list.remove(task[2])
 
             self.accomplish.emit(self.logs)
 
     def task_accomplish(self, name: str, log: dict):
-        """保存任务结果"""
+        """
+        销毁任务线程并保存任务结果
+
+        :param name: 任务名称
+        :param log: 任务日志记录
+        """
+
+        logger.info(
+            f"任务完成：{name}，日志记录：{list(log.values())}",
+            module=f"业务 {self.name}",
+        )
 
         self.logs.append([name, log])
         self.task.deleteLater()
@@ -245,7 +268,13 @@ class _TaskManager(QObject):
     def add_task(
         self, mode: str, name: str, info: Dict[str, Dict[str, Union[str, int, bool]]]
     ):
-        """添加任务"""
+        """
+        添加任务
+
+        :param mode: 任务模式
+        :param name: 任务名称
+        :param info: 任务信息
+        """
 
         if name in Config.running_list or name in self.task_dict:
 
@@ -253,11 +282,14 @@ class _TaskManager(QObject):
             MainInfoBar.push_info_bar("warning", "任务已存在", name, 5000)
             return None
 
-        logger.info(f"任务开始：{name}")
+        logger.info(f"任务开始：{name}，模式：{mode}", module="业务调度")
         MainInfoBar.push_info_bar("info", "任务开始", name, 3000)
         SoundPlayer.play("任务开始")
 
+        # 标记任务为运行中
         Config.running_list.append(name)
+
+        # 创建任务实例并连接信号
         self.task_dict[name] = Task(mode, name, info)
         self.task_dict[name].check_maa_version.connect(self.check_maa_version)
         self.task_dict[name].question.connect(
@@ -273,18 +305,24 @@ class _TaskManager(QObject):
             lambda logs: self.remove_task(mode, name, logs)
         )
 
+        # 向UI发送信号以创建或连接GUI
         if "新调度台" in mode:
             self.create_gui.emit(self.task_dict[name])
 
         elif "主调度台" in mode:
             self.connect_gui.emit(self.task_dict[name])
 
+        # 启动任务线程
         self.task_dict[name].start()
 
-    def stop_task(self, name: str):
-        """中止任务"""
+    def stop_task(self, name: str) -> None:
+        """
+        中止任务
 
-        logger.info(f"中止任务：{name}")
+        :param name: 任务名称
+        """
+
+        logger.info(f"中止任务：{name}", module="业务调度")
         MainInfoBar.push_info_bar("info", "中止任务", name, 3000)
 
         if name == "ALL":
@@ -303,19 +341,27 @@ class _TaskManager(QObject):
             self.task_dict[name].quit()
             self.task_dict[name].wait()
 
-    def remove_task(self, mode: str, name: str, logs: list):
-        """任务结束后的处理"""
+    def remove_task(self, mode: str, name: str, logs: list) -> None:
+        """
+        处理任务结束后的收尾工作
 
-        logger.info(f"任务结束：{name}")
+        :param mode: 任务模式
+        :param name: 任务名称
+        :param logs: 任务日志
+        """
+
+        logger.info(f"任务结束：{name}", module="业务调度")
         MainInfoBar.push_info_bar("info", "任务结束", name, 3000)
         SoundPlayer.play("任务结束")
 
+        # 删除任务线程，移除运行中标记
         self.task_dict[name].deleteLater()
         self.task_dict.pop(name)
         Config.running_list.remove(name)
 
         if "调度队列" in name and "人工排查" not in mode:
 
+            # 保存调度队列历史记录
             if len(logs) > 0:
                 time = logs[0][1]["Time"]
                 history = ""
@@ -331,25 +377,31 @@ class _TaskManager(QObject):
                     },
                 )
 
+            # 根据调度队列情况设置电源状态
             if (
                 Config.queue_dict[name]["Config"].get(
-                    Config.queue_dict[name]["Config"].queueSet_AfterAccomplish
+                    Config.queue_dict[name]["Config"].QueueSet_AfterAccomplish
                 )
                 != "NoAction"
                 and Config.power_sign == "NoAction"
             ):
                 Config.set_power_sign(
                     Config.queue_dict[name]["Config"].get(
-                        Config.queue_dict[name]["Config"].queueSet_AfterAccomplish
+                        Config.queue_dict[name]["Config"].QueueSet_AfterAccomplish
                     )
                 )
 
         if Config.args.mode == "cli" and Config.power_sign == "NoAction":
             Config.set_power_sign("KillSelf")
 
-    def check_maa_version(self, v: str):
-        """检查MAA版本"""
+    def check_maa_version(self, v: str) -> None:
+        """
+        检查MAA版本，如果版本过低则推送通知
 
+        :param v: 当前MAA版本
+        """
+
+        logger.info(f"检查MAA版本：{v}", module="业务调度")
         network = Network.add_task(
             mode="get",
             url="https://mirrorchyan.com/api/resources/MAA/latest?user_agent=AutoMaaGui&os=win&arch=x64&channel=stable",
@@ -359,7 +411,10 @@ class _TaskManager(QObject):
         if network_result["status_code"] == 200:
             maa_info = network_result["response_json"]
         else:
-            logger.warning(f"获取MAA版本信息时出错：{network_result['error_message']}")
+            logger.warning(
+                f"获取MAA版本信息时出错：{network_result['error_message']}",
+                module="业务调度",
+            )
             MainInfoBar.push_info_bar(
                 "warning",
                 "获取MAA版本信息时出错",
@@ -371,7 +426,8 @@ class _TaskManager(QObject):
         if version.parse(maa_info["data"]["version_name"]) > version.parse(v):
 
             logger.info(
-                f"检测到MAA版本过低：{v}，最新版本：{maa_info['data']['version_name']}"
+                f"检测到MAA版本过低：{v}，最新版本：{maa_info['data']['version_name']}",
+                module="业务调度",
             )
             MainInfoBar.push_info_bar(
                 "info",
@@ -380,8 +436,19 @@ class _TaskManager(QObject):
                 -1,
             )
 
+        logger.success(
+            f"MAA版本检查完成：{v}，最新版本：{maa_info['data']['version_name']}",
+            module="业务调度",
+        )
+
     def push_dialog(self, name: str, title: str, content: str):
-        """推送对话框"""
+        """
+        推送来自任务线程的对话框
+
+        :param name: 任务名称
+        :param title: 对话框标题
+        :param content: 对话框内容
+        """
 
         choice = MessageBox(title, content, Config.main_window)
         choice.yesButton.setText("是")

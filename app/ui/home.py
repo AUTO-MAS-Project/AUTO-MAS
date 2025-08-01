@@ -25,7 +25,6 @@ v4.4
 作者：DLmaster_361
 """
 
-from loguru import logger
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -49,7 +48,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-from app.core import Config, MainInfoBar, Network
+from app.core import Config, MainInfoBar, Network, logger
 from .Widget import Banner, IconButton
 
 
@@ -160,8 +159,12 @@ class Home(QWidget):
     def get_home_image(self) -> None:
         """获取主页图片"""
 
+        logger.info("获取主页图片", module="主页")
+
         if Config.get(Config.function_HomeImageMode) == "默认":
-            pass
+
+            logger.info("使用默认主页图片", module="主页")
+
         elif Config.get(Config.function_HomeImageMode) == "自定义":
 
             file_path, _ = QFileDialog.getOpenFileName(
@@ -180,7 +183,7 @@ class Home(QWidget):
                     / f"resources/images/Home/BannerCustomize{Path(file_path).suffix}",
                 )
 
-                logger.info(f"自定义主页图片更换成功：{file_path}")
+                logger.info(f"自定义主页图片更换成功：{file_path}", module="主页")
                 MainInfoBar.push_info_bar(
                     "success",
                     "主页图片更换成功",
@@ -189,7 +192,7 @@ class Home(QWidget):
                 )
 
             else:
-                logger.warning("自定义主页图片更换失败：未选择图片文件")
+                logger.warning("自定义主页图片更换失败：未选择图片文件", module="主页")
                 MainInfoBar.push_info_bar(
                     "warning",
                     "主页图片更换失败",
@@ -198,10 +201,10 @@ class Home(QWidget):
                 )
         elif Config.get(Config.function_HomeImageMode) == "主题图像":
 
-            # 从远程服务器获取最新主题图像
+            # 从远程服务器获取最新主题图像信息
             network = Network.add_task(
                 mode="get",
-                url="https://gitee.com/DLmaster_361/AUTO_MAA/raw/server/theme_image.json",
+                url="http://221.236.27.82:10197/d/AUTO_MAA/Server/theme_image.json",
             )
             network.loop.exec()
             network_result = Network.get_result(network)
@@ -209,7 +212,8 @@ class Home(QWidget):
                 theme_image = network_result["response_json"]
             else:
                 logger.warning(
-                    f"获取最新主题图像时出错：{network_result['error_message']}"
+                    f"获取最新主题图像时出错：{network_result['error_message']}",
+                    module="主页",
                 )
                 MainInfoBar.push_info_bar(
                     "warning",
@@ -230,6 +234,7 @@ class Home(QWidget):
             else:
                 time_local = datetime.strptime("2000-01-01 00:00", "%Y-%m-%d %H:%M")
 
+            # 检查主题图像是否需要更新
             if not (
                 Config.app_path / "resources/images/Home/BannerTheme.jpg"
             ).exists() or (
@@ -253,7 +258,9 @@ class Home(QWidget):
                     ) as f:
                         json.dump(theme_image, f, ensure_ascii=False, indent=4)
 
-                    logger.success(f"主题图像「{theme_image["name"]}」下载成功")
+                    logger.success(
+                        f"主题图像「{theme_image["name"]}」下载成功", module="主页"
+                    )
                     MainInfoBar.push_info_bar(
                         "success",
                         "主题图像下载成功",
@@ -264,7 +271,8 @@ class Home(QWidget):
                 else:
 
                     logger.warning(
-                        f"下载最新主题图像时出错：{network_result['error_message']}"
+                        f"下载最新主题图像时出错：{network_result['error_message']}",
+                        module="主页",
                     )
                     MainInfoBar.push_info_bar(
                         "warning",
@@ -275,18 +283,16 @@ class Home(QWidget):
 
             else:
 
-                logger.info("主题图像已是最新")
+                logger.info("主题图像已是最新", module="主页")
                 MainInfoBar.push_info_bar(
-                    "info",
-                    "主题图像已是最新",
-                    "主题图像已是最新！",
-                    3000,
+                    "info", "主题图像已是最新", "主题图像已是最新！", 3000
                 )
 
         self.set_banner()
 
     def set_banner(self):
         """设置主页图像"""
+
         if Config.get(Config.function_HomeImageMode) == "默认":
             self.banner.set_banner_image(
                 str(Config.app_path / "resources/images/Home/BannerDefault.png")
@@ -366,7 +372,7 @@ class ButtonGroup(SimpleCardWidget):
         doc_button = IconButton(
             FluentIcon.CHAT.icon(color=QColor("#fff")),
             tip_title="官方社群",
-            tip_content="加入官方群聊【AUTO_MAA绝赞DeBug中！】",
+            tip_content="加入官方群聊「AUTO_MAA绝赞DeBug中！」",
             isTooltip=True,
         )
         doc_button.setIconSize(QSize(32, 32))
