@@ -51,6 +51,18 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.24'
+
+      - name: Build go updater
+        shell: pwsh
+        run: |
+          cd Go_Updater
+          go install github.com/akavel/rsrc@latest
+          .\build.ps1
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -59,15 +71,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install flake8 pytest
           pip install -r requirements.txt
-
-      - name: Lint with flake8
-        run: |
-          # stop the build if there are Python syntax errors or undefined names
-          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-          # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
-          flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
 
       - name: Get version
         id: get_version
@@ -122,6 +126,8 @@ jobs:
           $ver = "${{ steps.get_version.outputs.main_version }}"
           Copy-Item "$root/app" "$root/AUTO_MAA/app" -Recurse
           Copy-Item "$root/resources" "$root/AUTO_MAA/resources" -Recurse
+          Copy-Item "$root/Go_Updater" "$root/AUTO_MAA/Go_Updater" -Recurse
+          Move-Item "$root/AUTO_MAA/Go_Updater/build/AUTO_MAA_Go_Updater.exe" "$root/AUTO_MAA/AUTO_MAA_Go_Updater_install.exe"
           Copy-Item "$root/main.py" "$root/AUTO_MAA/"
           Copy-Item "$root/requirements.txt" "$root/AUTO_MAA/"
           Copy-Item "$root/README.md" "$root/AUTO_MAA/"

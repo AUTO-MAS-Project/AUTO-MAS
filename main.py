@@ -44,12 +44,13 @@ def no_print(*args, **kwargs):
 builtins.print = no_print
 
 
-from loguru import logger
 import os
 import sys
 import ctypes
 from PySide6.QtWidgets import QApplication
 from qfluentwidgets import FluentTranslator
+
+from app.core.logger import logger
 
 
 def is_admin() -> bool:

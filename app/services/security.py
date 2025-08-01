@@ -25,18 +25,15 @@ v4.4
 作者：DLmaster_361
 """
 
-from loguru import logger
 import hashlib
 import random
 import secrets
 import base64
 import win32crypt
-from pathlib import Path
 from Crypto.Cipher import AES
 from Crypto.PublicKey import RSA
 from Crypto.Cipher import PKCS1_OAEP
 from Crypto.Util.Padding import pad, unpad
-from typing import List, Dict, Union
 
 from app.core import Config
 
@@ -44,7 +41,12 @@ from app.core import Config
 class CryptoHandler:
 
     def get_PASSWORD(self, PASSWORD: str) -> None:
-        """配置管理密钥"""
+        """
+        配置管理密钥
+
+        :param PASSWORD: 管理密钥
+        :type PASSWORD: str
+        """
 
         # 生成目录
         Config.key_path.mkdir(parents=True, exist_ok=True)
@@ -85,7 +87,12 @@ class CryptoHandler:
         (Config.app_path / "data/key/private_key.bin").write_bytes(private_key_local)
 
     def AUTO_encryptor(self, note: str) -> str:
-        """使用AUTO_MAA的算法加密数据"""
+        """
+        使用AUTO_MAA的算法加密数据
+
+        :param note: 数据明文
+        :type note: str
+        """
 
         if note == "":
             return ""
@@ -100,7 +107,16 @@ class CryptoHandler:
         return base64.b64encode(encrypted).decode("utf-8")
 
     def AUTO_decryptor(self, note: str, PASSWORD: str) -> str:
-        """使用AUTO_MAA的算法解密数据"""
+        """
+        使用AUTO_MAA的算法解密数据
+
+        :param note: 数据密文
+        :type note: str
+        :param PASSWORD: 管理密钥
+        :type PASSWORD: str
+        :return: 解密后的明文
+        :rtype: str
+        """
 
         if note == "":
             return ""
@@ -142,24 +158,31 @@ class CryptoHandler:
             return note
 
     def change_PASSWORD(self, PASSWORD_old: str, PASSWORD_new: str) -> None:
-        """修改管理密钥"""
+        """
+        修改管理密钥
 
-        for member in Config.member_dict.values():
+        :param PASSWORD_old: 旧管理密钥
+        :type PASSWORD_old: str
+        :param PASSWORD_new: 新管理密钥
+        :type PASSWORD_new: str
+        """
+
+        for script in Config.script_dict.values():
 
             # 使用旧管理密钥解密
-            if member["Type"] == "Maa":
-                for user in member["UserData"].values():
+            if script["Type"] == "Maa":
+                for user in script["UserData"].values():
                     user["Password"] = self.AUTO_decryptor(
                         user["Config"].get(user["Config"].Info_Password), PASSWORD_old
                     )
 
         self.get_PASSWORD(PASSWORD_new)
 
-        for member in Config.member_dict.values():
+        for script in Config.script_dict.values():
 
             # 使用新管理密钥重新加密
-            if member["Type"] == "Maa":
-                for user in member["UserData"].values():
+            if script["Type"] == "Maa":
+                for user in script["UserData"].values():
                     user["Config"].set(
                         user["Config"].Info_Password,
                         self.AUTO_encryptor(user["Password"]),
@@ -168,20 +191,38 @@ class CryptoHandler:
                     del user["Password"]
 
     def reset_PASSWORD(self, PASSWORD_new: str) -> None:
-        """重置管理密钥"""
+        """
+        重置管理密钥
+
+        :param PASSWORD_new: 新管理密钥
+        :type PASSWORD_new: str
+        """
 
         self.get_PASSWORD(PASSWORD_new)
 
-        for member in Config.member_dict.values():
+        for script in Config.script_dict.values():
 
-            if member["Type"] == "Maa":
-                for user in member["UserData"].values():
-                    user["Config"].set(user["Config"].Info_Password, "")
+            if script["Type"] == "Maa":
+                for user in script["UserData"].values():
+                    user["Config"].set(
+                        user["Config"].Info_Password, self.AUTO_encryptor("数据已重置")
+                    )
 
     def win_encryptor(
         self, note: str, description: str = None, entropy: bytes = None
     ) -> str:
-        """使用Windows DPAPI加密数据"""
+        """
+        使用Windows DPAPI加密数据
+
+        :param note: 数据明文
+        :type note: str
+        :param description: 描述信息
+        :type description: str
+        :param entropy: 随机熵
+        :type entropy: bytes
+        :return: 加密后的数据
+        :rtype: str
+        """
 
         if note == "":
             return ""
@@ -192,7 +233,16 @@ class CryptoHandler:
         return base64.b64encode(encrypted).decode("utf-8")
 
     def win_decryptor(self, note: str, entropy: bytes = None) -> str:
-        """使用Windows DPAPI解密数据"""
+        """
+        使用Windows DPAPI解密数据
+
+        :param note: 数据密文
+        :type note: str
+        :param entropy: 随机熵
+        :type entropy: bytes
+        :return: 解密后的明文
+        :rtype: str
+        """
 
         if note == "":
             return ""
@@ -202,21 +252,15 @@ class CryptoHandler:
         )
         return decrypted[1].decode("utf-8")
 
-    def search_member(self) -> List[Dict[str, Union[Path, list]]]:
-        """搜索所有脚本实例及其用户数据库路径"""
-
-        member_list = []
-
-        if (Config.app_path / "config/MaaConfig").exists():
-            for subdir in (Config.app_path / "config/MaaConfig").iterdir():
-                if subdir.is_dir():
-
-                    member_list.append({"Path": subdir / "user_data.db"})
-
-        return member_list
-
     def check_PASSWORD(self, PASSWORD: str) -> bool:
-        """验证管理密钥"""
+        """
+        验证管理密钥
+
+        :param PASSWORD: 管理密钥
+        :type PASSWORD: str
+        :return: 是否验证通过
+        :rtype: bool
+        """
 
         return bool(
             self.AUTO_decryptor(self.AUTO_encryptor("-"), PASSWORD) != "管理密钥错误"

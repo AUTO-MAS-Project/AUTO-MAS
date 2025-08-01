@@ -32,7 +32,6 @@ v4.4
 作者：DLmaster_361、ClozyA
 """
 
-from loguru import logger
 import time
 import json
 import hmac
@@ -40,7 +39,7 @@ import hashlib
 import requests
 from urllib import parse
 
-from app.core import Config
+from app.core import Config, logger
 
 
 def skland_sign_in(token) -> dict:
@@ -71,15 +70,16 @@ def skland_sign_in(token) -> dict:
         "vName": "1.5.1",
     }
 
-    # 生成签名
     def generate_signature(token_for_sign: str, path, body_or_query):
         """
         生成请求签名
+
         :param token_for_sign: 用于加密的token
         :param path: 请求路径（如 /api/v1/game/player/binding）
         :param body_or_query: GET用query字符串，POST用body字符串
         :return: (sign, 新的header_for_sign字典)
         """
+
         t = str(int(time.time()) - 2)  # 时间戳，-2秒以防服务器时间不一致
         token_bytes = token_for_sign.encode("utf-8")
         header_ca = dict(header_for_sign)
@@ -91,10 +91,10 @@ def skland_sign_in(token) -> dict:
         md5 = hashlib.md5(hex_s.encode("utf-8")).hexdigest()
         return md5, header_ca
 
-    # 获取带签名的header
     def get_sign_header(url: str, method, body, old_header, sign_token):
         """
         获取带签名的请求头
+
         :param url: 请求完整url
         :param method: 请求方式 GET/POST
         :param body: POST请求体或GET时为None
@@ -102,6 +102,7 @@ def skland_sign_in(token) -> dict:
         :param sign_token: 当前会话的签名token
         :return: 新请求头
         """
+
         h = json.loads(json.dumps(old_header))
         p = parse.urlparse(url)
         if method.lower() == "get":
@@ -115,15 +116,21 @@ def skland_sign_in(token) -> dict:
             h[i] = header_ca[i]
         return h
 
-    # 复制请求头并添加cred
     def copy_header(cred):
+        """
+        复制请求头并添加cred
+
+        :param cred: 当前会话的cred
+        :return: 新的请求头
+        """
         v = json.loads(json.dumps(header))
         v["cred"] = cred
         return v
 
-    # 使用token一步步拿到cred和sign_token
     def login_by_token(token_code):
         """
+        使用token一步步拿到cred和sign_token
+
         :param token_code: 你的skyland token
         :return: (cred, sign_token)
         """
@@ -136,8 +143,14 @@ def skland_sign_in(token) -> dict:
         grant_code = get_grant_code(token_code)
         return get_cred(grant_code)
 
-    # 通过grant code换cred和sign_token
     def get_cred(grant):
+        """
+        通过grant code获取cred和sign_token
+
+        :param grant: grant code
+        :return: (cred, sign_token)
+        """
+
         rsp = requests.post(
             cred_code_url,
             json={"code": grant, "kind": 1},
@@ -153,8 +166,13 @@ def skland_sign_in(token) -> dict:
         cred = rsp["data"]["cred"]
         return cred, sign_token
 
-    # 通过token换grant code
     def get_grant_code(token):
+        """
+        通过token获取grant code
+
+        :param token: 你的skyland token
+        :return: grant code
+        """
         rsp = requests.post(
             grant_code_url,
             json={"appCode": app_code, "token": token, "type": 0},
@@ -170,10 +188,10 @@ def skland_sign_in(token) -> dict:
             )
         return rsp["data"]["code"]
 
-    # 获取已绑定的角色列表
     def get_binding_list(cred, sign_token):
         """
-        查询绑定的角色
+        查询已绑定的角色列表
+
         :param cred: 当前cred
         :param sign_token: 当前sign_token
         :return: 角色列表
@@ -190,9 +208,15 @@ def skland_sign_in(token) -> dict:
             },
         ).json()
         if rsp["code"] != 0:
-            logger.error(f"森空岛服务 | 请求角色列表出现问题：{rsp['message']}")
+            logger.error(
+                f"森空岛服务 | 请求角色列表出现问题：{rsp['message']}",
+                module="森空岛签到",
+            )
             if rsp.get("message") == "用户未登录":
-                logger.error(f"森空岛服务 | 用户登录可能失效了，请重新登录！")
+                logger.error(
+                    f"森空岛服务 | 用户登录可能失效了，请重新登录！",
+                    module="森空岛签到",
+                )
                 return v
         # 只取明日方舟（arknights）的绑定账号
         for i in rsp["data"]["list"]:
@@ -201,10 +225,10 @@ def skland_sign_in(token) -> dict:
             v.extend(i.get("bindingList"))
         return v
 
-    # 执行签到
     def do_sign(cred, sign_token) -> dict:
         """
         对所有绑定的角色进行签到
+
         :param cred: 当前cred
         :param sign_token: 当前sign_token
         :return: 签到结果字典
@@ -257,5 +281,5 @@ def skland_sign_in(token) -> dict:
         # 依次签到
         return do_sign(cred, sign_token)
     except Exception as e:
-        logger.error(f"森空岛服务 | 森空岛签到失败: {e}")
+        logger.exception(f"森空岛服务 | 森空岛签到失败: {e}", module="森空岛签到")
         return {"成功": [], "重复": [], "失败": [], "总计": 0}

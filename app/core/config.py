@@ -25,7 +25,6 @@ v4.4
 作者：DLmaster_361
 """
 
-from loguru import logger
 from PySide6.QtCore import Signal
 import argparse
 import sqlite3
@@ -53,6 +52,7 @@ from qfluentwidgets import (
 from urllib.parse import urlparse
 from typing import Union, Dict, List
 
+from .logger import logger
 from .network import Network
 
 
@@ -205,9 +205,6 @@ class GlobalConfig(LQConfig):
         self.start_IfSelfStart = ConfigItem(
             "Start", "IfSelfStart", False, BoolValidator()
         )
-        self.start_IfRunDirectly = ConfigItem(
-            "Start", "IfRunDirectly", False, BoolValidator()
-        )
         self.start_IfMinimizeDirectly = ConfigItem(
             "Start", "IfMinimizeDirectly", False, BoolValidator()
         )
@@ -275,79 +272,53 @@ class QueueConfig(LQConfig):
     def __init__(self) -> None:
         super().__init__()
 
-        self.queueSet_Name = ConfigItem("QueueSet", "Name", "")
-        self.queueSet_Enabled = ConfigItem(
-            "QueueSet", "Enabled", False, BoolValidator()
+        self.QueueSet_Name = ConfigItem("QueueSet", "Name", "")
+        self.QueueSet_TimeEnabled = ConfigItem(
+            "QueueSet", "TimeEnabled", False, BoolValidator()
         )
-        self.queueSet_AfterAccomplish = OptionsConfigItem(
+        self.QueueSet_StartUpEnabled = ConfigItem(
+            "QueueSet", "StartUpEnabled", False, BoolValidator()
+        )
+        self.QueueSet_AfterAccomplish = OptionsConfigItem(
             "QueueSet",
             "AfterAccomplish",
             "NoAction",
             OptionsValidator(
-                ["NoAction", "KillSelf", "Sleep", "Hibernate", "Shutdown"]
+                [
+                    "NoAction",
+                    "KillSelf",
+                    "Sleep",
+                    "Hibernate",
+                    "Shutdown",
+                    "ShutdownForce",
+                ]
             ),
         )
 
-        self.time_TimeEnabled_0 = ConfigItem(
-            "Time", "TimeEnabled_0", False, BoolValidator()
-        )
-        self.time_TimeSet_0 = ConfigItem("Time", "TimeSet_0", "00:00")
+        self.config_item_dict: dict[str, Dict[str, ConfigItem]] = {
+            "Queue": {},
+            "Time": {},
+        }
 
-        self.time_TimeEnabled_1 = ConfigItem(
-            "Time", "TimeEnabled_1", False, BoolValidator()
-        )
-        self.time_TimeSet_1 = ConfigItem("Time", "TimeSet_1", "00:00")
+        for i in range(10):
 
-        self.time_TimeEnabled_2 = ConfigItem(
-            "Time", "TimeEnabled_2", False, BoolValidator()
-        )
-        self.time_TimeSet_2 = ConfigItem("Time", "TimeSet_2", "00:00")
+            self.config_item_dict["Time"][f"Enabled_{i}"] = ConfigItem(
+                "Time", f"Enabled_{i}", False, BoolValidator()
+            )
+            self.config_item_dict["Time"][f"Set_{i}"] = ConfigItem(
+                "Time", f"Set_{i}", "00:00"
+            )
+            self.config_item_dict["Queue"][f"Script_{i}"] = OptionsConfigItem(
+                "Queue", f"Script_{i}", "禁用"
+            )
 
-        self.time_TimeEnabled_3 = ConfigItem(
-            "Time", "TimeEnabled_3", False, BoolValidator()
-        )
-        self.time_TimeSet_3 = ConfigItem("Time", "TimeSet_3", "00:00")
-
-        self.time_TimeEnabled_4 = ConfigItem(
-            "Time", "TimeEnabled_4", False, BoolValidator()
-        )
-        self.time_TimeSet_4 = ConfigItem("Time", "TimeSet_4", "00:00")
-
-        self.time_TimeEnabled_5 = ConfigItem(
-            "Time", "TimeEnabled_5", False, BoolValidator()
-        )
-        self.time_TimeSet_5 = ConfigItem("Time", "TimeSet_5", "00:00")
-
-        self.time_TimeEnabled_6 = ConfigItem(
-            "Time", "TimeEnabled_6", False, BoolValidator()
-        )
-        self.time_TimeSet_6 = ConfigItem("Time", "TimeSet_6", "00:00")
-
-        self.time_TimeEnabled_7 = ConfigItem(
-            "Time", "TimeEnabled_7", False, BoolValidator()
-        )
-        self.time_TimeSet_7 = ConfigItem("Time", "TimeSet_7", "00:00")
-
-        self.time_TimeEnabled_8 = ConfigItem(
-            "Time", "TimeEnabled_8", False, BoolValidator()
-        )
-        self.time_TimeSet_8 = ConfigItem("Time", "TimeSet_8", "00:00")
-
-        self.time_TimeEnabled_9 = ConfigItem(
-            "Time", "TimeEnabled_9", False, BoolValidator()
-        )
-        self.time_TimeSet_9 = ConfigItem("Time", "TimeSet_9", "00:00")
-
-        self.queue_Member_1 = OptionsConfigItem("Queue", "Member_1", "禁用")
-        self.queue_Member_2 = OptionsConfigItem("Queue", "Member_2", "禁用")
-        self.queue_Member_3 = OptionsConfigItem("Queue", "Member_3", "禁用")
-        self.queue_Member_4 = OptionsConfigItem("Queue", "Member_4", "禁用")
-        self.queue_Member_5 = OptionsConfigItem("Queue", "Member_5", "禁用")
-        self.queue_Member_6 = OptionsConfigItem("Queue", "Member_6", "禁用")
-        self.queue_Member_7 = OptionsConfigItem("Queue", "Member_7", "禁用")
-        self.queue_Member_8 = OptionsConfigItem("Queue", "Member_8", "禁用")
-        self.queue_Member_9 = OptionsConfigItem("Queue", "Member_9", "禁用")
-        self.queue_Member_10 = OptionsConfigItem("Queue", "Member_10", "禁用")
+            setattr(
+                self, f"Time_Enabled_{i}", self.config_item_dict["Time"][f"Enabled_{i}"]
+            )
+            setattr(self, f"Time_Set_{i}", self.config_item_dict["Time"][f"Set_{i}"])
+            setattr(
+                self, f"Queue_Script_{i}", self.config_item_dict["Queue"][f"Script_{i}"]
+            )
 
         self.Data_LastProxyTime = ConfigItem(
             "Data", "LastProxyTime", "2000-01-01 00:00:00"
@@ -388,10 +359,7 @@ class MaaConfig(LQConfig):
             "RunSet", "RoutineTimeLimit", 10, RangeValidator(1, 1024)
         )
         self.RunSet_AnnihilationWeeklyLimit = ConfigItem(
-            "RunSet", "AnnihilationWeeklyLimit", False, BoolValidator()
-        )
-        self.RunSet_AutoUpdateMaa = ConfigItem(
-            "RunSet", "AutoUpdateMaa", False, BoolValidator()
+            "RunSet", "AnnihilationWeeklyLimit", True, BoolValidator()
         )
 
     def get_name(self) -> str:
@@ -411,16 +379,32 @@ class MaaUserConfig(LQConfig):
         )
         self.Info_StageMode = ConfigItem("Info", "StageMode", "固定")
         self.Info_Server = OptionsConfigItem(
-            "Info", "Server", "Official", OptionsValidator(["Official", "Bilibili"])
+            "Info",
+            "Server",
+            "Official",
+            OptionsValidator(
+                ["Official", "Bilibili", "YoStarEN", "YoStarJP", "YoStarKR", "txwy"]
+            ),
         )
         self.Info_Status = ConfigItem("Info", "Status", True, BoolValidator())
         self.Info_RemainedDay = ConfigItem(
             "Info", "RemainedDay", -1, RangeValidator(-1, 1024)
         )
-        self.Info_Annihilation = ConfigItem(
-            "Info", "Annihilation", False, BoolValidator()
+        self.Info_Annihilation = OptionsConfigItem(
+            "Info",
+            "Annihilation",
+            "Annihilation",
+            OptionsValidator(
+                [
+                    "Close",
+                    "Annihilation",
+                    "Chernobog@Annihilation",
+                    "LungmenOutskirts@Annihilation",
+                    "LungmenDowntown@Annihilation",
+                ]
+            ),
         )
-        self.Info_Routine = ConfigItem("Info", "Routine", False, BoolValidator())
+        self.Info_Routine = ConfigItem("Info", "Routine", True, BoolValidator())
         self.Info_InfrastMode = OptionsConfigItem(
             "Info",
             "InfrastMode",
@@ -581,9 +565,16 @@ class MaaPlanConfig(LQConfig):
         """获取当前的计划表配置项"""
 
         if self.get(self.Info_Mode) == "ALL":
+
             return self.config_item_dict["ALL"][name]
+
         elif self.get(self.Info_Mode) == "Weekly":
-            today = datetime.now().strftime("%A")
+
+            dt = datetime.now()
+            if dt.time() < datetime.min.time().replace(hour=4):
+                dt = dt - timedelta(days=1)
+            today = dt.strftime("%A")
+
             if today in self.config_item_dict:
                 return self.config_item_dict[today][name]
             else:
@@ -597,7 +588,7 @@ class GeneralConfig(LQConfig):
         super().__init__()
 
         self.Script_Name = ConfigItem("Script", "Name", "")
-        self.Script_RootPath = ConfigItem("Script", "RootPath", ".", FolderValidator())
+        self.Script_RootPath = ConfigItem("Script", "RootPath", ".", FileValidator())
         self.Script_ScriptPath = ConfigItem(
             "Script", "ScriptPath", ".", FileValidator()
         )
@@ -613,6 +604,12 @@ class GeneralConfig(LQConfig):
             "ConfigPathMode",
             "所有文件 (*)",
             OptionsValidator(["所有文件 (*)", "文件夹"]),
+        )
+        self.Script_UpdateConfigMode = OptionsConfigItem(
+            "Script",
+            "UpdateConfigMode",
+            "Never",
+            OptionsValidator(["Never", "Success", "Failure", "Always"]),
         )
         self.Script_LogPath = ConfigItem("Script", "LogPath", ".", FileValidator())
         self.Script_LogPathFormat = ConfigItem("Script", "LogPathFormat", "%Y-%m-%d")
@@ -707,7 +704,7 @@ class GeneralSubConfig(LQConfig):
 
 class AppConfig(GlobalConfig):
 
-    VERSION = "4.4.0.0"
+    VERSION = "4.4.1.0"
 
     stage_refreshed = Signal()
     PASSWORD_refreshed = Signal()
@@ -717,8 +714,8 @@ class AppConfig(GlobalConfig):
     def __init__(self) -> None:
         super().__init__()
 
-        self.app_path = Path(sys.argv[0]).resolve().parent  # 获取软件根目录
-        self.app_path_sys = Path(sys.argv[0]).resolve()  # 获取软件自身的路径
+        self.app_path = Path(sys.argv[0]).resolve().parent
+        self.app_path_sys = Path(sys.argv[0]).resolve()
 
         self.log_path = self.app_path / "debug/AUTO_MAA.log"
         self.database_path = self.app_path / "data/data.db"
@@ -728,7 +725,7 @@ class AppConfig(GlobalConfig):
         self.main_window = None
         self.PASSWORD = ""
         self.running_list = []
-        self.silence_list = []
+        self.silence_dict: Dict[Path, datetime] = {}
         self.info_bar_list = []
         self.stage_dict = {
             "ALL": {"value": [], "text": []},
@@ -744,7 +741,9 @@ class AppConfig(GlobalConfig):
         self.if_ignore_silence = False
         self.if_database_opened = False
 
-        self.search_member()
+        self.initialize()
+
+        self.search_script()
         self.search_queue()
 
         parser = argparse.ArgumentParser(
@@ -760,12 +759,15 @@ class AppConfig(GlobalConfig):
         parser.add_argument(
             "--config",
             nargs="+",
-            choices=list(self.member_dict.keys()) + list(self.queue_dict.keys()),
+            choices=list(self.script_dict.keys()) + list(self.queue_dict.keys()),
             help="指定需要运行哪些配置项",
         )
         self.args = parser.parse_args()
 
-        self.initialize()
+        logger.info(
+            f"运行模式： {'图形化界面' if self.args.mode == 'gui' else '命令行界面'}，配置项： {self.args.config if self.args.config else '启动时运行的调度队列'}",
+            module="配置管理",
+        )
 
     def initialize(self) -> None:
         """初始化程序配置管理模块"""
@@ -781,7 +783,7 @@ class AppConfig(GlobalConfig):
 
         self.init_logger()
         self.check_data()
-        logger.info("程序初始化完成")
+        logger.info("程序初始化完成", module="配置管理")
 
     def init_logger(self) -> None:
         """初始化日志记录器"""
@@ -789,7 +791,7 @@ class AppConfig(GlobalConfig):
         logger.add(
             sink=self.log_path,
             level="DEBUG",
-            format="<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | <level>{message}</level>",
+            format="<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | <cyan>{extra[module]}</cyan> | <level>{message}</level>",
             enqueue=True,
             backtrace=True,
             diagnose=True,
@@ -797,102 +799,22 @@ class AppConfig(GlobalConfig):
             retention="1 month",
             compression="zip",
         )
-        logger.info("")
-        logger.info("===================================")
-        logger.info("AUTO_MAA 主程序")
-        logger.info(f"版本号： v{self.VERSION}")
-        logger.info(f"根目录： {self.app_path}")
-        logger.info(
-            f"运行模式： {'图形化界面' if self.args.mode == 'gui' else '命令行界面'}"
+        logger.add(
+            sink=sys.stderr,
+            level="DEBUG",
+            format="<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | <cyan>{extra[module]}</cyan> | <level>{message}</level>",
+            enqueue=True,
+            backtrace=True,
+            diagnose=True,
+            colorize=True,
         )
-        logger.info("===================================")
 
-        logger.info("日志记录器初始化完成")
-
-    def get_stage(self) -> None:
-        """从MAA服务器获取活动关卡信息"""
-
-        network = Network.add_task(
-            mode="get",
-            url="https://api.maa.plus/MaaAssistantArknights/api/gui/StageActivity.json",
-        )
-        network.loop.exec()
-        network_result = Network.get_result(network)
-        if network_result["status_code"] == 200:
-            stage_infos: List[Dict[str, Union[str, Dict[str, Union[str, int]]]]] = (
-                network_result["response_json"]["Official"]["sideStoryStage"]
-            )
-        else:
-            logger.warning(
-                f"无法从MAA服务器获取活动关卡信息:{network_result['error_message']}"
-            )
-            stage_infos = []
-
-        ss_stage_dict = {"value": [], "text": []}
-
-        for stage_info in stage_infos:
-
-            if (
-                datetime.strptime(
-                    stage_info["Activity"]["UtcStartTime"], "%Y/%m/%d %H:%M:%S"
-                )
-                < datetime.now()
-                < datetime.strptime(
-                    stage_info["Activity"]["UtcExpireTime"], "%Y/%m/%d %H:%M:%S"
-                )
-            ):
-                ss_stage_dict["value"].append(stage_info["Value"])
-                ss_stage_dict["text"].append(stage_info["Value"])
-
-        # 生成每日关卡信息
-        stage_daily_info = [
-            {"value": "-", "text": "当前/上次", "days": [1, 2, 3, 4, 5, 6, 7]},
-            {"value": "1-7", "text": "1-7", "days": [1, 2, 3, 4, 5, 6, 7]},
-            {"value": "R8-11", "text": "R8-11", "days": [1, 2, 3, 4, 5, 6, 7]},
-            {
-                "value": "12-17-HARD",
-                "text": "12-17-HARD",
-                "days": [1, 2, 3, 4, 5, 6, 7],
-            },
-            {"value": "CE-6", "text": "龙门币-6/5", "days": [2, 4, 6, 7]},
-            {"value": "AP-5", "text": "红票-5", "days": [1, 4, 6, 7]},
-            {"value": "CA-5", "text": "技能-5", "days": [2, 3, 5, 7]},
-            {"value": "LS-6", "text": "经验-6/5", "days": [1, 2, 3, 4, 5, 6, 7]},
-            {"value": "SK-5", "text": "碳-5", "days": [1, 3, 5, 6]},
-            {"value": "PR-A-1", "text": "奶/盾芯片", "days": [1, 4, 5, 7]},
-            {"value": "PR-A-2", "text": "奶/盾芯片组", "days": [1, 4, 5, 7]},
-            {"value": "PR-B-1", "text": "术/狙芯片", "days": [1, 2, 5, 6]},
-            {"value": "PR-B-2", "text": "术/狙芯片组", "days": [1, 2, 5, 6]},
-            {"value": "PR-C-1", "text": "先/辅芯片", "days": [3, 4, 6, 7]},
-            {"value": "PR-C-2", "text": "先/辅芯片组", "days": [3, 4, 6, 7]},
-            {"value": "PR-D-1", "text": "近/特芯片", "days": [2, 3, 6, 7]},
-            {"value": "PR-D-2", "text": "近/特芯片组", "days": [2, 3, 6, 7]},
-        ]
-
-        for day in range(0, 8):
-
-            today_stage_dict = {"value": [], "text": []}
-
-            for stage_info in stage_daily_info:
-
-                if day in stage_info["days"] or day == 0:
-                    today_stage_dict["value"].append(stage_info["value"])
-                    today_stage_dict["text"].append(stage_info["text"])
-
-            self.stage_dict[calendar.day_name[day - 1] if day > 0 else "ALL"] = {
-                "value": today_stage_dict["value"] + ss_stage_dict["value"],
-                "text": today_stage_dict["text"] + ss_stage_dict["text"],
-            }
-
-        self.stage_refreshed.emit()
-
-    def server_date(self) -> date:
-        """获取当前的服务器日期"""
-
-        dt = datetime.now()
-        if dt.time() < datetime.min.time().replace(hour=4):
-            dt = dt - timedelta(days=1)
-        return dt.date()
+        logger.info("", module="配置管理")
+        logger.info("===================================", module="配置管理")
+        logger.info("AUTO_MAA 主程序", module="配置管理")
+        logger.info(f"版本号： v{self.VERSION}", module="配置管理")
+        logger.info(f"根目录： {self.app_path}", module="配置管理")
+        logger.info("===================================", module="配置管理")
 
     def check_data(self) -> None:
         """检查用户数据文件并处理数据文件版本更新"""
@@ -902,7 +824,7 @@ class AppConfig(GlobalConfig):
             db = sqlite3.connect(self.database_path)
             cur = db.cursor()
             cur.execute("CREATE TABLE version(v text)")
-            cur.execute("INSERT INTO version VALUES(?)", ("v1.7",))
+            cur.execute("INSERT INTO version VALUES(?)", ("v1.8",))
             db.commit()
             cur.close()
             db.close()
@@ -913,12 +835,12 @@ class AppConfig(GlobalConfig):
         cur.execute("SELECT * FROM version WHERE True")
         version = cur.fetchall()
 
-        if version[0][0] != "v1.7":
-            logger.info("数据文件版本更新开始")
+        if version[0][0] != "v1.8":
+            logger.info("数据文件版本更新开始", module="配置管理")
             if_streaming = False
             # v1.4-->v1.5
             if version[0][0] == "v1.4" or if_streaming:
-                logger.info("数据文件版本更新：v1.4-->v1.5")
+                logger.info("数据文件版本更新：v1.4-->v1.5", module="配置管理")
                 if_streaming = True
 
                 member_dict: Dict[str, Dict[str, Union[str, Path]]] = {}
@@ -1043,10 +965,9 @@ class AppConfig(GlobalConfig):
                 cur.execute("DELETE FROM version WHERE v = ?", ("v1.4",))
                 cur.execute("INSERT INTO version VALUES(?)", ("v1.5",))
                 db.commit()
-
             # v1.5-->v1.6
             if version[0][0] == "v1.5" or if_streaming:
-                logger.info("数据文件版本更新：v1.5-->v1.6")
+                logger.info("数据文件版本更新：v1.5-->v1.6", module="配置管理")
                 if_streaming = True
                 cur.execute("DELETE FROM version WHERE v = ?", ("v1.5",))
                 cur.execute("INSERT INTO version VALUES(?)", ("v1.6",))
@@ -1078,7 +999,7 @@ class AppConfig(GlobalConfig):
                     pass
             # v1.6-->v1.7
             if version[0][0] == "v1.6" or if_streaming:
-                logger.info("数据文件版本更新：v1.6-->v1.7")
+                logger.info("数据文件版本更新：v1.6-->v1.7", module="配置管理")
                 if_streaming = True
 
                 if (self.app_path / "config/MaaConfig").exists():
@@ -1145,15 +1066,143 @@ class AppConfig(GlobalConfig):
                 cur.execute("DELETE FROM version WHERE v = ?", ("v1.6",))
                 cur.execute("INSERT INTO version VALUES(?)", ("v1.7",))
                 db.commit()
+            # v1.7-->v1.8
+            if version[0][0] == "v1.7" or if_streaming:
+                logger.info("数据文件版本更新：v1.7-->v1.8", module="配置管理")
+                if_streaming = True
+
+                if (self.app_path / "config/QueueConfig").exists():
+                    for QueueConfig in (self.app_path / "config/QueueConfig").glob(
+                        "*.json"
+                    ):
+                        with QueueConfig.open(encoding="utf-8") as f:
+                            queue_config = json.load(f)
+
+                        queue_config["QueueSet"]["TimeEnabled"] = queue_config[
+                            "QueueSet"
+                        ]["Enabled"]
+
+                        for i in range(10):
+                            queue_config["Queue"][f"Script_{i}"] = queue_config[
+                                "Queue"
+                            ][f"Member_{i + 1}"]
+                            queue_config["Time"][f"Enabled_{i}"] = queue_config["Time"][
+                                f"TimeEnabled_{i}"
+                            ]
+                            queue_config["Time"][f"Set_{i}"] = queue_config["Time"][
+                                f"TimeSet_{i}"
+                            ]
+
+                        with QueueConfig.open("w", encoding="utf-8") as f:
+                            json.dump(queue_config, f, ensure_ascii=False, indent=4)
+
+                cur.execute("DELETE FROM version WHERE v = ?", ("v1.7",))
+                cur.execute("INSERT INTO version VALUES(?)", ("v1.8",))
+                db.commit()
 
             cur.close()
             db.close()
-            logger.info("数据文件版本更新完成")
+            logger.success("数据文件版本更新完成", module="配置管理")
 
-    def search_member(self) -> None:
-        """搜索所有脚本实例"""
+    def get_stage(self) -> None:
+        """从MAA服务器更新活动关卡信息"""
 
-        self.member_dict: Dict[
+        logger.info("开始获取活动关卡信息", module="配置管理")
+        network = Network.add_task(
+            mode="get",
+            url="https://api.maa.plus/MaaAssistantArknights/api/gui/StageActivity.json",
+        )
+        network.loop.exec()
+        network_result = Network.get_result(network)
+        if network_result["status_code"] == 200:
+            stage_infos: List[Dict[str, Union[str, Dict[str, Union[str, int]]]]] = (
+                network_result["response_json"]["Official"]["sideStoryStage"]
+            )
+        else:
+            logger.warning(
+                f"无法从MAA服务器获取活动关卡信息:{network_result['error_message']}",
+                module="配置管理",
+            )
+            stage_infos = []
+
+        ss_stage_dict = {"value": [], "text": []}
+
+        for stage_info in stage_infos:
+
+            if (
+                datetime.strptime(
+                    stage_info["Activity"]["UtcStartTime"], "%Y/%m/%d %H:%M:%S"
+                )
+                < datetime.now()
+                < datetime.strptime(
+                    stage_info["Activity"]["UtcExpireTime"], "%Y/%m/%d %H:%M:%S"
+                )
+            ):
+                ss_stage_dict["value"].append(stage_info["Value"])
+                ss_stage_dict["text"].append(stage_info["Value"])
+
+        # 生成每日关卡信息
+        stage_daily_info = [
+            {"value": "-", "text": "当前/上次", "days": [1, 2, 3, 4, 5, 6, 7]},
+            {"value": "1-7", "text": "1-7", "days": [1, 2, 3, 4, 5, 6, 7]},
+            {"value": "R8-11", "text": "R8-11", "days": [1, 2, 3, 4, 5, 6, 7]},
+            {
+                "value": "12-17-HARD",
+                "text": "12-17-HARD",
+                "days": [1, 2, 3, 4, 5, 6, 7],
+            },
+            {"value": "CE-6", "text": "龙门币-6/5", "days": [2, 4, 6, 7]},
+            {"value": "AP-5", "text": "红票-5", "days": [1, 4, 6, 7]},
+            {"value": "CA-5", "text": "技能-5", "days": [2, 3, 5, 7]},
+            {"value": "LS-6", "text": "经验-6/5", "days": [1, 2, 3, 4, 5, 6, 7]},
+            {"value": "SK-5", "text": "碳-5", "days": [1, 3, 5, 6]},
+            {"value": "PR-A-1", "text": "奶/盾芯片", "days": [1, 4, 5, 7]},
+            {"value": "PR-A-2", "text": "奶/盾芯片组", "days": [1, 4, 5, 7]},
+            {"value": "PR-B-1", "text": "术/狙芯片", "days": [1, 2, 5, 6]},
+            {"value": "PR-B-2", "text": "术/狙芯片组", "days": [1, 2, 5, 6]},
+            {"value": "PR-C-1", "text": "先/辅芯片", "days": [3, 4, 6, 7]},
+            {"value": "PR-C-2", "text": "先/辅芯片组", "days": [3, 4, 6, 7]},
+            {"value": "PR-D-1", "text": "近/特芯片", "days": [2, 3, 6, 7]},
+            {"value": "PR-D-2", "text": "近/特芯片组", "days": [2, 3, 6, 7]},
+        ]
+
+        for day in range(0, 8):
+
+            today_stage_dict = {"value": [], "text": []}
+
+            for stage_info in stage_daily_info:
+
+                if day in stage_info["days"] or day == 0:
+                    today_stage_dict["value"].append(stage_info["value"])
+                    today_stage_dict["text"].append(stage_info["text"])
+
+            self.stage_dict[calendar.day_name[day - 1] if day > 0 else "ALL"] = {
+                "value": today_stage_dict["value"] + ss_stage_dict["value"],
+                "text": today_stage_dict["text"] + ss_stage_dict["text"],
+            }
+
+        self.stage_refreshed.emit()
+
+        logger.success("活动关卡信息更新完成", module="配置管理")
+
+    def server_date(self) -> date:
+        """
+        获取当前的服务器日期
+
+        :return: 当前的服务器日期
+        :rtype: date
+        """
+
+        dt = datetime.now()
+        if dt.time() < datetime.min.time().replace(hour=4):
+            dt = dt - timedelta(days=1)
+        return dt.date()
+
+    def search_script(self) -> None:
+        """更新脚本实例配置信息"""
+
+        logger.info("开始搜索并读入脚本实例配置", module="配置管理")
+        self.script_dict: Dict[
             str,
             Dict[
                 str,
@@ -1173,7 +1222,7 @@ class AppConfig(GlobalConfig):
                     maa_config.load(maa_dir / "config.json", maa_config)
                     maa_config.save()
 
-                    self.member_dict[maa_dir.name] = {
+                    self.script_dict[maa_dir.name] = {
                         "Type": "Maa",
                         "Path": maa_dir,
                         "Config": maa_config,
@@ -1187,21 +1236,34 @@ class AppConfig(GlobalConfig):
                     general_config.load(general_dir / "config.json", general_config)
                     general_config.save()
 
-                    self.member_dict[general_dir.name] = {
+                    self.script_dict[general_dir.name] = {
                         "Type": "General",
                         "Path": general_dir,
                         "Config": general_config,
                         "SubData": None,
                     }
 
-        self.member_dict = dict(
-            sorted(self.member_dict.items(), key=lambda x: int(x[0][3:]))
+        self.script_dict = dict(
+            sorted(self.script_dict.items(), key=lambda x: int(x[0][3:]))
+        )
+
+        logger.success(
+            f"脚本实例配置搜索完成，共找到 {len(self.script_dict)} 个实例",
+            module="配置管理",
         )
 
     def search_maa_user(self, name: str) -> None:
+        """
+        更新指定 MAA 脚本实例的用户信息
+
+        :param name: 脚本实例名称
+        :type name: str
+        """
+
+        logger.info(f"开始搜索并读入 MAA 脚本实例 {name} 的用户信息", module="配置管理")
 
         user_dict: Dict[str, Dict[str, Union[Path, MaaUserConfig]]] = {}
-        for user_dir in (Config.member_dict[name]["Path"] / "UserData").iterdir():
+        for user_dir in (Config.script_dict[name]["Path"] / "UserData").iterdir():
             if user_dir.is_dir():
 
                 user_config = MaaUserConfig()
@@ -1210,14 +1272,29 @@ class AppConfig(GlobalConfig):
 
                 user_dict[user_dir.stem] = {"Path": user_dir, "Config": user_config}
 
-        self.member_dict[name]["UserData"] = dict(
+        self.script_dict[name]["UserData"] = dict(
             sorted(user_dict.items(), key=lambda x: int(x[0][3:]))
         )
 
+        logger.success(
+            f"MAA 脚本实例 {name} 的用户信息搜索完成，共找到 {len(user_dict)} 个用户",
+            module="配置管理",
+        )
+
     def search_general_sub(self, name: str) -> None:
+        """
+        更新指定通用脚本实例的子配置信息
+
+        :param name: 脚本实例名称
+        :type name: str
+        """
+
+        logger.info(
+            f"开始搜索并读入通用脚本实例 {name} 的子配置信息", module="配置管理"
+        )
 
         user_dict: Dict[str, Dict[str, Union[Path, GeneralSubConfig]]] = {}
-        for sub_dir in (Config.member_dict[name]["Path"] / "SubData").iterdir():
+        for sub_dir in (Config.script_dict[name]["Path"] / "SubData").iterdir():
             if sub_dir.is_dir():
 
                 sub_config = GeneralSubConfig()
@@ -1226,12 +1303,19 @@ class AppConfig(GlobalConfig):
 
                 user_dict[sub_dir.stem] = {"Path": sub_dir, "Config": sub_config}
 
-        self.member_dict[name]["SubData"] = dict(
+        self.script_dict[name]["SubData"] = dict(
             sorted(user_dict.items(), key=lambda x: int(x[0][3:]))
         )
 
+        logger.success(
+            f"通用脚本实例 {name} 的子配置信息搜索完成，共找到 {len(user_dict)} 个子配置",
+            module="配置管理",
+        )
+
     def search_plan(self) -> None:
-        """搜索所有计划表"""
+        """更新计划表配置信息"""
+
+        logger.info("开始搜索并读入计划表配置", module="配置管理")
 
         self.plan_dict: Dict[str, Dict[str, Union[str, Path, MaaPlanConfig]]] = {}
         if (self.app_path / "config/MaaPlanConfig").exists():
@@ -1252,8 +1336,15 @@ class AppConfig(GlobalConfig):
             sorted(self.plan_dict.items(), key=lambda x: int(x[0][3:]))
         )
 
+        logger.success(
+            f"计划表配置搜索完成，共找到 {len(self.plan_dict)} 个计划表",
+            module="配置管理",
+        )
+
     def search_queue(self):
-        """搜索所有调度队列实例"""
+        """更新调度队列实例配置信息"""
+
+        logger.info("开始搜索并读入调度队列配置", module="配置管理")
 
         self.queue_dict: Dict[str, Dict[str, Union[Path, QueueConfig]]] = {}
 
@@ -1273,50 +1364,73 @@ class AppConfig(GlobalConfig):
             sorted(self.queue_dict.items(), key=lambda x: int(x[0][5:]))
         )
 
+        logger.success(
+            f"调度队列配置搜索完成，共找到 {len(self.queue_dict)} 个调度队列",
+            module="配置管理",
+        )
+
     def change_queue(self, old: str, new: str) -> None:
-        """修改调度队列配置文件的队列参数"""
+        """
+        修改调度队列配置文件的队列参数
+
+        :param old: 旧脚本名
+        :param new: 新脚本名
+        """
+
+        logger.info(f"开始修改调度队列参数：{old} -> {new}", module="配置管理")
 
         for queue in self.queue_dict.values():
 
-            if queue["Config"].get(queue["Config"].queue_Member_1) == old:
-                queue["Config"].set(queue["Config"].queue_Member_1, new)
-            if queue["Config"].get(queue["Config"].queue_Member_2) == old:
-                queue["Config"].set(queue["Config"].queue_Member_2, new)
-            if queue["Config"].get(queue["Config"].queue_Member_3) == old:
-                queue["Config"].set(queue["Config"].queue_Member_3, new)
-            if queue["Config"].get(queue["Config"].queue_Member_4) == old:
-                queue["Config"].set(queue["Config"].queue_Member_4, new)
-            if queue["Config"].get(queue["Config"].queue_Member_5) == old:
-                queue["Config"].set(queue["Config"].queue_Member_5, new)
-            if queue["Config"].get(queue["Config"].queue_Member_6) == old:
-                queue["Config"].set(queue["Config"].queue_Member_6, new)
-            if queue["Config"].get(queue["Config"].queue_Member_7) == old:
-                queue["Config"].set(queue["Config"].queue_Member_7, new)
-            if queue["Config"].get(queue["Config"].queue_Member_8) == old:
-                queue["Config"].set(queue["Config"].queue_Member_8, new)
-            if queue["Config"].get(queue["Config"].queue_Member_9) == old:
-                queue["Config"].set(queue["Config"].queue_Member_9, new)
-            if queue["Config"].get(queue["Config"].queue_Member_10) == old:
-                queue["Config"].set(queue["Config"].queue_Member_10, new)
+            for i in range(10):
+
+                if (
+                    queue["Config"].get(
+                        queue["Config"].config_item_dict["Queue"][f"Script_{i}"]
+                    )
+                    == old
+                ):
+                    queue["Config"].set(
+                        queue["Config"].config_item_dict["Queue"][f"Script_{i}"], new
+                    )
+
+        logger.success(f"调度队列参数修改完成：{old} -> {new}", module="配置管理")
 
     def change_plan(self, old: str, new: str) -> None:
-        """修改脚本管理所有下属用户的计划表配置参数"""
+        """
+        修改脚本管理所有下属用户的计划表配置参数
 
-        for member in self.member_dict.values():
+        :param old: 旧计划表名
+        :param new: 新计划表名
+        """
 
-            for user in member["UserData"].values():
+        logger.info(f"开始修改计划表参数：{old} -> {new}", module="配置管理")
+
+        for script in self.script_dict.values():
+
+            for user in script["UserData"].values():
 
                 if user["Config"].get(user["Config"].Info_StageMode) == old:
                     user["Config"].set(user["Config"].Info_StageMode, new)
 
+        logger.success(f"计划表参数修改完成：{old} -> {new}", module="配置管理")
+
     def change_maa_user_info(
         self, name: str, user_data: Dict[str, Dict[str, Union[str, Path, dict]]]
     ) -> None:
-        """代理完成后保存改动的用户信息"""
+        """
+        保存代理完成后发生改动的用户信息
+
+        :param name: 脚本实例名称
+        :type name: str
+        :param user_data: 用户信息字典，包含用户名称和对应的配置信息
+        :type user_data: Dict[str, Dict[str, Union[str, Path, dict]]]
+        """
+
+        logger.info(f"开始保存 MAA 脚本实例 {name} 的用户信息变动", module="配置管理")
 
         for user, info in user_data.items():
 
-            user_config = self.member_dict[name]["UserData"][user]["Config"]
+            user_config = self.script_dict[name]["UserData"][user]["Config"]
 
             user_config.set(
                 user_config.Info_RemainedDay, info["Config"]["Info"]["RemainedDay"]
@@ -1345,14 +1459,25 @@ class AppConfig(GlobalConfig):
 
         self.sub_info_changed.emit()
 
+        logger.success(f"MAA 脚本实例 {name} 的用户信息变动保存完成", module="配置管理")
+
     def change_general_sub_info(
         self, name: str, sub_data: Dict[str, Dict[str, Union[str, Path, dict]]]
     ) -> None:
-        """代理完成后保存改动的配置信息"""
+        """
+        保存代理完成后发生改动的配置信息
+
+        :param name: 脚本实例名称
+        :type name: str
+        :param sub_data: 子配置信息字典，包含子配置名称和对应的配置信息
+        :type sub_data: Dict[str, Dict[str, Union[str, Path, dict]]]
+        """
+
+        logger.info(f"开始保存通用脚本实例 {name} 的子配置信息变动", module="配置管理")
 
         for sub, info in sub_data.items():
 
-            sub_config = self.member_dict[name]["SubData"][sub]["Config"]
+            sub_config = self.script_dict[name]["SubData"][sub]["Config"]
 
             sub_config.set(
                 sub_config.Info_RemainedDay, info["Config"]["Info"]["RemainedDay"]
@@ -1366,27 +1491,62 @@ class AppConfig(GlobalConfig):
 
         self.sub_info_changed.emit()
 
+        logger.success(
+            f"通用脚本实例 {name} 的子配置信息变动保存完成", module="配置管理"
+        )
+
     def set_power_sign(self, sign: str) -> None:
-        """设置当前电源状态"""
+        """
+        设置当前电源状态
+
+        :param sign: 电源状态标志
+        """
 
         self.power_sign = sign
         self.power_sign_changed.emit()
 
+        logger.info(f"电源状态已更改为: {sign}", module="配置管理")
+
     def save_history(self, key: str, content: dict) -> None:
-        """保存历史记录"""
+        """
+        保存历史记录
+
+        :param key: 调度队列的键
+        :type key: str
+        :param content: 包含时间和历史记录内容的字典
+        :type content: dict
+        """
 
         if key in self.queue_dict:
+            logger.info(f"保存调度队列 {key} 的历史记录", module="配置管理")
             self.queue_dict[key]["Config"].set(
                 self.queue_dict[key]["Config"].Data_LastProxyTime, content["Time"]
             )
             self.queue_dict[key]["Config"].set(
                 self.queue_dict[key]["Config"].Data_LastProxyHistory, content["History"]
             )
+            logger.success(f"调度队列 {key} 的历史记录已保存", module="配置管理")
         else:
             logger.warning(f"保存历史记录时未找到调度队列: {key}")
 
     def save_maa_log(self, log_path: Path, logs: list, maa_result: str) -> bool:
-        """保存MAA日志并生成对应统计数据"""
+        """
+        保存MAA日志并生成对应统计数据
+
+        :param log_path: 日志文件保存路径
+        :type log_path: Path
+        :param logs: 日志内容列表
+        :type logs: list
+        :param maa_result: MAA 结果
+        :type maa_result: str
+        :return: 是否包含6★招募
+        :rtype: bool
+        """
+
+        logger.info(
+            f"开始处理 MAA 日志，日志长度: {len(logs)}，日志标记：{maa_result}",
+            module="配置管理",
+        )
 
         data: Dict[str, Union[str, Dict[str, Union[int, dict]]]] = {
             "recruit_statistics": defaultdict(int),
@@ -1431,15 +1591,17 @@ class AppConfig(GlobalConfig):
         # 查找所有Fight任务的开始和结束位置
         fight_tasks = []
         for i, line in enumerate(logs):
-            if "开始任务: Fight" in line:
+            if "开始任务: Fight" in line or "开始任务: 刷理智" in line:
                 # 查找对应的任务结束位置
                 end_index = -1
                 for j in range(i + 1, len(logs)):
-                    if "完成任务: Fight" in logs[j]:
+                    if "完成任务: Fight" in logs[j] or "完成任务: 刷理智" in logs[j]:
                         end_index = j
                         break
                     # 如果遇到新的Fight任务开始，则当前任务没有正常结束
-                    if j < len(logs) and "开始任务: Fight" in logs[j]:
+                    if j < len(logs) and (
+                        "开始任务: Fight" in logs[j] or "开始任务: 刷理智" in logs[j]
+                    ):
                         break
 
                 # 如果找到了结束位置，记录这个任务的范围
@@ -1505,12 +1667,23 @@ class AppConfig(GlobalConfig):
         with log_path.with_suffix(".json").open("w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=4)
 
-        logger.info(f"处理完成：{log_path}")
+        logger.success(f"MAA 日志统计完成，日志路径：{log_path}", module="配置管理")
 
         return if_six_star
 
     def save_general_log(self, log_path: Path, logs: list, general_result: str) -> None:
-        """保存通用日志并生成对应统计数据"""
+        """
+        保存通用日志并生成对应统计数据
+
+        :param log_path: 日志文件保存路径
+        :param logs: 日志内容列表
+        :param general_result: 待保存的日志结果信息
+        """
+
+        logger.info(
+            f"开始处理通用日志，日志长度: {len(logs)}，日志标记：{general_result}",
+            module="配置管理",
+        )
 
         data: Dict[str, str] = {"general_result": general_result}
 
@@ -1521,10 +1694,23 @@ class AppConfig(GlobalConfig):
         with log_path.with_suffix(".json").open("w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=4)
 
-        logger.info(f"处理完成：{log_path}")
+        logger.success(
+            f"通用日志统计完成，日志路径：{log_path.with_suffix('.log')}",
+            module="配置管理",
+        )
 
     def merge_statistic_info(self, statistic_path_list: List[Path]) -> dict:
-        """合并指定数据统计信息文件"""
+        """
+        合并指定数据统计信息文件
+
+        :param statistic_path_list: 需要合并的统计信息文件路径列表
+        :return: 合并后的统计信息字典
+        """
+
+        logger.info(
+            f"开始合并统计信息文件，共计 {len(statistic_path_list)} 个文件",
+            module="配置管理",
+        )
 
         data = {"index": {}}
 
@@ -1591,12 +1777,28 @@ class AppConfig(GlobalConfig):
 
         data["index"] = [data["index"][_] for _ in sorted(data["index"])]
 
+        logger.success(
+            f"统计信息合并完成，共计 {len(data['index'])} 条记录", module="配置管理"
+        )
+
         return {k: v for k, v in data.items() if v}
 
     def search_history(
         self, mode: str, start_date: datetime, end_date: datetime
     ) -> dict:
-        """搜索所有历史记录"""
+        """
+        搜索指定范围内的历史记录
+
+        :param mode: 合并模式（按日合并、按周合并、按月合并）
+        :param start_date: 开始日期
+        :param end_date: 结束日期
+        :return: 搜索到的历史记录字典
+        """
+
+        logger.info(
+            f"开始搜索历史记录，合并模式：{mode}，日期范围：{start_date} 至 {end_date}",
+            module="配置管理",
+        )
 
         history_dict = {}
 
@@ -1638,10 +1840,43 @@ class AppConfig(GlobalConfig):
             except ValueError:
                 logger.warning(f"非日期格式的目录: {date_folder}")
 
+        logger.success(
+            f"历史记录搜索完成，共计 {len(history_dict)} 条记录", module="配置管理"
+        )
+
         return {
             k: v
             for k, v in sorted(history_dict.items(), key=lambda x: x[0], reverse=True)
         }
+
+    def clean_old_history(self):
+        """删除超过用户设定天数的历史记录文件（基于目录日期）"""
+
+        if self.get(self.function_HistoryRetentionTime) == 0:
+            logger.info("历史记录永久保留，跳过历史记录清理", module="配置管理")
+            return
+
+        logger.info("开始清理超过设定天数的历史记录", module="配置管理")
+
+        deleted_count = 0
+
+        for date_folder in (self.app_path / "history").iterdir():
+            if not date_folder.is_dir():
+                continue  # 只处理日期文件夹
+
+            try:
+                # 只检查 `YYYY-MM-DD` 格式的文件夹
+                folder_date = datetime.strptime(date_folder.name, "%Y-%m-%d")
+                if datetime.now() - folder_date > timedelta(
+                    days=self.get(self.function_HistoryRetentionTime)
+                ):
+                    shutil.rmtree(date_folder, ignore_errors=True)
+                    deleted_count += 1
+                    logger.info(f"已删除超期日志目录: {date_folder}", module="配置管理")
+            except ValueError:
+                logger.warning(f"非日期格式的目录: {date_folder}", module="配置管理")
+
+        logger.success(f"清理完成: {deleted_count} 个日期目录", module="配置管理")
 
 
 Config = AppConfig()
