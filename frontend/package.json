@@ -1,0 +1,62 @@
+{
+  "name": "frontend",
+  "private": true,
+  "version": "0.0.0",
+  "main": "dist-electron/main.js",
+  "scripts": {
+    "dev": "concurrently \"vite\" \"yarn watch:main\" \"yarn electron-dev\"",
+    "watch:main": "tsc --watch",
+    "electron-dev": "wait-on http://localhost:5173 && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron .",
+    "build:main": "tsc",
+    "build": "vite build && yarn build:main && electron-builder",
+    "web": "vite"
+  },
+  "build": {
+    "appId": "xyz.automaa.frontend",
+    "productName": "AUTO MAA",
+    "files": [
+      "dist",
+      "dist-electron",
+      "public"
+    ],
+    "directories": {
+      "buildResources": "assets"
+    },
+    "win": {
+      "icon": "public/AUTO_MAA.ico"
+    },
+    "mac": {
+      "icon": "public/AUTO_MAA.ico"
+    },
+    "linux": {
+      "icon": "public/AUTO_MAA.ico"
+    }
+  },
+  "dependencies": {
+    "@ant-design/icons-vue": "^7.0.1",
+    "ant-design-vue": "4.x",
+    "vue": "^3.5.17",
+    "vue-router": "4"
+  },
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^8.38.0",
+    "@typescript-eslint/parser": "^8.38.0",
+    "@vitejs/plugin-vue": "^6.0.1",
+    "@vue/tsconfig": "^0.7.0",
+    "concurrently": "^9.2.0",
+    "cross-env": "^10.0.0",
+    "electron": "^37.2.5",
+    "electron-builder": "^26.0.12",
+    "eslint": "^9.32.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^5.5.3",
+    "eslint-plugin-vue": "^10.4.0",
+    "prettier": "^3.6.2",
+    "typescript": "^5.9.2",
+    "vite": "^7.0.4",
+    "vite-plugin-eslint": "^1.8.1",
+    "vue-eslint-parser": "^10.2.0",
+    "vue-tsc": "^2.2.12",
+    "wait-on": "^8.0.4"
+  }
+}
