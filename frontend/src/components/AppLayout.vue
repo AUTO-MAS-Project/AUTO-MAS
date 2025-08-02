@@ -6,8 +6,8 @@
       collapsible
       :theme="isDark ? 'dark' : 'light'"
       style="height: 100vh; position: fixed; left: 0; top: 0; z-index: 100"
-      :width="240"
-      :collapsed-width="80"
+      :width="180"
+      :collapsed-width="60"
     >
       <div class="sider-content">
         <!-- Logo区域 - 点击切换展开/折叠 -->
@@ -70,7 +70,7 @@
 
     <a-layout
       :style="{
-        marginLeft: collapsed ? '80px' : '240px',
+        marginLeft: collapsed ? '60px' : '180px',
         height: '100vh',
         transition: 'margin-left 0.2s',
       }"
@@ -201,6 +201,16 @@ const handleMenuClick = (path: string) => {
 /* 浅色模式样式 */
 :deep(.ant-layout-sider-light) .logo-text {
   color: rgba(0, 0, 0, 0.88);
+}
+
+/* 浅色模式下的侧边栏背景色 */
+:deep(.ant-layout-sider-light) {
+  background: #f5f5f5 !important;
+}
+
+/* 浅色模式下的菜单背景色 */
+:deep(.ant-layout-sider-light .ant-menu-light) {
+  background: #f5f5f5 !important;
 }
 
 :deep(.ant-layout-sider) {
