@@ -69,7 +69,8 @@ function createWindow() {
 // 处理开发者工具请求
 electron_1.ipcMain.handle('open-dev-tools', () => {
     if (mainWindow) {
-        mainWindow.webContents.openDevTools();
+        // 在新窗口中打开开发者工具
+        mainWindow.webContents.openDevTools({ mode: 'undocked' });
     }
 });
 electron_1.app.whenReady().then(createWindow);
