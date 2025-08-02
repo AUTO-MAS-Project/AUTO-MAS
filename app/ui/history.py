@@ -41,7 +41,7 @@ from qfluentwidgets import (
     ZhDatePicker,
     SubtitleLabel,
 )
-from PySide6.QtCore import Signal, QDate
+from PySide6.QtCore import Signal, QDate, Qt
 import os
 import subprocess
 from datetime import datetime, timedelta
@@ -330,10 +330,11 @@ class History(QWidget):
                 def __init__(self, history_list: List[Path], parent=None):
                     super().__init__(parent)
                     self.setTitle("记录条目")
+                    self.setFixedHeight(500)
 
-                    self.Layout = QVBoxLayout()
-                    self.viewLayout.addLayout(self.Layout)
-                    self.viewLayout.setContentsMargins(3, 0, 3, 3)
+                    content_widget = QWidget()
+                    self.Layout = QVBoxLayout(content_widget)
+                    self.Layout.setContentsMargins(0, 0, 11, 0)
 
                     self.index_cards: List[StatefulItemCard] = []
 
@@ -352,16 +353,27 @@ class History(QWidget):
 
                     self.Layout.addStretch(1)
 
+                    scrollArea = ScrollArea()
+                    scrollArea.setWidgetResizable(True)
+                    scrollArea.setContentsMargins(0, 0, 0, 0)
+                    scrollArea.setStyleSheet("background: transparent; border: none;")
+                    scrollArea.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+                    scrollArea.setWidget(content_widget)
+
+                    self.viewLayout.addWidget(scrollArea)
+                    self.viewLayout.setContentsMargins(3, 0, 3, 3)
+
             class StatisticsCard(HeaderCardWidget):
                 """历史记录统计信息卡片组"""
 
                 def __init__(self, name: str, item_list: list, parent=None):
                     super().__init__(parent)
                     self.setTitle(name)
+                    self.setFixedHeight(500)
 
-                    self.Layout = QVBoxLayout()
-                    self.viewLayout.addLayout(self.Layout)
-                    self.viewLayout.setContentsMargins(3, 0, 3, 3)
+                    content_widget = QWidget()
+                    self.Layout = QVBoxLayout(content_widget)
+                    self.Layout.setContentsMargins(0, 0, 11, 0)
 
                     self.item_cards: List[QuantifiedItemCard] = []
 
@@ -375,12 +387,23 @@ class History(QWidget):
 
                     self.Layout.addStretch(1)
 
+                    scrollArea = ScrollArea()
+                    scrollArea.setWidgetResizable(True)
+                    scrollArea.setContentsMargins(0, 0, 0, 0)
+                    scrollArea.setStyleSheet("background: transparent; border: none;")
+                    scrollArea.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+                    scrollArea.setWidget(content_widget)
+
+                    self.viewLayout.addWidget(scrollArea)
+                    self.viewLayout.setContentsMargins(3, 0, 3, 3)
+
             class LogCard(HeaderCardWidget):
                 """历史记录日志卡片"""
 
                 def __init__(self, parent=None):
                     super().__init__(parent)
                     self.setTitle("日志")
+                    self.setFixedHeight(500)
 
                     self.text = TextBrowser(self)
                     self.open_file = PushButton("打开日志文件", self)

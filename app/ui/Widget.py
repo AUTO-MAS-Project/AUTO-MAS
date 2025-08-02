@@ -281,9 +281,9 @@ class NoticeMessageBox(MessageBoxBase):
             super().__init__(parent)
             self.setTitle(title)
 
-            self.Layout = QVBoxLayout()
-            self.viewLayout.addLayout(self.Layout)
-            self.viewLayout.setContentsMargins(3, 0, 3, 3)
+            content_widget = QWidget()
+            self.Layout = QVBoxLayout(content_widget)
+            self.Layout.setContentsMargins(0, 0, 11, 0)
 
             self.index_cards: List[QuantifiedItemCard] = []
 
@@ -300,6 +300,16 @@ class NoticeMessageBox(MessageBoxBase):
                 self.currentIndex = 0
 
             self.Layout.addStretch(1)
+
+            scrollArea = ScrollArea()
+            scrollArea.setWidgetResizable(True)
+            scrollArea.setContentsMargins(0, 0, 0, 0)
+            scrollArea.setStyleSheet("background: transparent; border: none;")
+            scrollArea.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+            scrollArea.setWidget(content_widget)
+
+            self.viewLayout.addWidget(scrollArea)
+            self.viewLayout.setContentsMargins(3, 0, 3, 3)
 
 
 class SettingFlyoutView(FlyoutViewBase):
