@@ -1,6 +1,14 @@
 <template>
-  <a-layout style="min-height: 100vh">
-    <a-layout-sider v-model:collapsed="collapsed" :trigger="null" collapsible :theme="isDark ? 'dark' : 'light'">
+  <a-layout style="height: 100vh; overflow: hidden">
+    <a-layout-sider
+      v-model:collapsed="collapsed"
+      :trigger="null"
+      collapsible
+      :theme="isDark ? 'dark' : 'light'"
+      style="height: 100vh; position: fixed; left: 0; top: 0; z-index: 100"
+      :width="240"
+      :collapsed-width="80"
+    >
       <div class="sider-content">
         <!-- Logo区域 - 点击切换展开/折叠 -->
         <div class="logo" @click="collapsed = !collapsed">
@@ -10,8 +18,12 @@
 
         <!-- 主菜单 -->
         <div class="main-menu">
-          <a-menu v-model:selectedKeys="selectedKeys" :theme="isDark ? 'dark' : 'light'" mode="inline"
-            :inline-collapsed="collapsed">
+          <a-menu
+            v-model:selectedKeys="selectedKeys"
+            :theme="isDark ? 'dark' : 'light'"
+            mode="inline"
+            :inline-collapsed="collapsed"
+          >
             <a-menu-item key="/home" @click="handleMenuClick('/home')">
               <home-outlined />
               <span>主页</span>
@@ -41,8 +53,12 @@
 
         <!-- 底部设置菜单 -->
         <div class="bottom-menu">
-          <a-menu v-model:selectedKeys="selectedKeys" :theme="isDark ? 'dark' : 'light'" mode="inline"
-            :inline-collapsed="collapsed">
+          <a-menu
+            v-model:selectedKeys="selectedKeys"
+            :theme="isDark ? 'dark' : 'light'"
+            mode="inline"
+            :inline-collapsed="collapsed"
+          >
             <a-menu-item key="/settings" @click="handleMenuClick('/settings')">
               <setting-outlined />
               <span>设置</span>
@@ -52,8 +68,22 @@
       </div>
     </a-layout-sider>
 
-    <a-layout>
-      <a-layout-content :style="{ padding: '24px', background: isDark ? '#141414' : '#ffffff' }">
+    <a-layout
+      :style="{
+        marginLeft: collapsed ? '80px' : '240px',
+        height: '100vh',
+        transition: 'margin-left 0.2s',
+      }"
+    >
+      <a-layout-content
+        class="content-area"
+        :style="{
+          padding: '24px',
+          background: isDark ? '#141414' : '#ffffff',
+          height: '100vh',
+          overflow: 'auto',
+        }"
+      >
         <router-view />
       </a-layout-content>
     </a-layout>
@@ -150,12 +180,17 @@ const handleMenuClick = (path: string) => {
 
 /* 深色模式下的底部菜单边框 */
 :deep(.ant-layout-sider-dark) .bottom-menu {
+  /*
   border-top: 1px solid rgba(255, 255, 255, 0.1);
+   */
 }
 
 /* 浅色模式下的底部菜单边框 */
 :deep(.ant-layout-sider-light) .bottom-menu {
+  /*
   border-top: 1px solid #d9d9d9;
+
+   */
 }
 
 /* 深色模式样式 */
@@ -172,8 +207,19 @@ const handleMenuClick = (path: string) => {
   position: relative;
 }
 
+/* 移除菜单右边框 */
 :deep(.ant-menu) {
-  border-right: none;
+  border-right: none !important;
+  border-inline-end: none !important;
+}
+
+/* 更强制地移除菜单右边框 */
+:deep(.ant-menu-light.ant-menu-root.ant-menu-inline),
+:deep(.ant-menu-light.ant-menu-root.ant-menu-vertical),
+:deep(.ant-menu-dark.ant-menu-root.ant-menu-inline),
+:deep(.ant-menu-dark.ant-menu-root.ant-menu-vertical) {
+  border-inline-end: none !important;
+  border-right: none !important;
 }
 
 /* 确保折叠时图标显示 */
@@ -184,5 +230,27 @@ const handleMenuClick = (path: string) => {
 :deep(.ant-menu-inline-collapsed .ant-menu-item .anticon) {
   font-size: 16px;
   line-height: 40px;
+}
+
+/* 隐藏内容区域滚动条 */
+.content-area {
+  /* Webkit 浏览器 (Chrome, Safari, Edge) */
+  scrollbar-width: none;
+  /* Firefox */
+  -ms-overflow-style: none;
+}
+
+.content-area::-webkit-scrollbar {
+  display: none;
+}
+
+/* 隐藏侧边栏主菜单滚动条 */
+.main-menu {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.main-menu::-webkit-scrollbar {
+  display: none;
 }
 </style>
