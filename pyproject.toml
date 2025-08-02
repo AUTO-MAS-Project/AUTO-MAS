@@ -1,0 +1,14 @@
+[project]
+name = "maa-auto"
+version = "0.1.0"
+description = "maa-auto~"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "aiofiles>=24.1.0",
+    "fastapi>=0.116.1",
+    "loguru>=0.7.3",
+    "pydantic>=2.11.7",
+    "pyyaml>=6.0.2",
+    "uvicorn>=0.35.0",
+]
