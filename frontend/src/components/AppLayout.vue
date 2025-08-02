@@ -1,21 +1,17 @@
 <template>
   <a-layout style="min-height: 100vh">
-    <a-layout-sider v-model:collapsed="collapsed" collapsible :theme="isDark ? 'dark' : 'light'">
+    <a-layout-sider v-model:collapsed="collapsed" :trigger="null" collapsible :theme="isDark ? 'dark' : 'light'">
       <div class="sider-content">
-        <!-- Logo区域 -->
-        <div class="logo">
+        <!-- Logo区域 - 点击切换展开/折叠 -->
+        <div class="logo" @click="collapsed = !collapsed">
           <img src="/AUTO_MAA.ico" alt="AUTO MAA" class="logo-image" />
-          <div v-if="!collapsed" class="logo-text">AUTO MAA</div>
+          <div v-if="!collapsed" class="logo-text">AUTO_MAA</div>
         </div>
 
         <!-- 主菜单 -->
         <div class="main-menu">
-          <a-menu
-            v-model:selectedKeys="selectedKeys"
-            :theme="isDark ? 'dark' : 'light'"
-            mode="inline"
-            :inline-collapsed="collapsed"
-          >
+          <a-menu v-model:selectedKeys="selectedKeys" :theme="isDark ? 'dark' : 'light'" mode="inline"
+            :inline-collapsed="collapsed">
             <a-menu-item key="/home" @click="handleMenuClick('/home')">
               <home-outlined />
               <span>主页</span>
@@ -45,12 +41,8 @@
 
         <!-- 底部设置菜单 -->
         <div class="bottom-menu">
-          <a-menu
-            v-model:selectedKeys="selectedKeys"
-            :theme="isDark ? 'dark' : 'light'"
-            mode="inline"
-            :inline-collapsed="collapsed"
-          >
+          <a-menu v-model:selectedKeys="selectedKeys" :theme="isDark ? 'dark' : 'light'" mode="inline"
+            :inline-collapsed="collapsed">
             <a-menu-item key="/settings" @click="handleMenuClick('/settings')">
               <setting-outlined />
               <span>设置</span>
@@ -61,7 +53,7 @@
     </a-layout-sider>
 
     <a-layout>
-      <a-layout-content style="padding: 24px; background: var(--ant-color-bg-container)">
+      <a-layout-content :style="{ padding: '24px', background: isDark ? '#141414' : '#ffffff' }">
         <router-view />
       </a-layout-content>
     </a-layout>
@@ -80,7 +72,7 @@ import {
 } from '@ant-design/icons-vue'
 import { ref, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { useTheme } from '../composables/useTheme'
+import { useTheme } from '../composables/useTheme.ts'
 
 const router = useRouter()
 const route = useRoute()
@@ -116,6 +108,12 @@ const handleMenuClick = (path: string) => {
   padding: 16px;
   margin: 16px;
   border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.logo:hover {
+  background-color: rgba(255, 255, 255, 0.1);
 }
 
 .logo-image {
@@ -128,6 +126,11 @@ const handleMenuClick = (path: string) => {
   font-size: 16px;
   font-weight: bold;
   letter-spacing: 1px;
+}
+
+/* 浅色模式下的 Logo 悬停效果 */
+:deep(.ant-layout-sider-light) .logo:hover {
+  background-color: rgba(0, 0, 0, 0.04);
 }
 
 .main-menu {
@@ -145,31 +148,24 @@ const handleMenuClick = (path: string) => {
   background: inherit;
 }
 
-/* 深色模式样式 */
-:deep(.ant-layout-sider-dark) .logo {
-  background: rgba(255, 255, 255, 0.2);
-}
-
-:deep(.ant-layout-sider-dark) .logo-text {
-  color: white;
-}
-
+/* 深色模式下的底部菜单边框 */
 :deep(.ant-layout-sider-dark) .bottom-menu {
   border-top: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-/* 浅色模式样式 */
-:deep(.ant-layout-sider-light) .logo {
-  background: rgba(0, 0, 0, 0.04);
-  border: 1px solid var(--ant-color-border);
-}
-
-:deep(.ant-layout-sider-light) .logo-text {
-  color: var(--ant-color-text);
-}
-
+/* 浅色模式下的底部菜单边框 */
 :deep(.ant-layout-sider-light) .bottom-menu {
-  border-top: 1px solid var(--ant-color-border);
+  border-top: 1px solid #d9d9d9;
+}
+
+/* 深色模式样式 */
+:deep(.ant-layout-sider-dark) .logo-text {
+  color: white;
+}
+
+/* 浅色模式样式 */
+:deep(.ant-layout-sider-light) .logo-text {
+  color: rgba(0, 0, 0, 0.88);
 }
 
 :deep(.ant-layout-sider) {
