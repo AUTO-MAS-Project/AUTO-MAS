@@ -563,7 +563,7 @@ func (app *Application) executeCheckingState() (UpdateState, error) {
 	default:
 		fmt.Printf("检查更新类别：%v\n", updateChannel)
 	}
-	fmt.Printf("当前版本：%v\n", currentVer)
+	fmt.Printf("当前版本：%s\n", app.formatVersionForDisplay(currentVer))
 	app.logger.Info("当前更新类别：" + updateChannel + "；当前版本：" + currentVer)
 	if err != nil {
 		app.logger.Error("检查更新失败: %v", err)
@@ -599,7 +599,7 @@ func (app *Application) executeCheckingState() (UpdateState, error) {
 	}
 
 	app.logger.Info("有可用更新: %s -> %s", currentVer, response.Data.VersionName)
-	fmt.Printf("发现新版本: %s -> %s\n", currentVer, response.Data.VersionName)
+	fmt.Printf("发现新版本: %s -> %s\n", app.formatVersionForDisplay(currentVer), response.Data.VersionName)
 
 	return StateUpdateAvailable, nil
 }
@@ -811,6 +811,20 @@ func (app *Application) formatBytes(bytes int64) string {
 		exp++
 	}
 	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
+}
+
+// formatVersionForDisplay 将版本格式转换为用户友好的显示格式
+// 例如: "4.4.1.3" -> "4.4.1-beta3", "4.4.1.0" -> "4.4.1"
+func (app *Application) formatVersionForDisplay(version string) string {
+	// 尝试解析版本
+	parsedVersion, err := appversion.ParseVersion(version)
+	if err != nil {
+		// 如果解析失败，返回原始版本
+		return version
+	}
+	
+	// 使用 ToDisplayVersion 方法转换为显示格式
+	return parsedVersion.ToDisplayVersion()
 }
 
 // handleUserInteraction 处理 GUI 模式的用户交互

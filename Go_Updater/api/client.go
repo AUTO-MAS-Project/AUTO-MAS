@@ -176,13 +176,8 @@ func compareVersions(v1, v2 string) int {
 	parts1 := parseVersionParts(v1)
 	parts2 := parseVersionParts(v2)
 
-	// 比较每个组件
-	maxLen := len(parts1)
-	if len(parts2) > maxLen {
-		maxLen = len(parts2)
-	}
-
-	for i := 0; i < maxLen; i++ {
+	// 比较前三个组件 (major.minor.patch)
+	for i := 0; i < 3; i++ {
 		var p1, p2 int
 		if i < len(parts1) {
 			p1 = parts1[i]
@@ -196,6 +191,32 @@ func compareVersions(v1, v2 string) int {
 		} else if p1 > p2 {
 			return 1
 		}
+	}
+
+	// 如果前三个组件相同，比较beta版本号
+	var beta1, beta2 int
+	if len(parts1) > 3 {
+		beta1 = parts1[3]
+	}
+	if len(parts2) > 3 {
+		beta2 = parts2[3]
+	}
+
+	// 特殊处理beta版本比较：
+	// - 如果一个是正式版(beta=0)，另一个是beta版(beta>0)，正式版更新
+	// - 如果都是beta版，比较beta版本号
+	if beta1 == 0 && beta2 > 0 {
+		return 1  // 正式版比beta版更新
+	}
+	if beta1 > 0 && beta2 == 0 {
+		return -1 // beta版比正式版旧
+	}
+	
+	// 都是正式版或都是beta版，直接比较
+	if beta1 < beta2 {
+		return -1
+	} else if beta1 > beta2 {
+		return 1
 	}
 
 	return 0
@@ -265,6 +286,7 @@ func parseVersionParts(version string) []int {
 				break
 			}
 		}
+		// Beta版本号保持正数，但在比较时会特殊处理
 		parts = append(parts, betaNum)
 	} else {
 		// 非beta版本，添加0作为beta版本号
