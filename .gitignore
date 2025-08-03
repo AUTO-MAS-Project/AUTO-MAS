@@ -16,3 +16,7 @@ logs/
 *.swp
 *.swo
 .DS_Store
+
+# Debug files
+debug/
+config/

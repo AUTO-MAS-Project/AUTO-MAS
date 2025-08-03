@@ -1,36 +1,48 @@
 from fastapi import FastAPI, HTTPException, Path, Body
-from pydantic import BaseModel
-from typing import Dict, Any, List, Optional
+from pydantic import BaseModel, Field
+from typing import Dict, Any, List, Optional, Literal
 from datetime import datetime
 
+
+from app.core import Config, logger
+
 app = FastAPI(
-    title="auto_maa",
+    title="AUTO_MAA",
     description="API for managing automation scripts, plans, and tasks",
-    version="1.0.0"
+    version="1.0.0",
 )
 
-#此文件由ai生成 返回值非最终版本
+# 此文件由ai生成 返回值非最终版本
 
 
 # ======================
 # Data Models
 # ======================
 
+
 # Script Models
-class ScriptCreate(BaseModel):
-    name: str
-    type: str  # "MAA" or "通用"
-    content: str
-    description: Optional[str] = None
+class ScriptCreateIn(BaseModel):
+    type: Literal["MAA", "General"]
+
+
+class ScriptCreateOut(BaseModel):
+    code: int = Field(default=200, description="状态码")
+    status: str = Field(default="success", description="操作状态")
+    message: str = Field(default="脚本添加成功", description="操作消息")
+    scriptId: str = Field(..., description="新创建的脚本ID")
+    data: Dict[str, Any] = Field(..., description="脚本配置数据")
+
 
 class ScriptUpdate(BaseModel):
     name: Optional[str] = None
     content: Optional[str] = None
     description: Optional[str] = None
 
+
 class ScriptUser(BaseModel):
     userId: str
     config: Dict[str, Any] = {}
+
 
 # Plan Models
 class PlanDayConfig(BaseModel):
@@ -42,6 +54,7 @@ class PlanDayConfig(BaseModel):
     备选_3: str
     剩余理智: str
 
+
 class PlanDetails(BaseModel):
     周一: PlanDayConfig
     周二: PlanDayConfig
@@ -51,18 +64,22 @@ class PlanDetails(BaseModel):
     周六: PlanDayConfig
     周日: PlanDayConfig
 
+
 class PlanCreate(BaseModel):
     name: str
     mode: str  # "全局" or "周计划"
     details: PlanDetails
+
 
 class PlanUpdate(BaseModel):
     name: Optional[str] = None
     mode: Optional[str] = None
     details: Optional[PlanDetails] = None
 
+
 class PlanModeUpdate(BaseModel):
     mode: str  # "全局" or "周计划"
+
 
 # Queue Models
 class QueueCreate(BaseModel):
@@ -71,11 +88,13 @@ class QueueCreate(BaseModel):
     schedule: str
     description: Optional[str] = None
 
+
 class QueueUpdate(BaseModel):
     name: Optional[str] = None
     scripts: Optional[List[str]] = None
     schedule: Optional[str] = None
     description: Optional[str] = None
+
 
 # Task Models
 class TaskCreate(BaseModel):
@@ -86,14 +105,17 @@ class TaskCreate(BaseModel):
     priority: int = 0
     parameters: Dict[str, Any] = {}
 
+
 # Settings Models
 class SettingsUpdate(BaseModel):
     key: str
     value: Any
 
+
 # ======================
 # API Endpoints
 # ======================
+
 
 @app.get("/api/activity/latest", summary="获取最新活动内容")
 async def get_latest_activity():
@@ -104,14 +126,17 @@ async def get_latest_activity():
     return {"status": "success", "data": {}}
 
 
-@app.post("/api/add/scripts", summary="添加脚本")
-async def add_script(script: ScriptCreate = Body(...)):
-    """
-    添加脚本
-    这里后端需要支持两种脚本，MAA和通用
-    """
-    # 实现添加脚本的逻辑
-    return {"status": "success", "scriptId": "new_script_id"}
+@app.post(
+    "/api/add/scripts",
+    summary="添加脚本",
+    response_model=ScriptCreateOut,
+    status_code=200,
+)
+async def add_script(script: ScriptCreateIn = Body(...)) -> ScriptCreateOut:
+    """添加脚本"""
+
+    uid, config = await Config.add_script(script.type)
+    return ScriptCreateOut(scriptId=str(uid), data=config.toDict())
 
 
 @app.post("/api/get/scripts", summary="查询脚本")
@@ -124,9 +149,7 @@ async def get_scripts():
 
 
 @app.post("/api/get/scripts/{scriptId}", summary="查询单个脚本")
-async def get_script(
-    scriptId: str = Path(..., description="脚本ID")
-):
+async def get_script(scriptId: str = Path(..., description="脚本ID")):
     """
     查询单个脚本
     """
@@ -137,7 +160,7 @@ async def get_script(
 @app.post("/api/update/scripts/{scriptId}", summary="更新脚本")
 async def update_script(
     scriptId: str = Path(..., description="脚本ID"),
-    update_data: ScriptUpdate = Body(...)
+    update_data: ScriptUpdate = Body(...),
 ):
     """
     更新脚本
@@ -147,9 +170,7 @@ async def update_script(
 
 
 @app.post("/api/delete/scripts/{scriptId}", summary="删除脚本")
-async def delete_script(
-    scriptId: str = Path(..., description="脚本ID")
-):
+async def delete_script(scriptId: str = Path(..., description="脚本ID")):
     """
     删除脚本
     """
@@ -159,8 +180,7 @@ async def delete_script(
 
 @app.post("/api/scripts/{scriptId}/users", summary="为脚本添加用户")
 async def add_script_user(
-    scriptId: str = Path(..., description="脚本ID"),
-    user: ScriptUser = Body(...)
+    scriptId: str = Path(..., description="脚本ID"), user: ScriptUser = Body(...)
 ):
     """
     为脚本添加用户
@@ -170,9 +190,7 @@ async def add_script_user(
 
 
 @app.get("/api/scripts/{scriptId}/users", summary="查询脚本的所有下属用户")
-async def get_script_users(
-    scriptId: str = Path(..., description="脚本ID")
-):
+async def get_script_users(scriptId: str = Path(..., description="脚本ID")):
     """
     查询脚本的所有下属用户
     """
@@ -183,7 +201,7 @@ async def get_script_users(
 @app.get("/api/scripts/{scriptId}/users/{userId}", summary="查询脚本下的单个下属用户")
 async def get_script_user(
     scriptId: str = Path(..., description="脚本ID"),
-    userId: str = Path(..., description="用户ID")
+    userId: str = Path(..., description="用户ID"),
 ):
     """
     查询脚本下的单个下属用户
@@ -196,7 +214,7 @@ async def get_script_user(
 async def update_script_user(
     scriptId: str = Path(..., description="脚本ID"),
     userId: str = Path(..., description="用户ID"),
-    config: Dict[str, Any] = Body(...)
+    config: Dict[str, Any] = Body(...),
 ):
     """
     更新脚本下属用户的关联信息
@@ -208,7 +226,7 @@ async def update_script_user(
 @app.delete("/api/scripts/{scriptId}/users/{userId}", summary="从脚本移除用户")
 async def remove_script_user(
     scriptId: str = Path(..., description="脚本ID"),
-    userId: str = Path(..., description="用户ID")
+    userId: str = Path(..., description="用户ID"),
 ):
     """
     从脚本移除用户
@@ -252,9 +270,7 @@ async def get_plans():
 
 
 @app.post("/api/get/plans/{planId}", summary="查询单个计划")
-async def get_plan(
-    planId: str = Path(..., description="计划ID")
-):
+async def get_plan(planId: str = Path(..., description="计划ID")):
     """
     查询单个计划
     """
@@ -264,8 +280,7 @@ async def get_plan(
 
 @app.post("/api/update/plans/{planId}", summary="更新计划")
 async def update_plan(
-    planId: str = Path(..., description="计划ID"),
-    update_data: PlanUpdate = Body(...)
+    planId: str = Path(..., description="计划ID"), update_data: PlanUpdate = Body(...)
 ):
     """
     更新计划
@@ -275,9 +290,7 @@ async def update_plan(
 
 
 @app.post("/api/delete/plans/{planId}", summary="删除计划")
-async def delete_plan(
-    planId: str = Path(..., description="计划ID")
-):
+async def delete_plan(planId: str = Path(..., description="计划ID")):
     """
     删除计划
     """
@@ -287,8 +300,7 @@ async def delete_plan(
 
 @app.post("/api/update/plans/{planId}/mode", summary="切换计划模式")
 async def update_plan_mode(
-    planId: str = Path(..., description="计划ID"),
-    mode_data: PlanModeUpdate = Body(...)
+    planId: str = Path(..., description="计划ID"), mode_data: PlanModeUpdate = Body(...)
 ):
     """
     切换计划模式
@@ -319,9 +331,7 @@ async def get_queues():
 
 
 @app.post("/api/get/queues/{queueId}", summary="查询单个调度队列详情")
-async def get_queue(
-    queueId: str = Path(..., description="调度队列ID")
-):
+async def get_queue(queueId: str = Path(..., description="调度队列ID")):
     """
     查询单个调度队列详情
     """
@@ -332,7 +342,7 @@ async def get_queue(
 @app.post("/api/update/queues/{queueId}", summary="更新调度队列")
 async def update_queue(
     queueId: str = Path(..., description="调度队列ID"),
-    update_data: QueueUpdate = Body(...)
+    update_data: QueueUpdate = Body(...),
 ):
     """
     更新调度队列
@@ -342,9 +352,7 @@ async def update_queue(
 
 
 @app.post("/api/delete/queues/{queueId}", summary="删除调度队列")
-async def delete_queue(
-    queueId: str = Path(..., description="调度队列ID")
-):
+async def delete_queue(queueId: str = Path(..., description="调度队列ID")):
     """
     删除调度队列
     """
@@ -362,9 +370,7 @@ async def add_task(task: TaskCreate = Body(...)):
 
 
 @app.post("/api/tasks/{taskId}/start", summary="开始任务")
-async def start_task(
-    taskId: str = Path(..., description="任务ID")
-):
+async def start_task(taskId: str = Path(..., description="任务ID")):
     """
     开始任务
     """
@@ -394,15 +400,13 @@ async def update_settings(settings: SettingsUpdate = Body(...)):
 # Error Handlers
 # ======================
 
+
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request, exc):
-    return {
-        "status": "error",
-        "code": exc.status_code,
-        "message": exc.detail
-    }
+    return {"status": "error", "code": exc.status_code, "message": exc.detail}
 
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8000)

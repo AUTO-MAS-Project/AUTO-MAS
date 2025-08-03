@@ -32,7 +32,7 @@ from collections import defaultdict
 from pathlib import Path
 
 
-from typing import Union, Dict, List
+from typing import Union, Dict, List, Literal
 
 from .logger import logger
 from app.models.ConfigBase import *
@@ -640,6 +640,15 @@ class AppConfig(GlobalConfig):
         logger.info(f"版本号： v{self.VERSION}", module="配置管理")
         logger.info(f"根目录： {self.root_path}", module="配置管理")
         logger.info("===================================", module="配置管理")
+
+    async def add_script(
+        self, script: Literal["MAA", "General"]
+    ) -> tuple[uuid.UUID, ConfigBase]:
+        """添加脚本配置"""
+
+        class_book = {"MAA": MaaConfig, "General": GeneralConfig}
+
+        return self.ScriptConfig.add(class_book[script])
 
     # def check_data(self) -> None:
     #     """检查用户数据文件并处理数据文件版本更新"""
