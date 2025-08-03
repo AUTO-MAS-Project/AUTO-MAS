@@ -147,12 +147,12 @@ func (pv *ParsedVersion) ToVersionString() string {
 	return fmt.Sprintf("%d.%d.%d.%d", pv.Major, pv.Minor, pv.Patch, pv.Beta)
 }
 
-// ToDisplayVersion 将版本转换为显示格式 (v4.4.0 或 v4.4.1-beta3)
+// ToDisplayVersion 将版本转换为显示格式 (4.4.0 或 4.4.1-beta3)
 func (pv *ParsedVersion) ToDisplayVersion() string {
 	if pv.Beta == 0 {
-		return fmt.Sprintf("v%d.%d.%d", pv.Major, pv.Minor, pv.Patch)
+		return fmt.Sprintf("%d.%d.%d", pv.Major, pv.Minor, pv.Patch)
 	}
-	return fmt.Sprintf("v%d.%d.%d-beta%d", pv.Major, pv.Minor, pv.Patch, pv.Beta)
+	return fmt.Sprintf("%d.%d.%d-beta%d", pv.Major, pv.Minor, pv.Patch, pv.Beta)
 }
 
 // GetChannel 根据版本返回渠道 (stable 或 beta)
@@ -174,5 +174,16 @@ func (pv *ParsedVersion) IsNewer(other *ParsedVersion) bool {
 	if pv.Patch != other.Patch {
 		return pv.Patch > other.Patch
 	}
+	
+	// 对于相同的主版本号，正式版本（Beta=0）比beta版本（Beta>0）更新
+	// 例如：4.4.1.0（正式版）> 4.4.1.3（beta3）
+	if pv.Beta == 0 && other.Beta > 0 {
+		return true  // 正式版比beta版更新
+	}
+	if pv.Beta > 0 && other.Beta == 0 {
+		return false // beta版比正式版旧
+	}
+	
+	// 如果都是beta版本，比较beta版本号
 	return pv.Beta > other.Beta
 }
