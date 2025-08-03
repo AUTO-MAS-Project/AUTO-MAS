@@ -253,7 +253,7 @@ class ConfigBase:
         if self.file:
             self.save()
 
-    def toDict(self):
+    def toDict(self) -> Dict[str, Any]:
         """将配置项转换为字典"""
 
         data = {}
@@ -482,7 +482,7 @@ class MultipleConfig:
         with self.file.open("w", encoding="utf-8") as f:
             json.dump(self.toDict(), f, ensure_ascii=False, indent=4)
 
-    def add(self, config_type: type) -> Any:
+    def add(self, config_type: type) -> tuple[uuid.UUID, ConfigBase]:
         """
         添加一个新的配置项
 
@@ -493,8 +493,8 @@ class MultipleConfig:
 
         Returns
         -------
-        Any
-            新创建的配置项实例
+        tuple[uuid.UUID, ConfigBase]
+            新创建的配置项的唯一标识符和实例
         """
 
         if config_type not in self.sub_config_type:
@@ -507,7 +507,7 @@ class MultipleConfig:
         if self.file:
             self.save()
 
-        return self.data[uid]
+        return uid, self.data[uid]
 
     def remove(self, uid: uuid.UUID):
         """
