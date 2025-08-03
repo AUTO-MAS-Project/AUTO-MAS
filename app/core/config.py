@@ -602,10 +602,18 @@ class AppConfig(GlobalConfig):
         self.ScriptConfig = MultipleConfig([MaaConfig, GeneralConfig])
         self.PlanConfig = MultipleConfig([MaaPlanConfig])
         self.QueueConfig = MultipleConfig([QueueConfig])
-        self.connect(self.config_path / "Config.json")
-        self.ScriptConfig.connect(self.config_path / "ScriptConfig.json")
-        self.PlanConfig.connect(self.config_path / "PlanConfig.json")
-        self.QueueConfig.connect(self.config_path / "QueueConfig.json")
+
+        import asyncio
+
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(self.init_config())
+
+    async def init_config(self) -> None:
+        """初始化配置管理"""
+        await self.connect(self.config_path / "Config.json")
+        await self.ScriptConfig.connect(self.config_path / "ScriptConfig.json")
+        await self.PlanConfig.connect(self.config_path / "PlanConfig.json")
+        await self.QueueConfig.connect(self.config_path / "QueueConfig.json")
 
         # self.check_data()
         logger.info("程序初始化完成", module="配置管理")
@@ -648,7 +656,7 @@ class AppConfig(GlobalConfig):
 
         class_book = {"MAA": MaaConfig, "General": GeneralConfig}
 
-        return self.ScriptConfig.add(class_book[script])
+        return await self.ScriptConfig.add(class_book[script])
 
     # def check_data(self) -> None:
     #     """检查用户数据文件并处理数据文件版本更新"""

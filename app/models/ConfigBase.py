@@ -192,7 +192,7 @@ class ConfigBase:
 
         self.file: None | Path = None
 
-    def connect(self, path: Path):
+    async def connect(self, path: Path):
         """
         将配置文件连接到指定配置文件
 
@@ -219,9 +219,9 @@ class ConfigBase:
             except json.JSONDecodeError:
                 data = {}
 
-        self.load(data)
+        await self.load(data)
 
-    def load(self, data: dict):
+    async def load(self, data: dict):
         """
         从字典加载配置数据
 
@@ -240,7 +240,7 @@ class ConfigBase:
                 if hasattr(self, k):
                     sub_config = getattr(self, k)
                     if isinstance(sub_config, MultipleConfig):
-                        sub_config.load(v)
+                        await sub_config.load(v)
             data.pop("SubConfigsInfo")
 
         for group, info in data.items():
@@ -251,9 +251,9 @@ class ConfigBase:
                         configItem.setValue(value)
 
         if self.file:
-            self.save()
+            await self.save()
 
-    def toDict(self) -> Dict[str, Any]:
+    async def toDict(self) -> Dict[str, Any]:
         """将配置项转换为字典"""
 
         data = {}
@@ -271,11 +271,11 @@ class ConfigBase:
 
                 if not data.get("SubConfigsInfo"):
                     data["SubConfigsInfo"] = {}
-                data["SubConfigsInfo"][name] = item.toDict()
+                data["SubConfigsInfo"][name] = await item.toDict()
 
         return data
 
-    def get(self, group: str, name: str) -> Any:
+    async def get(self, group: str, name: str) -> Any:
         """获取配置项的值"""
 
         if not hasattr(self, f"{group}_{name}"):
@@ -289,7 +289,7 @@ class ConfigBase:
                 f"Config item '{group}_{name}' is not a ConfigItem instance."
             )
 
-    def set(self, group: str, name: str, value: Any):
+    async def set(self, group: str, name: str, value: Any):
         """
         设置配置项的值
 
@@ -310,13 +310,13 @@ class ConfigBase:
         if isinstance(configItem, ConfigItem):
             configItem.setValue(value)
             if self.file:
-                self.save()
+                await self.save()
         else:
             raise TypeError(
                 f"Config item '{group}_{name}' is not a ConfigItem instance."
             )
 
-    def save(self):
+    async def save(self):
         """保存配置"""
 
         if not self.file:
@@ -326,7 +326,7 @@ class ConfigBase:
 
         self.file.parent.mkdir(parents=True, exist_ok=True)
         with self.file.open("w", encoding="utf-8") as f:
-            json.dump(self.toDict(), f, ensure_ascii=False, indent=4)
+            json.dump(await self.toDict(), f, ensure_ascii=False, indent=4)
 
 
 class MultipleConfig:
@@ -380,7 +380,7 @@ class MultipleConfig:
         """用户友好的字符串表示"""
         return f"MultipleConfig with {len(self.data)} items"
 
-    def connect(self, path: Path):
+    async def connect(self, path: Path):
         """
         将配置文件连接到指定配置文件
 
@@ -407,9 +407,9 @@ class MultipleConfig:
             except json.JSONDecodeError:
                 data = {}
 
-        self.load(data)
+        await self.load(data)
 
-    def load(self, data: dict):
+    async def load(self, data: dict):
         """
         从字典加载配置数据
 
@@ -443,7 +443,7 @@ class MultipleConfig:
                 if class_type.__name__ == type_name:
                     self.order.append(uuid.UUID(instance["uid"]))
                     self.data[self.order[-1]] = class_type()
-                    self.data[self.order[-1]].load(data[instance["uid"]])
+                    await self.data[self.order[-1]].load(data[instance["uid"]])
                     break
 
             else:
@@ -451,9 +451,9 @@ class MultipleConfig:
                 raise ValueError(f"Unknown sub config type: {type_name}")
 
         if self.file:
-            self.save()
+            await self.save()
 
-    def toDict(self):
+    async def toDict(self):
         """
         将配置项转换为字典
 
@@ -467,10 +467,10 @@ class MultipleConfig:
             ]
         }
         for uid, config in self.items():
-            data[str(uid)] = config.toDict()
+            data[str(uid)] = await config.toDict()
         return data
 
-    def save(self):
+    async def save(self):
         """保存配置"""
 
         if not self.file:
@@ -480,9 +480,9 @@ class MultipleConfig:
 
         self.file.parent.mkdir(parents=True, exist_ok=True)
         with self.file.open("w", encoding="utf-8") as f:
-            json.dump(self.toDict(), f, ensure_ascii=False, indent=4)
+            json.dump(await self.toDict(), f, ensure_ascii=False, indent=4)
 
-    def add(self, config_type: type) -> tuple[uuid.UUID, ConfigBase]:
+    async def add(self, config_type: type) -> tuple[uuid.UUID, ConfigBase]:
         """
         添加一个新的配置项
 
@@ -505,11 +505,11 @@ class MultipleConfig:
         self.data[uid] = config_type()
 
         if self.file:
-            self.save()
+            await self.save()
 
         return uid, self.data[uid]
 
-    def remove(self, uid: uuid.UUID):
+    async def remove(self, uid: uuid.UUID):
         """
         移除配置项
 
@@ -526,9 +526,9 @@ class MultipleConfig:
         self.order.remove(uid)
 
         if self.file:
-            self.save()
+            await self.save()
 
-    def setOrder(self, order: List[uuid.UUID]):
+    async def setOrder(self, order: List[uuid.UUID]):
         """
         设置配置项的顺序
 
@@ -544,7 +544,7 @@ class MultipleConfig:
         self.order = order
 
         if self.file:
-            self.save()
+            await self.save()
 
     def keys(self):
         """返回配置项的所有唯一标识符"""
