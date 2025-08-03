@@ -136,7 +136,7 @@ async def add_script(script: ScriptCreateIn = Body(...)) -> ScriptCreateOut:
     """添加脚本"""
 
     uid, config = await Config.add_script(script.type)
-    return ScriptCreateOut(scriptId=str(uid), data=config.toDict())
+    return ScriptCreateOut(scriptId=str(uid), data=await config.toDict())
 
 
 @app.post("/api/get/scripts", summary="查询脚本")
