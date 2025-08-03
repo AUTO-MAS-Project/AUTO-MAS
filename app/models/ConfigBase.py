@@ -390,6 +390,11 @@ class MultipleConfig:
             配置文件路径，必须为 JSON 文件，如果不存在则会创建
         """
 
+        if path.suffix != ".json":
+            raise ValueError(
+                "The config file must be a JSON file with '.json' extension."
+            )
+
         self.file = path
 
         if not self.file.exists():

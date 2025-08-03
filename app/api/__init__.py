@@ -18,40 +18,10 @@
 
 #   Contact: DLmaster_361@163.com
 
+__version__ = "5.0.0"
+__author__ = "DLmaster361 <DLmaster_361@163.com>"
+__license__ = "GPL-3.0 license"
 
-import os
-import sys
-import ctypes
+from .api import app
 
-from app.core.logger import logger
-
-
-def is_admin() -> bool:
-    """检查当前程序是否以管理员身份运行"""
-    try:
-        return ctypes.windll.shell32.IsUserAnAdmin()
-    except:
-        return False
-
-
-@logger.catch
-def main():
-
-    if is_admin():
-
-        import uvicorn
-        from app.api import app
-
-        uvicorn.run(app, host="0.0.0.0", port=8000)
-
-    else:
-
-        ctypes.windll.shell32.ShellExecuteW(
-            None, "runas", sys.executable, os.path.realpath(sys.argv[0]), None, 1
-        )
-        sys.exit(0)
-
-
-if __name__ == "__main__":
-
-    main()
+__all__ = ["app"]
