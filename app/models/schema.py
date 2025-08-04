@@ -74,6 +74,61 @@ class UserDeleteIn(UserInBase):
     userId: str = Field(..., description="用户ID")
 
 
+class QueueCreateOut(OutBase):
+    queueId: str = Field(..., description="新创建的队列ID")
+    data: Dict[str, Any] = Field(..., description="队列配置数据")
+
+
+class QueueGetIn(BaseModel):
+    queueId: Optional[str] = Field(None, description="队列ID，仅在模式为Single时需要")
+
+
+class QueueGetOut(OutBase):
+    index: List[Dict[str, str]] = Field(..., description="队列索引列表")
+    data: Dict[str, Any] = Field(..., description="队列列表或单个队列数据")
+
+
+class QueueUpdateIn(BaseModel):
+    queueId: str = Field(..., description="队列ID")
+    data: Dict[str, Dict[str, Any]] = Field(..., description="队列更新数据")
+
+
+class QueueDeleteIn(BaseModel):
+    queueId: str = Field(..., description="队列ID")
+
+
+class QueueSetInBase(BaseModel):
+    queueId: str = Field(..., description="所属队列ID")
+
+
+class TimeSetCreateOut(OutBase):
+    timeSetId: str = Field(..., description="新创建的时间设置ID")
+    data: Dict[str, Any] = Field(..., description="时间设置配置数据")
+
+
+class TimeSetUpdateIn(QueueSetInBase):
+    timeSetId: str = Field(..., description="时间设置ID")
+    data: Dict[str, Dict[str, Any]] = Field(..., description="时间设置更新数据")
+
+
+class TimeSetDeleteIn(QueueSetInBase):
+    timeSetId: str = Field(..., description="时间设置ID")
+
+
+class QueueItemCreateOut(OutBase):
+    queueItemId: str = Field(..., description="新创建的队列项ID")
+    data: Dict[str, Any] = Field(..., description="队列项配置数据")
+
+
+class QueueItemUpdateIn(QueueSetInBase):
+    queueItemId: str = Field(..., description="队列项ID")
+    data: Dict[str, Dict[str, Any]] = Field(..., description="队列项更新数据")
+
+
+class QueueItemDeleteIn(QueueSetInBase):
+    queueItemId: str = Field(..., description="队列项ID")
+
+
 class SettingGetOut(OutBase):
     data: Dict[str, Dict[str, Any]] = Field(..., description="全局设置数据")
 
