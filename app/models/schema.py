@@ -54,3 +54,11 @@ class ScriptUpdateIn(BaseModel):
 
 class ScriptDeleteIn(BaseModel):
     scriptId: str = Field(..., description="脚本ID")
+
+
+class SettingGetOut(BaseOut):
+    data: Dict[str, Dict[str, Any]] = Field(..., description="全局设置数据")
+
+
+class SettingUpdateIn(BaseModel):
+    data: Dict[str, Dict[str, Any]] = Field(..., description="全局设置更新数据")

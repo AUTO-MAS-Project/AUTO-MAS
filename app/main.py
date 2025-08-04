@@ -27,7 +27,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 
-from api import scripts_router
+from api import scripts_router, setting_router
 from core import Config
 from utils import get_logger
 
@@ -51,6 +51,7 @@ app.add_middleware(
 
 
 app.include_router(scripts_router)
+app.include_router(setting_router)
 
 
 def is_admin() -> bool:

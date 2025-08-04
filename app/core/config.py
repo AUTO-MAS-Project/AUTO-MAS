@@ -561,7 +561,7 @@ class AppConfig(GlobalConfig):
     VERSION = "4.5.0.1"
 
     def __init__(self) -> None:
-        super().__init__()
+        super().__init__(if_save_multi_config=False)
 
         # self.app_path = Path(sys.argv[0]).resolve().parent
         # self.app_path_sys = Path(sys.argv[0]).resolve()
@@ -670,6 +670,23 @@ class AppConfig(GlobalConfig):
         """删除脚本配置"""
 
         await self.ScriptConfig.remove(uuid.UUID(script_id))
+
+    async def get_setting(self) -> Dict[str, Any]:
+        """获取全局设置"""
+
+        self.logger.info("获取全局设置")
+
+        return await self.toDict(ignore_multi_config=True)
+
+    async def update_setting(self, data: Dict[str, Dict[str, Any]]) -> None:
+        """更新全局设置"""
+
+        self.logger.info(f"更新全局设置")
+
+        for group, items in data.items():
+            for name, value in items.items():
+                self.logger.debug(f"更新全局设置 - {group}.{name} = {value}")
+                await self.set(group, name, value)
 
     # def check_data(self) -> None:
     #     """检查用户数据文件并处理数据文件版本更新"""
