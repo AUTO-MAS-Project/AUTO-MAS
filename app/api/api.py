@@ -35,14 +35,19 @@ app.add_middleware(
 
 
 # Script Models
+
+
+class BaseOut(BaseModel):
+    code: int = Field(default=200, description="状态码")
+    status: str = Field(default="success", description="操作状态")
+    message: str = Field(default="操作成功", description="操作消息")
+
+
 class ScriptCreateIn(BaseModel):
     type: Literal["MAA", "General"]
 
 
-class ScriptCreateOut(BaseModel):
-    code: int = Field(default=200, description="状态码")
-    status: str = Field(default="success", description="操作状态")
-    message: str = Field(default="脚本添加成功", description="操作消息")
+class ScriptCreateOut(BaseOut):
     scriptId: str = Field(..., description="新创建的脚本ID")
     data: Dict[str, Any] = Field(..., description="脚本配置数据")
 
@@ -51,17 +56,22 @@ class ScriptGetIn(BaseModel):
     scriptId: Optional[str] = Field(None, description="脚本ID，仅在模式为Single时需要")
 
 
-class ScriptGetOut(BaseModel):
-    code: int = Field(default=200, description="状态码")
-    status: str = Field(default="success", description="操作状态")
-    message: str = Field(default="脚本查询成功", description="操作消息")
+class ScriptGetOut(BaseOut):
     index: List[Dict[str, str]] = Field(..., description="脚本索引列表")
     data: Dict[str, Any] = Field(..., description="脚本列表或单个脚本数据")
 
 
-class ScriptUpdate(BaseModel):
+class ScriptUpdateIn(BaseModel):
     scriptId: str = Field(..., description="脚本ID")
     data: Dict[str, Any] = Field(..., description="脚本更新数据")
+
+
+class ScriptUpdateOut(BaseOut):
+    message: str = Field(default="脚本更新成功", description="操作消息")
+
+
+class ScriptDeleteIn(BaseModel):
+    scriptId: str = Field(..., description="脚本ID")
 
 
 class ScriptUser(BaseModel):
@@ -142,13 +152,13 @@ class SettingsUpdate(BaseModel):
 # ======================
 
 
-@app.get("/api/activity/latest", summary="获取最新活动内容")
-async def get_latest_activity():
-    """
-    获取最新活动内容
-    """
-    # 实现获取最新活动的逻辑
-    return {"status": "success", "data": {}}
+# @app.get("/api/activity/latest", summary="获取最新活动内容")
+# async def get_latest_activity():
+#     """
+#     获取最新活动内容
+#     """
+#     # 实现获取最新活动的逻辑
+#     return {"status": "success", "data": {}}
 
 
 @app.post(
@@ -176,25 +186,33 @@ async def get_scripts(script: ScriptGetIn = Body(...)) -> ScriptGetOut:
     return ScriptGetOut(index=index, data=data)
 
 
-@app.post("/api/update/scripts/{scriptId}", summary="更新脚本")
-async def update_script(
-    scriptId: str = Path(..., description="脚本ID"),
-    update_data: ScriptUpdate = Body(...),
-):
-    """
-    更新脚本
-    """
-    # 实现更新脚本的逻辑
-    return {"status": "success"}
+# @app.post("/api/update/scripts/{scriptId}", summary="更新脚本")
+# async def update_script(
+#     scriptId: str = Path(..., description="脚本ID"),
+#     update_data: ScriptUpdate = Body(...),
+# ):
+#     """
+#     更新脚本
+#     """
+#     # 实现更新脚本的逻辑
+#     return {"status": "success"}
 
 
-@app.post("/api/delete/scripts/{scriptId}", summary="删除脚本")
-async def delete_script(scriptId: str = Path(..., description="脚本ID")):
-    """
-    删除脚本
-    """
-    # 实现删除脚本的逻辑
-    return {"status": "success"}
+@app.post(
+    "/api/delete/scripts",
+    summary="删除脚本",
+    response_model=BaseOut,
+    status_code=200,
+)
+async def delete_script(
+    script: ScriptDeleteIn = Body(..., description="脚本ID")
+) -> BaseOut:
+    """删除脚本"""
+    try:
+        await Config.del_script(script.scriptId)
+    except Exception as e:
+        return BaseOut(code=500, status="error", message=str(e))
+    return BaseOut()
 
 
 @app.post("/api/scripts/{scriptId}/users", summary="为脚本添加用户")
