@@ -23,7 +23,9 @@ import os
 import sys
 import ctypes
 
-from app.core.logger import logger
+from app.utils import get_logger
+
+logger = get_logger("主程序")
 
 
 def is_admin() -> bool:
@@ -34,7 +36,7 @@ def is_admin() -> bool:
         return False
 
 
-# @logger.catch
+@logger.catch
 def main():
 
     if is_admin():

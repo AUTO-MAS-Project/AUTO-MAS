@@ -23,6 +23,5 @@ __author__ = "DLmaster361 <DLmaster_361@163.com>"
 __license__ = "GPL-3.0 license"
 
 from .config import Config
-from .logger import logger
 
-__all__ = ["Config", "logger"]
+__all__ = ["Config"]

@@ -5,7 +5,10 @@ from datetime import datetime
 
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.core import Config, logger
+from app.core import Config
+from app.utils import get_logger
+
+logger = get_logger("API 模块")
 
 app = FastAPI(
     title="AUTO_MAA",

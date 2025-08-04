@@ -24,6 +24,7 @@ __author__ = "DLmaster361 <DLmaster_361@163.com>"
 __license__ = "GPL-3.0 license"
 
 from .api import app
-from .core import Config, logger
+from .core import Config
+from .utils import get_logger
 
-__all__ = ["app", "Config", "logger"]
+__all__ = ["app", "Config", "get_logger"]
