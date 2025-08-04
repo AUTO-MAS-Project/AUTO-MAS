@@ -1,3 +1,5 @@
+import uuid
+
 from fastapi import FastAPI, HTTPException, Path, Body
 from pydantic import BaseModel, Field
 from typing import Dict, Any, List, Optional, Literal
@@ -43,6 +45,19 @@ class ScriptCreateOut(BaseModel):
     message: str = Field(default="脚本添加成功", description="操作消息")
     scriptId: str = Field(..., description="新创建的脚本ID")
     data: Dict[str, Any] = Field(..., description="脚本配置数据")
+
+
+class ScriptGetIn(BaseModel):
+    mode: Literal["ALL", "Index", "Single"]
+    ScriptId: Optional[str] = None
+
+
+class ScriptGetOut(BaseModel):
+    code: int = Field(default=200, description="状态码")
+    status: str = Field(default="success", description="操作状态")
+    message: str = Field(default="脚本查询成功", description="操作消息")
+    index: List[Dict[str, str]] = Field(..., description="脚本索引列表")
+    data: Dict[str, Any] = Field(..., description="脚本列表或单个脚本数据")
 
 
 class ScriptUpdate(BaseModel):
@@ -151,22 +166,35 @@ async def add_script(script: ScriptCreateIn = Body(...)) -> ScriptCreateOut:
     return ScriptCreateOut(scriptId=str(uid), data=await config.toDict())
 
 
-@app.post("/api/get/scripts", summary="查询脚本")
-async def get_scripts():
-    """
-    查询脚本
-    """
-    # 实现查询脚本的逻辑
-    return {"status": "success", "data": []}
+@app.post(
+    "/api/get/scripts", summary="查询脚本", response_model=ScriptGetOut, status_code=200
+)
+async def get_scripts(script: ScriptGetIn = Body(...)) -> ScriptGetOut:
+    """查询脚本"""
+    try:
+        index, data = await Config.get_script(
+            script.mode, uuid.UUID(script.ScriptId) if script.ScriptId else None
+        )
+    except Exception as e:
+        return ScriptGetOut(code=500, status="error", message=str(e), index=[], data={})
+    return ScriptGetOut(index=index, data=data)
 
 
-@app.post("/api/get/scripts/{scriptId}", summary="查询单个脚本")
-async def get_script(scriptId: str = Path(..., description="脚本ID")):
+@app.post(
+    "/api/get/scripts/{scriptId}",
+    summary="查询单个脚本",
+    response_model=ScriptGetOut,
+    status_code=200,
+)
+async def get_script(scriptId: str = Path(..., description="脚本ID")) -> ScriptGetOut:
     """
     查询单个脚本
     """
-    # 实现查询单个脚本的逻辑
-    return {"status": "success", "data": {}}
+    try:
+        index, data = await Config.get_script("Single", uuid.UUID(scriptId))
+    except Exception as e:
+        return ScriptGetOut(code=500, status="error", message=str(e), index=[], data={})
+    return ScriptGetOut(index=index, data=data)
 
 
 @app.post("/api/update/scripts/{scriptId}", summary="更新脚本")

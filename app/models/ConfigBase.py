@@ -453,7 +453,7 @@ class MultipleConfig:
         if self.file:
             await self.save()
 
-    async def toDict(self):
+    async def toDict(self) -> Dict[str, Union[list, dict]]:
         """
         将配置项转换为字典
 
@@ -468,6 +468,34 @@ class MultipleConfig:
         }
         for uid, config in self.items():
             data[str(uid)] = await config.toDict()
+        return data
+
+    async def get(self, uid: uuid.UUID) -> Dict[str, Union[list, dict]]:
+        """
+        获取指定 UID 的配置项
+
+        Parameters
+        ----------
+        uid: uuid.UUID
+            要获取的配置项的唯一标识符
+        Returns
+        -------
+        Dict[str, Union[list, dict]]
+            对应的配置项数据字典
+        """
+
+        if uid not in self.data:
+            raise ValueError(f"Config item with uid {uid} does not exist.")
+
+        data: Dict[str, Union[list, dict]] = {
+            "instances": [
+                {"uid": str(_), "type": self.data[_].__class__.__name__}
+                for _ in self.order
+                if _ == uid
+            ]
+        }
+        data[str(uid)] = await self.data[uid].toDict()
+
         return data
 
     async def save(self):
