@@ -49,7 +49,7 @@ class ScriptCreateOut(BaseModel):
 
 class ScriptGetIn(BaseModel):
     mode: Literal["ALL", "Index", "Single"]
-    ScriptId: Optional[str] = None
+    scriptId: Optional[str] = None
 
 
 class ScriptGetOut(BaseModel):
@@ -173,25 +173,8 @@ async def get_scripts(script: ScriptGetIn = Body(...)) -> ScriptGetOut:
     """查询脚本"""
     try:
         index, data = await Config.get_script(
-            script.mode, uuid.UUID(script.ScriptId) if script.ScriptId else None
+            script.mode, uuid.UUID(script.scriptId) if script.scriptId else None
         )
-    except Exception as e:
-        return ScriptGetOut(code=500, status="error", message=str(e), index=[], data={})
-    return ScriptGetOut(index=index, data=data)
-
-
-@app.post(
-    "/api/get/scripts/{scriptId}",
-    summary="查询单个脚本",
-    response_model=ScriptGetOut,
-    status_code=200,
-)
-async def get_script(scriptId: str = Path(..., description="脚本ID")) -> ScriptGetOut:
-    """
-    查询单个脚本
-    """
-    try:
-        index, data = await Config.get_script("Single", uuid.UUID(scriptId))
     except Exception as e:
         return ScriptGetOut(code=500, status="error", message=str(e), index=[], data={})
     return ScriptGetOut(index=index, data=data)
