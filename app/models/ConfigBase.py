@@ -188,9 +188,10 @@ class ConfigBase:
     子配置项可以是 `MultipleConfig` 的实例。
     """
 
-    def __init__(self):
+    def __init__(self, if_save_multi_config: bool = True):
 
         self.file: None | Path = None
+        self.if_save_multi_config = if_save_multi_config
 
     async def connect(self, path: Path):
         """
@@ -253,7 +254,7 @@ class ConfigBase:
         if self.file:
             await self.save()
 
-    async def toDict(self) -> Dict[str, Any]:
+    async def toDict(self, ignore_multi_config: bool = False) -> Dict[str, Any]:
         """将配置项转换为字典"""
 
         data = {}
@@ -267,7 +268,7 @@ class ConfigBase:
                 if item.name:
                     data[item.group][item.name] = item.value
 
-            elif isinstance(item, MultipleConfig):
+            elif not ignore_multi_config and isinstance(item, MultipleConfig):
 
                 if not data.get("SubConfigsInfo"):
                     data["SubConfigsInfo"] = {}
@@ -326,7 +327,12 @@ class ConfigBase:
 
         self.file.parent.mkdir(parents=True, exist_ok=True)
         with self.file.open("w", encoding="utf-8") as f:
-            json.dump(await self.toDict(), f, ensure_ascii=False, indent=4)
+            json.dump(
+                await self.toDict(not self.if_save_multi_config),
+                f,
+                ensure_ascii=False,
+                indent=4,
+            )
 
 
 class MultipleConfig:
