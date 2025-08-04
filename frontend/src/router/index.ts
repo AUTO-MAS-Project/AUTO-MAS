@@ -19,6 +19,12 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '脚本管理' },
   },
   {
+    path: '/scripts/:id/edit',
+    name: 'ScriptEdit',
+    component: () => import('../views/ScriptEdit.vue'),
+    meta: { title: '编辑脚本' },
+  },
+  {
     path: '/plans',
     name: 'Plans',
     component: () => import('../views/Plans.vue'),
@@ -47,6 +53,12 @@ const routes: RouteRecordRaw[] = [
     name: 'Settings',
     component: () => import('../views/Settings.vue'),
     meta: { title: '设置' },
+  },
+  {
+    path: '/test',
+    name: 'Test',
+    component: () => import('../views/TestScript.vue'),
+    meta: { title: '测试' },
   },
 ]
 

@@ -4,76 +4,91 @@
   font-weight: 400;
 
   color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
-
+  
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+
+  /* 默认浅色模式 CSS 变量 */
+  --ant-color-primary: #1677ff;
+  --ant-color-primary-hover: #4096ff;
+  --ant-color-primary-bg: #1677ff1a;
+  --ant-color-text: rgba(0, 0, 0, 0.88);
+  --ant-color-text-secondary: rgba(0, 0, 0, 0.65);
+  --ant-color-text-tertiary: rgba(0, 0, 0, 0.45);
+  --ant-color-bg-container: #ffffff;
+  --ant-color-bg-layout: #f5f5f5;
+  --ant-color-bg-elevated: #ffffff;
+  --ant-color-border: #d9d9d9;
+  --ant-color-border-secondary: #f0f0f0;
+  --ant-color-error: #ff4d4f;
+  --ant-color-success: #52c41a;
+  --ant-color-warning: #faad14;
 }
 
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
+/* 深色模式默认变量 */
+:root.dark {
+  --ant-color-primary: #1677ff;
+  --ant-color-primary-hover: #4096ff;
+  --ant-color-primary-bg: #1677ff1a;
+  --ant-color-text: rgba(255, 255, 255, 0.88);
+  --ant-color-text-secondary: rgba(255, 255, 255, 0.65);
+  --ant-color-text-tertiary: rgba(255, 255, 255, 0.45);
+  --ant-color-bg-container: #141414;
+  --ant-color-bg-layout: #000000;
+  --ant-color-bg-elevated: #1f1f1f;
+  --ant-color-border: #424242;
+  --ant-color-border-secondary: #303030;
+  --ant-color-error: #ff4d4f;
+  --ant-color-success: #52c41a;
+  --ant-color-warning: #faad14;
 }
-a:hover {
-  color: #535bf2;
+
+* {
+  box-sizing: border-box;
 }
 
 body {
   margin: 0;
-  display: flex;
-  place-items: center;
   min-width: 320px;
   min-height: 100vh;
-}
-
-h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
-}
-
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  background-color: #1a1a1a;
-  cursor: pointer;
-  transition: border-color 0.25s;
-}
-button:hover {
-  border-color: #646cff;
-}
-button:focus,
-button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
-}
-
-.card {
-  padding: 2em;
+  background-color: var(--ant-color-bg-layout);
+  color: var(--ant-color-text);
 }
 
 #app {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
-  text-align: center;
+  width: 100%;
+  height: 100vh;
+  overflow: hidden;
 }
 
-@media (prefers-color-scheme: light) {
-  :root {
-    color: #213547;
-    background-color: #ffffff;
-  }
-  a:hover {
-    color: #747bff;
-  }
-  button {
-    background-color: #f9f9f9;
-  }
+/* 链接样式 */
+a {
+  color: var(--ant-color-primary);
+  text-decoration: none;
+  transition: color 0.3s ease;
+}
+
+a:hover {
+  color: var(--ant-color-primary-hover);
+}
+
+/* 滚动条样式 */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--ant-color-bg-layout);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--ant-color-border);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--ant-color-border-secondary);
 }

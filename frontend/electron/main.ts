@@ -1,12 +1,12 @@
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog } from 'electron'
 import * as path from 'path'
 
 let mainWindow: BrowserWindow | null = null
 
 function createWindow() {
     mainWindow = new BrowserWindow({
-        width: 1200,
-        height: 800,
+        width: 1600,
+        height: 900,
         minWidth: 800,
         minHeight: 600,
         icon: path.join(__dirname, '../public/AUTO_MAA.ico'), // 设置应用图标
@@ -42,6 +42,41 @@ ipcMain.handle('open-dev-tools', () => {
         // 在新窗口中打开开发者工具
         mainWindow.webContents.openDevTools({ mode: 'undocked' })
     }
+})
+
+// 处理文件夹选择请求
+ipcMain.handle('select-folder', async () => {
+    if (!mainWindow) return null
+    
+    const result = await dialog.showOpenDialog(mainWindow, {
+        properties: ['openDirectory'],
+        title: '选择文件夹'
+    })
+    
+    if (result.canceled) {
+        return null
+    }
+    
+    return result.filePaths[0]
+})
+
+// 处理文件选择请求
+ipcMain.handle('select-file', async (event, filters = []) => {
+    if (!mainWindow) return null
+    
+    const result = await dialog.showOpenDialog(mainWindow, {
+        properties: ['openFile'],
+        title: '选择文件',
+        filters: filters.length > 0 ? filters : [
+            { name: '所有文件', extensions: ['*'] }
+        ]
+    })
+    
+    if (result.canceled) {
+        return null
+    }
+    
+    return result.filePaths[0]
 })
 
 app.whenReady().then(createWindow)
