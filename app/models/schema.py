@@ -56,6 +56,10 @@ class ScriptDeleteIn(BaseModel):
     scriptId: str = Field(..., description="脚本ID")
 
 
+class ScriptReorderIn(BaseModel):
+    indexList: List[str] = Field(..., description="脚本ID列表，按新顺序排列")
+
+
 class UserInBase(BaseModel):
     scriptId: str = Field(..., description="所属脚本ID")
 
@@ -72,6 +76,10 @@ class UserUpdateIn(UserInBase):
 
 class UserDeleteIn(UserInBase):
     userId: str = Field(..., description="用户ID")
+
+
+class UserReorderIn(UserInBase):
+    indexList: List[str] = Field(..., description="用户ID列表，按新顺序排列")
 
 
 class QueueCreateOut(OutBase):
@@ -97,6 +105,10 @@ class QueueDeleteIn(BaseModel):
     queueId: str = Field(..., description="队列ID")
 
 
+class QueueReorderIn(BaseModel):
+    indexList: List[str] = Field(..., description="调度队列ID列表，按新顺序排列")
+
+
 class QueueSetInBase(BaseModel):
     queueId: str = Field(..., description="所属队列ID")
 
@@ -115,6 +127,10 @@ class TimeSetDeleteIn(QueueSetInBase):
     timeSetId: str = Field(..., description="时间设置ID")
 
 
+class TimeSetReorderIn(QueueSetInBase):
+    indexList: List[str] = Field(..., description="时间设置ID列表，按新顺序排列")
+
+
 class QueueItemCreateOut(OutBase):
     queueItemId: str = Field(..., description="新创建的队列项ID")
     data: Dict[str, Any] = Field(..., description="队列项配置数据")
@@ -127,6 +143,10 @@ class QueueItemUpdateIn(QueueSetInBase):
 
 class QueueItemDeleteIn(QueueSetInBase):
     queueItemId: str = Field(..., description="队列项ID")
+
+
+class QueueItemReorderIn(QueueSetInBase):
+    indexList: List[str] = Field(..., description="队列项ID列表，按新顺序排列")
 
 
 class SettingGetOut(OutBase):

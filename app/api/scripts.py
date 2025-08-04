@@ -70,6 +70,16 @@ async def delete_script(script: ScriptDeleteIn = Body(...)) -> OutBase:
     return OutBase()
 
 
+@router.post("/order", summary="重新排序脚本", response_model=OutBase, status_code=200)
+async def reorder_script(script: ScriptReorderIn = Body(...)) -> OutBase:
+
+    try:
+        await Config.reorder_script(script.indexList)
+    except Exception as e:
+        return OutBase(code=500, status="error", message=str(e))
+    return OutBase()
+
+
 @router.post(
     "/user/add", summary="添加用户", response_model=UserCreateOut, status_code=200
 )
@@ -98,6 +108,18 @@ async def delete_user(user: UserDeleteIn = Body(...)) -> OutBase:
 
     try:
         await Config.del_user(user.scriptId, user.userId)
+    except Exception as e:
+        return OutBase(code=500, status="error", message=str(e))
+    return OutBase()
+
+
+@router.post(
+    "/user/order", summary="重新排序用户", response_model=OutBase, status_code=200
+)
+async def reorder_user(user: UserReorderIn = Body(...)) -> OutBase:
+
+    try:
+        await Config.reorder_user(user.scriptId, user.indexList)
     except Exception as e:
         return OutBase(code=500, status="error", message=str(e))
     return OutBase()

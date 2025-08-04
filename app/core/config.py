@@ -653,6 +653,13 @@ class AppConfig(GlobalConfig):
 
         await self.ScriptConfig.remove(uuid.UUID(script_id))
 
+    async def reorder_script(self, index_list: list[str]) -> None:
+        """重新排序脚本"""
+
+        self.logger.info(f"重新排序脚本：{index_list}")
+
+        await self.ScriptConfig.setOrder([uuid.UUID(_) for _ in index_list])
+
     async def add_user(self, script_id: str) -> tuple[uuid.UUID, ConfigBase]:
         """添加用户配置"""
 
@@ -702,6 +709,17 @@ class AppConfig(GlobalConfig):
             await script_config.UserData.remove(uid)
             await self.ScriptConfig.save()
 
+    async def reorder_user(self, script_id: str, index_list: list[str]) -> None:
+        """重新排序用户"""
+
+        self.logger.info(f"{script_id} 重新排序用户：{index_list}")
+
+        script_config = self.ScriptConfig[uuid.UUID(script_id)]
+
+        if isinstance(script_config, (MaaConfig | GeneralConfig)):
+            await script_config.UserData.setOrder([uuid.UUID(_) for _ in index_list])
+            await self.ScriptConfig.save()
+
     async def add_queue(self) -> tuple[uuid.UUID, ConfigBase]:
         """添加调度队列"""
 
@@ -748,6 +766,13 @@ class AppConfig(GlobalConfig):
 
         await self.QueueConfig.remove(uuid.UUID(queue_id))
 
+    async def reorder_queue(self, index_list: list[str]) -> None:
+        """重新排序调度队列"""
+
+        self.logger.info(f"重新排序调度队列：{index_list}")
+
+        await self.QueueConfig.setOrder([uuid.UUID(_) for _ in index_list])
+
     async def add_time_set(self, queue_id: str) -> tuple[uuid.UUID, ConfigBase]:
         """添加时间设置配置"""
 
@@ -793,6 +818,17 @@ class AppConfig(GlobalConfig):
 
         if isinstance(queue_config, QueueConfig):
             await queue_config.TimeSet.remove(uid)
+            await self.QueueConfig.save()
+
+    async def reorder_time_set(self, queue_id: str, index_list: list[str]) -> None:
+        """重新排序时间设置"""
+
+        self.logger.info(f"{queue_id} 重新排序时间设置：{index_list}")
+
+        queue_config = self.QueueConfig[uuid.UUID(queue_id)]
+
+        if isinstance(queue_config, QueueConfig):
+            await queue_config.TimeSet.setOrder([uuid.UUID(_) for _ in index_list])
             await self.QueueConfig.save()
 
     async def add_queue_item(self, queue_id: str) -> tuple[uuid.UUID, ConfigBase]:
@@ -842,6 +878,17 @@ class AppConfig(GlobalConfig):
 
         if isinstance(queue_config, QueueConfig):
             await queue_config.QueueItem.remove(uid)
+            await self.QueueConfig.save()
+
+    async def reorder_queue_item(self, queue_id: str, index_list: list[str]) -> None:
+        """重新排序队列项"""
+
+        self.logger.info(f"{queue_id} 重新排序队列项：{index_list}")
+
+        queue_config = self.QueueConfig[uuid.UUID(queue_id)]
+
+        if isinstance(queue_config, QueueConfig):
+            await queue_config.QueueItem.setOrder([uuid.UUID(_) for _ in index_list])
             await self.QueueConfig.save()
 
     async def get_setting(self) -> Dict[str, Any]:
