@@ -632,21 +632,17 @@ class AppConfig(GlobalConfig):
 
         return await self.ScriptConfig.add(class_book[script])
 
-    async def get_script(
-        self, mode: Literal["ALL", "Index", "Single"], script_id: Optional[uuid.UUID]
-    ) -> tuple[list, dict]:
+    async def get_script(self, script_id: Optional[str]) -> tuple[list, dict]:
         """获取脚本配置"""
 
-        if mode in ["ALL", "Index"]:
+        if script_id is None:
             data = await self.ScriptConfig.toDict()
-        elif mode == "Single":
-            if script_id is None:
-                raise ValueError("script_id cannot be None when mode is 'Single'")
-            data = await self.ScriptConfig.get(script_id)
+        else:
+            data = await self.ScriptConfig.get(uuid.UUID(script_id))
 
         index = data.pop("instances", [])
 
-        return list(index), data if mode != "Index" else {}
+        return list(index), data
 
     # def check_data(self) -> None:
     #     """检查用户数据文件并处理数据文件版本更新"""

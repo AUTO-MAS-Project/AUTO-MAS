@@ -48,8 +48,7 @@ class ScriptCreateOut(BaseModel):
 
 
 class ScriptGetIn(BaseModel):
-    mode: Literal["ALL", "Index", "Single"]
-    scriptId: Optional[str] = None
+    scriptId: Optional[str] = Field(None, description="脚本ID，仅在模式为Single时需要")
 
 
 class ScriptGetOut(BaseModel):
@@ -61,9 +60,8 @@ class ScriptGetOut(BaseModel):
 
 
 class ScriptUpdate(BaseModel):
-    name: Optional[str] = None
-    content: Optional[str] = None
-    description: Optional[str] = None
+    scriptId: str = Field(..., description="脚本ID")
+    data: Dict[str, Any] = Field(..., description="脚本更新数据")
 
 
 class ScriptUser(BaseModel):
@@ -172,9 +170,7 @@ async def add_script(script: ScriptCreateIn = Body(...)) -> ScriptCreateOut:
 async def get_scripts(script: ScriptGetIn = Body(...)) -> ScriptGetOut:
     """查询脚本"""
     try:
-        index, data = await Config.get_script(
-            script.mode, uuid.UUID(script.scriptId) if script.scriptId else None
-        )
+        index, data = await Config.get_script(script.scriptId)
     except Exception as e:
         return ScriptGetOut(code=500, status="error", message=str(e), index=[], data={})
     return ScriptGetOut(index=index, data=data)
