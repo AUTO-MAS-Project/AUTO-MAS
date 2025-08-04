@@ -70,6 +70,16 @@ async def delete_queue(queue: QueueDeleteIn = Body(...)) -> OutBase:
     return OutBase()
 
 
+@router.post("/order", summary="重新排序", response_model=OutBase, status_code=200)
+async def reorder_queue(script: QueueReorderIn = Body(...)) -> OutBase:
+
+    try:
+        await Config.reorder_queue(script.indexList)
+    except Exception as e:
+        return OutBase(code=500, status="error", message=str(e))
+    return OutBase()
+
+
 @router.post(
     "/time/add", summary="添加定时项", response_model=TimeSetCreateOut, status_code=200
 )
@@ -98,6 +108,18 @@ async def delete_time_set(time: TimeSetDeleteIn = Body(...)) -> OutBase:
 
     try:
         await Config.del_time_set(time.queueId, time.timeSetId)
+    except Exception as e:
+        return OutBase(code=500, status="error", message=str(e))
+    return OutBase()
+
+
+@router.post(
+    "/time/order", summary="重新排序时间设置", response_model=OutBase, status_code=200
+)
+async def reorder_time_set(time: TimeSetReorderIn = Body(...)) -> OutBase:
+
+    try:
+        await Config.reorder_time_set(time.queueId, time.indexList)
     except Exception as e:
         return OutBase(code=500, status="error", message=str(e))
     return OutBase()
@@ -134,6 +156,18 @@ async def delete_item(item: QueueItemDeleteIn = Body(...)) -> OutBase:
 
     try:
         await Config.del_queue_item(item.queueId, item.queueItemId)
+    except Exception as e:
+        return OutBase(code=500, status="error", message=str(e))
+    return OutBase()
+
+
+@router.post(
+    "/item/order", summary="重新排序队列项", response_model=OutBase, status_code=200
+)
+async def reorder_item(item: QueueItemReorderIn = Body(...)) -> OutBase:
+
+    try:
+        await Config.reorder_queue_item(item.queueId, item.indexList)
     except Exception as e:
         return OutBase(code=500, status="error", message=str(e))
     return OutBase()
