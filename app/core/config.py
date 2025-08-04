@@ -79,9 +79,6 @@ class GlobalConfig(ConfigBase):
 
     UI_IfShowTray = ConfigItem("UI", "IfShowTray", False, BoolValidator())
     UI_IfToTray = ConfigItem("UI", "IfToTray", False, BoolValidator())
-    UI_Size = ConfigItem("UI", "size", "1200x700")
-    UI_Location = ConfigItem("UI", "location", "100x100")
-    UI_Maximized = ConfigItem("UI", "maximized", False, BoolValidator())
 
     Notify_SendTaskResultTime = ConfigItem(
         "Notify",
@@ -563,9 +560,6 @@ class AppConfig(GlobalConfig):
     def __init__(self) -> None:
         super().__init__(if_save_multi_config=False)
 
-        # self.app_path = Path(sys.argv[0]).resolve().parent
-        # self.app_path_sys = Path(sys.argv[0]).resolve()
-
         self.root_path = Path.cwd()
 
         self.log_path = self.root_path / "debug/app.log"
@@ -669,7 +663,58 @@ class AppConfig(GlobalConfig):
     async def del_script(self, script_id: str) -> None:
         """删除脚本配置"""
 
+        self.logger.info(f"删除脚本配置：{script_id}")
+
         await self.ScriptConfig.remove(uuid.UUID(script_id))
+
+    async def add_user(self, script_id: str) -> tuple[uuid.UUID, ConfigBase]:
+        """添加用户配置"""
+
+        self.logger.info(f"{script_id} 添加用户配置")
+
+        script_config = self.ScriptConfig[uuid.UUID(script_id)]
+
+        if isinstance(script_config, MaaConfig):
+            uid, config = await script_config.UserData.add(MaaUserConfig)
+        elif isinstance(script_config, GeneralConfig):
+            uid, config = await script_config.UserData.add(GeneralUserConfig)
+        else:
+            raise TypeError(f"Unsupported script config type: {type(script_config)}")
+
+        await self.ScriptConfig.save()
+        return uid, config
+
+    async def update_user(
+        self, script_id: str, user_id: str, data: Dict[str, Dict[str, Any]]
+    ) -> None:
+        """更新用户配置"""
+
+        self.logger.info(f"{script_id} 更新用户配置：{user_id}")
+
+        script_config = self.ScriptConfig[uuid.UUID(script_id)]
+        uid = uuid.UUID(user_id)
+
+        for group, items in data.items():
+            for name, value in items.items():
+                self.logger.debug(
+                    f"更新脚本配置：{script_id} - {group}.{name} = {value}"
+                )
+                if isinstance(script_config, (MaaConfig | GeneralConfig)):
+                    await script_config.UserData[uid].set(group, name, value)
+
+        await self.ScriptConfig.save()
+
+    async def del_user(self, script_id: str, user_id: str) -> None:
+        """删除用户配置"""
+
+        self.logger.info(f"{script_id} 删除用户配置：{user_id}")
+
+        script_config = self.ScriptConfig[uuid.UUID(script_id)]
+        uid = uuid.UUID(user_id)
+
+        if isinstance(script_config, (MaaConfig | GeneralConfig)):
+            await script_config.UserData.remove(uid)
+            await self.ScriptConfig.save()
 
     async def get_setting(self) -> Dict[str, Any]:
         """获取全局设置"""
@@ -687,294 +732,6 @@ class AppConfig(GlobalConfig):
             for name, value in items.items():
                 self.logger.debug(f"更新全局设置 - {group}.{name} = {value}")
                 await self.set(group, name, value)
-
-    # def check_data(self) -> None:
-    #     """检查用户数据文件并处理数据文件版本更新"""
-
-    #     # 生成主数据库
-    #     if not self.database_path.exists():
-    #         db = sqlite3.connect(self.database_path)
-    #         cur = db.cursor()
-    #         cur.execute("CREATE TABLE version(v text)")
-    #         cur.execute("INSERT INTO version VALUES(?)", ("v1.8",))
-    #         db.commit()
-    #         cur.close()
-    #         db.close()
-
-    #     # 数据文件版本更新
-    #     db = sqlite3.connect(self.database_path)
-    #     cur = db.cursor()
-    #     cur.execute("SELECT * FROM version WHERE True")
-    #     version = cur.fetchall()
-
-    #     if version[0][0] != "v1.8":
-    #         logger.info("数据文件版本更新开始", module="配置管理")
-    #         if_streaming = False
-    #         # v1.4-->v1.5
-    #         if version[0][0] == "v1.4" or if_streaming:
-    #             logger.info("数据文件版本更新：v1.4-->v1.5", module="配置管理")
-    #             if_streaming = True
-
-    #             member_dict: Dict[str, Dict[str, Union[str, Path]]] = {}
-    #             if (self.app_path / "config/MaaConfig").exists():
-    #                 for maa_dir in (self.app_path / "config/MaaConfig").iterdir():
-    #                     if maa_dir.is_dir():
-    #                         member_dict[maa_dir.name] = {
-    #                             "Type": "Maa",
-    #                             "Path": maa_dir,
-    #                         }
-
-    #             member_dict = dict(
-    #                 sorted(member_dict.items(), key=lambda x: int(x[0][3:]))
-    #             )
-
-    #             for name, config in member_dict.items():
-    #                 if config["Type"] == "Maa":
-
-    #                     _db = sqlite3.connect(config["Path"] / "user_data.db")
-    #                     _cur = _db.cursor()
-    #                     _cur.execute("SELECT * FROM adminx WHERE True")
-    #                     data = _cur.fetchall()
-    #                     data = [list(row) for row in data]
-    #                     data = sorted(data, key=lambda x: (-len(x[15]), x[16]))
-    #                     _cur.close()
-    #                     _db.close()
-
-    #                     (config["Path"] / "user_data.db").unlink()
-
-    #                     (config["Path"] / f"UserData").mkdir(
-    #                         parents=True, exist_ok=True
-    #                     )
-
-    #                     for i in range(len(data)):
-
-    #                         info = {
-    #                             "Data": {
-    #                                 "IfPassCheck": True,
-    #                                 "LastAnnihilationDate": "2000-01-01",
-    #                                 "LastProxyDate": data[i][5],
-    #                                 "ProxyTimes": data[i][14],
-    #                             },
-    #                             "Info": {
-    #                                 "Annihilation": bool(data[i][10] == "y"),
-    #                                 "GameId": data[i][6],
-    #                                 "GameIdMode": "固定",
-    #                                 "GameId_1": data[i][7],
-    #                                 "GameId_2": data[i][8],
-    #                                 "Id": data[i][1],
-    #                                 "Infrastructure": bool(data[i][11] == "y"),
-    #                                 "MedicineNumb": 0,
-    #                                 "Mode": (
-    #                                     "简洁" if data[i][15] == "simple" else "详细"
-    #                                 ),
-    #                                 "Name": data[i][0],
-    #                                 "Notes": data[i][13],
-    #                                 "Password": base64.b64encode(data[i][12]).decode(
-    #                                     "utf-8"
-    #                                 ),
-    #                                 "RemainedDay": data[i][3],
-    #                                 "Routine": bool(data[i][9] == "y"),
-    #                                 "Server": data[i][2],
-    #                                 "Status": bool(data[i][4] == "y"),
-    #                             },
-    #                         }
-
-    #                         (config["Path"] / f"UserData/用户_{i + 1}").mkdir(
-    #                             parents=True, exist_ok=True
-    #                         )
-    #                         with (
-    #                             config["Path"] / f"UserData/用户_{i + 1}/config.json"
-    #                         ).open(mode="w", encoding="utf-8") as f:
-    #                             json.dump(info, f, ensure_ascii=False, indent=4)
-
-    #                         if (
-    #                             self.app_path
-    #                             / f"config/MaaConfig/{name}/{data[i][15]}/{data[i][16]}/annihilation/gui.json"
-    #                         ).exists():
-    #                             (
-    #                                 config["Path"]
-    #                                 / f"UserData/用户_{i + 1}/Annihilation"
-    #                             ).mkdir(parents=True, exist_ok=True)
-    #                             shutil.move(
-    #                                 self.app_path
-    #                                 / f"config/MaaConfig/{name}/{data[i][15]}/{data[i][16]}/annihilation/gui.json",
-    #                                 config["Path"]
-    #                                 / f"UserData/用户_{i + 1}/Annihilation/gui.json",
-    #                             )
-    #                         if (
-    #                             self.app_path
-    #                             / f"config/MaaConfig/{name}/{data[i][15]}/{data[i][16]}/routine/gui.json"
-    #                         ).exists():
-    #                             (
-    #                                 config["Path"] / f"UserData/用户_{i + 1}/Routine"
-    #                             ).mkdir(parents=True, exist_ok=True)
-    #                             shutil.move(
-    #                                 self.app_path
-    #                                 / f"config/MaaConfig/{name}/{data[i][15]}/{data[i][16]}/routine/gui.json",
-    #                                 config["Path"]
-    #                                 / f"UserData/用户_{i + 1}/Routine/gui.json",
-    #                             )
-    #                         if (
-    #                             self.app_path
-    #                             / f"config/MaaConfig/{name}/{data[i][15]}/{data[i][16]}/infrastructure/infrastructure.json"
-    #                         ).exists():
-    #                             (
-    #                                 config["Path"]
-    #                                 / f"UserData/用户_{i + 1}/Infrastructure"
-    #                             ).mkdir(parents=True, exist_ok=True)
-    #                             shutil.move(
-    #                                 self.app_path
-    #                                 / f"config/MaaConfig/{name}/{data[i][15]}/{data[i][16]}/infrastructure/infrastructure.json",
-    #                                 config["Path"]
-    #                                 / f"UserData/用户_{i + 1}/Infrastructure/infrastructure.json",
-    #                             )
-
-    #                     if (config["Path"] / f"simple").exists():
-    #                         shutil.rmtree(config["Path"] / f"simple")
-    #                     if (config["Path"] / f"beta").exists():
-    #                         shutil.rmtree(config["Path"] / f"beta")
-
-    #             cur.execute("DELETE FROM version WHERE v = ?", ("v1.4",))
-    #             cur.execute("INSERT INTO version VALUES(?)", ("v1.5",))
-    #             db.commit()
-    #         # v1.5-->v1.6
-    #         if version[0][0] == "v1.5" or if_streaming:
-    #             logger.info("数据文件版本更新：v1.5-->v1.6", module="配置管理")
-    #             if_streaming = True
-    #             cur.execute("DELETE FROM version WHERE v = ?", ("v1.5",))
-    #             cur.execute("INSERT INTO version VALUES(?)", ("v1.6",))
-    #             db.commit()
-    #             # 删除旧的注册表项
-    #             import winreg
-
-    #             key = winreg.OpenKey(
-    #                 winreg.HKEY_CURRENT_USER,
-    #                 r"Software\Microsoft\Windows\CurrentVersion\Run",
-    #                 0,
-    #                 winreg.KEY_READ,
-    #             )
-
-    #             try:
-    #                 value, _ = winreg.QueryValueEx(key, "AUTO_MAA")
-    #                 winreg.CloseKey(key)
-    #                 key = winreg.OpenKey(
-    #                     winreg.HKEY_CURRENT_USER,
-    #                     r"Software\Microsoft\Windows\CurrentVersion\Run",
-    #                     winreg.KEY_SET_VALUE,
-    #                     winreg.KEY_ALL_ACCESS
-    #                     | winreg.KEY_WRITE
-    #                     | winreg.KEY_CREATE_SUB_KEY,
-    #                 )
-    #                 winreg.DeleteValue(key, "AUTO_MAA")
-    #                 winreg.CloseKey(key)
-    #             except FileNotFoundError:
-    #                 pass
-    #         # v1.6-->v1.7
-    #         if version[0][0] == "v1.6" or if_streaming:
-    #             logger.info("数据文件版本更新：v1.6-->v1.7", module="配置管理")
-    #             if_streaming = True
-
-    #             if (self.app_path / "config/MaaConfig").exists():
-
-    #                 for MaaConfig in (self.app_path / "config/MaaConfig").iterdir():
-    #                     if MaaConfig.is_dir():
-    #                         for user in (MaaConfig / "UserData").iterdir():
-    #                             if user.is_dir():
-    #                                 if (user / "config.json").exists():
-    #                                     with (user / "config.json").open(
-    #                                         encoding="utf-8"
-    #                                     ) as f:
-    #                                         user_config = json.load(f)
-    #                                     user_config["Info"]["Stage"] = user_config[
-    #                                         "Info"
-    #                                     ]["GameId"]
-    #                                     user_config["Info"]["StageMode"] = user_config[
-    #                                         "Info"
-    #                                     ]["GameIdMode"]
-    #                                     user_config["Info"]["Stage_1"] = user_config[
-    #                                         "Info"
-    #                                     ]["GameId_1"]
-    #                                     user_config["Info"]["Stage_2"] = user_config[
-    #                                         "Info"
-    #                                     ]["GameId_2"]
-    #                                     user_config["Info"]["Stage_Remain"] = (
-    #                                         user_config["Info"]["GameId_Remain"]
-    #                                     )
-    #                                     with (user / "config.json").open(
-    #                                         "w", encoding="utf-8"
-    #                                     ) as f:
-    #                                         json.dump(
-    #                                             user_config,
-    #                                             f,
-    #                                             ensure_ascii=False,
-    #                                             indent=4,
-    #                                         )
-
-    #             if (self.app_path / "config/MaaPlanConfig").exists():
-    #                 for MaaPlanConfig in (
-    #                     self.app_path / "config/MaaPlanConfig"
-    #                 ).iterdir():
-    #                     if (
-    #                         MaaPlanConfig.is_dir()
-    #                         and (MaaPlanConfig / "config.json").exists()
-    #                     ):
-    #                         with (MaaPlanConfig / "config.json").open(
-    #                             encoding="utf-8"
-    #                         ) as f:
-    #                             plan_config = json.load(f)
-
-    #                         for k in self.stage_dict.keys():
-    #                             plan_config[k]["Stage"] = plan_config[k]["GameId"]
-    #                             plan_config[k]["Stage_1"] = plan_config[k]["GameId_1"]
-    #                             plan_config[k]["Stage_2"] = plan_config[k]["GameId_2"]
-    #                             plan_config[k]["Stage_Remain"] = plan_config[k][
-    #                                 "GameId_Remain"
-    #                             ]
-    #                         with (MaaPlanConfig / "config.json").open(
-    #                             "w", encoding="utf-8"
-    #                         ) as f:
-    #                             json.dump(plan_config, f, ensure_ascii=False, indent=4)
-
-    #             cur.execute("DELETE FROM version WHERE v = ?", ("v1.6",))
-    #             cur.execute("INSERT INTO version VALUES(?)", ("v1.7",))
-    #             db.commit()
-    #         # v1.7-->v1.8
-    #         if version[0][0] == "v1.7" or if_streaming:
-    #             logger.info("数据文件版本更新：v1.7-->v1.8", module="配置管理")
-    #             if_streaming = True
-
-    #             if (self.app_path / "config/QueueConfig").exists():
-    #                 for QueueConfig in (self.app_path / "config/QueueConfig").glob(
-    #                     "*.json"
-    #                 ):
-    #                     with QueueConfig.open(encoding="utf-8") as f:
-    #                         queue_config = json.load(f)
-
-    #                     queue_config["QueueSet"]["TimeEnabled"] = queue_config[
-    #                         "QueueSet"
-    #                     ]["Enabled"]
-
-    #                     for i in range(10):
-    #                         queue_config["Queue"][f"Script_{i}"] = queue_config[
-    #                             "Queue"
-    #                         ][f"Member_{i + 1}"]
-    #                         queue_config["Time"][f"Enabled_{i}"] = queue_config["Time"][
-    #                             f"TimeEnabled_{i}"
-    #                         ]
-    #                         queue_config["Time"][f"Set_{i}"] = queue_config["Time"][
-    #                             f"TimeSet_{i}"
-    #                         ]
-
-    #                     with QueueConfig.open("w", encoding="utf-8") as f:
-    #                         json.dump(queue_config, f, ensure_ascii=False, indent=4)
-
-    #             cur.execute("DELETE FROM version WHERE v = ?", ("v1.7",))
-    #             cur.execute("INSERT INTO version VALUES(?)", ("v1.8",))
-    #             db.commit()
-
-    #         cur.close()
-    #         db.close()
-    #         logger.success("数据文件版本更新完成", module="配置管理")
 
     # def get_stage(self) -> None:
     #     """从MAA服务器更新活动关卡信息"""

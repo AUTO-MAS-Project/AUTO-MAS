@@ -31,15 +31,15 @@ router = APIRouter(prefix="/api/scripts", tags=["脚本管理"])
     "/add", summary="添加脚本", response_model=ScriptCreateOut, status_code=200
 )
 async def add_script(script: ScriptCreateIn = Body(...)) -> ScriptCreateOut:
-    """添加脚本"""
 
     uid, config = await Config.add_script(script.type)
     return ScriptCreateOut(scriptId=str(uid), data=await config.toDict())
 
 
-@router.post("/get", summary="查询脚本", response_model=ScriptGetOut, status_code=200)
+@router.post(
+    "/get", summary="查询脚本配置信息", response_model=ScriptGetOut, status_code=200
+)
 async def get_scripts(script: ScriptGetIn = Body(...)) -> ScriptGetOut:
-    """查询脚本"""
 
     try:
         index, data = await Config.get_script(script.scriptId)
@@ -48,23 +48,56 @@ async def get_scripts(script: ScriptGetIn = Body(...)) -> ScriptGetOut:
     return ScriptGetOut(index=index, data=data)
 
 
-@router.post("/update", summary="更新脚本", response_model=BaseOut, status_code=200)
-async def update_script(script: ScriptUpdateIn = Body(...)) -> BaseOut:
-    """更新脚本"""
+@router.post(
+    "/update", summary="更新脚本配置信息", response_model=OutBase, status_code=200
+)
+async def update_script(script: ScriptUpdateIn = Body(...)) -> OutBase:
 
     try:
         await Config.update_script(script.scriptId, script.data)
     except Exception as e:
-        return BaseOut(code=500, status="error", message=str(e))
-    return BaseOut()
+        return OutBase(code=500, status="error", message=str(e))
+    return OutBase()
 
 
-@router.post("/delete", summary="删除脚本", response_model=BaseOut, status_code=200)
-async def delete_script(script: ScriptDeleteIn = Body(...)) -> BaseOut:
-    """删除脚本"""
+@router.post("/delete", summary="删除脚本", response_model=OutBase, status_code=200)
+async def delete_script(script: ScriptDeleteIn = Body(...)) -> OutBase:
 
     try:
         await Config.del_script(script.scriptId)
     except Exception as e:
-        return BaseOut(code=500, status="error", message=str(e))
-    return BaseOut()
+        return OutBase(code=500, status="error", message=str(e))
+    return OutBase()
+
+
+@router.post(
+    "/user/add", summary="添加用户", response_model=UserCreateOut, status_code=200
+)
+async def add_user(user: UserInBase = Body(...)) -> UserCreateOut:
+
+    uid, config = await Config.add_user(user.scriptId)
+    return UserCreateOut(userId=str(uid), data=await config.toDict())
+
+
+@router.post(
+    "/user/update", summary="更新用户配置信息", response_model=OutBase, status_code=200
+)
+async def update_user(user: UserUpdateIn = Body(...)) -> OutBase:
+
+    try:
+        await Config.update_user(user.scriptId, user.userId, user.data)
+    except Exception as e:
+        return OutBase(code=500, status="error", message=str(e))
+    return OutBase()
+
+
+@router.post(
+    "/user/delete", summary="删除用户", response_model=OutBase, status_code=200
+)
+async def delete_user(user: UserDeleteIn = Body(...)) -> OutBase:
+
+    try:
+        await Config.del_user(user.scriptId, user.userId)
+    except Exception as e:
+        return OutBase(code=500, status="error", message=str(e))
+    return OutBase()
