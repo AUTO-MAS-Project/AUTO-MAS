@@ -1,15 +1,14 @@
-# 开发指南
 
+## 创建环境
+```bash
+uv venv
+```
 
 ## 安装依赖
 ```bash
-uv install
+uv pip install -e .
 ```
 
-## 开发启动
-```bash
-uv run main.py
-```
 
 ## 添加依赖
 ```bash
