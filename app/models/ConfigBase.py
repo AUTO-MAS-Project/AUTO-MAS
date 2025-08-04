@@ -74,6 +74,22 @@ class OptionsValidator(ConfigValidator):
         return value if self.validate(value) else self.options[0]
 
 
+class UidValidator(ConfigValidator):
+    """UID验证器"""
+
+    def validate(self, value: str) -> bool:
+        if value == "":
+            return True
+        try:
+            uuid.UUID(value)
+            return True
+        except ValueError:
+            return False
+
+    def correct(self, value: str) -> str:
+        return ""
+
+
 class BoolValidator(OptionsValidator):
     """布尔值验证器"""
 

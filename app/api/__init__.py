@@ -23,6 +23,7 @@ __author__ = "DLmaster361 <DLmaster_361@163.com>"
 __license__ = "GPL-3.0 license"
 
 from .scripts import router as scripts_router
+from .queue import router as queue_router
 from .setting import router as setting_router
 
-__all__ = ["scripts_router", "setting_router"]
+__all__ = ["scripts_router", "queue_router", "setting_router"]

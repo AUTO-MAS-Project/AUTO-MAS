@@ -22,36 +22,10 @@
 import os
 import sys
 import ctypes
-import uvicorn
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 
-
-from api import scripts_router, setting_router
-from core import Config
 from utils import get_logger
 
-
 logger = get_logger("主程序")
-
-
-app = FastAPI(
-    title="AUTO_MAA",
-    description="API for managing automation scripts, plans, and tasks",
-    version="1.0.0",
-)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # 允许所有域名跨域访问
-    allow_credentials=True,
-    allow_methods=["*"],  # 允许所有请求方法，如 GET、POST、PUT、DELETE
-    allow_headers=["*"],  # 允许所有请求头
-)
-
-
-app.include_router(scripts_router)
-app.include_router(setting_router)
 
 
 def is_admin() -> bool:
@@ -66,6 +40,44 @@ def is_admin() -> bool:
 def main():
 
     if is_admin():
+
+        import uvicorn
+        from fastapi import FastAPI
+        from contextlib import asynccontextmanager
+
+        @asynccontextmanager
+        async def lifespan(app: FastAPI):
+
+            from core import Config
+
+            await Config.init_config()
+
+            yield
+
+            logger.info("AUTO_MAA 后端程序关闭")
+            logger.info("----------------END----------------")
+
+        from fastapi.middleware.cors import CORSMiddleware
+        from api import scripts_router, queue_router, setting_router
+
+        app = FastAPI(
+            title="AUTO_MAA",
+            description="API for managing automation scripts, plans, and tasks",
+            version="1.0.0",
+            lifespan=lifespan,
+        )
+
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["*"],  # 允许所有域名跨域访问
+            allow_credentials=True,
+            allow_methods=["*"],  # 允许所有请求方法，如 GET、POST、PUT、DELETE
+            allow_headers=["*"],  # 允许所有请求头
+        )
+
+        app.include_router(scripts_router)
+        app.include_router(queue_router)
+        app.include_router(setting_router)
 
         uvicorn.run(app, host="0.0.0.0", port=8000)
 
