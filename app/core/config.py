@@ -644,6 +644,11 @@ class AppConfig(GlobalConfig):
 
         return list(index), data
 
+    async def del_script(self, script_id: str) -> None:
+        """删除脚本配置"""
+
+        await self.ScriptConfig.remove(uuid.UUID(script_id))
+
     # def check_data(self) -> None:
     #     """检查用户数据文件并处理数据文件版本更新"""
 
