@@ -105,14 +105,14 @@ class GlobalConfig(ConfigBase):
     )
     Notify_CompanyWebHookBotUrl = ConfigItem("Notify", "CompanyWebHookBotUrl", "")
 
-    Notify_IfAutoUpdate = ConfigItem("Update", "IfAutoUpdate", False, BoolValidator())
-    Notify_UpdateType = ConfigItem(
+    Update_IfAutoUpdate = ConfigItem("Update", "IfAutoUpdate", False, BoolValidator())
+    Update_UpdateType = ConfigItem(
         "Update", "UpdateType", "stable", OptionsValidator(["stable", "beta"])
     )
-    Notify_ThreadNumb = ConfigItem("Update", "ThreadNumb", 8, RangeValidator(1, 32))
-    Notify_ProxyAddress = ConfigItem("Update", "ProxyAddress", "")
-    Notify_ProxyUrlList = ConfigItem("Update", "ProxyUrlList", [])
-    Notify_MirrorChyanCDK = ConfigItem("Update", "MirrorChyanCDK", "")
+    Update_ThreadNumb = ConfigItem("Update", "ThreadNumb", 8, RangeValidator(1, 32))
+    Update_ProxyAddress = ConfigItem("Update", "ProxyAddress", "")
+    Update_ProxyUrlList = ConfigItem("Update", "ProxyUrlList", [])
+    Update_MirrorChyanCDK = ConfigItem("Update", "MirrorChyanCDK", "")
 
 
 class QueueItem(ConfigBase):
