@@ -22,10 +22,35 @@
 import os
 import sys
 import ctypes
+import uvicorn
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
-from app.utils import get_logger
+
+from api import scripts_router
+from core import Config
+from utils import get_logger
+
 
 logger = get_logger("主程序")
+
+
+app = FastAPI(
+    title="AUTO_MAA",
+    description="API for managing automation scripts, plans, and tasks",
+    version="1.0.0",
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # 允许所有域名跨域访问
+    allow_credentials=True,
+    allow_methods=["*"],  # 允许所有请求方法，如 GET、POST、PUT、DELETE
+    allow_headers=["*"],  # 允许所有请求头
+)
+
+
+app.include_router(scripts_router)
 
 
 def is_admin() -> bool:
@@ -40,9 +65,6 @@ def is_admin() -> bool:
 def main():
 
     if is_admin():
-
-        import uvicorn
-        from app.api import app
 
         uvicorn.run(app, host="0.0.0.0", port=8000)
 

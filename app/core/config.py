@@ -33,8 +33,8 @@ from pathlib import Path
 
 from typing import Union, Dict, List, Literal, Optional, Any, Tuple, Callable, TypeVar
 
-from app.utils import get_logger
-from app.models.ConfigBase import *
+from utils import get_logger
+from models.ConfigBase import *
 
 
 class GlobalConfig(ConfigBase):
@@ -628,12 +628,16 @@ class AppConfig(GlobalConfig):
     ) -> tuple[uuid.UUID, ConfigBase]:
         """添加脚本配置"""
 
+        self.logger.info(f"添加脚本配置：{script}")
+
         class_book = {"MAA": MaaConfig, "General": GeneralConfig}
 
         return await self.ScriptConfig.add(class_book[script])
 
     async def get_script(self, script_id: Optional[str]) -> tuple[list, dict]:
         """获取脚本配置"""
+
+        self.logger.info(f"获取脚本配置：{script_id}")
 
         if script_id is None:
             data = await self.ScriptConfig.toDict()
@@ -643,6 +647,24 @@ class AppConfig(GlobalConfig):
         index = data.pop("instances", [])
 
         return list(index), data
+
+    async def update_script(
+        self, script_id: str, data: Dict[str, Dict[str, Any]]
+    ) -> None:
+        """更新脚本配置"""
+
+        self.logger.info(f"更新脚本配置：{script_id}")
+
+        uid = uuid.UUID(script_id)
+
+        for group, items in data.items():
+            for name, value in items.items():
+                self.logger.debug(
+                    f"更新脚本配置：{script_id} - {group}.{name} = {value}"
+                )
+                await self.ScriptConfig[uid].set(group, name, value)
+
+        await self.ScriptConfig.save()
 
     async def del_script(self, script_id: str) -> None:
         """删除脚本配置"""

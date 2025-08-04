@@ -22,6 +22,6 @@ __version__ = "5.0.0"
 __author__ = "DLmaster361 <DLmaster_361@163.com>"
 __license__ = "GPL-3.0 license"
 
-from .api import app
+from .scripts import router as scripts_router
 
-__all__ = ["app"]
+__all__ = ["scripts_router"]

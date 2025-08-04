@@ -23,5 +23,6 @@ __author__ = "DLmaster361 <DLmaster_361@163.com>"
 __license__ = "GPL-3.0 license"
 
 from .ConfigBase import *
+from .schema import *
 
-__all__ = ["ConfigBase"]
+__all__ = ["ConfigBase", "schema"]
