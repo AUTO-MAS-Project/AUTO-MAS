@@ -28,11 +28,10 @@ import re
 import base64
 import calendar
 from datetime import datetime, timedelta, date
-from collections import defaultdict
 from pathlib import Path
 
 
-from typing import Union, Dict, List, Literal
+from typing import Union, Dict, List, Literal, Optional, Any, Tuple, Callable, TypeVar
 
 from app.utils import get_logger
 from app.models.ConfigBase import *
@@ -632,6 +631,22 @@ class AppConfig(GlobalConfig):
         class_book = {"MAA": MaaConfig, "General": GeneralConfig}
 
         return await self.ScriptConfig.add(class_book[script])
+
+    async def get_script(
+        self, mode: Literal["ALL", "Index", "Single"], script_id: Optional[uuid.UUID]
+    ) -> tuple[list, dict]:
+        """获取脚本配置"""
+
+        if mode in ["ALL", "Index"]:
+            data = await self.ScriptConfig.toDict()
+        elif mode == "Single":
+            if script_id is None:
+                raise ValueError("script_id cannot be None when mode is 'Single'")
+            data = await self.ScriptConfig.get(script_id)
+
+        index = data.pop("instances", [])
+
+        return list(index), data if mode != "Index" else {}
 
     # def check_data(self) -> None:
     #     """检查用户数据文件并处理数据文件版本更新"""
