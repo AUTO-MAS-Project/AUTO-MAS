@@ -6,8 +6,9 @@ import type {
   GeneralScriptConfig,
   GetScriptsResponse,
   ScriptDetail,
-  ScriptIndexItem
-} from '@/types/script'
+  ScriptIndexItem,
+  DeleteScriptResponse
+} from '../types/script.ts'
 
 const API_BASE_URL = 'http://localhost:8000/api'
 
@@ -173,24 +174,35 @@ export function useScriptApi() {
     }
   }
 
-  // 删除脚本（暂时模拟）
-  const deleteScript = async (scriptId: string) => {
+  // 删除脚本
+  const deleteScript = async (scriptId: string): Promise<boolean> => {
     loading.value = true
     error.value = null
 
     try {
-      const response = await fetch(`${API_BASE_URL}/delete/scripts/${scriptId}`, {
-        method: 'DELETE',
+      const response = await fetch(`${API_BASE_URL}/delete/scripts`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ scriptId }),
       })
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`)
       }
 
-      return await response.json()
+      const apiResponse: DeleteScriptResponse = await response.json()
+      
+      // 根据code判断是否成功（非200就是不成功）
+      if (apiResponse.code !== 200) {
+        throw new Error(apiResponse.message || '删除脚本失败')
+      }
+
+      return true
     } catch (err) {
       error.value = err instanceof Error ? err.message : '删除脚本失败'
-      return null
+      return false
     } finally {
       loading.value = false
     }

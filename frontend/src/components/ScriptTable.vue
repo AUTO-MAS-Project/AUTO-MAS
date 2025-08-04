@@ -292,7 +292,6 @@ const handleDeleteUser = (user: User) => {
 </script>
 
 <style scoped>
-/* 现代化表格样式 */
 .modern-table :deep(.ant-table) {
   background: var(--ant-color-bg-container);
   border-radius: 12px;

@@ -169,3 +169,10 @@ export interface ScriptDetail {
   config: MAAScriptConfig | GeneralScriptConfig
   createTime?: string
 }
+
+// 删除脚本API响应
+export interface DeleteScriptResponse {
+  code: number
+  status: string
+  message: string
+}

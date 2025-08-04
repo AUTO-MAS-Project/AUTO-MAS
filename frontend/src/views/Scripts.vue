@@ -216,33 +216,6 @@ const handleRefresh = () => {
   background-clip: text;
 }
 
-.add-button {
-  height: 48px;
-  padding: 0 24px;
-  font-size: 16px;
-  font-weight: 600;
-  border-radius: 12px;
-  box-shadow: 0 4px 12px rgba(24, 144, 255, 0.3);
-  transition: all 0.3s ease;
-}
-
-.add-button:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(24, 144, 255, 0.4);
-}
-
-.refresh-button {
-  height: 48px;
-  padding: 0 24px;
-  font-size: 16px;
-  font-weight: 500;
-  border-radius: 12px;
-  border: 2px solid var(--ant-color-border);
-  background: var(--ant-color-bg-container);
-  color: var(--ant-color-text);
-  transition: all 0.3s ease;
-}
-
 /* 脚本类型选择弹窗样式 */
 .type-select-modal :deep(.ant-modal-content) {
   border-radius: 16px;

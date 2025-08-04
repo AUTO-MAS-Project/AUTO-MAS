@@ -6,7 +6,11 @@
     "outDir": "dist-electron",
     "rootDir": "electron",
     "esModuleInterop": true,
-    "types": ["node", "electron"]
+    "types": ["node", "electron"],
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"]
+    }
   },
   "include": ["electron"]
 }

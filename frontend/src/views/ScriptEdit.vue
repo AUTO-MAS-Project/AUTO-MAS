@@ -4,45 +4,34 @@
       <div class="header-nav">
         <a-breadcrumb class="breadcrumb">
           <a-breadcrumb-item>
-            <router-link to="/scripts" class="breadcrumb-link">
-              脚本管理
-            </router-link>
+            <router-link to="/scripts" class="breadcrumb-link"> 脚本管理</router-link>
           </a-breadcrumb-item>
           <a-breadcrumb-item>
             <div class="breadcrumb-current">
-              <img 
-                v-if="formData.type === 'MAA'" 
-                src="@/assets/MAA.png" 
+              <img
+                v-if="formData.type === 'MAA'"
+                src="@/assets/MAA.png"
                 alt="MAA"
                 class="breadcrumb-logo"
               />
-              <img 
-                v-else 
-                src="@/assets/AUTO_MAA.png" 
-                alt="AUTO MAA"
-                class="breadcrumb-logo"
-              />
+              <img v-else src="@/assets/AUTO_MAA.png" alt="AUTO MAA" class="breadcrumb-logo" />
               编辑脚本
             </div>
           </a-breadcrumb-item>
         </a-breadcrumb>
       </div>
-      
+
       <a-space size="middle">
-        <a-button 
-          size="large"
-          @click="handleCancel"
-          class="cancel-button"
-        >
+        <a-button size="large" @click="handleCancel" class="cancel-button">
           <template #icon>
             <CloseOutlined />
           </template>
           取消
         </a-button>
-        <a-button 
-          type="primary" 
+        <a-button
+          type="primary"
           size="large"
-          :loading="loading" 
+          :loading="loading"
           @click="handleSave"
           class="save-button"
         >
@@ -55,16 +44,9 @@
     </div>
 
     <div class="script-edit-content">
-      <a-card 
-        :title="getCardTitle()" 
-        :loading="pageLoading"
-        class="config-card"
-      >
+      <a-card :title="getCardTitle()" :loading="pageLoading" class="config-card">
         <template #extra>
-          <a-tag 
-            :color="formData.type === 'MAA' ? 'blue' : 'green'" 
-            class="type-tag"
-          >
+          <a-tag :color="formData.type === 'MAA' ? 'blue' : 'green'" class="type-tag">
             {{ formData.type }}
           </a-tag>
         </template>
@@ -92,8 +74,8 @@
                       </span>
                     </a-tooltip>
                   </template>
-                  <a-input 
-                    v-model:value="formData.name" 
+                  <a-input
+                    v-model:value="formData.name"
                     placeholder="请输入脚本名称"
                     size="large"
                     class="modern-input"
@@ -110,8 +92,8 @@
                       </span>
                     </a-tooltip>
                   </template>
-                  <a-select 
-                    v-model:value="formData.type" 
+                  <a-select
+                    v-model:value="formData.type"
                     disabled
                     size="large"
                     class="modern-select"
@@ -143,18 +125,14 @@
                       </a-tooltip>
                     </template>
                     <a-input-group compact class="path-input-group">
-                      <a-input 
-                        v-model:value="maaConfig.Info.Path" 
+                      <a-input
+                        v-model:value="maaConfig.Info.Path"
                         placeholder="请选择MAA.exe所在的文件夹"
                         size="large"
                         class="path-input"
                         readonly
                       />
-                      <a-button 
-                        size="large"
-                        @click="selectMAAPath"
-                        class="path-button"
-                      >
+                      <a-button size="large" @click="selectMAAPath" class="path-button">
                         <template #icon>
                           <FolderOpenOutlined />
                         </template>
@@ -165,7 +143,7 @@
                 </a-col>
               </a-row>
             </div>
-            
+
             <!-- 运行配置 -->
             <div class="form-section">
               <div class="section-header">
@@ -182,13 +160,13 @@
                         </span>
                       </a-tooltip>
                     </template>
-                    <a-input-number 
-                      v-model:value="maaConfig.Run.ADBSearchRange" 
-                      :min="0" 
+                    <a-input-number
+                      v-model:value="maaConfig.Run.ADBSearchRange"
+                      :min="0"
                       :max="10"
                       size="large"
                       class="modern-number-input"
-                      style="width: 100%" 
+                      style="width: 100%"
                     />
                   </a-form-item>
                 </a-col>
@@ -202,13 +180,13 @@
                         </span>
                       </a-tooltip>
                     </template>
-                    <a-input-number 
-                      v-model:value="maaConfig.Run.AnnihilationTimeLimit" 
-                      :min="1" 
+                    <a-input-number
+                      v-model:value="maaConfig.Run.AnnihilationTimeLimit"
+                      :min="1"
                       :max="120"
                       size="large"
                       class="modern-number-input"
-                      style="width: 100%" 
+                      style="width: 100%"
                     />
                   </a-form-item>
                 </a-col>
@@ -222,18 +200,18 @@
                         </span>
                       </a-tooltip>
                     </template>
-                    <a-input-number 
-                      v-model:value="maaConfig.Run.ProxyTimesLimit" 
-                      :min="0" 
+                    <a-input-number
+                      v-model:value="maaConfig.Run.ProxyTimesLimit"
+                      :min="0"
                       :max="999"
                       size="large"
                       class="modern-number-input"
-                      style="width: 100%" 
+                      style="width: 100%"
                     />
                   </a-form-item>
                 </a-col>
               </a-row>
-              
+
               <a-row :gutter="24">
                 <a-col :span="8">
                   <a-form-item>
@@ -245,13 +223,13 @@
                         </span>
                       </a-tooltip>
                     </template>
-                    <a-input-number 
-                      v-model:value="maaConfig.Run.RoutineTimeLimit" 
-                      :min="1" 
+                    <a-input-number
+                      v-model:value="maaConfig.Run.RoutineTimeLimit"
+                      :min="1"
                       :max="180"
                       size="large"
                       class="modern-number-input"
-                      style="width: 100%" 
+                      style="width: 100%"
                     />
                   </a-form-item>
                 </a-col>
@@ -265,13 +243,13 @@
                         </span>
                       </a-tooltip>
                     </template>
-                    <a-input-number 
-                      v-model:value="maaConfig.Run.RunTimesLimit" 
-                      :min="1" 
+                    <a-input-number
+                      v-model:value="maaConfig.Run.RunTimesLimit"
+                      :min="1"
                       :max="10"
                       size="large"
                       class="modern-number-input"
-                      style="width: 100%" 
+                      style="width: 100%"
                     />
                   </a-form-item>
                 </a-col>
@@ -285,7 +263,7 @@
                         </span>
                       </a-tooltip>
                     </template>
-                    <a-select 
+                    <a-select
                       v-model:value="maaConfig.Run.TaskTransitionMethod"
                       size="large"
                       class="modern-select"
@@ -296,7 +274,7 @@
                   </a-form-item>
                 </a-col>
               </a-row>
-              
+
               <a-row :gutter="24">
                 <a-col :span="12">
                   <a-form-item>
@@ -308,7 +286,7 @@
                         </span>
                       </a-tooltip>
                     </template>
-                    <a-switch 
+                    <a-switch
                       v-model:checked="maaConfig.Run.AnnihilationWeeklyLimit"
                       size="default"
                       class="modern-switch"
@@ -338,18 +316,14 @@
                       </a-tooltip>
                     </template>
                     <a-input-group compact class="path-input-group">
-                      <a-input 
-                        v-model:value="generalConfig.Info.RootPath" 
+                      <a-input
+                        v-model:value="generalConfig.Info.RootPath"
                         placeholder="请选择脚本根目录"
                         size="large"
                         class="path-input"
                         readonly
                       />
-                      <a-button 
-                        size="large"
-                        @click="selectRootPath"
-                        class="path-button"
-                      >
+                      <a-button size="large" @click="selectRootPath" class="path-button">
                         <template #icon>
                           <FolderOpenOutlined />
                         </template>
@@ -360,7 +334,7 @@
                 </a-col>
               </a-row>
             </div>
-            
+
             <!-- 游戏配置 -->
             <div class="form-section">
               <div class="section-header">
@@ -378,18 +352,14 @@
                       </a-tooltip>
                     </template>
                     <a-input-group compact class="path-input-group">
-                      <a-input 
-                        v-model:value="generalConfig.Game.Path" 
+                      <a-input
+                        v-model:value="generalConfig.Game.Path"
                         placeholder="请选择游戏可执行文件"
                         size="large"
                         class="path-input"
                         readonly
                       />
-                      <a-button 
-                        size="large"
-                        @click="selectGamePath"
-                        class="path-button"
-                      >
+                      <a-button size="large" @click="selectGamePath" class="path-button">
                         <template #icon>
                           <FileOutlined />
                         </template>
@@ -408,8 +378,8 @@
                         </span>
                       </a-tooltip>
                     </template>
-                    <a-input 
-                      v-model:value="generalConfig.Game.Arguments" 
+                    <a-input
+                      v-model:value="generalConfig.Game.Arguments"
                       placeholder="请输入启动参数"
                       size="large"
                       class="modern-input"
@@ -417,7 +387,7 @@
                   </a-form-item>
                 </a-col>
               </a-row>
-              
+
               <a-row :gutter="24">
                 <a-col :span="8">
                   <a-form-item>
@@ -429,7 +399,7 @@
                         </span>
                       </a-tooltip>
                     </template>
-                    <a-select 
+                    <a-select
                       v-model:value="generalConfig.Game.Style"
                       size="large"
                       class="modern-select"
@@ -449,13 +419,13 @@
                         </span>
                       </a-tooltip>
                     </template>
-                    <a-input-number 
-                      v-model:value="generalConfig.Game.WaitTime" 
-                      :min="0" 
+                    <a-input-number
+                      v-model:value="generalConfig.Game.WaitTime"
+                      :min="0"
                       :max="300"
                       size="large"
                       class="modern-number-input"
-                      style="width: 100%" 
+                      style="width: 100%"
                     />
                   </a-form-item>
                 </a-col>
@@ -469,7 +439,7 @@
                         </span>
                       </a-tooltip>
                     </template>
-                    <a-switch 
+                    <a-switch
                       v-model:checked="generalConfig.Game.Enabled"
                       size="default"
                       class="modern-switch"
@@ -477,7 +447,7 @@
                   </a-form-item>
                 </a-col>
               </a-row>
-              
+
               <a-row :gutter="24">
                 <a-col :span="12">
                   <a-form-item>
@@ -489,7 +459,7 @@
                         </span>
                       </a-tooltip>
                     </template>
-                    <a-switch 
+                    <a-switch
                       v-model:checked="generalConfig.Game.IfForceClose"
                       size="default"
                       class="modern-switch"
@@ -498,7 +468,7 @@
                 </a-col>
               </a-row>
             </div>
-            
+
             <!-- 运行配置 -->
             <div class="form-section">
               <div class="section-header">
@@ -515,13 +485,13 @@
                         </span>
                       </a-tooltip>
                     </template>
-                    <a-input-number 
-                      v-model:value="generalConfig.Run.ProxyTimesLimit" 
-                      :min="0" 
+                    <a-input-number
+                      v-model:value="generalConfig.Run.ProxyTimesLimit"
+                      :min="0"
                       :max="999"
                       size="large"
                       class="modern-number-input"
-                      style="width: 100%" 
+                      style="width: 100%"
                     />
                   </a-form-item>
                 </a-col>
@@ -535,13 +505,13 @@
                         </span>
                       </a-tooltip>
                     </template>
-                    <a-input-number 
-                      v-model:value="generalConfig.Run.RunTimeLimit" 
-                      :min="1" 
+                    <a-input-number
+                      v-model:value="generalConfig.Run.RunTimeLimit"
+                      :min="1"
                       :max="300"
                       size="large"
                       class="modern-number-input"
-                      style="width: 100%" 
+                      style="width: 100%"
                     />
                   </a-form-item>
                 </a-col>
@@ -555,19 +525,19 @@
                         </span>
                       </a-tooltip>
                     </template>
-                    <a-input-number 
-                      v-model:value="generalConfig.Run.RunTimesLimit" 
-                      :min="1" 
+                    <a-input-number
+                      v-model:value="generalConfig.Run.RunTimesLimit"
+                      :min="1"
                       :max="10"
                       size="large"
                       class="modern-number-input"
-                      style="width: 100%" 
+                      style="width: 100%"
                     />
                   </a-form-item>
                 </a-col>
               </a-row>
             </div>
-            
+
             <!-- 脚本配置 -->
             <div class="form-section">
               <div class="section-header">
@@ -585,18 +555,14 @@
                       </a-tooltip>
                     </template>
                     <a-input-group compact class="path-input-group">
-                      <a-input 
-                        v-model:value="generalConfig.Script.ScriptPath" 
+                      <a-input
+                        v-model:value="generalConfig.Script.ScriptPath"
                         placeholder="请选择脚本文件"
                         size="large"
                         class="path-input"
                         readonly
                       />
-                      <a-button 
-                        size="large"
-                        @click="selectScriptPath"
-                        class="path-button"
-                      >
+                      <a-button size="large" @click="selectScriptPath" class="path-button">
                         <template #icon>
                           <FileOutlined />
                         </template>
@@ -616,18 +582,14 @@
                       </a-tooltip>
                     </template>
                     <a-input-group compact class="path-input-group">
-                      <a-input 
-                        v-model:value="generalConfig.Script.ConfigPath" 
+                      <a-input
+                        v-model:value="generalConfig.Script.ConfigPath"
                         placeholder="请选择配置文件"
                         size="large"
                         class="path-input"
                         readonly
                       />
-                      <a-button 
-                        size="large"
-                        @click="selectConfigPath"
-                        class="path-button"
-                      >
+                      <a-button size="large" @click="selectConfigPath" class="path-button">
                         <template #icon>
                           <FileOutlined />
                         </template>
@@ -637,7 +599,7 @@
                   </a-form-item>
                 </a-col>
               </a-row>
-              
+
               <a-row :gutter="24">
                 <a-col :span="12">
                   <a-form-item>
@@ -649,8 +611,8 @@
                         </span>
                       </a-tooltip>
                     </template>
-                    <a-input 
-                      v-model:value="generalConfig.Script.Arguments" 
+                    <a-input
+                      v-model:value="generalConfig.Script.Arguments"
                       placeholder="请输入脚本参数"
                       size="large"
                       class="modern-input"
@@ -667,8 +629,8 @@
                         </span>
                       </a-tooltip>
                     </template>
-                    <a-input 
-                      v-model:value="generalConfig.Script.ConfigPathMode" 
+                    <a-input
+                      v-model:value="generalConfig.Script.ConfigPathMode"
                       placeholder="配置路径模式"
                       size="large"
                       class="modern-input"
@@ -676,7 +638,7 @@
                   </a-form-item>
                 </a-col>
               </a-row>
-              
+
               <a-row :gutter="24">
                 <a-col :span="12">
                   <a-form-item>
@@ -689,18 +651,14 @@
                       </a-tooltip>
                     </template>
                     <a-input-group compact class="path-input-group">
-                      <a-input 
-                        v-model:value="generalConfig.Script.LogPath" 
+                      <a-input
+                        v-model:value="generalConfig.Script.LogPath"
                         placeholder="请选择日志目录"
                         size="large"
                         class="path-input"
                         readonly
                       />
-                      <a-button 
-                        size="large"
-                        @click="selectLogPath"
-                        class="path-button"
-                      >
+                      <a-button size="large" @click="selectLogPath" class="path-button">
                         <template #icon>
                           <FolderOpenOutlined />
                         </template>
@@ -719,8 +677,8 @@
                         </span>
                       </a-tooltip>
                     </template>
-                    <a-input 
-                      v-model:value="generalConfig.Script.LogPathFormat" 
+                    <a-input
+                      v-model:value="generalConfig.Script.LogPathFormat"
                       placeholder="日志格式"
                       size="large"
                       class="modern-input"
@@ -728,7 +686,7 @@
                   </a-form-item>
                 </a-col>
               </a-row>
-              
+
               <a-row :gutter="24">
                 <a-col :span="12">
                   <a-form-item>
@@ -740,7 +698,7 @@
                         </span>
                       </a-tooltip>
                     </template>
-                    <a-switch 
+                    <a-switch
                       v-model:checked="generalConfig.Script.IfTrackProcess"
                       size="default"
                       class="modern-switch"
@@ -757,7 +715,7 @@
                         </span>
                       </a-tooltip>
                     </template>
-                    <a-select 
+                    <a-select
                       v-model:value="generalConfig.Script.UpdateConfigMode"
                       size="large"
                       class="modern-select"
@@ -778,19 +736,18 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { message } from 'ant-design-vue'
 import type { FormInstance } from 'ant-design-vue'
-import type { ScriptType, MAAScriptConfig, GeneralScriptConfig } from '@/types/script'
-import { useScriptApi } from '@/composables/useScriptApi'
-import { 
-  SaveOutlined, 
-  CloseOutlined, 
-  FolderOpenOutlined,
+import { message } from 'ant-design-vue'
+import type { GeneralScriptConfig, MAAScriptConfig, ScriptType } from '../types/script'
+import { useScriptApi } from '../composables/useScriptApi'
+import {
+  CloseOutlined,
   FileOutlined,
-  SettingOutlined,
-  QuestionCircleOutlined
+  FolderOpenOutlined,
+  QuestionCircleOutlined,
+  SaveOutlined,
 } from '@ant-design/icons-vue'
 
 const route = useRoute()
@@ -803,14 +760,14 @@ const scriptId = route.params.id as string
 
 const formData = reactive({
   name: '',
-  type: 'MAA' as ScriptType
+  type: 'MAA' as ScriptType,
 })
 
 // MAA配置
 const maaConfig = reactive<MAAScriptConfig>({
   Info: {
     Name: '',
-    Path: '.'
+    Path: '.',
   },
   Run: {
     ADBSearchRange: 0,
@@ -819,13 +776,13 @@ const maaConfig = reactive<MAAScriptConfig>({
     ProxyTimesLimit: 0,
     RoutineTimeLimit: 10,
     RunTimesLimit: 3,
-    TaskTransitionMethod: 'ExitEmulator'
+    TaskTransitionMethod: 'ExitEmulator',
   },
   SubConfigsInfo: {
     UserData: {
-      instances: []
-    }
-  }
+      instances: [],
+    },
+  },
 })
 
 // General配置
@@ -836,16 +793,16 @@ const generalConfig = reactive<GeneralScriptConfig>({
     IfForceClose: false,
     Path: '.',
     Style: 'Emulator',
-    WaitTime: 0
+    WaitTime: 0,
   },
   Info: {
     Name: '',
-    RootPath: '.'
+    RootPath: '.',
   },
   Run: {
     ProxyTimesLimit: 0,
     RunTimeLimit: 10,
-    RunTimesLimit: 3
+    RunTimesLimit: 3,
   },
   Script: {
     Arguments: '',
@@ -860,18 +817,18 @@ const generalConfig = reactive<GeneralScriptConfig>({
     LogTimeFormat: '%Y-%m-%d %H:%M:%S',
     ScriptPath: '.',
     SuccessLog: '',
-    UpdateConfigMode: 'Never'
+    UpdateConfigMode: 'Never',
   },
   SubConfigsInfo: {
     UserData: {
-      instances: []
-    }
-  }
+      instances: [],
+    },
+  },
 })
 
 const rules = {
   name: [{ required: true, message: '请输入脚本名称', trigger: 'blur' }],
-  type: [{ required: true, message: '请选择脚本类型', trigger: 'change' }]
+  type: [{ required: true, message: '请选择脚本类型', trigger: 'change' }],
 }
 
 onMounted(async () => {
@@ -887,7 +844,7 @@ const loadScript = async () => {
       // 使用API返回的新建脚本数据
       const scriptData = routeState.scriptData
       formData.type = scriptData.type
-      
+
       if (scriptData.type === 'MAA') {
         const config = scriptData.config as MAAScriptConfig
         formData.name = config.Info.Name || '新建MAA脚本'
@@ -910,16 +867,16 @@ const loadScript = async () => {
     } else {
       // 编辑现有脚本时，从API获取数据
       const scriptDetail = await getScript(scriptId)
-      
+
       if (!scriptDetail) {
         message.error('脚本不存在或加载失败')
         router.push('/scripts')
         return
       }
-      
+
       formData.type = scriptDetail.type
       formData.name = scriptDetail.name
-      
+
       if (scriptDetail.type === 'MAA') {
         Object.assign(maaConfig, scriptDetail.config as MAAScriptConfig)
       } else {
@@ -938,14 +895,14 @@ const loadScript = async () => {
 const handleSave = async () => {
   try {
     await formRef.value?.validate()
-    
+
     const config = formData.type === 'MAA' ? maaConfig : generalConfig
     if (formData.type === 'MAA') {
       maaConfig.Info.Name = formData.name
     } else {
       generalConfig.Info.Name = formData.name
     }
-    
+
     const result = await updateScript(scriptId, config)
     if (result) {
       message.success('脚本更新成功')
@@ -967,7 +924,7 @@ const selectMAAPath = async () => {
       message.error('文件选择功能不可用，请在 Electron 环境中运行')
       return
     }
-    
+
     const path = await window.electronAPI.selectFolder()
     if (path) {
       maaConfig.Info.Path = path
@@ -985,7 +942,7 @@ const selectRootPath = async () => {
       message.error('文件选择功能不可用，请在 Electron 环境中运行')
       return
     }
-    
+
     const path = await window.electronAPI.selectFolder()
     if (path) {
       generalConfig.Info.RootPath = path
@@ -1003,10 +960,10 @@ const selectGamePath = async () => {
       message.error('文件选择功能不可用，请在 Electron 环境中运行')
       return
     }
-    
+
     const path = await window.electronAPI.selectFile([
       { name: '可执行文件', extensions: ['exe'] },
-      { name: '所有文件', extensions: ['*'] }
+      { name: '所有文件', extensions: ['*'] },
     ])
     if (path) {
       generalConfig.Game.Path = path
@@ -1024,14 +981,14 @@ const selectScriptPath = async () => {
       message.error('文件选择功能不可用，请在 Electron 环境中运行')
       return
     }
-    
+
     const path = await window.electronAPI.selectFile([
       { name: '脚本文件', extensions: ['py', 'js', 'bat', 'sh', 'cmd'] },
       { name: 'Python 脚本', extensions: ['py'] },
       { name: 'JavaScript 脚本', extensions: ['js'] },
       { name: '批处理文件', extensions: ['bat', 'cmd'] },
       { name: 'Shell 脚本', extensions: ['sh'] },
-      { name: '所有文件', extensions: ['*'] }
+      { name: '所有文件', extensions: ['*'] },
     ])
     if (path) {
       generalConfig.Script.ScriptPath = path
@@ -1049,14 +1006,14 @@ const selectConfigPath = async () => {
       message.error('文件选择功能不可用，请在 Electron 环境中运行')
       return
     }
-    
+
     const path = await window.electronAPI.selectFile([
       { name: '配置文件', extensions: ['json', 'yaml', 'yml', 'ini', 'conf', 'toml'] },
       { name: 'JSON 文件', extensions: ['json'] },
       { name: 'YAML 文件', extensions: ['yaml', 'yml'] },
       { name: 'INI 文件', extensions: ['ini', 'conf'] },
       { name: 'TOML 文件', extensions: ['toml'] },
-      { name: '所有文件', extensions: ['*'] }
+      { name: '所有文件', extensions: ['*'] },
     ])
     if (path) {
       generalConfig.Script.ConfigPath = path
@@ -1074,7 +1031,7 @@ const selectLogPath = async () => {
       message.error('文件选择功能不可用，请在 Electron 环境中运行')
       return
     }
-    
+
     const path = await window.electronAPI.selectFolder()
     if (path) {
       generalConfig.Script.LogPath = path
@@ -1145,9 +1102,6 @@ const getCardTitle = () => {
   transition: all 0.3s ease;
 }
 
-
-
-
 /* 按钮样式 */
 .cancel-button {
   padding: 0 12px;
@@ -1188,7 +1142,7 @@ const getCardTitle = () => {
 
 .config-card {
   border-radius: 16px;
-  box-shadow: 
+  box-shadow:
     0 4px 20px rgba(0, 0, 0, 0.08),
     0 1px 3px rgba(0, 0, 0, 0.1);
   border: 1px solid var(--ant-color-border-secondary);
@@ -1278,7 +1232,6 @@ const getCardTitle = () => {
   color: var(--ant-color-primary);
 }
 
-/* 现代化输入框 */
 .modern-input {
   border-radius: 8px;
   border: 2px solid var(--ant-color-border);
@@ -1407,36 +1360,36 @@ const getCardTitle = () => {
 /* 深色模式适配 */
 @media (prefers-color-scheme: dark) {
   .config-card {
-    box-shadow: 
+    box-shadow:
       0 4px 20px rgba(0, 0, 0, 0.3),
       0 1px 3px rgba(0, 0, 0, 0.4);
   }
-  
+
   .save-button {
     box-shadow: 0 4px 12px rgba(24, 144, 255, 0.4);
   }
-  
+
   .save-button:hover {
     box-shadow: 0 6px 16px rgba(24, 144, 255, 0.5);
   }
-  
+
   .cancel-button:hover {
     box-shadow: 0 4px 12px rgba(255, 77, 79, 0.3);
   }
-  
+
   .path-input-group:focus-within {
     box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2);
   }
-  
+
   .modern-input:focus,
   .modern-input.ant-input-focused {
     box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2);
   }
-  
+
   .modern-select.ant-select-focused :deep(.ant-select-selector) {
     box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2) !important;
   }
-  
+
   .modern-number-input :deep(.ant-input-number-focused) {
     box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2);
   }
@@ -1447,11 +1400,11 @@ const getCardTitle = () => {
   .script-edit-container {
     padding: 24px;
   }
-  
+
   .config-card :deep(.ant-card-body) {
     padding: 24px;
   }
-  
+
   .form-section {
     margin-bottom: 12px;
   }
@@ -1461,38 +1414,38 @@ const getCardTitle = () => {
   .script-edit-container {
     padding: 16px;
   }
-  
+
   .script-edit-header {
     flex-direction: column;
     gap: 16px;
     align-items: stretch;
   }
-  
+
   .config-card :deep(.ant-card-head) {
     padding: 16px 20px;
   }
-  
+
   .config-card :deep(.ant-card-head-title) {
     font-size: 20px;
   }
-  
+
   .config-card :deep(.ant-card-body) {
     padding: 20px;
   }
-  
+
   .section-header h3 {
     font-size: 18px;
   }
-  
+
   .form-section {
     margin-bottom: 12px;
   }
-  
+
   .path-button {
     padding: 0 16px;
     font-size: 14px;
   }
-  
+
   .cancel-button,
   .save-button {
     height: 44px;
