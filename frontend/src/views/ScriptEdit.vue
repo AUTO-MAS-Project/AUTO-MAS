@@ -1,737 +1,712 @@
 <template>
-  <div class="script-edit-container">
-    <div class="script-edit-header">
-      <div class="header-nav">
-        <a-breadcrumb class="breadcrumb">
-          <a-breadcrumb-item>
-            <router-link to="/scripts" class="breadcrumb-link"> 脚本管理</router-link>
-          </a-breadcrumb-item>
-          <a-breadcrumb-item>
-            <div class="breadcrumb-current">
-              <img
-                v-if="formData.type === 'MAA'"
-                src="@/assets/MAA.png"
-                alt="MAA"
-                class="breadcrumb-logo"
-              />
-              <img v-else src="@/assets/AUTO_MAA.png" alt="AUTO MAA" class="breadcrumb-logo" />
-              编辑脚本
-            </div>
-          </a-breadcrumb-item>
-        </a-breadcrumb>
-      </div>
-
-      <a-space size="middle">
-        <a-button size="large" @click="handleCancel" class="cancel-button">
-          <template #icon>
-            <CloseOutlined />
-          </template>
-          取消
-        </a-button>
-        <a-button
-          type="primary"
-          size="large"
-          :loading="loading"
-          @click="handleSave"
-          class="save-button"
-        >
-          <template #icon>
-            <SaveOutlined />
-          </template>
-          保存配置
-        </a-button>
-      </a-space>
+  <div class="script-edit-header">
+    <div class="header-nav">
+      <a-breadcrumb class="breadcrumb">
+        <a-breadcrumb-item>
+          <router-link to="/scripts" class="breadcrumb-link"> 脚本管理</router-link>
+        </a-breadcrumb-item>
+        <a-breadcrumb-item>
+          <div class="breadcrumb-current">
+            <img
+              v-if="formData.type === 'MAA'"
+              src="@/assets/MAA.png"
+              alt="MAA"
+              class="breadcrumb-logo"
+            />
+            <img v-else src="@/assets/AUTO_MAA.png" alt="AUTO MAA" class="breadcrumb-logo" />
+            编辑脚本
+          </div>
+        </a-breadcrumb-item>
+      </a-breadcrumb>
     </div>
 
-    <div class="script-edit-content">
-      <a-card :title="getCardTitle()" :loading="pageLoading" class="config-card">
-        <template #extra>
-          <a-tag :color="formData.type === 'MAA' ? 'blue' : 'green'" class="type-tag">
-            {{ formData.type }}
-          </a-tag>
+    <a-space size="middle">
+      <a-button size="large" @click="handleCancel" class="cancel-button">
+        <template #icon>
+          <CloseOutlined />
         </template>
+        取消
+      </a-button>
+      <a-button
+        type="primary"
+        size="large"
+        :loading="loading"
+        @click="handleSave"
+        class="save-button"
+      >
+        <template #icon>
+          <SaveOutlined />
+        </template>
+        保存配置
+      </a-button>
+    </a-space>
+  </div>
 
-        <a-form
-          ref="formRef"
-          :model="formData"
-          :rules="rules"
-          layout="vertical"
-          class="config-form"
-        >
-          <!-- 基本信息 -->
+  <div class="script-edit-content">
+    <a-card :title="getCardTitle()" :loading="pageLoading" class="config-card">
+      <template #extra>
+        <a-tag :color="formData.type === 'MAA' ? 'blue' : 'green'" class="type-tag">
+          {{ formData.type }}
+        </a-tag>
+      </template>
+
+      <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
+        <!-- 基本信息 -->
+        <div class="form-section">
+          <div class="section-header">
+            <h3>基本信息</h3>
+          </div>
+          <a-row :gutter="24">
+            <a-col :span="12">
+              <a-form-item name="name">
+                <template #label>
+                  <a-tooltip title="为脚本设置一个易于识别的名称">
+                    <span class="form-label">
+                      脚本名称
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-input
+                  v-model:value="formData.name"
+                  placeholder="请输入脚本名称"
+                  size="large"
+                  class="modern-input"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item name="type">
+                <template #label>
+                  <a-tooltip title="脚本类型创建后无法修改">
+                    <span class="form-label">
+                      脚本类型
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-select v-model:value="formData.type" disabled size="large">
+                  <a-select-option value="MAA">MAA脚本</a-select-option>
+                  <a-select-option value="General">General脚本</a-select-option>
+                </a-select>
+              </a-form-item>
+            </a-col>
+          </a-row>
+        </div>
+
+        <!-- MAA脚本配置 -->
+        <template v-if="formData.type === 'MAA'">
+          <!-- 路径配置 -->
           <div class="form-section">
             <div class="section-header">
-              <h3>基本信息</h3>
+              <h3>路径配置</h3>
+            </div>
+            <a-row :gutter="24">
+              <a-col :span="24">
+                <a-form-item name="path">
+                  <template #label>
+                    <a-tooltip title="选择MAA.exe所在的文件夹路径">
+                      <span class="form-label">
+                        MAA路径
+                        <QuestionCircleOutlined class="help-icon" />
+                      </span>
+                    </a-tooltip>
+                  </template>
+                  <a-input-group compact class="path-input-group">
+                    <a-input
+                      v-model:value="maaConfig.Info.Path"
+                      placeholder="请选择MAA.exe所在的文件夹"
+                      size="large"
+                      class="path-input"
+                      readonly
+                    />
+                    <a-button size="large" @click="selectMAAPath" class="path-button">
+                      <template #icon>
+                        <FolderOpenOutlined />
+                      </template>
+                      选择文件夹
+                    </a-button>
+                  </a-input-group>
+                </a-form-item>
+              </a-col>
+            </a-row>
+          </div>
+
+          <!-- 运行配置 -->
+          <div class="form-section">
+            <div class="section-header">
+              <h3>运行配置</h3>
+            </div>
+            <a-row :gutter="24">
+              <a-col :span="8">
+                <a-form-item>
+                  <template #label>
+                    <a-tooltip title="任务完成后的处理方式">
+                      <span class="form-label">
+                        任务转换方式
+                        <QuestionCircleOutlined class="help-icon" />
+                      </span>
+                    </a-tooltip>
+                  </template>
+                  <a-select v-model:value="maaConfig.Run.TaskTransitionMethod" size="large">
+                    <a-select-option value="ExitEmulator">重启模拟器</a-select-option>
+                    <a-select-option value="RestartGame">重启明日方舟</a-select-option>
+                    <a-select-option value="SwitchAccount">直接切换账号</a-select-option>
+                  </a-select>
+                </a-form-item>
+              </a-col>
+              <a-col :span="8">
+                <a-form-item>
+                  <template #label>
+                    <a-tooltip title="设置ADB设备搜索的范围，0表示不限制，数值越大搜索范围越广">
+                      <span class="form-label">
+                        ADB搜索范围
+                        <QuestionCircleOutlined class="help-icon" />
+                      </span>
+                    </a-tooltip>
+                  </template>
+                  <a-input-number
+                    v-model:value="maaConfig.Run.ADBSearchRange"
+                    :min="0"
+                    :max="10"
+                    size="large"
+                    class="modern-number-input"
+                    style="width: 100%"
+                  />
+                </a-form-item>
+              </a-col>
+
+              <a-col :span="8">
+                <a-form-item>
+                  <template #label>
+                    <a-tooltip title="代理指挥作战的次数限制，0表示不限制">
+                      <span class="form-label">
+                        代理次数限制
+                        <QuestionCircleOutlined class="help-icon" />
+                      </span>
+                    </a-tooltip>
+                  </template>
+                  <a-input-number
+                    v-model:value="maaConfig.Run.ProxyTimesLimit"
+                    :min="0"
+                    :max="999"
+                    size="large"
+                    class="modern-number-input"
+                    style="width: 100%"
+                  />
+                </a-form-item>
+              </a-col>
+            </a-row>
+            <a-row :gutter="24">
+              <a-col :span="8">
+                <a-form-item>
+                  <template #label>
+                    <a-tooltip title="剿灭作战的最大执行时间，超时后会停止执行">
+                      <span class="form-label">
+                        剿灭时间限制(分钟)
+                        <QuestionCircleOutlined class="help-icon" />
+                      </span>
+                    </a-tooltip>
+                  </template>
+                  <a-input-number
+                    v-model:value="maaConfig.Run.AnnihilationTimeLimit"
+                    :min="1"
+                    :max="120"
+                    size="large"
+                    class="modern-number-input"
+                    style="width: 100%"
+                  />
+                </a-form-item>
+              </a-col>
+              <a-col :span="8">
+                <a-form-item>
+                  <template #label>
+                    <a-tooltip title="每周剿灭达到上限后，本周剩余时间不在执行剿灭任务">
+                      <span class="form-label">
+                        每周剿灭达到上限后，本周剩余时间不在执行剿灭任务
+                        <QuestionCircleOutlined class="help-icon" />
+                      </span>
+                    </a-tooltip>
+                  </template>
+                  <a-select v-model:value="maaConfig.Run.AnnihilationWeeklyLimit" size="large">
+                    <a-select-option :value="true">是</a-select-option>
+                    <a-select-option :value="false">否</a-select-option>
+                  </a-select>
+                </a-form-item>
+              </a-col>
+            </a-row>
+
+            <a-row :gutter="24">
+              <a-col :span="8">
+                <a-form-item>
+                  <template #label>
+                    <a-tooltip title="日常任务的最大执行时间，包括基建、任务等">
+                      <span class="form-label">
+                        日常时间限制(分钟)
+                        <QuestionCircleOutlined class="help-icon" />
+                      </span>
+                    </a-tooltip>
+                  </template>
+                  <a-input-number
+                    v-model:value="maaConfig.Run.RoutineTimeLimit"
+                    :min="1"
+                    :max="180"
+                    size="large"
+                    class="modern-number-input"
+                    style="width: 100%"
+                  />
+                </a-form-item>
+              </a-col>
+              <a-col :span="8">
+                <a-form-item>
+                  <template #label>
+                    <a-tooltip title="脚本的最大运行次数，防止无限循环">
+                      <span class="form-label">
+                        运行次数限制
+                        <QuestionCircleOutlined class="help-icon" />
+                      </span>
+                    </a-tooltip>
+                  </template>
+                  <a-input-number
+                    v-model:value="maaConfig.Run.RunTimesLimit"
+                    :min="1"
+                    :max="10"
+                    size="large"
+                    class="modern-number-input"
+                    style="width: 100%"
+                  />
+                </a-form-item>
+              </a-col>
+            </a-row>
+          </div>
+        </template>
+
+        <!-- General脚本配置 -->
+        <template v-if="formData.type === 'General'">
+          <!-- 基础配置 -->
+          <div class="form-section">
+            <div class="section-header">
+              <h3>基础配置</h3>
+            </div>
+            <a-row :gutter="24">
+              <a-col :span="24">
+                <a-form-item name="rootPath">
+                  <template #label>
+                    <a-tooltip title="脚本的根目录路径，所有相对路径都基于此目录">
+                      <span class="form-label">
+                        根路径
+                        <QuestionCircleOutlined class="help-icon" />
+                      </span>
+                    </a-tooltip>
+                  </template>
+                  <a-input-group compact class="path-input-group">
+                    <a-input
+                      v-model:value="generalConfig.Info.RootPath"
+                      placeholder="请选择脚本根目录"
+                      size="large"
+                      class="path-input"
+                      readonly
+                    />
+                    <a-button size="large" @click="selectRootPath" class="path-button">
+                      <template #icon>
+                        <FolderOpenOutlined />
+                      </template>
+                      选择文件夹
+                    </a-button>
+                  </a-input-group>
+                </a-form-item>
+              </a-col>
+            </a-row>
+          </div>
+
+          <!-- 游戏配置 -->
+          <div class="form-section">
+            <div class="section-header">
+              <h3>游戏配置</h3>
             </div>
             <a-row :gutter="24">
               <a-col :span="12">
-                <a-form-item name="name">
+                <a-form-item>
                   <template #label>
-                    <a-tooltip title="为脚本设置一个易于识别的名称">
+                    <a-tooltip title="游戏可执行文件的路径">
                       <span class="form-label">
-                        脚本名称
+                        游戏路径
+                        <QuestionCircleOutlined class="help-icon" />
+                      </span>
+                    </a-tooltip>
+                  </template>
+                  <a-input-group compact class="path-input-group">
+                    <a-input
+                      v-model:value="generalConfig.Game.Path"
+                      placeholder="请选择游戏可执行文件"
+                      size="large"
+                      class="path-input"
+                      readonly
+                    />
+                    <a-button size="large" @click="selectGamePath" class="path-button">
+                      <template #icon>
+                        <FileOutlined />
+                      </template>
+                      选择文件
+                    </a-button>
+                  </a-input-group>
+                </a-form-item>
+              </a-col>
+              <a-col :span="12">
+                <a-form-item>
+                  <template #label>
+                    <a-tooltip title="启动游戏时的命令行参数">
+                      <span class="form-label">
+                        启动参数
                         <QuestionCircleOutlined class="help-icon" />
                       </span>
                     </a-tooltip>
                   </template>
                   <a-input
-                    v-model:value="formData.name"
-                    placeholder="请输入脚本名称"
+                    v-model:value="generalConfig.Game.Arguments"
+                    placeholder="请输入启动参数"
+                    size="large"
+                    class="modern-input"
+                  />
+                </a-form-item>
+              </a-col>
+            </a-row>
+
+            <a-row :gutter="24">
+              <a-col :span="8">
+                <a-form-item>
+                  <template #label>
+                    <a-tooltip title="游戏的运行方式">
+                      <span class="form-label">
+                        游戏样式
+                        <QuestionCircleOutlined class="help-icon" />
+                      </span>
+                    </a-tooltip>
+                  </template>
+                  <a-select v-model:value="generalConfig.Game.Style" size="large">
+                    <a-select-option value="Emulator">模拟器</a-select-option>
+                    <a-select-option value="Game">游戏</a-select-option>
+                  </a-select>
+                </a-form-item>
+              </a-col>
+              <a-col :span="8">
+                <a-form-item>
+                  <template #label>
+                    <a-tooltip title="启动游戏后等待的时间，单位为秒">
+                      <span class="form-label">
+                        等待时间(秒)
+                        <QuestionCircleOutlined class="help-icon" />
+                      </span>
+                    </a-tooltip>
+                  </template>
+                  <a-input-number
+                    v-model:value="generalConfig.Game.WaitTime"
+                    :min="0"
+                    :max="300"
+                    size="large"
+                    class="modern-number-input"
+                    style="width: 100%"
+                  />
+                </a-form-item>
+              </a-col>
+              <a-col :span="8">
+                <a-form-item>
+                  <template #label>
+                    <a-tooltip title="是否启用游戏自动启动功能">
+                      <span class="form-label">
+                        启用游戏
+                        <QuestionCircleOutlined class="help-icon" />
+                      </span>
+                    </a-tooltip>
+                  </template>
+                  <a-switch
+                    v-model:checked="generalConfig.Game.Enabled"
+                    size="default"
+                    class="modern-switch"
+                  />
+                </a-form-item>
+              </a-col>
+            </a-row>
+
+            <a-row :gutter="24">
+              <a-col :span="12">
+                <a-form-item>
+                  <template #label>
+                    <a-tooltip title="脚本结束后是否强制关闭游戏进程">
+                      <span class="form-label">
+                        强制关闭
+                        <QuestionCircleOutlined class="help-icon" />
+                      </span>
+                    </a-tooltip>
+                  </template>
+                  <a-switch
+                    v-model:checked="generalConfig.Game.IfForceClose"
+                    size="default"
+                    class="modern-switch"
+                  />
+                </a-form-item>
+              </a-col>
+            </a-row>
+          </div>
+
+          <!-- 运行配置 -->
+          <div class="form-section">
+            <div class="section-header">
+              <h3>运行配置</h3>
+            </div>
+            <a-row :gutter="24">
+              <a-col :span="8">
+                <a-form-item>
+                  <template #label>
+                    <a-tooltip title="代理作战的次数限制，0表示不限制">
+                      <span class="form-label">
+                        代理次数限制
+                        <QuestionCircleOutlined class="help-icon" />
+                      </span>
+                    </a-tooltip>
+                  </template>
+                  <a-input-number
+                    v-model:value="generalConfig.Run.ProxyTimesLimit"
+                    :min="0"
+                    :max="999"
+                    size="large"
+                    class="modern-number-input"
+                    style="width: 100%"
+                  />
+                </a-form-item>
+              </a-col>
+              <a-col :span="8">
+                <a-form-item>
+                  <template #label>
+                    <a-tooltip title="脚本的最大运行时间，单位为分钟">
+                      <span class="form-label">
+                        运行时间限制(分钟)
+                        <QuestionCircleOutlined class="help-icon" />
+                      </span>
+                    </a-tooltip>
+                  </template>
+                  <a-input-number
+                    v-model:value="generalConfig.Run.RunTimeLimit"
+                    :min="1"
+                    :max="300"
+                    size="large"
+                    class="modern-number-input"
+                    style="width: 100%"
+                  />
+                </a-form-item>
+              </a-col>
+              <a-col :span="8">
+                <a-form-item>
+                  <template #label>
+                    <a-tooltip title="脚本的最大运行次数，防止无限循环">
+                      <span class="form-label">
+                        运行次数限制
+                        <QuestionCircleOutlined class="help-icon" />
+                      </span>
+                    </a-tooltip>
+                  </template>
+                  <a-input-number
+                    v-model:value="generalConfig.Run.RunTimesLimit"
+                    :min="1"
+                    :max="10"
+                    size="large"
+                    class="modern-number-input"
+                    style="width: 100%"
+                  />
+                </a-form-item>
+              </a-col>
+            </a-row>
+          </div>
+
+          <!-- 脚本配置 -->
+          <div class="form-section">
+            <div class="section-header">
+              <h3>脚本配置</h3>
+            </div>
+            <a-row :gutter="24">
+              <a-col :span="12">
+                <a-form-item>
+                  <template #label>
+                    <a-tooltip title="脚本文件的路径">
+                      <span class="form-label">
+                        脚本路径
+                        <QuestionCircleOutlined class="help-icon" />
+                      </span>
+                    </a-tooltip>
+                  </template>
+                  <a-input-group compact class="path-input-group">
+                    <a-input
+                      v-model:value="generalConfig.Script.ScriptPath"
+                      placeholder="请选择脚本文件"
+                      size="large"
+                      class="path-input"
+                      readonly
+                    />
+                    <a-button size="large" @click="selectScriptPath" class="path-button">
+                      <template #icon>
+                        <FileOutlined />
+                      </template>
+                      选择文件
+                    </a-button>
+                  </a-input-group>
+                </a-form-item>
+              </a-col>
+              <a-col :span="12">
+                <a-form-item>
+                  <template #label>
+                    <a-tooltip title="配置文件的路径">
+                      <span class="form-label">
+                        配置路径
+                        <QuestionCircleOutlined class="help-icon" />
+                      </span>
+                    </a-tooltip>
+                  </template>
+                  <a-input-group compact class="path-input-group">
+                    <a-input
+                      v-model:value="generalConfig.Script.ConfigPath"
+                      placeholder="请选择配置文件"
+                      size="large"
+                      class="path-input"
+                      readonly
+                    />
+                    <a-button size="large" @click="selectConfigPath" class="path-button">
+                      <template #icon>
+                        <FileOutlined />
+                      </template>
+                      选择文件
+                    </a-button>
+                  </a-input-group>
+                </a-form-item>
+              </a-col>
+            </a-row>
+
+            <a-row :gutter="24">
+              <a-col :span="12">
+                <a-form-item>
+                  <template #label>
+                    <a-tooltip title="脚本运行时的命令行参数">
+                      <span class="form-label">
+                        脚本参数
+                        <QuestionCircleOutlined class="help-icon" />
+                      </span>
+                    </a-tooltip>
+                  </template>
+                  <a-input
+                    v-model:value="generalConfig.Script.Arguments"
+                    placeholder="请输入脚本参数"
                     size="large"
                     class="modern-input"
                   />
                 </a-form-item>
               </a-col>
               <a-col :span="12">
-                <a-form-item name="type">
+                <a-form-item>
                   <template #label>
-                    <a-tooltip title="脚本类型创建后无法修改">
+                    <a-tooltip title="配置文件的匹配模式">
                       <span class="form-label">
-                        脚本类型
+                        配置路径模式
                         <QuestionCircleOutlined class="help-icon" />
                       </span>
                     </a-tooltip>
                   </template>
-                  <a-select
-                    v-model:value="formData.type"
-                    disabled
+                  <a-input
+                    v-model:value="generalConfig.Script.ConfigPathMode"
+                    placeholder="配置路径模式"
                     size="large"
-                    class="modern-select"
-                  >
-                    <a-select-option value="MAA">MAA脚本</a-select-option>
-                    <a-select-option value="General">General脚本</a-select-option>
+                    class="modern-input"
+                  />
+                </a-form-item>
+              </a-col>
+            </a-row>
+
+            <a-row :gutter="24">
+              <a-col :span="12">
+                <a-form-item>
+                  <template #label>
+                    <a-tooltip title="日志文件的存储路径">
+                      <span class="form-label">
+                        日志路径
+                        <QuestionCircleOutlined class="help-icon" />
+                      </span>
+                    </a-tooltip>
+                  </template>
+                  <a-input-group compact class="path-input-group">
+                    <a-input
+                      v-model:value="generalConfig.Script.LogPath"
+                      placeholder="请选择日志目录"
+                      size="large"
+                      class="path-input"
+                      readonly
+                    />
+                    <a-button size="large" @click="selectLogPath" class="path-button">
+                      <template #icon>
+                        <FolderOpenOutlined />
+                      </template>
+                      选择文件夹
+                    </a-button>
+                  </a-input-group>
+                </a-form-item>
+              </a-col>
+              <a-col :span="12">
+                <a-form-item>
+                  <template #label>
+                    <a-tooltip title="日志文件名的格式，支持时间格式化">
+                      <span class="form-label">
+                        日志格式
+                        <QuestionCircleOutlined class="help-icon" />
+                      </span>
+                    </a-tooltip>
+                  </template>
+                  <a-input
+                    v-model:value="generalConfig.Script.LogPathFormat"
+                    placeholder="日志格式"
+                    size="large"
+                    class="modern-input"
+                  />
+                </a-form-item>
+              </a-col>
+            </a-row>
+
+            <a-row :gutter="24">
+              <a-col :span="12">
+                <a-form-item>
+                  <template #label>
+                    <a-tooltip title="是否跟踪脚本进程的运行状态">
+                      <span class="form-label">
+                        跟踪进程
+                        <QuestionCircleOutlined class="help-icon" />
+                      </span>
+                    </a-tooltip>
+                  </template>
+                  <a-switch
+                    v-model:checked="generalConfig.Script.IfTrackProcess"
+                    size="default"
+                    class="modern-switch"
+                  />
+                </a-form-item>
+              </a-col>
+              <a-col :span="12">
+                <a-form-item>
+                  <template #label>
+                    <a-tooltip title="配置文件的更新策略">
+                      <span class="form-label">
+                        配置更新模式
+                        <QuestionCircleOutlined class="help-icon" />
+                      </span>
+                    </a-tooltip>
+                  </template>
+                  <a-select v-model:value="generalConfig.Script.UpdateConfigMode" size="large">
+                    <a-select-option value="Never">从不更新</a-select-option>
+                    <a-select-option value="Always">总是更新</a-select-option>
+                    <a-select-option value="OnChange">变更时更新</a-select-option>
                   </a-select>
                 </a-form-item>
               </a-col>
             </a-row>
           </div>
-
-          <!-- MAA脚本配置 -->
-          <template v-if="formData.type === 'MAA'">
-            <!-- 路径配置 -->
-            <div class="form-section">
-              <div class="section-header">
-                <h3>路径配置</h3>
-              </div>
-              <a-row :gutter="24">
-                <a-col :span="24">
-                  <a-form-item name="path">
-                    <template #label>
-                      <a-tooltip title="选择MAA.exe所在的文件夹路径，这是MAA框架的安装目录">
-                        <span class="form-label">
-                          MAA路径
-                          <QuestionCircleOutlined class="help-icon" />
-                        </span>
-                      </a-tooltip>
-                    </template>
-                    <a-input-group compact class="path-input-group">
-                      <a-input
-                        v-model:value="maaConfig.Info.Path"
-                        placeholder="请选择MAA.exe所在的文件夹"
-                        size="large"
-                        class="path-input"
-                        readonly
-                      />
-                      <a-button size="large" @click="selectMAAPath" class="path-button">
-                        <template #icon>
-                          <FolderOpenOutlined />
-                        </template>
-                        选择文件夹
-                      </a-button>
-                    </a-input-group>
-                  </a-form-item>
-                </a-col>
-              </a-row>
-            </div>
-
-            <!-- 运行配置 -->
-            <div class="form-section">
-              <div class="section-header">
-                <h3>运行配置</h3>
-              </div>
-              <a-row :gutter="24">
-                <a-col :span="8">
-                  <a-form-item>
-                    <template #label>
-                      <a-tooltip title="设置ADB设备搜索的范围，0表示不限制，数值越大搜索范围越广">
-                        <span class="form-label">
-                          ADB搜索范围
-                          <QuestionCircleOutlined class="help-icon" />
-                        </span>
-                      </a-tooltip>
-                    </template>
-                    <a-input-number
-                      v-model:value="maaConfig.Run.ADBSearchRange"
-                      :min="0"
-                      :max="10"
-                      size="large"
-                      class="modern-number-input"
-                      style="width: 100%"
-                    />
-                  </a-form-item>
-                </a-col>
-                <a-col :span="8">
-                  <a-form-item>
-                    <template #label>
-                      <a-tooltip title="剿灭作战的最大执行时间，超时后会停止执行">
-                        <span class="form-label">
-                          剿灭时间限制(分钟)
-                          <QuestionCircleOutlined class="help-icon" />
-                        </span>
-                      </a-tooltip>
-                    </template>
-                    <a-input-number
-                      v-model:value="maaConfig.Run.AnnihilationTimeLimit"
-                      :min="1"
-                      :max="120"
-                      size="large"
-                      class="modern-number-input"
-                      style="width: 100%"
-                    />
-                  </a-form-item>
-                </a-col>
-                <a-col :span="8">
-                  <a-form-item>
-                    <template #label>
-                      <a-tooltip title="代理指挥作战的次数限制，0表示不限制">
-                        <span class="form-label">
-                          代理次数限制
-                          <QuestionCircleOutlined class="help-icon" />
-                        </span>
-                      </a-tooltip>
-                    </template>
-                    <a-input-number
-                      v-model:value="maaConfig.Run.ProxyTimesLimit"
-                      :min="0"
-                      :max="999"
-                      size="large"
-                      class="modern-number-input"
-                      style="width: 100%"
-                    />
-                  </a-form-item>
-                </a-col>
-              </a-row>
-
-              <a-row :gutter="24">
-                <a-col :span="8">
-                  <a-form-item>
-                    <template #label>
-                      <a-tooltip title="日常任务的最大执行时间，包括基建、任务等">
-                        <span class="form-label">
-                          日常时间限制(分钟)
-                          <QuestionCircleOutlined class="help-icon" />
-                        </span>
-                      </a-tooltip>
-                    </template>
-                    <a-input-number
-                      v-model:value="maaConfig.Run.RoutineTimeLimit"
-                      :min="1"
-                      :max="180"
-                      size="large"
-                      class="modern-number-input"
-                      style="width: 100%"
-                    />
-                  </a-form-item>
-                </a-col>
-                <a-col :span="8">
-                  <a-form-item>
-                    <template #label>
-                      <a-tooltip title="脚本的最大运行次数，防止无限循环">
-                        <span class="form-label">
-                          运行次数限制
-                          <QuestionCircleOutlined class="help-icon" />
-                        </span>
-                      </a-tooltip>
-                    </template>
-                    <a-input-number
-                      v-model:value="maaConfig.Run.RunTimesLimit"
-                      :min="1"
-                      :max="10"
-                      size="large"
-                      class="modern-number-input"
-                      style="width: 100%"
-                    />
-                  </a-form-item>
-                </a-col>
-                <a-col :span="8">
-                  <a-form-item>
-                    <template #label>
-                      <a-tooltip title="任务完成后的处理方式">
-                        <span class="form-label">
-                          任务转换方式
-                          <QuestionCircleOutlined class="help-icon" />
-                        </span>
-                      </a-tooltip>
-                    </template>
-                    <a-select
-                      v-model:value="maaConfig.Run.TaskTransitionMethod"
-                      size="large"
-                      class="modern-select"
-                    >
-                      <a-select-option value="NoAction">无操作</a-select-option>
-                      <a-select-option value="ExitEmulator">退出模拟器</a-select-option>
-                    </a-select>
-                  </a-form-item>
-                </a-col>
-              </a-row>
-
-              <a-row :gutter="24">
-                <a-col :span="12">
-                  <a-form-item>
-                    <template #label>
-                      <a-tooltip title="是否启用剿灭作战的周次数限制">
-                        <span class="form-label">
-                          剿灭周限制
-                          <QuestionCircleOutlined class="help-icon" />
-                        </span>
-                      </a-tooltip>
-                    </template>
-                    <a-switch
-                      v-model:checked="maaConfig.Run.AnnihilationWeeklyLimit"
-                      size="default"
-                      class="modern-switch"
-                    />
-                  </a-form-item>
-                </a-col>
-              </a-row>
-            </div>
-          </template>
-
-          <!-- General脚本配置 -->
-          <template v-if="formData.type === 'General'">
-            <!-- 基础配置 -->
-            <div class="form-section">
-              <div class="section-header">
-                <h3>基础配置</h3>
-              </div>
-              <a-row :gutter="24">
-                <a-col :span="24">
-                  <a-form-item name="rootPath">
-                    <template #label>
-                      <a-tooltip title="脚本的根目录路径，所有相对路径都基于此目录">
-                        <span class="form-label">
-                          根路径
-                          <QuestionCircleOutlined class="help-icon" />
-                        </span>
-                      </a-tooltip>
-                    </template>
-                    <a-input-group compact class="path-input-group">
-                      <a-input
-                        v-model:value="generalConfig.Info.RootPath"
-                        placeholder="请选择脚本根目录"
-                        size="large"
-                        class="path-input"
-                        readonly
-                      />
-                      <a-button size="large" @click="selectRootPath" class="path-button">
-                        <template #icon>
-                          <FolderOpenOutlined />
-                        </template>
-                        选择文件夹
-                      </a-button>
-                    </a-input-group>
-                  </a-form-item>
-                </a-col>
-              </a-row>
-            </div>
-
-            <!-- 游戏配置 -->
-            <div class="form-section">
-              <div class="section-header">
-                <h3>游戏配置</h3>
-              </div>
-              <a-row :gutter="24">
-                <a-col :span="12">
-                  <a-form-item>
-                    <template #label>
-                      <a-tooltip title="游戏可执行文件的路径">
-                        <span class="form-label">
-                          游戏路径
-                          <QuestionCircleOutlined class="help-icon" />
-                        </span>
-                      </a-tooltip>
-                    </template>
-                    <a-input-group compact class="path-input-group">
-                      <a-input
-                        v-model:value="generalConfig.Game.Path"
-                        placeholder="请选择游戏可执行文件"
-                        size="large"
-                        class="path-input"
-                        readonly
-                      />
-                      <a-button size="large" @click="selectGamePath" class="path-button">
-                        <template #icon>
-                          <FileOutlined />
-                        </template>
-                        选择文件
-                      </a-button>
-                    </a-input-group>
-                  </a-form-item>
-                </a-col>
-                <a-col :span="12">
-                  <a-form-item>
-                    <template #label>
-                      <a-tooltip title="启动游戏时的命令行参数">
-                        <span class="form-label">
-                          启动参数
-                          <QuestionCircleOutlined class="help-icon" />
-                        </span>
-                      </a-tooltip>
-                    </template>
-                    <a-input
-                      v-model:value="generalConfig.Game.Arguments"
-                      placeholder="请输入启动参数"
-                      size="large"
-                      class="modern-input"
-                    />
-                  </a-form-item>
-                </a-col>
-              </a-row>
-
-              <a-row :gutter="24">
-                <a-col :span="8">
-                  <a-form-item>
-                    <template #label>
-                      <a-tooltip title="游戏的运行方式">
-                        <span class="form-label">
-                          游戏样式
-                          <QuestionCircleOutlined class="help-icon" />
-                        </span>
-                      </a-tooltip>
-                    </template>
-                    <a-select
-                      v-model:value="generalConfig.Game.Style"
-                      size="large"
-                      class="modern-select"
-                    >
-                      <a-select-option value="Emulator">模拟器</a-select-option>
-                      <a-select-option value="Game">游戏</a-select-option>
-                    </a-select>
-                  </a-form-item>
-                </a-col>
-                <a-col :span="8">
-                  <a-form-item>
-                    <template #label>
-                      <a-tooltip title="启动游戏后等待的时间，单位为秒">
-                        <span class="form-label">
-                          等待时间(秒)
-                          <QuestionCircleOutlined class="help-icon" />
-                        </span>
-                      </a-tooltip>
-                    </template>
-                    <a-input-number
-                      v-model:value="generalConfig.Game.WaitTime"
-                      :min="0"
-                      :max="300"
-                      size="large"
-                      class="modern-number-input"
-                      style="width: 100%"
-                    />
-                  </a-form-item>
-                </a-col>
-                <a-col :span="8">
-                  <a-form-item>
-                    <template #label>
-                      <a-tooltip title="是否启用游戏自动启动功能">
-                        <span class="form-label">
-                          启用游戏
-                          <QuestionCircleOutlined class="help-icon" />
-                        </span>
-                      </a-tooltip>
-                    </template>
-                    <a-switch
-                      v-model:checked="generalConfig.Game.Enabled"
-                      size="default"
-                      class="modern-switch"
-                    />
-                  </a-form-item>
-                </a-col>
-              </a-row>
-
-              <a-row :gutter="24">
-                <a-col :span="12">
-                  <a-form-item>
-                    <template #label>
-                      <a-tooltip title="脚本结束后是否强制关闭游戏进程">
-                        <span class="form-label">
-                          强制关闭
-                          <QuestionCircleOutlined class="help-icon" />
-                        </span>
-                      </a-tooltip>
-                    </template>
-                    <a-switch
-                      v-model:checked="generalConfig.Game.IfForceClose"
-                      size="default"
-                      class="modern-switch"
-                    />
-                  </a-form-item>
-                </a-col>
-              </a-row>
-            </div>
-
-            <!-- 运行配置 -->
-            <div class="form-section">
-              <div class="section-header">
-                <h3>运行配置</h3>
-              </div>
-              <a-row :gutter="24">
-                <a-col :span="8">
-                  <a-form-item>
-                    <template #label>
-                      <a-tooltip title="代理作战的次数限制，0表示不限制">
-                        <span class="form-label">
-                          代理次数限制
-                          <QuestionCircleOutlined class="help-icon" />
-                        </span>
-                      </a-tooltip>
-                    </template>
-                    <a-input-number
-                      v-model:value="generalConfig.Run.ProxyTimesLimit"
-                      :min="0"
-                      :max="999"
-                      size="large"
-                      class="modern-number-input"
-                      style="width: 100%"
-                    />
-                  </a-form-item>
-                </a-col>
-                <a-col :span="8">
-                  <a-form-item>
-                    <template #label>
-                      <a-tooltip title="脚本的最大运行时间，单位为分钟">
-                        <span class="form-label">
-                          运行时间限制(分钟)
-                          <QuestionCircleOutlined class="help-icon" />
-                        </span>
-                      </a-tooltip>
-                    </template>
-                    <a-input-number
-                      v-model:value="generalConfig.Run.RunTimeLimit"
-                      :min="1"
-                      :max="300"
-                      size="large"
-                      class="modern-number-input"
-                      style="width: 100%"
-                    />
-                  </a-form-item>
-                </a-col>
-                <a-col :span="8">
-                  <a-form-item>
-                    <template #label>
-                      <a-tooltip title="脚本的最大运行次数，防止无限循环">
-                        <span class="form-label">
-                          运行次数限制
-                          <QuestionCircleOutlined class="help-icon" />
-                        </span>
-                      </a-tooltip>
-                    </template>
-                    <a-input-number
-                      v-model:value="generalConfig.Run.RunTimesLimit"
-                      :min="1"
-                      :max="10"
-                      size="large"
-                      class="modern-number-input"
-                      style="width: 100%"
-                    />
-                  </a-form-item>
-                </a-col>
-              </a-row>
-            </div>
-
-            <!-- 脚本配置 -->
-            <div class="form-section">
-              <div class="section-header">
-                <h3>脚本配置</h3>
-              </div>
-              <a-row :gutter="24">
-                <a-col :span="12">
-                  <a-form-item>
-                    <template #label>
-                      <a-tooltip title="脚本文件的路径">
-                        <span class="form-label">
-                          脚本路径
-                          <QuestionCircleOutlined class="help-icon" />
-                        </span>
-                      </a-tooltip>
-                    </template>
-                    <a-input-group compact class="path-input-group">
-                      <a-input
-                        v-model:value="generalConfig.Script.ScriptPath"
-                        placeholder="请选择脚本文件"
-                        size="large"
-                        class="path-input"
-                        readonly
-                      />
-                      <a-button size="large" @click="selectScriptPath" class="path-button">
-                        <template #icon>
-                          <FileOutlined />
-                        </template>
-                        选择文件
-                      </a-button>
-                    </a-input-group>
-                  </a-form-item>
-                </a-col>
-                <a-col :span="12">
-                  <a-form-item>
-                    <template #label>
-                      <a-tooltip title="配置文件的路径">
-                        <span class="form-label">
-                          配置路径
-                          <QuestionCircleOutlined class="help-icon" />
-                        </span>
-                      </a-tooltip>
-                    </template>
-                    <a-input-group compact class="path-input-group">
-                      <a-input
-                        v-model:value="generalConfig.Script.ConfigPath"
-                        placeholder="请选择配置文件"
-                        size="large"
-                        class="path-input"
-                        readonly
-                      />
-                      <a-button size="large" @click="selectConfigPath" class="path-button">
-                        <template #icon>
-                          <FileOutlined />
-                        </template>
-                        选择文件
-                      </a-button>
-                    </a-input-group>
-                  </a-form-item>
-                </a-col>
-              </a-row>
-
-              <a-row :gutter="24">
-                <a-col :span="12">
-                  <a-form-item>
-                    <template #label>
-                      <a-tooltip title="脚本运行时的命令行参数">
-                        <span class="form-label">
-                          脚本参数
-                          <QuestionCircleOutlined class="help-icon" />
-                        </span>
-                      </a-tooltip>
-                    </template>
-                    <a-input
-                      v-model:value="generalConfig.Script.Arguments"
-                      placeholder="请输入脚本参数"
-                      size="large"
-                      class="modern-input"
-                    />
-                  </a-form-item>
-                </a-col>
-                <a-col :span="12">
-                  <a-form-item>
-                    <template #label>
-                      <a-tooltip title="配置文件的匹配模式">
-                        <span class="form-label">
-                          配置路径模式
-                          <QuestionCircleOutlined class="help-icon" />
-                        </span>
-                      </a-tooltip>
-                    </template>
-                    <a-input
-                      v-model:value="generalConfig.Script.ConfigPathMode"
-                      placeholder="配置路径模式"
-                      size="large"
-                      class="modern-input"
-                    />
-                  </a-form-item>
-                </a-col>
-              </a-row>
-
-              <a-row :gutter="24">
-                <a-col :span="12">
-                  <a-form-item>
-                    <template #label>
-                      <a-tooltip title="日志文件的存储路径">
-                        <span class="form-label">
-                          日志路径
-                          <QuestionCircleOutlined class="help-icon" />
-                        </span>
-                      </a-tooltip>
-                    </template>
-                    <a-input-group compact class="path-input-group">
-                      <a-input
-                        v-model:value="generalConfig.Script.LogPath"
-                        placeholder="请选择日志目录"
-                        size="large"
-                        class="path-input"
-                        readonly
-                      />
-                      <a-button size="large" @click="selectLogPath" class="path-button">
-                        <template #icon>
-                          <FolderOpenOutlined />
-                        </template>
-                        选择文件夹
-                      </a-button>
-                    </a-input-group>
-                  </a-form-item>
-                </a-col>
-                <a-col :span="12">
-                  <a-form-item>
-                    <template #label>
-                      <a-tooltip title="日志文件名的格式，支持时间格式化">
-                        <span class="form-label">
-                          日志格式
-                          <QuestionCircleOutlined class="help-icon" />
-                        </span>
-                      </a-tooltip>
-                    </template>
-                    <a-input
-                      v-model:value="generalConfig.Script.LogPathFormat"
-                      placeholder="日志格式"
-                      size="large"
-                      class="modern-input"
-                    />
-                  </a-form-item>
-                </a-col>
-              </a-row>
-
-              <a-row :gutter="24">
-                <a-col :span="12">
-                  <a-form-item>
-                    <template #label>
-                      <a-tooltip title="是否跟踪脚本进程的运行状态">
-                        <span class="form-label">
-                          跟踪进程
-                          <QuestionCircleOutlined class="help-icon" />
-                        </span>
-                      </a-tooltip>
-                    </template>
-                    <a-switch
-                      v-model:checked="generalConfig.Script.IfTrackProcess"
-                      size="default"
-                      class="modern-switch"
-                    />
-                  </a-form-item>
-                </a-col>
-                <a-col :span="12">
-                  <a-form-item>
-                    <template #label>
-                      <a-tooltip title="配置文件的更新策略">
-                        <span class="form-label">
-                          配置更新模式
-                          <QuestionCircleOutlined class="help-icon" />
-                        </span>
-                      </a-tooltip>
-                    </template>
-                    <a-select
-                      v-model:value="generalConfig.Script.UpdateConfigMode"
-                      size="large"
-                      class="modern-select"
-                    >
-                      <a-select-option value="Never">从不更新</a-select-option>
-                      <a-select-option value="Always">总是更新</a-select-option>
-                      <a-select-option value="OnChange">变更时更新</a-select-option>
-                    </a-select>
-                  </a-form-item>
-                </a-col>
-              </a-row>
-            </div>
-          </template>
-        </a-form>
-      </a-card>
-    </div>
+        </template>
+      </a-form>
+    </a-card>
   </div>
 </template>
 

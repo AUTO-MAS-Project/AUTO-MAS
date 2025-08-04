@@ -22,7 +22,7 @@ export function useScriptApi() {
     error.value = null
 
     try {
-      const response = await fetch(`${API_BASE_URL}/add/scripts`, {
+      const response = await fetch(`${API_BASE_URL}/scripts/add`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -50,7 +50,7 @@ export function useScriptApi() {
     error.value = null
 
     try {
-      const response = await fetch(`${API_BASE_URL}/get/scripts`, {
+      const response = await fetch(`${API_BASE_URL}/scripts/get`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -101,7 +101,7 @@ export function useScriptApi() {
     error.value = null
 
     try {
-      const response = await fetch(`${API_BASE_URL}/get/scripts`, {
+      const response = await fetch(`${API_BASE_URL}/scripts/get`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -180,7 +180,7 @@ export function useScriptApi() {
     error.value = null
 
     try {
-      const response = await fetch(`${API_BASE_URL}/delete/scripts`, {
+      const response = await fetch(`${API_BASE_URL}/scripts/delete`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

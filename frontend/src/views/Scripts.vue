@@ -1,74 +1,72 @@
 <template>
-  <div class="scripts-container">
-    <div class="scripts-header">
-      <div class="header-title">
-        <h1>脚本管理</h1>
-      </div>
-      <a-space size="middle">
-        <a-button type="primary" size="large" @click="handleAddScript" class="link">
-          <template #icon>
-            <PlusOutlined />
-          </template>
-          添加脚本
-        </a-button>
-        <a-button size="large" @click="handleRefresh" class="default">
-          <template #icon>
-            <ReloadOutlined />
-          </template>
-          刷新
-        </a-button>
-      </a-space>
+  <div class="scripts-header">
+    <div class="header-title">
+      <h1>脚本管理</h1>
     </div>
-
-    <ScriptTable
-      :scripts="scripts"
-      @edit="handleEditScript"
-      @delete="handleDeleteScript"
-      @add-user="handleAddUser"
-      @edit-user="handleEditUser"
-      @delete-user="handleDeleteUser"
-    />
-
-    <!-- 脚本类型选择弹窗 -->
-    <a-modal
-      v-model:open="typeSelectVisible"
-      title="选择脚本类型"
-      :confirm-loading="addLoading"
-      @ok="handleConfirmAddScript"
-      @cancel="typeSelectVisible = false"
-      class="type-select-modal"
-      width="500px"
-      ok-text="确定"
-      cancel-text="取消"
-    >
-      <div class="type-selection">
-        <a-radio-group v-model:value="selectedType" class="type-radio-group">
-          <a-radio-button value="MAA" class="type-option">
-            <div class="type-content">
-              <div class="type-logo-container">
-                <img src="@/assets/MAA.png" alt="MAA" class="type-logo" />
-              </div>
-              <div class="type-info">
-                <div class="type-title">MAA脚本</div>
-                <div class="type-description">明日方舟自动化脚本，支持日常任务、作战等功能</div>
-              </div>
-            </div>
-          </a-radio-button>
-          <a-radio-button value="General" class="type-option">
-            <div class="type-content">
-              <div class="type-logo-container">
-                <img src="@/assets/AUTO_MAA.png" alt="AUTO MAA" class="type-logo" />
-              </div>
-              <div class="type-info">
-                <div class="type-title">General脚本</div>
-                <div class="type-description">通用自动化脚本，支持自定义游戏和脚本配置</div>
-              </div>
-            </div>
-          </a-radio-button>
-        </a-radio-group>
-      </div>
-    </a-modal>
+    <a-space size="middle">
+      <a-button type="primary" size="large" @click="handleAddScript" class="link">
+        <template #icon>
+          <PlusOutlined />
+        </template>
+        添加脚本
+      </a-button>
+      <a-button size="large" @click="handleRefresh" class="default">
+        <template #icon>
+          <ReloadOutlined />
+        </template>
+        刷新
+      </a-button>
+    </a-space>
   </div>
+
+  <ScriptTable
+    :scripts="scripts"
+    @edit="handleEditScript"
+    @delete="handleDeleteScript"
+    @add-user="handleAddUser"
+    @edit-user="handleEditUser"
+    @delete-user="handleDeleteUser"
+  />
+
+  <!-- 脚本类型选择弹窗 -->
+  <a-modal
+    v-model:open="typeSelectVisible"
+    title="选择脚本类型"
+    :confirm-loading="addLoading"
+    @ok="handleConfirmAddScript"
+    @cancel="typeSelectVisible = false"
+    class="type-select-modal"
+    width="500px"
+    ok-text="确定"
+    cancel-text="取消"
+  >
+    <div class="type-selection">
+      <a-radio-group v-model:value="selectedType" class="type-radio-group">
+        <a-radio-button value="MAA" class="type-option">
+          <div class="type-content">
+            <div class="type-logo-container">
+              <img src="@/assets/MAA.png" alt="MAA" class="type-logo" />
+            </div>
+            <div class="type-info">
+              <div class="type-title">MAA脚本</div>
+              <div class="type-description">明日方舟自动化脚本，支持日常任务、作战等功能</div>
+            </div>
+          </div>
+        </a-radio-button>
+        <a-radio-button value="General" class="type-option">
+          <div class="type-content">
+            <div class="type-logo-container">
+              <img src="@/assets/AUTO_MAA.png" alt="AUTO MAA" class="type-logo" />
+            </div>
+            <div class="type-info">
+              <div class="type-title">General脚本</div>
+              <div class="type-description">通用自动化脚本，支持自定义游戏和脚本配置</div>
+            </div>
+          </div>
+        </a-radio-button>
+      </a-radio-group>
+    </div>
+  </a-modal>
 </template>
 
 <script setup lang="ts">
