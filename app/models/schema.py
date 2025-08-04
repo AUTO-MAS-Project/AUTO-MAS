@@ -23,7 +23,7 @@ from pydantic import BaseModel, Field
 from typing import Dict, Any, List, Optional, Literal
 
 
-class BaseOut(BaseModel):
+class OutBase(BaseModel):
     code: int = Field(default=200, description="状态码")
     status: str = Field(default="success", description="操作状态")
     message: str = Field(default="操作成功", description="操作消息")
@@ -33,7 +33,7 @@ class ScriptCreateIn(BaseModel):
     type: Literal["MAA", "General"]
 
 
-class ScriptCreateOut(BaseOut):
+class ScriptCreateOut(OutBase):
     scriptId: str = Field(..., description="新创建的脚本ID")
     data: Dict[str, Any] = Field(..., description="脚本配置数据")
 
@@ -42,7 +42,7 @@ class ScriptGetIn(BaseModel):
     scriptId: Optional[str] = Field(None, description="脚本ID，仅在模式为Single时需要")
 
 
-class ScriptGetOut(BaseOut):
+class ScriptGetOut(OutBase):
     index: List[Dict[str, str]] = Field(..., description="脚本索引列表")
     data: Dict[str, Any] = Field(..., description="脚本列表或单个脚本数据")
 
@@ -56,7 +56,25 @@ class ScriptDeleteIn(BaseModel):
     scriptId: str = Field(..., description="脚本ID")
 
 
-class SettingGetOut(BaseOut):
+class UserInBase(BaseModel):
+    scriptId: str = Field(..., description="所属脚本ID")
+
+
+class UserCreateOut(OutBase):
+    userId: str = Field(..., description="新创建的用户ID")
+    data: Dict[str, Any] = Field(..., description="用户配置数据")
+
+
+class UserUpdateIn(UserInBase):
+    userId: str = Field(..., description="用户ID")
+    data: Dict[str, Dict[str, Any]] = Field(..., description="用户更新数据")
+
+
+class UserDeleteIn(UserInBase):
+    userId: str = Field(..., description="用户ID")
+
+
+class SettingGetOut(OutBase):
     data: Dict[str, Dict[str, Any]] = Field(..., description="全局设置数据")
 
 
