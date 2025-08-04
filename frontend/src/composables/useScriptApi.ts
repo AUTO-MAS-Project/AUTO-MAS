@@ -1,4 +1,5 @@
 import { ref } from 'vue'
+import { message } from 'ant-design-vue'
 import type {
   ScriptType,
   AddScriptResponse,
@@ -7,7 +8,8 @@ import type {
   GetScriptsResponse,
   ScriptDetail,
   ScriptIndexItem,
-  DeleteScriptResponse
+  DeleteScriptResponse,
+  UpdateScriptResponse
 } from '../types/script.ts'
 
 const API_BASE_URL = 'http://localhost:8000/api'
@@ -22,7 +24,7 @@ export function useScriptApi() {
     error.value = null
 
     try {
-      const response = await fetch(`${API_BASE_URL}/scripts/add`, {
+      const response = await fetch(`${API_BASE_URL}/add/scripts`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -35,9 +37,21 @@ export function useScriptApi() {
       }
 
       const data: AddScriptResponse = await response.json()
+      
+      // 检查API响应的code字段
+      if (data.code !== 200) {
+        const errorMsg = data.message || '添加脚本失败'
+        message.error(errorMsg)
+        throw new Error(errorMsg)
+      }
+      
       return data
     } catch (err) {
-      error.value = err instanceof Error ? err.message : '添加脚本失败'
+      const errorMsg = err instanceof Error ? err.message : '添加脚本失败'
+      error.value = errorMsg
+      if (!err.message?.includes('HTTP error')) {
+        message.error(errorMsg)
+      }
       return null
     } finally {
       loading.value = false
@@ -147,28 +161,47 @@ export function useScriptApi() {
     }
   }
 
-  // 更新脚本（暂时模拟）
-  const updateScript = async (scriptId: string, config: MAAScriptConfig | GeneralScriptConfig) => {
+  // 更新脚本
+  const updateScript = async (scriptId: string, data: MAAScriptConfig | GeneralScriptConfig): Promise<boolean> => {
     loading.value = true
     error.value = null
 
     try {
-      const response = await fetch(`${API_BASE_URL}/update/scripts/${scriptId}`, {
-        method: 'PUT',
+      // 创建数据副本并移除 SubConfigsInfo 字段
+      const { SubConfigsInfo, ...dataToSend } = data
+
+      const response = await fetch(`${API_BASE_URL}/scripts/update`, {
+        method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(config),
+        body: JSON.stringify({ scriptId, data: dataToSend }),
       })
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`)
       }
 
-      return await response.json()
+      const apiResponse: UpdateScriptResponse = await response.json()
+      
+      // 根据code判断是否成功（非200就是不成功）
+      if (apiResponse.code !== 200) {
+        const errorMsg = apiResponse.message || '更新脚本失败'
+        message.error(errorMsg)
+        throw new Error(errorMsg)
+      }
+
+      return true
     } catch (err) {
-      error.value = err instanceof Error ? err.message : '更新脚本失败'
-      return null
+      const errorMsg = err instanceof Error ? err.message : '更新脚本失败'
+      error.value = errorMsg
+      // 如果错误不是来自API响应（即没有显示过message.error），则显示错误消息
+      if (err instanceof Error && !err.message.includes('HTTP error')) {
+        // API响应错误已经在上面显示了，这里只处理其他错误
+      } else {
+        message.error(errorMsg)
+      }
+      return false
     } finally {
       loading.value = false
     }

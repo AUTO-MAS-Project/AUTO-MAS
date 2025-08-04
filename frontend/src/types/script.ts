@@ -176,3 +176,10 @@ export interface DeleteScriptResponse {
   status: string
   message: string
 }
+
+// 更新脚本API响应
+export interface UpdateScriptResponse {
+  code: number
+  status: string
+  message: string
+}
