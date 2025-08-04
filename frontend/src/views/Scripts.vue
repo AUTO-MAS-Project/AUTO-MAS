@@ -2,26 +2,16 @@
   <div class="scripts-container">
     <div class="scripts-header">
       <div class="header-title">
-        <FileTextOutlined class="title-icon" />
         <h1>脚本管理</h1>
       </div>
       <a-space size="middle">
-        <a-button 
-          type="primary" 
-          size="large"
-          @click="handleAddScript"
-          class="add-button"
-        >
+        <a-button type="primary" size="large" @click="handleAddScript" class="link">
           <template #icon>
             <PlusOutlined />
           </template>
           添加脚本
         </a-button>
-        <a-button 
-          size="large"
-          @click="handleRefresh"
-          class="refresh-button"
-        >
+        <a-button size="large" @click="handleRefresh" class="default">
           <template #icon>
             <ReloadOutlined />
           </template>
@@ -30,16 +20,14 @@
       </a-space>
     </div>
 
-    <div class="scripts-content">
-      <ScriptTable
-        :scripts="scripts"
-        @edit="handleEditScript"
-        @delete="handleDeleteScript"
-        @add-user="handleAddUser"
-        @edit-user="handleEditUser"
-        @delete-user="handleDeleteUser"
-      />
-    </div>
+    <ScriptTable
+      :scripts="scripts"
+      @edit="handleEditScript"
+      @delete="handleDeleteScript"
+      @add-user="handleAddUser"
+      @edit-user="handleEditUser"
+      @delete-user="handleDeleteUser"
+    />
 
     <!-- 脚本类型选择弹窗 -->
     <a-modal
@@ -50,12 +38,11 @@
       @cancel="typeSelectVisible = false"
       class="type-select-modal"
       width="500px"
+      ok-text="确定"
+      cancel-text="取消"
     >
       <div class="type-selection">
-        <a-radio-group 
-          v-model:value="selectedType" 
-          class="type-radio-group"
-        >
+        <a-radio-group v-model:value="selectedType" class="type-radio-group">
           <a-radio-button value="MAA" class="type-option">
             <div class="type-content">
               <div class="type-logo-container">
@@ -85,12 +72,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
-import { PlusOutlined, ReloadOutlined, FileTextOutlined } from '@ant-design/icons-vue'
+import { PlusOutlined, ReloadOutlined } from '@ant-design/icons-vue'
 import ScriptTable from '@/components/ScriptTable.vue'
-import type { Script, User, ScriptType, MAAScriptConfig, GeneralScriptConfig, ScriptDetail } from '@/types/script'
+import type { Script, ScriptType, User } from '@/types/script'
 import { useScriptApi } from '@/composables/useScriptApi'
 
 const router = useRouter()
@@ -101,144 +88,6 @@ const typeSelectVisible = ref(false)
 const selectedType = ref<ScriptType>('MAA')
 const addLoading = ref(false)
 
-// 模拟数据
-const mockScripts: Script[] = [
-  {
-    id: '1',
-    type: 'MAA',
-    name: 'MAA自动化脚本',
-    config: {
-      Info: {
-        Name: 'MAA自动化脚本',
-        Path: 'D:/MAA_For_AutoMAA'
-      },
-      Run: {
-        ADBSearchRange: 3,
-        AnnihilationTimeLimit: 40,
-        AnnihilationWeeklyLimit: true,
-        ProxyTimesLimit: 0,
-        RoutineTimeLimit: 10,
-        RunTimesLimit: 5,
-        TaskTransitionMethod: 'NoAction'
-      },
-      SubConfigsInfo: {
-        UserData: {
-          instances: []
-        }
-      }
-    } as MAAScriptConfig,
-    users: [
-      {
-        id: 'user1',
-        name: 'aoxuan',
-        Data: {
-          CustomInfrastPlanIndex: '0',
-          IfPassCheck: true,
-          LastAnnihilationDate: '2025-07-28',
-          LastProxyDate: '2025-08-03',
-          LastSklandDate: '2000-01-01',
-          ProxyTimes: 2
-        },
-        Info: {
-          Annihilation: 'Annihilation',
-          Id: '8668',
-          IfSkland: false,
-          InfrastMode: 'Normal',
-          MedicineNumb: 0,
-          Mode: '简洁',
-          Name: 'aoxuan',
-          Notes: '无',
-          Password: 'BVd/Y56Mts0gLywaz5kqT5lU',
-          RemainedDay: -1,
-          Routine: false,
-          SeriesNumb: '0',
-          Server: 'Official',
-          SklandToken: '',
-          Stage: 'AT-8',
-          StageMode: '固定',
-          Stage_1: '-',
-          Stage_2: '-',
-          Stage_3: '-',
-          Stage_Remain: '-',
-          Status: true
-        },
-        Notify: {
-          CompanyWebHookBotUrl: '',
-          Enabled: false,
-          IfCompanyWebHookBot: false,
-          IfSendMail: false,
-          IfSendSixStar: false,
-          IfSendStatistic: false,
-          IfServerChan: false,
-          ServerChanChannel: '',
-          ServerChanKey: '',
-          ServerChanTag: '',
-          ToAddress: ''
-        },
-        Task: {
-          IfAutoRoguelike: false,
-          IfBase: true,
-          IfCombat: true,
-          IfMall: true,
-          IfMission: true,
-          IfReclamation: false,
-          IfRecruiting: true,
-          IfWakeUp: true
-        },
-        QFluentWidgets: {
-          ThemeColor: '#ff009faa',
-          ThemeMode: 'Auto'
-        }
-      }
-    ]
-  },
-  {
-    id: '2',
-    type: 'General',
-    name: '通用自动化脚本',
-    config: {
-      Game: {
-        Arguments: '',
-        Enabled: false,
-        IfForceClose: false,
-        Path: '.',
-        Style: 'Emulator',
-        WaitTime: 0
-      },
-      Info: {
-        Name: '通用自动化脚本',
-        RootPath: '.'
-      },
-      Run: {
-        ProxyTimesLimit: 0,
-        RunTimeLimit: 10,
-        RunTimesLimit: 3
-      },
-      Script: {
-        Arguments: '',
-        ConfigPath: '.',
-        ConfigPathMode: '所有文件 (*)',
-        ErrorLog: '',
-        IfTrackProcess: false,
-        LogPath: '.',
-        LogPathFormat: '%Y-%m-%d',
-        LogTimeEnd: 1,
-        LogTimeStart: 1,
-        LogTimeFormat: '%Y-%m-%d %H:%M:%S',
-        ScriptPath: '.',
-        SuccessLog: '',
-        UpdateConfigMode: 'Never'
-      },
-      SubConfigsInfo: {
-        UserData: {
-          instances: []
-        }
-      }
-    } as GeneralScriptConfig,
-    users: []
-  }
-]
-
 onMounted(() => {
   loadScripts()
 })
@@ -246,7 +95,7 @@ onMounted(() => {
 const loadScripts = async () => {
   try {
     const scriptDetails = await getScripts()
-    
+
     // 将 ScriptDetail 转换为 Script 格式（为了兼容现有的表格组件）
     scripts.value = scriptDetails.map(detail => ({
       id: detail.uid,
@@ -254,7 +103,7 @@ const loadScripts = async () => {
       name: detail.name,
       config: detail.config,
       users: [], // 暂时为空，后续可以从其他API获取用户数据
-      createTime: detail.createTime || new Date().toLocaleString()
+      createTime: detail.createTime || new Date().toLocaleString(),
     }))
   } catch (error) {
     console.error('加载脚本列表失败:', error)
@@ -281,9 +130,9 @@ const handleConfirmAddScript = async () => {
           scriptData: {
             id: result.scriptId,
             type: selectedType.value,
-            config: result.data
-          }
-        }
+            config: result.data,
+          },
+        },
       })
     }
   } catch (error) {
@@ -325,8 +174,6 @@ const handleRefresh = () => {
   loadScripts()
   message.success('刷新成功')
 }
-
-
 </script>
 
 <style scoped>
@@ -394,31 +241,6 @@ const handleRefresh = () => {
   background: var(--ant-color-bg-container);
   color: var(--ant-color-text);
   transition: all 0.3s ease;
-}
-
-.refresh-button:hover {
-  border-color: var(--ant-color-primary);
-  color: var(--ant-color-primary);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-}
-
-.scripts-content {
-  flex: 1;
-  background: var(--ant-color-bg-container);
-  border-radius: 16px;
-  padding: 32px;
-  box-shadow: 
-    0 4px 20px rgba(0, 0, 0, 0.08),
-    0 1px 3px rgba(0, 0, 0, 0.1);
-  border: 1px solid var(--ant-color-border-secondary);
-  transition: all 0.3s ease;
-}
-
-.scripts-content:hover {
-  box-shadow: 
-    0 8px 30px rgba(0, 0, 0, 0.12),
-    0 2px 6px rgba(0, 0, 0, 0.15);
 }
 
 /* 脚本类型选择弹窗样式 */
@@ -509,9 +331,6 @@ const handleRefresh = () => {
   transition: all 0.3s ease;
 }
 
-
-
-
 .type-info {
   flex: 1;
 }
@@ -532,25 +351,25 @@ const handleRefresh = () => {
 /* 深色模式适配 */
 @media (prefers-color-scheme: dark) {
   .scripts-content {
-    box-shadow: 
+    box-shadow:
       0 4px 20px rgba(0, 0, 0, 0.3),
       0 1px 3px rgba(0, 0, 0, 0.4);
   }
-  
+
   .scripts-content:hover {
-    box-shadow: 
+    box-shadow:
       0 8px 30px rgba(0, 0, 0, 0.4),
       0 2px 6px rgba(0, 0, 0, 0.5);
   }
-  
+
   .add-button {
     box-shadow: 0 4px 12px rgba(24, 144, 255, 0.4);
   }
-  
+
   .add-button:hover {
     box-shadow: 0 6px 16px rgba(24, 144, 255, 0.5);
   }
-  
+
   .refresh-button:hover {
     box-shadow: 0 4px 12px rgba(255, 255, 255, 0.1);
   }
@@ -561,29 +380,29 @@ const handleRefresh = () => {
   .scripts-container {
     padding: 16px;
   }
-  
+
   .scripts-header {
     flex-direction: column;
     gap: 16px;
     align-items: stretch;
   }
-  
+
   .header-title h1 {
     font-size: 24px;
   }
-  
+
   .scripts-content {
     padding: 16px;
   }
-  
+
   .type-content {
     padding: 16px;
   }
-  
+
   .type-icon {
     font-size: 24px;
   }
-  
+
   .type-title {
     font-size: 16px;
   }

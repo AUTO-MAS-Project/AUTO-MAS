@@ -40,33 +40,21 @@
       </template>
 
       <template v-if="column.key === 'action'">
-        <a-space size="small">
-          <a-tooltip title="编辑脚本配置">
-            <a-button
-              type="primary"
-              size="small"
-              @click="handleEdit(record)"
-              class="action-button edit-button"
-            >
-              <template #icon>
-                <EditOutlined />
-              </template>
-              编辑
-            </a-button>
-          </a-tooltip>
-          <a-tooltip title="为此脚本添加用户">
-            <a-button
-              type="default"
-              size="small"
-              @click="handleAddUser(record)"
-              class="action-button add-user-button"
-            >
-              <template #icon>
-                <UserAddOutlined />
-              </template>
-              添加用户
-            </a-button>
-          </a-tooltip>
+        <a-space size="middle">
+          <a-button type="primary" size="middle" @click="handleEdit(record)" shape="round">
+            <template #icon>
+              <EditOutlined />
+            </template>
+            编辑
+          </a-button>
+
+          <a-button type="primary" size="middle" @click="handleAddUser(record)" shape="round">
+            <template #icon>
+              <UserAddOutlined />
+            </template>
+            添加用户
+          </a-button>
+
           <a-popconfirm
             title="确定要删除这个脚本吗？"
             description="删除后将无法恢复，请谨慎操作"
@@ -74,14 +62,12 @@
             ok-text="确定"
             cancel-text="取消"
           >
-            <a-tooltip title="删除脚本">
-              <a-button danger size="small" class="action-button delete-button">
-                <template #icon>
-                  <DeleteOutlined />
-                </template>
-                删除
-              </a-button>
-            </a-tooltip>
+            <a-button danger size="middle" type="primary" shape="round">
+              <template #icon>
+                <DeleteOutlined />
+              </template>
+              删除
+            </a-button>
           </a-popconfirm>
         </a-space>
       </template>
@@ -189,9 +175,13 @@ interface Props {
 
 interface Emits {
   (e: 'edit', script: Script): void
+
   (e: 'delete', script: Script): void
+
   (e: 'addUser', script: Script): void
+
   (e: 'editUser', user: User): void
+
   (e: 'deleteUser', user: User): void
 }
 
