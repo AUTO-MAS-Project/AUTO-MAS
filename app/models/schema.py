@@ -82,6 +82,37 @@ class UserReorderIn(UserInBase):
     indexList: List[str] = Field(..., description="用户ID列表，按新顺序排列")
 
 
+class PlanCreateIn(BaseModel):
+    type: Literal["MaaPlan"]
+
+
+class PlanCreateOut(OutBase):
+    planId: str = Field(..., description="新创建的计划ID")
+    data: Dict[str, Any] = Field(..., description="计划配置数据")
+
+
+class PlanGetIn(BaseModel):
+    planId: Optional[str] = Field(None, description="计划ID，仅在模式为Single时需要")
+
+
+class PlanGetOut(OutBase):
+    index: List[Dict[str, str]] = Field(..., description="计划索引列表")
+    data: Dict[str, Any] = Field(..., description="计划列表或单个计划数据")
+
+
+class PlanUpdateIn(BaseModel):
+    planId: str = Field(..., description="计划ID")
+    data: Dict[str, Dict[str, Any]] = Field(..., description="计划更新数据")
+
+
+class PlanDeleteIn(BaseModel):
+    planId: str = Field(..., description="计划ID")
+
+
+class PlanReorderIn(BaseModel):
+    indexList: List[str] = Field(..., description="计划ID列表，按新顺序排列")
+
+
 class QueueCreateOut(OutBase):
     queueId: str = Field(..., description="新创建的队列ID")
     data: Dict[str, Any] = Field(..., description="队列配置数据")

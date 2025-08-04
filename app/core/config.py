@@ -831,6 +831,61 @@ class AppConfig(GlobalConfig):
             await queue_config.TimeSet.setOrder([uuid.UUID(_) for _ in index_list])
             await self.QueueConfig.save()
 
+    async def add_plan(
+        self, script: Literal["MaaPlan"]
+    ) -> tuple[uuid.UUID, ConfigBase]:
+        """添加计划表"""
+
+        self.logger.info(f"添加计划表：{script}")
+
+        class_book = {"MaaPlan": MaaPlanConfig}
+
+        return await self.PlanConfig.add(class_book[script])
+
+    async def get_plan(self, plan_id: Optional[str]) -> tuple[list, dict]:
+        """获取计划表配置"""
+
+        self.logger.info(f"获取计划表配置：{plan_id}")
+
+        if plan_id is None:
+            data = await self.PlanConfig.toDict()
+        else:
+            data = await self.PlanConfig.get(uuid.UUID(plan_id))
+
+        index = data.pop("instances", [])
+
+        return list(index), data
+
+    async def update_plan(self, plan_id: str, data: Dict[str, Dict[str, Any]]) -> None:
+        """更新计划表配置"""
+
+        self.logger.info(f"更新计划表配置：{plan_id}")
+
+        uid = uuid.UUID(plan_id)
+
+        for group, items in data.items():
+            for name, value in items.items():
+                self.logger.debug(
+                    f"更新计划表配置：{plan_id} - {group}.{name} = {value}"
+                )
+                await self.PlanConfig[uid].set(group, name, value)
+
+        await self.PlanConfig.save()
+
+    async def del_plan(self, plan_id: str) -> None:
+        """删除计划表配置"""
+
+        self.logger.info(f"删除计划表配置：{plan_id}")
+
+        await self.PlanConfig.remove(uuid.UUID(plan_id))
+
+    async def reorder_plan(self, index_list: list[str]) -> None:
+        """重新排序计划表"""
+
+        self.logger.info(f"重新排序计划表：{index_list}")
+
+        await self.PlanConfig.setOrder([uuid.UUID(_) for _ in index_list])
+
     async def add_queue_item(self, queue_id: str) -> tuple[uuid.UUID, ConfigBase]:
         """添加队列项配置"""
 

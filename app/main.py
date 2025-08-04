@@ -58,7 +58,7 @@ def main():
             logger.info("----------------END----------------")
 
         from fastapi.middleware.cors import CORSMiddleware
-        from api import scripts_router, queue_router, setting_router
+        from api import scripts_router, plan_router, queue_router, setting_router
 
         app = FastAPI(
             title="AUTO_MAA",
@@ -76,6 +76,7 @@ def main():
         )
 
         app.include_router(scripts_router)
+        app.include_router(plan_router)
         app.include_router(queue_router)
         app.include_router(setting_router)
 
