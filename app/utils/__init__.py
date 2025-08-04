@@ -18,8 +18,11 @@
 
 #   Contact: DLmaster_361@163.com
 
+__version__ = "5.0.0"
+__author__ = "DLmaster361 <DLmaster_361@163.com>"
+__license__ = "GPL-3.0 license"
 
-from loguru import logger as _logger
 
-logger = _logger.patch(lambda record: record["extra"].setdefault("module", "未知模块"))
-logger.remove(0)
+from .logger import get_logger
+
+__all__ = ["get_logger"]

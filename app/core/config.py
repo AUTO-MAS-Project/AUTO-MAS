@@ -34,7 +34,7 @@ from pathlib import Path
 
 from typing import Union, Dict, List, Literal
 
-from .logger import logger
+from app.utils import get_logger
 from app.models.ConfigBase import *
 
 
@@ -593,7 +593,13 @@ class AppConfig(GlobalConfig):
         # self.if_ignore_silence = False
         # self.if_database_opened = False
 
-        self.init_logger()
+        self.logger = get_logger("配置管理")
+        self.logger.info("")
+        self.logger.info("===================================")
+        self.logger.info("AUTO_MAA 后端应用程序")
+        self.logger.info(f"版本号： v{self.VERSION}")
+        self.logger.info(f"根目录： {self.root_path}")
+        self.logger.info("===================================")
 
         # 检查目录
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -616,38 +622,7 @@ class AppConfig(GlobalConfig):
         await self.QueueConfig.connect(self.config_path / "QueueConfig.json")
 
         # self.check_data()
-        logger.info("程序初始化完成", module="配置管理")
-
-    def init_logger(self) -> None:
-        """初始化日志记录器"""
-
-        logger.add(
-            sink=self.log_path,
-            level="DEBUG",
-            format="<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | <cyan>{extra[module]}</cyan> | <level>{message}</level>",
-            enqueue=True,
-            backtrace=True,
-            diagnose=True,
-            rotation="1 week",
-            retention="1 month",
-            compression="zip",
-        )
-        logger.add(
-            sink=sys.stderr,
-            level="DEBUG",
-            format="<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | <cyan>{extra[module]}</cyan> | <level>{message}</level>",
-            enqueue=True,
-            backtrace=True,
-            diagnose=True,
-            colorize=True,
-        )
-
-        logger.info("", module="配置管理")
-        logger.info("===================================", module="配置管理")
-        logger.info("AUTO_MAA 后端", module="配置管理")
-        logger.info(f"版本号： v{self.VERSION}", module="配置管理")
-        logger.info(f"根目录： {self.root_path}", module="配置管理")
-        logger.info("===================================", module="配置管理")
+        self.logger.info("程序初始化完成")
 
     async def add_script(
         self, script: Literal["MAA", "General"]
