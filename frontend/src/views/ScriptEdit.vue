@@ -150,8 +150,8 @@
                   </template>
                   <a-select v-model:value="maaConfig.Run.TaskTransitionMethod" size="large">
                     <a-select-option value="ExitEmulator">重启模拟器</a-select-option>
-                    <a-select-option value="RestartGame">重启明日方舟</a-select-option>
-                    <a-select-option value="SwitchAccount">直接切换账号</a-select-option>
+                    <a-select-option value="ExitGame">重启明日方舟</a-select-option>
+                    <a-select-option value="NoAction">直接切换账号</a-select-option>
                   </a-select>
                 </a-form-item>
               </a-col>
@@ -809,7 +809,7 @@
   </div>
   <a-float-button
     type="primary"
-    @click="handleSubmit"
+    @click="handleSave"
     class="float-button"
     :style="{
       right: '24px',
