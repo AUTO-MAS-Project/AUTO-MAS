@@ -596,7 +596,6 @@
                   />
                 </a-form-item>
               </a-col>
-
             </a-row>
 
             <a-row :gutter="24"></a-row>
@@ -808,6 +807,18 @@
       </a-form>
     </a-card>
   </div>
+  <a-float-button
+    type="primary"
+    @click="handleSubmit"
+    class="float-button"
+    :style="{
+      right: '24px',
+    }"
+  >
+    <template #icon>
+      <SaveOutlined />
+    </template>
+  </a-float-button>
 </template>
 
 <script setup lang="ts">
@@ -1573,5 +1584,10 @@ const getCardTitle = () => {
 :deep(.ant-tooltip-arrow::before) {
   background: var(--ant-color-bg-elevated);
   border: 1px solid var(--ant-color-border);
+}
+
+.float-button {
+  width: 60px;
+  height: 60px;
 }
 </style>

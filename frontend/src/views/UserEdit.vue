@@ -642,6 +642,19 @@
       </a-card>
     </a-form>
   </div>
+
+  <a-float-button
+    type="primary"
+    @click="handleSubmit"
+    class="float-button"
+    :style="{
+      right: '24px',
+    }"
+  >
+    <template #icon>
+      <SaveOutlined />
+    </template>
+  </a-float-button>
 </template>
 
 <script setup lang="ts">
@@ -1013,5 +1026,10 @@ onMounted(() => {
   .user-edit-content {
     max-width: 100%;
   }
+}
+
+.float-button {
+  width: 60px;
+  height: 60px;
 }
 </style>
