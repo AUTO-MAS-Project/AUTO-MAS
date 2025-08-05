@@ -35,14 +35,18 @@ v4.4
 import time
 import json
 import hmac
+import asyncio
 import hashlib
 import requests
 from urllib import parse
 
-from app.core import Config, logger
+from core import Config
+from utils.logger import get_logger
+
+logger = get_logger("森空岛签到任务")
 
 
-def skland_sign_in(token) -> dict:
+async def skland_sign_in(token) -> dict:
     """森空岛签到"""
 
     app_code = "4ca99fa6b56cc2ba"
@@ -127,7 +131,7 @@ def skland_sign_in(token) -> dict:
         v["cred"] = cred
         return v
 
-    def login_by_token(token_code):
+    async def login_by_token(token_code):
         """
         使用token一步步拿到cred和sign_token
 
@@ -140,10 +144,10 @@ def skland_sign_in(token) -> dict:
             token_code = t["data"]["content"]
         except:
             pass
-        grant_code = get_grant_code(token_code)
-        return get_cred(grant_code)
+        grant_code = await get_grant_code(token_code)
+        return await get_cred(grant_code)
 
-    def get_cred(grant):
+    async def get_cred(grant):
         """
         通过grant code获取cred和sign_token
 
@@ -155,10 +159,7 @@ def skland_sign_in(token) -> dict:
             cred_code_url,
             json={"code": grant, "kind": 1},
             headers=header_login,
-            proxies={
-                "http": Config.get(Config.update_ProxyAddress),
-                "https": Config.get(Config.update_ProxyAddress),
-            },
+            proxies=Config.get_proxies(),
         ).json()
         if rsp["code"] != 0:
             raise Exception(f'获得cred失败：{rsp.get("messgae")}')
@@ -166,7 +167,7 @@ def skland_sign_in(token) -> dict:
         cred = rsp["data"]["cred"]
         return cred, sign_token
 
-    def get_grant_code(token):
+    async def get_grant_code(token):
         """
         通过token获取grant code
 
@@ -177,10 +178,7 @@ def skland_sign_in(token) -> dict:
             grant_code_url,
             json={"appCode": app_code, "token": token, "type": 0},
             headers=header_login,
-            proxies={
-                "http": Config.get(Config.update_ProxyAddress),
-                "https": Config.get(Config.update_ProxyAddress),
-            },
+            proxies=Config.get_proxies(),
         ).json()
         if rsp["status"] != 0:
             raise Exception(
@@ -188,7 +186,7 @@ def skland_sign_in(token) -> dict:
             )
         return rsp["data"]["code"]
 
-    def get_binding_list(cred, sign_token):
+    async def get_binding_list(cred, sign_token):
         """
         查询已绑定的角色列表
 
@@ -202,21 +200,12 @@ def skland_sign_in(token) -> dict:
             headers=get_sign_header(
                 binding_url, "get", None, copy_header(cred), sign_token
             ),
-            proxies={
-                "http": Config.get(Config.update_ProxyAddress),
-                "https": Config.get(Config.update_ProxyAddress),
-            },
+            proxies=Config.get_proxies(),
         ).json()
         if rsp["code"] != 0:
-            logger.error(
-                f"森空岛服务 | 请求角色列表出现问题：{rsp['message']}",
-                module="森空岛签到",
-            )
+            logger.error(f"请求角色列表出现问题：{rsp['message']}")
             if rsp.get("message") == "用户未登录":
-                logger.error(
-                    f"森空岛服务 | 用户登录可能失效了，请重新登录！",
-                    module="森空岛签到",
-                )
+                logger.error(f"用户登录可能失效了，请重新登录！")
                 return v
         # 只取明日方舟（arknights）的绑定账号
         for i in rsp["data"]["list"]:
@@ -225,7 +214,7 @@ def skland_sign_in(token) -> dict:
             v.extend(i.get("bindingList"))
         return v
 
-    def do_sign(cred, sign_token) -> dict:
+    async def do_sign(cred, sign_token) -> dict:
         """
         对所有绑定的角色进行签到
 
@@ -234,7 +223,7 @@ def skland_sign_in(token) -> dict:
         :return: 签到结果字典
         """
 
-        characters = get_binding_list(cred, sign_token)
+        characters = await get_binding_list(cred, sign_token)
         result = {"成功": [], "重复": [], "失败": [], "总计": len(characters)}
 
         for character in characters:
@@ -249,10 +238,7 @@ def skland_sign_in(token) -> dict:
                     sign_url, "post", body, copy_header(cred), sign_token
                 ),
                 json=body,
-                proxies={
-                    "http": Config.get(Config.update_ProxyAddress),
-                    "https": Config.get(Config.update_ProxyAddress),
-                },
+                proxies=Config.get_proxies(),
             ).json()
 
             if rsp["code"] != 0:
@@ -276,10 +262,10 @@ def skland_sign_in(token) -> dict:
     # 主流程
     try:
         # 拿到cred和sign_token
-        cred, sign_token = login_by_token(token)
-        time.sleep(1)
+        cred, sign_token = await login_by_token(token)
+        await asyncio.sleep(1)
         # 依次签到
-        return do_sign(cred, sign_token)
+        return await do_sign(cred, sign_token)
     except Exception as e:
-        logger.exception(f"森空岛服务 | 森空岛签到失败: {e}", module="森空岛签到")
+        logger.exception(f"森空岛签到失败: {e}")
         return {"成功": [], "重复": [], "失败": [], "总计": 0}

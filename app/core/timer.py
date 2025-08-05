@@ -26,16 +26,17 @@ from utils import get_logger
 from .config import Config
 
 
+logger = get_logger("主业务定时器")
+
+
 class _MainTimer:
 
     def __init__(self):
         super().__init__()
 
-        self.logger = get_logger("主业务定时器")
-
     async def second_task(self):
         """每秒定期任务"""
-        self.logger.info("每秒定期任务启动")
+        logger.info("每秒定期任务启动")
 
         while True:
 

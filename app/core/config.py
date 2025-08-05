@@ -39,6 +39,9 @@ from utils import get_logger
 from models.ConfigBase import *
 
 
+logger = get_logger("配置管理")
+
+
 class GlobalConfig(ConfigBase):
     """全局配置"""
 
@@ -99,8 +102,6 @@ class GlobalConfig(ConfigBase):
     Notify_ToAddress = ConfigItem("Notify", "ToAddress", "")
     Notify_IfServerChan = ConfigItem("Notify", "IfServerChan", False, BoolValidator())
     Notify_ServerChanKey = ConfigItem("Notify", "ServerChanKey", "")
-    Notify_ServerChanChannel = ConfigItem("Notify", "ServerChanChannel", "")
-    Notify_ServerChanTag = ConfigItem("Notify", "ServerChanTag", "")
     Notify_IfCompanyWebHookBot = ConfigItem(
         "Notify", "IfCompanyWebHookBot", False, BoolValidator()
     )
@@ -284,8 +285,6 @@ class MaaUserConfig(ConfigBase):
             "Notify", "IfServerChan", False, BoolValidator()
         )
         self.Notify_ServerChanKey = ConfigItem("Notify", "ServerChanKey", "")
-        self.Notify_ServerChanChannel = ConfigItem("Notify", "ServerChanChannel", "")
-        self.Notify_ServerChanTag = ConfigItem("Notify", "ServerChanTag", "")
         self.Notify_IfCompanyWebHookBot = ConfigItem(
             "Notify", "IfCompanyWebHookBot", False, BoolValidator()
         )
@@ -471,8 +470,6 @@ class GeneralUserConfig(ConfigBase):
             "Notify", "IfServerChan", False, BoolValidator()
         )
         self.Notify_ServerChanKey = ConfigItem("Notify", "ServerChanKey", "")
-        self.Notify_ServerChanChannel = ConfigItem("Notify", "ServerChanChannel", "")
-        self.Notify_ServerChanTag = ConfigItem("Notify", "ServerChanTag", "")
         self.Notify_IfCompanyWebHookBot = ConfigItem(
             "Notify", "IfCompanyWebHookBot", False, BoolValidator()
         )
@@ -596,13 +593,12 @@ class AppConfig(GlobalConfig):
         self.power_sign = "NoAction"
         self.if_ignore_silence = False
 
-        self.logger = get_logger("配置管理")
-        self.logger.info("")
-        self.logger.info("===================================")
-        self.logger.info("AUTO_MAA 后端应用程序")
-        self.logger.info(f"版本号： v{self.VERSION}")
-        self.logger.info(f"根目录： {self.root_path}")
-        self.logger.info("===================================")
+        logger.info("")
+        logger.info("===================================")
+        logger.info("AUTO_MAA 后端应用程序")
+        logger.info(f"版本号： v{self.VERSION}")
+        logger.info(f"根目录： {self.root_path}")
+        logger.info("===================================")
 
         # 检查目录
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -623,21 +619,21 @@ class AppConfig(GlobalConfig):
         await self.QueueConfig.connect(self.config_path / "QueueConfig.json")
 
         # self.check_data()
-        self.logger.info("程序初始化完成")
+        logger.info("程序初始化完成")
 
     async def add_script(
         self, script: Literal["MAA", "General"]
     ) -> tuple[uuid.UUID, ConfigBase]:
         """添加脚本配置"""
 
-        self.logger.info(f"添加脚本配置：{script}")
+        logger.info(f"添加脚本配置：{script}")
 
         return await self.ScriptConfig.add(self.CLASS_BOOK[script])
 
     async def get_script(self, script_id: Optional[str]) -> tuple[list, dict]:
         """获取脚本配置"""
 
-        self.logger.info(f"获取脚本配置：{script_id}")
+        logger.info(f"获取脚本配置：{script_id}")
 
         if script_id is None:
             data = await self.ScriptConfig.toDict()
@@ -653,15 +649,13 @@ class AppConfig(GlobalConfig):
     ) -> None:
         """更新脚本配置"""
 
-        self.logger.info(f"更新脚本配置：{script_id}")
+        logger.info(f"更新脚本配置：{script_id}")
 
         uid = uuid.UUID(script_id)
 
         for group, items in data.items():
             for name, value in items.items():
-                self.logger.debug(
-                    f"更新脚本配置：{script_id} - {group}.{name} = {value}"
-                )
+                logger.debug(f"更新脚本配置：{script_id} - {group}.{name} = {value}")
                 await self.ScriptConfig[uid].set(group, name, value)
 
         await self.ScriptConfig.save()
@@ -669,21 +663,21 @@ class AppConfig(GlobalConfig):
     async def del_script(self, script_id: str) -> None:
         """删除脚本配置"""
 
-        self.logger.info(f"删除脚本配置：{script_id}")
+        logger.info(f"删除脚本配置：{script_id}")
 
         await self.ScriptConfig.remove(uuid.UUID(script_id))
 
     async def reorder_script(self, index_list: list[str]) -> None:
         """重新排序脚本"""
 
-        self.logger.info(f"重新排序脚本：{index_list}")
+        logger.info(f"重新排序脚本：{index_list}")
 
         await self.ScriptConfig.setOrder([uuid.UUID(_) for _ in index_list])
 
     async def add_user(self, script_id: str) -> tuple[uuid.UUID, ConfigBase]:
         """添加用户配置"""
 
-        self.logger.info(f"{script_id} 添加用户配置")
+        logger.info(f"{script_id} 添加用户配置")
 
         script_config = self.ScriptConfig[uuid.UUID(script_id)]
 
@@ -702,16 +696,14 @@ class AppConfig(GlobalConfig):
     ) -> None:
         """更新用户配置"""
 
-        self.logger.info(f"{script_id} 更新用户配置：{user_id}")
+        logger.info(f"{script_id} 更新用户配置：{user_id}")
 
         script_config = self.ScriptConfig[uuid.UUID(script_id)]
         uid = uuid.UUID(user_id)
 
         for group, items in data.items():
             for name, value in items.items():
-                self.logger.debug(
-                    f"更新脚本配置：{script_id} - {group}.{name} = {value}"
-                )
+                logger.debug(f"更新脚本配置：{script_id} - {group}.{name} = {value}")
                 if isinstance(script_config, (MaaConfig | GeneralConfig)):
                     await script_config.UserData[uid].set(group, name, value)
 
@@ -720,7 +712,7 @@ class AppConfig(GlobalConfig):
     async def del_user(self, script_id: str, user_id: str) -> None:
         """删除用户配置"""
 
-        self.logger.info(f"{script_id} 删除用户配置：{user_id}")
+        logger.info(f"{script_id} 删除用户配置：{user_id}")
 
         script_config = self.ScriptConfig[uuid.UUID(script_id)]
         uid = uuid.UUID(user_id)
@@ -732,7 +724,7 @@ class AppConfig(GlobalConfig):
     async def reorder_user(self, script_id: str, index_list: list[str]) -> None:
         """重新排序用户"""
 
-        self.logger.info(f"{script_id} 重新排序用户：{index_list}")
+        logger.info(f"{script_id} 重新排序用户：{index_list}")
 
         script_config = self.ScriptConfig[uuid.UUID(script_id)]
 
@@ -743,14 +735,14 @@ class AppConfig(GlobalConfig):
     async def add_queue(self) -> tuple[uuid.UUID, ConfigBase]:
         """添加调度队列"""
 
-        self.logger.info("添加调度队列")
+        logger.info("添加调度队列")
 
         return await self.QueueConfig.add(QueueConfig)
 
     async def get_queue(self, queue_id: Optional[str]) -> tuple[list, dict]:
         """获取调度队列配置"""
 
-        self.logger.info(f"获取调度队列配置：{queue_id}")
+        logger.info(f"获取调度队列配置：{queue_id}")
 
         if queue_id is None:
             data = await self.QueueConfig.toDict()
@@ -766,15 +758,13 @@ class AppConfig(GlobalConfig):
     ) -> None:
         """更新调度队列配置"""
 
-        self.logger.info(f"更新调度队列配置：{queue_id}")
+        logger.info(f"更新调度队列配置：{queue_id}")
 
         uid = uuid.UUID(queue_id)
 
         for group, items in data.items():
             for name, value in items.items():
-                self.logger.debug(
-                    f"更新调度队列配置：{queue_id} - {group}.{name} = {value}"
-                )
+                logger.debug(f"更新调度队列配置：{queue_id} - {group}.{name} = {value}")
                 await self.QueueConfig[uid].set(group, name, value)
 
         await self.QueueConfig.save()
@@ -782,21 +772,21 @@ class AppConfig(GlobalConfig):
     async def del_queue(self, queue_id: str) -> None:
         """删除调度队列配置"""
 
-        self.logger.info(f"删除调度队列配置：{queue_id}")
+        logger.info(f"删除调度队列配置：{queue_id}")
 
         await self.QueueConfig.remove(uuid.UUID(queue_id))
 
     async def reorder_queue(self, index_list: list[str]) -> None:
         """重新排序调度队列"""
 
-        self.logger.info(f"重新排序调度队列：{index_list}")
+        logger.info(f"重新排序调度队列：{index_list}")
 
         await self.QueueConfig.setOrder([uuid.UUID(_) for _ in index_list])
 
     async def add_time_set(self, queue_id: str) -> tuple[uuid.UUID, ConfigBase]:
         """添加时间设置配置"""
 
-        self.logger.info(f"{queue_id} 添加时间设置配置")
+        logger.info(f"{queue_id} 添加时间设置配置")
 
         queue_config = self.QueueConfig[uuid.UUID(queue_id)]
 
@@ -813,16 +803,14 @@ class AppConfig(GlobalConfig):
     ) -> None:
         """更新时间设置配置"""
 
-        self.logger.info(f"{queue_id} 更新时间设置配置：{time_set_id}")
+        logger.info(f"{queue_id} 更新时间设置配置：{time_set_id}")
 
         queue_config = self.QueueConfig[uuid.UUID(queue_id)]
         uid = uuid.UUID(time_set_id)
 
         for group, items in data.items():
             for name, value in items.items():
-                self.logger.debug(
-                    f"更新时间设置配置：{queue_id} - {group}.{name} = {value}"
-                )
+                logger.debug(f"更新时间设置配置：{queue_id} - {group}.{name} = {value}")
                 if isinstance(queue_config, QueueConfig):
                     await queue_config.TimeSet[uid].set(group, name, value)
 
@@ -831,7 +819,7 @@ class AppConfig(GlobalConfig):
     async def del_time_set(self, queue_id: str, time_set_id: str) -> None:
         """删除时间设置配置"""
 
-        self.logger.info(f"{queue_id} 删除时间设置配置：{time_set_id}")
+        logger.info(f"{queue_id} 删除时间设置配置：{time_set_id}")
 
         queue_config = self.QueueConfig[uuid.UUID(queue_id)]
         uid = uuid.UUID(time_set_id)
@@ -843,7 +831,7 @@ class AppConfig(GlobalConfig):
     async def reorder_time_set(self, queue_id: str, index_list: list[str]) -> None:
         """重新排序时间设置"""
 
-        self.logger.info(f"{queue_id} 重新排序时间设置：{index_list}")
+        logger.info(f"{queue_id} 重新排序时间设置：{index_list}")
 
         queue_config = self.QueueConfig[uuid.UUID(queue_id)]
 
@@ -856,14 +844,14 @@ class AppConfig(GlobalConfig):
     ) -> tuple[uuid.UUID, ConfigBase]:
         """添加计划表"""
 
-        self.logger.info(f"添加计划表：{script}")
+        logger.info(f"添加计划表：{script}")
 
         return await self.PlanConfig.add(self.CLASS_BOOK[script])
 
     async def get_plan(self, plan_id: Optional[str]) -> tuple[list, dict]:
         """获取计划表配置"""
 
-        self.logger.info(f"获取计划表配置：{plan_id}")
+        logger.info(f"获取计划表配置：{plan_id}")
 
         if plan_id is None:
             data = await self.PlanConfig.toDict()
@@ -877,15 +865,13 @@ class AppConfig(GlobalConfig):
     async def update_plan(self, plan_id: str, data: Dict[str, Dict[str, Any]]) -> None:
         """更新计划表配置"""
 
-        self.logger.info(f"更新计划表配置：{plan_id}")
+        logger.info(f"更新计划表配置：{plan_id}")
 
         uid = uuid.UUID(plan_id)
 
         for group, items in data.items():
             for name, value in items.items():
-                self.logger.debug(
-                    f"更新计划表配置：{plan_id} - {group}.{name} = {value}"
-                )
+                logger.debug(f"更新计划表配置：{plan_id} - {group}.{name} = {value}")
                 await self.PlanConfig[uid].set(group, name, value)
 
         await self.PlanConfig.save()
@@ -893,21 +879,21 @@ class AppConfig(GlobalConfig):
     async def del_plan(self, plan_id: str) -> None:
         """删除计划表配置"""
 
-        self.logger.info(f"删除计划表配置：{plan_id}")
+        logger.info(f"删除计划表配置：{plan_id}")
 
         await self.PlanConfig.remove(uuid.UUID(plan_id))
 
     async def reorder_plan(self, index_list: list[str]) -> None:
         """重新排序计划表"""
 
-        self.logger.info(f"重新排序计划表：{index_list}")
+        logger.info(f"重新排序计划表：{index_list}")
 
         await self.PlanConfig.setOrder([uuid.UUID(_) for _ in index_list])
 
     async def add_queue_item(self, queue_id: str) -> tuple[uuid.UUID, ConfigBase]:
         """添加队列项配置"""
 
-        self.logger.info(f"{queue_id} 添加队列项配置")
+        logger.info(f"{queue_id} 添加队列项配置")
 
         queue_config = self.QueueConfig[uuid.UUID(queue_id)]
 
@@ -924,7 +910,7 @@ class AppConfig(GlobalConfig):
     ) -> None:
         """更新队列项配置"""
 
-        self.logger.info(f"{queue_id} 更新队列项配置：{queue_item_id}")
+        logger.info(f"{queue_id} 更新队列项配置：{queue_item_id}")
 
         queue_config = self.QueueConfig[uuid.UUID(queue_id)]
         uid = uuid.UUID(queue_item_id)
@@ -933,9 +919,7 @@ class AppConfig(GlobalConfig):
             for name, value in items.items():
                 if uuid.UUID(value) not in self.ScriptConfig:
                     raise ValueError(f"Script with uid {value} does not exist.")
-                self.logger.debug(
-                    f"更新队列项配置：{queue_id} - {group}.{name} = {value}"
-                )
+                logger.debug(f"更新队列项配置：{queue_id} - {group}.{name} = {value}")
                 if isinstance(queue_config, QueueConfig):
                     await queue_config.QueueItem[uid].set(group, name, value)
 
@@ -944,7 +928,7 @@ class AppConfig(GlobalConfig):
     async def del_queue_item(self, queue_id: str, queue_item_id: str) -> None:
         """删除队列项配置"""
 
-        self.logger.info(f"{queue_id} 删除队列项配置：{queue_item_id}")
+        logger.info(f"{queue_id} 删除队列项配置：{queue_item_id}")
 
         queue_config = self.QueueConfig[uuid.UUID(queue_id)]
         uid = uuid.UUID(queue_item_id)
@@ -956,7 +940,7 @@ class AppConfig(GlobalConfig):
     async def reorder_queue_item(self, queue_id: str, index_list: list[str]) -> None:
         """重新排序队列项"""
 
-        self.logger.info(f"{queue_id} 重新排序队列项：{index_list}")
+        logger.info(f"{queue_id} 重新排序队列项：{index_list}")
 
         queue_config = self.QueueConfig[uuid.UUID(queue_id)]
 
@@ -967,18 +951,18 @@ class AppConfig(GlobalConfig):
     async def get_setting(self) -> Dict[str, Any]:
         """获取全局设置"""
 
-        self.logger.info("获取全局设置")
+        logger.info("获取全局设置")
 
         return await self.toDict(ignore_multi_config=True)
 
     async def update_setting(self, data: Dict[str, Dict[str, Any]]) -> None:
         """更新全局设置"""
 
-        self.logger.info(f"更新全局设置")
+        logger.info(f"更新全局设置")
 
         for group, items in data.items():
             for name, value in items.items():
-                self.logger.debug(f"更新全局设置 - {group}.{name} = {value}")
+                logger.debug(f"更新全局设置 - {group}.{name} = {value}")
                 await self.set(group, name, value)
 
     def server_date(self) -> date:
@@ -994,25 +978,29 @@ class AppConfig(GlobalConfig):
             dt = dt - timedelta(days=1)
         return dt.date()
 
+    def get_proxies(self) -> Dict[str, str]:
+        """获取代理设置"""
+        return {
+            "http": self.get("Update", "ProxyAddress"),
+            "https": self.get("Update", "ProxyAddress"),
+        }
+
     async def get_stage(self) -> tuple[bool, Dict[str, Dict[str, list]]]:
         """从MAA服务器更新活动关卡信息"""
 
-        self.logger.info("开始获取活动关卡信息")
+        logger.info("开始获取活动关卡信息")
 
         response = requests.get(
             "https://api.maa.plus/MaaAssistantArknights/api/gui/StageActivity.json",
             timeout=10,
-            proxies={
-                "http": self.get("Update", "ProxyAddress"),
-                "https": self.get("Update", "ProxyAddress"),
-            },
+            proxies=self.get_proxies(),
         )
 
         if response.status_code == 200:
             stage_infos = response.json()["Official"]["sideStoryStage"]
             if_get_maa_stage = True
         else:
-            self.logger.warning(f"无法从MAA服务器获取活动关卡信息:{response.text}")
+            logger.warning(f"无法从MAA服务器获取活动关卡信息:{response.text}")
             if_get_maa_stage = False
             stage_infos = []
 
@@ -1054,23 +1042,18 @@ class AppConfig(GlobalConfig):
     async def get_server_info(self, type: str) -> Dict[str, Any]:
         """获取公告信息"""
 
-        self.logger.info(f"开始从 AUTO_MAA 服务器获取 {type} 信息")
+        logger.info(f"开始从 AUTO_MAA 服务器获取 {type} 信息")
 
         response = requests.get(
             url=f"http://221.236.27.82:10197/d/AUTO_MAA/Server/{type}.json",
             timeout=10,
-            proxies={
-                "http": self.get("Update", "ProxyAddress"),
-                "https": self.get("Update", "ProxyAddress"),
-            },
+            proxies=self.get_proxies(),
         )
 
         if response.status_code == 200:
             return response.json()
         else:
-            self.logger.warning(
-                f"无法从 AUTO_MAA 服务器获取 {type} 信息:{response.text}"
-            )
+            logger.warning(f"无法从 AUTO_MAA 服务器获取 {type} 信息:{response.text}")
             raise ConnectionError(
                 "Cannot connect to the notice server. Please check your network connection or try again later."
             )
