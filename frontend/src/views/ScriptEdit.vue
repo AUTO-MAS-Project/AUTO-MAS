@@ -281,7 +281,7 @@
           </div>
         </template>
 
-        <!-- General脚本配置 -->
+        <!-- 通用脚本配置 -->
         <template v-if="formData.type === 'General'">
           <!-- 基础配置 -->
           <div class="form-section">
@@ -931,12 +931,12 @@ const loadScript = async () => {
         }
       } else {
         const config = scriptData.config as GeneralScriptConfig
-        formData.name = config.Info.Name || '新建General脚本'
+        formData.name = config.Info.Name || '新建通用脚本'
         Object.assign(generalConfig, config)
         // 如果名称为空，设置默认名称
         if (!generalConfig.Info.Name) {
-          generalConfig.Info.Name = '新建General脚本'
-          formData.name = '新建General脚本'
+          generalConfig.Info.Name = '新建通用脚本'
+          formData.name = '新建通用脚本'
         }
       }
     } else {
@@ -1119,7 +1119,7 @@ const selectLogPath = async () => {
 }
 
 const getCardTitle = () => {
-  return formData.type === 'MAA' ? 'MAA脚本配置' : 'General脚本配置'
+  return formData.type === 'MAA' ? 'MAA脚本配置' : '通用脚本配置'
 }
 </script>
 

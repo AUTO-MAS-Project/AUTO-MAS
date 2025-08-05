@@ -23,7 +23,7 @@ export interface MAAScriptConfig {
   }
 }
 
-// General脚本配置
+// 通用脚本配置
 export interface GeneralScriptConfig {
   Game: {
     Arguments: string

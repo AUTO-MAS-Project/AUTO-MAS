@@ -1,8 +1,7 @@
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
-import type { SettingsData, GetSettingsResponse, UpdateSettingsResponse } from '../types/settings.ts'
-
-const API_BASE_URL = 'http://localhost:8000/api'
+import { Service } from '@/api'
+import type { SettingsData } from '@/types/script'
 
 export function useSettingsApi() {
   const loading = ref(false)
@@ -14,28 +13,16 @@ export function useSettingsApi() {
     error.value = null
 
     try {
-      const response = await fetch(`${API_BASE_URL}/setting/get`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({}), // 空请求体
-      })
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
-
-      const apiResponse: GetSettingsResponse = await response.json()
-
+      const response = await Service.getScriptsApiSettingGetPost()
+      
       // 根据code判断是否成功（非200就是不成功）
-      if (apiResponse.code !== 200) {
-        const errorMsg = apiResponse.message || '获取设置失败'
+      if (response.code !== 200) {
+        const errorMsg = response.message || '获取设置失败'
         message.error(errorMsg)
         throw new Error(errorMsg)
       }
 
-      return apiResponse.data
+      return response.data as SettingsData
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : '获取设置失败'
       error.value = errorMsg
@@ -54,30 +41,18 @@ export function useSettingsApi() {
     error.value = null
 
     try {
-      const response = await fetch(`${API_BASE_URL}/setting/update`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          data: settings,
-        }),
+      const response = await Service.updateScriptApiSettingUpdatePost({
+        data: settings
       })
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
-
-      const apiResponse: UpdateSettingsResponse = await response.json()
-
+      
       // 根据code判断是否成功（非200就是不成功）
-      if (apiResponse.code !== 200) {
-        const errorMsg = apiResponse.message || '设置修改失败'
+      if (response.code !== 200) {
+        const errorMsg = response.message || '设置修改失败'
         message.error(errorMsg)
         throw new Error(errorMsg)
       }
 
-      // message.success(apiResponse.message || '设置修改成功')
+      message.success(response.message || '设置修改成功')
       return true
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : '设置修改失败'
