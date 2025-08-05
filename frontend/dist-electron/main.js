@@ -42,11 +42,11 @@ function createWindow() {
         height: 900,
         minWidth: 800,
         minHeight: 600,
-        icon: path.join(__dirname, '../public/AUTO_MAA.ico'), // 设置应用图标
+        icon: path.join(__dirname, '../src/assets/AUTO_MAA.ico'), // 设置应用图标
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
             nodeIntegration: false,
-            contextIsolation: true
+            contextIsolation: true,
         },
         // 隐藏菜单栏
         autoHideMenuBar: true,
@@ -60,7 +60,8 @@ function createWindow() {
         mainWindow.loadURL(devServer);
     }
     else {
-        mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+        const indexHtmlPath = path.join(electron_1.app.getAppPath(), 'dist', 'index.html');
+        mainWindow.loadFile(indexHtmlPath);
     }
     mainWindow.on('closed', () => {
         mainWindow = null;
@@ -79,7 +80,7 @@ electron_1.ipcMain.handle('select-folder', async () => {
         return null;
     const result = await electron_1.dialog.showOpenDialog(mainWindow, {
         properties: ['openDirectory'],
-        title: '选择文件夹'
+        title: '选择文件夹',
     });
     if (result.canceled) {
         return null;
@@ -93,9 +94,7 @@ electron_1.ipcMain.handle('select-file', async (event, filters = []) => {
     const result = await electron_1.dialog.showOpenDialog(mainWindow, {
         properties: ['openFile'],
         title: '选择文件',
-        filters: filters.length > 0 ? filters : [
-            { name: '所有文件', extensions: ['*'] }
-        ]
+        filters: filters.length > 0 ? filters : [{ name: '所有文件', extensions: ['*'] }],
     });
     if (result.canceled) {
         return null;

@@ -5,6 +5,7 @@ import path from 'path'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [vue()],
+  base: './',
   resolve: {
     extensions: ['.js', '.ts', '.vue', '.json'],
     alias: {
