@@ -1,9 +1,21 @@
 <template>
   <div class="user-edit-header">
-    <div class="header-title">
-      <h1>{{ isEdit ? '编辑用户' : '添加用户' }}</h1>
-      <p class="subtitle">{{ scriptName }}</p>
+    <div class="header-nav">
+      <a-breadcrumb class="breadcrumb">
+        <a-breadcrumb-item>
+          <router-link to="/scripts">脚本管理</router-link>
+        </a-breadcrumb-item>
+        <a-breadcrumb-item>
+          <router-link :to="`/scripts/${scriptId}/edit`" class="breadcrumb-link">
+            {{ scriptName }}
+          </router-link>
+        </a-breadcrumb-item>
+        <a-breadcrumb-item>
+          {{ isEdit ? '编辑用户' : '添加用户' }}
+        </a-breadcrumb-item>
+      </a-breadcrumb>
     </div>
+
     <a-space size="middle">
       <a-button size="large" @click="handleCancel" class="cancel-button">
         <template #icon>
@@ -11,635 +23,888 @@
         </template>
         返回
       </a-button>
-      <a-button
-        type="primary"
-        size="large"
-        @click="handleSubmit"
-        :loading="loading"
-        class="save-button"
-      >
-        <template #icon>
-          <SaveOutlined />
-        </template>
-        {{ isEdit ? '保存修改' : '创建用户' }}
-      </a-button>
+      <!--      <a-button type="primary" size="large" @click="handleSubmit" :loading="loading" class="save-button">-->
+      <!--        <template #icon>-->
+      <!--          <SaveOutlined />-->
+      <!--        </template>-->
+      <!--        {{ isEdit ? '保存修改' : '创建用户' }}-->
+      <!--      </a-button>-->
     </a-space>
   </div>
 
   <div class="user-edit-content">
     <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="user-form">
-      <a-card title="基本信息" class="form-card">
-        <a-row :gutter="24">
-          <a-col :span="12">
-            <a-form-item name="userName" required>
-              <template #label>
-                <a-tooltip title="用于识别用户的显示名称">
-                  <span class="form-label">
-                    用户名
-                    <QuestionCircleOutlined class="help-icon" />
-                  </span>
-                </a-tooltip>
-              </template>
-              <a-input
-                v-model:value="formData.userName"
-                placeholder="请输入用户名"
-                :disabled="loading"
-                size="large"
-              />
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item name="userId" required>
-              <template #label>
-                <a-tooltip title="官服输入手机号，B服输入B站ID">
-                  <span class="form-label">
-                    账号ID
-                    <QuestionCircleOutlined class="help-icon" />
-                  </span>
-                </a-tooltip>
-              </template>
-              <a-input
-                v-model:value="formData.userId"
-                placeholder="官服输入手机号，B服输入B站ID"
-                :disabled="loading"
-                size="large"
-              />
-            </a-form-item>
-          </a-col>
-        </a-row>
+      <!-- MAA脚本用户配置 -->
+      <template v-if="scriptType === 'MAA'">
+        <a-card title="基本信息" class="form-card">
+          <a-row :gutter="24">
+            <a-col :span="12">
+              <a-form-item name="userName" required>
+                <template #label>
+                  <a-tooltip title="用于识别用户的显示名称">
+                    <span class="form-label">
+                      用户名
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-input
+                  v-model:value="formData.userName"
+                  placeholder="请输入用户名"
+                  :disabled="loading"
+                  size="large"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item name="userId" required>
+                <template #label>
+                  <a-tooltip title="官服输入手机号，B服输入B站ID">
+                    <span class="form-label">
+                      账号ID
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-input
+                  v-model:value="formData.userId"
+                  placeholder="官服输入手机号，B服输入B站ID"
+                  :disabled="loading"
+                  size="large"
+                />
+              </a-form-item>
+            </a-col>
+          </a-row>
 
-        <a-row :gutter="24">
-          <a-col :span="12">
-            <a-form-item name="status">
-              <template #label>
-                <a-tooltip title="是否启用该用户">
-                  <span class="form-label">
-                    启用状态
-                    <QuestionCircleOutlined class="help-icon" />
-                  </span>
-                </a-tooltip>
-              </template>
-              <a-select v-model:value="formData.Info.Status" size="large">
-                <a-select-option :value="true">是</a-select-option>
-                <a-select-option :value="false">否</a-select-option>
-              </a-select>
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item :name="['Info', 'Password']">
-              <template #label>
-                <a-tooltip title="用户登录游戏的密码">
-                  <span class="form-label">
-                    密码(密码仅用于储存,防止遗忘!此外无任何作用)
-                    <QuestionCircleOutlined class="help-icon" />
-                  </span>
-                </a-tooltip>
-              </template>
-              <a-input-password
-                v-model:value="formData.Info.Password"
-                placeholder="请输入密码"
-                :disabled="loading"
-                size="large"
-              />
-            </a-form-item>
-          </a-col>
-        </a-row>
-        <a-row :gutter="24">
-          <a-col :span="12">
-            <a-form-item name="server">
-              <template #label>
-                <a-tooltip title="选择用户所在的游戏服务器">
-                  <span class="form-label">
-                    服务器
-                    <QuestionCircleOutlined class="help-icon" />
-                  </span>
-                </a-tooltip>
-              </template>
-              <a-select
-                v-model:value="formData.Info.Server"
-                placeholder="请选择服务器"
-                :disabled="loading"
-                :options="serverOptions"
-                size="large"
-              />
-            </a-form-item>
-          </a-col>
+          <a-row :gutter="24">
+            <a-col :span="12">
+              <a-form-item name="status">
+                <template #label>
+                  <a-tooltip title="是否启用该用户">
+                    <span class="form-label">
+                      启用状态
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-select v-model:value="formData.Info.Status" size="large">
+                  <a-select-option :value="true">是</a-select-option>
+                  <a-select-option :value="false">否</a-select-option>
+                </a-select>
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item :name="['Info', 'Password']">
+                <template #label>
+                  <a-tooltip title="用户登录游戏的密码">
+                    <span class="form-label">
+                      密码(密码仅用于储存,防止遗忘!此外无任何作用)
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-input-password
+                  v-model:value="formData.Info.Password"
+                  placeholder="请输入密码"
+                  :disabled="loading"
+                  size="large"
+                />
+              </a-form-item>
+            </a-col>
+          </a-row>
+          <a-row :gutter="24">
+            <a-col :span="12">
+              <a-form-item name="server">
+                <template #label>
+                  <a-tooltip title="选择用户所在的游戏服务器">
+                    <span class="form-label">
+                      服务器
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-select
+                  v-model:value="formData.Info.Server"
+                  placeholder="请选择服务器"
+                  :disabled="loading"
+                  :options="serverOptions"
+                  size="large"
+                />
+              </a-form-item>
+            </a-col>
 
-          <a-col :span="12">
-            <a-form-item name="remainedDay">
-              <template #label>
-                <a-tooltip title="账号剩余的有效天数(-1表示无限)">
-                  <span class="form-label">
-                    剩余天数(-1表示无限)
-                    <QuestionCircleOutlined class="help-icon" />
-                  </span>
-                </a-tooltip>
-              </template>
-              <a-input-number
-                v-model:value="formData.Info.RemainedDay"
-                :min="0"
-                :max="9999"
-                placeholder="0"
-                :disabled="loading"
-                size="large"
-                style="width: 100%"
-              />
-            </a-form-item>
-          </a-col>
-        </a-row>
+            <a-col :span="12">
+              <a-form-item name="remainedDay">
+                <template #label>
+                  <a-tooltip title="账号剩余的有效天数(-1表示无限)">
+                    <span class="form-label">
+                      剩余天数(-1表示无限)
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-input-number
+                  v-model:value="formData.Info.RemainedDay"
+                  :min="0"
+                  :max="9999"
+                  placeholder="0"
+                  :disabled="loading"
+                  size="large"
+                  style="width: 100%"
+                />
+              </a-form-item>
+            </a-col>
+          </a-row>
 
-        <a-row :gutter="24">
-          <a-col :span="12">
-            <a-form-item name="mode">
-              <template #label>
-                <a-tooltip title="选择用户操作模式">
-                  <span class="form-label">
-                    用户配置模式
-                    <QuestionCircleOutlined class="help-icon" />
-                  </span>
-                </a-tooltip>
-              </template>
-              <a-select
-                v-model:value="formData.Info.Mode"
-                :options="[
-                  { label: '简洁', value: '简洁' },
-                  { label: '详细', value: '详细' },
-                ]"
-                :disabled="loading"
-                size="large"
-              />
-            </a-form-item>
-          </a-col>
+          <a-row :gutter="24">
+            <a-col :span="12">
+              <a-form-item name="mode">
+                <template #label>
+                  <a-tooltip title="选择用户操作模式">
+                    <span class="form-label">
+                      用户配置模式
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-select
+                  v-model:value="formData.Info.Mode"
+                  :options="[
+                    { label: '简洁', value: '简洁' },
+                    { label: '详细', value: '详细' },
+                  ]"
+                  :disabled="loading"
+                  size="large"
+                />
+              </a-form-item>
+            </a-col>
 
-          <a-col :span="12">
-            <a-form-item name="mode">
-              <template #label>
-                <a-tooltip title="剿灭代理">
-                  <span class="form-label">
-                    基建模式
-                    <QuestionCircleOutlined class="help-icon" />
-                  </span>
-                </a-tooltip>
-              </template>
-              <a-select
-                v-model:value="formData.Info.InfrastMode"
-                :options="[
-                  { label: '常规模式', value: 'Normal' },
-                  { label: '一键轮休', value: 'Rotation' },
-                  { label: '自定义基建', value: 'Custom' },
-                ]"
-                :disabled="loading"
-                size="large"
-              />
-            </a-form-item>
-          </a-col>
-          <!--          <a-col :span="8">-->
-          <!--            <a-form-item name="medicineNumb">-->
+            <a-col :span="12">
+              <a-form-item name="mode">
+                <template #label>
+                  <a-tooltip title="剿灭代理">
+                    <span class="form-label">
+                      基建模式
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-select
+                  v-model:value="formData.Info.InfrastMode"
+                  :options="[
+                    { label: '常规模式', value: 'Normal' },
+                    { label: '一键轮休', value: 'Rotation' },
+                    { label: '自定义基建', value: 'Custom' },
+                  ]"
+                  :disabled="loading"
+                  size="large"
+                />
+              </a-form-item>
+            </a-col>
+            <!--          <a-col :span="8">-->
+            <!--            <a-form-item name="medicineNumb">-->
+            <!--              <template #label>-->
+            <!--                <a-tooltip title="用户拥有的理智药数量，用于恢复理智">-->
+            <!--                  <span class="form-label">-->
+            <!--                    理智药数量-->
+            <!--                    <QuestionCircleOutlined class="help-icon" />-->
+            <!--                  </span>-->
+            <!--                </a-tooltip>-->
+            <!--              </template>-->
+            <!--              <a-input-number-->
+            <!--                v-model:value="formData.Info.MedicineNumb"-->
+            <!--                :min="0"-->
+            <!--                :max="999"-->
+            <!--                placeholder="0"-->
+            <!--                :disabled="loading"-->
+            <!--                size="large"-->
+            <!--                style="width: 100%"-->
+            <!--              />-->
+            <!--            </a-form-item>-->
+            <!--          </a-col>-->
+          </a-row>
+
+          <a-form-item name="notes">
+            <template #label>
+              <a-tooltip title="为用户添加备注信息，便于管理和识别">
+                <span class="form-label">
+                  备注
+                  <QuestionCircleOutlined class="help-icon" />
+                </span>
+              </a-tooltip>
+            </template>
+            <a-textarea
+              v-model:value="formData.Info.Notes"
+              placeholder="请输入备注信息"
+              :rows="4"
+              :disabled="loading"
+            />
+          </a-form-item>
+        </a-card>
+
+        <a-card title="关卡配置" class="form-card">
+          <!--        <a-row :gutter="24">-->
+          <!--          <a-col :span="12">-->
+          <!--            <a-form-item name="proxyTimes">-->
           <!--              <template #label>-->
-          <!--                <a-tooltip title="用户拥有的理智药数量，用于恢复理智">-->
+          <!--                <a-tooltip title="刷关代理次数，-1表示无限代理">-->
           <!--                  <span class="form-label">-->
-          <!--                    理智药数量-->
+          <!--                    刷关代理次数-->
           <!--                    <QuestionCircleOutlined class="help-icon" />-->
           <!--                  </span>-->
           <!--                </a-tooltip>-->
           <!--              </template>-->
-          <!--              <a-input-number-->
-          <!--                v-model:value="formData.Info.MedicineNumb"-->
-          <!--                :min="0"-->
-          <!--                :max="999"-->
-          <!--                placeholder="0"-->
-          <!--                :disabled="loading"-->
-          <!--                size="large"-->
-          <!--                style="width: 100%"-->
-          <!--              />-->
+          <!--              <div class="desc-text" style="color: #888; font-size: 14px; margin-top: 4px">-->
+          <!--                今日已代理{{ formData.Data.ProxyTimes }}次 | 本周代理已完成-->
+          <!--              </div>-->
           <!--            </a-form-item>-->
           <!--          </a-col>-->
-        </a-row>
+          <!--        </a-row>-->
 
-        <a-form-item name="notes">
-          <template #label>
-            <a-tooltip title="为用户添加备注信息，便于管理和识别">
-              <span class="form-label">
-                备注
-                <QuestionCircleOutlined class="help-icon" />
-              </span>
-            </a-tooltip>
-          </template>
-          <a-textarea
-            v-model:value="formData.Info.Notes"
-            placeholder="请输入备注信息"
-            :rows="4"
-            :disabled="loading"
-          />
-        </a-form-item>
-      </a-card>
+          <a-row :gutter="24">
+            <a-col :span="12">
+              <a-form-item name="mode">
+                <template #label>
+                  <a-tooltip title="剿灭代理">
+                    <span class="form-label">
+                      剿灭代理
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-select
+                  v-model:value="formData.Info.Annihilation"
+                  :options="[
+                    { label: '关闭', value: 'Close' },
+                    { label: '当期剿灭', value: 'Annihilation' },
+                    { label: '切尔诺伯格', value: 'Chernobog@Annihilation' },
+                    { label: '龙门外环', value: 'LungmenOutskirts@Annihilation' },
+                    { label: '龙门市区', value: 'LungmenDowntown@Annihilation' },
+                  ]"
+                  :disabled="loading"
+                  size="large"
+                />
+              </a-form-item>
+            </a-col>
+          </a-row>
+          <a-row :gutter="24"></a-row>
+          <a-row :gutter="24">
+            <a-col :span="6">
+              <a-form-item name="remainedDay">
+                <template #label>
+                  <a-tooltip title="吃理智药数量">
+                    <span class="form-label">
+                      吃理智药数量
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-input-number
+                  v-model:value="formData.Info.MedicineNumb"
+                  :min="0"
+                  :max="9999"
+                  placeholder="0"
+                  :disabled="loading"
+                  size="large"
+                  style="width: 100%"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :span="6">
+              <a-form-item name="mode">
+                <template #label>
+                  <a-tooltip title="连战次数">
+                    <span class="form-label">
+                      连战次数
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-select
+                  v-model:value="formData.Info.SeriesNumb"
+                  :options="[
+                    { label: 'AUTO', value: 'AUTO' },
+                    { label: '0', value: '0' },
+                    { label: '1', value: '1' },
+                    { label: '2', value: '2' },
+                    { label: '3', value: '3' },
+                    { label: '4', value: '4' },
+                    { label: '5', value: '5' },
+                    { label: '6', value: '6' },
+                  ]"
+                  :disabled="loading"
+                  size="large"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :span="6">
+              <a-form-item name="mode">
+                <template #label>
+                  <a-tooltip title="关卡选择">
+                    <span class="form-label">
+                      关卡配置模式
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-select
+                  v-model:value="formData.Info.StageMode"
+                  :options="[
+                    { label: '固定', value: '固定' },
+                    { label: '刷完即停', value: '刷完即停' },
+                  ]"
+                  :disabled="loading"
+                  size="large"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :span="6">
+              <a-form-item name="mode">
+                <template #label>
+                  <a-tooltip title="关卡选择">
+                    <span class="form-label">
+                      关卡选择
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-select
+                  v-model:value="formData.Info.Stage"
+                  :options="[
+                    { label: '不选择', value: '' },
+                    { label: '后期接口获取,先占位符', value: 'Other' },
+                  ]"
+                  :disabled="loading"
+                  size="large"
+                />
+              </a-form-item>
+            </a-col>
+          </a-row>
+          <a-row :gutter="24">
+            <a-col :span="6">
+              <a-form-item name="mode">
+                <template #label>
+                  <a-tooltip title="备选关卡-1">
+                    <span class="form-label">
+                      备选关卡-1
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-select
+                  v-model:value="formData.Info.Stage_1"
+                  :options="[
+                    { label: '不选择', value: '' },
+                    { label: '后期接口获取,先占位符', value: 'Other' },
+                  ]"
+                  :disabled="loading"
+                  size="large"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :span="6">
+              <a-form-item name="mode">
+                <template #label>
+                  <a-tooltip title="备选关卡-2">
+                    <span class="form-label">
+                      备选关卡-2
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-select
+                  v-model:value="formData.Info.Stage_2"
+                  :options="[
+                    { label: '不选择', value: '' },
+                    { label: '后期接口获取,先占位符', value: 'Other' },
+                  ]"
+                  :disabled="loading"
+                  size="large"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :span="6">
+              <a-form-item name="mode">
+                <template #label>
+                  <a-tooltip title="备选关卡-3">
+                    <span class="form-label">
+                      备选关卡-3
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-select
+                  v-model:value="formData.Info.Stage_3"
+                  :options="[
+                    { label: '不选择', value: '' },
+                    { label: '后期接口获取,先占位符', value: 'Other' },
+                  ]"
+                  :disabled="loading"
+                  size="large"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :span="6">
+              <a-form-item name="mode">
+                <template #label>
+                  <a-tooltip title="剩余理智">
+                    <span class="form-label">
+                      剩余理智
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-select
+                  v-model:value="formData.Info.Stage_Remain"
+                  :options="[
+                    { label: '不选择', value: '' },
+                    { label: '后期接口获取,先占位符', value: 'Other' },
+                  ]"
+                  :disabled="loading"
+                  size="large"
+                />
+              </a-form-item>
+            </a-col>
+          </a-row>
+          <a-row :gutter="24"></a-row>
+        </a-card>
 
-      <a-card title="关卡配置" class="form-card">
-        <!--        <a-row :gutter="24">-->
-        <!--          <a-col :span="12">-->
-        <!--            <a-form-item name="proxyTimes">-->
-        <!--              <template #label>-->
-        <!--                <a-tooltip title="刷关代理次数，-1表示无限代理">-->
-        <!--                  <span class="form-label">-->
-        <!--                    刷关代理次数-->
-        <!--                    <QuestionCircleOutlined class="help-icon" />-->
-        <!--                  </span>-->
-        <!--                </a-tooltip>-->
-        <!--              </template>-->
-        <!--              <div class="desc-text" style="color: #888; font-size: 14px; margin-top: 4px">-->
-        <!--                今日已代理{{ formData.Data.ProxyTimes }}次 | 本周代理已完成-->
-        <!--              </div>-->
-        <!--            </a-form-item>-->
-        <!--          </a-col>-->
-        <!--        </a-row>-->
-
-        <a-row :gutter="24">
-          <a-col :span="12">
-            <a-form-item name="mode">
-              <template #label>
-                <a-tooltip title="剿灭代理">
-                  <span class="form-label">
-                    剿灭代理
+        <a-card title="任务配置" class="form-card">
+          <a-row :gutter="24">
+            <a-col :span="6">
+              <a-form-item name="ifWakeUp" label="开始唤醒">
+                <a-switch v-model:checked="formData.Task.IfWakeUp" :disabled="loading" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="6">
+              <a-form-item name="ifRecruiting" label="自动公招">
+                <a-switch v-model:checked="formData.Task.IfRecruiting" :disabled="loading" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="6">
+              <a-form-item name="ifBase" label="基建换班">
+                <a-switch v-model:checked="formData.Task.IfBase" :disabled="loading" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="6">
+              <a-form-item name="ifCombat" label="刷理智">
+                <a-switch v-model:checked="formData.Task.IfCombat" :disabled="loading" />
+              </a-form-item>
+            </a-col>
+          </a-row>
+          <a-row :gutter="24">
+            <a-col :span="6">
+              <a-form-item name="ifMall" label="获取信用及购物">
+                <a-switch v-model:checked="formData.Task.IfMall" :disabled="loading" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="6">
+              <a-form-item name="ifMission" label="领取奖励">
+                <a-switch v-model:checked="formData.Task.IfMission" :disabled="loading" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="6">
+              <a-form-item name="ifAutoRoguelike">
+                <template #label>
+                  <a-tooltip title="暂不支持">
+                    <span>自动肉鸽 </span>
                     <QuestionCircleOutlined class="help-icon" />
-                  </span>
-                </a-tooltip>
-              </template>
-              <a-select
-                v-model:value="formData.Info.Annihilation"
-                :options="[
-                  { label: '关闭', value: 'Close' },
-                  { label: '当期剿灭', value: 'Annihilation' },
-                  { label: '切尔诺伯格', value: 'Chernobog@Annihilation' },
-                  { label: '龙门外环', value: 'LungmenOutskirts@Annihilation' },
-                  { label: '龙门市区', value: 'LungmenDowntown@Annihilation' },
-                ]"
-                :disabled="loading"
+                  </a-tooltip>
+                </template>
+                <a-switch v-model:checked="formData.Task.IfAutoRoguelike" :disabled="loading" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="6">
+              <a-form-item name="ifReclamation">
+                <template #label>
+                  <a-tooltip title="暂不支持">
+                    <span>生息演算 </span>
+                    <QuestionCircleOutlined class="help-icon" />
+                  </a-tooltip>
+                </template>
+                <a-switch v-model:checked="formData.Task.IfReclamation" :disabled="loading" />
+              </a-form-item>
+            </a-col>
+          </a-row>
+        </a-card>
+
+        <a-card title="森空岛配置" class="form-card">
+          <a-row :gutter="24" align="middle">
+            <a-col :span="6">
+              <span style="font-weight: 500">启用森空岛</span>
+            </a-col>
+            <a-col :span="18">
+              <a-switch v-model:checked="formData.Info.IfSkland" :disabled="loading" />
+              <span class="switch-description">开启后将启用森空岛相关功能</span>
+            </a-col>
+          </a-row>
+          <a-row :gutter="24" style="margin-top: 16px">
+            <a-col :span="24">
+              <span style="font-weight: 500">森空岛Token</span>
+              <a-input-password
+                v-model:value="formData.Info.SklandToken"
+                :disabled="loading || !formData.Info.IfSkland"
+                placeholder="请输入森空岛Token"
                 size="large"
+                style="margin-top: 8px; width: 100%"
+                allow-clear
               />
-            </a-form-item>
-          </a-col>
-        </a-row>
-        <a-row :gutter="24"></a-row>
-        <a-row :gutter="24">
-          <a-col :span="6">
-            <a-form-item name="remainedDay">
-              <template #label>
-                <a-tooltip title="吃理智药数量">
-                  <span class="form-label">
-                    吃理智药数量
-                    <QuestionCircleOutlined class="help-icon" />
-                  </span>
-                </a-tooltip>
-              </template>
-              <a-input-number
-                v-model:value="formData.Info.MedicineNumb"
-                :min="0"
-                :max="9999"
-                placeholder="0"
-                :disabled="loading"
+              <div style="color: #999; font-size: 12px; margin-top: 4px">
+                请在森空岛官网获取您的专属Token并粘贴到此处,详细教程建官网文档
+              </div>
+            </a-col>
+          </a-row>
+        </a-card>
+
+        <a-card title="通知配置" class="form-card">
+          <a-row :gutter="24" align="middle">
+            <a-col :span="6">
+              <span style="font-weight: 500">启用通知</span>
+            </a-col>
+            <a-col :span="18">
+              <a-switch v-model:checked="formData.Notify.Enabled" :disabled="loading" />
+              <span class="switch-description">启用后将发送任务通知</span>
+            </a-col>
+          </a-row>
+
+          <!-- 邮件通知 -->
+          <a-row :gutter="24" style="margin-top: 16px">
+            <a-col :span="6">
+              <a-checkbox
+                v-model:checked="formData.Notify.IfSendMail"
+                :disabled="loading || !formData.Notify.Enabled"
+                >邮件通知
+              </a-checkbox>
+            </a-col>
+            <a-col :span="18">
+              <a-input
+                v-model:value="formData.Notify.ToAddress"
+                placeholder="请输入收件人邮箱地址"
+                :disabled="loading || !formData.Notify.Enabled || !formData.Notify.IfSendMail"
                 size="large"
                 style="width: 100%"
               />
-            </a-form-item>
-          </a-col>
-          <a-col :span="6">
-            <a-form-item name="mode">
-              <template #label>
-                <a-tooltip title="连战次数">
-                  <span class="form-label">
-                    连战次数
-                    <QuestionCircleOutlined class="help-icon" />
-                  </span>
-                </a-tooltip>
-              </template>
-              <a-select
-                v-model:value="formData.Info.SeriesNumb"
-                :options="[
-                  { label: 'AUTO', value: 'AUTO' },
-                  { label: '0', value: '0' },
-                  { label: '1', value: '1' },
-                  { label: '2', value: '2' },
-                  { label: '3', value: '3' },
-                  { label: '4', value: '4' },
-                  { label: '5', value: '5' },
-                  { label: '6', value: '6' },
-                ]"
-                :disabled="loading"
-                size="large"
-              />
-            </a-form-item>
-          </a-col>
-          <a-col :span="6">
-            <a-form-item name="mode">
-              <template #label>
-                <a-tooltip title="关卡选择">
-                  <span class="form-label">
-                    关卡配置模式
-                    <QuestionCircleOutlined class="help-icon" />
-                  </span>
-                </a-tooltip>
-              </template>
-              <a-select
-                v-model:value="formData.Info.StageMode"
-                :options="[
-                  { label: '固定', value: '固定' },
-                  { label: '刷完即停', value: '刷完即停' },
-                ]"
-                :disabled="loading"
-                size="large"
-              />
-            </a-form-item>
-          </a-col>
-          <a-col :span="6">
-            <a-form-item name="mode">
-              <template #label>
-                <a-tooltip title="关卡选择">
-                  <span class="form-label">
-                    关卡选择
-                    <QuestionCircleOutlined class="help-icon" />
-                  </span>
-                </a-tooltip>
-              </template>
-              <a-select
-                v-model:value="formData.Info.Stage"
-                :options="[
-                  { label: '不选择', value: '' },
-                  { label: '后期接口获取,先占位符', value: 'Other' },
-                ]"
-                :disabled="loading"
-                size="large"
-              />
-            </a-form-item>
-          </a-col>
-        </a-row>
-        <a-row :gutter="24">
-          <a-col :span="6">
-            <a-form-item name="mode">
-              <template #label>
-                <a-tooltip title="备选关卡-1">
-                  <span class="form-label">
-                    备选关卡-1
-                    <QuestionCircleOutlined class="help-icon" />
-                  </span>
-                </a-tooltip>
-              </template>
-              <a-select
-                v-model:value="formData.Info.Stage_1"
-                :options="[
-                  { label: '不选择', value: '' },
-                  { label: '后期接口获取,先占位符', value: 'Other' },
-                ]"
-                :disabled="loading"
-                size="large"
-              />
-            </a-form-item>
-          </a-col>
-          <a-col :span="6">
-            <a-form-item name="mode">
-              <template #label>
-                <a-tooltip title="备选关卡-2">
-                  <span class="form-label">
-                    备选关卡-2
-                    <QuestionCircleOutlined class="help-icon" />
-                  </span>
-                </a-tooltip>
-              </template>
-              <a-select
-                v-model:value="formData.Info.Stage_2"
-                :options="[
-                  { label: '不选择', value: '' },
-                  { label: '后期接口获取,先占位符', value: 'Other' },
-                ]"
-                :disabled="loading"
-                size="large"
-              />
-            </a-form-item>
-          </a-col>
-          <a-col :span="6">
-            <a-form-item name="mode">
-              <template #label>
-                <a-tooltip title="备选关卡-3">
-                  <span class="form-label">
-                    备选关卡-3
-                    <QuestionCircleOutlined class="help-icon" />
-                  </span>
-                </a-tooltip>
-              </template>
-              <a-select
-                v-model:value="formData.Info.Stage_3"
-                :options="[
-                  { label: '不选择', value: '' },
-                  { label: '后期接口获取,先占位符', value: 'Other' },
-                ]"
-                :disabled="loading"
-                size="large"
-              />
-            </a-form-item>
-          </a-col>
-          <a-col :span="6">
-            <a-form-item name="mode">
-              <template #label>
-                <a-tooltip title="剩余理智">
-                  <span class="form-label">
-                    剩余理智
-                    <QuestionCircleOutlined class="help-icon" />
-                  </span>
-                </a-tooltip>
-              </template>
-              <a-select
-                v-model:value="formData.Info.Stage_Remain"
-                :options="[
-                  { label: '不选择', value: '' },
-                  { label: '后期接口获取,先占位符', value: 'Other' },
-                ]"
-                :disabled="loading"
-                size="large"
-              />
-            </a-form-item>
-          </a-col>
-        </a-row>
-        <a-row :gutter="24"></a-row>
-      </a-card>
+            </a-col>
+          </a-row>
 
-      <a-card title="任务配置" class="form-card">
-        <a-row :gutter="24">
-          <a-col :span="6">
-            <a-form-item name="ifWakeUp" label="开始唤醒">
-              <a-switch v-model:checked="formData.Task.IfWakeUp" :disabled="loading" />
-            </a-form-item>
-          </a-col>
-          <a-col :span="6">
-            <a-form-item name="ifRecruiting" label="自动公招">
-              <a-switch v-model:checked="formData.Task.IfRecruiting" :disabled="loading" />
-            </a-form-item>
-          </a-col>
-          <a-col :span="6">
-            <a-form-item name="ifBase" label="基建换班">
-              <a-switch v-model:checked="formData.Task.IfBase" :disabled="loading" />
-            </a-form-item>
-          </a-col>
-          <a-col :span="6">
-            <a-form-item name="ifCombat" label="刷理智">
-              <a-switch v-model:checked="formData.Task.IfCombat" :disabled="loading" />
-            </a-form-item>
-          </a-col>
-        </a-row>
-        <a-row :gutter="24">
-          <a-col :span="6">
-            <a-form-item name="ifMall" label="获取信用及购物">
-              <a-switch v-model:checked="formData.Task.IfMall" :disabled="loading" />
-            </a-form-item>
-          </a-col>
-          <a-col :span="6">
-            <a-form-item name="ifMission" label="领取奖励">
-              <a-switch v-model:checked="formData.Task.IfMission" :disabled="loading" />
-            </a-form-item>
-          </a-col>
-          <a-col :span="6">
-            <a-form-item name="ifAutoRoguelike">
-              <template #label>
-                <a-tooltip title="暂不支持">
-                  <span>自动肉鸽 </span>
+          <!-- Server酱通知 -->
+          <a-row :gutter="24" style="margin-top: 16px">
+            <a-col :span="6">
+              <a-checkbox
+                v-model:checked="formData.Notify.IfServerChan"
+                :disabled="loading || !formData.Notify.Enabled"
+                >Server酱
+              </a-checkbox>
+            </a-col>
+            <a-col :span="18" style="display: flex; gap: 8px">
+              <a-input
+                v-model:value="formData.Notify.ServerChanKey"
+                placeholder="SENDKEY"
+                :disabled="loading || !formData.Notify.Enabled || !formData.Notify.IfServerChan"
+                size="large"
+                style="flex: 2"
+              />
+            </a-col>
+          </a-row>
+
+          <!-- 企业微信群机器人通知 -->
+          <a-row :gutter="24" style="margin-top: 16px">
+            <a-col :span="6">
+              <a-checkbox
+                v-model:checked="formData.Notify.IfCompanyWebHookBot"
+                :disabled="loading || !formData.Notify.Enabled"
+                >企业微信群机器人
+              </a-checkbox>
+            </a-col>
+            <a-col :span="18">
+              <a-input
+                v-model:value="formData.Notify.CompanyWebHookBotUrl"
+                placeholder="请输入机器人Webhook地址"
+                :disabled="
+                  loading || !formData.Notify.Enabled || !formData.Notify.IfCompanyWebHookBot
+                "
+                size="large"
+                style="width: 100%"
+              />
+            </a-col>
+          </a-row>
+
+          <!-- 发送统计/六星等可选通知 -->
+          <a-row :gutter="24" style="margin-top: 16px">
+            <a-col :span="6">
+              <span style="font-weight: 500">通知内容</span>
+            </a-col>
+            <a-col :span="18" style="display: flex; gap: 32px">
+              <a-checkbox
+                v-model:checked="formData.Notify.IfSendStatistic"
+                :disabled="loading || !formData.Notify.Enabled"
+                >发送统计
+              </a-checkbox>
+              <a-checkbox
+                v-model:checked="formData.Notify.IfSendSixStar"
+                :disabled="loading || !formData.Notify.Enabled"
+                >六星掉落推送
+              </a-checkbox>
+            </a-col>
+          </a-row>
+        </a-card>
+      </template>
+
+      <!-- 通用脚本用户配置 -->
+      <template v-else>
+        <a-card title="基本信息" class="form-card">
+          <a-row :gutter="24">
+            <a-col :span="12">
+              <a-form-item name="userName" required>
+                <template #label>
+                  <a-tooltip title="用于识别用户的显示名称">
+                    <span class="form-label">
+                      用户名
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-input
+                  v-model:value="formData.userName"
+                  placeholder="请输入用户名"
+                  :disabled="loading"
+                  size="large"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item name="status">
+                <template #label>
+                  <a-tooltip title="是否启用该用户">
+                    <span class="form-label">
+                      启用状态
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-switch
+                  v-model:checked="formData.Info.Status"
+                  :disabled="loading"
+                  size="default"
+                />
+                <span class="switch-description">启用后该用户将参与自动化任务</span>
+              </a-form-item>
+            </a-col>
+          </a-row>
+
+          <a-row :gutter="24">
+            <a-col :span="12">
+              <a-form-item name="remainedDay">
+                <template #label>
+                  <a-tooltip title="账号剩余的有效天数，-1表示无限">
+                    <span class="form-label">
+                      剩余天数
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-input-number
+                  v-model:value="formData.Info.RemainedDay"
+                  :min="-1"
+                  :max="9999"
+                  placeholder="-1"
+                  :disabled="loading"
+                  size="large"
+                  style="width: 100%"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <!-- 占位列 -->
+            </a-col>
+          </a-row>
+
+          <a-form-item name="notes">
+            <template #label>
+              <a-tooltip title="为用户添加备注信息，便于管理和识别">
+                <span class="form-label">
+                  备注
                   <QuestionCircleOutlined class="help-icon" />
-                </a-tooltip>
-              </template>
-              <a-switch v-model:checked="formData.Task.IfAutoRoguelike" :disabled="loading" />
-            </a-form-item>
-          </a-col>
-          <a-col :span="6">
-            <a-form-item name="ifReclamation">
-              <template #label>
-                <a-tooltip title="暂不支持">
-                  <span>生息演算 </span>
-                  <QuestionCircleOutlined class="help-icon" />
-                </a-tooltip>
-              </template>
-              <a-switch v-model:checked="formData.Task.IfReclamation" :disabled="loading" />
-            </a-form-item>
-          </a-col>
-        </a-row>
-      </a-card>
-
-      <a-card title="森空岛配置" class="form-card">
-        <a-row :gutter="24" align="middle">
-          <a-col :span="6">
-            <span style="font-weight: 500">启用森空岛</span>
-          </a-col>
-          <a-col :span="18">
-            <a-switch v-model:checked="formData.Info.IfSkland" :disabled="loading" />
-            <span class="switch-description">开启后将启用森空岛相关功能</span>
-          </a-col>
-        </a-row>
-        <a-row :gutter="24" style="margin-top: 16px">
-          <a-col :span="24">
-            <span style="font-weight: 500">森空岛Token</span>
-            <a-input-password
-              v-model:value="formData.Info.SklandToken"
-              :disabled="loading || !formData.Info.IfSkland"
-              placeholder="请输入森空岛Token"
-              size="large"
-              style="margin-top: 8px; width: 100%"
-              allow-clear
+                </span>
+              </a-tooltip>
+            </template>
+            <a-textarea
+              v-model:value="formData.Info.Notes"
+              placeholder="请输入备注信息"
+              :rows="4"
+              :disabled="loading"
             />
-            <div style="color: #999; font-size: 12px; margin-top: 4px">
-              请在森空岛官网获取您的专属Token并粘贴到此处,详细教程建官网文档
-            </div>
-          </a-col>
-        </a-row>
-      </a-card>
+          </a-form-item>
+        </a-card>
 
-      <a-card title="通知配置" class="form-card">
-        <a-row :gutter="24" align="middle">
-          <a-col :span="6">
-            <span style="font-weight: 500">启用通知</span>
-          </a-col>
-          <a-col :span="18">
-            <a-switch v-model:checked="formData.Notify.Enabled" :disabled="loading" />
-            <span class="switch-description">启用后将发送任务通知</span>
-          </a-col>
-        </a-row>
+        <a-card title="脚本配置" class="form-card">
+          <a-row :gutter="24">
+            <a-col :span="12">
+              <a-form-item name="ifScriptBeforeTask">
+                <template #label>
+                  <a-tooltip title="是否在任务执行前运行自定义脚本">
+                    <span class="form-label">
+                      任务前执行脚本
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-switch
+                  v-model:checked="formData.Info.IfScriptBeforeTask"
+                  :disabled="loading"
+                  size="default"
+                />
+                <span class="switch-description">启用后将在任务执行前运行指定脚本</span>
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item name="ifScriptAfterTask">
+                <template #label>
+                  <a-tooltip title="是否在任务执行后运行自定义脚本">
+                    <span class="form-label">
+                      任务后执行脚本
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-switch
+                  v-model:checked="formData.Info.IfScriptAfterTask"
+                  :disabled="loading"
+                  size="default"
+                />
+                <span class="switch-description">启用后将在任务执行后运行指定脚本</span>
+              </a-form-item>
+            </a-col>
+          </a-row>
 
-        <!-- 邮件通知 -->
-        <a-row :gutter="24" style="margin-top: 16px">
-          <a-col :span="6">
-            <a-checkbox
-              v-model:checked="formData.Notify.IfSendMail"
-              :disabled="loading || !formData.Notify.Enabled"
-              >邮件通知
-            </a-checkbox>
-          </a-col>
-          <a-col :span="18">
-            <a-input
-              v-model:value="formData.Notify.ToAddress"
-              placeholder="请输入收件人邮箱地址"
-              :disabled="loading || !formData.Notify.Enabled || !formData.Notify.IfSendMail"
-              size="large"
-              style="width: 100%"
-            />
-          </a-col>
-        </a-row>
+          <a-row :gutter="24">
+            <a-col :span="12">
+              <a-form-item name="scriptBeforeTask">
+                <template #label>
+                  <a-tooltip title="任务执行前要运行的脚本路径或命令">
+                    <span class="form-label">
+                      任务前脚本
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-input
+                  v-model:value="formData.Info.ScriptBeforeTask"
+                  placeholder="请输入脚本路径或命令"
+                  :disabled="loading || !formData.Info.IfScriptBeforeTask"
+                  size="large"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item name="scriptAfterTask">
+                <template #label>
+                  <a-tooltip title="任务执行后要运行的脚本路径或命令">
+                    <span class="form-label">
+                      任务后脚本
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-input
+                  v-model:value="formData.Info.ScriptAfterTask"
+                  placeholder="请输入脚本路径或命令"
+                  :disabled="loading || !formData.Info.IfScriptAfterTask"
+                  size="large"
+                />
+              </a-form-item>
+            </a-col>
+          </a-row>
+        </a-card>
 
-        <!-- Server酱通知 -->
-        <a-row :gutter="24" style="margin-top: 16px">
-          <a-col :span="6">
-            <a-checkbox
-              v-model:checked="formData.Notify.IfServerChan"
-              :disabled="loading || !formData.Notify.Enabled"
-              >Server酱
-            </a-checkbox>
-          </a-col>
-          <a-col :span="18" style="display: flex; gap: 8px">
-            <a-input
-              v-model:value="formData.Notify.ServerChanKey"
-              placeholder="SENDKEY"
-              :disabled="loading || !formData.Notify.Enabled || !formData.Notify.IfServerChan"
-              size="large"
-              style="flex: 2"
-            />
-          </a-col>
-        </a-row>
+        <a-card title="通知配置" class="form-card">
+          <a-row :gutter="24" align="middle">
+            <a-col :span="6">
+              <span style="font-weight: 500">启用通知</span>
+            </a-col>
+            <a-col :span="18">
+              <a-switch v-model:checked="formData.Notify.Enabled" :disabled="loading" />
+              <span class="switch-description">启用后将发送任务通知</span>
+            </a-col>
+          </a-row>
 
-        <!-- 企业微信群机器人通知 -->
-        <a-row :gutter="24" style="margin-top: 16px">
-          <a-col :span="6">
-            <a-checkbox
-              v-model:checked="formData.Notify.IfCompanyWebHookBot"
-              :disabled="loading || !formData.Notify.Enabled"
-              >企业微信群机器人
-            </a-checkbox>
-          </a-col>
-          <a-col :span="18">
-            <a-input
-              v-model:value="formData.Notify.CompanyWebHookBotUrl"
-              placeholder="请输入机器人Webhook地址"
-              :disabled="
-                loading || !formData.Notify.Enabled || !formData.Notify.IfCompanyWebHookBot
-              "
-              size="large"
-              style="width: 100%"
-            />
-          </a-col>
-        </a-row>
+          <!-- 邮件通知 -->
+          <a-row :gutter="24" style="margin-top: 16px">
+            <a-col :span="6">
+              <a-checkbox
+                v-model:checked="formData.Notify.IfSendMail"
+                :disabled="loading || !formData.Notify.Enabled"
+                >邮件通知
+              </a-checkbox>
+            </a-col>
+            <a-col :span="18">
+              <a-input
+                v-model:value="formData.Notify.ToAddress"
+                placeholder="请输入收件人邮箱地址"
+                :disabled="loading || !formData.Notify.Enabled || !formData.Notify.IfSendMail"
+                size="large"
+                style="width: 100%"
+              />
+            </a-col>
+          </a-row>
 
-        <!-- 发送统计/六星等可选通知 -->
-        <a-row :gutter="24" style="margin-top: 16px">
-          <a-col :span="6">
-            <span style="font-weight: 500">通知内容</span>
-          </a-col>
-          <a-col :span="18" style="display: flex; gap: 32px">
-            <a-checkbox
-              v-model:checked="formData.Notify.IfSendStatistic"
-              :disabled="loading || !formData.Notify.Enabled"
-              >发送统计
-            </a-checkbox>
-            <a-checkbox
-              v-model:checked="formData.Notify.IfSendSixStar"
-              :disabled="loading || !formData.Notify.Enabled"
-              >六星掉落推送
-            </a-checkbox>
-          </a-col>
-        </a-row>
-      </a-card>
+          <!-- Server酱通知 -->
+          <a-row :gutter="24" style="margin-top: 16px">
+            <a-col :span="6">
+              <a-checkbox
+                v-model:checked="formData.Notify.IfServerChan"
+                :disabled="loading || !formData.Notify.Enabled"
+                >Server酱
+              </a-checkbox>
+            </a-col>
+            <a-col :span="18">
+              <a-input
+                v-model:value="formData.Notify.ServerChanKey"
+                placeholder="SENDKEY"
+                :disabled="loading || !formData.Notify.Enabled || !formData.Notify.IfServerChan"
+                size="large"
+                style="width: 100%"
+              />
+            </a-col>
+          </a-row>
+
+          <!-- 企业微信群机器人通知 -->
+          <a-row :gutter="24" style="margin-top: 16px">
+            <a-col :span="6">
+              <a-checkbox
+                v-model:checked="formData.Notify.IfCompanyWebHookBot"
+                :disabled="loading || !formData.Notify.Enabled"
+                >企业微信群机器人
+              </a-checkbox>
+            </a-col>
+            <a-col :span="18">
+              <a-input
+                v-model:value="formData.Notify.CompanyWebHookBotUrl"
+                placeholder="请输入机器人Webhook地址"
+                :disabled="
+                  loading || !formData.Notify.Enabled || !formData.Notify.IfCompanyWebHookBot
+                "
+                size="large"
+                style="width: 100%"
+              />
+            </a-col>
+          </a-row>
+
+          <!-- 发送统计等可选通知 -->
+          <a-row :gutter="24" style="margin-top: 16px">
+            <a-col :span="6">
+              <span style="font-weight: 500">通知内容</span>
+            </a-col>
+            <a-col :span="18">
+              <a-checkbox
+                v-model:checked="formData.Notify.IfSendStatistic"
+                :disabled="loading || !formData.Notify.Enabled"
+                >发送统计
+              </a-checkbox>
+            </a-col>
+          </a-row>
+        </a-card>
+      </template>
     </a-form>
   </div>
 
@@ -658,12 +923,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, computed, watch } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
-import { ArrowLeftOutlined, SaveOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
+import { ArrowLeftOutlined, QuestionCircleOutlined, SaveOutlined } from '@ant-design/icons-vue'
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
-import type { User } from '@/types/script'
 import { useUserApi } from '@/composables/useUserApi'
 import { useScriptApi } from '@/composables/useScriptApi'
 
@@ -682,6 +946,7 @@ const isEdit = computed(() => !!userId)
 
 // 脚本信息
 const scriptName = ref('')
+const scriptType = ref<'MAA' | 'General'>('MAA')
 
 // 服务器选项
 const serverOptions = [
@@ -689,8 +954,8 @@ const serverOptions = [
   { label: 'B服', value: 'Bilibili' },
 ]
 
-// 默认用户数据
-const getDefaultUserData = () => ({
+// MAA脚本默认用户数据
+const getDefaultMAAUserData = () => ({
   Info: {
     Name: '',
     Id: '',
@@ -746,6 +1011,41 @@ const getDefaultUserData = () => ({
     ProxyTimes: 0,
   },
 })
+
+// 通用脚本默认用户数据
+const getDefaultGeneralUserData = () => ({
+  Info: {
+    Name: '',
+    Notes: '',
+    Status: true,
+    RemainedDay: -1,
+    IfScriptBeforeTask: false,
+    IfScriptAfterTask: false,
+    ScriptBeforeTask: '',
+    ScriptAfterTask: '',
+  },
+  Notify: {
+    Enabled: false,
+    ToAddress: '',
+    IfSendMail: false,
+    IfSendStatistic: false,
+    IfServerChan: false,
+    IfCompanyWebHookBot: false,
+    ServerChanKey: '',
+    ServerChanChannel: '',
+    ServerChanTag: '',
+    CompanyWebHookBotUrl: '',
+  },
+  Data: {
+    LastProxyDate: '2000-01-01',
+    ProxyTimes: 0,
+  },
+})
+
+// 根据脚本类型获取默认数据
+const getDefaultUserData = () => {
+  return scriptType.value === 'MAA' ? getDefaultMAAUserData() : getDefaultGeneralUserData()
+}
 
 // 创建扁平化的表单数据，用于表单验证
 const formData = reactive({
@@ -805,6 +1105,14 @@ const loadScriptInfo = async () => {
     const script = await getScript(scriptId)
     if (script) {
       scriptName.value = script.name
+      scriptType.value = script.type // 设置脚本类型
+
+      // 重新初始化表单数据（根据脚本类型）
+      Object.assign(formData, {
+        userName: '',
+        userId: '',
+        ...getDefaultUserData(),
+      })
 
       // 如果是编辑模式，加载用户数据
       if (isEdit.value && script.config) {
@@ -818,20 +1126,30 @@ const loadScriptInfo = async () => {
             // 从用户数据中获取实际的用户信息
             const userData = config.SubConfigsInfo.UserData[userInstance.uid]
             if (userData) {
-              // 填充用户数据
-              Object.assign(formData, {
-                Info: { ...getDefaultUserData().Info, ...userData.Info },
-                Task: { ...getDefaultUserData().Task, ...userData.Task },
-                Notify: { ...getDefaultUserData().Notify, ...userData.Notify },
-                Data: { ...getDefaultUserData().Data, ...userData.Data },
-                QFluentWidgets: {
-                  ...getDefaultUserData().QFluentWidgets,
-                  ...userData.QFluentWidgets,
-                },
-              })
+              // 根据脚本类型填充用户数据
+              if (scriptType.value === 'MAA') {
+                Object.assign(formData, {
+                  Info: { ...getDefaultMAAUserData().Info, ...userData.Info },
+                  Task: { ...getDefaultMAAUserData().Task, ...userData.Task },
+                  Notify: { ...getDefaultMAAUserData().Notify, ...userData.Notify },
+                  Data: { ...getDefaultMAAUserData().Data, ...userData.Data },
+                  QFluentWidgets: {
+                    ...getDefaultMAAUserData().QFluentWidgets,
+                    ...userData.QFluentWidgets,
+                  },
+                })
+              } else {
+                // 通用脚本
+                Object.assign(formData, {
+                  Info: { ...getDefaultGeneralUserData().Info, ...userData.Info },
+                  Notify: { ...getDefaultGeneralUserData().Notify, ...userData.Notify },
+                  Data: { ...getDefaultGeneralUserData().Data, ...userData.Data },
+                })
+              }
+
               // 同步扁平化字段
               formData.userName = formData.Info.Name
-              formData.userId = formData.Info.Id
+              formData.userId = formData.Info.Id || ''
             }
           }
         }
@@ -908,6 +1226,14 @@ onMounted(() => {
   align-items: center;
   margin-bottom: 32px;
   padding: 0 8px;
+}
+
+.header-nav {
+  flex: 1;
+}
+
+.breadcrumb {
+  margin: 0;
 }
 
 .header-title h1 {

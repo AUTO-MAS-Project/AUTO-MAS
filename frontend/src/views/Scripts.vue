@@ -8,7 +8,7 @@
         <template #icon>
           <PlusOutlined />
         </template>
-        添加脚本
+        新建脚本
       </a-button>
       <a-button size="large" @click="handleRefresh" class="default">
         <template #icon>

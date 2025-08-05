@@ -23,22 +23,22 @@
     <a-space size="middle">
       <a-button size="large" @click="handleCancel" class="cancel-button">
         <template #icon>
-          <CloseOutlined />
+          <ArrowLeftOutlined />
         </template>
-        取消
+        返回
       </a-button>
-      <a-button
-        type="primary"
-        size="large"
-        :loading="loading"
-        @click="handleSave"
-        class="save-button"
-      >
-        <template #icon>
-          <SaveOutlined />
-        </template>
-        保存配置
-      </a-button>
+      <!--      <a-button-->
+      <!--        type="primary"-->
+      <!--        size="large"-->
+      <!--        :loading="loading"-->
+      <!--        @click="handleSave"-->
+      <!--        class="save-button"-->
+      <!--      >-->
+      <!--        <template #icon>-->
+      <!--          <SaveOutlined />-->
+      <!--        </template>-->
+      <!--        保存配置-->
+      <!--      </a-button>-->
     </a-space>
   </div>
 
@@ -829,7 +829,7 @@ import { message } from 'ant-design-vue'
 import type { GeneralScriptConfig, MAAScriptConfig, ScriptType } from '../types/script'
 import { useScriptApi } from '../composables/useScriptApi'
 import {
-  CloseOutlined,
+  ArrowLeftOutlined,
   FileOutlined,
   FolderOpenOutlined,
   QuestionCircleOutlined,
