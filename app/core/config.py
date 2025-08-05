@@ -549,7 +549,7 @@ class AppConfig(GlobalConfig):
     VERSION = "4.5.0.1"
 
     CLASS_BOOK = {
-        "Maa": MaaConfig,
+        "MAA": MaaConfig,
         "MaaPlan": MaaPlanConfig,
         "General": GeneralConfig,
     }

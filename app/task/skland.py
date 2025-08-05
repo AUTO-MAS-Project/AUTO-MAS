@@ -1,5 +1,6 @@
 #   AUTO_MAA:A MAA Multi Account Management and Automation Tool
 #   Copyright © 2024-2025 DLmaster361
+#   Copyright © 2025 ClozyA
 
 #   This file incorporates work covered by the following copyright and
 #   permission notice:
@@ -24,13 +25,6 @@
 
 #   Contact: DLmaster_361@163.com
 
-
-"""
-AUTO_MAA
-AUTO_MAA森空岛服务
-v4.4
-作者：DLmaster_361、ClozyA
-"""
 
 import time
 import json
