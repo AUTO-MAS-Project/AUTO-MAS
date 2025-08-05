@@ -37,7 +37,7 @@ def is_admin() -> bool:
         return False
 
 
-@logger.catch
+# @logger.catch
 def main():
 
     if is_admin():
