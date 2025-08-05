@@ -25,6 +25,14 @@ __license__ = "GPL-3.0 license"
 
 
 from .logger import get_logger
+from .ImageUtils import ImageUtils
+from .ProcessManager import ProcessManager
 from .security import dpapi_encrypt, dpapi_decrypt
 
-__all__ = ["get_logger", "dpapi_encrypt", "dpapi_decrypt"]
+__all__ = [
+    "get_logger",
+    "ImageUtils",
+    "ProcessManager",
+    "dpapi_encrypt",
+    "dpapi_decrypt",
+]
