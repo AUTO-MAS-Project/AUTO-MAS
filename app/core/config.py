@@ -59,9 +59,6 @@ class GlobalConfig(ConfigBase):
     )
     Function_IfSilence = ConfigItem("Function", "IfSilence", False, BoolValidator())
     Function_BossKey = ConfigItem("Function", "BossKey", "")
-    Function_UnattendedMode = ConfigItem(
-        "Function", "UnattendedMode", False, BoolValidator()
-    )
     Function_IfAgreeBilibili = ConfigItem(
         "Function", "IfAgreeBilibili", False, BoolValidator()
     )
@@ -95,7 +92,9 @@ class GlobalConfig(ConfigBase):
     Notify_IfPushPlyer = ConfigItem("Notify", "IfPushPlyer", False, BoolValidator())
     Notify_IfSendMail = ConfigItem("Notify", "IfSendMail", False, BoolValidator())
     Notify_SMTPServerAddress = ConfigItem("Notify", "SMTPServerAddress", "")
-    Notify_AuthorizationCode = ConfigItem("Notify", "AuthorizationCode", "")
+    Notify_AuthorizationCode = ConfigItem(
+        "Notify", "AuthorizationCode", "", EncryptValidator()
+    )
     Notify_FromAddress = ConfigItem("Notify", "FromAddress", "")
     Notify_ToAddress = ConfigItem("Notify", "ToAddress", "")
     Notify_IfServerChan = ConfigItem("Notify", "IfServerChan", False, BoolValidator())
@@ -114,7 +113,9 @@ class GlobalConfig(ConfigBase):
     Update_ThreadNumb = ConfigItem("Update", "ThreadNumb", 8, RangeValidator(1, 32))
     Update_ProxyAddress = ConfigItem("Update", "ProxyAddress", "")
     Update_ProxyUrlList = ConfigItem("Update", "ProxyUrlList", [])
-    Update_MirrorChyanCDK = ConfigItem("Update", "MirrorChyanCDK", "")
+    Update_MirrorChyanCDK = ConfigItem(
+        "Update", "MirrorChyanCDK", "", EncryptValidator()
+    )
 
 
 class QueueItem(ConfigBase):
@@ -123,7 +124,7 @@ class QueueItem(ConfigBase):
     def __init__(self) -> None:
         super().__init__()
 
-        self.Info_ScriptId = ConfigItem("Info", "ScriptId", "", UidValidator())
+        self.Info_ScriptId = ConfigItem("Info", "ScriptId", None, UidValidator())
 
 
 class TimeSet(ConfigBase):
@@ -221,7 +222,7 @@ class MaaUserConfig(ConfigBase):
             "Normal",
             OptionsValidator(["Normal", "Rotation", "Custom"]),
         )
-        self.Info_Password = ConfigItem("Info", "Password", "")
+        self.Info_Password = ConfigItem("Info", "Password", "", EncryptValidator())
         self.Info_Notes = ConfigItem("Info", "Notes", "无")
         self.Info_MedicineNumb = ConfigItem(
             "Info", "MedicineNumb", 0, RangeValidator(0, 1024)

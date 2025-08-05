@@ -22,11 +22,13 @@
 
 import json
 import uuid
+import win32com.client
 from copy import deepcopy
-from enum import Enum
 from pathlib import Path
-from typing import List, Callable, Any, Dict, Union
-from urllib.parse import urlparse
+from typing import List, Any, Dict, Union
+
+
+from utils import dpapi_encrypt, dpapi_decrypt
 
 
 class ConfigValidator:
@@ -49,46 +51,66 @@ class RangeValidator(ConfigValidator):
         self.max = max
         self.range = (min, max)
 
-    def validate(self, value: int | float) -> bool:
+    def validate(self, value: Any) -> bool:
+        if not isinstance(value, (int | float)):
+            return False
         return self.min <= value <= self.max
 
-    def correct(self, value: int | float) -> int | float:
+    def correct(self, value: Any) -> int | float:
+        if not isinstance(value, (int, float)):
+            try:
+                value = float(value)
+            except TypeError:
+                return self.min
         return min(max(self.min, value), self.max)
 
 
 class OptionsValidator(ConfigValidator):
     """选项验证器"""
 
-    def __init__(self, options):
+    def __init__(self, options: list):
         if not options:
             raise ValueError("The `options` can't be empty.")
 
-        if isinstance(options, Enum):
-            options = options._member_map_.values()
-
-        self.options = list(options)
+        self.options = options
 
     def validate(self, value: Any) -> bool:
         return value in self.options
 
-    def correct(self, value):
+    def correct(self, value: Any) -> Any:
         return value if self.validate(value) else self.options[0]
 
 
 class UidValidator(ConfigValidator):
     """UID验证器"""
 
-    def validate(self, value: str) -> bool:
-        if value == "":
+    def validate(self, value: Any) -> bool:
+        if value is None:
             return True
         try:
             uuid.UUID(value)
             return True
-        except ValueError:
+        except (TypeError, ValueError):
             return False
 
-    def correct(self, value: str) -> str:
-        return ""
+    def correct(self, value: Any) -> Any:
+        return value if self.validate(value) else None
+
+
+class EncryptValidator(ConfigValidator):
+    """加数据验证器"""
+
+    def validate(self, value: Any) -> bool:
+        if not isinstance(value, str):
+            return False
+        try:
+            dpapi_decrypt(value)
+            return True
+        except:
+            return False
+
+    def correct(self, value: Any) -> Any:
+        return value if self.validate(value) else dpapi_encrypt("数据损坏，请重新设置")
 
 
 class BoolValidator(OptionsValidator):
@@ -101,40 +123,44 @@ class BoolValidator(OptionsValidator):
 class FileValidator(ConfigValidator):
     """文件路径验证器"""
 
-    def validate(self, value):
-        return Path(value).exists()
+    def validate(self, value: Any) -> bool:
+        if not isinstance(value, str):
+            return False
+        if not Path(value).is_absolute():
+            return False
+        if Path(value).suffix == ".lnk":
+            return False
+        return True
 
-    def correct(self, value):
-        path = Path(value)
-        return str(path.absolute()).replace("\\", "/")
+    def correct(self, value: Any) -> str:
+        if not isinstance(value, str):
+            value = "."
+        if not Path(value).is_absolute():
+            value = Path(value).resolve().as_posix()
+        if Path(value).suffix == ".lnk":
+            try:
+                shell = win32com.client.Dispatch("WScript.Shell")
+                shortcut = shell.CreateShortcut(value)
+                value = shortcut.TargetPath
+            except:
+                pass
+        return Path(value).resolve().as_posix()
 
 
 class FolderValidator(ConfigValidator):
     """文件夹路径验证器"""
 
-    def validate(self, value):
-        return Path(value).exists()
+    def validate(self, value: Any) -> bool:
+        if not isinstance(value, str):
+            return False
+        if not Path(value).is_absolute():
+            return False
+        return True
 
-    def correct(self, value):
-        path = Path(value)
-        path.mkdir(exist_ok=True, parents=True)
-        return str(path.absolute()).replace("\\", "/")
-
-
-class FolderListValidator(ConfigValidator):
-    """文件夹列表验证器"""
-
-    def validate(self, value):
-        return all(Path(i).exists() for i in value)
-
-    def correct(self, value: List[str]):
-        folders = []
-        for folder in value:
-            path = Path(folder)
-            if path.exists():
-                folders.append(str(path.absolute()).replace("\\", "/"))
-
-        return folders
+    def correct(self, value: Any) -> str:
+        if not isinstance(value, str):
+            value = "."
+        return Path(value).resolve().as_posix()
 
 
 class ConfigItem:
@@ -144,7 +170,7 @@ class ConfigItem:
         self,
         group: str,
         name: str,
-        default: object,
+        default: Any,
         validator: None | ConfigValidator = None,
     ):
         """
@@ -165,10 +191,8 @@ class ConfigItem:
         super().__init__()
         self.group = group
         self.name = name
-        self.value: Any = None
+        self.value: Any = default
         self.validator = validator or ConfigValidator()
-
-        self.setValue(default)
 
     def setValue(self, value: Any):
         """
@@ -180,7 +204,11 @@ class ConfigItem:
             要设置的值，可以是任何合法类型
         """
 
-        if self.value == value:
+        if (
+            dpapi_decrypt(self.value)
+            if isinstance(self.validator, EncryptValidator)
+            else self.value
+        ) == value:
             return
 
         # deepcopy new value
@@ -189,8 +217,20 @@ class ConfigItem:
         except:
             self.value = value
 
+        if isinstance(self.validator, EncryptValidator):
+            self.value = dpapi_encrypt(self.value)
+
         if not self.validator.validate(self.value):
             self.value = self.validator.correct(self.value)
+
+    def getValue(self) -> Any:
+        """
+        获取配置项值
+        """
+
+        if isinstance(self.validator, EncryptValidator):
+            return dpapi_decrypt(self.value)
+        return self.value
 
 
 class ConfigBase:
@@ -271,7 +311,9 @@ class ConfigBase:
         if self.file:
             await self.save()
 
-    async def toDict(self, ignore_multi_config: bool = False) -> Dict[str, Any]:
+    async def toDict(
+        self, ignore_multi_config: bool = False, if_decrypt: bool = True
+    ) -> Dict[str, Any]:
         """将配置项转换为字典"""
 
         data = {}
@@ -283,7 +325,9 @@ class ConfigBase:
                 if not data.get(item.group):
                     data[item.group] = {}
                 if item.name:
-                    data[item.group][item.name] = item.value
+                    data[item.group][item.name] = (
+                        item.getValue() if if_decrypt else item.value
+                    )
 
             elif not ignore_multi_config and isinstance(item, MultipleConfig):
 
@@ -301,7 +345,7 @@ class ConfigBase:
 
         configItem = getattr(self, f"{group}_{name}")
         if isinstance(configItem, ConfigItem):
-            return configItem.value
+            return configItem.getValue()
         else:
             raise TypeError(
                 f"Config item '{group}_{name}' is not a ConfigItem instance."
@@ -345,7 +389,7 @@ class ConfigBase:
         self.file.parent.mkdir(parents=True, exist_ok=True)
         with self.file.open("w", encoding="utf-8") as f:
             json.dump(
-                await self.toDict(not self.if_save_multi_config),
+                await self.toDict(not self.if_save_multi_config, if_decrypt=False),
                 f,
                 ensure_ascii=False,
                 indent=4,
