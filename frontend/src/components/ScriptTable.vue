@@ -83,7 +83,13 @@
           row-key="id"
           class="user-table"
         >
+
           <template #bodyCell="{ column, record: user }">
+            <template v-if="column.key === 'server'">
+              <div class="server-cell">
+                <a-tag color="green">{{ user.Info.Server === 'Official' ? '官服' : 'B服' }}</a-tag>
+              </div>
+            </template>
             <template v-if="column.key === 'status'">
               <div class="status-cell">
                 <PlayCircleOutlined v-if="user.Info.Status" class="status-icon active" />
@@ -96,26 +102,22 @@
 
             <template v-if="column.key === 'lastRun'">
               <div class="last-run-cell">
-                <div class="run-item">
-                  <span class="run-label">剿灭:</span>
-                  <span class="run-date">{{ user.Data.LastAnnihilationDate }}</span>
+                <div v-if="!user.Data.LastAnnihilationDate && !user.Data.LastProxyDate" class="no-run-text">
+                  尚未运行
                 </div>
-                <div class="run-item">
-                  <span class="run-label">代理:</span>
-                  <span class="run-date">{{ user.Data.LastProxyDate }}</span>
-                </div>
+                <template v-else>
+                  <div class="run-item" v-if="user.Data.LastAnnihilationDate">
+                    <span class="run-label">剿灭:</span>
+                    <span class="run-date">{{ user.Data.LastAnnihilationDate }}</span>
+                  </div>
+                  <div class="run-item" v-if="user.Data.LastProxyDate">
+                    <span class="run-label">代理:</span>
+                    <span class="run-date">{{ user.Data.LastProxyDate }}</span>
+                  </div>
+                </template>
               </div>
             </template>
 
-            <template v-if="column.key === 'tasks'">
-              <a-space wrap class="task-tags">
-                <a-tag v-if="user.Task.IfBase" color="blue" class="task-tag">基建</a-tag>
-                <a-tag v-if="user.Task.IfCombat" color="green" class="task-tag">作战</a-tag>
-                <a-tag v-if="user.Task.IfMall" color="orange" class="task-tag">商店</a-tag>
-                <a-tag v-if="user.Task.IfMission" color="purple" class="task-tag">任务</a-tag>
-                <a-tag v-if="user.Task.IfRecruiting" color="cyan" class="task-tag">招募</a-tag>
-              </a-space>
-            </template>
 
             <template v-if="column.key === 'userAction'">
               <a-space size="small">
@@ -160,7 +162,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { TableColumnsType } from 'ant-design-vue'
-import type { Script, User } from '@/types/script'
+import type { Script, User } from '../types/script'
 import {
   DeleteOutlined,
   EditOutlined,
@@ -195,13 +197,13 @@ const columns: TableColumnsType = [
     key: 'name',
     width: 300,
   },
-  // {
-  //   title: '用户数量',
-  //   dataIndex: 'userCount',
-  //   key: 'userCount',
-  //   width: 120,
-  //   align: 'center',
-  // },
+  {
+    title: '用户数量',
+    dataIndex: 'userCount',
+    key: 'userCount',
+    width: 120,
+    align: 'center',
+  },
   // {
   //   title: '创建时间',
   //   dataIndex: 'createTime',
@@ -247,15 +249,10 @@ const userColumns: TableColumnsType = [
     width: 200,
   },
   {
-    title: '启用任务',
-    key: 'tasks',
-    width: 300,
-  },
-  {
     title: '备注',
     dataIndex: ['Info', 'Notes'],
     key: 'notes',
-    width: 150,
+    width: 250,
   },
   {
     title: '操作',
@@ -267,7 +264,7 @@ const userColumns: TableColumnsType = [
 
 const expandableConfig = computed(() => ({
   expandedRowRender: true,
-  rowExpandable: (record: Script) => record.users.length > 0,
+  rowExpandable: (record: Script) => record.users && record.users.length > 0,
 }))
 
 const handleEdit = (script: Script) => {
@@ -479,6 +476,14 @@ const handleDeleteUser = (user: User) => {
 .run-date {
   color: var(--ant-color-text);
   font-family: 'Consolas', 'Monaco', monospace;
+}
+
+.no-run-text {
+  color: var(--ant-color-text-tertiary);
+  font-size: 12px;
+  font-style: italic;
+  text-align: center;
+  padding: 8px 0;
 }
 
 /* 任务标签 */

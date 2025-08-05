@@ -59,7 +59,7 @@
               <img src="@/assets/AUTO_MAA.png" alt="AUTO MAA" class="type-logo" />
             </div>
             <div class="type-info">
-              <div class="type-title">General脚本</div>
+              <div class="type-title">通用脚本</div>
               <div class="type-description">通用自动化脚本，支持自定义游戏和脚本配置</div>
             </div>
           </div>
@@ -77,9 +77,11 @@ import { PlusOutlined, ReloadOutlined } from '@ant-design/icons-vue'
 import ScriptTable from '@/components/ScriptTable.vue'
 import type { Script, ScriptType, User } from '@/types/script'
 import { useScriptApi } from '@/composables/useScriptApi'
+import { useUserApi } from '@/composables/useUserApi'
 
 const router = useRouter()
 const { addScript, deleteScript, getScripts, loading } = useScriptApi()
+const { addUser, updateUser, deleteUser, loading: userLoading } = useUserApi()
 
 const scripts = ref<Script[]>([])
 const typeSelectVisible = ref(false)
@@ -95,14 +97,105 @@ const loadScripts = async () => {
     const scriptDetails = await getScripts()
 
     // 将 ScriptDetail 转换为 Script 格式（为了兼容现有的表格组件）
-    scripts.value = scriptDetails.map(detail => ({
-      id: detail.uid,
-      type: detail.type,
-      name: detail.name,
-      config: detail.config,
-      users: [], // 暂时为空，后续可以从其他API获取用户数据
-      createTime: detail.createTime || new Date().toLocaleString(),
-    }))
+    scripts.value = scriptDetails.map(detail => {
+      // 从配置中提取用户数据
+      const users: User[] = []
+
+      // 检查配置中是否有用户数据
+      if (detail.config && typeof detail.config === 'object') {
+        const config = detail.config as any
+
+        // 检查 SubConfigsInfo.UserData.instances
+        if (
+          config.SubConfigsInfo?.UserData?.instances &&
+          Array.isArray(config.SubConfigsInfo.UserData.instances)
+        ) {
+          config.SubConfigsInfo.UserData.instances.forEach((instance: any, index: number) => {
+            if (instance && typeof instance === 'object' && instance.uid) {
+              // 从用户数据中获取实际的用户信息
+              const userData = config.SubConfigsInfo.UserData[instance.uid]
+              if (userData) {
+                // 创建用户对象，使用真实的用户数据
+                const user: User = {
+                  id: instance.uid, // 使用真实的用户ID
+                  name: userData.Info?.Name || `用户${index + 1}`,
+                  Info: {
+                    Name: userData.Info?.Name || `用户${index + 1}`,
+                    Id: userData.Info?.Id || '',
+                    Password: userData.Info?.Password || '',
+                    Server: userData.Info?.Server || '官服',
+                    MedicineNumb: userData.Info?.MedicineNumb || 0,
+                    RemainedDay: userData.Info?.RemainedDay || 0,
+                    SeriesNumb: userData.Info?.SeriesNumb || '',
+                    Notes: userData.Info?.Notes || '',
+                    Status: userData.Info?.Status !== undefined ? userData.Info.Status : true,
+                    Mode: userData.Info?.Mode || 'MAA',
+                    InfrastMode: userData.Info?.InfrastMode || '默认',
+                    Routine: userData.Info?.Routine !== undefined ? userData.Info.Routine : true,
+                    Annihilation: userData.Info?.Annihilation || '当期',
+                    Stage: userData.Info?.Stage || '1-7',
+                    StageMode: userData.Info?.StageMode || '刷完即停',
+                    Stage_1: userData.Info?.Stage_1 || '',
+                    Stage_2: userData.Info?.Stage_2 || '',
+                    Stage_3: userData.Info?.Stage_3 || '',
+                    Stage_Remain: userData.Info?.Stage_Remain || '',
+                    IfSkland: userData.Info?.IfSkland || false,
+                    SklandToken: userData.Info?.SklandToken || '',
+                  },
+                  Task: {
+                    IfBase: userData.Task?.IfBase !== undefined ? userData.Task.IfBase : true,
+                    IfCombat: userData.Task?.IfCombat !== undefined ? userData.Task.IfCombat : true,
+                    IfMall: userData.Task?.IfMall !== undefined ? userData.Task.IfMall : true,
+                    IfMission:
+                      userData.Task?.IfMission !== undefined ? userData.Task.IfMission : true,
+                    IfRecruiting:
+                      userData.Task?.IfRecruiting !== undefined ? userData.Task.IfRecruiting : true,
+                    IfReclamation: userData.Task?.IfReclamation || false,
+                    IfAutoRoguelike: userData.Task?.IfAutoRoguelike || false,
+                    IfWakeUp: userData.Task?.IfWakeUp || false,
+                  },
+                  Notify: {
+                    Enabled: userData.Notify?.Enabled || false,
+                    ToAddress: userData.Notify?.ToAddress || '',
+                    IfSendMail: userData.Notify?.IfSendMail || false,
+                    IfSendSixStar: userData.Notify?.IfSendSixStar || false,
+                    IfSendStatistic: userData.Notify?.IfSendStatistic || false,
+                    IfServerChan: userData.Notify?.IfServerChan || false,
+                    IfCompanyWebHookBot: userData.Notify?.IfCompanyWebHookBot || false,
+                    ServerChanKey: userData.Notify?.ServerChanKey || '',
+                    ServerChanChannel: userData.Notify?.ServerChanChannel || '',
+                    ServerChanTag: userData.Notify?.ServerChanTag || '',
+                    CompanyWebHookBotUrl: userData.Notify?.CompanyWebHookBotUrl || '',
+                  },
+                  Data: {
+                    CustomInfrastPlanIndex: userData.Data?.CustomInfrastPlanIndex || '',
+                    IfPassCheck: userData.Data?.IfPassCheck || false,
+                    LastAnnihilationDate: userData.Data?.LastAnnihilationDate || '',
+                    LastProxyDate: userData.Data?.LastProxyDate || '',
+                    LastSklandDate: userData.Data?.LastSklandDate || '',
+                    ProxyTimes: userData.Data?.ProxyTimes || 0,
+                  },
+                  QFluentWidgets: {
+                    ThemeColor: userData.QFluentWidgets?.ThemeColor || 'blue',
+                    ThemeMode: userData.QFluentWidgets?.ThemeMode || 'system',
+                  },
+                }
+                users.push(user)
+              }
+            }
+          })
+        }
+      }
+
+      return {
+        id: detail.uid,
+        type: detail.type,
+        name: detail.name,
+        config: detail.config,
+        users,
+        createTime: detail.createTime || new Date().toLocaleString(),
+      }
+    })
   } catch (error) {
     console.error('加载脚本列表失败:', error)
     message.error('加载脚本列表失败')
@@ -154,18 +247,38 @@ const handleDeleteScript = async (script: Script) => {
 }
 
 const handleAddUser = (script: Script) => {
-  // TODO: 实现添加用户功能
-  message.info('添加用户功能待实现')
+  // 跳转到添加用户页面
+  router.push(`/scripts/${script.id}/users/add`)
 }
 
 const handleEditUser = (user: User) => {
-  // TODO: 实现编辑用户功能
-  message.info('编辑用户功能待实现')
+  // 从用户数据中找到对应的脚本
+  const script = scripts.value.find(s => s.users.some(u => u.id === user.id))
+  if (script) {
+    // 跳转到编辑用户页面
+    router.push(`/scripts/${script.id}/users/${user.id}/edit`)
+  } else {
+    message.error('找不到对应的脚本')
+  }
 }
 
-const handleDeleteUser = (user: User) => {
-  // TODO: 实现删除用户功能
-  message.info('删除用户功能待实现')
+const handleDeleteUser = async (user: User) => {
+  // 从用户数据中找到对应的脚本
+  const script = scripts.value.find(s => s.users.some(u => u.id === user.id))
+  if (!script) {
+    message.error('找不到对应的脚本')
+    return
+  }
+
+  const result = await deleteUser(script.id, user.id)
+  if (result) {
+    // 删除成功后，从本地数据中移除用户
+    const userIndex = script.users.findIndex(u => u.id === user.id)
+    if (userIndex > -1) {
+      script.users.splice(userIndex, 1)
+    }
+    message.success('用户删除成功')
+  }
 }
 
 const handleRefresh = () => {
