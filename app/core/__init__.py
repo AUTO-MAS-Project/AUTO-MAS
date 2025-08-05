@@ -1,5 +1,6 @@
 #   AUTO_MAA:A MAA Multi Account Management and Automation Tool
 #   Copyright © 2024-2025 DLmaster361
+#   Copyright © 2025 MoeSnowyFox
 
 #   This file is part of AUTO_MAA.
 
@@ -23,5 +24,6 @@ __author__ = "DLmaster361 <DLmaster_361@163.com>"
 __license__ = "GPL-3.0 license"
 
 from .config import Config
+from .timer import MainTimer
 
-__all__ = ["Config"]
+__all__ = ["Config", "MainTimer"]

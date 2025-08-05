@@ -1,5 +1,6 @@
 #   AUTO_MAA:A MAA Multi Account Management and Automation Tool
 #   Copyright © 2024-2025 DLmaster361
+#   Copyright © 2025 MoeSnowyFox
 
 #   This file is part of AUTO_MAA.
 
