@@ -384,18 +384,6 @@ onMounted(() => {
                     @blur="handleSettingChange('Notify', 'ServerChanKey', settings.Notify.ServerChanKey)"
                     placeholder="Server酱推送Key" style="width: 300px" />
                 </div>
-                <div class="input-group">
-                  <label>推送频道</label>
-                  <Input v-model:value="settings.Notify.ServerChanChannel"
-                    @blur="handleSettingChange('Notify', 'ServerChanChannel', settings.Notify.ServerChanChannel)"
-                    placeholder="推送频道" style="width: 300px" />
-                </div>
-                <div class="input-group">
-                  <label>推送标签</label>
-                  <Input v-model:value="settings.Notify.ServerChanTag"
-                    @blur="handleSettingChange('Notify', 'ServerChanTag', settings.Notify.ServerChanTag)"
-                    placeholder="推送标签" style="width: 300px" />
-                </div>
               </Space>
             </div>
 
