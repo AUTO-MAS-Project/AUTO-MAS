@@ -1,5 +1,6 @@
 #   AUTO_MAA:A MAA Multi Account Management and Automation Tool
 #   Copyright © 2024-2025 DLmaster361
+#   Copyright © 2025 MoeSnowyFox
 
 #   This file is part of AUTO_MAA.
 
@@ -27,6 +28,10 @@ class OutBase(BaseModel):
     code: int = Field(default=200, description="状态码")
     status: str = Field(default="success", description="操作状态")
     message: str = Field(default="操作成功", description="操作消息")
+
+
+class InfoOut(OutBase):
+    data: Dict[str, Any] = Field(..., description="收到的服务器数据")
 
 
 class ScriptCreateIn(BaseModel):

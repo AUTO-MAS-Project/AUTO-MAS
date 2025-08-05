@@ -1,5 +1,6 @@
 #   AUTO_MAA:A MAA Multi Account Management and Automation Tool
 #   Copyright © 2024-2025 DLmaster361
+#   Copyright © 2025 MoeSnowyFox
 
 #   This file is part of AUTO_MAA.
 
@@ -292,7 +293,7 @@ class ConfigBase:
 
         return data
 
-    async def get(self, group: str, name: str) -> Any:
+    def get(self, group: str, name: str) -> Any:
         """获取配置项的值"""
 
         if not hasattr(self, f"{group}_{name}"):

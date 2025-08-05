@@ -1,5 +1,6 @@
 #   AUTO_MAA:A MAA Multi Account Management and Automation Tool
 #   Copyright © 2024-2025 DLmaster361
+#   Copyright © 2025 MoeSnowyFox
 
 #   This file is part of AUTO_MAA.
 
@@ -41,6 +42,7 @@ def main():
 
     if is_admin():
 
+        import asyncio
         import uvicorn
         from fastapi import FastAPI
         from contextlib import asynccontextmanager
@@ -48,17 +50,30 @@ def main():
         @asynccontextmanager
         async def lifespan(app: FastAPI):
 
-            from core import Config
+            from core import Config, MainTimer
 
             await Config.init_config()
+            main_timer = asyncio.create_task(MainTimer.second_task())
 
             yield
+
+            main_timer.cancel()
+            try:
+                await main_timer
+            except asyncio.CancelledError:
+                logger.info("主业务定时器已关闭")
 
             logger.info("AUTO_MAA 后端程序关闭")
             logger.info("----------------END----------------")
 
         from fastapi.middleware.cors import CORSMiddleware
-        from api import scripts_router, plan_router, queue_router, setting_router
+        from api import (
+            info_router,
+            scripts_router,
+            plan_router,
+            queue_router,
+            setting_router,
+        )
 
         app = FastAPI(
             title="AUTO_MAA",
@@ -75,6 +90,7 @@ def main():
             allow_headers=["*"],  # 允许所有请求头
         )
 
+        app.include_router(info_router)
         app.include_router(scripts_router)
         app.include_router(plan_router)
         app.include_router(queue_router)

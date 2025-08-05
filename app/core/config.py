@@ -1,5 +1,6 @@
 #   AUTO_MAA:A MAA Multi Account Management and Automation Tool
 #   Copyright © 2024-2025 DLmaster361
+#   Copyright © 2025 MoeSnowyFox
 
 #   This file is part of AUTO_MAA.
 
@@ -19,13 +20,14 @@
 #   Contact: DLmaster_361@163.com
 
 
-import argparse
 import sqlite3
 import json
 import sys
 import shutil
 import re
 import base64
+import requests
+import truststore
 import calendar
 from datetime import datetime, timedelta, date
 from pathlib import Path
@@ -548,34 +550,50 @@ class AppConfig(GlobalConfig):
 
     VERSION = "4.5.0.1"
 
+    CLASS_BOOK = {
+        "Maa": MaaConfig,
+        "MaaPlan": MaaPlanConfig,
+        "General": GeneralConfig,
+    }
+    STAGE_DAILY_INFO = [
+        {"value": "-", "text": "当前/上次", "days": [1, 2, 3, 4, 5, 6, 7]},
+        {"value": "1-7", "text": "1-7", "days": [1, 2, 3, 4, 5, 6, 7]},
+        {"value": "R8-11", "text": "R8-11", "days": [1, 2, 3, 4, 5, 6, 7]},
+        {
+            "value": "12-17-HARD",
+            "text": "12-17-HARD",
+            "days": [1, 2, 3, 4, 5, 6, 7],
+        },
+        {"value": "CE-6", "text": "龙门币-6/5", "days": [2, 4, 6, 7]},
+        {"value": "AP-5", "text": "红票-5", "days": [1, 4, 6, 7]},
+        {"value": "CA-5", "text": "技能-5", "days": [2, 3, 5, 7]},
+        {"value": "LS-6", "text": "经验-6/5", "days": [1, 2, 3, 4, 5, 6, 7]},
+        {"value": "SK-5", "text": "碳-5", "days": [1, 3, 5, 6]},
+        {"value": "PR-A-1", "text": "奶/盾芯片", "days": [1, 4, 5, 7]},
+        {"value": "PR-A-2", "text": "奶/盾芯片组", "days": [1, 4, 5, 7]},
+        {"value": "PR-B-1", "text": "术/狙芯片", "days": [1, 2, 5, 6]},
+        {"value": "PR-B-2", "text": "术/狙芯片组", "days": [1, 2, 5, 6]},
+        {"value": "PR-C-1", "text": "先/辅芯片", "days": [3, 4, 6, 7]},
+        {"value": "PR-C-2", "text": "先/辅芯片组", "days": [3, 4, 6, 7]},
+        {"value": "PR-D-1", "text": "近/特芯片", "days": [2, 3, 6, 7]},
+        {"value": "PR-D-2", "text": "近/特芯片组", "days": [2, 3, 6, 7]},
+    ]
+
     def __init__(self) -> None:
         super().__init__(if_save_multi_config=False)
 
         self.root_path = Path.cwd()
 
         self.log_path = self.root_path / "debug/app.log"
-        # self.database_path = self.root_path / "data/data.db"
+        self.database_path = self.root_path / "data/data.db"
         self.config_path = self.root_path / "config"
-        # self.key_path = self.root_path / "data/key"
+        self.key_path = self.root_path / "data/key"
 
-        # self.main_window = None
         # self.PASSWORD = ""
-        # self.running_list = []
-        # self.silence_dict: Dict[Path, datetime] = {}
-        # self.info_bar_list = []
-        # self.stage_dict = {
-        #     "ALL": {"value": [], "text": []},
-        #     "Monday": {"value": [], "text": []},
-        #     "Tuesday": {"value": [], "text": []},
-        #     "Wednesday": {"value": [], "text": []},
-        #     "Thursday": {"value": [], "text": []},
-        #     "Friday": {"value": [], "text": []},
-        #     "Saturday": {"value": [], "text": []},
-        #     "Sunday": {"value": [], "text": []},
-        # }
-        # self.power_sign = "NoAction"
-        # self.if_ignore_silence = False
-        # self.if_database_opened = False
+        self.running_list = []
+        self.silence_dict: Dict[Path, datetime] = {}
+        self.power_sign = "NoAction"
+        self.if_ignore_silence = False
 
         self.logger = get_logger("配置管理")
         self.logger.info("")
@@ -593,8 +611,11 @@ class AppConfig(GlobalConfig):
         self.PlanConfig = MultipleConfig([MaaPlanConfig])
         self.QueueConfig = MultipleConfig([QueueConfig])
 
+        truststore.inject_into_ssl()
+
     async def init_config(self) -> None:
         """初始化配置管理"""
+
         await self.connect(self.config_path / "Config.json")
         await self.ScriptConfig.connect(self.config_path / "ScriptConfig.json")
         await self.PlanConfig.connect(self.config_path / "PlanConfig.json")
@@ -610,9 +631,7 @@ class AppConfig(GlobalConfig):
 
         self.logger.info(f"添加脚本配置：{script}")
 
-        class_book = {"MAA": MaaConfig, "General": GeneralConfig}
-
-        return await self.ScriptConfig.add(class_book[script])
+        return await self.ScriptConfig.add(self.CLASS_BOOK[script])
 
     async def get_script(self, script_id: Optional[str]) -> tuple[list, dict]:
         """获取脚本配置"""
@@ -838,9 +857,7 @@ class AppConfig(GlobalConfig):
 
         self.logger.info(f"添加计划表：{script}")
 
-        class_book = {"MaaPlan": MaaPlanConfig}
-
-        return await self.PlanConfig.add(class_book[script])
+        return await self.PlanConfig.add(self.CLASS_BOOK[script])
 
     async def get_plan(self, plan_id: Optional[str]) -> tuple[list, dict]:
         """获取计划表配置"""
@@ -975,6 +992,87 @@ class AppConfig(GlobalConfig):
         if dt.time() < datetime.min.time().replace(hour=4):
             dt = dt - timedelta(days=1)
         return dt.date()
+
+    async def get_stage(self) -> tuple[bool, Dict[str, Dict[str, list]]]:
+        """从MAA服务器更新活动关卡信息"""
+
+        self.logger.info("开始获取活动关卡信息")
+
+        response = requests.get(
+            "https://api.maa.plus/MaaAssistantArknights/api/gui/StageActivity.json",
+            timeout=10,
+            proxies={
+                "http": self.get("Update", "ProxyAddress"),
+                "https": self.get("Update", "ProxyAddress"),
+            },
+        )
+
+        if response.status_code == 200:
+            stage_infos = response.json()["Official"]["sideStoryStage"]
+            if_get_maa_stage = True
+        else:
+            self.logger.warning(f"无法从MAA服务器获取活动关卡信息:{response.text}")
+            if_get_maa_stage = False
+            stage_infos = []
+
+        ss_stage_dict = {"value": [], "text": []}
+
+        for stage_info in stage_infos:
+
+            if (
+                datetime.strptime(
+                    stage_info["Activity"]["UtcStartTime"], "%Y/%m/%d %H:%M:%S"
+                )
+                < datetime.now()
+                < datetime.strptime(
+                    stage_info["Activity"]["UtcExpireTime"], "%Y/%m/%d %H:%M:%S"
+                )
+            ):
+                ss_stage_dict["value"].append(stage_info["Value"])
+                ss_stage_dict["text"].append(stage_info["Value"])
+
+        stage_dict = {}
+
+        for day in range(0, 8):
+
+            today_stage_dict = {"value": [], "text": []}
+
+            for stage_info in self.STAGE_DAILY_INFO:
+
+                if day in stage_info["days"] or day == 0:
+                    today_stage_dict["value"].append(stage_info["value"])
+                    today_stage_dict["text"].append(stage_info["text"])
+
+            stage_dict[calendar.day_name[day - 1] if day > 0 else "ALL"] = {
+                "value": ss_stage_dict["value"] + today_stage_dict["value"],
+                "text": ss_stage_dict["text"] + today_stage_dict["text"],
+            }
+
+        return if_get_maa_stage, stage_dict
+
+    async def get_server_info(self, type: str) -> Dict[str, Any]:
+        """获取公告信息"""
+
+        self.logger.info(f"开始从 AUTO_MAA 服务器获取 {type} 信息")
+
+        response = requests.get(
+            url=f"http://221.236.27.82:10197/d/AUTO_MAA/Server/{type}.json",
+            timeout=10,
+            proxies={
+                "http": self.get("Update", "ProxyAddress"),
+                "https": self.get("Update", "ProxyAddress"),
+            },
+        )
+
+        if response.status_code == 200:
+            return response.json()
+        else:
+            self.logger.warning(
+                f"无法从 AUTO_MAA 服务器获取 {type} 信息:{response.text}"
+            )
+            raise ConnectionError(
+                "Cannot connect to the notice server. Please check your network connection or try again later."
+            )
 
 
 Config = AppConfig()
