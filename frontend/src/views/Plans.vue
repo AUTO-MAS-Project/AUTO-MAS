@@ -1,6 +1,9 @@
 <template>
+  <div v-if="loading" class="loading-box">
+    <a-spin tip="加载中，请稍候..." size="large" />
+  </div>
   <!-- 有计划时显示 -->
-  <div class="plans-content">
+  <div v-else class="plans-content">
     <!-- 计划头部 -->
     <div class="plans-header">
       <div class="header-title">
@@ -148,6 +151,8 @@ const currentPlanData = ref<Record<string, any> | null>(null)
 // 当前计划的名称和模式
 const currentPlanName = ref<string>('')
 const currentMode = ref<'ALL' | 'Weekly'>('ALL')
+
+const loading = ref(true)
 
 // 表格列配置（全局和周计划模式都使用相同的表格结构）
 const dynamicTableColumns = computed(() => {
@@ -570,6 +575,8 @@ const initPlans = async () => {
     console.error('初始化计划失败:', error)
     // 显示空状态
     currentPlanData.value = null
+  } finally {
+    loading.value = false
   }
 }
 
@@ -615,7 +622,9 @@ const savePlanData = async () => {
 
 // 刷新计划列表
 const handleRefresh = async () => {
+  loading.value = true
   await initPlans()
+  loading.value = false
   // message.success('刷新成功')
 }
 
@@ -628,8 +637,6 @@ onMounted(() => {
 </script>
 
 <style scoped>
-
-
 /* 空状态样式 */
 .empty-state {
   flex: 1;
@@ -706,7 +713,6 @@ onMounted(() => {
   background: var(--ant-color-bg-container);
   border-bottom: 1px solid var(--ant-color-border-secondary);
 }
-
 
 /* 计划内容 */
 .plan-content {
@@ -882,12 +888,10 @@ onMounted(() => {
   display: inline-block;
 }
 
-.plus-btn {
-  color: #4096ff;
-  border-radius: 50%;
-  padding: 2px 6px 2px 6px;
-  margin-left: 2px;
-  font-size: 20px;
-  vertical-align: -3px;
+.loading-box {
+  min-height: 400px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
 }
 </style>
