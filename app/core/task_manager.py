@@ -19,11 +19,12 @@
 #   Contact: DLmaster_361@163.com
 
 
+import uuid
 from datetime import datetime
 from packaging import version
 from typing import Dict, Union
 
-from .config import Config
+from .config import Config, MaaConfig, GeneralConfig
 from utils import get_logger
 from task import *
 
@@ -254,16 +255,35 @@ class _TaskManager:
 
         self.task_dict: Dict[str, Task] = {}
 
-    def add_task(
-        self, mode: str, name: str, info: Dict[str, Dict[str, Union[str, int, bool]]]
-    ):
+    def add_task(self, mode: str, uid: str):
         """
         添加任务
 
         :param mode: 任务模式
-        :param name: 任务名称
-        :param info: 任务信息
+        :param uid: 任务UID
         """
+
+        actual_id = uuid.UUID(uid)
+
+        if mode == "设置脚本":
+            if actual_id in Config.ScriptConfig:
+                task_id = actual_id
+            else:
+                for script_id, script in Config.ScriptConfig.items():
+                    if (
+                        isinstance(script, (MaaConfig | GeneralConfig))
+                        and actual_id in script.UserData
+                    ):
+                        task_id = script_id
+                        break
+                else:
+                    raise ValueError(
+                        f"The task corresponding to UID {uid} could not be found."
+                    )
+        elif actual_id in Config.QueueConfig or actual_id in Config.ScriptConfig:
+            task_id = actual_id
+        else:
+            raise ValueError(f"The task corresponding to UID {uid} could not be found.")
 
         if name in Config.running_list or name in self.task_dict:
 
@@ -382,68 +402,6 @@ class _TaskManager:
 
         if Config.args.mode == "cli" and Config.power_sign == "NoAction":
             Config.set_power_sign("KillSelf")
-
-    def check_maa_version(self, v: str) -> None:
-        """
-        检查MAA版本，如果版本过低则推送通知
-
-        :param v: 当前MAA版本
-        """
-
-        logger.info(f"检查MAA版本：{v}", module="业务调度")
-        network = Network.add_task(
-            mode="get",
-            url="https://mirrorchyan.com/api/resources/MAA/latest?user_agent=AutoMaaGui&os=win&arch=x64&channel=stable",
-        )
-        network.loop.exec()
-        network_result = Network.get_result(network)
-        if network_result["status_code"] == 200:
-            maa_info = network_result["response_json"]
-        else:
-            logger.warning(
-                f"获取MAA版本信息时出错：{network_result['error_message']}",
-                module="业务调度",
-            )
-            MainInfoBar.push_info_bar(
-                "warning",
-                "获取MAA版本信息时出错",
-                f"网络错误：{network_result['status_code']}",
-                5000,
-            )
-            return None
-
-        if version.parse(maa_info["data"]["version_name"]) > version.parse(v):
-
-            logger.info(
-                f"检测到MAA版本过低：{v}，最新版本：{maa_info['data']['version_name']}",
-                module="业务调度",
-            )
-            MainInfoBar.push_info_bar(
-                "info",
-                "MAA版本过低",
-                f"当前版本：{v}，最新稳定版：{maa_info['data']['version_name']}",
-                -1,
-            )
-
-        logger.success(
-            f"MAA版本检查完成：{v}，最新版本：{maa_info['data']['version_name']}",
-            module="业务调度",
-        )
-
-    def push_dialog(self, name: str, title: str, content: str):
-        """
-        推送来自任务线程的对话框
-
-        :param name: 任务名称
-        :param title: 对话框标题
-        :param content: 对话框内容
-        """
-
-        choice = MessageBox(title, content, Config.main_window)
-        choice.yesButton.setText("是")
-        choice.cancelButton.setText("否")
-
-        self.task_dict[name].question_response.emit(bool(choice.exec()))
 
 
 TaskManager = _TaskManager()

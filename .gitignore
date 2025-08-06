@@ -9,6 +9,9 @@ logs/
 
 # Virtual environments
 .venv
+.python-version
+list/
+uv.lock
 
 # IDE and editors
 .vscode/
@@ -17,6 +20,12 @@ logs/
 *.swo
 .DS_Store
 
-# Debug files
-debug/
+# User files
 config/
+data/
+debug/
+history/
+script/
+resources/notice.json
+resources/theme_image.json
+resources/images/Home/BannerTheme.jpg
