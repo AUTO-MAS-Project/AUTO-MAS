@@ -17,7 +17,10 @@ class Logger {
   private logToStorage = true
 
   constructor() {
-    this.loadLogsFromStorage()
+    // 延迟加载日志，等待electron API准备就绪
+    setTimeout(() => {
+      this.loadLogsFromStorage()
+    }, 100)
   }
 
   private formatTimestamp(): string {
@@ -68,24 +71,28 @@ class Logger {
     }
   }
 
-  private saveLogsToStorage() {
+  private async saveLogsToStorage() {
     try {
-      const logsToSave = this.logs.value.slice(-500) // 只保存最近500条日志
-      localStorage.setItem('app-logs', JSON.stringify(logsToSave))
+      if (window.electronAPI && window.electronAPI.saveLogsToFile) {
+        const logsToSave = this.logs.value.slice(-500) // 只保存最近500条日志
+        await window.electronAPI.saveLogsToFile(JSON.stringify(logsToSave, null, 2))
+      }
     } catch (error) {
-      console.error('保存日志到本地存储失败:', error)
+      console.error('保存日志到本地文件失败:', error)
     }
   }
 
-  private loadLogsFromStorage() {
+  private async loadLogsFromStorage() {
     try {
-      const savedLogs = localStorage.getItem('app-logs')
-      if (savedLogs) {
-        const parsedLogs = JSON.parse(savedLogs) as LogEntry[]
-        this.logs.value = parsedLogs
+      if (window.electronAPI && window.electronAPI.loadLogsFromFile) {
+        const savedLogs = await window.electronAPI.loadLogsFromFile()
+        if (savedLogs) {
+          const parsedLogs = JSON.parse(savedLogs) as LogEntry[]
+          this.logs.value = parsedLogs
+        }
       }
     } catch (error) {
-      console.error('从本地存储加载日志失败:', error)
+      console.error('从本地文件加载日志失败:', error)
     }
   }
 

@@ -19,6 +19,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     updateBackend: (repoUrl?: string) => ipcRenderer.invoke('update-backend', repoUrl),
     startBackend: () => ipcRenderer.invoke('start-backend'),
     
+    // 日志文件操作
+    saveLogsToFile: (logs: string) => ipcRenderer.invoke('save-logs-to-file', logs),
+    loadLogsFromFile: () => ipcRenderer.invoke('load-logs-from-file'),
+    
     // 监听下载进度
     onDownloadProgress: (callback: (progress: any) => void) => {
         ipcRenderer.on('download-progress', (_, progress) => callback(progress))

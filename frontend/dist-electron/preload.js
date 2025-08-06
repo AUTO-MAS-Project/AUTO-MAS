@@ -17,6 +17,9 @@ electron_1.contextBridge.exposeInMainWorld('electronAPI', {
     cloneBackend: (repoUrl) => electron_1.ipcRenderer.invoke('clone-backend', repoUrl),
     updateBackend: (repoUrl) => electron_1.ipcRenderer.invoke('update-backend', repoUrl),
     startBackend: () => electron_1.ipcRenderer.invoke('start-backend'),
+    // 日志文件操作
+    saveLogsToFile: (logs) => electron_1.ipcRenderer.invoke('save-logs-to-file', logs),
+    loadLogsFromFile: () => electron_1.ipcRenderer.invoke('load-logs-from-file'),
     // 监听下载进度
     onDownloadProgress: (callback) => {
         electron_1.ipcRenderer.on('download-progress', (_, progress) => callback(progress));

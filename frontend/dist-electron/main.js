@@ -35,6 +35,7 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 const electron_1 = require("electron");
 const path = __importStar(require("path"));
+const fs = __importStar(require("fs"));
 const environmentService_1 = require("./services/environmentService");
 const downloadService_1 = require("./services/downloadService");
 const pythonService_1 = require("./services/pythonService");
@@ -128,6 +129,40 @@ electron_1.ipcMain.handle('clone-backend', async (event, repoUrl = 'https://gith
 electron_1.ipcMain.handle('update-backend', async (event, repoUrl = 'https://github.com/DLmaster361/AUTO_MAA.git') => {
     const appRoot = (0, environmentService_1.getAppRoot)();
     return (0, gitService_1.cloneBackend)(appRoot, repoUrl); // 使用相同的逻辑，会自动判断是pull还是clone
+});
+// 日志文件操作
+electron_1.ipcMain.handle('save-logs-to-file', async (event, logs) => {
+    try {
+        const appRoot = (0, environmentService_1.getAppRoot)();
+        const logsDir = path.join(appRoot, 'logs');
+        // 确保logs目录存在
+        if (!fs.existsSync(logsDir)) {
+            fs.mkdirSync(logsDir, { recursive: true });
+        }
+        const logFilePath = path.join(logsDir, 'app.log');
+        fs.writeFileSync(logFilePath, logs, 'utf8');
+        console.log(`日志已保存到: ${logFilePath}`);
+    }
+    catch (error) {
+        console.error('保存日志文件失败:', error);
+        throw error;
+    }
+});
+electron_1.ipcMain.handle('load-logs-from-file', async () => {
+    try {
+        const appRoot = (0, environmentService_1.getAppRoot)();
+        const logFilePath = path.join(appRoot, 'logs', 'app.log');
+        if (fs.existsSync(logFilePath)) {
+            const logs = fs.readFileSync(logFilePath, 'utf8');
+            console.log(`从文件加载日志: ${logFilePath}`);
+            return logs;
+        }
+        return null;
+    }
+    catch (error) {
+        console.error('加载日志文件失败:', error);
+        return null;
+    }
 });
 // 应用生命周期
 electron_1.app.whenReady().then(createWindow);

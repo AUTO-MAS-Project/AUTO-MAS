@@ -18,6 +18,10 @@ export interface ElectronAPI {
   updateBackend: (repoUrl?: string) => Promise<{ success: boolean; error?: string }>
   startBackend: () => Promise<{ success: boolean; error?: string }>
   
+  // 日志文件操作
+  saveLogsToFile: (logs: string) => Promise<void>
+  loadLogsFromFile: () => Promise<string | null>
+  
   // 监听下载进度
   onDownloadProgress: (callback: (progress: any) => void) => void
   removeDownloadProgressListener: () => void
