@@ -1,10 +1,15 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { onMounted, computed } from 'vue'
+import { useRoute } from 'vue-router'
 import { ConfigProvider } from 'ant-design-vue'
 import { useTheme } from './composables/useTheme.ts'
 import AppLayout from './components/AppLayout.vue'
 
+const route = useRoute()
 const { antdTheme, initTheme } = useTheme()
+
+// 判断是否为初始化页面
+const isInitializationPage = computed(() => route.name === 'Initialization')
 
 onMounted(() => {
   initTheme()
@@ -13,7 +18,10 @@ onMounted(() => {
 
 <template>
   <ConfigProvider :theme="antdTheme">
-    <AppLayout />
+    <!-- 初始化页面使用全屏布局 -->
+    <router-view v-if="isInitializationPage" />
+    <!-- 其他页面使用应用布局 -->
+    <AppLayout v-else />
   </ConfigProvider>
 </template>
 

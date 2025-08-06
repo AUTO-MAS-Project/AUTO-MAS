@@ -8,5 +8,20 @@ window.addEventListener('DOMContentLoaded', () => {
 electron_1.contextBridge.exposeInMainWorld('electronAPI', {
     openDevTools: () => electron_1.ipcRenderer.invoke('open-dev-tools'),
     selectFolder: () => electron_1.ipcRenderer.invoke('select-folder'),
-    selectFile: (filters) => electron_1.ipcRenderer.invoke('select-file', filters)
+    selectFile: (filters) => electron_1.ipcRenderer.invoke('select-file', filters),
+    // 初始化相关API
+    checkEnvironment: () => electron_1.ipcRenderer.invoke('check-environment'),
+    downloadPython: (mirror) => electron_1.ipcRenderer.invoke('download-python', mirror),
+    downloadGit: () => electron_1.ipcRenderer.invoke('download-git'),
+    installDependencies: (mirror) => electron_1.ipcRenderer.invoke('install-dependencies', mirror),
+    cloneBackend: (repoUrl) => electron_1.ipcRenderer.invoke('clone-backend', repoUrl),
+    updateBackend: (repoUrl) => electron_1.ipcRenderer.invoke('update-backend', repoUrl),
+    startBackend: () => electron_1.ipcRenderer.invoke('start-backend'),
+    // 监听下载进度
+    onDownloadProgress: (callback) => {
+        electron_1.ipcRenderer.on('download-progress', (_, progress) => callback(progress));
+    },
+    removeDownloadProgressListener: () => {
+        electron_1.ipcRenderer.removeAllListeners('download-progress');
+    }
 });
