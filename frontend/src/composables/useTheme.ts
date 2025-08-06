@@ -99,7 +99,7 @@ const updateCSSVariables = () => {
     root.style.setProperty('--ant-color-bg-layout', '#f5f5f5')
     root.style.setProperty('--ant-color-bg-elevated', '#ffffff')
     root.style.setProperty('--ant-color-border', '#d9d9d9')
-    root.style.setProperty('--ant-color-border-secondary', '#f0f0f0')
+    root.style.setProperty('--ant-color-border-secondary', '#d9d9d9')
     root.style.setProperty('--ant-color-error', '#ff4d4f')
     root.style.setProperty('--ant-color-success', '#52c41a')
     root.style.setProperty('--ant-color-warning', '#faad14')

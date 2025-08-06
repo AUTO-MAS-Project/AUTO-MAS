@@ -1169,10 +1169,6 @@ const getCardTitle = () => {
   transition: color 0.3s ease;
 }
 
-.breadcrumb-link:hover {
-  color: var(--ant-color-primary);
-}
-
 .breadcrumb-current {
   display: flex;
   align-items: center;
@@ -1186,39 +1182,6 @@ const getCardTitle = () => {
   height: 20px;
   object-fit: contain;
   transition: all 0.3s ease;
-}
-
-/* 按钮样式 */
-.cancel-button {
-  padding: 0 12px;
-  font-size: 16px;
-  font-weight: 500;
-  border-radius: 12px;
-  border: 2px solid var(--ant-color-border);
-  background: var(--ant-color-bg-container);
-  color: var(--ant-color-text);
-  transition: all 0.3s ease;
-}
-
-.cancel-button:hover {
-  border-color: var(--ant-color-error);
-  color: var(--ant-color-error);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(255, 77, 79, 0.2);
-}
-
-.save-button {
-  padding: 0 12px;
-  font-size: 16px;
-  font-weight: 600;
-  border-radius: 12px;
-  box-shadow: 0 4px 12px rgba(24, 144, 255, 0.3);
-  transition: all 0.3s ease;
-}
-
-.save-button:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(24, 144, 255, 0.4);
 }
 
 /* 内容区域 */
@@ -1457,10 +1420,6 @@ const getCardTitle = () => {
 
   .save-button:hover {
     box-shadow: 0 6px 16px rgba(24, 144, 255, 0.5);
-  }
-
-  .cancel-button:hover {
-    box-shadow: 0 4px 12px rgba(255, 77, 79, 0.3);
   }
 
   .path-input-group:focus-within {
