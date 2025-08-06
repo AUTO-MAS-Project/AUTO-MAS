@@ -1,23 +1,6 @@
 <template>
-  <!-- 空状态 -->
-  <div v-if="planList.length === 0 && !loading" class="empty-state">
-    <div class="empty-content">
-      <div class="empty-icon">
-        <CalendarOutlined />
-      </div>
-      <h3>暂无计划</h3>
-      <p>创建您的第一个计划来开始使用</p>
-      <a-button type="primary" size="large" @click="handleAddPlan">
-        <template #icon>
-          <PlusOutlined />
-        </template>
-        创建计划
-      </a-button>
-    </div>
-  </div>
-
   <!-- 有计划时显示 -->
-  <div v-else-if="planList.length > 0" class="plans-content">
+  <div class="plans-content">
     <!-- 计划头部 -->
     <div class="plans-header">
       <div class="header-title">
@@ -39,26 +22,35 @@
       </a-space>
     </div>
 
-    <!-- 计划选择器 -->
-    <div class="plan-selector">
-      <a-tabs
-        v-model:activeKey="activePlanId"
-        type="editable-card"
-        @edit="onTabEdit"
-        @change="onPlanChange"
-        class="plan-tabs"
-      >
-        <a-tab-pane
-          v-for="plan in planList"
-          :key="plan.id"
-          :tab="plan.name"
-          :closable="planList.length > 1"
-        />
-      </a-tabs>
+    <!-- 计划内容区域 -->
+    <div v-if="!planList.length || !currentPlanData" class="empty-state">
+      <div class="empty-content empty-content-fancy" @click="handleAddPlan" style="cursor: pointer">
+        <div class="empty-icon">
+          <PlusOutlined />
+        </div>
+        <h2>你还没有创建过计划</h2>
+        <h1>点击此处来新建计划</h1>
+      </div>
     </div>
 
-    <!-- 计划内容区域 -->
-    <div class="plan-content" v-if="currentPlanData">
+    <div class="plan-content" v-else v-if="currentPlanData">
+      <!-- 计划选择器 -->
+      <div class="plan-selector">
+        <a-tabs
+          v-model:activeKey="activePlanId"
+          type="editable-card"
+          @edit="onTabEdit"
+          @change="onPlanChange"
+          class="plan-tabs"
+        >
+          <a-tab-pane
+            v-for="plan in planList"
+            :key="plan.id"
+            :tab="plan.name"
+            :closable="planList.length > 0"
+          />
+        </a-tabs>
+      </div>
       <!-- MAA计划配置 -->
       <div class="maa-config-section">
         <div class="section-header">
@@ -140,9 +132,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { message } from 'ant-design-vue'
-import { CalendarOutlined, PlusOutlined, ReloadOutlined, SaveOutlined } from '@ant-design/icons-vue'
+import { PlusOutlined, ReloadOutlined, SaveOutlined } from '@ant-design/icons-vue'
 import { usePlanApi } from '../composables/usePlanApi'
 
 // API 相关
@@ -636,13 +628,7 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.plans-container {
-  height: 100vh;
-  display: flex;
-  flex-direction: column;
-  background: var(--ant-color-bg-layout);
-  padding: 32px;
-}
+
 
 /* 空状态样式 */
 .empty-state {
@@ -721,25 +707,12 @@ onMounted(() => {
   border-bottom: 1px solid var(--ant-color-border-secondary);
 }
 
-.plan-tabs :deep(.ant-tabs-content-holder) {
-  display: none;
-}
-
-.plan-tabs :deep(.ant-tabs-nav) {
-  margin: 0;
-}
-
-.plan-tabs :deep(.ant-tabs-tab) {
-  padding: 12px 16px;
-  font-weight: 500;
-}
 
 /* 计划内容 */
 .plan-content {
   flex: 1;
   padding: 24px 32px;
   overflow: auto;
-  background: var(--ant-color-bg-layout);
 }
 
 .section-header {
@@ -793,12 +766,11 @@ onMounted(() => {
 
 .plan-name-input :deep(.ant-input:hover) {
   border-color: var(--ant-color-border);
-  background: var(--ant-color-bg-container);
 }
 
 .plan-name-input :deep(.ant-input:focus) {
   border-color: var(--ant-color-primary);
-  background: var(--ant-color-bg-container);
+
   box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.2);
 }
 
@@ -808,7 +780,6 @@ onMounted(() => {
 }
 
 .plan-table :deep(.ant-table-thead > tr > th) {
-  background: var(--ant-color-bg-layout);
   border-bottom: 2px solid var(--ant-color-border);
   font-weight: 600;
   color: var(--ant-color-text);
@@ -819,10 +790,6 @@ onMounted(() => {
   border-bottom: 1px solid var(--ant-color-border-secondary);
   text-align: center;
   padding: 12px 8px;
-}
-
-.plan-table :deep(.ant-table-tbody > tr:hover > td) {
-  background: var(--ant-color-bg-layout);
 }
 
 .task-name {
@@ -839,7 +806,6 @@ onMounted(() => {
 .config-select :deep(.ant-select-selector) {
   border-radius: 6px;
   border: 1px solid var(--ant-color-border);
-  background: var(--ant-color-bg-container);
 }
 
 .config-select :deep(.ant-select-selector:hover) {
@@ -878,5 +844,50 @@ onMounted(() => {
 .float-button {
   width: 60px;
   height: 60px;
+}
+
+.empty-content-fancy {
+  transition:
+    box-shadow 0.3s,
+    transform 0.2s;
+  border: none;
+  border-radius: 24px;
+}
+
+.empty-icon {
+  font-size: 80px;
+  margin-bottom: 32px;
+  border-radius: 50%;
+  width: 100px;
+  height: 100px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.empty-content-fancy h3 {
+  font-size: 26px;
+  font-weight: 700;
+  margin: 0 0 12px 0;
+  letter-spacing: 1px;
+}
+
+.empty-content-fancy p {
+  font-size: 16px;
+  border-radius: 8px;
+  padding: 8px 16px;
+  margin: 0 0 12px 0;
+  display: inline-block;
+}
+
+.plus-btn {
+  color: #4096ff;
+  border-radius: 50%;
+  padding: 2px 6px 2px 6px;
+  margin-left: 2px;
+  font-size: 20px;
+  vertical-align: -3px;
 }
 </style>
