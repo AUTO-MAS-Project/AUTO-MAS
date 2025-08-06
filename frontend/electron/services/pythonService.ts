@@ -291,8 +291,8 @@ const pipMirrorUrls = {
 export async function installDependencies(appRoot: string, mirror = 'tsinghua'): Promise<{ success: boolean; error?: string }> {
   try {
     const pythonPath = path.join(appRoot, 'environment', 'python', 'python.exe')
-    const backendPath = path.join(appRoot, 'backend')
-    const requirementsPath = path.join(backendPath, 'requirements.txt')
+    const backendPath = path.join(appRoot)
+    const requirementsPath = path.join(appRoot, 'requirements.txt')
 
     // 检查文件是否存在
     if (!fs.existsSync(pythonPath)) {
