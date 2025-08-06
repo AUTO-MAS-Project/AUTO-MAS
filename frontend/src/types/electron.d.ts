@@ -1,11 +1,30 @@
-export {}
+export interface ElectronAPI {
+  openDevTools: () => Promise<void>
+  selectFolder: () => Promise<string | null>
+  selectFile: (filters?: any[]) => Promise<string | null>
+  
+  // 初始化相关API
+  checkEnvironment: () => Promise<{
+    pythonExists: boolean
+    gitExists: boolean
+    backendExists: boolean
+    dependenciesInstalled: boolean
+    isInitialized: boolean
+  }>
+  downloadPython: (mirror?: string) => Promise<{ success: boolean; error?: string }>
+  downloadGit: () => Promise<{ success: boolean; error?: string }>
+  installDependencies: (mirror?: string) => Promise<{ success: boolean; error?: string }>
+  cloneBackend: (repoUrl?: string) => Promise<{ success: boolean; error?: string }>
+  updateBackend: (repoUrl?: string) => Promise<{ success: boolean; error?: string }>
+  startBackend: () => Promise<{ success: boolean; error?: string }>
+  
+  // 监听下载进度
+  onDownloadProgress: (callback: (progress: any) => void) => void
+  removeDownloadProgressListener: () => void
+}
 
 declare global {
   interface Window {
-    electronAPI: {
-      openDevTools: () => void,
-      selectFolder: () => Promise<string | null>
-      selectFile: (filters?: Array<{ name: string; extensions: string[] }>) => Promise<string | null>
-    }
+    electronAPI: ElectronAPI
   }
 }

@@ -4,7 +4,13 @@ import type { RouteRecordRaw } from 'vue-router'
 const routes: RouteRecordRaw[] = [
   {
     path: '/',
-    redirect: '/home',
+    redirect: '/initialization',
+  },
+  {
+    path: '/initialization',
+    name: 'Initialization',
+    component: () => import('../views/Initialization.vue'),
+    meta: { title: '初始化' },
   },
   {
     path: '/home',
@@ -65,6 +71,12 @@ const routes: RouteRecordRaw[] = [
     name: 'Settings',
     component: () => import('../views/Settings.vue'),
     meta: { title: '设置' },
+  },
+  {
+    path: '/logs',
+    name: 'Logs',
+    component: () => import('../views/Logs.vue'),
+    meta: { title: '系统日志' },
   },
 ]
 
