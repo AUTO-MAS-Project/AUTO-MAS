@@ -185,6 +185,19 @@ class QueueItemReorderIn(QueueSetInBase):
     indexList: List[str] = Field(..., description="队列项ID列表，按新顺序排列")
 
 
+class DispatchIn(BaseModel):
+    taskId: str = Field(
+        ...,
+        description="目标任务ID，设置类任务可选对应脚本ID或用户ID，代理类任务可选对应队列ID或脚本ID",
+    )
+
+
+class DispatchCreateIn(DispatchIn):
+    mode: Literal["自动代理", "人工排查", "设置脚本"] = Field(
+        ..., description="任务模式"
+    )
+
+
 class SettingGetOut(OutBase):
     data: Dict[str, Dict[str, Any]] = Field(..., description="全局设置数据")
 
