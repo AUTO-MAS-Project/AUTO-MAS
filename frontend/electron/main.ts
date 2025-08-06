@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain, dialog } from 'electron'
 import * as path from 'path'
+import * as fs from 'fs'
 import { getAppRoot, checkEnvironment } from './services/environmentService'
 import { setMainWindow as setDownloadMainWindow } from './services/downloadService'
 import { setMainWindow as setPythonMainWindow, downloadPython, installDependencies, startBackend } from './services/pythonService'
@@ -106,6 +107,44 @@ ipcMain.handle('clone-backend', async (event, repoUrl = 'https://github.com/DLma
 ipcMain.handle('update-backend', async (event, repoUrl = 'https://github.com/DLmaster361/AUTO_MAA.git') => {
   const appRoot = getAppRoot()
   return cloneBackend(appRoot, repoUrl) // 使用相同的逻辑，会自动判断是pull还是clone
+})
+
+// 日志文件操作
+ipcMain.handle('save-logs-to-file', async (event, logs: string) => {
+  try {
+    const appRoot = getAppRoot()
+    const logsDir = path.join(appRoot, 'logs')
+
+    // 确保logs目录存在
+    if (!fs.existsSync(logsDir)) {
+      fs.mkdirSync(logsDir, { recursive: true })
+    }
+
+    const logFilePath = path.join(logsDir, 'app.log')
+    fs.writeFileSync(logFilePath, logs, 'utf8')
+    console.log(`日志已保存到: ${logFilePath}`)
+  } catch (error) {
+    console.error('保存日志文件失败:', error)
+    throw error
+  }
+})
+
+ipcMain.handle('load-logs-from-file', async () => {
+  try {
+    const appRoot = getAppRoot()
+    const logFilePath = path.join(appRoot, 'logs', 'app.log')
+
+    if (fs.existsSync(logFilePath)) {
+      const logs = fs.readFileSync(logFilePath, 'utf8')
+      console.log(`从文件加载日志: ${logFilePath}`)
+      return logs
+    }
+
+    return null
+  } catch (error) {
+    console.error('加载日志文件失败:', error)
+    return null
+  }
 })
 
 // 应用生命周期

@@ -1,25 +1,34 @@
 <template>
   <div class="initialization-container">
-    <div class="initialization-content">
-      <div class="header">
-        <h1>AUTO MAA 初始化向导</h1>
-        <p>欢迎使用 AUTO MAA，让我们来配置您的运行环境</p>
-      </div>
+    <div class="header">
+      <h1>AUTO MAA 初始化向导</h1>
+      <p>欢迎使用 AUTO MAA，让我们来配置您的运行环境</p>
+    </div>
 
-      <a-steps 
-        :current="currentStep" 
-        :status="stepStatus"
-        class="init-steps"
-      >
-        <a-step title="主题设置" description="选择您喜欢的主题" />
-        <a-step title="Python 环境" description="安装 Python 运行环境" />
-        <a-step title="Git 工具" description="安装 Git 版本控制工具" />
-        <a-step title="源码获取" description="获取最新的后端代码" />
-        <a-step title="依赖安装" description="安装 Python 依赖包" />
-        <a-step title="启动服务" description="启动后端服务" />
-      </a-steps>
+    <a-steps 
+      :current="currentStep" 
+      :status="stepStatus"
+      class="init-steps"
+    >
+      <a-step title="主题设置" description="选择您喜欢的主题" />
+      <a-step title="Python 环境" description="安装 Python 运行环境" />
+      <a-step title="Git 工具" description="安装 Git 版本控制工具" />
+      <a-step title="源码获取" description="获取最新的后端代码" />
+      <a-step title="依赖安装" description="安装 Python 依赖包" />
+      <a-step title="启动服务" description="启动后端服务" />
+    </a-steps>
 
-      <div class="step-content">
+    <!-- 全局进度条 -->
+    <div v-if="isProcessing" class="global-progress">
+      <a-progress 
+        :percent="globalProgress" 
+        :status="globalProgressStatus"
+        :show-info="true"
+      />
+      <div class="progress-text">{{ progressText }}</div>
+    </div>
+
+    <div class="step-content">
         <!-- 步骤 0: 主题设置 -->
         <div v-if="currentStep === 0" class="step-panel">
           <h3>选择您的主题偏好</h3>
@@ -229,7 +238,7 @@
         />
       </div>
     </div>
-  </div>
+
 </template>
 
 <script setup lang="ts">
@@ -280,7 +289,7 @@ const pipMirrors = ref([
 
 const gitMirrors = ref([
   { key: 'github', name: 'GitHub 官方', url: 'https://github.com/DLmaster361/AUTO_MAA.git', speed: null as number | null },
-  { key: 'fastgit', name: 'FastGit 镜像', url: 'https://ghfast.top/https://github.com/DLmaster361/AUTO_MAA.git', speed: null as number | null }
+  { key: 'ghfast', name: 'ghfast 镜像', url: 'https://ghfast.top/https://github.com/DLmaster361/AUTO_MAA.git', speed: null as number | null }
 ])
 
 // 选中的镜像源
@@ -298,6 +307,11 @@ const startingService = ref(false)
 const showServiceProgress = ref(false)
 const serviceProgress = ref(0)
 const serviceStatus = ref('准备启动后端服务...')
+
+// 全局进度条状态
+const globalProgress = ref(0)
+const globalProgressStatus = ref<'normal' | 'exception' | 'success'>('normal')
+const progressText = ref('')
 
 const allCompleted = computed(() => 
   pythonInstalled.value && gitInstalled.value && backendExists.value && dependenciesInstalled.value
@@ -654,6 +668,19 @@ function getSpeedClass(speed: number | null) {
 
 // 监听下载进度
 function handleDownloadProgress(progress: DownloadProgress) {
+  // 更新全局进度条
+  globalProgress.value = progress.progress
+  progressText.value = progress.message
+  
+  if (progress.status === 'error') {
+    globalProgressStatus.value = 'exception'
+  } else if (progress.status === 'completed') {
+    globalProgressStatus.value = 'success'
+  } else {
+    globalProgressStatus.value = 'normal'
+  }
+  
+  // 更新服务进度（如果是服务相关）
   if (progress.type === 'service') {
     serviceProgress.value = progress.progress
     serviceStatus.value = progress.message
@@ -678,19 +705,9 @@ onUnmounted(() => {
 .initialization-container {
   min-height: 100vh;
   background: var(--ant-color-bg-layout);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 20px;
-}
+  padding: 50px 100px;
 
-.initialization-content {
-  background: var(--ant-color-bg-container);
-  border-radius: 16px;
-  padding: 40px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-  max-width: 900px;
-  width: 100%;
+  margin: 0 auto;
 }
 
 .header {
@@ -932,6 +949,58 @@ onUnmounted(() => {
 }
 
 .git-info {
+  margin-top: 16px;
+}
+
+/* 全局进度条样式 */
+.global-progress {
+  margin: 20px 0;
+  padding: 20px;
+  background: var(--ant-color-bg-container);
+  border-radius: 8px;
+  border: 1px solid var(--ant-color-border);
+}
+
+.progress-text {
+  text-align: center;
+  margin-top: 8px;
+  font-size: 14px;
+  color: var(--ant-color-text-secondary);
+}
+
+/* 状态信息样式 */
+.status-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-radius: 6px;
+  margin-bottom: 16px;
+  background: var(--ant-color-fill-quaternary);
+}
+
+.status-info.success {
+  background: var(--ant-color-success-bg);
+  border: 1px solid var(--ant-color-success-border);
+}
+
+.status-icon {
+  font-size: 16px;
+}
+
+.status-icon.info {
+  color: var(--ant-color-info);
+}
+
+.status-icon.success {
+  color: var(--ant-color-success);
+}
+
+.status-icon.loading {
+  color: var(--ant-color-primary);
+}
+
+.service-progress {
   margin-top: 16px;
 }
 

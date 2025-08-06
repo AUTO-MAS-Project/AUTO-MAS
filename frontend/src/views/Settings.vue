@@ -570,6 +570,14 @@ onMounted(() => {
               <p class="setting-description">打开浏览器开发者工具进行调试</p>
               <Button type="primary" @click="openDevTools">打开 F12 开发者工具</Button>
             </div>
+            
+            <Divider />
+            
+            <div class="setting-item">
+              <h4>系统日志</h4>
+              <p class="setting-description">查看应用运行日志，用于问题排查和调试</p>
+              <Button type="default" @click="$router.push('/logs')">查看系统日志</Button>
+            </div>
           </Space>
         </Card>
       </Tabs.TabPane>
