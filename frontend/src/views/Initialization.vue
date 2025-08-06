@@ -3,6 +3,7 @@
     <div class="header">
       <h1>AUTO MAA 初始化向导</h1>
       <p>欢迎使用 AUTO MAA，让我们来配置您的运行环境</p>
+      <a-button size="large" type="primary" @click="skipToHome">跳转至首页，直接跳过环境安装（仅开发用）</a-button>
     </div>
 
     <a-steps 
@@ -316,6 +317,10 @@ const progressText = ref('')
 const allCompleted = computed(() => 
   pythonInstalled.value && gitInstalled.value && backendExists.value && dependenciesInstalled.value
 )
+
+function skipToHome(){
+  router.push('/home')
+}
 
 // 主题设置相关
 function onThemeModeChange() {

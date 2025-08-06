@@ -13,13 +13,32 @@ export function setMainWindow(window: BrowserWindow) {
 
 const gitDownloadUrl = 'https://alist-automaa.fearr.xyz/d/AUTO_MAA/git.zip'
 
+// 递归复制目录，包括文件和隐藏文件
+function copyDirSync(src: string, dest: string) {
+  if (!fs.existsSync(dest)) {
+    fs.mkdirSync(dest, { recursive: true })
+  }
+  const entries = fs.readdirSync(src, { withFileTypes: true })
+  for (const entry of entries) {
+    const srcPath = path.join(src, entry.name)
+    const destPath = path.join(dest, entry.name)
+    if (entry.isDirectory()) {
+      copyDirSync(srcPath, destPath)
+    } else {
+      // 直接覆盖写，不需要先删除
+      fs.copyFileSync(srcPath, destPath)
+    }
+  }
+}
+
+
 // 获取Git环境变量配置
 function getGitEnvironment(appRoot: string) {
   const gitDir = path.join(appRoot, 'environment', 'git')
   const binPath = path.join(gitDir, 'bin')
   const mingw64BinPath = path.join(gitDir, 'mingw64', 'bin')
   const gitCorePath = path.join(gitDir, 'mingw64', 'libexec', 'git-core')
-  
+
   return {
     ...process.env,
     // 修复remote-https问题的关键：确保所有Git相关路径都在PATH中
@@ -38,7 +57,7 @@ function getGitEnvironment(appRoot: string) {
     // CURL_CA_BUNDLE: path.join(gitDir, 'mingw64', 'ssl', 'certs', 'ca-bundle.crt'),
     // 确保Git能找到所有必要的程序
     GIT_HTTP_LOW_SPEED_LIMIT: '0',
-    GIT_HTTP_LOW_SPEED_TIME: '0'
+    GIT_HTTP_LOW_SPEED_TIME: '0',
   }
 }
 
@@ -53,7 +72,7 @@ export async function downloadGit(appRoot: string): Promise<{ success: boolean; 
   try {
     const environmentPath = path.join(appRoot, 'environment')
     const gitPath = path.join(environmentPath, 'git')
-    
+
     if (!fs.existsSync(environmentPath)) {
       fs.mkdirSync(environmentPath, { recursive: true })
     }
@@ -63,7 +82,7 @@ export async function downloadGit(appRoot: string): Promise<{ success: boolean; 
         type: 'git',
         progress: 0,
         status: 'downloading',
-        message: '开始下载Git...'
+        message: '开始下载Git...',
       })
     }
 
@@ -76,48 +95,48 @@ export async function downloadGit(appRoot: string): Promise<{ success: boolean; 
         type: 'git',
         progress: 100,
         status: 'extracting',
-        message: '正在解压Git...'
+        message: '正在解压Git...',
       })
     }
 
     // 解压Git到临时目录，然后移动到正确位置
     console.log(`开始解压Git到: ${gitPath}`)
-    
+
     // 创建临时解压目录
     const tempExtractPath = path.join(environmentPath, 'git_temp')
     if (!fs.existsSync(tempExtractPath)) {
       fs.mkdirSync(tempExtractPath, { recursive: true })
       console.log(`创建临时解压目录: ${tempExtractPath}`)
     }
-    
+
     // 解压到临时目录
     const zip = new AdmZip(zipPath)
     zip.extractAllTo(tempExtractPath, true)
     console.log(`Git解压到临时目录: ${tempExtractPath}`)
-    
+
     // 检查解压后的目录结构
     const tempContents = fs.readdirSync(tempExtractPath)
     console.log(`临时目录内容:`, tempContents)
-    
+
     // 如果解压后有git子目录，则从git子目录移动内容
     let sourceDir = tempExtractPath
     if (tempContents.length === 1 && tempContents[0] === 'git') {
       sourceDir = path.join(tempExtractPath, 'git')
       console.log(`检测到git子目录，使用源目录: ${sourceDir}`)
     }
-    
+
     // 确保目标Git目录存在
     if (!fs.existsSync(gitPath)) {
       fs.mkdirSync(gitPath, { recursive: true })
       console.log(`创建Git目录: ${gitPath}`)
     }
-    
+
     // 移动文件到最终目录
     const sourceContents = fs.readdirSync(sourceDir)
     for (const item of sourceContents) {
       const sourcePath = path.join(sourceDir, item)
       const targetPath = path.join(gitPath, item)
-      
+
       // 如果目标已存在，先删除
       if (fs.existsSync(targetPath)) {
         if (fs.statSync(targetPath).isDirectory()) {
@@ -126,16 +145,16 @@ export async function downloadGit(appRoot: string): Promise<{ success: boolean; 
           fs.unlinkSync(targetPath)
         }
       }
-      
+
       // 移动文件或目录
       fs.renameSync(sourcePath, targetPath)
       console.log(`移动: ${sourcePath} -> ${targetPath}`)
     }
-    
+
     // 清理临时目录
     fs.rmSync(tempExtractPath, { recursive: true, force: true })
     console.log(`清理临时目录: ${tempExtractPath}`)
-    
+
     console.log(`Git解压完成到: ${gitPath}`)
 
     // 删除zip文件
@@ -147,7 +166,7 @@ export async function downloadGit(appRoot: string): Promise<{ success: boolean; 
         type: 'git',
         progress: 100,
         status: 'completed',
-        message: 'Git安装完成'
+        message: 'Git安装完成',
       })
     }
 
@@ -159,255 +178,113 @@ export async function downloadGit(appRoot: string): Promise<{ success: boolean; 
         type: 'git',
         progress: 0,
         status: 'error',
-        message: `Git下载失败: ${errorMessage}`
+        message: `Git下载失败: ${errorMessage}`,
       })
     }
     return { success: false, error: errorMessage }
   }
 }
 
-// 克隆后端代码
-export async function cloneBackend(appRoot: string, repoUrl = 'https://github.com/DLmaster361/AUTO_MAA.git'): Promise<{ success: boolean; error?: string }> {
+// 克隆后端代码（替换原有核心逻辑）
+export async function cloneBackend(
+  appRoot: string,
+  repoUrl = 'https://github.com/DLmaster361/AUTO_MAA.git'
+): Promise<{
+  success: boolean
+  error?: string
+}> {
   try {
-    const backendPath = path.join(appRoot)
-    const backendCheckPath = path.join(appRoot,'app')
+    const backendPath = appRoot
     const gitPath = path.join(appRoot, 'environment', 'git', 'bin', 'git.exe')
-
-    console.log(`开始获取后端代码`)
-    console.log(`Git路径: ${gitPath}`)
-    console.log(`仓库URL: ${repoUrl}`)
-    console.log(`目标路径: ${backendPath}`)
-
-    // 检查Git可执行文件是否存在
-    if (!fs.existsSync(gitPath)) {
-      throw new Error(`Git可执行文件不存在: ${gitPath}`)
-    }
-
-    // 获取Git环境变量
+    if (!fs.existsSync(gitPath)) throw new Error(`Git可执行文件不存在: ${gitPath}`)
     const gitEnv = getGitEnvironment(appRoot)
 
-    // 先测试Git是否能正常运行
-    console.log('测试Git版本...')
-    try {
+    // 检查 git 是否可用
+    await new Promise<void>((resolve, reject) => {
+      const proc = spawn(gitPath, ['--version'], { env: gitEnv })
+      proc.on('close', code => (code === 0 ? resolve() : reject(new Error('git 无法正常运行'))))
+      proc.on('error', reject)
+    })
+
+    // ==== 下面是关键逻辑 ====
+    if (isGitRepository(backendPath)) {
+      // 已是 git 仓库，直接 pull
+      if (mainWindow) {
+        mainWindow.webContents.send('download-progress', {
+          type: 'backend',
+          progress: 0,
+          status: 'downloading',
+          message: '正在更新后端代码...',
+        })
+      }
       await new Promise<void>((resolve, reject) => {
-        const testProcess = spawn(gitPath, ['--version'], {
-          stdio: 'pipe',
-          env: gitEnv
-        })
-
-        testProcess.stdout?.on('data', (data) => {
-          console.log('Git版本信息:', data.toString())
-        })
-
-        testProcess.stderr?.on('data', (data) => {
-          console.log('Git版本错误:', data.toString())
-        })
-
-        testProcess.on('close', (code) => {
-          if (code === 0) {
-            console.log('Git版本检查成功')
-            resolve()
-          } else {
-            reject(new Error(`Git版本检查失败，退出码: ${code}`))
-          }
-        })
-
-        testProcess.on('error', (error) => {
-          reject(error)
-        })
+        const proc = spawn(gitPath, ['pull'], { stdio: 'pipe', env: gitEnv, cwd: backendPath })
+        proc.stdout?.on('data', d => console.log('git pull:', d.toString()))
+        proc.stderr?.on('data', d => console.log('git pull err:', d.toString()))
+        proc.on('close', code =>
+          code === 0 ? resolve() : reject(new Error(`git pull失败，退出码: ${code}`))
+        )
+        proc.on('error', reject)
       })
-    } catch (error) {
-      console.error('Git版本检查失败:', error)
-      throw new Error(`Git无法正常运行: ${error}`)
-    }
-
-    console.log('Git环境变量:', gitEnv)
-
-    // 检查backend目录是否存在且是否为Git仓库
-    if (fs.existsSync(backendCheckPath)) {
-      if (isGitRepository(backendPath)) {
-        // 如果是Git仓库，执行pull更新
-        console.log('检测到Git仓库，执行pull更新...')
-
-        if (mainWindow) {
-          mainWindow.webContents.send('download-progress', {
-            type: 'backend',
-            progress: 0,
-            status: 'downloading',
-            message: '正在更新后端代码...'
-          })
-        }
-
-        await new Promise<void>((resolve, reject) => {
-          const process = spawn(gitPath, [
-            'clone',
-            '--progress',
-            '--verbose',
-            '-b', 'feature/refactor-backend',
-            repoUrl,
-            backendPath
-          ], {
-            stdio: 'pipe',
-            env: gitEnv,
-            cwd: appRoot
-          })
-
-          process.stdout?.on('data', (data) => {
-            const output = data.toString()
-            console.log('Git pull output:', output)
-          })
-
-          process.stderr?.on('data', (data) => {
-            const errorOutput = data.toString()
-            console.log('Git pull stderr:', errorOutput)
-          })
-
-          process.on('close', (code) => {
-            console.log(`git pull完成，退出码: ${code}`)
-            if (code === 0) {
-              resolve()
-            } else {
-              reject(new Error(`代码更新失败，退出码: ${code}`))
-            }
-          })
-
-          process.on('error', (error) => {
-            console.error('git pull进程错误:', error)
-            reject(error)
-          })
+      if (mainWindow) {
+        mainWindow.webContents.send('download-progress', {
+          type: 'backend',
+          progress: 100,
+          status: 'completed',
+          message: '后端代码更新完成',
         })
-
-        if (mainWindow) {
-          mainWindow.webContents.send('download-progress', {
-            type: 'backend',
-            progress: 100,
-            status: 'completed',
-            message: '后端代码更新完成'
-          })
-        }
-      } else {
-        // 如果目录存在但不是Git仓库，删除后重新克隆
-        console.log('目录存在但不是Git仓库，删除后重新克隆...')
-        fs.rmSync(backendPath, { recursive: true, force: true })
-
-        if (mainWindow) {
-          mainWindow.webContents.send('download-progress', {
-            type: 'backend',
-            progress: 0,
-            status: 'downloading',
-            message: '正在克隆后端代码...'
-          })
-        }
-
-        await new Promise<void>((resolve, reject) => {
-          const process = spawn(gitPath, [
-            'clone',
-            '--progress',
-            '--verbose',
-            repoUrl,
-            backendPath
-          ], {
-            stdio: 'pipe',
-            env: gitEnv,
-            cwd: appRoot
-          })
-
-          process.stdout?.on('data', (data) => {
-            const output = data.toString()
-            console.log('Git clone output:', output)
-          })
-
-          process.stderr?.on('data', (data) => {
-            const errorOutput = data.toString()
-            console.log('Git clone stderr:', errorOutput)
-          })
-
-          process.on('close', (code) => {
-            console.log(`git clone完成，退出码: ${code}`)
-            if (code === 0) {
-              resolve()
-            } else {
-              reject(new Error(`代码克隆失败，退出码: ${code}`))
-            }
-          })
-
-          process.on('error', (error) => {
-            console.error('git clone进程错误:', error)
-            reject(error)
-          })
-        })
-
-        if (mainWindow) {
-          mainWindow.webContents.send('download-progress', {
-            type: 'backend',
-            progress: 100,
-            status: 'completed',
-            message: '后端代码克隆完成'
-          })
-        }
       }
     } else {
-      // 如果目录不存在，直接克隆
-      console.log('目录不存在，开始克隆...')
+      // 不是 git 仓库，clone 到 tmp，再拷贝出来
+      const tmpDir = path.join(appRoot, 'git_tmp')
+      if (fs.existsSync(tmpDir)) fs.rmSync(tmpDir, { recursive: true, force: true })
+      fs.mkdirSync(tmpDir, { recursive: true })
 
       if (mainWindow) {
         mainWindow.webContents.send('download-progress', {
           type: 'backend',
           progress: 0,
           status: 'downloading',
-          message: '正在克隆后端代码...'
+          message: '正在克隆后端代码...',
         })
       }
-
       await new Promise<void>((resolve, reject) => {
-        const process = spawn(gitPath, [
-          'clone',
-          '--progress',
-          '--verbose',
-          '-b', 'feature/refactor-backend',
-          repoUrl,
-          backendPath
-        ], {
+        const proc = spawn(gitPath, ['clone', '--progress', '--verbose', repoUrl, tmpDir], {
           stdio: 'pipe',
           env: gitEnv,
-          cwd: appRoot
+          cwd: appRoot,
         })
-
-        process.stdout?.on('data', (data) => {
-          const output = data.toString()
-          console.log('Git clone output:', output)
-        })
-
-        process.stderr?.on('data', (data) => {
-          const errorOutput = data.toString()
-          console.log('Git clone stderr:', errorOutput)
-        })
-
-        process.on('close', (code) => {
-          console.log(`git clone完成，退出码: ${code}`)
-          if (code === 0) {
-            resolve()
-          } else {
-            reject(new Error(`代码克隆失败，退出码: ${code}`))
-          }
-        })
-
-        process.on('error', (error) => {
-          console.error('git clone进程错误:', error)
-          reject(error)
-        })
+        proc.stdout?.on('data', d => console.log('git clone:', d.toString()))
+        proc.stderr?.on('data', d => console.log('git clone err:', d.toString()))
+        proc.on('close', code =>
+          code === 0 ? resolve() : reject(new Error(`git clone失败，退出码: ${code}`))
+        )
+        proc.on('error', reject)
       })
+
+      // 复制所有文件到 backendPath（appRoot），包含 .git
+      const tmpFiles = fs.readdirSync(tmpDir)
+      for (const file of tmpFiles) {
+        const src = path.join(tmpDir, file)
+        const dst = path.join(backendPath, file)
+        if (fs.existsSync(dst)) {
+          if (fs.statSync(dst).isDirectory()) fs.rmSync(dst, { recursive: true, force: true })
+          else fs.unlinkSync(dst)
+        }
+        if (fs.statSync(src).isDirectory()) copyDirSync(src, dst)
+        else fs.copyFileSync(src, dst)
+      }
+      fs.rmSync(tmpDir, { recursive: true, force: true })
 
       if (mainWindow) {
         mainWindow.webContents.send('download-progress', {
           type: 'backend',
           progress: 100,
           status: 'completed',
-          message: '后端代码克隆完成'
+          message: '后端代码克隆完成',
         })
       }
     }
-
     return { success: true }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error)
@@ -417,7 +294,7 @@ export async function cloneBackend(appRoot: string, repoUrl = 'https://github.co
         type: 'backend',
         progress: 0,
         status: 'error',
-        message: `后端代码获取失败: ${errorMessage}`
+        message: `后端代码获取失败: ${errorMessage}`,
       })
     }
     return { success: false, error: errorMessage }
