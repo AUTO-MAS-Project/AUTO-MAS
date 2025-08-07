@@ -1,604 +1,78 @@
 <template>
   <div class="initialization-container">
-    <div class="header">
-      <h1>AUTO MAA 初始化向导</h1>
-      <p>欢迎使用 AUTO MAA，让我们来配置您的运行环境</p>
-      <a-button size="large" type="primary" @click="skipToHome">跳转至首页，直接跳过环境安装（仅开发用）</a-button>
-      <a-button size="large" type="default" @click="jumpToLastStep" style="margin-left: 16px;">
-        跳到启动服务（第六步）
-      </a-button>
-    </div>
+    <!-- 管理员权限检查 -->
+    <AdminCheck v-if="!isAdmin" />
 
-    <a-steps 
-      :current="currentStep" 
-      :status="stepStatus"
-      class="init-steps"
-    >
-      <a-step title="主题设置" description="选择您喜欢的主题" />
-      <a-step title="Python 环境" description="安装 Python 运行环境" />
-      <a-step title="Git 工具" description="安装 Git 版本控制工具" />
-      <a-step title="源码获取" description="获取最新的后端代码" />
-      <a-step title="依赖安装" description="安装 Python 依赖包" />
-      <a-step title="启动服务" description="启动后端服务" />
-    </a-steps>
+    <!-- 自动初始化模式 -->
+    <AutoMode 
+      v-if="autoMode"
+      :on-switch-to-manual="switchToManualMode"
+      :on-auto-complete="enterApp"
+    />
 
-    <!-- 全局进度条 -->
-    <div v-if="isProcessing" class="global-progress">
-      <a-progress 
-        :percent="globalProgress" 
-        :status="globalProgressStatus"
-        :show-info="true"
-      />
-      <div class="progress-text">{{ progressText }}</div>
-    </div>
-
-    <div class="step-content">
-        <!-- 步骤 0: 主题设置 -->
-        <div v-if="currentStep === 0" class="step-panel">
-          <h3>选择您的主题偏好</h3>
-          <div class="theme-settings">
-            <div class="setting-group">
-              <label>主题模式</label>
-              <a-radio-group v-model:value="selectedThemeMode" @change="onThemeModeChange">
-                <a-radio-button value="light">浅色模式</a-radio-button>
-                <a-radio-button value="dark">深色模式</a-radio-button>
-                <a-radio-button value="system">跟随系统</a-radio-button>
-              </a-radio-group>
-            </div>
-            <div class="setting-group">
-              <label>主题色彩</label>
-              <div class="color-picker">
-                <div 
-                  v-for="(color, key) in themeColors" 
-                  :key="key"
-                  class="color-option"
-                  :class="{ active: selectedThemeColor === key }"
-                  :style="{ backgroundColor: color }"
-                  @click="onThemeColorChange(key)"
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- 步骤 1: Python 环境 -->
-        <div v-if="currentStep === 1" class="step-panel">
-          <h3>Python 运行环境</h3>
-          <div v-if="!pythonInstalled" class="install-section">
-            <p>需要安装 Python 3.12.0 运行环境（64位嵌入式版本）</p>
-            
-            <div class="mirror-grid">
-              <div 
-                v-for="mirror in pythonMirrors" 
-                :key="mirror.key"
-                class="mirror-card"
-                :class="{ active: selectedPythonMirror === mirror.key }"
-                @click="selectedPythonMirror = mirror.key"
-              >
-                <div class="mirror-header">
-                  <h4>{{ mirror.name }}</h4>
-                  <div class="speed-badge" :class="getSpeedClass(mirror.speed)">
-                    <span v-if="mirror.speed === null && !testingSpeed">未测试</span>
-                    <span v-else-if="testingSpeed">测试中...</span>
-                    <span v-else-if="mirror.speed === 9999">超时</span>
-                    <span v-else>{{ mirror.speed }}ms</span>
-                  </div>
-                </div>
-                <div class="mirror-url">{{ mirror.url }}</div>
-              </div>
-            </div>
-            
-            <div class="test-actions">
-              <a-button @click="testPythonMirrorSpeed" :loading="testingSpeed" type="primary">
-                {{ testingSpeed ? '测速中...' : '重新测速' }}
-              </a-button>
-              <span class="test-note">3秒无响应视为超时</span>
-            </div>
-          </div>
-          <div v-else class="already-installed">
-            <a-result status="success" title="Python 环境已安装" />
-          </div>
-        </div>
-
-        <!-- 步骤 2: Git 工具 -->
-        <div v-if="currentStep === 2" class="step-panel">
-          <h3>Git 版本控制工具</h3>
-          <div v-if="!gitInstalled" class="install-section">
-            <p>需要安装 Git 工具来获取源代码</p>
-            <div class="git-info">
-              <a-alert 
-                message="Git 工具信息" 
-                description="将安装便携版 Git 工具，包含完整的版本控制功能，无需系统安装。"
-                type="info" 
-                show-icon 
-              />
-            </div>
-          </div>
-          <div v-else class="already-installed">
-            <a-result status="success" title="Git 工具已安装" />
-          </div>
-        </div>
-
-        <!-- 步骤 3: 源码获取 -->
-        <div v-if="currentStep === 3" class="step-panel">
-          <h3>获取后端源码</h3>
-          <div class="install-section">
-            <p>{{ backendExists ? '更新最新的后端代码' : '获取后端源代码' }}</p>
-            
-            <div class="mirror-grid">
-              <div 
-                v-for="mirror in gitMirrors" 
-                :key="mirror.key"
-                class="mirror-card"
-                :class="{ active: selectedGitMirror === mirror.key }"
-                @click="selectedGitMirror = mirror.key"
-              >
-                <div class="mirror-header">
-                  <h4>{{ mirror.name }}</h4>
-                  <div class="speed-badge" :class="getSpeedClass(mirror.speed)">
-                    <span v-if="mirror.speed === null && !testingGitSpeed">未测试</span>
-                    <span v-else-if="testingGitSpeed">测试中...</span>
-                    <span v-else-if="mirror.speed === 9999">超时</span>
-                    <span v-else>{{ mirror.speed }}ms</span>
-                  </div>
-                </div>
-                <div class="mirror-url">{{ mirror.url }}</div>
-              </div>
-            </div>
-            
-            <div class="test-actions">
-              <a-button @click="testGitMirrorSpeed" :loading="testingGitSpeed" type="primary">
-                {{ testingGitSpeed ? '测速中...' : '开始测速' }}
-              </a-button>
-              <span class="test-note">3秒无响应视为超时</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- 步骤 4: 依赖安装 -->
-        <div v-if="currentStep === 4" class="step-panel">
-          <h3>安装 Python 依赖包</h3>
-          <div class="install-section">
-            <p>通过 pip 安装项目所需的 Python 依赖包</p>
-            
-            <div class="mirror-grid">
-              <div 
-                v-for="mirror in pipMirrors" 
-                :key="mirror.key"
-                class="mirror-card"
-                :class="{ active: selectedPipMirror === mirror.key }"
-                @click="selectedPipMirror = mirror.key"
-              >
-                <div class="mirror-header">
-                  <h4>{{ mirror.name }}</h4>
-                  <div class="speed-badge" :class="getSpeedClass(mirror.speed)">
-                    <span v-if="mirror.speed === null && !testingPipSpeed">未测试</span>
-                    <span v-else-if="testingPipSpeed">测试中...</span>
-                    <span v-else-if="mirror.speed === 9999">超时</span>
-                    <span v-else>{{ mirror.speed }}ms</span>
-                  </div>
-                </div>
-                <div class="mirror-url">{{ mirror.url }}</div>
-              </div>
-            </div>
-            
-            <div class="test-actions">
-              <a-button @click="testPipMirrorSpeed" :loading="testingPipSpeed" type="primary">
-                {{ testingPipSpeed ? '测速中...' : '重新测速' }}
-              </a-button>
-              <span class="test-note">3秒无响应视为超时</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- 步骤 5: 启动服务 -->
-        <div v-if="currentStep === 5" class="step-panel">
-          <h3>启动后端服务</h3>
-          <div class="service-status">
-            <a-spin :spinning="startingService">
-              <div class="status-info">
-                <p>{{ serviceStatus }}</p>
-                <a-progress v-if="showServiceProgress" :percent="serviceProgress" />
-              </div>
-            </a-spin>
-          </div>
-        </div>
-      </div>
-
-      <div class="step-actions">
-        <a-button 
-          v-if="currentStep > 0" 
-          @click="prevStep"
-          :disabled="isProcessing"
-        >
-          上一步
-        </a-button>
-        
-        <a-button 
-          v-if="currentStep < 5" 
-          type="primary" 
-          @click="nextStep"
-          :loading="isProcessing"
-        >
-          {{ getNextButtonText() }}
-        </a-button>
-        
-        <!-- 第6步启动服务按钮 -->
-        <a-button 
-          v-if="currentStep === 5 && !serviceStarted" 
-          type="primary" 
-          @click="nextStep"
-          :loading="isProcessing"
-          :disabled="!canStartService"
-        >
-          {{ canStartService ? '启动服务' : '请先完成前置步骤' }}
-        </a-button>
-        
-        <!-- 调试：强制启动按钮 -->
-        <a-button 
-          v-if="currentStep === 5 && !serviceStarted && !canStartService" 
-          type="default" 
-          @click="forceStartService"
-          :loading="isProcessing"
-          danger
-        >
-          强制启动（调试用）
-        </a-button>
-        
-        <!-- 服务启动完成后的进入应用按钮 -->
-        <a-button 
-          v-if="currentStep === 5 && serviceStarted" 
-          type="primary" 
-          @click="enterApp"
-        >
-          进入应用
-        </a-button>
-      </div>
-
-      <div v-if="errorMessage" class="error-message">
-        <a-alert 
-          :message="errorMessage" 
-          type="error" 
-          show-icon 
-          closable
-          @close="errorMessage = ''"
-        />
-      </div>
-    </div>
-
+    <!-- 手动初始化模式 -->
+    <ManualMode 
+      v-else
+      ref="manualModeRef"
+      :python-installed="pythonInstalled"
+      :pip-installed="pipInstalled"
+      :git-installed="gitInstalled"
+      :backend-exists="backendExists"
+      :dependencies-installed="dependenciesInstalled"
+      :service-started="serviceStarted"
+      :on-skip-to-home="skipToHome"
+      :on-enter-app="enterApp"
+      :on-progress-update="handleProgressUpdate"
+    />
+  </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { useTheme } from '@/composables/useTheme'
 import { createComponentLogger } from '@/utils/logger'
-import type { InitializationStatus, DownloadProgress } from '@/types/initialization'
-import type { ThemeMode, ThemeColor } from '@/composables/useTheme'
+import { getConfig, saveConfig, setInitialized } from '@/utils/config'
+import AdminCheck from '@/components/initialization/AdminCheck.vue'
+import AutoMode from '@/components/initialization/AutoMode.vue'
+import ManualMode from '@/components/initialization/ManualMode.vue'
+import type { DownloadProgress } from '@/types/initialization'
 
 const router = useRouter()
-const { themeColors, setThemeMode, setThemeColor } = useTheme()
-const logger = createComponentLogger('Initialization')
+const logger = createComponentLogger('InitializationNew')
 
 // 基础状态
-const currentStep = ref(0)
-const stepStatus = ref<'wait' | 'process' | 'finish' | 'error'>('process')
-const errorMessage = ref('')
-const isProcessing = ref(false)
-
-// 主题设置
-const selectedThemeMode = ref<ThemeMode>('system')
-const selectedThemeColor = ref<ThemeColor>('blue')
+const isAdmin = ref(true)
+const autoMode = ref(false)
 
 // 安装状态
 const pythonInstalled = ref(false)
+const pipInstalled = ref(false)
 const gitInstalled = ref(false)
 const backendExists = ref(false)
 const dependenciesInstalled = ref(false)
+const serviceStarted = ref(false)
 
-// 镜像源配置
-const pythonMirrors = ref([
-  { key: 'official', name: 'Python 官方', url: 'https://www.python.org/ftp/python/3.12.0/', speed: null as number | null },
-  { key: 'tsinghua', name: '清华 TUNA 镜像', url: 'https://mirrors.tuna.tsinghua.edu.cn/python/3.12.0/', speed: null as number | null },
-  // { key: 'ustc', name: '中科大镜像', url: 'https://mirrors.ustc.edu.cn/python/3.12.0/', speed: null as number | null },
-  { key: 'huawei', name: '华为云镜像', url: 'https://mirrors.huaweicloud.com/repository/toolkit/python/3.12.0/', speed: null as number | null },
-  { key: 'aliyun', name: '阿里云镜像', url: 'https://mirrors.aliyun.com/python-release/windows/', speed: null as number | null }
-])
+// 组件引用
+const manualModeRef = ref()
 
-const pipMirrors = ref([
-  { key: 'official', name: 'PyPI 官方', url: 'https://pypi.org/simple/', speed: null as number | null },
-  { key: 'tsinghua', name: '清华大学', url: 'https://pypi.tuna.tsinghua.edu.cn/simple/', speed: null as number | null },
-  { key: 'aliyun', name: '阿里云', url: 'https://mirrors.aliyun.com/pypi/simple/', speed: null as number | null },
-  { key: 'douban', name: '豆瓣', url: 'https://pypi.douban.com/simple/', speed: null as number | null },
-  // { key: 'ustc', name: '中科大', url: 'https://pypi.mirrors.ustc.edu.cn/simple/', speed: null as number | null },
-  { key: 'huawei', name: '华中科技大学', url: 'https://pypi.hustunique.com/simple/', speed: null as number | null }
-])
-
-const gitMirrors = ref([
-  { key: 'github', name: 'GitHub 官方', url: 'https://github.com/DLmaster361/AUTO_MAA.git', speed: null as number | null },
-  { key: 'ghfast', name: 'ghfast 镜像', url: 'https://ghfast.top/https://github.com/DLmaster361/AUTO_MAA.git', speed: null as number | null }
-])
-
-// 选中的镜像源
-const selectedPythonMirror = ref('tsinghua')
-const selectedPipMirror = ref('tsinghua')
-const selectedGitMirror = ref('github')
-
-// 测速状态
-const testingSpeed = ref(false)
-const testingPipSpeed = ref(false)
-const testingGitSpeed = ref(false)
-
-// 服务状态
-const startingService = ref(false)
-const showServiceProgress = ref(false)
-const serviceProgress = ref(0)
-const serviceStatus = ref('准备启动后端服务...')
-const serviceStarted = ref(false) // 新增：服务是否已启动成功
-
-// 全局进度条状态
-const globalProgress = ref(0)
-const globalProgressStatus = ref<'normal' | 'exception' | 'success'>('normal')
-const progressText = ref('')
-
-// 检查是否可以启动服务（前置条件都满足）
-const canStartService = computed(() => {
-  const result = pythonInstalled.value && gitInstalled.value && backendExists.value && dependenciesInstalled.value
-  console.log('canStartService 计算结果:', {
-    pythonInstalled: pythonInstalled.value,
-    gitInstalled: gitInstalled.value,
-    backendExists: backendExists.value,
-    dependenciesInstalled: dependenciesInstalled.value,
-    result
-  })
-  return result
-})
-
-// 检查是否全部完成（包括服务启动）
-const allCompleted = computed(() => {
-  const result = pythonInstalled.value && gitInstalled.value && backendExists.value && dependenciesInstalled.value && serviceStarted.value
-  console.log('allCompleted 计算结果:', {
-    pythonInstalled: pythonInstalled.value,
-    gitInstalled: gitInstalled.value,
-    backendExists: backendExists.value,
-    dependenciesInstalled: dependenciesInstalled.value,
-    serviceStarted: serviceStarted.value,
-    result
-  })
-  return result
-})
-
-async function jumpToLastStep() {
-  console.log('跳转到第6步，先检查环境状态')
-  currentStep.value = 5
-  // 跳转到第6步时，重新检查环境状态
-  await checkEnvironment()
-}
-function skipToHome(){
+// 基础功能函数
+function skipToHome() {
   router.push('/home')
 }
 
-// 主题设置相关
-function onThemeModeChange() {
-  setThemeMode(selectedThemeMode.value)
-  saveSettings()
+function switchToManualMode() {
+  autoMode.value = false
 }
 
-function onThemeColorChange(color: ThemeColor) {
-  selectedThemeColor.value = color
-  setThemeColor(color)
-  saveSettings()
-}
-
-// 保存设置到本地存储
-function saveSettings() {
-  const settings = {
-    themeMode: selectedThemeMode.value,
-    themeColor: selectedThemeColor.value,
-    pythonMirror: selectedPythonMirror.value,
-    pipMirror: selectedPipMirror.value,
-    gitMirror: selectedGitMirror.value
-  }
-  localStorage.setItem('init-settings', JSON.stringify(settings))
-}
-
-// 加载设置
-function loadSettings() {
-  const saved = localStorage.getItem('init-settings')
-  if (saved) {
-    try {
-      const settings = JSON.parse(saved)
-      selectedThemeMode.value = settings.themeMode || 'system'
-      selectedThemeColor.value = settings.themeColor || 'blue'
-      selectedPythonMirror.value = settings.pythonMirror || 'tsinghua'
-      selectedPipMirror.value = settings.pipMirror || 'tsinghua'
-      selectedGitMirror.value = settings.gitMirror || 'github'
-    } catch (error) {
-      console.warn('Failed to load settings:', error)
-    }
-  }
-}
-
-// 测速功能 - 带3秒超时
-async function testMirrorWithTimeout(url: string, timeout = 3000): Promise<number> {
-  const startTime = Date.now()
-  
+// 进入应用
+async function enterApp() {
   try {
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), timeout)
-    
-    await fetch(url, { 
-      method: 'HEAD', 
-      mode: 'no-cors',
-      signal: controller.signal
-    })
-    
-    clearTimeout(timeoutId)
-    return Date.now() - startTime
+    // 设置初始化完成标记
+    await setInitialized(true)
+    console.log('设置初始化完成标记，跳转到首页')
+    router.push('/home')
   } catch (error) {
-    return 9999 // 超时或失败
-  }
-}
-
-async function testPythonMirrorSpeed() {
-  testingSpeed.value = true
-  try {
-    // 并发测试所有镜像源
-    const promises = pythonMirrors.value.map(async (mirror) => {
-      mirror.speed = await testMirrorWithTimeout(mirror.url)
-      return mirror
-    })
-    
-    await Promise.all(promises)
-    
-    // 按速度排序，最快的在前面
-    pythonMirrors.value.sort((a, b) => (a.speed || 9999) - (b.speed || 9999))
-    
-    // 自动选择最快的镜像源
-    const fastest = pythonMirrors.value.find(m => m.speed !== 9999)
-    if (fastest) {
-      selectedPythonMirror.value = fastest.key
-    }
-  } finally {
-    testingSpeed.value = false
-  }
-}
-
-async function testPipMirrorSpeed() {
-  testingPipSpeed.value = true
-  try {
-    const promises = pipMirrors.value.map(async (mirror) => {
-      mirror.speed = await testMirrorWithTimeout(mirror.url)
-      return mirror
-    })
-    
-    await Promise.all(promises)
-    pipMirrors.value.sort((a, b) => (a.speed || 9999) - (b.speed || 9999))
-    
-    // 自动选择最快的镜像源
-    const fastest = pipMirrors.value.find(m => m.speed !== 9999)
-    if (fastest) {
-      selectedPipMirror.value = fastest.key
-    }
-  } finally {
-    testingPipSpeed.value = false
-  }
-}
-
-async function testGitMirrorSpeed() {
-  testingGitSpeed.value = true
-  try {
-    const promises = gitMirrors.value.map(async (mirror) => {
-      const url = mirror.url.replace('.git', '')
-      mirror.speed = await testMirrorWithTimeout(url)
-      return mirror
-    })
-    
-    await Promise.all(promises)
-    gitMirrors.value.sort((a, b) => (a.speed || 9999) - (b.speed || 9999))
-    
-    // 自动选择最快的镜像源
-    const fastest = gitMirrors.value.find(m => m.speed !== 9999)
-    if (fastest) {
-      selectedGitMirror.value = fastest.key
-    }
-  } finally {
-    testingGitSpeed.value = false
-  }
-}
-
-// 步骤控制
-function prevStep() {
-  if (currentStep.value > 0) {
-    currentStep.value--
-  }
-}
-
-async function nextStep() {
-  console.log('nextStep 被调用，当前步骤:', currentStep.value)
-  isProcessing.value = true
-  errorMessage.value = ''
-  
-  try {
-    switch (currentStep.value) {
-      case 0: // 主题设置
-        console.log('执行主题设置')
-        saveSettings()
-        break
-      case 1: // Python 环境
-        console.log('执行Python环境安装')
-        if (!pythonInstalled.value) {
-          await installPython()
-        }
-        break
-      case 2: // Git 工具
-        console.log('执行Git工具安装')
-        if (!gitInstalled.value) {
-          await installGit()
-        }
-        break
-      case 3: // 源码获取
-        console.log('执行源码获取')
-        if (!backendExists.value) {
-          await cloneBackend()
-        } else {
-          await updateBackend()
-        }
-        break
-      case 4: // 依赖安装
-        console.log('执行依赖安装')
-        if (!dependenciesInstalled.value) {
-          await installDependencies()
-        }
-        break
-      case 5: // 启动服务
-        console.log('执行启动服务')
-        await startBackendService()
-        break
-    }
-    
-    if (currentStep.value < 5) {
-      currentStep.value++
-      // 进入新步骤时自动开始测速
-      await autoStartSpeedTest()
-    }
-  } catch (error) {
-    console.error('nextStep 执行出错:', error)
-    errorMessage.value = error instanceof Error ? error.message : String(error)
-    stepStatus.value = 'error'
-  } finally {
-    isProcessing.value = false
-  }
-}
-
-// 自动开始测速
-async function autoStartSpeedTest() {
-  switch (currentStep.value) {
-    case 1: // Python 环境
-      if (!pythonInstalled.value) {
-        await testPythonMirrorSpeed()
-      }
-      break
-    case 3: // 源码获取
-      await testGitMirrorSpeed()
-      break
-    case 4: // 依赖安装
-      if (!dependenciesInstalled.value) {
-        await testPipMirrorSpeed()
-      }
-      break
-  }
-}
-
-function getNextButtonText() {
-  switch (currentStep.value) {
-    case 0: return '下一步'
-    case 1: return pythonInstalled.value ? '下一步' : '安装 Python'
-    case 2: return gitInstalled.value ? '下一步' : '安装 Git'
-    case 3: return backendExists.value ? '更新代码' : '获取代码'
-    case 4: return '安装依赖'
-    case 5: return '启动服务'
-    default: return '下一步'
+    console.error('进入应用失败:', error)
   }
 }
 
@@ -616,178 +90,105 @@ async function checkEnvironment() {
     backendExists.value = status.backendExists
     dependenciesInstalled.value = status.dependenciesInstalled
     
-    // 如果所有环境都已准备好，跳到最后一步，但不自动启动服务
-    if (status.isInitialized) {
-      logger.info('环境已初始化完成，跳转到启动服务步骤（但不自动启动）')
-      console.log('环境已初始化完成，跳转到第6步')
-      currentStep.value = 5
-      // 移除自动启动服务的逻辑，让用户手动点击启动
-      // await startBackendService()
+    // 检查配置文件中的状态
+    const config = await getConfig()
+    pipInstalled.value = config.pipInstalled || false
+    
+    // 更新配置文件中的状态，确保与实际环境一致
+    const needsUpdate = 
+      config.pythonInstalled !== status.pythonExists ||
+      config.gitInstalled !== status.gitExists ||
+      config.backendExists !== status.backendExists ||
+      config.dependenciesInstalled !== status.dependenciesInstalled
+    
+    if (needsUpdate) {
+      console.log('更新配置文件中的环境状态')
+      await saveConfig({
+        pythonInstalled: status.pythonExists,
+        gitInstalled: status.gitExists,
+        backendExists: status.backendExists,
+        dependenciesInstalled: status.dependenciesInstalled
+      })
+    }
+    
+    // 检查是否第一次启动
+    const isFirst = config.isFirstLaunch
+    console.log('是否第一次启动:', isFirst)
+    
+    // 检查是否应该进入自动模式
+    console.log('自动模式判断条件:')
+    console.log('- 不是第一次启动:', !isFirst)
+    console.log('- 配置显示已初始化:', config.init)
+    console.log('- 环境检查结果:', status.isInitialized)
+    
+    // 如果配置显示已初始化且不是第一次启动，进入自动模式
+    // 不再依赖环境检查结果，因为配置文件更准确
+    if (!isFirst && config.init) {
+      logger.info('非首次启动且配置显示已初始化，进入自动模式')
+      console.log('进入自动模式，开始自动启动流程')
+      autoMode.value = true
     } else {
-      logger.info('环境未完全初始化，停留在初始化页面')
-      console.log('环境未完全初始化，当前步骤:', currentStep.value)
+      logger.info('首次启动或配置显示未初始化，进入手动模式')
+      console.log('进入手动模式')
+      console.log('原因: isFirst =', isFirst, ', config.init =', config.init)
     }
   } catch (error) {
     const errorMsg = `环境检查失败: ${error instanceof Error ? error.message : String(error)}`
     logger.error('环境检查失败', error)
     console.error('环境检查失败:', error)
-    errorMessage.value = errorMsg
   }
 }
 
-// 安装 Python
-async function installPython() {
-  logger.info('开始安装Python', { mirror: selectedPythonMirror.value })
-  const result = await window.electronAPI.downloadPython(selectedPythonMirror.value)
-  if (result.success) {
-    logger.info('Python安装成功')
-    pythonInstalled.value = true
-  } else {
-    logger.error('Python安装失败', result.error)
-    throw new Error(result.error)
-  }
-}
-
-// 安装依赖
-async function installDependencies() {
-  logger.info('开始安装Python依赖', { mirror: selectedPipMirror.value })
-  const result = await window.electronAPI.installDependencies(selectedPipMirror.value)
-  if (result.success) {
-    logger.info('Python依赖安装成功')
-    dependenciesInstalled.value = true
-  } else {
-    logger.error('Python依赖安装失败', result.error)
-    throw new Error(result.error)
-  }
-}
-
-// 安装 Git
-async function installGit() {
-  logger.info('开始安装Git工具')
-  const result = await window.electronAPI.downloadGit()
-  if (result.success) {
-    logger.info('Git工具安装成功')
-    gitInstalled.value = true
-  } else {
-    logger.error('Git工具安装失败', result.error)
-    throw new Error(result.error)
-  }
-}
-
-// 克隆后端代码
-async function cloneBackend() {
-  const selectedMirror = gitMirrors.value.find(m => m.key === selectedGitMirror.value)
-  logger.info('开始克隆后端代码', { mirror: selectedMirror?.name, url: selectedMirror?.url })
-  const result = await window.electronAPI.cloneBackend(selectedMirror?.url)
-  if (result.success) {
-    logger.info('后端代码克隆成功')
-    backendExists.value = true
-  } else {
-    logger.error('后端代码克隆失败', result.error)
-    throw new Error(result.error)
-  }
-}
-
-// 更新后端代码
-async function updateBackend() {
-  const selectedMirror = gitMirrors.value.find(m => m.key === selectedGitMirror.value)
-  logger.info('开始更新后端代码', { mirror: selectedMirror?.name, url: selectedMirror?.url })
-  const result = await window.electronAPI.updateBackend(selectedMirror?.url)
-  if (!result.success) {
-    logger.error('后端代码更新失败', result.error)
-    throw new Error(result.error)
-  }
-  logger.info('后端代码更新成功')
-}
-
-// 启动后端服务
-async function startBackendService() {
-  startingService.value = true
-  showServiceProgress.value = true
-  serviceStatus.value = '正在启动后端服务...'
-  
-  logger.info('开始启动后端服务')
-  
+// 检查管理员权限
+async function checkAdminPermission() {
   try {
-    const result = await window.electronAPI.startBackend()
-    if (result.success) {
-      serviceProgress.value = 100
-      serviceStatus.value = '后端服务启动成功'
-      serviceStarted.value = true // 设置服务启动成功状态
-      stepStatus.value = 'finish'
-      logger.info('后端服务启动成功')
-    } else {
-      logger.error('后端服务启动失败', result.error)
-      throw new Error(result.error)
-    }
+    const adminStatus = await window.electronAPI.checkAdmin()
+    isAdmin.value = adminStatus
+    console.log('管理员权限检查结果:', adminStatus)
   } catch (error) {
-    serviceStatus.value = '后端服务启动失败'
-    serviceStarted.value = false // 确保启动失败时状态正确
-    logger.error('后端服务启动异常', error)
-    throw error
-  } finally {
-    startingService.value = false
+    logger.error('检查管理员权限失败', error)
+    isAdmin.value = false
   }
 }
 
-// 强制启动服务（调试用）
-async function forceStartService() {
-  console.log('强制启动服务（忽略前置条件检查）')
-  await startBackendService()
-}
-
-// 进入应用
-function enterApp() {
-  // 设置初始化完成标记
-  localStorage.setItem('app-initialized', 'true')
-  console.log('设置初始化完成标记，跳转到首页')
-  router.push('/home')
-}
-
-// 获取速度样式类
-function getSpeedClass(speed: number | null) {
-  if (speed === null) return 'speed-unknown'
-  if (speed === 9999) return 'speed-timeout'
-  if (speed < 500) return 'speed-fast'
-  if (speed < 1500) return 'speed-medium'
-  return 'speed-slow'
-}
-
-// 监听下载进度
-function handleDownloadProgress(progress: DownloadProgress) {
-  // 更新全局进度条
-  globalProgress.value = progress.progress
-  progressText.value = progress.message
-  
-  if (progress.status === 'error') {
-    globalProgressStatus.value = 'exception'
-  } else if (progress.status === 'completed') {
-    globalProgressStatus.value = 'success'
-  } else {
-    globalProgressStatus.value = 'normal'
-  }
-  
-  // 更新服务进度（如果是服务相关）
-  if (progress.type === 'service') {
-    serviceProgress.value = progress.progress
-    serviceStatus.value = progress.message
-  }
+// 处理进度更新
+function handleProgressUpdate(progress: DownloadProgress) {
+  // 这里可以处理全局的进度更新逻辑
+  console.log('进度更新:', progress)
 }
 
 onMounted(async () => {
   console.log('初始化页面 onMounted 开始')
-  loadSettings()
   
-  // 添加延迟，确保页面完全加载后再检查环境
-  setTimeout(async () => {
-    console.log('开始环境检查')
-    await checkEnvironment()
+  // 测试配置系统
+  try {
+    console.log('测试配置系统...')
+    const testConfig = await getConfig()
+    console.log('当前配置:', testConfig)
     
-    // 如果当前步骤需要测速，自动开始测速
-    await autoStartSpeedTest()
-  }, 100)
+    // 测试保存配置
+    await saveConfig({ isFirstLaunch: false })
+    console.log('测试配置保存成功')
+    
+    // 重新读取配置验证
+    const updatedConfig = await getConfig()
+    console.log('更新后的配置:', updatedConfig)
+  } catch (error) {
+    console.error('配置系统测试失败:', error)
+  }
   
-  window.electronAPI.onDownloadProgress(handleDownloadProgress)
+  // 检查管理员权限
+  await checkAdminPermission()
+  
+  if (isAdmin.value) {
+    // 延迟检查环境，确保页面完全加载
+    setTimeout(async () => {
+      console.log('开始环境检查')
+      await checkEnvironment()
+    }, 100)
+  }
+  
+  window.electronAPI.onDownloadProgress(handleProgressUpdate)
   console.log('初始化页面 onMounted 完成')
 })
 
@@ -799,333 +200,13 @@ onUnmounted(() => {
 <style scoped>
 .initialization-container {
   min-height: 100vh;
-  background: var(--ant-color-bg-layout);
   padding: 50px 100px;
-
   margin: 0 auto;
 }
 
-.header {
-  text-align: center;
-  margin-bottom: 40px;
-}
-
-.header h1 {
-  font-size: 28px;
-  font-weight: 600;
-  color: var(--ant-color-text);
-  margin-bottom: 8px;
-}
-
-.header p {
-  font-size: 16px;
-  color: var(--ant-color-text-secondary);
-  margin: 0;
-}
-
-.init-steps {
-  margin-bottom: 40px;
-}
-
-.step-content {
-  min-height: 300px;
-  margin-bottom: 40px;
-}
-
-.step-panel {
-  padding: 20px;
-  background: var(--ant-color-bg-elevated);
-  border-radius: 8px;
-  border: 1px solid var(--ant-color-border);
-}
-
-.step-panel h3 {
-  font-size: 20px;
-  font-weight: 600;
-  color: var(--ant-color-text);
-  margin-bottom: 20px;
-}
-
-.theme-settings {
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-}
-
-.setting-group {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.setting-group label {
-  font-weight: 500;
-  color: var(--ant-color-text);
-}
-
-.color-picker {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.color-option {
-  width: 40px;
-  height: 40px;
-  border-radius: 8px;
-  cursor: pointer;
-  border: 2px solid transparent;
-  transition: all 0.2s ease;
-}
-
-.color-option:hover {
-  transform: scale(1.1);
-}
-
-.color-option.active {
-  border-color: var(--ant-color-text);
-  transform: scale(1.1);
-}
-
-.install-section {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-
-.install-section p {
-  color: var(--ant-color-text-secondary);
-  margin: 0;
-}
-
-.mirror-selection {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.mirror-selection label {
-  font-weight: 500;
-  color: var(--ant-color-text);
-  white-space: nowrap;
-}
-
-.speed-info {
-  color: var(--ant-color-text-tertiary);
-  font-size: 12px;
-}
-
-.already-installed {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  min-height: 200px;
-}
-
-.service-status {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  min-height: 200px;
-}
-
-.status-info {
-  text-align: center;
-  width: 100%;
-}
-
-.status-info p {
-  font-size: 16px;
-  color: var(--ant-color-text);
-  margin-bottom: 16px;
-}
-
-.step-actions {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 20px;
-}
-
-.error-message {
-  margin-top: 20px;
-}
-
-/* 镜像卡片样式 */
-.mirror-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 16px;
-  margin-bottom: 20px;
-}
-
-.mirror-card {
-  padding: 16px;
-  border: 2px solid var(--ant-color-border);
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  background: var(--ant-color-bg-container);
-}
-
-.mirror-card:hover {
-  border-color: var(--ant-color-primary);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-}
-
-.mirror-card.active {
-  border-color: var(--ant-color-primary);
-  background: var(--ant-color-primary-bg);
-}
-
-.mirror-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 8px;
-}
-
-.mirror-header h4 {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--ant-color-text);
-}
-
-.speed-badge {
-  padding: 4px 8px;
-  border-radius: 4px;
-  font-size: 12px;
-  font-weight: 500;
-}
-
-.speed-badge.speed-unknown {
-  background: var(--ant-color-fill-tertiary);
-  color: var(--ant-color-text-tertiary);
-}
-
-.speed-badge.speed-fast {
-  background: var(--ant-color-success-bg);
-  color: var(--ant-color-success);
-}
-
-.speed-badge.speed-medium {
-  background: var(--ant-color-warning-bg);
-  color: var(--ant-color-warning);
-}
-
-.speed-badge.speed-slow {
-  background: var(--ant-color-error-bg);
-  color: var(--ant-color-error);
-}
-
-.speed-badge.speed-timeout {
-  background: var(--ant-color-error-bg);
-  color: var(--ant-color-error);
-}
-
-.mirror-url {
-  font-size: 12px;
-  color: var(--ant-color-text-tertiary);
-  word-break: break-all;
-}
-
-.test-actions {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  justify-content: center;
-}
-
-.test-note {
-  font-size: 12px;
-  color: var(--ant-color-text-tertiary);
-}
-
-.git-info {
-  margin-top: 16px;
-}
-
-/* 全局进度条样式 */
-.global-progress {
-  margin: 20px 0;
-  padding: 20px;
-  background: var(--ant-color-bg-container);
-  border-radius: 8px;
-  border: 1px solid var(--ant-color-border);
-}
-
-.progress-text {
-  text-align: center;
-  margin-top: 8px;
-  font-size: 14px;
-  color: var(--ant-color-text-secondary);
-}
-
-/* 状态信息样式 */
-.status-info {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 16px;
-  border-radius: 6px;
-  margin-bottom: 16px;
-  background: var(--ant-color-fill-quaternary);
-}
-
-.status-info.success {
-  background: var(--ant-color-success-bg);
-  border: 1px solid var(--ant-color-success-border);
-}
-
-.status-icon {
-  font-size: 16px;
-}
-
-.status-icon.info {
-  color: var(--ant-color-info);
-}
-
-.status-icon.success {
-  color: var(--ant-color-success);
-}
-
-.status-icon.loading {
-  color: var(--ant-color-primary);
-}
-
-.service-progress {
-  margin-top: 16px;
-}
-
 @media (max-width: 768px) {
-  .initialization-content {
+  .initialization-container {
     padding: 20px;
-    margin: 10px;
-  }
-  
-  .mirror-grid {
-    grid-template-columns: 1fr;
-  }
-  
-  .mirror-selection {
-    flex-direction: column;
-    align-items: stretch;
-  }
-  
-  .mirror-selection label {
-    text-align: left;
-  }
-  
-  .step-actions {
-    flex-direction: column;
-    gap: 12px;
-  }
-  
-  .test-actions {
-    flex-direction: column;
-    gap: 8px;
   }
 }
 </style>

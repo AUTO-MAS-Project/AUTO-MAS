@@ -1,4 +1,4 @@
-# AUTO MAA Frontend
+# AUTO_MAA Frontend
 
 基于 Vue 3 + TypeScript + Ant Design Vue + Electron 的桌面应用程序。
 
