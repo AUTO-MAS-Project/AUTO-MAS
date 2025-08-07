@@ -220,27 +220,22 @@ onMounted(async () => {
 }
 
 .speed-badge.speed-unknown {
-  background: var(--ant-color-fill-tertiary);
   color: var(--ant-color-text-tertiary);
 }
 
 .speed-badge.speed-fast {
-  background: var(--ant-color-success-bg);
   color: var(--ant-color-success);
 }
 
 .speed-badge.speed-medium {
-  background: var(--ant-color-warning-bg);
   color: var(--ant-color-warning);
 }
 
 .speed-badge.speed-slow {
-  background: var(--ant-color-error-bg);
   color: var(--ant-color-error);
 }
 
 .speed-badge.speed-timeout {
-  background: var(--ant-color-error-bg);
   color: var(--ant-color-error);
 }
 
