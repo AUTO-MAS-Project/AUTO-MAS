@@ -28,7 +28,7 @@ from pathlib import Path
 from typing import List, Any, Dict, Union
 
 
-from utils import dpapi_encrypt, dpapi_decrypt
+from app.utils import dpapi_encrypt, dpapi_decrypt
 
 
 class ConfigValidator:

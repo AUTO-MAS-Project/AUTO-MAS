@@ -35,8 +35,8 @@ from pathlib import Path
 
 from typing import Union, Dict, List, Literal, Optional, Any, Tuple, Callable, TypeVar
 
-from utils import get_logger
-from models.ConfigBase import *
+from app.utils import get_logger
+from app.models.ConfigBase import *
 
 
 logger = get_logger("配置管理")

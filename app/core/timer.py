@@ -22,7 +22,7 @@ import asyncio
 import keyboard
 from datetime import datetime
 
-from utils import get_logger
+from app.utils import get_logger
 from .config import Config
 
 
