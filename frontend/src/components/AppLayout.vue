@@ -12,7 +12,7 @@
       <div class="sider-content">
         <!-- Logo区域 - 点击切换展开/折叠 -->
         <div class="logo" @click="collapsed = !collapsed">
-          <img src="/src/assets/AUTO_MAA.ico" alt="AUTO MAA" class="logo-image" />
+          <img src="/src/assets/AUTO_MAA.ico" alt="AUTO_MAA" class="logo-image" />
           <div v-if="!collapsed" class="logo-text">AUTO_MAA</div>
         </div>
 

@@ -50,9 +50,7 @@ const pipMirrors = ref<Mirror[]>([
   { key: 'official', name: 'PyPI 官方', url: 'https://pypi.org/simple/', speed: null },
   { key: 'tsinghua', name: '清华大学', url: 'https://pypi.tuna.tsinghua.edu.cn/simple/', speed: null },
   { key: 'aliyun', name: '阿里云', url: 'https://mirrors.aliyun.com/pypi/simple/', speed: null },
-  { key: 'douban', name: '豆瓣', url: 'https://pypi.douban.com/simple/', speed: null },
   { key: 'ustc', name: '中科大', url: 'https://pypi.mirrors.ustc.edu.cn/simple/', speed: null },
-  { key: 'huawei', name: '华中科技大学', url: 'https://pypi.hustunique.com/simple/', speed: null }
 ])
 
 const selectedPipMirror = ref('tsinghua')

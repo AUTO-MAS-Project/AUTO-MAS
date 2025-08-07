@@ -13,7 +13,7 @@
   },
   "build": {
     "appId": "xyz.automaa.frontend",
-    "productName": "AUTO MAA",
+    "productName": "AUTO_MAA",
     "files": [
       "dist",
       "dist-electron",

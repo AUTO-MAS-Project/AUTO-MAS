@@ -17,7 +17,7 @@
               alt="MAA"
               class="script-logo"
             />
-            <img v-else src="@/assets/AUTO_MAA.png" alt="AUTO MAA" class="script-logo" />
+            <img v-else src="@/assets/AUTO_MAA.png" alt="AUTO_MAA" class="script-logo" />
           </div>
           <div class="script-info">
             <div class="script-title">{{ record.name }}</div>
