@@ -13,11 +13,11 @@ export function setMainWindow(window: BrowserWindow) {
 
 // Python镜像源URL映射
 const pythonMirrorUrls = {
-  official: 'https://www.python.org/ftp/python/3.13.0/python-3.13.0-embed-amd64.zip',
-  tsinghua: 'https://mirrors.tuna.tsinghua.edu.cn/python/3.13.0/python-3.13.0-embed-amd64.zip',
-  ustc: 'https://mirrors.ustc.edu.cn/python/3.13.0/python-3.13.0-embed-amd64.zip',
-  huawei: 'https://mirrors.huaweicloud.com/repository/toolkit/python/3.13.0/python-3.13.0-embed-amd64.zip',
-  aliyun: 'https://mirrors.aliyun.com/python-release/windows/python-3.13.0-embed-amd64.zip'
+  official: 'https://www.python.org/ftp/python/3.12.0/python-3.12.0-embed-amd64.zip',
+  tsinghua: 'https://mirrors.tuna.tsinghua.edu.cn/python/3.12.0/python-3.12.0-embed-amd64.zip',
+  ustc: 'https://mirrors.ustc.edu.cn/python/3.12.0/python-3.12.0-embed-amd64.zip',
+  huawei: 'https://mirrors.huaweicloud.com/repository/toolkit/python/3.12.0/python-3.12.0-embed-amd64.zip',
+  aliyun: 'https://mirrors.aliyun.com/python-release/windows/python-3.12.0-embed-amd64.zip'
 }
 
 // 检查pip是否已安装
@@ -200,7 +200,7 @@ export async function downloadPython(appRoot: string, mirror = 'ustc'): Promise<
     const stats = fs.statSync(zipPath)
     console.log(`Python压缩包大小: ${stats.size} bytes (${(stats.size / 1024 / 1024).toFixed(2)} MB)`)
     
-    // Python 3.13.0嵌入式版本应该大约30MB，如果小于5MB可能是无效文件
+    // Python 3.12.0嵌入式版本应该大约30MB，如果小于5MB可能是无效文件
     if (stats.size < 5 * 1024 * 1024) { // 5MB
       fs.unlinkSync(zipPath) // 删除无效文件
       throw new Error(`Python下载文件大小异常: ${stats.size} bytes (${(stats.size / 1024).toFixed(2)} KB)，可能是镜像站返回的错误页面或无效文件`)
@@ -233,7 +233,7 @@ export async function downloadPython(appRoot: string, mirror = 'ustc'): Promise<
     console.log(`删除临时文件: ${zipPath}`)
 
     // 启用 site-packages 支持
-    const pthFile = path.join(pythonPath, 'python313._pth')
+    const pthFile = path.join(pythonPath, 'python312._pth')
     if (fs.existsSync(pthFile)) {
       let content = fs.readFileSync(pthFile, 'utf-8')
       content = content.replace(/^#import site/m, 'import site')
@@ -404,7 +404,7 @@ export async function startBackend(appRoot: string): Promise<{ success: boolean;
   try {
     const pythonPath = path.join(appRoot, 'environment', 'python', 'python.exe')
     const backendPath = path.join(appRoot)
-    const mainPyPath = path.join(backendPath, 'app','main.py')
+    const mainPyPath = path.join(backendPath,'main.py')
 
     // 检查文件是否存在
     if (!fs.existsSync(pythonPath)) {
@@ -414,9 +414,11 @@ export async function startBackend(appRoot: string): Promise<{ success: boolean;
       throw new Error('后端主文件不存在')
     }
 
+    console.log(`启动后端指令: "${pythonPath}" "${mainPyPath}"（cwd: ${appRoot}）`)
+
     // 启动后端进程
     const backendProcess = spawn(pythonPath, [mainPyPath], {
-      cwd: backendPath,
+      cwd: appRoot,
       stdio: 'pipe'
     })
 
@@ -433,7 +435,19 @@ export async function startBackend(appRoot: string): Promise<{ success: boolean;
         console.log('Backend output:', output)
         
         // 检查是否包含启动成功的标志
-        if (output.includes('uvicorn') || output.includes('8000')) {
+        if (output.includes('Uvicorn running') || output.includes('8000')) {
+          clearTimeout(timeout)
+          resolve()
+        }
+      })
+
+      // ✅ 重要：也要监听 stderr
+      backendProcess.stderr?.on('data', (data) => {
+        const output = data.toString()
+        console.error('Backend error:', output) // 保留原有日志
+
+        // ✅ 在 stderr 中也检查启动标志
+        if (output.includes('Uvicorn running') || output.includes('8000')) {
           clearTimeout(timeout)
           resolve()
         }

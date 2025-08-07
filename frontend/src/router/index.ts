@@ -4,7 +4,9 @@ import type { RouteRecordRaw } from 'vue-router'
 const routes: RouteRecordRaw[] = [
   {
     path: '/',
-    redirect: '/initialization',
+    redirect: () => {
+      return '/initialization'
+    },
   },
   {
     path: '/initialization',
@@ -83,6 +85,25 @@ const routes: RouteRecordRaw[] = [
 const router = createRouter({
   history: createWebHistory(),
   routes,
+})
+
+// 添加路由守卫，确保在生产环境中也能正确进入初始化页面
+router.beforeEach((to, from, next) => {
+  console.log('路由守卫：', { to: to.path, from: from.path })
+  
+  // 如果访问的不是初始化页面，且没有初始化标记，则重定向到初始化页面
+  if (to.path !== '/initialization') {
+    const isInitialized = localStorage.getItem('app-initialized')
+    console.log('检查初始化状态：', isInitialized)
+    
+    if (!isInitialized) {
+      console.log('应用未初始化，重定向到初始化页面')
+      next('/initialization')
+      return
+    }
+  }
+  
+  next()
 })
 
 export default router
