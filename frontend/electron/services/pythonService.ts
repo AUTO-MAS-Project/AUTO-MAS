@@ -403,7 +403,7 @@ export async function installDependencies(appRoot: string, mirror = 'tsinghua'):
 export async function startBackend(appRoot: string): Promise<{ success: boolean; error?: string }> {
   try {
     const pythonPath = path.join(appRoot, 'environment', 'python', 'python.exe')
-    const backendPath = path.join(appRoot, 'backend')
+    const backendPath = path.join(appRoot)
     const mainPyPath = path.join(backendPath, 'app','main.py')
 
     // 检查文件是否存在
