@@ -4,6 +4,9 @@
       <h1>AUTO MAA 初始化向导</h1>
       <p>欢迎使用 AUTO MAA，让我们来配置您的运行环境</p>
       <a-button size="large" type="primary" @click="skipToHome">跳转至首页，直接跳过环境安装（仅开发用）</a-button>
+      <a-button size="large" type="default" @click="jumpToLastStep" style="margin-left: 16px;">
+        跳到启动服务（第六步）
+      </a-button>
     </div>
 
     <a-steps 
@@ -318,6 +321,9 @@ const allCompleted = computed(() =>
   pythonInstalled.value && gitInstalled.value && backendExists.value && dependenciesInstalled.value
 )
 
+function jumpToLastStep() {
+  currentStep.value = 5
+}
 function skipToHome(){
   router.push('/home')
 }
