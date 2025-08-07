@@ -65,7 +65,7 @@
         <div v-if="currentStep === 1" class="step-panel">
           <h3>Python 运行环境</h3>
           <div v-if="!pythonInstalled" class="install-section">
-            <p>需要安装 Python 3.13.0 运行环境（64位嵌入式版本）</p>
+            <p>需要安装 Python 3.12.0 运行环境（64位嵌入式版本）</p>
             
             <div class="mirror-grid">
               <div 
@@ -223,8 +223,31 @@
           {{ getNextButtonText() }}
         </a-button>
         
+        <!-- 第6步启动服务按钮 -->
         <a-button 
-          v-if="currentStep === 5 && allCompleted" 
+          v-if="currentStep === 5 && !serviceStarted" 
+          type="primary" 
+          @click="nextStep"
+          :loading="isProcessing"
+          :disabled="!canStartService"
+        >
+          {{ canStartService ? '启动服务' : '请先完成前置步骤' }}
+        </a-button>
+        
+        <!-- 调试：强制启动按钮 -->
+        <a-button 
+          v-if="currentStep === 5 && !serviceStarted && !canStartService" 
+          type="default" 
+          @click="forceStartService"
+          :loading="isProcessing"
+          danger
+        >
+          强制启动（调试用）
+        </a-button>
+        
+        <!-- 服务启动完成后的进入应用按钮 -->
+        <a-button 
+          v-if="currentStep === 5 && serviceStarted" 
           type="primary" 
           @click="enterApp"
         >
@@ -275,10 +298,10 @@ const dependenciesInstalled = ref(false)
 
 // 镜像源配置
 const pythonMirrors = ref([
-  { key: 'official', name: 'Python 官方', url: 'https://www.python.org/ftp/python/3.13.0/', speed: null as number | null },
-  { key: 'tsinghua', name: '清华 TUNA 镜像', url: 'https://mirrors.tuna.tsinghua.edu.cn/python/3.13.0/', speed: null as number | null },
-  { key: 'ustc', name: '中科大镜像', url: 'https://mirrors.ustc.edu.cn/python/3.13.0/', speed: null as number | null },
-  { key: 'huawei', name: '华为云镜像', url: 'https://mirrors.huaweicloud.com/repository/toolkit/python/3.13.0/', speed: null as number | null },
+  { key: 'official', name: 'Python 官方', url: 'https://www.python.org/ftp/python/3.12.0/', speed: null as number | null },
+  { key: 'tsinghua', name: '清华 TUNA 镜像', url: 'https://mirrors.tuna.tsinghua.edu.cn/python/3.12.0/', speed: null as number | null },
+  // { key: 'ustc', name: '中科大镜像', url: 'https://mirrors.ustc.edu.cn/python/3.12.0/', speed: null as number | null },
+  { key: 'huawei', name: '华为云镜像', url: 'https://mirrors.huaweicloud.com/repository/toolkit/python/3.12.0/', speed: null as number | null },
   { key: 'aliyun', name: '阿里云镜像', url: 'https://mirrors.aliyun.com/python-release/windows/', speed: null as number | null }
 ])
 
@@ -287,7 +310,7 @@ const pipMirrors = ref([
   { key: 'tsinghua', name: '清华大学', url: 'https://pypi.tuna.tsinghua.edu.cn/simple/', speed: null as number | null },
   { key: 'aliyun', name: '阿里云', url: 'https://mirrors.aliyun.com/pypi/simple/', speed: null as number | null },
   { key: 'douban', name: '豆瓣', url: 'https://pypi.douban.com/simple/', speed: null as number | null },
-  { key: 'ustc', name: '中科大', url: 'https://pypi.mirrors.ustc.edu.cn/simple/', speed: null as number | null },
+  // { key: 'ustc', name: '中科大', url: 'https://pypi.mirrors.ustc.edu.cn/simple/', speed: null as number | null },
   { key: 'huawei', name: '华中科技大学', url: 'https://pypi.hustunique.com/simple/', speed: null as number | null }
 ])
 
@@ -311,18 +334,45 @@ const startingService = ref(false)
 const showServiceProgress = ref(false)
 const serviceProgress = ref(0)
 const serviceStatus = ref('准备启动后端服务...')
+const serviceStarted = ref(false) // 新增：服务是否已启动成功
 
 // 全局进度条状态
 const globalProgress = ref(0)
 const globalProgressStatus = ref<'normal' | 'exception' | 'success'>('normal')
 const progressText = ref('')
 
-const allCompleted = computed(() => 
-  pythonInstalled.value && gitInstalled.value && backendExists.value && dependenciesInstalled.value
-)
+// 检查是否可以启动服务（前置条件都满足）
+const canStartService = computed(() => {
+  const result = pythonInstalled.value && gitInstalled.value && backendExists.value && dependenciesInstalled.value
+  console.log('canStartService 计算结果:', {
+    pythonInstalled: pythonInstalled.value,
+    gitInstalled: gitInstalled.value,
+    backendExists: backendExists.value,
+    dependenciesInstalled: dependenciesInstalled.value,
+    result
+  })
+  return result
+})
 
-function jumpToLastStep() {
+// 检查是否全部完成（包括服务启动）
+const allCompleted = computed(() => {
+  const result = pythonInstalled.value && gitInstalled.value && backendExists.value && dependenciesInstalled.value && serviceStarted.value
+  console.log('allCompleted 计算结果:', {
+    pythonInstalled: pythonInstalled.value,
+    gitInstalled: gitInstalled.value,
+    backendExists: backendExists.value,
+    dependenciesInstalled: dependenciesInstalled.value,
+    serviceStarted: serviceStarted.value,
+    result
+  })
+  return result
+})
+
+async function jumpToLastStep() {
+  console.log('跳转到第6步，先检查环境状态')
   currentStep.value = 5
+  // 跳转到第6步时，重新检查环境状态
+  await checkEnvironment()
 }
 function skipToHome(){
   router.push('/home')
@@ -465,25 +515,30 @@ function prevStep() {
 }
 
 async function nextStep() {
+  console.log('nextStep 被调用，当前步骤:', currentStep.value)
   isProcessing.value = true
   errorMessage.value = ''
   
   try {
     switch (currentStep.value) {
       case 0: // 主题设置
+        console.log('执行主题设置')
         saveSettings()
         break
       case 1: // Python 环境
+        console.log('执行Python环境安装')
         if (!pythonInstalled.value) {
           await installPython()
         }
         break
       case 2: // Git 工具
+        console.log('执行Git工具安装')
         if (!gitInstalled.value) {
           await installGit()
         }
         break
       case 3: // 源码获取
+        console.log('执行源码获取')
         if (!backendExists.value) {
           await cloneBackend()
         } else {
@@ -491,11 +546,13 @@ async function nextStep() {
         }
         break
       case 4: // 依赖安装
+        console.log('执行依赖安装')
         if (!dependenciesInstalled.value) {
           await installDependencies()
         }
         break
       case 5: // 启动服务
+        console.log('执行启动服务')
         await startBackendService()
         break
     }
@@ -506,6 +563,7 @@ async function nextStep() {
       await autoStartSpeedTest()
     }
   } catch (error) {
+    console.error('nextStep 执行出错:', error)
     errorMessage.value = error instanceof Error ? error.message : String(error)
     stepStatus.value = 'error'
   } finally {
@@ -551,21 +609,28 @@ async function checkEnvironment() {
     const status = await window.electronAPI.checkEnvironment()
     
     logger.info('环境检查结果', status)
+    console.log('环境检查结果:', status)
     
     pythonInstalled.value = status.pythonExists
     gitInstalled.value = status.gitExists
     backendExists.value = status.backendExists
     dependenciesInstalled.value = status.dependenciesInstalled
     
-    // 如果所有环境都已准备好，跳到最后一步
+    // 如果所有环境都已准备好，跳到最后一步，但不自动启动服务
     if (status.isInitialized) {
-      logger.info('环境已初始化完成，跳转到启动服务步骤')
+      logger.info('环境已初始化完成，跳转到启动服务步骤（但不自动启动）')
+      console.log('环境已初始化完成，跳转到第6步')
       currentStep.value = 5
-      await startBackendService()
+      // 移除自动启动服务的逻辑，让用户手动点击启动
+      // await startBackendService()
+    } else {
+      logger.info('环境未完全初始化，停留在初始化页面')
+      console.log('环境未完全初始化，当前步骤:', currentStep.value)
     }
   } catch (error) {
     const errorMsg = `环境检查失败: ${error instanceof Error ? error.message : String(error)}`
     logger.error('环境检查失败', error)
+    console.error('环境检查失败:', error)
     errorMessage.value = errorMsg
   }
 }
@@ -648,6 +713,7 @@ async function startBackendService() {
     if (result.success) {
       serviceProgress.value = 100
       serviceStatus.value = '后端服务启动成功'
+      serviceStarted.value = true // 设置服务启动成功状态
       stepStatus.value = 'finish'
       logger.info('后端服务启动成功')
     } else {
@@ -656,6 +722,7 @@ async function startBackendService() {
     }
   } catch (error) {
     serviceStatus.value = '后端服务启动失败'
+    serviceStarted.value = false // 确保启动失败时状态正确
     logger.error('后端服务启动异常', error)
     throw error
   } finally {
@@ -663,8 +730,17 @@ async function startBackendService() {
   }
 }
 
+// 强制启动服务（调试用）
+async function forceStartService() {
+  console.log('强制启动服务（忽略前置条件检查）')
+  await startBackendService()
+}
+
 // 进入应用
 function enterApp() {
+  // 设置初始化完成标记
+  localStorage.setItem('app-initialized', 'true')
+  console.log('设置初始化完成标记，跳转到首页')
   router.push('/home')
 }
 
@@ -699,12 +775,20 @@ function handleDownloadProgress(progress: DownloadProgress) {
 }
 
 onMounted(async () => {
+  console.log('初始化页面 onMounted 开始')
   loadSettings()
-  await checkEnvironment()
-  window.electronAPI.onDownloadProgress(handleDownloadProgress)
   
-  // 如果当前步骤需要测速，自动开始测速
-  await autoStartSpeedTest()
+  // 添加延迟，确保页面完全加载后再检查环境
+  setTimeout(async () => {
+    console.log('开始环境检查')
+    await checkEnvironment()
+    
+    // 如果当前步骤需要测速，自动开始测速
+    await autoStartSpeedTest()
+  }, 100)
+  
+  window.electronAPI.onDownloadProgress(handleDownloadProgress)
+  console.log('初始化页面 onMounted 完成')
 })
 
 onUnmounted(() => {
