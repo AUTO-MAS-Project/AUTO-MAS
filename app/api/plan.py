@@ -22,8 +22,8 @@
 
 from fastapi import APIRouter, Body
 
-from core import Config
-from models.schema import *
+from app.core import Config
+from app.models.schema import *
 
 router = APIRouter(prefix="/api/plan", tags=["计划管理"])
 

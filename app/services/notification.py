@@ -30,8 +30,8 @@ from pathlib import Path
 
 from plyer import notification
 
-from core import Config
-from utils import get_logger, ImageUtils
+from app.core import Config
+from app.utils import get_logger, ImageUtils
 
 logger = get_logger("通知服务")
 

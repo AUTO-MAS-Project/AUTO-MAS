@@ -24,7 +24,7 @@ import os
 import sys
 import ctypes
 
-from utils import get_logger
+from app.utils import get_logger
 
 logger = get_logger("主程序")
 
@@ -50,7 +50,7 @@ def main():
         @asynccontextmanager
         async def lifespan(app: FastAPI):
 
-            from core import Config, MainTimer
+            from app.core import Config, MainTimer
 
             await Config.init_config()
             main_timer = asyncio.create_task(MainTimer.second_task())
@@ -67,7 +67,7 @@ def main():
             logger.info("----------------END----------------")
 
         from fastapi.middleware.cors import CORSMiddleware
-        from api import (
+        from app.api import (
             info_router,
             scripts_router,
             plan_router,

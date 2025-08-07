@@ -30,8 +30,8 @@ import getpass
 from datetime import datetime
 from pathlib import Path
 
-from core import Config
-from utils.logger import get_logger
+from app.core import Config
+from app.utils.logger import get_logger
 
 logger = get_logger("系统服务")
 
