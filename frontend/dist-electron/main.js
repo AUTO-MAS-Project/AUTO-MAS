@@ -36,10 +36,48 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const electron_1 = require("electron");
 const path = __importStar(require("path"));
 const fs = __importStar(require("fs"));
+const child_process_1 = require("child_process");
 const environmentService_1 = require("./services/environmentService");
 const downloadService_1 = require("./services/downloadService");
 const pythonService_1 = require("./services/pythonService");
 const gitService_1 = require("./services/gitService");
+// 检查是否以管理员权限运行
+function isRunningAsAdmin() {
+    try {
+        // 在Windows上，尝试写入系统目录来检查管理员权限
+        if (process.platform === 'win32') {
+            const testPath = path.join(process.env.WINDIR || 'C:\\Windows', 'temp', 'admin-test.tmp');
+            try {
+                fs.writeFileSync(testPath, 'test');
+                fs.unlinkSync(testPath);
+                return true;
+            }
+            catch {
+                return false;
+            }
+        }
+        return true; // 非Windows系统暂时返回true
+    }
+    catch {
+        return false;
+    }
+}
+// 重新以管理员权限启动应用
+function restartAsAdmin() {
+    if (process.platform === 'win32') {
+        const exePath = process.execPath;
+        const args = process.argv.slice(1);
+        // 使用PowerShell以管理员权限启动
+        (0, child_process_1.spawn)('powershell', [
+            '-Command',
+            `Start-Process -FilePath "${exePath}" -ArgumentList "${args.join(' ')}" -Verb RunAs`
+        ], {
+            detached: true,
+            stdio: 'ignore'
+        });
+        electron_1.app.quit();
+    }
+}
 let mainWindow = null;
 function createWindow() {
     mainWindow = new electron_1.BrowserWindow({
@@ -109,6 +147,10 @@ electron_1.ipcMain.handle('download-python', async (event, mirror = 'tsinghua') 
     const appRoot = (0, environmentService_1.getAppRoot)();
     return (0, pythonService_1.downloadPython)(appRoot, mirror);
 });
+electron_1.ipcMain.handle('install-pip', async () => {
+    const appRoot = (0, environmentService_1.getAppRoot)();
+    return (0, pythonService_1.installPipPackage)(appRoot);
+});
 electron_1.ipcMain.handle('install-dependencies', async (event, mirror = 'tsinghua') => {
     const appRoot = (0, environmentService_1.getAppRoot)();
     return (0, pythonService_1.installDependencies)(appRoot, mirror);
@@ -129,6 +171,54 @@ electron_1.ipcMain.handle('clone-backend', async (event, repoUrl = 'https://gith
 electron_1.ipcMain.handle('update-backend', async (event, repoUrl = 'https://github.com/DLmaster361/AUTO_MAA.git') => {
     const appRoot = (0, environmentService_1.getAppRoot)();
     return (0, gitService_1.cloneBackend)(appRoot, repoUrl); // 使用相同的逻辑，会自动判断是pull还是clone
+});
+// 配置文件操作
+electron_1.ipcMain.handle('save-config', async (event, config) => {
+    try {
+        const appRoot = (0, environmentService_1.getAppRoot)();
+        const configDir = path.join(appRoot, 'config');
+        const configPath = path.join(configDir, 'frontend_config.json');
+        // 确保config目录存在
+        if (!fs.existsSync(configDir)) {
+            fs.mkdirSync(configDir, { recursive: true });
+        }
+        fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8');
+        console.log(`配置已保存到: ${configPath}`);
+    }
+    catch (error) {
+        console.error('保存配置文件失败:', error);
+        throw error;
+    }
+});
+electron_1.ipcMain.handle('load-config', async () => {
+    try {
+        const appRoot = (0, environmentService_1.getAppRoot)();
+        const configPath = path.join(appRoot, 'config', 'frontend_config.json');
+        if (fs.existsSync(configPath)) {
+            const config = fs.readFileSync(configPath, 'utf8');
+            console.log(`从文件加载配置: ${configPath}`);
+            return JSON.parse(config);
+        }
+        return null;
+    }
+    catch (error) {
+        console.error('加载配置文件失败:', error);
+        return null;
+    }
+});
+electron_1.ipcMain.handle('reset-config', async () => {
+    try {
+        const appRoot = (0, environmentService_1.getAppRoot)();
+        const configPath = path.join(appRoot, 'config', 'frontend_config.json');
+        if (fs.existsSync(configPath)) {
+            fs.unlinkSync(configPath);
+            console.log(`配置文件已删除: ${configPath}`);
+        }
+    }
+    catch (error) {
+        console.error('重置配置文件失败:', error);
+        throw error;
+    }
 });
 // 日志文件操作
 electron_1.ipcMain.handle('save-logs-to-file', async (event, logs) => {
@@ -164,8 +254,23 @@ electron_1.ipcMain.handle('load-logs-from-file', async () => {
         return null;
     }
 });
+// 管理员权限相关
+electron_1.ipcMain.handle('check-admin', () => {
+    return isRunningAsAdmin();
+});
+electron_1.ipcMain.handle('restart-as-admin', () => {
+    restartAsAdmin();
+});
 // 应用生命周期
-electron_1.app.whenReady().then(createWindow);
+electron_1.app.whenReady().then(() => {
+    // 检查管理员权限
+    if (!isRunningAsAdmin()) {
+        console.log('应用未以管理员权限运行');
+        // 在生产环境中，可以选择是否强制要求管理员权限
+        // 这里先创建窗口，让用户选择是否重新启动
+    }
+    createWindow();
+});
 electron_1.app.on('window-all-closed', () => {
     if (process.platform !== 'darwin')
         electron_1.app.quit();

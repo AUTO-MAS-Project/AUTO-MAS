@@ -1,10 +1,50 @@
 import { app, BrowserWindow, ipcMain, dialog } from 'electron'
 import * as path from 'path'
 import * as fs from 'fs'
+import { spawn } from 'child_process'
 import { getAppRoot, checkEnvironment } from './services/environmentService'
 import { setMainWindow as setDownloadMainWindow } from './services/downloadService'
-import { setMainWindow as setPythonMainWindow, downloadPython, installDependencies, startBackend } from './services/pythonService'
+import { setMainWindow as setPythonMainWindow, downloadPython, installPipPackage, installDependencies, startBackend } from './services/pythonService'
 import { setMainWindow as setGitMainWindow, downloadGit, cloneBackend } from './services/gitService'
+
+// 检查是否以管理员权限运行
+function isRunningAsAdmin(): boolean {
+  try {
+    // 在Windows上，尝试写入系统目录来检查管理员权限
+    if (process.platform === 'win32') {
+      const testPath = path.join(process.env.WINDIR || 'C:\\Windows', 'temp', 'admin-test.tmp')
+      try {
+        fs.writeFileSync(testPath, 'test')
+        fs.unlinkSync(testPath)
+        return true
+      } catch {
+        return false
+      }
+    }
+    return true // 非Windows系统暂时返回true
+  } catch {
+    return false
+  }
+}
+
+// 重新以管理员权限启动应用
+function restartAsAdmin(): void {
+  if (process.platform === 'win32') {
+    const exePath = process.execPath
+    const args = process.argv.slice(1)
+    
+    // 使用PowerShell以管理员权限启动
+    spawn('powershell', [
+      '-Command',
+      `Start-Process -FilePath "${exePath}" -ArgumentList "${args.join(' ')}" -Verb RunAs`
+    ], {
+      detached: true,
+      stdio: 'ignore'
+    })
+    
+    app.quit()
+  }
+}
 
 let mainWindow: BrowserWindow | null = null
 
@@ -83,6 +123,11 @@ ipcMain.handle('download-python', async (event, mirror = 'tsinghua') => {
   return downloadPython(appRoot, mirror)
 })
 
+ipcMain.handle('install-pip', async () => {
+  const appRoot = getAppRoot()
+  return installPipPackage(appRoot)
+})
+
 ipcMain.handle('install-dependencies', async (event, mirror = 'tsinghua') => {
   const appRoot = getAppRoot()
   return installDependencies(appRoot, mirror)
@@ -107,6 +152,59 @@ ipcMain.handle('clone-backend', async (event, repoUrl = 'https://github.com/DLma
 ipcMain.handle('update-backend', async (event, repoUrl = 'https://github.com/DLmaster361/AUTO_MAA.git') => {
   const appRoot = getAppRoot()
   return cloneBackend(appRoot, repoUrl) // 使用相同的逻辑，会自动判断是pull还是clone
+})
+
+// 配置文件操作
+ipcMain.handle('save-config', async (event, config) => {
+  try {
+    const appRoot = getAppRoot()
+    const configDir = path.join(appRoot, 'config')
+    const configPath = path.join(configDir, 'frontend_config.json')
+
+    // 确保config目录存在
+    if (!fs.existsSync(configDir)) {
+      fs.mkdirSync(configDir, { recursive: true })
+    }
+
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8')
+    console.log(`配置已保存到: ${configPath}`)
+  } catch (error) {
+    console.error('保存配置文件失败:', error)
+    throw error
+  }
+})
+
+ipcMain.handle('load-config', async () => {
+  try {
+    const appRoot = getAppRoot()
+    const configPath = path.join(appRoot, 'config', 'frontend_config.json')
+
+    if (fs.existsSync(configPath)) {
+      const config = fs.readFileSync(configPath, 'utf8')
+      console.log(`从文件加载配置: ${configPath}`)
+      return JSON.parse(config)
+    }
+
+    return null
+  } catch (error) {
+    console.error('加载配置文件失败:', error)
+    return null
+  }
+})
+
+ipcMain.handle('reset-config', async () => {
+  try {
+    const appRoot = getAppRoot()
+    const configPath = path.join(appRoot, 'config', 'frontend_config.json')
+
+    if (fs.existsSync(configPath)) {
+      fs.unlinkSync(configPath)
+      console.log(`配置文件已删除: ${configPath}`)
+    }
+  } catch (error) {
+    console.error('重置配置文件失败:', error)
+    throw error
+  }
 })
 
 // 日志文件操作
@@ -147,8 +245,25 @@ ipcMain.handle('load-logs-from-file', async () => {
   }
 })
 
+// 管理员权限相关
+ipcMain.handle('check-admin', () => {
+  return isRunningAsAdmin()
+})
+
+ipcMain.handle('restart-as-admin', () => {
+  restartAsAdmin()
+})
+
 // 应用生命周期
-app.whenReady().then(createWindow)
+app.whenReady().then(() => {
+  // 检查管理员权限
+  if (!isRunningAsAdmin()) {
+    console.log('应用未以管理员权限运行')
+    // 在生产环境中，可以选择是否强制要求管理员权限
+    // 这里先创建窗口，让用户选择是否重新启动
+  }
+  createWindow()
+})
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()

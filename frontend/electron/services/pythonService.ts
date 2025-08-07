@@ -399,6 +399,50 @@ export async function installDependencies(appRoot: string, mirror = 'tsinghua'):
   }
 }
 
+// 导出pip安装函数
+export async function installPipPackage(appRoot: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const pythonPath = path.join(appRoot, 'environment', 'python')
+    
+    if (!fs.existsSync(pythonPath)) {
+      throw new Error('Python环境不存在，请先安装Python')
+    }
+
+    if (mainWindow) {
+      mainWindow.webContents.send('download-progress', {
+        type: 'pip',
+        progress: 0,
+        status: 'installing',
+        message: '正在安装pip...'
+      })
+    }
+
+    await installPip(pythonPath, appRoot)
+
+    if (mainWindow) {
+      mainWindow.webContents.send('download-progress', {
+        type: 'pip',
+        progress: 100,
+        status: 'completed',
+        message: 'pip安装完成'
+      })
+    }
+
+    return { success: true }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    if (mainWindow) {
+      mainWindow.webContents.send('download-progress', {
+        type: 'pip',
+        progress: 0,
+        status: 'error',
+        message: `pip安装失败: ${errorMessage}`
+      })
+    }
+    return { success: false, error: errorMessage }
+  }
+}
+
 // 启动后端
 export async function startBackend(appRoot: string): Promise<{ success: boolean; error?: string }> {
   try {
