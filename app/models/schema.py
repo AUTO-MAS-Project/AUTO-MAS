@@ -192,10 +192,22 @@ class DispatchIn(BaseModel):
     )
 
 
-class DispatchCreateIn(DispatchIn):
+class TaskCreateIn(DispatchIn):
     mode: Literal["自动代理", "人工排查", "设置脚本"] = Field(
         ..., description="任务模式"
     )
+
+
+class TaskCreateOut(OutBase):
+    taskId: str = Field(..., description="新创建的任务ID")
+
+
+class TaskMessage(BaseModel):
+    type: Literal["Update", "Message", "Info", "Signal"] = Field(
+        ...,
+        description="消息类型 Update: 更新数据, Message: 请求弹出对话框, Info: 需要在UI显示的消息, Signal: 程序信号",
+    )
+    data: Dict[str, Any] = Field(..., description="消息数据，具体内容根据type类型而定")
 
 
 class SettingGetOut(OutBase):

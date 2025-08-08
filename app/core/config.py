@@ -20,20 +20,18 @@
 #   Contact: DLmaster_361@163.com
 
 
-import sqlite3
-import json
-import sys
-import shutil
 import re
-import base64
+import shutil
+import asyncio
 import requests
 import truststore
 import calendar
 from datetime import datetime, timedelta, date
 from pathlib import Path
+from collections import defaultdict
 
 
-from typing import Union, Dict, List, Literal, Optional, Any, Tuple, Callable, TypeVar
+from typing import Dict, List, Literal, Optional, Any
 
 from app.utils import get_logger
 from app.models.ConfigBase import *
@@ -546,7 +544,7 @@ class GeneralConfig(ConfigBase):
 
 class AppConfig(GlobalConfig):
 
-    VERSION = "4.5.0.1"
+    VERSION = "5.0.0.1"
 
     CLASS_BOOK = {
         "MAA": MaaConfig,
@@ -580,15 +578,11 @@ class AppConfig(GlobalConfig):
     def __init__(self) -> None:
         super().__init__(if_save_multi_config=False)
 
-        self.root_path = Path.cwd()
+        self.log_path = Path.cwd() / "debug/app.log"
+        self.database_path = Path.cwd() / "data/data.db"
+        self.config_path = Path.cwd() / "config"
+        self.key_path = Path.cwd() / "data/key"
 
-        self.log_path = self.root_path / "debug/app.log"
-        self.database_path = self.root_path / "data/data.db"
-        self.config_path = self.root_path / "config"
-        self.key_path = self.root_path / "data/key"
-
-        # self.PASSWORD = ""
-        self.running_list = []
         self.silence_dict: Dict[Path, datetime] = {}
         self.power_sign = "NoAction"
         self.if_ignore_silence = False
@@ -597,7 +591,7 @@ class AppConfig(GlobalConfig):
         logger.info("===================================")
         logger.info("AUTO_MAA 后端应用程序")
         logger.info(f"版本号： v{self.VERSION}")
-        logger.info(f"根目录： {self.root_path}")
+        logger.info(f"工作目录： {Path.cwd()}")
         logger.info("===================================")
 
         # 检查目录
@@ -617,6 +611,10 @@ class AppConfig(GlobalConfig):
         await self.ScriptConfig.connect(self.config_path / "ScriptConfig.json")
         await self.PlanConfig.connect(self.config_path / "PlanConfig.json")
         await self.QueueConfig.connect(self.config_path / "QueueConfig.json")
+
+        from .task_manager import TaskManager
+
+        self.task_dict = TaskManager.task_dict
 
         # self.check_data()
         logger.info("程序初始化完成")
@@ -653,6 +651,11 @@ class AppConfig(GlobalConfig):
 
         uid = uuid.UUID(script_id)
 
+        if uid in self.task_dict:
+            raise RuntimeError(
+                f"Cannot update script {script_id} while tasks are running."
+            )
+
         for group, items in data.items():
             for name, value in items.items():
                 logger.debug(f"更新脚本配置：{script_id} - {group}.{name} = {value}")
@@ -665,7 +668,14 @@ class AppConfig(GlobalConfig):
 
         logger.info(f"删除脚本配置：{script_id}")
 
-        await self.ScriptConfig.remove(uuid.UUID(script_id))
+        uid = uuid.UUID(script_id)
+
+        if uid in self.task_dict:
+            raise RuntimeError(
+                f"Cannot delete script {script_id} while tasks are running."
+            )
+
+        await self.ScriptConfig.remove(uid)
 
     async def reorder_script(self, index_list: list[str]) -> None:
         """重新排序脚本"""
@@ -1057,6 +1067,344 @@ class AppConfig(GlobalConfig):
             raise ConnectionError(
                 "Cannot connect to the notice server. Please check your network connection or try again later."
             )
+
+    async def save_maa_log(self, log_path: Path, logs: list, maa_result: str) -> bool:
+        """
+        保存MAA日志并生成对应统计数据
+
+        :param log_path: 日志文件保存路径
+        :type log_path: Path
+        :param logs: 日志内容列表
+        :type logs: list
+        :param maa_result: MAA 结果
+        :type maa_result: str
+        :return: 是否包含6★招募
+        :rtype: bool
+        """
+
+        logger.info(f"开始处理 MAA 日志，日志长度: {len(logs)}，日志标记：{maa_result}")
+
+        data = {
+            "recruit_statistics": defaultdict(int),
+            "drop_statistics": defaultdict(dict),
+            "maa_result": maa_result,
+        }
+
+        if_six_star = False
+
+        # 公招统计（仅统计招募到的）
+        confirmed_recruit = False
+        current_star_level = None
+        i = 0
+        while i < len(logs):
+            if "公招识别结果:" in logs[i]:
+                current_star_level = None  # 每次识别公招时清空之前的星级
+                i += 1
+                while i < len(logs) and "Tags" not in logs[i]:  # 读取所有公招标签
+                    i += 1
+
+                if i < len(logs) and "Tags" in logs[i]:  # 识别星级
+                    star_match = re.search(r"(\d+)\s*★ Tags", logs[i])
+                    if star_match:
+                        current_star_level = f"{star_match.group(1)}★"
+                        if current_star_level == "6★":
+                            if_six_star = True
+
+            if "已确认招募" in logs[i]:  # 只有确认招募后才统计
+                confirmed_recruit = True
+
+            if confirmed_recruit and current_star_level:
+                data["recruit_statistics"][current_star_level] += 1
+                confirmed_recruit = False  # 重置，等待下一次公招
+                current_star_level = None  # 清空已处理的星级
+
+            i += 1
+
+        # 掉落统计
+        # 存储所有关卡的掉落统计
+        all_stage_drops = {}
+
+        # 查找所有Fight任务的开始和结束位置
+        fight_tasks = []
+        for i, line in enumerate(logs):
+            if "开始任务: Fight" in line or "开始任务: 刷理智" in line:
+                # 查找对应的任务结束位置
+                end_index = -1
+                for j in range(i + 1, len(logs)):
+                    if "完成任务: Fight" in logs[j] or "完成任务: 刷理智" in logs[j]:
+                        end_index = j
+                        break
+                    # 如果遇到新的Fight任务开始，则当前任务没有正常结束
+                    if j < len(logs) and (
+                        "开始任务: Fight" in logs[j] or "开始任务: 刷理智" in logs[j]
+                    ):
+                        break
+
+                # 如果找到了结束位置，记录这个任务的范围
+                if end_index != -1:
+                    fight_tasks.append((i, end_index))
+
+        # 处理每个Fight任务
+        for start_idx, end_idx in fight_tasks:
+            # 提取当前任务的日志
+            task_logs = logs[start_idx : end_idx + 1]
+
+            # 查找任务中的最后一次掉落统计
+            last_drop_stats = {}
+            current_stage = None
+
+            for line in task_logs:
+                # 匹配掉落统计行，如"1-7 掉落统计:"
+                drop_match = re.search(r"([A-Za-z0-9\-]+) 掉落统计:", line)
+                if drop_match:
+                    # 发现新的掉落统计，重置当前关卡的掉落数据
+                    current_stage = drop_match.group(1)
+                    last_drop_stats = {}
+                    continue
+
+                # 如果已经找到了关卡，处理掉落物
+                if current_stage:
+                    item_match: List[str] = re.findall(
+                        r"^(?!\[)(\S+?)\s*:\s*([\d,]+)(?:\s*\(\+[\d,]+\))?",
+                        line,
+                        re.M,
+                    )
+                    for item, total in item_match:
+                        # 解析数值时去掉逗号 （如 2,160 -> 2160）
+                        total = int(total.replace(",", ""))
+
+                        # 黑名单
+                        if item not in [
+                            "当前次数",
+                            "理智",
+                            "最快截图耗时",
+                            "专精等级",
+                            "剩余时间",
+                        ]:
+                            last_drop_stats[item] = total
+
+            # 如果任务中有掉落统计，更新总统计
+            if current_stage and last_drop_stats:
+                if current_stage not in all_stage_drops:
+                    all_stage_drops[current_stage] = {}
+
+                # 累加掉落数据
+                for item, count in last_drop_stats.items():
+                    all_stage_drops[current_stage].setdefault(item, 0)
+                    all_stage_drops[current_stage][item] += count
+
+        # 将累加后的掉落数据保存到结果中
+        data["drop_statistics"] = all_stage_drops
+
+        # 保存日志
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        with log_path.open("w", encoding="utf-8") as f:
+            f.writelines(logs)
+        with log_path.with_suffix(".json").open("w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=4)
+
+        logger.success(
+            f"MAA 日志统计完成，日志路径：{log_path}",
+        )
+
+        return if_six_star
+
+    async def save_general_log(
+        self, log_path: Path, logs: list, general_result: str
+    ) -> None:
+        """
+        保存通用日志并生成对应统计数据
+
+        :param log_path: 日志文件保存路径
+        :param logs: 日志内容列表
+        :param general_result: 待保存的日志结果信息
+        """
+
+        logger.info(
+            f"开始处理通用日志，日志长度: {len(logs)}，日志标记：{general_result}"
+        )
+
+        data: Dict[str, str] = {"general_result": general_result}
+
+        # 保存日志
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        with log_path.with_suffix(".log").open("w", encoding="utf-8") as f:
+            f.writelines(logs)
+        with log_path.with_suffix(".json").open("w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=4)
+
+        logger.success(f"通用日志统计完成，日志路径：{log_path.with_suffix('.log')}")
+
+    def merge_statistic_info(self, statistic_path_list: List[Path]) -> dict:
+        """
+        合并指定数据统计信息文件
+
+        :param statistic_path_list: 需要合并的统计信息文件路径列表
+        :return: 合并后的统计信息字典
+        """
+
+        logger.info(f"开始合并统计信息文件，共计 {len(statistic_path_list)} 个文件")
+
+        data: Dict[str, Any] = {"index": {}}
+
+        for json_file in statistic_path_list:
+
+            with json_file.open("r", encoding="utf-8") as f:
+                single_data = json.load(f)
+
+            for key in single_data.keys():
+
+                if key not in data:
+                    data[key] = {}
+
+                # 合并公招统计
+                if key == "recruit_statistics":
+
+                    for star_level, count in single_data[key].items():
+                        if star_level not in data[key]:
+                            data[key][star_level] = 0
+                        data[key][star_level] += count
+
+                # 合并掉落统计
+                elif key == "drop_statistics":
+
+                    for stage, drops in single_data[key].items():
+                        if stage not in data[key]:
+                            data[key][stage] = {}  # 初始化关卡
+
+                        for item, count in drops.items():
+
+                            if item not in data[key][stage]:
+                                data[key][stage][item] = 0
+                            data[key][stage][item] += count
+
+                # 录入运行结果
+                elif key in ["maa_result", "general_result"]:
+
+                    actual_date = datetime.strptime(
+                        f"{json_file.parent.parent.name} {json_file.stem}",
+                        "%Y-%m-%d %H-%M-%S",
+                    ) + timedelta(
+                        days=(
+                            1
+                            if datetime.strptime(json_file.stem, "%H-%M-%S").time()
+                            < datetime.min.time().replace(hour=4)
+                            else 0
+                        )
+                    )
+
+                    if single_data[key] != "Success!":
+                        if "error_info" not in data:
+                            data["error_info"] = {}
+                        data["error_info"][actual_date.strftime("%d日 %H:%M:%S")] = (
+                            single_data[key]
+                        )
+
+                    data["index"][actual_date] = [
+                        actual_date.strftime("%d日 %H:%M:%S"),
+                        ("完成" if single_data[key] == "Success!" else "异常"),
+                        json_file,
+                    ]
+
+        data["index"] = [data["index"][_] for _ in sorted(data["index"])]
+
+        logger.success(
+            f"统计信息合并完成，共计 {len(data['index'])} 条记录",
+        )
+
+        return {k: v for k, v in data.items() if v}
+
+    def search_history(
+        self, mode: str, start_date: datetime, end_date: datetime
+    ) -> dict:
+        """
+        搜索指定范围内的历史记录
+
+        :param mode: 合并模式（按日合并、按周合并、按月合并）
+        :param start_date: 开始日期
+        :param end_date: 结束日期
+        :return: 搜索到的历史记录字典
+        """
+
+        logger.info(
+            f"开始搜索历史记录，合并模式：{mode}，日期范围：{start_date} 至 {end_date}"
+        )
+
+        history_dict = {}
+
+        for date_folder in (Path.cwd() / "history").iterdir():
+            if not date_folder.is_dir():
+                continue  # 只处理日期文件夹
+
+            try:
+
+                date = datetime.strptime(date_folder.name, "%Y-%m-%d")
+
+                if not (start_date <= date <= end_date):
+                    continue  # 只统计在范围内的日期
+
+                if mode == "按日合并":
+                    date_name = date.strftime("%Y年 %m月 %d日")
+                elif mode == "按周合并":
+                    year, week, _ = date.isocalendar()
+                    date_name = f"{year}年 第{week}周"
+                elif mode == "按月合并":
+                    date_name = date.strftime("%Y年 %m月")
+
+                if date_name not in history_dict:
+                    history_dict[date_name] = {}
+
+                for user_folder in date_folder.iterdir():
+                    if not user_folder.is_dir():
+                        continue  # 只处理用户文件夹
+
+                    if user_folder.stem not in history_dict[date_name]:
+                        history_dict[date_name][user_folder.stem] = list(
+                            user_folder.with_suffix("").glob("*.json")
+                        )
+                    else:
+                        history_dict[date_name][user_folder.stem] += list(
+                            user_folder.with_suffix("").glob("*.json")
+                        )
+
+            except ValueError:
+                logger.warning(f"非日期格式的目录: {date_folder}")
+
+        logger.success(f"历史记录搜索完成，共计 {len(history_dict)} 条记录")
+
+        return {
+            k: v
+            for k, v in sorted(history_dict.items(), key=lambda x: x[0], reverse=True)
+        }
+
+    def clean_old_history(self):
+        """删除超过用户设定天数的历史记录文件（基于目录日期）"""
+
+        if self.get("Function", "HistoryRetentionTime") == 0:
+            logger.info("历史记录永久保留，跳过历史记录清理")
+            return
+
+        logger.info("开始清理超过设定天数的历史记录")
+
+        deleted_count = 0
+
+        for date_folder in (Path.cwd() / "history").iterdir():
+            if not date_folder.is_dir():
+                continue  # 只处理日期文件夹
+
+            try:
+                # 只检查 `YYYY-MM-DD` 格式的文件夹
+                folder_date = datetime.strptime(date_folder.name, "%Y-%m-%d")
+                if datetime.now() - folder_date > timedelta(
+                    days=self.get("Function", "HistoryRetentionTime")
+                ):
+                    shutil.rmtree(date_folder, ignore_errors=True)
+                    deleted_count += 1
+                    logger.info(f"已删除超期日志目录: {date_folder}")
+            except ValueError:
+                logger.warning(f"非日期格式的目录: {date_folder}")
+
+        logger.success(f"清理完成: {deleted_count} 个日期目录")
 
 
 Config = AppConfig()

@@ -193,6 +193,9 @@ class ConfigItem:
         self.name = name
         self.value: Any = default
         self.validator = validator or ConfigValidator()
+        self.is_locked = False
+
+        self.setValue(default)
 
     def setValue(self, value: Any):
         """
@@ -210,6 +213,11 @@ class ConfigItem:
             else self.value
         ) == value:
             return
+
+        if self.is_locked:
+            raise ValueError(
+                f"Config item '{self.group}.{self.name}' is locked and cannot be modified."
+            )
 
         # deepcopy new value
         try:
@@ -232,6 +240,18 @@ class ConfigItem:
             return dpapi_decrypt(self.value)
         return self.value
 
+    def lock(self):
+        """
+        锁定配置项，锁定后无法修改配置项值
+        """
+        self.is_locked = True
+
+    def unlock(self):
+        """
+        解锁配置项，解锁后可以修改配置项值
+        """
+        self.is_locked = False
+
 
 class ConfigBase:
     """
@@ -249,6 +269,7 @@ class ConfigBase:
 
         self.file: None | Path = None
         self.if_save_multi_config = if_save_multi_config
+        self.is_locked = False
 
     async def connect(self, path: Path):
         """
@@ -264,6 +285,9 @@ class ConfigBase:
             raise ValueError(
                 "The config file must be a JSON file with '.json' extension."
             )
+
+        if self.is_locked:
+            raise ValueError("Config is locked and cannot be modified.")
 
         self.file = path
 
@@ -291,6 +315,9 @@ class ConfigBase:
         data: dict
             配置数据字典
         """
+
+        if self.is_locked:
+            raise ValueError("Config is locked and cannot be modified.")
 
         # update the value of config item
         if data.get("SubConfigsInfo"):
@@ -395,6 +422,32 @@ class ConfigBase:
                 indent=4,
             )
 
+    async def lock(self):
+        """
+        锁定配置项，锁定后无法修改配置项值
+        """
+
+        self.is_locked = True
+
+        for name in dir(self):
+            item = getattr(self, name)
+            if isinstance(item, ConfigItem | MultipleConfig):
+                item.lock()
+
+    async def unlock(self):
+        """
+        解锁配置项，解锁后可以修改配置项值
+        """
+
+        self.is_locked = False
+
+        for name in dir(self):
+            item = getattr(self, name)
+            if isinstance(item, ConfigItem):
+                item.unlock()
+            elif isinstance(item, MultipleConfig):
+                await item.unlock()
+
 
 class MultipleConfig:
     """
@@ -424,6 +477,7 @@ class MultipleConfig:
         self.file: None | Path = None
         self.order: List[uuid.UUID] = []
         self.data: Dict[uuid.UUID, ConfigBase] = {}
+        self.is_locked = False
 
     def __getitem__(self, key: uuid.UUID) -> ConfigBase:
         """允许通过 config[uuid] 访问配置项"""
@@ -462,6 +516,9 @@ class MultipleConfig:
                 "The config file must be a JSON file with '.json' extension."
             )
 
+        if self.is_locked:
+            raise ValueError("Config is locked and cannot be modified.")
+
         self.file = path
 
         if not self.file.exists():
@@ -489,6 +546,9 @@ class MultipleConfig:
         data: dict
             配置数据字典
         """
+
+        if self.is_locked:
+            raise ValueError("Config is locked and cannot be modified.")
 
         if not data.get("instances"):
             self.order = []
@@ -614,8 +674,16 @@ class MultipleConfig:
             要移除的配置项的唯一标识符
         """
 
+        if self.is_locked:
+            raise ValueError("Config is locked and cannot be modified.")
+
         if uid not in self.data:
             raise ValueError(f"Config item with uid {uid} does not exist.")
+
+        if self.data[uid].is_locked:
+            raise ValueError(
+                f"Config item with uid {uid} is locked and cannot be removed."
+            )
 
         self.data.pop(uid)
         self.order.remove(uid)
@@ -640,6 +708,26 @@ class MultipleConfig:
 
         if self.file:
             await self.save()
+
+    async def lock(self):
+        """
+        锁定配置项，锁定后无法修改配置项值
+        """
+
+        self.is_locked = True
+
+        for item in self.values():
+            await item.lock()
+
+    async def unlock(self):
+        """
+        解锁配置项，解锁后可以修改配置项值
+        """
+
+        self.is_locked = False
+
+        for item in self.values():
+            await item.unlock()
 
     def keys(self):
         """返回配置项的所有唯一标识符"""

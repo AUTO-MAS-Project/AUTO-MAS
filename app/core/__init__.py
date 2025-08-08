@@ -23,7 +23,15 @@ __version__ = "5.0.0"
 __author__ = "DLmaster361 <DLmaster_361@163.com>"
 __license__ = "GPL-3.0 license"
 
-from .config import Config
+from .config import Config, MaaConfig, GeneralConfig, MaaUserConfig
 from .timer import MainTimer
+from .task_manager import TaskManager
 
-__all__ = ["Config", "MainTimer"]
+__all__ = [
+    "Config",
+    "MaaConfig",
+    "GeneralConfig",
+    "MainTimer",
+    "TaskManager",
+    "MaaUserConfig",
+]

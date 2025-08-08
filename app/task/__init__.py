@@ -25,5 +25,6 @@ __license__ = "GPL-3.0 license"
 
 
 from .skland import skland_sign_in
+from .MAA import MaaManager
 
-__all__ = ["skland_sign_in"]
+__all__ = ["skland_sign_in", "MaaManager"]
