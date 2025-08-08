@@ -34,8 +34,8 @@ import hashlib
 import requests
 from urllib import parse
 
-from core import Config
-from utils.logger import get_logger
+from app.core import Config
+from app.utils.logger import get_logger
 
 logger = get_logger("森空岛签到任务")
 

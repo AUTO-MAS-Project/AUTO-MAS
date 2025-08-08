@@ -20,19 +20,25 @@
 #   Contact: DLmaster_361@163.com
 
 
-from fastapi import APIRouter, Body
+import uuid
+from fastapi import APIRouter, WebSocket, Body, Path
 
-from app.core import Config
+from app.core import Config, TaskManager
 from app.models.schema import *
 
 router = APIRouter(prefix="/api/dispatch", tags=["任务调度"])
 
 
-@router.post("/add", summary="添加任务", response_model=OutBase, status_code=200)
-async def add_plan(plan: DispatchIn = Body(...)) -> OutBase:
+@router.post(
+    "/start", summary="添加任务", response_model=TaskCreateOut, status_code=200
+)
+async def add_plan(task: TaskCreateIn = Body(...)) -> TaskCreateOut:
 
-    uid, config = await Config.add_plan(plan.type)
-    return OutBase(code=200, status="success", message="任务添加成功")
+    try:
+        task_id = await TaskManager.add_task(task.mode, task.taskId)
+    except Exception as e:
+        return TaskCreateOut(code=500, status="error", message=str(e), taskId="")
+    return TaskCreateOut(taskId=str(task_id))
 
 
 @router.post("/stop", summary="中止任务", response_model=OutBase, status_code=200)
@@ -45,13 +51,18 @@ async def stop_plan(plan: DispatchIn = Body(...)) -> OutBase:
     return OutBase()
 
 
-@router.post(
-    "/order", summary="重新排序计划表", response_model=OutBase, status_code=200
-)
-async def reorder_plan(plan: PlanReorderIn = Body(...)) -> OutBase:
-
+@router.websocket("/ws/{taskId}")
+async def websocket_endpoint(
+    websocket: WebSocket, taskId: str = Path(..., description="要连接的任务ID")
+):
     try:
-        await Config.reorder_plan(plan.indexList)
-    except Exception as e:
-        return OutBase(code=500, status="error", message=str(e))
-    return OutBase()
+        uid = uuid.UUID(taskId)
+    except ValueError:
+        await websocket.close(code=1008, reason="无效的任务ID")
+        return
+
+    if uid in TaskManager.connection_events:
+        TaskManager.websocket_dict[uid] = websocket
+        TaskManager.connection_events[uid].set()
+    else:
+        await websocket.close(code=1008, reason="任务不存在或已结束")

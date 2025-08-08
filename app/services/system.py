@@ -303,7 +303,7 @@ class _SystemHandler:
         win32gui.EnumWindows(callback, window_info)
         return window_info
 
-    def kill_process(self, path: Path) -> None:
+    async def kill_process(self, path: Path) -> None:
         """
         根据路径中止进程
 
@@ -312,7 +312,7 @@ class _SystemHandler:
 
         logger.info(f"开始中止进程: {path}")
 
-        for pid in self.search_pids(path):
+        for pid in await self.search_pids(path):
             killprocess = subprocess.Popen(
                 f"taskkill /F /T /PID {pid}",
                 shell=True,
@@ -322,7 +322,7 @@ class _SystemHandler:
 
         logger.success(f"进程已中止: {path}")
 
-    def search_pids(self, path: Path) -> list:
+    async def search_pids(self, path: Path) -> list:
         """
         根据路径查找进程PID
 
