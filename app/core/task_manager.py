@@ -210,7 +210,7 @@ class _TaskManager:
                     lambda t: asyncio.create_task(task_item.final_task(t))
                 )
 
-    async def stop_task(self, task_id: uuid.UUID) -> None:
+    async def stop_task(self, task_id: str) -> None:
         """
         中止任务
 
@@ -219,10 +219,12 @@ class _TaskManager:
 
         logger.info(f"中止任务：{task_id}")
 
-        if task_id not in self.task_dict:
-            raise ValueError(f"The task {task_id} is not running.")
+        uid = uuid.UUID(task_id)
 
-        self.task_dict[task_id].cancel()
+        if uid not in self.task_dict:
+            raise ValueError(f"The task {uid} is not running.")
+
+        self.task_dict[uid].cancel()
 
     async def remove_task(
         self, task: asyncio.Task, mode: str, task_id: uuid.UUID
