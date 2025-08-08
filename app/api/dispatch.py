@@ -32,7 +32,7 @@ router = APIRouter(prefix="/api/dispatch", tags=["任务调度"])
 @router.post(
     "/start", summary="添加任务", response_model=TaskCreateOut, status_code=200
 )
-async def add_plan(task: TaskCreateIn = Body(...)) -> TaskCreateOut:
+async def add_task(task: TaskCreateIn = Body(...)) -> TaskCreateOut:
 
     try:
         task_id = await TaskManager.add_task(task.mode, task.taskId)
@@ -42,10 +42,10 @@ async def add_plan(task: TaskCreateIn = Body(...)) -> TaskCreateOut:
 
 
 @router.post("/stop", summary="中止任务", response_model=OutBase, status_code=200)
-async def stop_plan(plan: DispatchIn = Body(...)) -> OutBase:
+async def stop_task(task: DispatchIn = Body(...)) -> OutBase:
 
     try:
-        await Config.del_plan(plan.taskId)
+        await TaskManager.stop_task(task.taskId)
     except Exception as e:
         return OutBase(code=500, status="error", message=str(e))
     return OutBase()
