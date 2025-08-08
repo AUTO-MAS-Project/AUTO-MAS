@@ -124,7 +124,7 @@ async function startAutoProcess() {
     // todo 记得修改这里，为了调试加长了5000s
     setTimeout(() => {
       props.onAutoComplete()
-    }, 5000000)
+    }, 500)
   } catch (error) {
     logger.error('自动启动流程失败', error)
     progressText.value = `自动启动失败: ${error instanceof Error ? error.message : String(error)}`

@@ -120,7 +120,7 @@ async function checkEnvironment() {
     console.log('- 不是第一次启动:', !isFirst)
     console.log('- 配置显示已初始化:', config.init)
     console.log('- 环境检查结果:', status.isInitialized)
-    
+
     // 如果配置显示已初始化且不是第一次启动，进入自动模式
     // 不再依赖环境检查结果，因为配置文件更准确
     if (!isFirst && config.init) {
@@ -202,6 +202,8 @@ onUnmounted(() => {
   min-height: 100vh;
   padding: 50px 100px;
   margin: 0 auto;
+  background-color: var(--ant-color-bg-layout);
+  color: var(--ant-color-text);
 }
 
 @media (max-width: 768px) {
