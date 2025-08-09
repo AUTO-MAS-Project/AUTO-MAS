@@ -22,6 +22,7 @@
 import uuid
 import asyncio
 from fastapi import WebSocket
+from functools import partial
 from typing import Dict, Optional
 
 from .config import Config, MaaConfig, GeneralConfig, QueueConfig
@@ -82,8 +83,21 @@ class _TaskManager:
             raise RuntimeError(f"The task {task_id} is already running.")
 
         logger.info(f"创建任务：{task_id}，模式：{mode}")
+        self.task_dict[task_id] = asyncio.create_task(
+            self.run_task(mode, task_id, actual_id)
+        )
+        self.task_dict[task_id].add_done_callback(
+            lambda t: asyncio.create_task(self.remove_task(t, mode, task_id))
+        )
 
-        # 创建任务实例并连接信号
+        return task_id
+
+    # @logger.catch
+    async def run_task(
+        self, mode: str, task_id: uuid.UUID, actual_id: Optional[uuid.UUID]
+    ):
+
+        # 等待连接信号
         if task_id in self.connection_events:
             self.connection_events[task_id].clear()
         else:
@@ -95,20 +109,6 @@ class _TaskManager:
             raise RuntimeError(f"The task {task_id} is not connected to a WebSocket.")
 
         logger.info(f"开始运行任务：{task_id}，模式：{mode}")
-
-        self.task_dict[task_id] = asyncio.create_task(
-            self.run_task(mode, task_id, actual_id)
-        )
-        self.task_dict[task_id].add_done_callback(
-            lambda t: asyncio.create_task(self.remove_task(t, mode, task_id))
-        )
-
-        return task_id
-
-    @logger.catch
-    async def run_task(
-        self, mode: str, task_id: uuid.UUID, actual_id: Optional[uuid.UUID]
-    ):
 
         websocket = self.websocket_dict[task_id]
 
@@ -129,10 +129,13 @@ class _TaskManager:
                 )
                 return
 
-            task = asyncio.create_task(task_item.run())
-            task.add_done_callback(
+            uid = actual_id or uuid.uuid4()
+            self.task_dict[uid] = asyncio.create_task(task_item.run())
+            self.task_dict[uid].add_done_callback(
                 lambda t: asyncio.create_task(task_item.final_task(t))
             )
+            self.task_dict[uid].add_done_callback(partial(self.task_dict.pop, uid))
+            await self.task_dict[uid]
 
         else:
 
@@ -205,10 +208,14 @@ class _TaskManager:
                     )
                     continue
 
-                task = asyncio.create_task(task_item.run())
-                task.add_done_callback(
+                self.task_dict[script_id] = asyncio.create_task(task_item.run())
+                self.task_dict[script_id].add_done_callback(
                     lambda t: asyncio.create_task(task_item.final_task(t))
                 )
+                self.task_dict[script_id].add_done_callback(
+                    partial(self.task_dict.pop, script_id)
+                )
+                await self.task_dict[script_id]
 
     async def stop_task(self, task_id: str) -> None:
         """
@@ -249,14 +256,13 @@ class _TaskManager:
             await task
         except asyncio.CancelledError:
             logger.info(f"任务 {task_id} 已结束")
-            self.task_dict.pop(task_id)
+        self.task_dict.pop(task_id)
 
-        websocket = self.websocket_dict.pop(task_id, None)
+        websocket = self.websocket_dict.get(task_id, None)
         if websocket:
             await websocket.send_json(
                 TaskMessage(type="Signal", data={"Accomplish": "无描述"}).model_dump()
             )
-            await websocket.close()
 
 
 TaskManager = _TaskManager()

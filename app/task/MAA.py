@@ -105,7 +105,7 @@ class MaaManager:
         if not self.maa_set_path.exists():
             return "MAA配置文件不存在，请检查MAA路径设置！"
         if (self.mode != "设置脚本" or self.user_id is not None) and not (
-            Path.cwd() / f"data/{self.script_id}/Default/gui.json"
+            Path.cwd() / f"data/{self.script_id}/Default/ConfigFile/gui.json"
         ).exists():
             return "未完成 MAA 全局设置，请先设置 MAA！"
         return "Success!"
@@ -118,11 +118,11 @@ class MaaManager:
         self.begin_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         await self.configure()
-        check_result = self.check_config()
-        if check_result != "Success!":
-            logger.error(f"未通过配置检查：{check_result}")
+        self.check_result = self.check_config()
+        if self.check_result != "Success!":
+            logger.error(f"未通过配置检查：{self.check_result}")
             await self.websocket.send_json(
-                TaskMessage(type="Info", data={"Error": check_result}).model_dump()
+                TaskMessage(type="Info", data={"Error": self.check_result}).model_dump()
             )
             return
 
@@ -145,7 +145,7 @@ class MaaManager:
                 }
                 for uid, config in self.user_config.items()
                 if config.get("Info", "Status")
-                and config.get("Info", "RemainedDay") > 0
+                and config.get("Info", "RemainedDay") != 0
             ]
             self.user_list = sorted(
                 self.user_list,
@@ -184,7 +184,7 @@ class MaaManager:
                 if self.script_config.get(
                     "Run", "ProxyTimesLimit"
                 ) == 0 or user_data.get("Data", "ProxyTimes") < self.script_config.get(
-                    "RunSet", "ProxyTimesLimit"
+                    "Run", "ProxyTimesLimit"
                 ):
                     user["status"] = "运行"
                     await self.websocket.send_json(
@@ -201,9 +201,7 @@ class MaaManager:
                     )
                     continue
 
-                logger.info(
-                    f"开始代理用户: {user['user_id']}",
-                )
+                logger.info(f"开始代理用户: {user['user_id']}")
 
                 # 详细模式用户首次代理需打开模拟器
                 if user_data.get("Info", "Mode") == "详细":
@@ -214,8 +212,8 @@ class MaaManager:
                     "Annihilation": bool(
                         user_data.get("Info", "Annihilation") == "Close"
                     ),
-                    "Routine": user_data.get("Info", "Mode") == "简洁"
-                    or not user_data.get("Info", "Routine"),
+                    "Routine": user_data.get("Info", "Mode") == "复杂"
+                    and not user_data.get("Info", "Routine"),
                 }
 
                 user_logs_list = []
@@ -380,18 +378,18 @@ class MaaManager:
                     )
 
                     # 尝试次数循环
-                    for i in range(user_data.get("Run", "RunTimesLimit")):
+                    for i in range(self.script_config.get("Run", "RunTimesLimit")):
 
                         if run_book[mode]:
                             break
 
                         logger.info(
-                            f"用户 {user['name']} - 模式: {mode} - 尝试次数: {i + 1}/{user_data.get('Run','RunTimesLimit')}",
+                            f"用户 {user['name']} - 模式: {mode} - 尝试次数: {i + 1}/{self.script_config.get('Run','RunTimesLimit')}",
                         )
 
                         # 配置MAA
                         if isinstance(user_data, MaaUserConfig):
-                            set = await self.set_maa(mode, index, user_data)
+                            set = await self.set_maa(mode, user_data, index)
                         # 记录当前时间
                         self.log_start_time = datetime.now()
 
@@ -681,6 +679,7 @@ class MaaManager:
                                     },
                                 ).model_dump()
                             )
+                            await self.set_maa("Update")
                             subprocess.Popen(
                                 [self.maa_exe_path],
                                 creationflags=subprocess.CREATE_NO_WINDOW,
@@ -742,174 +741,164 @@ class MaaManager:
                     ).model_dump()
                 )
 
-    #     # 人工排查模式
-    #     elif self.mode == "人工排查":
+        #     # 人工排查模式
+        #     elif self.mode == "人工排查":
 
-    #         # 人工排查时，屏蔽静默操作
-    #         logger.info(
-    #             "人工排查任务开始，屏蔽静默操作",
-    #         )
-    #         Config.if_ignore_silence = True
+        #         # 人工排查时，屏蔽静默操作
+        #         logger.info(
+        #             "人工排查任务开始，屏蔽静默操作",
+        #         )
+        #         Config.if_ignore_silence = True
 
-    #         # 标记是否需要启动模拟器
-    #         self.if_open_emulator = True
-    #         # 标识排查模式
-    #         for _ in self.user_list:
-    #             _[0] += "_排查模式"
+        #         # 标记是否需要启动模拟器
+        #         self.if_open_emulator = True
+        #         # 标识排查模式
+        #         for _ in self.user_list:
+        #             _[0] += "_排查模式"
 
-    #         # 开始排查
-    #         for user in self.user_list:
+        #         # 开始排查
+        #         for user in self.user_list:
 
-    #             user_data = self.data[user[2]]["Config"]
+        #             user_data = self.data[user[2]]["Config"]
 
-    #             if self.isInterruptionRequested:
-    #                 break
+        #             if self.isInterruptionRequested:
+        #                 break
 
-    #             logger.info(f"开始排查用户: {user[0]}", )
+        #             logger.info(f"开始排查用户: {user[0]}", )
 
-    #             user[1] = "运行"
-    #             self.update_user_list.emit(self.user_list)
+        #             user[1] = "运行"
+        #             self.update_user_list.emit(self.user_list)
 
-    #             if user_data["Info"]["Mode"] == "详细":
-    #                 self.if_open_emulator = True
+        #             if user_data["Info"]["Mode"] == "详细":
+        #                 self.if_open_emulator = True
 
-    #             run_book = [False for _ in range(2)]
+        #             run_book = [False for _ in range(2)]
 
-    #             # 启动重试循环
-    #             while not self.isInterruptionRequested:
+        #             # 启动重试循环
+        #             while not self.isInterruptionRequested:
 
-    #                 # 配置MAA
-    #                 self.set_maa("人工排查", user[2])
+        #                 # 配置MAA
+        #                 self.set_maa("人工排查", user[2])
 
-    #                 # 记录当前时间
-    #                 self.log_start_time = datetime.now()
-    #                 # 创建MAA任务
-    #                 logger.info(
-    #                     f"启动MAA进程：{self.maa_exe_path}",
-    #                     ,
-    #                 )
-    #                 self.maa_process_manager.open_process(self.maa_exe_path, [], 0)
+        #                 # 记录当前时间
+        #                 self.log_start_time = datetime.now()
+        #                 # 创建MAA任务
+        #                 logger.info(
+        #                     f"启动MAA进程：{self.maa_exe_path}",
+        #                     ,
+        #                 )
+        #                 self.maa_process_manager.open_process(self.maa_exe_path, [], 0)
 
-    #                 # 监测MAA运行状态
-    #                 self.log_check_mode = "人工排查"
-    #                 self.start_monitor()
+        #                 # 监测MAA运行状态
+        #                 self.log_check_mode = "人工排查"
+        #                 self.start_monitor()
 
-    #                 if self.maa_result == "Success!":
-    #                     logger.info(
-    #                         f"用户: {user[0]} - MAA进程成功登录PRTS",
-    #                         ,
-    #                     )
-    #                     run_book[0] = True
-    #                     self.update_log_text.emit("检测到MAA进程成功登录PRTS")
-    #                 else:
-    #                     logger.error(
-    #                         f"用户: {user[0]} - MAA未能正确登录到PRTS: {self.maa_result}",
-    #                         ,
-    #                     )
-    #                     self.update_log_text.emit(
-    #                         f"{self.maa_result}\n正在中止相关程序\n请等待10s"
-    #                     )
-    #                     # 无命令行中止MAA与其子程序
-    #                     logger.info(
-    #                         f"中止MAA进程：{self.maa_exe_path}",
-    #                         ,
-    #                     )
-    #                     self.maa_process_manager.kill(if_force=True)
-    #                     System.kill_process(self.maa_exe_path)
-    #                     self.if_open_emulator = True
-    #                     self.sleep(10)
+        #                 if self.maa_result == "Success!":
+        #                     logger.info(
+        #                         f"用户: {user[0]} - MAA进程成功登录PRTS",
+        #                         ,
+        #                     )
+        #                     run_book[0] = True
+        #                     self.update_log_text.emit("检测到MAA进程成功登录PRTS")
+        #                 else:
+        #                     logger.error(
+        #                         f"用户: {user[0]} - MAA未能正确登录到PRTS: {self.maa_result}",
+        #                         ,
+        #                     )
+        #                     self.update_log_text.emit(
+        #                         f"{self.maa_result}\n正在中止相关程序\n请等待10s"
+        #                     )
+        #                     # 无命令行中止MAA与其子程序
+        #                     logger.info(
+        #                         f"中止MAA进程：{self.maa_exe_path}",
+        #                         ,
+        #                     )
+        #                     self.maa_process_manager.kill(if_force=True)
+        #                     System.kill_process(self.maa_exe_path)
+        #                     self.if_open_emulator = True
+        #                     self.sleep(10)
 
-    #                 # 登录成功，结束循环
-    #                 if run_book[0]:
-    #                     break
-    #                 # 登录失败，询问是否结束循环
-    #                 elif not self.isInterruptionRequested:
+        #                 # 登录成功，结束循环
+        #                 if run_book[0]:
+        #                     break
+        #                 # 登录失败，询问是否结束循环
+        #                 elif not self.isInterruptionRequested:
 
-    #                     self.play_sound.emit("排查重试")
-    #                     if not self.push_question(
-    #                         "操作提示", "MAA未能正确登录到PRTS，是否重试？"
-    #                     ):
-    #                         break
+        #                     self.play_sound.emit("排查重试")
+        #                     if not self.push_question(
+        #                         "操作提示", "MAA未能正确登录到PRTS，是否重试？"
+        #                     ):
+        #                         break
 
-    #             # 登录成功，录入人工排查情况
-    #             if run_book[0] and not self.isInterruptionRequested:
+        #             # 登录成功，录入人工排查情况
+        #             if run_book[0] and not self.isInterruptionRequested:
 
-    #                 self.play_sound.emit("排查录入")
-    #                 if self.push_question(
-    #                     "操作提示", "请检查用户代理情况，该用户是否正确完成代理任务？"
-    #                 ):
-    #                     run_book[1] = True
+        #                 self.play_sound.emit("排查录入")
+        #                 if self.push_question(
+        #                     "操作提示", "请检查用户代理情况，该用户是否正确完成代理任务？"
+        #                 ):
+        #                     run_book[1] = True
 
-    #             # 结果录入
-    #             if run_book[0] and run_book[1]:
-    #                 logger.info(
-    #                     f"用户 {user[0]} 通过人工排查",
-    #                 )
-    #                 user_data["Data"]["IfPassCheck"] = True
-    #                 user[1] = "完成"
-    #             else:
-    #                 logger.info(
-    #                     f"用户 {user[0]} 未通过人工排查",
-    #                     ,
-    #                 )
-    #                 user_data["Data"]["IfPassCheck"] = False
-    #                 user[1] = "异常"
+        #             # 结果录入
+        #             if run_book[0] and run_book[1]:
+        #                 logger.info(
+        #                     f"用户 {user[0]} 通过人工排查",
+        #                 )
+        #                 user_data["Data"]["IfPassCheck"] = True
+        #                 user[1] = "完成"
+        #             else:
+        #                 logger.info(
+        #                     f"用户 {user[0]} 未通过人工排查",
+        #                     ,
+        #                 )
+        #                 user_data["Data"]["IfPassCheck"] = False
+        #                 user[1] = "异常"
 
-    #             self.update_user_list.emit(self.user_list)
+        #             self.update_user_list.emit(self.user_list)
 
-    #         # 解除静默操作屏蔽
-    #         logger.info(
-    #             "人工排查任务结束，解除静默操作屏蔽",
-    #         )
-    #         Config.if_ignore_silence = False
+        #         # 解除静默操作屏蔽
+        #         logger.info(
+        #             "人工排查任务结束，解除静默操作屏蔽",
+        #         )
+        #         Config.if_ignore_silence = False
 
-    #     # 设置MAA模式
-    #     elif "设置MAA" in self.mode:
+        # 设置MAA模式
+        elif self.mode == "设置脚本":
 
-    #         # 配置MAA
-    #         self.set_maa(self.mode, "")
-    #         # 创建MAA任务
-    #         logger.info(
-    #             f"启动MAA进程：{self.maa_exe_path}",
-    #         )
-    #         self.maa_process_manager.open_process(self.maa_exe_path, [], 0)
-    #         # 记录当前时间
-    #         self.log_start_time = datetime.now()
+            # 配置MAA
+            await self.set_maa(self.mode)
+            # 创建MAA任务
+            logger.info(f"启动MAA进程：{self.maa_exe_path}")
+            await self.maa_process_manager.open_process(self.maa_exe_path, [], 0)
+            # 记录当前时间
+            self.log_start_time = datetime.now()
 
-    #         # 监测MAA运行状态
-    #         self.log_check_mode = "设置MAA"
-    #         self.start_monitor()
-
-    #         if "全局" in self.mode:
-    #             (self.config_path / "Default").mkdir(parents=True, exist_ok=True)
-    #             shutil.copy(self.maa_set_path, self.config_path / "Default")
-    #             logger.success(
-    #                 f"全局MAA配置文件已保存到 {self.config_path / 'Default/gui.json'}",
-    #                 ,
-    #             )
-
-    #         elif "用户" in self.mode:
-    #             self.user_config_path.mkdir(parents=True, exist_ok=True)
-    #             shutil.copy(self.maa_set_path, self.user_config_path)
-    #             logger.success(
-    #                 f"用户MAA配置文件已保存到 {self.user_config_path}",
-    #                 ,
-    #             )
-
-    #         result_text = ""
+            # 监测MAA运行状态
+            await self.maa_log_monitor.start(self.maa_log_path, self.log_start_time)
+            self.wait_event.clear()
+            await self.wait_event.wait()
 
     async def final_task(self, task: asyncio.Task):
 
+        logger.info("MAA 主任务已结束，开始执行后续操作")
+
         await Config.ScriptConfig[self.script_id].unlock()
+        logger.success(f"已解锁脚本配置 {self.script_id}")
+
+        # 结束各子任务
+        await self.maa_process_manager.kill(if_force=True)
+        await System.kill_process(self.maa_exe_path)
+        await self.emulator_process_manager.kill()
+        await self.maa_log_monitor.stop()
+        del self.maa_process_manager
+        del self.emulator_process_manager
+        del self.maa_log_monitor
+
+        if self.check_result != "Success!":
+            return self.check_result
 
         # 导出结果
         if self.mode in ["自动代理", "人工排查"]:
-
-            # 结束各子任务
-            await self.maa_process_manager.kill(if_force=True)
-            await System.kill_process(self.maa_exe_path)
-            await self.emulator_process_manager.kill()
-            await self.maa_log_monitor.stop()
 
             # 更新用户数据
             sc = Config.ScriptConfig[self.script_id]
@@ -960,10 +949,24 @@ class MaaManager:
                 10,
             )
             await self.push_notification("代理结果", title, result)
+        elif self.mode == "设置脚本":
+            (
+                Path.cwd()
+                / f"data/{self.script_id}/{self.user_id if self.user_id else 'Default'}/ConfigFile"
+            ).mkdir(parents=True, exist_ok=True)
+            shutil.copy(
+                self.maa_set_path,
+                (
+                    Path.cwd()
+                    / f"data/{self.script_id}/{self.user_id if self.user_id else 'Default'}/ConfigFile/gui.json"
+                ),
+            )
+
+            result_text = ""
 
         # 复原 MAA 配置文件
         logger.info(f"复原 MAA 配置文件：{Path.cwd() / f'data/{self.script_id}/Temp'}")
-        if (Path.cwd() / f"data/{self.script_id}/Temp").exists():
+        if (Path.cwd() / f"data/{self.script_id}/Temp/gui.json").exists():
             shutil.copy(
                 Path.cwd() / f"data/{self.script_id}/Temp/gui.json", self.maa_set_path
             )
@@ -981,7 +984,7 @@ class MaaManager:
                 data={
                     "log": f"即将搜索ADB实际地址\n正在等待模拟器完成启动\n请等待{self.wait_time}s"
                 },
-            )
+            ).model_dump()
         )
 
         await asyncio.sleep(self.wait_time)
@@ -1063,7 +1066,7 @@ class MaaManager:
         log = "".join(log_content)
 
         # 更新MAA日志
-        if self.maa_process_manager.is_running():
+        if await self.maa_process_manager.is_running():
 
             await self.websocket.send_json(
                 TaskMessage(type="Update", data={"log": log}).model_dump()
@@ -1131,14 +1134,12 @@ class MaaManager:
 
             elif (
                 "MaaAssistantArknights GUI exited" in log
-                or not self.maa_process_manager.is_running()
+                or not await self.maa_process_manager.is_running()
             ):
                 self.maa_result = "MAA在完成任务前退出"
 
             elif datetime.now() - latest_time > timedelta(
-                minutes=self.script_config.get(
-                    "RunSet", f"{self.log_check_mode}TimeLimit"
-                )
+                minutes=self.script_config.get("Run", f"{self.log_check_mode}TimeLimit")
             ):
                 self.maa_result = "MAA进程超时"
 
@@ -1156,7 +1157,7 @@ class MaaManager:
                 self.maa_result = "MAA在完成任务前中止"
             elif (
                 "MaaAssistantArknights GUI exited" in log
-                or not self.maa_process_manager.is_running()
+                or not await self.maa_process_manager.is_running()
             ):
                 self.maa_result = "MAA在完成任务前退出"
             else:
@@ -1165,7 +1166,7 @@ class MaaManager:
         elif self.mode == "设置脚本":
             if (
                 "MaaAssistantArknights GUI exited" in log
-                or not self.maa_process_manager.is_running()
+                or not await self.maa_process_manager.is_running()
             ):
                 self.maa_result = "Success!"
             else:
@@ -1175,50 +1176,21 @@ class MaaManager:
 
         if self.maa_result != "Wait":
 
+            logger.info(f"MAA 任务结果：{self.maa_result}，日志锁已释放")
             self.wait_event.set()
 
-    # def start_monitor(self) -> None:
-    #     """开始监视MAA日志"""
-
-    #     logger.info(
-    #         f"开始监视MAA日志，路径：{self.maa_log_path}，日志起始时间：{self.log_start_time}，模式：{self.log_check_mode}",
-    #         ,
-    #     )
-    #     self.log_monitor.addPath(str(self.maa_log_path))
-    #     self.log_monitor_timer.start(1000)
-    #     self.last_check_time = datetime.now()
-    #     self.monitor_loop.exec()
-
-    # def quit_monitor(self) -> None:
-    #     """退出MAA日志监视进程"""
-
-    #     if len(self.log_monitor.files()) != 0:
-
-    #         logger.info(
-    #             f"MAA日志监视器移除路径：{self.maa_log_path}",
-    #             ,
-    #         )
-    #         self.log_monitor.removePath(str(self.maa_log_path))
-
-    #     else:
-    #         logger.warning(
-    #             f"MAA日志监视器没有正在监看的路径：{self.log_monitor.files()}",
-    #             ,
-    #         )
-
-    #     self.log_monitor_timer.stop()
-    #     self.last_check_time = None
-    #     self.monitor_loop.quit()
-
-    #     logger.info("MAA日志监视锁已释放", )
-
-    async def set_maa(self, mode: str, index: int, user_data: MaaUserConfig) -> dict:
+    async def set_maa(
+        self,
+        mode: str,
+        user_data: Optional[MaaUserConfig] = None,
+        index: Optional[int] = None,
+    ) -> dict:
         """配置MAA运行参数"""
         logger.info(f"开始配置MAA运行参数: {mode}/{index}")
 
-        if "设置脚本" not in self.mode and mode != "Update":
+        if self.mode != "设置脚本" and mode != "Update":
 
-            if user_data.get("Info", "Server") == "Bilibili":
+            if user_data and user_data.get("Info", "Server") == "Bilibili":
                 self.agree_bilibili(True)
             else:
                 self.agree_bilibili(False)
@@ -1228,7 +1200,7 @@ class MaaManager:
         await System.kill_process(self.maa_exe_path)
 
         # 预导入MAA配置文件
-        if self.mode in ["自动代理", "人工排查"]:
+        if self.mode in ["自动代理", "人工排查"] and user_data is not None:
             if user_data.get("Info", "Mode") == "简洁":
                 shutil.copy(
                     (Path.cwd() / f"data/{self.script_id}/Default/ConfigFile/gui.json"),
@@ -1288,7 +1260,12 @@ class MaaManager:
             data["Global"][f"Timer.Timer{i}"] = "False"
 
         # 自动代理配置
-        if self.mode == "自动代理":
+        if (
+            self.mode == "自动代理"
+            and mode in ["Annihilation", "Routine"]
+            and index is not None
+            and user_data is not None
+        ):
 
             if (index == len(self.user_list) - 1) or (
                 self.user_config[uuid.UUID(self.user_list[index + 1]["user_id"])].get(
@@ -1392,7 +1369,7 @@ class MaaManager:
                 user_data.get("Info", "SeriesNumb")
             )  # 连战次数
 
-            if "剿灭" in mode:
+            if mode == "Annihilation":
 
                 data["Configurations"]["Default"][
                     "MainFunction.Stage1"
@@ -1434,7 +1411,7 @@ class MaaManager:
                     "GUI.HideSeries"
                 ] = "False"  # 隐藏连战次数
 
-            elif "日常" in mode:
+            elif mode == "Routine":
 
                 data["Configurations"]["Default"]["MainFunction.Stage1"] = (
                     user_data.get("Info", "Stage")
@@ -1541,7 +1518,7 @@ class MaaManager:
                         )  # 自定义基建配置索引
 
         # 人工排查配置
-        elif "人工排查" in mode:
+        elif self.mode == "人工排查" and user_data is not None:
 
             data["Configurations"]["Default"][
                 "MainFunction.PostActions"
@@ -1607,8 +1584,8 @@ class MaaManager:
                 "TaskQueue.Reclamation.IsChecked"
             ] = "False"  # 生息演算
 
-        # 设置MAA配置
-        elif "设置MAA" in mode:
+        # 设置脚本配置
+        elif self.mode == "设置脚本":
 
             data["Configurations"]["Default"][
                 "MainFunction.PostActions"
@@ -1659,7 +1636,7 @@ class MaaManager:
                 "TaskQueue.Reclamation.IsChecked"
             ] = "False"  # 生息演算
 
-        elif mode == "更新MAA":
+        elif mode == "Update":
 
             data["Configurations"]["Default"][
                 "MainFunction.PostActions"
@@ -1712,16 +1689,14 @@ class MaaManager:
             ] = "False"  # 生息演算
 
         # 启动模拟器仅生效一次
-        if "设置MAA" not in mode and "更新MAA" not in mode and self.if_open_emulator:
+        if self.mode != "设置脚本" and mode != "Update" and self.if_open_emulator:
             self.if_open_emulator = False
 
         # 覆写配置文件
         with self.maa_set_path.open(mode="w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=4)
 
-        logger.success(
-            f"MAA运行参数配置完成: {mode}/{index}",
-        )
+        logger.success(f"MAA运行参数配置完成: {mode}/{index}")
 
         return data
 
