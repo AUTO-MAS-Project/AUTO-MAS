@@ -21,7 +21,8 @@
 
 
 import uuid
-from fastapi import APIRouter, WebSocket, Body, Path
+import asyncio
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Body, Path
 
 from app.core import Config, TaskManager
 from app.models.schema import *
@@ -55,14 +56,26 @@ async def stop_task(task: DispatchIn = Body(...)) -> OutBase:
 async def websocket_endpoint(
     websocket: WebSocket, taskId: str = Path(..., description="要连接的任务ID")
 ):
+    await websocket.accept()
     try:
         uid = uuid.UUID(taskId)
     except ValueError:
         await websocket.close(code=1008, reason="无效的任务ID")
         return
 
-    if uid in TaskManager.connection_events:
+    if uid in TaskManager.connection_events and uid not in TaskManager.websocket_dict:
         TaskManager.websocket_dict[uid] = websocket
         TaskManager.connection_events[uid].set()
+        while True:
+            try:
+                data = await asyncio.wait_for(websocket.receive_json(), timeout=30.0)
+                await Config.message_queue.put({"task_id": uid, "message": data})
+            except asyncio.TimeoutError:
+                await websocket.send_json(
+                    TaskMessage(type="Signal", data={"Ping": "无描述"}).model_dump()
+                )
+            except WebSocketDisconnect:
+                TaskManager.websocket_dict.pop(uid, None)
+                break
     else:
         await websocket.close(code=1008, reason="任务不存在或已结束")

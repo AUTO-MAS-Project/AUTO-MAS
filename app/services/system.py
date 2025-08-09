@@ -264,10 +264,7 @@ class _SystemHandler:
                 pname = proc.info["name"].lower()
                 if any(keyword.lower() in pname for keyword in keywords):
                     proc.kill()
-                    logger.info(
-                        f"已关闭 MuMu 模拟器进程: {proc.info['name']}",
-                        module="系统服务",
-                    )
+                    logger.info(f"已关闭 MuMu 模拟器进程: {proc.info['name']}")
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 continue
 

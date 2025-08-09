@@ -77,6 +77,7 @@ def main():
             scripts_router,
             plan_router,
             queue_router,
+            dispatch_router,
             setting_router,
         )
 
@@ -99,6 +100,7 @@ def main():
         app.include_router(scripts_router)
         app.include_router(plan_router)
         app.include_router(queue_router)
+        app.include_router(dispatch_router)
         app.include_router(setting_router)
 
         uvicorn.run(app, host="0.0.0.0", port=8000)

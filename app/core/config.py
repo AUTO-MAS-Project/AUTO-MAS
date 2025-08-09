@@ -578,15 +578,6 @@ class AppConfig(GlobalConfig):
     def __init__(self) -> None:
         super().__init__(if_save_multi_config=False)
 
-        self.log_path = Path.cwd() / "debug/app.log"
-        self.database_path = Path.cwd() / "data/data.db"
-        self.config_path = Path.cwd() / "config"
-        self.key_path = Path.cwd() / "data/key"
-
-        self.silence_dict: Dict[Path, datetime] = {}
-        self.power_sign = "NoAction"
-        self.if_ignore_silence = False
-
         logger.info("")
         logger.info("===================================")
         logger.info("AUTO_MAA 后端应用程序")
@@ -594,9 +585,18 @@ class AppConfig(GlobalConfig):
         logger.info(f"工作目录： {Path.cwd()}")
         logger.info("===================================")
 
+        self.log_path = Path.cwd() / "debug/app.log"
+        self.database_path = Path.cwd() / "data/data.db"
+        self.config_path = Path.cwd() / "config"
+        self.key_path = Path.cwd() / "data/key"
         # 检查目录
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
         self.config_path.mkdir(parents=True, exist_ok=True)
+
+        self.message_queue = asyncio.Queue()
+        self.silence_dict: Dict[Path, datetime] = {}
+        self.power_sign = "NoAction"
+        self.if_ignore_silence = False
 
         self.ScriptConfig = MultipleConfig([MaaConfig, GeneralConfig])
         self.PlanConfig = MultipleConfig([MaaPlanConfig])

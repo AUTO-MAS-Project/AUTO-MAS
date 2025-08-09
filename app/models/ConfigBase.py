@@ -431,8 +431,10 @@ class ConfigBase:
 
         for name in dir(self):
             item = getattr(self, name)
-            if isinstance(item, ConfigItem | MultipleConfig):
+            if isinstance(item, ConfigItem):
                 item.lock()
+            elif isinstance(item, MultipleConfig):
+                await item.lock()
 
     async def unlock(self):
         """
