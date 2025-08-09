@@ -82,24 +82,15 @@
         {{ getNextButtonText() }}
       </a-button>
       
-      <!-- 第7步启动服务按钮 -->
+      <!-- 第7步重新启动服务按钮 -->
       <a-button 
-        v-if="currentStep === 6 && !serviceStarted" 
-        type="primary"
+        v-if="currentStep === 6" 
+        type="default"
         size="large"
         @click="handleNextStep"
         :loading="isProcessing"
       >
-        启动服务
-      </a-button>
-      
-      <!-- 服务启动完成后的进入应用按钮 -->
-      <a-button 
-        v-if="currentStep === 6 && serviceStarted" 
-        type="primary" 
-        @click="handleEnterApp"
-      >
-        进入应用
+        重新启动服务
       </a-button>
     </div>
 
@@ -261,7 +252,7 @@ function getNextButtonText() {
   }
 }
 
-// 自动开始测速
+// 自动开始测速和自动启动服务
 async function autoStartSpeedTest() {
   // 延迟一下确保组件已经挂载
   setTimeout(async () => {
@@ -283,6 +274,10 @@ async function autoStartSpeedTest() {
           console.log('自动开始pip镜像测速')
           await dependenciesStepRef.value.testPipMirrorSpeed()
         }
+        break
+      case 6: // 启动服务 - 自动启动后端
+        console.log('进入第七步，自动启动后端服务')
+        await autoStartBackendService()
         break
     }
   }, 500) // 延迟500ms确保组件完全加载
@@ -365,13 +360,16 @@ async function installDependencies() {
   }
 }
 
-async function startBackendService() {
-  logger.info('开始启动后端服务')
+// 自动启动后端服务（进入第七步时调用）
+async function autoStartBackendService() {
+  logger.info('自动启动后端服务')
+  isProcessing.value = true
+  errorMessage.value = ''
   
   if (serviceStepRef.value) {
     serviceStepRef.value.startingService = true
     serviceStepRef.value.showServiceProgress = true
-    serviceStepRef.value.serviceStatus = '正在启动后端服务...'
+    serviceStepRef.value.serviceStatus = '正在自动启动后端服务...'
   }
   
   try {
@@ -379,19 +377,69 @@ async function startBackendService() {
     if (result.success) {
       if (serviceStepRef.value) {
         serviceStepRef.value.serviceProgress = 100
-        serviceStepRef.value.serviceStatus = '后端服务启动成功'
+        serviceStepRef.value.serviceStatus = '后端服务启动成功，即将进入主页...'
       }
       stepStatus.value = 'finish'
-      logger.info('后端服务启动成功')
+      logger.info('后端服务自动启动成功，延迟1秒后自动进入主页')
+      
+      // 延迟1秒后自动进入主页
+      setTimeout(() => {
+        handleEnterApp()
+      }, 1000)
     } else {
-      logger.error('后端服务启动失败', result.error)
+      logger.error('后端服务自动启动失败', result.error)
+      if (serviceStepRef.value) {
+        serviceStepRef.value.serviceStatus = '后端服务启动失败，请点击重新启动'
+      }
+      errorMessage.value = `后端服务启动失败: ${result.error}`
+    }
+  } catch (error) {
+    if (serviceStepRef.value) {
+      serviceStepRef.value.serviceStatus = '后端服务启动失败，请点击重新启动'
+    }
+    logger.error('后端服务自动启动异常', error)
+    errorMessage.value = error instanceof Error ? error.message : String(error)
+  } finally {
+    if (serviceStepRef.value) {
+      serviceStepRef.value.startingService = false
+    }
+    isProcessing.value = false
+  }
+}
+
+// 手动启动后端服务（用户点击按钮时调用）
+async function startBackendService() {
+  logger.info('手动重新启动后端服务')
+  
+  if (serviceStepRef.value) {
+    serviceStepRef.value.startingService = true
+    serviceStepRef.value.showServiceProgress = true
+    serviceStepRef.value.serviceStatus = '正在重新启动后端服务...'
+  }
+  
+  try {
+    const result = await window.electronAPI.startBackend()
+    if (result.success) {
+      if (serviceStepRef.value) {
+        serviceStepRef.value.serviceProgress = 100
+        serviceStepRef.value.serviceStatus = '后端服务启动成功，即将进入主页...'
+      }
+      stepStatus.value = 'finish'
+      logger.info('后端服务手动启动成功，延迟1秒后自动进入主页')
+      
+      // 延迟1秒后自动进入主页
+      setTimeout(() => {
+        handleEnterApp()
+      }, 1000)
+    } else {
+      logger.error('后端服务手动启动失败', result.error)
       throw new Error(result.error)
     }
   } catch (error) {
     if (serviceStepRef.value) {
       serviceStepRef.value.serviceStatus = '后端服务启动失败'
     }
-    logger.error('后端服务启动异常', error)
+    logger.error('后端服务手动启动异常', error)
     throw error
   } finally {
     if (serviceStepRef.value) {
