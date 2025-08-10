@@ -64,3 +64,21 @@ async def get_apps_info() -> InfoOut:
     except Exception as e:
         return InfoOut(code=500, status="error", message=str(e), data={})
     return InfoOut(data=data)
+
+
+@router.post(
+    "/get/overview", summary="信息总览", response_model=InfoOut, status_code=200
+)
+async def add_overview() -> InfoOut:
+    try:
+        if_get_maa_stage, data = await Config.get_official_activity_stages()
+
+        return InfoOut(
+            status="success" if if_get_maa_stage else "warning",
+            message="获取活动关卡信息成功" if if_get_maa_stage else "未能获取活动关卡信息",
+            data=data,
+        )
+
+    except Exception as e:
+        return InfoOut(code=500, status="error", message=str(e), data={})
+
