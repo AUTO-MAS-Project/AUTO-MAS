@@ -290,30 +290,33 @@ class MaaUserConfig(ConfigBase):
             "Notify", "CompanyWebHookBotUrl", ""
         )
 
-    # def get_plan_info(self) -> Dict[str, Union[str, int]]:
-    #     """获取当前的计划下信息"""
+    def get_plan_info(self) -> Dict[str, Union[str, int]]:
+        """获取当前的计划下信息"""
 
-    #     if self.get(self.Info_StageMode) == "固定":
-    #         return {
-    #             "MedicineNumb": self.get(self.Info_MedicineNumb),
-    #             "SeriesNumb": self.get(self.Info_SeriesNumb),
-    #             "Stage": self.get(self.Info_Stage),
-    #             "Stage_1": self.get(self.Info_Stage_1),
-    #             "Stage_2": self.get(self.Info_Stage_2),
-    #             "Stage_3": self.get(self.Info_Stage_3),
-    #             "Stage_Remain": self.get(self.Info_Stage_Remain),
-    #         }
-    #     elif "计划" in self.get(self.Info_StageMode):
-    #         plan = Config.plan_dict[self.get(self.Info_StageMode)]["Config"]
-    #         return {
-    #             "MedicineNumb": plan.get(plan.get_current_info("MedicineNumb")),
-    #             "SeriesNumb": plan.get(plan.get_current_info("SeriesNumb")),
-    #             "Stage": plan.get(plan.get_current_info("Stage")),
-    #             "Stage_1": plan.get(plan.get_current_info("Stage_1")),
-    #             "Stage_2": plan.get(plan.get_current_info("Stage_2")),
-    #             "Stage_3": plan.get(plan.get_current_info("Stage_3")),
-    #             "Stage_Remain": plan.get(plan.get_current_info("Stage_Remain")),
-    #         }
+        if self.get("Info", "StageMode") == "固定":
+            return {
+                "MedicineNumb": self.get("Info", "MedicineNumb"),
+                "SeriesNumb": self.get("Info", "SeriesNumb"),
+                "Stage": self.get("Info", "Stage"),
+                "Stage_1": self.get("Info", "Stage_1"),
+                "Stage_2": self.get("Info", "Stage_2"),
+                "Stage_3": self.get("Info", "Stage_3"),
+                "Stage_Remain": self.get("Info", "Stage_Remain"),
+            }
+        else:
+            plan = Config.PlanConfig[uuid.UUID(self.get("Info", "StageMode"))]
+            if isinstance(plan, MaaPlanConfig):
+                return {
+                    "MedicineNumb": plan.get_current_info("MedicineNumb").getValue(),
+                    "SeriesNumb": plan.get_current_info("SeriesNumb").getValue(),
+                    "Stage": plan.get_current_info("Stage").getValue(),
+                    "Stage_1": plan.get_current_info("Stage_1").getValue(),
+                    "Stage_2": plan.get_current_info("Stage_2").getValue(),
+                    "Stage_3": plan.get_current_info("Stage_3").getValue(),
+                    "Stage_Remain": plan.get_current_info("Stage_Remain").getValue(),
+                }
+            else:
+                raise ValueError("Invalid plan type")
 
 
 class MaaConfig(ConfigBase):
@@ -406,24 +409,27 @@ class MaaPlanConfig(ConfigBase):
             ]:
                 setattr(self, f"{group}_{name}", self.config_item_dict[group][name])
 
-    # def get_current_info(self, name: str) -> ConfigItem:
-    #     """获取当前的计划表配置项"""
+    def get_current_info(self, name: str) -> ConfigItem:
+        """获取当前的计划表配置项"""
 
-    #     if self.get(self.Info_Mode) == "ALL":
+        if self.get("Info", "Mode") == "ALL":
 
-    #         return self.config_item_dict["ALL"][name]
+            return self.config_item_dict["ALL"][name]
 
-    #     elif self.get(self.Info_Mode) == "Weekly":
+        elif self.get("Info", "Mode") == "Weekly":
 
-    #         dt = datetime.now()
-    #         if dt.time() < datetime.min.time().replace(hour=4):
-    #             dt = dt - timedelta(days=1)
-    #         today = dt.strftime("%A")
+            dt = datetime.now()
+            if dt.time() < datetime.min.time().replace(hour=4):
+                dt = dt - timedelta(days=1)
+            today = dt.strftime("%A")
 
-    #         if today in self.config_item_dict:
-    #             return self.config_item_dict[today][name]
-    #         else:
-    #             return self.config_item_dict["ALL"][name]
+            if today in self.config_item_dict:
+                return self.config_item_dict[today][name]
+            else:
+                return self.config_item_dict["ALL"][name]
+
+        else:
+            raise ValueError("The mode is invalid.")
 
 
 class GeneralUserConfig(ConfigBase):
