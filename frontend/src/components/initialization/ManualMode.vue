@@ -46,10 +46,10 @@
       <PythonStep v-if="currentStep === 1" :python-installed="pythonInstalled" ref="pythonStepRef" />
 
       <!-- 步骤 2: pip 安装 -->
-      <PipStep v-if="currentStep === 2" :pip-installed="pipInstalled" />
+      <PipStep v-if="currentStep === 2" :pip-installed="pipInstalled" ref="pipStepRef" />
 
       <!-- 步骤 3: Git 工具 -->
-      <GitStep v-if="currentStep === 3" :git-installed="gitInstalled" />
+      <GitStep v-if="currentStep === 3" :git-installed="gitInstalled" ref="gitStepRef" />
 
       <!-- 步骤 4: 源码获取 -->
       <BackendStep v-if="currentStep === 4" :backend-exists="backendExists" ref="backendStepRef" />
@@ -152,6 +152,8 @@ const progressText = ref('')
 // 组件引用
 const themeStepRef = ref()
 const pythonStepRef = ref()
+const pipStepRef = ref()
+const gitStepRef = ref()
 const backendStepRef = ref()
 const dependenciesStepRef = ref()
 const serviceStepRef = ref()

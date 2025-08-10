@@ -99,15 +99,29 @@ async function startAutoProcess() {
       if (!result.success) {
         throw new Error(`代码更新失败: ${result.error}`)
       }
+    }
 
-      progressText.value = '更新依赖包...'
-      progress.value = 60
+    // 无论是否有更新，都检查并安装依赖
+    progressText.value = '检查并安装依赖包...'
+    progress.value = 60
 
-      // 使用配置中保存的pip镜像源
-      const pipResult = await window.electronAPI.installDependencies(config.selectedPipMirror)
-      if (!pipResult.success) {
-        throw new Error(`依赖更新失败: ${pipResult.error}`)
-      }
+    // 先尝试使用初始化时的镜像源
+    let pipMirror = config.selectedPipMirror || 'tsinghua'
+    let pipResult = await window.electronAPI.installDependencies(pipMirror)
+    
+    // 如果初始化时的镜像源不通，让用户重新选择
+    if (!pipResult.success) {
+      logger.warn(`使用镜像源 ${pipMirror} 安装依赖失败，需要重新选择镜像源`)
+      
+      // 切换到手动模式让用户重新选择镜像源
+      progressText.value = '依赖安装失败，需要重新配置镜像源'
+      progressStatus.value = 'exception'
+      
+      setTimeout(() => {
+        progressText.value = '请点击下方按钮重新配置环境'
+      }, 2000)
+      
+      return
     }
 
     progressText.value = '启动后端服务...'
@@ -121,7 +135,6 @@ async function startAutoProcess() {
     logger.info('自动启动流程完成，即将进入应用')
 
     // 延迟0.5秒后自动进入应用
-    // todo 记得修改这里，为了调试加长了5000s
     setTimeout(() => {
       props.onAutoComplete()
     }, 500)
@@ -139,11 +152,17 @@ async function startAutoProcess() {
   }
 }
 
-// 检查Git更新（简化版本，实际可以调用Git API）
+// 检查Git更新
 async function checkGitUpdate(): Promise<boolean> {
-  // 这里可以实现更复杂的Git更新检查逻辑
-  // 暂时返回false，表示没有更新
-  return false
+  try {
+    // 调用Electron API检查Git仓库是否有更新
+    const result = await window.electronAPI.checkGitUpdate()
+    return result.hasUpdate || false
+  } catch (error) {
+    logger.warn('检查Git更新失败:', error)
+    // 如果检查失败，假设有更新，这样会触发代码拉取和依赖安装
+    return true
+  }
 }
 
 // 根据镜像源key获取对应的URL
