@@ -50,8 +50,8 @@ class _MainTimer:
 
         if (
             not Config.if_ignore_silence
-            and await Config.get("Function", "IfSilence")
-            and await Config.get("Function", "BossKey") != ""
+            and Config.get("Function", "IfSilence")
+            and Config.get("Function", "BossKey") != ""
         ):
 
             pass

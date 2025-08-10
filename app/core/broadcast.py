@@ -1,6 +1,5 @@
 #   AUTO_MAA:A MAA Multi Account Management and Automation Tool
 #   Copyright © 2024-2025 DLmaster361
-#   Copyright © 2025 MoeSnowyFox
 
 #   This file is part of AUTO_MAA.
 
@@ -19,21 +18,34 @@
 
 #   Contact: DLmaster_361@163.com
 
-__version__ = "5.0.0"
-__author__ = "DLmaster361 <DLmaster_361@163.com>"
-__license__ = "GPL-3.0 license"
 
-from .broadcast import Broadcast
-from .config import Config, MaaConfig, GeneralConfig, MaaUserConfig
-from .timer import MainTimer
-from .task_manager import TaskManager
+import asyncio
+from copy import deepcopy
+from typing import Set
 
-__all__ = [
-    "Broadcast",
-    "Config",
-    "MaaConfig",
-    "GeneralConfig",
-    "MainTimer",
-    "TaskManager",
-    "MaaUserConfig",
-]
+from app.utils import get_logger
+
+
+logger = get_logger("消息广播")
+
+
+class _Broadcast:
+
+    def __init__(self):
+        self.__subscribers: Set[asyncio.Queue] = set()
+
+    async def subscribe(self, queue: asyncio.Queue):
+        """订阅者注册"""
+        self.__subscribers.add(queue)
+
+    async def unsubscribe(self, queue: asyncio.Queue):
+        """取消订阅"""
+        self.__subscribers.remove(queue)
+
+    async def put(self, item):
+        """向所有订阅者广播消息"""
+        for subscriber in self.__subscribers:
+            await subscriber.put(deepcopy(item))
+
+
+Broadcast = _Broadcast()

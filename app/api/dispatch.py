@@ -24,7 +24,7 @@ import uuid
 import asyncio
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Body, Path
 
-from app.core import Config, TaskManager
+from app.core import TaskManager, Broadcast
 from app.models.schema import *
 
 router = APIRouter(prefix="/api/dispatch", tags=["任务调度"])
@@ -69,7 +69,7 @@ async def websocket_endpoint(
         while True:
             try:
                 data = await asyncio.wait_for(websocket.receive_json(), timeout=30.0)
-                await Config.message_queue.put({"task_id": uid, "message": data})
+                await Broadcast.put(data)
             except asyncio.TimeoutError:
                 await websocket.send_json(
                     TaskMessage(type="Signal", data={"Ping": "无描述"}).model_dump()
