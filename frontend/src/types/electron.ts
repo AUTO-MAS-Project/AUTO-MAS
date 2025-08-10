@@ -53,6 +53,7 @@ export interface ElectronAPI {
     callback: (progress: { progress: number; status: string; message: string }) => void
   ) => void
   removeDownloadProgressListener: () => void
+  restartAsAdmin: () => Promise<void>
 }
 
 declare global {
