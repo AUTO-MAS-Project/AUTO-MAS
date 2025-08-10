@@ -20,17 +20,16 @@
 
 
 import json
+import uuid
 import asyncio
 import subprocess
 import shutil
-import uuid
 import win32com.client
-from fastapi import WebSocket
-from functools import partial
-from datetime import datetime, timedelta
 from pathlib import Path
+from fastapi import WebSocket
+from datetime import datetime, timedelta
 from jinja2 import Environment, FileSystemLoader
-from typing import Union, List, Dict, Optional
+from typing import List, Dict, Optional
 
 from app.core import Broadcast, Config, MaaConfig, MaaUserConfig
 from app.models.schema import TaskMessage
@@ -1458,16 +1457,25 @@ class MaaManager:
                 data["Configurations"]["Default"]["TaskQueue.Order.AutoRoguelike"] = "6"
                 data["Configurations"]["Default"]["TaskQueue.Order.Reclamation"] = "7"
 
+            if isinstance(self.cur_user_data, MaaUserConfig):
+                try:
+                    plan_data = self.cur_user_data.get_plan_info()
+                except Exception as e:
+                    logger.error(
+                        f"获取用户 {self.user_list[self.index]['user_id']} 的代理计划信息失败: {e}"
+                    )
+                    plan_data = {}
+            else:
+                plan_data = {}
+
             data["Configurations"]["Default"]["MainFunction.UseMedicine"] = (
-                "False"
-                if self.cur_user_data.get("Info", "MedicineNumb") == 0
-                else "True"
+                "False" if plan_data.get("MedicineNumb", 0) == 0 else "True"
             )  # 吃理智药
             data["Configurations"]["Default"]["MainFunction.UseMedicine.Quantity"] = (
-                str(self.cur_user_data.get("Info", "MedicineNumb"))
+                str(plan_data.get("MedicineNumb", 0))
             )  # 吃理智药数量
             data["Configurations"]["Default"]["MainFunction.Series.Quantity"] = (
-                self.cur_user_data.get("Info", "SeriesNumb")
+                plan_data.get("SeriesNumb", "0")
             )  # 连战次数
 
             if mode == "Annihilation":
@@ -1515,37 +1523,33 @@ class MaaManager:
             elif mode == "Routine":
 
                 data["Configurations"]["Default"]["MainFunction.Stage1"] = (
-                    self.cur_user_data.get("Info", "Stage")
-                    if self.cur_user_data.get("Info", "Stage") != "-"
-                    else ""
+                    plan_data.get("Stage") if plan_data.get("Stage", "-") != "-" else ""
                 )  # 主关卡
                 data["Configurations"]["Default"]["MainFunction.Stage2"] = (
-                    self.cur_user_data.get("Info", "Stage_1")
-                    if self.cur_user_data.get("Info", "Stage_1") != "-"
+                    plan_data.get("Stage_1")
+                    if plan_data.get("Stage_1", "-") != "-"
                     else ""
                 )  # 备选关卡1
                 data["Configurations"]["Default"]["MainFunction.Stage3"] = (
-                    self.cur_user_data.get("Info", "Stage_2")
-                    if self.cur_user_data.get("Info", "Stage_2") != "-"
+                    plan_data.get("Stage_2")
+                    if plan_data.get("Stage_2", "-") != "-"
                     else ""
                 )  # 备选关卡2
                 data["Configurations"]["Default"]["MainFunction.Stage4"] = (
-                    self.cur_user_data.get("Info", "Stage_3")
-                    if self.cur_user_data.get("Info", "Stage_3") != "-"
+                    plan_data.get("Stage_3")
+                    if plan_data.get("Stage_3", "-") != "-"
                     else ""
                 )  # 备选关卡3
                 data["Configurations"]["Default"]["Fight.RemainingSanityStage"] = (
-                    self.cur_user_data.get("Info", "Stage_Remain")
-                    if self.cur_user_data.get("Info", "Stage_Remain") != "-"
+                    plan_data.get("Stage_Remain")
+                    if plan_data.get("Stage_Remain", "-") != "-"
                     else ""
                 )  # 剩余理智关卡
                 data["Configurations"]["Default"][
                     "GUI.UseAlternateStage"
                 ] = "True"  # 备选关卡
                 data["Configurations"]["Default"]["Fight.UseRemainingSanityStage"] = (
-                    "True"
-                    if self.cur_user_data.get("Info", "Stage_Remain") != "-"
-                    else "False"
+                    "True" if plan_data.get("Stage_Remain", "-") != "-" else "False"
                 )  # 使用剩余理智
 
                 if self.cur_user_data.get("Info", "Mode") == "简洁":
