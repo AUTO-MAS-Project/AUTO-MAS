@@ -27,6 +27,7 @@ class LogMonitor:
         self.last_callback_time: datetime = datetime.now()
         self.log_contents: List[str] = []
         self.task: Optional[asyncio.Task] = None
+        self.__is_running = False
 
     async def monitor_log(self):
         """监控日志文件的主循环"""
@@ -35,76 +36,62 @@ class LogMonitor:
 
         logger.info(f"开始监控日志文件: {self.log_file_path}")
 
-        consecutive_errors = 0
+        while self.__is_running:
+            logger.debug("正在检查日志文件...")
+            log_contents = []
+            if_log_start = False
 
-        while True:
-            try:
-                log_contents = []
-                if_log_start = False
-
-                # 检查文件是否仍然存在
-                if not self.log_file_path.exists():
-                    logger.warning(f"日志文件不存在: {self.log_file_path}")
-                    await asyncio.sleep(1)
-                    continue
-
-                # 尝试读取文件
-                try:
-                    async with aiofiles.open(
-                        self.log_file_path, "r", encoding=self.encoding
-                    ) as f:
-                        async for line in f:
-                            if not if_log_start:
-                                try:
-                                    entry_time = datetime.strptime(
-                                        line[
-                                            self.time_stamp_range[
-                                                0
-                                            ] : self.time_stamp_range[1]
-                                        ],
-                                        self.time_format,
-                                    )
-                                    if entry_time > self.log_start_time:
-                                        if_log_start = True
-                                        log_contents.append(line)
-                                except (ValueError, IndexError):
-                                    continue
-                            else:
-                                log_contents.append(line)
-
-                except (FileNotFoundError, PermissionError) as e:
-                    logger.warning(f"文件访问错误: {e}")
-                    await asyncio.sleep(5)
-                    continue
-                except UnicodeDecodeError as e:
-                    logger.error(f"文件编码错误: {e}")
-                    await asyncio.sleep(10)
-                    continue
-
-                # 调用回调
-                if (
-                    log_contents != self.log_contents
-                    or datetime.now() - self.last_callback_time > timedelta(minutes=1)
-                ):
-                    self.log_contents = log_contents
-                    self.last_callback_time = datetime.now()
-
-                    # 安全调用回调函数
-                    try:
-                        await self.callback(log_contents)
-                    except Exception as e:
-                        logger.error(f"回调函数执行失败: {e}")
-
-            except asyncio.CancelledError:
-                logger.info("日志监控任务被取消")
-                break
-            except Exception as e:
-                logger.error(f"监控日志时发生未知错误：{e}")
-
-                consecutive_errors += 1
-                wait_time = min(60, 2**consecutive_errors)
-                await asyncio.sleep(wait_time)
+            # 检查文件是否仍然存在
+            if not self.log_file_path.exists():
+                logger.warning(f"日志文件不存在: {self.log_file_path}")
                 continue
+
+            # 尝试读取文件
+            try:
+                async with aiofiles.open(
+                    self.log_file_path, "r", encoding=self.encoding
+                ) as f:
+                    async for line in f:
+                        if not if_log_start:
+                            try:
+                                entry_time = datetime.strptime(
+                                    line[
+                                        self.time_stamp_range[
+                                            0
+                                        ] : self.time_stamp_range[1]
+                                    ],
+                                    self.time_format,
+                                )
+                                if entry_time > self.log_start_time:
+                                    if_log_start = True
+                                    log_contents.append(line)
+                            except (ValueError, IndexError):
+                                continue
+                        else:
+                            log_contents.append(line)
+
+            except (FileNotFoundError, PermissionError) as e:
+                logger.warning(f"文件访问错误: {e}")
+                await asyncio.sleep(5)
+                continue
+            except UnicodeDecodeError as e:
+                logger.error(f"文件编码错误: {e}")
+                await asyncio.sleep(10)
+                continue
+
+            # 调用回调
+            if (
+                log_contents != self.log_contents
+                or datetime.now() - self.last_callback_time > timedelta(minutes=1)
+            ):
+                self.log_contents = log_contents
+                self.last_callback_time = datetime.now()
+
+                # 安全调用回调函数
+                try:
+                    await self.callback(log_contents)
+                except Exception as e:
+                    logger.error(f"回调函数执行失败: {e}")
 
             await asyncio.sleep(1)
 
@@ -117,6 +104,8 @@ class LogMonitor:
         if self.task is not None and not self.task.done():
             await self.stop()
 
+        self.__is_running = True
+        self.log_contents = []
         self.log_file_path = log_file_path
         self.log_start_time = start_time
         self.task = asyncio.create_task(self.monitor_log())
@@ -125,14 +114,15 @@ class LogMonitor:
     async def stop(self):
         """停止监控"""
 
+        logger.info("请求取消日志监控任务")
+
         if self.task is not None and not self.task.done():
             self.task.cancel()
+
             try:
                 await self.task
             except asyncio.CancelledError:
-                pass
+                logger.info("日志监控任务已中止")
 
-        self.log_contents = []
-        self.log_file_path = None
+        logger.success("日志监控任务已停止")
         self.task = None
-        logger.info(f"日志监控已停止: {self.log_file_path}")

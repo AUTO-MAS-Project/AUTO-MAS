@@ -593,10 +593,9 @@ class AppConfig(GlobalConfig):
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
         self.config_path.mkdir(parents=True, exist_ok=True)
 
-        self.message_queue = asyncio.Queue()
         self.silence_dict: Dict[Path, datetime] = {}
         self.power_sign = "NoAction"
-        self.if_ignore_silence = False
+        self.if_ignore_silence: List[uuid.UUID] = []
 
         self.ScriptConfig = MultipleConfig([MaaConfig, GeneralConfig])
         self.PlanConfig = MultipleConfig([MaaPlanConfig])

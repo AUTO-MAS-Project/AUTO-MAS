@@ -78,7 +78,9 @@ class _TaskManager:
         else:
             raise ValueError(f"The task corresponding to UID {uid} could not be found.")
 
-        if task_id in self.task_dict:
+        if task_id in self.task_dict or (
+            actual_id is not None and actual_id in self.task_dict
+        ):
 
             raise RuntimeError(f"The task {task_id} is already running.")
 

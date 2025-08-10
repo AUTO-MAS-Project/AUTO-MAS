@@ -22,6 +22,7 @@
 import asyncio
 import psutil
 import subprocess
+from datetime import datetime, timedelta
 from pathlib import Path
 
 
@@ -34,6 +35,7 @@ class ProcessManager:
         self.main_pid = None
         self.tracked_pids = set()
         self.check_task = None
+        self.track_end_time = datetime.now()
 
     async def open_process(
         self, path: Path, args: list = [], tracking_time: int = 60
@@ -88,14 +90,13 @@ class ProcessManager:
 
         # 启动持续追踪任务
         if tracking_time > 0:
+            self.track_end_time = datetime.now() + timedelta(seconds=tracking_time)
             self.check_task = asyncio.create_task(self.track_processes())
-            await asyncio.sleep(tracking_time)
-            await self.stop_tracking()
 
     async def track_processes(self) -> None:
         """更新子进程列表"""
 
-        while True:
+        while datetime.now() < self.track_end_time:
             current_pids = set(self.tracked_pids)
             for pid in current_pids:
                 try:
@@ -107,16 +108,6 @@ class ProcessManager:
                 except psutil.NoSuchProcess:
                     continue
             await asyncio.sleep(0.1)
-
-    async def stop_tracking(self) -> None:
-        """停止更新子进程列表"""
-
-        if self.check_task and not self.check_task.done():
-            self.check_task.cancel()
-            try:
-                await self.check_task
-            except asyncio.CancelledError:
-                pass
 
     async def is_running(self) -> bool:
         """检查所有跟踪的进程是否还在运行"""
@@ -152,6 +143,13 @@ class ProcessManager:
     async def clear(self) -> None:
         """清空跟踪的进程列表"""
 
-        await self.stop_tracking()
+        if self.check_task is not None and not self.check_task.done():
+            self.check_task.cancel()
+
+            try:
+                await self.check_task
+            except asyncio.CancelledError:
+                pass
+
         self.main_pid = None
         self.tracked_pids.clear()
