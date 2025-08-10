@@ -14,15 +14,57 @@
       </div>
     </div>
     <div v-else class="already-installed">
-      <a-result status="success" title="pip 已安装" />
+      <a-result status="success" title="pip已成功安装，无需继续安装" />
+      <div class="reinstall-section">
+        <a-button type="primary" danger @click="handleForceReinstall" :loading="reinstalling">
+          {{ reinstalling ? '正在重新安装...' : '强制重新安装' }}
+        </a-button>
+        <p class="reinstall-note">点击此按钮将删除现有pip环境并重新安装</p>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import { ref } from 'vue'
+
 defineProps<{
   pipInstalled: boolean
 }>()
+
+const reinstalling = ref(false)
+
+// 强制重新安装pip
+async function handleForceReinstall() {
+  reinstalling.value = true
+  try {
+    console.log('开始强制重新安装pip')
+    // 先删除现有pip
+    const deleteResult = await window.electronAPI.deletePip()
+    if (!deleteResult.success) {
+      throw new Error(`删除pip失败: ${deleteResult.error}`)
+    }
+    
+    // 重新安装pip
+    const installResult = await window.electronAPI.installPip()
+    if (!installResult.success) {
+      throw new Error(`重新安装pip失败: ${installResult.error}`)
+    }
+    
+    console.log('pip强制重新安装成功')
+    // 通知父组件更新状态
+    window.location.reload() // 简单的页面刷新来更新状态
+  } catch (error) {
+    console.error('pip强制重新安装失败:', error)
+    // 这里可以添加错误提示
+  } finally {
+    reinstalling.value = false
+  }
+}
+
+defineExpose({
+  handleForceReinstall
+})
 </script>
 
 <style scoped>
@@ -57,8 +99,24 @@ defineProps<{
 
 .already-installed {
   display: flex;
+  flex-direction: column;
   justify-content: center;
   align-items: center;
   min-height: 200px;
+  gap: 20px;
+}
+
+.reinstall-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.reinstall-note {
+  font-size: 12px;
+  color: var(--ant-color-text-tertiary);
+  text-align: center;
+  margin: 0;
 }
 </style>

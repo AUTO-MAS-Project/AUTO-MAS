@@ -76,66 +76,148 @@ async function enterApp() {
   }
 }
 
+// 检查关键文件是否存在
+async function checkCriticalFiles() {
+  try {
+    logger.info('开始检查关键文件存在性')
+    console.log('🔍 正在调用 window.electronAPI.checkCriticalFiles()...')
+    
+    // 检查API是否存在
+    if (!window.electronAPI.checkCriticalFiles) {
+      console.warn('⚠️ window.electronAPI.checkCriticalFiles 不存在，使用配置文件状态')
+      // 如果API不存在，从配置文件读取状态
+      const config = await getConfig()
+      return {
+        pythonExists: config.pythonInstalled || false,
+        pipExists: config.pipInstalled || false,
+        gitExists: config.gitInstalled || false,
+        mainPyExists: config.backendExists || false
+      }
+    }
+    
+    // 检查关键文件
+    const criticalFiles = await window.electronAPI.checkCriticalFiles()
+    
+    console.log('🔍 electronAPI.checkCriticalFiles() 原始返回结果:', criticalFiles)
+    console.log('🔍 详细检查结果:')
+    console.log('  - pythonExists:', criticalFiles.pythonExists, typeof criticalFiles.pythonExists)
+    console.log('  - pipExists:', criticalFiles.pipExists, typeof criticalFiles.pipExists)
+    console.log('  - gitExists:', criticalFiles.gitExists, typeof criticalFiles.gitExists)
+    console.log('  - mainPyExists:', criticalFiles.mainPyExists, typeof criticalFiles.mainPyExists)
+    
+    const result = {
+      pythonExists: criticalFiles.pythonExists,
+      pipExists: criticalFiles.pipExists, 
+      gitExists: criticalFiles.gitExists,
+      mainPyExists: criticalFiles.mainPyExists
+    }
+    
+    console.log('🔍 最终返回结果:', result)
+    return result
+  } catch (error) {
+    logger.error('检查关键文件失败', error)
+    console.error('❌ 检查关键文件失败，使用配置文件状态:', error)
+    
+    // 如果检查失败，从配置文件读取状态
+    try {
+      const config = await getConfig()
+      console.log('📄 使用配置文件中的状态:', {
+        pythonInstalled: config.pythonInstalled,
+        pipInstalled: config.pipInstalled,
+        gitInstalled: config.gitInstalled,
+        backendExists: config.backendExists
+      })
+      return {
+        pythonExists: config.pythonInstalled || false,
+        pipExists: config.pipInstalled || false,
+        gitExists: config.gitInstalled || false,
+        mainPyExists: config.backendExists || false
+      }
+    } catch (configError) {
+      console.error('❌ 读取配置文件也失败了:', configError)
+      return {
+        pythonExists: false,
+        pipExists: false,
+        gitExists: false,
+        mainPyExists: false
+      }
+    }
+  }
+}
+
 // 检查环境状态
 async function checkEnvironment() {
   try {
     logger.info('开始检查环境状态')
-    const status = await window.electronAPI.checkEnvironment()
     
-    logger.info('环境检查结果', status)
-    console.log('环境检查结果:', status)
+    // 只检查关键exe文件是否存在
+    const criticalFiles = await checkCriticalFiles()
     
-    pythonInstalled.value = status.pythonExists
-    gitInstalled.value = status.gitExists
-    backendExists.value = status.backendExists
-    dependenciesInstalled.value = status.dependenciesInstalled
+    console.log('关键文件检查结果:', criticalFiles)
     
-    // 检查配置文件中的状态
+    // 直接根据exe文件存在性设置状态
+    pythonInstalled.value = criticalFiles.pythonExists
+    pipInstalled.value = criticalFiles.pipExists
+    gitInstalled.value = criticalFiles.gitExists
+    backendExists.value = criticalFiles.mainPyExists
+    
+    // 检查配置文件中的依赖安装状态
     const config = await getConfig()
-    pipInstalled.value = config.pipInstalled || false
+    dependenciesInstalled.value = config.dependenciesInstalled || false
     
-    // 更新配置文件中的状态，确保与实际环境一致
-    const needsUpdate = 
-      config.pythonInstalled !== status.pythonExists ||
-      config.gitInstalled !== status.gitExists ||
-      config.backendExists !== status.backendExists ||
-      config.dependenciesInstalled !== status.dependenciesInstalled
-    
-    if (needsUpdate) {
-      console.log('更新配置文件中的环境状态')
-      await saveConfig({
-        pythonInstalled: status.pythonExists,
-        gitInstalled: status.gitExists,
-        backendExists: status.backendExists,
-        dependenciesInstalled: status.dependenciesInstalled
-      })
-    }
+    console.log('📊 最终状态设置:')
+    console.log('  - pythonInstalled:', pythonInstalled.value)
+    console.log('  - pipInstalled:', pipInstalled.value)
+    console.log('  - gitInstalled:', gitInstalled.value)
+    console.log('  - backendExists:', backendExists.value)
+    console.log('  - dependenciesInstalled:', dependenciesInstalled.value)
     
     // 检查是否第一次启动
     const isFirst = config.isFirstLaunch
     console.log('是否第一次启动:', isFirst)
     
+    // 检查所有关键exe文件是否都存在
+    const allExeFilesExist = criticalFiles.pythonExists && 
+                            criticalFiles.pipExists && 
+                            criticalFiles.gitExists && 
+                            criticalFiles.mainPyExists
+    
+    console.log('关键exe文件状态检查:')
+    console.log('- python.exe存在:', criticalFiles.pythonExists)
+    console.log('- pip.exe存在:', criticalFiles.pipExists)
+    console.log('- git.exe存在:', criticalFiles.gitExists)
+    console.log('- main.py存在:', criticalFiles.mainPyExists)
+    console.log('- 所有关键文件存在:', allExeFilesExist)
+    
     // 检查是否应该进入自动模式
     console.log('自动模式判断条件:')
     console.log('- 不是第一次启动:', !isFirst)
     console.log('- 配置显示已初始化:', config.init)
-    console.log('- 环境检查结果:', status.isInitialized)
+    console.log('- 所有关键文件存在:', allExeFilesExist)
 
-    // 如果配置显示已初始化且不是第一次启动，进入自动模式
-    // 不再依赖环境检查结果，因为配置文件更准确
-    if (!isFirst && config.init) {
-      logger.info('非首次启动且配置显示已初始化，进入自动模式')
+    // 只有在非首次启动、配置显示已初始化、且所有关键exe文件都存在时才进入自动模式
+    if (!isFirst && config.init && allExeFilesExist) {
+      logger.info('非首次启动、配置显示已初始化且所有关键文件存在，进入自动模式')
       console.log('进入自动模式，开始自动启动流程')
       autoMode.value = true
     } else {
-      logger.info('首次启动或配置显示未初始化，进入手动模式')
+      logger.info('需要进入手动模式进行配置')
       console.log('进入手动模式')
-      console.log('原因: isFirst =', isFirst, ', config.init =', config.init)
+      console.log('原因: isFirst =', isFirst, ', config.init =', config.init, ', allExeFilesExist =', allExeFilesExist)
+      
+      // 如果关键文件缺失，重置初始化状态
+      if (!allExeFilesExist && config.init) {
+        console.log('检测到关键exe文件缺失，重置初始化状态')
+        await saveConfig({ init: false })
+      }
     }
   } catch (error) {
     const errorMsg = `环境检查失败: ${error instanceof Error ? error.message : String(error)}`
     logger.error('环境检查失败', error)
     console.error('环境检查失败:', error)
+    
+    // 检查失败时强制进入手动模式
+    autoMode.value = false
   }
 }
 

@@ -28,7 +28,13 @@
             </div>
         </div>
         <div v-else class="already-installed">
-            <a-result status="success" title="Python 环境已安装" />
+            <a-result status="success" title="Python已成功安装，无需继续安装" />
+            <div class="reinstall-section">
+                <a-button type="primary" danger @click="handleForceReinstall" :loading="reinstalling">
+                    {{ reinstalling ? '正在重新安装...' : '强制重新安装' }}
+                </a-button>
+                <p class="reinstall-note">点击此按钮将删除现有Python环境并重新安装</p>
+            </div>
         </div>
     </div>
 </template>
@@ -58,6 +64,7 @@ const pythonMirrors = ref<Mirror[]>([
 
 const selectedPythonMirror = ref('tsinghua')
 const testingSpeed = ref(false)
+const reinstalling = ref(false)
 
 // 加载配置中的镜像源选择
 async function loadMirrorConfig() {
@@ -130,9 +137,38 @@ function getSpeedClass(speed: number | null) {
     return 'speed-slow'
 }
 
+// 强制重新安装Python
+async function handleForceReinstall() {
+    reinstalling.value = true
+    try {
+        console.log('开始强制重新安装Python')
+        // 先删除现有Python目录
+        const deleteResult = await window.electronAPI.deletePython()
+        if (!deleteResult.success) {
+            throw new Error(`删除Python目录失败: ${deleteResult.error}`)
+        }
+        
+        // 重新下载安装Python
+        const installResult = await window.electronAPI.downloadPython(selectedPythonMirror.value)
+        if (!installResult.success) {
+            throw new Error(`重新安装Python失败: ${installResult.error}`)
+        }
+        
+        console.log('Python强制重新安装成功')
+        // 通知父组件更新状态
+        window.location.reload() // 简单的页面刷新来更新状态
+    } catch (error) {
+        console.error('Python强制重新安装失败:', error)
+        // 这里可以添加错误提示
+    } finally {
+        reinstalling.value = false
+    }
+}
+
 defineExpose({
     selectedPythonMirror,
-    testPythonMirrorSpeed
+    testPythonMirrorSpeed,
+    handleForceReinstall
 })
 
 // 组件挂载时加载配置并自动开始测速
@@ -267,8 +303,24 @@ onMounted(async () => {
 
 .already-installed {
     display: flex;
+    flex-direction: column;
     justify-content: center;
     align-items: center;
     min-height: 200px;
+    gap: 20px;
+}
+
+.reinstall-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+}
+
+.reinstall-note {
+    font-size: 12px;
+    color: var(--ant-color-text-tertiary);
+    text-align: center;
+    margin: 0;
 }
 </style>
