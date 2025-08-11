@@ -34,14 +34,10 @@ router = APIRouter(prefix="/api/info", tags=["信息获取"])
 async def get_stage_info() -> InfoOut:
 
     try:
-        if_get_maa_stage, data = await Config.get_stage()
+        data = await Config.get_stage_info()
     except Exception as e:
         return InfoOut(code=500, status="error", message=str(e), data={})
-    return InfoOut(
-        status="success" if if_get_maa_stage else "warning",
-        message="获取关卡号信息成功" if if_get_maa_stage else "未能获取活动关卡号信息",
-        data=data,
-    )
+    return InfoOut(data=data)
 
 
 @router.post("/notice", summary="获取通知信息", response_model=InfoOut, status_code=200)
@@ -75,10 +71,11 @@ async def add_overview() -> InfoOut:
 
         return InfoOut(
             status="success" if if_get_maa_stage else "warning",
-            message="获取活动关卡信息成功" if if_get_maa_stage else "未能获取活动关卡信息",
+            message=(
+                "获取活动关卡信息成功" if if_get_maa_stage else "未能获取活动关卡信息"
+            ),
             data=data,
         )
 
     except Exception as e:
         return InfoOut(code=500, status="error", message=str(e), data={})
-
