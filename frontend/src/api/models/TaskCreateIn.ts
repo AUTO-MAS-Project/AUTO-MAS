@@ -17,9 +17,9 @@ export namespace TaskCreateIn {
      * 任务模式
      */
     export enum mode {
-        _ = '自动代理',
-        _ = '人工排查',
-        _ = '设置脚本',
+        AutoMode = '自动代理',
+        ManualMode = '人工排查',
+        SettingScriptMode = '设置脚本',
     }
 }
 
