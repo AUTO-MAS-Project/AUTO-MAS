@@ -20,21 +20,19 @@
 #   Contact: DLmaster_361@163.com
 
 
+import calendar
 import re
 import shutil
+from collections import defaultdict
+from datetime import datetime, timedelta, date, timezone
+from pathlib import Path
+from typing import Literal, Optional, Tuple
+
 import requests
 import truststore
-import calendar
-from datetime import datetime, timedelta, date
-from pathlib import Path
-from collections import defaultdict
 
-
-from typing import Dict, List, Literal, Optional, Any
-
-from app.utils import get_logger
 from app.models.ConfigBase import *
-
+from app.utils import get_logger
 
 logger = get_logger("配置管理")
 
@@ -548,7 +546,6 @@ class GeneralConfig(ConfigBase):
 
 
 class AppConfig(GlobalConfig):
-
     VERSION = "5.0.0.1"
 
     CLASS_BOOK = {
@@ -624,7 +621,7 @@ class AppConfig(GlobalConfig):
         logger.info("程序初始化完成")
 
     async def add_script(
-        self, script: Literal["MAA", "General"]
+            self, script: Literal["MAA", "General"]
     ) -> tuple[uuid.UUID, ConfigBase]:
         """添加脚本配置"""
 
@@ -647,7 +644,7 @@ class AppConfig(GlobalConfig):
         return list(index), data
 
     async def update_script(
-        self, script_id: str, data: Dict[str, Dict[str, Any]]
+            self, script_id: str, data: Dict[str, Dict[str, Any]]
     ) -> None:
         """更新脚本配置"""
 
@@ -706,7 +703,7 @@ class AppConfig(GlobalConfig):
         return uid, config
 
     async def update_user(
-        self, script_id: str, user_id: str, data: Dict[str, Dict[str, Any]]
+            self, script_id: str, user_id: str, data: Dict[str, Dict[str, Any]]
     ) -> None:
         """更新用户配置"""
 
@@ -768,7 +765,7 @@ class AppConfig(GlobalConfig):
         return list(index), data
 
     async def update_queue(
-        self, queue_id: str, data: Dict[str, Dict[str, Any]]
+            self, queue_id: str, data: Dict[str, Dict[str, Any]]
     ) -> None:
         """更新调度队列配置"""
 
@@ -813,7 +810,7 @@ class AppConfig(GlobalConfig):
         return uid, config
 
     async def update_time_set(
-        self, queue_id: str, time_set_id: str, data: Dict[str, Dict[str, Any]]
+            self, queue_id: str, time_set_id: str, data: Dict[str, Dict[str, Any]]
     ) -> None:
         """更新时间设置配置"""
 
@@ -854,7 +851,7 @@ class AppConfig(GlobalConfig):
             await self.QueueConfig.save()
 
     async def add_plan(
-        self, script: Literal["MaaPlan"]
+            self, script: Literal["MaaPlan"]
     ) -> tuple[uuid.UUID, ConfigBase]:
         """添加计划表"""
 
@@ -920,7 +917,7 @@ class AppConfig(GlobalConfig):
         return uid, config
 
     async def update_queue_item(
-        self, queue_id: str, queue_item_id: str, data: Dict[str, Dict[str, Any]]
+            self, queue_id: str, queue_item_id: str, data: Dict[str, Dict[str, Any]]
     ) -> None:
         """更新队列项配置"""
 
@@ -1023,13 +1020,13 @@ class AppConfig(GlobalConfig):
         for stage_info in stage_infos:
 
             if (
-                datetime.strptime(
-                    stage_info["Activity"]["UtcStartTime"], "%Y/%m/%d %H:%M:%S"
-                )
-                < datetime.now()
-                < datetime.strptime(
-                    stage_info["Activity"]["UtcExpireTime"], "%Y/%m/%d %H:%M:%S"
-                )
+                    datetime.strptime(
+                        stage_info["Activity"]["UtcStartTime"], "%Y/%m/%d %H:%M:%S"
+                    )
+                    < datetime.now()
+                    < datetime.strptime(
+                stage_info["Activity"]["UtcExpireTime"], "%Y/%m/%d %H:%M:%S"
+            )
             ):
                 ss_stage_dict["value"].append(stage_info["Value"])
                 ss_stage_dict["text"].append(stage_info["Value"])
@@ -1052,6 +1049,128 @@ class AppConfig(GlobalConfig):
             }
 
         return if_get_maa_stage, stage_dict
+
+    async def get_official_activity_stages(
+            self,
+            url: str = "https://api.maa.plus/MaaAssistantArknights/api/gui/StageActivity.json",
+            timeout: int = 10,
+    ) -> Tuple[bool, Dict[str, List[Dict[str, str]]]]:
+        """
+        获取 Official 区服当前开放的活动关卡（仅返回 Display/Value/Drop）。
+        返回:
+            (if_success, {"ALL": [ {"Display": "...", "Value": "...", "Drop": "..."}, ... ]})
+        """
+        materials_map: Dict[str, str] = {
+            "30165": "重相位对映体",
+            "30155": "烧结核凝晶",
+            "30145": "晶体电子单元",
+            "30135": "D32钢",
+            "30125": "双极纳米片",
+            "30115": "聚合剂",
+            "31094": "手性屈光体",
+            "31093": "类凝结核",
+            "31084": "环烃预制体",
+            "31083": "环烃聚质",
+            "31074": "固化纤维板",
+            "31073": "褐素纤维",
+            "31064": "转质盐聚块",
+            "31063": "转质盐组",
+            "31054": "切削原液",
+            "31053": "化合切削液",
+            "31044": "精炼溶剂",
+            "31043": "半自然溶剂",
+            "31034": "晶体电路",
+            "31033": "晶体元件",
+            "31024": "炽合金块",
+            "31023": "炽合金",
+            "31014": "聚合凝胶",
+            "31013": "凝胶",
+            "30074": "白马醇",
+            "30073": "扭转醇",
+            "30084": "三水锰矿",
+            "30083": "轻锰矿",
+            "30094": "五水研磨石",
+            "30093": "研磨石",
+            "30104": "RMA70-24",
+            "30103": "RMA70-12",
+            "30014": "提纯源岩",
+            "30013": "固源岩组",
+            "30012": "固源岩",
+            "30011": "源岩",
+            "30064": "改量装置",
+            "30063": "全新装置",
+            "30062": "装置",
+            "30061": "破损装置",
+            "30034": "聚酸酯块",
+            "30033": "聚酸酯组",
+            "30032": "聚酸酯",
+            "30031": "酯原料",
+            "30024": "糖聚块",
+            "30023": "糖组",
+            "30022": "糖",
+            "30021": "代糖",
+            "30044": "异铁块",
+            "30043": "异铁组",
+            "30042": "异铁",
+            "30041": "异铁碎片",
+            "30054": "酮阵列",
+            "30053": "酮凝集组",
+            "30052": "酮凝集",
+            "30051": "双酮"
+        }
+
+        def normalize_drop(value: str) -> str:
+            # 去前后空格与常见零宽字符
+            s = str(value).strip()
+            s = re.sub(r"[\u200b\u200c\u200d\ufeff]", "", s)
+            return s
+
+        try:
+            resp = requests.get(url, timeout=timeout, proxies=self.get_proxies())
+        except Exception:
+            return False, {"ALL": []}
+
+        if resp.status_code != 200:
+            return False, {"ALL": []}
+
+        try:
+            payload = resp.json()
+        except Exception:
+            return False, {"ALL": []}
+
+        now_utc = datetime.now(timezone.utc)
+
+        def parse_utc(dt_str: str) -> datetime:
+            return datetime.strptime(dt_str, "%Y/%m/%d %H:%M:%S").replace(tzinfo=timezone.utc)
+
+        results: List[Dict[str, Any]] = []
+
+        for s in payload.get("Official", {}).get("sideStoryStage", []):
+            act = s.get("Activity", {}) or {}
+            try:
+                start_utc = parse_utc(act["UtcStartTime"])
+                expire_utc = parse_utc(act["UtcExpireTime"])
+            except Exception:
+                continue
+
+            if start_utc <= now_utc < expire_utc:
+                raw_drop = s.get("Drop", "")
+                drop_id = normalize_drop(raw_drop)
+
+                if drop_id.isdigit():
+                    drop_name = materials_map.get(drop_id, "未知材料")
+                else:
+                    drop_name = "DESC:"+drop_id  # 非纯数字，直接用文本.加一个DESC前缀方便前端区分
+
+                results.append({
+                    "Display": s.get("Display", ""),
+                    "Value": s.get("Value", ""),
+                    "Drop": raw_drop,
+                    "DropName": drop_name,
+                    "Activity": s.get("Activity", {})
+                })
+
+        return True, {"ALL": results}
 
     async def get_server_info(self, type: str) -> Dict[str, Any]:
         """获取公告信息"""
@@ -1140,7 +1259,7 @@ class AppConfig(GlobalConfig):
                         break
                     # 如果遇到新的Fight任务开始，则当前任务没有正常结束
                     if j < len(logs) and (
-                        "开始任务: Fight" in logs[j] or "开始任务: 刷理智" in logs[j]
+                            "开始任务: Fight" in logs[j] or "开始任务: 刷理智" in logs[j]
                     ):
                         break
 
@@ -1151,7 +1270,7 @@ class AppConfig(GlobalConfig):
         # 处理每个Fight任务
         for start_idx, end_idx in fight_tasks:
             # 提取当前任务的日志
-            task_logs = logs[start_idx : end_idx + 1]
+            task_logs = logs[start_idx: end_idx + 1]
 
             # 查找任务中的最后一次掉落统计
             last_drop_stats = {}
@@ -1214,7 +1333,7 @@ class AppConfig(GlobalConfig):
         return if_six_star
 
     async def save_general_log(
-        self, log_path: Path, logs: list, general_result: str
+            self, log_path: Path, logs: list, general_result: str
     ) -> None:
         """
         保存通用日志并生成对应统计数据
@@ -1292,7 +1411,7 @@ class AppConfig(GlobalConfig):
                         days=(
                             1
                             if datetime.strptime(json_file.stem, "%H-%M-%S").time()
-                            < datetime.min.time().replace(hour=4)
+                               < datetime.min.time().replace(hour=4)
                             else 0
                         )
                     )
@@ -1319,7 +1438,7 @@ class AppConfig(GlobalConfig):
         return {k: v for k, v in data.items() if v}
 
     def search_history(
-        self, mode: str, start_date: datetime, end_date: datetime
+            self, mode: str, start_date: datetime, end_date: datetime
     ) -> dict:
         """
         搜索指定范围内的历史记录
@@ -1400,7 +1519,7 @@ class AppConfig(GlobalConfig):
                 # 只检查 `YYYY-MM-DD` 格式的文件夹
                 folder_date = datetime.strptime(date_folder.name, "%Y-%m-%d")
                 if datetime.now() - folder_date > timedelta(
-                    days=self.get("Function", "HistoryRetentionTime")
+                        days=self.get("Function", "HistoryRetentionTime")
                 ):
                     shutil.rmtree(date_folder, ignore_errors=True)
                     deleted_count += 1
