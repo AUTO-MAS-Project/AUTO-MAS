@@ -58,6 +58,7 @@ def main():
             from app.core import Config, MainTimer
 
             await Config.init_config()
+            await Config.get_stage()
             main_timer = asyncio.create_task(MainTimer.second_task())
 
             yield
