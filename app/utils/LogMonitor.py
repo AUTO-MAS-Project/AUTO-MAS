@@ -9,6 +9,33 @@ from .logger import get_logger
 
 logger = get_logger("日志监控器")
 
+TIME_FIELDS = {
+    "%Y": "year",
+    "%m": "month",
+    "%d": "day",
+    "%H": "hour",
+    "%M": "minute",
+    "%S": "second",
+    "%f": "microsecond",
+}
+"""时间字段映射表"""
+
+
+def strptime(date_string: str, format: str, default_date: datetime) -> datetime:
+    """根据指定格式解析日期字符串"""
+
+    date = datetime.strptime(date_string, format)
+
+    # 构建参数字典
+    datetime_kwargs = {}
+    for format_code, field_name in TIME_FIELDS.items():
+        if format_code in format:
+            datetime_kwargs[field_name] = getattr(date, field_name)
+        else:
+            datetime_kwargs[field_name] = getattr(default_date, field_name)
+
+    return datetime(**datetime_kwargs)
+
 
 class LogMonitor:
     def __init__(
@@ -54,13 +81,14 @@ class LogMonitor:
                     async for line in f:
                         if not if_log_start:
                             try:
-                                entry_time = datetime.strptime(
+                                entry_time = strptime(
                                     line[
                                         self.time_stamp_range[
                                             0
                                         ] : self.time_stamp_range[1]
                                     ],
                                     self.time_format,
+                                    self.last_callback_time,
                                 )
                                 if entry_time > self.log_start_time:
                                     if_log_start = True

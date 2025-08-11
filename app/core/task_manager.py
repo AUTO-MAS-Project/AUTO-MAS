@@ -118,8 +118,8 @@ class _TaskManager:
 
             if isinstance(Config.ScriptConfig[task_id], MaaConfig):
                 task_item = MaaManager(mode, task_id, actual_id, websocket)
-            # elif isinstance(Config.ScriptConfig[task_id], GeneralConfig):
-            #     task_item = GeneralManager(mode, task_id, actual_id, websocket)
+            elif isinstance(Config.ScriptConfig[task_id], GeneralConfig):
+                task_item = GeneralManager(mode, task_id, actual_id, websocket)
             else:
                 logger.error(
                     f"不支持的脚本类型：{Config.ScriptConfig[task_id].__class__.__name__}"
@@ -197,8 +197,8 @@ class _TaskManager:
 
                 if isinstance(Config.ScriptConfig[script_id], MaaConfig):
                     task_item = MaaManager(mode, script_id, None, websocket)
-                # elif isinstance(Config.ScriptConfig[task_id], GeneralConfig):
-                #     task_item = GeneralManager(mode, task_id, actual_id, websocket)
+                elif isinstance(Config.ScriptConfig[task_id], GeneralConfig):
+                    task_item = GeneralManager(mode, task_id, actual_id, websocket)
                 else:
                     logger.error(
                         f"不支持的脚本类型：{Config.ScriptConfig[script_id].__class__.__name__}"

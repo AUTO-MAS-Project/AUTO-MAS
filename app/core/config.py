@@ -22,7 +22,6 @@
 
 import re
 import shutil
-import asyncio
 import requests
 import truststore
 import calendar
@@ -133,7 +132,7 @@ class TimeSet(ConfigBase):
         super().__init__()
 
         self.Info_Enabled = ConfigItem("Info", "Enabled", False, BoolValidator())
-        self.Info_Time = ConfigItem("Info", "Set", "00:00")
+        self.Info_Time = ConfigItem("Info", "Time", "00:00")
 
 
 class QueueConfig(ConfigBase):
