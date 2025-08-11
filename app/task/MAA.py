@@ -183,12 +183,9 @@ class MaaManager:
 
                 self.cur_user_data = self.user_config[uuid.UUID(user["user_id"])]
 
-                if self.script_config.get(
-                    "Run", "ProxyTimesLimit"
-                ) == 0 or self.cur_user_data.get(
-                    "Data", "ProxyTimes"
-                ) < self.script_config.get(
-                    "Run", "ProxyTimesLimit"
+                if (self.script_config.get("Run", "ProxyTimesLimit") == 0) or (
+                    self.cur_user_data.get("Data", "ProxyTimes")
+                    < self.script_config.get("Run", "ProxyTimesLimit")
                 ):
                     user["status"] = "运行"
                     await self.websocket.send_json(
@@ -848,6 +845,7 @@ class MaaManager:
             self.log_start_time = datetime.now()
 
             # 监测MAA运行状态
+            self.log_check_mode = "设置脚本"
             await self.maa_log_monitor.start(self.maa_log_path, self.log_start_time)
             self.wait_event.clear()
             await self.wait_event.wait()
@@ -893,7 +891,7 @@ class MaaManager:
                 )
                 self.user_list[self.index]["status"] = "完成"
                 logger.success(
-                    f"用户 {self.user_list[self.index]['name']} 的自动代理任务已完成"
+                    f"用户 {self.user_list[self.index]['user_id']} 的自动代理任务已完成"
                 )
                 Notify.push_plyer(
                     "成功完成一个自动代理任务！",
@@ -904,7 +902,7 @@ class MaaManager:
             else:
                 # 录入代理失败的用户
                 logger.error(
-                    f"用户 {self.user_list[self.index]['name']} 的自动代理任务未完成"
+                    f"用户 {self.user_list[self.index]['user_id']} 的自动代理任务未完成"
                 )
                 self.user_list[self.index]["status"] = "异常"
 
@@ -930,6 +928,7 @@ class MaaManager:
                 self.user_list[self.index]["status"] = "异常"
 
     async def final_task(self, task: asyncio.Task):
+        """结束时的收尾工作"""
 
         logger.info("MAA 主任务已结束，开始执行后续操作")
 
@@ -1005,7 +1004,7 @@ class MaaManager:
             title = (
                 f"{self.current_date} | {self.script_config.get("Info", "Name")}的{self.mode}任务报告"
                 if self.script_config.get("Info", "Name") != ""
-                else f"{self.current_date} | {self.mode[:4]}任务报告"
+                else f"{self.current_date} | {self.mode}任务报告"
             )
             result = {
                 "title": f"{self.mode}任务报告",
@@ -1028,9 +1027,11 @@ class MaaManager:
                 f"已完成数：{result["completed_count"]}，未完成数：{result["uncompleted_count"]}\n\n"
             )
             if len(result["failed_user"]) > 0:
-                result_text += f"{self.mode[2:4]}未成功的用户：\n{"\n".join(result["failed_user"])}\n"
+                result_text += (
+                    f"{self.mode}未成功的用户：\n{"\n".join(result["failed_user"])}\n"
+                )
             if len(result["waiting_user"]) > 0:
-                result_text += f"\n未开始{self.mode[2:4]}的用户：\n{"\n".join(result["waiting_user"])}\n"
+                result_text += f"\n未开始{self.mode}的用户：\n{"\n".join(result["waiting_user"])}\n"
 
             # 推送代理结果通知
             Notify.push_plyer(
@@ -1040,6 +1041,7 @@ class MaaManager:
                 10,
             )
             await self.push_notification("代理结果", title, result)
+
         elif self.mode == "设置脚本":
             (
                 Path.cwd()

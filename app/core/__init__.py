@@ -24,7 +24,7 @@ __author__ = "DLmaster361 <DLmaster_361@163.com>"
 __license__ = "GPL-3.0 license"
 
 from .broadcast import Broadcast
-from .config import Config, MaaConfig, GeneralConfig, MaaUserConfig
+from .config import Config, MaaConfig, GeneralConfig, MaaUserConfig, GeneralUserConfig
 from .timer import MainTimer
 from .task_manager import TaskManager
 
@@ -36,4 +36,5 @@ __all__ = [
     "MainTimer",
     "TaskManager",
     "MaaUserConfig",
+    "GeneralUserConfig",
 ]
