@@ -2,47 +2,50 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { InfoOut } from '../models/InfoOut.ts';
-import type { OutBase } from '../models/OutBase.ts';
-import type { PlanCreateIn } from '../models/PlanCreateIn.ts';
-import type { PlanCreateOut } from '../models/PlanCreateOut.ts';
-import type { PlanDeleteIn } from '../models/PlanDeleteIn.ts';
-import type { PlanGetIn } from '../models/PlanGetIn.ts';
-import type { PlanGetOut } from '../models/PlanGetOut.ts';
-import type { PlanReorderIn } from '../models/PlanReorderIn.ts';
-import type { PlanUpdateIn } from '../models/PlanUpdateIn.ts';
-import type { QueueCreateOut } from '../models/QueueCreateOut.ts';
-import type { QueueDeleteIn } from '../models/QueueDeleteIn.ts';
-import type { QueueGetIn } from '../models/QueueGetIn.ts';
-import type { QueueGetOut } from '../models/QueueGetOut.ts';
-import type { QueueItemCreateOut } from '../models/QueueItemCreateOut.ts';
-import type { QueueItemDeleteIn } from '../models/QueueItemDeleteIn.ts';
-import type { QueueItemReorderIn } from '../models/QueueItemReorderIn.ts';
-import type { QueueItemUpdateIn } from '../models/QueueItemUpdateIn.ts';
-import type { QueueReorderIn } from '../models/QueueReorderIn.ts';
-import type { QueueSetInBase } from '../models/QueueSetInBase.ts';
-import type { QueueUpdateIn } from '../models/QueueUpdateIn.ts';
-import type { ScriptCreateIn } from '../models/ScriptCreateIn.ts';
-import type { ScriptCreateOut } from '../models/ScriptCreateOut.ts';
-import type { ScriptDeleteIn } from '../models/ScriptDeleteIn.ts';
-import type { ScriptGetIn } from '../models/ScriptGetIn.ts';
-import type { ScriptGetOut } from '../models/ScriptGetOut.ts';
-import type { ScriptReorderIn } from '../models/ScriptReorderIn.ts';
-import type { ScriptUpdateIn } from '../models/ScriptUpdateIn.ts';
-import type { SettingGetOut } from '../models/SettingGetOut.ts';
-import type { SettingUpdateIn } from '../models/SettingUpdateIn.ts';
-import type { TimeSetCreateOut } from '../models/TimeSetCreateOut.ts';
-import type { TimeSetDeleteIn } from '../models/TimeSetDeleteIn.ts';
-import type { TimeSetReorderIn } from '../models/TimeSetReorderIn.ts';
-import type { TimeSetUpdateIn } from '../models/TimeSetUpdateIn.ts';
-import type { UserCreateOut } from '../models/UserCreateOut.ts';
-import type { UserDeleteIn } from '../models/UserDeleteIn.ts';
-import type { UserInBase } from '../models/UserInBase.ts';
-import type { UserReorderIn } from '../models/UserReorderIn.ts';
-import type { UserUpdateIn } from '../models/UserUpdateIn.ts';
-import type { CancelablePromise } from '../core/CancelablePromise.ts';
-import { OpenAPI } from '../core/OpenAPI.ts';
-import { request as __request } from '../core/request.ts';
+import type { DispatchIn } from '../models/DispatchIn';
+import type { InfoOut } from '../models/InfoOut';
+import type { OutBase } from '../models/OutBase';
+import type { PlanCreateIn } from '../models/PlanCreateIn';
+import type { PlanCreateOut } from '../models/PlanCreateOut';
+import type { PlanDeleteIn } from '../models/PlanDeleteIn';
+import type { PlanGetIn } from '../models/PlanGetIn';
+import type { PlanGetOut } from '../models/PlanGetOut';
+import type { PlanReorderIn } from '../models/PlanReorderIn';
+import type { PlanUpdateIn } from '../models/PlanUpdateIn';
+import type { QueueCreateOut } from '../models/QueueCreateOut';
+import type { QueueDeleteIn } from '../models/QueueDeleteIn';
+import type { QueueGetIn } from '../models/QueueGetIn';
+import type { QueueGetOut } from '../models/QueueGetOut';
+import type { QueueItemCreateOut } from '../models/QueueItemCreateOut';
+import type { QueueItemDeleteIn } from '../models/QueueItemDeleteIn';
+import type { QueueItemReorderIn } from '../models/QueueItemReorderIn';
+import type { QueueItemUpdateIn } from '../models/QueueItemUpdateIn';
+import type { QueueReorderIn } from '../models/QueueReorderIn';
+import type { QueueSetInBase } from '../models/QueueSetInBase';
+import type { QueueUpdateIn } from '../models/QueueUpdateIn';
+import type { ScriptCreateIn } from '../models/ScriptCreateIn';
+import type { ScriptCreateOut } from '../models/ScriptCreateOut';
+import type { ScriptDeleteIn } from '../models/ScriptDeleteIn';
+import type { ScriptGetIn } from '../models/ScriptGetIn';
+import type { ScriptGetOut } from '../models/ScriptGetOut';
+import type { ScriptReorderIn } from '../models/ScriptReorderIn';
+import type { ScriptUpdateIn } from '../models/ScriptUpdateIn';
+import type { SettingGetOut } from '../models/SettingGetOut';
+import type { SettingUpdateIn } from '../models/SettingUpdateIn';
+import type { TaskCreateIn } from '../models/TaskCreateIn';
+import type { TaskCreateOut } from '../models/TaskCreateOut';
+import type { TimeSetCreateOut } from '../models/TimeSetCreateOut';
+import type { TimeSetDeleteIn } from '../models/TimeSetDeleteIn';
+import type { TimeSetReorderIn } from '../models/TimeSetReorderIn';
+import type { TimeSetUpdateIn } from '../models/TimeSetUpdateIn';
+import type { UserCreateOut } from '../models/UserCreateOut';
+import type { UserDeleteIn } from '../models/UserDeleteIn';
+import type { UserInBase } from '../models/UserInBase';
+import type { UserReorderIn } from '../models/UserReorderIn';
+import type { UserUpdateIn } from '../models/UserUpdateIn';
+import type { CancelablePromise } from '../core/CancelablePromise';
+import { OpenAPI } from '../core/OpenAPI';
+import { request as __request } from '../core/request';
 export class Service {
     /**
      * 获取关卡号信息
@@ -75,6 +78,17 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/info/apps_info',
+        });
+    }
+    /**
+     * 信息总览
+     * @returns InfoOut Successful Response
+     * @throws ApiError
+     */
+    public static addOverviewApiInfoGetOverviewPost(): CancelablePromise<InfoOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/info/get/overview',
         });
     }
     /**
@@ -575,6 +589,44 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/queue/item/order',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 添加任务
+     * @param requestBody
+     * @returns TaskCreateOut Successful Response
+     * @throws ApiError
+     */
+    public static addTaskApiDispatchStartPost(
+        requestBody: TaskCreateIn,
+    ): CancelablePromise<TaskCreateOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/dispatch/start',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 中止任务
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static stopTaskApiDispatchStopPost(
+        requestBody: DispatchIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/dispatch/stop',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
