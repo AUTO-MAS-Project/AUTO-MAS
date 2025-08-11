@@ -37,6 +37,7 @@
     "@types/adm-zip": "^0.5.7",
     "adm-zip": "^0.5.16",
     "ant-design-vue": "4.x",
+    "dayjs": "^1.11.13",
     "vue": "^3.5.17",
     "vue-router": "4"
   },
