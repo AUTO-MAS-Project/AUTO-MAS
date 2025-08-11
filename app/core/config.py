@@ -1143,7 +1143,7 @@ class AppConfig(GlobalConfig):
         def parse_utc(dt_str: str) -> datetime:
             return datetime.strptime(dt_str, "%Y/%m/%d %H:%M:%S").replace(tzinfo=timezone.utc)
 
-        results: List[Dict[str, str]] = []
+        results: List[Dict[str, Any]] = []
 
         for s in payload.get("Official", {}).get("sideStoryStage", []):
             act = s.get("Activity", {}) or {}
@@ -1166,7 +1166,8 @@ class AppConfig(GlobalConfig):
                     "Display": s.get("Display", ""),
                     "Value": s.get("Value", ""),
                     "Drop": raw_drop,
-                    "DropName": drop_name
+                    "DropName": drop_name,
+                    "Activity": s.get("Activity", {})
                 })
 
         return True, {"ALL": results}
