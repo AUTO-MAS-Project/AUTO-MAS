@@ -29,21 +29,26 @@
         <!-- 活动信息展示 -->
         <div v-if="currentActivity && !loading" class="activity-info">
           <div class="activity-header">
-            <div class="activity-name">
-<!--              <CalendarOutlined class="activity-icon" />-->
-              <span class="activity-title">{{ currentActivity.StageName }}</span>
-              <a-tag color="blue" class="activity-tip">{{ currentActivity.Tip }}</a-tag>
-            </div>
-            <div class="activity-time">
-              <div class="time-item">
-                <ClockCircleOutlined class="time-icon" />
-                <span class="time-label">剩余时间：</span>
-                <span class="time-value remaining">{{ getTimeRemaining(currentActivity.UtcExpireTime, currentActivity.TimeZone) }}</span>
+            <div class="activity-left">
+              <div class="activity-name">
+                <span class="activity-title">{{ currentActivity.StageName }}</span>
+                <a-tag color="blue" class="activity-tip">{{ currentActivity.Tip }}</a-tag>
               </div>
-              <div class="time-item">
+              <div class="activity-end-time">
+                <ClockCircleOutlined class="time-icon" />
                 <span class="time-label">结束时间：</span>
                 <span class="time-value">{{ formatTime(currentActivity.UtcExpireTime, currentActivity.TimeZone) }}</span>
               </div>
+            </div>
+            
+            <div class="activity-right">
+              <a-statistic-countdown
+                title="当期活动剩余时间"
+                :value="getCountdownValue(currentActivity.UtcExpireTime)"
+                format="D 天 H 时 m 分"
+                :value-style="getCountdownStyle(currentActivity.UtcExpireTime)"
+                @finish="onCountdownFinish"
+              />
             </div>
           </div>
         </div>
@@ -136,29 +141,50 @@ const formatTime = (timeString: string, timeZone: number) => {
   }
 }
 
-// 计算活动剩余时间
-const getTimeRemaining = (expireTime: string, timeZone: number) => {
+// 获取倒计时的目标时间戳
+const getCountdownValue = (expireTime: string) => {
+  try {
+    return new Date(expireTime).getTime()
+  } catch {
+    return Date.now()
+  }
+}
+
+// 获取倒计时样式 - 如果剩余时间小于2天则显示红色
+const getCountdownStyle = (expireTime: string) => {
   try {
     const expire = new Date(expireTime)
     const now = new Date()
     const remaining = expire.getTime() - now.getTime()
+    const twoDaysInMs = 2 * 24 * 60 * 60 * 1000
     
-    if (remaining <= 0) return '已结束'
+    if (remaining <= twoDaysInMs) {
+      return {
+        color: '#ff4d4f',
+        fontWeight: 'bold',
+        fontSize: '18px'
+      }
+    }
     
-    const days = Math.floor(remaining / (1000 * 60 * 60 * 24))
-    const hours = Math.floor((remaining % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60))
-    
-    if (days > 0) {
-      return `${days}天${hours}小时`
-    } else if (hours > 0) {
-      return `${hours}小时`
-    } else {
-      const minutes = Math.floor((remaining % (1000 * 60 * 60)) / (1000 * 60))
-      return `${minutes}分钟`
+    return {
+      color: 'var(--ant-color-text)',
+      fontWeight: '600',
+      fontSize: '20px'
     }
   } catch {
-    return '未知'
+    return {
+      color: 'var(--ant-color-text)',
+      fontWeight: '600',
+      fontSize: '20px'
+    }
   }
+}
+
+// 倒计时结束回调
+const onCountdownFinish = () => {
+  message.warning('活动已结束')
+  // 重新获取数据
+  fetchActivityData()
 }
 
 const getMaterialImage = (dropName: string) => {
@@ -244,14 +270,34 @@ onMounted(() => {
 
 .activity-header {
   display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 24px;
+}
+
+.activity-left {
+  flex: 1;
+  display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.activity-right {
+  flex-shrink: 0;
+  text-align: right;
+}
+
+.activity-end-time {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
 }
 
 .activity-name {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
   flex-wrap: wrap;
 }
 
