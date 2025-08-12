@@ -2,6 +2,7 @@ loguru==0.7.3
 fastapi==0.116.1
 pydantic==2.11.7
 uvicorn==0.35.0
+websockets==15.0.1
 aiofiles==24.1.0
 plyer==2.1.0
 psutil==7.0.0
