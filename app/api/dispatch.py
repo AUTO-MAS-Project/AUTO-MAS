@@ -38,8 +38,8 @@ async def add_task(task: TaskCreateIn = Body(...)) -> TaskCreateOut:
     try:
         task_id = await TaskManager.add_task(task.mode, task.taskId)
     except Exception as e:
-        return TaskCreateOut(code=500, status="error", message=str(e), taskId="")
-    return TaskCreateOut(taskId=str(task_id))
+        return TaskCreateOut(code=500, status="error", message=str(e), websocketId="")
+    return TaskCreateOut(websocketId=str(task_id))
 
 
 @router.post("/stop", summary="中止任务", response_model=OutBase, status_code=200)
