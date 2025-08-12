@@ -34,6 +34,15 @@ class InfoOut(OutBase):
     data: Dict[str, Any] = Field(..., description="收到的服务器数据")
 
 
+class ComboBoxItem(BaseModel):
+    label: str = Field(..., description="展示值")
+    value: str = Field(..., description="实际值")
+
+
+class ComboBoxOut(OutBase):
+    data: List[ComboBoxItem] = Field(..., description="下拉框选项")
+
+
 class GlobalConfig_Function(BaseModel):
     HistoryRetentionTime: Optional[Literal[7, 15, 30, 60, 90, 180, 365, 0]] = Field(
         None, description="历史记录保留时间, 0表示永久保存"

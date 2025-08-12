@@ -40,6 +40,21 @@ async def get_stage_info() -> InfoOut:
     return InfoOut(data=data)
 
 
+@router.post(
+    "/combox/script",
+    summary="获取脚本下拉框信息",
+    response_model=ComboBoxOut,
+    status_code=200,
+)
+async def get_script_combox() -> ComboBoxOut:
+
+    try:
+        data: List[ComboBoxItem] = await Config.get_script_combox()
+    except Exception as e:
+        return ComboBoxOut(code=500, status="error", message=str(e), data=[])
+    return ComboBoxOut(data=data)
+
+
 @router.post("/notice", summary="获取通知信息", response_model=InfoOut, status_code=200)
 async def get_notice_info() -> InfoOut:
 
