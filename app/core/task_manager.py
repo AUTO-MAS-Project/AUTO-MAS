@@ -157,6 +157,8 @@ class _TaskManager:
 
                 task_list = []
                 for queue_item in queue.QueueItem.values():
+                    if queue_item.get("Info", "ScriptId") is None:
+                        continue
                     uid = uuid.UUID(queue_item.get("Info", "ScriptId"))
                     task_list.append(
                         {

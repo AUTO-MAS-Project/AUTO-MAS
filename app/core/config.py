@@ -220,7 +220,7 @@ class QueueConfig(ConfigBase):
     def __init__(self) -> None:
         super().__init__()
 
-        self.Info_Name = ConfigItem("Info", "Name", "")
+        self.Info_Name = ConfigItem("Info", "Name", "新队列")
         self.Info_TimeEnabled = ConfigItem(
             "Info", "TimeEnabled", False, BoolValidator()
         )
@@ -403,7 +403,7 @@ class MaaConfig(ConfigBase):
     def __init__(self) -> None:
         super().__init__()
 
-        self.Info_Name = ConfigItem("Info", "Name", "")
+        self.Info_Name = ConfigItem("Info", "Name", "新 MAA 脚本")
         self.Info_Path = ConfigItem("Info", "Path", ".", FolderValidator())
 
         self.Run_TaskTransitionMethod = ConfigItem(
@@ -440,7 +440,7 @@ class MaaPlanConfig(ConfigBase):
     def __init__(self) -> None:
         super().__init__()
 
-        self.Info_Name = ConfigItem("Info", "Name", "")
+        self.Info_Name = ConfigItem("Info", "Name", "新 MAA 计划表")
         self.Info_Mode = ConfigItem(
             "Info", "Mode", "ALL", OptionsValidator(["ALL", "Weekly"])
         )
@@ -511,12 +511,12 @@ class MaaPlanConfig(ConfigBase):
 
 
 class GeneralUserConfig(ConfigBase):
-    """通用子配置"""
+    """通用脚本用户配置"""
 
     def __init__(self) -> None:
         super().__init__()
 
-        self.Info_Name = ConfigItem("Info", "Name", "新配置")
+        self.Info_Name = ConfigItem("Info", "Name", "新用户")
         self.Info_Status = ConfigItem("Info", "Status", True, BoolValidator())
         self.Info_RemainedDay = ConfigItem(
             "Info", "RemainedDay", -1, RangeValidator(-1, 1024)
@@ -566,7 +566,7 @@ class GeneralConfig(ConfigBase):
     def __init__(self) -> None:
         super().__init__()
 
-        self.Info_Name = ConfigItem("Info", "Name", "")
+        self.Info_Name = ConfigItem("Info", "Name", "新通用脚本")
         self.Info_RootPath = ConfigItem("Info", "RootPath", ".", FileValidator())
 
         self.Script_ScriptPath = ConfigItem(
@@ -656,7 +656,7 @@ class AppConfig(GlobalConfig):
         self.power_sign = "NoAction"
         self.if_ignore_silence: List[uuid.UUID] = []
         self.last_stage_update = None
-        self.stage_info: Optional[Dict[str, Dict[str, List[str]]]] = None
+        self.stage_info: Optional[Dict[str, List[Dict[str, str]]]] = None
         self.temp_task: List[asyncio.Task] = []
 
         self.ScriptConfig = MultipleConfig([MaaConfig, GeneralConfig])
@@ -1058,18 +1058,39 @@ class AppConfig(GlobalConfig):
             "https": self.get("Update", "ProxyAddress"),
         }
 
-    async def get_stage_info(self) -> Dict[str, Dict[str, List[str]]]:
+    async def get_stage_info(
+        self,
+        type: Literal[
+            "Today",
+            "ALL",
+            "Monday",
+            "Tuesday",
+            "Wednesday",
+            "Thursday",
+            "Friday",
+            "Saturday",
+            "Sunday",
+            "Info",
+        ],
+    ):
         """获取关卡信息"""
+
+        if type == "Today":
+            dt = self.server_date()
+            index = dt.strftime("%A")
+        else:
+            index = type
 
         if self.stage_info is not None:
             task = asyncio.create_task(self.get_stage())
             self.temp_task.append(task)
             task.add_done_callback(lambda t: self.temp_task.remove(t))
-            return self.stage_info
         else:
-            return await self.get_stage()
+            await self.get_stage()
 
-    async def get_stage(self) -> Dict[str, Dict[str, List[str]]]:
+        return self.stage_info.get(index, []) if self.stage_info is not None else []
+
+    async def get_stage(self) -> Optional[Dict[str, List[Dict[str, str]]]]:
         """更新活动关卡信息"""
 
         if self.last_stage_update is not None and (
@@ -1132,7 +1153,9 @@ class AppConfig(GlobalConfig):
                 proxies=self.get_proxies(),
             )
             if response.status_code == 200:
-                stage_infos = response.json()["Official"]["sideStoryStage"]
+                stage_infos = (
+                    response.json().get("Official", {}).get("sideStoryStage", [])
+                )
                 if_get_maa_stage = True
             else:
                 logger.warning(f"无法从MAA服务器获取活动关卡信息:{response.text}")
@@ -1143,85 +1166,11 @@ class AppConfig(GlobalConfig):
             if_get_maa_stage = False
             stage_infos = []
 
-        ss_stage_dict = {"value": [], "text": []}
-
-        for stage_info in stage_infos:
-
-            if (
-                datetime.strptime(
-                    stage_info["Activity"]["UtcStartTime"], "%Y/%m/%d %H:%M:%S"
-                )
-                < datetime.now()
-                < datetime.strptime(
-                    stage_info["Activity"]["UtcExpireTime"], "%Y/%m/%d %H:%M:%S"
-                )
-            ):
-                ss_stage_dict["value"].append(stage_info["Value"])
-                ss_stage_dict["text"].append(stage_info["Value"])
-
-        stage_dict = {}
-
-        for day in range(0, 8):
-
-            today_stage_dict = {"value": [], "text": []}
-
-            for stage_info in STAGE_DAILY_INFO:
-
-                if day in stage_info["days"] or day == 0:
-                    today_stage_dict["value"].append(stage_info["value"])
-                    today_stage_dict["text"].append(stage_info["text"])
-
-            stage_dict[calendar.day_name[day - 1] if day > 0 else "ALL"] = {
-                "value": ss_stage_dict["value"] + today_stage_dict["value"],
-                "text": ss_stage_dict["text"] + today_stage_dict["text"],
-            }
-
-        self.stage_info = stage_dict
-
-        if if_get_maa_stage:
-
-            logger.success("成功获取远端活动关卡信息")
-            self.last_stage_update = datetime.now()
-            (Path.cwd() / "data/StageInfo").mkdir(parents=True, exist_ok=True)
-            (Path.cwd() / "data/StageInfo/TimeStamp.txt").write_text(
-                remote_time_stamp.strftime("%Y%m%d%H%M%S"), encoding="utf-8"
-            )
-            with (Path.cwd() / "data/StageInfo/StageInfo.json").open(
-                "w", encoding="utf-8"
-            ) as f:
-                json.dump(stage_dict, f, ensure_ascii=False, indent=4)
-
-        return stage_dict
-
-    async def get_official_activity_stages(
-        self,
-        url: str = "https://api.maa.plus/MaaAssistantArknights/api/gui/StageActivity.json",
-        timeout: int = 10,
-    ) -> Tuple[bool, Dict[str, List[Dict[str, str]]]]:
-        """
-        获取 Official 区服当前开放的活动关卡（仅返回 Display/Value/Drop）。
-        返回:
-            (if_success, {"ALL": [ {"Display": "...", "Value": "...", "Drop": "..."}, ... ]})
-        """
-
         def normalize_drop(value: str) -> str:
             # 去前后空格与常见零宽字符
             s = str(value).strip()
             s = re.sub(r"[\u200b\u200c\u200d\ufeff]", "", s)
             return s
-
-        try:
-            resp = requests.get(url, timeout=timeout, proxies=self.get_proxies())
-        except Exception:
-            return False, {"ALL": []}
-
-        if resp.status_code != 200:
-            return False, {"ALL": []}
-
-        try:
-            payload = resp.json()
-        except Exception:
-            return False, {"ALL": []}
 
         now_utc = datetime.now(timezone.utc)
 
@@ -1230,9 +1179,9 @@ class AppConfig(GlobalConfig):
                 tzinfo=timezone.utc
             )
 
-        results: List[Dict[str, Any]] = []
+        side_story_info: List[Dict[str, Any]] = []
 
-        for s in payload.get("Official", {}).get("sideStoryStage", []):
+        for s in stage_infos:
             act = s.get("Activity", {}) or {}
             try:
                 start_utc = parse_utc(act["UtcStartTime"])
@@ -1251,7 +1200,7 @@ class AppConfig(GlobalConfig):
                         "DESC:" + drop_id
                     )  # 非纯数字，直接用文本.加一个DESC前缀方便前端区分
 
-                results.append(
+                side_story_info.append(
                     {
                         "Display": s.get("Display", ""),
                         "Value": s.get("Value", ""),
@@ -1261,13 +1210,62 @@ class AppConfig(GlobalConfig):
                     }
                 )
 
-        return True, {"ALL": results}
+        side_story_stage = []
+
+        for stage_info in stage_infos:
+
+            if (
+                datetime.strptime(
+                    stage_info["Activity"]["UtcStartTime"], "%Y/%m/%d %H:%M:%S"
+                )
+                < datetime.now()
+                < datetime.strptime(
+                    stage_info["Activity"]["UtcExpireTime"], "%Y/%m/%d %H:%M:%S"
+                )
+            ):
+                side_story_stage.append(
+                    {"label": stage_info["Value"], "value": stage_info["Value"]}
+                )
+
+        self.stage_info = {}
+
+        for day in range(0, 8):
+
+            today_stage = []
+
+            for stage_info in STAGE_DAILY_INFO:
+
+                if day in stage_info["days"] or day == 0:
+                    today_stage.append(
+                        {"label": stage_info["text"], "value": stage_info["value"]}
+                    )
+
+            self.stage_info[calendar.day_name[day - 1] if day > 0 else "ALL"] = (
+                side_story_stage + today_stage
+            )
+
+        self.stage_info["Info"] = side_story_info
+
+        if if_get_maa_stage:
+
+            logger.success("成功获取远端活动关卡信息")
+            self.last_stage_update = datetime.now()
+            (Path.cwd() / "data/StageInfo").mkdir(parents=True, exist_ok=True)
+            (Path.cwd() / "data/StageInfo/TimeStamp.txt").write_text(
+                remote_time_stamp.strftime("%Y%m%d%H%M%S"), encoding="utf-8"
+            )
+            with (Path.cwd() / "data/StageInfo/StageInfo.json").open(
+                "w", encoding="utf-8"
+            ) as f:
+                json.dump(self.stage_info, f, ensure_ascii=False, indent=4)
+
+        return self.stage_info
 
     async def get_script_combox(self):
         """获取脚本下拉框信息"""
 
         logger.info("Getting script combo box information...")
-        data = []
+        data = [{"label": "未选择", "value": None}]
         for uid, script in self.ScriptConfig.items():
             data.append(
                 {

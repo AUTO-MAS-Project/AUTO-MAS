@@ -36,11 +36,28 @@ class InfoOut(OutBase):
 
 class ComboBoxItem(BaseModel):
     label: str = Field(..., description="展示值")
-    value: str = Field(..., description="实际值")
+    value: Optional[str] = Field(..., description="实际值")
 
 
 class ComboBoxOut(OutBase):
     data: List[ComboBoxItem] = Field(..., description="下拉框选项")
+
+
+class GetStageIn(BaseModel):
+    type: Literal[
+        "Today",
+        "ALL",
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday",
+        "Sunday",
+    ] = Field(
+        ...,
+        description="选择的日期类型, Today为当天, ALL为包含当天未开放关卡在内的所有项",
+    )
 
 
 class GlobalConfig_Function(BaseModel):
