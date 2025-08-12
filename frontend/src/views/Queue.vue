@@ -71,17 +71,17 @@
               />
             </div>
           </div>
-          <div class="section-controls">
-            <a-space>
-              <span class="status-label">状态：</span>
-              <a-switch 
-                v-model:checked="currentQueueEnabled" 
-                @change="onQueueStatusChange"
-                checked-children="启用"
-                un-checked-children="禁用"
-              />
-            </a-space>
-          </div>
+<!--          <div class="section-controls">-->
+<!--            <a-space>-->
+<!--              <span class="status-label">状态：</span>-->
+<!--              <a-switch -->
+<!--                v-model:checked="currentQueueEnabled" -->
+<!--                @change="onQueueStatusChange"-->
+<!--                checked-children="启用"-->
+<!--                un-checked-children="禁用"-->
+<!--              />-->
+<!--            </a-space>-->
+<!--          </div>-->
         </div>
 
         <!-- 定时项组件 -->
@@ -353,11 +353,7 @@ const refreshQueueItems = async () => {
               if (queueItemData?.Info) {
                 queueItems.push({
                   id: queueItemId,
-                  name: queueItemData.Info.name || `项目 ${queueItemId}`,
-                  script: queueItemData.Info.script || '',
-                  plan: queueItemData.Info.plan || '',
-                  status: queueItemData.Info.status || 'inactive',
-                  description: queueItemData.Info.description || ''
+                  script: queueItemData.Info.ScriptId || ''
                 })
               }
             } catch (itemError) {

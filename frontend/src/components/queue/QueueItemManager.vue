@@ -8,120 +8,50 @@
           </template>
           添加队列项
         </a-button>
-        <a-button @click="refreshData" :loading="loading">
-          <template #icon>
-            <ReloadOutlined />
-          </template>
-          刷新
-        </a-button>
       </a-space>
     </template>
 
-    <div class="queue-items-grid">
-      <div
-        v-for="item in queueItems"
-        :key="item.id"
-        class="queue-item-card-item"
-      >
-        <div class="item-header">
-          <div class="item-name">{{ item.name || `项目 ${item.id}` }}</div>
-          <a-dropdown>
-            <a-button size="small" type="text">
-              <MoreOutlined />
+    <a-table
+      :columns="queueColumns"
+      :data-source="queueItems"
+      :pagination="false"
+      size="middle"
+      :scroll="{ x: 600 }"
+    >
+      <template #bodyCell="{ column, record, index }">
+        <template v-if="column.key === 'index'">
+          第{{ index + 1 }}个脚本
+        </template>
+        <template v-else-if="column.key === 'script'">
+          {{ getScriptName(record.script) }}
+        </template>
+        <template v-else-if="column.key === 'actions'">
+          <a-space>
+            <a-button size="small" @click="editQueueItem(record)">
+              <EditOutlined />
+              编辑
             </a-button>
-            <template #overlay>
-              <a-menu>
-                <a-menu-item @click="editQueueItem(item)">
-                  <EditOutlined />
-                  编辑
-                </a-menu-item>
-                <a-menu-item @click="deleteQueueItem(item.id)" danger>
-                  <DeleteOutlined />
-                  删除
-                </a-menu-item>
-              </a-menu>
-            </template>
-          </a-dropdown>
-        </div>
-        <div class="item-content">
-          <div class="item-info">
-            <div class="info-row">
-              <span class="label">状态：</span>
-              <a-tag :color="getStatusColor(item.status)">
-                {{ getStatusText(item.status) }}
-              </a-tag>
-            </div>
-            <div class="info-row" v-if="item.script">
-              <span class="label">脚本：</span>
-              <span class="value">{{ item.script }}</span>
-            </div>
-            <div class="info-row" v-if="item.plan">
-              <span class="label">计划：</span>
-              <span class="value">{{ item.plan }}</span>
-            </div>
-            <div class="info-row" v-if="item.description">
-              <span class="label">描述：</span>
-              <span class="value">{{ item.description }}</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+            <a-popconfirm title="确定要删除这个队列项吗？" @confirm="deleteQueueItem(record.id)" ok-text="确定" cancel-text="取消">
+              <a-button size="small" danger>
+                <DeleteOutlined />
+                删除
+              </a-button>
+            </a-popconfirm>
+          </a-space>
+        </template>
+      </template>
+    </a-table>
 
     <div v-if="!queueItems.length && !loading" class="empty-state">
       <a-empty description="暂无队列项数据" />
     </div>
 
     <!-- 队列项编辑弹窗 -->
-    <a-modal
-      v-model:open="modalVisible"
-      :title="editingQueueItem ? '编辑队列项' : '添加队列项'"
-      @ok="saveQueueItem"
-      @cancel="cancelEdit"
-      :confirm-loading="saving"
-      width="600px"
-    >
-      <a-form
-        ref="formRef"
-        :model="form"
-        :rules="rules"
-        layout="vertical"
-      >
-        <a-form-item label="项目名称" name="name">
-          <a-input v-model:value="form.name" placeholder="请输入项目名称" />
-        </a-form-item>
+    <a-modal v-model:open="modalVisible" :title="editingQueueItem ? '编辑队列项' : '添加队列项'" @ok="saveQueueItem"
+      @cancel="cancelEdit" :confirm-loading="saving" width="600px">
+      <a-form ref="formRef" :model="form" :rules="rules" layout="vertical">
         <a-form-item label="关联脚本" name="script">
-          <a-select 
-            v-model:value="form.script" 
-            placeholder="请选择关联脚本"
-            allow-clear
-            :options="scriptOptions"
-          />
-        </a-form-item>
-        <a-form-item label="关联计划" name="plan">
-          <a-select 
-            v-model:value="form.plan" 
-            placeholder="请选择关联计划"
-            allow-clear
-            :options="planOptions"
-          />
-        </a-form-item>
-        <a-form-item label="状态" name="status">
-          <a-select v-model:value="form.status" placeholder="请选择状态">
-            <a-select-option value="active">激活</a-select-option>
-            <a-select-option value="inactive">未激活</a-select-option>
-            <a-select-option value="pending">等待中</a-select-option>
-            <a-select-option value="running">运行中</a-select-option>
-            <a-select-option value="completed">已完成</a-select-option>
-            <a-select-option value="failed">失败</a-select-option>
-          </a-select>
-        </a-form-item>
-        <a-form-item label="描述" name="description">
-          <a-textarea 
-            v-model:value="form.description" 
-            placeholder="请输入队列项描述（可选）"
-            :rows="3"
-          />
+          <a-select v-model:value="form.script" placeholder="请选择关联脚本" allow-clear :options="scriptOptions" />
         </a-form-item>
       </a-form>
     </a-modal>
@@ -129,7 +59,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch, onMounted } from 'vue'
+import { ref, reactive, watch, onMounted, h } from 'vue'
 import { message } from 'ant-design-vue'
 import {
   PlusOutlined,
@@ -162,23 +92,44 @@ const editingQueueItem = ref<any>(null)
 
 // 选项数据
 const scriptOptions = ref<Array<{ label: string; value: string }>>([])
-const planOptions = ref<Array<{ label: string; value: string }>>([])
+
+// 获取脚本名称
+const getScriptName = (scriptId: string) => {
+  if (!scriptId) return '未选择脚本'
+  const script = scriptOptions.value.find(script => script.value === scriptId)
+  return script?.label || '未知脚本'
+}
 
 // 表单引用和数据
 const formRef = ref<FormInstance>()
 const form = reactive({
-  name: '',
-  script: '',
-  plan: '',
-  status: 'active',
-  description: ''
+  script: ''
 })
 
 // 表单验证规则
 const rules = {
-  name: [{ required: true, message: '请输入项目名称', trigger: 'blur' }],
-  status: [{ required: true, message: '请选择状态', trigger: 'change' }]
+  script: [{ required: true, message: '请选择关联脚本', trigger: 'change' }]
 }
+
+// 表格列配置
+const queueColumns = [
+  {
+    title: '序号',
+    key: 'index',
+    width: 150,
+  },
+  {
+    title: '脚本名称',
+    key: 'script',
+    width: 200,
+  },
+  {
+    title: '操作',
+    key: 'actions',
+    width: 150,
+    fixed: 'right',
+  },
+]
 
 // 计算属性 - 使用props传入的数据
 const queueItems = ref(props.queueItems)
@@ -188,85 +139,50 @@ watch(() => props.queueItems, (newQueueItems) => {
   queueItems.value = newQueueItems
 }, { deep: true })
 
-// 获取状态文本
-const getStatusText = (status: string) => {
-  const statusMap: Record<string, string> = {
-    active: '激活',
-    inactive: '未激活',
-    pending: '等待中',
-    running: '运行中',
-    completed: '已完成',
-    failed: '失败'
-  }
-  return statusMap[status] || status
-}
 
-// 获取状态颜色
-const getStatusColor = (status: string) => {
-  const colorMap: Record<string, string> = {
-    active: 'green',
-    inactive: 'default',
-    pending: 'orange',
-    running: 'blue',
-    completed: 'cyan',
-    failed: 'red'
-  }
-  return colorMap[status] || 'default'
-}
-
-// 加载脚本和计划选项
+// 加载脚本选项
 const loadOptions = async () => {
   try {
-    // 加载脚本选项
-    const scriptsResponse = await Service.getScriptsApiScriptsGetPost({})
-    if (scriptsResponse.code === 200) {
-      scriptOptions.value = scriptsResponse.index.map((item: any) => ({
-        label: Object.values(item)[0] as string,
-        value: Object.keys(item)[0]
-      }))
-    }
+    console.log('开始加载脚本选项...')
+    // 使用正确的API获取脚本下拉框选项
+    const scriptsResponse = await Service.getScriptComboxApiInfoComboxScriptPost()
+    console.log('脚本API响应:', scriptsResponse)
 
-    // 加载计划选项
-    const plansResponse = await Service.getPlanApiPlanGetPost({})
-    if (plansResponse.code === 200) {
-      planOptions.value = plansResponse.index.map((item: any) => ({
-        label: Object.values(item)[0] as string,
-        value: Object.keys(item)[0]
-      }))
+    if (scriptsResponse.code === 200) {
+      console.log('脚本API响应数据:', scriptsResponse.data)
+      // 数据已经是正确的格式，直接使用
+      scriptOptions.value = scriptsResponse.data || []
+      console.log('处理后的脚本选项:', scriptOptions.value)
+    } else {
+      console.error('脚本API响应错误:', scriptsResponse)
     }
   } catch (error) {
-    console.error('加载选项失败:', error)
+    console.error('加载脚本选项失败:', error)
   }
 }
 
-// 刷新数据
-const refreshData = () => {
-  emit('refresh')
-}
 
 // 添加队列项
-const addQueueItem = () => {
+const addQueueItem = async () => {
   editingQueueItem.value = null
   Object.assign(form, {
-    name: '',
-    script: '',
-    plan: '',
-    status: 'active',
-    description: ''
+    script: ''
   })
+
+  // 确保在打开弹窗时加载脚本选项
+  await loadOptions()
   modalVisible.value = true
 }
 
 // 编辑队列项
-const editQueueItem = (item: any) => {
+const editQueueItem = async (item: any) => {
   editingQueueItem.value = item
   Object.assign(form, {
-    name: item.name || '',
-    script: item.script || '',
-    plan: item.plan || '',
-    status: item.status || 'active',
-    description: item.description || ''
+    script: item.script || ''
   })
+
+  // 确保在打开弹窗时加载脚本选项
+  await loadOptions()
   modalVisible.value = true
 }
 
@@ -275,23 +191,19 @@ const saveQueueItem = async () => {
   try {
     await formRef.value?.validate()
     saving.value = true
-    
+
     if (editingQueueItem.value) {
-      // 更新队列项 - 根据API文档格式
+      // 更新队列项 - 只保存脚本信息
       const response = await Service.updateItemApiQueueItemUpdatePost({
         queueId: props.queueId,
         queueItemId: editingQueueItem.value.id,
         data: {
           Info: {
-            name: form.name,
-            script: form.script,
-            plan: form.plan,
-            status: form.status,
-            description: form.description
+            ScriptId: form.script
           }
         }
       })
-      
+
       if (response.code === 200) {
         message.success('队列项更新成功')
       } else {
@@ -304,7 +216,7 @@ const saveQueueItem = async () => {
       const createResponse = await Service.addItemApiQueueItemAddPost({
         queueId: props.queueId
       })
-      
+
       // 2. 用返回的queueItemId更新队列项数据
       if (createResponse.code === 200 && createResponse.queueItemId) {
         const updateResponse = await Service.updateItemApiQueueItemUpdatePost({
@@ -312,15 +224,11 @@ const saveQueueItem = async () => {
           queueItemId: createResponse.queueItemId,
           data: {
             Info: {
-              name: form.name,
-              script: form.script,
-              plan: form.plan,
-              status: form.status,
-              description: form.description
+              ScriptId: form.script
             }
           }
         })
-        
+
         if (updateResponse.code === 200) {
           message.success('队列项添加成功')
         } else {
@@ -332,7 +240,7 @@ const saveQueueItem = async () => {
         return
       }
     }
-    
+
     modalVisible.value = false
     emit('refresh')
   } catch (error) {
@@ -352,11 +260,11 @@ const cancelEdit = () => {
 // 删除队列项
 const deleteQueueItem = async (itemId: string) => {
   try {
-    const response = await Service.deleteItemApiQueueItemDeletePost({ 
+    const response = await Service.deleteItemApiQueueItemDeletePost({
       queueId: props.queueId,
-      queueItemId: itemId 
+      queueItemId: itemId
     })
-    
+
     if (response.code === 200) {
       message.success('队列项删除成功')
       // 确保删除后刷新数据
@@ -386,72 +294,52 @@ onMounted(() => {
   font-weight: 600;
 }
 
-/* 队列项网格样式 */
-.queue-items-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 16px;
+/* 队列项列表样式 */
+.queue-items-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
-.queue-item-card-item {
+.queue-item-row {
+  display: flex;
+  align-items: center;
+  padding: 12px 16px;
   background: var(--ant-color-bg-container);
   border: 1px solid var(--ant-color-border);
-  border-radius: 8px;
-  padding: 16px;
+  border-radius: 6px;
   transition: all 0.2s ease;
 }
 
-.queue-item-card-item:hover {
+.queue-item-row:hover {
   border-color: var(--ant-color-primary);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
-.item-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
+.item-left {
+  flex: 0 0 120px;
 }
 
-.item-name {
-  font-size: 16px;
-  font-weight: 600;
+.item-index {
+  font-weight: 500;
   color: var(--ant-color-text);
-  flex: 1;
-  min-width: 0;
-  word-break: break-all;
-}
-
-.item-content {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.item-info {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.info-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
   font-size: 14px;
 }
 
-.label {
-  color: var(--ant-color-text-secondary);
-  min-width: 50px;
-  flex-shrink: 0;
+.item-center {
+  flex: 1;
+  padding: 0 16px;
 }
 
-.value {
+.script-name {
   color: var(--ant-color-text);
-  flex: 1;
-  min-width: 0;
-  word-break: break-all;
+  font-size: 14px;
+}
+
+.item-right {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 8px;
 }
 
 /* 空状态样式 */
@@ -471,7 +359,7 @@ onMounted(() => {
   .queue-items-grid {
     grid-template-columns: 1fr;
   }
-  
+
   .queue-item-card-item {
     padding: 12px;
   }
