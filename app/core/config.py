@@ -123,12 +123,6 @@ MATERIALS_MAP: Dict[str, str] = {
 class GlobalConfig(ConfigBase):
     """全局配置"""
 
-    Function_HomeImageMode = ConfigItem(
-        "Function",
-        "HomeImageMode",
-        "默认",
-        OptionsValidator(["默认", "自定义", "主题图像"]),
-    )
     Function_HistoryRetentionTime = ConfigItem(
         "Function",
         "HistoryRetentionTime",
@@ -189,9 +183,13 @@ class GlobalConfig(ConfigBase):
     Update_UpdateType = ConfigItem(
         "Update", "UpdateType", "stable", OptionsValidator(["stable", "beta"])
     )
-    Update_ThreadNumb = ConfigItem("Update", "ThreadNumb", 8, RangeValidator(1, 32))
+    Update_Source = ConfigItem(
+        "Update",
+        "Source",
+        "GitHub",
+        OptionsValidator(["GitHub", "MirrorChyan", "AutoSite"]),
+    )
     Update_ProxyAddress = ConfigItem("Update", "ProxyAddress", "")
-    Update_ProxyUrlList = ConfigItem("Update", "ProxyUrlList", [])
     Update_MirrorChyanCDK = ConfigItem(
         "Update", "MirrorChyanCDK", "", EncryptValidator()
     )
@@ -1023,19 +1021,21 @@ class AppConfig(GlobalConfig):
     async def get_setting(self) -> Dict[str, Any]:
         """获取全局设置"""
 
-        logger.info("获取全局设置")
+        logger.info("Get global settings")
 
         return await self.toDict(ignore_multi_config=True)
 
     async def update_setting(self, data: Dict[str, Dict[str, Any]]) -> None:
         """更新全局设置"""
 
-        logger.info(f"更新全局设置")
+        logger.info("Update global settings...")
 
         for group, items in data.items():
             for name, value in items.items():
-                logger.debug(f"更新全局设置 - {group}.{name} = {value}")
+                logger.debug(f"Update global settings - {group}.{name} = {value}")
                 await self.set(group, name, value)
+
+        logger.success("Global settings updated successfully.")
 
     def server_date(self) -> date:
         """
@@ -1079,17 +1079,22 @@ class AppConfig(GlobalConfig):
 
         logger.info("开始获取活动关卡信息")
 
-        response = requests.get(
-            "https://api.maa.plus/MaaAssistantArknights/api/stageAndTasksUpdateTime.json",
-            timeout=10,
-            proxies=self.get_proxies(),
-        )
-        if response.status_code == 200:
-            remote_time_stamp = datetime.strptime(
-                str(response.json().get("timestamp", 20000101000000)), "%Y%m%d%H%M%S"
+        try:
+            response = requests.get(
+                "https://api.maa.plus/MaaAssistantArknights/api/stageAndTasksUpdateTime.json",
+                timeout=10,
+                proxies=self.get_proxies(),
             )
-        else:
-            logger.warning(f"无法从MAA服务器获取活动关卡时间戳:{response.text}")
+            if response.status_code == 200:
+                remote_time_stamp = datetime.strptime(
+                    str(response.json().get("timestamp", 20000101000000)),
+                    "%Y%m%d%H%M%S",
+                )
+            else:
+                logger.warning(f"无法从MAA服务器获取活动关卡时间戳:{response.text}")
+                remote_time_stamp = datetime.fromtimestamp(0)
+        except Exception as e:
+            logger.warning(f"无法从MAA服务器获取活动关卡时间戳: {e}")
             remote_time_stamp = datetime.fromtimestamp(0)
 
         if (Path.cwd() / "data/StageInfo/TimeStamp.txt").exists() and (
@@ -1119,17 +1124,21 @@ class AppConfig(GlobalConfig):
         # 需要更新关卡信息
         logger.info("从远端更新关卡信息")
 
-        response = requests.get(
-            "https://api.maa.plus/MaaAssistantArknights/api/gui/StageActivity.json",
-            timeout=10,
-            proxies=self.get_proxies(),
-        )
-
-        if response.status_code == 200:
-            stage_infos = response.json()["Official"]["sideStoryStage"]
-            if_get_maa_stage = True
-        else:
-            logger.warning(f"无法从MAA服务器获取活动关卡信息:{response.text}")
+        try:
+            response = requests.get(
+                "https://api.maa.plus/MaaAssistantArknights/api/gui/StageActivity.json",
+                timeout=10,
+                proxies=self.get_proxies(),
+            )
+            if response.status_code == 200:
+                stage_infos = response.json()["Official"]["sideStoryStage"]
+                if_get_maa_stage = True
+            else:
+                logger.warning(f"无法从MAA服务器获取活动关卡信息:{response.text}")
+                if_get_maa_stage = False
+                stage_infos = []
+        except Exception as e:
+            logger.warning(f"无法从MAA服务器获取活动关卡信息: {e}")
             if_get_maa_stage = False
             stage_infos = []
 

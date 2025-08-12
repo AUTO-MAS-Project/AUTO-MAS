@@ -35,8 +35,10 @@ async def get_scripts() -> SettingGetOut:
     try:
         data = await Config.get_setting()
     except Exception as e:
-        return SettingGetOut(code=500, status="error", message=str(e), data={})
-    return SettingGetOut(data=data)
+        return SettingGetOut(
+            code=500, status="error", message=str(e), data=GlobalConfig(**{})
+        )
+    return SettingGetOut(data=GlobalConfig(**data))
 
 
 @router.post("/update", summary="更新配置", response_model=OutBase, status_code=200)
@@ -44,7 +46,7 @@ async def update_script(script: SettingUpdateIn = Body(...)) -> OutBase:
     """更新配置"""
 
     try:
-        await Config.update_setting(script.data)
+        await Config.update_setting(script.data.model_dump(exclude_unset=True))
     except Exception as e:
         return OutBase(code=500, status="error", message=str(e))
     return OutBase()
