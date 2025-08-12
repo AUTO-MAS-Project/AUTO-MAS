@@ -2,8 +2,12 @@
   <a-card title="定时项" class="time-set-card" :loading="loading">
     <template #extra>
       <a-space>
-        <a-button type="primary" @click="addTimeSet" :loading="loading"
-          :disabled="!props.queueId || props.queueId.trim() === ''">
+        <a-button
+          type="primary"
+          @click="addTimeSet"
+          :loading="loading"
+          :disabled="!props.queueId || props.queueId.trim() === ''"
+        >
           <template #icon>
             <PlusOutlined />
           </template>
@@ -18,10 +22,20 @@
       </a-space>
     </template>
 
-    <a-table :columns="timeColumns" :data-source="timeSets" :pagination="false" size="middle" :scroll="{ x: 800 }">
+    <a-table
+      :columns="timeColumns"
+      :data-source="timeSets"
+      :pagination="false"
+      size="middle"
+      :scroll="{ x: 800 }"
+    >
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'enabled'">
-          <a-switch v-model:checked="record.enabled" @change="updateTimeSetStatus(record)" size="small" />
+          <a-switch
+            v-model:checked="record.enabled"
+            @change="updateTimeSetStatus(record)"
+            size="small"
+          />
         </template>
         <template v-else-if="column.key === 'time'">
           <div class="time-display">
@@ -33,7 +47,12 @@
             <a-button size="small" @click="editTimeSet(record)">
               <EditOutlined />
             </a-button>
-            <a-popconfirm title="确定要删除这个定时项吗？" @confirm="deleteTimeSet(record.id)" ok-text="确定" cancel-text="取消">
+            <a-popconfirm
+              title="确定要删除这个定时项吗？"
+              @confirm="deleteTimeSet(record.id)"
+              ok-text="确定"
+              cancel-text="取消"
+            >
               <a-button size="small" danger>
                 <DeleteOutlined />
               </a-button>
@@ -48,11 +67,23 @@
     </div>
 
     <!-- 定时项编辑弹窗 -->
-    <a-modal v-model:open="modalVisible" :title="editingTimeSet ? '编辑定时项' : '添加定时项'" @ok="saveTimeSet"
-      @cancel="cancelEdit" :confirm-loading="saving">
+    <a-modal
+      v-model:open="modalVisible"
+      :title="editingTimeSet ? '编辑定时项' : '添加定时项'"
+      ok-text="确认"
+      cancel-text="取消"
+      @ok="saveTimeSet"
+      @cancel="cancelEdit"
+      :confirm-loading="saving"
+    >
       <a-form ref="formRef" :model="form" :rules="rules" layout="vertical">
         <a-form-item label="执行时间" name="time">
-          <a-time-picker v-model:value="form.time" format="HH:mm" placeholder="请选择执行时间" style="width: 100%" />
+          <a-time-picker
+            v-model:value="form.time"
+            format="HH:mm"
+            placeholder="请选择执行时间"
+            size="large"
+          />
         </a-form-item>
         <a-form-item label="启用状态" name="enabled">
           <a-switch v-model:checked="form.enabled" />
@@ -65,12 +96,7 @@
 <script setup lang="ts">
 import { ref, reactive, watch } from 'vue'
 import { message } from 'ant-design-vue'
-import {
-  PlusOutlined,
-  ReloadOutlined,
-  EditOutlined,
-  DeleteOutlined
-} from '@ant-design/icons-vue'
+import { PlusOutlined, ReloadOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons-vue'
 import { Service } from '@/api'
 import type { FormInstance } from 'ant-design-vue'
 import dayjs from 'dayjs'
@@ -127,7 +153,7 @@ const form = reactive({
 
 // 表单验证规则
 const rules = {
-  time: [{ required: true, message: '请选择执行时间', trigger: 'change' }]
+  time: [{ required: true, message: '请选择执行时间', trigger: 'change' }],
 }
 
 // 表格列配置
@@ -137,35 +163,39 @@ const timeColumns = [
     dataIndex: 'index',
     key: 'index',
     width: 80,
-    customRender: ({ index }: { index: number }) => index + 1
+    customRender: ({ index }: { index: number }) => index + 1,
   },
   {
     title: '执行时间',
     dataIndex: 'time',
     key: 'time',
-    width: 150
+    width: 150,
   },
   {
     title: '启用状态',
     dataIndex: 'enabled',
     key: 'enabled',
-    width: 100
+    width: 100,
   },
   {
     title: '操作',
     key: 'actions',
     width: 120,
-    fixed: 'right'
-  }
+    fixed: 'right',
+  },
 ]
 
 // 计算属性 - 使用props传入的数据
 const timeSets = ref([...props.timeSets])
 
 // 监听props变化
-watch(() => props.timeSets, (newTimeSets) => {
-  timeSets.value = [...newTimeSets]
-}, { deep: true, immediate: true })
+watch(
+  () => props.timeSets,
+  newTimeSets => {
+    timeSets.value = [...newTimeSets]
+  },
+  { deep: true, immediate: true }
+)
 
 // 刷新数据
 const refreshData = () => {
@@ -210,7 +240,14 @@ const saveTimeSet = async () => {
     }
 
     // 处理时间格式 - 使用工具函数
-    console.log('form.time:', form.time, 'type:', typeof form.time, 'isDayjs:', dayjs.isDayjs(form.time))
+    console.log(
+      'form.time:',
+      form.time,
+      'type:',
+      typeof form.time,
+      'isDayjs:',
+      dayjs.isDayjs(form.time)
+    )
 
     const timeString = formatTimeValue(form.time)
     console.log('timeString:', timeString)
@@ -223,11 +260,11 @@ const saveTimeSet = async () => {
         data: {
           Info: {
             Enabled: form.enabled,
-            Time: timeString
-          }
-        }
+            Time: timeString,
+          },
+        },
       })
-      
+
       if (response.code === 200) {
         message.success('定时项更新成功')
       } else {
@@ -237,7 +274,7 @@ const saveTimeSet = async () => {
     } else {
       // 添加定时项 - 先创建，再更新
       const createResponse = await Service.addTimeSetApiQueueTimeAddPost({
-        queueId: props.queueId
+        queueId: props.queueId,
       })
 
       if (createResponse.code === 200 && createResponse.timeSetId) {
@@ -248,10 +285,10 @@ const saveTimeSet = async () => {
             Info: {
               Enabled: form.enabled,
               Time: timeString,
-            }
-          }
+            },
+          },
         })
-        
+
         if (updateResponse.code === 200) {
           message.success('定时项添加成功')
         } else {
@@ -288,11 +325,11 @@ const updateTimeSetStatus = async (timeSet: any) => {
       timeSetId: timeSet.id,
       data: {
         Info: {
-          Enabled: timeSet.enabled
-        }
-      }
+          Enabled: timeSet.enabled,
+        },
+      },
     })
-    
+
     if (response.code === 200) {
       message.success('状态更新成功')
     } else {
@@ -308,16 +345,14 @@ const updateTimeSetStatus = async (timeSet: any) => {
   }
 }
 
-
-
 // 删除定时项
 const deleteTimeSet = async (timeSetId: string) => {
   try {
     const response = await Service.deleteTimeSetApiQueueTimeDeletePost({
       queueId: props.queueId,
-      timeSetId
+      timeSetId,
     })
-    
+
     if (response.code === 200) {
       message.success('定时项删除成功')
       // 确保删除后刷新数据
@@ -369,7 +404,6 @@ const deleteTimeSet = async (timeSetId: string) => {
 
 /* 时间显示样式 */
 .time-display {
-  font-family: 'Courier New', monospace;
   font-weight: 600;
   color: var(--ant-color-text);
   padding: 4px 8px;

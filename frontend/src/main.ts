@@ -6,6 +6,12 @@ import LoggerPlugin, { logger } from '@/utils/logger'
 
 import Antd from 'ant-design-vue'
 import 'ant-design-vue/dist/reset.css'
+import zhCN from 'ant-design-vue/es/locale/zh_CN'
+import dayjs from 'dayjs'
+import 'dayjs/locale/zh-cn'
+
+// 配置dayjs中文本地化
+dayjs.locale('zh-cn')
 
 // 配置API基础URL
 OpenAPI.BASE = 'http://localhost:8000'
