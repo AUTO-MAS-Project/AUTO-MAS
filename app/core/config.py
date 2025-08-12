@@ -1277,6 +1277,29 @@ class AppConfig(GlobalConfig):
 
         return data
 
+    async def get_task_combox(self):
+        """获取任务下拉框信息"""
+
+        logger.info("Getting task combo box information...")
+        data = [{"label": "未选择", "value": None}]
+        for uid, script in self.QueueConfig.items():
+            data.append(
+                {
+                    "label": f"队列 - {script.get('Info', 'Name')}",
+                    "value": str(uid),
+                }
+            )
+        for uid, script in self.ScriptConfig.items():
+            data.append(
+                {
+                    "label": f"脚本 - {TYPE_BOOK[script.__class__.__name__]} - {script.get('Info', 'Name')}",
+                    "value": str(uid),
+                }
+            )
+        logger.success("Task combo box information retrieved successfully.")
+
+        return data
+
     async def get_server_info(self, type: str) -> Dict[str, Any]:
         """获取公告信息"""
 

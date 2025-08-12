@@ -62,6 +62,22 @@ async def get_script_combox() -> ComboBoxOut:
     return ComboBoxOut(data=data)
 
 
+@router.post(
+    "/combox/task",
+    summary="获取可选任务下拉框信息",
+    response_model=ComboBoxOut,
+    status_code=200,
+)
+async def get_task_combox() -> ComboBoxOut:
+
+    try:
+        raw_data = await Config.get_task_combox()
+        data = [ComboBoxItem(**item) for item in raw_data] if raw_data else []
+    except Exception as e:
+        return ComboBoxOut(code=500, status="error", message=str(e), data=[])
+    return ComboBoxOut(data=data)
+
+
 @router.post("/notice", summary="获取通知信息", response_model=InfoOut, status_code=200)
 async def get_notice_info() -> InfoOut:
 
