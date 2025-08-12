@@ -627,6 +627,7 @@ class GeneralConfig(ConfigBase):
 
 
 CLASS_BOOK = {"MAA": MaaConfig, "MaaPlan": MaaPlanConfig, "General": GeneralConfig}
+TYPE_BOOK = {"MaaConfig": "MAA", "GeneralConfig": "通用"}
 
 
 class AppConfig(GlobalConfig):
@@ -1261,6 +1262,22 @@ class AppConfig(GlobalConfig):
                 )
 
         return True, {"ALL": results}
+
+    async def get_script_combox(self):
+        """获取脚本下拉框信息"""
+
+        logger.info("Getting script combo box information...")
+        data = []
+        for uid, script in self.ScriptConfig.items():
+            data.append(
+                {
+                    "label": f"{TYPE_BOOK[script.__class__.__name__]} - {script.get('Info', 'Name')}",
+                    "value": str(uid),
+                }
+            )
+        logger.success("Script combo box information retrieved successfully.")
+
+        return data
 
     async def get_server_info(self, type: str) -> Dict[str, Any]:
         """获取公告信息"""
