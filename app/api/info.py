@@ -29,15 +29,21 @@ router = APIRouter(prefix="/api/info", tags=["信息获取"])
 
 
 @router.post(
-    "/stage", summary="获取关卡号信息", response_model=InfoOut, status_code=200
+    "/combox/stage",
+    summary="获取关卡号下拉框信息",
+    response_model=ComboBoxOut,
+    status_code=200,
 )
-async def get_stage_info() -> InfoOut:
+async def get_stage_combox(
+    stage: GetStageIn = Body(..., description="关卡号类型")
+) -> ComboBoxOut:
 
     try:
-        data = await Config.get_stage_info()
+        raw_data = await Config.get_stage_info(stage.type)
+        data = [ComboBoxItem(**item) for item in raw_data] if raw_data else []
     except Exception as e:
-        return InfoOut(code=500, status="error", message=str(e), data={})
-    return InfoOut(data=data)
+        return ComboBoxOut(code=500, status="error", message=str(e), data=[])
+    return ComboBoxOut(data=data)
 
 
 @router.post(
@@ -49,7 +55,8 @@ async def get_stage_info() -> InfoOut:
 async def get_script_combox() -> ComboBoxOut:
 
     try:
-        data: List[ComboBoxItem] = await Config.get_script_combox()
+        raw_data = await Config.get_script_combox()
+        data = [ComboBoxItem(**item) for item in raw_data] if raw_data else []
     except Exception as e:
         return ComboBoxOut(code=500, status="error", message=str(e), data=[])
     return ComboBoxOut(data=data)
@@ -82,15 +89,7 @@ async def get_apps_info() -> InfoOut:
 )
 async def add_overview() -> InfoOut:
     try:
-        if_get_maa_stage, data = await Config.get_official_activity_stages()
-
-        return InfoOut(
-            status="success" if if_get_maa_stage else "warning",
-            message=(
-                "获取活动关卡信息成功" if if_get_maa_stage else "未能获取活动关卡信息"
-            ),
-            data=data,
-        )
-
+        data = await Config.get_stage_info("Info")
     except Exception as e:
-        return InfoOut(code=500, status="error", message=str(e), data={})
+        return InfoOut(code=500, status="error", message=str(e), data={"ALL": []})
+    return InfoOut(data={"ALL": data})
