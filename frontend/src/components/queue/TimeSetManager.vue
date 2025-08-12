@@ -13,12 +13,6 @@
           </template>
           添加定时项
         </a-button>
-        <a-button @click="refreshData" :loading="loading">
-          <template #icon>
-            <ReloadOutlined />
-          </template>
-          刷新
-        </a-button>
       </a-space>
     </template>
 
@@ -46,6 +40,7 @@
           <a-space>
             <a-button size="small" @click="editTimeSet(record)">
               <EditOutlined />
+              编辑
             </a-button>
             <a-popconfirm
               title="确定要删除这个定时项吗？"
@@ -55,6 +50,7 @@
             >
               <a-button size="small" danger>
                 <DeleteOutlined />
+                删除
               </a-button>
             </a-popconfirm>
           </a-space>

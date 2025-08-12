@@ -7,7 +7,16 @@ export { CancelablePromise, CancelError } from './core/CancelablePromise';
 export { OpenAPI } from './core/OpenAPI';
 export type { OpenAPIConfig } from './core/OpenAPI';
 
+export type { ComboBoxItem } from './models/ComboBoxItem';
+export type { ComboBoxOut } from './models/ComboBoxOut';
 export type { DispatchIn } from './models/DispatchIn';
+export type { GlobalConfig } from './models/GlobalConfig';
+export type { GlobalConfig_Function } from './models/GlobalConfig_Function';
+export type { GlobalConfig_Notify } from './models/GlobalConfig_Notify';
+export type { GlobalConfig_Start } from './models/GlobalConfig_Start';
+export type { GlobalConfig_UI } from './models/GlobalConfig_UI';
+export type { GlobalConfig_Update } from './models/GlobalConfig_Update';
+export type { GlobalConfig_Voice } from './models/GlobalConfig_Voice';
 export type { HTTPValidationError } from './models/HTTPValidationError';
 export type { InfoOut } from './models/InfoOut';
 export type { OutBase } from './models/OutBase';

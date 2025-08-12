@@ -2,6 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { ComboBoxOut } from '../models/ComboBoxOut';
 import type { DispatchIn } from '../models/DispatchIn';
 import type { InfoOut } from '../models/InfoOut';
 import type { OutBase } from '../models/OutBase';
@@ -56,6 +57,17 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/info/stage',
+        });
+    }
+    /**
+     * 获取脚本下拉框信息
+     * @returns ComboBoxOut Successful Response
+     * @throws ApiError
+     */
+    public static getScriptComboxApiInfoComboxScriptPost(): CancelablePromise<ComboBoxOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/info/combox/script',
         });
     }
     /**

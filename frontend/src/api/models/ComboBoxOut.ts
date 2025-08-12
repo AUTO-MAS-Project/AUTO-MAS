@@ -2,8 +2,8 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { GlobalConfig } from './GlobalConfig';
-export type SettingGetOut = {
+import type { ComboBoxItem } from './ComboBoxItem';
+export type ComboBoxOut = {
     /**
      * 状态码
      */
@@ -17,8 +17,8 @@ export type SettingGetOut = {
      */
     message?: string;
     /**
-     * 全局设置数据
+     * 下拉框选项
      */
-    data: GlobalConfig;
+    data: Array<ComboBoxItem>;
 };
 
