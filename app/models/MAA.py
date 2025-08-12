@@ -1237,7 +1237,7 @@ class MaaManager(QObject):
             else:
                 self.weekly_annihilation_limit_reached = False
 
-            if "任务出错: StartUp" in log:
+            if "任务出错: StartUp" in log or "任务出错: 开始唤醒" in log:
                 self.maa_result = "MAA未能正确登录PRTS"
 
             elif "任务已全部完成！" in log:
