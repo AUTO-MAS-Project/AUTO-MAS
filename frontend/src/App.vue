@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router'
 import { ConfigProvider } from 'ant-design-vue'
 import { useTheme } from './composables/useTheme.ts'
 import AppLayout from './components/AppLayout.vue'
+import zhCN from 'ant-design-vue/es/locale/zh_CN'
 
 const route = useRoute()
 const { antdTheme, initTheme } = useTheme()
@@ -17,7 +18,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <ConfigProvider :theme="antdTheme">
+  <ConfigProvider :theme="antdTheme" :locale="zhCN">
     <!-- 初始化页面使用全屏布局 -->
     <router-view v-if="isInitializationPage" />
     <!-- 其他页面使用应用布局 -->
