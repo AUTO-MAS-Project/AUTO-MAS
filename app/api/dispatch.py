@@ -38,7 +38,12 @@ async def add_task(task: TaskCreateIn = Body(...)) -> TaskCreateOut:
     try:
         task_id = await TaskManager.add_task(task.mode, task.taskId)
     except Exception as e:
-        return TaskCreateOut(code=500, status="error", message=str(e), websocketId="")
+        return TaskCreateOut(
+            code=500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            websocketId="",
+        )
     return TaskCreateOut(websocketId=str(task_id))
 
 
@@ -48,19 +53,22 @@ async def stop_task(task: DispatchIn = Body(...)) -> OutBase:
     try:
         await TaskManager.stop_task(task.taskId)
     except Exception as e:
-        return OutBase(code=500, status="error", message=str(e))
+        return OutBase(
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+        )
     return OutBase()
 
 
-@router.websocket("/ws/{taskId}")
+@router.websocket("/ws/{websocketId}")
 async def websocket_endpoint(
-    websocket: WebSocket, taskId: str = Path(..., description="要连接的任务ID")
+    websocket: WebSocket,
+    websocketId: str = Path(..., description="要连接的WebSocket ID"),
 ):
     await websocket.accept()
     try:
-        uid = uuid.UUID(taskId)
+        uid = uuid.UUID(websocketId)
     except ValueError:
-        await websocket.close(code=1008, reason="无效的任务ID")
+        await websocket.close(code=1008, reason="无效的WebSocket ID")
         return
 
     if uid in TaskManager.connection_events and uid not in TaskManager.websocket_dict:

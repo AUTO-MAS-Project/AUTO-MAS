@@ -42,7 +42,9 @@ async def get_stage_combox(
         raw_data = await Config.get_stage_info(stage.type)
         data = [ComboBoxItem(**item) for item in raw_data] if raw_data else []
     except Exception as e:
-        return ComboBoxOut(code=500, status="error", message=str(e), data=[])
+        return ComboBoxOut(
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}", data=[]
+        )
     return ComboBoxOut(data=data)
 
 
@@ -58,7 +60,9 @@ async def get_script_combox() -> ComboBoxOut:
         raw_data = await Config.get_script_combox()
         data = [ComboBoxItem(**item) for item in raw_data] if raw_data else []
     except Exception as e:
-        return ComboBoxOut(code=500, status="error", message=str(e), data=[])
+        return ComboBoxOut(
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}", data=[]
+        )
     return ComboBoxOut(data=data)
 
 
@@ -74,7 +78,9 @@ async def get_task_combox() -> ComboBoxOut:
         raw_data = await Config.get_task_combox()
         data = [ComboBoxItem(**item) for item in raw_data] if raw_data else []
     except Exception as e:
-        return ComboBoxOut(code=500, status="error", message=str(e), data=[])
+        return ComboBoxOut(
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}", data=[]
+        )
     return ComboBoxOut(data=data)
 
 
@@ -84,7 +90,9 @@ async def get_notice_info() -> InfoOut:
     try:
         data = await Config.get_server_info("notice")
     except Exception as e:
-        return InfoOut(code=500, status="error", message=str(e), data={})
+        return InfoOut(
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}", data={}
+        )
     return InfoOut(data=data)
 
 
@@ -96,7 +104,9 @@ async def get_apps_info() -> InfoOut:
     try:
         data = await Config.get_server_info("apps_info")
     except Exception as e:
-        return InfoOut(code=500, status="error", message=str(e), data={})
+        return InfoOut(
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}", data={}
+        )
     return InfoOut(data=data)
 
 
@@ -107,5 +117,10 @@ async def add_overview() -> InfoOut:
     try:
         data = await Config.get_stage_info("Info")
     except Exception as e:
-        return InfoOut(code=500, status="error", message=str(e), data={"ALL": []})
+        return InfoOut(
+            code=500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            data={"ALL": []},
+        )
     return InfoOut(data={"ALL": data})
