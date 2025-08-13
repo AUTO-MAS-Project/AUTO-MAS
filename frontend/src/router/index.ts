@@ -3,6 +3,7 @@ import type { RouteRecordRaw } from 'vue-router'
 
 import { isAppInitialized } from '@/utils/config'
 
+
 const routes: RouteRecordRaw[] = [
   {
     path: '/',
@@ -96,6 +97,14 @@ router.beforeEach(async (to, from, next) => {
 
   // 如果访问的不是初始化页面，且没有初始化标记，则重定向到初始化页面
   if (to.path !== '/initialization') {
+    // 在开发环境下跳过初始化检查
+    const isDev = import.meta.env.VITE_APP_ENV === 'dev'
+    if (isDev) {
+      console.log('开发环境，跳过初始化检查')
+      next()
+      return
+    }
+
     const initialized = await isAppInitialized()
     console.log('检查初始化状态：', initialized)
 
@@ -108,5 +117,6 @@ router.beforeEach(async (to, from, next) => {
 
   next()
 })
+
 
 export default router
