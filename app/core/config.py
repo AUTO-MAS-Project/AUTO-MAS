@@ -243,13 +243,6 @@ class QueueConfig(ConfigBase):
             ),
         )
 
-        self.Data_LastProxyTime = ConfigItem(
-            "Data", "LastProxyTime", "2000-01-01 00:00:00"
-        )
-        self.Data_LastProxyHistory = ConfigItem(
-            "Data", "LastProxyHistory", "暂无历史运行记录"
-        )
-
         self.TimeSet = MultipleConfig([TimeSet])
         self.QueueItem = MultipleConfig([QueueItem])
 
@@ -820,6 +813,8 @@ class AppConfig(GlobalConfig):
         else:
             data = await self.QueueConfig.get(uuid.UUID(queue_id))
 
+        print(data)
+
         index = data.pop("instances", [])
 
         return list(index), data
@@ -971,6 +966,7 @@ class AppConfig(GlobalConfig):
         if isinstance(queue_config, QueueConfig):
             uid, config = await queue_config.QueueItem.add(QueueItem)
         else:
+            logger.warning(f"Unsupported script config type: {type(queue_config)}")
             raise TypeError(f"Unsupported script config type: {type(queue_config)}")
 
         await self.QueueConfig.save()
@@ -989,6 +985,7 @@ class AppConfig(GlobalConfig):
         for group, items in data.items():
             for name, value in items.items():
                 if uuid.UUID(value) not in self.ScriptConfig:
+                    logger.warning(f"Script with uid {value} does not exist.")
                     raise ValueError(f"Script with uid {value} does not exist.")
                 logger.debug(f"更新队列项配置：{queue_id} - {group}.{name} = {value}")
                 if isinstance(queue_config, QueueConfig):
@@ -1269,7 +1266,7 @@ class AppConfig(GlobalConfig):
         for uid, script in self.ScriptConfig.items():
             data.append(
                 {
-                    "label": f"{TYPE_BOOK[script.__class__.__name__]} - {script.get('Info', 'Name')}",
+                    "label": f"{TYPE_BOOK[type(script).__name__]} - {script.get('Info', 'Name')}",
                     "value": str(uid),
                 }
             )
@@ -1292,7 +1289,7 @@ class AppConfig(GlobalConfig):
         for uid, script in self.ScriptConfig.items():
             data.append(
                 {
-                    "label": f"脚本 - {TYPE_BOOK[script.__class__.__name__]} - {script.get('Info', 'Name')}",
+                    "label": f"脚本 - {TYPE_BOOK[type(script).__name__]} - {script.get('Info', 'Name')}",
                     "value": str(uid),
                 }
             )
