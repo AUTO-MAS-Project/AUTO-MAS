@@ -34,7 +34,8 @@ router = APIRouter(prefix="/api/queue", tags=["调度队列管理"])
 async def add_queue() -> QueueCreateOut:
 
     uid, config = await Config.add_queue()
-    return QueueCreateOut(queueId=str(uid), data=await config.toDict())
+    data = QueueConfig(**(await config.toDict()))
+    return QueueCreateOut(queueId=str(uid), data=data)
 
 
 @router.post(
@@ -43,7 +44,9 @@ async def add_queue() -> QueueCreateOut:
 async def get_queues(queue: QueueGetIn = Body(...)) -> QueueGetOut:
 
     try:
-        index, data = await Config.get_queue(queue.queueId)
+        index, config = await Config.get_queue(queue.queueId)
+        index = [QueueIndexItem(**_) for _ in index]
+        data = {uid: QueueConfig(**cfg) for uid, cfg in config.items()}
     except Exception as e:
         return QueueGetOut(code=500, status="error", message=str(e), index=[], data={})
     return QueueGetOut(index=index, data=data)
@@ -55,7 +58,9 @@ async def get_queues(queue: QueueGetIn = Body(...)) -> QueueGetOut:
 async def update_queue(queue: QueueUpdateIn = Body(...)) -> OutBase:
 
     try:
-        await Config.update_queue(queue.queueId, queue.data)
+        await Config.update_queue(
+            queue.queueId, queue.data.model_dump(exclude_unset=True)
+        )
     except Exception as e:
         return OutBase(code=500, status="error", message=str(e))
     return OutBase()
@@ -87,7 +92,8 @@ async def reorder_queue(script: QueueReorderIn = Body(...)) -> OutBase:
 async def add_time_set(time: QueueSetInBase = Body(...)) -> TimeSetCreateOut:
 
     uid, config = await Config.add_time_set(time.queueId)
-    return TimeSetCreateOut(timeSetId=str(uid), data=await config.toDict())
+    data = TimeSet(**(await config.toDict()))
+    return TimeSetCreateOut(timeSetId=str(uid), data=data)
 
 
 @router.post(
@@ -96,7 +102,9 @@ async def add_time_set(time: QueueSetInBase = Body(...)) -> TimeSetCreateOut:
 async def update_time_set(time: TimeSetUpdateIn = Body(...)) -> OutBase:
 
     try:
-        await Config.update_time_set(time.queueId, time.timeSetId, time.data)
+        await Config.update_time_set(
+            time.queueId, time.timeSetId, time.data.model_dump(exclude_unset=True)
+        )
     except Exception as e:
         return OutBase(code=500, status="error", message=str(e))
     return OutBase()
@@ -135,7 +143,8 @@ async def reorder_time_set(time: TimeSetReorderIn = Body(...)) -> OutBase:
 async def add_item(item: QueueSetInBase = Body(...)) -> QueueItemCreateOut:
 
     uid, config = await Config.add_queue_item(item.queueId)
-    return QueueItemCreateOut(queueItemId=str(uid), data=await config.toDict())
+    data = QueueItem(**(await config.toDict()))
+    return QueueItemCreateOut(queueItemId=str(uid), data=data)
 
 
 @router.post(
@@ -144,7 +153,9 @@ async def add_item(item: QueueSetInBase = Body(...)) -> QueueItemCreateOut:
 async def update_item(item: QueueItemUpdateIn = Body(...)) -> OutBase:
 
     try:
-        await Config.update_queue_item(item.queueId, item.queueItemId, item.data)
+        await Config.update_queue_item(
+            item.queueId, item.queueItemId, item.data.model_dump(exclude_unset=True)
+        )
     except Exception as e:
         return OutBase(code=500, status="error", message=str(e))
     return OutBase()

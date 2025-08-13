@@ -122,7 +122,7 @@ class _TaskManager:
                 task_item = GeneralManager(mode, task_id, actual_id, websocket)
             else:
                 logger.error(
-                    f"不支持的脚本类型：{Config.ScriptConfig[task_id].__class__.__name__}"
+                    f"不支持的脚本类型：{type(Config.ScriptConfig[task_id]).__name__}"
                 )
                 await websocket.send_json(
                     TaskMessage(
@@ -146,7 +146,7 @@ class _TaskManager:
                 queue = Config.QueueConfig[task_id]
                 if not isinstance(queue, QueueConfig):
                     logger.error(
-                        f"不支持的队列类型：{Config.QueueConfig[task_id].__class__.__name__}"
+                        f"不支持的队列类型：{type(Config.QueueConfig[task_id]).__name__}"
                     )
                     await websocket.send_json(
                         TaskMessage(
@@ -203,7 +203,7 @@ class _TaskManager:
                     task_item = GeneralManager(mode, task_id, actual_id, websocket)
                 else:
                     logger.error(
-                        f"不支持的脚本类型：{Config.ScriptConfig[script_id].__class__.__name__}"
+                        f"不支持的脚本类型：{type(Config.ScriptConfig[script_id]).__name__}"
                     )
                     await websocket.send_json(
                         TaskMessage(

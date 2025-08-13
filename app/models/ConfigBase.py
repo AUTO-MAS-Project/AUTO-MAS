@@ -591,8 +591,7 @@ class MultipleConfig:
 
         data: Dict[str, Union[list, dict]] = {
             "instances": [
-                {"uid": str(_), "type": self.data[_].__class__.__name__}
-                for _ in self.order
+                {"uid": str(_), "type": type(self.data[_]).__name__} for _ in self.order
             ]
         }
         for uid, config in self.items():
@@ -618,7 +617,7 @@ class MultipleConfig:
 
         data: Dict[str, Union[list, dict]] = {
             "instances": [
-                {"uid": str(_), "type": self.data[_].__class__.__name__}
+                {"uid": str(_), "type": type(self.data[_]).__name__}
                 for _ in self.order
                 if _ == uid
             ]

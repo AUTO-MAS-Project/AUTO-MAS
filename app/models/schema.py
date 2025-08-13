@@ -133,63 +133,44 @@ class GlobalConfig(BaseModel):
     Update: Optional[GlobalConfig_Update] = Field(None, description="更新相关配置")
 
 
-# class QueueItem(ConfigBase):
-#     """队列项配置"""
-
-#     def __init__(self) -> None:
-#         super().__init__()
-
-#         self.Info_ScriptId = ConfigItem("Info", "ScriptId", None, UidValidator())
+class QueueItem_Info(BaseModel):
+    ScriptId: Optional[str] = Field(
+        None, description="任务所对应的脚本ID, 为None时表示未选择"
+    )
 
 
-# class TimeSet(ConfigBase):
-#     """时间设置配置"""
-
-#     def __init__(self) -> None:
-#         super().__init__()
-
-#         self.Info_Enabled = ConfigItem("Info", "Enabled", False, BoolValidator())
-#         self.Info_Time = ConfigItem("Info", "Time", "00:00")
+class QueueItem(BaseModel):
+    Info: Optional[QueueItem_Info] = Field(None, description="队列项")
 
 
-# class QueueConfig(ConfigBase):
-#     """队列配置"""
+class TimeSet_Info(BaseModel):
+    Enabled: Optional[bool] = Field(None, description="是否启用")
+    Time: Optional[str] = Field(None, description="时间设置, 格式为HH:MM")
 
-#     def __init__(self) -> None:
-#         super().__init__()
 
-#         self.Info_Name = ConfigItem("Info", "Name", "")
-#         self.Info_TimeEnabled = ConfigItem(
-#             "Info", "TimeEnabled", False, BoolValidator()
-#         )
-#         self.Info_StartUpEnabled = ConfigItem(
-#             "Info", "StartUpEnabled", False, BoolValidator()
-#         )
-#         self.Info_AfterAccomplish = ConfigItem(
-#             "Info",
-#             "AfterAccomplish",
-#             "NoAction",
-#             OptionsValidator(
-#                 [
-#                     "NoAction",
-#                     "KillSelf",
-#                     "Sleep",
-#                     "Hibernate",
-#                     "Shutdown",
-#                     "ShutdownForce",
-#                 ]
-#             ),
-#         )
+class TimeSet(BaseModel):
+    Info: Optional[TimeSet_Info] = Field(None, description="时间项")
 
-#         self.Data_LastProxyTime = ConfigItem(
-#             "Data", "LastProxyTime", "2000-01-01 00:00:00"
-#         )
-#         self.Data_LastProxyHistory = ConfigItem(
-#             "Data", "LastProxyHistory", "暂无历史运行记录"
-#         )
 
-#         self.TimeSet = MultipleConfig([TimeSet])
-#         self.QueueItem = MultipleConfig([QueueItem])
+class QueueIndexItem(BaseModel):
+    uid: str = Field(..., description="唯一标识符")
+    type: Literal["QueueConfig"] = Field(..., description="配置类型")
+
+
+class QueueConfig_Info(BaseModel):
+    Name: Optional[str] = Field(None, description="队列名称")
+    TimeEnabled: Optional[bool] = Field(None, description="是否启用定时")
+    StartUpEnabled: Optional[bool] = Field(None, description="是否启动时运行")
+    AfterAccomplish: Optional[
+        Literal[
+            "NoAction", "KillSelf", "Sleep", "Hibernate", "Shutdown", "ShutdownForce"
+        ]
+    ] = Field(None, description="完成后操作")
+
+
+class QueueConfig(BaseModel):
+
+    Info: Optional[QueueConfig_Info] = Field(None, description="队列信息")
 
 
 # class MaaUserConfig(ConfigBase):
@@ -652,21 +633,23 @@ class PlanReorderIn(BaseModel):
 
 class QueueCreateOut(OutBase):
     queueId: str = Field(..., description="新创建的队列ID")
-    data: Dict[str, Any] = Field(..., description="队列配置数据")
+    data: QueueConfig = Field(..., description="队列配置数据")
 
 
 class QueueGetIn(BaseModel):
-    queueId: Optional[str] = Field(None, description="队列ID，仅在模式为Single时需要")
+    queueId: Optional[str] = Field(
+        None, description="队列ID, 未携带时表示获取所有队列数据"
+    )
 
 
 class QueueGetOut(OutBase):
-    index: List[Dict[str, str]] = Field(..., description="队列索引列表")
-    data: Dict[str, Any] = Field(..., description="队列列表或单个队列数据")
+    index: List[QueueIndexItem] = Field(..., description="队列索引列表")
+    data: Dict[str, QueueConfig] = Field(..., description="队列列表或单个队列数据")
 
 
 class QueueUpdateIn(BaseModel):
     queueId: str = Field(..., description="队列ID")
-    data: Dict[str, Dict[str, Any]] = Field(..., description="队列更新数据")
+    data: QueueConfig = Field(..., description="队列更新数据")
 
 
 class QueueDeleteIn(BaseModel):
@@ -674,7 +657,7 @@ class QueueDeleteIn(BaseModel):
 
 
 class QueueReorderIn(BaseModel):
-    indexList: List[str] = Field(..., description="调度队列ID列表，按新顺序排列")
+    indexList: List[str] = Field(..., description="按新顺序排列的调度队列UID列表")
 
 
 class QueueSetInBase(BaseModel):
@@ -683,12 +666,12 @@ class QueueSetInBase(BaseModel):
 
 class TimeSetCreateOut(OutBase):
     timeSetId: str = Field(..., description="新创建的时间设置ID")
-    data: Dict[str, Any] = Field(..., description="时间设置配置数据")
+    data: TimeSet = Field(..., description="时间设置配置数据")
 
 
 class TimeSetUpdateIn(QueueSetInBase):
     timeSetId: str = Field(..., description="时间设置ID")
-    data: Dict[str, Dict[str, Any]] = Field(..., description="时间设置更新数据")
+    data: TimeSet = Field(..., description="时间设置更新数据")
 
 
 class TimeSetDeleteIn(QueueSetInBase):
@@ -701,12 +684,12 @@ class TimeSetReorderIn(QueueSetInBase):
 
 class QueueItemCreateOut(OutBase):
     queueItemId: str = Field(..., description="新创建的队列项ID")
-    data: Dict[str, Any] = Field(..., description="队列项配置数据")
+    data: QueueItem = Field(..., description="队列项配置数据")
 
 
 class QueueItemUpdateIn(QueueSetInBase):
     queueItemId: str = Field(..., description="队列项ID")
-    data: Dict[str, Dict[str, Any]] = Field(..., description="队列项更新数据")
+    data: QueueItem = Field(..., description="队列项更新数据")
 
 
 class QueueItemDeleteIn(QueueSetInBase):
