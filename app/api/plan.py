@@ -33,17 +33,27 @@ router = APIRouter(prefix="/api/plan", tags=["计划管理"])
 )
 async def add_plan(plan: PlanCreateIn = Body(...)) -> PlanCreateOut:
 
-    uid, config = await Config.add_plan(plan.type)
-    return PlanCreateOut(planId=str(uid), data=await config.toDict())
+    try:
+        uid, config = await Config.add_plan(plan.type)
+        data = MaaPlanConfig(**(await config.toDict()))
+    except Exception as e:
+        return PlanCreateOut(
+            code=500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            planId="",
+            data=MaaPlanConfig(**{}),
+        )
+    return PlanCreateOut(planId=str(uid), data=data)
 
 
-@router.post(
-    "/get", summary="查询计划表配置信息", response_model=PlanGetOut, status_code=200
-)
+@router.post("/get", summary="查询计划表", response_model=PlanGetOut, status_code=200)
 async def get_plan(plan: PlanGetIn = Body(...)) -> PlanGetOut:
 
     try:
         index, data = await Config.get_plan(plan.planId)
+        index = [PlanIndexItem(**_) for _ in index]
+        data = {uid: MaaPlanConfig(**cfg) for uid, cfg in data.items()}
     except Exception as e:
         return PlanGetOut(
             code=500,
@@ -61,7 +71,7 @@ async def get_plan(plan: PlanGetIn = Body(...)) -> PlanGetOut:
 async def update_plan(plan: PlanUpdateIn = Body(...)) -> OutBase:
 
     try:
-        await Config.update_plan(plan.planId, plan.data)
+        await Config.update_plan(plan.planId, plan.data.model_dump(exclude_unset=True))
     except Exception as e:
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
