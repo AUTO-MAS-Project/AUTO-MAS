@@ -1840,7 +1840,7 @@ class MaaManager:
         """通过所有渠道推送通知"""
         logger.info(f"开始推送通知，模式：{mode}，标题：{title}")
 
-        env = Environment(loader=FileSystemLoader(str(Path.cwd() / "resources/html")))
+        env = Environment(loader=FileSystemLoader(str(Path.cwd() / "res/html")))
 
         if mode == "代理结果" and (
             Config.get("Notify", "SendTaskResultTime") == "任何时刻"
@@ -2017,7 +2017,7 @@ class MaaManager:
                         Config.get("Notify", "CompanyWebHookBotUrl"),
                     )
                     Notify.CompanyWebHookBotPushImage(
-                        Path.cwd() / "resources/images/notification/six_star.png",
+                        Path.cwd() / "res/images/notification/six_star.png",
                         Config.get("Notify", "CompanyWebHookBotUrl"),
                     )
 
@@ -2061,7 +2061,7 @@ class MaaManager:
                             self.cur_user_data.get("Notify", "CompanyWebHookBotUrl"),
                         )
                         Notify.CompanyWebHookBotPushImage(
-                            Path.cwd() / "resources/images/notification/six_star.png",
+                            Path.cwd() / "res/images/notification/six_star.png",
                             self.cur_user_data.get("Notify", "CompanyWebHookBotUrl"),
                         )
                     else:
