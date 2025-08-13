@@ -10,6 +10,6 @@ export type ComboBoxItem = {
     /**
      * 实际值
      */
-    value: string;
+    value: (string | null);
 };
 

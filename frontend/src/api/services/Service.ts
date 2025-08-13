@@ -4,6 +4,7 @@
 /* eslint-disable */
 import type { ComboBoxOut } from '../models/ComboBoxOut';
 import type { DispatchIn } from '../models/DispatchIn';
+import type { GetStageIn } from '../models/GetStageIn';
 import type { InfoOut } from '../models/InfoOut';
 import type { OutBase } from '../models/OutBase';
 import type { PlanCreateIn } from '../models/PlanCreateIn';
@@ -49,14 +50,22 @@ import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
 export class Service {
     /**
-     * 获取关卡号信息
-     * @returns InfoOut Successful Response
+     * 获取关卡号下拉框信息
+     * @param requestBody
+     * @returns ComboBoxOut Successful Response
      * @throws ApiError
      */
-    public static getStageInfoApiInfoStagePost(): CancelablePromise<InfoOut> {
+    public static getStageComboxApiInfoComboxStagePost(
+        requestBody: GetStageIn,
+    ): CancelablePromise<ComboBoxOut> {
         return __request(OpenAPI, {
             method: 'POST',
-            url: '/api/info/stage',
+            url: '/api/info/combox/stage',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
         });
     }
     /**
@@ -68,6 +77,17 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/info/combox/script',
+        });
+    }
+    /**
+     * 获取可选任务下拉框信息
+     * @returns ComboBoxOut Successful Response
+     * @throws ApiError
+     */
+    public static getTaskComboxApiInfoComboxTaskPost(): CancelablePromise<ComboBoxOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/info/combox/task',
         });
     }
     /**

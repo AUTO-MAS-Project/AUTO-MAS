@@ -13,8 +13,10 @@ import 'dayjs/locale/zh-cn'
 // 配置dayjs中文本地化
 dayjs.locale('zh-cn')
 
+import { API_ENDPOINTS } from '@/config/mirrors'
+
 // 配置API基础URL
-OpenAPI.BASE = 'http://localhost:8000'
+OpenAPI.BASE = API_ENDPOINTS.local
 
 // 创建应用实例
 const app = createApp(App)
