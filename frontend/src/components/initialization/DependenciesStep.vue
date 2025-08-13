@@ -46,12 +46,9 @@ interface Mirror {
   speed: number | null
 }
 
-const pipMirrors = ref<Mirror[]>([
-  { key: 'official', name: 'PyPI 官方', url: 'https://pypi.org/simple/', speed: null },
-  { key: 'tsinghua', name: '清华大学', url: 'https://pypi.tuna.tsinghua.edu.cn/simple/', speed: null },
-  { key: 'aliyun', name: '阿里云', url: 'https://mirrors.aliyun.com/pypi/simple/', speed: null },
-  { key: 'ustc', name: '中科大', url: 'https://pypi.mirrors.ustc.edu.cn/simple/', speed: null },
-])
+import { PIP_MIRRORS } from '@/config/mirrors'
+
+const pipMirrors = ref<Mirror[]>(PIP_MIRRORS)
 
 const selectedPipMirror = ref('tsinghua')
 const testingPipSpeed = ref(false)

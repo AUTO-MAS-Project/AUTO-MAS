@@ -41,6 +41,7 @@
 import { ref, onMounted } from 'vue'
 import { createComponentLogger } from '@/utils/logger'
 import { getConfig } from '@/utils/config'
+import { getMirrorUrl } from '@/config/mirrors'
 import router from '@/router'
 
 const logger = createComponentLogger('AutoMode')
@@ -58,6 +59,9 @@ const progress = ref(0)
 const progressText = ref('')
 const progressStatus = ref<'normal' | 'exception' | 'success'>('normal')
 
+// 状态：控制是否取消自动启动
+const aborted = ref(false)
+
 // 状态：控制弹窗显隐
 const forceEnterVisible = ref(false)
 
@@ -74,6 +78,7 @@ function handleForceEnterConfirm() {
 
 // 事件处理
 function handleSwitchToManual() {
+  aborted.value = true  // 设置中断
   props.onSwitchToManual()
 }
 
@@ -82,12 +87,14 @@ async function startAutoProcess() {
   try {
     // 获取配置中保存的镜像源设置
     const config = await getConfig()
+    if (aborted.value) return
 
     progressText.value = '检查Git仓库更新...'
     progress.value = 20
 
     // 检查Git仓库是否有更新
     const hasUpdate = await checkGitUpdate()
+    if (aborted.value) return
 
     if (hasUpdate) {
       progressText.value = '发现更新，正在更新代码...'
@@ -96,6 +103,7 @@ async function startAutoProcess() {
       // 使用配置中保存的Git镜像源
       const gitMirrorUrl = getGitMirrorUrl(config.selectedGitMirror)
       const result = await window.electronAPI.updateBackend(gitMirrorUrl)
+      if (aborted.value) return
       if (!result.success) {
         throw new Error(`代码更新失败: ${result.error}`)
       }
@@ -108,6 +116,7 @@ async function startAutoProcess() {
     // 先尝试使用初始化时的镜像源
     let pipMirror = config.selectedPipMirror || 'tsinghua'
     let pipResult = await window.electronAPI.installDependencies(pipMirror)
+    if (aborted.value) return
     
     // 如果初始化时的镜像源不通，让用户重新选择
     if (!pipResult.success) {
@@ -127,6 +136,7 @@ async function startAutoProcess() {
     progressText.value = '启动后端服务...'
     progress.value = 80
     await startBackendService()
+    if (aborted.value) return
 
     progressText.value = '启动完成！'
     progress.value = 100
@@ -167,16 +177,7 @@ async function checkGitUpdate(): Promise<boolean> {
 
 // 根据镜像源key获取对应的URL
 function getGitMirrorUrl(mirrorKey: string): string {
-  const mirrors = {
-    github: 'https://github.com/DLmaster361/AUTO_MAA.git',
-    ghfast: 'https://ghfast.top/https://github.com/DLmaster361/AUTO_MAA.git',
-    ghproxy_cloudflare: 'https://gh-proxy.com/https://github.com/DLmaster361/AUTO_MAA.git.git',
-    ghproxy_hongkong: 'https://hk.gh-proxy.com/https://github.com/DLmaster361/AUTO_MAA.git.git',
-    ghproxy_fastly: 'https://cdn.gh-proxy.com/https://github.com/DLmaster361/AUTO_MAA.git.git',
-    ghproxy_edgeone: 'https://edgeone.gh-proxy.com/https://github.com/DLmaster361/AUTO_MAA.git.git'
-  }
-
-  return mirrors[mirrorKey as keyof typeof mirrors] || mirrors.github
+  return getMirrorUrl('git', mirrorKey)
 }
 
 // 启动后端服务
@@ -189,6 +190,7 @@ async function startBackendService() {
 
 // 组件挂载时开始自动流程
 onMounted(() => {
+  aborted.value = false
   startAutoProcess()
 })
 </script>
