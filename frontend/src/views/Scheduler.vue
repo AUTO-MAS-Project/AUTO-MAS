@@ -119,7 +119,7 @@ const taskOptions = ref<ComboBoxItem[]>([])
 
 // 任务表单
 const taskForm = reactive({
-  taskId: '',
+  taskId: null,
   mode: '自动代理' as TaskCreateIn.mode
 })
 
@@ -192,6 +192,12 @@ const addTask = async () => {
     message.error('请填写完整的任务信息')
     return
   }
+  if (
+    taskForm.taskId === ''
+  ) {
+    message.error('请选择要执行的任务')
+    return
+  }
 
   try {
     addTaskLoading.value = true
@@ -217,7 +223,7 @@ const addTask = async () => {
       addTaskModalVisible.value = false
 
       // 重置表单
-      taskForm.taskId = ''
+      taskForm.taskId = null
       taskForm.mode = '自动代理'
     } else {
       message.error(response.message || '创建任务失败')
@@ -233,7 +239,7 @@ const addTask = async () => {
 // 取消添加任务
 const cancelAddTask = () => {
   addTaskModalVisible.value = false
-  taskForm.taskId = ''
+  taskForm.taskId = null
   taskForm.mode = '自动代理'
 }
 
