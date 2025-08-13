@@ -1,101 +1,101 @@
 <template>
+  <div class="header">
+    <a-typography-title>{{ greeting }}</a-typography-title>
+  </div>
 
-    <div class="header">
-      <a-typography-title>主人早上好喵~</a-typography-title>
-    </div>
-    
-    <div class="content">
-      <!-- 当期活动关卡 -->
-      <a-card title="当期活动关卡" class="activity-card" :loading="loading">
-        <template #extra>
-          <a-button type="text" @click="refreshActivity" :loading="loading">
-            <template #icon>
-              <ReloadOutlined />
-            </template>
-            刷新
-          </a-button>
-        </template>
-        
-        <div v-if="error" class="error-message">
-          <a-alert
-            :message="error"
-            type="error"
-            show-icon
-            closable
-            @close="error = ''"
-          />
-        </div>
-        
-        <!-- 活动信息展示 -->
-        <div v-if="currentActivity && !loading" class="activity-info">
-          <div class="activity-header">
-            <div class="activity-left">
-              <div class="activity-name">
-                <span class="activity-title">{{ currentActivity.StageName }}</span>
-                <a-tag color="blue" class="activity-tip">{{ currentActivity.Tip }}</a-tag>
-              </div>
-              <div class="activity-end-time">
-                <ClockCircleOutlined class="time-icon" />
-                <span class="time-label">结束时间：</span>
-                <span class="time-value">{{ formatTime(currentActivity.UtcExpireTime, currentActivity.TimeZone) }}</span>
-              </div>
+  <div class="content">
+    <!-- 当期活动关卡 -->
+    <a-card title="当期活动关卡" class="activity-card" :loading="loading">
+      <template #extra>
+        <a-button type="text" @click="refreshActivity" :loading="loading">
+          <template #icon>
+            <ReloadOutlined />
+          </template>
+          刷新
+        </a-button>
+      </template>
+
+      <div v-if="error" class="error-message">
+        <a-alert :message="error" type="error" show-icon closable @close="error = ''" />
+      </div>
+
+      <!-- 活动信息展示 -->
+      <div v-if="currentActivity && !loading" class="activity-info">
+        <div class="activity-header">
+          <div class="activity-left">
+            <div class="activity-name">
+              <span class="activity-title">{{ currentActivity.StageName }}</span>
+              <a-tag color="blue" class="activity-tip">{{ currentActivity.Tip }}</a-tag>
             </div>
-            
-            <div class="activity-right">
-              <a-statistic-countdown
-                title="当期活动剩余时间"
-                :value="getCountdownValue(currentActivity.UtcExpireTime)"
-                format="D 天 H 时 m 分"
-                :value-style="getCountdownStyle(currentActivity.UtcExpireTime)"
-                @finish="onCountdownFinish"
+            <div class="activity-end-time">
+              <ClockCircleOutlined class="time-icon" />
+              <span class="time-label">结束时间：</span>
+              <span class="time-value">{{
+                formatTime(currentActivity.UtcExpireTime, currentActivity.TimeZone)
+              }}</span>
+            </div>
+          </div>
+
+          <div class="activity-right">
+            <a-statistic-countdown
+              title="当期活动剩余时间"
+              :value="getCountdownValue(currentActivity.UtcExpireTime)"
+              format="D 天 H 时 m 分"
+              :value-style="getCountdownStyle(currentActivity.UtcExpireTime)"
+              @finish="onCountdownFinish"
+            />
+          </div>
+        </div>
+      </div>
+
+      <div v-if="activityData?.length" class="activity-list">
+        <div v-for="item in activityData" :key="item.Value" class="activity-item">
+          <div class="stage-info">
+            <div class="stage-name">{{ item.Display }}</div>
+            <!--              <div class="stage-value">{{ item.Value }}</div>-->
+          </div>
+
+          <div class="drop-info">
+            <div class="drop-image">
+              <img
+                :src="
+                  item.DropName.startsWith('DESC:')
+                    ? getMaterialImage('固源岩')
+                    : getMaterialImage(item.DropName)
+                "
+                :alt="item.DropName.startsWith('DESC:') ? '固源岩' : item.DropName"
+                @error="handleImageError"
               />
             </div>
-          </div>
-        </div>
-        
-        <div v-if="activityData?.length" class="activity-list">
-          <div
-            v-for="item in activityData"
-            :key="item.Value"
-            class="activity-item"
-          >
-            <div class="stage-info">
-              <div class="stage-name">{{ item.Display }}</div>
-<!--              <div class="stage-value">{{ item.Value }}</div>-->
-            </div>
-            
-            <div class="drop-info">
-              <div class="drop-image">
-                <img
-                  :src="item.DropName.startsWith('DESC:') ? getMaterialImage('固源岩') : getMaterialImage(item.DropName)"
-                  :alt="item.DropName.startsWith('DESC:') ? '固源岩' : item.DropName"
-                  @error="handleImageError"
-                />
+
+            <div class="drop-details">
+              <div class="drop-name">
+                {{ item.DropName.startsWith('DESC:') ? item.DropName.substring(5) : item.DropName }}
               </div>
-              
-              <div class="drop-details">
-                <div class="drop-name">
-                  {{ item.DropName.startsWith('DESC:') ? item.DropName.substring(5) : item.DropName }}
-                </div>
-<!--                <div v-if="item.Drop && !item.DropName.startsWith('DESC:')" class="drop-id">-->
-<!--                  ID: {{ item.Drop }}-->
-<!--                </div>-->
-              </div>
+              <!--                <div v-if="item.Drop && !item.DropName.startsWith('DESC:')" class="drop-id">-->
+              <!--                  ID: {{ item.Drop }}-->
+              <!--                </div>-->
             </div>
           </div>
         </div>
-        
-        <div v-else-if="!loading" class="empty-state">
-          <a-empty description="暂无活动关卡数据" />
-        </div>
-      </a-card>
-    </div>
+      </div>
+
+      <div v-else-if="!loading" class="empty-state">
+        <a-empty description="暂无活动关卡数据" />
+      </div>
+    </a-card>
+  </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { message } from 'ant-design-vue'
-import { ReloadOutlined, InfoCircleOutlined, CalendarOutlined, ClockCircleOutlined } from '@ant-design/icons-vue'
+import {
+  ReloadOutlined,
+  InfoCircleOutlined,
+  CalendarOutlined,
+  ClockCircleOutlined,
+} from '@ant-design/icons-vue'
 import { Service } from '@/api'
 
 interface ActivityInfo {
@@ -134,7 +134,7 @@ const formatTime = (timeString: string, timeZone: number) => {
       month: '2-digit',
       day: '2-digit',
       hour: '2-digit',
-      minute: '2-digit'
+      minute: '2-digit',
     })
   } catch {
     return timeString
@@ -157,25 +157,25 @@ const getCountdownStyle = (expireTime: string) => {
     const now = new Date()
     const remaining = expire.getTime() - now.getTime()
     const twoDaysInMs = 2 * 24 * 60 * 60 * 1000
-    
+
     if (remaining <= twoDaysInMs) {
       return {
         color: '#ff4d4f',
         fontWeight: 'bold',
-        fontSize: '18px'
+        fontSize: '18px',
       }
     }
-    
+
     return {
       color: 'var(--ant-color-text)',
       fontWeight: '600',
-      fontSize: '20px'
+      fontSize: '20px',
     }
   } catch {
     return {
       color: 'var(--ant-color-text)',
       fontWeight: '600',
-      fontSize: '20px'
+      fontSize: '20px',
     }
   }
 }
@@ -203,10 +203,10 @@ const handleImageError = (event: Event) => {
 const fetchActivityData = async () => {
   loading.value = true
   error.value = ''
-  
+
   try {
     const response = await Service.addOverviewApiInfoGetOverviewPost()
-    
+
     if (response.code === 200 && response.data?.ALL) {
       activityData.value = response.data.ALL
     } else {
@@ -227,13 +227,27 @@ const refreshActivity = async () => {
   }
 }
 
+const greeting = computed(() => {
+  const hour = new Date().getHours()
+  if (hour >= 5 && hour < 11) {
+    return '主人早上好喵~'
+  } else if (hour >= 11 && hour < 14) {
+    return '主人中午好喵~'
+  } else if (hour >= 14 && hour < 18) {
+    return '主人下午好喵~'
+  } else if (hour >= 18 && hour < 23) {
+    return '主人晚上好喵~'
+  } else {
+    return '主人夜深了喵~早点休息喵~'
+  }
+})
+
 onMounted(() => {
   fetchActivityData()
 })
 </script>
 
 <style scoped>
-
 .header {
   margin-bottom: 24px;
 }
@@ -244,8 +258,6 @@ onMounted(() => {
   font-size: 24px;
   font-weight: 600;
 }
-
-
 
 .activity-card {
   margin-bottom: 24px;
@@ -458,15 +470,15 @@ onMounted(() => {
   .page-container {
     padding: 16px;
   }
-  
+
   .activity-list {
     grid-template-columns: 1fr;
   }
-  
+
   .activity-item {
     padding: 12px;
   }
-  
+
   .drop-image {
     width: 40px;
     height: 40px;

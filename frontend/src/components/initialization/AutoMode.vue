@@ -170,7 +170,12 @@ function getGitMirrorUrl(mirrorKey: string): string {
   const mirrors = {
     github: 'https://github.com/DLmaster361/AUTO_MAA.git',
     ghfast: 'https://ghfast.top/https://github.com/DLmaster361/AUTO_MAA.git',
+    ghproxy_cloudflare: 'https://gh-proxy.com/https://github.com/DLmaster361/AUTO_MAA.git.git',
+    ghproxy_hongkong: 'https://hk.gh-proxy.com/https://github.com/DLmaster361/AUTO_MAA.git.git',
+    ghproxy_fastly: 'https://cdn.gh-proxy.com/https://github.com/DLmaster361/AUTO_MAA.git.git',
+    ghproxy_edgeone: 'https://edgeone.gh-proxy.com/https://github.com/DLmaster361/AUTO_MAA.git.git'
   }
+
   return mirrors[mirrorKey as keyof typeof mirrors] || mirrors.github
 }
 
