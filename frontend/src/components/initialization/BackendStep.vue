@@ -50,10 +50,10 @@ defineProps<{
   backendExists: boolean
 }>()
 
-const gitMirrors = ref<Mirror[]>([
-  { key: 'github', name: 'GitHub 官方', url: 'https://github.com/DLmaster361/AUTO_MAA.git', speed: null },
-  { key: 'ghfast', name: 'ghfast 镜像', url: 'https://ghfast.top/https://github.com/DLmaster361/AUTO_MAA.git', speed: null }
-])
+import { GIT_MIRRORS } from '@/config/mirrors'
+
+const gitMirrors = ref<Mirror[]>(GIT_MIRRORS)
+
 
 const selectedGitMirror = ref('github')
 const testingGitSpeed = ref(false)

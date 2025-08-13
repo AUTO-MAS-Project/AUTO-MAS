@@ -64,7 +64,7 @@ async function installPip(pythonPath: string, appRoot: string): Promise<void> {
   console.log('pip未安装，开始安装...')
   
   const getPipPath = path.join(pythonPath, 'get-pip.py')
-  const getPipUrl = 'https://alist-automaa.fearr.xyz/d/AUTO_MAA/get-pip.py'
+  const getPipUrl = 'http://221.236.27.82:10197/d/AUTO_MAA/get-pip.py'
 
   console.log(`Python可执行文件路径: ${pythonExe}`)
   console.log(`get-pip.py下载URL: ${getPipUrl}`)
@@ -203,7 +203,7 @@ export async function downloadPython(appRoot: string, mirror = 'ustc'): Promise<
     // Python 3.12.0嵌入式版本应该大约30MB，如果小于5MB可能是无效文件
     if (stats.size < 5 * 1024 * 1024) { // 5MB
       fs.unlinkSync(zipPath) // 删除无效文件
-      throw new Error(`Python下载文件大小异常: ${stats.size} bytes (${(stats.size / 1024).toFixed(2)} KB)，可能是镜像站返回的错误页面或无效文件`)
+      throw new Error(`Python下载文件大小异常: ${stats.size} bytes (${(stats.size / 1024).toFixed(2)} KB)，可能是镜像站返回的错误页面或无效文件。请选择一个其他可用镜像源进行下载！`)
     }
 
     if (mainWindow) {

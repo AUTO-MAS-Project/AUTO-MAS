@@ -28,15 +28,15 @@
       <a-step title="启动服务" description="启动后端服务" />
     </a-steps>
 
-    <!-- 全局进度条 -->
-    <div v-if="isProcessing" class="global-progress">
-      <a-progress 
-        :percent="globalProgress" 
-        :status="globalProgressStatus"
-        :show-info="true"
-      />
-      <div class="progress-text">{{ progressText }}</div>
-    </div>
+<!--    &lt;!&ndash; 全局进度条 &ndash;&gt;-->
+<!--    <div v-if="isProcessing" class="global-progress">-->
+<!--      <a-progress -->
+<!--        :percent="globalProgress" -->
+<!--        :status="globalProgressStatus"-->
+<!--        :show-info="true"-->
+<!--      />-->
+<!--      <div class="progress-text">{{ progressText }}</div>-->
+<!--    </div>-->
 
     <div class="step-content">
       <!-- 步骤 0: 主题设置 -->
@@ -94,20 +94,21 @@
       </a-button>
     </div>
 
-    <div v-if="errorMessage" class="error-message">
-      <a-alert 
-        :message="errorMessage" 
-        type="error" 
-        show-icon 
-        closable
-        @close="errorMessage = ''"
-      />
-    </div>
+<!--    <div v-if="errorMessage" class="error-message">-->
+<!--      <a-alert -->
+<!--        :message="errorMessage" -->
+<!--        type="error" -->
+<!--        show-icon -->
+<!--        closable-->
+<!--        @close="errorMessage = ''"-->
+<!--      />-->
+<!--    </div>-->
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
+import { message } from 'ant-design-vue'
 import { createComponentLogger } from '@/utils/logger'
 import { saveConfig } from '@/utils/config'
 import ThemeStep from './ThemeStep.vue'
@@ -472,6 +473,15 @@ function handleDownloadProgress(progress: any) {
 defineExpose({
   currentStep,
   handleDownloadProgress
+})
+
+// 监听 errorMessage，一旦有内容就弹窗
+watch(errorMessage, (val) => {
+  if (val) {
+    message.error(val)
+    // 弹窗后可选：自动清空 errorMessage
+    // errorMessage.value = ''
+  }
 })
 </script>
 
