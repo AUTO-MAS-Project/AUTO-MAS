@@ -249,7 +249,7 @@ export async function cloneBackend(
         })
       }
       await new Promise<void>((resolve, reject) => {
-        const proc = spawn(gitPath, ['clone', '--progress', '--verbose','--branch', 'feature/refactor-backend', repoUrl, tmpDir], {
+        const proc = spawn(gitPath, ['clone', '--progress', '--verbose','--single-branch','--depth','1','--branch', 'feature/refactor-backend', repoUrl, tmpDir], {
           stdio: 'pipe',
           env: gitEnv,
           cwd: appRoot,
