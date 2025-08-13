@@ -39,7 +39,8 @@
               <a-tag :color="getTaskStatusColor(task.status)">
                 {{ task.status }}
               </a-tag>
-              <a-button type="text" size="small" danger @click.stop="stopTask(task.websocketId)" :icon="h(StopOutlined)">
+              <a-button type="text" size="small" danger @click.stop="stopTask(task.websocketId)"
+                :icon="h(StopOutlined)">
                 停止
               </a-button>
             </template>
@@ -51,8 +52,10 @@
                   清空
                 </a-button>
               </div>
-              <div class="output-content" ref="outputRefs">
-                <div v-for="(log, index) in task.logs" :key="index" :class="['log-line', `log-${log.type}`]">
+              <div class="output-content" :ref="el => setOutputRef(el as HTMLElement, task.websocketId)"
+                :key="`output-${task.websocketId}-${task.logs.length}`">
+                <div v-for="(log, index) in task.logs" :key="`${task.websocketId}-${index}-${log.time}`"
+                  :class="['log-line', `log-${log.type}`]">
                   <span class="log-time">{{ log.time }}</span>
                   <span class="log-message">{{ log.message }}</span>
                 </div>
@@ -93,7 +96,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, onUnmounted, h, nextTick } from 'vue'
+import { ref, reactive, onMounted, onUnmounted, h, nextTick, triggerRef } from 'vue'
 import { message, notification } from 'ant-design-vue'
 import {
   PlusOutlined,
@@ -110,9 +113,8 @@ const addTaskModalVisible = ref(false)
 const messageModalVisible = ref(false)
 const taskOptionsLoading = ref(false)
 const addTaskLoading = ref(false)
-const selectedTaskId = ref<string>('')
 const activeTaskPanels = ref<string[]>([])
-const outputRefs = ref<HTMLElement[]>([])
+const outputRefs = ref<Map<string, HTMLElement>>(new Map())
 
 // 任务选项
 const taskOptions = ref<ComboBoxItem[]>([])
@@ -146,7 +148,7 @@ interface RunningTask {
   }>
 }
 
-const runningTasks = ref<RunningTask[]>([])
+const runningTasks = reactive<RunningTask[]>([])
 
 // 消息处理
 interface TaskMessage {
@@ -159,6 +161,15 @@ interface TaskMessage {
 
 const currentMessage = ref<TaskMessage | null>(null)
 const messageResponse = ref('')
+
+// 设置输出容器引用
+const setOutputRef = (el: HTMLElement | null, websocketId: string) => {
+  if (el) {
+    outputRefs.value.set(websocketId, el)
+  } else {
+    outputRefs.value.delete(websocketId)
+  }
+}
 
 // 获取任务选项
 const loadTaskOptions = async () => {
@@ -260,7 +271,7 @@ const startCreatedTask = () => {
   }
 
   // 添加到运行任务列表
-  runningTasks.value.push(task)
+  runningTasks.push(task)
   activeTaskPanels.value.push(task.websocketId)
 
   // 连接WebSocket
@@ -379,20 +390,27 @@ const addTaskLog = (task: RunningTask, message: string, type: 'info' | 'error' |
   const now = new Date()
   const time = now.toLocaleTimeString()
 
-  task.logs.push({
-    time,
-    message,
-    type
-  })
+  // 找到任务在数组中的索引
+  const taskIndex = runningTasks.findIndex(t => t.websocketId === task.websocketId)
+  if (taskIndex >= 0) {
+    // 直接修改 reactive 数组中的任务对象
+    runningTasks[taskIndex].logs.push({
+      time,
+      message,
+      type
+    })
+
+    // 更新任务状态（如果有变化）
+    if (runningTasks[taskIndex].status !== task.status) {
+      runningTasks[taskIndex].status = task.status
+    }
+  }
 
   // 自动滚动到底部
   nextTick(() => {
-    const outputElements = outputRefs.value
-    if (outputElements && outputElements.length > 0) {
-      const taskIndex = runningTasks.value.findIndex(t => t.websocketId === task.websocketId)
-      if (taskIndex >= 0 && outputElements[taskIndex]) {
-        outputElements[taskIndex].scrollTop = outputElements[taskIndex].scrollHeight
-      }
+    const outputElement = outputRefs.value.get(task.websocketId)
+    if (outputElement) {
+      outputElement.scrollTop = outputElement.scrollHeight
     }
   })
 }
@@ -403,7 +421,7 @@ const sendMessageResponse = () => {
     return
   }
 
-  const task = runningTasks.value.find(t => t.websocketId === currentMessage.value?.taskId)
+  const task = runningTasks.find(t => t.websocketId === currentMessage.value?.taskId)
   if (task && task.websocket) {
     const response = {
       type: 'MessageResponse',
@@ -429,9 +447,9 @@ const cancelMessage = () => {
 
 // 停止任务
 const stopTask = (taskId: string) => {
-  const taskIndex = runningTasks.value.findIndex(t => t.websocketId === taskId)
+  const taskIndex = runningTasks.findIndex(t => t.websocketId === taskId)
   if (taskIndex >= 0) {
-    const task = runningTasks.value[taskIndex]
+    const task = runningTasks[taskIndex]
 
     // 关闭WebSocket连接
     if (task.websocket) {
@@ -440,7 +458,7 @@ const stopTask = (taskId: string) => {
     }
 
     // 从列表中移除
-    runningTasks.value.splice(taskIndex, 1)
+    runningTasks.splice(taskIndex, 1)
 
     // 从展开面板中移除
     const panelIndex = activeTaskPanels.value.indexOf(taskId)
@@ -454,7 +472,7 @@ const stopTask = (taskId: string) => {
 
 // 清空任务输出
 const clearTaskOutput = (taskId: string) => {
-  const task = runningTasks.value.find(t => t.websocketId === taskId)
+  const task = runningTasks.find(t => t.websocketId === taskId)
   if (task) {
     task.logs = []
   }
@@ -486,7 +504,7 @@ onMounted(() => {
 
 // 组件卸载时清理WebSocket连接
 onUnmounted(() => {
-  runningTasks.value.forEach(task => {
+  runningTasks.forEach(task => {
     if (task.websocket) {
       task.websocket.close()
     }
