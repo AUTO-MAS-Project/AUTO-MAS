@@ -15,12 +15,12 @@
     </div>
     <div v-else class="already-installed">
       <a-result status="success" title="pip已成功安装，无需继续安装" />
-      <div class="reinstall-section">
-        <a-button type="primary" danger @click="handleForceReinstall" :loading="reinstalling">
-          {{ reinstalling ? '正在重新安装...' : '强制重新安装' }}
-        </a-button>
-        <p class="reinstall-note">点击此按钮将删除现有pip环境并重新安装</p>
-      </div>
+<!--      <div class="reinstall-section">-->
+<!--        <a-button type="primary" danger @click="handleForceReinstall" :loading="reinstalling">-->
+<!--          {{ reinstalling ? '正在重新安装...' : '强制重新安装' }}-->
+<!--        </a-button>-->
+<!--        <p class="reinstall-note">点击此按钮将删除现有pip环境并重新安装</p>-->
+<!--      </div>-->
     </div>
   </div>
 </template>

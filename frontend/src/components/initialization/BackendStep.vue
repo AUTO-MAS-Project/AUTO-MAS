@@ -50,14 +50,9 @@ defineProps<{
   backendExists: boolean
 }>()
 
-const gitMirrors = ref<Mirror[]>([
-  { key: 'github', name: 'GitHub 官方', url: 'https://github.com/DLmaster361/AUTO_MAA.git', speed: null },
-  { key: 'ghfast', name: 'ghfast 镜像', url: 'https://ghfast.top/https://github.com/DLmaster361/AUTO_MAA.git', speed: null },
-  { key: 'ghproxy_cloudflare', name: 'gh-proxy Cloudflare 全球加速', url: 'https://gh-proxy.com/https://github.com/DLmaster361/AUTO_MAA.git.git', speed: null },
-  { key: 'ghproxy_hongkong', name: 'gh-proxy 香港节点（大陆优化）', url: 'https://hk.gh-proxy.com/https://github.com/DLmaster361/AUTO_MAA.git.git', speed: null },
-  { key: 'ghproxy_fastly', name: 'gh-proxy Fastly CDN', url: 'https://cdn.gh-proxy.com/https://github.com/DLmaster361/AUTO_MAA.git.git', speed: null },
-  { key: 'ghproxy_edgeone', name: 'gh-proxy EdgeOne 全球加速', url: 'https://edgeone.gh-proxy.com/https://github.com/DLmaster361/AUTO_MAA.git.git', speed: null }
-])
+import { GIT_MIRRORS } from '@/config/mirrors'
+
+const gitMirrors = ref<Mirror[]>(GIT_MIRRORS)
 
 
 const selectedGitMirror = ref('github')

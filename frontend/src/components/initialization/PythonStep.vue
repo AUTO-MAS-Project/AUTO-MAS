@@ -29,12 +29,12 @@
         </div>
         <div v-else class="already-installed">
             <a-result status="success" title="Python已成功安装，无需继续安装" />
-            <div class="reinstall-section">
-                <a-button type="primary" danger @click="handleForceReinstall" :loading="reinstalling">
-                    {{ reinstalling ? '正在重新安装...' : '强制重新安装' }}
-                </a-button>
-                <p class="reinstall-note">点击此按钮将删除现有Python环境并重新安装</p>
-            </div>
+<!--            <div class="reinstall-section">-->
+<!--                <a-button type="primary" danger @click="handleForceReinstall" :loading="reinstalling">-->
+<!--                    {{ reinstalling ? '正在重新安装...' : '强制重新安装' }}-->
+<!--                </a-button>-->
+<!--                <p class="reinstall-note">点击此按钮将删除现有Python环境并重新安装</p>-->
+<!--            </div>-->
         </div>
     </div>
 </template>
@@ -54,13 +54,9 @@ const props = defineProps<{
     pythonInstalled: boolean
 }>()
 
-const pythonMirrors = ref<Mirror[]>([
-    { key: 'official', name: 'Python 官方', url: 'https://www.python.org/ftp/python/3.13.0/', speed: null },
-    { key: 'tsinghua', name: '清华 TUNA 镜像', url: 'https://mirrors.tuna.tsinghua.edu.cn/python/3.13.0/', speed: null },
-    { key: 'ustc', name: '中科大镜像', url: 'https://mirrors.ustc.edu.cn/python/3.13.0/', speed: null },
-    { key: 'huawei', name: '华为云镜像', url: 'https://mirrors.huaweicloud.com/repository/toolkit/python/3.13.0/', speed: null },
-    { key: 'aliyun', name: '阿里云镜像', url: 'https://mirrors.aliyun.com/python-release/windows/', speed: null }
-])
+import { PYTHON_MIRRORS } from '@/config/mirrors'
+
+const pythonMirrors = ref<Mirror[]>(PYTHON_MIRRORS)
 
 const selectedPythonMirror = ref('tsinghua')
 const testingSpeed = ref(false)
