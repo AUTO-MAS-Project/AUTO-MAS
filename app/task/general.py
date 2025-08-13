@@ -937,7 +937,7 @@ class GeneralManager:
 
         logger.info(f"开始推送通知，模式：{mode}，标题：{title}")
 
-        env = Environment(loader=FileSystemLoader(str(Path.cwd() / "resources/html")))
+        env = Environment(loader=FileSystemLoader(str(Path.cwd() / "res/html")))
 
         if mode == "代理结果" and (
             Config.get("Notify", "SendTaskResultTime") == "任何时刻"

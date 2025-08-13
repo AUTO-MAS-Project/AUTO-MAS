@@ -26,6 +26,6 @@ data/
 debug/
 history/
 script/
-resources/notice.json
-resources/theme_image.json
-resources/images/Home/BannerTheme.jpg
+res/notice.json
+res/theme_image.json
+res/images/Home/BannerTheme.jpg

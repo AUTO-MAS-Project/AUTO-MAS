@@ -61,7 +61,7 @@ class Notification:
                     title=title,
                     message=message,
                     app_name="AUTO_MAA",
-                    app_icon=(Path.cwd() / "resources/icons/AUTO_MAA.ico").as_posix(),
+                    app_icon=(Path.cwd() / "res/icons/AUTO_MAA.ico").as_posix(),
                     timeout=t,
                     ticker=ticker,
                     toast=True,
@@ -272,7 +272,7 @@ class Notification:
                 Config.get("Notify", "CompanyWebHookBotUrl"),
             )
             Notify.CompanyWebHookBotPushImage(
-                Path.cwd() / "resources/images/notification/test_notify.png",
+                Path.cwd() / "res/images/notification/test_notify.png",
                 Config.get("Notify", "CompanyWebHookBotUrl"),
             )
 
