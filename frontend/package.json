@@ -23,6 +23,7 @@
       "buildResources": "assets"
     },
     "win": {
+      "requestedExecutionLevel": "requireAdministrator",
       "icon": "public/AUTO_MAA.ico"
     },
     "mac": {
