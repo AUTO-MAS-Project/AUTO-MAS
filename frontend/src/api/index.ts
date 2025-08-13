@@ -10,6 +10,7 @@ export type { OpenAPIConfig } from './core/OpenAPI';
 export type { ComboBoxItem } from './models/ComboBoxItem';
 export type { ComboBoxOut } from './models/ComboBoxOut';
 export type { DispatchIn } from './models/DispatchIn';
+export { GetStageIn } from './models/GetStageIn';
 export type { GlobalConfig } from './models/GlobalConfig';
 export type { GlobalConfig_Function } from './models/GlobalConfig_Function';
 export type { GlobalConfig_Notify } from './models/GlobalConfig_Notify';
