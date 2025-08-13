@@ -45,7 +45,13 @@ async def get_plan(plan: PlanGetIn = Body(...)) -> PlanGetOut:
     try:
         index, data = await Config.get_plan(plan.planId)
     except Exception as e:
-        return PlanGetOut(code=500, status="error", message=str(e), index=[], data={})
+        return PlanGetOut(
+            code=500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            index=[],
+            data={},
+        )
     return PlanGetOut(index=index, data=data)
 
 
@@ -57,7 +63,9 @@ async def update_plan(plan: PlanUpdateIn = Body(...)) -> OutBase:
     try:
         await Config.update_plan(plan.planId, plan.data)
     except Exception as e:
-        return OutBase(code=500, status="error", message=str(e))
+        return OutBase(
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+        )
     return OutBase()
 
 
@@ -67,7 +75,9 @@ async def delete_plan(plan: PlanDeleteIn = Body(...)) -> OutBase:
     try:
         await Config.del_plan(plan.planId)
     except Exception as e:
-        return OutBase(code=500, status="error", message=str(e))
+        return OutBase(
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+        )
     return OutBase()
 
 
@@ -79,5 +89,7 @@ async def reorder_plan(plan: PlanReorderIn = Body(...)) -> OutBase:
     try:
         await Config.reorder_plan(plan.indexList)
     except Exception as e:
-        return OutBase(code=500, status="error", message=str(e))
+        return OutBase(
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+        )
     return OutBase()

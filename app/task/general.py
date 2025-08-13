@@ -316,7 +316,7 @@ class GeneralManager:
                             break
 
                         # 更新静默进程标记有效时间
-                        if self.script_config.get("Game", "Style") == "Emulator":
+                        if self.script_config.get("Game", "Type") == "Emulator":
                             logger.info(
                                 f"更新静默进程标记：{self.game_path}，标记有效时间：{datetime.now() + timedelta(seconds=self.script_config.get('Game', 'WaitTime') + 10)}"
                             )

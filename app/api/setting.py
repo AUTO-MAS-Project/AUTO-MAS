@@ -36,7 +36,10 @@ async def get_scripts() -> SettingGetOut:
         data = await Config.get_setting()
     except Exception as e:
         return SettingGetOut(
-            code=500, status="error", message=str(e), data=GlobalConfig(**{})
+            code=500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            data=GlobalConfig(**{}),
         )
     return SettingGetOut(data=GlobalConfig(**data))
 
@@ -48,5 +51,7 @@ async def update_script(script: SettingUpdateIn = Body(...)) -> OutBase:
     try:
         await Config.update_setting(script.data.model_dump(exclude_unset=True))
     except Exception as e:
-        return OutBase(code=500, status="error", message=str(e))
+        return OutBase(
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+        )
     return OutBase()

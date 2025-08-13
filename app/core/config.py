@@ -596,8 +596,8 @@ class GeneralConfig(ConfigBase):
         self.Script_ErrorLog = ConfigItem("Script", "ErrorLog", "")
 
         self.Game_Enabled = ConfigItem("Game", "Enabled", False, BoolValidator())
-        self.Game_Style = ConfigItem(
-            "Game", "Style", "Emulator", OptionsValidator(["Emulator", "Client"])
+        self.Game_Type = ConfigItem(
+            "Game", "Type", "Emulator", OptionsValidator(["Emulator", "Client"])
         )
         self.Game_Path = ConfigItem("Game", "Path", ".", FileValidator())
         self.Game_Arguments = ConfigItem("Game", "Arguments", "")
@@ -738,6 +738,29 @@ class AppConfig(GlobalConfig):
 
         await self.ScriptConfig.setOrder([uuid.UUID(_) for _ in index_list])
 
+    async def get_user(
+        self, script_id: str, user_id: Optional[str]
+    ) -> tuple[list, dict]:
+        """获取用户配置"""
+
+        logger.info(f"获取用户配置：{script_id} - {user_id}")
+
+        uid = uuid.UUID(script_id)
+        sc = self.ScriptConfig[uid]
+
+        if isinstance(sc, (MaaConfig | GeneralConfig)):
+            if user_id is None:
+                data = await sc.UserData.toDict()
+            else:
+                data = await sc.UserData.get(uuid.UUID(user_id))
+        else:
+            logger.error(f"Unsupported script config type: {type(sc)}")
+            raise TypeError(f"Unsupported script config type: {type(sc)}")
+
+        index = data.pop("instances", [])
+
+        return list(index), data
+
     async def add_user(self, script_id: str) -> tuple[uuid.UUID, ConfigBase]:
         """添加用户配置"""
 
@@ -796,6 +819,57 @@ class AppConfig(GlobalConfig):
             await script_config.UserData.setOrder([uuid.UUID(_) for _ in index_list])
             await self.ScriptConfig.save()
 
+    async def add_plan(
+        self, script: Literal["MaaPlan"]
+    ) -> tuple[uuid.UUID, ConfigBase]:
+        """添加计划表"""
+
+        logger.info(f"添加计划表：{script}")
+
+        return await self.PlanConfig.add(CLASS_BOOK[script])
+
+    async def get_plan(self, plan_id: Optional[str]) -> tuple[list, dict]:
+        """获取计划表配置"""
+
+        logger.info(f"获取计划表配置：{plan_id}")
+
+        if plan_id is None:
+            data = await self.PlanConfig.toDict()
+        else:
+            data = await self.PlanConfig.get(uuid.UUID(plan_id))
+
+        index = data.pop("instances", [])
+
+        return list(index), data
+
+    async def update_plan(self, plan_id: str, data: Dict[str, Dict[str, Any]]) -> None:
+        """更新计划表配置"""
+
+        logger.info(f"更新计划表配置：{plan_id}")
+
+        uid = uuid.UUID(plan_id)
+
+        for group, items in data.items():
+            for name, value in items.items():
+                logger.debug(f"更新计划表配置：{plan_id} - {group}.{name} = {value}")
+                await self.PlanConfig[uid].set(group, name, value)
+
+        await self.PlanConfig.save()
+
+    async def del_plan(self, plan_id: str) -> None:
+        """删除计划表配置"""
+
+        logger.info(f"删除计划表配置：{plan_id}")
+
+        await self.PlanConfig.remove(uuid.UUID(plan_id))
+
+    async def reorder_plan(self, index_list: list[str]) -> None:
+        """重新排序计划表"""
+
+        logger.info(f"重新排序计划表：{index_list}")
+
+        await self.PlanConfig.setOrder([uuid.UUID(_) for _ in index_list])
+
     async def add_queue(self) -> tuple[uuid.UUID, ConfigBase]:
         """添加调度队列"""
 
@@ -848,6 +922,29 @@ class AppConfig(GlobalConfig):
         logger.info(f"重新排序调度队列：{index_list}")
 
         await self.QueueConfig.setOrder([uuid.UUID(_) for _ in index_list])
+
+    async def get_time_set(
+        self, queue_id: str, time_set_id: Optional[str]
+    ) -> tuple[list, dict]:
+        """获取时间设置配置"""
+
+        logger.info(f"Get time set of queue: {queue_id} - {time_set_id}")
+
+        uid = uuid.UUID(queue_id)
+        qc = self.QueueConfig[uid]
+
+        if isinstance(qc, QueueConfig):
+            if time_set_id is None:
+                data = await qc.TimeSet.toDict()
+            else:
+                data = await qc.TimeSet.get(uuid.UUID(time_set_id))
+        else:
+            logger.error(f"Unsupported queue config type: {type(qc)}")
+            raise TypeError(f"Unsupported queue config type: {type(qc)}")
+
+        index = data.pop("instances", [])
+
+        return list(index), data
 
     async def add_time_set(self, queue_id: str) -> tuple[uuid.UUID, ConfigBase]:
         """添加时间设置配置"""
@@ -905,56 +1002,28 @@ class AppConfig(GlobalConfig):
             await queue_config.TimeSet.setOrder([uuid.UUID(_) for _ in index_list])
             await self.QueueConfig.save()
 
-    async def add_plan(
-        self, script: Literal["MaaPlan"]
-    ) -> tuple[uuid.UUID, ConfigBase]:
-        """添加计划表"""
+    async def get_queue_item(
+        self, queue_id: str, queue_item_id: Optional[str]
+    ) -> tuple[list, dict]:
+        """获取队列项配置"""
 
-        logger.info(f"添加计划表：{script}")
+        logger.info(f"Get queue item of queue: {queue_id} - {queue_item_id}")
 
-        return await self.PlanConfig.add(CLASS_BOOK[script])
+        uid = uuid.UUID(queue_id)
+        qc = self.QueueConfig[uid]
 
-    async def get_plan(self, plan_id: Optional[str]) -> tuple[list, dict]:
-        """获取计划表配置"""
-
-        logger.info(f"获取计划表配置：{plan_id}")
-
-        if plan_id is None:
-            data = await self.PlanConfig.toDict()
+        if isinstance(qc, QueueConfig):
+            if queue_item_id is None:
+                data = await qc.QueueItem.toDict()
+            else:
+                data = await qc.QueueItem.get(uuid.UUID(queue_item_id))
         else:
-            data = await self.PlanConfig.get(uuid.UUID(plan_id))
+            logger.error(f"Unsupported queue config type: {type(qc)}")
+            raise TypeError(f"Unsupported queue config type: {type(qc)}")
 
         index = data.pop("instances", [])
 
         return list(index), data
-
-    async def update_plan(self, plan_id: str, data: Dict[str, Dict[str, Any]]) -> None:
-        """更新计划表配置"""
-
-        logger.info(f"更新计划表配置：{plan_id}")
-
-        uid = uuid.UUID(plan_id)
-
-        for group, items in data.items():
-            for name, value in items.items():
-                logger.debug(f"更新计划表配置：{plan_id} - {group}.{name} = {value}")
-                await self.PlanConfig[uid].set(group, name, value)
-
-        await self.PlanConfig.save()
-
-    async def del_plan(self, plan_id: str) -> None:
-        """删除计划表配置"""
-
-        logger.info(f"删除计划表配置：{plan_id}")
-
-        await self.PlanConfig.remove(uuid.UUID(plan_id))
-
-    async def reorder_plan(self, index_list: list[str]) -> None:
-        """重新排序计划表"""
-
-        logger.info(f"重新排序计划表：{index_list}")
-
-        await self.PlanConfig.setOrder([uuid.UUID(_) for _ in index_list])
 
     async def add_queue_item(self, queue_id: str) -> tuple[uuid.UUID, ConfigBase]:
         """添加队列项配置"""

@@ -21,7 +21,7 @@
 
 
 from pydantic import BaseModel, Field
-from typing import Dict, Any, List, Optional, Literal
+from typing import Any, Dict, List, Union, Optional, Literal
 
 
 class OutBase(BaseModel):
@@ -133,6 +133,21 @@ class GlobalConfig(BaseModel):
     Update: Optional[GlobalConfig_Update] = Field(None, description="更新相关配置")
 
 
+class QueueIndexItem(BaseModel):
+    uid: str = Field(..., description="唯一标识符")
+    type: Literal["QueueConfig"] = Field(..., description="配置类型")
+
+
+class QueueItemIndexItem(BaseModel):
+    uid: str = Field(..., description="唯一标识符")
+    type: Literal["QueueItem"] = Field(..., description="配置类型")
+
+
+class TimeSetIndexItem(BaseModel):
+    uid: str = Field(..., description="唯一标识符")
+    type: Literal["TimeSet"] = Field(..., description="配置类型")
+
+
 class QueueItem_Info(BaseModel):
     ScriptId: Optional[str] = Field(
         None, description="任务所对应的脚本ID, 为None时表示未选择"
@@ -152,11 +167,6 @@ class TimeSet(BaseModel):
     Info: Optional[TimeSet_Info] = Field(None, description="时间项")
 
 
-class QueueIndexItem(BaseModel):
-    uid: str = Field(..., description="唯一标识符")
-    type: Literal["QueueConfig"] = Field(..., description="配置类型")
-
-
 class QueueConfig_Info(BaseModel):
     Name: Optional[str] = Field(None, description="队列名称")
     TimeEnabled: Optional[bool] = Field(None, description="是否启用定时")
@@ -169,188 +179,119 @@ class QueueConfig_Info(BaseModel):
 
 
 class QueueConfig(BaseModel):
-
     Info: Optional[QueueConfig_Info] = Field(None, description="队列信息")
 
 
-# class MaaUserConfig(ConfigBase):
-#     """MAA用户配置"""
-
-#     def __init__(self) -> None:
-#         super().__init__()
-
-#         self.Info_Name = ConfigItem("Info", "Name", "新用户")
-#         self.Info_Id = ConfigItem("Info", "Id", "")
-#         self.Info_Mode = ConfigItem(
-#             "Info", "Mode", "简洁", OptionsValidator(["简洁", "详细"])
-#         )
-#         self.Info_StageMode = ConfigItem("Info", "StageMode", "固定")
-#         self.Info_Server = ConfigItem(
-#             "Info",
-#             "Server",
-#             "Official",
-#             OptionsValidator(
-#                 ["Official", "Bilibili", "YoStarEN", "YoStarJP", "YoStarKR", "txwy"]
-#             ),
-#         )
-#         self.Info_Status = ConfigItem("Info", "Status", True, BoolValidator())
-#         self.Info_RemainedDay = ConfigItem(
-#             "Info", "RemainedDay", -1, RangeValidator(-1, 1024)
-#         )
-#         self.Info_Annihilation = ConfigItem(
-#             "Info",
-#             "Annihilation",
-#             "Annihilation",
-#             OptionsValidator(
-#                 [
-#                     "Close",
-#                     "Annihilation",
-#                     "Chernobog@Annihilation",
-#                     "LungmenOutskirts@Annihilation",
-#                     "LungmenDowntown@Annihilation",
-#                 ]
-#             ),
-#         )
-#         self.Info_Routine = ConfigItem("Info", "Routine", True, BoolValidator())
-#         self.Info_InfrastMode = ConfigItem(
-#             "Info",
-#             "InfrastMode",
-#             "Normal",
-#             OptionsValidator(["Normal", "Rotation", "Custom"]),
-#         )
-#         self.Info_Password = ConfigItem("Info", "Password", "", EncryptValidator())
-#         self.Info_Notes = ConfigItem("Info", "Notes", "无")
-#         self.Info_MedicineNumb = ConfigItem(
-#             "Info", "MedicineNumb", 0, RangeValidator(0, 1024)
-#         )
-#         self.Info_SeriesNumb = ConfigItem(
-#             "Info",
-#             "SeriesNumb",
-#             "0",
-#             OptionsValidator(["0", "6", "5", "4", "3", "2", "1", "-1"]),
-#         )
-#         self.Info_Stage = ConfigItem("Info", "Stage", "-")
-#         self.Info_Stage_1 = ConfigItem("Info", "Stage_1", "-")
-#         self.Info_Stage_2 = ConfigItem("Info", "Stage_2", "-")
-#         self.Info_Stage_3 = ConfigItem("Info", "Stage_3", "-")
-#         self.Info_Stage_Remain = ConfigItem("Info", "Stage_Remain", "-")
-#         self.Info_IfSkland = ConfigItem("Info", "IfSkland", False, BoolValidator())
-#         self.Info_SklandToken = ConfigItem("Info", "SklandToken", "")
-
-#         self.Data_LastProxyDate = ConfigItem("Data", "LastProxyDate", "2000-01-01")
-#         self.Data_LastAnnihilationDate = ConfigItem(
-#             "Data", "LastAnnihilationDate", "2000-01-01"
-#         )
-#         self.Data_LastSklandDate = ConfigItem("Data", "LastSklandDate", "2000-01-01")
-#         self.Data_ProxyTimes = ConfigItem(
-#             "Data", "ProxyTimes", 0, RangeValidator(0, 1024)
-#         )
-#         self.Data_IfPassCheck = ConfigItem("Data", "IfPassCheck", True, BoolValidator())
-#         self.Data_CustomInfrastPlanIndex = ConfigItem(
-#             "Data", "CustomInfrastPlanIndex", "0"
-#         )
-
-#         self.Task_IfWakeUp = ConfigItem("Task", "IfWakeUp", True, BoolValidator())
-#         self.Task_IfRecruiting = ConfigItem(
-#             "Task", "IfRecruiting", True, BoolValidator()
-#         )
-#         self.Task_IfBase = ConfigItem("Task", "IfBase", True, BoolValidator())
-#         self.Task_IfCombat = ConfigItem("Task", "IfCombat", True, BoolValidator())
-#         self.Task_IfMall = ConfigItem("Task", "IfMall", True, BoolValidator())
-#         self.Task_IfMission = ConfigItem("Task", "IfMission", True, BoolValidator())
-#         self.Task_IfAutoRoguelike = ConfigItem(
-#             "Task", "IfAutoRoguelike", False, BoolValidator()
-#         )
-#         self.Task_IfReclamation = ConfigItem(
-#             "Task", "IfReclamation", False, BoolValidator()
-#         )
-
-#         self.Notify_Enabled = ConfigItem("Notify", "Enabled", False, BoolValidator())
-#         self.Notify_IfSendStatistic = ConfigItem(
-#             "Notify", "IfSendStatistic", False, BoolValidator()
-#         )
-#         self.Notify_IfSendSixStar = ConfigItem(
-#             "Notify", "IfSendSixStar", False, BoolValidator()
-#         )
-#         self.Notify_IfSendMail = ConfigItem(
-#             "Notify", "IfSendMail", False, BoolValidator()
-#         )
-#         self.Notify_ToAddress = ConfigItem("Notify", "ToAddress", "")
-#         self.Notify_IfServerChan = ConfigItem(
-#             "Notify", "IfServerChan", False, BoolValidator()
-#         )
-#         self.Notify_ServerChanKey = ConfigItem("Notify", "ServerChanKey", "")
-#         self.Notify_IfCompanyWebHookBot = ConfigItem(
-#             "Notify", "IfCompanyWebHookBot", False, BoolValidator()
-#         )
-#         self.Notify_CompanyWebHookBotUrl = ConfigItem(
-#             "Notify", "CompanyWebHookBotUrl", ""
-#         )
-
-#     def get_plan_info(self) -> Dict[str, Union[str, int]]:
-#         """获取当前的计划下信息"""
-
-#         if self.get("Info", "StageMode") == "固定":
-#             return {
-#                 "MedicineNumb": self.get("Info", "MedicineNumb"),
-#                 "SeriesNumb": self.get("Info", "SeriesNumb"),
-#                 "Stage": self.get("Info", "Stage"),
-#                 "Stage_1": self.get("Info", "Stage_1"),
-#                 "Stage_2": self.get("Info", "Stage_2"),
-#                 "Stage_3": self.get("Info", "Stage_3"),
-#                 "Stage_Remain": self.get("Info", "Stage_Remain"),
-#             }
-#         else:
-#             plan = Config.PlanConfig[uuid.UUID(self.get("Info", "StageMode"))]
-#             if isinstance(plan, MaaPlanConfig):
-#                 return {
-#                     "MedicineNumb": plan.get_current_info("MedicineNumb").getValue(),
-#                     "SeriesNumb": plan.get_current_info("SeriesNumb").getValue(),
-#                     "Stage": plan.get_current_info("Stage").getValue(),
-#                     "Stage_1": plan.get_current_info("Stage_1").getValue(),
-#                     "Stage_2": plan.get_current_info("Stage_2").getValue(),
-#                     "Stage_3": plan.get_current_info("Stage_3").getValue(),
-#                     "Stage_Remain": plan.get_current_info("Stage_Remain").getValue(),
-#                 }
-#             else:
-#                 raise ValueError("Invalid plan type")
+class ScriptIndexItem(BaseModel):
+    uid: str = Field(..., description="唯一标识符")
+    type: Literal["MaaConfig", "GeneralConfig"] = Field(..., description="配置类型")
 
 
-# class MaaConfig(ConfigBase):
-#     """MAA配置"""
+class UserIndexItem(BaseModel):
+    uid: str = Field(..., description="唯一标识符")
+    type: Literal["MaaUserConfig", "GeneralUserConfig"] = Field(
+        ..., description="配置类型"
+    )
 
-#     def __init__(self) -> None:
-#         super().__init__()
 
-#         self.Info_Name = ConfigItem("Info", "Name", "")
-#         self.Info_Path = ConfigItem("Info", "Path", ".", FolderValidator())
+class MaaUserConfig_Info(BaseModel):
+    Name: Optional[str] = Field(None, description="用户名")
+    Id: Optional[str] = Field(None, description="用户ID")
+    Mode: Optional[Literal["简洁", "详细"]] = Field(None, description="用户配置模式")
+    StageMode: Optional[str] = Field(None, description="关卡配置模式")
+    Server: Optional[
+        Literal["Official", "Bilibili", "YoStarEN", "YoStarJP", "YoStarKR", "txwy"]
+    ] = Field(None, description="服务器")
+    Status: Optional[bool] = Field(None, description="用户状态")
+    RemainedDay: Optional[int] = Field(None, description="剩余天数")
+    Annihilation: Optional[
+        Literal[
+            "Close",
+            "Annihilation",
+            "Chernobog@Annihilation",
+            "LungmenOutskirts@Annihilation",
+            "LungmenDowntown@Annihilation",
+        ]
+    ] = Field(None, description="剿灭模式")
+    Routine: Optional[bool] = Field(None, description="是否启用日常")
+    InfrastMode: Optional[Literal["Normal", "Rotation", "Custom"]] = Field(
+        None, description="基建模式"
+    )
+    Password: Optional[str] = Field(None, description="密码")
+    Notes: Optional[str] = Field(None, description="备注")
+    MedicineNumb: Optional[int] = Field(None, description="吃理智药数量")
+    SeriesNumb: Optional[Literal["0", "6", "5", "4", "3", "2", "1", "-1"]] = Field(
+        None, description="连战次数"
+    )
+    Stage: Optional[str] = Field(None, description="关卡选择")
+    Stage_1: Optional[str] = Field(None, description="备选关卡 - 1")
+    Stage_2: Optional[str] = Field(None, description="备选关卡 - 2")
+    Stage_3: Optional[str] = Field(None, description="备选关卡 - 3")
+    Stage_Remain: Optional[str] = Field(None, description="剩余理智关卡")
+    IfSkland: Optional[bool] = Field(None, description="是否启用森空岛签到")
+    SklandToken: Optional[str] = Field(None, description="SklandToken")
 
-#         self.Run_TaskTransitionMethod = ConfigItem(
-#             "Run",
-#             "TaskTransitionMethod",
-#             "ExitEmulator",
-#             OptionsValidator(["NoAction", "ExitGame", "ExitEmulator"]),
-#         )
-#         self.Run_ProxyTimesLimit = ConfigItem(
-#             "Run", "ProxyTimesLimit", 0, RangeValidator(0, 1024)
-#         )
-#         self.Run_ADBSearchRange = ConfigItem(
-#             "Run", "ADBSearchRange", 0, RangeValidator(0, 3)
-#         )
-#         self.Run_RunTimesLimit = ConfigItem(
-#             "Run", "RunTimesLimit", 3, RangeValidator(1, 1024)
-#         )
-#         self.Run_AnnihilationTimeLimit = ConfigItem(
-#             "Run", "AnnihilationTimeLimit", 40, RangeValidator(1, 1024)
-#         )
-#         self.Run_RoutineTimeLimit = ConfigItem(
-#             "Run", "RoutineTimeLimit", 10, RangeValidator(1, 1024)
-#         )
-#         self.Run_AnnihilationWeeklyLimit = ConfigItem(
-#             "Run", "AnnihilationWeeklyLimit", True, BoolValidator()
-#         )
 
-#         self.UserData = MultipleConfig([MaaUserConfig])
+class MaaUserConfig_Data(BaseModel):
+    LastProxyDate: Optional[str] = Field(None, description="上次代理日期")
+    LastAnnihilationDate: Optional[str] = Field(None, description="上次剿灭日期")
+    LastSklandDate: Optional[str] = Field(None, description="上次森空岛签到日期")
+    ProxyTimes: Optional[int] = Field(None, description="代理次数")
+    IfPassCheck: Optional[bool] = Field(None, description="是否通过人工排查")
+
+
+class MaaUserConfig_Task(BaseModel):
+    IfWakeUp: Optional[bool] = Field(None, description="开始唤醒")
+    IfRecruiting: Optional[bool] = Field(None, description="自动公招")
+    IfBase: Optional[bool] = Field(None, description="基建换班")
+    IfCombat: Optional[bool] = Field(None, description="刷理智")
+    IfMall: Optional[bool] = Field(None, description="获取信用及购物")
+    IfMission: Optional[bool] = Field(None, description="领取奖励")
+    IfAutoRoguelike: Optional[bool] = Field(None, description="自动肉鸽")
+    IfReclamation: Optional[bool] = Field(None, description="生息演算")
+
+
+class UserConfig_Notify(BaseModel):
+    Enabled: Optional[bool] = Field(None, description="是否启用通知")
+    IfSendStatistic: Optional[bool] = Field(None, description="是否发送统计信息")
+    IfSendSixStar: Optional[bool] = Field(None, description="是否发送高资喜报")
+    IfSendMail: Optional[bool] = Field(None, description="是否发送邮件通知")
+    ToAddress: Optional[str] = Field(None, description="邮件接收地址")
+    IfServerChan: Optional[bool] = Field(None, description="是否使用Server酱推送")
+    ServerChanKey: Optional[str] = Field(None, description="ServerChanKey")
+    IfCompanyWebHookBot: Optional[bool] = Field(None, description="是否使用Webhook推送")
+    CompanyWebHookBotUrl: Optional[str] = Field(None, description="企微Webhook Bot URL")
+
+
+class MaaUserConfig(BaseModel):
+    Info: Optional[MaaUserConfig_Info] = Field(None, description="基础信息")
+    Data: Optional[MaaUserConfig_Data] = Field(None, description="用户数据")
+    Task: Optional[MaaUserConfig_Task] = Field(None, description="任务列表")
+    Notify: Optional[UserConfig_Notify] = Field(None, description="单独通知")
+
+
+class MaaConfig_Info(BaseModel):
+    Name: Optional[str] = Field(None, description="脚本名称")
+    Path: Optional[str] = Field(None, description="脚本路径")
+
+
+class MaaConfig_Run(BaseModel):
+    TaskTransitionMethod: Optional[Literal["NoAction", "ExitGame", "ExitEmulator"]] = (
+        Field(None, description="简洁任务间切换方式")
+    )
+    ProxyTimesLimit: Optional[int] = Field(None, description="每日代理次数限制")
+    ADBSearchRange: Optional[int] = Field(None, description="ADB端口搜索范围")
+    RunTimesLimit: Optional[int] = Field(None, description="重试次数限制")
+    AnnihilationTimeLimit: Optional[int] = Field(None, description="剿灭超时限制")
+    RoutineTimeLimit: Optional[int] = Field(None, description="日常超时限制")
+    AnnihilationWeeklyLimit: Optional[bool] = Field(
+        None, description="剿灭每周仅代理至上限"
+    )
+
+
+class MaaConfig(BaseModel):
+    Info: Optional[MaaConfig_Info] = Field(None, description="脚本基础信息")
+    Run: Optional[MaaConfig_Run] = Field(None, description="脚本运行配置")
 
 
 # class MaaPlanConfig(ConfigBase):
@@ -429,120 +370,82 @@ class QueueConfig(BaseModel):
 #             raise ValueError("The mode is invalid.")
 
 
-# class GeneralUserConfig(ConfigBase):
-#     """通用子配置"""
+class GeneralUserConfig_Info(BaseModel):
 
-#     def __init__(self) -> None:
-#         super().__init__()
-
-#         self.Info_Name = ConfigItem("Info", "Name", "新配置")
-#         self.Info_Status = ConfigItem("Info", "Status", True, BoolValidator())
-#         self.Info_RemainedDay = ConfigItem(
-#             "Info", "RemainedDay", -1, RangeValidator(-1, 1024)
-#         )
-#         self.Info_IfScriptBeforeTask = ConfigItem(
-#             "Info", "IfScriptBeforeTask", False, BoolValidator()
-#         )
-#         self.Info_ScriptBeforeTask = ConfigItem(
-#             "Info", "ScriptBeforeTask", "", FileValidator()
-#         )
-#         self.Info_IfScriptAfterTask = ConfigItem(
-#             "Info", "IfScriptAfterTask", False, BoolValidator()
-#         )
-#         self.Info_ScriptAfterTask = ConfigItem(
-#             "Info", "ScriptAfterTask", "", FileValidator()
-#         )
-#         self.Info_Notes = ConfigItem("Info", "Notes", "无")
-
-#         self.Data_LastProxyDate = ConfigItem("Data", "LastProxyDate", "2000-01-01")
-#         self.Data_ProxyTimes = ConfigItem(
-#             "Data", "ProxyTimes", 0, RangeValidator(0, 1024)
-#         )
-
-#         self.Notify_Enabled = ConfigItem("Notify", "Enabled", False, BoolValidator())
-#         self.Notify_IfSendStatistic = ConfigItem(
-#             "Notify", "IfSendStatistic", False, BoolValidator()
-#         )
-#         self.Notify_IfSendMail = ConfigItem(
-#             "Notify", "IfSendMail", False, BoolValidator()
-#         )
-#         self.Notify_ToAddress = ConfigItem("Notify", "ToAddress", "")
-#         self.Notify_IfServerChan = ConfigItem(
-#             "Notify", "IfServerChan", False, BoolValidator()
-#         )
-#         self.Notify_ServerChanKey = ConfigItem("Notify", "ServerChanKey", "")
-#         self.Notify_IfCompanyWebHookBot = ConfigItem(
-#             "Notify", "IfCompanyWebHookBot", False, BoolValidator()
-#         )
-#         self.Notify_CompanyWebHookBotUrl = ConfigItem(
-#             "Notify", "CompanyWebHookBotUrl", ""
-#         )
+    Name: Optional[str] = Field(None, description="用户名")
+    Status: Optional[bool] = Field(None, description="用户状态")
+    RemainedDay: Optional[int] = Field(None, description="剩余天数")
+    IfScriptBeforeTask: Optional[bool] = Field(None, description="是否在任务前执行脚本")
+    ScriptBeforeTask: Optional[str] = Field(None, description="任务前脚本路径")
+    IfScriptAfterTask: Optional[bool] = Field(None, description="是否在任务后执行脚本")
+    ScriptAfterTask: Optional[str] = Field(None, description="任务后脚本路径")
+    Notes: Optional[str] = Field(None, description="备注")
 
 
-# class GeneralConfig(ConfigBase):
-#     """通用配置"""
+class GeneralUserConfig_Data(BaseModel):
+    LastProxyDate: Optional[str] = Field(None, description="上次代理日期")
+    ProxyTimes: Optional[int] = Field(None, description="代理次数")
 
-#     def __init__(self) -> None:
-#         super().__init__()
 
-#         self.Info_Name = ConfigItem("Info", "Name", "")
-#         self.Info_RootPath = ConfigItem("Info", "RootPath", ".", FileValidator())
+class GeneralUserConfig(BaseModel):
+    Info: Optional[GeneralUserConfig_Info] = Field(None, description="用户信息")
+    Data: Optional[GeneralUserConfig_Data] = Field(None, description="用户数据")
+    Notify: Optional[UserConfig_Notify] = Field(None, description="单独通知")
 
-#         self.Script_ScriptPath = ConfigItem(
-#             "Script", "ScriptPath", ".", FileValidator()
-#         )
-#         self.Script_Arguments = ConfigItem("Script", "Arguments", "")
-#         self.Script_IfTrackProcess = ConfigItem(
-#             "Script", "IfTrackProcess", False, BoolValidator()
-#         )
-#         self.Script_ConfigPath = ConfigItem(
-#             "Script", "ConfigPath", ".", FileValidator()
-#         )
-#         self.Script_ConfigPathMode = ConfigItem(
-#             "Script", "ConfigPathMode", "File", OptionsValidator(["File", "Folder"])
-#         )
-#         self.Script_UpdateConfigMode = ConfigItem(
-#             "Script",
-#             "UpdateConfigMode",
-#             "Never",
-#             OptionsValidator(["Never", "Success", "Failure", "Always"]),
-#         )
-#         self.Script_LogPath = ConfigItem("Script", "LogPath", ".", FileValidator())
-#         self.Script_LogPathFormat = ConfigItem("Script", "LogPathFormat", "%Y-%m-%d")
-#         self.Script_LogTimeStart = ConfigItem(
-#             "Script", "LogTimeStart", 1, RangeValidator(1, 1024)
-#         )
-#         self.Script_LogTimeEnd = ConfigItem(
-#             "Script", "LogTimeEnd", 1, RangeValidator(1, 1024)
-#         )
-#         self.Script_LogTimeFormat = ConfigItem(
-#             "Script", "LogTimeFormat", "%Y-%m-%d %H:%M:%S"
-#         )
-#         self.Script_SuccessLog = ConfigItem("Script", "SuccessLog", "")
-#         self.Script_ErrorLog = ConfigItem("Script", "ErrorLog", "")
 
-#         self.Game_Enabled = ConfigItem("Game", "Enabled", False, BoolValidator())
-#         self.Game_Style = ConfigItem(
-#             "Game", "Style", "Emulator", OptionsValidator(["Emulator", "Client"])
-#         )
-#         self.Game_Path = ConfigItem("Game", "Path", ".", FileValidator())
-#         self.Game_Arguments = ConfigItem("Game", "Arguments", "")
-#         self.Game_WaitTime = ConfigItem("Game", "WaitTime", 0, RangeValidator(0, 1024))
-#         self.Game_IfForceClose = ConfigItem(
-#             "Game", "IfForceClose", False, BoolValidator()
-#         )
+class GeneralConfig_Info(BaseModel):
+    Name: Optional[str] = Field(None, description="脚本名称")
+    RootPath: Optional[str] = Field(None, description="脚本根目录")
 
-#         self.Run_ProxyTimesLimit = ConfigItem(
-#             "Run", "ProxyTimesLimit", 0, RangeValidator(0, 1024)
-#         )
-#         self.Run_RunTimesLimit = ConfigItem(
-#             "Run", "RunTimesLimit", 3, RangeValidator(1, 1024)
-#         )
-#         self.Run_RunTimeLimit = ConfigItem(
-#             "Run", "RunTimeLimit", 10, RangeValidator(1, 1024)
-#         )
 
-#         self.UserData = MultipleConfig([GeneralUserConfig])
+class GeneralConfig_Script(BaseModel):
+    ScriptPath: Optional[str] = Field(None, description="脚本可执行文件路径")
+    Arguments: Optional[str] = Field(None, description="脚本启动附加命令参数")
+    IfTrackProcess: Optional[bool] = Field(None, description="是否追踪脚本子进程")
+    ConfigPath: Optional[str] = Field(None, description="配置文件路径")
+    ConfigPathMode: Optional[Literal["File", "Folder"]] = Field(
+        None, description="配置文件类型: 单个文件, 文件夹"
+    )
+    UpdateConfigMode: Optional[Literal["Never", "Success", "Failure", "Always"]] = (
+        Field(
+            None,
+            description="更新配置时机, 从不, 仅成功时, 仅失败时, 任务结束时",
+        )
+    )
+    LogPath: Optional[str] = Field(None, description="日志文件路径")
+    LogPathFormat: Optional[str] = Field(None, description="日志文件名格式")
+    LogTimeStart: Optional[int] = Field(None, description="日志时间戳开始位置")
+    LogTimeEnd: Optional[int] = Field(None, description="日志时间戳结束位置")
+    LogTimeFormat: Optional[str] = Field(None, description="日志时间戳格式")
+    SuccessLog: Optional[str] = Field(None, description="成功时日志")
+    ErrorLog: Optional[str] = Field(None, description="错误时日志")
+
+
+class GeneralConfig_Game(BaseModel):
+    Enabled: Optional[bool] = Field(None, description="游戏/模拟器相关功能是否启用")
+    Type: Optional[Literal["Emulator", "Client"]] = Field(
+        None, description="类型: 模拟器, PC端"
+    )
+    Path: Optional[str] = Field(None, description="游戏/模拟器程序路径")
+    Arguments: Optional[str] = Field(None, description="游戏/模拟器启动参数")
+    WaitTime: Optional[int] = Field(None, description="游戏/模拟器等待启动时间")
+    IfForceClose: Optional[bool] = Field(
+        None, description="是否强制关闭游戏/模拟器进程"
+    )
+
+
+class GeneralConfig_Run(BaseModel):
+    ProxyTimesLimit: Optional[int] = Field(None, description="每日代理次数限制")
+    RunTimesLimit: Optional[int] = Field(None, description="重试次数限制")
+    RunTimeLimit: Optional[int] = Field(None, description="日志超时限制")
+
+
+class GeneralConfig(BaseModel):
+
+    Info: Optional[GeneralConfig_Info] = Field(None, description="脚本基础信息")
+    Script: Optional[GeneralConfig_Script] = Field(None, description="脚本配置")
+    Game: Optional[GeneralConfig_Game] = Field(None, description="游戏配置")
+    Run: Optional[GeneralConfig_Run] = Field(None, description="运行配置")
 
 
 class ScriptCreateIn(BaseModel):
@@ -553,21 +456,25 @@ class ScriptCreateIn(BaseModel):
 
 class ScriptCreateOut(OutBase):
     scriptId: str = Field(..., description="新创建的脚本ID")
-    data: Dict[str, Any] = Field(..., description="脚本配置数据")
+    data: Union[MaaConfig, GeneralConfig] = Field(..., description="脚本配置数据")
 
 
 class ScriptGetIn(BaseModel):
-    scriptId: Optional[str] = Field(None, description="脚本ID，仅在模式为Single时需要")
+    scriptId: Optional[str] = Field(
+        None, description="脚本ID, 未携带时表示获取所有脚本数据"
+    )
 
 
 class ScriptGetOut(OutBase):
-    index: List[Dict[str, str]] = Field(..., description="脚本索引列表")
-    data: Dict[str, Any] = Field(..., description="脚本列表或单个脚本数据")
+    index: List[ScriptIndexItem] = Field(..., description="脚本索引列表")
+    data: Dict[str, Union[MaaConfig, GeneralConfig]] = Field(
+        ..., description="脚本数据字典, key来自于index列表的uid"
+    )
 
 
 class ScriptUpdateIn(BaseModel):
     scriptId: str = Field(..., description="脚本ID")
-    data: Dict[str, Dict[str, Any]] = Field(..., description="脚本更新数据")
+    data: Union[MaaConfig, GeneralConfig] = Field(..., description="脚本更新数据")
 
 
 class ScriptDeleteIn(BaseModel):
@@ -582,14 +489,31 @@ class UserInBase(BaseModel):
     scriptId: str = Field(..., description="所属脚本ID")
 
 
+class UserGetIn(UserInBase):
+    userId: Optional[str] = Field(
+        None, description="用户ID, 未携带时表示获取所有用户数据"
+    )
+
+
+class UserGetOut(OutBase):
+    index: List[UserIndexItem] = Field(..., description="用户索引列表")
+    data: Dict[str, Union[MaaUserConfig, GeneralUserConfig]] = Field(
+        ..., description="用户数据字典, key来自于index列表的uid"
+    )
+
+
 class UserCreateOut(OutBase):
     userId: str = Field(..., description="新创建的用户ID")
-    data: Dict[str, Any] = Field(..., description="用户配置数据")
+    data: Union[MaaUserConfig, GeneralUserConfig] = Field(
+        ..., description="用户配置数据"
+    )
 
 
 class UserUpdateIn(UserInBase):
     userId: str = Field(..., description="用户ID")
-    data: Dict[str, Dict[str, Any]] = Field(..., description="用户更新数据")
+    data: Union[MaaUserConfig, GeneralUserConfig] = Field(
+        ..., description="用户更新数据"
+    )
 
 
 class UserDeleteIn(UserInBase):
@@ -644,7 +568,9 @@ class QueueGetIn(BaseModel):
 
 class QueueGetOut(OutBase):
     index: List[QueueIndexItem] = Field(..., description="队列索引列表")
-    data: Dict[str, QueueConfig] = Field(..., description="队列列表或单个队列数据")
+    data: Dict[str, QueueConfig] = Field(
+        ..., description="队列数据字典, key来自于index列表的uid"
+    )
 
 
 class QueueUpdateIn(BaseModel):
@@ -664,6 +590,19 @@ class QueueSetInBase(BaseModel):
     queueId: str = Field(..., description="所属队列ID")
 
 
+class TimeSetGetIn(QueueSetInBase):
+    timeSetId: Optional[str] = Field(
+        None, description="时间设置ID, 未携带时表示获取所有时间设置数据"
+    )
+
+
+class TimeSetGetOut(OutBase):
+    index: List[TimeSetIndexItem] = Field(..., description="时间设置索引列表")
+    data: Dict[str, TimeSet] = Field(
+        ..., description="时间设置数据字典, key来自于index列表的uid"
+    )
+
+
 class TimeSetCreateOut(OutBase):
     timeSetId: str = Field(..., description="新创建的时间设置ID")
     data: TimeSet = Field(..., description="时间设置配置数据")
@@ -680,6 +619,19 @@ class TimeSetDeleteIn(QueueSetInBase):
 
 class TimeSetReorderIn(QueueSetInBase):
     indexList: List[str] = Field(..., description="时间设置ID列表，按新顺序排列")
+
+
+class QueueItemGetIn(QueueSetInBase):
+    queueItemId: Optional[str] = Field(
+        None, description="队列项ID, 未携带时表示获取所有队列项数据"
+    )
+
+
+class QueueItemGetOut(OutBase):
+    index: List[QueueItemIndexItem] = Field(..., description="队列项索引列表")
+    data: Dict[str, QueueItem] = Field(
+        ..., description="队列项数据字典, key来自于index列表的uid"
+    )
 
 
 class QueueItemCreateOut(OutBase):
