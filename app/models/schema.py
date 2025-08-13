@@ -294,82 +294,6 @@ class MaaConfig(BaseModel):
     Run: Optional[MaaConfig_Run] = Field(None, description="脚本运行配置")
 
 
-# class MaaPlanConfig(ConfigBase):
-#     """MAA计划表配置"""
-
-#     def __init__(self) -> None:
-#         super().__init__()
-
-#         self.Info_Name = ConfigItem("Info", "Name", "")
-#         self.Info_Mode = ConfigItem(
-#             "Info", "Mode", "ALL", OptionsValidator(["ALL", "Weekly"])
-#         )
-
-#         self.config_item_dict: dict[str, Dict[str, ConfigItem]] = {}
-
-#         for group in [
-#             "ALL",
-#             "Monday",
-#             "Tuesday",
-#             "Wednesday",
-#             "Thursday",
-#             "Friday",
-#             "Saturday",
-#             "Sunday",
-#         ]:
-#             self.config_item_dict[group] = {}
-
-#             self.config_item_dict[group]["MedicineNumb"] = ConfigItem(
-#                 group, "MedicineNumb", 0, RangeValidator(0, 1024)
-#             )
-#             self.config_item_dict[group]["SeriesNumb"] = ConfigItem(
-#                 group,
-#                 "SeriesNumb",
-#                 "0",
-#                 OptionsValidator(["0", "6", "5", "4", "3", "2", "1", "-1"]),
-#             )
-#             self.config_item_dict[group]["Stage"] = ConfigItem(group, "Stage", "-")
-#             self.config_item_dict[group]["Stage_1"] = ConfigItem(group, "Stage_1", "-")
-#             self.config_item_dict[group]["Stage_2"] = ConfigItem(group, "Stage_2", "-")
-#             self.config_item_dict[group]["Stage_3"] = ConfigItem(group, "Stage_3", "-")
-#             self.config_item_dict[group]["Stage_Remain"] = ConfigItem(
-#                 group, "Stage_Remain", "-"
-#             )
-
-#             for name in [
-#                 "MedicineNumb",
-#                 "SeriesNumb",
-#                 "Stage",
-#                 "Stage_1",
-#                 "Stage_2",
-#                 "Stage_3",
-#                 "Stage_Remain",
-#             ]:
-#                 setattr(self, f"{group}_{name}", self.config_item_dict[group][name])
-
-#     def get_current_info(self, name: str) -> ConfigItem:
-#         """获取当前的计划表配置项"""
-
-#         if self.get("Info", "Mode") == "ALL":
-
-#             return self.config_item_dict["ALL"][name]
-
-#         elif self.get("Info", "Mode") == "Weekly":
-
-#             dt = datetime.now()
-#             if dt.time() < datetime.min.time().replace(hour=4):
-#                 dt = dt - timedelta(days=1)
-#             today = dt.strftime("%A")
-
-#             if today in self.config_item_dict:
-#                 return self.config_item_dict[today][name]
-#             else:
-#                 return self.config_item_dict["ALL"][name]
-
-#         else:
-#             raise ValueError("The mode is invalid.")
-
-
 class GeneralUserConfig_Info(BaseModel):
 
     Name: Optional[str] = Field(None, description="用户名")
@@ -446,6 +370,41 @@ class GeneralConfig(BaseModel):
     Script: Optional[GeneralConfig_Script] = Field(None, description="脚本配置")
     Game: Optional[GeneralConfig_Game] = Field(None, description="游戏配置")
     Run: Optional[GeneralConfig_Run] = Field(None, description="运行配置")
+
+
+class PlanIndexItem(BaseModel):
+    uid: str = Field(..., description="唯一标识符")
+    type: Literal["MaaPlanConfig"] = Field(..., description="配置类型")
+
+
+class MaaPlanConfig_Info(BaseModel):
+    Name: Optional[str] = Field(None, description="计划表名称")
+    Mode: Optional[Literal["ALL", "Weekly"]] = Field(None, description="计划表模式")
+
+
+class MaaPlanConfig_Item(BaseModel):
+    MedicineNumb: Optional[int] = Field(None, description="吃理智药")
+    SeriesNumb: Optional[Literal["0", "6", "5", "4", "3", "2", "1", "-1"]] = Field(
+        None, description="连战次数"
+    )
+    Stage: Optional[str] = Field(None, description="关卡选择")
+    Stage_1: Optional[str] = Field(None, description="备选关卡 - 1")
+    Stage_2: Optional[str] = Field(None, description="备选关卡 - 2")
+    Stage_3: Optional[str] = Field(None, description="备选关卡 - 3")
+    Stage_Remain: Optional[str] = Field(None, description="剩余理智关卡")
+
+
+class MaaPlanConfig(BaseModel):
+
+    Info: Optional[MaaPlanConfig_Info] = Field(None, description="基础信息")
+    ALL: Optional[MaaPlanConfig_Item] = Field(None, description="全局")
+    Monday: Optional[MaaPlanConfig_Item] = Field(None, description="周一")
+    Tuesday: Optional[MaaPlanConfig_Item] = Field(None, description="周二")
+    Wednesday: Optional[MaaPlanConfig_Item] = Field(None, description="周三")
+    Thursday: Optional[MaaPlanConfig_Item] = Field(None, description="周四")
+    Friday: Optional[MaaPlanConfig_Item] = Field(None, description="周五")
+    Saturday: Optional[MaaPlanConfig_Item] = Field(None, description="周六")
+    Sunday: Optional[MaaPlanConfig_Item] = Field(None, description="周日")
 
 
 class ScriptCreateIn(BaseModel):
@@ -530,21 +489,23 @@ class PlanCreateIn(BaseModel):
 
 class PlanCreateOut(OutBase):
     planId: str = Field(..., description="新创建的计划ID")
-    data: Dict[str, Any] = Field(..., description="计划配置数据")
+    data: MaaPlanConfig = Field(..., description="计划配置数据")
 
 
 class PlanGetIn(BaseModel):
-    planId: Optional[str] = Field(None, description="计划ID，仅在模式为Single时需要")
+    planId: Optional[str] = Field(
+        None, description="计划ID, 未携带时表示获取所有计划数据"
+    )
 
 
 class PlanGetOut(OutBase):
-    index: List[Dict[str, str]] = Field(..., description="计划索引列表")
-    data: Dict[str, Any] = Field(..., description="计划列表或单个计划数据")
+    index: List[PlanIndexItem] = Field(..., description="计划索引列表")
+    data: Dict[str, MaaPlanConfig] = Field(..., description="计划列表或单个计划数据")
 
 
 class PlanUpdateIn(BaseModel):
     planId: str = Field(..., description="计划ID")
-    data: Dict[str, Dict[str, Any]] = Field(..., description="计划更新数据")
+    data: MaaPlanConfig = Field(..., description="计划更新数据")
 
 
 class PlanDeleteIn(BaseModel):
