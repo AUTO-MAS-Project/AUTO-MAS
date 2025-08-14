@@ -409,7 +409,7 @@ class MaaPlanConfig(BaseModel):
 
 class HistoryIndexItem(BaseModel):
     date: str = Field(..., description="日期")
-    status: str = Field(..., description="状态")
+    status: Literal["完成", "异常"] = Field(..., description="状态")
     jsonFile: str = Field(..., description="对应JSON文件")
 
 

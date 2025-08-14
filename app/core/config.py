@@ -1156,6 +1156,39 @@ class AppConfig(GlobalConfig):
 
         return self.stage_info.get(index, []) if self.stage_info is not None else []
 
+    async def get_proxy_overview(self) -> Dict[str, Any]:
+        """获取代理情况概览信息"""
+
+        logger.info("获取代理情况概览信息")
+
+        history_index = await self.search_history(
+            "按日合并", self.server_date(), self.server_date()
+        )
+        if self.server_date().strftime("%Y年 %m月 %d日") not in history_index:
+            return {}
+        history_data = {
+            k: await self.merge_statistic_info(v)
+            for k, v in history_index[
+                self.server_date().strftime("%Y年 %m月 %d日")
+            ].items()
+        }
+        overview = {}
+        for user, data in history_data.items():
+            last_proxy_date = max(
+                datetime.strptime(_["date"], "%d日 %H:%M:%S")
+                for _ in data.get("index", [])
+            ).strftime("%d日 %H:%M:%S")
+            proxy_times = len(data.get("index", []))
+            error_info = data.get("error_info", {})
+            error_times = len(error_info)
+            overview[user] = {
+                "LastProxyDate": last_proxy_date,
+                "ProxyTimes": proxy_times,
+                "ErrorTimes": error_times,
+                "ErrorInfo": error_info,
+            }
+        return overview
+
     async def get_stage(self) -> Optional[Dict[str, List[Dict[str, str]]]]:
         """更新活动关卡信息"""
 
@@ -1633,9 +1666,7 @@ class AppConfig(GlobalConfig):
 
         return {k: v for k, v in data.items() if v}
 
-    async def search_history(
-        self, mode: str, start_date: datetime, end_date: datetime
-    ) -> dict:
+    async def search_history(self, mode: str, start_date: date, end_date: date) -> dict:
         """
         搜索指定范围内的历史记录
 
@@ -1657,7 +1688,7 @@ class AppConfig(GlobalConfig):
 
             try:
 
-                date = datetime.strptime(date_folder.name, "%Y-%m-%d")
+                date = datetime.strptime(date_folder.name, "%Y-%m-%d").date()
 
                 if not (start_date <= date <= end_date):
                     continue  # 只统计在范围内的日期
