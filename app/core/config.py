@@ -194,6 +194,12 @@ class GlobalConfig(ConfigBase):
         "Update", "MirrorChyanCDK", "", EncryptValidator()
     )
 
+    Data_LastStageUpdated = ConfigItem(
+        "Data", "LastStageUpdated", "2000-01-01 00:00:00"
+    )
+    Data_StageTimeStamp = ConfigItem("Data", "StageTimeStamp", "2000-01-01 00:00:00")
+    Data_IfShowNotice = ConfigItem("Data", "IfShowNotice", True, BoolValidator())
+
 
 class QueueItem(ConfigBase):
     """队列项配置"""
@@ -641,14 +647,15 @@ class AppConfig(GlobalConfig):
         self.database_path = Path.cwd() / "data/data.db"
         self.config_path = Path.cwd() / "config"
         self.key_path = Path.cwd() / "data/key"
+        self.history_path = Path.cwd() / "history"
         # 检查目录
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
         self.config_path.mkdir(parents=True, exist_ok=True)
+        self.history_path.mkdir(parents=True, exist_ok=True)
 
         self.silence_dict: Dict[Path, datetime] = {}
         self.power_sign = "NoAction"
         self.if_ignore_silence: List[uuid.UUID] = []
-        self.last_stage_update = None
         self.stage_info: Optional[Dict[str, List[Dict[str, str]]]] = None
         self.temp_task: List[asyncio.Task] = []
 
@@ -1192,9 +1199,9 @@ class AppConfig(GlobalConfig):
     async def get_stage(self) -> Optional[Dict[str, List[Dict[str, str]]]]:
         """更新活动关卡信息"""
 
-        if self.last_stage_update is not None and (
-            datetime.now() - self.last_stage_update
-        ) < timedelta(hours=1):
+        if datetime.now() - timedelta(hours=1) < datetime.strptime(
+            self.get("Data", "LastStageUpdated"), "%Y-%m-%d %H:%M:%S"
+        ):
             logger.info("No need to update stage info, using cached data.")
             return self.stage_info if self.stage_info is not None else {}
 
@@ -1218,14 +1225,9 @@ class AppConfig(GlobalConfig):
             logger.warning(f"无法从MAA服务器获取活动关卡时间戳: {e}")
             remote_time_stamp = datetime.fromtimestamp(0)
 
-        if (Path.cwd() / "data/StageInfo/TimeStamp.txt").exists() and (
-            Path.cwd() / "data/StageInfo/StageInfo.json"
-        ).exists():
+        if (Path.cwd() / "data/StageInfo/StageInfo.json").exists():
             local_time_stamp = datetime.strptime(
-                (Path.cwd() / "data/StageInfo/TimeStamp.txt")
-                .read_text(encoding="utf-8")
-                .strip(),
-                "%Y%m%d%H%M%S",
+                self.get("Data", "StageTimeStamp"), "%Y-%m-%d %H:%M:%S"
             )
             with (Path.cwd() / "data/StageInfo/StageInfo.json").open(
                 "r", encoding="utf-8"
@@ -1239,7 +1241,9 @@ class AppConfig(GlobalConfig):
 
             logger.info("使用本地关卡信息")
             self.stage_info = local_stage_info
-            self.last_stage_update = datetime.now()
+            await self.set(
+                "Data", "LastStageUpdated", datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            )
             return local_stage_info
 
         # 需要更新关卡信息
@@ -1348,10 +1352,14 @@ class AppConfig(GlobalConfig):
         if if_get_maa_stage:
 
             logger.success("成功获取远端活动关卡信息")
-            self.last_stage_update = datetime.now()
+            await self.set(
+                "Data", "LastStageUpdated", datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            )
             (Path.cwd() / "data/StageInfo").mkdir(parents=True, exist_ok=True)
-            (Path.cwd() / "data/StageInfo/TimeStamp.txt").write_text(
-                remote_time_stamp.strftime("%Y%m%d%H%M%S"), encoding="utf-8"
+            await self.set(
+                "Data",
+                "StageTimeStamp",
+                remote_time_stamp.strftime("%Y-%m-%d %H:%M:%S"),
             )
             with (Path.cwd() / "data/StageInfo/StageInfo.json").open(
                 "w", encoding="utf-8"
@@ -1682,7 +1690,7 @@ class AppConfig(GlobalConfig):
 
         history_dict = {}
 
-        for date_folder in (Path.cwd() / "history").iterdir():
+        for date_folder in self.history_path.iterdir():
             if not date_folder.is_dir():
                 continue  # 只处理日期文件夹
 
@@ -1738,7 +1746,7 @@ class AppConfig(GlobalConfig):
 
         deleted_count = 0
 
-        for date_folder in (Path.cwd() / "history").iterdir():
+        for date_folder in self.history_path.iterdir():
             if not date_folder.is_dir():
                 continue  # 只处理日期文件夹
 

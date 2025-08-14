@@ -856,7 +856,7 @@ class MaaManager:
 
         if self.mode == "自动代理":
             # 发送统计信息
-            statistics = Config.merge_statistic_info(self.user_logs_list)
+            statistics = await Config.merge_statistic_info(self.user_logs_list)
             statistics["user_info"] = self.user_list[self.index]["name"]
             statistics["start_time"] = self.user_start_time.strftime(
                 "%Y-%m-%d %H:%M:%S"

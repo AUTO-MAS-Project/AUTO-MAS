@@ -226,7 +226,10 @@ class ConfigItem:
             self.value = value
 
         if isinstance(self.validator, EncryptValidator):
-            self.value = dpapi_encrypt(self.value)
+            if self.validator.validate(self.value):
+                self.value = self.value
+            else:
+                self.value = dpapi_encrypt(self.value)
 
         if not self.validator.validate(self.value):
             self.value = self.validator.correct(self.value)
