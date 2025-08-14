@@ -407,6 +407,30 @@ class MaaPlanConfig(BaseModel):
     Sunday: Optional[MaaPlanConfig_Item] = Field(None, description="周日")
 
 
+class HistoryIndexItem(BaseModel):
+    date: str = Field(..., description="日期")
+    status: str = Field(..., description="状态")
+    jsonFile: str = Field(..., description="对应JSON文件")
+
+
+class HistoryData(BaseModel):
+    index: Optional[List[HistoryIndexItem]] = Field(
+        None, description="历史记录索引列表"
+    )
+    recruit_statistics: Optional[Dict[str, int]] = Field(
+        None, description="公招统计数据, key为星级, value为对应的公招数量"
+    )
+    drop_statistics: Optional[Dict[str, Dict[str, int]]] = Field(
+        None, description="掉落统计数据, 格式为 { '关卡号': { '掉落物': 数量 } }"
+    )
+    error_info: Optional[Dict[str, str]] = Field(
+        None, description="报错信息, key为时间戳, value为错误描述"
+    )
+    log_content: Optional[str] = Field(
+        None, description="日志内容, 仅在提取单条历史记录数据时返回"
+    )
+
+
 class ScriptCreateIn(BaseModel):
     type: Literal["MAA", "General"] = Field(
         ..., description="脚本类型: MAA脚本, 通用脚本"
@@ -636,6 +660,29 @@ class TaskMessage(BaseModel):
         description="消息类型 Update: 更新数据, Message: 请求弹出对话框, Info: 需要在UI显示的消息, Signal: 程序信号",
     )
     data: Dict[str, Any] = Field(..., description="消息数据，具体内容根据type类型而定")
+
+
+class HistorySearchIn(BaseModel):
+    mode: Literal["按日合并", "按周合并", "按年月并"] = Field(
+        ..., description="合并模式"
+    )
+    start_date: str = Field(..., description="开始日期, 格式YYYY-MM-DD")
+    end_date: str = Field(..., description="结束日期, 格式YYYY-MM-DD")
+
+
+class HistorySearchOut(OutBase):
+    data: Dict[str, Dict[str, HistoryData]] = Field(
+        ...,
+        description="历史记录索引数据字典, 格式为 { '日期': { '用户名': [历史记录信息] } }",
+    )
+
+
+class HistoryDataGetIn(BaseModel):
+    jsonPath: str = Field(..., description="需要提取数据的历史记录JSON文件")
+
+
+class HistoryDataGetOut(OutBase):
+    data: HistoryData = Field(..., description="历史记录数据")
 
 
 class SettingGetOut(OutBase):

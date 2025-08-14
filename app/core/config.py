@@ -1552,7 +1552,7 @@ class AppConfig(GlobalConfig):
 
         logger.success(f"通用日志统计完成，日志路径：{log_path.with_suffix('.log')}")
 
-    def merge_statistic_info(self, statistic_path_list: List[Path]) -> dict:
+    async def merge_statistic_info(self, statistic_path_list: List[Path]) -> dict:
         """
         合并指定数据统计信息文件
 
@@ -1617,11 +1617,13 @@ class AppConfig(GlobalConfig):
                             single_data[key]
                         )
 
-                    data["index"][actual_date] = [
-                        actual_date.strftime("%d日 %H:%M:%S"),
-                        ("完成" if single_data[key] == "Success!" else "异常"),
-                        json_file,
-                    ]
+                    data["index"][actual_date] = {
+                        "date": actual_date.strftime("%d日 %H:%M:%S"),
+                        "status": (
+                            "完成" if single_data[key] == "Success!" else "异常"
+                        ),
+                        "jsonFile": str(json_file),
+                    }
 
         data["index"] = [data["index"][_] for _ in sorted(data["index"])]
 
@@ -1631,7 +1633,7 @@ class AppConfig(GlobalConfig):
 
         return {k: v for k, v in data.items() if v}
 
-    def search_history(
+    async def search_history(
         self, mode: str, start_date: datetime, end_date: datetime
     ) -> dict:
         """
@@ -1694,7 +1696,7 @@ class AppConfig(GlobalConfig):
             for k, v in sorted(history_dict.items(), key=lambda x: x[0], reverse=True)
         }
 
-    def clean_old_history(self):
+    async def clean_old_history(self):
         """删除超过用户设定天数的历史记录文件（基于目录日期）"""
 
         if self.get("Function", "HistoryRetentionTime") == 0:

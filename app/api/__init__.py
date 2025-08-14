@@ -28,6 +28,7 @@ from .scripts import router as scripts_router
 from .plan import router as plan_router
 from .queue import router as queue_router
 from .dispatch import router as dispatch_router
+from .history import router as history_router
 from .setting import router as setting_router
 
 __all__ = [
@@ -36,5 +37,6 @@ __all__ = [
     "plan_router",
     "queue_router",
     "dispatch_router",
+    "history_router",
     "setting_router",
 ]
