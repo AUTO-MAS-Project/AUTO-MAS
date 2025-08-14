@@ -59,6 +59,7 @@ def main():
 
             await Config.init_config()
             await Config.get_stage()
+            await Config.clean_old_history()
             main_timer = asyncio.create_task(MainTimer.second_task())
 
             yield
@@ -79,6 +80,7 @@ def main():
             plan_router,
             queue_router,
             dispatch_router,
+            history_router,
             setting_router,
         )
 
@@ -102,6 +104,7 @@ def main():
         app.include_router(plan_router)
         app.include_router(queue_router)
         app.include_router(dispatch_router)
+        app.include_router(history_router)
         app.include_router(setting_router)
 
         uvicorn.run(app, host="0.0.0.0", port=8000)
