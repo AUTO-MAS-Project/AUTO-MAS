@@ -115,12 +115,13 @@ async def get_apps_info() -> InfoOut:
 )
 async def add_overview() -> InfoOut:
     try:
-        data = await Config.get_stage_info("Info")
+        stage = await Config.get_stage_info("Info")
+        proxy = await Config.get_proxy_overview()
     except Exception as e:
         return InfoOut(
             code=500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
-            data={"ALL": []},
+            data={"Stage": [], "Proxy": []},
         )
-    return InfoOut(data={"ALL": data})
+    return InfoOut(data={"Stage": stage, "Proxy": proxy})

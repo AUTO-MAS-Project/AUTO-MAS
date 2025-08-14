@@ -20,7 +20,7 @@
 #   Contact: DLmaster_361@163.com
 
 
-import datetime
+from datetime import datetime
 from pathlib import Path
 from fastapi import APIRouter, Body
 
@@ -41,8 +41,8 @@ async def search_history(history: HistorySearchIn) -> HistorySearchOut:
     try:
         data = await Config.search_history(
             history.mode,
-            datetime.datetime.strptime(history.start_date, "%Y-%m-%d"),
-            datetime.datetime.strptime(history.end_date, "%Y-%m-%d"),
+            datetime.strptime(history.start_date, "%Y-%m-%d").date(),
+            datetime.strptime(history.end_date, "%Y-%m-%d").date(),
         )
         for date, users in data.items():
             for user, records in users.items():
