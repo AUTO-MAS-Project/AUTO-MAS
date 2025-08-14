@@ -463,7 +463,11 @@ export async function startBackend(appRoot: string): Promise<{ success: boolean;
     // 启动后端进程
     const backendProcess = spawn(pythonPath, [mainPyPath], {
       cwd: appRoot,
-      stdio: 'pipe'
+      stdio: 'pipe',
+      env: {
+        ...process.env,
+        PYTHONIOENCODING: 'utf-8'  // 设置Python输出编码为UTF-8
+      }
     })
 
 
