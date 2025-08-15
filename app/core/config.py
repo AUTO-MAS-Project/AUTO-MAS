@@ -1182,9 +1182,9 @@ class AppConfig(GlobalConfig):
         overview = {}
         for user, data in history_data.items():
             last_proxy_date = max(
-                datetime.strptime(_["date"], "%d日 %H:%M:%S")
+                datetime.strptime(_["date"], "%Y年%m月%d日 %H:%M:%S")
                 for _ in data.get("index", [])
-            ).strftime("%d日 %H:%M:%S")
+            ).strftime("%Y年%m月%d日 %H:%M:%S")
             proxy_times = len(data.get("index", []))
             error_info = data.get("error_info", {})
             error_times = len(error_info)
@@ -1642,12 +1642,12 @@ class AppConfig(GlobalConfig):
                     if single_data[key] != "Success!":
                         if "error_info" not in data:
                             data["error_info"] = {}
-                        data["error_info"][actual_date.strftime("%d日 %H:%M:%S")] = (
-                            single_data[key]
-                        )
+                        data["error_info"][
+                            actual_date.strftime("%Y年%m月%d日 %H:%M:%S")
+                        ] = single_data[key]
 
                     data["index"][actual_date] = {
-                        "date": actual_date.strftime("%d日 %H:%M:%S"),
+                        "date": actual_date.strftime("%Y年%m月%d日 %H:%M:%S"),
                         "status": (
                             "完成" if single_data[key] == "Success!" else "异常"
                         ),

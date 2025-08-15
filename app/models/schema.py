@@ -663,7 +663,7 @@ class TaskMessage(BaseModel):
 
 
 class HistorySearchIn(BaseModel):
-    mode: Literal["按日合并", "按周合并", "按年月并"] = Field(
+    mode: Literal["按日合并", "按周合并", "按月合并"] = Field(
         ..., description="合并模式"
     )
     start_date: str = Field(..., description="开始日期, 格式YYYY-MM-DD")
