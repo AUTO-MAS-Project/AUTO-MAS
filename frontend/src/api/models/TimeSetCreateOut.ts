@@ -2,6 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { TimeSet } from './TimeSet';
 export type TimeSetCreateOut = {
     /**
      * 状态码
@@ -22,6 +23,6 @@ export type TimeSetCreateOut = {
     /**
      * 时间设置配置数据
      */
-    data: Record<string, any>;
+    data: TimeSet;
 };
 

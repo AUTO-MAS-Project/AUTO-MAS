@@ -4,7 +4,7 @@
 /* eslint-disable */
 export type QueueGetIn = {
     /**
-     * 队列ID，仅在模式为Single时需要
+     * 队列ID, 未携带时表示获取所有队列数据
      */
     queueId?: (string | null);
 };

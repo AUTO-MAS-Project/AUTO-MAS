@@ -2,6 +2,8 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { GeneralConfig } from './GeneralConfig';
+import type { MaaConfig } from './MaaConfig';
 export type ScriptUpdateIn = {
     /**
      * 脚本ID
@@ -10,6 +12,6 @@ export type ScriptUpdateIn = {
     /**
      * 脚本更新数据
      */
-    data: Record<string, Record<string, any>>;
+    data: (MaaConfig | GeneralConfig);
 };
 

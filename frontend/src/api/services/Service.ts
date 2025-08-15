@@ -5,6 +5,10 @@
 import type { ComboBoxOut } from '../models/ComboBoxOut';
 import type { DispatchIn } from '../models/DispatchIn';
 import type { GetStageIn } from '../models/GetStageIn';
+import type { HistoryDataGetIn } from '../models/HistoryDataGetIn';
+import type { HistoryDataGetOut } from '../models/HistoryDataGetOut';
+import type { HistorySearchIn } from '../models/HistorySearchIn';
+import type { HistorySearchOut } from '../models/HistorySearchOut';
 import type { InfoOut } from '../models/InfoOut';
 import type { OutBase } from '../models/OutBase';
 import type { PlanCreateIn } from '../models/PlanCreateIn';
@@ -20,6 +24,8 @@ import type { QueueGetIn } from '../models/QueueGetIn';
 import type { QueueGetOut } from '../models/QueueGetOut';
 import type { QueueItemCreateOut } from '../models/QueueItemCreateOut';
 import type { QueueItemDeleteIn } from '../models/QueueItemDeleteIn';
+import type { QueueItemGetIn } from '../models/QueueItemGetIn';
+import type { QueueItemGetOut } from '../models/QueueItemGetOut';
 import type { QueueItemReorderIn } from '../models/QueueItemReorderIn';
 import type { QueueItemUpdateIn } from '../models/QueueItemUpdateIn';
 import type { QueueReorderIn } from '../models/QueueReorderIn';
@@ -38,10 +44,14 @@ import type { TaskCreateIn } from '../models/TaskCreateIn';
 import type { TaskCreateOut } from '../models/TaskCreateOut';
 import type { TimeSetCreateOut } from '../models/TimeSetCreateOut';
 import type { TimeSetDeleteIn } from '../models/TimeSetDeleteIn';
+import type { TimeSetGetIn } from '../models/TimeSetGetIn';
+import type { TimeSetGetOut } from '../models/TimeSetGetOut';
 import type { TimeSetReorderIn } from '../models/TimeSetReorderIn';
 import type { TimeSetUpdateIn } from '../models/TimeSetUpdateIn';
 import type { UserCreateOut } from '../models/UserCreateOut';
 import type { UserDeleteIn } from '../models/UserDeleteIn';
+import type { UserGetIn } from '../models/UserGetIn';
+import type { UserGetOut } from '../models/UserGetOut';
 import type { UserInBase } from '../models/UserInBase';
 import type { UserReorderIn } from '../models/UserReorderIn';
 import type { UserUpdateIn } from '../models/UserUpdateIn';
@@ -219,6 +229,25 @@ export class Service {
         });
     }
     /**
+     * 查询用户
+     * @param requestBody
+     * @returns UserGetOut Successful Response
+     * @throws ApiError
+     */
+    public static getUserApiScriptsUserGetPost(
+        requestBody: UserGetIn,
+    ): CancelablePromise<UserGetOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/user/get',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 添加用户
      * @param requestBody
      * @returns UserCreateOut Successful Response
@@ -314,7 +343,7 @@ export class Service {
         });
     }
     /**
-     * 查询计划表配置信息
+     * 查询计划表
      * @param requestBody
      * @returns PlanGetOut Successful Response
      * @throws ApiError
@@ -477,6 +506,25 @@ export class Service {
         });
     }
     /**
+     * 查询定时项
+     * @param requestBody
+     * @returns TimeSetGetOut Successful Response
+     * @throws ApiError
+     */
+    public static getTimeSetApiQueueTimeGetPost(
+        requestBody: TimeSetGetIn,
+    ): CancelablePromise<TimeSetGetOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/queue/time/get',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 添加定时项
      * @param requestBody
      * @returns TimeSetCreateOut Successful Response
@@ -534,7 +582,7 @@ export class Service {
         });
     }
     /**
-     * 重新排序时间设置
+     * 重新排序定时项
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
@@ -545,6 +593,25 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/queue/time/order',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 查询队列项
+     * @param requestBody
+     * @returns QueueItemGetOut Successful Response
+     * @throws ApiError
+     */
+    public static getItemApiQueueItemGetPost(
+        requestBody: QueueItemGetIn,
+    ): CancelablePromise<QueueItemGetOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/queue/item/get',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -659,6 +726,44 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/dispatch/stop',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 搜索历史记录总览信息
+     * @param requestBody
+     * @returns HistorySearchOut Successful Response
+     * @throws ApiError
+     */
+    public static searchHistoryApiHistorySearchPost(
+        requestBody: HistorySearchIn,
+    ): CancelablePromise<HistorySearchOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/history/search',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 从指定文件内获取历史记录数据
+     * @param requestBody
+     * @returns HistoryDataGetOut Successful Response
+     * @throws ApiError
+     */
+    public static getHistoryDataApiHistoryDataPost(
+        requestBody: HistoryDataGetIn,
+    ): CancelablePromise<HistoryDataGetOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/history/data',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

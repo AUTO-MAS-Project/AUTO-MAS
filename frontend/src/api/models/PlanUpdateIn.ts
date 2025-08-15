@@ -2,6 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { MaaPlanConfig } from './MaaPlanConfig';
 export type PlanUpdateIn = {
     /**
      * 计划ID
@@ -10,6 +11,6 @@ export type PlanUpdateIn = {
     /**
      * 计划更新数据
      */
-    data: Record<string, Record<string, any>>;
+    data: MaaPlanConfig;
 };
 
