@@ -252,65 +252,54 @@ const refreshTimeSets = async () => {
   }
 
   try {
-    // 重新从API获取最新的队列数据
-    const response = await Service.getQueuesApiQueueGetPost({})
+    // 使用专门的定时项API获取数据
+    const response = await Service.getTimeSetApiQueueTimeGetPost({
+      queueId: activeQueueId.value,
+    })
+
     if (response.code !== 200) {
-      console.error('获取队列数据失败:', response)
+      console.error('获取定时项数据失败:', response)
       currentTimeSets.value = []
       return
     }
 
-    // 更新缓存的队列数据
-    currentQueueData.value = response.data
+    const timeSets: any[] = []
 
-    // 从最新的队列数据中获取定时项信息
-    if (response.data && response.data[activeQueueId.value]) {
-      const queueData = response.data[activeQueueId.value]
-      const timeSets: any[] = []
+    // 处理定时项数据
+    if (response.index && Array.isArray(response.index)) {
+      response.index.forEach((item: any) => {
+        try {
+          const timeSetId = item.uid
+          if (!timeSetId || !response.data || !response.data[timeSetId]) return
 
-      // 检查是否有TimeSet配置
-      if (queueData?.SubConfigsInfo?.TimeSet) {
-        const timeSetConfig = queueData.SubConfigsInfo.TimeSet
+          const timeSetData = response.data[timeSetId]
+          if (timeSetData?.Info) {
+            // 解析时间字符串 "HH:mm"
+            const originalTimeString = timeSetData.Info.Set || timeSetData.Info.Time || '00:00'
+            const [hours = 0, minutes = 0] = originalTimeString.split(':').map(Number)
 
-        // 遍历instances数组获取所有定时项ID
-        if (Array.isArray(timeSetConfig.instances)) {
-          timeSetConfig.instances.forEach((instance: any) => {
-            try {
-              const timeSetId = instance?.uid
-              if (!timeSetId) return
+            // 创建标准化的时间字符串
+            const validHours = Math.max(0, Math.min(23, hours))
+            const validMinutes = Math.max(0, Math.min(59, minutes))
+            const timeString = `${validHours.toString().padStart(2, '0')}:${validMinutes.toString().padStart(2, '0')}`
 
-              const timeSetData = timeSetConfig[timeSetId]
-              if (timeSetData?.Info) {
-                // 解析时间字符串 "HH:mm" - 修复字段名
-                const originalTimeString = timeSetData.Info.Set || timeSetData.Info.Time || '00:00'
-                const [hours = 0, minutes = 0] = originalTimeString.split(':').map(Number)
-
-                // 创建标准化的时间字符串
-                const validHours = Math.max(0, Math.min(23, hours))
-                const validMinutes = Math.max(0, Math.min(59, minutes))
-                const timeString = `${validHours.toString().padStart(2, '0')}:${validMinutes.toString().padStart(2, '0')}`
-
-                timeSets.push({
-                  id: timeSetId,
-                  time: timeString,
-                  enabled: Boolean(timeSetData.Info.Enabled),
-                  description: timeSetData.Info.Description || '',
-                })
-              }
-            } catch (itemError) {
-              console.warn('解析单个定时项失败:', itemError, instance)
-            }
-          })
+            timeSets.push({
+              id: timeSetId,
+              time: timeString,
+              enabled: Boolean(timeSetData.Info.Enabled),
+              description: timeSetData.Info.Description || '',
+            })
+          }
+        } catch (itemError) {
+          console.warn('解析单个定时项失败:', itemError, item)
         }
-      }
-
-      // 使用nextTick确保数据更新不会导致渲染问题
-      await nextTick()
-      currentTimeSets.value = [...timeSets]
-      console.log('刷新后的定时项数据:', timeSets) // 调试日志
-    } else {
-      currentTimeSets.value = []
+      })
     }
+
+    // 使用nextTick确保数据更新不会导致渲染问题
+    await nextTick()
+    currentTimeSets.value = [...timeSets]
+    console.log('刷新后的定时项数据:', timeSets) // 调试日志
   } catch (error) {
     console.error('刷新定时项列表失败:', error)
     currentTimeSets.value = []
@@ -326,54 +315,43 @@ const refreshQueueItems = async () => {
   }
 
   try {
-    // 重新从API获取最新的队列数据
-    const response = await Service.getQueuesApiQueueGetPost({})
+    // 使用专门的队列项API获取数据
+    const response = await Service.getItemApiQueueItemGetPost({
+      queueId: activeQueueId.value,
+    })
+
     if (response.code !== 200) {
-      console.error('获取队列数据失败:', response)
+      console.error('获取队列项数据失败:', response)
       currentQueueItems.value = []
       return
     }
 
-    // 更新缓存的队列数据
-    currentQueueData.value = response.data
+    const queueItems: any[] = []
 
-    // 从最新的队列数据中获取队列项信息
-    if (response.data && response.data[activeQueueId.value]) {
-      const queueData = response.data[activeQueueId.value]
-      const queueItems: any[] = []
+    // 处理队列项数据
+    if (response.index && Array.isArray(response.index)) {
+      response.index.forEach((item: any) => {
+        try {
+          const queueItemId = item.uid
+          if (!queueItemId || !response.data || !response.data[queueItemId]) return
 
-      // 检查是否有QueueItem配置
-      if (queueData?.SubConfigsInfo?.QueueItem) {
-        const queueItemConfig = queueData.SubConfigsInfo.QueueItem
-
-        // 遍历instances数组获取所有队列项ID
-        if (Array.isArray(queueItemConfig.instances)) {
-          queueItemConfig.instances.forEach((instance: any) => {
-            try {
-              const queueItemId = instance?.uid
-              if (!queueItemId) return
-
-              const queueItemData = queueItemConfig[queueItemId]
-              if (queueItemData?.Info) {
-                queueItems.push({
-                  id: queueItemId,
-                  script: queueItemData.Info.ScriptId || '',
-                })
-              }
-            } catch (itemError) {
-              console.warn('解析单个队列项失败:', itemError, instance)
-            }
-          })
+          const queueItemData = response.data[queueItemId]
+          if (queueItemData?.Info) {
+            queueItems.push({
+              id: queueItemId,
+              script: queueItemData.Info.ScriptId || '',
+            })
+          }
+        } catch (itemError) {
+          console.warn('解析单个队列项失败:', itemError, item)
         }
-      }
-
-      // 使用nextTick确保数据更新不会导致渲染问题
-      await nextTick()
-      currentQueueItems.value = [...queueItems]
-      console.log('刷新后的队列项数据:', queueItems) // 调试日志
-    } else {
-      currentQueueItems.value = []
+      })
     }
+
+    // 使用nextTick确保数据更新不会导致渲染问题
+    await nextTick()
+    currentQueueItems.value = [...queueItems]
+    console.log('刷新后的队列项数据:', queueItems) // 调试日志
   } catch (error) {
     console.error('刷新队列项列表失败:', error)
     currentQueueItems.value = []

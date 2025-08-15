@@ -182,7 +182,7 @@ const loadOptions = async () => {
 const addQueueItem = async () => {
   editingQueueItem.value = null
   Object.assign(form, {
-    script: '',
+    script: null,
   })
 
   // 确保在打开弹窗时加载脚本选项
