@@ -199,7 +199,11 @@ class GlobalConfig(ConfigBase):
     )
     Data_StageTimeStamp = ConfigItem("Data", "StageTimeStamp", "2000-01-01 00:00:00")
     Data_Stage = ConfigItem("Data", "Stage", "{ }")
+    Data_LastNoticeUpdated = ConfigItem(
+        "Data", "LastNoticeUpdated", "2000-01-01 00:00:00"
+    )
     Data_IfShowNotice = ConfigItem("Data", "IfShowNotice", True, BoolValidator())
+    Data_Notice = ConfigItem("Data", "Notice", "{ }")
 
 
 class QueueItem(ConfigBase):
@@ -1202,7 +1206,7 @@ class AppConfig(GlobalConfig):
         if datetime.now() - timedelta(hours=1) < datetime.strptime(
             self.get("Data", "LastStageUpdated"), "%Y-%m-%d %H:%M:%S"
         ):
-            logger.info("No need to update stage info, using cached data.")
+            logger.info("一小时内已进行过一次检查，直接使用缓存的活动关卡信息")
             return json.loads(self.get("Data", "Stage"))
 
         logger.info("开始获取活动关卡信息")
@@ -1229,7 +1233,7 @@ class AppConfig(GlobalConfig):
             self.get("Data", "StageTimeStamp"), "%Y-%m-%d %H:%M:%S"
         )
 
-        # 本地文件关卡信息无需更新，直接返回本地数据
+        # 本地关卡信息无需更新，直接返回本地数据
         if datetime.fromtimestamp(0) < remote_time_stamp <= local_time_stamp:
 
             logger.info("使用本地关卡信息")
@@ -1395,24 +1399,58 @@ class AppConfig(GlobalConfig):
 
         return data
 
-    async def get_server_info(self, type: str) -> Dict[str, Any]:
+    async def get_notice(self) -> tuple[bool, Dict[str, str]]:
         """获取公告信息"""
 
-        logger.info(f"开始从 AUTO_MAA 服务器获取 {type} 信息")
+        local_notice = json.loads(self.get("Data", "Notice"))
+        if datetime.now() - timedelta(hours=1) < datetime.strptime(
+            self.get("Data", "LastNoticeUpdated"), "%Y-%m-%d %H:%M:%S"
+        ):
+            logger.info("一小时内已进行过一次检查，直接使用缓存的公告信息")
+            return False, local_notice.get("notice_dict", {})
 
-        response = requests.get(
-            url=f"http://221.236.27.82:10197/d/AUTO_MAA/Server/{type}.json",
-            timeout=10,
-            proxies=self.get_proxies(),
+        logger.info(f"开始从 AUTO_MAA 服务器获取公告信息")
+
+        try:
+            response = requests.get(
+                "http://221.236.27.82:10197/d/AUTO_MAA/Server/notice.json",
+                timeout=10,
+                proxies=self.get_proxies(),
+            )
+            if response.status_code == 200:
+                remote_notice = response.json()
+            else:
+                logger.warning(f"无法从 AUTO_MAA 服务器获取公告信息:{response.text}")
+                remote_notice = None
+        except Exception as e:
+            logger.warning(f"无法从 AUTO_MAA 服务器获取公告信息: {e}")
+            remote_notice = None
+
+        if remote_notice is None:
+            logger.warning("使用本地公告信息")
+            return False, local_notice.get("notice_dict", {})
+
+        await self.set(
+            "Data", "LastNoticeUpdated", datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         )
 
-        if response.status_code == 200:
-            return response.json()
-        else:
-            logger.warning(f"无法从 AUTO_MAA 服务器获取 {type} 信息:{response.text}")
-            raise ConnectionError(
-                "Cannot connect to the notice server. Please check your network connection or try again later."
+        local_time_stamp = datetime.strptime(
+            local_notice.get("time", "2000-01-01 00:00"), "%Y-%m-%d %H:%M"
+        )
+        remote_time_stamp = datetime.strptime(
+            remote_notice.get("time", "2000-01-01 00:00"), "%Y-%m-%d %H:%M"
+        )
+
+        # 本地公告信息需更新且持续展示
+        if local_time_stamp < remote_time_stamp < datetime.now():
+
+            logger.info("要求展示本地公告信息")
+            await self.set(
+                "Data", "Notice", json.dumps(remote_notice, ensure_ascii=False)
             )
+            await self.set("Data", "IfShowNotice", True)
+
+        return self.get("Data", "IfShowNotice"), remote_notice.get("notice_dict", {})
 
     async def save_maa_log(self, log_path: Path, logs: list, maa_result: str) -> bool:
         """

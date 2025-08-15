@@ -84,30 +84,50 @@ async def get_task_combox() -> ComboBoxOut:
     return ComboBoxOut(data=data)
 
 
-@router.post("/notice", summary="获取通知信息", response_model=InfoOut, status_code=200)
-async def get_notice_info() -> InfoOut:
+@router.post(
+    "/notice/get", summary="获取通知信息", response_model=NoticeOut, status_code=200
+)
+async def get_notice_info() -> NoticeOut:
 
     try:
-        data = await Config.get_server_info("notice")
+        if_need_show, data = await Config.get_notice()
     except Exception as e:
-        return InfoOut(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}", data={}
+        return NoticeOut(
+            code=500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            if_need_show=False,
+            data={},
         )
-    return InfoOut(data=data)
+    return NoticeOut(if_need_show=if_need_show, data=data)
 
 
 @router.post(
-    "/apps_info", summary="获取可下载应用信息", response_model=InfoOut, status_code=200
+    "/notice/confirm", summary="确认通知", response_model=OutBase, status_code=200
 )
-async def get_apps_info() -> InfoOut:
+async def confirm_notice() -> OutBase:
 
     try:
-        data = await Config.get_server_info("apps_info")
+        await Config.set("Data", "IfShowNotice", False)
     except Exception as e:
-        return InfoOut(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}", data={}
+        return OutBase(
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
-    return InfoOut(data=data)
+    return OutBase()
+
+
+# @router.post(
+#     "/apps_info", summary="获取可下载应用信息", response_model=InfoOut, status_code=200
+# )
+# async def get_apps_info() -> InfoOut:
+
+#     try:
+#         data = await Config.get_server_info("apps_info")
+#     except Exception as e:
+#         return InfoOut(
+#             code=500, status="error", message=f"{type(e).__name__}: {str(e)}", data={}
+#         )
+#     return InfoOut(data=data)
 
 
 @router.post(

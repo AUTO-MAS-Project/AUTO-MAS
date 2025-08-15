@@ -34,6 +34,13 @@ class InfoOut(OutBase):
     data: Dict[str, Any] = Field(..., description="收到的服务器数据")
 
 
+class NoticeOut(OutBase):
+    if_need_show: bool = Field(..., description="是否需要显示公告")
+    data: Dict[str, str] = Field(
+        ..., description="公告信息, key为公告标题, value为公告内容"
+    )
+
+
 class ComboBoxItem(BaseModel):
     label: str = Field(..., description="展示值")
     value: Optional[str] = Field(..., description="实际值")
