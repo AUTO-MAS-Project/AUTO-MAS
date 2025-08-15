@@ -38,7 +38,7 @@ const DEFAULT_CONFIG: FrontendConfig = {
   gitInstalled: false,
   backendExists: false,
   dependenciesInstalled: false,
-  pipInstalled: false
+  pipInstalled: false,
 }
 
 // 读取配置（内部使用，不触发保存）
@@ -83,7 +83,8 @@ export async function getConfig(): Promise<FrontendConfig> {
   const config = await getConfigInternal()
 
   // 如果是从localStorage迁移的配置，保存到文件并清理localStorage
-  const hasLocalStorage = localStorage.getItem('app-config') || localStorage.getItem('theme-settings')
+  const hasLocalStorage =
+    localStorage.getItem('app-config') || localStorage.getItem('theme-settings')
   if (hasLocalStorage) {
     try {
       await window.electronAPI.saveConfig(config)
@@ -155,7 +156,11 @@ export async function saveThemeConfig(themeMode: ThemeMode, themeColor: ThemeCol
 }
 
 // 保存镜像源设置
-export async function saveMirrorConfig(gitMirror: string, pythonMirror?: string, pipMirror?: string): Promise<void> {
+export async function saveMirrorConfig(
+  gitMirror: string,
+  pythonMirror?: string,
+  pipMirror?: string
+): Promise<void> {
   const config: Partial<FrontendConfig> = { selectedGitMirror: gitMirror }
   if (pythonMirror) config.selectedPythonMirror = pythonMirror
   if (pipMirror) config.selectedPipMirror = pipMirror

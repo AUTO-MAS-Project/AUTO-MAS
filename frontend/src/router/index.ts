@@ -3,7 +3,6 @@ import type { RouteRecordRaw } from 'vue-router'
 
 import { isAppInitialized } from '@/utils/config'
 
-
 const routes: RouteRecordRaw[] = [
   {
     path: '/',
@@ -90,7 +89,6 @@ const router = createRouter({
   routes,
 })
 
-
 // 添加路由守卫，确保在生产环境中也能正确进入初始化页面
 router.beforeEach(async (to, from, next) => {
   console.log('路由守卫：', { to: to.path, from: from.path })
@@ -117,6 +115,5 @@ router.beforeEach(async (to, from, next) => {
 
   next()
 })
-
 
 export default router

@@ -1,4 +1,3 @@
-
 // 设置相关类型定义
 export interface SettingsData {
   Function: {

@@ -2,7 +2,7 @@
   <div v-if="loading" class="loading-box">
     <a-spin tip="加载中，请稍候..." size="large" />
   </div>
-  
+
   <div v-else class="queue-content">
     <!-- 队列头部 -->
     <div class="queue-header">
@@ -27,7 +27,11 @@
 
     <!-- 空状态 -->
     <div v-if="!queueList.length || !currentQueueData" class="empty-state">
-      <div class="empty-content empty-content-fancy" @click="handleAddQueue" style="cursor: pointer">
+      <div
+        class="empty-content empty-content-fancy"
+        @click="handleAddQueue"
+        style="cursor: pointer"
+      >
         <div class="empty-icon">
           <PlusOutlined />
         </div>
@@ -71,21 +75,21 @@
               />
             </div>
           </div>
-<!--          <div class="section-controls">-->
-<!--            <a-space>-->
-<!--              <span class="status-label">状态：</span>-->
-<!--              <a-switch -->
-<!--                v-model:checked="currentQueueEnabled" -->
-<!--                @change="onQueueStatusChange"-->
-<!--                checked-children="启用"-->
-<!--                un-checked-children="禁用"-->
-<!--              />-->
-<!--            </a-space>-->
-<!--          </div>-->
+          <!--          <div class="section-controls">-->
+          <!--            <a-space>-->
+          <!--              <span class="status-label">状态：</span>-->
+          <!--              <a-switch -->
+          <!--                v-model:checked="currentQueueEnabled" -->
+          <!--                @change="onQueueStatusChange"-->
+          <!--                checked-children="启用"-->
+          <!--                un-checked-children="禁用"-->
+          <!--              />-->
+          <!--            </a-space>-->
+          <!--          </div>-->
         </div>
 
         <!-- 定时项组件 -->
-        <TimeSetManager 
+        <TimeSetManager
           v-if="activeQueueId && currentQueueData"
           :queue-id="activeQueueId"
           :time-sets="currentTimeSets"
@@ -93,7 +97,7 @@
         />
 
         <!-- 队列项组件 -->
-        <QueueItemManager 
+        <QueueItemManager
           v-if="activeQueueId && currentQueueData"
           :queue-id="activeQueueId"
           :queue-items="currentQueueItems"
@@ -147,7 +151,7 @@ const fetchQueues = async () => {
     if (response.code === 200) {
       // 处理队列数据
       console.log('API Response:', response) // 调试日志
-      
+
       if (response.index && response.index.length > 0) {
         queueList.value = response.index.map((item: any, index: number) => {
           try {
@@ -155,19 +159,19 @@ const fetchQueues = async () => {
             const queueId = item.uid
             const queueName = response.data[queueId]?.Info?.Name || `队列 ${index + 1}`
             console.log('Queue ID:', queueId, 'Name:', queueName, 'Type:', typeof queueId) // 调试日志
-            return { 
-              id: queueId, 
-              name: queueName 
+            return {
+              id: queueId,
+              name: queueName,
             }
           } catch (itemError) {
             console.warn('解析队列项失败:', itemError, item)
             return {
               id: `queue_${index}`,
-              name: `队列 ${index + 1}`
+              name: `队列 ${index + 1}`,
             }
           }
         })
-        
+
         // 如果有队列且没有选中的队列，默认选中第一个
         if (queueList.value.length > 0 && !activeQueueId.value) {
           activeQueueId.value = queueList.value[0].id
@@ -201,7 +205,7 @@ const fetchQueues = async () => {
 // 加载队列数据
 const loadQueueData = async (queueId: string) => {
   if (!queueId) return
-  
+
   try {
     const response = await Service.getQueuesApiQueueGetPost({})
     currentQueueData.value = response.data
@@ -209,7 +213,7 @@ const loadQueueData = async (queueId: string) => {
     // 根据API响应数据更新队列信息
     if (response.data && response.data[queueId]) {
       const queueData = response.data[queueId]
-      
+
       // 更新队列名称和状态
       const currentQueue = queueList.value.find(queue => queue.id === queueId)
       if (currentQueue) {
@@ -220,14 +224,14 @@ const loadQueueData = async (queueId: string) => {
       // 使用nextTick确保DOM更新后再加载数据
       await nextTick()
       await new Promise(resolve => setTimeout(resolve, 50))
-      
+
       // 加载定时项和队列项数据 - 添加错误处理
       try {
         await refreshTimeSets()
       } catch (timeError) {
         console.error('刷新定时项失败:', timeError)
       }
-      
+
       try {
         await refreshQueueItems()
       } catch (itemError) {
@@ -246,7 +250,7 @@ const refreshTimeSets = async () => {
     currentTimeSets.value = []
     return
   }
-  
+
   try {
     // 重新从API获取最新的队列数据
     const response = await Service.getQueuesApiQueueGetPost({})
@@ -255,42 +259,42 @@ const refreshTimeSets = async () => {
       currentTimeSets.value = []
       return
     }
-    
+
     // 更新缓存的队列数据
     currentQueueData.value = response.data
-    
+
     // 从最新的队列数据中获取定时项信息
     if (response.data && response.data[activeQueueId.value]) {
       const queueData = response.data[activeQueueId.value]
       const timeSets: any[] = []
-      
+
       // 检查是否有TimeSet配置
       if (queueData?.SubConfigsInfo?.TimeSet) {
         const timeSetConfig = queueData.SubConfigsInfo.TimeSet
-        
+
         // 遍历instances数组获取所有定时项ID
         if (Array.isArray(timeSetConfig.instances)) {
           timeSetConfig.instances.forEach((instance: any) => {
             try {
               const timeSetId = instance?.uid
               if (!timeSetId) return
-              
+
               const timeSetData = timeSetConfig[timeSetId]
               if (timeSetData?.Info) {
                 // 解析时间字符串 "HH:mm" - 修复字段名
                 const originalTimeString = timeSetData.Info.Set || timeSetData.Info.Time || '00:00'
                 const [hours = 0, minutes = 0] = originalTimeString.split(':').map(Number)
-                
+
                 // 创建标准化的时间字符串
                 const validHours = Math.max(0, Math.min(23, hours))
                 const validMinutes = Math.max(0, Math.min(59, minutes))
                 const timeString = `${validHours.toString().padStart(2, '0')}:${validMinutes.toString().padStart(2, '0')}`
-                
+
                 timeSets.push({
                   id: timeSetId,
                   time: timeString,
                   enabled: Boolean(timeSetData.Info.Enabled),
-                  description: timeSetData.Info.Description || ''
+                  description: timeSetData.Info.Description || '',
                 })
               }
             } catch (itemError) {
@@ -299,7 +303,7 @@ const refreshTimeSets = async () => {
           })
         }
       }
-      
+
       // 使用nextTick确保数据更新不会导致渲染问题
       await nextTick()
       currentTimeSets.value = [...timeSets]
@@ -320,7 +324,7 @@ const refreshQueueItems = async () => {
     currentQueueItems.value = []
     return
   }
-  
+
   try {
     // 重新从API获取最新的队列数据
     const response = await Service.getQueuesApiQueueGetPost({})
@@ -329,31 +333,31 @@ const refreshQueueItems = async () => {
       currentQueueItems.value = []
       return
     }
-    
+
     // 更新缓存的队列数据
     currentQueueData.value = response.data
-    
+
     // 从最新的队列数据中获取队列项信息
     if (response.data && response.data[activeQueueId.value]) {
       const queueData = response.data[activeQueueId.value]
       const queueItems: any[] = []
-      
+
       // 检查是否有QueueItem配置
       if (queueData?.SubConfigsInfo?.QueueItem) {
         const queueItemConfig = queueData.SubConfigsInfo.QueueItem
-        
+
         // 遍历instances数组获取所有队列项ID
         if (Array.isArray(queueItemConfig.instances)) {
           queueItemConfig.instances.forEach((instance: any) => {
             try {
               const queueItemId = instance?.uid
               if (!queueItemId) return
-              
+
               const queueItemData = queueItemConfig[queueItemId]
               if (queueItemData?.Info) {
                 queueItems.push({
                   id: queueItemId,
-                  script: queueItemData.Info.ScriptId || ''
+                  script: queueItemData.Info.ScriptId || '',
                 })
               }
             } catch (itemError) {
@@ -362,7 +366,7 @@ const refreshQueueItems = async () => {
           })
         }
       }
-      
+
       // 使用nextTick确保数据更新不会导致渲染问题
       await nextTick()
       currentQueueItems.value = [...queueItems]
@@ -382,7 +386,8 @@ const onQueueNameBlur = () => {
   if (activeQueueId.value) {
     const currentQueue = queueList.value.find(queue => queue.id === activeQueueId.value)
     if (currentQueue) {
-      currentQueue.name = currentQueueName.value || `队列 ${queueList.value.indexOf(currentQueue) + 1}`
+      currentQueue.name =
+        currentQueueName.value || `队列 ${queueList.value.indexOf(currentQueue) + 1}`
     }
   }
 }
@@ -409,7 +414,7 @@ const onTabEdit = async (targetKey: string | MouseEvent, action: 'add' | 'remove
 const handleAddQueue = async () => {
   try {
     const response = await Service.addQueueApiQueueAddPost()
-    
+
     if (response.code === 200 && response.queueId) {
       const defaultName = `队列 ${queueList.value.length + 1}`
       const newQueue = {
@@ -438,7 +443,7 @@ const handleAddQueue = async () => {
 const handleRemoveQueue = async (queueId: string) => {
   try {
     const response = await Service.deleteQueueApiQueueDeletePost({ queueId })
-    
+
     if (response.code === 200) {
       const index = queueList.value.findIndex(queue => queue.id === queueId)
       if (index > -1) {
@@ -465,12 +470,12 @@ const handleRemoveQueue = async (queueId: string) => {
 // 队列切换
 const onQueueChange = async (queueId: string) => {
   if (!queueId) return
-  
+
   try {
     // 清空当前数据，避免渲染问题
     currentTimeSets.value = []
     currentQueueItems.value = []
-    
+
     await loadQueueData(queueId)
   } catch (error) {
     console.error('队列切换失败:', error)
@@ -505,9 +510,9 @@ const saveQueueData = async () => {
 
     const response = await Service.updateQueueApiQueueUpdatePost({
       queueId: activeQueueId.value,
-      data: queueData
+      data: queueData,
     })
-    
+
     if (response.code !== 200) {
       throw new Error(response.message || '保存失败')
     }
@@ -701,7 +706,9 @@ onMounted(async () => {
 }
 
 .empty-content-fancy {
-  transition: box-shadow 0.3s, transform 0.2s;
+  transition:
+    box-shadow 0.3s,
+    transform 0.2s;
   border: none;
   border-radius: 24px;
 }

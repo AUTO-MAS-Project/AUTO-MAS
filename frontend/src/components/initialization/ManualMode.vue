@@ -3,22 +3,23 @@
     <div class="header">
       <h1>AUTO_MAA 初始化向导</h1>
       <p>欢迎使用 AUTO_MAA，让我们来配置您的运行环境</p>
-      
+
       <div class="header-actions">
         <a-button size="large" type="primary" @click="handleSkipToHome">
           跳转至首页（仅开发用）
         </a-button>
-        <a-button size="large" type="default" @click="handleJumpToStep(6)" style="margin-left: 16px;">
+        <a-button
+          size="large"
+          type="default"
+          @click="handleJumpToStep(6)"
+          style="margin-left: 16px"
+        >
           跳到启动服务（第七步）
         </a-button>
       </div>
     </div>
 
-    <a-steps 
-      :current="currentStep" 
-      :status="stepStatus"
-      class="init-steps"
-    >
+    <a-steps :current="currentStep" :status="stepStatus" class="init-steps">
       <a-step title="主题设置" description="选择您喜欢的主题" />
       <a-step title="Python 环境" description="安装 Python 运行环境" />
       <a-step title="pip 安装" description="安装 Python 包管理器" />
@@ -28,22 +29,26 @@
       <a-step title="启动服务" description="启动后端服务" />
     </a-steps>
 
-<!--    &lt;!&ndash; 全局进度条 &ndash;&gt;-->
-<!--    <div v-if="isProcessing" class="global-progress">-->
-<!--      <a-progress -->
-<!--        :percent="globalProgress" -->
-<!--        :status="globalProgressStatus"-->
-<!--        :show-info="true"-->
-<!--      />-->
-<!--      <div class="progress-text">{{ progressText }}</div>-->
-<!--    </div>-->
+    <!--    &lt;!&ndash; 全局进度条 &ndash;&gt;-->
+    <!--    <div v-if="isProcessing" class="global-progress">-->
+    <!--      <a-progress -->
+    <!--        :percent="globalProgress" -->
+    <!--        :status="globalProgressStatus"-->
+    <!--        :show-info="true"-->
+    <!--      />-->
+    <!--      <div class="progress-text">{{ progressText }}</div>-->
+    <!--    </div>-->
 
     <div class="step-content">
       <!-- 步骤 0: 主题设置 -->
       <ThemeStep v-if="currentStep === 0" ref="themeStepRef" />
 
       <!-- 步骤 1: Python 环境 -->
-      <PythonStep v-if="currentStep === 1" :python-installed="pythonInstalled" ref="pythonStepRef" />
+      <PythonStep
+        v-if="currentStep === 1"
+        :python-installed="pythonInstalled"
+        ref="pythonStepRef"
+      />
 
       <!-- 步骤 2: pip 安装 -->
       <PipStep v-if="currentStep === 2" :pip-installed="pipInstalled" ref="pipStepRef" />
@@ -71,20 +76,19 @@
         上一步
       </a-button>
 
-
-      <a-button 
+      <a-button
         v-if="currentStep < 6"
         size="large"
-        type="primary" 
+        type="primary"
         @click="handleNextStep"
         :loading="isProcessing"
       >
         {{ getNextButtonText() }}
       </a-button>
-      
+
       <!-- 第7步重新启动服务按钮 -->
-      <a-button 
-        v-if="currentStep === 6" 
+      <a-button
+        v-if="currentStep === 6"
         type="default"
         size="large"
         @click="handleNextStep"
@@ -94,15 +98,15 @@
       </a-button>
     </div>
 
-<!--    <div v-if="errorMessage" class="error-message">-->
-<!--      <a-alert -->
-<!--        :message="errorMessage" -->
-<!--        type="error" -->
-<!--        show-icon -->
-<!--        closable-->
-<!--        @close="errorMessage = ''"-->
-<!--      />-->
-<!--    </div>-->
+    <!--    <div v-if="errorMessage" class="error-message">-->
+    <!--      <a-alert -->
+    <!--        :message="errorMessage" -->
+    <!--        type="error" -->
+    <!--        show-icon -->
+    <!--        closable-->
+    <!--        @close="errorMessage = ''"-->
+    <!--      />-->
+    <!--    </div>-->
   </div>
 </template>
 
@@ -130,7 +134,7 @@ interface Props {
   backendExists: boolean
   dependenciesInstalled: boolean
   serviceStarted: boolean
-  
+
   // 事件处理函数
   onSkipToHome: () => void
   onEnterApp: () => void
@@ -183,7 +187,7 @@ async function handleNextStep() {
   console.log('nextStep 被调用，当前步骤:', currentStep.value)
   isProcessing.value = true
   errorMessage.value = ''
-  
+
   try {
     switch (currentStep.value) {
       case 0: // 主题设置
@@ -227,7 +231,7 @@ async function handleNextStep() {
         await startBackendService()
         break
     }
-    
+
     if (currentStep.value < 6) {
       currentStep.value++
       // 进入新步骤时自动开始测速
@@ -244,14 +248,22 @@ async function handleNextStep() {
 
 function getNextButtonText() {
   switch (currentStep.value) {
-    case 0: return '下一步'
-    case 1: return props.pythonInstalled ? '下一步' : '安装 Python'
-    case 2: return props.pipInstalled ? '下一步' : '安装 pip'
-    case 3: return props.gitInstalled ? '下一步' : '安装 Git'
-    case 4: return props.backendExists ? '更新代码' : '获取代码'
-    case 5: return '安装依赖'
-    case 6: return '启动服务'
-    default: return '下一步'
+    case 0:
+      return '下一步'
+    case 1:
+      return props.pythonInstalled ? '下一步' : '安装 Python'
+    case 2:
+      return props.pipInstalled ? '下一步' : '安装 pip'
+    case 3:
+      return props.gitInstalled ? '下一步' : '安装 Git'
+    case 4:
+      return props.backendExists ? '更新代码' : '获取代码'
+    case 5:
+      return '安装依赖'
+    case 6:
+      return '启动服务'
+    default:
+      return '下一步'
   }
 }
 
@@ -368,13 +380,13 @@ async function autoStartBackendService() {
   logger.info('自动启动后端服务')
   isProcessing.value = true
   errorMessage.value = ''
-  
+
   if (serviceStepRef.value) {
     serviceStepRef.value.startingService = true
     serviceStepRef.value.showServiceProgress = true
     serviceStepRef.value.serviceStatus = '正在自动启动后端服务...'
   }
-  
+
   try {
     const result = await window.electronAPI.startBackend()
     if (result.success) {
@@ -384,7 +396,7 @@ async function autoStartBackendService() {
       }
       stepStatus.value = 'finish'
       logger.info('后端服务自动启动成功，延迟1秒后自动进入主页')
-      
+
       // 延迟1秒后自动进入主页
       setTimeout(() => {
         handleEnterApp()
@@ -413,13 +425,13 @@ async function autoStartBackendService() {
 // 手动启动后端服务（用户点击按钮时调用）
 async function startBackendService() {
   logger.info('手动重新启动后端服务')
-  
+
   if (serviceStepRef.value) {
     serviceStepRef.value.startingService = true
     serviceStepRef.value.showServiceProgress = true
     serviceStepRef.value.serviceStatus = '正在重新启动后端服务...'
   }
-  
+
   try {
     const result = await window.electronAPI.startBackend()
     if (result.success) {
@@ -429,7 +441,7 @@ async function startBackendService() {
       }
       stepStatus.value = 'finish'
       logger.info('后端服务手动启动成功，延迟1秒后自动进入主页')
-      
+
       // 延迟1秒后自动进入主页
       setTimeout(() => {
         handleEnterApp()
@@ -456,7 +468,7 @@ function handleDownloadProgress(progress: any) {
   // 更新全局进度条
   globalProgress.value = progress.progress
   progressText.value = progress.message
-  
+
   if (progress.status === 'error') {
     globalProgressStatus.value = 'exception'
   } else if (progress.status === 'completed') {
@@ -464,7 +476,7 @@ function handleDownloadProgress(progress: any) {
   } else {
     globalProgressStatus.value = 'normal'
   }
-  
+
   // 通知父组件
   props.onProgressUpdate(progress)
 }
@@ -472,11 +484,11 @@ function handleDownloadProgress(progress: any) {
 // 暴露给父组件的方法
 defineExpose({
   currentStep,
-  handleDownloadProgress
+  handleDownloadProgress,
 })
 
 // 监听 errorMessage，一旦有内容就弹窗
-watch(errorMessage, (val) => {
+watch(errorMessage, val => {
   if (val) {
     message.error(val)
     // 弹窗后可选：自动清空 errorMessage
@@ -554,7 +566,7 @@ watch(errorMessage, (val) => {
     flex-direction: column;
     gap: 8px;
   }
-  
+
   .step-actions {
     flex-direction: column;
     gap: 12px;

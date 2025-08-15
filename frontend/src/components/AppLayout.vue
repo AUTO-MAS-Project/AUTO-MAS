@@ -57,7 +57,13 @@
     </a-layout-sider>
 
     <!-- 主内容区 -->
-    <a-layout :style="{ marginLeft: collapsed ? '60px' : '180px', transition: 'margin-left 0.2s', height: '100vh' }">
+    <a-layout
+      :style="{
+        marginLeft: collapsed ? '60px' : '180px',
+        transition: 'margin-left 0.2s',
+        height: '100vh',
+      }"
+    >
       <a-layout-content
         class="content-area"
         :style="{
@@ -103,9 +109,7 @@ const mainMenuItems = [
   { path: '/history', label: '历史记录', icon: HistoryOutlined },
 ]
 
-const bottomMenuItems = [
-  { path: '/settings', label: '设置', icon: SettingOutlined },
-]
+const bottomMenuItems = [{ path: '/settings', label: '设置', icon: SettingOutlined }]
 
 // 自动同步选中项
 const selectedKeys = computed(() => {
@@ -142,9 +146,11 @@ const toggleCollapse = () => {
   border-radius: 6px;
   cursor: pointer;
 }
+
 .logo:hover {
   background-color: rgba(255, 255, 255, 0.5);
 }
+
 :deep(.ant-layout-sider-light) .logo:hover {
   background-color: rgba(0, 0, 0, 0.04);
 }
@@ -162,6 +168,7 @@ const toggleCollapse = () => {
   opacity: 1;
   transition: opacity 0.2s ease;
 }
+
 .logo-text.text-hidden {
   opacity: 0;
 }
@@ -172,16 +179,19 @@ const toggleCollapse = () => {
   overflow: auto;
   /* 修复滚动条显示问题 */
   scrollbar-width: thin;
-  scrollbar-color: rgba(0,0,0,0.2) transparent;
+  scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
 }
+
 .main-menu-container::-webkit-scrollbar {
   width: 6px;
 }
+
 .main-menu-container::-webkit-scrollbar-track {
   background: transparent;
 }
+
 .main-menu-container::-webkit-scrollbar-thumb {
-  background: rgba(0,0,0,0.2);
+  background: rgba(0, 0, 0, 0.2);
   border-radius: 4px;
 }
 
@@ -190,6 +200,7 @@ const toggleCollapse = () => {
   margin-top: auto;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
+
 :deep(.ant-layout-sider-light .bottom-menu) {
   border-top: 1px solid rgba(0, 0, 0, 0.04);
 }
@@ -207,6 +218,7 @@ const toggleCollapse = () => {
 :deep(.ant-layout-sider-dark) .menu-text {
   color: #fff;
 }
+
 :deep(.ant-layout-sider-light) .logo-text,
 :deep(.ant-layout-sider-light) .menu-text {
   color: rgba(0, 0, 0, 0.88);
@@ -244,6 +256,7 @@ const toggleCollapse = () => {
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
+
 .content-area::-webkit-scrollbar {
   display: none;
 }

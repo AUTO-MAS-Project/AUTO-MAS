@@ -31,7 +31,6 @@ function copyDirSync(src: string, dest: string) {
   }
 }
 
-
 // 获取Git环境变量配置
 function getGitEnvironment(appRoot: string) {
   const gitDir = path.join(appRoot, 'environment', 'git')
@@ -249,11 +248,26 @@ export async function cloneBackend(
         })
       }
       await new Promise<void>((resolve, reject) => {
-        const proc = spawn(gitPath, ['clone', '--progress', '--verbose','--single-branch','--depth','1','--branch', 'feature/refactor-backend', repoUrl, tmpDir], {
-          stdio: 'pipe',
-          env: gitEnv,
-          cwd: appRoot,
-        })
+        const proc = spawn(
+          gitPath,
+          [
+            'clone',
+            '--progress',
+            '--verbose',
+            '--single-branch',
+            '--depth',
+            '1',
+            '--branch',
+            'feature/refactor-backend',
+            repoUrl,
+            tmpDir,
+          ],
+          {
+            stdio: 'pipe',
+            env: gitEnv,
+            cwd: appRoot,
+          }
+        )
         proc.stdout?.on('data', d => console.log('git clone:', d.toString()))
         proc.stderr?.on('data', d => console.log('git clone err:', d.toString()))
         proc.on('close', code =>

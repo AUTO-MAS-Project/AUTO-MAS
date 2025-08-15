@@ -24,7 +24,7 @@ defineExpose({
   startingService,
   showServiceProgress,
   serviceProgress,
-  serviceStatus
+  serviceStatus,
 })
 </script>
 

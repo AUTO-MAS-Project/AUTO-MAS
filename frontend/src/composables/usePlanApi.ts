@@ -96,6 +96,6 @@ export function usePlanApi() {
     createPlan,
     updatePlan,
     deletePlan,
-    reorderPlans
+    reorderPlans,
   }
 }

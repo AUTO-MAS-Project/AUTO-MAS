@@ -4,22 +4,22 @@
     <div v-if="!gitInstalled" class="install-section">
       <p>需要安装 Git 工具来获取源代码</p>
       <div class="git-info">
-        <a-alert 
-          message="Git 工具信息" 
+        <a-alert
+          message="Git 工具信息"
           description="将安装便携版 Git 工具，包含完整的版本控制功能，无需系统安装。"
-          type="info" 
-          show-icon 
+          type="info"
+          show-icon
         />
       </div>
     </div>
     <div v-else class="already-installed">
       <a-result status="success" title="Git已成功安装，无需继续安装" />
-<!--      <div class="reinstall-section">-->
-<!--        <a-button type="primary" danger @click="handleForceReinstall" :loading="reinstalling">-->
-<!--          {{ reinstalling ? '正在重新安装...' : '强制重新安装' }}-->
-<!--        </a-button>-->
-<!--        <p class="reinstall-note">点击此按钮将删除现有Git环境并重新安装</p>-->
-<!--      </div>-->
+      <!--      <div class="reinstall-section">-->
+      <!--        <a-button type="primary" danger @click="handleForceReinstall" :loading="reinstalling">-->
+      <!--          {{ reinstalling ? '正在重新安装...' : '强制重新安装' }}-->
+      <!--        </a-button>-->
+      <!--        <p class="reinstall-note">点击此按钮将删除现有Git环境并重新安装</p>-->
+      <!--      </div>-->
     </div>
   </div>
 </template>
@@ -43,13 +43,13 @@ async function handleForceReinstall() {
     if (!deleteResult.success) {
       throw new Error(`删除Git失败: ${deleteResult.error}`)
     }
-    
+
     // 重新安装Git
     const installResult = await window.electronAPI.downloadGit()
     if (!installResult.success) {
       throw new Error(`重新安装Git失败: ${installResult.error}`)
     }
-    
+
     console.log('Git强制重新安装成功')
     // 通知父组件更新状态
     window.location.reload() // 简单的页面刷新来更新状态
@@ -62,7 +62,7 @@ async function handleForceReinstall() {
 }
 
 defineExpose({
-  handleForceReinstall
+  handleForceReinstall,
 })
 </script>
 

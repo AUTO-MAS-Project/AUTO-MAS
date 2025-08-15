@@ -4,7 +4,13 @@ import * as fs from 'fs'
 import { spawn } from 'child_process'
 import { getAppRoot, checkEnvironment } from './services/environmentService'
 import { setMainWindow as setDownloadMainWindow } from './services/downloadService'
-import { setMainWindow as setPythonMainWindow, downloadPython, installPipPackage, installDependencies, startBackend } from './services/pythonService'
+import {
+  setMainWindow as setPythonMainWindow,
+  downloadPython,
+  installPipPackage,
+  installDependencies,
+  startBackend,
+} from './services/pythonService'
 import { setMainWindow as setGitMainWindow, downloadGit, cloneBackend } from './services/gitService'
 
 // 检查是否以管理员权限运行
@@ -32,16 +38,20 @@ function restartAsAdmin(): void {
   if (process.platform === 'win32') {
     const exePath = process.execPath
     const args = process.argv.slice(1)
-    
+
     // 使用PowerShell以管理员权限启动
-    spawn('powershell', [
-      '-Command',
-      `Start-Process -FilePath "${exePath}" -ArgumentList "${args.join(' ')}" -Verb RunAs`
-    ], {
-      detached: true,
-      stdio: 'ignore'
-    })
-    
+    spawn(
+      'powershell',
+      [
+        '-Command',
+        `Start-Process -FilePath "${exePath}" -ArgumentList "${args.join(' ')}" -Verb RunAs`,
+      ],
+      {
+        detached: true,
+        stdio: 'ignore',
+      }
+    )
+
     app.quit()
   }
 }
@@ -144,15 +154,21 @@ ipcMain.handle('download-git', async () => {
   return downloadGit(appRoot)
 })
 
-ipcMain.handle('clone-backend', async (event, repoUrl = 'https://github.com/DLmaster361/AUTO_MAA.git') => {
-  const appRoot = getAppRoot()
-  return cloneBackend(appRoot, repoUrl)
-})
+ipcMain.handle(
+  'clone-backend',
+  async (event, repoUrl = 'https://github.com/DLmaster361/AUTO_MAA.git') => {
+    const appRoot = getAppRoot()
+    return cloneBackend(appRoot, repoUrl)
+  }
+)
 
-ipcMain.handle('update-backend', async (event, repoUrl = 'https://github.com/DLmaster361/AUTO_MAA.git') => {
-  const appRoot = getAppRoot()
-  return cloneBackend(appRoot, repoUrl) // 使用相同的逻辑，会自动判断是pull还是clone
-})
+ipcMain.handle(
+  'update-backend',
+  async (event, repoUrl = 'https://github.com/DLmaster361/AUTO_MAA.git') => {
+    const appRoot = getAppRoot()
+    return cloneBackend(appRoot, repoUrl) // 使用相同的逻辑，会自动判断是pull还是clone
+  }
+)
 
 // 配置文件操作
 ipcMain.handle('save-config', async (event, config) => {
