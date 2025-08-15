@@ -269,7 +269,7 @@ class MaaUserConfig(ConfigBase):
         self.Info_Mode = ConfigItem(
             "Info", "Mode", "简洁", OptionsValidator(["简洁", "详细"])
         )
-        self.Info_StageMode = ConfigItem("Info", "StageMode", "固定")
+        self.Info_StageMode = ConfigItem("Info", "StageMode", "Fixed")
         self.Info_Server = ConfigItem(
             "Info",
             "Server",
@@ -375,7 +375,7 @@ class MaaUserConfig(ConfigBase):
     def get_plan_info(self) -> Dict[str, Union[str, int]]:
         """获取当前的计划下信息"""
 
-        if self.get("Info", "StageMode") == "固定":
+        if self.get("Info", "StageMode") == "Fixed":
             return {
                 "MedicineNumb": self.get("Info", "MedicineNumb"),
                 "SeriesNumb": self.get("Info", "SeriesNumb"),
@@ -898,8 +898,6 @@ class AppConfig(GlobalConfig):
         else:
             data = await self.QueueConfig.get(uuid.UUID(queue_id))
 
-        print(data)
-
         index = data.pop("instances", [])
 
         return list(index), data
@@ -1379,12 +1377,12 @@ class AppConfig(GlobalConfig):
     async def get_task_combox(self):
         """获取任务下拉框信息"""
 
-        logger.info("Getting task combo box information...")
+        logger.info("开始获取任务下拉框信息")
         data = [{"label": "未选择", "value": None}]
-        for uid, script in self.QueueConfig.items():
+        for uid, queue in self.QueueConfig.items():
             data.append(
                 {
-                    "label": f"队列 - {script.get('Info', 'Name')}",
+                    "label": f"队列 - {queue.get('Info', 'Name')}",
                     "value": str(uid),
                 }
             )
@@ -1395,7 +1393,18 @@ class AppConfig(GlobalConfig):
                     "value": str(uid),
                 }
             )
-        logger.success("Task combo box information retrieved successfully.")
+        logger.success("任务下拉框信息获取成功")
+
+        return data
+
+    async def get_plan_combox(self):
+        """获取计划下拉框信息"""
+
+        logger.info("开始获取计划下拉框信息")
+        data = [{"label": "固定", "value": "Fixed"}]
+        for uid, plan in self.PlanConfig.items():
+            data.append({"label": plan.get("Info", "Name"), "value": str(uid)})
+        logger.success("计划下拉框信息获取成功")
 
         return data
 
@@ -1451,6 +1460,19 @@ class AppConfig(GlobalConfig):
             await self.set("Data", "IfShowNotice", True)
 
         return self.get("Data", "IfShowNotice"), remote_notice.get("notice_dict", {})
+
+    async def get_startup_task(self):
+        """获取启动时需要运行的队列信息"""
+
+        logger.info("获取启动时需要运行的队列信息")
+        data = [
+            str(uid)
+            for uid, queue in self.QueueConfig.items()
+            if queue.get("Info", "StartUpEnabled")
+        ]
+        logger.success("启动时需要运行的队列信息获取成功")
+
+        return data
 
     async def save_maa_log(self, log_path: Path, logs: list, maa_result: str) -> bool:
         """
