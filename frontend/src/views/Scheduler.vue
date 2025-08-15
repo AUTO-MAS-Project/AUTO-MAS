@@ -42,7 +42,8 @@
             </div>
 
             <div v-else class="task-panels">
-              <a-collapse v-model:activeKey="currentTab.activeTaskPanels">
+              <a-collapse v-model:activeKey="currentTab.activeTaskPanels"
+                :key="`collapse-${currentTab.key}-${currentTab.runningTasks.length}`">
                 <a-collapse-panel v-for="task in currentTab.runningTasks" :key="task.websocketId"
                   :header="`任务: ${task.taskName}`" style="font-size: 16px; margin-left: 8px">
                   <template #extra>
@@ -92,18 +93,18 @@
                     <!-- 用户队列 -->
                     <a-col :span="5">
                       <a-card title="用户队列" size="small" style="height: 100%">
-<!--                        <template #extra>-->
-<!--                          <span style="font-size: 12px; color: #666;">{{ task.userQueue.length }} 项</span>-->
-<!--                        </template>-->
+                        <!--                        <template #extra>-->
+                        <!--                          <span style="font-size: 12px; color: #666;">{{ task.userQueue.length }} 项</span>-->
+                        <!--                        </template>-->
                         <div style="height: calc(100% - 40px); padding: 8px;">
-<!--                          &lt;!&ndash; 调试信息 &ndash;&gt;-->
-<!--                          <div v-if="task.userQueue.length === 0"-->
-<!--                            style="color: #999; font-size: 12px; margin-bottom: 8px;">-->
-<!--                            调试: userQueue 长度为 {{ task.userQueue.length }}-->
-<!--                          </div>-->
-<!--                          <div v-else style="color: #999; font-size: 12px; margin-bottom: 8px;">-->
-<!--                            调试: 找到 {{ task.userQueue.length }} 个队列项-->
-<!--                          </div>-->
+                          <!--                          &lt;!&ndash; 调试信息 &ndash;&gt;-->
+                          <!--                          <div v-if="task.userQueue.length === 0"-->
+                          <!--                            style="color: #999; font-size: 12px; margin-bottom: 8px;">-->
+                          <!--                            调试: userQueue 长度为 {{ task.userQueue.length }}-->
+                          <!--                          </div>-->
+                          <!--                          <div v-else style="color: #999; font-size: 12px; margin-bottom: 8px;">-->
+                          <!--                            调试: 找到 {{ task.userQueue.length }} 个队列项-->
+                          <!--                          </div>-->
 
                           <a-list :data-source="task.userQueue" size="small" :locale="{ emptyText: '暂无用户队列' }"
                             style="height: calc(100% - 30px); overflow-y: auto">
@@ -447,24 +448,65 @@ const startQuickTask = async () => {
       const selectedOption = taskOptions.value.find(option => option.value === quickTaskForm.taskId)
       const taskName = selectedOption?.label || '未知任务'
 
-      // 创建任务并添加到当前调度台
-      const task: RunningTask = {
-        websocketId: response.websocketId,
-        taskName,
-        status: '连接中',
-        websocket: null,
-        logs: [],
-        taskQueue: [],
-        userQueue: [],
+      // 检查是否已存在同名任务
+      const existingTaskIndex = currentTab.value.runningTasks.findIndex(t => t.taskName === taskName)
+      
+      if (existingTaskIndex >= 0) {
+        // 如果存在同名任务，复用现有任务卡片
+        const existingTask = currentTab.value.runningTasks[existingTaskIndex]
+        
+        // 关闭旧的WebSocket连接（如果存在）
+        if (existingTask.websocket) {
+          existingTask.websocket.close()
+        }
+        
+        // 保存旧的 websocketId
+        const oldWebsocketId = existingTask.websocketId
+        
+        // 更新任务信息
+        existingTask.websocketId = response.websocketId
+        existingTask.status = '连接中'
+        existingTask.websocket = null
+        existingTask.userQueue = []
+        
+        // 添加分隔日志
+        existingTask.logs.push({
+          time: new Date().toLocaleTimeString(),
+          message: '========== 新任务开始 ==========',
+          type: 'info'
+        })
+        
+        // 更新 activeTaskPanels 数组：移除旧ID，添加新ID
+        const oldPanelIndex = currentTab.value.activeTaskPanels.indexOf(oldWebsocketId)
+        if (oldPanelIndex >= 0) {
+          currentTab.value.activeTaskPanels.splice(oldPanelIndex, 1)
+        }
+        currentTab.value.activeTaskPanels.push(existingTask.websocketId)
+        
+        // 连接新的WebSocket
+        connectWebSocket(existingTask)
+
+        message.success('任务启动成功')
+      } else {
+        // 如果不存在同名任务，创建新任务
+        const task: RunningTask = {
+          websocketId: response.websocketId,
+          taskName,
+          status: '连接中',
+          websocket: null,
+          logs: [],
+          taskQueue: [],
+          userQueue: [],
+        }
+
+        currentTab.value.runningTasks.push(task)
+        currentTab.value.activeTaskPanels.push(task.websocketId)
+
+        // 连接WebSocket
+        connectWebSocket(task)
+
+        message.success('任务启动成功')
       }
-
-      currentTab.value.runningTasks.push(task)
-      currentTab.value.activeTaskPanels.push(task.websocketId)
-
-      // 连接WebSocket
-      connectWebSocket(task)
-
-      message.success('任务启动成功')
 
       // 重置表单
       quickTaskForm.taskId = null
@@ -705,7 +747,7 @@ const executeCompletionAction = (action: string) => {
   }
 }
 
-// 添加任务日志
+// 添加任务日志 - 使用 websocketId 而不是 task 对象
 const addTaskLog = (
   task: RunningTask,
   message: string,
@@ -714,20 +756,30 @@ const addTaskLog = (
   const now = new Date()
   const time = now.toLocaleTimeString()
 
-  // 找到任务在当前调度台中的索引
-  const taskIndex = currentTab.value.runningTasks.findIndex(t => t.websocketId === task.websocketId)
-  if (taskIndex >= 0) {
-    // 直接修改 reactive 数组中的任务对象
-    currentTab.value.runningTasks[taskIndex].logs.push({
-      time,
-      message,
-      type,
-    })
+  // 在所有调度台中查找正确的任务
+  let foundTask = false
+  for (const tab of schedulerTabs.value) {
+    const taskIndex = tab.runningTasks.findIndex(t => t.websocketId === task.websocketId)
+    if (taskIndex >= 0) {
+      // 直接修改 reactive 数组中的任务对象
+      tab.runningTasks[taskIndex].logs.push({
+        time,
+        message,
+        type,
+      })
 
-    // 更新任务状态（如果有变化）
-    if (currentTab.value.runningTasks[taskIndex].status !== task.status) {
-      currentTab.value.runningTasks[taskIndex].status = task.status
+      // 更新任务状态（如果有变化）
+      if (tab.runningTasks[taskIndex].status !== task.status) {
+        tab.runningTasks[taskIndex].status = task.status
+      }
+
+      foundTask = true
+      break
     }
+  }
+
+  if (!foundTask) {
+    console.warn('未找到对应的任务来添加日志，websocketId:', task.websocketId)
   }
 
   // 自动滚动到底部
