@@ -84,6 +84,79 @@
         <a-empty description="暂无活动关卡数据" />
       </div>
     </a-card>
+
+    <!-- 代理状态 -->
+    <a-card title="代理状态" class="proxy-card" :loading="loading">
+      <template #extra>
+        <a-tag :color="getProxyStatusColor()"> {{ Object.keys(proxyData).length }} 个用户</a-tag>
+      </template>
+
+      <div v-if="Object.keys(proxyData).length > 0" class="proxy-list">
+        <a-row :gutter="16">
+          <a-col v-for="(proxy, username) in proxyData" :key="username" :span="8">
+            <div class="proxy-item">
+              <div class="proxy-header">
+                <div class="proxy-username">
+                  <UserOutlined class="user-icon" />
+                  <span class="username">{{ username }}</span>
+                </div>
+                <!--                <div class="proxy-status">-->
+                <!--                  <a-tag :color="proxy.ErrorTimes > 0 ? 'error' : 'success'" size="small">-->
+                <!--                    {{ proxy.ErrorTimes > 0 ? '有错误' : '正常' }}-->
+                <!--                  </a-tag>-->
+                <!--                </div>-->
+              </div>
+
+              <div class="proxy-stats">
+                <!-- 第一行：最后代理时间，独占一行 -->
+                <div class="stat-item full-width">
+                  <a-statistic
+                    title="最后代理时间"
+                    :value="formatProxyDisplay(proxy.LastProxyDate)"
+                  />
+                </div>
+
+                <!-- 第二行：代理次数 和 错误次数 -->
+                <div class="stat-item half-width">
+                  <a-statistic title="代理次数" :value="proxy.ProxyTimes" />
+                </div>
+                <div class="stat-item half-width">
+                  <a-statistic
+                    title="错误次数"
+                    :value="proxy.ErrorTimes"
+                    :value-style="{ color: proxy.ErrorTimes > 0 ? '#ff4d4f' : undefined }"
+                  />
+                </div>
+              </div>
+
+              <!--              &lt;!&ndash; 错误信息 &ndash;&gt;-->
+              <!--              <div-->
+              <!--                v-if="proxy.ErrorTimes > 0 && Object.keys(proxy.ErrorInfo).length > 0"-->
+              <!--                class="proxy-errors"-->
+              <!--              >-->
+              <!--                <a-alert message="错误信息" type="error" show-icon size="small" class="error-alert">-->
+              <!--                  <template #description>-->
+              <!--                    <div class="error-list">-->
+              <!--                      <div-->
+              <!--                        v-for="(errorMsg, errorKey) in proxy.ErrorInfo"-->
+              <!--                        :key="errorKey"-->
+              <!--                        class="error-item"-->
+              <!--                      >-->
+              <!--                        <strong>{{ errorKey }}:</strong> {{ errorMsg }}-->
+              <!--                      </div>-->
+              <!--                    </div>-->
+              <!--                  </template>-->
+              <!--                </a-alert>-->
+              <!--              </div>-->
+            </div>
+          </a-col>
+        </a-row>
+      </div>
+
+      <div v-else-if="!loading" class="empty-state">
+        <a-empty description="暂无代理数据" />
+      </div>
+    </a-card>
   </div>
 </template>
 
@@ -95,8 +168,10 @@ import {
   InfoCircleOutlined,
   CalendarOutlined,
   ClockCircleOutlined,
+  UserOutlined,
 } from '@ant-design/icons-vue'
-import { Service } from '@/api'
+import { Service } from '@/api/services/Service'
+import dayjs from 'dayjs'
 
 interface ActivityInfo {
   Tip: string
@@ -114,15 +189,33 @@ interface ActivityItem {
   Activity: ActivityInfo
 }
 
+interface ProxyInfo {
+  LastProxyDate: string
+  ProxyTimes: number
+  ErrorTimes: number
+  ErrorInfo: Record<string, any>
+}
+
+interface ApiResponse {
+  Stage: ActivityItem[]
+  Proxy: Record<string, ProxyInfo>
+}
+
 const loading = ref(false)
 const error = ref('')
 const activityData = ref<ActivityItem[]>([])
+const proxyData = ref<Record<string, ProxyInfo>>({})
 
 // 获取当前活动信息
 const currentActivity = computed(() => {
   if (!activityData.value.length) return null
   return activityData.value[0]?.Activity
 })
+
+const formatProxyDisplay = (dateStr: string) => {
+  const ts = getProxyTimestamp(dateStr)
+  return dayjs(ts).format('YYYY-MM-DD HH:mm:ss') // 需要别的格式可改这里
+}
 
 // 格式化时间显示 - 直接使用给定时间，不进行时区转换
 const formatTime = (timeString: string, timeZone: number) => {
@@ -180,6 +273,32 @@ const getCountdownStyle = (expireTime: string) => {
   }
 }
 
+const getProxyTimestamp = (dateStr: string) => {
+  if (!dateStr) return Date.now()
+
+  // 1) 先尝试解析中文格式：2025年08月15日 14:01:02
+  //    捕获：年、月、日、时、分、秒
+  const m = dateStr.match(
+    /(\d{4})[年/](\d{1,2})[月/](\d{1,2})[日T\s]+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?/
+  )
+  if (m) {
+    const [, y, mo, d, h, mi, s] = m
+    const ts = new Date(
+      Number(y),
+      Number(mo) - 1,
+      Number(d),
+      Number(h),
+      Number(mi),
+      Number(s ?? 0)
+    ).getTime()
+    if (!Number.isNaN(ts)) return ts
+  }
+
+  // 2) 兜底：尝试让浏览器自己解析
+  const t = new Date(dateStr).getTime()
+  return Number.isNaN(t) ? Date.now() : t
+}
+
 // 倒计时结束回调
 const onCountdownFinish = () => {
   message.warning('活动已结束')
@@ -207,13 +326,19 @@ const fetchActivityData = async () => {
   try {
     const response = await Service.addOverviewApiInfoGetOverviewPost()
 
-    if (response.code === 200 && response.data?.ALL) {
-      activityData.value = response.data.ALL
+    if (response.code === 200) {
+      const data = response.data as ApiResponse
+      if (data.Stage) {
+        activityData.value = data.Stage
+      }
+      if (data.Proxy) {
+        proxyData.value = data.Proxy
+      }
     } else {
-      error.value = response.message || '获取活动数据失败'
+      error.value = response.message || '获取数据失败'
     }
   } catch (err) {
-    console.error('获取活动数据失败:', err)
+    console.error('获取数据失败:', err)
     error.value = '网络请求失败，请检查连接'
   } finally {
     loading.value = false
@@ -225,6 +350,12 @@ const refreshActivity = async () => {
   if (!error.value) {
     message.success('活动数据已刷新')
   }
+}
+
+// 获取代理状态颜色
+const getProxyStatusColor = () => {
+  const hasError = Object.values(proxyData.value).some(proxy => proxy.ErrorTimes > 0)
+  return hasError ? 'error' : 'success'
 }
 
 const greeting = computed(() => {
@@ -313,11 +444,6 @@ onMounted(() => {
   flex-wrap: wrap;
 }
 
-.activity-icon {
-  font-size: 16px;
-  color: var(--ant-color-primary);
-}
-
 .activity-title {
   font-size: 18px;
   font-weight: 600;
@@ -326,19 +452,6 @@ onMounted(() => {
 
 .activity-tip {
   font-size: 12px;
-}
-
-.activity-time {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.time-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 14px;
 }
 
 .time-icon {
@@ -466,6 +579,99 @@ onMounted(() => {
   }
 }
 
+/* 代理状态样式 */
+.proxy-card {
+  margin-bottom: 24px;
+}
+
+.proxy-card :deep(.ant-card-head-title) {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.proxy-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.proxy-item {
+  padding: 16px;
+  background: var(--ant-color-bg-container);
+  border: 1px solid var(--ant-color-border);
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+.proxy-item:hover {
+  border-color: var(--ant-color-primary);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.proxy-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.proxy-username {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.user-icon {
+  font-size: 16px;
+  color: var(--ant-color-primary);
+}
+
+.username {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ant-color-text);
+}
+
+.proxy-status {
+  flex-shrink: 0;
+}
+
+.proxy-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.stat-item {
+  flex: 1;
+  min-width: 0;
+}
+
+.stat-item.full-width {
+  flex: 0 0 100%; /* 占满整行 */
+}
+
+.stat-item.half-width {
+  flex: 0 0 calc(50% - 8px); /* 每个占一半宽度，减去间距 */
+}
+
+.stat-item {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 小屏时自动折行成两列或一列 */
+@media (max-width: 768px) {
+  .proxy-stats {
+    flex-wrap: wrap;
+  }
+
+  .stat-item {
+    flex: 1 1 100%;
+  }
+}
+
 @media (max-width: 768px) {
   .page-container {
     padding: 16px;
@@ -483,6 +689,20 @@ onMounted(() => {
     width: 40px;
     height: 40px;
     margin-right: 8px;
+  }
+
+  .proxy-item {
+    padding: 12px;
+  }
+
+  .proxy-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .proxy-stats :deep(.ant-col) {
+    margin-bottom: 8px;
   }
 }
 </style>
