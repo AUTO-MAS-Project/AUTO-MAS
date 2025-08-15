@@ -85,6 +85,24 @@ async def get_task_combox() -> ComboBoxOut:
 
 
 @router.post(
+    "/combox/plan",
+    summary="获取可选计划下拉框信息",
+    response_model=ComboBoxOut,
+    status_code=200,
+)
+async def get_plan_combox() -> ComboBoxOut:
+
+    try:
+        raw_data = await Config.get_plan_combox()
+        data = [ComboBoxItem(**item) for item in raw_data] if raw_data else []
+    except Exception as e:
+        return ComboBoxOut(
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}", data=[]
+        )
+    return ComboBoxOut(data=data)
+
+
+@router.post(
     "/notice/get", summary="获取通知信息", response_model=NoticeOut, status_code=200
 )
 async def get_notice_info() -> NoticeOut:
@@ -128,6 +146,23 @@ async def confirm_notice() -> OutBase:
 #             code=500, status="error", message=f"{type(e).__name__}: {str(e)}", data={}
 #         )
 #     return InfoOut(data=data)
+
+
+@router.post(
+    "/startuptask",
+    summary="获取启动时运行的队列ID",
+    response_model=InfoOut,
+    status_code=200,
+)
+async def get_startup_task() -> InfoOut:
+
+    try:
+        data = await Config.get_startup_task()
+    except Exception as e:
+        return InfoOut(
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}", data={}
+        )
+    return InfoOut(data={"queueIdList": data})
 
 
 @router.post(
