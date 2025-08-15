@@ -86,41 +86,40 @@
 
                   <!--                  <div class="task-detail-layout">-->
                   <a-row gutter="16" style="height: 100%">
-                    <!-- 任务队列 (20%) -->
+<!--                    &lt;!&ndash; 任务队列  &ndash;&gt;-->
+<!--                    <a-col :span="5">-->
+<!--                      <a-card title="任务队列" size="small" style="height: 100%">-->
+<!--                        <template :style="{ height: 'calc(100% - 40px)', padding: '8px' }">-->
+<!--                          <a-list-->
+<!--                            :data-source="task.taskQueue"-->
+<!--                            size="small"-->
+<!--                            :locale="{ emptyText: '暂无任务队列' }"-->
+<!--                            style="height: 100%; overflow-y: auto"-->
+<!--                          >-->
+<!--                            <template #renderItem="{ item }">-->
+<!--                              <a-list-item>-->
+<!--                                <a-list-item-meta>-->
+<!--                                  <template #title>-->
+<!--                                    <span class="queue-item-title">{{ item.name }}</span>-->
+<!--                                  </template>-->
+<!--                                  <template #description>-->
+<!--                                    <a-tag-->
+<!--                                      :color="getQueueItemStatusColor(item.status)"-->
+<!--                                      size="small"-->
+<!--                                    >-->
+<!--                                      {{ item.status }}-->
+<!--                                    </a-tag>-->
+<!--                                  </template>-->
+<!--                                </a-list-item-meta>-->
+<!--                              </a-list-item>-->
+<!--                            </template>-->
+<!--                          </a-list>-->
+<!--                        </template>-->
+<!--                      </a-card>-->
+<!--                    </a-col>-->
 
-                    <a-col :span="5">
-                      <a-card title="任务队列" size="small" style="height: 100%">
-                        <template :style="{ height: 'calc(100% - 40px)', padding: '8px' }">
-                          <a-list
-                            :data-source="task.taskQueue"
-                            size="small"
-                            :locale="{ emptyText: '暂无任务队列' }"
-                            style="height: 100%; overflow-y: auto"
-                          >
-                            <template #renderItem="{ item }">
-                              <a-list-item>
-                                <a-list-item-meta>
-                                  <template #title>
-                                    <span class="queue-item-title">{{ item.name }}</span>
-                                  </template>
-                                  <template #description>
-                                    <a-tag
-                                      :color="getQueueItemStatusColor(item.status)"
-                                      size="small"
-                                    >
-                                      {{ item.status }}
-                                    </a-tag>
-                                  </template>
-                                </a-list-item-meta>
-                              </a-list-item>
-                            </template>
-                          </a-list>
-                        </template>
-                      </a-card>
-                    </a-col>
-
-                    <!-- 用户队列 (20%) -->
-                    <a-col :span="5">
+                    <!-- 用户队列 -->
+                    <a-col :span="4">
                       <a-card title="用户队列" size="small" style="height: 100%">
                         <template :style="{ height: 'calc(100% - 40px)', padding: '8px' }">
                           <a-list
@@ -151,8 +150,8 @@
                       </a-card>
                     </a-col>
 
-                    <!-- 实时日志 (60%) -->
-                    <a-col :span="14">
+                    <!-- 实时日志 -->
+                    <a-col :span="20">
                       <a-card size="small" style="height: 100%" title="实时日志">
                         <div class="realtime-logs-panel">
                           <!--                          <a-row justify="space-between" align="middle" style="margin-bottom: 8px">-->
