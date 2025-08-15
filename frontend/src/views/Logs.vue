@@ -4,7 +4,7 @@
       <h2>系统日志</h2>
       <p>查看应用运行日志，支持搜索、过滤和导出功能</p>
     </div>
-    
+
     <div class="logs-content">
       <LogViewer />
     </div>

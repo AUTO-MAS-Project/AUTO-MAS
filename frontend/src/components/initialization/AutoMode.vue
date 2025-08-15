@@ -78,7 +78,7 @@ function handleForceEnterConfirm() {
 
 // 事件处理
 function handleSwitchToManual() {
-  aborted.value = true  // 设置中断
+  aborted.value = true // 设置中断
   props.onSwitchToManual()
 }
 
@@ -117,19 +117,19 @@ async function startAutoProcess() {
     let pipMirror = config.selectedPipMirror || 'tsinghua'
     let pipResult = await window.electronAPI.installDependencies(pipMirror)
     if (aborted.value) return
-    
+
     // 如果初始化时的镜像源不通，让用户重新选择
     if (!pipResult.success) {
       logger.warn(`使用镜像源 ${pipMirror} 安装依赖失败，需要重新选择镜像源`)
-      
+
       // 切换到手动模式让用户重新选择镜像源
       progressText.value = '依赖安装失败，需要重新配置镜像源'
       progressStatus.value = 'exception'
-      
+
       setTimeout(() => {
         progressText.value = '请点击下方按钮重新配置环境'
       }, 2000)
-      
+
       return
     }
 

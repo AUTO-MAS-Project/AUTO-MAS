@@ -19,9 +19,7 @@
       :scroll="{ x: 600 }"
     >
       <template #bodyCell="{ column, record, index }">
-        <template v-if="column.key === 'index'">
-          第{{ index + 1 }}个脚本
-        </template>
+        <template v-if="column.key === 'index'"> 第{{ index + 1 }}个脚本 </template>
         <template v-else-if="column.key === 'script'">
           {{ getScriptName(record.script) }}
         </template>
@@ -31,7 +29,12 @@
               <EditOutlined />
               编辑
             </a-button>
-            <a-popconfirm title="确定要删除这个队列项吗？" @confirm="deleteQueueItem(record.id)" ok-text="确定" cancel-text="取消">
+            <a-popconfirm
+              title="确定要删除这个队列项吗？"
+              @confirm="deleteQueueItem(record.id)"
+              ok-text="确定"
+              cancel-text="取消"
+            >
               <a-button size="small" danger>
                 <DeleteOutlined />
                 删除
@@ -47,11 +50,22 @@
     </div>
 
     <!-- 队列项编辑弹窗 -->
-    <a-modal v-model:open="modalVisible" :title="editingQueueItem ? '编辑队列项' : '添加队列项'" @ok="saveQueueItem"
-      @cancel="cancelEdit" :confirm-loading="saving" width="600px">
+    <a-modal
+      v-model:open="modalVisible"
+      :title="editingQueueItem ? '编辑队列项' : '添加队列项'"
+      @ok="saveQueueItem"
+      @cancel="cancelEdit"
+      :confirm-loading="saving"
+      width="600px"
+    >
       <a-form ref="formRef" :model="form" :rules="rules" layout="vertical">
         <a-form-item label="关联脚本" name="script">
-          <a-select v-model:value="form.script" placeholder="请选择关联脚本" allow-clear :options="scriptOptions" />
+          <a-select
+            v-model:value="form.script"
+            placeholder="请选择关联脚本"
+            allow-clear
+            :options="scriptOptions"
+          />
         </a-form-item>
       </a-form>
     </a-modal>
@@ -66,7 +80,7 @@ import {
   ReloadOutlined,
   EditOutlined,
   DeleteOutlined,
-  MoreOutlined
+  MoreOutlined,
 } from '@ant-design/icons-vue'
 import { Service } from '@/api'
 import type { FormInstance } from 'ant-design-vue'
@@ -103,12 +117,12 @@ const getScriptName = (scriptId: string) => {
 // 表单引用和数据
 const formRef = ref<FormInstance>()
 const form = reactive({
-  script: ''
+  script: '',
 })
 
 // 表单验证规则
 const rules = {
-  script: [{ required: true, message: '请选择关联脚本', trigger: 'change' }]
+  script: [{ required: true, message: '请选择关联脚本', trigger: 'change' }],
 }
 
 // 表格列配置
@@ -135,10 +149,13 @@ const queueColumns = [
 const queueItems = ref(props.queueItems)
 
 // 监听props变化
-watch(() => props.queueItems, (newQueueItems) => {
-  queueItems.value = newQueueItems
-}, { deep: true })
-
+watch(
+  () => props.queueItems,
+  newQueueItems => {
+    queueItems.value = newQueueItems
+  },
+  { deep: true }
+)
 
 // 加载脚本选项
 const loadOptions = async () => {
@@ -161,12 +178,11 @@ const loadOptions = async () => {
   }
 }
 
-
 // 添加队列项
 const addQueueItem = async () => {
   editingQueueItem.value = null
   Object.assign(form, {
-    script: ''
+    script: '',
   })
 
   // 确保在打开弹窗时加载脚本选项
@@ -178,7 +194,7 @@ const addQueueItem = async () => {
 const editQueueItem = async (item: any) => {
   editingQueueItem.value = item
   Object.assign(form, {
-    script: item.script || ''
+    script: item.script || '',
   })
 
   // 确保在打开弹窗时加载脚本选项
@@ -199,9 +215,9 @@ const saveQueueItem = async () => {
         queueItemId: editingQueueItem.value.id,
         data: {
           Info: {
-            ScriptId: form.script
-          }
-        }
+            ScriptId: form.script,
+          },
+        },
       })
 
       if (response.code === 200) {
@@ -214,7 +230,7 @@ const saveQueueItem = async () => {
       // 添加队列项 - 先创建，再更新
       // 1. 先创建队列项，只传queueId
       const createResponse = await Service.addItemApiQueueItemAddPost({
-        queueId: props.queueId
+        queueId: props.queueId,
       })
 
       // 2. 用返回的queueItemId更新队列项数据
@@ -224,9 +240,9 @@ const saveQueueItem = async () => {
           queueItemId: createResponse.queueItemId,
           data: {
             Info: {
-              ScriptId: form.script
-            }
-          }
+              ScriptId: form.script,
+            },
+          },
         })
 
         if (updateResponse.code === 200) {
@@ -262,7 +278,7 @@ const deleteQueueItem = async (itemId: string) => {
   try {
     const response = await Service.deleteItemApiQueueItemDeletePost({
       queueId: props.queueId,
-      queueItemId: itemId
+      queueItemId: itemId,
     })
 
     if (response.code === 200) {

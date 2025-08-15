@@ -13,8 +13,8 @@
       <div class="setting-group">
         <label>主题色彩</label>
         <div class="color-picker">
-          <div 
-            v-for="(color, key) in themeColors" 
+          <div
+            v-for="(color, key) in themeColors"
             :key="key"
             class="color-option"
             :class="{ active: selectedThemeColor === key }"
@@ -51,9 +51,9 @@ async function onThemeColorChange(color: ThemeColor) {
 
 async function saveSettings() {
   await saveThemeConfig(selectedThemeMode.value, selectedThemeColor.value)
-  console.log('主题设置已保存:', { 
-    themeMode: selectedThemeMode.value, 
-    themeColor: selectedThemeColor.value 
+  console.log('主题设置已保存:', {
+    themeMode: selectedThemeMode.value,
+    themeColor: selectedThemeColor.value,
   })
 }
 
@@ -64,9 +64,9 @@ async function loadSettings() {
     selectedThemeColor.value = config.themeColor
     setThemeMode(selectedThemeMode.value)
     setThemeColor(selectedThemeColor.value)
-    console.log('主题设置已加载:', { 
-      themeMode: selectedThemeMode.value, 
-      themeColor: selectedThemeColor.value 
+    console.log('主题设置已加载:', {
+      themeMode: selectedThemeMode.value,
+      themeColor: selectedThemeColor.value,
     })
   } catch (error) {
     console.warn('Failed to load theme settings:', error)
@@ -78,7 +78,7 @@ defineExpose({
   loadSettings,
   saveSettings,
   selectedThemeMode,
-  selectedThemeColor
+  selectedThemeColor,
 })
 
 // 组件挂载时加载设置

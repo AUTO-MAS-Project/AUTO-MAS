@@ -154,28 +154,27 @@
                     <!-- 实时日志 (60%) -->
                     <a-col :span="14">
                       <a-card size="small" style="height: 100%" title="实时日志">
-
                         <div class="realtime-logs-panel">
-<!--                          <a-row justify="space-between" align="middle" style="margin-bottom: 8px">-->
-<!--                            &lt;!&ndash; 左侧标题 &ndash;&gt;-->
-<!--                            <a-col :span="12">-->
-<!--                              <div class="log-title">实时日志</div>-->
-<!--                            </a-col>-->
+                          <!--                          <a-row justify="space-between" align="middle" style="margin-bottom: 8px">-->
+                          <!--                            &lt;!&ndash; 左侧标题 &ndash;&gt;-->
+                          <!--                            <a-col :span="12">-->
+                          <!--                              <div class="log-title">实时日志</div>-->
+                          <!--                            </a-col>-->
 
-<!--                            &lt;!&ndash; 右侧清空按钮 &ndash;&gt;-->
-<!--                            <a-col :span="12" style="text-align: right">-->
-<!--                              <div class="clear-button">-->
-<!--                                <a-button-->
-<!--                                  type="default"-->
-<!--                                  size="small"-->
-<!--                                  @click="clearTaskOutput(task.websocketId)"-->
-<!--                                  :icon="h(ClearOutlined)"-->
-<!--                                >-->
-<!--                                  清空-->
-<!--                                </a-button>-->
-<!--                              </div>-->
-<!--                            </a-col>-->
-<!--                          </a-row>-->
+                          <!--                            &lt;!&ndash; 右侧清空按钮 &ndash;&gt;-->
+                          <!--                            <a-col :span="12" style="text-align: right">-->
+                          <!--                              <div class="clear-button">-->
+                          <!--                                <a-button-->
+                          <!--                                  type="default"-->
+                          <!--                                  size="small"-->
+                          <!--                                  @click="clearTaskOutput(task.websocketId)"-->
+                          <!--                                  :icon="h(ClearOutlined)"-->
+                          <!--                                >-->
+                          <!--                                  清空-->
+                          <!--                                </a-button>-->
+                          <!--                              </div>-->
+                          <!--                            </a-col>-->
+                          <!--                          </a-row>-->
                           <div
                             class="panel-content log-content"
                             :ref="el => setOutputRef(el as HTMLElement, task.websocketId)"
@@ -624,17 +623,17 @@ const handleWebSocketMessage = (task: RunningTask, data: any) => {
 
     case 'Info':
       // 通知信息
-      let level = 'info';
-      let content = '未知通知';
+      let level = 'info'
+      let content = '未知通知'
 
       // 检查数据中是否有 Error 字段
       if (data.data?.Error) {
         // 如果是错误信息，设置为 error 级别
-        level = 'error';
-        content = data.data.Error; // 错误信息内容
+        level = 'error'
+        content = data.data.Error // 错误信息内容
       } else {
         // 如果没有 Error 字段，继续处理 val 或 message 字段
-        content = data.data?.val || data.data?.message || '未知通知';
+        content = data.data?.val || data.data?.message || '未知通知'
       }
 
       addTaskLog(task, content, level as any)

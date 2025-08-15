@@ -83,7 +83,6 @@
           row-key="id"
           class="user-table"
         >
-
           <template #bodyCell="{ column, record: user }">
             <template v-if="column.key === 'server'">
               <div class="server-cell">
@@ -102,7 +101,10 @@
 
             <template v-if="column.key === 'lastRun'">
               <div class="last-run-cell">
-                <div v-if="!user.Data.LastAnnihilationDate && !user.Data.LastProxyDate" class="no-run-text">
+                <div
+                  v-if="!user.Data.LastAnnihilationDate && !user.Data.LastProxyDate"
+                  class="no-run-text"
+                >
                   尚未运行
                 </div>
                 <template v-else>
@@ -117,7 +119,6 @@
                 </template>
               </div>
             </template>
-
 
             <template v-if="column.key === 'userAction'">
               <a-space size="small">

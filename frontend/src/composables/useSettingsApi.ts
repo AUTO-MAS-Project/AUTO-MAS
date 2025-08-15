@@ -14,7 +14,7 @@ export function useSettingsApi() {
 
     try {
       const response = await Service.getScriptsApiSettingGetPost()
-      
+
       // 根据code判断是否成功（非200就是不成功）
       if (response.code !== 200) {
         const errorMsg = response.message || '获取设置失败'
@@ -42,9 +42,9 @@ export function useSettingsApi() {
 
     try {
       const response = await Service.updateScriptApiSettingUpdatePost({
-        data: settings
+        data: settings,
       })
-      
+
       // 根据code判断是否成功（非200就是不成功）
       if (response.code !== 200) {
         const errorMsg = response.message || '设置修改失败'

@@ -14,11 +14,11 @@ export function useScriptApi() {
 
     try {
       const requestData: ScriptCreateIn = {
-        type: type === 'MAA' ? ScriptCreateIn.type.MAA : ScriptCreateIn.type.GENERAL
+        type: type === 'MAA' ? ScriptCreateIn.type.MAA : ScriptCreateIn.type.GENERAL,
       }
 
       const response = await Service.addScriptApiScriptsAddPost(requestData)
-      
+
       if (response.code !== 200) {
         const errorMsg = response.message || '添加脚本失败'
         message.error(errorMsg)
@@ -28,7 +28,7 @@ export function useScriptApi() {
       return {
         scriptId: response.scriptId,
         message: response.message || '脚本添加成功',
-        data: response.data
+        data: response.data,
       }
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : '添加脚本失败'
@@ -49,7 +49,7 @@ export function useScriptApi() {
 
     try {
       const response = await Service.getScriptsApiScriptsGetPost({})
-      
+
       if (response.code !== 200) {
         const errorMsg = response.message || '获取脚本列表失败'
         message.error(errorMsg)
@@ -84,7 +84,7 @@ export function useScriptApi() {
 
     try {
       const response = await Service.getScriptsApiScriptsGetPost({ scriptId })
-      
+
       if (response.code !== 200) {
         const errorMsg = response.message || '获取脚本详情失败'
         message.error(errorMsg)
@@ -105,7 +105,7 @@ export function useScriptApi() {
         type: scriptType,
         name: config?.Info?.Name || `${item.type}脚本`,
         config,
-        createTime: new Date().toLocaleString()
+        createTime: new Date().toLocaleString(),
       }
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : '获取脚本详情失败'
@@ -126,7 +126,7 @@ export function useScriptApi() {
 
     try {
       const response = await Service.deleteScriptApiScriptsDeletePost({ scriptId })
-      
+
       if (response.code !== 200) {
         const errorMsg = response.message || '删除脚本失败'
         message.error(errorMsg)
@@ -155,11 +155,11 @@ export function useScriptApi() {
       // 创建数据副本并移除 SubConfigsInfo 字段
       const { SubConfigsInfo, ...dataToSend } = data
 
-      const response = await Service.updateScriptApiScriptsUpdatePost({ 
-        scriptId, 
-        data: dataToSend 
+      const response = await Service.updateScriptApiScriptsUpdatePost({
+        scriptId,
+        data: dataToSend,
       })
-      
+
       if (response.code !== 200) {
         const errorMsg = response.message || '更新脚本失败'
         message.error(errorMsg)

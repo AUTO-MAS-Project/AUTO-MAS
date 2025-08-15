@@ -3,24 +3,24 @@
     <h3>安装 pip 包管理器</h3>
     <div v-if="!pipInstalled" class="install-section">
       <p>pip 是 Python 的包管理工具，用于安装和管理 Python 包</p>
-      
+
       <div class="pip-info">
-        <a-alert 
-          message="pip 安装信息" 
+        <a-alert
+          message="pip 安装信息"
           description="将自动下载并安装 pip 包管理器，这是安装 Python 依赖包的必要工具。"
-          type="info" 
-          show-icon 
+          type="info"
+          show-icon
         />
       </div>
     </div>
     <div v-else class="already-installed">
       <a-result status="success" title="pip已成功安装，无需继续安装" />
-<!--      <div class="reinstall-section">-->
-<!--        <a-button type="primary" danger @click="handleForceReinstall" :loading="reinstalling">-->
-<!--          {{ reinstalling ? '正在重新安装...' : '强制重新安装' }}-->
-<!--        </a-button>-->
-<!--        <p class="reinstall-note">点击此按钮将删除现有pip环境并重新安装</p>-->
-<!--      </div>-->
+      <!--      <div class="reinstall-section">-->
+      <!--        <a-button type="primary" danger @click="handleForceReinstall" :loading="reinstalling">-->
+      <!--          {{ reinstalling ? '正在重新安装...' : '强制重新安装' }}-->
+      <!--        </a-button>-->
+      <!--        <p class="reinstall-note">点击此按钮将删除现有pip环境并重新安装</p>-->
+      <!--      </div>-->
     </div>
   </div>
 </template>
@@ -44,13 +44,13 @@ async function handleForceReinstall() {
     if (!deleteResult.success) {
       throw new Error(`删除pip失败: ${deleteResult.error}`)
     }
-    
+
     // 重新安装pip
     const installResult = await window.electronAPI.installPip()
     if (!installResult.success) {
       throw new Error(`重新安装pip失败: ${installResult.error}`)
     }
-    
+
     console.log('pip强制重新安装成功')
     // 通知父组件更新状态
     window.location.reload() // 简单的页面刷新来更新状态
@@ -63,7 +63,7 @@ async function handleForceReinstall() {
 }
 
 defineExpose({
-  handleForceReinstall
+  handleForceReinstall,
 })
 </script>
 

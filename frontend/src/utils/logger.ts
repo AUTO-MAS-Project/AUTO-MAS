@@ -34,7 +34,7 @@ class Logger {
       level,
       message,
       data,
-      component
+      component,
     }
 
     // 添加到内存日志
@@ -48,7 +48,7 @@ class Logger {
     // 输出到控制台
     if (this.logToConsole) {
       const consoleMessage = `[${logEntry.timestamp}] [${level.toUpperCase()}] ${component ? `[${component}] ` : ''}${message}`
-      
+
       switch (level) {
         case 'debug':
           console.debug(consoleMessage, data)
@@ -133,7 +133,7 @@ class Logger {
         return `[${log.timestamp}] [${log.level.toUpperCase()}]${componentStr} ${log.message}${dataStr}`
       })
       .join('\n')
-    
+
     return logText
   }
 
@@ -142,14 +142,14 @@ class Logger {
     const logText = this.exportLogs()
     const blob = new Blob([logText], { type: 'text/plain;charset=utf-8' })
     const url = URL.createObjectURL(blob)
-    
+
     const link = document.createElement('a')
     link.href = url
     link.download = `auto-maa-logs-${new Date().toISOString().split('T')[0]}.txt`
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
-    
+
     URL.revokeObjectURL(url)
   }
 
@@ -188,5 +188,5 @@ export default {
   install(app: any) {
     app.config.globalProperties.$logger = logger
     app.provide('logger', logger)
-  }
+  },
 }

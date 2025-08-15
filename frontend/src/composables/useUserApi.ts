@@ -14,11 +14,11 @@ export function useUserApi() {
 
     try {
       const requestData: UserInBase = {
-        scriptId
+        scriptId,
       }
 
       const response = await Service.addUserApiScriptsUserAddPost(requestData)
-      
+
       if (response.code !== 200) {
         const errorMsg = response.message || '添加用户失败'
         message.error(errorMsg)
@@ -39,7 +39,11 @@ export function useUserApi() {
   }
 
   // 更新用户
-  const updateUser = async (scriptId: string, userId: string, userData: Record<string, Record<string, any>>): Promise<boolean> => {
+  const updateUser = async (
+    scriptId: string,
+    userId: string,
+    userData: Record<string, Record<string, any>>
+  ): Promise<boolean> => {
     loading.value = true
     error.value = null
 
@@ -47,11 +51,11 @@ export function useUserApi() {
       const requestData: UserUpdateIn = {
         scriptId,
         userId,
-        data: userData
+        data: userData,
       }
 
       const response = await Service.updateUserApiScriptsUserUpdatePost(requestData)
-      
+
       if (response.code !== 200) {
         const errorMsg = response.message || '更新用户失败'
         message.error(errorMsg)
@@ -80,11 +84,11 @@ export function useUserApi() {
     try {
       const requestData: UserDeleteIn = {
         scriptId,
-        userId
+        userId,
       }
 
       const response = await Service.deleteUserApiScriptsUserDeletePost(requestData)
-      
+
       if (response.code !== 200) {
         const errorMsg = response.message || '删除用户失败'
         message.error(errorMsg)

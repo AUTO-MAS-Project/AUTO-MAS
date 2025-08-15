@@ -3,10 +3,10 @@
     <h3>获取后端源码</h3>
     <div class="install-section">
       <p>{{ backendExists ? '更新最新的后端代码' : '获取后端源代码' }}</p>
-      
+
       <div class="mirror-grid">
-        <div 
-          v-for="mirror in gitMirrors" 
+        <div
+          v-for="mirror in gitMirrors"
           :key="mirror.key"
           class="mirror-card"
           :class="{ active: selectedGitMirror === mirror.key }"
@@ -24,7 +24,7 @@
           <div class="mirror-url">{{ mirror.url }}</div>
         </div>
       </div>
-      
+
       <div class="test-actions">
         <a-button @click="testGitMirrorSpeed" :loading="testingGitSpeed" type="primary">
           {{ testingGitSpeed ? '测速中...' : '开始测速' }}
@@ -54,7 +54,6 @@ import { GIT_MIRRORS } from '@/config/mirrors'
 
 const gitMirrors = ref<Mirror[]>(GIT_MIRRORS)
 
-
 const selectedGitMirror = ref('github')
 const testingGitSpeed = ref(false)
 
@@ -81,17 +80,17 @@ async function saveMirrorConfig() {
 
 async function testMirrorWithTimeout(url: string, timeout = 3000): Promise<number> {
   const startTime = Date.now()
-  
+
   try {
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), timeout)
-    
-    await fetch(url.replace('.git', ''), { 
-      method: 'HEAD', 
+
+    await fetch(url.replace('.git', ''), {
+      method: 'HEAD',
       mode: 'no-cors',
-      signal: controller.signal
+      signal: controller.signal,
     })
-    
+
     clearTimeout(timeoutId)
     return Date.now() - startTime
   } catch (error) {
@@ -102,14 +101,14 @@ async function testMirrorWithTimeout(url: string, timeout = 3000): Promise<numbe
 async function testGitMirrorSpeed() {
   testingGitSpeed.value = true
   try {
-    const promises = gitMirrors.value.map(async (mirror) => {
+    const promises = gitMirrors.value.map(async mirror => {
       mirror.speed = await testMirrorWithTimeout(mirror.url)
       return mirror
     })
-    
+
     await Promise.all(promises)
     gitMirrors.value.sort((a, b) => (a.speed || 9999) - (b.speed || 9999))
-    
+
     const fastest = gitMirrors.value.find(m => m.speed !== 9999)
     if (fastest) {
       selectedGitMirror.value = fastest.key
@@ -131,14 +130,14 @@ function getSpeedClass(speed: number | null) {
 defineExpose({
   selectedGitMirror,
   testGitMirrorSpeed,
-  gitMirrors
+  gitMirrors,
 })
 
 // 组件挂载时加载配置并自动开始测速
 onMounted(async () => {
   // 先加载配置
   await loadMirrorConfig()
-  
+
   console.log('BackendStep 组件挂载，自动开始测速')
   setTimeout(() => {
     testGitMirrorSpeed()

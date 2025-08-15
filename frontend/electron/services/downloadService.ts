@@ -18,7 +18,6 @@ export function downloadFile(url: string, outputPath: string): Promise<void> {
     // 创建HTTP客户端，兼容https和http
     const client = url.startsWith('https') ? https : http
 
-
     client
       .get(url, response => {
         const totalSize = parseInt(response.headers['content-length'] || '0', 10)

@@ -184,7 +184,7 @@ const handleThemeColorChange = (value: SelectValue) => {
 
 const openDevTools = () => {
   if ((window as any).electronAPI) {
-    ; (window as any).electronAPI.openDevTools()
+    ;(window as any).electronAPI.openDevTools()
   }
 }
 
@@ -204,21 +204,31 @@ onMounted(() => {
             <div class="setting-item">
               <h4>主题模式</h4>
               <p class="setting-description">选择应用程序的外观主题</p>
-              <Radio.Group :value="themeMode" @change="handleThemeModeChange" :options="themeModeOptions" />
+              <Radio.Group
+                :value="themeMode"
+                @change="handleThemeModeChange"
+                :options="themeModeOptions"
+              />
             </div>
             <Divider />
             <div class="setting-item">
               <h4>主题色</h4>
               <p class="setting-description">选择应用程序的主色调</p>
               <Select :value="themeColor" @change="handleThemeColorChange" style="width: 200px">
-                <Select.Option v-for="option in themeColorOptions" :key="option.value" :value="option.value">
+                <Select.Option
+                  v-for="option in themeColorOptions"
+                  :key="option.value"
+                  :value="option.value"
+                >
                   <div style="display: flex; align-items: center; gap: 8px">
-                    <div :style="{
-                      width: '16px',
-                      height: '16px',
-                      borderRadius: '50%',
-                      backgroundColor: option.color,
-                    }" />
+                    <div
+                      :style="{
+                        width: '16px',
+                        height: '16px',
+                        borderRadius: '50%',
+                        backgroundColor: option.color,
+                      }"
+                    />
                     {{ option.label }}
                   </div>
                 </Select.Option>
@@ -235,9 +245,12 @@ onMounted(() => {
             <div class="setting-item">
               <h4>Boss键</h4>
               <p class="setting-description">设置快速隐藏窗口的快捷键</p>
-              <Input v-model:value="settings.Function.BossKey"
-                @blur="handleSettingChange('Function', 'BossKey', settings.Function.BossKey)" placeholder="例如: Ctrl+H"
-                style="width: 300px" />
+              <Input
+                v-model:value="settings.Function.BossKey"
+                @blur="handleSettingChange('Function', 'BossKey', settings.Function.BossKey)"
+                placeholder="例如: Ctrl+H"
+                style="width: 300px"
+              />
             </div>
 
             <Divider />
@@ -245,9 +258,12 @@ onMounted(() => {
             <div class="setting-item">
               <h4>历史记录保留时间</h4>
               <p class="setting-description">设置历史记录的保留时间</p>
-              <Select v-model:value="settings.Function.HistoryRetentionTime"
-                @change="(value) => handleSettingChange('Function', 'HistoryRetentionTime', value)"
-                :options="historyRetentionOptions" style="width: 200px" />
+              <Select
+                v-model:value="settings.Function.HistoryRetentionTime"
+                @change="value => handleSettingChange('Function', 'HistoryRetentionTime', value)"
+                :options="historyRetentionOptions"
+                style="width: 200px"
+              />
             </div>
 
             <Divider />
@@ -255,9 +271,12 @@ onMounted(() => {
             <div class="setting-item">
               <h4>主页图像模式</h4>
               <p class="setting-description">选择主页显示的图像模式</p>
-              <Select v-model:value="settings.Function.HomeImageMode"
-                @change="(value) => handleSettingChange('Function', 'HomeImageMode', value)"
-                :options="homeImageModeOptions" style="width: 200px" />
+              <Select
+                v-model:value="settings.Function.HomeImageMode"
+                @change="value => handleSettingChange('Function', 'HomeImageMode', value)"
+                :options="homeImageModeOptions"
+                style="width: 200px"
+              />
             </div>
 
             <Divider />
@@ -266,28 +285,40 @@ onMounted(() => {
               <h4>功能开关</h4>
               <Space direction="vertical" size="middle">
                 <div class="switch-item">
-                  <Switch v-model:checked="settings.Function.IfAllowSleep"
-                    @change="(checked) => handleSettingChange('Function', 'IfAllowSleep', checked)" />
+                  <Switch
+                    v-model:checked="settings.Function.IfAllowSleep"
+                    @change="checked => handleSettingChange('Function', 'IfAllowSleep', checked)"
+                  />
                   <span class="switch-label">启动时阻止系统休眠</span>
                 </div>
                 <div class="switch-item">
-                  <Switch v-model:checked="settings.Function.IfSilence"
-                    @change="(checked) => handleSettingChange('Function', 'IfSilence', checked)" />
+                  <Switch
+                    v-model:checked="settings.Function.IfSilence"
+                    @change="checked => handleSettingChange('Function', 'IfSilence', checked)"
+                  />
                   <span class="switch-label">静默模式</span>
                 </div>
                 <div class="switch-item">
-                  <Switch v-model:checked="settings.Function.UnattendedMode"
-                    @change="(checked) => handleSettingChange('Function', 'UnattendedMode', checked)" />
+                  <Switch
+                    v-model:checked="settings.Function.UnattendedMode"
+                    @change="checked => handleSettingChange('Function', 'UnattendedMode', checked)"
+                  />
                   <span class="switch-label">无人值守模式</span>
                 </div>
                 <div class="switch-item">
-                  <Switch v-model:checked="settings.Function.IfAgreeBilibili"
-                    @change="(checked) => handleSettingChange('Function', 'IfAgreeBilibili', checked)" />
+                  <Switch
+                    v-model:checked="settings.Function.IfAgreeBilibili"
+                    @change="checked => handleSettingChange('Function', 'IfAgreeBilibili', checked)"
+                  />
                   <span class="switch-label">托管Bilibili游戏隐私政策</span>
                 </div>
                 <div class="switch-item">
-                  <Switch v-model:checked="settings.Function.IfSkipMumuSplashAds"
-                    @change="(checked) => handleSettingChange('Function', 'IfSkipMumuSplashAds', checked)" />
+                  <Switch
+                    v-model:checked="settings.Function.IfSkipMumuSplashAds"
+                    @change="
+                      checked => handleSettingChange('Function', 'IfSkipMumuSplashAds', checked)
+                    "
+                  />
                   <span class="switch-label">跳过MuMu模拟器启动广告</span>
                 </div>
               </Space>
@@ -303,9 +334,12 @@ onMounted(() => {
             <div class="setting-item">
               <h4>任务结果推送时间</h4>
               <p class="setting-description">设置何时推送任务执行结果</p>
-              <Select v-model:value="settings.Notify.SendTaskResultTime"
-                @change="(value) => handleSettingChange('Notify', 'SendTaskResultTime', value)"
-                :options="sendTaskResultTimeOptions" style="width: 200px" />
+              <Select
+                v-model:value="settings.Notify.SendTaskResultTime"
+                @change="value => handleSettingChange('Notify', 'SendTaskResultTime', value)"
+                :options="sendTaskResultTimeOptions"
+                style="width: 200px"
+              />
             </div>
 
             <Divider />
@@ -314,18 +348,24 @@ onMounted(() => {
               <h4>通知开关</h4>
               <Space direction="vertical" size="middle">
                 <div class="switch-item">
-                  <Switch v-model:checked="settings.Notify.IfSendStatistic"
-                    @change="(checked) => handleSettingChange('Notify', 'IfSendStatistic', checked)" />
+                  <Switch
+                    v-model:checked="settings.Notify.IfSendStatistic"
+                    @change="checked => handleSettingChange('Notify', 'IfSendStatistic', checked)"
+                  />
                   <span class="switch-label">发送统计信息</span>
                 </div>
                 <div class="switch-item">
-                  <Switch v-model:checked="settings.Notify.IfSendSixStar"
-                    @change="(checked) => handleSettingChange('Notify', 'IfSendSixStar', checked)" />
+                  <Switch
+                    v-model:checked="settings.Notify.IfSendSixStar"
+                    @change="checked => handleSettingChange('Notify', 'IfSendSixStar', checked)"
+                  />
                   <span class="switch-label">发送六星通知</span>
                 </div>
                 <div class="switch-item">
-                  <Switch v-model:checked="settings.Notify.IfPushPlyer"
-                    @change="(checked) => handleSettingChange('Notify', 'IfPushPlyer', checked)" />
+                  <Switch
+                    v-model:checked="settings.Notify.IfPushPlyer"
+                    @change="checked => handleSettingChange('Notify', 'IfPushPlyer', checked)"
+                  />
                   <span class="switch-label">启用PushPlus推送</span>
                 </div>
               </Space>
@@ -337,33 +377,61 @@ onMounted(() => {
               <h4>邮件通知</h4>
               <Space direction="vertical" size="middle" style="width: 100%">
                 <div class="switch-item">
-                  <Switch v-model:checked="settings.Notify.IfSendMail"
-                    @change="(checked) => handleSettingChange('Notify', 'IfSendMail', checked)" />
+                  <Switch
+                    v-model:checked="settings.Notify.IfSendMail"
+                    @change="checked => handleSettingChange('Notify', 'IfSendMail', checked)"
+                  />
                   <span class="switch-label">启用邮件通知</span>
                 </div>
                 <div class="input-group">
                   <label>SMTP服务器地址</label>
-                  <Input v-model:value="settings.Notify.SMTPServerAddress"
-                    @blur="handleSettingChange('Notify', 'SMTPServerAddress', settings.Notify.SMTPServerAddress)"
-                    placeholder="例如: smtp.gmail.com" style="width: 300px" />
+                  <Input
+                    v-model:value="settings.Notify.SMTPServerAddress"
+                    @blur="
+                      handleSettingChange(
+                        'Notify',
+                        'SMTPServerAddress',
+                        settings.Notify.SMTPServerAddress
+                      )
+                    "
+                    placeholder="例如: smtp.gmail.com"
+                    style="width: 300px"
+                  />
                 </div>
                 <div class="input-group">
                   <label>授权码</label>
-                  <Input.Password v-model:value="settings.Notify.AuthorizationCode"
-                    @blur="handleSettingChange('Notify', 'AuthorizationCode', settings.Notify.AuthorizationCode)"
-                    placeholder="邮箱授权码" style="width: 300px" />
+                  <Input.Password
+                    v-model:value="settings.Notify.AuthorizationCode"
+                    @blur="
+                      handleSettingChange(
+                        'Notify',
+                        'AuthorizationCode',
+                        settings.Notify.AuthorizationCode
+                      )
+                    "
+                    placeholder="邮箱授权码"
+                    style="width: 300px"
+                  />
                 </div>
                 <div class="input-group">
                   <label>发件人地址</label>
-                  <Input v-model:value="settings.Notify.FromAddress"
-                    @blur="handleSettingChange('Notify', 'FromAddress', settings.Notify.FromAddress)"
-                    placeholder="发件人邮箱地址" style="width: 300px" />
+                  <Input
+                    v-model:value="settings.Notify.FromAddress"
+                    @blur="
+                      handleSettingChange('Notify', 'FromAddress', settings.Notify.FromAddress)
+                    "
+                    placeholder="发件人邮箱地址"
+                    style="width: 300px"
+                  />
                 </div>
                 <div class="input-group">
                   <label>收件人地址</label>
-                  <Input v-model:value="settings.Notify.ToAddress"
-                    @blur="handleSettingChange('Notify', 'ToAddress', settings.Notify.ToAddress)" placeholder="收件人邮箱地址"
-                    style="width: 300px" />
+                  <Input
+                    v-model:value="settings.Notify.ToAddress"
+                    @blur="handleSettingChange('Notify', 'ToAddress', settings.Notify.ToAddress)"
+                    placeholder="收件人邮箱地址"
+                    style="width: 300px"
+                  />
                 </div>
               </Space>
             </div>
@@ -374,15 +442,22 @@ onMounted(() => {
               <h4>Server酱通知</h4>
               <Space direction="vertical" size="middle" style="width: 100%">
                 <div class="switch-item">
-                  <Switch v-model:checked="settings.Notify.IfServerChan"
-                    @change="(checked) => handleSettingChange('Notify', 'IfServerChan', checked)" />
+                  <Switch
+                    v-model:checked="settings.Notify.IfServerChan"
+                    @change="checked => handleSettingChange('Notify', 'IfServerChan', checked)"
+                  />
                   <span class="switch-label">启用Server酱通知</span>
                 </div>
                 <div class="input-group">
                   <label>Server酱Key</label>
-                  <Input v-model:value="settings.Notify.ServerChanKey"
-                    @blur="handleSettingChange('Notify', 'ServerChanKey', settings.Notify.ServerChanKey)"
-                    placeholder="Server酱推送Key" style="width: 300px" />
+                  <Input
+                    v-model:value="settings.Notify.ServerChanKey"
+                    @blur="
+                      handleSettingChange('Notify', 'ServerChanKey', settings.Notify.ServerChanKey)
+                    "
+                    placeholder="Server酱推送Key"
+                    style="width: 300px"
+                  />
                 </div>
               </Space>
             </div>
@@ -393,15 +468,28 @@ onMounted(() => {
               <h4>企业微信机器人</h4>
               <Space direction="vertical" size="middle" style="width: 100%">
                 <div class="switch-item">
-                  <Switch v-model:checked="settings.Notify.IfCompanyWebHookBot"
-                    @change="(checked) => handleSettingChange('Notify', 'IfCompanyWebHookBot', checked)" />
+                  <Switch
+                    v-model:checked="settings.Notify.IfCompanyWebHookBot"
+                    @change="
+                      checked => handleSettingChange('Notify', 'IfCompanyWebHookBot', checked)
+                    "
+                  />
                   <span class="switch-label">启用企业微信机器人</span>
                 </div>
                 <div class="input-group">
                   <label>Webhook URL</label>
-                  <Input v-model:value="settings.Notify.CompanyWebHookBotUrl"
-                    @blur="handleSettingChange('Notify', 'CompanyWebHookBotUrl', settings.Notify.CompanyWebHookBotUrl)"
-                    placeholder="企业微信机器人Webhook地址" style="width: 400px" />
+                  <Input
+                    v-model:value="settings.Notify.CompanyWebHookBotUrl"
+                    @blur="
+                      handleSettingChange(
+                        'Notify',
+                        'CompanyWebHookBotUrl',
+                        settings.Notify.CompanyWebHookBotUrl
+                      )
+                    "
+                    placeholder="企业微信机器人Webhook地址"
+                    style="width: 400px"
+                  />
                 </div>
               </Space>
             </div>
@@ -416,8 +504,10 @@ onMounted(() => {
             <div class="setting-item">
               <h4>自动更新</h4>
               <p class="setting-description">是否启用自动更新功能</p>
-              <Switch v-model:checked="settings.Update.IfAutoUpdate"
-                @change="(checked) => handleSettingChange('Update', 'IfAutoUpdate', checked)" />
+              <Switch
+                v-model:checked="settings.Update.IfAutoUpdate"
+                @change="checked => handleSettingChange('Update', 'IfAutoUpdate', checked)"
+              />
             </div>
 
             <Divider />
@@ -425,9 +515,12 @@ onMounted(() => {
             <div class="setting-item">
               <h4>更新类型</h4>
               <p class="setting-description">选择更新版本类型</p>
-              <Select v-model:value="settings.Update.UpdateType"
-                @change="(value) => handleSettingChange('Update', 'UpdateType', value)" :options="updateTypeOptions"
-                style="width: 200px" />
+              <Select
+                v-model:value="settings.Update.UpdateType"
+                @change="value => handleSettingChange('Update', 'UpdateType', value)"
+                :options="updateTypeOptions"
+                style="width: 200px"
+              />
             </div>
 
             <Divider />
@@ -435,9 +528,13 @@ onMounted(() => {
             <div class="setting-item">
               <h4>下载线程数</h4>
               <p class="setting-description">设置下载时使用的线程数量 (1-32)</p>
-              <InputNumber v-model:value="settings.Update.ThreadNumb"
-                @change="(value) => handleSettingChange('Update', 'ThreadNumb', value)" :min="1" :max="32"
-                style="width: 120px" />
+              <InputNumber
+                v-model:value="settings.Update.ThreadNumb"
+                @change="value => handleSettingChange('Update', 'ThreadNumb', value)"
+                :min="1"
+                :max="32"
+                style="width: 120px"
+              />
             </div>
 
             <Divider />
@@ -447,9 +544,14 @@ onMounted(() => {
               <Space direction="vertical" size="middle" style="width: 100%">
                 <div class="input-group">
                   <label>代理地址</label>
-                  <Input v-model:value="settings.Update.ProxyAddress"
-                    @blur="handleSettingChange('Update', 'ProxyAddress', settings.Update.ProxyAddress)"
-                    placeholder="例如: http://127.0.0.1:7890" style="width: 300px" />
+                  <Input
+                    v-model:value="settings.Update.ProxyAddress"
+                    @blur="
+                      handleSettingChange('Update', 'ProxyAddress', settings.Update.ProxyAddress)
+                    "
+                    placeholder="例如: http://127.0.0.1:7890"
+                    style="width: 300px"
+                  />
                 </div>
               </Space>
             </div>
@@ -459,9 +561,14 @@ onMounted(() => {
             <div class="setting-item">
               <h4>Mirror酱 CDK</h4>
               <p class="setting-description">设置Mirror酱CDK</p>
-              <Input v-model:value="settings.Update.MirrorChyanCDK"
-                @blur="handleSettingChange('Update', 'MirrorChyanCDK', settings.Update.MirrorChyanCDK)"
-                placeholder="镜像CDK" style="width: 300px" />
+              <Input
+                v-model:value="settings.Update.MirrorChyanCDK"
+                @blur="
+                  handleSettingChange('Update', 'MirrorChyanCDK', settings.Update.MirrorChyanCDK)
+                "
+                placeholder="镜像CDK"
+                style="width: 300px"
+              />
             </div>
           </Space>
         </Card>
@@ -474,8 +581,10 @@ onMounted(() => {
             <div class="setting-item">
               <h4>开机自启</h4>
               <p class="setting-description">是否在系统启动时自动启动应用</p>
-              <Switch v-model:checked="settings.Start.IfSelfStart"
-                @change="(checked) => handleSettingChange('Start', 'IfSelfStart', checked)" />
+              <Switch
+                v-model:checked="settings.Start.IfSelfStart"
+                @change="checked => handleSettingChange('Start', 'IfSelfStart', checked)"
+              />
             </div>
 
             <Divider />
@@ -483,8 +592,10 @@ onMounted(() => {
             <div class="setting-item">
               <h4>启动后直接最小化</h4>
               <p class="setting-description">启动后是否直接最小化到系统托盘</p>
-              <Switch v-model:checked="settings.Start.IfMinimizeDirectly"
-                @change="(checked) => handleSettingChange('Start', 'IfMinimizeDirectly', checked)" />
+              <Switch
+                v-model:checked="settings.Start.IfMinimizeDirectly"
+                @change="checked => handleSettingChange('Start', 'IfMinimizeDirectly', checked)"
+              />
             </div>
           </Space>
         </Card>
@@ -498,13 +609,17 @@ onMounted(() => {
               <h4>系统托盘</h4>
               <Space direction="vertical" size="middle">
                 <div class="switch-item">
-                  <Switch v-model:checked="settings.UI.IfShowTray"
-                    @change="(checked) => handleSettingChange('UI', 'IfShowTray', checked)" />
+                  <Switch
+                    v-model:checked="settings.UI.IfShowTray"
+                    @change="checked => handleSettingChange('UI', 'IfShowTray', checked)"
+                  />
                   <span class="switch-label">显示系统托盘图标</span>
                 </div>
                 <div class="switch-item">
-                  <Switch v-model:checked="settings.UI.IfToTray"
-                    @change="(checked) => handleSettingChange('UI', 'IfToTray', checked)" />
+                  <Switch
+                    v-model:checked="settings.UI.IfToTray"
+                    @change="checked => handleSettingChange('UI', 'IfToTray', checked)"
+                  />
                   <span class="switch-label">关闭时最小化到托盘</span>
                 </div>
               </Space>
@@ -512,27 +627,27 @@ onMounted(() => {
 
             <Divider />
 
-<!--            <div class="setting-item">-->
-<!--              <h4>窗口设置</h4>-->
-<!--              <Space direction="vertical" size="middle" style="width: 100%">-->
-<!--                <div class="input-group">-->
-<!--                  <label>窗口大小</label>-->
-<!--                  <Input v-model:value="settings.UI.size" @blur="handleSettingChange('UI', 'size', settings.UI.size)"-->
-<!--                    placeholder="例如: 1200x700" style="width: 200px" />-->
-<!--                </div>-->
-<!--                <div class="input-group">-->
-<!--                  <label>窗口位置</label>-->
-<!--                  <Input v-model:value="settings.UI.location"-->
-<!--                    @blur="handleSettingChange('UI', 'location', settings.UI.location)" placeholder="例如: 100x100"-->
-<!--                    style="width: 200px" />-->
-<!--                </div>-->
-<!--                <div class="switch-item">-->
-<!--                  <Switch v-model:checked="settings.UI.maximized"-->
-<!--                    @change="(checked) => handleSettingChange('UI', 'maximized', checked)" />-->
-<!--                  <span class="switch-label">启动时最大化窗口</span>-->
-<!--                </div>-->
-<!--              </Space>-->
-<!--            </div>-->
+            <!--            <div class="setting-item">-->
+            <!--              <h4>窗口设置</h4>-->
+            <!--              <Space direction="vertical" size="middle" style="width: 100%">-->
+            <!--                <div class="input-group">-->
+            <!--                  <label>窗口大小</label>-->
+            <!--                  <Input v-model:value="settings.UI.size" @blur="handleSettingChange('UI', 'size', settings.UI.size)"-->
+            <!--                    placeholder="例如: 1200x700" style="width: 200px" />-->
+            <!--                </div>-->
+            <!--                <div class="input-group">-->
+            <!--                  <label>窗口位置</label>-->
+            <!--                  <Input v-model:value="settings.UI.location"-->
+            <!--                    @blur="handleSettingChange('UI', 'location', settings.UI.location)" placeholder="例如: 100x100"-->
+            <!--                    style="width: 200px" />-->
+            <!--                </div>-->
+            <!--                <div class="switch-item">-->
+            <!--                  <Switch v-model:checked="settings.UI.maximized"-->
+            <!--                    @change="(checked) => handleSettingChange('UI', 'maximized', checked)" />-->
+            <!--                  <span class="switch-label">启动时最大化窗口</span>-->
+            <!--                </div>-->
+            <!--              </Space>-->
+            <!--            </div>-->
           </Space>
         </Card>
       </Tabs.TabPane>
@@ -544,8 +659,10 @@ onMounted(() => {
             <div class="setting-item">
               <h4>语音提示</h4>
               <p class="setting-description">是否启用语音提示功能</p>
-              <Switch v-model:checked="settings.Voice.Enabled"
-                @change="(checked) => handleSettingChange('Voice', 'Enabled', checked)" />
+              <Switch
+                v-model:checked="settings.Voice.Enabled"
+                @change="checked => handleSettingChange('Voice', 'Enabled', checked)"
+              />
             </div>
 
             <Divider />
@@ -553,9 +670,13 @@ onMounted(() => {
             <div class="setting-item">
               <h4>语音类型</h4>
               <p class="setting-description">选择语音提示的详细程度</p>
-              <Select v-model:value="settings.Voice.Type"
-                @change="(value) => handleSettingChange('Voice', 'Type', value)" :options="voiceTypeOptions"
-                style="width: 200px" :disabled="!settings.Voice.Enabled" />
+              <Select
+                v-model:value="settings.Voice.Type"
+                @change="value => handleSettingChange('Voice', 'Type', value)"
+                :options="voiceTypeOptions"
+                style="width: 200px"
+                :disabled="!settings.Voice.Enabled"
+              />
             </div>
           </Space>
         </Card>
@@ -570,9 +691,9 @@ onMounted(() => {
               <p class="setting-description">打开浏览器开发者工具进行调试</p>
               <Button type="primary" @click="openDevTools">打开 F12 开发者工具</Button>
             </div>
-            
+
             <Divider />
-            
+
             <div class="setting-item">
               <h4>系统日志</h4>
               <p class="setting-description">查看应用运行日志，用于问题排查和调试</p>
@@ -646,5 +767,4 @@ onMounted(() => {
 :deep(.ant-tabs-tab) {
   color: v-bind(textSecondaryColor);
 }
-
 </style>
