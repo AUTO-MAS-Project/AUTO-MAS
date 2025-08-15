@@ -2,6 +2,8 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { GeneralConfig } from './GeneralConfig';
+import type { MaaConfig } from './MaaConfig';
 export type ScriptCreateOut = {
     /**
      * 状态码
@@ -22,6 +24,6 @@ export type ScriptCreateOut = {
     /**
      * 脚本配置数据
      */
-    data: Record<string, any>;
+    data: (MaaConfig | GeneralConfig);
 };
 

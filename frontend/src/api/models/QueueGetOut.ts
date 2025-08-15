@@ -2,6 +2,8 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { QueueConfig } from './QueueConfig';
+import type { QueueIndexItem } from './QueueIndexItem';
 export type QueueGetOut = {
     /**
      * 状态码
@@ -18,10 +20,10 @@ export type QueueGetOut = {
     /**
      * 队列索引列表
      */
-    index: Array<Record<string, string>>;
+    index: Array<QueueIndexItem>;
     /**
-     * 队列列表或单个队列数据
+     * 队列数据字典, key来自于index列表的uid
      */
-    data: Record<string, any>;
+    data: Record<string, QueueConfig>;
 };
 

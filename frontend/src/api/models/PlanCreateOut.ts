@@ -2,6 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { MaaPlanConfig } from './MaaPlanConfig';
 export type PlanCreateOut = {
     /**
      * 状态码
@@ -22,6 +23,6 @@ export type PlanCreateOut = {
     /**
      * 计划配置数据
      */
-    data: Record<string, any>;
+    data: MaaPlanConfig;
 };
 

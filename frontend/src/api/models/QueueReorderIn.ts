@@ -4,7 +4,7 @@
 /* eslint-disable */
 export type QueueReorderIn = {
     /**
-     * 调度队列ID列表，按新顺序排列
+     * 按新顺序排列的调度队列UID列表
      */
     indexList: Array<string>;
 };

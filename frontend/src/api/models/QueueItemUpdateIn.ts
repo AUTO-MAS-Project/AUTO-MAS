@@ -2,6 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { QueueItem } from './QueueItem';
 export type QueueItemUpdateIn = {
     /**
      * 所属队列ID
@@ -14,6 +15,6 @@ export type QueueItemUpdateIn = {
     /**
      * 队列项更新数据
      */
-    data: Record<string, Record<string, any>>;
+    data: QueueItem;
 };
 

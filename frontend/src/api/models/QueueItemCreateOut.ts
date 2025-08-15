@@ -2,6 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { QueueItem } from './QueueItem';
 export type QueueItemCreateOut = {
     /**
      * 状态码
@@ -22,6 +23,6 @@ export type QueueItemCreateOut = {
     /**
      * 队列项配置数据
      */
-    data: Record<string, any>;
+    data: QueueItem;
 };
 
