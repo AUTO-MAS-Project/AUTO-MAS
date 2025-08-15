@@ -894,4 +894,12 @@ onMounted(() => {
   justify-content: center;
   align-items: center;
 }
+
+.empty-content-fancy h2 {
+  font-size: 26px;
+  font-weight: 700;
+  margin: 0 0 12px 0;
+  letter-spacing: 1px;
+  color: var(--ant-color-text);
+}
 </style>
