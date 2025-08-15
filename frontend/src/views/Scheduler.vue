@@ -2,17 +2,8 @@
   <div class="scheduler-container">
     <!-- 调度台标签页 -->
     <div class="scheduler-tabs">
-      <a-tabs
-        v-model:activeKey="activeSchedulerTab"
-        type="editable-card"
-        @edit="onSchedulerTabEdit"
-      >
-        <a-tab-pane
-          v-for="tab in schedulerTabs"
-          :key="tab.key"
-          :tab="tab.title"
-          :closable="tab.closable"
-        >
+      <a-tabs v-model:activeKey="activeSchedulerTab" type="editable-card" @edit="onSchedulerTabEdit">
+        <a-tab-pane v-for="tab in schedulerTabs" :key="tab.key" :tab="tab.title" :closable="tab.closable">
           <!-- 顶部操作栏 -->
           <div class="header-actions">
             <div class="left-actions">
@@ -32,20 +23,9 @@
             </div>
 
             <div class="right-actions">
-              <a-select
-                v-model:value="quickTaskForm.taskId"
-                placeholder="选择任务"
-                style="width: 200px"
-                :loading="taskOptionsLoading"
-                :options="taskOptions"
-                show-search
-                :filter-option="filterTaskOption"
-              />
-              <a-select
-                v-model:value="quickTaskForm.mode"
-                placeholder="执行模式"
-                style="width: 120px"
-              >
+              <a-select v-model:value="quickTaskForm.taskId" placeholder="选择任务" style="width: 200px"
+                :loading="taskOptionsLoading" :options="taskOptions" show-search :filter-option="filterTaskOption" />
+              <a-select v-model:value="quickTaskForm.mode" placeholder="执行模式" style="width: 120px">
                 <a-select-option value="自动代理">自动代理</a-select-option>
                 <a-select-option value="人工排查">人工排查</a-select-option>
               </a-select>
@@ -63,82 +43,76 @@
 
             <div v-else class="task-panels">
               <a-collapse v-model:activeKey="currentTab.activeTaskPanels">
-                <a-collapse-panel
-                  v-for="task in currentTab.runningTasks"
-                  :key="task.websocketId"
-                  :header="`任务: ${task.taskName}`"
-                  style="font-size: 16px; margin-left: 8px"
-                >
+                <a-collapse-panel v-for="task in currentTab.runningTasks" :key="task.websocketId"
+                  :header="`任务: ${task.taskName}`" style="font-size: 16px; margin-left: 8px">
                   <template #extra>
                     <a-tag :color="getTaskStatusColor(task.status)">
                       {{ task.status }}
                     </a-tag>
-                    <a-button
-                      type="text"
-                      size="small"
-                      danger
-                      @click.stop="stopTask(task.websocketId)"
-                      :icon="h(StopOutlined)"
-                    >
+                    <a-button type="text" size="small" danger @click.stop="stopTask(task.websocketId)"
+                      :icon="h(StopOutlined)">
                       停止
                     </a-button>
                   </template>
 
                   <!--                  <div class="task-detail-layout">-->
-                  <a-row gutter="16" style="height: 100%">
-<!--                    &lt;!&ndash; 任务队列  &ndash;&gt;-->
-<!--                    <a-col :span="5">-->
-<!--                      <a-card title="任务队列" size="small" style="height: 100%">-->
-<!--                        <template :style="{ height: 'calc(100% - 40px)', padding: '8px' }">-->
-<!--                          <a-list-->
-<!--                            :data-source="task.taskQueue"-->
-<!--                            size="small"-->
-<!--                            :locale="{ emptyText: '暂无任务队列' }"-->
-<!--                            style="height: 100%; overflow-y: auto"-->
-<!--                          >-->
-<!--                            <template #renderItem="{ item }">-->
-<!--                              <a-list-item>-->
-<!--                                <a-list-item-meta>-->
-<!--                                  <template #title>-->
-<!--                                    <span class="queue-item-title">{{ item.name }}</span>-->
-<!--                                  </template>-->
-<!--                                  <template #description>-->
-<!--                                    <a-tag-->
-<!--                                      :color="getQueueItemStatusColor(item.status)"-->
-<!--                                      size="small"-->
-<!--                                    >-->
-<!--                                      {{ item.status }}-->
-<!--                                    </a-tag>-->
-<!--                                  </template>-->
-<!--                                </a-list-item-meta>-->
-<!--                              </a-list-item>-->
-<!--                            </template>-->
-<!--                          </a-list>-->
-<!--                        </template>-->
-<!--                      </a-card>-->
-<!--                    </a-col>-->
+                  <a-row :gutter="16" style="height: 100%">
+                    <!--                    &lt;!&ndash; 任务队列  &ndash;&gt;-->
+                    <!--                    <a-col :span="5">-->
+                    <!--                      <a-card title="任务队列" size="small" style="height: 100%">-->
+                    <!--                        <template :style="{ height: 'calc(100% - 40px)', padding: '8px' }">-->
+                    <!--                          <a-list-->
+                    <!--                            :data-source="task.taskQueue"-->
+                    <!--                            size="small"-->
+                    <!--                            :locale="{ emptyText: '暂无任务队列' }"-->
+                    <!--                            style="height: 100%; overflow-y: auto"-->
+                    <!--                          >-->
+                    <!--                            <template #renderItem="{ item }">-->
+                    <!--                              <a-list-item>-->
+                    <!--                                <a-list-item-meta>-->
+                    <!--                                  <template #title>-->
+                    <!--                                    <span class="queue-item-title">{{ item.name }}</span>-->
+                    <!--                                  </template>-->
+                    <!--                                  <template #description>-->
+                    <!--                                    <a-tag-->
+                    <!--                                      :color="getQueueItemStatusColor(item.status)"-->
+                    <!--                                      size="small"-->
+                    <!--                                    >-->
+                    <!--                                      {{ item.status }}-->
+                    <!--                                    </a-tag>-->
+                    <!--                                  </template>-->
+                    <!--                                </a-list-item-meta>-->
+                    <!--                              </a-list-item>-->
+                    <!--                            </template>-->
+                    <!--                          </a-list>-->
+                    <!--                        </template>-->
+                    <!--                      </a-card>-->
+                    <!--                    </a-col>-->
 
                     <!-- 用户队列 -->
-                    <a-col :span="4">
+                    <a-col :span="5">
                       <a-card title="用户队列" size="small" style="height: 100%">
-                        <template :style="{ height: 'calc(100% - 40px)', padding: '8px' }">
-                          <a-list
-                            :data-source="task.userQueue"
-                            size="small"
-                            :locale="{ emptyText: '暂无用户队列' }"
-                            style="height: 100%; overflow-y: auto"
-                          >
+<!--                        <template #extra>-->
+<!--                          <span style="font-size: 12px; color: #666;">{{ task.userQueue.length }} 项</span>-->
+<!--                        </template>-->
+                        <div style="height: calc(100% - 40px); padding: 8px;">
+<!--                          &lt;!&ndash; 调试信息 &ndash;&gt;-->
+<!--                          <div v-if="task.userQueue.length === 0"-->
+<!--                            style="color: #999; font-size: 12px; margin-bottom: 8px;">-->
+<!--                            调试: userQueue 长度为 {{ task.userQueue.length }}-->
+<!--                          </div>-->
+<!--                          <div v-else style="color: #999; font-size: 12px; margin-bottom: 8px;">-->
+<!--                            调试: 找到 {{ task.userQueue.length }} 个队列项-->
+<!--                          </div>-->
+
+                          <a-list :data-source="task.userQueue" size="small" :locale="{ emptyText: '暂无用户队列' }"
+                            style="height: calc(100% - 30px); overflow-y: auto">
                             <template #renderItem="{ item }">
                               <a-list-item>
                                 <a-list-item-meta>
                                   <template #title>
                                     <span class="queue-item-title">{{ item.name }}</span>
-                                  </template>
-                                  <template #description>
-                                    <a-tag
-                                      :color="getQueueItemStatusColor(item.status)"
-                                      size="small"
-                                    >
+                                    <a-tag :color="getQueueItemStatusColor(item.status)" size="small">
                                       {{ item.status }}
                                     </a-tag>
                                   </template>
@@ -146,12 +120,12 @@
                               </a-list-item>
                             </template>
                           </a-list>
-                        </template>
+                        </div>
                       </a-card>
                     </a-col>
 
                     <!-- 实时日志 -->
-                    <a-col :span="20">
+                    <a-col :span="19">
                       <a-card size="small" style="height: 100%" title="实时日志">
                         <div class="realtime-logs-panel">
                           <!--                          <a-row justify="space-between" align="middle" style="margin-bottom: 8px">-->
@@ -174,16 +148,11 @@
                           <!--                              </div>-->
                           <!--                            </a-col>-->
                           <!--                          </a-row>-->
-                          <div
-                            class="panel-content log-content"
+                          <div class="panel-content log-content"
                             :ref="el => setOutputRef(el as HTMLElement, task.websocketId)"
-                            :key="`output-${task.websocketId}-${task.logs.length}`"
-                          >
-                            <div
-                              v-for="(log, index) in task.logs"
-                              :key="`${task.websocketId}-${index}-${log.time}`"
-                              :class="['log-line', `log-${log.type}`]"
-                            >
+                            :key="`output-${task.websocketId}-${task.logs.length}`">
+                            <div v-for="(log, index) in task.logs" :key="`${task.websocketId}-${index}-${log.time}`"
+                              :class="['log-line', `log-${log.type}`]">
                               <span class="log-time">{{ log.time }}</span>
                               <span class="log-message">{{ log.message }}</span>
                             </div>
@@ -201,23 +170,12 @@
     </div>
 
     <!-- 添加任务弹窗 -->
-    <a-modal
-      v-model:open="addTaskModalVisible"
-      title="添加任务"
-      @ok="addTask"
-      @cancel="cancelAddTask"
-      :confirmLoading="addTaskLoading"
-    >
+    <a-modal v-model:open="addTaskModalVisible" title="添加任务" @ok="addTask" @cancel="cancelAddTask"
+      :confirmLoading="addTaskLoading">
       <a-form :model="taskForm" layout="vertical">
         <a-form-item label="选择任务" required>
-          <a-select
-            v-model:value="taskForm.taskId"
-            placeholder="请选择要执行的任务"
-            :loading="taskOptionsLoading"
-            :options="taskOptions"
-            show-search
-            :filter-option="filterTaskOption"
-          />
+          <a-select v-model:value="taskForm.taskId" placeholder="请选择要执行的任务" :loading="taskOptionsLoading"
+            :options="taskOptions" show-search :filter-option="filterTaskOption" />
         </a-form-item>
         <a-form-item label="执行模式" required>
           <a-select v-model:value="taskForm.mode" placeholder="请选择执行模式">
@@ -230,19 +188,11 @@
     </a-modal>
     <!-- 消息
 对话框 -->
-    <a-modal
-      v-model:open="messageModalVisible"
-      :title="currentMessage?.title || '系统消息'"
-      @ok="sendMessageResponse"
-      @cancel="cancelMessage"
-    >
+    <a-modal v-model:open="messageModalVisible" :title="currentMessage?.title || '系统消息'" @ok="sendMessageResponse"
+      @cancel="cancelMessage">
       <div v-if="currentMessage">
         <p>{{ currentMessage.content }}</p>
-        <a-input
-          v-if="currentMessage.needInput"
-          v-model:value="messageResponse"
-          placeholder="请输入回复内容"
-        />
+        <a-input v-if="currentMessage.needInput" v-model:value="messageResponse" placeholder="请输入回复内容" />
       </div>
     </a-modal>
   </div>
@@ -252,10 +202,8 @@
 import { ref, reactive, onMounted, onUnmounted, h, nextTick, computed } from 'vue'
 import { message, notification } from 'ant-design-vue'
 import {
-  PlusOutlined,
   PlayCircleOutlined,
   StopOutlined,
-  ClearOutlined,
 } from '@ant-design/icons-vue'
 import { Service } from '@/api/services/Service'
 import type { ComboBoxItem } from '@/api/models/ComboBoxItem'
@@ -305,13 +253,13 @@ const taskOptions = ref<ComboBoxItem[]>([])
 // 任务表单（弹窗用）
 const taskForm = reactive({
   taskId: null,
-  mode: '自动代理' as TaskCreateIn.mode,
+  mode: '自动代理' as TaskCreateIn['mode'],
 })
 
 // 快速任务表单（右上角用）
 const quickTaskForm = reactive({
   taskId: null,
-  mode: '自动代理' as TaskCreateIn.mode,
+  mode: '自动代理' as TaskCreateIn['mode'],
 })
 
 // 运行中的任务
@@ -546,7 +494,11 @@ const connectWebSocket = (task: RunningTask) => {
     task.websocket = ws
 
     ws.onopen = () => {
-      task.status = '运行中'
+      // 更新任务状态
+      const taskIndex = currentTab.value.runningTasks.findIndex(t => t.websocketId === task.websocketId)
+      if (taskIndex >= 0) {
+        currentTab.value.runningTasks[taskIndex].status = '运行中'
+      }
       addTaskLog(task, '已连接到任务服务器', 'success')
     }
 
@@ -561,13 +513,21 @@ const connectWebSocket = (task: RunningTask) => {
     }
 
     ws.onclose = () => {
-      task.status = '已断开'
+      // 更新任务状态
+      const taskIndex = currentTab.value.runningTasks.findIndex(t => t.websocketId === task.websocketId)
+      if (taskIndex >= 0) {
+        currentTab.value.runningTasks[taskIndex].status = '已断开'
+        currentTab.value.runningTasks[taskIndex].websocket = null
+      }
       addTaskLog(task, '与服务器连接已断开', 'warning')
-      task.websocket = null
     }
 
     ws.onerror = error => {
-      task.status = '连接错误'
+      // 更新任务状态
+      const taskIndex = currentTab.value.runningTasks.findIndex(t => t.websocketId === task.websocketId)
+      if (taskIndex >= 0) {
+        currentTab.value.runningTasks[taskIndex].status = '连接错误'
+      }
       addTaskLog(task, '连接发生错误', 'error')
       console.error('WebSocket错误:', error)
     }
@@ -579,32 +539,58 @@ const connectWebSocket = (task: RunningTask) => {
 }
 // 处理WebSocket消息
 const handleWebSocketMessage = (task: RunningTask, data: any) => {
+  // 添加详细的调试日志
+  console.log('收到WebSocket消息:', data)
+  console.log('消息类型:', data.type)
+  console.log('消息数据:', data.data)
+
+  // 找到任务在当前调度台中的索引，确保实时更新
+  const taskIndex = currentTab.value.runningTasks.findIndex(t => t.websocketId === task.websocketId)
+  if (taskIndex === -1) {
+    console.log('未找到任务索引，websocketId:', task.websocketId)
+    return
+  }
+
   switch (data.type) {
     case 'Update':
-      // 界面更新信息 - 更新任务队列和用户队列
+      console.log('处理Update消息')
+      // 界面更新信息 - 更新用户队列
       if (data.data) {
-        // 更新任务队列
-        if (data.data.task_list) {
-          task.taskQueue = data.data.task_list.map((item: any) => ({
-            name: item.name || item.id || '未知任务',
+        console.log('data.data存在:', data.data)
+        // 更新用户队列 - 只显示 task_list 中的 name 字段
+        if (data.data.task_list && Array.isArray(data.data.task_list)) {
+          console.log('找到task_list，长度:', data.data.task_list.length)
+          console.log('task_list内容:', data.data.task_list)
+
+          // 直接更新响应式数组中的用户队列
+          const newUserQueue = data.data.task_list.map((item: any) => ({
+            name: item.name || '未知任务',
             status: item.status || '未知',
           }))
+
+          console.log('映射后的用户队列:', newUserQueue)
+          currentTab.value.runningTasks[taskIndex].userQueue = newUserQueue
+
+          // 强制触发响应式更新
+          nextTick(() => {
+            console.log('nextTick后的用户队列:', currentTab.value.runningTasks[taskIndex].userQueue)
+          })
+
+          // 添加调试日志，确认数据更新
+          console.log('用户队列已更新:', currentTab.value.runningTasks[taskIndex].userQueue)
+          console.log('当前任务对象:', currentTab.value.runningTasks[taskIndex])
+        } else {
+          console.log('task_list不存在或不是数组')
         }
 
-        // 更新用户队列
-        if (data.data.task_list) {
-          task.userQueue = data.data.task_list.map((user: any) => ({
-            name: user.name || user.username || user.id || '未知用户',
-            status: user.status || '未知',
-          }))
-        }
-
-        // 其他更新信息记录到日志
+        // 其他更新信息记录到日志，但不显示 task_list 的原始数据
         for (const [key, value] of Object.entries(data.data)) {
-          if (key !== 'taskQueue' && key !== 'userQueue') {
-            addTaskLog(task, `${key}: ${value}`, 'info')
+          if (key !== 'task_list') {
+            addTaskLog(currentTab.value.runningTasks[taskIndex], `${key}: ${value}`, 'info')
           }
         }
+      } else {
+        console.log('data.data不存在')
       }
       break
 
@@ -652,16 +638,19 @@ const handleWebSocketMessage = (task: RunningTask, data: any) => {
     case 'Signal':
       // 状态信号
       if (data.data?.Accomplish !== undefined) {
-        task.status = data.data.Accomplish ? '已完成' : '已失败'
-        addTaskLog(task, `任务${task.status}`, data.data.Accomplish ? 'success' : 'error')
+        const newStatus = data.data.Accomplish ? '已完成' : '已失败'
+
+        // 更新任务状态
+        currentTab.value.runningTasks[taskIndex].status = newStatus
+        addTaskLog(currentTab.value.runningTasks[taskIndex], `任务${newStatus}`, data.data.Accomplish ? 'success' : 'error')
 
         // 检查是否所有任务都完成了
         checkAllTasksCompleted()
 
         // 断开连接
-        if (task.websocket) {
-          task.websocket.close()
-          task.websocket = null
+        if (currentTab.value.runningTasks[taskIndex].websocket) {
+          currentTab.value.runningTasks[taskIndex].websocket.close()
+          currentTab.value.runningTasks[taskIndex].websocket = null
         }
       }
       break
@@ -835,6 +824,28 @@ const getTaskStatusColor = (status: string) => {
       return 'error'
     case '连接失败':
       return 'error'
+    default:
+      return 'default'
+  }
+}
+
+// 获取队列项状态颜色
+const getQueueItemStatusColor = (status: string) => {
+  switch (status) {
+    case '运行':
+    case '运行中':
+      return 'processing'
+    case '完成':
+    case '已完成':
+      return 'success'
+    case '失败':
+    case '已失败':
+      return 'error'
+    case '等待':
+    case '待执行':
+      return 'default'
+    case '暂停':
+      return 'warning'
     default:
       return 'default'
   }
