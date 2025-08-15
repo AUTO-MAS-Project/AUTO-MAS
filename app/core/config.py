@@ -198,6 +198,7 @@ class GlobalConfig(ConfigBase):
         "Data", "LastStageUpdated", "2000-01-01 00:00:00"
     )
     Data_StageTimeStamp = ConfigItem("Data", "StageTimeStamp", "2000-01-01 00:00:00")
+    Data_Stage = ConfigItem("Data", "Stage", "{ }")
     Data_IfShowNotice = ConfigItem("Data", "IfShowNotice", True, BoolValidator())
 
 
@@ -656,7 +657,6 @@ class AppConfig(GlobalConfig):
         self.silence_dict: Dict[Path, datetime] = {}
         self.power_sign = "NoAction"
         self.if_ignore_silence: List[uuid.UUID] = []
-        self.stage_info: Optional[Dict[str, List[Dict[str, str]]]] = None
         self.temp_task: List[asyncio.Task] = []
 
         self.ScriptConfig = MultipleConfig([MaaConfig, GeneralConfig])
@@ -1154,14 +1154,14 @@ class AppConfig(GlobalConfig):
         else:
             index = type
 
-        if self.stage_info is not None:
+        if json.loads(self.get("Data", "Stage")) != {}:
             task = asyncio.create_task(self.get_stage())
             self.temp_task.append(task)
             task.add_done_callback(lambda t: self.temp_task.remove(t))
         else:
             await self.get_stage()
 
-        return self.stage_info.get(index, []) if self.stage_info is not None else []
+        return json.loads(self.get("Data", "Stage")).get(index, [])
 
     async def get_proxy_overview(self) -> Dict[str, Any]:
         """获取代理情况概览信息"""
@@ -1203,7 +1203,7 @@ class AppConfig(GlobalConfig):
             self.get("Data", "LastStageUpdated"), "%Y-%m-%d %H:%M:%S"
         ):
             logger.info("No need to update stage info, using cached data.")
-            return self.stage_info if self.stage_info is not None else {}
+            return json.loads(self.get("Data", "Stage"))
 
         logger.info("开始获取活动关卡信息")
 
@@ -1225,26 +1225,18 @@ class AppConfig(GlobalConfig):
             logger.warning(f"无法从MAA服务器获取活动关卡时间戳: {e}")
             remote_time_stamp = datetime.fromtimestamp(0)
 
-        if (Path.cwd() / "data/StageInfo/StageInfo.json").exists():
-            local_time_stamp = datetime.strptime(
-                self.get("Data", "StageTimeStamp"), "%Y-%m-%d %H:%M:%S"
-            )
-            with (Path.cwd() / "data/StageInfo/StageInfo.json").open(
-                "r", encoding="utf-8"
-            ) as f:
-                local_stage_info = json.load(f)
-        else:
-            local_time_stamp = datetime.fromtimestamp(0)
+        local_time_stamp = datetime.strptime(
+            self.get("Data", "StageTimeStamp"), "%Y-%m-%d %H:%M:%S"
+        )
 
         # 本地文件关卡信息无需更新，直接返回本地数据
         if datetime.fromtimestamp(0) < remote_time_stamp <= local_time_stamp:
 
             logger.info("使用本地关卡信息")
-            self.stage_info = local_stage_info
             await self.set(
                 "Data", "LastStageUpdated", datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             )
-            return local_stage_info
+            return json.loads(self.get("Data", "Stage"))
 
         # 需要更新关卡信息
         logger.info("从远端更新关卡信息")
@@ -1330,7 +1322,7 @@ class AppConfig(GlobalConfig):
                     {"label": stage_info["Value"], "value": stage_info["Value"]}
                 )
 
-        self.stage_info = {}
+        stage_info = {}
 
         for day in range(0, 8):
 
@@ -1343,11 +1335,11 @@ class AppConfig(GlobalConfig):
                         {"label": stage_info["text"], "value": stage_info["value"]}
                     )
 
-            self.stage_info[calendar.day_name[day - 1] if day > 0 else "ALL"] = (
+            stage_info[calendar.day_name[day - 1] if day > 0 else "ALL"] = (
                 side_story_stage + today_stage
             )
 
-        self.stage_info["Info"] = side_story_info
+        stage_info["Info"] = side_story_info
 
         if if_get_maa_stage:
 
@@ -1355,18 +1347,14 @@ class AppConfig(GlobalConfig):
             await self.set(
                 "Data", "LastStageUpdated", datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             )
-            (Path.cwd() / "data/StageInfo").mkdir(parents=True, exist_ok=True)
             await self.set(
                 "Data",
                 "StageTimeStamp",
                 remote_time_stamp.strftime("%Y-%m-%d %H:%M:%S"),
             )
-            with (Path.cwd() / "data/StageInfo/StageInfo.json").open(
-                "w", encoding="utf-8"
-            ) as f:
-                json.dump(self.stage_info, f, ensure_ascii=False, indent=4)
+            await self.set("Data", "Stage", json.dumps(stage_info, ensure_ascii=False))
 
-        return self.stage_info
+        return stage_info
 
     async def get_script_combox(self):
         """获取脚本下拉框信息"""
