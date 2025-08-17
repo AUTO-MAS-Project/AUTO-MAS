@@ -829,6 +829,26 @@ class AppConfig(GlobalConfig):
             await script_config.UserData.setOrder([uuid.UUID(_) for _ in index_list])
             await self.ScriptConfig.save()
 
+    async def set_infrastructure(
+        self, script_id: str, user_id: str, jsonFile: str
+    ) -> None:
+
+        logger.info(f"{script_id} - {user_id} 设置基建配置：{jsonFile}")
+
+        json_path = Path(jsonFile)
+
+        if not json_path.exists():
+            raise FileNotFoundError(f"File not found: {json_path}")
+
+        (Path.cwd() / f"data/{script_id}/{user_id}/Infrastructure").mkdir(
+            parents=True, exist_ok=True
+        )
+        shutil.copy(
+            json_path,
+            Path.cwd()
+            / f"data/{script_id}/{user_id}/Infrastructure/infrastructure.json",
+        )
+
     async def add_plan(
         self, script: Literal["MaaPlan"]
     ) -> tuple[uuid.UUID, ConfigBase]:
