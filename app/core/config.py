@@ -659,7 +659,6 @@ class AppConfig(GlobalConfig):
         self.history_path.mkdir(parents=True, exist_ok=True)
 
         self.silence_dict: Dict[Path, datetime] = {}
-        self.power_sign = "NoAction"
         self.if_ignore_silence: List[uuid.UUID] = []
         self.temp_task: List[asyncio.Task] = []
 

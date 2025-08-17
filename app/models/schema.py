@@ -669,6 +669,12 @@ class TaskMessage(BaseModel):
     data: Dict[str, Any] = Field(..., description="消息数据，具体内容根据type类型而定")
 
 
+class PowerIn(BaseModel):
+    signal: Literal[
+        "NoAction", "Shutdown", "ShutdownForce", "Hibernate", "Sleep", "KillSelf"
+    ] = Field(..., description="电源操作信号")
+
+
 class HistorySearchIn(BaseModel):
     mode: Literal["按日合并", "按周合并", "按月合并"] = Field(
         ..., description="合并模式"

@@ -20,9 +20,13 @@
 #   Contact: DLmaster_361@163.com
 
 
+import os
+from pathlib import Path
+import shutil
 from fastapi import APIRouter, Body
 
 from app.core import Config
+from app.services import System
 from app.models.schema import *
 
 router = APIRouter(prefix="/api/setting", tags=["全局设置"])
@@ -49,7 +53,28 @@ async def update_script(script: SettingUpdateIn = Body(...)) -> OutBase:
     """更新配置"""
 
     try:
-        await Config.update_setting(script.data.model_dump(exclude_unset=True))
+        data = script.data.model_dump(exclude_unset=True)
+        await Config.update_setting(data)
+
+        if data.get("Start", {}).get("IfSelfStart", None) is not None:
+            await System.set_SelfStart()
+        if data.get("Function", None) is not None:
+            function = data["Function"]
+            if function.get("IfAllowSleep", None) is not None:
+                await System.set_Sleep()
+            if function.get("IfSkipMumuSplashAds", None) is not None:
+                MuMu_splash_ads_path = (
+                    Path(os.getenv("APPDATA") or "")
+                    / "Netease/MuMuPlayer-12.0/data/startupImage"
+                )
+                if Config.get("Function", "IfSkipMumuSplashAds"):
+                    if MuMu_splash_ads_path.exists() and MuMu_splash_ads_path.is_dir():
+                        shutil.rmtree(MuMu_splash_ads_path)
+                    MuMu_splash_ads_path.touch()
+                else:
+                    if MuMu_splash_ads_path.exists() and MuMu_splash_ads_path.is_file():
+                        MuMu_splash_ads_path.unlink()
+
     except Exception as e:
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
