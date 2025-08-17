@@ -205,3 +205,20 @@ async def reorder_user(user: UserReorderIn = Body(...)) -> OutBase:
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
     return OutBase()
+
+
+@router.post(
+    "/user/infrastructure",
+    summary="导入基建配置文件",
+    response_model=OutBase,
+    status_code=200,
+)
+async def import_infrastructure(user: UserSetIn = Body(...)) -> OutBase:
+
+    try:
+        await Config.set_infrastructure(user.scriptId, user.userId, user.jsonFile)
+    except Exception as e:
+        return OutBase(
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+        )
+    return OutBase()

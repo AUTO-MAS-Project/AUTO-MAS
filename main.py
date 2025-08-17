@@ -55,7 +55,7 @@ def main():
         @asynccontextmanager
         async def lifespan(app: FastAPI):
 
-            from app.core import Config, MainTimer
+            from app.core import Config, MainTimer, TaskManager
             from app.services import System
 
             await Config.init_config()
@@ -67,6 +67,7 @@ def main():
 
             yield
 
+            await TaskManager.stop_task("ALL")
             main_timer.cancel()
             try:
                 await main_timer

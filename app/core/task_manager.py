@@ -230,12 +230,14 @@ class _TaskManager:
 
         logger.info(f"中止任务：{task_id}")
 
-        uid = uuid.UUID(task_id)
-
-        if uid not in self.task_dict:
-            raise ValueError(f"The task {uid} is not running.")
-
-        self.task_dict[uid].cancel()
+        if task_id == "ALL":
+            for task in self.task_dict.values():
+                task.cancel()
+        else:
+            uid = uuid.UUID(task_id)
+            if uid not in self.task_dict:
+                raise ValueError(f"The task {uid} is not running.")
+            self.task_dict[uid].cancel()
 
     async def remove_task(
         self, task: asyncio.Task, mode: str, task_id: uuid.UUID

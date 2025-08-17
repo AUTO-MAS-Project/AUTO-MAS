@@ -514,6 +514,11 @@ class UserReorderIn(UserInBase):
     indexList: List[str] = Field(..., description="用户ID列表，按新顺序排列")
 
 
+class UserSetIn(UserInBase):
+    userId: str = Field(..., description="用户ID")
+    jsonFile: str = Field(..., description="JSON文件路径, 用于导入自定义基建文件")
+
+
 class PlanCreateIn(BaseModel):
     type: Literal["MaaPlan"]
 
