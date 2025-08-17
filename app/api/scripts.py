@@ -118,6 +118,64 @@ async def reorder_script(script: ScriptReorderIn = Body(...)) -> OutBase:
 
 
 @router.post(
+    "/import/file", summary="从文件加载脚本", response_model=OutBase, status_code=200
+)
+async def import_script_from_file(script: ScriptFileIn = Body(...)) -> OutBase:
+
+    try:
+        await Config.import_script_from_file(script.scriptId, script.jsonFile)
+    except Exception as e:
+        return OutBase(
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+        )
+    return OutBase()
+
+
+@router.post(
+    "/export/file", summary="导出脚本到文件", response_model=OutBase, status_code=200
+)
+async def export_script_to_file(script: ScriptFileIn = Body(...)) -> OutBase:
+
+    try:
+        await Config.export_script_to_file(script.scriptId, script.jsonFile)
+    except Exception as e:
+        return OutBase(
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+        )
+    return OutBase()
+
+
+@router.post(
+    "/import/web", summary="从网络加载脚本", response_model=OutBase, status_code=200
+)
+async def import_script_from_web(script: ScriptUrlIn = Body(...)) -> OutBase:
+
+    try:
+        await Config.import_script_from_web(script.scriptId, script.url)
+    except Exception as e:
+        return OutBase(
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+        )
+    return OutBase()
+
+
+@router.post(
+    "/Upload/web", summary="上传脚本配置到网络", response_model=OutBase, status_code=200
+)
+async def upload_script_to_web(script: ScriptUploadIn = Body(...)) -> OutBase:
+
+    try:
+        await Config.upload_script_to_web(
+            script.scriptId, script.config_name, script.author, script.description
+        )
+    except Exception as e:
+        return OutBase(
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+        )
+    return OutBase()
+
+
+@router.post(
     "/user/get", summary="查询用户", response_model=UserGetOut, status_code=200
 )
 async def get_user(user: UserGetIn = Body(...)) -> UserGetOut:

@@ -475,6 +475,23 @@ class ScriptReorderIn(BaseModel):
     indexList: List[str] = Field(..., description="脚本ID列表，按新顺序排列")
 
 
+class ScriptFileIn(BaseModel):
+    scriptId: str = Field(..., description="脚本ID")
+    jsonFile: str = Field(..., description="配置文件路径")
+
+
+class ScriptUrlIn(BaseModel):
+    scriptId: str = Field(..., description="脚本ID")
+    url: str = Field(..., description="配置文件URL")
+
+
+class ScriptUploadIn(BaseModel):
+    scriptId: str = Field(..., description="脚本ID")
+    config_name: str = Field(..., description="配置名称")
+    author: str = Field(..., description="作者")
+    description: str = Field(..., description="描述")
+
+
 class UserInBase(BaseModel):
     scriptId: str = Field(..., description="所属脚本ID")
 
