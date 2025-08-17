@@ -56,11 +56,14 @@ def main():
         async def lifespan(app: FastAPI):
 
             from app.core import Config, MainTimer
+            from app.services import System
 
             await Config.init_config()
             await Config.get_stage()
             await Config.clean_old_history()
             main_timer = asyncio.create_task(MainTimer.second_task())
+            await System.set_Sleep()
+            await System.set_SelfStart()
 
             yield
 

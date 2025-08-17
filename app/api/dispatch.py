@@ -25,6 +25,7 @@ import asyncio
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Body, Path
 
 from app.core import TaskManager, Broadcast
+from app.services import System
 from app.models.schema import *
 
 router = APIRouter(prefix="/api/dispatch", tags=["任务调度"])
@@ -52,6 +53,18 @@ async def stop_task(task: DispatchIn = Body(...)) -> OutBase:
 
     try:
         await TaskManager.stop_task(task.taskId)
+    except Exception as e:
+        return OutBase(
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+        )
+    return OutBase()
+
+
+@router.post("/power", summary="电源操作", response_model=OutBase, status_code=200)
+async def power_task(task: PowerIn = Body(...)) -> OutBase:
+
+    try:
+        await System.set_power(task.signal)
     except Exception as e:
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"

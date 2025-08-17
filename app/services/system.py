@@ -29,6 +29,7 @@ import tempfile
 import getpass
 from datetime import datetime
 from pathlib import Path
+from typing import Literal
 
 from app.core import Config
 from app.utils.logger import get_logger
@@ -41,12 +42,7 @@ class _SystemHandler:
     ES_CONTINUOUS = 0x80000000
     ES_SYSTEM_REQUIRED = 0x00000001
 
-    def __init__(self):
-
-        self.set_Sleep()
-        self.set_SelfStart()
-
-    def set_Sleep(self) -> None:
+    async def set_Sleep(self) -> None:
         """同步系统休眠状态"""
 
         if Config.get("Function", "IfAllowSleep"):
@@ -58,12 +54,10 @@ class _SystemHandler:
             # 恢复系统电源状态
             ctypes.windll.kernel32.SetThreadExecutionState(self.ES_CONTINUOUS)
 
-    def set_SelfStart(self) -> None:
+    async def set_SelfStart(self) -> None:
         """同步开机自启"""
 
-        return None  # 目前不支持开机自启
-
-        if Config.get("Function", "IfSelfStart") and not self.is_startup():
+        if Config.get("Start", "IfSelfStart") and not await self.is_startup():
 
             # 创建任务计划
             try:
@@ -114,7 +108,7 @@ class _SystemHandler:
                     </Settings>
                     <Actions Context="Author">
                         <Exec>
-                            <Command>"{Config.app_path_sys}"</Command>
+                            <Command>"{Path.cwd() / 'AUTO_MAA.exe'}"</Command>
                         </Exec>
                     </Actions>
                 </Task>"""
@@ -145,7 +139,7 @@ class _SystemHandler:
 
                     if result.returncode == 0:
                         logger.success(
-                            f"程序自启动任务计划已创建: {Config.app_path_sys}",
+                            f"程序自启动任务计划已创建: {Path.cwd() / 'AUTO_MAA.exe'}",
                             module="系统服务",
                         )
                     else:
@@ -164,7 +158,7 @@ class _SystemHandler:
             except Exception as e:
                 logger.exception(f"程序自启动任务计划创建失败: {e}")
 
-        elif not Config.get(Config.start_IfSelfStart) and self.is_startup():
+        elif not Config.get("Start", "IfSelfStart") and await self.is_startup():
 
             try:
 
@@ -187,11 +181,16 @@ class _SystemHandler:
             except Exception as e:
                 logger.exception(f"程序自启动任务计划删除失败: {e}")
 
-    def set_power(self, mode) -> None:
+    async def set_power(
+        self,
+        mode: Literal[
+            "NoAction", "Shutdown", "ShutdownForce", "Hibernate", "Sleep", "KillSelf"
+        ],
+    ) -> None:
         """
         执行系统电源操作
 
-        :param mode: 电源操作模式，支持 "NoAction", "Shutdown", "Hibernate", "Sleep", "KillSelf", "ShutdownForce"
+        :param mode: 电源操作
         """
 
         if sys.platform.startswith("win"):
@@ -202,7 +201,7 @@ class _SystemHandler:
 
             elif mode == "Shutdown":
 
-                self.kill_emulator_processes()
+                await self.kill_emulator_processes()
                 logger.info("执行关机操作")
                 subprocess.run(["shutdown", "/s", "/t", "0"])
 
@@ -253,7 +252,7 @@ class _SystemHandler:
                 logger.info("执行退出主程序操作")
                 sys.exit(0)
 
-    def kill_emulator_processes(self):
+    async def kill_emulator_processes(self):
         """这里暂时仅支持 MuMu 模拟器"""
 
         logger.info("正在清除模拟器进程")
@@ -270,7 +269,7 @@ class _SystemHandler:
 
         logger.success("模拟器进程清除完成")
 
-    def is_startup(self) -> bool:
+    async def is_startup(self) -> bool:
         """判断程序是否已经开机自启"""
 
         try:
@@ -286,7 +285,7 @@ class _SystemHandler:
             logger.exception(f"检查任务计划程序失败: {e}")
             return False
 
-    def get_window_info(self) -> list:
+    async def get_window_info(self) -> list:
         """获取当前前台窗口信息"""
 
         def callback(hwnd, window_info):
