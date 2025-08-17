@@ -166,6 +166,23 @@ async def get_startup_task() -> InfoOut:
 
 
 @router.post(
+    "/webconfig",
+    summary="获取配置分享中心的配置信息",
+    response_model=InfoOut,
+    status_code=200,
+)
+async def get_web_config() -> InfoOut:
+
+    try:
+        data = await Config.get_web_config()
+    except Exception as e:
+        return InfoOut(
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}", data={}
+        )
+    return InfoOut(data={"WebConfig": data})
+
+
+@router.post(
     "/get/overview", summary="信息总览", response_model=InfoOut, status_code=200
 )
 async def add_overview() -> InfoOut:

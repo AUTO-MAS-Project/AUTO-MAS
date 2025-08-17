@@ -204,6 +204,10 @@ class GlobalConfig(ConfigBase):
     )
     Data_IfShowNotice = ConfigItem("Data", "IfShowNotice", True, BoolValidator())
     Data_Notice = ConfigItem("Data", "Notice", "{ }")
+    Data_LastWebConfigUpdated = ConfigItem(
+        "Data", "LastWebConfigUpdated", "2000-01-01 00:00:00"
+    )
+    Data_WebConfig = ConfigItem("Data", "WebConfig", "{ }")
 
 
 class QueueItem(ConfigBase):
@@ -747,6 +751,164 @@ class AppConfig(GlobalConfig):
         logger.info(f"重新排序脚本：{index_list}")
 
         await self.ScriptConfig.setOrder([uuid.UUID(_) for _ in index_list])
+
+    async def import_script_from_file(self, script_id: str, jsonFile: str) -> None:
+        """从文件加载脚本配置"""
+
+        logger.info(f"从文件加载脚本配置：{script_id} - {jsonFile}")
+        uid = uuid.UUID(script_id)
+        file_path = Path(jsonFile)
+
+        if uid not in self.ScriptConfig:
+            logger.error(f"{script_id} 不存在")
+            raise KeyError(f"Script ID {script_id} not found in ScriptConfig.")
+        if not isinstance(self.ScriptConfig[uid], GeneralConfig):
+            logger.error(f"{script_id} 不是通用脚本配置")
+            raise TypeError(
+                f"Script ID {script_id} is not a General script configuration."
+            )
+        if not Path(file_path).exists():
+            logger.error(f"文件不存在：{file_path}")
+            raise FileNotFoundError(f"File not found: {file_path}")
+
+        data = json.loads(file_path.read_text(encoding="utf-8"))
+        await self.ScriptConfig[uid].load(data)
+        await self.ScriptConfig.save()
+
+        logger.success(f"{script_id} 配置加载成功")
+
+    async def export_script_to_file(self, script_id: str, jsonFile: str):
+        """导出脚本配置到文件"""
+
+        logger.info(f"导出配置到文件：{script_id} - {jsonFile}")
+
+        uid = uuid.UUID(script_id)
+        file_path = Path(jsonFile)
+
+        if uid not in self.ScriptConfig:
+            logger.error(f"{script_id} 不存在")
+            raise KeyError(f"Script ID {script_id} not found in ScriptConfig.")
+        if not isinstance(self.ScriptConfig[uid], GeneralConfig):
+            logger.error(f"{script_id} 不是通用脚本配置")
+            raise TypeError(
+                f"Script ID {script_id} is not a General script configuration."
+            )
+
+        temp = await self.ScriptConfig[uid].toDict(
+            ignore_multi_config=True, if_decrypt=False
+        )
+
+        # 移除配置中可能存在的隐私信息
+        temp["Info"]["Name"] = Path(file_path).stem
+        for path in ["ScriptPath", "ConfigPath", "LogPath"]:
+
+            if Path(temp["Script"][path]).is_relative_to(
+                Path(temp["Info"]["RootPath"])
+            ):
+
+                temp["Script"][path] = str(
+                    Path(r"C:/脚本根目录")
+                    / Path(temp["Script"][path]).relative_to(
+                        Path(temp["Info"]["RootPath"])
+                    )
+                )
+        temp["Info"]["RootPath"] = str(Path(r"C:/脚本根目录"))
+
+        file_path.write_text(
+            json.dumps(temp, ensure_ascii=False, indent=4), encoding="utf-8"
+        )
+
+        logger.success(f"{script_id} 配置导出成功")
+
+    async def import_script_from_web(self, script_id: str, url: str):
+        """从「AUTO_MAA 配置分享中心」导入配置"""
+
+        logger.info(f"从网络加载脚本配置：{script_id} - {url}")
+        uid = uuid.UUID(script_id)
+
+        if uid not in self.ScriptConfig:
+            logger.error(f"{script_id} 不存在")
+            raise KeyError(f"Script ID {script_id} not found in ScriptConfig.")
+        if not isinstance(self.ScriptConfig[uid], GeneralConfig):
+            logger.error(f"{script_id} 不是通用脚本配置")
+            raise TypeError(
+                f"Script ID {script_id} is not a General script configuration."
+            )
+
+        response = requests.get(url, timeout=10, proxies=self.get_proxies())
+        if response.status_code == 200:
+            data = response.json()
+        else:
+            logger.warning(f"无法从 AUTO_MAA 服务器获取配置内容:{response.text}")
+            raise ConnectionError(
+                f"Failed to fetch configuration from AUTO_MAA server: {response.status_code}"
+            )
+
+        await self.ScriptConfig[uid].load(data)
+        await self.ScriptConfig.save()
+
+        logger.success(f"{script_id} 配置加载成功")
+
+    async def upload_script_to_web(
+        self, script_id: str, config_name: str, author: str, description: str
+    ):
+        """上传配置到「AUTO_MAA 配置分享中心」"""
+
+        logger.info(f"上传配置到网络：{script_id} - {config_name} - {author}")
+
+        uid = uuid.UUID(script_id)
+
+        if uid not in self.ScriptConfig:
+            logger.error(f"{script_id} 不存在")
+            raise KeyError(f"Script ID {script_id} not found in ScriptConfig.")
+        if not isinstance(self.ScriptConfig[uid], GeneralConfig):
+            logger.error(f"{script_id} 不是通用脚本配置")
+            raise TypeError(
+                f"Script ID {script_id} is not a General script configuration."
+            )
+
+        temp = await self.ScriptConfig[uid].toDict(
+            ignore_multi_config=True, if_decrypt=False
+        )
+
+        # 移除配置中可能存在的隐私信息
+        temp["Info"]["Name"] = config_name
+        for path in ["ScriptPath", "ConfigPath", "LogPath"]:
+            if Path(temp["Script"][path]).is_relative_to(
+                Path(temp["Info"]["RootPath"])
+            ):
+                temp["Script"][path] = str(
+                    Path(r"C:/脚本根目录")
+                    / Path(temp["Script"][path]).relative_to(
+                        Path(temp["Info"]["RootPath"])
+                    )
+                )
+        temp["Info"]["RootPath"] = str(Path(r"C:/脚本根目录"))
+
+        files = {
+            "file": (
+                f"{config_name}&&{author}&&{description}&&{int(datetime.now().timestamp() * 1000)}.json",
+                json.dumps(temp, ensure_ascii=False),
+                "application/json",
+            )
+        }
+        data = {"username": author, "description": description}
+
+        response = requests.post(
+            "http://221.236.27.82:10023/api/upload/share",
+            files=files,
+            data=data,
+            timeout=10,
+            proxies=self.get_proxies(),
+        )
+
+        if response.status_code == 200:
+            logger.success("配置上传成功")
+        else:
+            logger.error(f"无法上传配置到 AUTO_MAA 服务器: {response.text}")
+            raise ConnectionError(
+                f"Failed to upload configuration to AUTO_MAA server: {response.status_code} - {response.text}"
+            )
 
     async def get_user(
         self, script_id: str, user_id: Optional[str]
@@ -1479,6 +1641,48 @@ class AppConfig(GlobalConfig):
             await self.set("Data", "IfShowNotice", True)
 
         return self.get("Data", "IfShowNotice"), remote_notice.get("notice_dict", {})
+
+    async def get_web_config(self):
+        """获取「AUTO_MAA 配置分享中心」配置"""
+
+        local_web_config = json.loads(self.get("Data", "WebConfig"))
+        if datetime.now() - timedelta(hours=1) < datetime.strptime(
+            self.get("Data", "LastWebConfigUpdated"), "%Y-%m-%d %H:%M:%S"
+        ):
+            logger.info("一小时内已进行过一次检查，直接使用缓存的配置分享中心信息")
+            return local_web_config
+
+        logger.info(f"开始从 AUTO_MAA 服务器获取配置分享中心信息")
+
+        try:
+            response = requests.get(
+                "http://221.236.27.82:10023/api/list/config/general",
+                timeout=10,
+                proxies=self.get_proxies(),
+            )
+            if response.status_code == 200:
+                remote_web_config = response.json()
+            else:
+                logger.warning(
+                    f"无法从 AUTO_MAA 服务器获取配置分享中心信息:{response.text}"
+                )
+                remote_web_config = None
+        except Exception as e:
+            logger.warning(f"无法从 AUTO_MAA 服务器获取配置分享中心信息: {e}")
+            remote_web_config = None
+
+        if remote_web_config is None:
+            logger.warning("使用本地配置分享中心信息")
+            return local_web_config
+
+        await self.set(
+            "Data", "LastWebConfigUpdated", datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        )
+        await self.set(
+            "Data", "WebConfig", json.dumps(remote_web_config, ensure_ascii=False)
+        )
+
+        return remote_web_config
 
     async def get_startup_task(self):
         """获取启动时需要运行的队列信息"""
