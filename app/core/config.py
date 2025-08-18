@@ -23,6 +23,7 @@
 import re
 import shutil
 import asyncio
+import sqlite3
 import calendar
 import requests
 import truststore
@@ -675,6 +676,8 @@ class AppConfig(GlobalConfig):
     async def init_config(self) -> None:
         """初始化配置管理"""
 
+        await self.check_data()
+
         await self.connect(self.config_path / "Config.json")
         await self.ScriptConfig.connect(self.config_path / "ScriptConfig.json")
         await self.PlanConfig.connect(self.config_path / "PlanConfig.json")
@@ -684,8 +687,263 @@ class AppConfig(GlobalConfig):
 
         self.task_dict = TaskManager.task_dict
 
-        # self.check_data()
         logger.info("程序初始化完成")
+
+    async def check_data(self) -> None:
+        """检查用户数据文件并处理数据文件版本更新"""
+
+        # 生成主数据库
+        if not self.database_path.exists():
+            db = sqlite3.connect(self.database_path)
+            cur = db.cursor()
+            cur.execute("CREATE TABLE version(v text)")
+            cur.execute("INSERT INTO version VALUES(?)", ("v1.9",))
+            db.commit()
+            cur.close()
+            db.close()
+
+        # 数据文件版本更新
+        db = sqlite3.connect(self.database_path)
+        cur = db.cursor()
+        cur.execute("SELECT * FROM version WHERE True")
+        version = cur.fetchall()
+
+        if version[0][0] != "v1.9":
+            logger.info(
+                "数据文件版本更新开始",
+            )
+            if_streaming = False
+            # v1.7-->v1.8
+            if version[0][0] == "v1.7" or if_streaming:
+                logger.info(
+                    "数据文件版本更新：v1.7-->v1.8",
+                )
+                if_streaming = True
+
+                if (Path.cwd() / "config/QueueConfig").exists():
+                    for QueueConfig in (Path.cwd() / "config/QueueConfig").glob(
+                        "*.json"
+                    ):
+                        with QueueConfig.open(encoding="utf-8") as f:
+                            queue_config = json.load(f)
+
+                        queue_config["QueueSet"]["TimeEnabled"] = queue_config[
+                            "QueueSet"
+                        ]["Enabled"]
+
+                        for i in range(10):
+                            queue_config["Queue"][f"Script_{i}"] = queue_config[
+                                "Queue"
+                            ][f"Member_{i + 1}"]
+                            queue_config["Time"][f"Enabled_{i}"] = queue_config["Time"][
+                                f"TimeEnabled_{i}"
+                            ]
+                            queue_config["Time"][f"Set_{i}"] = queue_config["Time"][
+                                f"TimeSet_{i}"
+                            ]
+
+                        with QueueConfig.open("w", encoding="utf-8") as f:
+                            json.dump(queue_config, f, ensure_ascii=False, indent=4)
+
+                cur.execute("DELETE FROM version WHERE v = ?", ("v1.7",))
+                cur.execute("INSERT INTO version VALUES(?)", ("v1.8",))
+                db.commit()
+            # v1.8-->v1.9
+            if version[0][0] == "v1.8" or if_streaming:
+                logger.info(
+                    "数据文件版本更新：v1.8-->v1.9",
+                )
+                if_streaming = True
+
+                await self.ScriptConfig.connect(self.config_path / "ScriptConfig.json")
+                await self.PlanConfig.connect(self.config_path / "PlanConfig.json")
+                await self.QueueConfig.connect(self.config_path / "QueueConfig.json")
+
+                if (Path.cwd() / "config/config.json").exists():
+                    (Path.cwd() / "config/config.json").rename(
+                        Path.cwd() / "config/Config.json"
+                    )
+                await self.connect(self.config_path / "Config.json")
+
+                plan_dict = {"固定": "Fixed"}
+
+                if (Path.cwd() / "config/MaaPlanConfig").exists():
+                    for MaaPlanConfig in (
+                        Path.cwd() / "config/MaaPlanConfig"
+                    ).iterdir():
+                        if (
+                            MaaPlanConfig.is_dir()
+                            and (MaaPlanConfig / "config.json").exists()
+                        ):
+
+                            maa_plan_config = json.loads(
+                                (MaaPlanConfig / "config.json").read_text(
+                                    encoding="utf-8"
+                                )
+                            )
+                            uid, pc = await self.add_plan("MaaPlan")
+                            plan_dict[MaaPlanConfig.name] = str(uid)
+
+                            await pc.load(maa_plan_config)
+
+                    await self.PlanConfig.save()
+
+                script_dict: Dict[str, Optional[str]] = {"禁用": None}
+
+                if (Path.cwd() / "config/MaaConfig").exists():
+
+                    for MaaConfig in (Path.cwd() / "config/MaaConfig").iterdir():
+                        if MaaConfig.is_dir():
+
+                            maa_config = json.loads(
+                                (MaaConfig / "config.json").read_text(encoding="utf-8")
+                            )
+                            maa_config["Info"] = maa_config["MaaSet"]
+                            maa_config["Run"] = maa_config["RunSet"]
+
+                            uid, sc = await self.add_script("MAA")
+                            script_dict[MaaConfig.name] = str(uid)
+                            await sc.load(maa_config)
+
+                            for user in (MaaConfig / "UserData").iterdir():
+                                if user.is_dir() and (user / "config.json").exists():
+                                    user_config = json.loads(
+                                        (user / "config.json").read_text(
+                                            encoding="utf-8"
+                                        )
+                                    )
+
+                                    user_config["Info"]["StageMode"] = plan_dict.get(
+                                        user_config["Info"]["StageMode"], "Fixed"
+                                    )
+                                    user_config["Info"]["Password"] = ""
+
+                                    user_uid, uc = await self.add_user(str(uid))
+                                    await uc.load(user_config)
+
+                                    if (user / "Routine/gui.json").exists():
+                                        (
+                                            Path.cwd()
+                                            / f"data/{uid}/{user_uid}/ConfigFile"
+                                        ).mkdir(parents=True, exist_ok=True)
+                                        shutil.copy(
+                                            user / "Routine/gui.json",
+                                            Path.cwd()
+                                            / f"data/{uid}/{user_uid}/ConfigFile/gui.json",
+                                        )
+                                    if (
+                                        user / "Infrastructure/infrastructure.json"
+                                    ).exists():
+                                        (
+                                            Path.cwd()
+                                            / f"data/{uid}/{user_uid}/Infrastructure"
+                                        ).mkdir(parents=True, exist_ok=True)
+                                        shutil.copy(
+                                            user / "Infrastructure/infrastructure.json",
+                                            Path.cwd()
+                                            / f"data/{uid}/{user_uid}/Infrastructure/infrastructure.json",
+                                        )
+
+                if (Path.cwd() / "config/GeneralConfig").exists():
+
+                    for GeneralConfig in (
+                        Path.cwd() / "config/GeneralConfig"
+                    ).iterdir():
+                        if GeneralConfig.is_dir():
+
+                            general_config = json.loads(
+                                (GeneralConfig / "config.json").read_text(
+                                    encoding="utf-8"
+                                )
+                            )
+                            general_config["Info"] = {
+                                "Name": general_config["Script"]["Name"],
+                                "RootPath": general_config["Script"]["RootPath"],
+                            }
+
+                            uid, sc = await self.add_script("General")
+                            script_dict[GeneralConfig.name] = str(uid)
+                            await sc.load(general_config)
+
+                            for user in (GeneralConfig / "SubData").iterdir():
+                                if user.is_dir() and (user / "config.json").exists():
+                                    user_config = json.loads(
+                                        (user / "config.json").read_text(
+                                            encoding="utf-8"
+                                        )
+                                    )
+
+                                    user_uid, uc = await self.add_user(str(uid))
+                                    await uc.load(user_config)
+
+                                    if (user / "ConfigFiles").exists():
+                                        (Path.cwd() / f"data/{uid}/{user_uid}").mkdir(
+                                            parents=True, exist_ok=True
+                                        )
+                                        shutil.move(
+                                            user / "ConfigFiles",
+                                            Path.cwd()
+                                            / f"data/{uid}/{user_uid}/ConfigFile",
+                                        )
+
+                await self.ScriptConfig.save()
+
+                if (Path.cwd() / "config/QueueConfig").exists():
+                    for QueueConfig in (Path.cwd() / "config/QueueConfig").glob(
+                        "*.json"
+                    ):
+                        queue_config = json.loads(
+                            QueueConfig.read_text(encoding="utf-8")
+                        )
+
+                        uid, qc = await self.add_queue()
+
+                        queue_config["Info"] = queue_config["QueueSet"]
+                        await qc.load(queue_config)
+
+                        for i in range(10):
+                            item_uid, item = await self.add_queue_item(str(uid))
+                            time_uid, time = await self.add_time_set(str(uid))
+
+                            await time.load(
+                                {
+                                    "Info": {
+                                        "Enabled": queue_config["Time"][f"Enabled_{i}"],
+                                        "Time": queue_config["Time"][f"Set_{i}"],
+                                    }
+                                }
+                            )
+                            await item.load(
+                                {
+                                    "Info": {
+                                        "ScriptId": script_dict.get(
+                                            queue_config["Queue"][f"Script_{i}"], None
+                                        )
+                                    }
+                                }
+                            )
+                    await self.QueueConfig.save()
+
+                if (Path.cwd() / "config/QueueConfig").exists():
+                    shutil.rmtree(Path.cwd() / "config/QueueConfig")
+                if (Path.cwd() / "config/MaaPlanConfig").exists():
+                    shutil.rmtree(Path.cwd() / "config/MaaPlanConfig")
+                if (Path.cwd() / "config/MaaConfig").exists():
+                    shutil.rmtree(Path.cwd() / "config/MaaConfig")
+                if (Path.cwd() / "config/GeneralConfig").exists():
+                    shutil.rmtree(Path.cwd() / "config/GeneralConfig")
+                if (Path.cwd() / "data/gameid.txt").exists():
+                    (Path.cwd() / "data/gameid.txt").unlink()
+                if (Path.cwd() / "data/key").exists():
+                    shutil.rmtree(Path.cwd() / "data/key")
+
+                cur.execute("DELETE FROM version WHERE v = ?", ("v1.8",))
+                cur.execute("INSERT INTO version VALUES(?)", ("v1.9",))
+                db.commit()
+
+            cur.close()
+            db.close()
+            logger.success("数据文件版本更新完成")
 
     async def add_script(
         self, script: Literal["MAA", "General"]
