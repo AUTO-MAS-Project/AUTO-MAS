@@ -704,7 +704,7 @@ class GeneralSubConfig(LQConfig):
 
 class AppConfig(GlobalConfig):
 
-    VERSION = "4.4.2.0"
+    VERSION = "4.4.3.0"
 
     stage_refreshed = Signal()
     PASSWORD_refreshed = Signal()
