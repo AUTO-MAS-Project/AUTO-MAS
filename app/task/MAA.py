@@ -1194,7 +1194,7 @@ class MaaManager:
 
             logger.info(f"MAA最近一条日志时间：{latest_time}")
 
-            if self.mode == "Annihilation" and "剿灭任务失败" in log:
+            if self.log_check_mode == "Annihilation" and "任务出错: 刷理智" in log:
                 self.weekly_annihilation_limit_reached = True
             else:
                 self.weekly_annihilation_limit_reached = False
@@ -1213,7 +1213,10 @@ class MaaManager:
                 if (
                     "完成任务: Fight" in log
                     or "完成任务: 刷理智" in log
-                    or "剿灭任务失败" in log
+                    or (
+                        self.log_check_mode == "Annihilation"
+                        and "任务出错: 刷理智" in log
+                    )
                 ):
                     self.task_dict["Combat"] = "False"
                 if "完成任务: Mall" in log or "完成任务: 获取信用及购物" in log:
