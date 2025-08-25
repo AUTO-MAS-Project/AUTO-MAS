@@ -933,7 +933,7 @@ import { useScriptApi } from '@/composables/useScriptApi'
 
 const router = useRouter()
 const route = useRoute()
-const { addUser, updateUser, loading: userLoading } = useUserApi()
+const { addUser, updateUser, getUsers, loading: userLoading } = useUserApi()
 const { getScript } = useScriptApi()
 
 const formRef = ref<FormInstance>()
@@ -1115,44 +1115,8 @@ const loadScriptInfo = async () => {
       })
 
       // 如果是编辑模式，加载用户数据
-      if (isEdit.value && script.config) {
-        const config = script.config as any
-        if (config.SubConfigsInfo?.UserData?.instances) {
-          const userInstance = config.SubConfigsInfo.UserData.instances.find(
-            (instance: any) => instance.uid === userId
-          )
-
-          if (userInstance) {
-            // 从用户数据中获取实际的用户信息
-            const userData = config.SubConfigsInfo.UserData[userInstance.uid]
-            if (userData) {
-              // 根据脚本类型填充用户数据
-              if (scriptType.value === 'MAA') {
-                Object.assign(formData, {
-                  Info: { ...getDefaultMAAUserData().Info, ...userData.Info },
-                  Task: { ...getDefaultMAAUserData().Task, ...userData.Task },
-                  Notify: { ...getDefaultMAAUserData().Notify, ...userData.Notify },
-                  Data: { ...getDefaultMAAUserData().Data, ...userData.Data },
-                  QFluentWidgets: {
-                    ...getDefaultMAAUserData().QFluentWidgets,
-                    ...userData.QFluentWidgets,
-                  },
-                })
-              } else {
-                // 通用脚本
-                Object.assign(formData, {
-                  Info: { ...getDefaultGeneralUserData().Info, ...userData.Info },
-                  Notify: { ...getDefaultGeneralUserData().Notify, ...userData.Notify },
-                  Data: { ...getDefaultGeneralUserData().Data, ...userData.Data },
-                })
-              }
-
-              // 同步扁平化字段
-              formData.userName = formData.Info.Name
-              formData.userId = formData.Info.Id || ''
-            }
-          }
-        }
+      if (isEdit.value) {
+        await loadUserData()
       }
     } else {
       message.error('脚本不存在')
@@ -1161,6 +1125,56 @@ const loadScriptInfo = async () => {
   } catch (error) {
     console.error('加载脚本信息失败:', error)
     message.error('加载脚本信息失败')
+  }
+}
+
+// 加载用户数据
+const loadUserData = async () => {
+  try {
+    const userResponse = await getUsers(scriptId, userId)
+    
+    if (userResponse && userResponse.code === 200) {
+      // 查找指定的用户数据
+      const userIndex = userResponse.index.find(index => index.uid === userId)
+      if (userIndex && userResponse.data[userId]) {
+        const userData = userResponse.data[userId] as any
+        
+        // 根据脚本类型填充用户数据
+        if (scriptType.value === 'MAA' && userIndex.type === 'MaaUserConfig') {
+          Object.assign(formData, {
+            Info: { ...getDefaultMAAUserData().Info, ...userData.Info },
+            Task: { ...getDefaultMAAUserData().Task, ...userData.Task },
+            Notify: { ...getDefaultMAAUserData().Notify, ...userData.Notify },
+            Data: { ...getDefaultMAAUserData().Data, ...userData.Data },
+            QFluentWidgets: {
+              ...getDefaultMAAUserData().QFluentWidgets,
+              ...userData.QFluentWidgets,
+            },
+          })
+        } else if (scriptType.value === 'General' && userIndex.type === 'GeneralUserConfig') {
+          Object.assign(formData, {
+            Info: { ...getDefaultGeneralUserData().Info, ...userData.Info },
+            Notify: { ...getDefaultGeneralUserData().Notify, ...userData.Notify },
+            Data: { ...getDefaultGeneralUserData().Data, ...userData.Data },
+          })
+        }
+
+        // 同步扁平化字段
+        formData.userName = formData.Info.Name || ''
+        formData.userId = formData.Info.Id || ''
+        
+        console.log('用户数据加载成功:', formData)
+      } else {
+        message.error('用户不存在')
+        handleCancel()
+      }
+    } else {
+      message.error('获取用户数据失败')
+      handleCancel()
+    }
+  } catch (error) {
+    console.error('加载用户数据失败:', error)
+    message.error('加载用户数据失败')
   }
 }
 
