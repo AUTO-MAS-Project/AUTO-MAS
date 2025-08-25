@@ -1,175 +1,283 @@
 <template>
-  <a-table
-    :columns="columns"
-    :data-source="scripts"
-    :pagination="false"
-    :expandable="expandableConfig"
-    row-key="id"
-    class="modern-table"
-  >
-    <template #bodyCell="{ column, record }">
-      <template v-if="column.key === 'name'">
-        <div class="script-name-cell">
-          <div class="script-type-logo">
-            <img
-              v-if="record.type === 'MAA'"
-              src="@/assets/MAA.png"
-              alt="MAA"
-              class="script-logo"
-            />
-            <img v-else src="@/assets/AUTO_MAA.png" alt="AUTO_MAA" class="script-logo" />
-          </div>
-          <div class="script-info">
-            <div class="script-title">{{ record.name }}</div>
-            <a-tag :color="record.type === 'MAA' ? 'blue' : 'green'" class="script-type-tag">
-              {{ record.type }}
-            </a-tag>
-          </div>
-        </div>
-      </template>
-
-      <template v-if="column.key === 'userCount'">
-        <a-badge
-          :count="record.users && record.users.length ? record.users.length : 0"
-          :number-style="{
-            backgroundColor: record.users.length > 0 ? '#52c41a' : '#d9d9d9',
-            color: record.users.length > 0 ? '#fff' : '#666',
-          }"
-          class="user-count-badge"
-        />
-      </template>
-
-      <template v-if="column.key === 'action'">
-        <a-space size="middle">
-          <a-button type="primary" size="middle" @click="handleEdit(record)" shape="round">
-            <template #icon>
-              <EditOutlined />
-            </template>
-            编辑
-          </a-button>
-
-          <a-button type="primary" size="middle" @click="handleAddUser(record)" shape="round">
-            <template #icon>
-              <UserAddOutlined />
-            </template>
-            添加用户
-          </a-button>
-
-          <a-popconfirm
-            title="确定要删除这个脚本吗？"
-            description="删除后将无法恢复，请谨慎操作"
-            @confirm="handleDelete(record)"
-            ok-text="确定"
-            cancel-text="取消"
-          >
-            <a-button danger size="middle" type="primary" shape="round">
-              <template #icon>
-                <DeleteOutlined />
-              </template>
-              删除
-            </a-button>
-          </a-popconfirm>
-        </a-space>
-      </template>
-    </template>
-
-    <template #expandedRowRender="{ record }">
-      <div class="expanded-content">
-        <a-table
-          :columns="userColumns"
-          :data-source="record.users"
-          :pagination="false"
-          size="small"
-          row-key="id"
-          class="user-table"
-        >
-          <template #bodyCell="{ column, record: user }">
-            <template v-if="column.key === 'server'">
-              <div class="server-cell">
-                <a-tag color="green">{{ user.Info.Server === 'Official' ? '官服' : 'B服' }}</a-tag>
+  <div class="scripts-grid">
+    <a-row :gutter="[24, 24]">
+      <a-col
+        v-for="script in scripts"
+        :key="script.id"
+        :xs="24"
+        :sm="24"
+        :md="24"
+        :lg="24"
+        :xl="24"
+        :xxl="24"
+      >
+        <a-card :hoverable="true" class="script-card" :body-style="{ padding: '0' }">
+          <!-- 脚本头部信息 -->
+          <div class="script-header">
+            <div class="script-info">
+              <div class="script-logo-container">
+                <img
+                  v-if="script.type === 'MAA'"
+                  src="@/assets/MAA.png"
+                  alt="MAA"
+                  class="script-logo"
+                />
+                <img v-else src="@/assets/AUTO_MAA.png" alt="AUTO_MAA" class="script-logo" />
               </div>
-            </template>
-            <template v-if="column.key === 'status'">
-              <div class="status-cell">
-                <PlayCircleOutlined v-if="user.Info.Status" class="status-icon active" />
-                <PauseCircleOutlined v-else class="status-icon inactive" />
-                <a-tag :color="user.Info.Status ? 'success' : 'error'">
-                  {{ user.Info.Status ? '启用' : '禁用' }}
+              <div class="script-details">
+                <h3 class="script-name">{{ script.name }}</h3>
+                <a-tag :color="script.type === 'MAA' ? 'blue' : 'green'" class="script-type">
+                  {{ script.type }}
                 </a-tag>
               </div>
-            </template>
-
-            <template v-if="column.key === 'lastRun'">
-              <div class="last-run-cell">
-                <div
-                  v-if="!user.Data.LastAnnihilationDate && !user.Data.LastProxyDate"
-                  class="no-run-text"
-                >
-                  尚未运行
-                </div>
-                <template v-else>
-                  <div class="run-item" v-if="user.Data.LastAnnihilationDate">
-                    <span class="run-label">剿灭:</span>
-                    <span class="run-date">{{ user.Data.LastAnnihilationDate }}</span>
-                  </div>
-                  <div class="run-item" v-if="user.Data.LastProxyDate">
-                    <span class="run-label">代理:</span>
-                    <span class="run-date">{{ user.Data.LastProxyDate }}</span>
-                  </div>
+            </div>
+            <div class="header-actions">
+              <a-button
+                v-if="script.type === 'MAA'"
+                type="primary"
+                ghost
+                size="middle"
+                @click="handleMAAConfig(script)"
+              >
+                <template #icon>
+                  <SettingOutlined />
                 </template>
-              </div>
-            </template>
+                设置MAA全局配置
+              </a-button>
+              <a-button type="default" size="middle" @click="handleEdit(script)">
+                <template #icon>
+                  <EditOutlined />
+                </template>
+                编辑脚本
+              </a-button>
+              <a-button
+                type="default"
+                size="middle"
+                class="action-button add-button"
+                @click="handleAddUser(script)"
+              >
+                <template #icon>
+                  <UserAddOutlined />
+                </template>
+                添加用户
+              </a-button>
+              <a-popconfirm
+                title="确定要删除这个脚本吗？"
+                description="删除后将无法恢复，请谨慎操作"
+                @confirm="handleDelete(script)"
+                ok-text="确定"
+                cancel-text="取消"
+              >
+                <a-button danger size="middle" class="action-button delete-button">
+                  <template #icon>
+                    <DeleteOutlined />
+                  </template>
+                  删除脚本
+                </a-button>
+              </a-popconfirm>
+            </div>
+          </div>
 
-            <template v-if="column.key === 'userAction'">
-              <a-space size="small">
-                <a-tooltip title="编辑用户配置">
-                  <a-button
-                    type="link"
-                    size="small"
-                    @click="handleEditUser(user)"
-                    class="user-action-button"
-                  >
-                    <template #icon>
-                      <EditOutlined />
-                    </template>
-                    编辑
-                  </a-button>
-                </a-tooltip>
-                <a-popconfirm
-                  title="确定要删除这个用户吗？"
-                  description="删除后将无法恢复"
-                  @confirm="handleDeleteUser(user)"
-                  ok-text="确定"
-                  cancel-text="取消"
-                >
-                  <a-tooltip title="删除用户">
-                    <a-button type="link" danger size="small" class="user-action-button">
-                      <template #icon>
-                        <DeleteOutlined />
-                      </template>
-                      删除
-                    </a-button>
-                  </a-tooltip>
-                </a-popconfirm>
-              </a-space>
-            </template>
-          </template>
-        </a-table>
-      </div>
-    </template>
-  </a-table>
+          <!-- 用户列表 -->
+          <div class="users-section" v-if="script.users && script.users.length > 0">
+            <div class="users-list">
+              <div v-for="user in script.users" :key="user.id" class="user-item">
+                <div class="user-info">
+                  <div class="user-details-row">
+                    <div class="user-name-section">
+                      <span class="user-name">{{ user.Info.Name }}</span>
+                      <!-- 只有MAA脚本才显示服务器标签 -->
+                      <a-tag
+                        v-if="script.type === 'MAA'"
+                        :color="user.Info.Server === 'Official' ? 'blue' : 'purple'"
+                        class="server-tag"
+                      >
+                        {{ user.Info.Server === 'Official' ? '官服' : 'B服' }}
+                      </a-tag>
+                    </div>
+
+                    <!-- 用户详细信息 - 只有MAA脚本才显示 -->
+                    <div v-if="script.type === 'MAA'" class="user-info-tags">
+                      <!-- 剿灭模式 -->
+                      <a-tag
+                        v-if="
+                          user.Info.Annihilation &&
+                          user.Info.Annihilation !== '-' &&
+                          user.Info.Annihilation !== ''
+                        "
+                        class="info-tag"
+                        color="cyan"
+                      >
+                        剿灭：{{
+                          ANNIHILATION_MAP[user.Info.Annihilation] ?? user.Info.Annihilation
+                        }}
+                      </a-tag>
+
+                      <!-- 森空岛签到 -->
+                      <a-tag
+                        v-if="user.Info.IfSkland !== undefined && user.Info.IfSkland !== null"
+                        class="info-tag"
+                        :color="user.Info.IfSkland ? 'green' : 'blue'"
+                      >
+                        森空岛: {{ user.Info.IfSkland ? '开启' : '关闭' }}
+                      </a-tag>
+
+                      <!-- 剩余天数 -->
+                      <a-tag
+                        v-if="user.Info.RemainedDay !== undefined && user.Info.RemainedDay !== null"
+                        class="info-tag"
+                        :color="
+                          user.Info.RemainedDay < 1
+                            ? 'gold'
+                            : user.Info.RemainedDay > 30
+                              ? 'green'
+                              : 'orange'
+                        "
+                      >
+                        剩余:
+                        {{ user.Info.RemainedDay < 1 ? '长期有效' : user.Info.RemainedDay + '天' }}
+                      </a-tag>
+
+                      <!-- 基建模式 -->
+                      <a-tag
+                        v-if="
+                          user.Info.InfrastMode &&
+                          user.Info.InfrastMode !== '-' &&
+                          user.Info.InfrastMode !== ''
+                        "
+                        class="info-tag"
+                        color="purple"
+                      >
+                        基建: {{ user.Info.InfrastMode === 'Normal' ? '普通' : '自定义' }}
+                      </a-tag>
+
+                      <!-- 关卡信息 - Stage固定展示 -->
+                      <a-tag v-if="user.Info.Stage" class="info-tag" color="blue">
+                        关卡: {{ user.Info.Stage === '-' ? '未选择' : user.Info.Stage }}
+                      </a-tag>
+
+                      <!-- 额外关卡 - 只有不为-或空时才显示 -->
+                      <a-tag
+                        v-if="
+                          user.Info.Stage_1 && user.Info.Stage_1 !== '-' && user.Info.Stage_1 !== ''
+                        "
+                        class="info-tag"
+                        color="geekblue"
+                      >
+                        关卡1: {{ user.Info.Stage_1 }}
+                      </a-tag>
+
+                      <a-tag
+                        v-if="
+                          user.Info.Stage_2 && user.Info.Stage_2 !== '-' && user.Info.Stage_2 !== ''
+                        "
+                        class="info-tag"
+                        color="geekblue"
+                      >
+                        关卡2: {{ user.Info.Stage_2 }}
+                      </a-tag>
+
+                      <a-tag
+                        v-if="
+                          user.Info.Stage_3 && user.Info.Stage_3 !== '-' && user.Info.Stage_3 !== ''
+                        "
+                        class="info-tag"
+                        color="geekblue"
+                      >
+                        关卡3: {{ user.Info.Stage_3 }}
+                      </a-tag>
+
+                      <a-tag
+                        v-if="
+                          user.Info.Stage_Remain &&
+                          user.Info.Stage_Remain !== '-' &&
+                          user.Info.Stage_Remain !== ''
+                        "
+                        class="info-tag"
+                        color="geekblue"
+                      >
+                        剩余关卡: {{ user.Info.Stage_Remain }}
+                      </a-tag>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="user-controls">
+                  <div class="user-status">
+                    <a-switch
+                      :checked="user.Info.Status"
+                      :checked-children="'启用'"
+                      :un-checked-children="'禁用'"
+                      @click="handleToggleUserStatus(user)"
+                      class="status-switch"
+                    />
+                  </div>
+
+                  <div class="user-actions">
+                    <a-tooltip title="编辑用户配置">
+                      <a-button
+                        type="default"
+                        size="middle"
+                        class="user-action-btn"
+                        @click="handleEditUser(user)"
+                      >
+                        <template #icon>
+                          <EditOutlined />
+                        </template>
+                        编辑
+                      </a-button>
+                    </a-tooltip>
+                    <a-popconfirm
+                      title="确定要删除这个用户吗？"
+                      description="删除后将无法恢复"
+                      @confirm="handleDeleteUser(user)"
+                      ok-text="确定"
+                      cancel-text="取消"
+                    >
+                      <a-tooltip title="删除用户">
+                        <a-button type="default" size="middle" danger class="user-action-btn">
+                          <template #icon>
+                            <DeleteOutlined />
+                          </template>
+                          删除
+                        </a-button>
+                      </a-tooltip>
+                    </a-popconfirm>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 空状态 -->
+          <div v-else class="empty-users">
+            <a-empty :image="false" description="暂无用户" class="compact-empty">
+              <template #image>
+                <UserOutlined class="empty-icon" />
+              </template>
+              <a-button type="primary" size="small" @click="handleAddUser(script)">
+                <template #icon>
+                  <PlusOutlined />
+                </template>
+                添加用户
+              </a-button>
+            </a-empty>
+          </div>
+        </a-card>
+      </a-col>
+    </a-row>
+  </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
-import type { TableColumnsType } from 'ant-design-vue'
 import type { Script, User } from '../types/script'
 import {
   DeleteOutlined,
   EditOutlined,
-  PauseCircleOutlined,
-  PlayCircleOutlined,
+  PlusOutlined,
+  SettingOutlined,
   UserAddOutlined,
+  UserOutlined,
 } from '@ant-design/icons-vue'
 
 interface Props {
@@ -186,87 +294,22 @@ interface Emits {
   (e: 'editUser', user: User): void
 
   (e: 'deleteUser', user: User): void
+
+  (e: 'maaConfig', script: Script): void
+
+  (e: 'toggleUserStatus', user: User): void
 }
 
-const props = defineProps<Props>()
+const ANNIHILATION_MAP: Record<string, string> = {
+  Annihilation: '当期剿灭',
+  'Chernobog@Annihilation': '切尔诺伯格',
+  'LungmenOutskirts@Annihilation': '龙门外环',
+  'LungmenDowntown@Annihilation': '龙门市区',
+  Close: '关闭',
+}
+
+defineProps<Props>()
 const emit = defineEmits<Emits>()
-
-const columns: TableColumnsType = [
-  {
-    title: '脚本名称',
-    dataIndex: 'name',
-    key: 'name',
-    width: 300,
-  },
-  {
-    title: '用户数量',
-    dataIndex: 'userCount',
-    key: 'userCount',
-    width: 120,
-    align: 'center',
-  },
-  // {
-  //   title: '创建时间',
-  //   dataIndex: 'createTime',
-  //   key: 'createTime',
-  //   width: 180,
-  // },
-  {
-    title: '操作',
-    key: 'action',
-    width: 250,
-    align: 'center',
-  },
-]
-
-const userColumns: TableColumnsType = [
-  {
-    title: '用户名',
-    dataIndex: ['Info', 'Name'],
-    key: 'name',
-    width: 150,
-  },
-  {
-    title: 'ID',
-    dataIndex: ['Info', 'Id'],
-    key: 'id',
-    width: 100,
-  },
-  {
-    title: '服务器',
-    dataIndex: ['Info', 'Server'],
-    key: 'server',
-    width: 100,
-  },
-  {
-    title: '状态',
-    key: 'status',
-    width: 80,
-    align: 'center',
-  },
-  {
-    title: '最后运行',
-    key: 'lastRun',
-    width: 200,
-  },
-  {
-    title: '备注',
-    dataIndex: ['Info', 'Notes'],
-    key: 'notes',
-    width: 250,
-  },
-  {
-    title: '操作',
-    key: 'userAction',
-    width: 120,
-    align: 'center',
-  },
-]
-
-const expandableConfig = computed(() => ({
-  expandedRowRender: true,
-  rowExpandable: (record: Script) => record.users && record.users.length > 0,
-}))
 
 const handleEdit = (script: Script) => {
   emit('edit', script)
@@ -287,276 +330,485 @@ const handleEditUser = (user: User) => {
 const handleDeleteUser = (user: User) => {
   emit('deleteUser', user)
 }
+
+const handleMAAConfig = (script: Script) => {
+  emit('maaConfig', script)
+}
+
+const handleToggleUserStatus = (user: User) => {
+  emit('toggleUserStatus', user)
+}
+
+function get_annihilation_name(annihilation_name) {
+  if (annihilation_name == 'Annihilation') {
+    return '当期剿灭'
+  }
+  if (annihilation_name == 'Chernobog@Annihilation') {
+    return '切尔诺伯格'
+  }
+  if (annihilation_name == 'LungmenOutskirts@Annihilation') {
+    return '龙门外环'
+  }
+  if (annihilation_name == 'LungmenDowntown@Annihilation') {
+    return '龙门市区'
+  }
+  return '未开启'
+}
 </script>
 
 <style scoped>
-.modern-table :deep(.ant-table) {
+.scripts-grid {
+  width: 100%;
+}
+
+/* 脚本卡片 */
+.script-card {
+  border-radius: 16px;
+  border: 1px solid var(--ant-color-border-secondary);
   background: var(--ant-color-bg-container);
-  border-radius: 12px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   overflow: hidden;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
 }
 
-.modern-table :deep(.ant-table-thead > tr > th) {
-  background: var(--ant-color-bg-container);
-  border-bottom: 2px solid var(--ant-color-border-secondary);
-  font-weight: 600;
-  font-size: 14px;
-  color: var(--ant-color-text);
-  padding: 16px 24px;
+.script-card:hover {
+  border-color: var(--ant-color-primary);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  transform: translateY(-2px);
 }
 
-.modern-table :deep(.ant-table-tbody > tr > td) {
-  padding: 20px 24px;
+/* 脚本头部 */
+.script-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 20px 16px;
   border-bottom: 1px solid var(--ant-color-border-secondary);
+}
+
+.script-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+}
+
+.script-logo-container {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--ant-color-bg-layout);
+  border: 1px solid var(--ant-color-border);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.script-logo {
+  width: 36px;
+  height: 36px;
+  object-fit: contain;
   transition: all 0.3s ease;
 }
 
-.modern-table :deep(.ant-table-tbody > tr:hover > td) {
+.script-details {
+  flex: 1;
+  min-width: 0;
+}
+
+.script-name {
+  margin: 0 0 6px 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--ant-color-text);
+  line-height: 1.3;
+  word-break: break-word;
+}
+
+.script-type {
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 6px;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.action-button {
+  border-radius: 8px;
+  font-weight: 500;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.action-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.config-button {
+  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
+  border-color: var(--ant-color-primary);
+}
+
+.config-button:hover {
+  background: linear-gradient(
+    135deg,
+    var(--ant-color-primary-hover),
+    var(--ant-color-primary-active)
+  );
+  border-color: var(--ant-color-primary-hover);
+}
+
+.edit-button {
+  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
+}
+
+.edit-button:hover {
+  background: linear-gradient(
+    135deg,
+    var(--ant-color-primary-hover),
+    var(--ant-color-primary-active)
+  );
+}
+
+.add-button {
+  border-color: var(--ant-color-primary);
+  color: var(--ant-color-primary);
+}
+
+.add-button:hover {
+  background: var(--ant-color-primary-bg);
+  border-color: var(--ant-color-primary-hover);
+  color: var(--ant-color-primary-hover);
+}
+
+.delete-button:hover {
+  background: linear-gradient(135deg, var(--ant-color-error), var(--ant-color-error-hover));
+}
+
+.more-actions {
+  color: var(--ant-color-text-secondary);
+  border: none;
+  box-shadow: none;
+}
+
+.more-actions:hover {
+  color: var(--ant-color-primary);
+  background: var(--ant-color-primary-bg);
+}
+
+/* 脚本操作按钮 */
+.script-actions {
+  display: flex;
+  gap: 8px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--ant-color-border-secondary);
   background: var(--ant-color-bg-layout);
 }
 
-.modern-table :deep(.ant-table-expanded-row > td) {
-  padding: 0;
+.script-actions .ant-btn {
+  border-radius: 6px;
+  font-weight: 500;
+  transition: all 0.3s ease;
+}
+
+.script-actions .ant-btn:hover {
+  transform: translateY(-1px);
+}
+
+/* 用户区域 */
+.users-section {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 用户列表 */
+.users-list {
+  max-height: 280px; /* 增加高度以完整展示3个用户 */
+  overflow-y: auto;
+}
+
+.user-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--ant-color-border-secondary);
+  transition: all 0.2s ease;
+  min-height: 80px; /* 确保每个用户项有足够高度 */
+}
+
+.user-item:last-child {
+  border-bottom: none;
+}
+
+.user-item:hover {
   background: var(--ant-color-bg-layout);
 }
 
-/* 脚本名称单元格 */
-.script-name-cell {
+.user-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.user-details-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.user-name-section {
   display: flex;
   align-items: center;
   gap: 12px;
 }
 
-.script-type-logo {
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--ant-color-bg-elevated);
-  border: 1px solid var(--ant-color-border-secondary);
-  overflow: hidden;
-}
-
-.script-logo {
-  width: 32px;
-  height: 32px;
-  object-fit: contain;
-  transition: all 0.3s ease;
-}
-
-.script-info {
-  flex: 1;
-}
-
-.script-title {
-  font-size: 16px;
+.user-name {
+  font-size: 18px;
   font-weight: 600;
   color: var(--ant-color-text);
-  margin-bottom: 4px;
 }
 
-.script-type-tag {
-  font-size: 12px;
-  font-weight: 500;
-  border-radius: 6px;
-}
-
-/* 用户数量徽章 */
-.user-count-badge :deep(.ant-badge-count) {
-  font-weight: 600;
-  border-radius: 8px;
-  min-width: 24px;
-  height: 24px;
-  line-height: 24px;
-  font-size: 12px;
-}
-
-/* 操作按钮 */
-.action-button {
-  border-radius: 8px;
-  font-weight: 500;
-  transition: all 0.3s ease;
-}
-
-.edit-button {
-  background: var(--ant-color-primary);
-  border-color: var(--ant-color-primary);
-}
-
-.edit-button:hover {
-  background: var(--ant-color-primary-hover);
-  border-color: var(--ant-color-primary-hover);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 8px rgba(24, 144, 255, 0.3);
-}
-
-.add-user-button {
-  border: 1px solid var(--ant-color-border);
-  background: var(--ant-color-bg-container);
-  color: var(--ant-color-text);
-}
-
-.add-user-button:hover {
-  border-color: var(--ant-color-primary);
-  color: var(--ant-color-primary);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-}
-
-.delete-button:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 8px rgba(255, 77, 79, 0.3);
-}
-
-/* 展开内容 */
-.expanded-content {
-  padding: 24px;
-  background: var(--ant-color-bg-layout);
-  border-radius: 0 0 12px 12px;
-}
-
-.user-table :deep(.ant-table) {
-  background: var(--ant-color-bg-container);
-  border-radius: 8px;
-  border: 1px solid var(--ant-color-border-secondary);
-}
-
-.user-table :deep(.ant-table-thead > tr > th) {
-  background: var(--ant-color-bg-layout);
-  font-size: 13px;
-  padding: 12px 16px;
-}
-
-.user-table :deep(.ant-table-tbody > tr > td) {
-  padding: 16px;
-  font-size: 13px;
-}
-
-/* 状态单元格 */
-.status-cell {
+.user-info-tags {
   display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
   align-items: center;
-  gap: 8px;
 }
 
-.status-icon {
-  font-size: 16px;
-}
-
-.status-icon.active {
-  color: #52c41a;
-}
-
-.status-icon.inactive {
-  color: #ff4d4f;
-}
-
-/* 最后运行单元格 */
-.last-run-cell {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.run-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-}
-
-.run-label {
-  color: var(--ant-color-text-secondary);
-  font-weight: 500;
-  min-width: 32px;
-}
-
-.run-date {
-  color: var(--ant-color-text);
-  font-family: 'Consolas', 'Monaco', monospace;
-}
-
-.no-run-text {
-  color: var(--ant-color-text-tertiary);
-  font-size: 12px;
-  font-style: italic;
-  text-align: center;
-  padding: 8px 0;
-}
-
-/* 任务标签 */
-.task-tags {
-  max-width: 300px;
-}
-
-.task-tag {
+.info-tag {
   font-size: 11px;
   font-weight: 500;
   border-radius: 4px;
-  margin: 2px;
+  margin: 0;
 }
 
-/* 用户操作按钮 */
-.user-action-button {
+.server-tag {
+  font-size: 11px;
+  font-weight: 500;
+  border-radius: 4px;
+}
+
+.user-controls {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-shrink: 0;
+  height: 100%;
+  justify-content: center;
+}
+
+.user-status {
+  display: flex;
+  align-items: center;
+}
+
+.status-switch {
   font-size: 12px;
-  padding: 4px 8px;
-  height: auto;
-  border-radius: 6px;
 }
 
-.user-action-button:hover {
+.status-switch :deep(.ant-switch-inner) {
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.user-actions {
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
+  align-items: center;
+}
+
+.user-action-btn {
+  border-radius: 6px;
+  font-weight: 500;
+  transition: all 0.3s ease;
+  min-width: 60px;
+  border: 1px solid var(--ant-color-border);
+  background: var(--ant-color-bg-container);
+}
+
+.user-action-btn:hover {
   transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  border-color: var(--ant-color-primary);
+}
+
+.user-action-btn.ant-btn-dangerous {
+  border-color: var(--ant-color-error);
+  color: var(--ant-color-error);
+}
+
+.user-action-btn.ant-btn-dangerous:hover {
+  border-color: var(--ant-color-error-hover);
+  background: var(--ant-color-error-bg);
+}
+
+/* 空状态 */
+.empty-users {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+}
+
+.compact-empty :deep(.ant-empty-description) {
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: var(--ant-color-text-tertiary);
+}
+
+.empty-icon {
+  font-size: 32px;
+  color: var(--ant-color-text-quaternary);
+  margin-bottom: 8px;
+}
+
+/* 折叠动画 */
+.ant-collapse-transition {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* 滚动条样式 */
+.users-list::-webkit-scrollbar {
+  width: 4px;
+}
+
+.users-list::-webkit-scrollbar-track {
+  background: var(--ant-color-bg-layout);
+}
+
+.users-list::-webkit-scrollbar-thumb {
+  background: var(--ant-color-border);
+  border-radius: 2px;
+}
+
+.users-list::-webkit-scrollbar-thumb:hover {
+  background: var(--ant-color-border-secondary);
 }
 
 /* 深色模式适配 */
 @media (prefers-color-scheme: dark) {
-  .modern-table :deep(.ant-table) {
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-  }
-
-  .edit-button:hover {
-    box-shadow: 0 4px 8px rgba(24, 144, 255, 0.4);
-  }
-
-  .add-user-button:hover {
-    box-shadow: 0 4px 8px rgba(255, 255, 255, 0.1);
-  }
-
-  .delete-button:hover {
-    box-shadow: 0 4px 8px rgba(255, 77, 79, 0.4);
+  .script-card:hover {
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
   }
 }
 
 /* 响应式设计 */
 @media (max-width: 768px) {
-  .modern-table :deep(.ant-table-tbody > tr > td) {
-    padding: 12px 16px;
+  .script-header {
+    padding: 16px 16px 12px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
   }
 
-  .script-name-cell {
+  .script-name {
+    font-size: 16px;
+  }
+
+  .header-actions {
     gap: 8px;
-  }
-
-  .script-type-icon {
-    width: 32px;
-    height: 32px;
-    font-size: 14px;
-  }
-
-  .script-title {
-    font-size: 14px;
-  }
-
-  .expanded-content {
-    padding: 16px;
   }
 
   .action-button {
     font-size: 12px;
-    padding: 4px 8px;
+    height: 28px;
+    padding: 0 8px;
+  }
+
+  .user-item {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .user-controls {
+    flex-direction: column;
+    gap: 8px;
+    align-items: flex-start;
+  }
+
+  .user-actions {
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .empty-users {
+    padding: 30px 16px;
+  }
+}
+
+@media (max-width: 576px) {
+  .script-info {
+    gap: 8px;
+  }
+
+  .script-logo-container {
+    width: 40px;
+    height: 40px;
+  }
+
+  .script-logo {
+    width: 28px;
+    height: 28px;
+  }
+
+  .script-name {
+    font-size: 15px;
+  }
+
+  .header-actions {
+    gap: 6px;
+  }
+
+  .action-button {
+    font-size: 11px;
+    height: 26px;
+    padding: 0 6px;
+  }
+
+  .user-item {
+    padding-left: 12px;
+    padding-right: 12px;
+    padding-top: 12px;
+    padding-bottom: 12px;
+  }
+
+  .user-details-row {
+    gap: 6px;
+  }
+
+  .user-name-section {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  .user-name {
+    font-size: 16px;
+  }
+
+  .user-info-tags {
+    gap: 4px;
+  }
+
+  .info-tag {
+    font-size: 10px;
   }
 }
 </style>
