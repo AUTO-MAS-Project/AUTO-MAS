@@ -656,10 +656,10 @@ class AppConfig(GlobalConfig):
         self.log_path = Path.cwd() / "debug/app.log"
         self.database_path = Path.cwd() / "data/data.db"
         self.config_path = Path.cwd() / "config"
-        self.key_path = Path.cwd() / "data/key"
         self.history_path = Path.cwd() / "history"
         # 检查目录
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
+        self.database_path.parent.mkdir(parents=True, exist_ok=True)
         self.config_path.mkdir(parents=True, exist_ok=True)
         self.history_path.mkdir(parents=True, exist_ok=True)
 
