@@ -1,32 +1,36 @@
 <template>
-  <div class="scripts-header">
-    <div class="header-title">
-      <h1>脚本管理</h1>
-    </div>
-    <a-space size="middle">
-      <a-button type="primary" size="large" @click="handleAddScript" class="link">
-        <template #icon>
-          <PlusOutlined />
-        </template>
-        新建脚本
-      </a-button>
-      <a-button size="large" @click="handleRefresh" class="default">
-        <template #icon>
-          <ReloadOutlined />
-        </template>
-        刷新
-      </a-button>
-    </a-space>
-  </div>
 
-  <ScriptTable
-    :scripts="scripts"
-    @edit="handleEditScript"
-    @delete="handleDeleteScript"
-    @add-user="handleAddUser"
-    @edit-user="handleEditUser"
-    @delete-user="handleDeleteUser"
-  />
+    <div class="scripts-header">
+      <div class="header-title">
+        <h1>脚本管理</h1>
+      </div>
+      <a-space size="middle">
+        <a-button type="primary" size="large" @click="handleAddScript" class="link">
+          <template #icon>
+            <PlusOutlined />
+          </template>
+          新建脚本
+        </a-button>
+        <a-button size="large" @click="handleRefresh" class="default">
+          <template #icon>
+            <ReloadOutlined />
+          </template>
+          刷新
+        </a-button>
+      </a-space>
+    </div>
+
+    <ScriptTable
+      :scripts="scripts"
+      @edit="handleEditScript"
+      @delete="handleDeleteScript"
+      @add-user="handleAddUser"
+      @edit-user="handleEditUser"
+      @delete-user="handleDeleteUser"
+      @maa-config="handleMAAConfig"
+      @toggle-user-status="handleToggleUserStatus"
+    />
+
 
   <!-- 脚本类型选择弹窗 -->
   <a-modal
@@ -193,6 +197,18 @@ const handleDeleteUser = async (user: User) => {
 const handleRefresh = () => {
   loadScripts()
   message.success('刷新成功')
+}
+
+const handleMAAConfig = (script: Script) => {
+  // TODO: 实现MAA全局配置功能
+  console.log('设置MAA全局配置:', script)
+  message.info('MAA全局配置功能待实现')
+}
+
+const handleToggleUserStatus = (user: User) => {
+  // TODO: 实现用户状态切换功能
+  console.log('切换用户状态:', user)
+  message.info(`切换用户 ${user.Info.Name} 的状态功能待实现`)
 }
 </script>
 

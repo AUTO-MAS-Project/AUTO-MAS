@@ -40,8 +40,6 @@ yarn install
 
 ### 开发模式
 ```bash
-yarn web          # 启动 Vite 开发服务器(浏览器查看)
-
 yarn dev          # 启动 Electron 开发环境
 ```
 

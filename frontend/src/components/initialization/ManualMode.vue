@@ -4,25 +4,24 @@
       <h1>AUTO_MAA 初始化向导</h1>
       <p>欢迎使用 AUTO_MAA，让我们来配置您的运行环境</p>
 
-      <div class="header-actions">
-        <a-button size="large" type="primary" @click="handleSkipToHome">
-          跳转至首页（仅开发用）
-        </a-button>
-        <a-button
-          size="large"
-          type="default"
-          @click="handleJumpToStep(6)"
-          style="margin-left: 16px"
-        >
-          跳到启动服务（第七步）
-        </a-button>
-      </div>
+      <!--      <div class="header-actions">-->
+      <!--        <a-button size="large" type="primary" @click="handleSkipToHome">-->
+      <!--          跳转至首页（仅开发用）-->
+      <!--        </a-button>-->
+      <!--        <a-button-->
+      <!--          size="large"-->
+      <!--          type="default"-->
+      <!--          @click="handleJumpToStep(6)"-->
+      <!--          style="margin-left: 16px"-->
+      <!--        >-->
+      <!--          跳到启动服务（第七步）-->
+      <!--        </a-button>-->
+      <!--      </div>-->
     </div>
 
     <a-steps :current="currentStep" :status="stepStatus" class="init-steps">
       <a-step title="主题设置" description="选择您喜欢的主题" />
       <a-step title="Python 环境" description="安装 Python 运行环境" />
-      <a-step title="pip 安装" description="安装 Python 包管理器" />
       <a-step title="Git 工具" description="安装 Git 版本控制工具" />
       <a-step title="源码获取" description="获取最新的后端代码" />
       <a-step title="依赖安装" description="安装 Python 依赖包" />
@@ -53,16 +52,13 @@
       <!-- 步骤 2: pip 安装 -->
       <PipStep v-if="currentStep === 2" :pip-installed="pipInstalled" ref="pipStepRef" />
 
-      <!-- 步骤 3: Git 工具 -->
-      <GitStep v-if="currentStep === 3" :git-installed="gitInstalled" ref="gitStepRef" />
-
-      <!-- 步骤 4: 源码获取 -->
+      <!-- 步骤 3: 源码获取 -->
       <BackendStep v-if="currentStep === 4" :backend-exists="backendExists" ref="backendStepRef" />
 
-      <!-- 步骤 5: 依赖安装 -->
+      <!-- 步骤 4: 依赖安装 -->
       <DependenciesStep v-if="currentStep === 5" ref="dependenciesStepRef" />
 
-      <!-- 步骤 6: 启动服务 -->
+      <!-- 步骤 5: 启动服务 -->
       <ServiceStep v-if="currentStep === 6" ref="serviceStepRef" />
     </div>
 
@@ -77,7 +73,7 @@
       </a-button>
 
       <a-button
-        v-if="currentStep < 6"
+        v-if="currentStep < 5"
         size="large"
         type="primary"
         @click="handleNextStep"
@@ -88,7 +84,7 @@
 
       <!-- 第7步重新启动服务按钮 -->
       <a-button
-        v-if="currentStep === 6"
+        v-if="currentStep === 5"
         type="default"
         size="large"
         @click="handleNextStep"
@@ -111,14 +107,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { createComponentLogger } from '@/utils/logger'
 import { saveConfig } from '@/utils/config'
 import ThemeStep from './ThemeStep.vue'
 import PythonStep from './PythonStep.vue'
 import PipStep from './PipStep.vue'
-import GitStep from './GitStep.vue'
 import BackendStep from './BackendStep.vue'
 import DependenciesStep from './DependenciesStep.vue'
 import ServiceStep from './ServiceStep.vue'
@@ -206,13 +201,7 @@ async function handleNextStep() {
           await installPip()
         }
         break
-      case 3: // Git 工具
-        console.log('执行Git工具安装')
-        if (!props.gitInstalled) {
-          await installGit()
-        }
-        break
-      case 4: // 源码获取
+      case 3: // 源码获取
         console.log('执行源码获取')
         if (!props.backendExists) {
           await cloneBackend()
@@ -220,19 +209,19 @@ async function handleNextStep() {
           await updateBackend()
         }
         break
-      case 5: // 依赖安装
+      case 4: // 依赖安装
         console.log('执行依赖安装')
         if (!props.dependenciesInstalled) {
           await installDependencies()
         }
         break
-      case 6: // 启动服务
+      case 5: // 启动服务
         console.log('执行启动服务')
         await startBackendService()
         break
     }
 
-    if (currentStep.value < 6) {
+    if (currentStep.value < 5) {
       currentStep.value++
       // 进入新步骤时自动开始测速
       await autoStartSpeedTest()
@@ -255,12 +244,10 @@ function getNextButtonText() {
     case 2:
       return props.pipInstalled ? '下一步' : '安装 pip'
     case 3:
-      return props.gitInstalled ? '下一步' : '安装 Git'
-    case 4:
       return props.backendExists ? '更新代码' : '获取代码'
-    case 5:
+    case 4:
       return '安装依赖'
-    case 6:
+    case 5:
       return '启动服务'
     default:
       return '下一步'

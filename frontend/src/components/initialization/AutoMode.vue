@@ -97,7 +97,7 @@ async function startAutoProcess() {
     if (aborted.value) return
 
     if (hasUpdate) {
-      progressText.value = '发现更新，正在更新代码...'
+      progressText.value = '正在更新...'
       progress.value = 40
 
       // 使用配置中保存的Git镜像源
