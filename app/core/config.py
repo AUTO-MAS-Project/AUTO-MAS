@@ -1718,6 +1718,8 @@ class AppConfig(GlobalConfig):
         side_story_info: List[Dict[str, Any]] = []
 
         for s in stage_infos:
+            if "SSReopen" in s.get("Display", ""):
+                continue
             act = s.get("Activity", {}) or {}
             try:
                 start_utc = parse_utc(act["UtcStartTime"])
