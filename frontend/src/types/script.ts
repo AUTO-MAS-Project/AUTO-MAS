@@ -167,6 +167,7 @@ export interface ScriptDetail {
   type: ScriptType
   name: string
   config: MAAScriptConfig | GeneralScriptConfig
+  users?: User[]
   createTime?: string
 }
 

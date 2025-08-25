@@ -1,7 +1,7 @@
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { Service } from '@/api'
-import type { UserInBase, UserCreateOut, UserUpdateIn, UserDeleteIn } from '@/api'
+import type { UserInBase, UserCreateOut, UserUpdateIn, UserDeleteIn, UserGetIn } from '@/api'
 
 export function useUserApi() {
   const loading = ref(false)
@@ -76,6 +76,38 @@ export function useUserApi() {
     }
   }
 
+  // 获取用户列表
+  const getUsers = async (scriptId: string, userId?: string) => {
+    loading.value = true
+    error.value = null
+
+    try {
+      const requestData: UserGetIn = {
+        scriptId,
+        userId: userId || null,
+      }
+
+      const response = await Service.getUserApiScriptsUserGetPost(requestData)
+
+      if (response.code !== 200) {
+        const errorMsg = response.message || '获取用户列表失败'
+        message.error(errorMsg)
+        throw new Error(errorMsg)
+      }
+
+      return response
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : '获取用户列表失败'
+      error.value = errorMsg
+      if (!err.message?.includes('HTTP error')) {
+        message.error(errorMsg)
+      }
+      return null
+    } finally {
+      loading.value = false
+    }
+  }
+
   // 删除用户
   const deleteUser = async (scriptId: string, userId: string): Promise<boolean> => {
     loading.value = true
@@ -113,6 +145,7 @@ export function useUserApi() {
     loading,
     error,
     addUser,
+    getUsers,
     updateUser,
     deleteUser,
   }
