@@ -1,22 +1,22 @@
 <template>
   <div class="manual-mode">
     <div class="header">
-      <h1>AUTO_MAA 初始化向导</h1>
-      <p>欢迎使用 AUTO_MAA，让我们来配置您的运行环境</p>
+      <a-typography-title >AUTO_MAA 初始化向导</a-typography-title>
+      <a-typography-title :level="4">欢迎使用 AUTO_MAA，让我们来配置您的运行环境</a-typography-title>
 
-      <div class="header-actions">
-        <a-button size="large" type="primary" @click="handleSkipToHome">
-          跳转至首页（仅开发用）
-        </a-button>
-        <a-button
-          size="large"
-          type="default"
-          @click="handleJumpToStep(5)"
-          style="margin-left: 16px"
-        >
-          跳到启动服务（第六步）
-        </a-button>
-      </div>
+<!--      <div class="header-actions">-->
+<!--        <a-button size="large" type="primary" @click="handleSkipToHome">-->
+<!--          跳转至首页（仅开发用）-->
+<!--        </a-button>-->
+<!--        <a-button-->
+<!--          size="large"-->
+<!--          type="default"-->
+<!--          @click="handleJumpToStep(5)"-->
+<!--          style="margin-left: 16px"-->
+<!--        >-->
+<!--          跳到启动服务（第六步）-->
+<!--        </a-button>-->
+<!--      </div>-->
     </div>
 
     <a-steps :current="currentStep" :status="stepStatus" class="init-steps">
