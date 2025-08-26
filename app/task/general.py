@@ -76,7 +76,7 @@ class GeneralManager:
             self.user_config = MultipleConfig([GeneralUserConfig])
             await self.user_config.load(await self.script_config.UserData.toDict())
 
-        self.script_root_path = Path(self.script_config.get("Script", "RootPath"))
+        self.script_root_path = Path(self.script_config.get("Info", "RootPath"))
         self.script_path = Path(self.script_config.get("Script", "ScriptPath"))
 
         arguments_list = []
