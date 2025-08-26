@@ -2,7 +2,7 @@
   <div class="scripts-grid">
     <a-row :gutter="[24, 24]">
       <a-col
-        v-for="script in scripts"
+        v-for="script in props.scripts"
         :key="script.id"
         :xs="24"
         :sm="24"
@@ -33,7 +33,7 @@
             </div>
             <div class="header-actions">
               <a-button
-                v-if="script.type === 'MAA'"
+                v-if="script.type === 'MAA' && !props.activeConnections.has(script.id)"
                 type="primary"
                 ghost
                 size="middle"
@@ -43,6 +43,18 @@
                   <SettingOutlined />
                 </template>
                 设置MAA全局配置
+              </a-button>
+              <a-button
+                v-if="script.type === 'MAA' && props.activeConnections.has(script.id)"
+                type="primary"
+                danger
+                size="middle"
+                @click="handleDisconnectMAA(script)"
+              >
+                <template #icon>
+                  <StopOutlined />
+                </template>
+                断开配置连接
               </a-button>
               <a-button type="default" size="middle" @click="handleEdit(script)">
                 <template #icon>
@@ -276,12 +288,14 @@ import {
   EditOutlined,
   PlusOutlined,
   SettingOutlined,
+  StopOutlined,
   UserAddOutlined,
   UserOutlined,
 } from '@ant-design/icons-vue'
 
 interface Props {
   scripts: Script[]
+  activeConnections: Map<string, string>
 }
 
 interface Emits {
@@ -297,6 +311,8 @@ interface Emits {
 
   (e: 'maaConfig', script: Script): void
 
+  (e: 'disconnectMaa', script: Script): void
+
   (e: 'toggleUserStatus', user: User): void
 }
 
@@ -308,7 +324,7 @@ const ANNIHILATION_MAP: Record<string, string> = {
   Close: '关闭',
 }
 
-defineProps<Props>()
+const props = defineProps<Props>()
 const emit = defineEmits<Emits>()
 
 const handleEdit = (script: Script) => {
@@ -333,6 +349,10 @@ const handleDeleteUser = (user: User) => {
 
 const handleMAAConfig = (script: Script) => {
   emit('maaConfig', script)
+}
+
+const handleDisconnectMAA = (script: Script) => {
+  emit('disconnectMaa', script)
 }
 
 const handleToggleUserStatus = (user: User) => {
