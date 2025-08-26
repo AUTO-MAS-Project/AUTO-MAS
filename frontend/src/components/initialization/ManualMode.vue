@@ -4,19 +4,19 @@
       <h1>AUTO_MAA 初始化向导</h1>
       <p>欢迎使用 AUTO_MAA，让我们来配置您的运行环境</p>
 
-      <!--      <div class="header-actions">-->
-      <!--        <a-button size="large" type="primary" @click="handleSkipToHome">-->
-      <!--          跳转至首页（仅开发用）-->
-      <!--        </a-button>-->
-      <!--        <a-button-->
-      <!--          size="large"-->
-      <!--          type="default"-->
-      <!--          @click="handleJumpToStep(6)"-->
-      <!--          style="margin-left: 16px"-->
-      <!--        >-->
-      <!--          跳到启动服务（第七步）-->
-      <!--        </a-button>-->
-      <!--      </div>-->
+      <div class="header-actions">
+        <a-button size="large" type="primary" @click="handleSkipToHome">
+          跳转至首页（仅开发用）
+        </a-button>
+        <a-button
+          size="large"
+          type="default"
+          @click="handleJumpToStep(5)"
+          style="margin-left: 16px"
+        >
+          跳到启动服务（第六步）
+        </a-button>
+      </div>
     </div>
 
     <a-steps :current="currentStep" :status="stepStatus" class="init-steps">
@@ -49,17 +49,17 @@
         ref="pythonStepRef"
       />
 
-      <!-- 步骤 2: pip 安装 -->
-      <PipStep v-if="currentStep === 2" :pip-installed="pipInstalled" ref="pipStepRef" />
+      <!-- 步骤 2: Git 工具 -->
+      <GitStep v-if="currentStep === 2" :git-installed="gitInstalled" ref="gitStepRef" />
 
       <!-- 步骤 3: 源码获取 -->
-      <BackendStep v-if="currentStep === 4" :backend-exists="backendExists" ref="backendStepRef" />
+      <BackendStep v-if="currentStep === 3" :backend-exists="backendExists" ref="backendStepRef" />
 
       <!-- 步骤 4: 依赖安装 -->
-      <DependenciesStep v-if="currentStep === 5" ref="dependenciesStepRef" />
+      <DependenciesStep v-if="currentStep === 4" ref="dependenciesStepRef" />
 
       <!-- 步骤 5: 启动服务 -->
-      <ServiceStep v-if="currentStep === 6" ref="serviceStepRef" />
+      <ServiceStep v-if="currentStep === 5" ref="serviceStepRef" />
     </div>
 
     <div class="step-actions">
@@ -82,7 +82,7 @@
         {{ getNextButtonText() }}
       </a-button>
 
-      <!-- 第7步重新启动服务按钮 -->
+      <!-- 第6步重新启动服务按钮 -->
       <a-button
         v-if="currentStep === 5"
         type="default"
@@ -107,13 +107,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { createComponentLogger } from '@/utils/logger'
 import { saveConfig } from '@/utils/config'
 import ThemeStep from './ThemeStep.vue'
 import PythonStep from './PythonStep.vue'
-import PipStep from './PipStep.vue'
+
+import GitStep from './GitStep.vue'
 import BackendStep from './BackendStep.vue'
 import DependenciesStep from './DependenciesStep.vue'
 import ServiceStep from './ServiceStep.vue'
@@ -124,7 +125,6 @@ const logger = createComponentLogger('ManualMode')
 interface Props {
   // 状态
   pythonInstalled: boolean
-  pipInstalled: boolean
   gitInstalled: boolean
   backendExists: boolean
   dependenciesInstalled: boolean
@@ -152,7 +152,6 @@ const progressText = ref('')
 // 组件引用
 const themeStepRef = ref()
 const pythonStepRef = ref()
-const pipStepRef = ref()
 const gitStepRef = ref()
 const backendStepRef = ref()
 const dependenciesStepRef = ref()
@@ -195,10 +194,10 @@ async function handleNextStep() {
           await installPython()
         }
         break
-      case 2: // pip 安装
-        console.log('执行pip安装')
-        if (!props.pipInstalled) {
-          await installPip()
+      case 2: // Git 工具
+        console.log('执行Git工具安装')
+        if (!props.gitInstalled) {
+          await installGit()
         }
         break
       case 3: // 源码获取
@@ -242,7 +241,7 @@ function getNextButtonText() {
     case 1:
       return props.pythonInstalled ? '下一步' : '安装 Python'
     case 2:
-      return props.pipInstalled ? '下一步' : '安装 pip'
+      return props.gitInstalled ? '下一步' : '安装 Git'
     case 3:
       return props.backendExists ? '更新代码' : '获取代码'
     case 4:
@@ -265,20 +264,20 @@ async function autoStartSpeedTest() {
           await pythonStepRef.value.testPythonMirrorSpeed()
         }
         break
-      case 4: // 源码获取
+      case 3: // 源码获取
         if (backendStepRef.value?.testGitMirrorSpeed) {
           console.log('自动开始Git镜像测速')
           await backendStepRef.value.testGitMirrorSpeed()
         }
         break
-      case 5: // 依赖安装
+      case 4: // 依赖安装
         if (!props.dependenciesInstalled && dependenciesStepRef.value?.testPipMirrorSpeed) {
           console.log('自动开始pip镜像测速')
           await dependenciesStepRef.value.testPipMirrorSpeed()
         }
         break
-      case 6: // 启动服务 - 自动启动后端
-        console.log('进入第七步，自动启动后端服务')
+      case 5: // 启动服务 - 自动启动后端
+        console.log('进入第六步，自动启动后端服务')
         await autoStartBackendService()
         break
     }
@@ -299,17 +298,7 @@ async function installPython() {
   }
 }
 
-async function installPip() {
-  logger.info('开始安装pip')
-  const result = await window.electronAPI.installPip()
-  if (result.success) {
-    logger.info('pip安装成功')
-    await saveConfig({ pipInstalled: true })
-  } else {
-    logger.error('pip安装失败', result.error)
-    throw new Error(result.error)
-  }
-}
+
 
 async function installGit() {
   logger.info('开始安装Git工具')
