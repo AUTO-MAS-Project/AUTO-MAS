@@ -22,12 +22,14 @@
 
     <ScriptTable
       :scripts="scripts"
+      :active-connections="activeConnections"
       @edit="handleEditScript"
       @delete="handleDeleteScript"
       @add-user="handleAddUser"
       @edit-user="handleEditUser"
       @delete-user="handleDeleteUser"
       @maa-config="handleMAAConfig"
+      @disconnect-maa="handleDisconnectMAA"
       @toggle-user-status="handleToggleUserStatus"
     />
 
@@ -74,7 +76,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { PlusOutlined, ReloadOutlined } from '@ant-design/icons-vue'
@@ -82,18 +84,28 @@ import ScriptTable from '@/components/ScriptTable.vue'
 import type { Script, ScriptType, User } from '@/types/script'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useUserApi } from '@/composables/useUserApi'
+import { useWebSocket } from '@/composables/useWebSocket'
 
 const router = useRouter()
 const { addScript, deleteScript, getScriptsWithUsers, loading } = useScriptApi()
 const { addUser, updateUser, deleteUser, loading: userLoading } = useUserApi()
+const { connect, disconnect, disconnectAll } = useWebSocket()
 
 const scripts = ref<Script[]>([])
 const typeSelectVisible = ref(false)
 const selectedType = ref<ScriptType>('MAA')
 const addLoading = ref(false)
 
+// WebSocket连接管理
+const activeConnections = ref<Map<string, string>>(new Map()) // scriptId -> websocketId
+
 onMounted(() => {
   loadScripts()
+})
+
+onUnmounted(() => {
+  // 清理所有WebSocket连接
+  disconnectAll()
 })
 
 const loadScripts = async () => {
@@ -199,10 +211,62 @@ const handleRefresh = () => {
   message.success('刷新成功')
 }
 
-const handleMAAConfig = (script: Script) => {
-  // TODO: 实现MAA全局配置功能
-  console.log('设置MAA全局配置:', script)
-  message.info('MAA全局配置功能待实现')
+const handleMAAConfig = async (script: Script) => {
+  try {
+    // 检查是否已有连接
+    const existingWebsocketId = activeConnections.value.get(script.id)
+    if (existingWebsocketId) {
+      message.warning('该脚本已在配置中，请先断开连接')
+      return
+    }
+
+    // 建立WebSocket连接进行MAA配置
+    const websocketId = await connect({
+      taskId: script.id,
+      mode: '设置脚本',
+      showNotifications: true,
+      onStatusChange: (status) => {
+        console.log(`脚本 ${script.name} 连接状态: ${status}`)
+      },
+      onMessage: (data) => {
+        console.log(`脚本 ${script.name} 收到消息:`, data)
+        // 这里可以根据需要处理特定的消息
+      },
+      onError: (error) => {
+        console.error(`脚本 ${script.name} 连接错误:`, error)
+        message.error(`MAA配置连接失败: ${error}`)
+        // 清理连接记录
+        activeConnections.value.delete(script.id)
+      }
+    })
+
+    if (websocketId) {
+      // 记录连接
+      activeConnections.value.set(script.id, websocketId)
+      message.success(`已开始配置 ${script.name}`)
+      
+      // 可选：设置自动断开连接的定时器（比如30分钟后）
+      setTimeout(() => {
+        if (activeConnections.value.has(script.id)) {
+          disconnect(websocketId)
+          activeConnections.value.delete(script.id)
+          message.info(`${script.name} 配置会话已超时断开`)
+        }
+      }, 30 * 60 * 1000) // 30分钟
+    }
+  } catch (error) {
+    console.error('MAA配置失败:', error)
+    message.error('MAA配置失败')
+  }
+}
+
+const handleDisconnectMAA = (script: Script) => {
+  const websocketId = activeConnections.value.get(script.id)
+  if (websocketId) {
+    disconnect(websocketId)
+    activeConnections.value.delete(script.id)
+    message.success(`已断开 ${script.name} 的配置连接`)
+  }
 }
 
 const handleToggleUserStatus = async (user: User) => {

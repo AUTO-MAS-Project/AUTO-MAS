@@ -17,6 +17,32 @@
     </div>
 
     <a-space size="middle">
+      <a-button 
+        v-if="scriptType === 'MAA'" 
+        type="primary" 
+        ghost 
+        size="large" 
+        @click="handleMAAConfig"
+        :loading="maaConfigLoading"
+      >
+        <template #icon>
+          <SettingOutlined />
+        </template>
+        MAA配置
+      </a-button>
+      <a-button 
+        v-if="scriptType === 'General'" 
+        type="primary" 
+        ghost 
+        size="large" 
+        @click="handleGeneralConfig"
+        :loading="generalConfigLoading"
+      >
+        <template #icon>
+          <SettingOutlined />
+        </template>
+        通用配置
+      </a-button>
       <a-button size="large" @click="handleCancel" class="cancel-button">
         <template #icon>
           <ArrowLeftOutlined />
@@ -926,15 +952,17 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
-import { ArrowLeftOutlined, QuestionCircleOutlined, SaveOutlined } from '@ant-design/icons-vue'
+import { ArrowLeftOutlined, QuestionCircleOutlined, SaveOutlined, SettingOutlined } from '@ant-design/icons-vue'
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
 import { useUserApi } from '@/composables/useUserApi'
 import { useScriptApi } from '@/composables/useScriptApi'
+import { useWebSocket } from '@/composables/useWebSocket'
 
 const router = useRouter()
 const route = useRoute()
 const { addUser, updateUser, getUsers, loading: userLoading } = useUserApi()
 const { getScript } = useScriptApi()
+const { connect, disconnect } = useWebSocket()
 
 const formRef = ref<FormInstance>()
 const loading = computed(() => userLoading.value)
@@ -947,6 +975,14 @@ const isEdit = computed(() => !!userId)
 // 脚本信息
 const scriptName = ref('')
 const scriptType = ref<'MAA' | 'General'>('MAA')
+
+// MAA配置相关
+const maaConfigLoading = ref(false)
+const maaWebsocketId = ref<string | null>(null)
+
+// 通用配置相关
+const generalConfigLoading = ref(false)
+const generalWebsocketId = ref<string | null>(null)
 
 // 服务器选项
 const serverOptions = [
@@ -1212,7 +1248,108 @@ const handleSubmit = async () => {
   }
 }
 
+const handleMAAConfig = async () => {
+  if (!isEdit.value) {
+    message.warning('请先保存用户后再进行MAA配置')
+    return
+  }
+
+  try {
+    maaConfigLoading.value = true
+
+    // 如果已有连接，先断开
+    if (maaWebsocketId.value) {
+      disconnect(maaWebsocketId.value)
+      maaWebsocketId.value = null
+    }
+
+    // 建立WebSocket连接进行MAA配置
+    const websocketId = await connect({
+      taskId: userId, // 使用用户ID进行配置
+      mode: '设置脚本',
+      showNotifications: true,
+      onStatusChange: (status) => {
+        console.log(`用户 ${formData.userName} MAA配置状态: ${status}`)
+      },
+      onMessage: (data) => {
+        console.log(`用户 ${formData.userName} MAA配置消息:`, data)
+        // 这里可以根据需要处理特定的消息
+      },
+      onError: (error) => {
+        console.error(`用户 ${formData.userName} MAA配置错误:`, error)
+        message.error(`MAA配置连接失败: ${error}`)
+        maaWebsocketId.value = null
+      }
+    })
+
+    if (websocketId) {
+      maaWebsocketId.value = websocketId
+      message.success(`已开始配置用户 ${formData.userName} 的MAA设置`)
+    }
+  } catch (error) {
+    console.error('MAA配置失败:', error)
+    message.error('MAA配置失败')
+  } finally {
+    maaConfigLoading.value = false
+  }
+}
+
+const handleGeneralConfig = async () => {
+  if (!isEdit.value) {
+    message.warning('请先保存用户后再进行通用配置')
+    return
+  }
+
+  try {
+    generalConfigLoading.value = true
+
+    // 如果已有连接，先断开
+    if (generalWebsocketId.value) {
+      disconnect(generalWebsocketId.value)
+      generalWebsocketId.value = null
+    }
+
+    // 建立WebSocket连接进行通用配置
+    const websocketId = await connect({
+      taskId: userId, // 使用用户ID进行配置
+      mode: '设置脚本',
+      showNotifications: true,
+      onStatusChange: (status) => {
+        console.log(`用户 ${formData.userName} 通用配置状态: ${status}`)
+      },
+      onMessage: (data) => {
+        console.log(`用户 ${formData.userName} 通用配置消息:`, data)
+        // 这里可以根据需要处理特定的消息
+      },
+      onError: (error) => {
+        console.error(`用户 ${formData.userName} 通用配置错误:`, error)
+        message.error(`通用配置连接失败: ${error}`)
+        generalWebsocketId.value = null
+      }
+    })
+
+    if (websocketId) {
+      generalWebsocketId.value = websocketId
+      message.success(`已开始配置用户 ${formData.userName} 的通用设置`)
+    }
+  } catch (error) {
+    console.error('通用配置失败:', error)
+    message.error('通用配置失败')
+  } finally {
+    generalConfigLoading.value = false
+  }
+}
+
 const handleCancel = () => {
+  // 清理WebSocket连接
+  if (maaWebsocketId.value) {
+    disconnect(maaWebsocketId.value)
+    maaWebsocketId.value = null
+  }
+  if (generalWebsocketId.value) {
+    disconnect(generalWebsocketId.value)
+    generalWebsocketId.value = null
+  }
   router.push('/scripts')
 }
 
