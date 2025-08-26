@@ -62,7 +62,7 @@ export function useUserApi() {
         throw new Error(errorMsg)
       }
 
-      message.success(response.message || '用户更新成功')
+      // message.success(response.message || '用户更新成功')
       return true
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : '更新用户失败'
@@ -127,7 +127,7 @@ export function useUserApi() {
         throw new Error(errorMsg)
       }
 
-      message.success(response.message || '用户删除成功')
+      // message.success(response.message || '用户删除成功')
       return true
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : '删除用户失败'

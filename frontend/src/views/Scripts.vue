@@ -205,11 +205,35 @@ const handleMAAConfig = (script: Script) => {
   message.info('MAA全局配置功能待实现')
 }
 
-const handleToggleUserStatus = (user: User) => {
-  // TODO: 实现用户状态切换功能
-  console.log('切换用户状态:', user)
-  message.info(`切换用户 ${user.Info.Name} 的状态功能待实现`)
+const handleToggleUserStatus = async (user: User) => {
+  try {
+    // 找到该用户对应的脚本
+    const script = scripts.value.find(s => s.users.some(u => u.id === user.id))
+    if (!script) {
+      message.error('找不到对应的脚本')
+      return
+    }
+    const newStatus = !user.Info.Status
+
+    // 调用 updateUser API
+    const result = await updateUser(script.id, user.id, {
+      Info: {
+        ...user.Info,
+        Status: newStatus,
+      },
+    })
+
+    if (result) {
+      // 本地同步状态
+      user.Info.Status = newStatus
+      // message.success(`用户 ${user.Info.Name} 已${newStatus ? '启用' : '禁用'}`)
+    }
+  } catch (error) {
+    console.error('切换用户状态失败:', error)
+    message.error('切换用户状态失败')
+  }
 }
+
 </script>
 
 <style scoped>
