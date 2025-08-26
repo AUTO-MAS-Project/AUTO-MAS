@@ -561,7 +561,7 @@ class MaaUserConfig(ConfigBase):
         )
         self.Info_Status = ConfigItem("Info", "Status", True, BoolValidator())
         self.Info_RemainedDay = ConfigItem(
-            "Info", "RemainedDay", -1, RangeValidator(-1, 1024)
+            "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
         )
         self.Info_Annihilation = ConfigItem(
             "Info",
@@ -587,7 +587,7 @@ class MaaUserConfig(ConfigBase):
         self.Info_Password = ConfigItem("Info", "Password", "", EncryptValidator())
         self.Info_Notes = ConfigItem("Info", "Notes", "无")
         self.Info_MedicineNumb = ConfigItem(
-            "Info", "MedicineNumb", 0, RangeValidator(0, 1024)
+            "Info", "MedicineNumb", 0, RangeValidator(0, 9999)
         )
         self.Info_SeriesNumb = ConfigItem(
             "Info",
@@ -601,7 +601,9 @@ class MaaUserConfig(ConfigBase):
         self.Info_Stage_3 = ConfigItem("Info", "Stage_3", "-")
         self.Info_Stage_Remain = ConfigItem("Info", "Stage_Remain", "-")
         self.Info_IfSkland = ConfigItem("Info", "IfSkland", False, BoolValidator())
-        self.Info_SklandToken = ConfigItem("Info", "SklandToken", "")
+        self.Info_SklandToken = ConfigItem(
+            "Info", "SklandToken", "", EncryptValidator()
+        )
 
         self.Data_LastProxyDate = ConfigItem("Data", "LastProxyDate", "2000-01-01")
         self.Data_LastAnnihilationDate = ConfigItem(
@@ -609,7 +611,7 @@ class MaaUserConfig(ConfigBase):
         )
         self.Data_LastSklandDate = ConfigItem("Data", "LastSklandDate", "2000-01-01")
         self.Data_ProxyTimes = ConfigItem(
-            "Data", "ProxyTimes", 0, RangeValidator(0, 1024)
+            "Data", "ProxyTimes", 0, RangeValidator(0, 9999)
         )
         self.Data_IfPassCheck = ConfigItem("Data", "IfPassCheck", True, BoolValidator())
         self.Data_CustomInfrastPlanIndex = ConfigItem(
@@ -698,19 +700,19 @@ class MaaConfig(ConfigBase):
             OptionsValidator(["NoAction", "ExitGame", "ExitEmulator"]),
         )
         self.Run_ProxyTimesLimit = ConfigItem(
-            "Run", "ProxyTimesLimit", 0, RangeValidator(0, 1024)
+            "Run", "ProxyTimesLimit", 0, RangeValidator(0, 9999)
         )
         self.Run_ADBSearchRange = ConfigItem(
             "Run", "ADBSearchRange", 0, RangeValidator(0, 3)
         )
         self.Run_RunTimesLimit = ConfigItem(
-            "Run", "RunTimesLimit", 3, RangeValidator(1, 1024)
+            "Run", "RunTimesLimit", 3, RangeValidator(1, 9999)
         )
         self.Run_AnnihilationTimeLimit = ConfigItem(
-            "Run", "AnnihilationTimeLimit", 40, RangeValidator(1, 1024)
+            "Run", "AnnihilationTimeLimit", 40, RangeValidator(1, 9999)
         )
         self.Run_RoutineTimeLimit = ConfigItem(
-            "Run", "RoutineTimeLimit", 10, RangeValidator(1, 1024)
+            "Run", "RoutineTimeLimit", 10, RangeValidator(1, 9999)
         )
         self.Run_AnnihilationWeeklyLimit = ConfigItem(
             "Run", "AnnihilationWeeklyLimit", True, BoolValidator()
@@ -745,7 +747,7 @@ class MaaPlanConfig(ConfigBase):
             self.config_item_dict[group] = {}
 
             self.config_item_dict[group]["MedicineNumb"] = ConfigItem(
-                group, "MedicineNumb", 0, RangeValidator(0, 1024)
+                group, "MedicineNumb", 0, RangeValidator(0, 9999)
             )
             self.config_item_dict[group]["SeriesNumb"] = ConfigItem(
                 group,
@@ -804,7 +806,7 @@ class GeneralUserConfig(ConfigBase):
         self.Info_Name = ConfigItem("Info", "Name", "新用户")
         self.Info_Status = ConfigItem("Info", "Status", True, BoolValidator())
         self.Info_RemainedDay = ConfigItem(
-            "Info", "RemainedDay", -1, RangeValidator(-1, 1024)
+            "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
         )
         self.Info_IfScriptBeforeTask = ConfigItem(
             "Info", "IfScriptBeforeTask", False, BoolValidator()
@@ -822,7 +824,7 @@ class GeneralUserConfig(ConfigBase):
 
         self.Data_LastProxyDate = ConfigItem("Data", "LastProxyDate", "2000-01-01")
         self.Data_ProxyTimes = ConfigItem(
-            "Data", "ProxyTimes", 0, RangeValidator(0, 1024)
+            "Data", "ProxyTimes", 0, RangeValidator(0, 9999)
         )
 
         self.Notify_Enabled = ConfigItem("Notify", "Enabled", False, BoolValidator())
@@ -876,10 +878,10 @@ class GeneralConfig(ConfigBase):
         self.Script_LogPath = ConfigItem("Script", "LogPath", ".", FileValidator())
         self.Script_LogPathFormat = ConfigItem("Script", "LogPathFormat", "%Y-%m-%d")
         self.Script_LogTimeStart = ConfigItem(
-            "Script", "LogTimeStart", 1, RangeValidator(1, 1024)
+            "Script", "LogTimeStart", 1, RangeValidator(1, 9999)
         )
         self.Script_LogTimeEnd = ConfigItem(
-            "Script", "LogTimeEnd", 1, RangeValidator(1, 1024)
+            "Script", "LogTimeEnd", 1, RangeValidator(1, 9999)
         )
         self.Script_LogTimeFormat = ConfigItem(
             "Script", "LogTimeFormat", "%Y-%m-%d %H:%M:%S"
@@ -893,19 +895,19 @@ class GeneralConfig(ConfigBase):
         )
         self.Game_Path = ConfigItem("Game", "Path", ".", FileValidator())
         self.Game_Arguments = ConfigItem("Game", "Arguments", "")
-        self.Game_WaitTime = ConfigItem("Game", "WaitTime", 0, RangeValidator(0, 1024))
+        self.Game_WaitTime = ConfigItem("Game", "WaitTime", 0, RangeValidator(0, 9999))
         self.Game_IfForceClose = ConfigItem(
             "Game", "IfForceClose", False, BoolValidator()
         )
 
         self.Run_ProxyTimesLimit = ConfigItem(
-            "Run", "ProxyTimesLimit", 0, RangeValidator(0, 1024)
+            "Run", "ProxyTimesLimit", 0, RangeValidator(0, 9999)
         )
         self.Run_RunTimesLimit = ConfigItem(
-            "Run", "RunTimesLimit", 3, RangeValidator(1, 1024)
+            "Run", "RunTimesLimit", 3, RangeValidator(1, 9999)
         )
         self.Run_RunTimeLimit = ConfigItem(
-            "Run", "RunTimeLimit", 10, RangeValidator(1, 1024)
+            "Run", "RunTimeLimit", 10, RangeValidator(1, 9999)
         )
 
         self.UserData = MultipleConfig([GeneralUserConfig])
