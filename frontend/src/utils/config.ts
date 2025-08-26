@@ -23,7 +23,6 @@ export interface FrontendConfig {
   gitInstalled?: boolean
   backendExists?: boolean
   dependenciesInstalled?: boolean
-  pipInstalled?: boolean
 }
 
 const DEFAULT_CONFIG: FrontendConfig = {
@@ -38,7 +37,6 @@ const DEFAULT_CONFIG: FrontendConfig = {
   gitInstalled: false,
   backendExists: false,
   dependenciesInstalled: false,
-  pipInstalled: false,
 }
 
 // 读取配置（内部使用，不触发保存）
