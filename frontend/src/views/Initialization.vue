@@ -15,7 +15,6 @@
       v-else
       ref="manualModeRef"
       :python-installed="pythonInstalled"
-      :pip-installed="pipInstalled"
       :git-installed="gitInstalled"
       :backend-exists="backendExists"
       :dependencies-installed="dependenciesInstalled"
@@ -46,7 +45,6 @@ const autoMode = ref(false)
 
 // 安装状态
 const pythonInstalled = ref(false)
-const pipInstalled = ref(false)
 const gitInstalled = ref(false)
 const backendExists = ref(false)
 const dependenciesInstalled = ref(false)
@@ -89,7 +87,6 @@ async function checkCriticalFiles() {
       const config = await getConfig()
       return {
         pythonExists: config.pythonInstalled || false,
-        pipExists: config.pipInstalled || false,
         gitExists: config.gitInstalled || false,
         mainPyExists: config.backendExists || false,
       }
@@ -101,13 +98,11 @@ async function checkCriticalFiles() {
     console.log('🔍 electronAPI.checkCriticalFiles() 原始返回结果:', criticalFiles)
     console.log('🔍 详细检查结果:')
     console.log('  - pythonExists:', criticalFiles.pythonExists, typeof criticalFiles.pythonExists)
-    console.log('  - pipExists:', criticalFiles.pipExists, typeof criticalFiles.pipExists)
     console.log('  - gitExists:', criticalFiles.gitExists, typeof criticalFiles.gitExists)
     console.log('  - mainPyExists:', criticalFiles.mainPyExists, typeof criticalFiles.mainPyExists)
 
     const result = {
       pythonExists: criticalFiles.pythonExists,
-      pipExists: criticalFiles.pipExists,
       gitExists: criticalFiles.gitExists,
       mainPyExists: criticalFiles.mainPyExists,
     }
@@ -123,13 +118,11 @@ async function checkCriticalFiles() {
       const config = await getConfig()
       console.log('📄 使用配置文件中的状态:', {
         pythonInstalled: config.pythonInstalled,
-        pipInstalled: config.pipInstalled,
         gitInstalled: config.gitInstalled,
         backendExists: config.backendExists,
       })
       return {
         pythonExists: config.pythonInstalled || false,
-        pipExists: config.pipInstalled || false,
         gitExists: config.gitInstalled || false,
         mainPyExists: config.backendExists || false,
       }
@@ -137,7 +130,6 @@ async function checkCriticalFiles() {
       console.error('❌ 读取配置文件也失败了:', configError)
       return {
         pythonExists: false,
-        pipExists: false,
         gitExists: false,
         mainPyExists: false,
       }
@@ -157,7 +149,6 @@ async function checkEnvironment() {
 
     // 直接根据exe文件存在性设置状态
     pythonInstalled.value = criticalFiles.pythonExists
-    pipInstalled.value = criticalFiles.pipExists
     gitInstalled.value = criticalFiles.gitExists
     backendExists.value = criticalFiles.mainPyExists
 
@@ -167,7 +158,6 @@ async function checkEnvironment() {
 
     console.log('📊 最终状态设置:')
     console.log('  - pythonInstalled:', pythonInstalled.value)
-    console.log('  - pipInstalled:', pipInstalled.value)
     console.log('  - gitInstalled:', gitInstalled.value)
     console.log('  - backendExists:', backendExists.value)
     console.log('  - dependenciesInstalled:', dependenciesInstalled.value)
@@ -179,13 +169,11 @@ async function checkEnvironment() {
     // 检查所有关键exe文件是否都存在
     const allExeFilesExist =
       criticalFiles.pythonExists &&
-      criticalFiles.pipExists &&
       criticalFiles.gitExists &&
       criticalFiles.mainPyExists
 
     console.log('关键exe文件状态检查:')
     console.log('- python.exe存在:', criticalFiles.pythonExists)
-    console.log('- pip.exe存在:', criticalFiles.pipExists)
     console.log('- git.exe存在:', criticalFiles.gitExists)
     console.log('- main.py存在:', criticalFiles.mainPyExists)
     console.log('- 所有关键文件存在:', allExeFilesExist)
