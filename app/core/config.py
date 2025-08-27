@@ -33,368 +33,10 @@ from datetime import datetime, timedelta, date, timezone
 from typing import Literal, Optional, Tuple
 
 from app.models.ConfigBase import *
+from app.utils.constants import *
 from app.utils import get_logger
 
 logger = get_logger("配置管理")
-
-STAGE_DAILY_INFO = [
-    {"value": "-", "text": "当前/上次", "days": [1, 2, 3, 4, 5, 6, 7]},
-    {"value": "1-7", "text": "1-7", "days": [1, 2, 3, 4, 5, 6, 7]},
-    {"value": "R8-11", "text": "R8-11", "days": [1, 2, 3, 4, 5, 6, 7]},
-    {
-        "value": "12-17-HARD",
-        "text": "12-17-HARD",
-        "days": [1, 2, 3, 4, 5, 6, 7],
-    },
-    {"value": "CE-6", "text": "龙门币-6/5", "days": [2, 4, 6, 7]},
-    {"value": "AP-5", "text": "红票-5", "days": [1, 4, 6, 7]},
-    {"value": "CA-5", "text": "技能-5", "days": [2, 3, 5, 7]},
-    {"value": "LS-6", "text": "经验-6/5", "days": [1, 2, 3, 4, 5, 6, 7]},
-    {"value": "SK-5", "text": "碳-5", "days": [1, 3, 5, 6]},
-    {"value": "PR-A-1", "text": "奶/盾芯片", "days": [1, 4, 5, 7]},
-    {"value": "PR-A-2", "text": "奶/盾芯片组", "days": [1, 4, 5, 7]},
-    {"value": "PR-B-1", "text": "术/狙芯片", "days": [1, 2, 5, 6]},
-    {"value": "PR-B-2", "text": "术/狙芯片组", "days": [1, 2, 5, 6]},
-    {"value": "PR-C-1", "text": "先/辅芯片", "days": [3, 4, 6, 7]},
-    {"value": "PR-C-2", "text": "先/辅芯片组", "days": [3, 4, 6, 7]},
-    {"value": "PR-D-1", "text": "近/特芯片", "days": [2, 3, 6, 7]},
-    {"value": "PR-D-2", "text": "近/特芯片组", "days": [2, 3, 6, 7]},
-]
-
-MATERIALS_MAP: Dict[str, str] = {
-    "1stact": "赏金猎人金币",
-    "5001": "声望",
-    "6001": "演习券",
-    "AP_GAMEPLAY": "理智",
-    "CRISIS_RUNE_COIN": "行动协议",
-    "RETRO_COIN": "事相结晶",
-    "SOCIAL_PT": "信用",
-    "act10d5_token_biscuit": "彼得海姆热销饼干",
-    "act10mini_token_ticket": "薪水票",
-    "act11d0_token_currency": "老旧贵族领铸币",
-    "act11d0_token_warrant": "沃伦姆德搜查令",
-    "act11mini_token_card": "借阅证",
-    "act12d0_token_components": "机械零件",
-    "act12d6_token_mushroom": "好看的蘑菇",
-    "act12d6_token_pancake": "美味的蜜饼",
-    "act12mini_token_component": "制式器械零件",
-    "act12side_point_cmemomedal": "陈小姐纪念奖牌",
-    "act12side_token_coupon": "约翰老妈代金券",
-    "act12side_token_key01": "《鬼虎双星》",
-    "act12side_token_key02": "《龙鼠相争》",
-    "act12side_token_key03": "《“黄金拍档”》",
-    "act12side_token_key04": "《假日终结》",
-    "act13d0_token_dial": "废弃时钟表盘",
-    "act13d5_token_securities": "梅什科竞技证券",
-    "act13mini_token_can": "宠物营养罐头",
-    "act13side_prestige_armorless": "无胄盟声望",
-    "act13side_prestige_commerce": "商业联合会声望",
-    "act13side_prestige_kazimierz": "监正会声望",
-    "act13side_token_card": "联合会ID卡",
-    "act13side_token_key": "卷宗管理员的钥匙",
-    "act13side_token_model": "骑士领纪念模型",
-    "act14mini_token_fu": "平安符",
-    "act14side_token_stone": "耶拉冈德之石",
-    "act15d0_token_ironSheet": "工厂铁片",
-    "act15d5_token_postcard": "奇景明信片",
-    "act15mini_token_figurine": "指木雕刻",
-    "act15side_token_tea": "罐装晌午茶",
-    "act16d5_token_inker": "夕墨",
-    "act16mini_token_sap": "辣瓶树水",
-    "act16side_token_bolt": "蚀刻弹弹壳",
-    "act17d0_token_form": "罗德岛物资配给证书",
-    "act17mini_token_ash": "炉渣",
-    "act17side_token_compass": "锈蚀的罗盘",
-    "act18d0_token_page": "手绘标本残页",
-    "act18d3_token_record": "腐蚀的伊比利亚唱片",
-    "act18mini_token_petals": "碎花瓣",
-    "act18side_token_pieces": "乐谱草稿",
-    "act19side_token_reagents": "神秘试剂",
-    "act1arcade_milestone_point": "积点卡券",
-    "act1bossrush_milestone_point": "试炼经验",
-    "act1bossrush_token_relic": "数据黑盒",
-    "act1collection_point_token": "“探索者”兑换点数",
-    "act1lock_point_reward": "赛事奖章",
-    "act1mainlinebp_token_star": "里程碑碎片",
-    "act1mainss_token_medi": "急性感染抑制剂",
-    "act1multi_token_cap": "参赛认证-S1",
-    "act1sandbox_milestone_point": "繁荣证章",
-    "act1vautochess_token_chess": "卫戍认证",
-    "act1vecb_milestone_point": "胜绩积分",
-    "act20side_token_book": "《奇谈怪论》复印本",
-    "act21side_token_permesso": "进货通行证",
-    "act22side_token_manuscript": "手抄歌谣集",
-    "act23side_token_spirit": "新酿烈刀子",
-    "act25side_token_fdrchips": "飞行数据记录芯片",
-    "act25side_token_key01": "特殊作战许可·α",
-    "act25side_token_key02": "特殊作战许可·β",
-    "act26side_token_fragmenta": "圣像碎片",
-    "act27side_token_fur": "毛绒绒生物的毛",
-    "act28side_token_box": "劣质燃料",
-    "act29side_token_erin": "调律追忆",
-    "act2bossrush_milestone_point": "试炼经验",
-    "act2bossrush_token_relic": "数据黑盒",
-    "act2collection_point_token": "“战略家”点数",
-    "act2mainss_token": "“勇气”胸章",
-    "act2vmulti_token_cap": "参赛纪念",
-    "act30side_token_box": "驮兽盲盒",
-    "act31side_token_box": "天桩",
-    "act32side_token_stamp": "艺术馆集章卡",
-    "act33side_token_sugar": "粗制糖块",
-    "act34side_token_chip": "“应急物资”蓝图芯片",
-    "act35side_token_dust": "流光之沙",
-    "act36side_token_recipe": "今日食谱",
-    "act37side_token_nay": "“我反对！”",
-    "act38d1_token_coin": "晶化源石",
-    "act38side_token_ticket": "匿名邀请函",
-    "act39side_token_garum": "盐鳞咸鳞汁",
-    "act3bossrush_milestone_point": "试炼经验",
-    "act3bossrush_token_relic": "数据黑盒",
-    "act3collection_point_token": "“战略家”点数",
-    "act40side_token_yumyum": "“生香”",
-    "act41side_token_light": "损坏的源石灯",
-    "act4bossrush_milestone_point": "试炼经验",
-    "act4bossrush_token_relic": "数据黑盒",
-    "act4d0_intelligencepoint": "有效情报值",
-    "act4d5_point_kfc": "KFC积分",
-    "act5d0_point_medal": "终极企鹅勋章",
-    "act5d1_point_conbounty": "合约赏金",
-    "act5d1_point_opagrt": "行动协议",
-    "act6d5_point_firecracker": "量子二踢脚",
-    "act6d8_point_token": "元宵通宝",
-    "act7d5_point_coupon": "食堂汤点券",
-    "act7mini_token_permit": "通关票券",
-    "act8mini_token_vigilo": "“印象”",
-    "act9d0_token_dogTag": "无名的识别牌",
-    "act9d4_point_token": "游击队员徽章",
-    "act9mini_token_ticket": "红松叶彩券",
-    "base_ap": "无人机",
-    "bilibili001": "预约干员随机4选1",
-    "et_ObsidianPass": "黑曜石节门票",
-    "favor_add_ulika": "主播U的直播切片",
-    "itempack_gacha_1": "福运鼓鼓礼袋",
-    "itempack_main_1": "罗德岛补给箱",
-    "itempack_mod_10": "狙击芯片组印刻仪",
-    "itempack_mod_11": "术师芯片组印刻仪",
-    "itempack_mod_12": "医疗芯片组印刻仪",
-    "itempack_mod_13": "辅助芯片组印刻仪",
-    "itempack_mod_14": "特种芯片组印刻仪",
-    "itempack_mod_4": "模组数据整合块",
-    "itempack_mod_6": "模组数据整合箱",
-    "itempack_mod_7": "先锋芯片组印刻仪",
-    "itempack_mod_8": "近卫芯片组印刻仪",
-    "itempack_mod_9": "重装芯片组印刻仪",
-    "mcardVoucher": "月卡兑换凭证",
-    "return_credit_token": "二次认证徽记",
-    "return_credit_token2": "二次认证徽记",
-    "rogue_1_token_bp": "蜡烛",
-    "rogue_1_token_grow": "昏暗的灵感",
-    "rogue_2_token_bp": "生机细胞",
-    "rogue_3_token_bp": "生态标本",
-    "rogue_4_token_bp": "魂灵书签",
-    "sandbox_1_tokencoin": "繁荣点数",
-    "token_Obsidian": "汐斯塔的黑曜石",
-    "token_ObsidianCoin": "黑曜石节抽奖代币",
-    "token_Wristband": "黑曜石节手环",
-    "4002": "至纯源石",
-    "4003": "合成玉",
-    "3141": "源石碎片",
-    "4001": "龙门币",
-    "3003": "赤金",
-    "4004": "高级凭证",
-    "classic_normal_ticket": "通用凭证",
-    "4005": "资质凭证",
-    "4006": "采购凭证",
-    "LMTGS_COIN_601": "寻访数据契约",
-    "LMTGS_COIN_903": "寻访数据契约",
-    "LMTGS_COIN_1401": "寻访数据契约",
-    "LMTGS_COIN_1601": "寻访数据契约",
-    "LMTGS_COIN_1803": "寻访数据契约",
-    "LMTGS_COIN_2101": "寻访数据契约",
-    "LMTGS_COIN_2301": "寻访数据契约",
-    "LMTGS_COIN_2501": "寻访数据契约",
-    "LMTGS_COIN_2701": "寻访数据契约",
-    "LMTGS_COIN_3001": "寻访数据契约",
-    "LMTGS_COIN_3301": "寻访数据契约",
-    "LMTGS_COIN_3501": "寻访数据契约",
-    "LMTGS_COIN_3801": "寻访数据契约",
-    "LMTGS_COIN_4101": "寻访数据契约",
-    "LMTGS_COIN_4401": "寻访数据契约",
-    "LMTGS_COIN_4701": "寻访数据契约",
-    "LMTGS_COIN_5001": "寻访数据契约",
-    "LMTGS_COIN_5301": "寻访数据契约",
-    "LMTGS_COIN_5601": "寻访数据契约",
-    "LMTGS_COIN_5801": "寻访数据契约",
-    "EPGS_COIN": "寻访参数模型",
-    "REP_COIN": "情报凭证",
-    "CRISIS_SHOP_COIN": "合约赏金",
-    "CRISIS_SHOP_COIN_V2": "晶体合约赏金",
-    "STORY_REVIEW_COIN": "事相碎片",
-    "ap_supply_lt_120": "应急理智浓缩液",
-    "ap_supply_lt_100": "应急理智顶液",
-    "ap_supply_lt_60": "应急理智合剂",
-    "ap_supply_lt_80": "应急理智加强剂",
-    "ap_supply_lt_010": "应急理智小样",
-    "ap_supply_lt_80_2025_1": "清爽运动饮料",
-    "EXTERMINATION_AGENT": "常态事务代理卡",
-    "Logistics_Special_Permit": "后勤特别许可证",
-    "premium_material_issue_voucher": "特级材料提货券",
-    "advanced_material_issue_voucher": "高级材料提货券",
-    "7004": "十连寻访凭证",
-    "classic_gacha_10": "十连中坚寻访凭证",
-    "LINKAGE_TKT_GACHA_10_1701": "特勤专家寻访凭证",
-    "LINKAGE_TKT_GACHA_10_3601": "指引明路寻访凭证",
-    "LINKAGE_TKT_GACHA_10_3602": "合作限定十连寻访凭证",
-    "LINKAGE_TKT_GACHA_10_4801": "特勤专家寻访凭证",
-    "LINKAGE_TKT_GACHA_10_5401": "好好吃饭寻访凭证",
-    "SINGLE_49_0_1_GACHA": "如死亦终寻访凭证",
-    "SINGLE_49_0_1_GACHA_10": "如死亦终十连寻访凭证",
-    "SINGLE_55_0_1_GACHA": "未致蒙尘寻访凭证",
-    "SINGLE_55_0_1_GACHA_10": "未致蒙尘十连寻访凭证",
-    "SINGLE_60_0_1_GACHA": "指令重构寻访凭证",
-    "SINGLE_60_0_1_GACHA_10": "指令重构十连寻访凭证",
-    "7003": "寻访凭证",
-    "classic_gacha": "中坚寻访凭证",
-    "7001": "招聘许可",
-    "7002": "加急许可",
-    "premium_material_voucher_perm": "特级材料提货券",
-    "advanced_material_voucher_perm": "高级材料提货券",
-    "randomMaterialRune_0": "荒芜行动物资补给",
-    "randomMaterialRune_1": "黄铁行动物资补给",
-    "randomMaterialRune_2": "利刃行动物资补给",
-    "randomMaterialRune_3": "燃灰行动物资补给",
-    "randomMaterialRune_4": "铅封行动物资补给",
-    "randomMaterialRune_5": "光谱行动物资补给",
-    "randomMaterialRune_6": "蛮鳞行动物资补给",
-    "randomMaterialRune_7": "松烟行动物资补给",
-    "randomMaterialRune_8": "寻昼行动物资补给",
-    "randomMaterialRune_9": "渊默行动物资补给",
-    "randomMaterialRune_10": "尘环行动物资补给",
-    "randomMaterialRune_11": "赝波行动物资补给",
-    "randomMaterialRune_12": "起源行动物资补给",
-    "randomMaterial_1": "罗德岛物资补给",
-    "randomMaterial_2": "岁过华灯",
-    "randomMaterial_3": "32h战略配给",
-    "randomMaterial_4": "感谢庆典物资补给",
-    "randomMaterial_5": "罗德岛物资补给II",
-    "randomMaterial_6": "罗德岛物资补给III",
-    "randomMaterial_7": "罗德岛物资补给IV",
-    "randomMaterial_8": "罗德岛物资补给V",
-    "randomMaterial_9": "罗德岛物资补给VI",
-    "randomMaterial_10": "罗德岛物资补给VII",
-    "randomMaterial_11": "罗德岛物资补给VIII",
-    "randomMaterial_5d5": "2024感谢庆典物资补给",
-    "randomMaterial_rhine2": "技术调查补给",
-    "randomDiamondShd_1": "罗德岛迎春红包",
-    "randomDiamondShd_2": "庆典礼盒",
-    "randomMaterial_siesta2": "峯联贸易物流补给",
-    "randomMaterial_act38side": "狂欢烟花桶",
-    "randomMaterial_leith2": "查访补给",
-    "2004": "高级作战记录",
-    "2003": "中级作战记录",
-    "2002": "初级作战记录",
-    "2001": "基础作战记录",
-    "3303": "技巧概要·卷3",
-    "3302": "技巧概要·卷2",
-    "3301": "技巧概要·卷1",
-    "mod_unlock_token": "模组数据块",
-    "mod_update_token_2": "数据增补仪",
-    "mod_update_token_1": "数据增补条",
-    "30165": "重相位对映体",
-    "30155": "烧结核凝晶",
-    "30145": "晶体电子单元",
-    "30135": "D32钢",
-    "30125": "双极纳米片",
-    "30115": "聚合剂",
-    "31094": "手性屈光体",
-    "31093": "类凝结核",
-    "31084": "环烃预制体",
-    "31083": "环烃聚质",
-    "31074": "固化纤维板",
-    "31073": "褐素纤维",
-    "31064": "转质盐聚块",
-    "31063": "转质盐组",
-    "31054": "切削原液",
-    "31053": "化合切削液",
-    "31044": "精炼溶剂",
-    "31043": "半自然溶剂",
-    "31034": "晶体电路",
-    "31033": "晶体元件",
-    "31024": "炽合金块",
-    "31023": "炽合金",
-    "31014": "聚合凝胶",
-    "31013": "凝胶",
-    "30074": "白马醇",
-    "30073": "扭转醇",
-    "30084": "三水锰矿",
-    "30083": "轻锰矿",
-    "30094": "五水研磨石",
-    "30093": "研磨石",
-    "30104": "RMA70-24",
-    "30103": "RMA70-12",
-    "30014": "提纯源岩",
-    "30013": "固源岩组",
-    "30012": "固源岩",
-    "30011": "源岩",
-    "30064": "改量装置",
-    "30063": "全新装置",
-    "30062": "装置",
-    "30061": "破损装置",
-    "30034": "聚酸酯块",
-    "30033": "聚酸酯组",
-    "30032": "聚酸酯",
-    "30031": "酯原料",
-    "30024": "糖聚块",
-    "30023": "糖组",
-    "30022": "糖",
-    "30021": "代糖",
-    "30044": "异铁块",
-    "30043": "异铁组",
-    "30042": "异铁",
-    "30041": "异铁碎片",
-    "30054": "酮阵列",
-    "30053": "酮凝集组",
-    "30052": "酮凝集",
-    "30051": "双酮",
-    "3105": "龙骨",
-    "3401": "家具零件",
-    "3133": "高级加固建材",
-    "3132": "进阶加固建材",
-    "3131": "基础加固建材",
-    "3114": "碳素组",
-    "3113": "碳素",
-    "3112": "碳",
-    "32001": "芯片助剂",
-    "3213": "先锋双芯片",
-    "3223": "近卫双芯片",
-    "3233": "重装双芯片",
-    "3243": "狙击双芯片",
-    "3253": "术师双芯片",
-    "3263": "医疗双芯片",
-    "3273": "辅助双芯片",
-    "3283": "特种双芯片",
-    "3212": "先锋芯片组",
-    "3222": "近卫芯片组",
-    "3232": "重装芯片组",
-    "3242": "狙击芯片组",
-    "3252": "术师芯片组",
-    "3262": "医疗芯片组",
-    "3272": "辅助芯片组",
-    "3282": "特种芯片组",
-    "3211": "先锋芯片",
-    "3221": "近卫芯片",
-    "3231": "重装芯片",
-    "3241": "狙击芯片",
-    "3251": "术师芯片",
-    "3261": "医疗芯片",
-    "3271": "辅助芯片",
-    "3281": "特种芯片",
-    "emoticon_originium_slug": "表情套组：虫动",
-    "act29side_frag_1": "乐之节符",
-    "act29side_frag_2": "怒之节符",
-    "act29side_frag_3": "哀之节符",
-    "act29side_frag_4": "惧之节符",
-}
 
 
 class GlobalConfig(ConfigBase):
@@ -1880,7 +1522,23 @@ class AppConfig(GlobalConfig):
         else:
             await self.get_stage()
 
-        return json.loads(self.get("Data", "Stage")).get(index, [])
+        if index == "Info":
+            today = self.server_date().isoweekday()
+            logger.info(f"获取关卡信息：{index}，今天是：{today}")
+            res_stage_info = []
+            for stage in RESOURCE_STAGE_INFO:
+                logger.info(f"available: {stage['days']},")
+                if (
+                    today in stage["days"]
+                    and stage["value"] in RESOURCE_STAGE_DROP_INFO
+                ):
+                    res_stage_info.append(RESOURCE_STAGE_DROP_INFO[stage["value"]])
+            return {
+                "SideStory": json.loads(self.get("Data", "Stage")).get("Info", []),
+                "Resource": res_stage_info,
+            }
+        else:
+            return json.loads(self.get("Data", "Stage")).get(index, [])
 
     async def get_proxy_overview(self) -> Dict[str, Any]:
         """获取代理情况概览信息"""
@@ -1915,7 +1573,9 @@ class AppConfig(GlobalConfig):
             }
         return overview
 
-    async def get_stage(self) -> Optional[Dict[str, List[Dict[str, str]]]]:
+    async def get_stage(
+        self, if_start: bool = False
+    ) -> Optional[Dict[str, List[Dict[str, str]]]]:
         """更新活动关卡信息"""
 
         if datetime.now() - timedelta(hours=1) < datetime.strptime(
@@ -1929,7 +1589,7 @@ class AppConfig(GlobalConfig):
         try:
             response = requests.get(
                 "https://api.maa.plus/MaaAssistantArknights/api/stageAndTasksUpdateTime.json",
-                timeout=10,
+                timeout=3 if if_start else 10,
                 proxies=self.get_proxies(),
             )
             if response.status_code == 200:
@@ -1963,22 +1623,22 @@ class AppConfig(GlobalConfig):
         try:
             response = requests.get(
                 "https://api.maa.plus/MaaAssistantArknights/api/gui/StageActivity.json",
-                timeout=10,
+                timeout=3 if if_start else 10,
                 proxies=self.get_proxies(),
             )
             if response.status_code == 200:
-                stage_infos = (
+                remote_side_story_info = (
                     response.json().get("Official", {}).get("sideStoryStage", [])
                 )
                 if_get_maa_stage = True
             else:
                 logger.warning(f"无法从MAA服务器获取活动关卡信息:{response.text}")
                 if_get_maa_stage = False
-                stage_infos = []
+                remote_side_story_info = []
         except Exception as e:
             logger.warning(f"无法从MAA服务器获取活动关卡信息: {e}")
             if_get_maa_stage = False
-            stage_infos = []
+            remote_side_story_info = []
 
         def normalize_drop(value: str) -> str:
             # 去前后空格与常见零宽字符
@@ -1986,19 +1646,18 @@ class AppConfig(GlobalConfig):
             s = re.sub(r"[\u200b\u200c\u200d\ufeff]", "", s)
             return s
 
-        now_utc = datetime.now(timezone.utc)
-
         def parse_utc(dt_str: str) -> datetime:
             return datetime.strptime(dt_str, "%Y/%m/%d %H:%M:%S").replace(
                 tzinfo=timezone.utc
             )
 
-        side_story_info: List[Dict[str, Any]] = []
+        now_utc = datetime.now(timezone.utc)
+        side_story_drop_info: List[Dict[str, Any]] = []
 
-        for s in stage_infos:
-            if "SSReopen" in s.get("Display", ""):
+        for stage in remote_side_story_info:
+            if "SSReopen" in stage.get("Display", ""):
                 continue
-            act = s.get("Activity", {}) or {}
+            act = stage.get("Activity", {}) or {}
             try:
                 start_utc = parse_utc(act["UtcStartTime"])
                 expire_utc = parse_utc(act["UtcExpireTime"])
@@ -2006,7 +1665,7 @@ class AppConfig(GlobalConfig):
                 continue
 
             if start_utc <= now_utc < expire_utc:
-                raw_drop = s.get("Drop", "")
+                raw_drop = stage.get("Drop", "")
                 drop_id = normalize_drop(raw_drop)
 
                 if drop_id.isdigit():
@@ -2016,51 +1675,49 @@ class AppConfig(GlobalConfig):
                         "DESC:" + drop_id
                     )  # 非纯数字，直接用文本.加一个DESC前缀方便前端区分
 
-                side_story_info.append(
+                side_story_drop_info.append(
                     {
-                        "Display": s.get("Display", ""),
-                        "Value": s.get("Value", ""),
+                        "Display": stage.get("Display", ""),
+                        "Value": stage.get("Value", ""),
                         "Drop": raw_drop,
                         "DropName": drop_name,
-                        "Activity": s.get("Activity", {}),
+                        "Activity": stage.get("Activity", {}),
                     }
                 )
 
-        side_story_stage = []
+        side_story_combox = []
 
-        for stage_info in stage_infos:
+        for stage in remote_side_story_info:
 
             if (
                 datetime.strptime(
-                    stage_info["Activity"]["UtcStartTime"], "%Y/%m/%d %H:%M:%S"
+                    stage["Activity"]["UtcStartTime"], "%Y/%m/%d %H:%M:%S"
                 )
                 < datetime.now()
                 < datetime.strptime(
-                    stage_info["Activity"]["UtcExpireTime"], "%Y/%m/%d %H:%M:%S"
+                    stage["Activity"]["UtcExpireTime"], "%Y/%m/%d %H:%M:%S"
                 )
             ):
-                side_story_stage.append(
-                    {"label": stage_info["Value"], "value": stage_info["Value"]}
+                side_story_combox.append(
+                    {"label": stage["Value"], "value": stage["Value"]}
                 )
 
-        stage_info = {}
+        stage_data = {}
 
         for day in range(0, 8):
 
-            today_stage = []
+            res_stage = []
 
-            for stage_info in STAGE_DAILY_INFO:
+            for stage in RESOURCE_STAGE_INFO:
 
-                if day in stage_info["days"] or day == 0:
-                    today_stage.append(
-                        {"label": stage_info["text"], "value": stage_info["value"]}
-                    )
+                if day in stage["days"] or day == 0:
+                    res_stage.append({"label": stage["text"], "value": stage["value"]})
 
-            stage_info[calendar.day_name[day - 1] if day > 0 else "ALL"] = (
-                side_story_stage + today_stage
+            stage_data[calendar.day_name[day - 1] if day > 0 else "ALL"] = (
+                side_story_combox + res_stage
             )
 
-        stage_info["Info"] = side_story_info
+        stage_data["Info"] = side_story_drop_info
 
         if if_get_maa_stage:
 
@@ -2073,9 +1730,9 @@ class AppConfig(GlobalConfig):
                 "StageTimeStamp",
                 remote_time_stamp.strftime("%Y-%m-%d %H:%M:%S"),
             )
-            await self.set("Data", "Stage", json.dumps(stage_info, ensure_ascii=False))
+            await self.set("Data", "Stage", json.dumps(stage_data, ensure_ascii=False))
 
-        return stage_info
+        return stage_data
 
     async def get_script_combox(self):
         """获取脚本下拉框信息"""
