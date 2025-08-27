@@ -189,7 +189,7 @@ async def get_web_config() -> InfoOut:
 @router.post(
     "/get/overview", summary="信息总览", response_model=InfoOut, status_code=200
 )
-async def add_overview() -> InfoOut:
+async def get_overview() -> InfoOut:
     try:
         stage = await Config.get_stage_info("Info")
         proxy = await Config.get_proxy_overview()

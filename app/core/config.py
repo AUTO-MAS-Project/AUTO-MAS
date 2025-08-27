@@ -28,6 +28,7 @@ import calendar
 import requests
 import truststore
 from pathlib import Path
+from fastapi import WebSocket
 from collections import defaultdict
 from datetime import datetime, timedelta, date, timezone
 from typing import Literal, Optional, Tuple
@@ -583,6 +584,7 @@ class AppConfig(GlobalConfig):
         self.config_path.mkdir(parents=True, exist_ok=True)
         self.history_path.mkdir(parents=True, exist_ok=True)
 
+        self.websocket: Optional[WebSocket] = None
         self.silence_dict: Dict[Path, datetime] = {}
         self.if_ignore_silence: List[uuid.UUID] = []
         self.temp_task: List[asyncio.Task] = []
@@ -864,6 +866,13 @@ class AppConfig(GlobalConfig):
             cur.close()
             db.close()
             logger.success("数据文件版本更新完成")
+
+    async def send_json(self, data: dict) -> None:
+        """通过WebSocket发送JSON数据"""
+        if Config.websocket is None:
+            raise RuntimeError("WebSocket 未连接")
+        else:
+            await Config.websocket.send_json(data)
 
     async def add_script(
         self, script: Literal["MAA", "General"]

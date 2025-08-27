@@ -19,26 +19,29 @@
 
 #   Contact: DLmaster_361@163.com
 
-__version__ = "5.0.0"
-__author__ = "DLmaster361 <DLmaster_361@163.com>"
-__license__ = "GPL-3.0 license"
 
-from .core import router as core_router
-from .info import router as info_router
-from .scripts import router as scripts_router
-from .plan import router as plan_router
-from .queue import router as queue_router
-from .dispatch import router as dispatch_router
-from .history import router as history_router
-from .setting import router as setting_router
+import asyncio
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-__all__ = [
-    "core_router",
-    "info_router",
-    "scripts_router",
-    "plan_router",
-    "queue_router",
-    "dispatch_router",
-    "history_router",
-    "setting_router",
-]
+from app.core import Config, Broadcast
+from app.services import System
+from app.models.schema import *
+
+router = APIRouter(prefix="/api/core", tags=["核心信息"])
+
+
+@router.websocket("/ws")
+async def connect_websocket(websocket: WebSocket):
+    await websocket.accept()
+    Config.websocket = websocket
+    while True:
+        try:
+            data = await asyncio.wait_for(websocket.receive_json(), timeout=30.0)
+            await Broadcast.put(data)
+        except asyncio.TimeoutError:
+            await websocket.send_json(
+                WebSocketMessage(type="Signal", data={"Ping": "无描述"}).model_dump()
+            )
+        except WebSocketDisconnect:
+            break
+    await System.set_power("KillSelf")

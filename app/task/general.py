@@ -33,7 +33,7 @@ from typing import Union, List, Dict, Optional
 
 
 from app.core import Config, GeneralConfig, GeneralUserConfig
-from app.models.schema import TaskMessage
+from app.models.schema import WebSocketMessage
 from app.models.ConfigBase import MultipleConfig
 from app.services import Notify, System
 from app.utils import get_logger, LogMonitor, ProcessManager, strptime
@@ -46,18 +46,14 @@ class GeneralManager:
     """通用脚本通用控制器"""
 
     def __init__(
-        self,
-        mode: str,
-        script_id: uuid.UUID,
-        user_id: Optional[uuid.UUID],
-        websocket: WebSocket,
+        self, mode: str, script_id: uuid.UUID, user_id: Optional[uuid.UUID], ws_id: str
     ):
         super(GeneralManager, self).__init__()
 
         self.mode = mode
         self.script_id = script_id
         self.user_id = user_id
-        self.websocket = websocket
+        self.ws_id = ws_id
 
         self.game_process_manager = ProcessManager()
         self.general_process_manager = ProcessManager()
@@ -164,8 +160,10 @@ class GeneralManager:
         self.check_result = self.check_config()
         if self.check_result != "Success!":
             logger.error(f"未通过配置检查：{self.check_result}")
-            await self.websocket.send_json(
-                TaskMessage(type="Info", data={"Error": self.check_result}).model_dump()
+            await Config.send_json(
+                WebSocketMessage(
+                    taskId=self.ws_id, type="Info", data={"Error": self.check_result}
+                ).model_dump()
             )
             return
 
@@ -229,16 +227,20 @@ class GeneralManager:
                     < self.script_config.get("Run", "ProxyTimesLimit")
                 ):
                     user["status"] = "运行"
-                    await self.websocket.send_json(
-                        TaskMessage(
-                            type="Update", data={"user_list": self.user_list}
+                    await Config.send_json(
+                        WebSocketMessage(
+                            taskId=self.ws_id,
+                            type="Update",
+                            data={"user_list": self.user_list},
                         ).model_dump()
                     )
                 else:
                     user["status"] = "跳过"
-                    await self.websocket.send_json(
-                        TaskMessage(
-                            type="Update", data={"user_list": self.user_list}
+                    await Config.send_json(
+                        WebSocketMessage(
+                            taskId=self.ws_id,
+                            type="Update",
+                            data={"user_list": self.user_list},
                         ).model_dump()
                     )
                     continue
@@ -254,8 +256,9 @@ class GeneralManager:
                 ).exists():
 
                     logger.error(f"用户: {user['user_id']} - 未找到配置文件")
-                    await self.websocket.send_json(
-                        TaskMessage(
+                    await Config.send_json(
+                        WebSocketMessage(
+                            taskId=self.ws_id,
                             type="Info",
                             data={"Error": f"未找到 {user['user_id']} 的配置文件"},
                         ).model_dump()
@@ -306,8 +309,9 @@ class GeneralManager:
                             )
                         except Exception as e:
                             logger.exception(f"启动游戏/模拟器时出现异常：{e}")
-                            await self.websocket.send_json(
-                                TaskMessage(
+                            await Config.send_json(
+                                WebSocketMessage(
+                                    taskId=self.ws_id,
                                     type="Info",
                                     data={"Error": f"启动游戏/模拟器时出现异常：{e}"},
                                 ).model_dump()
@@ -326,8 +330,9 @@ class GeneralManager:
                                 seconds=self.script_config.get("Game", "WaitTime") + 10
                             )
 
-                        await self.websocket.send_json(
-                            TaskMessage(
+                        await Config.send_json(
+                            WebSocketMessage(
+                                taskId=self.ws_id,
                                 type="Update",
                                 data={
                                     "log": f"正在等待游戏/模拟器完成启动\n请等待{self.script_config.get('Game', 'WaitTime')}s"
@@ -368,8 +373,9 @@ class GeneralManager:
                         logger.info(
                             f"用户: {user['user_id']} - 通用脚本进程完成代理任务"
                         )
-                        await self.websocket.send_json(
-                            TaskMessage(
+                        await Config.send_json(
+                            WebSocketMessage(
+                                taskId=self.ws_id,
                                 type="Update",
                                 data={
                                     "log": "检测到通用脚本进程完成代理任务\n正在等待相关程序结束\n请等待10s"
@@ -425,8 +431,9 @@ class GeneralManager:
                         )
                         # 打印中止信息
                         # 此时，log变量内存储的就是出现异常的日志信息，可以保存或发送用于问题排查
-                        await self.websocket.send_json(
-                            TaskMessage(
+                        await Config.send_json(
+                            WebSocketMessage(
+                                taskId=self.ws_id,
                                 type="Update",
                                 data={
                                     "log": f"{self.general_result}\n正在中止相关程序\n请等待10s"
@@ -768,8 +775,10 @@ class GeneralManager:
         # 更新日志
         if await self.general_process_manager.is_running():
 
-            await self.websocket.send_json(
-                TaskMessage(type="Update", data={"log": log}).model_dump()
+            await Config.send_json(
+                WebSocketMessage(
+                    taskId=self.ws_id, type="Update", data={"log": log}
+                ).model_dump()
             )
 
         if "自动代理" in self.mode:
