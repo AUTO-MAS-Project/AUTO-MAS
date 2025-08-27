@@ -271,6 +271,21 @@ ipcMain.handle('restart-as-admin', () => {
 })
 
 // 应用生命周期
+// 保证应用单例运行
+const gotTheLock = app.requestSingleInstanceLock();
+
+if (!gotTheLock) {
+  app.quit();
+  process.exit(0);
+}
+
+app.on('second-instance', () => {
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.focus();
+  }
+});
+
 app.whenReady().then(() => {
   // 检查管理员权限
   if (!isRunningAsAdmin()) {
@@ -279,7 +294,7 @@ app.whenReady().then(() => {
     // 这里先创建窗口，让用户选择是否重新启动
   }
   createWindow()
-})
+});
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
