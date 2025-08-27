@@ -23,6 +23,7 @@
 import os
 import sys
 import ctypes
+import logging
 from pathlib import Path
 
 current_dir = Path(__file__).resolve().parent
@@ -32,6 +33,24 @@ if str(current_dir) not in sys.path:
 from app.utils import get_logger
 
 logger = get_logger("主程序")
+
+
+class InterceptHandler(logging.Handler):
+    def emit(self, record):
+        # 获取对应 loguru 的 level
+        try:
+            level = logger.level(record.levelname).name
+        except ValueError:
+            level = record.levelno
+        # 转发日志
+        logger.opt(depth=6, exception=record.exc_info).log(level, record.getMessage())
+
+
+# 拦截标准 logging
+logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)
+for name in ("uvicorn", "uvicorn.error", "uvicorn.access", "fastapi"):
+    logging.getLogger(name).handlers = [InterceptHandler()]
+    logging.getLogger(name).propagate = False
 
 
 def is_admin() -> bool:
@@ -75,7 +94,6 @@ def main():
                 logger.info("主业务定时器已关闭")
 
             logger.info("AUTO_MAA 后端程序关闭")
-            logger.info("----------------END----------------")
 
         from fastapi.middleware.cors import CORSMiddleware
         from app.api import (
@@ -113,7 +131,19 @@ def main():
         app.include_router(history_router)
         app.include_router(setting_router)
 
-        uvicorn.run(app, host="0.0.0.0", port=36163)
+        async def run_server():
+
+            config = uvicorn.Config(
+                app, host="0.0.0.0", port=36163, log_level="info", log_config=None
+            )
+            server = uvicorn.Server(config)
+
+            from app.core import Config
+
+            Config.server = server
+            await server.serve()
+
+        asyncio.run(run_server())
 
     else:
 
