@@ -162,7 +162,7 @@ class GeneralManager:
             logger.error(f"未通过配置检查：{self.check_result}")
             await Config.send_json(
                 WebSocketMessage(
-                    taskId=self.ws_id, type="Info", data={"Error": self.check_result}
+                    id=self.ws_id, type="Info", data={"Error": self.check_result}
                 ).model_dump()
             )
             return
@@ -229,7 +229,7 @@ class GeneralManager:
                     user["status"] = "运行"
                     await Config.send_json(
                         WebSocketMessage(
-                            taskId=self.ws_id,
+                            id=self.ws_id,
                             type="Update",
                             data={"user_list": self.user_list},
                         ).model_dump()
@@ -238,7 +238,7 @@ class GeneralManager:
                     user["status"] = "跳过"
                     await Config.send_json(
                         WebSocketMessage(
-                            taskId=self.ws_id,
+                            id=self.ws_id,
                             type="Update",
                             data={"user_list": self.user_list},
                         ).model_dump()
@@ -258,7 +258,7 @@ class GeneralManager:
                     logger.error(f"用户: {user['user_id']} - 未找到配置文件")
                     await Config.send_json(
                         WebSocketMessage(
-                            taskId=self.ws_id,
+                            id=self.ws_id,
                             type="Info",
                             data={"Error": f"未找到 {user['user_id']} 的配置文件"},
                         ).model_dump()
@@ -311,7 +311,7 @@ class GeneralManager:
                             logger.exception(f"启动游戏/模拟器时出现异常：{e}")
                             await Config.send_json(
                                 WebSocketMessage(
-                                    taskId=self.ws_id,
+                                    id=self.ws_id,
                                     type="Info",
                                     data={"Error": f"启动游戏/模拟器时出现异常：{e}"},
                                 ).model_dump()
@@ -332,7 +332,7 @@ class GeneralManager:
 
                         await Config.send_json(
                             WebSocketMessage(
-                                taskId=self.ws_id,
+                                id=self.ws_id,
                                 type="Update",
                                 data={
                                     "log": f"正在等待游戏/模拟器完成启动\n请等待{self.script_config.get('Game', 'WaitTime')}s"
@@ -375,7 +375,7 @@ class GeneralManager:
                         )
                         await Config.send_json(
                             WebSocketMessage(
-                                taskId=self.ws_id,
+                                id=self.ws_id,
                                 type="Update",
                                 data={
                                     "log": "检测到通用脚本进程完成代理任务\n正在等待相关程序结束\n请等待10s"
@@ -433,7 +433,7 @@ class GeneralManager:
                         # 此时，log变量内存储的就是出现异常的日志信息，可以保存或发送用于问题排查
                         await Config.send_json(
                             WebSocketMessage(
-                                taskId=self.ws_id,
+                                id=self.ws_id,
                                 type="Update",
                                 data={
                                     "log": f"{self.general_result}\n正在中止相关程序\n请等待10s"
@@ -777,7 +777,7 @@ class GeneralManager:
 
             await Config.send_json(
                 WebSocketMessage(
-                    taskId=self.ws_id, type="Update", data={"log": log}
+                    id=self.ws_id, type="Update", data={"log": log}
                 ).model_dump()
             )
 
