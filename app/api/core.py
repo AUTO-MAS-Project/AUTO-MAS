@@ -40,7 +40,9 @@ async def connect_websocket(websocket: WebSocket):
             await Broadcast.put(data)
         except asyncio.TimeoutError:
             await websocket.send_json(
-                WebSocketMessage(type="Signal", data={"Ping": "无描述"}).model_dump()
+                WebSocketMessage(
+                    id="Main", type="Signal", data={"Ping": "无描述"}
+                ).model_dump()
             )
         except WebSocketDisconnect:
             break

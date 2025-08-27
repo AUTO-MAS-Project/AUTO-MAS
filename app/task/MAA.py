@@ -120,7 +120,7 @@ class MaaManager:
             logger.error(f"未通过配置检查：{self.check_result}")
             await Config.send_json(
                 WebSocketMessage(
-                    taskId=self.ws_id, type="Info", data={"Error": self.check_result}
+                    id=self.ws_id, type="Info", data={"Error": self.check_result}
                 ).model_dump()
             )
             return
@@ -187,7 +187,7 @@ class MaaManager:
                     user["status"] = "运行"
                     await Config.send_json(
                         WebSocketMessage(
-                            taskId=self.ws_id,
+                            id=self.ws_id,
                             type="Update",
                             data={"user_list": self.user_list},
                         ).model_dump()
@@ -196,7 +196,7 @@ class MaaManager:
                     user["status"] = "跳过"
                     await Config.send_json(
                         WebSocketMessage(
-                            taskId=self.ws_id,
+                            id=self.ws_id,
                             type="Update",
                             data={"user_list": self.user_list},
                         ).model_dump()
@@ -231,7 +231,7 @@ class MaaManager:
 
                         await Config.send_json(
                             WebSocketMessage(
-                                taskId=self.ws_id,
+                                id=self.ws_id,
                                 type="Update",
                                 data={"log": "正在执行森空岛签到中\n请稍候~"},
                             ).model_dump()
@@ -250,7 +250,7 @@ class MaaManager:
                                 )
                                 await Config.send_json(
                                     WebSocketMessage(
-                                        taskId=self.ws_id,
+                                        id=self.ws_id,
                                         type="Info",
                                         data={
                                             (
@@ -263,7 +263,7 @@ class MaaManager:
                             logger.info(f"用户: {user['user_id']} - 森空岛签到失败")
                             await Config.send_json(
                                 WebSocketMessage(
-                                    taskId=self.ws_id,
+                                    id=self.ws_id,
                                     type="Info",
                                     data={
                                         "Error": f"用户 {user['name']} 森空岛签到失败",
@@ -287,7 +287,7 @@ class MaaManager:
                     )
                     await Config.send_json(
                         WebSocketMessage(
-                            taskId=self.ws_id,
+                            id=self.ws_id,
                             type="Info",
                             data={
                                 "Warning": f"用户 {user['name']} 未配置森空岛签到Token，跳过森空岛签到"
@@ -331,7 +331,7 @@ class MaaManager:
                         )
                         await Config.send_json(
                             WebSocketMessage(
-                                taskId=self.ws_id,
+                                id=self.ws_id,
                                 type="Info",
                                 data={"Error": f"未找到 {user['name']} 的详细配置文件"},
                             ).model_dump()
@@ -342,7 +342,7 @@ class MaaManager:
                     # 更新当前模式到界面
                     await Config.send_json(
                         WebSocketMessage(
-                            taskId=self.ws_id,
+                            id=self.ws_id,
                             type="Update",
                             data={
                                 "user_status": {
@@ -426,7 +426,7 @@ class MaaManager:
                                 logger.exception(f"解析快捷方式时出现异常：{e}")
                                 await Config.send_json(
                                     WebSocketMessage(
-                                        taskId=self.ws_id,
+                                        id=self.ws_id,
                                         type="Info",
                                         data={
                                             "Error": f"解析快捷方式时出现异常：{e}",
@@ -439,7 +439,7 @@ class MaaManager:
                             logger.error(f"模拟器快捷方式不存在：{self.emulator_path}")
                             await Config.send_json(
                                 WebSocketMessage(
-                                    taskId=self.ws_id,
+                                    id=self.ws_id,
                                     type="Info",
                                     data={
                                         "Error": f"模拟器快捷方式 {self.emulator_path} 不存在",
@@ -491,7 +491,7 @@ class MaaManager:
                             logger.exception(f"释放ADB时出现异常：{e}")
                             await Config.send_json(
                                 WebSocketMessage(
-                                    taskId=self.ws_id,
+                                    id=self.ws_id,
                                     type="Info",
                                     data={"Warning": f"释放ADB时出现异常：{e}"},
                                 ).model_dump()
@@ -509,7 +509,7 @@ class MaaManager:
                                 logger.exception(f"启动模拟器时出现异常：{e}")
                                 await Config.send_json(
                                     WebSocketMessage(
-                                        taskId=self.ws_id,
+                                        id=self.ws_id,
                                         type="Info",
                                         data={
                                             "Error": "启动模拟器时出现异常，请检查MAA中模拟器路径设置"
@@ -557,7 +557,7 @@ class MaaManager:
                             )
                             await Config.send_json(
                                 WebSocketMessage(
-                                    taskId=self.ws_id,
+                                    id=self.ws_id,
                                     type="Update",
                                     data={
                                         "log": "检测到MAA进程完成代理任务\n正在等待相关程序结束\n请等待10s"
@@ -573,7 +573,7 @@ class MaaManager:
                             # 此时，log变量内存储的就是出现异常的日志信息，可以保存或发送用于问题排查
                             await Config.send_json(
                                 WebSocketMessage(
-                                    taskId=self.ws_id,
+                                    id=self.ws_id,
                                     type="Update",
                                     data={
                                         "log": f"{self.maa_result}\n正在中止相关程序\n请等待10s"
@@ -617,7 +617,7 @@ class MaaManager:
                             logger.exception(f"释放ADB时出现异常：{e}")
                             await Config.send_json(
                                 WebSocketMessage(
-                                    taskId=self.ws_id,
+                                    id=self.ws_id,
                                     type="Info",
                                     data={"Error": f"释放ADB时出现异常：{e}"},
                                 ).model_dump()
@@ -690,7 +690,7 @@ class MaaManager:
 
                             await Config.send_json(
                                 WebSocketMessage(
-                                    taskId=self.ws_id,
+                                    id=self.ws_id,
                                     type="Update",
                                     data={
                                         "log": "检测到MAA存在更新\nMAA正在执行更新动作\n请等待10s"
@@ -731,7 +731,7 @@ class MaaManager:
                 user["status"] = "运行"
                 await Config.send_json(
                     WebSocketMessage(
-                        taskId=self.ws_id,
+                        id=self.ws_id,
                         type="Update",
                         data={"user_list": self.user_list},
                     ).model_dump()
@@ -778,7 +778,7 @@ class MaaManager:
                         self.run_book["SignIn"] = True
                         await Config.send_json(
                             WebSocketMessage(
-                                taskId=self.ws_id,
+                                id=self.ws_id,
                                 type="Update",
                                 data={"log": "检测到MAA进程成功登录PRTS"},
                             ).model_dump()
@@ -789,7 +789,7 @@ class MaaManager:
                         )
                         await Config.send_json(
                             WebSocketMessage(
-                                taskId=self.ws_id,
+                                id=self.ws_id,
                                 type="Update",
                                 data={
                                     "log": f"{self.maa_result}\n正在中止相关程序\n请等待10s"
@@ -812,7 +812,7 @@ class MaaManager:
                         uid = str(uuid.uuid4())
                         await Config.send_json(
                             WebSocketMessage(
-                                taskId=self.ws_id,
+                                id=self.ws_id,
                                 type="Message",
                                 data={
                                     "message_id": uid,
@@ -832,7 +832,7 @@ class MaaManager:
                     uid = str(uuid.uuid4())
                     await Config.send_json(
                         WebSocketMessage(
-                            taskId=self.ws_id,
+                            id=self.ws_id,
                             type="Message",
                             data={
                                 "message_id": uid,
@@ -850,7 +850,7 @@ class MaaManager:
 
                 await Config.send_json(
                     WebSocketMessage(
-                        taskId=self.ws_id,
+                        id=self.ws_id,
                         type="Update",
                         data={"user_list": self.user_list},
                     ).model_dump()
@@ -931,7 +931,7 @@ class MaaManager:
 
             await Config.send_json(
                 WebSocketMessage(
-                    taskId=self.ws_id, type="Update", data={"user_list": self.user_list}
+                    id=self.ws_id, type="Update", data={"user_list": self.user_list}
                 ).model_dump()
             )
 
@@ -1110,7 +1110,7 @@ class MaaManager:
 
         await Config.send_json(
             WebSocketMessage(
-                taskId=self.ws_id,
+                id=self.ws_id,
                 type="Update",
                 data={
                     "log": f"即将搜索ADB实际地址\n正在等待模拟器完成启动\n请等待{self.wait_time}s"
@@ -1201,7 +1201,7 @@ class MaaManager:
 
             await Config.send_json(
                 WebSocketMessage(
-                    taskId=self.ws_id, type="Update", data={"log": log}
+                    id=self.ws_id, type="Update", data={"log": log}
                 ).model_dump()
             )
 
@@ -1628,7 +1628,7 @@ class MaaManager:
                             )
                             await Config.send_json(
                                 WebSocketMessage(
-                                    taskId=self.ws_id,
+                                    id=self.ws_id,
                                     type="Info",
                                     data={
                                         "warning": f"未选择用户 {self.cur_user_data.get('Info', 'Name')} 的自定义基建配置文件"

@@ -110,7 +110,7 @@ class _TaskManager:
                 )
                 await Config.send_json(
                     WebSocketMessage(
-                        taskId=str(task_id),
+                        id=str(task_id),
                         type="Info",
                         data={"Error": "脚本类型不支持"},
                     ).model_dump()
@@ -136,7 +136,7 @@ class _TaskManager:
                     )
                     await Config.send_json(
                         WebSocketMessage(
-                            taskId=str(task_id),
+                            id=str(task_id),
                             type="Info",
                             data={"Error": "队列类型不支持"},
                         ).model_dump()
@@ -170,7 +170,7 @@ class _TaskManager:
                     task["status"] = "跳过"
                     await Config.send_json(
                         WebSocketMessage(
-                            taskId=str(task_id),
+                            id=str(task_id),
                             type="Update",
                             data={"task_list": task_list},
                         ).model_dump()
@@ -182,7 +182,7 @@ class _TaskManager:
                 task["status"] = "运行"
                 await Config.send_json(
                     WebSocketMessage(
-                        taskId=str(task_id),
+                        id=str(task_id),
                         type="Update",
                         data={"task_list": task_list},
                     ).model_dump()
@@ -199,7 +199,7 @@ class _TaskManager:
                     )
                     await Config.send_json(
                         WebSocketMessage(
-                            taskId=str(task_id),
+                            id=str(task_id),
                             type="Info",
                             data={"Error": "脚本类型不支持"},
                         ).model_dump()
@@ -260,7 +260,7 @@ class _TaskManager:
 
         await Config.send_json(
             WebSocketMessage(
-                taskId=str(task_id), type="Signal", data={"Accomplish": "无描述"}
+                id=str(task_id), type="Signal", data={"Accomplish": "无描述"}
             ).model_dump()
         )
 
