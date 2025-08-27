@@ -40,12 +40,12 @@ yarn install
 
 ### 开发模式
 ```bash
-yarn dev          # 启动 Electron 开发环境
+yarn dev
 ```
 
 ### 构建
 ```bash
-yarn build        # 构建生产版本
+yarn build   
 ```
 
 ## 技术栈
