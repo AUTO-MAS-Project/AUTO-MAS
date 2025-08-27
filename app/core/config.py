@@ -23,6 +23,7 @@
 import re
 import shutil
 import asyncio
+import uvicorn
 import sqlite3
 import calendar
 import requests
@@ -584,6 +585,7 @@ class AppConfig(GlobalConfig):
         self.config_path.mkdir(parents=True, exist_ok=True)
         self.history_path.mkdir(parents=True, exist_ok=True)
 
+        self.server: Optional[uvicorn.Server] = None
         self.websocket: Optional[WebSocket] = None
         self.silence_dict: Dict[Path, datetime] = {}
         self.if_ignore_silence: List[uuid.UUID] = []
