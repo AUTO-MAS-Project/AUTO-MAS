@@ -70,10 +70,10 @@ function restartAsAdmin() {
         // 使用PowerShell以管理员权限启动
         (0, child_process_1.spawn)('powershell', [
             '-Command',
-            `Start-Process -FilePath "${exePath}" -ArgumentList "${args.join(' ')}" -Verb RunAs`
+            `Start-Process -FilePath "${exePath}" -ArgumentList "${args.join(' ')}" -Verb RunAs`,
         ], {
             detached: true,
-            stdio: 'ignore'
+            stdio: 'ignore',
         });
         electron_1.app.quit();
     }
@@ -262,6 +262,19 @@ electron_1.ipcMain.handle('restart-as-admin', () => {
     restartAsAdmin();
 });
 // 应用生命周期
+// 保证应用单例运行
+const gotTheLock = electron_1.app.requestSingleInstanceLock();
+if (!gotTheLock) {
+    electron_1.app.quit();
+    process.exit(0);
+}
+electron_1.app.on('second-instance', () => {
+    if (mainWindow) {
+        if (mainWindow.isMinimized())
+            mainWindow.restore();
+        mainWindow.focus();
+    }
+});
 electron_1.app.whenReady().then(() => {
     // 检查管理员权限
     if (!isRunningAsAdmin()) {

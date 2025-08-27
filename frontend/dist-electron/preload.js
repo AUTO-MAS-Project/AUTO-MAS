@@ -34,5 +34,5 @@ electron_1.contextBridge.exposeInMainWorld('electronAPI', {
     },
     removeDownloadProgressListener: () => {
         electron_1.ipcRenderer.removeAllListeners('download-progress');
-    }
+    },
 });
