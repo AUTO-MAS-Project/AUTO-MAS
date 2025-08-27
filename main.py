@@ -59,7 +59,7 @@ def main():
             from app.services import System
 
             await Config.init_config()
-            await Config.get_stage()
+            await Config.get_stage(if_start=True)
             await Config.clean_old_history()
             main_timer = asyncio.create_task(MainTimer.second_task())
             await System.set_Sleep()
@@ -111,7 +111,7 @@ def main():
         app.include_router(history_router)
         app.include_router(setting_router)
 
-        uvicorn.run(app, host="0.0.0.0", port=8000)
+        uvicorn.run(app, host="0.0.0.0", port=36163)
 
     else:
 

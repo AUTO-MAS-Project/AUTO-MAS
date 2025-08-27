@@ -40,7 +40,11 @@ async def get_stage_combox(
 
     try:
         raw_data = await Config.get_stage_info(stage.type)
-        data = [ComboBoxItem(**item) for item in raw_data] if raw_data else []
+        data = (
+            [ComboBoxItem(**item) for item in raw_data if isinstance(item, dict)]
+            if raw_data
+            else []
+        )
     except Exception as e:
         return ComboBoxOut(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}", data=[]

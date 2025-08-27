@@ -24,6 +24,7 @@ __author__ = "DLmaster361 <DLmaster_361@163.com>"
 __license__ = "GPL-3.0 license"
 
 
+from .constants import *
 from .logger import get_logger
 from .ImageUtils import ImageUtils
 from .LogMonitor import LogMonitor, strptime
@@ -31,6 +32,7 @@ from .ProcessManager import ProcessManager
 from .security import dpapi_encrypt, dpapi_decrypt
 
 __all__ = [
+    "constants",
     "get_logger",
     "ImageUtils",
     "LogMonitor",
