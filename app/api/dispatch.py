@@ -70,33 +70,3 @@ async def power_task(task: PowerIn = Body(...)) -> OutBase:
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
     return OutBase()
-
-
-@router.websocket("/ws/{websocketId}")
-async def websocket_endpoint(
-    websocket: WebSocket,
-    websocketId: str = Path(..., description="要连接的WebSocket ID"),
-):
-    await websocket.accept()
-    try:
-        uid = uuid.UUID(websocketId)
-    except ValueError:
-        await websocket.close(code=1008, reason="无效的WebSocket ID")
-        return
-
-    if uid in TaskManager.connection_events and uid not in TaskManager.websocket_dict:
-        TaskManager.websocket_dict[uid] = websocket
-        TaskManager.connection_events[uid].set()
-        while True:
-            try:
-                data = await asyncio.wait_for(websocket.receive_json(), timeout=30.0)
-                await Broadcast.put(data)
-            except asyncio.TimeoutError:
-                await websocket.send_json(
-                    TaskMessage(type="Signal", data={"Ping": "无描述"}).model_dump()
-                )
-            except WebSocketDisconnect:
-                TaskManager.websocket_dict.pop(uid, None)
-                break
-    else:
-        await websocket.close(code=1008, reason="任务不存在或已结束")

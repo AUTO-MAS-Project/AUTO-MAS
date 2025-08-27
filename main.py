@@ -79,6 +79,7 @@ def main():
 
         from fastapi.middleware.cors import CORSMiddleware
         from app.api import (
+            core_router,
             info_router,
             scripts_router,
             plan_router,
@@ -103,6 +104,7 @@ def main():
             allow_headers=["*"],  # 允许所有请求头
         )
 
+        app.include_router(core_router)
         app.include_router(info_router)
         app.include_router(scripts_router)
         app.include_router(plan_router)
