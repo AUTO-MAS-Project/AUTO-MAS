@@ -727,6 +727,16 @@ class AppConfig(GlobalConfig):
                             script_dict[MaaConfig.name] = str(uid)
                             await sc.load(maa_config)
 
+                            if (MaaConfig / "Default/gui.json").exists():
+                                (Path.cwd() / f"data/{uid}/Default/ConfigFile").mkdir(
+                                    parents=True, exist_ok=True
+                                )
+                                shutil.copy(
+                                    MaaConfig / "Default/gui.json",
+                                    Path.cwd()
+                                    / f"data/{uid}/Default/ConfigFile/gui.json",
+                                )
+
                             for user in (MaaConfig / "UserData").iterdir():
                                 if user.is_dir() and (user / "config.json").exists():
                                     user_config = json.loads(
