@@ -733,9 +733,7 @@ class TaskCreateOut(OutBase):
 
 
 class WebSocketMessage(BaseModel):
-    taskId: Optional[str] = Field(
-        default=None, description="任务ID, 不存在时表示消息来自主程序"
-    )
+    id: str = Field(..., description="消息ID, 为Main时表示消息来自主进程")
     type: Literal["Update", "Message", "Info", "Signal"] = Field(
         ...,
         description="消息类型 Update: 更新数据, Message: 请求弹出对话框, Info: 需要在UI显示的消息, Signal: 程序信号",
