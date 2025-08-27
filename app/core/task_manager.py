@@ -21,12 +21,11 @@
 
 import uuid
 import asyncio
-from fastapi import WebSocket
 from functools import partial
 from typing import Dict, Optional
 
 from .config import Config, MaaConfig, GeneralConfig, QueueConfig
-from app.models.schema import TaskMessage
+from app.models.schema import WebSocketMessage
 from app.utils import get_logger
 from app.task import *
 
@@ -41,8 +40,6 @@ class _TaskManager:
         super().__init__()
 
         self.task_dict: Dict[uuid.UUID, asyncio.Task] = {}
-        self.connection_events: Dict[uuid.UUID, asyncio.Event] = {}
-        self.websocket_dict: Dict[uuid.UUID, WebSocket] = {}
 
     async def add_task(self, mode: str, uid: str) -> uuid.UUID:
         """
@@ -99,34 +96,23 @@ class _TaskManager:
         self, mode: str, task_id: uuid.UUID, actual_id: Optional[uuid.UUID]
     ):
 
-        # 等待连接信号
-        if task_id in self.connection_events:
-            self.connection_events[task_id].clear()
-        else:
-            self.connection_events[task_id] = asyncio.Event()
-
-        await self.connection_events[task_id].wait()
-
-        if task_id not in self.websocket_dict:
-            raise RuntimeError(f"The task {task_id} is not connected to a WebSocket.")
-
         logger.info(f"开始运行任务：{task_id}，模式：{mode}")
-
-        websocket = self.websocket_dict[task_id]
 
         if mode == "设置脚本":
 
             if isinstance(Config.ScriptConfig[task_id], MaaConfig):
-                task_item = MaaManager(mode, task_id, actual_id, websocket)
+                task_item = MaaManager(mode, task_id, actual_id, str(task_id))
             elif isinstance(Config.ScriptConfig[task_id], GeneralConfig):
-                task_item = GeneralManager(mode, task_id, actual_id, websocket)
+                task_item = GeneralManager(mode, task_id, actual_id, str(task_id))
             else:
                 logger.error(
                     f"不支持的脚本类型：{type(Config.ScriptConfig[task_id]).__name__}"
                 )
-                await websocket.send_json(
-                    TaskMessage(
-                        type="Info", data={"Error": "脚本类型不支持"}
+                await Config.send_json(
+                    WebSocketMessage(
+                        taskId=str(task_id),
+                        type="Info",
+                        data={"Error": "脚本类型不支持"},
                     ).model_dump()
                 )
                 return
@@ -148,9 +134,11 @@ class _TaskManager:
                     logger.error(
                         f"不支持的队列类型：{type(Config.QueueConfig[task_id]).__name__}"
                     )
-                    await websocket.send_json(
-                        TaskMessage(
-                            type="Info", data={"Error": "队列类型不支持"}
+                    await Config.send_json(
+                        WebSocketMessage(
+                            taskId=str(task_id),
+                            type="Info",
+                            data={"Error": "队列类型不支持"},
                         ).model_dump()
                     )
                     return
@@ -180,9 +168,11 @@ class _TaskManager:
                 if script_id in self.task_dict:
 
                     task["status"] = "跳过"
-                    await websocket.send_json(
-                        TaskMessage(
-                            type="Update", data={"task_list": task_list}
+                    await Config.send_json(
+                        WebSocketMessage(
+                            taskId=str(task_id),
+                            type="Update",
+                            data={"task_list": task_list},
                         ).model_dump()
                     )
                     logger.info(f"跳过任务：{script_id}，该任务已在运行列表中")
@@ -190,24 +180,28 @@ class _TaskManager:
 
                 # 标记为运行中
                 task["status"] = "运行"
-                await websocket.send_json(
-                    TaskMessage(
-                        type="Update", data={"task_list": task_list}
+                await Config.send_json(
+                    WebSocketMessage(
+                        taskId=str(task_id),
+                        type="Update",
+                        data={"task_list": task_list},
                     ).model_dump()
                 )
                 logger.info(f"任务开始：{script_id}")
 
                 if isinstance(Config.ScriptConfig[script_id], MaaConfig):
-                    task_item = MaaManager(mode, script_id, None, websocket)
-                elif isinstance(Config.ScriptConfig[task_id], GeneralConfig):
-                    task_item = GeneralManager(mode, task_id, actual_id, websocket)
+                    task_item = MaaManager(mode, script_id, None, str(task_id))
+                elif isinstance(Config.ScriptConfig[script_id], GeneralConfig):
+                    task_item = GeneralManager(mode, script_id, actual_id, str(task_id))
                 else:
                     logger.error(
                         f"不支持的脚本类型：{type(Config.ScriptConfig[script_id]).__name__}"
                     )
-                    await websocket.send_json(
-                        TaskMessage(
-                            type="Info", data={"Error": "脚本类型不支持"}
+                    await Config.send_json(
+                        WebSocketMessage(
+                            taskId=str(task_id),
+                            type="Info",
+                            data={"Error": "脚本类型不支持"},
                         ).model_dump()
                     )
                     continue
@@ -264,11 +258,11 @@ class _TaskManager:
             logger.info(f"任务 {task_id} 已结束")
         self.task_dict.pop(task_id)
 
-        websocket = self.websocket_dict.get(task_id, None)
-        if websocket:
-            await websocket.send_json(
-                TaskMessage(type="Signal", data={"Accomplish": "无描述"}).model_dump()
-            )
+        await Config.send_json(
+            WebSocketMessage(
+                taskId=str(task_id), type="Signal", data={"Accomplish": "无描述"}
+            ).model_dump()
+        )
 
 
 TaskManager = _TaskManager()
