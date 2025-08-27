@@ -1,7 +1,7 @@
 {
   "name": "frontend",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.0.1",
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "concurrently \"vite\" \"yarn watch:main\" \"yarn electron-dev\"",
@@ -12,19 +12,31 @@
     "web": "vite"
   },
   "build": {
+    "asar": true,
+    "asarUnpack":[],
+    "extraMetadata": {
+      "env": "prod"
+    },
     "appId": "xyz.automaa.frontend",
     "productName": "AUTO_MAA",
     "files": [
       "dist",
       "dist-electron",
-      "public"
+      "public",
+      "!src/assets/*"
     ],
-    "directories": {
-      "buildResources": "assets"
-    },
+    "extraResources": [
+      {
+        "from": "src/assets",
+        "to": "assets",
+        "filter": []
+      }
+    ],
     "win": {
       "requestedExecutionLevel": "requireAdministrator",
-      "icon": "public/AUTO_MAA.ico"
+      "target": "dir",
+      "icon": "public/AUTO_MAA.ico",
+      "artifactName": "AUTO_MAA.exe"
     },
     "mac": {
       "icon": "public/AUTO_MAA.ico"
@@ -63,5 +75,6 @@
     "vue-eslint-parser": "^10.2.0",
     "vue-tsc": "^2.2.12",
     "wait-on": "^8.0.4"
-  }
+  },
+  "packageManager": "yarn@4.9.1+sha256.6ffc213b3ce0af5c92507977d9537ea3cc085caa52d1c3f08e94d613407fed19"
 }
