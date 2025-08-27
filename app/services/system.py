@@ -221,10 +221,10 @@ class _SystemHandler:
                     ["rundll32.exe", "powrprof.dll,SetSuspendState", "0,1,0"]
                 )
 
-            elif mode == "KillSelf":
+            elif mode == "KillSelf" and Config.server is not None:
 
                 logger.info("执行退出主程序操作")
-                sys.exit(0)
+                Config.server.should_exit = True
 
         elif sys.platform.startswith("linux"):
 
@@ -247,10 +247,10 @@ class _SystemHandler:
                 logger.info("执行睡眠操作")
                 subprocess.run(["systemctl", "suspend"])
 
-            elif mode == "KillSelf":
+            elif mode == "KillSelf" and Config.server is not None:
 
                 logger.info("执行退出主程序操作")
-                sys.exit(0)
+                Config.server.should_exit = True
 
     async def kill_emulator_processes(self):
         """这里暂时仅支持 MuMu 模拟器"""
