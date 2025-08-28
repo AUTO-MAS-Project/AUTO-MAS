@@ -4,24 +4,66 @@
     <div v-if="!pythonInstalled" class="install-section">
       <p>需要安装 Python 3.13.0 运行环境（64位嵌入式版本）</p>
 
-      <div class="mirror-grid">
-        <div
-          v-for="mirror in pythonMirrors"
-          :key="mirror.key"
-          class="mirror-card"
-          :class="{ active: selectedPythonMirror === mirror.key }"
-          @click="selectedPythonMirror = mirror.key"
-        >
-          <div class="mirror-header">
-            <h4>{{ mirror.name }}</h4>
-            <div class="speed-badge" :class="getSpeedClass(mirror.speed)">
-              <span v-if="mirror.speed === null && !testingSpeed">未测试</span>
-              <span v-else-if="testingSpeed">测试中...</span>
-              <span v-else-if="mirror.speed === 9999">超时</span>
-              <span v-else>{{ mirror.speed }}ms</span>
+      <!-- 镜像源 -->
+      <div class="mirror-section">
+        <div class="section-header">
+          <h4>镜像源</h4>
+          <a-tag color="green">推荐使用</a-tag>
+        </div>
+        <div class="mirror-grid">
+          <div
+            v-for="mirror in sortedMirrorMirrors"
+            :key="mirror.key"
+            class="mirror-card"
+            :class="{ active: selectedPythonMirror === mirror.key }"
+            @click="selectedPythonMirror = mirror.key"
+          >
+            <div class="mirror-header">
+              <div class="mirror-title">
+                <h4>{{ mirror.name }}</h4>
+                <a-tag v-if="mirror.recommended" color="gold" size="small">推荐</a-tag>
+              </div>
+              <div class="speed-badge" :class="getSpeedClass(mirror.speed)">
+                <span v-if="mirror.speed === null && !testingSpeed">未测试</span>
+                <span v-else-if="testingSpeed">测试中...</span>
+                <span v-else-if="mirror.speed === 9999">超时</span>
+                <span v-else>{{ mirror.speed }}ms</span>
+              </div>
             </div>
+            <div class="mirror-description">{{ mirror.description }}</div>
+            <div class="mirror-url">{{ mirror.url }}</div>
           </div>
-          <div class="mirror-url">{{ mirror.url }}</div>
+        </div>
+      </div>
+
+      <!-- 官方源 -->
+      <div class="mirror-section">
+        <div class="section-header">
+          <h4>官方源</h4>
+          <a-tag color="orange">中国大陆连通性不佳</a-tag>
+        </div>
+        <div class="mirror-grid">
+          <div
+            v-for="mirror in sortedOfficialMirrors"
+            :key="mirror.key"
+            class="mirror-card"
+            :class="{ active: selectedPythonMirror === mirror.key }"
+            @click="selectedPythonMirror = mirror.key"
+          >
+            <div class="mirror-header">
+              <div class="mirror-title">
+                <h4>{{ mirror.name }}</h4>
+              </div>
+              <div class="speed-badge" :class="getSpeedClass(mirror.speed)">
+                <span v-if="mirror.speed === null && !testingSpeed">未测试</span>
+                <span v-else-if="testingSpeed">测试中...</span>
+                <span v-else-if="mirror.speed === 9999">超时</span>
+                <span v-else>{{ mirror.speed }}ms</span>
+              </div>
+            </div>
+            <div class="mirror-description">{{ mirror.description }}</div>
+            <div class="mirror-url">{{ mirror.url }}</div>
+          </div>
         </div>
       </div>
 
@@ -45,25 +87,31 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { getConfig, saveConfig } from '@/utils/config'
-
-interface Mirror {
-  key: string
-  name: string
-  url: string
-  speed: number | null
-}
+import { 
+  PYTHON_MIRRORS, 
+  getOfficialMirrors, 
+  getMirrorMirrors,
+  sortMirrorsBySpeedAndRecommendation,
+  type MirrorConfig 
+} from '@/config/mirrors'
 
 const props = defineProps<{
   pythonInstalled: boolean
 }>()
 
-import { PYTHON_MIRRORS } from '@/config/mirrors'
+const pythonMirrors = ref<MirrorConfig[]>(PYTHON_MIRRORS)
 
-const pythonMirrors = ref<Mirror[]>(PYTHON_MIRRORS)
+// 按类型分组的镜像源
+const officialMirrors = computed(() => getOfficialMirrors('python'))
+const mirrorMirrors = computed(() => getMirrorMirrors('python'))
 
-const selectedPythonMirror = ref('tsinghua')
+// 按速度和推荐排序的镜像源
+const sortedOfficialMirrors = computed(() => sortMirrorsBySpeedAndRecommendation(officialMirrors.value))
+const sortedMirrorMirrors = computed(() => sortMirrorsBySpeedAndRecommendation(mirrorMirrors.value))
+
+const selectedPythonMirror = ref('aliyun')
 const testingSpeed = ref(false)
 const reinstalling = ref(false)
 
@@ -118,9 +166,9 @@ async function testPythonMirrorSpeed() {
 
     await Promise.all(promises)
 
-    pythonMirrors.value.sort((a, b) => (a.speed || 9999) - (b.speed || 9999))
-
-    const fastest = pythonMirrors.value.find(m => m.speed !== 9999)
+    // 优先选择推荐的且速度最快的镜像源
+    const sortedMirrors = sortMirrorsBySpeedAndRecommendation(pythonMirrors.value)
+    const fastest = sortedMirrors.find(m => m.speed !== 9999)
     if (fastest) {
       selectedPythonMirror.value = fastest.key
       await saveMirrorConfig() // 保存最快的镜像源选择
@@ -245,12 +293,20 @@ onMounted(async () => {
   margin-bottom: 8px;
 }
 
+.mirror-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .mirror-header h4 {
   margin: 0;
   font-size: 16px;
   font-weight: 600;
   color: var(--ant-color-text);
 }
+
+
 
 .speed-badge {
   padding: 4px 8px;
@@ -284,10 +340,35 @@ onMounted(async () => {
   color: var(--ant-color-error);
 }
 
+.mirror-description {
+  font-size: 13px;
+  color: var(--ant-color-text-secondary);
+  margin-bottom: 4px;
+  line-height: 1.4;
+}
+
 .mirror-url {
   font-size: 12px;
   color: var(--ant-color-text-tertiary);
   word-break: break-all;
+}
+
+.mirror-section {
+  margin-bottom: 24px;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.section-header h4 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ant-color-text);
 }
 
 .test-actions {
