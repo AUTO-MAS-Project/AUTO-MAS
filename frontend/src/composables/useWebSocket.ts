@@ -47,7 +47,7 @@ export function useWebSocket() {
       }
 
       const websocketId = response.websocketId
-      const wsUrl = `ws://localhost:8000/api/dispatch/ws/${websocketId}`
+      const wsUrl = `ws://localhost:36163/api/dispatch/ws/${websocketId}`
 
       // 建立WebSocket连接
       const ws = new WebSocket(wsUrl)

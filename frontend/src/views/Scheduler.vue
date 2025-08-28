@@ -529,7 +529,7 @@ const cancelAddTask = () => {
 
 // 连接WebSocket
 const connectWebSocket = (task: RunningTask) => {
-  const wsUrl = `ws://localhost:8000/api/dispatch/ws/${task.websocketId}`
+  const wsUrl = `ws://localhost:36163/api/dispatch/ws/${task.websocketId}`
 
   try {
     const ws = new WebSocket(wsUrl)

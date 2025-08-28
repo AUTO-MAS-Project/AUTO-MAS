@@ -507,7 +507,7 @@ export async function startBackend(appRoot: string): Promise<{ success: boolean;
         console.log('Backend output:', output)
 
         // 检查是否包含启动成功的标志
-        if (output.includes('Uvicorn running') || output.includes('8000')) {
+        if (output.includes('Uvicorn running') || output.includes('36163')) {
           clearTimeout(timeout)
           resolve()
         }
@@ -519,7 +519,7 @@ export async function startBackend(appRoot: string): Promise<{ success: boolean;
         console.error('Backend error:', output) // 保留原有日志
 
         // ✅ 在 stderr 中也检查启动标志
-        if (output.includes('Uvicorn running') || output.includes('8000')) {
+        if (output.includes('Uvicorn running') || output.includes('36163')) {
           clearTimeout(timeout)
           resolve()
         }
