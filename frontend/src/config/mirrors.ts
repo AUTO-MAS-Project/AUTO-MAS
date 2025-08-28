@@ -8,6 +8,10 @@ export interface MirrorConfig {
   name: string
   url: string
   speed?: number | null
+  type: 'official' | 'mirror'
+  chinaConnectivity?: 'poor' | 'good' | 'excellent'
+  description?: string
+  recommended?: boolean
 }
 
 export interface MirrorCategory {
@@ -15,105 +19,192 @@ export interface MirrorCategory {
 }
 
 /**
- * Git 仓库镜像源配置
+ * Git 仓库官方源配置
  */
-export const GIT_MIRRORS: MirrorConfig[] = [
+export const GIT_OFFICIAL_MIRRORS: MirrorConfig[] = [
   {
     key: 'github',
     name: 'GitHub 官方',
     url: 'https://github.com/DLmaster361/AUTO_MAA.git',
     speed: null,
+    type: 'official',
+    chinaConnectivity: 'poor',
+    description: '官方源，在中国大陆连通性不佳，可能需要科学上网',
+  },
+]
+
+/**
+ * Git 仓库镜像源配置
+ */
+export const GIT_MIRROR_MIRRORS: MirrorConfig[] = [
+  {
+    key: 'ghproxy_cloudflare',
+    name: 'gh-proxy (Cloudflare)',
+    url: 'https://gh-proxy.com/https://github.com/DLmaster361/AUTO_MAA.git',
+    speed: null,
+    type: 'mirror',
+    chinaConnectivity: 'good',
+    description: 'Cloudflare CDN 镜像，适合全球用户',
+  },
+  {
+    key: 'ghproxy_hongkong',
+    name: 'gh-proxy (香港节点)',
+    url: 'https://hk.gh-proxy.com/https://github.com/DLmaster361/AUTO_MAA.git',
+    speed: null,
+    type: 'mirror',
+    chinaConnectivity: 'excellent',
+    description: '香港节点镜像，对中国大陆用户友好',
+  },
+  {
+    key: 'ghproxy_fastly',
+    name: 'gh-proxy (Fastly CDN)',
+    url: 'https://cdn.gh-proxy.com/https://github.com/DLmaster361/AUTO_MAA.git',
+    speed: null,
+    type: 'mirror',
+    chinaConnectivity: 'good',
+    description: 'Fastly CDN 镜像服务',
+  },
+  {
+    key: 'ghproxy_edgeone',
+    name: 'gh-proxy (EdgeOne)',
+    url: 'https://edgeone.gh-proxy.com/https://github.com/DLmaster361/AUTO_MAA.git',
+    speed: null,
+    type: 'mirror',
+    chinaConnectivity: 'good',
+    description: 'EdgeOne 镜像服务',
+    recommended: true,
   },
   {
     key: 'ghfast',
     name: 'ghfast 镜像',
     url: 'https://ghfast.top/https://github.com/DLmaster361/AUTO_MAA.git',
     speed: null,
-  },
-  {
-    key: 'ghproxy_cloudflare',
-    name: 'gh-proxy (Cloudflare加速)',
-    url: 'https://gh-proxy.com/https://github.com/DLmaster361/AUTO_MAA.git',
-    speed: null,
-  },
-  {
-    key: 'ghproxy_hongkong',
-    name: 'gh-proxy (香港节点加速)',
-    url: 'https://hk.gh-proxy.com/https://github.com/DLmaster361/AUTO_MAA.git',
-    speed: null,
-  },
-  {
-    key: 'ghproxy_fastly',
-    name: 'gh-proxy (Fastly CDN加速)',
-    url: 'https://cdn.gh-proxy.com/https://github.com/DLmaster361/AUTO_MAA.git',
-    speed: null,
-  },
-  {
-    key: 'ghproxy_edgeone',
-    name: 'gh-proxy (EdgeOne加速）',
-    url: 'https://edgeone.gh-proxy.com/https://github.com/DLmaster361/AUTO_MAA.git',
-    speed: null,
+    type: 'mirror',
+    chinaConnectivity: 'good',
+    description: '第三方镜像服务',
   },
 ]
 
 /**
- * Python 下载镜像源配置（3.12.0 embed版本）
+ * Git 仓库所有镜像源配置（按类型分组）
  */
-export const PYTHON_MIRRORS: MirrorConfig[] = [
+export const GIT_MIRRORS: MirrorConfig[] = [
+  ...GIT_MIRROR_MIRRORS,
+  ...GIT_OFFICIAL_MIRRORS,
+]
+
+/**
+ * Python 官方源配置（3.12.0 embed版本）
+ */
+export const PYTHON_OFFICIAL_MIRRORS: MirrorConfig[] = [
   {
     key: 'official',
     name: 'Python 官方',
     url: 'https://www.python.org/ftp/python/3.12.0/python-3.12.0-embed-amd64.zip',
     speed: null,
+    type: 'official',
+    chinaConnectivity: 'poor',
+    description: 'Python 官方下载源，在中国大陆连通性不佳',
+  },
+]
+
+/**
+ * Python 镜像源配置（3.12.0 embed版本）
+ */
+export const PYTHON_MIRROR_MIRRORS: MirrorConfig[] = [
+  {
+    key: 'aliyun',
+    name: '阿里云镜像',
+    url: 'https://mirrors.aliyun.com/python-release/windows/python-3.12.0-embed-amd64.zip',
+    speed: null,
+    type: 'mirror',
+    chinaConnectivity: 'excellent',
+    description: '阿里云镜像服务，国内访问速度快',
+    recommended: true,
   },
   {
     key: 'tsinghua',
     name: '清华 TUNA 镜像',
     url: 'https://mirrors.tuna.tsinghua.edu.cn/python/3.12.0/python-3.12.0-embed-amd64.zip',
     speed: null,
+    type: 'mirror',
+    chinaConnectivity: 'excellent',
+    description: '清华大学开源软件镜像站，国内访问速度快',
   },
   {
     key: 'huawei',
     name: '华为云镜像',
     url: 'https://mirrors.huaweicloud.com/repository/toolkit/python/3.12.0/python-3.12.0-embed-amd64.zip',
     speed: null,
+    type: 'mirror',
+    chinaConnectivity: 'excellent',
+    description: '华为云镜像服务，国内访问稳定',
   },
+]
+
+/**
+ * Python 下载所有镜像源配置（按类型分组）
+ */
+export const PYTHON_MIRRORS: MirrorConfig[] = [
+  ...PYTHON_MIRROR_MIRRORS,
+  ...PYTHON_OFFICIAL_MIRRORS,
+]
+
+/**
+ * PyPI pip 官方源配置
+ */
+export const PIP_OFFICIAL_MIRRORS: MirrorConfig[] = [
   {
-    key: 'aliyun',
-    name: '阿里云镜像',
-    url: 'https://mirrors.aliyun.com/python-release/windows/python-3.12.0-embed-amd64.zip',
+    key: 'official',
+    name: 'PyPI 官方',
+    url: 'https://pypi.org/simple/',
     speed: null,
+    type: 'official',
+    chinaConnectivity: 'poor',
+    description: 'PyPI 官方源，在中国大陆连通性不佳，下载速度慢',
   },
 ]
 
 /**
  * PyPI pip 镜像源配置
  */
-export const PIP_MIRRORS: MirrorConfig[] = [
+export const PIP_MIRROR_MIRRORS: MirrorConfig[] = [
   {
-    key: 'official',
-    name: 'PyPI 官方',
-    url: 'https://pypi.org/simple/',
+    key: 'aliyun',
+    name: '阿里云',
+    url: 'https://mirrors.aliyun.com/pypi/simple/',
     speed: null,
+    type: 'mirror',
+    chinaConnectivity: 'excellent',
+    description: '阿里云 PyPI 镜像，国内访问速度快',
+    recommended: true,
   },
   {
     key: 'tsinghua',
     name: '清华大学',
     url: 'https://pypi.tuna.tsinghua.edu.cn/simple/',
     speed: null,
+    type: 'mirror',
+    chinaConnectivity: 'excellent',
+    description: '清华大学 PyPI 镜像，国内访问速度快',
   },
   {
     key: 'ustc',
     name: '中科大',
     url: 'https://pypi.mirrors.ustc.edu.cn/simple/',
     speed: null,
+    type: 'mirror',
+    chinaConnectivity: 'excellent',
+    description: '中科大 PyPI 镜像，国内访问稳定',
   },
-  {
-    key: 'aliyun',
-    name: '阿里云',
-    url: 'https://mirrors.aliyun.com/pypi/simple/',
-    speed: null,
-  },
+]
+
+/**
+ * PyPI pip 所有镜像源配置（按类型分组）
+ */
+export const PIP_MIRRORS: MirrorConfig[] = [
+  ...PIP_MIRROR_MIRRORS,
+  ...PIP_OFFICIAL_MIRRORS,
 ]
 
 /**
@@ -121,9 +212,9 @@ export const PIP_MIRRORS: MirrorConfig[] = [
  */
 export const API_ENDPOINTS = {
   // 本地开发服务器
-  local: 'http://localhost:8000',
+  local: 'http://localhost:36163',
   // WebSocket连接基础URL
-  websocket: 'ws://localhost:8000',
+  websocket: 'ws://localhost:36163',
   // 代理服务器示例
   proxy: 'http://127.0.0.1:7890',
 }
@@ -201,4 +292,72 @@ export function getFastestMirror(type: keyof MirrorCategory): MirrorConfig | nul
   const mirrors = getMirrorsByType(type)
   const sortedMirrors = sortMirrorsBySpeed(mirrors)
   return sortedMirrors.find(m => m.speed !== null && m.speed !== 9999) || null
+}
+
+/**
+ * 根据类型筛选镜像源
+ */
+export function getMirrorsBySourceType(
+  type: keyof MirrorCategory, 
+  sourceType: 'official' | 'mirror'
+): MirrorConfig[] {
+  const mirrors = getMirrorsByType(type)
+  return mirrors.filter(m => m.type === sourceType)
+}
+
+/**
+ * 获取官方源（标注中国大陆连通性）
+ */
+export function getOfficialMirrors(type: keyof MirrorCategory): MirrorConfig[] {
+  return getMirrorsBySourceType(type, 'official')
+}
+
+/**
+ * 获取镜像源
+ */
+export function getMirrorMirrors(type: keyof MirrorCategory): MirrorConfig[] {
+  return getMirrorsBySourceType(type, 'mirror')
+}
+
+/**
+ * 获取推荐的镜像源
+ */
+export function getRecommendedMirrors(type: keyof MirrorCategory): MirrorConfig[] {
+  const mirrors = getMirrorsByType(type)
+  return mirrors.filter(m => m.recommended === true)
+}
+
+/**
+ * 根据速度排序镜像源（推荐的排在前面）
+ */
+export function sortMirrorsBySpeedAndRecommendation(mirrors: MirrorConfig[]): MirrorConfig[] {
+  return [...mirrors].sort((a, b) => {
+    // 推荐的排在前面
+    if (a.recommended && !b.recommended) return -1
+    if (!a.recommended && b.recommended) return 1
+    
+    // 然后按速度排序
+    const speedA = a.speed === null ? 9999 : a.speed
+    const speedB = b.speed === null ? 9999 : b.speed
+    return speedA - speedB
+  })
+}
+
+/**
+ * 根据中国大陆连通性筛选镜像源
+ */
+export function getMirrorsByChinaConnectivity(
+  type: keyof MirrorCategory,
+  connectivity: 'poor' | 'good' | 'excellent'
+): MirrorConfig[] {
+  const mirrors = getMirrorsByType(type)
+  return mirrors.filter(m => m.chinaConnectivity === connectivity)
+}
+
+/**
+ * 获取适合中国大陆用户的镜像源（排除连通性差的）
+ */
+export function getChinaFriendlyMirrors(type: keyof MirrorCategory): MirrorConfig[] {
+  const mirrors = getMirrorsByType(type)
+  return mirrors.filter(m => m.chinaConnectivity !== 'poor')
 }
