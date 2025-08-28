@@ -73,12 +73,6 @@ export const PYTHON_MIRRORS: MirrorConfig[] = [
     speed: null,
   },
   {
-    key: 'ustc',
-    name: '中科大镜像',
-    url: 'https://mirrors.ustc.edu.cn/python/3.12.0/python-3.12.0-embed-amd64.zip',
-    speed: null,
-  },
-  {
     key: 'huawei',
     name: '华为云镜像',
     url: 'https://mirrors.huaweicloud.com/repository/toolkit/python/3.12.0/python-3.12.0-embed-amd64.zip',
@@ -118,12 +112,6 @@ export const PIP_MIRRORS: MirrorConfig[] = [
     key: 'aliyun',
     name: '阿里云',
     url: 'https://mirrors.aliyun.com/pypi/simple/',
-    speed: null,
-  },
-  {
-    key: 'douban',
-    name: '豆瓣',
-    url: 'https://pypi.douban.com/simple/',
     speed: null,
   },
 ]

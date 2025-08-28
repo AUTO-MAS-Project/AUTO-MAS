@@ -1,22 +1,24 @@
 <template>
   <div class="manual-mode">
     <div class="header">
-      <a-typography-title >AUTO_MAA 初始化向导</a-typography-title>
-      <a-typography-title :level="4">欢迎使用 AUTO_MAA，让我们来配置您的运行环境</a-typography-title>
+      <a-typography-title>AUTO_MAA 初始化向导</a-typography-title>
+      <a-typography-title :level="4"
+        >欢迎使用 AUTO_MAA，让我们来配置您的运行环境</a-typography-title
+      >
 
-<!--      <div class="header-actions">-->
-<!--        <a-button size="large" type="primary" @click="handleSkipToHome">-->
-<!--          跳转至首页（仅开发用）-->
-<!--        </a-button>-->
-<!--        <a-button-->
-<!--          size="large"-->
-<!--          type="default"-->
-<!--          @click="handleJumpToStep(5)"-->
-<!--          style="margin-left: 16px"-->
-<!--        >-->
-<!--          跳到启动服务（第六步）-->
-<!--        </a-button>-->
-<!--      </div>-->
+      <!--      <div class="header-actions">-->
+      <!--        <a-button size="large" type="primary" @click="handleSkipToHome">-->
+      <!--          跳转至首页（仅开发用）-->
+      <!--        </a-button>-->
+      <!--        <a-button-->
+      <!--          size="large"-->
+      <!--          type="default"-->
+      <!--          @click="handleJumpToStep(5)"-->
+      <!--          style="margin-left: 16px"-->
+      <!--        >-->
+      <!--          跳到启动服务（第六步）-->
+      <!--        </a-button>-->
+      <!--      </div>-->
     </div>
 
     <a-steps :current="currentStep" :status="stepStatus" class="init-steps">
@@ -107,8 +109,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
-import { message } from 'ant-design-vue'
+import { ref, watch } from 'vue'
+import { notification } from 'ant-design-vue'
 import { createComponentLogger } from '@/utils/logger'
 import { saveConfig } from '@/utils/config'
 import ThemeStep from './ThemeStep.vue'
@@ -298,8 +300,6 @@ async function installPython() {
   }
 }
 
-
-
 async function installGit() {
   logger.info('开始安装Git工具')
   const result = await window.electronAPI.downloadGit()
@@ -462,11 +462,14 @@ defineExpose({
   currentStep,
   handleDownloadProgress,
 })
-
 // 监听 errorMessage，一旦有内容就弹窗
 watch(errorMessage, val => {
   if (val) {
-    message.error(val)
+    notification.error({
+      message: '出错啦~',
+      description: val,
+      duration: 4.5,
+    })
     // 弹窗后可选：自动清空 errorMessage
     // errorMessage.value = ''
   }
