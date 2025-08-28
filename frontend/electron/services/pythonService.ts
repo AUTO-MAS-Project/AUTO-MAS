@@ -213,7 +213,7 @@ export async function downloadPython(
       // 5MB
       fs.unlinkSync(zipPath) // 删除无效文件
       throw new Error(
-        `Python下载文件大小异常: ${stats.size} bytes (${(stats.size / 1024).toFixed(2)} KB)，可能是镜像站返回的错误页面或无效文件。请选择一个其他可用镜像源进行下载！`
+        `Python下载文件大小异常: ${stats.size} bytes (${(stats.size / 1024).toFixed(2)} KB)。可能是对应镜像站不可用。请选择任意一个其他镜像源进行下载！`
       )
     }
 
