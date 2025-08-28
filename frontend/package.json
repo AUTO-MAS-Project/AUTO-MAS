@@ -13,7 +13,7 @@
   },
   "build": {
     "asar": true,
-    "asarUnpack":[],
+    "asarUnpack": [],
     "extraMetadata": {
       "env": "prod"
     },
@@ -50,11 +50,14 @@
     "@types/adm-zip": "^0.5.7",
     "adm-zip": "^0.5.16",
     "ant-design-vue": "4.x",
+    "axios": "^1.11.0",
     "dayjs": "^1.11.13",
+    "form-data": "^4.0.4",
     "vue": "^3.5.17",
     "vue-router": "4"
   },
   "devDependencies": {
+    "@types/node": "22.17.1",
     "@typescript-eslint/eslint-plugin": "^8.38.0",
     "@typescript-eslint/parser": "^8.38.0",
     "@vitejs/plugin-vue": "^6.0.1",
@@ -75,6 +78,9 @@
     "vue-eslint-parser": "^10.2.0",
     "vue-tsc": "^2.2.12",
     "wait-on": "^8.0.4"
+  },
+  "resolutions": {
+    "@types/node": "22.17.1"
   },
   "packageManager": "yarn@4.9.1+sha256.6ffc213b3ce0af5c92507977d9537ea3cc085caa52d1c3f08e94d613407fed19"
 }
