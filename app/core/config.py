@@ -1555,7 +1555,7 @@ class AppConfig(GlobalConfig):
                 ):
                     res_stage_info.append(RESOURCE_STAGE_DROP_INFO[stage["value"]])
             return {
-                "SideStory": json.loads(self.get("Data", "Stage")).get("Info", []),
+                "Activity": json.loads(self.get("Data", "Stage")).get("Info", []),
                 "Resource": res_stage_info,
             }
         else:
@@ -1819,7 +1819,7 @@ class AppConfig(GlobalConfig):
 
         try:
             response = requests.get(
-                "http://221.236.27.82:10197/d/AUTO_MAA/Server/notice.json",
+                "https://download.auto-mas.top/d/AUTO_MAA/Server/notice.json",
                 timeout=10,
                 proxies=self.get_proxies(),
             )
