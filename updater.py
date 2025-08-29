@@ -247,13 +247,11 @@ if version.parse(remote_version) > version.parse(current_version):
                     download_url = response.url
         else:
             print(f"MirrorChyan 未返回下载链接，使用自建下载站")
-            download_url = (
-                f"http://221.236.27.82:10197/d/AUTO_MAA/AUTO_MAA_{remote_version}.zip"
-            )
+            download_url = f"https://download.auto-mas.top/d/AUTO_MAA/AUTO_MAA_{remote_version}.zip"
 
     elif download_source == "AutoSite":
         download_url = (
-            f"http://221.236.27.82:10197/d/AUTO_MAA/AUTO_MAA_{remote_version}.zip"
+            f"https://download.auto-mas.top/d/AUTO_MAA/AUTO_MAA_{remote_version}.zip"
         )
 
     else:
