@@ -62,13 +62,13 @@ RESOURCE_STAGE_DROP_INFO = {
     "CA-5": {
         "Display": "技能-5",
         "Value": "CA-5",
-        "DropName": "技巧概要",
+        "DropName": "技巧概要·卷3",
         "Activity": {"Tip": "常驻开放", "StageName": "资源关卡"},
     },
     "LS-6": {
         "Display": "经验-6/5",
         "Value": "LS-6",
-        "DropName": "作战记录",
+        "DropName": "高级作战记录",
         "Activity": {"Tip": "常驻开放", "StageName": "资源关卡"},
     },
     "SK-5": {
@@ -80,49 +80,49 @@ RESOURCE_STAGE_DROP_INFO = {
     "PR-A-1": {
         "Display": "奶/盾芯片",
         "Value": "PR-A-1",
-        "DropName": "奶/盾芯片",
+        "DropName": "医疗芯片",
         "Activity": {"Tip": "常驻开放", "StageName": "资源关卡"},
     },
     "PR-A-2": {
         "Display": "奶/盾芯片组",
         "Value": "PR-A-2",
-        "DropName": "奶/盾芯片组",
+        "DropName": "医疗芯片组",
         "Activity": {"Tip": "常驻开放", "StageName": "资源关卡"},
     },
     "PR-B-1": {
         "Display": "术/狙芯片",
         "Value": "PR-B-1",
-        "DropName": "术/狙芯片",
+        "DropName": "术师芯片",
         "Activity": {"Tip": "常驻开放", "StageName": "资源关卡"},
     },
     "PR-B-2": {
         "Display": "术/狙芯片组",
         "Value": "PR-B-2",
-        "DropName": "术/狙芯片组",
+        "DropName": "术师芯片组",
         "Activity": {"Tip": "常驻开放", "StageName": "资源关卡"},
     },
     "PR-C-1": {
         "Display": "先/辅芯片",
         "Value": "PR-C-1",
-        "DropName": "先/辅芯片",
+        "DropName": "先锋芯片",
         "Activity": {"Tip": "常驻开放", "StageName": "资源关卡"},
     },
     "PR-C-2": {
         "Display": "先/辅芯片组",
         "Value": "PR-C-2",
-        "DropName": "先/辅芯片组",
+        "DropName": "先锋芯片组",
         "Activity": {"Tip": "常驻开放", "StageName": "资源关卡"},
     },
     "PR-D-1": {
         "Display": "近/特芯片",
         "Value": "PR-D-1",
-        "DropName": "近/特芯片",
+        "DropName": "近卫芯片",
         "Activity": {"Tip": "常驻开放", "StageName": "资源关卡"},
     },
     "PR-D-2": {
         "Display": "近/特芯片组",
         "Value": "PR-D-2",
-        "DropName": "近/特芯片组",
+        "DropName": "近卫芯片组",
         "Activity": {"Tip": "常驻开放", "StageName": "资源关卡"},
     },
 }
