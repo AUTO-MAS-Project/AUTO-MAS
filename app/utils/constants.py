@@ -48,81 +48,81 @@ RESOURCE_STAGE_INFO = [
 
 RESOURCE_STAGE_DROP_INFO = {
     "CE-6": {
-        "Display": "龙门币-6/5",
+        "Display": "CE-6",
         "Value": "CE-6",
         "DropName": "龙门币",
         "Activity": {"Tip": "常驻开放", "StageName": "资源关卡"},
     },
     "AP-5": {
-        "Display": "红票-5",
+        "Display": "AP-5",
         "Value": "AP-5",
         "DropName": "采购凭证",
         "Activity": {"Tip": "常驻开放", "StageName": "资源关卡"},
     },
     "CA-5": {
-        "Display": "技能-5",
+        "Display": "CA-5",
         "Value": "CA-5",
         "DropName": "技巧概要·卷3",
         "Activity": {"Tip": "常驻开放", "StageName": "资源关卡"},
     },
     "LS-6": {
-        "Display": "经验-6/5",
+        "Display": "LS-6",
         "Value": "LS-6",
         "DropName": "高级作战记录",
         "Activity": {"Tip": "常驻开放", "StageName": "资源关卡"},
     },
     "SK-5": {
-        "Display": "碳-5",
+        "Display": "SK-5",
         "Value": "SK-5",
         "DropName": "碳素组",
         "Activity": {"Tip": "常驻开放", "StageName": "资源关卡"},
     },
     "PR-A-1": {
-        "Display": "奶/盾芯片",
+        "Display": "PR-A",
         "Value": "PR-A-1",
-        "DropName": "医疗芯片",
-        "Activity": {"Tip": "常驻开放", "StageName": "资源关卡"},
-    },
-    "PR-A-2": {
-        "Display": "奶/盾芯片组",
-        "Value": "PR-A-2",
         "DropName": "医疗芯片组",
         "Activity": {"Tip": "常驻开放", "StageName": "资源关卡"},
     },
-    "PR-B-1": {
-        "Display": "术/狙芯片",
-        "Value": "PR-B-1",
-        "DropName": "术师芯片",
+    "PR-A-2": {
+        "Display": "PR-A",
+        "Value": "PR-A-2",
+        "DropName": "重装芯片组",
         "Activity": {"Tip": "常驻开放", "StageName": "资源关卡"},
     },
-    "PR-B-2": {
-        "Display": "术/狙芯片组",
-        "Value": "PR-B-2",
+    "PR-B-1": {
+        "Display": "PR-B",
+        "Value": "PR-B-1",
         "DropName": "术师芯片组",
         "Activity": {"Tip": "常驻开放", "StageName": "资源关卡"},
     },
-    "PR-C-1": {
-        "Display": "先/辅芯片",
-        "Value": "PR-C-1",
-        "DropName": "先锋芯片",
+    "PR-B-2": {
+        "Display": "PR-B",
+        "Value": "PR-B-2",
+        "DropName": "狙击芯片组",
         "Activity": {"Tip": "常驻开放", "StageName": "资源关卡"},
     },
-    "PR-C-2": {
-        "Display": "先/辅芯片组",
-        "Value": "PR-C-2",
+    "PR-C-1": {
+        "Display": "PR-C",
+        "Value": "PR-C-1",
         "DropName": "先锋芯片组",
         "Activity": {"Tip": "常驻开放", "StageName": "资源关卡"},
     },
+    "PR-C-2": {
+        "Display": "PR-C",
+        "Value": "PR-C-2",
+        "DropName": "辅助芯片组",
+        "Activity": {"Tip": "常驻开放", "StageName": "资源关卡"},
+    },
     "PR-D-1": {
-        "Display": "近/特芯片",
+        "Display": "PR-D",
         "Value": "PR-D-1",
-        "DropName": "近卫芯片",
+        "DropName": "近卫芯片组",
         "Activity": {"Tip": "常驻开放", "StageName": "资源关卡"},
     },
     "PR-D-2": {
-        "Display": "近/特芯片组",
+        "Display": "PR-D",
         "Value": "PR-D-2",
-        "DropName": "近卫芯片组",
+        "DropName": "特种芯片组",
         "Activity": {"Tip": "常驻开放", "StageName": "资源关卡"},
     },
 }
