@@ -1648,18 +1648,18 @@ class AppConfig(GlobalConfig):
                 proxies=self.get_proxies(),
             )
             if response.status_code == 200:
-                remote_side_story_info = (
+                remote_activity_stage_info = (
                     response.json().get("Official", {}).get("sideStoryStage", [])
                 )
                 if_get_maa_stage = True
             else:
                 logger.warning(f"无法从MAA服务器获取活动关卡信息:{response.text}")
                 if_get_maa_stage = False
-                remote_side_story_info = []
+                remote_activity_stage_info = []
         except Exception as e:
             logger.warning(f"无法从MAA服务器获取活动关卡信息: {e}")
             if_get_maa_stage = False
-            remote_side_story_info = []
+            remote_activity_stage_info = []
 
         def normalize_drop(value: str) -> str:
             # 去前后空格与常见零宽字符
@@ -1673,9 +1673,9 @@ class AppConfig(GlobalConfig):
             )
 
         now_utc = datetime.now(timezone.utc)
-        side_story_drop_info: List[Dict[str, Any]] = []
+        activity_stage_drop_info: List[Dict[str, Any]] = []
 
-        for stage in remote_side_story_info:
+        for stage in remote_activity_stage_info:
             if "SSReopen" in stage.get("Display", ""):
                 continue
             act = stage.get("Activity", {}) or {}
@@ -1696,7 +1696,7 @@ class AppConfig(GlobalConfig):
                         "DESC:" + drop_id
                     )  # 非纯数字，直接用文本.加一个DESC前缀方便前端区分
 
-                side_story_drop_info.append(
+                activity_stage_drop_info.append(
                     {
                         "Display": stage.get("Display", ""),
                         "Value": stage.get("Value", ""),
@@ -1706,9 +1706,9 @@ class AppConfig(GlobalConfig):
                     }
                 )
 
-        side_story_combox = []
+        activity_stage_combox = []
 
-        for stage in remote_side_story_info:
+        for stage in remote_activity_stage_info:
 
             if (
                 datetime.strptime(
@@ -1719,7 +1719,7 @@ class AppConfig(GlobalConfig):
                     stage["Activity"]["UtcExpireTime"], "%Y/%m/%d %H:%M:%S"
                 )
             ):
-                side_story_combox.append(
+                activity_stage_combox.append(
                     {"label": stage["Value"], "value": stage["Value"]}
                 )
 
@@ -1735,10 +1735,10 @@ class AppConfig(GlobalConfig):
                     res_stage.append({"label": stage["text"], "value": stage["value"]})
 
             stage_data[calendar.day_name[day - 1] if day > 0 else "ALL"] = (
-                side_story_combox + res_stage
+                activity_stage_combox + res_stage
             )
 
-        stage_data["Info"] = side_story_drop_info
+        stage_data["Info"] = activity_stage_drop_info
 
         if if_get_maa_stage:
 
