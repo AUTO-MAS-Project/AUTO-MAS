@@ -19,6 +19,19 @@
         </a-button>
       </a-space>
     </div>
+  <!-- 如果没有脚本，显示占位符 -->
+  <div v-if="scripts.length === 0" class="placeholder-container">
+    <div class="placeholder-content">
+      <h2>当前没有脚本</h2>
+      <p>您还没有创建任何脚本，点击下方的“新建脚本”按钮来创建您的第一个脚本。</p>
+      <a-button type="primary" size="large" @click="handleAddScript">
+        <template #icon>
+          <PlusOutlined />
+        </template>
+        新建脚本
+      </a-button>
+    </div>
+  </div>
 
     <ScriptTable
       :scripts="scripts"
@@ -244,7 +257,7 @@ const handleMAAConfig = async (script: Script) => {
       // 记录连接
       activeConnections.value.set(script.id, websocketId)
       message.success(`已开始配置 ${script.name}`)
-      
+
       // 可选：设置自动断开连接的定时器（比如30分钟后）
       setTimeout(() => {
         if (activeConnections.value.has(script.id)) {
@@ -503,5 +516,30 @@ const handleToggleUserStatus = async (user: User) => {
   .type-title {
     font-size: 16px;
   }
+}
+.placeholder-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 400px;
+}
+
+.placeholder-content {
+  text-align: center;
+  max-width: 500px;
+}
+
+.placeholder-content h2 {
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--ant-color-text);
+  margin-bottom: 16px;
+}
+
+.placeholder-content p {
+  font-size: 16px;
+  color: var(--ant-color-text-secondary);
+  margin-bottom: 24px;
+  line-height: 1.5;
 }
 </style>

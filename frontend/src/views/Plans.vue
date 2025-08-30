@@ -25,16 +25,21 @@
       </a-space>
     </div>
 
-    <!-- 计划内容区域 -->
-    <div v-if="!planList.length || !currentPlanData" class="empty-state">
-      <div class="empty-content empty-content-fancy" @click="handleAddPlan" style="cursor: pointer">
-        <div class="empty-icon">
-          <PlusOutlined />
-        </div>
-        <h2>你还没有创建过计划</h2>
-        <h1>点击此处来新建计划</h1>
+    <!-- 如果没有计划，显示占位符 -->
+    <div v-if="!planList.length || !currentPlanData" class="placeholder-container">
+      <div class="placeholder-content">
+        <h2>当前没有计划</h2>
+        <p>您还没有创建任何计划，点击下方按钮来创建您的第一个计划</p>
+        <a-button type="primary" size="large" @click="handleAddPlan">
+          <template #icon>
+            <PlusOutlined />
+          </template>
+          新建计划
+        </a-button>
       </div>
     </div>
+
+
 
     <div class="plan-content" v-else v-if="currentPlanData">
       <!-- 计划选择器 -->
@@ -893,6 +898,32 @@ onMounted(() => {
   display: flex;
   justify-content: center;
   align-items: center;
+}
+
+.placeholder-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 400px;
+}
+
+.placeholder-content {
+  text-align: center;
+  max-width: 500px;
+}
+
+.placeholder-content h2 {
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--ant-color-text);
+  margin-bottom: 16px;
+}
+
+.placeholder-content p {
+  font-size: 16px;
+  color: var(--ant-color-text-secondary);
+  margin-bottom: 24px;
+  line-height: 1.5;
 }
 
 .empty-content-fancy h2 {

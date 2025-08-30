@@ -25,20 +25,22 @@
       </a-space>
     </div>
 
-    <!-- 空状态 -->
-    <div v-if="!queueList.length || !currentQueueData" class="empty-state">
-      <div
-        class="empty-content empty-content-fancy"
-        @click="handleAddQueue"
-        style="cursor: pointer"
-      >
-        <div class="empty-icon">
-          <PlusOutlined />
-        </div>
-        <h2>你还没有创建过队列</h2>
-        <h1>点击此处来新建队列</h1>
+
+    <!-- 如果没有计划，显示占位符 -->
+    <!-- 如果没有队列，显示占位符 -->
+    <div v-if="!queueList.length || !currentQueueData" class="placeholder-container">
+      <div class="placeholder-content">
+        <h2>当前没有队列</h2>
+        <p>您还没有创建任何调度队列，点击下方按钮来创建您的第一个队列</p>
+        <a-button type="primary" size="large" @click="handleAddQueue">
+          <template #icon>
+            <PlusOutlined />
+          </template>
+          新建队列
+        </a-button>
       </div>
     </div>
+
 
     <!-- 队列内容 -->
     <div class="queue-main-content" v-else-if="currentQueueData">
@@ -676,6 +678,32 @@ onMounted(async () => {
   display: flex;
   justify-content: center;
   align-items: center;
+}
+
+.placeholder-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 400px;
+}
+
+.placeholder-content {
+  text-align: center;
+  max-width: 500px;
+}
+
+.placeholder-content h2 {
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--ant-color-text);
+  margin-bottom: 16px;
+}
+
+.placeholder-content p {
+  font-size: 16px;
+  color: var(--ant-color-text-secondary);
+  margin-bottom: 24px;
+  line-height: 1.5;
 }
 
 .float-button {
