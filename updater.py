@@ -113,7 +113,7 @@ def search_pids(path: Path) -> list:
             if proc.info["exe"] and proc.info["exe"].lower() == str(path).lower():
                 pids.append(proc.info["pid"])
         except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-            # 进程可能在此期间已结束或无法访问，忽略这些异常
+            # 进程可能在此期间已结束或无法访问, 忽略这些异常
             pass
     return pids
 
@@ -151,7 +151,7 @@ if (
     config.get("Source", "GitHub") == "MirrorChyan"
     and dpapi_decrypt(config.get("MirrorChyanCDK", "")) == ""
 ):
-    print("使用 MirrorChyan源但未填写 MirrorChyanCDK，转用 GitHub 源")
+    print("使用 MirrorChyan源但未填写 MirrorChyanCDK, 转用 GitHub 源")
     config["Source"] = "GitHub"
     config["MirrorChyanCDK"] = ""
 
@@ -185,15 +185,15 @@ else:
 
         if result["code"] != 0:
             if result["code"] in MIRROR_ERROR_INFO:
-                print(f"获取版本信息时出错：{MIRROR_ERROR_INFO[result['code']]}")
+                print(f"获取版本信息时出错: {MIRROR_ERROR_INFO[result['code']]}")
             else:
                 print(
-                    "获取版本信息时出错：意料之外的错误，请及时联系项目组以获取来自 Mirror 酱的技术支持"
+                    "获取版本信息时出错: 意料之外的错误, 请及时联系项目组以获取来自 Mirror 酱的技术支持"
                 )
             print(f"                    {result['msg']}")
         sys.exit(1)
     except Exception:
-        print(f"获取版本信息时出错：{response.text}")
+        print(f"获取版本信息时出错: {response.text}")
 
         sys.exit(1)
 
@@ -203,7 +203,7 @@ remote_version = version_info["data"]["version_name"]
 if version.parse(remote_version) > version.parse(current_version):
 
     # 版本更新信息
-    print(f"发现新版本：{remote_version}，当前版本：{current_version}")
+    print(f"发现新版本: {remote_version}, 当前版本: {current_version}")
 
     version_info_json: Dict[str, Dict[str, List[str]]] = json.loads(
         re.sub(
@@ -226,7 +226,7 @@ if version.parse(remote_version) > version.parse(current_version):
             update_version_info[key] += value
 
     for key, value in update_version_info.items():
-        print(f"{key}：")
+        print(f"{key}: ")
         for v in value:
             print(f"  - {v}")
 
@@ -246,7 +246,7 @@ if version.parse(remote_version) > version.parse(current_version):
                 if response.status_code == 200:
                     download_url = response.url
         else:
-            print(f"MirrorChyan 未返回下载链接，使用自建下载站")
+            print(f"MirrorChyan 未返回下载链接, 使用自建下载站")
             download_url = f"https://download.auto-mas.top/d/AUTO_MAA/AUTO_MAA_{remote_version}.zip"
 
     elif download_source == "AutoSite":
@@ -255,10 +255,10 @@ if version.parse(remote_version) > version.parse(current_version):
         )
 
     else:
-        print(f"未知的下载源：{download_source}，请检查配置文件")
+        print(f"未知的下载源: {download_source}, 请检查配置文件")
         sys.exit(1)
 
-    print(f"开始下载：{download_url}")
+    print(f"开始下载: {download_url}")
 
     # 清理可能存在的临时文件
     if (Path.cwd() / "download.temp").exists():
@@ -281,13 +281,13 @@ if version.parse(remote_version) > version.parse(current_version):
                     check_times -= 1
 
                 print(
-                    f"连接失败：{download_url}，状态码：{response.status_code}，剩余重试次数：{check_times}",
+                    f"连接失败: {download_url}, 状态码: {response.status_code}, 剩余重试次数: {check_times}",
                 )
 
                 time.sleep(1)
                 continue
 
-            print(f"连接成功：{download_url}，状态码：{response.status_code}")
+            print(f"连接成功: {download_url}, 状态码: {response.status_code}")
 
             file_size = int(response.headers.get("content-length", 0))
             downloaded_size = 0
@@ -300,7 +300,7 @@ if version.parse(remote_version) > version.parse(current_version):
                     f.write(chunk)
                     downloaded_size += len(chunk)
 
-                    # 更新指定线程的下载进度，每秒更新一次
+                    # 更新指定线程的下载进度, 每秒更新一次
                     if time.time() - last_time >= 1.0:
                         speed = (
                             (downloaded_size - last_download_size)
@@ -312,15 +312,15 @@ if version.parse(remote_version) > version.parse(current_version):
 
                         if speed >= 1024:
                             print(
-                                f"正在下载：AUTO-MAS 已下载：{downloaded_size / 1048576:.2f}/{file_size / 1048576:.2f} MB （{downloaded_size / file_size * 100:.2f}%） 下载速度：{speed / 1024:.2f} MB/s",
+                                f"正在下载: AUTO-MAS 已下载: {downloaded_size / 1048576:.2f}/{file_size / 1048576:.2f} MB （{downloaded_size / file_size * 100:.2f}%） 下载速度: {speed / 1024:.2f} MB/s",
                             )
                         else:
                             print(
-                                f"正在下载：AUTO-MAS 已下载：{downloaded_size / 1048576:.2f}/{file_size / 1048576:.2f} MB （{downloaded_size / file_size * 100:.2f}%） 下载速度：{speed:.2f} KB/s",
+                                f"正在下载: AUTO-MAS 已下载: {downloaded_size / 1048576:.2f}/{file_size / 1048576:.2f} MB （{downloaded_size / file_size * 100:.2f}%） 下载速度: {speed:.2f} KB/s",
                             )
 
             print(
-                f"下载完成：{download_url}，实际下载大小：{downloaded_size} 字节，耗时：{time.time() - start_time:.2f} 秒",
+                f"下载完成: {download_url}, 实际下载大小: {downloaded_size} 字节, 耗时: {time.time() - start_time:.2f} 秒",
             )
 
             break
@@ -331,7 +331,7 @@ if version.parse(remote_version) > version.parse(current_version):
                 check_times -= 1
 
             print(
-                f"下载出错：{download_url}，错误信息：{e}，剩余重试次数：{check_times}",
+                f"下载出错: {download_url}, 错误信息: {e}, 剩余重试次数: {check_times}",
             )
             time.sleep(1)
 
@@ -339,20 +339,20 @@ if version.parse(remote_version) > version.parse(current_version):
 
         if (Path.cwd() / "download.temp").exists():
             (Path.cwd() / "download.temp").unlink()
-        print(f"下载失败：{download_url}")
+        print(f"下载失败: {download_url}")
         sys.exit(1)
 
-    print(f"开始解压：{Path.cwd() / 'download.temp'} 到 {Path.cwd()}")
+    print(f"开始解压: {Path.cwd() / 'download.temp'} 到 {Path.cwd()}")
 
     while True:
 
         try:
             with zipfile.ZipFile(Path.cwd() / "download.temp", "r") as zip_ref:
                 zip_ref.extractall(Path.cwd())
-            print(f"解压完成：{Path.cwd() / 'download.temp'} 到 {Path.cwd()}")
+            print(f"解压完成: {Path.cwd() / 'download.temp'} 到 {Path.cwd()}")
             break
         except PermissionError:
-            print(f"解压出错：AUTO_MAA正在运行，正在尝试将其关闭")
+            print(f"解压出错: AUTO_MAA正在运行, 正在尝试将其关闭")
             kill_process(Path.cwd() / "AUTO_MAA.exe")
             time.sleep(1)
 
@@ -375,5 +375,5 @@ if version.parse(remote_version) > version.parse(current_version):
 
 else:
 
-    print(f"当前版本为最新版本：{current_version}")
+    print(f"当前版本为最新版本: {current_version}")
     sys.exit(0)

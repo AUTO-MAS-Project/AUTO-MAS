@@ -137,7 +137,7 @@ class GeneralManager:
             self.check_general_log,
         )
 
-        logger.success(f"{self.script_id}已锁定，通用配置提取完成")
+        logger.success(f"{self.script_id}已锁定, 通用配置提取完成")
 
     def check_config(self) -> str:
         """检查配置是否可用"""
@@ -150,7 +150,7 @@ class GeneralManager:
         return "Success!"
 
     async def run(self):
-        """主进程，运行通用脚本代理进程"""
+        """主进程, 运行通用脚本代理进程"""
 
         self.current_date = datetime.now().strftime("%m-%d")
         self.curdate = Config.server_date().strftime("%Y-%m-%d")
@@ -159,7 +159,7 @@ class GeneralManager:
         await self.configure()
         self.check_result = self.check_config()
         if self.check_result != "Success!":
-            logger.error(f"未通过配置检查：{self.check_result}")
+            logger.error(f"未通过配置检查: {self.check_result}")
             await Config.send_json(
                 WebSocketMessage(
                     id=self.ws_id, type="Info", data={"Error": self.check_result}
@@ -168,7 +168,7 @@ class GeneralManager:
             return
 
         # 记录配置文件
-        logger.info(f"记录通用脚本配置文件：{self.script_config_path}")
+        logger.info(f"记录通用脚本配置文件: {self.script_config_path}")
         (Path.cwd() / f"data/{self.script_id}/Temp").mkdir(parents=True, exist_ok=True)
         if self.script_config_path.exists():
             if self.script_config.get("Script", "ConfigPathMode") == "Folder":
@@ -183,7 +183,7 @@ class GeneralManager:
                     Path.cwd() / f"data/{self.script_id}/Temp/config.temp",
                 )
 
-        # 整理用户数据，筛选需代理的用户
+        # 整理用户数据, 筛选需代理的用户
         if self.mode != "设置脚本":
 
             self.user_list: List[Dict[str, str]] = [
@@ -197,7 +197,7 @@ class GeneralManager:
                 and config.get("Info", "RemainedDay") != 0
             ]
 
-            logger.info(f"用户列表创建完成，已筛选子配置数：{len(self.user_list)}")
+            logger.info(f"用户列表创建完成, 已筛选子配置数: {len(self.user_list)}")
 
         # 自动代理模式
         if self.mode == "自动代理":
@@ -273,7 +273,7 @@ class GeneralManager:
                         break
 
                     logger.info(
-                        f"用户 {user['user_id']} - 尝试次数: {i + 1}/{self.script_config.get('Run','RunTimesLimit')}",
+                        f"用户 {user['user_id']} - 尝试次数: {i + 1}/{self.script_config.get('Run','RunTimesLimit')}"
                     )
 
                     # 配置脚本
@@ -298,7 +298,7 @@ class GeneralManager:
 
                         try:
                             logger.info(
-                                f"启动游戏/模拟器：{self.game_path}，参数：{self.script_config.get('Game','Arguments')}",
+                                f"启动游戏/模拟器: {self.game_path}, 参数: {self.script_config.get('Game','Arguments')}"
                             )
                             await self.game_process_manager.open_process(
                                 self.game_path,
@@ -308,12 +308,12 @@ class GeneralManager:
                                 0,
                             )
                         except Exception as e:
-                            logger.exception(f"启动游戏/模拟器时出现异常：{e}")
+                            logger.exception(f"启动游戏/模拟器时出现异常: {e}")
                             await Config.send_json(
                                 WebSocketMessage(
                                     id=self.ws_id,
                                     type="Info",
-                                    data={"Error": f"启动游戏/模拟器时出现异常：{e}"},
+                                    data={"Error": f"启动游戏/模拟器时出现异常: {e}"},
                                 ).model_dump()
                             )
                             self.general_result = "游戏/模拟器启动失败"
@@ -322,7 +322,7 @@ class GeneralManager:
                         # 更新静默进程标记有效时间
                         if self.script_config.get("Game", "Type") == "Emulator":
                             logger.info(
-                                f"更新静默进程标记：{self.game_path}，标记有效时间：{datetime.now() + timedelta(seconds=self.script_config.get('Game', 'WaitTime') + 10)}"
+                                f"更新静默进程标记: {self.game_path}, 标记有效时间: {datetime.now() + timedelta(seconds=self.script_config.get('Game', 'WaitTime') + 10)}"
                             )
                             Config.silence_dict[
                                 self.game_path
@@ -343,7 +343,7 @@ class GeneralManager:
 
                     # 运行脚本任务
                     logger.info(
-                        f"运行脚本任务：{self.script_exe_path}，参数：{self.script_arguments}",
+                        f"运行脚本任务: {self.script_exe_path}, 参数: {self.script_arguments}"
                     )
                     await self.general_process_manager.open_process(
                         self.script_exe_path,
@@ -384,12 +384,12 @@ class GeneralManager:
                         )
 
                         # 中止相关程序
-                        logger.info(f"中止相关程序：{self.script_exe_path}")
+                        logger.info(f"中止相关程序: {self.script_exe_path}")
                         await self.general_process_manager.kill()
                         await System.kill_process(self.script_exe_path)
                         if self.script_config.get("Game", "Enabled"):
                             logger.info(
-                                f"中止游戏/模拟器进程：{list(self.game_process_manager.tracked_pids)}"
+                                f"中止游戏/模拟器进程: {list(self.game_process_manager.tracked_pids)}"
                             )
                             await self.game_process_manager.kill()
                             if self.script_config.get("Game", "IfForceClose"):
@@ -427,10 +427,10 @@ class GeneralManager:
 
                     else:
                         logger.error(
-                            f"配置: {user['user_id']} - 代理任务异常: {self.general_result}",
+                            f"配置: {user['user_id']} - 代理任务异常: {self.general_result}"
                         )
                         # 打印中止信息
-                        # 此时，log变量内存储的就是出现异常的日志信息，可以保存或发送用于问题排查
+                        # 此时, log变量内存储的就是出现异常的日志信息, 可以保存或发送用于问题排查
                         await Config.send_json(
                             WebSocketMessage(
                                 id=self.ws_id,
@@ -442,12 +442,12 @@ class GeneralManager:
                         )
 
                         # 中止相关程序
-                        logger.info(f"中止相关程序：{self.script_exe_path}")
+                        logger.info(f"中止相关程序: {self.script_exe_path}")
                         await self.general_process_manager.kill()
                         await System.kill_process(self.script_exe_path)
                         if self.script_config.get("Game", "Enabled"):
                             logger.info(
-                                f"中止游戏/模拟器进程：{list(self.game_process_manager.tracked_pids)}"
+                                f"中止游戏/模拟器进程: {list(self.game_process_manager.tracked_pids)}"
                             )
                             await self.game_process_manager.kill()
                             if self.script_config.get("Game", "IfForceClose"):
@@ -520,7 +520,7 @@ class GeneralManager:
             await self.set_general()
             # 创建通用脚本任务
             logger.info(
-                f"运行脚本任务：{self.script_set_exe_path}，参数：{self.script_set_arguments}"
+                f"运行脚本任务: {self.script_set_exe_path}, 参数: {self.script_set_arguments}"
             )
             await self.general_process_manager.open_process(
                 self.script_set_exe_path,
@@ -592,7 +592,7 @@ class GeneralManager:
     async def final_task(self, task: asyncio.Task):
         """结束时的收尾工作"""
 
-        logger.info("MAA 主任务已结束，开始执行后续操作")
+        logger.info("MAA 主任务已结束, 开始执行后续操作")
 
         await Config.ScriptConfig[self.script_id].unlock()
         logger.success(f"已解锁脚本配置 {self.script_id}")
@@ -692,21 +692,21 @@ class GeneralManager:
 
             # 生成结果文本
             result_text = (
-                f"任务开始时间：{result['start_time']}，结束时间：{result['end_time']}\n"
-                f"已完成数：{result['completed_count']}，未完成数：{result['uncompleted_count']}\n\n"
+                f"任务开始时间: {result['start_time']}, 结束时间: {result['end_time']}\n"
+                f"已完成数: {result['completed_count']}, 未完成数: {result['uncompleted_count']}\n\n"
             )
             if len(result["failed_user"]) > 0:
                 result_text += (
-                    f"{self.mode}未成功的用户：\n{"\n".join(result['failed_user'])}\n"
+                    f"{self.mode}未成功的用户: \n{"\n".join(result['failed_user'])}\n"
                 )
             if len(result["waiting_user"]) > 0:
-                result_text += f"\n未开始{self.mode}的用户：\n{"\n".join(result['waiting_user'])}\n"
+                result_text += f"\n未开始{self.mode}的用户: \n{"\n".join(result['waiting_user'])}\n"
 
             # 推送代理结果通知
             Notify.push_plyer(
                 title.replace("报告", "已完成！"),
-                f"已完成配置数：{len(over_user)}，未完成配置数：{len(error_user) + len(wait_user)}",
-                f"已完成配置数：{len(over_user)}，未完成配置数：{len(error_user) + len(wait_user)}",
+                f"已完成配置数: {len(over_user)}, 未完成配置数: {len(error_user) + len(wait_user)}",
+                f"已完成配置数: {len(over_user)}, 未完成配置数: {len(error_user) + len(wait_user)}",
                 10,
             )
             await self.push_notification("代理结果", title, result)
@@ -723,7 +723,7 @@ class GeneralManager:
                     dirs_exist_ok=True,
                 )
                 logger.success(
-                    f"通用脚本配置已保存到：{Path.cwd() / f'data/{self.script_id}/{self.user_id}/ConfigFile'}",
+                    f"通用脚本配置已保存到: {Path.cwd() / f'data/{self.script_id}/{self.user_id}/ConfigFile'}"
                 )
             elif self.script_config.get("Script", "ConfigPathMode") == "File":
                 shutil.copy(
@@ -733,7 +733,7 @@ class GeneralManager:
                     / self.script_config_path.name,
                 )
                 logger.success(
-                    f"通用脚本配置已保存到：{Path.cwd() / f'data/{self.script_id}/{self.user_id}/ConfigFile' / self.script_config_path.name}",
+                    f"通用脚本配置已保存到: {Path.cwd() / f'data/{self.script_id}/{self.user_id}/ConfigFile' / self.script_config_path.name}"
                 )
             result_text = ""
 
@@ -743,7 +743,7 @@ class GeneralManager:
             and (Path.cwd() / f"data/{self.script_id}/Temp").exists()
         ):
             logger.info(
-                f"复原通用脚本配置文件：{Path.cwd() / f"data/{self.script_id}/Temp"}"
+                f"复原通用脚本配置文件: {Path.cwd() / f"data/{self.script_id}/Temp"}"
             )
             shutil.copytree(
                 Path.cwd() / f"data/{self.script_id}/Temp",
@@ -756,7 +756,7 @@ class GeneralManager:
             and (Path.cwd() / f"data/{self.script_id}/Temp/config.temp").exists()
         ):
             logger.info(
-                f"复原通用脚本配置文件：{Path.cwd() / f"data/{self.script_id}/Temp/config.temp"}"
+                f"复原通用脚本配置文件: {Path.cwd() / f"data/{self.script_id}/Temp/config.temp"}"
             )
             shutil.copy(
                 Path.cwd() / f"data/{self.script_id}/Temp/config.temp",
@@ -796,7 +796,7 @@ class GeneralManager:
                 except ValueError:
                     pass
 
-            logger.info(f"通用脚本最近一条日志时间：{latest_time}")
+            logger.info(f"通用脚本最近一条日志时间: {latest_time}")
 
             for success_sign in self.success_log:
                 if success_sign in log:
@@ -811,7 +811,7 @@ class GeneralManager:
                 else:
                     for error_sign in self.error_log:
                         if error_sign in log:
-                            self.general_result = f"异常日志：{error_sign}"
+                            self.general_result = f"异常日志: {error_sign}"
                             break
                     else:
                         if await self.general_process_manager.is_running():
@@ -827,16 +827,16 @@ class GeneralManager:
             else:
                 self.general_result = "Success!"
 
-        logger.info(f"通用脚本日志分析结果：{self.general_result}")
+        logger.info(f"通用脚本日志分析结果: {self.general_result}")
 
         if self.general_result != "Wait":
 
-            logger.info(f"MAA 任务结果：{self.general_result}，日志锁已释放")
+            logger.info(f"MAA 任务结果: {self.general_result}, 日志锁已释放")
             self.wait_event.set()
 
     async def set_general(self) -> None:
         """配置通用脚本运行参数"""
-        logger.info(f"开始配置脚本运行参数：{self.mode}")
+        logger.info(f"开始配置脚本运行参数: {self.mode}")
 
         # 配置前关闭可能未正常退出的脚本进程
         if self.mode == "自动代理":
@@ -887,7 +887,7 @@ class GeneralManager:
                     self.script_config_path,
                 )
 
-        logger.info(f"脚本运行参数配置完成：{self.mode}")
+        logger.info(f"脚本运行参数配置完成: {self.mode}")
 
     async def execute_script_task(self, script_path: Path, task_name: str) -> bool:
         """执行脚本任务并等待结束"""
@@ -901,7 +901,7 @@ class GeneralManager:
             elif script_path.suffix.lower() in [".bat", ".cmd", ".exe"]:
                 cmd = [str(script_path)]
             elif script_path.suffix.lower() == "":
-                logger.warning(f"{task_name}脚本没有指定后缀名，无法执行")
+                logger.warning(f"{task_name}脚本没有指定后缀名, 无法执行")
                 return False
             else:
                 # 使用系统默认程序打开
@@ -929,7 +929,7 @@ class GeneralManager:
                     logger.info(f"{task_name}输出: {result.stdout}")
                 return True
             else:
-                logger.error(f"{task_name}执行失败，返回码: {result.returncode}")
+                logger.error(f"{task_name}执行失败, 返回码: {result.returncode}")
                 if result.stderr.strip():
                     logger.error(f"{task_name}错误输出: {result.stderr}")
                 return False
@@ -944,7 +944,7 @@ class GeneralManager:
     async def push_notification(self, mode: str, title: str, message) -> None:
         """通过所有渠道推送通知"""
 
-        logger.info(f"开始推送通知，模式：{mode}，标题：{title}")
+        logger.info(f"开始推送通知, 模式: {mode}, 标题: {title}")
 
         env = Environment(loader=FileSystemLoader(str(Path.cwd() / "res/html")))
 
@@ -957,14 +957,14 @@ class GeneralManager:
         ):
             # 生成文本通知内容
             message_text = (
-                f"任务开始时间：{message['start_time']}，结束时间：{message['end_time']}\n"
-                f"已完成数：{message['completed_count']}，未完成数：{message['uncompleted_count']}\n\n"
+                f"任务开始时间: {message['start_time']}, 结束时间: {message['end_time']}\n"
+                f"已完成数: {message['completed_count']}, 未完成数: {message['uncompleted_count']}\n\n"
             )
 
             if len(message["failed_user"]) > 0:
-                message_text += f"{self.mode[2:4]}未成功的配置：\n{"\n".join(message['failed_user'])}\n"
+                message_text += f"{self.mode[2:4]}未成功的配置: \n{"\n".join(message['failed_user'])}\n"
             if len(message["waiting_user"]) > 0:
-                message_text += f"\n未开始{self.mode[2:4]}的配置：\n{"\n".join(message['waiting_user'])}\n"
+                message_text += f"\n未开始{self.mode[2:4]}的配置: \n{"\n".join(message['waiting_user'])}\n"
 
             # 生成HTML通知内容
             message["failed_user"] = "、".join(message["failed_user"])
@@ -1049,7 +1049,7 @@ class GeneralManager:
                             self.cur_user_data.get("Notify", "ToAddress"),
                         )
                     else:
-                        logger.error(f"用户邮箱地址为空，无法发送用户单独的邮件通知")
+                        logger.error(f"用户邮箱地址为空, 无法发送用户单独的邮件通知")
 
                 # 发送ServerChan通知
                 if self.cur_user_data.get("Notify", "IfServerChan"):
@@ -1061,7 +1061,7 @@ class GeneralManager:
                         )
                     else:
                         logger.error(
-                            "用户ServerChan密钥为空，无法发送用户单独的ServerChan通知"
+                            "用户ServerChan密钥为空, 无法发送用户单独的ServerChan通知"
                         )
 
                 # 推送CompanyWebHookBot通知
@@ -1074,7 +1074,7 @@ class GeneralManager:
                         )
                     else:
                         logger.error(
-                            "用户CompanyWebHookBot密钥为空，无法发送用户单独的CompanyWebHookBot通知"
+                            "用户CompanyWebHookBot密钥为空, 无法发送用户单独的CompanyWebHookBot通知"
                         )
 
         return None

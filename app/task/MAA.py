@@ -92,23 +92,23 @@ class MaaManager:
             (1, 20), "%Y-%m-%d %H:%M:%S", self.check_maa_log
         )
 
-        logger.success(f"{self.script_id}已锁定，MAA配置提取完成")
+        logger.success(f"{self.script_id}已锁定, MAA配置提取完成")
 
     def check_config(self) -> str:
         """检查配置是否可用"""
 
         if not self.maa_exe_path.exists():
-            return "MAA.exe文件不存在，请检查MAA路径设置！"
+            return "MAA.exe文件不存在, 请检查MAA路径设置！"
         if not self.maa_set_path.exists():
-            return "MAA配置文件不存在，请检查MAA路径设置！"
+            return "MAA配置文件不存在, 请检查MAA路径设置！"
         if (self.mode != "设置脚本" or self.user_id is not None) and not (
             Path.cwd() / f"data/{self.script_id}/Default/ConfigFile/gui.json"
         ).exists():
-            return "未完成 MAA 全局设置，请先设置 MAA！"
+            return "未完成 MAA 全局设置, 请先设置 MAA！"
         return "Success!"
 
     async def run(self):
-        """主进程，运行MAA代理进程"""
+        """主进程, 运行MAA代理进程"""
 
         self.current_date = datetime.now().strftime("%m-%d")
         self.curdate = Config.server_date().strftime("%Y-%m-%d")
@@ -117,7 +117,7 @@ class MaaManager:
         await self.configure()
         self.check_result = self.check_config()
         if self.check_result != "Success!":
-            logger.error(f"未通过配置检查：{self.check_result}")
+            logger.error(f"未通过配置检查: {self.check_result}")
             await Config.send_json(
                 WebSocketMessage(
                     id=self.ws_id, type="Info", data={"Error": self.check_result}
@@ -126,14 +126,14 @@ class MaaManager:
             return
 
         # 记录 MAA 配置文件
-        logger.info(f"记录 MAA 配置文件：{self.maa_set_path}")
+        logger.info(f"记录 MAA 配置文件: {self.maa_set_path}")
         (Path.cwd() / f"data/{self.script_id}/Temp").mkdir(parents=True, exist_ok=True)
         if self.maa_set_path.exists():
             shutil.copy(
                 self.maa_set_path, Path.cwd() / f"data/{self.script_id}/Temp/gui.json"
             )
 
-        # 整理用户数据，筛选需代理的用户
+        # 整理用户数据, 筛选需代理的用户
         if self.mode != "设置脚本":
 
             self.user_list: List[Dict[str, str]] = [
@@ -153,7 +153,7 @@ class MaaManager:
                 ),
             )
 
-            logger.info(f"用户列表创建完成，已筛选用户数：{len(self.user_list)}")
+            logger.info(f"用户列表创建完成, 已筛选用户数: {len(self.user_list)}")
 
         # 自动代理模式
         if self.mode == "自动代理":
@@ -246,7 +246,7 @@ class MaaManager:
                             if type != "总计" and len(user_list) > 0:
 
                                 logger.info(
-                                    f"用户: {user['user_id']} - 森空岛签到{type}: {'、'.join(user_list)}",
+                                    f"用户: {user['user_id']} - 森空岛签到{type}: {'、'.join(user_list)}"
                                 )
                                 await Config.send_json(
                                     WebSocketMessage(
@@ -283,14 +283,14 @@ class MaaManager:
 
                 elif self.cur_user_data.get("Info", "IfSkland"):
                     logger.warning(
-                        f"用户: {user['user_id']} - 未配置森空岛签到Token，跳过森空岛签到"
+                        f"用户: {user['user_id']} - 未配置森空岛签到Token, 跳过森空岛签到"
                     )
                     await Config.send_json(
                         WebSocketMessage(
                             id=self.ws_id,
                             type="Info",
                             data={
-                                "Warning": f"用户 {user['name']} 未配置森空岛签到Token，跳过森空岛签到"
+                                "Warning": f"用户 {user['name']} 未配置森空岛签到Token, 跳过森空岛签到"
                             },
                         ).model_dump()
                     )
@@ -312,7 +312,7 @@ class MaaManager:
                         == datetime.strptime(self.curdate, "%Y-%m-%d").isocalendar()[:2]
                     ):
                         logger.info(
-                            f"用户: {user['user_id']} - 本周剿灭模式已达上限，跳过执行剿灭任务"
+                            f"用户: {user['user_id']} - 本周剿灭模式已达上限, 跳过执行剿灭任务"
                         )
                         self.run_book[mode] = True
                         continue
@@ -397,7 +397,7 @@ class MaaManager:
                             break
 
                         logger.info(
-                            f"用户 {user['name']} - 模式: {mode} - 尝试次数: {i + 1}/{self.script_config.get('Run','RunTimesLimit')}",
+                            f"用户 {user['name']} - 模式: {mode} - 尝试次数: {i + 1}/{self.script_config.get('Run','RunTimesLimit')}"
                         )
 
                         # 配置MAA
@@ -412,7 +412,7 @@ class MaaManager:
                         self.emulator_arguments = set["Configurations"]["Default"][
                             "Start.EmulatorAddCommand"
                         ].split()
-                        # 如果是快捷方式，进行解析
+                        # 如果是快捷方式, 进行解析
                         if (
                             self.emulator_path.suffix == ".lnk"
                             and self.emulator_path.exists()
@@ -423,20 +423,20 @@ class MaaManager:
                                 self.emulator_path = Path(shortcut.TargetPath)
                                 self.emulator_arguments = shortcut.Arguments.split()
                             except Exception as e:
-                                logger.exception(f"解析快捷方式时出现异常：{e}")
+                                logger.exception(f"解析快捷方式时出现异常: {e}")
                                 await Config.send_json(
                                     WebSocketMessage(
                                         id=self.ws_id,
                                         type="Info",
                                         data={
-                                            "Error": f"解析快捷方式时出现异常：{e}",
+                                            "Error": f"解析快捷方式时出现异常: {e}",
                                         },
                                     ).model_dump()
                                 )
                                 self.if_open_emulator = True
                                 break
                         elif not self.emulator_path.exists():
-                            logger.error(f"模拟器快捷方式不存在：{self.emulator_path}")
+                            logger.error(f"模拟器快捷方式不存在: {self.emulator_path}")
                             await Config.send_json(
                                 WebSocketMessage(
                                     id=self.ws_id,
@@ -479,40 +479,40 @@ class MaaManager:
 
                         # 任务开始前释放ADB
                         try:
-                            logger.info(f"释放ADB：{self.ADB_address}")
+                            logger.info(f"释放ADB: {self.ADB_address}")
                             subprocess.run(
                                 [self.ADB_path, "disconnect", self.ADB_address],
                                 creationflags=subprocess.CREATE_NO_WINDOW,
                             )
                         except subprocess.CalledProcessError as e:
                             # 忽略错误,因为可能本来就没有连接
-                            logger.warning(f"释放ADB时出现异常：{e}")
+                            logger.warning(f"释放ADB时出现异常: {e}")
                         except Exception as e:
-                            logger.exception(f"释放ADB时出现异常：{e}")
+                            logger.exception(f"释放ADB时出现异常: {e}")
                             await Config.send_json(
                                 WebSocketMessage(
                                     id=self.ws_id,
                                     type="Info",
-                                    data={"Warning": f"释放ADB时出现异常：{e}"},
+                                    data={"Warning": f"释放ADB时出现异常: {e}"},
                                 ).model_dump()
                             )
 
                         if self.if_open_emulator_process:
                             try:
                                 logger.info(
-                                    f"启动模拟器：{self.emulator_path}，参数：{self.emulator_arguments}"
+                                    f"启动模拟器: {self.emulator_path}, 参数: {self.emulator_arguments}"
                                 )
                                 await self.emulator_process_manager.open_process(
                                     self.emulator_path, self.emulator_arguments, 0
                                 )
                             except Exception as e:
-                                logger.exception(f"启动模拟器时出现异常：{e}")
+                                logger.exception(f"启动模拟器时出现异常: {e}")
                                 await Config.send_json(
                                     WebSocketMessage(
                                         id=self.ws_id,
                                         type="Info",
                                         data={
-                                            "Error": "启动模拟器时出现异常，请检查MAA中模拟器路径设置"
+                                            "Error": "启动模拟器时出现异常, 请检查MAA中模拟器路径设置"
                                         },
                                     ).model_dump()
                                 )
@@ -521,7 +521,7 @@ class MaaManager:
 
                         # 更新静默进程标记有效时间
                         logger.info(
-                            f"更新静默进程标记：{self.emulator_path}，标记有效时间：{datetime.now() + timedelta(seconds=self.wait_time + 10)}"
+                            f"更新静默进程标记: {self.emulator_path}, 标记有效时间: {datetime.now() + timedelta(seconds=self.wait_time + 10)}"
                         )
                         Config.silence_dict[self.emulator_path] = (
                             datetime.now() + timedelta(seconds=self.wait_time + 10)
@@ -530,7 +530,7 @@ class MaaManager:
                         await self.search_ADB_address()
 
                         # 创建MAA任务
-                        logger.info(f"启动MAA进程：{self.maa_exe_path}")
+                        logger.info(f"启动MAA进程: {self.maa_exe_path}")
                         await self.maa_process_manager.open_process(
                             self.maa_exe_path, [], 0
                         )
@@ -567,10 +567,10 @@ class MaaManager:
 
                         else:
                             logger.error(
-                                f"用户: {user['user_id']} - 代理任务异常: {self.maa_result}",
+                                f"用户: {user['user_id']} - 代理任务异常: {self.maa_result}"
                             )
                             # 打印中止信息
-                            # 此时，log变量内存储的就是出现异常的日志信息，可以保存或发送用于问题排查
+                            # 此时, log变量内存储的就是出现异常的日志信息, 可以保存或发送用于问题排查
                             await Config.send_json(
                                 WebSocketMessage(
                                     id=self.ws_id,
@@ -581,13 +581,13 @@ class MaaManager:
                                 ).model_dump()
                             )
                             # 无命令行中止MAA与其子程序
-                            logger.info(f"中止MAA进程：{self.maa_exe_path}")
+                            logger.info(f"中止MAA进程: {self.maa_exe_path}")
                             await self.maa_process_manager.kill(if_force=True)
                             await System.kill_process(self.maa_exe_path)
 
                             # 中止模拟器进程
                             logger.info(
-                                f"中止模拟器进程：{list(self.emulator_process_manager.tracked_pids)}"
+                                f"中止模拟器进程: {list(self.emulator_process_manager.tracked_pids)}"
                             )
                             await self.emulator_process_manager.kill()
 
@@ -605,27 +605,27 @@ class MaaManager:
 
                         # 任务结束后释放ADB
                         try:
-                            logger.info(f"释放ADB：{self.ADB_address}")
+                            logger.info(f"释放ADB: {self.ADB_address}")
                             subprocess.run(
                                 [self.ADB_path, "disconnect", self.ADB_address],
                                 creationflags=subprocess.CREATE_NO_WINDOW,
                             )
                         except subprocess.CalledProcessError as e:
                             # 忽略错误,因为可能本来就没有连接
-                            logger.warning(f"释放ADB时出现异常：{e}")
+                            logger.warning(f"释放ADB时出现异常: {e}")
                         except Exception as e:
-                            logger.exception(f"释放ADB时出现异常：{e}")
+                            logger.exception(f"释放ADB时出现异常: {e}")
                             await Config.send_json(
                                 WebSocketMessage(
                                     id=self.ws_id,
                                     type="Info",
-                                    data={"Error": f"释放ADB时出现异常：{e}"},
+                                    data={"Error": f"释放ADB时出现异常: {e}"},
                                 ).model_dump()
                             )
-                        # 任务结束后再次手动中止模拟器进程，防止退出不彻底
+                        # 任务结束后再次手动中止模拟器进程, 防止退出不彻底
                         if self.if_kill_emulator:
                             logger.info(
-                                f"任务结束后再次中止模拟器进程：{list(self.emulator_process_manager.tracked_pids)}"
+                                f"任务结束后再次中止模拟器进程: {list(self.emulator_process_manager.tracked_pids)}"
                             )
                             await self.emulator_process_manager.kill()
                             self.if_open_emulator = True
@@ -677,7 +677,7 @@ class MaaManager:
                         if if_six_star:
                             await self.push_notification(
                                 "公招六星",
-                                f"喜报：用户 {user['name']} 公招出六星啦！",
+                                f"喜报: 用户 {user['name']} 公招出六星啦！",
                                 {
                                     "user_name": user["name"],
                                 },
@@ -686,7 +686,7 @@ class MaaManager:
                         # 执行MAA解压更新动作
                         if self.maa_update_package:
 
-                            logger.info(f"检测到MAA更新，正在执行更新动作")
+                            logger.info(f"检测到MAA更新, 正在执行更新动作")
 
                             await Config.send_json(
                                 WebSocketMessage(
@@ -714,8 +714,8 @@ class MaaManager:
         # 人工排查模式
         elif self.mode == "人工排查":
 
-            # 人工排查时，屏蔽静默操作
-            logger.info("人工排查任务开始，屏蔽静默操作")
+            # 人工排查时, 屏蔽静默操作
+            logger.info("人工排查任务开始, 屏蔽静默操作")
             Config.if_ignore_silence.append(self.script_id)
 
             # 标记是否需要启动模拟器
@@ -751,7 +751,7 @@ class MaaManager:
                     # 记录当前时间
                     self.log_start_time = datetime.now()
                     # 创建MAA任务
-                    logger.info(f"启动MAA进程：{self.maa_exe_path}")
+                    logger.info(f"启动MAA进程: {self.maa_exe_path}")
                     await self.maa_process_manager.open_process(
                         self.maa_exe_path, [], 0
                     )
@@ -772,9 +772,7 @@ class MaaManager:
                     )
 
                     if self.maa_result == "Success!":
-                        logger.info(
-                            f"用户: {user['user_id']} - MAA进程成功登录PRTS",
-                        )
+                        logger.info(f"用户: {user['user_id']} - MAA进程成功登录PRTS")
                         self.run_book["SignIn"] = True
                         await Config.send_json(
                             WebSocketMessage(
@@ -797,16 +795,16 @@ class MaaManager:
                             ).model_dump()
                         )
                         # 无命令行中止MAA与其子程序
-                        logger.info(f"中止MAA进程：{self.maa_exe_path}")
+                        logger.info(f"中止MAA进程: {self.maa_exe_path}")
                         await self.maa_process_manager.kill(if_force=True)
                         await System.kill_process(self.maa_exe_path)
                         self.if_open_emulator = True
                         await asyncio.sleep(10)
 
-                    # 登录成功，结束循环
+                    # 登录成功, 结束循环
                     if self.run_book["SignIn"]:
                         break
-                    # 登录失败，询问是否结束循环
+                    # 登录失败, 询问是否结束循环
                     else:
 
                         uid = str(uuid.uuid4())
@@ -818,7 +816,7 @@ class MaaManager:
                                     "message_id": uid,
                                     "type": "Question",
                                     "title": "操作提示",
-                                    "message": "MAA未能正确登录到PRTS，是否重试？",
+                                    "message": "MAA未能正确登录到PRTS, 是否重试？",
                                 },
                             ).model_dump()
                         )
@@ -826,7 +824,7 @@ class MaaManager:
                         if result.get("choice", False):
                             break
 
-                # 登录成功，录入人工排查情况
+                # 登录成功, 录入人工排查情况
                 if self.run_book["SignIn"]:
 
                     uid = str(uuid.uuid4())
@@ -838,7 +836,7 @@ class MaaManager:
                                 "message_id": uid,
                                 "type": "Question",
                                 "title": "操作提示",
-                                "message": "请检查用户代理情况，该用户是否正确完成代理任务？",
+                                "message": "请检查用户代理情况, 该用户是否正确完成代理任务？",
                             },
                         ).model_dump()
                     )
@@ -862,7 +860,7 @@ class MaaManager:
             # 配置MAA
             await self.set_maa(self.mode)
             # 创建MAA任务
-            logger.info(f"启动MAA进程：{self.maa_exe_path}")
+            logger.info(f"启动MAA进程: {self.maa_exe_path}")
             await self.maa_process_manager.open_process(self.maa_exe_path, [], 0)
             # 记录当前时间
             self.log_start_time = datetime.now()
@@ -945,7 +943,7 @@ class MaaManager:
                 self.user_list[self.index]["status"] = "完成"
             else:
                 logger.info(
-                    f"用户 {self.user_list[self.index]['user_id']} 未通过人工排查",
+                    f"用户 {self.user_list[self.index]['user_id']} 未通过人工排查"
                 )
                 await self.cur_user_data.set("Data", "IfPassCheck", False)
                 self.user_list[self.index]["status"] = "异常"
@@ -953,7 +951,7 @@ class MaaManager:
     async def final_task(self, task: asyncio.Task):
         """结束时的收尾工作"""
 
-        logger.info("MAA 主任务已结束，开始执行后续操作")
+        logger.info("MAA 主任务已结束, 开始执行后续操作")
 
         await Config.ScriptConfig[self.script_id].unlock()
         logger.success(f"已解锁脚本配置 {self.script_id}")
@@ -974,7 +972,7 @@ class MaaManager:
         if self.mode == "人工排查":
 
             # 解除静默操作屏蔽
-            logger.info("人工排查任务结束，解除静默操作屏蔽")
+            logger.info("人工排查任务结束, 解除静默操作屏蔽")
             if self.script_id in Config.if_ignore_silence:
                 Config.if_ignore_silence.remove(self.script_id)
 
@@ -998,7 +996,7 @@ class MaaManager:
                 if if_six_star:
                     await self.push_notification(
                         "公招六星",
-                        f"喜报：用户 {self.user_list[self.index]['name']} 公招出六星啦！",
+                        f"喜报: 用户 {self.user_list[self.index]['name']} 公招出六星啦！",
                         {
                             "user_name": self.user_list[self.index]["name"],
                         },
@@ -1046,21 +1044,21 @@ class MaaManager:
 
             # 生成结果文本
             result_text = (
-                f"任务开始时间：{result["start_time"]}，结束时间：{result["end_time"]}\n"
-                f"已完成数：{result["completed_count"]}，未完成数：{result["uncompleted_count"]}\n\n"
+                f"任务开始时间: {result["start_time"]}, 结束时间: {result["end_time"]}\n"
+                f"已完成数: {result["completed_count"]}, 未完成数: {result["uncompleted_count"]}\n\n"
             )
             if len(result["failed_user"]) > 0:
                 result_text += (
-                    f"{self.mode}未成功的用户：\n{"\n".join(result["failed_user"])}\n"
+                    f"{self.mode}未成功的用户: \n{"\n".join(result["failed_user"])}\n"
                 )
             if len(result["waiting_user"]) > 0:
-                result_text += f"\n未开始{self.mode}的用户：\n{"\n".join(result["waiting_user"])}\n"
+                result_text += f"\n未开始{self.mode}的用户: \n{"\n".join(result["waiting_user"])}\n"
 
             # 推送代理结果通知
             Notify.push_plyer(
                 title.replace("报告", "已完成！"),
-                f"已完成用户数：{len(over_user)}，未完成用户数：{len(error_user) + len(wait_user)}",
-                f"已完成用户数：{len(over_user)}，未完成用户数：{len(error_user) + len(wait_user)}",
+                f"已完成用户数: {len(over_user)}, 未完成用户数: {len(error_user) + len(wait_user)}",
+                f"已完成用户数: {len(over_user)}, 未完成用户数: {len(error_user) + len(wait_user)}",
                 10,
             )
             await self.push_notification("代理结果", title, result)
@@ -1081,7 +1079,7 @@ class MaaManager:
             result_text = ""
 
         # 复原 MAA 配置文件
-        logger.info(f"复原 MAA 配置文件：{Path.cwd() / f'data/{self.script_id}/Temp'}")
+        logger.info(f"复原 MAA 配置文件: {Path.cwd() / f'data/{self.script_id}/Temp'}")
         if (Path.cwd() / f"data/{self.script_id}/Temp/gui.json").exists():
             shutil.copy(
                 Path.cwd() / f"data/{self.script_id}/Temp/gui.json", self.maa_set_path
@@ -1094,13 +1092,13 @@ class MaaManager:
     async def get_message(self, message_id: str):
         """获取当前任务的属性值"""
 
-        logger.info(f"等待客户端回应消息：{message_id}")
+        logger.info(f"等待客户端回应消息: {message_id}")
 
         while True:
             message = await self.message_queue.get()
             if message.get("message_id") == message_id:
                 self.message_queue.task_done()
-                logger.success(f"收到客户端回应消息：{message_id}")
+                logger.success(f"收到客户端回应消息: {message_id}")
                 return message
             else:
                 self.message_queue.task_done()
@@ -1129,7 +1127,7 @@ class MaaManager:
             ADB_port = int(self.ADB_address.split(":")[1])
 
         logger.info(
-            f"正在搜索ADB实际地址，ADB前缀：{ADB_ip}，初始端口：{ADB_port}，搜索范围：{self.port_range}"
+            f"正在搜索ADB实际地址, ADB前缀: {ADB_ip}, 初始端口: {ADB_port}, 搜索范围: {self.port_range}"
         )
 
         for port in self.port_range:
@@ -1159,10 +1157,10 @@ class MaaManager:
                 )
                 if ADB_address in devices_result.stdout:
 
-                    logger.info(f"ADB实际地址：{ADB_address}")
+                    logger.info(f"ADB实际地址: {ADB_address}")
 
                     # 断开连接
-                    logger.info(f"断开ADB连接：{ADB_address}")
+                    logger.info(f"断开ADB连接: {ADB_address}")
                     subprocess.run(
                         [self.ADB_path, "disconnect", ADB_address],
                         creationflags=subprocess.CREATE_NO_WINDOW,
@@ -1171,7 +1169,7 @@ class MaaManager:
                     self.ADB_address = ADB_address
 
                     # 覆写当前ADB地址
-                    logger.info(f"开始使用实际 ADB 地址覆写：{self.ADB_address}")
+                    logger.info(f"开始使用实际 ADB 地址覆写: {self.ADB_address}")
                     await self.maa_process_manager.kill(if_force=True)
                     await System.kill_process(self.maa_exe_path)
                     with self.maa_set_path.open(mode="r", encoding="utf-8") as f:
@@ -1186,9 +1184,9 @@ class MaaManager:
                     return None
 
                 else:
-                    logger.info(f"无法连接到ADB地址：{ADB_address}")
+                    logger.info(f"无法连接到ADB地址: {ADB_address}")
             else:
-                logger.info(f"无法连接到ADB地址：{ADB_address}")
+                logger.info(f"无法连接到ADB地址: {ADB_address}")
 
     async def check_maa_log(self, log_content: List[str]) -> None:
         """获取MAA日志并检查以判断MAA程序运行状态"""
@@ -1211,14 +1209,14 @@ class MaaManager:
             latest_time = self.log_start_time
             for _ in self.maa_logs[::-1]:
                 try:
-                    if "如果长时间无进一步日志更新，可能需要手动干预。" in _:
+                    if "如果长时间无进一步日志更新, 可能需要手动干预。" in _:
                         continue
                     latest_time = datetime.strptime(_[1:20], "%Y-%m-%d %H:%M:%S")
                     break
                 except ValueError:
                     pass
 
-            logger.info(f"MAA最近一条日志时间：{latest_time}")
+            logger.info(f"MAA最近一条日志时间: {latest_time}")
 
             if self.log_check_mode == "Annihilation" and "任务出错: 刷理智" in log:
                 self.weekly_annihilation_limit_reached = True
@@ -1308,11 +1306,11 @@ class MaaManager:
             else:
                 self.maa_result = "Wait"
 
-        logger.debug(f"MAA 日志分析结果：{self.maa_result}")
+        logger.debug(f"MAA 日志分析结果: {self.maa_result}")
 
         if self.maa_result != "Wait":
 
-            logger.info(f"MAA 任务结果：{self.maa_result}，日志锁已释放")
+            logger.info(f"MAA 任务结果: {self.maa_result}, 日志锁已释放")
             self.wait_event.set()
 
     async def set_maa(self, mode: str) -> dict:
@@ -1868,7 +1866,7 @@ class MaaManager:
 
     async def push_notification(self, mode: str, title: str, message) -> None:
         """通过所有渠道推送通知"""
-        logger.info(f"开始推送通知，模式：{mode}，标题：{title}")
+        logger.info(f"开始推送通知, 模式: {mode}, 标题: {title}")
 
         env = Environment(loader=FileSystemLoader(str(Path.cwd() / "res/html")))
 
@@ -1881,14 +1879,14 @@ class MaaManager:
         ):
             # 生成文本通知内容
             message_text = (
-                f"任务开始时间：{message['start_time']}，结束时间：{message['end_time']}\n"
-                f"已完成数：{message['completed_count']}，未完成数：{message['uncompleted_count']}\n\n"
+                f"任务开始时间: {message['start_time']}, 结束时间: {message['end_time']}\n"
+                f"已完成数: {message['completed_count']}, 未完成数: {message['uncompleted_count']}\n\n"
             )
 
             if len(message["failed_user"]) > 0:
-                message_text += f"{self.mode[2:4]}未成功的用户：\n{"\n".join(message["failed_user"])}\n"
+                message_text += f"{self.mode[2:4]}未成功的用户: \n{"\n".join(message["failed_user"])}\n"
             if len(message["waiting_user"]) > 0:
-                message_text += f"\n未开始{self.mode[2:4]}的用户：\n{"\n".join(message["waiting_user"])}\n"
+                message_text += f"\n未开始{self.mode[2:4]}的用户: \n{"\n".join(message["waiting_user"])}\n"
 
             # 生成HTML通知内容
             message["failed_user"] = "、".join(message["failed_user"])
@@ -1990,7 +1988,7 @@ class MaaManager:
                             self.cur_user_data.get("Notify", "ToAddress"),
                         )
                     else:
-                        logger.error(f"用户邮箱地址为空，无法发送用户单独的邮件通知")
+                        logger.error(f"用户邮箱地址为空, 无法发送用户单独的邮件通知")
 
                 # 发送ServerChan通知
                 if self.cur_user_data.get("Notify", "IfServerChan"):
@@ -2002,7 +2000,7 @@ class MaaManager:
                         )
                     else:
                         logger.error(
-                            "用户ServerChan密钥为空，无法发送用户单独的ServerChan通知"
+                            "用户ServerChan密钥为空, 无法发送用户单独的ServerChan通知"
                         )
 
                 # 推送CompanyWebHookBot通知
@@ -2015,7 +2013,7 @@ class MaaManager:
                         )
                     else:
                         logger.error(
-                            f"用户CompanyWebHookBot密钥为空，无法发送用户单独的CompanyWebHookBot通知"
+                            "用户CompanyWebHookBot密钥为空, 无法发送用户单独的CompanyWebHookBot通知"
                         )
 
         elif mode == "公招六星":
@@ -2066,7 +2064,7 @@ class MaaManager:
                             self.cur_user_data.get("Notify", "ToAddress"),
                         )
                     else:
-                        logger.error("用户邮箱地址为空，无法发送用户单独的邮件通知")
+                        logger.error("用户邮箱地址为空, 无法发送用户单独的邮件通知")
 
                 # 发送ServerChan通知
                 if self.cur_user_data.get("Notify", "IfServerChan"):
@@ -2079,7 +2077,7 @@ class MaaManager:
                         )
                     else:
                         logger.error(
-                            "用户ServerChan密钥为空，无法发送用户单独的ServerChan通知"
+                            "用户ServerChan密钥为空, 无法发送用户单独的ServerChan通知"
                         )
 
                 # 推送CompanyWebHookBot通知
@@ -2096,7 +2094,7 @@ class MaaManager:
                         )
                     else:
                         logger.error(
-                            "用户CompanyWebHookBot密钥为空，无法发送用户单独的CompanyWebHookBot通知"
+                            "用户CompanyWebHookBot密钥为空, 无法发送用户单独的CompanyWebHookBot通知"
                         )
 
         return None
