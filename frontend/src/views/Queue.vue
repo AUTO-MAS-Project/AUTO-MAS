@@ -159,6 +159,25 @@
           </div>
         </div>
 
+        <!-- 完成后操作配置 -->
+        <div class="config-section">
+          <div class="after-accomplish-settings">
+            <div class="setting-item">
+              <div class="setting-label">
+                <span class="setting-title">完成后操作</span>
+                <span class="setting-description">队列完成后执行的操作</span>
+              </div>
+              <a-select
+                v-model:value="currentAfterAccomplish"
+                @change="onAfterAccomplishChange"
+                size="default"
+                :options="afterAccomplishOptions"
+                placeholder="请选择操作"
+                style="min-width: 200px"
+              />
+            </div>
+          </div>
+        </div>
         <a-divider />
 
         <!-- 定时项管理 -->
@@ -170,8 +189,6 @@
             @refresh="refreshTimeSets"
           />
         </div>
-
-        <a-divider />
 
         <!-- 队列项管理 -->
         <div class="config-section">
@@ -188,9 +205,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, nextTick, watch } from 'vue'
+import { nextTick, onMounted, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
-import { PlusOutlined, ReloadOutlined, DeleteOutlined, EditOutlined } from '@ant-design/icons-vue'
+import { DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons-vue'
 import { Service } from '@/api'
 import TimeSetManager from '@/components/queue/TimeSetManager.vue'
 import QueueItemManager from '@/components/queue/QueueItemManager.vue'
@@ -206,8 +223,20 @@ const currentQueueEnabled = ref<boolean>(true)
 // 新增：启动时运行和定时运行的开关状态
 const currentStartUpEnabled = ref<boolean>(false)
 const currentTimeEnabled = ref<boolean>(false)
+// 新增：完成后操作状态
+const currentAfterAccomplish = ref<string>('NoAction')
 // 队列名称编辑状态
 const isEditingQueueName = ref<boolean>(false)
+
+// 完成后操作选项
+const afterAccomplishOptions = [
+  { label: '无操作', value: 'NoAction' },
+  { label: '退出软件', value: 'KillSelf' },
+  { label: '睡眠', value: 'Sleep' },
+  { label: '休眠', value: 'Hibernate' },
+  { label: '关机', value: 'Shutdown' },
+  { label: '强制关机', value: 'ShutdownForce' },
+]
 
 // 当前队列的定时项和队列项
 const currentTimeSets = ref<any[]>([])
@@ -299,6 +328,8 @@ const loadQueueData = async (queueId: string) => {
       // 更新开关状态 - 从API响应中获取
       currentStartUpEnabled.value = queueData.Info?.StartUpEnabled ?? false
       currentTimeEnabled.value = queueData.Info?.TimeEnabled ?? false
+      // 更新完成后操作状态 - 从API响应中获取
+      currentAfterAccomplish.value = queueData.Info?.AfterAccomplish ?? 'NoAction'
       await new Promise(resolve => setTimeout(resolve, 50))
 
       // 加载定时项和队列项数据 - 添加错误处理
@@ -363,7 +394,7 @@ const refreshTimeSets = async () => {
               id: timeSetId,
               time: timeString,
               enabled: Boolean(timeSetData.Info.Enabled),
-              description: timeSetData.Info.Description || '',
+              description: timeSetData.Info?.Description || '',
             })
           }
         } catch (itemError) {
@@ -472,6 +503,12 @@ const onQueueSwitchChange = () => {
   autoSave()
 }
 
+// 完成后操作切换处理
+const onAfterAccomplishChange = () => {
+  // 完成后操作切换时自动保存
+  autoSave()
+}
+
 // 队列状态切换处理
 const onQueueStatusChange = () => {
   // 状态切换时自动保存
@@ -569,14 +606,14 @@ const saveQueueData = async () => {
   if (!activeQueueId.value) return
 
   try {
-    // 构建符合API要求的数据结构，包含开关状态
+    // 构建符合API要求的数据结构，包含开关状态和完成后操作
     const queueData: Record<string, any> = {
-      "Info": {
-        "Name": currentQueueName.value,
-        "StartUpEnabled": currentStartUpEnabled.value,
-        "TimeEnabled": currentTimeEnabled.value,
-        "AfterAccomplish": "NoAction" // 保持默认值
-      }
+      Info: {
+        Name: currentQueueName.value,
+        StartUpEnabled: currentStartUpEnabled.value,
+        TimeEnabled: currentTimeEnabled.value,
+        AfterAccomplish: currentAfterAccomplish.value,
+      },
     }
 
     const response = await Service.updateQueueApiQueueUpdatePost({
@@ -602,7 +639,13 @@ const handleRefresh = async () => {
 
 // 自动保存功能
 watch(
-  () => [currentQueueName.value, currentQueueEnabled.value, currentStartUpEnabled.value, currentTimeEnabled.value],
+  () => [
+    currentQueueName.value,
+    currentQueueEnabled.value,
+    currentStartUpEnabled.value,
+    currentTimeEnabled.value,
+    currentAfterAccomplish.value,
+  ],
   async () => {
     await nextTick()
     autoSave()
@@ -811,6 +854,36 @@ onMounted(async () => {
 }
 
 .switch-description {
+  font-size: 14px;
+  color: var(--ant-color-text-secondary);
+}
+
+/* 完成后操作配置 */
+.after-accomplish-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.setting-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.setting-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.setting-title {
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--ant-color-text);
+}
+
+.setting-description {
   font-size: 14px;
   color: var(--ant-color-text-secondary);
 }
