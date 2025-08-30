@@ -48,7 +48,7 @@ class ImageUtils:
     @staticmethod
     def compress_image_if_needed(image_path: Path, max_size_mb=2) -> Path:
         """
-        如果图片大于max_size_mb，则压缩并覆盖原文件，返回原始路径（Path对象）
+        如果图片大于max_size_mb, 则压缩并覆盖原文件, 返回原始路径（Path对象）
         """
 
         RESAMPLE = Image.Resampling.LANCZOS  # Pillow 9.1.0及以后
@@ -82,6 +82,6 @@ class ImageUtils:
                 height = int(height * 0.95)
                 img = img.resize((width, height), RESAMPLE)
         else:
-            raise ValueError("仅支持JPG/JPEG和PNG格式图片的压缩。")
+            raise ValueError("仅支持JPG/JPEG和PNG格式图片的压缩")
 
         return image_path

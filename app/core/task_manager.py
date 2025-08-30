@@ -64,24 +64,22 @@ class _TaskManager:
                         task_id = script_id
                         break
                 else:
-                    raise ValueError(
-                        f"The task corresponding to UID {uid} could not be found."
-                    )
+                    raise ValueError(f"任务 {uid} 无法找到对应脚本配置")
         elif actual_id in Config.QueueConfig:
             task_id = actual_id
             actual_id = None
         elif actual_id in Config.ScriptConfig:
             task_id = uuid.uuid4()
         else:
-            raise ValueError(f"The task corresponding to UID {uid} could not be found.")
+            raise ValueError(f"任务 {uid} 无法找到对应脚本配置")
 
         if task_id in self.task_dict or (
             actual_id is not None and actual_id in self.task_dict
         ):
 
-            raise RuntimeError(f"The task {task_id} is already running.")
+            raise RuntimeError(f"任务 {task_id} 已在运行")
 
-        logger.info(f"创建任务：{task_id}，模式：{mode}")
+        logger.info(f"创建任务: {task_id}, 模式: {mode}")
         self.task_dict[task_id] = asyncio.create_task(
             self.run_task(mode, task_id, actual_id)
         )
@@ -96,7 +94,7 @@ class _TaskManager:
         self, mode: str, task_id: uuid.UUID, actual_id: Optional[uuid.UUID]
     ):
 
-        logger.info(f"开始运行任务：{task_id}，模式：{mode}")
+        logger.info(f"开始运行任务: {task_id}, 模式: {mode}")
 
         if mode == "设置脚本":
 
@@ -106,7 +104,7 @@ class _TaskManager:
                 task_item = GeneralManager(mode, task_id, actual_id, str(task_id))
             else:
                 logger.error(
-                    f"不支持的脚本类型：{type(Config.ScriptConfig[task_id]).__name__}"
+                    f"不支持的脚本类型: {type(Config.ScriptConfig[task_id]).__name__}"
                 )
                 await Config.send_json(
                     WebSocketMessage(
@@ -132,7 +130,7 @@ class _TaskManager:
                 queue = Config.QueueConfig[task_id]
                 if not isinstance(queue, QueueConfig):
                     logger.error(
-                        f"不支持的队列类型：{type(Config.QueueConfig[task_id]).__name__}"
+                        f"不支持的队列类型: {type(Config.QueueConfig[task_id]).__name__}"
                     )
                     await Config.send_json(
                         WebSocketMessage(
@@ -175,7 +173,7 @@ class _TaskManager:
                             data={"task_list": task_list},
                         ).model_dump()
                     )
-                    logger.info(f"跳过任务：{script_id}，该任务已在运行列表中")
+                    logger.info(f"跳过任务: {script_id}, 该任务已在运行列表中")
                     continue
 
                 # 标记为运行中
@@ -187,7 +185,7 @@ class _TaskManager:
                         data={"task_list": task_list},
                     ).model_dump()
                 )
-                logger.info(f"任务开始：{script_id}")
+                logger.info(f"任务开始: {script_id}")
 
                 if isinstance(Config.ScriptConfig[script_id], MaaConfig):
                     task_item = MaaManager(mode, script_id, None, str(task_id))
@@ -195,7 +193,7 @@ class _TaskManager:
                     task_item = GeneralManager(mode, script_id, actual_id, str(task_id))
                 else:
                     logger.error(
-                        f"不支持的脚本类型：{type(Config.ScriptConfig[script_id]).__name__}"
+                        f"不支持的脚本类型: {type(Config.ScriptConfig[script_id]).__name__}"
                     )
                     await Config.send_json(
                         WebSocketMessage(
@@ -222,7 +220,7 @@ class _TaskManager:
         :param task_id: 任务ID
         """
 
-        logger.info(f"中止任务：{task_id}")
+        logger.info(f"中止任务: {task_id}")
 
         if task_id == "ALL":
             for task in self.task_dict.values():
@@ -230,7 +228,7 @@ class _TaskManager:
         else:
             uid = uuid.UUID(task_id)
             if uid not in self.task_dict:
-                raise ValueError(f"The task {uid} is not running.")
+                raise ValueError(f"任务 {uid} 未在运行")
             self.task_dict[uid].cancel()
 
     async def remove_task(
@@ -249,7 +247,7 @@ class _TaskManager:
             任务ID
         """
 
-        logger.info(f"任务结束：{task_id}")
+        logger.info(f"任务结束: {task_id}")
 
         # 从任务字典中移除任务
         try:

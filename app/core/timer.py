@@ -65,9 +65,7 @@ class _MainTimer:
 
             if emulator_windows:
 
-                logger.info(
-                    f"检测到模拟器窗口：{emulator_windows}", module="主业务定时器"
-                )
+                logger.info(f"检测到模拟器窗口: {emulator_windows}")
                 try:
                     keyboard.press_and_release(
                         "+".join(
@@ -75,12 +73,9 @@ class _MainTimer:
                             for _ in Config.get("Function", "BossKey").split("+")
                         )
                     )
-                    logger.info(
-                        f"模拟按键：{Config.get('Function', 'BossKey')}",
-                        module="主业务定时器",
-                    )
+                    logger.info(f"模拟按键: {Config.get('Function', 'BossKey')}")
                 except Exception as e:
-                    logger.exception(f"模拟按键时出错：{e}", module="主业务定时器")
+                    logger.exception(f"模拟按键时出错: {e}")
 
 
 MainTimer = _MainTimer()

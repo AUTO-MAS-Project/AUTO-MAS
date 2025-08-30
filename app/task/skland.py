@@ -74,11 +74,11 @@ async def skland_sign_in(token) -> dict:
 
         :param token_for_sign: 用于加密的token
         :param path: 请求路径（如 /api/v1/game/player/binding）
-        :param body_or_query: GET用query字符串，POST用body字符串
+        :param body_or_query: GET用query字符串, POST用body字符串
         :return: (sign, 新的header_for_sign字典)
         """
 
-        t = str(int(time.time()) - 2)  # 时间戳，-2秒以防服务器时间不一致
+        t = str(int(time.time()) - 2)  # 时间戳, -2秒以防服务器时间不一致
         token_bytes = token_for_sign.encode("utf-8")
         header_ca = dict(header_for_sign)
         header_ca["timestamp"] = t
@@ -156,7 +156,7 @@ async def skland_sign_in(token) -> dict:
             proxies=Config.get_proxies(),
         ).json()
         if rsp["code"] != 0:
-            raise Exception(f'获得cred失败：{rsp.get("messgae")}')
+            raise Exception(f"获得cred失败: {rsp.get('message')}")
         sign_token = rsp["data"]["token"]
         cred = rsp["data"]["cred"]
         return cred, sign_token
@@ -176,7 +176,7 @@ async def skland_sign_in(token) -> dict:
         ).json()
         if rsp["status"] != 0:
             raise Exception(
-                f'使用token: {token[:3]}******{token[-3:]} 获得认证代码失败：{rsp.get("msg")}'
+                f"使用token: {token[:3]}******{token[-3:]} 获得认证代码失败: {rsp.get('msg')}"
             )
         return rsp["data"]["code"]
 
@@ -197,9 +197,9 @@ async def skland_sign_in(token) -> dict:
             proxies=Config.get_proxies(),
         ).json()
         if rsp["code"] != 0:
-            logger.error(f"请求角色列表出现问题：{rsp['message']}")
+            logger.error(f"请求角色列表出现问题: {rsp['message']}")
             if rsp.get("message") == "用户未登录":
-                logger.error(f"用户登录可能失效了，请重新登录！")
+                logger.error(f"用户登录可能失效了, 请重新登录！")
                 return v
         # 只取明日方舟（arknights）的绑定账号
         for i in rsp["data"]["list"]:

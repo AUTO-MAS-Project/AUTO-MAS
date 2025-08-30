@@ -60,7 +60,7 @@ def get_logger(module_name: str):
     """
     获取一个绑定 module 名的日志器
 
-    :param module_name: 模块名称，如 "用户管理"
+    :param module_name: 模块名称, 如 "用户管理"
     :return: 绑定后的 logger
     """
     return _logger.bind(module=module_name)

@@ -139,14 +139,10 @@ class _SystemHandler:
 
                     if result.returncode == 0:
                         logger.success(
-                            f"程序自启动任务计划已创建: {Path.cwd() / 'AUTO_MAA.exe'}",
-                            module="系统服务",
+                            f"程序自启动任务计划已创建: {Path.cwd() / 'AUTO_MAA.exe'}"
                         )
                     else:
-                        logger.error(
-                            f"程序自启动任务计划创建失败: {result.stderr}",
-                            module="系统服务",
-                        )
+                        logger.error(f"程序自启动任务计划创建失败: {result.stderr}")
 
                 finally:
                     # 删除临时文件
@@ -173,10 +169,7 @@ class _SystemHandler:
                 if result.returncode == 0:
                     logger.success("程序自启动任务计划已删除")
                 else:
-                    logger.error(
-                        f"程序自启动任务计划删除失败: {result.stderr}",
-                        module="系统服务",
-                    )
+                    logger.error(f"程序自启动任务计划删除失败: {result.stderr}")
 
             except Exception as e:
                 logger.exception(f"程序自启动任务计划删除失败: {e}")
@@ -334,7 +327,7 @@ class _SystemHandler:
                 if proc.info["exe"] and proc.info["exe"].lower() == str(path).lower():
                     pids.append(proc.info["pid"])
             except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-                # 进程可能在此期间已结束或无法访问，忽略这些异常
+                # 进程可能在此期间已结束或无法访问, 忽略这些异常
                 pass
         return pids
 

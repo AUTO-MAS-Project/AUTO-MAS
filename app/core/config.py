@@ -325,7 +325,7 @@ class MaaUserConfig(ConfigBase):
                     "Stage_Remain": plan.get_current_info("Stage_Remain").getValue(),
                 }
             else:
-                raise ValueError("Invalid plan type")
+                raise ValueError("不存在的计划表配置")
 
 
 class MaaConfig(ConfigBase):
@@ -438,7 +438,7 @@ class MaaPlanConfig(ConfigBase):
                 return self.config_item_dict["ALL"][name]
 
         else:
-            raise ValueError("The mode is invalid.")
+            raise ValueError("非法的计划表模式")
 
 
 class GeneralUserConfig(ConfigBase):
@@ -571,8 +571,8 @@ class AppConfig(GlobalConfig):
         logger.info("")
         logger.info("===================================")
         logger.info("AUTO_MAA 后端应用程序")
-        logger.info(f"版本号： v{self.VERSION}")
-        logger.info(f"工作目录： {Path.cwd()}")
+        logger.info(f"版本号:  v{self.VERSION}")
+        logger.info(f"工作目录:  {Path.cwd()}")
         logger.info("===================================")
 
         self.log_path = Path.cwd() / "debug/app.log"
@@ -640,7 +640,7 @@ class AppConfig(GlobalConfig):
             # v1.7-->v1.8
             if version[0][0] == "v1.7" or if_streaming:
                 logger.info(
-                    "数据文件版本更新：v1.7-->v1.8",
+                    "数据文件版本更新: v1.7-->v1.8",
                 )
                 if_streaming = True
 
@@ -675,7 +675,7 @@ class AppConfig(GlobalConfig):
             # v1.8-->v1.9
             if version[0][0] == "v1.8" or if_streaming:
                 logger.info(
-                    "数据文件版本更新：v1.8-->v1.9",
+                    "数据文件版本更新: v1.8-->v1.9",
                 )
                 if_streaming = True
 
@@ -891,14 +891,14 @@ class AppConfig(GlobalConfig):
     ) -> tuple[uuid.UUID, ConfigBase]:
         """添加脚本配置"""
 
-        logger.info(f"添加脚本配置：{script}")
+        logger.info(f"添加脚本配置: {script}")
 
         return await self.ScriptConfig.add(CLASS_BOOK[script])
 
     async def get_script(self, script_id: Optional[str]) -> tuple[list, dict]:
         """获取脚本配置"""
 
-        logger.info(f"获取脚本配置：{script_id}")
+        logger.info(f"获取脚本配置: {script_id}")
 
         if script_id is None:
             data = await self.ScriptConfig.toDict()
@@ -914,18 +914,16 @@ class AppConfig(GlobalConfig):
     ) -> None:
         """更新脚本配置"""
 
-        logger.info(f"更新脚本配置：{script_id}")
+        logger.info(f"更新脚本配置: {script_id}")
 
         uid = uuid.UUID(script_id)
 
         if uid in self.task_dict:
-            raise RuntimeError(
-                f"Cannot update script {script_id} while tasks are running."
-            )
+            raise RuntimeError(f"脚本 {script_id} 正在运行, 无法更新配置项")
 
         for group, items in data.items():
             for name, value in items.items():
-                logger.debug(f"更新脚本配置：{script_id} - {group}.{name} = {value}")
+                logger.debug(f"更新脚本配置: {script_id} - {group}.{name} = {value}")
                 await self.ScriptConfig[uid].set(group, name, value)
 
         await self.ScriptConfig.save()
@@ -933,42 +931,38 @@ class AppConfig(GlobalConfig):
     async def del_script(self, script_id: str) -> None:
         """删除脚本配置"""
 
-        logger.info(f"删除脚本配置：{script_id}")
+        logger.info(f"删除脚本配置: {script_id}")
 
         uid = uuid.UUID(script_id)
 
         if uid in self.task_dict:
-            raise RuntimeError(
-                f"Cannot delete script {script_id} while tasks are running."
-            )
+            raise RuntimeError(f"脚本 {script_id} 正在运行, 无法删除")
 
         await self.ScriptConfig.remove(uid)
 
     async def reorder_script(self, index_list: list[str]) -> None:
         """重新排序脚本"""
 
-        logger.info(f"重新排序脚本：{index_list}")
+        logger.info(f"重新排序脚本: {index_list}")
 
         await self.ScriptConfig.setOrder([uuid.UUID(_) for _ in index_list])
 
     async def import_script_from_file(self, script_id: str, jsonFile: str) -> None:
         """从文件加载脚本配置"""
 
-        logger.info(f"从文件加载脚本配置：{script_id} - {jsonFile}")
+        logger.info(f"从文件加载脚本配置: {script_id} - {jsonFile}")
         uid = uuid.UUID(script_id)
         file_path = Path(jsonFile)
 
         if uid not in self.ScriptConfig:
             logger.error(f"{script_id} 不存在")
-            raise KeyError(f"Script ID {script_id} not found in ScriptConfig.")
+            raise KeyError(f"脚本 {script_id} 不存在")
         if not isinstance(self.ScriptConfig[uid], GeneralConfig):
             logger.error(f"{script_id} 不是通用脚本配置")
-            raise TypeError(
-                f"Script ID {script_id} is not a General script configuration."
-            )
+            raise TypeError(f"脚本 {script_id} 不是通用脚本配置")
         if not Path(file_path).exists():
-            logger.error(f"文件不存在：{file_path}")
-            raise FileNotFoundError(f"File not found: {file_path}")
+            logger.error(f"文件不存在: {file_path}")
+            raise FileNotFoundError(f"文件不存在: {file_path}")
 
         data = json.loads(file_path.read_text(encoding="utf-8"))
         await self.ScriptConfig[uid].load(data)
@@ -979,19 +973,17 @@ class AppConfig(GlobalConfig):
     async def export_script_to_file(self, script_id: str, jsonFile: str):
         """导出脚本配置到文件"""
 
-        logger.info(f"导出配置到文件：{script_id} - {jsonFile}")
+        logger.info(f"导出配置到文件: {script_id} - {jsonFile}")
 
         uid = uuid.UUID(script_id)
         file_path = Path(jsonFile)
 
         if uid not in self.ScriptConfig:
             logger.error(f"{script_id} 不存在")
-            raise KeyError(f"Script ID {script_id} not found in ScriptConfig.")
+            raise KeyError(f"脚本 {script_id} 不存在")
         if not isinstance(self.ScriptConfig[uid], GeneralConfig):
             logger.error(f"{script_id} 不是通用脚本配置")
-            raise TypeError(
-                f"Script ID {script_id} is not a General script configuration."
-            )
+            raise TypeError(f"脚本 {script_id} 不是通用脚本配置")
 
         temp = await self.ScriptConfig[uid].toDict(
             ignore_multi_config=True, if_decrypt=False
@@ -1022,25 +1014,23 @@ class AppConfig(GlobalConfig):
     async def import_script_from_web(self, script_id: str, url: str):
         """从「AUTO_MAA 配置分享中心」导入配置"""
 
-        logger.info(f"从网络加载脚本配置：{script_id} - {url}")
+        logger.info(f"从网络加载脚本配置: {script_id} - {url}")
         uid = uuid.UUID(script_id)
 
         if uid not in self.ScriptConfig:
             logger.error(f"{script_id} 不存在")
-            raise KeyError(f"Script ID {script_id} not found in ScriptConfig.")
+            raise KeyError(f"脚本 {script_id} 不存在")
         if not isinstance(self.ScriptConfig[uid], GeneralConfig):
             logger.error(f"{script_id} 不是通用脚本配置")
-            raise TypeError(
-                f"Script ID {script_id} is not a General script configuration."
-            )
+            raise TypeError(f"脚本 {script_id} 不是通用脚本配置")
 
         response = requests.get(url, timeout=10, proxies=self.get_proxies())
         if response.status_code == 200:
             data = response.json()
         else:
-            logger.warning(f"无法从 AUTO_MAA 服务器获取配置内容:{response.text}")
+            logger.warning(f"无法从 AUTO_MAA 服务器获取配置内容: {response.text}")
             raise ConnectionError(
-                f"Failed to fetch configuration from AUTO_MAA server: {response.status_code}"
+                f"无法从 AUTO_MAA 服务器获取配置内容: {response.status_code}"
             )
 
         await self.ScriptConfig[uid].load(data)
@@ -1053,18 +1043,16 @@ class AppConfig(GlobalConfig):
     ):
         """上传配置到「AUTO_MAA 配置分享中心」"""
 
-        logger.info(f"上传配置到网络：{script_id} - {config_name} - {author}")
+        logger.info(f"上传配置到网络: {script_id} - {config_name} - {author}")
 
         uid = uuid.UUID(script_id)
 
         if uid not in self.ScriptConfig:
             logger.error(f"{script_id} 不存在")
-            raise KeyError(f"Script ID {script_id} not found in ScriptConfig.")
+            raise KeyError(f"脚本 {script_id} 不存在")
         if not isinstance(self.ScriptConfig[uid], GeneralConfig):
             logger.error(f"{script_id} 不是通用脚本配置")
-            raise TypeError(
-                f"Script ID {script_id} is not a General script configuration."
-            )
+            raise TypeError(f"脚本 {script_id} 不是通用脚本配置")
 
         temp = await self.ScriptConfig[uid].toDict(
             ignore_multi_config=True, if_decrypt=False
@@ -1106,7 +1094,7 @@ class AppConfig(GlobalConfig):
         else:
             logger.error(f"无法上传配置到 AUTO_MAA 服务器: {response.text}")
             raise ConnectionError(
-                f"Failed to upload configuration to AUTO_MAA server: {response.status_code} - {response.text}"
+                f"无法上传配置到 AUTO_MAA 服务器: {response.status_code} - {response.text}"
             )
 
     async def get_user(
@@ -1114,7 +1102,7 @@ class AppConfig(GlobalConfig):
     ) -> tuple[list, dict]:
         """获取用户配置"""
 
-        logger.info(f"获取用户配置：{script_id} - {user_id}")
+        logger.info(f"获取用户配置: {script_id} - {user_id}")
 
         uid = uuid.UUID(script_id)
         sc = self.ScriptConfig[uid]
@@ -1125,8 +1113,8 @@ class AppConfig(GlobalConfig):
             else:
                 data = await sc.UserData.get(uuid.UUID(user_id))
         else:
-            logger.error(f"Unsupported script config type: {type(sc)}")
-            raise TypeError(f"Unsupported script config type: {type(sc)}")
+            logger.error(f"不支持的脚本配置类型: {type(sc)}")
+            raise TypeError(f"不支持的脚本配置类型: {type(sc)}")
 
         index = data.pop("instances", [])
 
@@ -1144,7 +1132,7 @@ class AppConfig(GlobalConfig):
         elif isinstance(script_config, GeneralConfig):
             uid, config = await script_config.UserData.add(GeneralUserConfig)
         else:
-            raise TypeError(f"Unsupported script config type: {type(script_config)}")
+            raise TypeError(f"不支持的脚本配置类型: {type(script_config)}")
 
         await self.ScriptConfig.save()
         return uid, config
@@ -1154,14 +1142,14 @@ class AppConfig(GlobalConfig):
     ) -> None:
         """更新用户配置"""
 
-        logger.info(f"{script_id} 更新用户配置：{user_id}")
+        logger.info(f"{script_id} 更新用户配置: {user_id}")
 
         script_config = self.ScriptConfig[uuid.UUID(script_id)]
         uid = uuid.UUID(user_id)
 
         for group, items in data.items():
             for name, value in items.items():
-                logger.debug(f"更新脚本配置：{script_id} - {group}.{name} = {value}")
+                logger.debug(f"更新脚本配置: {script_id} - {group}.{name} = {value}")
                 if isinstance(script_config, (MaaConfig | GeneralConfig)):
                     await script_config.UserData[uid].set(group, name, value)
 
@@ -1170,7 +1158,7 @@ class AppConfig(GlobalConfig):
     async def del_user(self, script_id: str, user_id: str) -> None:
         """删除用户配置"""
 
-        logger.info(f"{script_id} 删除用户配置：{user_id}")
+        logger.info(f"{script_id} 删除用户配置: {user_id}")
 
         script_config = self.ScriptConfig[uuid.UUID(script_id)]
         uid = uuid.UUID(user_id)
@@ -1182,7 +1170,7 @@ class AppConfig(GlobalConfig):
     async def reorder_user(self, script_id: str, index_list: list[str]) -> None:
         """重新排序用户"""
 
-        logger.info(f"{script_id} 重新排序用户：{index_list}")
+        logger.info(f"{script_id} 重新排序用户: {index_list}")
 
         script_config = self.ScriptConfig[uuid.UUID(script_id)]
 
@@ -1194,12 +1182,12 @@ class AppConfig(GlobalConfig):
         self, script_id: str, user_id: str, jsonFile: str
     ) -> None:
 
-        logger.info(f"{script_id} - {user_id} 设置基建配置：{jsonFile}")
+        logger.info(f"{script_id} - {user_id} 设置基建配置: {jsonFile}")
 
         json_path = Path(jsonFile)
 
         if not json_path.exists():
-            raise FileNotFoundError(f"File not found: {json_path}")
+            raise FileNotFoundError(f"文件未找到: {json_path}")
 
         (Path.cwd() / f"data/{script_id}/{user_id}/Infrastructure").mkdir(
             parents=True, exist_ok=True
@@ -1215,14 +1203,14 @@ class AppConfig(GlobalConfig):
     ) -> tuple[uuid.UUID, ConfigBase]:
         """添加计划表"""
 
-        logger.info(f"添加计划表：{script}")
+        logger.info(f"添加计划表: {script}")
 
         return await self.PlanConfig.add(CLASS_BOOK[script])
 
     async def get_plan(self, plan_id: Optional[str]) -> tuple[list, dict]:
         """获取计划表配置"""
 
-        logger.info(f"获取计划表配置：{plan_id}")
+        logger.info(f"获取计划表配置: {plan_id}")
 
         if plan_id is None:
             data = await self.PlanConfig.toDict()
@@ -1236,13 +1224,13 @@ class AppConfig(GlobalConfig):
     async def update_plan(self, plan_id: str, data: Dict[str, Dict[str, Any]]) -> None:
         """更新计划表配置"""
 
-        logger.info(f"更新计划表配置：{plan_id}")
+        logger.info(f"更新计划表配置: {plan_id}")
 
         uid = uuid.UUID(plan_id)
 
         for group, items in data.items():
             for name, value in items.items():
-                logger.debug(f"更新计划表配置：{plan_id} - {group}.{name} = {value}")
+                logger.debug(f"更新计划表配置: {plan_id} - {group}.{name} = {value}")
                 await self.PlanConfig[uid].set(group, name, value)
 
         await self.PlanConfig.save()
@@ -1250,14 +1238,14 @@ class AppConfig(GlobalConfig):
     async def del_plan(self, plan_id: str) -> None:
         """删除计划表配置"""
 
-        logger.info(f"删除计划表配置：{plan_id}")
+        logger.info(f"删除计划表配置: {plan_id}")
 
         await self.PlanConfig.remove(uuid.UUID(plan_id))
 
     async def reorder_plan(self, index_list: list[str]) -> None:
         """重新排序计划表"""
 
-        logger.info(f"重新排序计划表：{index_list}")
+        logger.info(f"重新排序计划表: {index_list}")
 
         await self.PlanConfig.setOrder([uuid.UUID(_) for _ in index_list])
 
@@ -1271,7 +1259,7 @@ class AppConfig(GlobalConfig):
     async def get_queue(self, queue_id: Optional[str]) -> tuple[list, dict]:
         """获取调度队列配置"""
 
-        logger.info(f"获取调度队列配置：{queue_id}")
+        logger.info(f"获取调度队列配置: {queue_id}")
 
         if queue_id is None:
             data = await self.QueueConfig.toDict()
@@ -1287,13 +1275,13 @@ class AppConfig(GlobalConfig):
     ) -> None:
         """更新调度队列配置"""
 
-        logger.info(f"更新调度队列配置：{queue_id}")
+        logger.info(f"更新调度队列配置: {queue_id}")
 
         uid = uuid.UUID(queue_id)
 
         for group, items in data.items():
             for name, value in items.items():
-                logger.debug(f"更新调度队列配置：{queue_id} - {group}.{name} = {value}")
+                logger.debug(f"更新调度队列配置: {queue_id} - {group}.{name} = {value}")
                 await self.QueueConfig[uid].set(group, name, value)
 
         await self.QueueConfig.save()
@@ -1301,14 +1289,14 @@ class AppConfig(GlobalConfig):
     async def del_queue(self, queue_id: str) -> None:
         """删除调度队列配置"""
 
-        logger.info(f"删除调度队列配置：{queue_id}")
+        logger.info(f"删除调度队列配置: {queue_id}")
 
         await self.QueueConfig.remove(uuid.UUID(queue_id))
 
     async def reorder_queue(self, index_list: list[str]) -> None:
         """重新排序调度队列"""
 
-        logger.info(f"重新排序调度队列：{index_list}")
+        logger.info(f"重新排序调度队列: {index_list}")
 
         await self.QueueConfig.setOrder([uuid.UUID(_) for _ in index_list])
 
@@ -1328,8 +1316,8 @@ class AppConfig(GlobalConfig):
             else:
                 data = await qc.TimeSet.get(uuid.UUID(time_set_id))
         else:
-            logger.error(f"Unsupported queue config type: {type(qc)}")
-            raise TypeError(f"Unsupported queue config type: {type(qc)}")
+            logger.error(f"不支持的队列配置类型: {type(qc)}")
+            raise TypeError(f"不支持的队列配置类型: {type(qc)}")
 
         index = data.pop("instances", [])
 
@@ -1345,7 +1333,7 @@ class AppConfig(GlobalConfig):
         if isinstance(queue_config, QueueConfig):
             uid, config = await queue_config.TimeSet.add(TimeSet)
         else:
-            raise TypeError(f"Unsupported script config type: {type(queue_config)}")
+            raise TypeError(f"不支持的队列配置类型: {type(queue_config)}")
 
         await self.QueueConfig.save()
         return uid, config
@@ -1355,14 +1343,14 @@ class AppConfig(GlobalConfig):
     ) -> None:
         """更新时间设置配置"""
 
-        logger.info(f"{queue_id} 更新时间设置配置：{time_set_id}")
+        logger.info(f"{queue_id} 更新时间设置配置: {time_set_id}")
 
         queue_config = self.QueueConfig[uuid.UUID(queue_id)]
         uid = uuid.UUID(time_set_id)
 
         for group, items in data.items():
             for name, value in items.items():
-                logger.debug(f"更新时间设置配置：{queue_id} - {group}.{name} = {value}")
+                logger.debug(f"更新时间设置配置: {queue_id} - {group}.{name} = {value}")
                 if isinstance(queue_config, QueueConfig):
                     await queue_config.TimeSet[uid].set(group, name, value)
 
@@ -1371,7 +1359,7 @@ class AppConfig(GlobalConfig):
     async def del_time_set(self, queue_id: str, time_set_id: str) -> None:
         """删除时间设置配置"""
 
-        logger.info(f"{queue_id} 删除时间设置配置：{time_set_id}")
+        logger.info(f"{queue_id} 删除时间设置配置: {time_set_id}")
 
         queue_config = self.QueueConfig[uuid.UUID(queue_id)]
         uid = uuid.UUID(time_set_id)
@@ -1383,7 +1371,7 @@ class AppConfig(GlobalConfig):
     async def reorder_time_set(self, queue_id: str, index_list: list[str]) -> None:
         """重新排序时间设置"""
 
-        logger.info(f"{queue_id} 重新排序时间设置：{index_list}")
+        logger.info(f"{queue_id} 重新排序时间设置: {index_list}")
 
         queue_config = self.QueueConfig[uuid.UUID(queue_id)]
 
@@ -1407,8 +1395,8 @@ class AppConfig(GlobalConfig):
             else:
                 data = await qc.QueueItem.get(uuid.UUID(queue_item_id))
         else:
-            logger.error(f"Unsupported queue config type: {type(qc)}")
-            raise TypeError(f"Unsupported queue config type: {type(qc)}")
+            logger.error(f"不支持的队列配置类型: {type(qc)}")
+            raise TypeError(f"不支持的队列配置类型: {type(qc)}")
 
         index = data.pop("instances", [])
 
@@ -1424,8 +1412,8 @@ class AppConfig(GlobalConfig):
         if isinstance(queue_config, QueueConfig):
             uid, config = await queue_config.QueueItem.add(QueueItem)
         else:
-            logger.warning(f"Unsupported script config type: {type(queue_config)}")
-            raise TypeError(f"Unsupported script config type: {type(queue_config)}")
+            logger.warning(f"不支持的队列配置类型: {type(queue_config)}")
+            raise TypeError(f"不支持的队列配置类型: {type(queue_config)}")
 
         await self.QueueConfig.save()
         return uid, config
@@ -1435,7 +1423,7 @@ class AppConfig(GlobalConfig):
     ) -> None:
         """更新队列项配置"""
 
-        logger.info(f"{queue_id} 更新队列项配置：{queue_item_id}")
+        logger.info(f"{queue_id} 更新队列项配置: {queue_item_id}")
 
         queue_config = self.QueueConfig[uuid.UUID(queue_id)]
         uid = uuid.UUID(queue_item_id)
@@ -1443,9 +1431,9 @@ class AppConfig(GlobalConfig):
         for group, items in data.items():
             for name, value in items.items():
                 if uuid.UUID(value) not in self.ScriptConfig:
-                    logger.warning(f"Script with uid {value} does not exist.")
-                    raise ValueError(f"Script with uid {value} does not exist.")
-                logger.debug(f"更新队列项配置：{queue_id} - {group}.{name} = {value}")
+                    logger.warning(f"脚本 {value} 不存在")
+                    raise ValueError(f"脚本 {value} 不存在")
+                logger.debug(f"更新队列项配置: {queue_id} - {group}.{name} = {value}")
                 if isinstance(queue_config, QueueConfig):
                     await queue_config.QueueItem[uid].set(group, name, value)
 
@@ -1454,7 +1442,7 @@ class AppConfig(GlobalConfig):
     async def del_queue_item(self, queue_id: str, queue_item_id: str) -> None:
         """删除队列项配置"""
 
-        logger.info(f"{queue_id} 删除队列项配置：{queue_item_id}")
+        logger.info(f"{queue_id} 删除队列项配置: {queue_item_id}")
 
         queue_config = self.QueueConfig[uuid.UUID(queue_id)]
         uid = uuid.UUID(queue_item_id)
@@ -1466,7 +1454,7 @@ class AppConfig(GlobalConfig):
     async def reorder_queue_item(self, queue_id: str, index_list: list[str]) -> None:
         """重新排序队列项"""
 
-        logger.info(f"{queue_id} 重新排序队列项：{index_list}")
+        logger.info(f"{queue_id} 重新排序队列项: {index_list}")
 
         queue_config = self.QueueConfig[uuid.UUID(queue_id)]
 
@@ -1477,21 +1465,21 @@ class AppConfig(GlobalConfig):
     async def get_setting(self) -> Dict[str, Any]:
         """获取全局设置"""
 
-        logger.info("Get global settings")
+        logger.info("获取全局设置")
 
         return await self.toDict(ignore_multi_config=True)
 
     async def update_setting(self, data: Dict[str, Dict[str, Any]]) -> None:
         """更新全局设置"""
 
-        logger.info("Update global settings...")
+        logger.info("更新全局设置")
 
         for group, items in data.items():
             for name, value in items.items():
-                logger.debug(f"Update global settings - {group}.{name} = {value}")
+                logger.debug(f"更新全局设置 - {group}.{name} = {value}")
                 await self.set(group, name, value)
 
-        logger.success("Global settings updated successfully.")
+        logger.success("全局设置更新成功")
 
     def server_date(self) -> date:
         """
@@ -1545,10 +1533,8 @@ class AppConfig(GlobalConfig):
 
         if index == "Info":
             today = self.server_date().isoweekday()
-            logger.info(f"获取关卡信息：{index}，今天是：{today}")
             res_stage_info = []
             for stage in RESOURCE_STAGE_INFO:
-                logger.info(f"available: {stage['days']},")
                 if (
                     today in stage["days"]
                     and stage["value"] in RESOURCE_STAGE_DROP_INFO
@@ -1602,7 +1588,7 @@ class AppConfig(GlobalConfig):
         if datetime.now() - timedelta(hours=1) < datetime.strptime(
             self.get("Data", "LastStageUpdated"), "%Y-%m-%d %H:%M:%S"
         ):
-            logger.info("一小时内已进行过一次检查，直接使用缓存的活动关卡信息")
+            logger.info("一小时内已进行过一次检查, 直接使用缓存的活动关卡信息")
             return json.loads(self.get("Data", "Stage"))
 
         logger.info("开始获取活动关卡信息")
@@ -1629,7 +1615,7 @@ class AppConfig(GlobalConfig):
             self.get("Data", "StageTimeStamp"), "%Y-%m-%d %H:%M:%S"
         )
 
-        # 本地关卡信息无需更新，直接返回本地数据
+        # 本地关卡信息无需更新, 直接返回本地数据
         if datetime.fromtimestamp(0) < remote_time_stamp <= local_time_stamp:
 
             logger.info("使用本地关卡信息")
@@ -1694,7 +1680,7 @@ class AppConfig(GlobalConfig):
                 else:
                     drop_name = (
                         "DESC:" + drop_id
-                    )  # 非纯数字，直接用文本.加一个DESC前缀方便前端区分
+                    )  # 非纯数字, 直接用文本.加一个DESC前缀方便前端区分
 
                 activity_stage_drop_info.append(
                     {
@@ -1812,7 +1798,7 @@ class AppConfig(GlobalConfig):
         if datetime.now() - timedelta(hours=1) < datetime.strptime(
             self.get("Data", "LastNoticeUpdated"), "%Y-%m-%d %H:%M:%S"
         ):
-            logger.info("一小时内已进行过一次检查，直接使用缓存的公告信息")
+            logger.info("一小时内已进行过一次检查, 直接使用缓存的公告信息")
             return False, local_notice.get("notice_dict", {})
 
         logger.info(f"开始从 AUTO_MAA 服务器获取公告信息")
@@ -1865,7 +1851,7 @@ class AppConfig(GlobalConfig):
         if datetime.now() - timedelta(hours=1) < datetime.strptime(
             self.get("Data", "LastWebConfigUpdated"), "%Y-%m-%d %H:%M:%S"
         ):
-            logger.info("一小时内已进行过一次检查，直接使用缓存的配置分享中心信息")
+            logger.info("一小时内已进行过一次检查, 直接使用缓存的配置分享中心信息")
             return local_web_config
 
         logger.info(f"开始从 AUTO_MAA 服务器获取配置分享中心信息")
@@ -1927,7 +1913,7 @@ class AppConfig(GlobalConfig):
         :rtype: bool
         """
 
-        logger.info(f"开始处理 MAA 日志，日志长度: {len(logs)}，日志标记：{maa_result}")
+        logger.info(f"开始处理 MAA 日志, 日志长度: {len(logs)}, 日志标记: {maa_result}")
 
         data = {
             "recruit_statistics": defaultdict(int),
@@ -1960,7 +1946,7 @@ class AppConfig(GlobalConfig):
 
             if confirmed_recruit and current_star_level:
                 data["recruit_statistics"][current_star_level] += 1
-                confirmed_recruit = False  # 重置，等待下一次公招
+                confirmed_recruit = False  # 重置, 等待下一次公招
                 current_star_level = None  # 清空已处理的星级
 
             i += 1
@@ -1979,13 +1965,13 @@ class AppConfig(GlobalConfig):
                     if "完成任务: Fight" in logs[j] or "完成任务: 刷理智" in logs[j]:
                         end_index = j
                         break
-                    # 如果遇到新的Fight任务开始，则当前任务没有正常结束
+                    # 如果遇到新的Fight任务开始, 则当前任务没有正常结束
                     if j < len(logs) and (
                         "开始任务: Fight" in logs[j] or "开始任务: 刷理智" in logs[j]
                     ):
                         break
 
-                # 如果找到了结束位置，记录这个任务的范围
+                # 如果找到了结束位置, 记录这个任务的范围
                 if end_index != -1:
                     fight_tasks.append((i, end_index))
 
@@ -1999,15 +1985,15 @@ class AppConfig(GlobalConfig):
             current_stage = None
 
             for line in task_logs:
-                # 匹配掉落统计行，如"1-7 掉落统计:"
+                # 匹配掉落统计行, 如"1-7 掉落统计:"
                 drop_match = re.search(r"([A-Za-z0-9\-]+) 掉落统计:", line)
                 if drop_match:
-                    # 发现新的掉落统计，重置当前关卡的掉落数据
+                    # 发现新的掉落统计, 重置当前关卡的掉落数据
                     current_stage = drop_match.group(1)
                     last_drop_stats = {}
                     continue
 
-                # 如果已经找到了关卡，处理掉落物
+                # 如果已经找到了关卡, 处理掉落物
                 if current_stage:
                     item_match: List[str] = re.findall(
                         r"^(?!\[)(\S+?)\s*:\s*([\d,]+)(?:\s*\(\+[\d,]+\))?",
@@ -2028,7 +2014,7 @@ class AppConfig(GlobalConfig):
                         ]:
                             last_drop_stats[item] = total
 
-            # 如果任务中有掉落统计，更新总统计
+            # 如果任务中有掉落统计, 更新总统计
             if current_stage and last_drop_stats:
                 if current_stage not in all_stage_drops:
                     all_stage_drops[current_stage] = {}
@@ -2048,9 +2034,7 @@ class AppConfig(GlobalConfig):
         with log_path.with_suffix(".json").open("w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=4)
 
-        logger.success(
-            f"MAA 日志统计完成，日志路径：{log_path}",
-        )
+        logger.success(f"MAA 日志统计完成, 日志路径: {log_path}")
 
         return if_six_star
 
@@ -2066,7 +2050,7 @@ class AppConfig(GlobalConfig):
         """
 
         logger.info(
-            f"开始处理通用日志，日志长度: {len(logs)}，日志标记：{general_result}"
+            f"开始处理通用日志, 日志长度: {len(logs)}, 日志标记: {general_result}"
         )
 
         data: Dict[str, str] = {"general_result": general_result}
@@ -2078,7 +2062,7 @@ class AppConfig(GlobalConfig):
         with log_path.with_suffix(".json").open("w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=4)
 
-        logger.success(f"通用日志统计完成，日志路径：{log_path.with_suffix('.log')}")
+        logger.success(f"通用日志统计完成, 日志路径: {log_path.with_suffix('.log')}")
 
     async def merge_statistic_info(self, statistic_path_list: List[Path]) -> dict:
         """
@@ -2088,7 +2072,7 @@ class AppConfig(GlobalConfig):
         :return: 合并后的统计信息字典
         """
 
-        logger.info(f"开始合并统计信息文件，共计 {len(statistic_path_list)} 个文件")
+        logger.info(f"开始合并统计信息文件, 共计 {len(statistic_path_list)} 个文件")
 
         data: Dict[str, Any] = {"index": {}}
 
@@ -2155,9 +2139,7 @@ class AppConfig(GlobalConfig):
 
         data["index"] = [data["index"][_] for _ in sorted(data["index"])]
 
-        logger.success(
-            f"统计信息合并完成，共计 {len(data['index'])} 条记录",
-        )
+        logger.success(f"统计信息合并完成, 共计 {len(data['index'])} 条记录")
 
         return {k: v for k, v in data.items() if v}
 
@@ -2172,7 +2154,7 @@ class AppConfig(GlobalConfig):
         """
 
         logger.info(
-            f"开始搜索历史记录，合并模式：{mode}，日期范围：{start_date} 至 {end_date}"
+            f"开始搜索历史记录, 合并模式: {mode}, 日期范围: {start_date} 至 {end_date}"
         )
 
         history_dict = {}
@@ -2215,7 +2197,7 @@ class AppConfig(GlobalConfig):
             except ValueError:
                 logger.warning(f"非日期格式的目录: {date_folder}")
 
-        logger.success(f"历史记录搜索完成，共计 {len(history_dict)} 条记录")
+        logger.success(f"历史记录搜索完成, 共计 {len(history_dict)} 条记录")
 
         return {
             k: v
@@ -2226,7 +2208,7 @@ class AppConfig(GlobalConfig):
         """删除超过用户设定天数的历史记录文件（基于目录日期）"""
 
         if self.get("Function", "HistoryRetentionTime") == 0:
-            logger.info("历史记录永久保留，跳过历史记录清理")
+            logger.info("历史记录永久保留, 跳过历史记录清理")
             return
 
         logger.info("开始清理超过设定天数的历史记录")

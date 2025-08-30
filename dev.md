@@ -20,4 +20,4 @@ uv add <package-name>
 uv remove <package-name>
 ```
 
-> 💡 推荐使用uv作为默认包管理器，支持现代Python项目管理特性
+> 💡 推荐使用uv作为默认包管理器, 支持现代Python项目管理特性

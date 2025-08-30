@@ -27,7 +27,7 @@ from pathlib import Path
 
 
 class ProcessManager:
-    """进程监视器类，用于跟踪主进程及其所有子进程的状态"""
+    """进程监视器类, 用于跟踪主进程及其所有子进程的状态"""
 
     def __init__(self):
         super().__init__()
@@ -41,7 +41,7 @@ class ProcessManager:
         self, path: Path, args: list = [], tracking_time: int = 60
     ) -> None:
         """
-        启动一个新进程并返回其pid，并开始监视该进程
+        启动一个新进程并返回其pid, 并开始监视该进程
 
         Parameters
         ----------
@@ -63,7 +63,7 @@ class ProcessManager:
 
     async def start_monitoring(self, pid: int, tracking_time: int = 60) -> None:
         """
-        启动进程监视器，跟踪指定的主进程及其子进程
+        启动进程监视器, 跟踪指定的主进程及其子进程
 
         :param pid: 被监视进程的PID
         :param tracking_time: 子进程追踪持续时间（秒）

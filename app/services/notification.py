@@ -54,7 +54,7 @@ class Notification:
 
         if Config.get("Notify", "IfPushPlyer"):
 
-            logger.info(f"推送系统通知：{title}")
+            logger.info(f"推送系统通知: {title}")
 
             if notification.notify is not None:
                 notification.notify(
@@ -67,7 +67,7 @@ class Notification:
                     toast=True,
                 )
             else:
-                logger.error("plyer.notification 未正确导入，无法推送系统通知")
+                logger.error("plyer.notification 未正确导入, 无法推送系统通知")
 
         return True
 
@@ -75,7 +75,7 @@ class Notification:
         """
         推送邮件通知
 
-        :param mode: 邮件内容模式，支持 "文本" 和 "网页"
+        :param mode: 邮件内容模式, 支持 "文本" 和 "网页"
         :param title: 邮件标题
         :param content: 邮件内容
         :param to_address: 收件人地址
@@ -101,7 +101,7 @@ class Notification:
                 "请正确设置邮件通知的SMTP服务器地址、授权码、发件人地址和收件人地址"
             )
             raise ValueError(
-                "The SMTP server address, authorization code, sender address, or recipient address is not set correctly."
+                "邮件通知的SMTP服务器地址、授权码、发件人地址或收件人地址未正确配置"
             )
 
         # 定义邮件正文
@@ -132,7 +132,7 @@ class Notification:
             Config.get("Notify", "FromAddress"), to_address, message.as_string()
         )
         smtpObj.quit()
-        logger.success(f"邮件发送成功：{title}")
+        logger.success(f"邮件发送成功: {title}")
 
     def ServerChanPush(self, title, content, send_key) -> None:
         """
@@ -144,7 +144,7 @@ class Notification:
         """
 
         if not send_key:
-            raise ValueError("The ServerChan SendKey can not be empty.")
+            raise ValueError("ServerChan SendKey 不能为空")
 
         # 构造 URL
         if send_key.startswith("sctp"):
@@ -152,7 +152,7 @@ class Notification:
             if match:
                 url = f"https://{match.group(1)}.push.ft07.com/send/{send_key}.send"
             else:
-                raise ValueError("SendKey format is incorrect (sctp<int>).")
+                raise ValueError("SendKey 格式不正确 (sctp<int>)")
         else:
             url = f"https://sctapi.ftqq.com/{send_key}.send"
 
@@ -166,9 +166,9 @@ class Notification:
         result = response.json()
 
         if result.get("code") == 0:
-            logger.success(f"Server酱推送通知成功：{title}")
+            logger.success(f"Server酱推送通知成功: {title}")
         else:
-            raise Exception(f"ServerChan failed to send notification: {response.text}")
+            raise Exception(f"ServerChan 推送通知失败: {response.text}")
 
     def WebHookPush(self, title, content, webhook_url) -> None:
         """
@@ -180,7 +180,7 @@ class Notification:
         """
 
         if not webhook_url:
-            raise ValueError("The webhook URL can not be empty.")
+            raise ValueError("WebHook 地址不能为空")
 
         content = f"{title}\n{content}"
         data = {"msgtype": "text", "text": {"content": content}}
@@ -191,9 +191,9 @@ class Notification:
         info = response.json()
 
         if info["errcode"] == 0:
-            logger.success(f"WebHook 推送通知成功：{title}")
+            logger.success(f"WebHook 推送通知成功: {title}")
         else:
-            raise Exception(f"WebHook failed to send notification: {response.text}")
+            raise Exception(f"WebHook 推送通知失败: {response.text}")
 
     def CompanyWebHookBotPushImage(self, image_path: Path, webhook_url: str) -> None:
         """
@@ -204,14 +204,14 @@ class Notification:
         """
 
         if not webhook_url:
-            raise ValueError("The webhook URL can not be empty.")
+            raise ValueError("webhook URL 不能为空")
 
         # 压缩图片
         ImageUtils.compress_image_if_needed(image_path)
 
         # 检查图片是否存在
         if not image_path.exists():
-            raise FileNotFoundError(f"File not found: {image_path}")
+            raise FileNotFoundError(f"文件未找到: {image_path}")
 
         # 获取图片base64和md5
         image_base64 = ImageUtils.get_base64_from_file(str(image_path))
@@ -228,11 +228,9 @@ class Notification:
         info = response.json()
 
         if info.get("errcode") == 0:
-            logger.success(f"企业微信群机器人推送图片成功：{image_path.name}")
+            logger.success(f"企业微信群机器人推送图片成功: {image_path.name}")
         else:
-            raise Exception(
-                f"Company WebHook Bot failed to send image: {response.text}"
-            )
+            raise Exception(f"企业微信群机器人推送图片失败: {response.text}")
 
     def send_test_notification(self) -> None:
         """发送测试通知到所有已启用的通知渠道"""
@@ -242,7 +240,7 @@ class Notification:
         # 发送系统通知
         self.push_plyer(
             "测试通知",
-            "这是 AUTO_MAA 外部通知测试信息。如果你看到了这段内容，说明 AUTO_MAA 的通知功能已经正确配置且可以正常工作！",
+            "这是 AUTO_MAA 外部通知测试信息。如果你看到了这段内容, 说明 AUTO_MAA 的通知功能已经正确配置且可以正常工作！",
             "测试通知",
             3,
         )
@@ -252,7 +250,7 @@ class Notification:
             self.send_mail(
                 "文本",
                 "AUTO_MAA测试通知",
-                "这是 AUTO_MAA 外部通知测试信息。如果你看到了这段内容，说明 AUTO_MAA 的通知功能已经正确配置且可以正常工作！",
+                "这是 AUTO_MAA 外部通知测试信息。如果你看到了这段内容, 说明 AUTO_MAA 的通知功能已经正确配置且可以正常工作！",
                 Config.get("Notify", "ToAddress"),
             )
 
@@ -260,7 +258,7 @@ class Notification:
         if Config.get("Notify", "IfServerChan"):
             self.ServerChanPush(
                 "AUTO_MAA测试通知",
-                "这是 AUTO_MAA 外部通知测试信息。如果你看到了这段内容，说明 AUTO_MAA 的通知功能已经正确配置且可以正常工作！",
+                "这是 AUTO_MAA 外部通知测试信息。如果你看到了这段内容, 说明 AUTO_MAA 的通知功能已经正确配置且可以正常工作！",
                 Config.get("Notify", "ServerChanKey"),
             )
 
@@ -268,7 +266,7 @@ class Notification:
         if Config.get("Notify", "IfCompanyWebHookBot"):
             self.WebHookPush(
                 "AUTO_MAA测试通知",
-                "这是 AUTO_MAA 外部通知测试信息。如果你看到了这段内容，说明 AUTO_MAA 的通知功能已经正确配置且可以正常工作！",
+                "这是 AUTO_MAA 外部通知测试信息。如果你看到了这段内容, 说明 AUTO_MAA 的通知功能已经正确配置且可以正常工作！",
                 Config.get("Notify", "CompanyWebHookBotUrl"),
             )
             Notify.CompanyWebHookBotPushImage(

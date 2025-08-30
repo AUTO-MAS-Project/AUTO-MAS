@@ -521,7 +521,7 @@ class ScriptDeleteIn(BaseModel):
 
 
 class ScriptReorderIn(BaseModel):
-    indexList: List[str] = Field(..., description="脚本ID列表，按新顺序排列")
+    indexList: List[str] = Field(..., description="脚本ID列表, 按新顺序排列")
 
 
 class ScriptFileIn(BaseModel):
@@ -577,7 +577,7 @@ class UserDeleteIn(UserInBase):
 
 
 class UserReorderIn(UserInBase):
-    indexList: List[str] = Field(..., description="用户ID列表，按新顺序排列")
+    indexList: List[str] = Field(..., description="用户ID列表, 按新顺序排列")
 
 
 class UserSetIn(UserInBase):
@@ -615,7 +615,7 @@ class PlanDeleteIn(BaseModel):
 
 
 class PlanReorderIn(BaseModel):
-    indexList: List[str] = Field(..., description="计划ID列表，按新顺序排列")
+    indexList: List[str] = Field(..., description="计划ID列表, 按新顺序排列")
 
 
 class QueueCreateOut(OutBase):
@@ -681,7 +681,7 @@ class TimeSetDeleteIn(QueueSetInBase):
 
 
 class TimeSetReorderIn(QueueSetInBase):
-    indexList: List[str] = Field(..., description="时间设置ID列表，按新顺序排列")
+    indexList: List[str] = Field(..., description="时间设置ID列表, 按新顺序排列")
 
 
 class QueueItemGetIn(QueueSetInBase):
@@ -712,13 +712,13 @@ class QueueItemDeleteIn(QueueSetInBase):
 
 
 class QueueItemReorderIn(QueueSetInBase):
-    indexList: List[str] = Field(..., description="队列项ID列表，按新顺序排列")
+    indexList: List[str] = Field(..., description="队列项ID列表, 按新顺序排列")
 
 
 class DispatchIn(BaseModel):
     taskId: str = Field(
         ...,
-        description="目标任务ID，设置类任务可选对应脚本ID或用户ID，代理类任务可选对应队列ID或脚本ID",
+        description="目标任务ID, 设置类任务可选对应脚本ID或用户ID, 代理类任务可选对应队列ID或脚本ID",
     )
 
 
@@ -738,7 +738,7 @@ class WebSocketMessage(BaseModel):
         ...,
         description="消息类型 Update: 更新数据, Message: 请求弹出对话框, Info: 需要在UI显示的消息, Signal: 程序信号",
     )
-    data: Dict[str, Any] = Field(..., description="消息数据，具体内容根据type类型而定")
+    data: Dict[str, Any] = Field(..., description="消息数据, 具体内容根据type类型而定")
 
 
 class PowerIn(BaseModel):

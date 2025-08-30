@@ -59,7 +59,7 @@ class LogMonitor:
     async def monitor_log(self):
         """监控日志文件的主循环"""
         if self.log_file_path is None or not self.log_file_path.exists():
-            raise ValueError("Log file path is not set or does not exist.")
+            raise ValueError("日志文件路径未设置或文件不存在")
 
         logger.info(f"开始监控日志文件: {self.log_file_path}")
 
@@ -127,7 +127,7 @@ class LogMonitor:
         """启动监控"""
 
         if log_file_path.is_dir():
-            raise ValueError(f"Log file cannot be a directory: {log_file_path}")
+            raise ValueError(f"日志文件不能是目录: {log_file_path}")
 
         if self.task is not None and not self.task.done():
             await self.stop()
