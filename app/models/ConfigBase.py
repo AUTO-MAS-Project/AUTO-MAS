@@ -70,7 +70,7 @@ class OptionsValidator(ConfigValidator):
 
     def __init__(self, options: list):
         if not options:
-            raise ValueError("The `options` can't be empty.")
+            raise ValueError("可选项不能为空")
 
         self.options = options
 
@@ -110,7 +110,7 @@ class EncryptValidator(ConfigValidator):
             return False
 
     def correct(self, value: Any) -> Any:
-        return value if self.validate(value) else dpapi_encrypt("数据损坏，请重新设置")
+        return value if self.validate(value) else dpapi_encrypt("数据损坏, 请重新设置")
 
 
 class BoolValidator(OptionsValidator):
@@ -186,7 +186,7 @@ class ConfigItem:
             配置项默认值
 
         validator: ConfigValidator
-            配置项验证器，默认为 None，表示不进行验证
+            配置项验证器, 默认为 None, 表示不进行验证
         """
         super().__init__()
         self.group = group
@@ -199,12 +199,12 @@ class ConfigItem:
 
     def setValue(self, value: Any):
         """
-        设置配置项值，将自动进行验证和修正
+        设置配置项值, 将自动进行验证和修正
 
         Parameters
         ----------
         value: Any
-            要设置的值，可以是任何合法类型
+            要设置的值, 可以是任何合法类型
         """
 
         if (
@@ -215,9 +215,7 @@ class ConfigItem:
             return
 
         if self.is_locked:
-            raise ValueError(
-                f"Config item '{self.group}.{self.name}' is locked and cannot be modified."
-            )
+            raise ValueError(f"配置项 '{self.group}.{self.name}' 已锁定, 无法修改")
 
         # deepcopy new value
         try:
@@ -245,13 +243,13 @@ class ConfigItem:
 
     def lock(self):
         """
-        锁定配置项，锁定后无法修改配置项值
+        锁定配置项, 锁定后无法修改配置项值
         """
         self.is_locked = True
 
     def unlock(self):
         """
-        解锁配置项，解锁后可以修改配置项值
+        解锁配置项, 解锁后可以修改配置项值
         """
         self.is_locked = False
 
@@ -260,11 +258,11 @@ class ConfigBase:
     """
     配置基类
 
-    这个类提供了基本的配置项管理功能，包括连接配置文件、加载配置数据、获取和设置配置项值等。
+    这个类提供了基本的配置项管理功能, 包括连接配置文件、加载配置数据、获取和设置配置项值等。
 
-    此类不支持直接实例化，必须通过子类来实现具体的配置项，请继承此类并在子类中定义具体的配置项。
-    若将配置项设为类属性，则所有实例都会共享同一份配置项数据。
-    若将配置项设为实例属性，则每个实例都会有独立的配置项数据。
+    此类不支持直接实例化, 必须通过子类来实现具体的配置项, 请继承此类并在子类中定义具体的配置项。
+    若将配置项设为类属性, 则所有实例都会共享同一份配置项数据。
+    若将配置项设为实例属性, 则每个实例都会有独立的配置项数据。
     子配置项可以是 `MultipleConfig` 的实例。
     """
 
@@ -281,16 +279,14 @@ class ConfigBase:
         Parameters
         ----------
         path: Path
-            配置文件路径，必须为 JSON 文件，如果不存在则会创建
+            配置文件路径, 必须为 JSON 文件, 如果不存在则会创建
         """
 
         if path.suffix != ".json":
-            raise ValueError(
-                "The config file must be a JSON file with '.json' extension."
-            )
+            raise ValueError("配置文件必须是扩展名为 '.json' 的 JSON 文件")
 
         if self.is_locked:
-            raise ValueError("Config is locked and cannot be modified.")
+            raise ValueError("配置已锁定, 无法修改")
 
         self.file = path
 
@@ -310,8 +306,8 @@ class ConfigBase:
         """
         从字典加载配置数据
 
-        这个方法会遍历字典中的配置项，并将其设置到对应的 ConfigItem 实例中。
-        如果字典中包含 "SubConfigsInfo" 键，则会加载子配置项，这些子配置项应该是 MultipleConfig 的实例。
+        这个方法会遍历字典中的配置项, 并将其设置到对应的 ConfigItem 实例中。
+        如果字典中包含 "SubConfigsInfo" 键, 则会加载子配置项, 这些子配置项应该是 MultipleConfig 的实例。
 
         Parameters
         ----------
@@ -320,7 +316,7 @@ class ConfigBase:
         """
 
         if self.is_locked:
-            raise ValueError("Config is locked and cannot be modified.")
+            raise ValueError("配置已锁定, 无法修改")
 
         # update the value of config item
         if data.get("SubConfigsInfo"):
@@ -371,15 +367,13 @@ class ConfigBase:
         """获取配置项的值"""
 
         if not hasattr(self, f"{group}_{name}"):
-            raise AttributeError(f"Config item '{group}.{name}' does not exist.")
+            raise AttributeError(f"配置项 '{group}.{name}' 不存在")
 
         configItem = getattr(self, f"{group}_{name}")
         if isinstance(configItem, ConfigItem):
             return configItem.getValue()
         else:
-            raise TypeError(
-                f"Config item '{group}_{name}' is not a ConfigItem instance."
-            )
+            raise TypeError(f"配置项 '{group}.{name}' 不是 ConfigItem 实例")
 
     async def set(self, group: str, name: str, value: Any):
         """
@@ -396,7 +390,7 @@ class ConfigBase:
         """
 
         if not hasattr(self, f"{group}_{name}"):
-            raise AttributeError(f"Config item '{group}_{name}' does not exist.")
+            raise AttributeError(f"配置项 '{group}.{name}' 不存在")
 
         configItem = getattr(self, f"{group}_{name}")
         if isinstance(configItem, ConfigItem):
@@ -404,17 +398,13 @@ class ConfigBase:
             if self.file:
                 await self.save()
         else:
-            raise TypeError(
-                f"Config item '{group}_{name}' is not a ConfigItem instance."
-            )
+            raise TypeError(f"配置项 '{group}.{name}' 不是 ConfigItem 实例")
 
     async def save(self):
         """保存配置"""
 
         if not self.file:
-            raise ValueError(
-                "The `file` attribute is not set. Please set it before saving."
-            )
+            raise ValueError("文件路径未设置, 请先调用 `connect` 方法连接配置文件")
 
         self.file.parent.mkdir(parents=True, exist_ok=True)
         with self.file.open("w", encoding="utf-8") as f:
@@ -427,7 +417,7 @@ class ConfigBase:
 
     async def lock(self):
         """
-        锁定配置项，锁定后无法修改配置项值
+        锁定配置项, 锁定后无法修改配置项值
         """
 
         self.is_locked = True
@@ -441,7 +431,7 @@ class ConfigBase:
 
     async def unlock(self):
         """
-        解锁配置项，解锁后可以修改配置项值
+        解锁配置项, 解锁后可以修改配置项值
         """
 
         self.is_locked = False
@@ -458,24 +448,24 @@ class MultipleConfig:
     """
     多配置项管理类
 
-    这个类允许管理多个配置项实例，可以添加、删除、修改配置项，并将其保存到 JSON 文件中。
-    允许通过 `config[uuid]` 访问配置项，使用 `uuid in config` 检查是否存在配置项，使用 `len(config)` 获取配置项数量。
+    这个类允许管理多个配置项实例, 可以添加、删除、修改配置项, 并将其保存到 JSON 文件中。
+    允许通过 `config[uuid]` 访问配置项, 使用 `uuid in config` 检查是否存在配置项, 使用 `len(config)` 获取配置项数量。
 
     Parameters
     ----------
     sub_config_type: List[type]
-        子配置项的类型列表，必须是 ConfigBase 的子类
+        子配置项的类型列表, 必须是 ConfigBase 的子类
     """
 
     def __init__(self, sub_config_type: List[type]):
 
         if not sub_config_type:
-            raise ValueError("The `sub_config_type` can't be empty.")
+            raise ValueError("子配置项类型列表不能为空")
 
         for config_type in sub_config_type:
             if not issubclass(config_type, ConfigBase):
                 raise TypeError(
-                    f"Config type {config_type.__name__} must be a subclass of ConfigBase."
+                    f"配置类型 {config_type.__name__} 必须是 ConfigBase 的子类"
                 )
 
         self.sub_config_type = sub_config_type
@@ -487,7 +477,7 @@ class MultipleConfig:
     def __getitem__(self, key: uuid.UUID) -> ConfigBase:
         """允许通过 config[uuid] 访问配置项"""
         if key not in self.data:
-            raise KeyError(f"Config item with uuid {key} does not exist.")
+            raise KeyError(f"配置项 '{key}' 不存在")
         return self.data[key]
 
     def __contains__(self, key: uuid.UUID) -> bool:
@@ -513,16 +503,14 @@ class MultipleConfig:
         Parameters
         ----------
         path: Path
-            配置文件路径，必须为 JSON 文件，如果不存在则会创建
+            配置文件路径, 必须为 JSON 文件, 如果不存在则会创建
         """
 
         if path.suffix != ".json":
-            raise ValueError(
-                "The config file must be a JSON file with '.json' extension."
-            )
+            raise ValueError("配置文件必须是带有 '.json' 扩展名的 JSON 文件。")
 
         if self.is_locked:
-            raise ValueError("Config is locked and cannot be modified.")
+            raise ValueError("配置已锁定, 无法修改")
 
         self.file = path
 
@@ -542,9 +530,9 @@ class MultipleConfig:
         """
         从字典加载配置数据
 
-        这个方法会遍历字典中的配置项，并将其设置到对应的 ConfigBase 实例中。
-        如果字典中包含 "instances" 键，则会加载子配置项，这些子配置项应该是 ConfigBase 子类的实例。
-        如果字典中没有 "instances" 键，则清空当前配置项。
+        这个方法会遍历字典中的配置项, 并将其设置到对应的 ConfigBase 实例中。
+        如果字典中包含 "instances" 键, 则会加载子配置项, 这些子配置项应该是 ConfigBase 子类的实例。
+        如果字典中没有 "instances" 键, 则清空当前配置项。
 
         Parameters
         ----------
@@ -553,7 +541,7 @@ class MultipleConfig:
         """
 
         if self.is_locked:
-            raise ValueError("Config is locked and cannot be modified.")
+            raise ValueError("配置已锁定, 无法修改")
 
         if not data.get("instances"):
             self.order = []
@@ -580,7 +568,7 @@ class MultipleConfig:
 
             else:
 
-                raise ValueError(f"Unknown sub config type: {type_name}")
+                raise ValueError(f"未知的子配置类型: {type_name}")
 
         if self.file:
             await self.save()
@@ -589,7 +577,7 @@ class MultipleConfig:
         """
         将配置项转换为字典
 
-        返回一个字典，包含所有配置项的 UID 和类型，以及每个配置项的具体数据。
+        返回一个字典, 包含所有配置项的 UID 和类型, 以及每个配置项的具体数据。
         """
 
         data: Dict[str, Union[list, dict]] = {
@@ -616,7 +604,7 @@ class MultipleConfig:
         """
 
         if uid not in self.data:
-            raise ValueError(f"Config item with uid {uid} does not exist.")
+            raise ValueError(f"配置项 '{uid}' 不存在。")
 
         data: Dict[str, Union[list, dict]] = {
             "instances": [
@@ -633,9 +621,7 @@ class MultipleConfig:
         """保存配置"""
 
         if not self.file:
-            raise ValueError(
-                "The `file` attribute is not set. Please set it before saving."
-            )
+            raise ValueError("文件路径未设置, 请先调用 `connect` 方法连接配置文件")
 
         self.file.parent.mkdir(parents=True, exist_ok=True)
         with self.file.open("w", encoding="utf-8") as f:
@@ -648,7 +634,7 @@ class MultipleConfig:
         Parameters
         ----------
         config_type: type
-            配置项的类型，必须是初始化时已声明的 ConfigBase 子类
+            配置项的类型, 必须是初始化时已声明的 ConfigBase 子类
 
         Returns
         -------
@@ -657,7 +643,7 @@ class MultipleConfig:
         """
 
         if config_type not in self.sub_config_type:
-            raise ValueError(f"Config type {config_type.__name__} is not allowed.")
+            raise ValueError(f"配置类型 {config_type.__name__} 不被允许")
 
         uid = uuid.uuid4()
         self.order.append(uid)
@@ -679,15 +665,13 @@ class MultipleConfig:
         """
 
         if self.is_locked:
-            raise ValueError("Config is locked and cannot be modified.")
+            raise ValueError("配置已锁定, 无法修改")
 
         if uid not in self.data:
-            raise ValueError(f"Config item with uid {uid} does not exist.")
+            raise ValueError(f"配置项 '{uid}' 不存在")
 
         if self.data[uid].is_locked:
-            raise ValueError(
-                f"Config item with uid {uid} is locked and cannot be removed."
-            )
+            raise ValueError(f"配置项 '{uid}' 已锁定, 无法移除")
 
         self.data.pop(uid)
         self.order.remove(uid)
@@ -706,7 +690,7 @@ class MultipleConfig:
         """
 
         if set(order) != set(self.data.keys()):
-            raise ValueError("The order does not match the current config items.")
+            raise ValueError("顺序与当前配置项不匹配")
 
         self.order = order
 
@@ -715,7 +699,7 @@ class MultipleConfig:
 
     async def lock(self):
         """
-        锁定配置项，锁定后无法修改配置项值
+        锁定配置项, 锁定后无法修改配置项值
         """
 
         self.is_locked = True
@@ -725,7 +709,7 @@ class MultipleConfig:
 
     async def unlock(self):
         """
-        解锁配置项，解锁后可以修改配置项值
+        解锁配置项, 解锁后可以修改配置项值
         """
 
         self.is_locked = False

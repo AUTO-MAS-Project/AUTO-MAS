@@ -118,7 +118,7 @@ def main():
             CORSMiddleware,
             allow_origins=["*"],  # 允许所有域名跨域访问
             allow_credentials=True,
-            allow_methods=["*"],  # 允许所有请求方法，如 GET、POST、PUT、DELETE
+            allow_methods=["*"],  # 允许所有请求方法, 如 GET、POST、PUT、DELETE
             allow_headers=["*"],  # 允许所有请求头
         )
 

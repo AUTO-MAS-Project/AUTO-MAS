@@ -456,7 +456,7 @@ MATERIALS_MAP = {
     "3261": "医疗芯片",
     "3271": "辅助芯片",
     "3281": "特种芯片",
-    "emoticon_originium_slug": "表情套组：虫动",
+    "emoticon_originium_slug": "表情套组: 虫动",
     "act29side_frag_1": "乐之节符",
     "act29side_frag_2": "怒之节符",
     "act29side_frag_3": "哀之节符",
