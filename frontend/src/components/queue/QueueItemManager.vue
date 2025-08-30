@@ -18,6 +18,9 @@
       size="middle"
       :scroll="{ x: 600 }"
     >
+      <template #emptyText>
+        <span>暂无队列项</span>
+      </template>
       <template #bodyCell="{ column, record, index }">
         <template v-if="column.key === 'index'"> 第{{ index + 1 }}个脚本 </template>
         <template v-else-if="column.key === 'script'">
@@ -45,9 +48,6 @@
       </template>
     </a-table>
 
-    <div v-if="!queueItems.length && !loading" class="empty-state">
-      <a-empty description="暂无队列项数据" />
-    </div>
 
     <!-- 队列项编辑弹窗 -->
     <a-modal

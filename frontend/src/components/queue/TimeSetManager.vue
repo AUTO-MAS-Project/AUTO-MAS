@@ -23,6 +23,9 @@
       size="middle"
       :scroll="{ x: 800 }"
     >
+      <template #emptyText>
+        <span>暂无定时项</span>
+      </template>
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'enabled'">
           <a-switch
@@ -57,10 +60,6 @@
         </template>
       </template>
     </a-table>
-
-    <div v-if="!timeSets.length && !loading" class="empty-state">
-      <a-empty :description="!props.queueId ? '请先选择一个队列' : '暂无定时项数据'" />
-    </div>
 
     <!-- 定时项编辑弹窗 -->
     <a-modal
@@ -373,10 +372,6 @@ const deleteTimeSet = async (timeSetId: string) => {
   font-weight: 600;
 }
 
-.empty-state {
-  text-align: center;
-  padding: 40px 0;
-}
 
 /* 表格样式优化 */
 :deep(.ant-table-tbody > tr > td) {
