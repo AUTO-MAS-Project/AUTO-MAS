@@ -5,7 +5,7 @@
 
   <div class="content">
     <!-- 当期活动关卡 -->
-    <a-card title="当期活动关卡" class="activity-card" :loading="loading">
+    <a-card v-if="activityData?.length" title="当期活动关卡" class="activity-card" :loading="loading">
       <template #extra>
         <a-button type="text" @click="refreshActivity" :loading="loading">
           <template #icon>
@@ -31,57 +31,80 @@
               <ClockCircleOutlined class="time-icon" />
               <span class="time-label">结束时间：</span>
               <span class="time-value">{{
-                formatTime(currentActivity.UtcExpireTime, currentActivity.TimeZone)
+                formatTime(currentActivity.UtcExpireTime)
               }}</span>
             </div>
           </div>
 
           <div class="activity-right">
-            <a-statistic-countdown
-              title="当期活动剩余时间"
-              :value="getCountdownValue(currentActivity.UtcExpireTime)"
-              format="D 天 H 时 m 分"
-              :value-style="getCountdownStyle(currentActivity.UtcExpireTime)"
-              @finish="onCountdownFinish"
-            />
+            <a-statistic-countdown title="当期活动剩余时间" :value="getCountdownValue(currentActivity.UtcExpireTime)"
+              format="D 天 H 时 m 分" :value-style="getCountdownStyle(currentActivity.UtcExpireTime)"
+              @finish="onCountdownFinish" />
           </div>
         </div>
       </div>
 
-      <div v-if="activityData?.length" class="activity-list">
+      <div class="activity-list">
         <div v-for="item in activityData" :key="item.Value" class="activity-item">
           <div class="stage-info">
             <div class="stage-name">{{ item.Display }}</div>
-            <!--              <div class="stage-value">{{ item.Value }}</div>-->
           </div>
 
           <div class="drop-info">
             <div class="drop-image">
-              <img
-                :src="
-                  item.DropName.startsWith('DESC:')
-                    ? getMaterialImage('固源岩')
-                    : getMaterialImage(item.DropName)
-                "
-                :alt="item.DropName.startsWith('DESC:') ? '固源岩' : item.DropName"
-                @error="handleImageError"
-              />
+              <img v-if="getMaterialImage(item.DropName.startsWith('DESC:') ? '固源岩' : item.DropName)" :src="item.DropName.startsWith('DESC:')
+                ? getMaterialImage('固源岩')
+                : getMaterialImage(item.DropName)
+                " :alt="item.DropName.startsWith('DESC:') ? '固源岩' : item.DropName" @error="handleImageError" />
             </div>
 
             <div class="drop-details">
               <div class="drop-name">
                 {{ item.DropName.startsWith('DESC:') ? item.DropName.substring(5) : item.DropName }}
               </div>
-              <!--                <div v-if="item.Drop && !item.DropName.startsWith('DESC:')" class="drop-id">-->
-              <!--                  ID: {{ item.Drop }}-->
-              <!--                </div>-->
+            </div>
+          </div>
+        </div>
+      </div>
+    </a-card>
+
+    <!-- 资源收集关卡 -->
+    <a-card title="今日开放资源收集关卡" class="resource-card" :loading="loading">
+      <template #extra>
+        <a-button type="text" @click="refreshActivity" :loading="loading">
+          <template #icon>
+            <ReloadOutlined />
+          </template>
+          刷新
+        </a-button>
+      </template>
+
+      <div v-if="error" class="error-message">
+        <a-alert :message="error" type="error" show-icon closable @close="error = ''" />
+      </div>
+
+      <div v-if="resourceData?.length" class="resource-list">
+        <div v-for="item in resourceData" :key="item.Value" class="resource-item">
+          <div class="stage-info">
+            <div class="stage-name">{{ item.Display }}</div>
+          </div>
+
+          <div class="drop-info">
+            <div class="drop-image">
+              <img v-if="getMaterialImage(item.DropName)" :src="getMaterialImage(item.DropName)" :alt="item.DropName"
+                @error="handleImageError" />
+            </div>
+
+            <div class="drop-details">
+              <div class="drop-name">{{ item.DropName }}</div>
+              <div class="drop-tip">{{ item.Activity.Tip }}</div>
             </div>
           </div>
         </div>
       </div>
 
       <div v-else-if="!loading" class="empty-state">
-        <a-empty description="暂无活动关卡数据" />
+        <a-empty description="暂无资源收集数据" />
       </div>
     </a-card>
 
@@ -110,10 +133,7 @@
               <div class="proxy-stats">
                 <!-- 第一行：最后代理时间，独占一行 -->
                 <div class="stat-item full-width">
-                  <a-statistic
-                    title="最后代理时间"
-                    :value="formatProxyDisplay(proxy.LastProxyDate)"
-                  />
+                  <a-statistic title="最后代理时间" :value="formatProxyDisplay(proxy.LastProxyDate)" />
                 </div>
 
                 <!-- 第二行：代理次数 和 错误次数 -->
@@ -121,11 +141,8 @@
                   <a-statistic title="代理次数" :value="proxy.ProxyTimes" />
                 </div>
                 <div class="stat-item half-width">
-                  <a-statistic
-                    title="错误次数"
-                    :value="proxy.ErrorTimes"
-                    :value-style="{ color: proxy.ErrorTimes > 0 ? '#ff4d4f' : undefined }"
-                  />
+                  <a-statistic title="错误次数" :value="proxy.ErrorTimes"
+                    :value-style="{ color: proxy.ErrorTimes > 0 ? '#ff4d4f' : undefined }" />
                 </div>
               </div>
 
@@ -165,8 +182,6 @@ import { ref, onMounted, computed } from 'vue'
 import { message } from 'ant-design-vue'
 import {
   ReloadOutlined,
-  InfoCircleOutlined,
-  CalendarOutlined,
   ClockCircleOutlined,
   UserOutlined,
 } from '@ant-design/icons-vue'
@@ -197,14 +212,29 @@ interface ProxyInfo {
 }
 
 interface ApiResponse {
-  Stage: ActivityItem[]
+  Stage: {
+    Activity: ActivityItem[]
+    Resource: ResourceItem[]
+  }
   Proxy: Record<string, ProxyInfo>
+}
+
+interface ResourceItem {
+  Display: string
+  Value: string
+  DropName: string
+  Activity: {
+    Tip: string
+    StageName: string
+  }
 }
 
 const loading = ref(false)
 const error = ref('')
 const activityData = ref<ActivityItem[]>([])
+const resourceData = ref<ResourceItem[]>([])
 const proxyData = ref<Record<string, ProxyInfo>>({})
+
 
 // 获取当前活动信息
 const currentActivity = computed(() => {
@@ -218,7 +248,7 @@ const formatProxyDisplay = (dateStr: string) => {
 }
 
 // 格式化时间显示 - 直接使用给定时间，不进行时区转换
-const formatTime = (timeString: string, timeZone: number) => {
+const formatTime = (timeString: string) => {
   try {
     // 直接使用给定的时间字符串，因为已经是中国时间
     const date = new Date(timeString)
@@ -307,9 +337,13 @@ const onCountdownFinish = () => {
 }
 
 const getMaterialImage = (dropName: string) => {
+  if (!dropName) {
+    return ''
+  }
   try {
     return new URL(`../assets/materials/${dropName}.png`, import.meta.url).href
-  } catch {
+  } catch (error) {
+    console.warn('Failed to load material image:', dropName, error)
     return ''
   }
 }
@@ -329,7 +363,8 @@ const fetchActivityData = async () => {
     if (response.code === 200) {
       const data = response.data as ApiResponse
       if (data.Stage) {
-        activityData.value = data.Stage
+        activityData.value = data.Stage.Activity || []
+        resourceData.value = data.Stage.Resource || []
       }
       if (data.Proxy) {
         proxyData.value = data.Proxy
@@ -394,9 +429,47 @@ onMounted(() => {
   margin-bottom: 24px;
 }
 
+.resource-card {
+  margin-bottom: 24px;
+}
+
 .activity-card :deep(.ant-card-head-title) {
   font-size: 18px;
   font-weight: 600;
+}
+
+.resource-card :deep(.ant-card-head-title) {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+
+
+.resource-list {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+
+.resource-item {
+  display: flex;
+  align-items: center;
+  padding: 16px;
+  background: var(--ant-color-bg-container);
+  border: 1px solid var(--ant-color-border);
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+.resource-item:hover {
+  border-color: var(--ant-color-primary);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.drop-tip {
+  font-size: 12px;
+  color: var(--ant-color-text-tertiary);
+  margin-top: 2px;
 }
 
 .error-message {
@@ -568,13 +641,17 @@ onMounted(() => {
 }
 
 @media (max-width: 1200px) {
-  .activity-list {
+
+  .activity-list,
+  .resource-list {
     grid-template-columns: repeat(3, 1fr);
   }
 }
 
 @media (max-width: 900px) {
-  .activity-list {
+
+  .activity-list,
+  .resource-list {
     grid-template-columns: repeat(2, 1fr);
   }
 }
@@ -649,11 +726,13 @@ onMounted(() => {
 }
 
 .stat-item.full-width {
-  flex: 0 0 100%; /* 占满整行 */
+  flex: 0 0 100%;
+  /* 占满整行 */
 }
 
 .stat-item.half-width {
-  flex: 0 0 calc(50% - 8px); /* 每个占一半宽度，减去间距 */
+  flex: 0 0 calc(50% - 8px);
+  /* 每个占一半宽度，减去间距 */
 }
 
 .stat-item {
@@ -677,11 +756,13 @@ onMounted(() => {
     padding: 16px;
   }
 
-  .activity-list {
+  .activity-list,
+  .resource-list {
     grid-template-columns: 1fr;
   }
 
-  .activity-item {
+  .activity-item,
+  .resource-item {
     padding: 12px;
   }
 
