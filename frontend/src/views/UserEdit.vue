@@ -171,7 +171,7 @@
                 </template>
                 <a-input-number
                   v-model:value="formData.Info.RemainedDay"
-                  :min="0"
+                  :min="-1"
                   :max="9999"
                   placeholder="0"
                   :disabled="loading"
@@ -988,6 +988,10 @@ const generalWebsocketId = ref<string | null>(null)
 const serverOptions = [
   { label: '官服', value: 'Official' },
   { label: 'B服', value: 'Bilibili' },
+  { label: '国际服（YoStarEN）', value: 'YoStarEN' },
+  { label: '日服（YoStarJP）', value: 'YoStarJP' },
+  { label: '韩服（YoStarKR）', value: 'YoStarKR' },
+  { label: '繁中服（txwy）', value: 'txwy' },
 ]
 
 // MAA脚本默认用户数据

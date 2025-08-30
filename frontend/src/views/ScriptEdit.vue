@@ -158,7 +158,7 @@
               <a-col :span="8">
                 <a-form-item>
                   <template #label>
-                    <a-tooltip title="设置ADB设备搜索的范围，0表示不限制，数值越大搜索范围越广">
+                    <a-tooltip title="设置ADB设备搜索的范围，可输入范围：0-3">
                       <span class="form-label">
                         ADB搜索范围
                         <QuestionCircleOutlined class="help-icon" />
@@ -168,7 +168,7 @@
                   <a-input-number
                     v-model:value="maaConfig.Run.ADBSearchRange"
                     :min="0"
-                    :max="10"
+                    :max="3"
                     size="large"
                     class="modern-number-input"
                     style="width: 100%"
@@ -211,7 +211,7 @@
                   <a-input-number
                     v-model:value="maaConfig.Run.AnnihilationTimeLimit"
                     :min="1"
-                    :max="120"
+                    :max="9999"
                     size="large"
                     class="modern-number-input"
                     style="width: 100%"
@@ -250,7 +250,7 @@
                   <a-input-number
                     v-model:value="maaConfig.Run.RoutineTimeLimit"
                     :min="1"
-                    :max="180"
+                    :max="9999"
                     size="large"
                     class="modern-number-input"
                     style="width: 100%"
@@ -270,7 +270,7 @@
                   <a-input-number
                     v-model:value="maaConfig.Run.RunTimesLimit"
                     :min="1"
-                    :max="10"
+                    :max="9999"
                     size="large"
                     class="modern-number-input"
                     style="width: 100%"
