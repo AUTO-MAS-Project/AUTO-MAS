@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron'
 import * as path from 'path'
 import * as fs from 'fs'
 import { spawn } from 'child_process'
@@ -74,7 +74,6 @@ function createWindow() {
   })
 
   mainWindow.setMenuBarVisibility(false)
-
   const devServer = process.env.VITE_DEV_SERVER_URL
   if (devServer) {
     mainWindow.loadURL(devServer)
@@ -119,6 +118,17 @@ ipcMain.handle('select-file', async (event, filters = []) => {
     filters: filters.length > 0 ? filters : [{ name: '所有文件', extensions: ['*'] }],
   })
   return result.canceled ? null : result.filePaths[0]
+})
+
+// 在系统默认浏览器中打开URL
+ipcMain.handle('open-url', async (event, url: string) => {
+  try {
+    await shell.openExternal(url)
+    return { success: true }
+  } catch (error) {
+    console.error('打开链接失败:', error)
+    return { success: false, error: error.message }
+  }
 })
 
 // 环境检查

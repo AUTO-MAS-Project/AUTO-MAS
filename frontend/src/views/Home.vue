@@ -1,6 +1,21 @@
 <template>
   <div class="header">
     <a-typography-title>{{ greeting }}</a-typography-title>
+    <!-- 右上角公告按钮 -->
+    <div class="header-actions">
+      <a-button
+        type="primary"
+        ghost
+        @click="showNotice"
+        :loading="noticeLoading"
+        class="notice-button"
+      >
+        <template #icon>
+          <BellOutlined />
+        </template>
+        查看公告
+      </a-button>
+    </div>
   </div>
 
   <!-- 公告模态框 -->
@@ -230,7 +245,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { message } from 'ant-design-vue'
-import { ReloadOutlined, ClockCircleOutlined, UserOutlined } from '@ant-design/icons-vue'
+import { ReloadOutlined, ClockCircleOutlined, UserOutlined, BellOutlined } from '@ant-design/icons-vue'
 import { Service } from '@/api/services/Service'
 import NoticeModal from '@/components/NoticeModal.vue'
 import dayjs from 'dayjs'
@@ -286,6 +301,7 @@ const proxyData = ref<Record<string, ProxyInfo>>({})
 // 公告系统相关状态
 const noticeVisible = ref(false)
 const noticeData = ref<Record<string, string>>({})
+const noticeLoading = ref(false)
 
 // 获取当前活动信息
 const currentActivity = computed(() => {
@@ -462,7 +478,6 @@ const fetchNoticeData = async () => {
     if (response.code === 200) {
       // 检查是否需要显示公告
       if (response.if_need_show && response.data && Object.keys(response.data).length > 0) {
-      // if (response.data && Object.keys(response.data).length > 0) {
         noticeData.value = response.data
         noticeVisible.value = true
       }
@@ -480,6 +495,31 @@ const onNoticeConfirmed = () => {
   // message.success('公告已确认')
 }
 
+// 显示公告的处理函数
+const showNotice = async () => {
+  noticeLoading.value = true
+  try {
+    const response = await Service.getNoticeInfoApiInfoNoticeGetPost()
+
+    if (response.code === 200) {
+      // 忽略 if_need_show 字段，只要有公告数据就显示
+      if (response.data && Object.keys(response.data).length > 0) {
+        noticeData.value = response.data
+        noticeVisible.value = true
+      } else {
+        message.info('暂无公告信息')
+      }
+    } else {
+      message.error(response.message || '获取公告失败')
+    }
+  } catch (error) {
+    console.error('显示公告失败:', error)
+    message.error('显示公告失败，请稍后重试')
+  } finally {
+    noticeLoading.value = false
+  }
+}
+
 onMounted(() => {
   fetchActivityData()
   fetchNoticeData()
@@ -489,6 +529,9 @@ onMounted(() => {
 <style scoped>
 .header {
   margin-bottom: 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
 
 .header h1 {
@@ -496,6 +539,21 @@ onMounted(() => {
   color: var(--ant-color-text);
   font-size: 24px;
   font-weight: 600;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.notice-button {
+  min-width: 120px;
+}
+
+/* 公告相关样式 */
+.notice-modal {
+  /* 自定义公告模态框样式 */
 }
 
 .activity-card {

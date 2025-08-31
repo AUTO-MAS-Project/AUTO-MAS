@@ -23,7 +23,12 @@
           class="notice-tab-pane"
         >
           <div class="notice-content">
-            <div class="markdown-content" v-html="renderMarkdown(content)"></div>
+            <div
+              ref="markdownContentRef"
+              class="markdown-content"
+              v-html="renderMarkdown(content)"
+              @click="handleLinkClick"
+            ></div>
           </div>
         </a-tab-pane>
       </a-tabs>
@@ -113,6 +118,33 @@ const confirmNotices = async () => {
     message.error('确认公告失败，请重试')
   } finally {
     confirming.value = false
+  }
+}
+
+// 处理链接点击
+const handleLinkClick = async (event: MouseEvent) => {
+  const target = event.target as HTMLElement
+  if (target.tagName === 'A') {
+    event.preventDefault()
+    const url = target.getAttribute('href')
+    if (url) {
+      try {
+        // 检查是否在Electron环境中
+        if (window.electronAPI && window.electronAPI.openUrl) {
+          const result = await window.electronAPI.openUrl(url)
+          if (!result.success) {
+            console.error('打开链接失败:', result.error)
+            message.error('打开链接失败，请手动复制链接地址')
+          }
+        } else {
+          // 如果不在Electron环境中，使用普通的window.open
+          window.open(url, '_blank')
+        }
+      } catch (error) {
+        console.error('打开链接失败:', error)
+        message.error('打开链接失败，请手动复制链接地址')
+      }
+    }
   }
 }
 
