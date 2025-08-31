@@ -2,14 +2,18 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-export type UserReorderIn = {
+export type UserSetIn = {
     /**
      * 所属脚本ID
      */
     scriptId: string;
     /**
-     * 用户ID列表, 按新顺序排列
+     * 用户ID
      */
-    indexList: Array<string>;
+    userId: string;
+    /**
+     * JSON文件路径, 用于导入自定义基建文件
+     */
+    jsonFile: string;
 };
 

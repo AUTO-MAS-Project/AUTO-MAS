@@ -2,14 +2,14 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-export type TimeSetReorderIn = {
+export type ScriptUrlIn = {
     /**
-     * 所属队列ID
+     * 脚本ID
      */
-    queueId: string;
+    scriptId: string;
     /**
-     * 时间设置ID列表, 按新顺序排列
+     * 配置文件URL
      */
-    indexList: Array<string>;
+    url: string;
 };
 

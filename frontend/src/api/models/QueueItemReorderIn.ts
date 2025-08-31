@@ -8,7 +8,7 @@ export type QueueItemReorderIn = {
      */
     queueId: string;
     /**
-     * 队列项ID列表，按新顺序排列
+     * 队列项ID列表, 按新顺序排列
      */
     indexList: Array<string>;
 };
