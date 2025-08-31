@@ -111,13 +111,13 @@ ipcMain.handle('select-folder', async () => {
 })
 
 ipcMain.handle('select-file', async (event, filters = []) => {
-  if (!mainWindow) return null
+  if (!mainWindow) return []
   const result = await dialog.showOpenDialog(mainWindow, {
     properties: ['openFile'],
     title: '选择文件',
     filters: filters.length > 0 ? filters : [{ name: '所有文件', extensions: ['*'] }],
   })
-  return result.canceled ? null : result.filePaths[0]
+  return result.canceled ? [] : result.filePaths
 })
 
 // 在系统默认浏览器中打开URL

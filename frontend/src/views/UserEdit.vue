@@ -250,6 +250,52 @@
             <!--          </a-col>-->
           </a-row>
 
+          <!-- 自定义基建配置文件选择 -->
+          <a-row :gutter="24" v-if="scriptType === 'MAA' && formData.Info.InfrastMode === 'Custom'">
+            <a-col :span="24">
+              <a-form-item name="infrastructureConfigFile">
+                <template #label>
+                  <a-tooltip title="选择自定义基建配置JSON文件">
+                    <span class="form-label">
+                      基建配置文件
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <div style="display: flex; gap: 12px; align-items: center;">
+                  <a-input
+                    v-model:value="infrastructureConfigPath"
+                    placeholder="请选择基建配置JSON文件"
+                    readonly
+                    size="large"
+                    style="flex: 1;"
+                  />
+                  <a-button
+                    type="primary"
+                    ghost
+                    @click="selectInfrastructureConfig"
+                    :disabled="loading"
+                    size="large"
+                  >
+                    选择文件
+                  </a-button>
+                  <a-button
+                    type="primary"
+                    @click="importInfrastructureConfig"
+                    :disabled="loading || !infrastructureConfigPath || !isEdit"
+                    :loading="infrastructureImporting"
+                    size="large"
+                  >
+                    导入配置
+                  </a-button>
+                </div>
+                <div style="color: #999; font-size: 12px; margin-top: 4px;">
+                  请选择有效的基建配置JSON文件，点击"导入配置"按钮将其应用到当前用户。如果已经导入，可以忽略此选择框。
+                </div>
+              </a-form-item>
+            </a-col>
+          </a-row>
+
           <a-form-item name="notes">
             <template #label>
               <a-tooltip title="为用户添加备注信息，便于管理和识别">
@@ -957,6 +1003,7 @@ import type { FormInstance, Rule } from 'ant-design-vue/es/form'
 import { useUserApi } from '@/composables/useUserApi'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useWebSocket } from '@/composables/useWebSocket'
+import { Service } from '@/api'
 
 const router = useRouter()
 const route = useRoute()
@@ -983,6 +1030,10 @@ const maaWebsocketId = ref<string | null>(null)
 // 通用配置相关
 const generalConfigLoading = ref(false)
 const generalWebsocketId = ref<string | null>(null)
+
+// 基建配置文件相关
+const infrastructureConfigPath = ref('')
+const infrastructureImporting = ref(false)
 
 // 服务器选项
 const serverOptions = [
@@ -1341,6 +1392,61 @@ const handleGeneralConfig = async () => {
     message.error('通用配置失败')
   } finally {
     generalConfigLoading.value = false
+  }
+}
+
+// 选择基建配置文件
+const selectInfrastructureConfig = async () => {
+  try {
+    const path = await window.electronAPI?.selectFile([
+      { name: 'JSON 文件', extensions: ['json'] },
+      { name: '所有文件', extensions: ['*'] }
+    ])
+
+    if (path) {
+      infrastructureConfigPath.value = path
+      message.success('文件选择成功')
+    }
+  } catch (error) {
+    console.error('文件选择失败:', error)
+    message.error('文件选择失败')
+  }
+}
+
+// 导入基建配置
+const importInfrastructureConfig = async () => {
+  if (!infrastructureConfigPath.value) {
+    message.warning('请先选择配置文件')
+    return
+  }
+
+  if (!isEdit.value) {
+    message.warning('请先保存用户后再导入配置')
+    return
+  }
+
+  try {
+    infrastructureImporting.value = true
+
+    // 调用API导入基建配置
+    const result = await Service.importInfrastructureApiScriptsUserInfrastructurePost({
+      scriptId: scriptId,
+      userId: userId,
+      jsonFile: infrastructureConfigPath.value[0]
+    })
+
+    if (result && result.code === 200) {
+      message.success('基建配置导入成功')
+      // 清空文件路径
+      infrastructureConfigPath.value = ''
+    } else {
+      message.error(result?.msg || '基建配置导入失败')
+    }
+  } catch (error) {
+    console.error('基建配置导入失败:', error)
+    message.error('基建配置导入失败')
+  } finally {
+    infrastructureImporting.value = false
   }
 }
 
