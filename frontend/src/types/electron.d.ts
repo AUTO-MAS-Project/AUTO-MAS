@@ -2,7 +2,8 @@ export interface ElectronAPI {
   openDevTools: () => Promise<void>
   selectFolder: () => Promise<string | null>
   selectFile: (filters?: any[]) => Promise<string | null>
-  
+  openUrl: (url: string) => Promise<{ success: boolean; error?: string }>
+
   // 初始化相关API
   checkEnvironment: () => Promise<{
     pythonExists: boolean
