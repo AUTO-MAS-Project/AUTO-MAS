@@ -40,11 +40,31 @@
           </div>
 
           <div class="activity-right">
+            <!-- 剩余时间小于两天时显示红色倒计时 -->
             <a-statistic-countdown
+              v-if="isLessThanTwoDays(currentActivity.UtcExpireTime)"
               title="当期活动剩余时间"
               :value="getCountdownValue(currentActivity.UtcExpireTime)"
-              format="D 天 H 时 m 分 ss 秒 SSS 毫秒"
-              :value-style="getCountdownStyle(currentActivity.UtcExpireTime)"
+              format="活动时间仅剩 D 天 H 时 m 分 ss 秒 SSS 毫秒，请尽快完成喵~"
+              :value-style="{
+                color: '#ff4d4f',
+                fontWeight: 'bold',
+                fontSize: '18px',
+              }"
+              @finish="onCountdownFinish"
+            />
+
+            <!-- 剩余时间大于等于两天时显示常规倒计时 -->
+            <a-statistic-countdown
+              v-else
+              title="当期活动剩余时间"
+              :value="getCountdownValue(currentActivity.UtcExpireTime)"
+              format="D 天 H 时 m 分"
+              :value-style="{
+                color: 'var(--ant-color-text)',
+                fontWeight: '600',
+                fontSize: '20px',
+              }"
               @finish="onCountdownFinish"
             />
           </div>
@@ -241,6 +261,7 @@ interface ApiResponse {
 interface ResourceItem {
   Display: string
   Value: string
+  Drop: string
   DropName: string
   Activity: {
     Tip: string
@@ -288,6 +309,19 @@ const getCountdownValue = (expireTime: string) => {
     return new Date(expireTime).getTime()
   } catch {
     return Date.now()
+  }
+}
+
+// 检查剩余时间是否小于两天
+const isLessThanTwoDays = (expireTime: string) => {
+  try {
+    const expire = new Date(expireTime)
+    const now = new Date()
+    const remaining = expire.getTime() - now.getTime()
+    const twoDaysInMs = 20 * 24 * 60 * 60 * 1000
+    return remaining <= twoDaysInMs
+  } catch {
+    return false
   }
 }
 
