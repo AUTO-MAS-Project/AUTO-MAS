@@ -23,6 +23,6 @@ export namespace HistorySearchIn {
   export enum mode {
     DAILY = '按日合并',
     WEEKLY = '按周合并',
-    MONTHLY = '按年月并',
+    MONTHLY = '按月合并',
   }
 }
