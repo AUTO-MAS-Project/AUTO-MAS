@@ -5,7 +5,12 @@
 
   <div class="content">
     <!-- 当期活动关卡 -->
-    <a-card v-if="activityData?.length" title="当期活动关卡" class="activity-card" :loading="loading">
+    <a-card
+      v-if="activityData?.length"
+      title="当期活动关卡"
+      class="activity-card"
+      :loading="loading"
+    >
       <template #extra>
         <a-button type="text" @click="refreshActivity" :loading="loading">
           <template #icon>
@@ -24,22 +29,24 @@
         <div class="activity-header">
           <div class="activity-left">
             <div class="activity-name">
-              <span class="activity-title">{{ currentActivity.StageName }}</span>
-              <a-tag color="blue" class="activity-tip">{{ currentActivity.Tip }}</a-tag>
+              <span class="activity-title">{{ currentActivity.Tip }}</span>
+              <!--              <a-tag color="blue" class="activity-tip">{{ currentActivity.StageName }}</a-tag>-->
             </div>
             <div class="activity-end-time">
               <ClockCircleOutlined class="time-icon" />
               <span class="time-label">结束时间：</span>
-              <span class="time-value">{{
-                formatTime(currentActivity.UtcExpireTime)
-              }}</span>
+              <span class="time-value">{{ formatTime(currentActivity.UtcExpireTime) }}</span>
             </div>
           </div>
 
           <div class="activity-right">
-            <a-statistic-countdown title="当期活动剩余时间" :value="getCountdownValue(currentActivity.UtcExpireTime)"
-              format="D 天 H 时 m 分" :value-style="getCountdownStyle(currentActivity.UtcExpireTime)"
-              @finish="onCountdownFinish" />
+            <a-statistic-countdown
+              title="当期活动剩余时间"
+              :value="getCountdownValue(currentActivity.UtcExpireTime)"
+              format="D 天 H 时 m 分 ss 秒 SSS 毫秒"
+              :value-style="getCountdownStyle(currentActivity.UtcExpireTime)"
+              @finish="onCountdownFinish"
+            />
           </div>
         </div>
       </div>
@@ -52,10 +59,16 @@
 
           <div class="drop-info">
             <div class="drop-image">
-              <img v-if="getMaterialImage(item.DropName.startsWith('DESC:') ? '固源岩' : item.DropName)" :src="item.DropName.startsWith('DESC:')
-                ? getMaterialImage('固源岩')
-                : getMaterialImage(item.DropName)
-                " :alt="item.DropName.startsWith('DESC:') ? '固源岩' : item.DropName" @error="handleImageError" />
+              <img
+                v-if="getMaterialImage(item.DropName.startsWith('DESC:') ? '30012' : item.DropName)"
+                :src="
+                  item.DropName.startsWith('DESC:')
+                    ? getMaterialImage('30012')
+                    : getMaterialImage(item.Drop)
+                "
+                :alt="item.DropName.startsWith('DESC:') ? '30012' : item.DropName"
+                @error="handleImageError"
+              />
             </div>
 
             <div class="drop-details">
@@ -91,8 +104,12 @@
 
           <div class="drop-info">
             <div class="drop-image">
-              <img v-if="getMaterialImage(item.DropName)" :src="getMaterialImage(item.DropName)" :alt="item.DropName"
-                @error="handleImageError" />
+              <img
+                v-if="getMaterialImage(item.Drop)"
+                :src="getMaterialImage(item.Drop)"
+                :alt="item.DropName"
+                @error="handleImageError"
+              />
             </div>
 
             <div class="drop-details">
@@ -133,7 +150,10 @@
               <div class="proxy-stats">
                 <!-- 第一行：最后代理时间，独占一行 -->
                 <div class="stat-item full-width">
-                  <a-statistic title="最后代理时间" :value="formatProxyDisplay(proxy.LastProxyDate)" />
+                  <a-statistic
+                    title="最后代理时间"
+                    :value="formatProxyDisplay(proxy.LastProxyDate)"
+                  />
                 </div>
 
                 <!-- 第二行：代理次数 和 错误次数 -->
@@ -141,8 +161,11 @@
                   <a-statistic title="代理次数" :value="proxy.ProxyTimes" />
                 </div>
                 <div class="stat-item half-width">
-                  <a-statistic title="错误次数" :value="proxy.ErrorTimes"
-                    :value-style="{ color: proxy.ErrorTimes > 0 ? '#ff4d4f' : undefined }" />
+                  <a-statistic
+                    title="错误次数"
+                    :value="proxy.ErrorTimes"
+                    :value-style="{ color: proxy.ErrorTimes > 0 ? '#ff4d4f' : undefined }"
+                  />
                 </div>
               </div>
 
@@ -180,11 +203,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { message } from 'ant-design-vue'
-import {
-  ReloadOutlined,
-  ClockCircleOutlined,
-  UserOutlined,
-} from '@ant-design/icons-vue'
+import { ReloadOutlined, ClockCircleOutlined, UserOutlined } from '@ant-design/icons-vue'
 import { Service } from '@/api/services/Service'
 import dayjs from 'dayjs'
 
@@ -234,7 +253,6 @@ const error = ref('')
 const activityData = ref<ActivityItem[]>([])
 const resourceData = ref<ResourceItem[]>([])
 const proxyData = ref<Record<string, ProxyInfo>>({})
-
 
 // 获取当前活动信息
 const currentActivity = computed(() => {
@@ -306,25 +324,7 @@ const getCountdownStyle = (expireTime: string) => {
 const getProxyTimestamp = (dateStr: string) => {
   if (!dateStr) return Date.now()
 
-  // 1) 先尝试解析中文格式：2025年08月15日 14:01:02
-  //    捕获：年、月、日、时、分、秒
-  const m = dateStr.match(
-    /(\d{4})[年/](\d{1,2})[月/](\d{1,2})[日T\s]+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?/
-  )
-  if (m) {
-    const [, y, mo, d, h, mi, s] = m
-    const ts = new Date(
-      Number(y),
-      Number(mo) - 1,
-      Number(d),
-      Number(h),
-      Number(mi),
-      Number(s ?? 0)
-    ).getTime()
-    if (!Number.isNaN(ts)) return ts
-  }
-
-  // 2) 兜底：尝试让浏览器自己解析
+  //  兜底：尝试让浏览器自己解析
   const t = new Date(dateStr).getTime()
   return Number.isNaN(t) ? Date.now() : t
 }
@@ -358,7 +358,7 @@ const fetchActivityData = async () => {
   error.value = ''
 
   try {
-    const response = await Service.addOverviewApiInfoGetOverviewPost()
+    const response = await Service.getOverviewApiInfoGetOverviewPost()
 
     if (response.code === 200) {
       const data = response.data as ApiResponse
@@ -442,8 +442,6 @@ onMounted(() => {
   font-size: 18px;
   font-weight: 600;
 }
-
-
 
 .resource-list {
   display: grid;
@@ -641,7 +639,6 @@ onMounted(() => {
 }
 
 @media (max-width: 1200px) {
-
   .activity-list,
   .resource-list {
     grid-template-columns: repeat(3, 1fr);
@@ -649,7 +646,6 @@ onMounted(() => {
 }
 
 @media (max-width: 900px) {
-
   .activity-list,
   .resource-list {
     grid-template-columns: repeat(2, 1fr);
