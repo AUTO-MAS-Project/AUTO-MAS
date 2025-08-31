@@ -126,8 +126,13 @@ ipcMain.handle('open-url', async (event, url: string) => {
     await shell.openExternal(url)
     return { success: true }
   } catch (error) {
-    console.error('打开链接失败:', error)
-    return { success: false, error: error.message }
+    if (error instanceof Error) {
+      console.error('打开链接失败:', error.message)
+      return { success: false, error: error.message }
+    } else {
+      console.error('未知错误:', error)
+      return { success: false, error: String(error) }
+    }
   }
 })
 
@@ -282,19 +287,19 @@ ipcMain.handle('restart-as-admin', () => {
 
 // 应用生命周期
 // 保证应用单例运行
-const gotTheLock = app.requestSingleInstanceLock();
+const gotTheLock = app.requestSingleInstanceLock()
 
 if (!gotTheLock) {
-  app.quit();
-  process.exit(0);
+  app.quit()
+  process.exit(0)
 }
 
 app.on('second-instance', () => {
   if (mainWindow) {
-    if (mainWindow.isMinimized()) mainWindow.restore();
-    mainWindow.focus();
+    if (mainWindow.isMinimized()) mainWindow.restore()
+    mainWindow.focus()
   }
-});
+})
 
 app.whenReady().then(() => {
   // 检查管理员权限
@@ -304,7 +309,7 @@ app.whenReady().then(() => {
     // 这里先创建窗口，让用户选择是否重新启动
   }
   createWindow()
-});
+})
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
