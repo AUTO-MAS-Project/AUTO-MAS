@@ -3,6 +3,13 @@
     <a-typography-title>{{ greeting }}</a-typography-title>
   </div>
 
+  <!-- 公告模态框 -->
+  <NoticeModal
+    v-model:visible="noticeVisible"
+    :notice-data="noticeData"
+    @confirmed="onNoticeConfirmed"
+  />
+
   <div class="content">
     <!-- 当期活动关卡 -->
     <a-card
@@ -225,6 +232,7 @@ import { ref, onMounted, computed } from 'vue'
 import { message } from 'ant-design-vue'
 import { ReloadOutlined, ClockCircleOutlined, UserOutlined } from '@ant-design/icons-vue'
 import { Service } from '@/api/services/Service'
+import NoticeModal from '@/components/NoticeModal.vue'
 import dayjs from 'dayjs'
 
 interface ActivityInfo {
@@ -275,6 +283,10 @@ const activityData = ref<ActivityItem[]>([])
 const resourceData = ref<ResourceItem[]>([])
 const proxyData = ref<Record<string, ProxyInfo>>({})
 
+// 公告系统相关状态
+const noticeVisible = ref(false)
+const noticeData = ref<Record<string, string>>({})
+
 // 获取当前活动信息
 const currentActivity = computed(() => {
   if (!activityData.value.length) return null
@@ -318,7 +330,7 @@ const isLessThanTwoDays = (expireTime: string) => {
     const expire = new Date(expireTime)
     const now = new Date()
     const remaining = expire.getTime() - now.getTime()
-    const twoDaysInMs = 20 * 24 * 60 * 60 * 1000
+    const twoDaysInMs = 2 * 24 * 60 * 60 * 1000
     return remaining <= twoDaysInMs
   } catch {
     return false
@@ -442,8 +454,35 @@ const greeting = computed(() => {
   }
 })
 
+// 获取公告信息
+const fetchNoticeData = async () => {
+  try {
+    const response = await Service.getNoticeInfoApiInfoNoticeGetPost()
+
+    if (response.code === 200) {
+      // 检查是否需要显示公告
+      if (response.if_need_show && response.data && Object.keys(response.data).length > 0) {
+      // if (response.data && Object.keys(response.data).length > 0) {
+        noticeData.value = response.data
+        noticeVisible.value = true
+      }
+    } else {
+      console.warn('获取公告失败:', response.message)
+    }
+  } catch (error) {
+    console.error('获取公告失败:', error)
+  }
+}
+
+// 公告确认回调
+const onNoticeConfirmed = () => {
+  noticeVisible.value = false
+  // message.success('公告已确认')
+}
+
 onMounted(() => {
   fetchActivityData()
+  fetchNoticeData()
 })
 </script>
 
