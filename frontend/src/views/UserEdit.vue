@@ -1403,7 +1403,7 @@ const selectInfrastructureConfig = async () => {
       { name: '所有文件', extensions: ['*'] }
     ])
 
-    if (path) {
+    if (path && path.length > 0) {
       infrastructureConfigPath.value = path
       message.success('文件选择成功')
     }
