@@ -358,6 +358,24 @@
                 />
               </a-form-item>
             </a-col>
+            <a-col :span="12">
+              <a-form-item name="mode">
+                <template #label>
+                  <a-tooltip title="关卡选择">
+                    <span class="form-label">
+                      关卡配置模式
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-select
+                  v-model:value="formData.Info.StageMode"
+                  :options="stageModeOptions"
+                  :disabled="loading"
+                  size="large"
+                />
+              </a-form-item>
+            </a-col>
           </a-row>
           <a-row :gutter="24"></a-row>
           <a-row :gutter="24">
@@ -409,28 +427,8 @@
                 />
               </a-form-item>
             </a-col>
-            <a-col :span="6">
-              <a-form-item name="mode">
-                <template #label>
-                  <a-tooltip title="关卡选择">
-                    <span class="form-label">
-                      关卡配置模式
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
-                </template>
-                <a-select
-                  v-model:value="formData.Info.StageMode"
-                  :options="[
-                    { label: '固定', value: '固定' },
-                    { label: '刷完即停', value: '刷完即停' },
-                  ]"
-                  :disabled="loading"
-                  size="large"
-                />
-              </a-form-item>
-            </a-col>
-            <a-col :span="6">
+
+            <a-col :span="12">
               <a-form-item name="mode">
                 <template #label>
                   <a-tooltip title="关卡选择">
@@ -1395,6 +1393,22 @@ const handleGeneralConfig = async () => {
   }
 }
 
+const stageModeOptions = ref([
+  { label: '固定', value: 'Fixed' }
+])
+
+const loadStageModeOptions = async () => {
+  try {
+    const response = await Service.getPlanComboxApiInfoComboxPlanPost()
+    if (response && response.code === 200 && response.data) {
+      stageModeOptions.value = response.data
+    }
+  } catch (error) {
+    console.error('加载关卡配置模式选项失败:', error)
+    // 保持默认的固定选项
+  }
+}
+
 // 选择基建配置文件
 const selectInfrastructureConfig = async () => {
   try {
@@ -1471,6 +1485,7 @@ onMounted(() => {
   }
 
   loadScriptInfo()
+  loadStageModeOptions()
 })
 </script>
 
