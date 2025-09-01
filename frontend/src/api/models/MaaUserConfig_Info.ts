@@ -44,6 +44,10 @@ export type MaaUserConfig_Info = {
      */
     InfrastMode?: ('Normal' | 'Rotation' | 'Custom' | null);
     /**
+     * 自定义基建文件路径
+     */
+    InfrastPath?: (string | null);
+    /**
      * 密码
      */
     Password?: (string | null);

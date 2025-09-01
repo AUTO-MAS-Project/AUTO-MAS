@@ -245,6 +245,8 @@ import {
 import { Service } from '@/api/services/Service'
 import NoticeModal from '@/components/NoticeModal.vue'
 import dayjs from 'dayjs'
+import { API_ENDPOINTS } from '@/config/mirrors.ts'
+
 
 interface ActivityInfo {
   Tip: string
@@ -398,12 +400,8 @@ const getMaterialImage = (dropName: string) => {
   if (!dropName) {
     return ''
   }
-  try {
-    return new URL(`../assets/materials/${dropName}.png`, import.meta.url).href
-  } catch (error) {
-    console.warn('Failed to load material image:', dropName, error)
-    return ''
-  }
+  // 直接拼接后端图片接口地址
+  return `${API_ENDPOINTS.local}/api/res/materials/${dropName}.png`
 }
 
 const handleImageError = (event: Event) => {
