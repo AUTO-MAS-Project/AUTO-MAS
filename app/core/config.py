@@ -1186,6 +1186,8 @@ class AppConfig(GlobalConfig):
 
         logger.info(f"{script_id} - {user_id} 设置基建配置: {jsonFile}")
 
+        script_config = self.ScriptConfig[uuid.UUID(script_id)]
+        uid = uuid.UUID(user_id)
         json_path = Path(jsonFile)
 
         if not json_path.exists():
@@ -1199,6 +1201,9 @@ class AppConfig(GlobalConfig):
             Path.cwd()
             / f"data/{script_id}/{user_id}/Infrastructure/infrastructure.json",
         )
+
+        if isinstance(script_config, (MaaConfig)):
+            await script_config.UserData[uid].set("Info", "InfrastPath", str(json_path))
 
     async def add_plan(
         self, script: Literal["MaaPlan"]
