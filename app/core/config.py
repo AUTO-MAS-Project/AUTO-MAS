@@ -229,6 +229,7 @@ class MaaUserConfig(ConfigBase):
             "Normal",
             OptionsValidator(["Normal", "Rotation", "Custom"]),
         )
+        self.Info_InfrastPath = ConfigItem("Info", "InfrastPath", ".", FileValidator())
         self.Info_Password = ConfigItem("Info", "Password", "", EncryptValidator())
         self.Info_Notes = ConfigItem("Info", "Notes", "无")
         self.Info_MedicineNumb = ConfigItem(
