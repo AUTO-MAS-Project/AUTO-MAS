@@ -1,11 +1,38 @@
 <template>
   <div class="header">
     <a-typography-title>{{ greeting }}</a-typography-title>
+    <!-- 右上角公告按钮 -->
+    <div class="header-actions">
+      <a-button
+        type="primary"
+        ghost
+        @click="showNotice"
+        :loading="noticeLoading"
+        class="notice-button"
+      >
+        <template #icon>
+          <BellOutlined />
+        </template>
+        查看公告
+      </a-button>
+    </div>
   </div>
+
+  <!-- 公告模态框 -->
+  <NoticeModal
+    v-model:visible="noticeVisible"
+    :notice-data="noticeData"
+    @confirmed="onNoticeConfirmed"
+  />
 
   <div class="content">
     <!-- 当期活动关卡 -->
-    <a-card title="当期活动关卡" class="activity-card" :loading="loading">
+    <a-card
+      v-if="activityData?.length"
+      title="当期活动关卡"
+      class="activity-card"
+      :loading="loading"
+    >
       <template #extra>
         <a-button type="text" @click="refreshActivity" :loading="loading">
           <template #icon>
@@ -24,46 +51,64 @@
         <div class="activity-header">
           <div class="activity-left">
             <div class="activity-name">
-              <span class="activity-title">{{ currentActivity.StageName }}</span>
-              <a-tag color="blue" class="activity-tip">{{ currentActivity.Tip }}</a-tag>
+              <span class="activity-title">{{ currentActivity.Tip }}</span>
+              <!--              <a-tag color="blue" class="activity-tip">{{ currentActivity.StageName }}</a-tag>-->
             </div>
             <div class="activity-end-time">
               <ClockCircleOutlined class="time-icon" />
               <span class="time-label">结束时间：</span>
-              <span class="time-value">{{
-                formatTime(currentActivity.UtcExpireTime, currentActivity.TimeZone)
-              }}</span>
+              <span class="time-value">{{ formatTime(currentActivity.UtcExpireTime) }}</span>
             </div>
           </div>
 
           <div class="activity-right">
+            <!-- 剩余时间小于两天时显示红色倒计时 -->
             <a-statistic-countdown
+              v-if="isLessThanTwoDays(currentActivity.UtcExpireTime)"
+              title="当期活动剩余时间"
+              :value="getCountdownValue(currentActivity.UtcExpireTime)"
+              format="活动时间仅剩 D 天 H 时 m 分 ss 秒 SSS 毫秒，请尽快完成喵~"
+              :value-style="{
+                color: '#ff4d4f',
+                fontWeight: 'bold',
+                fontSize: '18px',
+              }"
+              @finish="onCountdownFinish"
+            />
+
+            <!-- 剩余时间大于等于两天时显示常规倒计时 -->
+            <a-statistic-countdown
+              v-else
               title="当期活动剩余时间"
               :value="getCountdownValue(currentActivity.UtcExpireTime)"
               format="D 天 H 时 m 分"
-              :value-style="getCountdownStyle(currentActivity.UtcExpireTime)"
+              :value-style="{
+                color: 'var(--ant-color-text)',
+                fontWeight: '600',
+                fontSize: '20px',
+              }"
               @finish="onCountdownFinish"
             />
           </div>
         </div>
       </div>
 
-      <div v-if="activityData?.length" class="activity-list">
+      <div class="activity-list">
         <div v-for="item in activityData" :key="item.Value" class="activity-item">
           <div class="stage-info">
             <div class="stage-name">{{ item.Display }}</div>
-            <!--              <div class="stage-value">{{ item.Value }}</div>-->
           </div>
 
           <div class="drop-info">
             <div class="drop-image">
               <img
+                v-if="getMaterialImage(item.DropName.startsWith('DESC:') ? '30012' : item.DropName)"
                 :src="
                   item.DropName.startsWith('DESC:')
-                    ? getMaterialImage('固源岩')
-                    : getMaterialImage(item.DropName)
+                    ? getMaterialImage('30012')
+                    : getMaterialImage(item.Drop)
                 "
-                :alt="item.DropName.startsWith('DESC:') ? '固源岩' : item.DropName"
+                :alt="item.DropName.startsWith('DESC:') ? '30012' : item.DropName"
                 @error="handleImageError"
               />
             </div>
@@ -72,16 +117,44 @@
               <div class="drop-name">
                 {{ item.DropName.startsWith('DESC:') ? item.DropName.substring(5) : item.DropName }}
               </div>
-              <!--                <div v-if="item.Drop && !item.DropName.startsWith('DESC:')" class="drop-id">-->
-              <!--                  ID: {{ item.Drop }}-->
-              <!--                </div>-->
+            </div>
+          </div>
+        </div>
+      </div>
+    </a-card>
+
+    <!-- 资源收集关卡 -->
+    <a-card title="今日开放资源收集关卡" class="resource-card" :loading="loading">
+      <div v-if="error" class="error-message">
+        <a-alert :message="error" type="error" show-icon closable @close="error = ''" />
+      </div>
+
+      <div v-if="resourceData?.length" class="resource-list">
+        <div v-for="item in resourceData" :key="item.Value" class="resource-item">
+          <div class="stage-info">
+            <div class="stage-name">{{ item.Display }}</div>
+          </div>
+
+          <div class="drop-info">
+            <div class="drop-image">
+              <img
+                v-if="getMaterialImage(item.Drop)"
+                :src="getMaterialImage(item.Drop)"
+                :alt="item.DropName"
+                @error="handleImageError"
+              />
+            </div>
+
+            <div class="drop-details">
+              <div class="drop-name">{{ item.DropName }}</div>
+              <div class="drop-tip">{{ item.Activity.Tip }}</div>
             </div>
           </div>
         </div>
       </div>
 
       <div v-else-if="!loading" class="empty-state">
-        <a-empty description="暂无活动关卡数据" />
+        <a-empty description="暂无资源收集数据" />
       </div>
     </a-card>
 
@@ -165,13 +238,15 @@ import { ref, onMounted, computed } from 'vue'
 import { message } from 'ant-design-vue'
 import {
   ReloadOutlined,
-  InfoCircleOutlined,
-  CalendarOutlined,
   ClockCircleOutlined,
   UserOutlined,
+  BellOutlined,
 } from '@ant-design/icons-vue'
 import { Service } from '@/api/services/Service'
+import NoticeModal from '@/components/NoticeModal.vue'
 import dayjs from 'dayjs'
+import { API_ENDPOINTS } from '@/config/mirrors.ts'
+
 
 interface ActivityInfo {
   Tip: string
@@ -197,14 +272,34 @@ interface ProxyInfo {
 }
 
 interface ApiResponse {
-  Stage: ActivityItem[]
+  Stage: {
+    Activity: ActivityItem[]
+    Resource: ResourceItem[]
+  }
   Proxy: Record<string, ProxyInfo>
+}
+
+interface ResourceItem {
+  Display: string
+  Value: string
+  Drop: string
+  DropName: string
+  Activity: {
+    Tip: string
+    StageName: string
+  }
 }
 
 const loading = ref(false)
 const error = ref('')
 const activityData = ref<ActivityItem[]>([])
+const resourceData = ref<ResourceItem[]>([])
 const proxyData = ref<Record<string, ProxyInfo>>({})
+
+// 公告系统相关状态
+const noticeVisible = ref(false)
+const noticeData = ref<Record<string, string>>({})
+const noticeLoading = ref(false)
 
 // 获取当前活动信息
 const currentActivity = computed(() => {
@@ -218,7 +313,7 @@ const formatProxyDisplay = (dateStr: string) => {
 }
 
 // 格式化时间显示 - 直接使用给定时间，不进行时区转换
-const formatTime = (timeString: string, timeZone: number) => {
+const formatTime = (timeString: string) => {
   try {
     // 直接使用给定的时间字符串，因为已经是中国时间
     const date = new Date(timeString)
@@ -240,6 +335,19 @@ const getCountdownValue = (expireTime: string) => {
     return new Date(expireTime).getTime()
   } catch {
     return Date.now()
+  }
+}
+
+// 检查剩余时间是否小于两天
+const isLessThanTwoDays = (expireTime: string) => {
+  try {
+    const expire = new Date(expireTime)
+    const now = new Date()
+    const remaining = expire.getTime() - now.getTime()
+    const twoDaysInMs = 2 * 24 * 60 * 60 * 1000
+    return remaining <= twoDaysInMs
+  } catch {
+    return false
   }
 }
 
@@ -276,25 +384,7 @@ const getCountdownStyle = (expireTime: string) => {
 const getProxyTimestamp = (dateStr: string) => {
   if (!dateStr) return Date.now()
 
-  // 1) 先尝试解析中文格式：2025年08月15日 14:01:02
-  //    捕获：年、月、日、时、分、秒
-  const m = dateStr.match(
-    /(\d{4})[年/](\d{1,2})[月/](\d{1,2})[日T\s]+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?/
-  )
-  if (m) {
-    const [, y, mo, d, h, mi, s] = m
-    const ts = new Date(
-      Number(y),
-      Number(mo) - 1,
-      Number(d),
-      Number(h),
-      Number(mi),
-      Number(s ?? 0)
-    ).getTime()
-    if (!Number.isNaN(ts)) return ts
-  }
-
-  // 2) 兜底：尝试让浏览器自己解析
+  //  兜底：尝试让浏览器自己解析
   const t = new Date(dateStr).getTime()
   return Number.isNaN(t) ? Date.now() : t
 }
@@ -307,11 +397,11 @@ const onCountdownFinish = () => {
 }
 
 const getMaterialImage = (dropName: string) => {
-  try {
-    return new URL(`../assets/materials/${dropName}.png`, import.meta.url).href
-  } catch {
+  if (!dropName) {
     return ''
   }
+  // 直接拼接后端图片接口地址
+  return `${API_ENDPOINTS.local}/api/res/materials/${dropName}.png`
 }
 
 const handleImageError = (event: Event) => {
@@ -324,12 +414,13 @@ const fetchActivityData = async () => {
   error.value = ''
 
   try {
-    const response = await Service.addOverviewApiInfoGetOverviewPost()
+    const response = await Service.getOverviewApiInfoGetOverviewPost()
 
     if (response.code === 200) {
       const data = response.data as ApiResponse
       if (data.Stage) {
-        activityData.value = data.Stage
+        activityData.value = data.Stage.Activity || []
+        resourceData.value = data.Stage.Resource || []
       }
       if (data.Proxy) {
         proxyData.value = data.Proxy
@@ -347,8 +438,8 @@ const fetchActivityData = async () => {
 
 const refreshActivity = async () => {
   await fetchActivityData()
-  if (!error.value) {
-    message.success('活动数据已刷新')
+  if (error.value) {
+    message.error(error.value)
   }
 }
 
@@ -373,14 +464,68 @@ const greeting = computed(() => {
   }
 })
 
+// 获取公告信息
+const fetchNoticeData = async () => {
+  try {
+    const response = await Service.getNoticeInfoApiInfoNoticeGetPost()
+
+    if (response.code === 200) {
+      // 检查是否需要显示公告
+      if (response.if_need_show && response.data && Object.keys(response.data).length > 0) {
+        noticeData.value = response.data
+        noticeVisible.value = true
+      }
+    } else {
+      console.warn('获取公告失败:', response.message)
+    }
+  } catch (error) {
+    console.error('获取公告失败:', error)
+  }
+}
+
+// 公告确认回调
+const onNoticeConfirmed = () => {
+  noticeVisible.value = false
+  // message.success('公告已确认')
+}
+
+// 显示公告的处理函数
+const showNotice = async () => {
+  noticeLoading.value = true
+  try {
+    const response = await Service.getNoticeInfoApiInfoNoticeGetPost()
+
+    if (response.code === 200) {
+      // 忽略 if_need_show 字段，只要有公告数据就显示
+      if (response.data && Object.keys(response.data).length > 0) {
+        noticeData.value = response.data
+        noticeVisible.value = true
+      } else {
+        message.info('暂无公告信息')
+      }
+    } else {
+      message.error(response.message || '获取公告失败')
+    }
+  } catch (error) {
+    console.error('显示公告失败:', error)
+    message.error('显示公告失败，请稍后重试')
+  } finally {
+    noticeLoading.value = false
+  }
+}
+
 onMounted(() => {
   fetchActivityData()
+  fetchNoticeData()
 })
 </script>
 
 <style scoped>
 .header {
   margin-bottom: 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
 
 .header h1 {
@@ -390,13 +535,64 @@ onMounted(() => {
   font-weight: 600;
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.notice-button {
+  min-width: 120px;
+}
+
+/* 公告相关样式 */
+.notice-modal {
+  /* 自定义公告模态框样式 */
+}
+
 .activity-card {
+  margin-bottom: 24px;
+}
+
+.resource-card {
   margin-bottom: 24px;
 }
 
 .activity-card :deep(.ant-card-head-title) {
   font-size: 18px;
   font-weight: 600;
+}
+
+.resource-card :deep(.ant-card-head-title) {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.resource-list {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+
+.resource-item {
+  display: flex;
+  align-items: center;
+  padding: 16px;
+  background: var(--ant-color-bg-container);
+  border: 1px solid var(--ant-color-border);
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+.resource-item:hover {
+  border-color: var(--ant-color-primary);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.drop-tip {
+  font-size: 12px;
+  color: var(--ant-color-text-tertiary);
+  margin-top: 2px;
 }
 
 .error-message {
@@ -568,13 +764,15 @@ onMounted(() => {
 }
 
 @media (max-width: 1200px) {
-  .activity-list {
+  .activity-list,
+  .resource-list {
     grid-template-columns: repeat(3, 1fr);
   }
 }
 
 @media (max-width: 900px) {
-  .activity-list {
+  .activity-list,
+  .resource-list {
     grid-template-columns: repeat(2, 1fr);
   }
 }
@@ -649,11 +847,13 @@ onMounted(() => {
 }
 
 .stat-item.full-width {
-  flex: 0 0 100%; /* 占满整行 */
+  flex: 0 0 100%;
+  /* 占满整行 */
 }
 
 .stat-item.half-width {
-  flex: 0 0 calc(50% - 8px); /* 每个占一半宽度，减去间距 */
+  flex: 0 0 calc(50% - 8px);
+  /* 每个占一半宽度，减去间距 */
 }
 
 .stat-item {
@@ -677,11 +877,13 @@ onMounted(() => {
     padding: 16px;
   }
 
-  .activity-list {
+  .activity-list,
+  .resource-list {
     grid-template-columns: 1fr;
   }
 
-  .activity-item {
+  .activity-item,
+  .resource-item {
     padding: 12px;
   }
 
