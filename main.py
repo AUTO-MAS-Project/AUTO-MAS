@@ -69,6 +69,7 @@ def main():
         import asyncio
         import uvicorn
         from fastapi import FastAPI
+        from fastapi.staticfiles import StaticFiles
         from contextlib import asynccontextmanager
 
         @asynccontextmanager
@@ -130,6 +131,12 @@ def main():
         app.include_router(dispatch_router)
         app.include_router(history_router)
         app.include_router(setting_router)
+
+        app.mount(
+            "/api/res/materials",
+            StaticFiles(directory=str(Path.cwd() / "res/images/materials")),
+            name="materials",
+        )
 
         async def run_server():
 

@@ -187,21 +187,6 @@ async def get_web_config() -> InfoOut:
 
 
 @router.post(
-    "/get/materials", summary="获取材料URL", response_model=InfoOut, status_code=200
-)
-async def get_materials(
-    materials: GetMaterialsIn = Body(..., description="材料ID")
-) -> InfoOut:
-    try:
-        data = await Config.get_materials(materials.dropId)
-    except Exception as e:
-        return InfoOut(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}", data={}
-        )
-    return InfoOut(data={"FileUrl": data})
-
-
-@router.post(
     "/get/overview", summary="信息总览", response_model=InfoOut, status_code=200
 )
 async def get_overview() -> InfoOut:
