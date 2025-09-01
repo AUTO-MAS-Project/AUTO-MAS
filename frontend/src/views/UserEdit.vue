@@ -1047,7 +1047,6 @@ const getDefaultMAAUserData = () => ({
     Status: true,
     Mode: 'MAA',
     InfrastMode: '默认',
-    InfrastPath: '',
     Routine: true,
     Annihilation: '当期',
     Stage: '1-7',
@@ -1058,11 +1057,6 @@ const getDefaultMAAUserData = () => ({
     Stage_Remain: '',
     IfSkland: false,
     SklandToken: '',
-    // 添加 General 脚本的属性以确保兼容性
-    IfScriptBeforeTask: false,
-    IfScriptAfterTask: false,
-    ScriptBeforeTask: '',
-    ScriptAfterTask: '',
   },
   Task: {
     IfBase: true,
@@ -1114,7 +1108,6 @@ const getDefaultGeneralUserData = () => ({
     ToAddress: '',
     IfSendMail: false,
     IfSendStatistic: false,
-    IfSendSixStar: false,
     IfServerChan: false,
     IfCompanyWebHookBot: false,
     ServerChanKey: '',
@@ -1139,7 +1132,7 @@ const formData = reactive({
   userName: '',
   userId: '',
   // 嵌套的实际数据
-  ...getDefaultMAAUserData(),
+  ...getDefaultUserData(),
 })
 
 // 表单验证规则
@@ -1194,20 +1187,10 @@ const loadScriptInfo = async () => {
       scriptType.value = script.type // 设置脚本类型
 
       // 重新初始化表单数据（根据脚本类型）
-      const defaultData =
-        scriptType.value === 'MAA' ? getDefaultMAAUserData() : getDefaultGeneralUserData()
-
-      // 清空现有数据并重新赋值
-      Object.keys(formData).forEach(key => {
-        if (key !== 'userName' && key !== 'userId') {
-          delete formData[key]
-        }
-      })
-
       Object.assign(formData, {
         userName: '',
         userId: '',
-        ...defaultData,
+        ...getDefaultUserData(),
       })
 
       // 如果是编辑模式，加载用户数据
