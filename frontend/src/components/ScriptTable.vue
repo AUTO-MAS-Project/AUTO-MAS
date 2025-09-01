@@ -146,7 +146,7 @@
                               : 'orange'
                         "
                       >
-                        剩余:
+                        剩余天数:
                         {{ user.Info.RemainedDay < 1 ? '长期有效' : user.Info.RemainedDay + '天' }}
                       </a-tag>
 
@@ -209,6 +209,13 @@
                         color="geekblue"
                       >
                         剩余关卡: {{ user.Info.Stage_Remain }}
+                      </a-tag>
+
+                      <a-tag
+                        class="info-tag"
+                        color="magenta"
+                      >
+                        备注: {{ truncateText(user.Info.Notes) }}
                       </a-tag>
                     </div>
                   </div>
@@ -373,6 +380,11 @@ function get_annihilation_name(annihilation_name) {
     return '龙门市区'
   }
   return '未开启'
+}
+
+const truncateText = (text: string, maxLength: number = 20): string => {
+  if (!text) return ''
+  return text.length > maxLength ? text.substring(0, maxLength) + '...' : text
 }
 </script>
 
