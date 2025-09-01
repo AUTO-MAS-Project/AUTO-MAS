@@ -621,6 +621,24 @@
               <span class="switch-description">启用后将发送任务通知</span>
             </a-col>
           </a-row>
+          <!-- 发送统计/六星等可选通知 -->
+          <a-row :gutter="24" style="margin-top: 16px">
+            <a-col :span="6">
+              <span style="font-weight: 500">通知内容</span>
+            </a-col>
+            <a-col :span="18" style="display: flex; gap: 32px">
+              <a-checkbox
+                v-model:checked="formData.Notify.IfSendStatistic"
+                :disabled="loading || !formData.Notify.Enabled"
+              >发送统计
+              </a-checkbox>
+              <a-checkbox
+                v-model:checked="formData.Notify.IfSendSixStar"
+                :disabled="loading || !formData.Notify.Enabled"
+              >六星掉落推送
+              </a-checkbox>
+            </a-col>
+          </a-row>
 
           <!-- 邮件通知 -->
           <a-row :gutter="24" style="margin-top: 16px">
@@ -684,24 +702,7 @@
             </a-col>
           </a-row>
 
-          <!-- 发送统计/六星等可选通知 -->
-          <a-row :gutter="24" style="margin-top: 16px">
-            <a-col :span="6">
-              <span style="font-weight: 500">通知内容</span>
-            </a-col>
-            <a-col :span="18" style="display: flex; gap: 32px">
-              <a-checkbox
-                v-model:checked="formData.Notify.IfSendStatistic"
-                :disabled="loading || !formData.Notify.Enabled"
-                >发送统计
-              </a-checkbox>
-              <a-checkbox
-                v-model:checked="formData.Notify.IfSendSixStar"
-                :disabled="loading || !formData.Notify.Enabled"
-                >六星掉落推送
-              </a-checkbox>
-            </a-col>
-          </a-row>
+
         </a-card>
       </template>
 
@@ -836,7 +837,7 @@
             <a-col :span="12">
               <a-form-item name="scriptBeforeTask">
                 <template #label>
-                  <a-tooltip title="任务执行前要运行的脚本路径或命令">
+                  <a-tooltip title="任务执行前要运行的脚本路径">
                     <span class="form-label">
                       任务前脚本
                       <QuestionCircleOutlined class="help-icon" />
@@ -845,7 +846,7 @@
                 </template>
                 <a-input
                   v-model:value="formData.Info.ScriptBeforeTask"
-                  placeholder="请输入脚本路径或命令"
+                  placeholder="请输入脚本路径"
                   :disabled="loading || !formData.Info.IfScriptBeforeTask"
                   size="large"
                 />
@@ -854,7 +855,7 @@
             <a-col :span="12">
               <a-form-item name="scriptAfterTask">
                 <template #label>
-                  <a-tooltip title="任务执行后要运行的脚本路径或命令">
+                  <a-tooltip title="任务执行后要运行的脚本路径">
                     <span class="form-label">
                       任务后脚本
                       <QuestionCircleOutlined class="help-icon" />
@@ -863,7 +864,7 @@
                 </template>
                 <a-input
                   v-model:value="formData.Info.ScriptAfterTask"
-                  placeholder="请输入脚本路径或命令"
+                  placeholder="请输入脚本路径"
                   :disabled="loading || !formData.Info.IfScriptAfterTask"
                   size="large"
                 />
@@ -880,6 +881,19 @@
             <a-col :span="18">
               <a-switch v-model:checked="formData.Notify.Enabled" :disabled="loading" />
               <span class="switch-description">启用后将发送任务通知</span>
+            </a-col>
+          </a-row>
+          <!-- 发送统计等可选通知 -->
+          <a-row :gutter="24" style="margin-top: 16px">
+            <a-col :span="6">
+              <span style="font-weight: 500">通知内容</span>
+            </a-col>
+            <a-col :span="18">
+              <a-checkbox
+                v-model:checked="formData.Notify.IfSendStatistic"
+                :disabled="loading || !formData.Notify.Enabled"
+              >发送统计
+              </a-checkbox>
             </a-col>
           </a-row>
 
@@ -945,19 +959,7 @@
             </a-col>
           </a-row>
 
-          <!-- 发送统计等可选通知 -->
-          <a-row :gutter="24" style="margin-top: 16px">
-            <a-col :span="6">
-              <span style="font-weight: 500">通知内容</span>
-            </a-col>
-            <a-col :span="18">
-              <a-checkbox
-                v-model:checked="formData.Notify.IfSendStatistic"
-                :disabled="loading || !formData.Notify.Enabled"
-                >发送统计
-              </a-checkbox>
-            </a-col>
-          </a-row>
+
         </a-card>
       </template>
     </a-form>
