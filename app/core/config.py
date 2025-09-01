@@ -1728,7 +1728,7 @@ class AppConfig(GlobalConfig):
                     res_stage.append({"label": stage["text"], "value": stage["value"]})
 
             stage_data[calendar.day_name[day - 1] if day > 0 else "ALL"] = (
-                res_stage[0] + activity_stage_combox + res_stage[1:]
+                res_stage[0:1] + activity_stage_combox + res_stage[1:]
             )
 
         stage_data["Info"] = activity_stage_drop_info
