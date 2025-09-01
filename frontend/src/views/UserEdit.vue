@@ -18,7 +18,7 @@
 
     <a-space size="middle">
       <a-button
-        v-if="scriptType === 'MAA'"
+        v-if="scriptType === 'MAA' && formData.Info.Mode !== '简洁'"
         type="primary"
         ghost
         size="large"
@@ -264,7 +264,7 @@
                 </template>
                 <div style="display: flex; gap: 12px; align-items: center">
                   <a-input
-                    v-model:value="infrastructureConfigPath"
+                    v-model:value="formData.Info.InfrastPath"
                     placeholder="请选择基建配置JSON文件"
                     readonly
                     size="large"
@@ -561,23 +561,23 @@
             <a-col :span="6">
               <a-form-item name="ifAutoRoguelike">
                 <template #label>
-                  <a-tooltip title="暂不支持">
+                  <a-tooltip title="暂不支持，正在适配中~">
                     <span>自动肉鸽 </span>
                     <QuestionCircleOutlined class="help-icon" />
                   </a-tooltip>
                 </template>
-                <a-switch v-model:checked="formData.Task.IfAutoRoguelike" :disabled="loading" />
+                <a-switch v-model:checked="formData.Task.IfAutoRoguelike" :disabled="true" />
               </a-form-item>
             </a-col>
             <a-col :span="6">
               <a-form-item name="ifReclamation">
                 <template #label>
-                  <a-tooltip title="暂不支持">
+                  <a-tooltip title="暂不支持，正在适配中~">
                     <span>生息演算 </span>
                     <QuestionCircleOutlined class="help-icon" />
                   </a-tooltip>
                 </template>
-                <a-switch v-model:checked="formData.Task.IfReclamation" :disabled="loading" />
+                <a-switch v-model:checked="formData.Task.IfReclamation" :disabled="true" />
               </a-form-item>
             </a-col>
           </a-row>
@@ -1261,9 +1261,12 @@ const handleSubmit = async () => {
   try {
     await formRef.value?.validate()
 
+    // 排除 InfrastPath 字段
+    const { InfrastPath, ...infoWithoutInfrastPath } = formData.Info
+
     // 构建提交数据
     const userData = {
-      Info: { ...formData.Info },
+      Info: { ...infoWithoutInfrastPath },
       Task: { ...formData.Task },
       Notify: { ...formData.Notify },
       Data: { ...formData.Data },
@@ -1428,6 +1431,7 @@ const selectInfrastructureConfig = async () => {
 
     if (path && path.length > 0) {
       infrastructureConfigPath.value = path
+      formData.Info.InfrastPath = path[0]
       message.success('文件选择成功')
     }
   } catch (error) {
