@@ -1,8 +1,31 @@
+# Python-generated files
 __pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+logs/
+*.egg-info
+
+# Virtual environments
+.venv
+.python-version
+list/
+uv.lock
+
+# IDE and editors
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# User files
+config/
 data/
 debug/
 history/
 script/
-resources/notice.json
-resources/theme_image.json
-resources/images/Home/BannerTheme.jpg
+res/notice.json
+res/theme_image.json
+res/images/Home/BannerTheme.jpg

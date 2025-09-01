@@ -18,99 +18,40 @@
 
 #   Contact: DLmaster_361@163.com
 
-"""
-AUTO_MAA
-AUTO_MAA主业务定时器
-v4.4
-作者：DLmaster_361
-"""
-
-from PySide6.QtCore import QObject, QTimer
-from datetime import datetime
+import asyncio
 import keyboard
+from datetime import datetime
 
-from .logger import logger
-from .config import Config
-from .task_manager import TaskManager
 from app.services import System
+from app.utils import get_logger
+from .config import Config
 
 
-class _MainTimer(QObject):
+logger = get_logger("主业务定时器")
 
-    def __init__(self, parent=None):
-        super().__init__(parent)
 
-        self.Timer = QTimer()
-        self.Timer.timeout.connect(self.timed_start)
-        self.Timer.timeout.connect(self.set_silence)
-        self.Timer.timeout.connect(self.check_power)
+class _MainTimer:
 
-        self.LongTimer = QTimer()
-        self.LongTimer.timeout.connect(self.long_timed_task)
+    async def second_task(self):
+        """每秒定期任务"""
+        logger.info("每秒定期任务启动")
 
-    def start(self):
-        """启动定时器"""
+        while True:
 
-        logger.info("启动主定时器", module="主业务定时器")
-        self.Timer.start(1000)
-        self.LongTimer.start(3600000)
+            await self.set_silence()
 
-    def stop(self):
-        """停止定时器"""
+            await asyncio.sleep(1)
 
-        logger.info("停止主定时器", module="主业务定时器")
-        self.Timer.stop()
-        self.Timer.deleteLater()
-        self.LongTimer.stop()
-        self.LongTimer.deleteLater()
-
-    def long_timed_task(self):
-        """长时间定期检定任务"""
-
-        logger.info("执行长时间定期检定任务", module="主业务定时器")
-
-        Config.get_stage()
-        Config.main_window.setting.show_notice()
-        if Config.get(Config.update_IfAutoUpdate):
-            Config.main_window.setting.check_update()
-
-    def timed_start(self):
-        """定时启动代理任务"""
-
-        for name, info in Config.queue_dict.items():
-
-            if not info["Config"].get(info["Config"].QueueSet_TimeEnabled):
-                continue
-
-            data = info["Config"].toDict()
-
-            time_set = [
-                data["Time"][f"Set_{_}"]
-                for _ in range(10)
-                if data["Time"][f"Enabled_{_}"]
-            ]
-            # 按时间调起代理任务
-            curtime = datetime.now().strftime("%Y-%m-%d %H:%M")
-            if (
-                curtime[11:16] in time_set
-                and curtime
-                != info["Config"].get(info["Config"].Data_LastProxyTime)[:16]
-                and name not in Config.running_list
-            ):
-
-                logger.info(f"定时唤起任务：{name}。", module="主业务定时器")
-                TaskManager.add_task("自动代理_新调度台", name, data)
-
-    def set_silence(self):
-        """设置静默模式"""
+    async def set_silence(self):
+        """静默模式通过模拟老板键来隐藏模拟器窗口"""
 
         if (
-            not Config.if_ignore_silence
-            and Config.get(Config.function_IfSilence)
-            and Config.get(Config.function_BossKey) != ""
+            len(Config.if_ignore_silence) > 0
+            and Config.get("Function", "IfSilence")
+            and Config.get("Function", "BossKey") != ""
         ):
 
-            windows = System.get_window_info()
+            windows = await System.get_window_info()
 
             emulator_windows = []
             for window in windows:
@@ -124,52 +65,17 @@ class _MainTimer(QObject):
 
             if emulator_windows:
 
-                logger.info(
-                    f"检测到模拟器窗口：{emulator_windows}", module="主业务定时器"
-                )
+                logger.info(f"检测到模拟器窗口: {emulator_windows}")
                 try:
                     keyboard.press_and_release(
                         "+".join(
                             _.strip().lower()
-                            for _ in Config.get(Config.function_BossKey).split("+")
+                            for _ in Config.get("Function", "BossKey").split("+")
                         )
                     )
-                    logger.info(
-                        f"模拟按键：{Config.get(Config.function_BossKey)}",
-                        module="主业务定时器",
-                    )
+                    logger.info(f"模拟按键: {Config.get('Function', 'BossKey')}")
                 except Exception as e:
-                    logger.exception(f"模拟按键时出错：{e}", module="主业务定时器")
-
-    def check_power(self):
-        """检查电源操作"""
-
-        if Config.power_sign != "NoAction" and not Config.running_list:
-
-            logger.info(f"触发电源操作：{Config.power_sign}", module="主业务定时器")
-
-            from app.ui import ProgressRingMessageBox
-
-            mode_book = {
-                "KillSelf": "退出软件",
-                "Sleep": "睡眠",
-                "Hibernate": "休眠",
-                "Shutdown": "关机",
-                "ShutdownForce": "关机（强制）",
-            }
-
-            choice = ProgressRingMessageBox(
-                Config.main_window, f"{mode_book[Config.power_sign]}倒计时"
-            )
-            if choice.exec():
-                logger.info(
-                    f"确认执行电源操作：{Config.power_sign}", module="主业务定时器"
-                )
-                System.set_power(Config.power_sign)
-                Config.set_power_sign("NoAction")
-            else:
-                logger.info(f"取消电源操作：{Config.power_sign}", module="主业务定时器")
-                Config.set_power_sign("NoAction")
+                    logger.exception(f"模拟按键时出错: {e}")
 
 
 MainTimer = _MainTimer()
