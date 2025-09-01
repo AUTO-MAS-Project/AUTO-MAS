@@ -125,15 +125,6 @@
 
     <!-- 资源收集关卡 -->
     <a-card title="今日开放资源收集关卡" class="resource-card" :loading="loading">
-      <template #extra>
-        <a-button type="text" @click="refreshActivity" :loading="loading">
-          <template #icon>
-            <ReloadOutlined />
-          </template>
-          刷新
-        </a-button>
-      </template>
-
       <div v-if="error" class="error-message">
         <a-alert :message="error" type="error" show-icon closable @close="error = ''" />
       </div>
@@ -245,7 +236,12 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { message } from 'ant-design-vue'
-import { ReloadOutlined, ClockCircleOutlined, UserOutlined, BellOutlined } from '@ant-design/icons-vue'
+import {
+  ReloadOutlined,
+  ClockCircleOutlined,
+  UserOutlined,
+  BellOutlined,
+} from '@ant-design/icons-vue'
 import { Service } from '@/api/services/Service'
 import NoticeModal from '@/components/NoticeModal.vue'
 import dayjs from 'dayjs'
@@ -444,8 +440,8 @@ const fetchActivityData = async () => {
 
 const refreshActivity = async () => {
   await fetchActivityData()
-  if (!error.value) {
-    message.success('活动数据已刷新')
+  if (error.value) {
+    message.error(error.value)
   }
 }
 
