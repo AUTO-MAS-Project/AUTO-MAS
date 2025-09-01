@@ -361,13 +361,6 @@ onMounted(() => {
                   />
                   <span class="switch-label">发送六星通知</span>
                 </div>
-                <div class="switch-item">
-                  <Switch
-                    v-model:checked="settings.Notify.IfPushPlyer"
-                    @change="checked => handleSettingChange('Notify', 'IfPushPlyer', checked)"
-                  />
-                  <span class="switch-label">启用PushPlus推送</span>
-                </div>
               </Space>
             </div>
 

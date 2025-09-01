@@ -67,7 +67,7 @@
           </a-form-item>
         </a-col>
         <a-col :span="6">
-          <a-form-item label=" " style="margin-bottom: 0">
+          <a-form-item label=" " style="margin-bottom: 0" :colon="false">
             <a-space>
               <a-button type="primary" @click="handleSearch" :loading="searchLoading">
                 <template #icon>
