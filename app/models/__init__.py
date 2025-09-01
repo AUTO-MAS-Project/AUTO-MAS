@@ -1,5 +1,6 @@
 #   AUTO_MAA:A MAA Multi Account Management and Automation Tool
 #   Copyright © 2024-2025 DLmaster361
+#   Copyright © 2025 MoeSnowyFox
 
 #   This file is part of AUTO_MAA.
 
@@ -18,18 +19,11 @@
 
 #   Contact: DLmaster_361@163.com
 
-"""
-AUTO_MAA
-AUTO_MAA模组包
-v4.4
-作者：DLmaster_361
-"""
-
-__version__ = "4.2.0"
+__version__ = "5.0.0"
 __author__ = "DLmaster361 <DLmaster_361@163.com>"
 __license__ = "GPL-3.0 license"
 
-from .general import GeneralManager
-from .MAA import MaaManager
+from .ConfigBase import *
+from .schema import *
 
-__all__ = ["GeneralManager", "MaaManager"]
+__all__ = ["ConfigBase", "schema"]

@@ -1,0 +1,21 @@
+[project]
+name = "AUTO_MAA"
+version = "4.0.0.1"
+description = "AUTO_MAA~"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "loguru==0.7.3",
+    "fastapi==0.116.1",
+    "pydantic==2.11.7",
+    "uvicorn==0.35.0",
+    "plyer==2.1.0",
+    "psutil==7.0.0",
+    "jinja2==3.1.6",
+    "pywin32==310",
+    "keyboard==0.13.5",
+    "truststore==0.10.1",
+    "requests==2.32.4",
+    "pillow==11.3.0",
+    "packaging==25.0",
+]

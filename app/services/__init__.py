@@ -18,20 +18,11 @@
 
 #   Contact: DLmaster_361@163.com
 
-"""
-AUTO_MAA
-AUTO_MAA服务包
-v4.4
-作者：DLmaster_361
-"""
-
-__version__ = "4.2.0"
+__version__ = "5.0.0"
 __author__ = "DLmaster361 <DLmaster_361@163.com>"
 __license__ = "GPL-3.0 license"
 
 from .notification import Notify
-from .security import Crypto
 from .system import System
-from .skland import skland_sign_in
 
-__all__ = ["Notify", "Crypto", "System", "skland_sign_in"]
+__all__ = ["Notify", "System"]
