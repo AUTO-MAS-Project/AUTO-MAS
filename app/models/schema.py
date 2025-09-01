@@ -67,10 +67,6 @@ class GetStageIn(BaseModel):
     )
 
 
-class GetMaterialsIn(BaseModel):
-    dropId: str = Field(..., description="材料ID")
-
-
 class GlobalConfig_Function(BaseModel):
     HistoryRetentionTime: Optional[Literal[7, 15, 30, 60, 90, 180, 365, 0]] = Field(
         None, description="历史记录保留时间, 0表示永久保存"
