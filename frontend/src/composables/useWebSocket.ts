@@ -1,223 +1,216 @@
-import { ref, reactive } from 'vue'
+import { ref, reactive, onUnmounted } from 'vue'
 import { message, notification } from 'ant-design-vue'
-import { Service } from '@/api/services/Service'
 
 // WebSocket连接状态
 export type WebSocketStatus = '连接中' | '已连接' | '已断开' | '连接错误'
 
 // WebSocket消息类型
-export interface WebSocketMessage {
-  type: 'Update' | 'Message' | 'Info' | 'Signal'
-  data?: any
-  message?: string
-  messageId?: string
+export type WebSocketMessageType = 'Signal' | 'Progress' | 'Result' | 'Error' | 'Notify'
+
+// WebSocket基础消息接口
+export interface WebSocketBaseMessage {
+  type: WebSocketMessageType
+  data: any
+}
+
+// 进度消息接口
+export interface ProgressMessage {
+  taskId: string
+  status: 'running' | 'waiting' | 'finished' | 'failed'
+  progress: number
+  msg: string
+}
+
+// 结果消息接口
+export interface ResultMessage {
+  taskId: string
+  status: 'success' | 'failed'
+  result: any
+}
+
+// 错误消息接口
+export interface ErrorMessage {
+  msg: string
+  code: number
+}
+
+// 通知消息接口
+export interface NotifyMessage {
+  title: string
+  content: string
 }
 
 // WebSocket连接配置
 export interface WebSocketConfig {
   taskId: string
-  mode: '设置脚本' | '自动代理' | '人工排查'
-  onMessage?: (data: any) => void
+  onProgress?: (data: ProgressMessage) => void
+  onResult?: (data: ResultMessage) => void
+  onError?: (error: ErrorMessage) => void
+  onNotify?: (notify: NotifyMessage) => void
   onStatusChange?: (status: WebSocketStatus) => void
-  onError?: (error: string) => void
   showNotifications?: boolean
 }
 
 export function useWebSocket() {
   const connections = ref<Map<string, WebSocket>>(new Map())
   const statuses = ref<Map<string, WebSocketStatus>>(new Map())
+  const BASE_WS_URL = 'ws://localhost:36163/api/core/ws'
 
-  // 获取WebSocket地址并建立连接
+  // 心跳检测
+  const heartbeat = (ws: WebSocket) => {
+    const pingMessage = {
+      type: 'Ping',
+      data: {}
+    }
+    ws.send(JSON.stringify(pingMessage))
+  }
+
+  // 建立WebSocket连接
   const connect = async (config: WebSocketConfig): Promise<string | null> => {
     try {
-      // 调用API获取WebSocket连接ID
-      const response = await Service.addTaskApiDispatchStartPost({
-        taskId: config.taskId,
-        mode: config.mode as any,
-      })
-
-      if (response.code !== 200) {
-        const errorMsg = response.message || '获取WebSocket地址失败'
-        if (config.onError) {
-          config.onError(errorMsg)
-        } else {
-          message.error(errorMsg)
-        }
-        return null
-      }
-
-      const websocketId = response.websocketId
-      const wsUrl = `ws://localhost:36163/api/dispatch/ws/${websocketId}`
-
-      // 建立WebSocket连接
-      const ws = new WebSocket(wsUrl)
-      connections.value.set(websocketId, ws)
-      statuses.value.set(websocketId, '连接中')
-
-      // 通知状态变化
-      if (config.onStatusChange) {
-        config.onStatusChange('连接中')
-      }
+      const ws = new WebSocket(BASE_WS_URL)
+      const taskId = config.taskId
 
       ws.onopen = () => {
-        statuses.value.set(websocketId, '已连接')
-        if (config.onStatusChange) {
-          config.onStatusChange('已连接')
-        }
-        if (config.showNotifications !== false) {
-          message.success('已连接到服务器')
-        }
+        statuses.value.set(taskId, '已连接')
+        config.onStatusChange?.('已连接')
+
+        // 启动心跳
+        const heartbeatInterval = setInterval(() => {
+          if (ws.readyState === WebSocket.OPEN) {
+            heartbeat(ws)
+          }
+        }, 30000)
+
+        // 清理定时器
+        ws.addEventListener('close', () => {
+          clearInterval(heartbeatInterval)
+        })
       }
 
       ws.onmessage = (event) => {
         try {
-          const data = JSON.parse(event.data)
-          handleMessage(data, config)
-        } catch (error) {
-          console.error('解析WebSocket消息失败:', error)
-          const errorMsg = `收到无效消息: ${event.data}`
-          if (config.onError) {
-            config.onError(errorMsg)
-          }
-        }
-      }
+          const message = JSON.parse(event.data) as WebSocketBaseMessage
 
-      ws.onclose = () => {
-        statuses.value.set(websocketId, '已断开')
-        connections.value.delete(websocketId)
-        if (config.onStatusChange) {
-          config.onStatusChange('已断开')
-        }
-        if (config.showNotifications !== false) {
-          message.warning('与服务器连接已断开')
+          switch (message.type) {
+            case 'Signal':
+              // 心跳信��，无需特殊处理
+              break
+            case 'Progress':
+              config.onProgress?.(message.data as ProgressMessage)
+              break
+            case 'Result':
+              config.onResult?.(message.data as ResultMessage)
+              break
+            case 'Error':
+              const errorData = message.data as ErrorMessage
+              config.onError?.(errorData)
+              if (config.showNotifications) {
+                message.error(errorData.msg)
+              }
+              break
+            case 'Notify':
+              const notifyData = message.data as NotifyMessage
+              config.onNotify?.(notifyData)
+              if (config.showNotifications) {
+                notification.info({
+                  message: notifyData.title,
+                  description: notifyData.content
+                })
+              }
+              break
+          }
+        } catch (e) {
+          console.error('WebSocket消息解析错误:', e)
         }
       }
 
       ws.onerror = (error) => {
-        statuses.value.set(websocketId, '连接错误')
-        const errorMsg = '连接发生错误'
-        if (config.onError) {
-          config.onError(errorMsg)
-        } else if (config.showNotifications !== false) {
-          message.error(errorMsg)
-        }
-        console.error('WebSocket错误:', error)
+        statuses.value.set(taskId, '连接错误')
+        config.onStatusChange?.('连接错误')
+        config.onError?.({ msg: 'WebSocket连接错误', code: 500 })
       }
 
-      return websocketId
+      ws.onclose = () => {
+        statuses.value.set(taskId, '已断开')
+        config.onStatusChange?.('已断开')
+        connections.value.delete(taskId)
+      }
+
+      connections.value.set(taskId, ws)
+      statuses.value.set(taskId, '连接中')
+      config.onStatusChange?.('连接中')
+
+      return taskId
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : '连接失败'
       if (config.onError) {
-        config.onError(errorMsg)
-      } else {
-        message.error(errorMsg)
+        config.onError({ msg: errorMsg, code: 500 })
       }
       return null
     }
   }
 
-  // 处理WebSocket消息
-  const handleMessage = (data: WebSocketMessage, config: WebSocketConfig) => {
-    // 调用自定义消息处理器
-    if (config.onMessage) {
-      config.onMessage(data)
-    }
-
-    // 默认消息处理
-    switch (data.type) {
-      case 'Info':
-        // 通知信息
-        let level = 'info'
-        let content = '未知通知'
-
-        // 检查数据中是否有 Error 字段
-        if (data.data?.Error) {
-          level = 'error'
-          content = data.data.Error
-        } else {
-          content = data.data?.val || data.data?.message || data.message || '未知通知'
+  // 发送任务开始指令
+  const startTask = (taskId: string, params: any) => {
+    const ws = connections.value.get(taskId)
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      const message = {
+        type: 'StartTask',
+        data: {
+          taskId,
+          params
         }
-
-        // 显示系统通知（仅在启用通知时）
-        if (config.showNotifications !== false) {
-          if (level === 'error') {
-            notification.error({ message: '任务错误', description: content })
-          } else if (level === 'warning') {
-            notification.warning({ message: '任务警告', description: content })
-          } else if (level === 'success') {
-            notification.success({ message: '任务成功', description: content })
-          } else {
-            notification.info({ message: '任务信息', description: content })
-          }
-        }
-        break
-
-      case 'Signal':
-        // 状态信号
-        if (data.data?.Accomplish !== undefined) {
-          const isSuccess = data.data.Accomplish
-          const statusMsg = isSuccess ? '任务已完成' : '任务已失败'
-          
-          if (config.showNotifications !== false) {
-            if (isSuccess) {
-              notification.success({ message: '任务完成', description: statusMsg })
-            } else {
-              notification.error({ message: '任务失败', description: statusMsg })
-            }
-          }
-        }
-        break
+      }
+      ws.send(JSON.stringify(message))
     }
   }
 
-  // 断开连接
-  const disconnect = (websocketId: string) => {
-    const ws = connections.value.get(websocketId)
+  // 更新配置
+  const updateConfig = (configKey: string, value: any) => {
+    // 发送给所���活跃连接
+    connections.value.forEach((ws) => {
+      if (ws.readyState === WebSocket.OPEN) {
+        const message = {
+          type: 'UpdateConfig',
+          data: {
+            configKey,
+            value
+          }
+        }
+        ws.send(JSON.stringify(message))
+      }
+    })
+  }
+
+  // 关闭连接
+  const disconnect = (taskId: string) => {
+    const ws = connections.value.get(taskId)
     if (ws) {
       ws.close()
-      connections.value.delete(websocketId)
-      statuses.value.delete(websocketId)
+      connections.value.delete(taskId)
+      statuses.value.delete(taskId)
     }
   }
 
-  // 断开所有连接
+  // 关闭所有连接
   const disconnectAll = () => {
-    connections.value.forEach((ws) => {
-      ws.close()
+    connections.value.forEach((ws, taskId) => {
+      disconnect(taskId)
     })
-    connections.value.clear()
-    statuses.value.clear()
   }
 
-  // 发送消息
-  const sendMessage = (websocketId: string, message: any) => {
-    const ws = connections.value.get(websocketId)
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify(message))
-      return true
-    }
-    return false
-  }
-
-  // 获取连接状态
-  const getStatus = (websocketId: string): WebSocketStatus | undefined => {
-    return statuses.value.get(websocketId)
-  }
-
-  // 检查连接是否存在
-  const isConnected = (websocketId: string): boolean => {
-    const ws = connections.value.get(websocketId)
-    return ws?.readyState === WebSocket.OPEN
-  }
+  // 组件卸载时清理所有连接
+  onUnmounted(() => {
+    disconnectAll()
+  })
 
   return {
-    connections: connections.value,
-    statuses: statuses.value,
     connect,
     disconnect,
     disconnectAll,
-    sendMessage,
-    getStatus,
-    isConnected,
+    startTask,
+    updateConfig,
+    statuses
   }
 }
