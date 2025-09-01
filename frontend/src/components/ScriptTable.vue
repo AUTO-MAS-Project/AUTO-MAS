@@ -382,7 +382,7 @@ function get_annihilation_name(annihilation_name) {
   return '未开启'
 }
 
-const truncateText = (text: string, maxLength: number = 20): string => {
+const truncateText = (text: string, maxLength: number = 10): string => {
   if (!text) return ''
   return text.length > maxLength ? text.substring(0, maxLength) + '...' : text
 }
