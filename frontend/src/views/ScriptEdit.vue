@@ -1118,7 +1118,7 @@ const selectLogPath = async () => {
       return
     }
 
-    const path = await window.electronAPI.selectFolder()
+    const path = await window.electronAPI.selectFile()
     if (path) {
       generalConfig.Script.LogPath = path
       message.success('日志路径选择成功')
@@ -1135,15 +1135,6 @@ const getCardTitle = () => {
 </script>
 
 <style scoped>
-/* 脚本编辑容器 */
-.script-edit-container {
-  padding: 32px;
-  min-height: 100vh;
-  background: var(--ant-color-bg-layout);
-  display: flex;
-  flex-direction: column;
-}
-
 /* 头部区域 */
 .script-edit-header {
   display: flex;
@@ -1298,10 +1289,6 @@ const getCardTitle = () => {
   box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.1);
 }
 
-.modern-select {
-  border-radius: 8px;
-}
-
 .modern-select :deep(.ant-select-selector) {
   border: 2px solid var(--ant-color-border) !important;
   border-radius: 8px !important;
@@ -1336,14 +1323,6 @@ const getCardTitle = () => {
 .modern-number-input :deep(.ant-input-number-focused) {
   border-color: var(--ant-color-primary);
   box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.1);
-}
-
-.modern-switch {
-  background: var(--ant-color-bg-layout);
-}
-
-.modern-switch.ant-switch-checked {
-  background: var(--ant-color-primary);
 }
 
 /* 路径输入组 */
@@ -1414,14 +1393,6 @@ const getCardTitle = () => {
       0 1px 3px rgba(0, 0, 0, 0.4);
   }
 
-  .save-button {
-    box-shadow: 0 4px 12px rgba(24, 144, 255, 0.4);
-  }
-
-  .save-button:hover {
-    box-shadow: 0 6px 16px rgba(24, 144, 255, 0.5);
-  }
-
   .path-input-group:focus-within {
     box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2);
   }
@@ -1442,10 +1413,6 @@ const getCardTitle = () => {
 
 /* 响应式设计 */
 @media (max-width: 1200px) {
-  .script-edit-container {
-    padding: 24px;
-  }
-
   .config-card :deep(.ant-card-body) {
     padding: 24px;
   }
@@ -1456,10 +1423,6 @@ const getCardTitle = () => {
 }
 
 @media (max-width: 768px) {
-  .script-edit-container {
-    padding: 16px;
-  }
-
   .script-edit-header {
     flex-direction: column;
     gap: 16px;
