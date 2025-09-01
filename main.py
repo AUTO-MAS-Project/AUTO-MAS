@@ -1,5 +1,6 @@
 #   AUTO_MAA:A MAA Multi Account Management and Automation Tool
 #   Copyright © 2024-2025 DLmaster361
+#   Copyright © 2025 MoeSnowyFox
 
 #   This file is part of AUTO_MAA.
 
@@ -18,39 +19,38 @@
 
 #   Contact: DLmaster_361@163.com
 
-"""
-AUTO_MAA
-AUTO_MAA主程序
-v4.4
-作者：DLmaster_361
-"""
-
-# 屏蔽广告
-import builtins
-
-original_print = builtins.print
-
-
-def no_print(*args, **kwargs):
-    if (
-        args
-        and isinstance(args[0], str)
-        and "QFluentWidgets Pro is now released." in args[0]
-    ):
-        return
-    return original_print(*args, **kwargs)
-
-
-builtins.print = no_print
-
 
 import os
 import sys
 import ctypes
-from PySide6.QtWidgets import QApplication
-from qfluentwidgets import FluentTranslator
+import logging
+from pathlib import Path
 
-from app.core.logger import logger
+current_dir = Path(__file__).resolve().parent
+if str(current_dir) not in sys.path:
+    sys.path.insert(0, str(current_dir))
+
+from app.utils import get_logger
+
+logger = get_logger("主程序")
+
+
+class InterceptHandler(logging.Handler):
+    def emit(self, record):
+        # 获取对应 loguru 的 level
+        try:
+            level = logger.level(record.levelname).name
+        except ValueError:
+            level = record.levelno
+        # 转发日志
+        logger.opt(depth=6, exception=record.exc_info).log(level, record.getMessage())
+
+
+# 拦截标准 logging
+logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)
+for name in ("uvicorn", "uvicorn.error", "uvicorn.access", "fastapi"):
+    logging.getLogger(name).handlers = [InterceptHandler()]
+    logging.getLogger(name).propagate = False
 
 
 def is_admin() -> bool:
@@ -61,28 +61,105 @@ def is_admin() -> bool:
         return False
 
 
-@logger.catch
+# @logger.catch
 def main():
 
-    application = QApplication(sys.argv)
-
-    translator = FluentTranslator()
-    application.installTranslator(translator)
-
-    from app.ui.main_window import AUTO_MAA
-
-    window = AUTO_MAA()
-    window.show_ui("显示主窗口", if_start=True)
-    window.start_up_task()
-    sys.exit(application.exec())
-
-
-if __name__ == "__main__":
-
     if is_admin():
-        main()
+
+        import asyncio
+        import uvicorn
+        from fastapi import FastAPI
+        from fastapi.staticfiles import StaticFiles
+        from contextlib import asynccontextmanager
+
+        @asynccontextmanager
+        async def lifespan(app: FastAPI):
+
+            from app.core import Config, MainTimer, TaskManager
+            from app.services import System
+
+            await Config.init_config()
+            await Config.get_stage(if_start=True)
+            await Config.clean_old_history()
+            main_timer = asyncio.create_task(MainTimer.second_task())
+            await System.set_Sleep()
+            await System.set_SelfStart()
+
+            yield
+
+            await TaskManager.stop_task("ALL")
+            main_timer.cancel()
+            try:
+                await main_timer
+            except asyncio.CancelledError:
+                logger.info("主业务定时器已关闭")
+
+            logger.info("AUTO_MAA 后端程序关闭")
+
+        from fastapi.middleware.cors import CORSMiddleware
+        from app.api import (
+            core_router,
+            info_router,
+            scripts_router,
+            plan_router,
+            queue_router,
+            dispatch_router,
+            history_router,
+            setting_router,
+        )
+
+        app = FastAPI(
+            title="AUTO_MAA",
+            description="API for managing automation scripts, plans, and tasks",
+            version="1.0.0",
+            lifespan=lifespan,
+        )
+
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["*"],  # 允许所有域名跨域访问
+            allow_credentials=True,
+            allow_methods=["*"],  # 允许所有请求方法, 如 GET、POST、PUT、DELETE
+            allow_headers=["*"],  # 允许所有请求头
+        )
+
+        app.include_router(core_router)
+        app.include_router(info_router)
+        app.include_router(scripts_router)
+        app.include_router(plan_router)
+        app.include_router(queue_router)
+        app.include_router(dispatch_router)
+        app.include_router(history_router)
+        app.include_router(setting_router)
+
+        app.mount(
+            "/api/res/materials",
+            StaticFiles(directory=str(Path.cwd() / "res/images/materials")),
+            name="materials",
+        )
+
+        async def run_server():
+
+            config = uvicorn.Config(
+                app, host="0.0.0.0", port=36163, log_level="info", log_config=None
+            )
+            server = uvicorn.Server(config)
+
+            from app.core import Config
+
+            Config.server = server
+            await server.serve()
+
+        asyncio.run(run_server())
+
     else:
+
         ctypes.windll.shell32.ShellExecuteW(
             None, "runas", sys.executable, os.path.realpath(sys.argv[0]), None, 1
         )
         sys.exit(0)
+
+
+if __name__ == "__main__":
+
+    main()

@@ -8,7 +8,7 @@ export type UserReorderIn = {
      */
     scriptId: string;
     /**
-     * 用户ID列表，按新顺序排列
+     * 用户ID列表, 按新顺序排列
      */
     indexList: Array<string>;
 };

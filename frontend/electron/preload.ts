@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openDevTools: () => ipcRenderer.invoke('open-dev-tools'),
   selectFolder: () => ipcRenderer.invoke('select-folder'),
   selectFile: (filters?: any[]) => ipcRenderer.invoke('select-file', filters),
+  openUrl: (url: string) => ipcRenderer.invoke('open-url', url),
 
   // 初始化相关API
   checkEnvironment: () => ipcRenderer.invoke('check-environment'),
