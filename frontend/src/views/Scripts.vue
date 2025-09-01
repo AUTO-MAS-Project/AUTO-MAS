@@ -1,31 +1,25 @@
 <template>
-  <!-- 加载状态 -->
-  <div v-if="loading" class="loading-container">
-    <a-spin size="large" tip="加载中，请稍候..." />
-  </div>
-
-  <!-- 主要内容 -->
-    <div class="scripts-header">
-      <div class="header-title">
-        <h1>脚本管理</h1>
-      </div>
-      <a-space size="middle">
-        <a-button type="primary" size="large" @click="handleAddScript" class="link">
-          <template #icon>
-            <PlusOutlined />
-          </template>
-          新建脚本
-        </a-button>
-        <a-button size="large" @click="handleRefresh" class="default">
-          <template #icon>
-            <ReloadOutlined />
-          </template>
-          刷新
-        </a-button>
-      </a-space>
+  <div class="scripts-header">
+    <div class="header-title">
+      <h1>脚本管理</h1>
     </div>
-    <!-- 如果没有脚本，显示占位符 -->
-    <div v-if="scripts.length === 0" class="placeholder-container">
+    <a-space size="middle">
+      <a-button type="primary" size="large" @click="handleAddScript" class="link">
+        <template #icon>
+          <PlusOutlined />
+        </template>
+        新建脚本
+      </a-button>
+      <a-button size="large" @click="handleRefresh" class="default">
+        <template #icon>
+          <ReloadOutlined />
+        </template>
+        刷新
+      </a-button>
+    </a-space>
+  </div>
+  <!-- 如果没有脚本，显示占位符 -->
+  <div v-if="scripts.length === 0" class="placeholder-container">
     <div class="placeholder-content">
       <h2>当前没有脚本</h2>
       <p>您还没有创建任何脚本，点击下方的“新建脚本”按钮来创建您的第一个脚本。</p>
@@ -601,22 +595,6 @@ const handleToggleUserStatus = async (user: User) => {
 </script>
 
 <style scoped>
-.loading-container {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  min-height: 400px;
-}
-
-.scripts-main {
-  padding: 32px;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  background: var(--ant-color-bg-layout);
-  min-height: 100vh;
-}
-
 .scripts-container {
   padding: 32px;
   height: 100%;
@@ -1033,7 +1011,7 @@ const handleToggleUserStatus = async (user: User) => {
 
 /* 响应式设计 */
 @media (max-width: 768px) {
-  .scripts-main {
+  .scripts-container {
     padding: 16px;
   }
 
