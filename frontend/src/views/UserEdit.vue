@@ -17,11 +17,11 @@
     </div>
 
     <a-space size="middle">
-      <a-button 
-        v-if="scriptType === 'MAA'" 
-        type="primary" 
-        ghost 
-        size="large" 
+      <a-button
+        v-if="scriptType === 'MAA'"
+        type="primary"
+        ghost
+        size="large"
         @click="handleMAAConfig"
         :loading="maaConfigLoading"
       >
@@ -30,11 +30,11 @@
         </template>
         MAA配置
       </a-button>
-      <a-button 
-        v-if="scriptType === 'General'" 
-        type="primary" 
-        ghost 
-        size="large" 
+      <a-button
+        v-if="scriptType === 'General'"
+        type="primary"
+        ghost
+        size="large"
         @click="handleGeneralConfig"
         :loading="generalConfigLoading"
       >
@@ -262,13 +262,13 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <div style="display: flex; gap: 12px; align-items: center;">
+                <div style="display: flex; gap: 12px; align-items: center">
                   <a-input
                     v-model:value="infrastructureConfigPath"
                     placeholder="请选择基建配置JSON文件"
                     readonly
                     size="large"
-                    style="flex: 1;"
+                    style="flex: 1"
                   />
                   <a-button
                     type="primary"
@@ -289,7 +289,7 @@
                     导入配置
                   </a-button>
                 </div>
-                <div style="color: #999; font-size: 12px; margin-top: 4px;">
+                <div style="color: #999; font-size: 12px; margin-top: 4px">
                   请选择有效的基建配置JSON文件，点击"导入配置"按钮将其应用到当前用户。如果已经导入，可以忽略此选择框。
                 </div>
               </a-form-item>
@@ -440,10 +440,7 @@
                 </template>
                 <a-select
                   v-model:value="formData.Info.Stage"
-                  :options="[
-                    { label: '不选择', value: '' },
-                    { label: '后期接口获取,先占位符', value: 'Other' },
-                  ]"
+                  :options="stageOptions"
                   :disabled="loading"
                   size="large"
                 />
@@ -463,10 +460,7 @@
                 </template>
                 <a-select
                   v-model:value="formData.Info.Stage_1"
-                  :options="[
-                    { label: '不选择', value: '' },
-                    { label: '后期接口获取,先占位符', value: 'Other' },
-                  ]"
+                  :options="stageOptions"
                   :disabled="loading"
                   size="large"
                 />
@@ -484,10 +478,7 @@
                 </template>
                 <a-select
                   v-model:value="formData.Info.Stage_2"
-                  :options="[
-                    { label: '不选择', value: '' },
-                    { label: '后期接口获取,先占位符', value: 'Other' },
-                  ]"
+                  :options="stageOptions"
                   :disabled="loading"
                   size="large"
                 />
@@ -505,10 +496,7 @@
                 </template>
                 <a-select
                   v-model:value="formData.Info.Stage_3"
-                  :options="[
-                    { label: '不选择', value: '' },
-                    { label: '后期接口获取,先占位符', value: 'Other' },
-                  ]"
+                  :options="stageOptions"
                   :disabled="loading"
                   size="large"
                 />
@@ -526,10 +514,7 @@
                 </template>
                 <a-select
                   v-model:value="formData.Info.Stage_Remain"
-                  :options="[
-                    { label: '不选择', value: '' },
-                    { label: '后期接口获取,先占位符', value: 'Other' },
-                  ]"
+                  :options="stageOptions"
                   :disabled="loading"
                   size="large"
                 />
@@ -996,7 +981,12 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
-import { ArrowLeftOutlined, QuestionCircleOutlined, SaveOutlined, SettingOutlined } from '@ant-design/icons-vue'
+import {
+  ArrowLeftOutlined,
+  QuestionCircleOutlined,
+  SaveOutlined,
+  SettingOutlined,
+} from '@ant-design/icons-vue'
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
 import { useUserApi } from '@/composables/useUserApi'
 import { useScriptApi } from '@/composables/useScriptApi'
@@ -1221,13 +1211,13 @@ const loadScriptInfo = async () => {
 const loadUserData = async () => {
   try {
     const userResponse = await getUsers(scriptId, userId)
-    
+
     if (userResponse && userResponse.code === 200) {
       // 查找指定的用户数据
       const userIndex = userResponse.index.find(index => index.uid === userId)
       if (userIndex && userResponse.data[userId]) {
         const userData = userResponse.data[userId] as any
-        
+
         // 根据脚本类型填充用户数据
         if (scriptType.value === 'MAA' && userIndex.type === 'MaaUserConfig') {
           Object.assign(formData, {
@@ -1251,7 +1241,7 @@ const loadUserData = async () => {
         // 同步扁平化字段
         formData.userName = formData.Info.Name || ''
         formData.userId = formData.Info.Id || ''
-        
+
         console.log('用户数据加载成功:', formData)
       } else {
         message.error('用户不存在')
@@ -1321,18 +1311,18 @@ const handleMAAConfig = async () => {
       taskId: userId, // 使用用户ID进行配置
       mode: '设置脚本',
       showNotifications: true,
-      onStatusChange: (status) => {
+      onStatusChange: status => {
         console.log(`用户 ${formData.userName} MAA配置状态: ${status}`)
       },
-      onMessage: (data) => {
+      onMessage: data => {
         console.log(`用户 ${formData.userName} MAA配置消息:`, data)
         // 这里可以根据需要处理特定的消息
       },
-      onError: (error) => {
+      onError: error => {
         console.error(`用户 ${formData.userName} MAA配置错误:`, error)
         message.error(`MAA配置连接失败: ${error}`)
         maaWebsocketId.value = null
-      }
+      },
     })
 
     if (websocketId) {
@@ -1367,18 +1357,18 @@ const handleGeneralConfig = async () => {
       taskId: userId, // 使用用户ID进行配置
       mode: '设置脚本',
       showNotifications: true,
-      onStatusChange: (status) => {
+      onStatusChange: status => {
         console.log(`用户 ${formData.userName} 通用配置状态: ${status}`)
       },
-      onMessage: (data) => {
+      onMessage: data => {
         console.log(`用户 ${formData.userName} 通用配置消息:`, data)
         // 这里可以根据需要处理特定的消息
       },
-      onError: (error) => {
+      onError: error => {
         console.error(`用户 ${formData.userName} 通用配置错误:`, error)
         message.error(`通用配置连接失败: ${error}`)
         generalWebsocketId.value = null
-      }
+      },
     })
 
     if (websocketId) {
@@ -1393,9 +1383,7 @@ const handleGeneralConfig = async () => {
   }
 }
 
-const stageModeOptions = ref([
-  { label: '固定', value: 'Fixed' }
-])
+const stageModeOptions = ref([{ label: '固定', value: 'Fixed' }])
 
 const loadStageModeOptions = async () => {
   try {
@@ -1409,12 +1397,33 @@ const loadStageModeOptions = async () => {
   }
 }
 
+const stageOptions = ref([{ label: '不选择', value: '' }])
+
+const loadStageOptions = async () => {
+  try {
+    const response = await Service.getStageComboxApiInfoComboxStagePost({
+      type: 'Today',
+    })
+    if (response && response.code === 200 && response.data) {
+      const sorted = [...response.data].sort((a, b) => {
+        if (a.value === '-') return -1
+        if (b.value === '-') return 1
+        return 0
+      })
+      stageOptions.value = sorted
+    }
+  } catch (error) {
+    console.error('加载关卡选项失败:', error)
+    // 保持默认选项
+  }
+}
+
 // 选择基建配置文件
 const selectInfrastructureConfig = async () => {
   try {
     const path = await window.electronAPI?.selectFile([
       { name: 'JSON 文件', extensions: ['json'] },
-      { name: '所有文件', extensions: ['*'] }
+      { name: '所有文件', extensions: ['*'] },
     ])
 
     if (path && path.length > 0) {
@@ -1446,7 +1455,7 @@ const importInfrastructureConfig = async () => {
     const result = await Service.importInfrastructureApiScriptsUserInfrastructurePost({
       scriptId: scriptId,
       userId: userId,
-      jsonFile: infrastructureConfigPath.value[0]
+      jsonFile: infrastructureConfigPath.value[0],
     })
 
     if (result && result.code === 200) {
@@ -1486,6 +1495,7 @@ onMounted(() => {
 
   loadScriptInfo()
   loadStageModeOptions()
+  loadStageOptions()
 })
 </script>
 
