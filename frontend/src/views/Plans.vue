@@ -1,143 +1,214 @@
 <template>
-  <div v-if="loading" class="loading-box">
-    <a-spin tip="加载中，请稍候..." size="large" />
-  </div>
-  <!-- 有计划时显示 -->
-  <div v-else class="plans-content">
-    <!-- 计划头部 -->
-    <div class="plans-header">
-      <div class="header-title">
-        <h1>计划管理</h1>
-      </div>
-      <a-space size="middle">
-        <a-button type="primary" size="large" @click="handleAddPlan">
-          <template #icon>
-            <PlusOutlined />
-          </template>
-          新建计划
-        </a-button>
-        <a-button size="large" @click="handleRefresh">
-          <template #icon>
-            <ReloadOutlined />
-          </template>
-          刷新
-        </a-button>
-      </a-space>
+    <!-- 加载状态 -->
+    <div v-if="loading" class="loading-container">
+      <a-spin size="large" tip="加载中，请稍候..." />
     </div>
 
-    <!-- 计划内容区域 -->
-    <div v-if="!planList.length || !currentPlanData" class="empty-state">
-      <div class="empty-content empty-content-fancy" @click="handleAddPlan" style="cursor: pointer">
-        <div class="empty-icon">
-          <PlusOutlined />
+    <!-- 主要内容 -->
+    <div v-else class="plans-main">
+      <!-- 页面头部 -->
+      <div class="plans-header">
+        <div class="header-left">
+          <h1 class="page-title">计划管理</h1>
         </div>
-        <h2>你还没有创建过计划</h2>
-        <h1>点击此处来新建计划</h1>
-      </div>
-    </div>
+        <div class="header-actions">
+          <a-space size="middle">
+            <a-button
+              type="primary"
+              size="large"
+              @click="handleAddPlan"
+              v-if="planList.length > 0 || currentPlanData"
+            >
+              <template #icon>
+                <PlusOutlined />
+              </template>
+              新建计划
+            </a-button>
 
-    <div class="plan-content" v-else v-if="currentPlanData">
-      <!-- 计划选择器 -->
-      <div class="plan-selector">
-        <a-tabs
-          v-model:activeKey="activePlanId"
-          type="editable-card"
-          @edit="onTabEdit"
-          @change="onPlanChange"
-          class="plan-tabs"
-        >
-          <a-tab-pane
-            v-for="plan in planList"
-            :key="plan.id"
-            :tab="plan.name"
-            :closable="planList.length > 0"
-          />
-        </a-tabs>
-      </div>
-      <!-- MAA计划配置 -->
-      <div class="maa-config-section">
-        <div class="section-header">
-          <div class="section-title">
-            <div class="plan-name-editor">
-              <a-input
-                v-model:value="currentPlanName"
-                placeholder="请输入计划名称"
+            <a-popconfirm
+              v-if="planList.length > 0"
+              title="确定要删除这个计划吗？"
+              ok-text="确定"
+              cancel-text="取消"
+              @confirm="handleRemovePlan(activePlanId)"
+            >
+              <a-button
+                danger
                 size="large"
-                class="plan-name-input"
-                @blur="onPlanNameBlur"
-                @pressEnter="onPlanNameBlur"
-              />
+                :disabled="!activePlanId"
+              >
+                <template #icon>
+                  <DeleteOutlined />
+                </template>
+                删除当前计划
+              </a-button>
+            </a-popconfirm>
+
+            <a-button size="large" @click="handleRefresh">
+              <template #icon>
+                <ReloadOutlined />
+              </template>
+              刷新
+            </a-button>
+          </a-space>
+        </div>
+      </div>
+
+      <!-- 空状态 -->
+      <div v-if="!planList.length || !currentPlanData" class="empty-state">
+        <a-empty
+          image="https://gw.alipayobjects.com/zos/antfincdn/ZHrcdLPrvN/empty.svg"
+          :image-style="{ height: '120px' }"
+          description="当前没有计划"
+        >
+          <template #description>
+            <span class="empty-description">
+              您还没有创建任何计划，点击下方按钮来创建您的第一个计划
+            </span>
+          </template>
+          <a-button type="primary" size="large" @click="handleAddPlan">
+            <template #icon>
+              <PlusOutlined />
+            </template>
+            新建计划
+          </a-button>
+        </a-empty>
+      </div>
+
+      <!-- 计划内容 -->
+      <div v-else class="plans-content">
+        <!-- 计划选择卡片 -->
+        <a-card class="plan-selector-card" :bordered="false">
+          <template #title>
+            <div class="card-title">
+              <span>计划选择</span>
+              <a-tag :color="planList.length > 0 ? 'success' : 'default'">
+                {{ planList.length }} 个计划
+              </a-tag>
+            </div>
+          </template>
+
+          <div class="plan-selection-container">
+            <!-- 计划按钮组 -->
+            <div class="plan-buttons-container">
+              <a-space wrap size="middle">
+                <a-button
+                  v-for="plan in planList"
+                  :key="plan.id"
+                  :type="activePlanId === plan.id ? 'primary' : 'default'"
+                  size="large"
+                  @click="onPlanChange(plan.id)"
+                  class="plan-button"
+                >
+                  {{ plan.name }}
+                </a-button>
+              </a-space>
             </div>
           </div>
-          <div class="section-controls">
-            <a-space>
-              <span class="mode-label">模式：</span>
-              <a-radio-group v-model:value="currentMode" @change="onModeChange" size="default">
-                <a-radio-button value="ALL">全局</a-radio-button>
-                <a-radio-button value="Weekly">周计划</a-radio-button>
-              </a-radio-group>
-            </a-space>
-          </div>
-        </div>
+        </a-card>
 
-        <!-- 使用 Ant Design 表格组件 -->
-        <a-table
-          :columns="dynamicTableColumns"
-          :data-source="tableData"
-          :pagination="false"
-          :scroll="{ x: 1000 }"
-          class="plan-table"
-          size="middle"
-        >
-          <template #bodyCell="{ column, record }">
-            <template v-if="column.key === 'taskName'">
-              <div class="task-name">
-                {{ record.taskName }}
+        <!-- 计划配置卡片 -->
+        <a-card class="plan-config-card" :bordered="false">
+          <template #title>
+            <div class="plan-title-container">
+              <div v-if="!isEditingPlanName" class="plan-title-display">
+                <span class="plan-title-text">{{ currentPlanName || '计划配置' }}</span>
+                <a-button
+                  type="text"
+                  size="small"
+                  @click="startEditPlanName"
+                  class="plan-edit-btn"
+                >
+                  <template #icon>
+                    <EditOutlined />
+                  </template>
+                </a-button>
               </div>
-            </template>
-            <template v-else-if="record.taskName === '吃理智药'">
-              <a-input-number
-                v-model:value="record[column.key]"
-                size="small"
-                :min="0"
-                :max="999"
-                :placeholder="getPlaceholder(column.key, record.taskName)"
-                class="config-input"
-              />
-            </template>
-            <template v-else>
-              <a-select
-                v-model:value="record[column.key]"
-                size="small"
-                :options="getSelectOptions(column.key, record.taskName)"
-                :placeholder="getPlaceholder(column.key, record.taskName)"
-                class="config-select"
-                allow-clear
-              />
-            </template>
+              <div v-else class="plan-title-edit">
+                <a-input
+                  v-model:value="currentPlanName"
+                  placeholder="请输入计划名称"
+                  size="small"
+                  class="plan-title-input"
+                  @blur="finishEditPlanName"
+                  @pressEnter="finishEditPlanName"
+                  :maxlength="50"
+                  ref="planNameInputRef"
+                />
+              </div>
+            </div>
           </template>
-        </a-table>
+          <template #extra>
+            <a-space>
+              <span class="mode-label">执行模式：</span>
+              <a-segmented
+                v-model:value="currentMode"
+                @change="onModeChange"
+                :options="[
+                  { label: '全局模式', value: 'ALL' },
+                  { label: '周计划模式', value: 'Weekly' }
+                ]"
+              />
+            </a-space>
+          </template>
+
+          <!-- 配置表格 -->
+          <div class="config-table-container">
+            <a-table
+              :columns="dynamicTableColumns"
+              :data-source="tableData"
+              :pagination="false"
+              class="config-table"
+              size="middle"
+              :bordered="true"
+              :scroll="{ x: false }"
+            >
+              <template #bodyCell="{ column, record, index }">
+                <template v-if="column.key === 'taskName'">
+                  <div class="task-name-cell">
+                    <a-tag
+                      :color="getTaskTagColor(record.taskName)"
+                      class="task-tag"
+                    >
+                      {{ record.taskName }}
+                    </a-tag>
+                  </div>
+                </template>
+                <template v-else-if="record.taskName === '吃理智药'">
+                  <a-input-number
+                    v-model:value="record[column.key]"
+                    size="small"
+                    :min="0"
+                    :max="999"
+                    :placeholder="getPlaceholder(column.key, record.taskName)"
+                    class="config-input-number"
+                    :controls="false"
+                  />
+                </template>
+                <template v-else>
+                  <a-select
+                    v-model:value="record[column.key]"
+                    size="small"
+                    :options="getSelectOptions(column.key, record.taskName)"
+                    :placeholder="getPlaceholder(column.key, record.taskName)"
+                    class="config-select"
+                    allow-clear
+                    :show-search="true"
+                    :filter-option="filterOption"
+                  />
+                </template>
+              </template>
+            </a-table>
+          </div>
+        </a-card>
       </div>
     </div>
-  </div>
-
-  <!-- 悬浮保存按钮 -->
-  <a-float-button
-    type="primary"
-    @click="handleSave"
-    class="float-button"
-    :style="{ right: '24px' }"
-  >
-    <template #icon>
-      <SaveOutlined />
-    </template>
-  </a-float-button>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch, nextTick } from 'vue'
 import { message } from 'ant-design-vue'
-import { PlusOutlined, ReloadOutlined, SaveOutlined } from '@ant-design/icons-vue'
+import { PlusOutlined, ReloadOutlined, DeleteOutlined, EditOutlined } from '@ant-design/icons-vue'
 import { usePlanApi } from '../composables/usePlanApi'
 
 // API 相关
@@ -151,6 +222,10 @@ const currentPlanData = ref<Record<string, any> | null>(null)
 // 当前计划的名称和模式
 const currentPlanName = ref<string>('')
 const currentMode = ref<'ALL' | 'Weekly'>('ALL')
+// 计划名称编辑状态
+const isEditingPlanName = ref<boolean>(false)
+// 显示名称提示
+const showNameTip = ref<boolean>(false)
 
 const loading = ref(true)
 
@@ -356,7 +431,7 @@ const getSelectOptions = (columnKey: string, taskName: string) => {
   switch (taskName) {
     case '连战次数':
       return [
-        { label: '0', value: '0' },
+        { label: '不选择', value: '0' },
         { label: '1', value: '1' },
         { label: '2', value: '2' },
         { label: '3', value: '3' },
@@ -418,13 +493,32 @@ const onModeChange = () => {
 
 // 计划名称编辑失焦处理
 const onPlanNameBlur = () => {
-  // 当用户编辑完计划名称后，更新标签页显示的名称
+  // 当用户编辑完计划名称后，更新按钮显示的名称
   if (activePlanId.value) {
     const currentPlan = planList.value.find(plan => plan.id === activePlanId.value)
     if (currentPlan) {
       currentPlan.name = currentPlanName.value || `计划 ${planList.value.indexOf(currentPlan) + 1}`
     }
   }
+}
+
+// 开始编辑计划名称
+const startEditPlanName = () => {
+  isEditingPlanName.value = true
+  // 使用 nextTick 确保 DOM 更新后再获取焦点
+  setTimeout(() => {
+    const input = document.querySelector('.plan-title-input input') as HTMLInputElement
+    if (input) {
+      input.focus()
+      input.select()
+    }
+  }, 100)
+}
+
+// 完成编辑计划名称
+const finishEditPlanName = () => {
+  isEditingPlanName.value = false
+  onPlanNameBlur()
 }
 
 // 手动保存处理
@@ -435,18 +529,9 @@ const handleSave = async () => {
   }
   try {
     await savePlanData()
-    message.success('保存成功')
+    // message.success('保存成功')
   } catch (error) {
     message.error('保存失败')
-  }
-}
-
-// 标签页编辑处理
-const onTabEdit = async (targetKey: string | MouseEvent, action: 'add' | 'remove') => {
-  if (action === 'add') {
-    await handleAddPlan()
-  } else if (action === 'remove' && typeof targetKey === 'string') {
-    await handleRemovePlan(targetKey)
   }
 }
 
@@ -454,7 +539,7 @@ const onTabEdit = async (targetKey: string | MouseEvent, action: 'add' | 'remove
 const handleAddPlan = async () => {
   try {
     const response = await createPlan('MaaPlan')
-    const defaultName = `计划 ${planList.value.length + 1}`
+    const defaultName = '新MAA计划表'
     const newPlan = {
       id: response.planId,
       name: defaultName,
@@ -466,6 +551,9 @@ const handleAddPlan = async () => {
     currentPlanName.value = defaultName
 
     await loadPlanData(newPlan.id)
+
+    // 显示名称修改提示
+    message.info('已创建新的MAA计划表，建议您修改为更有意义的名称', 3)
   } catch (error) {
     console.error('添加计划失败:', error)
   }
@@ -482,6 +570,8 @@ const handleRemovePlan = async (planId: string) => {
         activePlanId.value = planList.value[0]?.id || ''
         if (activePlanId.value) {
           await loadPlanData(activePlanId.value)
+        } else {
+          currentPlanData.value = null
         }
       }
     }
@@ -492,6 +582,8 @@ const handleRemovePlan = async (planId: string) => {
 
 // 计划切换
 const onPlanChange = async (planId: string) => {
+  // 立即更新activePlanId以确保按钮高亮切换
+  activePlanId.value = planId
   await loadPlanData(planId)
 }
 
@@ -628,76 +720,78 @@ const handleRefresh = async () => {
   // message.success('刷新成功')
 }
 
+// 自动保存功能
+watch(
+  () => [currentPlanName.value, currentMode.value, tableData.value],
+  async () => {
+    // 使用nextTick确保DOM更新后再保存
+    await nextTick()
+    handleSave()
+  },
+  { deep: true }
+)
+
 // 移除自动保存功能，改为手动保存
 // 用户需要点击悬浮按钮才能保存数据
 
 onMounted(() => {
   initPlans()
 })
+
+// 新增方法：获取任务标签颜色
+const getTaskTagColor = (taskName: string) => {
+  const colorMap: Record<string, string> = {
+    '吃理智药': 'blue',
+    '连战次数': 'green',
+    '关卡选择': 'orange',
+    '备选-1': 'purple',
+    '备选-2': 'purple',
+    '备选-3': 'purple',
+    '剩余理智': 'cyan'
+  }
+  return colorMap[taskName] || 'default'
+}
+
+// 新增方法：选择器过滤
+const filterOption = (input: string, option: any) => {
+  return option.label.toLowerCase().includes(input.toLowerCase())
+}
 </script>
 
 <style scoped>
-/* 空状态样式 */
-.empty-state {
-  flex: 1;
+.plans-container {
+  min-height: 100vh;
+  background: var(--ant-color-bg-layout);
+  padding: 24px;
+}
+
+.loading-container {
   display: flex;
-  align-items: center;
   justify-content: center;
+  align-items: center;
+  min-height: 400px;
 }
 
-.empty-content {
-  text-align: center;
-  padding: 48px;
-  background: var(--ant-color-bg-container);
-  border-radius: 16px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
-  border: 1px solid var(--ant-color-border-secondary);
+.plans-main {
+  max-width: 1400px;
+  margin: 0 auto;
 }
 
-.empty-icon {
-  font-size: 64px;
-  color: var(--ant-color-text-tertiary);
-  margin-bottom: 24px;
-}
-
-.empty-content h3 {
-  font-size: 20px;
-  font-weight: 600;
-  color: var(--ant-color-text);
-  margin: 0 0 8px 0;
-}
-
-.empty-content p {
-  font-size: 14px;
-  color: var(--ant-color-text-secondary);
-  margin: 0 0 32px 0;
-}
-
-/* 计划内容区域 */
-.plans-content {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  background: var(--ant-color-bg-container);
-  border-radius: 16px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
-  border: 1px solid var(--ant-color-border-secondary);
-  overflow: hidden;
-}
-
-/* 计划头部样式 */
+/* 页面头部 */
 .plans-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  padding: 24px 32px;
-  background: var(--ant-color-bg-container);
-  border-bottom: 1px solid var(--ant-color-border-secondary);
-  margin-bottom: 5px;
+  align-items: flex-end;
+  margin-bottom: 24px;
+  padding: 0 4px;
 }
 
-.header-title h1 {
-  margin: 0;
+.header-left {
+  flex: 1;
+}
+
+.page-title {
+  margin: 0 0 8px 0;
   font-size: 32px;
   font-weight: 700;
   color: var(--ant-color-text);
@@ -707,38 +801,81 @@ onMounted(() => {
   background-clip: text;
 }
 
-/* 计划选择器 */
-.plan-selector {
-  padding: 0 32px;
+.page-description {
+  margin: 0;
+  font-size: 16px;
+  color: var(--ant-color-text-secondary);
+  line-height: 1.5;
+}
+
+.header-actions {
+  flex-shrink: 0;
+}
+
+/* 空状态 */
+.empty-state {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 400px;
   background: var(--ant-color-bg-container);
-  border-bottom: 1px solid var(--ant-color-border-secondary);
+  border-radius: 12px;
+  border: 1px solid var(--ant-color-border-secondary);
+}
+
+.empty-description {
+  color: var(--ant-color-text-secondary);
+  font-size: 16px;
+  margin-bottom: 16px;
+  display: block;
 }
 
 /* 计划内容 */
-.plan-content {
-  flex: 1;
-  padding: 24px 32px;
-  overflow: auto;
-}
-
-.section-header {
+.plans-content {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 20px 24px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  flex-direction: column;
+  gap: 24px;
 }
 
-.section-title h3 {
-  margin: 0;
-  color: var(--ant-color-text);
+/* 计划选择卡片 */
+.plan-selector-card {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  border-radius: 12px;
+  border: 1px solid var(--ant-color-border-secondary);
+}
+
+.card-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   font-size: 18px;
   font-weight: 600;
 }
 
-.section-controls {
+.plan-selection-container {
+  padding: 16px;
+}
+
+/* 计划按钮组 */
+.plan-buttons-container {
   display: flex;
-  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.plan-button {
+  flex: 1 1 120px;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+/* 计划配置卡片 */
+.plan-config-card {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  border-radius: 12px;
+  border: 1px solid var(--ant-color-border-secondary);
+  min-height: 600px;
 }
 
 .mode-label {
@@ -747,71 +884,175 @@ onMounted(() => {
   font-weight: 500;
 }
 
-/* 计划名称编辑器样式 */
-.plan-name-editor {
+/* 计划名称编辑 */
+.plan-title-container {
   display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.plan-title-display {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.plan-title-text {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--ant-color-text);
+}
+
+.plan-edit-btn {
+  color: var(--ant-color-primary);
+  padding: 0;
+}
+
+/* 计划名称输入框 */
+.plan-title-input {
+  flex: 1;
+  max-width: 400px;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+/* 配置表格 */
+.config-table-container {
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--ant-color-border-secondary);
+}
+
+.config-table {
+  margin: 0;
+}
+
+/* 任务名称单元格 */
+.task-name-cell {
+  display: flex;
+  justify-content: center;
   align-items: center;
 }
 
-.plan-name-input {
-  max-width: 300px;
-  font-size: 18px;
-  font-weight: 600;
-}
-
-.plan-name-input :deep(.ant-input) {
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--ant-color-text);
-  font-size: 18px;
-  font-weight: 600;
-  padding: 4px 8px;
+.task-tag {
+  margin: 0;
+  padding: 4px 12px;
   border-radius: 6px;
-  transition: all 0.3s ease;
+  font-weight: 500;
+  font-size: 13px;
 }
 
-.plan-name-input :deep(.ant-input:hover) {
-  border-color: var(--ant-color-border);
-}
-
-.plan-name-input :deep(.ant-input:focus) {
-  border-color: var(--ant-color-primary);
-
-  box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.2);
-}
-
-/* 表格样式 */
-.plan-table {
-  background: var(--ant-color-bg-container);
-}
-
-.plan-table :deep(.ant-table-thead > tr > th) {
-  border-bottom: 2px solid var(--ant-color-border);
-  font-weight: 600;
-  color: var(--ant-color-text);
-  text-align: center;
-}
-
-.plan-table :deep(.ant-table-tbody > tr > td) {
-  border-bottom: 1px solid var(--ant-color-border-secondary);
-  text-align: center;
-  padding: 12px 8px;
-}
-
-.task-name {
-  font-weight: 600;
-  color: var(--ant-color-text);
-  text-align: center;
-}
-
+/* 配置输入组件 */
 .config-select {
   width: 100%;
   min-width: 100px;
 }
 
+.config-input-number {
+  width: 100%;
+  min-width: 100px;
+}
+
+/* 响应式设计 */
+@media (max-width: 1200px) {
+  .plans-container {
+    padding: 16px;
+  }
+
+  .plans-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 16px;
+  }
+
+  .page-title {
+    font-size: 28px;
+  }
+
+  .config-table-container {
+    overflow-x: auto;
+  }
+}
+
+@media (max-width: 768px) {
+  .plans-container {
+    padding: 12px;
+  }
+
+  .page-title {
+    font-size: 24px;
+  }
+
+  .page-description {
+    font-size: 14px;
+  }
+
+  .plan-title-input {
+    max-width: 100%;
+  }
+
+  .header-actions {
+    width: 100%;
+    display: flex;
+    justify-content: center;
+  }
+}
+
+/* 深度样式使用全局CSS变量 */
+.plan-selector-card :deep(.ant-card-head) {
+  border-bottom: 1px solid var(--ant-color-border-secondary);
+  padding: 16px 24px;
+}
+
+.plan-config-card :deep(.ant-card-head) {
+  border-bottom: 1px solid var(--ant-color-border-secondary);
+  padding: 16px 24px;
+}
+
+.plan-config-card :deep(.ant-card-head-title) {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.plan-title-container :deep(.ant-form-item-label) {
+  font-weight: 600;
+  color: var(--ant-color-text);
+}
+
+.plan-title-input :deep(.ant-input) {
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.plan-title-input :deep(.ant-input:focus) {
+  box-shadow: 0 0 0 2px var(--ant-color-primary-bg-hover);
+}
+
+.config-table :deep(.ant-table-thead > tr > th) {
+  background: var(--ant-color-bg-container-disabled);
+  border-bottom: 2px solid var(--ant-color-border);
+  font-weight: 600;
+  color: var(--ant-color-text);
+  text-align: center;
+  padding: 16px 12px;
+  font-size: 14px;
+}
+
+.config-table :deep(.ant-table-tbody > tr > td) {
+  border-bottom: 1px solid var(--ant-color-border-secondary);
+  text-align: center;
+  padding: 12px 8px;
+  vertical-align: middle;
+}
+
+.config-table :deep(.ant-table-tbody > tr:hover > td) {
+  background: var(--ant-color-bg-container-disabled);
+}
+
 .config-select :deep(.ant-select-selector) {
   border-radius: 6px;
-  border: 1px solid var(--ant-color-border);
+  transition: all 0.2s ease;
 }
 
 .config-select :deep(.ant-select-selector:hover) {
@@ -820,86 +1061,33 @@ onMounted(() => {
 
 .config-select :deep(.ant-select-focused .ant-select-selector) {
   border-color: var(--ant-color-primary);
-  box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.2);
+  box-shadow: 0 0 0 2px var(--ant-color-primary-bg-hover);
 }
 
-/* 输入框样式 */
-.config-input {
+.config-input-number :deep(.ant-input-number) {
+  border-radius: 6px;
   width: 100%;
-  min-width: 100px;
 }
 
-.config-input :deep(.ant-input-number-focused) {
+.config-input-number :deep(.ant-input-number-focused) {
   border-color: var(--ant-color-primary);
-  box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.2);
+  box-shadow: 0 0 0 2px var(--ant-color-primary-bg-hover);
 }
 
-/* 深色模式适配 */
-@media (prefers-color-scheme: dark) {
-  .maa-config-section {
-    border-color: var(--ant-color-border-secondary);
-    border-radius: 16px;
-  }
-
-  .section-header {
-    border-color: var(--ant-color-border-secondary);
-    border-radius: 16px;
-  }
+.plan-tabs :deep(.ant-tabs-tab) {
+  padding: 12px 20px;
+  font-size: 14px;
+  font-weight: 500;
+  border-radius: 8px 8px 0 0;
+  transition: all 0.2s ease;
 }
 
-.float-button {
-  width: 60px;
-  height: 60px;
+.plan-tabs :deep(.ant-tabs-tab-active) {
+  background: var(--ant-color-primary-bg);
+  color: var(--ant-color-primary);
 }
 
-.empty-content-fancy {
-  transition:
-    box-shadow 0.3s,
-    transform 0.2s;
-  border: none;
-  border-radius: 24px;
-}
-
-.empty-icon {
-  font-size: 80px;
-  margin-bottom: 32px;
-  border-radius: 50%;
-  width: 100px;
-  height: 100px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-left: auto;
-  margin-right: auto;
-}
-
-.empty-content-fancy h3 {
-  font-size: 26px;
-  font-weight: 700;
-  margin: 0 0 12px 0;
-  letter-spacing: 1px;
-}
-
-.empty-content-fancy p {
-  font-size: 16px;
-  border-radius: 8px;
-  padding: 8px 16px;
-  margin: 0 0 12px 0;
-  display: inline-block;
-}
-
-.loading-box {
-  min-height: 400px;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-}
-
-.empty-content-fancy h2 {
-  font-size: 26px;
-  font-weight: 700;
-  margin: 0 0 12px 0;
-  letter-spacing: 1px;
-  color: var(--ant-color-text);
+:deep(.ant-float-btn-group .ant-float-btn-group-circle-wrapper) {
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
 }
 </style>

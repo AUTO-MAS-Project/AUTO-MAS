@@ -28,7 +28,7 @@ export function usePlanApi() {
     try {
       const params: PlanCreateIn = { type }
       const response = await Service.addPlanApiPlanAddPost(params)
-      message.success('创建计划成功')
+      // message.success('创建计划成功')
       return response
     } catch (error) {
       console.error('创建计划失败:', error)

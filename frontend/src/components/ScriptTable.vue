@@ -263,10 +263,10 @@
 
           <!-- 空状态 -->
           <div v-else class="empty-users">
-            <a-empty :image="false" description="暂无用户" class="compact-empty">
-              <template #image>
-                <UserOutlined class="empty-icon" />
-              </template>
+            <a-empty
+              description="暂无用户"
+              class="compact-empty"
+            >
               <a-button type="primary" size="small" @click="handleAddUser(script)">
                 <template #icon>
                   <PlusOutlined />

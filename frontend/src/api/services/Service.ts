@@ -10,6 +10,7 @@ import type { HistoryDataGetOut } from '../models/HistoryDataGetOut';
 import type { HistorySearchIn } from '../models/HistorySearchIn';
 import type { HistorySearchOut } from '../models/HistorySearchOut';
 import type { InfoOut } from '../models/InfoOut';
+import type { NoticeOut } from '../models/NoticeOut';
 import type { OutBase } from '../models/OutBase';
 import type { PlanCreateIn } from '../models/PlanCreateIn';
 import type { PlanCreateOut } from '../models/PlanCreateOut';
@@ -18,6 +19,7 @@ import type { PlanGetIn } from '../models/PlanGetIn';
 import type { PlanGetOut } from '../models/PlanGetOut';
 import type { PlanReorderIn } from '../models/PlanReorderIn';
 import type { PlanUpdateIn } from '../models/PlanUpdateIn';
+import type { PowerIn } from '../models/PowerIn';
 import type { QueueCreateOut } from '../models/QueueCreateOut';
 import type { QueueDeleteIn } from '../models/QueueDeleteIn';
 import type { QueueGetIn } from '../models/QueueGetIn';
@@ -34,10 +36,13 @@ import type { QueueUpdateIn } from '../models/QueueUpdateIn';
 import type { ScriptCreateIn } from '../models/ScriptCreateIn';
 import type { ScriptCreateOut } from '../models/ScriptCreateOut';
 import type { ScriptDeleteIn } from '../models/ScriptDeleteIn';
+import type { ScriptFileIn } from '../models/ScriptFileIn';
 import type { ScriptGetIn } from '../models/ScriptGetIn';
 import type { ScriptGetOut } from '../models/ScriptGetOut';
 import type { ScriptReorderIn } from '../models/ScriptReorderIn';
 import type { ScriptUpdateIn } from '../models/ScriptUpdateIn';
+import type { ScriptUploadIn } from '../models/ScriptUploadIn';
+import type { ScriptUrlIn } from '../models/ScriptUrlIn';
 import type { SettingGetOut } from '../models/SettingGetOut';
 import type { SettingUpdateIn } from '../models/SettingUpdateIn';
 import type { TaskCreateIn } from '../models/TaskCreateIn';
@@ -54,6 +59,7 @@ import type { UserGetIn } from '../models/UserGetIn';
 import type { UserGetOut } from '../models/UserGetOut';
 import type { UserInBase } from '../models/UserInBase';
 import type { UserReorderIn } from '../models/UserReorderIn';
+import type { UserSetIn } from '../models/UserSetIn';
 import type { UserUpdateIn } from '../models/UserUpdateIn';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
@@ -101,25 +107,58 @@ export class Service {
         });
     }
     /**
-     * 获取通知信息
-     * @returns InfoOut Successful Response
+     * 获取可选计划下拉框信息
+     * @returns ComboBoxOut Successful Response
      * @throws ApiError
      */
-    public static getNoticeInfoApiInfoNoticePost(): CancelablePromise<InfoOut> {
+    public static getPlanComboxApiInfoComboxPlanPost(): CancelablePromise<ComboBoxOut> {
         return __request(OpenAPI, {
             method: 'POST',
-            url: '/api/info/notice',
+            url: '/api/info/combox/plan',
         });
     }
     /**
-     * 获取可下载应用信息
+     * 获取通知信息
+     * @returns NoticeOut Successful Response
+     * @throws ApiError
+     */
+    public static getNoticeInfoApiInfoNoticeGetPost(): CancelablePromise<NoticeOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/info/notice/get',
+        });
+    }
+    /**
+     * 确认通知
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static confirmNoticeApiInfoNoticeConfirmPost(): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/info/notice/confirm',
+        });
+    }
+    /**
+     * 获取启动时运行的队列ID
      * @returns InfoOut Successful Response
      * @throws ApiError
      */
-    public static getAppsInfoApiInfoAppsInfoPost(): CancelablePromise<InfoOut> {
+    public static getStartupTaskApiInfoStartuptaskPost(): CancelablePromise<InfoOut> {
         return __request(OpenAPI, {
             method: 'POST',
-            url: '/api/info/apps_info',
+            url: '/api/info/startuptask',
+        });
+    }
+    /**
+     * 获取配置分享中心的配置信息
+     * @returns InfoOut Successful Response
+     * @throws ApiError
+     */
+    public static getWebConfigApiInfoWebconfigPost(): CancelablePromise<InfoOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/info/webconfig',
         });
     }
     /**
@@ -127,7 +166,7 @@ export class Service {
      * @returns InfoOut Successful Response
      * @throws ApiError
      */
-    public static addOverviewApiInfoGetOverviewPost(): CancelablePromise<InfoOut> {
+    public static getOverviewApiInfoGetOverviewPost(): CancelablePromise<InfoOut> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/info/get/overview',
@@ -229,6 +268,82 @@ export class Service {
         });
     }
     /**
+     * 从文件加载脚本
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static importScriptFromFileApiScriptsImportFilePost(
+        requestBody: ScriptFileIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/import/file',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 导出脚本到文件
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static exportScriptToFileApiScriptsExportFilePost(
+        requestBody: ScriptFileIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/export/file',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 从网络加载脚本
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static importScriptFromWebApiScriptsImportWebPost(
+        requestBody: ScriptUrlIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/import/web',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 上传脚本配置到网络
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static uploadScriptToWebApiScriptsUploadWebPost(
+        requestBody: ScriptUploadIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/Upload/web',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 查询用户
      * @param requestBody
      * @returns UserGetOut Successful Response
@@ -316,6 +431,25 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/user/order',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 导入基建配置文件
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static importInfrastructureApiScriptsUserInfrastructurePost(
+        requestBody: UserSetIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/user/infrastructure',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -726,6 +860,25 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/dispatch/stop',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 电源操作
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static powerTaskApiDispatchPowerPost(
+        requestBody: PowerIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/dispatch/power',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

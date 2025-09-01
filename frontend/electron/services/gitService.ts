@@ -258,7 +258,7 @@ export async function cloneBackend(
             '--depth',
             '1',
             '--branch',
-            'feature/refactor-backend',
+            'feature/refactor',
             repoUrl,
             tmpDir,
           ],

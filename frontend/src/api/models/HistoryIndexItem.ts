@@ -21,8 +21,8 @@ export namespace HistoryIndexItem {
      * 状态
      */
     export enum status {
-        DONE = '完成',
-        ERROR = '异常',
+      DONE = '完成',
+      ERROR = '异常',
     }
 }
 

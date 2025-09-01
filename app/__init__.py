@@ -1,5 +1,6 @@
 #   AUTO_MAA:A MAA Multi Account Management and Automation Tool
 #   Copyright © 2024-2025 DLmaster361
+#   Copyright © 2025 MoeSnowyFox
 
 #   This file is part of AUTO_MAA.
 
@@ -18,32 +19,15 @@
 
 #   Contact: DLmaster_361@163.com
 
-"""
-AUTO_MAA
-AUTO_MAA主程序包
-v4.4
-作者：DLmaster_361
-"""
-
-__version__ = "4.2.0"
+__version__ = "5.0.0"
 __author__ = "DLmaster361 <DLmaster_361@163.com>"
 __license__ = "GPL-3.0 license"
 
-from .core import QueueConfig, MaaConfig, MaaUserConfig, Task, TaskManager, MainTimer
-from .models import MaaManager
-from .services import Notify, Crypto, System
-from .ui import AUTO_MAA
 
-__all__ = [
-    "QueueConfig",
-    "MaaConfig",
-    "MaaUserConfig",
-    "Task",
-    "TaskManager",
-    "MainTimer",
-    "MaaManager",
-    "Notify",
-    "Crypto",
-    "System",
-    "AUTO_MAA",
-]
+from .api import *
+from .core import *
+from .models import *
+from .services import *
+from .utils import *
+
+__all__ = ["api", "core", "models", "services", "utils"]

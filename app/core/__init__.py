@@ -1,5 +1,6 @@
 #   AUTO_MAA:A MAA Multi Account Management and Automation Tool
 #   Copyright © 2024-2025 DLmaster361
+#   Copyright © 2025 MoeSnowyFox
 
 #   This file is part of AUTO_MAA.
 
@@ -18,46 +19,22 @@
 
 #   Contact: DLmaster_361@163.com
 
-"""
-AUTO_MAA
-AUTO_MAA核心组件包
-v4.4
-作者：DLmaster_361
-"""
-
-__version__ = "4.2.0"
+__version__ = "5.0.0"
 __author__ = "DLmaster361 <DLmaster_361@163.com>"
 __license__ = "GPL-3.0 license"
 
-from .config import (
-    QueueConfig,
-    MaaConfig,
-    MaaUserConfig,
-    MaaPlanConfig,
-    GeneralConfig,
-    GeneralSubConfig,
-    Config,
-)
-from .logger import logger
-from .main_info_bar import MainInfoBar
-from .network import Network
-from .sound_player import SoundPlayer
-from .task_manager import Task, TaskManager
+from .broadcast import Broadcast
+from .config import Config, MaaConfig, GeneralConfig, MaaUserConfig, GeneralUserConfig
 from .timer import MainTimer
+from .task_manager import TaskManager
 
 __all__ = [
+    "Broadcast",
     "Config",
-    "QueueConfig",
     "MaaConfig",
-    "MaaUserConfig",
-    "MaaPlanConfig",
     "GeneralConfig",
-    "GeneralSubConfig",
-    "logger",
-    "MainInfoBar",
-    "Network",
-    "SoundPlayer",
-    "Task",
-    "TaskManager",
     "MainTimer",
+    "TaskManager",
+    "MaaUserConfig",
+    "GeneralUserConfig",
 ]

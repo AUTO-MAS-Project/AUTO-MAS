@@ -17,11 +17,11 @@
     </div>
 
     <a-space size="middle">
-      <a-button 
-        v-if="scriptType === 'MAA'" 
-        type="primary" 
-        ghost 
-        size="large" 
+      <a-button
+        v-if="scriptType === 'MAA' && formData.Info.Mode !== '简洁'"
+        type="primary"
+        ghost
+        size="large"
         @click="handleMAAConfig"
         :loading="maaConfigLoading"
       >
@@ -30,11 +30,11 @@
         </template>
         MAA配置
       </a-button>
-      <a-button 
-        v-if="scriptType === 'General'" 
-        type="primary" 
-        ghost 
-        size="large" 
+      <a-button
+        v-if="scriptType === 'General'"
+        type="primary"
+        ghost
+        size="large"
         @click="handleGeneralConfig"
         :loading="generalConfigLoading"
       >
@@ -171,7 +171,7 @@
                 </template>
                 <a-input-number
                   v-model:value="formData.Info.RemainedDay"
-                  :min="0"
+                  :min="-1"
                   :max="9999"
                   placeholder="0"
                   :disabled="loading"
@@ -250,6 +250,52 @@
             <!--          </a-col>-->
           </a-row>
 
+          <!-- 自定义基建配置文件选择 -->
+          <a-row :gutter="24" v-if="scriptType === 'MAA' && formData.Info.InfrastMode === 'Custom'">
+            <a-col :span="24">
+              <a-form-item name="infrastructureConfigFile">
+                <template #label>
+                  <a-tooltip title="选择自定义基建配置JSON文件">
+                    <span class="form-label">
+                      基建配置文件
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <div style="display: flex; gap: 12px; align-items: center">
+                  <a-input
+                    v-model:value="formData.Info.InfrastPath"
+                    placeholder="请选择基建配置JSON文件"
+                    readonly
+                    size="large"
+                    style="flex: 1"
+                  />
+                  <a-button
+                    type="primary"
+                    ghost
+                    @click="selectInfrastructureConfig"
+                    :disabled="loading"
+                    size="large"
+                  >
+                    选择文件
+                  </a-button>
+                  <a-button
+                    type="primary"
+                    @click="importInfrastructureConfig"
+                    :disabled="loading || !infrastructureConfigPath || !isEdit"
+                    :loading="infrastructureImporting"
+                    size="large"
+                  >
+                    导入配置
+                  </a-button>
+                </div>
+                <div style="color: #999; font-size: 12px; margin-top: 4px">
+                  请选择有效的基建配置JSON文件，点击"导入配置"按钮将其应用到当前用户。如果已经导入，可以忽略此选择框。
+                </div>
+              </a-form-item>
+            </a-col>
+          </a-row>
+
           <a-form-item name="notes">
             <template #label>
               <a-tooltip title="为用户添加备注信息，便于管理和识别">
@@ -312,6 +358,24 @@
                 />
               </a-form-item>
             </a-col>
+            <a-col :span="12">
+              <a-form-item name="mode">
+                <template #label>
+                  <a-tooltip title="关卡选择">
+                    <span class="form-label">
+                      关卡配置模式
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-select
+                  v-model:value="formData.Info.StageMode"
+                  :options="stageModeOptions"
+                  :disabled="loading"
+                  size="large"
+                />
+              </a-form-item>
+            </a-col>
           </a-row>
           <a-row :gutter="24"></a-row>
           <a-row :gutter="24">
@@ -363,28 +427,8 @@
                 />
               </a-form-item>
             </a-col>
-            <a-col :span="6">
-              <a-form-item name="mode">
-                <template #label>
-                  <a-tooltip title="关卡选择">
-                    <span class="form-label">
-                      关卡配置模式
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
-                </template>
-                <a-select
-                  v-model:value="formData.Info.StageMode"
-                  :options="[
-                    { label: '固定', value: '固定' },
-                    { label: '刷完即停', value: '刷完即停' },
-                  ]"
-                  :disabled="loading"
-                  size="large"
-                />
-              </a-form-item>
-            </a-col>
-            <a-col :span="6">
+
+            <a-col :span="12">
               <a-form-item name="mode">
                 <template #label>
                   <a-tooltip title="关卡选择">
@@ -396,10 +440,7 @@
                 </template>
                 <a-select
                   v-model:value="formData.Info.Stage"
-                  :options="[
-                    { label: '不选择', value: '' },
-                    { label: '后期接口获取,先占位符', value: 'Other' },
-                  ]"
+                  :options="stageOptions"
                   :disabled="loading"
                   size="large"
                 />
@@ -419,10 +460,7 @@
                 </template>
                 <a-select
                   v-model:value="formData.Info.Stage_1"
-                  :options="[
-                    { label: '不选择', value: '' },
-                    { label: '后期接口获取,先占位符', value: 'Other' },
-                  ]"
+                  :options="stageOptions"
                   :disabled="loading"
                   size="large"
                 />
@@ -440,10 +478,7 @@
                 </template>
                 <a-select
                   v-model:value="formData.Info.Stage_2"
-                  :options="[
-                    { label: '不选择', value: '' },
-                    { label: '后期接口获取,先占位符', value: 'Other' },
-                  ]"
+                  :options="stageOptions"
                   :disabled="loading"
                   size="large"
                 />
@@ -461,10 +496,7 @@
                 </template>
                 <a-select
                   v-model:value="formData.Info.Stage_3"
-                  :options="[
-                    { label: '不选择', value: '' },
-                    { label: '后期接口获取,先占位符', value: 'Other' },
-                  ]"
+                  :options="stageOptions"
                   :disabled="loading"
                   size="large"
                 />
@@ -482,10 +514,7 @@
                 </template>
                 <a-select
                   v-model:value="formData.Info.Stage_Remain"
-                  :options="[
-                    { label: '不选择', value: '' },
-                    { label: '后期接口获取,先占位符', value: 'Other' },
-                  ]"
+                  :options="stageOptions"
                   :disabled="loading"
                   size="large"
                 />
@@ -532,23 +561,23 @@
             <a-col :span="6">
               <a-form-item name="ifAutoRoguelike">
                 <template #label>
-                  <a-tooltip title="暂不支持">
+                  <a-tooltip title="暂不支持，正在适配中~">
                     <span>自动肉鸽 </span>
                     <QuestionCircleOutlined class="help-icon" />
                   </a-tooltip>
                 </template>
-                <a-switch v-model:checked="formData.Task.IfAutoRoguelike" :disabled="loading" />
+                <a-switch v-model:checked="formData.Task.IfAutoRoguelike" :disabled="true" />
               </a-form-item>
             </a-col>
             <a-col :span="6">
               <a-form-item name="ifReclamation">
                 <template #label>
-                  <a-tooltip title="暂不支持">
+                  <a-tooltip title="暂不支持，正在适配中~">
                     <span>生息演算 </span>
                     <QuestionCircleOutlined class="help-icon" />
                   </a-tooltip>
                 </template>
-                <a-switch v-model:checked="formData.Task.IfReclamation" :disabled="loading" />
+                <a-switch v-model:checked="formData.Task.IfReclamation" :disabled="true" />
               </a-form-item>
             </a-col>
           </a-row>
@@ -952,11 +981,17 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
-import { ArrowLeftOutlined, QuestionCircleOutlined, SaveOutlined, SettingOutlined } from '@ant-design/icons-vue'
+import {
+  ArrowLeftOutlined,
+  QuestionCircleOutlined,
+  SaveOutlined,
+  SettingOutlined,
+} from '@ant-design/icons-vue'
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
 import { useUserApi } from '@/composables/useUserApi'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useWebSocket } from '@/composables/useWebSocket'
+import { Service } from '@/api'
 
 const router = useRouter()
 const route = useRoute()
@@ -984,10 +1019,18 @@ const maaWebsocketId = ref<string | null>(null)
 const generalConfigLoading = ref(false)
 const generalWebsocketId = ref<string | null>(null)
 
+// 基建配置文件相关
+const infrastructureConfigPath = ref('')
+const infrastructureImporting = ref(false)
+
 // 服务器选项
 const serverOptions = [
   { label: '官服', value: 'Official' },
   { label: 'B服', value: 'Bilibili' },
+  { label: '国际服（YoStarEN）', value: 'YoStarEN' },
+  { label: '日服（YoStarJP）', value: 'YoStarJP' },
+  { label: '韩服（YoStarKR）', value: 'YoStarKR' },
+  { label: '繁中服（txwy）', value: 'txwy' },
 ]
 
 // MAA脚本默认用户数据
@@ -1004,6 +1047,7 @@ const getDefaultMAAUserData = () => ({
     Status: true,
     Mode: 'MAA',
     InfrastMode: '默认',
+    InfrastPath: '',
     Routine: true,
     Annihilation: '当期',
     Stage: '1-7',
@@ -1014,6 +1058,11 @@ const getDefaultMAAUserData = () => ({
     Stage_Remain: '',
     IfSkland: false,
     SklandToken: '',
+    // 添加 General 脚本的属性以确保兼容性
+    IfScriptBeforeTask: false,
+    IfScriptAfterTask: false,
+    ScriptBeforeTask: '',
+    ScriptAfterTask: '',
   },
   Task: {
     IfBase: true,
@@ -1065,6 +1114,7 @@ const getDefaultGeneralUserData = () => ({
     ToAddress: '',
     IfSendMail: false,
     IfSendStatistic: false,
+    IfSendSixStar: false,
     IfServerChan: false,
     IfCompanyWebHookBot: false,
     ServerChanKey: '',
@@ -1089,7 +1139,7 @@ const formData = reactive({
   userName: '',
   userId: '',
   // 嵌套的实际数据
-  ...getDefaultUserData(),
+  ...getDefaultMAAUserData(),
 })
 
 // 表单验证规则
@@ -1144,10 +1194,20 @@ const loadScriptInfo = async () => {
       scriptType.value = script.type // 设置脚本类型
 
       // 重新初始化表单数据（根据脚本类型）
+      const defaultData =
+        scriptType.value === 'MAA' ? getDefaultMAAUserData() : getDefaultGeneralUserData()
+
+      // 清空现有数据并重新赋值
+      Object.keys(formData).forEach(key => {
+        if (key !== 'userName' && key !== 'userId') {
+          delete formData[key]
+        }
+      })
+
       Object.assign(formData, {
         userName: '',
         userId: '',
-        ...getDefaultUserData(),
+        ...defaultData,
       })
 
       // 如果是编辑模式，加载用户数据
@@ -1168,13 +1228,13 @@ const loadScriptInfo = async () => {
 const loadUserData = async () => {
   try {
     const userResponse = await getUsers(scriptId, userId)
-    
+
     if (userResponse && userResponse.code === 200) {
       // 查找指定的用户数据
       const userIndex = userResponse.index.find(index => index.uid === userId)
       if (userIndex && userResponse.data[userId]) {
         const userData = userResponse.data[userId] as any
-        
+
         // 根据脚本类型填充用户数据
         if (scriptType.value === 'MAA' && userIndex.type === 'MaaUserConfig') {
           Object.assign(formData, {
@@ -1198,7 +1258,7 @@ const loadUserData = async () => {
         // 同步扁平化字段
         formData.userName = formData.Info.Name || ''
         formData.userId = formData.Info.Id || ''
-        
+
         console.log('用户数据加载成功:', formData)
       } else {
         message.error('用户不存在')
@@ -1218,9 +1278,12 @@ const handleSubmit = async () => {
   try {
     await formRef.value?.validate()
 
+    // 排除 InfrastPath 字段
+    const { InfrastPath, ...infoWithoutInfrastPath } = formData.Info
+
     // 构建提交数据
     const userData = {
-      Info: { ...formData.Info },
+      Info: { ...infoWithoutInfrastPath },
       Task: { ...formData.Task },
       Notify: { ...formData.Notify },
       Data: { ...formData.Data },
@@ -1268,18 +1331,18 @@ const handleMAAConfig = async () => {
       taskId: userId, // 使用用户ID进行配置
       mode: '设置脚本',
       showNotifications: true,
-      onStatusChange: (status) => {
+      onStatusChange: status => {
         console.log(`用户 ${formData.userName} MAA配置状态: ${status}`)
       },
-      onMessage: (data) => {
+      onMessage: data => {
         console.log(`用户 ${formData.userName} MAA配置消息:`, data)
         // 这里可以根据需要处理特定的消息
       },
-      onError: (error) => {
+      onError: error => {
         console.error(`用户 ${formData.userName} MAA配置错误:`, error)
         message.error(`MAA配置连接失败: ${error}`)
         maaWebsocketId.value = null
-      }
+      },
     })
 
     if (websocketId) {
@@ -1314,18 +1377,18 @@ const handleGeneralConfig = async () => {
       taskId: userId, // 使用用户ID进行配置
       mode: '设置脚本',
       showNotifications: true,
-      onStatusChange: (status) => {
+      onStatusChange: status => {
         console.log(`用户 ${formData.userName} 通用配置状态: ${status}`)
       },
-      onMessage: (data) => {
+      onMessage: data => {
         console.log(`用户 ${formData.userName} 通用配置消息:`, data)
         // 这里可以根据需要处理特定的消息
       },
-      onError: (error) => {
+      onError: error => {
         console.error(`用户 ${formData.userName} 通用配置错误:`, error)
         message.error(`通用配置连接失败: ${error}`)
         generalWebsocketId.value = null
-      }
+      },
     })
 
     if (websocketId) {
@@ -1337,6 +1400,97 @@ const handleGeneralConfig = async () => {
     message.error('通用配置失败')
   } finally {
     generalConfigLoading.value = false
+  }
+}
+
+const stageModeOptions = ref([{ label: '固定', value: 'Fixed' }])
+
+const loadStageModeOptions = async () => {
+  try {
+    const response = await Service.getPlanComboxApiInfoComboxPlanPost()
+    if (response && response.code === 200 && response.data) {
+      stageModeOptions.value = response.data
+    }
+  } catch (error) {
+    console.error('加载关卡配置模式选项失败:', error)
+    // 保持默认的固定选项
+  }
+}
+
+const stageOptions = ref([{ label: '不选择', value: '' }])
+
+const loadStageOptions = async () => {
+  try {
+    const response = await Service.getStageComboxApiInfoComboxStagePost({
+      type: 'Today',
+    })
+    if (response && response.code === 200 && response.data) {
+      const sorted = [...response.data].sort((a, b) => {
+        if (a.value === '-') return -1
+        if (b.value === '-') return 1
+        return 0
+      })
+      stageOptions.value = sorted
+    }
+  } catch (error) {
+    console.error('加载关卡选项失败:', error)
+    // 保持默认选项
+  }
+}
+
+// 选择基建配置文件
+const selectInfrastructureConfig = async () => {
+  try {
+    const path = await window.electronAPI?.selectFile([
+      { name: 'JSON 文件', extensions: ['json'] },
+      { name: '所有文件', extensions: ['*'] },
+    ])
+
+    if (path && path.length > 0) {
+      infrastructureConfigPath.value = path
+      formData.Info.InfrastPath = path[0]
+      message.success('文件选择成功')
+    }
+  } catch (error) {
+    console.error('文件选择失败:', error)
+    message.error('文件选择失败')
+  }
+}
+
+// 导入基建配置
+const importInfrastructureConfig = async () => {
+  if (!infrastructureConfigPath.value) {
+    message.warning('请先选择配置文件')
+    return
+  }
+
+  if (!isEdit.value) {
+    message.warning('请先保存用户后再导入配置')
+    return
+  }
+
+  try {
+    infrastructureImporting.value = true
+
+    // 调用API导入基建配置
+    const result = await Service.importInfrastructureApiScriptsUserInfrastructurePost({
+      scriptId: scriptId,
+      userId: userId,
+      jsonFile: infrastructureConfigPath.value[0],
+    })
+
+    if (result && result.code === 200) {
+      message.success('基建配置导入成功')
+      // 清空文件路径
+      infrastructureConfigPath.value = ''
+    } else {
+      message.error(result?.msg || '基建配置导入失败')
+    }
+  } catch (error) {
+    console.error('基建配置导入失败:', error)
+    message.error('基建配置导入失败')
+  } finally {
+    infrastructureImporting.value = false
   }
 }
 
@@ -1361,6 +1515,8 @@ onMounted(() => {
   }
 
   loadScriptInfo()
+  loadStageModeOptions()
+  loadStageOptions()
 })
 </script>
 

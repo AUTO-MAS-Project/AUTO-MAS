@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron'
 import * as path from 'path'
 import * as fs from 'fs'
 import { spawn } from 'child_process'
@@ -74,7 +74,6 @@ function createWindow() {
   })
 
   mainWindow.setMenuBarVisibility(false)
-
   const devServer = process.env.VITE_DEV_SERVER_URL
   if (devServer) {
     mainWindow.loadURL(devServer)
@@ -112,13 +111,29 @@ ipcMain.handle('select-folder', async () => {
 })
 
 ipcMain.handle('select-file', async (event, filters = []) => {
-  if (!mainWindow) return null
+  if (!mainWindow) return []
   const result = await dialog.showOpenDialog(mainWindow, {
     properties: ['openFile'],
     title: '选择文件',
     filters: filters.length > 0 ? filters : [{ name: '所有文件', extensions: ['*'] }],
   })
-  return result.canceled ? null : result.filePaths[0]
+  return result.canceled ? [] : result.filePaths
+})
+
+// 在系统默认浏览器中打开URL
+ipcMain.handle('open-url', async (event, url: string) => {
+  try {
+    await shell.openExternal(url)
+    return { success: true }
+  } catch (error) {
+    if (error instanceof Error) {
+      console.error('打开链接失败:', error.message)
+      return { success: false, error: error.message }
+    } else {
+      console.error('未知错误:', error)
+      return { success: false, error: String(error) }
+    }
+  }
 })
 
 // 环境检查
@@ -272,19 +287,19 @@ ipcMain.handle('restart-as-admin', () => {
 
 // 应用生命周期
 // 保证应用单例运行
-const gotTheLock = app.requestSingleInstanceLock();
+const gotTheLock = app.requestSingleInstanceLock()
 
 if (!gotTheLock) {
-  app.quit();
-  process.exit(0);
+  app.quit()
+  process.exit(0)
 }
 
 app.on('second-instance', () => {
   if (mainWindow) {
-    if (mainWindow.isMinimized()) mainWindow.restore();
-    mainWindow.focus();
+    if (mainWindow.isMinimized()) mainWindow.restore()
+    mainWindow.focus()
   }
-});
+})
 
 app.whenReady().then(() => {
   // 检查管理员权限
@@ -294,7 +309,7 @@ app.whenReady().then(() => {
     // 这里先创建窗口，让用户选择是否重新启动
   }
   createWindow()
-});
+})
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()

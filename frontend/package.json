@@ -48,11 +48,13 @@
   "dependencies": {
     "@ant-design/icons-vue": "^7.0.1",
     "@types/adm-zip": "^0.5.7",
+    "@types/markdown-it": "^14.1.2",
     "adm-zip": "^0.5.16",
     "ant-design-vue": "4.x",
     "axios": "^1.11.0",
     "dayjs": "^1.11.13",
     "form-data": "^4.0.4",
+    "markdown-it": "^14.1.0",
     "vue": "^3.5.17",
     "vue-router": "4"
   },

@@ -8,7 +8,7 @@ export type TimeSetReorderIn = {
      */
     queueId: string;
     /**
-     * 时间设置ID列表，按新顺序排列
+     * 时间设置ID列表, 按新顺序排列
      */
     indexList: Array<string>;
 };
