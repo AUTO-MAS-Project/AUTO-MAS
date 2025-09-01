@@ -700,16 +700,10 @@ const handleToggleUserStatus = async (user: User) => {
   overflow: hidden;
 }
 
-.type-radio-group :deep(.ant-radio-button-wrapper:hover) {
-  border-color: var(--ant-color-primary);
-  transform: translateY(-2px);
-  box-shadow: 0 4px 16px rgba(24, 144, 255, 0.2);
-}
 
 .type-radio-group :deep(.ant-radio-button-wrapper-checked) {
   border-color: var(--ant-color-primary);
   background: var(--ant-color-primary-bg);
-  box-shadow: 0 4px 16px rgba(24, 144, 255, 0.3);
 }
 
 .type-radio-group :deep(.ant-radio-button-wrapper::before) {
@@ -805,11 +799,6 @@ const handleToggleUserStatus = async (user: User) => {
   overflow: hidden;
 }
 
-.mode-radio-group :deep(.ant-radio-button-wrapper:hover) {
-  border-color: var(--ant-color-primary);
-  transform: translateY(-2px);
-  box-shadow: 0 4px 16px rgba(24, 144, 255, 0.2);
-}
 
 .mode-radio-group :deep(.ant-radio-button-wrapper-checked) {
   border-color: var(--ant-color-primary);
@@ -832,10 +821,6 @@ const handleToggleUserStatus = async (user: User) => {
   transition: all 0.3s ease;
 }
 
-.mode-content:hover {
-  border-color: var(--ant-color-primary);
-  box-shadow: 0 4px 16px rgba(24, 144, 255, 0.2);
-}
 
 /* 模板选择弹窗样式 */
 .template-select-modal :deep(.ant-modal-content) {
@@ -885,11 +870,6 @@ const handleToggleUserStatus = async (user: User) => {
   background: var(--ant-color-bg-container);
 }
 
-.template-item:hover {
-  border-color: var(--ant-color-primary);
-  background: var(--ant-color-primary-bg);
-  box-shadow: 0 4px 16px rgba(24, 144, 255, 0.2);
-}
 
 .template-item.selected {
   border-color: var(--ant-color-primary);
@@ -1012,22 +992,9 @@ const handleToggleUserStatus = async (user: User) => {
       0 1px 3px rgba(0, 0, 0, 0.4);
   }
 
-  .scripts-content:hover {
-    box-shadow:
-      0 8px 30px rgba(0, 0, 0, 0.4),
-      0 2px 6px rgba(0, 0, 0, 0.5);
-  }
 
   .add-button {
     box-shadow: 0 4px 12px rgba(24, 144, 255, 0.4);
-  }
-
-  .add-button:hover {
-    box-shadow: 0 6px 16px rgba(24, 144, 255, 0.5);
-  }
-
-  .refresh-button:hover {
-    box-shadow: 0 4px 12px rgba(255, 255, 255, 0.1);
   }
 }
 
@@ -1193,10 +1160,6 @@ const handleToggleUserStatus = async (user: User) => {
   transition: all 0.2s ease;
 }
 
-.template-item:hover {
-  border-color: var(--ant-color-primary);
-  background: var(--ant-color-bg-container);
-}
 
 .template-item.selected {
   border-color: var(--ant-color-primary);
@@ -1214,18 +1177,6 @@ const handleToggleUserStatus = async (user: User) => {
   position: relative;
 }
 
-.template-icon-wrapper {
-  width: 48px;
-  height: 48px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
-  border-radius: 16px;
-  box-shadow: 0 4px 16px rgba(24, 144, 255, 0.2);
-  position: relative;
-  overflow: hidden;
-}
 
 .template-icon-wrapper::before {
   content: '';
