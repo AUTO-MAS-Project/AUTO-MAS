@@ -1742,12 +1742,6 @@ class AppConfig(GlobalConfig):
 
         return stage_data
 
-    async def get_materials(self, dropId):
-        """获取材料URL"""
-        if dropId not in MATERIALS_MAP:
-            raise ValueError(f"未知的材料ID: {dropId}")
-        return f"file:///{quote((Path.cwd() / f"res/images/materials/{dropId}.png").as_posix())}"
-
     async def get_script_combox(self):
         """获取脚本下拉框信息"""
 
