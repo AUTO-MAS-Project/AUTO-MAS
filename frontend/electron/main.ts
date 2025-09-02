@@ -61,7 +61,7 @@ let mainWindow: BrowserWindow | null = null
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1600,
-    height: 900,
+    height: 1000,
     minWidth: 800,
     minHeight: 600,
     icon: path.join(__dirname, '../src/assets/AUTO_MAA.ico'),
