@@ -1,24 +1,24 @@
 <template>
   <div class="manual-mode">
     <div class="header">
-      <a-typography-title>AUTO_MAA 初始化向导</a-typography-title>
-      <a-typography-title :level="4"
+      <!--      <a-typography-title>AUTO_MAA 初始化向导</a-typography-title>-->
+      <a-typography-title :level="3"
         >欢迎使用 AUTO_MAA，让我们来配置您的运行环境</a-typography-title
       >
 
-            <div class="header-actions">
-              <a-button size="large" type="primary" @click="handleSkipToHome">
-                跳转至首页（仅开发用）
-              </a-button>
-              <a-button
-                size="large"
-                type="default"
-                @click="handleJumpToStep(3)"
-                style="margin-left: 16px"
-              >
-                跳到启动服务（第六步）
-              </a-button>
-            </div>
+      <!--            <div class="header-actions">-->
+      <!--              <a-button size="large" type="primary" @click="handleSkipToHome">-->
+      <!--                跳转至首页（仅开发用）-->
+      <!--              </a-button>-->
+      <!--              <a-button-->
+      <!--                size="large"-->
+      <!--                type="default"-->
+      <!--                @click="handleJumpToStep(3)"-->
+      <!--                style="margin-left: 16px"-->
+      <!--              >-->
+      <!--                跳到启动服务（第六步）-->
+      <!--              </a-button>-->
+      <!--            </div>-->
     </div>
 
     <a-steps :current="currentStep" :status="stepStatus" class="init-steps">
@@ -499,53 +499,23 @@ watch(errorMessage, val => {
   margin: 0 0 20px 0;
 }
 
-.header-actions {
-  display: flex;
-  justify-content: center;
-  gap: 16px;
-}
-
 .init-steps {
-  margin-bottom: 40px;
+  margin-bottom: 20px;
 }
 
 .step-content {
   min-height: 300px;
-  margin-bottom: 40px;
+  margin-bottom: 20px;
 }
 
 .step-actions {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 20px;
-}
-
-.error-message {
-  margin-top: 20px;
-}
-
-.global-progress {
-  margin: 20px 0;
-  padding: 20px;
-  background: var(--ant-color-bg-container);
-  border-radius: 8px;
-  border: 1px solid var(--ant-color-border);
-}
-
-.global-progress .progress-text {
-  text-align: center;
-  margin-top: 8px;
-  font-size: 14px;
-  color: var(--ant-color-text-secondary);
+  margin-bottom: 10px;
 }
 
 @media (max-width: 768px) {
-  .header-actions {
-    flex-direction: column;
-    gap: 8px;
-  }
-
   .step-actions {
     flex-direction: column;
     gap: 12px;
