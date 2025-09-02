@@ -13,15 +13,13 @@
 </template>
 
 <script setup lang="ts">
-import { createComponentLogger } from '@/utils/logger'
 
-const logger = createComponentLogger('AdminCheck')
 
 async function handleRestartAsAdmin() {
   try {
     await window.electronAPI.restartAsAdmin()
   } catch (error) {
-    logger.error('重启为管理员失败', error)
+    console.error('重启为管理员失败', error)
   }
 }
 </script>
