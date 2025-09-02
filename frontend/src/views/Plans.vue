@@ -1,208 +1,196 @@
 <template>
-    <!-- 加载状态 -->
-    <div v-if="loading" class="loading-container">
-      <a-spin size="large" tip="加载中，请稍候..." />
-    </div>
+  <!-- 加载状态 -->
+  <div v-if="loading" class="loading-container">
+    <a-spin size="large" tip="加载中，请稍候..." />
+  </div>
 
-    <!-- 主要内容 -->
-    <div v-else class="plans-main">
-      <!-- 页面头部 -->
-      <div class="plans-header">
-        <div class="header-left">
-          <h1 class="page-title">计划管理</h1>
-        </div>
-        <div class="header-actions">
-          <a-space size="middle">
-            <a-button
-              type="primary"
-              size="large"
-              @click="handleAddPlan"
-              v-if="planList.length > 0 || currentPlanData"
-            >
-              <template #icon>
-                <PlusOutlined />
-              </template>
-              新建计划
-            </a-button>
-
-            <a-popconfirm
-              v-if="planList.length > 0"
-              title="确定要删除这个计划吗？"
-              ok-text="确定"
-              cancel-text="取消"
-              @confirm="handleRemovePlan(activePlanId)"
-            >
-              <a-button
-                danger
-                size="large"
-                :disabled="!activePlanId"
-              >
-                <template #icon>
-                  <DeleteOutlined />
-                </template>
-                删除当前计划
-              </a-button>
-            </a-popconfirm>
-
-            <a-button size="large" @click="handleRefresh">
-              <template #icon>
-                <ReloadOutlined />
-              </template>
-              刷新
-            </a-button>
-          </a-space>
-        </div>
+  <!-- 主要内容 -->
+  <div v-else class="plans-main">
+    <!-- 页面头部 -->
+    <div class="plans-header">
+      <div class="header-left">
+        <h1 class="page-title">计划管理</h1>
       </div>
-
-      <!-- 空状态 -->
-      <div v-if="!planList.length || !currentPlanData" class="empty-state">
-        <a-empty
-          image="https://gw.alipayobjects.com/zos/antfincdn/ZHrcdLPrvN/empty.svg"
-          :image-style="{ height: '120px' }"
-          description="当前没有计划"
-        >
-          <template #description>
-            <span class="empty-description">
-              您还没有创建任何计划，点击下方按钮来创建您的第一个计划
-            </span>
-          </template>
-          <a-button type="primary" size="large" @click="handleAddPlan">
+      <div class="header-actions">
+        <a-space size="middle">
+          <a-button
+            type="primary"
+            size="large"
+            @click="handleAddPlan"
+            v-if="planList.length > 0 || currentPlanData"
+          >
             <template #icon>
               <PlusOutlined />
             </template>
             新建计划
           </a-button>
-        </a-empty>
-      </div>
 
-      <!-- 计划内容 -->
-      <div v-else class="plans-content">
-        <!-- 计划选择卡片 -->
-        <a-card class="plan-selector-card" :bordered="false">
-          <template #title>
-            <div class="card-title">
-              <span>计划选择</span>
-              <a-tag :color="planList.length > 0 ? 'success' : 'default'">
-                {{ planList.length }} 个计划
-              </a-tag>
-            </div>
-          </template>
-
-          <div class="plan-selection-container">
-            <!-- 计划按钮组 -->
-            <div class="plan-buttons-container">
-              <a-space wrap size="middle">
-                <a-button
-                  v-for="plan in planList"
-                  :key="plan.id"
-                  :type="activePlanId === plan.id ? 'primary' : 'default'"
-                  size="large"
-                  @click="onPlanChange(plan.id)"
-                  class="plan-button"
-                >
-                  {{ plan.name }}
-                </a-button>
-              </a-space>
-            </div>
-          </div>
-        </a-card>
-
-        <!-- 计划配置卡片 -->
-        <a-card class="plan-config-card" :bordered="false">
-          <template #title>
-            <div class="plan-title-container">
-              <div v-if="!isEditingPlanName" class="plan-title-display">
-                <span class="plan-title-text">{{ currentPlanName || '计划配置' }}</span>
-                <a-button
-                  type="text"
-                  size="small"
-                  @click="startEditPlanName"
-                  class="plan-edit-btn"
-                >
-                  <template #icon>
-                    <EditOutlined />
-                  </template>
-                </a-button>
-              </div>
-              <div v-else class="plan-title-edit">
-                <a-input
-                  v-model:value="currentPlanName"
-                  placeholder="请输入计划名称"
-                  size="small"
-                  class="plan-title-input"
-                  @blur="finishEditPlanName"
-                  @pressEnter="finishEditPlanName"
-                  :maxlength="50"
-                  ref="planNameInputRef"
-                />
-              </div>
-            </div>
-          </template>
-          <template #extra>
-            <a-space>
-              <span class="mode-label">执行模式：</span>
-              <a-segmented
-                v-model:value="currentMode"
-                @change="onModeChange"
-                :options="[
-                  { label: '全局模式', value: 'ALL' },
-                  { label: '周计划模式', value: 'Weekly' }
-                ]"
-              />
-            </a-space>
-          </template>
-
-          <!-- 配置表格 -->
-          <div class="config-table-container">
-            <a-table
-              :columns="dynamicTableColumns"
-              :data-source="tableData"
-              :pagination="false"
-              class="config-table"
-              size="middle"
-              :bordered="true"
-              :scroll="{ x: false }"
-            >
-              <template #bodyCell="{ column, record, index }">
-                <template v-if="column.key === 'taskName'">
-                  <div class="task-name-cell">
-                    <a-tag
-                      :color="getTaskTagColor(record.taskName)"
-                      class="task-tag"
-                    >
-                      {{ record.taskName }}
-                    </a-tag>
-                  </div>
-                </template>
-                <template v-else-if="record.taskName === '吃理智药'">
-                  <a-input-number
-                    v-model:value="record[column.key]"
-                    size="small"
-                    :min="0"
-                    :max="999"
-                    :placeholder="getPlaceholder(column.key, record.taskName)"
-                    class="config-input-number"
-                    :controls="false"
-                  />
-                </template>
-                <template v-else>
-                  <a-select
-                    v-model:value="record[column.key]"
-                    size="small"
-                    :options="getSelectOptions(column.key, record.taskName)"
-                    :placeholder="getPlaceholder(column.key, record.taskName)"
-                    class="config-select"
-                    allow-clear
-                    :show-search="true"
-                    :filter-option="filterOption"
-                  />
-                </template>
+          <a-popconfirm
+            v-if="planList.length > 0"
+            title="确定要删除这个计划吗？"
+            ok-text="确定"
+            cancel-text="取消"
+            @confirm="handleRemovePlan(activePlanId)"
+          >
+            <a-button danger size="large" :disabled="!activePlanId">
+              <template #icon>
+                <DeleteOutlined />
               </template>
-            </a-table>
-          </div>
-        </a-card>
+              删除当前计划
+            </a-button>
+          </a-popconfirm>
+
+          <a-button size="large" @click="handleRefresh">
+            <template #icon>
+              <ReloadOutlined />
+            </template>
+            刷新
+          </a-button>
+        </a-space>
       </div>
     </div>
+
+    <!-- 空状态 -->
+    <div v-if="!planList.length || !currentPlanData" class="empty-state">
+      <a-empty
+        image="https://gw.alipayobjects.com/zos/antfincdn/ZHrcdLPrvN/empty.svg"
+        :image-style="{ height: '120px' }"
+        description="当前没有计划"
+      >
+        <template #description>
+          <span class="empty-description">
+            您还没有创建任何计划，点击下方按钮来创建您的第一个计划
+          </span>
+        </template>
+        <a-button type="primary" size="large" @click="handleAddPlan">
+          <template #icon>
+            <PlusOutlined />
+          </template>
+          新建计划
+        </a-button>
+      </a-empty>
+    </div>
+
+    <!-- 计划内容 -->
+    <div v-else class="plans-content">
+      <!-- 计划选择卡片 -->
+      <a-card class="plan-selector-card" :bordered="false">
+        <template #title>
+          <div class="card-title">
+            <span>计划选择</span>
+            <a-tag :color="planList.length > 0 ? 'success' : 'default'">
+              {{ planList.length }} 个计划
+            </a-tag>
+          </div>
+        </template>
+
+        <div class="plan-selection-container">
+          <!-- 计划按钮组 -->
+          <div class="plan-buttons-container">
+            <a-space wrap size="middle">
+              <a-button
+                v-for="plan in planList"
+                :key="plan.id"
+                :type="activePlanId === plan.id ? 'primary' : 'default'"
+                size="large"
+                @click="onPlanChange(plan.id)"
+                class="plan-button"
+              >
+                {{ plan.name }}
+              </a-button>
+            </a-space>
+          </div>
+        </div>
+      </a-card>
+
+      <!-- 计划配置卡片 -->
+      <a-card class="plan-config-card" :bordered="false">
+        <template #title>
+          <div class="plan-title-container">
+            <div v-if="!isEditingPlanName" class="plan-title-display">
+              <span class="plan-title-text">{{ currentPlanName || '计划配置' }}</span>
+              <a-button type="text" size="small" @click="startEditPlanName" class="plan-edit-btn">
+                <template #icon>
+                  <EditOutlined />
+                </template>
+              </a-button>
+            </div>
+            <div v-else class="plan-title-edit">
+              <a-input
+                v-model:value="currentPlanName"
+                placeholder="请输入计划名称"
+                size="small"
+                class="plan-title-input"
+                @blur="finishEditPlanName"
+                @pressEnter="finishEditPlanName"
+                :maxlength="50"
+                ref="planNameInputRef"
+              />
+            </div>
+          </div>
+        </template>
+        <template #extra>
+          <a-space>
+            <span class="mode-label">执行模式：</span>
+            <a-segmented
+              v-model:value="currentMode"
+              @change="onModeChange"
+              :options="[
+                { label: '全局模式', value: 'ALL' },
+                { label: '周计划模式', value: 'Weekly' },
+              ]"
+            />
+          </a-space>
+        </template>
+
+        <!-- 配置表格 -->
+        <div class="config-table-container">
+          <a-table
+            :columns="dynamicTableColumns"
+            :data-source="tableData"
+            :pagination="false"
+            class="config-table"
+            size="middle"
+            :bordered="true"
+            :scroll="{ x: false }"
+          >
+            <template #bodyCell="{ column, record, index }">
+              <template v-if="column.key === 'taskName'">
+                <div class="task-name-cell">
+                  <a-tag :color="getTaskTagColor(record.taskName)" class="task-tag">
+                    {{ record.taskName }}
+                  </a-tag>
+                </div>
+              </template>
+              <template v-else-if="record.taskName === '吃理智药'">
+                <a-input-number
+                  v-model:value="record[column.key]"
+                  size="small"
+                  :min="0"
+                  :max="999"
+                  :placeholder="getPlaceholder(column.key, record.taskName)"
+                  class="config-input-number"
+                  :controls="false"
+                />
+              </template>
+              <template v-else>
+                <a-select
+                  v-model:value="record[column.key]"
+                  size="small"
+                  :options="getSelectOptions(column.key, record.taskName)"
+                  :placeholder="getPlaceholder(column.key, record.taskName)"
+                  class="config-select"
+                  allow-clear
+                  :show-search="true"
+                  :filter-option="filterOption"
+                />
+              </template>
+            </template>
+          </a-table>
+        </div>
+      </a-card>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -539,7 +527,7 @@ const handleSave = async () => {
 const handleAddPlan = async () => {
   try {
     const response = await createPlan('MaaPlan')
-    const defaultName = '新MAA计划表'
+    const defaultName = '新 MAA 计划表'
     const newPlan = {
       id: response.planId,
       name: defaultName,
@@ -741,13 +729,13 @@ onMounted(() => {
 // 新增方法：获取任务标签颜色
 const getTaskTagColor = (taskName: string) => {
   const colorMap: Record<string, string> = {
-    '吃理智药': 'blue',
-    '连战次数': 'green',
-    '关卡选择': 'orange',
+    吃理智药: 'blue',
+    连战次数: 'green',
+    关卡选择: 'orange',
     '备选-1': 'purple',
     '备选-2': 'purple',
     '备选-3': 'purple',
-    '剩余理智': 'cyan'
+    剩余理智: 'cyan',
   }
   return colorMap[taskName] || 'default'
 }

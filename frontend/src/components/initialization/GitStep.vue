@@ -105,17 +105,4 @@ defineExpose({
   gap: 20px;
 }
 
-.reinstall-section {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-}
-
-.reinstall-note {
-  font-size: 12px;
-  color: var(--ant-color-text-tertiary);
-  text-align: center;
-  margin: 0;
-}
 </style>

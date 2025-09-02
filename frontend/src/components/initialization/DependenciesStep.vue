@@ -23,7 +23,7 @@
                 <h4>{{ mirror.name }}</h4>
                 <a-tag v-if="mirror.recommended" color="gold" size="small">推荐</a-tag>
               </div>
-              <div class="speed-badge" :class="getSpeedClass(mirror.speed)">
+              <div class="speed-badge" :class="getSpeedClass(mirror.speed ?? null)">
                 <span v-if="mirror.speed === null && !testingPipSpeed">未测试</span>
                 <span v-else-if="testingPipSpeed">测试中...</span>
                 <span v-else-if="mirror.speed === 9999">超时</span>
@@ -54,7 +54,7 @@
               <div class="mirror-title">
                 <h4>{{ mirror.name }}</h4>
               </div>
-              <div class="speed-badge" :class="getSpeedClass(mirror.speed)">
+              <div class="speed-badge" :class="getSpeedClass(mirror.speed ?? null)">
                 <span v-if="mirror.speed === null && !testingPipSpeed">未测试</span>
                 <span v-else-if="testingPipSpeed">测试中...</span>
                 <span v-else-if="mirror.speed === 9999">超时</span>
@@ -80,12 +80,12 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { getConfig, saveConfig } from '@/utils/config'
-import { 
-  PIP_MIRRORS, 
-  getOfficialMirrors, 
+import {
+  PIP_MIRRORS,
+  getOfficialMirrors,
   getMirrorMirrors,
   sortMirrorsBySpeedAndRecommendation,
-  type MirrorConfig 
+  type MirrorConfig,
 } from '@/config/mirrors'
 
 const pipMirrors = ref<MirrorConfig[]>(PIP_MIRRORS)
@@ -95,7 +95,9 @@ const officialMirrors = computed(() => getOfficialMirrors('pip'))
 const mirrorMirrors = computed(() => getMirrorMirrors('pip'))
 
 // 按速度和推荐排序的镜像源
-const sortedOfficialMirrors = computed(() => sortMirrorsBySpeedAndRecommendation(officialMirrors.value))
+const sortedOfficialMirrors = computed(() =>
+  sortMirrorsBySpeedAndRecommendation(officialMirrors.value)
+)
 const sortedMirrorMirrors = computed(() => sortMirrorsBySpeedAndRecommendation(mirrorMirrors.value))
 
 const selectedPipMirror = ref('aliyun')
@@ -259,33 +261,11 @@ onMounted(async () => {
   color: var(--ant-color-text);
 }
 
-
-
 .speed-badge {
   padding: 4px 8px;
   border-radius: 4px;
   font-size: 12px;
   font-weight: 500;
-}
-
-.speed-badge.speed-unknown {
-  color: var(--ant-color-text-tertiary);
-}
-
-.speed-badge.speed-fast {
-  color: var(--ant-color-success);
-}
-
-.speed-badge.speed-medium {
-  color: var(--ant-color-warning);
-}
-
-.speed-badge.speed-slow {
-  color: var(--ant-color-error);
-}
-
-.speed-badge.speed-timeout {
-  color: var(--ant-color-error);
 }
 
 .mirror-description {
@@ -300,7 +280,6 @@ onMounted(async () => {
   color: var(--ant-color-text-tertiary);
   word-break: break-all;
 }
-
 
 .section-header {
   display: flex;

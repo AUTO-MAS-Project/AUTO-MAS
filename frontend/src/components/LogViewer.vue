@@ -252,7 +252,7 @@ onUnmounted(() => {
 }
 
 .log-entry:hover {
-  background: var(--ant-color-fill-quaternary);
+
 }
 
 .log-highlight {
@@ -311,7 +311,7 @@ onUnmounted(() => {
 }
 
 .log-data-content {
-  background: var(--ant-color-fill-quaternary);
+
   padding: 8px;
   border-radius: 4px;
   margin-top: 4px;

@@ -160,10 +160,6 @@ const dependenciesStepRef = ref()
 const serviceStepRef = ref()
 
 // 事件处理
-function handleSkipToHome() {
-  props.onSkipToHome()
-}
-
 function handleJumpToStep(step: number) {
   currentStep.value = step
 }

@@ -48,7 +48,6 @@
       </template>
     </a-table>
 
-
     <!-- 队列项编辑弹窗 -->
     <a-modal
       v-model:open="modalVisible"
@@ -73,17 +72,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch, onMounted, h } from 'vue'
-import { message } from 'ant-design-vue'
-import {
-  PlusOutlined,
-  ReloadOutlined,
-  EditOutlined,
-  DeleteOutlined,
-  MoreOutlined,
-} from '@ant-design/icons-vue'
-import { Service } from '@/api'
+import { onMounted, reactive, ref, watch } from 'vue'
 import type { FormInstance } from 'ant-design-vue'
+import { message } from 'ant-design-vue'
+import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons-vue'
+import { Service } from '@/api'
 
 // Props
 interface Props {

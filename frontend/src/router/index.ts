@@ -89,40 +89,40 @@ const router = createRouter({
   routes,
 })
 
-// // 添加路由守卫，确保在生产环境中也能正确进入初始化页面
-// router.beforeEach(async (to, from, next) => {
-//   console.log('路由守卫：', { to: to.path, from: from.path })
-//
-//   // 如果目标就是初始化页，放行并清除一次性标记，避免反复跳转
-//   if (to.path === '/initialization') {
-//     needInitLanding = false
-//     next()
-//     return
-//   }
-//
-//   // （可选）开发环境跳过检查，可按需恢复
-//   const isDev = import.meta.env.VITE_APP_ENV === 'dev'
-//   if (isDev) return next()
-//
-//   // 先按原逻辑：未初始化 => 强制进入初始化
-//   const initialized = await isAppInitialized()
-//   console.log('检查初始化状态：', initialized)
-//   if (!initialized) {
-//     needInitLanding = false // 以免重复重定向
-//     next('/initialization')
-//     return
-//   }
-//
-//   // 已初始化：如果是“本次启动的第一次进入”，也先去初始化页一次
-//   if (needInitLanding) {
-//     needInitLanding = false
-//     next({ path: '/initialization', query: { redirect: to.fullPath } })
-//     return
-//   }
-//
-//   // 其他情况正常放行
-//   next()
-// })
+// 添加路由守卫，确保在生产环境中也能正确进入初始化页面
+router.beforeEach(async (to, from, next) => {
+  console.log('路由守卫：', { to: to.path, from: from.path })
+
+  // 如果目标就是初始化页，放行并清除一次性标记，避免反复跳转
+  if (to.path === '/initialization') {
+    needInitLanding = false
+    next()
+    return
+  }
+
+  // （可选）开发环境跳过检查，可按需恢复
+  const isDev = import.meta.env.VITE_APP_ENV === 'dev'
+  if (isDev) return next()
+
+  // 先按原逻辑：未初始化 => 强制进入初始化
+  const initialized = await isAppInitialized()
+  console.log('检查初始化状态：', initialized)
+  if (!initialized) {
+    needInitLanding = false // 以免重复重定向
+    next('/initialization')
+    return
+  }
+
+  // 已初始化：如果是“本次启动的第一次进入”，也先去初始化页一次
+  if (needInitLanding) {
+    needInitLanding = false
+    next({ path: '/initialization', query: { redirect: to.fullPath } })
+    return
+  }
+
+  // 其他情况正常放行
+  next()
+})
 
 
 export default router

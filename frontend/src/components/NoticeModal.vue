@@ -92,10 +92,9 @@ const md = new MarkdownIt({
 const notices = computed(() => Object.keys(props.noticeData))
 
 // 当前公告索引
-const currentNoticeIndex = computed(() => {
+computed(() => {
   return notices.value.findIndex(title => title === activeNoticeKey.value)
 })
-
 // 渲染 markdown
 const renderMarkdown = (content: string) => {
   return md.render(content)
