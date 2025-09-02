@@ -438,17 +438,8 @@ const handleConfirmTemplate = async () => {
       // 刷新脚本列表
       await loadScripts()
 
-      // 跳转到编辑页面
-      router.push({
-        path: `/scripts/${createResult.scriptId}/edit`,
-        state: {
-          scriptData: {
-            id: createResult.scriptId,
-            type: 'General',
-            config: createResult.data,
-          },
-        },
-      })
+      // 跳转到编辑页面，不传递state数据，让编辑页面从API重新加载最新配置
+      router.push(`/scripts/${createResult.scriptId}/edit`)
     }
   } catch (error) {
     console.error('使用模板创建脚本失败:', error)

@@ -902,7 +902,8 @@
               <span class="switch-description">启用后将发送任务通知</span>
             </a-col>
           </a-row>
-          <!-- 发送统计等可选通知 -->
+
+          <!-- 发送统计 -->
           <a-row :gutter="24" style="margin-top: 16px">
             <a-col :span="6">
               <span style="font-weight: 500">通知内容</span>
@@ -1060,7 +1061,7 @@ const getDefaultMAAUserData = () => ({
     Password: '',
     Server: 'Official',
     MedicineNumb: 0,
-    RemainedDay: 0,
+    RemainedDay: -1,
     SeriesNumb: '0',
     Notes: '',
     Status: true,
@@ -1128,7 +1129,6 @@ const getDefaultGeneralUserData = () => ({
     ToAddress: '',
     IfSendMail: false,
     IfSendStatistic: false,
-    IfSendSixStar: false,
     IfServerChan: false,
     IfCompanyWebHookBot: false,
     ServerChanKey: '',
@@ -1322,10 +1322,18 @@ const handleSubmit = async () => {
     const { InfrastPath, ...infoWithoutInfrastPath } = formData.Info
 
     // 构建提交数据
+    let notifyData = { ...formData.Notify }
+    
+    // 如果是通用脚本，移除MAA专用的通知字段
+    if (scriptType.value === 'General') {
+      const { IfSendSixStar, ...generalNotify } = notifyData
+      notifyData = generalNotify
+    }
+    
     const userData = {
       Info: { ...infoWithoutInfrastPath },
       Task: { ...formData.Task },
-      Notify: { ...formData.Notify },
+      Notify: notifyData,
       Data: { ...formData.Data },
     }
 
