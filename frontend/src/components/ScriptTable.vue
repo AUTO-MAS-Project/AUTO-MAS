@@ -268,7 +268,7 @@
           <!-- 空状态 -->
           <div v-else class="empty-users">
             <div class="empty-content">
-              <img src="@/assets/NoData.png" alt="暂无用户" class="empty-image" />
+              <img src="@/assets/NoData.png" alt="无数据" class="empty-image" />
             </div>
           </div>
         </a-card>

@@ -17,7 +17,6 @@
             type="primary"
             size="large"
             @click="handleAddPlan"
-            v-if="planList.length > 0 || currentPlanData"
           >
             <template #icon>
               <PlusOutlined />
@@ -52,23 +51,15 @@
 
     <!-- 空状态 -->
     <div v-if="!planList.length || !currentPlanData" class="empty-state">
-      <a-empty
-        image="https://gw.alipayobjects.com/zos/antfincdn/ZHrcdLPrvN/empty.svg"
-        :image-style="{ height: '120px' }"
-        description="当前没有计划"
-      >
-        <template #description>
-          <span class="empty-description">
-            您还没有创建任何计划，点击下方按钮来创建您的第一个计划
-          </span>
-        </template>
-        <a-button type="primary" size="large" @click="handleAddPlan">
-          <template #icon>
-            <PlusOutlined />
-          </template>
-          新建计划
-        </a-button>
-      </a-empty>
+      <div class="empty-content">
+        <div class="empty-image-container">
+          <img src="@/assets/NoData.png" alt="暂无数据" class="empty-image" />
+        </div>
+        <div class="empty-text-content">
+          <h3 class="empty-title">暂无计划</h3>
+          <p class="empty-description">您还没有创建任何计划</p>
+        </div>
+      </div>
     </div>
 
     <!-- 计划内容 -->
@@ -805,17 +796,95 @@ const filterOption = (input: string, option: any) => {
   display: flex;
   justify-content: center;
   align-items: center;
-  min-height: 400px;
-  background: var(--ant-color-bg-container);
-  border-radius: 12px;
-  border: 1px solid var(--ant-color-border-secondary);
+  min-height: 500px;
+  padding: 60px 20px;
+  background: linear-gradient(135deg, rgba(24, 144, 255, 0.02), rgba(24, 144, 255, 0.01));
+  border-radius: 16px;
+  margin: 20px 0;
+}
+
+.empty-content {
+  text-align: center;
+  max-width: 480px;
+  animation: fadeInUp 0.8s ease-out;
+}
+
+.empty-image-container {
+  position: relative;
+  margin-bottom: 32px;
+  display: inline-block;
+}
+
+.empty-image-container::before {
+  content: '';
+  position: absolute;
+  top: -20px;
+  left: -20px;
+  right: -20px;
+  bottom: -20px;
+  background: radial-gradient(circle, rgba(24, 144, 255, 0.1) 0%, transparent 70%);
+  border-radius: 50%;
+  animation: pulse 3s ease-in-out infinite;
+}
+
+.empty-image {
+  max-width: 200px;
+  height: auto;
+  opacity: 0.9;
+  filter: drop-shadow(0 8px 24px rgba(0, 0, 0, 0.1));
+  transition: all 0.3s ease;
+  position: relative;
+  z-index: 1;
+}
+
+.empty-image:hover {
+  transform: translateY(-4px);
+  filter: drop-shadow(0 12px 32px rgba(0, 0, 0, 0.15));
+}
+
+.empty-text-content {
+  margin-top: 16px;
+}
+
+.empty-title {
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--ant-color-text);
+  margin: 0 0 12px 0;
+  background: linear-gradient(135deg, var(--ant-color-text), var(--ant-color-text-secondary));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .empty-description {
-  color: var(--ant-color-text-secondary);
   font-size: 16px;
-  margin-bottom: 16px;
-  display: block;
+  color: var(--ant-color-text-secondary);
+  line-height: 1.6;
+  margin: 0;
+  opacity: 0.8;
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 0.6;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.8;
+    transform: scale(1.05);
+  }
 }
 
 /* 计划内容 */
