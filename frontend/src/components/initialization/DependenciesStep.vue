@@ -201,7 +201,6 @@ onMounted(async () => {
   font-size: 20px;
   font-weight: 600;
   color: var(--ant-color-text);
-  margin-bottom: 20px;
 }
 
 .install-section {
@@ -219,7 +218,6 @@ onMounted(async () => {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 16px;
-  margin-bottom: 20px;
 }
 
 .mirror-card {
@@ -303,9 +301,6 @@ onMounted(async () => {
   word-break: break-all;
 }
 
-.mirror-section {
-  margin-bottom: 24px;
-}
 
 .section-header {
   display: flex;

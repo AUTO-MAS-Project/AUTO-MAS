@@ -31,7 +31,7 @@
               </div>
             </div>
             <div class="mirror-description">{{ mirror.description }}</div>
-            <div class="mirror-url">{{ mirror.url }}</div>
+<!--            <div class="mirror-url">{{ mirror.url }}</div>-->
           </div>
         </div>
       </div>
@@ -62,14 +62,14 @@
               </div>
             </div>
             <div class="mirror-description">{{ mirror.description }}</div>
-            <div class="mirror-url">{{ mirror.url }}</div>
+<!--            <div class="mirror-url">{{ mirror.url }}</div>-->
           </div>
         </div>
       </div>
 
       <div class="test-actions">
         <a-button @click="testGitMirrorSpeed" :loading="testingGitSpeed" type="primary">
-          {{ testingGitSpeed ? '测速中...' : '开始测速' }}
+          {{ testingGitSpeed ? '测速中...' : '重新测速' }}
         </a-button>
         <span class="test-note">3秒无响应视为超时</span>
       </div>
@@ -206,7 +206,7 @@ onMounted(async () => {
   font-size: 20px;
   font-weight: 600;
   color: var(--ant-color-text);
-  margin-bottom: 20px;
+
 }
 
 .install-section {
@@ -224,7 +224,7 @@ onMounted(async () => {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 16px;
-  margin-bottom: 20px;
+
 }
 
 .mirror-card {
@@ -308,9 +308,6 @@ onMounted(async () => {
   word-break: break-all;
 }
 
-.mirror-section {
-  margin-bottom: 24px;
-}
 
 .section-header {
   display: flex;
