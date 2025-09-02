@@ -1060,7 +1060,7 @@ const getDefaultMAAUserData = () => ({
     Password: '',
     Server: 'Official',
     MedicineNumb: 0,
-    RemainedDay: 0,
+    RemainedDay: -1,
     SeriesNumb: '0',
     Notes: '',
     Status: true,
