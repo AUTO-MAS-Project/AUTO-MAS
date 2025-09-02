@@ -45,15 +45,7 @@ export const GIT_MIRROR_MIRRORS: MirrorConfig[] = [
     type: 'mirror',
     chinaConnectivity: 'good',
     description: 'Cloudflare CDN 镜像，适合全球用户',
-  },
-  {
-    key: 'ghproxy_hongkong',
-    name: 'gh-proxy (香港节点)',
-    url: 'https://hk.gh-proxy.com/https://github.com/DLmaster361/AUTO_MAA.git',
-    speed: null,
-    type: 'mirror',
-    chinaConnectivity: 'excellent',
-    description: '香港节点镜像，对中国大陆用户友好',
+    recommended: true,
   },
   {
     key: 'ghproxy_fastly',
@@ -72,7 +64,6 @@ export const GIT_MIRROR_MIRRORS: MirrorConfig[] = [
     type: 'mirror',
     chinaConnectivity: 'good',
     description: 'EdgeOne 镜像服务',
-    recommended: true,
   },
   {
     key: 'ghfast',
