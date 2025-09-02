@@ -1164,15 +1164,6 @@ const rules = computed(() => {
       { min: 1, max: 50, message: '用户名长度应在1-50个字符之间', trigger: 'blur' },
     ],
   }
-
-  // 只有MAA脚本需要验证userId
-  if (scriptType.value === 'MAA') {
-    baseRules.userId = [
-      { required: false, message: '请输入账号ID', trigger: 'blur' },
-      { max: 50, message: '账号ID长度不能超过50个字符', trigger: 'blur' },
-    ]
-  }
-
   return baseRules
 })
 
