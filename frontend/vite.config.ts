@@ -9,7 +9,7 @@ export default defineConfig({
   resolve: {
     extensions: ['.js', '.ts', '.vue', '.json'],
     alias: {
-      '@': path.resolve(__dirname, 'src'),
+      '@': path.resolve(__dirname, './src'),
     },
   },
 })

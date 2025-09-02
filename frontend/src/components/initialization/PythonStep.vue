@@ -2,7 +2,7 @@
   <div class="step-panel">
     <h3>Python 运行环境</h3>
     <div v-if="!pythonInstalled" class="install-section">
-      <p>需要安装 Python 3.13.0 运行环境（64位嵌入式版本）</p>
+      <p>需要安装 Python 3.13.0 运行环境</p>
 
       <!-- 镜像源 -->
       <div class="mirror-section">
@@ -31,7 +31,7 @@
               </div>
             </div>
             <div class="mirror-description">{{ mirror.description }}</div>
-            <div class="mirror-url">{{ mirror.url }}</div>
+<!--            <div class="mirror-url">{{ mirror.url }}</div>-->
           </div>
         </div>
       </div>
@@ -62,7 +62,7 @@
               </div>
             </div>
             <div class="mirror-description">{{ mirror.description }}</div>
-            <div class="mirror-url">{{ mirror.url }}</div>
+<!--            <div class="mirror-url">{{ mirror.url }}</div>-->
           </div>
         </div>
       </div>
@@ -264,7 +264,7 @@ onMounted(async () => {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 16px;
-  margin-bottom: 20px;
+
 }
 
 .mirror-card {
@@ -353,9 +353,7 @@ onMounted(async () => {
   word-break: break-all;
 }
 
-.mirror-section {
-  margin-bottom: 24px;
-}
+
 
 .section-header {
   display: flex;

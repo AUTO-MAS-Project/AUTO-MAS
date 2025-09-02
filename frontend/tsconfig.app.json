@@ -1,14 +1,10 @@
 {
-  "extends": "@vue/tsconfig/tsconfig.dom.json",
+  "extends": "./tsconfig.base.json",
   "compilerOptions": {
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
-    
-    /* Module Resolution */
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
     "noEmit": true,
-
-    /* Linting */
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,

@@ -6,7 +6,7 @@
       <div class="git-info">
         <a-alert
           message="Git 工具信息"
-          description="将安装便携版 Git 工具，包含完整的版本控制功能，无需系统安装。"
+          description="将安装便携版 Git 工具，以实现后端代码更新。"
           type="info"
           show-icon
         />
