@@ -111,7 +111,6 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { notification } from 'ant-design-vue'
-import { createComponentLogger } from '@/utils/logger'
 import { saveConfig } from '@/utils/config'
 import ThemeStep from './ThemeStep.vue'
 import PythonStep from './PythonStep.vue'
@@ -121,7 +120,7 @@ import BackendStep from './BackendStep.vue'
 import DependenciesStep from './DependenciesStep.vue'
 import ServiceStep from './ServiceStep.vue'
 
-const logger = createComponentLogger('ManualMode')
+
 
 // Props
 interface Props {
@@ -284,26 +283,26 @@ async function autoStartSpeedTest() {
 
 // 安装函数
 async function installPython() {
-  logger.info('开始安装Python')
+  console.log('开始安装Python')
   const mirror = pythonStepRef.value?.selectedPythonMirror || 'tsinghua'
   const result = await window.electronAPI.downloadPython(mirror)
   if (result.success) {
-    logger.info('Python安装成功')
+    console.log('Python安装成功')
     await saveConfig({ pythonInstalled: true })
   } else {
-    logger.error('Python安装失败', result.error)
+    console.error('Python安装失败', result.error)
     throw new Error(result.error)
   }
 }
 
 async function installGit() {
-  logger.info('开始安装Git工具')
+  console.log('开始安装Git工具')
   const result = await window.electronAPI.downloadGit()
   if (result.success) {
-    logger.info('Git工具安装成功')
+    console.log('Git工具安装成功')
     await saveConfig({ gitInstalled: true })
   } else {
-    logger.error('Git工具安装失败', result.error)
+    console.error('Git工具安装失败', result.error)
     throw new Error(result.error)
   }
 }
@@ -311,13 +310,13 @@ async function installGit() {
 async function cloneBackend() {
   const selectedMirror = backendStepRef.value?.selectedGitMirror || 'github'
   const mirror = backendStepRef.value?.gitMirrors?.find((m: any) => m.key === selectedMirror)
-  logger.info('开始克隆后端代码', { mirror: mirror?.name, url: mirror?.url })
+  console.log('开始克隆后端代码', { mirror: mirror?.name, url: mirror?.url })
   const result = await window.electronAPI.cloneBackend(mirror?.url)
   if (result.success) {
-    logger.info('后端代码克隆成功')
+    console.log('后端代码克隆成功')
     await saveConfig({ backendExists: true })
   } else {
-    logger.error('后端代码克隆失败', result.error)
+    console.error('后端代码克隆失败', result.error)
     throw new Error(result.error)
   }
 }
@@ -325,31 +324,31 @@ async function cloneBackend() {
 async function updateBackend() {
   const selectedMirror = backendStepRef.value?.selectedGitMirror || 'github'
   const mirror = backendStepRef.value?.gitMirrors?.find((m: any) => m.key === selectedMirror)
-  logger.info('开始更新后端代码', { mirror: mirror?.name, url: mirror?.url })
+  console.log('开始更新后端代码', { mirror: mirror?.name, url: mirror?.url })
   const result = await window.electronAPI.updateBackend(mirror?.url)
   if (!result.success) {
-    logger.error('后端代码更新失败', result.error)
+    console.error('后端代码更新失败', result.error)
     throw new Error(result.error)
   }
-  logger.info('后端代码更新成功')
+  console.log('后端代码更新成功')
 }
 
 async function installDependencies() {
-  logger.info('开始安装Python依赖')
+  console.log('开始安装Python依赖')
   const mirror = dependenciesStepRef.value?.selectedPipMirror || 'tsinghua'
   const result = await window.electronAPI.installDependencies(mirror)
   if (result.success) {
-    logger.info('Python依赖安装成功')
+    console.log('Python依赖安装成功')
     await saveConfig({ dependenciesInstalled: true })
   } else {
-    logger.error('Python依赖安装失败', result.error)
+    console.error('Python依赖安装失败', result.error)
     throw new Error(result.error)
   }
 }
 
 // 自动启动后端服务（进入第七步时调用）
 async function autoStartBackendService() {
-  logger.info('自动启动后端服务')
+  console.log('自动启动后端服务')
   isProcessing.value = true
   errorMessage.value = ''
 
@@ -367,14 +366,14 @@ async function autoStartBackendService() {
         serviceStepRef.value.serviceStatus = '后端服务启动成功，即将进入主页...'
       }
       stepStatus.value = 'finish'
-      logger.info('后端服务自动启动成功，延迟1秒后自动进入主页')
+      console.log('后端服务自动启动成功，延迟1秒后自动进入主页')
 
       // 延迟1秒后自动进入主页
       setTimeout(() => {
         handleEnterApp()
       }, 1000)
     } else {
-      logger.error('后端服务自动启动失败', result.error)
+      console.error('后端服务自动启动失败', result.error)
       if (serviceStepRef.value) {
         serviceStepRef.value.serviceStatus = '后端服务启动失败，请点击重新启动'
       }
@@ -384,7 +383,7 @@ async function autoStartBackendService() {
     if (serviceStepRef.value) {
       serviceStepRef.value.serviceStatus = '后端服务启动失败，请点击重新启动'
     }
-    logger.error('后端服务自动启动异常', error)
+    console.error('后端服务自动启动异常', error)
     errorMessage.value = error instanceof Error ? error.message : String(error)
   } finally {
     if (serviceStepRef.value) {
@@ -396,7 +395,7 @@ async function autoStartBackendService() {
 
 // 手动启动后端服务（用户点击按钮时调用）
 async function startBackendService() {
-  logger.info('手动重新启动后端服务')
+  console.log('手动重新启动后端服务')
 
   if (serviceStepRef.value) {
     serviceStepRef.value.startingService = true
@@ -412,21 +411,21 @@ async function startBackendService() {
         serviceStepRef.value.serviceStatus = '后端服务启动成功，即将进入主页...'
       }
       stepStatus.value = 'finish'
-      logger.info('后端服务手动启动成功，延迟1秒后自动进入主页')
+      console.log('后端服务手动启动成功，延迟1秒后自动进入主页')
 
       // 延迟1秒后自动进入主页
       setTimeout(() => {
         handleEnterApp()
       }, 1000)
     } else {
-      logger.error('后端服务手动启动失败', result.error)
+      console.error('后端服务手动启动失败', result.error)
       throw new Error(result.error)
     }
   } catch (error) {
     if (serviceStepRef.value) {
       serviceStepRef.value.serviceStatus = '后端服务启动失败'
     }
-    logger.error('后端服务手动启动异常', error)
+    console.error('后端服务手动启动异常', error)
     throw error
   } finally {
     if (serviceStepRef.value) {

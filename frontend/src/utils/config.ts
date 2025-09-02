@@ -1,7 +1,4 @@
-import { createComponentLogger } from './logger'
 import type { ThemeMode, ThemeColor } from '@/composables/useTheme'
-
-const logger = createComponentLogger('Config')
 
 export interface FrontendConfig {
   // 基础配置
@@ -71,7 +68,6 @@ async function getConfigInternal(): Promise<FrontendConfig> {
     return config
   } catch (error) {
     console.error('读取配置失败:', error)
-    logger.error('读取配置失败', error)
     return { ...DEFAULT_CONFIG }
   }
 }
@@ -107,10 +103,8 @@ export async function saveConfig(config: Partial<FrontendConfig>): Promise<void>
     console.log('合并后的配置:', newConfig)
     await window.electronAPI.saveConfig(newConfig)
     console.log('配置保存成功')
-    logger.info('配置已保存', newConfig)
   } catch (error) {
     console.error('保存配置失败:', error)
-    logger.error('保存配置失败', error)
     throw error
   }
 }
@@ -122,9 +116,8 @@ export async function resetConfig(): Promise<void> {
     localStorage.removeItem('app-config')
     localStorage.removeItem('theme-settings')
     localStorage.removeItem('app-initialized')
-    logger.info('配置已重置')
   } catch (error) {
-    logger.error('重置配置失败', error)
+    console.error('重置配置失败:', error)
   }
 }
 
