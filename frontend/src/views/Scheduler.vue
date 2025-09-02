@@ -38,7 +38,9 @@
           <!-- 任务执行区域 -->
           <div class="execution-area">
             <div v-if="currentTab.runningTasks.length === 0" class="empty-state">
-              <a-empty description="暂无执行中的任务" />
+              <div class="empty-content">
+                <img src="@/assets/NoData.png" alt="无数据" class="empty-image" />
+              </div>
             </div>
 
             <div v-else class="task-panels">
