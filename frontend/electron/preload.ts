@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
 window.addEventListener('DOMContentLoaded', () => {
-  console.log('Preload loaded')
+  console.log('预加载脚本已加载')
 })
 
 // 暴露安全的 API 给渲染进程
@@ -31,6 +31,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   resetConfig: () => ipcRenderer.invoke('reset-config'),
 
   // 日志文件操作
+  getLogPath: () => ipcRenderer.invoke('get-log-path'),
+  getLogs: (lines?: number) => ipcRenderer.invoke('get-logs', lines),
+  clearLogs: () => ipcRenderer.invoke('clear-logs'),
+  cleanOldLogs: (daysToKeep?: number) => ipcRenderer.invoke('clean-old-logs', daysToKeep),
+  
+  // 保留原有方法以兼容现有代码
   saveLogsToFile: (logs: string) => ipcRenderer.invoke('save-logs-to-file', logs),
   loadLogsFromFile: () => ipcRenderer.invoke('load-logs-from-file'),
 
