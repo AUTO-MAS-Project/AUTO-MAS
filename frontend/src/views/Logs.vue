@@ -31,9 +31,6 @@ const textSecondaryColor = computed(() =>
   padding: 20px;
 }
 
-.logs-header {
-  margin-bottom: 24px;
-}
 
 .logs-header h1 {
   margin: 0 0 8px 0;
