@@ -211,10 +211,7 @@
                         剩余关卡: {{ user.Info.Stage_Remain }}
                       </a-tag>
 
-                      <a-tag
-                        class="info-tag"
-                        color="magenta"
-                      >
+                      <a-tag class="info-tag" color="magenta">
                         备注: {{ truncateText(user.Info.Notes) }}
                       </a-tag>
                     </div>
@@ -270,10 +267,7 @@
 
           <!-- 空状态 -->
           <div v-else class="empty-users">
-            <a-empty
-              description="暂无用户"
-              class="compact-empty"
-            >
+            <a-empty description="暂无用户" class="compact-empty">
               <a-button type="primary" size="small" @click="handleAddUser(script)">
                 <template #icon>
                   <PlusOutlined />
@@ -365,23 +359,6 @@ const handleDisconnectMAA = (script: Script) => {
 const handleToggleUserStatus = (user: User) => {
   emit('toggleUserStatus', user)
 }
-
-function get_annihilation_name(annihilation_name) {
-  if (annihilation_name == 'Annihilation') {
-    return '当期剿灭'
-  }
-  if (annihilation_name == 'Chernobog@Annihilation') {
-    return '切尔诺伯格'
-  }
-  if (annihilation_name == 'LungmenOutskirts@Annihilation') {
-    return '龙门外环'
-  }
-  if (annihilation_name == 'LungmenDowntown@Annihilation') {
-    return '龙门市区'
-  }
-  return '未开启'
-}
-
 const truncateText = (text: string, maxLength: number = 10): string => {
   if (!text) return ''
   return text.length > maxLength ? text.substring(0, maxLength) + '...' : text

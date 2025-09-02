@@ -23,7 +23,7 @@
                 <h4>{{ mirror.name }}</h4>
                 <a-tag v-if="mirror.recommended" color="gold" size="small">推荐</a-tag>
               </div>
-              <div class="speed-badge" :class="getSpeedClass(mirror.speed)">
+              <div class="speed-badge" :class="getSpeedClass(mirror.speed ?? null)">
                 <span v-if="mirror.speed === null && !testingSpeed">未测试</span>
                 <span v-else-if="testingSpeed">测试中...</span>
                 <span v-else-if="mirror.speed === 9999">超时</span>
@@ -54,7 +54,7 @@
               <div class="mirror-title">
                 <h4>{{ mirror.name }}</h4>
               </div>
-              <div class="speed-badge" :class="getSpeedClass(mirror.speed)">
+              <div class="speed-badge" :class="getSpeedClass(mirror.speed ?? null)">
                 <span v-if="mirror.speed === null && !testingSpeed">未测试</span>
                 <span v-else-if="testingSpeed">测试中...</span>
                 <span v-else-if="mirror.speed === 9999">超时</span>

@@ -520,7 +520,7 @@ const handleAddQueue = async () => {
     const response = await Service.addQueueApiQueueAddPost()
 
     if (response.code === 200 && response.queueId) {
-      const defaultName = '新调度队列'
+      const defaultName = '新队列'
       const newQueue = {
         id: response.queueId,
         name: defaultName,

@@ -242,18 +242,17 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref, onUnmounted, computed } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import {
-  PlusOutlined,
-  ReloadOutlined,
-  FileTextOutlined,
-  SettingOutlined,
   ClockCircleOutlined,
   FileSearchOutlined,
+  FileTextOutlined,
+  PlusOutlined,
+  ReloadOutlined,
+  SettingOutlined,
   UserOutlined,
-  CheckCircleFilled,
 } from '@ant-design/icons-vue'
 import ScriptTable from '@/components/ScriptTable.vue'
 import type { Script, ScriptType, User } from '@/types/script'
