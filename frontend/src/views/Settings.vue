@@ -204,11 +204,11 @@ onMounted(() => {
     <h1>设置</h1>
     <Tabs v-model:activeKey="activeKey" type="card" :loading="loading">
       <!-- 基础设置 -->
-      <Tabs.TabPane key="basic" tab="基础设置">
+      <Tabs.TabPane key="basic" tab="外观设置">
         <Card title="外观设置" :bordered="false">
           <Space direction="vertical" size="middle" style="width: 100%">
             <div class="setting-item">
-              <h4>主题模式</h4>
+              <h3>主题模式</h3>
               <p class="setting-description">选择应用程序的外观主题</p>
               <Radio.Group
                 :value="themeMode"
@@ -216,9 +216,9 @@ onMounted(() => {
                 :options="themeModeOptions"
               />
             </div>
-            <Divider />
+
             <div class="setting-item">
-              <h4>主题色</h4>
+              <h3>主题色</h3>
               <p class="setting-description">选择应用程序的主色调</p>
               <Select :value="themeColor" @change="handleThemeColorChange" style="width: 200px">
                 <Select.Option
@@ -249,7 +249,7 @@ onMounted(() => {
         <Card title="功能配置" :bordered="false">
           <Space direction="vertical" size="large" style="width: 100%">
             <div class="setting-item">
-              <h4>Boss键</h4>
+              <h3>Boss键</h3>
               <p class="setting-description">设置快速隐藏窗口的快捷键</p>
               <Input
                 v-model:value="settings.Function.BossKey"
@@ -259,10 +259,8 @@ onMounted(() => {
               />
             </div>
 
-            <Divider />
-
             <div class="setting-item">
-              <h4>历史记录保留时间</h4>
+              <h3>历史记录保留时间</h3>
               <p class="setting-description">设置历史记录的保留时间</p>
               <Select
                 v-model:value="settings.Function.HistoryRetentionTime"
@@ -272,10 +270,8 @@ onMounted(() => {
               />
             </div>
 
-            <Divider />
-
             <div class="setting-item">
-              <h4>主页图像模式</h4>
+              <h3>主页图像模式</h3>
               <p class="setting-description">选择主页显示的图像模式</p>
               <Select
                 v-model:value="settings.Function.HomeImageMode"
@@ -285,10 +281,8 @@ onMounted(() => {
               />
             </div>
 
-            <Divider />
-
             <div class="setting-item">
-              <h4>功能开关</h4>
+              <h3>功能开关</h3>
               <Space direction="vertical" size="middle">
                 <div class="switch-item">
                   <Switch
@@ -338,7 +332,7 @@ onMounted(() => {
         <Card title="通知配置" :bordered="false">
           <Space direction="vertical" size="large" style="width: 100%">
             <div class="setting-item">
-              <h4>任务结果推送时间</h4>
+              <h3>任务结果推送时间</h3>
               <p class="setting-description">设置何时推送任务执行结果</p>
               <Select
                 v-model:value="settings.Notify.SendTaskResultTime"
@@ -348,10 +342,8 @@ onMounted(() => {
               />
             </div>
 
-            <Divider />
-
             <div class="setting-item">
-              <h4>通知开关</h4>
+              <h3>通知开关</h3>
               <Space direction="vertical" size="middle">
                 <div class="switch-item">
                   <Switch
@@ -370,10 +362,8 @@ onMounted(() => {
               </Space>
             </div>
 
-            <Divider />
-
             <div class="setting-item">
-              <h4>邮件通知</h4>
+              <h3>邮件通知</h3>
               <Space direction="vertical" size="middle" style="width: 100%">
                 <div class="switch-item">
                   <Switch
@@ -435,10 +425,8 @@ onMounted(() => {
               </Space>
             </div>
 
-            <Divider />
-
             <div class="setting-item">
-              <h4>Server酱通知</h4>
+              <h3>Server酱通知</h3>
               <Space direction="vertical" size="middle" style="width: 100%">
                 <div class="switch-item">
                   <Switch
@@ -461,10 +449,8 @@ onMounted(() => {
               </Space>
             </div>
 
-            <Divider />
-
             <div class="setting-item">
-              <h4>企业微信机器人</h4>
+              <h3>企业微信机器人</h3>
               <Space direction="vertical" size="middle" style="width: 100%">
                 <div class="switch-item">
                   <Switch
@@ -501,7 +487,7 @@ onMounted(() => {
         <Card title="更新配置" :bordered="false">
           <Space direction="vertical" size="large" style="width: 100%">
             <div class="setting-item">
-              <h4>自动更新</h4>
+              <h3>自动更新</h3>
               <p class="setting-description">是否启用自动更新功能</p>
               <Switch
                 v-model:checked="settings.Update.IfAutoUpdate"
@@ -509,10 +495,8 @@ onMounted(() => {
               />
             </div>
 
-            <Divider />
-
             <div class="setting-item">
-              <h4>更新类型</h4>
+              <h3>更新类型</h3>
               <p class="setting-description">选择更新版本类型</p>
               <Select
                 v-model:value="settings.Update.UpdateType"
@@ -522,24 +506,8 @@ onMounted(() => {
               />
             </div>
 
-            <Divider />
-
             <div class="setting-item">
-              <h4>下载线程数</h4>
-              <p class="setting-description">设置下载时使用的线程数量 (1-32)</p>
-              <InputNumber
-                v-model:value="settings.Update.ThreadNumb"
-                @change="value => handleSettingChange('Update', 'ThreadNumb', value)"
-                :min="1"
-                :max="32"
-                style="width: 120px"
-              />
-            </div>
-
-            <Divider />
-
-            <div class="setting-item">
-              <h4>代理设置</h4>
+              <h3>代理设置</h3>
               <Space direction="vertical" size="middle" style="width: 100%">
                 <div class="input-group">
                   <label>代理地址</label>
@@ -555,10 +523,8 @@ onMounted(() => {
               </Space>
             </div>
 
-            <Divider />
-
             <div class="setting-item">
-              <h4>Mirror酱 CDK</h4>
+              <h3>Mirror酱 CDK</h3>
               <p class="setting-description">设置Mirror酱CDK</p>
               <Input
                 v-model:value="settings.Update.MirrorChyanCDK"
@@ -578,7 +544,7 @@ onMounted(() => {
         <Card title="启动配置" :bordered="false">
           <Space direction="vertical" size="large" style="width: 100%">
             <div class="setting-item">
-              <h4>开机自启</h4>
+              <h3>开机自启</h3>
               <p class="setting-description">是否在系统启动时自动启动应用</p>
               <Switch
                 v-model:checked="settings.Start.IfSelfStart"
@@ -586,10 +552,8 @@ onMounted(() => {
               />
             </div>
 
-            <Divider />
-
             <div class="setting-item">
-              <h4>启动后直接最小化</h4>
+              <h3>启动后直接最小化</h3>
               <p class="setting-description">启动后是否直接最小化到系统托盘</p>
               <Switch
                 v-model:checked="settings.Start.IfMinimizeDirectly"
@@ -605,7 +569,7 @@ onMounted(() => {
         <Card title="界面配置" :bordered="false">
           <Space direction="vertical" size="large" style="width: 100%">
             <div class="setting-item">
-              <h4>系统托盘</h4>
+              <h3>系统托盘</h3>
               <Space direction="vertical" size="middle">
                 <div class="switch-item">
                   <Switch
@@ -624,10 +588,8 @@ onMounted(() => {
               </Space>
             </div>
 
-            <Divider />
-
             <!--            <div class="setting-item">-->
-            <!--              <h4>窗口设置</h4>-->
+            <!--              <h3>窗口设置</h3>-->
             <!--              <Space direction="vertical" size="middle" style="width: 100%">-->
             <!--                <div class="input-group">-->
             <!--                  <label>窗口大小</label>-->
@@ -656,7 +618,7 @@ onMounted(() => {
         <Card title="语音配置" :bordered="false">
           <Space direction="vertical" size="large" style="width: 100%">
             <div class="setting-item">
-              <h4>语音提示</h4>
+              <h3>语音提示</h3>
               <p class="setting-description">是否启用语音提示功能</p>
               <Switch
                 v-model:checked="settings.Voice.Enabled"
@@ -664,10 +626,8 @@ onMounted(() => {
               />
             </div>
 
-            <Divider />
-
             <div class="setting-item">
-              <h4>语音类型</h4>
+              <h3>语音类型</h3>
               <p class="setting-description">选择语音提示的详细程度</p>
               <Select
                 v-model:value="settings.Voice.Type"
@@ -686,22 +646,16 @@ onMounted(() => {
         <Card title="开发者选项" :bordered="false">
           <Space direction="vertical" size="middle" style="width: 100%">
             <div class="setting-item">
-              <h4>日志管理</h4>
+              <h3>日志管理</h3>
               <p class="setting-description">查看和管理应用程序日志文件</p>
               <Button type="primary" @click="goToLogs">查看日志</Button>
             </div>
 
-            <Divider />
-
             <div class="setting-item">
-              <h4>开发者工具</h4>
+              <h3>开发者工具</h3>
               <p class="setting-description">打开浏览器开发者工具进行调试</p>
               <Button type="primary" @click="openDevTools">打开 F12 开发者工具</Button>
             </div>
-
-            <Divider />
-
-
           </Space>
         </Card>
       </Tabs.TabPane>
@@ -718,15 +672,15 @@ onMounted(() => {
 
 .settings-container h1 {
   margin: 0 0 24px 0;
-  font-size: 24px;
+  font-size: 36px;
   font-weight: 600;
   color: v-bind(textColor);
 }
 
-.setting-item h4 {
+.setting-item h3 {
   margin: 0 0 8px 0;
   font-weight: 600;
-  font-size: 16px;
+  font-size: 20px;
   color: v-bind(textColor);
 }
 
@@ -765,6 +719,7 @@ onMounted(() => {
 :deep(.ant-card-head-title) {
   color: v-bind(textColor);
   font-weight: 600;
+  font-size: 28px;
 }
 
 :deep(.ant-tabs-tab) {
