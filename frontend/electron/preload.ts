@@ -32,8 +32,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 日志文件操作
   getLogPath: () => ipcRenderer.invoke('get-log-path'),
-  getLogs: (lines?: number) => ipcRenderer.invoke('get-logs', lines),
-  clearLogs: () => ipcRenderer.invoke('clear-logs'),
+  getLogFiles: () => ipcRenderer.invoke('get-log-files'),
+  getLogs: (lines?: number, fileName?: string) => ipcRenderer.invoke('get-logs', lines, fileName),
+  clearLogs: (fileName?: string) => ipcRenderer.invoke('clear-logs', fileName),
   cleanOldLogs: (daysToKeep?: number) => ipcRenderer.invoke('clean-old-logs', daysToKeep),
   
   // 保留原有方法以兼容现有代码
