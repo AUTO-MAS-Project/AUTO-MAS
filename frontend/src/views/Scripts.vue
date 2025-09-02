@@ -93,7 +93,7 @@
             </div>
             <div class="type-info">
               <div class="type-title">MAA脚本</div>
-              <div class="type-description">明日方舟自动化脚本，支持日常任务、作战等功能</div>
+              <div class="type-description">明日方舟自动化脚本，支持多账号日常代理等功能</div>
             </div>
           </div>
         </a-radio-button>
@@ -104,7 +104,7 @@
             </div>
             <div class="type-info">
               <div class="type-title">通用脚本</div>
-              <div class="type-description">通用自动化脚本，支持自定义游戏和脚本配置</div>
+              <div class="type-description">通用自动化脚本，适用于所有具备日志文件的脚本</div>
             </div>
           </div>
         </a-radio-button>

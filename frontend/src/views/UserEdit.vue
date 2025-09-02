@@ -17,27 +17,15 @@
     </div>
 
     <a-space size="middle">
-      <a-button
-        v-if="scriptType === 'MAA' && formData.Info.Mode !== '简洁'"
-        type="primary"
-        ghost
-        size="large"
-        @click="handleMAAConfig"
-        :loading="maaConfigLoading"
-      >
+      <a-button v-if="scriptType === 'MAA' && formData.Info.Mode !== '简洁'" type="primary" ghost size="large"
+        @click="handleMAAConfig" :loading="maaConfigLoading">
         <template #icon>
           <SettingOutlined />
         </template>
         MAA配置
       </a-button>
-      <a-button
-        v-if="scriptType === 'General'"
-        type="primary"
-        ghost
-        size="large"
-        @click="handleGeneralConfig"
-        :loading="generalConfigLoading"
-      >
+      <a-button v-if="scriptType === 'General'" type="primary" ghost size="large" @click="handleGeneralConfig"
+        :loading="generalConfigLoading">
         <template #icon>
           <SettingOutlined />
         </template>
@@ -67,37 +55,27 @@
             <a-col :span="12">
               <a-form-item name="userName" required>
                 <template #label>
-                  <a-tooltip title="用于识别用户的显示名称">
+                  <a-tooltip title="用于区分用户的名称，相同名称的用户将被视为同一用户进行统计">
                     <span class="form-label">
                       用户名
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input
-                  v-model:value="formData.userName"
-                  placeholder="请输入用户名"
-                  :disabled="loading"
-                  size="large"
-                />
+                <a-input v-model:value="formData.userName" placeholder="请输入用户名" :disabled="loading" size="large" />
               </a-form-item>
             </a-col>
             <a-col :span="12">
-              <a-form-item name="userId" required>
+              <a-form-item name="userId">
                 <template #label>
-                  <a-tooltip title="官服输入手机号，B服输入B站ID">
+                  <a-tooltip title="用于切换账号，官服输入手机号，B服输入B站ID，无需切换则留空">
                     <span class="form-label">
                       账号ID
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input
-                  v-model:value="formData.userId"
-                  placeholder="官服输入手机号，B服输入B站ID"
-                  :disabled="loading"
-                  size="large"
-                />
+                <a-input v-model:value="formData.userId" placeholder="请输入账号ID" :disabled="loading" size="large" />
               </a-form-item>
             </a-col>
           </a-row>
@@ -122,19 +100,15 @@
             <a-col :span="12">
               <a-form-item :name="['Info', 'Password']">
                 <template #label>
-                  <a-tooltip title="用户登录游戏的密码">
+                  <a-tooltip title="用户密码，仅用于存储以防遗忘，此外无任何作用">
                     <span class="form-label">
-                      密码(密码仅用于储存,防止遗忘!此外无任何作用)
+                      密码
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input-password
-                  v-model:value="formData.Info.Password"
-                  placeholder="请输入密码"
-                  :disabled="loading"
-                  size="large"
-                />
+                <a-input-password v-model:value="formData.Info.Password" placeholder="密码仅用于储存以防遗忘，此外无任何作用"
+                  :disabled="loading" size="large" />
               </a-form-item>
             </a-col>
           </a-row>
@@ -149,35 +123,23 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select
-                  v-model:value="formData.Info.Server"
-                  placeholder="请选择服务器"
-                  :disabled="loading"
-                  :options="serverOptions"
-                  size="large"
-                />
+                <a-select v-model:value="formData.Info.Server" placeholder="请选择服务器" :disabled="loading"
+                  :options="serverOptions" size="large" />
               </a-form-item>
             </a-col>
 
             <a-col :span="12">
               <a-form-item name="remainedDay">
                 <template #label>
-                  <a-tooltip title="账号剩余的有效天数(-1表示无限)">
+                  <a-tooltip title="账号剩余的有效天数，「-1」表示无限">
                     <span class="form-label">
-                      剩余天数(-1表示无限)
+                      剩余天数
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input-number
-                  v-model:value="formData.Info.RemainedDay"
-                  :min="-1"
-                  :max="9999"
-                  placeholder="0"
-                  :disabled="loading"
-                  size="large"
-                  style="width: 100%"
-                />
+                <a-input-number v-model:value="formData.Info.RemainedDay" :min="-1" :max="9999" placeholder="0"
+                  :disabled="loading" size="large" style="width: 100%" />
               </a-form-item>
             </a-col>
           </a-row>
@@ -186,45 +148,35 @@
             <a-col :span="12">
               <a-form-item name="mode">
                 <template #label>
-                  <a-tooltip title="选择用户操作模式">
+                  <a-tooltip title="简洁模式下配置沿用脚本全局配置，详细模式下沿用用户自定义配置">
                     <span class="form-label">
                       用户配置模式
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select
-                  v-model:value="formData.Info.Mode"
-                  :options="[
-                    { label: '简洁', value: '简洁' },
-                    { label: '详细', value: '详细' },
-                  ]"
-                  :disabled="loading"
-                  size="large"
-                />
+                <a-select v-model:value="formData.Info.Mode" :options="[
+                  { label: '简洁', value: '简洁' },
+                  { label: '详细', value: '详细' },
+                ]" :disabled="loading" size="large" />
               </a-form-item>
             </a-col>
 
             <a-col :span="12">
               <a-form-item name="mode">
                 <template #label>
-                  <a-tooltip title="剿灭代理">
+                  <a-tooltip title="选择基建模式，自定义基建模式需要自行选择自定义基建配置文件">
                     <span class="form-label">
                       基建模式
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select
-                  v-model:value="formData.Info.InfrastMode"
-                  :options="[
-                    { label: '常规模式', value: 'Normal' },
-                    { label: '一键轮休', value: 'Rotation' },
-                    { label: '自定义基建', value: 'Custom' },
-                  ]"
-                  :disabled="loading"
-                  size="large"
-                />
+                <a-select v-model:value="formData.Info.InfrastMode" :options="[
+                  { label: '常规模式', value: 'Normal' },
+                  { label: '一键轮休', value: 'Rotation' },
+                  { label: '自定义基建', value: 'Custom' },
+                ]" :disabled="loading" size="large" />
               </a-form-item>
             </a-col>
             <!--          <a-col :span="8">-->
@@ -263,34 +215,19 @@
                   </a-tooltip>
                 </template>
                 <div style="display: flex; gap: 12px; align-items: center">
-                  <a-input
-                    v-model:value="formData.Info.InfrastPath"
-                    placeholder="请选择基建配置JSON文件"
-                    readonly
-                    size="large"
-                    style="flex: 1"
-                  />
-                  <a-button
-                    type="primary"
-                    ghost
-                    @click="selectInfrastructureConfig"
-                    :disabled="loading"
-                    size="large"
-                  >
+                  <a-input v-model:value="formData.Info.InfrastPath" placeholder="请选择基建配置JSON文件" readonly size="large"
+                    style="flex: 1" />
+                  <a-button type="primary" ghost @click="selectInfrastructureConfig" :disabled="loading" size="large">
                     选择文件
                   </a-button>
-                  <a-button
-                    type="primary"
-                    @click="importInfrastructureConfig"
-                    :disabled="loading || !infrastructureConfigPath || !isEdit"
-                    :loading="infrastructureImporting"
-                    size="large"
-                  >
+                  <a-button type="primary" @click="importInfrastructureConfig"
+                    :disabled="loading || !infrastructureConfigPath || !isEdit" :loading="infrastructureImporting"
+                    size="large">
                     导入配置
                   </a-button>
                 </div>
                 <div style="color: #999; font-size: 12px; margin-top: 4px">
-                  请选择有效的基建配置JSON文件，点击"导入配置"按钮将其应用到当前用户。如果已经导入，可以忽略此选择框。
+                  请选择有效的基建配置JSON文件，点击「导入配置」按钮将其应用到当前用户。如果已经导入，可以忽略此选择框。
                 </div>
               </a-form-item>
             </a-col>
@@ -298,19 +235,14 @@
 
           <a-form-item name="notes">
             <template #label>
-              <a-tooltip title="为用户添加备注信息，便于管理和识别">
+              <a-tooltip title="为用户添加备注信息">
                 <span class="form-label">
                   备注
                   <QuestionCircleOutlined class="help-icon" />
                 </span>
               </a-tooltip>
             </template>
-            <a-textarea
-              v-model:value="formData.Info.Notes"
-              placeholder="请输入备注信息"
-              :rows="4"
-              :disabled="loading"
-            />
+            <a-textarea v-model:value="formData.Info.Notes" placeholder="请输入备注信息" :rows="4" :disabled="loading" />
           </a-form-item>
         </a-card>
 
@@ -337,43 +269,34 @@
             <a-col :span="12">
               <a-form-item name="mode">
                 <template #label>
-                  <a-tooltip title="剿灭代理">
+                  <a-tooltip title="剿灭代理关卡选择">
                     <span class="form-label">
                       剿灭代理
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select
-                  v-model:value="formData.Info.Annihilation"
-                  :options="[
-                    { label: '关闭', value: 'Close' },
-                    { label: '当期剿灭', value: 'Annihilation' },
-                    { label: '切尔诺伯格', value: 'Chernobog@Annihilation' },
-                    { label: '龙门外环', value: 'LungmenOutskirts@Annihilation' },
-                    { label: '龙门市区', value: 'LungmenDowntown@Annihilation' },
-                  ]"
-                  :disabled="loading"
-                  size="large"
-                />
+                <a-select v-model:value="formData.Info.Annihilation" :options="[
+                  { label: '关闭', value: 'Close' },
+                  { label: '当期剿灭', value: 'Annihilation' },
+                  { label: '切尔诺伯格', value: 'Chernobog@Annihilation' },
+                  { label: '龙门外环', value: 'LungmenOutskirts@Annihilation' },
+                  { label: '龙门市区', value: 'LungmenDowntown@Annihilation' },
+                ]" :disabled="loading" size="large" />
               </a-form-item>
             </a-col>
             <a-col :span="12">
               <a-form-item name="mode">
                 <template #label>
-                  <a-tooltip title="关卡选择">
+                  <a-tooltip title="可选择「固定」或「计划表」">
                     <span class="form-label">
                       关卡配置模式
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select
-                  v-model:value="formData.Info.StageMode"
-                  :options="stageModeOptions"
-                  :disabled="loading"
-                  size="large"
-                />
+                <a-select v-model:value="formData.Info.StageMode" :options="stageModeOptions" :disabled="loading"
+                  size="large" />
               </a-form-item>
             </a-col>
           </a-row>
@@ -389,42 +312,30 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input-number
-                  v-model:value="formData.Info.MedicineNumb"
-                  :min="0"
-                  :max="9999"
-                  placeholder="0"
-                  :disabled="loading"
-                  size="large"
-                  style="width: 100%"
-                />
+                <a-input-number v-model:value="formData.Info.MedicineNumb" :min="0" :max="9999" placeholder="0"
+                  :disabled="loading" size="large" style="width: 100%" />
               </a-form-item>
             </a-col>
             <a-col :span="6">
               <a-form-item name="mode">
                 <template #label>
-                  <a-tooltip title="连战次数">
+                  <a-tooltip title="AUTO：自动识别关卡最大代理倍率，保持最大代理倍率且使用理智药后理智不溢出；数值（1~6）：按设定倍率执行代理；不切换：不调整游戏内代理倍率设定">
                     <span class="form-label">
                       连战次数
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select
-                  v-model:value="formData.Info.SeriesNumb"
-                  :options="[
-                    { label: 'AUTO', value: 'AUTO' },
-                    { label: '0', value: '0' },
-                    { label: '1', value: '1' },
-                    { label: '2', value: '2' },
-                    { label: '3', value: '3' },
-                    { label: '4', value: '4' },
-                    { label: '5', value: '5' },
-                    { label: '6', value: '6' },
-                  ]"
-                  :disabled="loading"
-                  size="large"
-                />
+                <a-select v-model:value="formData.Info.SeriesNumb" :options="[
+                  { label: 'AUTO', value: '0' },
+                  { label: '1', value: '1' },
+                  { label: '2', value: '2' },
+                  { label: '3', value: '3' },
+                  { label: '4', value: '4' },
+                  { label: '5', value: '5' },
+                  { label: '6', value: '6' },
+                  { label: '不切换', value: '-1' },
+                ]" :disabled="loading" size="large" />
               </a-form-item>
             </a-col>
 
@@ -438,12 +349,8 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select
-                  v-model:value="formData.Info.Stage"
-                  :options="stageOptions"
-                  :disabled="loading"
-                  size="large"
-                />
+                <a-select v-model:value="formData.Info.Stage" :options="stageOptions" :disabled="loading"
+                  size="large" />
               </a-form-item>
             </a-col>
           </a-row>
@@ -451,73 +358,57 @@
             <a-col :span="6">
               <a-form-item name="mode">
                 <template #label>
-                  <a-tooltip title="备选关卡-1">
+                  <a-tooltip title="备选关卡-1，所有备选关卡均选择「当前/上次」时视为不使用备选关卡">
                     <span class="form-label">
                       备选关卡-1
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select
-                  v-model:value="formData.Info.Stage_1"
-                  :options="stageOptions"
-                  :disabled="loading"
-                  size="large"
-                />
+                <a-select v-model:value="formData.Info.Stage_1" :options="stageOptions" :disabled="loading"
+                  size="large" />
               </a-form-item>
             </a-col>
             <a-col :span="6">
               <a-form-item name="mode">
                 <template #label>
-                  <a-tooltip title="备选关卡-2">
+                  <a-tooltip title="备选关卡-2，所有备选关卡均选择「当前/上次」时视为不使用备选关卡">
                     <span class="form-label">
                       备选关卡-2
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select
-                  v-model:value="formData.Info.Stage_2"
-                  :options="stageOptions"
-                  :disabled="loading"
-                  size="large"
-                />
+                <a-select v-model:value="formData.Info.Stage_2" :options="stageOptions" :disabled="loading"
+                  size="large" />
               </a-form-item>
             </a-col>
             <a-col :span="6">
               <a-form-item name="mode">
                 <template #label>
-                  <a-tooltip title="备选关卡-3">
+                  <a-tooltip title="备选关卡-3，所有备选关卡均选择「当前/上次」时视为不使用备选关卡">
                     <span class="form-label">
                       备选关卡-3
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select
-                  v-model:value="formData.Info.Stage_3"
-                  :options="stageOptions"
-                  :disabled="loading"
-                  size="large"
-                />
+                <a-select v-model:value="formData.Info.Stage_3" :options="stageOptions" :disabled="loading"
+                  size="large" />
               </a-form-item>
             </a-col>
             <a-col :span="6">
               <a-form-item name="mode">
                 <template #label>
-                  <a-tooltip title="剩余理智">
+                  <a-tooltip title="剩余理智，选择「当前/上次」时视为不使用剩余理智">
                     <span class="form-label">
                       剩余理智
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select
-                  v-model:value="formData.Info.Stage_Remain"
-                  :options="stageOptions"
-                  :disabled="loading"
-                  size="large"
-                />
+                <a-select v-model:value="formData.Info.Stage_Remain" :options="stageOptions" :disabled="loading"
+                  size="large" />
               </a-form-item>
             </a-col>
           </a-row>
@@ -561,7 +452,7 @@
             <a-col :span="6">
               <a-form-item name="ifAutoRoguelike">
                 <template #label>
-                  <a-tooltip title="暂不支持，正在适配中~">
+                  <a-tooltip title="未完全适配，请谨慎使用">
                     <span>自动肉鸽 </span>
                     <QuestionCircleOutlined class="help-icon" />
                   </a-tooltip>
@@ -572,7 +463,7 @@
             <a-col :span="6">
               <a-form-item name="ifReclamation">
                 <template #label>
-                  <a-tooltip title="暂不支持，正在适配中~">
+                  <a-tooltip title="暂不支持，等待适配中~">
                     <span>生息演算 </span>
                     <QuestionCircleOutlined class="help-icon" />
                   </a-tooltip>
@@ -586,26 +477,22 @@
         <a-card title="森空岛配置" class="form-card">
           <a-row :gutter="24" align="middle">
             <a-col :span="6">
-              <span style="font-weight: 500">启用森空岛</span>
+              <span style="font-weight: 500">森空岛签到</span>
             </a-col>
             <a-col :span="18">
               <a-switch v-model:checked="formData.Info.IfSkland" :disabled="loading" />
-              <span class="switch-description">开启后将启用森空岛相关功能</span>
+              <span class="switch-description">开启后将启用森空岛签到功能</span>
             </a-col>
           </a-row>
           <a-row :gutter="24" style="margin-top: 16px">
             <a-col :span="24">
               <span style="font-weight: 500">森空岛Token</span>
-              <a-input-password
-                v-model:value="formData.Info.SklandToken"
-                :disabled="loading || !formData.Info.IfSkland"
-                placeholder="请输入森空岛Token"
-                size="large"
-                style="margin-top: 8px; width: 100%"
-                allow-clear
-              />
+              <a-input-password v-model:value="formData.Info.SklandToken" :disabled="loading || !formData.Info.IfSkland"
+                placeholder="请输入森空岛Token" size="large" style="margin-top: 8px; width: 100%" allow-clear />
               <div style="color: #999; font-size: 12px; margin-top: 4px">
-                请在森空岛官网获取您的专属Token并粘贴到此处,详细教程建官网文档
+                请在森空岛官网获取您的专属Token并粘贴到此处，详细教程见
+                <a href="https://doc.auto-mas.top/docs/advanced-features.html#%E8%8E%B7%E5%8F%96%E9%B9%B0%E8%A7%92%E7%BD%91%E7%BB%9C%E9%80%9A%E8%A1%8C%E8%AF%81%E7%99%BB%E5%BD%95%E5%87%AD%E8%AF%81" target="_blank" style="color: #409EFF;">获取鹰角网络通行证登录凭证</a>
+                文档
               </div>
             </a-col>
           </a-row>
@@ -618,7 +505,7 @@
             </a-col>
             <a-col :span="18">
               <a-switch v-model:checked="formData.Notify.Enabled" :disabled="loading" />
-              <span class="switch-description">启用后将发送任务通知</span>
+              <span class="switch-description">启用后将发送此用户的任务通知到选中的渠道</span>
             </a-col>
           </a-row>
           <!-- 发送统计/六星等可选通知 -->
@@ -627,15 +514,11 @@
               <span style="font-weight: 500">通知内容</span>
             </a-col>
             <a-col :span="18" style="display: flex; gap: 32px">
-              <a-checkbox
-                v-model:checked="formData.Notify.IfSendStatistic"
-                :disabled="loading || !formData.Notify.Enabled"
-              >发送统计
+              <a-checkbox v-model:checked="formData.Notify.IfSendStatistic"
+                :disabled="loading || !formData.Notify.Enabled">统计信息
               </a-checkbox>
-              <a-checkbox
-                v-model:checked="formData.Notify.IfSendSixStar"
-                :disabled="loading || !formData.Notify.Enabled"
-              >六星掉落推送
+              <a-checkbox v-model:checked="formData.Notify.IfSendSixStar"
+                :disabled="loading || !formData.Notify.Enabled">公开招募高资喜报
               </a-checkbox>
             </a-col>
           </a-row>
@@ -643,62 +526,41 @@
           <!-- 邮件通知 -->
           <a-row :gutter="24" style="margin-top: 16px">
             <a-col :span="6">
-              <a-checkbox
-                v-model:checked="formData.Notify.IfSendMail"
-                :disabled="loading || !formData.Notify.Enabled"
-                >邮件通知
+              <a-checkbox v-model:checked="formData.Notify.IfSendMail"
+                :disabled="loading || !formData.Notify.Enabled">邮件通知
               </a-checkbox>
             </a-col>
             <a-col :span="18">
-              <a-input
-                v-model:value="formData.Notify.ToAddress"
-                placeholder="请输入收件人邮箱地址"
-                :disabled="loading || !formData.Notify.Enabled || !formData.Notify.IfSendMail"
-                size="large"
-                style="width: 100%"
-              />
+              <a-input v-model:value="formData.Notify.ToAddress" placeholder="请输入收件人邮箱地址"
+                :disabled="loading || !formData.Notify.Enabled || !formData.Notify.IfSendMail" size="large"
+                style="width: 100%" />
             </a-col>
           </a-row>
 
           <!-- Server酱通知 -->
           <a-row :gutter="24" style="margin-top: 16px">
             <a-col :span="6">
-              <a-checkbox
-                v-model:checked="formData.Notify.IfServerChan"
-                :disabled="loading || !formData.Notify.Enabled"
-                >Server酱
+              <a-checkbox v-model:checked="formData.Notify.IfServerChan"
+                :disabled="loading || !formData.Notify.Enabled">Server酱
               </a-checkbox>
             </a-col>
             <a-col :span="18" style="display: flex; gap: 8px">
-              <a-input
-                v-model:value="formData.Notify.ServerChanKey"
-                placeholder="SENDKEY"
-                :disabled="loading || !formData.Notify.Enabled || !formData.Notify.IfServerChan"
-                size="large"
-                style="flex: 2"
-              />
+              <a-input v-model:value="formData.Notify.ServerChanKey" placeholder="请输入SENDKEY"
+                :disabled="loading || !formData.Notify.Enabled || !formData.Notify.IfServerChan" size="large"
+                style="flex: 2" />
             </a-col>
           </a-row>
 
           <!-- 企业微信群机器人通知 -->
           <a-row :gutter="24" style="margin-top: 16px">
             <a-col :span="6">
-              <a-checkbox
-                v-model:checked="formData.Notify.IfCompanyWebHookBot"
-                :disabled="loading || !formData.Notify.Enabled"
-                >企业微信群机器人
+              <a-checkbox v-model:checked="formData.Notify.IfCompanyWebHookBot"
+                :disabled="loading || !formData.Notify.Enabled">企业微信群机器人
               </a-checkbox>
             </a-col>
             <a-col :span="18">
-              <a-input
-                v-model:value="formData.Notify.CompanyWebHookBotUrl"
-                placeholder="请输入机器人Webhook地址"
-                :disabled="
-                  loading || !formData.Notify.Enabled || !formData.Notify.IfCompanyWebHookBot
-                "
-                size="large"
-                style="width: 100%"
-              />
+              <a-input v-model:value="formData.Notify.CompanyWebHookBotUrl" placeholder="请输入机器人Webhook地址" :disabled="loading || !formData.Notify.Enabled || !formData.Notify.IfCompanyWebHookBot
+                " size="large" style="width: 100%" />
             </a-col>
           </a-row>
 
@@ -720,12 +582,7 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input
-                  v-model:value="formData.userName"
-                  placeholder="请输入用户名"
-                  :disabled="loading"
-                  size="large"
-                />
+                <a-input v-model:value="formData.userName" placeholder="请输入用户名" :disabled="loading" size="large" />
               </a-form-item>
             </a-col>
             <a-col :span="12">
@@ -738,11 +595,7 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-switch
-                  v-model:checked="formData.Info.Status"
-                  :disabled="loading"
-                  size="default"
-                />
+                <a-switch v-model:checked="formData.Info.Status" :disabled="loading" size="default" />
                 <span class="switch-description">启用后该用户将参与自动化任务</span>
               </a-form-item>
             </a-col>
@@ -759,15 +612,8 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input-number
-                  v-model:value="formData.Info.RemainedDay"
-                  :min="-1"
-                  :max="9999"
-                  placeholder="-1"
-                  :disabled="loading"
-                  size="large"
-                  style="width: 100%"
-                />
+                <a-input-number v-model:value="formData.Info.RemainedDay" :min="-1" :max="9999" placeholder="-1"
+                  :disabled="loading" size="large" style="width: 100%" />
               </a-form-item>
             </a-col>
             <a-col :span="12">
@@ -784,12 +630,7 @@
                 </span>
               </a-tooltip>
             </template>
-            <a-textarea
-              v-model:value="formData.Info.Notes"
-              placeholder="请输入备注信息"
-              :rows="4"
-              :disabled="loading"
-            />
+            <a-textarea v-model:value="formData.Info.Notes" placeholder="请输入备注信息" :rows="4" :disabled="loading" />
           </a-form-item>
         </a-card>
 
@@ -805,11 +646,7 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-switch
-                  v-model:checked="formData.Info.IfScriptBeforeTask"
-                  :disabled="loading"
-                  size="default"
-                />
+                <a-switch v-model:checked="formData.Info.IfScriptBeforeTask" :disabled="loading" size="default" />
                 <span class="switch-description">启用后将在任务执行前运行指定脚本</span>
               </a-form-item>
             </a-col>
@@ -823,11 +660,7 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-switch
-                  v-model:checked="formData.Info.IfScriptAfterTask"
-                  :disabled="loading"
-                  size="default"
-                />
+                <a-switch v-model:checked="formData.Info.IfScriptAfterTask" :disabled="loading" size="default" />
                 <span class="switch-description">启用后将在任务执行后运行指定脚本</span>
               </a-form-item>
             </a-col>
@@ -844,12 +677,8 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input
-                  v-model:value="formData.Info.ScriptBeforeTask"
-                  placeholder="请输入脚本路径"
-                  :disabled="loading || !formData.Info.IfScriptBeforeTask"
-                  size="large"
-                />
+                <a-input v-model:value="formData.Info.ScriptBeforeTask" placeholder="请输入脚本路径"
+                  :disabled="loading || !formData.Info.IfScriptBeforeTask" size="large" />
               </a-form-item>
             </a-col>
             <a-col :span="12">
@@ -862,12 +691,8 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input
-                  v-model:value="formData.Info.ScriptAfterTask"
-                  placeholder="请输入脚本路径"
-                  :disabled="loading || !formData.Info.IfScriptAfterTask"
-                  size="large"
-                />
+                <a-input v-model:value="formData.Info.ScriptAfterTask" placeholder="请输入脚本路径"
+                  :disabled="loading || !formData.Info.IfScriptAfterTask" size="large" />
               </a-form-item>
             </a-col>
           </a-row>
@@ -889,10 +714,8 @@
               <span style="font-weight: 500">通知内容</span>
             </a-col>
             <a-col :span="18">
-              <a-checkbox
-                v-model:checked="formData.Notify.IfSendStatistic"
-                :disabled="loading || !formData.Notify.Enabled"
-              >发送统计
+              <a-checkbox v-model:checked="formData.Notify.IfSendStatistic"
+                :disabled="loading || !formData.Notify.Enabled">发送统计
               </a-checkbox>
             </a-col>
           </a-row>
@@ -900,62 +723,41 @@
           <!-- 邮件通知 -->
           <a-row :gutter="24" style="margin-top: 16px">
             <a-col :span="6">
-              <a-checkbox
-                v-model:checked="formData.Notify.IfSendMail"
-                :disabled="loading || !formData.Notify.Enabled"
-                >邮件通知
+              <a-checkbox v-model:checked="formData.Notify.IfSendMail"
+                :disabled="loading || !formData.Notify.Enabled">邮件通知
               </a-checkbox>
             </a-col>
             <a-col :span="18">
-              <a-input
-                v-model:value="formData.Notify.ToAddress"
-                placeholder="请输入收件人邮箱地址"
-                :disabled="loading || !formData.Notify.Enabled || !formData.Notify.IfSendMail"
-                size="large"
-                style="width: 100%"
-              />
+              <a-input v-model:value="formData.Notify.ToAddress" placeholder="请输入收件人邮箱地址"
+                :disabled="loading || !formData.Notify.Enabled || !formData.Notify.IfSendMail" size="large"
+                style="width: 100%" />
             </a-col>
           </a-row>
 
           <!-- Server酱通知 -->
           <a-row :gutter="24" style="margin-top: 16px">
             <a-col :span="6">
-              <a-checkbox
-                v-model:checked="formData.Notify.IfServerChan"
-                :disabled="loading || !formData.Notify.Enabled"
-                >Server酱
+              <a-checkbox v-model:checked="formData.Notify.IfServerChan"
+                :disabled="loading || !formData.Notify.Enabled">Server酱
               </a-checkbox>
             </a-col>
             <a-col :span="18">
-              <a-input
-                v-model:value="formData.Notify.ServerChanKey"
-                placeholder="SENDKEY"
-                :disabled="loading || !formData.Notify.Enabled || !formData.Notify.IfServerChan"
-                size="large"
-                style="width: 100%"
-              />
+              <a-input v-model:value="formData.Notify.ServerChanKey" placeholder="SENDKEY"
+                :disabled="loading || !formData.Notify.Enabled || !formData.Notify.IfServerChan" size="large"
+                style="width: 100%" />
             </a-col>
           </a-row>
 
           <!-- 企业微信群机器人通知 -->
           <a-row :gutter="24" style="margin-top: 16px">
             <a-col :span="6">
-              <a-checkbox
-                v-model:checked="formData.Notify.IfCompanyWebHookBot"
-                :disabled="loading || !formData.Notify.Enabled"
-                >企业微信群机器人
+              <a-checkbox v-model:checked="formData.Notify.IfCompanyWebHookBot"
+                :disabled="loading || !formData.Notify.Enabled">企业微信群机器人
               </a-checkbox>
             </a-col>
             <a-col :span="18">
-              <a-input
-                v-model:value="formData.Notify.CompanyWebHookBotUrl"
-                placeholder="请输入机器人Webhook地址"
-                :disabled="
-                  loading || !formData.Notify.Enabled || !formData.Notify.IfCompanyWebHookBot
-                "
-                size="large"
-                style="width: 100%"
-              />
+              <a-input v-model:value="formData.Notify.CompanyWebHookBotUrl" placeholder="请输入机器人Webhook地址" :disabled="loading || !formData.Notify.Enabled || !formData.Notify.IfCompanyWebHookBot
+                " size="large" style="width: 100%" />
             </a-col>
           </a-row>
 
@@ -965,14 +767,9 @@
     </a-form>
   </div>
 
-  <a-float-button
-    type="primary"
-    @click="handleSubmit"
-    class="float-button"
-    :style="{
-      right: '24px',
-    }"
-  >
+  <a-float-button type="primary" @click="handleSubmit" class="float-button" :style="{
+    right: '24px',
+  }">
     <template #icon>
       <SaveOutlined />
     </template>
@@ -1060,11 +857,6 @@ const getDefaultMAAUserData = () => ({
     Stage_Remain: '',
     IfSkland: false,
     SklandToken: '',
-    // 添加 General 脚本的属性以确保兼容性
-    IfScriptBeforeTask: false,
-    IfScriptAfterTask: false,
-    ScriptBeforeTask: '',
-    ScriptAfterTask: '',
   },
   Task: {
     IfBase: true,
