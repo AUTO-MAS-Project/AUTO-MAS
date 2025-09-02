@@ -42,7 +42,7 @@ export function useUserApi() {
   const updateUser = async (
     scriptId: string,
     userId: string,
-    userData: Record<string, Record<string, any>>
+    userData: any
   ): Promise<boolean> => {
     loading.value = true
     error.value = null
@@ -54,10 +54,13 @@ export function useUserApi() {
         data: userData,
       }
 
+      console.log('发送更新用户请求:', requestData)
       const response = await Service.updateUserApiScriptsUserUpdatePost(requestData)
+      console.log('更新用户响应:', response)
 
       if (response.code !== 200) {
         const errorMsg = response.message || '更新用户失败'
+        console.error('更新用户失败:', errorMsg)
         message.error(errorMsg)
         throw new Error(errorMsg)
       }
