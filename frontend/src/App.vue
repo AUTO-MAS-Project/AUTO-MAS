@@ -5,6 +5,7 @@ import { ConfigProvider } from 'ant-design-vue'
 import { useTheme } from './composables/useTheme.ts'
 import AppLayout from './components/AppLayout.vue'
 import zhCN from 'ant-design-vue/es/locale/zh_CN'
+import { logger } from '@/utils/logger'
 
 const route = useRoute()
 const { antdTheme, initTheme } = useTheme()
@@ -13,7 +14,9 @@ const { antdTheme, initTheme } = useTheme()
 const isInitializationPage = computed(() => route.name === 'Initialization')
 
 onMounted(() => {
+  logger.info('App组件已挂载')
   initTheme()
+  logger.info('主题初始化完成')
 })
 </script>
 
