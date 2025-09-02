@@ -10,6 +10,7 @@ import {
   installPipPackage,
   installDependencies,
   startBackend,
+  stopBackend,
 } from './services/pythonService'
 import { setMainWindow as setGitMainWindow, downloadGit, cloneBackend } from './services/gitService'
 
@@ -298,6 +299,18 @@ app.on('second-instance', () => {
   if (mainWindow) {
     if (mainWindow.isMinimized()) mainWindow.restore()
     mainWindow.focus()
+  }
+})
+
+app.on('before-quit', async event => {
+  // 只处理一次，避免多重触发
+  event.preventDefault()
+  try {
+    await stopBackend()
+  } catch (e) {
+    console.error('停止后端时出错:', e)
+  } finally {
+    app.exit(0)
   }
 })
 
