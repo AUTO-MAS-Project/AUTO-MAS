@@ -141,9 +141,9 @@
               <a-col :span="8">
                 <a-form-item>
                   <template #label>
-                    <a-tooltip title="任务完成后的处理方式">
+                    <a-tooltip title="切换账号时需要执行的操作">
                       <span class="form-label">
-                        任务转换方式
+                        账号切换方法
                         <QuestionCircleOutlined class="help-icon" />
                       </span>
                     </a-tooltip>
@@ -158,9 +158,9 @@
               <a-col :span="8">
                 <a-form-item>
                   <template #label>
-                    <a-tooltip title="设置ADB设备搜索的范围，可输入范围：0-3">
+                    <a-tooltip title="使用mumu模拟器时设为3，其他模拟器设为0">
                       <span class="form-label">
-                        ADB搜索范围
+                        ADB端口号搜索范围
                         <QuestionCircleOutlined class="help-icon" />
                       </span>
                     </a-tooltip>
@@ -179,9 +179,9 @@
               <a-col :span="8">
                 <a-form-item>
                   <template #label>
-                    <a-tooltip title="代理指挥作战的次数限制，0表示不限制">
+                    <a-tooltip title="当用户本日代理成功次数达到该阀值时跳过代理，阈值为「0」时视为无代理次数上限">
                       <span class="form-label">
-                        代理次数限制
+                        用户单日代理次数上限
                         <QuestionCircleOutlined class="help-icon" />
                       </span>
                     </a-tooltip>
@@ -201,9 +201,9 @@
               <a-col :span="8">
                 <a-form-item>
                   <template #label>
-                    <a-tooltip title="剿灭作战的最大执行时间，超时后会停止执行">
+                    <a-tooltip title="执行剿灭代理任务时，MAA日志无变化时间超过该阀值视为超时">
                       <span class="form-label">
-                        剿灭时间限制(分钟)
+                        剿灭代理超时限制（分钟）
                         <QuestionCircleOutlined class="help-icon" />
                       </span>
                     </a-tooltip>
@@ -221,9 +221,9 @@
               <a-col :span="8">
                 <a-form-item>
                   <template #label>
-                    <a-tooltip title="每周剿灭达到上限后，本周剩余时间不在执行剿灭任务">
+                    <a-tooltip title="每周剿灭达到上限后，本周剩余时间不在执行剿灭任务，本功能存在误判可能，请谨慎使用">
                       <span class="form-label">
-                        每周剿灭达到上限后，本周剩余时间不在执行剿灭任务
+                        每周剿灭仅执行到上限
                         <QuestionCircleOutlined class="help-icon" />
                       </span>
                     </a-tooltip>
@@ -240,9 +240,9 @@
               <a-col :span="8">
                 <a-form-item>
                   <template #label>
-                    <a-tooltip title="日常任务的最大执行时间，包括基建、任务等">
+                    <a-tooltip title="执行日常代理任务时，MAA日志无变化时间超过该阀值视为超时">
                       <span class="form-label">
-                        日常时间限制(分钟)
+                        日常代理超时限制（分钟）
                         <QuestionCircleOutlined class="help-icon" />
                       </span>
                     </a-tooltip>
@@ -260,9 +260,9 @@
               <a-col :span="8">
                 <a-form-item>
                   <template #label>
-                    <a-tooltip title="脚本的最大运行次数，防止无限循环">
+                    <a-tooltip title="若重试超过该次数限制仍未完成代理，视为代理失败">
                       <span class="form-label">
-                        运行次数限制
+                        代理重试次数限制
                         <QuestionCircleOutlined class="help-icon" />
                       </span>
                     </a-tooltip>
