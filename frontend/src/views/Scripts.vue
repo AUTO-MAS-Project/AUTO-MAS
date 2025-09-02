@@ -24,19 +24,6 @@
       </a-button>
     </a-space>
   </div>
-  <!--    &lt;!&ndash; 如果没有脚本，显示占位符 &ndash;&gt;-->
-  <!--    <div v-if="scripts.length === 0" class="placeholder-container">-->
-  <!--    <div class="placeholder-content">-->
-  <!--      <h2>当前没有脚本</h2>-->
-  <!--      <p>您还没有创建任何脚本，点击下方的“新建脚本”按钮来创建您的第一个脚本。</p>-->
-  <!--      <a-button type="primary" size="large" @click="handleAddScript">-->
-  <!--        <template #icon>-->
-  <!--          <PlusOutlined />-->
-  <!--        </template>-->
-  <!--        新建脚本-->
-  <!--      </a-button>-->
-  <!--    </div>-->
-  <!--  </div>-->
 
   <!-- 空状态 -->
   <div v-if="scripts.length === 0" class="empty-state">
