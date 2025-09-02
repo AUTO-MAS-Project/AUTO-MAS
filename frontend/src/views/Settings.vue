@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, reactive } from 'vue'
+import { useRouter } from 'vue-router'
 import {
   Button,
   Card,
@@ -19,6 +20,7 @@ import { useSettingsApi } from '../composables/useSettingsApi'
 import type { SelectValue } from 'ant-design-vue/es/select'
 import type { SettingsData } from '../types/settings'
 
+const router = useRouter()
 const { themeMode, themeColor, themeColors, setThemeMode, setThemeColor, isDark } = useTheme()
 const { loading, getSettings, updateSettings } = useSettingsApi()
 
@@ -180,6 +182,10 @@ const handleThemeColorChange = (value: SelectValue) => {
   if (typeof value === 'string') {
     setThemeColor(value as ThemeColor)
   }
+}
+
+const goToLogs = () => {
+  router.push('/logs')
 }
 
 const openDevTools = () => {
@@ -679,6 +685,14 @@ onMounted(() => {
       <Tabs.TabPane key="advanced" tab="高级设置">
         <Card title="开发者选项" :bordered="false">
           <Space direction="vertical" size="middle" style="width: 100%">
+            <div class="setting-item">
+              <h4>日志管理</h4>
+              <p class="setting-description">查看和管理应用程序日志文件</p>
+              <Button type="primary" @click="goToLogs">查看日志</Button>
+            </div>
+
+            <Divider />
+
             <div class="setting-item">
               <h4>开发者工具</h4>
               <p class="setting-description">打开浏览器开发者工具进行调试</p>

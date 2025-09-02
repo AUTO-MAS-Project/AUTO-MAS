@@ -76,6 +76,12 @@ const routes: RouteRecordRaw[] = [
     component: () => import('../views/Settings.vue'),
     meta: { title: '设置' },
   },
+  {
+    path: '/logs',
+    name: 'Logs',
+    component: () => import('../views/Logs.vue'),
+    meta: { title: '日志查看' },
+  },
 ]
 
 const router = createRouter({
