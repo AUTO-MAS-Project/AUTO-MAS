@@ -1,344 +1,189 @@
 <template>
-  <div class="log-viewer">
-    <div class="log-header">
-      <div class="log-controls">
-        <a-select v-model:value="selectedLevel" style="width: 120px" @change="filterLogs">
-          <a-select-option value="all">所有级别</a-select-option>
-          <a-select-option value="debug">Debug</a-select-option>
-          <a-select-option value="info">Info</a-select-option>
-          <a-select-option value="warn">Warn</a-select-option>
-          <a-select-option value="error">Error</a-select-option>
-        </a-select>
+    <div class="log-viewer">
+        <div class="log-controls">
+            <a-space wrap>
+                <a-button @click="refreshLogs" :loading="loading">
+                    <template #icon>
+                        <ReloadOutlined />
+                    </template>
+                    刷新日志
+                </a-button>
 
-        <a-input-search
-          v-model:value="searchText"
-          placeholder="搜索日志..."
-          style="width: 200px"
-          @search="filterLogs"
-          @change="filterLogs"
-        />
+                <a-select v-model:value="logLines" @change="refreshLogs" style="width: 120px">
+                    <a-select-option :value="100">最近100行</a-select-option>
+                    <a-select-option :value="500">最近500行</a-select-option>
+                    <a-select-option :value="1000">最近1000行</a-select-option>
+                    <a-select-option :value="0">全部日志</a-select-option>
+                </a-select>
 
-        <a-button @click="clearLogs" danger>
-          <template #icon>
-            <DeleteOutlined />
-          </template>
-          清空日志
-        </a-button>
+                <a-button @click="clearLogs" :loading="clearing" type="primary" danger>
+                    <template #icon>
+                        <DeleteOutlined />
+                    </template>
+                    清空日志
+                </a-button>
 
-        <a-button @click="downloadLogs" type="primary">
-          <template #icon>
-            <DownloadOutlined />
-          </template>
-          导出日志
-        </a-button>
+                <a-button @click="cleanOldLogs" :loading="cleaning">
+                    <template #icon>
+                        <ClearOutlined />
+                    </template>
+                    清理旧日志
+                </a-button>
 
-        <a-button @click="toggleAutoScroll" :type="autoScroll ? 'primary' : 'default'">
-          <template #icon>
-            <VerticalAlignBottomOutlined />
-          </template>
-          自动滚动
-        </a-button>
-      </div>
-
-      <div class="log-stats">总计: {{ filteredLogs.length }} 条日志</div>
-    </div>
-
-    <div ref="logContainer" class="log-container" @scroll="handleScroll">
-      <div
-        v-for="(log, index) in filteredLogs"
-        :key="index"
-        class="log-entry"
-        :class="[`log-${log.level}`, { 'log-highlight': highlightedIndex === index }]"
-      >
-        <div class="log-timestamp">{{ log.timestamp }}</div>
-        <div class="log-level">{{ log.level.toUpperCase() }}</div>
-        <div v-if="log.component" class="log-component">[{{ log.component }}]</div>
-        <div class="log-message">{{ log.message }}</div>
-        <div v-if="log.data" class="log-data">
-          <a-button size="small" type="link" @click="toggleDataVisibility(index)">
-            {{ expandedData.has(index) ? '隐藏数据' : '显示数据' }}
-          </a-button>
-          <pre v-if="expandedData.has(index)" class="log-data-content">{{
-            JSON.stringify(log.data, null, 2)
-          }}</pre>
+                <a-button @click="openLogDirectory">
+                    <template #icon>
+                        <FolderOpenOutlined />
+                    </template>
+                    打开日志目录
+                </a-button>
+            </a-space>
         </div>
-      </div>
+
+        <div class="log-info">
+            <a-space>
+                <span>日志文件: {{ logPath }}</span>
+                <span>总行数: {{ totalLines }}</span>
+            </a-space>
+        </div>
+
+        <div class="log-content">
+            <a-textarea v-model:value="logs" :rows="25" readonly class="log-textarea" placeholder="暂无日志内容" />
+        </div>
     </div>
-  </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted } from 'vue'
+import { message } from 'ant-design-vue'
 import {
-  DeleteOutlined,
-  DownloadOutlined,
-  VerticalAlignBottomOutlined,
+    ReloadOutlined,
+    DeleteOutlined,
+    ClearOutlined,
+    FolderOpenOutlined
 } from '@ant-design/icons-vue'
-import { logger, type LogEntry, type LogLevel } from '@/utils/logger'
+import { logger } from '@/utils/logger'
 
-const logContainer = ref<HTMLElement>()
-const selectedLevel = ref<LogLevel | 'all'>('all')
-const searchText = ref('')
-const autoScroll = ref(true)
-const expandedData = ref(new Set<number>())
-const highlightedIndex = ref(-1)
+const logs = ref('')
+const logPath = ref('')
+const logLines = ref(500)
+const totalLines = ref(0)
+const loading = ref(false)
+const clearing = ref(false)
+const cleaning = ref(false)
 
-const logs = logger.getLogs()
+// 刷新日志
+const refreshLogs = async () => {
+    loading.value = true
+    try {
+        const logContent = await logger.getLogs(logLines.value || undefined)
+        logs.value = logContent
+        totalLines.value = logContent.split('\n').filter(line => line.trim()).length
 
-const filteredLogs = computed(() => {
-  let filtered = logs.value
-
-  // 按级别过滤
-  if (selectedLevel.value !== 'all') {
-    filtered = filtered.filter(log => log.level === selectedLevel.value)
-  }
-
-  // 按搜索文本过滤
-  if (searchText.value) {
-    const search = searchText.value.toLowerCase()
-    filtered = filtered.filter(
-      log =>
-        log.message.toLowerCase().includes(search) ||
-        log.component?.toLowerCase().includes(search) ||
-        (log.data && JSON.stringify(log.data).toLowerCase().includes(search))
-    )
-  }
-
-  return filtered
-})
-
-function filterLogs() {
-  // 过滤逻辑已在computed中处理
-  nextTick(() => {
-    if (autoScroll.value) {
-      scrollToBottom()
+        // 自动滚动到底部
+        setTimeout(() => {
+            const textarea = document.querySelector('.log-textarea textarea') as HTMLTextAreaElement
+            if (textarea) {
+                textarea.scrollTop = textarea.scrollHeight
+            }
+        }, 100)
+    } catch (error) {
+        message.error('获取日志失败: ' + error)
+        logger.error('获取日志失败:', error)
+    } finally {
+        loading.value = false
     }
-  })
 }
 
-function clearLogs() {
-  logger.clearLogs()
-  expandedData.value.clear()
+// 清空日志
+const clearLogs = async () => {
+    clearing.value = true
+    try {
+        await logger.clearLogs()
+        logs.value = ''
+        totalLines.value = 0
+        message.success('日志已清空')
+    } catch (error) {
+        message.error('清空日志失败: ' + error)
+        logger.error('清空日志失败:', error)
+    } finally {
+        clearing.value = false
+    }
 }
 
-function downloadLogs() {
-  logger.downloadLogs()
+// 清理旧日志
+const cleanOldLogs = async () => {
+    cleaning.value = true
+    try {
+        await logger.cleanOldLogs(7)
+        message.success('已清理7天前的旧日志文件')
+    } catch (error) {
+        message.error('清理旧日志失败: ' + error)
+        logger.error('清理旧日志失败:', error)
+    } finally {
+        cleaning.value = false
+    }
 }
 
-function toggleAutoScroll() {
-  autoScroll.value = !autoScroll.value
-  if (autoScroll.value) {
-    scrollToBottom()
-  }
+// 打开日志目录
+const openLogDirectory = async () => {
+    try {
+        const path = await logger.getLogPath()
+        // 获取日志目录路径
+        const logDir = path.substring(0, path.lastIndexOf('\\') || path.lastIndexOf('/'))
+
+        if (window.electronAPI?.openUrl) {
+            await window.electronAPI.openUrl(`file://${logDir}`)
+        }
+    } catch (error) {
+        message.error('打开日志目录失败: ' + error)
+        logger.error('打开日志目录失败:', error)
+    }
 }
 
-function toggleDataVisibility(index: number) {
-  if (expandedData.value.has(index)) {
-    expandedData.value.delete(index)
-  } else {
-    expandedData.value.add(index)
-  }
+// 获取日志文件路径
+const getLogPath = async () => {
+    try {
+        logPath.value = await logger.getLogPath()
+    } catch (error) {
+        logger.error('获取日志路径失败:', error)
+    }
 }
-
-function scrollToBottom() {
-  if (logContainer.value) {
-    logContainer.value.scrollTop = logContainer.value.scrollHeight
-  }
-}
-
-function handleScroll() {
-  if (!logContainer.value) return
-
-  const { scrollTop, scrollHeight, clientHeight } = logContainer.value
-  const isAtBottom = scrollTop + clientHeight >= scrollHeight - 10
-
-  if (!isAtBottom) {
-    autoScroll.value = false
-  }
-}
-
-// 监听新日志添加
-let unwatchLogs: (() => void) | null = null
 
 onMounted(() => {
-  // 初始滚动到底部
-  nextTick(() => {
-    scrollToBottom()
-  })
-
-  // 监听日志变化
-  unwatchLogs =
-    logs.value && typeof logs.value === 'object' && 'length' in logs.value
-      ? () => {} // 如果logs是响应式的，Vue会自动处理
-      : null
-})
-
-onUnmounted(() => {
-  if (unwatchLogs) {
-    unwatchLogs()
-  }
-})
-
-// 监听日志变化，自动滚动
-const prevLogsLength = ref(logs.value.length)
-const checkForNewLogs = () => {
-  if (logs.value.length > prevLogsLength.value) {
-    prevLogsLength.value = logs.value.length
-    if (autoScroll.value) {
-      nextTick(() => {
-        scrollToBottom()
-      })
-    }
-  }
-}
-
-// 定期检查新日志
-const logCheckInterval = setInterval(checkForNewLogs, 100)
-
-onUnmounted(() => {
-  clearInterval(logCheckInterval)
+    getLogPath()
+    refreshLogs()
 })
 </script>
 
 <style scoped>
 .log-viewer {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  background: var(--ant-color-bg-container);
-  border-radius: 8px;
-  overflow: hidden;
-}
-
-.log-header {
-  padding: 16px;
-  border-bottom: 1px solid var(--ant-color-border);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 12px;
+    padding: 16px;
 }
 
 .log-controls {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
+    margin-bottom: 16px;
 }
 
-.log-stats {
-  font-size: 14px;
-  color: var(--ant-color-text-secondary);
+.log-info {
+    margin-bottom: 12px;
+    font-size: 12px;
+    color: #666;
 }
 
-.log-container {
-  flex: 1;
-  overflow-y: auto;
-  padding: 8px;
-  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-  font-size: 12px;
-  line-height: 1.4;
+.log-content {
+    border: 1px solid #d9d9d9;
+    border-radius: 6px;
 }
 
-.log-entry {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 4px 8px;
-  border-radius: 4px;
-  margin-bottom: 2px;
-  word-break: break-all;
+.log-textarea :deep(.ant-input) {
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 12px;
+    line-height: 1.4;
+    border: none;
+    resize: none;
 }
 
-.log-entry:hover {
-
-}
-
-.log-highlight {
-  background: var(--ant-color-primary-bg) !important;
-}
-
-.log-timestamp {
-  color: var(--ant-color-text-tertiary);
-  white-space: nowrap;
-  min-width: 140px;
-}
-
-.log-level {
-  font-weight: bold;
-  min-width: 50px;
-  text-align: center;
-  padding: 2px 6px;
-  border-radius: 3px;
-  font-size: 10px;
-}
-
-.log-debug .log-level {
-  background: var(--ant-color-fill-secondary);
-  color: var(--ant-color-text-secondary);
-}
-
-.log-info .log-level {
-  background: var(--ant-color-info-bg);
-  color: var(--ant-color-info);
-}
-
-.log-warn .log-level {
-  background: var(--ant-color-warning-bg);
-  color: var(--ant-color-warning);
-}
-
-.log-error .log-level {
-  background: var(--ant-color-error-bg);
-  color: var(--ant-color-error);
-}
-
-.log-component {
-  color: var(--ant-color-primary);
-  font-weight: 500;
-  white-space: nowrap;
-}
-
-.log-message {
-  flex: 1;
-  color: var(--ant-color-text);
-}
-
-.log-data {
-  margin-top: 4px;
-  width: 100%;
-}
-
-.log-data-content {
-
-  padding: 8px;
-  border-radius: 4px;
-  margin-top: 4px;
-  font-size: 11px;
-  overflow-x: auto;
-}
-
-@media (max-width: 768px) {
-  .log-header {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .log-controls {
-    justify-content: center;
-  }
-
-  .log-entry {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 4px;
-  }
-
-  .log-timestamp,
-  .log-level,
-  .log-component {
-    min-width: auto;
-  }
+.log-textarea :deep(.ant-input:focus) {
+    box-shadow: none;
 }
 </style>

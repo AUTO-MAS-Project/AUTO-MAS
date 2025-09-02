@@ -1775,21 +1775,33 @@ electron-builder@^26.0.12:
   resolved "https://registry.npmmirror.com/electron-builder/-/electron-builder-26.0.12.tgz#797af2e70efdd96c9ea5d8a8164b8728c90d65ff"
   integrity sha512-cD1kz5g2sgPTMFHjLxfMjUK5JABq3//J4jPswi93tOPFz6btzXYtK5NrDt717NRbukCUDOrrvmYVOWERlqoiXA==
   dependencies:
-    app-builder-lib "26.0.12"
-    builder-util "26.0.11"
-    builder-util-runtime "9.3.1"
-    chalk "^4.1.2"
-    dmg-builder "26.0.12"
-    fs-extra "^10.1.0"
-    is-ci "^3.0.0"
-    lazy-val "^1.0.5"
-    simple-update-notifier "2.0.0"
-    yargs "^17.6.2"
+    app-builder-lib: "npm:26.0.12"
+    builder-util: "npm:26.0.11"
+    builder-util-runtime: "npm:9.3.1"
+    chalk: "npm:^4.1.2"
+    dmg-builder: "npm:26.0.12"
+    fs-extra: "npm:^10.1.0"
+    is-ci: "npm:^3.0.0"
+    lazy-val: "npm:^1.0.5"
+    simple-update-notifier: "npm:2.0.0"
+    yargs: "npm:^17.6.2"
+  bin:
+    electron-builder: cli.js
+    install-app-deps: install-app-deps.js
+  checksum: 10c0/88911a812c37bc8c154aed876af26f07206ee3734b6b0b011beffd2c5788fbbdaf41e99ac1663c23627add5963fbc31678de859f946462fca05eb0e24027625b
+  languageName: node
+  linkType: hard
 
-electron-publish@26.0.11:
-  version "26.0.11"
-  resolved "https://registry.npmmirror.com/electron-publish/-/electron-publish-26.0.11.tgz#92c9329a101af2836d9d228c82966eca1eee9a7b"
-  integrity sha512-a8QRH0rAPIWH9WyyS5LbNvW9Ark6qe63/LqDB7vu2JXYpi0Gma5Q60Dh4tmTqhOBQt0xsrzD8qE7C+D7j+B24A==
+"electron-log@npm:^5.4.3":
+  version: 5.4.3
+  resolution: "electron-log@npm:5.4.3"
+  checksum: 10c0/84d398d2a53cd73fdd1118f7b376b08d74938c79cb4aa3454aa176b61ebf1522f5cc92179355e69e0053301df7a19fbe6cf302319e5fbe5fc6a1600f282a2646
+  languageName: node
+  linkType: hard
+
+"electron-publish@npm:26.0.11":
+  version: 26.0.11
+  resolution: "electron-publish@npm:26.0.11"
   dependencies:
     "@types/fs-extra" "^9.0.11"
     builder-util "26.0.11"
@@ -2186,14 +2198,45 @@ fs-extra@^10.0.0, fs-extra@^10.1.0:
   resolved "https://registry.npmmirror.com/fs-extra/-/fs-extra-10.1.0.tgz#02873cfbc4084dde127eaa5f9905eef2325d1abf"
   integrity sha512-oRXApq54ETRj4eMiFzGnHWGy+zo5raudjuxN0b8H7s/RU2oW0Wvsx9O0ACRN/kRq9E8Vu/ReskGB5o3ji+FzHQ==
   dependencies:
-    graceful-fs "^4.2.0"
-    jsonfile "^6.0.1"
-    universalify "^2.0.0"
+    "@ant-design/icons-vue": "npm:^7.0.1"
+    "@types/adm-zip": "npm:^0.5.7"
+    "@types/markdown-it": "npm:^14.1.2"
+    "@types/node": "npm:22.17.1"
+    "@typescript-eslint/eslint-plugin": "npm:^8.38.0"
+    "@typescript-eslint/parser": "npm:^8.38.0"
+    "@vitejs/plugin-vue": "npm:^6.0.1"
+    "@vue/tsconfig": "npm:^0.7.0"
+    adm-zip: "npm:^0.5.16"
+    ant-design-vue: "npm:4.x"
+    axios: "npm:^1.11.0"
+    concurrently: "npm:^9.2.0"
+    cross-env: "npm:^10.0.0"
+    dayjs: "npm:^1.11.13"
+    electron: "npm:^37.2.5"
+    electron-builder: "npm:^26.0.12"
+    electron-log: "npm:^5.4.3"
+    eslint: "npm:^9.32.0"
+    eslint-config-prettier: "npm:^10.1.8"
+    eslint-plugin-prettier: "npm:^5.5.3"
+    eslint-plugin-vue: "npm:^10.4.0"
+    form-data: "npm:^4.0.4"
+    markdown-it: "npm:^14.1.0"
+    openapi-typescript-codegen: "npm:^0.29.0"
+    prettier: "npm:^3.6.2"
+    typescript: "npm:^5.9.2"
+    vite: "npm:^7.0.4"
+    vite-plugin-eslint: "npm:^1.8.1"
+    vue: "npm:^3.5.17"
+    vue-eslint-parser: "npm:^10.2.0"
+    vue-router: "npm:4"
+    vue-tsc: "npm:^2.2.12"
+    wait-on: "npm:^8.0.4"
+  languageName: unknown
+  linkType: soft
 
-fs-extra@^11.1.1, fs-extra@^11.2.0:
-  version "11.3.1"
-  resolved "https://registry.npmmirror.com/fs-extra/-/fs-extra-11.3.1.tgz#ba7a1f97a85f94c6db2e52ff69570db3671d5a74"
-  integrity sha512-eXvGGwZ5CL17ZSwHWd3bbgk7UUpF6IFHtP57NYYakPvHOs8GDgDe5KJI36jIJzDkJ6eJjuzRA8eBQb6SkKue0g==
+"fs-extra@npm:^10.0.0, fs-extra@npm:^10.1.0":
+  version: 10.1.0
+  resolution: "fs-extra@npm:10.1.0"
   dependencies:
     graceful-fs "^4.2.0"
     jsonfile "^6.0.1"

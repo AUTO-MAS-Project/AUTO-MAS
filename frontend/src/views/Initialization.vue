@@ -29,7 +29,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { createComponentLogger } from '@/utils/logger'
 import { getConfig, saveConfig, setInitialized } from '@/utils/config'
 import AdminCheck from '@/components/initialization/AdminCheck.vue'
 import AutoMode from '@/components/initialization/AutoMode.vue'
@@ -37,7 +36,6 @@ import ManualMode from '@/components/initialization/ManualMode.vue'
 import type { DownloadProgress } from '@/types/initialization'
 
 const router = useRouter()
-const logger = createComponentLogger('Initialization')
 
 // 基础状态
 const isAdmin = ref(true)
@@ -77,7 +75,6 @@ async function enterApp() {
 // 检查关键文件是否存在
 async function checkCriticalFiles() {
   try {
-    logger.info('开始检查关键文件存在性')
     console.log('🔍 正在调用 window.electronAPI.checkCriticalFiles()...')
 
     // 检查API是否存在
@@ -110,7 +107,6 @@ async function checkCriticalFiles() {
     console.log('🔍 最终返回结果:', result)
     return result
   } catch (error) {
-    logger.error('检查关键文件失败', error)
     console.error('❌ 检查关键文件失败，使用配置文件状态:', error)
 
     // 如果检查失败，从配置文件读取状态
@@ -140,7 +136,6 @@ async function checkCriticalFiles() {
 // 检查环境状态
 async function checkEnvironment() {
   try {
-    logger.info('开始检查环境状态')
 
     // 只检查关键exe文件是否存在
     const criticalFiles = await checkCriticalFiles()
@@ -186,11 +181,9 @@ async function checkEnvironment() {
 
     // 只有在非首次启动、配置显示已初始化、且所有关键exe文件都存在时才进入自动模式
     if (!isFirst && config.init && allExeFilesExist) {
-      logger.info('非首次启动、配置显示已初始化且所有关键文件存在，进入自动模式')
       console.log('进入自动模式，开始自动启动流程')
       autoMode.value = true
     } else {
-      logger.info('需要进入手动模式进行配置')
       console.log('进入手动模式')
       console.log(
         '原因: isFirst =',
@@ -209,7 +202,6 @@ async function checkEnvironment() {
     }
   } catch (error) {
     const errorMsg = `环境检查失败: ${error instanceof Error ? error.message : String(error)}`
-    logger.error('环境检查失败', error)
     console.error('环境检查失败:', error)
 
     // 检查失败时强制进入手动模式
@@ -224,7 +216,7 @@ async function checkAdminPermission() {
     isAdmin.value = adminStatus
     console.log('管理员权限检查结果:', adminStatus)
   } catch (error) {
-    logger.error('检查管理员权限失败', error)
+    console.error('检查管理员权限失败:', error)
     isAdmin.value = false
   }
 }

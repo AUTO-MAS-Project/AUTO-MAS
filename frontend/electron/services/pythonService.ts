@@ -4,6 +4,9 @@ import { spawn } from 'child_process'
 import { BrowserWindow } from 'electron'
 import AdmZip from 'adm-zip'
 import { downloadFile } from './downloadService'
+import { ChildProcessWithoutNullStreams } from 'node:child_process'
+import { log, stripAnsiColors } from './logService'
+
 
 let mainWindow: BrowserWindow | null = null
 
@@ -100,13 +103,13 @@ async function installPip(pythonPath: string, appRoot: string): Promise<void> {
     })
 
     process.stdout?.on('data', data => {
-      const output = data.toString()
-      console.log('pip安装输出:', output)
+      const output = stripAnsiColors(data.toString())
+      log.info('pip安装输出:', output)
     })
 
     process.stderr?.on('data', data => {
-      const errorOutput = data.toString()
-      console.log('pip安装错误输出:', errorOutput)
+      const errorOutput = stripAnsiColors(data.toString())
+      log.warn('pip安装错误输出:', errorOutput)
     })
 
     process.on('close', code => {
@@ -134,13 +137,13 @@ async function installPip(pythonPath: string, appRoot: string): Promise<void> {
     })
 
     verifyProcess.stdout?.on('data', data => {
-      const output = data.toString()
-      console.log('pip版本信息:', output)
+      const output = stripAnsiColors(data.toString())
+      log.info('pip版本信息:', output)
     })
 
     verifyProcess.stderr?.on('data', data => {
-      const errorOutput = data.toString()
-      console.log('pip版本检查错误:', errorOutput)
+      const errorOutput = stripAnsiColors(data.toString())
+      log.warn('pip版本检查错误:', errorOutput)
     })
 
     verifyProcess.on('close', code => {
@@ -366,8 +369,8 @@ export async function installDependencies(
       )
 
       process.stdout?.on('data', data => {
-        const output = data.toString()
-        console.log('Pip output:', output)
+        const output = stripAnsiColors(data.toString())
+        log.info('Pip output:', output)
 
         if (mainWindow) {
           mainWindow.webContents.send('download-progress', {
@@ -380,8 +383,8 @@ export async function installDependencies(
       })
 
       process.stderr?.on('data', data => {
-        const errorOutput = data.toString()
-        console.error('Pip error:', errorOutput)
+        const errorOutput = stripAnsiColors(data.toString())
+        log.error('Pip error:', errorOutput)
       })
 
       process.on('close', code => {
@@ -470,73 +473,139 @@ export async function installPipPackage(
 }
 
 // 启动后端
-export async function startBackend(appRoot: string): Promise<{ success: boolean; error?: string }> {
+let backendProc: ChildProcessWithoutNullStreams | null = null
+
+/**
+ * 启动后端
+ * @param appRoot 项目根目录
+ * @param timeoutMs 等待启动超时（默认 30 秒）
+ */
+export async function startBackend(appRoot: string, timeoutMs = 30_000) {
   try {
-    const pythonPath = path.join(appRoot, 'environment', 'python', 'python.exe')
-    const backendPath = path.join(appRoot)
-    const mainPyPath = path.join(backendPath, 'main.py')
-
-    // 检查文件是否存在
-    if (!fs.existsSync(pythonPath)) {
-      throw new Error('Python可执行文件不存在')
-    }
-    if (!fs.existsSync(mainPyPath)) {
-      throw new Error('后端主文件不存在')
+    // 如果已经在运行，直接返回
+    if (backendProc && !backendProc.killed && backendProc.exitCode == null) {
+      console.log('[Backend] 已在运行, PID =', backendProc.pid)
+      return { success: true }
     }
 
-    console.log(`启动后端指令: "${pythonPath}" "${mainPyPath}"（cwd: ${appRoot}）`)
+    const pythonExe = path.join(appRoot, 'environment', 'python', 'python.exe')
+    const mainPy = path.join(appRoot, 'main.py')
 
-    // 启动后端进程
-    const backendProcess = spawn(pythonPath, [mainPyPath], {
+    if (!fs.existsSync(pythonExe)) {
+      throw new Error(`Python可执行文件不存在: ${pythonExe}`)
+    }
+    if (!fs.existsSync(mainPy)) {
+      throw new Error(`后端主文件不存在: ${mainPy}`)
+    }
+
+    console.log(`[Backend] spawn "${pythonExe}" "${mainPy}" (cwd=${appRoot})`)
+
+    backendProc = spawn(pythonExe, [mainPy], {
       cwd: appRoot,
-      stdio: 'pipe',
-      env: {
-        ...process.env,
-        PYTHONIOENCODING: 'utf-8', // 设置Python输出编码为UTF-8
-      },
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
     })
 
-    // 等待后端启动
+    backendProc.stdout.setEncoding('utf8')
+    backendProc.stderr.setEncoding('utf8')
+
+    backendProc.stdout.on('data', d => {
+      const line = stripAnsiColors(d.toString().trim())
+      if (line) log.info('[Backend]', line)
+    })
+    backendProc.stderr.on('data', d => {
+      const line = stripAnsiColors(d.toString().trim())
+      if (line) log.info('[Backend]', line)
+    })
+
+    backendProc.once('exit', (code, signal) => {
+      console.log('[Backend] 退出', { code, signal })
+      backendProc = null
+    })
+    backendProc.once('error', e => {
+      console.error('[Backend] 进程错误:', e)
+    })
+
+    // 等待启动成功（匹配 Uvicorn 的输出）
     await new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        reject(new Error('后端启动超时'))
-      }, 30000) // 30秒超时
+      let settled = false
+      const timer = setTimeout(() => {
+        if (!settled) {
+          settled = true
+          reject(new Error('后端启动超时'))
+        }
+      }, timeoutMs)
 
-      backendProcess.stdout?.on('data', data => {
-        const output = data.toString()
-        console.log('Backend output:', output)
-
-        // 检查是否包含启动成功的标志
-        if (output.includes('Uvicorn running') || output.includes('36163')) {
-          clearTimeout(timeout)
+      const checkReady = (buf: Buffer | string) => {
+        if (settled) return
+        const s = buf.toString()
+        if (/Uvicorn running|http:\/\/0\.0\.0\.0:\d+/.test(s)) {
+          settled = true
+          clearTimeout(timer)
           resolve()
         }
-      })
+      }
 
-      // ✅ 重要：也要监听 stderr
-      backendProcess.stderr?.on('data', data => {
-        const output = data.toString()
-        console.error('Backend error:', output) // 保留原有日志
+      backendProc!.stdout.on('data', checkReady)
+      backendProc!.stderr.on('data', checkReady)
 
-        // ✅ 在 stderr 中也检查启动标志
-        if (output.includes('Uvicorn running') || output.includes('36163')) {
-          clearTimeout(timeout)
-          resolve()
+      backendProc!.once('exit', (code, sig) => {
+        if (!settled) {
+          settled = true
+          clearTimeout(timer)
+          reject(new Error(`后端提前退出: code=${code}, signal=${sig ?? ''}`))
         }
       })
-
-      backendProcess.stderr?.on('data', data => {
-        console.error('Backend error:', data.toString())
-      })
-
-      backendProcess.on('error', error => {
-        clearTimeout(timeout)
-        reject(error)
+      backendProc!.once('error', err => {
+        if (!settled) {
+          settled = true
+          clearTimeout(timer)
+          reject(err)
+        }
       })
     })
 
+    console.log('[Backend] 启动成功, PID =', backendProc.pid)
     return { success: true }
-  } catch (error) {
-    return { success: false, error: error instanceof Error ? error.message : String(error) }
+  } catch (e) {
+    console.error('[Backend] 启动失败:', e)
+    return { success: false, error: e instanceof Error ? e.message : String(e) }
   }
+}
+
+/** 停止后端进程（如果没启动就直接返回成功） */
+export async function stopBackend() {
+  if (!backendProc || backendProc.killed) {
+    console.log('[Backend] 未运行，无需停止')
+    return { success: true }
+  }
+
+  const pid = backendProc.pid
+  console.log('[Backend] 正在停止后端服务, PID =', pid)
+
+  return new Promise<{ success: boolean; error?: string }>(resolve => {
+    // 清监听，避免重复日志
+    backendProc?.stdout?.removeAllListeners('data')
+    backendProc?.stderr?.removeAllListeners('data')
+
+    backendProc!.once('exit', (code, signal) => {
+      console.log('[Backend] 已退出', { code, signal })
+      backendProc = null
+      resolve({ success: true })
+    })
+
+    backendProc!.once('error', err => {
+      console.error('[Backend] 停止时出错:', err)
+      backendProc = null
+      resolve({ success: false, error: err instanceof Error ? err.message : String(err) })
+    })
+
+    try {
+      backendProc!.kill() // 默认 SIGTERM，Windows 下等价于结束进程
+    } catch (e) {
+      console.error('[Backend] kill 调用失败:', e)
+      backendProc = null
+      resolve({ success: false, error: e instanceof Error ? e.message : String(e) })
+    }
+  })
 }
