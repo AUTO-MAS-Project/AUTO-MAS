@@ -13,7 +13,7 @@ import {
   stopBackend,
 } from './services/pythonService'
 import { setMainWindow as setGitMainWindow, downloadGit, cloneBackend } from './services/gitService'
-import { setupLogger, log, getLogPath, cleanOldLogs } from './services/logService'
+import { setupLogger, log, getLogPath, getLogFiles, cleanOldLogs } from './services/logService'
 
 // 检查是否以管理员权限运行
 function isRunningAsAdmin(): boolean {
@@ -256,9 +256,27 @@ ipcMain.handle('get-log-path', async () => {
   }
 })
 
-ipcMain.handle('get-logs', async (event, lines?: number) => {
+ipcMain.handle('get-log-files', async () => {
   try {
-    const logFilePath = getLogPath()
+    return getLogFiles()
+  } catch (error) {
+    log.error('获取日志文件列表失败:', error)
+    throw error
+  }
+})
+
+ipcMain.handle('get-logs', async (event, lines?: number, fileName?: string) => {
+  try {
+    let logFilePath: string
+    
+    if (fileName) {
+      // 如果指定了文件名，使用指定的文件
+      const appRoot = getAppRoot()
+      logFilePath = path.join(appRoot, 'logs', fileName)
+    } else {
+      // 否则使用当前日志文件
+      logFilePath = getLogPath()
+    }
     
     if (!fs.existsSync(logFilePath)) {
       return ''
@@ -278,13 +296,22 @@ ipcMain.handle('get-logs', async (event, lines?: number) => {
   }
 })
 
-ipcMain.handle('clear-logs', async () => {
+ipcMain.handle('clear-logs', async (event, fileName?: string) => {
   try {
-    const logFilePath = getLogPath()
+    let logFilePath: string
+    
+    if (fileName) {
+      // 如果指定了文件名，清空指定的文件
+      const appRoot = getAppRoot()
+      logFilePath = path.join(appRoot, 'logs', fileName)
+    } else {
+      // 否则清空当前日志文件
+      logFilePath = getLogPath()
+    }
     
     if (fs.existsSync(logFilePath)) {
       fs.writeFileSync(logFilePath, '', 'utf8')
-      log.info('日志文件已清空')
+      log.info(`日志文件已清空: ${fileName || '当前文件'}`)
     }
   } catch (error) {
     log.error('清空日志文件失败:', error)
