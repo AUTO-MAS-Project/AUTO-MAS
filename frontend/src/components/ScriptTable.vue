@@ -267,14 +267,9 @@
 
           <!-- 空状态 -->
           <div v-else class="empty-users">
-            <a-empty description="暂无用户" class="compact-empty">
-              <a-button type="primary" size="small" @click="handleAddUser(script)">
-                <template #icon>
-                  <PlusOutlined />
-                </template>
-                添加用户
-              </a-button>
-            </a-empty>
+            <div class="empty-content">
+              <img src="@/assets/NoData.png" alt="暂无用户" class="empty-image" />
+            </div>
           </div>
         </a-card>
       </a-col>
