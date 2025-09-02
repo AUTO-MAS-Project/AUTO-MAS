@@ -516,7 +516,7 @@ export async function startBackend(appRoot: string): Promise<{ success: boolean;
       // ✅ 重要：也要监听 stderr
       backendProcess.stderr?.on('data', data => {
         const output = data.toString()
-        console.error('Backend error:', output) // 保留原有日志
+        console.log('Backend output:', output) // 保留原有日志
 
         // ✅ 在 stderr 中也检查启动标志
         if (output.includes('Uvicorn running') || output.includes('36163')) {
@@ -526,7 +526,7 @@ export async function startBackend(appRoot: string): Promise<{ success: boolean;
       })
 
       backendProcess.stderr?.on('data', data => {
-        console.error('Backend error:', data.toString())
+        console.log('Backend output:', data.toString())
       })
 
       backendProcess.on('error', error => {
