@@ -1,13 +1,23 @@
 {
-  "extends": "./tsconfig.base.json",
   "compilerOptions": {
     "target": "ES2020",
     "module": "CommonJS",
+    "moduleResolution": "Node",
     "strict": true,
-    "outDir": "dist-electron",
+
     "rootDir": "electron",
+    "outDir": "dist-electron",
+
     "esModuleInterop": true,
-    "types": ["node", "electron"]
+    "allowSyntheticDefaultImports": true,
+    "types": ["node", "electron"],
+
+    // 仅供 IDE 跳转可选加入（不影响运行）
+    "baseUrl": ".",
+    "paths": { "@/*": ["./src/*"] },
+
+    // 关键：不要把 ESM import 原样保留，交给 TS 转成 require
+    "verbatimModuleSyntax": false
   },
   "include": ["electron"]
 }

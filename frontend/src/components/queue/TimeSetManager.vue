@@ -89,11 +89,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch } from 'vue'
-import { message } from 'ant-design-vue'
-import { PlusOutlined, ReloadOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons-vue'
-import { Service } from '@/api'
+import { reactive, ref, watch } from 'vue'
 import type { FormInstance } from 'ant-design-vue'
+import { message } from 'ant-design-vue'
+import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons-vue'
+import { Service } from '@/api'
 import dayjs from 'dayjs'
 
 // 时间处理工具函数
@@ -191,11 +191,6 @@ watch(
   },
   { deep: true, immediate: true }
 )
-
-// 刷新数据
-const refreshData = () => {
-  emit('refresh')
-}
 
 // 添加定时项
 const addTimeSet = () => {
@@ -372,14 +367,12 @@ const deleteTimeSet = async (timeSetId: string) => {
   font-weight: 600;
 }
 
-
 /* 表格样式优化 */
 :deep(.ant-table-tbody > tr > td) {
   padding: 12px 16px;
 }
 
 :deep(.ant-table-thead > tr > th) {
-  background: var(--ant-color-fill-quaternary);
   font-weight: 600;
 }
 
@@ -398,7 +391,6 @@ const deleteTimeSet = async (timeSetId: string) => {
   font-weight: 600;
   color: var(--ant-color-text);
   padding: 4px 8px;
-  background: var(--ant-color-fill-quaternary);
   border-radius: 4px;
   display: inline-block;
   min-width: 60px;

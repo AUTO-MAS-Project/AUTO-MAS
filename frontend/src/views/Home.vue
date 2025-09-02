@@ -724,7 +724,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--ant-color-fill-quaternary);
+
   border-radius: 6px;
   overflow: hidden;
 }
