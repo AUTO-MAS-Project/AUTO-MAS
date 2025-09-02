@@ -5,37 +5,58 @@
   </div>
 
   <!-- 主要内容 -->
-    <div class="scripts-header">
-      <div class="header-title">
-        <h1>脚本管理</h1>
-      </div>
-      <a-space size="middle">
-        <a-button type="primary" size="large" @click="handleAddScript" class="link">
-          <template #icon>
-            <PlusOutlined />
-          </template>
-          新建脚本
-        </a-button>
-        <a-button size="large" @click="handleRefresh" class="default">
-          <template #icon>
-            <ReloadOutlined />
-          </template>
-          刷新
-        </a-button>
-      </a-space>
+  <div class="scripts-header">
+    <div class="header-title">
+      <h1>脚本管理</h1>
     </div>
-    <!-- 如果没有脚本，显示占位符 -->
-    <div v-if="scripts.length === 0" class="placeholder-container">
-    <div class="placeholder-content">
-      <h2>当前没有脚本</h2>
-      <p>您还没有创建任何脚本，点击下方的“新建脚本”按钮来创建您的第一个脚本。</p>
+    <a-space size="middle">
+      <a-button type="primary" size="large" @click="handleAddScript" class="link">
+        <template #icon>
+          <PlusOutlined />
+        </template>
+        新建脚本
+      </a-button>
+      <a-button size="large" @click="handleRefresh" class="default">
+        <template #icon>
+          <ReloadOutlined />
+        </template>
+        刷新
+      </a-button>
+    </a-space>
+  </div>
+  <!--    &lt;!&ndash; 如果没有脚本，显示占位符 &ndash;&gt;-->
+  <!--    <div v-if="scripts.length === 0" class="placeholder-container">-->
+  <!--    <div class="placeholder-content">-->
+  <!--      <h2>当前没有脚本</h2>-->
+  <!--      <p>您还没有创建任何脚本，点击下方的“新建脚本”按钮来创建您的第一个脚本。</p>-->
+  <!--      <a-button type="primary" size="large" @click="handleAddScript">-->
+  <!--        <template #icon>-->
+  <!--          <PlusOutlined />-->
+  <!--        </template>-->
+  <!--        新建脚本-->
+  <!--      </a-button>-->
+  <!--    </div>-->
+  <!--  </div>-->
+
+  <!-- 空状态 -->
+  <div v-if="scripts.length === 0" class="empty-state">
+    <a-empty
+      image="https://gw.alipayobjects.com/zos/antfincdn/ZHrcdLPrvN/empty.svg"
+      :image-style="{ height: '120px' }"
+      description="当前没有脚本"
+    >
+      <template #description>
+        <span class="empty-description">
+          您还没有创建任何脚本，点击下方的“新建脚本”按钮来创建您的第一个脚本。
+        </span>
+      </template>
       <a-button type="primary" size="large" @click="handleAddScript">
         <template #icon>
           <PlusOutlined />
         </template>
         新建脚本
       </a-button>
-    </div>
+    </a-empty>
   </div>
 
   <ScriptTable
@@ -700,7 +721,6 @@ const handleToggleUserStatus = async (user: User) => {
   overflow: hidden;
 }
 
-
 .type-radio-group :deep(.ant-radio-button-wrapper-checked) {
   border-color: var(--ant-color-primary);
   background: var(--ant-color-primary-bg);
@@ -799,7 +819,6 @@ const handleToggleUserStatus = async (user: User) => {
   overflow: hidden;
 }
 
-
 .mode-radio-group :deep(.ant-radio-button-wrapper-checked) {
   border-color: var(--ant-color-primary);
   background: var(--ant-color-primary-bg);
@@ -820,7 +839,6 @@ const handleToggleUserStatus = async (user: User) => {
   border: 1px solid var(--ant-color-border-secondary);
   transition: all 0.3s ease;
 }
-
 
 /* 模板选择弹窗样式 */
 .template-select-modal :deep(.ant-modal-content) {
@@ -869,7 +887,6 @@ const handleToggleUserStatus = async (user: User) => {
   border: 2px solid var(--ant-color-border);
   background: var(--ant-color-bg-container);
 }
-
 
 .template-item.selected {
   border-color: var(--ant-color-primary);
@@ -991,7 +1008,6 @@ const handleToggleUserStatus = async (user: User) => {
       0 4px 20px rgba(0, 0, 0, 0.3),
       0 1px 3px rgba(0, 0, 0, 0.4);
   }
-
 
   .add-button {
     box-shadow: 0 4px 12px rgba(24, 144, 255, 0.4);
@@ -1160,7 +1176,6 @@ const handleToggleUserStatus = async (user: User) => {
   transition: all 0.2s ease;
 }
 
-
 .template-item.selected {
   border-color: var(--ant-color-primary);
   background: var(--ant-color-primary-bg);
@@ -1176,7 +1191,6 @@ const handleToggleUserStatus = async (user: User) => {
   border-bottom: 1px solid var(--ant-color-border-secondary);
   position: relative;
 }
-
 
 .template-icon-wrapper::before {
   content: '';

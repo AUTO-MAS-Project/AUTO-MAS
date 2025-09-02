@@ -10,7 +10,6 @@
     <div class="queue-header">
       <div class="header-left">
         <h1 class="page-title">调度队列</h1>
-        <p class="page-description">管理您的自动化调度队列和任务配置</p>
       </div>
       <div class="header-actions">
         <a-space size="middle">
