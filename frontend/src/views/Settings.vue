@@ -687,11 +687,7 @@ onMounted(() => {
 
             <Divider />
 
-            <div class="setting-item">
-              <h4>系统日志</h4>
-              <p class="setting-description">查看应用运行日志，用于问题排查和调试</p>
-              <Button type="default" @click="$router.push('/logs')">查看系统日志</Button>
-            </div>
+
           </Space>
         </Card>
       </Tabs.TabPane>
