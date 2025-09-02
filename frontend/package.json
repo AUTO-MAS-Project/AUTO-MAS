@@ -53,6 +53,7 @@
     "ant-design-vue": "4.x",
     "axios": "^1.11.0",
     "dayjs": "^1.11.13",
+    "electron-log": "^5.4.3",
     "form-data": "^4.0.4",
     "markdown-it": "^14.1.0",
     "vue": "^3.5.17",

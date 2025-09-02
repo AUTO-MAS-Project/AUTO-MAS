@@ -5,6 +5,8 @@ import { BrowserWindow } from 'electron'
 import AdmZip from 'adm-zip'
 import { downloadFile } from './downloadService'
 import { ChildProcessWithoutNullStreams } from 'node:child_process'
+import { log, stripAnsiColors } from './logService'
+
 
 let mainWindow: BrowserWindow | null = null
 
@@ -101,13 +103,13 @@ async function installPip(pythonPath: string, appRoot: string): Promise<void> {
     })
 
     process.stdout?.on('data', data => {
-      const output = data.toString()
-      console.log('pip安装输出:', output)
+      const output = stripAnsiColors(data.toString())
+      log.info('pip安装输出:', output)
     })
 
     process.stderr?.on('data', data => {
-      const errorOutput = data.toString()
-      console.log('pip安装错误输出:', errorOutput)
+      const errorOutput = stripAnsiColors(data.toString())
+      log.warn('pip安装错误输出:', errorOutput)
     })
 
     process.on('close', code => {
@@ -135,13 +137,13 @@ async function installPip(pythonPath: string, appRoot: string): Promise<void> {
     })
 
     verifyProcess.stdout?.on('data', data => {
-      const output = data.toString()
-      console.log('pip版本信息:', output)
+      const output = stripAnsiColors(data.toString())
+      log.info('pip版本信息:', output)
     })
 
     verifyProcess.stderr?.on('data', data => {
-      const errorOutput = data.toString()
-      console.log('pip版本检查错误:', errorOutput)
+      const errorOutput = stripAnsiColors(data.toString())
+      log.warn('pip版本检查错误:', errorOutput)
     })
 
     verifyProcess.on('close', code => {
@@ -367,8 +369,8 @@ export async function installDependencies(
       )
 
       process.stdout?.on('data', data => {
-        const output = data.toString()
-        console.log('Pip output:', output)
+        const output = stripAnsiColors(data.toString())
+        log.info('Pip output:', output)
 
         if (mainWindow) {
           mainWindow.webContents.send('download-progress', {
@@ -381,8 +383,8 @@ export async function installDependencies(
       })
 
       process.stderr?.on('data', data => {
-        const errorOutput = data.toString()
-        console.error('Pip error:', errorOutput)
+        const errorOutput = stripAnsiColors(data.toString())
+        log.error('Pip error:', errorOutput)
       })
 
       process.on('close', code => {
@@ -508,12 +510,12 @@ export async function startBackend(appRoot: string, timeoutMs = 30_000) {
     backendProc.stderr.setEncoding('utf8')
 
     backendProc.stdout.on('data', d => {
-      const line = d.toString().trim()
-      if (line) console.log('[Backend]', line)
+      const line = stripAnsiColors(d.toString().trim())
+      if (line) log.info('[Backend]', line)
     })
     backendProc.stderr.on('data', d => {
-      const line = d.toString().trim()
-      if (line) console.log('[Backend]', line)
+      const line = stripAnsiColors(d.toString().trim())
+      if (line) log.info('[Backend]', line)
     })
 
     backendProc.once('exit', (code, signal) => {

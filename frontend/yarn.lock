@@ -2449,6 +2449,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"electron-log@npm:^5.4.3":
+  version: 5.4.3
+  resolution: "electron-log@npm:5.4.3"
+  checksum: 10c0/84d398d2a53cd73fdd1118f7b376b08d74938c79cb4aa3454aa176b61ebf1522f5cc92179355e69e0053301df7a19fbe6cf302319e5fbe5fc6a1600f282a2646
+  languageName: node
+  linkType: hard
+
 "electron-publish@npm:26.0.11":
   version: 26.0.11
   resolution: "electron-publish@npm:26.0.11"
@@ -3061,6 +3068,7 @@ __metadata:
     dayjs: "npm:^1.11.13"
     electron: "npm:^37.2.5"
     electron-builder: "npm:^26.0.12"
+    electron-log: "npm:^5.4.3"
     eslint: "npm:^9.32.0"
     eslint-config-prettier: "npm:^10.1.8"
     eslint-plugin-prettier: "npm:^5.5.3"
