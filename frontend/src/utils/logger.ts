@@ -1,8 +1,9 @@
 // 渲染进程日志工具
 interface ElectronAPI {
   getLogPath: () => Promise<string>
-  getLogs: (lines?: number) => Promise<string>
-  clearLogs: () => Promise<void>
+  getLogFiles: () => Promise<string[]>
+  getLogs: (lines?: number, fileName?: string) => Promise<string>
+  clearLogs: (fileName?: string) => Promise<void>
   cleanOldLogs: (daysToKeep?: number) => Promise<void>
 }
 
@@ -45,19 +46,27 @@ class Logger {
     throw new Error('Electron API not available')
   }
 
-  // 获取日志内容
-  async getLogs(lines?: number): Promise<string> {
+  // 获取日志文件列表
+  async getLogFiles(): Promise<string[]> {
     if (window.electronAPI) {
-      return await window.electronAPI.getLogs(lines)
+      return await window.electronAPI.getLogFiles()
+    }
+    throw new Error('Electron API not available')
+  }
+
+  // 获取日志内容
+  async getLogs(lines?: number, fileName?: string): Promise<string> {
+    if (window.electronAPI) {
+      return await window.electronAPI.getLogs(lines, fileName)
     }
     throw new Error('Electron API not available')
   }
 
   // 清空日志
-  async clearLogs(): Promise<void> {
+  async clearLogs(fileName?: string): Promise<void> {
     if (window.electronAPI) {
-      await window.electronAPI.clearLogs()
-      console.info('日志已清空')
+      await window.electronAPI.clearLogs(fileName)
+      console.info(`日志已清空: ${fileName || '当前文件'}`)
     } else {
       throw new Error('Electron API not available')
     }

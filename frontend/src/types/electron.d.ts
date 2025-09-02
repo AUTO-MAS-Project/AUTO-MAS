@@ -25,8 +25,9 @@ export interface ElectronAPI {
 
   // 日志文件操作
   getLogPath: () => Promise<string>
-  getLogs: (lines?: number) => Promise<string>
-  clearLogs: () => Promise<void>
+  getLogFiles: () => Promise<string[]>
+  getLogs: (lines?: number, fileName?: string) => Promise<string>
+  clearLogs: (fileName?: string) => Promise<void>
   cleanOldLogs: (daysToKeep?: number) => Promise<void>
   
   // 保留原有方法以兼容现有代码

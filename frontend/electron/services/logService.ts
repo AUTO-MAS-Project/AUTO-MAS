@@ -15,6 +15,15 @@ function getLogDirectory(): string {
   return path.join(appRoot, 'logs')
 }
 
+// 获取当前日期的日志文件名 - 使用ISO 8601格式
+function getTodayLogFileName(): string {
+  const today = new Date()
+  const year = today.getFullYear()
+  const month = String(today.getMonth() + 1).padStart(2, '0')
+  const day = String(today.getDate()).padStart(2, '0')
+  return `frontendlog-${year}-${month}-${day}.log`
+}
+
 // 配置日志系统
 export function setupLogger() {
   // 设置日志文件路径到软件安装目录
@@ -30,28 +39,21 @@ export function setupLogger() {
   log.transports.file.format = '[{y}-{m}-{d} {h}:{i}:{s}.{ms}] [{level}] {text}'
   log.transports.console.format = '[{y}-{m}-{d} {h}:{i}:{s}.{ms}] [{level}] {text}'
 
-  // 设置主进程日志文件路径和名称
-  log.transports.file.resolvePathFn = () => path.join(logPath, 'app.log')
+  // 设置主进程日志文件路径和名称 - 按日期分文件
+  log.transports.file.resolvePathFn = () => {
+    const fileName = getTodayLogFileName()
+    return path.join(logPath, fileName)
+  }
 
   // 设置日志级别
   log.transports.file.level = 'debug'
   log.transports.console.level = 'debug'
 
-  // 设置文件大小限制 (10MB)
-  log.transports.file.maxSize = 10 * 1024 * 1024
+  // 设置文件大小限制 (50MB，因为按日期分文件，可以设置更大)
+  log.transports.file.maxSize = 50 * 1024 * 1024
 
-  // 保留最近的5个日志文件
-  log.transports.file.archiveLog = (file: any) => {
-    const filePath = file.toString()
-    const info = path.parse(filePath)
-
-    try {
-      return path.join(info.dir, `${info.name}.old${info.ext}`)
-    } catch (e) {
-      console.warn('Could not archive log file', e)
-      return null
-    }
-  }
+  // 禁用自动归档，因为我们按日期分文件
+  log.transports.file.archiveLog = null
 
   // 捕获未处理的异常和Promise拒绝
   log.catchErrors({
@@ -98,7 +100,7 @@ export function setupLogger() {
   }
 
   log.info('日志系统初始化完成')
-  log.info(`日志文件路径: ${path.join(logPath, 'main.log')}`)
+  log.info(`日志文件路径: ${path.join(logPath, getTodayLogFileName())}`)
 
   return log
 }
@@ -106,9 +108,25 @@ export function setupLogger() {
 // 导出日志实例和工具函数
 export { log, stripAnsiColors }
 
-// 获取日志文件路径
+// 获取当前日志文件路径
 export function getLogPath(): string {
-  return path.join(getLogDirectory(), 'main.log')
+  return path.join(getLogDirectory(), getTodayLogFileName())
+}
+
+// 获取所有日志文件列表
+export function getLogFiles(): string[] {
+  const fs = require('fs')
+  const logDir = getLogDirectory()
+  
+  if (!fs.existsSync(logDir)) {
+    return []
+  }
+  
+  const files = fs.readdirSync(logDir)
+  return files
+    .filter((file: string) => file.match(/^frontendlog-\d{4}-\d{2}-\d{2}\.log$/))
+    .sort()
+    .reverse() // 最新的在前面
 }
 
 // 清理旧日志文件
@@ -121,19 +139,27 @@ export function cleanOldLogs(daysToKeep: number = 7) {
   }
 
   const files = fs.readdirSync(logDir)
-  const now = Date.now()
-  const maxAge = daysToKeep * 24 * 60 * 60 * 1000 // 转换为毫秒
+  const now = new Date()
+  const cutoffDate = new Date(now.getTime() - daysToKeep * 24 * 60 * 60 * 1000)
+  
+  // 格式化截止日期为YYYY-MM-DD
+  const cutoffDateStr = cutoffDate.getFullYear() + '-' +
+    String(cutoffDate.getMonth() + 1).padStart(2, '0') + '-' +
+    String(cutoffDate.getDate()).padStart(2, '0')
 
   files.forEach((file: string) => {
-    const filePath = path.join(logDir, file)
-    const stats = fs.statSync(filePath)
-
-    if (now - stats.mtime.getTime() > maxAge) {
-      try {
-        fs.unlinkSync(filePath)
-        log.info(`已删除旧日志文件: ${file}`)
-      } catch (error) {
-        log.error(`删除旧日志文件失败: ${file}`, error)
+    // 匹配日志文件名格式 frontendlog-YYYY-MM-DD.log
+    const match = file.match(/^frontendlog-(\d{4}-\d{2}-\d{2})\.log$/)
+    if (match) {
+      const fileDateStr = match[1]
+      if (fileDateStr < cutoffDateStr) {
+        const filePath = path.join(logDir, file)
+        try {
+          fs.unlinkSync(filePath)
+          log.info(`已删除旧日志文件: ${file}`)
+        } catch (error) {
+          log.error(`删除旧日志文件失败: ${file}`, error)
+        }
       }
     }
   })
