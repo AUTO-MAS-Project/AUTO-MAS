@@ -17,15 +17,27 @@
     </div>
 
     <a-space size="middle">
-      <a-button v-if="scriptType === 'MAA' && formData.Info.Mode !== '简洁'" type="primary" ghost size="large"
-        @click="handleMAAConfig" :loading="maaConfigLoading">
+      <a-button
+        v-if="scriptType === 'MAA' && formData.Info.Mode !== '简洁'"
+        type="primary"
+        ghost
+        size="large"
+        @click="handleMAAConfig"
+        :loading="maaConfigLoading"
+      >
         <template #icon>
           <SettingOutlined />
         </template>
         MAA配置
       </a-button>
-      <a-button v-if="scriptType === 'General'" type="primary" ghost size="large" @click="handleGeneralConfig"
-        :loading="generalConfigLoading">
+      <a-button
+        v-if="scriptType === 'General'"
+        type="primary"
+        ghost
+        size="large"
+        @click="handleGeneralConfig"
+        :loading="generalConfigLoading"
+      >
         <template #icon>
           <SettingOutlined />
         </template>
@@ -37,12 +49,18 @@
         </template>
         返回
       </a-button>
-      <!--      <a-button type="primary" size="large" @click="handleSubmit" :loading="loading" class="save-button">-->
-      <!--        <template #icon>-->
-      <!--          <SaveOutlined />-->
-      <!--        </template>-->
-      <!--        {{ isEdit ? '保存修改' : '创建用户' }}-->
-      <!--      </a-button>-->
+      <a-button
+        type="primary"
+        size="large"
+        @click="handleSubmit"
+        :loading="loading"
+        class="save-button"
+      >
+        <template #icon>
+          <SaveOutlined />
+        </template>
+        {{ isEdit ? '保存修改' : '创建用户' }}
+      </a-button>
     </a-space>
   </div>
 
@@ -62,7 +80,12 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input v-model:value="formData.userName" placeholder="请输入用户名" :disabled="loading" size="large" />
+                <a-input
+                  v-model:value="formData.userName"
+                  placeholder="请输入用户名"
+                  :disabled="loading"
+                  size="large"
+                />
               </a-form-item>
             </a-col>
             <a-col :span="12">
@@ -75,7 +98,12 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input v-model:value="formData.userId" placeholder="请输入账号ID" :disabled="loading" size="large" />
+                <a-input
+                  v-model:value="formData.userId"
+                  placeholder="请输入账号ID"
+                  :disabled="loading"
+                  size="large"
+                />
               </a-form-item>
             </a-col>
           </a-row>
@@ -107,8 +135,12 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input-password v-model:value="formData.Info.Password" placeholder="密码仅用于储存以防遗忘，此外无任何作用"
-                  :disabled="loading" size="large" />
+                <a-input-password
+                  v-model:value="formData.Info.Password"
+                  placeholder="密码仅用于储存以防遗忘，此外无任何作用"
+                  :disabled="loading"
+                  size="large"
+                />
               </a-form-item>
             </a-col>
           </a-row>
@@ -123,8 +155,13 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select v-model:value="formData.Info.Server" placeholder="请选择服务器" :disabled="loading"
-                  :options="serverOptions" size="large" />
+                <a-select
+                  v-model:value="formData.Info.Server"
+                  placeholder="请选择服务器"
+                  :disabled="loading"
+                  :options="serverOptions"
+                  size="large"
+                />
               </a-form-item>
             </a-col>
 
@@ -138,8 +175,15 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input-number v-model:value="formData.Info.RemainedDay" :min="-1" :max="9999" placeholder="0"
-                  :disabled="loading" size="large" style="width: 100%" />
+                <a-input-number
+                  v-model:value="formData.Info.RemainedDay"
+                  :min="-1"
+                  :max="9999"
+                  placeholder="0"
+                  :disabled="loading"
+                  size="large"
+                  style="width: 100%"
+                />
               </a-form-item>
             </a-col>
           </a-row>
@@ -155,10 +199,15 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select v-model:value="formData.Info.Mode" :options="[
-                  { label: '简洁', value: '简洁' },
-                  { label: '详细', value: '详细' },
-                ]" :disabled="loading" size="large" />
+                <a-select
+                  v-model:value="formData.Info.Mode"
+                  :options="[
+                    { label: '简洁', value: '简洁' },
+                    { label: '详细', value: '详细' },
+                  ]"
+                  :disabled="loading"
+                  size="large"
+                />
               </a-form-item>
             </a-col>
 
@@ -172,11 +221,16 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select v-model:value="formData.Info.InfrastMode" :options="[
-                  { label: '常规模式', value: 'Normal' },
-                  { label: '一键轮休', value: 'Rotation' },
-                  { label: '自定义基建', value: 'Custom' },
-                ]" :disabled="loading" size="large" />
+                <a-select
+                  v-model:value="formData.Info.InfrastMode"
+                  :options="[
+                    { label: '常规模式', value: 'Normal' },
+                    { label: '一键轮休', value: 'Rotation' },
+                    { label: '自定义基建', value: 'Custom' },
+                  ]"
+                  :disabled="loading"
+                  size="large"
+                />
               </a-form-item>
             </a-col>
             <!--          <a-col :span="8">-->
@@ -215,14 +269,29 @@
                   </a-tooltip>
                 </template>
                 <div style="display: flex; gap: 12px; align-items: center">
-                  <a-input v-model:value="formData.Info.InfrastPath" placeholder="请选择基建配置JSON文件" readonly size="large"
-                    style="flex: 1" />
-                  <a-button type="primary" ghost @click="selectInfrastructureConfig" :disabled="loading" size="large">
+                  <a-input
+                    v-model:value="formData.Info.InfrastPath"
+                    placeholder="请选择基建配置JSON文件"
+                    readonly
+                    size="large"
+                    style="flex: 1"
+                  />
+                  <a-button
+                    type="primary"
+                    ghost
+                    @click="selectInfrastructureConfig"
+                    :disabled="loading"
+                    size="large"
+                  >
                     选择文件
                   </a-button>
-                  <a-button type="primary" @click="importInfrastructureConfig"
-                    :disabled="loading || !infrastructureConfigPath || !isEdit" :loading="infrastructureImporting"
-                    size="large">
+                  <a-button
+                    type="primary"
+                    @click="importInfrastructureConfig"
+                    :disabled="loading || !infrastructureConfigPath || !isEdit"
+                    :loading="infrastructureImporting"
+                    size="large"
+                  >
                     导入配置
                   </a-button>
                 </div>
@@ -242,7 +311,12 @@
                 </span>
               </a-tooltip>
             </template>
-            <a-textarea v-model:value="formData.Info.Notes" placeholder="请输入备注信息" :rows="4" :disabled="loading" />
+            <a-textarea
+              v-model:value="formData.Info.Notes"
+              placeholder="请输入备注信息"
+              :rows="4"
+              :disabled="loading"
+            />
           </a-form-item>
         </a-card>
 
@@ -276,13 +350,18 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select v-model:value="formData.Info.Annihilation" :options="[
-                  { label: '关闭', value: 'Close' },
-                  { label: '当期剿灭', value: 'Annihilation' },
-                  { label: '切尔诺伯格', value: 'Chernobog@Annihilation' },
-                  { label: '龙门外环', value: 'LungmenOutskirts@Annihilation' },
-                  { label: '龙门市区', value: 'LungmenDowntown@Annihilation' },
-                ]" :disabled="loading" size="large" />
+                <a-select
+                  v-model:value="formData.Info.Annihilation"
+                  :options="[
+                    { label: '关闭', value: 'Close' },
+                    { label: '当期剿灭', value: 'Annihilation' },
+                    { label: '切尔诺伯格', value: 'Chernobog@Annihilation' },
+                    { label: '龙门外环', value: 'LungmenOutskirts@Annihilation' },
+                    { label: '龙门市区', value: 'LungmenDowntown@Annihilation' },
+                  ]"
+                  :disabled="loading"
+                  size="large"
+                />
               </a-form-item>
             </a-col>
             <a-col :span="12">
@@ -295,8 +374,12 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select v-model:value="formData.Info.StageMode" :options="stageModeOptions" :disabled="loading"
-                  size="large" />
+                <a-select
+                  v-model:value="formData.Info.StageMode"
+                  :options="stageModeOptions"
+                  :disabled="loading"
+                  size="large"
+                />
               </a-form-item>
             </a-col>
           </a-row>
@@ -312,30 +395,44 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input-number v-model:value="formData.Info.MedicineNumb" :min="0" :max="9999" placeholder="0"
-                  :disabled="loading" size="large" style="width: 100%" />
+                <a-input-number
+                  v-model:value="formData.Info.MedicineNumb"
+                  :min="0"
+                  :max="9999"
+                  placeholder="0"
+                  :disabled="loading"
+                  size="large"
+                  style="width: 100%"
+                />
               </a-form-item>
             </a-col>
             <a-col :span="6">
               <a-form-item name="mode">
                 <template #label>
-                  <a-tooltip title="AUTO：自动识别关卡最大代理倍率，保持最大代理倍率且使用理智药后理智不溢出；数值（1~6）：按设定倍率执行代理；不切换：不调整游戏内代理倍率设定">
+                  <a-tooltip
+                    title="AUTO：自动识别关卡最大代理倍率，保持最大代理倍率且使用理智药后理智不溢出；数值（1~6）：按设定倍率执行代理；不切换：不调整游戏内代理倍率设定"
+                  >
                     <span class="form-label">
                       连战次数
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select v-model:value="formData.Info.SeriesNumb" :options="[
-                  { label: 'AUTO', value: '0' },
-                  { label: '1', value: '1' },
-                  { label: '2', value: '2' },
-                  { label: '3', value: '3' },
-                  { label: '4', value: '4' },
-                  { label: '5', value: '5' },
-                  { label: '6', value: '6' },
-                  { label: '不切换', value: '-1' },
-                ]" :disabled="loading" size="large" />
+                <a-select
+                  v-model:value="formData.Info.SeriesNumb"
+                  :options="[
+                    { label: 'AUTO', value: '0' },
+                    { label: '1', value: '1' },
+                    { label: '2', value: '2' },
+                    { label: '3', value: '3' },
+                    { label: '4', value: '4' },
+                    { label: '5', value: '5' },
+                    { label: '6', value: '6' },
+                    { label: '不切换', value: '-1' },
+                  ]"
+                  :disabled="loading"
+                  size="large"
+                />
               </a-form-item>
             </a-col>
 
@@ -349,8 +446,12 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select v-model:value="formData.Info.Stage" :options="stageOptions" :disabled="loading"
-                  size="large" />
+                <a-select
+                  v-model:value="formData.Info.Stage"
+                  :options="stageOptions"
+                  :disabled="loading"
+                  size="large"
+                />
               </a-form-item>
             </a-col>
           </a-row>
@@ -358,43 +459,61 @@
             <a-col :span="6">
               <a-form-item name="mode">
                 <template #label>
-                  <a-tooltip title="备选关卡-1，所有备选关卡均选择「当前/上次」时视为不使用备选关卡">
+                  <a-tooltip
+                    title="备选关卡-1，所有备选关卡均选择「当前/上次」时视为不使用备选关卡"
+                  >
                     <span class="form-label">
                       备选关卡-1
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select v-model:value="formData.Info.Stage_1" :options="stageOptions" :disabled="loading"
-                  size="large" />
+                <a-select
+                  v-model:value="formData.Info.Stage_1"
+                  :options="stageOptions"
+                  :disabled="loading"
+                  size="large"
+                />
               </a-form-item>
             </a-col>
             <a-col :span="6">
               <a-form-item name="mode">
                 <template #label>
-                  <a-tooltip title="备选关卡-2，所有备选关卡均选择「当前/上次」时视为不使用备选关卡">
+                  <a-tooltip
+                    title="备选关卡-2，所有备选关卡均选择「当前/上次」时视为不使用备选关卡"
+                  >
                     <span class="form-label">
                       备选关卡-2
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select v-model:value="formData.Info.Stage_2" :options="stageOptions" :disabled="loading"
-                  size="large" />
+                <a-select
+                  v-model:value="formData.Info.Stage_2"
+                  :options="stageOptions"
+                  :disabled="loading"
+                  size="large"
+                />
               </a-form-item>
             </a-col>
             <a-col :span="6">
               <a-form-item name="mode">
                 <template #label>
-                  <a-tooltip title="备选关卡-3，所有备选关卡均选择「当前/上次」时视为不使用备选关卡">
+                  <a-tooltip
+                    title="备选关卡-3，所有备选关卡均选择「当前/上次」时视为不使用备选关卡"
+                  >
                     <span class="form-label">
                       备选关卡-3
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select v-model:value="formData.Info.Stage_3" :options="stageOptions" :disabled="loading"
-                  size="large" />
+                <a-select
+                  v-model:value="formData.Info.Stage_3"
+                  :options="stageOptions"
+                  :disabled="loading"
+                  size="large"
+                />
               </a-form-item>
             </a-col>
             <a-col :span="6">
@@ -407,8 +526,12 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select v-model:value="formData.Info.Stage_Remain" :options="stageOptions" :disabled="loading"
-                  size="large" />
+                <a-select
+                  v-model:value="formData.Info.Stage_Remain"
+                  :options="stageOptions"
+                  :disabled="loading"
+                  size="large"
+                />
               </a-form-item>
             </a-col>
           </a-row>
@@ -487,11 +610,22 @@
           <a-row :gutter="24" style="margin-top: 16px">
             <a-col :span="24">
               <span style="font-weight: 500">森空岛Token</span>
-              <a-input-password v-model:value="formData.Info.SklandToken" :disabled="loading || !formData.Info.IfSkland"
-                placeholder="请输入森空岛Token" size="large" style="margin-top: 8px; width: 100%" allow-clear />
+              <a-input-password
+                v-model:value="formData.Info.SklandToken"
+                :disabled="loading || !formData.Info.IfSkland"
+                placeholder="请输入森空岛Token"
+                size="large"
+                style="margin-top: 8px; width: 100%"
+                allow-clear
+              />
               <div style="color: #999; font-size: 12px; margin-top: 4px">
                 请在森空岛官网获取您的专属Token并粘贴到此处，详细教程见
-                <a href="https://doc.auto-mas.top/docs/advanced-features.html#%E8%8E%B7%E5%8F%96%E9%B9%B0%E8%A7%92%E7%BD%91%E7%BB%9C%E9%80%9A%E8%A1%8C%E8%AF%81%E7%99%BB%E5%BD%95%E5%87%AD%E8%AF%81" target="_blank" style="color: #409EFF;">获取鹰角网络通行证登录凭证</a>
+                <a
+                  href="https://doc.auto-mas.top/docs/advanced-features.html#%E8%8E%B7%E5%8F%96%E9%B9%B0%E8%A7%92%E7%BD%91%E7%BB%9C%E9%80%9A%E8%A1%8C%E8%AF%81%E7%99%BB%E5%BD%95%E5%87%AD%E8%AF%81"
+                  target="_blank"
+                  style="color: #409eff"
+                  >获取鹰角网络通行证登录凭证</a
+                >
                 文档
               </div>
             </a-col>
@@ -514,11 +648,15 @@
               <span style="font-weight: 500">通知内容</span>
             </a-col>
             <a-col :span="18" style="display: flex; gap: 32px">
-              <a-checkbox v-model:checked="formData.Notify.IfSendStatistic"
-                :disabled="loading || !formData.Notify.Enabled">统计信息
+              <a-checkbox
+                v-model:checked="formData.Notify.IfSendStatistic"
+                :disabled="loading || !formData.Notify.Enabled"
+                >统计信息
               </a-checkbox>
-              <a-checkbox v-model:checked="formData.Notify.IfSendSixStar"
-                :disabled="loading || !formData.Notify.Enabled">公开招募高资喜报
+              <a-checkbox
+                v-model:checked="formData.Notify.IfSendSixStar"
+                :disabled="loading || !formData.Notify.Enabled"
+                >公开招募高资喜报
               </a-checkbox>
             </a-col>
           </a-row>
@@ -526,45 +664,64 @@
           <!-- 邮件通知 -->
           <a-row :gutter="24" style="margin-top: 16px">
             <a-col :span="6">
-              <a-checkbox v-model:checked="formData.Notify.IfSendMail"
-                :disabled="loading || !formData.Notify.Enabled">邮件通知
+              <a-checkbox
+                v-model:checked="formData.Notify.IfSendMail"
+                :disabled="loading || !formData.Notify.Enabled"
+                >邮件通知
               </a-checkbox>
             </a-col>
             <a-col :span="18">
-              <a-input v-model:value="formData.Notify.ToAddress" placeholder="请输入收件人邮箱地址"
-                :disabled="loading || !formData.Notify.Enabled || !formData.Notify.IfSendMail" size="large"
-                style="width: 100%" />
+              <a-input
+                v-model:value="formData.Notify.ToAddress"
+                placeholder="请输入收件人邮箱地址"
+                :disabled="loading || !formData.Notify.Enabled || !formData.Notify.IfSendMail"
+                size="large"
+                style="width: 100%"
+              />
             </a-col>
           </a-row>
 
           <!-- Server酱通知 -->
           <a-row :gutter="24" style="margin-top: 16px">
             <a-col :span="6">
-              <a-checkbox v-model:checked="formData.Notify.IfServerChan"
-                :disabled="loading || !formData.Notify.Enabled">Server酱
+              <a-checkbox
+                v-model:checked="formData.Notify.IfServerChan"
+                :disabled="loading || !formData.Notify.Enabled"
+                >Server酱
               </a-checkbox>
             </a-col>
             <a-col :span="18" style="display: flex; gap: 8px">
-              <a-input v-model:value="formData.Notify.ServerChanKey" placeholder="请输入SENDKEY"
-                :disabled="loading || !formData.Notify.Enabled || !formData.Notify.IfServerChan" size="large"
-                style="flex: 2" />
+              <a-input
+                v-model:value="formData.Notify.ServerChanKey"
+                placeholder="请输入SENDKEY"
+                :disabled="loading || !formData.Notify.Enabled || !formData.Notify.IfServerChan"
+                size="large"
+                style="flex: 2"
+              />
             </a-col>
           </a-row>
 
           <!-- 企业微信群机器人通知 -->
           <a-row :gutter="24" style="margin-top: 16px">
             <a-col :span="6">
-              <a-checkbox v-model:checked="formData.Notify.IfCompanyWebHookBot"
-                :disabled="loading || !formData.Notify.Enabled">企业微信群机器人
+              <a-checkbox
+                v-model:checked="formData.Notify.IfCompanyWebHookBot"
+                :disabled="loading || !formData.Notify.Enabled"
+                >企业微信群机器人
               </a-checkbox>
             </a-col>
             <a-col :span="18">
-              <a-input v-model:value="formData.Notify.CompanyWebHookBotUrl" placeholder="请输入机器人Webhook地址" :disabled="loading || !formData.Notify.Enabled || !formData.Notify.IfCompanyWebHookBot
-                " size="large" style="width: 100%" />
+              <a-input
+                v-model:value="formData.Notify.CompanyWebHookBotUrl"
+                placeholder="请输入机器人Webhook地址"
+                :disabled="
+                  loading || !formData.Notify.Enabled || !formData.Notify.IfCompanyWebHookBot
+                "
+                size="large"
+                style="width: 100%"
+              />
             </a-col>
           </a-row>
-
-
         </a-card>
       </template>
 
@@ -582,7 +739,12 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input v-model:value="formData.userName" placeholder="请输入用户名" :disabled="loading" size="large" />
+                <a-input
+                  v-model:value="formData.userName"
+                  placeholder="请输入用户名"
+                  :disabled="loading"
+                  size="large"
+                />
               </a-form-item>
             </a-col>
             <a-col :span="12">
@@ -595,7 +757,11 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-switch v-model:checked="formData.Info.Status" :disabled="loading" size="default" />
+                <a-switch
+                  v-model:checked="formData.Info.Status"
+                  :disabled="loading"
+                  size="default"
+                />
                 <span class="switch-description">启用后该用户将参与自动化任务</span>
               </a-form-item>
             </a-col>
@@ -612,8 +778,15 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input-number v-model:value="formData.Info.RemainedDay" :min="-1" :max="9999" placeholder="-1"
-                  :disabled="loading" size="large" style="width: 100%" />
+                <a-input-number
+                  v-model:value="formData.Info.RemainedDay"
+                  :min="-1"
+                  :max="9999"
+                  placeholder="-1"
+                  :disabled="loading"
+                  size="large"
+                  style="width: 100%"
+                />
               </a-form-item>
             </a-col>
             <a-col :span="12">
@@ -630,7 +803,12 @@
                 </span>
               </a-tooltip>
             </template>
-            <a-textarea v-model:value="formData.Info.Notes" placeholder="请输入备注信息" :rows="4" :disabled="loading" />
+            <a-textarea
+              v-model:value="formData.Info.Notes"
+              placeholder="请输入备注信息"
+              :rows="4"
+              :disabled="loading"
+            />
           </a-form-item>
         </a-card>
 
@@ -646,7 +824,11 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-switch v-model:checked="formData.Info.IfScriptBeforeTask" :disabled="loading" size="default" />
+                <a-switch
+                  v-model:checked="formData.Info.IfScriptBeforeTask"
+                  :disabled="loading"
+                  size="default"
+                />
                 <span class="switch-description">启用后将在任务执行前运行指定脚本</span>
               </a-form-item>
             </a-col>
@@ -660,7 +842,11 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-switch v-model:checked="formData.Info.IfScriptAfterTask" :disabled="loading" size="default" />
+                <a-switch
+                  v-model:checked="formData.Info.IfScriptAfterTask"
+                  :disabled="loading"
+                  size="default"
+                />
                 <span class="switch-description">启用后将在任务执行后运行指定脚本</span>
               </a-form-item>
             </a-col>
@@ -677,8 +863,12 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input v-model:value="formData.Info.ScriptBeforeTask" placeholder="请输入脚本路径"
-                  :disabled="loading || !formData.Info.IfScriptBeforeTask" size="large" />
+                <a-input
+                  v-model:value="formData.Info.ScriptBeforeTask"
+                  placeholder="请输入脚本路径"
+                  :disabled="loading || !formData.Info.IfScriptBeforeTask"
+                  size="large"
+                />
               </a-form-item>
             </a-col>
             <a-col :span="12">
@@ -691,8 +881,12 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input v-model:value="formData.Info.ScriptAfterTask" placeholder="请输入脚本路径"
-                  :disabled="loading || !formData.Info.IfScriptAfterTask" size="large" />
+                <a-input
+                  v-model:value="formData.Info.ScriptAfterTask"
+                  placeholder="请输入脚本路径"
+                  :disabled="loading || !formData.Info.IfScriptAfterTask"
+                  size="large"
+                />
               </a-form-item>
             </a-col>
           </a-row>
@@ -714,8 +908,10 @@
               <span style="font-weight: 500">通知内容</span>
             </a-col>
             <a-col :span="18">
-              <a-checkbox v-model:checked="formData.Notify.IfSendStatistic"
-                :disabled="loading || !formData.Notify.Enabled">发送统计
+              <a-checkbox
+                v-model:checked="formData.Notify.IfSendStatistic"
+                :disabled="loading || !formData.Notify.Enabled"
+                >发送统计
               </a-checkbox>
             </a-col>
           </a-row>
@@ -723,53 +919,77 @@
           <!-- 邮件通知 -->
           <a-row :gutter="24" style="margin-top: 16px">
             <a-col :span="6">
-              <a-checkbox v-model:checked="formData.Notify.IfSendMail"
-                :disabled="loading || !formData.Notify.Enabled">邮件通知
+              <a-checkbox
+                v-model:checked="formData.Notify.IfSendMail"
+                :disabled="loading || !formData.Notify.Enabled"
+                >邮件通知
               </a-checkbox>
             </a-col>
             <a-col :span="18">
-              <a-input v-model:value="formData.Notify.ToAddress" placeholder="请输入收件人邮箱地址"
-                :disabled="loading || !formData.Notify.Enabled || !formData.Notify.IfSendMail" size="large"
-                style="width: 100%" />
+              <a-input
+                v-model:value="formData.Notify.ToAddress"
+                placeholder="请输入收件人邮箱地址"
+                :disabled="loading || !formData.Notify.Enabled || !formData.Notify.IfSendMail"
+                size="large"
+                style="width: 100%"
+              />
             </a-col>
           </a-row>
 
           <!-- Server酱通知 -->
           <a-row :gutter="24" style="margin-top: 16px">
             <a-col :span="6">
-              <a-checkbox v-model:checked="formData.Notify.IfServerChan"
-                :disabled="loading || !formData.Notify.Enabled">Server酱
+              <a-checkbox
+                v-model:checked="formData.Notify.IfServerChan"
+                :disabled="loading || !formData.Notify.Enabled"
+                >Server酱
               </a-checkbox>
             </a-col>
             <a-col :span="18">
-              <a-input v-model:value="formData.Notify.ServerChanKey" placeholder="SENDKEY"
-                :disabled="loading || !formData.Notify.Enabled || !formData.Notify.IfServerChan" size="large"
-                style="width: 100%" />
+              <a-input
+                v-model:value="formData.Notify.ServerChanKey"
+                placeholder="SENDKEY"
+                :disabled="loading || !formData.Notify.Enabled || !formData.Notify.IfServerChan"
+                size="large"
+                style="width: 100%"
+              />
             </a-col>
           </a-row>
 
           <!-- 企业微信群机器人通知 -->
           <a-row :gutter="24" style="margin-top: 16px">
             <a-col :span="6">
-              <a-checkbox v-model:checked="formData.Notify.IfCompanyWebHookBot"
-                :disabled="loading || !formData.Notify.Enabled">企业微信群机器人
+              <a-checkbox
+                v-model:checked="formData.Notify.IfCompanyWebHookBot"
+                :disabled="loading || !formData.Notify.Enabled"
+                >企业微信群机器人
               </a-checkbox>
             </a-col>
             <a-col :span="18">
-              <a-input v-model:value="formData.Notify.CompanyWebHookBotUrl" placeholder="请输入机器人Webhook地址" :disabled="loading || !formData.Notify.Enabled || !formData.Notify.IfCompanyWebHookBot
-                " size="large" style="width: 100%" />
+              <a-input
+                v-model:value="formData.Notify.CompanyWebHookBotUrl"
+                placeholder="请输入机器人Webhook地址"
+                :disabled="
+                  loading || !formData.Notify.Enabled || !formData.Notify.IfCompanyWebHookBot
+                "
+                size="large"
+                style="width: 100%"
+              />
             </a-col>
           </a-row>
-
-
         </a-card>
       </template>
     </a-form>
   </div>
 
-  <a-float-button type="primary" @click="handleSubmit" class="float-button" :style="{
-    right: '24px',
-  }">
+  <a-float-button
+    type="primary"
+    @click="handleSubmit"
+    class="float-button"
+    :style="{
+      right: '24px',
+    }"
+  >
     <template #icon>
       <SaveOutlined />
     </template>
@@ -777,7 +997,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import {
@@ -838,19 +1058,19 @@ const getDefaultMAAUserData = () => ({
     Name: '',
     Id: '',
     Password: '',
-    Server: '官服',
+    Server: 'Official',
     MedicineNumb: 0,
     RemainedDay: 0,
-    SeriesNumb: '',
+    SeriesNumb: '0',
     Notes: '',
     Status: true,
-    Mode: 'MAA',
-    InfrastMode: '默认',
+    Mode: '简洁',
+    InfrastMode: 'Normal',
     InfrastPath: '',
     Routine: true,
-    Annihilation: '当期',
+    Annihilation: 'Annihilation',
     Stage: '1-7',
-    StageMode: '刷完即停',
+    StageMode: 'Fixed',
     Stage_1: '',
     Stage_2: '',
     Stage_3: '',
@@ -937,22 +1157,32 @@ const formData = reactive({
 })
 
 // 表单验证规则
-const rules: Record<string, Rule[]> = {
-  userName: [
-    { required: true, message: '请输入用户名', trigger: 'blur' },
-    { min: 1, max: 50, message: '用户名长度应在1-50个字符之间', trigger: 'blur' },
-  ],
-  userId: [
-    { required: true, message: '请输入用户ID', trigger: 'blur' },
-    { min: 1, max: 50, message: '用户ID长度应在1-50个字符之间', trigger: 'blur' },
-  ],
-}
+const rules = computed(() => {
+  const baseRules: Record<string, Rule[]> = {
+    userName: [
+      { required: true, message: '请输入用户名', trigger: 'blur' },
+      { min: 1, max: 50, message: '用户名长度应在1-50个字符之间', trigger: 'blur' },
+    ],
+  }
+
+  // 只有MAA脚本需要验证userId
+  if (scriptType.value === 'MAA') {
+    baseRules.userId = [
+      { required: false, message: '请输入账号ID', trigger: 'blur' },
+      { max: 50, message: '账号ID长度不能超过50个字符', trigger: 'blur' },
+    ]
+  }
+
+  return baseRules
+})
 
 // 同步扁平化字段与嵌套数据
 watch(
   () => formData.Info.Name,
   newVal => {
-    formData.userName = newVal
+    if (formData.userName !== newVal) {
+      formData.userName = newVal || ''
+    }
   },
   { immediate: true }
 )
@@ -960,7 +1190,9 @@ watch(
 watch(
   () => formData.Info.Id,
   newVal => {
-    formData.userId = newVal
+    if (formData.userId !== newVal) {
+      formData.userId = newVal || ''
+    }
   },
   { immediate: true }
 )
@@ -968,14 +1200,18 @@ watch(
 watch(
   () => formData.userName,
   newVal => {
-    formData.Info.Name = newVal
+    if (formData.Info.Name !== newVal) {
+      formData.Info.Name = newVal || ''
+    }
   }
 )
 
 watch(
   () => formData.userId,
   newVal => {
-    formData.Info.Id = newVal
+    if (formData.Info.Id !== newVal) {
+      formData.Info.Id = newVal || ''
+    }
   }
 )
 
@@ -1049,11 +1285,18 @@ const loadUserData = async () => {
           })
         }
 
-        // 同步扁平化字段
+        // 同步扁平化字段 - 使用nextTick确保数据更新完成后再同步
+        await nextTick()
         formData.userName = formData.Info.Name || ''
         formData.userId = formData.Info.Id || ''
 
-        console.log('用户数据加载成功:', formData)
+        console.log('用户数据加载成功:', {
+          userName: formData.userName,
+          userId: formData.userId,
+          InfoName: formData.Info.Name,
+          InfoId: formData.Info.Id,
+          fullData: formData,
+        })
       } else {
         message.error('用户不存在')
         handleCancel()
@@ -1071,6 +1314,18 @@ const loadUserData = async () => {
 const handleSubmit = async () => {
   try {
     await formRef.value?.validate()
+
+    // 确保扁平化字段同步到嵌套数据
+    formData.Info.Name = formData.userName
+    formData.Info.Id = formData.userId
+
+    console.log('提交前的表单数据:', {
+      userName: formData.userName,
+      userId: formData.userId,
+      InfoName: formData.Info.Name,
+      InfoId: formData.Info.Id,
+      isEdit: isEdit.value,
+    })
 
     // 排除 InfrastPath 字段
     const { InfrastPath, ...infoWithoutInfrastPath } = formData.Info
@@ -1094,10 +1349,22 @@ const handleSubmit = async () => {
       // 添加模式
       const result = await addUser(scriptId)
       if (result) {
-        // 创建成功后更新用户数据
-        await updateUser(scriptId, result.userId, userData)
-        message.success('用户创建成功')
-        handleCancel()
+        // 创建成功后立即更新用户数据
+        try {
+          const updateResult = await updateUser(scriptId, result.userId, userData)
+          console.log('用户数据更新结果:', updateResult)
+
+          if (updateResult) {
+            message.success('用户创建成功')
+            handleCancel()
+          } else {
+            message.error('用户创建成功，但数据更新失败，请手动编辑用户信息')
+            // 不跳转，让用户可以重新保存
+          }
+        } catch (updateError) {
+          console.error('更新用户数据时发生错误:', updateError)
+          message.error('用户创建成功，但数据更新失败，请手动编辑用户信息')
+        }
       }
     }
   } catch (error) {
