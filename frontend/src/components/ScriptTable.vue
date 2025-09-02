@@ -543,10 +543,7 @@ const truncateText = (text: string, maxLength: number = 10): string => {
 }
 
 /* 用户列表 */
-.users-list {
-  max-height: 280px; /* 增加高度以完整展示3个用户 */
-  overflow-y: auto;
-}
+
 
 .user-item {
   display: flex;
@@ -693,23 +690,7 @@ const truncateText = (text: string, maxLength: number = 10): string => {
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* 滚动条样式 */
-.users-list::-webkit-scrollbar {
-  width: 4px;
-}
-
-.users-list::-webkit-scrollbar-track {
-  background: var(--ant-color-bg-layout);
-}
-
-.users-list::-webkit-scrollbar-thumb {
-  background: var(--ant-color-border);
-  border-radius: 2px;
-}
-
-.users-list::-webkit-scrollbar-thumb:hover {
-  background: var(--ant-color-border-secondary);
-}
+/* 滚动条样式已移除，因为不再需要滚动 */
 
 /* 深色模式适配 */
 @media (prefers-color-scheme: dark) {
