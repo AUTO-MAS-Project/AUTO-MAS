@@ -39,12 +39,11 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { createComponentLogger } from '@/utils/logger'
 import { getConfig } from '@/utils/config'
 import { getMirrorUrl } from '@/config/mirrors'
 import router from '@/router'
 
-const logger = createComponentLogger('AutoMode')
+
 
 // Props
 interface Props {
@@ -120,7 +119,7 @@ async function startAutoProcess() {
 
     // 如果初始化时的镜像源不通，让用户重新选择
     if (!pipResult.success) {
-      logger.warn(`使用镜像源 ${pipMirror} 安装依赖失败，需要重新选择镜像源`)
+      console.warn(`使用镜像源 ${pipMirror} 安装依赖失败，需要重新选择镜像源`)
 
       // 切换到手动模式让用户重新选择镜像源
       progressText.value = '依赖安装失败，需要重新配置镜像源'
@@ -142,14 +141,14 @@ async function startAutoProcess() {
     progress.value = 100
     progressStatus.value = 'success'
 
-    logger.info('自动启动流程完成，即将进入应用')
+    console.log('自动启动流程完成，即将进入应用')
 
     // 延迟0.5秒后自动进入应用
     setTimeout(() => {
       props.onAutoComplete()
     }, 500)
   } catch (error) {
-    logger.error('自动启动流程失败', error)
+    console.error('自动启动流程失败', error)
     progressText.value = `自动启动失败: ${error instanceof Error ? error.message : String(error)}`
     progressStatus.value = 'exception'
 
@@ -169,7 +168,7 @@ async function checkGitUpdate(): Promise<boolean> {
     const result = await window.electronAPI.checkGitUpdate()
     return result.hasUpdate || false
   } catch (error) {
-    logger.warn('检查Git更新失败:', error)
+    console.warn('检查Git更新失败:', error)
     // 如果检查失败，假设有更新，这样会触发代码拉取和依赖安装
     return true
   }
