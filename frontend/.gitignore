@@ -24,3 +24,5 @@ dist-ssr
 *.sw?
 
 dist-electron
+.yarn
+.yarnrc.yml
