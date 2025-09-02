@@ -938,6 +938,10 @@ const formData = reactive({
 
 // 表单验证规则
 const rules: Record<string, Rule[]> = {
+  userName: [
+    { required: true, message: '请输入用户名', trigger: 'blur' },
+    { min: 1, max: 50, message: '用户名长度应在1-50个字符之间', trigger: 'blur' },
+  ],
   userId: [
     { required: true, message: '请输入用户ID', trigger: 'blur' },
     { min: 1, max: 50, message: '用户ID长度应在1-50个字符之间', trigger: 'blur' },
