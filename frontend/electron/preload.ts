@@ -11,6 +11,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   selectFile: (filters?: any[]) => ipcRenderer.invoke('select-file', filters),
   openUrl: (url: string) => ipcRenderer.invoke('open-url', url),
 
+  // 窗口控制
+  windowMinimize: () => ipcRenderer.invoke('window-minimize'),
+  windowMaximize: () => ipcRenderer.invoke('window-maximize'),
+  windowClose: () => ipcRenderer.invoke('window-close'),
+  windowIsMaximized: () => ipcRenderer.invoke('window-is-maximized'),
+
   // 初始化相关API
   checkEnvironment: () => ipcRenderer.invoke('check-environment'),
   downloadPython: (mirror?: string) => ipcRenderer.invoke('download-python', mirror),
