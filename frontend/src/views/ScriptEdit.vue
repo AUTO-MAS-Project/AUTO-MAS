@@ -57,7 +57,7 @@
             <h3>基本信息</h3>
           </div>
           <a-row :gutter="24">
-            <a-col :span="12">
+            <a-col :span="8">
               <a-form-item name="name">
                 <template #label>
                   <a-tooltip title="为脚本设置一个易于识别的名称">
@@ -75,34 +75,8 @@
                 />
               </a-form-item>
             </a-col>
-            <a-col :span="12">
-              <a-form-item name="type">
-                <template #label>
-                  <a-tooltip title="脚本类型创建后无法修改">
-                    <span class="form-label">
-                      脚本类型
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
-                </template>
-                <a-select v-model:value="formData.type" disabled size="large">
-                  <a-select-option value="MAA">MAA脚本</a-select-option>
-                  <a-select-option value="General">通用脚本</a-select-option>
-                </a-select>
-              </a-form-item>
-            </a-col>
-          </a-row>
-        </div>
-
-        <!-- MAA脚本配置 -->
-        <template v-if="formData.type === 'MAA'">
-          <!-- 路径配置 -->
-          <div class="form-section">
-            <div class="section-header">
-              <h3>路径配置</h3>
-            </div>
-            <a-row :gutter="24">
-              <a-col :span="24">
+            <template v-if="formData.type === 'MAA'">
+              <a-col :span="16">
                 <a-form-item name="path">
                   <template #label>
                     <a-tooltip title="选择MAA.exe所在的文件夹路径">
@@ -129,9 +103,41 @@
                   </a-input-group>
                 </a-form-item>
               </a-col>
-            </a-row>
-          </div>
+            </template>
+            <template v-if="formData.type === 'General'">
+              <a-col :span="16">
+                <a-form-item name="rootPath">
+                  <template #label>
+                    <a-tooltip title="脚本的根目录路径，其余路径将基于此目录自动调整">
+                      <span class="form-label">
+                        脚本根目录
+                        <QuestionCircleOutlined class="help-icon" />
+                      </span>
+                    </a-tooltip>
+                  </template>
+                  <a-input-group compact class="path-input-group">
+                    <a-input
+                      v-model:value="generalConfig.Info.RootPath"
+                      placeholder="请选择脚本根目录"
+                      size="large"
+                      class="path-input"
+                      readonly
+                    />
+                    <a-button size="large" @click="selectRootPath" class="path-button">
+                      <template #icon>
+                        <FolderOpenOutlined />
+                      </template>
+                      选择文件夹
+                    </a-button>
+                  </a-input-group>
+                </a-form-item>
+              </a-col>
+            </template>
+          </a-row>
+        </div>
 
+        <!-- MAA脚本配置 -->
+        <template v-if="formData.type === 'MAA'">
           <!-- 运行配置 -->
           <div class="form-section">
             <div class="section-header">
@@ -290,33 +296,6 @@
             </div>
             <a-row :gutter="24">
               <a-col :span="12">
-                <a-form-item name="rootPath">
-                  <template #label>
-                    <a-tooltip title="脚本的根目录路径，其余路径将基于此目录自动调整">
-                      <span class="form-label">
-                        根目录
-                        <QuestionCircleOutlined class="help-icon" />
-                      </span>
-                    </a-tooltip>
-                  </template>
-                  <a-input-group compact class="path-input-group">
-                    <a-input
-                      v-model:value="generalConfig.Info.RootPath"
-                      placeholder="请选择脚本根目录"
-                      size="large"
-                      class="path-input"
-                      readonly
-                    />
-                    <a-button size="large" @click="selectRootPath" class="path-button">
-                      <template #icon>
-                        <FolderOpenOutlined />
-                      </template>
-                      选择文件夹
-                    </a-button>
-                  </a-input-group>
-                </a-form-item>
-              </a-col>
-              <a-col :span="12">
                 <a-form-item>
                   <template #label>
                     <a-tooltip title="脚本主程序文件路径">
@@ -343,13 +322,7 @@
                   </a-input-group>
                 </a-form-item>
               </a-col>
-            </a-row>
-          </div>
-
-          <!-- 游戏配置 -->
-          <div class="form-section">
-            <a-row :gutter="24">
-              <a-col :span="12">
+              <a-col :span="6">
                 <a-form-item>
                   <template #label>
                     <a-tooltip title="启动脚本任务时需要添加的附加命令，详细语法参见官网文档">
@@ -367,7 +340,7 @@
                   />
                 </a-form-item>
               </a-col>
-              <a-col :span="12">
+              <a-col :span="6">
                 <a-form-item>
                   <template #label>
                     <a-tooltip title="开启后仅在脚本进程及其所有子进程全部结束时认定脚本进程结束">
