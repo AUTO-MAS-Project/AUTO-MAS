@@ -92,11 +92,7 @@
   <div class="history-content">
     <a-spin :spinning="searchLoading">
       <div v-if="historyData.length === 0 && !searchLoading" class="empty-state">
-        <a-empty description="暂无历史记录数据">
-          <template #image>
-            <HistoryOutlined style="font-size: 64px; color: #d9d9d9" />
-          </template>
-        </a-empty>
+        <img src="@/assets/NoData.png" alt="无数据" class="empty-image" />
       </div>
 
       <div v-else class="history-layout">
