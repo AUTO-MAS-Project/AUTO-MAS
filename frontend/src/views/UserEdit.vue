@@ -757,12 +757,10 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-switch
-                  v-model:checked="formData.Info.Status"
-                  :disabled="loading"
-                  size="default"
-                />
-                <span class="switch-description">启用后该用户将参与自动化任务</span>
+                <a-select v-model:value="formData.Info.Status" size="large">
+                  <a-select-option :value="true">是</a-select-option>
+                  <a-select-option :value="false">否</a-select-option>
+                </a-select>
               </a-form-item>
             </a-col>
           </a-row>
@@ -771,7 +769,7 @@
             <a-col :span="12">
               <a-form-item name="remainedDay">
                 <template #label>
-                  <a-tooltip title="账号剩余的有效天数，-1表示无限">
+                  <a-tooltip title="账号剩余的有效天数，「-1」表示无限">
                     <span class="form-label">
                       剩余天数
                       <QuestionCircleOutlined class="help-icon" />
@@ -796,7 +794,7 @@
 
           <a-form-item name="notes">
             <template #label>
-              <a-tooltip title="为用户添加备注信息，便于管理和识别">
+              <a-tooltip title="为用户添加备注信息">
                 <span class="form-label">
                   备注
                   <QuestionCircleOutlined class="help-icon" />
@@ -912,7 +910,7 @@
               <a-checkbox
                 v-model:checked="formData.Notify.IfSendStatistic"
                 :disabled="loading || !formData.Notify.Enabled"
-                >发送统计
+                >统计信息
               </a-checkbox>
             </a-col>
           </a-row>
@@ -949,7 +947,7 @@
             <a-col :span="18">
               <a-input
                 v-model:value="formData.Notify.ServerChanKey"
-                placeholder="SENDKEY"
+                placeholder="请输入SENDKEY"
                 :disabled="loading || !formData.Notify.Enabled || !formData.Notify.IfServerChan"
                 size="large"
                 style="width: 100%"
@@ -1151,7 +1149,6 @@ const getDefaultUserData = () => {
 const formData = reactive({
   // 扁平化的验证字段
   userName: '',
-  userId: '',
   // 嵌套的实际数据
   ...getDefaultMAAUserData(),
 })
