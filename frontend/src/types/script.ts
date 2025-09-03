@@ -30,7 +30,7 @@ export interface GeneralScriptConfig {
     Enabled: boolean
     IfForceClose: boolean
     Path: string
-    Style: string
+    Type: string
     WaitTime: number
   }
   Info: {

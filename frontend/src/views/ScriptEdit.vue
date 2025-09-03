@@ -292,9 +292,9 @@
               <a-col :span="12">
                 <a-form-item name="rootPath">
                   <template #label>
-                    <a-tooltip title="脚本的根目录路径，所有相对路径都基于此目录">
+                    <a-tooltip title="脚本的根目录路径，其余路径将基于此目录自动调整">
                       <span class="form-label">
-                        脚本根目录
+                        根目录
                         <QuestionCircleOutlined class="help-icon" />
                       </span>
                     </a-tooltip>
@@ -319,9 +319,9 @@
               <a-col :span="12">
                 <a-form-item>
                   <template #label>
-                    <a-tooltip title="脚本文件的路径">
+                    <a-tooltip title="脚本主程序文件路径">
                       <span class="form-label">
-                        脚本路径
+                        主程序路径
                         <QuestionCircleOutlined class="help-icon" />
                       </span>
                     </a-tooltip>
@@ -329,7 +329,7 @@
                   <a-input-group compact class="path-input-group">
                     <a-input
                       v-model:value="generalConfig.Script.ScriptPath"
-                      placeholder="请选择脚本文件"
+                      placeholder="请选择脚本主程序文件"
                       size="large"
                       class="path-input"
                       readonly
@@ -352,16 +352,16 @@
               <a-col :span="12">
                 <a-form-item>
                   <template #label>
-                    <a-tooltip title="脚本运行时的命令行参数">
+                    <a-tooltip title="启动脚本任务时需要添加的附加命令，详细语法参见官网文档">
                       <span class="form-label">
-                        脚本启动参数
+                        启动参数
                         <QuestionCircleOutlined class="help-icon" />
                       </span>
                     </a-tooltip>
                   </template>
                   <a-input
                     v-model:value="generalConfig.Script.Arguments"
-                    placeholder="请输入脚本参数"
+                    placeholder="请输入脚本启动参数"
                     size="large"
                     class="modern-input"
                   />
@@ -370,9 +370,9 @@
               <a-col :span="12">
                 <a-form-item>
                   <template #label>
-                    <a-tooltip title="是否追踪脚本子进程的运行状态">
+                    <a-tooltip title="开启后仅在脚本进程及其所有子进程全部结束时认定脚本进程结束">
                       <span class="form-label">
-                        追踪脚本子进程
+                        追踪子进程
                         <QuestionCircleOutlined class="help-icon" />
                       </span>
                     </a-tooltip>
@@ -394,7 +394,7 @@
               <a-col :span="12">
                 <a-form-item>
                   <template #label>
-                    <a-tooltip title="配置文件的路径">
+                    <a-tooltip title="脚本配置文件的路径">
                       <span class="form-label">
                         配置文件路径
                         <QuestionCircleOutlined class="help-icon" />
@@ -421,34 +421,34 @@
               <a-col :span="6">
                 <a-form-item>
                   <template #label>
-                    <a-tooltip title="配置文件的更新策略">
+                    <a-tooltip title="脚本配置文件类型">
                       <span class="form-label">
-                        脚本配置文件更新时机
+                        配置文件类型
                         <QuestionCircleOutlined class="help-icon" />
                       </span>
                     </a-tooltip>
                   </template>
-                  <a-select v-model:value="generalConfig.Script.UpdateConfigMode" size="large">
-                    <a-select-option value="Never">从不更新</a-select-option>
-                    <a-select-option value="Success">成功时更新</a-select-option>
-                    <a-select-option value="Failure">失败时更新</a-select-option>
-                    <a-select-option value="Always">总是更新</a-select-option>
+                  <a-select v-model:value="generalConfig.Script.ConfigPathMode" size="large">
+                    <a-select-option value="File">所有文件 (*)</a-select-option>
+                    <a-select-option value="Folder">文件夹</a-select-option>
                   </a-select>
                 </a-form-item>
               </a-col>
               <a-col :span="6">
                 <a-form-item>
                   <template #label>
-                    <a-tooltip title="脚本配置文件更新范围">
+                    <a-tooltip title="在选定的时刻更新脚本配置文件">
                       <span class="form-label">
-                        脚本配置文件更新范围
+                        配置文件更新时机
                         <QuestionCircleOutlined class="help-icon" />
                       </span>
                     </a-tooltip>
                   </template>
-                  <a-select v-model:value="generalConfig.Script.ConfigPathMode" size="large">
-                    <a-select-option value="All">所有文件 (*)</a-select-option>
-                    <a-select-option value="Folder">文件夹</a-select-option>
+                  <a-select v-model:value="generalConfig.Script.UpdateConfigMode" size="large">
+                    <a-select-option value="Never">从不</a-select-option>
+                    <a-select-option value="Success">成功时</a-select-option>
+                    <a-select-option value="Failure">失败时</a-select-option>
+                    <a-select-option value="Always">总是</a-select-option>
                   </a-select>
                 </a-form-item>
               </a-col>
@@ -457,9 +457,9 @@
               <a-col :span="12">
                 <a-form-item>
                   <template #label>
-                    <a-tooltip title="日志文件的存储路径">
+                    <a-tooltip title="脚本用于存放日志信息的文件路径">
                       <span class="form-label">
-                        脚本日志文件路径
+                        日志文件路径
                         <QuestionCircleOutlined class="help-icon" />
                       </span>
                     </a-tooltip>
@@ -467,7 +467,7 @@
                   <a-input-group compact class="path-input-group">
                     <a-input
                       v-model:value="generalConfig.Script.LogPath"
-                      placeholder="请选择日志目录"
+                      placeholder="请选择日志文件"
                       size="large"
                       class="path-input"
                       readonly
@@ -476,7 +476,7 @@
                       <template #icon>
                         <FolderOpenOutlined />
                       </template>
-                      选择文件夹
+                      选择文件
                     </a-button>
                   </a-input-group>
                 </a-form-item>
@@ -484,16 +484,16 @@
               <a-col :span="12">
                 <a-form-item>
                   <template #label>
-                    <a-tooltip title="日志文件名的格式，支持时间格式化">
+                    <a-tooltip title="指示实时生成日志文件名的格式，日志文件名固定时留空">
                       <span class="form-label">
-                        脚本日志文件名格式
+                        日志文件名格式
                         <QuestionCircleOutlined class="help-icon" />
                       </span>
                     </a-tooltip>
                   </template>
                   <a-input
                     v-model:value="generalConfig.Script.LogPathFormat"
-                    placeholder="日志格式"
+                    placeholder="日志文件名格式"
                     size="large"
                     class="modern-input"
                   />
@@ -505,36 +505,40 @@
               <a-col :span="6">
                 <a-form-item>
                   <template #label>
-                    <a-tooltip title="脚本时间戳起始位置">
+                    <a-tooltip title="脚本日志时间戳起始位置">
                       <span class="form-label">
-                        脚本时间戳起始位置
+                        日志时间戳起始位置
                         <QuestionCircleOutlined class="help-icon" />
                       </span>
                     </a-tooltip>
                   </template>
-                  <a-input
+                  <a-input-number
                     v-model:value="generalConfig.Script.LogTimeStart"
-                    placeholder="起始位置"
+                    :min="1"
+                    :max="9999"
                     size="large"
-                    class="modern-input"
+                    class="modern-number-input"
+                    style="width: 100%"
                   />
                 </a-form-item>
               </a-col>
               <a-col :span="6">
                 <a-form-item>
                   <template #label>
-                    <a-tooltip title="脚本时间戳结束位置">
+                    <a-tooltip title="脚本日志时间戳结束位置">
                       <span class="form-label">
-                        脚本时间戳结束位置
+                        日志时间戳结束位置
                         <QuestionCircleOutlined class="help-icon" />
                       </span>
                     </a-tooltip>
                   </template>
-                  <a-input
+                  <a-input-number
                     v-model:value="generalConfig.Script.LogTimeEnd"
-                    placeholder="结束位置"
+                    :min="1"
+                    :max="9999"
                     size="large"
-                    class="modern-input"
+                    class="modern-number-input"
+                    style="width: 100%"
                   />
                 </a-form-item>
               </a-col>
@@ -542,16 +546,16 @@
               <a-col :span="12">
                 <a-form-item>
                   <template #label>
-                    <a-tooltip title="配置文件的匹配模式">
+                    <a-tooltip title="脚本日志文件中时间戳的格式">
                       <span class="form-label">
-                        脚本日志时间戳格式
+                        日志时间戳格式
                         <QuestionCircleOutlined class="help-icon" />
                       </span>
                     </a-tooltip>
                   </template>
                   <a-input
                     v-model:value="generalConfig.Script.LogTimeFormat"
-                    placeholder="脚本日志时间戳格式"
+                    placeholder="请输入脚本日志时间戳格式"
                     size="large"
                     class="modern-input"
                   />
@@ -563,16 +567,16 @@
               <a-col :span="12">
                 <a-form-item>
                   <template #label>
-                    <a-tooltip title="根据这个来判断执行是否成功">
+                    <a-tooltip title="若填写，且日志文本信息中任意任务成功日志先于任务异常日志出现，则视为任务成功，否则若脚本进程结束时，日志文本信息中不存在任何任务成功日志，则视为任务失败；若留空，且在脚本进程结束时，日志文本信息中不存在任意任务异常日志，则视为任务成功">
                       <span class="form-label">
-                        脚本成功日志，以「 | 」进行分割
+                        任务成功日志
                         <QuestionCircleOutlined class="help-icon" />
                       </span>
                     </a-tooltip>
                   </template>
                   <a-input
                     v-model:value="generalConfig.Script.SuccessLog"
-                    placeholder="请输入脚本成功日志"
+                    placeholder="请输入脚本成功日志，以「 | 」进行分割"
                     size="large"
                     class="modern-input"
                   />
@@ -581,16 +585,16 @@
               <a-col :span="12">
                 <a-form-item>
                   <template #label>
-                    <a-tooltip title="根据这个来判断执行是否失败">
+                    <a-tooltip title="若任务异常日志先于任务成功日志出现，则视为任务失败">
                       <span class="form-label">
-                        脚本失败日志，以「 | 」进行分割
+                        任务失败日志
                         <QuestionCircleOutlined class="help-icon" />
                       </span>
                     </a-tooltip>
                   </template>
                   <a-input
                     v-model:value="generalConfig.Script.ErrorLog"
-                    placeholder="请输入脚本失败日志"
+                    placeholder="请输入脚本失败日志，以「 | 」进行分割"
                     size="large"
                     class="modern-input"
                   />
@@ -608,9 +612,9 @@
               <a-col :span="8">
                 <a-form-item>
                   <template #label>
-                    <a-tooltip title="是否启用游戏/模拟器相关功能">
+                    <a-tooltip title="是否由AUTO_MAA管理游戏/模拟器进程">
                       <span class="form-label">
-                        启用游戏/模拟器相关功能
+                        启用游戏相关功能
                         <QuestionCircleOutlined class="help-icon" />
                       </span>
                     </a-tooltip>
@@ -629,16 +633,16 @@
               <a-col :span="8">
                 <a-form-item>
                   <template #label>
-                    <a-tooltip title="游戏的运行方式">
+                    <a-tooltip title="游戏在哪个平台上运行">
                       <span class="form-label">
                         游戏平台类型
                         <QuestionCircleOutlined class="help-icon" />
                       </span>
                     </a-tooltip>
                   </template>
-                  <a-select v-model:value="generalConfig.Game.Style" size="large">
+                  <a-select v-model:value="generalConfig.Game.Type" size="large">
                     <a-select-option value="Emulator">安卓模拟器</a-select-option>
-                    <a-select-option value="Client">客户端</a-select-option>
+                    <a-select-option value="Client">PC客户端</a-select-option>
                   </a-select>
                 </a-form-item>
               </a-col>
@@ -655,7 +659,7 @@
                   <a-input-group compact class="path-input-group">
                     <a-input
                       v-model:value="generalConfig.Game.Path"
-                      placeholder="请选择脚本的可执行文件"
+                      placeholder="请选择游戏的可执行文件"
                       size="large"
                       class="path-input"
                       readonly
@@ -693,9 +697,29 @@
               <a-col :span="8">
                 <a-form-item>
                   <template #label>
+                    <a-tooltip title="启动游戏后等待的时间">
+                      <span class="form-label">
+                        启动后等待时间（秒）
+                        <QuestionCircleOutlined class="help-icon" />
+                      </span>
+                    </a-tooltip>
+                  </template>
+                  <a-input-number
+                    v-model:value="generalConfig.Game.WaitTime"
+                    :min="0"
+                    :max="300"
+                    size="large"
+                    class="modern-number-input"
+                    style="width: 100%"
+                  />
+                </a-form-item>
+              </a-col>
+              <a-col :span="8">
+                <a-form-item>
+                  <template #label>
                     <a-tooltip title="脚本结束后是否强制关闭游戏进程">
                       <span class="form-label">
-                        强制关闭
+                        强制关闭游戏
                         <QuestionCircleOutlined class="help-icon" />
                       </span>
                     </a-tooltip>
@@ -711,27 +735,6 @@
                   </a-select>
                 </a-form-item>
               </a-col>
-
-              <a-col :span="8">
-                <a-form-item>
-                  <template #label>
-                    <a-tooltip title="启动游戏后等待的时间，单位为秒">
-                      <span class="form-label">
-                        等待时间(秒)
-                        <QuestionCircleOutlined class="help-icon" />
-                      </span>
-                    </a-tooltip>
-                  </template>
-                  <a-input-number
-                    v-model:value="generalConfig.Game.WaitTime"
-                    :min="0"
-                    :max="300"
-                    size="large"
-                    class="modern-number-input"
-                    style="width: 100%"
-                  />
-                </a-form-item>
-              </a-col>
             </a-row>
           </div>
 
@@ -744,9 +747,9 @@
               <a-col :span="8">
                 <a-form-item>
                   <template #label>
-                    <a-tooltip title="代理作战的次数限制，0表示不限制">
+                    <a-tooltip title="当用户本日代理成功次数达到该阀值时跳过代理，阈值为「0」时视为无代理次数上限">
                       <span class="form-label">
-                        代理次数限制
+                        单日代理次数上限
                         <QuestionCircleOutlined class="help-icon" />
                       </span>
                     </a-tooltip>
@@ -764,17 +767,17 @@
               <a-col :span="8">
                 <a-form-item>
                   <template #label>
-                    <a-tooltip title="脚本的最大运行时间，单位为分钟">
+                    <a-tooltip title="若重试超过该次数限制仍未完成代理，视为代理失败">
                       <span class="form-label">
-                        运行时间限制(分钟)
+                        代理重试次数限制
                         <QuestionCircleOutlined class="help-icon" />
                       </span>
                     </a-tooltip>
                   </template>
                   <a-input-number
-                    v-model:value="generalConfig.Run.RunTimeLimit"
+                    v-model:value="generalConfig.Run.RunTimesLimit"
                     :min="1"
-                    :max="300"
+                    :max="10"
                     size="large"
                     class="modern-number-input"
                     style="width: 100%"
@@ -784,17 +787,17 @@
               <a-col :span="8">
                 <a-form-item>
                   <template #label>
-                    <a-tooltip title="脚本的最大运行次数，防止无限循环">
+                    <a-tooltip title="执行代理任务时，脚本日志无变化时间超过该阀值视为超时">
                       <span class="form-label">
-                        运行次数限制
+                        代理超时限制（分钟）
                         <QuestionCircleOutlined class="help-icon" />
                       </span>
                     </a-tooltip>
                   </template>
                   <a-input-number
-                    v-model:value="generalConfig.Run.RunTimesLimit"
+                    v-model:value="generalConfig.Run.RunTimeLimit"
                     :min="1"
-                    :max="10"
+                    :max="300"
                     size="large"
                     class="modern-number-input"
                     style="width: 100%"
@@ -878,7 +881,7 @@ const generalConfig = reactive<GeneralScriptConfig>({
     Enabled: false,
     IfForceClose: false,
     Path: '.',
-    Style: 'Emulator',
+    Type: 'Emulator',
     WaitTime: 0,
   },
   Info: {
