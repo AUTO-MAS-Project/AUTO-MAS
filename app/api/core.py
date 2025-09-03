@@ -34,6 +34,10 @@ router = APIRouter(prefix="/api/core", tags=["核心信息"])
 @router.websocket("/ws")
 async def connect_websocket(websocket: WebSocket):
 
+    if Config.websocket is not None:
+        await websocket.close(code=1000, reason="已有连接")
+        return
+
     await websocket.accept()
     Config.websocket = websocket
     last_pong = time.monotonic()
@@ -58,7 +62,7 @@ async def connect_websocket(websocket: WebSocket):
         except asyncio.TimeoutError:
 
             if time.monotonic() - last_pong > 15:
-                await websocket.close(code=1000, reason="Ping timeout")
+                await websocket.close(code=1000, reason="Ping超时")
                 break
             await websocket.send_json(
                 WebSocketMessage(
