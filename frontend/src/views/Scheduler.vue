@@ -927,7 +927,6 @@ onUnmounted(() => {
 
 <style scoped>
 .scheduler-container {
-  padding: 24px;
   height: 100%;
   display: flex;
   flex-direction: column;

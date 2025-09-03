@@ -98,31 +98,31 @@
       <div v-else class="history-layout">
         <!-- 左侧日期列表 -->
         <div class="date-sidebar">
-<!--          &lt;!&ndash; 数据总览 &ndash;&gt;-->
-<!--          <div class="overview-section">-->
-<!--            <a-card size="small" title="数据总览" class="overview-card">-->
-<!--              <div class="overview-stats">-->
-<!--                <a-statistic-->
-<!--                  title="总公招数"-->
-<!--                  :value="totalOverview.totalRecruit"-->
-<!--                  :value-style="{ color: '#1890ff', fontSize: '18px' }"-->
-<!--                >-->
-<!--                  <template #prefix>-->
-<!--                    <UserOutlined />-->
-<!--                  </template>-->
-<!--                </a-statistic>-->
-<!--                <a-statistic-->
-<!--                  title="总掉落数"-->
-<!--                  :value="totalOverview.totalDrop"-->
-<!--                  :value-style="{ color: '#52c41a', fontSize: '18px' }"-->
-<!--                >-->
-<!--                  <template #prefix>-->
-<!--                    <GiftOutlined />-->
-<!--                  </template>-->
-<!--                </a-statistic>-->
-<!--              </div>-->
-<!--            </a-card>-->
-<!--          </div>-->
+          <!--          &lt;!&ndash; 数据总览 &ndash;&gt;-->
+          <!--          <div class="overview-section">-->
+          <!--            <a-card size="small" title="数据总览" class="overview-card">-->
+          <!--              <div class="overview-stats">-->
+          <!--                <a-statistic-->
+          <!--                  title="总公招数"-->
+          <!--                  :value="totalOverview.totalRecruit"-->
+          <!--                  :value-style="{ color: '#1890ff', fontSize: '18px' }"-->
+          <!--                >-->
+          <!--                  <template #prefix>-->
+          <!--                    <UserOutlined />-->
+          <!--                  </template>-->
+          <!--                </a-statistic>-->
+          <!--                <a-statistic-->
+          <!--                  title="总掉落数"-->
+          <!--                  :value="totalOverview.totalDrop"-->
+          <!--                  :value-style="{ color: '#52c41a', fontSize: '18px' }"-->
+          <!--                >-->
+          <!--                  <template #prefix>-->
+          <!--                    <GiftOutlined />-->
+          <!--                  </template>-->
+          <!--                </a-statistic>-->
+          <!--              </div>-->
+          <!--            </a-card>-->
+          <!--          </div>-->
 
           <!-- 日期折叠列表 -->
           <div class="date-list">
@@ -174,7 +174,9 @@
                 <a-card size="small" title="记录条目" class="records-card">
                   <template #extra>
                     <a-space>
-                      <span class="record-count">{{ selectedUserData.index?.length || 0 }} 条记录</span>
+                      <span class="record-count"
+                        >{{ selectedUserData.index?.length || 0 }} 条记录</span
+                      >
                       <HistoryOutlined />
                     </a-space>
                   </template>
@@ -183,18 +185,18 @@
                       v-for="(record, index) in selectedUserData.index || []"
                       :key="record.jsonFile"
                       class="record-item"
-                      :class="{ 
+                      :class="{
                         active: selectedRecordIndex === index,
                         success: record.status === '完成',
-                        error: record.status === '异常'
+                        error: record.status === '异常',
                       }"
                       @click="handleSelectRecord(index, record)"
                     >
                       <div class="record-info">
                         <div class="record-header">
                           <span class="record-time">{{ record.date }}</span>
-                          <a-tag 
-                            :color="record.status === '完成' ? 'success' : 'error'" 
+                          <a-tag
+                            :color="record.status === '完成' ? 'success' : 'error'"
                             size="small"
                           >
                             {{ record.status }}
@@ -218,7 +220,9 @@
                     <a-card size="small" class="stat-card">
                       <template #title>
                         <span>公招统计</span>
-                        <span v-if="selectedRecordIndex >= 0" class="stat-subtitle">（当前记录）</span>
+                        <span v-if="selectedRecordIndex >= 0" class="stat-subtitle"
+                          >（当前记录）</span
+                        >
                         <span v-else class="stat-subtitle">（用户总计）</span>
                       </template>
                       <template #extra>
@@ -250,7 +254,9 @@
                     <a-card size="small" class="stat-card">
                       <template #title>
                         <span>掉落统计</span>
-                        <span v-if="selectedRecordIndex >= 0" class="stat-subtitle">（当前记录）</span>
+                        <span v-if="selectedRecordIndex >= 0" class="stat-subtitle"
+                          >（当前记录）</span
+                        >
                         <span v-else class="stat-subtitle">（用户总计）</span>
                       </template>
                       <template #extra>
@@ -526,8 +532,6 @@ const handleRefresh = () => {
   handleSearch()
 }
 
-
-
 // 快捷时间选择处理
 const handleQuickTimeSelect = (preset: (typeof timePresets)[0]) => {
   currentPreset.value = preset.key
@@ -607,7 +611,6 @@ const getDateStatusColor = (users: Record<string, HistoryData>) => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 24px;
-  padding: 0 24px;
 }
 
 .header-title h1 {
@@ -618,12 +621,10 @@ const getDateStatusColor = (users: Record<string, HistoryData>) => {
 
 .search-section {
   margin-bottom: 24px;
-  padding: 0 24px;
 }
 
 .history-content {
-  padding: 0 24px;
-  height: calc(100vh - 200px);
+  height: calc(80vh - 200px);
 }
 
 .empty-state {
@@ -959,16 +960,16 @@ const getDateStatusColor = (users: Record<string, HistoryData>) => {
   .history-layout {
     flex-direction: column;
   }
-  
+
   .date-sidebar {
     width: 100%;
     max-height: 300px;
   }
-  
+
   .detail-content {
     flex-direction: column;
   }
-  
+
   .log-area {
     width: 100%;
     max-height: 400px;

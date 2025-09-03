@@ -69,6 +69,8 @@ function createWindow() {
     minWidth: 800,
     minHeight: 600,
     icon: path.join(__dirname, '../src/assets/AUTO_MAA.ico'),
+    frame: false, // 去掉系统标题栏
+    titleBarStyle: 'hidden', // 隐藏标题栏
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
@@ -107,6 +109,33 @@ ipcMain.handle('open-dev-tools', () => {
   if (mainWindow) {
     mainWindow.webContents.openDevTools({ mode: 'undocked' })
   }
+})
+
+// 窗口控制
+ipcMain.handle('window-minimize', () => {
+  if (mainWindow) {
+    mainWindow.minimize()
+  }
+})
+
+ipcMain.handle('window-maximize', () => {
+  if (mainWindow) {
+    if (mainWindow.isMaximized()) {
+      mainWindow.unmaximize()
+    } else {
+      mainWindow.maximize()
+    }
+  }
+})
+
+ipcMain.handle('window-close', () => {
+  if (mainWindow) {
+    mainWindow.close()
+  }
+})
+
+ipcMain.handle('window-is-maximized', () => {
+  return mainWindow ? mainWindow.isMaximized() : false
 })
 
 ipcMain.handle('select-folder', async () => {
