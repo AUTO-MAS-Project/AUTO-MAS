@@ -448,10 +448,21 @@
                 </template>
                 <a-select
                   v-model:value="formData.Info.Stage"
-                  :options="stageOptions"
                   :disabled="loading"
                   size="large"
-                />
+                >
+                  <a-select-option v-for="option in stageOptions" :key="option.value" :value="option.value">
+                    <template v-if="option.label.includes('|')">
+                      <span>{{ option.label.split('|')[0] }}</span>
+                      <a-tag color="green" size="small" style="margin-left: 8px;">
+                        {{ option.label.split('|')[1] }}
+                      </a-tag>
+                    </template>
+                    <template v-else>
+                      {{ option.label }}
+                    </template>
+                  </a-select-option>
+                </a-select>
               </a-form-item>
             </a-col>
           </a-row>
@@ -470,10 +481,21 @@
                 </template>
                 <a-select
                   v-model:value="formData.Info.Stage_1"
-                  :options="stageOptions"
                   :disabled="loading"
                   size="large"
-                />
+                >
+                  <a-select-option v-for="option in stageOptions" :key="option.value" :value="option.value">
+                    <template v-if="option.label.includes('|')">
+                      <span>{{ option.label.split('|')[0] }}</span>
+                      <a-tag color="green" size="small" style="margin-left: 8px;">
+                        {{ option.label.split('|')[1] }}
+                      </a-tag>
+                    </template>
+                    <template v-else>
+                      {{ option.label }}
+                    </template>
+                  </a-select-option>
+                </a-select>
               </a-form-item>
             </a-col>
             <a-col :span="6">
@@ -490,10 +512,21 @@
                 </template>
                 <a-select
                   v-model:value="formData.Info.Stage_2"
-                  :options="stageOptions"
                   :disabled="loading"
                   size="large"
-                />
+                >
+                  <a-select-option v-for="option in stageOptions" :key="option.value" :value="option.value">
+                    <template v-if="option.label.includes('|')">
+                      <span>{{ option.label.split('|')[0] }}</span>
+                      <a-tag color="green" size="small" style="margin-left: 8px;">
+                        {{ option.label.split('|')[1] }}
+                      </a-tag>
+                    </template>
+                    <template v-else>
+                      {{ option.label }}
+                    </template>
+                  </a-select-option>
+                </a-select>
               </a-form-item>
             </a-col>
             <a-col :span="6">
@@ -510,28 +543,50 @@
                 </template>
                 <a-select
                   v-model:value="formData.Info.Stage_3"
-                  :options="stageOptions"
                   :disabled="loading"
                   size="large"
-                />
+                >
+                  <a-select-option v-for="option in stageOptions" :key="option.value" :value="option.value">
+                    <template v-if="option.label.includes('|')">
+                      <span>{{ option.label.split('|')[0] }}</span>
+                      <a-tag color="green" size="small" style="margin-left: 8px;">
+                        {{ option.label.split('|')[1] }}
+                      </a-tag>
+                    </template>
+                    <template v-else>
+                      {{ option.label }}
+                    </template>
+                  </a-select-option>
+                </a-select>
               </a-form-item>
             </a-col>
             <a-col :span="6">
               <a-form-item name="mode">
                 <template #label>
-                  <a-tooltip title="剩余理智，选择「当前/上次」时视为不使用剩余理智">
+                  <a-tooltip title="剩余理智关卡，选择「当前/上次」时视为不使用剩余理智关卡">
                     <span class="form-label">
-                      剩余理智
+                      剩余理智关卡
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
                 <a-select
                   v-model:value="formData.Info.Stage_Remain"
-                  :options="stageOptions"
                   :disabled="loading"
                   size="large"
-                />
+                >
+                  <a-select-option v-for="option in stageOptions" :key="option.value" :value="option.value">
+                    <template v-if="option.label.includes('|')">
+                      <span>{{ option.label.split('|')[0] }}</span>
+                      <a-tag color="green" size="small" style="margin-left: 8px;">
+                        {{ option.label.split('|')[1] }}
+                      </a-tag>
+                    </template>
+                    <template v-else>
+                      {{ option.label }}
+                    </template>
+                  </a-select-option>
+                </a-select>
               </a-form-item>
             </a-col>
           </a-row>
