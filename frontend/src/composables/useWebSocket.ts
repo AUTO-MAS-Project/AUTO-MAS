@@ -5,7 +5,7 @@ import { message, notification } from 'ant-design-vue'
 export type WebSocketStatus = '连接中' | '已连接' | '已断开' | '连接错误'
 
 // WebSocket消息类型
-export type WebSocketMessageType = 'Signal' | 'Progress' | 'Result' | 'Error' | 'Notify'
+export type WebSocketMessageType = 'Update' | 'Message' | 'Info' | 'Signal'
 
 // WebSocket基础消息接口
 export interface WebSocketBaseMessage {
