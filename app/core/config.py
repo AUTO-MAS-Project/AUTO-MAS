@@ -1525,12 +1525,6 @@ class AppConfig(GlobalConfig):
     ):
         """获取关卡信息"""
 
-        if type == "Today":
-            dt = self.server_date()
-            index = dt.strftime("%A")
-        else:
-            index = type
-
         if json.loads(self.get("Data", "Stage")) != {}:
             task = asyncio.create_task(self.get_stage())
             self.temp_task.append(task)
@@ -1538,7 +1532,7 @@ class AppConfig(GlobalConfig):
         else:
             await self.get_stage()
 
-        if index == "Info":
+        if type == "Info":
             today = self.server_date().isoweekday()
             res_stage_info = []
             for stage in RESOURCE_STAGE_INFO:
@@ -1551,8 +1545,17 @@ class AppConfig(GlobalConfig):
                 "Activity": json.loads(self.get("Data", "Stage")).get("Info", []),
                 "Resource": res_stage_info,
             }
+        elif type == "Today":
+            data = json.loads(self.get("Data", "Stage")).get(
+                self.server_date().strftime("%A"), []
+            )
+            for combox in data:
+                combox["label"] = RESOURCE_STAGE_DATE_TEXT.get(
+                    combox["value"], combox["label"]
+                )
+            return data
         else:
-            return json.loads(self.get("Data", "Stage")).get(index, [])
+            return json.loads(self.get("Data", "Stage")).get(type, [])
 
     async def get_proxy_overview(self) -> Dict[str, Any]:
         """获取代理情况概览信息"""
