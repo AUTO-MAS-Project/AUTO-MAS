@@ -47,6 +47,30 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '编辑用户' },
   },
   {
+    path: '/scripts/:scriptId/users/add/maa',
+    name: 'MAAUserAdd',
+    component: () => import('../views/MAAUserEdit.vue'),
+    meta: { title: '添加MAA用户' },
+  },
+  {
+    path: '/scripts/:scriptId/users/:userId/edit/maa',
+    name: 'MAAUserEdit',
+    component: () => import('../views/MAAUserEdit.vue'),
+    meta: { title: '编辑MAA用户' },
+  },
+  {
+    path: '/scripts/:scriptId/users/add/general',
+    name: 'GeneralUserAdd',
+    component: () => import('../views/GeneralUserEdit.vue'),
+    meta: { title: '添加通用用户' },
+  },
+  {
+    path: '/scripts/:scriptId/users/:userId/edit/general',
+    name: 'GeneralUserEdit',
+    component: () => import('../views/GeneralUserEdit.vue'),
+    meta: { title: '编辑通用用户' },
+  },
+  {
     path: '/plans',
     name: 'Plans',
     component: () => import('../views/Plans.vue'),
