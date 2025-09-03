@@ -229,7 +229,9 @@ class MaaUserConfig(ConfigBase):
             "Normal",
             OptionsValidator(["Normal", "Rotation", "Custom"]),
         )
-        self.Info_InfrastPath = ConfigItem("Info", "InfrastPath", ".", FileValidator())
+        self.Info_InfrastPath = ConfigItem(
+            "Info", "InfrastPath", str(Path.cwd()), FileValidator()
+        )
         self.Info_Password = ConfigItem("Info", "Password", "", EncryptValidator())
         self.Info_Notes = ConfigItem("Info", "Notes", "无")
         self.Info_MedicineNumb = ConfigItem(
@@ -337,7 +339,7 @@ class MaaConfig(ConfigBase):
         super().__init__()
 
         self.Info_Name = ConfigItem("Info", "Name", "新 MAA 脚本")
-        self.Info_Path = ConfigItem("Info", "Path", ".", FolderValidator())
+        self.Info_Path = ConfigItem("Info", "Path", str(Path.cwd()), FolderValidator())
 
         self.Run_TaskTransitionMethod = ConfigItem(
             "Run",
@@ -500,17 +502,19 @@ class GeneralConfig(ConfigBase):
         super().__init__()
 
         self.Info_Name = ConfigItem("Info", "Name", "新通用脚本")
-        self.Info_RootPath = ConfigItem("Info", "RootPath", ".", FileValidator())
+        self.Info_RootPath = ConfigItem(
+            "Info", "RootPath", str(Path.cwd()), FileValidator()
+        )
 
         self.Script_ScriptPath = ConfigItem(
-            "Script", "ScriptPath", ".", FileValidator()
+            "Script", "ScriptPath", str(Path.cwd()), FileValidator()
         )
         self.Script_Arguments = ConfigItem("Script", "Arguments", "")
         self.Script_IfTrackProcess = ConfigItem(
             "Script", "IfTrackProcess", False, BoolValidator()
         )
         self.Script_ConfigPath = ConfigItem(
-            "Script", "ConfigPath", ".", FileValidator()
+            "Script", "ConfigPath", str(Path.cwd()), FileValidator()
         )
         self.Script_ConfigPathMode = ConfigItem(
             "Script", "ConfigPathMode", "File", OptionsValidator(["File", "Folder"])
@@ -521,7 +525,9 @@ class GeneralConfig(ConfigBase):
             "Never",
             OptionsValidator(["Never", "Success", "Failure", "Always"]),
         )
-        self.Script_LogPath = ConfigItem("Script", "LogPath", ".", FileValidator())
+        self.Script_LogPath = ConfigItem(
+            "Script", "LogPath", str(Path.cwd()), FileValidator()
+        )
         self.Script_LogPathFormat = ConfigItem("Script", "LogPathFormat", "%Y-%m-%d")
         self.Script_LogTimeStart = ConfigItem(
             "Script", "LogTimeStart", 1, RangeValidator(1, 9999)
@@ -539,7 +545,7 @@ class GeneralConfig(ConfigBase):
         self.Game_Type = ConfigItem(
             "Game", "Type", "Emulator", OptionsValidator(["Emulator", "Client"])
         )
-        self.Game_Path = ConfigItem("Game", "Path", ".", FileValidator())
+        self.Game_Path = ConfigItem("Game", "Path", str(Path.cwd()), FileValidator())
         self.Game_Arguments = ConfigItem("Game", "Arguments", "")
         self.Game_WaitTime = ConfigItem("Game", "WaitTime", 0, RangeValidator(0, 9999))
         self.Game_IfForceClose = ConfigItem(

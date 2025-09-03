@@ -394,7 +394,7 @@
               <a-col :span="12">
                 <a-form-item>
                   <template #label>
-                    <a-tooltip title="脚本配置文件的路径">
+                    <a-tooltip :title="generalConfig.Script.ConfigPathMode === 'Folder' ? '脚本配置文件所在的文件夹路径' : '脚本配置文件的路径'">
                       <span class="form-label">
                         配置文件路径
                         <QuestionCircleOutlined class="help-icon" />
@@ -404,16 +404,17 @@
                   <a-input-group compact class="path-input-group">
                     <a-input
                       v-model:value="generalConfig.Script.ConfigPath"
-                      placeholder="请选择配置文件"
+                      :placeholder="generalConfig.Script.ConfigPathMode === 'Folder' ? '请选择配置文件夹' : '请选择配置文件'"
                       size="large"
                       class="path-input"
                       readonly
                     />
                     <a-button size="large" @click="selectConfigPath" class="path-button">
                       <template #icon>
-                        <FileOutlined />
+                        <FolderOpenOutlined v-if="generalConfig.Script.ConfigPathMode === 'Folder'" />
+                        <FileOutlined v-else />
                       </template>
-                      选择文件
+                      {{ generalConfig.Script.ConfigPathMode === 'Folder' ? '选择文件夹' : '选择文件' }}
                     </a-button>
                   </a-input-group>
                 </a-form-item>
@@ -429,7 +430,7 @@
                     </a-tooltip>
                   </template>
                   <a-select v-model:value="generalConfig.Script.ConfigPathMode" size="large">
-                    <a-select-option value="File">所有文件 (*)</a-select-option>
+                    <a-select-option value="File">单文件</a-select-option>
                     <a-select-option value="Folder">文件夹</a-select-option>
                   </a-select>
                 </a-form-item>
@@ -825,7 +826,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
 import { message } from 'ant-design-vue'
@@ -896,7 +897,7 @@ const generalConfig = reactive<GeneralScriptConfig>({
   Script: {
     Arguments: '',
     ConfigPath: '.',
-    ConfigPathMode: '所有文件 (*)',
+    ConfigPathMode: 'File',
     ErrorLog: '',
     IfTrackProcess: false,
     LogPath: '.',
@@ -919,6 +920,27 @@ const rules = {
   name: [{ required: true, message: '请输入脚本名称', trigger: 'blur' }],
   type: [{ required: true, message: '请选择脚本类型', trigger: 'change' }],
 }
+
+// 监听配置文件类型变化，重置路径为根目录
+watch(
+  () => generalConfig.Script.ConfigPathMode,
+  (newMode, oldMode) => {
+    if (newMode !== oldMode && generalConfig.Script.ConfigPath && generalConfig.Script.ConfigPath !== '.') {
+      // 当配置文件类型改变时，重置为根目录路径
+      const rootPath = generalConfig.Info.RootPath
+      if (rootPath && rootPath !== '.') {
+        generalConfig.Script.ConfigPath = rootPath
+        const typeText = newMode === 'Folder' ? '文件夹' : '文件'
+        message.info(`配置文件类型已切换为${typeText}，路径已重置为根目录`)
+      } else {
+        // 如果没有设置根目录，则清空路径
+        generalConfig.Script.ConfigPath = '.'
+        const typeText = newMode === 'Folder' ? '文件夹' : '文件'
+        message.info(`配置文件类型已切换为${typeText}，请重新选择路径`)
+      }
+    }
+  }
+)
 
 onMounted(async () => {
   await loadScript()
@@ -1072,11 +1094,7 @@ const selectScriptPath = async () => {
     }
 
     const path = await window.electronAPI.selectFile([
-      { name: '脚本文件', extensions: ['py', 'js', 'bat', 'sh', 'cmd'] },
-      { name: 'Python 脚本', extensions: ['py'] },
-      { name: 'JavaScript 脚本', extensions: ['js'] },
-      { name: '批处理文件', extensions: ['bat', 'cmd'] },
-      { name: 'Shell 脚本', extensions: ['sh'] },
+      { name: '可执行文件', extensions: ['exe', 'bat'] },
       { name: '所有文件', extensions: ['*'] },
     ])
     if (path) {
@@ -1096,21 +1114,33 @@ const selectConfigPath = async () => {
       return
     }
 
-    const path = await window.electronAPI.selectFile([
-      { name: '配置文件', extensions: ['json', 'yaml', 'yml', 'ini', 'conf', 'toml'] },
-      { name: 'JSON 文件', extensions: ['json'] },
-      { name: 'YAML 文件', extensions: ['yaml', 'yml'] },
-      { name: 'INI 文件', extensions: ['ini', 'conf'] },
-      { name: 'TOML 文件', extensions: ['toml'] },
-      { name: '所有文件', extensions: ['*'] },
-    ])
-    if (path) {
-      generalConfig.Script.ConfigPath = path
-      message.success('配置路径选择成功')
+    let selectedPath: string | undefined
+
+    // 根据配置文件类型选择不同的选择方式
+    if (generalConfig.Script.ConfigPathMode === 'Folder') {
+      // 选择文件夹
+      selectedPath = await window.electronAPI.selectFolder()
+    } else {
+      // 选择文件（默认行为）
+      selectedPath = await window.electronAPI.selectFile([
+        { name: '配置文件', extensions: ['json', 'yaml', 'yml', 'ini', 'conf', 'toml'] },
+        { name: 'JSON 文件', extensions: ['json'] },
+        { name: 'YAML 文件', extensions: ['yaml', 'yml'] },
+        { name: 'INI 文件', extensions: ['ini', 'conf'] },
+        { name: 'TOML 文件', extensions: ['toml'] },
+        { name: '所有文件', extensions: ['*'] },
+      ])
+    }
+
+    if (selectedPath) {
+      generalConfig.Script.ConfigPath = selectedPath
+      const typeText = generalConfig.Script.ConfigPathMode === 'Folder' ? '配置文件夹' : '配置文件'
+      message.success(`${typeText}路径选择成功`)
     }
   } catch (error) {
     console.error('选择配置路径失败:', error)
-    message.error('选择文件失败')
+    const typeText = generalConfig.Script.ConfigPathMode === 'Folder' ? '文件夹' : '文件'
+    message.error(`选择${typeText}失败`)
   }
 }
 
