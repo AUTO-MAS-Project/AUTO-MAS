@@ -4,6 +4,12 @@ export interface ElectronAPI {
   selectFile: (filters?: any[]) => Promise<string[]>
   openUrl: (url: string) => Promise<{ success: boolean; error?: string }>
 
+  // 窗口控制
+  windowMinimize: () => Promise<void>
+  windowMaximize: () => Promise<void>
+  windowClose: () => Promise<void>
+  windowIsMaximized: () => Promise<boolean>
+
   // 初始化相关API
   checkEnvironment: () => Promise<any>
   downloadPython: (mirror?: string) => Promise<any>

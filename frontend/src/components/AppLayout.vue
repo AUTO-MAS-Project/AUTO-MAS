@@ -7,14 +7,14 @@
       :width="180"
       :collapsed-width="60"
       :theme="isDark ? 'dark' : 'light'"
-      style="height: 100vh; position: fixed; left: 0; top: 0; z-index: 100"
+      style="height: calc(100vh - 32px); position: fixed; left: 0; top: 32px; z-index: 100"
     >
       <div class="sider-content">
-        <!-- Logo -->
-        <div class="logo" @click="toggleCollapse">
-          <img src="/src/assets/AUTO_MAA.ico" alt="AUTO_MAA" class="logo-image" />
-          <span class="logo-text" :class="{ 'text-hidden': collapsed }">AUTO_MAA</span>
-        </div>
+<!--        &lt;!&ndash; 折叠按钮 &ndash;&gt;-->
+<!--        <div class="collapse-trigger" @click="toggleCollapse">-->
+<!--          <MenuFoldOutlined v-if="!collapsed" />-->
+<!--          <MenuUnfoldOutlined v-else />-->
+<!--        </div>-->
 
         <!-- 主菜单容器 -->
         <div class="main-menu-container">
@@ -61,7 +61,7 @@
       :style="{
         marginLeft: collapsed ? '60px' : '180px',
         transition: 'margin-left 0.2s',
-        height: '100vh',
+        height: 'calc(100vh - 32px)',
       }"
     >
       <a-layout-content
@@ -69,7 +69,7 @@
         :style="{
           padding: '24px',
           background: isDark ? '#141414' : '#ffffff',
-          height: '100vh',
+          height: '100%',
           overflow: 'auto',
         }"
       >
@@ -88,6 +88,8 @@ import {
   ControlOutlined,
   HistoryOutlined,
   SettingOutlined,
+  MenuFoldOutlined,
+  MenuUnfoldOutlined,
 } from '@ant-design/icons-vue'
 import { ref, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
@@ -136,41 +138,33 @@ const toggleCollapse = () => {
   padding-bottom: 4px; /* 关键：添加3px底部内边距 */
 }
 
-/* Logo */
-.logo {
+/* 折叠按钮 */
+.collapse-trigger {
   height: 42px;
   display: flex;
   align-items: center;
-  padding: 0 12px;
+  justify-content: center;
   margin: 4px;
   border-radius: 6px;
   cursor: pointer;
+  font-size: 16px;
+  transition: background-color 0.2s;
 }
 
-.logo:hover {
-  background-color: rgba(255, 255, 255, 0.5);
+.collapse-trigger:hover {
+  background-color: rgba(255, 255, 255, 0.1);
 }
 
-:deep(.ant-layout-sider-light) .logo:hover {
+:deep(.ant-layout-sider-light) .collapse-trigger:hover {
   background-color: rgba(0, 0, 0, 0.04);
 }
 
-.logo-image {
-  width: 32px;
-  height: 32px;
+:deep(.ant-layout-sider-dark) .collapse-trigger {
+  color: #fff;
 }
 
-.logo-text {
-  margin-left: 12px;
-  font-size: 16px;
-  font-weight: bold;
-  white-space: nowrap;
-  opacity: 1;
-  transition: opacity 0.2s ease;
-}
-
-.logo-text.text-hidden {
-  opacity: 0;
+:deep(.ant-layout-sider-light) .collapse-trigger {
+  color: rgba(0, 0, 0, 0.88);
 }
 
 /* 主菜单容器 */

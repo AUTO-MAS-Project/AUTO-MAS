@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router'
 import { ConfigProvider } from 'ant-design-vue'
 import { useTheme } from './composables/useTheme.ts'
 import AppLayout from './components/AppLayout.vue'
+import TitleBar from './components/TitleBar.vue'
 import zhCN from 'ant-design-vue/es/locale/zh_CN'
 import { logger } from '@/utils/logger'
 
@@ -24,13 +25,21 @@ onMounted(() => {
   <ConfigProvider :theme="antdTheme" :locale="zhCN">
     <!-- 初始化页面使用全屏布局 -->
     <router-view v-if="isInitializationPage" />
-    <!-- 其他页面使用应用布局 -->
-    <AppLayout v-else />
+    <!-- 其他页面使用带标题栏的应用布局 -->
+    <div v-else class="app-container">
+      <TitleBar />
+      <AppLayout />
+    </div>
   </ConfigProvider>
 </template>
 
 <style>
 * {
   box-sizing: border-box;
+}
+
+.app-container {
+  height: 100vh;
+  overflow: hidden;
 }
 </style>
