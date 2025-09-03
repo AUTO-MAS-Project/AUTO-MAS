@@ -13,7 +13,7 @@
               alt="MAA"
               class="breadcrumb-logo"
             />
-            <img v-else src="@/assets/AUTO_MAA.png" alt="AUTO_MAA" class="breadcrumb-logo" />
+            <img v-else src="@/assets/AUTO-MAS.ico" alt="AUTO_MAA" class="breadcrumb-logo" />
             编辑脚本
           </div>
         </a-breadcrumb-item>
