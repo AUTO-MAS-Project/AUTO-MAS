@@ -20,6 +20,7 @@
 #   Contact: DLmaster_361@163.com
 
 
+import time
 import asyncio
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
@@ -32,18 +33,41 @@ router = APIRouter(prefix="/api/core", tags=["核心信息"])
 
 @router.websocket("/ws")
 async def connect_websocket(websocket: WebSocket):
+
     await websocket.accept()
     Config.websocket = websocket
+    last_pong = time.monotonic()
+    data = {}
+
     while True:
+
         try:
+
             data = await asyncio.wait_for(websocket.receive_json(), timeout=30.0)
-            await Broadcast.put(data)
+            if data.get("type") == "Signal" and "Pong" in data.get("data", {}):
+                last_pong = time.monotonic()
+            elif data.get("type") == "Signal" and "Ping" in data.get("data", {}):
+                await websocket.send_json(
+                    WebSocketMessage(
+                        id="Main", type="Signal", data={"Pong": "无描述"}
+                    ).model_dump()
+                )
+            else:
+                await Broadcast.put(data)
+
         except asyncio.TimeoutError:
+
+            if time.monotonic() - last_pong > 15:
+                await websocket.close(code=1000, reason="Ping timeout")
+                break
             await websocket.send_json(
                 WebSocketMessage(
                     id="Main", type="Signal", data={"Ping": "无描述"}
                 ).model_dump()
             )
+
         except WebSocketDisconnect:
             break
+
+    Config.websocket = None
     await System.set_power("KillSelf")
