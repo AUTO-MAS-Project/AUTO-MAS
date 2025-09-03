@@ -154,7 +154,7 @@
       </div>
 
       <div v-else-if="!loading" class="empty-state">
-        <a-empty description="暂无资源收集数据" />
+        <img src="@/assets/NoData.png" alt="无数据" class="empty-image" />
       </div>
     </a-card>
 
@@ -227,7 +227,7 @@
       </div>
 
       <div v-else-if="!loading" class="empty-state">
-        <a-empty description="暂无代理数据" />
+        <img src="@/assets/NoData.png" alt="无数据" class="empty-image" />
       </div>
     </a-card>
   </div>
