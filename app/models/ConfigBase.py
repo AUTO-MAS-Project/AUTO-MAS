@@ -134,7 +134,7 @@ class FileValidator(ConfigValidator):
 
     def correct(self, value: Any) -> str:
         if not isinstance(value, str):
-            value = "."
+            value = str(Path.cwd())
         if not Path(value).is_absolute():
             value = Path(value).resolve().as_posix()
         if Path(value).suffix == ".lnk":
@@ -159,7 +159,7 @@ class FolderValidator(ConfigValidator):
 
     def correct(self, value: Any) -> str:
         if not isinstance(value, str):
-            value = "."
+            value = str(Path.cwd())
         return Path(value).resolve().as_posix()
 
 
