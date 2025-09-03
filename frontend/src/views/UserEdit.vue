@@ -1266,6 +1266,24 @@ const loadScriptInfo = async () => {
       scriptName.value = script.name
       scriptType.value = script.type // 设置脚本类型
 
+      // 根据脚本类型重定向到对应的专用页面
+      if (script.type === 'MAA') {
+        if (isEdit.value) {
+          router.replace(`/scripts/${scriptId}/users/${userId}/edit/maa`)
+        } else {
+          router.replace(`/scripts/${scriptId}/users/add/maa`)
+        }
+        return
+      } else if (script.type === 'General') {
+        if (isEdit.value) {
+          router.replace(`/scripts/${scriptId}/users/${userId}/edit/general`)
+        } else {
+          router.replace(`/scripts/${scriptId}/users/add/general`)
+        }
+        return
+      }
+
+      // 如果脚本类型未知，继续使用原有逻辑（向后兼容）
       // 重新初始化表单数据（根据脚本类型）
       const defaultData =
         scriptType.value === 'MAA' ? getDefaultMAAUserData() : getDefaultGeneralUserData()

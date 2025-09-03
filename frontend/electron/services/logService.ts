@@ -53,7 +53,9 @@ export function setupLogger() {
   log.transports.file.maxSize = 50 * 1024 * 1024
 
   // 禁用自动归档，因为我们按日期分文件
-  log.transports.file.archiveLog = null
+  log.transports.file.archiveLog = () => {
+    /* do nothing */
+  };
 
   // 捕获未处理的异常和Promise拒绝
   log.catchErrors({
