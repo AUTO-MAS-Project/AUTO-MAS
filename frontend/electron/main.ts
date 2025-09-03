@@ -68,7 +68,7 @@ function createWindow() {
     height: 1000,
     minWidth: 800,
     minHeight: 600,
-    icon: path.join(__dirname, '../src/assets/AUTO_MAA.ico'),
+    icon: path.join(__dirname, '../src/assets/AUTO-MAS.ico'),
     frame: false, // 去掉系统标题栏
     titleBarStyle: 'hidden', // 隐藏标题栏
     webPreferences: {

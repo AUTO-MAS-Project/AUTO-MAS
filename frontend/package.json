@@ -35,14 +35,14 @@
     "win": {
       "requestedExecutionLevel": "requireAdministrator",
       "target": "dir",
-      "icon": "public/AUTO_MAA.ico",
+      "icon": "public/AUTO-MAS.ico",
       "artifactName": "AUTO_MAA.exe"
     },
     "mac": {
-      "icon": "public/AUTO_MAA.ico"
+      "icon": "public/AUTO-MAS.ico"
     },
     "linux": {
-      "icon": "public/AUTO_MAA.ico"
+      "icon": "public/AUTO-MAS.ico"
     }
   },
   "dependencies": {
