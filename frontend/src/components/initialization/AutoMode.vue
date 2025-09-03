@@ -1,7 +1,7 @@
 <template>
   <div class="auto-mode">
     <div class="header">
-      <img src="/src/assets/AUTO_MAA.png" alt="logo" class="logo" />
+      <img src="/src/assets/AUTO-MAS.ico" alt="logo" class="logo" />
       <a-typography-title :level="1">AUTO_MAA</a-typography-title>
     </div>
     <div class="tip">

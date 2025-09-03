@@ -3,8 +3,8 @@
     <!-- 左侧：Logo和软件名 -->
     <div class="title-bar-left">
       <div class="logo-section">
-        <img src="@/assets/AUTO_MAA.ico" alt="AUTO_MAA" class="title-logo" />
-        <span class="title-text">AUTO_MAA</span>
+        <img src="@/assets/AUTO-MAS.ico" alt="AUTO-MAS" class="title-logo" />
+        <span class="title-text">AUTO-MAS</span>
       </div>
     </div>
 
