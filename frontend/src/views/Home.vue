@@ -62,9 +62,23 @@
           </div>
 
           <div class="activity-right">
+            <!-- 活动已结束时显示提示 -->
+            <a-statistic-countdown
+              v-if="getActivityTimeStatus(currentActivity.UtcExpireTime) === 'ended'"
+              title=""
+              :value="getCountdownValue(currentActivity.UtcExpireTime)"
+              format="活动已结束"
+              :value-style="{
+                color: '#ff4d4f',
+                fontWeight: 'bold',
+                fontSize: '18px',
+              }"
+              @finish="onCountdownFinish"
+            />
+
             <!-- 剩余时间小于两天时显示红色倒计时 -->
             <a-statistic-countdown
-              v-if="isLessThanTwoDays(currentActivity.UtcExpireTime)"
+              v-else-if="getActivityTimeStatus(currentActivity.UtcExpireTime) === 'warning'"
               title="当期活动剩余时间"
               :value="getCountdownValue(currentActivity.UtcExpireTime)"
               format="活动时间仅剩 D 天 H 时 m 分 ss 秒 SSS 毫秒，请尽快完成喵~"
@@ -247,7 +261,6 @@ import NoticeModal from '@/components/NoticeModal.vue'
 import dayjs from 'dayjs'
 import { API_ENDPOINTS } from '@/config/mirrors.ts'
 
-
 interface ActivityInfo {
   Tip: string
   StageName: string
@@ -338,16 +351,18 @@ const getCountdownValue = (expireTime: string) => {
   }
 }
 
-// 检查剩余时间是否小于两天
-const isLessThanTwoDays = (expireTime: string) => {
+// 检查剩余时间状态：normal（>2天）、warning（<=2天>0）、ended（<=0）
+const getActivityTimeStatus = (expireTime: string): 'normal' | 'warning' | 'ended' => {
   try {
     const expire = new Date(expireTime)
     const now = new Date()
     const remaining = expire.getTime() - now.getTime()
     const twoDaysInMs = 2 * 24 * 60 * 60 * 1000
-    return remaining <= twoDaysInMs
+    if (remaining <= 0) return 'ended'
+    if (remaining <= twoDaysInMs) return 'warning'
+    return 'normal'
   } catch {
-    return false
+    return 'ended'
   }
 }
 
