@@ -40,8 +40,8 @@ export interface SettingsData {
     IfSelfStart: boolean
   }
   UI: {
-    IfShowTray: boolean
-    IfToTray: boolean
+    IfShowTray: boolean // 常驻显示托盘
+    IfToTray: boolean   // 最小化到托盘
     location: string
     maximized: boolean
     size: string
