@@ -61,7 +61,7 @@ class Notification:
                     title=title,
                     message=message,
                     app_name="AUTO_MAA",
-                    app_icon=(Path.cwd() / "res/icons/AUTO_MAA.ico").as_posix(),
+                    app_icon=(Path.cwd() / "res/icons/AUTO-MAS.ico").as_posix(),
                     timeout=t,
                     ticker=ticker,
                     toast=True,
