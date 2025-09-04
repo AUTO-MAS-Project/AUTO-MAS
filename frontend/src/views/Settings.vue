@@ -4,13 +4,11 @@ import { useRouter } from 'vue-router'
 import {
   Button,
   Card,
-  Divider,
   Radio,
   Select,
   Space,
   Switch,
   Tabs,
-  InputNumber,
   Input,
   message,
 } from 'ant-design-vue'
@@ -172,6 +170,17 @@ const saveSettings = async (category: keyof SettingsData, changes: any) => {
 const handleSettingChange = async (category: keyof SettingsData, key: string, value: any) => {
   const changes = { [key]: value }
   await saveSettings(category, changes)
+  
+  // 如果是UI设置的托盘相关配置，立即更新托盘状态
+  if (category === 'UI' && (key === 'IfShowTray' || key === 'IfToTray')) {
+    try {
+      if ((window as any).electronAPI && (window as any).electronAPI.updateTraySettings) {
+        await (window as any).electronAPI.updateTraySettings({ [key]: value })
+      }
+    } catch (error) {
+      console.error('更新托盘设置失败:', error)
+    }
+  }
 }
 
 const handleThemeModeChange = (e: any) => {
@@ -570,20 +579,21 @@ onMounted(() => {
           <Space direction="vertical" size="large" style="width: 100%">
             <div class="setting-item">
               <h3>系统托盘</h3>
+              <p class="setting-description">配置系统托盘的显示和行为</p>
               <Space direction="vertical" size="middle">
                 <div class="switch-item">
                   <Switch
                     v-model:checked="settings.UI.IfShowTray"
                     @change="checked => handleSettingChange('UI', 'IfShowTray', checked)"
                   />
-                  <span class="switch-label">显示系统托盘图标</span>
+                  <span class="switch-label">常驻显示托盘图标</span>
                 </div>
                 <div class="switch-item">
                   <Switch
                     v-model:checked="settings.UI.IfToTray"
                     @change="checked => handleSettingChange('UI', 'IfToTray', checked)"
                   />
-                  <span class="switch-label">关闭时最小化到托盘</span>
+                  <span class="switch-label">最小化到托盘</span>
                 </div>
               </Space>
             </div>

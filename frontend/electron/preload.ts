@@ -35,6 +35,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveConfig: (config: any) => ipcRenderer.invoke('save-config', config),
   loadConfig: () => ipcRenderer.invoke('load-config'),
   resetConfig: () => ipcRenderer.invoke('reset-config'),
+  
+  // 托盘设置实时更新
+  updateTraySettings: (uiSettings: any) => ipcRenderer.invoke('update-tray-settings', uiSettings),
 
   // 日志文件操作
   getLogPath: () => ipcRenderer.invoke('get-log-path'),
