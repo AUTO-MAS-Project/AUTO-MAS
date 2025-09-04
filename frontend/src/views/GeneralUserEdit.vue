@@ -135,84 +135,91 @@
         </a-form-item>
       </a-card>
 
-      <a-card title="脚本配置" class="form-card">
-        <a-row :gutter="24">
-          <a-col :span="12">
-            <a-form-item name="ifScriptBeforeTask">
-              <template #label>
-                <a-tooltip title="是否在任务执行前运行自定义脚本">
-                  <span class="form-label">
-                    任务前执行脚本
-                    <QuestionCircleOutlined class="help-icon" />
-                  </span>
-                </a-tooltip>
-              </template>
+      <a-card title="额外脚本" class="form-card">
+        <a-form-item name="scriptBeforeTask">
+          <template #label>
+            <a-tooltip title="在任务执行前运行自定义脚本">
+              <span class="form-label">
+                任务前执行脚本
+                <QuestionCircleOutlined class="help-icon" />
+              </span>
+            </a-tooltip>
+          </template>
+          <a-row :gutter="24" align="middle">
+            <a-col :span="4">
               <a-switch
                 v-model:checked="formData.Info.IfScriptBeforeTask"
                 :disabled="loading"
                 size="default"
               />
-              <span class="switch-description">启用后将在任务执行前运行指定脚本</span>
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item name="ifScriptAfterTask">
-              <template #label>
-                <a-tooltip title="是否在任务执行后运行自定义脚本">
-                  <span class="form-label">
-                    任务后执行脚本
-                    <QuestionCircleOutlined class="help-icon" />
-                  </span>
-                </a-tooltip>
-              </template>
+            </a-col>
+            <a-col :span="20">
+              <a-input-group compact class="path-input-group">
+                <a-input
+                  v-model:value="formData.Info.ScriptBeforeTask"
+                  placeholder="请选择脚本文件"
+                  :disabled="loading || !formData.Info.IfScriptBeforeTask"
+                  size="large"
+                  class="path-input"
+                  readonly
+                />
+                <a-button 
+                  size="large" 
+                  @click="selectScriptBeforeTask" 
+                  :disabled="loading || !formData.Info.IfScriptBeforeTask"
+                  class="path-button"
+                >
+                  <template #icon>
+                    <FileOutlined />
+                  </template>
+                  选择文件
+                </a-button>
+              </a-input-group>
+            </a-col>
+          </a-row>
+        </a-form-item>
+        <a-form-item name="scriptAfterTask">
+          <template #label>
+            <a-tooltip title="在任务执行后运行自定义脚本">
+              <span class="form-label">
+                任务后执行脚本
+                <QuestionCircleOutlined class="help-icon" />
+              </span>
+            </a-tooltip>
+          </template>
+          <a-row :gutter="24" align="middle">
+            <a-col :span="4">
               <a-switch
                 v-model:checked="formData.Info.IfScriptAfterTask"
                 :disabled="loading"
                 size="default"
               />
-              <span class="switch-description">启用后将在任务执行后运行指定脚本</span>
-            </a-form-item>
-          </a-col>
-        </a-row>
-
-        <a-row :gutter="24">
-          <a-col :span="12">
-            <a-form-item name="scriptBeforeTask">
-              <template #label>
-                <a-tooltip title="任务执行前要运行的脚本路径">
-                  <span class="form-label">
-                    任务前脚本
-                    <QuestionCircleOutlined class="help-icon" />
-                  </span>
-                </a-tooltip>
-              </template>
-              <a-input
-                v-model:value="formData.Info.ScriptBeforeTask"
-                placeholder="请输入脚本路径"
-                :disabled="loading || !formData.Info.IfScriptBeforeTask"
-                size="large"
-              />
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item name="scriptAfterTask">
-              <template #label>
-                <a-tooltip title="任务执行后要运行的脚本路径">
-                  <span class="form-label">
-                    任务后脚本
-                    <QuestionCircleOutlined class="help-icon" />
-                  </span>
-                </a-tooltip>
-              </template>
-              <a-input
-                v-model:value="formData.Info.ScriptAfterTask"
-                placeholder="请输入脚本路径"
-                :disabled="loading || !formData.Info.IfScriptAfterTask"
-                size="large"
-              />
-            </a-form-item>
-          </a-col>
-        </a-row>
+            </a-col>
+            <a-col :span="20">
+              <a-input-group compact class="path-input-group">
+                <a-input
+                  v-model:value="formData.Info.ScriptAfterTask"
+                  placeholder="请选择脚本文件"
+                  :disabled="loading || !formData.Info.IfScriptAfterTask"
+                  size="large"
+                  class="path-input"
+                  readonly
+                />
+                <a-button 
+                  size="large" 
+                  @click="selectScriptAfterTask" 
+                  :disabled="loading || !formData.Info.IfScriptAfterTask"
+                  class="path-button"
+                >
+                  <template #icon>
+                    <FileOutlined />
+                  </template>
+                  选择文件
+                </a-button>
+              </a-input-group>
+            </a-col>
+          </a-row>
+        </a-form-item>
       </a-card>
 
       <a-card title="通知配置" class="form-card">
@@ -325,6 +332,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import {
   ArrowLeftOutlined,
+  FileOutlined,
   QuestionCircleOutlined,
   SaveOutlined,
   SettingOutlined,
@@ -590,6 +598,43 @@ const handleGeneralConfig = async () => {
   }
 }
 
+// 文件选择方法
+const selectScriptBeforeTask = async () => {
+  try {
+    const path = await (window.electronAPI as any)?.selectFile([
+      { name: '可执行文件', extensions: ['exe', 'bat', 'cmd', 'ps1'] },
+      { name: '脚本文件', extensions: ['py', 'js', 'sh'] },
+      { name: '所有文件', extensions: ['*'] },
+    ])
+    
+    if (path && path.length > 0) {
+      formData.Info.ScriptBeforeTask = path[0]
+      message.success('任务前脚本路径选择成功')
+    }
+  } catch (error) {
+    console.error('选择任务前脚本失败:', error)
+    message.error('选择文件失败')
+  }
+}
+
+const selectScriptAfterTask = async () => {
+  try {
+    const path = await (window.electronAPI as any)?.selectFile([
+      { name: '可执行文件', extensions: ['exe', 'bat', 'cmd', 'ps1'] },
+      { name: '脚本文件', extensions: ['py', 'js', 'sh'] },
+      { name: '所有文件', extensions: ['*'] },
+    ])
+    
+    if (path && path.length > 0) {
+      formData.Info.ScriptAfterTask = path[0]
+      message.success('任务后脚本路径选择成功')
+    }
+  } catch (error) {
+    console.error('选择任务后脚本失败:', error)
+    message.error('选择文件失败')
+  }
+}
+
 const handleCancel = () => {
   // 清理WebSocket连接
   if (generalWebsocketId.value) {
@@ -754,5 +799,57 @@ onMounted(() => {
 .float-button {
   width: 60px;
   height: 60px;
+}
+
+/* 路径输入组样式 */
+.path-input-group {
+  display: flex;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 2px solid var(--ant-color-border);
+  transition: all 0.3s ease;
+}
+
+.path-input-group:hover {
+  border-color: var(--ant-color-primary-hover);
+}
+
+.path-input-group:focus-within {
+  border-color: var(--ant-color-primary);
+  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.1);
+}
+
+.path-input {
+  flex: 1;
+  border: none !important;
+  border-radius: 0 !important;
+  background: var(--ant-color-bg-container) !important;
+}
+
+.path-input:focus {
+  box-shadow: none !important;
+}
+
+.path-button {
+  border: none;
+  border-radius: 0;
+  background: var(--ant-color-primary-bg);
+  color: var(--ant-color-primary);
+  font-weight: 600;
+  padding: 0 20px;
+  transition: all 0.3s ease;
+  border-left: 1px solid var(--ant-color-border-secondary);
+}
+
+.path-button:hover {
+  background: var(--ant-color-primary);
+  color: white;
+  transform: none;
+}
+
+.path-button:disabled {
+  background: var(--ant-color-bg-container-disabled);
+  color: var(--ant-color-text-disabled);
+  cursor: not-allowed;
 }
 </style>
