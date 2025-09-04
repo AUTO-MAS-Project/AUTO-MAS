@@ -123,50 +123,64 @@
 
         <!-- 队列开关配置 -->
         <div class="config-section">
-          <div class="queue-switches">
-            <div class="switch-item">
-              <div class="switch-label">
-                <span class="switch-title">启动时运行</span>
-                <span class="switch-description">程序启动时自动运行此队列</span>
+          <a-row :gutter="24">
+            <a-col :span="6">
+              <div class="form-item-vertical">
+                <div class="form-label-wrapper">
+                  <span class="form-label">启动时运行</span>
+                  <a-tooltip title="软件启动时自动运行此队列">
+                    <QuestionCircleOutlined class="help-icon" />
+                  </a-tooltip>
+                </div>
+                <a-select
+                  v-model:value="currentStartUpEnabled"
+                  @change="onQueueSwitchChange"
+                  style="width: 100%"
+                  size="large"
+                >
+                  <a-select-option :value="true">是</a-select-option>
+                  <a-select-option :value="false">否</a-select-option>
+                </a-select>
               </div>
-              <a-switch
-                v-model:checked="currentStartUpEnabled"
-                @change="onQueueSwitchChange"
-                size="default"
-              />
-            </div>
-            <div class="switch-item">
-              <div class="switch-label">
-                <span class="switch-title">定时运行</span>
-                <span class="switch-description">按照设定的时间自动运行此队列</span>
+            </a-col>
+            <a-col :span="6">
+              <div class="form-item-vertical">
+                <div class="form-label-wrapper">
+                  <span class="form-label">定时运行</span>
+                  <a-tooltip title="在设定的时间自动运行此队列">
+                    <QuestionCircleOutlined class="help-icon" />
+                  </a-tooltip>
+                </div>
+                <a-select
+                  v-model:value="currentTimeEnabled"
+                  @change="onQueueSwitchChange"
+                  style="width: 100%"
+                  size="large"
+                >
+                  <a-select-option :value="true">是</a-select-option>
+                  <a-select-option :value="false">否</a-select-option>
+                </a-select>
               </div>
-              <a-switch
-                v-model:checked="currentTimeEnabled"
-                @change="onQueueSwitchChange"
-                size="default"
-              />
-            </div>
-          </div>
-        </div>
-
-        <!-- 完成后操作配置 -->
-        <div class="config-section">
-          <div class="after-accomplish-settings">
-            <div class="setting-item">
-              <div class="setting-label">
-                <span class="setting-title">完成后操作</span>
-                <span class="setting-description">队列完成后执行的操作</span>
+            </a-col>
+            <a-col :span="12">
+              <div class="form-item-vertical">
+                <div class="form-label-wrapper">
+                  <span class="form-label">完成后操作</span>
+                  <a-tooltip title="队列完成后执行的操作">
+                    <QuestionCircleOutlined class="help-icon" />
+                  </a-tooltip>
+                </div>
+                <a-select
+                  v-model:value="currentAfterAccomplish"
+                  @change="onAfterAccomplishChange"
+                  style="width: 100%"
+                  :options="afterAccomplishOptions"
+                  placeholder="请选择操作"
+                  size="large"
+                />
               </div>
-              <a-select
-                v-model:value="currentAfterAccomplish"
-                @change="onAfterAccomplishChange"
-                size="default"
-                :options="afterAccomplishOptions"
-                placeholder="请选择操作"
-                style="min-width: 200px"
-              />
-            </div>
-          </div>
+            </a-col>
+          </a-row>
         </div>
         <a-divider />
 
@@ -197,7 +211,7 @@
 <script setup lang="ts">
 import { nextTick, onMounted, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
-import { DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons-vue'
+import { DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import { Service } from '@/api'
 import TimeSetManager from '@/components/queue/TimeSetManager.vue'
 import QueueItemManager from '@/components/queue/QueueItemManager.vue'
@@ -894,37 +908,33 @@ onMounted(async () => {
 
 /* 配置区域 */
 .config-section {
-  margin-bottom: 24px;
+  margin-bottom: 12px;
 }
 
-/* 开关配置 */
-.queue-switches {
+/* 垂直排列的表单项 */
+.form-item-vertical {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 8px;
+  margin-bottom: 16px;
 }
 
-.switch-item {
+.form-label-wrapper {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  gap: 8px;
 }
 
-.switch-label {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.switch-title {
-  font-size: 16px;
-  font-weight: 500;
+/* 表单标签 */
+.form-label {
+  font-weight: 600;
   color: var(--ant-color-text);
+  font-size: 14px;
 }
 
-.switch-description {
+.help-icon {
+  color: #8c8c8c;
   font-size: 14px;
-  color: var(--ant-color-text-secondary);
 }
 
 /* 完成后操作配置 */

@@ -350,12 +350,6 @@
                       </span>
                     </a-tooltip>
                   </template>
-                  <!--                  <a-switch-->
-                  <!--                    v-model:checked="generalConfig.Script.IfTrackProcess"-->
-                  <!--                    size="default"-->
-                  <!--                    class="modern-switch"-->
-                  <!--                  />-->
-
                   <a-select v-model:value="generalConfig.Script.IfTrackProcess" size="large">
                     <a-select-option :value="true">是</a-select-option>
                     <a-select-option :value="false">否</a-select-option>
