@@ -1663,51 +1663,7 @@ class AppConfig(GlobalConfig):
             if_get_maa_stage = False
             remote_activity_stage_info = []
 
-        def normalize_drop(value: str) -> str:
-            # 去前后空格与常见零宽字符
-            s = str(value).strip()
-            s = re.sub(r"[\u200b\u200c\u200d\ufeff]", "", s)
-            return s
-
-        def parse_utc(dt_str: str) -> datetime:
-            return datetime.strptime(dt_str, "%Y/%m/%d %H:%M:%S").replace(
-                tzinfo=timezone.utc
-            )
-
-        now_utc = datetime.now(timezone.utc)
-        activity_stage_drop_info: List[Dict[str, Any]] = []
-
-        for stage in remote_activity_stage_info:
-            if "SSReopen" in stage.get("Display", ""):
-                continue
-            act = stage.get("Activity", {}) or {}
-            try:
-                start_utc = parse_utc(act["UtcStartTime"])
-                expire_utc = parse_utc(act["UtcExpireTime"])
-            except Exception:
-                continue
-
-            if start_utc <= now_utc < expire_utc:
-                raw_drop = stage.get("Drop", "")
-                drop_id = normalize_drop(raw_drop)
-
-                if drop_id.isdigit():
-                    drop_name = MATERIALS_MAP.get(drop_id, "未知材料")
-                else:
-                    drop_name = (
-                        "DESC:" + drop_id
-                    )  # 非纯数字, 直接用文本.加一个DESC前缀方便前端区分
-
-                activity_stage_drop_info.append(
-                    {
-                        "Display": stage.get("Display", ""),
-                        "Value": stage.get("Value", ""),
-                        "Drop": raw_drop,
-                        "DropName": drop_name,
-                        "Activity": stage.get("Activity", {}),
-                    }
-                )
-
+        activity_stage_drop_info = []
         activity_stage_combox = []
 
         for stage in remote_activity_stage_info:
@@ -1722,8 +1678,30 @@ class AppConfig(GlobalConfig):
                 )
             ):
                 activity_stage_combox.append(
-                    {"label": stage["Value"], "value": stage["Value"]}
+                    {"label": stage["Display"], "value": stage["Value"]}
                 )
+
+                if "SSReopen" not in stage["Display"]:
+
+                    raw_drop = stage["Drop"]
+                    drop_id = re.sub(
+                        r"[\u200b\u200c\u200d\ufeff]", "", str(raw_drop).strip()
+                    )  # 去除不可见字符
+
+                    if drop_id.isdigit():
+                        drop_name = MATERIALS_MAP.get(drop_id, "未知材料")
+                    else:
+                        drop_name = f"DESC:{drop_id}"  # 非纯数字, 直接用文本.加一个DESC前缀方便前端区分
+
+                    activity_stage_drop_info.append(
+                        {
+                            "Display": stage["Display"],
+                            "Value": stage["Value"],
+                            "Drop": raw_drop,
+                            "DropName": drop_name,
+                            "Activity": stage["Activity"],
+                        }
+                    )
 
         stage_data = {}
 
