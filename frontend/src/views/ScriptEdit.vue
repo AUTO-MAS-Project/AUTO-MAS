@@ -818,6 +818,227 @@ const router = useRouter()
 const { getScript, updateScript, loading } = useScriptApi()
 
 const formRef = ref<FormInstance>()
+
+// 路径处理工具函数
+const pathUtils = {
+  // 检查路径是否为绝对路径
+  isAbsolute(pathStr: string): boolean {
+    if (!pathStr || pathStr === '.') return false
+    // Windows: C:\ 或 D:\ 等
+    // Unix/Linux: /
+    return /^[a-zA-Z]:[\\/]/.test(pathStr) || pathStr.startsWith('/')
+  },
+
+  // 获取相对路径
+  getRelativePath(from: string, to: string): string {
+    if (!from || !to || from === '.' || to === '.') return '.'
+    
+    // 确保都是绝对路径
+    if (!this.isAbsolute(from) || !this.isAbsolute(to)) return to
+
+    // 规范化路径分隔符为 /
+    const normalizePath = (p: string) => p.replace(/\\/g, '/')
+    const fromNorm = normalizePath(from)
+    const toNorm = normalizePath(to)
+    
+    // 分割路径
+    const fromParts = fromNorm.split('/').filter(Boolean)
+    const toParts = toNorm.split('/').filter(Boolean)
+    
+    // Windows 驱动器字母处理
+    if (fromParts[0] && fromParts[0].includes(':') && toParts[0] && toParts[0].includes(':')) {
+      if (fromParts[0].toLowerCase() !== toParts[0].toLowerCase()) {
+        // 不同驱动器，返回绝对路径
+        return to
+      }
+    }
+    
+    // 找到公共前缀
+    let commonLength = 0
+    const minLength = Math.min(fromParts.length, toParts.length)
+    for (let i = 0; i < minLength; i++) {
+      if (fromParts[i].toLowerCase() === toParts[i].toLowerCase()) {
+        commonLength++
+      } else {
+        break
+      }
+    }
+    
+    // 构建相对路径
+    const upLevels = fromParts.length - commonLength
+    const downParts = toParts.slice(commonLength)
+    
+    const relativeParts = []
+    for (let i = 0; i < upLevels; i++) {
+      relativeParts.push('..')
+    }
+    relativeParts.push(...downParts)
+    
+    return relativeParts.length === 0 ? '.' : relativeParts.join('/')
+  },
+
+  // 解析相对路径为绝对路径
+  resolvePath(basePath: string, relativePath: string): string {
+    if (!basePath || basePath === '.' || !relativePath || relativePath === '.') {
+      return relativePath || '.'
+    }
+    
+    // 如果 relativePath 已经是绝对路径，直接返回
+    if (this.isAbsolute(relativePath)) {
+      return relativePath
+    }
+    
+    // 规范化路径分隔符
+    const normalizePath = (p: string) => p.replace(/\\/g, '/')
+    const baseNorm = normalizePath(basePath)
+    const relativeNorm = normalizePath(relativePath)
+    
+    // 分割路径
+    const baseParts = baseNorm.split('/').filter(Boolean)
+    const relativeParts = relativeNorm.split('/').filter(Boolean)
+    
+    // 处理相对路径
+    for (const part of relativeParts) {
+      if (part === '..') {
+        if (baseParts.length > 1 || (baseParts.length === 1 && !baseParts[0].includes(':'))) {
+          baseParts.pop()
+        }
+      } else if (part !== '.') {
+        baseParts.push(part)
+      }
+    }
+    
+    // 重新组合路径
+    let result = baseParts.join('/')
+    
+    // 对于 Windows 路径，确保驱动器字母格式正确
+    if (result.includes(':')) {
+      // 移除多余的斜杠并确保正确格式
+      result = result.replace(/\/+/g, '/')
+      result = result.replace(/^([a-zA-Z]):\/+/, '$1:/')
+      
+      // 如果只有驱动器字母，添加根路径斜杠
+      if (/^[a-zA-Z]:$/.test(result)) {
+        result += '/'
+      }
+    } else if (!result.startsWith('/')) {
+      // 对于非 Windows 路径，确保以 / 开头
+      result = '/' + result
+    }
+    
+    // 最终规范化处理
+    return this.normalizePath(result)
+  },
+
+  // 检查路径是否在根目录下
+  isSubPath(rootPath: string, targetPath: string): boolean {
+    if (!rootPath || !targetPath || rootPath === '.' || targetPath === '.') return false
+    
+    // 确保都是绝对路径
+    if (!this.isAbsolute(rootPath) || !this.isAbsolute(targetPath)) return false
+    
+    const normalizePath = (p: string) => p.replace(/\\/g, '/').toLowerCase()
+    const rootNorm = normalizePath(rootPath)
+    const targetNorm = normalizePath(targetPath)
+    
+    // 确保路径以 / 结尾以进行精确匹配
+    const rootWithSlash = rootNorm.endsWith('/') ? rootNorm : rootNorm + '/'
+    const targetWithSlash = targetNorm.endsWith('/') ? targetNorm : targetNorm + '/'
+    
+    return targetWithSlash.startsWith(rootWithSlash) || rootNorm === targetNorm
+  },
+
+  // 将 Windows 路径转换为标准格式
+  normalizePath(pathStr: string): string {
+    if (!pathStr || pathStr === '.') return pathStr
+    
+    // 替换反斜杠为正斜杠
+    let normalized = pathStr.replace(/\\/g, '/')
+    
+    // 移除多余的斜杠，但保留驱动器字母后的单个冒号
+    normalized = normalized.replace(/\/+/g, '/')
+    
+    // 确保 Windows 驱动器路径格式正确 (例如 C:/path)
+    normalized = normalized.replace(/^([a-zA-Z]):\/+/, '$1:/')
+    
+    // 移除末尾的斜杠（除非是根目录）
+    if (normalized.length > 1 && normalized.endsWith('/')) {
+      normalized = normalized.slice(0, -1)
+    }
+    
+    return normalized
+  }
+}
+
+// 路径验证函数
+const validatePath = (rootPath: string, targetPath: string, pathName: string): boolean => {
+  if (!targetPath || targetPath === '.') return true
+  if (!rootPath || rootPath === '.') {
+    message.warning(`请先设置脚本根目录后再选择${pathName}`)
+    return false
+  }
+  
+  if (!pathUtils.isSubPath(rootPath, targetPath)) {
+    message.error(`${pathName}必须是脚本根目录的子路径`)
+    return false
+  }
+  
+  return true
+}
+
+// 存储路径的相对关系，用于根目录变化时自动调整
+const pathRelations = reactive({
+  scriptPathRelative: '',
+  configPathRelative: '',
+  logPathRelative: ''
+})
+
+// 更新相对路径关系
+const updatePathRelations = () => {
+  const rootPath = generalConfig.Info.RootPath
+  if (!rootPath || rootPath === '.') {
+    pathRelations.scriptPathRelative = ''
+    pathRelations.configPathRelative = ''
+    pathRelations.logPathRelative = ''
+    return
+  }
+
+  if (generalConfig.Script.ScriptPath && generalConfig.Script.ScriptPath !== '.') {
+    pathRelations.scriptPathRelative = pathUtils.getRelativePath(rootPath, generalConfig.Script.ScriptPath)
+  }
+  
+  if (generalConfig.Script.ConfigPath && generalConfig.Script.ConfigPath !== '.') {
+    pathRelations.configPathRelative = pathUtils.getRelativePath(rootPath, generalConfig.Script.ConfigPath)
+  }
+  
+  if (generalConfig.Script.LogPath && generalConfig.Script.LogPath !== '.') {
+    pathRelations.logPathRelative = pathUtils.getRelativePath(rootPath, generalConfig.Script.LogPath)
+  }
+}
+
+// 根据新的根目录更新所有路径
+const updatePathsBasedOnRoot = (newRootPath: string) => {
+  if (!newRootPath || newRootPath === '.') return
+
+  // 根据保存的相对路径关系重新计算绝对路径
+  if (pathRelations.scriptPathRelative) {
+    const newScriptPath = pathUtils.resolvePath(newRootPath, pathRelations.scriptPathRelative)
+    const normalizedScriptPath = pathUtils.normalizePath(newScriptPath)
+    generalConfig.Script.ScriptPath = normalizedScriptPath
+  }
+  
+  if (pathRelations.configPathRelative) {
+    const newConfigPath = pathUtils.resolvePath(newRootPath, pathRelations.configPathRelative)
+    const normalizedConfigPath = pathUtils.normalizePath(newConfigPath)
+    generalConfig.Script.ConfigPath = normalizedConfigPath
+  }
+  
+  if (pathRelations.logPathRelative) {
+    const newLogPath = pathUtils.resolvePath(newRootPath, pathRelations.logPathRelative)
+    const normalizedLogPath = pathUtils.normalizePath(newLogPath)
+    generalConfig.Script.LogPath = normalizedLogPath
+  }
+}
 const pageLoading = ref(false)
 const scriptId = route.params.id as string
 
@@ -915,6 +1136,25 @@ watch(
   }
 )
 
+// 监听根目录变化，自动调整其他路径以保持相对关系
+watch(
+  () => generalConfig.Info.RootPath,
+  (newRootPath, oldRootPath) => {
+    // 只有在根目录真正改变时才触发
+    if (newRootPath !== oldRootPath && oldRootPath && oldRootPath !== '.') {
+      // 如果新根目录有效，根据保存的相对路径关系更新所有路径
+      if (newRootPath && newRootPath !== '.') {
+        updatePathsBasedOnRoot(newRootPath)
+      }
+    }
+    
+    // 无论如何都更新相对路径关系以备后用
+    if (newRootPath && newRootPath !== '.') {
+      updatePathRelations()
+    }
+  }
+)
+
 onMounted(async () => {
   await loadScript()
 })
@@ -965,6 +1205,10 @@ const loadScript = async () => {
         Object.assign(maaConfig, scriptDetail.config as MAAScriptConfig)
       } else {
         Object.assign(generalConfig, scriptDetail.config as GeneralScriptConfig)
+        // 对于 General 类型，在加载完成后初始化相对路径关系
+        setTimeout(() => {
+          updatePathRelations()
+        }, 100)
       }
     }
   } catch (error) {
@@ -1009,7 +1253,7 @@ const selectMAAPath = async () => {
       return
     }
 
-    const path = await window.electronAPI.selectFolder()
+    const path = await (window.electronAPI as any).selectFolder()
     if (path) {
       maaConfig.Info.Path = path
       message.success('MAA路径选择成功')
@@ -1027,10 +1271,29 @@ const selectRootPath = async () => {
       return
     }
 
-    const path = await window.electronAPI.selectFolder()
+    const path = await (window.electronAPI as any).selectFolder()
     if (path) {
-      generalConfig.Info.RootPath = path
-      message.success('根路径选择成功')
+      // 保存当前根目录，用于比较
+      const oldRootPath = generalConfig.Info.RootPath
+      
+      // 规范化新路径
+      const normalizedPath = pathUtils.normalizePath(path)
+      
+      // 在更改根目录之前，先更新相对路径关系
+      if (oldRootPath && oldRootPath !== '.' && oldRootPath !== normalizedPath) {
+        updatePathRelations()
+      }
+      
+      // 设置新的根目录
+      generalConfig.Info.RootPath = normalizedPath
+      
+      // 如果有保存的相对路径关系，根据新根目录更新其他路径
+      if (oldRootPath && oldRootPath !== '.' && oldRootPath !== normalizedPath) {
+        updatePathsBasedOnRoot(generalConfig.Info.RootPath)
+        message.success('根路径选择成功，其他路径已自动调整以保持相对关系')
+      } else {
+        message.success('根路径选择成功')
+      }
     }
   } catch (error) {
     console.error('选择根路径失败:', error)
@@ -1045,12 +1308,12 @@ const selectGamePath = async () => {
       return
     }
 
-    const path = await window.electronAPI.selectFile([
+    const paths = await (window.electronAPI as any).selectFile([
       { name: '可执行文件', extensions: ['exe'] },
       { name: '所有文件', extensions: ['*'] },
     ])
-    if (path) {
-      generalConfig.Game.Path = path
+    if (paths && paths.length > 0) {
+      generalConfig.Game.Path = paths[0]
       message.success('游戏路径选择成功')
     }
   } catch (error) {
@@ -1066,13 +1329,19 @@ const selectScriptPath = async () => {
       return
     }
 
-    const path = await window.electronAPI.selectFile([
+    const paths = await (window.electronAPI as any).selectFile([
       { name: '可执行文件', extensions: ['exe', 'bat'] },
       { name: '所有文件', extensions: ['*'] },
     ])
-    if (path) {
-      generalConfig.Script.ScriptPath = path
-      message.success('脚本路径选择成功')
+    if (paths && paths.length > 0) {
+      const path = paths[0]
+      // 验证路径是否在根目录下
+      if (validatePath(generalConfig.Info.RootPath, path, '主程序路径')) {
+        generalConfig.Script.ScriptPath = pathUtils.normalizePath(path)
+        // 更新相对路径关系
+        updatePathRelations()
+        message.success('脚本路径选择成功')
+      }
     }
   } catch (error) {
     console.error('选择脚本路径失败:', error)
@@ -1092,10 +1361,11 @@ const selectConfigPath = async () => {
     // 根据配置文件类型选择不同的选择方式
     if (generalConfig.Script.ConfigPathMode === 'Folder') {
       // 选择文件夹
-      selectedPath = await window.electronAPI.selectFolder()
+      selectedPath = await (window.electronAPI as any).selectFolder()
+      selectedPath = selectedPath || undefined
     } else {
       // 选择文件（默认行为）
-      selectedPath = await window.electronAPI.selectFile([
+      const paths = await (window.electronAPI as any).selectFile([
         { name: '配置文件', extensions: ['json', 'yaml', 'yml', 'ini', 'conf', 'toml'] },
         { name: 'JSON 文件', extensions: ['json'] },
         { name: 'YAML 文件', extensions: ['yaml', 'yml'] },
@@ -1103,12 +1373,18 @@ const selectConfigPath = async () => {
         { name: 'TOML 文件', extensions: ['toml'] },
         { name: '所有文件', extensions: ['*'] },
       ])
+      selectedPath = paths && paths.length > 0 ? paths[0] : undefined
     }
 
     if (selectedPath) {
-      generalConfig.Script.ConfigPath = selectedPath
-      const typeText = generalConfig.Script.ConfigPathMode === 'Folder' ? '配置文件夹' : '配置文件'
-      message.success(`${typeText}路径选择成功`)
+      // 验证路径是否在根目录下
+      const pathType = generalConfig.Script.ConfigPathMode === 'Folder' ? '配置文件夹' : '配置文件'
+      if (validatePath(generalConfig.Info.RootPath, selectedPath, `${pathType}路径`)) {
+        generalConfig.Script.ConfigPath = pathUtils.normalizePath(selectedPath)
+        // 更新相对路径关系
+        updatePathRelations()
+        message.success(`${pathType}路径选择成功`)
+      }
     }
   } catch (error) {
     console.error('选择配置路径失败:', error)
@@ -1124,14 +1400,20 @@ const selectLogPath = async () => {
       return
     }
 
-    const path = await window.electronAPI.selectFile()
-    if (path) {
-      generalConfig.Script.LogPath = path
-      message.success('日志路径选择成功')
+    const paths = await (window.electronAPI as any).selectFile()
+    if (paths && paths.length > 0) {
+      const path = paths[0]
+      // 验证路径是否在根目录下
+      if (validatePath(generalConfig.Info.RootPath, path, '日志文件路径')) {
+        generalConfig.Script.LogPath = pathUtils.normalizePath(path)
+        // 更新相对路径关系
+        updatePathRelations()
+        message.success('日志路径选择成功')
+      }
     }
   } catch (error) {
     console.error('选择日志路径失败:', error)
-    message.error('选择文件夹失败')
+    message.error('选择文件失败')
   }
 }
 
