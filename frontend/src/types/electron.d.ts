@@ -40,6 +40,10 @@ export interface ElectronAPI {
   saveLogsToFile: (logs: string) => Promise<void>
   loadLogsFromFile: () => Promise<string | null>
 
+  // 文件系统操作
+  openFile: (filePath: string) => Promise<void>
+  showItemInFolder: (filePath: string) => Promise<void>
+
   // 监听下载进度
   onDownloadProgress: (callback: (progress: any) => void) => void
   removeDownloadProgressListener: () => void
