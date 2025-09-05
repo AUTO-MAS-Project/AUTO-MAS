@@ -32,7 +32,7 @@
             <a-select v-model:value="searchForm.mode" style="width: 100%">
               <a-select-option value="按日合并">按日合并</a-select-option>
               <a-select-option value="按周合并">按周合并</a-select-option>
-              <a-select-option value="按年月并">按月合并</a-select-option>
+              <a-select-option value="按月合并">按月合并</a-select-option>
             </a-select>
           </a-form-item>
         </a-col>
@@ -299,7 +299,6 @@
                         </template>
                       </a-button>
                     </a-tooltip>
-                    <FileTextOutlined />
                   </a-space>
                 </template>
                 <a-spin :spinning="detailLoading">
