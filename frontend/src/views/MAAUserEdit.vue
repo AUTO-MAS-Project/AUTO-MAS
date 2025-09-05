@@ -52,8 +52,13 @@
   </div>
 
   <div class="user-edit-content">
-    <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="user-form">
-      <a-card title="基本信息" class="form-card">
+    <a-card class="config-card">
+      <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
+        <!-- 基本信息 -->
+        <div class="form-section">
+          <div class="section-header">
+            <h3>基本信息</h3>
+          </div>
         <a-row :gutter="24">
           <a-col :span="12">
             <a-form-item name="userName" required>
@@ -70,6 +75,7 @@
                 placeholder="请输入用户名"
                 :disabled="loading"
                 size="large"
+                class="modern-input"
               />
             </a-form-item>
           </a-col>
@@ -280,11 +286,16 @@
             placeholder="请输入备注信息"
             :rows="4"
             :disabled="loading"
+            class="modern-input"
           />
         </a-form-item>
-      </a-card>
+        </div>
 
-      <a-card title="关卡配置" class="form-card">
+        <!-- 关卡配置 -->
+        <div class="form-section">
+          <div class="section-header">
+            <h3>关卡配置</h3>
+          </div>
         <a-row :gutter="24">
           <a-col :span="12">
             <a-form-item name="mode">
@@ -535,9 +546,13 @@
             </a-form-item>
           </a-col>
         </a-row>
-      </a-card>
+        </div>
 
-      <a-card title="任务配置" class="form-card">
+        <!-- 任务配置 -->
+        <div class="form-section">
+          <div class="section-header">
+            <h3>任务配置</h3>
+          </div>
         <a-row :gutter="24">
           <a-col :span="6">
             <a-form-item name="ifWakeUp" label="开始唤醒">
@@ -594,9 +609,21 @@
             </a-form-item>
           </a-col>
         </a-row>
-      </a-card>
+        </div>
 
-      <a-card title="森空岛配置" class="form-card">
+        <!-- 森空岛配置 -->
+        <div class="form-section">
+          <div class="section-header">
+            <h3>森空岛配置</h3>
+            <a 
+              href="https://doc.auto-mas.top/docs/advanced-features.html#%E8%8E%B7%E5%8F%96%E9%B9%B0%E8%A7%92%E7%BD%91%E7%BB%9C%E9%80%9A%E8%A1%8C%E8%AF%81%E7%99%BB%E5%BD%95%E5%87%AD%E8%AF%81"
+              target="_blank" 
+              class="section-doc-link"
+              title="查看森空岛签到配置文档"
+            >
+              文档
+            </a>
+          </div>
         <a-row :gutter="24" align="middle">
           <a-col :span="6">
             <span style="font-weight: 500">森空岛签到</span>
@@ -617,21 +644,15 @@
               style="margin-top: 8px; width: 100%"
               allow-clear
             />
-            <div style="color: #999; font-size: 12px; margin-top: 4px">
-              请在森空岛官网获取您的专属Token并粘贴到此处，详细教程见
-              <a
-                href="https://doc.auto-mas.top/docs/advanced-features.html#%E8%8E%B7%E5%8F%96%E9%B9%B0%E8%A7%92%E7%BD%91%E7%BB%9C%E9%80%9A%E8%A1%8C%E8%AF%81%E7%99%BB%E5%BD%95%E5%87%AD%E8%AF%81"
-                target="_blank"
-                style="color: #409eff"
-                >获取鹰角网络通行证登录凭证</a
-              >
-              文档
-            </div>
           </a-col>
         </a-row>
-      </a-card>
+        </div>
 
-      <a-card title="通知配置" class="form-card">
+        <!-- 通知配置 -->
+        <div class="form-section">
+          <div class="section-header">
+            <h3>通知配置</h3>
+          </div>
         <a-row :gutter="24" align="middle">
           <a-col :span="6">
             <span style="font-weight: 500">启用通知</span>
@@ -718,11 +739,13 @@
               "
               size="large"
               style="width: 100%"
+              class="modern-input"
             />
           </a-col>
         </a-row>
-      </a-card>
-    </a-form>
+        </div>
+      </a-form>
+    </a-card>
   </div>
 
   <a-float-button
@@ -1239,6 +1262,115 @@ onMounted(() => {
 .user-edit-content {
   max-width: 1200px;
   margin: 0 auto;
+}
+
+.config-card {
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.config-card :deep(.ant-card-body) {
+  padding: 32px;
+}
+
+.config-form {
+  max-width: none;
+}
+
+/* form-section 样式 - 来自 ScriptEdit.vue */
+.form-section {
+  margin-bottom: 32px;
+}
+
+.form-section:last-child {
+  margin-bottom: 0;
+}
+
+.section-header {
+  margin-bottom: 20px;
+  padding-bottom: 8px;
+  border-bottom: 2px solid var(--ant-color-border-secondary);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.section-header h3 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--ant-color-text);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.section-header h3::before {
+  content: '';
+  width: 4px;
+  height: 24px;
+  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
+  border-radius: 2px;
+}
+
+/* 表单标签 */
+.form-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  color: var(--ant-color-text);
+  font-size: 14px;
+}
+
+.help-icon {
+  color: var(--ant-color-text-tertiary);
+  font-size: 14px;
+  cursor: help;
+  transition: color 0.3s ease;
+}
+
+.help-icon:hover {
+  color: var(--ant-color-primary);
+}
+
+.modern-input {
+  border-radius: 8px;
+  border: 2px solid var(--ant-color-border);
+  background: var(--ant-color-bg-container);
+  transition: all 0.3s ease;
+}
+
+.modern-input:hover {
+  border-color: var(--ant-color-primary-hover);
+}
+
+.modern-input:focus,
+.modern-input.ant-input-focused {
+  border-color: var(--ant-color-primary);
+  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.1);
+}
+
+/* section标题右侧文档链接 */
+.section-doc-link {
+  color: var(--ant-color-primary) !important;
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 500;
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--ant-color-primary);
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.section-doc-link:hover {
+  color: var(--ant-color-primary-hover) !important;
+  background-color: var(--ant-color-primary-bg);
+  border-color: var(--ant-color-primary-hover);
+  text-decoration: none;
 }
 
 .form-card {
