@@ -33,14 +33,6 @@
       class="activity-card"
       :loading="loading"
     >
-      <template #extra>
-        <a-button type="text" @click="refreshActivity" :loading="loading">
-          <template #icon>
-            <ReloadOutlined />
-          </template>
-          刷新
-        </a-button>
-      </template>
 
       <div v-if="error" class="error-message">
         <a-alert :message="error" type="error" show-icon closable @close="error = ''" />
@@ -251,7 +243,6 @@
 import { ref, onMounted, computed } from 'vue'
 import { message } from 'ant-design-vue'
 import {
-  ReloadOutlined,
   ClockCircleOutlined,
   UserOutlined,
   BellOutlined,
@@ -448,13 +439,6 @@ const fetchActivityData = async () => {
     error.value = '网络请求失败，请检查连接'
   } finally {
     loading.value = false
-  }
-}
-
-const refreshActivity = async () => {
-  await fetchActivityData()
-  if (error.value) {
-    message.error(error.value)
   }
 }
 

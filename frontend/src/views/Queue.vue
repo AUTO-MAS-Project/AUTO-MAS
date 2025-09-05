@@ -38,13 +38,6 @@
               删除当前队列
             </a-button>
           </a-popconfirm>
-
-          <a-button size="large" @click="handleRefresh">
-            <template #icon>
-              <ReloadOutlined />
-            </template>
-            刷新
-          </a-button>
         </a-space>
       </div>
     </div>
@@ -211,7 +204,7 @@
 <script setup lang="ts">
 import { nextTick, onMounted, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
-import { DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
+import { DeleteOutlined, EditOutlined, PlusOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import { Service } from '@/api'
 import TimeSetManager from '@/components/queue/TimeSetManager.vue'
 import QueueItemManager from '@/components/queue/QueueItemManager.vue'
@@ -632,13 +625,6 @@ const saveQueueData = async () => {
     console.error('保存队列数据失败:', error)
     throw error
   }
-}
-
-// 刷新队列列表
-const handleRefresh = async () => {
-  loading.value = true
-  await fetchQueues()
-  loading.value = false
 }
 
 // 自动保存功能

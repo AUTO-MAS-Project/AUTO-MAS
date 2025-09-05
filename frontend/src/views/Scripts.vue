@@ -16,12 +16,6 @@
         </template>
         新建脚本
       </a-button>
-      <a-button size="large" @click="handleRefresh" class="default">
-        <template #icon>
-          <ReloadOutlined />
-        </template>
-        刷新
-      </a-button>
     </a-space>
   </div>
 
@@ -229,7 +223,6 @@ import {
   FileSearchOutlined,
   FileTextOutlined,
   PlusOutlined,
-  ReloadOutlined,
   SettingOutlined,
   UserOutlined,
 } from '@ant-design/icons-vue'
@@ -492,11 +485,6 @@ const handleDeleteUser = async (user: User) => {
     }
     message.success('用户删除成功')
   }
-}
-
-const handleRefresh = () => {
-  loadScripts()
-  message.success('刷新成功')
 }
 
 const handleMAAConfig = async (script: Script) => {
