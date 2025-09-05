@@ -395,7 +395,28 @@
                 v-model:value="formData.Info.Stage"
                 :disabled="loading"
                 size="large"
+                placeholder="选择或输入自定义关卡"
               >
+                <template #dropdownRender="{ menuNode: menu }">
+                  <v-nodes :vnodes="menu" />
+                  <a-divider style="margin: 4px 0" />
+                  <a-space style="padding: 4px 8px" size="small">
+                    <a-input
+                      ref="stageInputRef"
+                      v-model:value="customStageName"
+                      placeholder="输入自定义关卡，如: 11-8"
+                      style="flex: 1"
+                      size="small"
+                      @keyup.enter="addCustomStage"
+                    />
+                    <a-button type="text" size="small" @click="addCustomStage">
+                      <template #icon>
+                        <PlusOutlined />
+                      </template>
+                      添加关卡
+                    </a-button>
+                  </a-space>
+                </template>
                 <a-select-option v-for="option in stageOptions" :key="option.value" :value="option.value">
                   <template v-if="option.label.includes('|')">
                     <span>{{ option.label.split('|')[0] }}</span>
@@ -405,6 +426,9 @@
                   </template>
                   <template v-else>
                     {{ option.label }}
+                    <a-tag v-if="option.isCustom" color="blue" size="small" style="margin-left: 8px;">
+                      自定义
+                    </a-tag>
                   </template>
                 </a-select-option>
               </a-select>
@@ -428,7 +452,28 @@
                 v-model:value="formData.Info.Stage_1"
                 :disabled="loading"
                 size="large"
+                placeholder="选择或输入自定义关卡"
               >
+                <template #dropdownRender="{ menuNode: menu }">
+                  <v-nodes :vnodes="menu" />
+                  <a-divider style="margin: 4px 0" />
+                  <a-space style="padding: 4px 8px" size="small">
+                    <a-input
+                      ref="stage1InputRef"
+                      v-model:value="customStage1Name"
+                      placeholder="输入自定义关卡，如: 11-8"
+                      style="flex: 1"
+                      size="small"
+                      @keyup.enter="addCustomStage1"
+                    />
+                    <a-button type="text" size="small" @click="addCustomStage1">
+                      <template #icon>
+                        <PlusOutlined />
+                      </template>
+                      添加关卡
+                    </a-button>
+                  </a-space>
+                </template>
                 <a-select-option v-for="option in stageOptions" :key="option.value" :value="option.value">
                   <template v-if="option.label.includes('|')">
                     <span>{{ option.label.split('|')[0] }}</span>
@@ -438,6 +483,9 @@
                   </template>
                   <template v-else>
                     {{ option.label }}
+                    <a-tag v-if="option.isCustom" color="blue" size="small" style="margin-left: 8px;">
+                      自定义
+                    </a-tag>
                   </template>
                 </a-select-option>
               </a-select>
@@ -459,7 +507,28 @@
                 v-model:value="formData.Info.Stage_2"
                 :disabled="loading"
                 size="large"
+                placeholder="选择或输入自定义关卡"
               >
+                <template #dropdownRender="{ menuNode: menu }">
+                  <v-nodes :vnodes="menu" />
+                  <a-divider style="margin: 4px 0" />
+                  <a-space style="padding: 4px 8px" size="small">
+                    <a-input
+                      ref="stage2InputRef"
+                      v-model:value="customStage2Name"
+                      placeholder="输入自定义关卡，如: 11-8"
+                      style="flex: 1"
+                      size="small"
+                      @keyup.enter="addCustomStage2"
+                    />
+                    <a-button type="text" size="small" @click="addCustomStage2">
+                      <template #icon>
+                        <PlusOutlined />
+                      </template>
+                      添加关卡
+                    </a-button>
+                  </a-space>
+                </template>
                 <a-select-option v-for="option in stageOptions" :key="option.value" :value="option.value">
                   <template v-if="option.label.includes('|')">
                     <span>{{ option.label.split('|')[0] }}</span>
@@ -469,6 +538,9 @@
                   </template>
                   <template v-else>
                     {{ option.label }}
+                    <a-tag v-if="option.isCustom" color="blue" size="small" style="margin-left: 8px;">
+                      自定义
+                    </a-tag>
                   </template>
                 </a-select-option>
               </a-select>
@@ -490,7 +562,28 @@
                 v-model:value="formData.Info.Stage_3"
                 :disabled="loading"
                 size="large"
+                placeholder="选择或输入自定义关卡"
               >
+                <template #dropdownRender="{ menuNode: menu }">
+                  <v-nodes :vnodes="menu" />
+                  <a-divider style="margin: 4px 0" />
+                  <a-space style="padding: 4px 8px" size="small">
+                    <a-input
+                      ref="stage3InputRef"
+                      v-model:value="customStage3Name"
+                      placeholder="输入自定义关卡，如: 11-8"
+                      style="flex: 1"
+                      size="small"
+                      @keyup.enter="addCustomStage3"
+                    />
+                    <a-button type="text" size="small" @click="addCustomStage3">
+                      <template #icon>
+                        <PlusOutlined />
+                      </template>
+                      添加关卡
+                    </a-button>
+                  </a-space>
+                </template>
                 <a-select-option v-for="option in stageOptions" :key="option.value" :value="option.value">
                   <template v-if="option.label.includes('|')">
                     <span>{{ option.label.split('|')[0] }}</span>
@@ -500,6 +593,9 @@
                   </template>
                   <template v-else>
                     {{ option.label }}
+                    <a-tag v-if="option.isCustom" color="blue" size="small" style="margin-left: 8px;">
+                      自定义
+                    </a-tag>
                   </template>
                 </a-select-option>
               </a-select>
@@ -519,7 +615,28 @@
                 v-model:value="formData.Info.Stage_Remain"
                 :disabled="loading"
                 size="large"
+                placeholder="选择或输入自定义关卡"
               >
+                <template #dropdownRender="{ menuNode: menu }">
+                  <v-nodes :vnodes="menu" />
+                  <a-divider style="margin: 4px 0" />
+                  <a-space style="padding: 4px 8px" size="small">
+                    <a-input
+                      ref="stageRemainInputRef"
+                      v-model:value="customStageRemainName"
+                      placeholder="输入自定义关卡，如: 11-8"
+                      style="flex: 1"
+                      size="small"
+                      @keyup.enter="addCustomStageRemain"
+                    />
+                    <a-button type="text" size="small" @click="addCustomStageRemain">
+                      <template #icon>
+                        <PlusOutlined />
+                      </template>
+                      添加关卡
+                    </a-button>
+                  </a-space>
+                </template>
                 <a-select-option v-for="option in stageOptions" :key="option.value" :value="option.value">
                   <template v-if="option.label.includes('|')">
                     <span>{{ option.label.split('|')[0] }}</span>
@@ -529,6 +646,9 @@
                   </template>
                   <template v-else>
                     {{ option.label }}
+                    <a-tag v-if="option.isCustom" color="blue" size="small" style="margin-left: 8px;">
+                      自定义
+                    </a-tag>
                   </template>
                 </a-select-option>
               </a-select>
@@ -748,6 +868,7 @@ import {
   QuestionCircleOutlined,
   SaveOutlined,
   SettingOutlined,
+  PlusOutlined,
 } from '@ant-design/icons-vue'
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
 import { useUserApi } from '@/composables/useUserApi'
@@ -789,6 +910,12 @@ const serverOptions = [
   { label: '韩服（YoStarKR）', value: 'YoStarKR' },
   { label: '繁中服（txwy）', value: 'txwy' },
 ]
+
+// 关卡选项
+const stageOptions = ref<any[]>([{ label: '不选择', value: '' }])
+
+// 关卡配置模式选项
+const stageModeOptions = ref<any[]>([{ label: '固定', value: 'Fixed' }])
 
 // MAA脚本默认用户数据
 const getDefaultMAAUserData = () => ({
@@ -976,6 +1103,93 @@ const loadUserData = async () => {
   }
 }
 
+const loadStageOptions = async () => {
+  try {
+    const response = await Service.getStageComboxApiInfoComboxStagePost({
+      type: 'Today',
+    })
+    if (response && response.code === 200 && response.data) {
+      const sorted = [...response.data].sort((a, b) => {
+        if (a.value === '-') return -1
+        if (b.value === '-') return 1
+        return 0
+      })
+      stageOptions.value = sorted
+    }
+  } catch (error) {
+    console.error('加载关卡选项失败:', error)
+    // 保持默认选项
+  }
+}
+
+const loadStageModeOptions = async () => {
+  try {
+    const response = await Service.getPlanComboxApiInfoComboxPlanPost()
+    if (response && response.code === 200 && response.data) {
+      stageModeOptions.value = response.data
+    }
+  } catch (error) {
+    console.error('加载关卡配置模式选项失败:', error)
+    // 保持默认的固定选项
+  }
+}
+
+// 选择基建配置文件
+const selectInfrastructureConfig = async () => {
+  try {
+    const path = await window.electronAPI?.selectFile([
+      { name: 'JSON 文件', extensions: ['json'] },
+      { name: '所有文件', extensions: ['*'] },
+    ])
+
+    if (path && path.length > 0) {
+      infrastructureConfigPath.value = path
+      formData.Info.InfrastPath = path[0]
+      message.success('文件选择成功')
+    }
+  } catch (error) {
+    console.error('文件选择失败:', error)
+    message.error('文件选择失败')
+  }
+}
+
+// 导入基建配置
+const importInfrastructureConfig = async () => {
+  if (!infrastructureConfigPath.value) {
+    message.warning('请先选择配置文件')
+    return
+  }
+
+  if (!isEdit.value) {
+    message.warning('请先保存用户后再导入配置')
+    return
+  }
+
+  try {
+    infrastructureImporting.value = true
+
+    // 调用API导入基建配置
+    const result = await Service.importInfrastructureApiScriptsUserInfrastructurePost({
+      scriptId: scriptId,
+      userId: userId,
+      jsonFile: infrastructureConfigPath.value[0],
+    })
+
+    if (result && result.code === 200) {
+      message.success('基建配置导入成功')
+      // 清空文件路径
+      infrastructureConfigPath.value = ''
+    } else {
+      message.error(result?.msg || '基建配置导入失败')
+    }
+  } catch (error) {
+    console.error('基建配置导入失败:', error)
+    message.error('基建配置导入失败')
+  } finally {
+    infrastructureImporting.value = false
+  }
+}
+
 const handleSubmit = async () => {
   try {
     await formRef.value?.validate()
@@ -1083,94 +1297,147 @@ const handleMAAConfig = async () => {
   }
 }
 
-const stageModeOptions = ref([{ label: '固定', value: 'Fixed' }])
+// 自定义关卡相关
+const customStageName = ref('')
+const customStage1Name = ref('')
+const customStage2Name = ref('')
+const customStage3Name = ref('')
+const customStageRemainName = ref('')
 
-const loadStageModeOptions = async () => {
-  try {
-    const response = await Service.getPlanComboxApiInfoComboxPlanPost()
-    if (response && response.code === 200 && response.data) {
-      stageModeOptions.value = response.data
-    }
-  } catch (error) {
-    console.error('加载关卡配置模式选项失败:', error)
-    // 保持默认的固定选项
-  }
+// 输入框引用
+const stageInputRef = ref()
+const stage1InputRef = ref()
+const stage2InputRef = ref()
+const stage3InputRef = ref()
+const stageRemainInputRef = ref()
+
+// VNodes 组件，用于渲染下拉菜单内容
+const VNodes = {
+  props: {
+    vnodes: {
+      type: Object,
+      required: true,
+    },
+  },
+  render() {
+    return this.vnodes
+  },
 }
 
-const stageOptions = ref([{ label: '不选择', value: '' }])
-
-const loadStageOptions = async () => {
-  try {
-    const response = await Service.getStageComboxApiInfoComboxStagePost({
-      type: 'Today',
-    })
-    if (response && response.code === 200 && response.data) {
-      const sorted = [...response.data].sort((a, b) => {
-        if (a.value === '-') return -1
-        if (b.value === '-') return 1
-        return 0
-      })
-      stageOptions.value = sorted
-    }
-  } catch (error) {
-    console.error('加载关卡选项失败:', error)
-    // 保持默认选项
+// 验证关卡名称格式
+const validateStageName = (stageName: string): boolean => {
+  if (!stageName || !stageName.trim()) {
+    return false
   }
+
+  // 简单的关卡名称验证，可以根据实际需要调整
+  const stagePattern = /^[a-zA-Z0-9\-_\u4e00-\u9fa5]+$/
+  return stagePattern.test(stageName.trim())
 }
 
-// 选择基建配置文件
-const selectInfrastructureConfig = async () => {
-  try {
-    const path = await window.electronAPI?.selectFile([
-      { name: 'JSON 文件', extensions: ['json'] },
-      { name: '所有文件', extensions: ['*'] },
-    ])
-
-    if (path && path.length > 0) {
-      infrastructureConfigPath.value = path
-      formData.Info.InfrastPath = path[0]
-      message.success('文件选择成功')
-    }
-  } catch (error) {
-    console.error('文件选择失败:', error)
-    message.error('文件选择失败')
+// 添加自定义关卡到选项列表
+const addStageToOptions = (stageName: string) => {
+  if (!stageName || !stageName.trim()) {
+    return false
   }
+
+  const trimmedName = stageName.trim()
+
+  // 检查是否已存在
+  const exists = stageOptions.value.find((option: any) => option.value === trimmedName)
+  if (exists) {
+    message.warning(`关卡 "${trimmedName}" 已存在`)
+    return false
+  }
+
+  // 添加到选项列表
+  stageOptions.value.push({
+    label: trimmedName,
+    value: trimmedName,
+    isCustom: true
+  })
+
+  message.success(`自定义关卡 "${trimmedName}" 添加成功`)
+  return true
 }
 
-// 导入基建配置
-const importInfrastructureConfig = async () => {
-  if (!infrastructureConfigPath.value) {
-    message.warning('请先选择配置文件')
+// 添加主关卡
+const addCustomStage = () => {
+  if (!validateStageName(customStageName.value)) {
+    message.error('请输入有效的关卡名称')
     return
   }
 
-  if (!isEdit.value) {
-    message.warning('请先保存用户后再导入配置')
+  if (addStageToOptions(customStageName.value)) {
+    formData.Info.Stage = customStageName.value.trim()
+    customStageName.value = ''
+    nextTick(() => {
+      stageInputRef.value?.focus()
+    })
+  }
+}
+
+// 添加备选关卡-1
+const addCustomStage1 = () => {
+  if (!validateStageName(customStage1Name.value)) {
+    message.error('请输入有效的关卡名称')
     return
   }
 
-  try {
-    infrastructureImporting.value = true
-
-    // 调用API导入基建配置
-    const result = await Service.importInfrastructureApiScriptsUserInfrastructurePost({
-      scriptId: scriptId,
-      userId: userId,
-      jsonFile: infrastructureConfigPath.value[0],
+  if (addStageToOptions(customStage1Name.value)) {
+    formData.Info.Stage_1 = customStage1Name.value.trim()
+    customStage1Name.value = ''
+    nextTick(() => {
+      stage1InputRef.value?.focus()
     })
+  }
+}
 
-    if (result && result.code === 200) {
-      message.success('基建配置导入成功')
-      // 清空文件路径
-      infrastructureConfigPath.value = ''
-    } else {
-      message.error(result?.msg || '基建配置导入失败')
-    }
-  } catch (error) {
-    console.error('基建配置导入失败:', error)
-    message.error('基建配置导入失败')
-  } finally {
-    infrastructureImporting.value = false
+// 添加备选关卡-2
+const addCustomStage2 = () => {
+  if (!validateStageName(customStage2Name.value)) {
+    message.error('请输入有效的关卡名称')
+    return
+  }
+
+  if (addStageToOptions(customStage2Name.value)) {
+    formData.Info.Stage_2 = customStage2Name.value.trim()
+    customStage2Name.value = ''
+    nextTick(() => {
+      stage2InputRef.value?.focus()
+    })
+  }
+}
+
+// 添加备选关卡-3
+const addCustomStage3 = () => {
+  if (!validateStageName(customStage3Name.value)) {
+    message.error('请输入有效的关卡名称')
+    return
+  }
+
+  if (addStageToOptions(customStage3Name.value)) {
+    formData.Info.Stage_3 = customStage3Name.value.trim()
+    customStage3Name.value = ''
+    nextTick(() => {
+      stage3InputRef.value?.focus()
+    })
+  }
+}
+
+// 添加剩余理智关卡
+const addCustomStageRemain = () => {
+  if (!validateStageName(customStageRemainName.value)) {
+    message.error('请输入有效的关卡名称')
+    return
+  }
+
+  if (addStageToOptions(customStageRemainName.value)) {
+    formData.Info.Stage_Remain = customStageRemainName.value.trim()
+    customStageRemainName.value = ''
+    nextTick(() => {
+      stageRemainInputRef.value?.focus()
+    })
   }
 }
 
@@ -1183,6 +1450,7 @@ const handleCancel = () => {
   router.push('/scripts')
 }
 
+// 初始化加载
 onMounted(() => {
   if (!scriptId) {
     message.error('缺少脚本ID参数')
