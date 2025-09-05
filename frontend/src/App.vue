@@ -23,8 +23,13 @@ onMounted(() => {
 
 <template>
   <ConfigProvider :theme="antdTheme" :locale="zhCN">
-    <!-- 初始化页面使用全屏布局 -->
-    <router-view v-if="isInitializationPage" />
+    <!-- 初始化页面使用带标题栏的全屏布局 -->
+    <div v-if="isInitializationPage" class="initialization-container">
+      <TitleBar />
+      <div class="initialization-content">
+        <router-view />
+      </div>
+    </div>
     <!-- 其他页面使用带标题栏的应用布局 -->
     <div v-else class="app-container">
       <TitleBar />
@@ -41,5 +46,23 @@ onMounted(() => {
 .app-container {
   height: 100vh;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.initialization-container {
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.initialization-content {
+  flex: 1;
+  overflow: auto;
+  width: 100%;
+  height: 100%;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
 </style>
