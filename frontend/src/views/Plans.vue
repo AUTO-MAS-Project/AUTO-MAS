@@ -13,24 +13,15 @@
       </div>
       <div class="header-actions">
         <a-space size="middle">
-          <a-button
-            type="primary"
-            size="large"
-            @click="handleAddPlan"
-          >
+          <a-button type="primary" size="large" @click="handleAddPlan">
             <template #icon>
               <PlusOutlined />
             </template>
             新建计划
           </a-button>
 
-          <a-popconfirm
-            v-if="planList.length > 0"
-            title="确定要删除这个计划吗？"
-            ok-text="确定"
-            cancel-text="取消"
-            @confirm="handleRemovePlan(activePlanId)"
-          >
+          <a-popconfirm v-if="planList.length > 0" title="确定要删除这个计划吗？" ok-text="确定" cancel-text="取消"
+            @confirm="handleRemovePlan(activePlanId)">
             <a-button danger size="large" :disabled="!activePlanId">
               <template #icon>
                 <DeleteOutlined />
@@ -72,14 +63,8 @@
           <!-- 计划按钮组 -->
           <div class="plan-buttons-container">
             <a-space wrap size="middle">
-              <a-button
-                v-for="plan in planList"
-                :key="plan.id"
-                :type="activePlanId === plan.id ? 'primary' : 'default'"
-                size="large"
-                @click="onPlanChange(plan.id)"
-                class="plan-button"
-              >
+              <a-button v-for="plan in planList" :key="plan.id" :type="activePlanId === plan.id ? 'primary' : 'default'"
+                size="large" @click="onPlanChange(plan.id)" class="plan-button">
                 {{ plan.name }}
               </a-button>
             </a-space>
@@ -100,77 +85,91 @@
               </a-button>
             </div>
             <div v-else class="plan-title-edit">
-              <a-input
-                v-model:value="currentPlanName"
-                placeholder="请输入计划名称"
-                size="small"
-                class="plan-title-input"
-                @blur="finishEditPlanName"
-                @pressEnter="finishEditPlanName"
-                :maxlength="50"
-                ref="planNameInputRef"
-              />
+              <a-input v-model:value="currentPlanName" placeholder="请输入计划名称" size="small" class="plan-title-input"
+                @blur="finishEditPlanName" @pressEnter="finishEditPlanName" :maxlength="50" ref="planNameInputRef" />
             </div>
           </div>
         </template>
         <template #extra>
           <a-space>
             <span class="mode-label">执行模式：</span>
-            <a-segmented
-              v-model:value="currentMode"
-              @change="onModeChange"
-              :options="[
-                { label: '全局模式', value: 'ALL' },
-                { label: '周计划模式', value: 'Weekly' },
-              ]"
-            />
+            <a-segmented v-model:value="currentMode" @change="onModeChange" :options="[
+              { label: '全局模式', value: 'ALL' },
+              { label: '周计划模式', value: 'Weekly' },
+            ]" />
+            <span class="view-label">视图：</span>
+            <a-segmented v-model:value="viewMode" :options="[
+              { label: '配置视图', value: 'config' },
+              { label: '简化视图', value: 'simple' },
+            ]" />
           </a-space>
         </template>
 
         <!-- 配置表格 -->
         <div class="config-table-container">
-          <a-table
-            :columns="dynamicTableColumns"
-            :data-source="tableData"
-            :pagination="false"
-            class="config-table"
-            size="middle"
-            :bordered="true"
-            :scroll="{ x: false }"
-          >
-            <template #bodyCell="{ column, record, index }">
-              <template v-if="column.key === 'taskName'">
-                <div class="task-name-cell">
-                  <a-tag :color="getTaskTagColor(record.taskName)" class="task-tag">
-                    {{ record.taskName }}
-                  </a-tag>
-                </div>
+          <!-- 配置视图 -->
+          <div v-if="viewMode === 'config'">
+            <a-table :columns="dynamicTableColumns" :data-source="tableData" :pagination="false" class="config-table"
+              size="middle" :bordered="true" :scroll="{ x: false }">
+              <template #bodyCell="{ column, record, index }">
+                <template v-if="column.key === 'taskName'">
+                  <div class="task-name-cell">
+                    <a-tag :color="getTaskTagColor(record.taskName)" class="task-tag">
+                      {{ record.taskName }}
+                    </a-tag>
+                  </div>
+                </template>
+                <template v-else-if="record.taskName === '吃理智药'">
+                  <a-input-number v-model:value="record[column.key]" size="small" :min="0" :max="999"
+                    :placeholder="getPlaceholder(column.key, record.taskName)" class="config-input-number"
+                    :controls="false" />
+                </template>
+                <template v-else>
+                  <a-select v-model:value="record[column.key]" size="small"
+                    :options="getSelectOptions(column.key, record.taskName)"
+                    :placeholder="getPlaceholder(column.key, record.taskName)" class="config-select" allow-clear
+                    :show-search="true" :filter-option="filterOption" />
+                </template>
               </template>
-              <template v-else-if="record.taskName === '吃理智药'">
-                <a-input-number
-                  v-model:value="record[column.key]"
-                  size="small"
-                  :min="0"
-                  :max="999"
-                  :placeholder="getPlaceholder(column.key, record.taskName)"
-                  class="config-input-number"
-                  :controls="false"
-                />
+            </a-table>
+          </div>
+
+          <div v-else>
+            <a-table :columns="dynamicSimpleViewColumns" :data-source="simpleViewData" :pagination="false"
+              class="simple-table" size="small" :bordered="true">
+              <template #bodyCell="{ column, record }">
+                <!-- 全选列 -->
+                <template v-if="column.key === 'globalControl'">
+                  <a-space>
+                    <a-tooltip title="开/关所有可用关卡" placement="left">
+                      <a-button ghost size="small" type="primary" @click="enableAllStages(record.key)">开</a-button>
+
+                    </a-tooltip>
+
+                    <a-button size="small" danger @click="disableAllStages(record.key)">
+                      关
+                    </a-button>
+
+                  </a-space>
+                </template>
+
+                <template v-else-if="column.key === 'taskName'">
+                  <div class="task-name-cell">
+                    <a-tag :color="getSimpleTaskTagColor(record.taskName)" class="task-tag">
+                      {{ record.taskName }}
+                    </a-tag>
+                  </div>
+                </template>
+                <template v-else>
+                  <!-- 只在关卡可用时显示开关 -->
+                  <div v-if="isStageAvailable(record.key, column.key)">
+                    <a-switch :checked="isStageEnabled(record.key, column.key)"
+                      @change="(checked: boolean) => toggleStage(record.key, column.key, checked)" />
+                  </div>
+                </template>
               </template>
-              <template v-else>
-                <a-select
-                  v-model:value="record[column.key]"
-                  size="small"
-                  :options="getSelectOptions(column.key, record.taskName)"
-                  :placeholder="getPlaceholder(column.key, record.taskName)"
-                  class="config-select"
-                  allow-clear
-                  :show-search="true"
-                  :filter-option="filterOption"
-                />
-              </template>
-            </template>
-          </a-table>
+            </a-table>
+          </div>
         </div>
       </a-card>
     </div>
@@ -183,21 +182,45 @@ import { message } from 'ant-design-vue'
 import { PlusOutlined, DeleteOutlined, EditOutlined } from '@ant-design/icons-vue'
 import { usePlanApi } from '../composables/usePlanApi'
 
+interface TableRow {
+  key: string;
+  taskName: string;
+  ALL: string | number;
+  Monday: string | number;
+  Tuesday: string | number;
+  Wednesday: string | number;
+  Thursday: string | number;
+  Friday: string | number;
+  Saturday: string | number;
+  Sunday: string | number;
+  [key: string]: string | number; // 保留动态属性支持
+}
+
+interface PlanData {
+  [key: string]: any;
+  Info?: {
+    Mode: 'ALL' | 'Weekly';
+    Name: string;
+  };
+}
+
 // API 相关
 const { getPlans, createPlan, updatePlan, deletePlan } = usePlanApi()
 
 // 计划列表和当前选中的计划
 const planList = ref<Array<{ id: string; name: string }>>([])
 const activePlanId = ref<string>('')
-const currentPlanData = ref<Record<string, any> | null>(null)
 
-// 当前计划的名称和模式
+const currentPlanData = ref<PlanData | null>(null);
+
+// 当前计划的名称和模式、视图
 const currentPlanName = ref<string>('')
 const currentMode = ref<'ALL' | 'Weekly'>('ALL')
+const viewMode = ref<'config' | 'simple'>('config');
+
+
 // 计划名称编辑状态
 const isEditingPlanName = ref<boolean>(false)
-// 显示名称提示
-const showNameTip = ref<boolean>(false)
 
 const loading = ref(true)
 
@@ -361,6 +384,28 @@ const tableData = ref([
     Sunday: '-',
   },
 ])
+
+// 简化视图专用列配置
+const dynamicSimpleViewColumns = computed(() => {
+  return [
+    {
+      title: '全局控制',
+      key: 'globalControl',
+      width: 75,
+      fixed: 'left',
+      align: 'center',
+    },
+    {
+      title: '关卡', // 修改列名为"关卡"
+      dataIndex: 'taskName',
+      key: 'taskName',
+      width: 120,
+      fixed: 'left',
+      align: 'center',
+    },
+    ...tableColumns.value.filter(col => col.key !== 'taskName' && col.key !== 'globalControl')
+  ]
+})
 
 // 关卡数据配置
 const STAGE_DAILY_INFO = [
@@ -567,7 +612,7 @@ const loadPlanData = async (planId: string) => {
 
     // 根据API响应数据更新表格数据
     if (response.data && response.data[planId]) {
-      const planData = response.data[planId]
+      const planData = response.data[planId] as PlanData
 
       // 更新计划名称和模式
       if (planData.Info) {
@@ -604,8 +649,8 @@ const loadPlanData = async (planId: string) => {
           'Sunday',
         ]
         timeKeys.forEach(timeKey => {
-          if (planData[timeKey] && planData[timeKey][fieldKey] !== undefined) {
-            row[timeKey] = planData[timeKey][fieldKey]
+          if (planData[timeKey] && (planData[timeKey] as Record<string, any>)[fieldKey] !== undefined) {
+            (row as TableRow)[timeKey] = (planData[timeKey] as Record<string, any>)[fieldKey]
           }
         })
       })
@@ -667,7 +712,7 @@ const savePlanData = async () => {
     timeKeys.forEach(timeKey => {
       planData[timeKey] = {}
       tableData.value.forEach(row => {
-        planData[timeKey][row.key] = row[timeKey]
+        (planData[timeKey] as Record<string, any>)[row.key] = (row as TableRow)[timeKey]
       })
     })
 
@@ -686,17 +731,33 @@ const savePlanData = async () => {
 
 // 自动保存功能
 watch(
-  () => [currentPlanName.value, currentMode.value, tableData.value],
+  () => [currentPlanName.value, currentMode.value],
   async () => {
     // 使用nextTick确保DOM更新后再保存
     await nextTick()
     handleSave()
+  }
+)
+// 单独监听表格数据变化，但减少深度
+watch(
+  () => tableData.value.map(row => ({
+    key: row.key,
+    ALL: row.ALL,
+    Monday: row.Monday,
+    Tuesday: row.Tuesday,
+    Wednesday: row.Wednesday,
+    Thursday: row.Thursday,
+    Friday: row.Friday,
+    Saturday: row.Saturday,
+    Sunday: row.Sunday
+  })),
+  async () => {
+    await nextTick();
+    handleSave();
   },
   { deep: true }
-)
+);
 
-// 移除自动保存功能，改为手动保存
-// 用户需要点击悬浮按钮才能保存数据
 
 onMounted(() => {
   initPlans()
@@ -720,6 +781,139 @@ const getTaskTagColor = (taskName: string) => {
 const filterOption = (input: string, option: any) => {
   return option.label.toLowerCase().includes(input.toLowerCase())
 }
+
+// 简化视图数据
+const SIMPLE_VIEW_DATA = STAGE_DAILY_INFO.filter(stage => stage.value !== '-').map(stage => ({
+  key: stage.value,
+  taskName: stage.text,
+  ALL: '-',
+  Monday: '-',
+  Tuesday: '-',
+  Wednesday: '-',
+  Thursday: '-',
+  Friday: '-',
+  Saturday: '-',
+  Sunday: '-',
+}));
+
+const simpleViewData = ref(SIMPLE_VIEW_DATA);
+
+
+
+
+// 检查关卡是否可用
+const isStageAvailable = (stageValue: string, columnKey: string) => {
+  if (columnKey === 'ALL') return true
+
+  const dayNumber = getDayNumber(columnKey)
+  const stage = STAGE_DAILY_INFO.find(s => s.value === stageValue)
+  return stage ? stage.days.includes(dayNumber) : false
+}
+
+// 检查关卡是否已启用
+const isStageEnabled = (stageValue: string, columnKey: string) => {
+  // 检查所有关卡槽位中是否有该关卡
+  const stageSlots = ['Stage', 'Stage_1', 'Stage_2', 'Stage_3']
+  return stageSlots.some(slot => {
+    const row = tableData.value.find(row => row.key === slot) as TableRow | undefined
+    return row && row[columnKey] === stageValue
+  })
+}
+// 切换关卡启用状态
+const toggleStage = (stageValue: string, columnKey: string, checked: boolean) => {
+  const stageSlots = ['Stage', 'Stage_1', 'Stage_2', 'Stage_3']
+
+  if (checked) {
+    // 启用关卡：找到第一个空槽位
+    for (const slot of stageSlots) {
+      const row = tableData.value.find(row => row.key === slot) as TableRow | undefined
+      if (row && (row[columnKey] === '-' || row[columnKey] === '')) {
+        row[columnKey] = stageValue
+        break
+      }
+    }
+  } else {
+    // 禁用关卡：从所有槽位中移除
+    for (const slot of stageSlots) {
+      const row = tableData.value.find(row => row.key === slot) as TableRow | undefined
+      if (row && row[columnKey] === stageValue) {
+        row[columnKey] = '-'
+      }
+    }
+  }
+}
+// 获取简化视图任务标签颜色
+const getSimpleTaskTagColor = (taskName: string) => {
+  const colorMap: Record<string, string> = {
+    '当前/上次': 'blue',
+    '1-7': 'default',
+    'R8-11': 'default',
+    '12-17-HARD': 'default',
+    '龙门币-6/5': 'blue',
+    '红票-5': 'volcano',
+    '技能-5': 'cyan',
+    '经验-6/5': 'gold',
+    '碳-5': 'none',
+    '奶/盾芯片': 'green',
+    '奶/盾芯片组': 'green',
+    '术/狙芯片': 'purple',
+    '术/狙芯片组': 'purple',
+    '先/辅芯片': 'volcano',
+    '先/辅芯片组': 'volcano',
+    '近/特芯片': 'red',
+    '近/特芯片组': 'red',
+  }
+
+  return colorMap[taskName] || 'default'
+}
+
+// 启用所有关卡
+const enableAllStages = (stageValue: string) => {
+  const timeKeys = [
+    'ALL',
+    'Monday',
+    'Tuesday',
+    'Wednesday',
+    'Thursday',
+    'Friday',
+    'Saturday',
+    'Sunday',
+  ];
+
+  timeKeys.forEach(timeKey => {
+    if (isStageAvailable(stageValue, timeKey)) {
+      // 如果当前状态不是启用状态，则切换
+      if (!isStageEnabled(stageValue, timeKey)) {
+        toggleStage(stageValue, timeKey, true);
+      }
+    }
+  });
+};
+
+// 新增禁用所有关卡的方法
+const disableAllStages = (stageValue: string) => {
+  const timeKeys = [
+    'ALL',
+    'Monday',
+    'Tuesday',
+    'Wednesday',
+    'Thursday',
+    'Friday',
+    'Saturday',
+    'Sunday',
+  ];
+
+  timeKeys.forEach(timeKey => {
+    if (isStageAvailable(stageValue, timeKey)) {
+      // 如果当前状态是启用状态，则切换
+      if (isStageEnabled(stageValue, timeKey)) {
+        toggleStage(stageValue, timeKey, false);
+      }
+    }
+  });
+};
+
+
 </script>
 
 <style scoped>
@@ -855,6 +1049,7 @@ const filterOption = (input: string, option: any) => {
     opacity: 0;
     transform: translateY(30px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -862,10 +1057,13 @@ const filterOption = (input: string, option: any) => {
 }
 
 @keyframes pulse {
-  0%, 100% {
+
+  0%,
+  100% {
     opacity: 0.6;
     transform: scale(1);
   }
+
   50% {
     opacity: 0.8;
     transform: scale(1.05);
@@ -1131,5 +1329,28 @@ const filterOption = (input: string, option: any) => {
 
 :deep(.ant-float-btn-group .ant-float-btn-group-circle-wrapper) {
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
+}
+
+
+/* 全局控制按钮样式 */
+.global-control-buttons {
+  display: flex;
+  gap: 6px;
+}
+
+.global-control-button {
+  min-width: 32px;
+  height: 24px;
+  font-size: 12px;
+  padding: 0 4px;
+}
+
+/* 拖拽视觉反馈 */
+.simple-table :deep(.ant-table-row.drag-over) {
+  border-top: 2px solid var(--ant-color-primary);
+}
+
+.simple-table :deep(.ant-table-row.dragging) {
+  opacity: 0.5;
 }
 </style>
