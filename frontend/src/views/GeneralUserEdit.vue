@@ -72,7 +72,7 @@
               />
             </a-form-item>
           </a-col>
-          <a-col :span="12">
+          <a-col :span="6">
             <a-form-item name="status">
               <template #label>
                 <a-tooltip title="是否启用该用户">
@@ -88,10 +88,7 @@
               </a-select>
             </a-form-item>
           </a-col>
-        </a-row>
-
-        <a-row :gutter="24">
-          <a-col :span="12">
+          <a-col :span="6">
             <a-form-item name="remainedDay">
               <template #label>
                 <a-tooltip title="账号剩余的有效天数，「-1」表示无限">

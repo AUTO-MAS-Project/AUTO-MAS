@@ -3,15 +3,9 @@
         <!-- 工具栏 -->
         <a-card size="small" class="toolbar-card">
             <a-row :gutter="[12, 12]" align="middle" justify="space-between" class="toolbar-grid">
-                <!-- 左侧：刷新 + 选择器 -->
+                <!-- 左侧：选择器 -->
                 <a-col :xs="24" :md="14">
                     <a-space :size="8" wrap>
-                        <a-button @click="refreshLogs" :loading="loading" type="primary">
-                            <template #icon>
-                                <ReloadOutlined />
-                            </template>
-                            刷新日志
-                        </a-button>
 
                         <a-select v-model:value="selectedLogFile" @change="onLogFileChange" style="width: 220px"
                             placeholder="选择日志文件">
@@ -105,7 +99,6 @@
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { message, Empty } from 'ant-design-vue'
 import {
-    ReloadOutlined,
     DeleteOutlined,
     ClearOutlined,
     FolderOpenOutlined,

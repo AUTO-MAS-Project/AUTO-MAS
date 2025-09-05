@@ -38,13 +38,6 @@
               删除当前计划
             </a-button>
           </a-popconfirm>
-
-          <a-button size="large" @click="handleRefresh">
-            <template #icon>
-              <ReloadOutlined />
-            </template>
-            刷新
-          </a-button>
         </a-space>
       </div>
     </div>
@@ -187,7 +180,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch, nextTick } from 'vue'
 import { message } from 'ant-design-vue'
-import { PlusOutlined, ReloadOutlined, DeleteOutlined, EditOutlined } from '@ant-design/icons-vue'
+import { PlusOutlined, DeleteOutlined, EditOutlined } from '@ant-design/icons-vue'
 import { usePlanApi } from '../composables/usePlanApi'
 
 // API 相关
@@ -689,14 +682,6 @@ const savePlanData = async () => {
     console.error('保存计划数据失败:', error)
     throw error
   }
-}
-
-// 刷新计划列表
-const handleRefresh = async () => {
-  loading.value = true
-  await initPlans()
-  loading.value = false
-  // message.success('刷新成功')
 }
 
 // 自动保存功能
