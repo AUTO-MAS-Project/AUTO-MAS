@@ -1,50 +1,44 @@
 // 设置相关类型定义
 export interface SettingsData {
+  UI: {
+    IfShowTray: boolean
+    IfToTray: boolean
+  }
   Function: {
     BossKey: string
     HistoryRetentionTime: number
-    HomeImageMode: string
     IfAgreeBilibili: boolean
     IfAllowSleep: boolean
     IfSilence: boolean
     IfSkipMumuSplashAds: boolean
-    UnattendedMode: boolean
   }
   Notify: {
-    AuthorizationCode: string
-    CompanyWebHookBotUrl: string
-    FromAddress: string
-    IfCompanyWebHookBot: boolean
+    SendTaskResultTime: string
+    IfSendStatistic: boolean
+    IfSendSixStar: boolean
     IfPushPlyer: boolean
     IfSendMail: boolean
-    IfSendSixStar: boolean
-    IfSendStatistic: boolean
-    IfServerChan: boolean
     SMTPServerAddress: string
-    SendTaskResultTime: string
-    ServerChanChannel: string
-    ServerChanKey: string
-    ServerChanTag: string
+    AuthorizationCode: string
+    FromAddress: string
     ToAddress: string
+    IfServerChan: boolean
+    ServerChanKey: string
+    ServerChanChannel: string
+    ServerChanTag: string
+    IfCompanyWebHookBot: boolean
+    CompanyWebHookBotUrl: string
   }
   Update: {
     IfAutoUpdate: boolean
-    MirrorChyanCDK: string
-    ProxyAddress: string
-    ProxyUrlList: string[]
-    ThreadNumb: number
     UpdateType: string
+    Source: string
+    ProxyAddress: string
+    MirrorChyanCDK: string
   }
   Start: {
-    IfMinimizeDirectly: boolean
     IfSelfStart: boolean
-  }
-  UI: {
-    IfShowTray: boolean // 常驻显示托盘
-    IfToTray: boolean   // 最小化到托盘
-    location: string
-    maximized: boolean
-    size: string
+    IfMinimizeDirectly: boolean
   }
   Voice: {
     Enabled: boolean
