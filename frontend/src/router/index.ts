@@ -35,18 +35,6 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '编辑脚本' },
   },
   {
-    path: '/scripts/:scriptId/users/add',
-    name: 'UserAdd',
-    component: () => import('../views/UserEdit.vue'),
-    meta: { title: '添加用户' },
-  },
-  {
-    path: '/scripts/:scriptId/users/:userId/edit',
-    name: 'UserEdit',
-    component: () => import('../views/UserEdit.vue'),
-    meta: { title: '编辑用户' },
-  },
-  {
     path: '/scripts/:scriptId/users/add/maa',
     name: 'MAAUserAdd',
     component: () => import('../views/MAAUserEdit.vue'),
