@@ -108,7 +108,7 @@
                       </a-tag>
                     </div>
 
-                    <!-- 用户详细信息 - 只有MAA脚本才显示 -->
+                    <!-- 用户详细信息 - MAA脚本用户 -->
                     <div v-if="script.type === 'MAA'" class="user-info-tags">
                       <!-- 剿灭模式 -->
                       <a-tag
@@ -138,16 +138,9 @@
                       <a-tag
                         v-if="user.Info.RemainedDay !== undefined && user.Info.RemainedDay !== null"
                         class="info-tag"
-                        :color="
-                          user.Info.RemainedDay < 1
-                            ? 'gold'
-                            : user.Info.RemainedDay > 30
-                              ? 'green'
-                              : 'orange'
-                        "
+                        :color="getRemainingDayColor(user.Info.RemainedDay)"
                       >
-                        剩余天数:
-                        {{ user.Info.RemainedDay < 1 ? '长期有效' : user.Info.RemainedDay + '天' }}
+                        {{ getRemainingDayText(user.Info.RemainedDay) }}
                       </a-tag>
 
                       <!-- 基建模式 -->
@@ -209,6 +202,22 @@
                         color="geekblue"
                       >
                         剩余关卡: {{ user.Info.Stage_Remain }}
+                      </a-tag>
+
+                      <a-tag class="info-tag" color="magenta">
+                        备注: {{ truncateText(user.Info.Notes) }}
+                      </a-tag>
+                    </div>
+                    <!-- 用户详细信息 - 通用脚本用户 -->
+                    <div v-if="script.type === 'General'" class="user-info-tags">
+
+                      <!-- 剩余天数 -->
+                      <a-tag
+                        v-if="user.Info.RemainedDay !== undefined && user.Info.RemainedDay !== null"
+                        class="info-tag"
+                        :color="getRemainingDayColor(user.Info.RemainedDay)"
+                      >
+                        {{ getRemainingDayText(user.Info.RemainedDay) }}
                       </a-tag>
 
                       <a-tag class="info-tag" color="magenta">
@@ -282,11 +291,9 @@ import type { Script, User } from '../types/script'
 import {
   DeleteOutlined,
   EditOutlined,
-  PlusOutlined,
   SettingOutlined,
   StopOutlined,
   UserAddOutlined,
-  UserOutlined,
 } from '@ant-design/icons-vue'
 
 interface Props {
@@ -357,6 +364,23 @@ const handleToggleUserStatus = (user: User) => {
 const truncateText = (text: string, maxLength: number = 10): string => {
   if (!text) return ''
   return text.length > maxLength ? text.substring(0, maxLength) + '...' : text
+}
+
+// 获取剩余天数的颜色
+const getRemainingDayColor = (remainedDay: number): string => {
+  if (remainedDay === -1) return 'gold'
+  if (remainedDay === 0) return 'red'
+  if (remainedDay <= 3) return 'orange'
+  if (remainedDay <= 7) return 'yellow'
+  if (remainedDay <= 30) return 'blue'
+  return 'green'
+}
+
+// 获取剩余天数的显示文本
+const getRemainingDayText = (remainedDay: number): string => {
+  if (remainedDay === -1) return '剩余天数: 长期有效'
+  if (remainedDay === 0) return '剩余天数: 已到期'
+  return `剩余天数: ${remainedDay}天`
 }
 </script>
 

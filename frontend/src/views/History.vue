@@ -3,14 +3,6 @@
     <div class="header-title">
       <h1>历史记录</h1>
     </div>
-    <a-space size="middle">
-      <a-button size="large" @click="handleRefresh" class="default">
-        <template #icon>
-          <ReloadOutlined />
-        </template>
-        刷新
-      </a-button>
-    </a-space>
   </div>
 
   <!-- 搜索筛选区域 -->
@@ -296,14 +288,6 @@
                 <template #extra>
                   <a-space>
                     <FileTextOutlined />
-                    <a-button
-                      type="link"
-                      size="small"
-                      @click="handleRefreshLog"
-                      :loading="detailLoading"
-                    >
-                      刷新日志
-                    </a-button>
                   </a-space>
                 </template>
                 <a-spin :spinning="detailLoading">
@@ -327,7 +311,6 @@
 import { ref, reactive, onMounted, computed } from 'vue'
 import { message } from 'ant-design-vue'
 import {
-  ReloadOutlined,
   SearchOutlined,
   ClearOutlined,
   HistoryOutlined,
@@ -527,11 +510,6 @@ const handleReset = () => {
   activeKeys.value = []
 }
 
-// 刷新数据
-const handleRefresh = () => {
-  handleSearch()
-}
-
 // 快捷时间选择处理
 const handleQuickTimeSelect = (preset: (typeof timePresets)[0]) => {
   currentPreset.value = preset.key
@@ -584,13 +562,6 @@ const loadUserLog = async (jsonFile: string) => {
     currentDetail.value = null
   } finally {
     detailLoading.value = false
-  }
-}
-
-// 刷新日志
-const handleRefreshLog = async () => {
-  if (currentJsonFile.value) {
-    await loadUserLog(currentJsonFile.value)
   }
 }
 

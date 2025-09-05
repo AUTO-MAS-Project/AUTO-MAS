@@ -331,7 +331,7 @@
         </a-row>
         <a-row :gutter="24">
           <a-col :span="6">
-            <a-form-item name="remainedDay">
+            <a-form-item name="medicineNumb">
               <template #label>
                 <a-tooltip title="吃理智药数量">
                   <span class="form-label">
