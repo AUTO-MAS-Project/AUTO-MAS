@@ -97,6 +97,20 @@ class UidValidator(ConfigValidator):
         return value if self.validate(value) else None
 
 
+class UUIDValidator(ConfigValidator):
+    """UUID验证器"""
+
+    def validate(self, value: Any) -> bool:
+        try:
+            uuid.UUID(value)
+            return True
+        except (TypeError, ValueError):
+            return False
+
+    def correct(self, value: Any) -> Any:
+        return value if self.validate(value) else str(uuid.uuid4())
+
+
 class EncryptValidator(ConfigValidator):
     """加数据验证器"""
 

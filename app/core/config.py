@@ -116,6 +116,10 @@ class GlobalConfig(ConfigBase):
         "Update", "MirrorChyanCDK", "", EncryptValidator()
     )
 
+    Data_UID = ConfigItem("Data", "UID", str(uuid.uuid4()), UUIDValidator())
+    Data_LastStatisticsUpload = ConfigItem(
+        "Data", "LastStatisticsUpload", "2000-01-01 00:00:00"
+    )
     Data_LastStageUpdated = ConfigItem(
         "Data", "LastStageUpdated", "2000-01-01 00:00:00"
     )
@@ -571,7 +575,7 @@ TYPE_BOOK = {"MaaConfig": "MAA", "GeneralConfig": "通用"}
 
 class AppConfig(GlobalConfig):
 
-    VERSION = "5.0.0.1"
+    VERSION = [5, 0, 0, 1]
 
     def __init__(self) -> None:
         super().__init__(if_save_multi_config=False)
@@ -579,7 +583,7 @@ class AppConfig(GlobalConfig):
         logger.info("")
         logger.info("===================================")
         logger.info("AUTO_MAA 后端应用程序")
-        logger.info(f"版本号:  v{self.VERSION}")
+        logger.info(f"版本号:  {self.version()}")
         logger.info(f"工作目录:  {Path.cwd()}")
         logger.info("===================================")
 
@@ -604,6 +608,16 @@ class AppConfig(GlobalConfig):
         self.QueueConfig = MultipleConfig([QueueConfig])
 
         truststore.inject_into_ssl()
+
+    def version(self) -> str:
+        """获取版本号字符串"""
+
+        if self.VERSION[3] == 0:
+            return f"v{'.'.join(str(_) for _ in self.VERSION[0:3])}"
+        else:
+            return (
+                f"v{'.'.join(str(_) for _ in self.VERSION[0:3])}-beta.{self.VERSION[3]}"
+            )
 
     async def init_config(self) -> None:
         """初始化配置管理"""

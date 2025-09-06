@@ -81,18 +81,25 @@ def main():
             await Config.init_config()
             await Config.get_stage(if_start=True)
             await Config.clean_old_history()
-            main_timer = asyncio.create_task(MainTimer.second_task())
+            second_timer = asyncio.create_task(MainTimer.second_task())
+            hour_timer = asyncio.create_task(MainTimer.hour_task())
             await System.set_Sleep()
             await System.set_SelfStart()
 
             yield
 
             await TaskManager.stop_task("ALL")
-            main_timer.cancel()
+            second_timer.cancel()
+            hour_timer.cancel()
             try:
-                await main_timer
+                await second_timer
+                await hour_timer
             except asyncio.CancelledError:
                 logger.info("主业务定时器已关闭")
+
+            from app.services import Matomo
+
+            await Matomo.close()
 
             logger.info("AUTO_MAA 后端程序关闭")
 
