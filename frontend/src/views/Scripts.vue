@@ -215,7 +215,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import {
@@ -287,10 +287,6 @@ onMounted(() => {
   loadScripts()
 })
 
-onUnmounted(() => {
-  // 清理所有WebSocket连接
-  disconnectAll()
-})
 
 const loadScripts = async () => {
   try {
