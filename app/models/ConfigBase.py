@@ -25,7 +25,7 @@ import uuid
 import win32com.client
 from copy import deepcopy
 from pathlib import Path
-from typing import List, Any, Dict, Union
+from typing import List, Any, Dict, Union, Optional
 
 
 from app.utils import dpapi_encrypt, dpapi_decrypt
@@ -112,7 +112,7 @@ class UUIDValidator(ConfigValidator):
 
 
 class EncryptValidator(ConfigValidator):
-    """加数据验证器"""
+    """加密数据验证器"""
 
     def validate(self, value: Any) -> bool:
         if not isinstance(value, str):
@@ -185,7 +185,7 @@ class ConfigItem:
         group: str,
         name: str,
         default: Any,
-        validator: None | ConfigValidator = None,
+        validator: Optional[ConfigValidator] = None,
     ):
         """
         Parameters
@@ -209,7 +209,10 @@ class ConfigItem:
         self.validator = validator or ConfigValidator()
         self.is_locked = False
 
-        self.setValue(default)
+        if not self.validator.validate(self.value):
+            raise ValueError(
+                f"配置项 '{self.group}.{self.name}' 的默认值 '{self.value}' 不合法"
+            )
 
     def setValue(self, value: Any):
         """
