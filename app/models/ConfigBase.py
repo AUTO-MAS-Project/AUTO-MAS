@@ -25,10 +25,11 @@ import uuid
 import win32com.client
 from copy import deepcopy
 from pathlib import Path
-from typing import List, Any, Dict, Union
+from typing import List, Any, Dict, Union, Optional
 
 
 from app.utils import dpapi_encrypt, dpapi_decrypt
+from app.utils.constants import RESERVED_NAMES, ILLEGAL_CHARS
 
 
 class ConfigValidator:
@@ -97,8 +98,22 @@ class UidValidator(ConfigValidator):
         return value if self.validate(value) else None
 
 
+class UUIDValidator(ConfigValidator):
+    """UUID验证器"""
+
+    def validate(self, value: Any) -> bool:
+        try:
+            uuid.UUID(value)
+            return True
+        except (TypeError, ValueError):
+            return False
+
+    def correct(self, value: Any) -> Any:
+        return value if self.validate(value) else str(uuid.uuid4())
+
+
 class EncryptValidator(ConfigValidator):
-    """加数据验证器"""
+    """加密数据验证器"""
 
     def validate(self, value: Any) -> bool:
         if not isinstance(value, str):
@@ -163,6 +178,46 @@ class FolderValidator(ConfigValidator):
         return Path(value).resolve().as_posix()
 
 
+class UserNameValidator(ConfigValidator):
+    """用户名验证器"""
+
+    def validate(self, value: Any) -> bool:
+        if not isinstance(value, str):
+            return False
+
+        if not value or not value.strip():
+            return False
+
+        if value != value.strip() or value != value.strip("."):
+            return False
+
+        if any(char in ILLEGAL_CHARS for char in value):
+            return False
+
+        if value.upper() in RESERVED_NAMES:
+            return False
+        if len(value) > 255:
+            return False
+
+        return True
+
+    def correct(self, value: Any) -> str:
+        if not isinstance(value, str):
+            value = "默认用户名"
+
+        value = value.strip().strip(".")
+
+        value = "".join(char for char in value if char not in ILLEGAL_CHARS)
+
+        if value.upper() in RESERVED_NAMES or not value:
+            value = "默认用户名"
+
+        if len(value) > 255:
+            value = value[:255]
+
+        return value
+
+
 class ConfigItem:
     """配置项"""
 
@@ -171,7 +226,7 @@ class ConfigItem:
         group: str,
         name: str,
         default: Any,
-        validator: None | ConfigValidator = None,
+        validator: Optional[ConfigValidator] = None,
     ):
         """
         Parameters
@@ -195,7 +250,10 @@ class ConfigItem:
         self.validator = validator or ConfigValidator()
         self.is_locked = False
 
-        self.setValue(default)
+        if not self.validator.validate(self.value):
+            raise ValueError(
+                f"配置项 '{self.group}.{self.name}' 的默认值 '{self.value}' 不合法"
+            )
 
     def setValue(self, value: Any):
         """

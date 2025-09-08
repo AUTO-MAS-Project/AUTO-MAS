@@ -32,7 +32,7 @@
             <a-select v-model:value="searchForm.mode" style="width: 100%">
               <a-select-option value="按日合并">按日合并</a-select-option>
               <a-select-option value="按周合并">按周合并</a-select-option>
-              <a-select-option value="按年月并">按月合并</a-select-option>
+              <a-select-option value="按月合并">按月合并</a-select-option>
             </a-select>
           </a-form-item>
         </a-col>
@@ -90,32 +90,6 @@
       <div v-else class="history-layout">
         <!-- 左侧日期列表 -->
         <div class="date-sidebar">
-          <!--          &lt;!&ndash; 数据总览 &ndash;&gt;-->
-          <!--          <div class="overview-section">-->
-          <!--            <a-card size="small" title="数据总览" class="overview-card">-->
-          <!--              <div class="overview-stats">-->
-          <!--                <a-statistic-->
-          <!--                  title="总公招数"-->
-          <!--                  :value="totalOverview.totalRecruit"-->
-          <!--                  :value-style="{ color: '#1890ff', fontSize: '18px' }"-->
-          <!--                >-->
-          <!--                  <template #prefix>-->
-          <!--                    <UserOutlined />-->
-          <!--                  </template>-->
-          <!--                </a-statistic>-->
-          <!--                <a-statistic-->
-          <!--                  title="总掉落数"-->
-          <!--                  :value="totalOverview.totalDrop"-->
-          <!--                  :value-style="{ color: '#52c41a', fontSize: '18px' }"-->
-          <!--                >-->
-          <!--                  <template #prefix>-->
-          <!--                    <GiftOutlined />-->
-          <!--                  </template>-->
-          <!--                </a-statistic>-->
-          <!--              </div>-->
-          <!--            </a-card>-->
-          <!--          </div>-->
-
           <!-- 日期折叠列表 -->
           <div class="date-list">
             <a-collapse v-model:activeKey="activeKeys" ghost>
@@ -187,7 +161,21 @@
                       <div class="record-info">
                         <div class="record-header">
                           <span class="record-time">{{ record.date }}</span>
+                          <a-tooltip
+                            v-if="record.status === '异常' && selectedUserData?.error_info && selectedUserData.error_info[record.date]"
+                            :title="selectedUserData.error_info[record.date]"
+                            placement="topLeft"
+                          >
+                            <a-tag
+                              color="error"
+                              size="small"
+                              class="error-tag-with-tooltip"
+                            >
+                              {{ record.status }}
+                            </a-tag>
+                          </a-tooltip>
                           <a-tag
+                            v-else
                             :color="record.status === '完成' ? 'success' : 'error'"
                             size="small"
                           >
@@ -287,7 +275,30 @@
               <a-card size="small" title="详细日志" class="log-card">
                 <template #extra>
                   <a-space>
-                    <FileTextOutlined />
+                    <a-tooltip title="打开日志文件">
+                      <a-button
+                        size="small"
+                        type="text"
+                        :disabled="!currentJsonFile"
+                        @click="handleOpenLogFile"
+                      >
+                        <template #icon>
+                          <FileOutlined />
+                        </template>
+                      </a-button>
+                    </a-tooltip>
+                    <a-tooltip title="打开日志文件所在目录">
+                      <a-button
+                        size="small"
+                        type="text"
+                        :disabled="!currentJsonFile"
+                        @click="handleOpenLogDirectory"
+                      >
+                        <template #icon>
+                          <FolderOpenOutlined />
+                        </template>
+                      </a-button>
+                    </a-tooltip>
                   </a-space>
                 </template>
                 <a-spin :spinning="detailLoading">
@@ -316,13 +327,14 @@ import {
   HistoryOutlined,
   UserOutlined,
   GiftOutlined,
-  ExclamationCircleOutlined,
   FileSearchOutlined,
   FileTextOutlined,
   RightOutlined,
+  FolderOpenOutlined,
+  FileOutlined,
 } from '@ant-design/icons-vue'
 import { Service } from '@/api/services/Service'
-import type { HistorySearchIn, HistoryData, HistoryDataGetIn } from '@/api/models'
+import type { HistorySearchIn, HistoryData } from '@/api'
 import dayjs from 'dayjs'
 
 // 响应式数据
@@ -565,6 +577,70 @@ const loadUserLog = async (jsonFile: string) => {
   }
 }
 
+// 打开日志文件
+const handleOpenLogFile = async () => {
+  if (!currentJsonFile.value) {
+    message.warning('请先选择一条记录')
+    return
+  }
+
+  try {
+    // 将 .json 扩展名替换为 .log
+    const logFilePath = currentJsonFile.value.replace(/\.json$/, '.log')
+    
+    console.log('尝试打开日志文件:', logFilePath)
+    console.log('electronAPI 可用性:', !!window.electronAPI)
+    console.log('openFile 方法可用性:', !!(window.electronAPI && (window.electronAPI as any).openFile))
+    
+    // 调用系统API打开文件
+    if (window.electronAPI && (window.electronAPI as any).openFile) {
+      await (window.electronAPI as any).openFile(logFilePath)
+      message.success('日志文件已打开')
+    } else {
+      const errorMsg = !window.electronAPI 
+        ? '当前环境不支持打开文件功能（electronAPI 不可用）'
+        : '当前环境不支持打开文件功能（openFile 方法不可用）'
+      console.error(errorMsg)
+      message.error(errorMsg)
+    }
+  } catch (error) {
+    console.error('打开日志文件失败:', error)
+    message.error(`打开日志文件失败: ${error}`)
+  }
+}
+
+// 打开日志文件所在目录
+const handleOpenLogDirectory = async () => {
+  if (!currentJsonFile.value) {
+    message.warning('请先选择一条记录')
+    return
+  }
+
+  try {
+    // 将 .json 扩展名替换为 .log
+    const logFilePath = currentJsonFile.value.replace(/\.json$/, '.log')
+    
+    console.log('尝试打开日志文件目录:', logFilePath)
+    console.log('electronAPI 可用性:', !!window.electronAPI)
+    console.log('showItemInFolder 方法可用性:', !!(window.electronAPI && (window.electronAPI as any).showItemInFolder))
+    
+    // 调用系统API打开目录并选中文件
+    if (window.electronAPI && (window.electronAPI as any).showItemInFolder) {
+      await (window.electronAPI as any).showItemInFolder(logFilePath)
+      message.success('日志文件目录已打开')
+    } else {
+      const errorMsg = !window.electronAPI 
+        ? '当前环境不支持打开目录功能（electronAPI 不可用）'
+        : '当前环境不支持打开目录功能（showItemInFolder 方法不可用）'
+      console.error(errorMsg)
+      message.error(errorMsg)
+    }
+  } catch (error) {
+    console.error('打开日志文件目录失败:', error)
+    message.error(`打开日志文件目录失败: ${error}`)
+  }
+}
+
 // 获取日期状态颜色
 const getDateStatusColor = (users: Record<string, HistoryData>) => {
   const hasError = Object.values(users).some(
@@ -612,7 +688,7 @@ const getDateStatusColor = (users: Record<string, HistoryData>) => {
 
 /* 左侧日期栏 */
 .date-sidebar {
-  width: 320px;
+  width: 200px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
@@ -945,6 +1021,16 @@ const getDateStatusColor = (users: Record<string, HistoryData>) => {
     width: 100%;
     max-height: 400px;
   }
+}
+
+/* 带tooltip的错误tag样式 */
+.error-tag-with-tooltip {
+  cursor: help;
+  position: relative;
+}
+
+.error-tag-with-tooltip:hover {
+  opacity: 0.8;
 }
 
 /* 统计数据标题样式 */

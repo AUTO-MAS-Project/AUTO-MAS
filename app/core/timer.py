@@ -22,7 +22,7 @@ import asyncio
 import keyboard
 from datetime import datetime
 
-from app.services import System
+from app.services import Matomo, System
 from app.utils import get_logger
 from .config import Config
 
@@ -41,6 +41,33 @@ class _MainTimer:
             await self.set_silence()
 
             await asyncio.sleep(1)
+
+    async def hour_task(self):
+        """每小时定期任务"""
+
+        logger.info("每小时定期任务启动")
+
+        while True:
+
+            if (
+                datetime.strptime(
+                    Config.get("Data", "LastStatisticsUpload"), "%Y-%m-%d %H:%M:%S"
+                ).date()
+                != datetime.now().date()
+            ):
+                await Matomo.send_event(
+                    "App",
+                    "Version",
+                    Config.version(),
+                    1 if "beta" in Config.version() else 0,
+                )
+                await Config.set(
+                    "Data",
+                    "LastStatisticsUpload",
+                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                )
+
+            await asyncio.sleep(3600)
 
     async def set_silence(self):
         """静默模式通过模拟老板键来隐藏模拟器窗口"""

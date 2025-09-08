@@ -215,7 +215,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import {
@@ -287,10 +287,6 @@ onMounted(() => {
   loadScripts()
 })
 
-onUnmounted(() => {
-  // 清理所有WebSocket连接
-  disconnectAll()
-})
 
 const loadScripts = async () => {
   try {
@@ -454,20 +450,31 @@ const handleDeleteScript = async (script: Script) => {
 }
 
 const handleAddUser = (script: Script) => {
-  // 跳转到添加用户页面
-  router.push(`/scripts/${script.id}/users/add`)
+  // 根据条件判断跳转到 MAA 还是通用用户添加页面
+  if (script.type === 'MAA') {
+    router.push(`/scripts/${script.id}/users/add/maa`) // 跳转到 MAA 用户添加页面
+  } else {
+    router.push(`/scripts/${script.id}/users/add/general`) // 跳转到通用用户添加页面
+  }
 }
 
 const handleEditUser = (user: User) => {
   // 从用户数据中找到对应的脚本
   const script = scripts.value.find(s => s.users.some(u => u.id === user.id))
   if (script) {
-    // 跳转到编辑用户页面
-    router.push(`/scripts/${script.id}/users/${user.id}/edit`)
+    // 判断是 MAA 用户还是通用用户
+    if (user.Info.Server) {
+      // 跳转到 MAA 用户编辑页面
+      router.push(`/scripts/${script.id}/users/${user.id}/edit/maa`)
+    } else {
+      // 跳转到通用用户编辑页面
+      router.push(`/scripts/${script.id}/users/${user.id}/edit/general`)
+    }
   } else {
     message.error('找不到对应的脚本')
   }
 }
+
 const handleDeleteUser = async (user: User) => {
   // 从用户数据中找到对应的脚本
   const script = scripts.value.find(s => s.users.some(u => u.id === user.id))
