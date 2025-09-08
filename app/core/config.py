@@ -116,6 +116,10 @@ class GlobalConfig(ConfigBase):
         "Update", "MirrorChyanCDK", "", EncryptValidator()
     )
 
+    Data_UID = ConfigItem("Data", "UID", str(uuid.uuid4()), UUIDValidator())
+    Data_LastStatisticsUpload = ConfigItem(
+        "Data", "LastStatisticsUpload", "2000-01-01 00:00:00"
+    )
     Data_LastStageUpdated = ConfigItem(
         "Data", "LastStageUpdated", "2000-01-01 00:00:00"
     )
@@ -190,7 +194,7 @@ class MaaUserConfig(ConfigBase):
     def __init__(self) -> None:
         super().__init__()
 
-        self.Info_Name = ConfigItem("Info", "Name", "新用户")
+        self.Info_Name = ConfigItem("Info", "Name", "新用户", UserNameValidator())
         self.Info_Id = ConfigItem("Info", "Id", "")
         self.Info_Mode = ConfigItem(
             "Info", "Mode", "简洁", OptionsValidator(["简洁", "详细"])
@@ -451,7 +455,7 @@ class GeneralUserConfig(ConfigBase):
     def __init__(self) -> None:
         super().__init__()
 
-        self.Info_Name = ConfigItem("Info", "Name", "新用户")
+        self.Info_Name = ConfigItem("Info", "Name", "新用户", UserNameValidator())
         self.Info_Status = ConfigItem("Info", "Status", True, BoolValidator())
         self.Info_RemainedDay = ConfigItem(
             "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
@@ -460,13 +464,13 @@ class GeneralUserConfig(ConfigBase):
             "Info", "IfScriptBeforeTask", False, BoolValidator()
         )
         self.Info_ScriptBeforeTask = ConfigItem(
-            "Info", "ScriptBeforeTask", "", FileValidator()
+            "Info", "ScriptBeforeTask", str(Path.cwd()), FileValidator()
         )
         self.Info_IfScriptAfterTask = ConfigItem(
             "Info", "IfScriptAfterTask", False, BoolValidator()
         )
         self.Info_ScriptAfterTask = ConfigItem(
-            "Info", "ScriptAfterTask", "", FileValidator()
+            "Info", "ScriptAfterTask", str(Path.cwd()), FileValidator()
         )
         self.Info_Notes = ConfigItem("Info", "Notes", "无")
 
@@ -571,7 +575,7 @@ TYPE_BOOK = {"MaaConfig": "MAA", "GeneralConfig": "通用"}
 
 class AppConfig(GlobalConfig):
 
-    VERSION = "5.0.0.1"
+    VERSION = [5, 0, 0, 1]
 
     def __init__(self) -> None:
         super().__init__(if_save_multi_config=False)
@@ -579,7 +583,7 @@ class AppConfig(GlobalConfig):
         logger.info("")
         logger.info("===================================")
         logger.info("AUTO_MAA 后端应用程序")
-        logger.info(f"版本号:  v{self.VERSION}")
+        logger.info(f"版本号:  {self.version()}")
         logger.info(f"工作目录:  {Path.cwd()}")
         logger.info("===================================")
 
@@ -604,6 +608,16 @@ class AppConfig(GlobalConfig):
         self.QueueConfig = MultipleConfig([QueueConfig])
 
         truststore.inject_into_ssl()
+
+    def version(self) -> str:
+        """获取版本号字符串"""
+
+        if self.VERSION[3] == 0:
+            return f"v{'.'.join(str(_) for _ in self.VERSION[0:3])}"
+        else:
+            return (
+                f"v{'.'.join(str(_) for _ in self.VERSION[0:3])}-beta.{self.VERSION[3]}"
+            )
 
     async def init_config(self) -> None:
         """初始化配置管理"""

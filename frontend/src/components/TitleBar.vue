@@ -3,6 +3,8 @@
     <!-- 左侧：Logo和软件名 -->
     <div class="title-bar-left">
       <div class="logo-section">
+        <!-- 新增虚化主题色圆形阴影 -->
+        <span class="logo-glow" aria-hidden="true"></span>
         <img src="@/assets/AUTO-MAS.ico" alt="AUTO-MAS" class="title-logo" />
         <span class="title-text">AUTO-MAS</span>
       </div>
@@ -94,6 +96,7 @@ onMounted(async () => {
   user-select: none;
   position: relative;
   z-index: 1000;
+  overflow: hidden; /* 新增：裁剪超出顶栏的发光 */
 }
 
 .title-bar-dark {
@@ -112,17 +115,42 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   gap: 8px;
+  position: relative; /* 使阴影绝对定位基准 */
+}
+
+/* 新增：主题色虚化圆形阴影 */
+.logo-glow {
+  position: absolute;
+  left: 55px; /* 调整：更贴近图标 */
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 200px;  /* 缩小尺寸以适配 32px 高度 */
+  height: 100px;
+  pointer-events: none;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 50%, var(--ant-color-primary) 0%, rgba(0,0,0,0) 70%);
+  filter: blur(24px); /* 降低模糊避免越界过多 */
+  opacity: 0.4;
+  z-index: 0;
+}
+.title-bar-dark .logo-glow {
+  opacity: 0.7;
+  filter: blur(24px);
 }
 
 .title-logo {
   width: 20px;
   height: 20px;
+  position: relative;
+  z-index: 1; /* 确保在阴影上方 */
 }
 
 .title-text {
   font-size: 13px;
   font-weight: 600;
   color: #333;
+  position: relative;
+  z-index: 1;
 }
 
 .title-bar-dark .title-text {

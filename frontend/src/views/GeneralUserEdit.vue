@@ -51,8 +51,13 @@
   </div>
 
   <div class="user-edit-content">
-    <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="user-form">
-      <a-card title="基本信息" class="form-card">
+    <a-card class="config-card">
+      <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
+        <!-- 基本信息 -->
+        <div class="form-section">
+          <div class="section-header">
+            <h3>基本信息</h3>
+          </div>
         <a-row :gutter="24">
           <a-col :span="12">
             <a-form-item name="userName" required>
@@ -69,6 +74,7 @@
                 placeholder="请输入用户名"
                 :disabled="loading"
                 size="large"
+                class="modern-input"
               />
             </a-form-item>
           </a-col>
@@ -128,11 +134,16 @@
             placeholder="请输入备注信息"
             :rows="4"
             :disabled="loading"
+            class="modern-input"
           />
         </a-form-item>
-      </a-card>
+        </div>
 
-      <a-card title="额外脚本" class="form-card">
+        <!-- 额外脚本 -->
+        <div class="form-section">
+          <div class="section-header">
+            <h3>额外脚本</h3>
+          </div>
         <a-form-item name="scriptBeforeTask">
           <template #label>
             <a-tooltip title="在任务执行前运行自定义脚本">
@@ -217,9 +228,13 @@
             </a-col>
           </a-row>
         </a-form-item>
-      </a-card>
+        </div>
 
-      <a-card title="通知配置" class="form-card">
+        <!-- 通知配置 -->
+        <div class="form-section">
+          <div class="section-header">
+            <h3>通知配置</h3>
+          </div>
         <a-row :gutter="24" align="middle">
           <a-col :span="6">
             <span style="font-weight: 500">启用通知</span>
@@ -302,11 +317,13 @@
               "
               size="large"
               style="width: 100%"
+              class="modern-input"
             />
           </a-col>
         </a-row>
-      </a-card>
-    </a-form>
+        </div>
+      </a-form>
+    </a-card>
   </div>
 
   <a-float-button
@@ -695,6 +712,89 @@ onMounted(() => {
 .user-edit-content {
   max-width: 1200px;
   margin: 0 auto;
+}
+
+.config-card {
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.config-card :deep(.ant-card-body) {
+  padding: 32px;
+}
+
+.config-form {
+  max-width: none;
+}
+
+.form-section {
+  margin-bottom: 12px;
+}
+
+.form-section:last-child {
+  margin-bottom: 0;
+}
+
+.section-header {
+  margin-bottom: 6px;
+  padding-bottom: 8px;
+  border-bottom: 2px solid var(--ant-color-border-secondary);
+}
+
+.section-header h3 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--ant-color-text);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.section-header h3::before {
+  content: '';
+  width: 4px;
+  height: 24px;
+  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
+  border-radius: 2px;
+}
+
+/* 表单标签 */
+.form-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  color: var(--ant-color-text);
+  font-size: 14px;
+}
+
+.help-icon {
+  color: var(--ant-color-text-tertiary);
+  font-size: 14px;
+  cursor: help;
+  transition: color 0.3s ease;
+}
+
+.help-icon:hover {
+  color: var(--ant-color-primary);
+}
+
+.modern-input {
+  border-radius: 8px;
+  border: 2px solid var(--ant-color-border);
+  background: var(--ant-color-bg-container);
+  transition: all 0.3s ease;
+}
+
+.modern-input:hover {
+  border-color: var(--ant-color-primary-hover);
+}
+
+.modern-input:focus,
+.modern-input.ant-input-focused {
+  border-color: var(--ant-color-primary);
+  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.1);
 }
 
 .form-card {

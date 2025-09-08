@@ -1,78 +1,31 @@
 <template>
-  <a-layout style="height: 100vh; overflow: hidden" class="app-layout-collapsed">
+  <a-layout style="height: 100vh; overflow: hidden">
     <a-layout-sider
-      v-model:collapsed="collapsed"
-      collapsible
-      :trigger="null"
-      :width="180"
-      :collapsed-width="60"
+      :width="SIDER_WIDTH"
       :theme="isDark ? 'dark' : 'light'"
-      style="height: calc(100vh - 32px); position: fixed; left: 0; top: 32px; z-index: 100"
+      :style="{ height: 'calc(100vh - 32px)', position: 'fixed', left: '0', top: '32px', zIndex: 100, background: 'var(--app-sider-bg)', borderRight: '1px solid var(--app-sider-border-color)' }"
     >
       <div class="sider-content">
-<!--        &lt;!&ndash; 折叠按钮 &ndash;&gt;-->
-<!--        <div class="collapse-trigger" @click="toggleCollapse">-->
-<!--          <MenuFoldOutlined v-if="!collapsed" />-->
-<!--          <MenuUnfoldOutlined v-else />-->
-<!--        </div>-->
-
-        <!-- 主菜单容器 -->
-        <div class="main-menu-container">
-          <a-menu
-            mode="inline"
-            :inline-collapsed="collapsed"
-            :theme="isDark ? 'dark' : 'light'"
-            class="main-menu"
-            v-model:selectedKeys="selectedKeys"
-          >
-            <template v-for="item in mainMenuItems" :key="item.path">
-              <a-menu-item @click="goTo(item.path)" :data-title="item.label">
-                <template #icon>
-                  <component :is="item.icon" />
-                </template>
-                <span v-if="!collapsed" class="menu-text">{{ item.label }}</span>
-              </a-menu-item>
-            </template>
-          </a-menu>
-        </div>
-
-        <!-- 底部菜单（带3px底部内边距） -->
         <a-menu
           mode="inline"
-          :inline-collapsed="collapsed"
+          :theme="isDark ? 'dark' : 'light'"
+          v-model:selectedKeys="selectedKeys"
+          :items="mainMenuItems"
+          @click="onMenuClick"
+        />
+        <a-menu
+          mode="inline"
           :theme="isDark ? 'dark' : 'light'"
           class="bottom-menu"
           v-model:selectedKeys="selectedKeys"
-        >
-          <template v-for="item in bottomMenuItems" :key="item.path">
-            <a-menu-item @click="goTo(item.path)" :data-title="item.label">
-              <template #icon>
-                <component :is="item.icon" />
-              </template>
-              <span v-if="!collapsed" class="menu-text">{{ item.label }}</span>
-            </a-menu-item>
-          </template>
-        </a-menu>
+          :items="bottomMenuItems"
+          @click="onMenuClick"
+        />
       </div>
     </a-layout-sider>
 
-    <!-- 主内容区 -->
-    <a-layout
-      :style="{
-        marginLeft: collapsed ? '60px' : '180px',
-        transition: 'margin-left 0.2s',
-        height: 'calc(100vh - 32px)',
-      }"
-    >
-      <a-layout-content
-        class="content-area"
-        :style="{
-          padding: '24px',
-          background: isDark ? '#141414' : '#ffffff',
-          height: '100%',
-          overflow: 'auto',
-        }"
-      >
+    <a-layout :style="{ marginLeft: SIDER_WIDTH + 'px', height: 'calc(100vh - 32px)', transition: 'margin-left .2s' }">
+      <a-layout-content class="content-area">
         <router-view />
       </a-layout-content>
     </a-layout>
@@ -88,202 +41,92 @@ import {
   ControlOutlined,
   HistoryOutlined,
   SettingOutlined,
-  MenuFoldOutlined,
-  MenuUnfoldOutlined,
 } from '@ant-design/icons-vue'
-import { ref, computed } from 'vue'
+import { computed, h } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useTheme } from '../composables/useTheme.ts'
+import type { MenuProps } from 'ant-design-vue'
+
+const SIDER_WIDTH = 140
 
 const router = useRouter()
 const route = useRoute()
 const { isDark } = useTheme()
 
-const collapsed = ref<boolean>(false)
+// 工具：生成菜单项
+const icon = (Comp: any) => () => h(Comp)
 
-// 菜单数据
 const mainMenuItems = [
-  { path: '/home', label: '主页', icon: HomeOutlined },
-  { path: '/scripts', label: '脚本管理', icon: FileTextOutlined },
-  { path: '/plans', label: '计划管理', icon: CalendarOutlined },
-  { path: '/queue', label: '调度队列', icon: UnorderedListOutlined },
-  { path: '/scheduler', label: '调度中心', icon: ControlOutlined },
-  { path: '/history', label: '历史记录', icon: HistoryOutlined },
+  { key: '/home', label: '主页', icon: icon(HomeOutlined) },
+  { key: '/scripts', label: '脚本管理', icon: icon(FileTextOutlined) },
+  { key: '/plans', label: '计划管理', icon: icon(CalendarOutlined) },
+  { key: '/queue', label: '调度队列', icon: icon(UnorderedListOutlined) },
+  { key: '/scheduler', label: '调度中心', icon: icon(ControlOutlined) },
+  { key: '/history', label: '历史记录', icon: icon(HistoryOutlined) },
+]
+const bottomMenuItems = [
+  { key: '/settings', label: '设置', icon: icon(SettingOutlined) },
 ]
 
-const bottomMenuItems = [{ path: '/settings', label: '设置', icon: SettingOutlined }]
+const allItems = [...mainMenuItems, ...bottomMenuItems]
 
-// 自动同步选中项
+// 选中项：根据当前路径前缀匹配
 const selectedKeys = computed(() => {
   const path = route.path
-  const allItems = [...mainMenuItems, ...bottomMenuItems]
-  const matched = allItems.find(item => path.startsWith(item.path))
-  return [matched?.path || '/home']
+  const matched = allItems.find(i => path.startsWith(String(i.key)))
+  return [matched?.key || '/home']
 })
 
-const goTo = (path: string) => {
-  router.push(path)
-}
-
-const toggleCollapse = () => {
-  collapsed.value = !collapsed.value
+const onMenuClick: MenuProps['onClick'] = info => {
+  const target = String(info.key)
+  if (route.path !== target) router.push(target)
 }
 </script>
 
 <style scoped>
-.sider-content {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  padding-bottom: 4px; /* 关键：添加3px底部内边距 */
-}
-
-/* 折叠按钮 */
-.collapse-trigger {
-  height: 42px;
+.sider-content { height:100%; display:flex; flex-direction:column; padding:4px 0 8px 0; }
+.sider-content :deep(.ant-menu) { border-inline-end: none !important; background: transparent !important; }
+/* 菜单项外框居中（左右留空），内容左对齐 */
+.sider-content :deep(.ant-menu .ant-menu-item) {
+  color: var(--app-menu-text-color);
+  margin: 2px auto;               /* 水平居中 */
+  width: calc(100% - 16px);       /* 两侧各留 8px 空隙 */
+  border-radius: 6px;
+  padding: 0 10px !important;     /* 左右内边距 */
+  line-height: 36px;
+  height: 36px;
   display: flex;
   align-items: center;
-  justify-content: center;
-  margin: 4px;
-  border-radius: 6px;
-  cursor: pointer;
+  justify-content: flex-start;    /* 左对齐图标与文字 */
+  gap: 6px;
+  transition: background .16s ease, color .16s ease;
+  text-align: left;
+}
+.sider-content :deep(.ant-menu .ant-menu-item .anticon) {
+  color: var(--app-menu-icon-color);
   font-size: 16px;
-  transition: background-color 0.2s;
+  line-height: 1;
+  transition: color .16s ease;
+  margin-right: 0;
 }
-
-.collapse-trigger:hover {
-  background-color: rgba(255, 255, 255, 0.1);
+/* Hover */
+.sider-content :deep(.ant-menu .ant-menu-item:hover) {
+  background: var(--app-menu-item-hover-bg, var(--app-menu-item-hover-bg-hex));
+  color: var(--app-menu-item-hover-text-color);
 }
-
-:deep(.ant-layout-sider-light) .collapse-trigger:hover {
-  background-color: rgba(0, 0, 0, 0.04);
+.sider-content :deep(.ant-menu .ant-menu-item:hover .anticon) { color: var(--app-menu-item-hover-text-color); }
+/* Selected */
+.sider-content :deep(.ant-menu .ant-menu-item-selected) {
+  background: var(--app-menu-item-selected-bg, var(--app-menu-item-selected-bg-hex));
+  color: var(--app-menu-text-color) !important;
+  font-weight: 500;
 }
-
-:deep(.ant-layout-sider-dark) .collapse-trigger {
-  color: #fff;
-}
-
-:deep(.ant-layout-sider-light) .collapse-trigger {
-  color: rgba(0, 0, 0, 0.88);
-}
-
-/* 主菜单容器 */
-.main-menu-container {
-  flex: 1;
-  overflow: auto;
-  /* 修复滚动条显示问题 */
-  scrollbar-width: thin;
-  scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
-}
-
-.main-menu-container::-webkit-scrollbar {
-  width: 6px;
-}
-
-.main-menu-container::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.main-menu-container::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.2);
-  border-radius: 4px;
-}
-
-/* 底部菜单 */
-.bottom-menu {
-  margin-top: auto;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-:deep(.ant-layout-sider-light .bottom-menu) {
-  border-top: 1px solid rgba(0, 0, 0, 0.04);
-}
-
-/* 菜单项文字 */
-.menu-text {
-  margin-left: 36px;
-  white-space: nowrap;
-  opacity: 1;
-  transition: opacity 0.2s ease;
-}
-
-/* 主题颜色 */
-:deep(.ant-layout-sider-dark) .logo-text,
-:deep(.ant-layout-sider-dark) .menu-text {
-  color: #fff;
-}
-
-:deep(.ant-layout-sider-light) .logo-text,
-:deep(.ant-layout-sider-light) .menu-text {
-  color: rgba(0, 0, 0, 0.88);
-}
-
-/* 菜单项统一样式 */
-:deep(.ant-menu-item),
-:deep(.ant-menu-item-selected) {
-  position: relative;
-  height: 40px;
-  line-height: 34px;
-  margin: 0 6px;
-  border-radius: 6px;
-  padding: 0 !important;
-}
-
-/* 图标绝对定位 */
-:deep(.ant-menu-item .ant-menu-item-icon) {
-  position: absolute;
-  left: 16px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 20px;
-  height: 20px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 18px;
-  pointer-events: none;
-  z-index: 2;
-}
-
-/* 隐藏内容区滚动条 */
-.content-area {
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-}
-
-.content-area::-webkit-scrollbar {
-  display: none;
-}
+.sider-content :deep(.ant-menu .ant-menu-item-selected .anticon) { color: var(--app-menu-icon-color); }
+.sider-content :deep(.ant-menu-light .ant-menu-item::after),
+.sider-content :deep(.ant-menu-dark .ant-menu-item::after) { display: none; }
+.bottom-menu { margin-top:auto; }
+.content-area { height:100%; overflow:auto; scrollbar-width:none; -ms-overflow-style:none; }
+.content-area::-webkit-scrollbar { display:none; }
 </style>
 
-<!-- 全局样式 -->
-<style>
-/* 收缩状态下，通过 data-title 显示 Tooltip */
-.app-layout-collapsed .ant-menu-inline-collapsed .ant-menu-item:hover::before {
-  content: attr(data-title);
-  position: absolute;
-  left: 60px;
-  top: 50%;
-  transform: translateY(-50%);
-  background: #1890ff;
-  color: #fff;
-  padding: 2px 8px;
-  border-radius: 4px;
-  white-space: nowrap;
-  font-size: 12px;
-  z-index: 1000;
-  opacity: 1;
-  pointer-events: none;
-}
-
-/* 修复底部菜单在折叠状态下的tooltip位置 */
-.app-layout-collapsed .ant-menu-inline-collapsed .bottom-menu .ant-menu-item:hover::before {
-  left: 60px;
-  transform: translateY(-50%);
-}
-
-/* 确保底部菜单在收缩状态下也有3px间距 */
-.app-layout-collapsed .ant-menu-inline-collapsed .bottom-menu {
-  padding-bottom: 6px;
-}
-</style>
+<!-- 调整：外框（菜单项背景块）水平居中，文字与图标左对齐 -->
