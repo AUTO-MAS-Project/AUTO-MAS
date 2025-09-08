@@ -464,13 +464,13 @@ class GeneralUserConfig(ConfigBase):
             "Info", "IfScriptBeforeTask", False, BoolValidator()
         )
         self.Info_ScriptBeforeTask = ConfigItem(
-            "Info", "ScriptBeforeTask", "", FileValidator()
+            "Info", "ScriptBeforeTask", str(Path.cwd()), FileValidator()
         )
         self.Info_IfScriptAfterTask = ConfigItem(
             "Info", "IfScriptAfterTask", False, BoolValidator()
         )
         self.Info_ScriptAfterTask = ConfigItem(
-            "Info", "ScriptAfterTask", "", FileValidator()
+            "Info", "ScriptAfterTask", str(Path.cwd()), FileValidator()
         )
         self.Info_Notes = ConfigItem("Info", "Notes", "无")
 
