@@ -212,6 +212,14 @@ class _TaskManager:
                     partial(self.task_dict.pop, script_id)
                 )
                 await self.task_dict[script_id]
+                task["status"] = "完成"
+                await Config.send_json(
+                    WebSocketMessage(
+                        id=str(task_id),
+                        type="Update",
+                        data={"task_list": task_list},
+                    ).model_dump()
+                )
 
     async def stop_task(self, task_id: str) -> None:
         """
