@@ -9,7 +9,8 @@
     "electron-dev": "wait-on http://localhost:5173 && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron .",
     "build:main": "tsc -p tsconfig.electron.json",
     "build": "vite build && yarn build:main && electron-builder",
-    "web": "vite"
+    "web": "vite",
+    "release": "vite build && yarn build:main && electron-builder --win --publish always"
   },
   "build": {
     "asar": true,
@@ -20,29 +21,37 @@
     "appId": "xyz.automaa.frontend",
     "productName": "AUTO_MAA",
     "files": [
-      "dist",
-      "dist-electron",
-      "public",
-      "!src/assets/*"
+      "dist/**",
+      "dist-electron/**",
+      "public/**",
+      "!src/**",
+      "!**/*.map"
+    ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "DLmaster_361",
+        "repo": "AUTO_MAA"
+      }
     ],
     "extraResources": [
-      {
-        "from": "src/assets",
-        "to": "assets",
-        "filter": []
-      }
+      { "from": "src/assets", "to": "assets", "filter": ["**/*"] }
     ],
     "win": {
       "requestedExecutionLevel": "requireAdministrator",
-      "target": "dir",
+      "target": [
+        { "target": "nsis", "arch": ["x64"] }
+      ],
       "icon": "public/AUTO-MAS.ico",
-      "artifactName": "AUTO_MAA.exe"
+      "artifactName": "AUTO_MAA-Setup-${version}-${arch}.${ext}"
     },
-    "mac": {
-      "icon": "public/AUTO-MAS.ico"
-    },
-    "linux": {
-      "icon": "public/AUTO-MAS.ico"
+    "nsis": {
+      "oneClick": false,
+      "perMachine": true,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "AUTO_MAA",
+      "differentialPackage": true
     }
   },
   "dependencies": {
@@ -54,6 +63,7 @@
     "axios": "^1.11.0",
     "dayjs": "^1.11.13",
     "electron-log": "^5.4.3",
+    "electron-updater": "6.6.2",
     "form-data": "^4.0.4",
     "markdown-it": "^14.1.0",
     "vue": "^3.5.17",
