@@ -194,7 +194,7 @@ class MaaUserConfig(ConfigBase):
     def __init__(self) -> None:
         super().__init__()
 
-        self.Info_Name = ConfigItem("Info", "Name", "新用户")
+        self.Info_Name = ConfigItem("Info", "Name", "新用户", UserNameValidator())
         self.Info_Id = ConfigItem("Info", "Id", "")
         self.Info_Mode = ConfigItem(
             "Info", "Mode", "简洁", OptionsValidator(["简洁", "详细"])
@@ -455,7 +455,7 @@ class GeneralUserConfig(ConfigBase):
     def __init__(self) -> None:
         super().__init__()
 
-        self.Info_Name = ConfigItem("Info", "Name", "新用户")
+        self.Info_Name = ConfigItem("Info", "Name", "新用户", UserNameValidator())
         self.Info_Status = ConfigItem("Info", "Status", True, BoolValidator())
         self.Info_RemainedDay = ConfigItem(
             "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
