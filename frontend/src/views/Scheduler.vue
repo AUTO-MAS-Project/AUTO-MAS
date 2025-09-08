@@ -941,10 +941,15 @@ onUnmounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+<<<<<<< Updated upstream
   margin-bottom: 16px;
   padding: 16px;
   border-radius: 8px;
   border: 1px solid var(--ant-color-border);
+=======
+  padding: 8px 16px;
+  border-bottom: 1px solid #d9d9d9;
+>>>>>>> Stashed changes
 }
 
 .left-actions {
