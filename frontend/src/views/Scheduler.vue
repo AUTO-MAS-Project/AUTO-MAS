@@ -496,7 +496,6 @@ onUnmounted(() => { schedulerTabs.value.forEach(tab => tab.runningTasks.forEach(
   justify-content: space-between;
   align-items: center;
   padding: 8px 16px;
-  background: #f0f2f5;
   border-bottom: 1px solid #d9d9d9;
 }
 
