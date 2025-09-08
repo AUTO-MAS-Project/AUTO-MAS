@@ -490,6 +490,26 @@ ipcMain.handle('open-url', async (_event, url: string) => {
   }
 })
 
+// 打开文件
+ipcMain.handle('open-file', async (_event, filePath: string) => {
+  try {
+    await shell.openPath(filePath)
+  } catch (error) {
+    console.error('打开文件失败:', error)
+    throw error
+  }
+})
+
+// 显示文件所在目录并选中文件
+ipcMain.handle('show-item-in-folder', async (_event, filePath: string) => {
+  try {
+    shell.showItemInFolder(filePath)
+  } catch (error) {
+    console.error('显示文件所在目录失败:', error)
+    throw error
+  }
+})
+
 // 环境检查
 ipcMain.handle('check-environment', async () => {
   const appRoot = getAppRoot()

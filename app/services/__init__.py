@@ -22,6 +22,7 @@ __version__ = "5.0.0"
 __author__ = "DLmaster361 <DLmaster_361@163.com>"
 __license__ = "GPL-3.0 license"
 
+from .matomo import Matomo
 from .notification import Notify
 from .system import System
 
