@@ -98,6 +98,8 @@ export type { TimeSetGetOut } from './models/TimeSetGetOut';
 export type { TimeSetIndexItem } from './models/TimeSetIndexItem';
 export type { TimeSetReorderIn } from './models/TimeSetReorderIn';
 export type { TimeSetUpdateIn } from './models/TimeSetUpdateIn';
+export type { UpdateCheckIn } from './models/UpdateCheckIn';
+export type { UpdateCheckOut } from './models/UpdateCheckOut';
 export type { UserConfig_Notify } from './models/UserConfig_Notify';
 export type { UserCreateOut } from './models/UserCreateOut';
 export type { UserDeleteIn } from './models/UserDeleteIn';
