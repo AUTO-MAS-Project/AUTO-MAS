@@ -495,9 +495,10 @@ onUnmounted(() => { schedulerTabs.value.forEach(tab => tab.runningTasks.forEach(
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 8px 16px;
-  background: #f0f2f5;
-  border-bottom: 1px solid #d9d9d9;
+  margin-bottom: 16px;
+  padding: 16px;
+  border-radius: 8px;
+  border: 1px solid var(--ant-color-border);
 }
 
 .left-actions {
