@@ -63,10 +63,22 @@ import type { UserInBase } from '../models/UserInBase';
 import type { UserReorderIn } from '../models/UserReorderIn';
 import type { UserSetIn } from '../models/UserSetIn';
 import type { UserUpdateIn } from '../models/UserUpdateIn';
+import type { VersionOut } from '../models/VersionOut';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
 export class Service {
+    /**
+     * 获取后端git版本信息
+     * @returns VersionOut Successful Response
+     * @throws ApiError
+     */
+    public static getGitVersionApiInfoVersionPost(): CancelablePromise<VersionOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/info/version',
+        });
+    }
     /**
      * 获取关卡号下拉框信息
      * @param requestBody
