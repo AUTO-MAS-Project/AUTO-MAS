@@ -40,7 +40,8 @@
     "win": {
       "requestedExecutionLevel": "requireAdministrator",
       "target": [
-        { "target": "nsis", "arch": ["x64"] }
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "zip", "arch": ["x64"] }
       ],
       "icon": "public/AUTO-MAS.ico",
       "artifactName": "AUTO_MAA-Setup-${version}-${arch}.${ext}"
