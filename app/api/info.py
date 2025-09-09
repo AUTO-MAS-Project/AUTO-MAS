@@ -43,13 +43,13 @@ async def get_git_version() -> VersionOut:
             code=500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
-            if_latest=False,
+            if_need_update=False,
             current_hash="",
             current_time="",
             current_version="",
         )
     return VersionOut(
-        if_latest=is_latest,
+        if_need_update=not is_latest,
         current_hash=commit_hash,
         current_time=commit_time,
         current_version=Config.version(),

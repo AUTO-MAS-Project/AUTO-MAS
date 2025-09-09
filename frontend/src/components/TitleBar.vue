@@ -12,6 +12,13 @@
           <span v-if="updateInfo?.if_need_update" class="update-hint" :title="getUpdateTooltip()">
             检测到更新 {{ updateInfo.latest_version }} 请尽快更新
           </span>
+          <span
+            v-if="backendUpdateInfo?.if_need_update"
+            class="update-hint"
+            :title="getUpdateTooltip()"
+          >
+            检测到更新后端有更新。请重启软件即可自动完成更新
+          </span>
         </span>
       </div>
     </div>
@@ -42,11 +49,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import { MinusOutlined, BorderOutlined, CopyOutlined, CloseOutlined } from '@ant-design/icons-vue'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { BorderOutlined, CloseOutlined, CopyOutlined, MinusOutlined } from '@ant-design/icons-vue'
 import { useTheme } from '@/composables/useTheme'
-import { Service } from '@/api'
 import type { UpdateCheckOut } from '@/api'
+import { Service, type VersionOut } from '@/api'
 
 const { isDark } = useTheme()
 const isMaximized = ref(false)
@@ -54,6 +61,11 @@ const isMaximized = ref(false)
 // 使用 import.meta.env 或直接定义版本号，确保打包后可用
 const version = import.meta.env.VITE_APP_VERSION || '获取版本失败！'
 const updateInfo = ref<UpdateCheckOut | null>(null)
+const backendUpdateInfo = ref<VersionOut | null>(null)
+
+const POLL_MS = 1 * 60 * 1000 // 10 分钟
+let pollTimer: number | null = null
+const polling = ref(false)
 
 // 获取是否有更新
 const getAppVersion = async () => {
@@ -65,7 +77,16 @@ const getAppVersion = async () => {
     return ver || '获取版本失败！'
   } catch (error) {
     console.error('Failed to get app version:', error)
-    return '获取版本失败！'
+    return '获取前端版本失败！'
+  }
+}
+
+const getBackendVersion = async () => {
+  try {
+    backendUpdateInfo.value = await Service.getGitVersionApiInfoVersionPost()
+  } catch (error) {
+    console.error('Failed to get backend version:', error)
+    return '获取后端版本失败！'
   }
 }
 
@@ -111,13 +132,40 @@ const closeWindow = async () => {
   }
 }
 
+const pollOnce = async () => {
+  if (polling.value) return
+  polling.value = true
+  try {
+    const [appRes, backendRes] = await Promise.allSettled([getAppVersion(), getBackendVersion()])
+
+    if (appRes.status === 'rejected') {
+      console.error('getAppVersion failed:', appRes.reason)
+    }
+    if (backendRes.status === 'rejected') {
+      console.error('getBackendVersion failed:', backendRes.reason)
+    }
+  } finally {
+    polling.value = false
+  }
+}
+
 onMounted(async () => {
   try {
     isMaximized.value = (await window.electronAPI?.windowIsMaximized()) || false
   } catch (error) {
     console.error('Failed to get window state:', error)
   }
-  await getAppVersion()
+  // 初始化立即跑一次
+  await pollOnce()
+  // 每 10 分钟检查一次更新
+  pollTimer = window.setInterval(pollOnce, POLL_MS)
+})
+
+onBeforeUnmount(() => {
+  if (pollTimer) {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
 })
 </script>
 
