@@ -31,6 +31,7 @@ from .queue import router as queue_router
 from .dispatch import router as dispatch_router
 from .history import router as history_router
 from .setting import router as setting_router
+from .update import router as update_router
 
 __all__ = [
     "core_router",
@@ -41,4 +42,5 @@ __all__ = [
     "dispatch_router",
     "history_router",
     "setting_router",
+    "update_router",
 ]
