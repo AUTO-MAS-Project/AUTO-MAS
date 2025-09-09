@@ -29,6 +29,34 @@ router = APIRouter(prefix="/api/info", tags=["信息获取"])
 
 
 @router.post(
+    "/version",
+    summary="获取后端git版本信息",
+    response_model=VersionOut,
+    status_code=200,
+)
+async def get_git_version() -> VersionOut:
+
+    try:
+        is_latest, commit_hash, commit_time = await Config.get_git_version()
+    except Exception as e:
+        return VersionOut(
+            code=500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            if_latest=False,
+            current_hash="",
+            current_time="",
+            current_version="",
+        )
+    return VersionOut(
+        if_latest=is_latest,
+        current_hash=commit_hash,
+        current_time=commit_time,
+        current_version=Config.version(),
+    )
+
+
+@router.post(
     "/combox/stage",
     summary="获取关卡号下拉框信息",
     response_model=ComboBoxOut,
