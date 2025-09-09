@@ -47,7 +47,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { useTheme } from '../composables/useTheme.ts'
 import type { MenuProps } from 'ant-design-vue'
 
-const SIDER_WIDTH = 140
+const SIDER_WIDTH = 160
 
 const router = useRouter()
 const route = useRoute()
@@ -84,7 +84,7 @@ const onMenuClick: MenuProps['onClick'] = info => {
 </script>
 
 <style scoped>
-.sider-content { height:100%; display:flex; flex-direction:column; padding:4px 0 8px 0; }
+.sider-content { height:100%; display:flex; flex-direction:column; padding:10px 3px; }
 .sider-content :deep(.ant-menu) { border-inline-end: none !important; background: transparent !important; }
 /* 菜单项外框居中（左右留空），内容左对齐 */
 .sider-content :deep(.ant-menu .ant-menu-item) {
@@ -92,9 +92,9 @@ const onMenuClick: MenuProps['onClick'] = info => {
   margin: 2px auto;               /* 水平居中 */
   width: calc(100% - 16px);       /* 两侧各留 8px 空隙 */
   border-radius: 6px;
-  padding: 0 10px !important;     /* 左右内边距 */
+  padding: 5px 16px !important;     /* 左右内边距 */
   line-height: 36px;
-  height: 36px;
+  height: 40px;
   display: flex;
   align-items: center;
   justify-content: flex-start;    /* 左对齐图标与文字 */
@@ -125,7 +125,7 @@ const onMenuClick: MenuProps['onClick'] = info => {
 .sider-content :deep(.ant-menu-light .ant-menu-item::after),
 .sider-content :deep(.ant-menu-dark .ant-menu-item::after) { display: none; }
 .bottom-menu { margin-top:auto; }
-.content-area { min-height:0; overflow:auto; scrollbar-width:none; -ms-overflow-style:none; padding:16px;}
+.content-area { min-height:0; overflow:auto; scrollbar-width:none; -ms-overflow-style:none; padding:32px;}
 .content-area::-webkit-scrollbar { display:none; }
 </style>
 
