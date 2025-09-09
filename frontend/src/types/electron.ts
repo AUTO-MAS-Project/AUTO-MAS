@@ -5,8 +5,17 @@ export interface ElectronAPI {
   selectFolder: () => Promise<string | null>
   selectFile: (filters?: Array<{ name: string; extensions: string[] }>) => Promise<string | null>
 
+  // 窗口控制
+  windowMinimize: () => Promise<void>
+  windowMaximize: () => Promise<void>
+  windowClose: () => Promise<void>
+  windowIsMaximized: () => Promise<boolean>
+
   // 管理员权限检查
   checkAdmin: () => Promise<boolean>
+
+  // 重启为管理员
+  restartAsAdmin: () => Promise<void>
 
   // 环境检查
   checkEnvironment: () => Promise<{
@@ -53,7 +62,6 @@ export interface ElectronAPI {
     callback: (progress: { progress: number; status: string; message: string }) => void
   ) => void
   removeDownloadProgressListener: () => void
-  restartAsAdmin: () => Promise<void>
 }
 
 declare global {

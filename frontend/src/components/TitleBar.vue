@@ -7,6 +7,12 @@
         <span class="logo-glow" aria-hidden="true"></span>
         <img src="@/assets/AUTO-MAS.ico" alt="AUTO-MAS" class="title-logo" />
         <span class="title-text">AUTO-MAS</span>
+        <span class="version-text">
+          v{{ version }}
+          <span v-if="updateInfo?.if_need_update" class="update-hint" :title="getUpdateTooltip()">
+            检测到更新 {{ updateInfo.latest_version }} 请尽快更新
+          </span>
+        </span>
       </div>
     </div>
 
@@ -16,26 +22,18 @@
     <!-- 右侧：窗口控制按钮 -->
     <div class="title-bar-right">
       <div class="window-controls">
-        <button 
-          class="control-button minimize-button" 
-          @click="minimizeWindow"
-          title="最小化"
-        >
+        <button class="control-button minimize-button" @click="minimizeWindow" title="最小化">
           <MinusOutlined />
         </button>
-        <button 
-          class="control-button maximize-button" 
+        <button
+          class="control-button maximize-button"
           @click="toggleMaximize"
           :title="isMaximized ? '还原' : '最大化'"
         >
           <BorderOutlined v-if="!isMaximized" />
           <CopyOutlined v-else />
         </button>
-        <button 
-          class="control-button close-button" 
-          @click="closeWindow"
-          title="关闭"
-        >
+        <button class="control-button close-button" @click="closeWindow" title="关闭">
           <CloseOutlined />
         </button>
       </div>
@@ -47,9 +45,46 @@
 import { ref, onMounted } from 'vue'
 import { MinusOutlined, BorderOutlined, CopyOutlined, CloseOutlined } from '@ant-design/icons-vue'
 import { useTheme } from '@/composables/useTheme'
+import { Service } from '@/api'
+import type { UpdateCheckOut } from '@/api'
 
 const { isDark } = useTheme()
 const isMaximized = ref(false)
+
+// 使用 import.meta.env 或直接定义版本号，确保打包后可用
+const version = import.meta.env.VITE_APP_VERSION || '获取版本失败！'
+const updateInfo = ref<UpdateCheckOut | null>(null)
+
+// 获取是否有更新
+const getAppVersion = async () => {
+  try {
+    const ver = await Service.checkUpdateApiUpdateCheckPost({
+      current_version: version,
+    })
+    updateInfo.value = ver
+    return ver || '获取版本失败！'
+  } catch (error) {
+    console.error('Failed to get app version:', error)
+    return '获取版本失败！'
+  }
+}
+
+// 生成更新提示的详细信息
+const getUpdateTooltip = () => {
+  if (!updateInfo.value?.update_info) return ''
+
+  const updateDetails = []
+  for (const [category, items] of Object.entries(updateInfo.value.update_info)) {
+    if (items && items.length > 0) {
+      updateDetails.push(`${category}:`)
+      items.forEach(item => {
+        updateDetails.push(`• ${item}`)
+      })
+      updateDetails.push('')
+    }
+  }
+  return updateDetails.join('\n')
+}
 
 const minimizeWindow = async () => {
   try {
@@ -62,7 +97,7 @@ const minimizeWindow = async () => {
 const toggleMaximize = async () => {
   try {
     await window.electronAPI?.windowMaximize()
-    isMaximized.value = await window.electronAPI?.windowIsMaximized() || false
+    isMaximized.value = (await window.electronAPI?.windowIsMaximized()) || false
   } catch (error) {
     console.error('Failed to toggle maximize:', error)
   }
@@ -78,10 +113,11 @@ const closeWindow = async () => {
 
 onMounted(async () => {
   try {
-    isMaximized.value = await window.electronAPI?.windowIsMaximized() || false
+    isMaximized.value = (await window.electronAPI?.windowIsMaximized()) || false
   } catch (error) {
     console.error('Failed to get window state:', error)
   }
+  await getAppVersion()
 })
 </script>
 
@@ -124,11 +160,11 @@ onMounted(async () => {
   left: 55px; /* 调整：更贴近图标 */
   top: 50%;
   transform: translate(-50%, -50%);
-  width: 200px;  /* 缩小尺寸以适配 32px 高度 */
+  width: 200px; /* 缩小尺寸以适配 32px 高度 */
   height: 100px;
   pointer-events: none;
   border-radius: 50%;
-  background: radial-gradient(circle at 50% 50%, var(--ant-color-primary) 0%, rgba(0,0,0,0) 70%);
+  background: radial-gradient(circle at 50% 50%, var(--ant-color-primary) 0%, rgba(0, 0, 0, 0) 70%);
   filter: blur(24px); /* 降低模糊避免越界过多 */
   opacity: 0.4;
   z-index: 0;
@@ -153,8 +189,21 @@ onMounted(async () => {
   z-index: 1;
 }
 
+.version-text {
+  font-size: 13px;
+  font-weight: 400;
+  opacity: 0.8;
+  position: relative;
+  z-index: 1;
+  margin-left: 4px;
+}
+
 .title-bar-dark .title-text {
   color: #fff;
+}
+
+.title-bar-dark .version-text {
+  color: #ffffff;
 }
 
 .title-bar-center {
@@ -217,5 +266,80 @@ onMounted(async () => {
 .title-bar-dark .minimize-button:hover,
 .title-bar-dark .maximize-button:hover {
   background: rgba(255, 255, 255, 0.15);
+}
+
+.update-hint {
+  font-weight: 500;
+  margin-left: 4px;
+  cursor: help;
+  background: linear-gradient(45deg, #ff0000, #ff7f00, #ffff00, #00ff00, #8b00ff, #ff0000);
+  background-size: 400% 400%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation:
+    rainbow-flow 3s ease-in-out infinite,
+    glow-pulse 2s ease-in-out infinite;
+  position: relative;
+}
+
+.update-hint::before {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  right: -2px;
+  bottom: -2px;
+  background: linear-gradient(45deg, #ff0000, #ff7f00, #ffff00, #00ff00, #8b00ff, #ff0000);
+  background-size: 400% 400%;
+  border-radius: 4px;
+  z-index: -1;
+  opacity: 0.3;
+  filter: blur(8px);
+  animation: rainbow-flow 3s ease-in-out infinite;
+}
+
+.title-bar-dark .update-hint::before {
+  opacity: 0.5;
+  filter: blur(10px);
+}
+
+@keyframes rainbow-flow {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+@keyframes glow-pulse {
+  0% {
+    filter: brightness(1) saturate(1);
+    transform: scale(1);
+  }
+  50% {
+    filter: brightness(1.2) saturate(1.3);
+    transform: scale(1.02);
+  }
+  100% {
+    filter: brightness(1) saturate(1);
+    transform: scale(1);
+  }
+}
+
+@keyframes pulse {
+  0% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+  100% {
+    opacity: 1;
+  }
 }
 </style>
