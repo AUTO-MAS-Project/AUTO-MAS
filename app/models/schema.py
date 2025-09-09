@@ -34,6 +34,13 @@ class InfoOut(OutBase):
     data: Dict[str, Any] = Field(..., description="收到的服务器数据")
 
 
+class VersionOut(OutBase):
+    if_latest: bool = Field(..., description="后端代码是否为最新")
+    current_hash: str = Field(..., description="后端代码当前哈希值")
+    current_time: str = Field(..., description="后端代码当前时间戳")
+    current_version: str = Field(..., description="后端当前版本号")
+
+
 class NoticeOut(OutBase):
     if_need_show: bool = Field(..., description="是否需要显示公告")
     data: Dict[str, str] = Field(
