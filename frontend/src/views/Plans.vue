@@ -853,7 +853,7 @@ const getSimpleTaskTagColor = (taskName: string) => {
     '红票-5': 'volcano',
     '技能-5': 'cyan',
     '经验-6/5': 'gold',
-    '碳-5': 'none',
+    '碳-5': 'default',
     '奶/盾芯片': 'green',
     '奶/盾芯片组': 'green',
     '术/狙芯片': 'purple',
