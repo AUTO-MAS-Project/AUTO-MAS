@@ -53,6 +53,8 @@ import type { TimeSetGetIn } from '../models/TimeSetGetIn';
 import type { TimeSetGetOut } from '../models/TimeSetGetOut';
 import type { TimeSetReorderIn } from '../models/TimeSetReorderIn';
 import type { TimeSetUpdateIn } from '../models/TimeSetUpdateIn';
+import type { UpdateCheckIn } from '../models/UpdateCheckIn';
+import type { UpdateCheckOut } from '../models/UpdateCheckOut';
 import type { UserCreateOut } from '../models/UserCreateOut';
 import type { UserDeleteIn } from '../models/UserDeleteIn';
 import type { UserGetIn } from '../models/UserGetIn';
@@ -954,6 +956,47 @@ export class Service {
             errors: {
                 422: `Validation Error`,
             },
+        });
+    }
+    /**
+     * 检查更新
+     * @param requestBody
+     * @returns UpdateCheckOut Successful Response
+     * @throws ApiError
+     */
+    public static checkUpdateApiUpdateCheckPost(
+        requestBody: UpdateCheckIn,
+    ): CancelablePromise<UpdateCheckOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/update/check',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 下载更新
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static downloadUpdateApiUpdateDownloadPost(): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/update/download',
+        });
+    }
+    /**
+     * 安装更新
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static installUpdateApiUpdateInstallPost(): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/update/install',
         });
     }
 }
