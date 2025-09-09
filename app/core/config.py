@@ -28,11 +28,11 @@ import sqlite3
 import calendar
 import requests
 import truststore
+from git import Repo
 from pathlib import Path
 from fastapi import WebSocket
-from urllib.parse import quote
 from collections import defaultdict
-from datetime import datetime, timedelta, date, timezone
+from datetime import datetime, timedelta, date
 from typing import Literal, Optional
 
 from app.models.ConfigBase import *
@@ -597,6 +597,7 @@ class AppConfig(GlobalConfig):
         self.config_path.mkdir(parents=True, exist_ok=True)
         self.history_path.mkdir(parents=True, exist_ok=True)
 
+        self.repo = Repo(Path.cwd())
         self.server: Optional[uvicorn.Server] = None
         self.websocket: Optional[WebSocket] = None
         self.silence_dict: Dict[Path, datetime] = {}
@@ -907,6 +908,26 @@ class AppConfig(GlobalConfig):
             raise RuntimeError("WebSocket 未连接")
         else:
             await Config.websocket.send_json(data)
+
+    async def get_git_version(self) -> tuple[bool, str, str]:
+
+        # 获取当前 commit
+        current_commit = self.repo.head.commit
+
+        # 获取 commit 哈希
+        commit_hash = current_commit.hexsha
+
+        # 获取 commit 时间
+        commit_time = datetime.fromtimestamp(current_commit.committed_date)
+
+        # 检查是否为最新 commit
+        # 获取远程分支的最新 commit
+        origin = self.repo.remotes.origin
+        origin.fetch()  # 拉取最新信息
+        remote_commit = self.repo.commit(f"origin/{self.repo.active_branch.name}")
+        is_latest = bool(current_commit.hexsha == remote_commit.hexsha)
+
+        return is_latest, commit_hash, commit_time.strftime("%Y-%m-%d %H:%M:%S")
 
     async def add_script(
         self, script: Literal["MAA", "General"]
