@@ -111,5 +111,6 @@ export type { UserReorderIn } from './models/UserReorderIn';
 export type { UserSetIn } from './models/UserSetIn';
 export type { UserUpdateIn } from './models/UserUpdateIn';
 export type { ValidationError } from './models/ValidationError';
+export type { VersionOut } from './models/VersionOut';
 
 export { Service } from './services/Service';
