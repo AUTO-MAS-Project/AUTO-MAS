@@ -777,3 +777,13 @@ class SettingGetOut(OutBase):
 
 class SettingUpdateIn(BaseModel):
     data: GlobalConfig = Field(..., description="全局设置需要更新的数据")
+
+
+class UpdateCheckIn(BaseModel):
+    current_version: str = Field(..., description="当前前端版本号")
+
+
+class UpdateCheckOut(OutBase):
+    if_need_update: bool = Field(..., description="是否需要更新前端")
+    latest_version: str = Field(..., description="最新前端版本号")
+    update_info: Dict[str, List[str]] = Field(..., description="版本更新信息字典")
