@@ -16,9 +16,9 @@ export type VersionOut = {
      */
     message?: string;
     /**
-     * 后端代码是否为最新
+     * 后端代码是否需要更新
      */
-    if_latest: boolean;
+    if_need_update: boolean;
     /**
      * 后端代码当前哈希值
      */
