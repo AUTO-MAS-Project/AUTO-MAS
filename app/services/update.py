@@ -22,6 +22,7 @@
 import re
 import time
 import json
+import asyncio
 import zipfile
 import requests
 import subprocess
@@ -209,7 +210,7 @@ class _UpdateHandler:
                         f"连接失败: {download_url}, 状态码: {response.status_code}, 剩余重试次数: {check_times}"
                     )
 
-                    time.sleep(1)
+                    await asyncio.sleep(1)
                     continue
 
                 logger.info(f"连接成功: {download_url}, 状态码: {response.status_code}")
@@ -225,17 +226,6 @@ class _UpdateHandler:
 
                         f.write(chunk)
                         downloaded_size += len(chunk)
-                        await Config.send_json(
-                            WebSocketMessage(
-                                id="Update",
-                                type="Update",
-                                data={
-                                    "downloaded_size": downloaded_size,
-                                    "file_size": file_size,
-                                    "speed": speed,
-                                },
-                            ).model_dump()
-                        )
 
                         # 更新指定线程的下载进度, 每秒更新一次
                         if time.time() - last_time >= 1.0:
@@ -246,6 +236,18 @@ class _UpdateHandler:
                             )
                             last_download_size = downloaded_size
                             last_time = time.time()
+
+                            await Config.send_json(
+                                WebSocketMessage(
+                                    id="Update",
+                                    type="Update",
+                                    data={
+                                        "downloaded_size": downloaded_size,
+                                        "file_size": file_size,
+                                        "speed": speed,
+                                    },
+                                ).model_dump()
+                            )
 
                 (Path.cwd() / "download.temp").rename(
                     Path.cwd() / f"UpdatePack_{self.remote_version}.zip"
@@ -276,7 +278,7 @@ class _UpdateHandler:
                 logger.info(
                     f"下载出错: {download_url}, 错误信息: {e}, 剩余重试次数: {check_times}"
                 )
-                time.sleep(1)
+                await asyncio.sleep(1)
 
         else:
 
