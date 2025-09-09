@@ -249,7 +249,7 @@ async def skland_sign_in(token) -> dict:
                     f"{character.get("nickName")}（{character.get("channelName")}）"
                 )
 
-            time.sleep(3)
+            await asyncio.sleep(3)
 
         return result
 
