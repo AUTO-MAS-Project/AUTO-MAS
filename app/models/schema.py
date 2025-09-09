@@ -35,7 +35,7 @@ class InfoOut(OutBase):
 
 
 class VersionOut(OutBase):
-    if_latest: bool = Field(..., description="后端代码是否为最新")
+    if_need_update: bool = Field(..., description="后端代码是否需要更新")
     current_hash: str = Field(..., description="后端代码当前哈希值")
     current_time: str = Field(..., description="后端代码当前时间戳")
     current_version: str = Field(..., description="后端当前版本号")

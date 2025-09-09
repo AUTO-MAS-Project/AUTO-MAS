@@ -13,7 +13,7 @@
             检测到更新 {{ updateInfo.latest_version }} 请尽快更新
           </span>
           <span
-            v-if="!backendUpdateInfo?.if_latest"
+            v-if="backendUpdateInfo?.if_need_update"
             class="update-hint"
             :title="getUpdateTooltip()"
           >
