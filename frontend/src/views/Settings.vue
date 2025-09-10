@@ -14,12 +14,17 @@ import { useSettingsApi } from '../composables/useSettingsApi'
 import type { SelectValue } from 'ant-design-vue/es/select'
 import type { SettingsData } from '../types/settings'
 import { Service, type VersionOut } from '@/api'
+import UpdateModal from '@/components/UpdateModal.vue'
+
+const updateData = ref<Record<string, string[]>>({})
 
 const app_version = import.meta.env.VITE_APP_VERSION || '获取版本失败！'
 
 const router = useRouter()
 const { themeMode, themeColor, themeColors, setThemeMode, setThemeColor } = useTheme()
 const { loading, getSettings, updateSettings } = useSettingsApi()
+
+const updateVisible = ref(false)
 
 const activeKey = ref('basic')
 
@@ -208,6 +213,34 @@ const openDevTools = () => {
   if ((window as any).electronAPI) {
     ;(window as any).electronAPI.openDevTools()
   }
+}
+
+const version = import.meta.env.VITE_APP_VERSION || '获取版本失败！'
+
+const checkUpdate = async () => {
+  try {
+    const response = await Service.checkUpdateApiUpdateCheckPost({
+      current_version: version,
+    })
+    if (response.code === 200) {
+      if (response.if_need_update) {
+        updateData.value = response.update_info
+        updateVisible.value = true
+      } else {
+        message.success("暂无更新~")
+      }
+    } else {
+      message.error(response.message || '获取更新失败')
+    }
+  } catch (error) {
+    console.error('获取更新失败:', error)
+    return '获取更新失败！'
+  }
+}
+
+// 确认回调
+const onUpdateConfirmed = () => {
+  updateVisible.value = false
 }
 
 onMounted(() => {
@@ -1224,11 +1257,23 @@ onMounted(() => {
                   </div>
                 </a-col>
               </a-row>
+              <a-button
+                type="primary"
+                @click="checkUpdate"
+                size="large"
+                >检查更新</a-button>
             </div>
           </div>
         </a-tab-pane>
       </a-tabs>
     </div>
+    <!-- 更新模态框 -->
+    <UpdateModal
+      v-if="updateVisible"
+      v-model:visible="updateVisible"
+      :update-data="updateData"
+      @confirmed="onUpdateConfirmed"
+    />
   </div>
 </template>
 
