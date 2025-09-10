@@ -39,6 +39,7 @@ yarn install
 ```
 
 ### 开发模式
+直接打开electron窗口
 ```bash
 yarn dev
 ```
