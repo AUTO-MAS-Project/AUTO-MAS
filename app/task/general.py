@@ -454,7 +454,7 @@ class GeneralManager:
                                 await System.kill_process(self.game_path)
 
                         # 推送异常通知
-                        Notify.push_plyer(
+                        await Notify.push_plyer(
                             "用户自动代理出现异常！",
                             f"用户 {user['name']} 的自动代理出现一次异常",
                             f"{user['name']} 的自动代理出现异常",
@@ -576,7 +576,7 @@ class GeneralManager:
             logger.success(
                 f"用户 {self.user_list[self.index]['user_id']} 的自动代理任务已完成"
             )
-            Notify.push_plyer(
+            await Notify.push_plyer(
                 "成功完成一个自动代理任务！",
                 f"已完成用户 {self.user_list[self.index]['name']} 的自动代理任务",
                 f"已完成 {self.user_list[self.index]['name']} 的自动代理任务",
@@ -703,7 +703,7 @@ class GeneralManager:
                 result_text += f"\n未开始{self.mode}的用户: \n{"\n".join(result['waiting_user'])}\n"
 
             # 推送代理结果通知
-            Notify.push_plyer(
+            await Notify.push_plyer(
                 title.replace("报告", "已完成！"),
                 f"已完成配置数: {len(over_user)}, 未完成配置数: {len(error_user) + len(wait_user)}",
                 f"已完成配置数: {len(over_user)}, 未完成配置数: {len(error_user) + len(wait_user)}",
@@ -979,19 +979,19 @@ class GeneralManager:
             # 发送全局通知
 
             if Config.get("Notify", "IfSendMail"):
-                Notify.send_mail(
+                await Notify.send_mail(
                     "网页", title, message_html, Config.get("Notify", "ToAddress")
                 )
 
             if Config.get("Notify", "IfServerChan"):
-                Notify.ServerChanPush(
+                await Notify.ServerChanPush(
                     title,
                     f"{serverchan_message}\n\nAUTO_MAA 敬上",
                     Config.get("Notify", "ServerChanKey"),
                 )
 
             if Config.get("Notify", "IfCompanyWebHookBot"):
-                Notify.WebHookPush(
+                await Notify.WebHookPush(
                     title,
                     f"{message_text}\n\nAUTO_MAA 敬上",
                     Config.get("Notify", "CompanyWebHookBotUrl"),
@@ -1016,19 +1016,19 @@ class GeneralManager:
             if Config.get("Notify", "IfSendStatistic"):
 
                 if Config.get("Notify", "IfSendMail"):
-                    Notify.send_mail(
+                    await Notify.send_mail(
                         "网页", title, message_html, Config.get("Notify", "ToAddress")
                     )
 
                 if Config.get("Notify", "IfServerChan"):
-                    Notify.ServerChanPush(
+                    await Notify.ServerChanPush(
                         title,
                         f"{serverchan_message}\n\nAUTO_MAA 敬上",
                         Config.get("Notify", "ServerChanKey"),
                     )
 
                 if Config.get("Notify", "IfCompanyWebHookBot"):
-                    Notify.WebHookPush(
+                    await Notify.WebHookPush(
                         title,
                         f"{message_text}\n\nAUTO_MAA 敬上",
                         Config.get("Notify", "CompanyWebHookBotUrl"),
@@ -1042,7 +1042,7 @@ class GeneralManager:
                 # 发送邮件通知
                 if self.cur_user_data.get("Notify", "IfSendMail"):
                     if self.cur_user_data.get("Notify", "ToAddress"):
-                        Notify.send_mail(
+                        await Notify.send_mail(
                             "网页",
                             title,
                             message_html,
@@ -1054,7 +1054,7 @@ class GeneralManager:
                 # 发送ServerChan通知
                 if self.cur_user_data.get("Notify", "IfServerChan"):
                     if self.cur_user_data.get("Notify", "ServerChanKey"):
-                        Notify.ServerChanPush(
+                        await Notify.ServerChanPush(
                             title,
                             f"{serverchan_message}\n\nAUTO_MAA 敬上",
                             self.cur_user_data.get("Notify", "ServerChanKey"),
@@ -1067,7 +1067,7 @@ class GeneralManager:
                 # 推送CompanyWebHookBot通知
                 if self.cur_user_data.get("Notify", "IfCompanyWebHookBot"):
                     if self.cur_user_data.get("Notify", "CompanyWebHookBotUrl"):
-                        Notify.WebHookPush(
+                        await Notify.WebHookPush(
                             title,
                             f"{message_text}\n\nAUTO_MAA 敬上",
                             self.cur_user_data.get("Notify", "CompanyWebHookBotUrl"),

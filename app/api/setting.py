@@ -26,7 +26,7 @@ import shutil
 from fastapi import APIRouter, Body
 
 from app.core import Config
-from app.services import System
+from app.services import System, Notify
 from app.models.schema import *
 
 router = APIRouter(prefix="/api/setting", tags=["全局设置"])
@@ -75,6 +75,21 @@ async def update_script(script: SettingUpdateIn = Body(...)) -> OutBase:
                     if MuMu_splash_ads_path.exists() and MuMu_splash_ads_path.is_file():
                         MuMu_splash_ads_path.unlink()
 
+    except Exception as e:
+        return OutBase(
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+        )
+    return OutBase()
+
+
+@router.post(
+    "/test_notify", summary="测试通知", response_model=OutBase, status_code=200
+)
+async def test_notify() -> OutBase:
+    """测试通知"""
+
+    try:
+        await Notify.send_test_notification()
     except Exception as e:
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
