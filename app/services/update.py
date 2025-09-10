@@ -1,20 +1,20 @@
-#   AUTO_MAA:A MAA Multi Account Management and Automation Tool
+#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2024-2025 DLmaster361
 
-#   This file is part of AUTO_MAA.
+#   This file is part of AUTO-MAS.
 
-#   AUTO_MAA is free software: you can redistribute it and/or modify
+#   AUTO-MAS is free software: you can redistribute it and/or modify
 #   it under the terms of the GNU General Public License as published
 #   by the Free Software Foundation, either version 3 of the License,
 #   or (at your option) any later version.
 
-#   AUTO_MAA is distributed in the hope that it will be useful,
+#   AUTO-MAS is distributed in the hope that it will be useful,
 #   but WITHOUT ANY WARRANTY; without even the implied warranty
 #   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
 #   the GNU General Public License for more details.
 
 #   You should have received a copy of the GNU General Public License
-#   along with AUTO_MAA. If not, see <https://www.gnu.org/licenses/>.
+#   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
 #   Contact: DLmaster_361@163.com
 
@@ -52,7 +52,7 @@ class _UpdateHandler:
         logger.info("开始检查更新")
 
         response = requests.get(
-            f"https://mirrorchyan.com/api/resources/AUTO_MAA/latest?user_agent=AutoMaaGui&current_version={current_version}&cdk={Config.get('Update', 'MirrorChyanCDK')}&channel={Config.get('Update', 'UpdateType')}",
+            f"https://mirrorchyan.com/api/resources/AUTO_MAA/latest?user_agent=AutoMasGui&current_version={current_version}&cdk={Config.get('Update', 'MirrorChyanCDK')}&channel={Config.get('Update', 'UpdateType')}",
             timeout=10,
             proxies=Config.get_proxies(),
         )
@@ -151,13 +151,13 @@ class _UpdateHandler:
 
         if Config.get("Update", "Source") == "GitHub":
 
-            download_url = f"https://github.com/DLmaster361/AUTO_MAA/releases/download/{self.remote_version}/AUTO_MAA_{self.remote_version}.zip"
+            download_url = f"https://github.com/AUTO-MAS-Project/AUTO-MAS/releases/download/{self.remote_version}/AUTO-MAS_{self.remote_version}.zip"
 
         elif Config.get("Update", "Source") == "MirrorChyan":
 
             if self.mirror_chyan_download_url is None:
                 logger.warning("MirrorChyan 未返回下载链接, 使用自建下载站")
-                download_url = f"https://download.auto-mas.top/d/AUTO_MAA/AUTO_MAA_{self.remote_version}.zip"
+                download_url = f"https://download.auto-mas.top/d/AUTO-MAS/AUTO-MAS_{self.remote_version}.zip"
 
             else:
                 with requests.get(
@@ -170,7 +170,7 @@ class _UpdateHandler:
                     if response.status_code == 200:
                         download_url = response.url
         elif Config.get("Update", "Source") == "AutoSite":
-            download_url = f"https://download.auto-mas.top/d/AUTO_MAA/AUTO_MAA_{self.remote_version}.zip"
+            download_url = f"https://download.auto-mas.top/d/AUTO-MAS/AUTO-MAS_{self.remote_version}.zip"
 
         else:
             await Config.send_json(
@@ -357,7 +357,7 @@ class _UpdateHandler:
         logger.info("启动更新程序")
         self.is_locked = False
         subprocess.Popen(
-            [Path.cwd() / "AUTO_MAA-Setup.exe"],
+            [Path.cwd() / "AUTO-MAS-Setup.exe"],
             creationflags=subprocess.CREATE_NEW_PROCESS_GROUP
             | subprocess.DETACHED_PROCESS
             | subprocess.CREATE_NO_WINDOW,

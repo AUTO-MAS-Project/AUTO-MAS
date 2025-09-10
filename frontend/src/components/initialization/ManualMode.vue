@@ -1,9 +1,9 @@
 <template>
   <div class="manual-mode">
     <div class="header">
-      <!--      <a-typography-title>AUTO_MAA 初始化向导</a-typography-title>-->
+      <!--      <a-typography-title>AUTO-MAS 初始化向导</a-typography-title>-->
       <a-typography-title :level="3"
-        >欢迎使用 AUTO_MAA，让我们来配置您的运行环境</a-typography-title
+        >欢迎使用 AUTO-MAS，让我们来配置您的运行环境</a-typography-title
       >
 
       <!--            <div class="header-actions">-->

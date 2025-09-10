@@ -2,7 +2,7 @@
   <div class="auto-mode">
     <div class="header">
       <img src="/src/assets/AUTO-MAS.ico" alt="logo" class="logo" />
-      <a-typography-title :level="1">AUTO_MAA</a-typography-title>
+      <a-typography-title :level="1">AUTO-MAS</a-typography-title>
     </div>
     <div class="tip">
       <a-typography-title :level="3">检测到环境已配置，正在启动后端~~</a-typography-title>

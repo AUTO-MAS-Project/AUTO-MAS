@@ -13,7 +13,7 @@
               alt="MAA"
               class="breadcrumb-logo"
             />
-            <img v-else src="@/assets/AUTO-MAS.ico" alt="AUTO_MAA" class="breadcrumb-logo" />
+            <img v-else src="@/assets/AUTO-MAS.ico" alt="AUTO-MAS" class="breadcrumb-logo" />
             编辑脚本
           </div>
         </a-breadcrumb-item>
@@ -580,7 +580,7 @@
               <a-col :span="8">
                 <a-form-item>
                   <template #label>
-                    <a-tooltip title="是否由AUTO_MAA管理游戏/模拟器进程">
+                    <a-tooltip title="是否由AUTO-MAS管理游戏/模拟器进程">
                       <span class="form-label">
                         启用游戏相关功能
                         <QuestionCircleOutlined class="help-icon" />
