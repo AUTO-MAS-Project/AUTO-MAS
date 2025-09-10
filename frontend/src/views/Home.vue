@@ -25,6 +25,13 @@
     @confirmed="onNoticeConfirmed"
   />
 
+  <!-- 更新模态框 -->
+  <UpdateModal
+    v-model:visible="updateVisible"
+    :update-data="updateData"
+    @confirmed="onUpdateConfirmed"
+  />
+
   <div class="content">
     <!-- 当期活动关卡 -->
     <a-card
@@ -33,7 +40,6 @@
       class="activity-card"
       :loading="loading"
     >
-
       <div v-if="error" class="error-message">
         <a-alert :message="error" type="error" show-icon closable @close="error = ''" />
       </div>
@@ -242,15 +248,12 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { message } from 'ant-design-vue'
-import {
-  ClockCircleOutlined,
-  UserOutlined,
-  BellOutlined,
-} from '@ant-design/icons-vue'
+import { ClockCircleOutlined, UserOutlined, BellOutlined } from '@ant-design/icons-vue'
 import { Service } from '@/api/services/Service'
 import NoticeModal from '@/components/NoticeModal.vue'
 import dayjs from 'dayjs'
 import { API_ENDPOINTS } from '@/config/mirrors.ts'
+import UpdateModal from '@/components/UpdateModal.vue'
 
 interface ActivityInfo {
   Tip: string
@@ -305,6 +308,11 @@ const noticeVisible = ref(false)
 const noticeData = ref<Record<string, string>>({})
 const noticeLoading = ref(false)
 
+// 更新相关
+const version = import.meta.env.VITE_APP_VERSION || '获取版本失败！'
+const updateVisible = ref(false)
+const updateData = ref<Record<string, string[]>>({})
+
 // 获取当前活动信息
 const currentActivity = computed(() => {
   if (!activityData.value.length) return null
@@ -358,35 +366,6 @@ const getActivityTimeStatus = (expireTime: string): 'normal' | 'warning' | 'ende
 }
 
 // 获取倒计时样式 - 如果剩余时间小于2天则显示红色
-const getCountdownStyle = (expireTime: string) => {
-  try {
-    const expire = new Date(expireTime)
-    const now = new Date()
-    const remaining = expire.getTime() - now.getTime()
-    const twoDaysInMs = 2 * 24 * 60 * 60 * 1000
-
-    if (remaining <= twoDaysInMs) {
-      return {
-        color: '#ff4d4f',
-        fontWeight: 'bold',
-        fontSize: '18px',
-      }
-    }
-
-    return {
-      color: 'var(--ant-color-text)',
-      fontWeight: '600',
-      fontSize: '20px',
-    }
-  } catch {
-    return {
-      color: 'var(--ant-color-text)',
-      fontWeight: '600',
-      fontSize: '20px',
-    }
-  }
-}
-
 const getProxyTimestamp = (dateStr: string) => {
   if (!dateStr) return Date.now()
 
@@ -513,9 +492,35 @@ const showNotice = async () => {
   }
 }
 
+const checkUpdate = async () => {
+  try {
+    const response = await Service.checkUpdateApiUpdateCheckPost({
+      current_version: version,
+    })
+    if (response.code === 200) {
+      if (response.if_need_update) {
+        updateData.value = response.update_info
+        updateVisible.value = true
+      } else {
+      }
+    } else {
+      message.error(response.message || '获取更新失败')
+    }
+  } catch (error) {
+    console.error('获取更新失败:', error)
+    return '获取更新失败！'
+  }
+}
+
+// 确认回调
+const onUpdateConfirmed = () => {
+  updateVisible.value = false
+}
+
 onMounted(() => {
   fetchActivityData()
   fetchNoticeData()
+  checkUpdate()
 })
 </script>
 
