@@ -1,21 +1,21 @@
-#   AUTO_MAA:A MAA Multi Account Management and Automation Tool
+#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2024-2025 DLmaster361
 #   Copyright © 2025 MoeSnowyFox
 
-#   This file is part of AUTO_MAA.
+#   This file is part of AUTO-MAS.
 
-#   AUTO_MAA is free software: you can redistribute it and/or modify
+#   AUTO-MAS is free software: you can redistribute it and/or modify
 #   it under the terms of the GNU General Public License as published
 #   by the Free Software Foundation, either version 3 of the License,
 #   or (at your option) any later version.
 
-#   AUTO_MAA is distributed in the hope that it will be useful,
+#   AUTO-MAS is distributed in the hope that it will be useful,
 #   but WITHOUT ANY WARRANTY; without even the implied warranty
 #   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
 #   the GNU General Public License for more details.
 
 #   You should have received a copy of the GNU General Public License
-#   along with AUTO_MAA. If not, see <https://www.gnu.org/licenses/>.
+#   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
 #   Contact: DLmaster_361@163.com
 
@@ -582,7 +582,7 @@ class AppConfig(GlobalConfig):
 
         logger.info("")
         logger.info("===================================")
-        logger.info("AUTO_MAA 后端应用程序")
+        logger.info("AUTO-MAS 后端应用程序")
         logger.info(f"版本号:  {self.version()}")
         logger.info(f"工作目录:  {Path.cwd()}")
         logger.info("===================================")
@@ -1055,7 +1055,7 @@ class AppConfig(GlobalConfig):
         logger.success(f"{script_id} 配置导出成功")
 
     async def import_script_from_web(self, script_id: str, url: str):
-        """从「AUTO_MAA 配置分享中心」导入配置"""
+        """从「AUTO-MAS 配置分享中心」导入配置"""
 
         logger.info(f"从网络加载脚本配置: {script_id} - {url}")
         uid = uuid.UUID(script_id)
@@ -1071,9 +1071,9 @@ class AppConfig(GlobalConfig):
         if response.status_code == 200:
             data = response.json()
         else:
-            logger.warning(f"无法从 AUTO_MAA 服务器获取配置内容: {response.text}")
+            logger.warning(f"无法从 AUTO-MAS 服务器获取配置内容: {response.text}")
             raise ConnectionError(
-                f"无法从 AUTO_MAA 服务器获取配置内容: {response.status_code}"
+                f"无法从 AUTO-MAS 服务器获取配置内容: {response.status_code}"
             )
 
         await self.ScriptConfig[uid].load(data)
@@ -1084,7 +1084,7 @@ class AppConfig(GlobalConfig):
     async def upload_script_to_web(
         self, script_id: str, config_name: str, author: str, description: str
     ):
-        """上传配置到「AUTO_MAA 配置分享中心」"""
+        """上传配置到「AUTO-MAS 配置分享中心」"""
 
         logger.info(f"上传配置到网络: {script_id} - {config_name} - {author}")
 
@@ -1135,9 +1135,9 @@ class AppConfig(GlobalConfig):
         if response.status_code == 200:
             logger.success("配置上传成功")
         else:
-            logger.error(f"无法上传配置到 AUTO_MAA 服务器: {response.text}")
+            logger.error(f"无法上传配置到 AUTO-MAS 服务器: {response.text}")
             raise ConnectionError(
-                f"无法上传配置到 AUTO_MAA 服务器: {response.status_code} - {response.text}"
+                f"无法上传配置到 AUTO-MAS 服务器: {response.status_code} - {response.text}"
             )
 
     async def get_user(
@@ -1830,7 +1830,7 @@ class AppConfig(GlobalConfig):
             logger.info("一小时内已进行过一次检查, 直接使用缓存的公告信息")
             return False, local_notice.get("notice_dict", {})
 
-        logger.info(f"开始从 AUTO_MAA 服务器获取公告信息")
+        logger.info(f"开始从 AUTO-MAS 服务器获取公告信息")
 
         try:
             response = requests.get(
@@ -1841,10 +1841,10 @@ class AppConfig(GlobalConfig):
             if response.status_code == 200:
                 remote_notice = response.json()
             else:
-                logger.warning(f"无法从 AUTO_MAA 服务器获取公告信息:{response.text}")
+                logger.warning(f"无法从 AUTO-MAS 服务器获取公告信息:{response.text}")
                 remote_notice = None
         except Exception as e:
-            logger.warning(f"无法从 AUTO_MAA 服务器获取公告信息: {e}")
+            logger.warning(f"无法从 AUTO-MAS 服务器获取公告信息: {e}")
             remote_notice = None
 
         if remote_notice is None:
@@ -1874,7 +1874,7 @@ class AppConfig(GlobalConfig):
         return self.get("Data", "IfShowNotice"), remote_notice.get("notice_dict", {})
 
     async def get_web_config(self):
-        """获取「AUTO_MAA 配置分享中心」配置"""
+        """获取「AUTO-MAS 配置分享中心」配置"""
 
         local_web_config = json.loads(self.get("Data", "WebConfig"))
         if datetime.now() - timedelta(hours=1) < datetime.strptime(
@@ -1883,7 +1883,7 @@ class AppConfig(GlobalConfig):
             logger.info("一小时内已进行过一次检查, 直接使用缓存的配置分享中心信息")
             return local_web_config
 
-        logger.info(f"开始从 AUTO_MAA 服务器获取配置分享中心信息")
+        logger.info(f"开始从 AUTO-MAS 服务器获取配置分享中心信息")
 
         try:
             response = requests.get(
@@ -1895,11 +1895,11 @@ class AppConfig(GlobalConfig):
                 remote_web_config = response.json()
             else:
                 logger.warning(
-                    f"无法从 AUTO_MAA 服务器获取配置分享中心信息:{response.text}"
+                    f"无法从 AUTO-MAS 服务器获取配置分享中心信息:{response.text}"
                 )
                 remote_web_config = None
         except Exception as e:
-            logger.warning(f"无法从 AUTO_MAA 服务器获取配置分享中心信息: {e}")
+            logger.warning(f"无法从 AUTO-MAS 服务器获取配置分享中心信息: {e}")
             remote_web_config = None
 
         if remote_web_config is None:

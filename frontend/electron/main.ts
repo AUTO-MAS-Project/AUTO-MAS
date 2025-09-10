@@ -203,7 +203,7 @@ function createTray() {
   ])
 
   tray.setContextMenu(contextMenu)
-  tray.setToolTip('AUTO_MAA')
+  tray.setToolTip('AUTO-MAS')
   
   // 双击托盘图标显示/隐藏窗口
   tray.on('double-click', () => {
@@ -545,7 +545,7 @@ ipcMain.handle('download-git', async () => {
 
 ipcMain.handle(
   'clone-backend',
-  async (_event, repoUrl = 'https://github.com/DLmaster361/AUTO_MAA.git') => {
+  async (_event, repoUrl = 'https://github.com/AUTO-MAS-Project/AUTO-MAS.git') => {
     const appRoot = getAppRoot()
     return cloneBackend(appRoot, repoUrl)
   }
@@ -553,7 +553,7 @@ ipcMain.handle(
 
 ipcMain.handle(
   'update-backend',
-  async (_event, repoUrl = 'https://github.com/DLmaster361/AUTO_MAA.git') => {
+  async (_event, repoUrl = 'https://github.com/AUTO-MAS-Project/AUTO-MAS.git') => {
     const appRoot = getAppRoot()
     return cloneBackend(appRoot, repoUrl) // 使用相同的逻辑，会自动判断是pull还是clone
   }

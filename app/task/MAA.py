@@ -1,20 +1,20 @@
-#   AUTO_MAA:A MAA Multi Account Management and Automation Tool
+#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2024-2025 DLmaster361
 
-#   This file is part of AUTO_MAA.
+#   This file is part of AUTO-MAS.
 
-#   AUTO_MAA is free software: you can redistribute it and/or modify
+#   AUTO-MAS is free software: you can redistribute it and/or modify
 #   it under the terms of the GNU General Public License as published
 #   by the Free Software Foundation, either version 3 of the License,
 #   or (at your option) any later version.
 
-#   AUTO_MAA is distributed in the hope that it will be useful,
+#   AUTO-MAS is distributed in the hope that it will be useful,
 #   but WITHOUT ANY WARRANTY; without even the implied warranty
 #   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
 #   the GNU General Public License for more details.
 
 #   You should have received a copy of the GNU General Public License
-#   along with AUTO_MAA. If not, see <https://www.gnu.org/licenses/>.
+#   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
 #   Contact: DLmaster_361@163.com
 
@@ -1908,14 +1908,14 @@ class MaaManager:
             if Config.get("Notify", "IfServerChan"):
                 await Notify.ServerChanPush(
                     title,
-                    f"{serverchan_message}\n\nAUTO_MAA 敬上",
+                    f"{serverchan_message}\n\nAUTO-MAS 敬上",
                     Config.get("Notify", "ServerChanKey"),
                 )
 
             if Config.get("Notify", "IfCompanyWebHookBot"):
                 await Notify.WebHookPush(
                     title,
-                    f"{message_text}\n\nAUTO_MAA 敬上",
+                    f"{message_text}\n\nAUTO-MAS 敬上",
                     Config.get("Notify", "CompanyWebHookBotUrl"),
                 )
 
@@ -1962,14 +1962,14 @@ class MaaManager:
                 if Config.get("Notify", "IfServerChan"):
                     await Notify.ServerChanPush(
                         title,
-                        f"{serverchan_message}\n\nAUTO_MAA 敬上",
+                        f"{serverchan_message}\n\nAUTO-MAS 敬上",
                         Config.get("Notify", "ServerChanKey"),
                     )
 
                 if Config.get("Notify", "IfCompanyWebHookBot"):
                     await Notify.WebHookPush(
                         title,
-                        f"{message_text}\n\nAUTO_MAA 敬上",
+                        f"{message_text}\n\nAUTO-MAS 敬上",
                         Config.get("Notify", "CompanyWebHookBotUrl"),
                     )
 
@@ -1995,7 +1995,7 @@ class MaaManager:
                     if self.cur_user_data.get("Notify", "ServerChanKey"):
                         await Notify.ServerChanPush(
                             title,
-                            f"{serverchan_message}\n\nAUTO_MAA 敬上",
+                            f"{serverchan_message}\n\nAUTO-MAS 敬上",
                             self.cur_user_data.get("Notify", "ServerChanKey"),
                         )
                     else:
@@ -2008,7 +2008,7 @@ class MaaManager:
                     if self.cur_user_data.get("Notify", "CompanyWebHookBotUrl"):
                         await Notify.WebHookPush(
                             title,
-                            f"{message_text}\n\nAUTO_MAA 敬上",
+                            f"{message_text}\n\nAUTO-MAS 敬上",
                             self.cur_user_data.get("Notify", "CompanyWebHookBotUrl"),
                         )
                     else:
@@ -2034,14 +2034,14 @@ class MaaManager:
                 if Config.get("Notify", "IfServerChan"):
                     await Notify.ServerChanPush(
                         title,
-                        "好羡慕~\n\nAUTO_MAA 敬上",
+                        "好羡慕~\n\nAUTO-MAS 敬上",
                         Config.get("Notify", "ServerChanKey"),
                     )
 
                 if Config.get("Notify", "IfCompanyWebHookBot"):
                     await Notify.WebHookPush(
                         title,
-                        "好羡慕~\n\nAUTO_MAA 敬上",
+                        "好羡慕~\n\nAUTO-MAS 敬上",
                         Config.get("Notify", "CompanyWebHookBotUrl"),
                     )
                     await Notify.CompanyWebHookBotPushImage(
@@ -2072,7 +2072,7 @@ class MaaManager:
                     if self.cur_user_data.get("Notify", "ServerChanKey"):
                         await Notify.ServerChanPush(
                             title,
-                            "好羡慕~\n\nAUTO_MAA 敬上",
+                            "好羡慕~\n\nAUTO-MAS 敬上",
                             self.cur_user_data.get("Notify", "ServerChanKey"),
                         )
                     else:
@@ -2085,7 +2085,7 @@ class MaaManager:
                     if self.cur_user_data.get("Notify", "CompanyWebHookBotUrl"):
                         await Notify.WebHookPush(
                             title,
-                            "好羡慕~\n\nAUTO_MAA 敬上",
+                            "好羡慕~\n\nAUTO-MAS 敬上",
                             self.cur_user_data.get("Notify", "CompanyWebHookBotUrl"),
                         )
                         await Notify.CompanyWebHookBotPushImage(

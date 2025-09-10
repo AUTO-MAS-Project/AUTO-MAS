@@ -22,7 +22,7 @@
                   alt="MAA"
                   class="script-logo"
                 />
-                <img v-else src="@/assets/AUTO-MAS.ico" alt="AUTO_MAA" class="script-logo" />
+                <img v-else src="@/assets/AUTO-MAS.ico" alt="AUTO-MAS" class="script-logo" />
               </div>
               <div class="script-details">
                 <h3 class="script-name">{{ script.name }}</h3>

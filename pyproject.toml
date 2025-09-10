@@ -1,7 +1,7 @@
 [project]
-name = "AUTO_MAA"
+name = "AUTO-MAS"
 version = "4.0.0.1"
-description = "AUTO_MAA~"
+description = "AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [

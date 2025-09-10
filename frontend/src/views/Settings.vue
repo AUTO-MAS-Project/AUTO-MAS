@@ -961,7 +961,7 @@ onMounted(() => {
                           <div>
                             Mirror酱CDK是使用Mirror源进行高速下载的凭证，可前往
                             <a
-                              href="https://mirrorchyan.com/zh/get-start?source=auto_maa-setting"
+                              href="https://mirrorchyan.com/zh/get-start?source=auto-mas-setting"
                               target="_blank"
                               class="tooltip-link"
                               @click.stop
@@ -1150,7 +1150,7 @@ onMounted(() => {
                       <h4>GitHub仓库</h4>
                       <p>查看源代码、提交issue和贡献</p>
                       <a
-                        href="https://github.com/DLmaster361/AUTO_MAA"
+                        href="https://github.com/AUTO-MAS-Project/AUTO-MAS"
                         target="_blank"
                         class="link-button"
                       >

@@ -1,20 +1,20 @@
-#   AUTO_MAA:A MAA Multi Account Management and Automation Tool
+#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2024-2025 DLmaster361
 
-#   This file is part of AUTO_MAA.
+#   This file is part of AUTO-MAS.
 
-#   AUTO_MAA is free software: you can redistribute it and/or modify
+#   AUTO-MAS is free software: you can redistribute it and/or modify
 #   it under the terms of the GNU General Public License as published
 #   by the Free Software Foundation, either version 3 of the License,
 #   or (at your option) any later version.
 
-#   AUTO_MAA is distributed in the hope that it will be useful,
+#   AUTO-MAS is distributed in the hope that it will be useful,
 #   but WITHOUT ANY WARRANTY; without even the implied warranty
 #   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
 #   the GNU General Public License for more details.
 
 #   You should have received a copy of the GNU General Public License
-#   along with AUTO_MAA. If not, see <https://www.gnu.org/licenses/>.
+#   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
 #   Contact: DLmaster_361@163.com
 
@@ -72,8 +72,8 @@ class _SystemHandler:
                     <RegistrationInfo>
                         <Date>{current_time}</Date>
                         <Author>{current_user}</Author>
-                        <Description>AUTO_MAA自启动服务</Description>
-                        <URI>\\AUTO_MAA_AutoStart</URI>
+                        <Description>AUTO-MAS自启动服务</Description>
+                        <URI>\\AUTO-MAS_AutoStart</URI>
                     </RegistrationInfo>
                     <Triggers>
                         <LogonTrigger>
@@ -108,7 +108,7 @@ class _SystemHandler:
                     </Settings>
                     <Actions Context="Author">
                         <Exec>
-                            <Command>"{Path.cwd() / 'AUTO_MAA.exe'}"</Command>
+                            <Command>"{Path.cwd() / 'AUTO-MAS.exe'}"</Command>
                         </Exec>
                     </Actions>
                 </Task>"""
@@ -126,7 +126,7 @@ class _SystemHandler:
                             "schtasks",
                             "/create",
                             "/tn",
-                            "AUTO_MAA_AutoStart",
+                            "AUTO-MAS_AutoStart",
                             "/xml",
                             xml_file,
                             "/f",
@@ -139,7 +139,7 @@ class _SystemHandler:
 
                     if result.returncode == 0:
                         logger.success(
-                            f"程序自启动任务计划已创建: {Path.cwd() / 'AUTO_MAA.exe'}"
+                            f"程序自启动任务计划已创建: {Path.cwd() / 'AUTO-MAS.exe'}"
                         )
                     else:
                         logger.error(f"程序自启动任务计划创建失败: {result.stderr}")
@@ -159,7 +159,7 @@ class _SystemHandler:
             try:
 
                 result = subprocess.run(
-                    ["schtasks", "/delete", "/tn", "AUTO_MAA_AutoStart", "/f"],
+                    ["schtasks", "/delete", "/tn", "AUTO-MAS_AutoStart", "/f"],
                     creationflags=subprocess.CREATE_NO_WINDOW,
                     stdin=subprocess.DEVNULL,
                     capture_output=True,
@@ -267,7 +267,7 @@ class _SystemHandler:
 
         try:
             result = subprocess.run(
-                ["schtasks", "/query", "/tn", "AUTO_MAA_AutoStart"],
+                ["schtasks", "/query", "/tn", "AUTO-MAS_AutoStart"],
                 creationflags=subprocess.CREATE_NO_WINDOW,
                 stdin=subprocess.DEVNULL,
                 capture_output=True,

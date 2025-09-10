@@ -73,7 +73,7 @@
         <a-radio-button value="General" class="type-option">
           <div class="type-content">
             <div class="type-logo-container">
-              <img src="@/assets/AUTO-MAS.ico" alt="AUTO_MAA" class="type-logo" />
+              <img src="@/assets/AUTO-MAS.ico" alt="AUTO-MAS" class="type-logo" />
             </div>
             <div class="type-info">
               <div class="type-title">通用脚本</div>

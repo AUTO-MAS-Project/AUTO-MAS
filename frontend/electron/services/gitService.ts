@@ -187,7 +187,7 @@ export async function downloadGit(appRoot: string): Promise<{ success: boolean; 
 // 克隆后端代码（替换原有核心逻辑）
 export async function cloneBackend(
   appRoot: string,
-  repoUrl = 'https://github.com/DLmaster361/AUTO_MAA.git'
+  repoUrl = 'https://github.com/AUTO-MAS-Project/AUTO-MAS.git'
 ): Promise<{
   success: boolean
   error?: string

@@ -1,20 +1,20 @@
-#   AUTO_MAA:A MAA Multi Account Management and Automation Tool
+#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2024-2025 DLmaster361
 
-#   This file is part of AUTO_MAA.
+#   This file is part of AUTO-MAS.
 
-#   AUTO_MAA is free software: you can redistribute it and/or modify
+#   AUTO-MAS is free software: you can redistribute it and/or modify
 #   it under the terms of the GNU General Public License as published
 #   by the Free Software Foundation, either version 3 of the License,
 #   or (at your option) any later version.
 
-#   AUTO_MAA is distributed in the hope that it will be useful,
+#   AUTO-MAS is distributed in the hope that it will be useful,
 #   but WITHOUT ANY WARRANTY; without even the implied warranty
 #   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
 #   the GNU General Public License for more details.
 
 #   You should have received a copy of the GNU General Public License
-#   along with AUTO_MAA. If not, see <https://www.gnu.org/licenses/>.
+#   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
 #   Contact: DLmaster_361@163.com
 
@@ -60,7 +60,7 @@ class Notification:
                 notification.notify(
                     title=title,
                     message=message,
-                    app_name="AUTO_MAA",
+                    app_name="AUTO-MAS",
                     app_icon=(Path.cwd() / "res/icons/AUTO-MAS.ico").as_posix(),
                     timeout=t,
                     ticker=ticker,
@@ -111,12 +111,12 @@ class Notification:
             message = MIMEMultipart("alternative")
         message["From"] = formataddr(
             (
-                Header("AUTO_MAA通知服务", "utf-8").encode(),
+                Header("AUTO-MAS通知服务", "utf-8").encode(),
                 Config.get("Notify", "FromAddress"),
             )
         )  # 发件人显示的名字
         message["To"] = formataddr(
-            (Header("AUTO_MAA用户", "utf-8").encode(), to_address)
+            (Header("AUTO-MAS用户", "utf-8").encode(), to_address)
         )  # 收件人显示的名字
         message["Subject"] = str(Header(title, "utf-8"))
 
@@ -242,7 +242,7 @@ class Notification:
         # 发送系统通知
         await self.push_plyer(
             "测试通知",
-            "这是 AUTO_MAA 外部通知测试信息。如果你看到了这段内容, 说明 AUTO_MAA 的通知功能已经正确配置且可以正常工作！",
+            "这是 AUTO-MAS 外部通知测试信息。如果你看到了这段内容, 说明 AUTO-MAS 的通知功能已经正确配置且可以正常工作！",
             "测试通知",
             3,
         )
@@ -251,24 +251,24 @@ class Notification:
         if Config.get("Notify", "IfSendMail"):
             await self.send_mail(
                 "文本",
-                "AUTO_MAA测试通知",
-                "这是 AUTO_MAA 外部通知测试信息。如果你看到了这段内容, 说明 AUTO_MAA 的通知功能已经正确配置且可以正常工作！",
+                "AUTO-MAS测试通知",
+                "这是 AUTO-MAS 外部通知测试信息。如果你看到了这段内容, 说明 AUTO-MAS 的通知功能已经正确配置且可以正常工作！",
                 Config.get("Notify", "ToAddress"),
             )
 
         # 发送Server酱通知
         if Config.get("Notify", "IfServerChan"):
             await self.ServerChanPush(
-                "AUTO_MAA测试通知",
-                "这是 AUTO_MAA 外部通知测试信息。如果你看到了这段内容, 说明 AUTO_MAA 的通知功能已经正确配置且可以正常工作！",
+                "AUTO-MAS测试通知",
+                "这是 AUTO-MAS 外部通知测试信息。如果你看到了这段内容, 说明 AUTO-MAS 的通知功能已经正确配置且可以正常工作！",
                 Config.get("Notify", "ServerChanKey"),
             )
 
         # 发送WebHook通知
         if Config.get("Notify", "IfCompanyWebHookBot"):
             await self.WebHookPush(
-                "AUTO_MAA测试通知",
-                "这是 AUTO_MAA 外部通知测试信息。如果你看到了这段内容, 说明 AUTO_MAA 的通知功能已经正确配置且可以正常工作！",
+                "AUTO-MAS测试通知",
+                "这是 AUTO-MAS 外部通知测试信息。如果你看到了这段内容, 说明 AUTO-MAS 的通知功能已经正确配置且可以正常工作！",
                 Config.get("Notify", "CompanyWebHookBotUrl"),
             )
             await self.CompanyWebHookBotPushImage(
