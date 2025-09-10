@@ -18,8 +18,8 @@
     "extraMetadata": {
       "env": "prod"
     },
-    "appId": "xyz.automaa.frontend",
-    "productName": "AUTO_MAA",
+    "appId": "top.auto-mas.frontend",
+    "productName": "AUTO-MAS",
     "files": [
       "dist/**",
       "dist-electron/**",
@@ -30,8 +30,8 @@
     "publish": [
       {
         "provider": "github",
-        "owner": "DLmaster_361",
-        "repo": "AUTO_MAA"
+        "owner": "AUTO-MAS-Project",
+        "repo": "AUTO-MAS"
       }
     ],
     "extraResources": [
@@ -44,14 +44,14 @@
         { "target": "zip", "arch": ["x64"] }
       ],
       "icon": "public/AUTO-MAS.ico",
-      "artifactName": "AUTO_MAA-Setup-${version}-${arch}.${ext}"
+      "artifactName": "AUTO-MAS-Setup-${version}-${arch}.${ext}"
     },
     "nsis": {
       "oneClick": false,
       "perMachine": true,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "shortcutName": "AUTO_MAA",
+      "shortcutName": "AUTO-MAS",
       "differentialPackage": true
     }
   },
