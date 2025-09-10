@@ -41,7 +41,7 @@ class Notification:
     def __init__(self):
         super().__init__()
 
-    def push_plyer(self, title, message, ticker, t) -> bool:
+    async def push_plyer(self, title, message, ticker, t) -> bool:
         """
         推送系统通知
 
@@ -71,7 +71,7 @@ class Notification:
 
         return True
 
-    def send_mail(self, mode, title, content, to_address) -> None:
+    async def send_mail(self, mode, title, content, to_address) -> None:
         """
         推送邮件通知
 
@@ -134,7 +134,7 @@ class Notification:
         smtpObj.quit()
         logger.success(f"邮件发送成功: {title}")
 
-    def ServerChanPush(self, title, content, send_key) -> None:
+    async def ServerChanPush(self, title, content, send_key) -> None:
         """
         使用Server酱推送通知
 
@@ -170,7 +170,7 @@ class Notification:
         else:
             raise Exception(f"ServerChan 推送通知失败: {response.text}")
 
-    def WebHookPush(self, title, content, webhook_url) -> None:
+    async def WebHookPush(self, title, content, webhook_url) -> None:
         """
         WebHook 推送通知
 
@@ -195,7 +195,9 @@ class Notification:
         else:
             raise Exception(f"WebHook 推送通知失败: {response.text}")
 
-    def CompanyWebHookBotPushImage(self, image_path: Path, webhook_url: str) -> None:
+    async def CompanyWebHookBotPushImage(
+        self, image_path: Path, webhook_url: str
+    ) -> None:
         """
         使用企业微信群机器人推送图片通知
 
@@ -232,13 +234,13 @@ class Notification:
         else:
             raise Exception(f"企业微信群机器人推送图片失败: {response.text}")
 
-    def send_test_notification(self) -> None:
+    async def send_test_notification(self) -> None:
         """发送测试通知到所有已启用的通知渠道"""
 
         logger.info("发送测试通知到所有已启用的通知渠道")
 
         # 发送系统通知
-        self.push_plyer(
+        await self.push_plyer(
             "测试通知",
             "这是 AUTO_MAA 外部通知测试信息。如果你看到了这段内容, 说明 AUTO_MAA 的通知功能已经正确配置且可以正常工作！",
             "测试通知",
@@ -247,7 +249,7 @@ class Notification:
 
         # 发送邮件通知
         if Config.get("Notify", "IfSendMail"):
-            self.send_mail(
+            await self.send_mail(
                 "文本",
                 "AUTO_MAA测试通知",
                 "这是 AUTO_MAA 外部通知测试信息。如果你看到了这段内容, 说明 AUTO_MAA 的通知功能已经正确配置且可以正常工作！",
@@ -256,7 +258,7 @@ class Notification:
 
         # 发送Server酱通知
         if Config.get("Notify", "IfServerChan"):
-            self.ServerChanPush(
+            await self.ServerChanPush(
                 "AUTO_MAA测试通知",
                 "这是 AUTO_MAA 外部通知测试信息。如果你看到了这段内容, 说明 AUTO_MAA 的通知功能已经正确配置且可以正常工作！",
                 Config.get("Notify", "ServerChanKey"),
@@ -264,12 +266,12 @@ class Notification:
 
         # 发送WebHook通知
         if Config.get("Notify", "IfCompanyWebHookBot"):
-            self.WebHookPush(
+            await self.WebHookPush(
                 "AUTO_MAA测试通知",
                 "这是 AUTO_MAA 外部通知测试信息。如果你看到了这段内容, 说明 AUTO_MAA 的通知功能已经正确配置且可以正常工作！",
                 Config.get("Notify", "CompanyWebHookBotUrl"),
             )
-            Notify.CompanyWebHookBotPushImage(
+            await self.CompanyWebHookBotPushImage(
                 Path.cwd() / "res/images/notification/test_notify.png",
                 Config.get("Notify", "CompanyWebHookBotUrl"),
             )
