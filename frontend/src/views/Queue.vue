@@ -669,7 +669,6 @@ onMounted(async () => {
 }
 
 .queue-main {
-  max-width: 1400px;
   margin: 0 auto;
 }
 
