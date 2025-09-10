@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { ref, onMounted, reactive } from 'vue'
 import { useRouter } from 'vue-router'
-import { 
+import {
   QuestionCircleOutlined,
   HomeOutlined,
   GithubOutlined,
-  QqOutlined
+  QqOutlined,
 } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import type { ThemeColor, ThemeMode } from '../composables/useTheme'
@@ -13,12 +13,17 @@ import { useTheme } from '../composables/useTheme.ts'
 import { useSettingsApi } from '../composables/useSettingsApi'
 import type { SelectValue } from 'ant-design-vue/es/select'
 import type { SettingsData } from '../types/settings'
+import { Service, type VersionOut } from '@/api'
+
+const app_version = import.meta.env.VITE_APP_VERSION || '获取版本失败！'
 
 const router = useRouter()
 const { themeMode, themeColor, themeColors, setThemeMode, setThemeColor } = useTheme()
 const { loading, getSettings, updateSettings } = useSettingsApi()
 
 const activeKey = ref('basic')
+
+const backendUpdateInfo = ref<VersionOut | null>(null)
 
 const settings = reactive<SettingsData>({
   UI: {
@@ -64,7 +69,7 @@ const settings = reactive<SettingsData>({
     Source: 'GitHub',
     ProxyAddress: '',
     MirrorChyanCDK: '',
-  }
+  },
 })
 
 // 选项配置
@@ -158,7 +163,7 @@ const handleSettingChange = async (category: keyof SettingsData, key: string, va
   console.log(`设置变更: ${category}.${key} = ${value}`)
   const changes = { [key]: value }
   await saveSettings(category, changes)
-  
+
   // 如果是UI设置的托盘相关配置，立即更新托盘状态
   if (category === 'UI' && (key === 'IfShowTray' || key === 'IfToTray')) {
     try {
@@ -173,6 +178,15 @@ const handleSettingChange = async (category: keyof SettingsData, key: string, va
       console.error('更新托盘设置失败:', error)
       message.error('托盘设置更新失败')
     }
+  }
+}
+
+const getBackendVersion = async () => {
+  try {
+    backendUpdateInfo.value = await Service.getGitVersionApiInfoVersionPost()
+  } catch (error) {
+    console.error('Failed to get backend version:', error)
+    return '获取后端版本失败！'
   }
 }
 
@@ -198,6 +212,7 @@ const openDevTools = () => {
 
 onMounted(() => {
   loadSettings()
+  getBackendVersion()
 })
 </script>
 
@@ -206,7 +221,7 @@ onMounted(() => {
     <div class="settings-header">
       <h1 class="page-title">设置</h1>
     </div>
-    
+
     <div class="settings-content">
       <a-tabs v-model:activeKey="activeKey" type="card" :loading="loading" class="settings-tabs">
         <!-- 界面设置 -->
@@ -241,9 +256,9 @@ onMounted(() => {
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </div>
-                    <a-select 
-                      :value="themeColor" 
-                      @change="handleThemeColorChange" 
+                    <a-select
+                      :value="themeColor"
+                      @change="handleThemeColorChange"
                       size="large"
                       style="width: 100%"
                     >
@@ -336,7 +351,10 @@ onMounted(() => {
                     </div>
                     <a-select
                       v-model:value="settings.Function.HistoryRetentionTime"
-                      @change="(value: any) => handleSettingChange('Function', 'HistoryRetentionTime', value)"
+                      @change="
+                        (value: any) =>
+                          handleSettingChange('Function', 'HistoryRetentionTime', value)
+                      "
                       :options="historyRetentionOptions"
                       size="large"
                       style="width: 100%"
@@ -353,7 +371,9 @@ onMounted(() => {
                     </div>
                     <a-select
                       v-model:value="settings.Function.IfAllowSleep"
-                      @change="(checked: any) => handleSettingChange('Function', 'IfAllowSleep', checked)"
+                      @change="
+                        (checked: any) => handleSettingChange('Function', 'IfAllowSleep', checked)
+                      "
                       size="large"
                       style="width: 100%"
                     >
@@ -374,7 +394,9 @@ onMounted(() => {
                     </div>
                     <a-select
                       v-model:value="settings.Function.IfSilence"
-                      @change="(checked: any) => handleSettingChange('Function', 'IfSilence', checked)"
+                      @change="
+                        (checked: any) => handleSettingChange('Function', 'IfSilence', checked)
+                      "
                       size="large"
                       style="width: 100%"
                     >
@@ -387,7 +409,9 @@ onMounted(() => {
                   <div class="form-item-vertical">
                     <div class="form-label-wrapper">
                       <span class="form-label">模拟器老板键</span>
-                      <a-tooltip title="程序依靠模拟器老板键隐藏模拟器窗口，需要开启静默模式后才能填写，请直接输入文字，多个键位之间请用「+」隔开">
+                      <a-tooltip
+                        title="程序依靠模拟器老板键隐藏模拟器窗口，需要开启静默模式后才能填写，请直接输入文字，多个键位之间请用「+」隔开"
+                      >
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </div>
@@ -408,13 +432,15 @@ onMounted(() => {
                       <span class="form-label">托管Bilibili游戏隐私政策</span>
                       <a-tooltip>
                         <template #title>
-                          <div style="max-width: 300px;">
-                            <p>开启本项即代表您已完整阅读并同意以下协议，并授权本程序在其认定需要时以其认定合适的方法替您处理相关弹窗：</p>
-                            <ul style="margin: 8px 0; padding-left: 16px;">
+                          <div style="max-width: 300px">
+                            <p>
+                              开启本项即代表您已完整阅读并同意以下协议，并授权本程序在其认定需要时以其认定合适的方法替您处理相关弹窗：
+                            </p>
+                            <ul style="margin: 8px 0; padding-left: 16px">
                               <li>
-                                <a 
-                                  href="https://www.bilibili.com/protocal/licence.html" 
-                                  target="_blank" 
+                                <a
+                                  href="https://www.bilibili.com/protocal/licence.html"
+                                  target="_blank"
                                   class="tooltip-link"
                                   @click.stop
                                 >
@@ -422,9 +448,9 @@ onMounted(() => {
                                 </a>
                               </li>
                               <li>
-                                <a 
-                                  href="https://www.bilibili.com/blackboard/privacy-pc.html" 
-                                  target="_blank" 
+                                <a
+                                  href="https://www.bilibili.com/blackboard/privacy-pc.html"
+                                  target="_blank"
                                   class="tooltip-link"
                                   @click.stop
                                 >
@@ -432,9 +458,9 @@ onMounted(() => {
                                 </a>
                               </li>
                               <li>
-                                <a 
-                                  href="https://game.bilibili.com/yhxy" 
-                                  target="_blank" 
+                                <a
+                                  href="https://game.bilibili.com/yhxy"
+                                  target="_blank"
                                   class="tooltip-link"
                                   @click.stop
                                 >
@@ -449,7 +475,10 @@ onMounted(() => {
                     </div>
                     <a-select
                       v-model:value="settings.Function.IfAgreeBilibili"
-                      @change="(checked: any) => handleSettingChange('Function', 'IfAgreeBilibili', checked)"
+                      @change="
+                        (checked: any) =>
+                          handleSettingChange('Function', 'IfAgreeBilibili', checked)
+                      "
                       size="large"
                       style="width: 100%"
                     >
@@ -468,7 +497,10 @@ onMounted(() => {
                     </div>
                     <a-select
                       v-model:value="settings.Function.IfSkipMumuSplashAds"
-                      @change="(checked: any) => handleSettingChange('Function', 'IfSkipMumuSplashAds', checked)"
+                      @change="
+                        (checked: any) =>
+                          handleSettingChange('Function', 'IfSkipMumuSplashAds', checked)
+                      "
                       size="large"
                       style="width: 100%"
                     >
@@ -500,7 +532,9 @@ onMounted(() => {
                     </div>
                     <a-select
                       v-model:value="settings.Notify.SendTaskResultTime"
-                      @change="(value: any) => handleSettingChange('Notify', 'SendTaskResultTime', value)"
+                      @change="
+                        (value: any) => handleSettingChange('Notify', 'SendTaskResultTime', value)
+                      "
                       :options="sendTaskResultTimeOptions"
                       size="large"
                       style="width: 100%"
@@ -517,7 +551,9 @@ onMounted(() => {
                     </div>
                     <a-select
                       v-model:value="settings.Notify.IfSendStatistic"
-                      @change="(checked: any) => handleSettingChange('Notify', 'IfSendStatistic', checked)"
+                      @change="
+                        (checked: any) => handleSettingChange('Notify', 'IfSendStatistic', checked)
+                      "
                       size="large"
                       style="width: 100%"
                     >
@@ -536,7 +572,9 @@ onMounted(() => {
                     </div>
                     <a-select
                       v-model:value="settings.Notify.IfSendSixStar"
-                      @change="(checked: any) => handleSettingChange('Notify', 'IfSendSixStar', checked)"
+                      @change="
+                        (checked: any) => handleSettingChange('Notify', 'IfSendSixStar', checked)
+                      "
                       size="large"
                       style="width: 100%"
                     >
@@ -563,7 +601,9 @@ onMounted(() => {
                     </div>
                     <a-select
                       v-model:value="settings.Notify.IfPushPlyer"
-                      @change="(checked: any) => handleSettingChange('Notify', 'IfPushPlyer', checked)"
+                      @change="
+                        (checked: any) => handleSettingChange('Notify', 'IfPushPlyer', checked)
+                      "
                       size="large"
                       style="width: 100%"
                     >
@@ -578,9 +618,9 @@ onMounted(() => {
             <div class="form-section">
               <div class="section-header">
                 <h3>邮件通知</h3>
-                <a 
-                  href="https://doc.auto-mas.top/docs/advanced-features.html#smtp-%E9%82%AE%E4%BB%B6%E6%8E%A8%E9%80%81%E6%B8%A0%E9%81%93" 
-                  target="_blank" 
+                <a
+                  href="https://doc.auto-mas.top/docs/advanced-features.html#smtp-%E9%82%AE%E4%BB%B6%E6%8E%A8%E9%80%81%E6%B8%A0%E9%81%93"
+                  target="_blank"
                   class="section-doc-link"
                   title="查看电子邮箱配置文档"
                 >
@@ -598,7 +638,9 @@ onMounted(() => {
                     </div>
                     <a-select
                       v-model:value="settings.Notify.IfSendMail"
-                      @change="(checked: any) => handleSettingChange('Notify', 'IfSendMail', checked)"
+                      @change="
+                        (checked: any) => handleSettingChange('Notify', 'IfSendMail', checked)
+                      "
                       size="large"
                       style="width: 100%"
                     >
@@ -617,7 +659,13 @@ onMounted(() => {
                     </div>
                     <a-input
                       v-model:value="settings.Notify.SMTPServerAddress"
-                      @blur="handleSettingChange('Notify', 'SMTPServerAddress', settings.Notify.SMTPServerAddress)"
+                      @blur="
+                        handleSettingChange(
+                          'Notify',
+                          'SMTPServerAddress',
+                          settings.Notify.SMTPServerAddress
+                        )
+                      "
                       :disabled="!settings.Notify.IfSendMail"
                       placeholder="请输入发信邮箱SMTP服务器地址"
                       size="large"
@@ -636,7 +684,9 @@ onMounted(() => {
                     </div>
                     <a-input
                       v-model:value="settings.Notify.FromAddress"
-                      @blur="handleSettingChange('Notify', 'FromAddress', settings.Notify.FromAddress)"
+                      @blur="
+                        handleSettingChange('Notify', 'FromAddress', settings.Notify.FromAddress)
+                      "
                       :disabled="!settings.Notify.IfSendMail"
                       placeholder="请输入发信邮箱地址"
                       size="large"
@@ -653,7 +703,13 @@ onMounted(() => {
                     </div>
                     <a-input-password
                       v-model:value="settings.Notify.AuthorizationCode"
-                      @blur="handleSettingChange('Notify', 'AuthorizationCode', settings.Notify.AuthorizationCode)"
+                      @blur="
+                        handleSettingChange(
+                          'Notify',
+                          'AuthorizationCode',
+                          settings.Notify.AuthorizationCode
+                        )
+                      "
                       :disabled="!settings.Notify.IfSendMail"
                       placeholder="请输入发信邮箱授权码"
                       size="large"
@@ -682,13 +738,12 @@ onMounted(() => {
               </a-row>
             </div>
 
-
             <div class="form-section">
               <div class="section-header">
                 <h3>Server酱通知</h3>
-                <a 
+                <a
                   href="https://doc.auto-mas.top/docs/advanced-features.html#serverchan-%E9%80%9A%E7%9F%A5%E6%8E%A8%E9%80%81%E6%B8%A0%E9%81%93"
-                  target="_blank" 
+                  target="_blank"
                   class="section-doc-link"
                   title="查看Server酱配置文档"
                 >
@@ -702,16 +757,16 @@ onMounted(() => {
                       <span class="form-label">启用Server酱通知</span>
                       <a-tooltip>
                         <template #title>
-                          <div>
-                            使用Server酱推送通知
-                          </div>
+                          <div>使用Server酱推送通知</div>
                         </template>
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </div>
                     <a-select
                       v-model:value="settings.Notify.IfServerChan"
-                      @change="(checked: any) => handleSettingChange('Notify', 'IfServerChan', checked)"
+                      @change="
+                        (checked: any) => handleSettingChange('Notify', 'IfServerChan', checked)
+                      "
                       size="large"
                       style="width: 100%"
                     >
@@ -733,7 +788,13 @@ onMounted(() => {
                     </div>
                     <a-input
                       v-model:value="settings.Notify.ServerChanKey"
-                      @blur="handleSettingChange('Notify', 'ServerChanKey', settings.Notify.ServerChanKey)"
+                      @blur="
+                        handleSettingChange(
+                          'Notify',
+                          'ServerChanKey',
+                          settings.Notify.ServerChanKey
+                        )
+                      "
                       :disabled="!settings.Notify.IfServerChan"
                       placeholder="请输入Server酱SendKey"
                       size="large"
@@ -746,9 +807,9 @@ onMounted(() => {
             <div class="form-section">
               <div class="section-header">
                 <h3>企业微信机器人通知</h3>
-                <a 
-                  href="https://doc.auto-mas.top/docs/advanced-features.html#%E4%BC%81%E4%B8%9A%E5%BE%AE%E4%BF%A1%E7%BE%A4%E6%9C%BA%E5%99%A8%E4%BA%BA%E9%80%9A%E7%9F%A5%E6%8E%A8%E9%80%81%E6%B8%A0%E9%81%93" 
-                  target="_blank" 
+                <a
+                  href="https://doc.auto-mas.top/docs/advanced-features.html#%E4%BC%81%E4%B8%9A%E5%BE%AE%E4%BF%A1%E7%BE%A4%E6%9C%BA%E5%99%A8%E4%BA%BA%E9%80%9A%E7%9F%A5%E6%8E%A8%E9%80%81%E6%B8%A0%E9%81%93"
+                  target="_blank"
                   class="section-doc-link"
                   title="查看企业微信机器人配置文档"
                 >
@@ -766,7 +827,10 @@ onMounted(() => {
                     </div>
                     <a-select
                       v-model:value="settings.Notify.IfCompanyWebHookBot"
-                      @change="(checked: any) => handleSettingChange('Notify', 'IfCompanyWebHookBot', checked)"
+                      @change="
+                        (checked: any) =>
+                          handleSettingChange('Notify', 'IfCompanyWebHookBot', checked)
+                      "
                       size="large"
                       style="width: 100%"
                     >
@@ -785,7 +849,13 @@ onMounted(() => {
                     </div>
                     <a-input
                       v-model:value="settings.Notify.CompanyWebHookBotUrl"
-                      @blur="handleSettingChange('Notify', 'CompanyWebHookBotUrl', settings.Notify.CompanyWebHookBotUrl)"
+                      @blur="
+                        handleSettingChange(
+                          'Notify',
+                          'CompanyWebHookBotUrl',
+                          settings.Notify.CompanyWebHookBotUrl
+                        )
+                      "
                       :disabled="!settings.Notify.IfCompanyWebHookBot"
                       placeholder="请输入Webhook URL"
                       size="large"
@@ -815,7 +885,9 @@ onMounted(() => {
                     </div>
                     <a-select
                       v-model:value="settings.Update.IfAutoUpdate"
-                      @change="(checked: any) => handleSettingChange('Update', 'IfAutoUpdate', checked)"
+                      @change="
+                        (checked: any) => handleSettingChange('Update', 'IfAutoUpdate', checked)
+                      "
                       size="large"
                       style="width: 100%"
                     >
@@ -864,13 +936,17 @@ onMounted(() => {
                   <div class="form-item-vertical">
                     <div class="form-label-wrapper">
                       <span class="form-label">网络代理地址</span>
-                      <a-tooltip title="使用网络代理软件时，若出现网络连接问题，请尝试设置代理地址，此设置全局生效">
+                      <a-tooltip
+                        title="使用网络代理软件时，若出现网络连接问题，请尝试设置代理地址，此设置全局生效"
+                      >
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </div>
                     <a-input
                       v-model:value="settings.Update.ProxyAddress"
-                      @blur="handleSettingChange('Update', 'ProxyAddress', settings.Update.ProxyAddress)"
+                      @blur="
+                        handleSettingChange('Update', 'ProxyAddress', settings.Update.ProxyAddress)
+                      "
                       placeholder="请输入网络代理地址"
                       size="large"
                     />
@@ -884,9 +960,9 @@ onMounted(() => {
                         <template #title>
                           <div>
                             Mirror酱CDK是使用Mirror源进行高速下载的凭证，可前往
-                            <a 
-                              href="https://mirrorchyan.com/zh/get-start?source=auto_maa-setting" 
-                              target="_blank" 
+                            <a
+                              href="https://mirrorchyan.com/zh/get-start?source=auto_maa-setting"
+                              target="_blank"
                               class="tooltip-link"
                               @click.stop
                             >
@@ -900,7 +976,13 @@ onMounted(() => {
                     </div>
                     <a-input
                       v-model:value="settings.Update.MirrorChyanCDK"
-                      @blur="handleSettingChange('Update', 'MirrorChyanCDK', settings.Update.MirrorChyanCDK)"
+                      @blur="
+                        handleSettingChange(
+                          'Update',
+                          'MirrorChyanCDK',
+                          settings.Update.MirrorChyanCDK
+                        )
+                      "
                       :disabled="settings.Update.Source !== 'MirrorChyan'"
                       placeholder="使用Mirror源时请输入Mirror酱CDK"
                       size="large"
@@ -930,7 +1012,9 @@ onMounted(() => {
                     </div>
                     <a-select
                       v-model:value="settings.Start.IfSelfStart"
-                      @change="(checked: any) => handleSettingChange('Start', 'IfSelfStart', checked)"
+                      @change="
+                        (checked: any) => handleSettingChange('Start', 'IfSelfStart', checked)
+                      "
                       size="large"
                       style="width: 100%"
                     >
@@ -949,7 +1033,10 @@ onMounted(() => {
                     </div>
                     <a-select
                       v-model:value="settings.Start.IfMinimizeDirectly"
-                      @change="(checked: any) => handleSettingChange('Start', 'IfMinimizeDirectly', checked)"
+                      @change="
+                        (checked: any) =>
+                          handleSettingChange('Start', 'IfMinimizeDirectly', checked)
+                      "
                       size="large"
                       style="width: 100%"
                     >
@@ -1023,12 +1110,8 @@ onMounted(() => {
               <a-row :gutter="24">
                 <a-col :span="24">
                   <a-space size="large">
-                    <a-button type="primary" @click="goToLogs" size="large">
-                      查看日志
-                    </a-button>
-                    <a-button @click="openDevTools" size="large">
-                      打开开发者工具
-                    </a-button>
+                    <a-button type="primary" @click="goToLogs" size="large"> 查看日志 </a-button>
+                    <a-button @click="openDevTools" size="large"> 打开开发者工具 </a-button>
                   </a-space>
                 </a-col>
               </a-row>
@@ -1052,11 +1135,7 @@ onMounted(() => {
                     <div class="link-content">
                       <h4>软件官网</h4>
                       <p>查看最新版本和功能介绍</p>
-                      <a 
-                        href="https://auto-mas.top" 
-                        target="_blank" 
-                        class="link-button"
-                      >
+                      <a href="https://auto-mas.top" target="_blank" class="link-button">
                         访问官网
                       </a>
                     </div>
@@ -1070,9 +1149,9 @@ onMounted(() => {
                     <div class="link-content">
                       <h4>GitHub仓库</h4>
                       <p>查看源代码、提交issue和贡献</p>
-                      <a 
-                        href="https://github.com/DLmaster361/AUTO_MAA" 
-                        target="_blank" 
+                      <a
+                        href="https://github.com/DLmaster361/AUTO_MAA"
+                        target="_blank"
                         class="link-button"
                       >
                         访问仓库
@@ -1088,11 +1167,7 @@ onMounted(() => {
                     <div class="link-content">
                       <h4>用户QQ群</h4>
                       <p>加入社区，获取帮助和交流</p>
-                      <a 
-                        href="https://qm.qq.com/q/bd9fISNoME" 
-                        target="_blank" 
-                        class="link-button"
-                      >
+                      <a href="https://qm.qq.com/q/bd9fISNoME" target="_blank" class="link-button">
                         加入群聊
                       </a>
                     </div>
@@ -1113,7 +1188,7 @@ onMounted(() => {
                   </div>
                   <div class="info-item">
                     <span class="info-label">当前版本：</span>
-                    <span class="info-value">v1.0.0</span>
+                    <span class="info-value">{{app_version}}</span>
                   </div>
                 </a-col>
                 <a-col :span="12">
@@ -1124,6 +1199,28 @@ onMounted(() => {
                   <div class="info-item">
                     <span class="info-label">许可证：</span>
                     <span class="info-value">GPL-3.0 license</span>
+                  </div>
+                </a-col>
+              </a-row>
+              <a-row :gutter="24">
+                <a-col :span="12">
+                  <div class="info-item">
+                    <span class="info-label">当前后端版本：</span>
+                    <span class="info-value">{{backendUpdateInfo?.current_version}}</span>
+                  </div>
+                  <div class="info-item">
+                    <span class="info-label">当前后端哈希值：</span>
+                    <span class="info-value">{{backendUpdateInfo?.current_hash}}</span>
+                  </div>
+                </a-col>
+                <a-col :span="12">
+                  <div class="info-item">
+                    <span class="info-label">当前时间？：</span>
+                    <span class="info-value">{{backendUpdateInfo?.current_time}}</span>
+                  </div>
+                  <div class="info-item">
+                    <span class="info-label">是否需要更新：</span>
+                    <span class="info-value">{{backendUpdateInfo?.if_need_update}}</span>
                   </div>
                 </a-col>
               </a-row>
