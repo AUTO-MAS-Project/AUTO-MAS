@@ -236,9 +236,9 @@ import MarkdownIt from 'markdown-it'
 
 const router = useRouter()
 const { addScript, deleteScript, getScriptsWithUsers, loading } = useScriptApi()
-const { addUser, updateUser, deleteUser, loading: userLoading } = useUserApi()
+const { updateUser, deleteUser } = useUserApi()
 const { subscribe, unsubscribe } = useWebSocket()
-const { getWebConfigTemplates, importScriptFromWeb, loading: templateApiLoading } = useTemplateApi()
+const { getWebConfigTemplates, importScriptFromWeb } = useTemplateApi()
 
 // 初始化markdown解析器
 const md = new MarkdownIt({
@@ -503,19 +503,11 @@ const handleMAAConfig = async (script: Script) => {
       return
     }
 
-    // 建立WebSocket订阅进行MAA配置
+    // 新订阅
     subscribe(script.id, {
-      onStatusChange: status => {
-        console.log(`脚本 ${script.name} 连接状态: ${status}`)
-      },
-      onMessage: data => {
-        console.log(`脚本 ${script.name} 收到消息:`, data)
-        // 这里可以根据需要处理特定的消息
-      },
       onError: error => {
         console.error(`脚本 ${script.name} 连接错误:`, error)
         message.error(`MAA配置连接失败: ${error}`)
-        // 清理连接记录
         activeConnections.value.delete(script.id)
       },
     })
