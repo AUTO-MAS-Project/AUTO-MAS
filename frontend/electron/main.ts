@@ -537,6 +537,10 @@ ipcMain.handle('start-backend', async () => {
   return startBackend(appRoot)
 })
 
+ipcMain.handle('stop-backend', async () => {
+  return stopBackend()
+})
+
 // Git相关
 ipcMain.handle('download-git', async () => {
   const appRoot = getAppRoot()
