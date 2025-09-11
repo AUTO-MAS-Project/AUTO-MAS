@@ -971,6 +971,18 @@ export class Service {
         });
     }
     /**
+     * 测试通知
+     * 测试通知
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static testNotifyApiSettingTestNotifyPost(): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/setting/test_notify',
+        });
+    }
+    /**
      * 检查更新
      * @param requestBody
      * @returns UpdateCheckOut Successful Response
