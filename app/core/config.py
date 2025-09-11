@@ -19,7 +19,7 @@
 
 #   Contact: DLmaster_361@163.com
 
-
+import os
 import re
 import shutil
 import asyncio
@@ -28,7 +28,6 @@ import sqlite3
 import calendar
 import requests
 import truststore
-from git import Repo
 from pathlib import Path
 from fastapi import WebSocket
 from collections import defaultdict
@@ -40,6 +39,16 @@ from app.utils.constants import *
 from app.utils import get_logger
 
 logger = get_logger("配置管理")
+
+if (Path.cwd() / "environment/git/bin/git.exe").exists():
+    os.environ["GIT_PYTHON_GIT_EXECUTABLE"] = str(
+        Path.cwd() / "environment/git/bin/git.exe"
+    )
+
+try:
+    from git import Repo
+except ImportError:
+    Repo = None
 
 
 class GlobalConfig(ConfigBase):
@@ -602,7 +611,16 @@ class AppConfig(GlobalConfig):
         self.config_path.mkdir(parents=True, exist_ok=True)
         self.history_path.mkdir(parents=True, exist_ok=True)
 
-        self.repo = Repo(Path.cwd())
+        # 初始化Git仓库（如果可用）
+        try:
+            if Repo is not None:
+                self.repo = Repo(Path.cwd())
+            else:
+                self.repo = None
+        except Exception as e:
+            logger.warning(f"Git仓库初始化失败: {e}")
+            self.repo = None
+
         self.server: Optional[uvicorn.Server] = None
         self.websocket: Optional[WebSocket] = None
         self.silence_dict: Dict[Path, datetime] = {}
@@ -915,24 +933,33 @@ class AppConfig(GlobalConfig):
             await Config.websocket.send_json(data)
 
     async def get_git_version(self) -> tuple[bool, str, str]:
+        """获取Git版本信息，如果Git不可用则返回默认值"""
 
-        # 获取当前 commit
-        current_commit = self.repo.head.commit
+        if self.repo is None:
+            logger.warning("Git仓库不可用，返回默认版本信息")
+            return False, "unknown", "unknown"
 
-        # 获取 commit 哈希
-        commit_hash = current_commit.hexsha
+        try:
+            # 获取当前 commit
+            current_commit = self.repo.head.commit
 
-        # 获取 commit 时间
-        commit_time = datetime.fromtimestamp(current_commit.committed_date)
+            # 获取 commit 哈希
+            commit_hash = current_commit.hexsha
 
-        # 检查是否为最新 commit
-        # 获取远程分支的最新 commit
-        origin = self.repo.remotes.origin
-        origin.fetch()  # 拉取最新信息
-        remote_commit = self.repo.commit(f"origin/{self.repo.active_branch.name}")
-        is_latest = bool(current_commit.hexsha == remote_commit.hexsha)
+            # 获取 commit 时间
+            commit_time = datetime.fromtimestamp(current_commit.committed_date)
 
-        return is_latest, commit_hash, commit_time.strftime("%Y-%m-%d %H:%M:%S")
+            # 检查是否为最新 commit
+            # 获取远程分支的最新 commit
+            origin = self.repo.remotes.origin
+            origin.fetch()  # 拉取最新信息
+            remote_commit = self.repo.commit(f"origin/{self.repo.active_branch.name}")
+            is_latest = bool(current_commit.hexsha == remote_commit.hexsha)
+
+            return is_latest, commit_hash, commit_time.strftime("%Y-%m-%d %H:%M:%S")
+        except Exception as e:
+            logger.warning(f"获取Git版本信息失败: {e}")
+            return False, "error", "error"
 
     async def add_script(
         self, script: Literal["MAA", "General"]
