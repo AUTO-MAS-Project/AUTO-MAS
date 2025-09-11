@@ -26,6 +26,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   cloneBackend: (repoUrl?: string) => ipcRenderer.invoke('clone-backend', repoUrl),
   updateBackend: (repoUrl?: string) => ipcRenderer.invoke('update-backend', repoUrl),
   startBackend: () => ipcRenderer.invoke('start-backend'),
+  stopBackend: () => ipcRenderer.invoke('stop-backend'),
 
   // 管理员权限相关
   checkAdmin: () => ipcRenderer.invoke('check-admin'),

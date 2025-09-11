@@ -18,7 +18,8 @@ export interface ElectronAPI {
   installDependencies: (mirror?: string) => Promise<any>
   cloneBackend: (repoUrl?: string) => Promise<any>
   updateBackend: (repoUrl?: string) => Promise<any>
-  startBackend: () => Promise<any>
+  startBackend: () => Promise<{ success: boolean; error?: string }>
+  stopBackend?: () => Promise<{ success: boolean; error?: string }>
 
   // 管理员权限相关
   checkAdmin: () => Promise<boolean>
