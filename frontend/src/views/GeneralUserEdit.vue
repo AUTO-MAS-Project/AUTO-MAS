@@ -360,7 +360,7 @@ const router = useRouter()
 const route = useRoute()
 const { addUser, updateUser, getUsers, loading: userLoading } = useUserApi()
 const { getScript } = useScriptApi()
-const { connect, disconnect } = useWebSocket()
+const { subscribe, unsubscribe } = useWebSocket()
 
 const formRef = ref<FormInstance>()
 const loading = computed(() => userLoading.value)
@@ -513,47 +513,28 @@ const loadUserData = async () => {
 const handleSubmit = async () => {
   try {
     await formRef.value?.validate()
-
-    // 确保扁平化字段同步到嵌套数据
     formData.Info.Name = formData.userName
-
-    console.log('提交前的表单数据:', {
-      userName: formData.userName,
-      InfoName: formData.Info.Name,
-      isEdit: isEdit.value,
-    })
-
-    // 构建提交数据，移除通用脚本不需要的MAA专用字段
-    const { IfSendSixStar, ...generalNotify } = formData.Notify
-    
     const userData = {
       Info: { ...formData.Info },
-      Notify: generalNotify,
+      Notify: { ...formData.Notify },
       Data: { ...formData.Data },
     }
-
     if (isEdit.value) {
-      // 编辑模式
       const result = await updateUser(scriptId, userId, userData)
       if (result) {
         message.success('用户更新成功')
         handleCancel()
       }
     } else {
-      // 添加模式
       const result = await addUser(scriptId)
       if (result) {
-        // 创建成功后立即更新用户数据
         try {
           const updateResult = await updateUser(scriptId, result.userId, userData)
-          console.log('用户数据更新结果:', updateResult)
-
           if (updateResult) {
             message.success('用户创建成功')
             handleCancel()
           } else {
             message.error('用户创建成功，但数据更新失败，请手动编辑用户信息')
-            // 不跳转，让用户可以重新保存
           }
         } catch (updateError) {
           console.error('更新用户数据时发生错误:', updateError)
@@ -575,35 +556,23 @@ const handleGeneralConfig = async () => {
   try {
     generalConfigLoading.value = true
 
-    // 如果已有连接，先断开
     if (generalWebsocketId.value) {
-      disconnect(generalWebsocketId.value)
+      unsubscribe(generalWebsocketId.value)
       generalWebsocketId.value = null
     }
 
-    // 建立WebSocket连接进行通用配置
-    const websocketId = await connect({
-      taskId: userId, // 使用用户ID进行配置
-      mode: '设置脚本',
-      showNotifications: true,
-      onStatusChange: status => {
-        console.log(`用户 ${formData.userName} 通用配置状态: ${status}`)
-      },
-      onMessage: data => {
-        console.log(`用户 ${formData.userName} 通用配置消息:`, data)
-        // 这里可以根据需要处理特定的消息
-      },
+    const subId = userId
+
+    subscribe(subId, {
       onError: error => {
         console.error(`用户 ${formData.userName} 通用配置错误:`, error)
         message.error(`通用配置连接失败: ${error}`)
         generalWebsocketId.value = null
-      },
+      }
     })
 
-    if (websocketId) {
-      generalWebsocketId.value = websocketId
-      message.success(`已开始配置用户 ${formData.userName} 的通用设置`)
-    }
+    generalWebsocketId.value = subId
+    message.success(`已开始配置用户 ${formData.userName} 的通用设置`)
   } catch (error) {
     console.error('通用配置失败:', error)
     message.error('通用配置失败')
@@ -650,9 +619,8 @@ const selectScriptAfterTask = async () => {
 }
 
 const handleCancel = () => {
-  // 清理WebSocket连接
   if (generalWebsocketId.value) {
-    disconnect(generalWebsocketId.value)
+    unsubscribe(generalWebsocketId.value)
     generalWebsocketId.value = null
   }
   router.push('/scripts')
@@ -945,8 +913,8 @@ onMounted(() => {
 }
 
 .path-button:disabled {
-  background: var(--ant-color-bg-container-disabled);
-  color: var(--ant-color-text-disabled);
+  background: var(--ant-color-bg-container);
+  color: var(--ant-color-text-tertiary);
   cursor: not-allowed;
 }
 </style>
