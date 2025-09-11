@@ -27,6 +27,7 @@ import zipfile
 import requests
 import subprocess
 from packaging import version
+from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 from pathlib import Path
 
@@ -48,6 +49,23 @@ class _UpdateHandler:
     async def check_update(
         self, current_version: str
     ) -> tuple[bool, str, Dict[str, List[str]]]:
+
+        if datetime.now() - timedelta(hours=4) < datetime.strptime(
+            Config.get("Data", "LastCheckVersion"), "%Y-%m-%d %H:%M:%S"
+        ):
+            logger.info("四小时内已进行过一次检查, 直接使用缓存的版本更新信息")
+            return (
+                (
+                    False
+                    if self.remote_version is None
+                    else bool(
+                        version.parse(self.remote_version)
+                        > version.parse(current_version)
+                    )
+                ),
+                current_version if self.remote_version is None else self.remote_version,
+                {},
+            )
 
         logger.info("开始检查更新")
 
@@ -72,6 +90,9 @@ class _UpdateHandler:
                     )
 
         logger.success("获取版本信息成功")
+        await Config.set(
+            "Data", "LastCheckVersion", datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        )
 
         remote_version = version_info["data"]["version_name"]
         self.remote_version = remote_version
