@@ -206,7 +206,7 @@ import { PlayCircleOutlined, StopOutlined } from '@ant-design/icons-vue'
 import { Service } from '@/api/services/Service'
 import type { ComboBoxItem } from '@/api/models/ComboBoxItem'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
-import { useWebSocket, type WebSocketBaseMessage } from '@/composables/useWebSocket'
+import { useWebSocket } from '@/composables/useWebSocket'
 
 // 类型定义
 interface RunningTask {
@@ -246,8 +246,8 @@ const messageResponse = ref('')
 const taskForm = reactive<{ taskId: string | null; mode: TaskCreateIn.mode }>({ taskId: null, mode: TaskCreateIn.mode.AutoMode })
 const quickTaskForm = reactive<{ taskId: string | null; mode: TaskCreateIn.mode }>({ taskId: null, mode: TaskCreateIn.mode.AutoMode })
 
-// WebSocket API
-const { connect: wsConnect, disconnect: wsDisconnect, sendRaw } = useWebSocket()
+// WebSocket API - 更新为新的订阅机制
+const { subscribe, unsubscribe } = useWebSocket()
 
 // Tab 事件
 const onSchedulerTabEdit = (targetKey: string | MouseEvent, action: 'add' | 'remove') => {
@@ -263,7 +263,7 @@ const addSchedulerTab = () => {
 const removeSchedulerTab = (key: string) => {
   const idx = schedulerTabs.value.findIndex(t => t.key === key)
   if (idx === -1) return
-  schedulerTabs.value[idx].runningTasks.forEach(t => wsDisconnect(t.websocketId))
+  schedulerTabs.value[idx].runningTasks.forEach(t => unsubscribe(t.websocketId))
   schedulerTabs.value.splice(idx, 1)
   if (activeSchedulerTab.value === key) activeSchedulerTab.value = schedulerTabs.value[Math.max(0, idx - 1)]?.key || 'main'
 }
@@ -321,7 +321,7 @@ const startQuickTask = async () => {
       const idx = currentTab.value.runningTasks.findIndex(t => t.taskName === name)
       if (idx >= 0) {
         const existing = currentTab.value.runningTasks[idx]
-        wsDisconnect(existing.websocketId)
+        unsubscribe(existing.websocketId)
         const oldId = existing.websocketId
         existing.websocketId = r.websocketId
         existing.status = '连接中'
@@ -347,18 +347,18 @@ const startQuickTask = async () => {
   }
 }
 
-// 订阅任务
+// 订阅任务 - 已重构为新的WebSocket订阅机制
 const subscribeTask = (task: RunningTask, mode: TaskCreateIn.mode) => {
-  wsConnect({
-    taskId: task.websocketId,
-    mode,
-    onMessage: raw => handleWebSocketMessage(task, raw),
-    onStatusChange: st => {
-      if (st === '已连接' && task.status === '连接中') task.status = '运行中'
-      if (st === '已断开' && task.status === '运行中') task.status = '已断开'
-      if (st === '连接错误') task.status = '连接错误'
-    }
+  // 使用已有的WebSocket订阅API实例
+  subscribe(task.websocketId, {
+    onProgress: (data) => handleTaskProgress(task, data),
+    onResult: (data) => handleTaskResult(task, data),
+    onError: (data) => handleTaskError(task, data),
+    onNotify: (data) => handleTaskNotify(task, data)
   })
+  
+  task.status = '运行中'
+  addTaskLog(task, `任务 ${task.taskName} 已开始执行 (模式: ${mode})`, 'info')
 }
 
 // 取消添加
@@ -393,6 +393,65 @@ const checkAllTasksCompleted = () => {
   message.success(`所有任务结束，准备执行动作: ${action}`)
 }
 
+// 新的WebSocket消息处理函数
+const handleTaskProgress = (task: RunningTask, data: any) => {
+  if (data?.task_list) {
+    const idx = currentTab.value.runningTasks.findIndex(t => t.websocketId === task.websocketId)
+    if (idx >= 0) {
+      currentTab.value.runningTasks[idx].userQueue = data.task_list.map((i: any) => ({ 
+        name: i.name || '未知任务', 
+        status: i.status || '未知' 
+      }))
+    }
+  }
+  if (data) {
+    Object.entries(data).forEach(([k, v]) => { 
+      if (k !== 'task_list') addTaskLog(task, `${k}: ${v}`, 'info') 
+    })
+  }
+}
+
+const handleTaskResult = (task: RunningTask, data: any) => {
+  const isSuccess = !data?.Error
+  const content = data?.Error || data?.message || data?.val || '任务完成'
+  addTaskLog(task, content, isSuccess ? 'success' : 'error')
+  task.status = isSuccess ? '已完成' : '已失败'
+  
+  if (isSuccess) {
+    notification.success({ message: '任务完成', description: content })
+  } else {
+    notification.error({ message: '任务失败', description: content })
+  }
+  checkAllTasksCompleted()
+}
+
+const handleTaskError = (task: RunningTask, data: any) => {
+  const content = data?.message || data?.Error || data?.val || '任务发生错误'
+  addTaskLog(task, content, 'error')
+  task.status = '已失败'
+  notification.error({ message: '任务错误', description: content })
+  checkAllTasksCompleted()
+}
+
+const handleTaskNotify = (task: RunningTask, data: any) => {
+  if (data?.needInput || data?.messageId) {
+    // 需要用户输入的消息
+    currentMessage.value = { 
+      title: '任务消息', 
+      content: data?.message || data?.val || '任务需要您的输入', 
+      needInput: true, 
+      messageId: data?.messageId, 
+      taskId: task.websocketId 
+    }
+    messageModalVisible.value = true
+  } else {
+    // 普通通知消息
+    const content = data?.message || data?.val || '任务通知'
+    addTaskLog(task, content, 'info')
+    notification.info({ message: '任务信息', description: content })
+  }
+}
+
 // 消息弹窗控制
 const cancelMessage = () => {
   messageModalVisible.value = false
@@ -400,67 +459,26 @@ const cancelMessage = () => {
   currentMessage.value = null
 }
 
-// WebSocket 消息处理
-const handleWebSocketMessage = (task: RunningTask, raw: WebSocketBaseMessage) => {
-  const type = raw.type
-  const payload: any = raw.data
-  const idx = currentTab.value.runningTasks.findIndex(t => t.websocketId === task.websocketId)
-  if (idx === -1) return
-  switch (type) {
-    case 'Update': {
-      if (payload?.task_list) {
-        currentTab.value.runningTasks[idx].userQueue = payload.task_list.map((i: any) => ({ name: i.name || '未知任务', status: i.status || '未知' }))
-      }
-      if (payload) Object.entries(payload).forEach(([k, v]) => { if (k !== 'task_list') addTaskLog(currentTab.value.runningTasks[idx], `${k}: ${v}`, 'info') })
-      break
-    }
-    case 'Message': {
-      currentMessage.value = { title: '任务消息', content: payload?.message || payload?.val || '任务需要您的输入', needInput: true, messageId: payload?.messageId || (raw as any).messageId, taskId: task.websocketId }
-      messageModalVisible.value = true
-      break
-    }
-    case 'Info': {
-      const isErr = !!payload?.Error
-      const content = payload?.Error || payload?.val || payload?.message || '未知通知'
-      addTaskLog(task, content, isErr ? 'error' : 'info')
-      if (isErr) notification.error({ message: '任务错误', description: content })
-      else notification.info({ message: '任务信息', description: content })
-      break
-    }
-    case 'Signal': {
-      if (payload?.Accomplish !== undefined) {
-        const done = !!payload.Accomplish
-        currentTab.value.runningTasks[idx].status = done ? '已完成' : '已失败'
-        addTaskLog(currentTab.value.runningTasks[idx], `任务${done ? '已完成' : '已失败'}`, done ? 'success' : 'error')
-        checkAllTasksCompleted()
-        wsDisconnect(task.websocketId)
-      }
-      break
-    }
-    default:
-      addTaskLog(task, `收到未知消息类型: ${type}`, 'warning')
-  }
-}
-
-// 回复消息
+// 回复消息 - 待重构为WebSocket消息发送
 const sendMessageResponse = () => {
   if (!currentMessage.value?.taskId) return
   const task = schedulerTabs.value.flatMap(t => t.runningTasks).find(t => t.websocketId === currentMessage.value!.taskId)
   if (task) {
-    sendRaw('MessageResponse', { messageId: currentMessage.value!.messageId, response: messageResponse.value }, task.websocketId)
+    // TODO: 实现WebSocket消息回复机制
     addTaskLog(task, `用户回复: ${messageResponse.value}`, 'info')
+    message.warning('消息回复功能待重构为WebSocket发送')
   }
   messageModalVisible.value = false
   messageResponse.value = ''
   currentMessage.value = null
 }
 
-// 停止任务
+// 停止任务 - 已重构为新的WebSocket取消订阅
 const stopTask = (id: string) => {
   const idx = currentTab.value.runningTasks.findIndex(t => t.websocketId === id)
   if (idx >= 0) {
     const task = currentTab.value.runningTasks[idx]
-    wsDisconnect(task.websocketId)
+    unsubscribe(task.websocketId)
     currentTab.value.runningTasks.splice(idx, 1)
     const p = currentTab.value.activeTaskPanels.indexOf(id)
     if (p >= 0) currentTab.value.activeTaskPanels.splice(p, 1)
@@ -468,15 +486,15 @@ const stopTask = (id: string) => {
   }
 }
 
-// 清空日志（按钮已注释，可保留）
-const clearTaskOutput = (id: string) => {
-  const t = currentTab.value.runningTasks.find(x => x.websocketId === id)
-  if (t) t.logs = []
-}
-
 // 生命周期
-onMounted(() => { wsConnect(); loadTaskOptions() })
-onUnmounted(() => { schedulerTabs.value.forEach(tab => tab.runningTasks.forEach(t => wsDisconnect(t.websocketId))) })
+onMounted(() => { 
+  // WebSocket 连接由 useWebSocket 模块自动管理，这里只加载任务选项
+  loadTaskOptions() 
+})
+onUnmounted(() => { 
+  // 清理订阅，但不断开全局连接
+  schedulerTabs.value.forEach(tab => tab.runningTasks.forEach(t => unsubscribe(t.websocketId))) 
+})
 </script>
 
 <style scoped>

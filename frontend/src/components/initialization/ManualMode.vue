@@ -7,7 +7,34 @@
       >
 
       <!--            <div class="header-actions">-->
-      <!--              <a-button size="large" type="primary" @click="handleSkipToHome">-->
+      <!--              <a-button size="large" type="prim  try {
+    const result = await window.electronAPI.startBackend()
+    if (result.success) {
+      if (serviceStepRef.value) {
+        serviceStepRef.value.serviceProgress = 100
+        serviceStepRef.value.serviceStatus = '后端服务启动成功，正在建立WebSocket连接...'
+      }
+      
+      // 后端启动成功，建立WebSocket连接
+      console.log('后端启动成功，正在建立WebSocket连接...')
+      const wsConnected = await connectAfterBackendStart()
+      if (!wsConnected) {
+        console.warn('WebSocket连接建立失败，但继续进入应用')
+      } else {
+        console.log('WebSocket连接建立成功')
+      }
+      
+      if (serviceStepRef.value) {
+        serviceStepRef.value.serviceStatus = '后端服务启动成功，即将进入主页...'
+      }
+      stepStatus.value = 'finish'
+      console.log('后端服务启动成功，延迟1秒后自动进入主页')
+
+      // 延迟1秒后自动进入主页
+      setTimeout(() => {
+        handleEnterApp()
+      }, 1000)
+    } else {ndleSkipToHome">-->
       <!--                跳转至首页（仅开发用）-->
       <!--              </a-button>-->
       <!--              <a-button-->
@@ -119,6 +146,7 @@ import GitStep from './GitStep.vue'
 import BackendStep from './BackendStep.vue'
 import DependenciesStep from './DependenciesStep.vue'
 import ServiceStep from './ServiceStep.vue'
+import { connectAfterBackendStart } from '@/composables/useWebSocket'
 
 
 
@@ -408,6 +436,19 @@ async function startBackendService() {
     if (result.success) {
       if (serviceStepRef.value) {
         serviceStepRef.value.serviceProgress = 100
+        serviceStepRef.value.serviceStatus = '后端服务启动成功，正在建立WebSocket连接...'
+      }
+      
+      // 后端启动成功，建立WebSocket连接
+      console.log('后端手动启动成功，正在建立WebSocket连接...')
+      const wsConnected = await connectAfterBackendStart()
+      if (!wsConnected) {
+        console.warn('WebSocket连接建立失败，但继续进入应用')
+      } else {
+        console.log('WebSocket连接建立成功')
+      }
+      
+      if (serviceStepRef.value) {
         serviceStepRef.value.serviceStatus = '后端服务启动成功，即将进入主页...'
       }
       stepStatus.value = 'finish'

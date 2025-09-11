@@ -42,6 +42,7 @@ import { ref, onMounted } from 'vue'
 import { getConfig } from '@/utils/config'
 import { getMirrorUrl } from '@/config/mirrors'
 import router from '@/router'
+import { connectAfterBackendStart } from '@/composables/useWebSocket'
 
 
 
@@ -184,6 +185,15 @@ async function startBackendService() {
   const result = await window.electronAPI.startBackend()
   if (!result.success) {
     throw new Error(`后端服务启动失败: ${result.error}`)
+  }
+  
+  // 后端启动成功，建立WebSocket连接
+  console.log('后端启动成功，正在建立WebSocket连接...')
+  const wsConnected = await connectAfterBackendStart()
+  if (!wsConnected) {
+    console.warn('WebSocket连接建立失败，但继续进入应用')
+  } else {
+    console.log('WebSocket连接建立成功')
   }
 }
 
