@@ -1,5 +1,5 @@
 import { ref, type Ref } from 'vue'
-import { message, notification, Modal } from 'ant-design-vue'
+import { message, Modal, notification } from 'ant-design-vue'
 
 // 基础配置
 const BASE_WS_URL = 'ws://localhost:36163/api/core/ws'
@@ -87,7 +87,7 @@ const initGlobalStorage = (): GlobalWSStorage => {
     heartbeatTimer: undefined,
     isConnecting: false,
     lastPingTime: 0,
-    connectionId: Math.random().toString(36).substr(2, 9),
+    connectionId: Math.random().toString(36).substring(2, 9),
     moduleLoadCount: 0,
     createdAt: Date.now(),
     hasEverConnected: false,
@@ -102,7 +102,7 @@ const initGlobalStorage = (): GlobalWSStorage => {
     lastConnectAttempt: 0,
     // 连接权限控制
     allowNewConnection: true, // 初始化时允许创建连接
-    connectionReason: '系统初始化'
+    connectionReason: '系统初始化',
   }
 }
 
@@ -112,8 +112,7 @@ const getGlobalStorage = (): GlobalWSStorage => {
     ;(window as any)[WS_STORAGE_KEY] = initGlobalStorage()
   }
 
-  const storage = (window as any)[WS_STORAGE_KEY] as GlobalWSStorage
-  return storage
+  return (window as any)[WS_STORAGE_KEY] as GlobalWSStorage
 }
 
 // 设置全局状态
@@ -131,12 +130,12 @@ const setBackendStatus = (status: BackendStatus) => {
 // 检查后端是否运行（通过WebSocket连接状态判断）
 const checkBackendStatus = (): boolean => {
   const global = getGlobalStorage()
-  
+
   // 如果WebSocket存在且状态为OPEN，说明后端运行正常
   if (global.wsRef && global.wsRef.readyState === WebSocket.OPEN) {
     return true
   }
-  
+
   // 如果WebSocket不存在或状态不是OPEN，说明后端可能有问题
   return false
 }
@@ -144,7 +143,7 @@ const checkBackendStatus = (): boolean => {
 // 重启后端
 const restartBackend = async (): Promise<boolean> => {
   const global = getGlobalStorage()
-  
+
   if (global.isRestartingBackend) {
     return false
   }
@@ -152,7 +151,7 @@ const restartBackend = async (): Promise<boolean> => {
   try {
     global.isRestartingBackend = true
     global.backendRestartAttempts++
-    
+
     setBackendStatus('starting')
 
     // 调用 Electron API 重启后端
@@ -181,7 +180,7 @@ const restartBackend = async (): Promise<boolean> => {
 // 后端监控和重启逻辑
 const handleBackendFailure = async () => {
   const global = getGlobalStorage()
-  
+
   if (global.backendRestartAttempts >= MAX_RESTART_ATTEMPTS) {
     // 弹窗提示用户重启整个应用
     Modal.error({
@@ -190,11 +189,11 @@ const handleBackendFailure = async () => {
       okText: '重启应用',
       onOk: () => {
         if ((window.electronAPI as any)?.windowClose) {
-          (window.electronAPI as any).windowClose()
+          ;(window.electronAPI as any).windowClose()
         } else {
           window.location.reload()
         }
-      }
+      },
     })
     return
   }
@@ -221,16 +220,16 @@ const handleBackendFailure = async () => {
 // 启动后端监控（仅基于WebSocket状态）
 const startBackendMonitoring = () => {
   const global = getGlobalStorage()
-  
+
   if (global.backendCheckTimer) {
     clearInterval(global.backendCheckTimer)
   }
-  
+
   global.backendCheckTimer = window.setInterval(() => {
     const isRunning = checkBackendStatus()
     const now = Date.now()
     global.lastBackendCheck = now
-    
+
     // 基于 WebSocket 状态判断后端运行状态
     if (isRunning) {
       // WebSocket连接正常
@@ -245,9 +244,9 @@ const startBackendMonitoring = () => {
         setBackendStatus('stopped')
       }
     }
-    
+
     // 仅在必要时检查心跳超时
-    if (global.lastPingTime > 0 && (now - global.lastPingTime) > HEARTBEAT_TIMEOUT * 2) {
+    if (global.lastPingTime > 0 && now - global.lastPingTime > HEARTBEAT_TIMEOUT * 2) {
       if (global.wsRef && global.wsRef.readyState === WebSocket.OPEN) {
         setBackendStatus('error')
       }
@@ -274,9 +273,18 @@ const startGlobalHeartbeat = (ws: WebSocket) => {
       try {
         const pingTime = Date.now()
         global.lastPingTime = pingTime
-        ws.send(JSON.stringify({ type: 'Signal', data: { Ping: pingTime, connectionId: global.connectionId } }))
-        setTimeout(() => { /* 心跳超时不主动断开 */ }, HEARTBEAT_TIMEOUT)
-      } catch { /* ignore */ }
+        ws.send(
+          JSON.stringify({
+            type: 'Signal',
+            data: { Ping: pingTime, connectionId: global.connectionId },
+          })
+        )
+        setTimeout(() => {
+          /* 心跳超时不主动断开 */
+        }, HEARTBEAT_TIMEOUT)
+      } catch {
+        /* ignore */
+      }
     }
   }, HEARTBEAT_INTERVAL)
 }
@@ -299,7 +307,12 @@ const handleMessage = (raw: WebSocketBaseMessage) => {
       const ws = global.wsRef
       if (ws && ws.readyState === WebSocket.OPEN) {
         try {
-          ws.send(JSON.stringify({ type: 'Signal', data: { Pong: raw.data.Ping, connectionId: global.connectionId } }))
+          ws.send(
+            JSON.stringify({
+              type: 'Signal',
+              data: { Pong: raw.data.Ping, connectionId: global.connectionId },
+            })
+          )
         } catch (e) {
           // Pong发送失败，静默处理
         }
@@ -325,7 +338,7 @@ const handleMessage = (raw: WebSocketBaseMessage) => {
       if (raw.data && (raw.data as NotifyMessage).title) {
         notification.info({
           message: (raw.data as NotifyMessage).title,
-          description: (raw.data as NotifyMessage).content
+          description: (raw.data as NotifyMessage).content,
         })
       }
       return
@@ -347,7 +360,7 @@ const handleMessage = (raw: WebSocketBaseMessage) => {
 // 后端启动后建立连接的公开函数
 export const connectAfterBackendStart = async (): Promise<boolean> => {
   setConnectionPermission(true, '后端启动后连接')
-  
+
   try {
     const connected = await connectGlobalWebSocket('后端启动后连接')
     if (connected) {
@@ -385,7 +398,7 @@ const createGlobalWebSocket = (): WebSocket => {
     global.hasEverConnected = true
     global.reconnectAttempts = 0
     setGlobalStatus('已连接')
-    
+
     startGlobalHeartbeat(ws)
 
     // 连接成功后禁止新连接
@@ -393,12 +406,24 @@ const createGlobalWebSocket = (): WebSocket => {
 
     // 发送连接确认和初始pong
     try {
-      ws.send(JSON.stringify({ type: 'Signal', data: { Connect: true, connectionId: global.connectionId } }))
-      ws.send(JSON.stringify({ type: 'Signal', data: { Pong: Date.now(), connectionId: global.connectionId } }))
-    } catch { /* ignore */ }
+      ws.send(
+        JSON.stringify({
+          type: 'Signal',
+          data: { Connect: true, connectionId: global.connectionId },
+        })
+      )
+      ws.send(
+        JSON.stringify({
+          type: 'Signal',
+          data: { Pong: Date.now(), connectionId: global.connectionId },
+        })
+      )
+    } catch {
+      /* ignore */
+    }
   }
 
-  ws.onmessage = (ev) => {
+  ws.onmessage = ev => {
     try {
       const raw = JSON.parse(ev.data) as WebSocketBaseMessage
       handleMessage(raw)
@@ -411,14 +436,17 @@ const createGlobalWebSocket = (): WebSocket => {
     setGlobalStatus('连接错误')
   }
 
-  ws.onclose = (event) => {
+  ws.onclose = event => {
     setGlobalStatus('已断开')
     stopGlobalHeartbeat()
     global.isConnecting = false
 
     // 检查是否是后端自杀导致的关闭
     if (event.code === 1000 && event.reason === 'Ping超时') {
-      handleBackendFailure()
+      handleBackendFailure().catch(error => {
+        // 忽略错误，或者可以添加适当的错误处理
+        console.warn('handleBackendFailure error:', error)
+      })
     } else {
       // 连接断开，不自动重连，等待后端重启
       setGlobalStatus('已断开')
@@ -478,18 +506,18 @@ const connectGlobalWebSocket = async (reason: string = '未指定原因'): Promi
     // 额外保护：检查最近连接尝试时间，避免过于频繁的连接
     const now = Date.now()
     const MIN_CONNECT_INTERVAL = 2000 // 最小连接间隔2秒
-    if (global.lastConnectAttempt && (now - global.lastConnectAttempt) < MIN_CONNECT_INTERVAL) {
+    if (global.lastConnectAttempt && now - global.lastConnectAttempt < MIN_CONNECT_INTERVAL) {
       return false
     }
 
     global.isConnecting = true
     global.lastConnectAttempt = now
-    
+
     // 清理旧连接引用（如果存在且已关闭）
     if (global.wsRef && global.wsRef.readyState === WebSocket.CLOSED) {
       global.wsRef = null
     }
-    
+
     global.wsRef = createGlobalWebSocket()
     setGlobalStatus('连接中')
     return true
@@ -512,16 +540,14 @@ const setConnectionPermission = (allow: boolean, reason: string) => {
 
 const checkConnectionPermission = (): boolean => {
   const global = getGlobalStorage()
-  return !!global.allowNewConnection
+  return global.allowNewConnection
 }
 
 // 只在后端启动/重启时允许创建连接
-const allowedConnectionReasons = [
-  '后端启动后连接',
-  '后端重启后重连'
-]
+const allowedConnectionReasons = ['后端启动后连接', '后端重启后重连']
 
-const isValidConnectionReason = (reason: string): boolean => allowedConnectionReasons.includes(reason)
+const isValidConnectionReason = (reason: string): boolean =>
+  allowedConnectionReasons.includes(reason)
 
 // 全局连接锁 - 防止多个模块实例同时连接
 let isGlobalConnectingLock = false
@@ -587,7 +613,7 @@ export function useWebSocket() {
     hasHeartbeat: !!global.heartbeatTimer,
     hasEverConnected: global.hasEverConnected,
     reconnectAttempts: global.reconnectAttempts,
-    isPersistentMode: true // 标识为永久连接模式
+    isPersistentMode: true, // 标识为永久连接模式
   })
 
   const restartBackendManually = async () => {
@@ -598,7 +624,12 @@ export function useWebSocket() {
 
   const getBackendStatus = () => {
     const global = getGlobalStorage()
-    return { status: global.backendStatus.value, restartAttempts: global.backendRestartAttempts, isRestarting: global.isRestartingBackend, lastCheck: global.lastBackendCheck }
+    return {
+      status: global.backendStatus.value,
+      restartAttempts: global.backendRestartAttempts,
+      isRestarting: global.isRestartingBackend,
+      lastCheck: global.lastBackendCheck,
+    }
   }
 
   return {
@@ -610,6 +641,6 @@ export function useWebSocket() {
     subscribers: global.subscribers,
     backendStatus: global.backendStatus,
     restartBackend: restartBackendManually,
-    getBackendStatus
+    getBackendStatus,
   }
 }
