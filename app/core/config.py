@@ -118,20 +118,25 @@ class GlobalConfig(ConfigBase):
 
     Data_UID = ConfigItem("Data", "UID", str(uuid.uuid4()), UUIDValidator())
     Data_LastStatisticsUpload = ConfigItem(
-        "Data", "LastStatisticsUpload", "2000-01-01 00:00:00"
+        "Data", "LastStatisticsUpload", "2000-01-01 00:00:00", DateTimeValidator()
     )
     Data_LastStageUpdated = ConfigItem(
-        "Data", "LastStageUpdated", "2000-01-01 00:00:00"
+        "Data", "LastStageUpdated", "2000-01-01 00:00:00", DateTimeValidator()
     )
-    Data_StageTimeStamp = ConfigItem("Data", "StageTimeStamp", "2000-01-01 00:00:00")
+    Data_StageTimeStamp = ConfigItem(
+        "Data", "StageTimeStamp", "2000-01-01 00:00:00", DateTimeValidator()
+    )
     Data_Stage = ConfigItem("Data", "Stage", "{ }")
     Data_LastNoticeUpdated = ConfigItem(
-        "Data", "LastNoticeUpdated", "2000-01-01 00:00:00"
+        "Data", "LastNoticeUpdated", "2000-01-01 00:00:00", DateTimeValidator()
     )
     Data_IfShowNotice = ConfigItem("Data", "IfShowNotice", True, BoolValidator())
     Data_Notice = ConfigItem("Data", "Notice", "{ }")
     Data_LastWebConfigUpdated = ConfigItem(
-        "Data", "LastWebConfigUpdated", "2000-01-01 00:00:00"
+        "Data", "LastWebConfigUpdated", "2000-01-01 00:00:00", DateTimeValidator()
+    )
+    Data_LastCheckVersion = ConfigItem(
+        "Data", "LastCheckVersion", "2000-01-01 00:00:00", DateTimeValidator()
     )
     Data_WebConfig = ConfigItem("Data", "WebConfig", "{ }")
 
