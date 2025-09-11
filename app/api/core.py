@@ -41,13 +41,14 @@ async def connect_websocket(websocket: WebSocket):
     await websocket.accept()
     Config.websocket = websocket
     last_pong = time.monotonic()
+    last_ping = time.monotonic()
     data = {}
 
     while True:
 
         try:
 
-            data = await asyncio.wait_for(websocket.receive_json(), timeout=30.0)
+            data = await asyncio.wait_for(websocket.receive_json(), timeout=15.0)
             if data.get("type") == "Signal" and "Pong" in data.get("data", {}):
                 last_pong = time.monotonic()
             elif data.get("type") == "Signal" and "Ping" in data.get("data", {}):
@@ -61,7 +62,7 @@ async def connect_websocket(websocket: WebSocket):
 
         except asyncio.TimeoutError:
 
-            if time.monotonic() - last_pong > 15:
+            if last_pong < last_ping:
                 await websocket.close(code=1000, reason="Ping超时")
                 break
             await websocket.send_json(
@@ -69,6 +70,7 @@ async def connect_websocket(websocket: WebSocket):
                     id="Main", type="Signal", data={"Ping": "无描述"}
                 ).model_dump()
             )
+            last_ping = time.monotonic()
 
         except WebSocketDisconnect:
             break
