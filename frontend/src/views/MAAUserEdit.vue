@@ -898,12 +898,14 @@ import { useUserApi } from '@/composables/useUserApi'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { Service } from '@/api'
+import { GetStageIn } from '@/api/models/GetStageIn'
+import { defineComponent } from 'vue'
 
 const router = useRouter()
 const route = useRoute()
 const { addUser, updateUser, getUsers, loading: userLoading } = useUserApi()
 const { getScript } = useScriptApi()
-const { connect, disconnect } = useWebSocket()
+const { subscribe, unsubscribe } = useWebSocket()
 
 const formRef = ref<FormInstance>()
 const loading = computed(() => userLoading.value)
@@ -1129,19 +1131,17 @@ const loadUserData = async () => {
 const loadStageOptions = async () => {
   try {
     const response = await Service.getStageComboxApiInfoComboxStagePost({
-      type: 'Today',
+      type: GetStageIn.type.TODAY
     })
     if (response && response.code === 200 && response.data) {
-      const sorted = [...response.data].sort((a, b) => {
+      stageOptions.value = [...response.data].sort((a, b) => {
         if (a.value === '-') return -1
         if (b.value === '-') return 1
         return 0
       })
-      stageOptions.value = sorted
     }
   } catch (error) {
     console.error('加载关卡选项失败:', error)
-    // 保持默认选项
   }
 }
 
@@ -1157,14 +1157,21 @@ const loadStageModeOptions = async () => {
   }
 }
 
+// 替换 VNodes 组件定义
+const VNodes = defineComponent({
+  props: { vnodes: { type: Object, required: true } },
+  setup(props) {
+    return () => props.vnodes as any
+  }
+})
+
 // 选择基建配置文件
 const selectInfrastructureConfig = async () => {
   try {
-    const path = await window.electronAPI?.selectFile([
+    const path = await (window as any).electronAPI?.selectFile([
       { name: 'JSON 文件', extensions: ['json'] },
       { name: '所有文件', extensions: ['*'] },
     ])
-
     if (path && path.length > 0) {
       infrastructureConfigPath.value = path
       formData.Info.InfrastPath = path[0]
@@ -1182,28 +1189,22 @@ const importInfrastructureConfig = async () => {
     message.warning('请先选择配置文件')
     return
   }
-
   if (!isEdit.value) {
     message.warning('请先保存用户后再导入配置')
     return
   }
-
   try {
     infrastructureImporting.value = true
-
-    // 调用API导入基建配置
     const result = await Service.importInfrastructureApiScriptsUserInfrastructurePost({
       scriptId: scriptId,
       userId: userId,
       jsonFile: infrastructureConfigPath.value[0],
     })
-
     if (result && result.code === 200) {
       message.success('基建配置导入成功')
-      // 清空文件路径
       infrastructureConfigPath.value = ''
     } else {
-      message.error(result?.msg || '基建配置导入失败')
+      message.error('基建配置导入失败')
     }
   } catch (error) {
     console.error('基建配置导入失败:', error)
@@ -1285,33 +1286,22 @@ const handleMAAConfig = async () => {
 
     // 如果已有连接，先断开
     if (maaWebsocketId.value) {
-      disconnect(maaWebsocketId.value)
+      unsubscribe(maaWebsocketId.value)
       maaWebsocketId.value = null
     }
 
-    // 建立WebSocket连接进行MAA配置
-    const websocketId = await connect({
-      taskId: userId, // 使用用户ID进行配置
-      mode: '设置脚本',
-      showNotifications: true,
-      onStatusChange: status => {
-        console.log(`用户 ${formData.userName} MAA配置状态: ${status}`)
-      },
-      onMessage: data => {
-        console.log(`用户 ${formData.userName} MAA配置消息:`, data)
-        // 这里可以根据需要处理特定的消息
-      },
+    // 直接订阅（旧 connect 参数移除）
+    const subId = userId
+    subscribe(subId, {
       onError: error => {
         console.error(`用户 ${formData.userName} MAA配置错误:`, error)
         message.error(`MAA配置连接失败: ${error}`)
         maaWebsocketId.value = null
-      },
+      }
     })
 
-    if (websocketId) {
-      maaWebsocketId.value = websocketId
-      message.success(`已开始配置用户 ${formData.userName} 的MAA设置`)
-    }
+    maaWebsocketId.value = subId
+    message.success(`已开始配置用户 ${formData.userName} 的MAA设置`)
   } catch (error) {
     console.error('MAA配置失败:', error)
     message.error('MAA配置失败')
@@ -1335,17 +1325,12 @@ const stage3InputRef = ref()
 const stageRemainInputRef = ref()
 
 // VNodes 组件，用于渲染下拉菜单内容
-const VNodes = {
-  props: {
-    vnodes: {
-      type: Object,
-      required: true,
-    },
-  },
-  render() {
-    return this.vnodes
-  },
-}
+const VNodes = defineComponent({
+  props: { vnodes: { type: Object, required: true } },
+  setup(props) {
+    return () => props.vnodes as any
+  }
+})
 
 // 验证关卡名称格式
 const validateStageName = (stageName: string): boolean => {
@@ -1465,9 +1450,8 @@ const addCustomStageRemain = () => {
 }
 
 const handleCancel = () => {
-  // 清理WebSocket连接
   if (maaWebsocketId.value) {
-    disconnect(maaWebsocketId.value)
+    unsubscribe(maaWebsocketId.value)
     maaWebsocketId.value = null
   }
   router.push('/scripts')
