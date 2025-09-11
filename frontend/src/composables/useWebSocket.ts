@@ -3,8 +3,8 @@ import { message, notification, Modal } from 'ant-design-vue'
 
 // 基础配置
 const BASE_WS_URL = 'ws://localhost:36163/api/core/ws'
-const HEARTBEAT_INTERVAL = 60000  // 60秒，确保后端有机会在30秒时发送ping
-const HEARTBEAT_TIMEOUT = 15000
+const HEARTBEAT_INTERVAL = 15000
+const HEARTBEAT_TIMEOUT = 5000
 const BACKEND_CHECK_INTERVAL = 3000 // 后端检查间隔
 const MAX_RESTART_ATTEMPTS = 3 // 最大重启尝试次数
 const RESTART_DELAY = 2000 // 重启延迟
