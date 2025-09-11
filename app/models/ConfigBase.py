@@ -24,6 +24,7 @@ import json
 import uuid
 import win32com.client
 from copy import deepcopy
+from datetime import datetime
 from pathlib import Path
 from typing import List, Any, Dict, Union, Optional
 
@@ -110,6 +111,27 @@ class UUIDValidator(ConfigValidator):
 
     def correct(self, value: Any) -> Any:
         return value if self.validate(value) else str(uuid.uuid4())
+
+
+class DateTimeValidator(ConfigValidator):
+
+    def validate(self, value: Any) -> bool:
+        if not isinstance(value, str):
+            return False
+        try:
+            datetime.strptime(value, "%Y-%m-%d %H:%M:%S")
+            return True
+        except ValueError:
+            return False
+
+    def correct(self, value: Any) -> str:
+        if not isinstance(value, str):
+            return "2000-01-01 00:00:00"
+        try:
+            datetime.strptime(value, "%Y-%m-%d %H:%M:%S")
+            return value
+        except ValueError:
+            return "2000-01-01 00:00:00"
 
 
 class EncryptValidator(ConfigValidator):

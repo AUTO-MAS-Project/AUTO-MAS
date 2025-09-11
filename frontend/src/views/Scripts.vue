@@ -236,9 +236,9 @@ import MarkdownIt from 'markdown-it'
 
 const router = useRouter()
 const { addScript, deleteScript, getScriptsWithUsers, loading } = useScriptApi()
-const { addUser, updateUser, deleteUser, loading: userLoading } = useUserApi()
-const { connect, disconnect, disconnectAll } = useWebSocket()
-const { getWebConfigTemplates, importScriptFromWeb, loading: templateApiLoading } = useTemplateApi()
+const { updateUser, deleteUser } = useUserApi()
+const { subscribe, unsubscribe } = useWebSocket()
+const { getWebConfigTemplates, importScriptFromWeb } = useTemplateApi()
 
 // 初始化markdown解析器
 const md = new MarkdownIt({
@@ -497,49 +497,36 @@ const handleDeleteUser = async (user: User) => {
 const handleMAAConfig = async (script: Script) => {
   try {
     // 检查是否已有连接
-    const existingWebsocketId = activeConnections.value.get(script.id)
-    if (existingWebsocketId) {
+    const existingConnection = activeConnections.value.get(script.id)
+    if (existingConnection) {
       message.warning('该脚本已在配置中，请先断开连接')
       return
     }
 
-    // 建立WebSocket连接进行MAA配置
-    const websocketId = await connect({
-      taskId: script.id,
-      mode: '设置脚本',
-      showNotifications: true,
-      onStatusChange: status => {
-        console.log(`脚本 ${script.name} 连接状态: ${status}`)
-      },
-      onMessage: data => {
-        console.log(`脚本 ${script.name} 收到消息:`, data)
-        // 这里可以根据需要处理特定的消息
-      },
+    // 新订阅
+    subscribe(script.id, {
       onError: error => {
         console.error(`脚本 ${script.name} 连接错误:`, error)
         message.error(`MAA配置连接失败: ${error}`)
-        // 清理连接记录
         activeConnections.value.delete(script.id)
       },
     })
 
-    if (websocketId) {
-      // 记录连接
-      activeConnections.value.set(script.id, websocketId)
-      message.success(`已开始配置 ${script.name}`)
+    // 记录连接
+    activeConnections.value.set(script.id, script.id)
+    message.success(`已开始配置 ${script.name}`)
 
-      // 可选：设置自动断开连接的定时器（比如30分钟后）
-      setTimeout(
-        () => {
-          if (activeConnections.value.has(script.id)) {
-            disconnect(websocketId)
-            activeConnections.value.delete(script.id)
-            message.info(`${script.name} 配置会话已超时断开`)
-          }
-        },
-        30 * 60 * 1000
-      ) // 30分钟
-    }
+    // 可选：设置自动断开连接的定时器（比如30分钟后）
+    setTimeout(
+      () => {
+        if (activeConnections.value.has(script.id)) {
+          unsubscribe(script.id)
+          activeConnections.value.delete(script.id)
+          message.info(`${script.name} 配置会话已超时断开`)
+        }
+      },
+      30 * 60 * 1000
+    ) // 30分钟
   } catch (error) {
     console.error('MAA配置失败:', error)
     message.error('MAA配置失败')
@@ -547,9 +534,9 @@ const handleMAAConfig = async (script: Script) => {
 }
 
 const handleDisconnectMAA = (script: Script) => {
-  const websocketId = activeConnections.value.get(script.id)
-  if (websocketId) {
-    disconnect(websocketId)
+  const connectionId = activeConnections.value.get(script.id)
+  if (connectionId) {
+    unsubscribe(script.id)
     activeConnections.value.delete(script.id)
     message.success(`已断开 ${script.name} 的配置连接`)
   }
