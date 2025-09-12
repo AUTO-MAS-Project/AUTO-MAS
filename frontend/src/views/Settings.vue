@@ -227,7 +227,7 @@ const checkUpdate = async () => {
         updateData.value = response.update_info
         updateVisible.value = true
       } else {
-        message.success("暂无更新~")
+        message.success('暂无更新~')
       }
     } else {
       message.error(response.message || '获取更新失败')
@@ -1220,8 +1220,8 @@ onMounted(() => {
                     <span class="info-value">AUTO-MAS</span>
                   </div>
                   <div class="info-item">
-                    <span class="info-label">当前版本：</span>
-                    <span class="info-value">{{app_version}}</span>
+                    <span class="info-label">许可证：</span>
+                    <span class="info-value">GPL-3.0 license</span>
                   </div>
                 </a-col>
                 <a-col :span="12">
@@ -1229,39 +1229,54 @@ onMounted(() => {
                     <span class="info-label">开发者：</span>
                     <span class="info-value">AUTO-MAS Team</span>
                   </div>
-                  <div class="info-item">
-                    <span class="info-label">许可证：</span>
-                    <span class="info-value">GPL-3.0 license</span>
-                  </div>
+                  <!--                  <div class="info-item">-->
+                  <!--                    <span class="info-label">当前版本：</span>-->
+                  <!--                    <span class="info-value">{{app_version}}</span>-->
+                  <!--                  </div>-->
                 </a-col>
               </a-row>
+              <a-divider></a-divider>
               <a-row :gutter="24">
                 <a-col :span="12">
                   <div class="info-item">
-                    <span class="info-label">当前后端版本：</span>
-                    <span class="info-value">{{backendUpdateInfo?.current_version}}</span>
+                    <span class="info-label">当前前端版本：</span>
+                    <span class="info-value">{{ version }}</span>
                   </div>
                   <div class="info-item">
                     <span class="info-label">当前后端哈希值：</span>
-                    <span class="info-value">{{backendUpdateInfo?.current_hash}}</span>
+                    <span class="info-value">{{ backendUpdateInfo?.current_hash }}</span>
                   </div>
                 </a-col>
                 <a-col :span="12">
                   <div class="info-item">
-                    <span class="info-label">当前时间？：</span>
-                    <span class="info-value">{{backendUpdateInfo?.current_time}}</span>
+                    <span class="info-label">当前后端版本：</span>
+                    <span class="info-value">{{ backendUpdateInfo?.current_version }}</span>
                   </div>
                   <div class="info-item">
-                    <span class="info-label">是否需要更新：</span>
-                    <span class="info-value">{{backendUpdateInfo?.if_need_update}}</span>
+                    <span class="info-label">后端更新时间：</span>
+                    <span class="info-value">{{ backendUpdateInfo?.current_time }}</span>
                   </div>
                 </a-col>
               </a-row>
-              <a-button
-                type="primary"
-                @click="checkUpdate"
-                size="large"
-                >检查更新</a-button>
+
+              <!-- 检查更新按钮区域 -->
+              <div class="update-section">
+                <div class="update-button-wrapper">
+                  <a-button type="primary" @click="checkUpdate" size="large" class="update-button">
+                    <template #icon>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                        <path
+                          d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"
+                        />
+                      </svg>
+                    </template>
+                    检查更新
+                  </a-button>
+                  <div class="update-hint">
+                    <span>点击检查是否有新版本可用</span>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </a-tab-pane>
@@ -1512,5 +1527,79 @@ onMounted(() => {
 .info-value {
   color: var(--ant-color-text-secondary);
   margin-left: 8px;
+}
+
+/* 检查更新按钮样式 */
+.update-section {
+  margin-top: 24px;
+  padding: 20px;
+  background: linear-gradient(
+    135deg,
+    var(--ant-color-primary-bg) 0%,
+    var(--ant-color-primary-bg-hover) 100%
+  );
+  border: 1px solid var(--ant-color-primary-border);
+  border-radius: 12px;
+  position: relative;
+  overflow: hidden;
+}
+
+.update-section::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--ant-color-primary), var(--ant-color-primary-hover));
+}
+
+.update-button-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.update-button {
+  height: 48px;
+  padding: 0 32px;
+  font-size: 16px;
+  font-weight: 600;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(22, 119, 255, 0.3);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 160px;
+  justify-content: center;
+}
+
+.update-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(22, 119, 255, 0.4);
+}
+
+.update-button:active {
+  transform: translateY(0);
+}
+
+.update-button svg {
+  transition: transform 0.3s ease;
+}
+
+.update-button:hover svg {
+  transform: rotate(180deg);
+}
+
+.update-hint {
+  text-align: center;
+}
+
+.update-hint span {
+  font-size: 13px;
+  color: var(--ant-color-text-tertiary);
+  font-weight: 500;
 }
 </style>
