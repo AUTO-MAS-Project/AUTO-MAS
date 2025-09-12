@@ -25,7 +25,7 @@ export const GIT_OFFICIAL_MIRRORS: MirrorConfig[] = [
   {
     key: 'github',
     name: 'GitHub 官方',
-    url: 'https://github.com/DLmaster361/AUTO_MAA.git',
+    url: 'https://github.com/AUTO-MAS-Project/AUTO-MAS.git',
     speed: null,
     type: 'official',
     chinaConnectivity: 'poor',
@@ -40,7 +40,7 @@ export const GIT_MIRROR_MIRRORS: MirrorConfig[] = [
   {
     key: 'ghproxy_cloudflare',
     name: 'gh-proxy (Cloudflare)',
-    url: 'https://gh-proxy.com/https://github.com/DLmaster361/AUTO_MAA.git',
+    url: 'https://gh-proxy.com/https://github.com/AUTO-MAS-Project/AUTO-MAS.git',
     speed: null,
     type: 'mirror',
     chinaConnectivity: 'good',
@@ -50,7 +50,7 @@ export const GIT_MIRROR_MIRRORS: MirrorConfig[] = [
   {
     key: 'ghproxy_fastly',
     name: 'gh-proxy (Fastly CDN)',
-    url: 'https://cdn.gh-proxy.com/https://github.com/DLmaster361/AUTO_MAA.git',
+    url: 'https://cdn.gh-proxy.com/https://github.com/AUTO-MAS-Project/AUTO-MAS.git',
     speed: null,
     type: 'mirror',
     chinaConnectivity: 'good',
@@ -59,7 +59,7 @@ export const GIT_MIRROR_MIRRORS: MirrorConfig[] = [
   {
     key: 'ghproxy_edgeone',
     name: 'gh-proxy (EdgeOne)',
-    url: 'https://edgeone.gh-proxy.com/https://github.com/DLmaster361/AUTO_MAA.git',
+    url: 'https://edgeone.gh-proxy.com/https://github.com/AUTO-MAS-Project/AUTO-MAS.git',
     speed: null,
     type: 'mirror',
     chinaConnectivity: 'good',
@@ -68,7 +68,7 @@ export const GIT_MIRROR_MIRRORS: MirrorConfig[] = [
   {
     key: 'ghfast',
     name: 'ghfast 镜像',
-    url: 'https://ghfast.top/https://github.com/DLmaster361/AUTO_MAA.git',
+    url: 'https://ghfast.top/https://github.com/AUTO-MAS-Project/AUTO-MAS.git',
     speed: null,
     type: 'mirror',
     chinaConnectivity: 'good',
