@@ -63,7 +63,7 @@ const version = import.meta.env.VITE_APP_VERSION || '获取版本失败！'
 const updateInfo = ref<UpdateCheckOut | null>(null)
 const backendUpdateInfo = ref<VersionOut | null>(null)
 
-const POLL_MS = 1 * 60 * 1000 // 10 分钟
+const POLL_MS = 10 * 60 * 1000 // 10 分钟
 let pollTimer: number | null = null
 const polling = ref(false)
 
