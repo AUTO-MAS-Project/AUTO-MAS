@@ -140,9 +140,6 @@ class GlobalConfig_Notify(BaseModel):
 
 class GlobalConfig_Update(BaseModel):
     IfAutoUpdate: Optional[bool] = Field(default=None, description="是否自动更新")
-    UpdateType: Optional[Literal["stable", "beta"]] = Field(
-        default=None, description="更新类型, stable为稳定版, beta为测试版"
-    )
     Source: Optional[Literal["GitHub", "MirrorChyan", "AutoSite"]] = Field(
         default=None, description="更新源: GitHub源, Mirror酱源, 自建源"
     )
