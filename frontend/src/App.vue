@@ -3,7 +3,7 @@ import { onMounted, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { ConfigProvider } from 'ant-design-vue'
 import { useTheme } from './composables/useTheme.ts'
-import { useUpdateChecker } from './composables/useUpdateChecker.ts'
+import { useUpdateModal } from './composables/useUpdateChecker.ts'
 import AppLayout from './components/AppLayout.vue'
 import TitleBar from './components/TitleBar.vue'
 import UpdateModal from './components/UpdateModal.vue'
@@ -12,7 +12,7 @@ import { logger } from '@/utils/logger'
 
 const route = useRoute()
 const { antdTheme, initTheme } = useTheme()
-const { updateVisible, updateData, onUpdateConfirmed } = useUpdateChecker()
+const { updateVisible, updateData, onUpdateConfirmed } = useUpdateModal()
 
 // 判断是否为初始化页面
 const isInitializationPage = computed(() => route.name === 'Initialization')
@@ -55,24 +55,28 @@ onMounted(() => {
 
 .app-container {
   height: 100vh;
-  overflow: hidden;
   display: flex;
   flex-direction: column;
 }
 
 .initialization-container {
   height: 100vh;
-  overflow: hidden;
   display: flex;
   flex-direction: column;
 }
 
 .initialization-content {
   flex: 1;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
   width: 100%;
-  height: 100%;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
+  /* 隐藏滚动条但保留滚动功能 */
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE/Edge */
+}
+
+/* 隐藏 Webkit 浏览器的滚动条 */
+.initialization-content::-webkit-scrollbar {
+  display: none;
 }
 </style>

@@ -1,5 +1,5 @@
 <template>
-  <div class="initialization-container">
+  <div class="initialization-page">
     <!-- 管理员权限检查 -->
     <AdminCheck v-if="!isAdmin" />
 
@@ -268,17 +268,17 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.initialization-container {
-  min-height: 100vh;
-  padding: 50px 100px;
-  margin: 0 auto;
-  background-color: var(--ant-color-bg-layout);
-  color: var(--ant-color-text);
+.initialization-page {
+  padding: 20px;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 100%;
 }
 
+/* 响应式优化 */
 @media (max-width: 768px) {
-  .initialization-container {
-    padding: 20px;
+  .initialization-page {
+    padding: 10px;
   }
 }
 </style>

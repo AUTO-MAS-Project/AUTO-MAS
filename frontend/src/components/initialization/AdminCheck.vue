@@ -29,6 +29,16 @@ async function handleRestartAsAdmin() {
   display: flex;
   justify-content: center;
   align-items: center;
-  min-height: 60vh;
+  min-height: calc(100vh - 120px); /* 减去标题栏和一些边距 */
+  padding: 20px;
+  box-sizing: border-box;
+}
+
+/* 响应式优化 */
+@media (max-height: 600px) {
+  .admin-check {
+    min-height: auto;
+    padding: 10px;
+  }
 }
 </style>

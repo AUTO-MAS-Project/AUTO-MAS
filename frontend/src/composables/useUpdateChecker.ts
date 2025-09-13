@@ -1,4 +1,4 @@
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onUnmounted } from 'vue'
 import { Service } from '@/api'
 import { message } from 'ant-design-vue'
 
@@ -17,11 +17,32 @@ const isPolling = ref(false)
 // 防止重复弹出的状态
 let lastShownVersion: string | null = null
 
+// 检查自动更新设置是否开启
+const checkAutoUpdateEnabled = async (): Promise<boolean> => {
+  try {
+    const response = await Service.getScriptsApiSettingGetPost()
+    if (response.code === 200 && response.data) {
+      return response.data.Update?.IfAutoUpdate || false
+    }
+  } catch (error) {
+    console.warn('[useUpdateChecker] 获取自动更新设置失败:', error)
+  }
+  return false
+}
+
 export function useUpdateChecker() {
   
   // 执行一次更新检查 - 完全参考顶栏的 pollOnce 逻辑
   const pollOnce = async () => {
     if (isPolling.value) return
+    
+    // 检查自动更新设置是否开启
+    const autoUpdateEnabled = await checkAutoUpdateEnabled()
+    if (!autoUpdateEnabled) {
+      console.log('[useUpdateChecker] 自动检查更新已关闭，跳过定时检查')
+      return
+    }
+    
     isPolling.value = true
     
     try {
@@ -89,8 +110,23 @@ export function useUpdateChecker() {
     updateVisible.value = false
   }
 
-  // 组件挂载时启动检查器 - 参考顶栏的 onMounted 逻辑
-  onMounted(async () => {
+  // 启动定时检查器
+  const startPolling = async () => {
+    // 检查自动更新设置是否开启
+    const autoUpdateEnabled = await checkAutoUpdateEnabled()
+    if (!autoUpdateEnabled) {
+      console.log('[useUpdateChecker] 自动检查更新已关闭，不启动定时任务')
+      return
+    }
+    
+    // 如果已经在检查中，则不重复启动
+    if (updateCheckTimer) {
+      console.log('[useUpdateChecker] 定时任务已存在，跳过启动')
+      return
+    }
+    
+    console.log('[useUpdateChecker] 启动定时版本检查任务')
+    
     // 延迟3秒后再执行首次检查，确保后端已经完全启动
     setTimeout(async () => {
       await pollOnce()
@@ -98,20 +134,47 @@ export function useUpdateChecker() {
     
     // 每 4 小时检查一次更新
     updateCheckTimer = setInterval(pollOnce, POLL_MS)
-  })
+  }
 
-  // 组件卸载时清理定时器 - 参考顶栏的 onBeforeUnmount 逻辑
-  onUnmounted(() => {
+  // 停止定时检查器
+  const stopPolling = () => {
     if (updateCheckTimer) {
       clearInterval(updateCheckTimer)
       updateCheckTimer = null
+      console.log('[useUpdateChecker] 停止定时版本检查任务')
     }
+  }
+
+  // 重新启动定时检查器（当设置变更时调用）
+  const restartPolling = async () => {
+    console.log('[useUpdateChecker] 重新启动定时检查任务')
+    stopPolling() // 先停止现有任务
+    await startPolling() // 再根据设置重新启动
+  }
+
+  // 组件卸载时清理定时器
+  onUnmounted(() => {
+    stopPolling()
   })
 
   return {
     updateVisible,
     updateData,
     checkUpdate,
-    onUpdateConfirmed
+    onUpdateConfirmed,
+    startPolling,
+    stopPolling,
+    restartPolling
+  }
+}
+
+// 创建一个仅用于显示弹窗的轻量版本（给App.vue使用）
+export function useUpdateModal() {
+  return {
+    updateVisible,
+    updateData,
+    onUpdateConfirmed: () => {
+      updateVisible.value = false
+    }
   }
 }

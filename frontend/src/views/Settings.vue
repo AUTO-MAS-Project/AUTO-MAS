@@ -11,6 +11,7 @@ import { message } from 'ant-design-vue'
 import type { ThemeColor, ThemeMode } from '../composables/useTheme'
 import { useTheme } from '../composables/useTheme.ts'
 import { useSettingsApi } from '../composables/useSettingsApi'
+import { useUpdateChecker } from '../composables/useUpdateChecker'
 import type { SelectValue } from 'ant-design-vue/es/select'
 import type { SettingsData } from '../types/settings'
 import { Service, type VersionOut } from '@/api'
@@ -23,6 +24,7 @@ const app_version = import.meta.env.VITE_APP_VERSION || '获取版本失败！'
 const router = useRouter()
 const { themeMode, themeColor, themeColors, setThemeMode, setThemeColor } = useTheme()
 const { loading, getSettings, updateSettings } = useSettingsApi()
+const { restartPolling } = useUpdateChecker()
 
 const updateVisible = ref(false)
 
@@ -182,6 +184,22 @@ const handleSettingChange = async (category: keyof SettingsData, key: string, va
     } catch (error) {
       console.error('更新托盘设置失败:', error)
       message.error('托盘设置更新失败')
+    }
+  }
+
+  // 如果是自动检查更新设置变更，重新启动定时任务
+  if (category === 'Update' && key === 'IfAutoUpdate') {
+    try {
+      console.log(`检测到自动检查更新设置变更: ${value}`)
+      await restartPolling()
+      if (value) {
+        message.success('已启用自动检查更新')
+      } else {
+        message.success('已禁用自动检查更新')
+      }
+    } catch (error) {
+      console.error('重新启动更新检查任务失败:', error)
+      message.error('更新检查设置变更失败')
     }
   }
 }
