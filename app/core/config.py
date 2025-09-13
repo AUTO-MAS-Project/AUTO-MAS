@@ -144,12 +144,6 @@ class GlobalConfig(ConfigBase):
     Data_LastWebConfigUpdated = ConfigItem(
         "Data", "LastWebConfigUpdated", "2000-01-01 00:00:00", DateTimeValidator()
     )
-    Data_LastCheckVersion = ConfigItem(
-        "Data", "LastCheckVersion", "2000-01-01 00:00:00", DateTimeValidator()
-    )
-    Data_UpdateVersionInfo = ConfigItem(
-        "Data", "UpdateVersionInfo", "{ }", JSONValidator()
-    )
     Data_WebConfig = ConfigItem("Data", "WebConfig", "{ }", JSONValidator())
 
 

@@ -788,6 +788,7 @@ class SettingUpdateIn(BaseModel):
 
 class UpdateCheckIn(BaseModel):
     current_version: str = Field(..., description="当前前端版本号")
+    if_force: bool = Field(..., description="是否强制拉取更新信息")
 
 
 class UpdateCheckOut(OutBase):

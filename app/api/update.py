@@ -37,7 +37,7 @@ async def check_update(version: UpdateCheckIn = Body(...)) -> UpdateCheckOut:
 
     try:
         if_need, latest_version, update_info = await Updater.check_update(
-            current_version=version.current_version
+            current_version=version.current_version, if_force=version.if_force
         )
     except Exception as e:
         return UpdateCheckOut(
