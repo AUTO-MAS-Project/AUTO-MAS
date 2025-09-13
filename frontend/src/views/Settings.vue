@@ -17,6 +17,8 @@ import type { SettingsData } from '../types/settings'
 import { Service, type VersionOut } from '@/api'
 import UpdateModal from '@/components/UpdateModal.vue'
 import { mirrorManager } from '@/utils/mirrorManager'
+import { request } from '@/api/core/request'
+import { OpenAPI } from '@/api'
 
 const updateData = ref<Record<string, string[]>>({})
 
@@ -292,6 +294,28 @@ const goToMirrorTest = () => {
 // 确认回调
 const onUpdateConfirmed = () => {
   updateVisible.value = false
+}
+
+const testingNotify = ref(false)
+
+const testNotify = async () => {
+  testingNotify.value = true
+  try {
+    const res: any = await request<any>(OpenAPI, {
+      method: 'POST',
+      url: '/api/setting/test_notify',
+    })
+    if (res?.code && res.code !== 200) {
+      message.warning(res?.message || '测试通知发送结果未知')
+    } else {
+      message.success('测试通知已发送')
+    }
+  } catch (error) {
+    console.error('测试通知发送失败:', error)
+    message.error('测试通知发送失败')
+  } finally {
+    testingNotify.value = false
+  }
 }
 
 onMounted(() => {
@@ -946,6 +970,19 @@ onMounted(() => {
                       size="large"
                     />
                   </div>
+                </a-col>
+              </a-row>
+            </div>
+
+            <div class="form-section">
+              <div class="section-header">
+                <h3>通知测试</h3>
+              </div>
+              <a-row :gutter="24">
+                <a-col :span="24">
+                  <a-space>
+                    <a-button type="primary" :loading="testingNotify" @click="testNotify">发送测试通知</a-button>
+                  </a-space>
                 </a-col>
               </a-row>
             </div>
