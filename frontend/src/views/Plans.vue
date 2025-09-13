@@ -85,8 +85,15 @@
               </a-button>
             </div>
             <div v-else class="plan-title-edit">
-              <a-input v-model:value="currentPlanName" placeholder="请输入计划名称" size="small" class="plan-title-input"
-                @blur="finishEditPlanName" @pressEnter="finishEditPlanName" :maxlength="50" ref="planNameInputRef" />
+              <a-input
+                v-model:value="currentPlanName"
+                placeholder="请输入计划名称"
+                class="plan-title-input"
+                @blur="finishEditPlanName"
+                @pressEnter="finishEditPlanName"
+                :maxlength="50"
+                ref="planNameInputRef"
+              />
             </div>
           </div>
         </template>
@@ -109,26 +116,72 @@
         <div class="config-table-container">
           <!-- 配置视图 -->
           <div v-if="viewMode === 'config'">
-            <a-table :columns="dynamicTableColumns" :data-source="tableData" :pagination="false" class="config-table"
-              size="middle" :bordered="true" :scroll="{ x: false }">
-              <template #bodyCell="{ column, record, index }">
+            <a-table
+              :columns="dynamicTableColumns"
+              :data-source="tableData"
+              :pagination="false"
+              :class="['config-table', `mode-${currentMode}`]"
+              size="middle"
+              :bordered="true"
+              :scroll="{ x: false }"
+              :row-class-name="(record: TableRow) => `task-row-${record.key}`"
+            >
+              <template #bodyCell="{ column, record }">
                 <template v-if="column.key === 'taskName'">
-                  <div class="task-name-cell">
-                    <a-tag :color="getTaskTagColor(record.taskName)" class="task-tag">
-                      {{ record.taskName }}
-                    </a-tag>
-                  </div>
+                  {{ record.taskName }}
                 </template>
                 <template v-else-if="record.taskName === '吃理智药'">
                   <a-input-number v-model:value="record[column.key]" size="small" :min="0" :max="999"
-                    :placeholder="getPlaceholder(column.key, record.taskName)" class="config-input-number"
-                    :controls="false" />
+                    :placeholder="getPlaceholder(record.taskName)" class="config-input-number"
+                    :controls="false" :disabled="isColumnDisabled(column.key)" />
+                </template>
+                <template v-else-if="['关卡选择', '备选关卡-1', '备选关卡-2', '备选关卡-3', '剩余理智'].includes(record.taskName)">
+                  <a-select 
+                    v-model:value="record[column.key]" 
+                    size="small"
+                    :placeholder="getPlaceholder(record.taskName)" 
+                    :class="['config-select', { 'custom-stage-selected': isCustomStage(record[column.key], column.key) }]"
+                    allow-clear
+                    :disabled="isColumnDisabled(column.key)"
+                  >
+                    <template #dropdownRender="{ menuNode: menu }">
+                      <v-nodes :vnodes="menu" />
+                      <a-divider style="margin: 4px 0" />
+                      <a-space style="padding: 4px 8px" size="small">
+                        <a-input
+                          v-model:value="customStageNames[`${record.key}_${column.key}`]"
+                          placeholder="自定义"
+                          style="flex: 1"
+                          size="small"
+                          @keyup.enter="addCustomStage(record.key, column.key)"
+                        />
+                        <a-button type="text" size="small" @click="addCustomStage(record.key, column.key)">
+                          <template #icon>
+                            <PlusOutlined />
+                          </template>
+                        </a-button>
+                      </a-space>
+                    </template>
+                    <a-select-option v-for="option in getSelectOptions(column.key, record.taskName, record[column.key])" :key="option.value" :value="option.value">
+                      <template v-if="option.label && option.label.includes('|')">
+                        <span>{{ option.label.split('|')[0] }}</span>
+                        <a-tag color="green" size="small" style="margin-left: 8px;">
+                          {{ option.label.split('|')[1] }}
+                        </a-tag>
+                      </template>
+                      <template v-else>
+                        <span :style="isCustomStage(option.value, column.key) ? { color: 'var(--ant-color-primary)', fontWeight: '500' } : {}">
+                          {{ option.label }}
+                        </span>
+                      </template>
+                    </a-select-option>
+                  </a-select>
                 </template>
                 <template v-else>
                   <a-select v-model:value="record[column.key]" size="small"
-                    :options="getSelectOptions(column.key, record.taskName)"
-                    :placeholder="getPlaceholder(column.key, record.taskName)" class="config-select" allow-clear
-                    :show-search="true" :filter-option="filterOption" />
+                    :options="getSelectOptions(column.key, record.taskName, record[column.key])"
+                    :placeholder="getPlaceholder(record.taskName)" class="config-select" allow-clear 
+                    :disabled="isColumnDisabled(column.key)" />
                 </template>
               </template>
             </a-table>
@@ -177,7 +230,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch, nextTick } from 'vue'
+import { computed, onMounted, ref, watch, nextTick, defineComponent } from 'vue'
 import { message } from 'ant-design-vue'
 import { PlusOutlined, DeleteOutlined, EditOutlined } from '@ant-design/icons-vue'
 import { usePlanApi } from '../composables/usePlanApi'
@@ -224,6 +277,74 @@ const isEditingPlanName = ref<boolean>(false)
 
 const loading = ref(true)
 
+// VNodes 组件，用于渲染下拉菜单内容
+const VNodes = defineComponent({
+  props: { vnodes: { type: Object, required: true } },
+  setup(props) {
+    return () => props.vnodes as any
+  }
+})
+
+// 自定义关卡相关变量
+const customStageNames = ref<Record<string, string>>({})
+
+// 关卡选项，包含自定义关卡
+const stageOptions = computed(() => {
+  const baseOptions = STAGE_DAILY_INFO.map(stage => ({
+    label: stage.text,
+    value: stage.value,
+    isCustom: false
+  }))
+  
+  // 添加自定义关卡
+  const customOptions = Object.keys(customStageNames.value).map(key => ({
+    label: customStageNames.value[key],
+    value: key,
+    isCustom: true
+  }))
+  
+  return [...baseOptions, ...customOptions]
+})
+
+// 添加自定义关卡的函数
+const addCustomStage = (rowKey: string, columnKey: string) => {
+  const inputName = `${rowKey}_${columnKey}`
+  const customName = customStageNames.value[inputName]
+  
+  if (!customName || !customName.trim()) {
+    message.warning('请输入关卡名称')
+    return
+  }
+
+  // 验证关卡名称格式
+  const stagePattern = /^[A-Za-z0-9\-_]+$/
+  if (!stagePattern.test(customName.trim())) {
+    message.warning('关卡名称只能包含字母、数字、短横线和下划线')
+    return
+  }
+
+  // 检查是否已存在
+  const existingOption = stageOptions.value.find(option => option.value === customName.trim())
+  if (existingOption) {
+    message.warning('该关卡已存在')
+    return
+  }
+
+  // 添加到选项中
+  customStageNames.value[customName.trim()] = customName.trim()
+  
+  // 设置为当前值
+  const targetRow = tableData.value.find(row => row.key === rowKey)
+  if (targetRow) {
+    (targetRow as any)[columnKey] = customName.trim()
+  }
+  
+  // 清空输入框
+  customStageNames.value[inputName] = ''
+  
+  message.success('关卡添加成功')
+}
+
 // 表格列配置（全局和周计划模式都使用相同的表格结构）
 const dynamicTableColumns = computed(() => {
   return tableColumns.value
@@ -238,6 +359,7 @@ const tableColumns = ref([
     width: 120,
     fixed: 'left',
     align: 'center',
+    className: 'task-name-td'
   },
   {
     title: '全局',
@@ -314,14 +436,14 @@ const tableData = ref([
   {
     key: 'SeriesNumb',
     taskName: '连战次数',
-    ALL: '0',
-    Monday: '0',
-    Tuesday: '0',
-    Wednesday: '0',
-    Thursday: '0',
-    Friday: '0',
-    Saturday: '0',
-    Sunday: '0',
+    ALL: '-1',
+    Monday: '-1',
+    Tuesday: '-1',
+    Wednesday: '-1',
+    Thursday: '-1',
+    Friday: '-1',
+    Saturday: '-1',
+    Sunday: '-1',
   },
   {
     key: 'Stage',
@@ -337,7 +459,7 @@ const tableData = ref([
   },
   {
     key: 'Stage_1',
-    taskName: '备选-1',
+    taskName: '备选关卡-1',
     ALL: '-',
     Monday: '-',
     Tuesday: '-',
@@ -349,7 +471,7 @@ const tableData = ref([
   },
   {
     key: 'Stage_2',
-    taskName: '备选-2',
+    taskName: '备选关卡-2',
     ALL: '-',
     Monday: '-',
     Tuesday: '-',
@@ -361,7 +483,7 @@ const tableData = ref([
   },
   {
     key: 'Stage_3',
-    taskName: '备选-3',
+    taskName: '备选关卡-3',
     ALL: '-',
     Monday: '-',
     Tuesday: '-',
@@ -443,8 +565,28 @@ const getDayNumber = (columnKey: string) => {
   return dayMap[columnKey] || 0
 }
 
+// 判断值是否为自定义关卡
+const isCustomStage = (value: string, columnKey: string) => {
+  if (!value || value === '-') return false
+
+  const dayNumber = getDayNumber(columnKey)
+
+  // 获取当前列可用的预定义关卡值
+  let availableStages = []
+  if (dayNumber === 0) {
+    // 全局列显示所有关卡
+    availableStages = STAGE_DAILY_INFO.map(stage => stage.value)
+  } else {
+    // 根据星期过滤可用的关卡
+    availableStages = STAGE_DAILY_INFO.filter(stage => stage.days.includes(dayNumber)).map(stage => stage.value)
+  }
+
+  // 如果值不在预定义列表中，则为自定义
+  return !availableStages.includes(value)
+}
+
 // 获取选择器选项
-const getSelectOptions = (columnKey: string, taskName: string) => {
+const getSelectOptions = (columnKey: string, taskName: string, currentValue?: string) => {
   switch (taskName) {
     case '连战次数':
       return [
@@ -458,25 +600,58 @@ const getSelectOptions = (columnKey: string, taskName: string) => {
         { label: 'AUTO', value: '-1' },
       ]
     case '关卡选择':
-    case '备选-1':
-    case '备选-2':
-    case '备选-3':
+    case '备选关卡-1':
+    case '备选关卡-2':
+    case '备选关卡-3':
     case '剩余理智': {
       const dayNumber = getDayNumber(columnKey)
 
-      // 如果是全局列，显示所有选项
+      // 基础关卡选项
+      let baseOptions = []
       if (dayNumber === 0) {
-        return STAGE_DAILY_INFO.map(stage => ({
+        // 如果是全局列，显示所有选项
+        baseOptions = STAGE_DAILY_INFO.map(stage => ({
           label: stage.text,
           value: stage.value,
+          isCustom: false
+        }))
+      } else {
+        // 根据星期过滤可用的关卡
+        baseOptions = STAGE_DAILY_INFO.filter(stage => stage.days.includes(dayNumber)).map(stage => ({
+          label: stage.text,
+          value: stage.value,
+          isCustom: false
         }))
       }
 
-      // 根据星期过滤可用的关卡
-      return STAGE_DAILY_INFO.filter(stage => stage.days.includes(dayNumber)).map(stage => ({
-        label: stage.text,
-        value: stage.value,
-      }))
+      // 如果当前值是自定义值且不在基础选项中，添加到选项列表
+      if (currentValue && isCustomStage(currentValue, columnKey)) {
+        const customOption = {
+          label: currentValue,
+          value: currentValue,
+          isCustom: true
+        }
+        // 检查是否已存在
+        const exists = baseOptions.some(option => option.value === currentValue)
+        if (!exists) {
+          baseOptions.push(customOption)
+        }
+      }
+
+      // 添加临时输入的自定义关卡（用于添加新关卡时）
+      const customOptions = Object.keys(customStageNames.value)
+        .filter(key => customStageNames.value[key] && customStageNames.value[key].trim())
+        .filter(key => {
+          const value = customStageNames.value[key]
+          return !baseOptions.some(option => option.value === value)
+        })
+        .map(key => ({
+          label: customStageNames.value[key],
+          value: customStageNames.value[key],
+          isCustom: true
+        }))
+
+      return [...baseOptions, ...customOptions]
     }
     default:
       return []
@@ -484,22 +659,35 @@ const getSelectOptions = (columnKey: string, taskName: string) => {
 }
 
 // 获取占位符
-const getPlaceholder = (columnKey: string, taskName: string) => {
+const getPlaceholder = (taskName: string) => {
   switch (taskName) {
     case '吃理智药':
       return '输入数量'
     case '连战次数':
       return '选择次数'
     case '关卡选择':
-    case '备选-1':
-    case '备选-2':
-    case '备选-3':
+    case '备选关卡-1':
+    case '备选关卡-2':
+    case '备选关卡-3':
       return '1-7'
     case '剩余理智':
-      return '1-8'
+      return '-'
     default:
       return '请选择'
   }
+}
+
+// 列禁用状态
+const isColumnDisabled = (columnKey: string): boolean => {
+  if (currentMode.value === 'ALL') {
+    // 在全局模式下，只允许编辑“全局”列
+    return columnKey !== 'ALL';
+  }
+  if (currentMode.value === 'Weekly') {
+    // 在周计划模式下，禁止编辑“全局”列
+    return columnKey === 'ALL';
+  }
+  return false;
 }
 
 // 模式切换处理
@@ -762,25 +950,6 @@ watch(
 onMounted(() => {
   initPlans()
 })
-
-// 新增方法：获取任务标签颜色
-const getTaskTagColor = (taskName: string) => {
-  const colorMap: Record<string, string> = {
-    吃理智药: 'blue',
-    连战次数: 'green',
-    关卡选择: 'orange',
-    '备选-1': 'purple',
-    '备选-2': 'purple',
-    '备选-3': 'purple',
-    剩余理智: 'cyan',
-  }
-  return colorMap[taskName] || 'default'
-}
-
-// 新增方法：选择器过滤
-const filterOption = (input: string, option: any) => {
-  return option.label.toLowerCase().includes(input.toLowerCase())
-}
 
 // 简化视图数据
 const SIMPLE_VIEW_DATA = STAGE_DAILY_INFO.filter(stage => stage.value !== '-').map(stage => ({
@@ -1114,7 +1283,6 @@ const disableAllStages = (stageValue: string) => {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
   border-radius: 12px;
   border: 1px solid var(--ant-color-border-secondary);
-  min-height: 600px;
 }
 
 .mode-label {
@@ -1172,14 +1340,12 @@ const disableAllStages = (stageValue: string) => {
   display: flex;
   justify-content: center;
   align-items: center;
-}
-
-.task-tag {
-  margin: 0;
+  height: 100%;
   padding: 4px 12px;
-  border-radius: 6px;
   font-weight: 500;
   font-size: 13px;
+  border-radius: 6px;
+  margin: 4px;
 }
 
 /* 配置输入组件 */
@@ -1191,6 +1357,51 @@ const disableAllStages = (stageValue: string) => {
 .config-input-number {
   width: 100%;
   min-width: 100px;
+  height: 100%;
+  border: none !important;
+  box-shadow: none !important;
+  background: transparent !important;
+}
+
+.config-input-number:hover,
+.config-input-number:focus,
+.config-input-number.ant-input-number-focused {
+  border: none !important;
+  box-shadow: none !important;
+  background: transparent !important;
+}
+
+.config-input-number :deep(.ant-input-number-input) {
+  text-align: center;
+  padding: 0 !important;
+  margin: 0 !important;
+  height: 100%;
+  border: none !important;
+  box-shadow: none !important;
+  background: transparent !important;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ant-color-text);
+}
+
+.config-input-number :deep(.ant-input-number-input:focus) {
+  box-shadow: none !important;
+  border: none !important;
+  background: transparent !important;
+}
+
+/* 隐藏数字输入框的控制按钮 */
+.config-input-number :deep(.ant-input-number-handler-wrap) {
+  display: none !important;
+}
+
+/* 确保在表格hover时保持一致的背景 */
+.config-table :deep(.ant-table-tbody > tr:hover .config-input-number) {
+  background: transparent !important;
+}
+
+.config-table :deep(.ant-table-tbody > tr:hover .ant-input-number-input) {
+  background: transparent !important;
 }
 
 /* 响应式设计 */
@@ -1281,7 +1492,7 @@ const disableAllStages = (stageValue: string) => {
 .config-table :deep(.ant-table-tbody > tr > td) {
   border-bottom: 1px solid var(--ant-color-border-secondary);
   text-align: center;
-  padding: 12px 8px;
+  padding: 4px 2px;
   vertical-align: middle;
 }
 
@@ -1289,28 +1500,205 @@ const disableAllStages = (stageValue: string) => {
   background: var(--ant-color-bg-container-disabled);
 }
 
+.config-table :deep(.ant-table-tbody > tr:hover .ant-select-selector) {
+  background: var(--ant-color-bg-container-disabled) !important;
+}
+
+.config-table :deep(.ant-table-tbody > tr:hover .ant-input-number) {
+  background: var(--ant-color-bg-container-disabled) !important;
+}
+
 .config-select :deep(.ant-select-selector) {
-  border-radius: 6px;
-  transition: all 0.2s ease;
+  border: none !important;
+  border-radius: 0;
+  background: transparent !important;
+  box-shadow: none !important;
+  padding: 0;
+  min-height: auto;
 }
 
 .config-select :deep(.ant-select-selector:hover) {
-  border-color: var(--ant-color-primary-hover);
+  border: none !important;
+  box-shadow: none !important;
 }
 
 .config-select :deep(.ant-select-focused .ant-select-selector) {
-  border-color: var(--ant-color-primary);
-  box-shadow: 0 0 0 2px var(--ant-color-primary-bg-hover);
+  border: none !important;
+  box-shadow: none !important;
 }
 
-.config-input-number :deep(.ant-input-number) {
-  border-radius: 6px;
+.config-select :deep(.ant-select-selection-search) {
+  margin: 0;
+  padding: 0;
+}
+
+.config-select :deep(.ant-select-selection-placeholder) {
+  color: var(--ant-color-text-tertiary);
+  font-size: 13px;
+  padding: 0;
+  margin: 0;
+}
+
+.config-select :deep(.ant-select-selection-item) {
+  color: var(--ant-color-text);
+  font-size: 13px;
+  font-weight: 500;
+  padding: 0;
+  margin: 0;
+  line-height: 1.2;
+}
+
+/* 自定义关卡选中时的主题色显示 */
+.custom-stage-selected :deep(.ant-select-selection-item) {
+  color: var(--ant-color-primary) !important;
+  font-weight: 600;
+}
+
+/* 隐藏清除按钮 */
+.config-select :deep(.ant-select-clear) {
+  display: none !important;
+}
+
+/* 任务名称单元格背景色 */
+.config-table :deep(.task-row-MedicineNumb td:first-child) {
+  background: rgba(59, 130, 246, 0.1);
+  color: #3B82F6;
+  font-weight: 500;
+}
+.config-table :deep(.ant-table-tbody > tr.task-row-MedicineNumb:hover > td:first-child) {
+  background: rgba(59, 130, 246, 0.2);
+}
+
+.config-table :deep(.task-row-SeriesNumb td:first-child) {
+  background: rgba(34, 197, 94, 0.1);
+  color: #22C55E;
+  font-weight: 500;
+}
+.config-table :deep(.ant-table-tbody > tr.task-row-SeriesNumb:hover > td:first-child) {
+  background: rgba(34, 197, 94, 0.2);
+}
+
+.config-table :deep(.task-row-Stage td:first-child) {
+  background: rgba(249, 115, 22, 0.1);
+  color: #F97316;
+  font-weight: 500;
+}
+.config-table :deep(.ant-table-tbody > tr.task-row-Stage:hover > td:first-child) {
+  background: rgba(249, 115, 22, 0.2);
+}
+
+.config-table :deep(.task-row-Stage_1 td:first-child),
+.config-table :deep(.task-row-Stage_2 td:first-child),
+.config-table :deep(.task-row-Stage_3 td:first-child) {
+  background: rgba(168, 85, 247, 0.1);
+  color: #A855F7;
+  font-weight: 500;
+}
+.config-table :deep(.ant-table-tbody > tr.task-row-Stage_1:hover > td:first-child),
+.config-table :deep(.ant-table-tbody > tr.task-row-Stage_2:hover > td:first-child),
+.config-table :deep(.ant-table-tbody > tr.task-row-Stage_3:hover > td:first-child) {
+  background: rgba(168, 85, 247, 0.2);
+}
+
+.config-table :deep(.task-row-Stage_Remain td:first-child) {
+  background: rgba(14, 165, 233, 0.1);
+  color: #0EA5E9;
+  font-weight: 500;
+}
+.config-table :deep(.ant-table-tbody > tr.task-row-Stage_Remain:hover > td:first-child) {
+  background: rgba(14, 165, 233, 0.2);
+}
+
+/* 禁用列标题样式 */
+.config-table.mode-ALL :deep(.ant-table-thead > tr > th:nth-child(n+3)) {
+  color: var(--ant-color-text-disabled) !important;
+  opacity: 0.5;
+}
+
+.config-table.mode-Weekly :deep(.ant-table-thead > tr > th:nth-child(2)) {
+  color: var(--ant-color-text-disabled) !important;
+  opacity: 0.5;
+}
+
+/* 禁用状态样式 */
+.config-select:disabled,
+.config-select.ant-select-disabled :deep(.ant-select-selector) {
+  background: var(--ant-color-bg-container-disabled) !important;
+  color: var(--ant-color-text-disabled) !important;
+  cursor: default !important;
+}
+
+.config-input-number:disabled,
+.config-input-number.ant-input-number-disabled :deep(.ant-input-number-input) {
+  background: var(--ant-color-bg-container-disabled) !important;
+  color: var(--ant-color-text-disabled) !important;
+  cursor: default !important;
+}
+
+/* 确保悬停时也不显示禁止图标 */
+.config-select:disabled:hover,
+.config-select.ant-select-disabled:hover :deep(.ant-select-selector),
+.config-input-number:disabled:hover,
+.config-input-number.ant-input-number-disabled:hover :deep(.ant-input-number-input) {
+  cursor: default !important;
+}
+
+/* 隐藏下拉箭头或调整样式 */
+.config-select :deep(.ant-select-arrow) {
+  right: 4px;
+  color: var(--ant-color-text-tertiary);
+  font-size: 10px;
+}
+
+.config-select :deep(.ant-select-arrow:hover) {
+  color: var(--ant-color-primary);
+}
+
+/* 自定义下拉框样式 - 增加下拉菜单宽度 */
+.config-select :deep(.ant-select-dropdown) {
+  min-width: 280px !important;
+  max-width: 400px !important;
+}
+
+.config-select :deep(.ant-select-item) {
+  padding: 8px 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 自定义关卡选项的样式 */
+.config-select :deep(.ant-select-item-option-content) {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
   width: 100%;
+  min-width: 0;
 }
 
-.config-input-number :deep(.ant-input-number-focused) {
-  border-color: var(--ant-color-primary);
-  box-shadow: 0 0 0 2px var(--ant-color-primary-bg-hover);
+.config-select :deep(.ant-select-item .ant-tag) {
+  margin-left: 8px;
+  flex-shrink: 0;
+}
+
+/* 自定义输入区域样式 */
+.config-select :deep(.ant-select-dropdown .ant-divider) {
+  margin: 4px 0;
+}
+
+.config-select :deep(.ant-select-dropdown .ant-space) {
+  padding: 8px 12px;
+  background: var(--ant-color-bg-container);
+  border-top: 1px solid var(--ant-color-border-secondary);
+}
+
+.config-select :deep(.ant-select-dropdown .ant-input) {
+  flex: 1;
+  min-width: 0;
+}
+
+.config-select :deep(.ant-select-dropdown .ant-btn) {
+  flex-shrink: 0;
 }
 
 .plan-tabs :deep(.ant-tabs-tab) {
@@ -1342,6 +1730,28 @@ const disableAllStages = (stageValue: string) => {
   height: 24px;
   font-size: 12px;
   padding: 0 4px;
+}
+
+/* 简化视图表格样式 */
+.simple-table :deep(.ant-table-thead > tr > th) {
+  background: var(--ant-color-bg-container-disabled);
+  border-bottom: 2px solid var(--ant-color-border);
+  font-weight: 600;
+  color: var(--ant-color-text);
+  text-align: center;
+  padding: 12px 8px;
+  font-size: 13px;
+}
+
+.simple-table :deep(.ant-table-tbody > tr > td) {
+  border-bottom: 1px solid var(--ant-color-border-secondary);
+  text-align: center;
+  padding: 8px 6px;
+  vertical-align: middle;
+}
+
+.simple-table :deep(.ant-table-tbody > tr:hover > td) {
+  background: var(--ant-color-bg-container-disabled);
 }
 
 /* 拖拽视觉反馈 */
