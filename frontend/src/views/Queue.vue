@@ -103,7 +103,6 @@
               <a-input
                 v-model:value="currentQueueName"
                 placeholder="请输入队列名称"
-                size="small"
                 class="queue-title-input"
                 @blur="finishEditQueueName"
                 @pressEnter="finishEditQueueName"
