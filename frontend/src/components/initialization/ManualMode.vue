@@ -48,7 +48,7 @@
       <!--            </div>-->
     </div>
 
-    <a-steps :current="currentStep" :status="stepStatus" class="init-steps">
+    <a-steps :current="displayCurrentStep" :status="stepStatus" class="init-steps">
       <a-step title="设置主题" />
       <a-step title="配置环境" />
       <a-step title="Git 工具" />
@@ -136,7 +136,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, watch, computed } from 'vue'
 import { notification } from 'ant-design-vue'
 import { saveConfig } from '@/utils/config'
 import { useUpdateChecker } from '@/composables/useUpdateChecker'
@@ -176,6 +176,11 @@ const currentStep = ref(0)
 const stepStatus = ref<'wait' | 'process' | 'finish' | 'error'>('process')
 const errorMessage = ref('')
 const isProcessing = ref(false)
+
+// 显示的当前步骤就是实际步骤
+const displayCurrentStep = computed(() => {
+  return currentStep.value
+})
 
 // 全局进度条状态
 const globalProgress = ref(0)
@@ -239,9 +244,8 @@ async function handleNextStep() {
         break
       case 4: // 依赖安装
         console.log('执行依赖安装')
-        if (!props.dependenciesInstalled) {
-          await installDependencies()
-        }
+        // 总是执行依赖安装，确保环境完整
+        await installDependencies()
         break
       case 5: // 启动服务
         console.log('执行启动服务')
@@ -274,7 +278,7 @@ function getNextButtonText() {
     case 3:
       return props.backendExists ? '更新代码' : '获取代码'
     case 4:
-      return '安装依赖'
+      return props.dependenciesInstalled ? '重新安装依赖' : '安装依赖'
     case 5:
       return '启动服务'
     default:

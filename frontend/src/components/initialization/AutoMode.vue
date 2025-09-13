@@ -32,7 +32,7 @@
     </div>
   </div>
 
-  <!-- 弹窗 -->
+  <!-- 强行进入应用弹窗 -->
   <a-modal
     v-model:open="forceEnterVisible"
     title="警告"
@@ -47,6 +47,8 @@
       show-icon
     />
   </a-modal>
+
+
 </template>
 
 <script setup lang="ts">
@@ -82,11 +84,6 @@ const aborted = ref(false)
 
 // 状态：控制弹窗显隐
 const forceEnterVisible = ref(false)
-
-// 镜像源重试相关状态
-const currentMirrorIndex = ref(0)
-const availableMirrors = ref<any[]>([])
-const maxRetries = ref(3)
 
 // 点击“强行进入应用”按钮，显示弹窗
 function handleForceEnter() {
@@ -195,11 +192,6 @@ async function checkGitUpdate(): Promise<boolean> {
     // 如果检查失败，假设有更新，这样会触发代码拉取和依赖安装
     return true
   }
-}
-
-// 根据镜像源key获取对应的URL
-function getGitMirrorUrl(mirrorKey: string): string {
-  return getMirrorUrl('git', mirrorKey)
 }
 
 // 尝试更新后端代码，支持镜像源重试
