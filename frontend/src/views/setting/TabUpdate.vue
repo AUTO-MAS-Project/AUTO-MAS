@@ -2,9 +2,8 @@
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type { SettingsData } from '@/types/settings'
 
-const { settings, updateTypeOptions, updateSourceOptions, handleSettingChange, checkUpdate } = defineProps<{
+const { settings, updateSourceOptions, handleSettingChange, checkUpdate } = defineProps<{
   settings: SettingsData
-  updateTypeOptions: { label: string; value: string }[]
   updateSourceOptions: { label: string; value: string }[]
   handleSettingChange: (category: keyof SettingsData, key: string, value: any) => Promise<void>
   checkUpdate: () => Promise<void>
@@ -25,7 +24,7 @@ const { settings, updateTypeOptions, updateSourceOptions, handleSettingChange, c
         </a-button>
       </div>
       <a-row :gutter="24">
-        <a-col :span="8">
+        <a-col :span="12">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
               <span class="form-label">自动检查更新</span>
@@ -44,24 +43,7 @@ const { settings, updateTypeOptions, updateSourceOptions, handleSettingChange, c
             </a-select>
           </div>
         </a-col>
-        <a-col :span="8">
-          <div class="form-item-vertical">
-            <div class="form-label-wrapper">
-              <span class="form-label">更新类型</span>
-              <a-tooltip title="选择版本更新类型">
-                <QuestionCircleOutlined class="help-icon" />
-              </a-tooltip>
-            </div>
-            <a-select
-              v-model:value="settings.Update.UpdateType"
-              @change="(value: any) => handleSettingChange('Update', 'UpdateType', value)"
-              :options="updateTypeOptions"
-              size="large"
-              style="width:100%"
-            />
-          </div>
-        </a-col>
-        <a-col :span="8">
+        <a-col :span="12">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
               <span class="form-label">更新源</span>
