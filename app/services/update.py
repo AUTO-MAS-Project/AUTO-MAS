@@ -71,7 +71,7 @@ class _UpdateHandler:
         logger.info("开始检查更新")
 
         response = requests.get(
-            f"https://mirrorchyan.com/api/resources/AUTO_MAA/latest?user_agent=AutoMasGui&current_version={current_version}&cdk={Config.get('Update', 'MirrorChyanCDK')}&channel={Config.get('Update', 'UpdateType')}",
+            f"https://mirrorchyan.com/api/resources/AUTO_MAA/latest?user_agent=AutoMasGui&current_version={current_version}&cdk={Config.get('Update', 'MirrorChyanCDK')}&channel=stable",
             timeout=10,
             proxies=Config.get_proxies(),
         )

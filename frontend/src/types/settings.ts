@@ -31,7 +31,6 @@ export interface SettingsData {
   }
   Update: {
     IfAutoUpdate: boolean
-    UpdateType: string
     Source: string
     ProxyAddress: string
     MirrorChyanCDK: string
