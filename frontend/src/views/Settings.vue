@@ -82,7 +82,6 @@ const settings = reactive<SettingsData>({
   },
   Update: {
     IfAutoUpdate: false,
-    UpdateType: 'stable',
     Source: 'GitHub',
     ProxyAddress: '',
     MirrorChyanCDK: '',
@@ -105,11 +104,6 @@ const sendTaskResultTimeOptions = [
   { label: '不推送', value: '不推送' },
   { label: '任何时刻', value: '任何时刻' },
   { label: '仅失败时', value: '仅失败时' },
-]
-
-const updateTypeOptions = [
-  { label: '稳定版', value: 'stable' },
-  { label: '测试版', value: 'beta' },
 ]
 
 const updateSourceOptions = [
@@ -981,7 +975,7 @@ onMounted(() => {
                 </a-button>
               </div>
               <a-row :gutter="24">
-                <a-col :span="8">
+                <a-col :span="12">
                   <div class="form-item-vertical">
                     <div class="form-label-wrapper">
                       <span class="form-label">自动检查更新</span>
@@ -1002,24 +996,7 @@ onMounted(() => {
                     </a-select>
                   </div>
                 </a-col>
-                <a-col :span="8">
-                  <div class="form-item-vertical">
-                    <div class="form-label-wrapper">
-                      <span class="form-label">更新类型</span>
-                      <a-tooltip title="选择版本更新类型">
-                        <QuestionCircleOutlined class="help-icon" />
-                      </a-tooltip>
-                    </div>
-                    <a-select
-                      v-model:value="settings.Update.UpdateType"
-                      @change="(value: any) => handleSettingChange('Update', 'UpdateType', value)"
-                      :options="updateTypeOptions"
-                      size="large"
-                      style="width: 100%"
-                    />
-                  </div>
-                </a-col>
-                <a-col :span="8">
+                <a-col :span="12">
                   <div class="form-item-vertical">
                     <div class="form-label-wrapper">
                       <span class="form-label">更新源</span>

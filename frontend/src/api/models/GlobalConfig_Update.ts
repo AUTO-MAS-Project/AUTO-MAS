@@ -8,10 +8,6 @@ export type GlobalConfig_Update = {
      */
     IfAutoUpdate?: (boolean | null);
     /**
-     * 更新类型, stable为稳定版, beta为测试版
-     */
-    UpdateType?: ('stable' | 'beta' | null);
-    /**
      * 更新源: GitHub源, Mirror酱源, 自建源
      */
     Source?: ('GitHub' | 'MirrorChyan' | 'AutoSite' | null);
