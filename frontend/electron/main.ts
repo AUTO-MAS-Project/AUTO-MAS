@@ -516,6 +516,47 @@ ipcMain.handle('check-environment', async () => {
   return checkEnvironment(appRoot)
 })
 
+// 关键文件检查 - 每次都重新检查exe文件是否存在
+ipcMain.handle('check-critical-files', async () => {
+  try {
+    const appRoot = getAppRoot()
+    
+    // 检查Python可执行文件
+    const pythonPath = path.join(appRoot, 'environment', 'python', 'python.exe')
+    const pythonExists = fs.existsSync(pythonPath)
+    
+    // 检查pip（通常与Python一起安装）
+    const pipPath = path.join(appRoot, 'environment', 'python', 'Scripts', 'pip.exe')
+    const pipExists = fs.existsSync(pipPath)
+    
+    // 检查Git可执行文件
+    const gitPath = path.join(appRoot, 'environment', 'git', 'bin', 'git.exe')
+    const gitExists = fs.existsSync(gitPath)
+    
+    // 检查后端主文件
+    const mainPyPath = path.join(appRoot, 'main.py')
+    const mainPyExists = fs.existsSync(mainPyPath)
+    
+    const result = {
+      pythonExists,
+      pipExists,
+      gitExists,
+      mainPyExists
+    }
+    
+    log.info('关键文件检查结果:', result)
+    return result
+  } catch (error) {
+    log.error('检查关键文件失败:', error)
+    return {
+      pythonExists: false,
+      pipExists: false,
+      gitExists: false,
+      mainPyExists: false
+    }
+  }
+})
+
 // Python相关
 ipcMain.handle('download-python', async (_event, mirror = 'tsinghua') => {
   const appRoot = getAppRoot()
@@ -545,6 +586,17 @@ ipcMain.handle('stop-backend', async () => {
 ipcMain.handle('download-git', async () => {
   const appRoot = getAppRoot()
   return downloadGit(appRoot)
+})
+
+ipcMain.handle('check-git-update', async () => {
+  try {
+    // 这里可以实现检查Git仓库更新的逻辑
+    // 暂时返回false，表示没有更新
+    return { hasUpdate: false }
+  } catch (error) {
+    log.error('检查Git更新失败:', error)
+    return { hasUpdate: false, error: error instanceof Error ? error.message : String(error) }
+  }
 })
 
 ipcMain.handle(

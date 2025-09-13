@@ -19,9 +19,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 初始化相关API
   checkEnvironment: () => ipcRenderer.invoke('check-environment'),
+  checkCriticalFiles: () => ipcRenderer.invoke('check-critical-files'),
   downloadPython: (mirror?: string) => ipcRenderer.invoke('download-python', mirror),
   installPip: () => ipcRenderer.invoke('install-pip'),
   downloadGit: () => ipcRenderer.invoke('download-git'),
+  checkGitUpdate: () => ipcRenderer.invoke('check-git-update'),
   installDependencies: (mirror?: string) => ipcRenderer.invoke('install-dependencies', mirror),
   cloneBackend: (repoUrl?: string) => ipcRenderer.invoke('clone-backend', repoUrl),
   updateBackend: (repoUrl?: string) => ipcRenderer.invoke('update-backend', repoUrl),
