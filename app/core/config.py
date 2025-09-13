@@ -135,19 +135,22 @@ class GlobalConfig(ConfigBase):
     Data_StageTimeStamp = ConfigItem(
         "Data", "StageTimeStamp", "2000-01-01 00:00:00", DateTimeValidator()
     )
-    Data_Stage = ConfigItem("Data", "Stage", "{ }")
+    Data_Stage = ConfigItem("Data", "Stage", "{ }", JSONValidator())
     Data_LastNoticeUpdated = ConfigItem(
         "Data", "LastNoticeUpdated", "2000-01-01 00:00:00", DateTimeValidator()
     )
     Data_IfShowNotice = ConfigItem("Data", "IfShowNotice", True, BoolValidator())
-    Data_Notice = ConfigItem("Data", "Notice", "{ }")
+    Data_Notice = ConfigItem("Data", "Notice", "{ }", JSONValidator())
     Data_LastWebConfigUpdated = ConfigItem(
         "Data", "LastWebConfigUpdated", "2000-01-01 00:00:00", DateTimeValidator()
     )
     Data_LastCheckVersion = ConfigItem(
         "Data", "LastCheckVersion", "2000-01-01 00:00:00", DateTimeValidator()
     )
-    Data_WebConfig = ConfigItem("Data", "WebConfig", "{ }")
+    Data_UpdateVersionInfo = ConfigItem(
+        "Data", "UpdateVersionInfo", "{ }", JSONValidator()
+    )
+    Data_WebConfig = ConfigItem("Data", "WebConfig", "{ }", JSONValidator())
 
 
 class QueueItem(ConfigBase):
