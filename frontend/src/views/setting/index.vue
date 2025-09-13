@@ -79,7 +79,6 @@ const settings = reactive<SettingsData>({
   Start: { IfSelfStart: false, IfMinimizeDirectly: false },
   Update: {
     IfAutoUpdate: false,
-    UpdateType: 'stable',
     Source: 'GitHub',
     ProxyAddress: '',
     MirrorChyanCDK: '',
@@ -102,11 +101,6 @@ const sendTaskResultTimeOptions = [
   { label: '不推送', value: '不推送' },
   { label: '任何时刻', value: '任何时刻' },
   { label: '仅失败时', value: '仅失败时' },
-]
-
-const updateTypeOptions = [
-  { label: '稳定版', value: 'stable' },
-  { label: '测试版', value: 'beta' },
 ]
 
 const updateSourceOptions = [
@@ -302,7 +296,6 @@ onMounted(() => {
         <a-tab-pane key="update" tab="更新设置">
           <TabUpdate
             :settings="settings"
-            :update-type-options="updateTypeOptions"
             :update-source-options="updateSourceOptions"
             :handle-setting-change="handleSettingChange"
             :check-update="checkUpdate"
