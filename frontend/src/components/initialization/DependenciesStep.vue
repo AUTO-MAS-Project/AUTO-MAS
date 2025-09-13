@@ -81,18 +81,16 @@
 import { ref, onMounted, computed } from 'vue'
 import { getConfig, saveConfig } from '@/utils/config'
 import {
-  PIP_MIRRORS,
-  getOfficialMirrors,
-  getMirrorMirrors,
   sortMirrorsBySpeedAndRecommendation,
   type MirrorConfig,
 } from '@/config/mirrors'
+import { mirrorManager } from '@/utils/mirrorManager'
 
-const pipMirrors = ref<MirrorConfig[]>(PIP_MIRRORS)
+const pipMirrors = ref<MirrorConfig[]>([])
 
 // 按类型分组的镜像源
-const officialMirrors = computed(() => getOfficialMirrors('pip'))
-const mirrorMirrors = computed(() => getMirrorMirrors('pip'))
+const officialMirrors = computed(() => pipMirrors.value.filter(m => m.type === 'official'))
+const mirrorMirrors = computed(() => pipMirrors.value.filter(m => m.type === 'mirror'))
 
 // 按速度和推荐排序的镜像源
 const sortedOfficialMirrors = computed(() =>
@@ -106,9 +104,15 @@ const testingPipSpeed = ref(false)
 // 加载配置中的镜像源选择
 async function loadMirrorConfig() {
   try {
+    // 从镜像管理器获取最新的pip镜像源配置（包含云端数据）
+    const cloudMirrors = mirrorManager.getMirrors('pip')
+    pipMirrors.value = [...cloudMirrors]
+    
     const config = await getConfig()
-    selectedPipMirror.value = config.selectedPipMirror
+    selectedPipMirror.value = config.selectedPipMirror || 'aliyun'
     console.log('pip镜像源配置已加载:', selectedPipMirror.value)
+    console.log('云端pip镜像源已加载:', cloudMirrors.length, '个')
+    console.log('云端pip镜像源详情:', cloudMirrors.map(m => ({ name: m.name, key: m.key })))
   } catch (error) {
     console.warn('加载pip镜像源配置失败:', error)
   }

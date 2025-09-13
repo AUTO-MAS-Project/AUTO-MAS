@@ -142,22 +142,20 @@
 import { ref, onMounted, computed } from 'vue'
 import { getConfig, saveConfig } from '@/utils/config'
 import { 
-  GIT_MIRRORS, 
-  getOfficialMirrors, 
-  getMirrorMirrors,
   sortMirrorsBySpeedAndRecommendation,
   type MirrorConfig 
 } from '@/config/mirrors'
+import { mirrorManager } from '@/utils/mirrorManager'
 
 defineProps<{
   backendExists: boolean
 }>()
 
-const gitMirrors = ref<MirrorConfig[]>(GIT_MIRRORS)
+const gitMirrors = ref<MirrorConfig[]>([])
 
 // 按类型分组的镜像源
-const officialMirrors = computed(() => getOfficialMirrors('git'))
-const mirrorMirrors = computed(() => getMirrorMirrors('git'))
+const officialMirrors = computed(() => gitMirrors.value.filter(m => m.type === 'official'))
+const mirrorMirrors = computed(() => gitMirrors.value.filter(m => m.type === 'mirror'))
 
 // 按速度和推荐排序的镜像源
 const sortedOfficialMirrors = computed(() => sortMirrorsBySpeedAndRecommendation(officialMirrors.value))
@@ -174,18 +172,26 @@ const addingCustomMirror = ref(false)
 // 加载配置中的镜像源选择
 async function loadMirrorConfig() {
   try {
+    // 从镜像管理器获取最新的Git镜像源配置（包含云端数据）
+    const cloudMirrors = mirrorManager.getMirrors('git')
+    
     const config = await getConfig()
     selectedGitMirror.value = config.selectedGitMirror || 'ghproxy_edgeone'
     
     // 加载自定义镜像源
     if (config.customGitMirrors && Array.isArray(config.customGitMirrors)) {
       customMirrors.value = config.customGitMirrors
-      // 将自定义镜像源添加到gitMirrors中
-      gitMirrors.value = [...GIT_MIRRORS, ...customMirrors.value]
+      // 将云端镜像源和自定义镜像源合并
+      gitMirrors.value = [...cloudMirrors, ...customMirrors.value]
+    } else {
+      // 只使用云端镜像源
+      gitMirrors.value = [...cloudMirrors]
     }
     
     console.log('Git镜像源配置已加载:', selectedGitMirror.value)
+    console.log('云端镜像源已加载:', cloudMirrors.length, '个')
     console.log('自定义镜像源已加载:', customMirrors.value.length, '个')
+    console.log('云端Git镜像源详情:', cloudMirrors.map(m => ({ name: m.name, key: m.key })))
   } catch (error) {
     console.warn('加载Git镜像源配置失败:', error)
   }
@@ -321,8 +327,9 @@ async function addCustomMirror() {
     // 添加到自定义镜像源列表
     customMirrors.value.push(newMirror)
     
-    // 更新完整的镜像源列表
-    gitMirrors.value = [...GIT_MIRRORS, ...customMirrors.value]
+    // 更新完整的镜像源列表（云端 + 自定义）
+    const cloudMirrors = mirrorManager.getMirrors('git')
+    gitMirrors.value = [...cloudMirrors, ...customMirrors.value]
     
     // 自动选择新添加的镜像源
     selectedGitMirror.value = customKey
@@ -366,8 +373,9 @@ async function removeCustomMirror(key: string) {
     // 从自定义镜像源列表中移除
     customMirrors.value = customMirrors.value.filter(m => m.key !== key)
     
-    // 更新完整的镜像源列表
-    gitMirrors.value = [...GIT_MIRRORS, ...customMirrors.value]
+    // 更新完整的镜像源列表（云端 + 自定义）
+    const cloudMirrors = mirrorManager.getMirrors('git')
+    gitMirrors.value = [...cloudMirrors, ...customMirrors.value]
     
     // 如果当前选中的是被删除的镜像源，切换到默认镜像源
     if (selectedGitMirror.value === key) {

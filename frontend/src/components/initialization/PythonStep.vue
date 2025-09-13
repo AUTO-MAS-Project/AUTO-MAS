@@ -90,22 +90,20 @@
 import { ref, onMounted, computed } from 'vue'
 import { getConfig, saveConfig } from '@/utils/config'
 import { 
-  PYTHON_MIRRORS, 
-  getOfficialMirrors, 
-  getMirrorMirrors,
   sortMirrorsBySpeedAndRecommendation,
   type MirrorConfig 
 } from '@/config/mirrors'
+import { mirrorManager } from '@/utils/mirrorManager'
 
 const props = defineProps<{
   pythonInstalled: boolean
 }>()
 
-const pythonMirrors = ref<MirrorConfig[]>(PYTHON_MIRRORS)
+const pythonMirrors = ref<MirrorConfig[]>([])
 
 // 按类型分组的镜像源
-const officialMirrors = computed(() => getOfficialMirrors('python'))
-const mirrorMirrors = computed(() => getMirrorMirrors('python'))
+const officialMirrors = computed(() => pythonMirrors.value.filter(m => m.type === 'official'))
+const mirrorMirrors = computed(() => pythonMirrors.value.filter(m => m.type === 'mirror'))
 
 // 按速度和推荐排序的镜像源
 const sortedOfficialMirrors = computed(() => sortMirrorsBySpeedAndRecommendation(officialMirrors.value))
@@ -118,9 +116,15 @@ const reinstalling = ref(false)
 // 加载配置中的镜像源选择
 async function loadMirrorConfig() {
   try {
+    // 从镜像管理器获取最新的Python镜像源配置（包含云端数据）
+    const cloudMirrors = mirrorManager.getMirrors('python')
+    pythonMirrors.value = [...cloudMirrors]
+    
     const config = await getConfig()
-    selectedPythonMirror.value = config.selectedPythonMirror
+    selectedPythonMirror.value = config.selectedPythonMirror || 'aliyun'
     console.log('Python镜像源配置已加载:', selectedPythonMirror.value)
+    console.log('云端Python镜像源已加载:', cloudMirrors.length, '个')
+    console.log('云端Python镜像源详情:', cloudMirrors.map(m => ({ name: m.name, key: m.key })))
   } catch (error) {
     console.warn('加载Python镜像源配置失败:', error)
   }
