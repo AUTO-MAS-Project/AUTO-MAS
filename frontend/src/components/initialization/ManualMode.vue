@@ -49,12 +49,12 @@
     </div>
 
     <a-steps :current="currentStep" :status="stepStatus" class="init-steps">
-      <a-step title="主题设置" description="选择您喜欢的主题" />
-      <a-step title="Python 环境" description="安装 Python 运行环境" />
-      <a-step title="Git 工具" description="安装 Git 版本控制工具" />
-      <a-step title="源码获取" description="获取最新的后端代码" />
-      <a-step title="依赖安装" description="安装 Python 依赖包" />
-      <a-step title="启动服务" description="启动后端服务" />
+      <a-step title="设置主题" />
+      <a-step title="配置环境" />
+      <a-step title="Git 工具" />
+      <a-step title="获取源码" />
+      <a-step title="安装依赖" />
+      <a-step title="启动服务" />
     </a-steps>
 
     <!--    &lt;!&ndash; 全局进度条 &ndash;&gt;-->
@@ -139,6 +139,7 @@
 import { ref, watch } from 'vue'
 import { notification } from 'ant-design-vue'
 import { saveConfig } from '@/utils/config'
+import { useUpdateChecker } from '@/composables/useUpdateChecker'
 import ThemeStep from './ThemeStep.vue'
 import PythonStep from './PythonStep.vue'
 
@@ -166,6 +167,9 @@ interface Props {
 }
 
 const props = defineProps<Props>()
+
+// 使用更新检查器
+const { startPolling } = useUpdateChecker()
 
 // 基础状态
 const currentStep = ref(0)
@@ -391,6 +395,23 @@ async function autoStartBackendService() {
     if (result.success) {
       if (serviceStepRef.value) {
         serviceStepRef.value.serviceProgress = 100
+        serviceStepRef.value.serviceStatus = '后端服务启动成功，正在建立WebSocket连接...'
+      }
+      
+      // 后端启动成功，建立WebSocket连接
+      console.log('后端自动启动成功，正在建立WebSocket连接...')
+      const wsConnected = await connectAfterBackendStart()
+      if (!wsConnected) {
+        console.warn('WebSocket连接建立失败，但继续进入应用')
+      } else {
+        console.log('WebSocket连接建立成功')
+      }
+      
+      // WebSocket连接完成后，启动版本检查定时任务
+      console.log('启动版本检查定时任务...')
+      await startPolling()
+      
+      if (serviceStepRef.value) {
         serviceStepRef.value.serviceStatus = '后端服务启动成功，即将进入主页...'
       }
       stepStatus.value = 'finish'
@@ -447,6 +468,10 @@ async function startBackendService() {
       } else {
         console.log('WebSocket连接建立成功')
       }
+      
+      // WebSocket连接完成后，启动版本检查定时任务
+      console.log('启动版本检查定时任务...')
+      await startPolling()
       
       if (serviceStepRef.value) {
         serviceStepRef.value.serviceStatus = '后端服务启动成功，即将进入主页...'
@@ -514,25 +539,23 @@ watch(errorMessage, val => {
 
 <style scoped>
 .manual-mode {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
   width: 100%;
+  max-width: 1000px;
+  margin: 0 auto;
 }
 
 .header {
   text-align: center;
-  margin-bottom: 40px;
+  margin-bottom: 20px;
 }
 
-.header h1 {
-  font-size: 28px;
+.header h3 {
+  font-size: 24px;
   font-weight: 600;
   color: var(--ant-color-text);
-  margin-bottom: 8px;
-}
-
-.header p {
-  font-size: 16px;
-  color: var(--ant-color-text-secondary);
-  margin: 0 0 20px 0;
 }
 
 .init-steps {
@@ -540,21 +563,50 @@ watch(errorMessage, val => {
 }
 
 .step-content {
+  background-color: var(--ant-color-bg-container);
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 8px;
+  padding: 24px;
   min-height: 300px;
-  margin-bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 
 .step-actions {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  margin-bottom: 10px;
+  gap: 16px;
+  margin-top: 20px;
 }
 
+/* 响应式优化 */
 @media (max-width: 768px) {
+  .manual-mode {
+    gap: 15px;
+  }
+
+  .header h3 {
+    font-size: 20px;
+  }
+
+  .init-steps {
+    /* 在小屏幕上，步骤条可以换行显示 */
+    :deep(.ant-steps-item-title) {
+      white-space: normal;
+    }
+  }
+
+  .step-content {
+    padding: 16px;
+    min-height: 250px;
+  }
+}
+
+@media (max-width: 480px) {
   .step-actions {
     flex-direction: column;
-    gap: 12px;
+    align-items: stretch;
   }
 }
 </style>

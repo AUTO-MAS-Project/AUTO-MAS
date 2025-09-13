@@ -42,6 +42,7 @@ import { ref, onMounted } from 'vue'
 import { getConfig } from '@/utils/config'
 import { getMirrorUrl } from '@/config/mirrors'
 import router from '@/router'
+import { useUpdateChecker } from '@/composables/useUpdateChecker'
 import { connectAfterBackendStart } from '@/composables/useWebSocket'
 
 
@@ -53,6 +54,9 @@ interface Props {
 }
 
 const props = defineProps<Props>()
+
+// 使用更新检查器
+const { startPolling } = useUpdateChecker()
 
 // 状态
 const progress = ref(0)
@@ -195,6 +199,10 @@ async function startBackendService() {
   } else {
     console.log('WebSocket连接建立成功')
   }
+  
+  // WebSocket连接完成后，启动版本检查定时任务
+  console.log('启动版本检查定时任务...')
+  await startPolling()
 }
 
 // 组件挂载时开始自动流程
@@ -210,14 +218,14 @@ onMounted(() => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  min-height: 60vh;
+  min-height: calc(100vh - 120px); /* 减去标题栏和一些边距 */
+  padding: 20px;
+  box-sizing: border-box;
 }
 
 .header {
   text-align: center;
   margin-bottom: 40px;
-  margin-top: 100px;
-  flex: auto;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -236,13 +244,19 @@ onMounted(() => {
   height: 100px;
 }
 
+.tip {
+  margin-bottom: 20px;
+  text-align: center;
+}
+
 .auto-progress {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 20px;
   margin: 40px 0;
-  width: 400px;
+  width: 100%;
+  max-width: 400px;
 }
 
 .progress-text {
@@ -255,5 +269,39 @@ onMounted(() => {
   margin-top: 20px;
   display: flex;
   gap: 20px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+/* 响应式优化 */
+@media (max-height: 700px) {
+  .auto-mode {
+    min-height: auto;
+    padding: 10px;
+  }
+  
+  .header {
+    margin-bottom: 20px;
+  }
+  
+  .header h1 {
+    font-size: 32px;
+  }
+  
+  .logo {
+    width: 80px;
+    height: 80px;
+  }
+}
+
+@media (max-width: 600px) {
+  .auto-actions {
+    flex-direction: column;
+    align-items: center;
+  }
+  
+  .auto-actions .ant-btn {
+    width: 200px;
+  }
 }
 </style>
