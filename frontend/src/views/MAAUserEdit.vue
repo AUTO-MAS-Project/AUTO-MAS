@@ -437,7 +437,7 @@
                   </template>
                   <template v-else>
                     {{ option.label }}
-                    <a-tag v-if="option.isCustom" color="blue" size="small" style="margin-left: 8px;">
+                    <a-tag v-if="isCustomStage(option.value)" color="blue" size="small" style="margin-left: 8px;">
                       自定义
                     </a-tag>
                   </template>
@@ -494,7 +494,7 @@
                   </template>
                   <template v-else>
                     {{ option.label }}
-                    <a-tag v-if="option.isCustom" color="blue" size="small" style="margin-left: 8px;">
+                    <a-tag v-if="isCustomStage(option.value)" color="blue" size="small" style="margin-left: 8px;">
                       自定义
                     </a-tag>
                   </template>
@@ -549,7 +549,7 @@
                   </template>
                   <template v-else>
                     {{ option.label }}
-                    <a-tag v-if="option.isCustom" color="blue" size="small" style="margin-left: 8px;">
+                    <a-tag v-if="isCustomStage(option.value)" color="blue" size="small" style="margin-left: 8px;">
                       自定义
                     </a-tag>
                   </template>
@@ -604,7 +604,7 @@
                   </template>
                   <template v-else>
                     {{ option.label }}
-                    <a-tag v-if="option.isCustom" color="blue" size="small" style="margin-left: 8px;">
+                    <a-tag v-if="isCustomStage(option.value)" color="blue" size="small" style="margin-left: 8px;">
                       自定义
                     </a-tag>
                   </template>
@@ -657,7 +657,7 @@
                   </template>
                   <template v-else>
                     {{ option.label }}
-                    <a-tag v-if="option.isCustom" color="blue" size="small" style="margin-left: 8px;">
+                    <a-tag v-if="isCustomStage(option.value)" color="blue" size="small" style="margin-left: 8px;">
                       自定义
                     </a-tag>
                   </template>
@@ -939,6 +939,18 @@ const serverOptions = [
 // 关卡选项
 const stageOptions = ref<any[]>([{ label: '不选择', value: '' }])
 
+// 判断值是否为自定义关卡
+const isCustomStage = (value: string) => {
+  if (!value || value === '' || value === '-') return false
+  
+  // 检查是否在从API加载的关卡列表中
+  const predefinedStage = stageOptions.value.find(option => 
+    option.value === value && !option.isCustom
+  )
+  
+  return !predefinedStage
+}
+
 // 关卡配置模式选项
 const stageModeOptions = ref<any[]>([{ label: '固定', value: 'Fixed' }])
 
@@ -969,6 +981,7 @@ const getDefaultMAAUserData = () => ({
     SklandToken: '',
   },
   Task: {
+    IfWakeUp: true,
     IfBase: true,
     IfCombat: true,
     IfMall: true,
@@ -976,7 +989,6 @@ const getDefaultMAAUserData = () => ({
     IfRecruiting: true,
     IfReclamation: false,
     IfAutoRoguelike: false,
-    IfWakeUp: false,
   },
   Notify: {
     Enabled: false,
@@ -1107,6 +1119,23 @@ const loadUserData = async () => {
         formData.userName = formData.Info.Name || ''
         formData.userId = formData.Info.Id || ''
 
+        // 检查并添加自定义关卡到选项列表
+        const stageFields = ['Stage', 'Stage_1', 'Stage_2', 'Stage_3', 'Stage_Remain']
+        stageFields.forEach(field => {
+          const stageValue = (formData.Info as any)[field]
+          if (stageValue && isCustomStage(stageValue)) {
+            // 检查是否已存在
+            const exists = stageOptions.value.find((option: any) => option.value === stageValue)
+            if (!exists) {
+              stageOptions.value.push({
+                label: stageValue,
+                value: stageValue,
+                isCustom: true
+              })
+            }
+          }
+        })
+
         console.log('用户数据加载成功:', {
           userName: formData.userName,
           userId: formData.userId,
@@ -1134,7 +1163,10 @@ const loadStageOptions = async () => {
       type: GetStageIn.type.TODAY
     })
     if (response && response.code === 200 && response.data) {
-      stageOptions.value = [...response.data].sort((a, b) => {
+      stageOptions.value = [...response.data].map(option => ({
+        ...option,
+        isCustom: false // 明确标记从API加载的关卡为非自定义
+      })).sort((a, b) => {
         if (a.value === '-') return -1
         if (b.value === '-') return 1
         return 0
@@ -1323,14 +1355,6 @@ const stage1InputRef = ref()
 const stage2InputRef = ref()
 const stage3InputRef = ref()
 const stageRemainInputRef = ref()
-
-// VNodes 组件，用于渲染下拉菜单内容
-const VNodes = defineComponent({
-  props: { vnodes: { type: Object, required: true } },
-  setup(props) {
-    return () => props.vnodes as any
-  }
-})
 
 // 验证关卡名称格式
 const validateStageName = (stageName: string): boolean => {
