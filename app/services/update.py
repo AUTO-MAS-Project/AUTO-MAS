@@ -64,7 +64,7 @@ class _UpdateHandler:
                     )
                 ),
                 current_version if self.remote_version is None else self.remote_version,
-                {},
+                json.loads(Config.get("Data", "UpdateVersionInfo")),
             )
 
         logger.info("开始检查更新")
@@ -122,6 +122,9 @@ class _UpdateHandler:
                         update_version_info[key] = []
                     update_version_info[key] += value
 
+            await Config.set(
+                "Data", "UpdateVersionInfo", json.dumps(update_version_info)
+            )
             return True, remote_version, update_version_info
 
         else:

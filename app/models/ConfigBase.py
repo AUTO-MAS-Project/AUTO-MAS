@@ -134,6 +134,21 @@ class DateTimeValidator(ConfigValidator):
             return "2000-01-01 00:00:00"
 
 
+class JSONValidator(ConfigValidator):
+
+    def validate(self, value: Any) -> bool:
+        if not isinstance(value, str):
+            return False
+        try:
+            json.loads(value)
+            return True
+        except json.JSONDecodeError:
+            return False
+
+    def correct(self, value: Any) -> str:
+        return value if self.validate(value) else "{ }"
+
+
 class EncryptValidator(ConfigValidator):
     """加密数据验证器"""
 
