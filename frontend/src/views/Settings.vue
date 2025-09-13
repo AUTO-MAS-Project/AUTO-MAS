@@ -1272,14 +1272,14 @@ onMounted(() => {
                         :loading="refreshingConfig"
                         size="large"
                       >
-                        刷新云端配置
+                        更新云端最新配置
                       </a-button>
-                      <a-button 
-                        @click="updateMirrorConfigStatus"
-                        size="large"
-                      >
-                        更新状态
-                      </a-button>
+<!--                      <a-button -->
+<!--                        @click="updateMirrorConfigStatus"-->
+<!--                        size="large"-->
+<!--                      >-->
+<!--                        更新状态-->
+<!--                      </a-button>-->
                       <a-button 
                         @click="goToMirrorTest"
                         size="large"
