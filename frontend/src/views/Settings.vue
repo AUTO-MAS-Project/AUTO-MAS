@@ -221,6 +221,7 @@ const checkUpdate = async () => {
   try {
     const response = await Service.checkUpdateApiUpdateCheckPost({
       current_version: version,
+      if_force: true, // 手动检查强制获取最新信息
     })
     if (response.code === 200) {
       if (response.if_need_update) {
@@ -234,7 +235,7 @@ const checkUpdate = async () => {
     }
   } catch (error) {
     console.error('获取更新失败:', error)
-    return '获取更新失败！'
+    message.error('获取更新失败！')
   }
 }
 
