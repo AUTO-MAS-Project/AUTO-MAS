@@ -288,6 +288,8 @@ onUnmounted(() => {
   box-sizing: border-box;
   width: 100%;
   min-height: 100%;
+  background-color: var(--ant-color-bg-layout);
+  color: var(--ant-color-text);
 }
 
 /* 响应式优化 */
