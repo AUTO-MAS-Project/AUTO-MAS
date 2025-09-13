@@ -111,9 +111,6 @@ class GlobalConfig(ConfigBase):
     Notify_CompanyWebHookBotUrl = ConfigItem("Notify", "CompanyWebHookBotUrl", "")
 
     Update_IfAutoUpdate = ConfigItem("Update", "IfAutoUpdate", False, BoolValidator())
-    Update_UpdateType = ConfigItem(
-        "Update", "UpdateType", "stable", OptionsValidator(["stable", "beta"])
-    )
     Update_Source = ConfigItem(
         "Update",
         "Source",
