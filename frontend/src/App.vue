@@ -3,13 +3,16 @@ import { onMounted, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { ConfigProvider } from 'ant-design-vue'
 import { useTheme } from './composables/useTheme.ts'
+import { useUpdateChecker } from './composables/useUpdateChecker.ts'
 import AppLayout from './components/AppLayout.vue'
 import TitleBar from './components/TitleBar.vue'
+import UpdateModal from './components/UpdateModal.vue'
 import zhCN from 'ant-design-vue/es/locale/zh_CN'
 import { logger } from '@/utils/logger'
 
 const route = useRoute()
 const { antdTheme, initTheme } = useTheme()
+const { updateVisible, updateData, onUpdateConfirmed } = useUpdateChecker()
 
 // 判断是否为初始化页面
 const isInitializationPage = computed(() => route.name === 'Initialization')
@@ -35,6 +38,13 @@ onMounted(() => {
       <TitleBar />
       <AppLayout />
     </div>
+    
+    <!-- 全局更新模态框 -->
+    <UpdateModal
+      v-model:visible="updateVisible"
+      :update-data="updateData"
+      @confirmed="onUpdateConfirmed"
+    />
   </ConfigProvider>
 </template>
 
