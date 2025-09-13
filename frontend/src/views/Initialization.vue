@@ -34,6 +34,7 @@ import AdminCheck from '@/components/initialization/AdminCheck.vue'
 import AutoMode from '@/components/initialization/AutoMode.vue'
 import ManualMode from '@/components/initialization/ManualMode.vue'
 import type { DownloadProgress } from '@/types/initialization'
+import { mirrorManager } from '@/utils/mirrorManager'
 
 const router = useRouter()
 
@@ -47,6 +48,12 @@ const gitInstalled = ref(false)
 const backendExists = ref(false)
 const dependenciesInstalled = ref(false)
 const serviceStarted = ref(false)
+
+// 镜像配置状态
+const mirrorConfigStatus = ref({
+  source: 'fallback' as 'cloud' | 'fallback',
+  version: ''
+})
 
 // 组件引用
 const manualModeRef = ref()
@@ -229,6 +236,14 @@ function handleProgressUpdate(progress: DownloadProgress) {
 
 onMounted(async () => {
   console.log('初始化页面 onMounted 开始')
+
+  // 更新镜像配置状态
+  const status = mirrorManager.getConfigStatus()
+  mirrorConfigStatus.value = {
+    source: status.source,
+    version: status.version || ''
+  }
+  console.log('镜像配置状态:', mirrorConfigStatus.value)
 
   // 测试配置系统
   try {

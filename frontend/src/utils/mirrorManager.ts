@@ -14,6 +14,7 @@ import {
   sortMirrorsBySpeed,
   getFastestMirror,
 } from '@/config/mirrors'
+import { cloudConfigManager, type CloudMirrorConfig } from './cloudConfigManager'
 
 /**
  * 镜像源管理器类
@@ -23,6 +24,7 @@ export class MirrorManager {
   private mirrorConfigs: MirrorCategory = { ...ALL_MIRRORS }
   private apiEndpoints = { ...API_ENDPOINTS }
   private downloadLinks = { ...DOWNLOAD_LINKS }
+  private isInitialized = false
 
   private constructor() {}
 
@@ -34,6 +36,73 @@ export class MirrorManager {
       MirrorManager.instance = new MirrorManager()
     }
     return MirrorManager.instance
+  }
+
+  /**
+   * 初始化镜像管理器（从云端拉取配置）
+   */
+  async initialize(): Promise<void> {
+    if (this.isInitialized) {
+      return
+    }
+
+    try {
+      // 准备兜底配置
+      const fallbackConfig: CloudMirrorConfig = {
+        version: '1.0.0-local',
+        lastUpdated: new Date().toISOString(),
+        mirrors: { ...ALL_MIRRORS },
+        apiEndpoints: { ...API_ENDPOINTS },
+        downloadLinks: { ...DOWNLOAD_LINKS }
+      }
+
+      // 从云端初始化配置
+      const config = await cloudConfigManager.initializeConfig(fallbackConfig)
+      
+      // 更新本地配置
+      this.mirrorConfigs = config.mirrors
+      this.apiEndpoints = config.apiEndpoints
+      this.downloadLinks = config.downloadLinks
+
+      this.isInitialized = true
+      console.log('镜像管理器初始化完成')
+    } catch (error) {
+      console.error('镜像管理器初始化失败:', error)
+      // 使用默认配置
+      this.isInitialized = true
+    }
+  }
+
+  /**
+   * 手动刷新云端配置
+   */
+  async refreshCloudConfig(): Promise<{ success: boolean; error?: string }> {
+    try {
+      const result = await cloudConfigManager.refreshConfig()
+      
+      if (result.success && result.config) {
+        // 更新本地配置
+        this.mirrorConfigs = result.config.mirrors
+        this.apiEndpoints = result.config.apiEndpoints
+        this.downloadLinks = result.config.downloadLinks
+        
+        return { success: true }
+      } else {
+        return { success: false, error: result.error }
+      }
+    } catch (error) {
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : '刷新配置失败' 
+      }
+    }
+  }
+
+  /**
+   * 获取配置状态
+   */
+  getConfigStatus() {
+    return cloudConfigManager.getConfigStatus()
   }
 
   /**
