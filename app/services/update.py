@@ -44,27 +44,28 @@ class _UpdateHandler:
     def __init__(self) -> None:
         self.is_locked: bool = False
         self.remote_version: Optional[str] = None
+        self.last_check_time: Optional[datetime] = None
+        self.update_version_info: Optional[Dict[str, List[str]]] = None
         self.mirror_chyan_download_url: Optional[str] = None
 
     async def check_update(
-        self, current_version: str
+        self, current_version: str, if_force: bool = False
     ) -> tuple[bool, str, Dict[str, List[str]]]:
 
-        if datetime.now() - timedelta(hours=4) < datetime.strptime(
-            Config.get("Data", "LastCheckVersion"), "%Y-%m-%d %H:%M:%S"
+        if (
+            not if_force
+            and self.remote_version is not None
+            and self.last_check_time is not None
+            and self.update_version_info is not None
+            and self.last_check_time > datetime.now() - timedelta(hours=4)
         ):
             logger.info("四小时内已进行过一次检查, 直接使用缓存的版本更新信息")
             return (
-                (
-                    False
-                    if self.remote_version is None
-                    else bool(
-                        version.parse(self.remote_version)
-                        > version.parse(current_version)
-                    )
+                bool(
+                    version.parse(self.remote_version) > version.parse(current_version)
                 ),
-                current_version if self.remote_version is None else self.remote_version,
-                json.loads(Config.get("Data", "UpdateVersionInfo")),
+                self.remote_version,
+                self.update_version_info,
             )
 
         logger.info("开始检查更新")
@@ -90,16 +91,15 @@ class _UpdateHandler:
                     )
 
         logger.success("获取版本信息成功")
-        await Config.set(
-            "Data", "LastCheckVersion", datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        )
+        self.last_check_time = datetime.now()
 
-        remote_version = version_info["data"]["version_name"]
-        self.remote_version = remote_version
+        self.remote_version = version_info["data"]["version_name"]
+        if self.remote_version is None:
+            raise Exception("Mirror 酱未返回版本号, 请稍后重试")
         if "url" in version_info["data"]:
             self.mirror_chyan_download_url = version_info["data"]["url"]
 
-        if version.parse(remote_version) > version.parse(current_version):
+        if version.parse(self.remote_version) > version.parse(current_version):
 
             # 版本更新信息
             version_info_json: Dict[str, Dict[str, List[str]]] = json.loads(
@@ -110,7 +110,7 @@ class _UpdateHandler:
                 )
             )
 
-            update_version_info = {}
+            self.update_version_info = {}
             for v_i in [
                 info
                 for ver, info in version_info_json.items()
@@ -118,14 +118,11 @@ class _UpdateHandler:
             ]:
 
                 for key, value in v_i.items():
-                    if key not in update_version_info:
-                        update_version_info[key] = []
-                    update_version_info[key] += value
+                    if key not in self.update_version_info:
+                        self.update_version_info[key] = []
+                    self.update_version_info[key] += value
 
-            await Config.set(
-                "Data", "UpdateVersionInfo", json.dumps(update_version_info)
-            )
-            return True, remote_version, update_version_info
+            return True, self.remote_version, self.update_version_info
 
         else:
             return False, current_version, {}
