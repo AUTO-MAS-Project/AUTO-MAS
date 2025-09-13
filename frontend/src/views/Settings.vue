@@ -16,6 +16,7 @@ import type { SelectValue } from 'ant-design-vue/es/select'
 import type { SettingsData } from '../types/settings'
 import { Service, type VersionOut } from '@/api'
 import UpdateModal from '@/components/UpdateModal.vue'
+import { mirrorManager } from '@/utils/mirrorManager'
 
 const updateData = ref<Record<string, string[]>>({})
 
@@ -31,6 +32,15 @@ const updateVisible = ref(false)
 const activeKey = ref('basic')
 
 const backendUpdateInfo = ref<VersionOut | null>(null)
+
+// 镜像配置相关状态
+const mirrorConfigStatus = ref({
+  isUsingCloudConfig: false,
+  version: '',
+  lastUpdated: '',
+  source: 'fallback' as 'cloud' | 'fallback'
+})
+const refreshingConfig = ref(false)
 
 const settings = reactive<SettingsData>({
   UI: {
@@ -257,6 +267,34 @@ const checkUpdate = async () => {
   }
 }
 
+// 镜像配置相关方法
+const updateMirrorConfigStatus = () => {
+  const status = mirrorManager.getConfigStatus()
+  mirrorConfigStatus.value = status
+}
+
+const refreshMirrorConfig = async () => {
+  refreshingConfig.value = true
+  try {
+    const result = await mirrorManager.refreshCloudConfig()
+    if (result.success) {
+      message.success('镜像配置刷新成功')
+      updateMirrorConfigStatus()
+    } else {
+      message.warning(result.error || '刷新失败，继续使用当前配置')
+    }
+  } catch (error) {
+    console.error('刷新镜像配置失败:', error)
+    message.error('刷新镜像配置失败')
+  } finally {
+    refreshingConfig.value = false
+  }
+}
+
+const goToMirrorTest = () => {
+  router.push('/mirror-test')
+}
+
 // 确认回调
 const onUpdateConfirmed = () => {
   updateVisible.value = false
@@ -265,6 +303,7 @@ const onUpdateConfirmed = () => {
 onMounted(() => {
   loadSettings()
   getBackendVersion()
+  updateMirrorConfigStatus()
 })
 </script>
 
@@ -1180,6 +1219,97 @@ onMounted(() => {
                     <a-button type="primary" @click="goToLogs" size="large"> 查看日志 </a-button>
                     <a-button @click="openDevTools" size="large"> 打开开发者工具 </a-button>
                   </a-space>
+                </a-col>
+              </a-row>
+            </div>
+          </div>
+        </a-tab-pane>
+
+        <!-- 镜像配置 -->
+        <a-tab-pane key="mirrors" tab="镜像配置">
+          <div class="tab-content">
+            <div class="form-section">
+              <div class="section-header">
+                <h3>镜像站配置</h3>
+                <p class="section-description">
+                  管理下载站和加速站配置，支持从云端自动更新最新的镜像站列表
+                </p>
+              </div>
+              
+              <a-row :gutter="24">
+                <a-col :span="24">
+                  <div class="form-item-vertical">
+                    <div class="form-label-wrapper">
+                      <span class="form-label">配置状态</span>
+                    </div>
+                    <a-descriptions :column="1" bordered size="small">
+                      <a-descriptions-item label="配置来源">
+                        <a-tag :color="mirrorConfigStatus.source === 'cloud' ? 'green' : 'orange'">
+                          {{ mirrorConfigStatus.source === 'cloud' ? '云端配置' : '本地兜底配置' }}
+                        </a-tag>
+                      </a-descriptions-item>
+                      <a-descriptions-item label="配置版本" v-if="mirrorConfigStatus.version">
+                        {{ mirrorConfigStatus.version }}
+                      </a-descriptions-item>
+                      <a-descriptions-item label="最后更新" v-if="mirrorConfigStatus.lastUpdated">
+                        {{ new Date(mirrorConfigStatus.lastUpdated).toLocaleString() }}
+                      </a-descriptions-item>
+                    </a-descriptions>
+                  </div>
+                </a-col>
+              </a-row>
+
+              <a-row :gutter="24" style="margin-top: 24px;">
+                <a-col :span="24">
+                  <div class="form-item-vertical">
+                    <div class="form-label-wrapper">
+                      <span class="form-label">配置管理</span>
+                    </div>
+                    <a-space size="large">
+                      <a-button 
+                        type="primary" 
+                        @click="refreshMirrorConfig"
+                        :loading="refreshingConfig"
+                        size="large"
+                      >
+                        刷新云端配置
+                      </a-button>
+                      <a-button 
+                        @click="updateMirrorConfigStatus"
+                        size="large"
+                      >
+                        更新状态
+                      </a-button>
+                      <a-button 
+                        @click="goToMirrorTest"
+                        size="large"
+                      >
+                        测试页面
+                      </a-button>
+                    </a-space>
+                  </div>
+                </a-col>
+              </a-row>
+
+              <a-row :gutter="24" style="margin-top: 24px;">
+                <a-col :span="24">
+                  <div class="form-item-vertical">
+                    <div class="form-label-wrapper">
+                      <span class="form-label">说明</span>
+                    </div>
+                    <a-alert
+                      message="镜像配置说明"
+                      type="info"
+                      show-icon
+                    >
+                      <template #description>
+                        <ul style="margin: 8px 0; padding-left: 20px;">
+                          <li>应用启动时会自动尝试从云端拉取最新的镜像站配置</li>
+                          <li>可以手动点击"刷新云端配置"按钮获取最新配置</li>
+                        </ul>
+                      </template>
+                    </a-alert>
+                  </div>
                 </a-col>
               </a-row>
             </div>
