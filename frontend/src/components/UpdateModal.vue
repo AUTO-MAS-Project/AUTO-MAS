@@ -5,10 +5,11 @@
     :width="800"
     :footer="null"
     :mask-closable="false"
+    :z-index="9999"
     class="update-modal"
   >
 
-  <div v-if="hasUpdate" class="update-container">
+  <div class="update-container">
       <!-- 更新内容展示 -->
       <div class="update-content">
         <div
@@ -21,7 +22,7 @@
       <!-- 操作按钮 -->
       <div class="update-footer">
         <div class="update-actions">
-          <a-button v-if="!downloading && !downloaded" @click="visible = false">暂不更新</a-button>
+          <a-button v-if="!downloading && !downloaded" @click="handleCancel">暂不更新</a-button>
           <a-button v-if="!downloading && !downloaded" type="primary" @click="downloadUpdate">
             下载更新
           </a-button>
@@ -40,18 +41,42 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import MarkdownIt from 'markdown-it'
 import { Service } from '@/api/services/Service.ts'
 
-const visible = ref(false)
+// Props 定义
+interface Props {
+  visible: boolean
+  updateData: Record<string, string[]>
+}
+
+const props = defineProps<Props>()
+
+// Emits 定义
+const emit = defineEmits<{
+  confirmed: []
+  'update:visible': [value: boolean]
+}>()
+
+// 内部状态
 const hasUpdate = ref(false)
 const downloading = ref(false)
 const downloaded = ref(false)
 const installing = ref(false)
-const updateContent = ref("")
 const latestVersion = ref("")
+
+// 计算属性 - 响应式地接收外部 visible 状态
+const visible = computed({
+  get: () => props.visible,
+  set: (value: boolean) => emit('update:visible', value)
+})
+
+// 计算属性 - 转换 updateData 为 markdown
+const updateContent = computed(() => {
+  return updateInfoToMarkdown(props.updateData, latestVersion.value, '更新内容')
+})
 
 // markdown 渲染器
 const md = new MarkdownIt({ html: true, linkify: true, typographer: true })
@@ -105,27 +130,34 @@ function updateInfoToMarkdown(
   return lines.join('\n')
 }
 
-// 初始化弹窗流程
-const initUpdateCheck = async () => {
-  try {
-    const version = import.meta.env.VITE_APP_VERSION || '0.0.0'
-    const response = await Service.checkUpdateApiUpdateCheckPost({ current_version: version })
-
-    if (response.code === 200 && response.if_need_update) {
-      hasUpdate.value = true
-      latestVersion.value = response.latest_version || ''
-      // ✅ 核心修改：把对象转成 Markdown 再给渲染器
-      updateContent.value = updateInfoToMarkdown(
-        response.update_info,
-        response.latest_version,
-        '更新内容'
-      )
-      visible.value = true
+// 初始化时设置 hasUpdate
+const initializeModal = () => {
+  if (props.updateData && Object.keys(props.updateData).length > 0) {
+    hasUpdate.value = true
+    // 从 updateData 中提取版本信息（如果有的话）
+    const versionInfo = Object.values(props.updateData).flat().find(item => 
+      typeof item === 'string' && item.includes('版本')
+    )
+    if (versionInfo) {
+      const versionMatch = versionInfo.match(/v?(\d+\.\d+\.\d+)/)
+      if (versionMatch) {
+        latestVersion.value = versionMatch[1]
+      }
     }
-  } catch (err) {
-    console.error('检查更新失败:', err)
   }
 }
+
+// 监听 props 变化
+watch(() => props.updateData, () => {
+  initializeModal()
+}, { immediate: true })
+
+// 监听 visible 变化
+watch(() => props.visible, (newVisible) => {
+  if (newVisible && props.updateData && Object.keys(props.updateData).length > 0) {
+    hasUpdate.value = true
+  }
+}, { immediate: true })
 
 // 下载更新
 const downloadUpdate = async () => {
@@ -134,6 +166,7 @@ const downloadUpdate = async () => {
     const res = await Service.downloadUpdateApiUpdateDownloadPost()
     if (res.code === 200) {
       downloaded.value = true
+      message.success('下载完成')
     } else {
       message.error(res.message || '下载失败')
     }
@@ -153,6 +186,7 @@ const installUpdate = async () => {
     if (res.code === 200) {
       message.success('安装启动')
       visible.value = false
+      emit('confirmed')
     } else {
       message.error(res.message || '安装失败')
     }
@@ -164,9 +198,11 @@ const installUpdate = async () => {
   }
 }
 
-onMounted(() => {
-  initUpdateCheck()
-})
+// 关闭弹窗
+const handleCancel = () => {
+  visible.value = false
+  emit('confirmed')
+}
 
 </script>
 

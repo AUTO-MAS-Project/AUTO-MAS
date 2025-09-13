@@ -25,13 +25,6 @@
     @confirmed="onNoticeConfirmed"
   />
 
-  <!-- 更新模态框 -->
-  <UpdateModal
-    v-model:visible="updateVisible"
-    :update-data="updateData"
-    @confirmed="onUpdateConfirmed"
-  />
-
   <div class="content">
     <!-- 当期活动关卡 -->
     <a-card
@@ -253,7 +246,6 @@ import { Service } from '@/api/services/Service'
 import NoticeModal from '@/components/NoticeModal.vue'
 import dayjs from 'dayjs'
 import { API_ENDPOINTS } from '@/config/mirrors.ts'
-import UpdateModal from '@/components/UpdateModal.vue'
 
 interface ActivityInfo {
   Tip: string
@@ -307,11 +299,6 @@ const proxyData = ref<Record<string, ProxyInfo>>({})
 const noticeVisible = ref(false)
 const noticeData = ref<Record<string, string>>({})
 const noticeLoading = ref(false)
-
-// 更新相关
-const version = import.meta.env.VITE_APP_VERSION || '获取版本失败！'
-const updateVisible = ref(false)
-const updateData = ref<Record<string, string[]>>({})
 
 // 获取当前活动信息
 const currentActivity = computed(() => {
@@ -492,35 +479,9 @@ const showNotice = async () => {
   }
 }
 
-const checkUpdate = async () => {
-  try {
-    const response = await Service.checkUpdateApiUpdateCheckPost({
-      current_version: version,
-    })
-    if (response.code === 200) {
-      if (response.if_need_update) {
-        updateData.value = response.update_info
-        updateVisible.value = true
-      } else {
-      }
-    } else {
-      message.error(response.message || '获取更新失败')
-    }
-  } catch (error) {
-    console.error('获取更新失败:', error)
-    return '获取更新失败！'
-  }
-}
-
-// 确认回调
-const onUpdateConfirmed = () => {
-  updateVisible.value = false
-}
-
 onMounted(() => {
   fetchActivityData()
   fetchNoticeData()
-  checkUpdate()
 })
 </script>
 
@@ -547,11 +508,6 @@ onMounted(() => {
 
 .notice-button {
   min-width: 120px;
-}
-
-/* 公告相关样式 */
-.notice-modal {
-  /* 自定义公告模态框样式 */
 }
 
 .activity-card {
