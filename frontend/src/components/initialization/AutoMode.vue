@@ -15,8 +15,20 @@
     </div>
 
     <div class="auto-actions">
-      <a-button @click="handleSwitchToManual" type="primary" size="large">重新配置环境</a-button>
-      <a-button @click="handleForceEnter" type="default" size="large">强行进入应用</a-button>
+      <a-button 
+        @click="handleSwitchToManual" 
+        type="primary" 
+        size="large"
+      >
+        重新配置环境
+      </a-button>
+      <a-button 
+        @click="handleForceEnter" 
+        type="default" 
+        size="large"
+      >
+        强行进入应用
+      </a-button>
     </div>
   </div>
 
@@ -41,9 +53,11 @@
 import { ref, onMounted } from 'vue'
 import { getConfig } from '@/utils/config'
 import { getMirrorUrl } from '@/config/mirrors'
+import { mirrorManager } from '@/utils/mirrorManager'
 import router from '@/router'
 import { useUpdateChecker } from '@/composables/useUpdateChecker'
 import { connectAfterBackendStart } from '@/composables/useWebSocket'
+import { message } from 'ant-design-vue'
 
 
 
@@ -68,6 +82,11 @@ const aborted = ref(false)
 
 // 状态：控制弹窗显隐
 const forceEnterVisible = ref(false)
+
+// 镜像源重试相关状态
+const currentMirrorIndex = ref(0)
+const availableMirrors = ref<any[]>([])
+const maxRetries = ref(3)
 
 // 点击“强行进入应用”按钮，显示弹窗
 function handleForceEnter() {
@@ -104,12 +123,17 @@ async function startAutoProcess() {
       progressText.value = '发现更新，正在更新代码...'
       progress.value = 40
 
-      // 使用配置中保存的Git镜像源
-      const gitMirrorUrl = getGitMirrorUrl(config.selectedGitMirror)
-      const result = await window.electronAPI.updateBackend(gitMirrorUrl)
+      // 尝试更新代码，支持镜像源重试
+      const updateSuccess = await tryUpdateBackendWithRetry(config)
       if (aborted.value) return
-      if (!result.success) {
-        throw new Error(`代码更新失败: ${result.error}`)
+      if (!updateSuccess) {
+        // 所有镜像源都失败了，显示重新配置按钮
+        progressText.value = '代码更新失败，所有镜像源均无法访问'
+        progressStatus.value = 'exception'
+        setTimeout(() => {
+          progressText.value = '请点击下方按钮重新配置环境'
+        }, 2000)
+        return
       }
     }
 
@@ -117,23 +141,17 @@ async function startAutoProcess() {
     progressText.value = '检查并安装依赖包...'
     progress.value = 60
 
-    // 先尝试使用初始化时的镜像源
-    let pipMirror = config.selectedPipMirror || 'tsinghua'
-    let pipResult = await window.electronAPI.installDependencies(pipMirror)
+    // 尝试安装依赖，支持镜像源重试
+    const dependenciesSuccess = await tryInstallDependenciesWithRetry(config)
     if (aborted.value) return
 
-    // 如果初始化时的镜像源不通，让用户重新选择
-    if (!pipResult.success) {
-      console.warn(`使用镜像源 ${pipMirror} 安装依赖失败，需要重新选择镜像源`)
-
-      // 切换到手动模式让用户重新选择镜像源
-      progressText.value = '依赖安装失败，需要重新配置镜像源'
+    if (!dependenciesSuccess) {
+      // 所有PIP镜像源都失败了，显示重新配置按钮
+      progressText.value = '依赖安装失败，所有PIP镜像源均无法访问'
       progressStatus.value = 'exception'
-
       setTimeout(() => {
         progressText.value = '请点击下方按钮重新配置环境'
       }, 2000)
-
       return
     }
 
@@ -182,6 +200,108 @@ async function checkGitUpdate(): Promise<boolean> {
 // 根据镜像源key获取对应的URL
 function getGitMirrorUrl(mirrorKey: string): string {
   return getMirrorUrl('git', mirrorKey)
+}
+
+// 尝试更新后端代码，支持镜像源重试
+async function tryUpdateBackendWithRetry(config: any): Promise<boolean> {
+  // 获取所有Git镜像源
+  const allGitMirrors = mirrorManager.getMirrors('git')
+  
+  // 加载用户的自定义镜像源
+  const customMirrors = config.customGitMirrors || []
+  const combinedMirrors = [...allGitMirrors, ...customMirrors]
+  
+  // 优先使用用户选择的镜像源
+  const selectedMirror = combinedMirrors.find(m => m.key === config.selectedGitMirror)
+  let mirrorsToTry = selectedMirror ? [selectedMirror] : []
+  
+  // 添加其他镜像源作为备选
+  const otherMirrors = combinedMirrors.filter(m => m.key !== config.selectedGitMirror)
+  mirrorsToTry = [...mirrorsToTry, ...otherMirrors]
+  
+  console.log('准备尝试的Git镜像源:', mirrorsToTry.map(m => m.name))
+  
+  for (let i = 0; i < mirrorsToTry.length; i++) {
+    if (aborted.value) return false
+    
+    const mirror = mirrorsToTry[i]
+    progressText.value = `正在使用 ${mirror.name} 更新代码... (${i + 1}/${mirrorsToTry.length})`
+    
+    try {
+      console.log(`尝试使用镜像源: ${mirror.name} (${mirror.url})`)
+      const result = await window.electronAPI.updateBackend(mirror.url)
+      
+      if (result.success) {
+        console.log(`使用镜像源 ${mirror.name} 更新成功`)
+        message.success(`使用 ${mirror.name} 更新代码成功`)
+        return true
+      } else {
+        console.warn(`镜像源 ${mirror.name} 更新失败:`, result.error)
+        if (i < mirrorsToTry.length - 1) {
+          progressText.value = `${mirror.name} 失败，尝试下一个镜像源...`
+          await new Promise(resolve => setTimeout(resolve, 1000)) // 等待1秒
+        }
+      }
+    } catch (error) {
+      console.error(`镜像源 ${mirror.name} 更新异常:`, error)
+      if (i < mirrorsToTry.length - 1) {
+        progressText.value = `${mirror.name} 异常，尝试下一个镜像源...`
+        await new Promise(resolve => setTimeout(resolve, 1000)) // 等待1秒
+      }
+    }
+  }
+  
+  console.error('所有Git镜像源都无法更新代码')
+  return false
+}
+
+// 尝试安装依赖，支持镜像源重试
+async function tryInstallDependenciesWithRetry(config: any): Promise<boolean> {
+  // 获取所有PIP镜像源
+  const allPipMirrors = mirrorManager.getMirrors('pip')
+  
+  // 优先使用用户选择的镜像源
+  const selectedMirror = allPipMirrors.find(m => m.key === config.selectedPipMirror)
+  let mirrorsToTry = selectedMirror ? [selectedMirror] : []
+  
+  // 添加其他镜像源作为备选
+  const otherMirrors = allPipMirrors.filter(m => m.key !== config.selectedPipMirror)
+  mirrorsToTry = [...mirrorsToTry, ...otherMirrors]
+  
+  console.log('准备尝试的PIP镜像源:', mirrorsToTry.map(m => m.name))
+  
+  for (let i = 0; i < mirrorsToTry.length; i++) {
+    if (aborted.value) return false
+    
+    const mirror = mirrorsToTry[i]
+    progressText.value = `正在使用 ${mirror.name} 安装依赖... (${i + 1}/${mirrorsToTry.length})`
+    
+    try {
+      console.log(`尝试使用PIP镜像源: ${mirror.name} (${mirror.url})`)
+      const result = await window.electronAPI.installDependencies(mirror.key)
+      
+      if (result.success) {
+        console.log(`使用PIP镜像源 ${mirror.name} 安装成功`)
+        message.success(`使用 ${mirror.name} 安装依赖成功`)
+        return true
+      } else {
+        console.warn(`PIP镜像源 ${mirror.name} 安装失败:`, result.error)
+        if (i < mirrorsToTry.length - 1) {
+          progressText.value = `${mirror.name} 失败，尝试下一个镜像源...`
+          await new Promise(resolve => setTimeout(resolve, 1000)) // 等待1秒
+        }
+      }
+    } catch (error) {
+      console.error(`PIP镜像源 ${mirror.name} 安装异常:`, error)
+      if (i < mirrorsToTry.length - 1) {
+        progressText.value = `${mirror.name} 异常，尝试下一个镜像源...`
+        await new Promise(resolve => setTimeout(resolve, 1000)) // 等待1秒
+      }
+    }
+  }
+  
+  console.error('所有PIP镜像源都无法安装依赖')
+  return false
 }
 
 // 启动后端服务
