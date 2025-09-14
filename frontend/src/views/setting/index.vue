@@ -11,8 +11,6 @@ import { useUpdateChecker } from '@/composables/useUpdateChecker'
 import { Service, type VersionOut } from '@/api'
 import UpdateModal from '@/components/UpdateModal.vue'
 import { mirrorManager } from '@/utils/mirrorManager'
-import { request } from '@/api/core/request'
-import { OpenAPI } from '@/api'
 
 // 引入拆分后的 Tab 组件
 import TabBasic from './TabBasic.vue'
@@ -243,7 +241,7 @@ const testingNotify = ref(false)
 const testNotify = async () => {
   testingNotify.value = true
   try {
-    const res: any = await request<any>(OpenAPI, { method: 'POST', url: '/api/setting/test_notify' })
+    const res = await Service.testNotifyApiSettingTestNotifyPost()
     if (res?.code && res.code !== 200) message.warning(res?.message || '测试通知发送结果未知')
     else message.success('测试通知已发送')
   } catch (e) {
