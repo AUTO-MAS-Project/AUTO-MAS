@@ -22,7 +22,6 @@ import TabUpdate from './TabUpdate.vue'
 import TabStart from './TabStart.vue'
 import TabVoice from './TabVoice.vue'
 import TabAdvanced from './TabAdvanced.vue'
-import TabMirrors from './TabMirrors.vue'
 import TabOthers from './TabOthers.vue'
 
 const router = useRouter()
@@ -308,11 +307,10 @@ onMounted(() => {
           <TabVoice :settings="settings" :voice-type-options="voiceTypeOptions" :handle-setting-change="handleSettingChange" />
         </a-tab-pane>
         <a-tab-pane key="advanced" tab="高级设置">
-          <TabAdvanced :go-to-logs="goToLogs" :open-dev-tools="openDevTools" />
-        </a-tab-pane>
-        <a-tab-pane key="mirrors" tab="镜像配置">
-          <TabMirrors
-            :mirror-config-status="mirrorConfigStatus.value"
+          <TabAdvanced 
+            :go-to-logs="goToLogs" 
+            :open-dev-tools="openDevTools"
+            :mirror-config-status="mirrorConfigStatus"
             :refreshing-config="refreshingConfig"
             :refresh-mirror-config="refreshMirrorConfig"
             :go-to-mirror-test="goToMirrorTest"
