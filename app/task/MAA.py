@@ -1339,7 +1339,7 @@ class MaaManager:
                 shutil.copy(
                     (
                         Path.cwd()
-                        / f"data/{self.script_id}/{self.user_id}/ConfigFile/gui.json"
+                        / f"data/{self.script_id}/{self.user_list[self.index]['user_id']}/ConfigFile/gui.json"
                     ),
                     self.maa_set_path,
                 )
@@ -1357,12 +1357,12 @@ class MaaManager:
             elif self.user_id is not None:
                 if (
                     Path.cwd()
-                    / f"data/{self.script_id}/{self.user_list[self.index]['user_id']}/ConfigFile/gui.json"
+                    / f"data/{self.script_id}/{self.user_id}/ConfigFile/gui.json"
                 ).exists():
                     shutil.copy(
                         (
                             Path.cwd()
-                            / f"data/{self.script_id}/{self.user_list[self.index]['user_id']}/ConfigFile/gui.json"
+                            / f"data/{self.script_id}/{self.user_id}/ConfigFile/gui.json"
                         ),
                         self.maa_set_path,
                     )
