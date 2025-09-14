@@ -40,8 +40,8 @@
     @add-user="handleAddUser"
     @edit-user="handleEditUser"
     @delete-user="handleDeleteUser"
-    @maa-config="handleMAAConfig"
-    @disconnect-maa="handleDisconnectMAA"
+    @start-maa-config="handleStartMAAConfig"
+    @save-maa-config="handleSaveMAAConfig"
     @toggle-user-status="handleToggleUserStatus"
   />
 
@@ -232,6 +232,8 @@ import { useScriptApi } from '@/composables/useScriptApi'
 import { useUserApi } from '@/composables/useUserApi'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { useTemplateApi, type WebConfigTemplate } from '@/composables/useTemplateApi'
+import { Service } from '@/api/services/Service'
+import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import MarkdownIt from 'markdown-it'
 
 const router = useRouter()
@@ -494,51 +496,89 @@ const handleDeleteUser = async (user: User) => {
   }
 }
 
-const handleMAAConfig = async (script: Script) => {
+const handleStartMAAConfig = async (script: Script) => {
   try {
     // 检查是否已有连接
     const existingConnection = activeConnections.value.get(script.id)
     if (existingConnection) {
-      message.warning('该脚本已在配置中，请先断开连接')
+      message.warning('该脚本已在配置中，请先保存配置')
       return
     }
 
-    // 新订阅
-    subscribe(script.id, {
-      onError: error => {
-        console.error(`脚本 ${script.name} 连接错误:`, error)
-        message.error(`MAA配置连接失败: ${error}`)
-        activeConnections.value.delete(script.id)
-      },
+    // 调用启动配置任务API
+    const response = await Service.addTaskApiDispatchStartPost({
+      taskId: script.id,
+      mode: TaskCreateIn.mode.SettingScriptMode
     })
 
-    // 记录连接
-    activeConnections.value.set(script.id, script.id)
-    message.success(`已开始配置 ${script.name}`)
-
-    // 可选：设置自动断开连接的定时器（比如30分钟后）
-    setTimeout(
-      () => {
-        if (activeConnections.value.has(script.id)) {
-          unsubscribe(script.id)
+    if (response.code === 200) {
+      // 订阅WebSocket消息
+      subscribe(response.websocketId, {
+        onError: error => {
+          console.error(`脚本 ${script.name} 连接错误:`, error)
+          message.error(`MAA配置连接失败: ${error}`)
           activeConnections.value.delete(script.id)
-          message.info(`${script.name} 配置会话已超时断开`)
+        },
+        onResult: (data: any) => {
+          // 处理配置完成消息（兼容任何结构）
+          if (data.Accomplish) {
+            message.success(`${script.name} 配置已完成`)
+            activeConnections.value.delete(script.id)
+          }
         }
-      },
-      30 * 60 * 1000
-    ) // 30分钟
+      })
+
+      // 记录连接和websocketId
+      activeConnections.value.set(script.id, response.websocketId)
+      message.success(`已启动 ${script.name} 的MAA配置`)
+
+      // 设置自动断开连接的定时器（30分钟后）
+      setTimeout(
+        () => {
+          if (activeConnections.value.has(script.id)) {
+            const wsId = activeConnections.value.get(script.id)
+            if (wsId) {
+              unsubscribe(wsId)
+            }
+            activeConnections.value.delete(script.id)
+            message.info(`${script.name} 配置会话已超时断开`)
+          }
+        },
+        30 * 60 * 1000
+      ) // 30分钟
+    } else {
+      message.error(response.message || '启动MAA配置失败')
+    }
   } catch (error) {
-    console.error('MAA配置失败:', error)
-    message.error('MAA配置失败')
+    console.error('启动MAA配置失败:', error)
+    message.error('启动MAA配置失败')
   }
 }
 
-const handleDisconnectMAA = (script: Script) => {
-  const connectionId = activeConnections.value.get(script.id)
-  if (connectionId) {
-    unsubscribe(script.id)
-    activeConnections.value.delete(script.id)
-    message.success(`已断开 ${script.name} 的配置连接`)
+const handleSaveMAAConfig = async (script: Script) => {
+  try {
+    const websocketId = activeConnections.value.get(script.id)
+    if (!websocketId) {
+      message.error('未找到活动的配置会话')
+      return
+    }
+
+    // 调用停止配置任务API
+    const response = await Service.stopTaskApiDispatchStopPost({
+      taskId: websocketId
+    })
+
+    if (response.code === 200) {
+      // 取消订阅
+      unsubscribe(websocketId)
+      activeConnections.value.delete(script.id)
+      message.success(`${script.name} 的配置已保存`)
+    } else {
+      message.error(response.message || '保存配置失败')
+    }
+  } catch (error) {
+    console.error('保存MAA配置失败:', error)
+    message.error('保存MAA配置失败')
   }
 }
 

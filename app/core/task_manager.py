@@ -180,9 +180,7 @@ class _TaskManager:
                 task["status"] = "运行"
                 await Config.send_json(
                     WebSocketMessage(
-                        id=str(task_id),
-                        type="Update",
-                        data={"task_list": task_list},
+                        id=str(task_id), type="Update", data={"task_list": task_list}
                     ).model_dump()
                 )
                 logger.info(f"任务开始: {script_id}")
@@ -269,6 +267,20 @@ class _TaskManager:
                 id=str(task_id), type="Signal", data={"Accomplish": "无描述"}
             ).model_dump()
         )
+
+        if mode == "自动代理" and task_id in Config.QueueConfig:
+
+            await Config.send_json(
+                WebSocketMessage(
+                    id=str(task_id),
+                    type="Signal",
+                    data={
+                        "power": Config.QueueConfig[task_id].get(
+                            "Info", "AfterAccomplish"
+                        )
+                    },
+                ).model_dump()
+            )
 
 
 TaskManager = _TaskManager()

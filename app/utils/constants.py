@@ -20,6 +20,8 @@
 #   Contact: DLmaster_361@163.com
 
 
+from datetime import datetime
+
 RESOURCE_STAGE_INFO = [
     {"value": "-", "text": "当前/上次", "days": [1, 2, 3, 4, 5, 6, 7]},
     {"value": "1-7", "text": "1-7", "days": [1, 2, 3, 4, 5, 6, 7]},
@@ -270,3 +272,6 @@ MIRROR_ERROR_INFO = {
     1: "未知错误类型",
 }
 """MirrorChyan错误代码映射表"""
+
+DEFAULT_DATETIME = datetime.strptime("2000-01-01 00:00:00", "%Y-%m-%d %H:%M:%S")
+"""默认日期时间"""
