@@ -354,7 +354,12 @@
                 <!-- 计划模式：显示只读文本 -->
                 <div v-if="isPlanMode" class="plan-mode-display">
                   <div class="plan-value">{{ displayMedicineNumb }}</div>
-                  <div class="plan-source">来自计划表</div>
+                  <a-tooltip>
+                    <template #title>
+                      <div class="plan-tooltip" v-html="formatTooltip(medicineNumbTooltip)"></div>
+                    </template>
+                    <div class="plan-source">来自计划表</div>
+                  </a-tooltip>
                 </div>
                 <!-- 固定模式：显示输入框 -->
                 <a-input-number
@@ -392,7 +397,12 @@
                           : displaySeriesNumb
                     }}
                   </div>
-                  <div class="plan-source">来自计划表</div>
+                  <a-tooltip>
+                    <template #title>
+                      <div class="plan-tooltip" v-html="formatTooltip(seriesNumbTooltip)"></div>
+                    </template>
+                    <div class="plan-source">来自计划表</div>
+                  </a-tooltip>
                 </div>
                 <!-- 固定模式：显示选择框 -->
                 <a-select
@@ -429,7 +439,12 @@
                   <div class="plan-value">
                     {{ displayStage === '-' ? '当前/上次' : displayStage || '不选择' }}
                   </div>
-                  <div class="plan-source">来自计划表</div>
+                  <a-tooltip>
+                    <template #title>
+                      <div class="plan-tooltip" v-html="formatTooltip(stageTooltip)"></div>
+                    </template>
+                    <div class="plan-source">来自计划表</div>
+                  </a-tooltip>
                 </div>
                 <!-- 固定模式：显示选择框 -->
                 <a-select
@@ -504,7 +519,12 @@
                   <div class="plan-value">
                     {{ displayStage1 === '-' ? '当前/上次' : displayStage1 || '不选择' }}
                   </div>
-                  <div class="plan-source">来自计划表</div>
+                  <a-tooltip>
+                    <template #title>
+                      <div class="plan-tooltip" v-html="formatTooltip(stage1Tooltip)"></div>
+                    </template>
+                    <div class="plan-source">来自计划表</div>
+                  </a-tooltip>
                 </div>
                 <!-- 固定模式：显示选择框 -->
                 <a-select
@@ -577,7 +597,12 @@
                   <div class="plan-value">
                     {{ displayStage2 === '-' ? '当前/上次' : displayStage2 || '不选择' }}
                   </div>
-                  <div class="plan-source">来自计划表</div>
+                  <a-tooltip>
+                    <template #title>
+                      <div class="plan-tooltip" v-html="formatTooltip(stage2Tooltip)"></div>
+                    </template>
+                    <div class="plan-source">来自计划表</div>
+                  </a-tooltip>
                 </div>
                 <!-- 固定模式：显示选择框 -->
                 <a-select
@@ -650,7 +675,12 @@
                   <div class="plan-value">
                     {{ displayStage3 === '-' ? '当前/上次' : displayStage3 || '不选择' }}
                   </div>
-                  <div class="plan-source">来自计划表</div>
+                  <a-tooltip>
+                    <template #title>
+                      <div class="plan-tooltip" v-html="formatTooltip(stage3Tooltip)"></div>
+                    </template>
+                    <div class="plan-source">来自计划表</div>
+                  </a-tooltip>
                 </div>
                 <!-- 固定模式：显示选择框 -->
                 <a-select
@@ -721,7 +751,12 @@
                   <div class="plan-value">
                     {{ displayStageRemain === '-' ? '不选择' : displayStageRemain || '不选择' }}
                   </div>
-                  <div class="plan-source">来自计划表</div>
+                  <a-tooltip>
+                    <template #title>
+                      <div class="plan-tooltip" v-html="formatTooltip(stageRemainTooltip)"></div>
+                    </template>
+                    <div class="plan-source">来自计划表</div>
+                  </a-tooltip>
                 </div>
                 <!-- 固定模式：显示选择框 -->
                 <a-select
@@ -1083,6 +1118,70 @@ const isPlanMode = computed(() => {
   return formData.Info.StageMode !== 'Fixed'
 })
 const planModeConfig = ref<any>(null)
+// 新增：存储完整的计划数据用于悬浮提示
+const fullPlanData = ref<any>(null)
+
+// 新增：生成计划表悬浮提示内容的函数
+const getPlanTooltip = (fieldName: string) => {
+  if (!fullPlanData.value || !isPlanMode.value) return ''
+
+  const planData = fullPlanData.value
+  const mode = planData.Info?.Mode || 'ALL'
+
+  if (mode === 'ALL') {
+    return '此项由全局计划表控制'
+  } else if (mode === 'Weekly') {
+    const weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+    const weekdaysZh = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+
+    let tooltip = '此项由周计划表控制:\n'
+
+    weekdays.forEach((day, index) => {
+      const dayConfig = planData[day]
+      let value = ''
+
+      if (dayConfig && dayConfig[fieldName] !== undefined) {
+        value = dayConfig[fieldName]
+      } else if (planData.ALL && planData.ALL[fieldName] !== undefined) {
+        value = planData.ALL[fieldName] + ' (全局)'
+      } else {
+        value = '未设置'
+      }
+
+      // 格式化特殊字段的显示
+      if (fieldName === 'SeriesNumb') {
+        if (value === '0') value = 'AUTO'
+        else if (value === '-1') value = '不切换'
+      } else if (
+        fieldName === 'Stage' ||
+        fieldName === 'Stage_1' ||
+        fieldName === 'Stage_2' ||
+        fieldName === 'Stage_3'
+      ) {
+        if (value === '-') value = '当前/上次'
+        else if (value === '') value = '不选择'
+      } else if (fieldName === 'Stage_Remain') {
+        if (value === '-') value = '不选择'
+        else if (value === '') value = '不选择'
+      }
+
+      tooltip += `${weekdaysZh[index]}: ${value}\n`
+    })
+
+    return tooltip.trim()
+  }
+
+  return ''
+}
+
+// 新增：各字段的悬浮提示计算属性
+const medicineNumbTooltip = computed(() => getPlanTooltip('MedicineNumb'))
+const seriesNumbTooltip = computed(() => getPlanTooltip('SeriesNumb'))
+const stageTooltip = computed(() => getPlanTooltip('Stage'))
+const stage1Tooltip = computed(() => getPlanTooltip('Stage_1'))
+const stage2Tooltip = computed(() => getPlanTooltip('Stage_2'))
+const stage3Tooltip = computed(() => getPlanTooltip('Stage_3'))
+const stageRemainTooltip = computed(() => getPlanTooltip('Stage_Remain'))
 
 // 计算属性用于显示正确的值（来自计划表或用户配置）
 const displayMedicineNumb = computed({
@@ -1375,7 +1474,7 @@ const loadUserData = async () => {
           })
         }
 
-        // 同步扁平化字段 - 使用nextTick确保数据更新完成后再同步
+        // 同步扁平字段 - 使用nextTick确保数据更新完成后再同步
         await nextTick()
         formData.userName = formData.Info.Name || ''
         formData.userId = formData.Info.Id || ''
@@ -1624,7 +1723,7 @@ const validateStageName = (stageName: string): boolean => {
   return stagePattern.test(stageName.trim())
 }
 
-// 添加自定义关卡到选项列表
+// 添加自定义关卡到选���列表
 const addStageToOptions = (stageName: string) => {
   if (!stageName || !stageName.trim()) {
     return false
@@ -1748,6 +1847,20 @@ const handleCancel = () => {
   router.push('/scripts')
 }
 
+// 新增：格式化 tooltip（支持换行）函数
+const escapeHtml = (text: string) =>
+  text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+
+const formatTooltip = (text: string) => {
+  if (!text) return ''
+  return escapeHtml(text).replace(/\n/g, '<br/>')
+}
+
 // 初始化加载
 onMounted(() => {
   if (!scriptId) {
@@ -1776,6 +1889,9 @@ onMounted(() => {
             const planData = response.data[newStageMode]
             const currentConfig = getPlanCurrentConfig(planData)
             planModeConfig.value = currentConfig
+
+            // 新增：保存完整的计划数据用于悬浮提示
+            fullPlanData.value = planData
 
             console.log('计划配置加载成功:', {
               planId: newStageMode,
@@ -2073,7 +2189,7 @@ onMounted(() => {
   padding: 8px 12px;
   border: 1px solid var(--ant-color-border);
   border-radius: 6px;
-  background: var(--ant-color-fill-alter);
+  background: var(--ant-color-bg-container);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -2093,6 +2209,14 @@ onMounted(() => {
   padding: 2px 8px;
   background: var(--ant-color-primary-bg);
   border-radius: 12px;
-  border: 1px solid var(--ant-color-primary-border);
+  border: 1px solid var(--ant-color-primary);
+}
+
+/* plan-tooltip 样式 */
+.plan-tooltip {
+  white-space: normal;
+  line-height: 1.5;
+  max-width: 320px;
+  font-size: 12px;
 }
 </style>
