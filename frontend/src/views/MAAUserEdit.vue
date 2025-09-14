@@ -1027,7 +1027,6 @@ import { useWebSocket } from '@/composables/useWebSocket'
 import { Service } from '@/api'
 import { GetStageIn } from '@/api/models/GetStageIn'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
-import { defineComponent } from 'vue'
 
 const router = useRouter()
 const route = useRoute()
