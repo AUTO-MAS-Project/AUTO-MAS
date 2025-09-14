@@ -37,24 +37,24 @@
                 type="primary"
                 ghost
                 size="middle"
-                @click="handleMAAConfig(script)"
+                @click="handleStartMAAConfig(script)"
               >
                 <template #icon>
                   <SettingOutlined />
                 </template>
-                设置MAA全局配置
+                配置MAA
               </a-button>
               <a-button
                 v-if="script.type === 'MAA' && props.activeConnections.has(script.id)"
                 type="primary"
-                danger
                 size="middle"
-                @click="handleDisconnectMAA(script)"
+                style="background: #52c41a; border-color: #52c41a;"
+                @click="handleSaveMAAConfig(script)"
               >
                 <template #icon>
-                  <StopOutlined />
+                  <SaveOutlined />
                 </template>
-                断开配置连接
+                保存配置
               </a-button>
               <a-button type="default" size="middle" @click="handleEdit(script)">
                 <template #icon>
@@ -291,8 +291,8 @@ import type { Script, User } from '../types/script'
 import {
   DeleteOutlined,
   EditOutlined,
+  SaveOutlined,
   SettingOutlined,
-  StopOutlined,
   UserAddOutlined,
 } from '@ant-design/icons-vue'
 
@@ -312,9 +312,9 @@ interface Emits {
 
   (e: 'deleteUser', user: User): void
 
-  (e: 'maaConfig', script: Script): void
+  (e: 'startMaaConfig', script: Script): void
 
-  (e: 'disconnectMaa', script: Script): void
+  (e: 'saveMaaConfig', script: Script): void
 
   (e: 'toggleUserStatus', user: User): void
 }
@@ -350,12 +350,12 @@ const handleDeleteUser = (user: User) => {
   emit('deleteUser', user)
 }
 
-const handleMAAConfig = (script: Script) => {
-  emit('maaConfig', script)
+const handleStartMAAConfig = (script: Script) => {
+  emit('startMaaConfig', script)
 }
 
-const handleDisconnectMAA = (script: Script) => {
-  emit('disconnectMaa', script)
+const handleSaveMAAConfig = (script: Script) => {
+  emit('saveMaaConfig', script)
 }
 
 const handleToggleUserStatus = (user: User) => {

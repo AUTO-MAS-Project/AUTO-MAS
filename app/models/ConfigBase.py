@@ -30,7 +30,7 @@ from typing import List, Any, Dict, Union, Optional
 
 
 from app.utils import dpapi_encrypt, dpapi_decrypt
-from app.utils.constants import RESERVED_NAMES, ILLEGAL_CHARS
+from app.utils.constants import RESERVED_NAMES, ILLEGAL_CHARS, DEFAULT_DATETIME
 
 
 class ConfigValidator:
@@ -114,24 +114,30 @@ class UUIDValidator(ConfigValidator):
 
 
 class DateTimeValidator(ConfigValidator):
+    """日期时间验证器"""
+
+    def __init__(self, date_format: str) -> None:
+        if not date_format:
+            raise ValueError("日期时间格式不能为空")
+        self.date_format = date_format
 
     def validate(self, value: Any) -> bool:
         if not isinstance(value, str):
             return False
         try:
-            datetime.strptime(value, "%Y-%m-%d %H:%M:%S")
+            datetime.strptime(value, self.date_format)
             return True
         except ValueError:
             return False
 
     def correct(self, value: Any) -> str:
         if not isinstance(value, str):
-            return "2000-01-01 00:00:00"
+            return DEFAULT_DATETIME.strftime(self.date_format)
         try:
-            datetime.strptime(value, "%Y-%m-%d %H:%M:%S")
+            datetime.strptime(value, self.date_format)
             return value
         except ValueError:
-            return "2000-01-01 00:00:00"
+            return DEFAULT_DATETIME.strftime(self.date_format)
 
 
 class JSONValidator(ConfigValidator):
