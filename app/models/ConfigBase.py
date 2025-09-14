@@ -308,6 +308,8 @@ class ConfigItem:
             要设置的值, 可以是任何合法类型
         """
 
+        print(self.group, self.name, value, self.value)
+
         if (
             dpapi_decrypt(self.value)
             if isinstance(self.validator, EncryptValidator)

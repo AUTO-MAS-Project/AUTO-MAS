@@ -1357,12 +1357,12 @@ class MaaManager:
             elif self.user_id is not None:
                 if (
                     Path.cwd()
-                    / f"data/{self.script_id}/{self.user_id}/ConfigFile/gui.json"
+                    / f"data/{self.script_id}/{self.user_list[self.index]['user_id']}/ConfigFile/gui.json"
                 ).exists():
                     shutil.copy(
                         (
                             Path.cwd()
-                            / f"data/{self.script_id}/{self.user_id}/ConfigFile/gui.json"
+                            / f"data/{self.script_id}/{self.user_list[self.index]['user_id']}/ConfigFile/gui.json"
                         ),
                         self.maa_set_path,
                     )
@@ -1597,7 +1597,7 @@ class MaaManager:
 
                         if (
                             Path.cwd()
-                            / f"data/{self.script_id}/{self.user_id}/Infrastructure/infrastructure.json"
+                            / f"data/{self.script_id}/{self.user_list[self.index]['user_id']}/Infrastructure/infrastructure.json"
                         ).exists():
 
                             data["Configurations"]["Default"][
@@ -1618,7 +1618,7 @@ class MaaManager:
                                 "Infrast.CustomInfrastFile"
                             ] = str(
                                 Path.cwd()
-                                / f"data/{self.script_id}/{self.user_id}/Infrastructure/infrastructure.json"
+                                / f"data/{self.script_id}/{self.user_list[self.index]['user_id']}/Infrastructure/infrastructure.json"
                             )  # 自定义基建配置文件地址
                         else:
                             logger.warning(
