@@ -1,8 +1,18 @@
 <template>
   <div class="mirror-test-container">
     <div class="test-header">
-      <h2>镜像配置测试页面</h2>
-      <p>用于测试云端镜像配置拉取功能</p>
+      <div class="header-content">
+        <div class="title-section">
+          <h2>镜像配置测试页面</h2>
+          <p>用于测试云端镜像配置拉取功能</p>
+        </div>
+        <a-button @click="goBack" size="large">
+          <template #icon>
+            <ArrowLeftOutlined />
+          </template>
+          返回设置
+        </a-button>
+      </div>
     </div>
 
     <div class="test-content">
@@ -83,9 +93,13 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
+import { ArrowLeftOutlined } from '@ant-design/icons-vue'
 import { mirrorManager } from '@/utils/mirrorManager'
 import { cloudConfigManager, type CloudMirrorConfig } from '@/utils/cloudConfigManager'
+
+const router = useRouter()
 
 interface TestLog {
   time: string
@@ -196,6 +210,10 @@ const testCloudUrl = async () => {
   }
 }
 
+const goBack = () => {
+  router.push('/settings')
+}
+
 onMounted(() => {
   updateStatus()
   addLog('镜像配置测试页面已加载', 'info')
@@ -210,8 +228,18 @@ onMounted(() => {
 }
 
 .test-header {
-  text-align: center;
   margin-bottom: 24px;
+}
+
+.header-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.title-section {
+  flex: 1;
+  text-align: center;
 }
 
 .test-header h2 {
