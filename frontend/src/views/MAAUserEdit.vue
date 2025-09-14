@@ -351,8 +351,15 @@
                   </span>
                 </a-tooltip>
               </template>
+              <!-- 计划模式：显示只读文本 -->
+              <div v-if="isPlanMode" class="plan-mode-display">
+                <div class="plan-value">{{ displayMedicineNumb }}</div>
+                <div class="plan-source">来自计划表</div>
+              </div>
+              <!-- 固定模式：显示输入框 -->
               <a-input-number
-                v-model:value="formData.Info.MedicineNumb"
+                v-else
+                v-model:value="displayMedicineNumb"
                 :min="0"
                 :max="9999"
                 placeholder="0"
@@ -374,8 +381,19 @@
                   </span>
                 </a-tooltip>
               </template>
+              <!-- 计划模式：显示只读文本 -->
+              <div v-if="isPlanMode" class="plan-mode-display">
+                <div class="plan-value">{{ 
+                  displaySeriesNumb === '0' ? 'AUTO' :
+                  displaySeriesNumb === '-1' ? '不切换' :
+                  displaySeriesNumb
+                }}</div>
+                <div class="plan-source">来自计划表</div>
+              </div>
+              <!-- 固定模式：显示选择框 -->
               <a-select
-                v-model:value="formData.Info.SeriesNumb"
+                v-else
+                v-model:value="displaySeriesNumb"
                 :options="[
                   { label: 'AUTO', value: '0' },
                   { label: '1', value: '1' },
@@ -402,8 +420,15 @@
                   </span>
                 </a-tooltip>
               </template>
+              <!-- 计划模式：显示只读文本 -->
+              <div v-if="isPlanMode" class="plan-mode-display">
+                <div class="plan-value">{{ displayStage === '-' ? '当前/上次' : (displayStage || '不选择') }}</div>
+                <div class="plan-source">来自计划表</div>
+              </div>
+              <!-- 固定模式：显示选择框 -->
               <a-select
-                v-model:value="formData.Info.Stage"
+                v-else
+                v-model:value="displayStage"
                 :disabled="loading"
                 size="large"
                 placeholder="选择或输入自定义关卡"
@@ -420,7 +445,11 @@
                       size="small"
                       @keyup.enter="addCustomStage"
                     />
-                    <a-button type="text" size="small" @click="addCustomStage">
+                    <a-button 
+                      type="text" 
+                      size="small" 
+                      @click="addCustomStage"
+                    >
                       <template #icon>
                         <PlusOutlined />
                       </template>
@@ -459,8 +488,15 @@
                   </span>
                 </a-tooltip>
               </template>
+              <!-- 计划模式：显示只读文本 -->
+              <div v-if="isPlanMode" class="plan-mode-display">
+                <div class="plan-value">{{ displayStage1 === '-' ? '当前/上次' : (displayStage1 || '不选择') }}</div>
+                <div class="plan-source">来自计划表</div>
+              </div>
+              <!-- 固定模式：显示选择框 -->
               <a-select
-                v-model:value="formData.Info.Stage_1"
+                v-else
+                v-model:value="displayStage1"
                 :disabled="loading"
                 size="large"
                 placeholder="选择或输入自定义关卡"
@@ -477,7 +513,11 @@
                       size="small"
                       @keyup.enter="addCustomStage1"
                     />
-                    <a-button type="text" size="small" @click="addCustomStage1">
+                    <a-button 
+                      type="text" 
+                      size="small" 
+                      @click="addCustomStage1"
+                    >
                       <template #icon>
                         <PlusOutlined />
                       </template>
@@ -514,8 +554,15 @@
                   </span>
                 </a-tooltip>
               </template>
+              <!-- 计划模式：显示只读文本 -->
+              <div v-if="isPlanMode" class="plan-mode-display">
+                <div class="plan-value">{{ displayStage2 === '-' ? '当前/上次' : (displayStage2 || '不选择') }}</div>
+                <div class="plan-source">来自计划表</div>
+              </div>
+              <!-- 固定模式：显示选择框 -->
               <a-select
-                v-model:value="formData.Info.Stage_2"
+                v-else
+                v-model:value="displayStage2"
                 :disabled="loading"
                 size="large"
                 placeholder="选择或输入自定义关卡"
@@ -532,7 +579,11 @@
                       size="small"
                       @keyup.enter="addCustomStage2"
                     />
-                    <a-button type="text" size="small" @click="addCustomStage2">
+                    <a-button 
+                      type="text" 
+                      size="small" 
+                      @click="addCustomStage2"
+                    >
                       <template #icon>
                         <PlusOutlined />
                       </template>
@@ -569,8 +620,15 @@
                   </span>
                 </a-tooltip>
               </template>
+              <!-- 计划模式：显示只读文本 -->
+              <div v-if="isPlanMode" class="plan-mode-display">
+                <div class="plan-value">{{ displayStage3 === '-' ? '当前/上次' : (displayStage3 || '不选择') }}</div>
+                <div class="plan-source">来自计划表</div>
+              </div>
+              <!-- 固定模式：显示选择框 -->
               <a-select
-                v-model:value="formData.Info.Stage_3"
+                v-else
+                v-model:value="displayStage3"
                 :disabled="loading"
                 size="large"
                 placeholder="选择或输入自定义关卡"
@@ -587,7 +645,11 @@
                       size="small"
                       @keyup.enter="addCustomStage3"
                     />
-                    <a-button type="text" size="small" @click="addCustomStage3">
+                    <a-button 
+                      type="text" 
+                      size="small" 
+                      @click="addCustomStage3"
+                    >
                       <template #icon>
                         <PlusOutlined />
                       </template>
@@ -615,15 +677,22 @@
           <a-col :span="6">
             <a-form-item name="mode">
               <template #label>
-                <a-tooltip title="剩余理智关卡，选择「当前/上次」时视为不使用剩余理智关卡">
+                <a-tooltip title="剩余理智关卡，选择「不选择」时视为不使用剩余理智关卡">
                   <span class="form-label">
                     剩余理智关卡
                     <QuestionCircleOutlined class="help-icon" />
                   </span>
                 </a-tooltip>
               </template>
+              <!-- 计划模式：显示只读文本 -->
+              <div v-if="isPlanMode" class="plan-mode-display">
+                <div class="plan-value">{{ displayStageRemain === '-' ? '不选择' : (displayStageRemain || '不选择') }}</div>
+                <div class="plan-source">来自计划表</div>
+              </div>
+              <!-- 固定模式：显示选择框 -->
               <a-select
-                v-model:value="formData.Info.Stage_Remain"
+                v-else
+                v-model:value="displayStageRemain"
                 :disabled="loading"
                 size="large"
                 placeholder="选择或输入自定义关卡"
@@ -640,7 +709,11 @@
                       size="small"
                       @keyup.enter="addCustomStageRemain"
                     />
-                    <a-button type="text" size="small" @click="addCustomStageRemain">
+                    <a-button 
+                      type="text" 
+                      size="small" 
+                      @click="addCustomStageRemain"
+                    >
                       <template #icon>
                         <PlusOutlined />
                       </template>
@@ -648,7 +721,7 @@
                     </a-button>
                   </a-space>
                 </template>
-                <a-select-option v-for="option in stageOptions" :key="option.value" :value="option.value">
+                <a-select-option v-for="option in stageRemainOptions" :key="option.value" :value="option.value">
                   <template v-if="option.label.includes('|')">
                     <span>{{ option.label.split('|')[0] }}</span>
                     <a-tag color="green" size="small" style="margin-left: 8px;">
@@ -896,6 +969,7 @@ import {
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
 import { useUserApi } from '@/composables/useUserApi'
 import { useScriptApi } from '@/composables/useScriptApi'
+import { usePlanApi } from '@/composables/usePlanApi'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { Service } from '@/api'
 import { GetStageIn } from '@/api/models/GetStageIn'
@@ -905,6 +979,7 @@ const router = useRouter()
 const route = useRoute()
 const { addUser, updateUser, getUsers, loading: userLoading } = useUserApi()
 const { getScript } = useScriptApi()
+const { getPlans } = usePlanApi()
 const { subscribe, unsubscribe } = useWebSocket()
 
 const formRef = ref<FormInstance>()
@@ -939,6 +1014,16 @@ const serverOptions = [
 // 关卡选项
 const stageOptions = ref<any[]>([{ label: '不选择', value: '' }])
 
+// 剩余理智关卡专用选项（将"当前/上次"改为"不选择"）
+const stageRemainOptions = computed(() => {
+  return stageOptions.value.map(option => {
+    if (option.value === '-') {
+      return { ...option, label: option.label.replace('当前/上次', '不选择') }
+    }
+    return option
+  })
+})
+
 // 判断值是否为自定义关卡
 const isCustomStage = (value: string) => {
   if (!value || value === '' || value === '-') return false
@@ -953,6 +1038,150 @@ const isCustomStage = (value: string) => {
 
 // 关卡配置模式选项
 const stageModeOptions = ref<any[]>([{ label: '固定', value: 'Fixed' }])
+
+// 计划模式状态
+const isPlanMode = computed(() => {
+  return formData.Info.StageMode !== 'Fixed'
+})
+const planModeConfig = ref<any>(null)
+
+// 计算属性用于显示正确的值（来自计划表或用户配置）
+const displayMedicineNumb = computed({
+  get: () => {
+    if (isPlanMode.value && planModeConfig.value?.MedicineNumb !== undefined) {
+      return planModeConfig.value.MedicineNumb
+    }
+    return formData.Info.MedicineNumb
+  },
+  set: (value) => {
+    if (!isPlanMode.value) {
+      formData.Info.MedicineNumb = value
+    }
+  }
+})
+
+const displaySeriesNumb = computed({
+  get: () => {
+    if (isPlanMode.value && planModeConfig.value?.SeriesNumb !== undefined) {
+      return planModeConfig.value.SeriesNumb
+    }
+    return formData.Info.SeriesNumb
+  },
+  set: (value) => {
+    if (!isPlanMode.value) {
+      formData.Info.SeriesNumb = value
+    }
+  }
+})
+
+const displayStage = computed({
+  get: () => {
+    if (isPlanMode.value && planModeConfig.value?.Stage !== undefined) {
+      return planModeConfig.value.Stage
+    }
+    return formData.Info.Stage
+  },
+  set: (value) => {
+    if (!isPlanMode.value) {
+      formData.Info.Stage = value
+    }
+  }
+})
+
+const displayStage1 = computed({
+  get: () => {
+    if (isPlanMode.value && planModeConfig.value?.Stage_1 !== undefined) {
+      return planModeConfig.value.Stage_1
+    }
+    return formData.Info.Stage_1
+  },
+  set: (value) => {
+    if (!isPlanMode.value) {
+      formData.Info.Stage_1 = value
+    }
+  }
+})
+
+const displayStage2 = computed({
+  get: () => {
+    if (isPlanMode.value && planModeConfig.value?.Stage_2 !== undefined) {
+      return planModeConfig.value.Stage_2
+    }
+    return formData.Info.Stage_2
+  },
+  set: (value) => {
+    if (!isPlanMode.value) {
+      formData.Info.Stage_2 = value
+    }
+  }
+})
+
+const displayStage3 = computed({
+  get: () => {
+    if (isPlanMode.value && planModeConfig.value?.Stage_3 !== undefined) {
+      return planModeConfig.value.Stage_3
+    }
+    return formData.Info.Stage_3
+  },
+  set: (value) => {
+    if (!isPlanMode.value) {
+      formData.Info.Stage_3 = value
+    }
+  }
+})
+
+const displayStageRemain = computed({
+  get: () => {
+    if (isPlanMode.value && planModeConfig.value?.Stage_Remain !== undefined) {
+      return planModeConfig.value.Stage_Remain
+    }
+    return formData.Info.Stage_Remain
+  },
+  set: (value) => {
+    if (!isPlanMode.value) {
+      formData.Info.Stage_Remain = value
+    }
+  }
+})
+
+// 获取计划当前配置
+const getPlanCurrentConfig = (planData: any) => {
+  if (!planData) return null
+  
+  const mode = planData.Info?.Mode || 'ALL'
+  
+  if (mode === 'ALL') {
+    return planData.ALL || null
+  } else if (mode === 'Weekly') {
+    // 获取+12时区的当前时间
+    const now = new Date()
+    const utc12Time = new Date(now.getTime() + (12 * 60 * 60 * 1000))
+    
+    // 如果是凌晨4点前，算作前一天
+    if (utc12Time.getHours() < 4) {
+      utc12Time.setDate(utc12Time.getDate() - 1)
+    }
+    
+    const weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+    const today = weekdays[utc12Time.getDay()]
+    
+    console.log('计划表周模式调试:', {
+      原始时间: now.toISOString(),
+      UTC12时间: utc12Time.toISOString(),
+      星期: today,
+      计划数据: planData
+    })
+    
+    // 优先使用今天的配置，如果没有或为空则使用ALL配置
+    const todayConfig = planData[today]
+    if (todayConfig && Object.keys(todayConfig).length > 0) {
+      return todayConfig
+    }
+    return planData.ALL || null
+  }
+  
+  return null
+}
 
 // MAA脚本默认用户数据
 const getDefaultMAAUserData = () => ({
@@ -1166,11 +1395,7 @@ const loadStageOptions = async () => {
       stageOptions.value = [...response.data].map(option => ({
         ...option,
         isCustom: false // 明确标记从API加载的关卡为非自定义
-      })).sort((a, b) => {
-        if (a.value === '-') return -1
-        if (b.value === '-') return 1
-        return 0
-      })
+      }))
     }
   } catch (error) {
     console.error('加载关卡选项失败:', error)
@@ -1401,7 +1626,9 @@ const addCustomStage = () => {
   }
 
   if (addStageToOptions(customStageName.value)) {
-    formData.Info.Stage = customStageName.value.trim()
+    if (!isPlanMode.value) {
+      formData.Info.Stage = customStageName.value.trim()
+    }
     customStageName.value = ''
     nextTick(() => {
       stageInputRef.value?.focus()
@@ -1417,7 +1644,9 @@ const addCustomStage1 = () => {
   }
 
   if (addStageToOptions(customStage1Name.value)) {
-    formData.Info.Stage_1 = customStage1Name.value.trim()
+    if (!isPlanMode.value) {
+      formData.Info.Stage_1 = customStage1Name.value.trim()
+    }
     customStage1Name.value = ''
     nextTick(() => {
       stage1InputRef.value?.focus()
@@ -1433,7 +1662,9 @@ const addCustomStage2 = () => {
   }
 
   if (addStageToOptions(customStage2Name.value)) {
-    formData.Info.Stage_2 = customStage2Name.value.trim()
+    if (!isPlanMode.value) {
+      formData.Info.Stage_2 = customStage2Name.value.trim()
+    }
     customStage2Name.value = ''
     nextTick(() => {
       stage2InputRef.value?.focus()
@@ -1449,7 +1680,9 @@ const addCustomStage3 = () => {
   }
 
   if (addStageToOptions(customStage3Name.value)) {
-    formData.Info.Stage_3 = customStage3Name.value.trim()
+    if (!isPlanMode.value) {
+      formData.Info.Stage_3 = customStage3Name.value.trim()
+    }
     customStage3Name.value = ''
     nextTick(() => {
       stage3InputRef.value?.focus()
@@ -1465,7 +1698,9 @@ const addCustomStageRemain = () => {
   }
 
   if (addStageToOptions(customStageRemainName.value)) {
-    formData.Info.Stage_Remain = customStageRemainName.value.trim()
+    if (!isPlanMode.value) {
+      formData.Info.Stage_Remain = customStageRemainName.value.trim()
+    }
     customStageRemainName.value = ''
     nextTick(() => {
       stageRemainInputRef.value?.focus()
@@ -1492,6 +1727,44 @@ onMounted(() => {
   loadScriptInfo()
   loadStageModeOptions()
   loadStageOptions()
+  
+  // 设置StageMode变化监听器
+  watch(
+    () => formData.Info.StageMode,
+    async (newStageMode) => {
+      if (newStageMode === 'Fixed') {
+        // 切换到固定模式，清除计划配置
+        planModeConfig.value = null
+      } else if (newStageMode && newStageMode !== '') {
+        // 切换到计划模式，加载计划配置
+        try {
+          const response = await getPlans(newStageMode)
+          
+          if (response && response.code === 200 && response.data[newStageMode]) {
+            const planData = response.data[newStageMode]
+            const currentConfig = getPlanCurrentConfig(planData)
+            planModeConfig.value = currentConfig
+            
+            console.log('计划配置加载成功:', {
+              planId: newStageMode,
+              currentConfig,
+              planModeConfigValue: planModeConfig.value
+            })
+            
+            message.success(`已切换到计划模式：${newStageMode}`)
+          } else {
+            message.warning('计划配置加载失败，请检查计划是否存在')
+            planModeConfig.value = null
+          }
+        } catch (error) {
+          console.error('加载计划配置失败:', error)
+          message.error('加载计划配置时发生错误')
+          planModeConfig.value = null
+        }
+      }
+    },
+    { immediate: false }
+  )
 })
 </script>
 
@@ -1748,5 +2021,42 @@ onMounted(() => {
 .float-button {
   width: 60px;
   height: 60px;
+}
+
+/* 计划模式提示样式 */
+.plan-mode-hint {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--ant-color-primary);
+  font-weight: 500;
+}
+
+/* 计划模式显示样式 */
+.plan-mode-display {
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid var(--ant-color-border);
+  border-radius: 6px;
+  background: var(--ant-color-fill-alter);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.plan-value {
+  font-size: 14px;
+  color: var(--ant-color-text);
+  font-weight: 500;
+  flex: 1;
+}
+
+.plan-source {
+  font-size: 12px;
+  color: var(--ant-color-primary);
+  font-weight: 500;
+  padding: 2px 8px;
+  background: var(--ant-color-primary-bg);
+  border-radius: 12px;
+  border: 1px solid var(--ant-color-primary-border);
 }
 </style>
