@@ -362,7 +362,7 @@ const handleToggleUserStatus = (user: User) => {
   emit('toggleUserStatus', user)
 }
 const truncateText = (text: string, maxLength: number = 10): string => {
-  if (!text) return ''
+  if (!text || text.length === 0) return '无'
   return text.length > maxLength ? text.substring(0, maxLength) + '...' : text
 }
 
