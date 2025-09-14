@@ -1012,6 +1012,7 @@ import { usePlanApi } from '@/composables/usePlanApi'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { Service } from '@/api'
 import { GetStageIn } from '@/api/models/GetStageIn'
+import { getTodayWeekdayEast12 } from '@/utils/dateUtils'
 
 const router = useRouter()
 const route = useRoute()
@@ -1191,21 +1192,14 @@ const getPlanCurrentConfig = (planData: any) => {
   if (mode === 'ALL') {
     return planData.ALL || null
   } else if (mode === 'Weekly') {
-    // 获取+12时区的当前时间
-    const now = new Date()
-    const utc12Time = new Date(now.getTime() + 12 * 60 * 60 * 1000)
-
-    // 如果是凌晨4点前，算作前一天
-    if (utc12Time.getHours() < 4) {
-      utc12Time.setDate(utc12Time.getDate() - 1)
-    }
+    // 使用dateUtils工具直接获取+12时区的今天是星期几（已经是数字0-6）
+    const todayWeekday = getTodayWeekdayEast12()
 
     const weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
-    const today = weekdays[utc12Time.getDay()]
+    const today = weekdays[todayWeekday]
 
     console.log('计划表周模式调试:', {
-      原始时间: now.toISOString(),
-      UTC12时间: utc12Time.toISOString(),
+      东12区星期几: todayWeekday,
       星期: today,
       计划数据: planData,
     })
