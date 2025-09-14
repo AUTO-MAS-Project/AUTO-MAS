@@ -590,12 +590,125 @@ ipcMain.handle('download-git', async () => {
 
 ipcMain.handle('check-git-update', async () => {
   try {
-    // 这里可以实现检查Git仓库更新的逻辑
-    // 暂时返回false，表示没有更新
-    return { hasUpdate: false }
+    const appRoot = getAppRoot()
+    
+    // 检查是否为Git仓库
+    const gitDir = path.join(appRoot, '.git')
+    if (!fs.existsSync(gitDir)) {
+      log.info('不是Git仓库，跳过更新检查')
+      return { hasUpdate: false }
+    }
+    
+    // 检查Git可执行文件是否存在
+    const gitPath = path.join(appRoot, 'environment', 'git', 'bin', 'git.exe')
+    if (!fs.existsSync(gitPath)) {
+      log.warn('Git可执行文件不存在，无法检查更新')
+      return { hasUpdate: false, error: 'Git可执行文件不存在' }
+    }
+    
+    // 获取Git环境变量
+    const gitEnv = {
+      ...process.env,
+      PATH: `${path.join(appRoot, 'environment', 'git', 'bin')};${path.join(appRoot, 'environment', 'git', 'mingw64', 'bin')};${process.env.PATH}`,
+      GIT_EXEC_PATH: path.join(appRoot, 'environment', 'git', 'mingw64', 'libexec', 'git-core'),
+      HOME: process.env.USERPROFILE || process.env.HOME,
+      GIT_CONFIG_NOSYSTEM: '1',
+      GIT_TERMINAL_PROMPT: '0',
+      GIT_ASKPASS: '',
+    }
+    
+    log.info('开始检查Git仓库更新...')
+    
+    // 执行 git fetch 获取最新的远程信息
+    await new Promise<void>((resolve, reject) => {
+      const fetchProc = spawn(gitPath, ['fetch', 'origin'], {
+        stdio: 'pipe',
+        env: gitEnv,
+        cwd: appRoot,
+      })
+      
+      fetchProc.stdout?.on('data', (data) => {
+        log.info('git fetch output:', data.toString())
+      })
+      
+      fetchProc.stderr?.on('data', (data) => {
+        log.info('git fetch stderr:', data.toString())
+      })
+      
+      fetchProc.on('close', (code) => {
+        if (code === 0) {
+          resolve()
+        } else {
+          reject(new Error(`git fetch失败，退出码: ${code}`))
+        }
+      })
+      
+      fetchProc.on('error', reject)
+    })
+    
+    // 检查本地分支是否落后于远程分支
+    const hasUpdate = await new Promise<boolean>((resolve, reject) => {
+      const statusProc = spawn(gitPath, ['status', '-uno', '--porcelain=v1'], {
+        stdio: 'pipe',
+        env: gitEnv,
+        cwd: appRoot,
+      })
+      
+      let output = ''
+      statusProc.stdout?.on('data', (data) => {
+        output += data.toString()
+      })
+      
+      statusProc.stderr?.on('data', (data) => {
+        log.info('git status stderr:', data.toString())
+      })
+      
+      statusProc.on('close', (code) => {
+        if (code === 0) {
+          // 检查是否有 "Your branch is behind" 的信息
+          // 使用 git rev-list 来比较本地和远程分支
+          const revListProc = spawn(gitPath, ['rev-list', '--count', 'HEAD..origin/feature/refactor'], {
+            stdio: 'pipe',
+            env: gitEnv,
+            cwd: appRoot,
+          })
+          
+          let revOutput = ''
+          revListProc.stdout?.on('data', (data) => {
+            revOutput += data.toString()
+          })
+          
+          revListProc.on('close', (revCode) => {
+            if (revCode === 0) {
+              const commitsBehind = parseInt(revOutput.trim())
+              const hasUpdates = commitsBehind > 0
+              log.info(`本地分支落后远程分支 ${commitsBehind} 个提交，hasUpdate: ${hasUpdates}`)
+              resolve(hasUpdates)
+            } else {
+              log.warn('无法比较本地和远程分支，假设有更新')
+              resolve(true) // 如果无法确定，假设有更新
+            }
+          })
+          
+          revListProc.on('error', () => {
+            log.warn('git rev-list执行失败，假设有更新')
+            resolve(true)
+          })
+        } else {
+          reject(new Error(`git status失败，退出码: ${code}`))
+        }
+      })
+      
+      statusProc.on('error', reject)
+    })
+    
+    log.info(`Git更新检查完成，hasUpdate: ${hasUpdate}`)
+    return { hasUpdate }
+    
   } catch (error) {
     log.error('检查Git更新失败:', error)
-    return { hasUpdate: false, error: error instanceof Error ? error.message : String(error) }
+    // 如果检查失败，返回true以触发更新流程，确保代码是最新的
+    return { hasUpdate: true, error: error instanceof Error ? error.message : String(error) }
   }
 })
 

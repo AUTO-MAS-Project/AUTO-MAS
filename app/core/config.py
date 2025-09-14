@@ -124,22 +124,37 @@ class GlobalConfig(ConfigBase):
 
     Data_UID = ConfigItem("Data", "UID", str(uuid.uuid4()), UUIDValidator())
     Data_LastStatisticsUpload = ConfigItem(
-        "Data", "LastStatisticsUpload", "2000-01-01 00:00:00", DateTimeValidator()
+        "Data",
+        "LastStatisticsUpload",
+        "2000-01-01 00:00:00",
+        DateTimeValidator("%Y-%m-%d %H:%M:%S"),
     )
     Data_LastStageUpdated = ConfigItem(
-        "Data", "LastStageUpdated", "2000-01-01 00:00:00", DateTimeValidator()
+        "Data",
+        "LastStageUpdated",
+        "2000-01-01 00:00:00",
+        DateTimeValidator("%Y-%m-%d %H:%M:%S"),
     )
     Data_StageTimeStamp = ConfigItem(
-        "Data", "StageTimeStamp", "2000-01-01 00:00:00", DateTimeValidator()
+        "Data",
+        "StageTimeStamp",
+        "2000-01-01 00:00:00",
+        DateTimeValidator("%Y-%m-%d %H:%M:%S"),
     )
     Data_Stage = ConfigItem("Data", "Stage", "{ }", JSONValidator())
     Data_LastNoticeUpdated = ConfigItem(
-        "Data", "LastNoticeUpdated", "2000-01-01 00:00:00", DateTimeValidator()
+        "Data",
+        "LastNoticeUpdated",
+        "2000-01-01 00:00:00",
+        DateTimeValidator("%Y-%m-%d %H:%M:%S"),
     )
     Data_IfShowNotice = ConfigItem("Data", "IfShowNotice", True, BoolValidator())
     Data_Notice = ConfigItem("Data", "Notice", "{ }", JSONValidator())
     Data_LastWebConfigUpdated = ConfigItem(
-        "Data", "LastWebConfigUpdated", "2000-01-01 00:00:00", DateTimeValidator()
+        "Data",
+        "LastWebConfigUpdated",
+        "2000-01-01 00:00:00",
+        DateTimeValidator("%Y-%m-%d %H:%M:%S"),
     )
     Data_WebConfig = ConfigItem("Data", "WebConfig", "{ }", JSONValidator())
 
@@ -265,11 +280,15 @@ class MaaUserConfig(ConfigBase):
             "Info", "SklandToken", "", EncryptValidator()
         )
 
-        self.Data_LastProxyDate = ConfigItem("Data", "LastProxyDate", "2000-01-01")
-        self.Data_LastAnnihilationDate = ConfigItem(
-            "Data", "LastAnnihilationDate", "2000-01-01"
+        self.Data_LastProxyDate = ConfigItem(
+            "Data", "LastProxyDate", "2000-01-01", DateTimeValidator("%Y-%m-%d")
         )
-        self.Data_LastSklandDate = ConfigItem("Data", "LastSklandDate", "2000-01-01")
+        self.Data_LastAnnihilationDate = ConfigItem(
+            "Data", "LastAnnihilationDate", "2000-01-01", DateTimeValidator("%Y-%m-%d")
+        )
+        self.Data_LastSklandDate = ConfigItem(
+            "Data", "LastSklandDate", "2000-01-01", DateTimeValidator("%Y-%m-%d")
+        )
         self.Data_ProxyTimes = ConfigItem(
             "Data", "ProxyTimes", 0, RangeValidator(0, 9999)
         )
