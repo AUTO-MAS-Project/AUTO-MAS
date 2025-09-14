@@ -62,9 +62,9 @@ const mainMenuItems = [
   { key: '/plans', label: '计划管理', icon: icon(CalendarOutlined) },
   { key: '/queue', label: '调度队列', icon: icon(UnorderedListOutlined) },
   { key: '/scheduler', label: '调度中心', icon: icon(ControlOutlined) },
-  { key: '/history', label: '历史记录', icon: icon(HistoryOutlined) },
 ]
 const bottomMenuItems = [
+  { key: '/history', label: '历史记录', icon: icon(HistoryOutlined) },
   { key: '/settings', label: '设置', icon: icon(SettingOutlined) },
 ]
 
