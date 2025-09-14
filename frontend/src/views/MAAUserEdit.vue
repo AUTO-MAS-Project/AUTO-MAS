@@ -17,18 +17,32 @@
     </div>
 
     <a-space size="middle">
+      <!-- MAA配置按钮组 -->
       <a-button
-        v-if="formData.Info.Mode !== '简洁'"
+        v-if="formData.Info.Mode !== '简洁' && !maaWebsocketId"
         type="primary"
         ghost
         size="large"
-        @click="handleMAAConfig"
+        @click="handleStartMAAConfig"
         :loading="maaConfigLoading"
       >
         <template #icon>
           <SettingOutlined />
         </template>
-        MAA配置
+        配置MAA
+      </a-button>
+      <a-button
+        v-if="formData.Info.Mode !== '简洁' && maaWebsocketId"
+        type="primary"
+        size="large"
+        @click="handleSaveMAAConfig"
+        :loading="maaConfigLoading"
+        style="background: #52c41a; border-color: #52c41a;"
+      >
+        <template #icon>
+          <SaveOutlined />
+        </template>
+        保存配置
       </a-button>
       <a-button size="large" @click="handleCancel" class="cancel-button">
         <template #icon>
@@ -973,6 +987,7 @@ import { usePlanApi } from '@/composables/usePlanApi'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { Service } from '@/api'
 import { GetStageIn } from '@/api/models/GetStageIn'
+import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { defineComponent } from 'vue'
 
 const router = useRouter()
@@ -1235,9 +1250,9 @@ const getDefaultMAAUserData = () => ({
   Data: {
     CustomInfrastPlanIndex: '',
     IfPassCheck: false,
-    LastAnnihilationDate: '',
-    LastProxyDate: '',
-    LastSklandDate: '',
+    LastAnnihilationDate: '2000-01-01',
+    LastProxyDate: '2000-01-01',
+    LastSklandDate: '2000-01-01',
     ProxyTimes: 0,
   },
 })
@@ -1532,36 +1547,95 @@ const handleSubmit = async () => {
   }
 }
 
-const handleMAAConfig = async () => {
+const handleStartMAAConfig = async () => {
   if (!isEdit.value) {
     message.warning('请先保存用户后再进行MAA配置')
     return
   }
 
   try {
-    maaConfigLoading.value = true
-
-    // 如果已有连接，先断开
+    // 检查是否已有连接
     if (maaWebsocketId.value) {
-      unsubscribe(maaWebsocketId.value)
-      maaWebsocketId.value = null
+      message.warning('该用户MAA配置已在进行中，请先保存配置')
+      return
     }
 
-    // 直接订阅（旧 connect 参数移除）
-    const subId = userId
-    subscribe(subId, {
-      onError: error => {
-        console.error(`用户 ${formData.userName} MAA配置错误:`, error)
-        message.error(`MAA配置连接失败: ${error}`)
-        maaWebsocketId.value = null
-      }
+    maaConfigLoading.value = true
+
+    // 调用启动配置任务API
+    const response = await Service.addTaskApiDispatchStartPost({
+      taskId: userId,
+      mode: TaskCreateIn.mode.SettingScriptMode
     })
 
-    maaWebsocketId.value = subId
-    message.success(`已开始配置用户 ${formData.userName} 的MAA设置`)
+    if (response.code === 200) {
+      // 订阅WebSocket消息
+      subscribe(response.websocketId, {
+        onError: error => {
+          console.error(`用户 ${formData.userName} MAA配置错误:`, error)
+          message.error(`MAA配置连接失败: ${error}`)
+          maaWebsocketId.value = null
+        },
+        onResult: (data: any) => {
+          // 处理配置完成消息（兼容任何结构）
+          if (data.Accomplish) {
+            message.success(`用户 ${formData.userName} MAA配置已完成`)
+            maaWebsocketId.value = null
+          }
+        }
+      })
+
+      // 记录连接和websocketId
+      maaWebsocketId.value = response.websocketId
+      message.success(`已启动用户 ${formData.userName} 的MAA配置`)
+
+      // 设置自动断开连接的定时器（30分钟后）
+      setTimeout(
+        () => {
+          if (maaWebsocketId.value) {
+            unsubscribe(maaWebsocketId.value)
+            maaWebsocketId.value = null
+            message.info(`用户 ${formData.userName} MAA配置会话已超时断开`)
+          }
+        },
+        30 * 60 * 1000
+      ) // 30分钟
+    } else {
+      message.error(response.message || '启动MAA配置失败')
+    }
   } catch (error) {
-    console.error('MAA配置失败:', error)
-    message.error('MAA配置失败')
+    console.error('启动MAA配置失败:', error)
+    message.error('启动MAA配置失败')
+  } finally {
+    maaConfigLoading.value = false
+  }
+}
+
+const handleSaveMAAConfig = async () => {
+  try {
+    if (!maaWebsocketId.value) {
+      message.error('未找到活动的配置会话')
+      return
+    }
+
+    maaConfigLoading.value = true
+
+    // 调用停止配置任务API
+    const response = await Service.stopTaskApiDispatchStopPost({
+      taskId: maaWebsocketId.value
+    })
+
+    if (response.code === 200) {
+      // 取消订阅
+      unsubscribe(maaWebsocketId.value)
+      maaWebsocketId.value = null
+      message.success(`用户 ${formData.userName} 的MAA配置已保存`)
+    } else {
+      message.error(response.message || '保存配置失败')
+    }
+  } catch (error) {
+    console.error('保存MAA配置失败:', error)
+    message.error('保存MAA配置失败')
   } finally {
     maaConfigLoading.value = false
   }
