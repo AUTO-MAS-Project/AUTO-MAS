@@ -135,7 +135,7 @@
                     :placeholder="getPlaceholder(record.taskName)" class="config-input-number"
                     :controls="false" :disabled="isColumnDisabled(column.key)" />
                 </template>
-                <template v-else-if="['关卡选择', '备选关卡-1', '备选关卡-2', '备选关卡-3', '剩余理智'].includes(record.taskName)">
+                <template v-else-if="['关卡选择', '备选关卡-1', '备选关卡-2', '备选关卡-3', '剩余理智关卡'].includes(record.taskName)">
                   <a-select 
                     v-model:value="record[column.key]" 
                     size="small"
@@ -436,14 +436,14 @@ const tableData = ref([
   {
     key: 'SeriesNumb',
     taskName: '连战次数',
-    ALL: '-1',
-    Monday: '-1',
-    Tuesday: '-1',
-    Wednesday: '-1',
-    Thursday: '-1',
-    Friday: '-1',
-    Saturday: '-1',
-    Sunday: '-1',
+    ALL: '0',
+    Monday: '0',
+    Tuesday: '0',
+    Wednesday: '0',
+    Thursday: '0',
+    Friday: '0',
+    Saturday: '0',
+    Sunday: '0',
   },
   {
     key: 'Stage',
@@ -495,7 +495,7 @@ const tableData = ref([
   },
   {
     key: 'Stage_Remain',
-    taskName: '剩余理智',
+    taskName: '剩余理智关卡',
     ALL: '-',
     Monday: '-',
     Tuesday: '-',
@@ -535,10 +535,10 @@ const STAGE_DAILY_INFO = [
   { value: '1-7', text: '1-7', days: [1, 2, 3, 4, 5, 6, 7] },
   { value: 'R8-11', text: 'R8-11', days: [1, 2, 3, 4, 5, 6, 7] },
   { value: '12-17-HARD', text: '12-17-HARD', days: [1, 2, 3, 4, 5, 6, 7] },
+  { value: 'LS-6', text: '经验-6/5', days: [1, 2, 3, 4, 5, 6, 7] },
   { value: 'CE-6', text: '龙门币-6/5', days: [2, 4, 6, 7] },
   { value: 'AP-5', text: '红票-5', days: [1, 4, 6, 7] },
   { value: 'CA-5', text: '技能-5', days: [2, 3, 5, 7] },
-  { value: 'LS-6', text: '经验-6/5', days: [1, 2, 3, 4, 5, 6, 7] },
   { value: 'SK-5', text: '碳-5', days: [1, 3, 5, 6] },
   { value: 'PR-A-1', text: '奶/盾芯片', days: [1, 4, 5, 7] },
   { value: 'PR-A-2', text: '奶/盾芯片组', days: [1, 4, 5, 7] },
@@ -590,20 +590,20 @@ const getSelectOptions = (columnKey: string, taskName: string, currentValue?: st
   switch (taskName) {
     case '连战次数':
       return [
-        { label: '不选择', value: '0' },
+        { label: 'AUTO', value: '0' },
         { label: '1', value: '1' },
         { label: '2', value: '2' },
         { label: '3', value: '3' },
         { label: '4', value: '4' },
         { label: '5', value: '5' },
         { label: '6', value: '6' },
-        { label: 'AUTO', value: '-1' },
+        { label: '不切换', value: '-1' },
       ]
     case '关卡选择':
     case '备选关卡-1':
     case '备选关卡-2':
     case '备选关卡-3':
-    case '剩余理智': {
+    case '剩余理智关卡': {
       const dayNumber = getDayNumber(columnKey)
 
       // 基础关卡选项
@@ -611,14 +611,14 @@ const getSelectOptions = (columnKey: string, taskName: string, currentValue?: st
       if (dayNumber === 0) {
         // 如果是全局列，显示所有选项
         baseOptions = STAGE_DAILY_INFO.map(stage => ({
-          label: stage.text,
+          label: taskName === '剩余理智关卡' && stage.value === '-' ? '不选择' : stage.text,
           value: stage.value,
           isCustom: false
         }))
       } else {
         // 根据星期过滤可用的关卡
         baseOptions = STAGE_DAILY_INFO.filter(stage => stage.days.includes(dayNumber)).map(stage => ({
-          label: stage.text,
+          label: taskName === '剩余理智关卡' && stage.value === '-' ? '不选择' : stage.text,
           value: stage.value,
           isCustom: false
         }))
@@ -670,8 +670,8 @@ const getPlaceholder = (taskName: string) => {
     case '备选关卡-2':
     case '备选关卡-3':
       return '1-7'
-    case '剩余理智':
-      return '-'
+    case '剩余理智关卡':
+      return '不选择'
     default:
       return '请选择'
   }
@@ -1561,52 +1561,78 @@ const disableAllStages = (stageValue: string) => {
 
 /* 任务名称单元格背景色 */
 .config-table :deep(.task-row-MedicineNumb td:first-child) {
-  background: rgba(59, 130, 246, 0.1);
+  background: #EBF4FF !important; /* 不透明的蓝色背景 */
   color: #3B82F6;
   font-weight: 500;
 }
 .config-table :deep(.ant-table-tbody > tr.task-row-MedicineNumb:hover > td:first-child) {
-  background: rgba(59, 130, 246, 0.2);
+  background: #DBEAFE !important; /* 悬停时稍深的蓝色 */
 }
 
 .config-table :deep(.task-row-SeriesNumb td:first-child) {
-  background: rgba(34, 197, 94, 0.1);
+  background: #ECFDF5 !important; /* 不透明的绿色背景 */
   color: #22C55E;
   font-weight: 500;
 }
 .config-table :deep(.ant-table-tbody > tr.task-row-SeriesNumb:hover > td:first-child) {
-  background: rgba(34, 197, 94, 0.2);
+  background: #D1FAE5 !important; /* 悬停时稍深的绿色 */
 }
 
 .config-table :deep(.task-row-Stage td:first-child) {
-  background: rgba(249, 115, 22, 0.1);
+  background: #FFF7ED !important; /* 不透明的橙色背景 */
   color: #F97316;
   font-weight: 500;
 }
 .config-table :deep(.ant-table-tbody > tr.task-row-Stage:hover > td:first-child) {
-  background: rgba(249, 115, 22, 0.2);
+  background: #FED7AA !important; /* 悬停时稍深的橙色 */
 }
 
 .config-table :deep(.task-row-Stage_1 td:first-child),
 .config-table :deep(.task-row-Stage_2 td:first-child),
 .config-table :deep(.task-row-Stage_3 td:first-child) {
-  background: rgba(168, 85, 247, 0.1);
+  background: #FAF5FF !important; /* 不透明的紫色背景 */
   color: #A855F7;
   font-weight: 500;
 }
 .config-table :deep(.ant-table-tbody > tr.task-row-Stage_1:hover > td:first-child),
 .config-table :deep(.ant-table-tbody > tr.task-row-Stage_2:hover > td:first-child),
 .config-table :deep(.ant-table-tbody > tr.task-row-Stage_3:hover > td:first-child) {
-  background: rgba(168, 85, 247, 0.2);
+  background: #F3E8FF !important; /* 悬停时稍深的紫色 */
 }
 
 .config-table :deep(.task-row-Stage_Remain td:first-child) {
-  background: rgba(14, 165, 233, 0.1);
+  background: #F0F9FF !important; /* 不透明的天蓝色背景 */
   color: #0EA5E9;
   font-weight: 500;
 }
 .config-table :deep(.ant-table-tbody > tr.task-row-Stage_Remain:hover > td:first-child) {
-  background: rgba(14, 165, 233, 0.2);
+  background: #E0F2FE !important; /* 悬停时稍深的天蓝色 */
+}
+
+/* 确保固定列在滚动时背景不透明 */
+.config-table :deep(.ant-table-fixed-left) {
+  background: var(--ant-color-bg-container) !important;
+}
+
+.config-table :deep(.ant-table-thead > tr > th.ant-table-fixed-left) {
+  background: var(--ant-color-bg-container) !important;
+  border-right: 1px solid var(--ant-color-border);
+  box-shadow: 2px 0 4px rgba(0, 0, 0, 0.05);
+}
+
+/* 专门处理"配置项"表头单元格 */
+.config-table :deep(.ant-table-thead > tr > th:first-child) {
+  background: var(--ant-color-bg-container) !important;
+  border-right: 1px solid var(--ant-color-border);
+  box-shadow: 2px 0 4px rgba(0, 0, 0, 0.05);
+  position: relative;
+  z-index: 2;
+}
+
+.config-table :deep(.ant-table-tbody > tr > td.ant-table-fixed-left) {
+  background: inherit !important;
+  border-right: 1px solid var(--ant-color-border-secondary);
+  box-shadow: 2px 0 4px rgba(0, 0, 0, 0.05);
 }
 
 /* 禁用列标题样式 */
