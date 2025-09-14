@@ -3,9 +3,16 @@
     <!-- 管理员权限检查 -->
     <AdminCheck v-if="!isAdmin" />
 
+    <!-- 环境不完整页面 -->
+    <EnvironmentIncomplete
+      v-if="showEnvironmentIncomplete"
+      :missing-components="missingComponents"
+      :on-switch-to-manual="switchToManualMode"
+    />
+
     <!-- 自动初始化模式 -->
     <AutoMode
-      v-if="autoMode"
+      v-else-if="autoMode"
       :on-switch-to-manual="switchToManualMode"
       :on-auto-complete="enterApp"
     />
@@ -33,6 +40,7 @@ import { getConfig, saveConfig, setInitialized } from '@/utils/config'
 import AdminCheck from '@/components/initialization/AdminCheck.vue'
 import AutoMode from '@/components/initialization/AutoMode.vue'
 import ManualMode from '@/components/initialization/ManualMode.vue'
+import EnvironmentIncomplete from '@/components/initialization/EnvironmentIncomplete.vue'
 import type { DownloadProgress } from '@/types/initialization'
 import { mirrorManager } from '@/utils/mirrorManager'
 
@@ -41,6 +49,8 @@ const router = useRouter()
 // 基础状态
 const isAdmin = ref(true)
 const autoMode = ref(false)
+const showEnvironmentIncomplete = ref(false)
+const missingComponents = ref<string[]>([])
 
 // 安装状态
 const pythonInstalled = ref(false)
@@ -64,7 +74,9 @@ function skipToHome() {
 }
 
 function switchToManualMode() {
+  showEnvironmentIncomplete.value = false
   autoMode.value = false
+  console.log('切换到手动模式')
 }
 
 // 进入应用
@@ -143,8 +155,7 @@ async function checkCriticalFiles() {
 // 检查环境状态
 async function checkEnvironment() {
   try {
-
-    // 只检查关键exe文件是否存在
+    // 每次都重新检查关键exe文件是否存在，不依赖持久化配置
     const criticalFiles = await checkCriticalFiles()
 
     console.log('关键文件检查结果:', criticalFiles)
@@ -154,7 +165,7 @@ async function checkEnvironment() {
     gitInstalled.value = criticalFiles.gitExists
     backendExists.value = criticalFiles.mainPyExists
 
-    // 检查配置文件中的依赖安装状态
+    // 依赖安装状态从配置文件读取，但在手动模式中会重新安装
     const config = await getConfig()
     dependenciesInstalled.value = config.dependenciesInstalled || false
 
@@ -180,27 +191,43 @@ async function checkEnvironment() {
     console.log('- main.py存在:', criticalFiles.mainPyExists)
     console.log('- 所有关键文件存在:', allExeFilesExist)
 
-    // 检查是否应该进入自动模式
+    // 新的自动模式判断逻辑：只要所有关键exe文件都存在且不是第一次启动就进入自动模式
     console.log('自动模式判断条件:')
     console.log('- 不是第一次启动:', !isFirst)
-    console.log('- 配置显示已初始化:', config.init)
     console.log('- 所有关键文件存在:', allExeFilesExist)
 
-    // 只有在非首次启动、配置显示已初始化、且所有关键exe文件都存在时才进入自动模式
-    if (!isFirst && config.init && allExeFilesExist) {
+    // 只要不是第一次启动且所有关键exe文件都存在就进入自动模式
+    if (!isFirst && allExeFilesExist) {
       console.log('进入自动模式，开始自动启动流程')
       autoMode.value = true
     } else {
       console.log('进入手动模式')
-      console.log(
-        '原因: isFirst =',
-        isFirst,
-        ', config.init =',
-        config.init,
-        ', allExeFilesExist =',
-        allExeFilesExist
-      )
-
+      if (isFirst) {
+        console.log('原因: 第一次启动')
+        // 第一次启动直接进入手动模式
+        autoMode.value = false
+        showEnvironmentIncomplete.value = false
+      } else if (!allExeFilesExist) {
+        console.log('原因: 关键exe文件缺失')
+        console.log('  - python.exe缺失:', !criticalFiles.pythonExists)
+        console.log('  - git.exe缺失:', !criticalFiles.gitExists)
+        console.log('  - main.py缺失:', !criticalFiles.mainPyExists)
+        
+        // 显示环境不完整页面
+        const missing = []
+        if (!criticalFiles.pythonExists) missing.push('Python 环境')
+        if (!criticalFiles.gitExists) missing.push('Git 工具')
+        if (!criticalFiles.mainPyExists) missing.push('后端代码')
+        
+        missingComponents.value = missing
+        showEnvironmentIncomplete.value = true
+        autoMode.value = false
+      } else {
+        // 其他情况直接进入手动模式
+        autoMode.value = false
+        showEnvironmentIncomplete.value = false
+      }
+      
       // 如果关键文件缺失，重置初始化状态
       if (!allExeFilesExist && config.init) {
         console.log('检测到关键exe文件缺失，重置初始化状态')
@@ -288,6 +315,8 @@ onUnmounted(() => {
   box-sizing: border-box;
   width: 100%;
   min-height: 100%;
+  background-color: var(--ant-color-bg-layout);
+  color: var(--ant-color-text);
 }
 
 /* 响应式优化 */
