@@ -98,31 +98,36 @@
                         <h3>任务队列</h3>
                       </div>
                       <div class="column-content">
-                        <a-list 
-                          :data-source="tab.taskQueue" 
-                          size="small"
-                        >
-                          <template #renderItem="{ item }">
-                            <a-list-item>
-                              <a-list-item-meta>
-                                <template #title>
-                                  <span class="queue-item-name">{{ item.name }}</span>
-                                </template>
-                                <template #description>
-                                  <a-tag :color="getQueueStatusColor(item.status)" size="small">
-                                    {{ item.status }}
-                                  </a-tag>
-                                </template>
-                              </a-list-item-meta>
-                            </a-list-item>
-                          </template>
-                          <template #empty>
-                            <div class="empty-state-mini">
-                              <img src="@/assets/NoData.png" alt="暂无数据" class="empty-image-mini" />
-                              <p class="empty-text-mini">暂无任务队列</p>
+                        <!-- 调试信息 -->
+                        <div v-if="false" style="font-size: 10px; color: red; padding: 4px; border: 1px solid red;">
+                          Debug Tasks: {{ tab.taskQueue.length }} 
+                          <div>{{ JSON.stringify(tab.taskQueue) }}</div>
+                        </div>
+                        
+                        <div v-if="tab.taskQueue.length === 0" class="empty-state-mini">
+                          <img src="@/assets/NoData.png" alt="暂无数据" class="empty-image-mini" />
+                          <p class="empty-text-mini">暂无任务队列</p>
+                        </div>
+                        <div v-else class="queue-cards">
+                          <a-card 
+                            v-for="(task, index) in tab.taskQueue" 
+                            :key="`task-${index}`"
+                            size="small" 
+                            class="queue-card"
+                            :class="{ 'running-card': task.status === '运行' }"
+                          >
+                            <template #title>
+                              <div class="card-title-row">
+                                <a-tag :color="getQueueStatusColor(task.status)" size="small">
+                                  {{ task.status }}
+                                </a-tag>
+                              </div>
+                            </template>
+                            <div class="card-content">
+                              <p class="task-name">{{ task.name }}</p>
                             </div>
-                          </template>
-                        </a-list>
+                          </a-card>
+                        </div>
                       </div>
                     </div>
                   </a-col>
@@ -134,39 +139,36 @@
                         <h3>用户队列</h3>
                       </div>
                       <div class="column-content">
-                        <a-list 
-                          :data-source="tab.userQueue" 
-                          size="small"
-                        >
-                          <template #renderItem="{ item }">
-                            <a-list-item>
-                              <a-list-item-meta>
-                                <template #title>
-                                  <span class="queue-item-name">{{ item.name }}</span>
-                                  <a-tag 
-                                    v-if="item.extraStatus" 
-                                    :color="getQueueStatusColor(item.extraStatus)" 
-                                    size="small"
-                                    class="extra-status-tag"
-                                  >
-                                    {{ item.extraStatus }}
-                                  </a-tag>
-                                </template>
-                                <template #description>
-                                  <a-tag :color="getQueueStatusColor(item.status)" size="small">
-                                    {{ item.status }}
-                                  </a-tag>
-                                </template>
-                              </a-list-item-meta>
-                            </a-list-item>
-                          </template>
-                          <template #empty>
-                            <div class="empty-state-mini">
-                              <img src="@/assets/NoData.png" alt="暂无数据" class="empty-image-mini" />
-                              <p class="empty-text-mini">暂无用户队列</p>
+                        <!-- 调试信息 -->
+                        <div v-if="false" style="font-size: 10px; color: blue; padding: 4px; border: 1px solid blue;">
+                          Debug Users: {{ tab.userQueue.length }}
+                          <div>{{ JSON.stringify(tab.userQueue) }}</div>
+                        </div>
+                        
+                        <div v-if="tab.userQueue.length === 0" class="empty-state-mini">
+                          <img src="@/assets/NoData.png" alt="暂无数据" class="empty-image-mini" />
+                          <p class="empty-text-mini">暂无用户队列</p>
+                        </div>
+                        <div v-else class="queue-cards">
+                          <a-card 
+                            v-for="(user, index) in tab.userQueue" 
+                            :key="`user-${index}`"
+                            size="small" 
+                            class="queue-card"
+                            :class="{ 'running-card': user.status === '运行' }"
+                          >
+                            <template #title>
+                              <div class="card-title-row">
+                                <a-tag :color="getQueueStatusColor(user.status)" size="small">
+                                  {{ user.status }}
+                                </a-tag>
+                              </div>
+                            </template>
+                            <div class="card-content">
+                              <p class="user-name">{{ user.name }}</p>
                             </div>
-                          </template>
-                        </a-list>
+                          </a-card>
+                        </div>
                       </div>
                     </div>
                   </a-col>
@@ -256,7 +258,6 @@ import { useWebSocket } from '@/composables/useWebSocket'
 interface QueueItem {
   name: string
   status: string
-  extraStatus?: string // 额外状态tag，仅在运行时显示
 }
 
 interface LogEntry {
@@ -468,20 +469,56 @@ const startPowerCountdown = () => {
 
 // 任务操作
 const startTask = async (tab: SchedulerTab) => {
+  console.log('[Scheduler Debug] 开始启动任务:', {
+    tabKey: tab.key,
+    selectedTaskId: tab.selectedTaskId,
+    selectedMode: tab.selectedMode,
+    currentStatus: tab.status
+  })
+  
   if (!tab.selectedTaskId || !tab.selectedMode) {
+    console.warn('[Scheduler Debug] 任务参数不完整')
     message.error('请选择任务项和执行模式')
     return
   }
   
   try {
+    // 转换模式为正确的枚举值
+    let modeEnum: TaskCreateIn.mode
+    switch (tab.selectedMode) {
+      case '自动代理':
+        modeEnum = TaskCreateIn.mode.AutoMode
+        break
+      case '人工排查':
+        modeEnum = TaskCreateIn.mode.ManualMode
+        break
+      case '设置脚本':
+        modeEnum = TaskCreateIn.mode.SettingScriptMode
+        break
+      default:
+        console.error('[Scheduler Debug] 无效的任务模式:', tab.selectedMode)
+        message.error('无效的任务模式')
+        return
+    }
+    
+    console.log('[Scheduler Debug] 发送任务创建请求:', {
+      taskId: tab.selectedTaskId,
+      mode: modeEnum
+    })
+    
     const response = await Service.addTaskApiDispatchStartPost({
       taskId: tab.selectedTaskId,
-      mode: tab.selectedMode
+      mode: modeEnum
     })
+    
+    console.log('[Scheduler Debug] 任务创建响应:', response)
     
     if (response.code === 200) {
       tab.status = '运行'
       tab.websocketId = response.websocketId
+      console.log('[Scheduler Debug] 设置WebSocket ID:', tab.websocketId)
+      
+      // 清空之前的状态
       tab.taskQueue = []
       tab.userQueue = []
       tab.logs = []
@@ -493,13 +530,15 @@ const startTask = async (tab: SchedulerTab) => {
       
       // 订阅WebSocket消息
       subscribeToTask(tab)
+      console.log('[Scheduler Debug] 已订阅WebSocket消息')
       
       message.success('任务启动成功')
     } else {
+      console.error('[Scheduler Debug] 任务启动失败:', response)
       message.error(response.message || '启动任务失败')
     }
   } catch (error) {
-    console.error('启动任务失败:', error)
+    console.error('[Scheduler Debug] 启动任务异常:', error)
     message.error('启动任务失败')
   }
 }
@@ -515,6 +554,7 @@ const stopTask = async (tab: SchedulerTab) => {
     
     tab.status = '结束'
     tab.websocketId = null
+    // 任务结束后不清空选择，允许重新开始
     addLog(tab, '任务已停止', 'warning')
     
     message.success('任务已停止')
@@ -522,103 +562,230 @@ const stopTask = async (tab: SchedulerTab) => {
   } catch (error) {
     console.error('停止任务失败:', error)
     message.error('停止任务失败')
+    
+    // 即使API调用失败，也要清理本地状态
+    if (tab.websocketId) {
+      unsubscribe(tab.websocketId)
+      tab.status = '结束'
+      tab.websocketId = null
+      addLog(tab, '任务已强制停止', 'warning')
+    }
   }
 }
 
 // WebSocket消息处理
 const subscribeToTask = (tab: SchedulerTab) => {
-  if (!tab.websocketId) return
+  console.log('[Scheduler Debug] 订阅WebSocket消息:', {
+    tabKey: tab.key,
+    websocketId: tab.websocketId
+  })
+  
+  if (!tab.websocketId) {
+    console.warn('[Scheduler Debug] WebSocket ID为空，无法订阅')
+    return
+  }
+  
+  // 检查WebSocket连接状态
+  const { status, getConnectionInfo } = useWebSocket()
+  const connectionInfo = getConnectionInfo()
+  console.log('[Scheduler Debug] WebSocket连接状态:', {
+    status: status.value,
+    connectionInfo: connectionInfo
+  })
   
   subscribe(tab.websocketId, {
-    onProgress: (data) => handleUpdateMessage(tab, data),
-    onResult: (data) => handleInfoMessage(tab, data),
-    onError: (data) => handleInfoMessage(tab, data),
-    onNotify: (data) => handleMessageDialog(tab, data)
+    onProgress: (data) => {
+      console.log('[Scheduler Debug] onProgress收到消息:', data)
+      handleWebSocketMessage(tab, data)
+    },
+    onResult: (data) => {
+      console.log('[Scheduler Debug] onResult收到消息:', data)
+      handleWebSocketMessage(tab, data)
+    },
+    onError: (data) => {
+      console.log('[Scheduler Debug] onError收到消息:', data)
+      handleWebSocketMessage(tab, data)
+    },
+    onNotify: (data) => {
+      console.log('[Scheduler Debug] onNotify收到消息:', data)
+      handleWebSocketMessage(tab, data)
+    }
   })
+  
+  // 添加连接状态检查
+  console.log('[Scheduler Debug] WebSocket订阅完成，等待消息...')
+  
+  // 检查当前订阅者数量
+  const { subscribers } = useWebSocket()
+  console.log('[Scheduler Debug] 当前订阅者数量:', subscribers.value.size)
+  console.log('[Scheduler Debug] 所有订阅者:', Array.from(subscribers.value.keys()))
+}
+
+// 统一的WebSocket消息处理函数
+const handleWebSocketMessage = (tab: SchedulerTab, wsMessage: any) => {
+  console.log('[Scheduler Debug] 收到WebSocket消息:', {
+    tabKey: tab.key,
+    tabWebsocketId: tab.websocketId,
+    message: wsMessage
+  })
+  
+  // 检查消息是否符合 WebSocketMessage 格式
+  if (!wsMessage || typeof wsMessage !== 'object') {
+    console.warn('[Scheduler Debug] 收到无效的WebSocket消息:', wsMessage)
+    return
+  }
+  
+  const { id, type, data } = wsMessage
+  
+  console.log('[Scheduler Debug] 解析WebSocket消息:', {
+    messageId: id,
+    messageType: type,
+    messageData: data,
+    tabWebsocketId: tab.websocketId,
+    isMatch: id === tab.websocketId
+  })
+  
+  // 只处理与当前标签页相关的消息
+  if (id !== tab.websocketId) {
+    console.log('[Scheduler Debug] 消息ID不匹配，跳过处理')
+    return
+  }
+  
+  switch (type) {
+    case 'Update':
+      console.log('[Scheduler Debug] 处理Update消息')
+      handleUpdateMessage(tab, data)
+      break
+    case 'Info':
+      console.log('[Scheduler Debug] 处理Info消息')
+      handleInfoMessage(tab, data)
+      break
+    case 'Message':
+      console.log('[Scheduler Debug] 处理Message消息')
+      handleMessageDialog(tab, data)
+      break
+    case 'Signal':
+      console.log('[Scheduler Debug] 处理Signal消息')
+      handleSignalMessage(tab, data)
+      break
+    default:
+      console.warn('[Scheduler Debug] 未知的WebSocket消息类型:', type, '完整消息:', wsMessage)
+      // 尝试作为通用消息处理
+      addLog(tab, `收到未知类型消息: ${type} - ${JSON.stringify(data)}`, 'info')
+  }
 }
 
 const handleUpdateMessage = (tab: SchedulerTab, data: any) => {
+  console.log('[Scheduler Debug] 处理Update消息:', {
+    tabKey: tab.key,
+    data: data,
+    hasTaskList: !!data.task_list,
+    hasUserList: !!data.user_list,
+    taskListLength: data.task_list?.length,
+    userListLength: data.user_list?.length
+  })
+  
   // 更新任务队列
-  if (data.task_list) {
-    tab.taskQueue = data.task_list.map((item: any) => ({
+  if (data.task_list && Array.isArray(data.task_list)) {
+    console.log('[Scheduler Debug] 更新任务队列:', data.task_list)
+    const newTaskQueue = data.task_list.map((item: any) => ({
       name: item.name || '未知任务',
       status: item.status || '未知'
     }))
+    tab.taskQueue.splice(0, tab.taskQueue.length, ...newTaskQueue)
+    console.log('[Scheduler Debug] 任务队列更新后:', tab.taskQueue)
   }
   
   // 更新用户队列
-  if (data.user_list) {
-    tab.userQueue = data.user_list.map((item: any) => ({
+  if (data.user_list && Array.isArray(data.user_list)) {
+    console.log('[Scheduler Debug] 更新用户队列:', data.user_list)
+    const newUserQueue = data.user_list.map((item: any) => ({
       name: item.name || '未知用户',
-      status: item.status || '未知',
-      extraStatus: item.status === '运行' ? item.extraStatus : undefined
+      status: item.status || '未知'
     }))
-  }
-  
-  // 更新日志
-  if (data.log) {
-    handleLogUpdate(tab, data.log)
+    tab.userQueue.splice(0, tab.userQueue.length, ...newUserQueue)
+    console.log('[Scheduler Debug] 用户队列更新后:', tab.userQueue)
   }
 }
 
 const handleInfoMessage = (tab: SchedulerTab, data: any) => {
+  console.log('[Scheduler Debug] 处理Info消息:', {
+    tabKey: tab.key,
+    data: data
+  })
+  
   if (data.Error) {
+    console.log('[Scheduler Debug] 添加错误日志:', data.Error)
     addLog(tab, data.Error, 'error')
     notification.error({ message: '任务错误', description: data.Error })
   } else if (data.Warning) {
+    console.log('[Scheduler Debug] 添加警告日志:', data.Warning)
     addLog(tab, data.Warning, 'warning')
     notification.warning({ message: '任务警告', description: data.Warning })
   } else if (data.Info) {
+    console.log('[Scheduler Debug] 添加信息日志:', data.Info)
     addLog(tab, data.Info, 'info')
     notification.info({ message: '任务信息', description: data.Info })
-  } else if (data.Accomplish) {
-    tab.status = '结束'
-    addLog(tab, '任务完成', 'success')
-    notification.success({ message: '任务完成', description: data.Accomplish })
-    checkAllTasksCompleted()
-  }
-  
-  // 处理电源操作信号
-  if (data.power && powerAction.value === PowerIn.signal.NO_ACTION) {
-    powerAction.value = data.power as PowerIn.signal
+  } else {
+    // 处理其他信息类型
+    console.log('[Scheduler Debug] 处理其他信息类型:', data)
+    for (const [key, value] of Object.entries(data)) {
+      if (typeof value === 'string') {
+        console.log('[Scheduler Debug] 添加其他类型日志:', `${key}: ${value}`)
+        addLog(tab, `${key}: ${value}`, 'info')
+      }
+    }
   }
 }
 
 const handleMessageDialog = (tab: SchedulerTab, data: any) => {
-  currentMessage.value = {
-    title: data.title || '系统消息',
-    content: data.content || '任务需要您的输入',
-    needInput: data.needInput || false,
-    messageId: data.messageId,
-    taskId: tab.websocketId || undefined
+  // 处理需要用户输入的消息对话框
+  if (data.title && data.content) {
+    currentMessage.value = {
+      title: data.title,
+      content: data.content,
+      needInput: data.needInput || false,
+      messageId: data.messageId,
+      taskId: tab.websocketId || undefined
+    }
+    messageModalVisible.value = true
   }
-  messageModalVisible.value = true
+}
+
+const handleSignalMessage = (tab: SchedulerTab, data: any) => {
+  if (data.Accomplish) {
+    addLog(tab, `任务完成: ${data.Accomplish}`, 'success')
+    tab.status = '结束'
+    
+    // 清理WebSocket连接
+    if (tab.websocketId) {
+      unsubscribe(tab.websocketId)
+      tab.websocketId = null
+    }
+    
+    notification.success({ message: '任务完成', description: data.Accomplish })
+    checkAllTasksCompleted()
+  }
+  
+  if (data.power) {
+    addLog(tab, `电源操作信号: ${data.power}`, 'info')
+    // 如果收到电源操作信号，触发倒计时
+    if (data.power !== 'NoAction') {
+      powerAction.value = data.power as PowerIn.signal
+      startPowerCountdown()
+    }
+  }
 }
 
 // 日志处理
-const handleLogUpdate = (tab: SchedulerTab, newLogContent: string) => {
-  // 检查是否为新日志还是追加日志
-  if (!tab.lastLogContent || !newLogContent.startsWith(tab.lastLogContent)) {
-    // 新日志，直接替换
-    tab.logs = []
-    tab.isLogAtBottom = true
-  }
-  
-  // 解析并添加新的日志行
-  const lines = newLogContent.split('\n')
-  const existingLines = tab.lastLogContent.split('\n').length
-  const newLines = lines.slice(existingLines - 1)
-  
-  newLines.forEach(line => {
-    if (line.trim()) {
-      addLog(tab, line, 'info')
-    }
+const addLog = (tab: SchedulerTab, message: string, type: LogEntry['type'] = 'info') => {
+  console.log('[Scheduler Debug] 添加日志:', {
+    tabKey: tab.key,
+    message: message,
+    type: type,
+    currentLogsLength: tab.logs.length
   })
   
-  tab.lastLogContent = newLogContent
-}
-
-const addLog = (tab: SchedulerTab, message: string, type: LogEntry['type'] = 'info') => {
   const logEntry: LogEntry = {
     time: new Date().toLocaleTimeString(),
     message,
@@ -628,12 +795,21 @@ const addLog = (tab: SchedulerTab, message: string, type: LogEntry['type'] = 'in
   
   tab.logs.push(logEntry)
   
+  console.log('[Scheduler Debug] 日志添加后:', {
+    tabKey: tab.key,
+    totalLogs: tab.logs.length,
+    isLogAtBottom: tab.isLogAtBottom
+  })
+  
   // 如果日志在底部，自动滚动
   if (tab.isLogAtBottom) {
     nextTick(() => {
       const el = logRefs.value.get(tab.key)
       if (el) {
         el.scrollTop = el.scrollHeight
+        console.log('[Scheduler Debug] 日志自动滚动到底部')
+      } else {
+        console.warn('[Scheduler Debug] 找不到日志元素，无法滚动')
       }
     })
   }
@@ -713,6 +889,29 @@ const filterTaskOption = (input: string, option: any) => {
   return (option?.label || '').toLowerCase().includes(input.toLowerCase())
 }
 
+// 调试工具函数
+const testWebSocketConnection = () => {
+  const { status, getConnectionInfo, sendRaw } = useWebSocket()
+  const connectionInfo = getConnectionInfo()
+  
+  console.log('[Scheduler Debug] 手动测试WebSocket连接:')
+  console.log('状态:', status.value)
+  console.log('连接信息:', connectionInfo)
+  
+  // 尝试发送一个测试消息
+  try {
+    sendRaw('Signal', { Test: 'Frontend Test Message' })
+    console.log('[Scheduler Debug] 测试消息已发送')
+  } catch (error) {
+    console.error('[Scheduler Debug] 发送测试消息失败:', error)
+  }
+}
+
+// 在开发者工具中暴露测试函数
+if (typeof window !== 'undefined') {
+  (window as any).testWebSocketConnection = testWebSocketConnection
+}
+
 // 加载任务选项
 const loadTaskOptions = async () => {
   try {
@@ -733,7 +932,19 @@ const loadTaskOptions = async () => {
 
 // 生命周期
 onMounted(() => {
+  console.log('[Scheduler Debug] 组件已挂载，开始初始化')
+  
+  // 检查WebSocket连接状态
+  const { status, getConnectionInfo } = useWebSocket()
+  console.log('[Scheduler Debug] 组件初始化时WebSocket状态:', {
+    status: status.value,
+    connectionInfo: getConnectionInfo()
+  })
+  
   loadTaskOptions()
+  console.log('[Scheduler Debug] 开始加载任务选项')
+  
+  console.log('[Scheduler Debug] 初始化的调度台标签:', schedulerTabs.value)
 })
 
 onUnmounted(() => {
@@ -955,6 +1166,83 @@ onUnmounted(() => {
 
 .extra-status-tag {
   margin-left: 4px;
+}
+
+/* 队列卡片样式 */
+.queue-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.queue-card {
+  border: 1px solid var(--ant-color-border);
+  border-radius: 8px;
+  background: var(--ant-color-bg-container);
+  transition: all 0.2s ease;
+  overflow: hidden;
+}
+
+.queue-card:hover {
+  border-color: var(--ant-color-primary);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.queue-card.running-card {
+  border-color: var(--ant-color-primary);
+  background: linear-gradient(135deg, var(--ant-color-primary-bg) 0%, var(--ant-color-bg-container) 100%);
+  animation: runningPulse 2s ease-in-out infinite alternate;
+}
+
+@keyframes runningPulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(24, 144, 255, 0.4);
+  }
+  100% {
+    box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.1);
+  }
+}
+
+.card-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.card-content {
+  padding: 4px 0;
+}
+
+.task-name,
+.user-name {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ant-color-text);
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.running-card .task-name,
+.running-card .user-name {
+  color: var(--ant-color-primary);
+}
+
+/* 队列卡片在小空间中的响应式 */
+.queue-card :deep(.ant-card-head) {
+  padding: 8px 12px;
+  min-height: auto;
+  border-bottom: 1px solid var(--ant-color-border-secondary);
+}
+
+.queue-card :deep(.ant-card-body) {
+  padding: 8px 12px;
+}
+
+.queue-card :deep(.ant-card-head-title) {
+  font-size: 12px;
+  font-weight: 500;
 }
 
 .log-line {
