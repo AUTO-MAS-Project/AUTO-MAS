@@ -294,6 +294,14 @@ const handleMessage = (raw: WebSocketBaseMessage) => {
   const msgType = String(raw.type)
   const id = raw.id
 
+  // 添加原始消息调试
+  console.log('[WebSocket Debug] 收到原始消息:', {
+    type: msgType,
+    id: id,
+    data: raw.data,
+    fullMessage: raw
+  })
+
   // 优先处理Signal类型的ping-pong消息，不受id限制
   if (msgType === 'Signal') {
     // 处理心跳响应
@@ -326,6 +334,21 @@ const handleMessage = (raw: WebSocketBaseMessage) => {
 
     if (msgType === 'Progress') return sub.onProgress?.(raw.data as ProgressMessage)
     if (msgType === 'Result') return sub.onResult?.(raw.data as ResultMessage)
+    if (msgType === 'Update') {
+      // 处理Update类型消息，当作Progress处理
+      console.log('[WebSocket Debug] 收到Update消息:', raw)
+      return sub.onProgress?.(raw as any)
+    }
+    if (msgType === 'Info') {
+      // 处理Info类型消息，当作Notify处理
+      console.log('[WebSocket Debug] 收到Info消息:', raw)
+      return sub.onNotify?.(raw as any)
+    }
+    if (msgType === 'Message') {
+      // 处理Message类型消息，当作Notify处理
+      console.log('[WebSocket Debug] 收到Message消息:', raw)
+      return sub.onNotify?.(raw as any)
+    }
     if (msgType === 'Error') {
       sub.onError?.(raw.data as ErrorMessage)
       if (!sub.onError && raw.data && (raw.data as ErrorMessage).msg) {
@@ -344,15 +367,26 @@ const handleMessage = (raw: WebSocketBaseMessage) => {
       return
     }
     // 其他类型可扩展
+    console.log('[WebSocket Debug] 未处理的消息类型:', msgType, raw)
   }
 
   if (id) {
     const sub = global.subscribers.value.get(id)
+    console.log('[WebSocket Debug] 查找订阅者:', {
+      messageId: id,
+      hasSubscriber: !!sub,
+      totalSubscribers: global.subscribers.value.size,
+      allSubscriberIds: Array.from(global.subscribers.value.keys())
+    })
     if (sub) {
+      console.log('[WebSocket Debug] 分发消息给订阅者:', id)
       dispatch(sub)
+    } else {
+      console.warn('[WebSocket Debug] 未找到对应的订阅者:', id)
     }
   } else {
     // 无 id 的消息广播给所有订阅者
+    console.log('[WebSocket Debug] 广播消息给所有订阅者，订阅者数量:', global.subscribers.value.size)
     global.subscribers.value.forEach((sub: WebSocketSubscriber) => dispatch(sub))
   }
 }
