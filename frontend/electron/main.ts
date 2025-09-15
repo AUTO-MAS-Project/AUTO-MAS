@@ -99,7 +99,7 @@ function loadConfig(): AppConfig {
   try {
     const appRoot = getAppRoot()
     const configPath = path.join(appRoot, 'config', 'frontend_config.json')
-    
+
     if (fs.existsSync(configPath)) {
       const configData = fs.readFileSync(configPath, 'utf8')
       const config = JSON.parse(configData)
@@ -139,9 +139,9 @@ function createTray() {
     path.join(app.getAppPath(), 'public/AUTO-MAS.ico'),
     path.join(app.getAppPath(), 'dist/AUTO-MAS.ico')
   ]
-  
+
   let trayIcon
-  
+
   try {
     // 尝试加载图标
     for (const iconPath of iconPaths) {
@@ -153,7 +153,7 @@ function createTray() {
         }
       }
     }
-    
+
     // 如果所有路径都失败，创建一个默认图标
     if (!trayIcon || trayIcon.isEmpty()) {
       log.warn('无法加载托盘图标，使用默认图标')
@@ -165,7 +165,7 @@ function createTray() {
   }
 
   tray = new Tray(trayIcon)
-  
+
   const contextMenu = Menu.buildFromTemplate([
     {
       label: '显示窗口',
@@ -204,7 +204,7 @@ function createTray() {
 
   tray.setContextMenu(contextMenu)
   tray.setToolTip('AUTO-MAS')
-  
+
   // 双击托盘图标显示/隐藏窗口
   tray.on('double-click', () => {
     if (mainWindow) {
@@ -238,7 +238,7 @@ function destroyTray() {
 function updateTrayVisibility(config: AppConfig) {
   // 根据需求逻辑判断是否应该显示托盘
   let shouldShowTray = false
-  
+
   if (config.UI.IfShowTray && config.UI.IfToTray) {
     // 勾选常驻显示托盘和最小化到托盘，就一直展示托盘
     shouldShowTray = true
@@ -252,7 +252,7 @@ function updateTrayVisibility(config: AppConfig) {
     // 没有常驻显示托盘也没有最小化到托盘，托盘一直不展示
     shouldShowTray = false
   }
-  
+
   // 特殊情况：如果没有窗口显示且没有托盘，强制显示托盘避免程序成为幽灵
   if (!shouldShowTray && (!mainWindow || !mainWindow.isVisible()) && !tray) {
     shouldShowTray = true
@@ -270,20 +270,20 @@ function updateTrayVisibility(config: AppConfig) {
 
 function createWindow() {
   log.info('开始创建主窗口')
-  
+
   const config = loadConfig()
-  
+
   // 解析窗口大小
   const [width, height] = config.UI.size.split(',').map(s => parseInt(s.trim()) || 1600)
   const [x, y] = config.UI.location.split(',').map(s => parseInt(s.trim()) || 100)
-  
+
   mainWindow = new BrowserWindow({
-    width: Math.max(width, 800),
-    height: Math.max(height, 600),
+    width: Math.max(width, 1600),
+    height: Math.max(height, 900),
     x,
     y,
-    minWidth: 800,
-    minHeight: 600,
+    minWidth: 1600,
+    minHeight: 900,
     icon: path.join(__dirname, '../public/AUTO-MAS.ico'),
     frame: false, // 去掉系统标题栏
     titleBarStyle: 'hidden', // 隐藏标题栏
@@ -315,16 +315,16 @@ function createWindow() {
   // 窗口事件处理
   mainWindow.on('close', (event) => {
     const currentConfig = loadConfig()
-    
+
     if (!isQuitting && currentConfig.UI.IfToTray) {
       // 如果启用了最小化到托盘，阻止关闭并隐藏窗口
       event.preventDefault()
       mainWindow?.hide()
       mainWindow?.setSkipTaskbar(true)
-      
+
       // 更新托盘状态
       updateTrayVisibility(currentConfig)
-      
+
       log.info('窗口已最小化到托盘，任务栏图标已隐藏')
     } else {
       // 保存窗口状态
@@ -340,15 +340,15 @@ function createWindow() {
   // 窗口最小化事件
   mainWindow.on('minimize', () => {
     const currentConfig = loadConfig()
-    
+
     if (currentConfig.UI.IfToTray) {
       // 如果启用了最小化到托盘，隐藏窗口并从任务栏移除
       mainWindow?.hide()
       mainWindow?.setSkipTaskbar(true)
-      
+
       // 更新托盘状态
       updateTrayVisibility(currentConfig)
-      
+
       log.info('窗口已最小化到托盘，任务栏图标已隐藏')
     }
   })
@@ -393,26 +393,26 @@ function createWindow() {
 // 保存窗口状态（带防抖）
 function saveWindowState() {
   if (!mainWindow) return
-  
+
   // 清除之前的定时器
   if (saveWindowStateTimeout) {
     clearTimeout(saveWindowStateTimeout)
   }
-  
+
   // 设置新的定时器，500ms后保存
   saveWindowStateTimeout = setTimeout(() => {
     try {
       const config = loadConfig()
       const bounds = mainWindow!.getBounds()
       const isMaximized = mainWindow!.isMaximized()
-      
+
       // 只有在窗口不是最大化状态时才保存位置和大小
       if (!isMaximized) {
         config.UI.size = `${bounds.width},${bounds.height}`
         config.UI.location = `${bounds.x},${bounds.y}`
       }
       config.UI.maximized = isMaximized
-      
+
       saveConfig(config)
       log.info('窗口状态已保存')
     } catch (error) {
@@ -520,30 +520,30 @@ ipcMain.handle('check-environment', async () => {
 ipcMain.handle('check-critical-files', async () => {
   try {
     const appRoot = getAppRoot()
-    
+
     // 检查Python可执行文件
     const pythonPath = path.join(appRoot, 'environment', 'python', 'python.exe')
     const pythonExists = fs.existsSync(pythonPath)
-    
+
     // 检查pip（通常与Python一起安装）
     const pipPath = path.join(appRoot, 'environment', 'python', 'Scripts', 'pip.exe')
     const pipExists = fs.existsSync(pipPath)
-    
+
     // 检查Git可执行文件
     const gitPath = path.join(appRoot, 'environment', 'git', 'bin', 'git.exe')
     const gitExists = fs.existsSync(gitPath)
-    
+
     // 检查后端主文件
     const mainPyPath = path.join(appRoot, 'main.py')
     const mainPyExists = fs.existsSync(mainPyPath)
-    
+
     const result = {
       pythonExists,
       pipExists,
       gitExists,
       mainPyExists
     }
-    
+
     log.info('关键文件检查结果:', result)
     return result
   } catch (error) {
@@ -591,21 +591,21 @@ ipcMain.handle('download-git', async () => {
 ipcMain.handle('check-git-update', async () => {
   try {
     const appRoot = getAppRoot()
-    
+
     // 检查是否为Git仓库
     const gitDir = path.join(appRoot, '.git')
     if (!fs.existsSync(gitDir)) {
       log.info('不是Git仓库，跳过更新检查')
       return { hasUpdate: false }
     }
-    
+
     // 检查Git可执行文件是否存在
     const gitPath = path.join(appRoot, 'environment', 'git', 'bin', 'git.exe')
     if (!fs.existsSync(gitPath)) {
       log.warn('Git可执行文件不存在，无法检查更新')
       return { hasUpdate: false, error: 'Git可执行文件不存在' }
     }
-    
+
     // 获取Git环境变量
     const gitEnv = {
       ...process.env,
@@ -616,9 +616,9 @@ ipcMain.handle('check-git-update', async () => {
       GIT_TERMINAL_PROMPT: '0',
       GIT_ASKPASS: '',
     }
-    
+
     log.info('开始检查Git仓库更新...')
-    
+
     // 执行 git fetch 获取最新的远程信息
     await new Promise<void>((resolve, reject) => {
       const fetchProc = spawn(gitPath, ['fetch', 'origin'], {
@@ -626,15 +626,15 @@ ipcMain.handle('check-git-update', async () => {
         env: gitEnv,
         cwd: appRoot,
       })
-      
+
       fetchProc.stdout?.on('data', (data) => {
         log.info('git fetch output:', data.toString())
       })
-      
+
       fetchProc.stderr?.on('data', (data) => {
         log.info('git fetch stderr:', data.toString())
       })
-      
+
       fetchProc.on('close', (code) => {
         if (code === 0) {
           resolve()
@@ -642,10 +642,10 @@ ipcMain.handle('check-git-update', async () => {
           reject(new Error(`git fetch失败，退出码: ${code}`))
         }
       })
-      
+
       fetchProc.on('error', reject)
     })
-    
+
     // 检查本地分支是否落后于远程分支
     const hasUpdate = await new Promise<boolean>((resolve, reject) => {
       const statusProc = spawn(gitPath, ['status', '-uno', '--porcelain=v1'], {
@@ -653,16 +653,16 @@ ipcMain.handle('check-git-update', async () => {
         env: gitEnv,
         cwd: appRoot,
       })
-      
+
       let output = ''
       statusProc.stdout?.on('data', (data) => {
         output += data.toString()
       })
-      
+
       statusProc.stderr?.on('data', (data) => {
         log.info('git status stderr:', data.toString())
       })
-      
+
       statusProc.on('close', (code) => {
         if (code === 0) {
           // 检查是否有 "Your branch is behind" 的信息
@@ -672,12 +672,12 @@ ipcMain.handle('check-git-update', async () => {
             env: gitEnv,
             cwd: appRoot,
           })
-          
+
           let revOutput = ''
           revListProc.stdout?.on('data', (data) => {
             revOutput += data.toString()
           })
-          
+
           revListProc.on('close', (revCode) => {
             if (revCode === 0) {
               const commitsBehind = parseInt(revOutput.trim())
@@ -689,7 +689,7 @@ ipcMain.handle('check-git-update', async () => {
               resolve(true) // 如果无法确定，假设有更新
             }
           })
-          
+
           revListProc.on('error', () => {
             log.warn('git rev-list执行失败，假设有更新')
             resolve(true)
@@ -698,13 +698,13 @@ ipcMain.handle('check-git-update', async () => {
           reject(new Error(`git status失败，退出码: ${code}`))
         }
       })
-      
+
       statusProc.on('error', reject)
     })
-    
+
     log.info(`Git更新检查完成，hasUpdate: ${hasUpdate}`)
     return { hasUpdate }
-    
+
   } catch (error) {
     log.error('检查Git更新失败:', error)
     // 如果检查失败，返回true以触发更新流程，确保代码是最新的
@@ -742,7 +742,7 @@ ipcMain.handle('save-config', async (_event, config) => {
 
     fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8')
     console.log(`配置已保存到: ${configPath}`)
-    
+
     // 如果是UI配置更新，需要更新托盘状态
     if (config.UI) {
       updateTrayVisibility(config)
@@ -760,10 +760,10 @@ ipcMain.handle('update-tray-settings', async (_event, uiSettings) => {
     const currentConfig = loadConfig()
     currentConfig.UI = { ...currentConfig.UI, ...uiSettings }
     saveConfig(currentConfig)
-    
+
     // 立即更新托盘状态
     updateTrayVisibility(currentConfig)
-    
+
     log.info('托盘设置已更新:', uiSettings)
     return true
   } catch (error) {
@@ -827,7 +827,7 @@ ipcMain.handle('get-log-files', async (_event) => {
 ipcMain.handle('get-logs', async (_event, lines?: number, fileName?: string) => {
   try {
     let logFilePath: string
-    
+
     if (fileName) {
       // 如果指定了文件名，使用指定的文件
       const appRoot = getAppRoot()
@@ -836,18 +836,18 @@ ipcMain.handle('get-logs', async (_event, lines?: number, fileName?: string) => 
       // 否则使用当前日志文件
       logFilePath = getLogPath()
     }
-    
+
     if (!fs.existsSync(logFilePath)) {
       return ''
     }
 
     const logs = fs.readFileSync(logFilePath, 'utf8')
-    
+
     if (lines && lines > 0) {
       const logLines = logs.split('\n')
       return logLines.slice(-lines).join('\n')
     }
-    
+
     return logs
   } catch (error) {
     log.error('读取日志文件失败:', error)
@@ -858,7 +858,7 @@ ipcMain.handle('get-logs', async (_event, lines?: number, fileName?: string) => 
 ipcMain.handle('clear-logs', async (_event, fileName?: string) => {
   try {
     let logFilePath: string
-    
+
     if (fileName) {
       // 如果指定了文件名，清空指定的文件
       const appRoot = getAppRoot()
@@ -867,7 +867,7 @@ ipcMain.handle('clear-logs', async (_event, fileName?: string) => {
       // 否则清空当前日志文件
       logFilePath = getLogPath()
     }
-    
+
     if (fs.existsSync(logFilePath)) {
       fs.writeFileSync(logFilePath, '', 'utf8')
       log.info(`日志文件已清空: ${fileName || '当前文件'}`)
@@ -956,12 +956,12 @@ app.on('before-quit', async event => {
   if (!isQuitting) {
     event.preventDefault()
     isQuitting = true
-    
+
     log.info('应用准备退出')
-    
+
     // 清理托盘
     destroyTray()
-    
+
     try {
       await stopBackend()
       log.info('后端服务已停止')
@@ -978,16 +978,16 @@ app.on('before-quit', async event => {
 app.whenReady().then(() => {
   // 初始化日志系统
   setupLogger()
-  
+
   // 清理7天前的旧日志
   cleanOldLogs(7)
-  
+
   log.info('应用启动')
   log.info(`应用版本: ${app.getVersion()}`)
   log.info(`Electron版本: ${process.versions.electron}`)
   log.info(`Node版本: ${process.versions.node}`)
   log.info(`平台: ${process.platform}`)
-  
+
   // 检查管理员权限
   if (!isRunningAsAdmin()) {
     log.warn('应用未以管理员权限运行')
@@ -997,7 +997,7 @@ app.whenReady().then(() => {
   } else {
     log.info('应用以管理员权限运行')
   }
-  
+
   createWindow()
 })
 
@@ -1008,3 +1008,4 @@ app.on('window-all-closed', () => {
 app.on('activate', () => {
   if (mainWindow === null) createWindow()
 })
+
