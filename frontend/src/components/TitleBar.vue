@@ -37,8 +37,7 @@
           @click="toggleMaximize"
           :title="isMaximized ? '还原' : '最大化'"
         >
-          <BorderOutlined v-if="!isMaximized" />
-          <CopyOutlined v-else />
+          <BorderOutlined />
         </button>
         <button class="control-button close-button" @click="closeWindow" title="关闭">
           <CloseOutlined />
@@ -317,10 +316,10 @@ onBeforeUnmount(() => {
 }
 
 .update-hint {
-  font-weight: 500;
+  font-weight: 600;
   margin-left: 4px;
   cursor: help;
-  background: linear-gradient(45deg, #ff0000, #ff7f00, #ffff00, #00ff00, #8b00ff, #ff0000);
+  background: linear-gradient(45deg, #ff1744, #ff5722, #ff9800, #ffc107, #4caf50, #00bcd4, #2196f3, #9c27b0, #ff1744);
   background-size: 400% 400%;
   -webkit-background-clip: text;
   background-clip: text;
@@ -329,6 +328,18 @@ onBeforeUnmount(() => {
     rainbow-flow 3s ease-in-out infinite,
     glow-pulse 2s ease-in-out infinite;
   position: relative;
+  filter: drop-shadow(0 0 4px rgba(255, 64, 129, 0.4));
+  transition: all 0.3s ease;
+  font-size: 13px;
+  line-height: 1.2;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+
+.update-hint:hover {
+  transform: scale(1.02);
+  filter: drop-shadow(0 0 8px rgba(255, 64, 129, 0.7));
+  animation-duration: 3s, 2s;
 }
 
 .update-hint::before {
@@ -338,18 +349,44 @@ onBeforeUnmount(() => {
   left: -2px;
   right: -2px;
   bottom: -2px;
-  background: linear-gradient(45deg, #ff0000, #ff7f00, #ffff00, #00ff00, #8b00ff, #ff0000);
+  background: linear-gradient(45deg, #ff1744, #ff5722, #ff9800, #ffc107, #4caf50, #00bcd4, #2196f3, #9c27b0, #ff1744);
   background-size: 400% 400%;
-  border-radius: 4px;
+  border-radius: 6px;
   z-index: -1;
-  opacity: 0.3;
+  opacity: 0.12;
   filter: blur(8px);
-  animation: rainbow-flow 3s ease-in-out infinite;
+  animation: rainbow-flow 4s ease-in-out infinite;
+}
+
+.update-hint::after {
+  content: '';
+  position: absolute;
+  top: -3px;
+  left: -3px;
+  right: -3px;
+  bottom: -3px;
+  background: radial-gradient(circle at center, rgba(255, 64, 129, 0.08) 0%, transparent 70%);
+  border-radius: 8px;
+  z-index: -2;
+  animation: pulse-ring 4s ease-in-out infinite;
+}
+
+/* 为相邻的更新提示添加间距 */
+.update-hint + .update-hint {
+  margin-left: 12px;
+}
+
+.title-bar-dark .update-hint {
+  filter: drop-shadow(0 0 6px rgba(255, 64, 129, 0.6));
 }
 
 .title-bar-dark .update-hint::before {
-  opacity: 0.5;
+  opacity: 0.2;
   filter: blur(10px);
+}
+
+.title-bar-dark .update-hint::after {
+  background: radial-gradient(circle at center, rgba(255, 64, 129, 0.15) 0%, transparent 70%);
 }
 
 @keyframes rainbow-flow {
@@ -366,28 +403,35 @@ onBeforeUnmount(() => {
 
 @keyframes glow-pulse {
   0% {
-    filter: brightness(1) saturate(1);
+    filter: drop-shadow(0 0 4px rgba(255, 64, 129, 0.4)) brightness(1);
     transform: scale(1);
   }
-  50% {
-    filter: brightness(1.2) saturate(1.3);
-    transform: scale(1.02);
+  33% {
+    filter: drop-shadow(0 0 6px rgba(255, 152, 0, 0.5)) brightness(1.08);
+    transform: scale(1.003);
+  }
+  66% {
+    filter: drop-shadow(0 0 5px rgba(76, 175, 80, 0.45)) brightness(1.05);
+    transform: scale(1.002);
   }
   100% {
-    filter: brightness(1) saturate(1);
+    filter: drop-shadow(0 0 4px rgba(255, 64, 129, 0.4)) brightness(1);
     transform: scale(1);
   }
 }
 
-@keyframes pulse {
+@keyframes pulse-ring {
   0% {
-    opacity: 1;
+    opacity: 0.08;
+    transform: scale(0.98);
   }
   50% {
-    opacity: 0.7;
+    opacity: 0.04;
+    transform: scale(1.02);
   }
   100% {
-    opacity: 1;
+    opacity: 0.08;
+    transform: scale(0.98);
   }
 }
 </style>
