@@ -6,7 +6,7 @@
           <router-link to="/scripts">脚本管理</router-link>
         </a-breadcrumb-item>
         <a-breadcrumb-item>
-          <router-link :to="`/scripts/${scriptId}/edit`" class="breadcrumb-link">
+          <router-link :to="`/scripts/${scriptId}/edit/maa`" class="breadcrumb-link">
             {{ scriptName }}
           </router-link>
         </a-breadcrumb-item>
