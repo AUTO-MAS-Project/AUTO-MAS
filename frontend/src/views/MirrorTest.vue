@@ -239,7 +239,6 @@ onMounted(() => {
 
 .title-section {
   flex: 1;
-  text-align: center;
 }
 
 .test-header h2 {

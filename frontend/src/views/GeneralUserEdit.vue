@@ -638,12 +638,6 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.user-edit-container {
-  padding: 32px;
-  min-height: 100vh;
-  background: var(--ant-color-bg-layout);
-}
-
 .user-edit-header {
   display: flex;
   justify-content: space-between;
@@ -658,23 +652,6 @@ onMounted(() => {
 
 .breadcrumb {
   margin: 0;
-}
-
-.header-title h1 {
-  margin: 0;
-  font-size: 32px;
-  font-weight: 700;
-  color: var(--ant-color-text);
-  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-
-.subtitle {
-  margin: 4px 0 0 0;
-  font-size: 16px;
-  color: var(--ant-color-text-secondary);
 }
 
 .user-edit-content {
@@ -727,7 +704,6 @@ onMounted(() => {
   border-radius: 2px;
 }
 
-/* 表单标签 */
 .form-label {
   display: flex;
   align-items: center;
@@ -765,38 +741,10 @@ onMounted(() => {
   box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.1);
 }
 
-.form-card {
-  margin-bottom: 24px;
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-}
-
-.form-card :deep(.ant-card-head) {
-  border-bottom: 2px solid var(--ant-color-border-secondary);
-}
-
-.form-card :deep(.ant-card-head-title) {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--ant-color-text);
-}
-
-.user-form :deep(.ant-form-item-label > label) {
-  font-weight: 500;
-  color: var(--ant-color-text);
-}
-
-.switch-description,
-.task-description {
+.switch-description {
   margin-left: 12px;
   font-size: 13px;
   color: var(--ant-color-text-secondary);
-}
-
-.task-description {
-  display: block;
-  margin-top: 4px;
-  margin-left: 0;
 }
 
 .cancel-button {
@@ -820,53 +768,11 @@ onMounted(() => {
   border-color: var(--ant-color-primary-hover);
 }
 
-/* 表单标签样式 */
-.form-label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-weight: 500;
-  color: var(--ant-color-text);
-}
-
-.help-icon {
-  font-size: 14px;
-  color: var(--ant-color-text-tertiary);
-  cursor: help;
-  transition: color 0.3s ease;
-}
-
-.help-icon:hover {
-  color: var(--ant-color-primary);
-}
-
-/* 响应式设计 */
-@media (max-width: 768px) {
-  .user-edit-container {
-    padding: 16px;
-  }
-
-  .user-edit-header {
-    flex-direction: column;
-    gap: 16px;
-    align-items: stretch;
-  }
-
-  .header-title h1 {
-    font-size: 24px;
-  }
-
-  .user-edit-content {
-    max-width: 100%;
-  }
-}
-
 .float-button {
   width: 60px;
   height: 60px;
 }
 
-/* 路径输入组样式 */
 .path-input-group {
   display: flex;
   border-radius: 8px;
@@ -909,12 +815,18 @@ onMounted(() => {
 .path-button:hover {
   background: var(--ant-color-primary);
   color: white;
-  transform: none;
 }
 
-.path-button:disabled {
-  background: var(--ant-color-bg-container);
-  color: var(--ant-color-text-tertiary);
-  cursor: not-allowed;
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .user-edit-header {
+    flex-direction: column;
+    gap: 16px;
+    align-items: stretch;
+  }
+
+  .user-edit-content {
+    max-width: 100%;
+  }
 }
 </style>
