@@ -98,12 +98,6 @@
                         <h3>任务队列</h3>
                       </div>
                       <div class="column-content">
-                        <!-- 调试信息 -->
-                        <div v-if="false" style="font-size: 10px; color: red; padding: 4px; border: 1px solid red;">
-                          Debug Tasks: {{ tab.taskQueue.length }} 
-                          <div>{{ JSON.stringify(tab.taskQueue) }}</div>
-                        </div>
-                        
                         <div v-if="tab.taskQueue.length === 0" class="empty-state-mini">
                           <img src="@/assets/NoData.png" alt="暂无数据" class="empty-image-mini" />
                           <p class="empty-text-mini">暂无任务队列</p>
@@ -139,12 +133,6 @@
                         <h3>用户队列</h3>
                       </div>
                       <div class="column-content">
-                        <!-- 调试信息 -->
-                        <div v-if="false" style="font-size: 10px; color: blue; padding: 4px; border: 1px solid blue;">
-                          Debug Users: {{ tab.userQueue.length }}
-                          <div>{{ JSON.stringify(tab.userQueue) }}</div>
-                        </div>
-                        
                         <div v-if="tab.userQueue.length === 0" class="empty-state-mini">
                           <img src="@/assets/NoData.png" alt="暂无数据" class="empty-image-mini" />
                           <p class="empty-text-mini">暂无用户队列</p>
@@ -173,11 +161,11 @@
                     </div>
                   </a-col>
 
-                  <!-- 日志栏 -->
+                      <!-- 日志栏 -->
                   <a-col :span="16">
                     <div class="status-column">
                       <div class="section-header">
-                        <h3>实时日志</h3>
+                        <h3>日志</h3>
                       </div>
                       <div 
                         class="column-content log-content"
@@ -525,9 +513,6 @@ const startTask = async (tab: SchedulerTab) => {
       tab.isLogAtBottom = true
       tab.lastLogContent = ''
       
-      // 添加初始日志
-      addLog(tab, `任务开始: ${getTaskName(tab.selectedTaskId)} (模式: ${tab.selectedMode})`, 'info')
-      
       // 订阅WebSocket消息
       subscribeToTask(tab)
       console.log('[Scheduler Debug] 已订阅WebSocket消息')
@@ -555,7 +540,6 @@ const stopTask = async (tab: SchedulerTab) => {
     tab.status = '结束'
     tab.websocketId = null
     // 任务结束后不清空选择，允许重新开始
-    addLog(tab, '任务已停止', 'warning')
     
     message.success('任务已停止')
     checkAllTasksCompleted()
@@ -568,7 +552,6 @@ const stopTask = async (tab: SchedulerTab) => {
       unsubscribe(tab.websocketId)
       tab.status = '结束'
       tab.websocketId = null
-      addLog(tab, '任务已强制停止', 'warning')
     }
   }
 }
@@ -670,8 +653,7 @@ const handleWebSocketMessage = (tab: SchedulerTab, wsMessage: any) => {
       break
     default:
       console.warn('[Scheduler Debug] 未知的WebSocket消息类型:', type, '完整消息:', wsMessage)
-      // 尝试作为通用消息处理
-      addLog(tab, `收到未知类型消息: ${type} - ${JSON.stringify(data)}`, 'info')
+      // 不再添加日志，只在控制台记录
   }
 }
 
@@ -681,6 +663,7 @@ const handleUpdateMessage = (tab: SchedulerTab, data: any) => {
     data: data,
     hasTaskList: !!data.task_list,
     hasUserList: !!data.user_list,
+    hasLog: !!data.log,
     taskListLength: data.task_list?.length,
     userListLength: data.user_list?.length
   })
@@ -706,6 +689,26 @@ const handleUpdateMessage = (tab: SchedulerTab, data: any) => {
     tab.userQueue.splice(0, tab.userQueue.length, ...newUserQueue)
     console.log('[Scheduler Debug] 用户队列更新后:', tab.userQueue)
   }
+  
+  // 处理日志消息 - 只当 data 包含 log 键时才添加日志
+  if (data.log) {
+    console.log('[Scheduler Debug] 收到日志消息:', data.log)
+    if (typeof data.log === 'string') {
+      addLog(tab, data.log, 'info')
+    } else if (typeof data.log === 'object') {
+      // 如果日志是对象，处理不同类型
+      if (data.log.Error) {
+        addLog(tab, data.log.Error, 'error')
+      } else if (data.log.Warning) {
+        addLog(tab, data.log.Warning, 'warning')
+      } else if (data.log.Info) {
+        addLog(tab, data.log.Info, 'info')
+      } else {
+        // 如果是其他格式，转为字符串
+        addLog(tab, JSON.stringify(data.log), 'info')
+      }
+    }
+  }
 }
 
 const handleInfoMessage = (tab: SchedulerTab, data: any) => {
@@ -715,24 +718,20 @@ const handleInfoMessage = (tab: SchedulerTab, data: any) => {
   })
   
   if (data.Error) {
-    console.log('[Scheduler Debug] 添加错误日志:', data.Error)
-    addLog(tab, data.Error, 'error')
+    console.log('[Scheduler Debug] 收到错误信息:', data.Error)
     notification.error({ message: '任务错误', description: data.Error })
   } else if (data.Warning) {
-    console.log('[Scheduler Debug] 添加警告日志:', data.Warning)
-    addLog(tab, data.Warning, 'warning')
+    console.log('[Scheduler Debug] 收到警告信息:', data.Warning)
     notification.warning({ message: '任务警告', description: data.Warning })
   } else if (data.Info) {
-    console.log('[Scheduler Debug] 添加信息日志:', data.Info)
-    addLog(tab, data.Info, 'info')
+    console.log('[Scheduler Debug] 收到信息:', data.Info)
     notification.info({ message: '任务信息', description: data.Info })
   } else {
     // 处理其他信息类型
     console.log('[Scheduler Debug] 处理其他信息类型:', data)
     for (const [key, value] of Object.entries(data)) {
       if (typeof value === 'string') {
-        console.log('[Scheduler Debug] 添加其他类型日志:', `${key}: ${value}`)
-        addLog(tab, `${key}: ${value}`, 'info')
+        console.log('[Scheduler Debug] 其他类型信息:', `${key}: ${value}`)
       }
     }
   }
@@ -754,7 +753,7 @@ const handleMessageDialog = (tab: SchedulerTab, data: any) => {
 
 const handleSignalMessage = (tab: SchedulerTab, data: any) => {
   if (data.Accomplish) {
-    addLog(tab, `任务完成: ${data.Accomplish}`, 'success')
+    console.log('[Scheduler Debug] 任务完成:', data.Accomplish)
     tab.status = '结束'
     
     // 清理WebSocket连接
@@ -768,7 +767,7 @@ const handleSignalMessage = (tab: SchedulerTab, data: any) => {
   }
   
   if (data.power) {
-    addLog(tab, `电源操作信号: ${data.power}`, 'info')
+    console.log('[Scheduler Debug] 收到电源操作信号:', data.power)
     // 如果收到电源操作信号，触发倒计时
     if (data.power !== 'NoAction') {
       powerAction.value = data.power as PowerIn.signal
@@ -863,11 +862,6 @@ const cancelMessage = () => {
 }
 
 // 工具函数
-const getTaskName = (taskId: string) => {
-  const option = taskOptions.value.find(opt => opt.value === taskId)
-  return option?.label || '未知任务'
-}
-
 const getTabStatusColor = (status: string): string => {
   const colorMap: Record<string, string> = {
     '新建': 'default',
