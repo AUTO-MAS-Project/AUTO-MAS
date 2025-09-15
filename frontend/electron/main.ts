@@ -1,4 +1,14 @@
-import { app, BrowserWindow, ipcMain, dialog, shell, Tray, Menu, nativeImage } from 'electron'
+import {
+  app,
+  BrowserWindow,
+  ipcMain,
+  dialog,
+  shell,
+  Tray,
+  Menu,
+  nativeImage,
+  screen,
+} from 'electron'
 import * as path from 'path'
 import * as fs from 'fs'
 import { spawn } from 'child_process'
@@ -58,7 +68,6 @@ function restartAsAdmin(): void {
   }
 }
 
-let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
 let isQuitting = false
 let saveWindowStateTimeout: NodeJS.Timeout | null = null
@@ -86,12 +95,12 @@ const defaultConfig: AppConfig = {
     IfToTray: false,
     location: '100,100',
     maximized: false,
-    size: '1600,1000'
+    size: '1600,1000',
   },
   Start: {
     IfMinimizeDirectly: false,
-    IfSelfStart: false
-  }
+    IfSelfStart: false,
+  },
 }
 
 // 加载配置
@@ -137,7 +146,7 @@ function createTray() {
     path.join(__dirname, '../public/AUTO-MAS.ico'),
     path.join(process.resourcesPath, 'assets/AUTO-MAS.ico'),
     path.join(app.getAppPath(), 'public/AUTO-MAS.ico'),
-    path.join(app.getAppPath(), 'dist/AUTO-MAS.ico')
+    path.join(app.getAppPath(), 'dist/AUTO-MAS.ico'),
   ]
 
   let trayIcon
@@ -178,7 +187,7 @@ function createTray() {
           mainWindow.show()
           mainWindow.focus()
         }
-      }
+      },
     },
     {
       label: '隐藏窗口',
@@ -190,7 +199,7 @@ function createTray() {
           }
           mainWindow.hide()
         }
-      }
+      },
     },
     { type: 'separator' },
     {
@@ -198,8 +207,8 @@ function createTray() {
       click: () => {
         isQuitting = true
         app.quit()
-      }
-    }
+      },
+    },
   ])
 
   tray.setContextMenu(contextMenu)
@@ -267,124 +276,165 @@ function updateTrayVisibility(config: AppConfig) {
     log.info('托盘图标已销毁')
   }
 }
-
+let mainWindow: Electron.BrowserWindow | null = null
 function createWindow() {
   log.info('开始创建主窗口')
 
   const config = loadConfig()
 
-  // 解析窗口大小
-  const [width, height] = config.UI.size.split(',').map(s => parseInt(s.trim()) || 1600)
-  const [x, y] = config.UI.location.split(',').map(s => parseInt(s.trim()) || 100)
+  // 解析配置
+  const [cfgW, cfgH] = config.UI.size.split(',').map((s: string) => parseInt(s.trim(), 10) || 1600)
+  const [cfgX, cfgY] = config.UI.location
+    .split(',')
+    .map((s: string) => parseInt(s.trim(), 10) || 100)
 
-  mainWindow = new BrowserWindow({
-    width: Math.max(width, 1600),
-    height: Math.max(height, 900),
-    x,
-    y,
-    minWidth: 1600,
-    minHeight: 900,
+  // 以目标位置选最近显示器
+  const targetDisplay = screen.getDisplayNearestPoint({ x: cfgX, y: cfgY })
+  const sf = targetDisplay.scaleFactor
+
+  // 逻辑最小尺寸（DIP）
+  const minDipW = Math.floor(1600 / sf)
+  const minDipH = Math.floor(900 / sf)
+
+  // 初始窗口逻辑尺寸（DIP）
+  let initW = Math.max(cfgW, minDipW)
+  let initH = Math.max(cfgH, minDipH)
+
+  // 不超过工作区
+  const { width: waW, height: waH } = targetDisplay.workAreaSize
+  initW = Math.min(initW, waW)
+  initH = Math.min(initH, waH)
+
+  // 关键：用局部常量 win，全程用它，类型不为 null
+  const win = new BrowserWindow({
+    x: cfgX,
+    y: cfgY,
+    width: initW,
+    height: initH,
+    minWidth: minDipW,
+    minHeight: minDipH,
+    useContentSize: true,
+    frame: false,
+    titleBarStyle: 'hidden',
     icon: path.join(__dirname, '../public/AUTO-MAS.ico'),
-    frame: false, // 去掉系统标题栏
-    titleBarStyle: 'hidden', // 隐藏标题栏
+    autoHideMenuBar: true,
+    show: !config.Start.IfMinimizeDirectly,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
       contextIsolation: true,
     },
-    autoHideMenuBar: true,
-    show: !config.Start.IfMinimizeDirectly, // 根据配置决定是否直接显示
   })
 
-  // 如果配置为最大化，则最大化窗口
-  if (config.UI.maximized) {
-    mainWindow.maximize()
+  // 把局部的 win 赋值给模块级（供其他模块/函数用）
+  mainWindow = win
+
+  // 根据显示器动态更新最小尺寸/边界
+  const recomputeMinSize = () => {
+    // 这里用 win，不会是 null
+    const bounds = win.getBounds()
+    const disp = screen.getDisplayMatching(bounds)
+    const s = disp.scaleFactor
+    const w = Math.floor(1600 / s)
+    const h = Math.floor(900 / s)
+
+    const [curMinW, curMinH] = win.getMinimumSize()
+    if (w !== curMinW || h !== curMinH) {
+      win.setMinimumSize(w, h)
+
+      if (win.isMaximized()) return
+
+      const { width: wW, height: wH } = disp.workAreaSize
+      const newBounds = { ...bounds }
+      if (newBounds.width > wW) newBounds.width = wW
+      if (newBounds.height > wH) newBounds.height = wH
+      if (newBounds.width < w) newBounds.width = w
+      if (newBounds.height < h) newBounds.height = h
+      win.setBounds(newBounds)
+    }
   }
 
-  mainWindow.setMenuBarVisibility(false)
+  // 监听显示器变化/窗口移动
+  win.on('moved', recomputeMinSize)
+  win.on('resized', recomputeMinSize)
+  screen.on('display-metrics-changed', recomputeMinSize)
+
+  // 最大化配置
+  if (config.UI.maximized) {
+    win.maximize()
+  }
+
+  win.setMenuBarVisibility(false)
   const devServer = process.env.VITE_DEV_SERVER_URL
   if (devServer) {
     log.info(`加载开发服务器: ${devServer}`)
-    mainWindow.loadURL(devServer)
+    win.loadURL(devServer)
   } else {
     const indexHtmlPath = path.join(app.getAppPath(), 'dist', 'index.html')
     log.info(`加载生产环境页面: ${indexHtmlPath}`)
-    mainWindow.loadFile(indexHtmlPath)
+    win.loadFile(indexHtmlPath)
   }
 
   // 窗口事件处理
-  mainWindow.on('close', (event) => {
+  win.on('close', (event: Electron.Event) => {
     const currentConfig = loadConfig()
 
     if (!isQuitting && currentConfig.UI.IfToTray) {
-      // 如果启用了最小化到托盘，阻止关闭并隐藏窗口
       event.preventDefault()
-      mainWindow?.hide()
-      mainWindow?.setSkipTaskbar(true)
-
-      // 更新托盘状态
+      win.hide()
+      win.setSkipTaskbar(true)
       updateTrayVisibility(currentConfig)
-
       log.info('窗口已最小化到托盘，任务栏图标已隐藏')
     } else {
-      // 保存窗口状态
       saveWindowState()
     }
   })
 
-  mainWindow.on('closed', () => {
+  win.on('closed', () => {
     log.info('主窗口已关闭')
+    // 清理监听（可选）
+    screen.removeListener('display-metrics-changed', recomputeMinSize)
+    // 置空模块级引用
     mainWindow = null
   })
 
-  // 窗口最小化事件
-  mainWindow.on('minimize', () => {
+  win.on('minimize', () => {
     const currentConfig = loadConfig()
-
     if (currentConfig.UI.IfToTray) {
-      // 如果启用了最小化到托盘，隐藏窗口并从任务栏移除
-      mainWindow?.hide()
-      mainWindow?.setSkipTaskbar(true)
-
-      // 更新托盘状态
+      win.hide()
+      win.setSkipTaskbar(true)
       updateTrayVisibility(currentConfig)
-
       log.info('窗口已最小化到托盘，任务栏图标已隐藏')
     }
   })
 
-  // 窗口显示/隐藏事件，用于更新托盘状态
-  mainWindow.on('show', () => {
+  win.on('show', () => {
     const currentConfig = loadConfig()
-    // 窗口显示时，恢复任务栏图标
-    mainWindow?.setSkipTaskbar(false)
+    win.setSkipTaskbar(false)
     updateTrayVisibility(currentConfig)
     log.info('窗口已显示，任务栏图标已恢复')
   })
 
-  mainWindow.on('hide', () => {
+  win.on('hide', () => {
     const currentConfig = loadConfig()
-    // 窗口隐藏时，根据配置决定是否隐藏任务栏图标
     if (currentConfig.UI.IfToTray) {
-      mainWindow?.setSkipTaskbar(true)
+      win.setSkipTaskbar(true)
       log.info('窗口已隐藏，任务栏图标已隐藏')
     }
     updateTrayVisibility(currentConfig)
   })
 
-  // 窗口移动和调整大小时保存状态
-  mainWindow.on('moved', saveWindowState)
-  mainWindow.on('resized', saveWindowState)
-  mainWindow.on('maximize', saveWindowState)
-  mainWindow.on('unmaximize', saveWindowState)
+  // 移动/调整大小/最大化状态变化时保存
+  win.on('moved', saveWindowState)
+  win.on('resized', saveWindowState)
+  win.on('maximize', saveWindowState)
+  win.on('unmaximize', saveWindowState)
 
-  // 设置各个服务的主窗口引用
-  if (mainWindow) {
-    setDownloadMainWindow(mainWindow)
-    setPythonMainWindow(mainWindow)
-    setGitMainWindow(mainWindow)
-    log.info('主窗口创建完成，服务引用已设置')
-  }
+  // 设置各个服务的主窗口引用（此处 win 一定存在，可直接传）
+  setDownloadMainWindow(win)
+  setPythonMainWindow(win)
+  setGitMainWindow(win)
+  log.info('主窗口创建完成，服务引用已设置')
 
   // 根据配置初始化托盘
   updateTrayVisibility(config)
@@ -541,7 +591,7 @@ ipcMain.handle('check-critical-files', async () => {
       pythonExists,
       pipExists,
       gitExists,
-      mainPyExists
+      mainPyExists,
     }
 
     log.info('关键文件检查结果:', result)
@@ -552,7 +602,7 @@ ipcMain.handle('check-critical-files', async () => {
       pythonExists: false,
       pipExists: false,
       gitExists: false,
-      mainPyExists: false
+      mainPyExists: false,
     }
   }
 })
@@ -627,15 +677,15 @@ ipcMain.handle('check-git-update', async () => {
         cwd: appRoot,
       })
 
-      fetchProc.stdout?.on('data', (data) => {
+      fetchProc.stdout?.on('data', data => {
         log.info('git fetch output:', data.toString())
       })
 
-      fetchProc.stderr?.on('data', (data) => {
+      fetchProc.stderr?.on('data', data => {
         log.info('git fetch stderr:', data.toString())
       })
 
-      fetchProc.on('close', (code) => {
+      fetchProc.on('close', code => {
         if (code === 0) {
           resolve()
         } else {
@@ -655,30 +705,34 @@ ipcMain.handle('check-git-update', async () => {
       })
 
       let output = ''
-      statusProc.stdout?.on('data', (data) => {
+      statusProc.stdout?.on('data', data => {
         output += data.toString()
       })
 
-      statusProc.stderr?.on('data', (data) => {
+      statusProc.stderr?.on('data', data => {
         log.info('git status stderr:', data.toString())
       })
 
-      statusProc.on('close', (code) => {
+      statusProc.on('close', code => {
         if (code === 0) {
           // 检查是否有 "Your branch is behind" 的信息
           // 使用 git rev-list 来比较本地和远程分支
-          const revListProc = spawn(gitPath, ['rev-list', '--count', 'HEAD..origin/feature/refactor'], {
-            stdio: 'pipe',
-            env: gitEnv,
-            cwd: appRoot,
-          })
+          const revListProc = spawn(
+            gitPath,
+            ['rev-list', '--count', 'HEAD..origin/feature/refactor'],
+            {
+              stdio: 'pipe',
+              env: gitEnv,
+              cwd: appRoot,
+            }
+          )
 
           let revOutput = ''
-          revListProc.stdout?.on('data', (data) => {
+          revListProc.stdout?.on('data', data => {
             revOutput += data.toString()
           })
 
-          revListProc.on('close', (revCode) => {
+          revListProc.on('close', revCode => {
             if (revCode === 0) {
               const commitsBehind = parseInt(revOutput.trim())
               const hasUpdates = commitsBehind > 0
@@ -704,7 +758,6 @@ ipcMain.handle('check-git-update', async () => {
 
     log.info(`Git更新检查完成，hasUpdate: ${hasUpdate}`)
     return { hasUpdate }
-
   } catch (error) {
     log.error('检查Git更新失败:', error)
     // 如果检查失败，返回true以触发更新流程，确保代码是最新的
@@ -815,7 +868,7 @@ ipcMain.handle('get-log-path', async () => {
   }
 })
 
-ipcMain.handle('get-log-files', async (_event) => {
+ipcMain.handle('get-log-files', async _event => {
   try {
     return getLogFiles()
   } catch (error) {
@@ -1008,4 +1061,3 @@ app.on('window-all-closed', () => {
 app.on('activate', () => {
   if (mainWindow === null) createWindow()
 })
-
