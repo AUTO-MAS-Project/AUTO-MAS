@@ -641,10 +641,6 @@ const handleToggleUserStatus = async (user: User) => {
   margin: 0;
 }
 
-.link {
-  margin-left: 16px;
-}
-
 .empty-state {
   text-align: center;
   padding: 40px 20px;
@@ -652,11 +648,6 @@ const handleToggleUserStatus = async (user: User) => {
 
 .empty-image-container {
   margin-bottom: 16px;
-}
-
-.empty-image {
-  max-width: 100%;
-  height: auto;
 }
 
 .empty-title {
@@ -667,39 +658,55 @@ const handleToggleUserStatus = async (user: User) => {
 
 .empty-description {
   font-size: 16px;
-  color: rgba(0, 0, 0, 0.45);
+  color: var(--ant-color-text-secondary);
 }
 
-.type-select-modal :deep(.ant-modal-content) {
+/* 模态框通用样式 */
+.type-select-modal :deep(.ant-modal-content),
+.general-mode-modal :deep(.ant-modal-content),
+.template-select-modal :deep(.ant-modal-content) {
   border-radius: 12px;
 }
 
-.type-select-modal :deep(.ant-modal-header) {
+.type-select-modal :deep(.ant-modal-header),
+.general-mode-modal :deep(.ant-modal-header),
+.template-select_modal :deep(.ant-modal-header) {
   border-bottom: 1px solid var(--ant-color-border);
   padding: 16px 24px;
 }
 
-.type-select-modal :deep(.ant-modal-title) {
+.type-select-modal :deep(.ant-modal-title),
+.general-mode_modal :deep(.ant-modal-title),
+.template-select-modal :deep(.ant-modal-title) {
   font-size: 18px;
   font-weight: 600;
 }
 
-.type-select-modal :deep(.ant-modal-body) {
+.type-select-modal :deep(.ant-modal-body),
+.general-mode-modal :deep(.ant-modal-body) {
   padding: 24px;
 }
 
-.type-selection {
+.template-select-modal :deep(.ant-modal-body) {
+  padding: 0;
+}
+
+/* 选择组样式 */
+.type-selection,
+.mode-selection {
   margin: 16px 0;
 }
 
-.type-radio-group {
+.type-radio-group,
+.mode-radio-group {
   width: 100%;
   display: flex;
   flex-direction: column;
   gap: 16px;
 }
 
-.type-radio-group :deep(.ant-radio-button-wrapper) {
+.type-radio-group :deep(.ant-radio-button-wrapper),
+.mode-radio-group :deep(.ant-radio-button-wrapper) {
   height: auto;
   padding: 0;
   border: 1px solid var(--ant-color-border);
@@ -709,21 +716,25 @@ const handleToggleUserStatus = async (user: User) => {
   text-align: left;
 }
 
-.type-radio-group :deep(.ant-radio-button-wrapper:hover) {
+.type-radio-group :deep(.ant-radio-button-wrapper:hover),
+.mode-radio-group :deep(.ant-radio-button-wrapper:hover) {
   border-color: var(--ant-color-primary);
 }
 
-.type-radio-group :deep(.ant-radio-button-wrapper-checked) {
+.type-radio-group :deep(.ant-radio-button-wrapper-checked),
+.mode-radio-group :deep(.ant-radio-button-wrapper-checked) {
   border-color: var(--ant-color-primary);
   background: var(--ant-color-primary-bg);
   color: var(--ant-color-primary);
 }
 
-.type-radio-group :deep(.ant-radio-button-wrapper::before) {
+.type-radio-group :deep(.ant-radio-button-wrapper::before),
+.mode-radio-group :deep(.ant-radio-button-wrapper::before) {
   display: none;
 }
 
-.type-radio-group :deep(.ant-radio-button-wrapper .ant-radio-button) {
+.type-radio-group :deep(.ant-radio-button-wrapper .ant-radio-button),
+.mode-radio-group :deep(.ant-radio-button-wrapper .ant-radio-button) {
   display: none;
 }
 
@@ -733,6 +744,13 @@ const handleToggleUserStatus = async (user: User) => {
   gap: 16px;
   padding: 16px 20px;
   width: 100%;
+}
+
+.mode-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px;
 }
 
 .type-logo-container {
@@ -753,98 +771,18 @@ const handleToggleUserStatus = async (user: User) => {
   object-fit: contain;
 }
 
-.type-info {
-  flex: 1;
-}
-
-.type-title {
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--ant-color-text);
-  margin-bottom: 4px;
-}
-
-.type-description {
-  font-size: 14px;
-  color: var(--ant-color-text-secondary);
-  line-height: 1.4;
-}
-
-/* 通用脚本创建方式选择弹窗样式 */
-.general-mode-modal :deep(.ant-modal-content) {
-  border-radius: 12px;
-}
-
-.general-mode-modal :deep(.ant-modal-header) {
-  border-bottom: 1px solid var(--ant-color-border);
-  padding: 16px 24px;
-}
-
-.general-mode-modal :deep(.ant-modal-title) {
-  font-size: 18px;
-  font-weight: 600;
-}
-
-.general-mode-modal :deep(.ant-modal-body) {
-  padding: 24px;
-}
-
-.mode-selection {
-  margin: 16px 0;
-}
-
-.mode-radio-group {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.mode-radio-group :deep(.ant-radio-button-wrapper) {
-  height: auto;
-  padding: 0;
-  border: 1px solid var(--ant-color-border);
-  border-radius: 8px;
-  background: var(--ant-color-bg-container);
-  transition: all 0.3s ease;
-  text-align: left;
-}
-
-.mode-radio-group :deep(.ant-radio-button-wrapper:hover) {
-  border-color: var(--ant-color-primary);
-}
-
-.mode-radio-group :deep(.ant-radio-button-wrapper-checked) {
-  border-color: var(--ant-color-primary);
-  background: var(--ant-color-primary-bg);
-  color: var(--ant-color-primary);
-}
-
-.mode-radio-group :deep(.ant-radio-button-wrapper::before) {
-  display: none;
-}
-
-.mode-radio-group :deep(.ant-radio-button-wrapper .ant-radio-button) {
-  display: none;
-}
-
-.mode-content {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 16px 20px;
-}
-
 .mode-icon {
   font-size: 24px;
   color: var(--ant-color-primary);
   flex-shrink: 0;
 }
 
+.type-info,
 .mode-info {
   flex: 1;
 }
 
+.type-title,
 .mode-title {
   font-size: 16px;
   font-weight: 600;
@@ -852,118 +790,44 @@ const handleToggleUserStatus = async (user: User) => {
   margin-bottom: 4px;
 }
 
+.type-description,
 .mode-description {
   font-size: 14px;
   color: var(--ant-color-text-secondary);
   line-height: 1.4;
 }
 
-.ant-modal-content {
-  border-radius: 12px;
-}
-
-.ant-modal-header {
-  border-bottom: none;
-}
-
-.ant-modal-title {
-  font-size: 18px;
-  font-weight: 500;
-}
-
-.ant-modal-close {
-  color: rgba(0, 0, 0, 0.45);
-}
-
-.ant-modal-close:hover {
-  color: rgba(0, 0, 0, 0.65);
-}
-
-.ant-btn-primary {
-  background: #1890ff;
-  border-color: #1890ff;
-  color: #fff;
-}
-
-.ant-btn-primary:hover {
-  background: #40a9ff;
-  border-color: #40a9ff;
-}
-
-.ant-btn-primary:focus {
-  box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.2);
-}
-
-.ant-radio-button-wrapper {
-  border-radius: 8px;
-}
-
-.ant-radio-button-wrapper:hover {
-  border-color: #1890ff;
-}
-
-.ant-radio-button-wrapper-checked {
-  background: #1890ff;
-  border-color: #1890ff;
-  color: #fff;
-}
-
-.ant-input {
-  border-radius: 8px;
-}
-
-.ant-input:focus {
-  box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.2);
-}
-
-.ant-spin {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-/* 模板选择弹窗样式 */
-.template-select-modal :deep(.ant-modal-content) {
-  border-radius: 16px;
-  overflow: hidden;
-  background: var(--ant-color-bg-container);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12);
-}
-
-.template-select-modal :deep(.ant-modal-header) {
-  background: linear-gradient(135deg, var(--ant-color-bg-container), var(--ant-color-primary-bg));
-  border-bottom: 1px solid var(--ant-color-border);
-  padding: 20px 24px;
-}
-
-.template-select-modal :deep(.ant-modal-title) {
-  font-size: 20px;
-  font-weight: 600;
-  color: var(--ant-color-text);
-}
-
-.template-select-modal :deep(.ant-modal-body) {
-  padding: 24px;
-  background: var(--ant-color-bg-layout);
-}
-
+/* 模板选择样式 */
 .template-selection {
-  margin: 0;
+  min-height: 400px;
+}
+
+.no-templates {
+  text-align: center;
+  padding: 60px 20px;
+}
+
+.no-templates-content {
+  color: var(--ant-color-text-secondary);
+}
+
+.no-templates-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+  color: var(--ant-color-text-tertiary);
 }
 
 .templates-container {
-  background: var(--ant-color-bg-container);
-  border-radius: 12px;
-  padding: 20px;
-  margin-top: 16px;
+  height: 600px;
+  display: flex;
+  flex-direction: column;
 }
 
 .templates-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 16px;
-  padding-bottom: 12px;
+  padding: 24px;
   border-bottom: 1px solid var(--ant-color-border);
 }
 
@@ -976,18 +840,14 @@ const handleToggleUserStatus = async (user: User) => {
 .count-badge {
   background: var(--ant-color-primary);
   color: white;
-  padding: 4px 8px;
+  padding: 2px 8px;
   border-radius: 12px;
   font-size: 12px;
   font-weight: 600;
-  min-width: 20px;
-  text-align: center;
 }
 
 .count-text {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--ant-color-text);
+  color: var(--ant-color-text-secondary);
 }
 
 .search-container {
@@ -996,77 +856,71 @@ const handleToggleUserStatus = async (user: User) => {
   margin-left: 16px;
 }
 
-.template-search {
-  width: 100%;
-}
-
 .templates-list {
-  max-height: 400px;
+  flex: 1;
   overflow-y: auto;
-  padding-right: 8px;
+  padding: 0 24px 24px;
+  /* 隐藏滚动条 */
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE and Edge */
 }
 
 .templates-list::-webkit-scrollbar {
-  width: 6px;
+  display: none; /* Chrome, Safari and Opera */
 }
 
-.templates-list::-webkit-scrollbar-track {
-  background: var(--ant-color-bg-layout);
-  border-radius: 3px;
+.no-search-results {
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--ant-color-text-secondary);
 }
 
-.templates-list::-webkit-scrollbar-thumb {
-  background: var(--ant-color-border);
-  border-radius: 3px;
+.no-results-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+  color: var(--ant-color-text-tertiary);
 }
 
-.templates-list::-webkit-scrollbar-thumb:hover {
-  background: var(--ant-color-primary-hover);
+.no-results-tip {
+  font-size: 14px;
+  color: var(--ant-color-text-tertiary);
 }
 
 .template-item {
-  background: var(--ant-color-bg-elevated);
   border: 1px solid var(--ant-color-border);
   border-radius: 8px;
-  margin-bottom: 12px;
+  margin-bottom: 16px;
   cursor: pointer;
   transition: all 0.3s ease;
-  overflow: hidden;
+  background: var(--ant-color-bg-container);
 }
 
 .template-item:hover {
-  border-color: var(--ant-color-primary-hover);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  border-color: var(--ant-color-primary);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 .template-item.selected {
   border-color: var(--ant-color-primary);
   background: var(--ant-color-primary-bg);
-  box-shadow: 0 4px 16px rgba(24, 144, 255, 0.2);
 }
 
 .template-content {
-  padding: 16px 20px;
+  padding: 20px;
 }
 
 .template-header {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  margin-bottom: 8px;
-}
-
-.template-info {
-  flex: 1;
+  margin-bottom: 12px;
 }
 
 .template-name {
+  margin: 0 0 8px 0;
   font-size: 16px;
   font-weight: 600;
   color: var(--ant-color-text);
-  margin: 0 0 6px 0;
-  line-height: 1.4;
 }
 
 .template-meta {
@@ -1084,10 +938,8 @@ const handleToggleUserStatus = async (user: User) => {
 }
 
 .template-description {
-  font-size: 14px;
   color: var(--ant-color-text-secondary);
   line-height: 1.5;
-  margin-top: 8px;
 }
 
 .template-description :deep(p) {
@@ -1096,78 +948,5 @@ const handleToggleUserStatus = async (user: User) => {
 
 .template-description :deep(p:last-child) {
   margin-bottom: 0;
-}
-
-.template-description :deep(code) {
-  background: var(--ant-color-bg-layout);
-  padding: 2px 4px;
-  border-radius: 4px;
-  font-size: 12px;
-  font-family: 'Consolas', 'Monaco', monospace;
-}
-
-.template-description :deep(strong) {
-  font-weight: 600;
-  color: var(--ant-color-text);
-}
-
-.no-templates {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  min-height: 300px;
-  background: var(--ant-color-bg-container);
-  border-radius: 16px;
-  margin-top: 20px;
-}
-
-.no-templates-content {
-  text-align: center;
-  padding: 40px;
-  max-width: 400px;
-}
-
-.no-templates-icon {
-  font-size: 64px;
-  color: var(--ant-color-text-tertiary);
-  margin-bottom: 24px;
-  opacity: 0.6;
-}
-
-.no-templates-content h3 {
-  font-size: 20px;
-  font-weight: 600;
-  color: var(--ant-color-text);
-  margin: 0 0 12px;
-}
-
-.no-templates-content p {
-  font-size: 14px;
-  color: var(--ant-color-text-secondary);
-  line-height: 1.6;
-  margin: 0;
-}
-
-.no-search-results {
-  text-align: center;
-  padding: 40px 20px;
-  color: var(--ant-color-text-secondary);
-}
-
-.no-results-icon {
-  font-size: 48px;
-  color: var(--ant-color-text-tertiary);
-  margin-bottom: 16px;
-  opacity: 0.6;
-}
-
-.no-search-results p {
-  margin: 0 0 8px 0;
-  font-size: 14px;
-}
-
-.no-results-tip {
-  font-size: 12px;
-  color: var(--ant-color-text-tertiary);
 }
 </style>

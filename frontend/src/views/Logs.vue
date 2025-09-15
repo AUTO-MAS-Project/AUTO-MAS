@@ -20,21 +20,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ArrowLeftOutlined } from '@ant-design/icons-vue'
 import LogViewer from '@/components/LogViewer.vue'
-import { useTheme } from '@/composables/useTheme'
 
 const router = useRouter()
-const { isDark } = useTheme()
-
-const textColor = computed(() =>
-  isDark.value ? 'rgba(255, 255, 255, 0.88)' : 'rgba(0, 0, 0, 0.88)'
-)
-const textSecondaryColor = computed(() =>
-  isDark.value ? 'rgba(255, 255, 255, 0.65)' : 'rgba(0, 0, 0, 0.65)'
-)
 
 const goBack = () => {
   router.push('/settings')
@@ -66,12 +56,12 @@ const goBack = () => {
   margin: 0 0 8px 0;
   font-size: 24px;
   font-weight: 600;
-  color: v-bind(textColor);
+  color: var(--ant-color-text);
 }
 
 .logs-description {
   margin: 0;
-  color: v-bind(textSecondaryColor);
+  color: var(--ant-color-text-secondary);
   font-size: 14px;
   line-height: 1.5;
 }
