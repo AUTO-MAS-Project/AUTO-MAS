@@ -29,10 +29,16 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '脚本管理' },
   },
   {
-    path: '/scripts/:id/edit',
-    name: 'ScriptEdit',
-    component: () => import('../views/ScriptEdit.vue'),
-    meta: { title: '编辑脚本' },
+    path: '/scripts/:id/edit/maa',
+    name: 'MAAScriptEdit',
+    component: () => import('../views/MAAScriptEdit.vue'),
+    meta: { title: '编辑MAA脚本' },
+  },
+  {
+    path: '/scripts/:id/edit/general',
+    name: 'GeneralScriptEdit',
+    component: () => import('../views/GeneralScriptEdit.vue'),
+    meta: { title: '编辑通用脚本' },
   },
   {
     path: '/scripts/:scriptId/users/add/maa',
