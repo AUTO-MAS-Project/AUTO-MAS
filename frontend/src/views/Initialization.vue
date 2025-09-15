@@ -213,15 +213,22 @@ async function checkEnvironment() {
         console.log('  - git.exe缺失:', !criticalFiles.gitExists)
         console.log('  - main.py缺失:', !criticalFiles.mainPyExists)
         
-        // 显示环境不完整页面
-        const missing = []
-        if (!criticalFiles.pythonExists) missing.push('Python 环境')
-        if (!criticalFiles.gitExists) missing.push('Git 工具')
-        if (!criticalFiles.mainPyExists) missing.push('后端代码')
-        
-        missingComponents.value = missing
-        showEnvironmentIncomplete.value = true
-        autoMode.value = false
+        // 检查是否应该显示环境不完整页面（仅在自动模式下）
+        // 如果不是第一次启动且关键文件缺失，说明之前是自动模式但现在环境有问题
+        if (!isFirst) {
+          const missing = []
+          if (!criticalFiles.pythonExists) missing.push('Python 环境')
+          if (!criticalFiles.gitExists) missing.push('Git 工具')
+          if (!criticalFiles.mainPyExists) missing.push('后端代码')
+
+          missingComponents.value = missing
+          showEnvironmentIncomplete.value = true
+          autoMode.value = false
+        } else {
+          // 第一次启动时，即使文件缺失也直接进入手动模式
+          autoMode.value = false
+          showEnvironmentIncomplete.value = false
+        }
       } else {
         // 其他情况直接进入手动模式
         autoMode.value = false
@@ -236,7 +243,7 @@ async function checkEnvironment() {
     }
   } catch (error) {
     const errorMsg = `环境检查失败: ${error instanceof Error ? error.message : String(error)}`
-    console.error('环境检查失败:', error)
+    console.error(errorMsg)
 
     // 检查失败时强制进入手动模式
     autoMode.value = false
