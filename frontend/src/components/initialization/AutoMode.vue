@@ -132,24 +132,31 @@ async function startAutoProcess() {
         }, 2000)
         return
       }
-    }
 
-    // 无论是否有更新，都检查并安装依赖
-    progressText.value = '检查并安装依赖包...'
-    progress.value = 60
+      // 代码更新成功后，检查并安装依赖
+      progressText.value = '检查并安装依赖包...'
+      progress.value = 60
 
-    // 尝试安装依赖，支持镜像源重试
-    const dependenciesSuccess = await tryInstallDependenciesWithRetry(config)
-    if (aborted.value) return
+      // 尝试安装依赖，支持镜像源重试
+      const dependenciesSuccess = await tryInstallDependenciesWithRetry(config)
+      if (aborted.value) return
 
-    if (!dependenciesSuccess) {
-      // 所有PIP镜像源都失败了，显示重新配置按钮
-      progressText.value = '依赖安装失败，所有PIP镜像源均无法访问'
-      progressStatus.value = 'exception'
-      setTimeout(() => {
-        progressText.value = '请点击下方按钮重新配置环境'
-      }, 2000)
-      return
+      if (!dependenciesSuccess) {
+        // 所有PIP镜像源都失败了，显示重新配置按钮
+        progressText.value = '依赖安装失败，所有PIP镜像源均无法访问'
+        progressStatus.value = 'exception'
+        setTimeout(() => {
+          progressText.value = '请点击下方按钮重新配置环境'
+        }, 2000)
+        return
+      }
+    } else {
+      // 没有更新，跳过依赖安装，直接设置进度
+      console.log('代码没有更新，跳过依赖安装阶段')
+      progressText.value = '代码无需更新，跳过依赖安装...'
+      progress.value = 60
+      // 短暂延迟以显示跳过信息
+      await new Promise(resolve => setTimeout(resolve, 1000))
     }
 
     progressText.value = '启动后端服务...'
