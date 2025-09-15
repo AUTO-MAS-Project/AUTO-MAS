@@ -15,6 +15,12 @@
     </div>
 
     <a-space size="middle">
+      <a-button size="large" type="primary" @click="showUploadModal" class="upload-button">
+        <template #icon>
+          <CloudUploadOutlined />
+        </template>
+        分享当前配置到配置分享站
+      </a-button>
       <a-button size="large" @click="handleCancel" class="cancel-button">
         <template #icon>
           <ArrowLeftOutlined />
@@ -577,6 +583,67 @@
       <SaveOutlined />
     </template>
   </a-float-button>
+
+  <!-- 上传脚本弹窗 -->
+  <a-modal
+    v-model:open="uploadModalVisible"
+    title="上传脚本配置到云端"
+    :confirm-loading="uploadLoading"
+    @ok="handleUpload"
+    @cancel="handleUploadCancel"
+    width="600px"
+    :maskClosable="false"
+  >
+    <a-form
+      ref="uploadFormRef"
+      :model="uploadForm"
+      :rules="uploadRules"
+      layout="vertical"
+      class="upload-form"
+    >
+      <a-form-item name="config_name" label="配置名称">
+        <a-input
+          v-model:value="uploadForm.config_name"
+          placeholder="为您的脚本配置起一个易于识别的名称"
+          size="large"
+          :maxlength="50"
+          show-count
+          class="modern-input"
+        />
+      </a-form-item>
+
+      <a-form-item name="author" label="作者">
+        <a-input
+          v-model:value="uploadForm.author"
+          placeholder="请输入作者名称"
+          size="large"
+          :maxlength="30"
+          show-count
+          class="modern-input"
+        />
+      </a-form-item>
+
+      <a-form-item name="description" label="描述">
+        <a-textarea
+          v-model:value="uploadForm.description"
+          placeholder="请简要描述该脚本配置的功能、适用场景等信息"
+          size="large"
+          :rows="4"
+          :maxlength="200"
+          show-count
+          class="modern-textarea"
+        />
+      </a-form-item>
+
+      <a-alert message="分享说明" type="info">
+        <template #description>
+          <p>
+            所有<span style="font-weight: bold;"> 敏感信息 </span>均会在上传前自动移除，上传内容仅包含脚本配置的非敏感信息。上传且通过审核后，其他用户可以下载并使用您的脚本配置。请确保配置信息准确且描述清晰。
+          </p>
+        </template>
+      </a-alert>
+    </a-form>
+  </a-modal>
 </template>
 
 <script setup lang="ts">
@@ -586,8 +653,11 @@ import type { FormInstance } from 'ant-design-vue'
 import { message } from 'ant-design-vue'
 import type { GeneralScriptConfig, ScriptType } from '../types/script'
 import { useScriptApi } from '../composables/useScriptApi'
+import { Service } from '../api'
+import type { ScriptUploadIn } from '../api'
 import {
   ArrowLeftOutlined,
+  CloudUploadOutlined,
   FileOutlined,
   FolderOpenOutlined,
   QuestionCircleOutlined,
@@ -599,6 +669,7 @@ const router = useRouter()
 const { getScript, updateScript, loading } = useScriptApi()
 
 const formRef = ref<FormInstance>()
+const uploadFormRef = ref<FormInstance>()
 
 // 路径处理工具函数
 const pathUtils = {
@@ -1132,6 +1203,66 @@ const selectLogPath = async () => {
   } catch (error) {
     console.error('选择日志路径失败:', error)
     message.error('选择文件失败')
+  }
+}
+
+// 上传脚本配置相关
+const uploadModalVisible = ref(false)
+const uploadLoading = ref(false)
+
+const uploadForm = reactive({
+  config_name: '',
+  author: '',
+  description: '',
+})
+
+// 上传表单验证规则
+const uploadRules = {
+  config_name: [{ required: true, message: '请输入配置名称', trigger: 'blur' }],
+  author: [{ required: true, message: '请输入作者名称', trigger: 'blur' }],
+  description: [{ required: true, message: '请输入描述', trigger: 'blur' }],
+}
+
+// 显示上传弹窗
+const showUploadModal = () => {
+  uploadModalVisible.value = true
+}
+
+// 隐藏上传弹窗
+const handleUploadCancel = () => {
+  uploadModalVisible.value = false
+}
+
+// 处理上传脚本配置
+const handleUpload = async () => {
+  try {
+    await uploadFormRef.value?.validate()
+
+    uploadLoading.value = true
+
+    // 构建上传数据
+    const uploadData: ScriptUploadIn = {
+      scriptId: scriptId,
+      config_name: uploadForm.config_name,
+      author: uploadForm.author,
+      description: uploadForm.description,
+    }
+
+    // 调用上传API
+    await Service.uploadScriptToWebApiScriptsUploadWebPost(uploadData)
+
+    message.success('脚本配置上传成功，等待审核通过后即可向所有用户展示~')
+    uploadModalVisible.value = false
+
+    // 重置表单
+    uploadForm.config_name = ''
+    uploadForm.author = ''
+    uploadForm.description = ''
+  } catch (error) {
+    console.error('上传失败:', error)
+    message.error('上传失败，请检查网络连接或稍后重试')
+  } finally {
+    uploadLoading.value = false
   }
 }
 </script>
