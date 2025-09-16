@@ -115,7 +115,7 @@
         <!-- 配置表格 -->
         <div class="config-table-container">
           <!-- 配置视图 -->
-          <div v-if="viewMode === 'config'">
+          <div v-if="viewMode === 'config'" class="config-table-wrapper">
             <a-table
               :columns="dynamicTableColumns"
               :data-source="tableData"
@@ -123,7 +123,7 @@
               :class="['config-table', `mode-${currentMode}`]"
               size="middle"
               :bordered="true"
-              :scroll="{ x: false }"
+              :scroll="{ x: 'max-content' }"
               :row-class-name="(record: TableRow) => `task-row-${record.key}`"
             >
               <template #bodyCell="{ column, record }">
@@ -187,9 +187,9 @@
             </a-table>
           </div>
 
-          <div v-else>
+          <div v-else class="simple-table-wrapper">
             <a-table :columns="dynamicSimpleViewColumns" :data-source="simpleViewData" :pagination="false"
-              class="simple-table" size="small" :bordered="true">
+              class="simple-table" size="small" :bordered="true" :scroll="{ x: 'max-content' }">
               <template #bodyCell="{ column, record }">
                 <!-- 全选列 -->
                 <template v-if="column.key === 'globalControl'">
@@ -1420,8 +1420,13 @@ const disableAllStages = (stageValue: string) => {
     font-size: 28px;
   }
 
-  .config-table-container {
-    overflow-x: auto;
+  /* 小屏幕上确保表格能够水平滚动 */
+  .config-table :deep(.ant-table-content) {
+    min-width: 800px; /* 最小宽度确保表格内容不会被挤压 */
+  }
+
+  .simple-table :deep(.ant-table-content) {
+    min-width: 600px;
   }
 }
 
@@ -1559,7 +1564,7 @@ const disableAllStages = (stageValue: string) => {
   display: none !important;
 }
 
-/* 任务名称单元格背景色 */
+/* 任务名称单元格背景色 - 浅色主题 */
 .config-table :deep(.task-row-MedicineNumb td:first-child) {
   background: #EBF4FF !important; /* 不透明的蓝色背景 */
   color: #3B82F6;
@@ -1609,6 +1614,56 @@ const disableAllStages = (stageValue: string) => {
   background: #E0F2FE !important; /* 悬停时稍深的天蓝色 */
 }
 
+/* 任务名称单元格背景色 - 深色主题 */
+.dark .config-table :deep(.task-row-MedicineNumb td:first-child) {
+  background: #1E3A8A !important; /* 深色蓝色背景 */
+  color: #93C5FD;
+  font-weight: 500;
+}
+.dark .config-table :deep(.ant-table-tbody > tr.task-row-MedicineNumb:hover > td:first-child) {
+  background: #1E40AF !important; /* 悬停时稍亮的蓝色 */
+}
+
+.dark .config-table :deep(.task-row-SeriesNumb td:first-child) {
+  background: #14532D !important; /* 深色绿色背景 */
+  color: #86EFAC;
+  font-weight: 500;
+}
+.dark .config-table :deep(.ant-table-tbody > tr.task-row-SeriesNumb:hover > td:first-child) {
+  background: #166534 !important; /* 悬停时稍亮的绿色 */
+}
+
+.dark .config-table :deep(.task-row-Stage td:first-child) {
+  background: #7C2D12 !important; /* 深色橙色背景 */
+  color: #FDBA74;
+  font-weight: 500;
+}
+.dark .config-table :deep(.ant-table-tbody > tr.task-row-Stage:hover > td:first-child) {
+  background: #9A3412 !important; /* 悬停时稍亮的橙色 */
+}
+
+.dark .config-table :deep(.task-row-Stage_1 td:first-child),
+.dark .config-table :deep(.task-row-Stage_2 td:first-child),
+.dark .config-table :deep(.task-row-Stage_3 td:first-child) {
+  background: #581C87 !important; /* 深色紫色背景 */
+  color: #C4B5FD;
+  font-weight: 500;
+}
+.dark .config-table :deep(.ant-table-tbody > tr.task-row-Stage_1:hover > td:first-child),
+.dark .config-table :deep(.ant-table-tbody > tr.task-row-Stage_2:hover > td:first-child),
+.dark .config-table :deep(.ant-table-tbody > tr.task-row-Stage_3:hover > td:first-child) {
+  background: #6B21A8 !important; /* 悬停时稍亮的紫色 */
+}
+
+.dark .config-table :deep(.task-row-Stage_Remain td:first-child) {
+  background: #0C4A6E !important; /* 深色天蓝色背景 */
+  color: #7DD3FC;
+  font-weight: 500;
+}
+.dark .config-table :deep(.ant-table-tbody > tr.task-row-Stage_Remain:hover > td:first-child) {
+  background: #075985 !important; /* 悬停时稍亮的天蓝色 */
+}
+
 /* 确保固定列在滚动时背景不透明 */
 .config-table :deep(.ant-table-fixed-left) {
   background: var(--ant-color-bg-container) !important;
@@ -1630,9 +1685,25 @@ const disableAllStages = (stageValue: string) => {
 }
 
 .config-table :deep(.ant-table-tbody > tr > td.ant-table-fixed-left) {
-  background: inherit !important;
+  background: var(--ant-color-bg-container) !important;
   border-right: 1px solid var(--ant-color-border-secondary);
   box-shadow: 2px 0 4px rgba(0, 0, 0, 0.05);
+}
+
+/* 深色主题下确保第一列背景不透明 */
+.dark .config-table :deep(.ant-table-thead > tr > th:first-child) {
+  background: var(--ant-color-bg-container) !important;
+  box-shadow: 2px 0 4px rgba(0, 0, 0, 0.2);
+}
+
+.dark .config-table :deep(.ant-table-tbody > tr > td:first-child) {
+  background: var(--ant-color-bg-container) !important;
+  box-shadow: 2px 0 4px rgba(0, 0, 0, 0.2);
+}
+
+.dark .config-table :deep(.ant-table-tbody > tr > td.ant-table-fixed-left) {
+  background: var(--ant-color-bg-container) !important;
+  box-shadow: 2px 0 4px rgba(0, 0, 0, 0.2);
 }
 
 /* 禁用列标题样式 */
@@ -1780,6 +1851,83 @@ const disableAllStages = (stageValue: string) => {
   background: var(--ant-color-bg-container-disabled);
 }
 
+/* 简化视图表格滚动条样式 */
+.simple-table :deep(.ant-table-content) {
+  overflow-x: auto;
+}
+
+/* 深色主题滚动条样式 - 简化视图 */
+.dark .simple-table :deep(.ant-table-content)::-webkit-scrollbar {
+  height: 8px;
+}
+
+.dark .simple-table :deep(.ant-table-content)::-webkit-scrollbar-track {
+  background: var(--ant-color-bg-layout);
+  border-radius: 4px;
+}
+
+.dark .simple-table :deep(.ant-table-content)::-webkit-scrollbar-thumb {
+  background: var(--ant-color-border);
+  border-radius: 4px;
+  transition: background 0.2s ease;
+}
+
+.dark .simple-table :deep(.ant-table-content)::-webkit-scrollbar-thumb:hover {
+  background: var(--ant-color-text-tertiary);
+}
+
+/* 浅色主题滚动条样式 - 简化视图 */
+.simple-table :deep(.ant-table-content)::-webkit-scrollbar {
+  height: 8px;
+}
+
+.simple-table :deep(.ant-table-content)::-webkit-scrollbar-track {
+  background: #f5f5f5;
+  border-radius: 4px;
+}
+
+.simple-table :deep(.ant-table-content)::-webkit-scrollbar-thumb {
+  background: #d9d9d9;
+  border-radius: 4px;
+  transition: background 0.2s ease;
+}
+
+.simple-table :deep(.ant-table-content)::-webkit-scrollbar-thumb:hover {
+  background: #bfbfbf;
+}
+
+/* Firefox 滚动条样式 - 简化视图 */
+.dark .simple-table :deep(.ant-table-content) {
+  scrollbar-width: thin;
+  scrollbar-color: var(--ant-color-border) var(--ant-color-bg-layout);
+}
+
+.simple-table :deep(.ant-table-content) {
+  scrollbar-width: thin;
+  scrollbar-color: #d9d9d9 #f5f5f5;
+}
+
+/* 确保简化视图固定列正确显示 */
+.simple-table :deep(.ant-table-thead > tr > th.ant-table-fixed-left) {
+  background: var(--ant-color-bg-container) !important;
+  border-right: 1px solid var(--ant-color-border);
+  box-shadow: 2px 0 4px rgba(0, 0, 0, 0.05);
+}
+
+.simple-table :deep(.ant-table-tbody > tr > td.ant-table-fixed-left) {
+  background: var(--ant-color-bg-container) !important;
+  border-right: 1px solid var(--ant-color-border-secondary);
+  box-shadow: 2px 0 4px rgba(0, 0, 0, 0.05);
+}
+
+.dark .simple-table :deep(.ant-table-thead > tr > th.ant-table-fixed-left) {
+  box-shadow: 2px 0 4px rgba(0, 0, 0, 0.2);
+}
+
+.dark .simple-table :deep(.ant-table-tbody > tr > td.ant-table-fixed-left) {
+  box-shadow: 2px 0 4px rgba(0, 0, 0, 0.2);
+}
+
 /* 拖拽视觉反馈 */
 .simple-table :deep(.ant-table-row.drag-over) {
   border-top: 2px solid var(--ant-color-primary);
@@ -1787,5 +1935,86 @@ const disableAllStages = (stageValue: string) => {
 
 .simple-table :deep(.ant-table-row.dragging) {
   opacity: 0.5;
+}
+
+/* 水平滚动条样式 */
+.config-table-container {
+  /* 移除容器的滚动，让Ant Design表格自己处理 */
+  width: 100%;
+}
+
+.config-table-wrapper {
+  /* 移除wrapper的滚动，避免双滚动条 */
+  width: 100%;
+}
+
+.simple-table-wrapper {
+  /* 移除wrapper的滚动，避免双滚动条 */
+  width: 100%;
+}
+
+/* 为配置表格添加更好的滚动条样式 */
+.config-table :deep(.ant-table-content) {
+  /* 让Ant Design表格自己处理滚动 */
+  overflow-x: auto;
+}
+
+/* 深色主题滚动条样式 - 针对表格内容区域 */
+.dark .config-table :deep(.ant-table-content)::-webkit-scrollbar {
+  height: 8px;
+}
+
+.dark .config-table :deep(.ant-table-content)::-webkit-scrollbar-track {
+  background: var(--ant-color-bg-layout);
+  border-radius: 4px;
+}
+
+.dark .config-table :deep(.ant-table-content)::-webkit-scrollbar-thumb {
+  background: var(--ant-color-border);
+  border-radius: 4px;
+  transition: background 0.2s ease;
+}
+
+.dark .config-table :deep(.ant-table-content)::-webkit-scrollbar-thumb:hover {
+  background: var(--ant-color-text-tertiary);
+}
+
+/* 浅色主题滚动条样式 - 针对表格内容区域 */
+.config-table :deep(.ant-table-content)::-webkit-scrollbar {
+  height: 8px;
+}
+
+.config-table :deep(.ant-table-content)::-webkit-scrollbar-track {
+  background: #f5f5f5;
+  border-radius: 4px;
+}
+
+.config-table :deep(.ant-table-content)::-webkit-scrollbar-thumb {
+  background: #d9d9d9;
+  border-radius: 4px;
+  transition: background 0.2s ease;
+}
+
+.config-table :deep(.ant-table-content)::-webkit-scrollbar-thumb:hover {
+  background: #bfbfbf;
+}
+
+/* 确保表格在小屏幕上能够水平滚动 */
+@media (max-width: 1200px) {
+  .config-table-container {
+    /* 移除重复的overflow-x，避免双滚动条 */
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* Firefox 滚动条样式 - 针对表格内容区域 */
+.dark .config-table :deep(.ant-table-content) {
+  scrollbar-width: thin;
+  scrollbar-color: var(--ant-color-border) var(--ant-color-bg-layout);
+}
+
+.config-table :deep(.ant-table-content) {
+  scrollbar-width: thin;
+  scrollbar-color: #d9d9d9 #f5f5f5;
 }
 </style>
