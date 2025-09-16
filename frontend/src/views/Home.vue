@@ -67,17 +67,13 @@
               @finish="onCountdownFinish"
             />
 
-            <!-- 剩余时间小于两天时显示红色倒计时 -->
+            <!-- 剩余时间小于两天时显示炫彩倒计时 -->
             <a-statistic-countdown
               v-else-if="getActivityTimeStatus(currentActivity.UtcExpireTime) === 'warning'"
               title="当期活动剩余时间"
               :value="getCountdownValue(currentActivity.UtcExpireTime)"
               format="活动时间仅剩 D 天 H 时 m 分 ss 秒 SSS 毫秒，请尽快完成喵~"
-              :value-style="{
-                color: '#ff4d4f',
-                fontWeight: 'bold',
-                fontSize: '18px',
-              }"
+              class="rainbow-text"
               @finish="onCountdownFinish"
             />
 
@@ -729,6 +725,26 @@ onMounted(() => {
   display: inline-grid;
   grid-template-columns: 1fr 1fr;
   gap: 16px;
+}
+
+.rainbow-text {
+  font-weight: bold;
+  font-size: 18px;
+  background: linear-gradient(270deg, #ff4d4f, #fffa00, #00ffea, #ff4d4f, #ff4d4f);
+  background-size: 400% 400%;
+  color: transparent;
+  background-clip: text;
+  -webkit-background-clip: text;
+  animation: rainbow-move 4s linear infinite;
+}
+
+@keyframes rainbow-move {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 100% 50%;
+  }
 }
 
 /* 响应式设计 */
