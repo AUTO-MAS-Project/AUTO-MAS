@@ -162,15 +162,15 @@
                         <div class="record-header">
                           <span class="record-time">{{ record.date }}</span>
                           <a-tooltip
-                            v-if="record.status === '异常' && selectedUserData?.error_info && selectedUserData.error_info[record.date]"
+                            v-if="
+                              record.status === '异常' &&
+                              selectedUserData?.error_info &&
+                              selectedUserData.error_info[record.date]
+                            "
                             :title="selectedUserData.error_info[record.date]"
                             placement="topLeft"
                           >
-                            <a-tag
-                              color="error"
-                              size="small"
-                              class="error-tag-with-tooltip"
-                            >
+                            <a-tag color="error" size="small" class="error-tag-with-tooltip">
                               {{ record.status }}
                             </a-tag>
                           </a-tooltip>
@@ -198,9 +198,7 @@
                 <a-card size="small" class="stat-card">
                   <template #title>
                     <span>公招统计</span>
-                    <span v-if="selectedRecordIndex >= 0" class="stat-subtitle"
-                      >（当前记录）</span
-                    >
+                    <span v-if="selectedRecordIndex >= 0" class="stat-subtitle">（当前记录）</span>
                     <span v-else class="stat-subtitle">（用户总计）</span>
                   </template>
                   <template #extra>
@@ -222,7 +220,13 @@
                     </a-row>
                   </div>
                   <div v-else class="no-data">
-                    <a-empty description="暂无公招数据" :image="false" />
+                    <a-empty
+                      description="暂无公招数据"
+                      :image="NodataImage"
+                      :image-style="{
+                        height: '60px',
+                      }"
+                    />
                   </div>
                 </a-card>
 
@@ -230,9 +234,7 @@
                 <a-card size="small" class="stat-card">
                   <template #title>
                     <span>掉落统计</span>
-                    <span v-if="selectedRecordIndex >= 0" class="stat-subtitle"
-                      >（当前记录）</span
-                    >
+                    <span v-if="selectedRecordIndex >= 0" class="stat-subtitle">（当前记录）</span>
                     <span v-else class="stat-subtitle">（用户总计）</span>
                   </template>
                   <template #extra>
@@ -258,7 +260,13 @@
                     </a-collapse>
                   </div>
                   <div v-else class="no-data">
-                    <a-empty description="暂无掉落数据" :image="false" />
+                    <a-empty
+                      description="暂无掉落数据"
+                      :image="NodataImage"
+                      :image-style="{
+                        height: '60px',
+                      }"
+                    />
                   </div>
                 </a-card>
               </div>
@@ -300,7 +308,13 @@
                     <pre>{{ currentDetail.log_content }}</pre>
                   </div>
                   <div v-else class="no-log">
-                    <a-empty description="暂无日志内容" :image="false" />
+                    <a-empty
+                      description="未选择日志，请从左边记录条目中选择"
+                      :image="NodataImage"
+                      :image-style="{
+                        height: '60px',
+                      }"
+                    />
                   </div>
                 </a-spin>
               </a-card>
@@ -322,7 +336,6 @@ import {
   UserOutlined,
   GiftOutlined,
   FileSearchOutlined,
-  FileTextOutlined,
   RightOutlined,
   FolderOpenOutlined,
   FileOutlined,
@@ -330,6 +343,7 @@ import {
 import { Service } from '@/api/services/Service'
 import type { HistorySearchIn, HistoryData } from '@/api'
 import dayjs from 'dayjs'
+import NodataImage from '@/assets/NoData.png'
 
 // 响应式数据
 const searchLoading = ref(false)
@@ -532,7 +546,7 @@ const handleDateChange = () => {
   currentPreset.value = ''
 }
 
-// 选择用户处理
+// ���择用户处理
 const handleSelectUser = async (date: string, username: string, userData: HistoryData) => {
   selectedUser.value = `${date}-${username}`
   selectedUserData.value = userData
@@ -581,17 +595,20 @@ const handleOpenLogFile = async () => {
   try {
     // 将 .json 扩展名替换为 .log
     const logFilePath = currentJsonFile.value.replace(/\.json$/, '.log')
-    
+
     console.log('尝试打开日志文件:', logFilePath)
     console.log('electronAPI 可用性:', !!window.electronAPI)
-    console.log('openFile 方法可用性:', !!(window.electronAPI && (window.electronAPI as any).openFile))
-    
+    console.log(
+      'openFile 方法可用性:',
+      !!(window.electronAPI && (window.electronAPI as any).openFile)
+    )
+
     // 调用系统API打开文件
     if (window.electronAPI && (window.electronAPI as any).openFile) {
       await (window.electronAPI as any).openFile(logFilePath)
       message.success('日志文件已打开')
     } else {
-      const errorMsg = !window.electronAPI 
+      const errorMsg = !window.electronAPI
         ? '当前环境不支持打开文件功能（electronAPI 不可用）'
         : '当前环境不支持打开文件功能（openFile 方法不可用）'
       console.error(errorMsg)
@@ -613,17 +630,20 @@ const handleOpenLogDirectory = async () => {
   try {
     // 将 .json 扩展名替换为 .log
     const logFilePath = currentJsonFile.value.replace(/\.json$/, '.log')
-    
+
     console.log('尝试打开日志文件目录:', logFilePath)
     console.log('electronAPI 可用性:', !!window.electronAPI)
-    console.log('showItemInFolder 方法可用性:', !!(window.electronAPI && (window.electronAPI as any).showItemInFolder))
-    
+    console.log(
+      'showItemInFolder 方法可用性:',
+      !!(window.electronAPI && (window.electronAPI as any).showItemInFolder)
+    )
+
     // 调用系统API打开目录并选中文件
     if (window.electronAPI && (window.electronAPI as any).showItemInFolder) {
       await (window.electronAPI as any).showItemInFolder(logFilePath)
       message.success('日志文件目录已打开')
     } else {
-      const errorMsg = !window.electronAPI 
+      const errorMsg = !window.electronAPI
         ? '当前环境不支持打开目录功能（electronAPI 不可用）'
         : '当前环境不支持打开目录功能（showItemInFolder 方法不可用）'
       console.error(errorMsg)
@@ -631,7 +651,7 @@ const handleOpenLogDirectory = async () => {
     }
   } catch (error) {
     console.error('打开日志文件目录失败:', error)
-    message.error(`打开日志文件目录失败: ${error}`)
+    message.error(`��开日志文件目录失败: ${error}`)
   }
 }
 
@@ -676,6 +696,7 @@ const getDateStatusColor = (users: Record<string, HistoryData>) => {
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
+
 .search-section {
   margin-bottom: 24px;
 }
@@ -1003,6 +1024,7 @@ const getDateStatusColor = (users: Record<string, HistoryData>) => {
   display: flex;
   align-items: center;
   justify-content: center;
+  min-height: 500px;
 }
 
 /* 按钮样式 */
