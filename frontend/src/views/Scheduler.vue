@@ -61,7 +61,7 @@
                   />
                   <a-select 
                     v-model:value="tab.selectedMode" 
-                    placeholder="选择模式" 
+                    placeholder="选择模式"
                     style="width: 120px"
                     :disabled="tab.status === '运行'"
                   >
@@ -286,7 +286,7 @@ const schedulerTabs = ref<SchedulerTab[]>([
     closable: false, 
     status: '新建',
     selectedTaskId: null,
-    selectedMode: null,
+    selectedMode: '自动代理' as TaskCreateIn.mode,
     websocketId: null,
     taskQueue: [], 
     userQueue: [], 
@@ -337,7 +337,7 @@ const addSchedulerTab = () => {
     closable: true, 
     status: '新建',
     selectedTaskId: null,
-    selectedMode: null,
+    selectedMode: '自动代理' as TaskCreateIn.mode,
     websocketId: null,
     taskQueue: [], 
     userQueue: [], 
