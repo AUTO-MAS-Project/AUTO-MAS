@@ -604,7 +604,11 @@ class GeneralManager:
         if self.check_result != "Success!":
             return self.check_result
 
-        if self.mode == "自动代理" and self.user_list[self.index]["status"] == "运行":
+        if (
+            self.mode == "自动代理"
+            and hasattr(self, "index")
+            and self.user_list[self.index]["status"] == "运行"
+        ):
 
             self.general_result = "用户手动中止任务"
 
