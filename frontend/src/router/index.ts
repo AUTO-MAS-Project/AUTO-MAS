@@ -1,7 +1,8 @@
-import { createRouter, createWebHistory } from 'vue-router'
 import type { RouteRecordRaw } from 'vue-router'
-let needInitLanding = true
+import { createRouter, createWebHistory } from 'vue-router'
 import { isAppInitialized } from '@/utils/config'
+
+let needInitLanding = true
 
 const routes: RouteRecordRaw[] = [
   {
@@ -79,7 +80,7 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/scheduler',
     name: 'Scheduler',
-    component: () => import('../views/Scheduler.vue'),
+    component: () => import('../views/scheduler/index.vue'),
     meta: { title: '调度中心' },
   },
   {
@@ -147,6 +148,5 @@ router.beforeEach(async (to, from, next) => {
   // 其他情况正常放行
   next()
 })
-
 
 export default router
