@@ -971,7 +971,11 @@ class MaaManager:
             if self.script_id in Config.if_ignore_silence:
                 Config.if_ignore_silence.remove(self.script_id)
 
-        if self.mode == "自动代理" and self.user_list[self.index]["status"] == "运行":
+        if (
+            self.mode == "自动代理"
+            and hasattr(self, "index")
+            and self.user_list[self.index]["status"] == "运行"
+        ):
 
             if not self.maa_update_package:
 
@@ -999,7 +1003,11 @@ class MaaManager:
 
             await self.result_record()
 
-        elif self.mode == "人工排查" and self.user_list[self.index]["status"] == "运行":
+        elif (
+            self.mode == "人工排查"
+            and hasattr(self, "index")
+            and self.user_list[self.index]["status"] == "运行"
+        ):
 
             await self.result_record()
 
