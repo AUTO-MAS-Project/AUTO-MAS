@@ -125,38 +125,74 @@ class _TaskManager:
 
         else:
 
+            # 初始化任务列表
             if task_id in Config.QueueConfig:
 
                 queue = Config.QueueConfig[task_id]
                 if not isinstance(queue, QueueConfig):
-                    logger.error(
-                        f"不支持的队列类型: {type(Config.QueueConfig[task_id]).__name__}"
-                    )
-                    await Config.send_json(
-                        WebSocketMessage(
-                            id=str(task_id),
-                            type="Info",
-                            data={"Error": "队列类型不支持"},
-                        ).model_dump()
-                    )
                     return
 
                 task_list = []
                 for queue_item in queue.QueueItem.values():
                     if queue_item.get("Info", "ScriptId") is None:
                         continue
-                    uid = uuid.UUID(queue_item.get("Info", "ScriptId"))
+                    script_id = uuid.UUID(queue_item.get("Info", "ScriptId"))
+                    script = Config.ScriptConfig[script_id]
+                    if not isinstance(script, (MaaConfig | GeneralConfig)):
+                        logger.error(f"不支持的脚本类型: {type(script).__name__}")
+                        continue
                     task_list.append(
                         {
-                            "script_id": str(uid),
+                            "script_id": str(script_id),
                             "status": "等待",
-                            "name": Config.ScriptConfig[uid].get("Info", "Name"),
+                            "name": script.get("Info", "Name"),
+                            "user_list": [
+                                {
+                                    "user_id": str(user_id),
+                                    "status": "等待",
+                                    "name": config.get("Info", "Name"),
+                                }
+                                for user_id, config in script.UserData.items()
+                                if config.get("Info", "Status")
+                                and config.get("Info", "RemainedDay") != 0
+                            ],
                         }
                     )
 
             elif actual_id is not None and actual_id in Config.ScriptConfig:
 
-                task_list = [{"script_id": str(actual_id), "status": "等待"}]
+                script = Config.ScriptConfig[actual_id]
+                if not isinstance(script, (MaaConfig | GeneralConfig)):
+                    logger.error(f"不支持的脚本类型: {type(script).__name__}")
+                    return
+
+                task_list = [
+                    {
+                        "script_id": str(actual_id),
+                        "status": "等待",
+                        "name": script.get("Info", "Name"),
+                        "user_list": [
+                            {
+                                "user_id": str(user_id),
+                                "status": "等待",
+                                "name": config.get("Info", "Name"),
+                            }
+                            for user_id, config in script.UserData.items()
+                            if config.get("Info", "Status")
+                            and config.get("Info", "RemainedDay") != 0
+                        ],
+                    }
+                ]
+
+            await Config.send_json(
+                WebSocketMessage(
+                    id=str(task_id), type="Update", data={"task_dict": task_list}
+                ).model_dump()
+            )
+
+            # 清理用户列表初值
+            for task in task_list:
+                task.pop("user_list", None)
 
             for task in task_list:
 
@@ -174,6 +210,20 @@ class _TaskManager:
                         ).model_dump()
                     )
                     logger.info(f"跳过任务: {script_id}, 该任务已在运行列表中")
+                    continue
+
+                # 检查任务对应脚本是否仍存在
+                if script_id in self.task_dict:
+
+                    task["status"] = "异常"
+                    await Config.send_json(
+                        WebSocketMessage(
+                            id=str(task_id),
+                            type="Update",
+                            data={"task_list": task_list},
+                        ).model_dump()
+                    )
+                    logger.info(f"跳过任务: {script_id}, 该任务对应脚本已被删除")
                     continue
 
                 # 标记为运行中
