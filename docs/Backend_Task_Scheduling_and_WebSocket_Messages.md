@@ -73,7 +73,7 @@ AUTO-MAS 后端采用基于 AsyncIO 的异步任务调度系统，主要由以�
 
 #### 3.2.1 Update 类型 - 数据更新
 
-**用途**: 通知前端更新界面数据
+**用途**: 通知前端更新界面数据，"user_list"仅给出当前处于`运行`状态的脚本的用户列表值
 
 **常见数据格式:**
 
@@ -87,6 +87,29 @@ AUTO-MAS 后端采用基于 AsyncIO 的异步任务调度系统，主要由以�
         "name": "用户名",
         "status": "运行状态",
         "config": "配置信息"
+      }
+    ]
+  }
+}
+```
+
+```json
+{
+  "id": "task-uuid", 
+  "type": "Update",
+  "data": {
+    "task_dict": [
+      {
+        "script_id": "脚本ID",
+        "status": "等待/运行/完成/跳过",
+        "name": "脚本名称",
+        "user_list": [
+          {
+            "name": "用户名",
+            "status": "运行状态",
+            "config": "配置信息"
+          }
+        ]
       }
     ]
   }
