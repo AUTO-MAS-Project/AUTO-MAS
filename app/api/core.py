@@ -48,7 +48,7 @@ async def connect_websocket(websocket: WebSocket):
 
         try:
 
-            data = await asyncio.wait_for(websocket.receive_json(), timeout=15.0)
+            data = await asyncio.wait_for(websocket.receive_json(), timeout=1000005.0)
             if data.get("type") == "Signal" and "Pong" in data.get("data", {}):
                 last_pong = time.monotonic()
             elif data.get("type") == "Signal" and "Ping" in data.get("data", {}):

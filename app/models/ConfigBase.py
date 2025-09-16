@@ -83,22 +83,6 @@ class OptionsValidator(ConfigValidator):
         return value if self.validate(value) else self.options[0]
 
 
-class UidValidator(ConfigValidator):
-    """UID验证器"""
-
-    def validate(self, value: Any) -> bool:
-        if value is None:
-            return True
-        try:
-            uuid.UUID(value)
-            return True
-        except (TypeError, ValueError):
-            return False
-
-    def correct(self, value: Any) -> Any:
-        return value if self.validate(value) else None
-
-
 class UUIDValidator(ConfigValidator):
     """UUID验证器"""
 
@@ -333,14 +317,20 @@ class ConfigItem:
         if not self.validator.validate(self.value):
             self.value = self.validator.correct(self.value)
 
-    def getValue(self) -> Any:
+    def getValue(self, if_decrypt: bool = True) -> Any:
         """
         获取配置项值
         """
 
-        if isinstance(self.validator, EncryptValidator):
-            return dpapi_decrypt(self.value)
-        return self.value
+        v = (
+            self.value
+            if self.validator.validate(self.value)
+            else self.validator.correct(self.value)
+        )
+
+        if isinstance(self.validator, EncryptValidator) and if_decrypt:
+            return dpapi_decrypt(v)
+        return v
 
     def lock(self):
         """
@@ -452,9 +442,7 @@ class ConfigBase:
                 if not data.get(item.group):
                     data[item.group] = {}
                 if item.name:
-                    data[item.group][item.name] = (
-                        item.getValue() if if_decrypt else item.value
-                    )
+                    data[item.group][item.name] = item.getValue(if_decrypt)
 
             elif not ignore_multi_config and isinstance(item, MultipleConfig):
 
@@ -838,3 +826,32 @@ class MultipleConfig:
         """返回配置项的所有唯一标识符和实例的元组"""
 
         return zip(self.keys(), self.values())
+
+
+class MultipleUIDValidator(ConfigValidator):
+    """多配置管理类UID验证器"""
+
+    def __init__(
+        self, default: Any, related_config: Dict[str, MultipleConfig], config_name: str
+    ):
+        self.default = default
+        self.related_config = related_config
+        self.config_name = config_name
+
+    def validate(self, value: Any) -> bool:
+        if value == self.default:
+            return True
+        if not isinstance(value, str):
+            return False
+        try:
+            uid = uuid.UUID(value)
+        except (TypeError, ValueError):
+            return False
+        if uid in self.related_config.get(self.config_name, {}):
+            return True
+        return False
+
+    def correct(self, value: Any) -> Any:
+        if self.validate(value):
+            return value
+        return self.default

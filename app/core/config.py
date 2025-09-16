@@ -162,10 +162,17 @@ class GlobalConfig(ConfigBase):
 class QueueItem(ConfigBase):
     """队列项配置"""
 
+    related_config: dict[str, MultipleConfig] = {}
+
     def __init__(self) -> None:
         super().__init__()
 
-        self.Info_ScriptId = ConfigItem("Info", "ScriptId", None, UidValidator())
+        self.Info_ScriptId = ConfigItem(
+            "Info",
+            "ScriptId",
+            None,
+            MultipleUIDValidator(None, self.related_config, "ScriptConfig"),
+        )
 
 
 class TimeSet(ConfigBase):
@@ -175,7 +182,7 @@ class TimeSet(ConfigBase):
         super().__init__()
 
         self.Info_Enabled = ConfigItem("Info", "Enabled", False, BoolValidator())
-        self.Info_Time = ConfigItem("Info", "Time", "00:00")
+        self.Info_Time = ConfigItem("Info", "Time", "00:00", DateTimeValidator("%H:%M"))
 
 
 class QueueConfig(ConfigBase):
@@ -214,6 +221,8 @@ class QueueConfig(ConfigBase):
 class MaaUserConfig(ConfigBase):
     """MAA用户配置"""
 
+    related_config: dict[str, MultipleConfig] = {}
+
     def __init__(self) -> None:
         super().__init__()
 
@@ -222,7 +231,12 @@ class MaaUserConfig(ConfigBase):
         self.Info_Mode = ConfigItem(
             "Info", "Mode", "简洁", OptionsValidator(["简洁", "详细"])
         )
-        self.Info_StageMode = ConfigItem("Info", "StageMode", "Fixed")
+        self.Info_StageMode = ConfigItem(
+            "Info",
+            "StageMode",
+            "Fixed",
+            MultipleUIDValidator("Fixed", self.related_config, "PlanConfig"),
+        )
         self.Info_Server = ConfigItem(
             "Info",
             "Server",
@@ -501,7 +515,9 @@ class GeneralUserConfig(ConfigBase):
         )
         self.Info_Notes = ConfigItem("Info", "Notes", "无")
 
-        self.Data_LastProxyDate = ConfigItem("Data", "LastProxyDate", "2000-01-01")
+        self.Data_LastProxyDate = ConfigItem(
+            "Data", "LastProxyDate", "2000-01-01", DateTimeValidator("%Y-%m-%d")
+        )
         self.Data_ProxyTimes = ConfigItem(
             "Data", "ProxyTimes", 0, RangeValidator(0, 9999)
         )
@@ -643,6 +659,8 @@ class AppConfig(GlobalConfig):
         self.ScriptConfig = MultipleConfig([MaaConfig, GeneralConfig])
         self.PlanConfig = MultipleConfig([MaaPlanConfig])
         self.QueueConfig = MultipleConfig([QueueConfig])
+        QueueItem.related_config["ScriptConfig"] = self.ScriptConfig
+        MaaUserConfig.related_config["PlanConfig"] = self.PlanConfig
 
         truststore.inject_into_ssl()
 
