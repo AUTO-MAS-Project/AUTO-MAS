@@ -76,7 +76,6 @@ class _TaskManager:
         if task_id in self.task_dict or (
             actual_id is not None and actual_id in self.task_dict
         ):
-
             raise RuntimeError(f"任务 {task_id} 已在运行")
 
         logger.info(f"创建任务: {task_id}, 模式: {mode}")

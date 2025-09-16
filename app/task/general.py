@@ -529,16 +529,10 @@ class GeneralManager:
                     60 if self.script_config.get("Script", "IfTrackProcess") else 0
                 ),
             )
-            # 记录当前时间
-            self.log_start_time = datetime.now()
 
-            # 监测MAA运行状态
-            await self.general_log_monitor.start(
-                self.script_log_path, self.log_start_time
-            )
+            # 等待用户完成配置
             self.wait_event.clear()
             await self.wait_event.wait()
-            await self.general_log_monitor.stop()
 
     async def result_record(self) -> None:
         """记录用户结果信息"""
@@ -820,12 +814,6 @@ class GeneralManager:
                             self.general_result = "脚本在完成任务前退出"
                         else:
                             self.general_result = "Success!"
-
-        elif self.mode == "设置通用脚本":
-            if await self.general_process_manager.is_running():
-                self.general_result = "Wait"
-            else:
-                self.general_result = "Success!"
 
         logger.info(f"通用脚本日志分析结果: {self.general_result}")
 

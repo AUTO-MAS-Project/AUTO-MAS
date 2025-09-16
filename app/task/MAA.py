@@ -862,15 +862,10 @@ class MaaManager:
             # 创建MAA任务
             logger.info(f"启动MAA进程: {self.maa_exe_path}")
             await self.maa_process_manager.open_process(self.maa_exe_path, [], 0)
-            # 记录当前时间
-            self.log_start_time = datetime.now()
 
-            # 监测MAA运行状态
-            self.log_check_mode = "设置脚本"
-            await self.maa_log_monitor.start(self.maa_log_path, self.log_start_time)
+            # 等待用户完成配置
             self.wait_event.clear()
             await self.wait_event.wait()
-            await self.maa_log_monitor.stop()
 
     async def result_record(self):
         """记录用户结果信息"""
@@ -1294,15 +1289,6 @@ class MaaManager:
                 or not await self.maa_process_manager.is_running()
             ):
                 self.maa_result = "MAA在完成任务前退出"
-            else:
-                self.maa_result = "Wait"
-
-        elif self.mode == "设置脚本":
-            if (
-                "MaaAssistantArknights GUI exited" in log
-                or not await self.maa_process_manager.is_running()
-            ):
-                self.maa_result = "Success!"
             else:
                 self.maa_result = "Wait"
 
