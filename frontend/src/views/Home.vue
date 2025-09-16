@@ -72,7 +72,7 @@
               v-else-if="getActivityTimeStatus(currentActivity.UtcExpireTime) === 'warning'"
               title="当期活动剩余时间"
               :value="getCountdownValue(currentActivity.UtcExpireTime)"
-              format="活动时间仅剩 D 天 H 时 m 分 ss 秒 SSS 毫秒，请尽快完成喵~"
+              format="D 天 H 时 m 分 ss 秒 SSS 毫秒"
               class="rainbow-text"
               @finish="onCountdownFinish"
             />
@@ -740,7 +740,7 @@ onMounted(() => {
 
 @keyframes rainbow-move {
   0% {
-    background-position: 0% 50%;
+    background-position: 0 50%;
   }
   100% {
     background-position: 100% 50%;
