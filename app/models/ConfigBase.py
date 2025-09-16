@@ -369,7 +369,7 @@ class ConfigBase:
 
     def __init__(self, if_save_multi_config: bool = True):
 
-        self.file: None | Path = None
+        self.file: Optional[Path] = None
         self.if_save_multi_config = if_save_multi_config
         self.is_locked = False
 
@@ -492,6 +492,9 @@ class ConfigBase:
 
         if not hasattr(self, f"{group}_{name}"):
             raise AttributeError(f"配置项 '{group}.{name}' 不存在")
+
+        if self.is_locked:
+            raise ValueError("配置已锁定, 无法修改")
 
         configItem = getattr(self, f"{group}_{name}")
         if isinstance(configItem, ConfigItem):

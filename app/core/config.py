@@ -1026,6 +1026,12 @@ class AppConfig(GlobalConfig):
         if uid in self.task_dict:
             raise RuntimeError(f"脚本 {script_id} 正在运行, 无法删除")
 
+        for queue in self.QueueConfig.values():
+            if isinstance(queue, QueueConfig):
+                for key, value in queue.QueueItem.items():
+                    if value.get("Info", "ScriptId") == str(uid):
+                        await queue.QueueItem.remove(key)
+
         await self.ScriptConfig.remove(uid)
 
     async def reorder_script(self, index_list: list[str]) -> None:
@@ -1288,7 +1294,7 @@ class AppConfig(GlobalConfig):
             / f"data/{script_id}/{user_id}/Infrastructure/infrastructure.json",
         )
 
-        if isinstance(script_config, (MaaConfig)):
+        if isinstance(script_config, MaaConfig):
             await script_config.UserData[uid].set("Info", "InfrastPath", str(json_path))
 
     async def add_plan(
@@ -1333,7 +1339,24 @@ class AppConfig(GlobalConfig):
 
         logger.info(f"删除计划表配置: {plan_id}")
 
-        await self.PlanConfig.remove(uuid.UUID(plan_id))
+        uid = uuid.UUID(plan_id)
+
+        user_list = []
+
+        for script in self.ScriptConfig.values():
+            if isinstance(script, MaaConfig):
+                for user in script.UserData.values():
+                    if user.get("Info", "StageMode") == str(uid):
+                        if user.is_locked:
+                            raise RuntimeError(
+                                f"用户 {user.get('Info','Name')} 正在使用此计划表且被锁定, 无法完成删除"
+                            )
+                        user_list.append(user)
+
+        for user in user_list:
+            await user.set("Info", "StageMode", "Fixed")
+
+        await self.PlanConfig.remove(uid)
 
     async def reorder_plan(self, index_list: list[str]) -> None:
         """重新排序计划表"""
