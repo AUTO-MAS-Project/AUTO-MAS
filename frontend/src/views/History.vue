@@ -92,7 +92,7 @@
         <div class="date-sidebar">
           <!-- 日期折叠列表 -->
           <div class="date-list">
-            <a-collapse v-model:activeKey="activeKeys" ghost>
+            <a-collapse v-model:activeKey="activeKeys" ghost accordion>
               <a-collapse-panel
                 v-for="dateGroup in historyData"
                 :key="dateGroup.date"
@@ -133,7 +133,7 @@
           </div>
 
           <div v-else class="detail-content">
-            <!-- 左侧：记录条目和统计数据 -->
+            <!-- 中间：记录条目和统计数据 -->
             <div class="records-area">
               <!-- 记录条目列表 -->
               <div class="records-section">
@@ -194,79 +194,73 @@
 
               <!-- 统计数据 -->
               <div class="statistics-section">
-                <a-row :gutter="16">
-                  <!-- 公招统计 -->
-                  <a-col :span="12">
-                    <a-card size="small" class="stat-card">
-                      <template #title>
-                        <span>公招统计</span>
-                        <span v-if="selectedRecordIndex >= 0" class="stat-subtitle"
-                          >（当前记录）</span
-                        >
-                        <span v-else class="stat-subtitle">（用户总计）</span>
-                      </template>
-                      <template #extra>
-                        <UserOutlined />
-                      </template>
-                      <div v-if="currentStatistics.recruit_statistics" class="recruit-stats">
+                <!-- 公招统计 -->
+                <a-card size="small" class="stat-card">
+                  <template #title>
+                    <span>公招统计</span>
+                    <span v-if="selectedRecordIndex >= 0" class="stat-subtitle"
+                      >（当前记录）</span
+                    >
+                    <span v-else class="stat-subtitle">（用户总计）</span>
+                  </template>
+                  <template #extra>
+                    <UserOutlined />
+                  </template>
+                  <div v-if="currentStatistics.recruit_statistics" class="recruit-stats">
+                    <a-row :gutter="8">
+                      <a-col
+                        v-for="(count, star) in currentStatistics.recruit_statistics"
+                        :key="star"
+                        :span="8"
+                      >
+                        <a-statistic
+                          :title="`${star}星`"
+                          :value="count"
+                          :value-style="{ fontSize: '16px' }"
+                        />
+                      </a-col>
+                    </a-row>
+                  </div>
+                  <div v-else class="no-data">
+                    <a-empty description="暂无公招数据" :image="false" />
+                  </div>
+                </a-card>
+
+                <!-- 掉落统计 -->
+                <a-card size="small" class="stat-card">
+                  <template #title>
+                    <span>掉落统计</span>
+                    <span v-if="selectedRecordIndex >= 0" class="stat-subtitle"
+                      >（当前记录）</span
+                    >
+                    <span v-else class="stat-subtitle">（用户总计）</span>
+                  </template>
+                  <template #extra>
+                    <GiftOutlined />
+                  </template>
+                  <div v-if="currentStatistics.drop_statistics" class="drop-stats">
+                    <a-collapse size="small" ghost>
+                      <a-collapse-panel
+                        v-for="(drops, stage) in currentStatistics.drop_statistics"
+                        :key="stage"
+                        :header="stage"
+                      >
                         <a-row :gutter="8">
-                          <a-col
-                            v-for="(count, star) in currentStatistics.recruit_statistics"
-                            :key="star"
-                            :span="8"
-                          >
+                          <a-col v-for="(count, item) in drops" :key="item" :span="12">
                             <a-statistic
-                              :title="`${star}星`"
+                              :title="item"
                               :value="count"
-                              :value-style="{ fontSize: '16px' }"
+                              :value-style="{ fontSize: '14px' }"
                             />
                           </a-col>
                         </a-row>
-                      </div>
-                      <div v-else class="no-data">
-                        <a-empty description="暂无公招数据" :image="false" />
-                      </div>
-                    </a-card>
-                  </a-col>
-
-                  <!-- 掉落统计 -->
-                  <a-col :span="12">
-                    <a-card size="small" class="stat-card">
-                      <template #title>
-                        <span>掉落统计</span>
-                        <span v-if="selectedRecordIndex >= 0" class="stat-subtitle"
-                          >（当前记录）</span
-                        >
-                        <span v-else class="stat-subtitle">（用户总计）</span>
-                      </template>
-                      <template #extra>
-                        <GiftOutlined />
-                      </template>
-                      <div v-if="currentStatistics.drop_statistics" class="drop-stats">
-                        <a-collapse size="small" ghost>
-                          <a-collapse-panel
-                            v-for="(drops, stage) in currentStatistics.drop_statistics"
-                            :key="stage"
-                            :header="stage"
-                          >
-                            <a-row :gutter="8">
-                              <a-col v-for="(count, item) in drops" :key="item" :span="12">
-                                <a-statistic
-                                  :title="item"
-                                  :value="count"
-                                  :value-style="{ fontSize: '14px' }"
-                                />
-                              </a-col>
-                            </a-row>
-                          </a-collapse-panel>
-                        </a-collapse>
-                      </div>
-                      <div v-else class="no-data">
-                        <a-empty description="暂无掉落数据" :image="false" />
-                      </div>
-                    </a-card>
-                  </a-col>
-                </a-row>
+                      </a-collapse-panel>
+                    </a-collapse>
+                  </div>
+                  <div v-else class="no-data">
+                    <a-empty description="暂无掉落数据" :image="false" />
+                  </div>
+                </a-card>
               </div>
             </div>
 
@@ -822,7 +816,8 @@ const getDateStatusColor = (users: Record<string, HistoryData>) => {
 
 /* 记录条目区域 */
 .records-area {
-  flex: 1;
+  width: 400px;
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -929,6 +924,9 @@ const getDateStatusColor = (users: Record<string, HistoryData>) => {
 .statistics-section {
   flex: 1;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
 .stat-card {
@@ -960,8 +958,8 @@ const getDateStatusColor = (users: Record<string, HistoryData>) => {
 
 /* 日志区域 */
 .log-area {
-  width: 400px;
-  flex-shrink: 0;
+  flex: 1;
+  min-width: 300px;
   display: flex;
   flex-direction: column;
 }
