@@ -20,8 +20,13 @@
             新建计划
           </a-button>
 
-          <a-popconfirm v-if="planList.length > 0" title="确定要删除这个计划吗？" ok-text="确定" cancel-text="取消"
-            @confirm="handleRemovePlan(activePlanId)">
+          <a-popconfirm
+            v-if="planList.length > 0"
+            title="确定要删除这个计划吗？"
+            ok-text="确定"
+            cancel-text="取消"
+            @confirm="handleRemovePlan(activePlanId)"
+          >
             <a-button danger size="large" :disabled="!activePlanId">
               <template #icon>
                 <DeleteOutlined />
@@ -63,8 +68,14 @@
           <!-- 计划按钮组 -->
           <div class="plan-buttons-container">
             <a-space wrap size="middle">
-              <a-button v-for="plan in planList" :key="plan.id" :type="activePlanId === plan.id ? 'primary' : 'default'"
-                size="large" @click="onPlanChange(plan.id)" class="plan-button">
+              <a-button
+                v-for="plan in planList"
+                :key="plan.id"
+                :type="activePlanId === plan.id ? 'primary' : 'default'"
+                size="large"
+                @click="onPlanChange(plan.id)"
+                class="plan-button"
+              >
                 {{ plan.name }}
               </a-button>
             </a-space>
@@ -100,15 +111,22 @@
         <template #extra>
           <a-space>
             <span class="mode-label">执行模式：</span>
-            <a-segmented v-model:value="currentMode" @change="onModeChange" :options="[
-              { label: '全局模式', value: 'ALL' },
-              { label: '周计划模式', value: 'Weekly' },
-            ]" />
+            <a-segmented
+              v-model:value="currentMode"
+              @change="onModeChange"
+              :options="[
+                { label: '全局模式', value: 'ALL' },
+                { label: '周计划模式', value: 'Weekly' },
+              ]"
+            />
             <span class="view-label">视图：</span>
-            <a-segmented v-model:value="viewMode" :options="[
-              { label: '配置视图', value: 'config' },
-              { label: '简化视图', value: 'simple' },
-            ]" />
+            <a-segmented
+              v-model:value="viewMode"
+              :options="[
+                { label: '配置视图', value: 'config' },
+                { label: '简化视图', value: 'simple' },
+              ]"
+            />
           </a-space>
         </template>
 
@@ -131,16 +149,32 @@
                   {{ record.taskName }}
                 </template>
                 <template v-else-if="record.taskName === '吃理智药'">
-                  <a-input-number v-model:value="record[column.key]" size="small" :min="0" :max="999"
-                    :placeholder="getPlaceholder(record.taskName)" class="config-input-number"
-                    :controls="false" :disabled="isColumnDisabled(column.key)" />
-                </template>
-                <template v-else-if="['关卡选择', '备选关卡-1', '备选关卡-2', '备选关卡-3', '剩余理智关卡'].includes(record.taskName)">
-                  <a-select 
-                    v-model:value="record[column.key]" 
+                  <a-input-number
+                    v-model:value="record[column.key]"
                     size="small"
-                    :placeholder="getPlaceholder(record.taskName)" 
-                    :class="['config-select', { 'custom-stage-selected': isCustomStage(record[column.key], column.key) }]"
+                    :min="0"
+                    :max="999"
+                    :placeholder="getPlaceholder(record.taskName)"
+                    class="config-input-number"
+                    :controls="false"
+                    :disabled="isColumnDisabled(column.key)"
+                  />
+                </template>
+                <template
+                  v-else-if="
+                    ['关卡选择', '备选关卡-1', '备选关卡-2', '备选关卡-3', '剩余理智关卡'].includes(
+                      record.taskName
+                    )
+                  "
+                >
+                  <a-select
+                    v-model:value="record[column.key]"
+                    size="small"
+                    :placeholder="getPlaceholder(record.taskName)"
+                    :class="[
+                      'config-select',
+                      { 'custom-stage-selected': isCustomStage(record[column.key], column.key) },
+                    ]"
                     allow-clear
                     :disabled="isColumnDisabled(column.key)"
                   >
@@ -155,22 +189,40 @@
                           size="small"
                           @keyup.enter="addCustomStage(record.key, column.key)"
                         />
-                        <a-button type="text" size="small" @click="addCustomStage(record.key, column.key)">
+                        <a-button
+                          type="text"
+                          size="small"
+                          @click="addCustomStage(record.key, column.key)"
+                        >
                           <template #icon>
                             <PlusOutlined />
                           </template>
                         </a-button>
                       </a-space>
                     </template>
-                    <a-select-option v-for="option in getSelectOptions(column.key, record.taskName, record[column.key])" :key="option.value" :value="option.value">
+                    <a-select-option
+                      v-for="option in getSelectOptions(
+                        column.key,
+                        record.taskName,
+                        record[column.key]
+                      )"
+                      :key="option.value"
+                      :value="option.value"
+                    >
                       <template v-if="option.label && option.label.includes('|')">
                         <span>{{ option.label.split('|')[0] }}</span>
-                        <a-tag color="green" size="small" style="margin-left: 8px;">
+                        <a-tag color="green" size="small" style="margin-left: 8px">
                           {{ option.label.split('|')[1] }}
                         </a-tag>
                       </template>
                       <template v-else>
-                        <span :style="isCustomStage(option.value, column.key) ? { color: 'var(--ant-color-primary)', fontWeight: '500' } : {}">
+                        <span
+                          :style="
+                            isCustomStage(option.value, column.key)
+                              ? { color: 'var(--ant-color-primary)', fontWeight: '500' }
+                              : {}
+                          "
+                        >
                           {{ option.label }}
                         </span>
                       </template>
@@ -178,31 +230,47 @@
                   </a-select>
                 </template>
                 <template v-else>
-                  <a-select v-model:value="record[column.key]" size="small"
+                  <a-select
+                    v-model:value="record[column.key]"
+                    size="small"
                     :options="getSelectOptions(column.key, record.taskName, record[column.key])"
-                    :placeholder="getPlaceholder(record.taskName)" class="config-select" allow-clear 
-                    :disabled="isColumnDisabled(column.key)" />
+                    :placeholder="getPlaceholder(record.taskName)"
+                    class="config-select"
+                    allow-clear
+                    :disabled="isColumnDisabled(column.key)"
+                  />
                 </template>
               </template>
             </a-table>
           </div>
 
           <div v-else class="simple-table-wrapper">
-            <a-table :columns="dynamicSimpleViewColumns" :data-source="simpleViewData" :pagination="false"
-              class="simple-table" size="small" :bordered="true" :scroll="{ x: 'max-content' }">
+            <a-table
+              :columns="dynamicSimpleViewColumns"
+              :data-source="simpleViewData"
+              :pagination="false"
+              class="simple-table"
+              size="small"
+              :bordered="true"
+              :scroll="{ x: 'max-content' }"
+            >
               <template #bodyCell="{ column, record }">
                 <!-- 全选列 -->
                 <template v-if="column.key === 'globalControl'">
                   <a-space>
                     <a-tooltip title="开/关所有可用关卡" placement="left">
-                      <a-button ghost size="small" type="primary" @click="enableAllStages(record.key)">开</a-button>
-
+                      <a-button
+                        ghost
+                        size="small"
+                        type="primary"
+                        @click="enableAllStages(record.key)"
+                        >开
+                      </a-button>
                     </a-tooltip>
 
                     <a-button size="small" danger @click="disableAllStages(record.key)">
                       关
                     </a-button>
-
                   </a-space>
                 </template>
 
@@ -216,8 +284,10 @@
                 <template v-else>
                   <!-- 只在关卡可用时显示开关 -->
                   <div v-if="isStageAvailable(record.key, column.key)">
-                    <a-switch :checked="isStageEnabled(record.key, column.key)"
-                      @change="(checked: boolean) => toggleStage(record.key, column.key, checked)" />
+                    <a-switch
+                      :checked="isStageEnabled(record.key, column.key)"
+                      @change="(checked: boolean) => toggleStage(record.key, column.key, checked)"
+                    />
                   </div>
                 </template>
               </template>
@@ -230,31 +300,34 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch, nextTick, defineComponent } from 'vue'
+import { computed, defineComponent, nextTick, onMounted, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
-import { PlusOutlined, DeleteOutlined, EditOutlined } from '@ant-design/icons-vue'
+import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons-vue'
 import { usePlanApi } from '../composables/usePlanApi'
+import { useRoute } from 'vue-router' // 新增
 
 interface TableRow {
-  key: string;
-  taskName: string;
-  ALL: string | number;
-  Monday: string | number;
-  Tuesday: string | number;
-  Wednesday: string | number;
-  Thursday: string | number;
-  Friday: string | number;
-  Saturday: string | number;
-  Sunday: string | number;
-  [key: string]: string | number; // 保留动态属性支持
+  key: string
+  taskName: string
+  ALL: string | number
+  Monday: string | number
+  Tuesday: string | number
+  Wednesday: string | number
+  Thursday: string | number
+  Friday: string | number
+  Saturday: string | number
+  Sunday: string | number
+
+  [key: string]: string | number // 保留动态属性支持
 }
 
 interface PlanData {
-  [key: string]: any;
+  [key: string]: any
+
   Info?: {
-    Mode: 'ALL' | 'Weekly';
-    Name: string;
-  };
+    Mode: 'ALL' | 'Weekly'
+    Name: string
+  }
 }
 
 // API 相关
@@ -264,13 +337,12 @@ const { getPlans, createPlan, updatePlan, deletePlan } = usePlanApi()
 const planList = ref<Array<{ id: string; name: string }>>([])
 const activePlanId = ref<string>('')
 
-const currentPlanData = ref<PlanData | null>(null);
+const currentPlanData = ref<PlanData | null>(null)
 
 // 当前计划的名称和模式、视图
 const currentPlanName = ref<string>('')
 const currentMode = ref<'ALL' | 'Weekly'>('ALL')
-const viewMode = ref<'config' | 'simple'>('config');
-
+const viewMode = ref<'config' | 'simple'>('config')
 
 // 计划名称编辑状态
 const isEditingPlanName = ref<boolean>(false)
@@ -282,7 +354,7 @@ const VNodes = defineComponent({
   props: { vnodes: { type: Object, required: true } },
   setup(props) {
     return () => props.vnodes as any
-  }
+  },
 })
 
 // 自定义关卡相关变量
@@ -293,16 +365,16 @@ const stageOptions = computed(() => {
   const baseOptions = STAGE_DAILY_INFO.map(stage => ({
     label: stage.text,
     value: stage.value,
-    isCustom: false
+    isCustom: false,
   }))
-  
+
   // 添加自定义关卡
   const customOptions = Object.keys(customStageNames.value).map(key => ({
     label: customStageNames.value[key],
     value: key,
-    isCustom: true
+    isCustom: true,
   }))
-  
+
   return [...baseOptions, ...customOptions]
 })
 
@@ -310,7 +382,7 @@ const stageOptions = computed(() => {
 const addCustomStage = (rowKey: string, columnKey: string) => {
   const inputName = `${rowKey}_${columnKey}`
   const customName = customStageNames.value[inputName]
-  
+
   if (!customName || !customName.trim()) {
     message.warning('请输入关卡名称')
     return
@@ -332,16 +404,16 @@ const addCustomStage = (rowKey: string, columnKey: string) => {
 
   // 添加到选项中
   customStageNames.value[customName.trim()] = customName.trim()
-  
+
   // 设置为当前值
   const targetRow = tableData.value.find(row => row.key === rowKey)
   if (targetRow) {
-    (targetRow as any)[columnKey] = customName.trim()
+    ;(targetRow as any)[columnKey] = customName.trim()
   }
-  
+
   // 清空输入框
   customStageNames.value[inputName] = ''
-  
+
   message.success('关卡添加成功')
 }
 
@@ -359,7 +431,7 @@ const tableColumns = ref([
     width: 120,
     fixed: 'left',
     align: 'center',
-    className: 'task-name-td'
+    className: 'task-name-td',
   },
   {
     title: '全局',
@@ -525,7 +597,7 @@ const dynamicSimpleViewColumns = computed(() => {
       fixed: 'left',
       align: 'center',
     },
-    ...tableColumns.value.filter(col => col.key !== 'taskName' && col.key !== 'globalControl')
+    ...tableColumns.value.filter(col => col.key !== 'taskName' && col.key !== 'globalControl'),
   ]
 })
 
@@ -578,7 +650,9 @@ const isCustomStage = (value: string, columnKey: string) => {
     availableStages = STAGE_DAILY_INFO.map(stage => stage.value)
   } else {
     // 根据星期过滤可用的关卡
-    availableStages = STAGE_DAILY_INFO.filter(stage => stage.days.includes(dayNumber)).map(stage => stage.value)
+    availableStages = STAGE_DAILY_INFO.filter(stage => stage.days.includes(dayNumber)).map(
+      stage => stage.value
+    )
   }
 
   // 如果值不在预定义列表中，则为自定义
@@ -613,15 +687,17 @@ const getSelectOptions = (columnKey: string, taskName: string, currentValue?: st
         baseOptions = STAGE_DAILY_INFO.map(stage => ({
           label: taskName === '剩余理智关卡' && stage.value === '-' ? '不选择' : stage.text,
           value: stage.value,
-          isCustom: false
+          isCustom: false,
         }))
       } else {
         // 根据星期过滤可用的关卡
-        baseOptions = STAGE_DAILY_INFO.filter(stage => stage.days.includes(dayNumber)).map(stage => ({
-          label: taskName === '剩余理智关卡' && stage.value === '-' ? '不选择' : stage.text,
-          value: stage.value,
-          isCustom: false
-        }))
+        baseOptions = STAGE_DAILY_INFO.filter(stage => stage.days.includes(dayNumber)).map(
+          stage => ({
+            label: taskName === '剩余理智关卡' && stage.value === '-' ? '不选择' : stage.text,
+            value: stage.value,
+            isCustom: false,
+          })
+        )
       }
 
       // 如果当前值是自定义值且不在基础选项中，添加到选项列表
@@ -629,7 +705,7 @@ const getSelectOptions = (columnKey: string, taskName: string, currentValue?: st
         const customOption = {
           label: currentValue,
           value: currentValue,
-          isCustom: true
+          isCustom: true,
         }
         // 检查是否已存在
         const exists = baseOptions.some(option => option.value === currentValue)
@@ -648,7 +724,7 @@ const getSelectOptions = (columnKey: string, taskName: string, currentValue?: st
         .map(key => ({
           label: customStageNames.value[key],
           value: customStageNames.value[key],
-          isCustom: true
+          isCustom: true,
         }))
 
       return [...baseOptions, ...customOptions]
@@ -681,13 +757,13 @@ const getPlaceholder = (taskName: string) => {
 const isColumnDisabled = (columnKey: string): boolean => {
   if (currentMode.value === 'ALL') {
     // 在全局模式下，只允许编辑“全局”列
-    return columnKey !== 'ALL';
+    return columnKey !== 'ALL'
   }
   if (currentMode.value === 'Weekly') {
     // 在周计划模式下，禁止编辑“全局”列
-    return columnKey === 'ALL';
+    return columnKey === 'ALL'
   }
-  return false;
+  return false
 }
 
 // 模式切换处理
@@ -837,8 +913,11 @@ const loadPlanData = async (planId: string) => {
           'Sunday',
         ]
         timeKeys.forEach(timeKey => {
-          if (planData[timeKey] && (planData[timeKey] as Record<string, any>)[fieldKey] !== undefined) {
-            (row as TableRow)[timeKey] = (planData[timeKey] as Record<string, any>)[fieldKey]
+          if (
+            planData[timeKey] &&
+            (planData[timeKey] as Record<string, any>)[fieldKey] !== undefined
+          ) {
+            ;(row as TableRow)[timeKey] = (planData[timeKey] as Record<string, any>)[fieldKey]
           }
         })
       })
@@ -854,23 +933,25 @@ const initPlans = async () => {
     const response = await getPlans()
     if (response.index && response.index.length > 0) {
       planList.value = response.index.map((item: any, index: number) => {
-        // API响应格式: {"uid": "xxx", "type": "MaaPlanConfig"}
         const planId = item.uid
         const planName = response.data[planId]?.Info?.Name || `计划 ${index + 1}`
-        return {
-          id: planId,
-          name: planName,
-        }
+        return { id: planId, name: planName }
       })
-      activePlanId.value = planList.value[0].id
+
+      // 根据路由查询参数尝试选中特定计划
+      const queryPlanId = (route.query.planId as string) || ''
+      const target = queryPlanId ? planList.value.find(p => p.id === queryPlanId) : null
+      if (target) {
+        activePlanId.value = target.id
+      } else {
+        activePlanId.value = planList.value[0].id
+      }
       await loadPlanData(activePlanId.value)
     } else {
-      // 如果没有计划，显示空状态而不是自动创建
       currentPlanData.value = null
     }
   } catch (error) {
     console.error('初始化计划失败:', error)
-    // 显示空状态
     currentPlanData.value = null
   } finally {
     loading.value = false
@@ -900,7 +981,7 @@ const savePlanData = async () => {
     timeKeys.forEach(timeKey => {
       planData[timeKey] = {}
       tableData.value.forEach(row => {
-        (planData[timeKey] as Record<string, any>)[row.key] = (row as TableRow)[timeKey]
+        ;(planData[timeKey] as Record<string, any>)[row.key] = (row as TableRow)[timeKey]
       })
     })
 
@@ -928,24 +1009,39 @@ watch(
 )
 // 单独监听表格数据变化，但减少深度
 watch(
-  () => tableData.value.map(row => ({
-    key: row.key,
-    ALL: row.ALL,
-    Monday: row.Monday,
-    Tuesday: row.Tuesday,
-    Wednesday: row.Wednesday,
-    Thursday: row.Thursday,
-    Friday: row.Friday,
-    Saturday: row.Saturday,
-    Sunday: row.Sunday
-  })),
+  () =>
+    tableData.value.map(row => ({
+      key: row.key,
+      ALL: row.ALL,
+      Monday: row.Monday,
+      Tuesday: row.Tuesday,
+      Wednesday: row.Wednesday,
+      Thursday: row.Thursday,
+      Friday: row.Friday,
+      Saturday: row.Saturday,
+      Sunday: row.Sunday,
+    })),
   async () => {
-    await nextTick();
-    handleSave();
+    await nextTick()
+    handleSave()
   },
   { deep: true }
-);
+)
 
+const route = useRoute() // 补充：之前缺失导致无法读取 query
+
+// 监听 planId 查询参数变化（当页面已在 /plans 再次跳转时也能切换）
+watch(
+  () => route.query.planId,
+  async newPlanId => {
+    if (!newPlanId) return
+    const target = planList.value.find(p => p.id === newPlanId)
+    if (target && target.id !== activePlanId.value) {
+      activePlanId.value = target.id
+      await loadPlanData(activePlanId.value)
+    }
+  }
+)
 
 onMounted(() => {
   initPlans()
@@ -963,12 +1059,9 @@ const SIMPLE_VIEW_DATA = STAGE_DAILY_INFO.filter(stage => stage.value !== '-').m
   Friday: '-',
   Saturday: '-',
   Sunday: '-',
-}));
+}))
 
-const simpleViewData = ref(SIMPLE_VIEW_DATA);
-
-
-
+const simpleViewData = ref(SIMPLE_VIEW_DATA)
 
 // 检查关卡是否可用
 const isStageAvailable = (stageValue: string, columnKey: string) => {
@@ -1047,17 +1140,17 @@ const enableAllStages = (stageValue: string) => {
     'Friday',
     'Saturday',
     'Sunday',
-  ];
+  ]
 
   timeKeys.forEach(timeKey => {
     if (isStageAvailable(stageValue, timeKey)) {
       // 如果当前状态不是启用状态，则切换
       if (!isStageEnabled(stageValue, timeKey)) {
-        toggleStage(stageValue, timeKey, true);
+        toggleStage(stageValue, timeKey, true)
       }
     }
-  });
-};
+  })
+}
 
 // 新增禁用所有关卡的方法
 const disableAllStages = (stageValue: string) => {
@@ -1070,19 +1163,17 @@ const disableAllStages = (stageValue: string) => {
     'Friday',
     'Saturday',
     'Sunday',
-  ];
+  ]
 
   timeKeys.forEach(timeKey => {
     if (isStageAvailable(stageValue, timeKey)) {
       // 如果当前状态是启用状态，则切换
       if (isStageEnabled(stageValue, timeKey)) {
-        toggleStage(stageValue, timeKey, false);
+        toggleStage(stageValue, timeKey, false)
       }
     }
-  });
-};
-
-
+  })
+}
 </script>
 
 <style scoped>
@@ -1225,7 +1316,6 @@ const disableAllStages = (stageValue: string) => {
 }
 
 @keyframes pulse {
-
   0%,
   100% {
     opacity: 0.6;
@@ -1566,100 +1656,110 @@ const disableAllStages = (stageValue: string) => {
 
 /* 任务名称单元格背景色 - 浅色主题 */
 .config-table :deep(.task-row-MedicineNumb td:first-child) {
-  background: #EBF4FF !important; /* 不透明的蓝色背景 */
-  color: #3B82F6;
+  background: #ebf4ff !important; /* 不透明的蓝色背景 */
+  color: #3b82f6;
   font-weight: 500;
 }
+
 .config-table :deep(.ant-table-tbody > tr.task-row-MedicineNumb:hover > td:first-child) {
-  background: #DBEAFE !important; /* 悬停时稍深的蓝色 */
+  background: #dbeafe !important; /* 悬停时稍深的蓝色 */
 }
 
 .config-table :deep(.task-row-SeriesNumb td:first-child) {
-  background: #ECFDF5 !important; /* 不透明的绿色背景 */
-  color: #22C55E;
+  background: #ecfdf5 !important; /* 不透明的绿色背景 */
+  color: #22c55e;
   font-weight: 500;
 }
+
 .config-table :deep(.ant-table-tbody > tr.task-row-SeriesNumb:hover > td:first-child) {
-  background: #D1FAE5 !important; /* 悬停时稍深的绿色 */
+  background: #d1fae5 !important; /* 悬停时稍深的绿色 */
 }
 
 .config-table :deep(.task-row-Stage td:first-child) {
-  background: #FFF7ED !important; /* 不透明的橙色背景 */
-  color: #F97316;
+  background: #fff7ed !important; /* 不透明的橙色背景 */
+  color: #f97316;
   font-weight: 500;
 }
+
 .config-table :deep(.ant-table-tbody > tr.task-row-Stage:hover > td:first-child) {
-  background: #FED7AA !important; /* 悬停时稍深的橙色 */
+  background: #fed7aa !important; /* 悬停时稍深的橙色 */
 }
 
 .config-table :deep(.task-row-Stage_1 td:first-child),
 .config-table :deep(.task-row-Stage_2 td:first-child),
 .config-table :deep(.task-row-Stage_3 td:first-child) {
-  background: #FAF5FF !important; /* 不透明的紫色背景 */
-  color: #A855F7;
+  background: #faf5ff !important; /* 不透明的紫色背景 */
+  color: #a855f7;
   font-weight: 500;
 }
+
 .config-table :deep(.ant-table-tbody > tr.task-row-Stage_1:hover > td:first-child),
 .config-table :deep(.ant-table-tbody > tr.task-row-Stage_2:hover > td:first-child),
 .config-table :deep(.ant-table-tbody > tr.task-row-Stage_3:hover > td:first-child) {
-  background: #F3E8FF !important; /* 悬停时稍深的紫色 */
+  background: #f3e8ff !important; /* 悬停时稍深的紫色 */
 }
 
 .config-table :deep(.task-row-Stage_Remain td:first-child) {
-  background: #F0F9FF !important; /* 不透明的天蓝色背景 */
-  color: #0EA5E9;
+  background: #f0f9ff !important; /* 不透明的天蓝色背景 */
+  color: #0ea5e9;
   font-weight: 500;
 }
+
 .config-table :deep(.ant-table-tbody > tr.task-row-Stage_Remain:hover > td:first-child) {
-  background: #E0F2FE !important; /* 悬停时稍深的天蓝色 */
+  background: #e0f2fe !important; /* 悬停时稍深的天蓝色 */
 }
 
 /* 任务名称单元格背景色 - 深色主题 */
 .dark .config-table :deep(.task-row-MedicineNumb td:first-child) {
-  background: #1E3A8A !important; /* 深色蓝色背景 */
-  color: #93C5FD;
+  background: #1e3a8a !important; /* 深色蓝色背景 */
+  color: #93c5fd;
   font-weight: 500;
 }
+
 .dark .config-table :deep(.ant-table-tbody > tr.task-row-MedicineNumb:hover > td:first-child) {
-  background: #1E40AF !important; /* 悬停时稍亮的蓝色 */
+  background: #1e40af !important; /* 悬停时稍亮的蓝色 */
 }
 
 .dark .config-table :deep(.task-row-SeriesNumb td:first-child) {
-  background: #14532D !important; /* 深色绿色背景 */
-  color: #86EFAC;
+  background: #14532d !important; /* 深色绿色背景 */
+  color: #86efac;
   font-weight: 500;
 }
+
 .dark .config-table :deep(.ant-table-tbody > tr.task-row-SeriesNumb:hover > td:first-child) {
   background: #166534 !important; /* 悬停时稍亮的绿色 */
 }
 
 .dark .config-table :deep(.task-row-Stage td:first-child) {
-  background: #7C2D12 !important; /* 深色橙色背景 */
-  color: #FDBA74;
+  background: #7c2d12 !important; /* 深色橙色背景 */
+  color: #fdba74;
   font-weight: 500;
 }
+
 .dark .config-table :deep(.ant-table-tbody > tr.task-row-Stage:hover > td:first-child) {
-  background: #9A3412 !important; /* 悬停时稍亮的橙色 */
+  background: #9a3412 !important; /* 悬停时稍亮的橙色 */
 }
 
 .dark .config-table :deep(.task-row-Stage_1 td:first-child),
 .dark .config-table :deep(.task-row-Stage_2 td:first-child),
 .dark .config-table :deep(.task-row-Stage_3 td:first-child) {
-  background: #581C87 !important; /* 深色紫色背景 */
-  color: #C4B5FD;
+  background: #581c87 !important; /* 深色紫色背景 */
+  color: #c4b5fd;
   font-weight: 500;
 }
+
 .dark .config-table :deep(.ant-table-tbody > tr.task-row-Stage_1:hover > td:first-child),
 .dark .config-table :deep(.ant-table-tbody > tr.task-row-Stage_2:hover > td:first-child),
 .dark .config-table :deep(.ant-table-tbody > tr.task-row-Stage_3:hover > td:first-child) {
-  background: #6B21A8 !important; /* 悬停时稍亮的紫色 */
+  background: #6b21a8 !important; /* 悬停时稍亮的紫色 */
 }
 
 .dark .config-table :deep(.task-row-Stage_Remain td:first-child) {
-  background: #0C4A6E !important; /* 深色天蓝色背景 */
-  color: #7DD3FC;
+  background: #0c4a6e !important; /* 深色天蓝色背景 */
+  color: #7dd3fc;
   font-weight: 500;
 }
+
 .dark .config-table :deep(.ant-table-tbody > tr.task-row-Stage_Remain:hover > td:first-child) {
   background: #075985 !important; /* 悬停时稍亮的天蓝色 */
 }
@@ -1707,7 +1807,7 @@ const disableAllStages = (stageValue: string) => {
 }
 
 /* 禁用列标题样式 */
-.config-table.mode-ALL :deep(.ant-table-thead > tr > th:nth-child(n+3)) {
+.config-table.mode-ALL :deep(.ant-table-thead > tr > th:nth-child(n + 3)) {
   color: var(--ant-color-text-disabled) !important;
   opacity: 0.5;
 }
@@ -1814,7 +1914,6 @@ const disableAllStages = (stageValue: string) => {
 :deep(.ant-float-btn-group .ant-float-btn-group-circle-wrapper) {
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
 }
-
 
 /* 全局控制按钮样式 */
 .global-control-buttons {
