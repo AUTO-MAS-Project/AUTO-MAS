@@ -1,4 +1,8 @@
 <template>
+  <!-- 加载状态 -->
+  <div v-if="loading" class="loading-container">
+    <a-spin size="large" tip="加载中，请稍候..." />
+  </div>
 
   <!-- 主要内容 -->
   <div class="scripts-header">
@@ -620,7 +624,6 @@ const handleToggleUserStatus = async (user: User) => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 255, 255, 0.8);
   z-index: 9999;
 }
 
