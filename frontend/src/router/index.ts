@@ -149,4 +149,49 @@ router.beforeEach(async (to, from, next) => {
   next()
 })
 
+// 路由跳转函数
+export function navigateTo(
+  path: string,
+  options?: {
+    replace?: boolean
+    query?: Record<string, any>
+  }
+) {
+  const { replace = false, query } = options || {}
+
+  if (replace) {
+    return router.replace({ path, query })
+  } else {
+    return router.push({ path, query })
+  }
+}
+
+// 通过路由名称跳转的函数
+export function navigateToByName(
+  name: string,
+  options?: {
+    replace?: boolean
+    query?: Record<string, any>
+    params?: Record<string, any>
+  }
+) {
+  const { replace = false, query, params } = options || {}
+
+  if (replace) {
+    return router.replace({ name, query, params })
+  } else {
+    return router.push({ name, query, params })
+  }
+}
+
+// 返回上一页的函数
+export function goBack() {
+  return router.back()
+}
+
+// 前进到下一页的函数
+export function goForward() {
+  return router.forward()
+}
+
 export default router

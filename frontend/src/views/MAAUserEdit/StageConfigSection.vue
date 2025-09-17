@@ -2,6 +2,13 @@
   <div class="form-section">
     <div class="section-header">
       <h3>关卡配置</h3>
+      <!-- 只在计划表模式时显示跳转按钮 -->
+      <a-button v-if="isPlanMode" type="link" @click="handleGoToPlans" class="plans-button">
+        <template #icon>
+          <CalendarOutlined />
+        </template>
+        跳转到计划表
+      </a-button>
     </div>
     <a-row :gutter="24">
       <a-col :span="12">
@@ -172,9 +179,7 @@
       <a-col :span="6">
         <a-form-item name="mode">
           <template #label>
-            <a-tooltip
-              title="备选关卡-1，所有备选关卡均选择「当前/上次」时视为不使用备选关卡"
-            >
+            <a-tooltip title="备选关卡-1，所有备选关卡均选择「当前/上次」时视为不使用备选关卡">
               <span class="form-label">
                 备选关卡-1
                 <QuestionCircleOutlined class="help-icon" />
@@ -208,9 +213,7 @@
       <a-col :span="6">
         <a-form-item name="mode">
           <template #label>
-            <a-tooltip
-              title="备选关卡-2，所有备选关卡均选择「当前/上次」时视为不使用备选关卡"
-            >
+            <a-tooltip title="备选关卡-2，所有备选关卡均选择「当前/上次」时视为不使用备选关卡">
               <span class="form-label">
                 备选关卡-2
                 <QuestionCircleOutlined class="help-icon" />
@@ -244,9 +247,7 @@
       <a-col :span="6">
         <a-form-item name="mode">
           <template #label>
-            <a-tooltip
-              title="备选关卡-3，所有备选关卡均选择「当前/上次」时视为不使用备选关卡"
-            >
+            <a-tooltip title="备选关卡-3，所有备选关卡均选择「当前/上次」时视为不使用备选关卡">
               <span class="form-label">
                 备选关卡-3
                 <QuestionCircleOutlined class="help-icon" />
@@ -316,10 +317,11 @@
 </template>
 
 <script setup lang="ts">
-import { QuestionCircleOutlined } from '@ant-design/icons-vue'
+import { CalendarOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import StageSelector from './StageSelector.vue'
+import { navigateTo } from '@/router'
 
-defineProps<{
+const props = defineProps<{
   formData: any
   loading: boolean
   stageModeOptions: any[]
@@ -358,24 +360,20 @@ const emit = defineEmits<{
 }>()
 
 // 事件处理函数
-const handleAddCustomStage = (stageName: string) => {
-  emit('handle-add-custom-stage', stageName)
-}
-
-const handleAddCustomStage1 = (stageName: string) => {
-  emit('handle-add-custom-stage1', stageName)
-}
-
-const handleAddCustomStage2 = (stageName: string) => {
-  emit('handle-add-custom-stage2', stageName)
-}
-
-const handleAddCustomStage3 = (stageName: string) => {
-  emit('handle-add-custom-stage3', stageName)
-}
-
-const handleAddCustomStageRemain = (stageName: string) => {
+const handleAddCustomStage = (stageName: string) => emit('handle-add-custom-stage', stageName)
+const handleAddCustomStage1 = (stageName: string) => emit('handle-add-custom-stage1', stageName)
+const handleAddCustomStage2 = (stageName: string) => emit('handle-add-custom-stage2', stageName)
+const handleAddCustomStage3 = (stageName: string) => emit('handle-add-custom-stage3', stageName)
+const handleAddCustomStageRemain = (stageName: string) =>
   emit('handle-add-custom-stage-remain', stageName)
+
+// 跳转到计划表
+const handleGoToPlans = () => {
+  const planId =
+    props.isPlanMode && props.formData?.Info?.StageMode && props.formData.Info.StageMode !== 'Fixed'
+      ? props.formData.Info.StageMode
+      : undefined
+  navigateTo('/plans', { query: { from: 'stage-config', ...(planId ? { planId } : {}) } })
 }
 
 // 格式化 tooltip
@@ -387,10 +385,7 @@ const escapeHtml = (text: string) =>
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;')
 
-const formatTooltip = (text: string) => {
-  if (!text) return ''
-  return escapeHtml(text).replace(/\n/g, '<br/>')
-}
+const formatTooltip = (text: string) => (text ? escapeHtml(text).replace(/\n/g, '<br/>') : '')
 </script>
 
 <style scoped>
@@ -423,6 +418,15 @@ const formatTooltip = (text: string) => {
   height: 24px;
   background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
   border-radius: 2px;
+}
+
+.plans-button {
+  font-size: 14px;
+  color: var(--ant-color-primary);
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .form-label {
