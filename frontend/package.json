@@ -35,13 +35,29 @@
       }
     ],
     "extraResources": [
-      { "from": "src/assets", "to": "assets", "filter": ["**/*"] }
+      {
+        "from": "src/assets",
+        "to": "assets",
+        "filter": [
+          "**/*"
+        ]
+      }
     ],
     "win": {
       "requestedExecutionLevel": "requireAdministrator",
       "target": [
-        { "target": "nsis", "arch": ["x64"] },
-        { "target": "zip", "arch": ["x64"] }
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
       "icon": "public/AUTO-MAS.ico",
       "artifactName": "AUTO-MAS-Setup-${version}-${arch}.${ext}"
@@ -67,7 +83,8 @@
     "form-data": "^4.0.4",
     "markdown-it": "^14.1.0",
     "vue": "^3.5.17",
-    "vue-router": "4"
+    "vue-router": "4",
+    "vuedraggable": "^4.1.0"
   },
   "devDependencies": {
     "@types/node": "22.17.1",
