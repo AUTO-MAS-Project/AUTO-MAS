@@ -289,7 +289,6 @@ onMounted(() => {
   loadScripts()
 })
 
-
 const loadScripts = async () => {
   try {
     const scriptDetails = await getScriptsWithUsers()
@@ -512,7 +511,7 @@ const handleStartMAAConfig = async (script: Script) => {
     // 调用启动配置任务API
     const response = await Service.addTaskApiDispatchStartPost({
       taskId: script.id,
-      mode: TaskCreateIn.mode.SettingScriptMode
+      mode: TaskCreateIn.mode.SettingScriptMode,
     })
 
     if (response.code === 200) {
@@ -529,7 +528,7 @@ const handleStartMAAConfig = async (script: Script) => {
             message.success(`${script.name} 配置已完成`)
             activeConnections.value.delete(script.id)
           }
-        }
+        },
       })
 
       // 记录连接和websocketId
@@ -569,7 +568,7 @@ const handleSaveMAAConfig = async (script: Script) => {
 
     // 调用停止配置任务API
     const response = await Service.stopTaskApiDispatchStopPost({
-      taskId: websocketId
+      taskId: websocketId,
     })
 
     if (response.code === 200) {
@@ -605,6 +604,11 @@ const handleToggleUserStatus = async (user: User) => {
     })
 
     if (result) {
+      // 更新本地数据状态
+      const targetUser = script.users.find(u => u.id === user.id)
+      if (targetUser) {
+        targetUser.Info.Status = newStatus
+      }
       message.success('用户状态更新成功')
     }
   } catch (error) {
