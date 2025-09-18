@@ -1194,7 +1194,7 @@ class AppConfig(GlobalConfig):
         data = {"username": author, "description": description}
 
         response = requests.post(
-            "http://221.236.27.82:10023/api/upload/share",
+            "https://share.auto-mas.top/api/upload/share",
             files=files,
             data=data,
             timeout=10,
@@ -1973,7 +1973,7 @@ class AppConfig(GlobalConfig):
 
         try:
             response = requests.get(
-                "http://221.236.27.82:10023/api/list/config/general",
+                "https://share.auto-mas.top/api/list/config/general",
                 timeout=10,
                 proxies=self.get_proxies(),
             )
