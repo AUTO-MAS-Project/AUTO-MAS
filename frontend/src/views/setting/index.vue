@@ -190,7 +190,10 @@ const openDevTools = () => (window as any).electronAPI?.openDevTools?.()
 // 更新检查
 const checkUpdate = async () => {
   try {
-    const response = await Service.checkUpdateApiUpdateCheckPost({ current_version: version, if_force: true })
+    const response = await Service.checkUpdateApiUpdateCheckPost({
+      current_version: version,
+      if_force: true,
+    })
     if (response.code === 200) {
       if (response.if_need_update) {
         updateData.value = response.update_info
@@ -229,7 +232,9 @@ const refreshMirrorConfig = async () => {
   } catch (e) {
     console.error('刷新镜像配置失败', e)
     message.error('刷新镜像配置失败')
-  } finally { refreshingConfig.value = false }
+  } finally {
+    refreshingConfig.value = false
+  }
 }
 const goToMirrorTest = () => router.push('/mirror-test')
 
@@ -244,7 +249,9 @@ const testNotify = async () => {
   } catch (e) {
     console.error('测试通知发送失败', e)
     message.error('测试通知发送失败')
-  } finally { testingNotify.value = false }
+  } finally {
+    testingNotify.value = false
+  }
 }
 
 onMounted(() => {
@@ -291,8 +298,8 @@ onMounted(() => {
           />
         </a-tab-pane>
         <a-tab-pane key="advanced" tab="高级设置">
-          <TabAdvanced 
-            :go-to-logs="goToLogs" 
+          <TabAdvanced
+            :go-to-logs="goToLogs"
             :open-dev-tools="openDevTools"
             :mirror-config-status="mirrorConfigStatus"
             :refreshing-config="refreshingConfig"
@@ -300,53 +307,249 @@ onMounted(() => {
             :go-to-mirror-test="goToMirrorTest"
           />
         </a-tab-pane>
-        <a-tab-pane key="others" tab="其他">
+        <a-tab-pane key="others" tab="其他设置">
           <TabOthers :version="version" :backend-update-info="backendUpdateInfo" />
         </a-tab-pane>
       </a-tabs>
     </div>
-    <UpdateModal v-if="updateVisible" v-model:visible="updateVisible" :update-data="updateData" @confirmed="onUpdateConfirmed" />
+    <UpdateModal
+      v-if="updateVisible"
+      v-model:visible="updateVisible"
+      :update-data="updateData"
+      @confirmed="onUpdateConfirmed"
+    />
   </div>
 </template>
 
 <style scoped>
 /* 统一样式，使用 :deep 作用到子组件内部 */
-.settings-container { max-width: 1200px; margin: 0 auto; padding: 20px; }
-.settings-header { margin-bottom: 24px; }
-.page-title { margin: 0; font-size: 32px; font-weight: 600; color: var(--ant-color-text); }
-.settings-content { background: var(--ant-color-bg-container); border-radius: 12px; }
-.settings-tabs { margin: 0; }
-.settings-tabs :deep(.ant-tabs-card > .ant-tabs-nav .ant-tabs-tab) { background: transparent; border: 1px solid var(--ant-color-border); border-radius: 8px 8px 0 0; margin-right: 8px; }
-.settings-tabs :deep(.ant-tabs-card > .ant-tabs-nav .ant-tabs-tab-active) { background: var(--ant-color-bg-container); border-bottom-color: var(--ant-color-bg-container); }
-:deep(.tab-content) { padding: 24px; }
-:deep(.form-section) { margin-bottom: 32px; }
-:deep(.form-section:last-child) { margin-bottom: 0; }
-:deep(.section-header) { margin-bottom: 20px; padding-bottom: 8px; border-bottom: 2px solid var(--ant-color-border-secondary); display: flex; justify-content: space-between; align-items: center; }
-:deep(.section-header h3) { margin: 0; font-size: 20px; font-weight: 700; color: var(--ant-color-text); display: flex; align-items: center; gap: 12px; }
-:deep(.section-header h3::before) { content: ''; width: 4px; height: 24px; background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover)); border-radius: 2px; }
-:deep(.section-description) { margin: 4px 0 0; font-size: 13px; color: var(--ant-color-text-secondary); }
-:deep(.section-doc-link) { color: var(--ant-color-primary) !important; text-decoration: none; font-size: 14px; font-weight: 500; padding: 4px 8px; border-radius: 4px; border: 1px solid var(--ant-color-primary); transition: all .2s ease; display: flex; align-items: center; gap: 4px; }
-:deep(.section-doc-link:hover) { color: var(--ant-color-primary-hover) !important; background-color: var(--ant-color-primary-bg); border-color: var(--ant-color-primary-hover); text-decoration: none; }
-:deep(.section-update-button) { height: 32px; padding: 0 12px; font-size: 13px; font-weight: 600; border-radius: 6px; box-shadow: 0 2px 6px rgba(22,119,255,.2); transition: all .3s cubic-bezier(.4,0,.2,1); display: flex; align-items: center; gap: 6px; background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover)) !important; border: none !important; color: #fff !important; }
-:deep(.section-update-button:hover) { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(22,119,255,.3); background: linear-gradient(135deg,#4096ff,#1677ff) !important; color: #fff !important; }
-:deep(.section-update-button:active) { transform: translateY(0); color: #fff !important; }
-:deep(.section-update-button svg) { transition: transform .3s ease; }
-:deep(.section-update-button:hover svg) { transform: rotate(180deg); }
-:deep(.form-item-vertical) { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
-:deep(.form-label-wrapper) { display: flex; align-items: center; gap: 8px; }
-:deep(.form-label) { font-weight: 600; color: var(--ant-color-text); font-size: 14px; }
-:deep(.help-icon) { color: #8c8c8c; font-size: 14px; }
-:deep(.tooltip-link) { color: var(--ant-color-primary) !important; text-decoration: underline; transition: color .2s ease; }
-:deep(.tooltip-link:hover) { color: var(--ant-color-primary-hover) !important; text-decoration: underline; }
-:deep(.link-card) { background: var(--ant-color-bg-container); border: 1px solid var(--ant-color-border); border-radius: 8px; padding: 20px; text-align: center; transition: all .3s ease; height: 100%; display: flex; flex-direction: column; align-items: center; }
-:deep(.link-card:hover) { border-color: var(--ant-color-primary); box-shadow: 0 4px 12px rgba(0,0,0,.1); transform: translateY(-2px); }
-:deep(.link-icon) { font-size: 48px; margin-bottom: 16px; line-height: 1; color: var(--ant-color-primary); display: flex; justify-content: center; align-items: center; }
-:deep(.link-content) { flex: 1; display: flex; flex-direction: column; }
-:deep(.link-content h4) { margin: 0 0 8px; font-size: 18px; font-weight: 600; color: var(--ant-color-text); }
-:deep(.link-content p) { margin: 0 0 16px; font-size: 14px; color: var(--ant-color-text-secondary); line-height: 1.5; flex: 1; }
-:deep(.link-button) { display: inline-block; padding: 8px 16px; background: var(--ant-color-primary); color: #fff !important; text-decoration: none; border-radius: 4px; font-size: 14px; font-weight: 500; transition: background-color .2s ease; margin-top: auto; }
-:deep(.link-button:hover) { background: var(--ant-color-primary-hover); color: #fff !important; text-decoration: none; }
-:deep(.info-item) { display: flex; align-items: center; margin-bottom: 12px; line-height: 1.5; }
-:deep(.info-label) { font-weight: 600; color: var(--ant-color-text); min-width: 100px; flex-shrink: 0; }
-:deep(.info-value) { color: var(--ant-color-text-secondary); margin-left: 8px; }
+.settings-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px;
+}
+.settings-header {
+  margin-bottom: 24px;
+}
+.page-title {
+  margin: 0;
+  font-size: 32px;
+  font-weight: 600;
+  color: var(--ant-color-text);
+}
+.settings-content {
+  background: var(--ant-color-bg-container);
+  border-radius: 12px;
+}
+.settings-tabs {
+  margin: 0;
+}
+.settings-tabs :deep(.ant-tabs-card > .ant-tabs-nav .ant-tabs-tab) {
+  background: transparent;
+  border: 1px solid var(--ant-color-border);
+  border-radius: 8px 8px 0 0;
+  margin-right: 8px;
+}
+.settings-tabs :deep(.ant-tabs-card > .ant-tabs-nav .ant-tabs-tab-active) {
+  background: var(--ant-color-bg-container);
+  border-bottom-color: var(--ant-color-bg-container);
+}
+:deep(.tab-content) {
+  padding: 24px;
+}
+:deep(.form-section) {
+  margin-bottom: 32px;
+}
+:deep(.form-section:last-child) {
+  margin-bottom: 0;
+}
+:deep(.section-header) {
+  margin-bottom: 20px;
+  padding-bottom: 8px;
+  border-bottom: 2px solid var(--ant-color-border-secondary);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+:deep(.section-header h3) {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--ant-color-text);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+:deep(.section-header h3::before) {
+  content: '';
+  width: 4px;
+  height: 24px;
+  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
+  border-radius: 2px;
+}
+:deep(.section-description) {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--ant-color-text-secondary);
+}
+:deep(.section-doc-link) {
+  color: var(--ant-color-primary) !important;
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 500;
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--ant-color-primary);
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+:deep(.section-doc-link:hover) {
+  color: var(--ant-color-primary-hover) !important;
+  background-color: var(--ant-color-primary-bg);
+  border-color: var(--ant-color-primary-hover);
+  text-decoration: none;
+}
+:deep(.section-update-button) {
+  height: 32px;
+  padding: 0 12px;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 6px;
+  box-shadow: 0 2px 6px rgba(22, 119, 255, 0.2);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: linear-gradient(
+    135deg,
+    var(--ant-color-primary),
+    var(--ant-color-primary-hover)
+  ) !important;
+  border: none !important;
+  color: #fff !important;
+}
+:deep(.section-update-button:hover) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(22, 119, 255, 0.3);
+  background: linear-gradient(135deg, #4096ff, #1677ff) !important;
+  color: #fff !important;
+}
+:deep(.section-update-button:active) {
+  transform: translateY(0);
+  color: #fff !important;
+}
+:deep(.section-update-button svg) {
+  transition: transform 0.3s ease;
+}
+:deep(.section-update-button:hover svg) {
+  transform: rotate(180deg);
+}
+:deep(.form-item-vertical) {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+:deep(.form-label-wrapper) {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+:deep(.form-label) {
+  font-weight: 600;
+  color: var(--ant-color-text);
+  font-size: 14px;
+}
+:deep(.help-icon) {
+  color: #8c8c8c;
+  font-size: 14px;
+}
+:deep(.tooltip-link) {
+  color: var(--ant-color-primary) !important;
+  text-decoration: underline;
+  transition: color 0.2s ease;
+}
+:deep(.tooltip-link:hover) {
+  color: var(--ant-color-primary-hover) !important;
+  text-decoration: underline;
+}
+:deep(.link-card) {
+  background: var(--ant-color-bg-container);
+  border: 1px solid var(--ant-color-border);
+  border-radius: 8px;
+  padding: 20px;
+  text-align: center;
+  transition: all 0.3s ease;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+:deep(.link-card:hover) {
+  border-color: var(--ant-color-primary);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  transform: translateY(-2px);
+}
+:deep(.link-icon) {
+  font-size: 48px;
+  margin-bottom: 16px;
+  line-height: 1;
+  color: var(--ant-color-primary);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+:deep(.link-content) {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+:deep(.link-content h4) {
+  margin: 0 0 8px;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--ant-color-text);
+}
+:deep(.link-content p) {
+  margin: 0 0 16px;
+  font-size: 14px;
+  color: var(--ant-color-text-secondary);
+  line-height: 1.5;
+  flex: 1;
+}
+:deep(.link-button) {
+  display: inline-block;
+  padding: 8px 16px;
+  background: var(--ant-color-primary);
+  color: #fff !important;
+  text-decoration: none;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 500;
+  transition: background-color 0.2s ease;
+  margin-top: auto;
+}
+:deep(.link-button:hover) {
+  background: var(--ant-color-primary-hover);
+  color: #fff !important;
+  text-decoration: none;
+}
+:deep(.info-item) {
+  display: flex;
+  align-items: center;
+  margin-bottom: 12px;
+  line-height: 1.5;
+}
+:deep(.info-label) {
+  font-weight: 600;
+  color: var(--ant-color-text);
+  min-width: 100px;
+  flex-shrink: 0;
+}
+:deep(.info-value) {
+  color: var(--ant-color-text-secondary);
+  margin-left: 8px;
+}
 </style>
