@@ -1,288 +1,302 @@
 <template>
   <div class="scripts-grid">
-    <a-row :gutter="[24, 24]">
-      <a-col
-        v-for="script in props.scripts"
-        :key="script.id"
-        :xs="24"
-        :sm="24"
-        :md="24"
-        :lg="24"
-        :xl="24"
-        :xxl="24"
-      >
-        <a-card :hoverable="true" class="script-card" :body-style="{ padding: '0' }">
-          <!-- 脚本头部信息 -->
-          <div class="script-header">
-            <div class="script-info">
-              <div class="script-logo-container">
-                <img
-                  v-if="script.type === 'MAA'"
-                  src="@/assets/MAA.png"
-                  alt="MAA"
-                  class="script-logo"
-                />
-                <img v-else src="@/assets/AUTO-MAS.ico" alt="AUTO-MAS" class="script-logo" />
+    <!-- 使用vuedraggable包装脚本列表 -->
+    <draggable
+      v-model="localScripts"
+      item-key="id"
+      :animation="200"
+      ghost-class="script-ghost"
+      chosen-class="script-chosen"
+      drag-class="script-drag"
+      @end="onScriptDragEnd"
+      class="draggable-scripts"
+    >
+      <template #item="{ element: script }">
+        <div class="script-wrapper" :key="script.id">
+          <a-card :hoverable="true" class="script-card" :body-style="{ padding: '0' }">
+            <!-- 脚本头部信息 -->
+            <div class="script-header">
+              <div class="script-info">
+                <div class="script-logo-container">
+                  <img
+                    v-if="script.type === 'MAA'"
+                    src="@/assets/MAA.png"
+                    alt="MAA"
+                    class="script-logo"
+                  />
+                  <img v-else src="@/assets/AUTO-MAS.ico" alt="AUTO-MAS" class="script-logo" />
+                </div>
+                <div class="script-details">
+                  <h3 class="script-name">{{ script.name }}</h3>
+                  <a-tag :color="script.type === 'MAA' ? 'blue' : 'green'" class="script-type">
+                    {{ script.type }}
+                  </a-tag>
+                </div>
               </div>
-              <div class="script-details">
-                <h3 class="script-name">{{ script.name }}</h3>
-                <a-tag :color="script.type === 'MAA' ? 'blue' : 'green'" class="script-type">
-                  {{ script.type }}
-                </a-tag>
-              </div>
-            </div>
-            <div class="header-actions">
-              <a-button
-                v-if="script.type === 'MAA' && !props.activeConnections.has(script.id)"
-                type="primary"
-                ghost
-                size="middle"
-                @click="handleStartMAAConfig(script)"
-              >
-                <template #icon>
-                  <SettingOutlined />
-                </template>
-                配置MAA
-              </a-button>
-              <a-button
-                v-if="script.type === 'MAA' && props.activeConnections.has(script.id)"
-                type="primary"
-                size="middle"
-                style="background: #52c41a; border-color: #52c41a;"
-                @click="handleSaveMAAConfig(script)"
-              >
-                <template #icon>
-                  <SaveOutlined />
-                </template>
-                保存配置
-              </a-button>
-              <a-button type="default" size="middle" @click="handleEdit(script)">
-                <template #icon>
-                  <EditOutlined />
-                </template>
-                编辑脚本
-              </a-button>
-              <a-button
-                type="default"
-                size="middle"
-                class="action-button add-button"
-                @click="handleAddUser(script)"
-              >
-                <template #icon>
-                  <UserAddOutlined />
-                </template>
-                添加用户
-              </a-button>
-              <a-popconfirm
-                title="确定要删除这个脚本吗？"
-                description="删除后将无法恢复，请谨慎操作"
-                @confirm="handleDelete(script)"
-                ok-text="确定"
-                cancel-text="取消"
-              >
-                <a-button danger size="middle" class="action-button delete-button">
+              <div class="header-actions">
+                <a-button
+                  v-if="script.type === 'MAA' && !props.activeConnections.has(script.id)"
+                  type="primary"
+                  ghost
+                  size="middle"
+                  @click="handleStartMAAConfig(script)"
+                >
                   <template #icon>
-                    <DeleteOutlined />
+                    <SettingOutlined />
                   </template>
-                  删除脚本
+                  配置MAA
                 </a-button>
-              </a-popconfirm>
-            </div>
-          </div>
-
-          <!-- 用户列表 -->
-          <div class="users-section" v-if="script.users && script.users.length > 0">
-            <div class="users-list">
-              <div v-for="user in script.users" :key="user.id" class="user-item">
-                <div class="user-info">
-                  <div class="user-details-row">
-                    <div class="user-name-section">
-                      <span class="user-name">{{ user.Info.Name }}</span>
-                      <!-- 只有MAA脚本才显示服务器标签 -->
-                      <a-tag
-                        v-if="script.type === 'MAA'"
-                        :color="user.Info.Server === 'Official' ? 'blue' : 'purple'"
-                        class="server-tag"
-                      >
-                        {{ user.Info.Server === 'Official' ? '官服' : 'B服' }}
-                      </a-tag>
-                    </div>
-
-                    <!-- 用户详细信息 - MAA脚本用户 -->
-                    <div v-if="script.type === 'MAA'" class="user-info-tags">
-                      <!-- 剿灭模式 -->
-                      <a-tag
-                        v-if="
-                          user.Info.Annihilation &&
-                          user.Info.Annihilation !== '-' &&
-                          user.Info.Annihilation !== ''
-                        "
-                        class="info-tag"
-                        color="cyan"
-                      >
-                        剿灭：{{
-                          ANNIHILATION_MAP[user.Info.Annihilation] ?? user.Info.Annihilation
-                        }}
-                      </a-tag>
-
-                      <!-- 森空岛签到 -->
-                      <a-tag
-                        v-if="user.Info.IfSkland !== undefined && user.Info.IfSkland !== null"
-                        class="info-tag"
-                        :color="user.Info.IfSkland ? 'green' : 'blue'"
-                      >
-                        森空岛: {{ user.Info.IfSkland ? '开启' : '关闭' }}
-                      </a-tag>
-
-                      <!-- 剩余天数 -->
-                      <a-tag
-                        v-if="user.Info.RemainedDay !== undefined && user.Info.RemainedDay !== null"
-                        class="info-tag"
-                        :color="getRemainingDayColor(user.Info.RemainedDay)"
-                      >
-                        {{ getRemainingDayText(user.Info.RemainedDay) }}
-                      </a-tag>
-
-                      <!-- 基建模式 -->
-                      <a-tag
-                        v-if="
-                          user.Info.InfrastMode &&
-                          user.Info.InfrastMode !== '-' &&
-                          user.Info.InfrastMode !== ''
-                        "
-                        class="info-tag"
-                        color="purple"
-                      >
-                        基建: {{ user.Info.InfrastMode === 'Normal' ? '普通' : '自定义' }}
-                      </a-tag>
-
-                      <!-- 关卡信息 - Stage固定展示 -->
-                      <a-tag v-if="user.Info.Stage" class="info-tag" color="blue">
-                        关卡: {{ user.Info.Stage === '-' ? '未选择' : user.Info.Stage }}
-                      </a-tag>
-
-                      <!-- 额外关卡 - 只有不为-或空时才显示 -->
-                      <a-tag
-                        v-if="
-                          user.Info.Stage_1 && user.Info.Stage_1 !== '-' && user.Info.Stage_1 !== ''
-                        "
-                        class="info-tag"
-                        color="geekblue"
-                      >
-                        关卡1: {{ user.Info.Stage_1 }}
-                      </a-tag>
-
-                      <a-tag
-                        v-if="
-                          user.Info.Stage_2 && user.Info.Stage_2 !== '-' && user.Info.Stage_2 !== ''
-                        "
-                        class="info-tag"
-                        color="geekblue"
-                      >
-                        关卡2: {{ user.Info.Stage_2 }}
-                      </a-tag>
-
-                      <a-tag
-                        v-if="
-                          user.Info.Stage_3 && user.Info.Stage_3 !== '-' && user.Info.Stage_3 !== ''
-                        "
-                        class="info-tag"
-                        color="geekblue"
-                      >
-                        关卡3: {{ user.Info.Stage_3 }}
-                      </a-tag>
-
-                      <a-tag
-                        v-if="
-                          user.Info.Stage_Remain &&
-                          user.Info.Stage_Remain !== '-' &&
-                          user.Info.Stage_Remain !== ''
-                        "
-                        class="info-tag"
-                        color="geekblue"
-                      >
-                        剩余关卡: {{ user.Info.Stage_Remain }}
-                      </a-tag>
-
-                      <a-tag class="info-tag" color="magenta">
-                        备注: {{ truncateText(user.Info.Notes) }}
-                      </a-tag>
-                    </div>
-                    <!-- 用户详细信息 - 通用脚本用户 -->
-                    <div v-if="script.type === 'General'" class="user-info-tags">
-
-                      <!-- 剩余天数 -->
-                      <a-tag
-                        v-if="user.Info.RemainedDay !== undefined && user.Info.RemainedDay !== null"
-                        class="info-tag"
-                        :color="getRemainingDayColor(user.Info.RemainedDay)"
-                      >
-                        {{ getRemainingDayText(user.Info.RemainedDay) }}
-                      </a-tag>
-
-                      <a-tag class="info-tag" color="magenta">
-                        备注: {{ truncateText(user.Info.Notes) }}
-                      </a-tag>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="user-controls">
-                  <div class="user-status">
-                    <a-switch
-                      :checked="user.Info.Status"
-                      :checked-children="'启用'"
-                      :un-checked-children="'禁用'"
-                      @click="handleToggleUserStatus(user)"
-                      class="status-switch"
-                    />
-                  </div>
-
-                  <div class="user-actions">
-                    <a-tooltip title="编辑用户配置">
-                      <a-button
-                        type="default"
-                        size="middle"
-                        class="user-action-btn"
-                        @click="handleEditUser(user)"
-                      >
-                        <template #icon>
-                          <EditOutlined />
-                        </template>
-                        编辑
-                      </a-button>
-                    </a-tooltip>
-                    <a-popconfirm
-                      title="确定要删除这个用户吗？"
-                      description="删除后将无法恢复"
-                      @confirm="handleDeleteUser(user)"
-                      ok-text="确定"
-                      cancel-text="取消"
-                    >
-                      <a-tooltip title="删除用户">
-                        <a-button type="default" size="middle" danger class="user-action-btn">
-                          <template #icon>
-                            <DeleteOutlined />
-                          </template>
-                          删除
-                        </a-button>
-                      </a-tooltip>
-                    </a-popconfirm>
-                  </div>
-                </div>
+                <a-button
+                  v-if="script.type === 'MAA' && props.activeConnections.has(script.id)"
+                  type="primary"
+                  size="middle"
+                  style="background: #52c41a; border-color: #52c41a;"
+                  @click="handleSaveMAAConfig(script)"
+                >
+                  <template #icon>
+                    <SaveOutlined />
+                  </template>
+                  保存配置
+                </a-button>
+                <a-button type="default" size="middle" @click="handleEdit(script)">
+                  <template #icon>
+                    <EditOutlined />
+                  </template>
+                  编辑脚本
+                </a-button>
+                <a-button
+                  type="default"
+                  size="middle"
+                  class="action-button add-button"
+                  @click="handleAddUser(script)"
+                >
+                  <template #icon>
+                    <UserAddOutlined />
+                  </template>
+                  添加用户
+                </a-button>
+                <a-popconfirm
+                  title="确定要删除这个脚本吗？"
+                  description="删除后将无法恢复，请谨慎操作"
+                  @confirm="handleDelete(script)"
+                  ok-text="确定"
+                  cancel-text="取消"
+                >
+                  <a-button danger size="middle" class="action-button delete-button">
+                    <template #icon>
+                      <DeleteOutlined />
+                    </template>
+                    删除脚本
+                  </a-button>
+                </a-popconfirm>
               </div>
             </div>
-          </div>
 
-          <!-- 空状态 -->
-          <div v-else class="empty-users">
-            <div class="empty-content">
-              <img src="@/assets/NoData.png" alt="无数据" class="empty-image" />
+            <!-- 用户列表 -->
+            <div class="users-section" v-if="script.users && script.users.length > 0">
+              <!-- 使用vuedraggable包装用户列表 -->
+              <draggable
+                v-model="script.users"
+                item-key="id"
+                :animation="200"
+                ghost-class="user-ghost"
+                chosen-class="user-chosen"
+                drag-class="user-drag"
+                @end="(evt) => onUserDragEnd(evt, script)"
+                class="users-list"
+              >
+                <template #item="{ element: user }">
+                  <div class="user-item" :key="user.id">
+                    <div class="user-info">
+                      <div class="user-details-row">
+                        <div class="user-name-section">
+                          <span class="user-name">{{ user.Info.Name }}</span>
+                          <!-- 只有MAA脚本才显示服务器标签 -->
+                          <a-tag
+                            v-if="script.type === 'MAA'"
+                            :color="user.Info.Server === 'Official' ? 'blue' : 'purple'"
+                            class="server-tag"
+                          >
+                            {{ user.Info.Server === 'Official' ? '官服' : 'B服' }}
+                          </a-tag>
+                        </div>
+
+                        <!-- 用户详细信息 - MAA脚本用户 -->
+                        <div v-if="script.type === 'MAA'" class="user-info-tags">
+                          <!-- 剿灭模式 -->
+                          <a-tag
+                            v-if="
+                              user.Info.Annihilation &&
+                              user.Info.Annihilation !== '-' &&
+                              user.Info.Annihilation !== ''
+                            "
+                            class="info-tag"
+                            color="cyan"
+                          >
+                            剿灭：{{
+                              ANNIHILATION_MAP[user.Info.Annihilation] ?? user.Info.Annihilation
+                            }}
+                          </a-tag>
+
+                          <!-- 森空岛签到 -->
+                          <a-tag
+                            v-if="user.Info.IfSkland !== undefined && user.Info.IfSkland !== null"
+                            class="info-tag"
+                            :color="user.Info.IfSkland ? 'green' : 'blue'"
+                          >
+                            森空岛: {{ user.Info.IfSkland ? '开启' : '关闭' }}
+                          </a-tag>
+
+                          <!-- 剩余天数 -->
+                          <a-tag
+                            v-if="user.Info.RemainedDay !== undefined && user.Info.RemainedDay !== null"
+                            class="info-tag"
+                            :color="getRemainingDayColor(user.Info.RemainedDay)"
+                          >
+                            {{ getRemainingDayText(user.Info.RemainedDay) }}
+                          </a-tag>
+
+                          <!-- 基建模式 -->
+                          <a-tag
+                            v-if="
+                              user.Info.InfrastMode &&
+                              user.Info.InfrastMode !== '-' &&
+                              user.Info.InfrastMode !== ''
+                            "
+                            class="info-tag"
+                            color="purple"
+                          >
+                            基建: {{ user.Info.InfrastMode === 'Normal' ? '普通' : '自定义' }}
+                          </a-tag>
+
+                          <!-- 关卡信息 - Stage固定展示 -->
+                          <a-tag v-if="user.Info.Stage" class="info-tag" color="blue">
+                            关卡: {{ user.Info.Stage === '-' ? '未选择' : user.Info.Stage }}
+                          </a-tag>
+
+                          <!-- 额外关卡 - 只有不为-或空时才显示 -->
+                          <a-tag
+                            v-if="
+                              user.Info.Stage_1 && user.Info.Stage_1 !== '-' && user.Info.Stage_1 !== ''
+                            "
+                            class="info-tag"
+                            color="geekblue"
+                          >
+                            关卡1: {{ user.Info.Stage_1 }}
+                          </a-tag>
+
+                          <a-tag
+                            v-if="
+                              user.Info.Stage_2 && user.Info.Stage_2 !== '-' && user.Info.Stage_2 !== ''
+                            "
+                            class="info-tag"
+                            color="geekblue"
+                          >
+                            关卡2: {{ user.Info.Stage_2 }}
+                          </a-tag>
+
+                          <a-tag
+                            v-if="
+                              user.Info.Stage_3 && user.Info.Stage_3 !== '-' && user.Info.Stage_3 !== ''
+                            "
+                            class="info-tag"
+                            color="geekblue"
+                          >
+                            关卡3: {{ user.Info.Stage_3 }}
+                          </a-tag>
+
+                          <a-tag
+                            v-if="
+                              user.Info.Stage_Remain &&
+                              user.Info.Stage_Remain !== '-' &&
+                              user.Info.Stage_Remain !== ''
+                            "
+                            class="info-tag"
+                            color="geekblue"
+                          >
+                            剩余关卡: {{ user.Info.Stage_Remain }}
+                          </a-tag>
+
+                          <a-tag class="info-tag" color="magenta">
+                            备注: {{ truncateText(user.Info.Notes) }}
+                          </a-tag>
+                        </div>
+                        <!-- 用户详细信息 - 通用脚本用户 -->
+                        <div v-if="script.type === 'General'" class="user-info-tags">
+                          <!-- 剩余天数 -->
+                          <a-tag
+                            v-if="user.Info.RemainedDay !== undefined && user.Info.RemainedDay !== null"
+                            class="info-tag"
+                            :color="getRemainingDayColor(user.Info.RemainedDay)"
+                          >
+                            {{ getRemainingDayText(user.Info.RemainedDay) }}
+                          </a-tag>
+
+                          <a-tag class="info-tag" color="magenta">
+                            备注: {{ truncateText(user.Info.Notes) }}
+                          </a-tag>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="user-controls">
+                      <div class="user-status">
+                        <a-switch
+                          :checked="user.Info.Status"
+                          :checked-children="'启用'"
+                          :un-checked-children="'禁用'"
+                          @click="handleToggleUserStatus(user)"
+                          class="status-switch"
+                        />
+                      </div>
+
+                      <div class="user-actions">
+                        <a-tooltip title="编辑用户配置">
+                          <a-button
+                            type="default"
+                            size="middle"
+                            class="user-action-btn"
+                            @click="handleEditUser(user)"
+                          >
+                            <template #icon>
+                              <EditOutlined />
+                            </template>
+                            编辑
+                          </a-button>
+                        </a-tooltip>
+                        <a-popconfirm
+                          title="确定要删除这个用户吗？"
+                          description="删除后将无法恢复"
+                          @confirm="handleDeleteUser(user)"
+                          ok-text="确定"
+                          cancel-text="取消"
+                        >
+                          <a-tooltip title="删除用户">
+                            <a-button type="default" size="middle" danger class="user-action-btn">
+                              <template #icon>
+                                <DeleteOutlined />
+                              </template>
+                              删除
+                            </a-button>
+                          </a-tooltip>
+                        </a-popconfirm>
+                      </div>
+                    </div>
+                  </div>
+                </template>
+              </draggable>
             </div>
-          </div>
-        </a-card>
-      </a-col>
-    </a-row>
+
+            <!-- 空状态 -->
+            <div v-else class="empty-users">
+              <div class="empty-content">
+                <img src="@/assets/NoData.png" alt="无数据" class="empty-image" />
+              </div>
+            </div>
+          </a-card>
+        </div>
+      </template>
+    </draggable>
   </div>
 </template>
 
@@ -295,6 +309,10 @@ import {
   SettingOutlined,
   UserAddOutlined,
 } from '@ant-design/icons-vue'
+import draggable from 'vuedraggable'
+import { ref, watch } from 'vue'
+import { Service } from '@/api'
+import { message } from 'ant-design-vue'
 
 interface Props {
   scripts: Script[]
@@ -303,20 +321,14 @@ interface Props {
 
 interface Emits {
   (e: 'edit', script: Script): void
-
   (e: 'delete', script: Script): void
-
   (e: 'addUser', script: Script): void
-
   (e: 'editUser', user: User): void
-
   (e: 'deleteUser', user: User): void
-
   (e: 'startMaaConfig', script: Script): void
-
   (e: 'saveMaaConfig', script: Script): void
-
   (e: 'toggleUserStatus', user: User): void
+  (e: 'scriptsReordered', scripts: Script[]): void
 }
 
 const ANNIHILATION_MAP: Record<string, string> = {
@@ -329,6 +341,18 @@ const ANNIHILATION_MAP: Record<string, string> = {
 
 const props = defineProps<Props>()
 const emit = defineEmits<Emits>()
+
+// 本地脚本列表状态
+const localScripts = ref<Script[]>([])
+
+// 监听props变化，更新本地状态
+watch(
+  () => props.scripts,
+  (newScripts) => {
+    localScripts.value = [...newScripts]
+  },
+  { immediate: true, deep: true }
+)
 
 const handleEdit = (script: Script) => {
   emit('edit', script)
@@ -361,6 +385,7 @@ const handleSaveMAAConfig = (script: Script) => {
 const handleToggleUserStatus = (user: User) => {
   emit('toggleUserStatus', user)
 }
+
 const truncateText = (text: string, maxLength: number = 10): string => {
   if (!text || text.length === 0) return '无'
   return text.length > maxLength ? text.substring(0, maxLength) + '...' : text
@@ -382,11 +407,115 @@ const getRemainingDayText = (remainedDay: number): string => {
   if (remainedDay === 0) return '剩余天数: 已到期'
   return `剩余天数: ${remainedDay}天`
 }
+
+// 处理脚本拖拽结束
+const onScriptDragEnd = async () => {
+  try {
+    const scriptIds = localScripts.value.map((script) => script.id)
+    await Service.reorderScriptApiScriptsOrderPost({
+      indexList: scriptIds,
+    })
+
+    // 通知父组件脚本顺序已更改
+    emit('scriptsReordered', localScripts.value)
+
+    message.success('脚本排序已保存')
+  } catch (error) {
+    console.error('保存脚本排序失败:', error)
+    message.error('保存脚本排序失败')
+
+    // 恢复原始顺序
+    localScripts.value = [...props.scripts]
+  }
+}
+
+// 处理用户拖拽结束
+const onUserDragEnd = async (evt: any, script: Script) => {
+  try {
+    const userIds = script.users?.map((user) => user.id) || []
+    await Service.reorderUserApiScriptsUserOrderPost({
+      scriptId: script.id,
+      indexList: userIds,
+    })
+
+    message.success('用户排序已保存')
+  } catch (error) {
+    console.error('保存用户排序失败:', error)
+    message.error('保存用户排序失败')
+
+    // 恢复原始顺序 - 找到原始脚本并恢复用户顺序
+    const originalScript = props.scripts.find((s) => s.id === script.id)
+    if (originalScript && originalScript.users) {
+      script.users = [...originalScript.users]
+    }
+  }
+}
 </script>
 
 <style scoped>
 .scripts-grid {
   width: 100%;
+}
+
+/* 拖拽样式 */
+.draggable-scripts {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.script-wrapper {
+  width: 100%;
+}
+
+.script-ghost {
+  opacity: 0.5;
+  transform: rotate(2deg);
+}
+
+.script-chosen {
+  cursor: grabbing !important;
+}
+
+.script-drag {
+  transform: rotate(2deg);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.2);
+  z-index: 1000;
+}
+
+.users-list {
+  width: 100%;
+}
+
+.user-ghost {
+  opacity: 0.5;
+  background: var(--ant-color-primary-bg) !important;
+  border: 2px dashed var(--ant-color-primary) !important;
+}
+
+.user-chosen {
+  cursor: grabbing !important;
+  background: var(--ant-color-primary-bg) !important;
+}
+
+.user-drag {
+  transform: rotate(1deg);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  z-index: 999;
+  background: var(--ant-color-bg-container) !important;
+}
+
+/* 拖拽时禁用某些交互 */
+.script-ghost .script-card:hover,
+.script-drag .script-card:hover {
+  transform: none !important;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.2) !important;
+}
+
+.user-ghost:hover,
+.user-drag:hover {
+  background: var(--ant-color-primary-bg) !important;
 }
 
 /* 脚本卡片 */
@@ -483,32 +612,6 @@ const getRemainingDayText = (remainedDay: number): string => {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
-.config-button {
-  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
-  border-color: var(--ant-color-primary);
-}
-
-.config-button:hover {
-  background: linear-gradient(
-    135deg,
-    var(--ant-color-primary-hover),
-    var(--ant-color-primary-active)
-  );
-  border-color: var(--ant-color-primary-hover);
-}
-
-.edit-button {
-  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
-}
-
-.edit-button:hover {
-  background: linear-gradient(
-    135deg,
-    var(--ant-color-primary-hover),
-    var(--ant-color-primary-active)
-  );
-}
-
 .add-button {
   border-color: var(--ant-color-primary);
   color: var(--ant-color-primary);
@@ -524,45 +627,12 @@ const getRemainingDayText = (remainedDay: number): string => {
   background: linear-gradient(135deg, var(--ant-color-error), var(--ant-color-error-hover));
 }
 
-.more-actions {
-  color: var(--ant-color-text-secondary);
-  border: none;
-  box-shadow: none;
-}
-
-.more-actions:hover {
-  color: var(--ant-color-primary);
-  background: var(--ant-color-primary-bg);
-}
-
-/* 脚本操作按钮 */
-.script-actions {
-  display: flex;
-  gap: 8px;
-  padding: 16px 20px;
-  border-bottom: 1px solid var(--ant-color-border-secondary);
-  background: var(--ant-color-bg-layout);
-}
-
-.script-actions .ant-btn {
-  border-radius: 6px;
-  font-weight: 500;
-  transition: all 0.3s ease;
-}
-
-.script-actions .ant-btn:hover {
-  transform: translateY(-1px);
-}
-
 /* 用户区域 */
 .users-section {
   flex: 1;
   display: flex;
   flex-direction: column;
 }
-
-/* 用户列表 */
-
 
 .user-item {
   display: flex;
@@ -571,7 +641,7 @@ const getRemainingDayText = (remainedDay: number): string => {
   padding: 16px 20px;
   border-bottom: 1px solid var(--ant-color-border-secondary);
   transition: all 0.2s ease;
-  min-height: 80px; /* 确保每个用户项有足够高度 */
+  min-height: 80px;
 }
 
 .user-item:last-child {
@@ -690,32 +760,6 @@ const getRemainingDayText = (remainedDay: number): string => {
   align-items: center;
   justify-content: center;
   padding: 40px 20px;
-}
-
-.compact-empty :deep(.ant-empty-description) {
-  margin-bottom: 12px;
-  font-size: 13px;
-  color: var(--ant-color-text-tertiary);
-}
-
-.empty-icon {
-  font-size: 32px;
-  color: var(--ant-color-text-quaternary);
-  margin-bottom: 8px;
-}
-
-/* 折叠动画 */
-.ant-collapse-transition {
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-/* 滚动条样式已移除，因为不再需要滚动 */
-
-/* 深色模式适配 */
-@media (prefers-color-scheme: dark) {
-  .script-card:hover {
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
-  }
 }
 
 /* 响应式设计 */
