@@ -1860,7 +1860,7 @@ class AppConfig(GlobalConfig):
         """获取脚本下拉框信息"""
 
         logger.info("Getting script combo box information...")
-        data = [{"label": "未选择", "value": None}]
+        data = [{"label": "未选择", "value": "-"}]
         for uid, script in self.ScriptConfig.items():
             data.append(
                 {
