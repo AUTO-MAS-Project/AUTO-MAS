@@ -1,12 +1,12 @@
 <template>
-  <a-card title="队列项" class="queue-item-card" :loading="loading">
+  <a-card title="任务列表" class="queue-item-card" :loading="loading">
     <template #extra>
       <a-space>
         <a-button type="primary" @click="addQueueItem" :loading="loading">
           <template #icon>
             <PlusOutlined />
           </template>
-          添加队列项
+          添加任务
         </a-button>
       </a-space>
     </template>
@@ -16,29 +16,36 @@
       :data-source="queueItems"
       :pagination="false"
       size="middle"
-      :scroll="{ x: 600 }"
+      :scroll="{ x: false, y: false }"
+      table-layout="auto"
+      class="queue-table"
     >
       <template #emptyText>
-        <span>暂无队列项</span>
+        <span>暂无任务</span>
       </template>
       <template #bodyCell="{ column, record, index }">
-        <template v-if="column.key === 'index'"> 第{{ index + 1 }}个脚本 </template>
+        <template v-if="column.key === 'index'"> {{ index + 1 }} </template>
         <template v-else-if="column.key === 'script'">
-          {{ getScriptName(record.script) }}
+          <a-select
+            v-model:value="record.script"
+            @change="updateQueueItemScript(record)"
+            size="small"
+            style="width: 200px"
+            class="script-select"
+            placeholder="请选择脚本"
+            :options="scriptOptions"
+            allow-clear
+          />
         </template>
         <template v-else-if="column.key === 'actions'">
           <a-space>
-            <a-button size="small" @click="editQueueItem(record)">
-              <EditOutlined />
-              编辑
-            </a-button>
             <a-popconfirm
-              title="确定要删除这个队列项吗？"
+              title="确定要删除这个任务吗？"
               @confirm="deleteQueueItem(record.id)"
               ok-text="确定"
               cancel-text="取消"
             >
-              <a-button size="small" danger>
+              <a-button size="middle" danger>
                 <DeleteOutlined />
                 删除
               </a-button>
@@ -47,35 +54,13 @@
         </template>
       </template>
     </a-table>
-
-    <!-- 队列项编辑弹窗 -->
-    <a-modal
-      v-model:open="modalVisible"
-      :title="editingQueueItem ? '编辑队列项' : '添加队列项'"
-      @ok="saveQueueItem"
-      @cancel="cancelEdit"
-      :confirm-loading="saving"
-      width="600px"
-    >
-      <a-form ref="formRef" :model="form" :rules="rules" layout="vertical">
-        <a-form-item label="关联脚本" name="script">
-          <a-select
-            v-model:value="form.script"
-            placeholder="请选择关联脚本"
-            allow-clear
-            :options="scriptOptions"
-          />
-        </a-form-item>
-      </a-form>
-    </a-modal>
   </a-card>
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref, watch } from 'vue'
-import type { FormInstance } from 'ant-design-vue'
+import { onMounted, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
-import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons-vue'
+import { DeleteOutlined, PlusOutlined } from '@ant-design/icons-vue'
 import { Service } from '@/api'
 
 // Props
@@ -93,48 +78,29 @@ const emit = defineEmits<{
 
 // 响应式数据
 const loading = ref(false)
-const saving = ref(false)
-const modalVisible = ref(false)
-const editingQueueItem = ref<any>(null)
 
 // 选项数据
-const scriptOptions = ref<Array<{ label: string; value: string }>>([])
-
-// 获取脚本名称
-const getScriptName = (scriptId: string) => {
-  if (!scriptId) return '未选择脚本'
-  const script = scriptOptions.value.find(script => script.value === scriptId)
-  return script?.label || '未知脚本'
-}
-
-// 表单引用和数据
-const formRef = ref<FormInstance>()
-const form = reactive({
-  script: '',
-})
-
-// 表单验证规则
-const rules = {
-  script: [{ required: true, message: '请选择关联脚本', trigger: 'change' }],
-}
+const scriptOptions = ref<Array<{ label: string; value: string | null }>>([])
 
 // 表格列配置
 const queueColumns = [
   {
     title: '序号',
     key: 'index',
-    width: 150,
+    width: 80,
+    align: 'center',
   },
   {
-    title: '脚本名称',
+    title: '脚本任务',
     key: 'script',
-    width: 200,
+    align: 'center',
+    ellipsis: true,
   },
   {
     title: '操作',
     key: 'actions',
-    width: 150,
-    fixed: 'right',
+    width: 100,
+    align: 'center',
   },
 ]
 
@@ -160,7 +126,7 @@ const loadOptions = async () => {
 
     if (scriptsResponse.code === 200) {
       console.log('脚本API响应数据:', scriptsResponse.data)
-      // 数据已经是正确的格式，直接使用
+      // 直接使用接口返回的combox选项
       scriptOptions.value = scriptsResponse.data || []
       console.log('处理后的脚本选项:', scriptOptions.value)
     } else {
@@ -171,99 +137,57 @@ const loadOptions = async () => {
   }
 }
 
-// 添加队列项
-const addQueueItem = async () => {
-  editingQueueItem.value = null
-  Object.assign(form, {
-    script: null,
-  })
-
-  // 确保在打开弹窗时加载脚本选项
-  await loadOptions()
-  modalVisible.value = true
-}
-
-// 编辑队列项
-const editQueueItem = async (item: any) => {
-  editingQueueItem.value = item
-  Object.assign(form, {
-    script: item.script || '',
-  })
-
-  // 确保在打开弹窗时加载脚本选项
-  await loadOptions()
-  modalVisible.value = true
-}
-
-// 保存队列项
-const saveQueueItem = async () => {
+// 更新队列项脚本
+const updateQueueItemScript = async (record: any) => {
   try {
-    await formRef.value?.validate()
-    saving.value = true
-
-    if (editingQueueItem.value) {
-      // 更新队列项 - 只保存脚本信息
-      const response = await Service.updateItemApiQueueItemUpdatePost({
-        queueId: props.queueId,
-        queueItemId: editingQueueItem.value.id,
-        data: {
-          Info: {
-            ScriptId: form.script,
-          },
+    loading.value = true
+    
+    const response = await Service.updateItemApiQueueItemUpdatePost({
+      queueId: props.queueId,
+      queueItemId: record.id,
+      data: {
+        Info: {
+          ScriptId: record.script,
         },
-      })
+      },
+    })
 
-      if (response.code === 200) {
-        message.success('队列项更新成功')
-      } else {
-        message.error('队列项更新失败: ' + (response.message || '未知错误'))
-        return
-      }
+    if (response.code === 200) {
+      message.success('脚本更新成功')
+      emit('refresh')
     } else {
-      // 添加队列项 - 先创建，再更新
-      // 1. 先创建队列项，只传queueId
-      const createResponse = await Service.addItemApiQueueItemAddPost({
-        queueId: props.queueId,
-      })
-
-      // 2. 用返回的queueItemId更新队列项数据
-      if (createResponse.code === 200 && createResponse.queueItemId) {
-        const updateResponse = await Service.updateItemApiQueueItemUpdatePost({
-          queueId: props.queueId,
-          queueItemId: createResponse.queueItemId,
-          data: {
-            Info: {
-              ScriptId: form.script,
-            },
-          },
-        })
-
-        if (updateResponse.code === 200) {
-          message.success('队列项添加成功')
-        } else {
-          message.error('队列项添加失败: ' + (updateResponse.message || '未知错误'))
-          return
-        }
-      } else {
-        message.error('创建队列项失败: ' + (createResponse.message || '未知错误'))
-        return
-      }
+      message.error('脚本更新失败: ' + (response.message || '未知错误'))
     }
-
-    modalVisible.value = false
-    emit('refresh')
-  } catch (error) {
-    console.error('保存队列项失败:', error)
-    message.error('保存队列项失败: ' + (error?.message || '网络错误'))
+  } catch (error: any) {
+    console.error('更新脚本失败:', error)
+    message.error('更新脚本失败: ' + (error?.message || '网络错误'))
   } finally {
-    saving.value = false
+    loading.value = false
   }
 }
 
-// 取消编辑
-const cancelEdit = () => {
-  modalVisible.value = false
-  editingQueueItem.value = null
+// 添加队列项
+const addQueueItem = async () => {
+  try {
+    loading.value = true
+    
+    // 直接创建队列项，默认ScriptId为null（未选择）
+    const createResponse = await Service.addItemApiQueueItemAddPost({
+      queueId: props.queueId,
+    })
+
+    if (createResponse.code === 200 && createResponse.queueItemId) {
+      message.success('任务添加成功')
+      emit('refresh')
+    } else {
+      message.error('任务添加失败: ' + (createResponse.message || '未知错误'))
+    }
+  } catch (error: any) {
+    console.error('添加任务失败:', error)
+    message.error('添加任务失败: ' + (error?.message || '网络错误'))
+  } finally {
+    loading.value = false
+  }
 }
 
 // 删除队列项
@@ -281,7 +205,7 @@ const deleteQueueItem = async (itemId: string) => {
     } else {
       message.error('删除队列项失败: ' + (response.message || '未知错误'))
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error('删除队列项失败:', error)
     message.error('删除队列项失败: ' + (error?.message || '网络错误'))
   }
@@ -301,6 +225,199 @@ onMounted(() => {
 .queue-item-card :deep(.ant-card-head-title) {
   font-size: 18px;
   font-weight: 600;
+}
+
+/* 表格样式优化 */
+.queue-table {
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+.queue-table :deep(.ant-table-wrapper) {
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+/* 禁用所有滚动条，让表格自动延伸 */
+:deep(.ant-table-wrapper) {
+  overflow: visible !important;
+}
+
+:deep(.ant-table-container) {
+  overflow: visible !important;
+  max-height: none !important;
+  height: auto !important;
+}
+
+:deep(.ant-table-body) {
+  overflow: visible !important;
+  max-height: none !important;
+  height: auto !important;
+}
+
+:deep(.ant-table-content) {
+  overflow: visible !important;
+  max-height: none !important;
+  height: auto !important;
+}
+
+:deep(.ant-table-tbody) {
+  overflow: visible !important;
+}
+
+:deep(.ant-table) {
+  font-size: 14px;
+  table-layout: auto;
+  width: 100%;
+  overflow: visible !important;
+}
+
+/* 列宽度控制 */
+:deep(.ant-table-thead > tr > th:nth-child(1)) {
+  width: 80px !important;
+  min-width: 80px !important;
+  max-width: 80px !important;
+}
+
+:deep(.ant-table-thead > tr > th:nth-child(2)) {
+  width: auto !important;
+  min-width: 120px !important;
+}
+
+:deep(.ant-table-thead > tr > th:nth-child(3)) {
+  width: 180px !important;
+  min-width: 180px !important;
+  max-width: 180px !important;
+}
+
+:deep(.ant-table-tbody > tr > td:nth-child(1)) {
+  width: 80px !important;
+  min-width: 80px !important;
+  max-width: 80px !important;
+}
+
+:deep(.ant-table-tbody > tr > td:nth-child(2)) {
+  width: auto !important;
+  min-width: 120px !important;
+}
+
+:deep(.ant-table-tbody > tr > td:nth-child(3)) {
+  width: 180px !important;
+  min-width: 180px !important;
+  max-width: 180px !important;
+}
+
+/* 强制移除任何可能的滚动条 */
+:deep(.ant-table-wrapper),
+:deep(.ant-table-container),
+:deep(.ant-table-body),
+:deep(.ant-table-content),
+:deep(.ant-table),
+:deep(.ant-table-tbody) {
+  scrollbar-width: none !important; /* Firefox */
+  -ms-overflow-style: none !important; /* IE/Edge */
+}
+
+:deep(.ant-table-wrapper)::-webkit-scrollbar,
+:deep(.ant-table-container)::-webkit-scrollbar,
+:deep(.ant-table-body)::-webkit-scrollbar,
+:deep(.ant-table-content)::-webkit-scrollbar,
+:deep(.ant-table)::-webkit-scrollbar,
+:deep(.ant-table-tbody)::-webkit-scrollbar {
+  display: none !important; /* Chrome/Safari */
+}
+
+/* 表格行和列样式 */
+:deep(.ant-table-tbody > tr > td) {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--ant-color-border);
+}
+
+:deep(.ant-table-thead > tr > th) {
+  font-weight: 600;
+  padding: 8px 12px;
+  text-align: center;
+  background-color: var(--ant-color-bg-container);
+  border-bottom: 1px solid var(--ant-color-border);
+}
+
+/* 脚本名称列特殊处理 */
+:deep(.ant-table-tbody > tr > td:nth-child(2)) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  word-break: break-all;
+}
+
+:deep(.ant-table-thead > tr > th:nth-child(2)) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 确保列内容正确显示 */
+:deep(.ant-table-thead > tr > th) {
+  text-align: center;
+  vertical-align: middle;
+}
+
+:deep(.ant-table-tbody > tr > td) {
+  text-align: center;
+  vertical-align: middle;
+}
+
+:deep(.ant-table-cell) {
+  text-align: center;
+}
+
+/* 表格整体布局优化 */
+:deep(.ant-table-wrapper) {
+  width: 100%;
+  min-height: auto;
+}
+
+/* 确保表格不会被压缩 */
+:deep(.ant-table-fixed-header) {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+
+:deep(.ant-table-fixed-header)::-webkit-scrollbar {
+  display: none !important;
+}
+
+/* 序号列样式 */
+:deep(.ant-table-tbody > tr > td:first-child) {
+  font-weight: 500;
+  color: var(--ant-color-text-secondary);
+}
+
+/* 操作按钮布局 */
+:deep(.ant-btn) {
+  min-width: auto;
+  height: 32px;
+  padding: 0 8px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+:deep(.ant-space) {
+  gap: 6px !important;
+}
+
+:deep(.ant-space-item) {
+  margin-right: 6px !important;
+}
+
+/* 操作列内容居中且不超出 */
+:deep(.ant-table-tbody > tr > td:nth-child(3) .ant-space) {
+  justify-content: center;
+  width: 100%;
+}
+
+/* 按钮图标样式调整 */
+:deep(.ant-btn .anticon) {
+  font-size: 14px;
 }
 
 /* 队列项列表样式 */
@@ -378,5 +495,98 @@ onMounted(() => {
 :deep(.ant-tag) {
   margin: 0;
   border-radius: 4px;
+}
+
+/* 脚本下拉框样式 - 使用与TimeSetManager.vue状态下拉框相同的样式 */
+.script-select :deep(.ant-select-selector) {
+  background: transparent !important;
+  border: none !important;
+  padding: 0 6px !important;
+  font-size: 13px !important;
+  min-height: 28px !important;
+  line-height: 26px !important;
+  box-shadow: none !important;
+  text-align: center;
+}
+
+.script-select :deep(.ant-select-selection-item) {
+  line-height: 26px !important;
+  color: var(--ant-color-text) !important;
+  font-size: 13px !important;
+  font-weight: 500;
+  padding: 0;
+  margin: 0;
+}
+
+.script-select :deep(.ant-select-selection-placeholder) {
+  line-height: 26px !important;
+  color: var(--ant-color-text-placeholder) !important;
+  font-size: 13px !important;
+  padding: 0;
+  margin: 0;
+}
+
+.script-select :deep(.ant-select-clear) {
+  display: none !important;
+}
+
+.script-select :deep(.ant-select-selection-search) {
+  margin: 0 !important;
+  padding: 0;
+}
+
+.script-select :deep(.ant-select-selection-search-input) {
+  padding: 0 !important;
+  margin: 0 !important;
+  height: 26px !important;
+}
+
+.script-select:hover :deep(.ant-select-selector) {
+  border: none !important;
+  box-shadow: none !important;
+  background: transparent !important;
+}
+
+.script-select:focus-within :deep(.ant-select-selector),
+.script-select.ant-select-focused :deep(.ant-select-selector) {
+  border: none !important;
+  box-shadow: none !important;
+  background: transparent !important;
+  outline: none !important;
+}
+
+.script-select :deep(.ant-select-selector):focus,
+.script-select :deep(.ant-select-selector):focus-within {
+  border: none !important;
+  box-shadow: none !important;
+  background: transparent !important;
+  outline: none !important;
+  cursor: default !important;
+}
+
+/* 下拉箭头样式 */
+.script-select :deep(.ant-select-arrow) {
+  right: 4px;
+  color: var(--ant-color-text-tertiary);
+  font-size: 10px;
+}
+
+.script-select :deep(.ant-select-arrow:hover) {
+  color: var(--ant-color-primary);
+}
+
+/* 自定义下拉框样式 - 增加下拉菜单宽度 */
+.script-select :deep(.ant-select-dropdown) {
+  min-width: 200px !important;
+  max-width: 300px !important;
+}
+
+.script-select :deep(.ant-select-item) {
+  padding: 8px 12px !important;
+  font-size: 13px !important;
+}
+
+.script-select :deep(.ant-select-item-option-content) {
+  font-size: 13px !important;
 }
 </style>
