@@ -1564,9 +1564,6 @@ class AppConfig(GlobalConfig):
 
         for group, items in data.items():
             for name, value in items.items():
-                if uuid.UUID(value) not in self.ScriptConfig:
-                    logger.warning(f"脚本 {value} 不存在")
-                    raise ValueError(f"脚本 {value} 不存在")
                 logger.debug(f"更新队列项配置: {queue_id} - {group}.{name} = {value}")
                 if isinstance(queue_config, QueueConfig):
                     await queue_config.QueueItem[uid].set(group, name, value)
