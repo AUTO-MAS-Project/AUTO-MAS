@@ -170,8 +170,8 @@ class QueueItem(ConfigBase):
         self.Info_ScriptId = ConfigItem(
             "Info",
             "ScriptId",
-            None,
-            MultipleUIDValidator(None, self.related_config, "ScriptConfig"),
+            "-",
+            MultipleUIDValidator("-", self.related_config, "ScriptConfig"),
         )
 
 
@@ -928,7 +928,7 @@ class AppConfig(GlobalConfig):
                                 {
                                     "Info": {
                                         "ScriptId": script_dict.get(
-                                            queue_config["Queue"][f"Script_{i}"], None
+                                            queue_config["Queue"][f"Script_{i}"], "-"
                                         )
                                     }
                                 }
