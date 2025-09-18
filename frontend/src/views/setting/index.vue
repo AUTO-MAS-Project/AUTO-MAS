@@ -16,9 +16,6 @@ import { mirrorManager } from '@/utils/mirrorManager'
 import TabBasic from './TabBasic.vue'
 import TabFunction from './TabFunction.vue'
 import TabNotify from './TabNotify.vue'
-import TabUpdate from './TabUpdate.vue'
-import TabStart from './TabStart.vue'
-import TabVoice from './TabVoice.vue'
 import TabAdvanced from './TabAdvanced.vue'
 import TabOthers from './TabOthers.vue'
 
@@ -278,7 +275,10 @@ onMounted(() => {
           <TabFunction
             :settings="settings"
             :history-retention-options="historyRetentionOptions"
+            :update-source-options="updateSourceOptions"
+            :voice-type-options="voiceTypeOptions"
             :handle-setting-change="handleSettingChange"
+            :check-update="checkUpdate"
           />
         </a-tab-pane>
         <a-tab-pane key="notify" tab="通知设置">
@@ -289,20 +289,6 @@ onMounted(() => {
             :test-notify="testNotify"
             :testing-notify="testingNotify"
           />
-        </a-tab-pane>
-        <a-tab-pane key="update" tab="更新设置">
-          <TabUpdate
-            :settings="settings"
-            :update-source-options="updateSourceOptions"
-            :handle-setting-change="handleSettingChange"
-            :check-update="checkUpdate"
-          />
-        </a-tab-pane>
-        <a-tab-pane key="start" tab="启动设置">
-          <TabStart :settings="settings" :handle-setting-change="handleSettingChange" />
-        </a-tab-pane>
-        <a-tab-pane key="voice" tab="语音设置">
-          <TabVoice :settings="settings" :voice-type-options="voiceTypeOptions" :handle-setting-change="handleSettingChange" />
         </a-tab-pane>
         <a-tab-pane key="advanced" tab="高级设置">
           <TabAdvanced 
