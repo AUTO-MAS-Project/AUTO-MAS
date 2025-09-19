@@ -1,40 +1,51 @@
 <template>
   <div class="task-control">
-    <div class="control-row">
-      <a-select
-        v-model:value="localSelectedTaskId"
-        placeholder="选择任务项"
-        style="width: 200px"
-        :loading="taskOptionsLoading"
-        :options="taskOptions"
-        show-search
-        :filter-option="filterTaskOption"
-        :disabled="disabled"
-        @change="onTaskChange"
-      />
-      <a-select
-        v-model:value="localSelectedMode"
-        placeholder="选择模式"
-        style="width: 120px"
-        :disabled="disabled"
-        @change="onModeChange"
-      >
-        <a-select-option v-for="option in modeOptions" :key="option.value" :value="option.value">
-          {{ option.label }}
-        </a-select-option>
-      </a-select>
-      <div class="control-spacer"></div>
-      <a-button
-        v-if="status !== '运行'"
-        type="primary"
-        @click="onStart"
-        :icon="h(PlayCircleOutlined)"
-        :disabled="!canStart"
-      >
-        开始任务
-      </a-button>
-      <a-button v-else danger @click="onStop" :icon="h(StopOutlined)"> 中止任务</a-button>
-    </div>
+    <a-card class="control-card" :bordered="false">
+      <div class="control-row">
+        <a-space size="middle">
+          <a-select
+            v-model:value="localSelectedTaskId"
+            placeholder="选择任务项"
+            style="width: 200px"
+            :loading="taskOptionsLoading"
+            :options="taskOptions"
+            show-search
+            :filter-option="filterTaskOption"
+            :disabled="disabled"
+            @change="onTaskChange"
+            size="large"
+          />
+          <a-select
+            v-model:value="localSelectedMode"
+            placeholder="选择模式"
+            style="width: 120px"
+            :disabled="disabled"
+            @change="onModeChange"
+            size="large"
+          >
+            <a-select-option v-for="option in modeOptions" :key="option.value" :value="option.value">
+              {{ option.label }}
+            </a-select-option>
+          </a-select>
+        </a-space>
+        <div class="control-spacer"></div>
+        <a-space size="middle">
+          <a-button
+            v-if="status !== '运行'"
+            type="primary"
+            @click="onStart"
+            :icon="h(PlayCircleOutlined)"
+            :disabled="!canStart"
+            size="large"
+          >
+            开始任务
+          </a-button>
+          <a-button v-else danger @click="onStop" :icon="h(StopOutlined)" size="large">
+            中止任务
+          </a-button>
+        </a-space>
+      </div>
+    </a-card>
   </div>
 </template>
 
@@ -127,33 +138,50 @@ const filterTaskOption = (input: string, option: any) => {
   margin-bottom: 16px;
 }
 
+.control-card {
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  border: 1px solid var(--ant-color-border-secondary);
+}
+
+.control-card :deep(.ant-card-body) {
+  padding: 16px;
+}
+
 .control-row {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 16px;
-  background: var(--ant-color-bg-layout);
-  border: 1px solid var(--ant-color-border);
+  background: var(--ant-color-bg-container);
   border-radius: 8px;
   transition: all 0.3s ease;
-}
-
-/* 暗色模式适配 */
-@media (prefers-color-scheme: dark) {
-  .control-row {
-    background: var(--ant-color-bg-layout, #141414);
-    border: 1px solid var(--ant-color-border, #424242);
-  }
 }
 
 .control-spacer {
   flex: 1;
 }
 
+/* 暗色模式适配 */
+@media (prefers-color-scheme: dark) {
+  .control-card {
+    background: var(--ant-color-bg-container, #1f1f1f);
+    border: 1px solid var(--ant-color-border, #424242);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  }
+  
+  .control-row {
+    background: var(--ant-color-bg-container, #1f1f1f);
+  }
+}
+
 @media (max-width: 768px) {
   .control-row {
     flex-direction: column;
     align-items: stretch;
+  }
+  
+  .control-card :deep(.ant-card-body) {
+    padding: 12px;
   }
 
   .control-spacer {

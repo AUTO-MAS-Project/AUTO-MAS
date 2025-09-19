@@ -13,9 +13,38 @@ import {
   type TaskMessage,
 } from './schedulerConstants'
 
-export function useSchedulerLogic() {
-  // 核心状态
-  const schedulerTabs = ref<SchedulerTab[]>([
+// 本地存储键名
+const SCHEDULER_STORAGE_KEY = 'scheduler-tabs-state'
+const SCHEDULER_POWER_ACTION_KEY = 'scheduler-power-action'
+
+// 从本地存储加载调度台状态
+const loadTabsFromStorage = (): SchedulerTab[] => {
+  try {
+    const stored = localStorage.getItem(SCHEDULER_STORAGE_KEY)
+    if (stored) {
+      const parsed = JSON.parse(stored)
+      // 确保运行中的任务状态正确重置
+      return parsed.map((tab: any) => ({
+        ...tab,
+        // 重置WebSocket相关状态
+        websocketId: null,
+        status: tab.status === '运行' ? '结束' : tab.status,
+        // 确保数组存在
+        taskQueue: Array.isArray(tab.taskQueue) ? tab.taskQueue : [],
+        userQueue: Array.isArray(tab.userQueue) ? tab.userQueue : [],
+        logs: Array.isArray(tab.logs) ? tab.logs : [],
+        // 确保其他属性存在
+        selectedTaskId: tab.selectedTaskId || null,
+        selectedMode: tab.selectedMode || TaskCreateIn.mode.AutoMode,
+        isLogAtBottom: typeof tab.isLogAtBottom === 'boolean' ? tab.isLogAtBottom : true,
+        lastLogContent: tab.lastLogContent || '',
+      }))
+    }
+  } catch (e) {
+    console.error('Failed to load scheduler tabs from storage:', e)
+  }
+  // 默认返回主调度台
+  return [
     {
       key: 'main',
       title: '主调度台',
@@ -30,18 +59,64 @@ export function useSchedulerLogic() {
       isLogAtBottom: true,
       lastLogContent: '',
     },
-  ])
+  ]
+}
 
-  const activeSchedulerTab = ref('main')
+// 从本地存储加载电源操作状态
+const loadPowerActionFromStorage = (): PowerIn.signal => {
+  try {
+    const stored = localStorage.getItem(SCHEDULER_POWER_ACTION_KEY)
+    if (stored) {
+      return stored as PowerIn.signal
+    }
+  } catch (e) {
+    console.error('Failed to load power action from storage:', e)
+  }
+  return PowerIn.signal.NO_ACTION
+}
+
+// 保存调度台状态到本地存储
+const saveTabsToStorage = (tabs: SchedulerTab[]) => {
+  try {
+    // 保存前清理运行时状态
+    const tabsToSave = tabs.map(tab => ({
+      ...tab,
+      // 清理运行时属性
+      websocketId: null,
+      status: tab.status === '运行' ? '结束' : tab.status,
+    }))
+    localStorage.setItem(SCHEDULER_STORAGE_KEY, JSON.stringify(tabsToSave))
+  } catch (e) {
+    console.error('Failed to save scheduler tabs to storage:', e)
+  }
+}
+
+// 保存电源操作状态到本地存储
+const savePowerActionToStorage = (powerAction: PowerIn.signal) => {
+  try {
+    localStorage.setItem(SCHEDULER_POWER_ACTION_KEY, powerAction)
+  } catch (e) {
+    console.error('Failed to save power action to storage:', e)
+  }
+}
+
+export function useSchedulerLogic() {
+  // 核心状态 - 从本地存储加载或使用默认值
+  const schedulerTabs = ref<SchedulerTab[]>(loadTabsFromStorage())
+
+  const activeSchedulerTab = ref(schedulerTabs.value[0]?.key || 'main')
   const logRefs = ref(new Map<string, HTMLElement>())
-  let tabCounter = 1
+  let tabCounter = schedulerTabs.value.length > 1 ? 
+    Math.max(...schedulerTabs.value
+      .filter(tab => tab.key.startsWith('tab-'))
+      .map(tab => parseInt(tab.key.replace('tab-', '')) || 0)) + 1 : 1
 
   // 任务选项
   const taskOptionsLoading = ref(false)
   const taskOptions = ref<ComboBoxItem[]>([])
 
-  // 电源操作
-  const powerAction = ref<PowerIn.signal>(PowerIn.signal.NO_ACTION)
+  // 电源操作 - 从本地存储加载或使用默认值
+  const powerAction = ref<PowerIn.signal>(loadPowerActionFromStorage())
   const powerCountdownVisible = ref(false)
   const powerCountdown = ref(10)
   let powerCountdownTimer: ReturnType<typeof setInterval> | null = null
@@ -63,6 +138,31 @@ export function useSchedulerLogic() {
     return schedulerTabs.value.find(tab => tab.key === activeSchedulerTab.value)
   })
 
+  // 监听调度台变化并保存到本地存储
+  const watchTabsChanges = () => {
+    const saveState = () => {
+      saveTabsToStorage(schedulerTabs.value)
+    }
+
+    // 监听各种可能导致状态变化的操作
+    const originalPush = schedulerTabs.value.push
+    schedulerTabs.value.push = function(...items: SchedulerTab[]) {
+      const result = originalPush.apply(this, items)
+      saveState()
+      return result
+    }
+
+    const originalSplice = schedulerTabs.value.splice
+    schedulerTabs.value.splice = function(start: number, deleteCount?: number, ...items: SchedulerTab[]) {
+      const result = originalSplice.apply(this, [start, deleteCount, ...items] as any)
+      saveState()
+      return result
+    }
+  }
+
+  // 初始化监听
+  watchTabsChanges()
+
   // Tab 管理
   const addSchedulerTab = () => {
     tabCounter++
@@ -82,6 +182,7 @@ export function useSchedulerLogic() {
     }
     schedulerTabs.value.push(tab)
     activeSchedulerTab.value = tab.key
+    saveTabsToStorage(schedulerTabs.value)
   }
 
   const removeSchedulerTab = (key: string) => {
@@ -121,6 +222,7 @@ export function useSchedulerLogic() {
         logRefs.value.delete(key)
 
         schedulerTabs.value.splice(idx, 1)
+        saveTabsToStorage(schedulerTabs.value)
 
         if (activeSchedulerTab.value === key) {
           const newActiveIndex = Math.max(0, idx - 1)
@@ -158,6 +260,7 @@ export function useSchedulerLogic() {
 
         subscribeToTask(tab)
         message.success('任务启动成功')
+        saveTabsToStorage(schedulerTabs.value)
       } else {
         message.error(response.message || '启动任务失败')
       }
@@ -182,6 +285,7 @@ export function useSchedulerLogic() {
 
       message.success('任务已停止')
       checkAllTasksCompleted()
+      saveTabsToStorage(schedulerTabs.value)
     } catch (error) {
       console.error('停止任务失败:', error)
       message.error('停止任务失败')
@@ -192,6 +296,7 @@ export function useSchedulerLogic() {
         tab.status = '结束'
         tab.websocketId = null
       }
+      saveTabsToStorage(schedulerTabs.value)
     }
   }
 
@@ -265,6 +370,7 @@ export function useSchedulerLogic() {
         else addLog(tab, JSON.stringify(data.log), 'info')
       }
     }
+    saveTabsToStorage(schedulerTabs.value)
   }
 
   const handleInfoMessage = (tab: SchedulerTab, data: any) => {
@@ -301,10 +407,12 @@ export function useSchedulerLogic() {
 
       notification.success({ message: '任务完成', description: data.Accomplish })
       checkAllTasksCompleted()
+      saveTabsToStorage(schedulerTabs.value)
     }
 
     if (data.power && data.power !== 'NoAction') {
       powerAction.value = data.power as PowerIn.signal
+      savePowerActionToStorage(powerAction.value)
       startPowerCountdown()
     }
   }
@@ -355,6 +463,7 @@ export function useSchedulerLogic() {
   // 电源操作
   const onPowerActionChange = (value: PowerIn.signal) => {
     powerAction.value = value
+    savePowerActionToStorage(value)
   }
 
   const startPowerCountdown = () => {
@@ -457,6 +566,8 @@ export function useSchedulerLogic() {
         ws.unsubscribe(tab.websocketId)
       }
     })
+    saveTabsToStorage(schedulerTabs.value)
+    savePowerActionToStorage(powerAction.value)
   }
 
   return {

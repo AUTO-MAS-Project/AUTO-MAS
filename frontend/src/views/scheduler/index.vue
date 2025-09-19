@@ -1,26 +1,30 @@
 <template>
-  <div class="scheduler-page">
+  <!-- 主要内容 -->
+  <div class="scheduler-main">
     <!-- 页面头部 -->
     <div class="scheduler-header">
       <div class="header-left">
         <h1 class="page-title">调度中心</h1>
       </div>
       <div class="header-actions">
-        <span class="power-label">任务完成后电源操作：</span>
-        <a-select
-          v-model:value="powerAction"
-          style="width: 140px"
-          :disabled="!canChangePowerAction"
-          @change="onPowerActionChange"
-        >
-          <a-select-option
-            v-for="(text, signal) in POWER_ACTION_TEXT"
-            :key="signal"
-            :value="signal"
+        <a-space size="middle">
+          <span class="power-label">任务完成后电源操作：</span>
+          <a-select
+            v-model:value="powerAction"
+            style="width: 140px"
+            :disabled="!canChangePowerAction"
+            @change="onPowerActionChange"
+            size="large"
           >
-            {{ text }}
-          </a-select-option>
-        </a-select>
+            <a-select-option
+              v-for="(text, signal) in POWER_ACTION_TEXT"
+              :key="signal"
+              :value="signal"
+            >
+              {{ text }}
+            </a-select-option>
+          </a-select>
+        </a-space>
       </div>
     </div>
 
@@ -30,6 +34,7 @@
         v-model:activeKey="activeSchedulerTab"
         type="editable-card"
         @edit="onSchedulerTabEdit"
+        :hide-add="false"
       >
         <a-tab-pane
           v-for="tab in schedulerTabs"
@@ -43,7 +48,7 @@
               {{ tab.status }}
             </a-tag>
             <a-tooltip v-if="tab.status === '运行'" title="运行中的调度台无法删除" placement="top">
-              <span class="tab-lock-icon">🔒</span>
+              <LockOutlined class="tab-lock-icon" />
             </a-tooltip>
           </template>
 
@@ -89,7 +94,7 @@
                   :logs="tab.logs"
                   :tab-key="tab.key"
                   :is-log-at-bottom="tab.isLogAtBottom"
-                  @scroll="onLogScroll(tab, $event)"
+                  @scroll="onLogScroll(tab)"
                   @set-ref="setLogRef"
                   @clear-logs="clearTabLogs(tab)"
                 />
@@ -97,6 +102,13 @@
             </a-row>
           </div>
         </a-tab-pane>
+        
+        <!-- 空状态 -->
+        <template #empty>
+          <div class="empty-tab-content">
+            <a-empty description="暂无调度台" />
+          </div>
+        </template>
       </a-tabs>
     </div>
 
@@ -224,23 +236,22 @@ onUnmounted(() => {
 
 <style scoped>
 /* 页面容器 */
-.scheduler-page {
-  height: 100vh;
+.scheduler-main {
+  height: 100%;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background-color: var(--ant-color-bg-container);
-  color: var(--ant-color-text);
+  padding: 16px;
+  background-color: var(--ant-color-bg-layout);
 }
 
 /* 页面头部样式 */
 .scheduler-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  padding: 0 4px 24px;
-  flex-shrink: 0;
-  background-color: var(--ant-color-bg-layout);
+  align-items: flex-end;
+  margin-bottom: 16px;
+  padding: 0 4px;
 }
 
 .header-left {
@@ -248,7 +259,7 @@ onUnmounted(() => {
 }
 
 .page-title {
-  margin: 0;
+  margin: 0 0 8px 0;
   font-size: 32px;
   font-weight: 700;
   color: var(--ant-color-text);
@@ -268,6 +279,7 @@ onUnmounted(() => {
 .power-label {
   font-size: 14px;
   color: var(--ant-color-text-secondary);
+  margin-right: 8px;
 }
 
 /* 标签页样式 */
@@ -277,6 +289,8 @@ onUnmounted(() => {
   flex-direction: column;
   overflow: hidden;
   background-color: var(--ant-color-bg-container);
+  border-radius: 8px;
+  padding: 12px;
 }
 
 .scheduler-tabs :deep(.ant-tabs) {
@@ -286,185 +300,25 @@ onUnmounted(() => {
   background-color: var(--ant-color-bg-container);
 }
 
-.scheduler-tabs :deep(.ant-tabs-content-holder) {
-  flex: 1;
-  overflow: hidden;
-  background-color: var(--ant-color-bg-container);
-}
-
-.scheduler-tabs :deep(.ant-tabs-tabpane) {
-  height: 100%;
-  overflow: hidden;
-  background-color: var(--ant-color-bg-container);
-}
-
-.scheduler-tabs :deep(.ant-tabs-tab) {
-  background-color: var(--ant-color-bg-layout);
-  border-color: var(--ant-color-border);
-}
-
-.scheduler-tabs :deep(.ant-tabs-tab-active) {
-  background-color: var(--ant-color-bg-container);
-}
-
-.tab-title {
-  margin-right: 8px;
-  color: var(--ant-color-text);
-}
-
-.tab-status {
-  margin-right: 4px;
-}
-
-.tab-lock-icon {
-  font-size: 12px;
-  opacity: 0.7;
-}
-
-/* 统一卡片样式 */
-.task-unified-card {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  background-color: var(--ant-color-bg-container);
-}
-
-.status-row {
-  flex: 1;
-  overflow: hidden;
-}
-
-.status-row :deep(.ant-col) {
-  height: 100%;
-}
-
-/* 电源倒计时样式 */
-.power-countdown {
-  display: flex;
-  align-items: flex-start;
-  gap: 16px;
-}
-
-.warning-icon {
-  color: var(--ant-color-warning);
-  font-size: 24px;
-  flex-shrink: 0;
-}
-
-.power-countdown p {
-  margin: 0 0 12px 0;
-  font-size: 16px;
-  line-height: 1.5;
-  color: var(--ant-color-text);
-}
-
-.power-countdown strong {
-  color: var(--ant-color-text-heading);
-}
-
-/* 暗色模式适配 */
-@media (prefers-color-scheme: dark) {
-  .scheduler-page {
-    background-color: var(--ant-color-bg-container, #1f1f1f);
-    color: var(--ant-color-text, #ffffff);
-  }
-
-  .scheduler-header {
-    background-color: var(--ant-color-bg-layout, #141414);
-  }
-
-  .page-title {
-    color: var(--ant-color-text, #ffffff);
-  }
-
-  .power-label {
-    color: var(--ant-color-text-secondary, #bfbfbf);
-  }
-
-  .scheduler-tabs {
-    background-color: var(--ant-color-bg-container, #1f1f1f);
-  }
-
-  .scheduler-tabs :deep(.ant-tabs) {
-    background-color: var(--ant-color-bg-container, #1f1f1f);
-  }
-
-  .scheduler-tabs :deep(.ant-tabs-content-holder) {
-    background-color: var(--ant-color-bg-container, #1f1f1f);
-  }
-
-  .scheduler-tabs :deep(.ant-tabs-tabpane) {
-    background-color: var(--ant-color-bg-container, #1f1f1f);
-  }
-
-  .scheduler-tabs :deep(.ant-tabs-tab) {
-    background-color: var(--ant-color-bg-layout, #141414);
-    border-color: var(--ant-color-border, #424242);
-    color: var(--ant-color-text, #ffffff);
-  }
-
-  .scheduler-tabs :deep(.ant-tabs-tab-active) {
-    background-color: var(--ant-color-bg-container, #1f1f1f);
-    color: var(--ant-color-text, #ffffff);
-  }
-
-  .tab-title {
-    color: var(--ant-color-text, #ffffff);
-  }
-
-  .task-unified-card {
-    background-color: var(--ant-color-bg-container, #1f1f1f);
-  }
-
-  .warning-icon {
-    color: var(--ant-color-warning, #faad14);
-  }
-
-  .power-countdown p {
-    color: var(--ant-color-text, #ffffff);
-  }
-
-  .power-countdown strong {
-    color: var(--ant-color-text-heading, #ffffff);
-  }
-}
-
-/* 响应式设计 */
-@media (max-width: 1200px) {
-  .status-row :deep(.ant-col:nth-child(1)) {
-    span: 6;
-  }
-
-  .status-row :deep(.ant-col:nth-child(2)) {
-    span: 6;
-  }
-
-  .status-row :deep(.ant-col:nth-child(3)) {
-    span: 12;
-  }
-}
-
+/* 响应式 - 移动端适配 */
 @media (max-width: 768px) {
+  .scheduler-main {
+    padding: 8px;
+  }
+
   .scheduler-header {
     flex-direction: column;
-    align-items: stretch;
-    gap: 16px;
+    align-items: flex-start;
+    gap: 12px;
   }
 
   .header-actions {
-    justify-content: center;
+    width: 100%;
+    justify-content: space-between;
   }
 
-  .status-row {
-    flex-direction: column;
-  }
-
-  .status-row :deep(.ant-col) {
-    width: 100% !important;
-    flex: none;
-    height: auto;
-    margin-bottom: 16px;
+  .power-label {
+    display: none;
   }
 }
 </style>
