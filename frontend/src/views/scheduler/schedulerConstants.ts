@@ -13,10 +13,10 @@ export const TAB_STATUS_COLOR: Record<SchedulerStatus, string> = {
 
 // 队列状态 -> 颜色
 export const getQueueStatusColor = (status: string): string => {
-  if (/成功|完成|已完成/.test(status)) return 'success'
-  if (/失败|错误|异常/.test(status)) return 'error'
-  if (/等待|排队|挂起/.test(status)) return 'warning'
-  if (/进行|执行|运行/.test(status)) return 'processing'
+  if (/成功|完成|已完成/.test(status)) return 'green'
+  if (/失败|错误|异常/.test(status)) return 'red'
+  if (/等待|排队|挂起/.test(status)) return 'orange'
+  if (/进行|执行|运行/.test(status)) return 'blue'
   return 'default'
 }
 
@@ -37,7 +37,7 @@ export const POWER_ACTION_TEXT: Record<PowerIn.signal, string> = {
   [PowerIn.signal.SHUTDOWN_FORCE]: '强制关机',
 }
 
-export const getPowerActionText = (action: PowerIn.signal) => POWER_ACTION_TEXT[action] || '无动作'
+export const getPowerActionText = (action: PowerIn.signal) => POWER_ACTION_TEXT[action] || '无动��'
 
 // 日志相关
 export const LOG_MAX_LENGTH = 2000 // 最多保留日志条数

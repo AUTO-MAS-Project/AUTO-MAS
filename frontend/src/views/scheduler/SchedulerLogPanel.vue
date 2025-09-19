@@ -109,15 +109,15 @@ const clearLogs = () => {
 
 .log-content {
   flex: 1;
-  padding: 16px;
-  background: var(--ant-color-bg-container);
+  padding: 12px;
+  background: var(--ant-color-bg-layout);
   border: 1px solid var(--ant-color-border);
   border-radius: 6px;
   overflow-y: auto;
+  max-height: 400px;
   font-family: 'Courier New', monospace;
   font-size: 12px;
   line-height: 1.4;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 .empty-state-mini {
@@ -125,13 +125,13 @@ const clearLogs = () => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  min-height: 200px;
+  height: 200px;
   color: var(--ant-color-text-tertiary);
 }
 
 .empty-image-mini {
-  width: 64px;
-  height: 64px;
+  max-width: 64px;
+  height: auto;
   opacity: 0.5;
   margin-bottom: 8px;
   filter: var(--ant-color-scheme-dark, brightness(0.8));
@@ -145,8 +145,8 @@ const clearLogs = () => {
 
 .log-line {
   margin-bottom: 2px;
-  padding: 4px 8px;
-  border-radius: 4px;
+  padding: 2px 4px;
+  border-radius: 2px;
   word-wrap: break-word;
 }
 
@@ -198,9 +198,8 @@ const clearLogs = () => {
   }
 
   .log-content {
-    background: var(--ant-color-bg-container, #1f1f1f);
+    background: var(--ant-color-bg-layout, #141414);
     border: 1px solid var(--ant-color-border, #424242);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
   }
 
   .empty-state-mini {
@@ -248,14 +247,6 @@ const clearLogs = () => {
 
   .log-success .log-message {
     color: var(--ant-color-success, #73d13d);
-  }
-}
-</style>
-
-<style scoped>
-@media (max-width: 768px) {
-  .log-content {
-    padding: 12px;
   }
 }
 </style>
