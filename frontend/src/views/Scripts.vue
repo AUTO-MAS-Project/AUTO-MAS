@@ -6,8 +6,8 @@
 
   <!-- 主要内容 -->
   <div class="scripts-header">
-    <div class="header-title">
-      <h1>脚本管理</h1>
+    <div class="header-left">
+      <h1 class="page-title">脚本管理</h1>
     </div>
     <a-space size="middle">
       <a-button type="primary" size="large" @click="handleAddScript" class="link">
@@ -634,14 +634,24 @@ const handleToggleUserStatus = async (user: User) => {
 .scripts-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-end;
   margin-bottom: 24px;
+  padding: 0 4px;
 }
 
-.header-title h1 {
-  font-size: 28px;
-  font-weight: 600;
-  margin: 0;
+.header-left {
+  flex: 1;
+}
+
+.page-title {
+  margin: 0 0 8px 0;
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--ant-color-text);
+  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .empty-state {
