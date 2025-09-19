@@ -11,49 +11,69 @@
       </a-space>
     </template>
 
-    <a-table
-      :columns="queueColumns"
-      :data-source="queueItems"
-      :pagination="false"
-      size="middle"
-      :scroll="{ x: false, y: false }"
-      table-layout="auto"
-      class="queue-table"
-    >
-      <template #emptyText>
-        <span>暂无任务</span>
-      </template>
-      <template #bodyCell="{ column, record, index }">
-        <template v-if="column.key === 'index'"> {{ index + 1 }} </template>
-        <template v-else-if="column.key === 'script'">
-          <a-select
-            v-model:value="record.script"
-            @change="updateQueueItemScript(record)"
-            size="small"
-            style="width: 200px"
-            class="script-select"
-            placeholder="请选择脚本"
-            :options="scriptOptions"
-            allow-clear
-          />
+    <!-- 使用vuedraggable替换a-table实现拖拽功能 -->
+    <div class="draggable-table-container">
+      <!-- 表头 -->
+      <div class="draggable-table-header">
+        <div class="header-cell index-cell">序号</div>
+        <div class="header-cell script-cell">脚本任务</div>
+        <div class="header-cell actions-cell">操作</div>
+      </div>
+
+      <!-- 拖拽内容区域 -->
+      <draggable
+        v-model="queueItems"
+        group="queueItems"
+        item-key="id"
+        :animation="200"
+        :disabled="loading"
+        ghost-class="ghost"
+        chosen-class="chosen"
+        drag-class="drag"
+        @end="onDragEnd"
+        class="draggable-container"
+      >
+        <template #item="{ element: record, index }">
+          <div class="draggable-row" :class="{ 'row-dragging': loading }">
+            <div class="row-cell index-cell">{{ index + 1 }}</div>
+            <div class="row-cell script-cell">
+              <a-select
+                v-model:value="record.script"
+                @change="updateQueueItemScript(record)"
+                size="small"
+                style="width: 200px"
+                class="script-select"
+                placeholder="请选择脚本"
+                :options="scriptOptions"
+                allow-clear
+              />
+            </div>
+            <div class="row-cell actions-cell">
+              <a-space>
+                <a-popconfirm
+                  title="确定要删除这个任务吗？"
+                  @confirm="deleteQueueItem(record.id)"
+                  ok-text="确定"
+                  cancel-text="取消"
+                >
+                  <a-button size="middle" danger>
+                    <DeleteOutlined />
+                    删除
+                  </a-button>
+                </a-popconfirm>
+              </a-space>
+            </div>
+          </div>
         </template>
-        <template v-else-if="column.key === 'actions'">
-          <a-space>
-            <a-popconfirm
-              title="确定要删除这个任务吗？"
-              @confirm="deleteQueueItem(record.id)"
-              ok-text="确定"
-              cancel-text="取消"
-            >
-              <a-button size="middle" danger>
-                <DeleteOutlined />
-                删除
-              </a-button>
-            </a-popconfirm>
-          </a-space>
-        </template>
-      </template>
-    </a-table>
+      </draggable>
+
+      <!-- 空状态 -->
+      <div v-if="queueItems.length === 0" class="empty-state">
+        <div class="empty-content">
+          <img src="@/assets/NoData.png" alt="无数据" class="empty-image" />
+        </div>
+      </div>
+    </div>
   </a-card>
 </template>
 
@@ -61,15 +81,13 @@
 import { onMounted, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons-vue'
+import draggable from 'vuedraggable'
 import { Service } from '@/api'
 
 // Props
 interface Props {
   queueId: string
-  queueItems: Array<{
-    id: string
-    script: string | null
-  }>
+  queueItems: any[]
 }
 
 const props = defineProps<Props>()
@@ -82,14 +100,8 @@ const emit = defineEmits<{
 // 响应式数据
 const loading = ref(false)
 
-// 脚本选项类型定义
-interface ScriptOption {
-  label: string
-  value: string | null
-}
-
-// 脚本选项
-const scriptOptions = ref<ScriptOption[]>([])
+// 选项数据
+const scriptOptions = ref<Array<{ label: string; value: string | null }>>([])
 
 // 表格列配置
 const queueColumns = [
@@ -108,7 +120,7 @@ const queueColumns = [
   {
     title: '操作',
     key: 'actions',
-    width: 180,
+    width: 100,
     align: 'center',
   },
 ]
@@ -148,10 +160,9 @@ const loadOptions = async () => {
 
 // 更新队列项脚本
 const updateQueueItemScript = async (record: any) => {
-  const oldScript = record.script
   try {
     loading.value = true
-    
+
     const response = await Service.updateItemApiQueueItemUpdatePost({
       queueId: props.queueId,
       queueItemId: record.id,
@@ -164,15 +175,11 @@ const updateQueueItemScript = async (record: any) => {
 
     if (response.code === 200) {
       message.success('脚本更新成功')
-      // 不触发刷新，避免界面闪烁
+      emit('refresh')
     } else {
-      // 回滚本地变更
-      record.script = oldScript
       message.error('脚本更新失败: ' + (response.message || '未知错误'))
     }
   } catch (error: any) {
-    // 发生异常时回滚
-    record.script = oldScript
     console.error('更新脚本失败:', error)
     message.error('更新脚本失败: ' + (error?.message || '网络错误'))
   } finally {
@@ -184,7 +191,7 @@ const updateQueueItemScript = async (record: any) => {
 const addQueueItem = async () => {
   try {
     loading.value = true
-    
+
     // 直接创建队列项，默认ScriptId为null（未选择）
     const createResponse = await Service.addItemApiQueueItemAddPost({
       queueId: props.queueId,
@@ -192,7 +199,6 @@ const addQueueItem = async () => {
 
     if (createResponse.code === 200 && createResponse.queueItemId) {
       message.success('任务添加成功')
-      // 只在添加成功后刷新，避免不必要的闪烁
       emit('refresh')
     } else {
       message.error('任务添加失败: ' + (createResponse.message || '未知错误'))
@@ -223,6 +229,44 @@ const deleteQueueItem = async (itemId: string) => {
   } catch (error: any) {
     console.error('删除队列项失败:', error)
     message.error('删除队列项失败: ' + (error?.message || '网络错误'))
+  }
+}
+
+// 拖拽结束处理函数
+const onDragEnd = async (evt: any) => {
+  // 如果位置没有变化，直接返回
+  if (evt.oldIndex === evt.newIndex) {
+    return
+  }
+
+  try {
+    loading.value = true
+
+    // 构造排序后的ID列表
+    const sortedIds = queueItems.value.map(item => item.id)
+
+    // 调用排序API
+    const response = await Service.reorderItemApiQueueItemOrderPost({
+      queueId: props.queueId,
+      indexList: sortedIds,
+    })
+
+    if (response.code === 200) {
+      message.success('任务顺序已更新')
+      // 刷新数据以确保与服务器同步
+      emit('refresh')
+    } else {
+      message.error('更新任务顺序失败: ' + (response.message || '未知错误'))
+      // 如果失败，刷新数据恢复原状态
+      emit('refresh')
+    }
+  } catch (error: any) {
+    console.error('拖拽排序失败:', error)
+    message.error('更新任务顺序失败: ' + (error?.message || '网络错误'))
+    // 如果失败，刷新数据恢复原状态
+    emit('refresh')
+  } finally {
+    loading.value = false
   }
 }
 
@@ -483,10 +527,150 @@ onMounted(() => {
   gap: 8px;
 }
 
+/* 拖拽表格样式 */
+.draggable-table-container {
+  width: 100%;
+  border: 1px solid var(--ant-color-border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.draggable-table-header {
+  display: flex;
+  background-color: var(--ant-color-fill-quaternary);
+  border-bottom: 1px solid var(--ant-color-border);
+}
+
+.header-cell {
+  padding: 12px 16px;
+  font-weight: 600;
+  color: var(--ant-color-text);
+  text-align: center;
+  border-right: 1px solid var(--ant-color-border);
+}
+
+.header-cell:last-child {
+  border-right: none;
+}
+
+.index-cell {
+  width: 80px;
+  min-width: 80px;
+  max-width: 80px;
+}
+
+.script-cell {
+  flex: 1;
+  min-width: 200px;
+}
+
+.actions-cell {
+  width: 180px;
+  min-width: 180px;
+  max-width: 180px;
+}
+
+.draggable-container {
+  min-height: 60px;
+}
+
+.draggable-row {
+  display: flex;
+  align-items: center;
+  background: var(--ant-color-bg-container);
+  border-bottom: 1px solid var(--ant-color-border);
+  transition: all 0.2s ease;
+  cursor: move;
+}
+
+.draggable-row:last-child {
+  border-bottom: none;
+}
+
+.draggable-row:hover {
+  background-color: var(--ant-color-fill-quaternary);
+}
+
+.draggable-row.row-dragging {
+  cursor: not-allowed;
+}
+
+.row-cell {
+  padding: 12px 16px;
+  text-align: center;
+  border-right: 1px solid var(--ant-color-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.row-cell:last-child {
+  border-right: none;
+}
+
+.row-cell.index-cell {
+  width: 80px;
+  min-width: 80px;
+  max-width: 80px;
+  font-weight: 500;
+  color: var(--ant-color-text-secondary);
+}
+
+.row-cell.script-cell {
+  flex: 1;
+  min-width: 200px;
+}
+
+.row-cell.actions-cell {
+  width: 180px;
+  min-width: 180px;
+  max-width: 180px;
+}
+
+/* 拖拽状态样式 */
+.ghost {
+  opacity: 0.5;
+  background: var(--ant-color-primary-bg);
+  border: 2px dashed var(--ant-color-primary);
+}
+
+.chosen {
+  background: var(--ant-color-primary-bg-hover);
+  transform: scale(1.02);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.drag {
+  transform: rotate(5deg);
+  opacity: 0.8;
+}
+
 /* 空状态样式 */
 .empty-state {
-  text-align: center;
-  padding: 40px 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+}
+
+.empty-content {
+  display: flex;
+  justify-content: center;
+}
+
+.empty-image {
+  max-width: 200px;
+  height: auto;
+  opacity: 0.9;
+  filter: drop-shadow(0 8px 24px rgba(0, 0, 0, 0.1));
+  transition: all 0.3s ease;
+  position: relative;
+  z-index: 1;
+}
+
+.empty-image:hover {
+  transform: translateY(-4px);
+  filter: drop-shadow(0 12px 32px rgba(0, 0, 0, 0.15));
 }
 
 /* 响应式设计 */
@@ -503,6 +687,30 @@ onMounted(() => {
 
   .queue-item-card-item {
     padding: 12px;
+  }
+
+  .draggable-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .row-cell,
+  .header-cell {
+    border-right: none;
+    border-bottom: 1px solid var(--ant-color-border);
+  }
+
+  .row-cell:last-child,
+  .header-cell:last-child {
+    border-bottom: none;
+  }
+
+  .index-cell,
+  .script-cell,
+  .actions-cell {
+    width: 100% !important;
+    min-width: auto !important;
+    max-width: none !important;
   }
 }
 

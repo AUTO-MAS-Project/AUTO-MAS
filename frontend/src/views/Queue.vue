@@ -362,7 +362,7 @@ const refreshTimeSets = async () => {
 
     if (response.code !== 200) {
       console.error('获取定时项数据失败:', response)
-      currentTimeSets.value = []
+      // 不清空数组，避免骨架屏闪现
       return
     }
 
@@ -401,19 +401,19 @@ const refreshTimeSets = async () => {
 
     // 使用nextTick确保数据更新不会导致渲染问题
     await nextTick()
-    currentTimeSets.value = [...timeSets]
+    // 直接替换数组内容，而不是清空再赋值，避免骨架屏闪现
+    currentTimeSets.value.splice(0, currentTimeSets.value.length, ...timeSets)
     console.log('刷新后的定时项数据:', timeSets) // 调试日志
   } catch (error) {
     console.error('刷新定时项列表失败:', error)
-    currentTimeSets.value = []
-    // 不显示错误消息，避免干扰用户
+    // 不清空数组，避免骨架屏闪现
   }
 }
 
 // 刷新队列项数据
 const refreshQueueItems = async () => {
   if (!activeQueueId.value) {
-    currentQueueItems.value = []
+    // 不清空数组，避免骨架屏闪现
     return
   }
 
@@ -425,7 +425,7 @@ const refreshQueueItems = async () => {
 
     if (response.code !== 200) {
       console.error('获取队列项数据失败:', response)
-      currentQueueItems.value = []
+      // 不清空数组，避免骨架屏闪现
       return
     }
 
@@ -451,19 +451,14 @@ const refreshQueueItems = async () => {
       })
     }
 
-    // 只在数据真正发生变化时才更新，避免不必要的界面闪烁
-    const oldItemsString = JSON.stringify(currentQueueItems.value)
-    const newItemsString = JSON.stringify(queueItems)
-    
-    if (oldItemsString !== newItemsString) {
-      currentQueueItems.value = [...queueItems]
-    }
-    
+    // 使用nextTick确保数据更新不会导致渲染问题
+    await nextTick()
+    // 直接替换数组内容，而不是清空再赋值，避免骨架屏闪现
+    currentQueueItems.value.splice(0, currentQueueItems.value.length, ...queueItems)
     console.log('刷新后的队列项数据:', queueItems) // 调试日志
   } catch (error) {
     console.error('刷新队列项列表失败:', error)
-    currentQueueItems.value = []
-    // 不显示错误消息，避免干扰用户
+    // 不清空数组，避免骨架屏闪现
   }
 }
 
@@ -630,19 +625,6 @@ const saveQueueData = async () => {
     throw error
   }
 }
-
-// 监听队列项变化，但避免频繁刷新导致的界面闪烁
-watch(
-  () => currentQueueItems.value,
-  (newItems, oldItems) => {
-    // 深度比较避免不必要的更新
-    if (JSON.stringify(newItems) !== JSON.stringify(oldItems)) {
-      // 只有当数据真正改变时才触发更新
-      console.log('队列项数据变化，触发更新')
-    }
-  },
-  { deep: true }
-)
 
 // 自动保存功能
 watch(
