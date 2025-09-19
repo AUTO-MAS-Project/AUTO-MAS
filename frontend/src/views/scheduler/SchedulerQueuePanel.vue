@@ -74,6 +74,11 @@ const getStatusColor = (status: string) => getQueueStatusColor(status)
 .queue-content {
   flex: 1;
   overflow-y: auto;
+  padding: 12px;
+  background: var(--ant-color-bg-layout);
+  border: 1px solid var(--ant-color-border);
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 .empty-state-mini {
@@ -81,13 +86,13 @@ const getStatusColor = (status: string) => getQueueStatusColor(status)
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: 200px;
+  min-height: 200px;
   color: var(--ant-color-text-tertiary);
 }
 
 .empty-image-mini {
-  width: 48px;
-  height: 48px;
+  width: 64px;
+  height: 64px;
   opacity: 0.5;
   margin-bottom: 8px;
   filter: var(--ant-color-scheme-dark, brightness(0.8));
@@ -109,11 +114,13 @@ const getStatusColor = (status: string) => getQueueStatusColor(status)
   border-radius: 6px;
   transition: all 0.2s ease;
   background-color: var(--ant-color-bg-container);
-  border-color: var(--ant-color-border);
+  border: 1px solid var(--ant-color-border);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
 .queue-card:hover {
   box-shadow: 0 2px 8px var(--ant-color-shadow);
+  border-color: var(--ant-color-primary);
 }
 
 .running-card {
@@ -144,6 +151,12 @@ const getStatusColor = (status: string) => getQueueStatusColor(status)
     color: var(--ant-color-text-heading, #ffffff);
   }
 
+  .queue-content {
+    background: var(--ant-color-bg-layout, #141414);
+    border: 1px solid var(--ant-color-border, #424242);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  }
+
   .empty-state-mini {
     color: var(--ant-color-text-tertiary, #8c8c8c);
   }
@@ -159,19 +172,17 @@ const getStatusColor = (status: string) => getQueueStatusColor(status)
   .queue-card {
     background-color: var(--ant-color-bg-container, #1f1f1f);
     border-color: var(--ant-color-border, #424242);
-  }
-
-  .queue-card:hover {
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-  }
-
-  .running-card {
-    border-color: var(--ant-color-primary, #1890ff);
-    box-shadow: 0 0 0 1px rgba(24, 144, 255, 0.2);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
   }
 
   .item-name {
     color: var(--ant-color-text, #ffffff);
+  }
+}
+
+@media (max-width: 768px) {
+  .queue-content {
+    padding: 8px;
   }
 }
 </style>
