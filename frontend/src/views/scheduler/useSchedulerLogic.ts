@@ -1,4 +1,4 @@
-import { computed, nextTick, ref } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { message, Modal, notification } from 'ant-design-vue'
 import { Service } from '@/api/services/Service'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
@@ -106,10 +106,14 @@ export function useSchedulerLogic() {
 
   const activeSchedulerTab = ref(schedulerTabs.value[0]?.key || 'main')
   const logRefs = ref(new Map<string, HTMLElement>())
-  let tabCounter = schedulerTabs.value.length > 1 ? 
-    Math.max(...schedulerTabs.value
-      .filter(tab => tab.key.startsWith('tab-'))
-      .map(tab => parseInt(tab.key.replace('tab-', '')) || 0)) + 1 : 1
+  let tabCounter =
+    schedulerTabs.value.length > 1
+      ? Math.max(
+          ...schedulerTabs.value
+            .filter(tab => tab.key.startsWith('tab-'))
+            .map(tab => parseInt(tab.key.replace('tab-', '')) || 0)
+        ) + 1
+      : 1
 
   // 任务选项
   const taskOptionsLoading = ref(false)
@@ -140,24 +144,14 @@ export function useSchedulerLogic() {
 
   // 监听调度台变化并保存到本地存储
   const watchTabsChanges = () => {
-    const saveState = () => {
-      saveTabsToStorage(schedulerTabs.value)
-    }
-
-    // 监听各种可能导致状态变化的操作
-    const originalPush = schedulerTabs.value.push
-    schedulerTabs.value.push = function(...items: SchedulerTab[]) {
-      const result = originalPush.apply(this, items)
-      saveState()
-      return result
-    }
-
-    const originalSplice = schedulerTabs.value.splice
-    schedulerTabs.value.splice = function(start: number, deleteCount?: number, ...items: SchedulerTab[]) {
-      const result = originalSplice.apply(this, [start, deleteCount, ...items] as any)
-      saveState()
-      return result
-    }
+    // 使用Vue的watch API来监听数组变化，而不是重写原生方法
+    watch(
+      schedulerTabs,
+      newTabs => {
+        saveTabsToStorage(newTabs)
+      },
+      { deep: true }
+    )
   }
 
   // 初始化监听
@@ -182,7 +176,6 @@ export function useSchedulerLogic() {
     }
     schedulerTabs.value.push(tab)
     activeSchedulerTab.value = tab.key
-    saveTabsToStorage(schedulerTabs.value)
   }
 
   const removeSchedulerTab = (key: string) => {
@@ -222,7 +215,6 @@ export function useSchedulerLogic() {
         logRefs.value.delete(key)
 
         schedulerTabs.value.splice(idx, 1)
-        saveTabsToStorage(schedulerTabs.value)
 
         if (activeSchedulerTab.value === key) {
           const newActiveIndex = Math.max(0, idx - 1)
