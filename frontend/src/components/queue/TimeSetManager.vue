@@ -1,5 +1,5 @@
 <template>
-  <a-card title="定时列表" class="time-set-card" :loading="loading">
+  <a-card title="定时列表" class="time-set-card">
     <template #extra>
       <a-space>
         <a-button
@@ -16,60 +16,80 @@
       </a-space>
     </template>
 
-    <a-table
-      :columns="timeColumns"
-      :data-source="timeSets"
-      :pagination="false"
-      size="middle"
-      :scroll="{ x: false, y: false }"
-      table-layout="auto"
-      class="time-set-table"
-    >
-      <template #emptyText>
-        <span>暂无定时</span>
-      </template>
-      <template #bodyCell="{ column, record }">
-        <template v-if="column.key === 'enabled'">
-          <a-select
-            v-model:value="record.enabled"
-            @change="updateTimeSetStatus(record)"
-            size="small"
-            style="width: 80px"
-            class="status-select"
-          >
-            <a-select-option :value="true">启用</a-select-option>
-            <a-select-option :value="false">禁用</a-select-option>
-          </a-select>
-        </template>
-        <template v-else-if="column.key === 'time'">
-          <a-time-picker
-            v-model:value="record.timeValue"
-            format="HH:mm"
-            placeholder="请选择时间"
-            size="small"
-            @change="updateTimeSetTime(record)"
-            :disabled="loading"
-          />
-        </template>
-        <template v-else-if="column.key === 'actions'">
-          <a-space>
-            <a-popconfirm
-              title="确定要删除这个定时吗？"
-              @confirm="deleteTimeSet(record.id)"
-              ok-text="确定"
-              cancel-text="取消"
-            >
-              <a-button size="middle" danger>
-                <DeleteOutlined />
-                删除
-              </a-button>
-            </a-popconfirm>
-          </a-space>
-        </template>
-      </template>
-    </a-table>
+    <!-- 使用vuedraggable替换a-table实现拖拽功能 -->
+    <div class="draggable-table-container">
+      <!-- 表头 -->
+      <div class="draggable-table-header">
+        <div class="header-cell index-cell">序号</div>
+        <div class="header-cell status-cell">状态</div>
+        <div class="header-cell time-cell">执行时间</div>
+        <div class="header-cell actions-cell">操作</div>
+      </div>
 
+      <!-- 拖拽内容区域 -->
+      <draggable
+        v-model="timeSets"
+        group="timeSets"
+        item-key="id"
+        :animation="200"
+        :disabled="loading"
+        ghost-class="ghost"
+        chosen-class="chosen"
+        drag-class="drag"
+        @end="onDragEnd"
+        class="draggable-container"
+      >
+        <template #item="{ element: record, index }">
+          <div class="draggable-row" :class="{ 'row-dragging': loading }">
+            <div class="row-cell index-cell">{{ index + 1 }}</div>
+            <div class="row-cell status-cell">
+              <a-select
+                v-model:value="record.enabled"
+                @change="updateTimeSetStatus(record)"
+                size="small"
+                style="width: 80px"
+                class="status-select"
+              >
+                <a-select-option :value="true">启用</a-select-option>
+                <a-select-option :value="false">禁用</a-select-option>
+              </a-select>
+            </div>
+            <div class="row-cell time-cell">
+              <a-time-picker
+                v-model:value="record.timeValue"
+                format="HH:mm"
+                placeholder="请选择时间"
+                size="small"
+                @change="updateTimeSetTime(record)"
+                :disabled="loading"
+              />
+            </div>
+            <div class="row-cell actions-cell">
+              <a-space>
+                <a-popconfirm
+                  title="确定要删除这个定时吗？"
+                  @confirm="deleteTimeSet(record.id)"
+                  ok-text="确定"
+                  cancel-text="取消"
+                >
+                  <a-button size="middle" danger>
+                    <DeleteOutlined />
+                    删除
+                  </a-button>
+                </a-popconfirm>
+              </a-space>
+            </div>
+          </div>
+        </template>
+      </draggable>
 
+      <!-- 空状态 -->
+      <div v-if="timeSets.length === 0" class="empty-state">
+        <div class="empty-content">
+          <img src="@/assets/NoData.png" alt="无数据" class="empty-image" />
+        </div>
+      </div>
+    </div>
   </a-card>
 </template>
 
@@ -77,6 +97,7 @@
 import { ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons-vue'
+import draggable from 'vuedraggable'
 import { Service } from '@/api'
 import dayjs from 'dayjs'
 
@@ -159,7 +180,7 @@ const timeSets = ref([...props.timeSets])
 const processTimeSets = (rawTimeSets: any[]) => {
   return rawTimeSets.map(item => ({
     ...item,
-    timeValue: parseTimeString(item.time)
+    timeValue: parseTimeString(item.time),
   }))
 }
 
@@ -221,7 +242,7 @@ const addTimeSet = async () => {
 const updateTimeSetTime = async (timeSet: any) => {
   try {
     const timeString = formatTimeValue(timeSet.timeValue)
-    
+
     const response = await Service.updateTimeSetApiQueueTimeUpdatePost({
       queueId: props.queueId,
       timeSetId: timeSet.id,
@@ -295,6 +316,44 @@ const deleteTimeSet = async (timeSetId: string) => {
   } catch (error: any) {
     console.error('删除定时项失败:', error)
     message.error('删除定时项失败: ' + (error?.message || '网络错误'))
+  }
+}
+
+// 拖拽结束处理函数
+const onDragEnd = async (evt: any) => {
+  // 如果位置没有变化，直接返回
+  if (evt.oldIndex === evt.newIndex) {
+    return
+  }
+
+  try {
+    loading.value = true
+
+    // 构造排序后的ID列表
+    const sortedIds = timeSets.value.map(item => item.id)
+
+    // 调用排序API
+    const response = await Service.reorderTimeSetApiQueueTimeOrderPost({
+      queueId: props.queueId,
+      indexList: sortedIds,
+    })
+
+    if (response.code === 200) {
+      message.success('定时顺序已更新')
+      // 刷新数据以确保与服务器同步
+      emit('refresh')
+    } else {
+      message.error('更新定时顺序失败: ' + (response.message || '未知错误'))
+      // 如果失败，刷新数据恢复原状态
+      emit('refresh')
+    }
+  } catch (error: any) {
+    console.error('拖拽排序失败:', error)
+    message.error('更新定时顺序失败: ' + (error?.message || '网络错误'))
+    // 如果失败，刷新数据恢复原状态
+    emit('refresh')
+  } finally {
+    loading.value = false
   }
 }
 </script>
@@ -771,6 +830,221 @@ const deleteTimeSet = async (timeSetId: string) => {
 :deep(.ant-picker-time-panel-cell:hover) {
   background: var(--ant-color-fill-tertiary);
 }
+
+/* 拖拽表格样式 */
+.draggable-table-container {
+  width: 100%;
+  border: 1px solid var(--ant-color-border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.draggable-table-header {
+  display: flex;
+  background-color: var(--ant-color-fill-quaternary);
+  border-bottom: 1px solid var(--ant-color-border);
+}
+
+.header-cell {
+  padding: 12px 16px;
+  font-weight: 600;
+  color: var(--ant-color-text);
+  text-align: center;
+  border-right: 1px solid var(--ant-color-border);
+}
+
+.header-cell:last-child {
+  border-right: none;
+}
+
+.index-cell {
+  width: 80px;
+  min-width: 80px;
+  max-width: 80px;
+}
+
+.status-cell {
+  width: 120px;
+  min-width: 120px;
+  max-width: 120px;
+}
+
+.time-cell {
+  flex: 1;
+  min-width: 100px;
+}
+
+.actions-cell {
+  width: 180px;
+  min-width: 180px;
+  max-width: 180px;
+}
+
+.draggable-container {
+  min-height: 60px;
+}
+
+.draggable-row {
+  display: flex;
+  align-items: center;
+  background: var(--ant-color-bg-container);
+  border-bottom: 1px solid var(--ant-color-border);
+  transition: all 0.2s ease;
+  cursor: move;
+}
+
+.draggable-row:last-child {
+  border-bottom: none;
+}
+
+.draggable-row:hover {
+  background-color: var(--ant-color-fill-quaternary);
+}
+
+.draggable-row.row-dragging {
+  cursor: not-allowed;
+}
+
+.row-cell {
+  padding: 12px 16px;
+  text-align: center;
+  border-right: 1px solid var(--ant-color-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.row-cell:last-child {
+  border-right: none;
+}
+
+.row-cell.index-cell {
+  width: 80px;
+  min-width: 80px;
+  max-width: 80px;
+  font-weight: 500;
+  color: var(--ant-color-text-secondary);
+}
+
+.row-cell.status-cell {
+  width: 120px;
+  min-width: 120px;
+  max-width: 120px;
+}
+
+.row-cell.time-cell {
+  flex: 1;
+  min-width: 100px;
+}
+
+.row-cell.actions-cell {
+  width: 180px;
+  min-width: 180px;
+  max-width: 180px;
+}
+
+/* 拖拽状态样式 */
+.ghost {
+  opacity: 0.5;
+  background: var(--ant-color-primary-bg);
+  border: 2px dashed var(--ant-color-primary);
+}
+
+.chosen {
+  background: var(--ant-color-primary-bg-hover);
+  transform: scale(1.02);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.drag {
+  transform: rotate(5deg);
+  opacity: 0.8;
+}
+
+/* 空状态样式 */
+.empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+}
+
+.empty-content {
+  display: flex;
+  justify-content: center;
+}
+
+.empty-image {
+  max-width: 200px;
+  height: auto;
+  opacity: 0.9;
+  filter: drop-shadow(0 8px 24px rgba(0, 0, 0, 0.1));
+  transition: all 0.3s ease;
+  position: relative;
+  z-index: 1;
+}
+
+.empty-image:hover {
+  transform: translateY(-4px);
+  filter: drop-shadow(0 12px 32px rgba(0, 0, 0, 0.15));
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .draggable-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .row-cell,
+  .header-cell {
+    border-right: none;
+    border-bottom: 1px solid var(--ant-color-border);
+  }
+
+  .row-cell:last-child,
+  .header-cell:last-child {
+    border-bottom: none;
+  }
+
+  .index-cell,
+  .status-cell,
+  .time-cell,
+  .actions-cell {
+    width: 100% !important;
+    min-width: auto !important;
+    max-width: none !important;
+  }
+}
+
+/* 深色主题滚动条样式 - 时间选择器 */
+.dark :deep(.ant-picker-time-panel-column)::-webkit-scrollbar {
+  width: 8px;
+}
+
+.dark :deep(.ant-picker-time-panel-column)::-webkit-scrollbar-track {
+  background: var(--ant-color-bg-layout);
+  border-radius: 4px;
+}
+
+.dark :deep(.ant-picker-time-panel-column)::-webkit-scrollbar-thumb {
+  background: var(--ant-color-border);
+  border-radius: 4px;
+  transition: background 0.2s ease;
+}
+
+.dark :deep(.ant-picker-time-panel-column)::-webkit-scrollbar-thumb:hover {
+  background: var(--ant-color-text-tertiary);
+}
+
+/* 时间选择器面板项目样式优化 */
+:deep(.ant-picker-time-panel-cell) {
+  transition: all 0.2s ease;
+}
+
+:deep(.ant-picker-time-panel-cell:hover) {
+  background: var(--ant-color-fill-tertiary);
+}
 </style>
 
 <!-- 全局样式 - 用于时间选择器弹出面板 -->
@@ -833,46 +1107,5 @@ const deleteTimeSet = async (timeSetId: string) => {
 
 [data-theme='dark'] .ant-picker-dropdown .ant-picker-time-panel-column::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.45);
-}
-
-/* body类名方式的深色模式 */
-body.dark .ant-picker-dropdown .ant-picker-time-panel-column::-webkit-scrollbar {
-  width: 8px;
-}
-
-body.dark .ant-picker-dropdown .ant-picker-time-panel-column::-webkit-scrollbar-track {
-  background: #000000;
-  border-radius: 4px;
-}
-
-body.dark .ant-picker-dropdown .ant-picker-time-panel-column::-webkit-scrollbar-thumb {
-  background: #424242;
-  border-radius: 4px;
-  transition: background 0.2s ease;
-}
-
-body.dark .ant-picker-dropdown .ant-picker-time-panel-column::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.45);
-}
-
-/* Firefox 支持 */
-.ant-picker-dropdown .ant-picker-time-panel-column {
-  scrollbar-width: thin;
-  scrollbar-color: #d9d9d9 #f5f5f5;
-}
-
-:root.dark .ant-picker-dropdown .ant-picker-time-panel-column {
-  scrollbar-width: thin;
-  scrollbar-color: #424242 #000000;
-}
-
-[data-theme='dark'] .ant-picker-dropdown .ant-picker-time-panel-column {
-  scrollbar-width: thin;
-  scrollbar-color: #424242 #000000;
-}
-
-body.dark .ant-picker-dropdown .ant-picker-time-panel-column {
-  scrollbar-width: thin;
-  scrollbar-color: #424242 #000000;
 }
 </style>
