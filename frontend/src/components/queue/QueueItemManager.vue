@@ -11,84 +11,49 @@
       </a-space>
     </template>
 
-    <!-- 使用vuedraggable替换a-table实现拖拽功能 -->
-    <div class="draggable-table-container">
-      <!-- 表头 -->
-      <div class="draggable-table-header">
-        <div class="header-cell index-cell">序号</div>
-        <div class="header-cell script-cell">脚本任务</div>
-        <div class="header-cell actions-cell">操作</div>
-      </div>
-
-      <!-- 拖拽内容区域 -->
-      <draggable
-        v-model="queueItems"
-        group="queueItems"
-        item-key="id"
-        :animation="200"
-        :disabled="loading"
-        ghost-class="ghost"
-        chosen-class="chosen"
-        drag-class="drag"
-        @end="onDragEnd"
-        class="draggable-container"
-      >
-        <template #item="{ element: record, index }">
-          <div class="draggable-row" :class="{ 'row-dragging': loading }">
-            <div class="row-cell index-cell">{{ index + 1 }}</div>
-            <div class="row-cell script-cell">
-              <a-select
-                v-model:value="record.script"
-                @change="updateQueueItemScript(record)"
-                size="small"
-                style="width: 200px"
-                class="script-select"
-                placeholder="请选择脚本"
-                :options="scriptOptions"
-                allow-clear
-              />
-            </div>
-            <div class="row-cell actions-cell">
-              <a-space>
-                <a-popconfirm
-                  title="确定要删除这个任务吗？"
-                  @confirm="deleteQueueItem(record.id)"
-                  ok-text="确定"
-                  cancel-text="取消"
-                >
-                  <a-button size="middle" danger>
-                    <DeleteOutlined />
-                    删除
-                  </a-button>
-                </a-popconfirm>
-              </a-space>
-            </div>
-          </div>
+    <a-table
+      :columns="queueColumns"
+      :data-source="queueItems"
+      :pagination="false"
+      size="middle"
+      :scroll="{ x: false, y: false }"
+      table-layout="auto"
+      class="queue-table"
+    >
+      <template #emptyText>
+        <span>暂无任务</span>
+      </template>
+      <template #bodyCell="{ column, record, index }">
+        <template v-if="column.key === 'index'"> {{ index + 1 }} </template>
+        <template v-else-if="column.key === 'script'">
+          <a-select
+            v-model:value="record.script"
+            @change="updateQueueItemScript(record)"
+            size="small"
+            style="width: 200px"
+            class="script-select"
+            placeholder="请选择脚本"
+            :options="scriptOptions"
+            allow-clear
+          />
+        </template>
+        <template v-else-if="column.key === 'actions'">
+          <a-space>
+            <a-popconfirm
+              title="确定要删除这个任务吗？"
+              @confirm="deleteQueueItem(record.id)"
+              ok-text="确定"
+              cancel-text="取消"
+            >
+              <a-button size="middle" danger>
+                <DeleteOutlined />
+                删除
+              </a-button>
+            </a-popconfirm>
+          </a-space>
         </template>
       </template>
     </a-table>
-
-    <!-- 队列项编辑弹窗 -->
-    <a-modal
-      v-model:open="modalVisible"
-      :title="editingQueueItem ? '编辑任务' : '添加任务'"
-      @ok="saveQueueItem"
-      @cancel="cancelEdit"
-      :confirm-loading="saving"
-      width="600px"
-    >
-      <a-form ref="formRef" :model="form" :rules="rules" layout="vertical">
-        <a-form-item label="关联脚本" name="script">
-          <a-select
-            v-model:value="form.script"
-            placeholder="请选择关联脚本"
-            allow-clear
-            :options="scriptOptions"
-            class="script-select"
-          />
-        </a-form-item>
-      </a-form>
-    </a-modal>
   </a-card>
 </template>
 
@@ -96,7 +61,6 @@
 import { onMounted, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons-vue'
-import draggable from 'vuedraggable'
 import { Service } from '@/api'
 
 // Props
@@ -187,7 +151,7 @@ const updateQueueItemScript = async (record: any) => {
   const oldScript = record.script
   try {
     loading.value = true
-
+    
     const response = await Service.updateItemApiQueueItemUpdatePost({
       queueId: props.queueId,
       queueItemId: record.id,
@@ -220,7 +184,7 @@ const updateQueueItemScript = async (record: any) => {
 const addQueueItem = async () => {
   try {
     loading.value = true
-
+    
     // 直接创建队列项，默认ScriptId为null（未选择）
     const createResponse = await Service.addItemApiQueueItemAddPost({
       queueId: props.queueId,
@@ -259,44 +223,6 @@ const deleteQueueItem = async (itemId: string) => {
   } catch (error: any) {
     console.error('删除队列项失败:', error)
     message.error('删除队列项失败: ' + (error?.message || '网络错误'))
-  }
-}
-
-// 拖拽结束处理函数
-const onDragEnd = async (evt: any) => {
-  // 如果位置没有变化，直接返回
-  if (evt.oldIndex === evt.newIndex) {
-    return
-  }
-
-  try {
-    loading.value = true
-
-    // 构造排序后的ID列表
-    const sortedIds = queueItems.value.map(item => item.id)
-
-    // 调用排序API
-    const response = await Service.reorderItemApiQueueItemOrderPost({
-      queueId: props.queueId,
-      indexList: sortedIds,
-    })
-
-    if (response.code === 200) {
-      message.success('任务顺序已更新')
-      // 刷新数据以确保与服务器同步
-      emit('refresh')
-    } else {
-      message.error('更新任务顺序失败: ' + (response.message || '未知错误'))
-      // 如果失败，刷新数据恢复原状态
-      emit('refresh')
-    }
-  } catch (error: any) {
-    console.error('拖拽排序失败:', error)
-    message.error('更新任务顺序失败: ' + (error?.message || '网络错误'))
-    // 如果失败，刷新数据恢复原状态
-    emit('refresh')
-  } finally {
-    loading.value = false
   }
 }
 
@@ -563,124 +489,6 @@ onMounted(() => {
   padding: 40px 0;
 }
 
-/* 拖拽表格样式 */
-.draggable-table-container {
-  width: 100%;
-  border: 1px solid var(--ant-color-border);
-  border-radius: 6px;
-  overflow: hidden;
-}
-
-.draggable-table-header {
-  display: flex;
-  background-color: var(--ant-color-fill-quaternary);
-  border-bottom: 1px solid var(--ant-color-border);
-}
-
-.header-cell {
-  padding: 12px 16px;
-  font-weight: 600;
-  color: var(--ant-color-text);
-  text-align: center;
-  border-right: 1px solid var(--ant-color-border);
-}
-
-.header-cell:last-child {
-  border-right: none;
-}
-
-.index-cell {
-  width: 80px;
-  min-width: 80px;
-  max-width: 80px;
-}
-
-.script-cell {
-  flex: 1;
-  min-width: 200px;
-}
-
-.actions-cell {
-  width: 180px;
-  min-width: 180px;
-  max-width: 180px;
-}
-
-.draggable-container {
-  min-height: 60px;
-}
-
-.draggable-row {
-  display: flex;
-  align-items: center;
-  background: var(--ant-color-bg-container);
-  border-bottom: 1px solid var(--ant-color-border);
-  transition: all 0.2s ease;
-  cursor: move;
-}
-
-.draggable-row:last-child {
-  border-bottom: none;
-}
-
-.draggable-row:hover {
-  background-color: var(--ant-color-fill-quaternary);
-}
-
-.draggable-row.row-dragging {
-  cursor: not-allowed;
-}
-
-.row-cell {
-  padding: 12px 16px;
-  text-align: center;
-  border-right: 1px solid var(--ant-color-border);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.row-cell:last-child {
-  border-right: none;
-}
-
-.row-cell.index-cell {
-  width: 80px;
-  min-width: 80px;
-  max-width: 80px;
-  font-weight: 500;
-  color: var(--ant-color-text-secondary);
-}
-
-.row-cell.script-cell {
-  flex: 1;
-  min-width: 200px;
-}
-
-.row-cell.actions-cell {
-  width: 180px;
-  min-width: 180px;
-  max-width: 180px;
-}
-
-/* 拖拽状态样式 */
-.ghost {
-  opacity: 0.5;
-  background: var(--ant-color-primary-bg);
-  border: 2px dashed var(--ant-color-primary);
-}
-
-.chosen {
-  background: var(--ant-color-primary-bg-hover);
-  transform: scale(1.02);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-}
-
-.drag {
-  transform: rotate(5deg);
-  opacity: 0.8;
-}
-
 /* 响应式设计 */
 @media (max-width: 1200px) {
   .queue-items-grid {
@@ -695,30 +503,6 @@ onMounted(() => {
 
   .queue-item-card-item {
     padding: 12px;
-  }
-
-  .draggable-row {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .row-cell,
-  .header-cell {
-    border-right: none;
-    border-bottom: 1px solid var(--ant-color-border);
-  }
-
-  .row-cell:last-child,
-  .header-cell:last-child {
-    border-bottom: none;
-  }
-
-  .index-cell,
-  .script-cell,
-  .actions-cell {
-    width: 100% !important;
-    min-width: auto !important;
-    max-width: none !important;
   }
 }
 
