@@ -1,5 +1,5 @@
 <template>
-  <a-card title="任务列表" class="queue-item-card" :loading="loading">
+  <a-card title="任务列表" class="queue-item-card">
     <template #extra>
       <a-space>
         <a-button type="primary" @click="addQueueItem" :loading="loading">
@@ -54,6 +54,28 @@
         </template>
       </template>
     </a-table>
+
+    <!-- 队列项编辑弹窗 -->
+    <a-modal
+      v-model:open="modalVisible"
+      :title="editingQueueItem ? '编辑任务' : '添加任务'"
+      @ok="saveQueueItem"
+      @cancel="cancelEdit"
+      :confirm-loading="saving"
+      width="600px"
+    >
+      <a-form ref="formRef" :model="form" :rules="rules" layout="vertical">
+        <a-form-item label="关联脚本" name="script">
+          <a-select
+            v-model:value="form.script"
+            placeholder="请选择关联脚本"
+            allow-clear
+            :options="scriptOptions"
+            class="script-select"
+          />
+        </a-form-item>
+      </a-form>
+    </a-modal>
   </a-card>
 </template>
 
@@ -66,7 +88,10 @@ import { Service } from '@/api'
 // Props
 interface Props {
   queueId: string
-  queueItems: any[]
+  queueItems: Array<{
+    id: string
+    script: string | null
+  }>
 }
 
 const props = defineProps<Props>()
@@ -79,8 +104,14 @@ const emit = defineEmits<{
 // 响应式数据
 const loading = ref(false)
 
-// 选项数据
-const scriptOptions = ref<Array<{ label: string; value: string | null }>>([])
+// 脚本选项类型定义
+interface ScriptOption {
+  label: string
+  value: string | null
+}
+
+// 脚本选项
+const scriptOptions = ref<ScriptOption[]>([])
 
 // 表格列配置
 const queueColumns = [
@@ -99,7 +130,7 @@ const queueColumns = [
   {
     title: '操作',
     key: 'actions',
-    width: 100,
+    width: 180,
     align: 'center',
   },
 ]
@@ -139,6 +170,7 @@ const loadOptions = async () => {
 
 // 更新队列项脚本
 const updateQueueItemScript = async (record: any) => {
+  const oldScript = record.script
   try {
     loading.value = true
     
@@ -154,11 +186,15 @@ const updateQueueItemScript = async (record: any) => {
 
     if (response.code === 200) {
       message.success('脚本更新成功')
-      emit('refresh')
+      // 不触发刷新，避免界面闪烁
     } else {
+      // 回滚本地变更
+      record.script = oldScript
       message.error('脚本更新失败: ' + (response.message || '未知错误'))
     }
   } catch (error: any) {
+    // 发生异常时回滚
+    record.script = oldScript
     console.error('更新脚本失败:', error)
     message.error('更新脚本失败: ' + (error?.message || '网络错误'))
   } finally {
@@ -178,6 +214,7 @@ const addQueueItem = async () => {
 
     if (createResponse.code === 200 && createResponse.queueItemId) {
       message.success('任务添加成功')
+      // 只在添加成功后刷新，避免不必要的闪烁
       emit('refresh')
     } else {
       message.error('任务添加失败: ' + (createResponse.message || '未知错误'))

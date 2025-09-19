@@ -225,22 +225,21 @@ onUnmounted(() => {
 <style scoped>
 /* 页面容器 */
 .scheduler-page {
-  height: 100vh;
+  min-height: 100vh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background-color: var(--ant-color-bg-container);
-  color: var(--ant-color-text);
+  background: var(--ant-color-bg-layout);
+  padding: 24px;
 }
 
 /* 页面头部样式 */
 .scheduler-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  padding: 0 4px 24px;
-  flex-shrink: 0;
-  background-color: var(--ant-color-bg-layout);
+  align-items: flex-end;
+  margin-bottom: 24px;
+  padding: 0 4px;
 }
 
 .header-left {
@@ -248,7 +247,7 @@ onUnmounted(() => {
 }
 
 .page-title {
-  margin: 0;
+  margin: 0 0 8px 0;
   font-size: 32px;
   font-weight: 700;
   color: var(--ant-color-text);
@@ -277,6 +276,9 @@ onUnmounted(() => {
   flex-direction: column;
   overflow: hidden;
   background-color: var(--ant-color-bg-container);
+  border-radius: 8px;
+  padding: 16px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 .scheduler-tabs :deep(.ant-tabs) {
@@ -301,10 +303,12 @@ onUnmounted(() => {
 .scheduler-tabs :deep(.ant-tabs-tab) {
   background-color: var(--ant-color-bg-layout);
   border-color: var(--ant-color-border);
+  border-radius: 6px 6px 0 0;
 }
 
 .scheduler-tabs :deep(.ant-tabs-tab-active) {
   background-color: var(--ant-color-bg-container);
+  border-bottom: 1px solid var(--ant-color-bg-container);
 }
 
 .tab-title {
@@ -333,6 +337,7 @@ onUnmounted(() => {
 .status-row {
   flex: 1;
   overflow: hidden;
+  margin-top: 16px;
 }
 
 .status-row :deep(.ant-col) {
@@ -366,12 +371,8 @@ onUnmounted(() => {
 /* 暗色模式适配 */
 @media (prefers-color-scheme: dark) {
   .scheduler-page {
-    background-color: var(--ant-color-bg-container, #1f1f1f);
-    color: var(--ant-color-text, #ffffff);
-  }
-
-  .scheduler-header {
     background-color: var(--ant-color-bg-layout, #141414);
+    color: var(--ant-color-text, #ffffff);
   }
 
   .page-title {
@@ -384,6 +385,7 @@ onUnmounted(() => {
 
   .scheduler-tabs {
     background-color: var(--ant-color-bg-container, #1f1f1f);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
   }
 
   .scheduler-tabs :deep(.ant-tabs) {
@@ -407,6 +409,7 @@ onUnmounted(() => {
   .scheduler-tabs :deep(.ant-tabs-tab-active) {
     background-color: var(--ant-color-bg-container, #1f1f1f);
     color: var(--ant-color-text, #ffffff);
+    border-bottom: 1px solid var(--ant-color-bg-container, #1f1f1f);
   }
 
   .tab-title {
@@ -446,14 +449,23 @@ onUnmounted(() => {
 }
 
 @media (max-width: 768px) {
+  .scheduler-page {
+    padding: 16px;
+  }
+  
   .scheduler-header {
     flex-direction: column;
     align-items: stretch;
     gap: 16px;
+    margin-bottom: 16px;
   }
 
   .header-actions {
     justify-content: center;
+  }
+
+  .scheduler-tabs {
+    padding: 12px;
   }
 
   .status-row {
