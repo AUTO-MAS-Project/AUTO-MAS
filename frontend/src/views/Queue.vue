@@ -451,9 +451,14 @@ const refreshQueueItems = async () => {
       })
     }
 
-    // 使用nextTick确保数据更新不会导致渲染问题
-    await nextTick()
-    currentQueueItems.value = [...queueItems]
+    // 只在数据真正发生变化时才更新，避免不必要的界面闪烁
+    const oldItemsString = JSON.stringify(currentQueueItems.value)
+    const newItemsString = JSON.stringify(queueItems)
+    
+    if (oldItemsString !== newItemsString) {
+      currentQueueItems.value = [...queueItems]
+    }
+    
     console.log('刷新后的队列项数据:', queueItems) // 调试日志
   } catch (error) {
     console.error('刷新队列项列表失败:', error)
@@ -625,6 +630,19 @@ const saveQueueData = async () => {
     throw error
   }
 }
+
+// 监听队列项变化，但避免频繁刷新导致的界面闪烁
+watch(
+  () => currentQueueItems.value,
+  (newItems, oldItems) => {
+    // 深度比较避免不必要的更新
+    if (JSON.stringify(newItems) !== JSON.stringify(oldItems)) {
+      // 只有当数据真正改变时才触发更新
+      console.log('队列项数据变化，触发更新')
+    }
+  },
+  { deep: true }
+)
 
 // 自动保存功能
 watch(
