@@ -312,27 +312,26 @@ export function useSchedulerLogic() {
   }
 
   const handleUpdateMessage = (tab: SchedulerTab, data: any) => {
-    // 直接使用所有状态信息，不进行额外初始化操作
-    // 按照层级结构处理任务和用户队列
+    // 处理task_dict初始化消息
     if (data.task_dict && Array.isArray(data.task_dict)) {
-      // 处理任务队列
+      // 初始化任务队列
       const newTaskQueue = data.task_dict.map((item: any) => ({
         name: item.name || '未知任务',
-        status: item.status || '未知',
+        status: '等待',
       }));
       
-      // 处理用户队列，按照层级结构处理
-      // 用户是任务的子级，需要保留任务与用户之间的关联关系
+      // 初始化用户队列（仅包含运行状态下的用户）
       const newUserQueue: QueueItem[] = [];
       data.task_dict.forEach((taskItem: any) => {
         if (taskItem.user_list && Array.isArray(taskItem.user_list)) {
           taskItem.user_list.forEach((user: any) => {
-            // 用户作为任务的子级，使用"任务名-用户名"格式保持关联关系
-            // 这样TaskOverviewPanel组件可以通过前缀匹配正确构建树形结构
-            newUserQueue.push({
-              name: `${taskItem.name}-${user.name}`,
-              status: user.status || '未知',
-            });
+            // 只有在用户状态为运行时才添加到用户队列中
+            if (user.status === '运行') {
+              newUserQueue.push({
+                name: `${taskItem.name}-${user.name}`,
+                status: user.status,
+              });
+            }
           });
         }
       });
