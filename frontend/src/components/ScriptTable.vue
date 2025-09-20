@@ -50,7 +50,7 @@
                   v-if="script.type === 'MAA' && props.activeConnections.has(script.id)"
                   type="primary"
                   size="middle"
-                  style="background: #52c41a; border-color: #52c41a;"
+                  style="background: #52c41a; border-color: #52c41a"
                   @click="handleSaveMAAConfig(script)"
                 >
                   <template #icon>
@@ -102,7 +102,7 @@
                 ghost-class="user-ghost"
                 chosen-class="user-chosen"
                 drag-class="user-drag"
-                @end="(evt) => onUserDragEnd(evt, script)"
+                @end="evt => onUserDragEnd(evt, script)"
                 class="users-list"
               >
                 <template #item="{ element: user }">
@@ -149,7 +149,9 @@
 
                           <!-- 剩余天数 -->
                           <a-tag
-                            v-if="user.Info.RemainedDay !== undefined && user.Info.RemainedDay !== null"
+                            v-if="
+                              user.Info.RemainedDay !== undefined && user.Info.RemainedDay !== null
+                            "
                             class="info-tag"
                             :color="getRemainingDayColor(user.Info.RemainedDay)"
                           >
@@ -177,7 +179,9 @@
                           <!-- 额外关卡 - 只有不为-或空时才显示 -->
                           <a-tag
                             v-if="
-                              user.Info.Stage_1 && user.Info.Stage_1 !== '-' && user.Info.Stage_1 !== ''
+                              user.Info.Stage_1 &&
+                              user.Info.Stage_1 !== '-' &&
+                              user.Info.Stage_1 !== ''
                             "
                             class="info-tag"
                             color="geekblue"
@@ -187,7 +191,9 @@
 
                           <a-tag
                             v-if="
-                              user.Info.Stage_2 && user.Info.Stage_2 !== '-' && user.Info.Stage_2 !== ''
+                              user.Info.Stage_2 &&
+                              user.Info.Stage_2 !== '-' &&
+                              user.Info.Stage_2 !== ''
                             "
                             class="info-tag"
                             color="geekblue"
@@ -197,7 +203,9 @@
 
                           <a-tag
                             v-if="
-                              user.Info.Stage_3 && user.Info.Stage_3 !== '-' && user.Info.Stage_3 !== ''
+                              user.Info.Stage_3 &&
+                              user.Info.Stage_3 !== '-' &&
+                              user.Info.Stage_3 !== ''
                             "
                             class="info-tag"
                             color="geekblue"
@@ -225,7 +233,9 @@
                         <div v-if="script.type === 'General'" class="user-info-tags">
                           <!-- 剩余天数 -->
                           <a-tag
-                            v-if="user.Info.RemainedDay !== undefined && user.Info.RemainedDay !== null"
+                            v-if="
+                              user.Info.RemainedDay !== undefined && user.Info.RemainedDay !== null
+                            "
                             class="info-tag"
                             :color="getRemainingDayColor(user.Info.RemainedDay)"
                           >
@@ -321,13 +331,21 @@ interface Props {
 
 interface Emits {
   (e: 'edit', script: Script): void
+
   (e: 'delete', script: Script): void
+
   (e: 'addUser', script: Script): void
+
   (e: 'editUser', user: User): void
+
   (e: 'deleteUser', user: User): void
+
   (e: 'startMaaConfig', script: Script): void
+
   (e: 'saveMaaConfig', script: Script): void
+
   (e: 'toggleUserStatus', user: User): void
+
   (e: 'scriptsReordered', scripts: Script[]): void
 }
 
@@ -348,7 +366,7 @@ const localScripts = ref<Script[]>([])
 // 监听props变化，更新本地状态
 watch(
   () => props.scripts,
-  (newScripts) => {
+  newScripts => {
     localScripts.value = [...newScripts]
   },
   { immediate: true, deep: true }
@@ -411,9 +429,25 @@ const getRemainingDayText = (remainedDay: number): string => {
 // 处理脚本拖拽结束
 const onScriptDragEnd = async () => {
   try {
-    const scriptIds = localScripts.value.map((script) => script.id)
+    // 获取当前脚本ID顺序
+    const currentScriptIds = localScripts.value.map(script => script.id)
+    // 获取原始脚本ID顺序
+    const originalScriptIds = props.scripts.map(script => script.id)
+
+    // 检查顺序是否发生变化
+    const hasOrderChanged =
+      currentScriptIds.length !== originalScriptIds.length ||
+      currentScriptIds.some((id, index) => id !== originalScriptIds[index])
+
+    // 如果顺序没有变化，则不触发后端更新
+    if (!hasOrderChanged) {
+      console.log('脚本顺序未发生变化，跳过后端更新')
+      return
+    }
+
+    // 顺序发生变化，调用后端API更新
     await Service.reorderScriptApiScriptsOrderPost({
-      indexList: scriptIds,
+      indexList: currentScriptIds,
     })
 
     // 通知父组件脚本顺序已更改
@@ -432,7 +466,7 @@ const onScriptDragEnd = async () => {
 // 处理用户拖拽结束
 const onUserDragEnd = async (evt: any, script: Script) => {
   try {
-    const userIds = script.users?.map((user) => user.id) || []
+    const userIds = script.users?.map(user => user.id) || []
     await Service.reorderUserApiScriptsUserOrderPost({
       scriptId: script.id,
       indexList: userIds,
@@ -444,7 +478,7 @@ const onUserDragEnd = async (evt: any, script: Script) => {
     message.error('保存用户排序失败')
 
     // 恢复原始顺序 - 找到原始脚本并恢复用户顺序
-    const originalScript = props.scripts.find((s) => s.id === script.id)
+    const originalScript = props.scripts.find(s => s.id === script.id)
     if (originalScript && originalScript.users) {
       script.users = [...originalScript.users]
     }

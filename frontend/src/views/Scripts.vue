@@ -1,7 +1,27 @@
 <template>
-  <!-- 加载状态 -->
-  <div v-if="loading" class="loading-container">
-    <a-spin size="large" tip="加载中，请稍候..." />
+  <!-- MAA配置遮罩层 -->
+  <div v-if="showMAAConfigMask" class="maa-config-mask">
+    <div class="mask-content">
+      <div class="mask-icon">
+        <SettingOutlined :style="{ fontSize: '48px', color: '#1890ff' }" />
+      </div>
+      <h2 class="mask-title">正在进行MAA配置</h2>
+      <p class="mask-description">
+        当前正在配置MAA脚本，请在MAA配置界面完成相关设置。
+        <br />
+        配置完成后，请点击"保存配置"按钮来解除页面锁定。
+      </p>
+      <div class="mask-actions">
+        <a-button
+          v-if="currentConfigScript"
+          type="primary"
+          size="large"
+          @click="handleSaveMAAConfig(currentConfigScript)"
+        >
+          保存配置
+        </a-button>
+      </div>
+    </div>
   </div>
 
   <!-- 主要内容 -->
@@ -20,7 +40,8 @@
   </div>
 
   <!-- 空状态 -->
-  <div v-if="scripts.length === 0" class="empty-state">
+  <!-- 增加 loadedOnce 条件，避免初始渲染时闪烁 -->
+  <div v-if="!loading && loadedOnce && scripts.length === 0" class="empty-state">
     <div class="empty-content">
       <div class="empty-image-container">
         <img src="@/assets/NoData.png" alt="暂无数据" class="empty-image" />
@@ -237,7 +258,7 @@ import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import MarkdownIt from 'markdown-it'
 
 const router = useRouter()
-const { addScript, deleteScript, getScriptsWithUsers, loading } = useScriptApi()
+const { addScript, deleteScript, getScriptsWithUsers } = useScriptApi()
 const { updateUser, deleteUser } = useUserApi()
 const { subscribe, unsubscribe } = useWebSocket()
 const { getWebConfigTemplates, importScriptFromWeb } = useTemplateApi()
@@ -250,6 +271,8 @@ const md = new MarkdownIt({
 })
 
 const scripts = ref<Script[]>([])
+// 增加：标记是否已经完成过一次脚本列表加载（成功或失败都算一次）
+const loadedOnce = ref(false)
 const typeSelectVisible = ref(false)
 const generalModeSelectVisible = ref(false)
 const templateSelectVisible = ref(false)
@@ -260,6 +283,8 @@ const templates = ref<WebConfigTemplate[]>([])
 const addLoading = ref(false)
 const templateLoading = ref(false)
 const searchKeyword = ref('')
+const showMAAConfigMask = ref(false) // 控制MAA配置遮罩层的显示
+const currentConfigScript = ref<Script | null>(null) // 当前正在配置的脚本
 
 // WebSocket连接管理
 const activeConnections = ref<Map<string, string>>(new Map()) // scriptId -> websocketId
@@ -305,6 +330,9 @@ const loadScripts = async () => {
   } catch (error) {
     console.error('加载脚本列表失败:', error)
     message.error('加载脚本列表失败')
+  } finally {
+    // 首次加载结束（不论成功失败）后置位，避免初始闪烁
+    loadedOnce.value = true
   }
 }
 
@@ -515,18 +543,31 @@ const handleStartMAAConfig = async (script: Script) => {
     })
 
     if (response.code === 200) {
+      // 显示遮罩层
+      showMAAConfigMask.value = true
+      currentConfigScript.value = script
+
       // 订阅WebSocket消息
       subscribe(response.websocketId, {
-        onError: error => {
-          console.error(`脚本 ${script.name} 连接错误:`, error)
-          message.error(`MAA配置连接失败: ${error}`)
-          activeConnections.value.delete(script.id)
-        },
-        onResult: (data: any) => {
+        onMessage: (wsMessage: any) => {
+          // 处理错误消息
+          if (wsMessage.type === 'error') {
+            console.error(`脚本 ${script.name} 连接错误:`, wsMessage.data)
+            message.error(`MAA配置连接失败: ${wsMessage.data}`)
+            activeConnections.value.delete(script.id)
+            // 连接错误时隐藏遮罩
+            showMAAConfigMask.value = false
+            currentConfigScript.value = null
+            return
+          }
+
           // 处理配置完成消息（兼容任何结构）
-          if (data.Accomplish) {
+          if (wsMessage.data && wsMessage.data.Accomplish) {
             message.success(`${script.name} 配置已完成`)
             activeConnections.value.delete(script.id)
+            // 自动隐藏遮罩
+            showMAAConfigMask.value = false
+            currentConfigScript.value = null
           }
         },
       })
@@ -544,6 +585,9 @@ const handleStartMAAConfig = async (script: Script) => {
               unsubscribe(wsId)
             }
             activeConnections.value.delete(script.id)
+            // 超时时隐藏遮罩
+            showMAAConfigMask.value = false
+            currentConfigScript.value = null
             message.info(`${script.name} 配置会话已超时断开`)
           }
         },
@@ -575,6 +619,11 @@ const handleSaveMAAConfig = async (script: Script) => {
       // 取消订阅
       unsubscribe(websocketId)
       activeConnections.value.delete(script.id)
+
+      // 隐藏遮罩
+      showMAAConfigMask.value = false
+      currentConfigScript.value = null
+
       message.success(`${script.name} 的配置已保存`)
     } else {
       message.error(response.message || '保存配置失败')
@@ -604,12 +653,9 @@ const handleToggleUserStatus = async (user: User) => {
     })
 
     if (result) {
-      // 更新本地数据状态
-      const targetUser = script.users.find(u => u.id === user.id)
-      if (targetUser) {
-        targetUser.Info.Status = newStatus
-      }
       message.success('用户状态更新成功')
+      // 更新本地用户状态
+      user.Info.Status = newStatus
     }
   } catch (error) {
     console.error('更新用户状态失败:', error)
@@ -619,175 +665,186 @@ const handleToggleUserStatus = async (user: User) => {
 </script>
 
 <style scoped>
-.loading-container {
+.maa-config-mask {
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
+  background: rgba(0, 0, 0, 0.45);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 9999;
 }
 
-.scripts-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-  margin-bottom: 24px;
-  padding: 0 4px;
+.mask-content {
+  background: var(--ant-color-bg-elevated);
+  border-radius: 8px;
+  padding: 24px;
+  max-width: 480px;
+  width: 100%;
+  text-align: center;
+  box-shadow:
+    0 6px 16px 0 rgba(0, 0, 0, 0.08),
+    0 3px 6px -4px rgba(0, 0, 0, 0.12),
+    0 9px 28px 8px rgba(0, 0, 0, 0.05);
+  border: 1px solid var(--ant-color-border);
 }
 
-.header-left {
-  flex: 1;
+.mask-icon {
+  margin-bottom: 16px;
 }
 
-.page-title {
-  margin: 0 0 8px 0;
-  font-size: 32px;
-  font-weight: 700;
+.mask-title {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0 0 8px;
   color: var(--ant-color-text);
-  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+}
+
+.mask-description {
+  font-size: 14px;
+  color: var(--ant-color-text-secondary);
+  margin: 0 0 24px;
+  line-height: 1.5;
+}
+
+.mask-actions {
+  display: flex;
+  justify-content: center;
+}
+
+.link {
+  display: inline-flex;
+  align-items: center;
+}
+
+.link .anticon {
+  margin-right: 8px;
+}
+
+.loading-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
 }
 
 .empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: calc(100vh - 200px);
   text-align: center;
-  padding: 40px 20px;
 }
 
 .empty-image-container {
   margin-bottom: 16px;
 }
 
+.empty-image {
+  max-width: 100%;
+  height: auto;
+}
+
 .empty-title {
-  font-size: 22px;
+  font-size: 18px;
   font-weight: 500;
-  margin: 0 0 8px 0;
+  margin: 0;
+  color: var(--ant-color-text);
 }
 
 .empty-description {
-  font-size: 16px;
+  font-size: 14px;
   color: var(--ant-color-text-secondary);
+  margin: 0;
 }
 
-/* 模态框通用样式 */
-.type-select-modal :deep(.ant-modal-content),
-.general-mode-modal :deep(.ant-modal-content),
-.template-select-modal :deep(.ant-modal-content) {
-  border-radius: 12px;
+.scripts-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24px;
 }
 
-.type-select-modal :deep(.ant-modal-header),
-.general-mode-modal :deep(.ant-modal-header),
-.template-select_modal :deep(.ant-modal-header) {
-  border-bottom: 1px solid var(--ant-color-border);
-  padding: 16px 24px;
+.page-title {
+  font-size: 24px;
+  font-weight: 500;
+  margin: 0;
+  color: var(--ant-color-text);
 }
 
-.type-select-modal :deep(.ant-modal-title),
-.general-mode_modal :deep(.ant-modal-title),
-.template-select-modal :deep(.ant-modal-title) {
-  font-size: 18px;
-  font-weight: 600;
+.type-select-modal,
+.general-mode-modal,
+.template-select-modal {
+  text-align: left;
 }
 
-.type-select-modal :deep(.ant-modal-body),
-.general-mode-modal :deep(.ant-modal-body) {
-  padding: 24px;
-}
-
-.template-select-modal :deep(.ant-modal-body) {
-  padding: 0;
-}
-
-/* 选择组样式 */
 .type-selection,
-.mode-selection {
-  margin: 16px 0;
+.mode-selection,
+.template-selection {
+  margin-top: 16px;
 }
 
 .type-radio-group,
 .mode-radio-group {
-  width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 16px;
 }
 
-.type-radio-group :deep(.ant-radio-button-wrapper),
-.mode-radio-group :deep(.ant-radio-button-wrapper) {
-  height: auto;
-  padding: 0;
-  border: 1px solid var(--ant-color-border);
-  border-radius: 8px;
-  background: var(--ant-color-bg-container);
-  transition: all 0.3s ease;
-  text-align: left;
-}
-
-.type-radio-group :deep(.ant-radio-button-wrapper:hover),
-.mode-radio-group :deep(.ant-radio-button-wrapper:hover) {
-  border-color: var(--ant-color-primary);
-}
-
-.type-radio-group :deep(.ant-radio-button-wrapper-checked),
-.mode-radio-group :deep(.ant-radio-button-wrapper-checked) {
-  border-color: var(--ant-color-primary);
-  background: var(--ant-color-primary-bg);
-  color: var(--ant-color-primary);
-}
-
-.type-radio-group :deep(.ant-radio-button-wrapper::before),
-.mode-radio-group :deep(.ant-radio-button-wrapper::before) {
-  display: none;
-}
-
-.type-radio-group :deep(.ant-radio-button-wrapper .ant-radio-button),
-.mode-radio-group :deep(.ant-radio-button-wrapper .ant-radio-button) {
-  display: none;
-}
-
-.type-content {
+.type-option,
+.mode-option {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 16px 20px;
-  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--ant-color-border);
+  border-radius: 8px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  transition: all 0.3s;
+  background: var(--ant-color-bg-container);
 }
 
+.type-option:hover,
+.mode-option:hover {
+  border-color: var(--ant-color-primary);
+  background: var(--ant-color-primary-bg);
+}
+
+.type-content,
 .mode-content {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 16px 20px;
+  width: 100%;
 }
 
-.type-logo-container {
+.type-logo-container,
+.mode-icon {
   width: 40px;
   height: 40px;
-  border-radius: 8px;
+  margin-right: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--ant-color-bg-elevated);
-  border: 1px solid var(--ant-color-border-secondary);
-  flex-shrink: 0;
+  border-radius: 6px;
+  background: var(--ant-color-primary-bg);
 }
 
 .type-logo {
   width: 32px;
   height: 32px;
-  object-fit: contain;
 }
 
 .mode-icon {
-  font-size: 24px;
+  font-size: 20px;
   color: var(--ant-color-primary);
-  flex-shrink: 0;
 }
 
 .type-info,
@@ -798,68 +855,53 @@ const handleToggleUserStatus = async (user: User) => {
 .type-title,
 .mode-title {
   font-size: 16px;
-  font-weight: 600;
+  font-weight: 500;
+  margin: 0 0 4px;
   color: var(--ant-color-text);
-  margin-bottom: 4px;
 }
 
 .type-description,
 .mode-description {
   font-size: 14px;
   color: var(--ant-color-text-secondary);
-  line-height: 1.4;
-}
-
-/* 模板选择样式 */
-.template-selection {
-  min-height: 400px;
-}
-
-.no-templates {
-  text-align: center;
-  padding: 60px 20px;
-}
-
-.no-templates-content {
-  color: var(--ant-color-text-secondary);
-}
-
-.no-templates-icon {
-  font-size: 48px;
-  margin-bottom: 16px;
-  color: var(--ant-color-text-tertiary);
+  margin: 0;
 }
 
 .templates-container {
-  height: 600px;
-  display: flex;
-  flex-direction: column;
+  margin-top: 16px;
 }
 
 .templates-header {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  padding: 24px;
-  border-bottom: 1px solid var(--ant-color-border);
+  justify-content: space-between;
+  margin-bottom: 16px;
 }
 
 .templates-count {
   display: flex;
   align-items: center;
-  gap: 8px;
+  font-size: 14px;
+  color: var(--ant-color-text);
 }
 
 .count-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 10px;
   background: var(--ant-color-primary);
-  color: white;
-  padding: 2px 8px;
-  border-radius: 12px;
+  color: #fff;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 500;
+  margin-right: 8px;
 }
 
 .count-text {
+  font-size: 14px;
   color: var(--ant-color-text-secondary);
 }
 
@@ -869,70 +911,59 @@ const handleToggleUserStatus = async (user: User) => {
   margin-left: 16px;
 }
 
+.template-search {
+  width: 100%;
+}
+
 .templates-list {
-  flex: 1;
+  max-height: 400px;
   overflow-y: auto;
-  padding: 0 24px 24px;
-  /* 隐藏滚动条 */
-  scrollbar-width: none; /* Firefox */
-  -ms-overflow-style: none; /* IE and Edge */
-}
-
-.templates-list::-webkit-scrollbar {
-  display: none; /* Chrome, Safari and Opera */
-}
-
-.no-search-results {
-  text-align: center;
-  padding: 60px 20px;
-  color: var(--ant-color-text-secondary);
-}
-
-.no-results-icon {
-  font-size: 48px;
-  margin-bottom: 16px;
-  color: var(--ant-color-text-tertiary);
-}
-
-.no-results-tip {
-  font-size: 14px;
-  color: var(--ant-color-text-tertiary);
-}
-
-.template-item {
   border: 1px solid var(--ant-color-border);
-  border-radius: 8px;
-  margin-bottom: 16px;
-  cursor: pointer;
-  transition: all 0.3s ease;
+  border-radius: 6px;
   background: var(--ant-color-bg-container);
 }
 
-.template-item:hover {
-  border-color: var(--ant-color-primary);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+.template-item {
+  padding: 16px;
+  border-bottom: 1px solid var(--ant-color-border);
+  cursor: pointer;
+  transition: background-color 0.3s;
+  background: var(--ant-color-bg-container);
 }
 
-.template-item.selected {
-  border-color: var(--ant-color-primary);
+.template-item:last-child {
+  border-bottom: none;
+}
+
+.template-item:hover {
   background: var(--ant-color-primary-bg);
 }
 
+.template-item.selected {
+  background: var(--ant-color-primary-bg);
+  border-color: var(--ant-color-primary);
+}
+
 .template-content {
-  padding: 20px;
+  display: flex;
+  flex-direction: column;
 }
 
 .template-header {
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
+}
+
+.template-info {
+  flex: 1;
 }
 
 .template-name {
-  margin: 0 0 8px 0;
   font-size: 16px;
-  font-weight: 600;
+  font-weight: 500;
+  margin: 0 0 4px;
   color: var(--ant-color-text);
 }
 
@@ -951,15 +982,39 @@ const handleToggleUserStatus = async (user: User) => {
 }
 
 .template-description {
+  font-size: 14px;
   color: var(--ant-color-text-secondary);
+  margin: 0;
   line-height: 1.5;
 }
 
-.template-description :deep(p) {
-  margin: 0 0 8px 0;
+.no-search-results,
+.no-templates {
+  text-align: center;
+  padding: 32px 16px;
+  color: var(--ant-color-text-secondary);
 }
 
-.template-description :deep(p:last-child) {
-  margin-bottom: 0;
+.no-results-icon,
+.no-templates-icon {
+  font-size: 48px;
+  color: var(--ant-color-text-tertiary);
+  margin-bottom: 16px;
+}
+
+.no-templates-content h3 {
+  color: var(--ant-color-text);
+  margin: 0 0 8px;
+}
+
+.no-templates-content p {
+  color: var(--ant-color-text-secondary);
+  margin: 0;
+}
+
+.no-results-tip {
+  font-size: 12px;
+  color: var(--ant-color-text-tertiary);
+  margin-top: 4px;
 }
 </style>
