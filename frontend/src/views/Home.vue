@@ -240,6 +240,7 @@ import { message } from 'ant-design-vue'
 import { ClockCircleOutlined, UserOutlined, BellOutlined } from '@ant-design/icons-vue'
 import { Service } from '@/api/services/Service'
 import NoticeModal from '@/components/NoticeModal.vue'
+import { useAudioPlayer } from '@/composables/useAudioPlayer'
 import dayjs from 'dayjs'
 import { API_ENDPOINTS } from '@/config/mirrors.ts'
 
@@ -295,6 +296,9 @@ const proxyData = ref<Record<string, ProxyInfo>>({})
 const noticeVisible = ref(false)
 const noticeData = ref<Record<string, string>>({})
 const noticeLoading = ref(false)
+
+// 音频播放器
+const { playSound } = useAudioPlayer()
 
 // 获取当前活动信息
 const currentActivity = computed(() => {
@@ -435,6 +439,8 @@ const fetchNoticeData = async () => {
       if (response.if_need_show && response.data && Object.keys(response.data).length > 0) {
         noticeData.value = response.data
         noticeVisible.value = true
+        // 播放公告展示音频
+        await playSound('simple/announcement_display')
       }
     } else {
       console.warn('获取公告失败:', response.message)
@@ -461,6 +467,8 @@ const showNotice = async () => {
       if (response.data && Object.keys(response.data).length > 0) {
         noticeData.value = response.data
         noticeVisible.value = true
+        // 手动查看公告时也播放音频
+        await playSound('simple/announcement_display')
       } else {
         message.info('暂无公告信息')
       }

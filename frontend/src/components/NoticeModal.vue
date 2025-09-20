@@ -59,6 +59,7 @@ import { ref, computed, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import MarkdownIt from 'markdown-it'
 import { Service } from '@/api/services/Service'
+import { useAudioPlayer } from '@/composables/useAudioPlayer'
 
 interface Props {
   visible: boolean
@@ -80,6 +81,9 @@ const visible = computed({
 
 const confirming = ref(false)
 const activeNoticeKey = ref('')
+
+// 音频播放器
+const { playSound } = useAudioPlayer()
 
 // 初始化 markdown 解析器
 const md = new MarkdownIt({
@@ -159,10 +163,12 @@ watch(
   { immediate: true }
 )
 
-// 监听弹窗显示状态，重置到第一个公告
-watch(visible, newVisible => {
+// 监听弹窗显示状态，重置到第一个公告并播放音频
+watch(visible, async (newVisible) => {
   if (newVisible && notices.value.length > 0) {
     activeNoticeKey.value = notices.value[0]
+    // 当公告模态框显示时播放音频
+    await playSound('simple/announcement_display')
   }
 })
 </script>
