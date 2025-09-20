@@ -242,7 +242,8 @@ export function useSchedulerLogic() {
 
       // 不再取消订阅，保持WebSocket连接以便接收结束信号
       // 只需发送停止请求，等待后端通过WebSocket发送结束信号
-      message.success('已发送停止任务请求，等待任务完成确认')
+      // 移除了提示消息"已发送停止任务请求，等待任务完成确认"
+      // 因为任务状态变更必须由明确外部信号驱动，不应该使用提示消息来表示等待状态
       saveTabsToStorage(schedulerTabs.value)
     } catch (error) {
       console.error('停止任务失败:', error)
@@ -270,13 +271,6 @@ export function useSchedulerLogic() {
     // 只处理与当前标签页相关的消息
     if (id && id !== tab.websocketId) {
       console.log('[Scheduler] 消息ID不匹配，忽略消息:', { messageId: id, tabId: tab.websocketId })
-      return
-    }
-
-    // 处理通过Info类型包装的Signal消息
-    if (type === 'Info' && data && data.title === 'Signal' && data.data) {
-      console.log('[Scheduler] 处理通过Info包装的Signal消息:', data.data)
-      handleSignalMessage(tab, data.data)
       return
     }
 
@@ -318,26 +312,27 @@ export function useSchedulerLogic() {
   }
 
   const handleUpdateMessage = (tab: SchedulerTab, data: any) => {
-    // 处理task_dict初始化消息
+    // 直接使用所有状态信息，不进行额外初始化操作
+    // 按照层级结构处理任务和用户队列
     if (data.task_dict && Array.isArray(data.task_dict)) {
-      // 初始化任务队列
+      // 处理任务队列
       const newTaskQueue = data.task_dict.map((item: any) => ({
         name: item.name || '未知任务',
-        status: '等待',
+        status: item.status || '未知',
       }));
       
-      // 初始化用户队列（仅包含运行状态下的用户）
+      // 处理用户队列，按照层级结构处理
+      // 用户是任务的子级，需要保留任务与用户之间的关联关系
       const newUserQueue: QueueItem[] = [];
       data.task_dict.forEach((taskItem: any) => {
         if (taskItem.user_list && Array.isArray(taskItem.user_list)) {
           taskItem.user_list.forEach((user: any) => {
-            // 只有在用户状态为运行时才添加到用户队列中
-            if (user.status === '运行') {
-              newUserQueue.push({
-                name: `${taskItem.name}-${user.name}`,
-                status: user.status,
-              });
-            }
+            // 用户作为任务的子级，使用"任务名-用户名"格式保持关联关系
+            // 这样TaskOverviewPanel组件可以通过前缀匹配正确构建树形结构
+            newUserQueue.push({
+              name: `${taskItem.name}-${user.name}`,
+              status: user.status || '未知',
+            });
           });
         }
       });
@@ -426,7 +421,7 @@ export function useSchedulerLogic() {
         tab.websocketId = null
       }
 
-      notification.success({ message: '任务完成', description: data.Accomplish })
+      message.success('任务完成')
       checkAllTasksCompleted()
       saveTabsToStorage(schedulerTabs.value)
       

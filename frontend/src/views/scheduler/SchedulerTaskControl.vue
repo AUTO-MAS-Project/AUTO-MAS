@@ -31,22 +31,17 @@
         <div class="control-spacer"></div>
         <a-space size="middle">
           <a-button
-            @click="onStart"
-            type="primary"
-            :disabled="disabled || !localSelectedTaskId || !localSelectedMode"
+            @click="onAction"
+            :type="status === '运行' ? 'default' : 'primary'"
+            :danger="status === '运行'"
+            :disabled="status === '运行' ? false : (!localSelectedTaskId || !localSelectedMode || disabled)"
             size="large"
           >
-            <template #icon><PlayCircleOutlined /></template>
-            开始执行
-          </a-button>
-          <a-button
-            @click="onStop"
-            :disabled="status !== '运行'"
-            danger
-            size="large"
-          >
-            <template #icon><StopOutlined /></template>
-            停止任务
+            <template #icon>
+              <StopOutlined v-if="status === '运行'" />
+              <PlayCircleOutlined v-else />
+            </template>
+            {{ status === '运行' ? '停止任务' : '开始执行' }}
           </a-button>
         </a-space>
       </div>
@@ -55,7 +50,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, h, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { PlayCircleOutlined, StopOutlined } from '@ant-design/icons-vue'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import type { ComboBoxItem } from '@/api/models/ComboBoxItem'
@@ -124,12 +119,13 @@ const onModeChange = (value: TaskCreateIn.mode) => {
   emit('update:selectedMode', value)
 }
 
-const onStart = () => {
-  emit('start')
-}
-
-const onStop = () => {
-  emit('stop')
+// 合并的按钮事件处理
+const onAction = () => {
+  if (props.status === '运行') {
+    emit('stop')
+  } else {
+    emit('start')
+  }
 }
 
 // 任务选项过滤
