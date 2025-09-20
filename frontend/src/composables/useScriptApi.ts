@@ -42,10 +42,15 @@ export function useScriptApi() {
     }
   }
 
-  // 获取脚本列表
-  const getScripts = async (): Promise<ScriptDetail[]> => {
-    loading.value = true
-    error.value = null
+  // 获取脚本列表（可选择是否管理 loading 状态，避免嵌套调用时提前结束 loading）
+  const getScripts = async (manageLoading: boolean = true): Promise<ScriptDetail[]> => {
+    if (manageLoading) {
+      loading.value = true
+      error.value = null
+    } else {
+      // 仅清理错误，不改变外部 loading
+      error.value = null
+    }
 
     try {
       const response = await Service.getScriptsApiScriptsGetPost({})
@@ -73,18 +78,20 @@ export function useScriptApi() {
       }
       return []
     } finally {
-      loading.value = false
+      if (manageLoading) {
+        loading.value = false
+      }
     }
   }
 
-  // 获取脚本列表及其用户数据
+  // 获取脚本列表及其用户数据（统一管理一次 loading）
   const getScriptsWithUsers = async (): Promise<ScriptDetail[]> => {
     loading.value = true
     error.value = null
 
     try {
-      // 首先获取脚本列表
-      const scriptDetails = await getScripts()
+      // 首先获取脚本列表，但不在内部结束 loading
+      const scriptDetails = await getScripts(false)
 
       // 为每个脚本获取用户数据
       const scriptsWithUsers = await Promise.all(
