@@ -146,6 +146,11 @@ def main():
             StaticFiles(directory=str(Path.cwd() / "res/images/materials")),
             name="materials",
         )
+        app.mount(
+            "/api/res/sounds",
+            StaticFiles(directory=str(Path.cwd() / "res/sounds")),
+            name="sounds",
+        )
 
         async def run_server():
 
