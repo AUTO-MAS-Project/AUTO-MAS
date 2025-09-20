@@ -40,7 +40,8 @@
   </div>
 
   <!-- 空状态 -->
-  <div v-if="scripts.length === 0" class="empty-state">
+  <!-- 增加 loadedOnce 条件，避免初始渲染时闪烁 -->
+  <div v-if="!loading && loadedOnce && scripts.length === 0" class="empty-state">
     <div class="empty-content">
       <div class="empty-image-container">
         <img src="@/assets/NoData.png" alt="暂无数据" class="empty-image" />
@@ -270,6 +271,8 @@ const md = new MarkdownIt({
 })
 
 const scripts = ref<Script[]>([])
+// 增加：标记是否已经完成过一次脚本列表加载（成功或失败都算一次）
+const loadedOnce = ref(false)
 const typeSelectVisible = ref(false)
 const generalModeSelectVisible = ref(false)
 const templateSelectVisible = ref(false)
@@ -327,6 +330,9 @@ const loadScripts = async () => {
   } catch (error) {
     console.error('加载脚本列表失败:', error)
     message.error('加载脚本列表失败')
+  } finally {
+    // 首次加载结束（不论成功失败）后置位，避免初始闪烁
+    loadedOnce.value = true
   }
 }
 
