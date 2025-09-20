@@ -3,5 +3,5 @@
 </template>
 
 <script setup lang="ts">
-import DebugPanel from './debug/index.vue'
+import DebugPanel from './devtools/index.vue'
 </script>
