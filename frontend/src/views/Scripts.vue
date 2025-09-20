@@ -257,7 +257,7 @@ import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import MarkdownIt from 'markdown-it'
 
 const router = useRouter()
-const { addScript, deleteScript, getScriptsWithUsers, loading } = useScriptApi()
+const { addScript, deleteScript, getScriptsWithUsers } = useScriptApi()
 const { updateUser, deleteUser } = useUserApi()
 const { subscribe, unsubscribe } = useWebSocket()
 const { getWebConfigTemplates, importScriptFromWeb } = useTemplateApi()
@@ -543,17 +543,20 @@ const handleStartMAAConfig = async (script: Script) => {
 
       // 订阅WebSocket消息
       subscribe(response.websocketId, {
-        onError: error => {
-          console.error(`脚本 ${script.name} 连接错误:`, error)
-          message.error(`MAA配置连接失败: ${error}`)
-          activeConnections.value.delete(script.id)
-          // 连接错误时隐藏遮罩
-          showMAAConfigMask.value = false
-          currentConfigScript.value = null
-        },
-        onResult: (data: any) => {
+        onMessage: (wsMessage: any) => {
+          // 处理错误消息
+          if (wsMessage.type === 'error') {
+            console.error(`脚本 ${script.name} 连接错误:`, wsMessage.data)
+            message.error(`MAA配置连接失败: ${wsMessage.data}`)
+            activeConnections.value.delete(script.id)
+            // 连接错误时隐藏遮罩
+            showMAAConfigMask.value = false
+            currentConfigScript.value = null
+            return
+          }
+
           // 处理配置完成消息（兼容任何结构）
-          if (data.Accomplish) {
+          if (wsMessage.data && wsMessage.data.Accomplish) {
             message.success(`${script.name} 配置已完成`)
             activeConnections.value.delete(script.id)
             // 自动隐藏遮罩
