@@ -5,6 +5,7 @@ import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { PowerIn } from '@/api/models/PowerIn'
 import { useWebSocket } from '@/composables/useWebSocket'
 import type { ComboBoxItem } from '@/api/models/ComboBoxItem'
+import type { QueueItem } from './schedulerConstants'
 import {
   getPowerActionText,
   LOG_MAX_LENGTH,
@@ -333,13 +334,41 @@ export function useSchedulerLogic() {
   }
 
   const handleUpdateMessage = (tab: SchedulerTab, data: any) => {
+    // 处理task_dict初始化消息
+    if (data.task_dict && Array.isArray(data.task_dict)) {
+      // 初始化任务队列
+      const newTaskQueue = data.task_dict.map((item: any) => ({
+        name: item.name || '未知任务',
+        status: '等待',
+      }));
+      
+      // 初始化用户队列（仅包含运行状态下的用户）
+      const newUserQueue: QueueItem[] = [];
+      data.task_dict.forEach((taskItem: any) => {
+        if (taskItem.user_list && Array.isArray(taskItem.user_list)) {
+          taskItem.user_list.forEach((user: any) => {
+            // 只有在用户状态为运行时才添加到用户队列中
+            if (user.status === '运行') {
+              newUserQueue.push({
+                name: `${taskItem.name}-${user.name}`,
+                status: user.status,
+              });
+            }
+          });
+        }
+      });
+      
+      tab.taskQueue.splice(0, tab.taskQueue.length, ...newTaskQueue);
+      tab.userQueue.splice(0, tab.userQueue.length, ...newUserQueue);
+    }
+    
     // 更新任务队列
     if (data.task_list && Array.isArray(data.task_list)) {
       const newTaskQueue = data.task_list.map((item: any) => ({
         name: item.name || '未知任务',
         status: item.status || '未知',
-      }))
-      tab.taskQueue.splice(0, tab.taskQueue.length, ...newTaskQueue)
+      }));
+      tab.taskQueue.splice(0, tab.taskQueue.length, ...newTaskQueue);
     }
 
     // 更新用户队列
@@ -347,19 +376,20 @@ export function useSchedulerLogic() {
       const newUserQueue = data.user_list.map((item: any) => ({
         name: item.name || '未知用户',
         status: item.status || '未知',
-      }))
-      tab.userQueue.splice(0, tab.userQueue.length, ...newUserQueue)
+      }));
+      tab.userQueue.splice(0, tab.userQueue.length, ...newUserQueue);
     }
 
-    // 处理日志
+    // 处理日志 - 直接显示完整日志内容，覆盖上次显示的内容
     if (data.log) {
       if (typeof data.log === 'string') {
-        addLog(tab, data.log, 'info')
+        // 直接替换日志内容，不添加时间戳，不保留历史记录
+        tab.lastLogContent = data.log;
       } else if (typeof data.log === 'object') {
-        if (data.log.Error) addLog(tab, data.log.Error, 'error')
-        else if (data.log.Warning) addLog(tab, data.log.Warning, 'warning')
-        else if (data.log.Info) addLog(tab, data.log.Info, 'info')
-        else addLog(tab, JSON.stringify(data.log), 'info')
+        if (data.log.Error) tab.lastLogContent = data.log.Error;
+        else if (data.log.Warning) tab.lastLogContent = data.log.Warning;
+        else if (data.log.Info) tab.lastLogContent = data.log.Info;
+        else tab.lastLogContent = JSON.stringify(data.log);
       }
     }
     saveTabsToStorage(schedulerTabs.value)
@@ -406,33 +436,6 @@ export function useSchedulerLogic() {
       powerAction.value = data.power as PowerIn.signal
       savePowerActionToStorage(powerAction.value)
       startPowerCountdown()
-    }
-  }
-
-  // 日志管理
-  const addLog = (tab: SchedulerTab, message: string, type: LogEntry['type'] = 'info') => {
-    const logEntry: LogEntry = {
-      time: new Date().toLocaleTimeString(),
-      message,
-      type,
-      timestamp: Date.now(),
-    }
-
-    tab.logs.push(logEntry)
-
-    // 限制日志条数
-    if (tab.logs.length > LOG_MAX_LENGTH) {
-      tab.logs.splice(0, tab.logs.length - LOG_MAX_LENGTH)
-    }
-
-    // 自动滚动到底部
-    if (tab.isLogAtBottom) {
-      nextTick(() => {
-        const el = logRefs.value.get(tab.key)
-        if (el) {
-          el.scrollTop = el.scrollHeight
-        }
-      })
     }
   }
 
@@ -589,7 +592,6 @@ export function useSchedulerLogic() {
     stopTask,
 
     // 日志操作
-    addLog,
     onLogScroll,
     setLogRef,
 

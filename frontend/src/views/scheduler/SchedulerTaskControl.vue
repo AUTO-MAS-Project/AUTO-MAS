@@ -1,6 +1,6 @@
 <template>
   <div class="task-control">
-    <a-card class="control-card" :bordered="false">
+    <div class="control-card">
       <div class="control-row">
         <a-space size="middle">
           <a-select
@@ -31,21 +31,26 @@
         <div class="control-spacer"></div>
         <a-space size="middle">
           <a-button
-            v-if="status !== '运行'"
-            type="primary"
             @click="onStart"
-            :icon="h(PlayCircleOutlined)"
-            :disabled="!canStart"
+            type="primary"
+            :disabled="disabled || !localSelectedTaskId || !localSelectedMode"
             size="large"
           >
-            开始任务
+            <template #icon><PlayCircleOutlined /></template>
+            开始执行
           </a-button>
-          <a-button v-else danger @click="onStop" :icon="h(StopOutlined)" size="large">
-            中止任务
+          <a-button
+            @click="onStop"
+            :disabled="status !== '运行'"
+            danger
+            size="large"
+          >
+            <template #icon><StopOutlined /></template>
+            停止任务
           </a-button>
         </a-space>
       </div>
-    </a-card>
+    </div>
   </div>
 </template>
 
@@ -136,56 +141,41 @@ const filterTaskOption = (input: string, option: any) => {
 <style scoped>
 .task-control {
   margin-bottom: 16px;
+  border-radius: 12px;
+  background-color: var(--ant-color-bg-container);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  border: 1px solid var(--ant-color-border-secondary);
+  overflow: hidden;
 }
 
 .control-card {
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  border: 1px solid var(--ant-color-border-secondary);
-}
-
-.control-card :deep(.ant-card-body) {
   padding: 16px;
 }
 
 .control-row {
   display: flex;
   align-items: center;
-  gap: 12px;
-  background: var(--ant-color-bg-container);
-  border-radius: 8px;
-  transition: all 0.3s ease;
+  flex-wrap: wrap;
+  gap: 16px;
 }
 
 .control-spacer {
   flex: 1;
 }
 
-/* 暗色模式适配 */
-@media (prefers-color-scheme: dark) {
-  .control-card {
-    background: var(--ant-color-bg-container, #1f1f1f);
-    border: 1px solid var(--ant-color-border, #424242);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-  }
-  
-  .control-row {
-    background: var(--ant-color-bg-container, #1f1f1f);
-  }
-}
-
+/* 响应式 - 移动端适配 */
 @media (max-width: 768px) {
   .control-row {
     flex-direction: column;
     align-items: stretch;
   }
   
-  .control-card :deep(.ant-card-body) {
-    padding: 12px;
-  }
-
   .control-spacer {
     display: none;
+  }
+  
+  .control-card {
+    padding: 12px;
   }
 }
 </style>

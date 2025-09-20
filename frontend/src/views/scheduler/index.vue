@@ -53,7 +53,7 @@
           </template>
 
           <!-- 任务控制与状态内容 -->
-          <div class="task-unified-card">
+          <div class="task-unified-card" :class="`status-${tab.status}`">
             <!-- 任务控制栏 -->
             <SchedulerTaskControl
               v-model:selectedTaskId="tab.selectedTaskId"
@@ -67,39 +67,23 @@
             />
 
             <!-- 状态展示区域 -->
-            <a-row :gutter="16" class="status-row">
-              <!-- 任务队列栏 -->
-              <a-col :span="4">
-                <SchedulerQueuePanel
-                  title="任务队列"
-                  :items="tab.taskQueue"
-                  type="task"
-                  empty-text="暂无任务队列"
+            <div class="status-container">
+              <div class="overview-panel-container">
+                <TaskOverviewPanel
+                  :task-queue="tab.taskQueue"
+                  :user-queue="tab.userQueue"
                 />
-              </a-col>
-
-              <!-- 用户队列栏 -->
-              <a-col :span="4">
-                <SchedulerQueuePanel
-                  title="用户队列"
-                  :items="tab.userQueue"
-                  type="user"
-                  empty-text="暂无用户队列"
-                />
-              </a-col>
-
-              <!-- 日志栏 -->
-              <a-col :span="16">
+              </div>
+              <div class="log-panel-container">
                 <SchedulerLogPanel
-                  :logs="tab.logs"
+                  :log-content="tab.lastLogContent"
                   :tab-key="tab.key"
                   :is-log-at-bottom="tab.isLogAtBottom"
                   @scroll="onLogScroll(tab)"
                   @set-ref="setLogRef"
-                  @clear-logs="clearTabLogs(tab)"
                 />
-              </a-col>
-            </a-row>
+              </div>
+            </div>
           </div>
         </a-tab-pane>
         
@@ -165,8 +149,8 @@ import {
 } from './schedulerConstants'
 import { useSchedulerLogic } from './useSchedulerLogic'
 import SchedulerTaskControl from './SchedulerTaskControl.vue'
-import SchedulerQueuePanel from './SchedulerQueuePanel.vue'
 import SchedulerLogPanel from './SchedulerLogPanel.vue'
+import TaskOverviewPanel from './TaskOverviewPanel.vue'
 
 // 使用业务逻辑层
 const {
@@ -219,10 +203,6 @@ const onSchedulerTabEdit = (targetKey: string | MouseEvent, action: 'add' | 'rem
   }
 }
 
-// 清空指定标签页的日志
-const clearTabLogs = (tab: SchedulerTab) => {
-  tab.logs.splice(0)
-}
 
 // 生命周期
 onMounted(() => {
@@ -241,7 +221,6 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  padding: 16px;
   background-color: var(--ant-color-bg-layout);
 }
 
@@ -300,6 +279,55 @@ onUnmounted(() => {
   background-color: var(--ant-color-bg-container);
 }
 
+/* 任务卡片统一容器 */
+.task-unified-card {
+  background-color: transparent;
+  box-shadow: none;
+  height: calc(100vh - 230px); /* 动态计算高度 */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* 根据状态变化的样式 */
+.task-unified-card.status-新建 {
+  background-color: transparent;
+}
+
+.task-unified-card.status-运行 {
+  background-color: transparent;
+}
+
+.task-unified-card.status-结束 {
+  background-color: transparent;
+}
+
+/* 状态容器 */
+.status-container {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  gap: 16px;
+  padding: 0;
+  margin: 0;
+}
+
+/* 任务总览面板容器 */
+.overview-panel-container {
+  flex: 0 0 33.333333%; /* 占据1/3宽度 */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* 日志面板容器 */
+.log-panel-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
 /* 响应式 - 移动端适配 */
 @media (max-width: 768px) {
   .scheduler-main {
@@ -319,6 +347,16 @@ onUnmounted(() => {
 
   .power-label {
     display: none;
+  }
+  
+  .status-container {
+    flex-direction: column;
+  }
+  
+  .overview-panel-container,
+  .log-panel-container {
+    flex: 1;
+    width: 100%;
   }
 }
 </style>
