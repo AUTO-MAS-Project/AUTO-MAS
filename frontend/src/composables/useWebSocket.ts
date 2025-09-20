@@ -18,33 +18,13 @@ export interface WebSocketBaseMessage {
   data?: any
 }
 
-export interface ProgressMessage {
-  percent?: number
-  status?: string
-  msg?: string
-}
-
-export interface ResultMessage {
-  success?: boolean
-  result?: any
-}
-
-export interface ErrorMessage {
-  msg?: string
-  code?: number
-}
-
-export interface NotifyMessage {
-  title?: string
-  content?: string
-}
+// 删除了冗余的类型定义：
+// ProgressMessage、ResultMessage、ErrorMessage、NotifyMessage
+// 因为现在WebSocket消息处理统一使用onMessage回调函数，不再需要这些特定的类型
 
 export interface WebSocketSubscriber {
   id: string
-  onProgress?: (data: ProgressMessage) => void
-  onResult?: (data: ResultMessage) => void
-  onError?: (err: ErrorMessage) => void
-  onNotify?: (n: NotifyMessage) => void
+  onMessage?: (message: WebSocketBaseMessage) => void
 }
 
 // 后端状态类型
@@ -318,74 +298,6 @@ const handleMessage = (raw: WebSocketBaseMessage) => {
     fullMessage: raw
   })
 
-  // 优先处理Signal类型的ping-pong消息，不受id限制
-  if (msgType === 'Signal') {
-    // 处理心跳响应
-    if (raw.data && raw.data.Pong) {
-      global.lastPingTime = 0 // 重置ping时间，表示收到了响应
-      return
-    }
-
-    // 处理后端发送的Ping，回复Pong
-    if (raw.data && raw.data.Ping) {
-      const ws = global.wsRef
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        try {
-          ws.send(
-            JSON.stringify({
-              type: 'Signal',
-              data: { Pong: raw.data.Ping, connectionId: global.connectionId },
-            })
-          )
-        } catch (e) {
-          // Pong发送失败，静默处理
-        }
-      }
-      return
-    }
-  }
-
-  const dispatch = (sub: WebSocketSubscriber) => {
-    if (msgType === 'Signal') return
-
-    if (msgType === 'Progress') return sub.onProgress?.(raw.data as ProgressMessage)
-    if (msgType === 'Result') return sub.onResult?.(raw.data as ResultMessage)
-    if (msgType === 'Update') {
-      // 处理Update类型消息，当作Progress处理
-      console.log('[WebSocket Debug] 收到Update消息:', raw)
-      return sub.onProgress?.(raw as any)
-    }
-    if (msgType === 'Info') {
-      // 处理Info类型消息，当作Notify处理
-      console.log('[WebSocket Debug] 收到Info消息:', raw)
-      return sub.onNotify?.(raw as any)
-    }
-    if (msgType === 'Message') {
-      // 处理Message类型消息，当作Notify处理
-      console.log('[WebSocket Debug] 收到Message消息:', raw)
-      return sub.onNotify?.(raw as any)
-    }
-    if (msgType === 'Error') {
-      sub.onError?.(raw.data as ErrorMessage)
-      if (!sub.onError && raw.data && (raw.data as ErrorMessage).msg) {
-        message.error((raw.data as ErrorMessage).msg)
-      }
-      return
-    }
-    if (msgType === 'Notify') {
-      sub.onNotify?.(raw.data as NotifyMessage)
-      if (raw.data && (raw.data as NotifyMessage).title) {
-        notification.info({
-          message: (raw.data as NotifyMessage).title,
-          description: (raw.data as NotifyMessage).content,
-        })
-      }
-      return
-    }
-    // 其他类型可扩展
-    console.log('[WebSocket Debug] 未处理的消息类型:', msgType, raw)
-  }
-
   if (id) {
     const sub = global.subscribers.value.get(id)
     console.log('[WebSocket Debug] 查找订阅者:', {
@@ -395,30 +307,37 @@ const handleMessage = (raw: WebSocketBaseMessage) => {
       allSubscriberIds: Array.from(global.subscribers.value.keys())
     })
     if (sub) {
-      console.log('[WebSocket Debug] 分发消息给订阅者:', id)
-      dispatch(sub)
+      // 有订阅者，直接分发消息
+      console.log('[WebSocket Debug] 找到订阅者，直接分发消息')
+      handleMessageDispatch(raw, sub)
     } else {
-      // 将没有订阅者的消息暂存到消息队列中
-      console.warn('[WebSocket Debug] 未找到对应的订阅者，将消息暂存到队列中:', id)
-      const messageQueue = getMessageQueue()
-      messageQueue.set(id, {
-        message: raw,
-        timestamp: Date.now()
-      })
-      setMessageQueue(messageQueue)
+      // 没有订阅者，将消息暂存到队列中
+      console.log(`[WebSocket Debug] 没有找到ID为${id}的订阅者，将消息暂存到队列`)
       
+      const currentMessageQueue = getMessageQueue()
+      
+      // 对于Map类型的消息队列，直接存储或更新
+      currentMessageQueue.set(id, { message: raw, timestamp: Date.now() })
+      console.log(`[WebSocket Debug] 添加新消息到队列，ID: ${id}, Type: ${msgType}`)
+
       // 清理过期消息（超过1分钟的消息）
       const now = Date.now()
-      messageQueue.forEach((queued, msgId) => {
-        if (now - queued.timestamp > 60000) { // 1分钟 = 60000毫秒
-          console.log('[WebSocket] 清理过期消息:', msgId)
-          messageQueue.delete(msgId)
+      let deletedCount = 0
+      currentMessageQueue.forEach((value, key) => {
+        if (now - (value.timestamp || 0) > 60000) {
+          currentMessageQueue.delete(key)
+          deletedCount++
         }
       })
-      setMessageQueue(messageQueue)
+      
+      if (deletedCount > 0) {
+        console.log(`[WebSocket Debug] 清理了${deletedCount}条过期消息`)
+      }
+      
+      // 更新消息队列
+      setMessageQueue(currentMessageQueue)
     }
   }
-  // 移除无id消息的处理逻辑，因为后端不会发送这类消息
 }
 
 // 后端启动后建立连接的公开函数
@@ -488,8 +407,32 @@ const createGlobalWebSocket = (): WebSocket => {
     
     // 自动订阅ID为"Main"的消息，用于处理ping-pong等系统消息
     _subscribe("Main", {
-      onNotify: () => {
-        // Main ID的消息通常不包含需要处理的Notify内容，但保留处理函数以确保订阅完整性
+      onMessage: (message: WebSocketBaseMessage) => {
+        // 处理系统级消息（如ping-pong）
+        if (message && message.type === 'Signal' && message.data) {
+          // 处理心跳响应
+          if (message.data.Pong) {
+            global.lastPingTime = 0 // 重置ping时间，表示收到了响应
+            return
+          }
+
+          // 处理后端发送的Ping，回复Pong
+          if (message.data.Ping) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+              try {
+                ws.send(
+                  JSON.stringify({
+                    type: 'Signal',
+                    data: { Pong: message.data.Ping, connectionId: global.connectionId },
+                  })
+                )
+              } catch (e) {
+                // Pong发送失败，静默处理
+              }
+            }
+            return
+          }
+        }
       }
     });
   }
@@ -775,43 +718,17 @@ export const _subscribe = (id: string, subscriber: Omit<WebSocketSubscriber, 'id
 const handleMessageDispatch = (raw: WebSocketBaseMessage, sub: WebSocketSubscriber) => {
   const msgType = raw.type
 
-  if (msgType === 'Signal') return
+  console.log('[WebSocket] 分发消息类型:', msgType, '消息内容:', raw)
 
-  if (msgType === 'Progress') return sub.onProgress?.(raw.data as ProgressMessage)
-  if (msgType === 'Result') return sub.onResult?.(raw.data as ResultMessage)
-  if (msgType === 'Update') {
-    // 处理Update类型消息，当作Progress处理
-    console.log('[WebSocket Debug] 分发Update消息:', raw)
-    return sub.onProgress?.(raw as any)
-  }
-  if (msgType === 'Info') {
-    // 处理Info类型消息，当作Notify处理
-    console.log('[WebSocket Debug] 分发Info消息:', raw)
-    return sub.onNotify?.(raw as any)
-  }
-  if (msgType === 'Message') {
-    // 处理Message类型消息，当作Notify处理
-    console.log('[WebSocket Debug] 分发Message消息:', raw)
-    return sub.onNotify?.(raw as any)
-  }
-  if (msgType === 'Error') {
-    sub.onError?.(raw.data as ErrorMessage)
-    if (!sub.onError && raw.data && (raw.data as ErrorMessage).msg) {
-      message.error((raw.data as ErrorMessage).msg)
-    }
-    return
-  }
-  if (msgType === 'Notify') {
-    sub.onNotify?.(raw.data as NotifyMessage)
-    if (raw.data && (raw.data as NotifyMessage).title) {
-      notification.info({
-        message: (raw.data as NotifyMessage).title,
-        description: (raw.data as NotifyMessage).content,
-      })
-    }
-    return
+  // 如果订阅者定义了 onMessage 回调，则优先使用统一的处理函数
+  if (sub.onMessage) {
+    return sub.onMessage(raw)
   }
   
-  // 其他类型可扩展
-  console.log('[WebSocket Debug] 未处理的消息类型:', msgType, raw)
+  // 如果没有 onMessage 处理函数，则记录错误（理论上不应该出现）
+  console.error('[WebSocket] 错误：订阅者没有定义onMessage处理函数', {
+    subscriberId: sub.id,
+    messageType: msgType,
+    messageContent: raw
+  })
 }
