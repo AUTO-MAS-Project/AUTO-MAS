@@ -5,11 +5,13 @@
     :class="{ collapsed: isCollapsed, dragging: isDragging }"
     :style="{ left: `${panelPosition.x}px`, top: `${panelPosition.y}px` }"
   >
-    <div class="debug-header" @mousedown="handleDragStart" @click="toggleCollapse">
-      <span class="debug-title"
-        >🐛 调试面板 <span v-if="isDragging" class="drag-indicator">📌</span></span
-      >
-      <span class="toggle-btn">{{ isCollapsed ? '展开' : '收起' }}</span>
+    <div class="debug-header">
+      <span class="debug-title drag-handle" @mousedown="handleDragStart">
+        调试面板 <span v-if="isDragging" class="drag-indicator">📌</span>
+      </span>
+      <button class="toggle-btn" @click="toggleCollapse" @mousedown.stop>
+        {{ isCollapsed ? '展开' : '收起' }}
+      </button>
     </div>
 
     <div v-if="!isCollapsed" class="debug-content" @mousedown.stop>
@@ -105,7 +107,7 @@ const route = useRoute()
 const router = useRouter()
 
 // 开发环境检测
-const isDev = ref(import.meta.env.DEV)
+const isDev = ref(process.env.NODE_ENV === 'development' || import.meta.env?.DEV === true)
 
 // 面板状态
 const isCollapsed = ref(false)
@@ -163,7 +165,7 @@ const updateTime = () => {
 const addRouteHistory = (newRoute: typeof route) => {
   const historyItem: RouteHistoryItem = {
     path: newRoute.path,
-    name: newRoute.name,
+    name: typeof newRoute.name === 'string' ? newRoute.name : String(newRoute.name || ''),
     time: new Date().toLocaleTimeString(),
   }
 
@@ -320,24 +322,37 @@ onUnmounted(() => {
   padding: 8px 12px;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   border-radius: 8px 8px 0 0;
-  cursor: grab;
   display: flex;
   justify-content: space-between;
   align-items: center;
   user-select: none;
 }
 
-.debug-header:active {
+.drag-handle {
+  font-weight: bold;
+  cursor: grab;
+  flex: 1;
+  padding: 4px 0;
+}
+
+.drag-handle:active {
   cursor: grabbing;
 }
 
-.debug-title {
-  font-weight: bold;
+.toggle-btn {
+  background: rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 4px;
+  color: #fff;
+  padding: 4px 8px;
+  font-size: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
 }
 
-.toggle-btn {
-  font-size: 10px;
-  opacity: 0.8;
+.toggle-btn:hover {
+  background: rgba(255, 255, 255, 0.3);
+  border-color: rgba(255, 255, 255, 0.5);
 }
 
 .debug-content {
