@@ -11,25 +11,30 @@
         <div v-if="items.length === 0" class="empty-state-mini">
           <a-empty :description="emptyText" />
         </div>
-        <div v-else class="queue-cards">
-          <a-card
-            v-for="(item, index) in items"
-            :key="`${type}-${index}`"
-            size="small"
-            class="queue-card"
-            :class="{ 'running-card': item.status === '运行' }"
+        <div v-else class="queue-tree">
+          <a-tree
+            :tree-data="treeData"
+            :expanded-keys="expandedKeys"
+            @expand="handleExpand"
+            :show-line="showLine"
+            :selectable="false"
+            :show-icon="false"
+            class="queue-tree-view"
           >
-            <template #title>
-              <div class="card-title-row">
-                <a-tag :color="getStatusColor(item.status)" size="small">
-                  {{ item.status }}
+            <template #title="{ title, status, type }">
+              <div class="tree-item-content">
+                <span class="item-name">{{ title }}</span>
+                <a-tag 
+                  v-if="status" 
+                  :color="getStatusColor(status)" 
+                  size="small" 
+                  class="status-tag"
+                >
+                  {{ status }}
                 </a-tag>
               </div>
             </template>
-            <div class="card-content">
-              <p class="item-name">{{ item.name }}</p>
-            </div>
-          </a-card>
+          </a-tree>
         </div>
       </div>
     </a-card>
@@ -37,7 +42,8 @@
 </template>
 
 <script setup lang="ts">
-import { getQueueStatusColor, type QueueItem } from './schedulerConstants'
+import { ref, computed, watch } from 'vue';
+import { getQueueStatusColor, type QueueItem } from './schedulerConstants';
 
 interface Props {
   title: string
@@ -50,7 +56,69 @@ const props = withDefaults(defineProps<Props>(), {
   emptyText: '暂无数据',
 })
 
-const getStatusColor = (status: string) => getQueueStatusColor(status)
+// 树形数据结构
+const treeData = computed(() => {
+  // 为任务队列构建树形结构
+  if (props.type === 'task') {
+    return props.items.map((item, index) => ({
+      key: `task-${index}`,
+      title: item.name,
+      status: item.status,
+      type: 'task'
+    }));
+  } 
+  // 为用户队列构建树形结构
+  else {
+    // 按照名称前缀分组
+    const groups: Record<string, any[]> = {};
+    props.items.forEach((item, index) => {
+      const prefix = item.name.split('-')[0] || '默认分组';
+      if (!groups[prefix]) {
+        groups[prefix] = [];
+      }
+      groups[prefix].push({
+        key: `user-${index}`,
+        title: item.name,
+        status: item.status,
+        type: 'user'
+      });
+    });
+
+    // 构建树形结构
+    return Object.entries(groups).map(([groupName, groupItems]) => {
+      if (groupItems.length === 1) {
+        // 如果组内只有一个项目，直接返回该项目
+        return groupItems[0];
+      } else {
+        // 如果组内有多个项目，创建一个父节点
+        return {
+          key: `group-${groupName}`,
+          title: groupName,
+          type: 'group',
+          children: groupItems
+        };
+      }
+    });
+  }
+});
+
+const expandedKeys = ref<string[]>([]);
+const showLine = computed(() => ({ showLeafIcon: false }));
+
+const getStatusColor = (status: string) => getQueueStatusColor(status);
+
+// 处理展开/收起事件
+const handleExpand = (keys: string[]) => {
+  expandedKeys.value = keys;
+};
+
+// 监听items变化，自动展开所有节点
+watch(() => props.items, () => {
+  // 默认展开所有节点
+  expandedKeys.value = treeData.value
+    .filter(node => node.children)
+    .map(node => node.key as string);
+}, { immediate: true });
 </script>
 
 <style scoped>
@@ -104,45 +172,49 @@ const getStatusColor = (status: string) => getQueueStatusColor(status)
   height: 100%;
 }
 
-.queue-cards {
+.queue-tree {
+  height: 100%;
+}
+
+.queue-tree-view {
+  background: transparent;
+}
+
+.queue-tree-view :deep(.ant-tree-treenode) {
+  padding: 2px 0;
+}
+
+.queue-tree-view :deep(.ant-tree-node-content-wrapper) {
   display: flex;
-  flex-direction: column;
-  gap: 12px;
+  align-items: center;
+  padding: 6px 8px;
+  border-radius: 6px;
+  transition: all 0.2s;
 }
 
-.queue-card {
-  border-radius: 8px;
-  transition: all 0.2s ease;
-  background-color: var(--ant-color-bg-layout);
-  border: 1px solid var(--ant-color-border);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+.queue-tree-view :deep(.ant-tree-node-content-wrapper:hover) {
+  background-color: var(--ant-color-fill-secondary);
 }
 
-.queue-card:hover {
-  box-shadow: 0 4px 12px var(--ant-color-shadow);
-  transform: translateY(-2px);
-}
-
-.running-card {
-  border-color: var(--ant-color-primary);
-  box-shadow: 0 0 0 2px var(--ant-color-primary-bg);
-}
-
-.card-title-row {
+.tree-item-content {
   display: flex;
-  justify-content: flex-end;
-}
-
-.card-content {
-  padding-top: 8px;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
 }
 
 .item-name {
+  flex: 1;
   margin: 0;
   font-size: 14px;
   font-weight: 500;
   color: var(--ant-color-text);
   word-break: break-word;
+  padding-right: 8px;
+}
+
+.status-tag {
+  flex-shrink: 0;
 }
 
 /* 暗色模式适配 */
@@ -165,18 +237,8 @@ const getStatusColor = (status: string) => getQueueStatusColor(status)
     color: var(--ant-color-text-heading, #ffffff);
   }
 
-  .queue-card {
-    background-color: var(--ant-color-bg-layout, #141414);
-    border: 1px solid var(--ant-color-border, #424242);
-  }
-
-  .queue-card:hover {
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-  }
-
-  .running-card {
-    border-color: var(--ant-color-primary, #1890ff);
-    box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.2);
+  .queue-tree-view :deep(.ant-tree-node-content-wrapper:hover) {
+    background-color: var(--ant-color-fill);
   }
 
   .item-name {
