@@ -1,5 +1,19 @@
 <template>
   <div class="quick-nav-page">
+    <!-- 手动导航 -->
+    <div class="debug-section">
+      <h4>🎯 手动导航</h4>
+      <div class="manual-nav">
+        <input
+          v-model="manualPath"
+          @keyup.enter="navigateToManualPath"
+          placeholder="输入路径 (例: /home, /scripts)"
+          class="path-input"
+        />
+        <button @click="navigateToManualPath" class="nav-go-btn">跳转</button>
+      </div>
+    </div>
+
     <!-- 快捷导航 -->
     <div class="debug-section">
       <h4>🚀 快捷导航</h4>
@@ -48,7 +62,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 const route = useRoute()
@@ -77,6 +91,22 @@ const commonRoutes = [
 // 导航到指定路由
 const navigateTo = (path: string) => {
   router.push(path)
+}
+
+// 手动导航路径
+const manualPath = ref('')
+
+// 手动导航
+const navigateToManualPath = () => {
+  if (manualPath.value.trim()) {
+    let path = manualPath.value.trim()
+    // 确保路径以 / 开头
+    if (!path.startsWith('/')) {
+      path = '/' + path
+    }
+    router.push(path)
+    manualPath.value = '' // 清空输入框
+  }
 }
 
 // 清除本地存储
@@ -195,5 +225,49 @@ const toggleConsole = () => {
 
 .desc {
   color: #999;
+}
+
+.manual-nav {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.path-input {
+  flex: 1;
+  padding: 4px 8px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  color: #fff;
+  font-size: 10px;
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.path-input:focus {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: #4caf50;
+}
+
+.path-input::placeholder {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.nav-go-btn {
+  padding: 4px 12px;
+  background: #2196f3;
+  border: 1px solid #1976d2;
+  border-radius: 4px;
+  color: #fff;
+  cursor: pointer;
+  font-size: 10px;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.nav-go-btn:hover {
+  background: #1976d2;
+  border-color: #1565c0;
 }
 </style>
