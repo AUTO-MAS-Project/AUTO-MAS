@@ -25,6 +25,7 @@
               :placeholder="getPlaceholder(record.taskName)"
               class="config-input-number"
               :controls="false"
+              :bordered="false"
               :disabled="isColumnDisabled(column.key as string)"
             />
           </template>
@@ -50,10 +51,11 @@
                 },
               ]"
               allow-clear
+              :bordered="false"
               :disabled="isColumnDisabled(column.key as string)"
             >
               <template #dropdownRender="{ menuNode: menu }">
-                <v-nodes :vnodes="menu" />
+                <component :is="VNodeRenderer" :vnodes="menu" />
                 <a-divider style="margin: 4px 0" />
                 <a-space style="padding: 4px 8px" size="small">
                   <a-input
@@ -61,6 +63,8 @@
                     placeholder="自定义"
                     style="flex: 1"
                     size="small"
+                    :bordered="false"
+                    class="config-text-input"
                     @keyup.enter="addCustomStage(record.key, column.key as string)"
                   />
                   <a-button
@@ -119,6 +123,7 @@
               :placeholder="getPlaceholder(record.taskName)"
               class="config-select"
               allow-clear
+              :bordered="false"
               :disabled="isColumnDisabled(column.key as string)"
             />
           </template>
@@ -141,8 +146,8 @@
             <a-space>
               <a-tooltip title="开/关所有可用关卡" placement="left">
                 <a-button ghost size="small" type="primary" @click="enableAllStages(record.key)"
-                  >开</a-button
-                >
+                  >开
+                </a-button>
               </a-tooltip>
               <a-button size="small" danger @click="disableAllStages(record.key)">关</a-button>
             </a-space>
@@ -150,9 +155,9 @@
 
           <template v-else-if="column.key === 'taskName'">
             <div class="task-name-cell">
-              <a-tag :color="getSimpleTaskTagColor(record.taskName)" class="task-tag">{{
-                record.taskName
-              }}</a-tag>
+              <a-tag :color="getSimpleTaskTagColor(record.taskName)" class="task-tag"
+                >{{ record.taskName }}
+              </a-tag>
             </div>
           </template>
 
@@ -206,7 +211,8 @@ const props = defineProps<Props>()
 const emit = defineEmits<Emits>()
 
 // 渲染VNode的辅助组件
-const VNodes = defineComponent({
+const VNodeRenderer = defineComponent({
+  name: 'VNodeRenderer',
   props: { vnodes: { type: Object, required: true } },
   setup(p) {
     return () => p.vnodes as any
@@ -422,7 +428,7 @@ const stageOptions = computed(() => {
 const isCustomStage = (value: string, columnKey: string) => {
   if (!value || value === '-') return false
   const dayNumber = getDayNumber(columnKey)
-  let availableStages: string[] = []
+  let availableStages: string[]
   if (dayNumber === 0) {
     availableStages = STAGE_DAILY_INFO.map(stage => stage.value)
   } else {
@@ -698,12 +704,7 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.config-table-wrapper {
-}
-
-.simple-table-wrapper {
-}
-
+/* Inputs/selects: borderless + centered */
 .config-select {
   width: 100%;
   min-width: 100px;
@@ -712,10 +713,84 @@ onMounted(() => {
 .config-input-number {
   width: 100%;
   min-width: 100px;
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.config-input-number:hover,
+.config-input-number:focus,
+.config-input-number:active {
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.config-input-number input {
+  text-align: center;
+}
+
+/* Ensure centered text in all states for Ant Design Vue InputNumber */
+.config-input-number :deep(.ant-input-number-input) {
+  text-align: center;
+}
+
+/* Remove number input handlers spacing (already controls=false) */
+.config-input-number :deep(.ant-input-number-handler-wrap) {
+  display: none;
+}
+
+/* Select: borderless */
+.config-select :deep(.ant-select-selector) {
+  border: none !important;
+  box-shadow: none !important;
+  background: transparent !important;
+}
+
+.config-select :deep(.ant-select-focused .ant-select-selector),
+.config-select :deep(.ant-select:hover .ant-select-selector) {
+  border: none !important;
+  box-shadow: none !important;
+}
+
+/* Center selected text and placeholder */
+.config-select :deep(.ant-select-selection-item),
+.config-select :deep(.ant-select-selection-placeholder) {
+  width: 100%;
+  text-align: center;
+  margin-inline-start: 0 !important;
+}
+
+/* Clear icon alignment without shifting text */
+.config-select :deep(.ant-select-clear) {
+  right: 4px;
+}
+
+/* Disabled states keep borderless look */
+.config-select :deep(.ant-select-disabled .ant-select-selector) {
+  background: transparent !important;
+}
+
+/* Borderless text input in dropdown */
+.config-text-input {
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  text-align: center;
+}
+
+.config-text-input:hover,
+.config-text-input:focus {
+  border: none !important;
+  box-shadow: none !important;
 }
 
 .task-name-cell {
   display: flex;
   justify-content: center;
+}
+
+/* Ensure table body cell content stays centered visually */
+:deep(.config-table .ant-table-tbody > tr > td) {
+  text-align: center;
 }
 </style>
