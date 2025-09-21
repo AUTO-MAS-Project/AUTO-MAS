@@ -82,10 +82,10 @@ export function useSchedulerLogic() {
   let tabCounter =
     schedulerTabs.value.length > 1
       ? Math.max(
-          ...schedulerTabs.value
-            .filter(tab => tab.key.startsWith('tab-'))
-            .map(tab => parseInt(tab.key.replace('tab-', '')) || 0)
-        ) + 1
+        ...schedulerTabs.value
+          .filter(tab => tab.key.startsWith('tab-'))
+          .map(tab => parseInt(tab.key.replace('tab-', '')) || 0)
+      ) + 1
       : 1
 
   // 任务选项
@@ -105,6 +105,67 @@ export function useSchedulerLogic() {
 
   // WebSocket 实例
   const ws = useWebSocket()
+
+  // 订阅TaskManager消息，处理自动创建的任务
+  const subscribeToTaskManager = () => {
+    ws.subscribe('TaskManager', {
+      onMessage: (message) => handleTaskManagerMessage(message)
+    })
+  }
+
+  const handleTaskManagerMessage = (wsMessage: any) => {
+    if (!wsMessage || typeof wsMessage !== 'object') return
+
+    const { type, data } = wsMessage
+    console.log('[Scheduler] 收到TaskManager消息:', { type, data })
+
+    if (type === 'Signal' && data && data.newTask) {
+      // 收到新任务信号，自动创建调度台
+      const taskId = data.newTask
+      console.log('[Scheduler] 收到新任务信号，任务ID:', taskId)
+
+      // 创建新的调度台
+      createSchedulerTabForTask(taskId)
+    }
+  }
+
+  const createSchedulerTabForTask = (taskId: string) => {
+    // 检查是否已经存在相同websocketId的调度台
+    const existingTab = schedulerTabs.value.find(tab => tab.websocketId === taskId)
+    if (existingTab) {
+      console.log('[Scheduler] 调度台已存在，切换到该调度台:', existingTab.title)
+      activeSchedulerTab.value = existingTab.key
+      return
+    }
+
+    // 创建新的调度台
+    tabCounter++
+    const tab: SchedulerTab = {
+      key: `tab-${tabCounter}`,
+      title: `自动调度台${tabCounter}`,
+      closable: true,
+      status: '运行', // 直接设置为运行状态
+      selectedTaskId: null,
+      selectedMode: TaskCreateIn.mode.AutoMode,
+      websocketId: taskId, // 设置websocketId
+      taskQueue: [],
+      userQueue: [],
+      logs: [],
+      isLogAtBottom: true,
+      lastLogContent: '',
+    }
+
+    schedulerTabs.value.push(tab)
+    activeSchedulerTab.value = tab.key
+
+    // 立即订阅该任务的WebSocket消息
+    subscribeToTask(tab)
+
+    console.log('[Scheduler] 已创建新的自动调度台:', tab.title, '任务ID:', taskId)
+    message.success(`已自动创建调度台: ${tab.title}`)
+
+    saveTabsToStorage(schedulerTabs.value)
+  }
 
   // 计算属性
   const canChangePowerAction = computed(() => {
@@ -186,7 +247,7 @@ export function useSchedulerLogic() {
 
         // 清理日志引用
         logRefs.value.delete(key)
-        
+
         // 清理任务总览面板引用
         overviewRefs.value.delete(key)
 
@@ -327,7 +388,7 @@ export function useSchedulerLogic() {
       console.log('传递 WebSocket 消息给 TaskOverviewPanel:', wsMessage)
       overviewPanel.handleWSMessage(wsMessage)
     }
-    
+
     // 处理task_dict初始化消息
     if (data.task_dict && Array.isArray(data.task_dict)) {
       // 初始化任务队列 - 保持原始状态
@@ -335,7 +396,7 @@ export function useSchedulerLogic() {
         name: item.name || '未知任务',
         status: item.status || '等待',  // 使用实际状态，而不是强制设置为等待
       }));
-      
+
       // 初始化用户队列（仅包含运行状态下的用户）
       const newUserQueue: QueueItem[] = [];
       data.task_dict.forEach((taskItem: any) => {
@@ -351,11 +412,11 @@ export function useSchedulerLogic() {
           });
         }
       });
-      
+
       tab.taskQueue.splice(0, tab.taskQueue.length, ...newTaskQueue);
       tab.userQueue.splice(0, tab.userQueue.length, ...newUserQueue);
     }
-    
+
     // 更新任务队列
     if (data.task_list && Array.isArray(data.task_list)) {
       const newTaskQueue = data.task_list.map((item: any) => ({
@@ -414,7 +475,7 @@ export function useSchedulerLogic() {
 
   const handleSignalMessage = (tab: SchedulerTab, data: any) => {
     console.log('[Scheduler] 处理Signal消息:', data)
-    
+
     // 只有收到WebSocket的Accomplish信号才将任务标记为结束状态
     // 这确保了调度台状态与实际任务执行状态严格同步
     if (data && data.Accomplish) {
@@ -422,7 +483,7 @@ export function useSchedulerLogic() {
       // 使用Vue的响应式更新方式
       tab.status = '结束'
       console.log('[Scheduler] 已更新tab.status为结束，当前tab状态:', tab.status)
-      
+
       // 强制触发Vue响应式更新
       const tabIndex = schedulerTabs.value.findIndex(t => t.key === tab.key)
       if (tabIndex !== -1) {
@@ -439,7 +500,7 @@ export function useSchedulerLogic() {
       message.success('任务完成')
       checkAllTasksCompleted()
       saveTabsToStorage(schedulerTabs.value)
-      
+
       // 触发Vue的响应式更新
       schedulerTabs.value = [...schedulerTabs.value]
     }
@@ -571,11 +632,21 @@ export function useSchedulerLogic() {
     }
   }
 
+  // 初始化函数
+  const initialize = () => {
+    // 订阅TaskManager消息
+    subscribeToTaskManager()
+    console.log('[Scheduler] 已订阅TaskManager消息')
+  }
+
   // 清理函数
   const cleanup = () => {
     if (powerCountdownTimer) {
       clearInterval(powerCountdownTimer)
     }
+
+    // 取消订阅TaskManager
+    ws.unsubscribe('TaskManager')
 
     schedulerTabs.value.forEach(tab => {
       if (tab.websocketId) {
@@ -625,6 +696,7 @@ export function useSchedulerLogic() {
     cancelMessage,
 
     // 初始化与清理
+    initialize,
     loadTaskOptions,
     cleanup,
 
