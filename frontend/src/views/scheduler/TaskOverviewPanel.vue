@@ -2,108 +2,71 @@
   <div class="overview-panel">
     <div class="section-header">
       <h3>任务总览</h3>
+<!--      <a-badge :count="totalTaskCount" :overflow-count="99" />-->
     </div>
     <div class="overview-content">
-      <div v-if="treeData.length === 0" class="empty-state-mini">
-        <a-empty description="暂无任务" />
-      </div>
-      <div v-else class="overview-tree">
-        <a-tree
-          :tree-data="treeData"
-          :expanded-keys="expandedKeys"
-          @expand="handleExpand"
-          :show-line="showLine"
-          :selectable="false"
-          :show-icon="false"
-          class="overview-tree-view"
-        >
-          <template #title="{ title, status, type }">
-            <div class="tree-item-content">
-              <span class="item-name">{{ title }}</span>
-              <a-tag 
-                v-if="status" 
-                :color="getStatusColor(status)" 
-                size="small" 
-                class="status-tag"
-              >
-                {{ status }}
-              </a-tag>
-            </div>
-          </template>
-        </a-tree>
-      </div>
+      <TaskTree :task-data="taskData" ref="taskTreeRef" />
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue';
-import { getQueueStatusColor, type QueueItem } from './schedulerConstants';
+import { ref, computed } from 'vue'
+import TaskTree from '@/components/TaskTree.vue'
 
-interface Props {
-  taskQueue: QueueItem[];
-  userQueue: QueueItem[];
+interface User {
+  user_id: string
+  status: string
+  name: string
 }
 
-const props = defineProps<Props>();
+interface Script {
+  script_id: string
+  status: string
+  name: string
+  user_list: User[]
+}
 
-// 树形数据结构
-const treeData = computed(() => {
-  // 构建脚本节点
-  const scriptNodes = props.taskQueue.map((task, index) => {
-    // 查找相关的用户
-    const relatedUsers = props.userQueue.filter(user => 
-      user.name.startsWith(`${task.name}-`)
-    );
-    
-    // 构建用户子节点
-    const userChildren = relatedUsers.map((user, userIndex) => ({
-      key: `user-${index}-${userIndex}`,
-      title: user.name.replace(`${task.name}-`, ''), // 移除前缀以避免重复
-      status: user.status,
-      type: 'user'
-    }));
-    
-    // 构建脚本节点
-    const scriptNode: any = {
-      key: `script-${index}`,
-      title: task.name,
-      status: task.status,
-      type: 'script'
-    };
-    
-    // 如果有相关用户，添加为子节点
-    if (userChildren.length > 0) {
-      scriptNode.children = userChildren;
+interface WSMessage {
+  type: string
+  id: string
+  data: {
+    task_dict: Script[]
+  }
+  fullMessage?: any
+}
+
+// 任务数据
+const taskData = ref<Script[]>([])
+const taskTreeRef = ref()
+
+// 计算总任务数量
+const totalTaskCount = computed(() => {
+  return taskData.value.reduce((total, script) => {
+    return total + (script.user_list?.length || 0)
+  }, 0)
+})
+
+// 处理 WebSocket 消息
+const handleWSMessage = (message: WSMessage) => {
+  console.log('TaskOverviewPanel 收到 WebSocket 消息:', message)
+  if (message.type === 'Update' && message.data?.task_dict) {
+    console.log('更新任务数据:', message.data.task_dict)
+    taskData.value = message.data.task_dict
+    console.log('设置后的 taskData:', taskData.value)
+    // 更新展开状态
+    if (taskTreeRef.value) {
+      taskTreeRef.value.updateExpandedScripts()
     }
-    
-    return scriptNode;
-  });
-  
-  return scriptNodes;
-});
+  }
+}
 
-const expandedKeys = ref<string[]>([]);
-const showLine = computed(() => ({ showLeafIcon: false }));
-
-const getStatusColor = (status: string) => getQueueStatusColor(status);
-
-// 处理展开/收起事件
-const handleExpand = (keys: string[]) => {
-  expandedKeys.value = keys;
-};
-
-// 监听任务队列变化，自动展开所有节点
-watch(() => props.taskQueue, (newTaskQueue) => {
-  // 默认展开所有脚本节点
-  expandedKeys.value = newTaskQueue.map((_, index) => `script-${index}`);
-}, { immediate: true });
-
-// 监听用户队列变化，更新展开状态
-watch(() => props.userQueue, () => {
-  // 重新计算展开状态，确保新增的节点能正确显示
-  expandedKeys.value = props.taskQueue.map((_, index) => `script-${index}`);
-});
+// 暴露方法供父组件调用
+defineExpose({
+  handleWSMessage,
+  expandAll: () => taskTreeRef.value?.expandAll(),
+  collapseAll: () => taskTreeRef.value?.collapseAll()
+})
 </script>
 
 <style scoped>
@@ -148,51 +111,7 @@ watch(() => props.userQueue, () => {
   height: 100%;
 }
 
-.overview-tree {
-  height: 100%;
-}
 
-.overview-tree-view {
-  background: transparent;
-}
-
-.overview-tree-view :deep(.ant-tree-treenode) {
-  padding: 4px 0;
-}
-
-.overview-tree-view :deep(.ant-tree-node-content-wrapper) {
-  display: flex;
-  align-items: center;
-  padding: 8px 12px;
-  border-radius: 6px;
-  transition: all 0.2s;
-  height: auto;
-}
-
-.overview-tree-view :deep(.ant-tree-node-content-wrapper:hover) {
-  background-color: var(--ant-color-fill-secondary);
-}
-
-.tree-item-content {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  width: 100%;
-}
-
-.item-name {
-  flex: 1;
-  margin: 0;
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--ant-color-text);
-  word-break: break-word;
-  padding-right: 8px;
-}
-
-.status-tag {
-  flex-shrink: 0;
-}
 
 /* 暗色模式适配 */
 @media (prefers-color-scheme: dark) {
@@ -205,17 +124,9 @@ watch(() => props.userQueue, () => {
     border-bottom: 1px solid var(--ant-color-border, #424242);
   }
   
-  .section-header h3 {
-    color: var(--ant-color-text-heading, #ffffff);
-  }
 
-  .overview-tree-view :deep(.ant-tree-node-content-wrapper:hover) {
-    background-color: var(--ant-color-fill);
-  }
 
-  .item-name {
-    color: var(--ant-color-text, #ffffff);
-  }
+
 }
 
 @media (max-width: 768px) {

@@ -165,9 +165,7 @@ onUnmounted(() => {
     border-bottom: 1px solid var(--ant-color-border, #424242);
   }
   
-  .section-header h3 {
-    color: var(--ant-color-text-heading, #ffffff);
-  }
+
 
   .log-text {
     color: var(--ant-color-text, #ffffff);
