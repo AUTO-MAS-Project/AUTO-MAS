@@ -70,8 +70,7 @@
             <div class="status-container">
               <div class="overview-panel-container">
                 <TaskOverviewPanel
-                  :task-queue="tab.taskQueue"
-                  :user-queue="tab.userQueue"
+                  :ref="el => setOverviewRef(el, tab.key)"
                 />
               </div>
               <div class="log-panel-container">
@@ -192,6 +191,9 @@ const {
   // 初始化与清理
   loadTaskOptions,
   cleanup,
+
+  // 新增：任务总览面板引用管理
+  setOverviewRef,
 } = useSchedulerLogic()
 
 // Tab 操作
