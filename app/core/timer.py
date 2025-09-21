@@ -72,6 +72,7 @@ class _MainTimer:
 
             await asyncio.sleep(3600)
 
+    @logger.catch()
     async def timed_start(self):
         """定时启动代理任务"""
 
@@ -85,10 +86,14 @@ class _MainTimer:
                 continue
 
             # 避免重复调起任务
-            if curtime == Config.get("Data", "LastTimeStarted"):
+            if curtime == queue.get("Data", "LastTimedStart"):
+                logger.debug("已启动过任务，跳过本任务")
                 continue
 
             for time_set in queue.TimeSet.values():
+                logger.debug(
+                    f"检查定时任务：{time_set.get('Info', 'Time')}, 启用状态：{time_set.get('Info', 'Enabled')}"
+                )
                 if (
                     time_set.get("Info", "Enabled")
                     and curtime[11:16] == time_set.get("Info", "Time")
@@ -107,6 +112,8 @@ class _MainTimer:
 
     async def set_silence(self):
         """静默模式通过模拟老板键来隐藏模拟器窗口"""
+
+        logger.debug("检查静默模式")
 
         if (
             len(Config.if_ignore_silence) > 0
@@ -139,6 +146,8 @@ class _MainTimer:
                     logger.info(f"模拟按键: {Config.get('Function', 'BossKey')}")
                 except Exception as e:
                     logger.exception(f"模拟按键时出错: {e}")
+
+        logger.debug("静默模式检查完毕")
 
 
 MainTimer = _MainTimer()
