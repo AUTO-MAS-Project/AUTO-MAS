@@ -78,6 +78,7 @@ export function useSchedulerLogic() {
 
   const activeSchedulerTab = ref(schedulerTabs.value[0]?.key || 'main')
   const logRefs = ref(new Map<string, HTMLElement>())
+  const overviewRefs = ref(new Map<string, any>()) // 任务总览面板引用
   let tabCounter =
     schedulerTabs.value.length > 1
       ? Math.max(
@@ -185,6 +186,9 @@ export function useSchedulerLogic() {
 
         // 清理日志引用
         logRefs.value.delete(key)
+        
+        // 清理任务总览面板引用
+        overviewRefs.value.delete(key)
 
         schedulerTabs.value.splice(idx, 1)
 
@@ -312,6 +316,18 @@ export function useSchedulerLogic() {
   }
 
   const handleUpdateMessage = (tab: SchedulerTab, data: any) => {
+    // 直接将 WebSocket 消息传递给 TaskOverviewPanel
+    const overviewPanel = overviewRefs.value.get(tab.key)
+    if (overviewPanel && overviewPanel.handleWSMessage) {
+      const wsMessage = {
+        type: 'Update',
+        id: tab.websocketId,
+        data: data
+      }
+      console.log('传递 WebSocket 消息给 TaskOverviewPanel:', wsMessage)
+      overviewPanel.handleWSMessage(wsMessage)
+    }
+    
     // 处理task_dict初始化消息
     if (data.task_dict && Array.isArray(data.task_dict)) {
       // 初始化任务队列
@@ -448,6 +464,15 @@ export function useSchedulerLogic() {
       logRefs.value.set(key, el)
     } else {
       logRefs.value.delete(key)
+    }
+  }
+
+  const setOverviewRef = (el: any, key: string) => {
+    if (el) {
+      overviewRefs.value.set(key, el)
+      console.log('设置 TaskOverviewPanel 引用:', key, el)
+    } else {
+      overviewRefs.value.delete(key)
     }
   }
 
@@ -602,5 +627,8 @@ export function useSchedulerLogic() {
     // 初始化与清理
     loadTaskOptions,
     cleanup,
+
+    // 任务总览面板引用管理
+    setOverviewRef,
   }
 }
