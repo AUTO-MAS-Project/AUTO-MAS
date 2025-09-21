@@ -330,10 +330,10 @@ export function useSchedulerLogic() {
     
     // 处理task_dict初始化消息
     if (data.task_dict && Array.isArray(data.task_dict)) {
-      // 初始化任务队列
+      // 初始化任务队列 - 保持原始状态
       const newTaskQueue = data.task_dict.map((item: any) => ({
         name: item.name || '未知任务',
-        status: '等待',
+        status: item.status || '等待',  // 使用实际状态，而不是强制设置为等待
       }));
       
       // 初始化用户队列（仅包含运行状态下的用户）

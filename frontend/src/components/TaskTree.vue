@@ -107,17 +107,41 @@ const toggleScript = (scriptId: string) => {
   }
 }
 
-// 获取状态颜色
+// 获取状态颜色 - 使用更全面的映射和后备逻辑
 const getStatusColor = (status: string) => {
-  const statusColorMap: Record<string, string> = {
+  // 精确匹配优先
+  const exactStatusColorMap: Record<string, string> = {
     '等待': 'orange',
+    '排队': 'orange',
+    '挂起': 'orange',
     '运行中': 'blue',
+    '运行': 'blue',
+    '进行中': 'blue',
+    '执行中': 'blue',
     '已完成': 'green',
+    '完成': 'green',
+    '成功': 'green',
     '失败': 'red',
+    '异常': 'red',
+    '错误': 'red',
     '暂停': 'gray',
-    '取消': 'default'
+    '取消': 'default',
+    '停止': 'default'
   }
-  return statusColorMap[status] || 'default'
+  
+  // 先尝试精确匹配
+  if (exactStatusColorMap[status]) {
+    return exactStatusColorMap[status]
+  }
+  
+  // 使用正则表达式进行模糊匹配（作为后备）
+  if (/成功|完成|已完成/.test(status)) return 'green'
+  if (/失败|错误|异常/.test(status)) return 'red'
+  if (/等待|排队|挂起/.test(status)) return 'orange'
+  if (/进行|执行|运行/.test(status)) return 'blue'
+  if (/暂停|停止/.test(status)) return 'gray'
+  
+  return 'default'
 }
 
 // 初始化时展开所有脚本
