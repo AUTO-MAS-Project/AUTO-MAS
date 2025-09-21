@@ -22,7 +22,7 @@
 import uuid
 import asyncio
 from functools import partial
-from typing import Dict, Optional
+from typing import Dict, Optional, Literal
 
 from .config import Config, MaaConfig, GeneralConfig, QueueConfig
 from app.models.schema import WebSocketMessage
@@ -41,7 +41,9 @@ class _TaskManager:
 
         self.task_dict: Dict[uuid.UUID, asyncio.Task] = {}
 
-    async def add_task(self, mode: str, uid: str) -> uuid.UUID:
+    async def add_task(
+        self, mode: Literal["自动代理", "人工排查", "设置脚本"], uid: str
+    ) -> uuid.UUID:
         """
         添加任务
 
@@ -330,6 +332,23 @@ class _TaskManager:
                     },
                 ).model_dump()
             )
+
+    async def start_startup_queue(self):
+        """开始运行启动时运行的调度队列"""
+
+        logger.info("开始运行启动时任务")
+        for uid, queue in Config.QueueConfig.items():
+
+            if queue.get("Info", "StartUpEnabled") and uid not in self.task_dict:
+                logger.info(f"启动时需要运行的队列：{uid}")
+                task_id = await TaskManager.add_task("自动代理", str(uid))
+                await Config.send_json(
+                    WebSocketMessage(
+                        id="TaskManager", type="Signal", data={"newTask": str(task_id)}
+                    ).model_dump()
+                )
+
+        logger.success("启动时任务开始运行")
 
 
 TaskManager = _TaskManager()
