@@ -63,7 +63,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { usePlanApi } from '@/composables/usePlanApi'
@@ -112,6 +112,15 @@ const currentTableComponent = computed(() => {
   }
 })
 
+// 添加防抖工具函数
+const debounce = <T extends (...args: any[]) => any>(func: T, wait: number): T => {
+  let timeout: NodeJS.Timeout | null = null
+  return ((...args: any[]) => {
+    if (timeout) clearTimeout(timeout)
+    timeout = setTimeout(() => func(...args), wait)
+  }) as T
+}
+
 const handleAddPlan = async (planType: string = 'MaaPlan') => {
   try {
     const response = await createPlan(planType)
@@ -147,7 +156,72 @@ const handleRemovePlan = async (planId: string) => {
   }
 }
 
+// 添加异步保存队列和状态管理
+const savingQueue = ref(new Set<string>())
+const savePromises = ref(new Map<string, Promise<void>>())
+
+// 异步保存函数
+const saveInBackground = async (planId: string) => {
+  // 如果已经在保存队列中，等待现有的保存完成
+  if (savingQueue.value.has(planId)) {
+    const existingPromise = savePromises.value.get(planId)
+    if (existingPromise) {
+      await existingPromise
+    }
+    return
+  }
+
+  savingQueue.value.add(planId)
+
+  const savePromise = (async () => {
+    try {
+      const currentPlan = planList.value.find(plan => plan.id === planId)
+      const planType = currentPlan?.type || 'MaaPlan'
+
+      // Start from existing tableData, then overwrite Info explicitly
+      const planData: Record<string, any> = { ...(tableData.value || {}) }
+      planData.Info = { Mode: currentMode.value, Name: currentPlanName.value, Type: planType }
+
+      await updatePlan(planId, planData)
+    } catch (error) {
+      console.error('后台保存计划数据失败:', error)
+      // 不显示错误消息，避免打断用户操作
+    } finally {
+      savingQueue.value.delete(planId)
+      savePromises.value.delete(planId)
+    }
+  })()
+
+  savePromises.value.set(planId, savePromise)
+  return savePromise
+}
+
+// 防抖保存函数
+const debouncedSave = debounce(async () => {
+  if (!activePlanId.value) return
+  await saveInBackground(activePlanId.value)
+}, 300)
+
+const handleSave = async () => {
+  if (!activePlanId.value) {
+    message.warning('请先选择一个计划')
+    return
+  }
+  await debouncedSave()
+}
+
+// 优化计划切换逻辑
 const onPlanChange = async (planId: string) => {
+  if (planId === activePlanId.value) return
+
+  // 触发当前计划的异步保存，但不等待完成
+  if (activePlanId.value) {
+    saveInBackground(activePlanId.value).catch(error => {
+      console.warn('切换时保存当前计划失败:', error)
+    })
+  }
+
+  // 立即切换到新计划
   activePlanId.value = planId
   await loadPlanData(planId)
 }
@@ -232,32 +306,21 @@ const initPlans = async () => {
   }
 }
 
-const savePlanData = async () => {
-  if (!activePlanId.value) return
+const savePlanData = async (planId?: string) => {
+  const targetPlanId = planId || activePlanId.value
+  if (!targetPlanId) return
+
   try {
-    const currentPlan = planList.value.find(plan => plan.id === activePlanId.value)
+    const currentPlan = planList.value.find(plan => plan.id === targetPlanId)
     const planType = currentPlan?.type || 'MaaPlan'
 
-    // Start from existing tableData, then overwrite Info explicitly
     const planData: Record<string, any> = { ...(tableData.value || {}) }
     planData.Info = { Mode: currentMode.value, Name: currentPlanName.value, Type: planType }
 
-    await updatePlan(activePlanId.value, planData)
+    await updatePlan(targetPlanId, planData)
   } catch (error) {
     console.error('保存计划数据失败:', error)
     throw error
-  }
-}
-
-const handleSave = async () => {
-  if (!activePlanId.value) {
-    message.warning('请先选择一个计划')
-    return
-  }
-  try {
-    await savePlanData()
-  } catch (error) {
-    message.error('保存失败')
   }
 }
 
@@ -282,7 +345,7 @@ watch(
   () => [currentPlanName.value, currentMode.value],
   async () => {
     await nextTick()
-    handleSave()
+    await debouncedSave()
   }
 )
 
@@ -298,8 +361,24 @@ watch(
   }
 )
 
+// 在组件卸载前确保所有保存操作完成
+const ensureAllSaved = async () => {
+  const pendingPromises = Array.from(savePromises.value.values())
+  if (pendingPromises.length > 0) {
+    await Promise.allSettled(pendingPromises)
+  }
+}
+
 onMounted(() => {
   initPlans()
+
+  // 监听页面卸载
+  window.addEventListener('beforeunload', ensureAllSaved)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('beforeunload', ensureAllSaved)
+  ensureAllSaved()
 })
 </script>
 

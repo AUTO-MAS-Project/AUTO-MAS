@@ -178,7 +178,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineComponent, onMounted, ref, watch } from 'vue'
+import { computed, defineComponent, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { PlusOutlined } from '@ant-design/icons-vue'
 
@@ -219,6 +219,7 @@ const VNodeRenderer = defineComponent({
   },
 })
 
+// 改回使用普通的ref，确保响应式正常工作
 const rows = ref<TableRow[]>([
   {
     key: 'MedicineNumb',
@@ -411,38 +412,40 @@ const addCustomStage = (rowKey: string, columnKey: string) => {
   message.success('关卡添加成功')
 }
 
+// 缓存计算属性，避免重复计算
+const stageOptionsCache = ref(new Map<string, any[]>())
+
 const stageOptions = computed(() => {
-  const baseOptions = STAGE_DAILY_INFO.map(stage => ({
-    label: stage.text,
-    value: stage.value,
-    isCustom: false,
-  }))
-  const customOptions = Object.keys(customStageNames.value).map(key => ({
-    label: customStageNames.value[key],
-    value: key,
-    isCustom: true,
-  }))
-  return [...baseOptions, ...customOptions]
+  const cacheKey = 'base_stage_options'
+  if (!stageOptionsCache.value.has(cacheKey)) {
+    const baseOptions = STAGE_DAILY_INFO.map(stage => ({
+      label: stage.text,
+      value: stage.value,
+      isCustom: false,
+    }))
+    const customOptions = Object.keys(customStageNames.value).map(key => ({
+      label: customStageNames.value[key],
+      value: key,
+      isCustom: true,
+    }))
+    stageOptionsCache.value.set(cacheKey, [...baseOptions, ...customOptions])
+  }
+  return stageOptionsCache.value.get(cacheKey) || []
 })
 
-const isCustomStage = (value: string, columnKey: string) => {
-  if (!value || value === '-') return false
-  const dayNumber = getDayNumber(columnKey)
-  let availableStages: string[]
-  if (dayNumber === 0) {
-    availableStages = STAGE_DAILY_INFO.map(stage => stage.value)
-  } else {
-    availableStages = STAGE_DAILY_INFO.filter(stage => stage.days.includes(dayNumber)).map(
-      stage => stage.value
-    )
-  }
-  return !availableStages.includes(value)
-}
-
+// 优化getSelectOptions函数，添加缓存
 const getSelectOptions = (columnKey: string, taskName: string, currentValue?: string) => {
+  const cacheKey = `${columnKey}_${taskName}_${currentValue || ''}`
+
+  if (stageOptionsCache.value.has(cacheKey)) {
+    return stageOptionsCache.value.get(cacheKey)
+  }
+
+  let options: any[] = []
+
   switch (taskName) {
     case '连战次数':
-      return [
+      options = [
         { label: 'AUTO', value: '0' },
         { label: '1', value: '1' },
         { label: '2', value: '2' },
@@ -452,6 +455,7 @@ const getSelectOptions = (columnKey: string, taskName: string, currentValue?: st
         { label: '6', value: '6' },
         { label: '不切换', value: '-1' },
       ]
+      break
     case '关卡选择':
     case '备选关卡-1':
     case '备选关卡-2':
@@ -486,11 +490,30 @@ const getSelectOptions = (columnKey: string, taskName: string, currentValue?: st
           value: customStageNames.value[key],
           isCustom: true,
         }))
-      return [...baseOptions, ...customOptions]
+      options = [...baseOptions, ...customOptions]
+      break
     }
     default:
-      return []
+      options = []
   }
+
+  // 缓存结果
+  stageOptionsCache.value.set(cacheKey, options)
+  return options
+}
+
+const isCustomStage = (value: string, columnKey: string) => {
+  if (!value || value === '-') return false
+  const dayNumber = getDayNumber(columnKey)
+  let availableStages: string[]
+  if (dayNumber === 0) {
+    availableStages = STAGE_DAILY_INFO.map(stage => stage.value)
+  } else {
+    availableStages = STAGE_DAILY_INFO.filter(stage => stage.days.includes(dayNumber)).map(
+      stage => stage.value
+    )
+  }
+  return !availableStages.includes(value)
 }
 
 const getPlaceholder = (taskName: string) => {
@@ -549,9 +572,11 @@ const isStageEnabled = (stageValue: string, columnKey: string) => {
 
 const toggleStage = (stageValue: string, columnKey: string, checked: boolean) => {
   const stageSlots = ['Stage', 'Stage_1', 'Stage_2', 'Stage_3']
+  const newRows = [...rows.value]
+
   if (checked) {
     for (const slot of stageSlots) {
-      const row = rows.value.find(r => r.key === slot) as TableRow | undefined
+      const row = newRows.find(r => r.key === slot) as TableRow | undefined
       if (row && ((row as any)[columnKey] === '-' || (row as any)[columnKey] === '')) {
         ;(row as any)[columnKey] = stageValue
         break
@@ -559,12 +584,14 @@ const toggleStage = (stageValue: string, columnKey: string, checked: boolean) =>
     }
   } else {
     for (const slot of stageSlots) {
-      const row = rows.value.find(r => r.key === slot) as TableRow | undefined
+      const row = newRows.find(r => r.key === slot) as TableRow | undefined
       if (row && (row as any)[columnKey] === stageValue) {
         ;(row as any)[columnKey] = '-'
       }
     }
   }
+
+  rows.value = newRows
 }
 
 const getSimpleTaskTagColor = (taskName: string) => {
@@ -626,29 +653,6 @@ const disableAllStages = (stageValue: string) => {
   })
 }
 
-// 将 props.tableData 映射到 rows
-const applyPlanDataToRows = (plan: Record<string, any> | null | undefined) => {
-  if (!plan) return
-  const timeKeys = [
-    'ALL',
-    'Monday',
-    'Tuesday',
-    'Wednesday',
-    'Thursday',
-    'Friday',
-    'Saturday',
-    'Sunday',
-  ]
-  rows.value.forEach(row => {
-    const fieldKey = row.key
-    timeKeys.forEach(timeKey => {
-      if (plan[timeKey] && plan[timeKey][fieldKey] !== undefined) {
-        ;(row as any)[timeKey] = plan[timeKey][fieldKey]
-      }
-    })
-  })
-}
-
 // 从 rows 组装为 API 所需结构
 const buildPlanDataFromRows = (): Record<string, any> => {
   const planData: Record<string, any> = {}
@@ -671,6 +675,48 @@ const buildPlanDataFromRows = (): Record<string, any> => {
   return planData
 }
 
+// 优化数据同步，但保持响应式
+const applyPlanDataToRows = (plan: Record<string, any> | null | undefined) => {
+  if (!plan) return
+
+  const timeKeys = [
+    'ALL',
+    'Monday',
+    'Tuesday',
+    'Wednesday',
+    'Thursday',
+    'Friday',
+    'Saturday',
+    'Sunday',
+  ]
+
+  rows.value.forEach(row => {
+    const fieldKey = row.key
+    timeKeys.forEach(timeKey => {
+      if (plan[timeKey] && plan[timeKey][fieldKey] !== undefined) {
+        ;(row as any)[timeKey] = plan[timeKey][fieldKey]
+      }
+    })
+  })
+
+  // 清除缓存以重新计算选项
+  stageOptionsCache.value.clear()
+}
+
+// 简化的防抖函数
+const debounce = <T extends (...args: any[]) => any>(func: T, wait: number): T => {
+  let timeout: NodeJS.Timeout | null = null
+  return ((...args: any[]) => {
+    if (timeout) clearTimeout(timeout)
+    timeout = setTimeout(() => func(...args), wait)
+  }) as T
+}
+
+const debouncedEmitUpdate = debounce(() => {
+  emit('update-table-data', buildPlanDataFromRows())
+}, 150)
+
+// 恢复正常的watch监听
 watch(
   () => props.tableData,
   newVal => {
@@ -679,28 +725,14 @@ watch(
   { immediate: true, deep: true }
 )
 
+// 监听rows变化并触发更新
 watch(
-  () =>
-    rows.value.map(r => ({
-      key: r.key,
-      ALL: r.ALL,
-      Monday: r.Monday,
-      Tuesday: r.Tuesday,
-      Wednesday: r.Wednesday,
-      Thursday: r.Thursday,
-      Friday: r.Friday,
-      Saturday: r.Saturday,
-      Sunday: r.Sunday,
-    })),
+  rows,
   () => {
-    emit('update-table-data', buildPlanDataFromRows())
+    debouncedEmitUpdate()
   },
   { deep: true }
 )
-
-onMounted(() => {
-  applyPlanDataToRows(props.tableData || {})
-})
 </script>
 
 <style scoped>
