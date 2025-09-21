@@ -140,6 +140,7 @@
 
 <script setup lang="ts">
 import { onMounted, onUnmounted } from 'vue'
+import { LockOutlined } from '@ant-design/icons-vue'
 import {
   getPowerActionText,
   POWER_ACTION_TEXT,
@@ -189,6 +190,7 @@ const {
   cancelMessage,
 
   // 初始化与清理
+  initialize,
   loadTaskOptions,
   cleanup,
 
@@ -208,6 +210,7 @@ const onSchedulerTabEdit = (targetKey: string | MouseEvent, action: 'add' | 'rem
 
 // 生命周期
 onMounted(() => {
+  initialize() // 初始化TaskManager订阅
   loadTaskOptions()
 })
 
