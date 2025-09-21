@@ -1,5 +1,5 @@
 import { ref, type Ref } from 'vue'
-import { message, Modal, notification } from 'ant-design-vue'
+import { Modal } from 'ant-design-vue'
 
 // 基础配置
 const BASE_WS_URL = 'ws://localhost:36163/api/core/ws'
@@ -280,7 +280,9 @@ const getMessageQueue = (): Map<string, { message: WebSocketBaseMessage; timesta
 }
 
 // 设置消息队列
-const setMessageQueue = (queue: Map<string, { message: WebSocketBaseMessage; timestamp: number }>): void => {
+const setMessageQueue = (
+  queue: Map<string, { message: WebSocketBaseMessage; timestamp: number }>
+): void => {
   const global = getGlobalStorage()
   global.messageQueue.value = queue
 }
@@ -295,7 +297,7 @@ const handleMessage = (raw: WebSocketBaseMessage) => {
     type: msgType,
     id: id,
     data: raw.data,
-    fullMessage: raw
+    fullMessage: raw,
   })
 
   if (id) {
@@ -304,7 +306,7 @@ const handleMessage = (raw: WebSocketBaseMessage) => {
       messageId: id,
       hasSubscriber: !!sub,
       totalSubscribers: global.subscribers.value.size,
-      allSubscriberIds: Array.from(global.subscribers.value.keys())
+      allSubscriberIds: Array.from(global.subscribers.value.keys()),
     })
     if (sub) {
       // 有订阅者，直接分发消息
@@ -313,9 +315,9 @@ const handleMessage = (raw: WebSocketBaseMessage) => {
     } else {
       // 没有订阅者，将消息暂存到队列中
       console.log(`[WebSocket Debug] 没有找到ID为${id}的订阅者，将消息暂存到队列`)
-      
+
       const currentMessageQueue = getMessageQueue()
-      
+
       // 对于Map类型的消息队列，直接存储或更新
       currentMessageQueue.set(id, { message: raw, timestamp: Date.now() })
       console.log(`[WebSocket Debug] 添加新消息到队列，ID: ${id}, Type: ${msgType}`)
@@ -329,11 +331,11 @@ const handleMessage = (raw: WebSocketBaseMessage) => {
           deletedCount++
         }
       })
-      
+
       if (deletedCount > 0) {
         console.log(`[WebSocket Debug] 清理了${deletedCount}条过期消息`)
       }
-      
+
       // 更新消息队列
       setMessageQueue(currentMessageQueue)
     }
@@ -404,9 +406,9 @@ const createGlobalWebSocket = (): WebSocket => {
     } catch {
       /* ignore */
     }
-    
+
     // 自动订阅ID为"Main"的消息，用于处理ping-pong等系统消息
-    _subscribe("Main", {
+    _subscribe('Main', {
       onMessage: (message: WebSocketBaseMessage) => {
         // 处理系统级消息（如ping-pong）
         if (message && message.type === 'Signal' && message.data) {
@@ -433,8 +435,8 @@ const createGlobalWebSocket = (): WebSocket => {
             return
           }
         }
-      }
-    });
+      },
+    })
   }
 
   ws.onmessage = ev => {
@@ -599,7 +601,7 @@ export function useWebSocket() {
 
   const subscribe = (id: string, handlers: Omit<WebSocketSubscriber, 'id'>) => {
     // 使用全局的subscribe函数来确保消息队列机制正常工作
-    _subscribe(id, handlers);
+    _subscribe(id, handlers)
   }
 
   const unsubscribe = (id: string) => {
@@ -668,15 +670,20 @@ export function useWebSocket() {
 export const _subscribe = (id: string, subscriber: Omit<WebSocketSubscriber, 'id'>) => {
   const global = getGlobalStorage()
   const fullSubscriber: WebSocketSubscriber = { ...subscriber, id }
-  
+
   // 添加订阅者
   global.subscribers.value.set(id, fullSubscriber)
   console.log('[WebSocket] 添加订阅者:', id, '当前订阅者数量:', global.subscribers.value.size)
-  
+
   // 检查消息队列中是否有该订阅者的消息
   const messageQueue = getMessageQueue()
-  console.log('[WebSocket] 检查消息队列，当前队列大小:', messageQueue.size, '队列内容:', Array.from(messageQueue.entries()))
-  
+  console.log(
+    '[WebSocket] 检查消息队列，当前队列大小:',
+    messageQueue.size,
+    '队列内容:',
+    Array.from(messageQueue.entries())
+  )
+
   // 检查特定ID的消息
   const queuedMessage = messageQueue.get(id)
   if (queuedMessage) {
@@ -697,13 +704,21 @@ export const _subscribe = (id: string, subscriber: Omit<WebSocketSubscriber, 'id
   } else {
     console.log('[WebSocket] 未在队列中找到ID为', id, '的消息')
   }
-  
+
   // 清理过期消息（超过1分钟的消息）
   const now = Date.now()
   let cleanedCount = 0
   messageQueue.forEach((queued, msgId) => {
-    if (now - queued.timestamp > 60000) { // 1分钟 = 60000毫秒
-      console.log('[WebSocket] 清理过期消息:', msgId, '消息内容:', queued.message, '时间戳:', queued.timestamp)
+    if (now - queued.timestamp > 60000) {
+      // 1分钟 = 60000毫秒
+      console.log(
+        '[WebSocket] 清理过期消息:',
+        msgId,
+        '消息内容:',
+        queued.message,
+        '时间戳:',
+        queued.timestamp
+      )
       messageQueue.delete(msgId)
       cleanedCount++
     }
@@ -724,11 +739,11 @@ const handleMessageDispatch = (raw: WebSocketBaseMessage, sub: WebSocketSubscrib
   if (sub.onMessage) {
     return sub.onMessage(raw)
   }
-  
+
   // 如果没有 onMessage 处理函数，则记录错误（理论上不应该出现）
   console.error('[WebSocket] 错误：订阅者没有定义onMessage处理函数', {
     subscriberId: sub.id,
     messageType: msgType,
-    messageContent: raw
+    messageContent: raw,
   })
 }
