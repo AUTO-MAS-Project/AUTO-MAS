@@ -966,7 +966,7 @@ class AppConfig(GlobalConfig):
     async def send_json(self, data: dict) -> None:
         """通过WebSocket发送JSON数据"""
         if Config.websocket is None:
-            raise RuntimeError("WebSocket 未连接")
+            logger.warning("WebSocket 未连接")
         else:
             await Config.websocket.send_json(data)
 
