@@ -181,23 +181,6 @@ async def confirm_notice() -> OutBase:
 
 
 @router.post(
-    "/startuptask",
-    summary="获取启动时运行的队列ID",
-    response_model=InfoOut,
-    status_code=200,
-)
-async def get_startup_task() -> InfoOut:
-
-    try:
-        data = await Config.get_startup_task()
-    except Exception as e:
-        return InfoOut(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}", data={}
-        )
-    return InfoOut(data={"queueIdList": data})
-
-
-@router.post(
     "/webconfig",
     summary="获取配置分享中心的配置信息",
     response_model=InfoOut,

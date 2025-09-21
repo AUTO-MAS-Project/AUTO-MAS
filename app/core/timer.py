@@ -24,7 +24,9 @@ from datetime import datetime
 
 from app.services import Matomo, System
 from app.utils import get_logger
-from .config import Config
+from app.models.schema import WebSocketMessage
+from .config import Config, QueueConfig
+from .task_manager import TaskManager
 
 
 logger = get_logger("主业务定时器")
@@ -39,6 +41,7 @@ class _MainTimer:
         while True:
 
             await self.set_silence()
+            await self.timed_start()
 
             await asyncio.sleep(1)
 
@@ -68,6 +71,39 @@ class _MainTimer:
                 )
 
             await asyncio.sleep(3600)
+
+    async def timed_start(self):
+        """定时启动代理任务"""
+
+        curtime = datetime.now().strftime("%Y-%m-%d %H:%M")
+
+        for uid, queue in Config.QueueConfig.items():
+
+            if not isinstance(queue, QueueConfig) or not queue.get(
+                "Info", "TimeEnabled"
+            ):
+                continue
+
+            # 避免重复调起任务
+            if curtime == Config.get("Data", "LastTimeStarted"):
+                continue
+
+            for time_set in queue.TimeSet.values():
+                if (
+                    time_set.get("Info", "Enabled")
+                    and curtime[11:16] == time_set.get("Info", "Time")
+                    and uid not in Config.task_dict
+                ):
+                    logger.info(f"定时唤起任务：{uid}")
+                    task_id = await TaskManager.add_task("自动代理", str(uid))
+
+                    await Config.send_json(
+                        WebSocketMessage(
+                            id="TaskManager",
+                            type="Signal",
+                            data={"newTask": str(task_id)},
+                        ).model_dump()
+                    )
 
     async def set_silence(self):
         """静默模式通过模拟老板键来隐藏模拟器窗口"""

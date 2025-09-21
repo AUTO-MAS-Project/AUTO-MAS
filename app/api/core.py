@@ -24,7 +24,7 @@ import time
 import asyncio
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from app.core import Config, Broadcast
+from app.core import Config, Broadcast, TaskManager
 from app.services import System
 from app.models.schema import *
 
@@ -43,6 +43,8 @@ async def connect_websocket(websocket: WebSocket):
     last_pong = time.monotonic()
     last_ping = time.monotonic()
     data = {}
+
+    await TaskManager.start_startup_queue()
 
     while True:
 
