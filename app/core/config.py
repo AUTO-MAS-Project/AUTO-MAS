@@ -214,6 +214,13 @@ class QueueConfig(ConfigBase):
             ),
         )
 
+        self.Data_LastTimedStart = ConfigItem(
+            "Data",
+            "LastTimedStart",
+            "2000-01-01 00:00",
+            DateTimeValidator("%Y-%m-%d %H:%M"),
+        )
+
         self.TimeSet = MultipleConfig([TimeSet])
         self.QueueItem = MultipleConfig([QueueItem])
 
@@ -1997,19 +2004,6 @@ class AppConfig(GlobalConfig):
         )
 
         return remote_web_config
-
-    async def get_startup_task(self):
-        """获取启动时需要运行的队列信息"""
-
-        logger.info("获取启动时需要运行的队列信息")
-        data = [
-            str(uid)
-            for uid, queue in self.QueueConfig.items()
-            if queue.get("Info", "StartUpEnabled")
-        ]
-        logger.success("启动时需要运行的队列信息获取成功")
-
-        return data
 
     async def save_maa_log(self, log_path: Path, logs: list, maa_result: str) -> bool:
         """
