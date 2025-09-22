@@ -1,63 +1,66 @@
 <template>
   <!-- 加载状态 -->
-  <div v-if="loading" class="loading-container">
-    <a-spin size="large" tip="加载中，请稍候..." />
-  </div>
-
-  <!-- 主要内容 -->
-  <div v-else class="plans-main">
-    <!-- 页面头部 -->
-    <PlanHeader
-      :plan-list="planList"
-      :active-plan-id="activePlanId"
-      @add-plan="handleAddPlan"
-      @remove-plan="handleRemovePlan"
-    />
-
-    <!-- 空状态 -->
-    <div v-if="!planList.length || !currentPlanData" class="empty-state">
-      <div class="empty-content">
-        <div class="empty-image-container">
-          <img src="@/assets/NoData.png" alt="暂无数据" class="empty-image" />
-        </div>
-        <div class="empty-text-content">
-          <h3 class="empty-title">暂无计划</h3>
-          <p class="empty-description">您还没有创建任何计划</p>
-        </div>
-      </div>
+  <div>
+    <div v-if="loading" class="loading-container">
+      <a-spin size="large" tip="加载中，请稍候..." />
     </div>
 
-    <!-- 计划内容 -->
-    <div v-else class="plans-content">
-      <!-- 计划选择器 -->
-      <PlanSelector
+    <!-- 主要内容 -->
+    <div v-else class="plans-main">
+      <!-- 页面头部 -->
+      <PlanHeader
         :plan-list="planList"
         :active-plan-id="activePlanId"
-        @plan-change="onPlanChange"
+        @add-plan="handleAddPlan"
+        @remove-plan="handleRemovePlan"
       />
 
-      <!-- 计划配置 -->
-      <PlanConfig
-        :current-plan-name="currentPlanName"
-        :current-mode="currentMode"
-        :view-mode="viewMode"
-        :is-editing-plan-name="isEditingPlanName"
-        @update:current-plan-name="currentPlanName = $event"
-        @update:current-mode="currentMode = $event"
-        @update:view-mode="viewMode = $event"
-        @start-edit-plan-name="startEditPlanName"
-        @finish-edit-plan-name="finishEditPlanName"
-        @mode-change="onModeChange"
-      >
-        <!-- 动态渲染不同类型的表格 -->
-        <component
-          :is="currentTableComponent"
-          :table-data="tableData"
+      <!-- 空状态 -->
+      <div v-if="!planList.length || !currentPlanData" class="empty-state">
+        <div class="empty-content">
+          <div class="empty-image-container">
+            <img src="@/assets/NoData.png" alt="暂无数据" class="empty-image" />
+          </div>
+          <div class="empty-text-content">
+            <h3 class="empty-title">暂无计划</h3>
+            <p class="empty-description">您还没有创建任何计划</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- 计划内容 -->
+      <div v-else class="plans-content">
+        <!-- 计划选择器 -->
+        <PlanSelector
+          :plan-list="planList"
+          :active-plan-id="activePlanId"
+          @plan-change="onPlanChange"
+        />
+
+        <!-- 计划配置 -->
+        <PlanConfig
+          :current-plan-name="currentPlanName"
           :current-mode="currentMode"
           :view-mode="viewMode"
-          @update-table-data="handleTableDataUpdate"
-        />
-      </PlanConfig>
+          :is-editing-plan-name="isEditingPlanName"
+          @update:current-plan-name="currentPlanName = $event"
+          @update:current-mode="currentMode = $event"
+          @update:view-mode="viewMode = $event"
+          @start-edit-plan-name="startEditPlanName"
+          @finish-edit-plan-name="finishEditPlanName"
+          @mode-change="onModeChange"
+        >
+          <!-- 动态渲染不同类型的表格 -->
+          <component
+            :is="currentTableComponent"
+            :table-data="tableData"
+            :current-mode="currentMode"
+            :view-mode="viewMode"
+            :options-loaded="!loading"
+            @update-table-data="handleTableDataUpdate"
+          />
+        </PlanConfig>
+      </div>
     </div>
   </div>
 </template>
@@ -103,9 +106,11 @@ const tableData = ref<Record<string, any>>({})
 
 const currentTableComponent = computed(() => {
   const currentPlan = planList.value.find(plan => plan.id === activePlanId.value)
-  const planType = currentPlan?.type || 'MaaPlan'
+  // 统一使用 MaaPlanConfig 作为默认类型
+  const planType =
+    currentPlan?.type === 'MaaPlan' ? 'MaaPlanConfig' : currentPlan?.type || 'MaaPlanConfig'
   switch (planType) {
-    case 'MaaPlan':
+    case 'MaaPlanConfig':
       return MaaPlanTable
     default:
       return MaaPlanTable
@@ -121,7 +126,7 @@ const debounce = <T extends (...args: any[]) => any>(func: T, wait: number): T =
   }) as T
 }
 
-const handleAddPlan = async (planType: string = 'MaaPlan') => {
+const handleAddPlan = async (planType: string = 'MaaPlanConfig') => {
   try {
     const response = await createPlan(planType)
     const defaultName = getDefaultPlanName(planType)
@@ -176,7 +181,7 @@ const saveInBackground = async (planId: string) => {
   const savePromise = (async () => {
     try {
       const currentPlan = planList.value.find(plan => plan.id === planId)
-      const planType = currentPlan?.type || 'MaaPlan'
+      const planType = currentPlan?.type || 'MaaPlanConfig'
 
       // Start from existing tableData, then overwrite Info explicitly
       const planData: Record<string, any> = { ...(tableData.value || {}) }
@@ -287,7 +292,7 @@ const initPlans = async () => {
       planList.value = response.index.map((item: any) => {
         const planId = item.uid
         const planData = response.data[planId]
-        const planType = planData?.Info?.Type || 'MaaPlan'
+        const planType = item.type === 'MaaPlan' ? 'MaaPlanConfig' : item.type || 'MaaPlanConfig'
         const planName = planData?.Info?.Name || getDefaultPlanName(planType)
         return { id: planId, name: planName, type: planType }
       })
@@ -306,28 +311,10 @@ const initPlans = async () => {
   }
 }
 
-const savePlanData = async (planId?: string) => {
-  const targetPlanId = planId || activePlanId.value
-  if (!targetPlanId) return
-
-  try {
-    const currentPlan = planList.value.find(plan => plan.id === targetPlanId)
-    const planType = currentPlan?.type || 'MaaPlan'
-
-    const planData: Record<string, any> = { ...(tableData.value || {}) }
-    planData.Info = { Mode: currentMode.value, Name: currentPlanName.value, Type: planType }
-
-    await updatePlan(targetPlanId, planData)
-  } catch (error) {
-    console.error('保存计划数据失败:', error)
-    throw error
-  }
-}
-
 const getDefaultPlanName = (planType: string) =>
   (
     ({
-      MaaPlan: '新 MAA 计划表',
+      MaaPlanConfig: '新 MAA 计划表',
       GeneralPlan: '新通用计划表',
       CustomPlan: '新自定义计划表',
     }) as Record<string, string>
@@ -335,7 +322,7 @@ const getDefaultPlanName = (planType: string) =>
 const getPlanTypeLabel = (planType: string) =>
   (
     ({
-      MaaPlan: 'MAA计划表',
+      MaaPlanConfig: 'MAA计划表',
       GeneralPlan: '通用计划表',
       CustomPlan: '自定义计划表',
     }) as Record<string, string>

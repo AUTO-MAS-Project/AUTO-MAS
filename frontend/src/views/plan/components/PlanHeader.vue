@@ -24,11 +24,11 @@
               </a-menu-item> -->
             </a-menu>
           </template>
-          <a-button type="primary" size="large">
+          <a-button type="primary" size="large" @click="handleAddPlan">
             <template #icon>
               <PlusOutlined />
             </template>
-            新建计划
+            {{ getPlanButtonText }}
             <DownOutlined />
           </a-button>
         </a-dropdown>
@@ -54,6 +54,7 @@
 
 <script setup lang="ts">
 import { DeleteOutlined, DownOutlined, PlusOutlined } from '@ant-design/icons-vue'
+import { ref, computed } from 'vue'
 
 interface Plan {
   id: string
@@ -68,15 +69,36 @@ interface Props {
 
 interface Emits {
   (e: 'add-plan', planType: string): void
-
   (e: 'remove-plan', planId: string): void
 }
 
 defineProps<Props>()
 const emit = defineEmits<Emits>()
 
+// 默认计划类型
+const selectedPlanType = ref('MaaPlan')
+
+// 根据选择的计划类型获取按钮文本
+const getPlanButtonText = computed(() => {
+  switch (selectedPlanType.value) {
+    case 'MaaPlan':
+      return '新建 MAA 计划'
+    case 'GeneralPlan':
+      return '新建通用计划'
+    case 'CustomPlan':
+      return '新建自定义计划'
+    default:
+      return '新建计划'
+  }
+})
+
 const handleMenuClick = ({ key }: { key: string }) => {
-  emit('add-plan', key)
+  selectedPlanType.value = key
+}
+
+// 点击主按钮创建计划
+const handleAddPlan = () => {
+  emit('add-plan', selectedPlanType.value)
 }
 </script>
 
