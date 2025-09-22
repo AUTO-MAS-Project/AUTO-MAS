@@ -284,7 +284,7 @@ const initPlans = async () => {
   try {
     const response = await getPlans()
     if (response.index && response.index.length > 0) {
-      planList.value = response.index.map((item: any, index: number) => {
+      planList.value = response.index.map((item: any) => {
         const planId = item.uid
         const planData = response.data[planId]
         const planType = planData?.Info?.Type || 'MaaPlan'
@@ -343,10 +343,11 @@ const getPlanTypeLabel = (planType: string) =>
 
 watch(
   () => [currentPlanName.value, currentMode.value],
-  async () => {
-    await nextTick()
-    await debouncedSave()
-  }
+  () => {
+    // await nextTick()
+    debouncedSave() // 直接调用即可，无需等待
+  },
+  { flush: 'post' }
 )
 
 watch(
