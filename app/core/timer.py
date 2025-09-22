@@ -87,13 +87,9 @@ class _MainTimer:
 
             # 避免重复调起任务
             if curtime == queue.get("Data", "LastTimedStart"):
-                logger.debug("已启动过任务，跳过本任务")
                 continue
 
             for time_set in queue.TimeSet.values():
-                logger.debug(
-                    f"检查定时任务：{time_set.get('Info', 'Time')}, 启用状态：{time_set.get('Info', 'Enabled')}"
-                )
                 if (
                     time_set.get("Info", "Enabled")
                     and curtime[11:16] == time_set.get("Info", "Time")
@@ -101,6 +97,8 @@ class _MainTimer:
                 ):
                     logger.info(f"定时唤起任务：{uid}")
                     task_id = await TaskManager.add_task("自动代理", str(uid))
+                    await queue.set("Data", "LastTimedStart", curtime)
+                    await Config.QueueConfig.save()
 
                     await Config.send_json(
                         WebSocketMessage(
