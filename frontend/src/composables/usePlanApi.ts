@@ -1,7 +1,7 @@
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
-import type { PlanCreateIn, PlanDeleteIn, PlanGetIn, PlanReorderIn, PlanUpdateIn } from '../api'
-import { Service } from '../api'
+import type { PlanCreateIn, PlanDeleteIn, PlanGetIn, PlanReorderIn, PlanUpdateIn } from '@/api'
+import { Service } from '@/api'
 
 export function usePlanApi() {
   const loading = ref(false)
@@ -11,8 +11,7 @@ export function usePlanApi() {
     loading.value = true
     try {
       const params: PlanGetIn = planId ? { planId } : {}
-      const response = await Service.getPlanApiPlanGetPost(params)
-      return response
+      return await Service.getPlanApiPlanGetPost(params)
     } catch (error) {
       console.error('获取计划失败:', error)
       message.error('获取计划失败')
