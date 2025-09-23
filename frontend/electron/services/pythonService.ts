@@ -574,38 +574,38 @@ export async function startBackend(appRoot: string, timeoutMs = 30_000) {
 }
 
 /** 停止后端进程（如果没启动就直接返回成功） */
-export async function stopBackend() {
-  if (!backendProc || backendProc.killed) {
-    console.log('[Backend] 未运行，无需停止')
-    return { success: true }
-  }
-
-  const pid = backendProc.pid
-  console.log('[Backend] 正在停止后端服务, PID =', pid)
-
-  return new Promise<{ success: boolean; error?: string }>(resolve => {
-    // 清监听，避免重复日志
-    backendProc?.stdout?.removeAllListeners('data')
-    backendProc?.stderr?.removeAllListeners('data')
-
-    backendProc!.once('exit', (code, signal) => {
-      console.log('[Backend] 已退出', { code, signal })
-      backendProc = null
-      resolve({ success: true })
-    })
-
-    backendProc!.once('error', err => {
-      console.error('[Backend] 停止时出错:', err)
-      backendProc = null
-      resolve({ success: false, error: err instanceof Error ? err.message : String(err) })
-    })
-
-    try {
-      backendProc!.kill() // 默认 SIGTERM，Windows 下等价于结束进程
-    } catch (e) {
-      console.error('[Backend] kill 调用失败:', e)
-      backendProc = null
-      resolve({ success: false, error: e instanceof Error ? e.message : String(e) })
-    }
-  })
-}
+// export async function stopBackend() {
+//   if (!backendProc || backendProc.killed) {
+//     console.log('[Backend] 未运行，无需停止')
+//     return { success: true }
+//   }
+//
+//   const pid = backendProc.pid
+//   console.log('[Backend] 正在停止后端服务, PID =', pid)
+//
+//   return new Promise<{ success: boolean; error?: string }>(resolve => {
+//     // 清监听，避免重复日志
+//     backendProc?.stdout?.removeAllListeners('data')
+//     backendProc?.stderr?.removeAllListeners('data')
+//
+//     backendProc!.once('exit', (code, signal) => {
+//       console.log('[Backend] 已退出', { code, signal })
+//       backendProc = null
+//       resolve({ success: true })
+//     })
+//
+//     backendProc!.once('error', err => {
+//       console.error('[Backend] 停止时出错:', err)
+//       backendProc = null
+//       resolve({ success: false, error: err instanceof Error ? err.message : String(err) })
+//     })
+//
+//     try {
+//       backendProc!.kill() // 默认 SIGTERM，Windows 下等价于结束进程
+//     } catch (e) {
+//       console.error('[Backend] kill 调用失败:', e)
+//       backendProc = null
+//       resolve({ success: false, error: e instanceof Error ? e.message : String(e) })
+//     }
+//   })
+// }
