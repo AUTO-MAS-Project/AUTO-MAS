@@ -79,3 +79,16 @@ async def connect_websocket(websocket: WebSocket):
 
     Config.websocket = None
     await System.set_power("KillSelf")
+
+
+@router.post("/close")
+async def close():
+    """关闭后端程序"""
+
+    try:
+        await System.set_power("KillSelf")
+    except Exception as e:
+        return OutBase(
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+        )
+    return OutBase()
