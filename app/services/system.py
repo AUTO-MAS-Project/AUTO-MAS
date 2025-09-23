@@ -21,6 +21,7 @@
 
 import sys
 import ctypes
+import asyncio
 import win32gui
 import win32process
 import psutil
@@ -29,9 +30,10 @@ import tempfile
 import getpass
 from datetime import datetime
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Optional
 
 from app.core import Config
+from app.models.schema import WebSocketMessage
 from app.utils.logger import get_logger
 
 logger = get_logger("系统服务")
@@ -41,6 +43,10 @@ class _SystemHandler:
 
     ES_CONTINUOUS = 0x80000000
     ES_SYSTEM_REQUIRED = 0x00000001
+    countdown = 60
+
+    def __init__(self) -> None:
+        self.power_task: Optional[asyncio.Task] = None
 
     async def set_Sleep(self) -> None:
         """同步系统休眠状态"""
@@ -244,6 +250,47 @@ class _SystemHandler:
 
                 logger.info("执行退出主程序操作")
                 Config.server.should_exit = True
+
+    async def _power_task(
+        self,
+        power_sign: Literal[
+            "NoAction", "Shutdown", "ShutdownForce", "Hibernate", "Sleep", "KillSelf"
+        ],
+    ) -> None:
+        """电源任务"""
+
+        await asyncio.sleep(self.countdown)
+        if power_sign == "KillSelf":
+            await Config.send_json(
+                WebSocketMessage(
+                    id="Main", type="Signal", data={"RequestClose": "请求前端关闭"}
+                ).model_dump()
+            )
+        await self.set_power(power_sign)
+
+    async def start_power_task(self):
+        """开始电源任务"""
+
+        if self.power_task is None or self.power_task.done():
+            self.power_task = asyncio.create_task(self._power_task(Config.power_sign))
+            logger.info(
+                f"电源任务已启动, {self.countdown}秒后执行: {Config.power_sign}"
+            )
+        else:
+            logger.warning("已有电源任务在运行, 请勿重复启动")
+
+    async def cancel_power_task(self):
+        """取消电源任务"""
+
+        if self.power_task is not None and not self.power_task.done():
+            self.power_task.cancel()
+            try:
+                await self.power_task
+            except asyncio.CancelledError:
+                logger.info("电源任务已取消")
+        else:
+            logger.warning("当前无电源任务在运行")
+            raise RuntimeError("当前无电源任务在运行")
 
     async def kill_emulator_processes(self):
         """这里暂时仅支持 MuMu 模拟器"""

@@ -102,28 +102,28 @@ RESOURCE_STAGE_DROP_INFO = {
         "Display": "PR-A",
         "Value": "PR-A",
         "Drop": "PR-A",
-        "DropName": "医疗/重装芯片",
+        "DropName": "奶/盾芯片",
         "Activity": {"Tip": "一四五日", "StageName": "资源关卡"},
     },
     "PR-B-1": {
         "Display": "PR-B",
         "Value": "PR-B",
         "Drop": "PR-B",
-        "DropName": "术师/狙击芯片",
+        "DropName": "术/狙芯片",
         "Activity": {"Tip": "一二五六", "StageName": "资源关卡"},
     },
     "PR-C-1": {
         "Display": "PR-C",
         "Value": "PR-C",
         "Drop": "PR-C",
-        "DropName": "先锋/辅助芯片",
+        "DropName": "先/辅芯片",
         "Activity": {"Tip": "三四六日", "StageName": "资源关卡"},
     },
     "PR-D-1": {
         "Display": "PR-D",
         "Value": "PR-D",
         "Drop": "PR-D",
-        "DropName": "近卫/特种芯片",
+        "DropName": "近/特芯片",
         "Activity": {"Tip": "二三六日", "StageName": "资源关卡"},
     },
 }
@@ -228,6 +228,16 @@ MATERIALS_MAP = {
     "PR-D": "近卫/特种芯片",
 }
 """掉落物索引表"""
+
+POWER_SIGN_MAP = {
+    "NoAction": "无动作",
+    "Shutdown": "关机",
+    "ShutdownForce": "强制关机",
+    "Hibernate": "休眠",
+    "Sleep": "睡眠",
+    "KillSelf": "退出程序",
+}
+"""电源操作类型索引表"""
 
 RESERVED_NAMES = {
     "CON",
