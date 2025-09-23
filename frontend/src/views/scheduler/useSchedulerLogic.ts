@@ -95,7 +95,12 @@ export function useSchedulerLogic() {
   // 电源操作 - 从本地存储加载或使用默认值
   const powerAction = ref<PowerIn.signal>(loadPowerActionFromStorage())
   const powerCountdownVisible = ref(false)
-  const powerCountdown = ref(10)
+  const powerCountdownData = ref<{
+    title?: string
+    message?: string
+    countdown?: number
+  }>({})
+  // 前端自己的60秒倒计时
   let powerCountdownTimer: ReturnType<typeof setInterval> | null = null
 
   // 消息弹窗
@@ -333,6 +338,13 @@ export function useSchedulerLogic() {
 
     console.log('[Scheduler] 收到WebSocket消息:', { id, type, data, tabId: tab.websocketId })
 
+    // 处理全局消息（如电源操作倒计时）
+    if (id === 'Main' && type === 'Message' && data?.type === 'Countdown') {
+      console.log('[Scheduler] 收到全局倒计时消息:', data)
+      handleMessageDialog(tab, data)
+      return
+    }
+
     // 只处理与当前标签页相关的消息
     if (id && id !== tab.websocketId) {
       console.log('[Scheduler] 消息ID不匹配，忽略消息:', { messageId: id, tabId: tab.websocketId })
@@ -461,6 +473,14 @@ export function useSchedulerLogic() {
   }
 
   const handleMessageDialog = (tab: SchedulerTab, data: any) => {
+    // 处理倒计时消息
+    if (data.type === 'Countdown') {
+      console.log('[Scheduler] 收到倒计时消息，启动60秒倒计时:', data)
+      startPowerCountdown(data)
+      return
+    }
+
+    // 处理普通消息对话框
     if (data.title && data.content) {
       currentMessage.value = {
         title: data.title,
@@ -498,18 +518,16 @@ export function useSchedulerLogic() {
       }
 
       message.success('任务完成')
-      checkAllTasksCompleted()
       saveTabsToStorage(schedulerTabs.value)
 
       // 触发Vue的响应式更新
       schedulerTabs.value = [...schedulerTabs.value]
     }
 
-    if (data && data.power && data.power !== 'NoAction') {
-      powerAction.value = data.power as PowerIn.signal
-      savePowerActionToStorage(powerAction.value)
-      startPowerCountdown()
-    }
+    // 移除自动处理电源信号的逻辑，电源操作完全由后端WebSocket的倒计时消息控制
+    // if (data && data.power && data.power !== 'NoAction') {
+    //   // 不再自己处理电源信号
+    // }
   }
 
   const onLogScroll = (tab: SchedulerTab) => {
@@ -538,57 +556,88 @@ export function useSchedulerLogic() {
   }
 
   // 电源操作
-  const onPowerActionChange = (value: PowerIn.signal) => {
+  const onPowerActionChange = async (value: PowerIn.signal) => {
     powerAction.value = value
     savePowerActionToStorage(value)
-  }
 
-  const startPowerCountdown = () => {
-    if (powerAction.value === PowerIn.signal.NO_ACTION) return
-
-    powerCountdownVisible.value = true
-    powerCountdown.value = 10
-
-    powerCountdownTimer = setInterval(() => {
-      powerCountdown.value--
-      if (powerCountdown.value <= 0) {
-        if (powerCountdownTimer) {
-          clearInterval(powerCountdownTimer)
-          powerCountdownTimer = null
-        }
-        powerCountdownVisible.value = false
-        executePowerAction()
-      }
-    }, 1000)
-  }
-
-  const executePowerAction = async () => {
+    // 调用API设置电源操作
     try {
-      await Service.powerTaskApiDispatchPowerPost({ signal: powerAction.value })
-      message.success(`${getPowerActionText(powerAction.value)}命令已发送`)
+      await Service.setPowerApiDispatchSetPowerPost({ signal: value })
+      console.log('[Scheduler] 电源操作设置成功:', value)
     } catch (error) {
-      console.error('执行电源操作失败:', error)
-      message.error('执行电源操作失败')
+      console.error('设置电源操作失败:', error)
+      message.error('设置电源操作失败')
     }
   }
 
-  const cancelPowerAction = () => {
+  // 启动60秒倒计时
+  const startPowerCountdown = (data: any) => {
+    // 清除之前的计时器
     if (powerCountdownTimer) {
       clearInterval(powerCountdownTimer)
       powerCountdownTimer = null
     }
+
+    // 显示倒计时弹窗
+    powerCountdownVisible.value = true
+
+    // 设置倒计时数据，从60秒开始
+    powerCountdownData.value = {
+      title: data.title || `${getPowerActionText(powerAction.value)}倒计时`,
+      message: data.message || `程序将在倒计时结束后执行 ${getPowerActionText(powerAction.value)} 操作`,
+      countdown: 60
+    }
+
+    // 启动每秒倒计时
+    powerCountdownTimer = setInterval(() => {
+      if (powerCountdownData.value.countdown && powerCountdownData.value.countdown > 0) {
+        powerCountdownData.value.countdown--
+        console.log('[Scheduler] 倒计时:', powerCountdownData.value.countdown)
+
+        // 倒计时结束
+        if (powerCountdownData.value.countdown <= 0) {
+          if (powerCountdownTimer) {
+            clearInterval(powerCountdownTimer)
+            powerCountdownTimer = null
+          }
+          powerCountdownVisible.value = false
+          console.log('[Scheduler] 倒计时结束，弹窗关闭')
+        }
+      }
+    }, 1000)
+  }
+
+  // 移除自动执行电源操作，由后端完全控制
+  // const executePowerAction = async () => {
+  //   // 不再自己执行电源操作，完全由后端控制
+  // }
+
+  const cancelPowerAction = async () => {
+    // 清除倒计时器
+    if (powerCountdownTimer) {
+      clearInterval(powerCountdownTimer)
+      powerCountdownTimer = null
+    }
+
+    // 关闭倒计时弹窗
     powerCountdownVisible.value = false
-    powerCountdown.value = 10
+
+    // 调用取消电源操作的API
+    try {
+      await Service.cancelPowerTaskApiDispatchCancelPowerPost()
+      message.success('已取消电源操作')
+    } catch (error) {
+      console.error('取消电源操作失败:', error)
+      message.error('取消电源操作失败')
+    }
+
     // 注意：这里不重置 powerAction，保留用户选择
   }
 
-  const checkAllTasksCompleted = () => {
-    const hasRunningTasks = schedulerTabs.value.some(tab => tab.status === '运行')
-
-    if (!hasRunningTasks && powerAction.value !== PowerIn.signal.NO_ACTION) {
-      startPowerCountdown()
-    }
-  }
+  // 移除自动检查任务完成的逻辑，完全由后端控制
+  // const checkAllTasksCompleted = () => {
+  //   // 不再自己检查任务完成状态，完全由后端WebSocket消息控制
+  // }
 
   // 消息弹窗操作
   const sendMessageResponse = () => {
@@ -637,16 +686,43 @@ export function useSchedulerLogic() {
     // 订阅TaskManager消息
     subscribeToTaskManager()
     console.log('[Scheduler] 已订阅TaskManager消息')
+
+    // 订阅Main消息（用于接收全局消息如电源操作倒计时）
+    subscribeToMainMessages()
+    console.log('[Scheduler] 已订阅Main消息')
+  }
+
+  // 订阅Main消息，处理全局消息
+  const subscribeToMainMessages = () => {
+    ws.subscribe('Main', {
+      onMessage: (message) => handleMainMessage(message)
+    })
+  }
+
+  const handleMainMessage = (wsMessage: any) => {
+    if (!wsMessage || typeof wsMessage !== 'object') return
+
+    const { type, data } = wsMessage
+    console.log('[Scheduler] 收到Main消息:', { type, data })
+
+    if (type === 'Message' && data && data.type === 'Countdown') {
+      // 收到倒计时消息，启动前端60秒倒计时
+      console.log('[Scheduler] 收到倒计时消息，启动60秒倒计时:', data)
+      startPowerCountdown(data)
+    }
   }
 
   // 清理函数
   const cleanup = () => {
+    // 清理倒计时器
     if (powerCountdownTimer) {
       clearInterval(powerCountdownTimer)
+      powerCountdownTimer = null
     }
 
-    // 取消订阅TaskManager
+    // 取消订阅TaskManager和Main
     ws.unsubscribe('TaskManager')
+    ws.unsubscribe('Main')
 
     schedulerTabs.value.forEach(tab => {
       if (tab.websocketId) {
@@ -666,7 +742,7 @@ export function useSchedulerLogic() {
     taskOptions,
     powerAction,
     powerCountdownVisible,
-    powerCountdown,
+    powerCountdownData,
     messageModalVisible,
     currentMessage,
     messageResponse,
