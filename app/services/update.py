@@ -359,7 +359,7 @@ class _UpdateHandler:
             await Config.send_json(
                 WebSocketMessage(
                     id="Update",
-                    type="Message",
+                    type="Info",
                     data={"Error": f"解压失败, {type(e).__name__}: {e}"},
                 ).model_dump()
             )

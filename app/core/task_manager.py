@@ -25,9 +25,11 @@ from functools import partial
 from typing import Dict, Optional, Literal
 
 from .config import Config, MaaConfig, GeneralConfig, QueueConfig
+from app.services import System
 from app.models.schema import WebSocketMessage
 from app.utils import get_logger
 from app.task import *
+from app.utils.constants import POWER_SIGN_MAP
 
 
 logger = get_logger("业务调度")
@@ -321,17 +323,25 @@ class _TaskManager:
 
         if mode == "自动代理" and task_id in Config.QueueConfig:
 
-            await Config.send_json(
-                WebSocketMessage(
-                    id=str(task_id),
-                    type="Signal",
-                    data={
-                        "power": Config.QueueConfig[task_id].get(
-                            "Info", "AfterAccomplish"
-                        )
-                    },
-                ).model_dump()
-            )
+            if Config.power_sign != "NoAction":
+                Config.power_sign = Config.QueueConfig[task_id].get(
+                    "Info", "AfterAccomplish"
+                )
+
+            if len(self.task_dict) == 0 and Config.power_sign != "NoAction":
+                logger.info(f"所有任务已结束，准备执行电源操作: {Config.power_sign}")
+                await Config.send_json(
+                    WebSocketMessage(
+                        id="Main",
+                        type="Message",
+                        data={
+                            "type": "Countdown",
+                            "title": f"{POWER_SIGN_MAP[Config.power_sign]}倒计时",
+                            "message": f"程序将在倒计时结束后执行 {POWER_SIGN_MAP[Config.power_sign]} 操作",
+                        },
+                    ).model_dump()
+                )
+                await System.start_power_task()
 
     async def start_startup_queue(self):
         """开始运行启动时运行的调度队列"""

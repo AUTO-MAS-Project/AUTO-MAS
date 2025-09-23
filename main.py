@@ -104,7 +104,7 @@ def main():
 
             await Config.send_json(
                 WebSocketMessage(
-                    id="Main", type="Signal", data={"Close": "后端已安全关闭"}
+                    id="Main", type="Signal", data={"Closed": "后端已安全关闭"}
                 ).model_dump()
             )
 

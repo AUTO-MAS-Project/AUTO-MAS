@@ -11,7 +11,7 @@ export function setMainWindow(window: BrowserWindow) {
   mainWindow = window
 }
 
-const gitDownloadUrl = 'http://221.236.27.82:10197/d/AUTO_MAA/git.zip'
+const gitDownloadUrl = 'https://download.auto-mas.top/d/AUTO_MAS/git.zip'
 
 // 递归复制目录，包括文件和隐藏文件
 function copyDirSync(src: string, dest: string) {

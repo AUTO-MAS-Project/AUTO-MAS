@@ -1093,7 +1093,7 @@ class MaaManager:
         return result_text
 
     async def get_message(self, message_id: str):
-        """获取当前任务的属性值"""
+        """获取客户端回应消息"""
 
         logger.info(f"等待客户端回应消息: {message_id}")
 

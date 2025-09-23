@@ -22,7 +22,7 @@
 
 from fastapi import APIRouter, Body
 
-from app.core import TaskManager
+from app.core import Config, TaskManager
 from app.services import System
 from app.models.schema import *
 
@@ -58,11 +58,27 @@ async def stop_task(task: DispatchIn = Body(...)) -> OutBase:
     return OutBase()
 
 
-@router.post("/power", summary="电源操作", response_model=OutBase, status_code=200)
-async def power_task(task: PowerIn = Body(...)) -> OutBase:
+@router.post(
+    "/set/power", summary="设置电源标志", response_model=OutBase, status_code=200
+)
+async def set_power(task: PowerIn = Body(...)) -> OutBase:
 
     try:
-        await System.set_power(task.signal)
+        Config.power_sign = task.signal
+    except Exception as e:
+        return OutBase(
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+        )
+    return OutBase()
+
+
+@router.post(
+    "/cancel/power", summary="取消电源任务", response_model=OutBase, status_code=200
+)
+async def cancel_power_task() -> OutBase:
+
+    try:
+        await System.cancel_power_task()
     except Exception as e:
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
