@@ -323,9 +323,14 @@ class _TaskManager:
 
         if mode == "自动代理" and task_id in Config.QueueConfig:
 
-            if Config.power_sign != "NoAction":
+            if Config.power_sign == "NoAction":
                 Config.power_sign = Config.QueueConfig[task_id].get(
                     "Info", "AfterAccomplish"
+                )
+                await Config.send_json(
+                    WebSocketMessage(
+                        id="Main", type="Update", data={"PowerSign": Config.power_sign}
+                    ).model_dump()
                 )
 
             if len(self.task_dict) == 0 and Config.power_sign != "NoAction":
