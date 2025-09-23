@@ -659,6 +659,9 @@ class AppConfig(GlobalConfig):
 
         self.server: Optional[uvicorn.Server] = None
         self.websocket: Optional[WebSocket] = None
+        self.power_sign: Literal[
+            "NoAction", "Shutdown", "ShutdownForce", "Hibernate", "Sleep", "KillSelf"
+        ] = "NoAction"
         self.silence_dict: Dict[Path, datetime] = {}
         self.if_ignore_silence: List[uuid.UUID] = []
         self.temp_task: List[asyncio.Task] = []
@@ -1924,7 +1927,7 @@ class AppConfig(GlobalConfig):
 
         try:
             response = requests.get(
-                "https://download.auto-mas.top/d/AUTO_MAA/Server/notice.json",
+                "https://download.auto-mas.top/d/AUTO_MAS/Server/notice.json",
                 timeout=10,
                 proxies=self.get_proxies(),
             )
