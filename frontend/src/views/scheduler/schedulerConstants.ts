@@ -37,7 +37,7 @@ export const POWER_ACTION_TEXT: Record<PowerIn.signal, string> = {
   [PowerIn.signal.SHUTDOWN_FORCE]: '强制关机',
 }
 
-export const getPowerActionText = (action: PowerIn.signal) => POWER_ACTION_TEXT[action] || '无动��'
+export const getPowerActionText = (action: PowerIn.signal) => POWER_ACTION_TEXT[action] || '无动作'
 
 // 日志相关
 export const LOG_MAX_LENGTH = 2000 // 最多保留日志条数
