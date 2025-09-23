@@ -112,29 +112,43 @@
       </div>
     </a-modal>
 
-    <!-- 电源操作倒计时模态框 -->
-    <a-modal
-      v-model:open="powerCountdownVisible"
-      title="电源操作确认"
-      :closable="false"
-      :maskClosable="false"
-      @cancel="cancelPowerAction"
-    >
-      <template #footer>
-        <a-button @click="cancelPowerAction">取消</a-button>
-      </template>
-      <div class="power-countdown">
-        <div class="warning-icon">⚠️</div>
-        <div>
-          <p>
-            所有任务已完成，系统将在 <strong>{{ powerCountdown }}</strong> 秒后执行：<strong>{{
-              getPowerActionText(powerAction)
-            }}</strong>
+    <!-- 电源操作倒计时全屏弹窗 -->
+    <div v-if="powerCountdownVisible" class="power-countdown-overlay">
+      <div class="power-countdown-container">
+        <div class="countdown-content">
+          <div class="warning-icon">⚠️</div>
+          <h2 class="countdown-title">{{ powerCountdownData.title || `${getPowerActionText(powerAction)}倒计时` }}</h2>
+          <p class="countdown-message">
+            {{ powerCountdownData.message || `程序将在倒计时结束后执行 ${getPowerActionText(powerAction)} 操作` }}
           </p>
-          <a-progress :percent="(10 - powerCountdown) * 10" :show-info="false" />
+          <div class="countdown-timer" v-if="powerCountdownData.countdown !== undefined">
+            <span class="countdown-number">{{ powerCountdownData.countdown }}</span>
+            <span class="countdown-unit">秒</span>
+          </div>
+          <div class="countdown-timer" v-else>
+            <span class="countdown-text">等待后端倒计时...</span>
+          </div>
+          <a-progress 
+            v-if="powerCountdownData.countdown !== undefined"
+            :percent="Math.max(0, Math.min(100, (60 - powerCountdownData.countdown) / 60 * 100))" 
+            :show-info="false" 
+            :stroke-color="(powerCountdownData.countdown || 0) <= 10 ? '#ff4d4f' : '#1890ff'"
+            :stroke-width="8"
+            class="countdown-progress"
+          />
+          <div class="countdown-actions">
+            <a-button 
+              type="primary" 
+              size="large" 
+              @click="cancelPowerAction"
+              class="cancel-button"
+            >
+              取消操作
+            </a-button>
+          </div>
         </div>
       </div>
-    </a-modal>
+    </div>
   </div>
 </template>
 
@@ -161,7 +175,7 @@ const {
   taskOptions,
   powerAction,
   powerCountdownVisible,
-  powerCountdown,
+  powerCountdownData,
   messageModalVisible,
   currentMessage,
   messageResponse,
@@ -333,6 +347,128 @@ onUnmounted(() => {
   overflow: hidden;
 }
 
+/* 电源操作倒计时全屏弹窗样式 */
+.power-countdown-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(8px);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fadeIn 0.3s ease-out;
+}
+
+.power-countdown-container {
+  background: var(--ant-color-bg-container);
+  border-radius: 16px;
+  padding: 48px;
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.2);
+  text-align: center;
+  max-width: 500px;
+  width: 90%;
+  animation: slideIn 0.3s ease-out;
+}
+
+.countdown-content .warning-icon {
+  font-size: 64px;
+  margin-bottom: 24px;
+  display: block;
+  animation: pulse 2s infinite;
+}
+
+.countdown-title {
+  font-size: 28px;
+  font-weight: 600;
+  color: var(--ant-color-text);
+  margin: 0 0 16px 0;
+}
+
+.countdown-message {
+  font-size: 16px;
+  color: var(--ant-color-text-secondary);
+  margin: 0 0 32px 0;
+  line-height: 1.5;
+}
+
+.countdown-timer {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  margin-bottom: 32px;
+}
+
+.countdown-number {
+  font-size: 72px;
+  font-weight: 700;
+  color: var(--ant-color-primary);
+  line-height: 1;
+  margin-right: 8px;
+  font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+}
+
+.countdown-unit {
+  font-size: 24px;
+  color: var(--ant-color-text-secondary);
+  font-weight: 500;
+}
+
+.countdown-text {
+  font-size: 24px;
+  color: var(--ant-color-text-secondary);
+  font-weight: 500;
+}
+
+.countdown-progress {
+  margin-bottom: 32px;
+}
+
+.countdown-actions {
+  display: flex;
+  justify-content: center;
+}
+
+.cancel-button {
+  padding: 12px 32px;
+  height: auto;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+/* 动画效果 */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.1);
+  }
+}
+
 /* 响应式 - 移动端适配 */
 @media (max-width: 768px) {
   .scheduler-main {
@@ -362,6 +498,29 @@ onUnmounted(() => {
   .log-panel-container {
     flex: 1;
     width: 100%;
+  }
+
+  /* 移动端倒计时弹窗适配 */
+  .power-countdown-container {
+    padding: 32px 24px;
+    margin: 16px;
+  }
+
+  .countdown-title {
+    font-size: 24px;
+  }
+
+  .countdown-number {
+    font-size: 56px;
+  }
+
+  .countdown-unit {
+    font-size: 20px;
+  }
+
+  .countdown-content .warning-icon {
+    font-size: 48px;
+    margin-bottom: 16px;
   }
 }
 </style>
