@@ -178,7 +178,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineComponent, ref, watch } from 'vue'
+import { computed, defineComponent, onMounted, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { PlusOutlined } from '@ant-design/icons-vue'
 
@@ -203,12 +203,43 @@ interface Props {
   viewMode: 'config' | 'simple'
 }
 
+// 添加一个新的prop用于控制选项是否已加载
+interface ExtendedProps extends Props {
+  optionsLoaded?: boolean
+}
+
 interface Emits {
   (e: 'update-table-data', value: Record<string, any>): void
 }
 
-const props = defineProps<Props>()
+const props = defineProps<ExtendedProps>()
 const emit = defineEmits<Emits>()
+
+// 添加一个响应式变量来跟踪选项是否已加载
+const localOptionsLoaded = ref(false)
+
+// 在组件挂载后延迟加载选项数据
+onMounted(() => {
+  // 使用setTimeout延迟加载选项，让表格先渲染出来
+  setTimeout(() => {
+    localOptionsLoaded.value = true
+    // 清除缓存以确保重新计算选项
+    stageOptionsCache.value.clear()
+  }, 0)
+})
+
+// 当tableData发生变化且有数据时，确保选项已加载
+watch(
+  () => props.tableData,
+  newData => {
+    if (newData && Object.keys(newData).length > 0 && !localOptionsLoaded.value) {
+      localOptionsLoaded.value = true
+      // 清除缓存以确保重新计算选项
+      stageOptionsCache.value.clear()
+    }
+  },
+  { immediate: true }
+)
 
 // 渲染VNode的辅助组件
 const VNodeRenderer = defineComponent({
@@ -415,7 +446,14 @@ const addCustomStage = (rowKey: string, columnKey: string) => {
 // 缓存计算属性，避免重复计算
 const stageOptionsCache = ref(new Map<string, any[]>())
 
+// 修改stageOptions计算属性，仅在选项已加载时才计算
 const stageOptions = computed(() => {
+  // 如果通过props传入了optionsLoaded且为true，或者本地状态表示已加载，则计算选项
+  const optionsReady = props.optionsLoaded || localOptionsLoaded.value
+  if (!optionsReady) {
+    return []
+  }
+
   const cacheKey = 'base_stage_options'
   if (!stageOptionsCache.value.has(cacheKey)) {
     const baseOptions = STAGE_DAILY_INFO.map(stage => ({
@@ -433,15 +471,25 @@ const stageOptions = computed(() => {
   return stageOptionsCache.value.get(cacheKey) || []
 })
 
-// 优化getSelectOptions函数，添加缓存
+// 修改getSelectOptions函数，添加选项未加载时的默认处理
 const getSelectOptions = (columnKey: string, taskName: string, currentValue?: string) => {
+  // 如果选项未加载，返回包含当前值的简单选项或空数组
+  const optionsReady = props.optionsLoaded || localOptionsLoaded.value
+  if (!optionsReady) {
+    if (currentValue) {
+      // 如果有当前值，至少返回包含当前值的选项，避免显示空白
+      return [{ label: currentValue, value: currentValue }]
+    }
+    return []
+  }
+
   const cacheKey = `${columnKey}_${taskName}_${currentValue || ''}`
 
   if (stageOptionsCache.value.has(cacheKey)) {
     return stageOptionsCache.value.get(cacheKey)
   }
 
-  let options: any[] = []
+  let options: any[]
 
   switch (taskName) {
     case '连战次数':
