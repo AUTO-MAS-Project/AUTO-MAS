@@ -125,9 +125,19 @@ const toggleMaximize = async () => {
 
 const closeWindow = async () => {
   try {
+    // 先调用后端关闭API
+    await Service.closeApiCoreClosePost()
+    console.log('Backend close API called successfully')
+    // 然后关闭窗口
     await window.electronAPI?.windowClose()
   } catch (error) {
     console.error('Failed to close window:', error)
+    // 即使API调用失败，也尝试关闭窗口
+    try {
+      await window.electronAPI?.windowClose()
+    } catch (closeError) {
+      console.error('Failed to close window after API error:', closeError)
+    }
   }
 }
 

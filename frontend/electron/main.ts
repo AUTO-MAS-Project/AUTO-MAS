@@ -20,7 +20,6 @@ import {
   installPipPackage,
   installDependencies,
   startBackend,
-  stopBackend,
 } from './services/pythonService'
 import { setMainWindow as setGitMainWindow, downloadGit, cloneBackend } from './services/gitService'
 import { setupLogger, log, getLogPath, getLogFiles, cleanOldLogs } from './services/logService'
@@ -628,9 +627,9 @@ ipcMain.handle('start-backend', async () => {
   return startBackend(appRoot)
 })
 
-ipcMain.handle('stop-backend', async () => {
-  return stopBackend()
-})
+// ipcMain.handle('stop-backend', async () => {
+//   return stopBackend()
+// })
 
 // Git相关
 ipcMain.handle('download-git', async () => {
@@ -1015,16 +1014,16 @@ app.on('before-quit', async event => {
     // 清理托盘
     destroyTray()
 
-    try {
-      await stopBackend()
-      log.info('后端服务已停止')
-    } catch (e) {
-      log.error('停止后端时出错:', e)
-      console.error('停止后端时出错:', e)
-    } finally {
-      log.info('应用退出')
-      app.exit(0)
-    }
+    // try {
+    //   await stopBackend()
+    //   log.info('后端服务已停止')
+    // } catch (e) {
+    //   log.error('停止后端时出错:', e)
+    //   console.error('停止后端时出错:', e)
+    // } finally {
+    //   log.info('应用退出')
+    //   app.exit(0)
+    // }
   }
 })
 
