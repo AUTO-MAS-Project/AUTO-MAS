@@ -22,12 +22,7 @@
             class="plan-button"
           >
             <span class="plan-name">{{ plan.name }}</span>
-            <a-tag
-              v-if="shouldShowPlanTypeTag(plan)"
-              size="small"
-              color="blue"
-              class="plan-type-tag"
-            >
+            <a-tag v-if="shouldShowPlanTypeTag()" size="small" color="blue" class="plan-type-tag">
               {{ getPlanTypeLabel(plan.type) }}
             </a-tag>
           </a-button>
@@ -72,7 +67,7 @@ const handlePlanClick = debounce((planId: string) => {
 
 // 判断是否需要显示计划类型标签
 // 当所有计划的类型都相同时不显示标签，否则显示非默认类型的标签
-const shouldShowPlanTypeTag = (plan: Plan) => {
+const shouldShowPlanTypeTag = () => {
   // 如果只有一个计划或没有计划，不显示类型标签
   if (props.planList.length <= 1) {
     return false
