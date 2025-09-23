@@ -83,18 +83,11 @@ const shouldShowPlanTypeTag = (plan: Plan) => {
   const allSameType = props.planList.every(p => p.type === firstType)
 
   // 如果所有计划类型相同，则不显示任何标签
-  if (allSameType) {
-    return false
-  }
-
-  // 如果存在不同类型的计划，则只显示非默认类型（MaaPlanConfig）的标签
-  const normalizedPlanType = plan.type === 'MaaPlan' ? 'MaaPlanConfig' : plan.type
-  return normalizedPlanType !== 'MaaPlanConfig'
+  return !allSameType
 }
 
 const getPlanTypeLabel = (planType: string) => {
-  // 统一使用 MaaPlanConfig 作为默认类型
-  const normalizedPlanType = planType === 'MaaPlan' ? 'MaaPlanConfig' : planType
+  const normalizedPlanType = planType
   const labelMap: Record<string, string> = {
     MaaPlanConfig: 'MAA',
     GeneralPlan: '通用',
