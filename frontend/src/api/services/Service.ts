@@ -69,6 +69,18 @@ import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
 export class Service {
     /**
+     * Close
+     * 关闭后端程序
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static closeApiCoreClosePost(): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/core/close',
+        });
+    }
+    /**
      * 获取后端git版本信息
      * @returns VersionOut Successful Response
      * @throws ApiError
@@ -151,17 +163,6 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/info/notice/confirm',
-        });
-    }
-    /**
-     * 获取启动时运行的队列ID
-     * @returns InfoOut Successful Response
-     * @throws ApiError
-     */
-    public static getStartupTaskApiInfoStartuptaskPost(): CancelablePromise<InfoOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/info/startuptask',
         });
     }
     /**
@@ -882,22 +883,33 @@ export class Service {
         });
     }
     /**
-     * 电源操作
+     * 设置电源标志
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
      */
-    public static powerTaskApiDispatchPowerPost(
+    public static setPowerApiDispatchSetPowerPost(
         requestBody: PowerIn,
     ): CancelablePromise<OutBase> {
         return __request(OpenAPI, {
             method: 'POST',
-            url: '/api/dispatch/power',
+            url: '/api/dispatch/set/power',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
                 422: `Validation Error`,
             },
+        });
+    }
+    /**
+     * 取消电源任务
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static cancelPowerTaskApiDispatchCancelPowerPost(): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/dispatch/cancel/power',
         });
     }
     /**
