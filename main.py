@@ -77,6 +77,7 @@ def main():
 
             from app.core import Config, MainTimer, TaskManager
             from app.services import System
+            from app.models.schema import WebSocketMessage
 
             await Config.init_config()
             await Config.get_stage(if_start=True)
@@ -100,6 +101,12 @@ def main():
             from app.services import Matomo
 
             await Matomo.close()
+
+            await Config.send_json(
+                WebSocketMessage(
+                    id="Main", type="Signal", data={"Close": "后端已安全关闭"}
+                ).model_dump()
+            )
 
             logger.info("AUTO-MAS 后端程序关闭")
 
