@@ -570,6 +570,41 @@ export function useSchedulerLogic() {
     }
   }
 
+  // 更新电源操作显示（不发送API请求）
+  const updatePowerActionDisplay = (powerSign: string) => {
+    // 将后端的PowerSign转换为前端的PowerIn.signal枚举值
+    let newPowerAction: PowerIn.signal = PowerIn.signal.NO_ACTION
+
+    switch (powerSign) {
+      case 'NoAction':
+        newPowerAction = PowerIn.signal.NO_ACTION
+        break
+      case 'KillSelf':
+        newPowerAction = PowerIn.signal.KILL_SELF
+        break
+      case 'Sleep':
+        newPowerAction = PowerIn.signal.SLEEP
+        break
+      case 'Hibernate':
+        newPowerAction = PowerIn.signal.HIBERNATE
+        break
+      case 'Shutdown':
+        newPowerAction = PowerIn.signal.SHUTDOWN
+        break
+      case 'ShutdownForce':
+        newPowerAction = PowerIn.signal.SHUTDOWN_FORCE
+        break
+      default:
+        console.warn('[Scheduler] 未知的PowerSign值:', powerSign)
+        return
+    }
+
+    // 更新显示状态和本地存储，但不发送API请求
+    powerAction.value = newPowerAction
+    savePowerActionToStorage(newPowerAction)
+    console.log('[Scheduler] 电源操作显示已更新为:', newPowerAction)
+  }
+
   // 启动60秒倒计时
   const startPowerCountdown = (data: any) => {
     // 清除之前的计时器
@@ -709,6 +744,10 @@ export function useSchedulerLogic() {
       // 收到倒计时消息，启动前端60秒倒计时
       console.log('[Scheduler] 收到倒计时消息，启动60秒倒计时:', data)
       startPowerCountdown(data)
+    } else if (type === 'Update' && data && data.PowerSign !== undefined) {
+      // 收到电源操作更新消息，更新显示
+      console.log('[Scheduler] 收到电源操作更新消息:', data.PowerSign)
+      updatePowerActionDisplay(data.PowerSign)
     }
   }
 
