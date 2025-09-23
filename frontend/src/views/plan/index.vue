@@ -107,8 +107,7 @@ const tableData = ref<Record<string, any>>({})
 const currentTableComponent = computed(() => {
   const currentPlan = planList.value.find(plan => plan.id === activePlanId.value)
   // 统一使用 MaaPlanConfig 作为默认类型
-  const planType =
-    currentPlan?.type === 'MaaPlan' ? 'MaaPlanConfig' : currentPlan?.type || 'MaaPlanConfig'
+  const planType = currentPlan?.type
   switch (planType) {
     case 'MaaPlanConfig':
       return MaaPlanTable
@@ -292,7 +291,7 @@ const initPlans = async () => {
       planList.value = response.index.map((item: any) => {
         const planId = item.uid
         const planData = response.data[planId]
-        const planType = item.type === 'MaaPlan' ? 'MaaPlanConfig' : item.type || 'MaaPlanConfig'
+        const planType = item.type
         const planName = planData?.Info?.Name || getDefaultPlanName(planType)
         return { id: planId, name: planName, type: planType }
       })

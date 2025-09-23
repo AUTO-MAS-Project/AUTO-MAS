@@ -9,7 +9,7 @@
         <a-dropdown>
           <template #overlay>
             <a-menu @click="handleMenuClick">
-              <a-menu-item key="MaaPlan">
+              <a-menu-item key="MaaPlanConfig">
                 <PlusOutlined />
                 新建 MAA 计划
               </a-menu-item>
@@ -54,7 +54,7 @@
 
 <script setup lang="ts">
 import { DeleteOutlined, DownOutlined, PlusOutlined } from '@ant-design/icons-vue'
-import { ref, computed } from 'vue'
+import { computed, ref } from 'vue'
 
 interface Plan {
   id: string
@@ -69,6 +69,7 @@ interface Props {
 
 interface Emits {
   (e: 'add-plan', planType: string): void
+
   (e: 'remove-plan', planId: string): void
 }
 
@@ -76,12 +77,12 @@ defineProps<Props>()
 const emit = defineEmits<Emits>()
 
 // 默认计划类型
-const selectedPlanType = ref('MaaPlan')
+const selectedPlanType = ref('MaaPlanConfig')
 
 // 根据选择的计划类型获取按钮文本
 const getPlanButtonText = computed(() => {
   switch (selectedPlanType.value) {
-    case 'MaaPlan':
+    case 'MaaPlanConfig':
       return '新建 MAA 计划'
     case 'GeneralPlan':
       return '新建通用计划'

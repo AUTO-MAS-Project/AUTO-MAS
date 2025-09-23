@@ -1,7 +1,7 @@
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
+import type { PlanCreateIn, PlanDeleteIn, PlanGetIn, PlanReorderIn, PlanUpdateIn } from '../api'
 import { Service } from '../api'
-import type { PlanCreateIn, PlanGetIn, PlanUpdateIn, PlanDeleteIn, PlanReorderIn } from '../api'
 
 export function usePlanApi() {
   const loading = ref(false)
@@ -26,10 +26,12 @@ export function usePlanApi() {
   const createPlan = async (type: string) => {
     loading.value = true
     try {
+      if (type === 'MaaPlanConfig') {
+        type = 'MaaPlan'
+      }
       const params: PlanCreateIn = { type }
-      const response = await Service.addPlanApiPlanAddPost(params)
       // message.success('创建计划成功')
-      return response
+      return await Service.addPlanApiPlanAddPost(params)
     } catch (error) {
       console.error('创建计划失败:', error)
       message.error('创建计划失败')
@@ -44,9 +46,8 @@ export function usePlanApi() {
     loading.value = true
     try {
       const params: PlanUpdateIn = { planId, data }
-      const response = await Service.updatePlanApiPlanUpdatePost(params)
       // message.success('更新计划成功')
-      return response
+      return await Service.updatePlanApiPlanUpdatePost(params)
     } catch (error) {
       console.error('更新计划失败:', error)
       message.error('更新计划失败')
