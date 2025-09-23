@@ -35,8 +35,8 @@ interface GlobalWSStorage {
   wsRef: WebSocket | null
   status: Ref<WebSocketStatus>
   subscribers: Ref<Map<string, WebSocketSubscriber>>
-  // 修改消息队列结构，使用Map存储消息和时间戳
-  messageQueue: Ref<Map<string, { message: WebSocketBaseMessage; timestamp: number }>>
+  // 修改消息队列结构，使用Map存储消息数组和时间戳
+  messageQueue: Ref<Map<string, Array<{ message: WebSocketBaseMessage; timestamp: number }>>>
   heartbeatTimer?: number
   isConnecting: boolean
   lastPingTime: number
@@ -66,8 +66,8 @@ const initGlobalStorage = (): GlobalWSStorage => {
     wsRef: null,
     status: ref<WebSocketStatus>('已断开'),
     subscribers: ref(new Map<string, WebSocketSubscriber>()),
-    // 初始化消息队列
-    messageQueue: ref(new Map<string, { message: WebSocketBaseMessage; timestamp: number }>()),
+    // 初始化消息队列，使用数组存储每个ID的多条消息
+    messageQueue: ref(new Map<string, Array<{ message: WebSocketBaseMessage; timestamp: number }>>()),
     heartbeatTimer: undefined,
     isConnecting: false,
     lastPingTime: 0,
@@ -274,14 +274,14 @@ const startGlobalHeartbeat = (ws: WebSocket) => {
 }
 
 // 获取消息队列
-const getMessageQueue = (): Map<string, { message: WebSocketBaseMessage; timestamp: number }> => {
+const getMessageQueue = (): Map<string, Array<{ message: WebSocketBaseMessage; timestamp: number }>> => {
   const global = getGlobalStorage()
   return global.messageQueue.value
 }
 
 // 设置消息队列
 const setMessageQueue = (
-  queue: Map<string, { message: WebSocketBaseMessage; timestamp: number }>
+  queue: Map<string, Array<{ message: WebSocketBaseMessage; timestamp: number }>>
 ): void => {
   const global = getGlobalStorage()
   global.messageQueue.value = queue
@@ -318,22 +318,31 @@ const handleMessage = (raw: WebSocketBaseMessage) => {
 
       const currentMessageQueue = getMessageQueue()
 
-      // 对于Map类型的消息队列，直接存储或更新
-      currentMessageQueue.set(id, { message: raw, timestamp: Date.now() })
-      console.log(`[WebSocket Debug] 添加新消息到队列，ID: ${id}, Type: ${msgType}`)
+      // 获取该ID现有的消息数组，如果不存在则创建新的空数组
+      const existingMessages = currentMessageQueue.get(id) || []
+      // 将新消息添加到数组末尾
+      existingMessages.push({ message: raw, timestamp: Date.now() })
+      // 更新该ID的消息数组
+      currentMessageQueue.set(id, existingMessages)
+      console.log(`[WebSocket Debug] 添加新消息到队列，ID: ${id}, Type: ${msgType}, 当前消息数量: ${existingMessages.length}`)
 
       // 清理过期消息（超过1分钟的消息）
       const now = Date.now()
       let deletedCount = 0
-      currentMessageQueue.forEach((value, key) => {
-        if (now - (value.timestamp || 0) > 60000) {
-          currentMessageQueue.delete(key)
-          deletedCount++
+      currentMessageQueue.forEach((messages, key) => {
+        // 过滤掉过期的消息
+        const filteredMessages = messages.filter(msg => now - (msg.timestamp || 0) <= 60000)
+        const removedCount = messages.length - filteredMessages.length
+        if (removedCount > 0) {
+          deletedCount += removedCount
+          console.log(`[WebSocket Debug] 清理了${removedCount}条ID为${key}的过期消息`)
         }
+        // 更新过滤后的消息数组
+        currentMessageQueue.set(key, filteredMessages)
       })
 
       if (deletedCount > 0) {
-        console.log(`[WebSocket Debug] 清理了${deletedCount}条过期消息`)
+        console.log(`[WebSocket Debug] 共清理了${deletedCount}条过期消息`)
       }
 
       // 更新消息队列
@@ -685,18 +694,23 @@ export const _subscribe = (id: string, subscriber: Omit<WebSocketSubscriber, 'id
   )
 
   // 检查特定ID的消息
-  const queuedMessage = messageQueue.get(id)
-  if (queuedMessage) {
-    console.log('[WebSocket] 发现队列中的消息，立即分发给新订阅者:', id, '消息内容:', queuedMessage)
+  const queuedMessages = messageQueue.get(id)
+  if (queuedMessages && queuedMessages.length > 0) {
+    console.log('[WebSocket] 发现队列中的消息，立即按顺序分发给新订阅者:', id, '消息数量:', queuedMessages.length)
     // 创建临时订阅者对象用于分发消息
     const tempSubscriber: WebSocketSubscriber = { ...subscriber, id }
-    console.log('[WebSocket] 开始处理遗留消息，订阅者ID:', id, '消息:', queuedMessage.message)
-    try {
-      handleMessageDispatch(queuedMessage.message, tempSubscriber)
-      console.log('[WebSocket] 遗留消息处理完成，订阅者ID:', id)
-    } catch (error) {
-      console.error('[WebSocket] 处理遗留消息时出错，订阅者ID:', id, '错误:', error)
-    }
+    
+    // 按顺序处理所有遗留消息
+    queuedMessages.forEach((queuedMessage, index) => {
+      console.log('[WebSocket] 开始处理遗留消息，订阅者ID:', id, '消息索引:', index, '消息:', queuedMessage.message)
+      try {
+        handleMessageDispatch(queuedMessage.message, tempSubscriber)
+        console.log('[WebSocket] 遗留消息处理完成，订阅者ID:', id, '消息索引:', index)
+      } catch (error) {
+        console.error('[WebSocket] 处理遗留消息时出错，订阅者ID:', id, '消息索引:', index, '错误:', error)
+      }
+    })
+    
     // 从队列中移除已处理的消息
     messageQueue.delete(id)
     setMessageQueue(messageQueue)
@@ -708,21 +722,18 @@ export const _subscribe = (id: string, subscriber: Omit<WebSocketSubscriber, 'id
   // 清理过期消息（超过1分钟的消息）
   const now = Date.now()
   let cleanedCount = 0
-  messageQueue.forEach((queued, msgId) => {
-    if (now - queued.timestamp > 60000) {
-      // 1分钟 = 60000毫秒
-      console.log(
-        '[WebSocket] 清理过期消息:',
-        msgId,
-        '消息内容:',
-        queued.message,
-        '时间戳:',
-        queued.timestamp
-      )
-      messageQueue.delete(msgId)
-      cleanedCount++
+  messageQueue.forEach((queuedMessages, msgId) => {
+    // 过滤掉过期的消息
+    const filteredMessages = queuedMessages.filter(msg => now - msg.timestamp <= 60000)
+    const removedCount = queuedMessages.length - filteredMessages.length
+    if (removedCount > 0) {
+      cleanedCount += removedCount
+      console.log('[WebSocket] 清理过期消息:', msgId, '清理数量:', removedCount)
+      // 更新过滤后的消息数组
+      messageQueue.set(msgId, filteredMessages)
     }
   })
+  
   if (cleanedCount > 0) {
     console.log('[WebSocket] 共清理过期消息数量:', cleanedCount)
     setMessageQueue(messageQueue)
