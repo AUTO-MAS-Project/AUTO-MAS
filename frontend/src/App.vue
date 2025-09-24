@@ -8,6 +8,7 @@ import AppLayout from './components/AppLayout.vue'
 import TitleBar from './components/TitleBar.vue'
 import UpdateModal from './components/UpdateModal.vue'
 import DevDebugPanel from './components/DevDebugPanel.vue'
+import GlobalPowerCountdown from './components/GlobalPowerCountdown.vue'
 import zhCN from 'ant-design-vue/es/locale/zh_CN'
 import { logger } from '@/utils/logger'
 
@@ -49,6 +50,9 @@ onMounted(() => {
 
     <!-- 开发环境调试面板 -->
     <DevDebugPanel />
+
+    <!-- 全局电源倒计时弹窗 -->
+    <GlobalPowerCountdown />
   </ConfigProvider>
 </template>
 

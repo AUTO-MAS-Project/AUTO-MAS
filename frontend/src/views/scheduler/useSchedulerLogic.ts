@@ -8,7 +8,6 @@ import schedulerHandlers from './schedulerHandlers'
 import type { ComboBoxItem } from '@/api/models/ComboBoxItem'
 import type { QueueItem, Script } from './schedulerConstants'
 import {
-  getPowerActionText,
   type SchedulerTab,
   type TaskMessage,
   type SchedulerStatus,
@@ -94,13 +93,15 @@ export function useSchedulerLogic() {
 
   // 电源操作 - 从本地存储加载或使用默认值
   const powerAction = ref<PowerIn.signal>(loadPowerActionFromStorage())
+  // 注意：电源倒计时弹窗已移至全局组件 GlobalPowerCountdown.vue
+  // 这里保留引用以避免破坏现有代码，但实际功能由全局组件处理
   const powerCountdownVisible = ref(false)
   const powerCountdownData = ref<{
     title?: string
     message?: string
     countdown?: number
   }>({})
-  // 前端自己的60秒倒计时
+  // 前端自己的60秒倒计时 - 已移至全局组件
   let powerCountdownTimer: ReturnType<typeof setInterval> | null = null
 
   // 消息弹窗
@@ -508,10 +509,10 @@ export function useSchedulerLogic() {
   }
 
   const handleMessageDialog = (tab: SchedulerTab, data: any) => {
-    // 处理倒计时消息
+    // 处理倒计时消息 - 已移至全局组件处理
     if (data.type === 'Countdown') {
-      console.log('[Scheduler] 收到倒计时消息，启动60秒倒计时:', data)
-      startPowerCountdown(data)
+      console.log('[Scheduler] 收到倒计时消息，由全局组件处理:', data)
+      // 不再在调度中心处理倒计时，由 GlobalPowerCountdown 组件处理
       return
     }
 
@@ -654,68 +655,16 @@ export function useSchedulerLogic() {
     console.log('[Scheduler] 电源操作显示已更新为:', newPowerAction)
   }
 
-  // 启动60秒倒计时
-  const startPowerCountdown = (data: any) => {
-    // 清除之前的计时器
-    if (powerCountdownTimer) {
-      clearInterval(powerCountdownTimer)
-      powerCountdownTimer = null
-    }
-
-    // 显示倒计时弹窗
-    powerCountdownVisible.value = true
-
-    // 设置倒计时数据，从60秒开始
-    powerCountdownData.value = {
-      title: data.title || `${getPowerActionText(powerAction.value)}倒计时`,
-      message: data.message || `程序将在倒计时结束后执行 ${getPowerActionText(powerAction.value)} 操作`,
-      countdown: 60
-    }
-
-    // 启动每秒倒计时
-    powerCountdownTimer = setInterval(() => {
-      if (powerCountdownData.value.countdown && powerCountdownData.value.countdown > 0) {
-        powerCountdownData.value.countdown--
-        console.log('[Scheduler] 倒计时:', powerCountdownData.value.countdown)
-
-        // 倒计时结束
-        if (powerCountdownData.value.countdown <= 0) {
-          if (powerCountdownTimer) {
-            clearInterval(powerCountdownTimer)
-            powerCountdownTimer = null
-          }
-          powerCountdownVisible.value = false
-          console.log('[Scheduler] 倒计时结束，弹窗关闭')
-        }
-      }
-    }, 1000)
-  }
-
-  // 移除自动执行电源操作，由后端完全控制
+  // 启动60秒倒计时 - 已移至全局组件，这里保留空函数避免破坏现有代码
+// 移除自动执行电源操作，由后端完全控制
   // const executePowerAction = async () => {
   //   // 不再自己执行电源操作，完全由后端控制
   // }
 
   const cancelPowerAction = async () => {
-    // 清除倒计时器
-    if (powerCountdownTimer) {
-      clearInterval(powerCountdownTimer)
-      powerCountdownTimer = null
-    }
-
-    // 关闭倒计时弹窗
-    powerCountdownVisible.value = false
-
-    // 调用取消电源操作的API
-    try {
-      await Service.cancelPowerTaskApiDispatchCancelPowerPost()
-      message.success('已取消电源操作')
-    } catch (error) {
-      console.error('取消电源操作失败:', error)
-      message.error('取消电源操作失败')
-    }
-
-    // 注意：这里不重置 powerAction，保留用户选择
+    console.log('[Scheduler] cancelPowerAction 已移至全局组件，调度中心不再处理')
+    // 电源操作取消功能已移至 GlobalPowerCountdown 组件
+    // 这里保留空函数以避免破坏现有的调用代码
   }
 
   // 移除自动检查任务完成的逻辑，完全由后端控制
@@ -788,8 +737,8 @@ export function useSchedulerLogic() {
         },
         onCountdown: (data) => {
           try {
-            // 直接启动前端倒计时
-            startPowerCountdown(data)
+            // 倒计时已移至全局组件处理，这里不再处理
+            console.log('[Scheduler] 倒计时消息由全局组件处理:', data)
           } catch (e) {
             console.warn('[Scheduler] registerSchedulerUI onCountdown error:', e)
           }
@@ -814,7 +763,8 @@ export function useSchedulerLogic() {
       const pendingCountdown = schedulerHandlers.consumePendingCountdown()
       if (pendingCountdown) {
         try {
-          startPowerCountdown(pendingCountdown)
+          // 倒计时已移至全局组件处理，这里不再处理
+          console.log('[Scheduler] 待处理倒计时消息由全局组件处理:', pendingCountdown)
         } catch (e) {
           console.warn('[Scheduler] replay pending countdown error:', e)
         }
@@ -844,9 +794,9 @@ export function useSchedulerLogic() {
     console.log('[Scheduler] 收到Main消息:', { type, data })
 
     if (type === 'Message' && data && data.type === 'Countdown') {
-      // 收到倒计时消息，启动前端60秒倒计时
-      console.log('[Scheduler] 收到倒计时消息，启动前端60秒倒计时:', data)
-      startPowerCountdown(data)
+      // 收到倒计时消息，由全局组件处理
+      console.log('[Scheduler] 收到倒计时消息，由全局组件处理:', data)
+      // 不再在调度中心处理倒计时
     } else if (type === 'Update' && data && data.PowerSign !== undefined) {
       // 收到电源操作更新消息，更新显示
       console.log('[Scheduler] 收到电源操作更新消息:', data.PowerSign)
@@ -856,7 +806,7 @@ export function useSchedulerLogic() {
 
   // 清理函数
   const cleanup = () => {
-    // 清理倒计时器
+    // 清理倒计时器 - 已移至全局组件，这里保留以避免错误
     if (powerCountdownTimer) {
       clearInterval(powerCountdownTimer)
       powerCountdownTimer = null
