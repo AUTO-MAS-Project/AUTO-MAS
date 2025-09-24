@@ -37,6 +37,7 @@
         <button @click="clearStorage" class="action-btn">清除存储</button>
         <button @click="reloadPage" class="action-btn">重新加载</button>
         <button @click="toggleConsole" class="action-btn">切换控制台</button>
+        <button @click="openDevtool" class="action-btn">打开开发者工具</button>
       </div>
     </div>
 
@@ -107,6 +108,10 @@ const navigateToManualPath = () => {
     router.push(path)
     manualPath.value = '' // 清空输入框
   }
+}
+
+const openDevtool = () => {
+    window.electronAPI.openDevTools()
 }
 
 // 清除本地存储
