@@ -10,6 +10,7 @@ import {
   getPowerActionText,
   type SchedulerTab,
   type TaskMessage,
+  type SchedulerStatus,
 } from './schedulerConstants'
 
 // 电源操作状态仍然保存到localStorage中，以便重启后保持用户设置
@@ -133,39 +134,19 @@ export function useSchedulerLogic() {
   }
 
   const createSchedulerTabForTask = (taskId: string) => {
-    // 检查是否已经存在相同websocketId的调度台
-    const existingTab = schedulerTabs.value.find(tab => tab.websocketId === taskId)
-    if (existingTab) {
-      console.log('[Scheduler] 调度台已存在，切换到该调度台:', existingTab.title)
-      activeSchedulerTab.value = existingTab.key
-      return
-    }
 
-    // 创建新的调度台
-    tabCounter++
-    const tab: SchedulerTab = {
-      key: `tab-${tabCounter}`,
-      title: `自动调度台${tabCounter}`,
-      closable: true,
-      status: '运行', // 直接设置为运行状态
-      selectedTaskId: null,
-      selectedMode: TaskCreateIn.mode.AutoMode,
-      websocketId: taskId, // 设置websocketId
-      taskQueue: [],
-      userQueue: [],
-      logs: [],
-      isLogAtBottom: true,
-      lastLogContent: '',
-    }
-
-    schedulerTabs.value.push(tab)
-    activeSchedulerTab.value = tab.key
+    // 使用现有的addSchedulerTab函数创建新调度台，并传入特定的配置选项
+    const newTab = addSchedulerTab({
+      title: `调度台${tabCounter}`,
+      status: '运行',
+      websocketId: taskId,
+    })
 
     // 立即订阅该任务的WebSocket消息
-    subscribeToTask(tab)
+    subscribeToTask(newTab)
 
-    console.log('[Scheduler] 已创建新的自动调度台:', tab.title, '任务ID:', taskId)
-    message.success(`已自动创建调度台: ${tab.title}`)
+    console.log('[Scheduler] 已创建新的自动调度台:', newTab.title, '任务ID:', taskId)
+    message.success(`已自动创建调度台: ${newTab.title}`)
 
     saveTabsToStorage(schedulerTabs.value)
   }
@@ -195,16 +176,23 @@ export function useSchedulerLogic() {
   watchTabsChanges()
 
   // Tab 管理
-  const addSchedulerTab = () => {
+  const addSchedulerTab = (options?: { title?: string, status?: string, websocketId?: string }) => {
     tabCounter++
+    const status = options?.status || '新建'
+    // 使用更安全的类型断言，确保状态值是有效的SchedulerStatus
+    const validStatus: SchedulerStatus =
+      ['新建', '运行', '等待', '结束', '异常'].includes(status) ?
+        status as SchedulerStatus :
+        '新建'
+
     const tab: SchedulerTab = {
       key: `tab-${tabCounter}`,
-      title: `调度台${tabCounter}`,
+      title: options?.title || `调度台${tabCounter}`,
       closable: true,
-      status: '新建',
+      status: validStatus,
       selectedTaskId: null,
       selectedMode: TaskCreateIn.mode.AutoMode,
-      websocketId: null,
+      websocketId: options?.websocketId || null,
       taskQueue: [],
       userQueue: [],
       logs: [],
@@ -213,6 +201,8 @@ export function useSchedulerLogic() {
     }
     schedulerTabs.value.push(tab)
     activeSchedulerTab.value = tab.key
+
+    return tab
   }
 
   const removeSchedulerTab = (key: string) => {
@@ -933,4 +923,3 @@ export function useSchedulerLogic() {
     setOverviewRef,
   }
 }
-
