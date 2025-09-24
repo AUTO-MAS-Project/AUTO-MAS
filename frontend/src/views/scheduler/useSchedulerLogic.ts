@@ -3,7 +3,8 @@ import { message, Modal, notification } from 'ant-design-vue'
 import { Service } from '@/api/services/Service'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { PowerIn } from '@/api/models/PowerIn'
-import { useWebSocket, setTaskManagerHandler, setMainMessageHandler } from '@/composables/useWebSocket'
+import { useWebSocket, ExternalWSHandlers } from '@/composables/useWebSocket'
+import schedulerHandlers from './schedulerHandlers'
 import type { ComboBoxItem } from '@/api/models/ComboBoxItem'
 import type { QueueItem, Script } from './schedulerConstants'
 import {
@@ -184,7 +185,7 @@ export function useSchedulerLogic() {
       title: options?.title || `调度台${tabCounter}`,
       closable: true,
       status: validStatus,
-      selectedTaskId: null,
+      selectedTaskId: options?.websocketId || null,
       selectedMode: TaskCreateIn.mode.AutoMode,
       websocketId: options?.websocketId || null,
       taskQueue: [],
@@ -767,9 +768,60 @@ export function useSchedulerLogic() {
   // 初始化函数
   const initialize = () => {
     // 设置全局WebSocket的消息处理函数
-    setTaskManagerHandler(handleTaskManagerMessage)
-    setMainMessageHandler(handleMainMessage)
+    // 通过 import 的 ExternalWSHandlers 直接注册处理函数，保证导入方能够永久引用并调用
+    ExternalWSHandlers.taskManagerMessage = handleTaskManagerMessage
+    ExternalWSHandlers.mainMessage = handleMainMessage
     console.log('[Scheduler] 已设置全局WebSocket消息处理函数')
+
+    // 注册 UI hooks 到 schedulerHandlers，使其能在 schedulerHandlers 检测到 pending 时回放到当前 UI
+    try {
+      schedulerHandlers.registerSchedulerUI({
+        onNewTab: (tab) => {
+          try {
+            // 创建并订阅新调度台
+            const newTab = addSchedulerTab({ title: tab.title, status: '运行', websocketId: tab.websocketId })
+            subscribeToTask(newTab)
+            saveTabsToStorage(schedulerTabs.value)
+          } catch (e) {
+            console.warn('[Scheduler] registerSchedulerUI onNewTab error:', e)
+          }
+        },
+        onCountdown: (data) => {
+          try {
+            // 直接启动前端倒计时
+            startPowerCountdown(data)
+          } catch (e) {
+            console.warn('[Scheduler] registerSchedulerUI onCountdown error:', e)
+          }
+        }
+      })
+
+      // 回放 pending tabs（如果有的话）
+      const pending = schedulerHandlers.consumePendingTabIds()
+      if (pending && pending.length > 0) {
+        pending.forEach((taskId: string) => {
+          try {
+            const newTab = addSchedulerTab({ title: `调度台${taskId}`, status: '运行', websocketId: taskId })
+            subscribeToTask(newTab)
+          } catch (e) {
+            console.warn('[Scheduler] replay pending tab error:', e)
+          }
+        })
+        saveTabsToStorage(schedulerTabs.value)
+      }
+
+      // 回放 pending countdown（如果有的话）
+      const pendingCountdown = schedulerHandlers.consumePendingCountdown()
+      if (pendingCountdown) {
+        try {
+          startPowerCountdown(pendingCountdown)
+        } catch (e) {
+          console.warn('[Scheduler] replay pending countdown error:', e)
+        }
+      }
+    } catch (e) {
+      console.warn('[Scheduler] schedulerHandlers registration failed:', e)
+    }
 
     // 新增：为已有的“运行中”标签恢复 WebSocket 订阅，防止路由切换返回后不再更新
     try {
@@ -811,8 +863,7 @@ export function useSchedulerLogic() {
     }
 
     // 清理全局WebSocket的消息处理函数
-    setTaskManagerHandler(() => {})
-    setMainMessageHandler(() => {})
+    // 不再清理或重置导出的处理函数，保持使用者注册的处理逻辑永久有效
 
     schedulerTabs.value.forEach(tab => {
       if (tab.websocketId) {
