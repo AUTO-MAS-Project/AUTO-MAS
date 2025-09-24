@@ -3,7 +3,7 @@ import { message, Modal, notification } from 'ant-design-vue'
 import { Service } from '@/api/services/Service'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { PowerIn } from '@/api/models/PowerIn'
-import { useWebSocket } from '@/composables/useWebSocket'
+import { useWebSocket, setTaskManagerHandler, setMainMessageHandler } from '@/composables/useWebSocket'
 import type { ComboBoxItem } from '@/api/models/ComboBoxItem'
 import type { QueueItem, Script } from './schedulerConstants'
 import {
@@ -110,13 +110,7 @@ export function useSchedulerLogic() {
   // WebSocket 实例
   const ws = useWebSocket()
 
-  // 订阅TaskManager消息，处理自动创建的任务
-  const subscribeToTaskManager = () => {
-    ws.subscribe('TaskManager', {
-      onMessage: (message) => handleTaskManagerMessage(message)
-    })
-  }
-
+  // TaskManager消息处理函数（供全局WebSocket调用）
   const handleTaskManagerMessage = (wsMessage: any) => {
     if (!wsMessage || typeof wsMessage !== 'object') return
 
@@ -772,13 +766,10 @@ export function useSchedulerLogic() {
 
   // 初始化函数
   const initialize = () => {
-    // 订阅TaskManager消息
-    subscribeToTaskManager()
-    console.log('[Scheduler] 已订阅TaskManager消息')
-
-    // 订阅Main消息（用于接收全局消息如电源操作倒计时）
-    subscribeToMainMessages()
-    console.log('[Scheduler] 已订阅Main消息')
+    // 设置全局WebSocket的消息处理函数
+    setTaskManagerHandler(handleTaskManagerMessage)
+    setMainMessageHandler(handleMainMessage)
+    console.log('[Scheduler] 已设置全局WebSocket消息处理函数')
 
     // 新增：为已有的“运行中”标签恢复 WebSocket 订阅，防止路由切换返回后不再更新
     try {
@@ -793,13 +784,7 @@ export function useSchedulerLogic() {
     }
   }
 
-  // 订阅Main消息，处理全局消息
-  const subscribeToMainMessages = () => {
-    ws.subscribe('Main', {
-      onMessage: (message) => handleMainMessage(message)
-    })
-  }
-
+  // Main消息处理函数（供全局WebSocket调用）
   const handleMainMessage = (wsMessage: any) => {
     if (!wsMessage || typeof wsMessage !== 'object') return
 
@@ -825,9 +810,9 @@ export function useSchedulerLogic() {
       powerCountdownTimer = null
     }
 
-    // 取消订阅TaskManager和Main
-    ws.unsubscribe('TaskManager')
-    ws.unsubscribe('Main')
+    // 清理全局WebSocket的消息处理函数
+    setTaskManagerHandler(() => {})
+    setMainMessageHandler(() => {})
 
     schedulerTabs.value.forEach(tab => {
       if (tab.websocketId) {
