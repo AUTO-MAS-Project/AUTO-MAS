@@ -11,8 +11,37 @@ import {
 } from 'electron'
 import * as path from 'path'
 import * as fs from 'fs'
-import { spawn } from 'child_process'
+import { spawn, exec } from 'child_process'
 import { getAppRoot, checkEnvironment } from './services/environmentService'
+
+// 强制清理相关进程的函数
+async function forceKillRelatedProcesses(): Promise<void> {
+  try {
+    const { killAllRelatedProcesses } = await import('./utils/processManager')
+    await killAllRelatedProcesses()
+    log.info('所有相关进程已清理')
+  } catch (error) {
+    log.error('清理进程时出错:', error)
+    
+    // 备用清理方法
+    if (process.platform === 'win32') {
+      const appRoot = getAppRoot()
+      const pythonExePath = path.join(appRoot, 'environment', 'python', 'python.exe')
+      
+      return new Promise((resolve) => {
+        // 使用更简单的命令强制结束相关进程
+        exec(`taskkill /f /im python.exe`, (error) => {
+          if (error) {
+            log.warn('备用清理方法失败:', error.message)
+          } else {
+            log.info('备用清理方法执行成功')
+          }
+          resolve()
+        })
+      })
+    }
+  }
+}
 import { setMainWindow as setDownloadMainWindow } from './services/downloadService'
 import {
   setMainWindow as setPythonMainWindow,
@@ -385,7 +414,25 @@ function createWindow() {
       updateTrayVisibility(currentConfig)
       log.info('窗口已最小化到托盘，任务栏图标已隐藏')
     } else {
-      saveWindowState()
+      // 立即保存窗口状态，不使用防抖
+      if (!win.isDestroyed()) {
+        try {
+          const config = loadConfig()
+          const bounds = win.getBounds()
+          const isMaximized = win.isMaximized()
+
+          if (!isMaximized) {
+            config.UI.size = `${bounds.width},${bounds.height}`
+            config.UI.location = `${bounds.x},${bounds.y}`
+          }
+          config.UI.maximized = isMaximized
+
+          saveConfig(config)
+          log.info('窗口状态已保存')
+        } catch (error) {
+          log.error('保存窗口状态失败:', error)
+        }
+      }
     }
   })
 
@@ -395,6 +442,19 @@ function createWindow() {
     screen.removeListener('display-metrics-changed', recomputeMinSize)
     // 置空模块级引用
     mainWindow = null
+    
+    // 如果是正在退出，立即执行进程清理
+    if (isQuitting) {
+      log.info('窗口关闭，执行最终清理')
+      setTimeout(async () => {
+        try {
+          await forceKillRelatedProcesses()
+        } catch (e) {
+          log.error('最终清理失败:', e)
+        }
+        process.exit(0)
+      }, 100)
+    }
   })
 
   win.on('minimize', () => {
@@ -441,7 +501,7 @@ function createWindow() {
 
 // 保存窗口状态（带防抖）
 function saveWindowState() {
-  if (!mainWindow) return
+  if (!mainWindow || mainWindow.isDestroyed()) return
 
   // 清除之前的定时器
   if (saveWindowStateTimeout) {
@@ -451,9 +511,15 @@ function saveWindowState() {
   // 设置新的定时器，500ms后保存
   saveWindowStateTimeout = setTimeout(() => {
     try {
+      // 再次检查窗口是否存在且未销毁
+      if (!mainWindow || mainWindow.isDestroyed()) {
+        log.warn('窗口已销毁，跳过保存状态')
+        return
+      }
+
       const config = loadConfig()
-      const bounds = mainWindow!.getBounds()
-      const isMaximized = mainWindow!.isMaximized()
+      const bounds = mainWindow.getBounds()
+      const isMaximized = mainWindow.isMaximized()
 
       // 只有在窗口不是最大化状态时才保存位置和大小
       if (!isMaximized) {
@@ -496,8 +562,56 @@ ipcMain.handle('window-maximize', () => {
 
 ipcMain.handle('window-close', () => {
   if (mainWindow) {
+    isQuitting = true
     mainWindow.close()
   }
+})
+
+// 添加强制退出处理器
+ipcMain.handle('app-quit', () => {
+  isQuitting = true
+  app.quit()
+})
+
+// 添加进程管理相关的 IPC 处理器
+ipcMain.handle('get-related-processes', async () => {
+  try {
+    const { getRelatedProcesses } = await import('./utils/processManager')
+    return await getRelatedProcesses()
+  } catch (error) {
+    log.error('获取进程信息失败:', error)
+    return []
+  }
+})
+
+ipcMain.handle('kill-all-processes', async () => {
+  try {
+    await forceKillRelatedProcesses()
+    return { success: true }
+  } catch (error) {
+    log.error('强制清理进程失败:', error)
+    return { success: false, error: error instanceof Error ? error.message : String(error) }
+  }
+})
+
+// 添加一个测试用的强制退出命令
+ipcMain.handle('force-exit', async () => {
+  log.info('收到强制退出命令')
+  isQuitting = true
+  
+  // 立即清理进程
+  try {
+    await forceKillRelatedProcesses()
+  } catch (e) {
+    log.error('强制清理失败:', e)
+  }
+  
+  // 强制退出
+  setTimeout(() => {
+    process.exit(0)
+  }, 500)
+  
+  return { success: true }
 })
 
 ipcMain.handle('window-is-maximized', () => {
@@ -627,9 +741,10 @@ ipcMain.handle('start-backend', async () => {
   return startBackend(appRoot)
 })
 
-// ipcMain.handle('stop-backend', async () => {
-//   return stopBackend()
-// })
+ipcMain.handle('stop-backend', async () => {
+  const { stopBackend } = await import('./services/pythonService')
+  return stopBackend()
+})
 
 // Git相关
 ipcMain.handle('download-git', async () => {
@@ -1011,19 +1126,67 @@ app.on('before-quit', async event => {
 
     log.info('应用准备退出')
 
+    // 清理定时器
+    if (saveWindowStateTimeout) {
+      clearTimeout(saveWindowStateTimeout)
+      saveWindowStateTimeout = null
+    }
+
     // 清理托盘
     destroyTray()
 
-    // try {
-    //   await stopBackend()
-    //   log.info('后端服务已停止')
-    // } catch (e) {
-    //   log.error('停止后端时出错:', e)
-    //   console.error('停止后端时出错:', e)
-    // } finally {
-    //   log.info('应用退出')
-    //   app.exit(0)
-    // }
+    // 立即开始强制清理，不等待优雅关闭
+    log.info('开始强制清理所有相关进程')
+    
+    try {
+      // 并行执行多种清理方法
+      const cleanupPromises = [
+        // 方法1: 使用我们的进程管理器
+        forceKillRelatedProcesses(),
+        
+        // 方法2: 直接使用 taskkill 命令
+        new Promise<void>((resolve) => {
+          if (process.platform === 'win32') {
+            const appRoot = getAppRoot()
+            const commands = [
+              `taskkill /f /im python.exe`,
+              `wmic process where "CommandLine like '%main.py%'" delete`,
+              `wmic process where "CommandLine like '%${appRoot.replace(/\\/g, '\\\\')}%'" delete`
+            ]
+            
+            let completed = 0
+            commands.forEach(cmd => {
+              exec(cmd, () => {
+                completed++
+                if (completed === commands.length) {
+                  resolve()
+                }
+              })
+            })
+            
+            // 2秒超时
+            setTimeout(resolve, 2000)
+          } else {
+            resolve()
+          }
+        })
+      ]
+      
+      // 最多等待3秒
+      const timeoutPromise = new Promise(resolve => setTimeout(resolve, 3000))
+      await Promise.race([Promise.all(cleanupPromises), timeoutPromise])
+      
+      log.info('进程清理完成')
+    } catch (e) {
+      log.error('进程清理时出错:', e)
+    }
+
+    log.info('应用强制退出')
+    
+    // 使用 process.exit 而不是 app.exit，更加强制
+    setTimeout(() => {
+      process.exit(0)
+    }, 500)
   }
 })
 
@@ -1054,7 +1217,10 @@ app.whenReady().then(() => {
 })
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit()
+  if (process.platform !== 'darwin') {
+    isQuitting = true
+    app.quit()
+  }
 })
 
 app.on('activate', () => {

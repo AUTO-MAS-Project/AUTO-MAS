@@ -16,6 +16,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   windowMaximize: () => ipcRenderer.invoke('window-maximize'),
   windowClose: () => ipcRenderer.invoke('window-close'),
   windowIsMaximized: () => ipcRenderer.invoke('window-is-maximized'),
+  appQuit: () => ipcRenderer.invoke('app-quit'),
+
+  // 进程管理
+  getRelatedProcesses: () => ipcRenderer.invoke('get-related-processes'),
+  killAllProcesses: () => ipcRenderer.invoke('kill-all-processes'),
+  forceExit: () => ipcRenderer.invoke('force-exit'),
 
   // 初始化相关API
   checkEnvironment: () => ipcRenderer.invoke('check-environment'),
