@@ -11,7 +11,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref } from 'vue'
 import TaskTree from '@/components/TaskTree.vue'
 
 interface User {
@@ -103,13 +103,12 @@ const handleWSMessage = (message: WSMessage) => {
     // 处理 task_list 数据
     else if (message.data?.task_list && Array.isArray(message.data.task_list)) {
       console.log('更新任务列表 (task_list):', message.data.task_list)
-      const convertedData = message.data.task_list.map((task: any) => ({
+      taskData.value = message.data.task_list.map((task: any) => ({
         script_id: task.id || task.script_id || `task_${Date.now()}`,
         name: task.name || '未知任务',
         status: task.status || '等待',
         user_list: task.user_list || []
       }))
-      taskData.value = convertedData
       console.log('转换后的 taskData:', taskData.value)
       
       // 更新展开状态
@@ -158,7 +157,7 @@ defineExpose({
   margin: 0;
   font-size: 18px;
   font-weight: 600;
-  color: var(--ant-color-text-heading);
+  color: var(--ant-color-text);
 }
 
 .overview-content {

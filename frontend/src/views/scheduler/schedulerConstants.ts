@@ -4,6 +4,20 @@ import { PowerIn } from '@/api/models/PowerIn'
 // 调度台状态
 export type SchedulerStatus = '新建' | '运行' | '结束'
 
+// 新增：任务总览数据类型
+export interface User {
+  user_id: string
+  status: string
+  name: string
+}
+
+export interface Script {
+  script_id: string
+  status: string
+  name: string
+  user_list: User[]
+}
+
 // 状态颜色映射
 export const TAB_STATUS_COLOR: Record<SchedulerStatus, string> = {
   新建: 'default',
@@ -69,6 +83,8 @@ export interface SchedulerTab {
   logs: LogEntry[]
   isLogAtBottom: boolean
   lastLogContent: string
+  // 新增：任务总览快照（用于路由返回时快速恢复显示）
+  overviewData?: Script[]
 }
 
 export interface TaskMessage {
