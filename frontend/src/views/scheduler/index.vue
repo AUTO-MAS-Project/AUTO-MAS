@@ -158,7 +158,6 @@ import { LockOutlined } from '@ant-design/icons-vue'
 import {
   getPowerActionText,
   POWER_ACTION_TEXT,
-  type SchedulerTab,
   TAB_STATUS_COLOR,
 } from './schedulerConstants'
 import { useSchedulerLogic } from './useSchedulerLogic'
