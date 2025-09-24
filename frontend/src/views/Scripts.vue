@@ -799,8 +799,14 @@ const handleToggleUserStatus = async (user: User) => {
   flex-direction: column;
 }
 
+/* Hide the small separator (::before) AntD injects between button wrappers */
+.type-radio-group :deep(.ant-radio-button-wrapper:not(:first-child)::before) {
+  display: none !important;
+}
+
 .type-option,
 .mode-option {
+  height: auto;
   display: flex;
   align-items: center;
   padding: 12px;
