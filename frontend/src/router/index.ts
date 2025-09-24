@@ -1,5 +1,7 @@
 import type { RouteRecordRaw } from 'vue-router'
 import { createRouter, createWebHistory } from 'vue-router'
+// 同步导入调度中心，保证其模块级导出（如 handler 注册点）在应用初始化时可用
+import SchedulerView from '../views/scheduler/index.vue'
 import { isAppInitialized } from '@/utils/config'
 
 let needInitLanding = true
@@ -80,7 +82,7 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/scheduler',
     name: 'Scheduler',
-    component: () => import('../views/scheduler/index.vue'),
+    component: SchedulerView,
     meta: { title: '调度中心' },
   },
   {

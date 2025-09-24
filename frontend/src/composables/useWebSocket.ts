@@ -1,4 +1,10 @@
 import { ref, type Ref } from 'vue'
+// 为了在调度中心 UI 未加载时仍能使用具体逻辑，直接同步导入 schedulerHandlers 的默认实现
+// schedulerHandlers 不再依赖 useWebSocket，因此同步导入不会产生致命循环依赖
+import schedulerHandlers from '@/views/scheduler/schedulerHandlers'
+let _defaultHandlersLoaded = true
+let _defaultTaskManagerHandler: (m: any) => void = schedulerHandlers.handleTaskManagerMessage
+let _defaultMainHandler: (m: any) => void = schedulerHandlers.handleMainMessage
 import { Modal } from 'ant-design-vue'
 
 // 基础配置
@@ -576,18 +582,34 @@ window.addEventListener('beforeunload', () => {
   // 保持连接
 })
 
-// 全局订阅处理函数 - 供调度台逻辑调用
-let globalTaskManagerHandler: ((message: any) => void) | null = null
-let globalMainMessageHandler: ((message: any) => void) | null = null
-
-// 设置TaskManager消息处理函数
-export const setTaskManagerHandler = (handler: (message: any) => void) => {
-  globalTaskManagerHandler = handler
-}
-
-// 设置Main消息处理函数  
-export const setMainMessageHandler = (handler: (message: any) => void) => {
-  globalMainMessageHandler = handler
+// 导出一个长期存在的可变对象，供外部通过 import 直接赋值/替换处理函数
+// 这样可以避免通过 window 或全局函数暴露，同时保证导入方始终能获取到该对象并设置回调，且不会被内部清理
+export const ExternalWSHandlers: {
+  mainMessage: (message: any) => void
+  taskManagerMessage: (message: any) => void
+} = {
+  mainMessage: (message: any) => {
+    // 如果默认实现已加载，则调用之；否则保持空实现
+    try {
+      if (_defaultHandlersLoaded && typeof _defaultMainHandler === 'function') {
+        _defaultMainHandler(message)
+        return
+      }
+    } catch (e) {
+      console.warn('[ExternalWSHandlers] default main handler error:', e)
+    }
+    // 未加载默认实现时保持空实现
+  },
+  taskManagerMessage: (message: any) => {
+    try {
+      if (_defaultHandlersLoaded && typeof _defaultTaskManagerHandler === 'function') {
+        _defaultTaskManagerHandler(message)
+        return
+      }
+    } catch (e) {
+      console.warn('[ExternalWSHandlers] default taskManager handler error:', e)
+    }
+  },
 }
 
 // 初始化全局订阅
@@ -595,8 +617,11 @@ const initializeGlobalSubscriptions = () => {
   // 订阅TaskManager消息
   _subscribe('TaskManager', {
     onMessage: (message) => {
-      if (globalTaskManagerHandler) {
-        globalTaskManagerHandler(message)
+      try {
+        ExternalWSHandlers.taskManagerMessage(message)
+      } catch (e) {
+        // 防御性处理，确保调用方异常不会影响消息通道
+        console.warn('[WebSocket] External taskManagerMessage handler error:', e)
       }
     }
   })
@@ -633,9 +658,11 @@ const initializeGlobalSubscriptions = () => {
         }
       }
 
-      // 调用外部设置的Main消息处理函数
-      if (globalMainMessageHandler) {
-        globalMainMessageHandler(message)
+      // 调用外部导入的 Main 消息处理函数（由使用者通过 import 并赋值给 ExternalWSHandlers）
+      try {
+        ExternalWSHandlers.mainMessage(message)
+      } catch (e) {
+        console.warn('[WebSocket] External mainMessage handler error:', e)
       }
     }
   })
