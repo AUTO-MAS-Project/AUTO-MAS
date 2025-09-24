@@ -574,38 +574,69 @@ export async function startBackend(appRoot: string, timeoutMs = 30_000) {
 }
 
 /** 停止后端进程（如果没启动就直接返回成功） */
-// export async function stopBackend() {
-//   if (!backendProc || backendProc.killed) {
-//     console.log('[Backend] 未运行，无需停止')
-//     return { success: true }
-//   }
-//
-//   const pid = backendProc.pid
-//   console.log('[Backend] 正在停止后端服务, PID =', pid)
-//
-//   return new Promise<{ success: boolean; error?: string }>(resolve => {
-//     // 清监听，避免重复日志
-//     backendProc?.stdout?.removeAllListeners('data')
-//     backendProc?.stderr?.removeAllListeners('data')
-//
-//     backendProc!.once('exit', (code, signal) => {
-//       console.log('[Backend] 已退出', { code, signal })
-//       backendProc = null
-//       resolve({ success: true })
-//     })
-//
-//     backendProc!.once('error', err => {
-//       console.error('[Backend] 停止时出错:', err)
-//       backendProc = null
-//       resolve({ success: false, error: err instanceof Error ? err.message : String(err) })
-//     })
-//
-//     try {
-//       backendProc!.kill() // 默认 SIGTERM，Windows 下等价于结束进程
-//     } catch (e) {
-//       console.error('[Backend] kill 调用失败:', e)
-//       backendProc = null
-//       resolve({ success: false, error: e instanceof Error ? e.message : String(e) })
-//     }
-//   })
-// }
+export async function stopBackend() {
+  if (!backendProc || backendProc.killed) {
+    console.log('[Backend] 未运行，无需停止')
+    return { success: true }
+  }
+
+  const pid = backendProc.pid
+  console.log('[Backend] 正在停止后端服务, PID =', pid)
+
+  return new Promise<{ success: boolean; error?: string }>(resolve => {
+    // 设置超时，确保不会无限等待
+    const timeout = setTimeout(() => {
+      console.warn('[Backend] 停止超时，强制结束进程')
+      try {
+        if (backendProc && !backendProc.killed) {
+          // 在 Windows 上使用 taskkill 强制结束进程树
+          if (process.platform === 'win32') {
+            const { exec } = require('child_process')
+            exec(`taskkill /f /t /pid ${pid}`, (error: any) => {
+              if (error) {
+                console.error('[Backend] taskkill 失败:', error)
+              } else {
+                console.log('[Backend] 进程树已强制结束')
+              }
+            })
+          } else {
+            backendProc.kill('SIGKILL')
+          }
+        }
+      } catch (e) {
+        console.error('[Backend] 强制结束失败:', e)
+      }
+      backendProc = null
+      resolve({ success: true })
+    }, 2000) // 2秒超时
+
+    // 清监听，避免重复日志
+    backendProc?.stdout?.removeAllListeners('data')
+    backendProc?.stderr?.removeAllListeners('data')
+
+    backendProc!.once('exit', (code, signal) => {
+      clearTimeout(timeout)
+      console.log('[Backend] 已退出', { code, signal })
+      backendProc = null
+      resolve({ success: true })
+    })
+
+    backendProc!.once('error', err => {
+      clearTimeout(timeout)
+      console.error('[Backend] 停止时出错:', err)
+      backendProc = null
+      resolve({ success: false, error: err instanceof Error ? err.message : String(err) })
+    })
+
+    try {
+      // 首先尝试优雅关闭
+      backendProc!.kill('SIGTERM')
+      console.log('[Backend] 已发送 SIGTERM 信号')
+    } catch (e) {
+      clearTimeout(timeout)
+      console.error('[Backend] kill 调用失败:', e)
+      backendProc = null
+      resolve({ success: false, error: e instanceof Error ? e.message : String(e) })
+    }
+  })
+}

@@ -12,11 +12,7 @@
           <span v-if="updateInfo?.if_need_update" class="update-hint" :title="getUpdateTooltip()">
             检测到更新 {{ updateInfo.latest_version }} 请尽快更新
           </span>
-          <span
-            v-if="backendUpdateInfo?.if_need_update"
-            class="update-hint"
-            :title="getUpdateTooltip()"
-          >
+          <span v-if="backendUpdateInfo?.if_need_update" class="update-hint" :title="getUpdateTooltip()">
             检测到更新后端有更新。请重启软件即可自动完成更新
           </span>
         </span>
@@ -32,11 +28,7 @@
         <button class="control-button minimize-button" @click="minimizeWindow" title="最小化">
           <MinusOutlined />
         </button>
-        <button
-          class="control-button maximize-button"
-          @click="toggleMaximize"
-          :title="isMaximized ? '还原' : '最大化'"
-        >
+        <button class="control-button maximize-button" @click="toggleMaximize" :title="isMaximized ? '还原' : '最大化'">
           <BorderOutlined />
         </button>
         <button class="control-button close-button" @click="closeWindow" title="关闭">
@@ -125,19 +117,40 @@ const toggleMaximize = async () => {
 
 const closeWindow = async () => {
   try {
-    // 先调用后端关闭API
-    await Service.closeApiCoreClosePost()
-    console.log('Backend close API called successfully')
-    // 然后关闭窗口
-    await window.electronAPI?.windowClose()
-  } catch (error) {
-    console.error('Failed to close window:', error)
-    // 即使API调用失败，也尝试关闭窗口
+    console.log('开始关闭应用...')
+
+    // 先检查当前进程状态
     try {
-      await window.electronAPI?.windowClose()
-    } catch (closeError) {
-      console.error('Failed to close window after API error:', closeError)
+      const processes = await window.electronAPI?.getRelatedProcesses()
+      console.log('关闭前的进程状态:', processes)
+    } catch (e) {
+      console.warn('无法获取进程状态:', e)
     }
+
+    // 异步调用后端关闭API，不等待响应
+    Service.closeApiCoreClosePost().catch(error => {
+      console.warn('Backend close API failed (this is expected):', error)
+    })
+
+    // 使用更激进的强制退出方法
+    try {
+      console.log('执行强制退出...')
+      await window.electronAPI?.forceExit()
+    } catch (error) {
+      console.error('强制退出失败，尝试备用方法:', error)
+
+      // 备用方法：先尝试正常关闭
+      try {
+        await window.electronAPI?.windowClose()
+        setTimeout(async () => {
+          await window.electronAPI?.appQuit()
+        }, 500)
+      } catch (backupError) {
+        console.error('备用方法也失败:', backupError)
+      }
+    }
+  } catch (error) {
+    console.error('关闭应用失败:', error)
   }
 }
 
@@ -189,7 +202,8 @@ onBeforeUnmount(() => {
   user-select: none;
   position: relative;
   z-index: 1000;
-  overflow: hidden; /* 新增：裁剪超出顶栏的发光 */
+  overflow: hidden;
+  /* 新增：裁剪超出顶栏的发光 */
 }
 
 .title-bar-dark {
@@ -208,24 +222,29 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 8px;
-  position: relative; /* 使阴影绝对定位基准 */
+  position: relative;
+  /* 使阴影绝对定位基准 */
 }
 
 /* 新增：主题色虚化圆形阴影 */
 .logo-glow {
   position: absolute;
-  left: 55px; /* 调整：更贴近图标 */
+  left: 55px;
+  /* 调整：更贴近图标 */
   top: 50%;
   transform: translate(-50%, -50%);
-  width: 200px; /* 缩小尺寸以适配 32px 高度 */
+  width: 200px;
+  /* 缩小尺寸以适配 32px 高度 */
   height: 100px;
   pointer-events: none;
   border-radius: 50%;
   background: radial-gradient(circle at 50% 50%, var(--ant-color-primary) 0%, rgba(0, 0, 0, 0) 70%);
-  filter: blur(24px); /* 降低模糊避免越界过多 */
+  filter: blur(24px);
+  /* 降低模糊避免越界过多 */
   opacity: 0.4;
   z-index: 0;
 }
+
 .title-bar-dark .logo-glow {
   opacity: 0.7;
   filter: blur(24px);
@@ -235,7 +254,8 @@ onBeforeUnmount(() => {
   width: 20px;
   height: 20px;
   position: relative;
-  z-index: 1; /* 确保在阴影上方 */
+  z-index: 1;
+  /* 确保在阴影上方 */
 }
 
 .title-text {
@@ -382,7 +402,7 @@ onBeforeUnmount(() => {
 }
 
 /* 为相邻的更新提示添加间距 */
-.update-hint + .update-hint {
+.update-hint+.update-hint {
   margin-left: 12px;
 }
 
@@ -403,9 +423,11 @@ onBeforeUnmount(() => {
   0% {
     background-position: 0% 50%;
   }
+
   50% {
     background-position: 100% 50%;
   }
+
   100% {
     background-position: 0% 50%;
   }
@@ -416,14 +438,17 @@ onBeforeUnmount(() => {
     filter: drop-shadow(0 0 4px rgba(255, 64, 129, 0.4)) brightness(1);
     transform: scale(1);
   }
+
   33% {
     filter: drop-shadow(0 0 6px rgba(255, 152, 0, 0.5)) brightness(1.08);
     transform: scale(1.003);
   }
+
   66% {
     filter: drop-shadow(0 0 5px rgba(76, 175, 80, 0.45)) brightness(1.05);
     transform: scale(1.002);
   }
+
   100% {
     filter: drop-shadow(0 0 4px rgba(255, 64, 129, 0.4)) brightness(1);
     transform: scale(1);
@@ -435,10 +460,12 @@ onBeforeUnmount(() => {
     opacity: 0.08;
     transform: scale(0.98);
   }
+
   50% {
     opacity: 0.04;
     transform: scale(1.02);
   }
+
   100% {
     opacity: 0.08;
     transform: scale(0.98);
