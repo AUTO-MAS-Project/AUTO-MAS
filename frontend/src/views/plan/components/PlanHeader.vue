@@ -114,6 +114,7 @@ const handleAddPlan = () => {
 
 .header-left {
   flex: 1;
+  min-width: 0; /* 防止文字溢出 */
 }
 
 .page-title {
@@ -125,22 +126,14 @@ const handleAddPlan = () => {
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
+  white-space: nowrap; /* 防止标题换行 */
+  overflow: hidden;
+  text-overflow: ellipsis; /* 长标题时显示省略号 */
 }
 
 .header-actions {
   flex-shrink: 0;
-}
-
-@media (max-width: 1200px) {
-  .plans-header {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 16px;
-  }
-
-  .page-title {
-    font-size: 28px;
-  }
+  margin-left: 16px; /* 添加间距防止太紧密 */
 }
 
 @media (max-width: 768px) {
@@ -148,10 +141,12 @@ const handleAddPlan = () => {
     font-size: 24px;
   }
 
+  .plans-header {
+    padding: 0 2px; /* 减少边距给内容更多空间 */
+  }
+
   .header-actions {
-    width: 100%;
-    display: flex;
-    justify-content: center;
+    margin-left: 8px; /* 小屏幕时减少间距 */
   }
 }
 </style>
