@@ -93,7 +93,7 @@ const initGlobalStorage = (): GlobalWSStorage => {
 // 获取全局存储
 const getGlobalStorage = (): GlobalWSStorage => {
   if (!(window as any)[WS_STORAGE_KEY]) {
-    ;(window as any)[WS_STORAGE_KEY] = initGlobalStorage()
+    ; (window as any)[WS_STORAGE_KEY] = initGlobalStorage()
   }
 
   return (window as any)[WS_STORAGE_KEY] as GlobalWSStorage
@@ -173,7 +173,7 @@ const handleBackendFailure = async () => {
       okText: '重启应用',
       onOk: () => {
         if ((window.electronAPI as any)?.windowClose) {
-          ;(window.electronAPI as any).windowClose()
+          ; (window.electronAPI as any).windowClose()
         } else {
           window.location.reload()
         }
@@ -416,36 +416,8 @@ const createGlobalWebSocket = (): WebSocket => {
       /* ignore */
     }
 
-    // 自动订阅ID为"Main"的消息，用于处理ping-pong等系统消息
-    _subscribe('Main', {
-      onMessage: (message: WebSocketBaseMessage) => {
-        // 处理系统级消息（如ping-pong）
-        if (message && message.type === 'Signal' && message.data) {
-          // 处理心跳响应
-          if (message.data.Pong) {
-            global.lastPingTime = 0 // 重置ping时间，表示收到了响应
-            return
-          }
-
-          // 处理后端发送的Ping，回复Pong
-          if (message.data.Ping) {
-            if (ws && ws.readyState === WebSocket.OPEN) {
-              try {
-                ws.send(
-                  JSON.stringify({
-                    type: 'Signal',
-                    data: { Pong: message.data.Ping, connectionId: global.connectionId },
-                  })
-                )
-              } catch (e) {
-                // Pong发送失败，静默处理
-              }
-            }
-            return
-          }
-        }
-      },
-    })
+    // 初始化全局订阅（TaskManager和Main）
+    initializeGlobalSubscriptions()
   }
 
   ws.onmessage = ev => {
@@ -604,6 +576,71 @@ window.addEventListener('beforeunload', () => {
   // 保持连接
 })
 
+// 全局订阅处理函数 - 供调度台逻辑调用
+let globalTaskManagerHandler: ((message: any) => void) | null = null
+let globalMainMessageHandler: ((message: any) => void) | null = null
+
+// 设置TaskManager消息处理函数
+export const setTaskManagerHandler = (handler: (message: any) => void) => {
+  globalTaskManagerHandler = handler
+}
+
+// 设置Main消息处理函数  
+export const setMainMessageHandler = (handler: (message: any) => void) => {
+  globalMainMessageHandler = handler
+}
+
+// 初始化全局订阅
+const initializeGlobalSubscriptions = () => {
+  // 订阅TaskManager消息
+  _subscribe('TaskManager', {
+    onMessage: (message) => {
+      if (globalTaskManagerHandler) {
+        globalTaskManagerHandler(message)
+      }
+    }
+  })
+
+  // 订阅Main消息  
+  _subscribe('Main', {
+    onMessage: (message) => {
+      // 处理系统级消息（如ping-pong）
+      if (message && message.type === 'Signal' && message.data) {
+        // 处理心跳响应
+        if (message.data.Pong) {
+          const global = getGlobalStorage()
+          global.lastPingTime = 0 // 重置ping时间，表示收到了响应
+          return
+        }
+
+        // 处理后端发送的Ping，回复Pong
+        if (message.data.Ping) {
+          const global = getGlobalStorage()
+          const ws = global.wsRef
+          if (ws && ws.readyState === WebSocket.OPEN) {
+            try {
+              ws.send(
+                JSON.stringify({
+                  type: 'Signal',
+                  data: { Pong: message.data.Ping, connectionId: global.connectionId },
+                })
+              )
+            } catch (e) {
+              // Pong发送失败，静默处理
+            }
+          }
+          return
+        }
+      }
+
+      // 调用外部设置的Main消息处理函数
+      if (globalMainMessageHandler) {
+        globalMainMessageHandler(message)
+      }
+    }
+  })
+}
+
 // 主要 Hook 函数
 export function useWebSocket() {
   const global = getGlobalStorage()
@@ -699,7 +736,7 @@ export const _subscribe = (id: string, subscriber: Omit<WebSocketSubscriber, 'id
     console.log('[WebSocket] 发现队列中的消息，立即按顺序分发给新订阅者:', id, '消息数量:', queuedMessages.length)
     // 创建临时订阅者对象用于分发消息
     const tempSubscriber: WebSocketSubscriber = { ...subscriber, id }
-    
+
     // 按顺序处理所有遗留消息
     queuedMessages.forEach((queuedMessage, index) => {
       console.log('[WebSocket] 开始处理遗留消息，订阅者ID:', id, '消息索引:', index, '消息:', queuedMessage.message)
@@ -710,7 +747,7 @@ export const _subscribe = (id: string, subscriber: Omit<WebSocketSubscriber, 'id
         console.error('[WebSocket] 处理遗留消息时出错，订阅者ID:', id, '消息索引:', index, '错误:', error)
       }
     })
-    
+
     // 从队列中移除已处理的消息
     messageQueue.delete(id)
     setMessageQueue(messageQueue)
@@ -733,7 +770,7 @@ export const _subscribe = (id: string, subscriber: Omit<WebSocketSubscriber, 'id
       messageQueue.set(msgId, filteredMessages)
     }
   })
-  
+
   if (cleanedCount > 0) {
     console.log('[WebSocket] 共清理过期消息数量:', cleanedCount)
     setMessageQueue(messageQueue)
