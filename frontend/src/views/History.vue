@@ -833,16 +833,18 @@ const getDateStatusColor = (users: Record<string, HistoryData>) => {
   display: flex;
   gap: 16px;
   min-height: 0;
+  min-width: 0; /* 确保子项 flex:1 时可以收缩 */
+  overflow: hidden; /* 避免被长行撑出 */
 }
 
 /* 记录条目区域 */
 .records-area {
   width: 400px;
-  flex-shrink: 0;
+  flex-shrink: 1; /* 新增: 允许一定程度收缩 */
+  min-width: 260px; /* 给一个合理下限 */
   display: flex;
   flex-direction: column;
   gap: 16px;
-  min-width: 0;
 }
 
 .records-section {
@@ -980,7 +982,8 @@ const getDateStatusColor = (users: Record<string, HistoryData>) => {
 /* 日志区域 */
 .log-area {
   flex: 1;
-  min-width: 300px;
+  /* 允许在父级 flex 宽度不足时压缩，避免整体被撑出视口 */
+  min-width: 0; /* 修改: 原来是 300px，导致在内容渲染后无法收缩 */
   display: flex;
   flex-direction: column;
 }
@@ -1004,19 +1007,19 @@ const getDateStatusColor = (users: Record<string, HistoryData>) => {
   flex: 1;
   max-height: 500px;
   overflow-y: auto;
-  background: var(--ant-color-bg-layout);
-  border: 1px solid var(--ant-color-border);
-  border-radius: 6px;
-  padding: 12px;
-  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-  font-size: 12px;
-  line-height: 1.4;
+  /* 新增: 防止超长无空格字符串把容器撑宽 */
+  overflow-x: auto; /* 横向单独滚动，而不是撑出布局 */
+  word-break: break-all;
+  overflow-wrap: anywhere;
 }
 
 .log-content pre {
   margin: 0;
   white-space: pre-wrap;
-  word-wrap: break-word;
+  word-wrap: break-word; /* 兼容性写法 */
+  word-break: break-all; /* 处理超长连续字符 */
+  overflow-wrap: anywhere;
+  max-width: 100%;
 }
 
 .no-log {
@@ -1055,7 +1058,22 @@ const getDateStatusColor = (users: Record<string, HistoryData>) => {
 
   .log-area {
     width: 100%;
-    max-height: 400px;
+    min-width: 0;
+  }
+}
+
+/* 针对极窄窗口再降级为纵向布局，提前触发布局切换，避免出现水平滚动 */
+@media (max-width: 1000px) {
+  .history-layout {
+    flex-direction: column;
+  }
+  .records-area {
+    width: 100%;
+    min-width: 0;
+  }
+  .log-area {
+    width: 100%;
+    min-width: 0;
   }
 }
 
