@@ -793,6 +793,13 @@ export function useSchedulerLogic() {
     const { type, data } = wsMessage
     console.log('[Scheduler] 收到Main消息:', { type, data })
 
+    // 首先调用 schedulerHandlers 的处理函数，确保 RequestClose 等信号被正确处理
+    try {
+      schedulerHandlers.handleMainMessage(wsMessage)
+    } catch (e) {
+      console.warn('[Scheduler] schedulerHandlers.handleMainMessage error:', e)
+    }
+
     if (type === 'Message' && data && data.type === 'Countdown') {
       // 收到倒计时消息，由全局组件处理
       console.log('[Scheduler] 收到倒计时消息，由全局组件处理:', data)
