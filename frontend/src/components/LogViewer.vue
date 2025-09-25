@@ -60,7 +60,7 @@
                                 <template #icon>
                                     <ExportOutlined />
                                 </template>
-                                导出日志（txt格式）
+                                导出日志（log格式）
                             </a-button>
                             <!--                <a-button @click="scrollToBottom" :disabled="!logs">-->
                             <!--                  <template #icon><DownOutlined /></template>-->
@@ -285,7 +285,7 @@ const exportLogs = async () => {
         } else {
             fileName = `logs_${new Date().toISOString().slice(0, 10)}`
         }
-        a.download = `${fileName}.txt`
+        a.download = `${fileName}.log`
 
         document.body.appendChild(a)
         a.click()
