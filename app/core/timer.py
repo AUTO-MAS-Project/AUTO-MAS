@@ -112,7 +112,7 @@ class _MainTimer:
         """静默模式通过模拟老板键来隐藏模拟器窗口"""
 
         if (
-            len(Config.if_ignore_silence) > 0
+            len(Config.if_ignore_silence) == 0
             and Config.get("Function", "IfSilence")
             and Config.get("Function", "BossKey") != ""
         ):
