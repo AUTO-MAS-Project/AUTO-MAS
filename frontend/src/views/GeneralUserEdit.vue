@@ -50,6 +50,33 @@
     </a-space>
   </div>
 
+  <!-- 通用配置遮罩层 -->
+  <teleport to="body">
+    <div v-if="showGeneralConfigMask" class="maa-config-mask">
+      <div class="mask-content">
+        <div class="mask-icon">
+          <SettingOutlined :style="{ fontSize: '48px', color: '#1890ff' }" />
+        </div>
+        <h2 class="mask-title">正在进行通用配置</h2>
+        <p class="mask-description">
+          当前正在进行该用户的通用配置，请在配置界面完成相关设置。
+          <br />
+          配置完成后，请点击"保存配置"按钮来结束配置会话。
+        </p>
+        <div class="mask-actions">
+          <a-button
+            v-if="generalWebsocketId"
+            type="primary"
+            size="large"
+            @click="handleSaveGeneralConfig"
+          >
+            保存配置
+          </a-button>
+        </div>
+      </div>
+    </div>
+  </teleport>
+
   <div class="user-edit-content">
     <a-card class="config-card">
       <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
@@ -355,6 +382,8 @@ import type { FormInstance, Rule } from 'ant-design-vue/es/form'
 import { useUserApi } from '@/composables/useUserApi'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useWebSocket } from '@/composables/useWebSocket'
+import { Service } from '@/api'
+import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 
 const router = useRouter()
 const route = useRoute()
@@ -376,6 +405,8 @@ const scriptName = ref('')
 // 通用配置相关
 const generalConfigLoading = ref(false)
 const generalWebsocketId = ref<string | null>(null)
+const showGeneralConfigMask = ref(false)
+let generalConfigTimeout: number | null = null
 
 // 通用脚本默认用户数据
 const getDefaultGeneralUserData = () => ({
@@ -556,28 +587,103 @@ const handleGeneralConfig = async () => {
   try {
     generalConfigLoading.value = true
 
+    // 先立即显示遮罩以避免后端延迟导致无法感知
+    showGeneralConfigMask.value = true
+
+    // 如果已有连接，先断开并清理
     if (generalWebsocketId.value) {
       unsubscribe(generalWebsocketId.value)
       generalWebsocketId.value = null
+      showGeneralConfigMask.value = false
+      if (generalConfigTimeout) {
+        window.clearTimeout(generalConfigTimeout)
+        generalConfigTimeout = null
+      }
     }
 
-    const subId = userId
-
-    subscribe(subId, {
-      onError: error => {
-        console.error(`用户 ${formData.userName} 通用配置错误:`, error)
-        message.error(`通用配置连接失败: ${error}`)
-        generalWebsocketId.value = null
-      }
+    // 调用后端启动任务接口，传入 userId 作为 taskId 与设置模式
+    const response = await Service.addTaskApiDispatchStartPost({
+      taskId: userId,
+      mode: TaskCreateIn.mode.SettingScriptMode,
     })
 
-    generalWebsocketId.value = subId
-    message.success(`已开始配置用户 ${formData.userName} 的通用设置`)
+    console.debug('通用配置 start 接口返回:', response)
+    if (response && response.websocketId) {
+      const wsId = response.websocketId
+
+      console.debug('订阅 websocketId:', wsId)
+
+      // 订阅 websocket
+      subscribe(wsId, {
+        onMessage: (wsMessage: any) => {
+          if (wsMessage.type === 'error') {
+            console.error(`用户 ${formData.userName} 通用配置错误:`, wsMessage.data)
+            message.error(`通用配置连接失败: ${wsMessage.data}`)
+            unsubscribe(wsId)
+            generalWebsocketId.value = null
+            showGeneralConfigMask.value = false
+            return
+          }
+
+          if (wsMessage.data && wsMessage.data.Accomplish) {
+            message.success(`用户 ${formData.userName} 的配置已完成`)
+            unsubscribe(wsId)
+            generalWebsocketId.value = null
+            showGeneralConfigMask.value = false
+          }
+        },
+      })
+
+      generalWebsocketId.value = wsId
+      showGeneralConfigMask.value = true
+      message.success(`已开始配置用户 ${formData.userName} 的通用设置`)
+
+      // 设置 30 分钟超时自动断开
+      generalConfigTimeout = window.setTimeout(() => {
+        if (generalWebsocketId.value) {
+          const id = generalWebsocketId.value
+          unsubscribe(id)
+          generalWebsocketId.value = null
+          showGeneralConfigMask.value = false
+          message.info(`用户 ${formData.userName} 的配置会话已超时断开`)
+        }
+        generalConfigTimeout = null
+      }, 30 * 60 * 1000)
+    } else {
+      message.error(response?.message || '启动通用配置失败')
+    }
   } catch (error) {
-    console.error('通用配置失败:', error)
-    message.error('通用配置失败')
+    console.error('启动通用配置失败:', error)
+    message.error('启动通用配置失败')
   } finally {
     generalConfigLoading.value = false
+  }
+}
+
+const handleSaveGeneralConfig = async () => {
+  try {
+    const websocketId = generalWebsocketId.value
+    if (!websocketId) {
+      message.error('未找到活动的配置会话')
+      return
+    }
+
+    const response = await Service.stopTaskApiDispatchStopPost({ taskId: websocketId })
+    if (response && response.code === 200) {
+      unsubscribe(websocketId)
+      generalWebsocketId.value = null
+      showGeneralConfigMask.value = false
+      if (generalConfigTimeout) {
+        window.clearTimeout(generalConfigTimeout)
+        generalConfigTimeout = null
+      }
+      message.success('用户的通用配置已保存')
+    } else {
+      message.error(response.message || '保存配置失败')
+    }
+  } catch (error) {
+    console.error('保存通用配置失败:', error)
+    message.error('保存通用配置失败')
   }
 }
 
@@ -622,6 +728,11 @@ const handleCancel = () => {
   if (generalWebsocketId.value) {
     unsubscribe(generalWebsocketId.value)
     generalWebsocketId.value = null
+    showGeneralConfigMask.value = false
+    if (generalConfigTimeout) {
+      window.clearTimeout(generalConfigTimeout)
+      generalConfigTimeout = null
+    }
   }
   router.push('/scripts')
 }
@@ -828,5 +939,56 @@ onMounted(() => {
   .user-edit-content {
     max-width: 100%;
   }
+}
+
+/* 通用/MAA 配置遮罩样式（用于全局覆盖） */
+.maa-config-mask {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+.mask-content {
+  background: var(--ant-color-bg-elevated);
+  border-radius: 8px;
+  padding: 24px;
+  max-width: 480px;
+  width: 100%;
+  text-align: center;
+  box-shadow:
+    0 6px 16px 0 rgba(0, 0, 0, 0.08),
+    0 3px 6px -4px rgba(0, 0, 0, 0.12),
+    0 9px 28px 8px rgba(0, 0, 0, 0.05);
+  border: 1px solid var(--ant-color-border);
+}
+
+.mask-icon {
+  margin-bottom: 16px;
+}
+
+.mask-title {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0 0 8px;
+  color: var(--ant-color-text);
+}
+
+.mask-description {
+  font-size: 14px;
+  color: var(--ant-color-text-secondary);
+  margin: 0 0 24px;
+  line-height: 1.5;
+}
+
+.mask-actions {
+  display: flex;
+  justify-content: center;
 }
 </style>
