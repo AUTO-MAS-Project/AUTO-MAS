@@ -26,7 +26,7 @@
       </div>
 
       <!-- 详细筛选条件 -->
-      <a-row :gutter="16" align="middle">
+      <a-row :gutter="16" :align="'middle'">
         <a-col :span="6">
           <a-form-item label="合并模式" style="margin-bottom: 0">
             <a-select v-model:value="searchForm.mode" style="width: 100%">
@@ -277,43 +277,54 @@
               <a-card size="small" title="详细日志" class="log-card">
                 <template #extra>
                   <a-space>
-                    <a-tooltip title="打开日志文件">
+                    <a-tooltip title="打开日志文件" :getPopupContainer="tooltipContainer">
                       <a-button
                         size="small"
                         type="text"
                         :disabled="!currentJsonFile"
                         @click="handleOpenLogFile"
+                        :class="{ 'no-hover-shift': true }"
+                        :style="buttonFixedStyle"
                       >
                         <template #icon>
                           <FileOutlined />
                         </template>
                       </a-button>
                     </a-tooltip>
-                    <a-tooltip title="打开日志文件所在目录">
+                    <a-tooltip title="打开日志文件所在目录" :getPopupContainer="tooltipContainer">
                       <a-button
                         size="small"
                         type="text"
                         :disabled="!currentJsonFile"
                         @click="handleOpenLogDirectory"
+                        :class="{ 'no-hover-shift': true }"
+                        :style="buttonFixedStyle"
                       >
                         <template #icon>
                           <FolderOpenOutlined />
                         </template>
                       </a-button>
                     </a-tooltip>
+                    <a-tooltip :getPopupContainer="tooltipContainer">
+                      <a-select
+                        v-model:value="logFontSize"
+                        size="small"
+                        class="log-font-size-select"
+                        style="width: 72px"
+                        :options="logFontSizeOptions.map(v => ({ value: v, label: v + 'px' }))"
+                      />
+                    </a-tooltip>
                   </a-space>
                 </template>
                 <a-spin :spinning="detailLoading">
-                  <div v-if="currentDetail?.log_content" class="log-content">
+                  <div v-if="currentDetail?.log_content" class="log-content" :style="{ fontSize: logFontSize + 'px' }">
                     <pre>{{ currentDetail.log_content }}</pre>
                   </div>
                   <div v-else class="no-log">
                     <a-empty
                       description="未选择日志，请从左边记录条目中选择"
                       :image="NodataImage"
-                      :image-style="{
-                        height: '60px',
-                      }"
+                      :image-style="{ height: '60px' }"
                     />
                   </div>
                 </a-spin>
@@ -341,7 +352,7 @@ import {
   FileOutlined,
 } from '@ant-design/icons-vue'
 import { Service } from '@/api/services/Service'
-import type { HistorySearchIn, HistoryData } from '@/api'
+import { HistorySearchIn, type HistoryData } from '@/api' // 调整：枚举需要值导入
 import dayjs from 'dayjs'
 import NodataImage from '@/assets/NoData.png'
 
@@ -358,62 +369,20 @@ const selectedRecordIndex = ref(-1)
 const currentDetail = ref<HistoryData | null>(null)
 const currentJsonFile = ref('')
 
-// 快捷时间选择预设
+// 快捷时间选择预设（改用枚举值）
 const timePresets = [
-  {
-    key: 'today',
-    label: '今天',
-    startDate: () => dayjs().format('YYYY-MM-DD'),
-    endDate: () => dayjs().format('YYYY-MM-DD'),
-    mode: '按日合并' as HistorySearchIn.mode,
-  },
-  {
-    key: 'yesterday',
-    label: '昨天',
-    startDate: () => dayjs().subtract(1, 'day').format('YYYY-MM-DD'),
-    endDate: () => dayjs().subtract(1, 'day').format('YYYY-MM-DD'),
-    mode: '按日合并' as HistorySearchIn.mode,
-  },
-  {
-    key: 'week',
-    label: '最近一周',
-    startDate: () => dayjs().subtract(7, 'day').format('YYYY-MM-DD'),
-    endDate: () => dayjs().format('YYYY-MM-DD'),
-    mode: '按日合并' as HistorySearchIn.mode,
-  },
-  {
-    key: 'month',
-    label: '最近一个月',
-    startDate: () => dayjs().subtract(1, 'month').format('YYYY-MM-DD'),
-    endDate: () => dayjs().format('YYYY-MM-DD'),
-    mode: '按周合并' as HistorySearchIn.mode,
-  },
-  {
-    key: 'twoMonths',
-    label: '最近两个月',
-    startDate: () => dayjs().subtract(2, 'month').format('YYYY-MM-DD'),
-    endDate: () => dayjs().format('YYYY-MM-DD'),
-    mode: '按周合并' as HistorySearchIn.mode,
-  },
-  {
-    key: 'threeMonths',
-    label: '最近三个月',
-    startDate: () => dayjs().subtract(3, 'month').format('YYYY-MM-DD'),
-    endDate: () => dayjs().format('YYYY-MM-DD'),
-    mode: '按月合并' as HistorySearchIn.mode,
-  },
-  {
-    key: 'halfYear',
-    label: '最近半年',
-    startDate: () => dayjs().subtract(6, 'month').format('YYYY-MM-DD'),
-    endDate: () => dayjs().format('YYYY-MM-DD'),
-    mode: '按月合并' as HistorySearchIn.mode,
-  },
+  { key: 'today', label: '今天', startDate: () => dayjs().format('YYYY-MM-DD'), endDate: () => dayjs().format('YYYY-MM-DD'), mode: HistorySearchIn.mode.DAILY },
+  { key: 'yesterday', label: '昨天', startDate: () => dayjs().subtract(1, 'day').format('YYYY-MM-DD'), endDate: () => dayjs().subtract(1, 'day').format('YYYY-MM-DD'), mode: HistorySearchIn.mode.DAILY },
+  { key: 'week', label: '最近一周', startDate: () => dayjs().subtract(7, 'day').format('YYYY-MM-DD'), endDate: () => dayjs().format('YYYY-MM-DD'), mode: HistorySearchIn.mode.DAILY },
+  { key: 'month', label: '最近一个月', startDate: () => dayjs().subtract(1, 'month').format('YYYY-MM-DD'), endDate: () => dayjs().format('YYYY-MM-DD'), mode: HistorySearchIn.mode.WEEKLY },
+  { key: 'twoMonths', label: '最近两个月', startDate: () => dayjs().subtract(2, 'month').format('YYYY-MM-DD'), endDate: () => dayjs().format('YYYY-MM-DD'), mode: HistorySearchIn.mode.WEEKLY },
+  { key: 'threeMonths', label: '最近三个月', startDate: () => dayjs().subtract(3, 'month').format('YYYY-MM-DD'), endDate: () => dayjs().format('YYYY-MM-DD'), mode: HistorySearchIn.mode.MONTHLY },
+  { key: 'halfYear', label: '最近半年', startDate: () => dayjs().subtract(6, 'month').format('YYYY-MM-DD'), endDate: () => dayjs().format('YYYY-MM-DD'), mode: HistorySearchIn.mode.MONTHLY },
 ]
 
-// 搜索表单
+// 搜索表单（默认按日合并）
 const searchForm = reactive({
-  mode: '按日合并' as HistorySearchIn.mode,
+  mode: HistorySearchIn.mode.DAILY as HistorySearchIn.mode,
   startDate: dayjs().subtract(7, 'day').format('YYYY-MM-DD'),
   endDate: dayjs().format('YYYY-MM-DD'),
 })
@@ -425,37 +394,6 @@ interface HistoryDateGroup {
 }
 
 const historyData = ref<HistoryDateGroup[]>([])
-
-// 计算总览数据
-const totalOverview = computed(() => {
-  let totalRecruit = 0
-  let totalDrop = 0
-
-  historyData.value.forEach(dateGroup => {
-    Object.values(dateGroup.users).forEach(userData => {
-      // 统计公招数据
-      if (userData.recruit_statistics) {
-        Object.values(userData.recruit_statistics).forEach((count: any) => {
-          totalRecruit += count
-        })
-      }
-
-      // 统计掉落数据
-      if (userData.drop_statistics) {
-        Object.values(userData.drop_statistics).forEach((stageDrops: any) => {
-          Object.values(stageDrops).forEach((count: any) => {
-            totalDrop += count
-          })
-        })
-      }
-    })
-  })
-
-  return {
-    totalRecruit,
-    totalDrop,
-  }
-})
 
 // 当前显示的统计数据（根据是否选中记录条目来决定显示用户总计还是单条记录的数据）
 const currentStatistics = computed(() => {
@@ -523,7 +461,7 @@ const handleSearch = async () => {
 
 // 重置搜索条件
 const handleReset = () => {
-  searchForm.mode = '按日合并'
+  searchForm.mode = HistorySearchIn.mode.DAILY
   searchForm.startDate = dayjs().subtract(7, 'day').format('YYYY-MM-DD')
   searchForm.endDate = dayjs().format('YYYY-MM-DD')
   historyData.value = []
@@ -546,12 +484,12 @@ const handleDateChange = () => {
   currentPreset.value = ''
 }
 
-// ���择用户处理
+// 选择用户处理（修正乱码注释）
 const handleSelectUser = async (date: string, username: string, userData: HistoryData) => {
   selectedUser.value = `${date}-${username}`
   selectedUserData.value = userData
-  selectedRecordIndex.value = -1 // 重置记录选择
-  currentDetail.value = null // 清空日志内容
+  selectedRecordIndex.value = -1
+  currentDetail.value = null
   currentJsonFile.value = ''
 }
 
@@ -655,15 +593,14 @@ const handleOpenLogDirectory = async () => {
   }
 }
 
-// 获取日期状态颜色
-const getDateStatusColor = (users: Record<string, HistoryData>) => {
-  const hasError = Object.values(users).some(
-    user =>
-      user.index?.some(item => item.status === '异常') ||
-      (user.error_info && Object.keys(user.error_info).length > 0)
-  )
-  return hasError ? 'error' : 'success'
-}
+// 日志字体大小（恢复）
+const logFontSize = ref(14)
+const logFontSizeOptions = [12, 13, 14, 16, 18, 20]
+
+// Tooltip 容器：避免挂载到 body 造成全局滚动条闪烁与布局抖动
+const tooltipContainer = (triggerNode: HTMLElement) => triggerNode?.parentElement || document.body
+// 固定 button 尺寸，避免 hover/tooltip 状态导致宽度高度微调
+const buttonFixedStyle = { width: '28px', height: '28px', padding: 0 }
 </script>
 
 <style scoped>
@@ -681,11 +618,6 @@ const getDateStatusColor = (users: Record<string, HistoryData>) => {
   gap: 16px;
 }
 
-.title-icon {
-  font-size: 32px;
-  color: var(--ant-color-primary);
-}
-
 .header-title h1 {
   margin: 0;
   font-size: 32px;
@@ -701,8 +633,9 @@ const getDateStatusColor = (users: Record<string, HistoryData>) => {
   margin-bottom: 24px;
 }
 
-.history-content {
+.history-content { /* 避免 tooltip 在局部弹出时引起外层出现滚动条 */
   height: calc(80vh - 200px);
+  overflow: hidden;
 }
 
 .empty-state {
@@ -723,21 +656,6 @@ const getDateStatusColor = (users: Record<string, HistoryData>) => {
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  gap: 16px;
-}
-
-.overview-section {
-  flex-shrink: 0;
-}
-
-.overview-card {
-  border: 1px solid var(--ant-color-border);
-  border-radius: 8px;
-}
-
-.overview-stats {
-  display: flex;
-  justify-content: space-around;
   gap: 16px;
 }
 
@@ -785,7 +703,7 @@ const getDateStatusColor = (users: Record<string, HistoryData>) => {
 }
 
 .user-item:hover {
-  background: var(--ant-color-bg-container-disabled);
+  background: rgba(0, 0, 0, 0.04); /* 移除未知 CSS 变量 */
   border-color: var(--ant-color-border);
 }
 
@@ -805,17 +723,11 @@ const getDateStatusColor = (users: Record<string, HistoryData>) => {
   font-size: 13px;
 }
 
-.user-status {
-  display: flex;
-  gap: 4px;
-}
-
 /* 右侧详情区域 */
 .detail-area {
   flex: 1;
   display: flex;
   flex-direction: column;
-  min-width: 0;
 }
 
 .no-selection {
@@ -826,6 +738,7 @@ const getDateStatusColor = (users: Record<string, HistoryData>) => {
   border: 1px solid var(--ant-color-border);
   border-radius: 8px;
   background: var(--ant-color-bg-container);
+  min-height: 400px;
 }
 
 .detail-content {
@@ -833,16 +746,18 @@ const getDateStatusColor = (users: Record<string, HistoryData>) => {
   display: flex;
   gap: 16px;
   min-height: 0;
+  min-width: 0; /* 确保子项 flex:1 时可以收缩 */
+  overflow: hidden; /* 避免被长行撑出 */
 }
 
 /* 记录条目区域 */
 .records-area {
   width: 400px;
-  flex-shrink: 0;
+  flex-shrink: 1; /* 新增: 允许一定程度收缩 */
+  min-width: 260px; /* 给一个合理下限 */
   display: flex;
   flex-direction: column;
   gap: 16px;
-  min-width: 0;
 }
 
 .records-section {
@@ -883,7 +798,7 @@ const getDateStatusColor = (users: Record<string, HistoryData>) => {
 }
 
 .record-item:hover {
-  background: var(--ant-color-bg-container-disabled);
+  background: rgba(0, 0, 0, 0.04); /* 移除未知 CSS 变量 */
 }
 
 .record-item.active {
@@ -968,19 +883,11 @@ const getDateStatusColor = (users: Record<string, HistoryData>) => {
   min-height: 120px;
 }
 
-.error-section {
-  margin-top: 16px;
-}
-
-.error-card {
-  border: 1px solid var(--ant-color-error-border);
-  border-radius: 8px;
-}
-
 /* 日志区域 */
 .log-area {
   flex: 1;
-  min-width: 300px;
+  /* 允许在父级 flex 宽度不足时压缩，避免整体被撑出视口 */
+  min-width: 0; /* 修改: 原来是 300px，导致在内容渲染后无法收缩 */
   display: flex;
   flex-direction: column;
 }
@@ -1004,30 +911,34 @@ const getDateStatusColor = (users: Record<string, HistoryData>) => {
   flex: 1;
   max-height: 500px;
   overflow-y: auto;
-  background: var(--ant-color-bg-layout);
-  border: 1px solid var(--ant-color-border);
-  border-radius: 6px;
-  padding: 12px;
-  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-  font-size: 12px;
-  line-height: 1.4;
+  /* 新增: 防止超长无空格字符串把容器撑宽 */
+  overflow-x: auto; /* 横向单独滚动，而不是撑出布局 */
+  word-break: break-all;
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  line-height: 1.5;
 }
 
 .log-content pre {
   margin: 0;
   white-space: pre-wrap;
   word-wrap: break-word;
+  word-break: break-all;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+  font-size: inherit;
+  line-height: inherit;
 }
 
-.no-log {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 500px;
+/* 恢复字体选择器样式 */
+.log-font-size-select :deep(.ant-select-selector) {
+  padding: 0 4px;
+  text-align: center;
 }
 
 /* 按钮样式 */
+/* 移除未使用 .title-icon */
+/* 移除 unused overview-section / overview-card / overview-stats / user-status / error-section / error-card */
 .default {
   border-color: var(--ant-color-border);
   color: var(--ant-color-text);
@@ -1036,6 +947,22 @@ const getDateStatusColor = (users: Record<string, HistoryData>) => {
 .default:hover {
   border-color: var(--ant-color-primary);
   color: var(--ant-color-primary);
+}
+
+/* 防止按钮在获得焦点/激活时出现位移（如出现 outline 或行高变化导致的抖动） */
+.no-hover-shift {
+  line-height: 1; /* 固定行高 */
+}
+.no-hover-shift :deep(.ant-btn-icon) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 约束 tooltip 在本容器内时的最大宽度，减少撑开 */
+:deep(.ant-tooltip) {
+  max-width: 260px;
+  word-break: break-word;
 }
 
 /* 响应式设计 */
@@ -1055,52 +982,22 @@ const getDateStatusColor = (users: Record<string, HistoryData>) => {
 
   .log-area {
     width: 100%;
-    max-height: 400px;
+    min-width: 0;
   }
 }
 
-/* 带tooltip的错误tag样式 */
-.error-tag-with-tooltip {
-  cursor: help;
-  position: relative;
-}
-
-.error-tag-with-tooltip:hover {
-  opacity: 0.8;
-}
-
-/* 统计数据标题样式 */
-.stat-subtitle {
-  font-size: 12px;
-  color: var(--ant-color-text-secondary);
-  font-weight: normal;
-  margin-left: 8px;
-}
-
-/* 滚动条样式 */
-.date-list::-webkit-scrollbar,
-.log-content::-webkit-scrollbar,
-.records-list::-webkit-scrollbar {
-  width: 6px;
-}
-
-.date-list::-webkit-scrollbar-track,
-.log-content::-webkit-scrollbar-track,
-.records-list::-webkit-scrollbar-track {
-  background: var(--ant-color-bg-container);
-  border-radius: 3px;
-}
-
-.date-list::-webkit-scrollbar-thumb,
-.log-content::-webkit-scrollbar-thumb,
-.records-list::-webkit-scrollbar-thumb {
-  background: var(--ant-color-border);
-  border-radius: 3px;
-}
-
-.date-list::-webkit-scrollbar-thumb:hover,
-.log-content::-webkit-scrollbar-thumb:hover,
-.records-list::-webkit-scrollbar-thumb:hover {
-  background: var(--ant-color-border-secondary);
+/* 针对极窄窗口再降级为纵向布局，提前触发布局切换，避免出现水平滚动 */
+@media (max-width: 1000px) {
+  .history-layout {
+    flex-direction: column;
+  }
+  .records-area {
+    width: 100%;
+    min-width: 0;
+  }
+  .log-area {
+    width: 100%;
+    min-width: 0;
+  }
 }
 </style>
