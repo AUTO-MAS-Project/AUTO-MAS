@@ -1068,6 +1068,8 @@ class AppConfig(GlobalConfig):
                         await queue.QueueItem.remove(key)
 
         await self.ScriptConfig.remove(uid)
+        if (Path.cwd() / f"data/{uid}").exists():
+            shutil.rmtree(Path.cwd() / f"data/{uid}")
 
     async def reorder_script(self, index_list: list[str]) -> None:
         """重新排序脚本"""
@@ -1295,6 +1297,8 @@ class AppConfig(GlobalConfig):
         if isinstance(script_config, (MaaConfig | GeneralConfig)):
             await script_config.UserData.remove(uid)
             await self.ScriptConfig.save()
+            if (Path.cwd() / f"data/{script_id}/{user_id}").exists():
+                shutil.rmtree(Path.cwd() / f"data/{script_id}/{user_id}")
 
     async def reorder_user(self, script_id: str, index_list: list[str]) -> None:
         """重新排序用户"""
