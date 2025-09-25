@@ -882,6 +882,13 @@ class AppConfig(GlobalConfig):
                                 "RootPath": general_config["Script"]["RootPath"],
                             }
 
+                            general_config["Script"]["ConfigPathMode"] = (
+                                "File"
+                                if "所有文件"
+                                in general_config["Script"]["ConfigPathMode"]
+                                else "Folder"
+                            )
+
                             uid, sc = await self.add_script("General")
                             script_dict[GeneralConfig.name] = str(uid)
                             await sc.load(general_config)
