@@ -815,7 +815,6 @@ const getDateStatusColor = (users: Record<string, HistoryData>) => {
   flex: 1;
   display: flex;
   flex-direction: column;
-  min-width: 0;
 }
 
 .no-selection {
@@ -826,6 +825,7 @@ const getDateStatusColor = (users: Record<string, HistoryData>) => {
   border: 1px solid var(--ant-color-border);
   border-radius: 8px;
   background: var(--ant-color-bg-container);
+  min-height: 400px;
 }
 
 .detail-content {
