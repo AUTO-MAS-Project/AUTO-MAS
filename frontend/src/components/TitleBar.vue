@@ -41,7 +41,7 @@
 
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue'
-import { BorderOutlined, CloseOutlined, CopyOutlined, MinusOutlined } from '@ant-design/icons-vue'
+import { BorderOutlined, CloseOutlined, MinusOutlined } from '@ant-design/icons-vue'
 import { useTheme } from '@/composables/useTheme'
 import type { UpdateCheckOut } from '@/api'
 import { Service, type VersionOut } from '@/api'
