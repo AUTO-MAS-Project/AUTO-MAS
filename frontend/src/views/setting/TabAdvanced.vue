@@ -1,19 +1,13 @@
 <script setup lang="ts">
-const {
-  goToLogs,
-  openDevTools,
-  mirrorConfigStatus,
-  refreshingConfig,
-  refreshMirrorConfig,
-  goToMirrorTest
-} = defineProps<{
+const props = defineProps<{
   goToLogs: () => void
   openDevTools: () => void
-  mirrorConfigStatus: { isUsingCloudConfig: boolean; version: string; lastUpdated: string; source: 'cloud' | 'fallback' }
   refreshingConfig: boolean
   refreshMirrorConfig: () => Promise<void>
   goToMirrorTest: () => void
 }>()
+
+const { goToLogs, openDevTools, refreshingConfig, refreshMirrorConfig, goToMirrorTest } = props
 </script>
 <template>
   <div class="tab-content">
