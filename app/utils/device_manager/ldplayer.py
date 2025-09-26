@@ -2,9 +2,9 @@ import asyncio
 from typing import Literal
 from app.utils.device_manager.utils import BaseDevice, ExeRunner, DeviceStatus
 from app.utils.logger import get_logger
-from app.utils.device_manager.postMessage import (
-    post_keys_to_hwnd,
-    post_keys_to_hwnd_sync,
+from app.utils.device_manager.keyboard_utils import (
+    vk_codes_to_key_names,
+    send_key_combination,
 )
 import psutil
 from pydantic import BaseModel
@@ -156,6 +156,7 @@ class LDManager(BaseDevice):
 
         try:
             emulator_info = result.get(int(idx))
+            print(emulator_info)
             if not emulator_info:
                 self.logger.error(f"未找到模拟器{idx}的信息")
                 return False, {}, DeviceStatus.UNKNOWN
@@ -164,10 +165,11 @@ class LDManager(BaseDevice):
 
             # 计算状态码
             if emulator_info.in_android == 1:
-                status = DeviceStatus.STARTING
+                status = DeviceStatus.ONLINE
             elif emulator_info.in_android == 2:
                 if emulator_info.vbox_pid > 0:
-                    status = DeviceStatus.ONLINE
+                    status = DeviceStatus.STARTING
+                    # 雷电启动后, vbox_pid为-1, 目前不知道有什么区别
                 else:
                     status = DeviceStatus.STARTING
             elif emulator_info.in_android == 0:
@@ -230,10 +232,10 @@ class LDManager(BaseDevice):
 
     async def send_boss_key(
         self,
-        idx: str,
         boss_keys: list[int],
         result: EmulatorInfo,
-        is_show: bool = False,  # True: 显示, False: 隐藏
+        is_show: bool = False,
+        # True: 显示, False: 隐藏
     ) -> bool:
         """
         发送BOSS键
@@ -242,19 +244,37 @@ class LDManager(BaseDevice):
             idx (str): 模拟器索引
             boss_keys (list[int]): BOSS键的虚拟键码列表
             result (EmulatorInfo): 模拟器信息
-            is_show (bool, optional): 隐藏或显示窗口，默认为 False（隐藏）。
+            is_show (bool, optional): 将要隐藏或显示窗口，默认为 False（隐藏）。
         """
         hwnd = result.top_hwnd
-        if not hwnd:
-            return False
+        try:
+            # 使用键盘工具发送按键组合
+            success = await send_key_combination(vk_codes_to_key_names(boss_keys))
+            if not success:
+                return False
 
-        await post_keys_to_hwnd(hwnd, boss_keys)
-        await asyncio.sleep(0.5)
-        if win32gui.IsWindowVisible(hwnd) == (not is_show):
-            return True
-        else:
-            status = await post_keys_to_hwnd_sync(hwnd, boss_keys)
-            return status == (not is_show)
+            # 等待系统处理
+            await asyncio.sleep(0.5)
+
+            # 检查窗口可见性是否符合预期
+            current_visible = win32gui.IsWindowVisible(hwnd)
+            expected_visible = is_show
+
+            if current_visible == expected_visible:
+                return True
+            else:
+                # 如果第一次没有成功，再试一次
+                success = await send_key_combination(vk_codes_to_key_names(boss_keys))
+                if not success:
+                    return False
+
+                await asyncio.sleep(0.5)
+                current_visible = win32gui.IsWindowVisible(hwnd)
+                return current_visible == expected_visible
+
+        except Exception as e:
+            self.logger.error(f"发送BOSS键失败: {e}")
+            return False
 
     async def hide_device(
         self,
@@ -268,7 +288,7 @@ class LDManager(BaseDevice):
         if status != DeviceStatus.ONLINE:
             return False, status
 
-        return await self.send_boss_key(idx, boss_keys, result, False), status
+        return await self.send_boss_key(boss_keys, result, False), status
 
     async def show_device(
         self,
@@ -282,7 +302,7 @@ class LDManager(BaseDevice):
         if status != DeviceStatus.ONLINE:
             return False, status
 
-        return await self.send_boss_key(idx, boss_keys, result, True), status
+        return await self.send_boss_key(boss_keys, result, True), status
 
     async def get_adb_ports(self, pid: int) -> int:
         """使用psutil获取adb端口"""
