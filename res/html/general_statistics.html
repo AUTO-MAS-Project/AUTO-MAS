@@ -166,10 +166,10 @@
         </div>
 
         <div class="content">
-            <p><strong>用户代理信息：</strong>{{ sub_info }}</p>
-            <p><strong>任务开始时间：</strong>{{ start_time }}</p>
-            <p><strong>任务结束时间：</strong>{{ end_time }}</p>
-            <p><strong>脚本执行结果：</strong>
+            <p><strong>代理信息：</strong>{{ sub_info }}</p>
+            <p><strong>开始时间：</strong>{{ start_time }}</p>
+            <p><strong>结束时间：</strong>{{ end_time }}</p>
+            <p><strong>执行结果：</strong>
                 {% if sub_result == '代理成功' %}
                 <span class="greenhighlight">{{ sub_result }}</span>
                 {% elif sub_result == '代理失败' %}
