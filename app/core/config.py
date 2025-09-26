@@ -2052,8 +2052,8 @@ class AppConfig(GlobalConfig):
             if sanity_match:
                 data["sanity"] = int(sanity_match.group(1))
 
-            # 提取理智回满时间：理智将在 2025-09-26 18:57 回满
-            sanity_full_match = re.search(r"理智将在\s*(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2})\s*回满", log_line)
+            # 提取理智回满时间：理智将在 2025-09-26 18:57 回满。(17h 29m 后)
+            sanity_full_match = re.search(r"(理智将在\s*\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}\s*回满。\(\d+h\s+\d+m\s+后\))", log_line)
             if sanity_full_match:
                 data["sanity_full_at"] = sanity_full_match.group(1)
 
