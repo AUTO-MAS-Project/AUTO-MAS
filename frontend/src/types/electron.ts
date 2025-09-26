@@ -16,7 +16,12 @@ export interface ElectronAPI {
 
   // 重启为管理员
   restartAsAdmin: () => Promise<void>
+  appQuit: () => Promise<void>
 
+  // 进程管理
+  getRelatedProcesses: () => Promise<any[]>
+  killAllProcesses: () => Promise<{ success: boolean; error?: string }>
+  forceExit: () => Promise<{ success: boolean }>
   // 环境检查
   checkEnvironment: () => Promise<{
     pythonExists: boolean

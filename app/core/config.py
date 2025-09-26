@@ -882,6 +882,13 @@ class AppConfig(GlobalConfig):
                                 "RootPath": general_config["Script"]["RootPath"],
                             }
 
+                            general_config["Script"]["ConfigPathMode"] = (
+                                "File"
+                                if "所有文件"
+                                in general_config["Script"]["ConfigPathMode"]
+                                else "Folder"
+                            )
+
                             uid, sc = await self.add_script("General")
                             script_dict[GeneralConfig.name] = str(uid)
                             await sc.load(general_config)
@@ -1061,6 +1068,8 @@ class AppConfig(GlobalConfig):
                         await queue.QueueItem.remove(key)
 
         await self.ScriptConfig.remove(uid)
+        if (Path.cwd() / f"data/{uid}").exists():
+            shutil.rmtree(Path.cwd() / f"data/{uid}")
 
     async def reorder_script(self, index_list: list[str]) -> None:
         """重新排序脚本"""
@@ -1288,6 +1297,8 @@ class AppConfig(GlobalConfig):
         if isinstance(script_config, (MaaConfig | GeneralConfig)):
             await script_config.UserData.remove(uid)
             await self.ScriptConfig.save()
+            if (Path.cwd() / f"data/{script_id}/{user_id}").exists():
+                shutil.rmtree(Path.cwd() / f"data/{script_id}/{user_id}")
 
     async def reorder_user(self, script_id: str, index_list: list[str]) -> None:
         """重新排序用户"""
@@ -2027,10 +2038,24 @@ class AppConfig(GlobalConfig):
         data = {
             "recruit_statistics": defaultdict(int),
             "drop_statistics": defaultdict(dict),
+            "sanity": 0,
+            "sanity_full_at": "",
             "maa_result": maa_result,
         }
 
         if_six_star = False
+
+        # 提取理智相关信息
+        for log_line in logs:
+            # 提取当前理智值：理智: 5/180
+            sanity_match = re.search(r"理智:\s*(\d+)/\d+", log_line)
+            if sanity_match:
+                data["sanity"] = int(sanity_match.group(1))
+
+            # 提取理智回满时间：理智将在 2025-09-26 18:57 回满。(17h 29m 后)
+            sanity_full_match = re.search(r"(理智将在\s*\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}\s*回满。\(\d+h\s+\d+m\s+后\))", log_line)
+            if sanity_full_match:
+                data["sanity_full_at"] = sanity_full_match.group(1)
 
         # 公招统计（仅统计招募到的）
         confirmed_recruit = False
@@ -2140,6 +2165,7 @@ class AppConfig(GlobalConfig):
         log_path.parent.mkdir(parents=True, exist_ok=True)
         with log_path.open("w", encoding="utf-8") as f:
             f.writelines(logs)
+        # 保存统计数据
         with log_path.with_suffix(".json").open("w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=4)
 
@@ -2215,6 +2241,10 @@ class AppConfig(GlobalConfig):
                             if item not in data[key][stage]:
                                 data[key][stage][item] = 0
                             data[key][stage][item] += count
+
+                # 处理理智相关字段 - 使用最后一个文件的值
+                elif key in ["sanity", "sanity_full_at"]:
+                    data[key] = single_data[key]
 
                 # 录入运行结果
                 elif key in ["maa_result", "general_result"]:

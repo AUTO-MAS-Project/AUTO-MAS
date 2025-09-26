@@ -9,6 +9,12 @@ export interface ElectronAPI {
   windowMaximize: () => Promise<void>
   windowClose: () => Promise<void>
   windowIsMaximized: () => Promise<boolean>
+  appQuit: () => Promise<void>
+
+  // 进程管理
+  getRelatedProcesses: () => Promise<any[]>
+  killAllProcesses: () => Promise<{ success: boolean; error?: string }>
+  forceExit: () => Promise<{ success: boolean }>
 
   // 初始化相关API
   checkEnvironment: () => Promise<any>

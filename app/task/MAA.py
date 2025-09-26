@@ -1122,7 +1122,7 @@ class MaaManager:
         await asyncio.sleep(self.wait_time)
 
         if "-" in self.ADB_address:
-            ADB_ip = f"{self.ADB_address.split("-")[0]}-"
+            ADB_ip = f"{self.ADB_address.split('-')[0]}-"
             ADB_port = int(self.ADB_address.split("-")[1])
 
         elif ":" in self.ADB_address:
@@ -1933,6 +1933,8 @@ class MaaManager:
             message_text = (
                 f"开始时间: {message['start_time']}\n"
                 f"结束时间: {message['end_time']}\n"
+                f"理智剩余: {message.get('sanity', '未知')}\n"
+                f"回复时间: {message.get('sanity_full_at', '未知')}\n"
                 f"MAA执行结果: {message['maa_result']}\n\n"
                 f"{recruit_text}\n"
                 f"{drop_text}"

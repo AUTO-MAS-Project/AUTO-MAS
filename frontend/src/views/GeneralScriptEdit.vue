@@ -647,7 +647,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref, watch } from 'vue'
+import { onMounted, reactive, ref, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
 import { message } from 'ant-design-vue'
@@ -894,6 +894,9 @@ const updatePathsBasedOnRoot = (newRootPath: string) => {
 const pageLoading = ref(false)
 const scriptId = route.params.id as string
 
+// 在初始化（从接口加载数据）期间阻止某些 watcher 生效
+const isInitializing = ref(false)
+
 const formData = reactive({
   name: '',
   type: 'General' as ScriptType,
@@ -945,26 +948,36 @@ const rules = {
   type: [{ required: true, message: '请选择脚本类型', trigger: 'change' }],
 }
 
-// 监听配置文件类型变化，重置路径为根目录
-watch(
-  () => generalConfig.Script.ConfigPathMode,
-  (newMode, oldMode) => {
-    if (newMode !== oldMode && generalConfig.Script.ConfigPath && generalConfig.Script.ConfigPath !== '.') {
-      // 当配置文件类型改变时，重置为根目录路径
-      const rootPath = generalConfig.Info.RootPath
-      if (rootPath && rootPath !== '.') {
-        generalConfig.Script.ConfigPath = rootPath
-        const typeText = newMode === 'Folder' ? '文件夹' : '文件'
-        message.info(`配置文件类型已切换为${typeText}，路径已重置为根目录`)
-      } else {
-        // 如果没有设置根目录，则清空路径
-        generalConfig.Script.ConfigPath = '.'
-        const typeText = newMode === 'Folder' ? '文件夹' : '文件'
-        message.info(`配置文件类型已切换为${typeText}，请重新选择路径`)
+// 延迟注册 ConfigPathMode watcher（在加载脚本并完成初始化后再注册）
+let stopConfigPathModeWatcher: (() => void) | null = null
+
+const setupConfigPathModeWatcher = () => {
+  // 如果已存在 watcher，先停止
+  if (stopConfigPathModeWatcher) {
+    stopConfigPathModeWatcher()
+    stopConfigPathModeWatcher = null
+  }
+
+  stopConfigPathModeWatcher = watch(
+    () => generalConfig.Script.ConfigPathMode,
+    (newMode, oldMode) => {
+      if (newMode !== oldMode && generalConfig.Script.ConfigPath && generalConfig.Script.ConfigPath !== '.') {
+        // 当配置文件类型改变时，重置为根目录路径
+        const rootPath = generalConfig.Info.RootPath
+        if (rootPath && rootPath !== '.') {
+          generalConfig.Script.ConfigPath = rootPath
+          const typeText = newMode === 'Folder' ? '文件夹' : '文件'
+          message.info(`配置文件类型已切换为${typeText}，路径已重置为根目录`)
+        } else {
+          // 如果没有设置根目录，则清空路径
+          generalConfig.Script.ConfigPath = '.'
+          const typeText = newMode === 'Folder' ? '文件夹' : '文件'
+          message.info(`配置文件类型已切换为${typeText}，请重新选择路径`)
+        }
       }
     }
-  }
-)
+  )
+}
 
 // 监听根目录变化，自动调整其他路径以保持相对关系
 watch(
@@ -987,9 +1000,13 @@ watch(
 
 onMounted(async () => {
   await loadScript()
+  // 在脚本加载完成并完成初始化后，再注册 ConfigPathMode 的 watcher，避免初始化阶段触发重置逻辑
+  setupConfigPathModeWatcher()
 })
 
 const loadScript = async () => {
+  // 标记正在初始化，阻止某些 watcher 在赋值时触发
+  isInitializing.value = true
   pageLoading.value = true
   try {
     // 检查是否有通过路由状态传递的数据（新建脚本时）
@@ -1030,6 +1047,10 @@ const loadScript = async () => {
     router.push('/scripts')
   } finally {
     pageLoading.value = false
+    // 初始化完成，等待一次 nextTick 以确保所有由赋值触发的 watcher
+    // 在 isInitializing 为 true 时被调度并能正确跳过，然后再清除初始化标志
+    await nextTick()
+    isInitializing.value = false
   }
 }
 

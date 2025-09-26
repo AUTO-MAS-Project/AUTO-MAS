@@ -34,11 +34,17 @@ const version = (import.meta as any).env?.VITE_APP_VERSION || '获取版本失�
 const backendUpdateInfo = ref<VersionOut | null>(null)
 
 // 镜像配置状态
-const mirrorConfigStatus = ref({
+type MirrorConfigStatus = {
+  isUsingCloudConfig: boolean
+  version?: string
+  lastUpdated?: string
+  source: 'cloud' | 'fallback'
+}
+const mirrorConfigStatus = ref<MirrorConfigStatus>({
   isUsingCloudConfig: false,
-  version: '',
-  lastUpdated: '',
-  source: 'fallback' as 'cloud' | 'fallback',
+  version: undefined,
+  lastUpdated: undefined,
+  source: 'fallback',
 })
 const refreshingConfig = ref(false)
 
@@ -324,9 +330,12 @@ onMounted(() => {
 <style scoped>
 /* 统一样式，使用 :deep 作用到子组件内部 */
 .settings-container {
-  max-width: 1200px;
-  margin: 0 auto;
+  /* Allow the settings page to expand with the window width */
+  width: 100%;
+  max-width: none;
+  margin: 0;
   padding: 20px;
+  box-sizing: border-box;
 }
 .settings-header {
   margin-bottom: 24px;
@@ -340,6 +349,7 @@ onMounted(() => {
 .settings-content {
   background: var(--ant-color-bg-container);
   border-radius: 12px;
+  width: 100%;
 }
 .settings-tabs {
   margin: 0;
@@ -356,6 +366,7 @@ onMounted(() => {
 }
 :deep(.tab-content) {
   padding: 24px;
+  width: 100%;
 }
 :deep(.form-section) {
   margin-bottom: 32px;
@@ -536,6 +547,7 @@ onMounted(() => {
   color: #fff !important;
   text-decoration: none;
 }
+/* link-grid styles moved into TabOthers.vue (scoped) */
 :deep(.info-item) {
   display: flex;
   align-items: center;

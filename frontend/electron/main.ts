@@ -781,97 +781,44 @@ ipcMain.handle('check-git-update', async () => {
       GIT_ASKPASS: '',
     }
 
-    log.info('开始检查Git仓库更新...')
+    log.info('开始检查Git仓库更新（跳过fetch，避免直接访问GitHub）...')
 
-    // 执行 git fetch 获取最新的远程信息
-    await new Promise<void>((resolve, reject) => {
-      const fetchProc = spawn(gitPath, ['fetch', 'origin'], {
-        stdio: 'pipe',
-        env: gitEnv,
-        cwd: appRoot,
-      })
-
-      fetchProc.stdout?.on('data', data => {
-        log.info('git fetch output:', data.toString())
-      })
-
-      fetchProc.stderr?.on('data', data => {
-        log.info('git fetch stderr:', data.toString())
-      })
-
-      fetchProc.on('close', code => {
-        if (code === 0) {
-          resolve()
-        } else {
-          reject(new Error(`git fetch失败，退出码: ${code}`))
-        }
-      })
-
-      fetchProc.on('error', reject)
-    })
-
-    // 检查本地分支是否落后于远程分支
-    const hasUpdate = await new Promise<boolean>((resolve, reject) => {
-      const statusProc = spawn(gitPath, ['status', '-uno', '--porcelain=v1'], {
+    // 不执行fetch，直接检查本地状态
+    // 这样避免了直接访问GitHub，而是在后续的pull操作中使用镜像站
+    
+    // 获取当前HEAD的commit hash
+    const currentCommit = await new Promise<string>((resolve, reject) => {
+      const revParseProc = spawn(gitPath, ['rev-parse', 'HEAD'], {
         stdio: 'pipe',
         env: gitEnv,
         cwd: appRoot,
       })
 
       let output = ''
-      statusProc.stdout?.on('data', data => {
+      revParseProc.stdout?.on('data', data => {
         output += data.toString()
       })
 
-      statusProc.stderr?.on('data', data => {
-        log.info('git status stderr:', data.toString())
-      })
-
-      statusProc.on('close', code => {
+      revParseProc.on('close', code => {
         if (code === 0) {
-          // 检查是否有 "Your branch is behind" 的信息
-          // 使用 git rev-list 来比较本地和远程分支
-          const revListProc = spawn(
-            gitPath,
-            ['rev-list', '--count', 'HEAD..origin/feature/refactor'],
-            {
-              stdio: 'pipe',
-              env: gitEnv,
-              cwd: appRoot,
-            }
-          )
-
-          let revOutput = ''
-          revListProc.stdout?.on('data', data => {
-            revOutput += data.toString()
-          })
-
-          revListProc.on('close', revCode => {
-            if (revCode === 0) {
-              const commitsBehind = parseInt(revOutput.trim())
-              const hasUpdates = commitsBehind > 0
-              log.info(`本地分支落后远程分支 ${commitsBehind} 个提交，hasUpdate: ${hasUpdates}`)
-              resolve(hasUpdates)
-            } else {
-              log.warn('无法比较本地和远程分支，假设有更新')
-              resolve(true) // 如果无法确定，假设有更新
-            }
-          })
-
-          revListProc.on('error', () => {
-            log.warn('git rev-list执行失败，假设有更新')
-            resolve(true)
-          })
+          resolve(output.trim())
         } else {
-          reject(new Error(`git status失败，退出码: ${code}`))
+          reject(new Error(`git rev-parse失败，退出码: ${code}`))
         }
       })
 
-      statusProc.on('error', reject)
+      revParseProc.on('error', reject)
     })
 
-    log.info(`Git更新检查完成，hasUpdate: ${hasUpdate}`)
-    return { hasUpdate }
+    log.info(`当前本地commit: ${currentCommit}`)
+    
+    // 由于我们跳过了fetch步骤（避免直接访问GitHub），
+    // 我们无法准确知道远程是否有更新
+    // 因此返回true，让后续的pull操作通过镜像站来检查和获取更新
+    // 如果没有更新，pull操作会很快完成且不会有实际变化
+    log.info('跳过远程检查，返回hasUpdate=true以触发镜像站更新流程')
+    return { hasUpdate: true, skipReason: 'avoided_github_access' }
+    
   } catch (error) {
     log.error('检查Git更新失败:', error)
     // 如果检查失败，返回true以触发更新流程，确保代码是最新的

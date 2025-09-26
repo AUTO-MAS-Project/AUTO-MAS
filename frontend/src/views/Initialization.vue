@@ -191,55 +191,45 @@ async function checkEnvironment() {
     console.log('- main.py存在:', criticalFiles.mainPyExists)
     console.log('- 所有关键文件存在:', allExeFilesExist)
 
-    // 新的自动模式判断逻辑：只要所有关键exe文件都存在且不是第一次启动就进入自动模式
-    console.log('自动模式判断条件:')
-    console.log('- 不是第一次启动:', !isFirst)
+    // 页面模式判断逻辑：
+    // 1. 第一次启动 -> 直接进入手动模式
+    // 2. 非第一次启动 + 文件完整 -> 自动模式
+    // 3. 非第一次启动 + 文件缺失 -> 环境不完整页面
+    console.log('页面模式判断条件:')
+    console.log('- 是否第一次启动:', isFirst)
     console.log('- 所有关键文件存在:', allExeFilesExist)
 
-    // 只要不是第一次启动且所有关键exe文件都存在就进入自动模式
-    if (!isFirst && allExeFilesExist) {
+    // 第一次启动时，无论文件是否存在都直接进入手动模式
+    if (isFirst) {
+      console.log('第一次启动，直接进入手动模式')
+      autoMode.value = false
+      showEnvironmentIncomplete.value = false
+    } else if (allExeFilesExist) {
+      // 不是第一次启动且所有关键exe文件都存在，进入自动模式
       console.log('进入自动模式，开始自动启动流程')
       autoMode.value = true
+      showEnvironmentIncomplete.value = false
     } else {
-      console.log('进入手动模式')
-      if (isFirst) {
-        console.log('原因: 第一次启动')
-        // 第一次启动直接进入手动模式
-        autoMode.value = false
-        showEnvironmentIncomplete.value = false
-      } else if (!allExeFilesExist) {
-        console.log('原因: 关键exe文件缺失')
-        console.log('  - python.exe缺失:', !criticalFiles.pythonExists)
-        console.log('  - git.exe缺失:', !criticalFiles.gitExists)
-        console.log('  - main.py缺失:', !criticalFiles.mainPyExists)
-        
-        // 检查是否应该显示环境不完整页面（仅在自动模式下）
-        // 如果不是第一次启动且关键文件缺失，说明之前是自动模式但现在环境有问题
-        if (!isFirst) {
-          const missing = []
-          if (!criticalFiles.pythonExists) missing.push('Python 环境')
-          if (!criticalFiles.gitExists) missing.push('Git 工具')
-          if (!criticalFiles.mainPyExists) missing.push('后端代码')
-
-          missingComponents.value = missing
-          showEnvironmentIncomplete.value = true
-          autoMode.value = false
-        } else {
-          // 第一次启动时，即使文件缺失也直接进入手动模式
-          autoMode.value = false
-          showEnvironmentIncomplete.value = false
-        }
-      } else {
-        // 其他情况直接进入手动模式
-        autoMode.value = false
-        showEnvironmentIncomplete.value = false
-      }
+      // 不是第一次启动但关键文件缺失，显示环境不完整页面
+      console.log('环境损坏，显示环境不完整页面')
+      console.log('  - python.exe缺失:', !criticalFiles.pythonExists)
+      console.log('  - git.exe缺失:', !criticalFiles.gitExists)
+      console.log('  - main.py缺失:', !criticalFiles.mainPyExists)
       
-      // 如果关键文件缺失，重置初始化状态
-      if (!allExeFilesExist && config.init) {
-        console.log('检测到关键exe文件缺失，重置初始化状态')
-        await saveConfig({ init: false })
-      }
+      const missing = []
+      if (!criticalFiles.pythonExists) missing.push('Python 环境')
+      if (!criticalFiles.gitExists) missing.push('Git 工具')
+      if (!criticalFiles.mainPyExists) missing.push('后端代码')
+
+      missingComponents.value = missing
+      showEnvironmentIncomplete.value = true
+      autoMode.value = false
+    }
+      
+    // 如果关键文件缺失，重置初始化状态
+    if (!allExeFilesExist && config.init) {
+      console.log('检测到关键exe文件缺失，重置初始化状态')
+      await saveConfig({ init: false })
     }
   } catch (error) {
     const errorMsg = `环境检查失败: ${error instanceof Error ? error.message : String(error)}`
@@ -284,14 +274,6 @@ onMounted(async () => {
     console.log('测试配置系统...')
     const testConfig = await getConfig()
     console.log('当前配置:', testConfig)
-
-    // 测试保存配置
-    await saveConfig({ isFirstLaunch: false })
-    console.log('测试配置保存成功')
-
-    // 重新读取配置验证
-    const updatedConfig = await getConfig()
-    console.log('更新后的配置:', updatedConfig)
   } catch (error) {
     console.error('配置系统测试失败:', error)
   }
