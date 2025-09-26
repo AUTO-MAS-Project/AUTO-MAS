@@ -1933,6 +1933,8 @@ class MaaManager:
             message_text = (
                 f"开始时间: {message['start_time']}\n"
                 f"结束时间: {message['end_time']}\n"
+                f"理智剩余: {message['sanity']}\n"
+                f"回复时间: {message['sanity_full_at']}\n"
                 f"MAA执行结果: {message['maa_result']}\n\n"
                 f"{recruit_text}\n"
                 f"{drop_text}"
