@@ -2242,6 +2242,10 @@ class AppConfig(GlobalConfig):
                                 data[key][stage][item] = 0
                             data[key][stage][item] += count
 
+                # 处理理智相关字段 - 使用最后一个文件的值
+                elif key in ["sanity", "sanity_full_at"]:
+                    data[key] = single_data[key]
+
                 # 录入运行结果
                 elif key in ["maa_result", "general_result"]:
 
