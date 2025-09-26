@@ -13,8 +13,8 @@ const { version, backendUpdateInfo } = defineProps<{
       <div class="section-header">
         <h3>项目链接</h3>
       </div>
-      <a-row :gutter="24">
-        <a-col :span="8">
+      <div class="link-grid">
+        <div class="link-item">
           <div class="link-card">
             <div class="link-icon"><HomeOutlined /></div>
             <div class="link-content">
@@ -23,18 +23,18 @@ const { version, backendUpdateInfo } = defineProps<{
               <a href="https://auto-mas.top" target="_blank" class="link-button">访问官网</a>
             </div>
           </div>
-        </a-col>
-        <a-col :span="8">
+        </div>
+        <div class="link-item">
           <div class="link-card">
             <div class="link-icon"><GithubOutlined /></div>
             <div class="link-content">
               <h4>GitHub仓库</h4>
-              <p>查看源代码、提交issue和贡献</p>
+              <p>查看源代码、提交issue和捐赠</p>
               <a href="https://github.com/AUTO-MAS-Project/AUTO-MAS" target="_blank" class="link-button">访问仓库</a>
             </div>
           </div>
-        </a-col>
-        <a-col :span="8">
+        </div>
+        <div class="link-item">
           <div class="link-card">
             <div class="link-icon"><QqOutlined /></div>
             <div class="link-content">
@@ -43,8 +43,8 @@ const { version, backendUpdateInfo } = defineProps<{
               <a href="https://qm.qq.com/q/bd9fISNoME" target="_blank" class="link-button">加入群聊</a>
             </div>
           </div>
-        </a-col>
-      </a-row>
+        </div>
+      </div>
     </div>
 
     <div class="form-section">
@@ -74,3 +74,30 @@ const { version, backendUpdateInfo } = defineProps<{
     </div>
   </div>
 </template>
+
+<style scoped>
+/* Responsive grid for link cards: ensures cards expand to fill available width */
+.link-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 24px;
+  align-items: stretch;
+  width: 100%;
+}
+
+.link-item {
+  display: flex;
+}
+
+/* Make sure link-card fills its grid cell */
+.link-card {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.link-content {
+  flex: 1 1 auto;
+}
+
+</style>

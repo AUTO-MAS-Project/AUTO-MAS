@@ -2,19 +2,23 @@
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type { SettingsData } from '@/types/settings'
 
-const { settings, sendTaskResultTimeOptions, handleSettingChange, testNotify, testingNotify } = defineProps<{
+const props = defineProps<{
   settings: SettingsData
   sendTaskResultTimeOptions: { label: string; value: string }[]
   handleSettingChange: (category: keyof SettingsData, key: string, value: any) => Promise<void>
   testNotify: () => Promise<void>
   testingNotify: boolean
 }>()
+
+const { settings, sendTaskResultTimeOptions, handleSettingChange, testNotify, testingNotify } = props
 </script>
+
 <template>
   <div class="tab-content">
     <div class="form-section">
       <div class="section-header">
         <h3>通知内容</h3>
+        <a-button type="primary" :loading="testingNotify" @click="testNotify" size="small" class="section-update-button primary-style">发送测试通知</a-button>
       </div>
       <a-row :gutter="24">
         <a-col :span="8">
@@ -319,17 +323,73 @@ const { settings, sendTaskResultTimeOptions, handleSettingChange, testNotify, te
       </a-row>
     </div>
 
-    <div class="form-section">
-      <div class="section-header">
-        <h3>通知测试</h3>
-      </div>
-      <a-row :gutter="24">
-        <a-col :span="24">
-          <a-space>
-            <a-button type="primary" :loading="testingNotify" @click="testNotify">发送测试通知</a-button>
-          </a-space>
-        </a-col>
-      </a-row>
-    </div>
+    <!-- 测试按钮已移至“通知内容”标题右侧 -->
   </div>
 </template>
+
+<style scoped>
+/* Header layout */
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* Doc link and header action parity */
+.section-header .section-update-button {
+  /* Apply doc-link visual tokens to the local update button only.
+     Do NOT touch global .section-doc-link so the real doc button remains unchanged. */
+  color: var(--ant-color-primary) !important;
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 500;
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--ant-color-primary);
+  transition: all 0.18s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  line-height: 1;
+}
+
+.section-header .section-update-button:hover {
+  color: var(--ant-color-primary-hover) !important;
+  background-color: var(--ant-color-primary-bg);
+  border-color: var(--ant-color-primary-hover);
+}
+
+/* Primary gradient style for the update button */
+
+.section-header .section-update-button.primary-style {
+  /* Keep gradient but match doc-link height/rounded corners for parity */
+  height: 32px;
+  padding: 4px 8px; /* same vertical padding as doc-link */
+  font-size: 14px; /* same as doc-link for visual parity */
+  font-weight: 500;
+  border-radius: 4px; /* same radius as doc-link */
+  box-shadow: 0 2px 8px rgba(22, 119, 255, 0.18);
+  transition: transform 0.16s ease, box-shadow 0.16s ease;
+  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover)) !important;
+  border: 1px solid var(--ant-color-primary) !important; /* subtle border to match doc-link rhythm */
+  color: #fff !important;
+}
+
+.section-header .section-update-button.primary-style:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(22, 119, 255, 0.22);
+}
+
+@media (max-width: 640px) {
+  .section-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .section-header .section-update-button {
+    margin-top: 4px;
+  }
+}
+
+</style>
+
