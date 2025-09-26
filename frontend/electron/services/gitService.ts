@@ -207,7 +207,7 @@ export async function cloneBackend(
 
     // ==== 下面是关键逻辑 ====
     if (isGitRepository(backendPath)) {
-      // 已是 git 仓库，直接 pull
+      // 已是 git 仓库，先更新远程URL为镜像站，然后 pull
       if (mainWindow) {
         mainWindow.webContents.send('download-progress', {
           type: 'backend',
@@ -216,6 +216,24 @@ export async function cloneBackend(
           message: '正在更新后端代码...',
         })
       }
+      
+      // 更新远程URL为镜像站URL，避免直接访问GitHub
+      console.log(`更新远程URL为镜像站: ${repoUrl}`)
+      await new Promise<void>((resolve, reject) => {
+        const proc = spawn(gitPath, ['remote', 'set-url', 'origin', repoUrl], { 
+          stdio: 'pipe', 
+          env: gitEnv, 
+          cwd: backendPath 
+        })
+        proc.stdout?.on('data', d => console.log('git remote set-url:', d.toString()))
+        proc.stderr?.on('data', d => console.log('git remote set-url err:', d.toString()))
+        proc.on('close', code =>
+          code === 0 ? resolve() : reject(new Error(`git remote set-url失败，退出码: ${code}`))
+        )
+        proc.on('error', reject)
+      })
+      
+      // 执行pull操作
       await new Promise<void>((resolve, reject) => {
         const proc = spawn(gitPath, ['pull'], { stdio: 'pipe', env: gitEnv, cwd: backendPath })
         proc.stdout?.on('data', d => console.log('git pull:', d.toString()))

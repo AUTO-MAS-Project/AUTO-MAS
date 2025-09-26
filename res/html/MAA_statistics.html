@@ -166,9 +166,11 @@
         </div>
 
         <div class="content">
-            <p><strong>用户代理信息：</strong>{{ user_info }}</p>
-            <p><strong>任务开始时间：</strong>{{ start_time }}</p>
-            <p><strong>任务结束时间：</strong>{{ end_time }}</p>
+            <p><strong>用户信息：</strong>{{ user_info }}</p>
+            <p><strong>开始时间：</strong>{{ start_time }}</p>
+            <p><strong>结束时间：</strong>{{ end_time }}</p>
+            <p><strong>理智剩余：</strong>{{ sanity }}</p>
+            <p><strong>回复时间：</strong>{{ sanity_full_at }}</p>
             <p><strong>MAA执行结果：</strong>
                 {% if maa_result == '代理任务全部完成' %}
                 <span class="greenhighlight">{{ maa_result }}</span>
@@ -223,8 +225,8 @@
                 <a href="https://github.com/AUTO-MAS-Project/AUTO-MAS" class="button">AUTO-MAS GitHub</a>
             </div>
             <div>
-                <p><strong>文档站仓库：</strong></p>
-                <a href="https://github.com/AUTO-MAS-Project/AUTO-MAS-docs" class="button">AUTO-MAS 文档站 GitHub</a>
+                <p><strong>文档站：</strong></p>
+                <a href="https://doc.auto-mas.top/" class="button">AUTO-MAS 文档站</a>
             </div>
         </div>
     </div>
