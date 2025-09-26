@@ -99,7 +99,11 @@ export function handleMainMessage(wsMessage: any) {
     if (!wsMessage || typeof wsMessage !== 'object') return
     const { type, data } = wsMessage
     try {
-        if (type === 'Message' && data && data.type === 'Countdown') {
+        if (type === 'Signal' && data && data.RequestClose) {
+            // 处理后端请求前端关闭的信号
+            console.log('收到后端关闭请求，开始执行应用自杀...')
+            handleRequestClose()
+        } else if (type === 'Message' && data && data.type === 'Countdown') {
             // 存储倒计时消息，供 UI 回放
             storePendingCountdown(data)
             if (uiHooks.onCountdown) {
@@ -115,6 +119,40 @@ export function handleMainMessage(wsMessage: any) {
         }
     } catch (e) {
         console.warn('[SchedulerHandlers] handleMainMessage error:', e)
+    }
+}
+
+// 处理后端请求关闭的函数
+async function handleRequestClose() {
+    try {
+        console.log('开始执行前端自杀流程...')
+        
+        // 使用更激进的强制退出方法
+        if (window.electronAPI?.forceExit) {
+            console.log('执行强制退出...')
+            await window.electronAPI.forceExit()
+        } else if (window.electronAPI?.windowClose) {
+            // 备用方法：先尝试正常关闭
+            console.log('执行窗口关闭...')
+            await window.electronAPI.windowClose()
+            setTimeout(async () => {
+                if (window.electronAPI?.appQuit) {
+                    await window.electronAPI.appQuit()
+                }
+            }, 500)
+        } else {
+            // 最后的备用方法
+            console.log('使用页面重载作为最后手段...')
+            window.location.reload()
+        }
+    } catch (error) {
+        console.error('执行自杀流程失败:', error)
+        // 如果所有方法都失败，尝试页面重载
+        try {
+            window.location.reload()
+        } catch (e) {
+            console.error('页面重载也失败:', e)
+        }
     }
 }
 

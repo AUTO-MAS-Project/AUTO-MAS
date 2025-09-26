@@ -1,5 +1,31 @@
 <template>
   <div class="user-edit-container">
+    <!-- MAA配置遮罩层 -->
+    <teleport to="body">
+      <div v-if="showMAAConfigMask" class="maa-config-mask">
+        <div class="mask-content">
+          <div class="mask-icon">
+            <SettingOutlined :style="{ fontSize: '48px', color: '#1890ff' }" />
+          </div>
+          <h2 class="mask-title">正在进行MAA配置</h2>
+          <p class="mask-description">
+            当前正在配置该用户的 MAA，请在 MAA 配置界面完成相关设置。
+            <br />
+            配置完成后，请点击"保存配置"按钮来结束配置会话。
+          </p>
+          <div class="mask-actions">
+            <a-button
+              v-if="maaWebsocketId"
+              type="primary"
+              size="large"
+              @click="handleSaveMAAConfig"
+            >
+              保存配置
+            </a-button>
+          </div>
+        </div>
+      </div>
+    </teleport>
     <!-- 头部组件 -->
     <MAAUserEditHeader
       :script-id="scriptId"
@@ -104,13 +130,14 @@
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
-import { SaveOutlined } from '@ant-design/icons-vue'
+import { SaveOutlined, SettingOutlined } from '@ant-design/icons-vue'
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
 import { useUserApi } from '@/composables/useUserApi'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { usePlanApi } from '@/composables/usePlanApi'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { Service } from '@/api'
+import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { GetStageIn } from '@/api/models/GetStageIn'
 import { getTodayWeekdayEast12 } from '@/utils/dateUtils'
 
@@ -143,6 +170,8 @@ const scriptName = ref('')
 // MAA配置相关
 const maaConfigLoading = ref(false)
 const maaWebsocketId = ref<string | null>(null)
+const showMAAConfigMask = ref(false)
+let maaConfigTimeout: number | null = null
 
 // 基建配置文件相关
 const infrastructureConfigPath = ref('')
@@ -741,25 +770,93 @@ const handleMAAConfig = async () => {
     if (maaWebsocketId.value) {
       unsubscribe(maaWebsocketId.value)
       maaWebsocketId.value = null
+      showMAAConfigMask.value = false
+      if (maaConfigTimeout) {
+        window.clearTimeout(maaConfigTimeout)
+        maaConfigTimeout = null
+      }
     }
 
-    // 直接订阅（旧 connect 参数移除）
-    const subId = userId
-    subscribe(subId, {
-      onError: error => {
-        console.error(`用户 ${formData.userName} MAA配置错误:`, error)
-        message.error(`MAA配置连接失败: ${error}`)
-        maaWebsocketId.value = null
-      },
+    // 调用后端启动任务接口，传入 userId 作为 taskId 与设置模式
+    const response = await Service.addTaskApiDispatchStartPost({
+      taskId: userId,
+      mode: TaskCreateIn.mode.SettingScriptMode,
     })
 
-    maaWebsocketId.value = subId
-    message.success(`已开始配置用户 ${formData.userName} 的MAA设置`)
+    if (response && response.websocketId) {
+      const wsId = response.websocketId
+
+      // 订阅 websocket
+      subscribe(wsId, {
+        onMessage: (wsMessage: any) => {
+          if (wsMessage.type === 'error') {
+            console.error(`用户 ${formData.Info?.Name || formData.userName} MAA配置错误:`, wsMessage.data)
+            message.error(`MAA配置连接失败: ${wsMessage.data}`)
+            unsubscribe(wsId)
+            maaWebsocketId.value = null
+            showMAAConfigMask.value = false
+            return
+          }
+
+          if (wsMessage.data && wsMessage.data.Accomplish) {
+            message.success(`用户 ${formData.Info?.Name || formData.userName} 的配置已完成`)
+            unsubscribe(wsId)
+            maaWebsocketId.value = null
+            showMAAConfigMask.value = false
+          }
+        },
+      })
+
+      maaWebsocketId.value = wsId
+      showMAAConfigMask.value = true
+      message.success(`已开始配置用户 ${formData.Info?.Name || formData.userName} 的MAA设置`)
+
+      // 设置 30 分钟超时自动断开
+      maaConfigTimeout = window.setTimeout(() => {
+        if (maaWebsocketId.value) {
+          const id = maaWebsocketId.value
+          unsubscribe(id)
+          maaWebsocketId.value = null
+          showMAAConfigMask.value = false
+          message.info(`用户 ${formData.Info?.Name || formData.userName} 的配置会话已超时断开`)
+        }
+        maaConfigTimeout = null
+      }, 30 * 60 * 1000)
+    } else {
+      message.error(response?.message || '启动MAA配置失败')
+    }
   } catch (error) {
-    console.error('MAA配置失败:', error)
-    message.error('MAA配置失败')
+    console.error('启动MAA配置失败:', error)
+    message.error('启动MAA配置失败')
   } finally {
     maaConfigLoading.value = false
+  }
+}
+
+const handleSaveMAAConfig = async () => {
+  try {
+    const websocketId = maaWebsocketId.value
+    if (!websocketId) {
+      message.error('未找到活动的配置会话')
+      return
+    }
+
+    const response = await Service.stopTaskApiDispatchStopPost({ taskId: websocketId })
+    if (response && response.code === 200) {
+      unsubscribe(websocketId)
+      maaWebsocketId.value = null
+      showMAAConfigMask.value = false
+      if (maaConfigTimeout) {
+        window.clearTimeout(maaConfigTimeout)
+        maaConfigTimeout = null
+      }
+      message.success('用户的配置已保存')
+    } else {
+      message.error(response.message || '保存配置失败')
+    }
+  } catch (error) {
+    console.error('保存MAA配置失败:', error)
+    message.error('保存MAA配置失败')
   }
 }
 
@@ -1019,5 +1116,56 @@ onMounted(() => {
   .user-edit-content {
     max-width: 100%;
   }
+}
+
+/* MAA 配置遮罩样式（与 Scripts.vue 一致，用于全局覆盖） */
+.maa-config-mask {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+.mask-content {
+  background: var(--ant-color-bg-elevated);
+  border-radius: 8px;
+  padding: 24px;
+  max-width: 480px;
+  width: 100%;
+  text-align: center;
+  box-shadow:
+    0 6px 16px 0 rgba(0, 0, 0, 0.08),
+    0 3px 6px -4px rgba(0, 0, 0, 0.12),
+    0 9px 28px 8px rgba(0, 0, 0, 0.05);
+  border: 1px solid var(--ant-color-border);
+}
+
+.mask-icon {
+  margin-bottom: 16px;
+}
+
+.mask-title {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0 0 8px;
+  color: var(--ant-color-text);
+}
+
+.mask-description {
+  font-size: 14px;
+  color: var(--ant-color-text-secondary);
+  margin: 0 0 24px;
+  line-height: 1.5;
+}
+
+.mask-actions {
+  display: flex;
+  justify-content: center;
 }
 </style>
