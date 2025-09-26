@@ -2038,10 +2038,24 @@ class AppConfig(GlobalConfig):
         data = {
             "recruit_statistics": defaultdict(int),
             "drop_statistics": defaultdict(dict),
+            "sanity": 0,
+            "sanity_full_at": "",
             "maa_result": maa_result,
         }
 
         if_six_star = False
+
+        # 提取理智相关信息
+        for log_line in logs:
+            # 提取当前理智值：理智: 5/180
+            sanity_match = re.search(r"理智:\s*(\d+)/\d+", log_line)
+            if sanity_match:
+                data["sanity"] = int(sanity_match.group(1))
+
+            # 提取理智回满时间：理智将在 2025-09-26 18:57 回满
+            sanity_full_match = re.search(r"理智将在\s*(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2})\s*回满", log_line)
+            if sanity_full_match:
+                data["sanity_full_at"] = sanity_full_match.group(1)
 
         # 公招统计（仅统计招募到的）
         confirmed_recruit = False
@@ -2151,6 +2165,7 @@ class AppConfig(GlobalConfig):
         log_path.parent.mkdir(parents=True, exist_ok=True)
         with log_path.open("w", encoding="utf-8") as f:
             f.writelines(logs)
+        # 保存统计数据
         with log_path.with_suffix(".json").open("w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=4)
 
