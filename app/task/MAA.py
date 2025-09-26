@@ -1052,7 +1052,7 @@ class MaaManager:
             )
             if len(result["failed_user"]) > 0:
                 result_text += (
-                    f"{self.mode未成功的用户: \n{"\n".join(result["failed_user"])}\n"
+                    f"{self.mode未成功}的用户: \n{"\n".join(result["failed_user"])}\n"
                 )
             if len(result["waiting_user"]) > 0:
                 result_text += f"\n未开始{self.mode}的用户: \n{"\n".join(result["waiting_user"])}\n"
