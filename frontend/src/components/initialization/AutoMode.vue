@@ -12,6 +12,24 @@
       <a-spin size="large" />
       <div class="progress-text">{{ progressText }}</div>
       <a-progress :percent="progress" :status="progressStatus" />
+
+      <!-- 重试倒计时显示 -->
+      <div v-if="showRetryCountdown" class="retry-countdown">
+        <a-alert
+          type="warning"
+          show-icon
+          :message="`更新失败，${retryCountdown} 秒后重试 (第 ${currentRetryCount}/${maxRetries} 次)`"
+        />
+        <div class="retry-actions">
+          <a-button
+            @click="retryNow"
+            type="primary"
+            size="small"
+          >
+            立即重试
+          </a-button>
+        </div>
+      </div>
     </div>
 
     <div class="auto-actions">
@@ -47,21 +65,16 @@
       show-icon
     />
   </a-modal>
-
-
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { getConfig } from '@/utils/config'
-import { getMirrorUrl } from '@/config/mirrors'
 import { mirrorManager } from '@/utils/mirrorManager'
 import router from '@/router'
 import { useUpdateChecker } from '@/composables/useUpdateChecker'
 import { connectAfterBackendStart } from '@/composables/useWebSocket'
 import { message } from 'ant-design-vue'
-
-
 
 // Props
 interface Props {
@@ -85,26 +98,87 @@ const aborted = ref(false)
 // 状态：控制弹窗显隐
 const forceEnterVisible = ref(false)
 
-// 点击“强行进入应用”按钮，显示弹窗
+// 重试相关状态
+const showRetryCountdown = ref(false)
+const retryCountdown = ref(5) // 修改为5秒
+const currentRetryCount = ref(0)
+const maxRetries = ref(999) // 设置为999，表示几乎无限重试
+const retryTimer = ref<NodeJS.Timeout | null>(null)
+const countdownTimer = ref<NodeJS.Timeout | null>(null)
+
+// 清理定时器
+function clearTimers() {
+  if (retryTimer.value) {
+    clearTimeout(retryTimer.value)
+    retryTimer.value = null
+  }
+  if (countdownTimer.value) {
+    clearInterval(countdownTimer.value)
+    countdownTimer.value = null
+  }
+}
+
+// 开始重试倒计时
+function startRetryCountdown() {
+  showRetryCountdown.value = true
+  retryCountdown.value = 5 // 修改为5秒
+  progressStatus.value = 'exception'
+
+  // 倒计时定时器
+  countdownTimer.value = setInterval(() => {
+    retryCountdown.value--
+    if (retryCountdown.value <= 0) {
+      clearTimers()
+      showRetryCountdown.value = false
+      retryNow()
+    }
+  }, 1000)
+}
+
+// 立即重试
+function retryNow() {
+  clearTimers()
+  showRetryCountdown.value = false
+  progressStatus.value = 'normal'
+
+  // 重新开始自动流程
+  console.log(`开始第 ${currentRetryCount.value + 1} 次重试`)
+  startAutoProcess()
+}
+
+// 点击"强行进入应用"按钮，显示弹窗
 function handleForceEnter() {
+  clearTimers()
+  showRetryCountdown.value = false
   forceEnterVisible.value = true
 }
 
-// 确认弹窗中的“我知道我在做什么”按钮，直接进入应用
+// 确认弹窗中的"我知道我在做什么"按钮，直接进入应用
 function handleForceEnterConfirm() {
+  clearTimers()
+  aborted.value = true
   forceEnterVisible.value = false
   router.push('/home')
 }
 
-// 事件处理
+// 事件处理 - 增强重新配置环境按钮功能
 function handleSwitchToManual() {
-  aborted.value = true // 设置中断
+  clearTimers() // 清理所有定时器
+  showRetryCountdown.value = false // 隐藏重试倒计时
+  aborted.value = true // 设置中断标志
+  currentRetryCount.value = 0 // 重置重试计数
+  progressStatus.value = 'normal' // 重置进度状态
   props.onSwitchToManual()
 }
 
 // 自动启动流程
 async function startAutoProcess() {
   try {
+    // 重置中断状态
+    if (currentRetryCount.value === 0) {
+      aborted.value = false
+    }
+
     // 获取配置中保存的镜像源设置
     const config = await getConfig()
     if (aborted.value) return
@@ -123,14 +197,22 @@ async function startAutoProcess() {
       // 尝试更新代码，支持镜像源重试
       const updateSuccess = await tryUpdateBackendWithRetry(config)
       if (aborted.value) return
+
       if (!updateSuccess) {
-        // 所有镜像源都失败了，显示重新配置按钮
-        progressText.value = '代码更新失败，所有镜像源均无法访问'
-        progressStatus.value = 'exception'
-        setTimeout(() => {
-          progressText.value = '请点击下方按钮重新配置环境'
-        }, 2000)
-        return
+        // 代码更新失败，开始重试流程
+        currentRetryCount.value++
+
+        if (currentRetryCount.value < maxRetries.value) {
+          progressText.value = `代码更新失败，准备重试...`
+          console.log(`代码更新失败，准备进行第 ${currentRetryCount.value} 次重试`)
+          startRetryCountdown()
+          return
+        } else {
+          // 达到最大重试次数
+          progressText.value = '代码更新失败，已达到最大重试次数'
+          progressStatus.value = 'exception'
+          return
+        }
       }
 
       // 代码更新成功后，检查并安装依赖
@@ -142,13 +224,20 @@ async function startAutoProcess() {
       if (aborted.value) return
 
       if (!dependenciesSuccess) {
-        // 所有PIP镜像源都失败了，显示重新配置按钮
-        progressText.value = '依赖安装失败，所有PIP镜像源均无法访问'
-        progressStatus.value = 'exception'
-        setTimeout(() => {
-          progressText.value = '请点击下方按钮重新配置环境'
-        }, 2000)
-        return
+        // 依赖安装失败，开始重试流程
+        currentRetryCount.value++
+
+        if (currentRetryCount.value < maxRetries.value) {
+          progressText.value = `依赖安装失败，准备重试...`
+          console.log(`依赖安装失败，准备进行第 ${currentRetryCount.value} 次重试`)
+          startRetryCountdown()
+          return
+        } else {
+          // 达到最大重试次数
+          progressText.value = '依赖安装失败，已达到最大重试次数'
+          progressStatus.value = 'exception'
+          return
+        }
       }
     } else {
       // 没有更新，跳过依赖安装，直接设置进度
@@ -168,23 +257,30 @@ async function startAutoProcess() {
     progress.value = 100
     progressStatus.value = 'success'
 
+    // 重置重试计数器
+    currentRetryCount.value = 0
+
     console.log('自动启动流程完成，即将进入应用')
 
     // 延迟0.5秒后自动进入应用
     setTimeout(() => {
       props.onAutoComplete()
     }, 500)
+
   } catch (error) {
     console.error('自动启动流程失败', error)
-    progressText.value = `自动启动失败: ${error instanceof Error ? error.message : String(error)}`
-    progressStatus.value = 'exception'
 
-    // 5秒后提供切换到手动模式的选项
-    setTimeout(() => {
-      if (progressStatus.value === 'exception') {
-        progressText.value = '自动启动失败，请点击下方按钮重新配置环境'
-      }
-    }, 5000)
+    // 如果是后端启动失败，也要重试
+    currentRetryCount.value++
+
+    if (currentRetryCount.value < maxRetries.value) {
+      progressText.value = `启动失败: ${error instanceof Error ? error.message : String(error)}，准备重试...`
+      console.log(`后端启动失败，准备进行第 ${currentRetryCount.value} 次重试`)
+      startRetryCountdown()
+    } else {
+      progressText.value = `自动启动失败: ${error instanceof Error ? error.message : String(error)}`
+      progressStatus.value = 'exception'
+    }
   }
 }
 
@@ -327,7 +423,13 @@ async function startBackendService() {
 // 组件挂载时开始自动流程
 onMounted(() => {
   aborted.value = false
+  currentRetryCount.value = 0
   startAutoProcess()
+})
+
+// 组件卸载时清理定时器
+onUnmounted(() => {
+  clearTimers()
 })
 </script>
 
@@ -389,7 +491,24 @@ onMounted(() => {
   display: flex;
   gap: 20px;
   flex-wrap: wrap;
+}
+
+/* 重试倒计时样式 */
+.retry-countdown {
+  width: 100%;
+  margin-top: 16px;
+}
+
+.retry-actions {
+  margin-top: 12px;
+  display: flex;
+  gap: 12px;
   justify-content: center;
+  flex-wrap: wrap;
+}
+
+.retry-actions .ant-btn {
+  min-width: 100px;
 }
 
 /* 响应式优化 */
