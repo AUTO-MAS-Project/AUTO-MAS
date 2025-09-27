@@ -109,7 +109,6 @@ class GlobalConfig(ConfigBase):
         "Notify", "IfCompanyWebHookBot", False, BoolValidator()
     )
     Notify_CompanyWebHookBotUrl = ConfigItem("Notify", "CompanyWebHookBotUrl", "")
-    Notify_CustomWebhooks = ConfigItem("Notify", "CustomWebhooks", "[]", JSONValidator())
 
     Update_IfAutoUpdate = ConfigItem("Update", "IfAutoUpdate", False, BoolValidator())
     Update_Source = ConfigItem(
@@ -355,7 +354,6 @@ class MaaUserConfig(ConfigBase):
         self.Notify_CompanyWebHookBotUrl = ConfigItem(
             "Notify", "CompanyWebHookBotUrl", ""
         )
-        self.Notify_CustomWebhooks = ConfigItem("Notify", "CustomWebhooks", "[]", JSONValidator())
 
     def get_plan_info(self) -> Dict[str, Union[str, int]]:
         """获取当前的计划下信息"""
@@ -549,7 +547,6 @@ class GeneralUserConfig(ConfigBase):
         self.Notify_CompanyWebHookBotUrl = ConfigItem(
             "Notify", "CompanyWebHookBotUrl", ""
         )
-        self.Notify_CustomWebhooks = ConfigItem("Notify", "CustomWebhooks", "[]", JSONValidator())
 
 
 class GeneralConfig(ConfigBase):
