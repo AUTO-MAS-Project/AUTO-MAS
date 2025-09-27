@@ -5,7 +5,7 @@
 import type { GeneralUserConfig_Data } from './GeneralUserConfig_Data';
 import type { GeneralUserConfig_Info } from './GeneralUserConfig_Info';
 import type { UserConfig_Notify } from './UserConfig_Notify';
-export type GeneralUserConfig = {
+export type GeneralUserConfig_Input = {
     /**
      * 用户信息
      */
