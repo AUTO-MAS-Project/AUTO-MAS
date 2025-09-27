@@ -203,15 +203,48 @@ class Notification:
                 "time": datetime.now().strftime("%H:%M:%S")
             }
             
-            # 替换模板中的变量
-            formatted_template = template.format(**template_vars)
+            logger.debug(f"原始模板: {template}")
+            logger.debug(f"模板变量: {template_vars}")
             
-            # 尝试解析为JSON
+            # 先尝试作为JSON模板处理
             try:
-                data = json.loads(formatted_template)
+                # 解析模板为JSON对象，然后替换其中的变量
+                template_obj = json.loads(template)
+                
+                # 递归替换JSON对象中的变量
+                def replace_variables(obj):
+                    if isinstance(obj, dict):
+                        return {k: replace_variables(v) for k, v in obj.items()}
+                    elif isinstance(obj, list):
+                        return [replace_variables(item) for item in obj]
+                    elif isinstance(obj, str):
+                        result = obj
+                        for key, value in template_vars.items():
+                            result = result.replace(f"{{{key}}}", str(value))
+                        return result
+                    else:
+                        return obj
+                
+                data = replace_variables(template_obj)
+                logger.debug(f"成功解析JSON模板: {data}")
+                
             except json.JSONDecodeError:
-                # 如果不是JSON格式，作为纯文本发送
-                data = formatted_template
+                # 如果不是有效的JSON，作为字符串模板处理
+                logger.debug("模板不是有效JSON，作为字符串模板处理")
+                formatted_template = template
+                for key, value in template_vars.items():
+                    # 转义特殊字符以避免JSON解析错误
+                    safe_value = str(value).replace('"', '\\"').replace('\n', '\\n').replace('\r', '\\r')
+                    formatted_template = formatted_template.replace(f"{{{key}}}", safe_value)
+                
+                # 再次尝试解析为JSON
+                try:
+                    data = json.loads(formatted_template)
+                    logger.debug(f"字符串模板解析为JSON成功: {data}")
+                except json.JSONDecodeError:
+                    # 最终作为纯文本发送
+                    data = formatted_template
+                    logger.debug(f"作为纯文本发送: {data}")
                 
         except Exception as e:
             logger.warning(f"模板解析失败，使用默认格式: {e}")
