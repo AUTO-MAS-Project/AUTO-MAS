@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type { SettingsData } from '@/types/settings'
+import WebhookManager from '@/components/WebhookManager.vue'
 
 const props = defineProps<{
   settings: SettingsData
@@ -11,6 +12,11 @@ const props = defineProps<{
 }>()
 
 const { settings, sendTaskResultTimeOptions, handleSettingChange, testNotify, testingNotify } = props
+
+// 处理 Webhook 变化
+const handleWebhookChange = async () => {
+  await handleSettingChange('Notify', 'CustomWebhooks', settings.Notify.CustomWebhooks)
+}
 </script>
 
 <template>
@@ -273,54 +279,20 @@ const { settings, sendTaskResultTimeOptions, handleSettingChange, testNotify, te
 
     <div class="form-section">
       <div class="section-header">
-        <h3>企业微信机器人通知</h3>
+        <h3>自定义 Webhook 通知</h3>
         <a
-          href="https://doc.auto-mas.top/docs/advanced-features.html#%E4%BC%81%E4%B8%9A%E5%BE%AE%E4%BF%A1%E7%BE%A4%E6%9C%BA%E5%99%A8%E4%BA%BA%E9%80%9A%E7%9F%A5%E6%8E%A8%E9%80%81%E6%B8%A0%E9%81%93"
+          href="https://doc.auto-mas.top/docs/advanced-features.html#%E8%87%AA%E5%AE%9A%E4%B9%89webhook%E9%80%9A%E7%9F%A5"
           target="_blank"
           class="section-doc-link"
-          title="查看企业微信机器人配置文档"
+          title="查看自定义Webhook配置文档"
         >
           文档
         </a>
       </div>
-      <a-row :gutter="24">
-        <a-col :span="12">
-          <div class="form-item-vertical">
-            <div class="form-label-wrapper">
-              <span class="form-label">启用企业微信机器人通知</span>
-              <a-tooltip title="使用企业微信机器人推送通知">
-                <QuestionCircleOutlined class="help-icon" />
-              </a-tooltip>
-            </div>
-            <a-select
-              v-model:value="settings.Notify.IfCompanyWebHookBot"
-              @change="(checked: any) => handleSettingChange('Notify', 'IfCompanyWebHookBot', checked)"
-              size="large"
-              style="width: 100%"
-            >
-              <a-select-option :value="true">是</a-select-option>
-              <a-select-option :value="false">否</a-select-option>
-            </a-select>
-          </div>
-        </a-col>
-        <a-col :span="12">
-          <div class="form-item-vertical">
-            <div class="form-label-wrapper">
-              <span class="form-label">Webhook URL</span>
-              <a-tooltip title="企业微信机器人的Webhook地址">
-                <QuestionCircleOutlined class="help-icon" />
-              </a-tooltip>
-            </div>
-            <a-input
-              v-model:value="settings.Notify.CompanyWebHookBotUrl"
-              @blur="handleSettingChange('Notify', 'CompanyWebHookBotUrl', settings.Notify.CompanyWebHookBotUrl)"
-              :disabled="!settings.Notify.IfCompanyWebHookBot"
-              placeholder="请输入Webhook URL"
-              size="large"
-            />
-          </div>
-        </a-col>
-      </a-row>
+      <WebhookManager 
+        v-model:webhooks="settings.Notify.CustomWebhooks"
+        @change="handleWebhookChange"
+      />
     </div>
 
     <!-- 测试按钮已移至“通知内容”标题右侧 -->

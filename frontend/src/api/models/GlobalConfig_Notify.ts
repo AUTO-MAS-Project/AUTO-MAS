@@ -2,6 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { CustomWebhook } from './CustomWebhook';
 export type GlobalConfig_Notify = {
     /**
      * 任务结果推送时机
@@ -48,12 +49,8 @@ export type GlobalConfig_Notify = {
      */
     ServerChanKey?: (string | null);
     /**
-     * 是否使用企微Webhook推送
+     * 自定义Webhook列表
      */
-    IfCompanyWebHookBot?: (boolean | null);
-    /**
-     * 企微Webhook Bot URL
-     */
-    CompanyWebHookBotUrl?: (string | null);
+    CustomWebhooks?: (Array<CustomWebhook> | null);
 };
 
