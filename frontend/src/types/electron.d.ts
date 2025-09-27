@@ -18,6 +18,8 @@ export interface ElectronAPI {
 
   // 初始化相关API
   checkEnvironment: () => Promise<any>
+  checkCriticalFiles: () => Promise<{ pythonExists: boolean; gitExists: boolean; mainPyExists: boolean }>
+  checkGitUpdate: () => Promise<{ hasUpdate: boolean; error?: string }>
   downloadPython: (mirror?: string) => Promise<any>
   installPip: () => Promise<any>
   downloadGit: () => Promise<any>
