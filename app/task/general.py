@@ -983,7 +983,10 @@ class GeneralManager:
                 )
 
             # 发送自定义Webhook通知
-            custom_webhooks = Config.get("Notify", "CustomWebhooks", [])
+            try:
+                custom_webhooks = Config.get("Notify", "CustomWebhooks")
+            except AttributeError:
+                custom_webhooks = []
             if custom_webhooks:
                 for webhook in custom_webhooks:
                     if webhook.get("enabled", True):
@@ -1027,7 +1030,10 @@ class GeneralManager:
                     )
 
                 # 发送自定义Webhook通知
-                custom_webhooks = Config.get("Notify", "CustomWebhooks", [])
+                try:
+                    custom_webhooks = Config.get("Notify", "CustomWebhooks")
+                except AttributeError:
+                    custom_webhooks = []
                 if custom_webhooks:
                     for webhook in custom_webhooks:
                         if webhook.get("enabled", True):

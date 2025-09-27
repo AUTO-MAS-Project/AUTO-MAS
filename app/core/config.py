@@ -105,10 +105,7 @@ class GlobalConfig(ConfigBase):
     Notify_ToAddress = ConfigItem("Notify", "ToAddress", "")
     Notify_IfServerChan = ConfigItem("Notify", "IfServerChan", False, BoolValidator())
     Notify_ServerChanKey = ConfigItem("Notify", "ServerChanKey", "")
-    Notify_IfCompanyWebHookBot = ConfigItem(
-        "Notify", "IfCompanyWebHookBot", False, BoolValidator()
-    )
-    Notify_CompanyWebHookBotUrl = ConfigItem("Notify", "CompanyWebHookBotUrl", "")
+    Notify_CustomWebhooks = ConfigItem("Notify", "CustomWebhooks", [])
 
     Update_IfAutoUpdate = ConfigItem("Update", "IfAutoUpdate", False, BoolValidator())
     Update_Source = ConfigItem(
@@ -348,12 +345,7 @@ class MaaUserConfig(ConfigBase):
             "Notify", "IfServerChan", False, BoolValidator()
         )
         self.Notify_ServerChanKey = ConfigItem("Notify", "ServerChanKey", "")
-        self.Notify_IfCompanyWebHookBot = ConfigItem(
-            "Notify", "IfCompanyWebHookBot", False, BoolValidator()
-        )
-        self.Notify_CompanyWebHookBotUrl = ConfigItem(
-            "Notify", "CompanyWebHookBotUrl", ""
-        )
+        self.Notify_CustomWebhooks = ConfigItem("Notify", "CustomWebhooks", [])
 
     def get_plan_info(self) -> Dict[str, Union[str, int]]:
         """获取当前的计划下信息"""
@@ -541,12 +533,7 @@ class GeneralUserConfig(ConfigBase):
             "Notify", "IfServerChan", False, BoolValidator()
         )
         self.Notify_ServerChanKey = ConfigItem("Notify", "ServerChanKey", "")
-        self.Notify_IfCompanyWebHookBot = ConfigItem(
-            "Notify", "IfCompanyWebHookBot", False, BoolValidator()
-        )
-        self.Notify_CompanyWebHookBotUrl = ConfigItem(
-            "Notify", "CompanyWebHookBotUrl", ""
-        )
+        self.Notify_CustomWebhooks = ConfigItem("Notify", "CustomWebhooks", [])
 
 
 class GeneralConfig(ConfigBase):
