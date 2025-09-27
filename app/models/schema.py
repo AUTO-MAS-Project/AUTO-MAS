@@ -291,7 +291,7 @@ class MaaUserConfig_Task(BaseModel):
     IfReclamation: Optional[bool] = Field(default=None, description="生息演算")
 
 
-class UserConfig_Notify(BaseModel):
+class MaaUserConfig_Notify(BaseModel):
     Enabled: Optional[bool] = Field(default=None, description="是否启用通知")
     IfSendStatistic: Optional[bool] = Field(
         default=None, description="是否发送统计信息"
@@ -311,11 +311,30 @@ class UserConfig_Notify(BaseModel):
     )
 
 
+class GeneralUserConfig_Notify(BaseModel):
+    Enabled: Optional[bool] = Field(default=None, description="是否启用通知")
+    IfSendStatistic: Optional[bool] = Field(
+        default=None, description="是否发送统计信息"
+    )
+    IfSendMail: Optional[bool] = Field(default=None, description="是否发送邮件通知")
+    ToAddress: Optional[str] = Field(default=None, description="邮件接收地址")
+    IfServerChan: Optional[bool] = Field(
+        default=None, description="是否使用Server酱推送"
+    )
+    ServerChanKey: Optional[str] = Field(default=None, description="ServerChanKey")
+    IfCompanyWebHookBot: Optional[bool] = Field(
+        default=None, description="是否使用Webhook推送"
+    )
+    CompanyWebHookBotUrl: Optional[str] = Field(
+        default=None, description="企微Webhook Bot URL"
+    )
+
+
 class MaaUserConfig(BaseModel):
     Info: Optional[MaaUserConfig_Info] = Field(default=None, description="基础信息")
     Data: Optional[MaaUserConfig_Data] = Field(default=None, description="用户数据")
     Task: Optional[MaaUserConfig_Task] = Field(default=None, description="任务列表")
-    Notify: Optional[UserConfig_Notify] = Field(default=None, description="单独通知")
+    Notify: Optional[MaaUserConfig_Notify] = Field(default=None, description="单独通知")
 
 
 class MaaConfig_Info(BaseModel):
@@ -368,7 +387,9 @@ class GeneralUserConfig_Data(BaseModel):
 class GeneralUserConfig(BaseModel):
     Info: Optional[GeneralUserConfig_Info] = Field(default=None, description="用户信息")
     Data: Optional[GeneralUserConfig_Data] = Field(default=None, description="用户数据")
-    Notify: Optional[UserConfig_Notify] = Field(default=None, description="单独通知")
+    Notify: Optional[GeneralUserConfig_Notify] = Field(
+        default=None, description="单独通知"
+    )
 
 
 class GeneralConfig_Info(BaseModel):
