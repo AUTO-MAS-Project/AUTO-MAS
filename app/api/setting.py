@@ -28,6 +28,7 @@ from fastapi import APIRouter, Body
 from app.core import Config
 from app.services import System, Notify
 from app.models.schema import *
+import uuid
 
 router = APIRouter(prefix="/api/setting", tags=["全局设置"])
 
@@ -95,3 +96,43 @@ async def test_notify() -> OutBase:
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
     return OutBase()
+
+
+@router.post(
+    "/webhook/templates", summary="获取Webhook模板", response_model=InfoOut, status_code=200
+)
+async def get_webhook_templates() -> InfoOut:
+    """获取所有可用的Webhook模板"""
+    
+    try:
+        templates = Notify.get_webhook_templates()
+        return InfoOut(data=templates)
+    except Exception as e:
+        return InfoOut(
+            code=500,
+            status="error", 
+            message=f"{type(e).__name__}: {str(e)}",
+            data={}
+        )
+
+
+@router.post(
+    "/webhook/test", summary="测试单个Webhook", response_model=OutBase, status_code=200
+)
+async def test_webhook(webhook_config: CustomWebhook = Body(...)) -> OutBase:
+    """测试单个Webhook配置"""
+    
+    try:
+        webhook_dict = webhook_config.model_dump()
+        await Notify.CustomWebhookPush(
+            "AUTO-MAS Webhook测试",
+            "这是一条测试消息，如果您收到此消息，说明Webhook配置正确！",
+            webhook_dict
+        )
+        return OutBase(message="Webhook测试成功")
+    except Exception as e:
+        return OutBase(
+            code=500,
+            status="error",
+            message=f"Webhook测试失败: {type(e).__name__}: {str(e)}"
+        )

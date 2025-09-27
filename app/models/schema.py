@@ -110,6 +110,16 @@ class GlobalConfig_UI(BaseModel):
     IfToTray: Optional[bool] = Field(default=None, description="是否最小化到托盘")
 
 
+class CustomWebhook(BaseModel):
+    id: str = Field(..., description="Webhook唯一标识")
+    name: str = Field(..., description="Webhook名称")
+    url: str = Field(..., description="Webhook URL")
+    template: str = Field(..., description="消息模板类型")
+    enabled: bool = Field(default=True, description="是否启用")
+    headers: Optional[Dict[str, str]] = Field(default=None, description="自定义请求头")
+    body_template: Optional[str] = Field(default=None, description="自定义消息体模板")
+
+
 class GlobalConfig_Notify(BaseModel):
     SendTaskResultTime: Optional[Literal["不推送", "任何时刻", "仅失败时"]] = Field(
         default=None, description="任务结果推送时机"
@@ -135,6 +145,9 @@ class GlobalConfig_Notify(BaseModel):
     )
     CompanyWebHookBotUrl: Optional[str] = Field(
         default=None, description="企微Webhook Bot URL"
+    )
+    CustomWebhooks: Optional[List[CustomWebhook]] = Field(
+        default=None, description="自定义Webhook列表"
     )
 
 
@@ -308,6 +321,9 @@ class UserConfig_Notify(BaseModel):
     )
     CompanyWebHookBotUrl: Optional[str] = Field(
         default=None, description="企微Webhook Bot URL"
+    )
+    CustomWebhooks: Optional[List[CustomWebhook]] = Field(
+        default=None, description="自定义Webhook列表"
     )
 
 
@@ -792,3 +808,11 @@ class UpdateCheckOut(OutBase):
     if_need_update: bool = Field(..., description="是否需要更新前端")
     latest_version: str = Field(..., description="最新前端版本号")
     update_info: Dict[str, List[str]] = Field(..., description="版本更新信息字典")
+
+
+class WebhookTemplatesOut(OutBase):
+    data: Dict[str, Dict] = Field(..., description="Webhook模板数据")
+
+
+class WebhookTestIn(BaseModel):
+    webhook: CustomWebhook = Field(..., description="要测试的Webhook配置")
