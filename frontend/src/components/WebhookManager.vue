@@ -28,6 +28,14 @@
           <div class="webhook-url">{{ webhook.url }}</div>
         </div>
         <div class="webhook-actions">
+          <a-switch
+            v-model:checked="webhook.enabled"
+            @change="toggleWebhookEnabled(webhook)"
+            size="small"
+            :checked-children="'启用'"
+            :un-checked-children="'禁用'"
+            class="webhook-switch"
+          />
           <a-button type="text" size="small" @click="testWebhook(webhook)" :loading="testingWebhooks[webhook.id]">
             <template #icon>
               <PlayCircleOutlined />
@@ -163,7 +171,9 @@ import {
   EditOutlined, 
   DeleteOutlined, 
   PlayCircleOutlined,
-  ApiOutlined
+  ApiOutlined,
+  CheckCircleOutlined,
+  StopOutlined
 } from '@ant-design/icons-vue'
 import type { CustomWebhook } from '@/types/settings'
 import { WEBHOOK_TEMPLATES, TEMPLATE_VARIABLES } from '@/utils/webhookTemplates'
@@ -231,6 +241,20 @@ const editWebhook = (webhook: CustomWebhook) => {
     : []
   
   modalVisible.value = true
+}
+
+// 切换 Webhook 启用状态
+const toggleWebhookEnabled = (webhook: CustomWebhook) => {
+  // 由于 a-switch 已经改变了 webhook.enabled 的值，我们需要根据新值来更新
+  const newEnabled = webhook.enabled
+  const newWebhooks = webhooks.value.map(w =>
+    w.id === webhook.id 
+      ? { ...w, enabled: newEnabled }
+      : w
+  )
+  webhooks.value = newWebhooks
+  emit('change')
+  message.success(`Webhook "${webhook.name}" 已${newEnabled ? '启用' : '禁用'}`)
 }
 
 // 删除 Webhook
@@ -442,6 +466,11 @@ const handleCancel = () => {
   display: flex;
   gap: 4px;
   flex-shrink: 0;
+  align-items: center;
+}
+
+.webhook-switch {
+  margin-right: 8px;
 }
 
 .empty-state {
