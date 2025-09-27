@@ -109,11 +109,18 @@ export interface User {
     Status: boolean
   }
   Notify: {
-    CompanyWebHookBotUrl: string
     Enabled: boolean
-    IfCompanyWebHookBot: boolean
     IfSendMail: boolean
     IfSendSixStar: boolean
+    CustomWebhooks: Array<{
+      id: string
+      name: string
+      url: string
+      template: string
+      enabled: boolean
+      headers?: Record<string, string>
+      method?: 'POST' | 'GET'
+    }>
     IfSendStatistic: boolean
     IfServerChan: boolean
     ServerChanChannel: string

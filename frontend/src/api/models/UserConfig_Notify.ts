@@ -2,6 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { CustomWebhook } from './CustomWebhook';
 export type UserConfig_Notify = {
     /**
      * 是否启用通知
@@ -32,12 +33,8 @@ export type UserConfig_Notify = {
      */
     ServerChanKey?: (string | null);
     /**
-     * 是否使用Webhook推送
+     * 用户自定义Webhook列表
      */
-    IfCompanyWebHookBot?: (boolean | null);
-    /**
-     * 企微Webhook Bot URL
-     */
-    CompanyWebHookBotUrl?: (string | null);
+    CustomWebhooks?: (Array<CustomWebhook> | null);
 };
 

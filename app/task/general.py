@@ -982,12 +982,22 @@ class GeneralManager:
                     Config.get("Notify", "ServerChanKey"),
                 )
 
-            if Config.get("Notify", "IfCompanyWebHookBot"):
-                await Notify.WebHookPush(
-                    title,
-                    f"{message_text}\n\nAUTO-MAS 敬上",
-                    Config.get("Notify", "CompanyWebHookBotUrl"),
-                )
+            # 发送自定义Webhook通知
+            try:
+                custom_webhooks = Config.get("Notify", "CustomWebhooks")
+            except AttributeError:
+                custom_webhooks = []
+            if custom_webhooks:
+                for webhook in custom_webhooks:
+                    if webhook.get("enabled", True):
+                        try:
+                            await Notify.CustomWebhookPush(
+                                title,
+                                f"{message_text}\n\nAUTO-MAS 敬上",
+                                webhook
+                            )
+                        except Exception as e:
+                            logger.error(f"自定义Webhook推送失败 ({webhook.get('name', 'Unknown')}): {e}")
 
         elif mode == "统计信息":
 
@@ -1019,12 +1029,22 @@ class GeneralManager:
                         Config.get("Notify", "ServerChanKey"),
                     )
 
-                if Config.get("Notify", "IfCompanyWebHookBot"):
-                    await Notify.WebHookPush(
-                        title,
-                        f"{message_text}\n\nAUTO-MAS 敬上",
-                        Config.get("Notify", "CompanyWebHookBotUrl"),
-                    )
+                # 发送自定义Webhook通知
+                try:
+                    custom_webhooks = Config.get("Notify", "CustomWebhooks")
+                except AttributeError:
+                    custom_webhooks = []
+                if custom_webhooks:
+                    for webhook in custom_webhooks:
+                        if webhook.get("enabled", True):
+                            try:
+                                await Notify.CustomWebhookPush(
+                                    title,
+                                    f"{message_text}\n\nAUTO-MAS 敬上",
+                                    webhook
+                                )
+                            except Exception as e:
+                                logger.error(f"自定义Webhook推送失败 ({webhook.get('name', 'Unknown')}): {e}")
 
             # 发送用户单独通知
             if self.cur_user_data.get("Notify", "Enabled") and self.cur_user_data.get(
@@ -1057,13 +1077,19 @@ class GeneralManager:
                         )
 
                 # 推送CompanyWebHookBot通知
-                if self.cur_user_data.get("Notify", "IfCompanyWebHookBot"):
-                    if self.cur_user_data.get("Notify", "CompanyWebHookBotUrl"):
-                        await Notify.WebHookPush(
-                            title,
-                            f"{message_text}\n\nAUTO-MAS 敬上",
-                            self.cur_user_data.get("Notify", "CompanyWebHookBotUrl"),
-                        )
+                # 发送用户自定义Webhook通知
+                user_webhooks = self.cur_user_data.get("Notify", {}).get("CustomWebhooks", [])
+                if user_webhooks:
+                    for webhook in user_webhooks:
+                        if webhook.get("enabled", True):
+                            try:
+                                await Notify.CustomWebhookPush(
+                                    title,
+                                    f"{message_text}\n\nAUTO-MAS 敬上",
+                                    webhook
+                                )
+                            except Exception as e:
+                                logger.error(f"用户自定义Webhook推送失败 ({webhook.get('name', 'Unknown')}): {e}")
                     else:
                         logger.error(
                             "用户CompanyWebHookBot密钥为空, 无法发送用户单独的CompanyWebHookBot通知"
