@@ -1,3 +1,14 @@
+// 自定义Webhook配置
+export interface CustomWebhook {
+  id: string
+  name: string
+  url: string
+  template: string
+  enabled: boolean
+  headers?: Record<string, string>
+  method?: 'POST' | 'GET'
+}
+
 // 设置相关类型定义
 export interface SettingsData {
   UI: {
@@ -26,8 +37,7 @@ export interface SettingsData {
     ServerChanKey: string
     ServerChanChannel: string
     ServerChanTag: string
-    IfCompanyWebHookBot: boolean
-    CompanyWebHookBotUrl: string
+    CustomWebhooks: CustomWebhook[]
   }
   Update: {
     IfAutoUpdate: boolean
