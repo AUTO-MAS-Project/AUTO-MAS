@@ -85,85 +85,85 @@
           <div class="section-header">
             <h3>基本信息</h3>
           </div>
-        <a-row :gutter="24">
-          <a-col :span="12">
-            <a-form-item name="userName" required>
-              <template #label>
-                <a-tooltip title="用于识别用户的显示名称">
-                  <span class="form-label">
-                    用户名
-                    <QuestionCircleOutlined class="help-icon" />
-                  </span>
-                </a-tooltip>
-              </template>
-              <a-input
-                v-model:value="formData.userName"
-                placeholder="请输入用户名"
-                :disabled="loading"
-                size="large"
-                class="modern-input"
-              />
-            </a-form-item>
-          </a-col>
-          <a-col :span="6">
-            <a-form-item name="status">
-              <template #label>
-                <a-tooltip title="是否启用该用户">
-                  <span class="form-label">
-                    启用状态
-                    <QuestionCircleOutlined class="help-icon" />
-                  </span>
-                </a-tooltip>
-              </template>
-              <a-select v-model:value="formData.Info.Status" size="large">
-                <a-select-option :value="true">是</a-select-option>
-                <a-select-option :value="false">否</a-select-option>
-              </a-select>
-            </a-form-item>
-          </a-col>
-          <a-col :span="6">
-            <a-form-item name="remainedDay">
-              <template #label>
-                <a-tooltip title="账号剩余的有效天数，「-1」表示无限">
-                  <span class="form-label">
-                    剩余天数
-                    <QuestionCircleOutlined class="help-icon" />
-                  </span>
-                </a-tooltip>
-              </template>
-              <a-input-number
-                v-model:value="formData.Info.RemainedDay"
-                :min="-1"
-                :max="9999"
-                placeholder="-1"
-                :disabled="loading"
-                size="large"
-                style="width: 100%"
-              />
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <!-- 占位列 -->
-          </a-col>
-        </a-row>
+          <a-row :gutter="24">
+            <a-col :span="12">
+              <a-form-item name="userName" required>
+                <template #label>
+                  <a-tooltip title="用于识别用户的显示名称">
+                    <span class="form-label">
+                      用户名
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-input
+                  v-model:value="formData.userName"
+                  placeholder="请输入用户名"
+                  :disabled="loading"
+                  size="large"
+                  class="modern-input"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :span="6">
+              <a-form-item name="status">
+                <template #label>
+                  <a-tooltip title="是否启用该用户">
+                    <span class="form-label">
+                      启用状态
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-select v-model:value="formData.Info.Status" size="large">
+                  <a-select-option :value="true">是</a-select-option>
+                  <a-select-option :value="false">否</a-select-option>
+                </a-select>
+              </a-form-item>
+            </a-col>
+            <a-col :span="6">
+              <a-form-item name="remainedDay">
+                <template #label>
+                  <a-tooltip title="账号剩余的有效天数，「-1」表示无限">
+                    <span class="form-label">
+                      剩余天数
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-input-number
+                  v-model:value="formData.Info.RemainedDay"
+                  :min="-1"
+                  :max="9999"
+                  placeholder="-1"
+                  :disabled="loading"
+                  size="large"
+                  style="width: 100%"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <!-- 占位列 -->
+            </a-col>
+          </a-row>
 
-        <a-form-item name="notes">
-          <template #label>
-            <a-tooltip title="为用户添加备注信息">
-              <span class="form-label">
-                备注
-                <QuestionCircleOutlined class="help-icon" />
-              </span>
-            </a-tooltip>
-          </template>
-          <a-textarea
-            v-model:value="formData.Info.Notes"
-            placeholder="请输入备注信息"
-            :rows="4"
-            :disabled="loading"
-            class="modern-input"
-          />
-        </a-form-item>
+          <a-form-item name="notes">
+            <template #label>
+              <a-tooltip title="为用户添加备注信息">
+                <span class="form-label">
+                  备注
+                  <QuestionCircleOutlined class="help-icon" />
+                </span>
+              </a-tooltip>
+            </template>
+            <a-textarea
+              v-model:value="formData.Info.Notes"
+              placeholder="请输入备注信息"
+              :rows="4"
+              :disabled="loading"
+              class="modern-input"
+            />
+          </a-form-item>
         </div>
 
         <!-- 额外脚本 -->
@@ -171,90 +171,90 @@
           <div class="section-header">
             <h3>额外脚本</h3>
           </div>
-        <a-form-item name="scriptBeforeTask">
-          <template #label>
-            <a-tooltip title="在任务执行前运行自定义脚本">
-              <span class="form-label">
-                任务前执行脚本
-                <QuestionCircleOutlined class="help-icon" />
-              </span>
-            </a-tooltip>
-          </template>
-          <a-row :gutter="24" align="middle">
-            <a-col :span="4">
-              <a-switch
-                v-model:checked="formData.Info.IfScriptBeforeTask"
-                :disabled="loading"
-                size="default"
-              />
-            </a-col>
-            <a-col :span="20">
-              <a-input-group compact class="path-input-group">
-                <a-input
-                  v-model:value="formData.Info.ScriptBeforeTask"
-                  placeholder="请选择脚本文件"
-                  :disabled="loading || !formData.Info.IfScriptBeforeTask"
-                  size="large"
-                  class="path-input"
-                  readonly
+          <a-form-item name="scriptBeforeTask">
+            <template #label>
+              <a-tooltip title="在任务执行前运行自定义脚本">
+                <span class="form-label">
+                  任务前执行脚本
+                  <QuestionCircleOutlined class="help-icon" />
+                </span>
+              </a-tooltip>
+            </template>
+            <a-row :gutter="24" align="middle">
+              <a-col :span="4">
+                <a-switch
+                  v-model:checked="formData.Info.IfScriptBeforeTask"
+                  :disabled="loading"
+                  size="default"
                 />
-                <a-button 
-                  size="large" 
-                  @click="selectScriptBeforeTask" 
-                  :disabled="loading || !formData.Info.IfScriptBeforeTask"
-                  class="path-button"
-                >
-                  <template #icon>
-                    <FileOutlined />
-                  </template>
-                  选择文件
-                </a-button>
-              </a-input-group>
-            </a-col>
-          </a-row>
-        </a-form-item>
-        <a-form-item name="scriptAfterTask">
-          <template #label>
-            <a-tooltip title="在任务执行后运行自定义脚本">
-              <span class="form-label">
-                任务后执行脚本
-                <QuestionCircleOutlined class="help-icon" />
-              </span>
-            </a-tooltip>
-          </template>
-          <a-row :gutter="24" align="middle">
-            <a-col :span="4">
-              <a-switch
-                v-model:checked="formData.Info.IfScriptAfterTask"
-                :disabled="loading"
-                size="default"
-              />
-            </a-col>
-            <a-col :span="20">
-              <a-input-group compact class="path-input-group">
-                <a-input
-                  v-model:value="formData.Info.ScriptAfterTask"
-                  placeholder="请选择脚本文件"
-                  :disabled="loading || !formData.Info.IfScriptAfterTask"
-                  size="large"
-                  class="path-input"
-                  readonly
+              </a-col>
+              <a-col :span="20">
+                <a-input-group compact class="path-input-group">
+                  <a-input
+                    v-model:value="formData.Info.ScriptBeforeTask"
+                    placeholder="请选择脚本文件"
+                    :disabled="loading || !formData.Info.IfScriptBeforeTask"
+                    size="large"
+                    class="path-input"
+                    readonly
+                  />
+                  <a-button
+                    size="large"
+                    @click="selectScriptBeforeTask"
+                    :disabled="loading || !formData.Info.IfScriptBeforeTask"
+                    class="path-button"
+                  >
+                    <template #icon>
+                      <FileOutlined />
+                    </template>
+                    选择文件
+                  </a-button>
+                </a-input-group>
+              </a-col>
+            </a-row>
+          </a-form-item>
+          <a-form-item name="scriptAfterTask">
+            <template #label>
+              <a-tooltip title="在任务执行后运行自定义脚本">
+                <span class="form-label">
+                  任务后执行脚本
+                  <QuestionCircleOutlined class="help-icon" />
+                </span>
+              </a-tooltip>
+            </template>
+            <a-row :gutter="24" align="middle">
+              <a-col :span="4">
+                <a-switch
+                  v-model:checked="formData.Info.IfScriptAfterTask"
+                  :disabled="loading"
+                  size="default"
                 />
-                <a-button 
-                  size="large" 
-                  @click="selectScriptAfterTask" 
-                  :disabled="loading || !formData.Info.IfScriptAfterTask"
-                  class="path-button"
-                >
-                  <template #icon>
-                    <FileOutlined />
-                  </template>
-                  选择文件
-                </a-button>
-              </a-input-group>
-            </a-col>
-          </a-row>
-        </a-form-item>
+              </a-col>
+              <a-col :span="20">
+                <a-input-group compact class="path-input-group">
+                  <a-input
+                    v-model:value="formData.Info.ScriptAfterTask"
+                    placeholder="请选择脚本文件"
+                    :disabled="loading || !formData.Info.IfScriptAfterTask"
+                    size="large"
+                    class="path-input"
+                    readonly
+                  />
+                  <a-button
+                    size="large"
+                    @click="selectScriptAfterTask"
+                    :disabled="loading || !formData.Info.IfScriptAfterTask"
+                    class="path-button"
+                  >
+                    <template #icon>
+                      <FileOutlined />
+                    </template>
+                    选择文件
+                  </a-button>
+                </a-input-group>
+              </a-col>
+            </a-row>
+          </a-form-item>
         </div>
 
         <!-- 通知配置 -->
@@ -262,92 +262,77 @@
           <div class="section-header">
             <h3>通知配置</h3>
           </div>
-        <a-row :gutter="24" align="middle">
-          <a-col :span="6">
-            <span style="font-weight: 500">启用通知</span>
-          </a-col>
-          <a-col :span="18">
-            <a-switch v-model:checked="formData.Notify.Enabled" :disabled="loading" />
-            <span class="switch-description">启用后将发送任务通知</span>
-          </a-col>
-        </a-row>
+          <a-row :gutter="24" align="middle">
+            <a-col :span="6">
+              <span style="font-weight: 500">启用通知</span>
+            </a-col>
+            <a-col :span="18">
+              <a-switch v-model:checked="formData.Notify.Enabled" :disabled="loading" />
+              <span class="switch-description">启用后将发送任务通知</span>
+            </a-col>
+          </a-row>
 
-        <!-- 发送统计 -->
-        <a-row :gutter="24" style="margin-top: 16px">
-          <a-col :span="6">
-            <span style="font-weight: 500">通知内容</span>
-          </a-col>
-          <a-col :span="18">
-            <a-checkbox
-              v-model:checked="formData.Notify.IfSendStatistic"
-              :disabled="loading || !formData.Notify.Enabled"
-              >统计信息
-            </a-checkbox>
-          </a-col>
-        </a-row>
+          <!-- 发送统计 -->
+          <a-row :gutter="24" style="margin-top: 16px">
+            <a-col :span="6">
+              <span style="font-weight: 500">通知内容</span>
+            </a-col>
+            <a-col :span="18">
+              <a-checkbox
+                v-model:checked="formData.Notify.IfSendStatistic"
+                :disabled="loading || !formData.Notify.Enabled"
+                >统计信息
+              </a-checkbox>
+            </a-col>
+          </a-row>
 
-        <!-- 邮件通知 -->
-        <a-row :gutter="24" style="margin-top: 16px">
-          <a-col :span="6">
-            <a-checkbox
-              v-model:checked="formData.Notify.IfSendMail"
-              :disabled="loading || !formData.Notify.Enabled"
-              >邮件通知
-            </a-checkbox>
-          </a-col>
-          <a-col :span="18">
-            <a-input
-              v-model:value="formData.Notify.ToAddress"
-              placeholder="请输入收件人邮箱地址"
-              :disabled="loading || !formData.Notify.Enabled || !formData.Notify.IfSendMail"
-              size="large"
-              style="width: 100%"
+          <!-- 邮件通知 -->
+          <a-row :gutter="24" style="margin-top: 16px">
+            <a-col :span="6">
+              <a-checkbox
+                v-model:checked="formData.Notify.IfSendMail"
+                :disabled="loading || !formData.Notify.Enabled"
+                >邮件通知
+              </a-checkbox>
+            </a-col>
+            <a-col :span="18">
+              <a-input
+                v-model:value="formData.Notify.ToAddress"
+                placeholder="请输入收件人邮箱地址"
+                :disabled="loading || !formData.Notify.Enabled || !formData.Notify.IfSendMail"
+                size="large"
+                style="width: 100%"
+              />
+            </a-col>
+          </a-row>
+
+          <!-- Server酱通知 -->
+          <a-row :gutter="24" style="margin-top: 16px">
+            <a-col :span="6">
+              <a-checkbox
+                v-model:checked="formData.Notify.IfServerChan"
+                :disabled="loading || !formData.Notify.Enabled"
+                >Server酱
+              </a-checkbox>
+            </a-col>
+            <a-col :span="18">
+              <a-input
+                v-model:value="formData.Notify.ServerChanKey"
+                placeholder="请输入SENDKEY"
+                :disabled="loading || !formData.Notify.Enabled || !formData.Notify.IfServerChan"
+                size="large"
+                style="width: 100%"
+              />
+            </a-col>
+          </a-row>
+
+          <!-- 自定义 Webhook 通知 -->
+          <div style="margin-top: 16px">
+            <WebhookManager
+              v-model:webhooks="formData.Notify.CustomWebhooks"
+              @change="handleWebhookChange"
             />
-          </a-col>
-        </a-row>
-
-        <!-- Server酱通知 -->
-        <a-row :gutter="24" style="margin-top: 16px">
-          <a-col :span="6">
-            <a-checkbox
-              v-model:checked="formData.Notify.IfServerChan"
-              :disabled="loading || !formData.Notify.Enabled"
-              >Server酱
-            </a-checkbox>
-          </a-col>
-          <a-col :span="18">
-            <a-input
-              v-model:value="formData.Notify.ServerChanKey"
-              placeholder="请输入SENDKEY"
-              :disabled="loading || !formData.Notify.Enabled || !formData.Notify.IfServerChan"
-              size="large"
-              style="width: 100%"
-            />
-          </a-col>
-        </a-row>
-
-        <!-- 企业微信群机器人通知 -->
-        <a-row :gutter="24" style="margin-top: 16px">
-          <a-col :span="6">
-            <a-checkbox
-              v-model:checked="formData.Notify.IfCompanyWebHookBot"
-              :disabled="loading || !formData.Notify.Enabled"
-              >企业微信群机器人
-            </a-checkbox>
-          </a-col>
-          <a-col :span="18">
-            <a-input
-              v-model:value="formData.Notify.CompanyWebHookBotUrl"
-              placeholder="请输入机器人Webhook地址"
-              :disabled="
-                loading || !formData.Notify.Enabled || !formData.Notify.IfCompanyWebHookBot
-              "
-              size="large"
-              style="width: 100%"
-              class="modern-input"
-            />
-          </a-col>
-        </a-row>
+          </div>
         </div>
       </a-form>
     </a-card>
@@ -384,6 +369,7 @@ import { useScriptApi } from '@/composables/useScriptApi'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { Service } from '@/api'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
+import WebhookManager from '@/components/WebhookManager.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -426,11 +412,10 @@ const getDefaultGeneralUserData = () => ({
     IfSendMail: false,
     IfSendStatistic: false,
     IfServerChan: false,
-    IfCompanyWebHookBot: false,
     ServerChanKey: '',
     ServerChanChannel: '',
     ServerChanTag: '',
-    CompanyWebHookBotUrl: '',
+    CustomWebhooks: [],
   },
   Data: {
     LastProxyDate: '2000-01-01',
@@ -639,16 +624,19 @@ const handleGeneralConfig = async () => {
       message.success(`已开始配置用户 ${formData.userName} 的通用设置`)
 
       // 设置 30 分钟超时自动断开
-      generalConfigTimeout = window.setTimeout(() => {
-        if (generalWebsocketId.value) {
-          const id = generalWebsocketId.value
-          unsubscribe(id)
-          generalWebsocketId.value = null
-          showGeneralConfigMask.value = false
-          message.info(`用户 ${formData.userName} 的配置会话已超时断开`)
-        }
-        generalConfigTimeout = null
-      }, 30 * 60 * 1000)
+      generalConfigTimeout = window.setTimeout(
+        () => {
+          if (generalWebsocketId.value) {
+            const id = generalWebsocketId.value
+            unsubscribe(id)
+            generalWebsocketId.value = null
+            showGeneralConfigMask.value = false
+            message.info(`用户 ${formData.userName} 的配置会话已超时断开`)
+          }
+          generalConfigTimeout = null
+        },
+        30 * 60 * 1000
+      )
     } else {
       message.error(response?.message || '启动通用配置失败')
     }
@@ -695,7 +683,7 @@ const selectScriptBeforeTask = async () => {
       { name: '脚本文件', extensions: ['py', 'js', 'sh'] },
       { name: '所有文件', extensions: ['*'] },
     ])
-    
+
     if (path && path.length > 0) {
       formData.Info.ScriptBeforeTask = path[0]
       message.success('任务前脚本路径选择成功')
@@ -713,7 +701,7 @@ const selectScriptAfterTask = async () => {
       { name: '脚本文件', extensions: ['py', 'js', 'sh'] },
       { name: '所有文件', extensions: ['*'] },
     ])
-    
+
     if (path && path.length > 0) {
       formData.Info.ScriptAfterTask = path[0]
       message.success('任务后脚本路径选择成功')
@@ -722,6 +710,13 @@ const selectScriptAfterTask = async () => {
     console.error('选择任务后脚本失败:', error)
     message.error('选择文件失败')
   }
+}
+
+// 处理 Webhook 变化
+const handleWebhookChange = () => {
+  // 这里可以添加额外的处理逻辑，比如验证或保存
+  console.log('User webhooks changed:', formData.Notify.CustomWebhooks)
+  // 注意：实际保存会在用户点击保存按钮时进行，这里只是更新本地数据
 }
 
 const handleCancel = () => {

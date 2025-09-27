@@ -110,6 +110,16 @@ class GlobalConfig_UI(BaseModel):
     IfToTray: Optional[bool] = Field(default=None, description="是否最小化到托盘")
 
 
+class CustomWebhook(BaseModel):
+    id: str = Field(..., description="Webhook唯一标识")
+    name: str = Field(..., description="Webhook名称")
+    url: str = Field(..., description="Webhook URL")
+    template: str = Field(..., description="消息模板")
+    enabled: bool = Field(default=True, description="是否启用")
+    headers: Optional[Dict[str, str]] = Field(default=None, description="自定义请求头")
+    method: Optional[Literal["POST", "GET"]] = Field(default="POST", description="请求方法")
+
+
 class GlobalConfig_Notify(BaseModel):
     SendTaskResultTime: Optional[Literal["不推送", "任何时刻", "仅失败时"]] = Field(
         default=None, description="任务结果推送时机"
@@ -130,11 +140,8 @@ class GlobalConfig_Notify(BaseModel):
         default=None, description="是否使用ServerChan推送"
     )
     ServerChanKey: Optional[str] = Field(default=None, description="ServerChan推送密钥")
-    IfCompanyWebHookBot: Optional[bool] = Field(
-        default=None, description="是否使用企微Webhook推送"
-    )
-    CompanyWebHookBotUrl: Optional[str] = Field(
-        default=None, description="企微Webhook Bot URL"
+    CustomWebhooks: Optional[List[CustomWebhook]] = Field(
+        default=None, description="自定义Webhook列表"
     )
 
 
@@ -303,11 +310,8 @@ class MaaUserConfig_Notify(BaseModel):
         default=None, description="是否使用Server酱推送"
     )
     ServerChanKey: Optional[str] = Field(default=None, description="ServerChanKey")
-    IfCompanyWebHookBot: Optional[bool] = Field(
-        default=None, description="是否使用Webhook推送"
-    )
-    CompanyWebHookBotUrl: Optional[str] = Field(
-        default=None, description="企微Webhook Bot URL"
+    CustomWebhooks: Optional[List[CustomWebhook]] = Field(
+        default=None, description="用户自定义Webhook列表"
     )
 
 

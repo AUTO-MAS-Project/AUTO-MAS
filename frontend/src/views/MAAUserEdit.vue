@@ -41,7 +41,13 @@
 
     <div class="user-edit-content">
       <a-card class="config-card">
-        <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
+        <a-form
+          ref="formRef"
+          :model="formData"
+          :rules="rules"
+          layout="vertical"
+          class="config-form"
+        >
           <!-- 基本信息组件 -->
           <BasicInfoSection
             :form-data="formData"
@@ -91,22 +97,13 @@
           />
 
           <!-- 任务配置组件 -->
-          <TaskConfigSection
-            :form-data="formData"
-            :loading="loading"
-          />
+          <TaskConfigSection :form-data="formData" :loading="loading" />
 
           <!-- 森空岛配置组件 -->
-          <SkylandConfigSection
-            :form-data="formData"
-            :loading="loading"
-          />
+          <SkylandConfigSection :form-data="formData" :loading="loading" />
 
           <!-- 通知配置组件 -->
-          <NotifyConfigSection
-            :form-data="formData"
-            :loading="loading"
-          />
+          <NotifyConfigSection :form-data="formData" :loading="loading" />
         </a-form>
       </a-card>
     </div>
@@ -459,11 +456,10 @@ const getDefaultMAAUserData = () => ({
     IfSendSixStar: false,
     IfSendStatistic: false,
     IfServerChan: false,
-    IfCompanyWebHookBot: false,
     ServerChanKey: '',
     ServerChanChannel: '',
     ServerChanTag: '',
-    CompanyWebHookBotUrl: '',
+    CustomWebhooks: [],
   },
   Data: {
     CustomInfrastPlanIndex: '',
@@ -790,7 +786,10 @@ const handleMAAConfig = async () => {
       subscribe(wsId, {
         onMessage: (wsMessage: any) => {
           if (wsMessage.type === 'error') {
-            console.error(`用户 ${formData.Info?.Name || formData.userName} MAA配置错误:`, wsMessage.data)
+            console.error(
+              `用户 ${formData.Info?.Name || formData.userName} MAA配置错误:`,
+              wsMessage.data
+            )
             message.error(`MAA配置连接失败: ${wsMessage.data}`)
             unsubscribe(wsId)
             maaWebsocketId.value = null
@@ -812,16 +811,19 @@ const handleMAAConfig = async () => {
       message.success(`已开始配置用户 ${formData.Info?.Name || formData.userName} 的MAA设置`)
 
       // 设置 30 分钟超时自动断开
-      maaConfigTimeout = window.setTimeout(() => {
-        if (maaWebsocketId.value) {
-          const id = maaWebsocketId.value
-          unsubscribe(id)
-          maaWebsocketId.value = null
-          showMAAConfigMask.value = false
-          message.info(`用户 ${formData.Info?.Name || formData.userName} 的配置会话已超时断开`)
-        }
-        maaConfigTimeout = null
-      }, 30 * 60 * 1000)
+      maaConfigTimeout = window.setTimeout(
+        () => {
+          if (maaWebsocketId.value) {
+            const id = maaWebsocketId.value
+            unsubscribe(id)
+            maaWebsocketId.value = null
+            showMAAConfigMask.value = false
+            message.info(`用户 ${formData.Info?.Name || formData.userName} 的配置会话已超时断开`)
+          }
+          maaConfigTimeout = null
+        },
+        30 * 60 * 1000
+      )
     } else {
       message.error(response?.message || '启动MAA配置失败')
     }
@@ -1016,7 +1018,6 @@ const updateStageRemain = (value: string) => {
     formData.Info.Stage_Remain = value
   }
 }
-
 
 // 初始化加载
 onMounted(() => {

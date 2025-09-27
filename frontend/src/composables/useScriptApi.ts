@@ -154,8 +154,7 @@ export function useScriptApi() {
                       ToAddress: maaUserData.Notify?.ToAddress !== undefined ? maaUserData.Notify.ToAddress : '',
                       IfServerChan: maaUserData.Notify?.IfServerChan !== undefined ? maaUserData.Notify.IfServerChan : false,
                       ServerChanKey: maaUserData.Notify?.ServerChanKey !== undefined ? maaUserData.Notify.ServerChanKey : '',
-                      IfCompanyWebHookBot: maaUserData.Notify?.IfCompanyWebHookBot !== undefined ? maaUserData.Notify.IfCompanyWebHookBot : false,
-                      CompanyWebHookBotUrl: maaUserData.Notify?.CompanyWebHookBotUrl !== undefined ? maaUserData.Notify.CompanyWebHookBotUrl : '',
+                      CustomWebhooks: maaUserData.Notify?.CustomWebhooks !== undefined ? maaUserData.Notify.CustomWebhooks : [],
                     },
                     Data: {
                       LastAnnihilationDate: maaUserData.Data?.LastAnnihilationDate !== undefined ? maaUserData.Data.LastAnnihilationDate : '',
@@ -188,8 +187,7 @@ export function useScriptApi() {
                       ToAddress: generalUserData.Notify?.ToAddress !== undefined ? generalUserData.Notify.ToAddress : '',
                       IfServerChan: generalUserData.Notify?.IfServerChan !== undefined ? generalUserData.Notify.IfServerChan : false,
                       ServerChanKey: generalUserData.Notify?.ServerChanKey !== undefined ? generalUserData.Notify.ServerChanKey : '',
-                      IfCompanyWebHookBot: generalUserData.Notify?.IfCompanyWebHookBot !== undefined ? generalUserData.Notify.IfCompanyWebHookBot : false,
-                      CompanyWebHookBotUrl: generalUserData.Notify?.CompanyWebHookBotUrl !== undefined ? generalUserData.Notify.CompanyWebHookBotUrl : '',
+                      CustomWebhooks: generalUserData.Notify?.CustomWebhooks !== undefined ? generalUserData.Notify.CustomWebhooks : [],
                     },
                     Data: {
                       LastProxyDate: generalUserData.Data?.LastProxyDate !== undefined ? generalUserData.Data.LastProxyDate : '',

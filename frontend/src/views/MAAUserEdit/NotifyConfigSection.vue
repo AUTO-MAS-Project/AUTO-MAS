@@ -71,36 +71,30 @@
       </a-col>
     </a-row>
 
-    <!-- 企业微信群机器人通知 -->
-    <a-row :gutter="24" style="margin-top: 16px">
-      <a-col :span="6">
-        <a-checkbox
-          v-model:checked="formData.Notify.IfCompanyWebHookBot"
-          :disabled="loading || !formData.Notify.Enabled"
-          >企业微信群机器人
-        </a-checkbox>
-      </a-col>
-      <a-col :span="18">
-        <a-input
-          v-model:value="formData.Notify.CompanyWebHookBotUrl"
-          placeholder="请输入机器人Webhook地址"
-          :disabled="
-            loading || !formData.Notify.Enabled || !formData.Notify.IfCompanyWebHookBot
-          "
-          size="large"
-          style="width: 100%"
-          class="modern-input"
-        />
-      </a-col>
-    </a-row>
+    <!-- 自定义 Webhook 通知 -->
+    <div style="margin-top: 16px">
+      <WebhookManager
+        v-model:webhooks="formData.Notify.CustomWebhooks"
+        @change="handleWebhookChange"
+      />
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import WebhookManager from '@/components/WebhookManager.vue'
+
 defineProps<{
   formData: any
   loading: boolean
 }>()
+
+// 处理 Webhook 变化
+const handleWebhookChange = () => {
+  // 这里可以添加额外的处理逻辑，比如验证或保存
+  console.log('User webhooks changed:', formData.Notify.CustomWebhooks)
+  // 注意：实际保存会在用户点击保存按钮时进行，这里只是更新本地数据
+}
 </script>
 
 <style scoped>

@@ -6,7 +6,7 @@ import type { MaaUserConfig_Data } from './MaaUserConfig_Data';
 import type { MaaUserConfig_Info } from './MaaUserConfig_Info';
 import type { MaaUserConfig_Task } from './MaaUserConfig_Task';
 import type { UserConfig_Notify } from './UserConfig_Notify';
-export type MaaUserConfig = {
+export type MaaUserConfig_Output = {
     /**
      * 基础信息
      */
