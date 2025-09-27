@@ -170,9 +170,101 @@ class Notification:
         else:
             raise Exception(f"ServerChan 推送通知失败: {response.text}")
 
+    async def CustomWebhookPush(self, title, content, webhook_config) -> None:
+        """
+        自定义 Webhook 推送通知
+
+        :param title: 通知标题
+        :param content: 通知内容
+        :param webhook_config: Webhook配置对象
+        """
+        
+        if not webhook_config.get("url"):
+            raise ValueError("Webhook URL 不能为空")
+        
+        if not webhook_config.get("enabled", True):
+            logger.info(f"Webhook {webhook_config.get('name', 'Unknown')} 已禁用，跳过推送")
+            return
+
+        # 解析模板
+        template = webhook_config.get("template", '{"title": "{title}", "content": "{content}"}')
+        
+        # 替换模板变量
+        try:
+            import json
+            from datetime import datetime
+            
+            # 准备模板变量
+            template_vars = {
+                "title": title,
+                "content": content,
+                "datetime": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "date": datetime.now().strftime("%Y-%m-%d"),
+                "time": datetime.now().strftime("%H:%M:%S")
+            }
+            
+            # 替换模板中的变量
+            formatted_template = template.format(**template_vars)
+            
+            # 尝试解析为JSON
+            try:
+                data = json.loads(formatted_template)
+            except json.JSONDecodeError:
+                # 如果不是JSON格式，作为纯文本发送
+                data = formatted_template
+                
+        except Exception as e:
+            logger.warning(f"模板解析失败，使用默认格式: {e}")
+            data = {"title": title, "content": content}
+
+        # 准备请求头
+        headers = {"Content-Type": "application/json"}
+        if webhook_config.get("headers"):
+            headers.update(webhook_config["headers"])
+
+        # 发送请求
+        method = webhook_config.get("method", "POST").upper()
+        
+        try:
+            if method == "POST":
+                if isinstance(data, dict):
+                    response = requests.post(
+                        url=webhook_config["url"], 
+                        json=data, 
+                        headers=headers,
+                        timeout=10, 
+                        proxies=Config.get_proxies()
+                    )
+                else:
+                    response = requests.post(
+                        url=webhook_config["url"], 
+                        data=data, 
+                        headers=headers,
+                        timeout=10, 
+                        proxies=Config.get_proxies()
+                    )
+            else:  # GET
+                params = data if isinstance(data, dict) else {"message": data}
+                response = requests.get(
+                    url=webhook_config["url"], 
+                    params=params,
+                    headers=headers,
+                    timeout=10, 
+                    proxies=Config.get_proxies()
+                )
+            
+            # 检查响应
+            if response.status_code == 200:
+                logger.success(f"自定义Webhook推送成功: {webhook_config.get('name', 'Unknown')} - {title}")
+            else:
+                raise Exception(f"HTTP {response.status_code}: {response.text}")
+                
+        except Exception as e:
+            raise Exception(f"自定义Webhook推送失败 ({webhook_config.get('name', 'Unknown')}): {str(e)}")
+
     async def WebHookPush(self, title, content, webhook_url) -> None:
         """
-        WebHook 推送通知
+        WebHook 推送通知 (兼容旧版企业微信格式)
 
         :param title: 通知标题
         :param content: 通知内容
@@ -264,17 +356,19 @@ class Notification:
                 Config.get("Notify", "ServerChanKey"),
             )
 
-        # 发送WebHook通知
-        if Config.get("Notify", "IfCompanyWebHookBot"):
-            await self.WebHookPush(
-                "AUTO-MAS测试通知",
-                "这是 AUTO-MAS 外部通知测试信息。如果你看到了这段内容, 说明 AUTO-MAS 的通知功能已经正确配置且可以正常工作！",
-                Config.get("Notify", "CompanyWebHookBotUrl"),
-            )
-            await self.CompanyWebHookBotPushImage(
-                Path.cwd() / "res/images/notification/test_notify.png",
-                Config.get("Notify", "CompanyWebHookBotUrl"),
-            )
+        # 发送自定义Webhook通知
+        custom_webhooks = Config.get("Notify", "CustomWebhooks", [])
+        if custom_webhooks:
+            for webhook in custom_webhooks:
+                if webhook.get("enabled", True):
+                    try:
+                        await self.CustomWebhookPush(
+                            "AUTO-MAS测试通知",
+                            "这是 AUTO-MAS 外部通知测试信息。如果你看到了这段内容, 说明 AUTO-MAS 的通知功能已经正确配置且可以正常工作！",
+                            webhook
+                        )
+                    except Exception as e:
+                        logger.error(f"自定义Webhook测试失败 ({webhook.get('name', 'Unknown')}): {e}")
 
         logger.success("测试通知发送完成")
 
