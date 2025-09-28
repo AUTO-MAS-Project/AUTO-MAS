@@ -1,6 +1,7 @@
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2024-2025 DLmaster361
 #   Copyright © 2025 MoeSnowyFox
+#   Copyright © 2025 AUTO-MAS Team
 
 #   This file is part of AUTO-MAS.
 
@@ -61,7 +62,7 @@ def is_admin() -> bool:
         return False
 
 
-# @logger.catch
+@logger.catch
 def main():
 
     if is_admin():

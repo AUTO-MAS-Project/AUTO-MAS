@@ -1,6 +1,7 @@
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2024-2025 DLmaster361
 #   Copyright © 2025 MoeSnowyFox
+#   Copyright © 2025 AUTO-MAS Team
 
 #   This file is part of AUTO-MAS.
 
@@ -974,27 +975,23 @@ class AppConfig(GlobalConfig):
             logger.warning("Git仓库不可用，返回默认版本信息")
             return False, "unknown", "unknown"
 
-        try:
-            # 获取当前 commit
-            current_commit = self.repo.head.commit
+        # 获取当前 commit
+        current_commit = self.repo.head.commit
 
-            # 获取 commit 哈希
-            commit_hash = current_commit.hexsha
+        # 获取 commit 哈希
+        commit_hash = current_commit.hexsha
 
-            # 获取 commit 时间
-            commit_time = datetime.fromtimestamp(current_commit.committed_date)
+        # 获取 commit 时间
+        commit_time = datetime.fromtimestamp(current_commit.committed_date)
 
-            # 检查是否为最新 commit
-            # 获取远程分支的最新 commit
-            origin = self.repo.remotes.origin
-            origin.fetch()  # 拉取最新信息
-            remote_commit = self.repo.commit(f"origin/{self.repo.active_branch.name}")
-            is_latest = bool(current_commit.hexsha == remote_commit.hexsha)
+        # 检查是否为最新 commit
+        # 获取远程分支的最新 commit
+        origin = self.repo.remotes.origin
+        origin.fetch()  # 拉取最新信息
+        remote_commit = self.repo.commit(f"origin/{self.repo.active_branch.name}")
+        is_latest = bool(current_commit.hexsha == remote_commit.hexsha)
 
-            return is_latest, commit_hash, commit_time.strftime("%Y-%m-%d %H:%M:%S")
-        except Exception as e:
-            logger.warning(f"获取Git版本信息失败: {e}")
-            return False, "error", "error"
+        return is_latest, commit_hash, commit_time.strftime("%Y-%m-%d %H:%M:%S")
 
     async def add_script(
         self, script: Literal["MAA", "General"]
@@ -1864,7 +1861,7 @@ class AppConfig(GlobalConfig):
     async def get_script_combox(self):
         """获取脚本下拉框信息"""
 
-        logger.info("Getting script combo box information...")
+        logger.info("开始获取脚本下拉框信息")
         data = [{"label": "未选择", "value": "-"}]
         for uid, script in self.ScriptConfig.items():
             data.append(
@@ -1873,7 +1870,7 @@ class AppConfig(GlobalConfig):
                     "value": str(uid),
                 }
             )
-        logger.success("Script combo box information retrieved successfully.")
+        logger.success("脚本下拉框信息获取成功")
 
         return data
 
@@ -2040,7 +2037,10 @@ class AppConfig(GlobalConfig):
                 data["sanity"] = int(sanity_match.group(1))
 
             # 提取理智回满时间：理智将在 2025-09-26 18:57 回满。(17h 29m 后)
-            sanity_full_match = re.search(r"(理智将在\s*\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}\s*回满。\(\d+h\s+\d+m\s+后\))", log_line)
+            sanity_full_match = re.search(
+                r"(理智将在\s*\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}\s*回满。\(\d+h\s+\d+m\s+后\))",
+                log_line,
+            )
             if sanity_full_match:
                 data["sanity_full_at"] = sanity_full_match.group(1)
 
@@ -2150,11 +2150,11 @@ class AppConfig(GlobalConfig):
 
         # 保存日志
         log_path.parent.mkdir(parents=True, exist_ok=True)
-        with log_path.open("w", encoding="utf-8") as f:
-            f.writelines(logs)
+        log_path.write_text("\n".join(logs), encoding="utf-8")
         # 保存统计数据
-        with log_path.with_suffix(".json").open("w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=4)
+        log_path.with_suffix(".json").write_text(
+            json.dumps(data, ensure_ascii=False, index=4), encoding="utf-8"
+        )
 
         logger.success(f"MAA 日志统计完成, 日志路径: {log_path}")
 
@@ -2179,10 +2179,10 @@ class AppConfig(GlobalConfig):
 
         # 保存日志
         log_path.parent.mkdir(parents=True, exist_ok=True)
-        with log_path.with_suffix(".log").open("w", encoding="utf-8") as f:
-            f.writelines(logs)
-        with log_path.with_suffix(".json").open("w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=4)
+        log_path.with_suffix(".log").write_text("\n".join(logs), encoding="utf-8")
+        log_path.with_suffix(".json").write_text(
+            json.dumps(data, ensure_ascii=False, indent=4), encoding="utf-8"
+        )
 
         logger.success(f"通用日志统计完成, 日志路径: {log_path.with_suffix('.log')}")
 
@@ -2200,8 +2200,13 @@ class AppConfig(GlobalConfig):
 
         for json_file in statistic_path_list:
 
-            with json_file.open("r", encoding="utf-8") as f:
-                single_data = json.load(f)
+            try:
+                single_data = json.loads(json_file.read_text(encoding="utf-8"))
+            except Exception as e:
+                logger.warning(
+                    f"无法解析文件 {json_file}, 错误信息: {type(e).__name__}: {str(e)}"
+                )
+                continue
 
             for key in single_data.keys():
 
