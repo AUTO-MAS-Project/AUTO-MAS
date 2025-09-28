@@ -37,9 +37,7 @@ from app.services import Notify, System
 from app.utils import get_logger, LogMonitor, ProcessManager
 from .skland import skland_sign_in
 
-
 logger = get_logger("MAA 调度器")
-
 
 METHOD_BOOK = {"NoAction": "8", "ExitGame": "9", "ExitEmulator": "12"}
 MOOD_BOOK = {"Annihilation": "剿灭", "Routine": "日常"}
@@ -49,7 +47,7 @@ class MaaManager:
     """MAA控制器"""
 
     def __init__(
-        self, mode: str, script_id: uuid.UUID, user_id: Optional[uuid.UUID], ws_id: str
+            self, mode: str, script_id: uuid.UUID, user_id: Optional[uuid.UUID], ws_id: str
     ):
         super().__init__()
 
@@ -102,7 +100,7 @@ class MaaManager:
         if not self.maa_set_path.exists():
             return "MAA配置文件不存在, 请检查MAA路径设置！"
         if (self.mode != "设置脚本" or self.user_id is not None) and not (
-            Path.cwd() / f"data/{self.script_id}/Default/ConfigFile/gui.json"
+                Path.cwd() / f"data/{self.script_id}/Default/ConfigFile/gui.json"
         ).exists():
             return "未完成 MAA 全局设置, 请先设置 MAA！"
         return "Success!"
@@ -135,7 +133,6 @@ class MaaManager:
 
         # 整理用户数据, 筛选需代理的用户
         if self.mode != "设置脚本":
-
             self.user_list: List[Dict[str, str]] = [
                 {
                     "user_id": str(uid),
@@ -144,7 +141,7 @@ class MaaManager:
                 }
                 for uid, config in self.user_config.items()
                 if config.get("Info", "Status")
-                and config.get("Info", "RemainedDay") != 0
+                   and config.get("Info", "RemainedDay") != 0
             ]
             self.user_list = sorted(
                 self.user_list,
@@ -163,10 +160,10 @@ class MaaManager:
             # # 执行情况预处理
             for _ in self.user_list:
                 if (
-                    self.user_config[uuid.UUID(_["user_id"])].get(
-                        "Data", "LastProxyDate"
-                    )
-                    != self.curdate
+                        self.user_config[uuid.UUID(_["user_id"])].get(
+                            "Data", "LastProxyDate"
+                        )
+                        != self.curdate
                 ):
                     await self.user_config[uuid.UUID(_["user_id"])].set(
                         "Data", "LastProxyDate", self.curdate
@@ -181,8 +178,8 @@ class MaaManager:
                 self.cur_user_data = self.user_config[uuid.UUID(user["user_id"])]
 
                 if (self.script_config.get("Run", "ProxyTimesLimit") == 0) or (
-                    self.cur_user_data.get("Data", "ProxyTimes")
-                    < self.script_config.get("Run", "ProxyTimesLimit")
+                        self.cur_user_data.get("Data", "ProxyTimes")
+                        < self.script_config.get("Run", "ProxyTimesLimit")
                 ):
                     user["status"] = "运行"
                     await Config.send_json(
@@ -215,18 +212,18 @@ class MaaManager:
                         self.cur_user_data.get("Info", "Annihilation") == "Close"
                     ),
                     "Routine": self.cur_user_data.get("Info", "Mode") == "复杂"
-                    and not self.cur_user_data.get("Info", "Routine"),
+                               and not self.cur_user_data.get("Info", "Routine"),
                 }
 
                 self.user_logs_list = []
                 self.user_start_time = datetime.now()
 
                 if self.cur_user_data.get(
-                    "Info", "IfSkland"
+                        "Info", "IfSkland"
                 ) and self.cur_user_data.get("Info", "SklandToken"):
 
                     if self.cur_user_data.get(
-                        "Data", "LastSklandDate"
+                            "Data", "LastSklandDate"
                     ) != datetime.now().strftime("%Y-%m-%d"):
 
                         await Config.send_json(
@@ -244,7 +241,6 @@ class MaaManager:
                         for type, user_list in skland_result.items():
 
                             if type != "总计" and len(user_list) > 0:
-
                                 logger.info(
                                     f"用户: {user['user_id']} - 森空岛签到{type}: {'、'.join(user_list)}"
                                 )
@@ -272,8 +268,8 @@ class MaaManager:
                             )
 
                         if (
-                            skland_result["总计"] > 0
-                            and len(skland_result["失败"]) == 0
+                                skland_result["总计"] > 0
+                                and len(skland_result["失败"]) == 0
                         ):
                             await self.cur_user_data.set(
                                 "Data",
@@ -303,13 +299,13 @@ class MaaManager:
 
                     # 剿灭模式；满足条件跳过剿灭
                     if (
-                        mode == "Annihilation"
-                        and self.script_config.get("Run", "AnnihilationWeeklyLimit")
-                        and datetime.strptime(
-                            self.cur_user_data.get("Data", "LastAnnihilationDate"),
-                            "%Y-%m-%d",
-                        ).isocalendar()[:2]
-                        == datetime.strptime(self.curdate, "%Y-%m-%d").isocalendar()[:2]
+                            mode == "Annihilation"
+                            and self.script_config.get("Run", "AnnihilationWeeklyLimit")
+                            and datetime.strptime(
+                        self.cur_user_data.get("Data", "LastAnnihilationDate"),
+                        "%Y-%m-%d",
+                    ).isocalendar()[:2]
+                            == datetime.strptime(self.curdate, "%Y-%m-%d").isocalendar()[:2]
                     ):
                         logger.info(
                             f"用户: {user['user_id']} - 本周剿灭模式已达上限, 跳过执行剿灭任务"
@@ -320,11 +316,11 @@ class MaaManager:
                         self.weekly_annihilation_limit_reached = False
 
                     if (
-                        self.cur_user_data.get("Info", "Mode") == "详细"
-                        and not (
+                            self.cur_user_data.get("Info", "Mode") == "详细"
+                            and not (
                             Path.cwd()
                             / f"data/{self.script_id}/{user['user_id']}/ConfigFile/gui.json"
-                        ).exists()
+                    ).exists()
                     ):
                         logger.error(
                             f"用户: {user['user_id']} - 未找到日常详细配置文件"
@@ -397,7 +393,7 @@ class MaaManager:
                             break
 
                         logger.info(
-                            f"用户 {user['name']} - 模式: {mode} - 尝试次数: {i + 1}/{self.script_config.get('Run','RunTimesLimit')}"
+                            f"用户 {user['name']} - 模式: {mode} - 尝试次数: {i + 1}/{self.script_config.get('Run', 'RunTimesLimit')}"
                         )
 
                         # 配置MAA
@@ -414,8 +410,8 @@ class MaaManager:
                         ].split()
                         # 如果是快捷方式, 进行解析
                         if (
-                            self.emulator_path.suffix == ".lnk"
-                            and self.emulator_path.exists()
+                                self.emulator_path.suffix == ".lnk"
+                                and self.emulator_path.exists()
                         ):
                             try:
                                 shell = win32com.client.Dispatch("WScript.Shell")
@@ -524,7 +520,7 @@ class MaaManager:
                             f"更新静默进程标记: {self.emulator_path}, 标记有效时间: {datetime.now() + timedelta(seconds=self.wait_time + 10)}"
                         )
                         Config.silence_dict[self.emulator_path] = (
-                            datetime.now() + timedelta(seconds=self.wait_time + 10)
+                                datetime.now() + timedelta(seconds=self.wait_time + 10)
                         )
 
                         await self.search_ADB_address()
@@ -645,11 +641,11 @@ class MaaManager:
 
                         # 记录更新包路径
                         if (
-                            data["Global"]["VersionUpdate.package"]
-                            and (
+                                data["Global"]["VersionUpdate.package"]
+                                and (
                                 self.maa_root_path
                                 / data["Global"]["VersionUpdate.package"]
-                            ).exists()
+                        ).exists()
                         ):
                             self.maa_update_package = data["Global"][
                                 "VersionUpdate.package"
@@ -657,8 +653,8 @@ class MaaManager:
 
                         # 记录剿灭情况
                         if (
-                            mode == "Annihilation"
-                            and self.weekly_annihilation_limit_reached
+                                mode == "Annihilation"
+                                and self.weekly_annihilation_limit_reached
                         ):
                             await self.cur_user_data.set(
                                 "Data", "LastAnnihilationDate", self.curdate
@@ -685,7 +681,6 @@ class MaaManager:
 
                         # 执行MAA解压更新动作
                         if self.maa_update_package:
-
                             logger.info(f"检测到MAA更新, 正在执行更新动作")
 
                             await Config.send_json(
@@ -892,8 +887,8 @@ class MaaManager:
             if self.run_book["Annihilation"] and self.run_book["Routine"]:
                 # 成功完成代理的用户修改相关参数
                 if (
-                    self.cur_user_data.get("Data", "ProxyTimes") == 0
-                    and self.cur_user_data.get("Info", "RemainedDay") != -1
+                        self.cur_user_data.get("Data", "ProxyTimes") == 0
+                        and self.cur_user_data.get("Info", "RemainedDay") != -1
                 ):
                     await self.cur_user_data.set(
                         "Info",
@@ -972,9 +967,9 @@ class MaaManager:
                 Config.if_ignore_silence.remove(self.script_id)
 
         if (
-            self.mode == "自动代理"
-            and hasattr(self, "index")
-            and self.user_list[self.index]["status"] == "运行"
+                self.mode == "自动代理"
+                and hasattr(self, "index")
+                and self.user_list[self.index]["status"] == "运行"
         ):
 
             if not self.maa_update_package:
@@ -1004,9 +999,9 @@ class MaaManager:
             await self.result_record()
 
         elif (
-            self.mode == "人工排查"
-            and hasattr(self, "index")
-            and self.user_list[self.index]["status"] == "运行"
+                self.mode == "人工排查"
+                and hasattr(self, "index")
+                and self.user_list[self.index]["status"] == "运行"
         ):
 
             await self.result_record()
@@ -1068,14 +1063,14 @@ class MaaManager:
 
         elif self.mode == "设置脚本":
             (
-                Path.cwd()
-                / f"data/{self.script_id}/{self.user_id if self.user_id else 'Default'}/ConfigFile"
+                    Path.cwd()
+                    / f"data/{self.script_id}/{self.user_id if self.user_id else 'Default'}/ConfigFile"
             ).mkdir(parents=True, exist_ok=True)
             shutil.copy(
                 self.maa_set_path,
                 (
-                    Path.cwd()
-                    / f"data/{self.script_id}/{self.user_id if self.user_id else 'Default'}/ConfigFile/gui.json"
+                        Path.cwd()
+                        / f"data/{self.script_id}/{self.user_id if self.user_id else 'Default'}/ConfigFile/gui.json"
                 ),
             )
 
@@ -1199,7 +1194,6 @@ class MaaManager:
 
         # 更新MAA日志
         if await self.maa_process_manager.is_running():
-
             await Config.send_json(
                 WebSocketMessage(
                     id=self.ws_id, type="Update", data={"log": log}
@@ -1238,12 +1232,12 @@ class MaaManager:
                 if "完成任务: Infrast" in log or "完成任务: 基建换班" in log:
                     self.task_dict["Base"] = "False"
                 if (
-                    "完成任务: Fight" in log
-                    or "完成任务: 刷理智" in log
-                    or (
+                        "完成任务: Fight" in log
+                        or "完成任务: 刷理智" in log
+                        or (
                         self.log_check_mode == "Annihilation"
                         and "任务出错: 刷理智" in log
-                    )
+                )
                 ):
                     self.task_dict["Combat"] = "False"
                 if "完成任务: Mall" in log or "完成任务: 获取信用及购物" in log:
@@ -1270,13 +1264,13 @@ class MaaManager:
                 self.maa_result = "MAA在完成任务前中止"
 
             elif (
-                "MaaAssistantArknights GUI exited" in log
-                or not await self.maa_process_manager.is_running()
+                    "MaaAssistantArknights GUI exited" in log
+                    or not await self.maa_process_manager.is_running()
             ):
                 self.maa_result = "MAA在完成任务前退出"
 
             elif datetime.now() - latest_time > timedelta(
-                minutes=self.script_config.get("Run", f"{self.log_check_mode}TimeLimit")
+                    minutes=self.script_config.get("Run", f"{self.log_check_mode}TimeLimit")
             ):
                 self.maa_result = "MAA进程超时"
 
@@ -1293,8 +1287,8 @@ class MaaManager:
             elif "已停止" in log:
                 self.maa_result = "MAA在完成任务前中止"
             elif (
-                "MaaAssistantArknights GUI exited" in log
-                or not await self.maa_process_manager.is_running()
+                    "MaaAssistantArknights GUI exited" in log
+                    or not await self.maa_process_manager.is_running()
             ):
                 self.maa_result = "MAA在完成任务前退出"
             else:
@@ -1303,7 +1297,6 @@ class MaaManager:
         logger.debug(f"MAA 日志分析结果: {self.maa_result}")
 
         if self.maa_result != "Wait":
-
             logger.info(f"MAA 任务结果: {self.maa_result}, 日志锁已释放")
             self.wait_event.set()
 
@@ -1332,17 +1325,17 @@ class MaaManager:
             elif self.cur_user_data.get("Info", "Mode") == "详细":
                 shutil.copy(
                     (
-                        Path.cwd()
-                        / f"data/{self.script_id}/{self.user_list[self.index]['user_id']}/ConfigFile/gui.json"
+                            Path.cwd()
+                            / f"data/{self.script_id}/{self.user_list[self.index]['user_id']}/ConfigFile/gui.json"
                     ),
                     self.maa_set_path,
                 )
         elif self.mode == "设置脚本":
             if (
-                self.user_id is None
-                and (
+                    self.user_id is None
+                    and (
                     Path.cwd() / f"data/{self.script_id}/Default/ConfigFile/gui.json"
-                ).exists()
+            ).exists()
             ):
                 shutil.copy(
                     (Path.cwd() / f"data/{self.script_id}/Default/ConfigFile/gui.json"),
@@ -1350,21 +1343,21 @@ class MaaManager:
                 )
             elif self.user_id is not None:
                 if (
-                    Path.cwd()
-                    / f"data/{self.script_id}/{self.user_id}/ConfigFile/gui.json"
+                        Path.cwd()
+                        / f"data/{self.script_id}/{self.user_id}/ConfigFile/gui.json"
                 ).exists():
                     shutil.copy(
                         (
-                            Path.cwd()
-                            / f"data/{self.script_id}/{self.user_id}/ConfigFile/gui.json"
+                                Path.cwd()
+                                / f"data/{self.script_id}/{self.user_id}/ConfigFile/gui.json"
                         ),
                         self.maa_set_path,
                     )
                 else:
                     shutil.copy(
                         (
-                            Path.cwd()
-                            / f"data/{self.script_id}/Default/ConfigFile/gui.json"
+                                Path.cwd()
+                                / f"data/{self.script_id}/Default/ConfigFile/gui.json"
                         ),
                         self.maa_set_path,
                     )
@@ -1374,7 +1367,6 @@ class MaaManager:
 
         # 切换配置
         if data["Current"] != "Default":
-
             data["Configurations"]["Default"] = data["Configurations"][data["Current"]]
             data["Current"] = "Default"
 
@@ -1386,10 +1378,10 @@ class MaaManager:
         if self.mode == "自动代理" and mode in ["Annihilation", "Routine"]:
 
             if (self.index == len(self.user_list) - 1) or (
-                self.user_config[
-                    uuid.UUID(self.user_list[self.index + 1]["user_id"])
-                ].get("Info", "Mode")
-                == "详细"
+                    self.user_config[
+                        uuid.UUID(self.user_list[self.index + 1]["user_id"])
+                    ].get("Info", "Mode")
+                    == "详细"
             ):
                 data["Configurations"]["Default"][
                     "MainFunction.PostActions"
@@ -1467,10 +1459,9 @@ class MaaManager:
 
             # 整理任务顺序
             if (
-                mode == "Annihilation"
-                or self.cur_user_data.get("Info", "Mode") == "简洁"
+                    mode == "Annihilation"
+                    or self.cur_user_data.get("Info", "Mode") == "简洁"
             ):
-
                 data["Configurations"]["Default"]["TaskQueue.Order.WakeUp"] = "0"
                 data["Configurations"]["Default"]["TaskQueue.Order.Recruiting"] = "1"
                 data["Configurations"]["Default"]["TaskQueue.Order.Base"] = "2"
@@ -1520,10 +1511,10 @@ class MaaManager:
                 ] = "1"  # 连战次数
                 data["Configurations"]["Default"][
                     "MainFunction.Annihilation.UseCustom"
-                ] = "True"  #   自定义剿灭关卡
+                ] = "True"  # 自定义剿灭关卡
                 data["Configurations"]["Default"]["MainFunction.Annihilation.Stage"] = (
                     self.cur_user_data.get("Info", "Annihilation")
-                )  #   自定义剿灭关卡号
+                )  # 自定义剿灭关卡号
                 data["Configurations"]["Default"][
                     "Penguin.IsDrGrandet"
                 ] = "False"  # 博朗台模式
@@ -1590,8 +1581,8 @@ class MaaManager:
                     if self.cur_user_data.get("Info", "InfrastMode") == "Custom":
 
                         if (
-                            Path.cwd()
-                            / f"data/{self.script_id}/{self.user_list[self.index]['user_id']}/Infrastructure/infrastructure.json"
+                                Path.cwd()
+                                / f"data/{self.script_id}/{self.user_list[self.index]['user_id']}/Infrastructure/infrastructure.json"
                         ).exists():
 
                             data["Configurations"]["Default"][
@@ -1639,8 +1630,8 @@ class MaaManager:
 
                     # 基建模式
                     if (
-                        data["Configurations"]["Default"]["Infrast.InfrastMode"]
-                        == "Custom"
+                            data["Configurations"]["Default"]["Infrast.InfrastMode"]
+                            == "Custom"
                     ):
                         data["Configurations"]["Default"][
                             "Infrast.CustomInfrastPlanIndex"
@@ -1865,11 +1856,11 @@ class MaaManager:
         env = Environment(loader=FileSystemLoader(str(Path.cwd() / "res/html")))
 
         if mode == "代理结果" and (
-            Config.get("Notify", "SendTaskResultTime") == "任何时刻"
-            or (
-                Config.get("Notify", "SendTaskResultTime") == "仅失败时"
-                and message["uncompleted_count"] != 0
-            )
+                Config.get("Notify", "SendTaskResultTime") == "任何时刻"
+                or (
+                        Config.get("Notify", "SendTaskResultTime") == "仅失败时"
+                        and message["uncompleted_count"] != 0
+                )
         ):
             # 生成文本通知内容
             message_text = (
@@ -1991,7 +1982,7 @@ class MaaManager:
 
             # 发送用户单独通知
             if self.cur_user_data.get("Notify", "Enabled") and self.cur_user_data.get(
-                "Notify", "IfSendStatistic"
+                    "Notify", "IfSendStatistic"
             ):
 
                 # 发送邮件通知
@@ -2021,7 +2012,12 @@ class MaaManager:
 
                 # 推送CompanyWebHookBot通知
                 # 发送用户自定义Webhook通知
-                user_webhooks = self.cur_user_data.get("Notify", {}).get("CustomWebhooks", [])
+                try:
+                    user_webhooks = self.cur_user_data.get("Notify", "CustomWebhooks")
+                except AttributeError:
+                    user_webhooks = []
+                if not user_webhooks:
+                    user_webhooks = []
                 if user_webhooks:
                     for webhook in user_webhooks:
                         if webhook.get("enabled", True):
@@ -2033,10 +2029,10 @@ class MaaManager:
                                 )
                             except Exception as e:
                                 logger.error(f"用户自定义Webhook推送失败 ({webhook.get('name', 'Unknown')}): {e}")
-                    else:
-                        logger.error(
-                            "用户CompanyWebHookBot密钥为空, 无法发送用户单独的CompanyWebHookBot通知"
-                        )
+                else:
+                    logger.error(
+                        "用户CompanyWebHookBot密钥为空, 无法发送用户单独的CompanyWebHookBot通知"
+                    )
 
         elif mode == "公招六星":
 
@@ -2079,7 +2075,7 @@ class MaaManager:
 
             # 发送用户单独通知
             if self.cur_user_data.get("Notify", "Enabled") and self.cur_user_data.get(
-                "Notify", "IfSendSixStar"
+                    "Notify", "IfSendSixStar"
             ):
 
                 # 发送邮件通知
@@ -2110,7 +2106,12 @@ class MaaManager:
 
                 # 推送CompanyWebHookBot通知
                 # 发送用户自定义Webhook通知（六星喜报）
-                user_webhooks = self.cur_user_data.get("Notify", {}).get("CustomWebhooks", [])
+                try:
+                    user_webhooks = self.cur_user_data.get("Notify", "CustomWebhooks")
+                except AttributeError:
+                    user_webhooks = []
+                if not user_webhooks:
+                    user_webhooks = []
                 if user_webhooks:
                     for webhook in user_webhooks:
                         if webhook.get("enabled", True):
@@ -2122,9 +2123,9 @@ class MaaManager:
                                 )
                             except Exception as e:
                                 logger.error(f"用户自定义Webhook推送失败 ({webhook.get('name', 'Unknown')}): {e}")
-                    else:
-                        logger.error(
-                            "用户CompanyWebHookBot密钥为空, 无法发送用户单独的CompanyWebHookBot通知"
-                        )
+                else:
+                    logger.error(
+                        "用户CompanyWebHookBot密钥为空, 无法发送用户单独的CompanyWebHookBot通知"
+                    )
 
         return None
