@@ -306,47 +306,66 @@ async function tryUpdateBackendWithRetry(config: any): Promise<boolean> {
   const customMirrors = config.customGitMirrors || []
   const combinedMirrors = [...allGitMirrors, ...customMirrors]
   
-  // 优先使用用户选择的镜像源
+  // 分离镜像源和官方源（GitHub）
+  const mirrorSources = combinedMirrors.filter(m => m.type === 'mirror')
+  const officialSources = combinedMirrors.filter(m => m.type === 'official')
+
+  // 构建尝试顺序：先尝试镜像源，最后尝试GitHub
+  let mirrorsToTry: any[] = []
+
+  // 首先添加用户选择的镜像源（如果是镜像源类型）
   const selectedMirror = combinedMirrors.find(m => m.key === config.selectedGitMirror)
-  let mirrorsToTry = selectedMirror ? [selectedMirror] : []
-  
-  // 添加其他镜像源作为备选
-  const otherMirrors = combinedMirrors.filter(m => m.key !== config.selectedGitMirror)
-  mirrorsToTry = [...mirrorsToTry, ...otherMirrors]
-  
-  console.log('准备尝试的Git镜像源:', mirrorsToTry.map(m => m.name))
-  
+  if (selectedMirror && selectedMirror.type === 'mirror') {
+    mirrorsToTry.push(selectedMirror)
+  }
+
+  // 然后添加其他镜像源（排除已选择的）
+  const otherMirrorSources = mirrorSources.filter(m => m.key !== config.selectedGitMirror)
+  mirrorsToTry = [...mirrorsToTry, ...otherMirrorSources]
+
+  // 如果用户选择的是官方源，放在镜像源之后
+  if (selectedMirror && selectedMirror.type === 'official') {
+    mirrorsToTry.push(selectedMirror)
+  }
+
+  // 最后添加其他官方源（排除已选择的）
+  const otherOfficialSources = officialSources.filter(m => m.key !== config.selectedGitMirror)
+  mirrorsToTry = [...mirrorsToTry, ...otherOfficialSources]
+
+  console.log('准备尝试的Git源（镜像源优先）:', mirrorsToTry.map(m => `${m.name} (${m.type})`))
+
   for (let i = 0; i < mirrorsToTry.length; i++) {
     if (aborted.value) return false
     
     const mirror = mirrorsToTry[i]
-    progressText.value = `正在使用 ${mirror.name} 更新代码... (${i + 1}/${mirrorsToTry.length})`
-    
+    const sourceType = mirror.type === 'mirror' ? '镜像源' : '官方源'
+    progressText.value = `正在使用 ${mirror.name} ${sourceType}更新代码... (${i + 1}/${mirrorsToTry.length})`
+
     try {
-      console.log(`尝试使用镜像源: ${mirror.name} (${mirror.url})`)
+      console.log(`尝试使用${sourceType}: ${mirror.name} (${mirror.url})`)
       const result = await window.electronAPI.updateBackend(mirror.url)
       
       if (result.success) {
-        console.log(`使用镜像源 ${mirror.name} 更新成功`)
-        message.success(`使用 ${mirror.name} 更新代码成功`)
+        console.log(`使用${sourceType} ${mirror.name} 更新成功`)
+        message.success(`使用 ${mirror.name} ${sourceType}更新代码成功`)
         return true
       } else {
-        console.warn(`镜像源 ${mirror.name} 更新失败:`, result.error)
+        console.warn(`${sourceType} ${mirror.name} 更新失败:`, result.error)
         if (i < mirrorsToTry.length - 1) {
-          progressText.value = `${mirror.name} 失败，尝试下一个镜像源...`
+          progressText.value = `${mirror.name} ${sourceType}失败，尝试下一个源...`
           await new Promise(resolve => setTimeout(resolve, 1000)) // 等待1秒
         }
       }
     } catch (error) {
-      console.error(`镜像源 ${mirror.name} 更新异常:`, error)
+      console.error(`${sourceType} ${mirror.name} 更新异常:`, error)
       if (i < mirrorsToTry.length - 1) {
-        progressText.value = `${mirror.name} 异常，尝试下一个镜像源...`
+        progressText.value = `${mirror.name} ${sourceType}异常，尝试下一个源...`
         await new Promise(resolve => setTimeout(resolve, 1000)) // 等待1秒
       }
     }
   }
   
-  console.error('所有Git镜像源都无法更新代码')
+  console.error('所有Git源（镜像源和官方源）都无法更新代码')
   return false
 }
 
