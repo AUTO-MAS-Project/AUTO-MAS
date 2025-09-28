@@ -1,5 +1,6 @@
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2024-2025 DLmaster361
+#   Copyright © 2025 AUTO-MAS Team
 
 #   This file is part of AUTO-MAS.
 
@@ -992,12 +993,12 @@ class GeneralManager:
                     if webhook.get("enabled", True):
                         try:
                             await Notify.CustomWebhookPush(
-                                title,
-                                f"{message_text}\n\nAUTO-MAS 敬上",
-                                webhook
+                                title, f"{message_text}\n\nAUTO-MAS 敬上", webhook
                             )
                         except Exception as e:
-                            logger.error(f"自定义Webhook推送失败 ({webhook.get('name', 'Unknown')}): {e}")
+                            logger.error(
+                                f"自定义Webhook推送失败 ({webhook.get('name', 'Unknown')}): {e}"
+                            )
 
         elif mode == "统计信息":
 
@@ -1039,12 +1040,12 @@ class GeneralManager:
                         if webhook.get("enabled", True):
                             try:
                                 await Notify.CustomWebhookPush(
-                                    title,
-                                    f"{message_text}\n\nAUTO-MAS 敬上",
-                                    webhook
+                                    title, f"{message_text}\n\nAUTO-MAS 敬上", webhook
                                 )
                             except Exception as e:
-                                logger.error(f"自定义Webhook推送失败 ({webhook.get('name', 'Unknown')}): {e}")
+                                logger.error(
+                                    f"自定义Webhook推送失败 ({webhook.get('name', 'Unknown')}): {e}"
+                                )
 
             # 发送用户单独通知
             if self.cur_user_data.get("Notify", "Enabled") and self.cur_user_data.get(
@@ -1078,18 +1079,18 @@ class GeneralManager:
 
                 # 推送CompanyWebHookBot通知
                 # 发送用户自定义Webhook通知
-                user_webhooks = self.cur_user_data.get("Notify", {}).get("CustomWebhooks", [])
+                user_webhooks = self.cur_user_data.get("Notify", "CustomWebhooks")
                 if user_webhooks:
                     for webhook in user_webhooks:
                         if webhook.get("enabled", True):
                             try:
                                 await Notify.CustomWebhookPush(
-                                    title,
-                                    f"{message_text}\n\nAUTO-MAS 敬上",
-                                    webhook
+                                    title, f"{message_text}\n\nAUTO-MAS 敬上", webhook
                                 )
                             except Exception as e:
-                                logger.error(f"用户自定义Webhook推送失败 ({webhook.get('name', 'Unknown')}): {e}")
+                                logger.error(
+                                    f"用户自定义Webhook推送失败 ({webhook.get('name', 'Unknown')}): {e}"
+                                )
                     else:
                         logger.error(
                             "用户CompanyWebHookBot密钥为空, 无法发送用户单独的CompanyWebHookBot通知"

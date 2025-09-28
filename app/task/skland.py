@@ -7,6 +7,7 @@
 #
 #       skland-checkin-ghaction Copyright © 2023 Yanstory
 #       https://github.com/Yanstory/skland-checkin-ghaction
+#   Copyright © 2025 AUTO-MAS Team
 
 #   This file is part of AUTO-MAS.
 

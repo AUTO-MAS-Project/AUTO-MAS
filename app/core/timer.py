@@ -1,5 +1,6 @@
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2024-2025 DLmaster361
+#   Copyright © 2025 AUTO-MAS Team
 
 #   This file is part of AUTO-MAS.
 
@@ -108,6 +109,7 @@ class _MainTimer:
                         ).model_dump()
                     )
 
+    @logger.catch()
     async def set_silence(self):
         """静默模式通过模拟老板键来隐藏模拟器窗口"""
 

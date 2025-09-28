@@ -1,5 +1,6 @@
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2024-2025 DLmaster361
+#   Copyright © 2025 AUTO-MAS Team
 
 #   This file is part of AUTO-MAS.
 
@@ -23,7 +24,6 @@ import asyncio
 import aiohttp
 import json
 import uuid
-import psutil
 import platform
 import time
 from typing import Dict, Any, Optional

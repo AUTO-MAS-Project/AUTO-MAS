@@ -1,6 +1,7 @@
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2024-2025 DLmaster361
 #   Copyright © 2025 MoeSnowyFox
+#   Copyright © 2025 AUTO-MAS Team
 
 #   This file is part of AUTO-MAS.
 
@@ -117,7 +118,9 @@ class CustomWebhook(BaseModel):
     template: str = Field(..., description="消息模板")
     enabled: bool = Field(default=True, description="是否启用")
     headers: Optional[Dict[str, str]] = Field(default=None, description="自定义请求头")
-    method: Optional[Literal["POST", "GET"]] = Field(default="POST", description="请求方法")
+    method: Optional[Literal["POST", "GET"]] = Field(
+        default="POST", description="请求方法"
+    )
 
 
 class GlobalConfig_Notify(BaseModel):

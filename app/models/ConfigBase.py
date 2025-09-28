@@ -1,6 +1,7 @@
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2024-2025 DLmaster361
 #   Copyright © 2025 MoeSnowyFox
+#   Copyright © 2025 AUTO-MAS Team
 
 #   This file is part of AUTO-MAS.
 
@@ -385,11 +386,10 @@ class ConfigBase:
             self.file.parent.mkdir(parents=True, exist_ok=True)
             self.file.touch()
 
-        with self.file.open("r", encoding="utf-8") as f:
-            try:
-                data = json.load(f)
-            except json.JSONDecodeError:
-                data = {}
+        try:
+            data = json.loads(self.file.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            data = {}
 
         await self.load(data)
 
@@ -499,13 +499,14 @@ class ConfigBase:
             raise ValueError("文件路径未设置, 请先调用 `connect` 方法连接配置文件")
 
         self.file.parent.mkdir(parents=True, exist_ok=True)
-        with self.file.open("w", encoding="utf-8") as f:
-            json.dump(
+        self.file.write_text(
+            json.dumps(
                 await self.toDict(not self.if_save_multi_config, if_decrypt=False),
-                f,
                 ensure_ascii=False,
                 indent=4,
-            )
+            ),
+            encoding="utf-8",
+        )
 
     async def lock(self):
         """
@@ -610,11 +611,10 @@ class MultipleConfig:
             self.file.parent.mkdir(parents=True, exist_ok=True)
             self.file.touch()
 
-        with self.file.open("r", encoding="utf-8") as f:
-            try:
-                data = json.load(f)
-            except json.JSONDecodeError:
-                data = {}
+        try:
+            data = json.loads(self.file.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            data = {}
 
         await self.load(data)
 
@@ -716,8 +716,10 @@ class MultipleConfig:
             raise ValueError("文件路径未设置, 请先调用 `connect` 方法连接配置文件")
 
         self.file.parent.mkdir(parents=True, exist_ok=True)
-        with self.file.open("w", encoding="utf-8") as f:
-            json.dump(await self.toDict(), f, ensure_ascii=False, indent=4)
+        self.file.write_text(
+            json.dumps(await self.toDict(), ensure_ascii=False, indent=4),
+            encoding="utf-8",
+        )
 
     async def add(self, config_type: type) -> tuple[uuid.UUID, ConfigBase]:
         """

@@ -1,6 +1,7 @@
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2024-2025 DLmaster361
 #   Copyright © 2025 MoeSnowyFox
+#   Copyright © 2025 AUTO-MAS Team
 
 #   This file is part of AUTO-MAS.
 
@@ -55,7 +56,7 @@ async def add_script(script: ScriptCreateIn = Body(...)) -> ScriptCreateOut:
 @router.post(
     "/get", summary="查询脚本配置信息", response_model=ScriptGetOut, status_code=200
 )
-async def get_scripts(script: ScriptGetIn = Body(...)) -> ScriptGetOut:
+async def get_script(script: ScriptGetIn = Body(...)) -> ScriptGetOut:
 
     try:
         index, data = await Config.get_script(script.scriptId)

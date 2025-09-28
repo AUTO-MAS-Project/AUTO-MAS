@@ -1,5 +1,6 @@
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2024-2025 DLmaster361
+#   Copyright © 2025 AUTO-MAS Team
 
 #   This file is part of AUTO-MAS.
 
@@ -178,39 +179,43 @@ class Notification:
         :param content: 通知内容
         :param webhook_config: Webhook配置对象
         """
-        
+
         if not webhook_config.get("url"):
             raise ValueError("Webhook URL 不能为空")
-        
+
         if not webhook_config.get("enabled", True):
-            logger.info(f"Webhook {webhook_config.get('name', 'Unknown')} 已禁用，跳过推送")
+            logger.info(
+                f"Webhook {webhook_config.get('name', 'Unknown')} 已禁用，跳过推送"
+            )
             return
 
         # 解析模板
-        template = webhook_config.get("template", '{"title": "{title}", "content": "{content}"}')
-        
+        template = webhook_config.get(
+            "template", '{"title": "{title}", "content": "{content}"}'
+        )
+
         # 替换模板变量
         try:
             import json
             from datetime import datetime
-            
+
             # 准备模板变量
             template_vars = {
                 "title": title,
                 "content": content,
                 "datetime": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "date": datetime.now().strftime("%Y-%m-%d"),
-                "time": datetime.now().strftime("%H:%M:%S")
+                "time": datetime.now().strftime("%H:%M:%S"),
             }
-            
+
             logger.debug(f"原始模板: {template}")
             logger.debug(f"模板变量: {template_vars}")
-            
+
             # 先尝试作为JSON模板处理
             try:
                 # 解析模板为JSON对象，然后替换其中的变量
                 template_obj = json.loads(template)
-                
+
                 # 递归替换JSON对象中的变量
                 def replace_variables(obj):
                     if isinstance(obj, dict):
@@ -224,19 +229,26 @@ class Notification:
                         return result
                     else:
                         return obj
-                
+
                 data = replace_variables(template_obj)
                 logger.debug(f"成功解析JSON模板: {data}")
-                
+
             except json.JSONDecodeError:
                 # 如果不是有效的JSON，作为字符串模板处理
                 logger.debug("模板不是有效JSON，作为字符串模板处理")
                 formatted_template = template
                 for key, value in template_vars.items():
                     # 转义特殊字符以避免JSON解析错误
-                    safe_value = str(value).replace('"', '\\"').replace('\n', '\\n').replace('\r', '\\r')
-                    formatted_template = formatted_template.replace(f"{{{key}}}", safe_value)
-                
+                    safe_value = (
+                        str(value)
+                        .replace('"', '\\"')
+                        .replace("\n", "\\n")
+                        .replace("\r", "\\r")
+                    )
+                    formatted_template = formatted_template.replace(
+                        f"{{{key}}}", safe_value
+                    )
+
                 # 再次尝试解析为JSON
                 try:
                     data = json.loads(formatted_template)
@@ -245,7 +257,7 @@ class Notification:
                     # 最终作为纯文本发送
                     data = formatted_template
                     logger.debug(f"作为纯文本发送: {data}")
-                
+
         except Exception as e:
             logger.warning(f"模板解析失败，使用默认格式: {e}")
             data = {"title": title, "content": content}
@@ -257,43 +269,47 @@ class Notification:
 
         # 发送请求
         method = webhook_config.get("method", "POST").upper()
-        
+
         try:
             if method == "POST":
                 if isinstance(data, dict):
                     response = requests.post(
-                        url=webhook_config["url"], 
-                        json=data, 
+                        url=webhook_config["url"],
+                        json=data,
                         headers=headers,
-                        timeout=10, 
-                        proxies=Config.get_proxies()
+                        timeout=10,
+                        proxies=Config.get_proxies(),
                     )
                 else:
                     response = requests.post(
-                        url=webhook_config["url"], 
-                        data=data, 
+                        url=webhook_config["url"],
+                        data=data,
                         headers=headers,
-                        timeout=10, 
-                        proxies=Config.get_proxies()
+                        timeout=10,
+                        proxies=Config.get_proxies(),
                     )
             else:  # GET
                 params = data if isinstance(data, dict) else {"message": data}
                 response = requests.get(
-                    url=webhook_config["url"], 
+                    url=webhook_config["url"],
                     params=params,
                     headers=headers,
-                    timeout=10, 
-                    proxies=Config.get_proxies()
+                    timeout=10,
+                    proxies=Config.get_proxies(),
                 )
-            
+
             # 检查响应
             if response.status_code == 200:
-                logger.success(f"自定义Webhook推送成功: {webhook_config.get('name', 'Unknown')} - {title}")
+                logger.success(
+                    f"自定义Webhook推送成功: {webhook_config.get('name', 'Unknown')} - {title}"
+                )
             else:
                 raise Exception(f"HTTP {response.status_code}: {response.text}")
-                
+
         except Exception as e:
-            raise Exception(f"自定义Webhook推送失败 ({webhook_config.get('name', 'Unknown')}): {str(e)}")
+            raise Exception(
+                f"自定义Webhook推送失败 ({webhook_config.get('name', 'Unknown')}): {str(e)}"
+            )
 
     async def WebHookPush(self, title, content, webhook_url) -> None:
         """
@@ -401,10 +417,12 @@ class Notification:
                         await self.CustomWebhookPush(
                             "AUTO-MAS测试通知",
                             "这是 AUTO-MAS 外部通知测试信息。如果你看到了这段内容, 说明 AUTO-MAS 的通知功能已经正确配置且可以正常工作！",
-                            webhook
+                            webhook,
                         )
                     except Exception as e:
-                        logger.error(f"自定义Webhook测试失败 ({webhook.get('name', 'Unknown')}): {e}")
+                        logger.error(
+                            f"自定义Webhook测试失败 ({webhook.get('name', 'Unknown')}): {e}"
+                        )
 
         logger.success("测试通知发送完成")
 
