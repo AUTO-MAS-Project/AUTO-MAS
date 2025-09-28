@@ -1,6 +1,7 @@
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2024-2025 DLmaster361
 #   Copyright © 2025 MoeSnowyFox
+#   Copyright © 2025 AUTO-MAS Team
 
 #   This file is part of AUTO-MAS.
 
@@ -44,9 +45,9 @@ async def get_git_version() -> VersionOut:
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
             if_need_update=False,
-            current_hash="",
-            current_time="",
-            current_version="",
+            current_hash="unknown",
+            current_time="unknown",
+            current_version=Config.version(),
         )
     return VersionOut(
         if_need_update=not is_latest,

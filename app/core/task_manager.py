@@ -1,5 +1,6 @@
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2024-2025 DLmaster361
+#   Copyright © 2025 AUTO-MAS Team
 
 #   This file is part of AUTO-MAS.
 
@@ -92,7 +93,7 @@ class _TaskManager:
 
         return task_id
 
-    # @logger.catch
+    @logger.catch
     async def run_task(
         self, mode: str, task_id: uuid.UUID, actual_id: Optional[uuid.UUID]
     ):
@@ -124,7 +125,17 @@ class _TaskManager:
                 lambda t: asyncio.create_task(task_item.final_task(t))
             )
             self.task_dict[uid].add_done_callback(partial(self.task_dict.pop, uid))
-            await self.task_dict[uid]
+            try:
+                await self.task_dict[uid]
+            except Exception as e:
+                logger.error(f"任务 {task_id} 运行出错: {type(e).__name__}: {str(e)}")
+                await Config.send_json(
+                    WebSocketMessage(
+                        id=str(task_id),
+                        type="Info",
+                        data={"Error": f"任务运行时出错 {type(e).__name__}: {str(e)}"},
+                    ).model_dump()
+                )
 
         else:
 
@@ -262,8 +273,23 @@ class _TaskManager:
                 self.task_dict[script_id].add_done_callback(
                     partial(self.task_dict.pop, script_id)
                 )
-                await self.task_dict[script_id]
-                task["status"] = "完成"
+                try:
+                    await self.task_dict[script_id]
+                    task["status"] = "完成"
+                except Exception as e:
+                    logger.error(
+                        f"任务 {script_id} 运行出错: {type(e).__name__}: {str(e)}"
+                    )
+                    await Config.send_json(
+                        WebSocketMessage(
+                            id=str(task_id),
+                            type="Info",
+                            data={
+                                "Error": f"任务运行时出错 {type(e).__name__}: {str(e)}"
+                            },
+                        ).model_dump()
+                    )
+                    task["status"] = "异常"
                 await Config.send_json(
                     WebSocketMessage(
                         id=str(task_id),
@@ -287,7 +313,7 @@ class _TaskManager:
         else:
             uid = uuid.UUID(task_id)
             if uid not in self.task_dict:
-                raise ValueError(f"任务 {uid} 未在运行")
+                raise ValueError("任务未在运行")
             self.task_dict[uid].cancel()
 
     async def remove_task(
