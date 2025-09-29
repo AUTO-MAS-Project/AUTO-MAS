@@ -48,6 +48,10 @@ async def search_history(history: HistorySearchIn) -> HistorySearchOut:
         for date, users in data.items():
             for user, records in users.items():
                 record = await Config.merge_statistic_info(records)
+                # 安全检查：确保 index 字段存在
+                if "index" not in record:
+                    logger.warning(f"合并统计信息缺少 index 字段，用户: {user}, 日期: {date}")
+                    record["index"] = []
                 record["index"] = [HistoryIndexItem(**_) for _ in record["index"]]
                 record = HistoryData(**record)
                 data[date][user] = record

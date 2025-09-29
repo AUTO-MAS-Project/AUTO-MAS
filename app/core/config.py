@@ -2272,7 +2272,12 @@ class AppConfig(GlobalConfig):
 
         logger.success(f"统计信息合并完成, 共计 {len(data['index'])} 条记录")
 
-        return {k: v for k, v in data.items() if v}
+        # 确保返回的字典始终包含 index 字段，即使为空
+        result = {k: v for k, v in data.items() if v}
+        if "index" not in result:
+            result["index"] = []
+
+        return result
 
     async def search_history(self, mode: str, start_date: date, end_date: date) -> dict:
         """
