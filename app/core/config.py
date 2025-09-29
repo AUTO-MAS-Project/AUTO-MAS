@@ -2153,7 +2153,7 @@ class AppConfig(GlobalConfig):
         log_path.write_text("\n".join(logs), encoding="utf-8")
         # 保存统计数据
         log_path.with_suffix(".json").write_text(
-            json.dumps(data, ensure_ascii=False, index=4), encoding="utf-8"
+            json.dumps(data, ensure_ascii=False, indent=4), encoding="utf-8"
         )
 
         logger.success(f"MAA 日志统计完成, 日志路径: {log_path}")
