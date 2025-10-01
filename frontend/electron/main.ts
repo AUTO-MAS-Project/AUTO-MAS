@@ -5,6 +5,7 @@ import {
   ipcMain,
   Menu,
   nativeImage,
+  nativeTheme,
   screen,
   shell,
   Tray,
@@ -749,6 +750,108 @@ ipcMain.handle('stop-backend', async () => {
   return stopBackend()
 })
 
+// 获取当前主题信息
+ipcMain.handle('get-theme-info', async () => {
+  try {
+    const appRoot = getAppRoot()
+    const configPath = path.join(appRoot, 'config', 'frontend_config.json')
+    
+    let themeMode = 'system'
+    let themeColor = 'blue'
+    
+    // 尝试从配置文件读取主题设置
+    if (fs.existsSync(configPath)) {
+      try {
+        const configData = fs.readFileSync(configPath, 'utf8')
+        const config = JSON.parse(configData)
+        themeMode = config.themeMode || 'system'
+        themeColor = config.themeColor || 'blue'
+      } catch (error) {
+        log.warn('读取主题配置失败，使用默认值:', error)
+      }
+    }
+    
+    // 检测系统主题
+    const systemTheme = nativeTheme.shouldUseDarkColors ? 'dark' : 'light'
+    
+    // 确定实际使用的主题
+    let actualTheme = themeMode
+    if (themeMode === 'system') {
+      actualTheme = systemTheme
+    }
+    
+    const themeColors: Record<string, string> = {
+      blue: '#1677ff',
+      purple: '#722ed1', 
+      cyan: '#13c2c2',
+      green: '#52c41a',
+      magenta: '#eb2f96',
+      pink: '#eb2f96',
+      red: '#ff4d4f',
+      orange: '#fa8c16',
+      yellow: '#fadb14',
+      volcano: '#fa541c',
+      geekblue: '#2f54eb',
+      lime: '#a0d911',
+      gold: '#faad14',
+    }
+    
+    return {
+      themeMode,
+      themeColor,
+      actualTheme,
+      systemTheme,
+      isDark: actualTheme === 'dark',
+      primaryColor: themeColors[themeColor] || themeColors.blue
+    }
+  } catch (error) {
+    log.error('获取主题信息失败:', error)
+    return {
+      themeMode: 'system',
+      themeColor: 'blue', 
+      actualTheme: 'light',
+      systemTheme: 'light',
+      isDark: false,
+      primaryColor: '#1677ff'
+    }
+  }
+})
+
+// 获取对话框专用的主题信息
+ipcMain.handle('get-theme', async () => {
+  try {
+    const appRoot = getAppRoot()
+    const configPath = path.join(appRoot, 'config', 'frontend_config.json')
+    
+    let themeMode = 'system'
+    
+    // 尝试从配置文件读取主题设置
+    if (fs.existsSync(configPath)) {
+      try {
+        const configData = fs.readFileSync(configPath, 'utf8')
+        const config = JSON.parse(configData)
+        themeMode = config.themeMode || 'system'
+      } catch (error) {
+        log.warn('读取主题配置失败，使用默认值:', error)
+      }
+    }
+    
+    // 检测系统主题
+    const systemTheme = nativeTheme.shouldUseDarkColors ? 'dark' : 'light'
+    
+    // 确定实际使用的主题
+    let actualTheme = themeMode
+    if (themeMode === 'system') {
+      actualTheme = systemTheme
+    }
+    
+    return actualTheme
+  } catch (error) {
+    log.error('获取对话框主题失败:', error)
+    return nativeTheme.shouldUseDarkColors ? 'dark' : 'light'
+  }
+})
+
 // 全局存储对话框窗口引用和回调
 let dialogWindows = new Map<string, BrowserWindow>()
 let dialogCallbacks = new Map<string, (result: boolean) => void>()
@@ -769,15 +872,19 @@ function createQuestionDialog(questionData: any): Promise<boolean> {
       messageId: messageId
     }
     
-    // 创建对话框窗口
+    // 获取主窗口的尺寸用于全屏显示
+    let windowBounds = { width: 800, height: 600, x: 100, y: 100 }
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      windowBounds = mainWindow.getBounds()
+    }
+    
+    // 创建对话框窗口 - 小尺寸可拖动窗口
     const dialogWindow = new BrowserWindow({
-      width: 450,
-      height: 200,
-      minWidth: 350,
-      minHeight: 150,
-      maxWidth: 600,
-      maxHeight: 400,
-      resizable: true,
+      width: 400,
+      height: 140,
+      x: windowBounds.x + (windowBounds.width - 400) / 2, // 居中显示
+      y: windowBounds.y + (windowBounds.height - 200) / 2,
+      resizable: false, // 不允许改变大小
       minimizable: false,
       maximizable: false,
       alwaysOnTop: true,
@@ -803,19 +910,8 @@ function createQuestionDialog(questionData: any): Promise<boolean> {
     const dialogUrl = `file://${path.join(__dirname, '../public/dialog.html')}?data=${encodedData}`
     dialogWindow.loadURL(dialogUrl)
     
-    // 窗口准备好后显示并居中
+    // 窗口准备好后显示
     dialogWindow.once('ready-to-show', () => {
-      // 计算居中位置
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        const mainBounds = mainWindow.getBounds()
-        const dialogBounds = dialogWindow.getBounds()
-        const x = Math.round(mainBounds.x + (mainBounds.width - dialogBounds.width) / 2)
-        const y = Math.round(mainBounds.y + (mainBounds.height - dialogBounds.height) / 2)
-        dialogWindow.setPosition(x, y)
-      } else {
-        dialogWindow.center()
-      }
-      
       dialogWindow.show()
       dialogWindow.focus()
     })
@@ -830,7 +926,7 @@ function createQuestionDialog(questionData: any): Promise<boolean> {
       }
     })
     
-    log.info(`对话框窗口已创建: ${messageId}`)
+    log.info(`全屏对话框窗口已创建: ${messageId}`)
   })
 }
 
@@ -867,16 +963,16 @@ ipcMain.handle('dialog-response', async (_event, messageId: string, choice: bool
   return true
 })
 
-// 调整对话框窗口大小
-ipcMain.handle('resize-dialog-window', async (_event, height: number) => {
+// 移动对话框窗口
+ipcMain.handle('move-window', async (_event, deltaX: number, deltaY: number) => {
   // 获取当前活动的对话框窗口（最后创建的）
   const dialogWindow = Array.from(dialogWindows.values()).pop()
   if (dialogWindow && !dialogWindow.isDestroyed()) {
-    const bounds = dialogWindow.getBounds()
-    dialogWindow.setBounds({
-      ...bounds,
-      height: Math.max(150, Math.min(400, height))
-    })
+    const currentBounds = dialogWindow.getBounds()
+    dialogWindow.setPosition(
+      currentBounds.x + deltaX,
+      currentBounds.y + deltaY
+    )
   }
 })
 

@@ -23,17 +23,13 @@ const isElectron = () => {
 
 // 发送用户选择结果到后端
 const sendResponse = (messageId: string, choice: boolean) => {
-  const response = {
-    message_id: messageId,
-    choice: choice,
-  }
-
+  const response = {"choice": choice}
   logger.info('[WebSocket消息监听器] 发送用户选择结果:', response)
 
   // 发送响应消息到后端
-  sendRaw('Response', response)
+  sendRaw('Response', response, messageId)
 }
-
+  
 // 显示系统级问题对话框
 const showQuestion = async (questionData: any) => {
   const title = questionData.title || '操作提示'

@@ -64,6 +64,16 @@ declare global {
     dialogResponse: (messageId: string, choice: boolean) => Promise<boolean>
     resizeDialogWindow: (height: number) => Promise<void>
 
+    // 主题信息获取
+    getThemeInfo: () => Promise<{
+      themeMode: string
+      themeColor: string
+      actualTheme: string
+      systemTheme: string
+      isDark: boolean
+      primaryColor: string
+    }>
+
     // 监听下载进度
     onDownloadProgress: (callback: (progress: any) => void) => void
     removeDownloadProgressListener: () => void
