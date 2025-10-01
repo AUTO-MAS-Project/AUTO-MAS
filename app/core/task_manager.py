@@ -62,10 +62,7 @@ class _TaskManager:
                 actual_id = None
             else:
                 for script_id, script in Config.ScriptConfig.items():
-                    if (
-                        isinstance(script, (MaaConfig | GeneralConfig))
-                        and actual_id in script.UserData
-                    ):
+                    if actual_id in script.UserData:
                         task_id = script_id
                         break
                 else:
@@ -142,31 +139,26 @@ class _TaskManager:
             # 初始化任务列表
             if task_id in Config.QueueConfig:
 
-                queue = Config.QueueConfig[task_id]
-                if not isinstance(queue, QueueConfig):
-                    return
-
                 task_list = []
-                for queue_item in queue.QueueItem.values():
+                for queue_item in Config.QueueConfig[task_id].QueueItem.values():
                     if queue_item.get("Info", "ScriptId") == "-":
                         continue
-                    script_id = uuid.UUID(queue_item.get("Info", "ScriptId"))
-                    script = Config.ScriptConfig[script_id]
-                    if not isinstance(script, (MaaConfig | GeneralConfig)):
-                        logger.error(f"不支持的脚本类型: {type(script).__name__}")
-                        continue
+                    script_uid = uuid.UUID(queue_item.get("Info", "ScriptId"))
+
                     task_list.append(
                         {
-                            "script_id": str(script_id),
+                            "script_id": str(script_uid),
                             "status": "等待",
-                            "name": script.get("Info", "Name"),
+                            "name": Config.ScriptConfig[script_uid].get("Info", "Name"),
                             "user_list": [
                                 {
                                     "user_id": str(user_id),
                                     "status": "等待",
                                     "name": config.get("Info", "Name"),
                                 }
-                                for user_id, config in script.UserData.items()
+                                for user_id, config in Config.ScriptConfig[
+                                    script_uid
+                                ].UserData.items()
                                 if config.get("Info", "Status")
                                 and config.get("Info", "RemainedDay") != 0
                             ],
@@ -175,23 +167,20 @@ class _TaskManager:
 
             elif actual_id is not None and actual_id in Config.ScriptConfig:
 
-                script = Config.ScriptConfig[actual_id]
-                if not isinstance(script, (MaaConfig | GeneralConfig)):
-                    logger.error(f"不支持的脚本类型: {type(script).__name__}")
-                    return
-
                 task_list = [
                     {
                         "script_id": str(actual_id),
                         "status": "等待",
-                        "name": script.get("Info", "Name"),
+                        "name": Config.ScriptConfig[actual_id].get("Info", "Name"),
                         "user_list": [
                             {
                                 "user_id": str(user_id),
                                 "status": "等待",
                                 "name": config.get("Info", "Name"),
                             }
-                            for user_id, config in script.UserData.items()
+                            for user_id, config in Config.ScriptConfig[
+                                actual_id
+                            ].UserData.items()
                             if config.get("Info", "Status")
                             and config.get("Info", "RemainedDay") != 0
                         ],

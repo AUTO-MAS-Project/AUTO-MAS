@@ -27,10 +27,9 @@ import shutil
 import asyncio
 import subprocess
 from pathlib import Path
-from fastapi import WebSocket
 from datetime import datetime, timedelta
 from jinja2 import Environment, FileSystemLoader
-from typing import Union, List, Dict, Optional
+from typing import List, Dict, Optional
 
 
 from app.core import Config, GeneralConfig, GeneralUserConfig
@@ -44,7 +43,7 @@ logger = get_logger("通用调度器")
 
 
 class GeneralManager:
-    """通用脚本通用控制器"""
+    """通用脚本调度器"""
 
     def __init__(
         self, mode: str, script_id: uuid.UUID, user_id: Optional[uuid.UUID], ws_id: str
@@ -69,9 +68,8 @@ class GeneralManager:
         await Config.ScriptConfig[self.script_id].lock()
 
         self.script_config = Config.ScriptConfig[self.script_id]
-        if isinstance(self.script_config, GeneralConfig):
-            self.user_config = MultipleConfig([GeneralUserConfig])
-            await self.user_config.load(await self.script_config.UserData.toDict())
+        self.user_config = MultipleConfig([GeneralUserConfig])
+        await self.user_config.load(await self.script_config.UserData.toDict())
 
         self.script_root_path = Path(self.script_config.get("Info", "RootPath"))
         self.script_path = Path(self.script_config.get("Script", "ScriptPath"))
@@ -142,6 +140,9 @@ class GeneralManager:
 
     def check_config(self) -> str:
         """检查配置是否可用"""
+
+        if not isinstance(Config.ScriptConfig[self.script_id], GeneralConfig):
+            return "脚本配置类型错误, 不是通用脚本类型"
 
         if self.mode == "人工排查":
             return "通用脚本不支持人工排查模式"
@@ -221,298 +222,319 @@ class GeneralManager:
             # 开始代理
             for self.index, user in enumerate(self.user_list):
 
-                self.cur_user_data = self.user_config[uuid.UUID(user["user_id"])]
+                try:
 
-                if (self.script_config.get("Run", "ProxyTimesLimit") == 0) or (
-                    self.cur_user_data.get("Data", "ProxyTimes")
-                    < self.script_config.get("Run", "ProxyTimesLimit")
-                ):
-                    user["status"] = "运行"
-                    await Config.send_json(
-                        WebSocketMessage(
-                            id=self.ws_id,
-                            type="Update",
-                            data={"user_list": self.user_list},
-                        ).model_dump()
-                    )
-                else:
-                    user["status"] = "跳过"
-                    await Config.send_json(
-                        WebSocketMessage(
-                            id=self.ws_id,
-                            type="Update",
-                            data={"user_list": self.user_list},
-                        ).model_dump()
-                    )
-                    continue
+                    self.cur_user_data = self.user_config[uuid.UUID(user["user_id"])]
 
-                logger.info(f"开始代理用户: {user['user_id']}")
+                    if (self.script_config.get("Run", "ProxyTimesLimit") == 0) or (
+                        self.cur_user_data.get("Data", "ProxyTimes")
+                        < self.script_config.get("Run", "ProxyTimesLimit")
+                    ):
+                        user["status"] = "运行"
+                        await Config.send_json(
+                            WebSocketMessage(
+                                id=self.ws_id,
+                                type="Update",
+                                data={"user_list": self.user_list},
+                            ).model_dump()
+                        )
+                    else:
+                        user["status"] = "跳过"
+                        await Config.send_json(
+                            WebSocketMessage(
+                                id=self.ws_id,
+                                type="Update",
+                                data={"user_list": self.user_list},
+                            ).model_dump()
+                        )
+                        continue
 
-                self.user_start_time = datetime.now()
+                    logger.info(f"开始代理用户: {user['user_id']}")
 
-                self.run_book = False
+                    self.user_start_time = datetime.now()
 
-                if not (
-                    Path.cwd() / f"data/{self.script_id}/{user['user_id']}/ConfigFile"
-                ).exists():
+                    self.run_book = False
 
-                    logger.error(f"用户: {user['user_id']} - 未找到配置文件")
+                    if not (
+                        Path.cwd()
+                        / f"data/{self.script_id}/{user['user_id']}/ConfigFile"
+                    ).exists():
+
+                        logger.error(f"用户: {user['user_id']} - 未找到配置文件")
+                        await Config.send_json(
+                            WebSocketMessage(
+                                id=self.ws_id,
+                                type="Info",
+                                data={"Error": f"未找到 {user['user_id']} 的配置文件"},
+                            ).model_dump()
+                        )
+                        self.run_book = False
+                        continue
+
+                    # 尝试次数循环
+                    for i in range(self.script_config.get("Run", "RunTimesLimit")):
+
+                        if self.run_book:
+                            break
+
+                        logger.info(
+                            f"用户 {user['user_id']} - 尝试次数: {i + 1}/{self.script_config.get('Run','RunTimesLimit')}"
+                        )
+
+                        # 配置脚本
+                        await self.set_general()
+                        # 记录当前时间
+                        self.log_start_time = datetime.now()
+
+                        # 执行任务前脚本
+                        if (
+                            self.cur_user_data.get("Info", "IfScriptBeforeTask")
+                            and Path(
+                                self.cur_user_data.get("Info", "ScriptBeforeTask")
+                            ).exists()
+                        ):
+                            await self.execute_script_task(
+                                Path(
+                                    self.cur_user_data.get("Info", "ScriptBeforeTask")
+                                ),
+                                "脚本前任务",
+                            )
+
+                        # 启动游戏/模拟器
+                        if self.script_config.get("Game", "Enabled"):
+
+                            try:
+                                logger.info(
+                                    f"启动游戏/模拟器: {self.game_path}, 参数: {self.script_config.get('Game','Arguments')}"
+                                )
+                                await self.game_process_manager.open_process(
+                                    self.game_path,
+                                    str(
+                                        self.script_config.get("Game", "Arguments")
+                                    ).split(" "),
+                                    0,
+                                )
+                            except Exception as e:
+                                logger.exception(f"启动游戏/模拟器时出现异常: {e}")
+                                await Config.send_json(
+                                    WebSocketMessage(
+                                        id=self.ws_id,
+                                        type="Info",
+                                        data={
+                                            "Error": f"启动游戏/模拟器时出现异常: {e}"
+                                        },
+                                    ).model_dump()
+                                )
+                                self.general_result = "游戏/模拟器启动失败"
+                                break
+
+                            # 更新静默进程标记有效时间
+                            if self.script_config.get("Game", "Type") == "Emulator":
+                                logger.info(
+                                    f"更新静默进程标记: {self.game_path}, 标记有效时间: {datetime.now() + timedelta(seconds=self.script_config.get('Game', 'WaitTime') + 10)}"
+                                )
+                                Config.silence_dict[
+                                    self.game_path
+                                ] = datetime.now() + timedelta(
+                                    seconds=self.script_config.get("Game", "WaitTime")
+                                    + 10
+                                )
+
+                            await Config.send_json(
+                                WebSocketMessage(
+                                    id=self.ws_id,
+                                    type="Update",
+                                    data={
+                                        "log": f"正在等待游戏/模拟器完成启动\n请等待{self.script_config.get('Game', 'WaitTime')}s"
+                                    },
+                                ).model_dump()
+                            )
+                            await asyncio.sleep(
+                                self.script_config.get("Game", "WaitTime")
+                            )
+
+                        # 运行脚本任务
+                        logger.info(
+                            f"运行脚本任务: {self.script_exe_path}, 参数: {self.script_arguments}"
+                        )
+                        await self.general_process_manager.open_process(
+                            self.script_exe_path,
+                            self.script_arguments,
+                            tracking_time=(
+                                60
+                                if self.script_config.get("Script", "IfTrackProcess")
+                                else 0
+                            ),
+                        )
+
+                        # 监测运行状态
+                        await self.general_log_monitor.start(
+                            self.script_log_path, self.log_start_time
+                        )
+                        self.wait_event.clear()
+                        await self.wait_event.wait()
+
+                        await self.general_log_monitor.stop()
+
+                        # 处理通用脚本结果
+                        if self.general_result == "Success!":
+
+                            # 标记任务完成
+                            self.run_book = True
+
+                            logger.info(
+                                f"用户: {user['user_id']} - 通用脚本进程完成代理任务"
+                            )
+                            await Config.send_json(
+                                WebSocketMessage(
+                                    id=self.ws_id,
+                                    type="Update",
+                                    data={
+                                        "log": "检测到通用脚本进程完成代理任务\n正在等待相关程序结束\n请等待10s"
+                                    },
+                                ).model_dump()
+                            )
+
+                            # 中止相关程序
+                            logger.info(f"中止相关程序: {self.script_exe_path}")
+                            await self.general_process_manager.kill()
+                            await System.kill_process(self.script_exe_path)
+                            if self.script_config.get("Game", "Enabled"):
+                                logger.info(
+                                    f"中止游戏/模拟器进程: {list(self.game_process_manager.tracked_pids)}"
+                                )
+                                await self.game_process_manager.kill()
+                                if self.script_config.get("Game", "IfForceClose"):
+                                    await System.kill_process(self.game_path)
+
+                            await asyncio.sleep(10)
+
+                            # 更新脚本配置文件
+                            if self.script_config.get("Script", "UpdateConfigMode") in [
+                                "Success",
+                                "Always",
+                            ]:
+
+                                if (
+                                    self.script_config.get("Script", "ConfigPathMode")
+                                    == "Folder"
+                                ):
+                                    shutil.copytree(
+                                        self.script_config_path,
+                                        Path.cwd()
+                                        / f"data/{self.script_id}/{user['user_id']}/ConfigFile",
+                                        dirs_exist_ok=True,
+                                    )
+                                elif (
+                                    self.script_config.get("Script", "ConfigPathMode")
+                                    == "File"
+                                ):
+                                    shutil.copy(
+                                        self.script_config_path,
+                                        Path.cwd()
+                                        / f"data/{self.script_id}/{user['user_id']}/ConfigFile"
+                                        / self.script_config_path.name,
+                                    )
+                                logger.success("通用脚本配置文件已更新")
+
+                        else:
+                            logger.error(
+                                f"配置: {user['user_id']} - 代理任务异常: {self.general_result}"
+                            )
+                            # 打印中止信息
+                            # 此时, log变量内存储的就是出现异常的日志信息, 可以保存或发送用于问题排查
+                            await Config.send_json(
+                                WebSocketMessage(
+                                    id=self.ws_id,
+                                    type="Update",
+                                    data={
+                                        "log": f"{self.general_result}\n正在中止相关程序\n请等待10s"
+                                    },
+                                ).model_dump()
+                            )
+
+                            # 中止相关程序
+                            logger.info(f"中止相关程序: {self.script_exe_path}")
+                            await self.general_process_manager.kill()
+                            await System.kill_process(self.script_exe_path)
+                            if self.script_config.get("Game", "Enabled"):
+                                logger.info(
+                                    f"中止游戏/模拟器进程: {list(self.game_process_manager.tracked_pids)}"
+                                )
+                                await self.game_process_manager.kill()
+                                if self.script_config.get("Game", "IfForceClose"):
+                                    await System.kill_process(self.game_path)
+
+                            # 推送异常通知
+                            await Notify.push_plyer(
+                                "用户自动代理出现异常！",
+                                f"用户 {user['name']} 的自动代理出现一次异常",
+                                f"{user['name']} 的自动代理出现异常",
+                                3,
+                            )
+
+                            await asyncio.sleep(10)
+
+                            # 更新脚本配置文件
+                            if self.script_config.get("Script", "UpdateConfigMode") in [
+                                "Failure",
+                                "Always",
+                            ]:
+
+                                if (
+                                    self.script_config.get("Script", "ConfigPathMode")
+                                    == "Folder"
+                                ):
+                                    shutil.copytree(
+                                        self.script_config_path,
+                                        Path.cwd()
+                                        / f"data/{self.script_id}/{user['user_id']}/ConfigFile",
+                                        dirs_exist_ok=True,
+                                    )
+                                elif (
+                                    self.script_config.get("Script", "ConfigPathMode")
+                                    == "File"
+                                ):
+                                    shutil.copy(
+                                        self.script_config_path,
+                                        Path.cwd()
+                                        / f"data/{self.script_id}/{user['user_id']}/ConfigFile"
+                                        / self.script_config_path.name,
+                                    )
+                                logger.success("通用脚本配置文件已更新")
+
+                        # 执行任务后脚本
+                        if (
+                            self.cur_user_data.get("Info", "IfScriptAfterTask")
+                            and Path(
+                                self.cur_user_data.get("Info", "ScriptAfterTask")
+                            ).exists()
+                        ):
+                            await self.execute_script_task(
+                                Path(self.cur_user_data.get("Info", "ScriptAfterTask")),
+                                "脚本后任务",
+                            )
+
+                        # 保存运行日志以及统计信息
+                        await Config.save_general_log(
+                            Path.cwd()
+                            / f"history/{self.curdate}/{user['name']}/{self.log_start_time.strftime('%H-%M-%S')}.log",
+                            self.general_logs,
+                            self.general_result,
+                        )
+
+                    await self.result_record()
+
+                except Exception as e:
+                    logger.exception(f"用户 {user['user_id']} 代理时出现异常: {e}")
+                    user["status"] = "异常"
                     await Config.send_json(
                         WebSocketMessage(
                             id=self.ws_id,
                             type="Info",
-                            data={"Error": f"未找到 {user['user_id']} 的配置文件"},
+                            data={"Error": f"代理用户 {user['name']} 时出现异常: {e}"},
                         ).model_dump()
                     )
-                    self.run_book = False
-                    continue
-
-                # 尝试次数循环
-                for i in range(self.script_config.get("Run", "RunTimesLimit")):
-
-                    if self.run_book:
-                        break
-
-                    logger.info(
-                        f"用户 {user['user_id']} - 尝试次数: {i + 1}/{self.script_config.get('Run','RunTimesLimit')}"
-                    )
-
-                    # 配置脚本
-                    await self.set_general()
-                    # 记录当前时间
-                    self.log_start_time = datetime.now()
-
-                    # 执行任务前脚本
-                    if (
-                        self.cur_user_data.get("Info", "IfScriptBeforeTask")
-                        and Path(
-                            self.cur_user_data.get("Info", "ScriptBeforeTask")
-                        ).exists()
-                    ):
-                        await self.execute_script_task(
-                            Path(self.cur_user_data.get("Info", "ScriptBeforeTask")),
-                            "脚本前任务",
-                        )
-
-                    # 启动游戏/模拟器
-                    if self.script_config.get("Game", "Enabled"):
-
-                        try:
-                            logger.info(
-                                f"启动游戏/模拟器: {self.game_path}, 参数: {self.script_config.get('Game','Arguments')}"
-                            )
-                            await self.game_process_manager.open_process(
-                                self.game_path,
-                                str(self.script_config.get("Game", "Arguments")).split(
-                                    " "
-                                ),
-                                0,
-                            )
-                        except Exception as e:
-                            logger.exception(f"启动游戏/模拟器时出现异常: {e}")
-                            await Config.send_json(
-                                WebSocketMessage(
-                                    id=self.ws_id,
-                                    type="Info",
-                                    data={"Error": f"启动游戏/模拟器时出现异常: {e}"},
-                                ).model_dump()
-                            )
-                            self.general_result = "游戏/模拟器启动失败"
-                            break
-
-                        # 更新静默进程标记有效时间
-                        if self.script_config.get("Game", "Type") == "Emulator":
-                            logger.info(
-                                f"更新静默进程标记: {self.game_path}, 标记有效时间: {datetime.now() + timedelta(seconds=self.script_config.get('Game', 'WaitTime') + 10)}"
-                            )
-                            Config.silence_dict[
-                                self.game_path
-                            ] = datetime.now() + timedelta(
-                                seconds=self.script_config.get("Game", "WaitTime") + 10
-                            )
-
-                        await Config.send_json(
-                            WebSocketMessage(
-                                id=self.ws_id,
-                                type="Update",
-                                data={
-                                    "log": f"正在等待游戏/模拟器完成启动\n请等待{self.script_config.get('Game', 'WaitTime')}s"
-                                },
-                            ).model_dump()
-                        )
-                        await asyncio.sleep(self.script_config.get("Game", "WaitTime"))
-
-                    # 运行脚本任务
-                    logger.info(
-                        f"运行脚本任务: {self.script_exe_path}, 参数: {self.script_arguments}"
-                    )
-                    await self.general_process_manager.open_process(
-                        self.script_exe_path,
-                        self.script_arguments,
-                        tracking_time=(
-                            60
-                            if self.script_config.get("Script", "IfTrackProcess")
-                            else 0
-                        ),
-                    )
-
-                    # 监测运行状态
-                    await self.general_log_monitor.start(
-                        self.script_log_path, self.log_start_time
-                    )
-                    self.wait_event.clear()
-                    await self.wait_event.wait()
-
-                    await self.general_log_monitor.stop()
-
-                    # 处理通用脚本结果
-                    if self.general_result == "Success!":
-
-                        # 标记任务完成
-                        self.run_book = True
-
-                        logger.info(
-                            f"用户: {user['user_id']} - 通用脚本进程完成代理任务"
-                        )
-                        await Config.send_json(
-                            WebSocketMessage(
-                                id=self.ws_id,
-                                type="Update",
-                                data={
-                                    "log": "检测到通用脚本进程完成代理任务\n正在等待相关程序结束\n请等待10s"
-                                },
-                            ).model_dump()
-                        )
-
-                        # 中止相关程序
-                        logger.info(f"中止相关程序: {self.script_exe_path}")
-                        await self.general_process_manager.kill()
-                        await System.kill_process(self.script_exe_path)
-                        if self.script_config.get("Game", "Enabled"):
-                            logger.info(
-                                f"中止游戏/模拟器进程: {list(self.game_process_manager.tracked_pids)}"
-                            )
-                            await self.game_process_manager.kill()
-                            if self.script_config.get("Game", "IfForceClose"):
-                                await System.kill_process(self.game_path)
-
-                        await asyncio.sleep(10)
-
-                        # 更新脚本配置文件
-                        if self.script_config.get("Script", "UpdateConfigMode") in [
-                            "Success",
-                            "Always",
-                        ]:
-
-                            if (
-                                self.script_config.get("Script", "ConfigPathMode")
-                                == "Folder"
-                            ):
-                                shutil.copytree(
-                                    self.script_config_path,
-                                    Path.cwd()
-                                    / f"data/{self.script_id}/{user['user_id']}/ConfigFile",
-                                    dirs_exist_ok=True,
-                                )
-                            elif (
-                                self.script_config.get("Script", "ConfigPathMode")
-                                == "File"
-                            ):
-                                shutil.copy(
-                                    self.script_config_path,
-                                    Path.cwd()
-                                    / f"data/{self.script_id}/{user['user_id']}/ConfigFile"
-                                    / self.script_config_path.name,
-                                )
-                            logger.success("通用脚本配置文件已更新")
-
-                    else:
-                        logger.error(
-                            f"配置: {user['user_id']} - 代理任务异常: {self.general_result}"
-                        )
-                        # 打印中止信息
-                        # 此时, log变量内存储的就是出现异常的日志信息, 可以保存或发送用于问题排查
-                        await Config.send_json(
-                            WebSocketMessage(
-                                id=self.ws_id,
-                                type="Update",
-                                data={
-                                    "log": f"{self.general_result}\n正在中止相关程序\n请等待10s"
-                                },
-                            ).model_dump()
-                        )
-
-                        # 中止相关程序
-                        logger.info(f"中止相关程序: {self.script_exe_path}")
-                        await self.general_process_manager.kill()
-                        await System.kill_process(self.script_exe_path)
-                        if self.script_config.get("Game", "Enabled"):
-                            logger.info(
-                                f"中止游戏/模拟器进程: {list(self.game_process_manager.tracked_pids)}"
-                            )
-                            await self.game_process_manager.kill()
-                            if self.script_config.get("Game", "IfForceClose"):
-                                await System.kill_process(self.game_path)
-
-                        # 推送异常通知
-                        await Notify.push_plyer(
-                            "用户自动代理出现异常！",
-                            f"用户 {user['name']} 的自动代理出现一次异常",
-                            f"{user['name']} 的自动代理出现异常",
-                            3,
-                        )
-
-                        await asyncio.sleep(10)
-
-                        # 更新脚本配置文件
-                        if self.script_config.get("Script", "UpdateConfigMode") in [
-                            "Failure",
-                            "Always",
-                        ]:
-
-                            if (
-                                self.script_config.get("Script", "ConfigPathMode")
-                                == "Folder"
-                            ):
-                                shutil.copytree(
-                                    self.script_config_path,
-                                    Path.cwd()
-                                    / f"data/{self.script_id}/{user['user_id']}/ConfigFile",
-                                    dirs_exist_ok=True,
-                                )
-                            elif (
-                                self.script_config.get("Script", "ConfigPathMode")
-                                == "File"
-                            ):
-                                shutil.copy(
-                                    self.script_config_path,
-                                    Path.cwd()
-                                    / f"data/{self.script_id}/{user['user_id']}/ConfigFile"
-                                    / self.script_config_path.name,
-                                )
-                            logger.success("通用脚本配置文件已更新")
-
-                    # 执行任务后脚本
-                    if (
-                        self.cur_user_data.get("Info", "IfScriptAfterTask")
-                        and Path(
-                            self.cur_user_data.get("Info", "ScriptAfterTask")
-                        ).exists()
-                    ):
-                        await self.execute_script_task(
-                            Path(self.cur_user_data.get("Info", "ScriptAfterTask")),
-                            "脚本后任务",
-                        )
-
-                    # 保存运行日志以及统计信息
-                    await Config.save_general_log(
-                        Path.cwd()
-                        / f"history/{self.curdate}/{user['name']}/{self.log_start_time.strftime('%H-%M-%S')}.log",
-                        self.general_logs,
-                        self.general_result,
-                    )
-
-                await self.result_record()
 
         # 设置通用脚本模式
         elif self.mode == "设置脚本":
@@ -545,11 +567,21 @@ class GeneralManager:
             "end_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "user_result": "代理成功" if self.run_book else self.general_result,
         }
-        await self.push_notification(
-            "统计信息",
-            f"{self.current_date} | 用户 {self.user_list[self.index]['name']} 的自动代理统计报告",
-            statistics,
-        )
+        try:
+            await self.push_notification(
+                "统计信息",
+                f"{self.current_date} | 用户 {self.user_list[self.index]['name']} 的自动代理统计报告",
+                statistics,
+            )
+        except Exception as e:
+            logger.exception(f"推送统计信息失败: {e}")
+            await Config.send_json(
+                WebSocketMessage(
+                    id=self.ws_id,
+                    type="Info",
+                    data={"Error": f"推送统计信息失败: {e}"},
+                ).model_dump()
+            )
 
         if self.run_book:
             # 成功完成代理的用户修改相关参数
@@ -659,10 +691,10 @@ class GeneralManager:
         if self.mode == "自动代理":
 
             # 更新用户数据
-            sc = Config.ScriptConfig[self.script_id]
-            if isinstance(sc, GeneralConfig):
-                await sc.UserData.load(await self.user_config.toDict())
-                await Config.ScriptConfig.save()
+            await Config.ScriptConfig[self.script_id].UserData.load(
+                await self.user_config.toDict()
+            )
+            await Config.ScriptConfig.save()
 
             error_user = [_["name"] for _ in self.user_list if _["status"] == "异常"]
             over_user = [_["name"] for _ in self.user_list if _["status"] == "完成"]
@@ -708,7 +740,17 @@ class GeneralManager:
                 f"已完成配置数: {len(over_user)}, 未完成配置数: {len(error_user) + len(wait_user)}",
                 10,
             )
-            await self.push_notification("代理结果", title, result)
+            try:
+                await self.push_notification("代理结果", title, result)
+            except Exception as e:
+                logger.exception(f"推送代理结果失败: {e}")
+                await Config.send_json(
+                    WebSocketMessage(
+                        id=self.ws_id,
+                        type="Info",
+                        data={"Error": f"推送代理结果失败: {e}"},
+                    ).model_dump()
+                )
 
         elif self.mode == "设置脚本":
 
@@ -970,7 +1012,6 @@ class GeneralManager:
             serverchan_message = message_text.replace("\n", "\n\n")
 
             # 发送全局通知
-
             if Config.get("Notify", "IfSendMail"):
                 await Notify.send_mail(
                     "网页", title, message_html, Config.get("Notify", "ToAddress")
@@ -984,21 +1025,10 @@ class GeneralManager:
                 )
 
             # 发送自定义Webhook通知
-            try:
-                custom_webhooks = Config.get("Notify", "CustomWebhooks")
-            except AttributeError:
-                custom_webhooks = []
-            if custom_webhooks:
-                for webhook in custom_webhooks:
-                    if webhook.get("enabled", True):
-                        try:
-                            await Notify.CustomWebhookPush(
-                                title, f"{message_text}\n\nAUTO-MAS 敬上", webhook
-                            )
-                        except Exception as e:
-                            logger.error(
-                                f"自定义Webhook推送失败 ({webhook.get('name', 'Unknown')}): {e}"
-                            )
+            for webhook in Config.Notify_CustomWebhooks.values():
+                await Notify.WebhookPush(
+                    title, f"{message_text}\n\nAUTO-MAS 敬上", webhook
+                )
 
         elif mode == "统计信息":
 
@@ -1031,21 +1061,10 @@ class GeneralManager:
                     )
 
                 # 发送自定义Webhook通知
-                try:
-                    custom_webhooks = Config.get("Notify", "CustomWebhooks")
-                except AttributeError:
-                    custom_webhooks = []
-                if custom_webhooks:
-                    for webhook in custom_webhooks:
-                        if webhook.get("enabled", True):
-                            try:
-                                await Notify.CustomWebhookPush(
-                                    title, f"{message_text}\n\nAUTO-MAS 敬上", webhook
-                                )
-                            except Exception as e:
-                                logger.error(
-                                    f"自定义Webhook推送失败 ({webhook.get('name', 'Unknown')}): {e}"
-                                )
+                for webhook in Config.Notify_CustomWebhooks.values():
+                    await Notify.WebhookPush(
+                        title, f"{message_text}\n\nAUTO-MAS 敬上", webhook
+                    )
 
             # 发送用户单独通知
             if self.cur_user_data.get("Notify", "Enabled") and self.cur_user_data.get(
@@ -1078,22 +1097,7 @@ class GeneralManager:
                         )
 
                 # 推送CompanyWebHookBot通知
-                # 发送用户自定义Webhook通知
-                user_webhooks = self.cur_user_data.get("Notify", "CustomWebhooks")
-                if user_webhooks:
-                    for webhook in user_webhooks:
-                        if webhook.get("enabled", True):
-                            try:
-                                await Notify.CustomWebhookPush(
-                                    title, f"{message_text}\n\nAUTO-MAS 敬上", webhook
-                                )
-                            except Exception as e:
-                                logger.error(
-                                    f"用户自定义Webhook推送失败 ({webhook.get('name', 'Unknown')}): {e}"
-                                )
-                    else:
-                        logger.error(
-                            "用户CompanyWebHookBot密钥为空, 无法发送用户单独的CompanyWebHookBot通知"
-                        )
-
-        return None
+                for webhook in self.cur_user_data.Notify_CustomWebhooks.values():
+                    await Notify.WebhookPush(
+                        title, f"{message_text}\n\nAUTO-MAS 敬上", webhook
+                    )
