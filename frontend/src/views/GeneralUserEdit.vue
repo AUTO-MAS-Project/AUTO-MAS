@@ -16,11 +16,7 @@
       </a-breadcrumb>
     </div>
 
-     // 如果已有连接，先断开
-    if (generalSubscriptionId.value) {
-      unsubscribe(generalSubscriptionId.value)
-      generalSubscriptionId.value = null
-      generalWebsocketId.value = nulla-space size="middle">
+    <a-space size="middle">
       <a-button
         type="primary"
         ghost
@@ -375,6 +371,15 @@ import { Service } from '@/api'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import WebhookManager from '@/components/WebhookManager.vue'
 
+// 扩展 Window 接口以支持 Electron API
+declare global {
+  interface Window {
+    electronAPI: {
+      selectFile: (filters: Array<{ name: string; extensions: string[] }>) => Promise<string[]>
+    }
+  }
+}
+
 const router = useRouter()
 const route = useRoute()
 const { addUser, updateUser, getUsers, loading: userLoading } = useUserApi()
@@ -581,8 +586,9 @@ const handleGeneralConfig = async () => {
     showGeneralConfigMask.value = true
 
     // 如果已有连接，先断开并清理
-    if (generalWebsocketId.value) {
-      unsubscribe(generalWebsocketId.value)
+    if (generalSubscriptionId.value) {
+      unsubscribe(generalSubscriptionId.value)
+      generalSubscriptionId.value = null
       generalWebsocketId.value = null
       showGeneralConfigMask.value = false
       if (generalConfigTimeout) {
@@ -690,7 +696,7 @@ const handleSaveGeneralConfig = async () => {
 // 文件选择方法
 const selectScriptBeforeTask = async () => {
   try {
-    const path = await (window.electronAPI as any)?.selectFile([
+    const path = await window.electronAPI?.selectFile([
       { name: '可执行文件', extensions: ['exe', 'bat', 'cmd', 'ps1'] },
       { name: '脚本文件', extensions: ['py', 'js', 'sh'] },
       { name: '所有文件', extensions: ['*'] },
@@ -708,7 +714,7 @@ const selectScriptBeforeTask = async () => {
 
 const selectScriptAfterTask = async () => {
   try {
-    const path = await (window.electronAPI as any)?.selectFile([
+    const path = await window.electronAPI?.selectFile([
       { name: '可执行文件', extensions: ['exe', 'bat', 'cmd', 'ps1'] },
       { name: '脚本文件', extensions: ['py', 'js', 'sh'] },
       { name: '所有文件', extensions: ['*'] },
