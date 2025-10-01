@@ -43,12 +43,14 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import RouteInfoPage from './RouteInfoPage.vue'
 import EnvironmentPage from './EnvironmentPage.vue'
 import QuickNavPage from './QuickNavPage.vue'
+import MessageTestPage from './MessageTestPage.vue'
 
 // 调试页面配置
 const tabs = [
   { key: 'route', title: '路由', icon: '🛣️', component: RouteInfoPage },
   { key: 'env', title: '环境', icon: '⚙️', component: EnvironmentPage },
   { key: 'nav', title: '导航', icon: '🚀', component: QuickNavPage },
+  { key: 'message', title: '消息', icon: '💬', component: MessageTestPage },
 ]
 
 // 开发环境检测
