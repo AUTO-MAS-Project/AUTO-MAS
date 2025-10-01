@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>操作确认</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            font-size: 14px;
+            line-height: 1.5;
+            color: #333;
+            background: #f5f5f5;
+            padding: 20px;
+            overflow: hidden;
+        }
+        
+        .dialog-container {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+            max-width: 100%;
+            height: auto;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .dialog-header {
+            padding: 20px 24px 16px;
+            border-bottom: 1px solid #e1e5e9;
+            background: #f8f9fa;
+            border-radius: 8px 8px 0 0;
+        }
+        
+        .dialog-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #212529;
+            margin: 0;
+        }
+        
+        .dialog-content {
+            padding: 24px;
+            flex: 1;
+            min-height: 60px;
+        }
+        
+        .dialog-message {
+            font-size: 14px;
+            line-height: 1.6;
+            color: #495057;
+            margin: 0;
+            word-wrap: break-word;
+            white-space: pre-wrap;
+        }
+        
+        .dialog-actions {
+            padding: 16px 24px 24px;
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+            border-top: 1px solid #e1e5e9;
+            background: #f8f9fa;
+            border-radius: 0 0 8px 8px;
+        }
+        
+        .dialog-button {
+            padding: 10px 20px;
+            border: 1px solid #dee2e6;
+            border-radius: 6px;
+            background: white;
+            color: #495057;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.2s ease;
+            min-width: 80px;
+            outline: none;
+        }
+        
+        .dialog-button:hover {
+            background: #e9ecef;
+            border-color: #adb5bd;
+        }
+        
+        .dialog-button:focus {
+            box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.25);
+            border-color: #86b7fe;
+        }
+        
+        .dialog-button:active {
+            transform: translateY(1px);
+        }
+        
+        .dialog-button.primary {
+            background: #0d6efd;
+            color: white;
+            border-color: #0d6efd;
+        }
+        
+        .dialog-button.primary:hover {
+            background: #0b5ed7;
+            border-color: #0a58ca;
+        }
+        
+        .dialog-button.danger {
+            background: #dc3545;
+            color: white;
+            border-color: #dc3545;
+        }
+        
+        .dialog-button.danger:hover {
+            background: #c82333;
+            border-color: #bd2130;
+        }
+        
+        /* 键盘导航样式 */
+        .dialog-button:focus-visible {
+            outline: 2px solid #0d6efd;
+            outline-offset: 2px;
+        }
+        
+        /* 暗色主题支持 */
+        @media (prefers-color-scheme: dark) {
+            body {
+                background: #212529;
+                color: #f8f9fa;
+            }
+            
+            .dialog-container {
+                background: #343a40;
+            }
+            
+            .dialog-header,
+            .dialog-actions {
+                background: #2c3236;
+                border-color: #495057;
+            }
+            
+            .dialog-title {
+                color: #f8f9fa;
+            }
+            
+            .dialog-message {
+                color: #dee2e6;
+            }
+            
+            .dialog-button {
+                background: #495057;
+                color: #f8f9fa;
+                border-color: #6c757d;
+            }
+            
+            .dialog-button:hover {
+                background: #5a6268;
+                border-color: #7c848a;
+            }
+        }
+        
+        /* 动画效果 */
+        .dialog-container {
+            animation: dialogSlideIn 0.2s ease-out;
+        }
+        
+        @keyframes dialogSlideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-20px) scale(0.95);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="dialog-container">
+        <div class="dialog-header">
+            <h3 class="dialog-title" id="dialog-title">操作确认</h3>
+        </div>
+        <div class="dialog-content">
+            <p class="dialog-message" id="dialog-message">是否要执行此操作？</p>
+        </div>
+        <div class="dialog-actions" id="dialog-actions">
+            <!-- 按钮将通过 JavaScript 动态生成 -->
+        </div>
+    </div>
+
+    <script>
+        // 获取传递的参数
+        const urlParams = new URLSearchParams(window.location.search);
+        const data = JSON.parse(decodeURIComponent(urlParams.get('data') || '{}'));
+        
+        // 设置对话框内容
+        document.getElementById('dialog-title').textContent = data.title || '操作确认';
+        document.getElementById('dialog-message').textContent = data.message || '是否要执行此操作？';
+        
+        // 创建按钮
+        const actionsContainer = document.getElementById('dialog-actions');
+        const options = data.options || ['确定', '取消'];
+        
+        options.forEach((option, index) => {
+            const button = document.createElement('button');
+            button.className = 'dialog-button';
+            button.textContent = option;
+            
+            // 第一个按钮设为主要按钮
+            if (index === 0) {
+                button.className += ' primary';
+            }
+            
+            // 绑定点击事件
+            button.addEventListener('click', () => {
+                // 发送结果到主进程
+                if (window.electronAPI && window.electronAPI.dialogResponse) {
+                    const choice = index === 0; // 第一个选项为 true
+                    window.electronAPI.dialogResponse(data.messageId, choice);
+                }
+                
+                // 不需要手动关闭窗口，主进程会处理
+                // 移除 window.electronAPI.windowClose() 调用
+            });
+            
+            actionsContainer.appendChild(button);
+        });
+        
+        // 自动聚焦第一个按钮
+        setTimeout(() => {
+            const firstButton = actionsContainer.querySelector('.dialog-button');
+            if (firstButton) {
+                firstButton.focus();
+            }
+        }, 100);
+        
+        // 键盘事件处理
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') {
+                // ESC 键相当于取消
+                if (window.electronAPI && window.electronAPI.dialogResponse) {
+                    window.electronAPI.dialogResponse(data.messageId, false);
+                }
+                // 不需要手动关闭窗口，主进程会处理
+            } else if (event.key === 'Enter') {
+                // Enter 键相当于确定
+                const focusedButton = document.activeElement;
+                if (focusedButton && focusedButton.classList.contains('dialog-button')) {
+                    focusedButton.click();
+                } else {
+                    // 如果没有聚焦按钮，默认点击第一个
+                    const firstButton = actionsContainer.querySelector('.dialog-button');
+                    if (firstButton) {
+                        firstButton.click();
+                    }
+                }
+            }
+        });
+        
+        // 窗口加载完成后调整大小
+        window.addEventListener('load', () => {
+            if (window.electronAPI && window.electronAPI.resizeDialogWindow) {
+                // 获取内容高度
+                const container = document.querySelector('.dialog-container');
+                const height = container.offsetHeight + 40; // 加上一些边距
+                window.electronAPI.resizeDialogWindow(Math.min(height, 400));
+            }
+        });
+    </script>
+</body>
+</html>

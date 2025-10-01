@@ -63,6 +63,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openFile: (filePath: string) => ipcRenderer.invoke('open-file', filePath),
   showItemInFolder: (filePath: string) => ipcRenderer.invoke('show-item-in-folder', filePath),
 
+  // 对话框相关
+  showQuestionDialog: (questionData: any) => ipcRenderer.invoke('show-question-dialog', questionData),
+  dialogResponse: (messageId: string, choice: boolean) => ipcRenderer.invoke('dialog-response', messageId, choice),
+  resizeDialogWindow: (height: number) => ipcRenderer.invoke('resize-dialog-window', height),
+
   // 监听下载进度
   onDownloadProgress: (callback: (progress: any) => void) => {
     ipcRenderer.on('download-progress', (_, progress) => callback(progress))

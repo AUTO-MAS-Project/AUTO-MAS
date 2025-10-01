@@ -1,18 +1,28 @@
 import {
   app,
   BrowserWindow,
-  ipcMain,
   dialog,
-  shell,
-  Tray,
+  ipcMain,
   Menu,
   nativeImage,
   screen,
+  shell,
+  Tray,
 } from 'electron'
 import * as path from 'path'
 import * as fs from 'fs'
-import { spawn, exec } from 'child_process'
-import { getAppRoot, checkEnvironment } from './services/environmentService'
+import { exec, spawn } from 'child_process'
+import { checkEnvironment, getAppRoot } from './services/environmentService'
+import { setMainWindow as setDownloadMainWindow } from './services/downloadService'
+import {
+  downloadPython,
+  installDependencies,
+  installPipPackage,
+  setMainWindow as setPythonMainWindow,
+  startBackend,
+} from './services/pythonService'
+import { cloneBackend, downloadGit, setMainWindow as setGitMainWindow } from './services/gitService'
+import { cleanOldLogs, getLogFiles, getLogPath, log, setupLogger } from './services/logService'
 
 // 强制清理相关进程的函数
 async function forceKillRelatedProcesses(): Promise<void> {
@@ -22,15 +32,15 @@ async function forceKillRelatedProcesses(): Promise<void> {
     log.info('所有相关进程已清理')
   } catch (error) {
     log.error('清理进程时出错:', error)
-    
+
     // 备用清理方法
     if (process.platform === 'win32') {
       const appRoot = getAppRoot()
       const pythonExePath = path.join(appRoot, 'environment', 'python', 'python.exe')
-      
-      return new Promise((resolve) => {
+
+      return new Promise(resolve => {
         // 使用更简单的命令强制结束相关进程
-        exec(`taskkill /f /im python.exe`, (error) => {
+        exec(`taskkill /f /im python.exe`, error => {
           if (error) {
             log.warn('备用清理方法失败:', error.message)
           } else {
@@ -42,16 +52,6 @@ async function forceKillRelatedProcesses(): Promise<void> {
     }
   }
 }
-import { setMainWindow as setDownloadMainWindow } from './services/downloadService'
-import {
-  setMainWindow as setPythonMainWindow,
-  downloadPython,
-  installPipPackage,
-  installDependencies,
-  startBackend,
-} from './services/pythonService'
-import { setMainWindow as setGitMainWindow, downloadGit, cloneBackend } from './services/gitService'
-import { setupLogger, log, getLogPath, getLogFiles, cleanOldLogs } from './services/logService'
 
 // 检查是否以管理员权限运行
 function isRunningAsAdmin(): boolean {
@@ -113,6 +113,7 @@ interface AppConfig {
     IfMinimizeDirectly: boolean
     IfSelfStart: boolean
   }
+
   [key: string]: any
 }
 
@@ -304,7 +305,9 @@ function updateTrayVisibility(config: AppConfig) {
     log.info('托盘图标已销毁')
   }
 }
+
 let mainWindow: Electron.BrowserWindow | null = null
+
 function createWindow() {
   log.info('开始创建主窗口')
 
@@ -442,7 +445,7 @@ function createWindow() {
     screen.removeListener('display-metrics-changed', recomputeMinSize)
     // 置空模块级引用
     mainWindow = null
-    
+
     // 如果是正在退出，立即执行进程清理
     if (isQuitting) {
       log.info('窗口关闭，执行最终清理')
@@ -598,19 +601,19 @@ ipcMain.handle('kill-all-processes', async () => {
 ipcMain.handle('force-exit', async () => {
   log.info('收到强制退出命令')
   isQuitting = true
-  
+
   // 立即清理进程
   try {
     await forceKillRelatedProcesses()
   } catch (e) {
     log.error('强制清理失败:', e)
   }
-  
+
   // 强制退出
   setTimeout(() => {
     process.exit(0)
   }, 500)
-  
+
   return { success: true }
 })
 
@@ -746,6 +749,137 @@ ipcMain.handle('stop-backend', async () => {
   return stopBackend()
 })
 
+// 全局存储对话框窗口引用和回调
+let dialogWindows = new Map<string, BrowserWindow>()
+let dialogCallbacks = new Map<string, (result: boolean) => void>()
+
+// 创建对话框窗口
+function createQuestionDialog(questionData: any): Promise<boolean> {
+  return new Promise((resolve) => {
+    const messageId = questionData.messageId || 'dialog_' + Date.now()
+    
+    // 存储回调函数
+    dialogCallbacks.set(messageId, resolve)
+    
+    // 准备对话框数据
+    const dialogData = {
+      title: questionData.title || '操作确认',
+      message: questionData.message || '是否要执行此操作？',
+      options: questionData.options || ['确定', '取消'],
+      messageId: messageId
+    }
+    
+    // 创建对话框窗口
+    const dialogWindow = new BrowserWindow({
+      width: 450,
+      height: 200,
+      minWidth: 350,
+      minHeight: 150,
+      maxWidth: 600,
+      maxHeight: 400,
+      resizable: true,
+      minimizable: false,
+      maximizable: false,
+      alwaysOnTop: true,
+      show: false,
+      frame: false,
+      modal: mainWindow ? true : false,
+      parent: mainWindow || undefined,
+      icon: path.join(__dirname, '../public/AUTO-MAS.ico'),
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true,
+        preload: path.join(__dirname, 'preload.js'),
+      },
+    })
+    
+    // 存储窗口引用
+    dialogWindows.set(messageId, dialogWindow)
+    
+    // 编码对话框数据
+    const encodedData = encodeURIComponent(JSON.stringify(dialogData))
+    
+    // 加载对话框页面
+    const dialogUrl = `file://${path.join(__dirname, '../public/dialog.html')}?data=${encodedData}`
+    dialogWindow.loadURL(dialogUrl)
+    
+    // 窗口准备好后显示并居中
+    dialogWindow.once('ready-to-show', () => {
+      // 计算居中位置
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        const mainBounds = mainWindow.getBounds()
+        const dialogBounds = dialogWindow.getBounds()
+        const x = Math.round(mainBounds.x + (mainBounds.width - dialogBounds.width) / 2)
+        const y = Math.round(mainBounds.y + (mainBounds.height - dialogBounds.height) / 2)
+        dialogWindow.setPosition(x, y)
+      } else {
+        dialogWindow.center()
+      }
+      
+      dialogWindow.show()
+      dialogWindow.focus()
+    })
+    
+    // 窗口关闭时清理
+    dialogWindow.on('closed', () => {
+      dialogWindows.delete(messageId)
+      const callback = dialogCallbacks.get(messageId)
+      if (callback) {
+        dialogCallbacks.delete(messageId)
+        callback(false) // 默认返回 false (取消)
+      }
+    })
+    
+    log.info(`对话框窗口已创建: ${messageId}`)
+  })
+}
+
+// 显示问题对话框
+ipcMain.handle('show-question-dialog', async (_event, questionData) => {
+  log.info('收到显示对话框请求:', questionData)
+  try {
+    const result = await createQuestionDialog(questionData)
+    log.info(`对话框结果: ${result}`)
+    return result
+  } catch (error) {
+    log.error('创建对话框失败:', error)
+    return false
+  }
+})
+
+// 处理对话框响应
+ipcMain.handle('dialog-response', async (_event, messageId: string, choice: boolean) => {
+  log.info(`收到对话框响应: ${messageId} = ${choice}`)
+  
+  const callback = dialogCallbacks.get(messageId)
+  if (callback) {
+    dialogCallbacks.delete(messageId)
+    callback(choice)
+  }
+  
+  // 关闭对话框窗口
+  const dialogWindow = dialogWindows.get(messageId)
+  if (dialogWindow && !dialogWindow.isDestroyed()) {
+    dialogWindow.close()
+  }
+  dialogWindows.delete(messageId)
+  
+  return true
+})
+
+// 调整对话框窗口大小
+ipcMain.handle('resize-dialog-window', async (_event, height: number) => {
+  // 获取当前活动的对话框窗口（最后创建的）
+  const dialogWindow = Array.from(dialogWindows.values()).pop()
+  if (dialogWindow && !dialogWindow.isDestroyed()) {
+    const bounds = dialogWindow.getBounds()
+    dialogWindow.setBounds({
+      ...bounds,
+      height: Math.max(150, Math.min(400, height))
+    })
+  }
+})
+
 // Git相关
 ipcMain.handle('download-git', async () => {
   const appRoot = getAppRoot()
@@ -785,7 +919,7 @@ ipcMain.handle('check-git-update', async () => {
 
     // 不执行fetch，直接检查本地状态
     // 这样避免了直接访问GitHub，而是在后续的pull操作中使用镜像站
-    
+
     // 获取当前HEAD的commit hash
     const currentCommit = await new Promise<string>((resolve, reject) => {
       const revParseProc = spawn(gitPath, ['rev-parse', 'HEAD'], {
@@ -811,14 +945,13 @@ ipcMain.handle('check-git-update', async () => {
     })
 
     log.info(`当前本地commit: ${currentCommit}`)
-    
+
     // 由于我们跳过了fetch步骤（避免直接访问GitHub），
     // 我们无法准确知道远程是否有更新
     // 因此返回true，让后续的pull操作通过镜像站来检查和获取更新
     // 如果没有更新，pull操作会很快完成且不会有实际变化
     log.info('跳过远程检查，返回hasUpdate=true以触发镜像站更新流程')
     return { hasUpdate: true, skipReason: 'avoided_github_access' }
-    
   } catch (error) {
     log.error('检查Git更新失败:', error)
     // 如果检查失败，返回true以触发更新流程，确保代码是最新的
@@ -1084,23 +1217,23 @@ app.on('before-quit', async event => {
 
     // 立即开始强制清理，不等待优雅关闭
     log.info('开始强制清理所有相关进程')
-    
+
     try {
       // 并行执行多种清理方法
       const cleanupPromises = [
         // 方法1: 使用我们的进程管理器
         forceKillRelatedProcesses(),
-        
+
         // 方法2: 直接使用 taskkill 命令
-        new Promise<void>((resolve) => {
+        new Promise<void>(resolve => {
           if (process.platform === 'win32') {
             const appRoot = getAppRoot()
             const commands = [
               `taskkill /f /im python.exe`,
               `wmic process where "CommandLine like '%main.py%'" delete`,
-              `wmic process where "CommandLine like '%${appRoot.replace(/\\/g, '\\\\')}%'" delete`
+              `wmic process where "CommandLine like '%${appRoot.replace(/\\/g, '\\\\')}%'" delete`,
             ]
-            
+
             let completed = 0
             commands.forEach(cmd => {
               exec(cmd, () => {
@@ -1110,26 +1243,26 @@ app.on('before-quit', async event => {
                 }
               })
             })
-            
+
             // 2秒超时
             setTimeout(resolve, 2000)
           } else {
             resolve()
           }
-        })
+        }),
       ]
-      
+
       // 最多等待3秒
       const timeoutPromise = new Promise(resolve => setTimeout(resolve, 3000))
       await Promise.race([Promise.all(cleanupPromises), timeoutPromise])
-      
+
       log.info('进程清理完成')
     } catch (e) {
       log.error('进程清理时出错:', e)
     }
 
     log.info('应用强制退出')
-    
+
     // 使用 process.exit 而不是 app.exit，更加强制
     setTimeout(() => {
       process.exit(0)
