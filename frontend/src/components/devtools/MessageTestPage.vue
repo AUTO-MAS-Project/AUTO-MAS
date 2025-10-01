@@ -74,7 +74,7 @@ import { onMounted, onUnmounted, ref } from 'vue'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { logger } from '@/utils/logger'
 
-const { subscribe, unsubscribe, sendRaw, getConnectionInfo } = useWebSocket()
+const { subscribe, unsubscribe, getConnectionInfo } = useWebSocket()
 
 // 测试状态
 const isTesting = ref(false)
@@ -165,27 +165,39 @@ const directTriggerModal = () => {
   }, 1000)
 }
 
-// 发送WebSocket消息来模拟接收消息
+// 直接调用弹窗API测试功能
 const simulateMessage = (messageData: any) => {
-  logger.info('[调试工具] 发送模拟消息:', messageData)
-  
-  // 检查连接状态
-  const connInfo = getConnectionInfo()
-  if (connInfo.status !== '已连接') {
-    logger.warn('[调试工具] WebSocket未连接，无法发送消息')
-    lastResponse.value = '发送失败: WebSocket未连接'
-    return
-  }
+  logger.info('[调试工具] 直接测试弹窗功能:', messageData)
   
   try {
-    // 使用sendRaw直接发送Message类型的消息
-    sendRaw('Message', messageData)
+    // 检查是否在Electron环境
+    if (typeof window !== 'undefined' && (window as any).electronAPI?.showQuestionDialog) {
+      // 直接调用Electron的弹窗API进行测试
+      (window as any).electronAPI.showQuestionDialog({
+        title: messageData.title || '测试标题',
+        message: messageData.message || '测试消息',
+        options: messageData.options || ['确定', '取消'],
+        messageId: messageData.message_id || 'test-' + Date.now()
+      }).then((result: boolean) => {
+        logger.info('[调试工具] 弹窗测试结果:', result)
+        const choice = result ? '确认' : '取消'
+        lastResponse.value = `用户选择: ${choice}`
+        addTestHistory('弹窗测试', choice)
+      }).catch((error: any) => {
+        logger.error('[调试工具] 弹窗测试失败:', error)
+        lastResponse.value = '弹窗测试失败: ' + (error?.message || '未知错误')
+      })
+    } else {
+      logger.warn('[调试工具] 不在Electron环境中或API不可用，使用浏览器confirm作为备用')
+      const result = confirm(`${messageData.title || '测试'}\n\n${messageData.message || '这是测试消息'}`)
+      const choice = result ? '确认' : '取消'
+      lastResponse.value = `用户选择: ${choice} (浏览器备用)`
+      addTestHistory('浏览器备用测试', choice)
+    }
     
-    logger.info('[调试工具] 消息已发送到WebSocket')
-    lastResponse.value = '消息已发送，等待弹窗显示...'
   } catch (error: any) {
-    logger.error('[调试工具] 发送消息失败:', error)
-    lastResponse.value = '发送失败: ' + (error?.message || '未知错误')
+    logger.error('[调试工具] 测试弹窗失败:', error)
+    lastResponse.value = '测试失败: ' + (error?.message || '未知错误')
   }
 }
 

@@ -44,22 +44,28 @@ import RouteInfoPage from './RouteInfoPage.vue'
 import EnvironmentPage from './EnvironmentPage.vue'
 import QuickNavPage from './QuickNavPage.vue'
 import MessageTestPage from './MessageTestPage.vue'
+import BackendLaunchPage from './BackendLaunchPage.vue'
 
 // 调试页面配置
 const tabs = [
   { key: 'route', title: '路由', icon: '🛣️', component: RouteInfoPage },
   { key: 'env', title: '环境', icon: '⚙️', component: EnvironmentPage },
-  { key: 'nav', title: '导航', icon: '🚀', component: QuickNavPage },
+  { key: 'backend', title: '后端', icon: '🚀', component: BackendLaunchPage },
+  { key: 'nav', title: '导航', icon: '🧭', component: QuickNavPage },
   { key: 'message', title: '消息', icon: '💬', component: MessageTestPage },
 ]
 
 // 开发环境检测
-const isDev = ref(process.env.NODE_ENV === 'development' || import.meta.env?.DEV === true)
+const isDev = ref(
+  process.env.NODE_ENV === 'development' || 
+  (import.meta as any).env?.DEV === true ||
+  window.location.hostname === 'localhost'
+)
 
 // 面板状态
 const isCollapsed = ref(false)
 const isDragging = ref(false)
-const activeTab = ref('route')
+const activeTab = ref('backend') // 默认显示后端页面
 
 // 面板位置
 const panelPosition = ref({
