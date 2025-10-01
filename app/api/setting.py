@@ -29,7 +29,7 @@ from fastapi import APIRouter, Body
 from app.core import Config
 from app.services import System, Notify
 from app.models.schema import *
-import uuid
+from app.models.config import Webhook as WebhookConfig
 
 router = APIRouter(prefix="/api/setting", tags=["全局设置"])
 
@@ -180,31 +180,19 @@ async def reorder_webhook(webhook: WebhookReorderIn = Body(...)) -> OutBase:
 
 
 @router.post(
-    "/webhook/test",
-    summary="测试自定义Webhook",
-    response_model=OutBase,
-    status_code=200,
+    "/webhook/test", summary="测试Webhook配置", response_model=OutBase, status_code=200
 )
-async def test_webhook(webhook_data: dict = Body(...)) -> OutBase:
+async def test_webhook(webhook: WebhookTestIn = Body(...)) -> OutBase:
     """测试自定义Webhook"""
 
     try:
-        webhook_config = {
-            "name": webhook_data.get("name", "测试Webhook"),
-            "url": webhook_data.get("url", ""),
-            "template": webhook_data.get("template", ""),
-            "enabled": True,
-            "headers": webhook_data.get("headers", {}),
-            "method": webhook_data.get("method", "POST"),
-        }
-
-        await Notify.CustomWebhookPush(
+        webhook_config = WebhookConfig()
+        await webhook_config.load(webhook.data.model_dump())
+        await Notify.WebhookPush(
             "AUTO-MAS Webhook测试",
             "这是一条测试消息，如果您收到此消息，说明Webhook配置正确！",
             webhook_config,
         )
-
-        return OutBase(message="Webhook测试成功")
-
     except Exception as e:
         return OutBase(code=500, status="error", message=f"Webhook测试失败: {str(e)}")
+    return OutBase()
