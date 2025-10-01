@@ -44,7 +44,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveConfig: (config: any) => ipcRenderer.invoke('save-config', config),
   loadConfig: () => ipcRenderer.invoke('load-config'),
   resetConfig: () => ipcRenderer.invoke('reset-config'),
-  
+
   // 托盘设置实时更新
   updateTraySettings: (uiSettings: any) => ipcRenderer.invoke('update-tray-settings', uiSettings),
 
@@ -54,7 +54,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getLogs: (lines?: number, fileName?: string) => ipcRenderer.invoke('get-logs', lines, fileName),
   clearLogs: (fileName?: string) => ipcRenderer.invoke('clear-logs', fileName),
   cleanOldLogs: (daysToKeep?: number) => ipcRenderer.invoke('clean-old-logs', daysToKeep),
-  
+
   // 保留原有方法以兼容现有代码
   saveLogsToFile: (logs: string) => ipcRenderer.invoke('save-logs-to-file', logs),
   loadLogsFromFile: () => ipcRenderer.invoke('load-logs-from-file'),

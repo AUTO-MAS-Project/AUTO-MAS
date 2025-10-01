@@ -50,7 +50,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { ref, watch } from 'vue'
 import { PlayCircleOutlined, StopOutlined } from '@ant-design/icons-vue'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import type { ComboBoxItem } from '@/api/models/ComboBoxItem'
@@ -87,11 +87,6 @@ const localSelectedMode = ref(props.selectedMode)
 
 // 模式选项
 const modeOptions = TASK_MODE_OPTIONS
-
-// 计算属性
-const canStart = computed(() => {
-  return !!(localSelectedTaskId.value && localSelectedMode.value) && !props.disabled
-})
 
 // 监听 props 变化，同步到本地状态
 watch(

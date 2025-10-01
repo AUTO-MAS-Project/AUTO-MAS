@@ -120,7 +120,6 @@
 import { onMounted, onUnmounted } from 'vue'
 import { LockOutlined } from '@ant-design/icons-vue'
 import {
-  getPowerActionText,
   POWER_ACTION_TEXT,
   TAB_STATUS_COLOR,
 } from './schedulerConstants'
@@ -137,8 +136,6 @@ const {
   taskOptionsLoading,
   taskOptions,
   powerAction,
-  powerCountdownVisible,
-  powerCountdownData,
   messageModalVisible,
   currentMessage,
   messageResponse,
@@ -160,7 +157,6 @@ const {
 
   // 电源操作
   onPowerActionChange,
-  cancelPowerAction,
 
   // 消息操作
   sendMessageResponse,
@@ -189,6 +185,13 @@ const onSchedulerTabEdit = (targetKey: string | MouseEvent, action: 'add' | 'rem
 onMounted(() => {
   initialize() // 初始化TaskManager订阅
   loadTaskOptions()
+  
+  // 开发环境下导入调试工具
+  if (process.env.NODE_ENV === 'development') {
+    import('@/utils/scheduler-debug').then(() => {
+      console.log('调度中心调试工具已加载，使用 debugScheduler() 和 testWebSocketConnection() 进行调试')
+    })
+  }
 })
 
 onUnmounted(() => {

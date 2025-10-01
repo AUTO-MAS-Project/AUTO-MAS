@@ -78,6 +78,7 @@ export interface SchedulerTab {
   selectedTaskId: string | null
   selectedMode: TaskCreateIn.mode | null
   websocketId: string | null
+  subscriptionId?: string | null
   taskQueue: QueueItem[]
   userQueue: QueueItem[]
   logs: LogEntry[]
