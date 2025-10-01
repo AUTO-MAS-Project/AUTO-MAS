@@ -230,8 +230,8 @@ export function useSchedulerLogic() {
         if (idx === -1) return
 
         // 清理 WebSocket 订阅
-        if (tab.websocketId) {
-          ws.unsubscribe(tab.websocketId)
+        if (tab.subscriptionId) {
+          ws.unsubscribe(tab.subscriptionId)
         }
 
         // 清理日志引用
@@ -310,9 +310,13 @@ export function useSchedulerLogic() {
   const subscribeToTask = (tab: SchedulerTab) => {
     if (!tab.websocketId) return
 
-    ws.subscribe(tab.websocketId, {
-      onMessage: (message) => handleWebSocketMessage(tab, message)
-    })
+    const subscriptionId = ws.subscribe(
+      { id: tab.websocketId },
+      (message) => handleWebSocketMessage(tab, message)
+    )
+    
+    // 将订阅ID保存到tab中，以便后续取消订阅
+    tab.subscriptionId = subscriptionId
   }
 
   const handleWebSocketMessage = (tab: SchedulerTab, wsMessage: any) => {
@@ -548,8 +552,12 @@ export function useSchedulerLogic() {
         console.log('[Scheduler] 已强制更新schedulerTabs，当前tabs状态:', schedulerTabs.value)
       }
 
+      if (tab.subscriptionId) {
+        ws.unsubscribe(tab.subscriptionId)
+        tab.subscriptionId = null
+      }
+      
       if (tab.websocketId) {
-        ws.unsubscribe(tab.websocketId)
         tab.websocketId = null
       }
 
@@ -823,8 +831,8 @@ export function useSchedulerLogic() {
     // 不再清理或重置导出的处理函数，保持使用者注册的处理逻辑永久有效
 
     schedulerTabs.value.forEach(tab => {
-      if (tab.websocketId) {
-        ws.unsubscribe(tab.websocketId)
+      if (tab.subscriptionId) {
+        ws.unsubscribe(tab.subscriptionId)
       }
     })
     saveTabsToStorage(schedulerTabs.value)
