@@ -23,6 +23,10 @@
 
 from datetime import datetime
 
+
+TYPE_BOOK = {"MaaConfig": "MAA", "GeneralConfig": "通用"}
+"""配置类型映射表"""
+
 RESOURCE_STAGE_INFO = [
     {"value": "-", "text": "当前/上次", "days": [1, 2, 3, 4, 5, 6, 7]},
     {"value": "1-7", "text": "1-7", "days": [1, 2, 3, 4, 5, 6, 7]},
