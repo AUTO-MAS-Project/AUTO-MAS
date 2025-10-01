@@ -1,22 +1,31 @@
+// websocket.ts
 import { ref, type Ref } from 'vue'
-// 为了在调度中心 UI 未加载时仍能使用具体逻辑，直接同步导入 schedulerHandlers 的默认实现
-// schedulerHandlers 不再依赖 useWebSocket，因此同步导入不会产生致命循环依赖
 import schedulerHandlers from '@/views/scheduler/schedulerHandlers'
-let _defaultHandlersLoaded = true
-let _defaultTaskManagerHandler: (m: any) => void = schedulerHandlers.handleTaskManagerMessage
-let _defaultMainHandler: (m: any) => void = schedulerHandlers.handleMainMessage
 import { Modal } from 'ant-design-vue'
 
-// 基础配置
+// ====== 配置项 ======
 const BASE_WS_URL = 'ws://localhost:36163/api/core/ws'
 const HEARTBEAT_INTERVAL = 15000
 const HEARTBEAT_TIMEOUT = 5000
-const BACKEND_CHECK_INTERVAL = 3000 // 后端检查间隔
-const MAX_RESTART_ATTEMPTS = 3 // 最大重启尝试次数
-const RESTART_DELAY = 2000 // 重启延迟
+const BACKEND_CHECK_INTERVAL = 3000
+const MAX_RESTART_ATTEMPTS = 3
+const RESTART_DELAY = 2000
+const MAX_QUEUE_SIZE = 50 // 每个 ID 或全局 type 队列最大条数
+const MESSAGE_TTL = 60000 // 60 秒过期
 
-// 类型定义
+// ====== DEBUG 控制 ======
+const DEBUG = process.env.NODE_ENV === 'development'
+
+const log = (...args: any[]) => {
+  if (DEBUG) console.log('[WebSocket]', ...args)
+}
+const warn = (...args: any[]) => {
+  if (DEBUG) console.warn('[WebSocket]', ...args)
+}
+
+// ====== 类型定义 ======
 export type WebSocketStatus = '连接中' | '已连接' | '已断开' | '连接错误'
+export type BackendStatus = 'unknown' | 'starting' | 'running' | 'stopped' | 'error'
 
 export interface WebSocketBaseMessage {
   id?: string
@@ -24,25 +33,36 @@ export interface WebSocketBaseMessage {
   data?: any
 }
 
-// 删除了冗余的类型定义：
-// ProgressMessage、ResultMessage、ErrorMessage、NotifyMessage
-// 因为现在WebSocket消息处理统一使用onMessage回调函数，不再需要这些特定的类型
-
-export interface WebSocketSubscriber {
-  id: string
-  onMessage?: (message: WebSocketBaseMessage) => void
+export interface SubscriptionFilter {
+  type?: string
+  id?: string
+  needCache?: boolean
 }
 
-// 后端状态类型
-export type BackendStatus = 'unknown' | 'starting' | 'running' | 'stopped' | 'error'
+export interface WebSocketSubscription {
+  subscriptionId: string
+  filter: SubscriptionFilter
+  handler: (message: WebSocketBaseMessage) => void
+}
 
-// 全局存储接口 - 添加后端管理和连接控制
+interface CacheMarker {
+  type?: string
+  id?: string
+  refCount: number
+}
+
+interface CachedMessage {
+  message: WebSocketBaseMessage
+  timestamp: number
+}
+
+// ====== 全局存储 ======
 interface GlobalWSStorage {
   wsRef: WebSocket | null
   status: Ref<WebSocketStatus>
-  subscribers: Ref<Map<string, WebSocketSubscriber>>
-  // 修改消息队列结构，使用Map存储消息数组和时间戳
-  messageQueue: Ref<Map<string, Array<{ message: WebSocketBaseMessage; timestamp: number }>>>
+  subscriptions: Ref<Map<string, WebSocketSubscription>>
+  cacheMarkers: Ref<Map<string, CacheMarker>>
+  cachedMessages: Ref<Array<CachedMessage>>
   heartbeatTimer?: number
   isConnecting: boolean
   lastPingTime: number
@@ -51,115 +71,85 @@ interface GlobalWSStorage {
   createdAt: number
   hasEverConnected: boolean
   reconnectAttempts: number
-  // 新增：后端管理
   backendStatus: Ref<BackendStatus>
   backendCheckTimer?: number
   backendRestartAttempts: number
   isRestartingBackend: boolean
   lastBackendCheck: number
-  // 新增：连接保护
   lastConnectAttempt: number
-  // 新增：连接权限控制
   allowNewConnection: boolean
   connectionReason: string
+  subscriptionCounter: number
 }
 
 const WS_STORAGE_KEY = Symbol.for('GLOBAL_WEBSOCKET_PERSISTENT')
 
-// 初始化全局存储
-const initGlobalStorage = (): GlobalWSStorage => {
-  return {
-    wsRef: null,
-    status: ref<WebSocketStatus>('已断开'),
-    subscribers: ref(new Map<string, WebSocketSubscriber>()),
-    // 初始化消息队列，使用数组存储每个ID的多条消息
-    messageQueue: ref(new Map<string, Array<{ message: WebSocketBaseMessage; timestamp: number }>>()),
-    heartbeatTimer: undefined,
-    isConnecting: false,
-    lastPingTime: 0,
-    connectionId: Math.random().toString(36).substring(2, 9),
-    moduleLoadCount: 0,
-    createdAt: Date.now(),
-    hasEverConnected: false,
-    reconnectAttempts: 0,
-    // 后端管理
-    backendStatus: ref<BackendStatus>('unknown'),
-    backendCheckTimer: undefined,
-    backendRestartAttempts: 0,
-    isRestartingBackend: false,
-    lastBackendCheck: 0,
-    // 连接保护
-    lastConnectAttempt: 0,
-    // 连接权限控制
-    allowNewConnection: true, // 初始化时允许创建连接
-    connectionReason: '系统初始化',
-  }
-}
+const initGlobalStorage = (): GlobalWSStorage => ({
+  wsRef: null,
+  status: ref<WebSocketStatus>('已断开'),
+  subscriptions: ref(new Map()),
+  cacheMarkers: ref(new Map()),
+  cachedMessages: ref([]),
+  heartbeatTimer: undefined,
+  isConnecting: false,
+  lastPingTime: 0,
+  connectionId: Math.random().toString(36).substring(2, 9),
+  moduleLoadCount: 0,
+  createdAt: Date.now(),
+  hasEverConnected: false,
+  reconnectAttempts: 0,
+  backendStatus: ref<BackendStatus>('unknown'),
+  backendCheckTimer: undefined,
+  backendRestartAttempts: 0,
+  isRestartingBackend: false,
+  lastBackendCheck: 0,
+  lastConnectAttempt: 0,
+  allowNewConnection: true,
+  connectionReason: '系统初始化',
+  subscriptionCounter: 0,
+})
 
-// 获取全局存储
 const getGlobalStorage = (): GlobalWSStorage => {
   if (!(window as any)[WS_STORAGE_KEY]) {
-    ; (window as any)[WS_STORAGE_KEY] = initGlobalStorage()
+    ;(window as any)[WS_STORAGE_KEY] = initGlobalStorage()
   }
-
-  return (window as any)[WS_STORAGE_KEY] as GlobalWSStorage
+  return (window as any)[WS_STORAGE_KEY]
 }
 
-// 设置全局状态
+// ====== 状态设置 ======
 const setGlobalStatus = (status: WebSocketStatus) => {
-  const global = getGlobalStorage()
-  global.status.value = status
+  getGlobalStorage().status.value = status
 }
-
-// 设置后端状态
 const setBackendStatus = (status: BackendStatus) => {
-  const global = getGlobalStorage()
-  global.backendStatus.value = status
+  getGlobalStorage().backendStatus.value = status
 }
 
-// 检查后端是否运行（通过WebSocket连接状态判断）
+// ====== 后端管理 ======
 const checkBackendStatus = (): boolean => {
   const global = getGlobalStorage()
-
-  // 如果WebSocket存在且状态为OPEN，说明后端运行正常
-  if (global.wsRef && global.wsRef.readyState === WebSocket.OPEN) {
-    return true
-  }
-
-  // 如果WebSocket不存在或状态不是OPEN，说明后端可能有问题
-  return false
+  return !!(global.wsRef && global.wsRef.readyState === WebSocket.OPEN)
 }
 
-// 重启后端
 const restartBackend = async (): Promise<boolean> => {
   const global = getGlobalStorage()
-
-  if (global.isRestartingBackend) {
-    return false
-  }
+  if (global.isRestartingBackend) return false
 
   try {
     global.isRestartingBackend = true
     global.backendRestartAttempts++
-
     setBackendStatus('starting')
 
-    // 调用 Electron API 重启后端
     if ((window.electronAPI as any)?.startBackend) {
       const result = await (window.electronAPI as any).startBackend()
-      if (result.success) {
+      if (result?.success) {
         setBackendStatus('running')
         global.backendRestartAttempts = 0
         return true
-      } else {
-        setBackendStatus('error')
-        return false
       }
-    } else {
-      setBackendStatus('error')
-      return false
     }
-  } catch (error) {
+    setBackendStatus('error')
+    return false
+  } catch (e) {
     setBackendStatus('error')
     return false
   } finally {
@@ -167,19 +157,16 @@ const restartBackend = async (): Promise<boolean> => {
   }
 }
 
-// 后端监控和重启逻辑
 const handleBackendFailure = async () => {
   const global = getGlobalStorage()
-
   if (global.backendRestartAttempts >= MAX_RESTART_ATTEMPTS) {
-    // 弹窗提示用户重启整个应用
     Modal.error({
       title: '后端服务异常',
       content: '后端服务多次重启失败，请重启整个应用程序。',
       okText: '重启应用',
       onOk: () => {
         if ((window.electronAPI as any)?.windowClose) {
-          ; (window.electronAPI as any).windowClose()
+          ;(window.electronAPI as any).windowClose()
         } else {
           window.location.reload()
         }
@@ -188,63 +175,48 @@ const handleBackendFailure = async () => {
     return
   }
 
-  // 尝试重启后端
   setTimeout(async () => {
     const success = await restartBackend()
     if (success) {
-      // 重启成功，允许重连并等待一段时间后重新连接 WebSocket
       setConnectionPermission(true, '后端重启后重连')
       setTimeout(() => {
         connectGlobalWebSocket('后端重启后重连').then(() => {
-          // 连接完成后禁止新连接
           setConnectionPermission(false, '正常运行中')
         })
       }, RESTART_DELAY)
     } else {
-      // 重启失败，继续监控
       setTimeout(handleBackendFailure, RESTART_DELAY)
     }
   }, RESTART_DELAY)
 }
 
-// 启动后端监控（仅基于WebSocket状态）
 const startBackendMonitoring = () => {
   const global = getGlobalStorage()
-
-  if (global.backendCheckTimer) {
-    clearInterval(global.backendCheckTimer)
-  }
+  if (global.backendCheckTimer) clearInterval(global.backendCheckTimer)
 
   global.backendCheckTimer = window.setInterval(() => {
     const isRunning = checkBackendStatus()
     const now = Date.now()
     global.lastBackendCheck = now
 
-    // 基于 WebSocket 状态判断后端运行状态
     if (isRunning) {
-      // WebSocket连接正常
       if (global.backendStatus.value !== 'running') {
         setBackendStatus('running')
-        global.backendRestartAttempts = 0 // 重置重启计数
+        global.backendRestartAttempts = 0
       }
-    } else {
-      // WebSocket连接异常，但不频繁报告
-      const shouldReportStatus = global.backendStatus.value === 'running'
-      if (shouldReportStatus) {
-        setBackendStatus('stopped')
-      }
+    } else if (global.backendStatus.value === 'running') {
+      setBackendStatus('stopped')
     }
 
-    // 仅在必要时检查心跳超时
     if (global.lastPingTime > 0 && now - global.lastPingTime > HEARTBEAT_TIMEOUT * 2) {
-      if (global.wsRef && global.wsRef.readyState === WebSocket.OPEN) {
+      if (global.wsRef?.readyState === WebSocket.OPEN) {
         setBackendStatus('error')
       }
     }
-  }, BACKEND_CHECK_INTERVAL * 2) // 降低检查频率
+  }, BACKEND_CHECK_INTERVAL * 2)
 }
 
-// 停止心跳
+// ====== 心跳 ======
 const stopGlobalHeartbeat = () => {
   const global = getGlobalStorage()
   if (global.heartbeatTimer) {
@@ -253,158 +225,263 @@ const stopGlobalHeartbeat = () => {
   }
 }
 
-// 启动心跳
 const startGlobalHeartbeat = (ws: WebSocket) => {
   const global = getGlobalStorage()
   stopGlobalHeartbeat()
-
   global.heartbeatTimer = window.setInterval(() => {
     if (ws.readyState === WebSocket.OPEN) {
+      const pingTime = Date.now()
+      global.lastPingTime = pingTime
       try {
-        const pingTime = Date.now()
-        global.lastPingTime = pingTime
         ws.send(
           JSON.stringify({
             type: 'Signal',
             data: { Ping: pingTime, connectionId: global.connectionId },
           })
         )
-        setTimeout(() => {
-          /* 心跳超时不主动断开 */
-        }, HEARTBEAT_TIMEOUT)
-      } catch {
-        /* ignore */
-      }
+      } catch {}
     }
   }, HEARTBEAT_INTERVAL)
 }
 
-// 获取消息队列
-const getMessageQueue = (): Map<string, Array<{ message: WebSocketBaseMessage; timestamp: number }>> => {
+// ====== 消息队列和缓存管理 ======
+const cleanupExpiredMessages = (now: number) => {
   const global = getGlobalStorage()
-  return global.messageQueue.value
+  global.cachedMessages.value = global.cachedMessages.value.filter(
+    cached => now - cached.timestamp <= MESSAGE_TTL
+  )
 }
 
-// 设置消息队列
-const setMessageQueue = (
-  queue: Map<string, Array<{ message: WebSocketBaseMessage; timestamp: number }>>
-): void => {
-  const global = getGlobalStorage()
-  global.messageQueue.value = queue
+// 检查消息是否匹配订阅条件
+const messageMatchesFilter = (message: WebSocketBaseMessage, filter: SubscriptionFilter): boolean => {
+  // 如果都不指定，匹配所有消息
+  if (!filter.type && !filter.id) return true
+  
+  // 如果只指定type
+  if (filter.type && !filter.id) return message.type === filter.type
+  
+  // 如果只指定id
+  if (!filter.type && filter.id) return message.id === filter.id
+  
+  // 如果同时指定type和id，必须都匹配
+  return message.type === filter.type && message.id === filter.id
 }
 
+// 获取缓存标记的key
+const getCacheMarkerKey = (filter: SubscriptionFilter): string => {
+  if (filter.type && filter.id) return `${filter.type}:${filter.id}`
+  if (filter.type) return `type:${filter.type}`
+  if (filter.id) return `id:${filter.id}`
+  return 'all'
+}
+
+// 添加缓存标记
+const addCacheMarker = (filter: SubscriptionFilter) => {
+  if (!filter.needCache) return
+  
+  const global = getGlobalStorage()
+  const key = getCacheMarkerKey(filter)
+  const existing = global.cacheMarkers.value.get(key)
+  
+  if (existing) {
+    existing.refCount++
+  } else {
+    global.cacheMarkers.value.set(key, {
+      type: filter.type,
+      id: filter.id,
+      refCount: 1
+    })
+  }
+  
+  log(`缓存标记 ${key} 引用计数: ${global.cacheMarkers.value.get(key)?.refCount}`)
+}
+
+// 移除缓存标记
+const removeCacheMarker = (filter: SubscriptionFilter) => {
+  if (!filter.needCache) return
+  
+  const global = getGlobalStorage()
+  const key = getCacheMarkerKey(filter)
+  const existing = global.cacheMarkers.value.get(key)
+  
+  if (existing) {
+    existing.refCount--
+    if (existing.refCount <= 0) {
+      global.cacheMarkers.value.delete(key)
+      log(`移除缓存标记: ${key}`)
+    } else {
+      log(`缓存标记 ${key} 引用计数: ${existing.refCount}`)
+    }
+  }
+}
+
+// 检查消息是否需要缓存
+const shouldCacheMessage = (message: WebSocketBaseMessage): boolean => {
+  const global = getGlobalStorage()
+  
+  for (const [, marker] of global.cacheMarkers.value) {
+    const filter = { type: marker.type, id: marker.id }
+    if (messageMatchesFilter(message, filter)) {
+      return true
+    }
+  }
+  return false
+}
+
+// ====== 消息分发 ======
 const handleMessage = (raw: WebSocketBaseMessage) => {
   const global = getGlobalStorage()
-  const msgType = String(raw.type)
-  const id = raw.id
+  const now = Date.now()
 
-  // 添加原始消息调试
-  console.log('[WebSocket Debug] 收到原始消息:', {
-    type: msgType,
-    id: id,
-    data: raw.data,
-    fullMessage: raw,
+  if (DEBUG) {
+    log('收到原始消息:', { type: raw.type, id: raw.id, data: raw.data })
+  }
+
+  let dispatched = false
+
+  // 分发给所有匹配的订阅者
+  global.subscriptions.value.forEach((subscription) => {
+    if (messageMatchesFilter(raw, subscription.filter)) {
+      try {
+        subscription.handler(raw)
+        dispatched = true
+      } catch (e) {
+        warn(`订阅处理器错误 [${subscription.subscriptionId}]:`, e)
+      }
+    }
   })
 
-  if (id) {
-    const sub = global.subscribers.value.get(id)
-    console.log('[WebSocket Debug] 查找订阅者:', {
-      messageId: id,
-      hasSubscriber: !!sub,
-      totalSubscribers: global.subscribers.value.size,
-      allSubscriberIds: Array.from(global.subscribers.value.keys()),
-    })
-    if (sub) {
-      // 有订阅者，直接分发消息
-      console.log('[WebSocket Debug] 找到订阅者，直接分发消息')
-      handleMessageDispatch(raw, sub)
-    } else {
-      // 没有订阅者，将消息暂存到队列中
-      console.log(`[WebSocket Debug] 没有找到ID为${id}的订阅者，将消息暂存到队列`)
+  // 如果需要缓存且有标记，则添加到缓存
+  if (shouldCacheMessage(raw)) {
+    global.cachedMessages.value.push({ message: raw, timestamp: now })
+    // 限制缓存大小
+    if (global.cachedMessages.value.length > MAX_QUEUE_SIZE) {
+      global.cachedMessages.value = global.cachedMessages.value.slice(-MAX_QUEUE_SIZE)
+    }
+    log(`消息已缓存: type=${raw.type}, id=${raw.id}`)
+  }
 
-      const currentMessageQueue = getMessageQueue()
+  // 定期清理过期消息（每 10 条触发一次，避免频繁）
+  if (Math.random() < 0.1) {
+    cleanupExpiredMessages(now)
+  }
 
-      // 获取该ID现有的消息数组，如果不存在则创建新的空数组
-      const existingMessages = currentMessageQueue.get(id) || []
-      // 将新消息添加到数组末尾
-      existingMessages.push({ message: raw, timestamp: Date.now() })
-      // 更新该ID的消息数组
-      currentMessageQueue.set(id, existingMessages)
-      console.log(`[WebSocket Debug] 添加新消息到队列，ID: ${id}, Type: ${msgType}, 当前消息数量: ${existingMessages.length}`)
+  if (!dispatched) {
+    log('无订阅者接收此消息:', raw)
+  }
+}
 
-      // 清理过期消息（超过1分钟的消息）
-      const now = Date.now()
-      let deletedCount = 0
-      currentMessageQueue.forEach((messages, key) => {
-        // 过滤掉过期的消息
-        const filteredMessages = messages.filter(msg => now - (msg.timestamp || 0) <= 60000)
-        const removedCount = messages.length - filteredMessages.length
-        if (removedCount > 0) {
-          deletedCount += removedCount
-          console.log(`[WebSocket Debug] 清理了${removedCount}条ID为${key}的过期消息`)
-        }
-        // 更新过滤后的消息数组
-        currentMessageQueue.set(key, filteredMessages)
-      })
-
-      if (deletedCount > 0) {
-        console.log(`[WebSocket Debug] 共清理了${deletedCount}条过期消息`)
+// ====== 新的订阅机制 ======
+export const subscribe = (
+  filter: SubscriptionFilter,
+  handler: (message: WebSocketBaseMessage) => void
+): string => {
+  const global = getGlobalStorage()
+  const subscriptionId = `sub_${++global.subscriptionCounter}_${Date.now()}`
+  
+  const subscription: WebSocketSubscription = {
+    subscriptionId,
+    filter,
+    handler
+  }
+  
+  global.subscriptions.value.set(subscriptionId, subscription)
+  
+  // 添加缓存标记
+  addCacheMarker(filter)
+  
+  // 回放匹配的缓存消息
+  const matchingMessages = global.cachedMessages.value.filter(cached => 
+    messageMatchesFilter(cached.message, filter)
+  )
+  
+  if (matchingMessages.length > 0) {
+    log(`回放 ${matchingMessages.length} 条缓存消息给订阅 ${subscriptionId}`)
+    matchingMessages.forEach(cached => {
+      try {
+        handler(cached.message)
+      } catch (e) {
+        warn(`回放消息时处理器错误 [${subscriptionId}]:`, e)
       }
+    })
+  }
+  
+  log(`新订阅创建: ${subscriptionId}`, filter)
+  return subscriptionId
+}
 
-      // 更新消息队列
-      setMessageQueue(currentMessageQueue)
-    }
+export const unsubscribe = (subscriptionId: string): void => {
+  const global = getGlobalStorage()
+  const subscription = global.subscriptions.value.get(subscriptionId)
+  
+  if (subscription) {
+    // 移除缓存标记
+    removeCacheMarker(subscription.filter)
+    
+    // 清理缓存中没有任何标记的消息
+    cleanupUnmarkedCache()
+    
+    global.subscriptions.value.delete(subscriptionId)
+    log(`订阅已取消: ${subscriptionId}`)
+  } else {
+    warn(`尝试取消不存在的订阅: ${subscriptionId}`)
   }
 }
 
-// 后端启动后建立连接的公开函数
-export const connectAfterBackendStart = async (): Promise<boolean> => {
-  setConnectionPermission(true, '后端启动后连接')
-
-  try {
-    const connected = await connectGlobalWebSocket('后端启动后连接')
-    if (connected) {
-      startBackendMonitoring()
-      // 连接完成后禁止新连接
-      setConnectionPermission(false, '正常运行中')
-      return true
-    } else {
-      return false
+// 清理没有标记的缓存消息
+const cleanupUnmarkedCache = () => {
+  const global = getGlobalStorage()
+  
+  global.cachedMessages.value = global.cachedMessages.value.filter(cached => {
+    // 检查是否还有标记需要这条消息
+    for (const [, marker] of global.cacheMarkers.value) {
+      const filter = { type: marker.type, id: marker.id }
+      if (messageMatchesFilter(cached.message, filter)) {
+        return true
+      }
     }
-  } catch (error) {
     return false
-  }
+  })
 }
 
-// 创建 WebSocket 连接
+// ====== 连接控制 ======
+let isGlobalConnectingLock = false
+const acquireConnectionLock = () => {
+  if (isGlobalConnectingLock) return false
+  isGlobalConnectingLock = true
+  return true
+}
+const releaseConnectionLock = () => {
+  isGlobalConnectingLock = false
+}
+
+const allowedConnectionReasons = ['后端启动后连接', '后端重启后重连']
+const isValidConnectionReason = (reason: string) => allowedConnectionReasons.includes(reason)
+const checkConnectionPermission = () => getGlobalStorage().allowNewConnection
+const setConnectionPermission = (allow: boolean, reason: string) => {
+  const global = getGlobalStorage()
+  global.allowNewConnection = allow
+  global.connectionReason = reason
+}
+
 const createGlobalWebSocket = (): WebSocket => {
   const global = getGlobalStorage()
-
-  // 检查现有连接状态
   if (global.wsRef) {
-    if (global.wsRef.readyState === WebSocket.OPEN) {
-      return global.wsRef
-    }
-
-    if (global.wsRef.readyState === WebSocket.CONNECTING) {
-      return global.wsRef
-    }
+    if (global.wsRef.readyState === WebSocket.OPEN) return global.wsRef
+    if (global.wsRef.readyState === WebSocket.CONNECTING) return global.wsRef
   }
 
   const ws = new WebSocket(BASE_WS_URL)
+  global.wsRef = ws
 
   ws.onopen = () => {
     global.isConnecting = false
     global.hasEverConnected = true
     global.reconnectAttempts = 0
     setGlobalStatus('已连接')
-
     startGlobalHeartbeat(ws)
-
-    // 连接成功后禁止新连接
     setConnectionPermission(false, '正常运行中')
 
-    // 发送连接确认和初始pong
     try {
       ws.send(
         JSON.stringify({
@@ -418,11 +495,8 @@ const createGlobalWebSocket = (): WebSocket => {
           data: { Pong: Date.now(), connectionId: global.connectionId },
         })
       )
-    } catch {
-      /* ignore */
-    }
+    } catch {}
 
-    // 初始化全局订阅（TaskManager和Main）
     initializeGlobalSubscriptions()
   }
 
@@ -430,96 +504,47 @@ const createGlobalWebSocket = (): WebSocket => {
     try {
       const raw = JSON.parse(ev.data) as WebSocketBaseMessage
       handleMessage(raw)
-    } catch (e) {
-      // 消息解析失败，静默处理
-    }
+    } catch {}
   }
 
-  ws.onerror = () => {
-    setGlobalStatus('连接错误')
-  }
-
+  ws.onerror = () => setGlobalStatus('连接错误')
   ws.onclose = event => {
     setGlobalStatus('已断开')
     stopGlobalHeartbeat()
     global.isConnecting = false
 
-    // 检查是否是后端自杀导致的关闭
     if (event.code === 1000 && event.reason === 'Ping超时') {
-      handleBackendFailure().catch(error => {
-        // 忽略错误，或者可以添加适当的错误处理
-        console.warn('handleBackendFailure error:', error)
-      })
-    } else {
-      // 连接断开，不自动重连，等待后端重启
-      setGlobalStatus('已断开')
+      handleBackendFailure().catch(e => warn('handleBackendFailure error:', e))
     }
   }
-
-  // 为新创建的 WebSocket 设置引用
-  global.wsRef = ws
 
   return ws
 }
 
-// 连接全局 WebSocket
 const connectGlobalWebSocket = async (reason: string = '未指定原因'): Promise<boolean> => {
   const global = getGlobalStorage()
-
-  // 首先检查连接权限
-  if (!checkConnectionPermission()) {
-    return false
-  }
-
-  // 验证连接原因是否合法
-  if (!isValidConnectionReason(reason)) {
-    return false
-  }
-
-  // 尝试获取全局连接锁
-  if (!acquireConnectionLock()) {
-    return false
-  }
+  if (!checkConnectionPermission() || !isValidConnectionReason(reason)) return false
+  if (!acquireConnectionLock()) return false
 
   try {
-    // 严格检查现有连接，避免重复创建
     if (global.wsRef) {
       const state = global.wsRef.readyState
-
       if (state === WebSocket.OPEN) {
         setGlobalStatus('已连接')
         return true
       }
-
-      if (state === WebSocket.CONNECTING) {
-        return true
-      }
-
-      // CLOSING 或 CLOSED 状态才允许创建新连接
-      if (state === WebSocket.CLOSING) {
-        return false
-      }
+      if (state === WebSocket.CONNECTING) return true
+      if (state === WebSocket.CLOSING) return false
     }
 
-    // 检查全局连接标志 - 增强防重复逻辑
-    if (global.isConnecting) {
-      return false
-    }
+    if (global.isConnecting) return false
 
-    // 额外保护：检查最近连接尝试时间，避免过于频繁的连接
     const now = Date.now()
-    const MIN_CONNECT_INTERVAL = 2000 // 最小连接间隔2秒
-    if (global.lastConnectAttempt && now - global.lastConnectAttempt < MIN_CONNECT_INTERVAL) {
-      return false
-    }
+    if (global.lastConnectAttempt && now - global.lastConnectAttempt < 2000) return false
 
     global.isConnecting = true
     global.lastConnectAttempt = now
-
-    // 清理旧连接引用（如果存在且已关闭）
-    if (global.wsRef && global.wsRef.readyState === WebSocket.CLOSED) {
-      global.wsRef = null
-    }
+    if (global.wsRef?.readyState === WebSocket.CLOSED) global.wsRef = null
 
     global.wsRef = createGlobalWebSocket()
     setGlobalStatus('连接中')
@@ -529,76 +554,40 @@ const connectGlobalWebSocket = async (reason: string = '未指定原因'): Promi
     global.isConnecting = false
     return false
   } finally {
-    // 确保始终释放连接锁
     releaseConnectionLock()
   }
 }
 
-// 连接权限控制函数
-const setConnectionPermission = (allow: boolean, reason: string) => {
-  const global = getGlobalStorage()
-  global.allowNewConnection = allow
-  global.connectionReason = reason
-}
-
-const checkConnectionPermission = (): boolean => {
-  const global = getGlobalStorage()
-  return global.allowNewConnection
-}
-
-// 只在后端启动/重启时允许创建连接
-const allowedConnectionReasons = ['后端启动后连接', '后端重启后重连']
-
-const isValidConnectionReason = (reason: string): boolean =>
-  allowedConnectionReasons.includes(reason)
-
-// 全局连接锁 - 防止多个模块实例同时连接
-let isGlobalConnectingLock = false
-
-// 获取全局连接锁
-const acquireConnectionLock = (): boolean => {
-  if (isGlobalConnectingLock) {
+export const connectAfterBackendStart = async (): Promise<boolean> => {
+  setConnectionPermission(true, '后端启动后连接')
+  try {
+    const connected = await connectGlobalWebSocket('后端启动后连接')
+    if (connected) {
+      startBackendMonitoring()
+      setConnectionPermission(false, '正常运行中')
+      return true
+    }
+    return false
+  } catch {
     return false
   }
-  isGlobalConnectingLock = true
-  return true
 }
 
-// 释放全局连接锁
-const releaseConnectionLock = () => {
-  isGlobalConnectingLock = false
-}
+// ====== 全局处理器 ======
+let _defaultHandlersLoaded = true
+let _defaultTaskManagerHandler = schedulerHandlers.handleTaskManagerMessage
+let _defaultMainHandler = schedulerHandlers.handleMainMessage
 
-// 模块初始化逻辑 - 不自动建立连接
-const global = getGlobalStorage()
-
-// 只在模块真正加载时计数一次
-if (global.moduleLoadCount === 0) {
-  global.moduleLoadCount = 1
-}
-
-// 页面卸载时不关闭连接，保持永久连接
-window.addEventListener('beforeunload', () => {
-  // 保持连接
-})
-
-// 导出一个长期存在的可变对象，供外部通过 import 直接赋值/替换处理函数
-// 这样可以避免通过 window 或全局函数暴露，同时保证导入方始终能获取到该对象并设置回调，且不会被内部清理
-export const ExternalWSHandlers: {
-  mainMessage: (message: any) => void
-  taskManagerMessage: (message: any) => void
-} = {
+export const ExternalWSHandlers = {
   mainMessage: (message: any) => {
-    // 如果默认实现已加载，则调用之；否则保持空实现
     try {
       if (_defaultHandlersLoaded && typeof _defaultMainHandler === 'function') {
         _defaultMainHandler(message)
         return
       }
     } catch (e) {
-      console.warn('[ExternalWSHandlers] default main handler error:', e)
+      warn('default main handler error:', e)
     }
-    // 未加载默认实现时保持空实现
   },
   taskManagerMessage: (message: any) => {
     try {
@@ -607,120 +596,88 @@ export const ExternalWSHandlers: {
         return
       }
     } catch (e) {
-      console.warn('[ExternalWSHandlers] default taskManager handler error:', e)
+      warn('default taskManager handler error:', e)
     }
   },
 }
 
-// 初始化全局订阅
 const initializeGlobalSubscriptions = () => {
-  // 订阅TaskManager消息
-  _subscribe('TaskManager', {
-    onMessage: (message) => {
-      try {
-        ExternalWSHandlers.taskManagerMessage(message)
-      } catch (e) {
-        // 防御性处理，确保调用方异常不会影响消息通道
-        console.warn('[WebSocket] External taskManagerMessage handler error:', e)
-      }
+  subscribe({ id: 'TaskManager' }, (msg: WebSocketBaseMessage) => {
+    try {
+      ExternalWSHandlers.taskManagerMessage(msg)
+    } catch (e) {
+      warn('External taskManagerMessage handler error:', e)
     }
   })
 
-  // 订阅Main消息  
-  _subscribe('Main', {
-    onMessage: (message) => {
-      // 处理系统级消息（如ping-pong）
-      if (message && message.type === 'Signal' && message.data) {
-        // 处理心跳响应
-        if (message.data.Pong) {
-          const global = getGlobalStorage()
-          global.lastPingTime = 0 // 重置ping时间，表示收到了响应
-          return
-        }
-
-        // 处理后端发送的Ping，回复Pong
-        if (message.data.Ping) {
-          const global = getGlobalStorage()
-          const ws = global.wsRef
-          if (ws && ws.readyState === WebSocket.OPEN) {
-            try {
-              ws.send(
-                JSON.stringify({
-                  type: 'Signal',
-                  data: { Pong: message.data.Ping, connectionId: global.connectionId },
-                })
-              )
-            } catch (e) {
-              // Pong发送失败，静默处理
-            }
-          }
-          return
-        }
+  subscribe({ id: 'Main' }, (msg: WebSocketBaseMessage) => {
+    if (msg.type === 'Signal' && msg.data) {
+      if (msg.data.Pong) {
+        getGlobalStorage().lastPingTime = 0
+        return
       }
-
-      // 调用外部导入的 Main 消息处理函数（由使用者通过 import 并赋值给 ExternalWSHandlers）
-      try {
-        ExternalWSHandlers.mainMessage(message)
-      } catch (e) {
-        console.warn('[WebSocket] External mainMessage handler error:', e)
+      if (msg.data.Ping) {
+        const global = getGlobalStorage()
+        const ws = global.wsRef
+        if (ws?.readyState === WebSocket.OPEN) {
+          try {
+            ws.send(
+              JSON.stringify({
+                type: 'Signal',
+                data: { Pong: msg.data.Ping, connectionId: global.connectionId },
+              })
+            )
+          } catch {}
+        }
+        return
       }
+    }
+    try {
+      ExternalWSHandlers.mainMessage(msg)
+    } catch (e) {
+      warn('External mainMessage handler error:', e)
     }
   })
 }
 
-// 主要 Hook 函数
+// ====== Vue Hook ======
 export function useWebSocket() {
   const global = getGlobalStorage()
 
-  const subscribe = (id: string, handlers: Omit<WebSocketSubscriber, 'id'>) => {
-    // 使用全局的subscribe函数来确保消息队列机制正常工作
-    _subscribe(id, handlers)
-  }
-
-  const unsubscribe = (id: string) => {
-    global.subscribers.value.delete(id)
-  }
-
   const sendRaw = (type: string, data?: any, id?: string) => {
     const ws = global.wsRef
-
-    if (ws && ws.readyState === WebSocket.OPEN) {
+    if (ws?.readyState === WebSocket.OPEN) {
       try {
         ws.send(JSON.stringify({ id, type, data }))
-      } catch (e) {
-        // 发送失败，静默处理
-      }
+      } catch {}
     }
   }
 
   const getConnectionInfo = () => ({
     connectionId: global.connectionId,
     status: global.status.value,
-    subscriberCount: global.subscribers.value.size,
+    subscriberCount: global.subscriptions.value.size,
     moduleLoadCount: global.moduleLoadCount,
     wsReadyState: global.wsRef ? global.wsRef.readyState : null,
     isConnecting: global.isConnecting,
     hasHeartbeat: !!global.heartbeatTimer,
     hasEverConnected: global.hasEverConnected,
     reconnectAttempts: global.reconnectAttempts,
-    isPersistentMode: true, // 标识为永久连接模式
+    isPersistentMode: true,
   })
 
   const restartBackendManually = async () => {
-    const global = getGlobalStorage()
-    global.backendRestartAttempts = 0
+    const g = getGlobalStorage()
+    g.backendRestartAttempts = 0
     return await restartBackend()
   }
 
-  const getBackendStatus = () => {
-    const global = getGlobalStorage()
-    return {
-      status: global.backendStatus.value,
-      restartAttempts: global.backendRestartAttempts,
-      isRestarting: global.isRestartingBackend,
-      lastCheck: global.lastBackendCheck,
-    }
-  }
+  const getBackendStatus = () => ({
+    status: global.backendStatus.value,
+    restartAttempts: global.backendRestartAttempts,
+    isRestarting: global.isRestartingBackend,
+    lastCheck: global.lastBackendCheck,
+  })
 
   return {
     subscribe,
@@ -728,97 +685,17 @@ export function useWebSocket() {
     sendRaw,
     getConnectionInfo,
     status: global.status,
-    subscribers: global.subscribers,
     backendStatus: global.backendStatus,
     restartBackend: restartBackendManually,
     getBackendStatus,
   }
 }
 
-/**
- * 订阅指定ID的消息
- * @param id 消息ID
- * @param subscriber 订阅者对象
- */
-export const _subscribe = (id: string, subscriber: Omit<WebSocketSubscriber, 'id'>) => {
-  const global = getGlobalStorage()
-  const fullSubscriber: WebSocketSubscriber = { ...subscriber, id }
+// ====== 页面卸载保护 ======
+window.addEventListener('beforeunload', () => {
+  // 保持连接
+})
 
-  // 添加订阅者
-  global.subscribers.value.set(id, fullSubscriber)
-  console.log('[WebSocket] 添加订阅者:', id, '当前订阅者数量:', global.subscribers.value.size)
-
-  // 检查消息队列中是否有该订阅者的消息
-  const messageQueue = getMessageQueue()
-  console.log(
-    '[WebSocket] 检查消息队列，当前队列大小:',
-    messageQueue.size,
-    '队列内容:',
-    Array.from(messageQueue.entries())
-  )
-
-  // 检查特定ID的消息
-  const queuedMessages = messageQueue.get(id)
-  if (queuedMessages && queuedMessages.length > 0) {
-    console.log('[WebSocket] 发现队列中的消息，立即按顺序分发给新订阅者:', id, '消息数量:', queuedMessages.length)
-    // 创建临时订阅者对象用于分发消息
-    const tempSubscriber: WebSocketSubscriber = { ...subscriber, id }
-
-    // 按顺序处理所有遗留消息
-    queuedMessages.forEach((queuedMessage, index) => {
-      console.log('[WebSocket] 开始处理遗留消息，订阅者ID:', id, '消息索引:', index, '消息:', queuedMessage.message)
-      try {
-        handleMessageDispatch(queuedMessage.message, tempSubscriber)
-        console.log('[WebSocket] 遗留消息处理完成，订阅者ID:', id, '消息索引:', index)
-      } catch (error) {
-        console.error('[WebSocket] 处理遗留消息时出错，订阅者ID:', id, '消息索引:', index, '错误:', error)
-      }
-    })
-
-    // 从队列中移除已处理的消息
-    messageQueue.delete(id)
-    setMessageQueue(messageQueue)
-    console.log('[WebSocket] 已从队列中移除消息，剩余队列大小:', messageQueue.size)
-  } else {
-    console.log('[WebSocket] 未在队列中找到ID为', id, '的消息')
-  }
-
-  // 清理过期消息（超过1分钟的消息）
-  const now = Date.now()
-  let cleanedCount = 0
-  messageQueue.forEach((queuedMessages, msgId) => {
-    // 过滤掉过期的消息
-    const filteredMessages = queuedMessages.filter(msg => now - msg.timestamp <= 60000)
-    const removedCount = queuedMessages.length - filteredMessages.length
-    if (removedCount > 0) {
-      cleanedCount += removedCount
-      console.log('[WebSocket] 清理过期消息:', msgId, '清理数量:', removedCount)
-      // 更新过滤后的消息数组
-      messageQueue.set(msgId, filteredMessages)
-    }
-  })
-
-  if (cleanedCount > 0) {
-    console.log('[WebSocket] 共清理过期消息数量:', cleanedCount)
-    setMessageQueue(messageQueue)
-  }
-}
-
-// 新增函数：处理消息分发
-const handleMessageDispatch = (raw: WebSocketBaseMessage, sub: WebSocketSubscriber) => {
-  const msgType = raw.type
-
-  console.log('[WebSocket] 分发消息类型:', msgType, '消息内容:', raw)
-
-  // 如果订阅者定义了 onMessage 回调，则优先使用统一的处理函数
-  if (sub.onMessage) {
-    return sub.onMessage(raw)
-  }
-
-  // 如果没有 onMessage 处理函数，则记录错误（理论上不应该出现）
-  console.error('[WebSocket] 错误：订阅者没有定义onMessage处理函数', {
-    subscriberId: sub.id,
-    messageType: msgType,
-    messageContent: raw,
-  })
-}
+// ====== 模块加载计数 ======
+const global = getGlobalStorage()
+if (global.moduleLoadCount === 0) global.moduleLoadCount = 1
