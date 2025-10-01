@@ -166,6 +166,7 @@ const scriptName = ref('')
 
 // MAA配置相关
 const maaConfigLoading = ref(false)
+const maaSubscriptionId = ref<string | null>(null)
 const maaWebsocketId = ref<string | null>(null)
 const showMAAConfigMask = ref(false)
 let maaConfigTimeout: number | null = null
@@ -763,8 +764,9 @@ const handleMAAConfig = async () => {
     maaConfigLoading.value = true
 
     // 如果已有连接，先断开
-    if (maaWebsocketId.value) {
-      unsubscribe(maaWebsocketId.value)
+    if (maaSubscriptionId.value) {
+      unsubscribe(maaSubscriptionId.value)
+      maaSubscriptionId.value = null
       maaWebsocketId.value = null
       showMAAConfigMask.value = false
       if (maaConfigTimeout) {
@@ -783,15 +785,17 @@ const handleMAAConfig = async () => {
       const wsId = response.websocketId
 
       // 订阅 websocket
-      subscribe(wsId, {
-        onMessage: (wsMessage: any) => {
+      const subscriptionId = subscribe(
+        { id: wsId },
+        (wsMessage: any) => {
           if (wsMessage.type === 'error') {
             console.error(
               `用户 ${formData.Info?.Name || formData.userName} MAA配置错误:`,
               wsMessage.data
             )
             message.error(`MAA配置连接失败: ${wsMessage.data}`)
-            unsubscribe(wsId)
+            unsubscribe(subscriptionId)
+            maaSubscriptionId.value = null
             maaWebsocketId.value = null
             showMAAConfigMask.value = false
             return
@@ -799,13 +803,15 @@ const handleMAAConfig = async () => {
 
           if (wsMessage.data && wsMessage.data.Accomplish) {
             message.success(`用户 ${formData.Info?.Name || formData.userName} 的配置已完成`)
-            unsubscribe(wsId)
+            unsubscribe(subscriptionId)
+            maaSubscriptionId.value = null
             maaWebsocketId.value = null
             showMAAConfigMask.value = false
           }
-        },
-      })
+        }
+      )
 
+      maaSubscriptionId.value = subscriptionId
       maaWebsocketId.value = wsId
       showMAAConfigMask.value = true
       message.success(`已开始配置用户 ${formData.Info?.Name || formData.userName} 的MAA设置`)
@@ -813,9 +819,9 @@ const handleMAAConfig = async () => {
       // 设置 30 分钟超时自动断开
       maaConfigTimeout = window.setTimeout(
         () => {
-          if (maaWebsocketId.value) {
-            const id = maaWebsocketId.value
-            unsubscribe(id)
+          if (maaSubscriptionId.value) {
+            unsubscribe(maaSubscriptionId.value)
+            maaSubscriptionId.value = null
             maaWebsocketId.value = null
             showMAAConfigMask.value = false
             message.info(`用户 ${formData.Info?.Name || formData.userName} 的配置会话已超时断开`)
@@ -845,7 +851,10 @@ const handleSaveMAAConfig = async () => {
 
     const response = await Service.stopTaskApiDispatchStopPost({ taskId: websocketId })
     if (response && response.code === 200) {
-      unsubscribe(websocketId)
+      if (maaSubscriptionId.value) {
+        unsubscribe(maaSubscriptionId.value)
+        maaSubscriptionId.value = null
+      }
       maaWebsocketId.value = null
       showMAAConfigMask.value = false
       if (maaConfigTimeout) {
@@ -970,8 +979,9 @@ const addCustomStageRemain = (stageName: string) => {
 }
 
 const handleCancel = () => {
-  if (maaWebsocketId.value) {
-    unsubscribe(maaWebsocketId.value)
+  if (maaSubscriptionId.value) {
+    unsubscribe(maaSubscriptionId.value)
+    maaSubscriptionId.value = null
     maaWebsocketId.value = null
   }
   router.push('/scripts')
