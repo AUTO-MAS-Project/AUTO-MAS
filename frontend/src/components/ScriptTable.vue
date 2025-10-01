@@ -102,7 +102,7 @@
                 ghost-class="user-ghost"
                 chosen-class="user-chosen"
                 drag-class="user-drag"
-                @end="evt => onUserDragEnd(evt, script)"
+                @end="(evt: any) => onUserDragEnd(evt, script)"
                 class="users-list"
               >
                 <template #item="{ element: user }">
@@ -326,7 +326,7 @@ import { message } from 'ant-design-vue'
 
 interface Props {
   scripts: Script[]
-  activeConnections: Map<string, string>
+  activeConnections: Map<string, { subscriptionId: string; websocketId: string }>
 }
 
 interface Emits {
@@ -464,7 +464,7 @@ const onScriptDragEnd = async () => {
 }
 
 // 处理用户拖拽结束
-const onUserDragEnd = async (evt: any, script: Script) => {
+const onUserDragEnd = async (_evt: any, script: Script) => {
   try {
     const userIds = script.users?.map(user => user.id) || []
     await Service.reorderUserApiScriptsUserOrderPost({

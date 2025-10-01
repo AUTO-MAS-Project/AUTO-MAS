@@ -41,7 +41,7 @@
 
   <!-- 空状态 -->
   <!-- 增加 loadedOnce 条件，避免初始渲染时闪烁 -->
-  <div v-if="!loading && loadedOnce && scripts.length === 0" class="empty-state">
+  <div v-if="!addLoading && loadedOnce && scripts.length === 0" class="empty-state">
     <div class="empty-content">
       <div class="empty-image-container">
         <img src="@/assets/NoData.png" alt="暂无数据" class="empty-image" />
@@ -287,7 +287,7 @@ const showMAAConfigMask = ref(false) // 控制MAA配置遮罩层的显示
 const currentConfigScript = ref<Script | null>(null) // 当前正在配置的脚本
 
 // WebSocket连接管理
-const activeConnections = ref<Map<string, string>>(new Map()) // scriptId -> websocketId
+const activeConnections = ref<Map<string, { subscriptionId: string; websocketId: string }>>(new Map()) // scriptId -> { subscriptionId, websocketId }
 
 // 解析模板描述的markdown
 const parseMarkdown = (text: string) => {
@@ -548,8 +548,9 @@ const handleStartMAAConfig = async (script: Script) => {
       currentConfigScript.value = script
 
       // 订阅WebSocket消息
-      subscribe(response.websocketId, {
-        onMessage: (wsMessage: any) => {
+      const subscriptionId = subscribe(
+        { id: response.websocketId },
+        (wsMessage: any) => {
           // 处理错误消息
           if (wsMessage.type === 'error') {
             console.error(`脚本 ${script.name} 连接错误:`, wsMessage.data)
@@ -569,20 +570,23 @@ const handleStartMAAConfig = async (script: Script) => {
             showMAAConfigMask.value = false
             currentConfigScript.value = null
           }
-        },
-      })
+        }
+      )
 
-      // 记录连接和websocketId
-      activeConnections.value.set(script.id, response.websocketId)
+      // 记录连接和subscriptionId
+      activeConnections.value.set(script.id, {
+        subscriptionId,
+        websocketId: response.websocketId
+      })
       message.success(`已启动 ${script.name} 的MAA配置`)
 
       // 设置自动断开连接的定时器（30分钟后）
       setTimeout(
         () => {
           if (activeConnections.value.has(script.id)) {
-            const wsId = activeConnections.value.get(script.id)
-            if (wsId) {
-              unsubscribe(wsId)
+            const connection = activeConnections.value.get(script.id)
+            if (connection) {
+              unsubscribe(connection.subscriptionId)
             }
             activeConnections.value.delete(script.id)
             // 超时时隐藏遮罩
@@ -604,20 +608,20 @@ const handleStartMAAConfig = async (script: Script) => {
 
 const handleSaveMAAConfig = async (script: Script) => {
   try {
-    const websocketId = activeConnections.value.get(script.id)
-    if (!websocketId) {
+    const connection = activeConnections.value.get(script.id)
+    if (!connection) {
       message.error('未找到活动的配置会话')
       return
     }
 
     // 调用停止配置任务API
     const response = await Service.stopTaskApiDispatchStopPost({
-      taskId: websocketId,
+      taskId: connection.websocketId,
     })
 
     if (response.code === 200) {
       // 取消订阅
-      unsubscribe(websocketId)
+      unsubscribe(connection.subscriptionId)
       activeConnections.value.delete(script.id)
 
       // 隐藏遮罩

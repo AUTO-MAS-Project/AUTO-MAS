@@ -16,7 +16,11 @@
       </a-breadcrumb>
     </div>
 
-    <a-space size="middle">
+     // 如果已有连接，先断开
+    if (generalSubscriptionId.value) {
+      unsubscribe(generalSubscriptionId.value)
+      generalSubscriptionId.value = null
+      generalWebsocketId.value = nulla-space size="middle">
       <a-button
         type="primary"
         ghost
@@ -390,6 +394,7 @@ const scriptName = ref('')
 
 // 通用配置相关
 const generalConfigLoading = ref(false)
+const generalSubscriptionId = ref<string | null>(null)
 const generalWebsocketId = ref<string | null>(null)
 const showGeneralConfigMask = ref(false)
 let generalConfigTimeout: number | null = null
@@ -599,12 +604,14 @@ const handleGeneralConfig = async () => {
       console.debug('订阅 websocketId:', wsId)
 
       // 订阅 websocket
-      subscribe(wsId, {
-        onMessage: (wsMessage: any) => {
+      const subscriptionId = subscribe(
+        { id: wsId },
+        (wsMessage: any) => {
           if (wsMessage.type === 'error') {
             console.error(`用户 ${formData.userName} 通用配置错误:`, wsMessage.data)
             message.error(`通用配置连接失败: ${wsMessage.data}`)
-            unsubscribe(wsId)
+            unsubscribe(subscriptionId)
+            generalSubscriptionId.value = null
             generalWebsocketId.value = null
             showGeneralConfigMask.value = false
             return
@@ -612,13 +619,15 @@ const handleGeneralConfig = async () => {
 
           if (wsMessage.data && wsMessage.data.Accomplish) {
             message.success(`用户 ${formData.userName} 的配置已完成`)
-            unsubscribe(wsId)
+            unsubscribe(subscriptionId)
+            generalSubscriptionId.value = null
             generalWebsocketId.value = null
             showGeneralConfigMask.value = false
           }
-        },
-      })
+        }
+      )
 
+      generalSubscriptionId.value = subscriptionId
       generalWebsocketId.value = wsId
       showGeneralConfigMask.value = true
       message.success(`已开始配置用户 ${formData.userName} 的通用设置`)
@@ -626,9 +635,9 @@ const handleGeneralConfig = async () => {
       // 设置 30 分钟超时自动断开
       generalConfigTimeout = window.setTimeout(
         () => {
-          if (generalWebsocketId.value) {
-            const id = generalWebsocketId.value
-            unsubscribe(id)
+          if (generalSubscriptionId.value) {
+            unsubscribe(generalSubscriptionId.value)
+            generalSubscriptionId.value = null
             generalWebsocketId.value = null
             showGeneralConfigMask.value = false
             message.info(`用户 ${formData.userName} 的配置会话已超时断开`)
@@ -658,7 +667,10 @@ const handleSaveGeneralConfig = async () => {
 
     const response = await Service.stopTaskApiDispatchStopPost({ taskId: websocketId })
     if (response && response.code === 200) {
-      unsubscribe(websocketId)
+      if (generalSubscriptionId.value) {
+        unsubscribe(generalSubscriptionId.value)
+        generalSubscriptionId.value = null
+      }
       generalWebsocketId.value = null
       showGeneralConfigMask.value = false
       if (generalConfigTimeout) {
@@ -720,8 +732,9 @@ const handleWebhookChange = () => {
 }
 
 const handleCancel = () => {
-  if (generalWebsocketId.value) {
-    unsubscribe(generalWebsocketId.value)
+  if (generalSubscriptionId.value) {
+    unsubscribe(generalSubscriptionId.value)
+    generalSubscriptionId.value = null
     generalWebsocketId.value = null
     showGeneralConfigMask.value = false
     if (generalConfigTimeout) {
