@@ -86,10 +86,10 @@ class Webhook_Info(BaseModel):
 
 
 class Webhook_Data(BaseModel):
-    url: Optional[str] = Field(default=None, description="Webhook URL")
-    template: Optional[str] = Field(default=None, description="消息模板")
-    headers: Optional[Dict[str, str]] = Field(default=None, description="自定义请求头")
-    method: Optional[Literal["POST", "GET"]] = Field(
+    Url: Optional[str] = Field(default=None, description="Webhook URL")
+    Template: Optional[str] = Field(default=None, description="消息模板")
+    Headers: Optional[Dict[str, str]] = Field(default=None, description="自定义请求头")
+    Method: Optional[Literal["POST", "GET"]] = Field(
         default=None, description="请求方法"
     )
 
@@ -662,6 +662,10 @@ class WebhookDeleteIn(WebhookInBase):
 
 class WebhookReorderIn(WebhookInBase):
     indexList: List[str] = Field(..., description="Webhook ID列表, 按新顺序排列")
+
+
+class WebhookTestIn(WebhookInBase):
+    data: Webhook = Field(..., description="Webhook配置数据")
 
 
 class PlanCreateIn(BaseModel):
