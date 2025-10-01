@@ -75,6 +75,30 @@ class GetStageIn(BaseModel):
     )
 
 
+class WebhookIndexItem(BaseModel):
+    uid: str = Field(..., description="唯一标识符")
+    type: Literal["Webhook"] = Field(..., description="配置类型")
+
+
+class Webhook_Info(BaseModel):
+    Name: Optional[str] = Field(default=None, description="Webhook名称")
+    Enabled: Optional[bool] = Field(default=None, description="是否启用")
+
+
+class Webhook_Data(BaseModel):
+    url: Optional[str] = Field(default=None, description="Webhook URL")
+    template: Optional[str] = Field(default=None, description="消息模板")
+    headers: Optional[Dict[str, str]] = Field(default=None, description="自定义请求头")
+    method: Optional[Literal["POST", "GET"]] = Field(
+        default=None, description="请求方法"
+    )
+
+
+class Webhook(BaseModel):
+    Info: Optional[Webhook_Info] = Field(default=None, description="Webhook基础信息")
+    Data: Optional[Webhook_Data] = Field(default=None, description="Webhook配置数据")
+
+
 class GlobalConfig_Function(BaseModel):
     HistoryRetentionTime: Optional[Literal[7, 15, 30, 60, 90, 180, 365, 0]] = Field(
         None, description="历史记录保留时间, 0表示永久保存"
@@ -111,18 +135,6 @@ class GlobalConfig_UI(BaseModel):
     IfToTray: Optional[bool] = Field(default=None, description="是否最小化到托盘")
 
 
-class CustomWebhook(BaseModel):
-    id: str = Field(..., description="Webhook唯一标识")
-    name: str = Field(..., description="Webhook名称")
-    url: str = Field(..., description="Webhook URL")
-    template: str = Field(..., description="消息模板")
-    enabled: bool = Field(default=True, description="是否启用")
-    headers: Optional[Dict[str, str]] = Field(default=None, description="自定义请求头")
-    method: Optional[Literal["POST", "GET"]] = Field(
-        default="POST", description="请求方法"
-    )
-
-
 class GlobalConfig_Notify(BaseModel):
     SendTaskResultTime: Optional[Literal["不推送", "任何时刻", "仅失败时"]] = Field(
         default=None, description="任务结果推送时机"
@@ -143,9 +155,6 @@ class GlobalConfig_Notify(BaseModel):
         default=None, description="是否使用ServerChan推送"
     )
     ServerChanKey: Optional[str] = Field(default=None, description="ServerChan推送密钥")
-    CustomWebhooks: Optional[List[CustomWebhook]] = Field(
-        default=None, description="自定义Webhook列表"
-    )
 
 
 class GlobalConfig_Update(BaseModel):
@@ -313,9 +322,6 @@ class MaaUserConfig_Notify(BaseModel):
         default=None, description="是否使用Server酱推送"
     )
     ServerChanKey: Optional[str] = Field(default=None, description="ServerChanKey")
-    CustomWebhooks: Optional[List[CustomWebhook]] = Field(
-        default=None, description="用户自定义Webhook列表"
-    )
 
 
 class GeneralUserConfig_Notify(BaseModel):
@@ -616,6 +622,46 @@ class UserReorderIn(UserInBase):
 class UserSetIn(UserInBase):
     userId: str = Field(..., description="用户ID")
     jsonFile: str = Field(..., description="JSON文件路径, 用于导入自定义基建文件")
+
+
+class WebhookInBase(BaseModel):
+    scriptId: Optional[str] = Field(
+        default=None, description="所属脚本ID, 获取全局设置的Webhook数据时无需携带"
+    )
+    userId: Optional[str] = Field(
+        default=None, description="所属用户ID, 获取全局设置的Webhook数据时无需携带"
+    )
+
+
+class WebhookGetIn(WebhookInBase):
+    webhookId: Optional[str] = Field(
+        default=None, description="Webhook ID, 未携带时表示获取所有Webhook数据"
+    )
+
+
+class WebhookGetOut(OutBase):
+    index: List[WebhookIndexItem] = Field(..., description="Webhook索引列表")
+    data: Dict[str, Webhook] = Field(
+        ..., description="Webhook数据字典, key来自于index列表的uid"
+    )
+
+
+class WebhookCreateOut(OutBase):
+    webhookId: str = Field(..., description="新创建的Webhook ID")
+    data: Webhook = Field(..., description="Webhook配置数据")
+
+
+class WebhookUpdateIn(WebhookInBase):
+    webhookId: str = Field(..., description="Webhook ID")
+    data: Webhook = Field(..., description="Webhook更新数据")
+
+
+class WebhookDeleteIn(WebhookInBase):
+    webhookId: str = Field(..., description="Webhook ID")
+
+
+class WebhookReorderIn(WebhookInBase):
+    indexList: List[str] = Field(..., description="Webhook ID列表, 按新顺序排列")
 
 
 class PlanCreateIn(BaseModel):

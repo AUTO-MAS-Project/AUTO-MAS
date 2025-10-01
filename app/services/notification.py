@@ -21,17 +21,20 @@
 
 
 import re
+import json
 import smtplib
 import requests
+from datetime import datetime
+from plyer import notification
 from email.header import Header
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import formataddr
 from pathlib import Path
-
-from plyer import notification
+from typing import Literal
 
 from app.core import Config
+from app.models.config import Webhook
 from app.utils import get_logger, ImageUtils
 
 logger = get_logger("通知服务")
@@ -39,71 +42,76 @@ logger = get_logger("通知服务")
 
 class Notification:
 
-    def __init__(self):
-        super().__init__()
-
-    async def push_plyer(self, title, message, ticker, t) -> bool:
+    async def push_plyer(self, title: str, message: str, ticker: str, t: int) -> None:
         """
         推送系统通知
 
-        :param title: 通知标题
-        :param message: 通知内容
-        :param ticker: 通知横幅
-        :param t: 通知持续时间
-        :return: bool
+        Parameters
+        ----------
+        title: str
+            通知标题
+        message: str
+            通知内容
+        ticker: str
+            通知横幅
+        t: int
+            通知持续时间
         """
 
-        if Config.get("Notify", "IfPushPlyer"):
+        if not Config.get("Notify", "IfPushPlyer"):
+            return
 
-            logger.info(f"推送系统通知: {title}")
+        logger.info(f"推送系统通知: {title}")
 
-            if notification.notify is not None:
-                notification.notify(
-                    title=title,
-                    message=message,
-                    app_name="AUTO-MAS",
-                    app_icon=(Path.cwd() / "res/icons/AUTO-MAS.ico").as_posix(),
-                    timeout=t,
-                    ticker=ticker,
-                    toast=True,
-                )
-            else:
-                logger.error("plyer.notification 未正确导入, 无法推送系统通知")
+        if notification.notify is not None:
+            notification.notify(
+                title=title,
+                message=message,
+                app_name="AUTO-MAS",
+                app_icon=(Path.cwd() / "res/icons/AUTO-MAS.ico").as_posix(),
+                timeout=t,
+                ticker=ticker,
+                toast=True,
+            )
+        else:
+            logger.error("plyer.notification 未正确导入, 无法推送系统通知")
 
-        return True
-
-    async def send_mail(self, mode, title, content, to_address) -> None:
+    async def send_mail(
+        self, mode: Literal["文本", "网页"], title: str, content: str, to_address: str
+    ) -> None:
         """
         推送邮件通知
 
-        :param mode: 邮件内容模式, 支持 "文本" 和 "网页"
-        :param title: 邮件标题
-        :param content: 邮件内容
-        :param to_address: 收件人地址
+        Parameters
+        ----------
+        mode: Literal["文本", "网页"]
+            邮件内容模式, 支持 "文本" 和 "网页"
+        title: str
+            邮件标题
+        content: str
+            邮件内容
+        to_address: str
+            收件人地址
         """
 
-        if (
-            Config.get("Notify", "SMTPServerAddress") == ""
-            or Config.get("Notify", "AuthorizationCode") == ""
-            or not bool(
-                re.match(
-                    r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$",
-                    Config.get("Notify", "FromAddress"),
-                )
-            )
-            or not bool(
-                re.match(
-                    r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$",
-                    to_address,
-                )
+        if Config.get("Notify", "SMTPServerAddress") == "":
+            raise ValueError("邮件通知的SMTP服务器地址不能为空")
+        if Config.get("Notify", "AuthorizationCode") == "":
+            raise ValueError("邮件通知的授权码不能为空")
+        if not bool(
+            re.match(
+                r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$",
+                Config.get("Notify", "FromAddress"),
             )
         ):
-            logger.error(
-                "请正确设置邮件通知的SMTP服务器地址、授权码、发件人地址和收件人地址"
+            raise ValueError("邮件通知的发送邮箱格式错误或为空")
+        if not bool(
+            re.match(
+                r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$",
+                to_address,
             )
-            raise ValueError(
-                "邮件通知的SMTP服务器地址、授权码、发件人地址或收件人地址未正确配置"
-            )
+        ):
+            raise ValueError("邮件通知的接收邮箱格式错误或为空")
 
         # 定义邮件正文
         if mode == "文本":
@@ -135,16 +143,21 @@ class Notification:
         smtpObj.quit()
         logger.success(f"邮件发送成功: {title}")
 
-    async def ServerChanPush(self, title, content, send_key) -> None:
+    async def ServerChanPush(self, title: str, content: str, send_key: str) -> None:
         """
         使用Server酱推送通知
 
-        :param title: 通知标题
-        :param content: 通知内容
-        :param send_key: Server酱的SendKey
+        Parameters
+        ----------
+        title: str
+            通知标题
+        content: str
+            通知内容
+        send_key: str
+            Server酱的SendKey
         """
 
-        if not send_key:
+        if send_key == "":
             raise ValueError("ServerChan SendKey 不能为空")
 
         # 构造 URL
@@ -171,33 +184,33 @@ class Notification:
         else:
             raise Exception(f"ServerChan 推送通知失败: {response.text}")
 
-    async def CustomWebhookPush(self, title, content, webhook_config) -> None:
+    async def WebhookPush(self, title: str, content: str, webhook: Webhook) -> None:
         """
-        自定义 Webhook 推送通知
+        Webhook 推送通知
 
-        :param title: 通知标题
-        :param content: 通知内容
-        :param webhook_config: Webhook配置对象
+        Parameters
+        ----------
+        title: str
+            通知标题
+        content: str
+            通知内容
+        webhook: Webhook
+            Webhook配置对象
         """
-
-        if not webhook_config.get("url"):
-            raise ValueError("Webhook URL 不能为空")
-
-        if not webhook_config.get("enabled", True):
-            logger.info(
-                f"Webhook {webhook_config.get('name', 'Unknown')} 已禁用，跳过推送"
-            )
+        if not webhook.get("Info", "Enabled"):
             return
 
+        if webhook.get("Data", "Url") == "":
+            raise ValueError("Webhook URL 不能为空")
+
         # 解析模板
-        template = webhook_config.get(
-            "template", '{"title": "{title}", "content": "{content}"}'
+        template = (
+            webhook.get("Data", "Template")
+            or '{"title": "{title}", "content": "{content}"}'
         )
 
         # 替换模板变量
         try:
-            import json
-            from datetime import datetime
 
             # 准备模板变量
             template_vars = {
@@ -264,56 +277,55 @@ class Notification:
 
         # 准备请求头
         headers = {"Content-Type": "application/json"}
-        if webhook_config.get("headers"):
-            headers.update(webhook_config["headers"])
+        headers.update(json.loads(webhook.get("Data", "Headers")))
 
-        # 发送请求
-        method = webhook_config.get("method", "POST").upper()
-
-        try:
-            if method == "POST":
-                if isinstance(data, dict):
-                    response = requests.post(
-                        url=webhook_config["url"],
-                        json=data,
-                        headers=headers,
-                        timeout=10,
-                        proxies=Config.get_proxies(),
-                    )
-                else:
-                    response = requests.post(
-                        url=webhook_config["url"],
-                        data=data,
-                        headers=headers,
-                        timeout=10,
-                        proxies=Config.get_proxies(),
-                    )
-            else:  # GET
-                params = data if isinstance(data, dict) else {"message": data}
-                response = requests.get(
-                    url=webhook_config["url"],
-                    params=params,
+        if webhook.get("Data", "Method") == "POST":
+            if isinstance(data, dict):
+                response = requests.post(
+                    url=webhook.get("Data", "Url"),
+                    json=data,
                     headers=headers,
                     timeout=10,
                     proxies=Config.get_proxies(),
                 )
-
-            # 检查响应
-            if response.status_code == 200:
-                logger.success(
-                    f"自定义Webhook推送成功: {webhook_config.get('name', 'Unknown')} - {title}"
+            elif isinstance(data, str):
+                response = requests.post(
+                    url=webhook.get("Data", "Url"),
+                    data=data,
+                    headers=headers,
+                    timeout=10,
+                    proxies=Config.get_proxies(),
                 )
+        elif webhook.get("Data", "Method") == "GET":
+            if isinstance(data, dict):
+                # Flatten params to ensure all values are str or list of str
+                params = {}
+                for k, v in data.items():
+                    if isinstance(v, (dict, list)):
+                        params[k] = json.dumps(v, ensure_ascii=False)
+                    else:
+                        params[k] = str(v)
             else:
-                raise Exception(f"HTTP {response.status_code}: {response.text}")
-
-        except Exception as e:
-            raise Exception(
-                f"自定义Webhook推送失败 ({webhook_config.get('name', 'Unknown')}): {str(e)}"
+                params = {"message": str(data)}
+            response = requests.get(
+                url=webhook.get("Data", "Url"),
+                params=params,
+                headers=headers,
+                timeout=10,
+                proxies=Config.get_proxies(),
             )
 
-    async def WebHookPush(self, title, content, webhook_url) -> None:
+        # 检查响应
+        if response.status_code == 200:
+            logger.success(
+                f"自定义Webhook推送成功: {webhook.get('Info', 'Name')} - {title}"
+            )
+        else:
+            raise Exception(f"HTTP {response.status_code}: {response.text}")
+
+    async def _WebHookPush(self, title, content, webhook_url) -> None:
         """
-        WebHook 推送通知 (兼容旧版企业微信格式)
+        WebHook 推送通知 (即将弃用)
 
         :param title: 通知标题
         :param content: 通知内容
@@ -340,7 +352,7 @@ class Notification:
         self, image_path: Path, webhook_url: str
     ) -> None:
         """
-        使用企业微信群机器人推送图片通知
+        使用企业微信群机器人推送图片通知（等待重新适配）
 
         :param image_path: 图片文件路径
         :param webhook_url: 企业微信群机器人的WebHook地址
@@ -406,23 +418,12 @@ class Notification:
             )
 
         # 发送自定义Webhook通知
-        try:
-            custom_webhooks = Config.get("Notify", "CustomWebhooks")
-        except AttributeError:
-            custom_webhooks = []
-        if custom_webhooks:
-            for webhook in custom_webhooks:
-                if webhook.get("enabled", True):
-                    try:
-                        await self.CustomWebhookPush(
-                            "AUTO-MAS测试通知",
-                            "这是 AUTO-MAS 外部通知测试信息。如果你看到了这段内容, 说明 AUTO-MAS 的通知功能已经正确配置且可以正常工作！",
-                            webhook,
-                        )
-                    except Exception as e:
-                        logger.error(
-                            f"自定义Webhook测试失败 ({webhook.get('name', 'Unknown')}): {e}"
-                        )
+        for webhook in Config.Notify_CustomWebhooks.values():
+            await self.WebhookPush(
+                "AUTO-MAS测试通知",
+                "这是 AUTO-MAS 外部通知测试信息。如果你看到了这段内容, 说明 AUTO-MAS 的通知功能已经正确配置且可以正常工作！",
+                webhook,
+            )
 
         logger.success("测试通知发送完成")
 

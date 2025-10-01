@@ -74,9 +74,8 @@ class MaaManager:
         await Config.ScriptConfig[self.script_id].lock()
 
         self.script_config = Config.ScriptConfig[self.script_id]
-        if isinstance(self.script_config, MaaConfig):
-            self.user_config = MultipleConfig([MaaUserConfig])
-            await self.user_config.load(await self.script_config.UserData.toDict())
+        self.user_config = MultipleConfig([MaaUserConfig])
+        await self.user_config.load(await self.script_config.UserData.toDict())
 
         self.maa_root_path = Path(self.script_config.get("Info", "Path"))
         self.maa_set_path = self.maa_root_path / "config/gui.json"
@@ -96,6 +95,8 @@ class MaaManager:
     def check_config(self) -> str:
         """检查配置是否可用"""
 
+        if not isinstance(Config.ScriptConfig[self.script_id], MaaConfig):
+            return "脚本配置类型错误, 不是MAA脚本类型"
         if not self.maa_exe_path.exists():
             return "MAA.exe文件不存在, 请检查MAA路径设置！"
         if not self.maa_set_path.exists():
@@ -176,536 +177,582 @@ class MaaManager:
             # 开始代理
             for self.index, user in enumerate(self.user_list):
 
-                self.cur_user_data = self.user_config[uuid.UUID(user["user_id"])]
+                try:
 
-                if (self.script_config.get("Run", "ProxyTimesLimit") == 0) or (
-                    self.cur_user_data.get("Data", "ProxyTimes")
-                    < self.script_config.get("Run", "ProxyTimesLimit")
-                ):
-                    user["status"] = "运行"
-                    await Config.send_json(
-                        WebSocketMessage(
-                            id=self.ws_id,
-                            type="Update",
-                            data={"user_list": self.user_list},
-                        ).model_dump()
-                    )
-                else:
-                    user["status"] = "跳过"
-                    await Config.send_json(
-                        WebSocketMessage(
-                            id=self.ws_id,
-                            type="Update",
-                            data={"user_list": self.user_list},
-                        ).model_dump()
-                    )
-                    continue
+                    self.cur_user_data = self.user_config[uuid.UUID(user["user_id"])]
 
-                logger.info(f"开始代理用户: {user['user_id']}")
-
-                # 详细模式用户首次代理需打开模拟器
-                if self.cur_user_data.get("Info", "Mode") == "详细":
-                    self.if_open_emulator = True
-
-                # 初始化代理情况记录和模式替换表
-                self.run_book = {
-                    "Annihilation": bool(
-                        self.cur_user_data.get("Info", "Annihilation") == "Close"
-                    ),
-                    "Routine": self.cur_user_data.get("Info", "Mode") == "复杂"
-                    and not self.cur_user_data.get("Info", "Routine"),
-                }
-
-                self.user_logs_list = []
-                self.user_start_time = datetime.now()
-
-                if self.cur_user_data.get(
-                    "Info", "IfSkland"
-                ) and self.cur_user_data.get("Info", "SklandToken"):
-
-                    if self.cur_user_data.get(
-                        "Data", "LastSklandDate"
-                    ) != datetime.now().strftime("%Y-%m-%d"):
-
+                    if (self.script_config.get("Run", "ProxyTimesLimit") == 0) or (
+                        self.cur_user_data.get("Data", "ProxyTimes")
+                        < self.script_config.get("Run", "ProxyTimesLimit")
+                    ):
+                        user["status"] = "运行"
                         await Config.send_json(
                             WebSocketMessage(
                                 id=self.ws_id,
                                 type="Update",
-                                data={"log": "正在执行森空岛签到中\n请稍候~"},
+                                data={"user_list": self.user_list},
                             ).model_dump()
                         )
-
-                        skland_result = await skland_sign_in(
-                            self.cur_user_data.get("Info", "SklandToken")
+                    else:
+                        user["status"] = "跳过"
+                        await Config.send_json(
+                            WebSocketMessage(
+                                id=self.ws_id,
+                                type="Update",
+                                data={"user_list": self.user_list},
+                            ).model_dump()
                         )
+                        continue
 
-                        for type, user_list in skland_result.items():
+                    logger.info(f"开始代理用户: {user['user_id']}")
 
-                            if type != "总计" and len(user_list) > 0:
-                                logger.info(
-                                    f"用户: {user['user_id']} - 森空岛签到{type}: {'、'.join(user_list)}"
-                                )
+                    # 详细模式用户首次代理需打开模拟器
+                    if self.cur_user_data.get("Info", "Mode") == "详细":
+                        self.if_open_emulator = True
+
+                    # 初始化代理情况记录和模式替换表
+                    self.run_book = {
+                        "Annihilation": bool(
+                            self.cur_user_data.get("Info", "Annihilation") == "Close"
+                        ),
+                        "Routine": self.cur_user_data.get("Info", "Mode") == "详细"
+                        and not self.cur_user_data.get("Info", "Routine"),
+                    }
+
+                    self.user_logs_list = []
+                    self.user_start_time = datetime.now()
+
+                    if self.cur_user_data.get(
+                        "Info", "IfSkland"
+                    ) and self.cur_user_data.get("Info", "SklandToken"):
+
+                        if self.cur_user_data.get(
+                            "Data", "LastSklandDate"
+                        ) != datetime.now().strftime("%Y-%m-%d"):
+
+                            await Config.send_json(
+                                WebSocketMessage(
+                                    id=self.ws_id,
+                                    type="Update",
+                                    data={"log": "正在执行森空岛签到中\n请稍候~"},
+                                ).model_dump()
+                            )
+
+                            skland_result = await skland_sign_in(
+                                self.cur_user_data.get("Info", "SklandToken")
+                            )
+
+                            for type, user_list in skland_result.items():
+
+                                if type != "总计" and len(user_list) > 0:
+                                    logger.info(
+                                        f"用户: {user['user_id']} - 森空岛签到{type}: {'、'.join(user_list)}"
+                                    )
+                                    await Config.send_json(
+                                        WebSocketMessage(
+                                            id=self.ws_id,
+                                            type="Info",
+                                            data={
+                                                (
+                                                    "Info"
+                                                    if type != "失败"
+                                                    else "Error"
+                                                ): f"用户 {user['name']} 森空岛签到{type}: {'、'.join(user_list)}"
+                                            },
+                                        ).model_dump()
+                                    )
+                            if skland_result["总计"] == 0:
+                                logger.info(f"用户: {user['user_id']} - 森空岛签到失败")
                                 await Config.send_json(
                                     WebSocketMessage(
                                         id=self.ws_id,
                                         type="Info",
                                         data={
-                                            (
-                                                "Info" if type != "失败" else "Error"
-                                            ): f"用户 {user['name']} 森空岛签到{type}: {'、'.join(user_list)}"
+                                            "Error": f"用户 {user['name']} 森空岛签到失败",
                                         },
                                     ).model_dump()
                                 )
-                        if skland_result["总计"] == 0:
-                            logger.info(f"用户: {user['user_id']} - 森空岛签到失败")
-                            await Config.send_json(
-                                WebSocketMessage(
-                                    id=self.ws_id,
-                                    type="Info",
-                                    data={
-                                        "Error": f"用户 {user['name']} 森空岛签到失败",
-                                    },
-                                ).model_dump()
-                            )
 
-                        if (
-                            skland_result["总计"] > 0
-                            and len(skland_result["失败"]) == 0
-                        ):
-                            await self.cur_user_data.set(
-                                "Data",
-                                "LastSklandDate",
-                                datetime.now().strftime("%Y-%m-%d"),
-                            )
+                            if (
+                                skland_result["总计"] > 0
+                                and len(skland_result["失败"]) == 0
+                            ):
+                                await self.cur_user_data.set(
+                                    "Data",
+                                    "LastSklandDate",
+                                    datetime.now().strftime("%Y-%m-%d"),
+                                )
 
-                elif self.cur_user_data.get("Info", "IfSkland"):
-                    logger.warning(
-                        f"用户: {user['user_id']} - 未配置森空岛签到Token, 跳过森空岛签到"
-                    )
-                    await Config.send_json(
-                        WebSocketMessage(
-                            id=self.ws_id,
-                            type="Info",
-                            data={
-                                "Warning": f"用户 {user['name']} 未配置森空岛签到Token, 跳过森空岛签到"
-                            },
-                        ).model_dump()
-                    )
-
-                # 剿灭-日常模式循环
-                for mode in ["Annihilation", "Routine"]:
-
-                    if self.run_book[mode]:
-                        continue
-
-                    # 剿灭模式；满足条件跳过剿灭
-                    if (
-                        mode == "Annihilation"
-                        and self.script_config.get("Run", "AnnihilationWeeklyLimit")
-                        and datetime.strptime(
-                            self.cur_user_data.get("Data", "LastAnnihilationDate"),
-                            "%Y-%m-%d",
-                        ).isocalendar()[:2]
-                        == datetime.strptime(self.curdate, "%Y-%m-%d").isocalendar()[:2]
-                    ):
-                        logger.info(
-                            f"用户: {user['user_id']} - 本周剿灭模式已达上限, 跳过执行剿灭任务"
-                        )
-                        self.run_book[mode] = True
-                        continue
-                    else:
-                        self.weekly_annihilation_limit_reached = False
-
-                    if (
-                        self.cur_user_data.get("Info", "Mode") == "详细"
-                        and not (
-                            Path.cwd()
-                            / f"data/{self.script_id}/{user['user_id']}/ConfigFile/gui.json"
-                        ).exists()
-                    ):
-                        logger.error(
-                            f"用户: {user['user_id']} - 未找到日常详细配置文件"
+                    elif self.cur_user_data.get("Info", "IfSkland"):
+                        logger.warning(
+                            f"用户: {user['user_id']} - 未配置森空岛签到Token, 跳过森空岛签到"
                         )
                         await Config.send_json(
                             WebSocketMessage(
                                 id=self.ws_id,
                                 type="Info",
-                                data={"Error": f"未找到 {user['name']} 的详细配置文件"},
+                                data={
+                                    "Warning": f"用户 {user['name']} 未配置森空岛签到Token, 跳过森空岛签到"
+                                },
                             ).model_dump()
                         )
-                        self.run_book[mode] = False
-                        break
 
-                    # 更新当前模式到界面
+                    # 剿灭-日常模式循环
+                    for mode in ["Annihilation", "Routine"]:
+
+                        if self.run_book[mode]:
+                            continue
+
+                        # 剿灭模式；满足条件跳过剿灭
+                        if (
+                            mode == "Annihilation"
+                            and self.script_config.get("Run", "AnnihilationWeeklyLimit")
+                            and datetime.strptime(
+                                self.cur_user_data.get("Data", "LastAnnihilationDate"),
+                                "%Y-%m-%d",
+                            ).isocalendar()[:2]
+                            == datetime.strptime(
+                                self.curdate, "%Y-%m-%d"
+                            ).isocalendar()[:2]
+                        ):
+                            logger.info(
+                                f"用户: {user['user_id']} - 本周剿灭模式已达上限, 跳过执行剿灭任务"
+                            )
+                            self.run_book[mode] = True
+                            continue
+                        else:
+                            self.weekly_annihilation_limit_reached = False
+
+                        if (
+                            self.cur_user_data.get("Info", "Mode") == "详细"
+                            and not (
+                                Path.cwd()
+                                / f"data/{self.script_id}/{user['user_id']}/ConfigFile/gui.json"
+                            ).exists()
+                        ):
+                            logger.error(
+                                f"用户: {user['user_id']} - 未找到日常详细配置文件"
+                            )
+                            await Config.send_json(
+                                WebSocketMessage(
+                                    id=self.ws_id,
+                                    type="Info",
+                                    data={
+                                        "Error": f"未找到 {user['name']} 的详细配置文件"
+                                    },
+                                ).model_dump()
+                            )
+                            self.run_book[mode] = False
+                            break
+
+                        # 更新当前模式到界面
+                        await Config.send_json(
+                            WebSocketMessage(
+                                id=self.ws_id,
+                                type="Update",
+                                data={
+                                    "user_status": {
+                                        "user_id": user["user_id"],
+                                        "type": mode,
+                                    }
+                                },
+                            ).model_dump()
+                        )
+
+                        # 解析任务构成
+                        if mode == "Routine":
+
+                            self.task_dict = {
+                                "WakeUp": str(
+                                    self.cur_user_data.get("Task", "IfWakeUp")
+                                ),
+                                "Recruiting": str(
+                                    self.cur_user_data.get("Task", "IfRecruiting")
+                                ),
+                                "Base": str(self.cur_user_data.get("Task", "IfBase")),
+                                "Combat": str(
+                                    self.cur_user_data.get("Task", "IfCombat")
+                                ),
+                                "Mission": str(
+                                    self.cur_user_data.get("Task", "IfMission")
+                                ),
+                                "Mall": str(self.cur_user_data.get("Task", "IfMall")),
+                                "AutoRoguelike": str(
+                                    self.cur_user_data.get("Task", "IfAutoRoguelike")
+                                ),
+                                "Reclamation": str(
+                                    self.cur_user_data.get("Task", "IfReclamation")
+                                ),
+                            }
+
+                        elif mode == "Annihilation":
+
+                            self.task_dict = {
+                                "WakeUp": "True",
+                                "Recruiting": "False",
+                                "Base": "False",
+                                "Combat": "True",
+                                "Mission": "False",
+                                "Mall": "False",
+                                "AutoRoguelike": "False",
+                                "Reclamation": "False",
+                            }
+
+                        logger.info(
+                            f"用户 {user['name']} - 模式: {mode} - 任务列表: {self.task_dict.values()}"
+                        )
+
+                        # 尝试次数循环
+                        for i in range(self.script_config.get("Run", "RunTimesLimit")):
+
+                            if self.run_book[mode]:
+                                break
+
+                            logger.info(
+                                f"用户 {user['name']} - 模式: {mode} - 尝试次数: {i + 1}/{self.script_config.get('Run', 'RunTimesLimit')}"
+                            )
+
+                            # 配置MAA
+                            set = await self.set_maa(mode)
+                            # 记录当前时间
+                            self.log_start_time = datetime.now()
+
+                            # 记录模拟器与ADB路径
+                            self.emulator_path = Path(
+                                set["Configurations"]["Default"]["Start.EmulatorPath"]
+                            )
+                            self.emulator_arguments = set["Configurations"]["Default"][
+                                "Start.EmulatorAddCommand"
+                            ].split()
+                            # 如果是快捷方式, 进行解析
+                            if (
+                                self.emulator_path.suffix == ".lnk"
+                                and self.emulator_path.exists()
+                            ):
+                                try:
+                                    shell = win32com.client.Dispatch("WScript.Shell")
+                                    shortcut = shell.CreateShortcut(
+                                        str(self.emulator_path)
+                                    )
+                                    self.emulator_path = Path(shortcut.TargetPath)
+                                    self.emulator_arguments = shortcut.Arguments.split()
+                                except Exception as e:
+                                    logger.exception(f"解析快捷方式时出现异常: {e}")
+                                    await Config.send_json(
+                                        WebSocketMessage(
+                                            id=self.ws_id,
+                                            type="Info",
+                                            data={
+                                                "Error": f"解析快捷方式时出现异常: {e}",
+                                            },
+                                        ).model_dump()
+                                    )
+                                    self.if_open_emulator = True
+                                    break
+                            elif not self.emulator_path.exists():
+                                logger.error(
+                                    f"模拟器快捷方式不存在: {self.emulator_path}"
+                                )
+                                await Config.send_json(
+                                    WebSocketMessage(
+                                        id=self.ws_id,
+                                        type="Info",
+                                        data={
+                                            "Error": f"模拟器快捷方式 {self.emulator_path} 不存在",
+                                        },
+                                    ).model_dump()
+                                )
+                                self.if_open_emulator = True
+                                break
+
+                            self.wait_time = int(
+                                set["Configurations"]["Default"][
+                                    "Start.EmulatorWaitSeconds"
+                                ]
+                            )
+
+                            self.ADB_path = Path(
+                                set["Configurations"]["Default"]["Connect.AdbPath"]
+                            )
+                            self.ADB_path = (
+                                self.ADB_path
+                                if self.ADB_path.is_absolute()
+                                else self.maa_root_path / self.ADB_path
+                            )
+                            self.ADB_address = set["Configurations"]["Default"][
+                                "Connect.Address"
+                            ]
+                            self.if_kill_emulator = bool(
+                                set["Configurations"]["Default"][
+                                    "MainFunction.PostActions"
+                                ]
+                                == "12"
+                            )
+                            self.if_open_emulator_process = bool(
+                                set["Configurations"]["Default"][
+                                    "Start.OpenEmulatorAfterLaunch"
+                                ]
+                                == "True"
+                            )
+
+                            # 任务开始前释放ADB
+                            try:
+                                logger.info(f"释放ADB: {self.ADB_address}")
+                                subprocess.run(
+                                    [self.ADB_path, "disconnect", self.ADB_address],
+                                    creationflags=subprocess.CREATE_NO_WINDOW,
+                                )
+                            except subprocess.CalledProcessError as e:
+                                # 忽略错误,因为可能本来就没有连接
+                                logger.warning(f"释放ADB时出现异常: {e}")
+                            except Exception as e:
+                                logger.exception(f"释放ADB时出现异常: {e}")
+                                await Config.send_json(
+                                    WebSocketMessage(
+                                        id=self.ws_id,
+                                        type="Info",
+                                        data={"Warning": f"释放ADB时出现异常: {e}"},
+                                    ).model_dump()
+                                )
+
+                            if self.if_open_emulator_process:
+                                try:
+                                    logger.info(
+                                        f"启动模拟器: {self.emulator_path}, 参数: {self.emulator_arguments}"
+                                    )
+                                    await self.emulator_process_manager.open_process(
+                                        self.emulator_path, self.emulator_arguments, 0
+                                    )
+                                except Exception as e:
+                                    logger.exception(f"启动模拟器时出现异常: {e}")
+                                    await Config.send_json(
+                                        WebSocketMessage(
+                                            id=self.ws_id,
+                                            type="Info",
+                                            data={
+                                                "Error": "启动模拟器时出现异常, 请检查MAA中模拟器路径设置"
+                                            },
+                                        ).model_dump()
+                                    )
+                                    self.if_open_emulator = True
+                                    break
+
+                            # 更新静默进程标记有效时间
+                            logger.info(
+                                f"更新静默进程标记: {self.emulator_path}, 标记有效时间: {datetime.now() + timedelta(seconds=self.wait_time + 10)}"
+                            )
+                            Config.silence_dict[self.emulator_path] = (
+                                datetime.now() + timedelta(seconds=self.wait_time + 10)
+                            )
+
+                            await self.search_ADB_address()
+
+                            # 创建MAA任务
+                            logger.info(f"启动MAA进程: {self.maa_exe_path}")
+                            await self.maa_process_manager.open_process(
+                                self.maa_exe_path, [], 0
+                            )
+
+                            # 监测MAA运行状态
+                            self.log_check_mode = mode
+                            await self.maa_log_monitor.start(
+                                self.maa_log_path, self.log_start_time
+                            )
+
+                            self.wait_event.clear()
+                            await self.wait_event.wait()
+
+                            await self.maa_log_monitor.stop()
+
+                            # 处理MAA结果
+                            if self.maa_result == "Success!":
+
+                                # 标记任务完成
+                                self.run_book[mode] = True
+
+                                logger.info(
+                                    f"用户: {user['user_id']} - MAA进程完成代理任务"
+                                )
+                                await Config.send_json(
+                                    WebSocketMessage(
+                                        id=self.ws_id,
+                                        type="Update",
+                                        data={
+                                            "log": "检测到MAA进程完成代理任务\n正在等待相关程序结束\n请等待10s"
+                                        },
+                                    ).model_dump()
+                                )
+
+                            else:
+                                logger.error(
+                                    f"用户: {user['user_id']} - 代理任务异常: {self.maa_result}"
+                                )
+                                # 打印中止信息
+                                # 此时, log变量内存储的就是出现异常的日志信息, 可以保存或发送用于问题排查
+                                await Config.send_json(
+                                    WebSocketMessage(
+                                        id=self.ws_id,
+                                        type="Update",
+                                        data={
+                                            "log": f"{self.maa_result}\n正在中止相关程序\n请等待10s"
+                                        },
+                                    ).model_dump()
+                                )
+                                # 无命令行中止MAA与其子程序
+                                logger.info(f"中止MAA进程: {self.maa_exe_path}")
+                                await self.maa_process_manager.kill(if_force=True)
+                                await System.kill_process(self.maa_exe_path)
+
+                                # 中止模拟器进程
+                                logger.info(
+                                    f"中止模拟器进程: {list(self.emulator_process_manager.tracked_pids)}"
+                                )
+                                await self.emulator_process_manager.kill()
+
+                                self.if_open_emulator = True
+
+                                # 推送异常通知
+                                await Notify.push_plyer(
+                                    "用户自动代理出现异常！",
+                                    f"用户 {user['name']} 的{MOOD_BOOK[mode]}部分出现一次异常",
+                                    f"{user['name']}的{MOOD_BOOK[mode]}出现异常",
+                                    3,
+                                )
+
+                            await asyncio.sleep(10)
+
+                            # 任务结束后释放ADB
+                            try:
+                                logger.info(f"释放ADB: {self.ADB_address}")
+                                subprocess.run(
+                                    [self.ADB_path, "disconnect", self.ADB_address],
+                                    creationflags=subprocess.CREATE_NO_WINDOW,
+                                )
+                            except subprocess.CalledProcessError as e:
+                                # 忽略错误,因为可能本来就没有连接
+                                logger.warning(f"释放ADB时出现异常: {e}")
+                            except Exception as e:
+                                logger.exception(f"释放ADB时出现异常: {e}")
+                                await Config.send_json(
+                                    WebSocketMessage(
+                                        id=self.ws_id,
+                                        type="Info",
+                                        data={"Error": f"释放ADB时出现异常: {e}"},
+                                    ).model_dump()
+                                )
+                            # 任务结束后再次手动中止模拟器进程, 防止退出不彻底
+                            if self.if_kill_emulator:
+                                logger.info(
+                                    f"任务结束后再次中止模拟器进程: {list(self.emulator_process_manager.tracked_pids)}"
+                                )
+                                await self.emulator_process_manager.kill()
+                                self.if_open_emulator = True
+
+                            # 从配置文件中解析所需信息
+                            with self.maa_set_path.open(
+                                mode="r", encoding="utf-8"
+                            ) as f:
+                                data = json.load(f)
+
+                            # 记录自定义基建索引
+                            await self.cur_user_data.set(
+                                "Data",
+                                "CustomInfrastPlanIndex",
+                                data["Configurations"]["Default"][
+                                    "Infrast.CustomInfrastPlanIndex"
+                                ],
+                            )
+
+                            # 记录更新包路径
+                            if (
+                                data["Global"]["VersionUpdate.package"]
+                                and (
+                                    self.maa_root_path
+                                    / data["Global"]["VersionUpdate.package"]
+                                ).exists()
+                            ):
+                                self.maa_update_package = data["Global"][
+                                    "VersionUpdate.package"
+                                ]
+
+                            # 记录剿灭情况
+                            if (
+                                mode == "Annihilation"
+                                and self.weekly_annihilation_limit_reached
+                            ):
+                                await self.cur_user_data.set(
+                                    "Data", "LastAnnihilationDate", self.curdate
+                                )
+                            # 保存运行日志以及统计信息
+                            if_six_star = await Config.save_maa_log(
+                                Path.cwd()
+                                / f"history/{self.curdate}/{user['name']}/{self.log_start_time.strftime('%H-%M-%S')}.log",
+                                self.maa_logs,
+                                self.maa_result,
+                            )
+                            self.user_logs_list.append(
+                                Path.cwd()
+                                / f"history/{self.curdate}/{user['name']}/{self.log_start_time.strftime('%H-%M-%S')}.json"
+                            )
+                            if if_six_star:
+                                try:
+                                    await self.push_notification(
+                                        "公招六星",
+                                        f"喜报: 用户 {user['name']} 公招出六星啦！",
+                                        {
+                                            "user_name": user["name"],
+                                        },
+                                    )
+                                except Exception as e:
+                                    logger.exception(f"推送公招六星通知时出现异常: {e}")
+                                    await Config.send_json(
+                                        WebSocketMessage(
+                                            id=self.ws_id,
+                                            type="Info",
+                                            data={
+                                                "Error": f"推送公招六星通知时出现异常: {e}"
+                                            },
+                                        ).model_dump()
+                                    )
+
+                            # 执行MAA解压更新动作
+                            if self.maa_update_package:
+                                logger.info(f"检测到MAA更新, 正在执行更新动作")
+
+                                await Config.send_json(
+                                    WebSocketMessage(
+                                        id=self.ws_id,
+                                        type="Update",
+                                        data={
+                                            "log": "检测到MAA存在更新\nMAA正在执行更新动作\n请等待10s"
+                                        },
+                                    ).model_dump()
+                                )
+                                await self.set_maa("Update")
+                                subprocess.Popen(
+                                    [self.maa_exe_path],
+                                    creationflags=subprocess.CREATE_NO_WINDOW,
+                                )
+                                await asyncio.sleep(10)
+                                await System.kill_process(self.maa_exe_path)
+
+                                self.maa_update_package = ""
+
+                                logger.info(f"更新动作结束")
+
+                    await self.result_record()
+
+                except Exception as e:
+
+                    logger.exception(f"代理用户 {user['user_id']} 时出现异常: {e}")
+                    user["status"] = "异常"
                     await Config.send_json(
                         WebSocketMessage(
                             id=self.ws_id,
-                            type="Update",
-                            data={
-                                "user_status": {
-                                    "user_id": user["user_id"],
-                                    "type": mode,
-                                }
-                            },
+                            type="Info",
+                            data={"Error": f"代理用户 {user['name']} 时出现异常: {e}"},
                         ).model_dump()
                     )
-
-                    # 解析任务构成
-                    if mode == "Routine":
-
-                        self.task_dict = {
-                            "WakeUp": str(self.cur_user_data.get("Task", "IfWakeUp")),
-                            "Recruiting": str(
-                                self.cur_user_data.get("Task", "IfRecruiting")
-                            ),
-                            "Base": str(self.cur_user_data.get("Task", "IfBase")),
-                            "Combat": str(self.cur_user_data.get("Task", "IfCombat")),
-                            "Mission": str(self.cur_user_data.get("Task", "IfMission")),
-                            "Mall": str(self.cur_user_data.get("Task", "IfMall")),
-                            "AutoRoguelike": str(
-                                self.cur_user_data.get("Task", "IfAutoRoguelike")
-                            ),
-                            "Reclamation": str(
-                                self.cur_user_data.get("Task", "IfReclamation")
-                            ),
-                        }
-
-                    elif mode == "Annihilation":
-
-                        self.task_dict = {
-                            "WakeUp": "True",
-                            "Recruiting": "False",
-                            "Base": "False",
-                            "Combat": "True",
-                            "Mission": "False",
-                            "Mall": "False",
-                            "AutoRoguelike": "False",
-                            "Reclamation": "False",
-                        }
-
-                    logger.info(
-                        f"用户 {user['name']} - 模式: {mode} - 任务列表: {self.task_dict.values()}"
-                    )
-
-                    # 尝试次数循环
-                    for i in range(self.script_config.get("Run", "RunTimesLimit")):
-
-                        if self.run_book[mode]:
-                            break
-
-                        logger.info(
-                            f"用户 {user['name']} - 模式: {mode} - 尝试次数: {i + 1}/{self.script_config.get('Run', 'RunTimesLimit')}"
-                        )
-
-                        # 配置MAA
-                        set = await self.set_maa(mode)
-                        # 记录当前时间
-                        self.log_start_time = datetime.now()
-
-                        # 记录模拟器与ADB路径
-                        self.emulator_path = Path(
-                            set["Configurations"]["Default"]["Start.EmulatorPath"]
-                        )
-                        self.emulator_arguments = set["Configurations"]["Default"][
-                            "Start.EmulatorAddCommand"
-                        ].split()
-                        # 如果是快捷方式, 进行解析
-                        if (
-                            self.emulator_path.suffix == ".lnk"
-                            and self.emulator_path.exists()
-                        ):
-                            try:
-                                shell = win32com.client.Dispatch("WScript.Shell")
-                                shortcut = shell.CreateShortcut(str(self.emulator_path))
-                                self.emulator_path = Path(shortcut.TargetPath)
-                                self.emulator_arguments = shortcut.Arguments.split()
-                            except Exception as e:
-                                logger.exception(f"解析快捷方式时出现异常: {e}")
-                                await Config.send_json(
-                                    WebSocketMessage(
-                                        id=self.ws_id,
-                                        type="Info",
-                                        data={
-                                            "Error": f"解析快捷方式时出现异常: {e}",
-                                        },
-                                    ).model_dump()
-                                )
-                                self.if_open_emulator = True
-                                break
-                        elif not self.emulator_path.exists():
-                            logger.error(f"模拟器快捷方式不存在: {self.emulator_path}")
-                            await Config.send_json(
-                                WebSocketMessage(
-                                    id=self.ws_id,
-                                    type="Info",
-                                    data={
-                                        "Error": f"模拟器快捷方式 {self.emulator_path} 不存在",
-                                    },
-                                ).model_dump()
-                            )
-                            self.if_open_emulator = True
-                            break
-
-                        self.wait_time = int(
-                            set["Configurations"]["Default"][
-                                "Start.EmulatorWaitSeconds"
-                            ]
-                        )
-
-                        self.ADB_path = Path(
-                            set["Configurations"]["Default"]["Connect.AdbPath"]
-                        )
-                        self.ADB_path = (
-                            self.ADB_path
-                            if self.ADB_path.is_absolute()
-                            else self.maa_root_path / self.ADB_path
-                        )
-                        self.ADB_address = set["Configurations"]["Default"][
-                            "Connect.Address"
-                        ]
-                        self.if_kill_emulator = bool(
-                            set["Configurations"]["Default"]["MainFunction.PostActions"]
-                            == "12"
-                        )
-                        self.if_open_emulator_process = bool(
-                            set["Configurations"]["Default"][
-                                "Start.OpenEmulatorAfterLaunch"
-                            ]
-                            == "True"
-                        )
-
-                        # 任务开始前释放ADB
-                        try:
-                            logger.info(f"释放ADB: {self.ADB_address}")
-                            subprocess.run(
-                                [self.ADB_path, "disconnect", self.ADB_address],
-                                creationflags=subprocess.CREATE_NO_WINDOW,
-                            )
-                        except subprocess.CalledProcessError as e:
-                            # 忽略错误,因为可能本来就没有连接
-                            logger.warning(f"释放ADB时出现异常: {e}")
-                        except Exception as e:
-                            logger.exception(f"释放ADB时出现异常: {e}")
-                            await Config.send_json(
-                                WebSocketMessage(
-                                    id=self.ws_id,
-                                    type="Info",
-                                    data={"Warning": f"释放ADB时出现异常: {e}"},
-                                ).model_dump()
-                            )
-
-                        if self.if_open_emulator_process:
-                            try:
-                                logger.info(
-                                    f"启动模拟器: {self.emulator_path}, 参数: {self.emulator_arguments}"
-                                )
-                                await self.emulator_process_manager.open_process(
-                                    self.emulator_path, self.emulator_arguments, 0
-                                )
-                            except Exception as e:
-                                logger.exception(f"启动模拟器时出现异常: {e}")
-                                await Config.send_json(
-                                    WebSocketMessage(
-                                        id=self.ws_id,
-                                        type="Info",
-                                        data={
-                                            "Error": "启动模拟器时出现异常, 请检查MAA中模拟器路径设置"
-                                        },
-                                    ).model_dump()
-                                )
-                                self.if_open_emulator = True
-                                break
-
-                        # 更新静默进程标记有效时间
-                        logger.info(
-                            f"更新静默进程标记: {self.emulator_path}, 标记有效时间: {datetime.now() + timedelta(seconds=self.wait_time + 10)}"
-                        )
-                        Config.silence_dict[self.emulator_path] = (
-                            datetime.now() + timedelta(seconds=self.wait_time + 10)
-                        )
-
-                        await self.search_ADB_address()
-
-                        # 创建MAA任务
-                        logger.info(f"启动MAA进程: {self.maa_exe_path}")
-                        await self.maa_process_manager.open_process(
-                            self.maa_exe_path, [], 0
-                        )
-
-                        # 监测MAA运行状态
-                        self.log_check_mode = mode
-                        await self.maa_log_monitor.start(
-                            self.maa_log_path, self.log_start_time
-                        )
-
-                        self.wait_event.clear()
-                        await self.wait_event.wait()
-
-                        await self.maa_log_monitor.stop()
-
-                        # 处理MAA结果
-                        if self.maa_result == "Success!":
-
-                            # 标记任务完成
-                            self.run_book[mode] = True
-
-                            logger.info(
-                                f"用户: {user['user_id']} - MAA进程完成代理任务"
-                            )
-                            await Config.send_json(
-                                WebSocketMessage(
-                                    id=self.ws_id,
-                                    type="Update",
-                                    data={
-                                        "log": "检测到MAA进程完成代理任务\n正在等待相关程序结束\n请等待10s"
-                                    },
-                                ).model_dump()
-                            )
-
-                        else:
-                            logger.error(
-                                f"用户: {user['user_id']} - 代理任务异常: {self.maa_result}"
-                            )
-                            # 打印中止信息
-                            # 此时, log变量内存储的就是出现异常的日志信息, 可以保存或发送用于问题排查
-                            await Config.send_json(
-                                WebSocketMessage(
-                                    id=self.ws_id,
-                                    type="Update",
-                                    data={
-                                        "log": f"{self.maa_result}\n正在中止相关程序\n请等待10s"
-                                    },
-                                ).model_dump()
-                            )
-                            # 无命令行中止MAA与其子程序
-                            logger.info(f"中止MAA进程: {self.maa_exe_path}")
-                            await self.maa_process_manager.kill(if_force=True)
-                            await System.kill_process(self.maa_exe_path)
-
-                            # 中止模拟器进程
-                            logger.info(
-                                f"中止模拟器进程: {list(self.emulator_process_manager.tracked_pids)}"
-                            )
-                            await self.emulator_process_manager.kill()
-
-                            self.if_open_emulator = True
-
-                            # 推送异常通知
-                            await Notify.push_plyer(
-                                "用户自动代理出现异常！",
-                                f"用户 {user['name']} 的{MOOD_BOOK[mode]}部分出现一次异常",
-                                f"{user['name']}的{MOOD_BOOK[mode]}出现异常",
-                                3,
-                            )
-
-                        await asyncio.sleep(10)
-
-                        # 任务结束后释放ADB
-                        try:
-                            logger.info(f"释放ADB: {self.ADB_address}")
-                            subprocess.run(
-                                [self.ADB_path, "disconnect", self.ADB_address],
-                                creationflags=subprocess.CREATE_NO_WINDOW,
-                            )
-                        except subprocess.CalledProcessError as e:
-                            # 忽略错误,因为可能本来就没有连接
-                            logger.warning(f"释放ADB时出现异常: {e}")
-                        except Exception as e:
-                            logger.exception(f"释放ADB时出现异常: {e}")
-                            await Config.send_json(
-                                WebSocketMessage(
-                                    id=self.ws_id,
-                                    type="Info",
-                                    data={"Error": f"释放ADB时出现异常: {e}"},
-                                ).model_dump()
-                            )
-                        # 任务结束后再次手动中止模拟器进程, 防止退出不彻底
-                        if self.if_kill_emulator:
-                            logger.info(
-                                f"任务结束后再次中止模拟器进程: {list(self.emulator_process_manager.tracked_pids)}"
-                            )
-                            await self.emulator_process_manager.kill()
-                            self.if_open_emulator = True
-
-                        # 从配置文件中解析所需信息
-                        with self.maa_set_path.open(mode="r", encoding="utf-8") as f:
-                            data = json.load(f)
-
-                        # 记录自定义基建索引
-                        await self.cur_user_data.set(
-                            "Data",
-                            "CustomInfrastPlanIndex",
-                            data["Configurations"]["Default"][
-                                "Infrast.CustomInfrastPlanIndex"
-                            ],
-                        )
-
-                        # 记录更新包路径
-                        if (
-                            data["Global"]["VersionUpdate.package"]
-                            and (
-                                self.maa_root_path
-                                / data["Global"]["VersionUpdate.package"]
-                            ).exists()
-                        ):
-                            self.maa_update_package = data["Global"][
-                                "VersionUpdate.package"
-                            ]
-
-                        # 记录剿灭情况
-                        if (
-                            mode == "Annihilation"
-                            and self.weekly_annihilation_limit_reached
-                        ):
-                            await self.cur_user_data.set(
-                                "Data", "LastAnnihilationDate", self.curdate
-                            )
-                        # 保存运行日志以及统计信息
-                        if_six_star = await Config.save_maa_log(
-                            Path.cwd()
-                            / f"history/{self.curdate}/{user['name']}/{self.log_start_time.strftime('%H-%M-%S')}.log",
-                            self.maa_logs,
-                            self.maa_result,
-                        )
-                        self.user_logs_list.append(
-                            Path.cwd()
-                            / f"history/{self.curdate}/{user['name']}/{self.log_start_time.strftime('%H-%M-%S')}.json"
-                        )
-                        if if_six_star:
-                            await self.push_notification(
-                                "公招六星",
-                                f"喜报: 用户 {user['name']} 公招出六星啦！",
-                                {
-                                    "user_name": user["name"],
-                                },
-                            )
-
-                        # 执行MAA解压更新动作
-                        if self.maa_update_package:
-                            logger.info(f"检测到MAA更新, 正在执行更新动作")
-
-                            await Config.send_json(
-                                WebSocketMessage(
-                                    id=self.ws_id,
-                                    type="Update",
-                                    data={
-                                        "log": "检测到MAA存在更新\nMAA正在执行更新动作\n请等待10s"
-                                    },
-                                ).model_dump()
-                            )
-                            await self.set_maa("Update")
-                            subprocess.Popen(
-                                [self.maa_exe_path],
-                                creationflags=subprocess.CREATE_NO_WINDOW,
-                            )
-                            await asyncio.sleep(10)
-                            await System.kill_process(self.maa_exe_path)
-
-                            self.maa_update_package = ""
-
-                            logger.info(f"更新动作结束")
-
-                await self.result_record()
 
         # 人工排查模式
         elif self.mode == "人工排查":
@@ -879,11 +926,21 @@ class MaaManager:
                 if (self.run_book["Annihilation"] and self.run_book["Routine"])
                 else "代理任务未全部完成"
             )
-            await self.push_notification(
-                "统计信息",
-                f"{self.current_date} | 用户 {self.user_list[self.index]['name']} 的自动代理统计报告",
-                statistics,
-            )
+            try:
+                await self.push_notification(
+                    "统计信息",
+                    f"{self.current_date} | 用户 {self.user_list[self.index]['name']} 的自动代理统计报告",
+                    statistics,
+                )
+            except Exception as e:
+                logger.exception(f"推送统计信息时出现异常: {e}")
+                await Config.send_json(
+                    WebSocketMessage(
+                        id=self.ws_id,
+                        type="Info",
+                        data={"Error": f"推送统计信息时出现异常: {e}"},
+                    ).model_dump()
+                )
 
             if self.run_book["Annihilation"] and self.run_book["Routine"]:
                 # 成功完成代理的用户修改相关参数
@@ -989,13 +1046,23 @@ class MaaManager:
                     / f"history/{self.curdate}/{self.user_list[self.index]['name']}/{self.log_start_time.strftime('%H-%M-%S')}.json"
                 )
                 if if_six_star:
-                    await self.push_notification(
-                        "公招六星",
-                        f"喜报: 用户 {self.user_list[self.index]['name']} 公招出六星啦！",
-                        {
-                            "user_name": self.user_list[self.index]["name"],
-                        },
-                    )
+                    try:
+                        await self.push_notification(
+                            "公招六星",
+                            f"喜报: 用户 {self.user_list[self.index]['name']} 公招出六星啦！",
+                            {
+                                "user_name": self.user_list[self.index]["name"],
+                            },
+                        )
+                    except Exception as e:
+                        logger.exception(f"推送公招六星通知时出现异常: {e}")
+                        await Config.send_json(
+                            WebSocketMessage(
+                                id=self.ws_id,
+                                type="Info",
+                                data={"Error": f"推送公招六星通知时出现异常: {e}"},
+                            ).model_dump()
+                        )
 
             await self.result_record()
 
@@ -1011,10 +1078,10 @@ class MaaManager:
         if self.mode in ["自动代理", "人工排查"]:
 
             # 更新用户数据
-            sc = Config.ScriptConfig[self.script_id]
-            if isinstance(sc, MaaConfig):
-                await sc.UserData.load(await self.user_config.toDict())
-                await Config.ScriptConfig.save()
+            await Config.ScriptConfig[self.script_id].UserData.load(
+                await self.user_config.toDict()
+            )
+            await Config.ScriptConfig.save()
 
             error_user = [_["name"] for _ in self.user_list if _["status"] == "异常"]
             over_user = [_["name"] for _ in self.user_list if _["status"] == "完成"]
@@ -1060,7 +1127,17 @@ class MaaManager:
                 f"已完成用户数: {len(over_user)}, 未完成用户数: {len(error_user) + len(wait_user)}",
                 10,
             )
-            await self.push_notification("代理结果", title, result)
+            try:
+                await self.push_notification("代理结果", title, result)
+            except Exception as e:
+                logger.exception(f"推送代理结果时出现异常: {e}")
+                await Config.send_json(
+                    WebSocketMessage(
+                        id=self.ws_id,
+                        type="Info",
+                        data={"Error": f"推送代理结果时出现异常: {e}"},
+                    ).model_dump()
+                )
 
         elif self.mode == "设置脚本":
             (
@@ -1472,16 +1549,29 @@ class MaaManager:
                 data["Configurations"]["Default"]["TaskQueue.Order.AutoRoguelike"] = "6"
                 data["Configurations"]["Default"]["TaskQueue.Order.Reclamation"] = "7"
 
-            if isinstance(self.cur_user_data, MaaUserConfig):
-                try:
-                    plan_data = self.cur_user_data.get_plan_info()
-                except Exception as e:
-                    logger.error(
-                        f"获取用户 {self.user_list[self.index]['user_id']} 的代理计划信息失败: {e}"
-                    )
-                    plan_data = {}
+            if self.cur_user_data.get("Info", "StageMode") == "Fixed":
+                plan_data = {
+                    "MedicineNumb": self.cur_user_data.get("Info", "MedicineNumb"),
+                    "SeriesNumb": self.cur_user_data.get("Info", "SeriesNumb"),
+                    "Stage": self.cur_user_data.get("Info", "Stage"),
+                    "Stage_1": self.cur_user_data.get("Info", "Stage_1"),
+                    "Stage_2": self.cur_user_data.get("Info", "Stage_2"),
+                    "Stage_3": self.cur_user_data.get("Info", "Stage_3"),
+                    "Stage_Remain": self.cur_user_data.get("Info", "Stage_Remain"),
+                }
             else:
-                plan_data = {}
+                plan = Config.PlanConfig[
+                    uuid.UUID(self.cur_user_data.get("Info", "StageMode"))
+                ]
+                plan_data = {
+                    "MedicineNumb": plan.get_current_info("MedicineNumb").getValue(),
+                    "SeriesNumb": plan.get_current_info("SeriesNumb").getValue(),
+                    "Stage": plan.get_current_info("Ssstage").getValue(),
+                    "Stage_1": plan.get_current_info("Stage_1").getValue(),
+                    "Stage_2": plan.get_current_info("Stage_2").getValue(),
+                    "Stage_3": plan.get_current_info("Stage_3").getValue(),
+                    "Stage_Remain": plan.get_current_info("Stage_Remain").getValue(),
+                }
 
             data["Configurations"]["Default"]["MainFunction.UseMedicine"] = (
                 "False" if plan_data.get("MedicineNumb", 0) == 0 else "True"
@@ -1899,21 +1989,10 @@ class MaaManager:
                 )
 
             # 发送自定义Webhook通知
-            try:
-                custom_webhooks = Config.get("Notify", "CustomWebhooks")
-            except AttributeError:
-                custom_webhooks = []
-            if custom_webhooks:
-                for webhook in custom_webhooks:
-                    if webhook.get("enabled", True):
-                        try:
-                            await Notify.CustomWebhookPush(
-                                title, f"{message_text}\n\nAUTO-MAS 敬上", webhook
-                            )
-                        except Exception as e:
-                            logger.error(
-                                f"自定义Webhook推送失败 ({webhook.get('name', 'Unknown')}): {e}"
-                            )
+            for webhook in Config.Notify_CustomWebhooks.values():
+                await Notify.WebhookPush(
+                    title, f"{message_text}\n\nAUTO-MAS 敬上", webhook
+                )
 
         elif mode == "统计信息":
 
@@ -1965,21 +2044,10 @@ class MaaManager:
                     )
 
                 # 发送自定义Webhook通知
-                try:
-                    custom_webhooks = Config.get("Notify", "CustomWebhooks")
-                except AttributeError:
-                    custom_webhooks = []
-                if custom_webhooks:
-                    for webhook in custom_webhooks:
-                        if webhook.get("enabled", True):
-                            try:
-                                await Notify.CustomWebhookPush(
-                                    title, f"{message_text}\n\nAUTO-MAS 敬上", webhook
-                                )
-                            except Exception as e:
-                                logger.error(
-                                    f"自定义Webhook推送失败 ({webhook.get('name', 'Unknown')}): {e}"
-                                )
+                for webhook in Config.Notify_CustomWebhooks.values():
+                    await Notify.WebhookPush(
+                        title, f"{message_text}\n\nAUTO-MAS 敬上", webhook
+                    )
 
             # 发送用户单独通知
             if self.cur_user_data.get("Notify", "Enabled") and self.cur_user_data.get(
@@ -1988,51 +2056,25 @@ class MaaManager:
 
                 # 发送邮件通知
                 if self.cur_user_data.get("Notify", "IfSendMail"):
-                    if self.cur_user_data.get("Notify", "ToAddress"):
-                        await Notify.send_mail(
-                            "网页",
-                            title,
-                            message_html,
-                            self.cur_user_data.get("Notify", "ToAddress"),
-                        )
-                    else:
-                        logger.error(f"用户邮箱地址为空, 无法发送用户单独的邮件通知")
+                    await Notify.send_mail(
+                        "网页",
+                        title,
+                        message_html,
+                        self.cur_user_data.get("Notify", "ToAddress"),
+                    )
 
                 # 发送ServerChan通知
                 if self.cur_user_data.get("Notify", "IfServerChan"):
-                    if self.cur_user_data.get("Notify", "ServerChanKey"):
-                        await Notify.ServerChanPush(
-                            title,
-                            f"{serverchan_message}\n\nAUTO-MAS 敬上",
-                            self.cur_user_data.get("Notify", "ServerChanKey"),
-                        )
-                    else:
-                        logger.error(
-                            "用户ServerChan密钥为空, 无法发送用户单独的ServerChan通知"
-                        )
+                    await Notify.ServerChanPush(
+                        title,
+                        f"{serverchan_message}\n\nAUTO-MAS 敬上",
+                        self.cur_user_data.get("Notify", "ServerChanKey"),
+                    )
 
-                # 推送CompanyWebHookBot通知
-                # 发送用户自定义Webhook通知
-                try:
-                    user_webhooks = self.cur_user_data.get("Notify", "CustomWebhooks")
-                except AttributeError:
-                    user_webhooks = []
-                if not user_webhooks:
-                    user_webhooks = []
-                if user_webhooks:
-                    for webhook in user_webhooks:
-                        if webhook.get("enabled", True):
-                            try:
-                                await Notify.CustomWebhookPush(
-                                    title, f"{message_text}\n\nAUTO-MAS 敬上", webhook
-                                )
-                            except Exception as e:
-                                logger.error(
-                                    f"用户自定义Webhook推送失败 ({webhook.get('name', 'Unknown')}): {e}"
-                                )
-                else:
-                    logger.error(
-                        "用户CompanyWebHookBot密钥为空, 无法发送用户单独的CompanyWebHookBot通知"
+                # 推送CompanyWebHook通知
+                for webhook in self.cur_user_data.Notify_CustomWebhooks.values():
+                    await Notify.WebhookPush(
+                        title, f"{message_text}\n\nAUTO-MAS 敬上", webhook
                     )
 
         elif mode == "公招六星":
@@ -2058,21 +2100,8 @@ class MaaManager:
                     )
 
                 # 发送自定义Webhook通知（六星喜报）
-                try:
-                    custom_webhooks = Config.get("Notify", "CustomWebhooks")
-                except AttributeError:
-                    custom_webhooks = []
-                if custom_webhooks:
-                    for webhook in custom_webhooks:
-                        if webhook.get("enabled", True):
-                            try:
-                                await Notify.CustomWebhookPush(
-                                    title, "好羡慕~\n\nAUTO-MAS 敬上", webhook
-                                )
-                            except Exception as e:
-                                logger.error(
-                                    f"自定义Webhook推送失败 ({webhook.get('name', 'Unknown')}): {e}"
-                                )
+                for webhook in Config.Notify_CustomWebhooks.values():
+                    await Notify.WebhookPush(title, "好羡慕~\n\nAUTO-MAS 敬上", webhook)
 
             # 发送用户单独通知
             if self.cur_user_data.get("Notify", "Enabled") and self.cur_user_data.get(
@@ -2081,52 +2110,21 @@ class MaaManager:
 
                 # 发送邮件通知
                 if self.cur_user_data.get("Notify", "IfSendMail"):
-                    if self.cur_user_data.get("Notify", "ToAddress"):
-                        await Notify.send_mail(
-                            "网页",
-                            title,
-                            message_html,
-                            self.cur_user_data.get("Notify", "ToAddress"),
-                        )
-                    else:
-                        logger.error("用户邮箱地址为空, 无法发送用户单独的邮件通知")
+                    await Notify.send_mail(
+                        "网页",
+                        title,
+                        message_html,
+                        self.cur_user_data.get("Notify", "ToAddress"),
+                    )
 
                 # 发送ServerChan通知
                 if self.cur_user_data.get("Notify", "IfServerChan"):
-
-                    if self.cur_user_data.get("Notify", "ServerChanKey"):
-                        await Notify.ServerChanPush(
-                            title,
-                            "好羡慕~\n\nAUTO-MAS 敬上",
-                            self.cur_user_data.get("Notify", "ServerChanKey"),
-                        )
-                    else:
-                        logger.error(
-                            "用户ServerChan密钥为空, 无法发送用户单独的ServerChan通知"
-                        )
-
-                # 推送CompanyWebHookBot通知
-                # 发送用户自定义Webhook通知（六星喜报）
-                try:
-                    user_webhooks = self.cur_user_data.get("Notify", "CustomWebhooks")
-                except AttributeError:
-                    user_webhooks = []
-                if not user_webhooks:
-                    user_webhooks = []
-                if user_webhooks:
-                    for webhook in user_webhooks:
-                        if webhook.get("enabled", True):
-                            try:
-                                await Notify.CustomWebhookPush(
-                                    title, "好羡慕~\n\nAUTO-MAS 敬上", webhook
-                                )
-                            except Exception as e:
-                                logger.error(
-                                    f"用户自定义Webhook推送失败 ({webhook.get('name', 'Unknown')}): {e}"
-                                )
-                else:
-                    logger.error(
-                        "用户CompanyWebHookBot密钥为空, 无法发送用户单独的CompanyWebHookBot通知"
+                    await Notify.ServerChanPush(
+                        title,
+                        "好羡慕~\n\nAUTO-MAS 敬上",
+                        self.cur_user_data.get("Notify", "ServerChanKey"),
                     )
 
-        return None
+                # 推送CompanyWebHookBot通知
+                for webhook in self.cur_user_data.Notify_CustomWebhooks.values():
+                    await Notify.WebhookPush(title, "好羡慕~\n\nAUTO-MAS 敬上", webhook)

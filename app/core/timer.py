@@ -81,9 +81,7 @@ class _MainTimer:
 
         for uid, queue in Config.QueueConfig.items():
 
-            if not isinstance(queue, QueueConfig) or not queue.get(
-                "Info", "TimeEnabled"
-            ):
+            if not queue.get("Info", "TimeEnabled"):
                 continue
 
             # 避免重复调起任务

@@ -100,141 +100,83 @@ async def test_notify() -> OutBase:
 
 
 @router.post(
-    "/webhook/create",
-    summary="创建自定义Webhook",
-    response_model=OutBase,
+    "/webhook/get",
+    summary="查询 webhook 配置",
+    response_model=WebhookGetOut,
     status_code=200,
 )
-async def create_webhook(webhook_data: dict = Body(...)) -> OutBase:
-    """创建自定义Webhook"""
+async def get_webhook(webhook: WebhookGetIn = Body(...)) -> WebhookGetOut:
 
     try:
-        # 生成唯一ID
-        webhook_id = str(uuid.uuid4())
-
-        # 创建webhook配置
-        webhook_config = {
-            "id": webhook_id,
-            "name": webhook_data.get("name", ""),
-            "url": webhook_data.get("url", ""),
-            "template": webhook_data.get("template", ""),
-            "enabled": webhook_data.get("enabled", True),
-            "headers": webhook_data.get("headers", {}),
-            "method": webhook_data.get("method", "POST"),
-        }
-
-        # 获取当前配置
-        current_config = await Config.get_setting()
-        custom_webhooks = current_config.get("Notify", {}).get("CustomWebhooks", [])
-
-        # 添加新webhook
-        custom_webhooks.append(webhook_config)
-
-        # 更新配置
-        update_data = {"Notify": {"CustomWebhooks": custom_webhooks}}
-        await Config.update_setting(update_data)
-
-        return OutBase(message=f"Webhook '{webhook_config['name']}' 创建成功")
-
+        index, data = await Config.get_webhook(None, None, webhook.webhookId)
+        index = [WebhookIndexItem(**_) for _ in index]
+        data = {uid: Webhook(**cfg) for uid, cfg in data.items()}
     except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+        return WebhookGetOut(
+            code=500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            index=[],
+            data={},
         )
+    return WebhookGetOut(index=index, data=data)
 
 
 @router.post(
-    "/webhook/update",
-    summary="更新自定义Webhook",
-    response_model=OutBase,
+    "/webhook/add",
+    summary="添加定时项",
+    response_model=WebhookCreateOut,
     status_code=200,
 )
-async def update_webhook(webhook_data: dict = Body(...)) -> OutBase:
-    """更新自定义Webhook"""
+async def add_webhook() -> WebhookCreateOut:
 
-    try:
-        webhook_id = webhook_data.get("id")
-        if not webhook_id:
-            return OutBase(code=400, status="error", message="缺少Webhook ID")
-
-        # 获取当前配置
-        current_config = await Config.get_setting()
-        custom_webhooks = current_config.get("Notify", {}).get("CustomWebhooks", [])
-
-        # 查找并更新webhook
-        updated = False
-        for i, webhook in enumerate(custom_webhooks):
-            if webhook.get("id") == webhook_id:
-                custom_webhooks[i].update(
-                    {
-                        "name": webhook_data.get("name", webhook.get("name", "")),
-                        "url": webhook_data.get("url", webhook.get("url", "")),
-                        "template": webhook_data.get(
-                            "template", webhook.get("template", "")
-                        ),
-                        "enabled": webhook_data.get(
-                            "enabled", webhook.get("enabled", True)
-                        ),
-                        "headers": webhook_data.get(
-                            "headers", webhook.get("headers", {})
-                        ),
-                        "method": webhook_data.get(
-                            "method", webhook.get("method", "POST")
-                        ),
-                    }
-                )
-                updated = True
-                break
-
-        if not updated:
-            return OutBase(code=404, status="error", message="Webhook不存在")
-
-        # 更新配置
-        update_data = {"Notify": {"CustomWebhooks": custom_webhooks}}
-        await Config.update_setting(update_data)
-
-        return OutBase(message="Webhook更新成功")
-
-    except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
+    uid, config = await Config.add_webhook(None, None)
+    data = Webhook(**(await config.toDict()))
+    return WebhookCreateOut(webhookId=str(uid), data=data)
 
 
 @router.post(
-    "/webhook/delete",
-    summary="删除自定义Webhook",
-    response_model=OutBase,
-    status_code=200,
+    "/webhook/update", summary="更新定时项", response_model=OutBase, status_code=200
 )
-async def delete_webhook(webhook_data: dict = Body(...)) -> OutBase:
-    """删除自定义Webhook"""
+async def update_webhook(webhook: WebhookUpdateIn = Body(...)) -> OutBase:
 
     try:
-        webhook_id = webhook_data.get("id")
-        if not webhook_id:
-            return OutBase(code=400, status="error", message="缺少Webhook ID")
-
-        # 获取当前配置
-        current_config = await Config.get_setting()
-        custom_webhooks = current_config.get("Notify", {}).get("CustomWebhooks", [])
-
-        # 查找并删除webhook
-        original_length = len(custom_webhooks)
-        custom_webhooks = [w for w in custom_webhooks if w.get("id") != webhook_id]
-
-        if len(custom_webhooks) == original_length:
-            return OutBase(code=404, status="error", message="Webhook不存在")
-
-        # 更新配置
-        update_data = {"Notify": {"CustomWebhooks": custom_webhooks}}
-        await Config.update_setting(update_data)
-
-        return OutBase(message="Webhook删除成功")
-
+        await Config.update_webhook(
+            None, None, webhook.webhookId, webhook.data.model_dump(exclude_unset=True)
+        )
     except Exception as e:
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
+    return OutBase()
+
+
+@router.post(
+    "/webhook/delete", summary="删除定时项", response_model=OutBase, status_code=200
+)
+async def delete_webhook(webhook: WebhookDeleteIn = Body(...)) -> OutBase:
+
+    try:
+        await Config.del_webhook(None, None, webhook.webhookId)
+    except Exception as e:
+        return OutBase(
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+        )
+    return OutBase()
+
+
+@router.post(
+    "/webhook/order", summary="重新排序定时项", response_model=OutBase, status_code=200
+)
+async def reorder_webhook(webhook: WebhookReorderIn = Body(...)) -> OutBase:
+
+    try:
+        await Config.reorder_webhook(None, None, webhook.indexList)
+    except Exception as e:
+        return OutBase(
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+        )
+    return OutBase()
 
 
 @router.post(

@@ -35,7 +35,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta, date
 from typing import Literal, Optional
 
-from app.models.ConfigBase import *
+from app.models.config import *
 from app.utils.constants import *
 from app.utils import get_logger
 
@@ -50,565 +50,6 @@ try:
     from git import Repo
 except ImportError:
     Repo = None
-
-
-class GlobalConfig(ConfigBase):
-    """全局配置"""
-
-    Function_HistoryRetentionTime = ConfigItem(
-        "Function",
-        "HistoryRetentionTime",
-        0,
-        OptionsValidator([7, 15, 30, 60, 90, 180, 365, 0]),
-    )
-    Function_IfAllowSleep = ConfigItem(
-        "Function", "IfAllowSleep", False, BoolValidator()
-    )
-    Function_IfSilence = ConfigItem("Function", "IfSilence", False, BoolValidator())
-    Function_BossKey = ConfigItem("Function", "BossKey", "")
-    Function_IfAgreeBilibili = ConfigItem(
-        "Function", "IfAgreeBilibili", False, BoolValidator()
-    )
-    Function_IfSkipMumuSplashAds = ConfigItem(
-        "Function", "IfSkipMumuSplashAds", False, BoolValidator()
-    )
-
-    Voice_Enabled = ConfigItem("Voice", "Enabled", False, BoolValidator())
-    Voice_Type = ConfigItem(
-        "Voice", "Type", "simple", OptionsValidator(["simple", "noisy"])
-    )
-
-    Start_IfSelfStart = ConfigItem("Start", "IfSelfStart", False, BoolValidator())
-    Start_IfMinimizeDirectly = ConfigItem(
-        "Start", "IfMinimizeDirectly", False, BoolValidator()
-    )
-
-    UI_IfShowTray = ConfigItem("UI", "IfShowTray", False, BoolValidator())
-    UI_IfToTray = ConfigItem("UI", "IfToTray", False, BoolValidator())
-
-    Notify_SendTaskResultTime = ConfigItem(
-        "Notify",
-        "SendTaskResultTime",
-        "不推送",
-        OptionsValidator(["不推送", "任何时刻", "仅失败时"]),
-    )
-    Notify_IfSendStatistic = ConfigItem(
-        "Notify", "IfSendStatistic", False, BoolValidator()
-    )
-    Notify_IfSendSixStar = ConfigItem("Notify", "IfSendSixStar", False, BoolValidator())
-    Notify_IfPushPlyer = ConfigItem("Notify", "IfPushPlyer", False, BoolValidator())
-    Notify_IfSendMail = ConfigItem("Notify", "IfSendMail", False, BoolValidator())
-    Notify_SMTPServerAddress = ConfigItem("Notify", "SMTPServerAddress", "")
-    Notify_AuthorizationCode = ConfigItem(
-        "Notify", "AuthorizationCode", "", EncryptValidator()
-    )
-    Notify_FromAddress = ConfigItem("Notify", "FromAddress", "")
-    Notify_ToAddress = ConfigItem("Notify", "ToAddress", "")
-    Notify_IfServerChan = ConfigItem("Notify", "IfServerChan", False, BoolValidator())
-    Notify_ServerChanKey = ConfigItem("Notify", "ServerChanKey", "")
-    Notify_CustomWebhooks = ConfigItem("Notify", "CustomWebhooks", [])
-
-    Update_IfAutoUpdate = ConfigItem("Update", "IfAutoUpdate", False, BoolValidator())
-    Update_Source = ConfigItem(
-        "Update",
-        "Source",
-        "GitHub",
-        OptionsValidator(["GitHub", "MirrorChyan", "AutoSite"]),
-    )
-    Update_ProxyAddress = ConfigItem("Update", "ProxyAddress", "")
-    Update_MirrorChyanCDK = ConfigItem(
-        "Update", "MirrorChyanCDK", "", EncryptValidator()
-    )
-
-    Data_UID = ConfigItem("Data", "UID", str(uuid.uuid4()), UUIDValidator())
-    Data_LastStatisticsUpload = ConfigItem(
-        "Data",
-        "LastStatisticsUpload",
-        "2000-01-01 00:00:00",
-        DateTimeValidator("%Y-%m-%d %H:%M:%S"),
-    )
-    Data_LastStageUpdated = ConfigItem(
-        "Data",
-        "LastStageUpdated",
-        "2000-01-01 00:00:00",
-        DateTimeValidator("%Y-%m-%d %H:%M:%S"),
-    )
-    Data_StageTimeStamp = ConfigItem(
-        "Data",
-        "StageTimeStamp",
-        "2000-01-01 00:00:00",
-        DateTimeValidator("%Y-%m-%d %H:%M:%S"),
-    )
-    Data_Stage = ConfigItem("Data", "Stage", "{ }", JSONValidator())
-    Data_LastNoticeUpdated = ConfigItem(
-        "Data",
-        "LastNoticeUpdated",
-        "2000-01-01 00:00:00",
-        DateTimeValidator("%Y-%m-%d %H:%M:%S"),
-    )
-    Data_IfShowNotice = ConfigItem("Data", "IfShowNotice", True, BoolValidator())
-    Data_Notice = ConfigItem("Data", "Notice", "{ }", JSONValidator())
-    Data_LastWebConfigUpdated = ConfigItem(
-        "Data",
-        "LastWebConfigUpdated",
-        "2000-01-01 00:00:00",
-        DateTimeValidator("%Y-%m-%d %H:%M:%S"),
-    )
-    Data_WebConfig = ConfigItem("Data", "WebConfig", "{ }", JSONValidator())
-
-
-class QueueItem(ConfigBase):
-    """队列项配置"""
-
-    related_config: dict[str, MultipleConfig] = {}
-
-    def __init__(self) -> None:
-        super().__init__()
-
-        self.Info_ScriptId = ConfigItem(
-            "Info",
-            "ScriptId",
-            "-",
-            MultipleUIDValidator("-", self.related_config, "ScriptConfig"),
-        )
-
-
-class TimeSet(ConfigBase):
-    """时间设置配置"""
-
-    def __init__(self) -> None:
-        super().__init__()
-
-        self.Info_Enabled = ConfigItem("Info", "Enabled", False, BoolValidator())
-        self.Info_Time = ConfigItem("Info", "Time", "00:00", DateTimeValidator("%H:%M"))
-
-
-class QueueConfig(ConfigBase):
-    """队列配置"""
-
-    def __init__(self) -> None:
-        super().__init__()
-
-        self.Info_Name = ConfigItem("Info", "Name", "新队列")
-        self.Info_TimeEnabled = ConfigItem(
-            "Info", "TimeEnabled", False, BoolValidator()
-        )
-        self.Info_StartUpEnabled = ConfigItem(
-            "Info", "StartUpEnabled", False, BoolValidator()
-        )
-        self.Info_AfterAccomplish = ConfigItem(
-            "Info",
-            "AfterAccomplish",
-            "NoAction",
-            OptionsValidator(
-                [
-                    "NoAction",
-                    "KillSelf",
-                    "Sleep",
-                    "Hibernate",
-                    "Shutdown",
-                    "ShutdownForce",
-                ]
-            ),
-        )
-
-        self.Data_LastTimedStart = ConfigItem(
-            "Data",
-            "LastTimedStart",
-            "2000-01-01 00:00",
-            DateTimeValidator("%Y-%m-%d %H:%M"),
-        )
-
-        self.TimeSet = MultipleConfig([TimeSet])
-        self.QueueItem = MultipleConfig([QueueItem])
-
-
-class MaaUserConfig(ConfigBase):
-    """MAA用户配置"""
-
-    related_config: dict[str, MultipleConfig] = {}
-
-    def __init__(self) -> None:
-        super().__init__()
-
-        self.Info_Name = ConfigItem("Info", "Name", "新用户", UserNameValidator())
-        self.Info_Id = ConfigItem("Info", "Id", "")
-        self.Info_Mode = ConfigItem(
-            "Info", "Mode", "简洁", OptionsValidator(["简洁", "详细"])
-        )
-        self.Info_StageMode = ConfigItem(
-            "Info",
-            "StageMode",
-            "Fixed",
-            MultipleUIDValidator("Fixed", self.related_config, "PlanConfig"),
-        )
-        self.Info_Server = ConfigItem(
-            "Info",
-            "Server",
-            "Official",
-            OptionsValidator(
-                ["Official", "Bilibili", "YoStarEN", "YoStarJP", "YoStarKR", "txwy"]
-            ),
-        )
-        self.Info_Status = ConfigItem("Info", "Status", True, BoolValidator())
-        self.Info_RemainedDay = ConfigItem(
-            "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
-        )
-        self.Info_Annihilation = ConfigItem(
-            "Info",
-            "Annihilation",
-            "Annihilation",
-            OptionsValidator(
-                [
-                    "Close",
-                    "Annihilation",
-                    "Chernobog@Annihilation",
-                    "LungmenOutskirts@Annihilation",
-                    "LungmenDowntown@Annihilation",
-                ]
-            ),
-        )
-        self.Info_Routine = ConfigItem("Info", "Routine", True, BoolValidator())
-        self.Info_InfrastMode = ConfigItem(
-            "Info",
-            "InfrastMode",
-            "Normal",
-            OptionsValidator(["Normal", "Rotation", "Custom"]),
-        )
-        self.Info_InfrastPath = ConfigItem(
-            "Info", "InfrastPath", str(Path.cwd()), FileValidator()
-        )
-        self.Info_Password = ConfigItem("Info", "Password", "", EncryptValidator())
-        self.Info_Notes = ConfigItem("Info", "Notes", "无")
-        self.Info_MedicineNumb = ConfigItem(
-            "Info", "MedicineNumb", 0, RangeValidator(0, 9999)
-        )
-        self.Info_SeriesNumb = ConfigItem(
-            "Info",
-            "SeriesNumb",
-            "0",
-            OptionsValidator(["0", "6", "5", "4", "3", "2", "1", "-1"]),
-        )
-        self.Info_Stage = ConfigItem("Info", "Stage", "-")
-        self.Info_Stage_1 = ConfigItem("Info", "Stage_1", "-")
-        self.Info_Stage_2 = ConfigItem("Info", "Stage_2", "-")
-        self.Info_Stage_3 = ConfigItem("Info", "Stage_3", "-")
-        self.Info_Stage_Remain = ConfigItem("Info", "Stage_Remain", "-")
-        self.Info_IfSkland = ConfigItem("Info", "IfSkland", False, BoolValidator())
-        self.Info_SklandToken = ConfigItem(
-            "Info", "SklandToken", "", EncryptValidator()
-        )
-
-        self.Data_LastProxyDate = ConfigItem(
-            "Data", "LastProxyDate", "2000-01-01", DateTimeValidator("%Y-%m-%d")
-        )
-        self.Data_LastAnnihilationDate = ConfigItem(
-            "Data", "LastAnnihilationDate", "2000-01-01", DateTimeValidator("%Y-%m-%d")
-        )
-        self.Data_LastSklandDate = ConfigItem(
-            "Data", "LastSklandDate", "2000-01-01", DateTimeValidator("%Y-%m-%d")
-        )
-        self.Data_ProxyTimes = ConfigItem(
-            "Data", "ProxyTimes", 0, RangeValidator(0, 9999)
-        )
-        self.Data_IfPassCheck = ConfigItem("Data", "IfPassCheck", True, BoolValidator())
-        self.Data_CustomInfrastPlanIndex = ConfigItem(
-            "Data", "CustomInfrastPlanIndex", "0"
-        )
-
-        self.Task_IfWakeUp = ConfigItem("Task", "IfWakeUp", True, BoolValidator())
-        self.Task_IfRecruiting = ConfigItem(
-            "Task", "IfRecruiting", True, BoolValidator()
-        )
-        self.Task_IfBase = ConfigItem("Task", "IfBase", True, BoolValidator())
-        self.Task_IfCombat = ConfigItem("Task", "IfCombat", True, BoolValidator())
-        self.Task_IfMall = ConfigItem("Task", "IfMall", True, BoolValidator())
-        self.Task_IfMission = ConfigItem("Task", "IfMission", True, BoolValidator())
-        self.Task_IfAutoRoguelike = ConfigItem(
-            "Task", "IfAutoRoguelike", False, BoolValidator()
-        )
-        self.Task_IfReclamation = ConfigItem(
-            "Task", "IfReclamation", False, BoolValidator()
-        )
-
-        self.Notify_Enabled = ConfigItem("Notify", "Enabled", False, BoolValidator())
-        self.Notify_IfSendStatistic = ConfigItem(
-            "Notify", "IfSendStatistic", False, BoolValidator()
-        )
-        self.Notify_IfSendSixStar = ConfigItem(
-            "Notify", "IfSendSixStar", False, BoolValidator()
-        )
-        self.Notify_IfSendMail = ConfigItem(
-            "Notify", "IfSendMail", False, BoolValidator()
-        )
-        self.Notify_ToAddress = ConfigItem("Notify", "ToAddress", "")
-        self.Notify_IfServerChan = ConfigItem(
-            "Notify", "IfServerChan", False, BoolValidator()
-        )
-        self.Notify_ServerChanKey = ConfigItem("Notify", "ServerChanKey", "")
-        self.Notify_CustomWebhooks = ConfigItem("Notify", "CustomWebhooks", [])
-
-    def get_plan_info(self) -> Dict[str, Union[str, int]]:
-        """获取当前的计划下信息"""
-
-        if self.get("Info", "StageMode") == "Fixed":
-            return {
-                "MedicineNumb": self.get("Info", "MedicineNumb"),
-                "SeriesNumb": self.get("Info", "SeriesNumb"),
-                "Stage": self.get("Info", "Stage"),
-                "Stage_1": self.get("Info", "Stage_1"),
-                "Stage_2": self.get("Info", "Stage_2"),
-                "Stage_3": self.get("Info", "Stage_3"),
-                "Stage_Remain": self.get("Info", "Stage_Remain"),
-            }
-        else:
-            plan = Config.PlanConfig[uuid.UUID(self.get("Info", "StageMode"))]
-            if isinstance(plan, MaaPlanConfig):
-                return {
-                    "MedicineNumb": plan.get_current_info("MedicineNumb").getValue(),
-                    "SeriesNumb": plan.get_current_info("SeriesNumb").getValue(),
-                    "Stage": plan.get_current_info("Stage").getValue(),
-                    "Stage_1": plan.get_current_info("Stage_1").getValue(),
-                    "Stage_2": plan.get_current_info("Stage_2").getValue(),
-                    "Stage_3": plan.get_current_info("Stage_3").getValue(),
-                    "Stage_Remain": plan.get_current_info("Stage_Remain").getValue(),
-                }
-            else:
-                raise ValueError("不存在的计划表配置")
-
-
-class MaaConfig(ConfigBase):
-    """MAA配置"""
-
-    def __init__(self) -> None:
-        super().__init__()
-
-        self.Info_Name = ConfigItem("Info", "Name", "新 MAA 脚本")
-        self.Info_Path = ConfigItem("Info", "Path", str(Path.cwd()), FolderValidator())
-
-        self.Run_TaskTransitionMethod = ConfigItem(
-            "Run",
-            "TaskTransitionMethod",
-            "ExitEmulator",
-            OptionsValidator(["NoAction", "ExitGame", "ExitEmulator"]),
-        )
-        self.Run_ProxyTimesLimit = ConfigItem(
-            "Run", "ProxyTimesLimit", 0, RangeValidator(0, 9999)
-        )
-        self.Run_ADBSearchRange = ConfigItem(
-            "Run", "ADBSearchRange", 0, RangeValidator(0, 3)
-        )
-        self.Run_RunTimesLimit = ConfigItem(
-            "Run", "RunTimesLimit", 3, RangeValidator(1, 9999)
-        )
-        self.Run_AnnihilationTimeLimit = ConfigItem(
-            "Run", "AnnihilationTimeLimit", 40, RangeValidator(1, 9999)
-        )
-        self.Run_RoutineTimeLimit = ConfigItem(
-            "Run", "RoutineTimeLimit", 10, RangeValidator(1, 9999)
-        )
-        self.Run_AnnihilationWeeklyLimit = ConfigItem(
-            "Run", "AnnihilationWeeklyLimit", True, BoolValidator()
-        )
-
-        self.UserData = MultipleConfig([MaaUserConfig])
-
-
-class MaaPlanConfig(ConfigBase):
-    """MAA计划表配置"""
-
-    def __init__(self) -> None:
-        super().__init__()
-
-        self.Info_Name = ConfigItem("Info", "Name", "新 MAA 计划表")
-        self.Info_Mode = ConfigItem(
-            "Info", "Mode", "ALL", OptionsValidator(["ALL", "Weekly"])
-        )
-
-        self.config_item_dict: dict[str, Dict[str, ConfigItem]] = {}
-
-        for group in [
-            "ALL",
-            "Monday",
-            "Tuesday",
-            "Wednesday",
-            "Thursday",
-            "Friday",
-            "Saturday",
-            "Sunday",
-        ]:
-            self.config_item_dict[group] = {}
-
-            self.config_item_dict[group]["MedicineNumb"] = ConfigItem(
-                group, "MedicineNumb", 0, RangeValidator(0, 9999)
-            )
-            self.config_item_dict[group]["SeriesNumb"] = ConfigItem(
-                group,
-                "SeriesNumb",
-                "0",
-                OptionsValidator(["0", "6", "5", "4", "3", "2", "1", "-1"]),
-            )
-            self.config_item_dict[group]["Stage"] = ConfigItem(group, "Stage", "-")
-            self.config_item_dict[group]["Stage_1"] = ConfigItem(group, "Stage_1", "-")
-            self.config_item_dict[group]["Stage_2"] = ConfigItem(group, "Stage_2", "-")
-            self.config_item_dict[group]["Stage_3"] = ConfigItem(group, "Stage_3", "-")
-            self.config_item_dict[group]["Stage_Remain"] = ConfigItem(
-                group, "Stage_Remain", "-"
-            )
-
-            for name in [
-                "MedicineNumb",
-                "SeriesNumb",
-                "Stage",
-                "Stage_1",
-                "Stage_2",
-                "Stage_3",
-                "Stage_Remain",
-            ]:
-                setattr(self, f"{group}_{name}", self.config_item_dict[group][name])
-
-    def get_current_info(self, name: str) -> ConfigItem:
-        """获取当前的计划表配置项"""
-
-        if self.get("Info", "Mode") == "ALL":
-
-            return self.config_item_dict["ALL"][name]
-
-        elif self.get("Info", "Mode") == "Weekly":
-
-            dt = datetime.now()
-            if dt.time() < datetime.min.time().replace(hour=4):
-                dt = dt - timedelta(days=1)
-            today = dt.strftime("%A")
-
-            if today in self.config_item_dict:
-                return self.config_item_dict[today][name]
-            else:
-                return self.config_item_dict["ALL"][name]
-
-        else:
-            raise ValueError("非法的计划表模式")
-
-
-class GeneralUserConfig(ConfigBase):
-    """通用脚本用户配置"""
-
-    def __init__(self) -> None:
-        super().__init__()
-
-        self.Info_Name = ConfigItem("Info", "Name", "新用户", UserNameValidator())
-        self.Info_Status = ConfigItem("Info", "Status", True, BoolValidator())
-        self.Info_RemainedDay = ConfigItem(
-            "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
-        )
-        self.Info_IfScriptBeforeTask = ConfigItem(
-            "Info", "IfScriptBeforeTask", False, BoolValidator()
-        )
-        self.Info_ScriptBeforeTask = ConfigItem(
-            "Info", "ScriptBeforeTask", str(Path.cwd()), FileValidator()
-        )
-        self.Info_IfScriptAfterTask = ConfigItem(
-            "Info", "IfScriptAfterTask", False, BoolValidator()
-        )
-        self.Info_ScriptAfterTask = ConfigItem(
-            "Info", "ScriptAfterTask", str(Path.cwd()), FileValidator()
-        )
-        self.Info_Notes = ConfigItem("Info", "Notes", "无")
-
-        self.Data_LastProxyDate = ConfigItem(
-            "Data", "LastProxyDate", "2000-01-01", DateTimeValidator("%Y-%m-%d")
-        )
-        self.Data_ProxyTimes = ConfigItem(
-            "Data", "ProxyTimes", 0, RangeValidator(0, 9999)
-        )
-
-        self.Notify_Enabled = ConfigItem("Notify", "Enabled", False, BoolValidator())
-        self.Notify_IfSendStatistic = ConfigItem(
-            "Notify", "IfSendStatistic", False, BoolValidator()
-        )
-        self.Notify_IfSendMail = ConfigItem(
-            "Notify", "IfSendMail", False, BoolValidator()
-        )
-        self.Notify_ToAddress = ConfigItem("Notify", "ToAddress", "")
-        self.Notify_IfServerChan = ConfigItem(
-            "Notify", "IfServerChan", False, BoolValidator()
-        )
-        self.Notify_ServerChanKey = ConfigItem("Notify", "ServerChanKey", "")
-        self.Notify_CustomWebhooks = ConfigItem("Notify", "CustomWebhooks", [])
-
-
-class GeneralConfig(ConfigBase):
-    """通用配置"""
-
-    def __init__(self) -> None:
-        super().__init__()
-
-        self.Info_Name = ConfigItem("Info", "Name", "新通用脚本")
-        self.Info_RootPath = ConfigItem(
-            "Info", "RootPath", str(Path.cwd()), FileValidator()
-        )
-
-        self.Script_ScriptPath = ConfigItem(
-            "Script", "ScriptPath", str(Path.cwd()), FileValidator()
-        )
-        self.Script_Arguments = ConfigItem("Script", "Arguments", "")
-        self.Script_IfTrackProcess = ConfigItem(
-            "Script", "IfTrackProcess", False, BoolValidator()
-        )
-        self.Script_ConfigPath = ConfigItem(
-            "Script", "ConfigPath", str(Path.cwd()), FileValidator()
-        )
-        self.Script_ConfigPathMode = ConfigItem(
-            "Script", "ConfigPathMode", "File", OptionsValidator(["File", "Folder"])
-        )
-        self.Script_UpdateConfigMode = ConfigItem(
-            "Script",
-            "UpdateConfigMode",
-            "Never",
-            OptionsValidator(["Never", "Success", "Failure", "Always"]),
-        )
-        self.Script_LogPath = ConfigItem(
-            "Script", "LogPath", str(Path.cwd()), FileValidator()
-        )
-        self.Script_LogPathFormat = ConfigItem("Script", "LogPathFormat", "%Y-%m-%d")
-        self.Script_LogTimeStart = ConfigItem(
-            "Script", "LogTimeStart", 1, RangeValidator(1, 9999)
-        )
-        self.Script_LogTimeEnd = ConfigItem(
-            "Script", "LogTimeEnd", 1, RangeValidator(1, 9999)
-        )
-        self.Script_LogTimeFormat = ConfigItem(
-            "Script", "LogTimeFormat", "%Y-%m-%d %H:%M:%S"
-        )
-        self.Script_SuccessLog = ConfigItem("Script", "SuccessLog", "")
-        self.Script_ErrorLog = ConfigItem("Script", "ErrorLog", "")
-
-        self.Game_Enabled = ConfigItem("Game", "Enabled", False, BoolValidator())
-        self.Game_Type = ConfigItem(
-            "Game", "Type", "Emulator", OptionsValidator(["Emulator", "Client"])
-        )
-        self.Game_Path = ConfigItem("Game", "Path", str(Path.cwd()), FileValidator())
-        self.Game_Arguments = ConfigItem("Game", "Arguments", "")
-        self.Game_WaitTime = ConfigItem("Game", "WaitTime", 0, RangeValidator(0, 9999))
-        self.Game_IfForceClose = ConfigItem(
-            "Game", "IfForceClose", False, BoolValidator()
-        )
-
-        self.Run_ProxyTimesLimit = ConfigItem(
-            "Run", "ProxyTimesLimit", 0, RangeValidator(0, 9999)
-        )
-        self.Run_RunTimesLimit = ConfigItem(
-            "Run", "RunTimesLimit", 3, RangeValidator(1, 9999)
-        )
-        self.Run_RunTimeLimit = ConfigItem(
-            "Run", "RunTimeLimit", 10, RangeValidator(1, 9999)
-        )
-
-        self.UserData = MultipleConfig([GeneralUserConfig])
-
-
-CLASS_BOOK = {"MAA": MaaConfig, "MaaPlan": MaaPlanConfig, "General": GeneralConfig}
-TYPE_BOOK = {"MaaConfig": "MAA", "GeneralConfig": "通用"}
 
 
 class AppConfig(GlobalConfig):
@@ -995,7 +436,7 @@ class AppConfig(GlobalConfig):
 
     async def add_script(
         self, script: Literal["MAA", "General"]
-    ) -> tuple[uuid.UUID, ConfigBase]:
+    ) -> tuple[uuid.UUID, Union[MaaConfig, GeneralConfig]]:
         """添加脚本配置"""
 
         logger.info(f"添加脚本配置: {script}")
@@ -1008,12 +449,13 @@ class AppConfig(GlobalConfig):
         logger.info(f"获取脚本配置: {script_id}")
 
         if script_id is None:
+            # 获取所有脚本配置
             data = await self.ScriptConfig.toDict()
         else:
+            # 获取指定脚本配置
             data = await self.ScriptConfig.get(uuid.UUID(script_id))
 
         index = data.pop("instances", [])
-
         return list(index), data
 
     async def update_script(
@@ -1045,11 +487,11 @@ class AppConfig(GlobalConfig):
         if uid in self.task_dict:
             raise RuntimeError(f"脚本 {script_id} 正在运行, 无法删除")
 
+        # 删除脚本相关的队列项
         for queue in self.QueueConfig.values():
-            if isinstance(queue, QueueConfig):
-                for key, value in queue.QueueItem.items():
-                    if value.get("Info", "ScriptId") == str(uid):
-                        await queue.QueueItem.remove(key)
+            for key, value in queue.QueueItem.items():
+                if value.get("Info", "ScriptId") == str(uid):
+                    await queue.QueueItem.remove(key)
 
         await self.ScriptConfig.remove(uid)
         if (Path.cwd() / f"data/{uid}").exists():
@@ -1220,28 +662,27 @@ class AppConfig(GlobalConfig):
         logger.info(f"获取用户配置: {script_id} - {user_id}")
 
         uid = uuid.UUID(script_id)
-        sc = self.ScriptConfig[uid]
 
-        if isinstance(sc, (MaaConfig | GeneralConfig)):
-            if user_id is None:
-                data = await sc.UserData.toDict()
-            else:
-                data = await sc.UserData.get(uuid.UUID(user_id))
+        if user_id is None:
+            # 获取全部用户配置
+            data = await self.ScriptConfig[uid].UserData.toDict()
         else:
-            logger.error(f"不支持的脚本配置类型: {type(sc)}")
-            raise TypeError(f"不支持的脚本配置类型: {type(sc)}")
+            # 获取指定用户配置
+            data = await self.ScriptConfig[uid].UserData.get(uuid.UUID(user_id))
 
         index = data.pop("instances", [])
-
         return list(index), data
 
-    async def add_user(self, script_id: str) -> tuple[uuid.UUID, ConfigBase]:
+    async def add_user(
+        self, script_id: str
+    ) -> tuple[uuid.UUID, Union[MaaUserConfig, GeneralUserConfig]]:
         """添加用户配置"""
 
         logger.info(f"{script_id} 添加用户配置")
 
         script_config = self.ScriptConfig[uuid.UUID(script_id)]
 
+        # 根据脚本类型选择添加对应用户配置
         if isinstance(script_config, MaaConfig):
             uid, config = await script_config.UserData.add(MaaUserConfig)
         elif isinstance(script_config, GeneralConfig):
@@ -1259,14 +700,15 @@ class AppConfig(GlobalConfig):
 
         logger.info(f"{script_id} 更新用户配置: {user_id}")
 
-        script_config = self.ScriptConfig[uuid.UUID(script_id)]
-        uid = uuid.UUID(user_id)
+        script_uid = uuid.UUID(script_id)
+        user_uid = uuid.UUID(user_id)
 
         for group, items in data.items():
             for name, value in items.items():
                 logger.debug(f"更新脚本配置: {script_id} - {group}.{name} = {value}")
-                if isinstance(script_config, (MaaConfig | GeneralConfig)):
-                    await script_config.UserData[uid].set(group, name, value)
+                await self.ScriptConfig[script_uid].UserData[user_uid].set(
+                    group, name, value
+                )
 
         await self.ScriptConfig.save()
 
@@ -1275,25 +717,25 @@ class AppConfig(GlobalConfig):
 
         logger.info(f"{script_id} 删除用户配置: {user_id}")
 
-        script_config = self.ScriptConfig[uuid.UUID(script_id)]
-        uid = uuid.UUID(user_id)
+        script_uid = uuid.UUID(script_id)
+        user_uid = uuid.UUID(user_id)
 
-        if isinstance(script_config, (MaaConfig | GeneralConfig)):
-            await script_config.UserData.remove(uid)
-            await self.ScriptConfig.save()
-            if (Path.cwd() / f"data/{script_id}/{user_id}").exists():
-                shutil.rmtree(Path.cwd() / f"data/{script_id}/{user_id}")
+        await self.ScriptConfig[script_uid].UserData.remove(user_uid)
+        await self.ScriptConfig.save()
+        if (Path.cwd() / f"data/{script_id}/{user_id}").exists():
+            shutil.rmtree(Path.cwd() / f"data/{script_id}/{user_id}")
 
     async def reorder_user(self, script_id: str, index_list: list[str]) -> None:
         """重新排序用户"""
 
         logger.info(f"{script_id} 重新排序用户: {index_list}")
 
-        script_config = self.ScriptConfig[uuid.UUID(script_id)]
+        script_uid = uuid.UUID(script_id)
 
-        if isinstance(script_config, (MaaConfig | GeneralConfig)):
-            await script_config.UserData.setOrder([uuid.UUID(_) for _ in index_list])
-            await self.ScriptConfig.save()
+        await self.ScriptConfig[script_uid].UserData.setOrder(
+            list(map(uuid.UUID, index_list))
+        )
+        await self.ScriptConfig.save()
 
     async def set_infrastructure(
         self, script_id: str, user_id: str, jsonFile: str
@@ -1301,12 +743,15 @@ class AppConfig(GlobalConfig):
 
         logger.info(f"{script_id} - {user_id} 设置基建配置: {jsonFile}")
 
-        script_config = self.ScriptConfig[uuid.UUID(script_id)]
-        uid = uuid.UUID(user_id)
+        script_uid = uuid.UUID(script_id)
+        user_uid = uuid.UUID(user_id)
         json_path = Path(jsonFile)
 
         if not json_path.exists():
             raise FileNotFoundError(f"文件未找到: {json_path}")
+
+        if not isinstance(self.ScriptConfig[script_uid], MaaConfig):
+            raise TypeError(f"脚本 {script_id} 不是 MAA 脚本, 无法设置基建配置")
 
         (Path.cwd() / f"data/{script_id}/{user_id}/Infrastructure").mkdir(
             parents=True, exist_ok=True
@@ -1316,13 +761,13 @@ class AppConfig(GlobalConfig):
             Path.cwd()
             / f"data/{script_id}/{user_id}/Infrastructure/infrastructure.json",
         )
-
-        if isinstance(script_config, MaaConfig):
-            await script_config.UserData[uid].set("Info", "InfrastPath", str(json_path))
+        await self.ScriptConfig[script_uid].UserData[user_uid].set(
+            "Info", "InfrastPath", str(json_path)
+        )
 
     async def add_plan(
         self, script: Literal["MaaPlan"]
-    ) -> tuple[uuid.UUID, ConfigBase]:
+    ) -> tuple[uuid.UUID, MaaPlanConfig]:
         """添加计划表"""
 
         logger.info(f"添加计划表: {script}")
@@ -1340,7 +785,6 @@ class AppConfig(GlobalConfig):
             data = await self.PlanConfig.get(uuid.UUID(plan_id))
 
         index = data.pop("instances", [])
-
         return list(index), data
 
     async def update_plan(self, plan_id: str, data: Dict[str, Dict[str, Any]]) -> None:
@@ -1348,12 +792,12 @@ class AppConfig(GlobalConfig):
 
         logger.info(f"更新计划表配置: {plan_id}")
 
-        uid = uuid.UUID(plan_id)
+        plan_uid = uuid.UUID(plan_id)
 
         for group, items in data.items():
             for name, value in items.items():
                 logger.debug(f"更新计划表配置: {plan_id} - {group}.{name} = {value}")
-                await self.PlanConfig[uid].set(group, name, value)
+                await self.PlanConfig[plan_uid].set(group, name, value)
 
         await self.PlanConfig.save()
 
@@ -1362,14 +806,14 @@ class AppConfig(GlobalConfig):
 
         logger.info(f"删除计划表配置: {plan_id}")
 
-        uid = uuid.UUID(plan_id)
+        plan_uid = uuid.UUID(plan_id)
 
         user_list = []
 
         for script in self.ScriptConfig.values():
             if isinstance(script, MaaConfig):
                 for user in script.UserData.values():
-                    if user.get("Info", "StageMode") == str(uid):
+                    if user.get("Info", "StageMode") == str(plan_uid):
                         if user.is_locked:
                             raise RuntimeError(
                                 f"用户 {user.get('Info','Name')} 正在使用此计划表且被锁定, 无法完成删除"
@@ -1379,16 +823,16 @@ class AppConfig(GlobalConfig):
         for user in user_list:
             await user.set("Info", "StageMode", "Fixed")
 
-        await self.PlanConfig.remove(uid)
+        await self.PlanConfig.remove(plan_uid)
 
     async def reorder_plan(self, index_list: list[str]) -> None:
         """重新排序计划表"""
 
         logger.info(f"重新排序计划表: {index_list}")
 
-        await self.PlanConfig.setOrder([uuid.UUID(_) for _ in index_list])
+        await self.PlanConfig.setOrder(list(map(uuid.UUID, index_list)))
 
-    async def add_queue(self) -> tuple[uuid.UUID, ConfigBase]:
+    async def add_queue(self) -> tuple[uuid.UUID, QueueConfig]:
         """添加调度队列"""
 
         logger.info("添加调度队列")
@@ -1406,7 +850,6 @@ class AppConfig(GlobalConfig):
             data = await self.QueueConfig.get(uuid.UUID(queue_id))
 
         index = data.pop("instances", [])
-
         return list(index), data
 
     async def update_queue(
@@ -1416,12 +859,12 @@ class AppConfig(GlobalConfig):
 
         logger.info(f"更新调度队列配置: {queue_id}")
 
-        uid = uuid.UUID(queue_id)
+        queue_uid = uuid.UUID(queue_id)
 
         for group, items in data.items():
             for name, value in items.items():
                 logger.debug(f"更新调度队列配置: {queue_id} - {group}.{name} = {value}")
-                await self.QueueConfig[uid].set(group, name, value)
+                await self.QueueConfig[queue_uid].set(group, name, value)
 
         await self.QueueConfig.save()
 
@@ -1437,42 +880,32 @@ class AppConfig(GlobalConfig):
 
         logger.info(f"重新排序调度队列: {index_list}")
 
-        await self.QueueConfig.setOrder([uuid.UUID(_) for _ in index_list])
+        await self.QueueConfig.setOrder(list(map(uuid.UUID, index_list)))
 
     async def get_time_set(
         self, queue_id: str, time_set_id: Optional[str]
     ) -> tuple[list, dict]:
         """获取时间设置配置"""
 
-        logger.info(f"Get time set of queue: {queue_id} - {time_set_id}")
+        logger.info(f"获取队列的时间配置: {queue_id} - {time_set_id}")
 
-        uid = uuid.UUID(queue_id)
-        qc = self.QueueConfig[uid]
+        queue_uid = uuid.UUID(queue_id)
 
-        if isinstance(qc, QueueConfig):
-            if time_set_id is None:
-                data = await qc.TimeSet.toDict()
-            else:
-                data = await qc.TimeSet.get(uuid.UUID(time_set_id))
+        if time_set_id is None:
+            data = await self.QueueConfig[queue_uid].TimeSet.toDict()
         else:
-            logger.error(f"不支持的队列配置类型: {type(qc)}")
-            raise TypeError(f"不支持的队列配置类型: {type(qc)}")
+            data = await self.QueueConfig[queue_uid].TimeSet.get(uuid.UUID(time_set_id))
 
         index = data.pop("instances", [])
-
         return list(index), data
 
-    async def add_time_set(self, queue_id: str) -> tuple[uuid.UUID, ConfigBase]:
+    async def add_time_set(self, queue_id: str) -> tuple[uuid.UUID, TimeSet]:
         """添加时间设置配置"""
 
         logger.info(f"{queue_id} 添加时间设置配置")
 
-        queue_config = self.QueueConfig[uuid.UUID(queue_id)]
-
-        if isinstance(queue_config, QueueConfig):
-            uid, config = await queue_config.TimeSet.add(TimeSet)
-        else:
-            raise TypeError(f"不支持的队列配置类型: {type(queue_config)}")
+        queue_uid = uuid.UUID(queue_id)
+        uid, config = await self.QueueConfig[queue_uid].TimeSet.add(TimeSet)
 
         await self.QueueConfig.save()
         return uid, config
@@ -1484,14 +917,15 @@ class AppConfig(GlobalConfig):
 
         logger.info(f"{queue_id} 更新时间设置配置: {time_set_id}")
 
-        queue_config = self.QueueConfig[uuid.UUID(queue_id)]
-        uid = uuid.UUID(time_set_id)
+        queue_uid = uuid.UUID(queue_id)
+        time_set_uid = uuid.UUID(time_set_id)
 
         for group, items in data.items():
             for name, value in items.items():
                 logger.debug(f"更新时间设置配置: {queue_id} - {group}.{name} = {value}")
-                if isinstance(queue_config, QueueConfig):
-                    await queue_config.TimeSet[uid].set(group, name, value)
+                await self.QueueConfig[queue_uid].TimeSet[time_set_uid].set(
+                    group, name, value
+                )
 
         await self.QueueConfig.save()
 
@@ -1500,60 +934,51 @@ class AppConfig(GlobalConfig):
 
         logger.info(f"{queue_id} 删除时间设置配置: {time_set_id}")
 
-        queue_config = self.QueueConfig[uuid.UUID(queue_id)]
-        uid = uuid.UUID(time_set_id)
+        queue_uid = uuid.UUID(queue_id)
+        time_set_uid = uuid.UUID(time_set_id)
 
-        if isinstance(queue_config, QueueConfig):
-            await queue_config.TimeSet.remove(uid)
-            await self.QueueConfig.save()
+        await self.QueueConfig[queue_uid].TimeSet.remove(time_set_uid)
+        await self.QueueConfig.save()
 
     async def reorder_time_set(self, queue_id: str, index_list: list[str]) -> None:
         """重新排序时间设置"""
 
         logger.info(f"{queue_id} 重新排序时间设置: {index_list}")
 
-        queue_config = self.QueueConfig[uuid.UUID(queue_id)]
+        queue_uid = uuid.UUID(queue_id)
 
-        if isinstance(queue_config, QueueConfig):
-            await queue_config.TimeSet.setOrder([uuid.UUID(_) for _ in index_list])
-            await self.QueueConfig.save()
+        await self.QueueConfig[queue_uid].TimeSet.setOrder(
+            list(map(uuid.UUID, index_list))
+        )
+        await self.QueueConfig.save()
 
     async def get_queue_item(
         self, queue_id: str, queue_item_id: Optional[str]
     ) -> tuple[list, dict]:
         """获取队列项配置"""
 
-        logger.info(f"Get queue item of queue: {queue_id} - {queue_item_id}")
+        logger.info(f"获取队列的队列项配置: {queue_id} - {queue_item_id}")
 
-        uid = uuid.UUID(queue_id)
-        qc = self.QueueConfig[uid]
+        queue_uid = uuid.UUID(queue_id)
 
-        if isinstance(qc, QueueConfig):
-            if queue_item_id is None:
-                data = await qc.QueueItem.toDict()
-            else:
-                data = await qc.QueueItem.get(uuid.UUID(queue_item_id))
+        if queue_item_id is None:
+            data = await self.QueueConfig[queue_uid].QueueItem.toDict()
         else:
-            logger.error(f"不支持的队列配置类型: {type(qc)}")
-            raise TypeError(f"不支持的队列配置类型: {type(qc)}")
+            data = await self.QueueConfig[queue_uid].QueueItem.get(
+                uuid.UUID(queue_item_id)
+            )
 
         index = data.pop("instances", [])
-
         return list(index), data
 
-    async def add_queue_item(self, queue_id: str) -> tuple[uuid.UUID, ConfigBase]:
+    async def add_queue_item(self, queue_id: str) -> tuple[uuid.UUID, QueueItem]:
         """添加队列项配置"""
 
         logger.info(f"{queue_id} 添加队列项配置")
 
-        queue_config = self.QueueConfig[uuid.UUID(queue_id)]
+        queue_uid = uuid.UUID(queue_id)
 
-        if isinstance(queue_config, QueueConfig):
-            uid, config = await queue_config.QueueItem.add(QueueItem)
-        else:
-            logger.warning(f"不支持的队列配置类型: {type(queue_config)}")
-            raise TypeError(f"不支持的队列配置类型: {type(queue_config)}")
-
+        uid, config = await self.QueueConfig[queue_uid].QueueItem.add(QueueItem)
         await self.QueueConfig.save()
         return uid, config
 
@@ -1564,14 +989,15 @@ class AppConfig(GlobalConfig):
 
         logger.info(f"{queue_id} 更新队列项配置: {queue_item_id}")
 
-        queue_config = self.QueueConfig[uuid.UUID(queue_id)]
-        uid = uuid.UUID(queue_item_id)
+        queue_uid = uuid.UUID(queue_id)
+        queue_item_uid = uuid.UUID(queue_item_id)
 
         for group, items in data.items():
             for name, value in items.items():
                 logger.debug(f"更新队列项配置: {queue_id} - {group}.{name} = {value}")
-                if isinstance(queue_config, QueueConfig):
-                    await queue_config.QueueItem[uid].set(group, name, value)
+                await self.QueueConfig[queue_uid].QueueItem[queue_item_uid].set(
+                    group, name, value
+                )
 
         await self.QueueConfig.save()
 
@@ -1580,23 +1006,23 @@ class AppConfig(GlobalConfig):
 
         logger.info(f"{queue_id} 删除队列项配置: {queue_item_id}")
 
-        queue_config = self.QueueConfig[uuid.UUID(queue_id)]
-        uid = uuid.UUID(queue_item_id)
+        queue_uid = uuid.UUID(queue_id)
+        queue_item_uid = uuid.UUID(queue_item_id)
 
-        if isinstance(queue_config, QueueConfig):
-            await queue_config.QueueItem.remove(uid)
-            await self.QueueConfig.save()
+        await self.QueueConfig[queue_uid].QueueItem.remove(queue_item_uid)
+        await self.QueueConfig.save()
 
     async def reorder_queue_item(self, queue_id: str, index_list: list[str]) -> None:
         """重新排序队列项"""
 
         logger.info(f"{queue_id} 重新排序队列项: {index_list}")
 
-        queue_config = self.QueueConfig[uuid.UUID(queue_id)]
+        queue_uid = uuid.UUID(queue_id)
 
-        if isinstance(queue_config, QueueConfig):
-            await queue_config.QueueItem.setOrder([uuid.UUID(_) for _ in index_list])
-            await self.QueueConfig.save()
+        await self.QueueConfig[queue_uid].QueueItem.setOrder(
+            list(map(uuid.UUID, index_list))
+        )
+        await self.QueueConfig.save()
 
     async def get_setting(self) -> Dict[str, Any]:
         """获取全局设置"""
@@ -1616,6 +1042,158 @@ class AppConfig(GlobalConfig):
                 await self.set(group, name, value)
 
         logger.success("全局设置更新成功")
+
+    async def get_webhook(
+        self,
+        script_id: Optional[str],
+        user_id: Optional[str],
+        webhook_id: Optional[str],
+    ) -> tuple[list, dict]:
+        """获取webhook配置"""
+
+        if script_id is None and user_id is None:
+            logger.info(f"获取全局webhook设置: {webhook_id}")
+
+            if webhook_id is None:
+                data = await self.Notify_CustomWebhooks.toDict()
+            else:
+                data = await self.Notify_CustomWebhooks.get(uuid.UUID(webhook_id))
+
+        else:
+            logger.info(f"获取webhook设置: {script_id} - {user_id} - {webhook_id}")
+
+            script_uid = uuid.UUID(script_id)
+            user_uid = uuid.UUID(user_id)
+
+            if webhook_id is None:
+                data = (
+                    await self.ScriptConfig[script_uid]
+                    .UserData[user_uid]
+                    .Notify_CustomWebhooks.toDict()
+                )
+            else:
+                data = (
+                    await self.ScriptConfig[script_uid]
+                    .UserData[user_uid]
+                    .Notify_CustomWebhooks.get(uuid.UUID(webhook_id))
+                )
+
+        index = data.pop("instances", [])
+        return list(index), data
+
+    async def add_webhook(
+        self, script_id: Optional[str], user_id: Optional[str]
+    ) -> tuple[uuid.UUID, Webhook]:
+        """添加webhook配置"""
+
+        if script_id is None and user_id is None:
+            logger.info("添加全局webhook配置")
+
+            uid, config = await self.Notify_CustomWebhooks.add(Webhook)
+            await self.save()
+            return uid, config
+
+        else:
+            logger.info(f"添加webhook配置: {script_id} - {user_id}")
+
+            script_uid = uuid.UUID(script_id)
+            user_uid = uuid.UUID(user_id)
+
+            uid, config = (
+                await self.ScriptConfig[script_uid]
+                .UserData[user_uid]
+                .Notify_CustomWebhooks.add(Webhook)
+            )
+            await self.ScriptConfig.save()
+            return uid, config
+
+    async def update_webhook(
+        self,
+        script_id: Optional[str],
+        user_id: Optional[str],
+        webhook_id: str,
+        data: Dict[str, Dict[str, Any]],
+    ) -> None:
+        """更新 webhook 配置"""
+
+        webhook_uid = uuid.UUID(webhook_id)
+
+        if script_id is None and user_id is None:
+            logger.info(f"更新 webhook 全局配置: {webhook_id}")
+
+            for group, items in data.items():
+                for name, value in items.items():
+                    logger.debug(
+                        f"更新全局 webhook:{webhook_id} - {group}.{name} = {value}"
+                    )
+                    await self.Notify_CustomWebhooks[webhook_uid].set(
+                        group, name, value
+                    )
+
+            await self.save()
+
+        else:
+            logger.info(f"更新 webhook 配置: {script_id} - {user_id} - {webhook_id}")
+
+            script_uid = uuid.UUID(script_id)
+            user_uid = uuid.UUID(user_id)
+
+            for group, items in data.items():
+                for name, value in items.items():
+                    logger.debug(
+                        f"更新用户 webhook: {script_id} - {user_id} - {webhook_id} - {group}.{name} = {value}"
+                    )
+                    await self.ScriptConfig[script_uid].UserData[
+                        user_uid
+                    ].Notify_CustomWebhooks[webhook_uid].set(group, name, value)
+
+            await self.ScriptConfig.save()
+
+    async def del_webhook(
+        self, script_id: Optional[str], user_id: Optional[str], webhook_id: str
+    ) -> None:
+        """删除 webhook 配置"""
+
+        webhook_uid = uuid.UUID(webhook_id)
+
+        if script_id is None and user_id is None:
+            logger.info(f"删除全局 webhook 配置: {webhook_id}")
+
+            await self.Notify_CustomWebhooks.remove(webhook_uid)
+            await self.save()
+
+        else:
+            logger.info(f"删除 webhook 配置: {script_id} - {user_id} - {webhook_id}")
+
+            script_uid = uuid.UUID(script_id)
+            user_uid = uuid.UUID(user_id)
+
+            await self.ScriptConfig[script_uid].UserData[
+                user_uid
+            ].Notify_CustomWebhooks.remove(webhook_uid)
+            await self.ScriptConfig.save()
+
+    async def reorder_webhook(
+        self, script_id: Optional[str], user_id: Optional[str], index_list: list[str]
+    ) -> None:
+        """重新排序 webhook"""
+
+        if script_id is None and user_id is None:
+            logger.info(f"重新排序全局 webhook: {index_list}")
+
+            await self.Notify_CustomWebhooks.setOrder(list(map(uuid.UUID, index_list)))
+            await self.save()
+
+        else:
+            logger.info(f"重新排序 webhook: {script_id} - {user_id} - {index_list}")
+
+            script_uid = uuid.UUID(script_id)
+            user_uid = uuid.UUID(user_id)
+
+            await self.ScriptConfig[script_uid].UserData[
+                user_uid
+            ].Notify_CustomWebhooks.setOrder(list(map(uuid.UUID, index_list)))
+            await self.ScriptConfig.save()
 
     def server_date(self) -> date:
         """

@@ -25,9 +25,10 @@ import json
 import uuid
 import win32com.client
 from copy import deepcopy
+from urllib.parse import urlparse
 from datetime import datetime
 from pathlib import Path
-from typing import List, Any, Dict, Union, Optional
+from typing import List, Any, Dict, Union, Optional, TypeVar, Generic, Type
 
 
 from app.utils import dpapi_encrypt, dpapi_decrypt
@@ -127,17 +128,25 @@ class DateTimeValidator(ConfigValidator):
 
 class JSONValidator(ConfigValidator):
 
+    def __init__(self, tpye: type[dict] | type[list] = dict) -> None:
+        self.type = tpye
+
     def validate(self, value: Any) -> bool:
         if not isinstance(value, str):
             return False
         try:
-            json.loads(value)
-            return True
+            data = json.loads(value)
+            if isinstance(data, self.type):
+                return True
+            else:
+                return False
         except json.JSONDecodeError:
             return False
 
     def correct(self, value: Any) -> str:
-        return value if self.validate(value) else "{ }"
+        return (
+            value if self.validate(value) else ("{ }" if self.type == dict else "[ ]")
+        )
 
 
 class EncryptValidator(ConfigValidator):
@@ -244,6 +253,67 @@ class UserNameValidator(ConfigValidator):
             value = value[:255]
 
         return value
+
+
+class URLValidator(ConfigValidator):
+    """URL格式验证器"""
+
+    def __init__(
+        self,
+        schemes: list[str] | None = None,
+        require_netloc: bool = True,
+        default: str = "",
+    ):
+        """
+        :param schemes: 允许的协议列表, 若为 None 则允许任意协议
+        :param require_netloc: 是否要求必须包含网络位置, 如域名或IP
+        """
+        self.schemes = [s.lower() for s in schemes] if schemes else None
+        self.require_netloc = require_netloc
+        self.default = default
+
+    def validate(self, value: Any) -> bool:
+
+        if value == self.default:
+            return True
+
+        if not isinstance(value, str):
+            return False
+
+        try:
+            parsed = urlparse(value)
+        except Exception:
+            return False
+
+        # 检查协议
+        if self.schemes is not None:
+            if not parsed.scheme or parsed.scheme.lower() not in self.schemes:
+                return False
+        else:
+            # 不限制协议仍要求有 scheme
+            if not parsed.scheme:
+                return False
+
+        # 检查是否包含网络位置
+        if self.require_netloc and not parsed.netloc:
+            return False
+
+        return True
+
+    def correct(self, value: Any) -> str:
+
+        if self.validate(value):
+            return value
+
+        if isinstance(value, str):
+            # 简单尝试：若看起来像域名，加上 https://
+            stripped = value.strip()
+            if stripped and not stripped.startswith(("http://", "https://")):
+                candidate = f"https://{stripped}"
+                if self.validate(candidate):
+                    return candidate
+
+        return self.default
 
 
 class ConfigItem:
@@ -537,7 +607,10 @@ class ConfigBase:
                 await item.unlock()
 
 
-class MultipleConfig:
+T = TypeVar("T", bound="ConfigBase")
+
+
+class MultipleConfig(Generic[T]):
     """
     多配置项管理类
 
@@ -550,7 +623,7 @@ class MultipleConfig:
         子配置项的类型列表, 必须是 ConfigBase 的子类
     """
 
-    def __init__(self, sub_config_type: List[type]):
+    def __init__(self, sub_config_type: List[Type[T]]):
 
         if not sub_config_type:
             raise ValueError("子配置项类型列表不能为空")
@@ -561,13 +634,13 @@ class MultipleConfig:
                     f"配置类型 {config_type.__name__} 必须是 ConfigBase 的子类"
                 )
 
-        self.sub_config_type = sub_config_type
-        self.file: None | Path = None
+        self.sub_config_type: List[Type[T]] = sub_config_type
+        self.file: Path | None = None
         self.order: List[uuid.UUID] = []
-        self.data: Dict[uuid.UUID, ConfigBase] = {}
+        self.data: Dict[uuid.UUID, T] = {}
         self.is_locked = False
 
-    def __getitem__(self, key: uuid.UUID) -> ConfigBase:
+    def __getitem__(self, key: uuid.UUID) -> T:
         """允许通过 config[uuid] 访问配置项"""
         if key not in self.data:
             raise KeyError(f"配置项 '{key}' 不存在")
@@ -665,7 +738,9 @@ class MultipleConfig:
         if self.file:
             await self.save()
 
-    async def toDict(self) -> Dict[str, Union[list, dict]]:
+    async def toDict(
+        self, ignore_multi_config: bool = False, if_decrypt: bool = True
+    ) -> Dict[str, Union[list, dict]]:
         """
         将配置项转换为字典
 
@@ -678,7 +753,7 @@ class MultipleConfig:
             ]
         }
         for uid, config in self.items():
-            data[str(uid)] = await config.toDict()
+            data[str(uid)] = await config.toDict(ignore_multi_config, if_decrypt)
         return data
 
     async def get(self, uid: uuid.UUID) -> Dict[str, Union[list, dict]]:
@@ -721,7 +796,7 @@ class MultipleConfig:
             encoding="utf-8",
         )
 
-    async def add(self, config_type: type) -> tuple[uuid.UUID, ConfigBase]:
+    async def add(self, config_type: Type[T]) -> tuple[uuid.UUID, T]:
         """
         添加一个新的配置项
 
