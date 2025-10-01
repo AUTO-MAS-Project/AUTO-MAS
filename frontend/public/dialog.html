@@ -5,6 +5,70 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>操作确认</title>
     <style>
+        :root {
+            /* 亮色模式变量 */
+            --primary-color: #1677ff;
+            --primary-hover: #4096ff;
+            --primary-active: #0958d9;
+            --danger-color: #ff4d4f;
+            --danger-hover: #ff7875;
+            --danger-active: #d9363e;
+            --success-color: #52c41a;
+            --warning-color: #faad14;
+            
+            --text-primary: #262626;
+            --text-secondary: #595959;
+            --text-tertiary: #8c8c8c;
+            --text-disabled: #bfbfbf;
+            
+            --bg-primary: #ffffff;
+            --bg-secondary: #fafafa;
+            --bg-tertiary: #f5f5f5;
+            --bg-quaternary: #f0f0f0;
+            
+            --border-primary: #d9d9d9;
+            --border-secondary: #f0f0f0;
+            --border-hover: #4096ff;
+            
+            --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.03), 0 1px 6px -1px rgba(0, 0, 0, 0.02), 0 2px 4px 0 rgba(0, 0, 0, 0.02);
+            --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            
+            --radius-sm: 6px;
+            --radius-md: 8px;
+            --radius-lg: 12px;
+            
+            --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+        }
+        
+        /* 暗色模式变量 */
+        [data-theme="dark"] {
+            --primary-color: #1668dc;
+            --primary-hover: #3c89e8;
+            --primary-active: #1554ad;
+            --danger-color: #ff4d4f;
+            --danger-hover: #ff7875;
+            --danger-active: #d9363e;
+            
+            --text-primary: #ffffff;
+            --text-secondary: #c9cdd4;
+            --text-tertiary: #a6adb4;
+            --text-disabled: #6c757d;
+            
+            --bg-primary: #1f1f1f;
+            --bg-secondary: #2a2a2a;
+            --bg-tertiary: #373737;
+            --bg-quaternary: #404040;
+            
+            --border-primary: #434343;
+            --border-secondary: #303030;
+            --border-hover: #3c89e8;
+            
+            --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.15), 0 1px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px 0 rgba(0, 0, 0, 0.1);
+            --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.2), 0 2px 4px -1px rgba(0, 0, 0, 0.15);
+            --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.25), 0 4px 6px -2px rgba(0, 0, 0, 0.2);
+        }
+        
         * {
             margin: 0;
             padding: 0;
@@ -12,188 +76,339 @@
         }
         
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            font-family: var(--font-family);
             font-size: 14px;
-            line-height: 1.5;
-            color: #333;
-            background: #f5f5f5;
-            padding: 20px;
+            line-height: 1.5715;
+            color: var(--text-primary);
+            background: var(--bg-primary);
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
             overflow: hidden;
-        }
-        
-        .dialog-container {
-            background: white;
-            border-radius: 8px;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
-            max-width: 100%;
-            height: auto;
+            transition: color 0.2s ease, background-color 0.2s ease;
+            user-select: none;
             display: flex;
             flex-direction: column;
         }
         
+        .dialog-container {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            background: var(--bg-primary);
+            border-radius: var(--radius-md);
+            border: 1px solid var(--border-primary);
+            transition: background-color 0.2s ease, border-color 0.2s ease;
+            box-shadow: var(--shadow-lg);
+        }
+        
         .dialog-header {
-            padding: 20px 24px 16px;
-            border-bottom: 1px solid #e1e5e9;
-            background: #f8f9fa;
-            border-radius: 8px 8px 0 0;
+            padding: 12px 16px 8px 16px;
+            background: var(--bg-primary);
+            border-radius: var(--radius-md) var(--radius-md) 0 0;
+            transition: background-color 0.2s ease;
+            cursor: move;
+            -webkit-app-region: drag;
+            border-bottom: 1px solid var(--border-secondary);
         }
         
         .dialog-title {
-            font-size: 16px;
+            font-size: 14px;
             font-weight: 600;
-            color: #212529;
+            color: var(--text-primary);
             margin: 0;
+            text-align: center;
+            transition: color 0.2s ease;
         }
         
         .dialog-content {
-            padding: 24px;
+            padding: 16px;
             flex: 1;
-            min-height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--bg-primary);
+            transition: background-color 0.2s ease;
         }
         
         .dialog-message {
-            font-size: 14px;
-            line-height: 1.6;
-            color: #495057;
+            font-size: 13px;
+            line-height: 1.5;
+            color: var(--text-secondary);
             margin: 0;
             word-wrap: break-word;
             white-space: pre-wrap;
+            text-align: center;
+            transition: color 0.2s ease;
+            max-width: 100%;
         }
         
         .dialog-actions {
-            padding: 16px 24px 24px;
+            padding: 12px 16px 12px 16px;
             display: flex;
-            justify-content: flex-end;
-            gap: 12px;
-            border-top: 1px solid #e1e5e9;
-            background: #f8f9fa;
-            border-radius: 0 0 8px 8px;
+            justify-content: center;
+            gap: 8px;
+            background: var(--bg-primary);
+            border-radius: 0 0 var(--radius-md) var(--radius-md);
+            transition: background-color 0.2s ease;
         }
         
         .dialog-button {
-            padding: 10px 20px;
-            border: 1px solid #dee2e6;
-            border-radius: 6px;
-            background: white;
-            color: #495057;
+            padding: 6px 12px;
+            height: 28px;
+            border: 1px solid var(--border-primary);
+            border-radius: var(--radius-sm);
+            background: var(--bg-primary);
+            color: var(--text-primary);
             cursor: pointer;
-            font-size: 14px;
+            font-size: 12px;
             font-weight: 500;
-            transition: all 0.2s ease;
-            min-width: 80px;
+            transition: all 0.2s cubic-bezier(0.645, 0.045, 0.355, 1);
+            min-width: 60px;
             outline: none;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            font-family: var(--font-family);
+            line-height: 1.5715;
         }
         
         .dialog-button:hover {
-            background: #e9ecef;
-            border-color: #adb5bd;
+            background: var(--bg-quaternary);
+            border-color: var(--border-hover);
+            color: var(--primary-color);
         }
         
         .dialog-button:focus {
-            box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.25);
-            border-color: #86b7fe;
+            box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.2);
+            border-color: var(--border-hover);
+            outline: none;
         }
         
         .dialog-button:active {
-            transform: translateY(1px);
+            transform: translateY(0);
+            box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.12);
         }
         
         .dialog-button.primary {
-            background: #0d6efd;
-            color: white;
-            border-color: #0d6efd;
+            background: var(--primary-color);
+            color: #fff;
+            border-color: var(--primary-color);
+            text-shadow: 0 -1px 0 rgba(0, 0, 0, 0.12);
         }
         
         .dialog-button.primary:hover {
-            background: #0b5ed7;
-            border-color: #0a58ca;
+            background: var(--primary-hover);
+            border-color: var(--primary-hover);
+            color: #fff;
+        }
+        
+        .dialog-button.primary:active {
+            background: var(--primary-active);
+            border-color: var(--primary-active);
         }
         
         .dialog-button.danger {
-            background: #dc3545;
-            color: white;
-            border-color: #dc3545;
+            background: var(--danger-color);
+            color: #fff;
+            border-color: var(--danger-color);
+            text-shadow: 0 -1px 0 rgba(0, 0, 0, 0.12);
         }
         
         .dialog-button.danger:hover {
-            background: #c82333;
-            border-color: #bd2130;
+            background: var(--danger-hover);
+            border-color: var(--danger-hover);
+            color: #fff;
+        }
+        
+        .dialog-button.danger:active {
+            background: var(--danger-active);
+            border-color: var(--danger-active);
         }
         
         /* 键盘导航样式 */
         .dialog-button:focus-visible {
-            outline: 2px solid #0d6efd;
+            outline: 2px solid var(--primary-color);
             outline-offset: 2px;
-        }
-        
-        /* 暗色主题支持 */
-        @media (prefers-color-scheme: dark) {
-            body {
-                background: #212529;
-                color: #f8f9fa;
-            }
-            
-            .dialog-container {
-                background: #343a40;
-            }
-            
-            .dialog-header,
-            .dialog-actions {
-                background: #2c3236;
-                border-color: #495057;
-            }
-            
-            .dialog-title {
-                color: #f8f9fa;
-            }
-            
-            .dialog-message {
-                color: #dee2e6;
-            }
-            
-            .dialog-button {
-                background: #495057;
-                color: #f8f9fa;
-                border-color: #6c757d;
-            }
-            
-            .dialog-button:hover {
-                background: #5a6268;
-                border-color: #7c848a;
-            }
         }
         
         /* 动画效果 */
         .dialog-container {
-            animation: dialogSlideIn 0.2s ease-out;
+            animation: dialogFadeIn 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
         }
         
-        @keyframes dialogSlideIn {
+        @keyframes dialogFadeIn {
             from {
                 opacity: 0;
-                transform: translateY(-20px) scale(0.95);
+                transform: scale(0.98);
             }
             to {
                 opacity: 1;
-                transform: translateY(0) scale(1);
+                transform: scale(1);
+            }
+        }
+        
+        /* 响应式设计 */
+        @media (max-width: 350px) {
+            .dialog-header {
+                padding: 8px 12px 6px 12px;
+            }
+            
+            .dialog-title {
+                font-size: 12px;
+            }
+            
+            .dialog-content {
+                padding: 12px;
+            }
+            
+            .dialog-message {
+                font-size: 11px;
+            }
+            
+            .dialog-actions {
+                padding: 8px 12px 8px 12px;
+                flex-direction: column;
+                gap: 6px;
+            }
+            
+            .dialog-button {
+                width: 100%;
+                margin: 0;
+                font-size: 11px;
+                height: 24px;
             }
         }
     </style>
 </head>
 <body>
-    <div class="dialog-container">
+    <div class="dialog-container" role="dialog" aria-modal="true" aria-labelledby="dialog-title" aria-describedby="dialog-message">
         <div class="dialog-header">
             <h3 class="dialog-title" id="dialog-title">操作确认</h3>
         </div>
         <div class="dialog-content">
             <p class="dialog-message" id="dialog-message">是否要执行此操作？</p>
         </div>
-        <div class="dialog-actions" id="dialog-actions">
+        <div class="dialog-actions" id="dialog-actions" role="group" aria-label="对话框操作按钮">
             <!-- 按钮将通过 JavaScript 动态生成 -->
         </div>
     </div>
 
     <script>
+        // 主题管理
+        const ThemeManager = {
+            init() {
+                this.applyTheme();
+                this.listenForThemeChanges();
+            },
+            
+            applyTheme() {
+                // 优先从 Electron 主进程获取软件内主题状态
+                if (window.electronAPI && window.electronAPI.getTheme) {
+                    window.electronAPI.getTheme().then(theme => {
+                        document.documentElement.setAttribute('data-theme', theme);
+                    }).catch(() => {
+                        // 如果获取失败，使用系统主题
+                        this.useSystemTheme();
+                    });
+                } else {
+                    this.useSystemTheme();
+                }
+            },
+            
+            useSystemTheme() {
+                const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+                document.documentElement.setAttribute('data-theme', prefersDark ? 'dark' : 'light');
+            },
+            
+            listenForThemeChanges() {
+                // 监听系统主题变化
+                window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
+                    // 如果软件主题配置为系统跟随，则更新主题
+                    if (!window.electronAPI || !window.electronAPI.getTheme) {
+                        document.documentElement.setAttribute('data-theme', e.matches ? 'dark' : 'light');
+                    } else {
+                        // 重新获取软件内主题状态
+                        this.applyTheme();
+                    }
+                });
+                
+                // 监听 Electron 主题变化
+                if (window.electronAPI && window.electronAPI.onThemeChanged) {
+                    window.electronAPI.onThemeChanged((theme) => {
+                        document.documentElement.setAttribute('data-theme', theme);
+                    });
+                }
+            }
+        };
+        
+        // 拖拽管理
+        const DragManager = {
+            isDragging: false,
+            startX: 0,
+            startY: 0,
+            
+            init() {
+                const header = document.querySelector('.dialog-header');
+                if (!header) return;
+                
+                header.addEventListener('mousedown', this.handleMouseDown.bind(this));
+                document.addEventListener('mousemove', this.handleMouseMove.bind(this));
+                document.addEventListener('mouseup', this.handleMouseUp.bind(this));
+                
+                // 防止文本选择
+                header.addEventListener('selectstart', (e) => e.preventDefault());
+            },
+            
+            handleMouseDown(e) {
+                // 只有在头部区域才能拖拽
+                if (!e.target.closest('.dialog-header')) return;
+                
+                this.isDragging = true;
+                this.startX = e.clientX;
+                this.startY = e.clientY;
+                
+                const container = document.querySelector('.dialog-container');
+                container.style.transition = 'none';
+                
+                e.preventDefault();
+            },
+            
+            handleMouseMove(e) {
+                if (!this.isDragging) return;
+                
+                const deltaX = e.clientX - this.startX;
+                const deltaY = e.clientY - this.startY;
+                
+                // 通知 Electron 移动窗口
+                if (window.electronAPI && window.electronAPI.moveWindow) {
+                    window.electronAPI.moveWindow(deltaX, deltaY);
+                }
+                
+                e.preventDefault();
+            },
+            
+            handleMouseUp(e) {
+                if (!this.isDragging) return;
+                
+                this.isDragging = false;
+                
+                const container = document.querySelector('.dialog-container');
+                container.style.transition = '';
+                
+                e.preventDefault();
+            }
+        };
+        
+        // 窗口加载完成后的初始化
+        window.addEventListener('load', () => {
+            // 初始化主题管理
+            ThemeManager.init();
+        });
+        
         // 获取传递的参数
         const urlParams = new URLSearchParams(window.location.search);
         const data = JSON.parse(decodeURIComponent(urlParams.get('data') || '{}'));
@@ -211,21 +426,26 @@
             button.className = 'dialog-button';
             button.textContent = option;
             
-            // 第一个按钮设为主要按钮
-            if (index === 0) {
+            // 根据按钮文本设置样式
+            if (option.includes('确定') || option.includes('是') || option.includes('同意')) {
                 button.className += ' primary';
+            } else if (option.includes('删除') || option.includes('危险')) {
+                button.className += ' danger';
             }
             
             // 绑定点击事件
             button.addEventListener('click', () => {
+                // 添加点击动画
+                button.style.transform = 'scale(0.98)';
+                setTimeout(() => {
+                    button.style.transform = '';
+                }, 100);
+                
                 // 发送结果到主进程
                 if (window.electronAPI && window.electronAPI.dialogResponse) {
                     const choice = index === 0; // 第一个选项为 true
                     window.electronAPI.dialogResponse(data.messageId, choice);
                 }
-                
-                // 不需要手动关闭窗口，主进程会处理
-                // 移除 window.electronAPI.windowClose() 调用
             });
             
             actionsContainer.appendChild(button);
@@ -246,7 +466,6 @@
                 if (window.electronAPI && window.electronAPI.dialogResponse) {
                     window.electronAPI.dialogResponse(data.messageId, false);
                 }
-                // 不需要手动关闭窗口，主进程会处理
             } else if (event.key === 'Enter') {
                 // Enter 键相当于确定
                 const focusedButton = document.activeElement;
@@ -259,17 +478,31 @@
                         firstButton.click();
                     }
                 }
+            } else if (event.key === 'Tab') {
+                // Tab 键在按钮间切换
+                const buttons = Array.from(actionsContainer.querySelectorAll('.dialog-button'));
+                const currentIndex = buttons.indexOf(document.activeElement);
+                
+                if (event.shiftKey) {
+                    // Shift+Tab 向前切换
+                    const prevIndex = currentIndex <= 0 ? buttons.length - 1 : currentIndex - 1;
+                    buttons[prevIndex].focus();
+                } else {
+                    // Tab 向后切换
+                    const nextIndex = currentIndex >= buttons.length - 1 ? 0 : currentIndex + 1;
+                    buttons[nextIndex].focus();
+                }
+                event.preventDefault();
             }
         });
         
-        // 窗口加载完成后调整大小
+        // 窗口加载完成后的初始化
         window.addEventListener('load', () => {
-            if (window.electronAPI && window.electronAPI.resizeDialogWindow) {
-                // 获取内容高度
-                const container = document.querySelector('.dialog-container');
-                const height = container.offsetHeight + 40; // 加上一些边距
-                window.electronAPI.resizeDialogWindow(Math.min(height, 400));
-            }
+            // 初始化主题管理
+            ThemeManager.init();
+            
+            // 初始化拖拽管理
+            DragManager.init();
         });
     </script>
 </body>
