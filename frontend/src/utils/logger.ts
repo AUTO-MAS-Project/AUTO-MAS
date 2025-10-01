@@ -1,24 +1,13 @@
 // 渲染进程日志工具
-interface ElectronAPI {
-  getLogPath: () => Promise<string>
-  getLogFiles: () => Promise<string[]>
-  getLogs: (lines?: number, fileName?: string) => Promise<string>
-  clearLogs: (fileName?: string) => Promise<void>
-  cleanOldLogs: (daysToKeep?: number) => Promise<void>
-}
+const LogLevel = {
+  DEBUG: 'DEBUG',
+  INFO: 'INFO',
+  WARN: 'WARN',
+  ERROR: 'ERROR'
+} as const
 
-declare global {
-  interface Window {
-    electronAPI: ElectronAPI
-  }
-}
-
-export enum LogLevel {
-  DEBUG = 'DEBUG',
-  INFO = 'INFO',
-  WARN = 'WARN',
-  ERROR = 'ERROR'
-}
+export type LogLevel = typeof LogLevel[keyof typeof LogLevel]
+export { LogLevel }
 
 class Logger {
   // 直接使用原生console，主进程会自动处理日志记录
@@ -40,32 +29,32 @@ class Logger {
 
   // 获取日志文件路径
   async getLogPath(): Promise<string> {
-    if (window.electronAPI) {
-      return await window.electronAPI.getLogPath()
+    if ((window as any).electronAPI) {
+      return await (window as any).electronAPI.getLogPath()
     }
     throw new Error('Electron API not available')
   }
 
   // 获取日志文件列表
   async getLogFiles(): Promise<string[]> {
-    if (window.electronAPI) {
-      return await window.electronAPI.getLogFiles()
+    if ((window as any).electronAPI) {
+      return await (window as any).electronAPI.getLogFiles()
     }
     throw new Error('Electron API not available')
   }
 
   // 获取日志内容
   async getLogs(lines?: number, fileName?: string): Promise<string> {
-    if (window.electronAPI) {
-      return await window.electronAPI.getLogs(lines, fileName)
+    if ((window as any).electronAPI) {
+      return await (window as any).electronAPI.getLogs(lines, fileName)
     }
     throw new Error('Electron API not available')
   }
 
   // 清空日志
   async clearLogs(fileName?: string): Promise<void> {
-    if (window.electronAPI) {
-      await window.electronAPI.clearLogs(fileName)
+    if ((window as any).electronAPI) {
+      await (window as any).electronAPI.clearLogs(fileName)
       console.info(`日志已清空: ${fileName || '当前文件'}`)
     } else {
       throw new Error('Electron API not available')
@@ -74,8 +63,8 @@ class Logger {
 
   // 清理旧日志
   async cleanOldLogs(daysToKeep: number = 7): Promise<void> {
-    if (window.electronAPI) {
-      await window.electronAPI.cleanOldLogs(daysToKeep)
+    if ((window as any).electronAPI) {
+      await (window as any).electronAPI.cleanOldLogs(daysToKeep)
       console.info(`已清理${daysToKeep}天前的旧日志`)
     } else {
       throw new Error('Electron API not available')
