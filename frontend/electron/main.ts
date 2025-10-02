@@ -881,7 +881,7 @@ function createQuestionDialog(questionData: any): Promise<boolean> {
     // 创建对话框窗口 - 小尺寸可拖动窗口
     const dialogWindow = new BrowserWindow({
       width: 400,
-      height: 140,
+      height: 145,
       x: windowBounds.x + (windowBounds.width - 400) / 2, // 居中显示
       y: windowBounds.y + (windowBounds.height - 200) / 2,
       resizable: false, // 不允许改变大小
