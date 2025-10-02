@@ -171,10 +171,45 @@
                             基建: {{ user.Info.InfrastMode === 'Normal' ? '普通' : '自定义' }}
                           </a-tag>
 
-                          <!-- 关卡信息 - Stage固定展示 -->
-                          <a-tag v-if="user.Info.Stage" class="info-tag" color="blue">
-                            关卡: {{ user.Info.Stage === '-' ? '未选择' : user.Info.Stage }}
-                          </a-tag>
+                          <!-- 关卡信息 - 根据是否使用计划表配置显示不同内容 -->
+                          <template v-if="user.Info.Stage === '1-7' && props.currentPlanData">
+                            <!-- 计划表模式信息 -->
+                            <a-tag
+                              v-if="props.currentPlanData.Info?.Mode"
+                              class="info-tag"
+                              color="purple"
+                            >
+                              模式:
+                              {{ props.currentPlanData.Info.Mode === 'ALL' ? '全局' : '周计划' }}
+                            </a-tag>
+
+                            <!-- 显示计划表中的所有关卡 -->
+                            <template v-for="(stageInfo, index) in getAllPlanStages()" :key="index">
+                              <a-tag class="info-tag" color="green">
+                                {{ stageInfo.label }}: {{ stageInfo.value }}
+                              </a-tag>
+                            </template>
+
+                            <!-- 如果没有配置任何关卡，显示提示 -->
+                            <a-tag
+                              v-if="getAllPlanStages().length === 0"
+                              class="info-tag"
+                              color="orange"
+                            >
+                              关卡: 计划表未配置
+                            </a-tag>
+                          </template>
+
+                          <!-- 用户自定义关卡 -->
+                          <template v-else>
+                            <a-tag
+                              v-if="user.Info.Stage"
+                              class="info-tag"
+                              :color="getStageTagColor(user.Info.Stage)"
+                            >
+                              关卡: {{ getDisplayStage(user.Info.Stage) }}
+                            </a-tag>
+                          </template>
 
                           <!-- 额外关卡 - 只有不为-或空时才显示 -->
                           <a-tag
@@ -327,6 +362,7 @@ import { message } from 'ant-design-vue'
 interface Props {
   scripts: Script[]
   activeConnections: Map<string, { subscriptionId: string; websocketId: string }>
+  currentPlanData?: Record<string, any> | null
 }
 
 interface Emits {
@@ -419,11 +455,113 @@ const getRemainingDayColor = (remainedDay: number): string => {
   return 'green'
 }
 
+// 获取关卡标签颜色
+const getStageTagColor = (stage: string): string => {
+  if (stage === '1-7') return 'green' // 使用计划表配置用绿色
+  return 'blue' // 自定义关卡用蓝色
+}
+
 // 获取剩余天数的显示文本
 const getRemainingDayText = (remainedDay: number): string => {
   if (remainedDay === -1) return '剩余天数: 长期有效'
   if (remainedDay === 0) return '剩余天数: 已到期'
   return `剩余天数: ${remainedDay}天`
+}
+
+// 获取关卡的显示文本
+const getDisplayStage = (stage: string): string => {
+  if (stage === '-') return '未选择'
+
+  // 如果是默认值且有计划表数据，显示计划表中的实际关卡
+  if (stage === '1-7' && props.currentPlanData) {
+    const planStage = getCurrentPlanStage()
+    if (planStage && planStage !== '-') {
+      return planStage
+    }
+    return '使用计划表配置'
+  }
+
+  return stage
+}
+
+// 从计划表获取当前关卡
+const getCurrentPlanStage = (): string => {
+  if (!props.currentPlanData) return ''
+
+  // 根据当前时间确定使用哪个时间段的配置
+  const planMode = props.currentPlanData.Info?.Mode || 'ALL'
+  let timeKey = 'ALL'
+
+  if (planMode === 'Weekly') {
+    // 如果是周模式，根据当前星期几获取对应配置
+    const today = new Date().getDay() // 0=Sunday, 1=Monday, ...
+    const dayMap = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+    timeKey = dayMap[today]
+  }
+
+  // 从计划表获取关卡配置
+  const timeConfig = props.currentPlanData[timeKey]
+  if (!timeConfig) return ''
+
+  // 获取主要关卡
+  if (timeConfig.Stage && timeConfig.Stage !== '-') {
+    return timeConfig.Stage
+  }
+
+  // 如果主要关卡为空，尝试获取第一个备选关卡
+  const backupStages = [timeConfig.Stage_1, timeConfig.Stage_2, timeConfig.Stage_3]
+  for (const stage of backupStages) {
+    if (stage && stage !== '-') {
+      return stage
+    }
+  }
+
+  return ''
+}
+
+// 从计划表获取所有配置的关卡
+const getAllPlanStages = (): Array<{ label: string; value: string }> => {
+  if (!props.currentPlanData) return []
+
+  // 根据当前时间确定使用哪个时间段的配置
+  const planMode = props.currentPlanData.Info?.Mode || 'ALL'
+  let timeKey = 'ALL'
+
+  if (planMode === 'Weekly') {
+    // 如果是周模式，根据当前星期几获取对应配置
+    const today = new Date().getDay() // 0=Sunday, 1=Monday, ...
+    const dayMap = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+    timeKey = dayMap[today]
+  }
+
+  // 从计划表获取关卡配置
+  const timeConfig = props.currentPlanData[timeKey]
+  if (!timeConfig) return []
+
+  const stages: Array<{ label: string; value: string }> = []
+
+  // 主关卡
+  if (timeConfig.Stage && timeConfig.Stage !== '-') {
+    stages.push({ label: '关卡', value: timeConfig.Stage })
+  }
+
+  // 备选关卡
+  if (timeConfig.Stage_1 && timeConfig.Stage_1 !== '-') {
+    stages.push({ label: '关卡1', value: timeConfig.Stage_1 })
+  }
+  if (timeConfig.Stage_2 && timeConfig.Stage_2 !== '-') {
+    stages.push({ label: '关卡2', value: timeConfig.Stage_2 })
+  }
+  if (timeConfig.Stage_3 && timeConfig.Stage_3 !== '-') {
+    stages.push({ label: '关卡3', value: timeConfig.Stage_3 })
+  }
+
+  // 剩余关卡
+  if (timeConfig.Stage_Remain && timeConfig.Stage_Remain !== '-') {
+    stages.push({ label: '剩余关卡', value: timeConfig.Stage_Remain })
+  }
+
+  return stages
 }
 
 // 处理脚本拖拽结束
