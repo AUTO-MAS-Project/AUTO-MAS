@@ -56,6 +56,7 @@
   <ScriptTable
     :scripts="scripts"
     :active-connections="activeConnections"
+    :current-plan-data="currentPlanData"
     @edit="handleEditScript"
     @delete="handleDeleteScript"
     @add-user="handleAddUser"
@@ -253,6 +254,7 @@ import { useScriptApi } from '@/composables/useScriptApi'
 import { useUserApi } from '@/composables/useUserApi'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { useTemplateApi, type WebConfigTemplate } from '@/composables/useTemplateApi'
+import { usePlanApi } from '@/composables/usePlanApi'
 import { Service } from '@/api/services/Service'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import MarkdownIt from 'markdown-it'
@@ -262,6 +264,7 @@ const { addScript, deleteScript, getScriptsWithUsers } = useScriptApi()
 const { updateUser, deleteUser } = useUserApi()
 const { subscribe, unsubscribe } = useWebSocket()
 const { getWebConfigTemplates, importScriptFromWeb } = useTemplateApi()
+const { getPlans } = usePlanApi()
 
 // 初始化markdown解析器
 const md = new MarkdownIt({
@@ -273,6 +276,8 @@ const md = new MarkdownIt({
 const scripts = ref<Script[]>([])
 // 增加：标记是否已经完成过一次脚本列表加载（成功或失败都算一次）
 const loadedOnce = ref(false)
+// 当前计划表数据
+const currentPlanData = ref<Record<string, any> | null>(null)
 const typeSelectVisible = ref(false)
 const generalModeSelectVisible = ref(false)
 const templateSelectVisible = ref(false)
@@ -312,6 +317,7 @@ const filteredTemplates = computed(() => {
 
 onMounted(() => {
   loadScripts()
+  loadCurrentPlan()
 })
 
 const loadScripts = async () => {
@@ -333,6 +339,21 @@ const loadScripts = async () => {
   } finally {
     // 首次加载结束（不论成功失败）后置位，避免初始闪烁
     loadedOnce.value = true
+  }
+}
+
+// 加载当前计划表数据
+const loadCurrentPlan = async () => {
+  try {
+    const response = await getPlans()
+    if (response.data && response.index && response.index.length > 0) {
+      // 获取第一个计划表的数据
+      const firstPlanId = response.index[0].uid
+      currentPlanData.value = response.data[firstPlanId] || null
+    }
+  } catch (error) {
+    console.error('加载计划表数据失败:', error)
+    // 不显示错误消息，因为计划表数据是可选的
   }
 }
 
