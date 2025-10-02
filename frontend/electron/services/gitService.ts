@@ -1,7 +1,7 @@
 import * as path from 'path'
 import * as fs from 'fs'
 import { spawn } from 'child_process'
-import { BrowserWindow } from 'electron'
+import { BrowserWindow, app } from 'electron'
 import AdmZip from 'adm-zip'
 import { downloadFile } from './downloadService'
 
@@ -12,6 +12,116 @@ export function setMainWindow(window: BrowserWindow) {
 }
 
 const gitDownloadUrl = 'https://download.auto-mas.top/d/AUTO_MAS/git.zip'
+
+// 获取应用版本号
+function getAppVersion(appRoot: string): string {
+  console.log('=== 开始获取应用版本号 ===')
+  console.log(`应用根目录: ${appRoot}`)
+
+  try {
+    // 方法1: 从 Electron app 获取版本号（打包后可用）
+    try {
+      const appVersion = app.getVersion()
+      if (appVersion && appVersion !== '1.0.0') { // 避免使用默认版本
+        console.log(`✅ 从 app.getVersion() 获取版本号: ${appVersion}`)
+        return appVersion
+      }
+    } catch (error) {
+      console.log('⚠️ app.getVersion() 获取失败:', error)
+    }
+
+    // 方法2: 从预设的环境变量获取（如果在构建时注入了）
+    if (process.env.VITE_APP_VERSION) {
+      console.log(`✅ 从环境变量获取版本号: ${process.env.VITE_APP_VERSION}`)
+      return process.env.VITE_APP_VERSION
+    }
+
+    // 方法3: 开发环境下从 package.json 获取
+    const packageJsonPath = path.join(appRoot, 'frontend', 'package.json')
+    console.log(`尝试读取前端package.json: ${packageJsonPath}`)
+
+    if (fs.existsSync(packageJsonPath)) {
+      const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'))
+      const version = packageJson.version || '获取版本失败！'
+      console.log(`✅ 从前端package.json获取版本号: ${version}`)
+      return version
+    }
+
+    console.log('⚠️ 前端package.json不存在，尝试读取根目录package.json')
+
+    // 方法4: 从根目录 package.json 获取（开发环境）
+    const currentPackageJsonPath = path.join(appRoot, 'package.json')
+    console.log(`尝试读取根目录package.json: ${currentPackageJsonPath}`)
+
+    if (fs.existsSync(currentPackageJsonPath)) {
+      const packageJson = JSON.parse(fs.readFileSync(currentPackageJsonPath, 'utf8'))
+      const version = packageJson.version || '获取版本失败！'
+      console.log(`✅ 从根目录package.json获取版本号: ${version}`)
+      return version
+    }
+
+    console.log('❌ 未找到任何版本信息源')
+    return '获取版本失败！'
+  } catch (error) {
+    console.error('❌ 获取版本号失败:', error)
+    return '获取版本失败！'
+  }
+}
+
+// 检查分支是否存在
+async function checkBranchExists(
+  gitPath: string,
+  gitEnv: any,
+  repoUrl: string,
+  branchName: string
+): Promise<boolean> {
+  console.log(`=== 检查分支是否存在: ${branchName} ===`)
+  console.log(`Git路径: ${gitPath}`)
+  console.log(`仓库URL: ${repoUrl}`)
+
+  try {
+    return new Promise<boolean>(resolve => {
+      const proc = spawn(gitPath, ['ls-remote', '--heads', repoUrl, branchName], {
+        stdio: 'pipe',
+        env: gitEnv,
+      })
+
+      let output = ''
+      let errorOutput = ''
+
+      proc.stdout?.on('data', data => {
+        const chunk = data.toString()
+        output += chunk
+        console.log(`git ls-remote stdout: ${chunk.trim()}`)
+      })
+
+      proc.stderr?.on('data', data => {
+        const chunk = data.toString()
+        errorOutput += chunk
+        console.log(`git ls-remote stderr: ${chunk.trim()}`)
+      })
+
+      proc.on('close', code => {
+        console.log(`git ls-remote 退出码: ${code}`)
+        // 如果输出包含分支名，说明分支存在
+        const branchExists = output.includes(`refs/heads/${branchName}`)
+        console.log(`分支 ${branchName} ${branchExists ? '✅ 存在' : '❌ 不存在'}`)
+        if (errorOutput) {
+          console.log(`错误输出: ${errorOutput}`)
+        }
+        resolve(branchExists)
+      })
+
+      proc.on('error', error => {
+        console.error(`git ls-remote 进程错误:`, error)
+        resolve(false)
+      })
+    })
+  } catch (error) {
+    console.error(`❌ 检查分支 ${branchName} 时出错:`, error)
+    return false
+  }
+}
 
 // 递归复制目录，包括文件和隐藏文件
 function copyDirSync(src: string, dest: string) {
@@ -192,69 +302,226 @@ export async function cloneBackend(
   success: boolean
   error?: string
 }> {
+  console.log('=== 开始克隆/更新后端代码 ===')
+  console.log(`应用根目录: ${appRoot}`)
+  console.log(`仓库URL: ${repoUrl}`)
+
   try {
     const backendPath = appRoot
     const gitPath = path.join(appRoot, 'environment', 'git', 'bin', 'git.exe')
-    if (!fs.existsSync(gitPath)) throw new Error(`Git可执行文件不存在: ${gitPath}`)
+
+    console.log(`Git可执行文件路径: ${gitPath}`)
+    console.log(`后端代码路径: ${backendPath}`)
+
+    if (!fs.existsSync(gitPath)) {
+      const error = `Git可执行文件不存在: ${gitPath}`
+      console.error(`❌ ${error}`)
+      throw new Error(error)
+    }
+
+    console.log('✅ Git可执行文件存在')
     const gitEnv = getGitEnvironment(appRoot)
+    console.log('✅ Git环境变量配置完成')
 
     // 检查 git 是否可用
+    console.log('=== 检查Git是否可用 ===')
     await new Promise<void>((resolve, reject) => {
       const proc = spawn(gitPath, ['--version'], { env: gitEnv })
-      proc.on('close', code => (code === 0 ? resolve() : reject(new Error('git 无法正常运行'))))
-      proc.on('error', reject)
+
+      proc.stdout?.on('data', data => {
+        console.log(`git --version output: ${data.toString().trim()}`)
+      })
+
+      proc.stderr?.on('data', data => {
+        console.log(`git --version error: ${data.toString().trim()}`)
+      })
+
+      proc.on('close', code => {
+        console.log(`git --version 退出码: ${code}`)
+        if (code === 0) {
+          console.log('✅ Git可用')
+          resolve()
+        } else {
+          console.error('❌ Git无法正常运行')
+          reject(new Error('git 无法正常运行'))
+        }
+      })
+
+      proc.on('error', error => {
+        console.error('❌ Git进程启动失败:', error)
+        reject(error)
+      })
     })
 
+    // 获取版本号并确定目标分支
+    const version = getAppVersion(appRoot)
+    console.log(`=== 分支选择逻辑 ===`)
+    console.log(`当前应用版本: ${version}`)
+
+    let targetBranch = 'feature/refactor' // 默认分支
+    console.log(`默认分支: ${targetBranch}`)
+
+    if (version !== '获取版本失败！') {
+      // 检查版本对应的分支是否存在
+      console.log(`开始检查版本分支是否存在...`)
+      const versionBranchExists = await checkBranchExists(gitPath, gitEnv, repoUrl, version)
+      if (versionBranchExists) {
+        targetBranch = version
+        console.log(`🎯 将使用版本分支: ${targetBranch}`)
+      } else {
+        console.log(`⚠️ 版本分支 ${version} 不存在，使用默认分支: ${targetBranch}`)
+      }
+    } else {
+      console.log('⚠️ 版本号获取失败，使用默认分支: feature/refactor')
+    }
+
+    console.log(`=== 最终选择分支: ${targetBranch} ===`)
+
+    // 检查是否为Git仓库
+    const isRepo = isGitRepository(backendPath)
+    console.log(`检查是否为Git仓库: ${isRepo ? '✅ 是' : '❌ 否'}`)
+
     // ==== 下面是关键逻辑 ====
-    if (isGitRepository(backendPath)) {
+    if (isRepo) {
+      console.log('=== 更新现有Git仓库 ===')
+
       // 已是 git 仓库，先更新远程URL为镜像站，然后 pull
       if (mainWindow) {
         mainWindow.webContents.send('download-progress', {
           type: 'backend',
           progress: 0,
           status: 'downloading',
-          message: '正在更新后端代码...',
+          message: `正在更新后端代码(分支: ${targetBranch})...`,
         })
       }
-      
+
       // 更新远程URL为镜像站URL，避免直接访问GitHub
-      console.log(`更新远程URL为镜像站: ${repoUrl}`)
+      console.log(`📡 更新远程URL为镜像站: ${repoUrl}`)
       await new Promise<void>((resolve, reject) => {
-        const proc = spawn(gitPath, ['remote', 'set-url', 'origin', repoUrl], { 
-          stdio: 'pipe', 
-          env: gitEnv, 
-          cwd: backendPath 
+        const proc = spawn(gitPath, ['remote', 'set-url', 'origin', repoUrl], {
+          stdio: 'pipe',
+          env: gitEnv,
+          cwd: backendPath,
         })
-        proc.stdout?.on('data', d => console.log('git remote set-url:', d.toString()))
-        proc.stderr?.on('data', d => console.log('git remote set-url err:', d.toString()))
-        proc.on('close', code =>
-          code === 0 ? resolve() : reject(new Error(`git remote set-url失败，退出码: ${code}`))
-        )
-        proc.on('error', reject)
+        proc.stdout?.on('data', d => console.log('git remote set-url stdout:', d.toString().trim()))
+        proc.stderr?.on('data', d => console.log('git remote set-url stderr:', d.toString().trim()))
+        proc.on('close', code => {
+          console.log(`git remote set-url 退出码: ${code}`)
+          if (code === 0) {
+            console.log('✅ 远程URL更新成功')
+            resolve()
+          } else {
+            console.error('❌ 远程URL更新失败')
+            reject(new Error(`git remote set-url失败，退出码: ${code}`))
+          }
+        })
+        proc.on('error', error => {
+          console.error('❌ git remote set-url 进程错误:', error)
+          reject(error)
+        })
       })
-      
-      // 执行pull操作
+
+      // 获取目标分支信息（显式 fetch 目标分支）
+      console.log(`📥 显式获取远程分支: ${targetBranch} ...`)
       await new Promise<void>((resolve, reject) => {
-        const proc = spawn(gitPath, ['pull'], { stdio: 'pipe', env: gitEnv, cwd: backendPath })
-        proc.stdout?.on('data', d => console.log('git pull:', d.toString()))
-        proc.stderr?.on('data', d => console.log('git pull err:', d.toString()))
-        proc.on('close', code =>
-          code === 0 ? resolve() : reject(new Error(`git pull失败，退出码: ${code}`))
-        )
-        proc.on('error', reject)
+        const proc = spawn(gitPath, ['fetch', 'origin', targetBranch], {
+          stdio: 'pipe',
+          env: gitEnv,
+          cwd: backendPath,
+        })
+        proc.stdout?.on('data', d => console.log('git fetch stdout:', d.toString().trim()))
+        proc.stderr?.on('data', d => console.log('git fetch stderr:', d.toString().trim()))
+        proc.on('close', code => {
+          console.log(`git fetch origin ${targetBranch} 退出码: ${code}`)
+          if (code === 0) {
+            console.log(`✅ 成功获取远程分支: ${targetBranch}`)
+            resolve()
+          } else {
+            console.error(`❌ 获取远程分支失败: ${targetBranch}`)
+            reject(new Error(`git fetch origin ${targetBranch} 失败，退出码: ${code}`))
+          }
+        })
+        proc.on('error', error => {
+          console.error('❌ git fetch 进程错误:', error)
+          reject(error)
+        })
       })
+
+      // 切换到目标分支
+      console.log(`🔀 切换到目标分支: ${targetBranch}`)
+      await new Promise<void>((resolve, reject) => {
+        const proc = spawn(gitPath, ['checkout', '-B', targetBranch, `origin/${targetBranch}`], {
+          stdio: 'pipe',
+          env: gitEnv,
+          cwd: backendPath,
+        })
+        proc.stdout?.on('data', d => console.log('git checkout stdout:', d.toString().trim()))
+        proc.stderr?.on('data', d => console.log('git checkout stderr:', d.toString().trim()))
+        proc.on('close', code => {
+          console.log(`git checkout 退出码: ${code}`)
+          if (code === 0) {
+            console.log(`✅ 成功切换到分支: ${targetBranch}`)
+            resolve()
+          } else {
+            console.error(`❌ 切换分支失败: ${targetBranch}`)
+            reject(new Error(`git checkout失败，退出码: ${code}`))
+          }
+        })
+        proc.on('error', error => {
+          console.error('❌ git checkout 进程错误:', error)
+          reject(error)
+        })
+      })
+
+      // 执行pull操作
+      console.log('🔄 强制同步到远程分支最新提交...')
+      await new Promise<void>((resolve, reject) => {
+        const proc = spawn(gitPath, ['reset', '--hard', `origin/${targetBranch}`], {
+          stdio: 'pipe',
+          env: gitEnv,
+          cwd: backendPath,
+        })
+        proc.stdout?.on('data', d => console.log('git reset stdout:', d.toString().trim()))
+        proc.stderr?.on('data', d => console.log('git reset stderr:', d.toString().trim()))
+        proc.on('close', code => {
+          console.log(`git reset --hard 退出码: ${code}`)
+          if (code === 0) {
+            console.log('✅ 代码已强制更新到远程最新版本')
+            resolve()
+          } else {
+            console.error('❌ 代码重置失败')
+            reject(new Error(`git reset --hard 失败，退出码: ${code}`))
+          }
+        })
+        proc.on('error', error => {
+          console.error('❌ git reset 进程错误:', error)
+          reject(error)
+        })
+      })
+
       if (mainWindow) {
         mainWindow.webContents.send('download-progress', {
           type: 'backend',
           progress: 100,
           status: 'completed',
-          message: '后端代码更新完成',
+          message: `后端代码更新完成(分支: ${targetBranch})`,
         })
       }
+
+      console.log(`✅ 后端代码更新完成(分支: ${targetBranch})`)
     } else {
+      console.log('=== 克隆新的Git仓库 ===')
+
       // 不是 git 仓库，clone 到 tmp，再拷贝出来
       const tmpDir = path.join(appRoot, 'git_tmp')
-      if (fs.existsSync(tmpDir)) fs.rmSync(tmpDir, { recursive: true, force: true })
+      console.log(`临时目录: ${tmpDir}`)
+
+      if (fs.existsSync(tmpDir)) {
+        console.log('🗑️ 清理现有临时目录...')
+        fs.rmSync(tmpDir, { recursive: true, force: true })
+      }
+
+      console.log('📁 创建临时目录...')
       fs.mkdirSync(tmpDir, { recursive: true })
 
       if (mainWindow) {
@@ -262,9 +529,13 @@ export async function cloneBackend(
           type: 'backend',
           progress: 0,
           status: 'downloading',
-          message: '正在克隆后端代码...',
+          message: `正在克隆后端代码(分支: ${targetBranch})...`,
         })
       }
+
+      console.log(`📥 开始克隆代码到临时目录...`)
+      console.log(`克隆参数: --single-branch --depth 1 --branch ${targetBranch}`)
+
       await new Promise<void>((resolve, reject) => {
         const proc = spawn(
           gitPath,
@@ -276,7 +547,7 @@ export async function cloneBackend(
             '--depth',
             '1',
             '--branch',
-            'feature/refactor',
+            targetBranch,
             repoUrl,
             tmpDir,
           ],
@@ -286,26 +557,51 @@ export async function cloneBackend(
             cwd: appRoot,
           }
         )
-        proc.stdout?.on('data', d => console.log('git clone:', d.toString()))
-        proc.stderr?.on('data', d => console.log('git clone err:', d.toString()))
-        proc.on('close', code =>
-          code === 0 ? resolve() : reject(new Error(`git clone失败，退出码: ${code}`))
-        )
-        proc.on('error', reject)
+        proc.stdout?.on('data', d => console.log('git clone stdout:', d.toString().trim()))
+        proc.stderr?.on('data', d => console.log('git clone stderr:', d.toString().trim()))
+        proc.on('close', code => {
+          console.log(`git clone 退出码: ${code}`)
+          if (code === 0) {
+            console.log('✅ 代码克隆成功')
+            resolve()
+          } else {
+            console.error('❌ 代码克隆失败')
+            reject(new Error(`git clone失败，退出码: ${code}`))
+          }
+        })
+        proc.on('error', error => {
+          console.error('❌ git clone 进程错误:', error)
+          reject(error)
+        })
       })
 
       // 复制所有文件到 backendPath（appRoot），包含 .git
+      console.log('📋 复制文件到目标目录...')
       const tmpFiles = fs.readdirSync(tmpDir)
+      console.log(`临时目录中的文件: ${tmpFiles.join(', ')}`)
+
       for (const file of tmpFiles) {
         const src = path.join(tmpDir, file)
         const dst = path.join(backendPath, file)
+
+        console.log(`复制: ${file}`)
+
         if (fs.existsSync(dst)) {
+          console.log(`  - 删除现有文件/目录: ${dst}`)
           if (fs.statSync(dst).isDirectory()) fs.rmSync(dst, { recursive: true, force: true })
           else fs.unlinkSync(dst)
         }
-        if (fs.statSync(src).isDirectory()) copyDirSync(src, dst)
-        else fs.copyFileSync(src, dst)
+
+        if (fs.statSync(src).isDirectory()) {
+          console.log(`  - 复制目录: ${src} -> ${dst}`)
+          copyDirSync(src, dst)
+        } else {
+          console.log(`  - 复制文件: ${src} -> ${dst}`)
+          fs.copyFileSync(src, dst)
+        }
       }
+
+      console.log('🗑️ 清理临时目录...')
       fs.rmSync(tmpDir, { recursive: true, force: true })
 
       if (mainWindow) {
@@ -313,14 +609,20 @@ export async function cloneBackend(
           type: 'backend',
           progress: 100,
           status: 'completed',
-          message: '后端代码克隆完成',
+          message: `后端代码克隆完成(分支: ${targetBranch})`,
         })
       }
+
+      console.log(`✅ 后端代码克隆完成(分支: ${targetBranch})`)
     }
+
+    console.log('=== 后端代码获取操作完成 ===')
     return { success: true }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error)
-    console.error('获取后端代码失败:', errorMessage)
+    console.error('❌ 获取后端代码失败:', errorMessage)
+    console.error('错误堆栈:', error instanceof Error ? error.stack : 'N/A')
+
     if (mainWindow) {
       mainWindow.webContents.send('download-progress', {
         type: 'backend',
