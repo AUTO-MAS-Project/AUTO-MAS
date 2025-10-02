@@ -45,6 +45,7 @@ class _Broadcast:
 
     async def put(self, item):
         """向所有订阅者广播消息"""
+        logger.debug(f"向所有订阅者广播消息: {item}")
         for subscriber in self.__subscribers:
             await subscriber.put(deepcopy(item))
 
