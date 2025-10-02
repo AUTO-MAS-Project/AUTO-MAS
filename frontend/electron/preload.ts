@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   windowClose: () => ipcRenderer.invoke('window-close'),
   windowIsMaximized: () => ipcRenderer.invoke('window-is-maximized'),
   appQuit: () => ipcRenderer.invoke('app-quit'),
+  appRestart: () => ipcRenderer.invoke('app-restart'),
 
   // 进程管理
   getRelatedProcesses: () => ipcRenderer.invoke('get-related-processes'),

@@ -571,6 +571,14 @@ ipcMain.handle('window-close', () => {
   }
 })
 
+// 添加应用重启处理器
+ipcMain.handle('app-restart', () => {
+  console.log('重启应用程序...')
+  isQuitting = true
+  app.relaunch()
+  app.exit(0)
+})
+
 // 添加强制退出处理器
 ipcMain.handle('app-quit', () => {
   isQuitting = true
@@ -755,10 +763,10 @@ ipcMain.handle('get-theme-info', async () => {
   try {
     const appRoot = getAppRoot()
     const configPath = path.join(appRoot, 'config', 'frontend_config.json')
-    
+
     let themeMode = 'system'
     let themeColor = 'blue'
-    
+
     // 尝试从配置文件读取主题设置
     if (fs.existsSync(configPath)) {
       try {
@@ -770,19 +778,19 @@ ipcMain.handle('get-theme-info', async () => {
         log.warn('读取主题配置失败，使用默认值:', error)
       }
     }
-    
+
     // 检测系统主题
     const systemTheme = nativeTheme.shouldUseDarkColors ? 'dark' : 'light'
-    
+
     // 确定实际使用的主题
     let actualTheme = themeMode
     if (themeMode === 'system') {
       actualTheme = systemTheme
     }
-    
+
     const themeColors: Record<string, string> = {
       blue: '#1677ff',
-      purple: '#722ed1', 
+      purple: '#722ed1',
       cyan: '#13c2c2',
       green: '#52c41a',
       magenta: '#eb2f96',
@@ -795,7 +803,7 @@ ipcMain.handle('get-theme-info', async () => {
       lime: '#a0d911',
       gold: '#faad14',
     }
-    
+
     return {
       themeMode,
       themeColor,
@@ -808,7 +816,7 @@ ipcMain.handle('get-theme-info', async () => {
     log.error('获取主题信息失败:', error)
     return {
       themeMode: 'system',
-      themeColor: 'blue', 
+      themeColor: 'blue',
       actualTheme: 'light',
       systemTheme: 'light',
       isDark: false,
@@ -822,9 +830,9 @@ ipcMain.handle('get-theme', async () => {
   try {
     const appRoot = getAppRoot()
     const configPath = path.join(appRoot, 'config', 'frontend_config.json')
-    
+
     let themeMode = 'system'
-    
+
     // 尝试从配置文件读取主题设置
     if (fs.existsSync(configPath)) {
       try {
@@ -835,16 +843,16 @@ ipcMain.handle('get-theme', async () => {
         log.warn('读取主题配置失败，使用默认值:', error)
       }
     }
-    
+
     // 检测系统主题
     const systemTheme = nativeTheme.shouldUseDarkColors ? 'dark' : 'light'
-    
+
     // 确定实际使用的主题
     let actualTheme = themeMode
     if (themeMode === 'system') {
       actualTheme = systemTheme
     }
-    
+
     return actualTheme
   } catch (error) {
     log.error('获取对话框主题失败:', error)
@@ -860,10 +868,10 @@ let dialogCallbacks = new Map<string, (result: boolean) => void>()
 function createQuestionDialog(questionData: any): Promise<boolean> {
   return new Promise((resolve) => {
     const messageId = questionData.messageId || 'dialog_' + Date.now()
-    
+
     // 存储回调函数
     dialogCallbacks.set(messageId, resolve)
-    
+
     // 准备对话框数据
     const dialogData = {
       title: questionData.title || '操作确认',
@@ -871,13 +879,13 @@ function createQuestionDialog(questionData: any): Promise<boolean> {
       options: questionData.options || ['确定', '取消'],
       messageId: messageId
     }
-    
+
     // 获取主窗口的尺寸用于全屏显示
     let windowBounds = { width: 800, height: 600, x: 100, y: 100 }
     if (mainWindow && !mainWindow.isDestroyed()) {
       windowBounds = mainWindow.getBounds()
     }
-    
+
     // 创建对话框窗口 - 小尺寸可拖动窗口
     const dialogWindow = new BrowserWindow({
       width: 400,
@@ -899,23 +907,23 @@ function createQuestionDialog(questionData: any): Promise<boolean> {
         preload: path.join(__dirname, 'preload.js'),
       },
     })
-    
+
     // 存储窗口引用
     dialogWindows.set(messageId, dialogWindow)
-    
+
     // 编码对话框数据
     const encodedData = encodeURIComponent(JSON.stringify(dialogData))
-    
+
     // 加载对话框页面
     const dialogUrl = `file://${path.join(__dirname, '../public/dialog.html')}?data=${encodedData}`
     dialogWindow.loadURL(dialogUrl)
-    
+
     // 窗口准备好后显示
     dialogWindow.once('ready-to-show', () => {
       dialogWindow.show()
       dialogWindow.focus()
     })
-    
+
     // 窗口关闭时清理
     dialogWindow.on('closed', () => {
       dialogWindows.delete(messageId)
@@ -925,7 +933,7 @@ function createQuestionDialog(questionData: any): Promise<boolean> {
         callback(false) // 默认返回 false (取消)
       }
     })
-    
+
     log.info(`全屏对话框窗口已创建: ${messageId}`)
   })
 }
@@ -946,20 +954,20 @@ ipcMain.handle('show-question-dialog', async (_event, questionData) => {
 // 处理对话框响应
 ipcMain.handle('dialog-response', async (_event, messageId: string, choice: boolean) => {
   log.info(`收到对话框响应: ${messageId} = ${choice}`)
-  
+
   const callback = dialogCallbacks.get(messageId)
   if (callback) {
     dialogCallbacks.delete(messageId)
     callback(choice)
   }
-  
+
   // 关闭对话框窗口
   const dialogWindow = dialogWindows.get(messageId)
   if (dialogWindow && !dialogWindow.isDestroyed()) {
     dialogWindow.close()
   }
   dialogWindows.delete(messageId)
-  
+
   return true
 })
 

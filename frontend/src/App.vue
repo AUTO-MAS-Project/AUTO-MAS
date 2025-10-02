@@ -10,7 +10,6 @@ import UpdateModal from './components/UpdateModal.vue'
 import DevDebugPanel from './components/DevDebugPanel.vue'
 import GlobalPowerCountdown from './components/GlobalPowerCountdown.vue'
 import WebSocketMessageListener from './components/WebSocketMessageListener.vue'
-import WebSocketDebugPanel from './components/WebSocketDebugPanel.vue'
 import zhCN from 'ant-design-vue/es/locale/zh_CN'
 import { logger } from '@/utils/logger'
 
@@ -58,9 +57,6 @@ onMounted(() => {
 
     <!-- WebSocket 消息监听组件 -->
     <WebSocketMessageListener />
-
-    <!-- WebSocket 调试面板 (仅开发环境) -->
-    <WebSocketDebugPanel v-if="$route.query.debug === 'true'" />
   </ConfigProvider>
 </template>
 
