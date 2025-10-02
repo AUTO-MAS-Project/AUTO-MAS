@@ -20,8 +20,24 @@
 
 from pathlib import Path
 from datetime import datetime, timedelta
-
-from .ConfigBase import *
+import uuid
+from .ConfigBase import (
+    ConfigBase,
+    MultipleConfig,
+    ConfigItem,
+    MultipleUIDValidator,
+    BoolValidator,
+    OptionsValidator,
+    RangeValidator,
+    FileValidator,
+    FolderValidator,
+    EncryptValidator,
+    UUIDValidator,
+    DateTimeValidator,
+    JSONValidator,
+    URLValidator,
+    UserNameValidator,
+)
 
 
 class Webhook(ConfigBase):
@@ -383,7 +399,7 @@ class MaaPlanConfig(ConfigBase):
             "Info", "Mode", "ALL", OptionsValidator(["ALL", "Weekly"])
         )
 
-        self.config_item_dict: dict[str, Dict[str, ConfigItem]] = {}
+        self.config_item_dict: dict[str, dict[str, ConfigItem]] = {}
 
         for group in [
             "ALL",
@@ -429,11 +445,9 @@ class MaaPlanConfig(ConfigBase):
         """获取当前的计划表配置项"""
 
         if self.get("Info", "Mode") == "ALL":
-
             return self.config_item_dict["ALL"][name]
 
         elif self.get("Info", "Mode") == "Weekly":
-
             dt = datetime.now()
             if dt.time() < datetime.min.time().replace(hour=4):
                 dt = dt - timedelta(days=1)
