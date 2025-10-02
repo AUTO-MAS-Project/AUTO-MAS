@@ -71,9 +71,9 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { getConfig } from '@/utils/config'
 import { mirrorManager } from '@/utils/mirrorManager'
-import router from '@/router'
 import { useUpdateChecker } from '@/composables/useUpdateChecker'
 import { connectAfterBackendStart } from '@/composables/useWebSocket'
+import { forceEnterApp } from '@/utils/appEntry'
 import { message } from 'ant-design-vue'
 
 // Props
@@ -154,11 +154,12 @@ function handleForceEnter() {
 }
 
 // 确认弹窗中的"我知道我在做什么"按钮，直接进入应用
-function handleForceEnterConfirm() {
+async function handleForceEnterConfirm() {
   clearTimers()
   aborted.value = true
   forceEnterVisible.value = false
-  router.push('/home')
+  
+  await forceEnterApp('自动模式-强行进入确认')
 }
 
 // 事件处理 - 增强重新配置环境按钮功能

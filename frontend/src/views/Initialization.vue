@@ -43,6 +43,7 @@ import ManualMode from '@/components/initialization/ManualMode.vue'
 import EnvironmentIncomplete from '@/components/initialization/EnvironmentIncomplete.vue'
 import type { DownloadProgress } from '@/types/initialization'
 import { mirrorManager } from '@/utils/mirrorManager'
+import { forceEnterApp } from '@/utils/appEntry'
 
 const router = useRouter()
 
@@ -69,8 +70,8 @@ const mirrorConfigStatus = ref({
 const manualModeRef = ref()
 
 // 基础功能函数
-function skipToHome() {
-  router.push('/home')
+async function skipToHome() {
+  await forceEnterApp('跳过初始化直接进入')
 }
 
 function switchToManualMode() {
@@ -84,10 +85,14 @@ async function enterApp() {
   try {
     // 设置初始化完成标记
     await setInitialized(true)
-    console.log('设置初始化完成标记，跳转到首页')
-    router.push('/home')
+    console.log('设置初始化完成标记，准备进入应用...')
+    
+    // 使用统一的进入应用函数
+    await forceEnterApp('初始化完成后进入')
   } catch (error) {
     console.error('进入应用失败:', error)
+    // 即使出错也强制进入
+    await forceEnterApp('初始化失败后强制进入')
   }
 }
 
