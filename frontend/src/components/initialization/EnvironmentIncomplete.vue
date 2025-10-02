@@ -63,7 +63,7 @@
 
 <script setup lang="ts">
 import { ExclamationCircleOutlined } from '@ant-design/icons-vue'
-import router from '@/router'
+import { forceEnterApp } from '@/utils/appEntry'
 
 // Props
 interface Props {
@@ -79,8 +79,8 @@ function handleReconfigure() {
 }
 
 // 强行进入应用
-function handleForceEnter() {
-  router.push('/home')
+async function handleForceEnter() {
+  await forceEnterApp('环境不完整-强行进入')
 }
 </script>
 
