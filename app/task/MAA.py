@@ -29,7 +29,7 @@ import win32com.client
 from pathlib import Path
 from datetime import datetime, timedelta
 from jinja2 import Environment, FileSystemLoader
-from typing import List, Dict, Optional
+from typing import Literal
 
 from app.core import Broadcast, Config, MaaConfig, MaaUserConfig
 from app.models.schema import WebSocketMessage
@@ -42,17 +42,22 @@ logger = get_logger("MAA 调度器")
 
 METHOD_BOOK = {"NoAction": "8", "ExitGame": "9", "ExitEmulator": "12"}
 MOOD_BOOK = {"Annihilation": "剿灭", "Routine": "日常"}
+maa_mode_type = Literal["自动代理", "手动代理", "设置脚本"]
 
 
 class MaaManager:
     """MAA控制器"""
 
     def __init__(
-        self, mode: str, script_id: uuid.UUID, user_id: Optional[uuid.UUID], ws_id: str
+        self,
+        mode: maa_mode_type,
+        script_id: uuid.UUID,
+        user_id: uuid.UUID | None,
+        ws_id: str,
     ):
         super().__init__()
 
-        self.mode = mode
+        self.mode: maa_mode_type = mode
         self.script_id = script_id
         self.user_id = user_id
         self.ws_id = ws_id
@@ -135,7 +140,7 @@ class MaaManager:
 
         # 整理用户数据, 筛选需代理的用户
         if self.mode != "设置脚本":
-            self.user_list: List[Dict[str, str]] = [
+            self.user_list: list[dict[str, str]] = [
                 {
                     "user_id": str(uid),
                     "status": "等待",
@@ -156,7 +161,6 @@ class MaaManager:
 
         # 自动代理模式
         if self.mode == "自动代理":
-
             # 标记是否需要重启模拟器
             self.if_open_emulator = True
             # # 执行情况预处理
@@ -707,7 +711,7 @@ class MaaManager:
 
                             # 执行MAA解压更新动作
                             if self.maa_update_package:
-                                logger.info(f"检测到MAA更新, 正在执行更新动作")
+                                logger.info("检测到MAA更新, 正在执行更新动作")
 
                                 await Config.send_json(
                                     WebSocketMessage(
@@ -728,7 +732,7 @@ class MaaManager:
 
                                 self.maa_update_package = ""
 
-                                logger.info(f"更新动作结束")
+                                logger.info("更新动作结束")
 
                     await self.result_record()
 
@@ -1132,6 +1136,8 @@ class MaaManager:
             )
 
             result_text = ""
+        else:
+            result_text = ""
 
         # 复原 MAA 配置文件
         logger.info(f"复原 MAA 配置文件: {Path.cwd() / f'data/{self.script_id}/Temp'}")
@@ -1180,6 +1186,8 @@ class MaaManager:
         elif ":" in self.ADB_address:
             ADB_ip = f"{self.ADB_address.split(':')[0]}:"
             ADB_port = int(self.ADB_address.split(":")[1])
+        else:
+            raise ValueError("ADB地址格式错误")
 
         logger.info(
             f"正在搜索ADB实际地址, ADB前缀: {ADB_ip}, 初始端口: {ADB_port}, 搜索范围: {self.port_range}"
@@ -1226,9 +1234,9 @@ class MaaManager:
                     await System.kill_process(self.maa_exe_path)
                     with self.maa_set_path.open(mode="r", encoding="utf-8") as f:
                         data = json.load(f)
-                    data["Configurations"]["Default"][
-                        "Connect.Address"
-                    ] = self.ADB_address
+                    data["Configurations"]["Default"]["Connect.Address"] = (
+                        self.ADB_address
+                    )
                     data["Configurations"]["Default"]["Start.EmulatorWaitSeconds"] = "0"
                     with self.maa_set_path.open(mode="w", encoding="utf-8") as f:
                         json.dump(data, f, ensure_ascii=False, indent=4)
@@ -1240,7 +1248,7 @@ class MaaManager:
             else:
                 logger.info(f"无法连接到ADB地址: {ADB_address}")
 
-    async def check_maa_log(self, log_content: List[str]) -> None:
+    async def check_maa_log(self, log_content: list[str]) -> None:
         """获取MAA日志并检查以判断MAA程序运行状态"""
 
         self.maa_logs = log_content
@@ -1433,30 +1441,30 @@ class MaaManager:
                 ].get("Info", "Mode")
                 == "详细"
             ):
-                data["Configurations"]["Default"][
-                    "MainFunction.PostActions"
-                ] = "12"  # 完成后退出MAA和模拟器
+                data["Configurations"]["Default"]["MainFunction.PostActions"] = (
+                    "12"  # 完成后退出MAA和模拟器
+                )
             else:
                 data["Configurations"]["Default"]["MainFunction.PostActions"] = (
                     METHOD_BOOK[self.script_config.get("Run", "TaskTransitionMethod")]
                 )  # 完成后行为
 
-            data["Configurations"]["Default"][
-                "Start.RunDirectly"
-            ] = "True"  # 启动MAA后直接运行
+            data["Configurations"]["Default"]["Start.RunDirectly"] = (
+                "True"  # 启动MAA后直接运行
+            )
             data["Configurations"]["Default"]["Start.OpenEmulatorAfterLaunch"] = str(
                 self.if_open_emulator
             )  # 启动MAA后自动开启模拟器
 
-            data["Global"][
-                "VersionUpdate.ScheduledUpdateCheck"
-            ] = "False"  # 定时检查更新
-            data["Global"][
-                "VersionUpdate.AutoDownloadUpdatePackage"
-            ] = "True"  # 自动下载更新包
-            data["Global"][
-                "VersionUpdate.AutoInstallUpdatePackage"
-            ] = "False"  # 自动安装更新包
+            data["Global"]["VersionUpdate.ScheduledUpdateCheck"] = (
+                "False"  # 定时检查更新
+            )
+            data["Global"]["VersionUpdate.AutoDownloadUpdatePackage"] = (
+                "True"  # 自动下载更新包
+            )
+            data["Global"]["VersionUpdate.AutoInstallUpdatePackage"] = (
+                "False"  # 自动安装更新包
+            )
 
             if Config.get("Function", "IfSilence"):
                 data["Global"]["Start.MinimizeDirectly"] = "True"  # 启动MAA后直接最小化
@@ -1481,9 +1489,9 @@ class MaaManager:
                 )
 
             # 按预设设定任务
-            data["Configurations"]["Default"][
-                "TaskQueue.WakeUp.IsChecked"
-            ] = "True"  # 开始唤醒
+            data["Configurations"]["Default"]["TaskQueue.WakeUp.IsChecked"] = (
+                "True"  # 开始唤醒
+            )
             data["Configurations"]["Default"]["TaskQueue.Recruiting.IsChecked"] = (
                 self.task_dict["Recruiting"]
             )  # 自动公招
@@ -1555,45 +1563,45 @@ class MaaManager:
             )  # 连战次数
 
             if mode == "Annihilation":
-                data["Configurations"]["Default"][
-                    "MainFunction.Stage1"
-                ] = "Annihilation"  # 主关卡
-                data["Configurations"]["Default"][
-                    "MainFunction.Stage2"
-                ] = ""  # 备选关卡1
-                data["Configurations"]["Default"][
-                    "MainFunction.Stage3"
-                ] = ""  # 备选关卡2
-                data["Configurations"]["Default"][
-                    "Fight.RemainingSanityStage"
-                ] = ""  # 剩余理智关卡
-                data["Configurations"]["Default"][
-                    "MainFunction.Series.Quantity"
-                ] = "1"  # 连战次数
+                data["Configurations"]["Default"]["MainFunction.Stage1"] = (
+                    "Annihilation"  # 主关卡
+                )
+                data["Configurations"]["Default"]["MainFunction.Stage2"] = (
+                    ""  # 备选关卡1
+                )
+                data["Configurations"]["Default"]["MainFunction.Stage3"] = (
+                    ""  # 备选关卡2
+                )
+                data["Configurations"]["Default"]["Fight.RemainingSanityStage"] = (
+                    ""  # 剩余理智关卡
+                )
+                data["Configurations"]["Default"]["MainFunction.Series.Quantity"] = (
+                    "1"  # 连战次数
+                )
                 data["Configurations"]["Default"][
                     "MainFunction.Annihilation.UseCustom"
                 ] = "True"  # 自定义剿灭关卡
                 data["Configurations"]["Default"]["MainFunction.Annihilation.Stage"] = (
                     self.cur_user_data.get("Info", "Annihilation")
                 )  # 自定义剿灭关卡号
-                data["Configurations"]["Default"][
-                    "Penguin.IsDrGrandet"
-                ] = "False"  # 博朗台模式
-                data["Configurations"]["Default"][
-                    "GUI.CustomStageCode"
-                ] = "True"  # 手动输入关卡名
-                data["Configurations"]["Default"][
-                    "GUI.UseAlternateStage"
-                ] = "False"  # 使用备选关卡
-                data["Configurations"]["Default"][
-                    "Fight.UseRemainingSanityStage"
-                ] = "False"  # 使用剩余理智
-                data["Configurations"]["Default"][
-                    "Fight.UseExpiringMedicine"
-                ] = "True"  # 无限吃48小时内过期的理智药
-                data["Configurations"]["Default"][
-                    "GUI.HideSeries"
-                ] = "False"  # 隐藏连战次数
+                data["Configurations"]["Default"]["Penguin.IsDrGrandet"] = (
+                    "False"  # 博朗台模式
+                )
+                data["Configurations"]["Default"]["GUI.CustomStageCode"] = (
+                    "True"  # 手动输入关卡名
+                )
+                data["Configurations"]["Default"]["GUI.UseAlternateStage"] = (
+                    "False"  # 使用备选关卡
+                )
+                data["Configurations"]["Default"]["Fight.UseRemainingSanityStage"] = (
+                    "False"  # 使用剩余理智
+                )
+                data["Configurations"]["Default"]["Fight.UseExpiringMedicine"] = (
+                    "True"  # 无限吃48小时内过期的理智药
+                )
+                data["Configurations"]["Default"]["GUI.HideSeries"] = (
+                    "False"  # 隐藏连战次数
+                )
 
             elif mode == "Routine":
                 data["Configurations"]["Default"]["MainFunction.Stage1"] = (
@@ -1619,32 +1627,32 @@ class MaaManager:
                     if plan_data.get("Stage_Remain", "-") != "-"
                     else ""
                 )  # 剩余理智关卡
-                data["Configurations"]["Default"][
-                    "GUI.UseAlternateStage"
-                ] = "True"  # 备选关卡
+                data["Configurations"]["Default"]["GUI.UseAlternateStage"] = (
+                    "True"  # 备选关卡
+                )
                 data["Configurations"]["Default"]["Fight.UseRemainingSanityStage"] = (
                     "True" if plan_data.get("Stage_Remain", "-") != "-" else "False"
                 )  # 使用剩余理智
 
                 if self.cur_user_data.get("Info", "Mode") == "简洁":
-                    data["Configurations"]["Default"][
-                        "Penguin.IsDrGrandet"
-                    ] = "False"  # 博朗台模式
-                    data["Configurations"]["Default"][
-                        "GUI.CustomStageCode"
-                    ] = "True"  # 手动输入关卡名
-                    data["Configurations"]["Default"][
-                        "Fight.UseExpiringMedicine"
-                    ] = "True"  # 无限吃48小时内过期的理智药
+                    data["Configurations"]["Default"]["Penguin.IsDrGrandet"] = (
+                        "False"  # 博朗台模式
+                    )
+                    data["Configurations"]["Default"]["GUI.CustomStageCode"] = (
+                        "True"  # 手动输入关卡名
+                    )
+                    data["Configurations"]["Default"]["Fight.UseExpiringMedicine"] = (
+                        "True"  # 无限吃48小时内过期的理智药
+                    )
                     # 自定义基建配置
                     if self.cur_user_data.get("Info", "InfrastMode") == "Custom":
                         if (
                             Path.cwd()
                             / f"data/{self.script_id}/{self.user_list[self.index]['user_id']}/Infrastructure/infrastructure.json"
                         ).exists():
-                            data["Configurations"]["Default"][
-                                "Infrast.InfrastMode"
-                            ] = "Custom"  # 基建模式
+                            data["Configurations"]["Default"]["Infrast.InfrastMode"] = (
+                                "Custom"  # 基建模式
+                            )
                             data["Configurations"]["Default"][
                                 "Infrast.CustomInfrastPlanIndex"
                             ] = self.cur_user_data.get(
@@ -1697,27 +1705,27 @@ class MaaManager:
 
         # 人工排查配置
         elif self.mode == "人工排查" and self.cur_user_data is not None:
-            data["Configurations"]["Default"][
-                "MainFunction.PostActions"
-            ] = "8"  # 完成后退出MAA
-            data["Configurations"]["Default"][
-                "Start.RunDirectly"
-            ] = "True"  # 启动MAA后直接运行
+            data["Configurations"]["Default"]["MainFunction.PostActions"] = (
+                "8"  # 完成后退出MAA
+            )
+            data["Configurations"]["Default"]["Start.RunDirectly"] = (
+                "True"  # 启动MAA后直接运行
+            )
             data["Global"]["Start.MinimizeDirectly"] = "True"  # 启动MAA后直接最小化
             data["Global"]["GUI.UseTray"] = "True"  # 显示托盘图标
             data["Global"]["GUI.MinimizeToTray"] = "True"  # 最小化时隐藏至托盘
             data["Configurations"]["Default"]["Start.OpenEmulatorAfterLaunch"] = str(
                 self.if_open_emulator
             )  # 启动MAA后自动开启模拟器
-            data["Global"][
-                "VersionUpdate.ScheduledUpdateCheck"
-            ] = "False"  # 定时检查更新
-            data["Global"][
-                "VersionUpdate.AutoDownloadUpdatePackage"
-            ] = "False"  # 自动下载更新包
-            data["Global"][
-                "VersionUpdate.AutoInstallUpdatePackage"
-            ] = "False"  # 自动安装更新包
+            data["Global"]["VersionUpdate.ScheduledUpdateCheck"] = (
+                "False"  # 定时检查更新
+            )
+            data["Global"]["VersionUpdate.AutoDownloadUpdatePackage"] = (
+                "False"  # 自动下载更新包
+            )
+            data["Global"]["VersionUpdate.AutoInstallUpdatePackage"] = (
+                "False"  # 自动安装更新包
+            )
 
             # 客户端类型
             data["Configurations"]["Default"]["Start.ClientType"] = (
@@ -1736,132 +1744,132 @@ class MaaManager:
                     self.cur_user_data.get("Info", "Id")
                 )
 
-            data["Configurations"]["Default"][
-                "TaskQueue.WakeUp.IsChecked"
-            ] = "True"  # 开始唤醒
-            data["Configurations"]["Default"][
-                "TaskQueue.Recruiting.IsChecked"
-            ] = "False"  # 自动公招
-            data["Configurations"]["Default"][
-                "TaskQueue.Base.IsChecked"
-            ] = "False"  # 基建换班
-            data["Configurations"]["Default"][
-                "TaskQueue.Combat.IsChecked"
-            ] = "False"  # 刷理智
-            data["Configurations"]["Default"][
-                "TaskQueue.Mission.IsChecked"
-            ] = "False"  # 领取奖励
-            data["Configurations"]["Default"][
-                "TaskQueue.Mall.IsChecked"
-            ] = "False"  # 获取信用及购物
-            data["Configurations"]["Default"][
-                "TaskQueue.AutoRoguelike.IsChecked"
-            ] = "False"  # 自动肉鸽
-            data["Configurations"]["Default"][
-                "TaskQueue.Reclamation.IsChecked"
-            ] = "False"  # 生息演算
+            data["Configurations"]["Default"]["TaskQueue.WakeUp.IsChecked"] = (
+                "True"  # 开始唤醒
+            )
+            data["Configurations"]["Default"]["TaskQueue.Recruiting.IsChecked"] = (
+                "False"  # 自动公招
+            )
+            data["Configurations"]["Default"]["TaskQueue.Base.IsChecked"] = (
+                "False"  # 基建换班
+            )
+            data["Configurations"]["Default"]["TaskQueue.Combat.IsChecked"] = (
+                "False"  # 刷理智
+            )
+            data["Configurations"]["Default"]["TaskQueue.Mission.IsChecked"] = (
+                "False"  # 领取奖励
+            )
+            data["Configurations"]["Default"]["TaskQueue.Mall.IsChecked"] = (
+                "False"  # 获取信用及购物
+            )
+            data["Configurations"]["Default"]["TaskQueue.AutoRoguelike.IsChecked"] = (
+                "False"  # 自动肉鸽
+            )
+            data["Configurations"]["Default"]["TaskQueue.Reclamation.IsChecked"] = (
+                "False"  # 生息演算
+            )
 
         # 设置脚本配置
         elif self.mode == "设置脚本":
-            data["Configurations"]["Default"][
-                "MainFunction.PostActions"
-            ] = "0"  # 完成后无动作
-            data["Configurations"]["Default"][
-                "Start.RunDirectly"
-            ] = "False"  # 启动MAA后直接运行
-            data["Configurations"]["Default"][
-                "Start.OpenEmulatorAfterLaunch"
-            ] = "False"  # 启动MAA后自动开启模拟器
-            data["Global"][
-                "VersionUpdate.ScheduledUpdateCheck"
-            ] = "False"  # 定时检查更新
-            data["Global"][
-                "VersionUpdate.AutoDownloadUpdatePackage"
-            ] = "False"  # 自动下载更新包
-            data["Global"][
-                "VersionUpdate.AutoInstallUpdatePackage"
-            ] = "False"  # 自动安装更新包
+            data["Configurations"]["Default"]["MainFunction.PostActions"] = (
+                "0"  # 完成后无动作
+            )
+            data["Configurations"]["Default"]["Start.RunDirectly"] = (
+                "False"  # 启动MAA后直接运行
+            )
+            data["Configurations"]["Default"]["Start.OpenEmulatorAfterLaunch"] = (
+                "False"  # 启动MAA后自动开启模拟器
+            )
+            data["Global"]["VersionUpdate.ScheduledUpdateCheck"] = (
+                "False"  # 定时检查更新
+            )
+            data["Global"]["VersionUpdate.AutoDownloadUpdatePackage"] = (
+                "False"  # 自动下载更新包
+            )
+            data["Global"]["VersionUpdate.AutoInstallUpdatePackage"] = (
+                "False"  # 自动安装更新包
+            )
 
             if Config.get("Function", "IfSilence"):
-                data["Global"][
-                    "Start.MinimizeDirectly"
-                ] = "False"  # 启动MAA后直接最小化
+                data["Global"]["Start.MinimizeDirectly"] = (
+                    "False"  # 启动MAA后直接最小化
+                )
 
-            data["Configurations"]["Default"][
-                "TaskQueue.WakeUp.IsChecked"
-            ] = "False"  # 开始唤醒
-            data["Configurations"]["Default"][
-                "TaskQueue.Recruiting.IsChecked"
-            ] = "False"  # 自动公招
-            data["Configurations"]["Default"][
-                "TaskQueue.Base.IsChecked"
-            ] = "False"  # 基建换班
-            data["Configurations"]["Default"][
-                "TaskQueue.Combat.IsChecked"
-            ] = "False"  # 刷理智
-            data["Configurations"]["Default"][
-                "TaskQueue.Mission.IsChecked"
-            ] = "False"  # 领取奖励
-            data["Configurations"]["Default"][
-                "TaskQueue.Mall.IsChecked"
-            ] = "False"  # 获取信用及购物
-            data["Configurations"]["Default"][
-                "TaskQueue.AutoRoguelike.IsChecked"
-            ] = "False"  # 自动肉鸽
-            data["Configurations"]["Default"][
-                "TaskQueue.Reclamation.IsChecked"
-            ] = "False"  # 生息演算
+            data["Configurations"]["Default"]["TaskQueue.WakeUp.IsChecked"] = (
+                "False"  # 开始唤醒
+            )
+            data["Configurations"]["Default"]["TaskQueue.Recruiting.IsChecked"] = (
+                "False"  # 自动公招
+            )
+            data["Configurations"]["Default"]["TaskQueue.Base.IsChecked"] = (
+                "False"  # 基建换班
+            )
+            data["Configurations"]["Default"]["TaskQueue.Combat.IsChecked"] = (
+                "False"  # 刷理智
+            )
+            data["Configurations"]["Default"]["TaskQueue.Mission.IsChecked"] = (
+                "False"  # 领取奖励
+            )
+            data["Configurations"]["Default"]["TaskQueue.Mall.IsChecked"] = (
+                "False"  # 获取信用及购物
+            )
+            data["Configurations"]["Default"]["TaskQueue.AutoRoguelike.IsChecked"] = (
+                "False"  # 自动肉鸽
+            )
+            data["Configurations"]["Default"]["TaskQueue.Reclamation.IsChecked"] = (
+                "False"  # 生息演算
+            )
 
         elif mode == "Update":
-            data["Configurations"]["Default"][
-                "MainFunction.PostActions"
-            ] = "0"  # 完成后无动作
-            data["Configurations"]["Default"][
-                "Start.RunDirectly"
-            ] = "False"  # 启动MAA后直接运行
-            data["Configurations"]["Default"][
-                "Start.OpenEmulatorAfterLaunch"
-            ] = "False"  # 启动MAA后自动开启模拟器
+            data["Configurations"]["Default"]["MainFunction.PostActions"] = (
+                "0"  # 完成后无动作
+            )
+            data["Configurations"]["Default"]["Start.RunDirectly"] = (
+                "False"  # 启动MAA后直接运行
+            )
+            data["Configurations"]["Default"]["Start.OpenEmulatorAfterLaunch"] = (
+                "False"  # 启动MAA后自动开启模拟器
+            )
             data["Global"]["Start.MinimizeDirectly"] = "True"  # 启动MAA后直接最小化
             data["Global"]["GUI.UseTray"] = "True"  # 显示托盘图标
             data["Global"]["GUI.MinimizeToTray"] = "True"  # 最小化时隐藏至托盘
-            data["Global"][
-                "VersionUpdate.package"
-            ] = self.maa_update_package  # 更新包路径
+            data["Global"]["VersionUpdate.package"] = (
+                self.maa_update_package
+            )  # 更新包路径
 
-            data["Global"][
-                "VersionUpdate.ScheduledUpdateCheck"
-            ] = "False"  # 定时检查更新
-            data["Global"][
-                "VersionUpdate.AutoDownloadUpdatePackage"
-            ] = "False"  # 自动下载更新包
-            data["Global"][
-                "VersionUpdate.AutoInstallUpdatePackage"
-            ] = "True"  # 自动安装更新包
-            data["Configurations"]["Default"][
-                "TaskQueue.WakeUp.IsChecked"
-            ] = "False"  # 开始唤醒
-            data["Configurations"]["Default"][
-                "TaskQueue.Recruiting.IsChecked"
-            ] = "False"  # 自动公招
-            data["Configurations"]["Default"][
-                "TaskQueue.Base.IsChecked"
-            ] = "False"  # 基建换班
-            data["Configurations"]["Default"][
-                "TaskQueue.Combat.IsChecked"
-            ] = "False"  # 刷理智
-            data["Configurations"]["Default"][
-                "TaskQueue.Mission.IsChecked"
-            ] = "False"  # 领取奖励
-            data["Configurations"]["Default"][
-                "TaskQueue.Mall.IsChecked"
-            ] = "False"  # 获取信用及购物
-            data["Configurations"]["Default"][
-                "TaskQueue.AutoRoguelike.IsChecked"
-            ] = "False"  # 自动肉鸽
-            data["Configurations"]["Default"][
-                "TaskQueue.Reclamation.IsChecked"
-            ] = "False"  # 生息演算
+            data["Global"]["VersionUpdate.ScheduledUpdateCheck"] = (
+                "False"  # 定时检查更新
+            )
+            data["Global"]["VersionUpdate.AutoDownloadUpdatePackage"] = (
+                "False"  # 自动下载更新包
+            )
+            data["Global"]["VersionUpdate.AutoInstallUpdatePackage"] = (
+                "True"  # 自动安装更新包
+            )
+            data["Configurations"]["Default"]["TaskQueue.WakeUp.IsChecked"] = (
+                "False"  # 开始唤醒
+            )
+            data["Configurations"]["Default"]["TaskQueue.Recruiting.IsChecked"] = (
+                "False"  # 自动公招
+            )
+            data["Configurations"]["Default"]["TaskQueue.Base.IsChecked"] = (
+                "False"  # 基建换班
+            )
+            data["Configurations"]["Default"]["TaskQueue.Combat.IsChecked"] = (
+                "False"  # 刷理智
+            )
+            data["Configurations"]["Default"]["TaskQueue.Mission.IsChecked"] = (
+                "False"  # 领取奖励
+            )
+            data["Configurations"]["Default"]["TaskQueue.Mall.IsChecked"] = (
+                "False"  # 获取信用及购物
+            )
+            data["Configurations"]["Default"]["TaskQueue.AutoRoguelike.IsChecked"] = (
+                "False"  # 自动肉鸽
+            )
+            data["Configurations"]["Default"]["TaskQueue.Reclamation.IsChecked"] = (
+                "False"  # 生息演算
+            )
 
         # 启动模拟器仅生效一次
         if self.mode != "设置脚本" and mode != "Update" and self.if_open_emulator:
