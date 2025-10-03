@@ -102,7 +102,6 @@ export interface ElectronAPI {
   removeDownloadProgressListener: () => void
 }
 
-}
 
 declare global {
   interface Window {
