@@ -64,6 +64,13 @@ import type { UserReorderIn } from '../models/UserReorderIn';
 import type { UserSetIn } from '../models/UserSetIn';
 import type { UserUpdateIn } from '../models/UserUpdateIn';
 import type { VersionOut } from '../models/VersionOut';
+import type { WebhookCreateOut } from '../models/WebhookCreateOut';
+import type { WebhookDeleteIn } from '../models/WebhookDeleteIn';
+import type { WebhookGetIn } from '../models/WebhookGetIn';
+import type { WebhookGetOut } from '../models/WebhookGetOut';
+import type { WebhookReorderIn } from '../models/WebhookReorderIn';
+import type { WebhookTestIn } from '../models/WebhookTestIn';
+import type { WebhookUpdateIn } from '../models/WebhookUpdateIn';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
@@ -212,7 +219,7 @@ export class Service {
      * @returns ScriptGetOut Successful Response
      * @throws ApiError
      */
-    public static getScriptsApiScriptsGetPost(
+    public static getScriptApiScriptsGetPost(
         requestBody: ScriptGetIn,
     ): CancelablePromise<ScriptGetOut> {
         return __request(OpenAPI, {
@@ -995,18 +1002,17 @@ export class Service {
         });
     }
     /**
-     * 创建自定义Webhook
-     * 创建自定义Webhook
+     * 查询 webhook 配置
      * @param requestBody
-     * @returns OutBase Successful Response
+     * @returns WebhookGetOut Successful Response
      * @throws ApiError
      */
-    public static createWebhookApiSettingWebhookCreatePost(
-        requestBody: Record<string, any>,
-    ): CancelablePromise<OutBase> {
+    public static getWebhookApiSettingWebhookGetPost(
+        requestBody: WebhookGetIn,
+    ): CancelablePromise<WebhookGetOut> {
         return __request(OpenAPI, {
             method: 'POST',
-            url: '/api/setting/webhook/create',
+            url: '/api/setting/webhook/get',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -1015,14 +1021,24 @@ export class Service {
         });
     }
     /**
-     * 更新自定义Webhook
-     * 更新自定义Webhook
+     * 添加定时项
+     * @returns WebhookCreateOut Successful Response
+     * @throws ApiError
+     */
+    public static addWebhookApiSettingWebhookAddPost(): CancelablePromise<WebhookCreateOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/setting/webhook/add',
+        });
+    }
+    /**
+     * 更新定时项
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
      */
     public static updateWebhookApiSettingWebhookUpdatePost(
-        requestBody: Record<string, any>,
+        requestBody: WebhookUpdateIn,
     ): CancelablePromise<OutBase> {
         return __request(OpenAPI, {
             method: 'POST',
@@ -1035,14 +1051,13 @@ export class Service {
         });
     }
     /**
-     * 删除自定义Webhook
-     * 删除自定义Webhook
+     * 删除定时项
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
      */
     public static deleteWebhookApiSettingWebhookDeletePost(
-        requestBody: Record<string, any>,
+        requestBody: WebhookDeleteIn,
     ): CancelablePromise<OutBase> {
         return __request(OpenAPI, {
             method: 'POST',
@@ -1055,14 +1070,33 @@ export class Service {
         });
     }
     /**
-     * 测试自定义Webhook
+     * 重新排序定时项
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static reorderWebhookApiSettingWebhookOrderPost(
+        requestBody: WebhookReorderIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/setting/webhook/order',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 测试Webhook配置
      * 测试自定义Webhook
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
      */
     public static testWebhookApiSettingWebhookTestPost(
-        requestBody: Record<string, any>,
+        requestBody: WebhookTestIn,
     ): CancelablePromise<OutBase> {
         return __request(OpenAPI, {
             method: 'POST',
