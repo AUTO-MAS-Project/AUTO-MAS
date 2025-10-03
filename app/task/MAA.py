@@ -850,7 +850,7 @@ class MaaManager:
                             ).model_dump()
                         )
                         result = await self.get_message(uid, "Response")
-                        if result.get("data", {}).get("choice", False):
+                        if not result.get("data", {}).get("choice", False):
                             break
 
                 # 登录成功, 录入人工排查情况
