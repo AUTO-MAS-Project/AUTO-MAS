@@ -377,7 +377,6 @@ class MaaConfig(BaseModel):
 
 
 class GeneralUserConfig_Info(BaseModel):
-
     Name: Optional[str] = Field(default=None, description="用户名")
     Status: Optional[bool] = Field(default=None, description="用户状态")
     RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
@@ -457,7 +456,6 @@ class GeneralConfig_Run(BaseModel):
 
 
 class GeneralConfig(BaseModel):
-
     Info: Optional[GeneralConfig_Info] = Field(default=None, description="脚本基础信息")
     Script: Optional[GeneralConfig_Script] = Field(default=None, description="脚本配置")
     Game: Optional[GeneralConfig_Game] = Field(default=None, description="游戏配置")
@@ -489,7 +487,6 @@ class MaaPlanConfig_Item(BaseModel):
 
 
 class MaaPlanConfig(BaseModel):
-
     Info: Optional[MaaPlanConfig_Info] = Field(default=None, description="基础信息")
     ALL: Optional[MaaPlanConfig_Item] = Field(default=None, description="全局")
     Monday: Optional[MaaPlanConfig_Item] = Field(default=None, description="周一")
@@ -870,3 +867,76 @@ class UpdateCheckOut(OutBase):
     if_need_update: bool = Field(..., description="是否需要更新前端")
     latest_version: str = Field(..., description="最新前端版本号")
     update_info: Dict[str, List[str]] = Field(..., description="版本更新信息字典")
+
+
+# 模拟器管理相关的模型
+class EmulatorInfo(BaseModel):
+    """模拟器信息"""
+
+    name: str = Field(..., description="模拟器名称")
+    type: str = Field(..., description="模拟器类型")
+    path: str = Field(..., description="模拟器路径")
+    max_wait_time: int = Field(..., description="最大等待时间")
+    boss_keys: List[str] = Field(default_factory=list, description="老板键列表")
+
+
+class EmulatorIndexItem(BaseModel):
+    """模拟器索引项"""
+
+    uuid: str = Field(..., description="模拟器配置UUID")
+    name: str = Field(..., description="模拟器名称")
+
+
+class EmulatorGetOut(OutBase):
+    """获取模拟器配置响应"""
+
+    index: List[EmulatorIndexItem] = Field(..., description="模拟器索引列表")
+    data: Dict[str, EmulatorInfo] = Field(..., description="模拟器配置数据")
+
+
+class EmulatorGetIn(BaseModel):
+    """获取模拟器配置请求"""
+
+    emulatorId: Optional[str] = Field(
+        None, description="指定的模拟器ID，为空则获取所有"
+    )
+
+
+class EmulatorCreateOut(OutBase):
+    """创建模拟器配置响应"""
+
+    emulatorId: str = Field(..., description="新创建的模拟器ID")
+    data: EmulatorInfo = Field(..., description="模拟器配置数据")
+
+
+class EmulatorUpdateIn(BaseModel):
+    """更新模拟器配置请求"""
+
+    emulatorId: str = Field(..., description="模拟器ID")
+    data: EmulatorInfo = Field(..., description="需要更新的模拟器配置数据")
+
+
+class EmulatorDeleteIn(BaseModel):
+    """删除模拟器配置请求"""
+
+    emulatorId: str = Field(..., description="模拟器ID")
+
+
+class EmulatorReorderIn(BaseModel):
+    """重新排序模拟器请求"""
+
+    indexList: List[str] = Field(..., description="重新排序后的模拟器ID列表")
+
+
+class EmulatorSearchResult(BaseModel):
+    """模拟器搜索结果"""
+
+    type: str = Field(..., description="模拟器类型")
+    path: str = Field(..., description="模拟器路径")
+    name: str = Field(..., description="推荐的显示名称")
+
+
+class EmulatorSearchOut(OutBase):
+    """自动搜索模拟器响应"""
+
+    emulators: List[EmulatorSearchResult] = Field(..., description="找到的模拟器列表")

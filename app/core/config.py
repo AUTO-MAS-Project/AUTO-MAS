@@ -33,7 +33,9 @@ from pathlib import Path
 from fastapi import WebSocket
 from collections import defaultdict
 from datetime import datetime, timedelta, date
-from typing import Literal, Optional
+from typing import Literal, Optional, Union, Dict, Any,List
+import uuid
+import json
 
 from app.models.config import *
 from app.utils.constants import *
@@ -53,7 +55,6 @@ except ImportError:
 
 
 class AppConfig(GlobalConfig):
-
     VERSION = [5, 0, 0, 1]
 
     def __init__(self) -> None:
@@ -215,7 +216,6 @@ class AppConfig(GlobalConfig):
                             MaaPlanConfig.is_dir()
                             and (MaaPlanConfig / "config.json").exists()
                         ):
-
                             maa_plan_config = json.loads(
                                 (MaaPlanConfig / "config.json").read_text(
                                     encoding="utf-8"
@@ -231,10 +231,8 @@ class AppConfig(GlobalConfig):
                 script_dict: Dict[str, Optional[str]] = {"禁用": None}
 
                 if (Path.cwd() / "config/MaaConfig").exists():
-
                     for MaaConfig in (Path.cwd() / "config/MaaConfig").iterdir():
                         if MaaConfig.is_dir():
-
                             maa_config = json.loads(
                                 (MaaConfig / "config.json").read_text(encoding="utf-8")
                             )
@@ -295,12 +293,10 @@ class AppConfig(GlobalConfig):
                                         )
 
                 if (Path.cwd() / "config/GeneralConfig").exists():
-
                     for GeneralConfig in (
                         Path.cwd() / "config/GeneralConfig"
                     ).iterdir():
                         if GeneralConfig.is_dir():
-
                             general_config = json.loads(
                                 (GeneralConfig / "config.json").read_text(
                                     encoding="utf-8"
@@ -549,11 +545,9 @@ class AppConfig(GlobalConfig):
         # 移除配置中可能存在的隐私信息
         temp["Info"]["Name"] = Path(file_path).stem
         for path in ["ScriptPath", "ConfigPath", "LogPath"]:
-
             if Path(temp["Script"][path]).is_relative_to(
                 Path(temp["Info"]["RootPath"])
             ):
-
                 temp["Script"][path] = str(
                     Path(r"C:/脚本根目录")
                     / Path(temp["Script"][path]).relative_to(
@@ -706,8 +700,10 @@ class AppConfig(GlobalConfig):
         for group, items in data.items():
             for name, value in items.items():
                 logger.debug(f"更新脚本配置: {script_id} - {group}.{name} = {value}")
-                await self.ScriptConfig[script_uid].UserData[user_uid].set(
-                    group, name, value
+                await (
+                    self.ScriptConfig[script_uid]
+                    .UserData[user_uid]
+                    .set(group, name, value)
                 )
 
         await self.ScriptConfig.save()
@@ -740,7 +736,6 @@ class AppConfig(GlobalConfig):
     async def set_infrastructure(
         self, script_id: str, user_id: str, jsonFile: str
     ) -> None:
-
         logger.info(f"{script_id} - {user_id} 设置基建配置: {jsonFile}")
 
         script_uid = uuid.UUID(script_id)
@@ -761,8 +756,10 @@ class AppConfig(GlobalConfig):
             Path.cwd()
             / f"data/{script_id}/{user_id}/Infrastructure/infrastructure.json",
         )
-        await self.ScriptConfig[script_uid].UserData[user_uid].set(
-            "Info", "InfrastPath", str(json_path)
+        await (
+            self.ScriptConfig[script_uid]
+            .UserData[user_uid]
+            .set("Info", "InfrastPath", str(json_path))
         )
 
     async def add_plan(
@@ -923,8 +920,10 @@ class AppConfig(GlobalConfig):
         for group, items in data.items():
             for name, value in items.items():
                 logger.debug(f"更新时间设置配置: {queue_id} - {group}.{name} = {value}")
-                await self.QueueConfig[queue_uid].TimeSet[time_set_uid].set(
-                    group, name, value
+                await (
+                    self.QueueConfig[queue_uid]
+                    .TimeSet[time_set_uid]
+                    .set(group, name, value)
                 )
 
         await self.QueueConfig.save()
@@ -995,8 +994,10 @@ class AppConfig(GlobalConfig):
         for group, items in data.items():
             for name, value in items.items():
                 logger.debug(f"更新队列项配置: {queue_id} - {group}.{name} = {value}")
-                await self.QueueConfig[queue_uid].QueueItem[queue_item_uid].set(
-                    group, name, value
+                await (
+                    self.QueueConfig[queue_uid]
+                    .QueueItem[queue_item_uid]
+                    .set(group, name, value)
                 )
 
         await self.QueueConfig.save()
@@ -1143,9 +1144,12 @@ class AppConfig(GlobalConfig):
                     logger.debug(
                         f"更新用户 webhook: {script_id} - {user_id} - {webhook_id} - {group}.{name} = {value}"
                     )
-                    await self.ScriptConfig[script_uid].UserData[
-                        user_uid
-                    ].Notify_CustomWebhooks[webhook_uid].set(group, name, value)
+                    await (
+                        self.ScriptConfig[script_uid]
+                        .UserData[user_uid]
+                        .Notify_CustomWebhooks[webhook_uid]
+                        .set(group, name, value)
+                    )
 
             await self.ScriptConfig.save()
 
@@ -1168,9 +1172,11 @@ class AppConfig(GlobalConfig):
             script_uid = uuid.UUID(script_id)
             user_uid = uuid.UUID(user_id)
 
-            await self.ScriptConfig[script_uid].UserData[
-                user_uid
-            ].Notify_CustomWebhooks.remove(webhook_uid)
+            await (
+                self.ScriptConfig[script_uid]
+                .UserData[user_uid]
+                .Notify_CustomWebhooks.remove(webhook_uid)
+            )
             await self.ScriptConfig.save()
 
     async def reorder_webhook(
@@ -1190,9 +1196,11 @@ class AppConfig(GlobalConfig):
             script_uid = uuid.UUID(script_id)
             user_uid = uuid.UUID(user_id)
 
-            await self.ScriptConfig[script_uid].UserData[
-                user_uid
-            ].Notify_CustomWebhooks.setOrder(list(map(uuid.UUID, index_list)))
+            await (
+                self.ScriptConfig[script_uid]
+                .UserData[user_uid]
+                .Notify_CustomWebhooks.setOrder(list(map(uuid.UUID, index_list)))
+            )
             await self.ScriptConfig.save()
 
     def server_date(self) -> date:
@@ -1334,7 +1342,6 @@ class AppConfig(GlobalConfig):
 
         # 本地关卡信息无需更新, 直接返回本地数据
         if datetime.fromtimestamp(0) < remote_time_stamp <= local_time_stamp:
-
             logger.info("使用本地关卡信息")
             await self.set(
                 "Data", "LastStageUpdated", datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -1368,7 +1375,6 @@ class AppConfig(GlobalConfig):
         activity_stage_combox = []
 
         for stage in remote_activity_stage_info:
-
             if (
                 datetime.strptime(
                     stage["Activity"]["UtcStartTime"], "%Y/%m/%d %H:%M:%S"
@@ -1383,7 +1389,6 @@ class AppConfig(GlobalConfig):
                 )
 
                 if "SSReopen" not in stage["Display"]:
-
                     raw_drop = stage["Drop"]
                     drop_id = re.sub(
                         r"[\u200b\u200c\u200d\ufeff]", "", str(raw_drop).strip()
@@ -1407,11 +1412,9 @@ class AppConfig(GlobalConfig):
         stage_data = {}
 
         for day in range(0, 8):
-
             res_stage = []
 
             for stage in RESOURCE_STAGE_INFO:
-
                 if day in stage["days"] or day == 0:
                     res_stage.append({"label": stage["text"], "value": stage["value"]})
 
@@ -1422,7 +1425,6 @@ class AppConfig(GlobalConfig):
         stage_data["Info"] = activity_stage_drop_info
 
         if if_get_maa_stage:
-
             logger.success("成功获取远端活动关卡信息")
             await self.set(
                 "Data", "LastStageUpdated", datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -1530,7 +1532,6 @@ class AppConfig(GlobalConfig):
 
         # 本地公告信息需更新且持续展示
         if local_time_stamp < remote_time_stamp < datetime.now():
-
             logger.info("要求展示本地公告信息")
             await self.set(
                 "Data", "Notice", json.dumps(remote_notice, ensure_ascii=False)
@@ -1777,7 +1778,6 @@ class AppConfig(GlobalConfig):
         data: Dict[str, Any] = {"index": {}}
 
         for json_file in statistic_path_list:
-
             try:
                 single_data = json.loads(json_file.read_text(encoding="utf-8"))
             except Exception as e:
@@ -1787,13 +1787,11 @@ class AppConfig(GlobalConfig):
                 continue
 
             for key in single_data.keys():
-
                 if key not in data:
                     data[key] = {}
 
                 # 合并公招统计
                 if key == "recruit_statistics":
-
                     for star_level, count in single_data[key].items():
                         if star_level not in data[key]:
                             data[key][star_level] = 0
@@ -1801,13 +1799,11 @@ class AppConfig(GlobalConfig):
 
                 # 合并掉落统计
                 elif key == "drop_statistics":
-
                     for stage, drops in single_data[key].items():
                         if stage not in data[key]:
                             data[key][stage] = {}  # 初始化关卡
 
                         for item, count in drops.items():
-
                             if item not in data[key][stage]:
                                 data[key][stage][item] = 0
                             data[key][stage][item] += count
@@ -1818,7 +1814,6 @@ class AppConfig(GlobalConfig):
 
                 # 录入运行结果
                 elif key in ["maa_result", "general_result"]:
-
                     actual_date = datetime.strptime(
                         f"{json_file.parent.parent.name} {json_file.stem}",
                         "%Y-%m-%d %H-%M-%S",
@@ -1878,7 +1873,6 @@ class AppConfig(GlobalConfig):
                 continue  # 只处理日期文件夹
 
             try:
-
                 date = datetime.strptime(date_folder.name, "%Y-%m-%d").date()
 
                 if not (start_date <= date <= end_date):
