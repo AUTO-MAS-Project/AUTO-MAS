@@ -269,6 +269,13 @@ export function useSchedulerLogic() {
         tab.status = '运行'
         tab.websocketId = response.websocketId
 
+        // 确保清理任何可能存在的旧订阅
+        if (tab.subscriptionId) {
+          console.log('[Scheduler] 清理旧的WebSocket订阅:', tab.subscriptionId)
+          ws.unsubscribe(tab.subscriptionId)
+          tab.subscriptionId = null
+        }
+
         // 清空之前的状态
         tab.taskQueue.splice(0)
         tab.userQueue.splice(0)
@@ -310,10 +317,11 @@ export function useSchedulerLogic() {
   const subscribeToTask = (tab: SchedulerTab) => {
     if (!tab.websocketId) return
 
-    // 如果已经有活动的订阅，不要重复订阅
+    // 如果已经有活动的订阅，先清理旧订阅
     if (tab.subscriptionId) {
-      console.log('[Scheduler] 任务已有活动订阅，跳过重复订阅:', { key: tab.key, websocketId: tab.websocketId })
-      return
+      console.log('[Scheduler] 检测到旧订阅，先清理:', { key: tab.key, oldSubscriptionId: tab.subscriptionId, newWebsocketId: tab.websocketId })
+      ws.unsubscribe(tab.subscriptionId)
+      tab.subscriptionId = null
     }
 
     const subscriptionId = ws.subscribe(
@@ -324,6 +332,12 @@ export function useSchedulerLogic() {
     // 将订阅ID保存到tab中，以便后续取消订阅
     tab.subscriptionId = subscriptionId
     console.log('[Scheduler] 新建WebSocket订阅:', { key: tab.key, websocketId: tab.websocketId, subscriptionId })
+
+    // 验证订阅是否成功建立
+    if (!subscriptionId) {
+      console.error('[Scheduler] WebSocket订阅创建失败！', { key: tab.key, websocketId: tab.websocketId })
+      message.error('WebSocket订阅创建失败，可能无法接收任务消息')
+    }
   }
 
   const handleWebSocketMessage = (tab: SchedulerTab, wsMessage: any) => {
@@ -560,11 +574,17 @@ export function useSchedulerLogic() {
       }
 
       if (tab.subscriptionId) {
-        ws.unsubscribe(tab.subscriptionId)
+        console.log('[Scheduler] 任务完成，清理WebSocket订阅:', { key: tab.key, subscriptionId: tab.subscriptionId, websocketId: tab.websocketId })
+        try {
+          ws.unsubscribe(tab.subscriptionId)
+        } catch (error) {
+          console.warn('[Scheduler] 清理订阅时发生错误:', error)
+        }
         tab.subscriptionId = null
       }
 
       if (tab.websocketId) {
+        console.log('[Scheduler] 任务完成，清理websocketId:', { key: tab.key, websocketId: tab.websocketId })
         tab.websocketId = null
       }
 
@@ -826,6 +846,20 @@ export function useSchedulerLogic() {
     }
   }
 
+  // 调试函数：检查所有调度台的订阅状态
+  const debugSubscriptionStatus = () => {
+    console.log('[Scheduler Debug] 当前调度台订阅状态:')
+    schedulerTabs.value.forEach(tab => {
+      console.log(`- Tab ${tab.key} (${tab.title}):`, {
+        status: tab.status,
+        websocketId: tab.websocketId,
+        subscriptionId: tab.subscriptionId,
+        hasSubscription: !!tab.subscriptionId
+      })
+    })
+    console.log('[Scheduler Debug] WebSocket状态:', ws.status.value)
+  }
+
   // 清理函数
   const cleanup = () => {
     // 清理倒计时器 - 已移至全局组件，这里保留以避免错误
@@ -932,5 +966,8 @@ export function useSchedulerLogic() {
 
     // 任务总览面板引用管理
     setOverviewRef,
+
+    // 调试功能
+    debugSubscriptionStatus,
   }
 }
