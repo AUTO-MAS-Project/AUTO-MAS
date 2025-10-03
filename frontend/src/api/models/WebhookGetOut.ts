@@ -2,9 +2,9 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { GeneralUserConfig } from './GeneralUserConfig';
-import type { MaaUserConfig } from './MaaUserConfig';
-export type UserCreateOut = {
+import type { Webhook } from './Webhook';
+import type { WebhookIndexItem } from './WebhookIndexItem';
+export type WebhookGetOut = {
     /**
      * 状态码
      */
@@ -18,12 +18,12 @@ export type UserCreateOut = {
      */
     message?: string;
     /**
-     * 新创建的用户ID
+     * Webhook索引列表
      */
-    userId: string;
+    index: Array<WebhookIndexItem>;
     /**
-     * 用户配置数据
+     * Webhook数据字典, key来自于index列表的uid
      */
-    data: (MaaUserConfig | GeneralUserConfig);
+    data: Record<string, Webhook>;
 };
 
