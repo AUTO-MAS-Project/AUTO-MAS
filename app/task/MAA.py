@@ -25,7 +25,6 @@ import uuid
 import asyncio
 import subprocess
 import shutil
-import win32com.client
 from pathlib import Path
 from datetime import datetime, timedelta
 from jinja2 import Environment, FileSystemLoader
@@ -37,6 +36,8 @@ from app.models.ConfigBase import MultipleConfig
 from app.services import Notify, System
 from app.utils import get_logger, LogMonitor, ProcessManager
 from .skland import skland_sign_in
+
+from app.utils.emulator_manager import EmulatorManager
 
 logger = get_logger("MAA 调度器")
 
@@ -62,8 +63,8 @@ class MaaManager:
         self.user_id = user_id
         self.ws_id = ws_id
 
-        self.emulator_process_manager = ProcessManager()
         self.maa_process_manager = ProcessManager()
+        self.emulator_manager = EmulatorManager()
         self.wait_event = asyncio.Event()
         self.message_queue = asyncio.Queue()
 
@@ -412,53 +413,20 @@ class MaaManager:
                             # 记录当前时间
                             self.log_start_time = datetime.now()
 
-                            # 记录模拟器与ADB路径
-                            self.emulator_path = Path(
-                                set["Configurations"]["Default"]["Start.EmulatorPath"]
+                            # 模拟器参数初始化
+                            self.emulator_uuid = self.cur_user_data.get(
+                                "Emulator", "uuid"
                             )
-                            self.emulator_arguments = set["Configurations"]["Default"][
-                                "Start.EmulatorAddCommand"
-                            ].split()
-                            # 如果是快捷方式, 进行解析
-                            if (
-                                self.emulator_path.suffix == ".lnk"
-                                and self.emulator_path.exists()
-                            ):
-                                try:
-                                    shell = win32com.client.Dispatch("WScript.Shell")
-                                    shortcut = shell.CreateShortcut(
-                                        str(self.emulator_path)
-                                    )
-                                    self.emulator_path = Path(shortcut.TargetPath)
-                                    self.emulator_arguments = shortcut.Arguments.split()
-                                except Exception as e:
-                                    logger.exception(f"解析快捷方式时出现异常: {e}")
-                                    await Config.send_json(
-                                        WebSocketMessage(
-                                            id=self.ws_id,
-                                            type="Info",
-                                            data={
-                                                "Error": f"解析快捷方式时出现异常: {e}",
-                                            },
-                                        ).model_dump()
-                                    )
-                                    self.if_open_emulator = True
-                                    break
-                            elif not self.emulator_path.exists():
-                                logger.error(
-                                    f"模拟器快捷方式不存在: {self.emulator_path}"
-                                )
-                                await Config.send_json(
-                                    WebSocketMessage(
-                                        id=self.ws_id,
-                                        type="Info",
-                                        data={
-                                            "Error": f"模拟器快捷方式 {self.emulator_path} 不存在",
-                                        },
-                                    ).model_dump()
-                                )
-                                self.if_open_emulator = True
-                                break
+                            self.emulator_index = self.cur_user_data.get(
+                                "Emulator", "index"
+                            )
+
+                            logger.info(
+                                f"启动模拟器: {self.emulator_uuid}, 参数: {self.emulator_index}"
+                            )
+
+                            self.if_open_emulator = True
+                            # break
 
                             self.wait_time = int(
                                 set["Configurations"]["Default"][
@@ -511,14 +479,19 @@ class MaaManager:
                                 )
 
                             if self.if_open_emulator_process:
-                                try:
-                                    logger.info(
-                                        f"启动模拟器: {self.emulator_path}, 参数: {self.emulator_arguments}"
-                                    )
-                                    await self.emulator_process_manager.open_process(
-                                        self.emulator_path, self.emulator_arguments, 0
-                                    )
-                                except Exception as e:
+                                logger.info(
+                                    f"启动模拟器: {self.emulator_uuid}, 参数: {self.emulator_index}"
+                                )
+
+                                (
+                                    OK,
+                                    e,
+                                    self.adb_dict,
+                                ) = await self.emulator_manager.start_emulator(
+                                    self.emulator_uuid,
+                                    self.emulator_index,
+                                )
+                                if not OK:
                                     logger.exception(f"启动模拟器时出现异常: {e}")
                                     await Config.send_json(
                                         WebSocketMessage(
@@ -531,16 +504,15 @@ class MaaManager:
                                     )
                                     self.if_open_emulator = True
                                     break
+                                del OK, e
 
                             # 更新静默进程标记有效时间
                             logger.info(
-                                f"更新静默进程标记: {self.emulator_path}, 标记有效时间: {datetime.now() + timedelta(seconds=self.wait_time + 10)}"
+                                f"更新静默进程标记: 标记有效时间: {datetime.now() + timedelta(seconds=self.wait_time + 10)}"
                             )
-                            Config.silence_dict[self.emulator_path] = (
-                                datetime.now() + timedelta(seconds=self.wait_time + 10)
-                            )
-
-                            await self.search_ADB_address()
+                            Config.silence_dict[self.emulator_uuid][
+                                self.emulator_index
+                            ] = datetime.now() + timedelta(seconds=self.wait_time + 10)
 
                             # 创建MAA任务
                             logger.info(f"启动MAA进程: {self.maa_exe_path}")
@@ -598,10 +570,10 @@ class MaaManager:
                                 await System.kill_process(self.maa_exe_path)
 
                                 # 中止模拟器进程
-                                logger.info(
-                                    f"中止模拟器进程: {list(self.emulator_process_manager.tracked_pids)}"
+                                logger.info("任务结束后再次中止模拟器进程:")
+                                await self.emulator_manager.close_emulator(
+                                    self.emulator_uuid, self.emulator_index
                                 )
-                                await self.emulator_process_manager.kill()
 
                                 self.if_open_emulator = True
 
@@ -636,10 +608,10 @@ class MaaManager:
                                 )
                             # 任务结束后再次手动中止模拟器进程, 防止退出不彻底
                             if self.if_kill_emulator:
-                                logger.info(
-                                    f"任务结束后再次中止模拟器进程: {list(self.emulator_process_manager.tracked_pids)}"
+                                logger.info("任务结束后再次中止模拟器进程:")
+                                await self.emulator_manager.close_emulator(
+                                    self.emulator_uuid, self.emulator_index
                                 )
-                                await self.emulator_process_manager.kill()
                                 self.if_open_emulator = True
 
                             # 从配置文件中解析所需信息
@@ -996,10 +968,8 @@ class MaaManager:
         await Broadcast.unsubscribe(self.message_queue)
         await self.maa_process_manager.kill(if_force=True)
         await System.kill_process(self.maa_exe_path)
-        await self.emulator_process_manager.kill()
         await self.maa_log_monitor.stop()
         del self.maa_process_manager
-        del self.emulator_process_manager
         del self.maa_log_monitor
 
         if self.check_result != "Success!":
@@ -1163,90 +1133,6 @@ class MaaManager:
                 return message
             else:
                 self.message_queue.task_done()
-
-    async def search_ADB_address(self) -> None:
-        """搜索ADB实际地址"""
-
-        await Config.send_json(
-            WebSocketMessage(
-                id=self.ws_id,
-                type="Update",
-                data={
-                    "log": f"即将搜索ADB实际地址\n正在等待模拟器完成启动\n请等待{self.wait_time}s"
-                },
-            ).model_dump()
-        )
-
-        await asyncio.sleep(self.wait_time)
-
-        if "-" in self.ADB_address:
-            ADB_ip = f"{self.ADB_address.split('-')[0]}-"
-            ADB_port = int(self.ADB_address.split("-")[1])
-
-        elif ":" in self.ADB_address:
-            ADB_ip = f"{self.ADB_address.split(':')[0]}:"
-            ADB_port = int(self.ADB_address.split(":")[1])
-        else:
-            raise ValueError("ADB地址格式错误")
-
-        logger.info(
-            f"正在搜索ADB实际地址, ADB前缀: {ADB_ip}, 初始端口: {ADB_port}, 搜索范围: {self.port_range}"
-        )
-
-        for port in self.port_range:
-            ADB_address = f"{ADB_ip}{ADB_port + port}"
-
-            # 尝试通过ADB连接到指定地址
-            connect_result = subprocess.run(
-                [self.ADB_path, "connect", ADB_address],
-                creationflags=subprocess.CREATE_NO_WINDOW,
-                stdin=subprocess.DEVNULL,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-            )
-
-            if "connected" in connect_result.stdout:
-                # 检查连接状态
-                devices_result = subprocess.run(
-                    [self.ADB_path, "devices"],
-                    creationflags=subprocess.CREATE_NO_WINDOW,
-                    stdin=subprocess.DEVNULL,
-                    capture_output=True,
-                    text=True,
-                    encoding="utf-8",
-                )
-                if ADB_address in devices_result.stdout:
-                    logger.info(f"ADB实际地址: {ADB_address}")
-
-                    # 断开连接
-                    logger.info(f"断开ADB连接: {ADB_address}")
-                    subprocess.run(
-                        [self.ADB_path, "disconnect", ADB_address],
-                        creationflags=subprocess.CREATE_NO_WINDOW,
-                    )
-
-                    self.ADB_address = ADB_address
-
-                    # 覆写当前ADB地址
-                    logger.info(f"开始使用实际 ADB 地址覆写: {self.ADB_address}")
-                    await self.maa_process_manager.kill(if_force=True)
-                    await System.kill_process(self.maa_exe_path)
-                    with self.maa_set_path.open(mode="r", encoding="utf-8") as f:
-                        data = json.load(f)
-                    data["Configurations"]["Default"]["Connect.Address"] = (
-                        self.ADB_address
-                    )
-                    data["Configurations"]["Default"]["Start.EmulatorWaitSeconds"] = "0"
-                    with self.maa_set_path.open(mode="w", encoding="utf-8") as f:
-                        json.dump(data, f, ensure_ascii=False, indent=4)
-
-                    return None
-
-                else:
-                    logger.info(f"无法连接到ADB地址: {ADB_address}")
-            else:
-                logger.info(f"无法连接到ADB地址: {ADB_address}")
 
     async def check_maa_log(self, log_content: list[str]) -> None:
         """获取MAA日志并检查以判断MAA程序运行状态"""
