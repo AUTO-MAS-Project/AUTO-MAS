@@ -4,9 +4,9 @@
 /* eslint-disable */
 import type { MaaUserConfig_Data } from './MaaUserConfig_Data';
 import type { MaaUserConfig_Info } from './MaaUserConfig_Info';
+import type { MaaUserConfig_Notify } from './MaaUserConfig_Notify';
 import type { MaaUserConfig_Task } from './MaaUserConfig_Task';
-import type { UserConfig_Notify } from './UserConfig_Notify';
-export type MaaUserConfig_Output = {
+export type MaaUserConfig = {
     /**
      * 基础信息
      */
@@ -22,6 +22,6 @@ export type MaaUserConfig_Output = {
     /**
      * 单独通知
      */
-    Notify?: (UserConfig_Notify | null);
+    Notify?: (MaaUserConfig_Notify | null);
 };
 

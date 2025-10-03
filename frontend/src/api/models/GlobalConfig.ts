@@ -8,7 +8,7 @@ import type { GlobalConfig_Start } from './GlobalConfig_Start';
 import type { GlobalConfig_UI } from './GlobalConfig_UI';
 import type { GlobalConfig_Update } from './GlobalConfig_Update';
 import type { GlobalConfig_Voice } from './GlobalConfig_Voice';
-export type GlobalConfig_Output = {
+export type GlobalConfig = {
     /**
      * 功能相关配置
      */
