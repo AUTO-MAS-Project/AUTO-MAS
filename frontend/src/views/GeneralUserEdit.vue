@@ -329,7 +329,9 @@
           <!-- 自定义 Webhook 通知 -->
           <div style="margin-top: 16px">
             <WebhookManager
-              v-model:webhooks="formData.Notify.CustomWebhooks"
+              mode="user"
+              :script-id="scriptId"
+              :user-id="userId"
               @change="handleWebhookChange"
             />
           </div>

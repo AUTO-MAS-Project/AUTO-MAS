@@ -74,7 +74,9 @@
     <!-- 自定义 Webhook 通知 -->
     <div style="margin-top: 16px">
       <WebhookManager
-        v-model:webhooks="formData.Notify.CustomWebhooks"
+        mode="user"
+        :script-id="props.scriptId"
+        :user-id="props.userId"
         @change="handleWebhookChange"
       />
     </div>
@@ -84,15 +86,17 @@
 <script setup lang="ts">
 import WebhookManager from '@/components/WebhookManager.vue'
 
-defineProps<{
+const props = defineProps<{
   formData: any
   loading: boolean
+  scriptId?: string
+  userId?: string
 }>()
 
 // 处理 Webhook 变化
 const handleWebhookChange = () => {
   // 这里可以添加额外的处理逻辑，比如验证或保存
-  console.log('User webhooks changed:', formData.Notify.CustomWebhooks)
+  console.log('User webhooks changed for script:', props.scriptId, 'user:', props.userId)
   // 注意：实际保存会在用户点击保存按钮时进行，这里只是更新本地数据
 }
 </script>
