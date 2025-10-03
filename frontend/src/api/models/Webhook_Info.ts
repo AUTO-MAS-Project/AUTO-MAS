@@ -2,11 +2,14 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { GlobalConfig } from './GlobalConfig';
-export type SettingUpdateIn = {
+export type Webhook_Info = {
     /**
-     * 全局设置需要更新的数据
+     * Webhook名称
      */
-    data: GlobalConfig;
+    Name?: (string | null);
+    /**
+     * 是否启用
+     */
+    Enabled?: (boolean | null);
 };
 
