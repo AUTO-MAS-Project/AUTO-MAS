@@ -301,6 +301,9 @@ class MaaUserConfig(ConfigBase):
             "Info", "SklandToken", "", EncryptValidator()
         )
 
+        self.Emulator_Uuid = ConfigItem("Emulator", "uuid", "")
+        self.Emulator_index = ConfigItem("Emulator", "index", "")
+
         self.Data_LastProxyDate = ConfigItem(
             "Data", "LastProxyDate", "2000-01-01", DateTimeValidator("%Y-%m-%d")
         )
@@ -579,5 +582,38 @@ class GeneralConfig(ConfigBase):
         self.UserData = MultipleConfig([GeneralUserConfig])
 
 
-CLASS_BOOK = {"MAA": MaaConfig, "MaaPlan": MaaPlanConfig, "General": GeneralConfig}
+class EmulatorManagerConfig(ConfigBase):
+    """模拟器管理配置"""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.Info_Name = ConfigItem("Info", "Name", "新多开器")
+
+        EmulatorType = [
+            "general",
+            "mumu",
+            "ldplayer",
+            "nox",  # 以下都是骗你的, 根本没有写~~
+            "memu",
+            "blueStacks",
+        ]
+
+        self.EmulatorType = ConfigItem(
+            "Info", "Type", "general", OptionsValidator(EmulatorType)
+        )
+        self.Path = ConfigItem("Data", "Path", "", FileValidator())
+
+        self.Boss_keys = ConfigItem("Data", "Boss_keys", "[]", JSONValidator())
+
+        self.max_wait_time = ConfigItem(
+            "Data", "max_wait_time", 60, RangeValidator(-1, 9999)
+        )
+
+
+CLASS_BOOK = {
+    "MAA": MaaConfig,
+    "MaaPlan": MaaPlanConfig,
+    "General": GeneralConfig,
+    "EmulatorManager": EmulatorManagerConfig,
+}
 """配置类映射表"""
