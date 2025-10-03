@@ -57,7 +57,7 @@ class AppConfig(GlobalConfig):
     VERSION = [5, 0, 0, 1]
 
     def __init__(self) -> None:
-        super().__init__(if_save_multi_config=False)
+        super().__init__()
 
         logger.info("")
         logger.info("===================================")
@@ -95,9 +95,11 @@ class AppConfig(GlobalConfig):
         self.if_ignore_silence: List[uuid.UUID] = []
         self.temp_task: List[asyncio.Task] = []
 
-        self.ScriptConfig = MultipleConfig([MaaConfig, GeneralConfig])
-        self.PlanConfig = MultipleConfig([MaaPlanConfig])
-        self.QueueConfig = MultipleConfig([QueueConfig])
+        self.ScriptConfig = MultipleConfig(
+            [MaaConfig, GeneralConfig], if_save_needed=False
+        )
+        self.PlanConfig = MultipleConfig([MaaPlanConfig], if_save_needed=False)
+        self.QueueConfig = MultipleConfig([QueueConfig], if_save_needed=False)
         QueueItem.related_config["ScriptConfig"] = self.ScriptConfig
         MaaUserConfig.related_config["PlanConfig"] = self.PlanConfig
 
