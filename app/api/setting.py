@@ -124,19 +124,28 @@ async def get_webhook(webhook: WebhookGetIn = Body(...)) -> WebhookGetOut:
 
 @router.post(
     "/webhook/add",
-    summary="添加定时项",
+    summary="添加webhook项",
     response_model=WebhookCreateOut,
     status_code=200,
 )
 async def add_webhook() -> WebhookCreateOut:
 
-    uid, config = await Config.add_webhook(None, None)
-    data = Webhook(**(await config.toDict()))
+    try:
+        uid, config = await Config.add_webhook(None, None)
+        data = Webhook(**(await config.toDict()))
+    except Exception as e:
+        return WebhookCreateOut(
+            code=500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            webhookId="",
+            data=Webhook(**{}),
+        )
     return WebhookCreateOut(webhookId=str(uid), data=data)
 
 
 @router.post(
-    "/webhook/update", summary="更新定时项", response_model=OutBase, status_code=200
+    "/webhook/update", summary="更新webhook项", response_model=OutBase, status_code=200
 )
 async def update_webhook(webhook: WebhookUpdateIn = Body(...)) -> OutBase:
 
@@ -152,7 +161,7 @@ async def update_webhook(webhook: WebhookUpdateIn = Body(...)) -> OutBase:
 
 
 @router.post(
-    "/webhook/delete", summary="删除定时项", response_model=OutBase, status_code=200
+    "/webhook/delete", summary="删除webhook项", response_model=OutBase, status_code=200
 )
 async def delete_webhook(webhook: WebhookDeleteIn = Body(...)) -> OutBase:
 
@@ -166,7 +175,10 @@ async def delete_webhook(webhook: WebhookDeleteIn = Body(...)) -> OutBase:
 
 
 @router.post(
-    "/webhook/order", summary="重新排序定时项", response_model=OutBase, status_code=200
+    "/webhook/order",
+    summary="重新排序webhook项",
+    response_model=OutBase,
+    status_code=200,
 )
 async def reorder_webhook(webhook: WebhookReorderIn = Body(...)) -> OutBase:
 

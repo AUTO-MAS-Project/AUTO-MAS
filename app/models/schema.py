@@ -88,7 +88,7 @@ class Webhook_Info(BaseModel):
 class Webhook_Data(BaseModel):
     Url: Optional[str] = Field(default=None, description="Webhook URL")
     Template: Optional[str] = Field(default=None, description="消息模板")
-    Headers: Optional[Dict[str, str]] = Field(default=None, description="自定义请求头")
+    Headers: Optional[str] = Field(default=None, description="自定义请求头")
     Method: Optional[Literal["POST", "GET"]] = Field(
         default=None, description="请求方法"
     )
