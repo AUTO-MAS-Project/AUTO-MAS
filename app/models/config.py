@@ -27,7 +27,7 @@ from .ConfigBase import *
 class Webhook(ConfigBase):
     """Webhook 配置"""
 
-    Info_Name = ConfigItem("Info", "Name", "")
+    Info_Name = ConfigItem("Info", "Name", "新自定义 Webhook 通知")
     Info_Enabled = ConfigItem("Info", "Enabled", True, BoolValidator())
 
     Data_Url = ConfigItem("Data", "Url", "", URLValidator())
