@@ -14,7 +14,7 @@ export type Webhook_Data = {
     /**
      * 自定义请求头
      */
-    Headers?: (Record<string, string> | null);
+    Headers?: (string | null);
     /**
      * 请求方法
      */
