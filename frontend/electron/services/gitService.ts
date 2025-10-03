@@ -421,34 +421,86 @@ export async function cloneBackend(
         })
       })
 
-      // 获取目标分支信息（显式 fetch 目标分支）
-      console.log(`📥 显式获取远程分支: ${targetBranch} ...`)
+      // 强制清理本地修改和未跟踪文件
+      console.log('🧹 强制清理所有本地修改和未跟踪文件...')
       await new Promise<void>((resolve, reject) => {
-        const proc = spawn(gitPath, ['fetch', 'origin', targetBranch], {
+        const proc = spawn(gitPath, ['clean', '-fxd'], {
           stdio: 'pipe',
           env: gitEnv,
           cwd: backendPath,
         })
-        proc.stdout?.on('data', d => console.log('git fetch stdout:', d.toString().trim()))
-        proc.stderr?.on('data', d => console.log('git fetch stderr:', d.toString().trim()))
+        proc.stdout?.on('data', d => console.log('git clean stdout:', d.toString().trim()))
+        proc.stderr?.on('data', d => console.log('git clean stderr:', d.toString().trim()))
         proc.on('close', code => {
-          console.log(`git fetch origin ${targetBranch} 退出码: ${code}`)
+          console.log(`git clean 退出码: ${code}`)
           if (code === 0) {
-            console.log(`✅ 成功获取远程分支: ${targetBranch}`)
+            console.log('✅ 本地修改和未跟踪文件已清理')
             resolve()
           } else {
-            console.error(`❌ 获取远程分支失败: ${targetBranch}`)
-            reject(new Error(`git fetch origin ${targetBranch} 失败，退出码: ${code}`))
+            console.warn('⚠️ 清理未跟踪文件时出现问题，继续执行')
+            resolve() // 即使失败也继续，这不是关键步骤
           }
         })
         proc.on('error', error => {
-          console.error('❌ git fetch 进程错误:', error)
+          console.error('❌ git clean 进程错误:', error)
+          resolve() // 继续执行，不阻塞后续操作
+        })
+      })
+
+      // 强制重置当前分支到HEAD，丢弃所有本地修改
+      console.log('🔄 重置当前分支，丢弃所有本地修改...')
+      await new Promise<void>((resolve, reject) => {
+        const proc = spawn(gitPath, ['reset', '--hard', 'HEAD'], {
+          stdio: 'pipe',
+          env: gitEnv,
+          cwd: backendPath,
+        })
+        proc.stdout?.on('data', d => console.log('git reset HEAD stdout:', d.toString().trim()))
+        proc.stderr?.on('data', d => console.log('git reset HEAD stderr:', d.toString().trim()))
+        proc.on('close', code => {
+          console.log(`git reset HEAD 退出码: ${code}`)
+          if (code === 0) {
+            console.log('✅ 本地修改已重置')
+            resolve()
+          } else {
+            console.warn('⚠️ 重置本地修改时出现问题，继续执行')
+            resolve() // 继续执行
+          }
+        })
+        proc.on('error', error => {
+          console.error('❌ git reset HEAD 进程错误:', error)
+          resolve() // 继续执行
+        })
+      })
+
+      // 强制获取所有远程分支信息，不受本地配置限制
+      console.log(`📥 强制获取所有远程分支信息...`)
+      await new Promise<void>((resolve, reject) => {
+        const proc = spawn(gitPath, ['fetch', '--all', '--force'], {
+          stdio: 'pipe',
+          env: gitEnv,
+          cwd: backendPath,
+        })
+        proc.stdout?.on('data', d => console.log('git fetch --all stdout:', d.toString().trim()))
+        proc.stderr?.on('data', d => console.log('git fetch --all stderr:', d.toString().trim()))
+        proc.on('close', code => {
+          console.log(`git fetch --all 退出码: ${code}`)
+          if (code === 0) {
+            console.log(`✅ 所有远程分支信息获取成功`)
+            resolve()
+          } else {
+            console.error(`❌ 获取远程分支信息失败`)
+            reject(new Error(`git fetch --all 失败，退出码: ${code}`))
+          }
+        })
+        proc.on('error', error => {
+          console.error('❌ git fetch --all 进程错误:', error)
           reject(error)
         })
       })
 
-      // 切换到目标分支
-      console.log(`🔀 切换到目标分支: ${targetBranch}`)
+      // 强制切换到目标分支，直接指向远程分支
+      console.log(`🔀 强制切换到目标分支: ${targetBranch}`)
       await new Promise<void>((resolve, reject) => {
         const proc = spawn(gitPath, ['checkout', '-B', targetBranch, `origin/${targetBranch}`], {
           stdio: 'pipe',
@@ -473,7 +525,7 @@ export async function cloneBackend(
         })
       })
 
-      // 执行pull操作
+      // 强制同步到远程分支最新提交，确保远程代码完全覆盖本地
       console.log('🔄 强制同步到远程分支最新提交...')
       await new Promise<void>((resolve, reject) => {
         const proc = spawn(gitPath, ['reset', '--hard', `origin/${targetBranch}`], {
@@ -496,6 +548,27 @@ export async function cloneBackend(
         proc.on('error', error => {
           console.error('❌ git reset 进程错误:', error)
           reject(error)
+        })
+      })
+
+      // 额外的安全措施：再次清理可能的未跟踪文件
+      console.log('🧹 最终清理确保工作区干净...')
+      await new Promise<void>((resolve, reject) => {
+        const proc = spawn(gitPath, ['clean', '-fxd'], {
+          stdio: 'pipe',
+          env: gitEnv,
+          cwd: backendPath,
+        })
+        proc.stdout?.on('data', d => console.log('git final clean stdout:', d.toString().trim()))
+        proc.stderr?.on('data', d => console.log('git final clean stderr:', d.toString().trim()))
+        proc.on('close', code => {
+          console.log(`git final clean 退出码: ${code}`)
+          console.log('✅ 工作区最终清理完成')
+          resolve() // 无论成功失败都继续，这是额外的安全措施
+        })
+        proc.on('error', error => {
+          console.error('❌ git final clean 进程错误:', error)
+          resolve() // 继续执行
         })
       })
 
