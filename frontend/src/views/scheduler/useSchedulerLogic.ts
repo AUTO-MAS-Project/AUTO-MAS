@@ -310,13 +310,20 @@ export function useSchedulerLogic() {
   const subscribeToTask = (tab: SchedulerTab) => {
     if (!tab.websocketId) return
 
+    // 如果已经有活动的订阅，不要重复订阅
+    if (tab.subscriptionId) {
+      console.log('[Scheduler] 任务已有活动订阅，跳过重复订阅:', { key: tab.key, websocketId: tab.websocketId })
+      return
+    }
+
     const subscriptionId = ws.subscribe(
       { id: tab.websocketId },
       (message) => handleWebSocketMessage(tab, message)
     )
-    
+
     // 将订阅ID保存到tab中，以便后续取消订阅
     tab.subscriptionId = subscriptionId
+    console.log('[Scheduler] 新建WebSocket订阅:', { key: tab.key, websocketId: tab.websocketId, subscriptionId })
   }
 
   const handleWebSocketMessage = (tab: SchedulerTab, wsMessage: any) => {
@@ -556,7 +563,7 @@ export function useSchedulerLogic() {
         ws.unsubscribe(tab.subscriptionId)
         tab.subscriptionId = null
       }
-      
+
       if (tab.websocketId) {
         tab.websocketId = null
       }
@@ -664,7 +671,7 @@ export function useSchedulerLogic() {
   }
 
   // 启动60秒倒计时 - 已移至全局组件，这里保留空函数避免破坏现有代码
-// 移除自动执行电源操作，由后端完全控制
+  // 移除自动执行电源操作，由后端完全控制
   // const executePowerAction = async () => {
   //   // 不再自己执行电源操作，完全由后端控制
   // }
@@ -830,9 +837,12 @@ export function useSchedulerLogic() {
     // 清理全局WebSocket的消息处理函数
     // 不再清理或重置导出的处理函数，保持使用者注册的处理逻辑永久有效
 
+    // 在组件卸载时，只取消非运行状态任务的订阅
+    // 运行中任务的订阅将保持，以便在后台继续接收消息
     schedulerTabs.value.forEach(tab => {
-      if (tab.subscriptionId) {
+      if (tab.subscriptionId && tab.status !== '运行') {
         ws.unsubscribe(tab.subscriptionId)
+        tab.subscriptionId = null // 清理订阅ID
       }
     })
     saveTabsToStorage(schedulerTabs.value)
