@@ -601,7 +601,7 @@ class EmulatorManagerConfig(ConfigBase):
         self.EmulatorType = ConfigItem(
             "Info", "Type", "general", OptionsValidator(EmulatorType)
         )
-        self.Path = ConfigItem("Data", "Path", "", FileValidator())
+        self.Path = ConfigItem("Data", "Path", "")
 
         self.Boss_keys = ConfigItem("Data", "Boss_keys", "[]", JSONValidator())
 

@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
-import { useTheme } from '@/composables/useTheme'
 import type { ThemeColor, ThemeMode } from '@/composables/useTheme'
+import { useTheme } from '@/composables/useTheme'
 import type { SelectValue } from 'ant-design-vue/es/select'
 import type { SettingsData } from '@/types/settings'
 import { useSettingsApi } from '@/composables/useSettingsApi'
@@ -18,6 +18,7 @@ import TabFunction from './TabFunction.vue'
 import TabNotify from './TabNotify.vue'
 import TabAdvanced from './TabAdvanced.vue'
 import TabOthers from './TabOthers.vue'
+import TabEmulator from './TabEmulator.vue'
 
 const router = useRouter()
 const { themeMode, themeColor, themeColors, setThemeMode, setThemeColor } = useTheme()
@@ -315,6 +316,9 @@ onMounted(() => {
         <a-tab-pane key="others" tab="其他设置">
           <TabOthers :version="version" :backend-update-info="backendUpdateInfo" />
         </a-tab-pane>
+        <a-tab-pane key="emulator" tab="模拟器设置">
+          <TabEmulator :settings="settings" :handle-setting-change="handleSettingChange" />
+        </a-tab-pane>
       </a-tabs>
     </div>
     <UpdateModal
@@ -336,43 +340,53 @@ onMounted(() => {
   padding: 20px;
   box-sizing: border-box;
 }
+
 .settings-header {
   margin-bottom: 24px;
 }
+
 .page-title {
   margin: 0;
   font-size: 32px;
   font-weight: 600;
   color: var(--ant-color-text);
 }
+
 .settings-content {
   background: var(--ant-color-bg-container);
   border-radius: 12px;
   width: 100%;
 }
+
 .settings-tabs {
   margin: 0;
 }
+
 .settings-tabs :deep(.ant-tabs-card > .ant-tabs-nav .ant-tabs-tab) {
   background: transparent;
   border: 1px solid var(--ant-color-border);
   border-radius: 8px 8px 0 0;
   margin-right: 8px;
 }
+
 .settings-tabs :deep(.ant-tabs-card > .ant-tabs-nav .ant-tabs-tab-active) {
   background: var(--ant-color-bg-container);
   border-bottom-color: var(--ant-color-bg-container);
 }
+
 :deep(.tab-content) {
   padding: 24px;
   width: 100%;
 }
+
 :deep(.form-section) {
   margin-bottom: 32px;
 }
+
 :deep(.form-section:last-child) {
   margin-bottom: 0;
 }
+
 :deep(.section-header) {
   margin-bottom: 20px;
   padding-bottom: 8px;
@@ -381,6 +395,7 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
 }
+
 :deep(.section-header h3) {
   margin: 0;
   font-size: 20px;
@@ -390,6 +405,7 @@ onMounted(() => {
   align-items: center;
   gap: 12px;
 }
+
 :deep(.section-header h3::before) {
   content: '';
   width: 4px;
@@ -397,11 +413,13 @@ onMounted(() => {
   background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
   border-radius: 2px;
 }
+
 :deep(.section-description) {
   margin: 4px 0 0;
   font-size: 13px;
   color: var(--ant-color-text-secondary);
 }
+
 :deep(.section-doc-link) {
   color: var(--ant-color-primary) !important;
   text-decoration: none;
@@ -415,12 +433,14 @@ onMounted(() => {
   align-items: center;
   gap: 4px;
 }
+
 :deep(.section-doc-link:hover) {
   color: var(--ant-color-primary-hover) !important;
   background-color: var(--ant-color-primary-bg);
   border-color: var(--ant-color-primary-hover);
   text-decoration: none;
 }
+
 :deep(.section-update-button) {
   height: 32px;
   padding: 0 12px;
@@ -440,51 +460,62 @@ onMounted(() => {
   border: none !important;
   color: #fff !important;
 }
+
 :deep(.section-update-button:hover) {
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(22, 119, 255, 0.3);
   background: linear-gradient(135deg, #4096ff, #1677ff) !important;
   color: #fff !important;
 }
+
 :deep(.section-update-button:active) {
   transform: translateY(0);
   color: #fff !important;
 }
+
 :deep(.section-update-button svg) {
   transition: transform 0.3s ease;
 }
+
 :deep(.section-update-button:hover svg) {
   transform: rotate(180deg);
 }
+
 :deep(.form-item-vertical) {
   display: flex;
   flex-direction: column;
   gap: 8px;
   margin-bottom: 16px;
 }
+
 :deep(.form-label-wrapper) {
   display: flex;
   align-items: center;
   gap: 8px;
 }
+
 :deep(.form-label) {
   font-weight: 600;
   color: var(--ant-color-text);
   font-size: 14px;
 }
+
 :deep(.help-icon) {
   color: #8c8c8c;
   font-size: 14px;
 }
+
 :deep(.tooltip-link) {
   color: var(--ant-color-primary) !important;
   text-decoration: underline;
   transition: color 0.2s ease;
 }
+
 :deep(.tooltip-link:hover) {
   color: var(--ant-color-primary-hover) !important;
   text-decoration: underline;
 }
+
 :deep(.link-card) {
   background: var(--ant-color-bg-container);
   border: 1px solid var(--ant-color-border);
@@ -497,11 +528,13 @@ onMounted(() => {
   flex-direction: column;
   align-items: center;
 }
+
 :deep(.link-card:hover) {
   border-color: var(--ant-color-primary);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
   transform: translateY(-2px);
 }
+
 :deep(.link-icon) {
   font-size: 48px;
   margin-bottom: 16px;
@@ -511,17 +544,20 @@ onMounted(() => {
   justify-content: center;
   align-items: center;
 }
+
 :deep(.link-content) {
   flex: 1;
   display: flex;
   flex-direction: column;
 }
+
 :deep(.link-content h4) {
   margin: 0 0 8px;
   font-size: 18px;
   font-weight: 600;
   color: var(--ant-color-text);
 }
+
 :deep(.link-content p) {
   margin: 0 0 16px;
   font-size: 14px;
@@ -529,6 +565,7 @@ onMounted(() => {
   line-height: 1.5;
   flex: 1;
 }
+
 :deep(.link-button) {
   display: inline-block;
   padding: 8px 16px;
@@ -541,11 +578,13 @@ onMounted(() => {
   transition: background-color 0.2s ease;
   margin-top: auto;
 }
+
 :deep(.link-button:hover) {
   background: var(--ant-color-primary-hover);
   color: #fff !important;
   text-decoration: none;
 }
+
 /* link-grid styles moved into TabOthers.vue (scoped) */
 :deep(.info-item) {
   display: flex;
@@ -553,12 +592,14 @@ onMounted(() => {
   margin-bottom: 12px;
   line-height: 1.5;
 }
+
 :deep(.info-label) {
   font-weight: 600;
   color: var(--ant-color-text);
   min-width: 100px;
   flex-shrink: 0;
 }
+
 :deep(.info-value) {
   color: var(--ant-color-text-secondary);
   margin-left: 8px;
