@@ -2,9 +2,8 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { GeneralUserConfig } from './GeneralUserConfig';
-import type { MaaUserConfig } from './MaaUserConfig';
-export type UserCreateOut = {
+import type { Webhook } from './Webhook';
+export type WebhookCreateOut = {
     /**
      * 状态码
      */
@@ -18,12 +17,12 @@ export type UserCreateOut = {
      */
     message?: string;
     /**
-     * 新创建的用户ID
+     * 新创建的Webhook ID
      */
-    userId: string;
+    webhookId: string;
     /**
-     * 用户配置数据
+     * Webhook配置数据
      */
-    data: (MaaUserConfig | GeneralUserConfig);
+    data: Webhook;
 };
 
