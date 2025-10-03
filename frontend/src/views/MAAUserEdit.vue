@@ -103,7 +103,12 @@
           <SkylandConfigSection :form-data="formData" :loading="loading" />
 
           <!-- 通知配置组件 -->
-          <NotifyConfigSection :form-data="formData" :loading="loading" />
+          <NotifyConfigSection 
+            :form-data="formData" 
+            :loading="loading"
+            :script-id="scriptId"
+            :user-id="userId"
+          />
         </a-form>
       </a-card>
     </div>
