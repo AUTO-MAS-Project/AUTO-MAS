@@ -22,7 +22,14 @@ import {
   setMainWindow as setPythonMainWindow,
   startBackend,
 } from './services/pythonService'
-import { cloneBackend, downloadGit, setMainWindow as setGitMainWindow } from './services/gitService'
+import {
+  cloneBackend,
+  downloadGit,
+  setMainWindow as setGitMainWindow,
+  checkRepoStatus,
+  cleanDepot,
+  getRepoInfo
+} from './services/gitService'
 import { cleanOldLogs, getLogFiles, getLogPath, log, setupLogger } from './services/logService'
 
 // 强制清理相关进程的函数
@@ -990,28 +997,48 @@ ipcMain.handle('download-git', async () => {
   return downloadGit(appRoot)
 })
 
+// 新增的git管理方法
+ipcMain.handle('check-repo-status', async () => {
+  const appRoot = getAppRoot()
+  const { checkRepoStatus } = await import('./services/gitService')
+  return checkRepoStatus(appRoot)
+})
+
+ipcMain.handle('clean-depot', async () => {
+  const appRoot = getAppRoot()
+  const { cleanDepot } = await import('./services/gitService')
+  return cleanDepot(appRoot)
+})
+
+ipcMain.handle('get-repo-info', async () => {
+  const appRoot = getAppRoot()
+  const { getRepoInfo } = await import('./services/gitService')
+  return getRepoInfo(appRoot)
+})
+
 ipcMain.handle('check-git-update', async () => {
   try {
     const appRoot = getAppRoot()
+    const repoPath = path.join(appRoot, 'repo')
 
-    // 检查是否为Git仓库
-    const gitDir = path.join(appRoot, '.git')
+    // 检查repo是否为Git仓库
+    const gitDir = path.join(repoPath, '.git')
     if (!fs.existsSync(gitDir)) {
-      log.info('不是Git仓库，跳过更新检查')
-      return { hasUpdate: false }
+      log.info('repo不存在或不是Git仓库，需要重新克隆')
+      return { hasUpdate: true, needsClone: true }
     }
 
     // 检查Git可执行文件是否存在
     const gitPath = path.join(appRoot, 'environment', 'git', 'bin', 'git.exe')
     if (!fs.existsSync(gitPath)) {
-      log.warn('Git可执行文件不存在，无法检查更新')
+      log.warn('Git可执行文件不存在，需要先安装Git')
       return { hasUpdate: false, error: 'Git可执行文件不存在' }
     }
 
     // 获取Git环境变量
     const gitEnv = {
       ...process.env,
-      PATH: `${path.join(appRoot, 'environment', 'git', 'bin')};${path.join(appRoot, 'environment', 'git', 'mingw64', 'bin')};${process.env.PATH}`,
+      PATH: `${path.join(appRoot, 'environment', 'git', 'bin')};${path.join(appRoot, 'environment', 'git', 'mingw64', 'bin')};${path.join(appRoot, 'environment', 'git', 'mingw64', 'libexec', 'git-core')};${process.env.PATH}`,
       GIT_EXEC_PATH: path.join(appRoot, 'environment', 'git', 'mingw64', 'libexec', 'git-core'),
       HOME: process.env.USERPROFILE || process.env.HOME,
       GIT_CONFIG_NOSYSTEM: '1',
@@ -1019,46 +1046,60 @@ ipcMain.handle('check-git-update', async () => {
       GIT_ASKPASS: '',
     }
 
-    log.info('开始检查Git仓库更新（跳过fetch，避免直接访问GitHub）...')
+    log.info('检查repo中的Git仓库状态...')
 
-    // 不执行fetch，直接检查本地状态
-    // 这样避免了直接访问GitHub，而是在后续的pull操作中使用镜像站
-
-    // 获取当前HEAD的commit hash
-    const currentCommit = await new Promise<string>((resolve, reject) => {
-      const revParseProc = spawn(gitPath, ['rev-parse', 'HEAD'], {
-        stdio: 'pipe',
-        env: gitEnv,
-        cwd: appRoot,
+    // 获取当前分支名和commit hash
+    const [currentBranch, currentCommit] = await Promise.all([
+      new Promise<string>((resolve, reject) => {
+        const branchProc = spawn(gitPath, ['branch', '--show-current'], {
+          stdio: 'pipe',
+          env: gitEnv,
+          cwd: repoPath,
+        })
+        let output = ''
+        branchProc.stdout?.on('data', data => { output += data.toString() })
+        branchProc.on('close', code => {
+          if (code === 0) {
+            resolve(output.trim())
+          } else {
+            resolve('unknown') // 如果获取失败，使用默认值
+          }
+        })
+        branchProc.on('error', () => resolve('unknown'))
+      }),
+      new Promise<string>((resolve, reject) => {
+        const commitProc = spawn(gitPath, ['rev-parse', 'HEAD'], {
+          stdio: 'pipe',
+          env: gitEnv,
+          cwd: repoPath,
+        })
+        let output = ''
+        commitProc.stdout?.on('data', data => { output += data.toString() })
+        commitProc.on('close', code => {
+          if (code === 0) {
+            resolve(output.trim())
+          } else {
+            resolve('unknown')
+          }
+        })
+        commitProc.on('error', () => resolve('unknown'))
       })
+    ])
 
-      let output = ''
-      revParseProc.stdout?.on('data', data => {
-        output += data.toString()
-      })
+    log.info(`当前repo状态 - 分支: ${currentBranch}, commit: ${currentCommit.substring(0, 8)}...`)
 
-      revParseProc.on('close', code => {
-        if (code === 0) {
-          resolve(output.trim())
-        } else {
-          reject(new Error(`git rev-parse失败，退出码: ${code}`))
-        }
-      })
-
-      revParseProc.on('error', reject)
-    })
-
-    log.info(`当前本地commit: ${currentCommit}`)
-
-    // 由于我们跳过了fetch步骤（避免直接访问GitHub），
-    // 我们无法准确知道远程是否有更新
-    // 因此返回true，让后续的pull操作通过镜像站来检查和获取更新
-    // 如果没有更新，pull操作会很快完成且不会有实际变化
-    log.info('跳过远程检查，返回hasUpdate=true以触发镜像站更新流程')
-    return { hasUpdate: true, skipReason: 'avoided_github_access' }
+    // 由于我们使用镜像站更新，且新的更新逻辑会自动处理分支切换和代码同步，
+    // 我们直接返回true让更新流程来处理一切
+    log.info('返回hasUpdate=true，让更新流程处理分支切换和代码同步')
+    return {
+      hasUpdate: true,
+      currentBranch,
+      currentCommit: currentCommit.substring(0, 8),
+      repoExists: true
+    }
   } catch (error) {
     log.error('检查Git更新失败:', error)
-    // 如果检查失败，返回true以触发更新流程，确保代码是最新的
+    // 如果检查失败，返回true以触发更新流程
     return { hasUpdate: true, error: error instanceof Error ? error.message : String(error) }
   }
 })
