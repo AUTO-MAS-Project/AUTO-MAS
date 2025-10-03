@@ -290,7 +290,7 @@ const handleWebhookChange = async () => {
         </a>
       </div>
       <WebhookManager 
-        v-model:webhooks="settings.Notify.CustomWebhooks"
+        mode="global"
         @change="handleWebhookChange"
       />
     </div>
