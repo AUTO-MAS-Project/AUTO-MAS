@@ -4,8 +4,8 @@
 /* eslint-disable */
 import type { GeneralUserConfig_Data } from './GeneralUserConfig_Data';
 import type { GeneralUserConfig_Info } from './GeneralUserConfig_Info';
-import type { UserConfig_Notify } from './UserConfig_Notify';
-export type GeneralUserConfig_Input = {
+import type { GeneralUserConfig_Notify } from './GeneralUserConfig_Notify';
+export type GeneralUserConfig = {
     /**
      * 用户信息
      */
@@ -17,6 +17,6 @@ export type GeneralUserConfig_Input = {
     /**
      * 单独通知
      */
-    Notify?: (UserConfig_Notify | null);
+    Notify?: (GeneralUserConfig_Notify | null);
 };
 
