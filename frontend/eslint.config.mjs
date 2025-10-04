@@ -13,10 +13,10 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
 export default [
-  // 基础 JS
+  // 基础 JS 推荐规则
   js.configs.recommended,
 
-  // Vue 3（这里已经把 parser 设成了 vue-eslint-parser，不要再覆盖它）
+  // Vue 3 推荐规则（内部使用 vue-eslint-parser）
   ...vue.configs['flat/recommended'],
 
   // -------- 渲染端（Vite + Vue）类型感知 ----------
@@ -28,7 +28,7 @@ export default [
       globals: { ...globals.browser, ...globals.node },
       parserOptions: {
         extraFileExtensions: ['.vue'],
-        // 关键：让 .vue 的 <script lang="ts"> 用 TS 解析器
+        // 让 <script lang="ts"> 用 TS 解析器
         parser: tseslint.parser,
         project: [path.join(__dirname, 'tsconfig.app.json')],
         tsconfigRootDir: __dirname,
@@ -43,7 +43,7 @@ export default [
     },
   },
 
-  // -------- Electron 主进程/预加载（Node/CJS 输出） ----------
+  // -------- Electron 主进程/预加载 ----------
   {
     files: ['electron/**/*.ts'],
     languageOptions: {
@@ -55,8 +55,6 @@ export default [
         tsconfigRootDir: __dirname,
       },
     },
-    // 对纯 .ts 文件，TS 解析器由 typescript-eslint 的 flat preset 自动处理；
-    // 这里不重复指定 languageOptions.parser，避免与 vue 的 parser 冲突。
     plugins: { '@typescript-eslint': tseslint.plugin },
     rules: {
       '@typescript-eslint/no-require-imports': 'off',
@@ -67,7 +65,7 @@ export default [
     },
   },
 
-  // -------- 仅 JS 的公共脚本/配置（用默认 espree 即可） ----------
+  // -------- 公共 JS/配置文件 ----------
   {
     files: ['public/**/*.js', 'eslint.config.mjs'],
     languageOptions: {
@@ -77,11 +75,25 @@ export default [
     },
   },
 
-  // Prettier 集成与去冲突
-  { plugins: { prettier: prettierPlugin }, rules: { 'prettier/prettier': 'error' } },
+  // -------- 全局规则调整 ----------
+  {
+    rules: {
+      // 关掉换行符报错
+      'linebreak-style': 'off',
+    },
+  },
+
+  // -------- Prettier 集成 ----------
+  {
+    plugins: { prettier: prettierPlugin },
+    rules: {
+      // Prettier 错误当成 ESLint 错误
+      'prettier/prettier': ['error', { endOfLine: 'auto' }],
+    },
+  },
   configPrettier,
 
-  // 忽略产物
+  // 忽略产物目录
   {
     ignores: ['dist/**', 'dist-electron/**', 'out/**', 'build/**', 'node_modules/**', '**/*.d.ts'],
   },
