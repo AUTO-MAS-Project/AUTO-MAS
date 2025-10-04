@@ -295,18 +295,11 @@ const handleTableDataUpdate = async (newData: Record<string, any>) => {
 
 const loadPlanData = async (planId: string) => {
   try {
-    // 优化：先检查缓存数据，避免不必要的API调用
-    let planData: PlanData | null = null
-    
-    if (currentPlanData.value && currentPlanData.value[planId]) {
-      planData = currentPlanData.value[planId] as PlanData
-      console.log(`[计划表] 使用缓存数据 (${planId})`)
-    } else {
-      const response = await getPlans(planId)
-      currentPlanData.value = response.data
-      planData = response.data[planId] as PlanData
-      console.log(`[计划表] 加载新数据 (${planId})`)
-    }
+    // 总是从后端重新加载数据，确保数据一致性
+    const response = await getPlans(planId)
+    currentPlanData.value = response.data
+    const planData = response.data[planId] as PlanData
+    console.log(`[计划表] 从后端加载数据 (${planId})`)
     
     if (planData) {
       if (planData.Info) {
@@ -330,7 +323,8 @@ const loadPlanData = async (planId: string) => {
         currentMode.value = planData.Info.Mode || 'ALL'
       }
       
-      tableData.value = planData
+      // 标记这是初始加载，需要强制更新自定义关卡
+      tableData.value = { ...planData, _isInitialLoad: true }
     }
   } catch (error) {
     console.error('加载计划数据失败:', error)
@@ -380,7 +374,8 @@ const initPlans = async () => {
         }
         
         console.log(`[计划表] 初始加载数据 (${selectedPlanId}):`, planData)
-        tableData.value = planData
+        // 标记这是初始加载，需要强制更新自定义关卡
+        tableData.value = { ...planData, _isInitialLoad: true }
       }
     } else {
       currentPlanData.value = null
