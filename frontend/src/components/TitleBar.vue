@@ -8,7 +8,7 @@
         <img src="@/assets/AUTO-MAS.ico" alt="AUTO-MAS" class="title-logo" />
         <span class="title-text">AUTO-MAS</span>
         <span class="version-text">
-          v{{ version }}
+          {{ version }}
           <span v-if="updateInfo?.if_need_update" class="update-hint" :title="getUpdateTooltip()">
             检测到更新 {{ updateInfo.latest_version }} 请尽快更新
           </span>
