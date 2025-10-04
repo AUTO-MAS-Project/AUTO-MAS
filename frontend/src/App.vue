@@ -4,18 +4,21 @@ import { useRoute } from 'vue-router'
 import { ConfigProvider } from 'ant-design-vue'
 import { useTheme } from './composables/useTheme.ts'
 import { useUpdateModal } from './composables/useUpdateChecker.ts'
+import { useAppClosing } from './composables/useAppClosing.ts'
 import AppLayout from './components/AppLayout.vue'
 import TitleBar from './components/TitleBar.vue'
 import UpdateModal from './components/UpdateModal.vue'
 import DevDebugPanel from './components/DevDebugPanel.vue'
 import GlobalPowerCountdown from './components/GlobalPowerCountdown.vue'
 import WebSocketMessageListener from './components/WebSocketMessageListener.vue'
+import AppClosingOverlay from './components/AppClosingOverlay.vue'
 import zhCN from 'ant-design-vue/es/locale/zh_CN'
 import { logger } from '@/utils/logger'
 
 const route = useRoute()
 const { antdTheme, initTheme } = useTheme()
 const { updateVisible, updateData, onUpdateConfirmed } = useUpdateModal()
+const { isClosing } = useAppClosing()
 
 // 判断是否为初始化页面
 const isInitializationPage = computed(() => route.name === 'Initialization')
@@ -57,6 +60,9 @@ onMounted(() => {
 
     <!-- WebSocket 消息监听组件 -->
     <WebSocketMessageListener />
+
+    <!-- 应用关闭遮罩 -->
+    <AppClosingOverlay :visible="isClosing" />
   </ConfigProvider>
 </template>
 
