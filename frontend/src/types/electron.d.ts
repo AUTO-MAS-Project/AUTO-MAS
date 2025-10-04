@@ -62,6 +62,10 @@ export interface ElectronAPI {
   loadConfig: () => Promise<any>
   resetConfig: () => Promise<void>
 
+  // 托盘设置
+  updateTraySettings: (uiSettings: any) => Promise<boolean>
+  syncBackendConfig: (backendSettings: any) => Promise<boolean>
+
   // 日志文件操作
   getLogPath: () => Promise<string>
   getLogFiles: () => Promise<string[]>
