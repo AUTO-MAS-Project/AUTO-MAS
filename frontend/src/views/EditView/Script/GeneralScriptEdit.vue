@@ -7,7 +7,7 @@
         </a-breadcrumb-item>
         <a-breadcrumb-item>
           <div class="breadcrumb-current">
-            <img src="@/assets/AUTO-MAS.ico" alt="AUTO-MAS" class="breadcrumb-logo" />
+            <img src="../../../assets/AUTO-MAS.ico" alt="AUTO-MAS" class="breadcrumb-logo" />
             编辑脚本
           </div>
         </a-breadcrumb-item>
@@ -651,10 +651,10 @@ import { onMounted, reactive, ref, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
 import { message } from 'ant-design-vue'
-import type { GeneralScriptConfig, ScriptType } from '../types/script'
-import { useScriptApi } from '../composables/useScriptApi'
-import { Service } from '../api'
-import type { ScriptUploadIn } from '../api'
+import type { GeneralScriptConfig, ScriptType } from '../../../types/script.ts'
+import { useScriptApi } from '../../../composables/useScriptApi.ts'
+import { Service } from '../../../api'
+import type { ScriptUploadIn } from '../../../api'
 import {
   ArrowLeftOutlined,
   CloudUploadOutlined,
