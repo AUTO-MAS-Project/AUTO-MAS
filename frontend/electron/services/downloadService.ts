@@ -31,7 +31,7 @@ export function downloadFile(url: string, outputPath: string): Promise<void> {
           downloadedSize += chunk.length
           const progress = totalSize ? Math.round((downloadedSize / totalSize) * 100) : 0
 
-          console.log(`下载进度: ${progress}% (${downloadedSize}/${totalSize})`)
+          // console.log(`下载进度: ${progress}% (${downloadedSize}/${totalSize})`)
 
           if (mainWindow) {
             mainWindow.webContents.send('download-progress', {
