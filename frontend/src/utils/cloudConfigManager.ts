@@ -3,7 +3,7 @@
  * 负责从云端拉取最新的镜像站配置，如果失败则使用本地兜底配置
  */
 
-import type { MirrorCategory, MirrorConfig } from '@/config/mirrors'
+import type { MirrorCategory } from '@/config/mirrors'
 
 export interface CloudMirrorConfig {
   version: string
@@ -18,7 +18,7 @@ export class CloudConfigManager {
   private cloudConfigUrl = 'https://download.auto-mas.top/d/AUTO_MAS/Server/mirrors.json'
   private fallbackConfig: CloudMirrorConfig | null = null
   private currentConfig: CloudMirrorConfig | null = null
-  private fetchTimeout = 3000 // 3秒超时
+  private fetchTimeout = 10000 // 10秒超时
 
   private constructor() {}
 
@@ -40,11 +40,17 @@ export class CloudConfigManager {
    * 从云端拉取最新配置
    */
   async fetchCloudConfig(): Promise<CloudMirrorConfig | null> {
+    const startTime = Date.now()
+    
     try {
-      console.log('正在从云端拉取镜像站配置...')
+      console.log(`正在从云端拉取镜像站配置... (超时时间: ${this.fetchTimeout}ms)`)
+      console.log(`请求URL: ${this.cloudConfigUrl}`)
       
       const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), this.fetchTimeout)
+      const timeoutId = setTimeout(() => {
+        console.warn(`网络请求超时 (${this.fetchTimeout}ms)`)
+        controller.abort()
+      }, this.fetchTimeout)
 
       const response = await fetch(this.cloudConfigUrl, {
         method: 'GET',
@@ -56,6 +62,7 @@ export class CloudConfigManager {
       })
 
       clearTimeout(timeoutId)
+      const responseTime = Date.now() - startTime
 
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`)
@@ -69,11 +76,16 @@ export class CloudConfigManager {
       }
 
       this.currentConfig = config
-      console.log('云端配置拉取成功:', config.version)
+      console.log(`云端配置拉取成功 (耗时: ${responseTime}ms, 版本: ${config.version})`)
       return config
 
     } catch (error) {
-      console.warn('云端配置拉取失败:', error)
+      const responseTime = Date.now() - startTime
+      if (error instanceof Error && error.name === 'AbortError') {
+        console.warn(`云端配置拉取超时 (耗时: ${responseTime}ms)`)
+      } else {
+        console.warn(`云端配置拉取失败 (耗时: ${responseTime}ms):`, error)
+      }
       return null
     }
   }
@@ -126,14 +138,21 @@ export class CloudConfigManager {
   async initializeConfig(fallbackConfig: CloudMirrorConfig): Promise<CloudMirrorConfig> {
     this.setFallbackConfig(fallbackConfig)
     
-    // 尝试拉取云端配置
-    const cloudConfig = await this.fetchCloudConfig()
+    // 尝试拉取云端配置，增加重试机制
+    let cloudConfig = await this.fetchCloudConfig()
+    
+    // 如果第一次失败，等待2秒后重试一次
+    if (!cloudConfig) {
+      console.log('首次拉取云端配置失败，2秒后重试...')
+      await new Promise(resolve => setTimeout(resolve, 2000))
+      cloudConfig = await this.fetchCloudConfig()
+    }
     
     if (cloudConfig) {
       console.log('使用云端配置')
       return cloudConfig
     } else {
-      console.log('使用本地兜底配置')
+      console.log('云端配置拉取失败，使用本地兜底配置')
       return fallbackConfig
     }
   }
