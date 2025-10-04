@@ -1,8 +1,8 @@
 <template>
   <div class="step-panel">
-    <h3>安装 Python 依赖包</h3>
-    <div class="install-section">
-      <p>通过 pip 安装项目所需的 Python 依赖包</p>
+    <h3>Python 运行环境</h3>
+    <div v-if="!pythonInstalled" class="install-section">
+      <p>需要安装 Python 3.13.0 运行环境</p>
 
       <!-- 镜像源 -->
       <div class="mirror-section">
@@ -15,8 +15,8 @@
             v-for="mirror in sortedMirrorMirrors"
             :key="mirror.key"
             class="mirror-card"
-            :class="{ active: selectedPipMirror === mirror.key }"
-            @click="selectedPipMirror = mirror.key"
+            :class="{ active: selectedPythonMirror === mirror.key }"
+            @click="selectedPythonMirror = mirror.key"
           >
             <div class="mirror-header">
               <div class="mirror-title">
@@ -24,14 +24,14 @@
                 <a-tag v-if="mirror.recommended" color="gold" size="small">推荐</a-tag>
               </div>
               <div class="speed-badge" :class="getSpeedClass(mirror.speed ?? null)">
-                <span v-if="mirror.speed === null && !testingPipSpeed">未测试</span>
-                <span v-else-if="testingPipSpeed">测试中...</span>
+                <span v-if="mirror.speed === null && !testingSpeed">未测试</span>
+                <span v-else-if="testingSpeed">测试中...</span>
                 <span v-else-if="mirror.speed === 9999">超时</span>
                 <span v-else>{{ mirror.speed }}ms</span>
               </div>
             </div>
             <div class="mirror-description">{{ mirror.description }}</div>
-            <div class="mirror-url">{{ mirror.url }}</div>
+<!--            <div class="mirror-url">{{ mirror.url }}</div>-->
           </div>
         </div>
       </div>
@@ -47,84 +47,96 @@
             v-for="mirror in sortedOfficialMirrors"
             :key="mirror.key"
             class="mirror-card"
-            :class="{ active: selectedPipMirror === mirror.key }"
-            @click="selectedPipMirror = mirror.key"
+            :class="{ active: selectedPythonMirror === mirror.key }"
+            @click="selectedPythonMirror = mirror.key"
           >
             <div class="mirror-header">
               <div class="mirror-title">
                 <h4>{{ mirror.name }}</h4>
               </div>
               <div class="speed-badge" :class="getSpeedClass(mirror.speed ?? null)">
-                <span v-if="mirror.speed === null && !testingPipSpeed">未测试</span>
-                <span v-else-if="testingPipSpeed">测试中...</span>
+                <span v-if="mirror.speed === null && !testingSpeed">未测试</span>
+                <span v-else-if="testingSpeed">测试中...</span>
                 <span v-else-if="mirror.speed === 9999">超时</span>
                 <span v-else>{{ mirror.speed }}ms</span>
               </div>
             </div>
             <div class="mirror-description">{{ mirror.description }}</div>
-            <div class="mirror-url">{{ mirror.url }}</div>
+<!--            <div class="mirror-url">{{ mirror.url }}</div>-->
           </div>
         </div>
       </div>
 
       <div class="test-actions">
-        <a-button @click="testPipMirrorSpeed" :loading="testingPipSpeed" type="primary">
-          {{ testingPipSpeed ? '测速中...' : '重新测速' }}
+        <a-button @click="testPythonMirrorSpeed" :loading="testingSpeed" type="primary">
+          {{ testingSpeed ? '测速中...' : '重新测速' }}
         </a-button>
         <span class="test-note">3秒无响应视为超时</span>
       </div>
+    </div>
+    <div v-else class="already-installed">
+      <a-result status="success" title="Python已成功安装，无需继续安装" />
+      <!--            <div class="reinstall-section">-->
+      <!--                <a-button type="primary" danger @click="handleForceReinstall" :loading="reinstalling">-->
+      <!--                    {{ reinstalling ? '正在重新安装...' : '强制重新安装' }}-->
+      <!--                </a-button>-->
+      <!--                <p class="reinstall-note">点击此按钮将删除现有Python环境并重新安装</p>-->
+      <!--            </div>-->
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
-import { getConfig, saveConfig } from '@/utils/config'
-import {
+import { getConfig, saveConfig } from '@/utils/config.ts'
+import { 
   sortMirrorsBySpeedAndRecommendation,
-  type MirrorConfig,
-} from '@/config/mirrors'
-import { mirrorManager } from '@/utils/mirrorManager'
+  type MirrorConfig 
+} from '@/config/mirrors.ts'
+import { mirrorManager } from '@/utils/mirrorManager.ts'
 
-const pipMirrors = ref<MirrorConfig[]>([])
+const props = defineProps<{
+  pythonInstalled: boolean
+}>()
+
+const pythonMirrors = ref<MirrorConfig[]>([])
 
 // 按类型分组的镜像源
-const officialMirrors = computed(() => pipMirrors.value.filter(m => m.type === 'official'))
-const mirrorMirrors = computed(() => pipMirrors.value.filter(m => m.type === 'mirror'))
+const officialMirrors = computed(() => pythonMirrors.value.filter(m => m.type === 'official'))
+const mirrorMirrors = computed(() => pythonMirrors.value.filter(m => m.type === 'mirror'))
 
 // 按速度和推荐排序的镜像源
-const sortedOfficialMirrors = computed(() =>
-  sortMirrorsBySpeedAndRecommendation(officialMirrors.value)
-)
+const sortedOfficialMirrors = computed(() => sortMirrorsBySpeedAndRecommendation(officialMirrors.value))
 const sortedMirrorMirrors = computed(() => sortMirrorsBySpeedAndRecommendation(mirrorMirrors.value))
 
-const selectedPipMirror = ref('aliyun')
-const testingPipSpeed = ref(false)
+const selectedPythonMirror = ref('aliyun')
+const testingSpeed = ref(false)
+const reinstalling = ref(false)
 
 // 加载配置中的镜像源选择
 async function loadMirrorConfig() {
   try {
-    // 从镜像管理器获取最新的pip镜像源配置（包含云端数据）
-    const cloudMirrors = mirrorManager.getMirrors('pip')
-    pipMirrors.value = [...cloudMirrors]
+    // 从镜像管理器获取最新的Python镜像源配置（包含云端数据）
+    const cloudMirrors = mirrorManager.getMirrors('python')
+    pythonMirrors.value = [...cloudMirrors]
     
     const config = await getConfig()
-    selectedPipMirror.value = config.selectedPipMirror || 'aliyun'
-    console.log('pip镜像源配置已加载:', selectedPipMirror.value)
-    console.log('云端pip镜像源已加载:', cloudMirrors.length, '个')
-    console.log('云端pip镜像源详情:', cloudMirrors.map(m => ({ name: m.name, key: m.key })))
+    selectedPythonMirror.value = config.selectedPythonMirror || 'aliyun'
+    console.log('Python镜像源配置已加载:', selectedPythonMirror.value)
+    console.log('云端Python镜像源已加载:', cloudMirrors.length, '个')
+    console.log('云端Python镜像源详情:', cloudMirrors.map(m => ({ name: m.name, key: m.key })))
   } catch (error) {
-    console.warn('加载pip镜像源配置失败:', error)
+    console.warn('加载Python镜像源配置失败:', error)
   }
 }
 
 // 保存镜像源选择
 async function saveMirrorConfig() {
   try {
-    await saveConfig({ selectedPipMirror: selectedPipMirror.value })
-    console.log('pip镜像源配置已保存:', selectedPipMirror.value)
+    await saveConfig({ selectedPythonMirror: selectedPythonMirror.value })
+    console.log('Python镜像源配置已保存:', selectedPythonMirror.value)
   } catch (error) {
-    console.warn('保存pip镜像源配置失败:', error)
+    console.warn('保存Python镜像源配置失败:', error)
   }
 }
 
@@ -148,10 +160,10 @@ async function testMirrorWithTimeout(url: string, timeout = 3000): Promise<numbe
   }
 }
 
-async function testPipMirrorSpeed() {
-  testingPipSpeed.value = true
+async function testPythonMirrorSpeed() {
+  testingSpeed.value = true
   try {
-    const promises = pipMirrors.value.map(async mirror => {
+    const promises = pythonMirrors.value.map(async mirror => {
       mirror.speed = await testMirrorWithTimeout(mirror.url)
       return mirror
     })
@@ -159,14 +171,14 @@ async function testPipMirrorSpeed() {
     await Promise.all(promises)
 
     // 优先选择推荐的且速度最快的镜像源
-    const sortedMirrors = sortMirrorsBySpeedAndRecommendation(pipMirrors.value)
+    const sortedMirrors = sortMirrorsBySpeedAndRecommendation(pythonMirrors.value)
     const fastest = sortedMirrors.find(m => m.speed !== 9999)
     if (fastest) {
-      selectedPipMirror.value = fastest.key
+      selectedPythonMirror.value = fastest.key
       await saveMirrorConfig() // 保存最快的镜像源选择
     }
   } finally {
-    testingPipSpeed.value = false
+    testingSpeed.value = false
   }
 }
 
@@ -178,9 +190,38 @@ function getSpeedClass(speed: number | null) {
   return 'speed-slow'
 }
 
+// 强制重新安装Python
+async function handleForceReinstall() {
+  reinstalling.value = true
+  try {
+    console.log('开始强制重新安装Python')
+    // 先删除现有Python目录
+    const deleteResult = await window.electronAPI.deletePython()
+    if (!deleteResult.success) {
+      throw new Error(`删除Python目录失败: ${deleteResult.error}`)
+    }
+
+    // 重新下载安装Python
+    const installResult = await window.electronAPI.downloadPython(selectedPythonMirror.value)
+    if (!installResult.success) {
+      throw new Error(`重新安装Python失败: ${installResult.error}`)
+    }
+
+    console.log('Python强制重新安装成功')
+    // 通知父组件更新状态
+    window.location.reload() // 简单的页面刷新来更新状态
+  } catch (error) {
+    console.error('Python强制重新安装失败:', error)
+    // 这里可以添加错误提示
+  } finally {
+    reinstalling.value = false
+  }
+}
+
 defineExpose({
-  selectedPipMirror,
-  testPipMirrorSpeed,
+  selectedPythonMirror,
+  testPythonMirrorSpeed,
+  handleForceReinstall,
 })
 
 // 组件挂载时加载配置并自动开始测速
@@ -188,10 +229,12 @@ onMounted(async () => {
   // 先加载配置
   await loadMirrorConfig()
 
-  console.log('DependenciesStep 组件挂载，自动开始测速')
-  setTimeout(() => {
-    testPipMirrorSpeed()
-  }, 200) // 延迟200ms确保组件完全渲染
+  if (!props.pythonInstalled) {
+    console.log('PythonStep 组件挂载，自动开始测速')
+    setTimeout(() => {
+      testPythonMirrorSpeed()
+    }, 200) // 延迟200ms确保组件完全渲染
+  }
 })
 </script>
 
@@ -207,6 +250,7 @@ onMounted(async () => {
   font-size: 20px;
   font-weight: 600;
   color: var(--ant-color-text);
+  margin-bottom: 20px;
 }
 
 .install-section {
@@ -224,6 +268,7 @@ onMounted(async () => {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 16px;
+
 }
 
 .mirror-card {
@@ -265,11 +310,38 @@ onMounted(async () => {
   color: var(--ant-color-text);
 }
 
+
+
 .speed-badge {
   padding: 4px 8px;
   border-radius: 4px;
   font-size: 12px;
   font-weight: 500;
+}
+
+.speed-badge.speed-unknown {
+  background: var(--ant-color-fill-tertiary);
+  color: var(--ant-color-text-tertiary);
+}
+
+.speed-badge.speed-fast {
+  background: var(--ant-color-success-bg);
+  color: var(--ant-color-success);
+}
+
+.speed-badge.speed-medium {
+  background: var(--ant-color-warning-bg);
+  color: var(--ant-color-warning);
+}
+
+.speed-badge.speed-slow {
+  background: var(--ant-color-error-bg);
+  color: var(--ant-color-error);
+}
+
+.speed-badge.speed-timeout {
+  background: var(--ant-color-error-bg);
+  color: var(--ant-color-error);
 }
 
 .mirror-description {
@@ -284,6 +356,8 @@ onMounted(async () => {
   color: var(--ant-color-text-tertiary);
   word-break: break-all;
 }
+
+
 
 .section-header {
   display: flex;
@@ -309,5 +383,28 @@ onMounted(async () => {
 .test-note {
   font-size: 12px;
   color: var(--ant-color-text-tertiary);
+}
+
+.already-installed {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  min-height: 200px;
+  gap: 20px;
+}
+
+.reinstall-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.reinstall-note {
+  font-size: 12px;
+  color: var(--ant-color-text-tertiary);
+  text-align: center;
+  margin: 0;
 }
 </style>

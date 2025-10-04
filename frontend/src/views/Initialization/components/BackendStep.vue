@@ -140,12 +140,12 @@
 
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
-import { getConfig, saveConfig } from '@/utils/config'
+import { getConfig, saveConfig } from '@/utils/config.ts'
 import { 
   sortMirrorsBySpeedAndRecommendation,
   type MirrorConfig 
-} from '@/config/mirrors'
-import { mirrorManager } from '@/utils/mirrorManager'
+} from '@/config/mirrors.ts'
+import { mirrorManager } from '@/utils/mirrorManager.ts'
 
 defineProps<{
   backendExists: boolean

@@ -16,7 +16,7 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/initialization',
     name: 'Initialization',
-    component: () => import('../views/Initialization.vue'),
+    component: () => import('../views/Initialization/index.vue'),
     meta: { title: '初始化' },
   },
   {
