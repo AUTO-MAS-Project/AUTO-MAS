@@ -28,7 +28,7 @@ const loadTabsFromStorage = (): SchedulerTab[] => {
         key: 'main',
         title: '主调度台',
         closable: false,
-        status: '新建',
+        status: '空闲',
         selectedTaskId: null,
         selectedMode: TaskCreateIn.mode.AutoMode,
         websocketId: null,
@@ -174,12 +174,12 @@ export function useSchedulerLogic() {
   // Tab 管理
   const addSchedulerTab = (options?: { title?: string, status?: string, websocketId?: string }) => {
     tabCounter++
-    const status = options?.status || '新建'
+    const status = options?.status || '空闲'
     // 使用更安全的类型断言，确保状态值是有效的SchedulerStatus
     const validStatus: SchedulerStatus =
-      ['新建', '运行', '等待', '结束', '异常'].includes(status) ?
+      ['空闲', '运行', '等待', '结束', '异常'].includes(status) ?
         status as SchedulerStatus :
-        '新建'
+        '空闲'
 
     const tab: SchedulerTab = {
       key: `tab-${tabCounter}`,
