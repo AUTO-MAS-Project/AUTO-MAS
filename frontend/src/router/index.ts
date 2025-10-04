@@ -76,7 +76,7 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/queue',
     name: 'Queue',
-    component: () => import('../views/Queue.vue'),
+    component: () => import('../views/queue/index.vue'),
     meta: { title: '调度队列' },
   },
   {

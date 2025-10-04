@@ -13,11 +13,7 @@
       </div>
       <div class="header-actions">
         <a-space size="middle">
-          <a-button
-            type="primary"
-            size="large"
-            @click="handleAddQueue"
-          >
+          <a-button type="primary" size="large" @click="handleAddQueue">
             <template #icon>
               <PlusOutlined />
             </template>
@@ -46,7 +42,7 @@
     <div v-if="!queueList.length || !currentQueueData" class="empty-state">
       <div class="empty-content">
         <div class="empty-image-container">
-          <img src="@/assets/NoData.png" alt="暂无数据" class="empty-image" />
+          <img src="../../assets/NoData.png" alt="暂无数据" class="empty-image" />
         </div>
         <div class="empty-text-content">
           <h3 class="empty-title">暂无队列</h3>
@@ -203,10 +199,15 @@
 <script setup lang="ts">
 import { nextTick, onMounted, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
-import { DeleteOutlined, EditOutlined, PlusOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
+import {
+  DeleteOutlined,
+  EditOutlined,
+  PlusOutlined,
+  QuestionCircleOutlined,
+} from '@ant-design/icons-vue'
 import { Service } from '@/api'
-import TimeSetManager from '@/components/queue/TimeSetManager.vue'
-import QueueItemManager from '@/components/queue/QueueItemManager.vue'
+import QueueItemManager from '@/views/queue/components/QueueItemManager.vue'
+import TimeSetManager from '@/views/queue/components/TimeSetManager.vue'
 
 // 队列列表和当前选中的队列
 const queueList = ref<Array<{ id: string; name: string }>>([])
@@ -706,7 +707,6 @@ onMounted(async () => {
   flex-shrink: 0;
 }
 
-
 /* 空状态 */
 .empty-state {
   display: flex;
@@ -793,7 +793,8 @@ onMounted(async () => {
 }
 
 @keyframes pulse {
-  0%, 100% {
+  0%,
+  100% {
     opacity: 0.6;
     transform: scale(1);
   }
