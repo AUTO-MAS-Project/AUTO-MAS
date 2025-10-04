@@ -366,11 +366,11 @@ import {
   SettingOutlined,
 } from '@ant-design/icons-vue'
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
-import { useUserApi } from '@/composables/useUserApi'
-import { useScriptApi } from '@/composables/useScriptApi'
-import { useWebSocket } from '@/composables/useWebSocket'
+import { useUserApi } from '@/composables/useUserApi.ts'
+import { useScriptApi } from '@/composables/useScriptApi.ts'
+import { useWebSocket } from '@/composables/useWebSocket.ts'
 import { Service } from '@/api'
-import { TaskCreateIn } from '@/api/models/TaskCreateIn'
+import { TaskCreateIn } from '@/api/models/TaskCreateIn.ts'
 import WebhookManager from '@/components/WebhookManager.vue'
 
 // 扩展 Window 接口以支持 Electron API
