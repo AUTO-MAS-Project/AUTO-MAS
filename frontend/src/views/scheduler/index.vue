@@ -71,13 +71,12 @@
           :data-tab-key="tab.key"
         >
           <template #tab>
-            <span class="tab-title">{{ tab.title }}</span>
-            <a-tag :color="TAB_STATUS_COLOR[tab.status]" size="small" class="tab-status">
-              {{ tab.status }}
-            </a-tag>
-            <a-tooltip v-if="tab.status === '运行'" title="运行中的调度台无法删除" placement="top">
-              <LockOutlined class="tab-lock-icon" />
-            </a-tooltip>
+            <div class="tab-content">
+              <span class="tab-title">{{ tab.title }}</span>
+              <a-tag :color="TAB_STATUS_COLOR[tab.status]" size="small" class="tab-status">
+                {{ tab.status }}
+              </a-tag>
+            </div>
           </template>
 
           <!-- 任务控制与状态内容 -->
@@ -146,7 +145,7 @@
 
 <script setup lang="ts">
 import { onMounted, onUnmounted, computed } from 'vue'
-import { LockOutlined, MinusOutlined, PlusOutlined } from '@ant-design/icons-vue'
+import { MinusOutlined, PlusOutlined } from '@ant-design/icons-vue'
 import {
   POWER_ACTION_TEXT,
   TAB_STATUS_COLOR,
@@ -298,6 +297,48 @@ onUnmounted(() => {
   background-color: var(--ant-color-bg-container);
 }
 
+/* 自定义标签页tab内容布局 */
+.tab-content {
+  display: flex;
+  align-items: center;
+  gap: 8px; /* 标题与徽章之间的间距 */
+  position: relative;
+}
+
+.tab-title {
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.tab-status {
+  margin: 0 !important; /* 清除antd默认margin */
+  flex-shrink: 0;
+}
+
+/* 针对运行状态的tab，隐藏关闭按钮 */
+.scheduler-tabs :deep(.ant-tabs-tab) {
+  transition: all 0.2s ease-in-out;
+}
+
+/* 运行状态的标签隐藏关闭按钮并调整宽度 */
+.scheduler-tabs :deep(.ant-tabs-tab[data-closable="false"] .ant-tabs-tab-remove) {
+  display: none !important;
+}
+
+/* 非运行状态的标签显示关闭按钮 */
+.scheduler-tabs :deep(.ant-tabs-tab[data-closable="true"] .ant-tabs-tab-remove) {
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  margin-left: 8px;
+  opacity: 0.7;
+  transition: opacity 0.2s;
+}
+
+.scheduler-tabs :deep(.ant-tabs-tab[data-closable="true"] .ant-tabs-tab-remove:hover) {
+  opacity: 1;
+}
+
 /* 自定义标签页操作按钮 */
 .tab-actions {
   display: flex;
@@ -355,7 +396,7 @@ onUnmounted(() => {
 }
 
 /* 根据状态变化的样式 */
-.task-unified-card.status-新建 {
+.task-unified-card.status-空闲 {
   background-color: transparent;
 }
 
