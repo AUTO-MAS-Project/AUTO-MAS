@@ -506,8 +506,30 @@ function createWindow() {
   setGitMainWindow(win)
   log.info('主窗口创建完成，服务引用已设置')
 
-  // 根据配置初始化托盘
+  // 初始托盘配置（使用文件配置）
   updateTrayVisibility(config)
+
+  // 等待窗口准备完成后再初始化托盘和处理启动配置
+  win.webContents.once('did-finish-load', () => {
+    // 重新加载配置以确保获取最新配置
+    const currentConfig = loadConfig()
+
+    // 根据配置初始化托盘
+    updateTrayVisibility(currentConfig)
+
+    // 处理启动后直接最小化
+    if (currentConfig.Start.IfMinimizeDirectly) {
+      if (currentConfig.UI.IfToTray) {
+        win.hide()
+        win.setSkipTaskbar(true)
+        log.info('应用启动后直接最小化到托盘')
+      } else {
+        win.minimize()
+        log.info('应用启动后直接最小化')
+      }
+      updateTrayVisibility(currentConfig)
+    }
+  })
 }
 
 // 保存窗口状态（带防抖）
@@ -1160,6 +1182,52 @@ ipcMain.handle('update-tray-settings', async (_event, uiSettings) => {
     return true
   } catch (error) {
     log.error('更新托盘设置失败:', error)
+    throw error
+  }
+})
+
+// 新增：同步后端配置的IPC处理器
+ipcMain.handle('sync-backend-config', async (_event, backendSettings) => {
+  try {
+    const currentConfig = loadConfig()
+
+    // 同步UI配置
+    if (backendSettings.UI) {
+      currentConfig.UI = { ...currentConfig.UI, ...backendSettings.UI }
+    }
+
+    // 同步Start配置
+    if (backendSettings.Start) {
+      currentConfig.Start = { ...currentConfig.Start, ...backendSettings.Start }
+    }
+
+    // 保存到前端配置文件
+    saveConfig(currentConfig)
+
+    // 更新托盘状态
+    updateTrayVisibility(currentConfig)
+
+    // 处理启动后直接最小化（如果当前窗口仍然可见）
+    if (currentConfig.Start.IfMinimizeDirectly && mainWindow && mainWindow.isVisible() && !mainWindow.isMinimized()) {
+      setTimeout(() => {
+        if (mainWindow && mainWindow.isVisible() && !mainWindow.isMinimized()) {
+          if (currentConfig.UI.IfToTray) {
+            mainWindow.hide()
+            mainWindow.setSkipTaskbar(true)
+            log.info('同步配置后执行启动最小化到托盘')
+          } else {
+            mainWindow.minimize()
+            log.info('同步配置后执行启动最小化')
+          }
+          updateTrayVisibility(currentConfig)
+        }
+      }, 500) // 给一些延迟确保UI准备完成
+    }
+
+    log.info('后端配置已同步:', backendSettings)
+    return true
+  } catch (error) {
+    log.error('同步后端配置失败:', error)
     throw error
   }
 })

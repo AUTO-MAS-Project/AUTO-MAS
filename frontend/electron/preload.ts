@@ -54,6 +54,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 托盘设置实时更新
   updateTraySettings: (uiSettings: any) => ipcRenderer.invoke('update-tray-settings', uiSettings),
 
+  // 同步后端配置
+  syncBackendConfig: (backendSettings: any) => ipcRenderer.invoke('sync-backend-config', backendSettings),
+
   // 日志文件操作
   getLogPath: () => ipcRenderer.invoke('get-log-path'),
   getLogFiles: () => ipcRenderer.invoke('get-log-files'),

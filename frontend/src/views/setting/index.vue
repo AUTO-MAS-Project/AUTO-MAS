@@ -144,7 +144,22 @@ const themeColorOptions = Object.entries(themeColors).map(([key, color]) => ({
 // 加载和保存
 const loadSettings = async () => {
   const data = await getSettings()
-  if (data) Object.assign(settings, data)
+  if (data) {
+    Object.assign(settings, data)
+    
+    // 同步配置到 Electron 主进程
+    try {
+      if ((window as any).electronAPI?.syncBackendConfig) {
+        await (window as any).electronAPI.syncBackendConfig({
+          UI: data.UI,
+          Start: data.Start
+        })
+        console.log('后端配置已同步到 Electron')
+      }
+    } catch (e) {
+      console.error('同步配置到 Electron 失败', e)
+    }
+  }
 }
 
 const saveSettings = async (category: keyof SettingsData, changes: any) => {
@@ -161,6 +176,8 @@ const saveSettings = async (category: keyof SettingsData, changes: any) => {
 const handleSettingChange = async (category: keyof SettingsData, key: string, value: any) => {
   const changes = { [key]: value }
   await saveSettings(category, changes)
+  
+  // 处理托盘相关配置
   if (category === 'UI' && (key === 'IfShowTray' || key === 'IfToTray')) {
     try {
       if ((window as any).electronAPI?.updateTraySettings) {
@@ -171,6 +188,21 @@ const handleSettingChange = async (category: keyof SettingsData, key: string, va
       message.error('托盘设置更新失败')
     }
   }
+  
+  // 处理启动配置
+  if (category === 'Start' && key === 'IfMinimizeDirectly') {
+    try {
+      if ((window as any).electronAPI?.syncBackendConfig) {
+        await (window as any).electronAPI.syncBackendConfig({
+          Start: { [key]: value }
+        })
+      }
+    } catch (e) {
+      console.error('同步启动配置失败', e)
+      message.error('启动配置同步失败')
+    }
+  }
+  
   if (category === 'Update' && key === 'IfAutoUpdate') {
     try {
       await restartPolling()
