@@ -2,6 +2,7 @@
 import { ref, type Ref } from 'vue'
 import schedulerHandlers from '@/views/scheduler/schedulerHandlers'
 import { Modal } from 'ant-design-vue'
+import { useAppClosing } from '@/composables/useAppClosing'
 
 // ====== 配置项 ======
 const BASE_WS_URL = 'ws://localhost:36163/api/core/ws'
@@ -290,6 +291,10 @@ const showReconnectFailureModal = () => {
     maskClosable: false,
     onOk: () => {
       log('用户选择重启整个应用')
+      // 显示关闭遮罩
+      const { showClosingOverlay } = useAppClosing()
+      showClosingOverlay()
+      
       // 重启整个应用
       if ((window.electronAPI as any)?.appRestart) {
         ; (window.electronAPI as any).appRestart()
@@ -365,6 +370,10 @@ const handleBackendFailure = async () => {
       content: '后端服务多次重启失败，请重启整个应用程序。',
       okText: '重启应用',
       onOk: () => {
+        // 显示关闭遮罩
+        const { showClosingOverlay } = useAppClosing()
+        showClosingOverlay()
+        
         if ((window.electronAPI as any)?.appRestart) {
           ; (window.electronAPI as any).appRestart()
         } else if ((window.electronAPI as any)?.windowClose) {
