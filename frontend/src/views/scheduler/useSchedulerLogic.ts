@@ -301,10 +301,8 @@ export function useSchedulerLogic() {
     try {
       await Service.stopTaskApiDispatchStopPost({ taskId: tab.websocketId })
 
-      // 本地乐观刷新：将“运行/运行中”改为“等待”，立即回放到总览面板
-      refreshOverviewDisplay(tab, { optimisticStop: true })
-
-      // 等待后端通过 WebSocket 发送真实结束/更新信号进行最终同步
+      // 等待后端通过 WebSocket 发送真实结束/更新信号进行同步
+      message.info('正在停止任务，请稍候...')
       saveTabsToStorage(schedulerTabs.value)
     } catch (error) {
       console.error('停止任务失败:', error)
@@ -422,7 +420,7 @@ export function useSchedulerLogic() {
           const userStatuses = users.map((u: any) => u.status)
           let scriptStatus = '等待'
           if (userStatuses.includes('异常') || userStatuses.includes('失败')) scriptStatus = '异常'
-          else if (userStatuses.includes('运行中')) scriptStatus = '运行中'
+          else if (userStatuses.includes('运行')) scriptStatus = '运行'
           else if (userStatuses.length > 0 && userStatuses.every((s: string) => s === '已完成')) scriptStatus = '已完成'
           tab.overviewData = [
             {
@@ -437,7 +435,7 @@ export function useSchedulerLogic() {
           const userStatuses = users.map((u: any) => u.status)
           let scriptStatus = '等待'
           if (userStatuses.includes('异常') || userStatuses.includes('失败')) scriptStatus = '异常'
-          else if (userStatuses.includes('运行中')) scriptStatus = '运行中'
+          else if (userStatuses.includes('运行')) scriptStatus = '运行'
           else if (userStatuses.length > 0 && userStatuses.every((s: string) => s === '已完成')) scriptStatus = '已完成'
           // 更新第一个脚本
           tab.overviewData = [
@@ -450,14 +448,78 @@ export function useSchedulerLogic() {
           ]
         }
       } else if (data.task_list && Array.isArray(data.task_list)) {
-        // 将 task_list 转为 Script[]
-        const converted: Script[] = data.task_list.map((task: any) => ({
-          script_id: task.id || task.script_id || `task_${Date.now()}`,
-          name: task.name || '未知任务',
-          status: task.status || '等待',
-          user_list: task.user_list || [],
-        }))
-        tab.overviewData = converted
+        // 修复：更完善的 task_list 处理逻辑
+        console.log('[Scheduler] 处理 task_list 更新:', data.task_list)
+
+        // 如果已有 overviewData，尝试合并状态信息
+        if (tab.overviewData && tab.overviewData.length > 0) {
+          // 根据任务名称或ID匹配更新状态
+          const updatedOverviewData = tab.overviewData.map(script => {
+            const matchingTask = data.task_list.find((task: any) =>
+              task.name === script.name ||
+              task.id === script.script_id ||
+              task.script_id === script.script_id
+            )
+
+            if (matchingTask) {
+              return {
+                ...script,
+                status: matchingTask.status || script.status,
+                // 如果 task_list 包含 user_list，则使用新的用户列表，否则保持现有的
+                user_list: matchingTask.user_list ? [...matchingTask.user_list] : script.user_list,
+              }
+            }
+            return script
+          })
+
+          // 如果有新的任务不在现有数据中，添加它们
+          const newTasks = data.task_list.filter((task: any) =>
+            !tab.overviewData!.some(script =>
+              task.name === script.name ||
+              task.id === script.script_id ||
+              task.script_id === script.script_id
+            )
+          )
+
+          if (newTasks.length > 0) {
+            const convertedNewTasks: Script[] = newTasks.map((task: any) => ({
+              script_id: task.id || task.script_id || `task_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+              name: task.name || '未知任务',
+              status: task.status || '等待',
+              user_list: task.user_list ? [...task.user_list] : [], // 使用后端提供的 user_list
+            }))
+            updatedOverviewData.push(...convertedNewTasks)
+          }
+
+          tab.overviewData = updatedOverviewData
+        } else {
+          // 如果没有现有数据，直接转换
+          const converted: Script[] = data.task_list.map((task: any) => ({
+            script_id: task.id || task.script_id || `task_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            name: task.name || '未知任务',
+            status: task.status || '等待',
+            user_list: task.user_list ? [...task.user_list] : [], // 使用后端提供的 user_list
+          }))
+          tab.overviewData = converted
+        }
+
+        console.log('[Scheduler] 更新后的 overviewData:', tab.overviewData)
+
+        // 立即同步更新到总览组件
+        const overviewPanel = overviewRefs.value.get(tab.key)
+        if (overviewPanel && overviewPanel.handleWSMessage && tab.overviewData) {
+          const syncMessage = {
+            type: 'Update',
+            id: tab.websocketId,
+            data: { task_dict: tab.overviewData }
+          }
+          console.log('[Scheduler] 同步 task_list 更新到总览组件:', syncMessage)
+          try {
+            overviewPanel.handleWSMessage(syncMessage)
+          } catch (e) {
+            console.warn('[Scheduler] 同步 task_list 到总览组件失败:', e)
+          }
+        }
       }
     } catch (e) {
       console.warn('[Scheduler] 维护 overviewData 快照时出现问题:', e)
@@ -808,11 +870,11 @@ export function useSchedulerLogic() {
       console.warn('[Scheduler] schedulerHandlers registration failed:', e)
     }
 
-    // 新增：为已有的“运行中”标签恢复 WebSocket 订阅，防止路由切换返回后不再更新
+    // 新增：为已有的"运行"标签恢复 WebSocket 订阅，防止路由切换返回后不再更新
     try {
       schedulerTabs.value.forEach(tab => {
         if (tab.status === '运行' && tab.websocketId) {
-          console.log('[Scheduler] 初始化阶段为运行中的标签恢复订阅:', { key: tab.key, websocketId: tab.websocketId })
+          console.log('[Scheduler] 初始化阶段为运行的标签恢复订阅:', { key: tab.key, websocketId: tab.websocketId })
           subscribeToTask(tab)
         }
       })
@@ -872,7 +934,7 @@ export function useSchedulerLogic() {
     // 不再清理或重置导出的处理函数，保持使用者注册的处理逻辑永久有效
 
     // 在组件卸载时，只取消非运行状态任务的订阅
-    // 运行中任务的订阅将保持，以便在后台继续接收消息
+    // 运行任务的订阅将保持，以便在后台继续接收消息
     schedulerTabs.value.forEach(tab => {
       if (tab.subscriptionId && tab.status !== '运行') {
         ws.unsubscribe(tab.subscriptionId)
@@ -883,49 +945,14 @@ export function useSchedulerLogic() {
     savePowerActionToStorage(powerAction.value)
   }
 
-  // 在面板上刷新任务总览显示（支持停止后的乐观更新）
-  const refreshOverviewDisplay = (tab: SchedulerTab, options?: { optimisticStop?: boolean }) => {
-    try {
-      const panel = overviewRefs.value.get(tab.key)
-      if (!tab.overviewData || !panel || !panel.handleWSMessage) return
-
-      let nextData: Script[] = tab.overviewData
-
-      if (options?.optimisticStop) {
-        // 将“运行/运行中”的用户标记为“等待”，并据此推导脚本状态
-        nextData = tab.overviewData.map(scr => {
-          const nextUsers = (scr.user_list || []).map(u => {
-            if (u.status === '运行' || u.status === '运行中') {
-              return { ...u, status: '等待' }
-            }
-            return u
-          })
-          // 推导脚本状态
-          const statuses = nextUsers.map(u => u.status)
-          let s = '等待'
-          if (statuses.includes('异常') || statuses.includes('失败')) s = '异常'
-          else if (statuses.includes('运行') || statuses.includes('运行中')) s = '运行中'
-          else if (statuses.length > 0 && statuses.every(st => st === '已完成')) s = '已完成'
-          else if (statuses.includes('等待')) s = '等待'
-          return { ...scr, user_list: nextUsers, status: s }
-        })
-        // 保存回快照
-        tab.overviewData = nextData
-      }
-
-      // 立即回放
-      const wsMessage = { type: 'Update', id: tab.websocketId, data: { task_dict: nextData } }
-      panel.handleWSMessage(wsMessage)
-    } catch (e) {
-      console.warn('[Scheduler] 刷新任务总览显示失败:', e)
-    }
-  }
-
   return {
     // 状态
     schedulerTabs,
     activeSchedulerTab,
     logRefs,
+    // 将“运行/运行中”的用户标记为“等待”，并据此推导脚本状态
+
+
     taskOptionsLoading,
     taskOptions,
     powerAction,
