@@ -29,9 +29,9 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { useTheme } from '@/composables/useTheme'
-import { getConfig, saveThemeConfig } from '@/utils/config'
-import type { ThemeMode, ThemeColor } from '@/composables/useTheme'
+import { useTheme } from '@/composables/useTheme.ts'
+import { getConfig, saveThemeConfig } from '@/utils/config.ts'
+import type { ThemeMode, ThemeColor } from '@/composables/useTheme.ts'
 
 const { themeColors, setThemeMode, setThemeColor } = useTheme()
 

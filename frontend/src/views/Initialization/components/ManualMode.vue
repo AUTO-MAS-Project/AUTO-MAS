@@ -138,8 +138,8 @@
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue'
 import { notification } from 'ant-design-vue'
-import { saveConfig } from '@/utils/config'
-import { useUpdateChecker } from '@/composables/useUpdateChecker'
+import { saveConfig } from '@/utils/config.ts'
+import { useUpdateChecker } from '@/composables/useUpdateChecker.ts'
 import ThemeStep from './ThemeStep.vue'
 import PythonStep from './PythonStep.vue'
 
@@ -147,7 +147,7 @@ import GitStep from './GitStep.vue'
 import BackendStep from './BackendStep.vue'
 import DependenciesStep from './DependenciesStep.vue'
 import ServiceStep from './ServiceStep.vue'
-import { connectAfterBackendStart } from '@/composables/useWebSocket'
+import { connectAfterBackendStart } from '@/composables/useWebSocket.ts'
 
 
 
