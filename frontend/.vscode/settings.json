@@ -1,0 +1,18 @@
+{
+  "typescript.tsdk": "node_modules/typescript/lib",
+  "eslint.experimental.useFlatConfig": true,
+  "eslint.validate": [
+    "javascript",
+    "typescript",
+    "vue",
+    "json",
+    "jsonc"
+  ],
+  "editor.codeActionsOnSave": {
+    "source.fixAll": true,
+    "source.fixAll.eslint": true
+  },
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "editor.formatOnSave": true,
+  "vue.compiler.generateSlots": true
+}
