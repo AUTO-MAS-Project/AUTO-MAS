@@ -598,14 +598,14 @@ class EmulatorManagerConfig(ConfigBase):
             "blueStacks",
         ]
 
-        self.EmulatorType = ConfigItem(
+        self.Info_Type = ConfigItem(
             "Info", "Type", "general", OptionsValidator(EmulatorType)
         )
-        self.Path = ConfigItem("Data", "Path", "")
+        self.Data_Path = ConfigItem("Data", "Path", "")
 
-        self.Boss_keys = ConfigItem("Data", "Boss_keys", "[]", JSONValidator())
+        self.Data_Boss_keys = ConfigItem("Data", "Boss_keys", "[]", JSONValidator(list))
 
-        self.max_wait_time = ConfigItem(
+        self.Data_max_wait_time = ConfigItem(
             "Data", "max_wait_time", 60, RangeValidator(-1, 9999)
         )
 
