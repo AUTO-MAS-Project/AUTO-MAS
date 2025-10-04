@@ -725,7 +725,6 @@ onMounted(() => {
   background: transparent !important;
   border: none !important;
   padding: 0 6px !important;
-  font-size: 13px !important;
   min-height: 28px !important;
   line-height: 26px !important;
   box-shadow: none !important;
@@ -735,7 +734,6 @@ onMounted(() => {
 .script-select :deep(.ant-select-selection-item) {
   line-height: 26px !important;
   color: var(--ant-color-text) !important;
-  font-size: 13px !important;
   font-weight: 500;
   padding: 0;
   margin: 0;
@@ -744,7 +742,6 @@ onMounted(() => {
 .script-select :deep(.ant-select-selection-placeholder) {
   line-height: 26px !important;
   color: var(--ant-color-text-placeholder) !important;
-  font-size: 13px !important;
   padding: 0;
   margin: 0;
 }
@@ -806,10 +803,6 @@ onMounted(() => {
 
 .script-select :deep(.ant-select-item) {
   padding: 8px 12px !important;
-  font-size: 13px !important;
 }
 
-.script-select :deep(.ant-select-item-option-content) {
-  font-size: 13px !important;
-}
 </style>
