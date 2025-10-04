@@ -38,7 +38,6 @@ export const getQueueStatusColor = (status: string): string => {
 export const TASK_MODE_OPTIONS = [
   { label: TaskCreateIn.mode.AutoMode, value: TaskCreateIn.mode.AutoMode },
   { label: TaskCreateIn.mode.ManualMode, value: TaskCreateIn.mode.ManualMode },
-  { label: TaskCreateIn.mode.SettingScriptMode, value: TaskCreateIn.mode.SettingScriptMode },
 ]
 
 // 电源操作映射
