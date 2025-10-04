@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { h, onMounted, ref } from 'vue'
+// 挂载和卸载键盘监听
+import { h, onMounted, onUnmounted, ref } from 'vue'
 import { message } from 'ant-design-vue'
 import {
   CloseOutlined,
@@ -14,6 +15,16 @@ import {
 import draggable from 'vuedraggable'
 import type { EmulatorIndexItem, EmulatorInfo, EmulatorSearchResult } from '@/api'
 import { Service } from '@/api'
+
+// 模拟器类型映射
+const emulatorTypeOptions = [
+  { value: 'general', label: '通用模拟器' },
+  { value: 'mumu', label: 'MuMu模拟器' },
+  { value: 'ldplayer', label: '雷电模拟器' },
+  { value: 'nox', label: '夜神模拟器' },
+  { value: 'memu', label: '逍遥模拟器' },
+  { value: 'blueStacks', label: 'BlueStacks' },
+]
 
 // 数据状态
 const loading = ref(false)
@@ -32,6 +43,11 @@ const editingData = ref<EmulatorInfo>({
   max_wait_time: 60,
   boss_keys: [],
 })
+
+// 老板键录制状态
+const recordingBossKey = ref(false)
+const recordedKeys = ref<Set<string>>(new Set())
+const bossKeyInput = ref('')
 
 // 加载模拟器列表
 const loadEmulators = async () => {
@@ -56,12 +72,17 @@ const loadEmulators = async () => {
 
 // 添加模拟器
 const handleAdd = async () => {
+  // 如果有正在编辑的模拟器，先保存
+  if (editingId.value) {
+    await handleSave(editingId.value)
+  }
+
   try {
     const response = await Service.addEmulatorApiSettingEmulatorAddPost()
     if (response.code === 200) {
       message.success('添加成功')
       await loadEmulators()
-      // 自动进入编辑模式
+      // 自动进入编辑模式，焦点切换到新模拟器
       editingId.value = response.emulatorId
       editingData.value = { ...response.data }
     } else {
@@ -74,7 +95,12 @@ const handleAdd = async () => {
 }
 
 // 开始编辑
-const handleEdit = (uuid: string) => {
+const handleEdit = async (uuid: string) => {
+  // 如果有正在编辑的其他模拟器，先保存
+  if (editingId.value && editingId.value !== uuid) {
+    await handleSave(editingId.value)
+  }
+
   editingId.value = uuid
   editingData.value = { ...emulatorData.value[uuid] }
 }
@@ -109,6 +135,8 @@ const handleCancel = () => {
     max_wait_time: 60,
     boss_keys: [],
   }
+  recordingBossKey.value = false
+  recordedKeys.value.clear()
 }
 
 // 删除模拟器
@@ -205,26 +233,109 @@ const handleDragEnd = async (newIndex: EmulatorIndexItem[]) => {
   }
 }
 
-// Boss键输入处理
-const bossKeyInput = ref('')
-const handleAddBossKey = () => {
-  if (bossKeyInput.value.trim() && editingData.value.boss_keys) {
-    if (!editingData.value.boss_keys.includes(bossKeyInput.value.trim())) {
-      editingData.value.boss_keys.push(bossKeyInput.value.trim())
-      bossKeyInput.value = ''
+// 路径选择
+const selectEmulatorPath = async () => {
+  try {
+    if (!window.electronAPI) {
+      message.error('文件选择功能不可用，请在 Electron 环境中运行')
+      return
     }
+
+    const paths = await (window.electronAPI as any).selectFile([
+      { name: '可执行文件', extensions: ['exe'] },
+      { name: '所有文件', extensions: ['*'] },
+    ])
+    if (paths && paths.length > 0) {
+      editingData.value.path = paths[0]
+      message.success('模拟器路径选择成功')
+    }
+  } catch (error) {
+    console.error('选择模拟器路径失败:', error)
+    message.error('选择文件失败')
   }
 }
 
-const handleRemoveBossKey = (key: string) => {
-  if (editingData.value.boss_keys) {
-    editingData.value.boss_keys = editingData.value.boss_keys.filter(k => k !== key)
+// 开始录制老板键
+const startRecordBossKey = () => {
+  recordingBossKey.value = true
+  recordedKeys.value.clear()
+  bossKeyInput.value = ''
+  message.info('请按下快捷键组合...')
+}
+
+// 停止录制老板键
+const stopRecordBossKey = () => {
+  recordingBossKey.value = false
+  recordedKeys.value.clear()
+  bossKeyInput.value = ''
+}
+
+// 键盘事件处理
+const handleKeyDown = (event: KeyboardEvent) => {
+  if (!recordingBossKey.value) return
+
+  event.preventDefault()
+  event.stopPropagation()
+
+  const keys: string[] = []
+
+  if (event.ctrlKey) keys.push('Ctrl')
+  if (event.shiftKey) keys.push('Shift')
+  if (event.altKey) keys.push('Alt')
+  if (event.metaKey) keys.push('Meta')
+
+  // 获取主键
+  const mainKey = event.key
+  if (mainKey !== 'Control' && mainKey !== 'Shift' && mainKey !== 'Alt' && mainKey !== 'Meta') {
+    // 将字母转为大写
+    const displayKey = mainKey.length === 1 ? mainKey.toUpperCase() : mainKey
+    keys.push(displayKey)
+  }
+
+  if (keys.length > 0) {
+    recordedKeys.value = new Set(keys)
+  }
+}
+
+const handleKeyUp = (event: KeyboardEvent) => {
+  if (!recordingBossKey.value) return
+
+  event.preventDefault()
+  event.stopPropagation()
+
+  // 如果已经记录了按键，停止录制并设置为老板键
+  if (recordedKeys.value.size > 0) {
+    const keyCombo = Array.from(recordedKeys.value).join('+')
+    editingData.value.boss_keys = [keyCombo]
+    message.success(`已设置老板键: ${keyCombo}`)
+    recordingBossKey.value = false
+    recordedKeys.value.clear()
   }
 }
 
 onMounted(() => {
   loadEmulators()
+  document.addEventListener('keydown', handleKeyDown)
+  document.addEventListener('keyup', handleKeyUp)
 })
+
+onUnmounted(() => {
+  document.removeEventListener('keydown', handleKeyDown)
+  document.removeEventListener('keyup', handleKeyUp)
+})
+
+const handleSetBossKey = () => {
+  if (bossKeyInput.value.trim()) {
+    editingData.value.boss_keys = [bossKeyInput.value.trim()]
+    bossKeyInput.value = ''
+    message.success('老板键已设置')
+  }
+}
+
+const handleRemoveBossKey = () => {
+  editingData.value.boss_keys = []
+  message.success('老板键已清除')
+}
 </script>
 
 <template>
@@ -324,7 +435,12 @@ onMounted(() => {
                           <QuestionCircleOutlined class="help-icon" />
                         </a-tooltip>
                       </div>
-                      <a-input v-model:value="editingData.type" placeholder="模拟器类型" />
+                      <a-select
+                        v-model:value="editingData.type"
+                        placeholder="选择模拟器类型"
+                        :options="emulatorTypeOptions"
+                        style="width: 100%"
+                      />
                     </div>
                   </a-col>
                   <a-col :span="12">
@@ -337,9 +453,11 @@ onMounted(() => {
                       </div>
                       <a-input-number
                         v-model:value="editingData.max_wait_time"
-                        :min="10"
-                        :max="300"
+                        placeholder="输入最大等待时间"
                         style="width: 100%"
+                        min="10"
+                        max="300"
+                        step="5"
                       />
                     </div>
                   </a-col>
@@ -352,7 +470,14 @@ onMounted(() => {
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </div>
-                  <a-input v-model:value="editingData.path" placeholder="C:\Program Files\..." />
+                  <div style="display: flex; gap: 8px">
+                    <a-input
+                      v-model:value="editingData.path"
+                      placeholder="输入模拟器路径"
+                      :disabled="true"
+                    />
+                    <a-button @click="selectEmulatorPath">选择路径</a-button>
+                  </div>
                 </div>
 
                 <div class="form-item-vertical">
@@ -365,10 +490,21 @@ onMounted(() => {
                   <div style="display: flex; gap: 8px; margin-bottom: 8px">
                     <a-input
                       v-model:value="bossKeyInput"
-                      placeholder="输入快捷键，如 Ctrl+Q"
-                      @press-enter="handleAddBossKey"
+                      :placeholder="
+                        recordingBossKey ? '请按下快捷键组合...' : '输入快捷键，如 Ctrl+Q'
+                      "
+                      :disabled="recordingBossKey"
+                      @press-enter="handleSetBossKey"
                     />
-                    <a-button @click="handleAddBossKey">添加</a-button>
+                    <a-button v-if="!recordingBossKey" type="default" @click="startRecordBossKey">
+                      录制
+                    </a-button>
+                    <a-button v-else type="primary" danger @click="stopRecordBossKey">
+                      取消录制
+                    </a-button>
+                    <a-button @click="handleSetBossKey" :disabled="recordingBossKey">
+                      设置
+                    </a-button>
                   </div>
                   <div
                     v-if="editingData.boss_keys && editingData.boss_keys.length > 0"
@@ -378,36 +514,11 @@ onMounted(() => {
                       v-for="key in editingData.boss_keys"
                       :key="key"
                       closable
-                      @close="handleRemoveBossKey(key)"
+                      @close="handleRemoveBossKey()"
                     >
                       {{ key }}
                     </a-tag>
                   </div>
-                </div>
-              </div>
-
-              <div v-else class="card-content card-content-view">
-                <div class="info-row">
-                  <span class="info-label">类型：</span>
-                  <span class="info-value">{{ emulatorData[element.uuid]?.type || '未设置' }}</span>
-                </div>
-                <div class="info-row">
-                  <span class="info-label">路径：</span>
-                  <span class="info-value">{{ emulatorData[element.uuid]?.path || '未设置' }}</span>
-                </div>
-                <div class="info-row">
-                  <span class="info-label">等待时间：</span>
-                  <span class="info-value"
-                    >{{ emulatorData[element.uuid]?.max_wait_time || 60 }} 秒</span
-                  >
-                </div>
-                <div v-if="emulatorData[element.uuid]?.boss_keys?.length" class="info-row">
-                  <span class="info-label">老板键：</span>
-                  <span class="info-value">
-                    <a-tag v-for="key in emulatorData[element.uuid].boss_keys" :key="key">{{
-                      key
-                    }}</a-tag>
-                  </span>
                 </div>
               </div>
             </div>
@@ -416,72 +527,103 @@ onMounted(() => {
       </a-spin>
     </div>
 
-    <!-- 搜索结果弹窗 -->
-    <a-modal v-model:open="showSearchModal" title="搜索到的模拟器" :footer="null" width="600px">
-      <div class="search-results">
-        <a-list :data-source="searchResults" :loading="searching">
+    <!-- 搜索结果导入模态框 -->
+    <a-modal v-model:visible="showSearchModal" title="搜索到的模拟器" width="600" :footer="null">
+      <a-spin :spinning="searching">
+        <div v-if="searchResults.length === 0" class="empty-state">
+          <a-empty description="未找到任何模拟器" />
+        </div>
+
+        <a-list v-else item-layout="horizontal" :data-source="searchResults">
           <template #renderItem="{ item }">
             <a-list-item>
-              <a-list-item-meta>
-                <template #title>{{ item.name }}</template>
-                <template #description>
-                  <div>类型: {{ item.type }}</div>
-                  <div>路径: {{ item.path }}</div>
-                </template>
-              </a-list-item-meta>
               <template #actions>
                 <a-button type="primary" size="small" @click="handleImportFromSearch(item)">
                   导入
                 </a-button>
               </template>
+              <a-list-item-meta :title="item.name" :description="`${item.type} - ${item.path}`" />
             </a-list-item>
           </template>
         </a-list>
-      </div>
+      </a-spin>
     </a-modal>
   </div>
 </template>
 
 <style scoped>
+.tab-content {
+  padding: 24px;
+  background: var(--bg-color-container);
+  border-radius: 8px;
+  min-height: 100vh;
+}
+
+.form-section {
+  background: var(--bg-color-elevated);
+  padding: 24px;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.section-header h3 {
+  color: var(--text-color-primary);
+  margin: 0;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 48px 0;
+}
+
 .emulator-card {
-  background: var(--ant-color-bg-container);
-  border: 1px solid var(--ant-color-border);
+  background: var(--bg-color-container);
+  border: 1px solid var(--border-color);
   border-radius: 8px;
   margin-bottom: 16px;
-  overflow: hidden;
-  transition: all 0.3s ease;
+  padding: 16px;
+  transition: all 0.3s;
 }
 
 .emulator-card:hover {
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  border-color: var(--border-color-hover);
 }
 
 .card-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 16px 20px;
-  background: var(--ant-color-bg-layout);
-  border-bottom: 1px solid var(--ant-color-border);
+  margin-bottom: 16px;
 }
 
 .card-title {
   display: flex;
   align-items: center;
-  gap: 12px;
+  color: var(--text-color-primary);
+}
+
+.card-title span {
   font-size: 16px;
   font-weight: 600;
-  color: var(--ant-color-text);
 }
 
 .drag-handle {
   cursor: move;
-  font-size: 16px;
-  color: var(--ant-color-text-secondary);
+  margin-right: 8px;
+  color: var(--text-color-secondary);
+  transition: color 0.3s;
 }
 
 .drag-handle:hover {
-  color: var(--ant-color-primary);
+  color: var(--primary-color);
 }
 
 .card-actions {
@@ -490,45 +632,71 @@ onMounted(() => {
 }
 
 .card-content {
-  padding: 20px;
+  margin-top: 16px;
 }
 
-.card-content-view {
-  background: var(--ant-color-bg-layout);
+.form-item-vertical {
+  margin-bottom: 16px;
 }
 
-.info-row {
+.form-label-wrapper {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   margin-bottom: 8px;
-  line-height: 1.8;
 }
 
-.info-label {
-  font-weight: 600;
-  color: var(--ant-color-text);
-  min-width: 80px;
-  flex-shrink: 0;
+.form-label {
+  font-weight: 500;
+  margin-right: 8px;
+  color: var(--text-color-primary);
 }
 
-.info-value {
-  color: var(--ant-color-text-secondary);
-  word-break: break-all;
+.help-icon {
+  color: var(--text-color-tertiary);
 }
 
 .boss-key-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  margin-top: 8px;
 }
 
-.empty-state {
-  padding: 60px 20px;
-  text-align: center;
+.ant-list-item-meta {
+  flex: 1;
 }
 
-.search-results {
-  max-height: 500px;
-  overflow-y: auto;
+/* 暗色模式支持 */
+:root {
+  --bg-color-container: #f9f9f9;
+  --bg-color-elevated: #ffffff;
+  --border-color: #e8e8e8;
+  --border-color-hover: #d9d9d9;
+  --text-color-primary: rgba(0, 0, 0, 0.88);
+  --text-color-secondary: rgba(0, 0, 0, 0.65);
+  --text-color-tertiary: rgba(0, 0, 0, 0.45);
+  --primary-color: #1890ff;
+}
+
+html.dark {
+  --bg-color-container: #1f1f1f;
+  --bg-color-elevated: #141414;
+  --border-color: #303030;
+  --border-color-hover: #434343;
+  --text-color-primary: rgba(255, 255, 255, 0.88);
+  --text-color-secondary: rgba(255, 255, 255, 0.65);
+  --text-color-tertiary: rgba(255, 255, 255, 0.45);
+  --primary-color: #1890ff;
+}
+
+/* 暗色模式下的额外调整 */
+html.dark .emulator-card {
+  background: #1a1a1a;
+}
+
+html.dark .form-section {
+  background: #0a0a0a;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+html.dark .emulator-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 }
 </style>

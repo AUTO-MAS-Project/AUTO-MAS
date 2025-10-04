@@ -230,10 +230,15 @@ async def add_emulator() -> EmulatorCreateOut:
     """添加新的模拟器配置"""
 
     try:
-        from app.utils.emulator_manager import add_emulator as add_emulator_impl
+        from app.utils.emulator_manager import (
+            add_emulator as add_emulator_impl,
+            convert_config_to_info_dict,
+        )
 
         uid, config = await add_emulator_impl()
-        data = EmulatorInfo(**(await config.toDict()))
+        config_dict = await config.toDict()
+        info_dict = convert_config_to_info_dict(config_dict)
+        data = EmulatorInfo(**info_dict)
         return EmulatorCreateOut(emulatorId=str(uid), data=data)
     except Exception as e:
         return EmulatorCreateOut(
