@@ -70,7 +70,7 @@
       <!-- 空状态 -->
       <div v-if="queueItems.length === 0" class="empty-state">
         <div class="empty-content">
-          <img src="@/assets/NoData.png" alt="无数据" class="empty-image" />
+          <img src="../../../assets/NoData.png" alt="无数据" class="empty-image" />
         </div>
       </div>
     </div>
