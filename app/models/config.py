@@ -40,6 +40,34 @@ from .ConfigBase import (
 )
 
 
+class EmulatorManagerConfig(ConfigBase):
+    """模拟器管理配置"""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.Info_Name = ConfigItem("Info", "Name", "新多开器")
+
+        EmulatorType = [
+            "general",
+            "mumu",
+            "ldplayer",
+            "nox",  # 以下都是骗你的, 根本没有写~~
+            "memu",
+            "blueStacks",
+        ]
+
+        self.Info_Type = ConfigItem(
+            "Info", "Type", "general", OptionsValidator(EmulatorType)
+        )
+        self.Data_Path = ConfigItem("Data", "Path", "")
+
+        self.Data_Boss_keys = ConfigItem("Data", "Boss_keys", "[]", JSONValidator(list))
+
+        self.Data_max_wait_time = ConfigItem(
+            "Data", "max_wait_time", 60, RangeValidator(-1, 9999)
+        )
+
+
 class Webhook(ConfigBase):
     """Webhook 配置"""
 
@@ -157,6 +185,7 @@ class GlobalConfig(ConfigBase):
         DateTimeValidator("%Y-%m-%d %H:%M:%S"),
     )
     Data_WebConfig = ConfigItem("Data", "WebConfig", "{ }", JSONValidator())
+    EmulatorData = MultipleConfig([EmulatorManagerConfig])
 
 
 class QueueItem(ConfigBase):
@@ -580,34 +609,6 @@ class GeneralConfig(ConfigBase):
         )
 
         self.UserData = MultipleConfig([GeneralUserConfig])
-
-
-class EmulatorManagerConfig(ConfigBase):
-    """模拟器管理配置"""
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.Info_Name = ConfigItem("Info", "Name", "新多开器")
-
-        EmulatorType = [
-            "general",
-            "mumu",
-            "ldplayer",
-            "nox",  # 以下都是骗你的, 根本没有写~~
-            "memu",
-            "blueStacks",
-        ]
-
-        self.Info_Type = ConfigItem(
-            "Info", "Type", "general", OptionsValidator(EmulatorType)
-        )
-        self.Data_Path = ConfigItem("Data", "Path", "")
-
-        self.Data_Boss_keys = ConfigItem("Data", "Boss_keys", "[]", JSONValidator(list))
-
-        self.Data_max_wait_time = ConfigItem(
-            "Data", "max_wait_time", 60, RangeValidator(-1, 9999)
-        )
 
 
 CLASS_BOOK = {

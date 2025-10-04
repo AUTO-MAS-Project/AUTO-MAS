@@ -25,11 +25,41 @@ import os
 from pathlib import Path
 import shutil
 from fastapi import APIRouter, Body
-
+import uuid as uuid_module
 from app.core import Config
 from app.services import System, Notify
-from app.models.schema import *
+from app.models.schema import (
+    SettingGetOut,
+    GlobalConfig,
+    OutBase,
+    SettingUpdateIn,
+    WebhookGetOut,
+    WebhookIndexItem,
+    Webhook,
+    WebhookGetIn,
+    WebhookCreateOut,
+    WebhookUpdateIn,
+    WebhookDeleteIn,
+    WebhookReorderIn,
+    WebhookTestIn,
+    EmulatorOutBase,
+    EmulatorUpdateIn,
+    EmulatorDeleteIn,
+    EmulatorDevicesIn,
+    EmulatorDevicesOut,
+    EmulatorSearchOut,
+    EmulatorSearchResult,
+    EmulatorStartIn,
+    EmulatorStartOut,
+    EmulatorStopIn,
+)
 from app.models.config import Webhook as WebhookConfig
+
+from app.core.emulator_manager import emulator_manager
+from app.models.config import EmulatorManagerConfig
+from app.core.emulator_manager.emulator_search import (
+    search_emulators as search_emulators_func,
+)
 
 router = APIRouter(prefix="/api/setting", tags=["全局设置"])
 
@@ -196,57 +226,51 @@ async def test_webhook(webhook: WebhookTestIn = Body(...)) -> OutBase:
 # 模拟器管理相关API
 @router.post(
     "/emulator/get",
-    summary="查询模拟器配置",
-    response_model=EmulatorGetOut,
+    summary="查询全部模拟器配置",
+    response_model=OutBase,
     status_code=200,
 )
-async def get_emulators(emulator: EmulatorGetIn = Body(...)) -> EmulatorGetOut:
+async def get_emulators() -> OutBase:
     """查询模拟器配置"""
 
     try:
-        from app.utils.emulator_manager import get_emulator
-
-        index, data = await get_emulator(emulator.emulatorId)
-        index = [EmulatorIndexItem(**_) for _ in index]
-        data = {uid: EmulatorInfo(**cfg) for uid, cfg in data.items()}
+        data = await emulator_manager.config.toDict()
+        return OutBase(message=str(data))
     except Exception as e:
-        return EmulatorGetOut(
+        return OutBase(
             code=500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
-            index=[],
-            data={},
         )
-    return EmulatorGetOut(index=index, data=data)
 
 
 @router.post(
     "/emulator/add",
     summary="添加模拟器配置",
-    response_model=EmulatorCreateOut,
+    response_model=EmulatorOutBase,
     status_code=200,
 )
-async def add_emulator() -> EmulatorCreateOut:
+async def add_emulator() -> EmulatorOutBase:
     """添加新的模拟器配置"""
 
     try:
-        from app.utils.emulator_manager import (
-            add_emulator as add_emulator_impl,
-            convert_config_to_info_dict,
-        )
 
-        uid, config = await add_emulator_impl()
-        config_dict = await config.toDict()
-        info_dict = convert_config_to_info_dict(config_dict)
-        data = EmulatorInfo(**info_dict)
-        return EmulatorCreateOut(emulatorId=str(uid), data=data)
+        uuid, new_config = await emulator_manager.config.add(EmulatorManagerConfig)
+        data = await new_config.toDict() if new_config else dict()
+        return EmulatorOutBase(
+            code=200,
+            status="success",
+            message="",
+            emulator_data=data,
+            emulator_uuid=str(uuid),
+        )
     except Exception as e:
-        return EmulatorCreateOut(
+        return EmulatorOutBase(
             code=500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
-            emulatorId="",
-            data=EmulatorInfo(name="", type="", path="", max_wait_time=60),
+            emulator_data=dict(),
+            emulator_uuid="",
         )
 
 
@@ -260,16 +284,31 @@ async def update_emulator(emulator: EmulatorUpdateIn = Body(...)) -> OutBase:
     """更新模拟器配置"""
 
     try:
-        from app.utils.emulator_manager import update_emulator as update_emulator_impl
+        # 将字符串UUID转换为UUID对象
+        emulator_uuid = uuid_module.UUID(emulator.emulator_uuid)
 
-        await update_emulator_impl(
-            emulator.emulatorId, emulator.data.model_dump(exclude_unset=True)
-        )
+        # 检查UUID是否存在
+        if emulator_uuid not in emulator_manager.config:
+            return OutBase(
+                code=404,
+                status="error",
+                message=f"未找到UUID为 {emulator.emulator_uuid} 的模拟器配置",
+            )
+
+        # 获取配置实例(从 MultipleConfig 中直接获取)
+        config_instance = emulator_manager.config[emulator_uuid]
+
+        # 直接加载字典数据,配置会自动保存
+        await config_instance.load(emulator.data)
+
+        return OutBase(code=200, status="success", message="模拟器配置更新成功")
+
+    except ValueError as e:
+        return OutBase(code=400, status="error", message=f"无效的UUID格式: {str(e)}")
     except Exception as e:
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
-    return OutBase()
 
 
 @router.post(
@@ -282,34 +321,68 @@ async def delete_emulator(emulator: EmulatorDeleteIn = Body(...)) -> OutBase:
     """删除模拟器配置"""
 
     try:
-        from app.utils.emulator_manager import del_emulator
+        # 将字符串UUID转换为UUID对象
+        emulator_uuid = uuid_module.UUID(emulator.emulator_uuid)
 
-        await del_emulator(emulator.emulatorId)
+        # 检查UUID是否存在
+        if emulator_uuid not in emulator_manager.config:
+            return OutBase(
+                code=404,
+                status="error",
+                message=f"未找到UUID为 {emulator.emulator_uuid} 的模拟器配置",
+            )
+
+        # 删除配置
+        await emulator_manager.config.remove(emulator_uuid)
+
+        return OutBase(code=200, status="success", message="模拟器配置删除成功")
+
+    except ValueError as e:
+        return OutBase(code=400, status="error", message=f"无效的UUID格式: {str(e)}")
     except Exception as e:
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
-    return OutBase()
 
 
 @router.post(
-    "/emulator/order",
-    summary="重新排序模拟器配置",
-    response_model=OutBase,
+    "/emulator/devices",
+    summary="获取模拟器设备信息",
+    response_model=EmulatorDevicesOut,
     status_code=200,
 )
-async def reorder_emulator(emulator: EmulatorReorderIn = Body(...)) -> OutBase:
-    """重新排序模拟器配置"""
+async def get_emulator_devices(
+    emulator: EmulatorDevicesIn = Body(...),
+) -> EmulatorDevicesOut:
+    """获取指定模拟器下的所有设备信息"""
 
     try:
-        from app.utils.emulator_manager import reorder_emulator as reorder_emulator_impl
-
-        await reorder_emulator_impl(emulator.indexList)
-    except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+        # 调用 emulator_manager.get_emulator_status 获取设备信息
+        success, result = await emulator_manager.get_emulator_status(
+            emulator.emulator_uuid
         )
-    return OutBase()
+
+        if success:
+            # success=True 时, result 是 dict
+            return EmulatorDevicesOut(
+                code=200,
+                status="success",
+                message="获取设备信息成功",
+                devices=result,  # type: ignore
+            )
+        else:
+            # success=False 时, result 是错误消息字符串
+            return EmulatorDevicesOut(
+                code=500, status="error", message=str(result), devices={}
+            )
+
+    except Exception as e:
+        return EmulatorDevicesOut(
+            code=500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            devices={},
+        )
 
 
 @router.post(
@@ -322,9 +395,7 @@ async def search_emulators() -> EmulatorSearchOut:
     """自动搜索系统中安装的模拟器"""
 
     try:
-        from app.utils.emulator_manager import search_emulators_api
-
-        emulators = await search_emulators_api()
+        emulators = await search_emulators_func()
         search_results = [EmulatorSearchResult(**emulator) for emulator in emulators]
         return EmulatorSearchOut(emulators=search_results)
     except Exception as e:
@@ -333,4 +404,99 @@ async def search_emulators() -> EmulatorSearchOut:
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
             emulators=[],
+        )
+
+
+@router.post(
+    "/emulator/start",
+    summary="启动指定模拟器",
+    response_model=EmulatorStartOut,
+    status_code=200,
+)
+async def start_emulator(emulator: EmulatorStartIn = Body(...)) -> EmulatorStartOut:
+    """根据UUID和索引启动指定模拟器"""
+
+    try:
+        # 验证UUID格式
+        try:
+            emulator_uuid = uuid_module.UUID(emulator.emulator_uuid)
+        except ValueError:
+            return EmulatorStartOut(
+                code=400,
+                status="error",
+                message=f"无效的UUID格式: {emulator.emulator_uuid}",
+                adb_info={},
+            )
+
+        # 检查模拟器配置是否存在
+        if emulator_uuid not in emulator_manager.config:
+            return EmulatorStartOut(
+                code=404,
+                status="error",
+                message=f"未找到UUID为 {emulator.emulator_uuid} 的模拟器配置",
+                adb_info={},
+            )
+
+        # 调用启动函数
+        success, message, adb_info = await emulator_manager.start_emulator(
+            emulator.emulator_uuid, emulator.index, emulator.package_name
+        )
+
+        if success:
+            return EmulatorStartOut(message=message, adb_info=adb_info)
+        else:
+            return EmulatorStartOut(
+                code=500, status="error", message=message, adb_info=adb_info
+            )
+
+    except Exception as e:
+        return EmulatorStartOut(
+            code=500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            adb_info={},
+        )
+
+
+@router.post(
+    "/emulator/stop",
+    summary="关闭指定模拟器",
+    response_model=OutBase,
+    status_code=200,
+)
+async def stop_emulator(emulator: EmulatorStopIn = Body(...)) -> OutBase:
+    """根据UUID和索引关闭指定模拟器"""
+
+    try:
+        # 验证UUID格式
+        try:
+            emulator_uuid = uuid_module.UUID(emulator.emulator_uuid)
+        except ValueError:
+            return OutBase(
+                code=400,
+                status="error",
+                message=f"无效的UUID格式: {emulator.emulator_uuid}",
+            )
+
+        # 检查模拟器配置是否存在
+        if emulator_uuid not in emulator_manager.config:
+            return OutBase(
+                code=404,
+                status="error",
+                message=f"未找到UUID为 {emulator.emulator_uuid} 的模拟器配置",
+            )
+
+        # 调用关闭函数
+        success, message = await emulator_manager.close_emulator(
+            emulator.emulator_uuid, emulator.index
+        )
+
+        if success:
+            return OutBase(message=message)
+        else:
+            return OutBase(code=500, status="error", message=message)
+
+    except Exception as e:
+        return OutBase(
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
