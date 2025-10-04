@@ -9,14 +9,18 @@
             size="small"
             :type="logMode === 'follow' ? 'primary' : 'default'"
           >
-            {{ logMode === 'follow' ? '跟随模式' : '自由浏览' }}
+            {{ logMode === 'follow' ? '保持最新' : '自由浏览' }}
           </a-button>
         </a-space>
       </div>
     </div>
     <div class="log-content" ref="logContentRef" @scroll="onScroll">
-      <div v-if="!logContent" class="empty-state-mini">
-        <a-empty description="暂无日志信息" />
+      <div v-if="!logContent" class="empty-state">
+        <div class="empty-content">
+          <div class="empty-image-container">
+            <img src="@/assets/NoData.png" alt="暂无数据" class="empty-image" />
+          </div>
+        </div>
       </div>
       <pre v-else class="log-text">{{ logContent }}</pre>
     </div>
@@ -44,13 +48,13 @@ const props = defineProps<Props>()
 const emit = defineEmits<Emits>()
 
 const logContentRef = ref<HTMLElement | null>(null)
-// 默认为跟随模式
+// 默认为保持最新
 const logMode = ref<LogMode>('follow')
 
 
 const toggleLogMode = () => {
   logMode.value = logMode.value === 'follow' ? 'browse' : 'follow'
-  // 切换到跟随模式时，自动滚动到底部
+  // 切换到保持最新时，自动滚动到底部
   if (logMode.value === 'follow') {
     nextTick(() => {
       scrollToBottom()
@@ -77,7 +81,7 @@ watch(
   () => props.logContent,
   () => {
     nextTick(() => {
-      // 跟随模式下自动滚动到底部
+      // 保持最新下自动滚动到底部
       if (logMode.value === 'follow' && logContentRef.value) {
         scrollToBottom()
       }
@@ -184,5 +188,44 @@ onUnmounted(() => {
   .log-content {
     padding: 12px;
   }
+}
+
+/* 空状态样式 */
+.empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 200px;
+  text-align: center;
+}
+
+.empty-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.empty-image-container {
+  margin-bottom: 16px;
+}
+
+.empty-image {
+  width: 80px;
+  height: auto;
+  opacity: 0.6;
+}
+
+.empty-title {
+  font-size: 16px;
+  font-weight: 500;
+  margin: 0 0 4px 0;
+  color: var(--ant-color-text);
+}
+
+.empty-description {
+  font-size: 14px;
+  color: var(--ant-color-text-secondary);
+  margin: 0;
 }
 </style>

@@ -221,7 +221,7 @@ export function useSchedulerLogic() {
 
     Modal.confirm({
       title: '确认删除',
-      content: `确定要删除调度台 "${tab.title}" 吗？删除后无法恢复。`,
+      content: `确定要删除调度台 "${tab.title}" 吗？`,
       okText: '确认删除',
       cancelText: '取消',
       okType: 'danger',
@@ -248,6 +248,52 @@ export function useSchedulerLogic() {
         }
 
         message.success(`调度台 "${tab.title}" 已删除`)
+      },
+    })
+  }
+
+  // 批量删除所有未运行状态的调度台子页（主调度台除外）
+  const removeAllNonRunningTabs = () => {
+    const nonRunningTabs = schedulerTabs.value.filter(
+      tab => tab.key !== 'main' && tab.status !== '运行'
+    )
+
+    if (nonRunningTabs.length === 0) {
+      message.info('没有可删除的调度台')
+      return
+    }
+
+    Modal.confirm({
+      title: '批量删除',
+      content: `确定要删除 ${nonRunningTabs.length} 个空闲的调度台吗？`,
+      okText: '确认删除',
+      cancelText: '取消',
+      okType: 'danger',
+      onOk() {
+        nonRunningTabs.forEach(tab => {
+          // 清理 WebSocket 订阅
+          if (tab.subscriptionId) {
+            ws.unsubscribe(tab.subscriptionId)
+          }
+
+          // 清理日志引用
+          logRefs.value.delete(tab.key)
+
+          // 清理任务总览面板引用
+          overviewRefs.value.delete(tab.key)
+        })
+
+        // 从数组中移除这些标签页
+        schedulerTabs.value = schedulerTabs.value.filter(
+          tab => tab.key === 'main' || tab.status === '运行'
+        )
+
+        // 如果当前活动的标签页被删除了，切换到主调度台
+        if (!schedulerTabs.value.find(tab => tab.key === activeSchedulerTab.value)) {
+          activeSchedulerTab.value = 'main'
+        }
+
+        message.success(`成功删除 ${nonRunningTabs.length} 个调度台`)
       },
     })
   }
@@ -969,6 +1015,7 @@ export function useSchedulerLogic() {
     // Tab 管理
     addSchedulerTab,
     removeSchedulerTab,
+    removeAllNonRunningTabs,
 
     // 任务操作
     startTask,

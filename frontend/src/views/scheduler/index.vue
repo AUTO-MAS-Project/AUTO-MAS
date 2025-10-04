@@ -34,8 +34,36 @@
         v-model:activeKey="activeSchedulerTab"
         type="editable-card"
         @edit="onSchedulerTabEdit"
-        :hide-add="false"
+        :hide-add="true"
       >
+        <template #tabBarExtraContent>
+          <div class="tab-actions">
+            <a-tooltip title="添加新的调度台" placement="top">
+              <a-button
+                class="tab-action-btn tab-add-btn"
+                size="default"
+                @click="addSchedulerTab"
+              >
+                <template #icon>
+                  <PlusOutlined />
+                </template>
+              </a-button>
+            </a-tooltip>
+            <a-tooltip title="删除所有空闲的调度台" placement="top">
+              <a-button
+                class="tab-action-btn tab-remove-btn"
+                size="default"
+                @click="removeAllNonRunningTabs"
+                :disabled="!hasNonRunningTabs"
+                danger
+              >
+                <template #icon>
+                  <MinusOutlined />
+                </template>
+              </a-button>
+            </a-tooltip>
+          </div>
+        </template>
         <a-tab-pane
           v-for="tab in schedulerTabs"
           :key="tab.key"
@@ -117,8 +145,8 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted } from 'vue'
-import { LockOutlined } from '@ant-design/icons-vue'
+import { onMounted, onUnmounted, computed } from 'vue'
+import { LockOutlined, MinusOutlined, PlusOutlined } from '@ant-design/icons-vue'
 import {
   POWER_ACTION_TEXT,
   TAB_STATUS_COLOR,
@@ -146,6 +174,7 @@ const {
   // Tab 管理
   addSchedulerTab,
   removeSchedulerTab,
+  removeAllNonRunningTabs,
 
   // 任务操作
   startTask,
@@ -170,6 +199,11 @@ const {
   // 新增：任务总览面板引用管理
   setOverviewRef,
 } = useSchedulerLogic()
+
+// 计算属性：检查是否有可删除的调度台
+const hasNonRunningTabs = computed(() => {
+  return schedulerTabs.value.some(tab => tab.key !== 'main' && tab.status !== '运行')
+})
 
 // Tab 操作
 const onSchedulerTabEdit = (targetKey: string | MouseEvent, action: 'add' | 'remove') => {
@@ -264,11 +298,57 @@ onUnmounted(() => {
   background-color: var(--ant-color-bg-container);
 }
 
+/* 自定义标签页操作按钮 */
+.tab-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+  margin-top: -12px; /* 负边距抵消容器padding，使按钮上边距与右边距(12px)相同 */
+}
+
+.tab-action-btn {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--ant-color-border);
+  border-radius: 6px;
+  background-color: var(--ant-color-bg-container);
+  color: var(--ant-color-text);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.tab-action-btn:hover {
+  border-color: var(--ant-color-primary);
+  color: var(--ant-color-primary);
+}
+
+.tab-add-btn {
+  border-color: var(--ant-color-border);
+}
+
+.tab-add-btn:hover {
+  border-color: var(--ant-color-primary);
+  color: var(--ant-color-primary);
+}
+
+.tab-remove-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.tab-remove-btn:disabled:hover {
+  border-color: var(--ant-color-border);
+  color: var(--ant-color-text-disabled);
+}
+
 /* 任务卡片统一容器 */
 .task-unified-card {
   background-color: transparent;
   box-shadow: none;
-  height: calc(100vh - 230px); /* 动态计算高度 */
+  height: calc(100vh - 237px);
   display: flex;
   flex-direction: column;
   overflow: hidden;
