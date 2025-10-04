@@ -870,73 +870,70 @@ class UpdateCheckOut(OutBase):
 
 
 # 模拟器管理相关的模型
-class EmulatorInfo(BaseModel):
-    """模拟器信息"""
-
-    name: str = Field(..., description="模拟器名称")
-    type: str = Field(..., description="模拟器类型")
-    path: str = Field(..., description="模拟器路径")
-    max_wait_time: int = Field(..., description="最大等待时间")
-    boss_keys: List[str] = Field(default_factory=list, description="老板键列表")
 
 
-class EmulatorIndexItem(BaseModel):
-    """模拟器索引项"""
-
-    uuid: str = Field(..., description="模拟器配置UUID")
-    name: str = Field(..., description="模拟器名称")
-
-
-class EmulatorGetOut(OutBase):
-    """获取模拟器配置响应"""
-
-    index: List[EmulatorIndexItem] = Field(..., description="模拟器索引列表")
-    data: Dict[str, EmulatorInfo] = Field(..., description="模拟器配置数据")
-
-
-class EmulatorGetIn(BaseModel):
-    """获取模拟器配置请求"""
-
-    emulatorId: Optional[str] = Field(
-        None, description="指定的模拟器ID，为空则获取所有"
-    )
-
-
-class EmulatorCreateOut(OutBase):
-    """创建模拟器配置响应"""
-
-    emulatorId: str = Field(..., description="新创建的模拟器ID")
-    data: EmulatorInfo = Field(..., description="模拟器配置数据")
+class EmulatorOutBase(OutBase):
+    emulator_uuid: str = Field(..., description="模拟器UUID")
+    emulator_data: dict = Field(..., description="模拟器信息")
 
 
 class EmulatorUpdateIn(BaseModel):
     """更新模拟器配置请求"""
 
-    emulatorId: str = Field(..., description="模拟器ID")
-    data: EmulatorInfo = Field(..., description="需要更新的模拟器配置数据")
+    emulator_uuid: str = Field(..., description="模拟器UUID")
+    data: dict = Field(..., description="需要更新的模拟器配置数据")
 
 
 class EmulatorDeleteIn(BaseModel):
     """删除模拟器配置请求"""
 
-    emulatorId: str = Field(..., description="模拟器ID")
+    emulator_uuid: str = Field(..., description="模拟器UUID")
 
 
-class EmulatorReorderIn(BaseModel):
-    """重新排序模拟器请求"""
+class EmulatorDevicesIn(BaseModel):
+    """获取模拟器设备信息请求"""
 
-    indexList: List[str] = Field(..., description="重新排序后的模拟器ID列表")
+    emulator_uuid: str = Field(..., description="模拟器UUID")
+
+
+class EmulatorDevicesOut(OutBase):
+    """获取模拟器设备信息响应"""
+
+    devices: dict = Field(default_factory=dict, description="设备信息字典")
 
 
 class EmulatorSearchResult(BaseModel):
-    """模拟器搜索结果"""
+    """模拟器搜索结果项"""
 
+    name: str = Field(..., description="模拟器名称")
     type: str = Field(..., description="模拟器类型")
     path: str = Field(..., description="模拟器路径")
-    name: str = Field(..., description="推荐的显示名称")
 
 
 class EmulatorSearchOut(OutBase):
-    """自动搜索模拟器响应"""
+    """模拟器搜索响应"""
 
-    emulators: List[EmulatorSearchResult] = Field(..., description="找到的模拟器列表")
+    emulators: List[EmulatorSearchResult] = Field(
+        default_factory=list, description="搜索到的模拟器列表"
+    )
+
+
+class EmulatorStartIn(BaseModel):
+    """启动模拟器请求"""
+
+    emulator_uuid: str = Field(..., description="模拟器UUID")
+    index: str = Field(..., description="模拟器索引")
+    package_name: str = Field(default="", description="启动包名(可选)")
+
+
+class EmulatorStartOut(OutBase):
+    """启动模拟器响应"""
+
+    adb_info: dict = Field(default_factory=dict, description="ADB连接信息")
+
+
+class EmulatorStopIn(BaseModel):
+    """关闭模拟器请求"""
+
+    emulator_uuid: str = Field(..., description="模拟器UUID")
+    index: str = Field(..., description="模拟器索引")
