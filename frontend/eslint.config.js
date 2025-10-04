@@ -1,34 +1,51 @@
-const vue = require('eslint-plugin-vue');
-const ts = require('@typescript-eslint/eslint-plugin');
-const tsParser = require('@typescript-eslint/parser');
-const prettier = require('eslint-plugin-prettier');
+// eslint.config.js
+import vue from 'eslint-plugin-vue'
+import ts from '@typescript-eslint/eslint-plugin'
+import tsParser from '@typescript-eslint/parser'
+import prettierPlugin from 'eslint-plugin-prettier'
 
-module.exports = [
-  // 推荐的 vue3 配置
-  vue.configs['vue3-recommended'],
-  // 推荐的 ts 配置
-  ts.configs.recommended,
-  // 推荐的 prettier 配置
-  prettier.configs.recommended,
-  // 自定义规则和文件范围
+export default [
+  ...vue.configs['flat/recommended'],
+
   {
-    files: ['**/*.js', '**/*.ts', '**/*.vue'],
-    ignores: ['dist/**', 'node_modules/**'],
+    files: ['**/*.ts', '**/*.tsx'],
     languageOptions: {
       parser: tsParser,
-      ecmaVersion: 2021,
-      sourceType: 'module',
+      parserOptions: {
+        ecmaVersion: 2022,
+        sourceType: 'module',
+        project: './tsconfig.json', // 可选：启用类型感知规则
+      },
     },
     plugins: {
-      vue,
       '@typescript-eslint': ts,
-      prettier,
     },
     rules: {
-      'vue/multi-word-component-names': 'off',
+      ...ts.configs.recommended.rules,
       '@typescript-eslint/no-explicit-any': 'off',
-      // 如果你希望 prettier 报错，取消注释下面一行
-      // 'prettier/prettier': 'error',
     },
   },
-];
+
+  // ✅ Prettier 集成（Flat Config 风格）
+  {
+    files: ['**/*.js', '**/*.ts', '**/*.vue'],
+    plugins: {
+      prettier: prettierPlugin,
+    },
+    rules: {
+      'prettier/prettier': 'error', // 让 prettier 错误变成 ESLint 错误
+    },
+  },
+
+  // ✅ 自定义规则和忽略文件
+  {
+    ignores: ['dist/**', 'node_modules/**'],
+  },
+
+  {
+    files: ['**/*.js', '**/*.vue'],
+    rules: {
+      'vue/multi-word-component-names': 'off',
+    },
+  },
+]
