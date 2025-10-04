@@ -10,7 +10,10 @@
     "build:main": "tsc -p tsconfig.electron.json",
     "build": "vite build && yarn build:main && electron-builder",
     "web": "vite",
-    "release": "vite build && yarn build:main && electron-builder --win --publish always"
+    "release": "vite build && yarn build:main && electron-builder --win --publish always",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier . --write"
   },
   "build": {
     "asar": true,
@@ -104,7 +107,6 @@
     "prettier": "^3.6.2",
     "typescript": "^5.9.2",
     "vite": "^7.0.4",
-    "vite-plugin-eslint": "^1.8.1",
     "vue-eslint-parser": "^10.2.0",
     "vue-tsc": "^2.2.12",
     "wait-on": "^8.0.4"
