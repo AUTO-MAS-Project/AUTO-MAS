@@ -60,6 +60,7 @@ class GeneralManager:
         self.wait_event = asyncio.Event()
 
         self.general_logs = []
+        self.log_start_time = datetime.now()
         self.general_result = "Wait"
 
     async def configure(self):

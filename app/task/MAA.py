@@ -64,6 +64,7 @@ class MaaManager:
 
         self.maa_logs = []
         self.maa_result = "Wait"
+        self.log_start_time = datetime.now()
         self.maa_update_package = ""
 
     async def configure(self):
