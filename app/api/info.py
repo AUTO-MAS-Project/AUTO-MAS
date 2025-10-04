@@ -45,15 +45,13 @@ async def get_git_version() -> VersionOut:
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
             if_need_update=False,
-            current_hash="unknown",
             current_time="unknown",
-            current_version=Config.version(),
+            current_hash="unknown",
         )
     return VersionOut(
         if_need_update=not is_latest,
-        current_hash=commit_hash,
         current_time=commit_time,
-        current_version=Config.version(),
+        current_hash=commit_hash,
     )
 
 
