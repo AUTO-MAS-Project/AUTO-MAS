@@ -614,7 +614,6 @@ const onDragEnd = async (evt: any) => {
   background: transparent !important;
   border: none !important;
   padding: 0 6px !important;
-  font-size: 13px !important;
   min-height: 28px !important;
   line-height: 26px !important;
   box-shadow: none !important;
@@ -624,7 +623,6 @@ const onDragEnd = async (evt: any) => {
 .status-select :deep(.ant-select-selection-item) {
   line-height: 26px !important;
   color: var(--ant-color-text) !important;
-  font-size: 13px !important;
   font-weight: 500;
   padding: 0;
   margin: 0;
@@ -633,7 +631,6 @@ const onDragEnd = async (evt: any) => {
 .status-select :deep(.ant-select-selection-placeholder) {
   line-height: 26px !important;
   color: var(--ant-color-text-placeholder) !important;
-  font-size: 13px !important;
   padding: 0;
   margin: 0;
 }
@@ -695,11 +692,9 @@ const onDragEnd = async (evt: any) => {
 
 .status-select :deep(.ant-select-item) {
   padding: 8px 12px !important;
-  font-size: 13px !important;
 }
 
 .status-select :deep(.ant-select-item-option-content) {
-  font-size: 13px !important;
 }
 
 /* 时间显示样式 */
@@ -718,7 +713,6 @@ const onDragEnd = async (evt: any) => {
   background: transparent !important;
   border: none !important;
   padding: 0 6px !important;
-  font-size: 13px !important;
   min-height: 28px !important;
   line-height: 26px !important;
   box-shadow: none !important;
@@ -728,7 +722,6 @@ const onDragEnd = async (evt: any) => {
 
 :deep(.ant-picker-input > input) {
   text-align: center !important;
-  font-size: 13px !important;
   font-weight: 600 !important;
   color: var(--ant-color-text) !important;
   background: transparent !important;
