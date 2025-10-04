@@ -107,6 +107,7 @@ function restartAsAdmin(): void {
 let tray: Tray | null = null
 let isQuitting = false
 let saveWindowStateTimeout: NodeJS.Timeout | null = null
+let isInitialStartup = true // 标记是否为初次启动
 
 // 配置接口
 interface AppConfig {
@@ -517,18 +518,21 @@ function createWindow() {
     // 根据配置初始化托盘
     updateTrayVisibility(currentConfig)
 
-    // 处理启动后直接最小化
-    if (currentConfig.Start.IfMinimizeDirectly) {
+    // 处理启动后直接最小化（只在初次启动时执行）
+    if (isInitialStartup && currentConfig.Start.IfMinimizeDirectly) {
       if (currentConfig.UI.IfToTray) {
         win.hide()
         win.setSkipTaskbar(true)
-        log.info('应用启动后直接最小化到托盘')
+        log.info('应用初次启动后直接最小化到托盘')
       } else {
         win.minimize()
-        log.info('应用启动后直接最小化')
+        log.info('应用初次启动后直接最小化')
       }
       updateTrayVisibility(currentConfig)
     }
+    
+    // 标记初次启动已完成
+    isInitialStartup = false
   })
 }
 
@@ -1206,23 +1210,6 @@ ipcMain.handle('sync-backend-config', async (_event, backendSettings) => {
 
     // 更新托盘状态
     updateTrayVisibility(currentConfig)
-
-    // 处理启动后直接最小化（如果当前窗口仍然可见）
-    if (currentConfig.Start.IfMinimizeDirectly && mainWindow && mainWindow.isVisible() && !mainWindow.isMinimized()) {
-      setTimeout(() => {
-        if (mainWindow && mainWindow.isVisible() && !mainWindow.isMinimized()) {
-          if (currentConfig.UI.IfToTray) {
-            mainWindow.hide()
-            mainWindow.setSkipTaskbar(true)
-            log.info('同步配置后执行启动最小化到托盘')
-          } else {
-            mainWindow.minimize()
-            log.info('同步配置后执行启动最小化')
-          }
-          updateTrayVisibility(currentConfig)
-        }
-      }, 500) // 给一些延迟确保UI准备完成
-    }
 
     log.info('后端配置已同步:', backendSettings)
     return true
