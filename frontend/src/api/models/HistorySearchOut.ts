@@ -2,7 +2,8 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { HistoryData } from './HistoryData'
+import type { HistoryData } from '@/api'
+
 export type HistorySearchOut = {
   /**
    * 状态码

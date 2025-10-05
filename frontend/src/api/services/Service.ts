@@ -2,91 +2,94 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { ComboBoxOut } from '../models/ComboBoxOut'
-import type { DispatchIn } from '../models/DispatchIn'
-import type { EmulatorDeleteIn } from '../models/EmulatorDeleteIn'
-import type { EmulatorDevicesIn } from '../models/EmulatorDevicesIn'
-import type { EmulatorDevicesOut } from '../models/EmulatorDevicesOut'
-import type { EmulatorGetOut } from '../models/EmulatorGetOut'
-import type { EmulatorOutBase } from '../models/EmulatorOutBase'
-import type { EmulatorSearchOut } from '../models/EmulatorSearchOut'
-import type { EmulatorStartIn } from '../models/EmulatorStartIn'
-import type { EmulatorStartOut } from '../models/EmulatorStartOut'
-import type { EmulatorStatusIn } from '../models/EmulatorStatusIn'
-import type { EmulatorStatusOut } from '../models/EmulatorStatusOut'
-import type { EmulatorStopIn } from '../models/EmulatorStopIn'
-import type { EmulatorUpdateIn } from '../models/EmulatorUpdateIn'
-import type { GetStageIn } from '../models/GetStageIn'
-import type { HistoryDataGetIn } from '../models/HistoryDataGetIn'
-import type { HistoryDataGetOut } from '../models/HistoryDataGetOut'
-import type { HistorySearchIn } from '../models/HistorySearchIn'
-import type { HistorySearchOut } from '../models/HistorySearchOut'
-import type { InfoOut } from '../models/InfoOut'
-import type { NoticeOut } from '../models/NoticeOut'
-import type { OutBase } from '../models/OutBase'
-import type { PlanCreateIn } from '../models/PlanCreateIn'
-import type { PlanCreateOut } from '../models/PlanCreateOut'
-import type { PlanDeleteIn } from '../models/PlanDeleteIn'
-import type { PlanGetIn } from '../models/PlanGetIn'
-import type { PlanGetOut } from '../models/PlanGetOut'
-import type { PlanReorderIn } from '../models/PlanReorderIn'
-import type { PlanUpdateIn } from '../models/PlanUpdateIn'
-import type { PowerIn } from '../models/PowerIn'
-import type { QueueCreateOut } from '../models/QueueCreateOut'
-import type { QueueDeleteIn } from '../models/QueueDeleteIn'
-import type { QueueGetIn } from '../models/QueueGetIn'
-import type { QueueGetOut } from '../models/QueueGetOut'
-import type { QueueItemCreateOut } from '../models/QueueItemCreateOut'
-import type { QueueItemDeleteIn } from '../models/QueueItemDeleteIn'
-import type { QueueItemGetIn } from '../models/QueueItemGetIn'
-import type { QueueItemGetOut } from '../models/QueueItemGetOut'
-import type { QueueItemReorderIn } from '../models/QueueItemReorderIn'
-import type { QueueItemUpdateIn } from '../models/QueueItemUpdateIn'
-import type { QueueReorderIn } from '../models/QueueReorderIn'
-import type { QueueSetInBase } from '../models/QueueSetInBase'
-import type { QueueUpdateIn } from '../models/QueueUpdateIn'
-import type { ScriptCreateIn } from '../models/ScriptCreateIn'
-import type { ScriptCreateOut } from '../models/ScriptCreateOut'
-import type { ScriptDeleteIn } from '../models/ScriptDeleteIn'
-import type { ScriptFileIn } from '../models/ScriptFileIn'
-import type { ScriptGetIn } from '../models/ScriptGetIn'
-import type { ScriptGetOut } from '../models/ScriptGetOut'
-import type { ScriptReorderIn } from '../models/ScriptReorderIn'
-import type { ScriptUpdateIn } from '../models/ScriptUpdateIn'
-import type { ScriptUploadIn } from '../models/ScriptUploadIn'
-import type { ScriptUrlIn } from '../models/ScriptUrlIn'
-import type { SettingGetOut } from '../models/SettingGetOut'
-import type { SettingUpdateIn } from '../models/SettingUpdateIn'
-import type { TaskCreateIn } from '../models/TaskCreateIn'
-import type { TaskCreateOut } from '../models/TaskCreateOut'
-import type { TimeSetCreateOut } from '../models/TimeSetCreateOut'
-import type { TimeSetDeleteIn } from '../models/TimeSetDeleteIn'
-import type { TimeSetGetIn } from '../models/TimeSetGetIn'
-import type { TimeSetGetOut } from '../models/TimeSetGetOut'
-import type { TimeSetReorderIn } from '../models/TimeSetReorderIn'
-import type { TimeSetUpdateIn } from '../models/TimeSetUpdateIn'
-import type { UpdateCheckIn } from '../models/UpdateCheckIn'
-import type { UpdateCheckOut } from '../models/UpdateCheckOut'
-import type { UserCreateOut } from '../models/UserCreateOut'
-import type { UserDeleteIn } from '../models/UserDeleteIn'
-import type { UserGetIn } from '../models/UserGetIn'
-import type { UserGetOut } from '../models/UserGetOut'
-import type { UserInBase } from '../models/UserInBase'
-import type { UserReorderIn } from '../models/UserReorderIn'
-import type { UserSetIn } from '../models/UserSetIn'
-import type { UserUpdateIn } from '../models/UserUpdateIn'
-import type { VersionOut } from '../models/VersionOut'
-import type { WebhookCreateOut } from '../models/WebhookCreateOut'
-import type { WebhookDeleteIn } from '../models/WebhookDeleteIn'
-import type { WebhookGetIn } from '../models/WebhookGetIn'
-import type { WebhookGetOut } from '../models/WebhookGetOut'
-import type { WebhookInBase } from '../models/WebhookInBase'
-import type { WebhookReorderIn } from '../models/WebhookReorderIn'
-import type { WebhookTestIn } from '../models/WebhookTestIn'
-import type { WebhookUpdateIn } from '../models/WebhookUpdateIn'
-import type { CancelablePromise } from '../core/CancelablePromise'
-import { OpenAPI } from '../core/OpenAPI'
+import type {
+  CancelablePromise,
+  ComboBoxOut,
+  DispatchIn,
+  EmulatorDeleteIn,
+  EmulatorDevicesIn,
+  EmulatorDevicesOut,
+  EmulatorGetOut,
+  EmulatorOutBase,
+  EmulatorSearchOut,
+  EmulatorStartIn,
+  EmulatorStartOut,
+  EmulatorStatusIn,
+  EmulatorStatusOut,
+  EmulatorStopIn,
+  EmulatorUpdateIn,
+  GetStageIn,
+  HistoryDataGetIn,
+  HistoryDataGetOut,
+  HistorySearchIn,
+  HistorySearchOut,
+  InfoOut,
+  NoticeOut,
+  OutBase,
+  PlanCreateIn,
+  PlanCreateOut,
+  PlanDeleteIn,
+  PlanGetIn,
+  PlanGetOut,
+  PlanReorderIn,
+  PlanUpdateIn,
+  PowerIn,
+  QueueCreateOut,
+  QueueDeleteIn,
+  QueueGetIn,
+  QueueGetOut,
+  QueueItemCreateOut,
+  QueueItemDeleteIn,
+  QueueItemGetIn,
+  QueueItemGetOut,
+  QueueItemReorderIn,
+  QueueItemUpdateIn,
+  QueueReorderIn,
+  QueueSetInBase,
+  QueueUpdateIn,
+  ScriptCreateIn,
+  ScriptCreateOut,
+  ScriptDeleteIn,
+  ScriptFileIn,
+  ScriptGetIn,
+  ScriptGetOut,
+  ScriptReorderIn,
+  ScriptUpdateIn,
+  ScriptUploadIn,
+  ScriptUrlIn,
+  SettingGetOut,
+  SettingUpdateIn,
+  TaskCreateIn,
+  TaskCreateOut,
+  TimeSetCreateOut,
+  TimeSetDeleteIn,
+  TimeSetGetIn,
+  TimeSetGetOut,
+  TimeSetReorderIn,
+  TimeSetUpdateIn,
+  UpdateCheckIn,
+  UpdateCheckOut,
+  UserCreateOut,
+  UserDeleteIn,
+  UserGetIn,
+  UserGetOut,
+  UserInBase,
+  UserReorderIn,
+  UserSetIn,
+  UserUpdateIn,
+  VersionOut,
+  WebhookCreateOut,
+  WebhookDeleteIn,
+  WebhookGetIn,
+  WebhookGetOut,
+  WebhookInBase,
+  WebhookReorderIn,
+  WebhookTestIn,
+  WebhookUpdateIn,
+} from '@/api'
+import { OpenAPI } from '@/api'
 import { request as __request } from '../core/request'
+
 export class Service {
   /**
    * Close
@@ -100,6 +103,7 @@ export class Service {
       url: '/api/core/close',
     })
   }
+
   /**
    * 获取后端git版本信息
    * @returns VersionOut Successful Response
@@ -111,6 +115,7 @@ export class Service {
       url: '/api/info/version',
     })
   }
+
   /**
    * 获取关卡号下拉框信息
    * @param requestBody
@@ -130,6 +135,7 @@ export class Service {
       },
     })
   }
+
   /**
    * 获取脚本下拉框信息
    * @returns ComboBoxOut Successful Response
@@ -141,6 +147,7 @@ export class Service {
       url: '/api/info/combox/script',
     })
   }
+
   /**
    * 获取可选任务下拉框信息
    * @returns ComboBoxOut Successful Response
@@ -152,6 +159,7 @@ export class Service {
       url: '/api/info/combox/task',
     })
   }
+
   /**
    * 获取可选计划下拉框信息
    * @returns ComboBoxOut Successful Response
@@ -163,6 +171,7 @@ export class Service {
       url: '/api/info/combox/plan',
     })
   }
+
   /**
    * 获取通知信息
    * @returns NoticeOut Successful Response
@@ -174,6 +183,7 @@ export class Service {
       url: '/api/info/notice/get',
     })
   }
+
   /**
    * 确认通知
    * @returns OutBase Successful Response
@@ -185,6 +195,7 @@ export class Service {
       url: '/api/info/notice/confirm',
     })
   }
+
   /**
    * 获取配置分享中心的配置信息
    * @returns InfoOut Successful Response
@@ -196,6 +207,7 @@ export class Service {
       url: '/api/info/webconfig',
     })
   }
+
   /**
    * 信息总览
    * @returns InfoOut Successful Response
@@ -207,6 +219,7 @@ export class Service {
       url: '/api/info/get/overview',
     })
   }
+
   /**
    * 添加脚本
    * @param requestBody
@@ -226,6 +239,7 @@ export class Service {
       },
     })
   }
+
   /**
    * 查询脚本配置信息
    * @param requestBody
@@ -245,6 +259,7 @@ export class Service {
       },
     })
   }
+
   /**
    * 更新脚本配置信息
    * @param requestBody
@@ -264,6 +279,7 @@ export class Service {
       },
     })
   }
+
   /**
    * 删除脚本
    * @param requestBody
@@ -283,6 +299,7 @@ export class Service {
       },
     })
   }
+
   /**
    * 重新排序脚本
    * @param requestBody
@@ -302,6 +319,7 @@ export class Service {
       },
     })
   }
+
   /**
    * 从文件加载脚本
    * @param requestBody
@@ -321,6 +339,7 @@ export class Service {
       },
     })
   }
+
   /**
    * 导出脚本到文件
    * @param requestBody
@@ -340,6 +359,7 @@ export class Service {
       },
     })
   }
+
   /**
    * 从网络加载脚本
    * @param requestBody
@@ -359,6 +379,7 @@ export class Service {
       },
     })
   }
+
   /**
    * 上传脚本配置到网络
    * @param requestBody
@@ -378,6 +399,7 @@ export class Service {
       },
     })
   }
+
   /**
    * 查询用户
    * @param requestBody
@@ -397,6 +419,7 @@ export class Service {
       },
     })
   }
+
   /**
    * 添加用户
    * @param requestBody
@@ -416,6 +439,7 @@ export class Service {
       },
     })
   }
+
   /**
    * 更新用户配置信息
    * @param requestBody
@@ -435,6 +459,7 @@ export class Service {
       },
     })
   }
+
   /**
    * 删除用户
    * @param requestBody
@@ -454,6 +479,7 @@ export class Service {
       },
     })
   }
+
   /**
    * 重新排序用户
    * @param requestBody
@@ -473,6 +499,7 @@ export class Service {
       },
     })
   }
+
   /**
    * 导入基建配置文件
    * @param requestBody
@@ -492,6 +519,7 @@ export class Service {
       },
     })
   }
+
   /**
    * 查询 webhook 配置
    * @param requestBody
@@ -511,6 +539,7 @@ export class Service {
       },
     })
   }
+
   /**
    * 添加webhook项
    * @param requestBody
@@ -530,6 +559,7 @@ export class Service {
       },
     })
   }
+
   /**
    * 更新webhook项
    * @param requestBody
@@ -549,6 +579,7 @@ export class Service {
       },
     })
   }
+
   /**
    * 删除webhook项
    * @param requestBody
@@ -568,6 +599,7 @@ export class Service {
       },
     })
   }
+
   /**
    * 重新排序webhook项
    * @param requestBody
@@ -587,6 +619,7 @@ export class Service {
       },
     })
   }
+
   /**
    * 添加计划表
    * @param requestBody
@@ -604,6 +637,7 @@ export class Service {
       },
     })
   }
+
   /**
    * 查询计划表
    * @param requestBody
@@ -621,6 +655,7 @@ export class Service {
       },
     })
   }
+
   /**
    * 更新计划表配置信息
    * @param requestBody
@@ -638,6 +673,7 @@ export class Service {
       },
     })
   }
+
   /**
    * 删除计划表
    * @param requestBody
@@ -655,6 +691,7 @@ export class Service {
       },
     })
   }
+
   /**
    * 重新排序计划表
    * @param requestBody
@@ -674,6 +711,7 @@ export class Service {
       },
     })
   }
+
   /**
    * 添加调度队列
    * @returns QueueCreateOut Successful Response
@@ -685,6 +723,7 @@ export class Service {
       url: '/api/queue/add',
     })
   }
+
   /**
    * 查询调度队列配置信息
    * @param requestBody
@@ -702,6 +741,7 @@ export class Service {
       },
     })
   }
+
   /**
    * 更新调度队列配置信息
    * @param requestBody
@@ -721,6 +761,7 @@ export class Service {
       },
     })
   }
+
   /**
    * 删除调度队列
    * @param requestBody
@@ -740,6 +781,7 @@ export class Service {
       },
     })
   }
+
   /**
    * 重新排序
    * @param requestBody
@@ -759,6 +801,7 @@ export class Service {
       },
     })
   }
+
   /**
    * 查询定时项
    * @param requestBody
@@ -778,6 +821,7 @@ export class Service {
       },
     })
   }
+
   /**
    * 添加定时项
    * @param requestBody
@@ -797,6 +841,7 @@ export class Service {
       },
     })
   }
+
   /**
    * 更新定时项
    * @param requestBody
@@ -816,6 +861,7 @@ export class Service {
       },
     })
   }
+
   /**
    * 删除定时项
    * @param requestBody
@@ -835,6 +881,7 @@ export class Service {
       },
     })
   }
+
   /**
    * 重新排序定时项
    * @param requestBody
@@ -854,6 +901,7 @@ export class Service {
       },
     })
   }
+
   /**
    * 查询队列项
    * @param requestBody
@@ -873,6 +921,7 @@ export class Service {
       },
     })
   }
+
   /**
    * 添加队列项
    * @param requestBody
@@ -892,6 +941,7 @@ export class Service {
       },
     })
   }
+
   /**
    * 更新队列项
    * @param requestBody
@@ -911,6 +961,7 @@ export class Service {
       },
     })
   }
+
   /**
    * 删除队列项
    * @param requestBody
@@ -930,6 +981,7 @@ export class Service {
       },
     })
   }
+
   /**
    * 重新排序队列项
    * @param requestBody
@@ -949,6 +1001,7 @@ export class Service {
       },
     })
   }
+
   /**
    * 添加任务
    * @param requestBody
@@ -968,6 +1021,7 @@ export class Service {
       },
     })
   }
+
   /**
    * 中止任务
    * @param requestBody
@@ -985,6 +1039,7 @@ export class Service {
       },
     })
   }
+
   /**
    * 设置电源标志
    * @param requestBody
@@ -1002,6 +1057,7 @@ export class Service {
       },
     })
   }
+
   /**
    * 取消电源任务
    * @returns OutBase Successful Response
@@ -1013,6 +1069,7 @@ export class Service {
       url: '/api/dispatch/cancel/power',
     })
   }
+
   /**
    * 搜索历史记录总览信息
    * @param requestBody
@@ -1032,6 +1089,7 @@ export class Service {
       },
     })
   }
+
   /**
    * 从指定文件内获取历史记录数据
    * @param requestBody
@@ -1051,6 +1109,7 @@ export class Service {
       },
     })
   }
+
   /**
    * 查询配置
    * 查询配置
@@ -1063,6 +1122,7 @@ export class Service {
       url: '/api/setting/get',
     })
   }
+
   /**
    * 更新配置
    * 更新配置
@@ -1083,6 +1143,7 @@ export class Service {
       },
     })
   }
+
   /**
    * 测试通知
    * 测试通知
@@ -1095,6 +1156,7 @@ export class Service {
       url: '/api/setting/test_notify',
     })
   }
+
   /**
    * 查询 webhook 配置
    * @param requestBody
@@ -1114,6 +1176,7 @@ export class Service {
       },
     })
   }
+
   /**
    * 添加webhook项
    * @returns WebhookCreateOut Successful Response
@@ -1125,6 +1188,7 @@ export class Service {
       url: '/api/setting/webhook/add',
     })
   }
+
   /**
    * 更新webhook项
    * @param requestBody
@@ -1144,6 +1208,7 @@ export class Service {
       },
     })
   }
+
   /**
    * 删除webhook项
    * @param requestBody
@@ -1163,6 +1228,7 @@ export class Service {
       },
     })
   }
+
   /**
    * 重新排序webhook项
    * @param requestBody
@@ -1182,6 +1248,7 @@ export class Service {
       },
     })
   }
+
   /**
    * 测试Webhook配置
    * 测试自定义Webhook
@@ -1202,6 +1269,7 @@ export class Service {
       },
     })
   }
+
   /**
    * 查询全部模拟器配置
    * 查询模拟器配置
@@ -1214,6 +1282,7 @@ export class Service {
       url: '/api/setting/emulator/get',
     })
   }
+
   /**
    * 添加模拟器配置
    * 添加新的模拟器配置
@@ -1226,6 +1295,7 @@ export class Service {
       url: '/api/setting/emulator/add',
     })
   }
+
   /**
    * 更新模拟器配置
    * 更新模拟器配置
@@ -1246,6 +1316,7 @@ export class Service {
       },
     })
   }
+
   /**
    * 删除模拟器配置
    * 删除模拟器配置
@@ -1266,6 +1337,7 @@ export class Service {
       },
     })
   }
+
   /**
    * 获取模拟器设备信息
    * 获取指定模拟器下的所有设备信息
@@ -1286,6 +1358,7 @@ export class Service {
       },
     })
   }
+
   /**
    * 自动搜索模拟器
    * 自动搜索系统中安装的模拟器
@@ -1298,6 +1371,7 @@ export class Service {
       url: '/api/setting/emulator/search',
     })
   }
+
   /**
    * 启动指定模拟器
    * 根据UUID和索引启动指定模拟器
@@ -1318,6 +1392,7 @@ export class Service {
       },
     })
   }
+
   /**
    * 关闭指定模拟器
    * 根据UUID和索引关闭指定模拟器
@@ -1338,6 +1413,7 @@ export class Service {
       },
     })
   }
+
   /**
    * 获取模拟器状态
    * 获取指定UUID的模拟器状态，或获取所有模拟器状态（不传UUID时）
@@ -1358,6 +1434,7 @@ export class Service {
       },
     })
   }
+
   /**
    * 检查更新
    * @param requestBody
@@ -1377,6 +1454,7 @@ export class Service {
       },
     })
   }
+
   /**
    * 下载更新
    * @returns OutBase Successful Response
@@ -1388,6 +1466,7 @@ export class Service {
       url: '/api/update/download',
     })
   }
+
   /**
    * 安装更新
    * @returns OutBase Successful Response

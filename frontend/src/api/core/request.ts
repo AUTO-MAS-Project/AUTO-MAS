@@ -6,12 +6,12 @@ import axios from 'axios'
 import type { AxiosError, AxiosRequestConfig, AxiosResponse, AxiosInstance } from 'axios'
 import FormData from 'form-data'
 
-import { ApiError } from './ApiError'
+import { ApiError } from '@/api'
 import type { ApiRequestOptions } from './ApiRequestOptions'
 import type { ApiResult } from './ApiResult'
-import { CancelablePromise } from './CancelablePromise'
+import { CancelablePromise } from '@/api'
 import type { OnCancel } from './CancelablePromise'
-import type { OpenAPIConfig } from './OpenAPI'
+import type { OpenAPIConfig } from '@/api'
 
 export const isDefined = <T>(
   value: T | null | undefined
@@ -245,7 +245,7 @@ export const sendRequest = async <T>(
 }
 
 export const getResponseHeader = (
-  response: AxiosResponse<any>,
+  response: AxiosResponse>,
   responseHeader?: string
 ): string | undefined => {
   if (responseHeader) {
@@ -257,7 +257,7 @@ export const getResponseHeader = (
   return undefined
 }
 
-export const getResponseBody = (response: AxiosResponse<any>): any => {
+export const getResponseBody = (response: AxiosResponse>): any => {
   if (response.status !== 204) {
     return response.data
   }

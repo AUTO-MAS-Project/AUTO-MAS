@@ -2,8 +2,8 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { Webhook } from './Webhook'
-import type { WebhookIndexItem } from './WebhookIndexItem'
+import type { Webhook, WebhookIndexItem } from '@/api'
+
 export type WebhookGetOut = {
   /**
    * 状态码

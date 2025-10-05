@@ -2,7 +2,8 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { HistoryIndexItem } from './HistoryIndexItem'
+import type { HistoryIndexItem } from '@/api'
+
 export type HistoryData = {
   /**
    * 历史记录索引列表

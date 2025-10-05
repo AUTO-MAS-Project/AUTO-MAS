@@ -2,8 +2,8 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { Webhook_Data } from './Webhook_Data'
-import type { Webhook_Info } from './Webhook_Info'
+import type { Webhook_Data, Webhook_Info } from '@/api'
+
 export type Webhook = {
   /**
    * Webhook基础信息

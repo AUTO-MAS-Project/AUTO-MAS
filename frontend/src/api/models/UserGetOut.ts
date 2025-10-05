@@ -2,9 +2,8 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { GeneralUserConfig } from './GeneralUserConfig'
-import type { MaaUserConfig } from './MaaUserConfig'
-import type { UserIndexItem } from './UserIndexItem'
+import type { GeneralUserConfig, MaaUserConfig, UserIndexItem } from '@/api'
+
 export type UserGetOut = {
   /**
    * 状态码

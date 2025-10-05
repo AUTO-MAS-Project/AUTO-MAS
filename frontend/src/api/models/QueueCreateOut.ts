@@ -2,7 +2,8 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { QueueConfig } from './QueueConfig'
+import type { QueueConfig } from '@/api'
+
 export type QueueCreateOut = {
   /**
    * 状态码

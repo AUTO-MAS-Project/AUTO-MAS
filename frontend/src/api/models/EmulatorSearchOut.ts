@@ -2,7 +2,8 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { EmulatorSearchResult } from './EmulatorSearchResult'
+import type { EmulatorSearchResult } from '@/api'
+
 /**
  * 模拟器搜索响应
  */
