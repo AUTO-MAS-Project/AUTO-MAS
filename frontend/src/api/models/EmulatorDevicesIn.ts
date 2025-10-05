@@ -3,12 +3,12 @@
 /* tslint:disable */
 /* eslint-disable */
 /**
- * 获取模拟器配置请求
+ * 获取模拟器设备信息请求
  */
-export type EmulatorGetIn = {
+export type EmulatorDevicesIn = {
     /**
-     * 指定的模拟器ID，为空则获取所有
+     * 模拟器UUID
      */
-    emulatorId?: (string | null);
+    emulator_uuid: string;
 };
 

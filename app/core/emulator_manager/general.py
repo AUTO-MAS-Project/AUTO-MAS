@@ -26,7 +26,7 @@ import subprocess
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, Any
-from app.utils.emulator_manager.utils import BaseDevice, DeviceStatus
+from app.core.emulator_manager.utils import BaseDevice, DeviceStatus
 from app.utils.logger import get_logger
 
 

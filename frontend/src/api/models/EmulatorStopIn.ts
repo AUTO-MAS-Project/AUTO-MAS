@@ -3,12 +3,16 @@
 /* tslint:disable */
 /* eslint-disable */
 /**
- * 模拟器索引项
+ * 关闭模拟器请求
  */
-export type EmulatorIndexItem = {
+export type EmulatorStopIn = {
     /**
      * 模拟器UUID
      */
-    uuid: string;
+    emulator_uuid: string;
+    /**
+     * 模拟器索引
+     */
+    index: string;
 };
 

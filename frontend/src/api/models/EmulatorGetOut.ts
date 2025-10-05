@@ -3,9 +3,8 @@
 /* tslint:disable */
 /* eslint-disable */
 import type { EmulatorIndexItem } from './EmulatorIndexItem';
-import type { EmulatorInfo } from './EmulatorInfo';
 /**
- * 获取模拟器配置响应
+ * 获取模拟器列表响应
  */
 export type EmulatorGetOut = {
     /**
@@ -23,10 +22,10 @@ export type EmulatorGetOut = {
     /**
      * 模拟器索引列表
      */
-    index: Array<EmulatorIndexItem>;
+    index?: Array<EmulatorIndexItem>;
     /**
-     * 模拟器配置数据
+     * 模拟器数据字典
      */
-    data: Record<string, EmulatorInfo>;
+    data?: Record<string, Record<string, any>>;
 };
 

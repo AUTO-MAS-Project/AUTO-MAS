@@ -1,8 +1,8 @@
 import asyncio
 from typing import Literal
-from app.utils.emulator_manager.utils import BaseDevice, ExeRunner, DeviceStatus
+from app.core.emulator_manager.utils import BaseDevice, ExeRunner, DeviceStatus
 from app.utils.logger import get_logger
-from app.utils.emulator_manager.keyboard_utils import (
+from app.core.emulator_manager.keyboard_utils import (
     vk_codes_to_key_names,
     send_key_combination,
 )

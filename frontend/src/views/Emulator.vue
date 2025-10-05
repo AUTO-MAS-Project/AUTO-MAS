@@ -6,13 +6,29 @@ import {
   CloseOutlined,
   DeleteOutlined,
   EditOutlined,
+  PlayCircleOutlined,
   PlusOutlined,
   QuestionCircleOutlined,
+  ReloadOutlined,
   SaveOutlined,
   SearchOutlined,
+  StopOutlined,
 } from '@ant-design/icons-vue'
-import type { EmulatorIndexItem, EmulatorInfo, EmulatorSearchResult } from '@/api'
+import type { EmulatorSearchResult } from '@/api'
 import { Service } from '@/api'
+
+// 临时类型定义，等待OpenAPI更新
+interface EmulatorIndexItem {
+  uuid: string
+}
+
+interface EmulatorInfo {
+  name: string
+  type: string
+  path: string
+  max_wait_time: number
+  boss_keys: string[]
+}
 
 // 模拟器类型映射
 const emulatorTypeOptions = [
@@ -28,7 +44,7 @@ const emulatorTypeOptions = [
 const loading = ref(false)
 const searching = ref(false)
 const emulatorIndex = ref<EmulatorIndexItem[]>([])
-const emulatorData = ref<Record<string, EmulatorInfo>>({})
+const emulatorData = ref<Record<string, any>>({})
 const searchResults = ref<EmulatorSearchResult[]>([])
 const showSearchModal = ref(false)
 
@@ -36,6 +52,8 @@ const showSearchModal = ref(false)
 const expandedEmulators = ref<Set<string>>(new Set())
 const devicesData = ref<Record<string, Record<string, { title: string; status: string }>>>({})
 const loadingDevices = ref<Set<string>>(new Set())
+const startingDevices = ref<Set<string>>(new Set())
+const stoppingDevices = ref<Set<string>>(new Set())
 
 // 编辑状态
 const editingId = ref<string | null>(null)
@@ -56,12 +74,10 @@ const bossKeyInput = ref('')
 const loadEmulators = async () => {
   loading.value = true
   try {
-    const response = await Service.getEmulatorsApiSettingEmulatorGetPost({
-      emulatorId: null,
-    })
-    if (response.code === 200) {
-      emulatorIndex.value = response.index
-      emulatorData.value = response.data
+    const response = await Service.getEmulatorsApiSettingEmulatorGetPost()
+    if (response.code === 200 && 'index' in response && 'data' in response) {
+      emulatorIndex.value = response.index as any[]
+      emulatorData.value = response.data as Record<string, any>
     } else {
       message.error(response.message || '加载模拟器配置失败')
     }
@@ -86,8 +102,16 @@ const handleAdd = async () => {
       message.success('添加成功')
       await loadEmulators()
       // 自动进入编辑模式，焦点切换到新模拟器
-      editingId.value = response.emulatorId
-      editingData.value = { ...response.data }
+      editingId.value = response.emulator_uuid
+      // 将后端返回的分组结构转换为扁平结构
+      const configData = response.emulator_data
+      editingData.value = {
+        name: configData?.Info?.Name || '',
+        type: configData?.Info?.Type || '',
+        path: configData?.Data?.Path || '',
+        max_wait_time: configData?.Data?.max_wait_time || 60,
+        boss_keys: configData?.Data?.Boss_keys ? JSON.parse(configData.Data.Boss_keys) : [],
+      }
     } else {
       message.error(response.message || '添加失败')
     }
@@ -105,15 +129,37 @@ const handleEdit = async (uuid: string) => {
   }
 
   editingId.value = uuid
-  editingData.value = { ...emulatorData.value[uuid] }
+  
+  // 将后端的分组结构转换为扁平结构供前端编辑
+  const configData = emulatorData.value[uuid]
+  editingData.value = {
+    name: configData?.Info?.Name || '',
+    type: configData?.Info?.Type || '',
+    path: configData?.Data?.Path || '',
+    max_wait_time: configData?.Data?.max_wait_time || 60,
+    boss_keys: configData?.Data?.Boss_keys ? JSON.parse(configData.Data.Boss_keys) : [],
+  }
 }
 
 // 保存编辑
 const handleSave = async (uuid: string) => {
   try {
+    // 将前端的扁平结构转换为后端需要的分组结构
+    const configData = {
+      Info: {
+        Name: editingData.value.name,
+        Type: editingData.value.type,
+      },
+      Data: {
+        Path: editingData.value.path,
+        max_wait_time: editingData.value.max_wait_time,
+        Boss_keys: JSON.stringify(editingData.value.boss_keys),
+      },
+    }
+    
     const response = await Service.updateEmulatorApiSettingEmulatorUpdatePost({
-      emulatorId: uuid,
-      data: editingData.value,
+      emulator_uuid: uuid,
+      data: configData,
     })
     if (response.code === 200) {
       message.success('保存成功')
@@ -146,7 +192,7 @@ const handleCancel = () => {
 const handleDelete = async (uuid: string) => {
   try {
     const response = await Service.deleteEmulatorApiSettingEmulatorDeletePost({
-      emulatorId: uuid,
+      emulator_uuid: uuid,
     })
     if (response.code === 200) {
       message.success('删除成功')
@@ -166,7 +212,7 @@ const handleSearch = async () => {
   try {
     const response = await Service.searchEmulatorsApiSettingEmulatorSearchPost()
     if (response.code === 200) {
-      searchResults.value = response.emulators
+      searchResults.value = response.emulators || []
       if (searchResults.value.length > 0) {
         showSearchModal.value = true
       } else {
@@ -188,15 +234,19 @@ const handleImportFromSearch = async (result: EmulatorSearchResult) => {
   try {
     const response = await Service.addEmulatorApiSettingEmulatorAddPost()
     if (response.code === 200) {
-      // 更新新添加的模拟器配置
+      // 更新新添加的模拟器配置，使用分组结构
       const updateResponse = await Service.updateEmulatorApiSettingEmulatorUpdatePost({
-        emulatorId: response.emulatorId,
+        emulator_uuid: response.emulator_uuid,
         data: {
-          name: result.name,
-          type: result.type,
-          path: result.path,
-          max_wait_time: 60,
-          boss_keys: [],
+          Info: {
+            Name: result.name,
+            Type: result.type,
+          },
+          Data: {
+            Path: result.path,
+            max_wait_time: 60,
+            Boss_keys: JSON.stringify([]),
+          },
         },
       })
       if (updateResponse.code === 200) {
@@ -226,35 +276,27 @@ const toggleDevices = async (uuid: string) => {
     expandedEmulators.value.add(uuid)
     expandedEmulators.value = new Set(expandedEmulators.value)
     
-    // 如果还没有加载设备信息，则加载
-    if (!devicesData.value[uuid]) {
-      await loadDevices(uuid)
-    }
+    // 加载设备信息
+    await loadDevices(uuid)
   }
 }
 
-// 加载设备信息
+// 加载设备信息 - 使用新的status API
 const loadDevices = async (uuid: string) => {
   loadingDevices.value.add(uuid)
   loadingDevices.value = new Set(loadingDevices.value)
   
   try {
-    // const response = await Service.getEmulatorDevicesApiSettingEmulatorDevicesPost({
-    //   emulatorId: uuid,
-    // })
-    // if (response.code === 200) {
-    //   devicesData.value[uuid] = response.devices
-    // } else {
-    //   message.error(response.message || '获取设备信息失败')
-    //   expandedEmulators.value.delete(uuid)
-    //   expandedEmulators.value = new Set(expandedEmulators.value)
-    // }
+    const response = await Service.getEmulatorStatusApiApiSettingEmulatorStatusPost({
+      emulator_uuid: uuid,
+    })
     
-    // 临时数据用于测试UI
-    await new Promise(resolve => setTimeout(resolve, 500))
-    devicesData.value[uuid] = {
-      '0': { title: '模拟器-1', status: '0' },
-      '1': { title: '模拟器-2', status: '1' },
+    if (response.code === 200) {
+      devicesData.value[uuid] = response.status_data || {}
+    } else {
+      message.error(response.message || '获取设备信息失败')
+      expandedEmulators.value.delete(uuid)
+      expandedEmulators.value = new Set(expandedEmulators.value)
     }
   } catch (e) {
     console.error('获取设备信息失败', e)
@@ -272,6 +314,63 @@ const loadDevices = async (uuid: string) => {
 const refreshDevices = async (uuid: string) => {
   await loadDevices(uuid)
   message.success('刷新成功')
+}
+
+// 启动模拟器
+const startEmulator = async (uuid: string, index: string) => {
+  const deviceKey = `${uuid}-${index}`
+  startingDevices.value.add(deviceKey)
+  startingDevices.value = new Set(startingDevices.value)
+  
+  try {
+    const response = await Service.startEmulatorApiSettingEmulatorStartPost({
+      emulator_uuid: uuid,
+      index: index,
+      package_name: '',
+    })
+    
+    if (response.code === 200) {
+      message.success(response.message || `模拟器 ${index} 启动成功`)
+      // 刷新设备状态
+      await loadDevices(uuid)
+    } else {
+      message.error(response.message || '启动失败')
+    }
+  } catch (e) {
+    console.error('启动模拟器失败', e)
+    message.error('启动模拟器失败')
+  } finally {
+    startingDevices.value.delete(deviceKey)
+    startingDevices.value = new Set(startingDevices.value)
+  }
+}
+
+// 关闭模拟器
+const stopEmulator = async (uuid: string, index: string) => {
+  const deviceKey = `${uuid}-${index}`
+  stoppingDevices.value.add(deviceKey)
+  stoppingDevices.value = new Set(stoppingDevices.value)
+  
+  try {
+    const response = await Service.stopEmulatorApiSettingEmulatorStopPost({
+      emulator_uuid: uuid,
+      index: index,
+    })
+    
+    if (response.code === 200) {
+      message.success(response.message || `模拟器 ${index} 已关闭`)
+      // 刷新设备状态
+      await loadDevices(uuid)
+    } else {
+      message.error(response.message || '关闭失败')
+    }
+  } catch (e) {
+    console.error('关闭模拟器失败', e)
+    message.error('关闭模拟器失败')
+  } finally {
+    stoppingDevices.value.delete(deviceKey)
+    stoppingDevices.value = new Set(stoppingDevices.value)
+  }
 }
 
 // 路径选择
@@ -380,25 +479,25 @@ const handleRemoveBossKey = () => {
 </script>
 
 <template>
-  <div class="tab-content">
-    <div class="form-section">
-      <div class="section-header">
-        <h3>模拟器配置</h3>
-        <div style="display: flex; gap: 8px">
-          <a-button
-            type="primary"
-            :icon="h(SearchOutlined)"
-            @click="handleSearch"
-            :loading="searching"
-          >
-            自动搜索
-          </a-button>
-          <a-button type="primary" :icon="h(PlusOutlined)" @click="handleAdd">
-            添加模拟器
-          </a-button>
-        </div>
+  <div class="emulator-page">
+    <div class="page-header">
+      <h1>模拟器管理</h1>
+      <div class="header-actions">
+        <a-button
+          type="primary"
+          :icon="h(SearchOutlined)"
+          @click="handleSearch"
+          :loading="searching"
+        >
+          自动搜索
+        </a-button>
+        <a-button type="primary" :icon="h(PlusOutlined)" @click="handleAdd">
+          添加模拟器
+        </a-button>
       </div>
+    </div>
 
+    <div class="page-content">
       <a-spin :spinning="loading">
         <div v-if="emulatorIndex.length === 0" class="empty-state">
           <a-empty description="暂无模拟器配置">
@@ -411,7 +510,7 @@ const handleRemoveBossKey = () => {
             <div class="card-header">
               <div class="card-title">
                 <span v-if="editingId !== element.uuid">{{
-                  emulatorData[element.uuid]?.name || '未命名'
+                  emulatorData[element.uuid]?.Info?.Name || '未命名'
                 }}</span>
                 <a-input
                   v-else
@@ -494,9 +593,9 @@ const handleRemoveBossKey = () => {
                       v-model:value="editingData.max_wait_time"
                       placeholder="输入最大等待时间"
                       style="width: 100%"
-                      min="10"
-                      max="300"
-                      step="5"
+                      :min="10"
+                      :max="300"
+                      :step="5"
                     />
                   </div>
                 </a-col>
@@ -565,6 +664,7 @@ const handleRemoveBossKey = () => {
                 <h4>设备列表</h4>
                 <a-button
                   size="small"
+                  :icon="h(ReloadOutlined)"
                   @click="refreshDevices(element.uuid)"
                   :loading="loadingDevices.has(element.uuid)"
                 >
@@ -598,6 +698,28 @@ const handleRemoveBossKey = () => {
                         <span class="info-label">状态码:</span>
                         <span class="info-value">{{ device.status }}</span>
                       </div>
+                    </div>
+                    <div class="device-actions">
+                      <a-button
+                        type="primary"
+                        size="small"
+                        :icon="h(PlayCircleOutlined)"
+                        @click="startEmulator(element.uuid, String(index))"
+                        :loading="startingDevices.has(`${element.uuid}-${index}`)"
+                        :disabled="device.status === '0'"
+                      >
+                        启动
+                      </a-button>
+                      <a-button
+                        danger
+                        size="small"
+                        :icon="h(StopOutlined)"
+                        @click="stopEmulator(element.uuid, String(index))"
+                        :loading="stoppingDevices.has(`${element.uuid}-${index}`)"
+                        :disabled="device.status !== '0'"
+                      >
+                        关闭
+                      </a-button>
                     </div>
                   </div>
                 </div>
@@ -633,30 +755,36 @@ const handleRemoveBossKey = () => {
 </template>
 
 <style scoped>
-.tab-content {
+.emulator-page {
   padding: 24px;
   background: var(--bg-color-container);
-  border-radius: 8px;
   min-height: 100vh;
 }
 
-.form-section {
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.page-header h1 {
+  color: var(--text-color-primary);
+  margin: 0;
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.header-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.page-content {
   background: var(--bg-color-elevated);
   padding: 24px;
   border-radius: 8px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-}
-
-.section-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
-}
-
-.section-header h3 {
-  color: var(--text-color-primary);
-  margin: 0;
 }
 
 .empty-state {
@@ -694,17 +822,6 @@ const handleRemoveBossKey = () => {
 .card-title span {
   font-size: 16px;
   font-weight: 600;
-}
-
-.drag-handle {
-  cursor: move;
-  margin-right: 8px;
-  color: var(--text-color-secondary);
-  transition: color 0.3s;
-}
-
-.drag-handle:hover {
-  color: var(--primary-color);
 }
 
 .card-actions {
@@ -799,6 +916,7 @@ const handleRemoveBossKey = () => {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  margin-bottom: 12px;
 }
 
 .info-item {
@@ -820,6 +938,12 @@ const handleRemoveBossKey = () => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.device-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
 }
 
 .ant-list-item-meta {
@@ -854,7 +978,7 @@ html.dark .emulator-card {
   background: #1a1a1a;
 }
 
-html.dark .form-section {
+html.dark .page-content {
   background: #0a0a0a;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }

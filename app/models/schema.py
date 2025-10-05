@@ -872,6 +872,21 @@ class UpdateCheckOut(OutBase):
 # 模拟器管理相关的模型
 
 
+class EmulatorIndexItem(BaseModel):
+    """模拟器索引项"""
+
+    uuid: str = Field(..., description="模拟器UUID")
+
+
+class EmulatorGetOut(OutBase):
+    """获取模拟器列表响应"""
+
+    index: List[EmulatorIndexItem] = Field(
+        default_factory=list, description="模拟器索引列表"
+    )
+    data: Dict[str, Any] = Field(default_factory=dict, description="模拟器数据字典")
+
+
 class EmulatorOutBase(OutBase):
     emulator_uuid: str = Field(..., description="模拟器UUID")
     emulator_data: dict = Field(..., description="模拟器信息")
@@ -937,3 +952,17 @@ class EmulatorStopIn(BaseModel):
 
     emulator_uuid: str = Field(..., description="模拟器UUID")
     index: str = Field(..., description="模拟器索引")
+
+
+class EmulatorStatusIn(BaseModel):
+    """获取模拟器状态请求"""
+
+    emulator_uuid: str | None = Field(
+        default=None, description="模拟器UUID，为空时获取所有模拟器状态"
+    )
+
+
+class EmulatorStatusOut(OutBase):
+    """获取模拟器状态响应"""
+
+    status_data: dict = Field(default_factory=dict, description="模拟器状态信息")

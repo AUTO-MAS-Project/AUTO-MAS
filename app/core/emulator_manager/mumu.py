@@ -1,6 +1,6 @@
 import asyncio
 import json
-from app.utils.emulator_manager.utils import BaseDevice, ExeRunner, DeviceStatus
+from app.core.emulator_manager.utils import BaseDevice, ExeRunner, DeviceStatus
 from app.utils.logger import get_logger
 from app.models.config import EmulatorManagerConfig
 

@@ -2,11 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { EmulatorSearchResult } from './EmulatorSearchResult';
-/**
- * 模拟器搜索响应
- */
-export type EmulatorSearchOut = {
+export type EmulatorOutBase = {
     /**
      * 状态码
      */
@@ -20,8 +16,12 @@ export type EmulatorSearchOut = {
      */
     message?: string;
     /**
-     * 搜索到的模拟器列表
+     * 模拟器UUID
      */
-    emulators?: Array<EmulatorSearchResult>;
+    emulator_uuid: string;
+    /**
+     * 模拟器信息
+     */
+    emulator_data: Record<string, any>;
 };
 
