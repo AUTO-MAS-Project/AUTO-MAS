@@ -1,7 +1,11 @@
 <template>
   <div class="task-tree-container">
     <div v-if="taskData.length === 0" class="empty-state">
-      <a-empty description="暂无任务数据" />
+      <div class="empty-content">
+        <div class="empty-image-container">
+          <img src="@/assets/NoData.png" alt="暂无数据" class="empty-image" />
+        </div>
+      </div>
     </div>
     <div v-else class="task-tree">
       <div 
@@ -547,5 +551,44 @@ defineExpose({
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+/* 空状态样式 */
+.empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 200px;
+  text-align: center;
+}
+
+.empty-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.empty-image-container {
+  margin-bottom: 16px;
+}
+
+.empty-image {
+  width: 80px;
+  height: auto;
+  opacity: 0.6;
+}
+
+.empty-title {
+  font-size: 16px;
+  font-weight: 500;
+  margin: 0 0 4px 0;
+  color: var(--ant-color-text);
+}
+
+.empty-description {
+  font-size: 14px;
+  color: var(--ant-color-text-secondary);
+  margin: 0;
 }
 </style>

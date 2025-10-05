@@ -1,24 +1,35 @@
+#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+#   Copyright © 2025 AUTO-MAS Team
+
+#   This file is part of AUTO-MAS.
+
+#   AUTO-MAS is free software: you can redistribute it and/or modify
+#   it under the terms of the GNU General Public License as published
+#   by the Free Software Foundation, either version 3 of the License,
+#   or (at your option) any later version.
+
+#   AUTO-MAS is distributed in the hope that it will be useful,
+#   but WITHOUT ANY WARRANTY; without even the implied warranty
+#   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
+#   the GNU General Public License for more details.
+
+#   You should have received a copy of the GNU General Public License
+#   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
+
+#   Contact: DLmaster_361@163.com
+
+
 import asyncio
 import aiofiles
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from pathlib import Path
 from typing import Callable, Optional, List, Awaitable
 
+from .constants import TIME_FIELDS
 from .logger import get_logger
 
 logger = get_logger("日志监控器")
-
-TIME_FIELDS = {
-    "%Y": "year",
-    "%m": "month",
-    "%d": "day",
-    "%H": "hour",
-    "%M": "minute",
-    "%S": "second",
-    "%f": "microsecond",
-}
-"""时间字段映射表"""
 
 
 def strptime(date_string: str, format: str, default_date: datetime) -> datetime:
@@ -54,7 +65,6 @@ class LogMonitor:
         self.last_callback_time: datetime = datetime.now()
         self.log_contents: List[str] = []
         self.task: Optional[asyncio.Task] = None
-        self.__is_running = False
 
     async def monitor_log(self):
         """监控日志文件的主循环"""
@@ -63,7 +73,9 @@ class LogMonitor:
 
         logger.info(f"开始监控日志文件: {self.log_file_path}")
 
-        while self.__is_running:
+        if_mtime_checked = False
+
+        while True:
             logger.debug("正在检查日志文件...")
             log_contents = []
             if_log_start = False
@@ -71,7 +83,21 @@ class LogMonitor:
             # 检查文件是否仍然存在
             if not self.log_file_path.exists():
                 logger.warning(f"日志文件不存在: {self.log_file_path}")
+                await asyncio.sleep(1)
                 continue
+
+            if not if_mtime_checked:
+                if (
+                    date.fromtimestamp(self.log_file_path.stat().st_mtime)
+                    == date.today()
+                ):
+                    if_mtime_checked = True
+                else:
+                    logger.warning(
+                        f"日志文件今天未被修改: {date.fromtimestamp(self.log_file_path.stat().st_mtime)}"
+                    )
+                    await asyncio.sleep(1)
+                    continue
 
             # 尝试读取文件
             try:
@@ -132,7 +158,6 @@ class LogMonitor:
         if self.task is not None and not self.task.done():
             await self.stop()
 
-        self.__is_running = True
         self.log_contents = []
         self.log_file_path = log_file_path
         self.log_start_time = start_time

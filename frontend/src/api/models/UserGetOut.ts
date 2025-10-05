@@ -2,8 +2,8 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { GeneralUserConfig_Output } from './GeneralUserConfig_Output';
-import type { MaaUserConfig_Output } from './MaaUserConfig_Output';
+import type { GeneralUserConfig } from './GeneralUserConfig';
+import type { MaaUserConfig } from './MaaUserConfig';
 import type { UserIndexItem } from './UserIndexItem';
 export type UserGetOut = {
     /**
@@ -25,6 +25,6 @@ export type UserGetOut = {
     /**
      * 用户数据字典, key来自于index列表的uid
      */
-    data: Record<string, (MaaUserConfig_Output | GeneralUserConfig_Output)>;
+    data: Record<string, (MaaUserConfig | GeneralUserConfig)>;
 };
 

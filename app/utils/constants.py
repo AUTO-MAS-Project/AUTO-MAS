@@ -234,6 +234,18 @@ MATERIALS_MAP = {
 }
 """掉落物索引表"""
 
+
+TIME_FIELDS = {
+    "%Y": "year",
+    "%m": "month",
+    "%d": "day",
+    "%H": "hour",
+    "%M": "minute",
+    "%S": "second",
+    "%f": "microsecond",
+}
+"""时间字段映射表"""
+
 POWER_SIGN_MAP = {
     "NoAction": "无动作",
     "Shutdown": "关机",

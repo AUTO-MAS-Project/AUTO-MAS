@@ -3,6 +3,7 @@
 // 核心策略：将重要事件保存到 localStorage（或内存队列），并暴露注册点供 UI 在挂载时接收并回放。
 
 // no types needed here to avoid circular/unused imports
+import { useAppClosing } from '@/composables/useAppClosing'
 
 const PENDING_TABS_KEY = 'scheduler-pending-tabs'
 const PENDING_COUNTDOWN_KEY = 'scheduler-pending-countdown'
@@ -126,6 +127,10 @@ export function handleMainMessage(wsMessage: any) {
 async function handleRequestClose() {
     try {
         console.log('开始执行前端自杀流程...')
+        
+        // 显示关闭遮罩
+        const { showClosingOverlay } = useAppClosing()
+        showClosingOverlay()
         
         // 使用更激进的强制退出方法
         if (window.electronAPI?.forceExit) {

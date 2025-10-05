@@ -134,6 +134,7 @@ export type { WebhookCreateOut } from './models/WebhookCreateOut';
 export type { WebhookDeleteIn } from './models/WebhookDeleteIn';
 export type { WebhookGetIn } from './models/WebhookGetIn';
 export type { WebhookGetOut } from './models/WebhookGetOut';
+export type { WebhookInBase } from './models/WebhookInBase';
 export type { WebhookIndexItem } from './models/WebhookIndexItem';
 export type { WebhookReorderIn } from './models/WebhookReorderIn';
 export type { WebhookTestIn } from './models/WebhookTestIn';

@@ -22,34 +22,36 @@
       <!-- 操作按钮 -->
       <div class="update-footer">
         <div class="update-actions">
-          <a-button v-if="!downloading && !downloaded" @click="handleCancel">暂不更新</a-button>
-          <a-button v-if="!downloading && !downloaded" type="primary" @click="downloadUpdate">
+          <a-button @click="handleCancel">暂不更新</a-button>
+          <a-button type="primary" @click="handleDownload">
             下载更新
-          </a-button>
-
-          <a-button v-if="downloading" type="primary" :loading="true" disabled>
-            下载中...（后端进度）
-          </a-button>
-
-          <a-button v-if="downloaded" type="primary" :loading="installing" @click="installUpdate">
-            {{ installing ? '正在安装...' : '立即安装' }}
           </a-button>
         </div>
       </div>
     </div>
   </a-modal>
+
+  <!-- 独立的下载窗口 -->
+  <UpdateDownloadModal
+    v-model:visible="showDownloadModal"
+    :latest-version="latestVersion"
+    :update-data="updateData"
+    @completed="handleDownloadCompleted"
+    @cancelled="handleDownloadCancelled"
+    @install-requested="handleInstallRequested"
+  />
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
-import { message } from 'ant-design-vue'
+import { computed, ref } from 'vue'
 import MarkdownIt from 'markdown-it'
-import { Service } from '@/api/services/Service.ts'
+import UpdateDownloadModal from './UpdateDownloadModal.vue'
 
 // Props 定义
 interface Props {
   visible: boolean
   updateData: Record<string, string[]>
+  latestVersion?: string
 }
 
 const props = defineProps<Props>()
@@ -60,12 +62,16 @@ const emit = defineEmits<{
   'update:visible': [value: boolean]
 }>()
 
+
+
 // 内部状态
 const hasUpdate = ref(false)
-const downloading = ref(false)
-const downloaded = ref(false)
-const installing = ref(false)
-const latestVersion = ref("")
+const showDownloadModal = ref(false)
+
+// 计算最新版本号
+const latestVersion = computed(() => {
+  return props.latestVersion || ''
+})
 
 // 计算属性 - 响应式地接收外部 visible 状态
 const visible = computed({
@@ -130,77 +136,46 @@ function updateInfoToMarkdown(
   return lines.join('\n')
 }
 
-// 初始化时设置 hasUpdate
-const initializeModal = () => {
-  if (props.updateData && Object.keys(props.updateData).length > 0) {
-    hasUpdate.value = true
-    // 从 updateData 中提取版本信息（如果有的话）
-    const versionInfo = Object.values(props.updateData).flat().find(item => 
-      typeof item === 'string' && item.includes('版本')
-    )
-    if (versionInfo) {
-      const versionMatch = versionInfo.match(/v?(\d+\.\d+\.\d+)/)
-      if (versionMatch) {
-        latestVersion.value = versionMatch[1]
-      }
-    }
-  }
+
+
+// 初始化检查
+if (props.updateData && Object.keys(props.updateData).length > 0) {
+  hasUpdate.value = true
 }
 
-// 监听 props 变化
-watch(() => props.updateData, () => {
-  initializeModal()
-}, { immediate: true })
-
-// 监听 visible 变化
-watch(() => props.visible, (newVisible) => {
-  if (newVisible && props.updateData && Object.keys(props.updateData).length > 0) {
-    hasUpdate.value = true
-  }
-}, { immediate: true })
-
-// 下载更新
-const downloadUpdate = async () => {
-  downloading.value = true
-  try {
-    const res = await Service.downloadUpdateApiUpdateDownloadPost()
-    if (res.code === 200) {
-      downloaded.value = true
-      message.success('下载完成')
-    } else {
-      message.error(res.message || '下载失败')
-    }
-  } catch (err) {
-    console.error('下载更新失败:', err)
-    message.error('下载更新失败')
-  } finally {
-    downloading.value = false
-  }
-}
-
-// 安装更新
-const installUpdate = async () => {
-  installing.value = true
-  try {
-    const res = await Service.installUpdateApiUpdateInstallPost()
-    if (res.code === 200) {
-      message.success('安装启动')
-      visible.value = false
-      emit('confirmed')
-    } else {
-      message.error(res.message || '安装失败')
-    }
-  } catch (err) {
-    console.error('安装失败:', err)
-    message.error('安装失败')
-  } finally {
-    installing.value = false
-  }
+// 处理下载按钮点击
+const handleDownload = () => {
+  console.log('[UpdateModal] 点击下载按钮')
+  console.log('[UpdateModal] 当前props:', {
+    updateData: props.updateData,
+    latestVersion: props.latestVersion,
+    visible: props.visible
+  })
+  // 关闭当前窗口，显示下载窗口
+  visible.value = false
+  showDownloadModal.value = true
+  console.log('[UpdateModal] 设置showDownloadModal为true:', showDownloadModal.value)
 }
 
 // 关闭弹窗
 const handleCancel = () => {
   visible.value = false
+  emit('confirmed')
+}
+
+// 下载窗口事件处理
+const handleDownloadCompleted = () => {
+  showDownloadModal.value = false
+  emit('confirmed')
+}
+
+const handleDownloadCancelled = () => {
+  showDownloadModal.value = false
+  emit('confirmed')
+}
+
+const handleInstallRequested = () => {
+  showDownloadModal.value = false
   emit('confirmed')
 }
 

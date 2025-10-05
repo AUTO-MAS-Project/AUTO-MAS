@@ -34,17 +34,21 @@ src/
 ## 开发
 
 ### 安装依赖
+
 ```bash
 yarn install
 ```
 
 ### 开发模式
+
 直接打开electron窗口
+
 ```bash
 yarn dev
 ```
 
 ### 构建
+
 ```bash
 yarn build   
 ```
@@ -58,3 +62,12 @@ yarn build
 - **构建工具**: Vite
 - **桌面端**: Electron
 - **包管理**: Yarn
+
+eslint + Prettier 代码规范相关
+
+```bash
+yarn lint          # 查看问题
+yarn lint:fix      # 自动修复
+yarn format        # 仅 Prettier 全量改格式（非必须）
+```
+

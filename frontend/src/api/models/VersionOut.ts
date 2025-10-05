@@ -27,9 +27,5 @@ export type VersionOut = {
      * 后端代码当前时间戳
      */
     current_time: string;
-    /**
-     * 后端当前版本号
-     */
-    current_version: string;
 };
 

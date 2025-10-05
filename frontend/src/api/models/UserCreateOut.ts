@@ -2,8 +2,8 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { GeneralUserConfig_Output } from './GeneralUserConfig_Output';
-import type { MaaUserConfig_Output } from './MaaUserConfig_Output';
+import type { GeneralUserConfig } from './GeneralUserConfig';
+import type { MaaUserConfig } from './MaaUserConfig';
 export type UserCreateOut = {
     /**
      * 状态码
@@ -24,6 +24,6 @@ export type UserCreateOut = {
     /**
      * 用户配置数据
      */
-    data: (MaaUserConfig_Output | GeneralUserConfig_Output);
+    data: (MaaUserConfig | GeneralUserConfig);
 };
 
