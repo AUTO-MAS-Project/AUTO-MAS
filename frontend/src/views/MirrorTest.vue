@@ -199,7 +199,7 @@ const testCloudUrl = async () => {
   addLog('测试云端URL连通性...', 'info')
   
   try {
-    const response = await fetch('https://download.auto-mas.top/d/AUTO_MAS/Server/mirrors.json', {
+    const response = await fetch('https://download.auto-mas.top/d/AUTO-MAS/Server/mirrors.json', {
       method: 'HEAD',
       mode: 'no-cors'
     })

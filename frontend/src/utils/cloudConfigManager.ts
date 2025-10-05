@@ -15,12 +15,12 @@ export interface CloudMirrorConfig {
 
 export class CloudConfigManager {
   private static instance: CloudConfigManager
-  private cloudConfigUrl = 'https://download.auto-mas.top/d/AUTO_MAS/Server/mirrors.json'
+  private cloudConfigUrl = 'https://download.auto-mas.top/d/AUTO-MAS/Server/mirrors.json'
   private fallbackConfig: CloudMirrorConfig | null = null
   private currentConfig: CloudMirrorConfig | null = null
   private fetchTimeout = 10000 // 10秒超时
 
-  private constructor() {}
+  private constructor() { }
 
   static getInstance(): CloudConfigManager {
     if (!CloudConfigManager.instance) {
@@ -41,11 +41,11 @@ export class CloudConfigManager {
    */
   async fetchCloudConfig(): Promise<CloudMirrorConfig | null> {
     const startTime = Date.now()
-    
+
     try {
       console.log(`正在从云端拉取镜像站配置... (超时时间: ${this.fetchTimeout}ms)`)
       console.log(`请求URL: ${this.cloudConfigUrl}`)
-      
+
       const controller = new AbortController()
       const timeoutId = setTimeout(() => {
         console.warn(`网络请求超时 (${this.fetchTimeout}ms)`)
@@ -69,7 +69,7 @@ export class CloudConfigManager {
       }
 
       const config: CloudMirrorConfig = await response.json()
-      
+
       // 验证配置格式
       if (!this.validateConfig(config)) {
         throw new Error('云端配置格式不正确')
@@ -137,17 +137,17 @@ export class CloudConfigManager {
    */
   async initializeConfig(fallbackConfig: CloudMirrorConfig): Promise<CloudMirrorConfig> {
     this.setFallbackConfig(fallbackConfig)
-    
+
     // 尝试拉取云端配置，增加重试机制
     let cloudConfig = await this.fetchCloudConfig()
-    
+
     // 如果第一次失败，等待2秒后重试一次
     if (!cloudConfig) {
       console.log('首次拉取云端配置失败，2秒后重试...')
       await new Promise(resolve => setTimeout(resolve, 2000))
       cloudConfig = await this.fetchCloudConfig()
     }
-    
+
     if (cloudConfig) {
       console.log('使用云端配置')
       return cloudConfig
@@ -163,19 +163,19 @@ export class CloudConfigManager {
   async refreshConfig(): Promise<{ success: boolean; config?: CloudMirrorConfig; error?: string }> {
     try {
       const cloudConfig = await this.fetchCloudConfig()
-      
+
       if (cloudConfig) {
         return { success: true, config: cloudConfig }
       } else {
-        return { 
-          success: false, 
+        return {
+          success: false,
           error: '无法获取云端配置，继续使用当前配置',
           config: this.getCurrentConfig() || undefined
         }
       }
     } catch (error) {
-      return { 
-        success: false, 
+      return {
+        success: false,
         error: error instanceof Error ? error.message : '未知错误',
         config: this.getCurrentConfig() || undefined
       }
@@ -192,7 +192,7 @@ export class CloudConfigManager {
     source: 'cloud' | 'fallback'
   } {
     const config = this.getCurrentConfig()
-    
+
     return {
       isUsingCloudConfig: this.currentConfig !== null,
       version: config?.version,

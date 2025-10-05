@@ -1521,7 +1521,7 @@ class AppConfig(GlobalConfig):
         try:
             async with httpx.AsyncClient(proxy=self.get_proxy()) as client:
                 response = await client.get(
-                    "https://download.auto-mas.top/d/AUTO_MAS/Server/notice.json"
+                    "https://download.auto-mas.top/d/AUTO-MAS/Server/notice.json"
                 )
                 if response.status_code == 200:
                     remote_notice = response.json()
