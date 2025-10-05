@@ -74,6 +74,12 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '计划管理' },
   },
   {
+    path: '/emulators',
+    name: 'Emulators',
+    component: () => import('../views/Emulator.vue'),
+    meta: { title: '模拟器管理' },
+  },
+  {
     path: '/queue',
     name: 'Queue',
     component: () => import('../views/Queue.vue'),
