@@ -1,3 +1,24 @@
+#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+#   Copyright © 2025 AUTO-MAS Team
+
+#   This file is part of AUTO-MAS.
+
+#   AUTO-MAS is free software: you can redistribute it and/or modify
+#   it under the terms of the GNU General Public License as published
+#   by the Free Software Foundation, either version 3 of the License,
+#   or (at your option) any later version.
+
+#   AUTO-MAS is distributed in the hope that it will be useful,
+#   but WITHOUT ANY WARRANTY; without even the implied warranty
+#   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
+#   the GNU General Public License for more details.
+
+#   You should have received a copy of the GNU General Public License
+#   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
+
+#   Contact: DLmaster_361@163.com
+
+
 import asyncio
 import aiofiles
 import os
@@ -5,20 +26,10 @@ from datetime import datetime, timedelta, date
 from pathlib import Path
 from typing import Callable, Optional, List, Awaitable
 
+from .constants import TIME_FIELDS
 from .logger import get_logger
 
 logger = get_logger("日志监控器")
-
-TIME_FIELDS = {
-    "%Y": "year",
-    "%m": "month",
-    "%d": "day",
-    "%H": "hour",
-    "%M": "minute",
-    "%S": "second",
-    "%f": "microsecond",
-}
-"""时间字段映射表"""
 
 
 def strptime(date_string: str, format: str, default_date: datetime) -> datetime:

@@ -7,9 +7,8 @@ import type { ThemeColor, ThemeMode } from '@/composables/useTheme'
 import type { SelectValue } from 'ant-design-vue/es/select'
 import type { SettingsData } from '@/types/settings'
 import { useSettingsApi } from '@/composables/useSettingsApi'
-import { useUpdateChecker } from '@/composables/useUpdateChecker'
+import { useUpdateChecker } from '@/composables/useUpdateChecker.ts'
 import { Service, type VersionOut } from '@/api'
-import UpdateModal from '@/components/UpdateModal.vue'
 import { mirrorManager } from '@/utils/mirrorManager'
 
 // 引入拆分后的 Tab 组件
@@ -22,14 +21,10 @@ import TabOthers from './TabOthers.vue'
 const router = useRouter()
 const { themeMode, themeColor, themeColors, setThemeMode, setThemeColor } = useTheme()
 const { loading, getSettings, updateSettings } = useSettingsApi()
-const { restartPolling } = useUpdateChecker()
+const { restartPolling, updateVisible, updateData, latestVersion, checkUpdate: globalCheckUpdate } = useUpdateChecker()
 
 // 活动标签
 const activeKey = ref('basic')
-
-// 更新相关
-const updateVisible = ref(false)
-const updateData = ref<Record<string, string[]>>({})
 const version = (import.meta as any).env?.VITE_APP_VERSION || '获取版本失败！'
 const backendUpdateInfo = ref<VersionOut | null>(null)
 
@@ -224,26 +219,28 @@ const handleThemeColorChange = (value: SelectValue) => {
 const goToLogs = () => router.push('/logs')
 const openDevTools = () => (window as any).electronAPI?.openDevTools?.()
 
-// 更新检查
+// 更新检查 - 使用全局更新检查器
 const checkUpdate = async () => {
+  console.log('[Setting] 使用全局更新检查器进行手动检查')
+  console.log('[Setting] 检查前状态:', {
+    updateVisible: updateVisible.value,
+    updateData: updateData.value,
+    latestVersion: latestVersion.value
+  })
+  
   try {
-    const response = await Service.checkUpdateApiUpdateCheckPost({
-      current_version: version,
-      if_force: true,
+    await globalCheckUpdate(false, true) // silent=false, forceCheck=true
+    console.log('[Setting] 全局更新检查完成，状态:', {
+      updateVisible: updateVisible.value,
+      updateData: updateData.value,
+      latestVersion: latestVersion.value
     })
-    if (response.code === 200) {
-      if (response.if_need_update) {
-        updateData.value = response.update_info
-        updateVisible.value = true
-      } else message.success('暂无更新~')
-    } else message.error(response.message || '获取更新失败')
-  } catch (e) {
-    console.error(e)
-    message.error('获取更新失败！')
+  } catch (error) {
+    console.error('[Setting] 全局更新检查失败:', error)
   }
 }
 
-const onUpdateConfirmed = () => (updateVisible.value = false)
+// onUpdateConfirmed 不再需要，由全局UpdateModal管理
 
 // 后端版本
 const getBackendVersion = async () => {
@@ -349,12 +346,8 @@ onMounted(() => {
         </a-tab-pane>
       </a-tabs>
     </div>
-    <UpdateModal
-      v-if="updateVisible"
-      v-model:visible="updateVisible"
-      :update-data="updateData"
-      @confirmed="onUpdateConfirmed"
-    />
+    <!-- 不再在设置页面直接显示UpdateModal，使用全局的UpdateModal -->
+    <!-- UpdateModal现在由App.vue统一管理 -->
   </div>
 </template>
 
@@ -459,28 +452,16 @@ onMounted(() => {
   font-size: 13px;
   font-weight: 600;
   border-radius: 6px;
-  box-shadow: 0 2px 6px rgba(22, 119, 255, 0.2);
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   display: flex;
   align-items: center;
   gap: 6px;
-  background: linear-gradient(
-    135deg,
-    var(--ant-color-primary),
-    var(--ant-color-primary-hover)
-  ) !important;
-  border: none !important;
-  color: #fff !important;
 }
 :deep(.section-update-button:hover) {
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(22, 119, 255, 0.3);
-  background: linear-gradient(135deg, #4096ff, #1677ff) !important;
-  color: #fff !important;
 }
 :deep(.section-update-button:active) {
   transform: translateY(0);
-  color: #fff !important;
 }
 :deep(.section-update-button svg) {
   transition: transform 0.3s ease;
