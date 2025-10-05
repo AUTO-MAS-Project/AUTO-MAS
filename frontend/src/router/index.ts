@@ -16,7 +16,7 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/initialization',
     name: 'Initialization',
-    component: () => import('../views/Initialization.vue'),
+    component: () => import('../views/Initialization/index.vue'),
     meta: { title: '初始化' },
   },
   {
@@ -34,37 +34,37 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/scripts/:id/edit/maa',
     name: 'MAAScriptEdit',
-    component: () => import('../views/MAAScriptEdit.vue'),
+    component: () => import('../views/EditView/Script/MAAScriptEdit.vue'),
     meta: { title: '编辑MAA脚本' },
   },
   {
     path: '/scripts/:id/edit/general',
     name: 'GeneralScriptEdit',
-    component: () => import('../views/GeneralScriptEdit.vue'),
+    component: () => import('../views/EditView/Script/GeneralScriptEdit.vue'),
     meta: { title: '编辑通用脚本' },
   },
   {
     path: '/scripts/:scriptId/users/add/maa',
     name: 'MAAUserAdd',
-    component: () => import('../views/MAAUserEdit.vue'),
+    component: () => import('../views/EditView/User/MAAUserEdit.vue'),
     meta: { title: '添加MAA用户' },
   },
   {
     path: '/scripts/:scriptId/users/:userId/edit/maa',
     name: 'MAAUserEdit',
-    component: () => import('../views/MAAUserEdit.vue'),
+    component: () => import('../views/EditView/User/MAAUserEdit.vue'),
     meta: { title: '编辑MAA用户' },
   },
   {
     path: '/scripts/:scriptId/users/add/general',
     name: 'GeneralUserAdd',
-    component: () => import('../views/GeneralUserEdit.vue'),
+    component: () => import('../views/EditView/User/GeneralUserEdit.vue'),
     meta: { title: '添加通用用户' },
   },
   {
     path: '/scripts/:scriptId/users/:userId/edit/general',
     name: 'GeneralUserEdit',
-    component: () => import('../views/GeneralUserEdit.vue'),
+    component: () => import('../views/EditView/User/GeneralUserEdit.vue'),
     meta: { title: '编辑通用用户' },
   },
   {

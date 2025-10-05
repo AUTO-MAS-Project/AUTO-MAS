@@ -8,7 +8,7 @@
         <a-breadcrumb-item>
           <div class="breadcrumb-current">
             <img
-              src="@/assets/MAA.png"
+              src="../../../assets/MAA.png"
               alt="MAA"
               class="breadcrumb-logo"
             />
@@ -260,8 +260,8 @@ import { onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
 import { message } from 'ant-design-vue'
-import type { MAAScriptConfig, ScriptType } from '../types/script'
-import { useScriptApi } from '../composables/useScriptApi'
+import type { MAAScriptConfig, ScriptType } from '../../../types/script.ts'
+import { useScriptApi } from '../../../composables/useScriptApi.ts'
 import {
   ArrowLeftOutlined,
   FolderOpenOutlined,

@@ -63,7 +63,7 @@
 
 <script setup lang="ts">
 import { ExclamationCircleOutlined } from '@ant-design/icons-vue'
-import { forceEnterApp } from '@/utils/appEntry'
+import { forceEnterApp } from '@/utils/appEntry.ts'
 
 // Props
 interface Props {

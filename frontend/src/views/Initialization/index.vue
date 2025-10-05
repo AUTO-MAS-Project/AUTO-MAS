@@ -36,14 +36,14 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { getConfig, saveConfig, setInitialized } from '@/utils/config'
-import AdminCheck from '@/components/initialization/AdminCheck.vue'
-import AutoMode from '@/components/initialization/AutoMode.vue'
-import ManualMode from '@/components/initialization/ManualMode.vue'
-import EnvironmentIncomplete from '@/components/initialization/EnvironmentIncomplete.vue'
-import type { DownloadProgress } from '@/types/initialization'
-import { mirrorManager } from '@/utils/mirrorManager'
-import { forceEnterApp } from '@/utils/appEntry'
+import { getConfig, saveConfig, setInitialized } from '@/utils/config.ts'
+import AdminCheck from '@/views/Initialization/components/AdminCheck.vue'
+import AutoMode from '@/views/Initialization/components/AutoMode.vue'
+import ManualMode from '@/views/Initialization/components/ManualMode.vue'
+import EnvironmentIncomplete from '@/views/Initialization/components/EnvironmentIncomplete.vue'
+import type { DownloadProgress } from '@/types/initialization.ts'
+import { mirrorManager } from '@/utils/mirrorManager.ts'
+import { forceEnterApp } from '@/utils/appEntry.ts'
 
 const router = useRouter()
 

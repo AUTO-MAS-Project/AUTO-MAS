@@ -807,11 +807,16 @@ class AppConfig(GlobalConfig):
 
         plan_uid = uuid.UUID(plan_id)
 
+        update_details = []
         for group, items in data.items():
+            update_details.append(f"\n{group}\t")
             for name, value in items.items():
-                logger.debug(f"更新计划表配置: {plan_id} - {group}.{name} = {value}")
+                update_details.append(f"{value}")
                 await self.PlanConfig[plan_uid].set(group, name, value)
 
+        if update_details:
+            debug_msg = f"\n更新计划表配置详情 [{plan_id}]: {', '.join(update_details)}"
+            logger.debug(debug_msg)
         await self.PlanConfig.save()
 
     async def del_plan(self, plan_id: str) -> None:
