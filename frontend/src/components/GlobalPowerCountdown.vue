@@ -6,28 +6,23 @@
         <div class="warning-icon">⚠️</div>
         <h2 class="countdown-title">{{ title }}</h2>
         <p class="countdown-message">{{ message }}</p>
-        <div class="countdown-timer" v-if="countdown !== undefined">
+        <div v-if="countdown !== undefined" class="countdown-timer">
           <span class="countdown-number">{{ countdown }}</span>
           <span class="countdown-unit">秒</span>
         </div>
-        <div class="countdown-timer" v-else>
+        <div v-else class="countdown-timer">
           <span class="countdown-text">等待后端倒计时...</span>
         </div>
-        <a-progress 
+        <a-progress
           v-if="countdown !== undefined"
-          :percent="Math.max(0, Math.min(100, (60 - countdown) / 60 * 100))" 
-          :show-info="false" 
+          :percent="Math.max(0, Math.min(100, ((60 - countdown) / 60) * 100))"
+          :show-info="false"
           :stroke-color="(countdown || 0) <= 10 ? '#ff4d4f' : '#1890ff'"
           :stroke-width="8"
           class="countdown-progress"
         />
         <div class="countdown-actions">
-          <a-button 
-            type="primary" 
-            size="large" 
-            @click="handleCancel"
-            class="cancel-button"
-          >
+          <a-button type="primary" size="large" class="cancel-button" @click="handleCancel">
             取消操作
           </a-button>
         </div>
@@ -53,7 +48,7 @@ let countdownTimer: ReturnType<typeof setInterval> | null = null
 // 启动倒计时
 const startCountdown = (data: any) => {
   console.log('[GlobalPowerCountdown] 启动倒计时:', data)
-  
+
   // 清除之前的计时器
   if (countdownTimer) {
     clearInterval(countdownTimer)
@@ -90,7 +85,7 @@ const startCountdown = (data: any) => {
 // 取消电源操作
 const handleCancel = async () => {
   console.log('[GlobalPowerCountdown] 用户取消电源操作')
-  
+
   // 清除倒计时器
   if (countdownTimer) {
     clearInterval(countdownTimer)
@@ -112,9 +107,9 @@ const handleCancel = async () => {
 // 处理Main消息的函数
 const handleMainMessage = (message: any) => {
   if (!message || typeof message !== 'object') return
-  
+
   const { type, data } = message
-  
+
   if (type === 'Message' && data && data.type === 'Countdown') {
     console.log('[GlobalPowerCountdown] 收到倒计时消息:', data)
     startCountdown(data)
@@ -133,7 +128,7 @@ const cleanup = () => {
 onMounted(() => {
   // 替换全局Main消息处理器，添加倒计时处理
   const originalMainHandler = ExternalWSHandlers.mainMessage
-  
+
   ExternalWSHandlers.mainMessage = (message: any) => {
     // 先调用原有的处理逻辑
     if (typeof originalMainHandler === 'function') {
@@ -143,11 +138,11 @@ onMounted(() => {
         console.warn('[GlobalPowerCountdown] 原有Main消息处理器出错:', e)
       }
     }
-    
+
     // 然后处理倒计时消息
     handleMainMessage(message)
   }
-  
+
   console.log('[GlobalPowerCountdown] 全局电源倒计时组件已挂载')
 })
 
@@ -272,7 +267,8 @@ onUnmounted(() => {
 }
 
 @keyframes pulse {
-  0%, 100% {
+  0%,
+  100% {
     transform: scale(1);
   }
   50% {

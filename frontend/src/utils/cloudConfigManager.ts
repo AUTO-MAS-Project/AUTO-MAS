@@ -20,7 +20,7 @@ export class CloudConfigManager {
   private currentConfig: CloudMirrorConfig | null = null
   private fetchTimeout = 10000 // 10秒超时
 
-  private constructor() { }
+  private constructor() {}
 
   static getInstance(): CloudConfigManager {
     if (!CloudConfigManager.instance) {
@@ -55,10 +55,10 @@ export class CloudConfigManager {
       const response = await fetch(this.cloudConfigUrl, {
         method: 'GET',
         headers: {
-          'Accept': 'application/json',
-          'Cache-Control': 'no-cache'
+          Accept: 'application/json',
+          'Cache-Control': 'no-cache',
         },
-        signal: controller.signal
+        signal: controller.signal,
       })
 
       clearTimeout(timeoutId)
@@ -78,7 +78,6 @@ export class CloudConfigManager {
       this.currentConfig = config
       console.log(`云端配置拉取成功 (耗时: ${responseTime}ms, 版本: ${config.version})`)
       return config
-
     } catch (error) {
       const responseTime = Date.now() - startTime
       if (error instanceof Error && error.name === 'AbortError') {
@@ -170,14 +169,14 @@ export class CloudConfigManager {
         return {
           success: false,
           error: '无法获取云端配置，继续使用当前配置',
-          config: this.getCurrentConfig() || undefined
+          config: this.getCurrentConfig() || undefined,
         }
       }
     } catch (error) {
       return {
         success: false,
         error: error instanceof Error ? error.message : '未知错误',
-        config: this.getCurrentConfig() || undefined
+        config: this.getCurrentConfig() || undefined,
       }
     }
   }
@@ -197,7 +196,7 @@ export class CloudConfigManager {
       isUsingCloudConfig: this.currentConfig !== null,
       version: config?.version,
       lastUpdated: config?.lastUpdated,
-      source: this.currentConfig ? 'cloud' : 'fallback'
+      source: this.currentConfig ? 'cloud' : 'fallback',
     }
   }
 }

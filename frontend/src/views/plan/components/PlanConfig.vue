@@ -7,8 +7,8 @@
           <a-button
             type="text"
             size="small"
-            @click="$emit('start-edit-plan-name')"
             class="plan-edit-btn"
+            @click="$emit('start-edit-plan-name')"
           >
             <template #icon>
               <EditOutlined />
@@ -17,14 +17,14 @@
         </div>
         <div v-else class="plan-title-edit">
           <a-input
+            ref="planNameInputRef"
             :value="currentPlanName"
-            @update:value="$emit('update:current-plan-name', $event)"
             placeholder="请输入计划名称"
             class="plan-title-input"
-            @blur="$emit('finish-edit-plan-name')"
-            @pressEnter="$emit('finish-edit-plan-name')"
             :maxlength="50"
-            ref="planNameInputRef"
+            @update:value="$emit('update:current-plan-name', $event)"
+            @blur="$emit('finish-edit-plan-name')"
+            @press-enter="$emit('finish-edit-plan-name')"
           />
         </div>
       </div>
@@ -34,20 +34,20 @@
         <span class="mode-label">执行模式：</span>
         <a-segmented
           :value="currentMode"
-          @change="handleModeChange"
           :options="[
             { label: '全局模式', value: 'ALL' },
             { label: '周计划模式', value: 'Weekly' },
           ]"
+          @change="handleModeChange"
         />
         <span class="view-label">视图：</span>
         <a-segmented
           :value="viewMode"
-          @change="$emit('update:view-mode', $event)"
           :options="[
             { label: '配置视图', value: 'config' },
             { label: '简化视图', value: 'simple' },
           ]"
+          @change="$emit('update:view-mode', $event)"
         />
       </a-space>
     </template>

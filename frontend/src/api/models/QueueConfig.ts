@@ -2,11 +2,10 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { QueueConfig_Info } from './QueueConfig_Info';
+import type { QueueConfig_Info } from './QueueConfig_Info'
 export type QueueConfig = {
-    /**
-     * 队列信息
-     */
-    Info?: (QueueConfig_Info | null);
-};
-
+  /**
+   * 队列信息
+   */
+  Info?: QueueConfig_Info | null
+}

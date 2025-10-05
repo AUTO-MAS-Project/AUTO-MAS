@@ -15,6 +15,6 @@ export function useAppClosing() {
   return {
     isClosing: readonly(isClosing),
     showClosingOverlay,
-    hideClosingOverlay
+    hideClosingOverlay,
   }
 }

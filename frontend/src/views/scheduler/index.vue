@@ -13,8 +13,8 @@
             v-model:value="powerAction"
             style="width: 140px"
             :disabled="!canChangePowerAction"
-            @change="onPowerActionChange"
             size="large"
+            @change="onPowerActionChange"
           >
             <a-select-option
               v-for="(text, signal) in POWER_ACTION_TEXT"
@@ -31,19 +31,15 @@
     <!-- 调度台标签页 -->
     <div class="scheduler-tabs">
       <a-tabs
-        v-model:activeKey="activeSchedulerTab"
+        v-model:active-key="activeSchedulerTab"
         type="editable-card"
-        @edit="onSchedulerTabEdit"
         :hide-add="true"
+        @edit="onSchedulerTabEdit"
       >
         <template #tabBarExtraContent>
           <div class="tab-actions">
             <a-tooltip title="添加新的调度台" placement="top">
-              <a-button
-                class="tab-action-btn tab-add-btn"
-                size="default"
-                @click="addSchedulerTab"
-              >
+              <a-button class="tab-action-btn tab-add-btn" size="default" @click="addSchedulerTab">
                 <template #icon>
                   <PlusOutlined />
                 </template>
@@ -53,9 +49,9 @@
               <a-button
                 class="tab-action-btn tab-remove-btn"
                 size="default"
-                @click="removeAllNonRunningTabs"
                 :disabled="!hasNonRunningTabs"
                 danger
+                @click="removeAllNonRunningTabs"
               >
                 <template #icon>
                   <MinusOutlined />
@@ -83,10 +79,10 @@
           <div class="task-unified-card" :class="`status-${tab.status}`">
             <!-- 任务控制栏 -->
             <SchedulerTaskControl
-              v-model:selectedTaskId="tab.selectedTaskId"
-              v-model:selectedMode="tab.selectedMode"
-              :taskOptions="taskOptions"
-              :taskOptionsLoading="taskOptionsLoading"
+              v-model:selected-task-id="tab.selectedTaskId"
+              v-model:selected-mode="tab.selectedMode"
+              :task-options="taskOptions"
+              :task-options-loading="taskOptionsLoading"
               :status="tab.status"
               :disabled="tab.status === '运行'"
               @start="startTask(tab)"
@@ -96,9 +92,7 @@
             <!-- 状态展示区域 -->
             <div class="status-container">
               <div class="overview-panel-container">
-                <TaskOverviewPanel
-                  :ref="el => setOverviewRef(el, tab.key)"
-                />
+                <TaskOverviewPanel :ref="el => setOverviewRef(el, tab.key)" />
               </div>
               <div class="log-panel-container">
                 <SchedulerLogPanel
@@ -112,7 +106,7 @@
             </div>
           </div>
         </a-tab-pane>
-        
+
         <!-- 空状态 -->
         <template #empty>
           <div class="empty-tab-content">
@@ -146,10 +140,7 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, computed } from 'vue'
 import { MinusOutlined, PlusOutlined } from '@ant-design/icons-vue'
-import {
-  POWER_ACTION_TEXT,
-  TAB_STATUS_COLOR,
-} from './schedulerConstants'
+import { POWER_ACTION_TEXT, TAB_STATUS_COLOR } from './schedulerConstants'
 import { useSchedulerLogic } from './useSchedulerLogic'
 import SchedulerTaskControl from './SchedulerTaskControl.vue'
 import SchedulerLogPanel from './SchedulerLogPanel.vue'
@@ -213,16 +204,17 @@ const onSchedulerTabEdit = (targetKey: string | MouseEvent, action: 'add' | 'rem
   }
 }
 
-
 // 生命周期
 onMounted(() => {
   initialize() // 初始化TaskManager订阅
   loadTaskOptions()
-  
+
   // 开发环境下导入调试工具
   if (process.env.NODE_ENV === 'development') {
     import('@/utils/scheduler-debug').then(() => {
-      console.log('调度中心调试工具已加载，使用 debugScheduler() 和 testWebSocketConnection() 进行调试')
+      console.log(
+        '调度中心调试工具已加载，使用 debugScheduler() 和 testWebSocketConnection() 进行调试'
+      )
     })
   }
 })
@@ -321,12 +313,12 @@ onUnmounted(() => {
 }
 
 /* 运行状态的标签隐藏关闭按钮并调整宽度 */
-.scheduler-tabs :deep(.ant-tabs-tab[data-closable="false"] .ant-tabs-tab-remove) {
+.scheduler-tabs :deep(.ant-tabs-tab[data-closable='false'] .ant-tabs-tab-remove) {
   display: none !important;
 }
 
 /* 非运行状态的标签显示关闭按钮 */
-.scheduler-tabs :deep(.ant-tabs-tab[data-closable="true"] .ant-tabs-tab-remove) {
+.scheduler-tabs :deep(.ant-tabs-tab[data-closable='true'] .ant-tabs-tab-remove) {
   display: flex !important;
   align-items: center;
   justify-content: center;
@@ -335,7 +327,7 @@ onUnmounted(() => {
   transition: opacity 0.2s;
 }
 
-.scheduler-tabs :deep(.ant-tabs-tab[data-closable="true"] .ant-tabs-tab-remove:hover) {
+.scheduler-tabs :deep(.ant-tabs-tab[data-closable='true'] .ant-tabs-tab-remove:hover) {
   opacity: 1;
 }
 
@@ -456,11 +448,11 @@ onUnmounted(() => {
   .power-label {
     display: none;
   }
-  
+
   .status-container {
     flex-direction: column;
   }
-  
+
   .overview-panel-container,
   .log-panel-container {
     flex: 1;

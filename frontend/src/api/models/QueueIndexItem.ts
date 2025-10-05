@@ -3,13 +3,12 @@
 /* tslint:disable */
 /* eslint-disable */
 export type QueueIndexItem = {
-    /**
-     * 唯一标识符
-     */
-    uid: string;
-    /**
-     * 配置类型
-     */
-    type: string;
-};
-
+  /**
+   * 唯一标识符
+   */
+  uid: string
+  /**
+   * 配置类型
+   */
+  type: string
+}

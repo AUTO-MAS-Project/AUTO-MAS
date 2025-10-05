@@ -3,9 +3,8 @@
 /* tslint:disable */
 /* eslint-disable */
 export type UserInBase = {
-    /**
-     * 所属脚本ID
-     */
-    scriptId: string;
-};
-
+  /**
+   * 所属脚本ID
+   */
+  scriptId: string
+}

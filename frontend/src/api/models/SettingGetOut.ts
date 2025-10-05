@@ -2,23 +2,22 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { GlobalConfig } from './GlobalConfig';
+import type { GlobalConfig } from './GlobalConfig'
 export type SettingGetOut = {
-    /**
-     * 状态码
-     */
-    code?: number;
-    /**
-     * 操作状态
-     */
-    status?: string;
-    /**
-     * 操作消息
-     */
-    message?: string;
-    /**
-     * 全局设置数据
-     */
-    data: GlobalConfig;
-};
-
+  /**
+   * 状态码
+   */
+  code?: number
+  /**
+   * 操作状态
+   */
+  status?: string
+  /**
+   * 操作消息
+   */
+  message?: string
+  /**
+   * 全局设置数据
+   */
+  data: GlobalConfig
+}

@@ -6,9 +6,8 @@
  * 模拟器索引项
  */
 export type EmulatorIndexItem = {
-    /**
-     * 模拟器UUID
-     */
-    uuid: string;
-};
-
+  /**
+   * 模拟器UUID
+   */
+  uuid: string
+}

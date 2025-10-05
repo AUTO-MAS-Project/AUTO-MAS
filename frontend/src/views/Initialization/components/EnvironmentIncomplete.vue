@@ -4,7 +4,7 @@
       <img src="/src/assets/AUTO-MAS.ico" alt="logo" class="logo" />
       <a-typography-title :level="1">AUTO-MAS</a-typography-title>
     </div>
-    
+
     <div class="content">
       <a-result
         status="warning"
@@ -24,34 +24,22 @@
               </template>
             </a-list>
           </div>
-          
+
           <div class="description">
-            <a-typography-paragraph>
-              这种情况通常由以下原因导致：
-            </a-typography-paragraph>
+            <a-typography-paragraph> 这种情况通常由以下原因导致： </a-typography-paragraph>
             <ul>
               <li>杀毒软件误删了相关文件</li>
               <li>手动删除了环境文件</li>
               <li>系统更新或清理工具清理了相关文件</li>
             </ul>
-            <a-typography-paragraph>
-              建议重新配置环境以确保程序正常运行。
-            </a-typography-paragraph>
+            <a-typography-paragraph> 建议重新配置环境以确保程序正常运行。 </a-typography-paragraph>
           </div>
-          
+
           <div class="actions">
-            <a-button 
-              type="primary" 
-              size="large"
-              @click="handleReconfigure"
-            >
+            <a-button type="primary" size="large" @click="handleReconfigure">
               重新配置环境
             </a-button>
-            <a-button 
-              size="large"
-              @click="handleForceEnter"
-              style="margin-left: 16px"
-            >
+            <a-button size="large" style="margin-left: 16px" @click="handleForceEnter">
               强行进入应用
             </a-button>
           </div>
@@ -155,15 +143,15 @@ async function handleForceEnter() {
     min-height: auto;
     padding: 10px;
   }
-  
+
   .header {
     margin-bottom: 20px;
   }
-  
+
   .header h1 {
     font-size: 32px;
   }
-  
+
   .logo {
     width: 80px;
     height: 80px;
@@ -177,7 +165,7 @@ async function handleForceEnter() {
     gap: 12px;
     align-items: center;
   }
-  
+
   .actions .ant-btn {
     width: 200px;
   }

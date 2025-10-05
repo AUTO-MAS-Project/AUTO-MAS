@@ -3,7 +3,7 @@
     <div class="section-header">
       <h3>关卡配置</h3>
       <!-- 只在计划表模式时显示跳转按钮 -->
-      <a-button v-if="isPlanMode" type="link" @click="handleGoToPlans" class="plans-button">
+      <a-button v-if="isPlanMode" type="link" class="plans-button" @click="handleGoToPlans">
         <template #icon>
           <CalendarOutlined />
         </template>
@@ -79,13 +79,13 @@
           <a-input-number
             v-else
             :value="displayMedicineNumb"
-            @update:value="$emit('update-medicine-numb', $event)"
             :min="0"
             :max="9999"
             placeholder="0"
             :disabled="loading"
             size="large"
             style="width: 100%"
+            @update:value="$emit('update-medicine-numb', $event)"
           />
         </a-form-item>
       </a-col>
@@ -123,7 +123,6 @@
           <a-select
             v-else
             :value="displaySeriesNumb"
-            @update:value="$emit('update-series-numb', $event)"
             :options="[
               { label: 'AUTO', value: '0' },
               { label: '1', value: '1' },
@@ -136,6 +135,7 @@
             ]"
             :disabled="loading"
             size="large"
+            @update:value="$emit('update-series-numb', $event)"
           />
         </a-form-item>
       </a-col>
@@ -166,10 +166,10 @@
           <StageSelector
             v-else
             :value="displayStage"
-            @update:value="$emit('update-stage', $event)"
             :options="stageOptions"
             :loading="loading"
             placeholder="选择或输入自定义关卡"
+            @update:value="$emit('update-stage', $event)"
             @add-custom-stage="handleAddCustomStage"
           />
         </a-form-item>
@@ -202,10 +202,10 @@
           <StageSelector
             v-else
             :value="displayStage1"
-            @update:value="$emit('update-stage1', $event)"
             :options="stageOptions"
             :loading="loading"
             placeholder="选择或输入自定义关卡"
+            @update:value="$emit('update-stage1', $event)"
             @add-custom-stage="handleAddCustomStage1"
           />
         </a-form-item>
@@ -236,10 +236,10 @@
           <StageSelector
             v-else
             :value="displayStage2"
-            @update:value="$emit('update-stage2', $event)"
             :options="stageOptions"
             :loading="loading"
             placeholder="选择或输入自定义关卡"
+            @update:value="$emit('update-stage2', $event)"
             @add-custom-stage="handleAddCustomStage2"
           />
         </a-form-item>
@@ -270,10 +270,10 @@
           <StageSelector
             v-else
             :value="displayStage3"
-            @update:value="$emit('update-stage3', $event)"
             :options="stageOptions"
             :loading="loading"
             placeholder="选择或输入自定义关卡"
+            @update:value="$emit('update-stage3', $event)"
             @add-custom-stage="handleAddCustomStage3"
           />
         </a-form-item>
@@ -304,10 +304,10 @@
           <StageSelector
             v-else
             :value="displayStageRemain"
-            @update:value="$emit('update-stage-remain', $event)"
             :options="stageRemainOptions"
             :loading="loading"
             placeholder="选择或输入自定义关卡"
+            @update:value="$emit('update-stage-remain', $event)"
             @add-custom-stage="handleAddCustomStageRemain"
           />
         </a-form-item>

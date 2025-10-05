@@ -3,13 +3,12 @@
 /* tslint:disable */
 /* eslint-disable */
 export type QueueItemDeleteIn = {
-    /**
-     * 所属队列ID
-     */
-    queueId: string;
-    /**
-     * 队列项ID
-     */
-    queueItemId: string;
-};
-
+  /**
+   * 所属队列ID
+   */
+  queueId: string
+  /**
+   * 队列项ID
+   */
+  queueItemId: string
+}

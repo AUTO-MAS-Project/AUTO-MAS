@@ -1,6 +1,5 @@
 <template>
   <div>
-
     <!-- 配置视图 -->
     <div v-show="viewMode === 'config'" class="config-table-wrapper">
       <a-table
@@ -21,7 +20,6 @@
           <template v-else-if="record.taskName === '吃理智药'">
             <a-input-number
               :value="(record as any)[column.key]"
-              @update:value="updateConfigValue(record.key, column.key as TimeKey, $event)"
               size="small"
               :min="0"
               :max="999"
@@ -29,13 +27,13 @@
               :controls="false"
               :bordered="false"
               :disabled="isColumnDisabled(column.key as string)"
+              @update:value="updateConfigValue(record.key, column.key as TimeKey, $event)"
             />
           </template>
 
           <template v-else>
             <a-select
               :value="(record as any)[column.key]"
-              @update:value="updateConfigValue(record.key, column.key as TimeKey, $event)"
               size="small"
               :class="[
                 'config-select',
@@ -46,6 +44,7 @@
               allow-clear
               :bordered="false"
               :disabled="isColumnDisabled(column.key as string)"
+              @update:value="updateConfigValue(record.key, column.key as TimeKey, $event)"
             >
               <a-select-option
                 v-for="option in getSelectOptions(
@@ -109,8 +108,8 @@
             <a-switch
               v-if="isStageAvailable(record.key, column.key as string)"
               :checked="record[column.key]"
-              @change="handleStageToggle(record.key, column.key as TimeKey, $event)"
               :disabled="isSwitchDisabled(column.key as string, record)"
+              @change="handleStageToggle(record.key, column.key as TimeKey, $event)"
             />
           </template>
         </template>
@@ -134,11 +133,11 @@
               v-model:value="tempCustomStages[`custom_stage_${i}` as keyof typeof tempCustomStages]"
               placeholder="输入关卡号"
               :maxlength="50"
-              allowClear
+              allow-clear
               size="large"
               class="modern-input"
               @input="onCustomStageInput(i as 1 | 2 | 3 | 4)"
-              @pressEnter="onCustomStageInput(i as 1 | 2 | 3 | 4)"
+              @press-enter="onCustomStageInput(i as 1 | 2 | 3 | 4)"
             />
           </a-form-item>
         </a-col>
@@ -182,8 +181,6 @@ const tempCustomStages = ref({
   custom_stage_3: '',
   custom_stage_4: '',
 })
-
-
 
 // 配置视图列定义
 const configColumns = [
@@ -232,19 +229,19 @@ const debounceTimers = ref<Record<string, NodeJS.Timeout>>({})
 const onCustomStageInput = (index: 1 | 2 | 3 | 4) => {
   const key = `custom_stage_${index}` as keyof typeof tempCustomStages.value
   const timerKey = `custom_stage_${index}`
-  
+
   // 清除之前的定时器
   if (debounceTimers.value[timerKey]) {
     clearTimeout(debounceTimers.value[timerKey])
   }
-  
+
   // 设置新的防抖定时器
   debounceTimers.value[timerKey] = setTimeout(() => {
     const newValue = tempCustomStages.value[key].trim()
-    
+
     // 实时更新自定义关卡定义
     coordinator.updateCustomStageDefinition(index, newValue)
-    
+
     // 实时保存到后端
     emitUpdate()
   }, 500) // 500ms 防抖延迟
@@ -441,11 +438,11 @@ watch(
     if (newData) {
       // 检查是否是初始加载
       const isInitialLoad = (newData as any)._isInitialLoad === true
-      
+
       // 清理标记后传递给协调器
       const cleanData = { ...newData }
       delete (cleanData as any)._isInitialLoad
-      
+
       // 从后端数据加载到协调器
       coordinator.fromApiData(cleanData, isInitialLoad)
       // 同步到临时输入框
@@ -550,8 +547,6 @@ watch(
   color: var(--ant-color-primary);
 }
 
-
-
 .modern-input {
   border-radius: 4px;
   border: 1px solid var(--ant-color-border);
@@ -568,8 +563,6 @@ watch(
   border-color: var(--ant-color-primary);
   box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.2);
 }
-
-
 
 .task-tag {
   margin: 0;

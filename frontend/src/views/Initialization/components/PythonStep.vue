@@ -31,7 +31,7 @@
               </div>
             </div>
             <div class="mirror-description">{{ mirror.description }}</div>
-<!--            <div class="mirror-url">{{ mirror.url }}</div>-->
+            <!--            <div class="mirror-url">{{ mirror.url }}</div>-->
           </div>
         </div>
       </div>
@@ -62,13 +62,13 @@
               </div>
             </div>
             <div class="mirror-description">{{ mirror.description }}</div>
-<!--            <div class="mirror-url">{{ mirror.url }}</div>-->
+            <!--            <div class="mirror-url">{{ mirror.url }}</div>-->
           </div>
         </div>
       </div>
 
       <div class="test-actions">
-        <a-button @click="testPythonMirrorSpeed" :loading="testingSpeed" type="primary">
+        <a-button :loading="testingSpeed" type="primary" @click="testPythonMirrorSpeed">
           {{ testingSpeed ? '测速中...' : '重新测速' }}
         </a-button>
         <span class="test-note">3秒无响应视为超时</span>
@@ -89,10 +89,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { getConfig, saveConfig } from '@/utils/config.ts'
-import { 
-  sortMirrorsBySpeedAndRecommendation,
-  type MirrorConfig 
-} from '@/config/mirrors.ts'
+import { sortMirrorsBySpeedAndRecommendation, type MirrorConfig } from '@/config/mirrors.ts'
 import { mirrorManager } from '@/utils/mirrorManager.ts'
 
 const props = defineProps<{
@@ -106,7 +103,9 @@ const officialMirrors = computed(() => pythonMirrors.value.filter(m => m.type ==
 const mirrorMirrors = computed(() => pythonMirrors.value.filter(m => m.type === 'mirror'))
 
 // 按速度和推荐排序的镜像源
-const sortedOfficialMirrors = computed(() => sortMirrorsBySpeedAndRecommendation(officialMirrors.value))
+const sortedOfficialMirrors = computed(() =>
+  sortMirrorsBySpeedAndRecommendation(officialMirrors.value)
+)
 const sortedMirrorMirrors = computed(() => sortMirrorsBySpeedAndRecommendation(mirrorMirrors.value))
 
 const selectedPythonMirror = ref('aliyun')
@@ -119,12 +118,15 @@ async function loadMirrorConfig() {
     // 从镜像管理器获取最新的Python镜像源配置（包含云端数据）
     const cloudMirrors = mirrorManager.getMirrors('python')
     pythonMirrors.value = [...cloudMirrors]
-    
+
     const config = await getConfig()
     selectedPythonMirror.value = config.selectedPythonMirror || 'aliyun'
     console.log('Python镜像源配置已加载:', selectedPythonMirror.value)
     console.log('云端Python镜像源已加载:', cloudMirrors.length, '个')
-    console.log('云端Python镜像源详情:', cloudMirrors.map(m => ({ name: m.name, key: m.key })))
+    console.log(
+      '云端Python镜像源详情:',
+      cloudMirrors.map(m => ({ name: m.name, key: m.key }))
+    )
   } catch (error) {
     console.warn('加载Python镜像源配置失败:', error)
   }
@@ -268,7 +270,6 @@ onMounted(async () => {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 16px;
-
 }
 
 .mirror-card {
@@ -309,8 +310,6 @@ onMounted(async () => {
   font-weight: 600;
   color: var(--ant-color-text);
 }
-
-
 
 .speed-badge {
   padding: 4px 8px;
@@ -356,8 +355,6 @@ onMounted(async () => {
   color: var(--ant-color-text-tertiary);
   word-break: break-all;
 }
-
-
 
 .section-header {
   display: flex;

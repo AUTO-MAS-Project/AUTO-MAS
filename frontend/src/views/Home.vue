@@ -6,9 +6,9 @@
       <a-button
         type="primary"
         ghost
-        @click="showNotice"
         :loading="noticeLoading"
         class="notice-button"
+        @click="showNotice"
       >
         <template #icon>
           <BellOutlined />

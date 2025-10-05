@@ -6,11 +6,11 @@
       <div class="manual-nav">
         <input
           v-model="manualPath"
-          @keyup.enter="navigateToManualPath"
           placeholder="输入路径 (例: /home, /scripts)"
           class="path-input"
+          @keyup.enter="navigateToManualPath"
         />
-        <button @click="navigateToManualPath" class="nav-go-btn">跳转</button>
+        <button class="nav-go-btn" @click="navigateToManualPath">跳转</button>
       </div>
     </div>
 
@@ -21,9 +21,9 @@
         <button
           v-for="route in commonRoutes"
           :key="route.path"
-          @click="navigateTo(route.path)"
           class="nav-btn"
           :class="{ active: currentRoute.path === route.path }"
+          @click="navigateTo(route.path)"
         >
           {{ route.title }}
         </button>
@@ -34,10 +34,10 @@
     <div class="debug-section">
       <h4>🛠️ 开发工具</h4>
       <div class="tool-actions">
-        <button @click="clearStorage" class="action-btn">清除存储</button>
-        <button @click="reloadPage" class="action-btn">重新加载</button>
-        <button @click="toggleConsole" class="action-btn">切换控制台</button>
-        <button @click="openDevtool" class="action-btn">打开开发者工具</button>
+        <button class="action-btn" @click="clearStorage">清除存储</button>
+        <button class="action-btn" @click="reloadPage">重新加载</button>
+        <button class="action-btn" @click="toggleConsole">切换控制台</button>
+        <button class="action-btn" @click="openDevtool">打开开发者工具</button>
       </div>
     </div>
 
@@ -113,7 +113,7 @@ const navigateToManualPath = () => {
 const openDevtool = () => {
   try {
     if ((window as any).electronAPI?.openDevTools) {
-      (window as any).electronAPI.openDevTools()
+      ;(window as any).electronAPI.openDevTools()
       console.log('✅ 开发者工具已打开')
     } else {
       console.warn('⚠️ 开发者工具API不可用')

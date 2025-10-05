@@ -3,9 +3,8 @@
 /* tslint:disable */
 /* eslint-disable */
 export type QueueItem_Info = {
-    /**
-     * 任务所对应的脚本ID, 为None时表示未选择
-     */
-    ScriptId?: (string | null);
-};
-
+  /**
+   * 任务所对应的脚本ID, 为None时表示未选择
+   */
+  ScriptId?: string | null
+}

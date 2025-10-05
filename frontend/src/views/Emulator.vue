@@ -129,7 +129,7 @@ const handleEdit = async (uuid: string) => {
   }
 
   editingId.value = uuid
-  
+
   // 将后端的分组结构转换为扁平结构供前端编辑
   const configData = emulatorData.value[uuid]
   editingData.value = {
@@ -156,7 +156,7 @@ const handleSave = async (uuid: string) => {
         Boss_keys: JSON.stringify(editingData.value.boss_keys),
       },
     }
-    
+
     const response = await Service.updateEmulatorApiSettingEmulatorUpdatePost({
       emulator_uuid: uuid,
       data: configData,
@@ -275,7 +275,7 @@ const toggleDevices = async (uuid: string) => {
     // 如果未展开，则加载并展开
     expandedEmulators.value.add(uuid)
     expandedEmulators.value = new Set(expandedEmulators.value)
-    
+
     // 加载设备信息
     await loadDevices(uuid)
   }
@@ -285,12 +285,12 @@ const toggleDevices = async (uuid: string) => {
 const loadDevices = async (uuid: string) => {
   loadingDevices.value.add(uuid)
   loadingDevices.value = new Set(loadingDevices.value)
-  
+
   try {
     const response = await Service.getEmulatorStatusApiApiSettingEmulatorStatusPost({
       emulator_uuid: uuid,
     })
-    
+
     if (response.code === 200) {
       devicesData.value[uuid] = response.status_data || {}
     } else {
@@ -321,14 +321,14 @@ const startEmulator = async (uuid: string, index: string) => {
   const deviceKey = `${uuid}-${index}`
   startingDevices.value.add(deviceKey)
   startingDevices.value = new Set(startingDevices.value)
-  
+
   try {
     const response = await Service.startEmulatorApiSettingEmulatorStartPost({
       emulator_uuid: uuid,
       index: index,
       package_name: '',
     })
-    
+
     if (response.code === 200) {
       message.success(response.message || `模拟器 ${index} 启动成功`)
       // 刷新设备状态
@@ -350,13 +350,13 @@ const stopEmulator = async (uuid: string, index: string) => {
   const deviceKey = `${uuid}-${index}`
   stoppingDevices.value.add(deviceKey)
   stoppingDevices.value = new Set(stoppingDevices.value)
-  
+
   try {
     const response = await Service.stopEmulatorApiSettingEmulatorStopPost({
       emulator_uuid: uuid,
       index: index,
     })
-    
+
     if (response.code === 200) {
       message.success(response.message || `模拟器 ${index} 已关闭`)
       // 刷新设备状态
@@ -486,14 +486,12 @@ const handleRemoveBossKey = () => {
         <a-button
           type="primary"
           :icon="h(SearchOutlined)"
-          @click="handleSearch"
           :loading="searching"
+          @click="handleSearch"
         >
           自动搜索
         </a-button>
-        <a-button type="primary" :icon="h(PlusOutlined)" @click="handleAdd">
-          添加模拟器
-        </a-button>
+        <a-button type="primary" :icon="h(PlusOutlined)" @click="handleAdd"> 添加模拟器 </a-button>
       </div>
     </div>
 
@@ -534,11 +532,7 @@ const handleRemoveBossKey = () => {
                   </a-button>
                 </template>
                 <template v-else>
-                  <a-button
-                    type="link"
-                    size="small"
-                    @click="toggleDevices(element.uuid)"
-                  >
+                  <a-button type="link" size="small" @click="toggleDevices(element.uuid)">
                     {{ expandedEmulators.has(element.uuid) ? '折叠设备' : '查看设备' }}
                   </a-button>
                   <a-button
@@ -640,7 +634,7 @@ const handleRemoveBossKey = () => {
                   <a-button v-else type="primary" danger @click="stopRecordBossKey">
                     取消录制
                   </a-button>
-                  <a-button @click="handleSetBossKey" :disabled="recordingBossKey"> 设置 </a-button>
+                  <a-button :disabled="recordingBossKey" @click="handleSetBossKey"> 设置 </a-button>
                 </div>
                 <div
                   v-if="editingData.boss_keys && editingData.boss_keys.length > 0"
@@ -665,15 +659,21 @@ const handleRemoveBossKey = () => {
                 <a-button
                   size="small"
                   :icon="h(ReloadOutlined)"
-                  @click="refreshDevices(element.uuid)"
                   :loading="loadingDevices.has(element.uuid)"
+                  @click="refreshDevices(element.uuid)"
                 >
                   刷新
                 </a-button>
               </div>
 
               <a-spin :spinning="loadingDevices.has(element.uuid)">
-                <div v-if="!devicesData[element.uuid] || Object.keys(devicesData[element.uuid]).length === 0" class="empty-devices">
+                <div
+                  v-if="
+                    !devicesData[element.uuid] ||
+                    Object.keys(devicesData[element.uuid]).length === 0
+                  "
+                  class="empty-devices"
+                >
                   <a-empty description="暂无设备信息" />
                 </div>
 
@@ -704,9 +704,9 @@ const handleRemoveBossKey = () => {
                         type="primary"
                         size="small"
                         :icon="h(PlayCircleOutlined)"
-                        @click="startEmulator(element.uuid, String(index))"
                         :loading="startingDevices.has(`${element.uuid}-${index}`)"
                         :disabled="device.status === '0'"
+                        @click="startEmulator(element.uuid, String(index))"
                       >
                         启动
                       </a-button>
@@ -714,9 +714,9 @@ const handleRemoveBossKey = () => {
                         danger
                         size="small"
                         :icon="h(StopOutlined)"
-                        @click="stopEmulator(element.uuid, String(index))"
                         :loading="stoppingDevices.has(`${element.uuid}-${index}`)"
                         :disabled="device.status !== '0'"
+                        @click="stopEmulator(element.uuid, String(index))"
                       >
                         关闭
                       </a-button>

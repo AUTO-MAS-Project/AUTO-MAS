@@ -102,7 +102,7 @@ const viewMode = ref<'config' | 'simple'>('config')
 
 const isEditingPlanName = ref<boolean>(false)
 const loading = ref(true)
-const switching = ref(false)  // 添加切换状态
+const switching = ref(false) // 添加切换状态
 
 // Use a record to match child component expectations
 const tableData = ref<Record<string, any>>({})
@@ -139,7 +139,10 @@ const handleAddPlan = async (planType: string = 'MaaPlanConfig') => {
     await loadPlanData(newPlan.id)
     // 如果生成的名称包含数字，说明有重名，提示用户
     if (uniqueName.match(/\s\d+$/)) {
-      message.info(`已创建新的${getPlanTypeLabel(planType)}："${uniqueName}"，建议您修改为更有意义的名称`, 4)
+      message.info(
+        `已创建新的${getPlanTypeLabel(planType)}："${uniqueName}"，建议您修改为更有意义的名称`,
+        4
+      )
     } else {
       message.success(`已创建新的${getPlanTypeLabel(planType)}："${uniqueName}"`)
     }
@@ -263,10 +266,10 @@ const finishEditPlanName = () => {
     if (currentPlan) {
       const newName = currentPlanName.value?.trim() || ''
       const existingNames = planList.value.map(plan => plan.name)
-      
+
       // 验证新名称
       const validation = validatePlanName(newName, existingNames, currentPlan.name)
-      
+
       if (!validation.isValid) {
         // 如果验证失败，显示错误消息并恢复原名称
         message.error(validation.message || '计划表名称无效')
@@ -300,16 +303,16 @@ const loadPlanData = async (planId: string) => {
     currentPlanData.value = response.data
     const planData = response.data[planId] as PlanData
     console.log(`[计划表] 从后端加载数据 (${planId})`)
-    
+
     if (planData) {
       if (planData.Info) {
         const apiName = planData.Info.Name || ''
         const currentPlan = planList.value.find(plan => plan.id === planId)
-        
+
         // 优先使用planList中的名称
         if (currentPlan && currentPlan.name) {
           currentPlanName.value = currentPlan.name
-          
+
           if (apiName !== currentPlan.name) {
             console.log(`[计划表] 同步名称: API="${apiName}" -> planList="${currentPlan.name}"`)
           }
@@ -319,10 +322,10 @@ const loadPlanData = async (planId: string) => {
             currentPlan.name = apiName
           }
         }
-        
+
         currentMode.value = planData.Info.Mode || 'ALL'
       }
-      
+
       // 标记这是初始加载，需要强制更新自定义关卡
       tableData.value = { ...planData, _isInitialLoad: true }
     }
@@ -337,42 +340,47 @@ const initPlans = async () => {
     if (response.index && response.index.length > 0) {
       // 优化：预先收集所有名称，避免O(n²)复杂度
       const allPlanNames: string[] = []
-      
+
       planList.value = response.index.map((item: any) => {
         const planId = item.uid
         const planData = response.data[planId]
         const planType = item.type
         let planName = planData?.Info?.Name || ''
-        
+
         // 如果API中没有名称，或者名称是默认的模板名称，则生成唯一名称
-        if (!planName || planName === '新 MAA 计划表' || planName === '新通用计划表' || planName === '新自定义计划表') {
+        if (
+          !planName ||
+          planName === '新 MAA 计划表' ||
+          planName === '新通用计划表' ||
+          planName === '新自定义计划表'
+        ) {
           planName = generateUniquePlanName(planType, allPlanNames)
         }
-        
+
         allPlanNames.push(planName)
         return { id: planId, name: planName, type: planType }
       })
-      
+
       const queryPlanId = (route.query.planId as string) || ''
       const target = queryPlanId ? planList.value.find(p => p.id === queryPlanId) : null
       const selectedPlanId = target ? target.id : planList.value[0].id
-      
+
       // 优化：直接使用已获取的数据，避免重复API调用
       activePlanId.value = selectedPlanId
       const planData = response.data[selectedPlanId]
       if (planData) {
         currentPlanData.value = response.data
-        
+
         // 直接设置数据，避免loadPlanData的重复调用
         const selectedPlan = planList.value.find(plan => plan.id === selectedPlanId)
         if (selectedPlan) {
           currentPlanName.value = selectedPlan.name
         }
-        
+
         if (planData.Info) {
           currentMode.value = planData.Info.Mode || 'ALL'
         }
-        
+
         console.log(`[计划表] 初始加载数据 (${selectedPlanId}):`, planData)
         // 标记这是初始加载，需要强制更新自定义关卡
         tableData.value = { ...planData, _isInitialLoad: true }

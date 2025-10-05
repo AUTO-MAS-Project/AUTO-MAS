@@ -7,7 +7,6 @@ import { downloadFile } from './downloadService'
 import { ChildProcessWithoutNullStreams } from 'node:child_process'
 import { log, stripAnsiColors } from './logService'
 
-
 let mainWindow: BrowserWindow | null = null
 
 export function setMainWindow(window: BrowserWindow) {

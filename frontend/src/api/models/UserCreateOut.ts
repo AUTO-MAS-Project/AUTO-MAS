@@ -2,28 +2,27 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { GeneralUserConfig } from './GeneralUserConfig';
-import type { MaaUserConfig } from './MaaUserConfig';
+import type { GeneralUserConfig } from './GeneralUserConfig'
+import type { MaaUserConfig } from './MaaUserConfig'
 export type UserCreateOut = {
-    /**
-     * 状态码
-     */
-    code?: number;
-    /**
-     * 操作状态
-     */
-    status?: string;
-    /**
-     * 操作消息
-     */
-    message?: string;
-    /**
-     * 新创建的用户ID
-     */
-    userId: string;
-    /**
-     * 用户配置数据
-     */
-    data: (MaaUserConfig | GeneralUserConfig);
-};
-
+  /**
+   * 状态码
+   */
+  code?: number
+  /**
+   * 操作状态
+   */
+  status?: string
+  /**
+   * 操作消息
+   */
+  message?: string
+  /**
+   * 新创建的用户ID
+   */
+  userId: string
+  /**
+   * 用户配置数据
+   */
+  data: MaaUserConfig | GeneralUserConfig
+}

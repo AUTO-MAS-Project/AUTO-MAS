@@ -30,7 +30,7 @@
       <h1 class="page-title">脚本管理</h1>
     </div>
     <a-space size="middle">
-      <a-button type="primary" size="large" @click="handleAddScript" class="link">
+      <a-button type="primary" size="large" class="link" @click="handleAddScript">
         <template #icon>
           <PlusOutlined />
         </template>
@@ -72,12 +72,12 @@
     v-model:open="typeSelectVisible"
     title="选择脚本类型"
     :confirm-loading="addLoading"
-    @ok="handleConfirmAddScript"
-    @cancel="typeSelectVisible = false"
     class="type-select-modal"
     width="500px"
     ok-text="确定"
     cancel-text="取消"
+    @ok="handleConfirmAddScript"
+    @cancel="typeSelectVisible = false"
   >
     <div class="type-selection">
       <a-radio-group v-model:value="selectedType" class="type-radio-group">
@@ -112,12 +112,12 @@
     v-model:open="generalModeSelectVisible"
     title="选择创建方式"
     :confirm-loading="addLoading"
-    @ok="handleConfirmGeneralMode"
-    @cancel="generalModeSelectVisible = false"
     class="general-mode-modal"
     width="600px"
     ok-text="确定"
     cancel-text="返回"
+    @ok="handleConfirmGeneralMode"
+    @cancel="generalModeSelectVisible = false"
   >
     <div class="mode-selection">
       <a-radio-group v-model:value="selectedGeneralMode" class="mode-radio-group">
@@ -152,13 +152,13 @@
     v-model:open="templateSelectVisible"
     title="选择配置模板"
     :confirm-loading="templateLoading"
-    @ok="handleConfirmTemplate"
-    @cancel="handleCancelTemplate"
     class="template-select-modal"
     width="1000px"
     ok-text="使用此模板"
     cancel-text="返回"
     :ok-button-props="{ disabled: !selectedTemplate }"
+    @ok="handleConfirmTemplate"
+    @cancel="handleCancelTemplate"
   >
     <div class="template-selection">
       <a-spin :spinning="templateLoading">
@@ -292,7 +292,9 @@ const showMAAConfigMask = ref(false) // 控制MAA配置遮罩层的显示
 const currentConfigScript = ref<Script | null>(null) // 当前正在配置的脚本
 
 // WebSocket连接管理
-const activeConnections = ref<Map<string, { subscriptionId: string; websocketId: string }>>(new Map()) // scriptId -> { subscriptionId, websocketId }
+const activeConnections = ref<Map<string, { subscriptionId: string; websocketId: string }>>(
+  new Map()
+) // scriptId -> { subscriptionId, websocketId }
 
 // 解析模板描述的markdown
 const parseMarkdown = (text: string) => {
@@ -569,35 +571,32 @@ const handleStartMAAConfig = async (script: Script) => {
       currentConfigScript.value = script
 
       // 订阅WebSocket消息
-      const subscriptionId = subscribe(
-        { id: response.websocketId },
-        (wsMessage: any) => {
-          // 处理错误消息
-          if (wsMessage.type === 'error') {
-            console.error(`脚本 ${script.name} 连接错误:`, wsMessage.data)
-            message.error(`MAA配置连接失败: ${wsMessage.data}`)
-            activeConnections.value.delete(script.id)
-            // 连接错误时隐藏遮罩
-            showMAAConfigMask.value = false
-            currentConfigScript.value = null
-            return
-          }
-
-          // 处理配置完成消息（兼容任何结构）
-          if (wsMessage.data && wsMessage.data.Accomplish) {
-            message.success(`${script.name} 配置已完成`)
-            activeConnections.value.delete(script.id)
-            // 自动隐藏遮罩
-            showMAAConfigMask.value = false
-            currentConfigScript.value = null
-          }
+      const subscriptionId = subscribe({ id: response.websocketId }, (wsMessage: any) => {
+        // 处理错误消息
+        if (wsMessage.type === 'error') {
+          console.error(`脚本 ${script.name} 连接错误:`, wsMessage.data)
+          message.error(`MAA配置连接失败: ${wsMessage.data}`)
+          activeConnections.value.delete(script.id)
+          // 连接错误时隐藏遮罩
+          showMAAConfigMask.value = false
+          currentConfigScript.value = null
+          return
         }
-      )
+
+        // 处理配置完成消息（兼容任何结构）
+        if (wsMessage.data && wsMessage.data.Accomplish) {
+          message.success(`${script.name} 配置已完成`)
+          activeConnections.value.delete(script.id)
+          // 自动隐藏遮罩
+          showMAAConfigMask.value = false
+          currentConfigScript.value = null
+        }
+      })
 
       // 记录连接和subscriptionId
       activeConnections.value.set(script.id, {
         subscriptionId,
-        websocketId: response.websocketId
+        websocketId: response.websocketId,
       })
       message.success(`已启动 ${script.name} 的MAA配置`)
 

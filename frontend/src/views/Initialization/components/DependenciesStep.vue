@@ -68,7 +68,7 @@
       </div>
 
       <div class="test-actions">
-        <a-button @click="testPipMirrorSpeed" :loading="testingPipSpeed" type="primary">
+        <a-button :loading="testingPipSpeed" type="primary" @click="testPipMirrorSpeed">
           {{ testingPipSpeed ? '测速中...' : '重新测速' }}
         </a-button>
         <span class="test-note">3秒无响应视为超时</span>
@@ -80,10 +80,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { getConfig, saveConfig } from '@/utils/config.ts'
-import {
-  sortMirrorsBySpeedAndRecommendation,
-  type MirrorConfig,
-} from '@/config/mirrors.ts'
+import { sortMirrorsBySpeedAndRecommendation, type MirrorConfig } from '@/config/mirrors.ts'
 import { mirrorManager } from '@/utils/mirrorManager.ts'
 
 const pipMirrors = ref<MirrorConfig[]>([])
@@ -107,12 +104,15 @@ async function loadMirrorConfig() {
     // 从镜像管理器获取最新的pip镜像源配置（包含云端数据）
     const cloudMirrors = mirrorManager.getMirrors('pip')
     pipMirrors.value = [...cloudMirrors]
-    
+
     const config = await getConfig()
     selectedPipMirror.value = config.selectedPipMirror || 'aliyun'
     console.log('pip镜像源配置已加载:', selectedPipMirror.value)
     console.log('云端pip镜像源已加载:', cloudMirrors.length, '个')
-    console.log('云端pip镜像源详情:', cloudMirrors.map(m => ({ name: m.name, key: m.key })))
+    console.log(
+      '云端pip镜像源详情:',
+      cloudMirrors.map(m => ({ name: m.name, key: m.key }))
+    )
   } catch (error) {
     console.warn('加载pip镜像源配置失败:', error)
   }

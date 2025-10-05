@@ -19,23 +19,23 @@ export function generateUniquePlanName(planType: string, existingNames: string[]
     GeneralPlan: '新通用计划表',
     CustomPlan: '新自定义计划表',
   } as Record<string, string>
-  
+
   const baseName = baseNames[planType] || '新计划表'
-  
+
   // 如果基础名称没有被使用，直接返回
   if (!existingNames.includes(baseName)) {
     return baseName
   }
-  
+
   // 查找可用的编号
   let counter = 2
   let candidateName = `${baseName} ${counter}`
-  
+
   while (existingNames.includes(candidateName)) {
     counter++
     candidateName = `${baseName} ${counter}`
   }
-  
+
   return candidateName
 }
 
@@ -47,31 +47,29 @@ export function generateUniquePlanName(planType: string, existingNames: string[]
  * @returns 验证结果
  */
 export function validatePlanName(
-  newName: string, 
-  existingNames: string[], 
+  newName: string,
+  existingNames: string[],
   currentName?: string
 ): PlanNameValidationResult {
   // 检查名称是否为空
   if (!newName || !newName.trim()) {
     return { isValid: false, message: '计划表名称不能为空' }
   }
-  
+
   const trimmedName = newName.trim()
-  
+
   // 检查名称长度
   if (trimmedName.length > 50) {
     return { isValid: false, message: '计划表名称不能超过50个字符' }
   }
-  
+
   // 检查是否与其他计划表重名（排除当前名称）
-  const isDuplicate = existingNames.some(name => 
-    name === trimmedName && name !== currentName
-  )
-  
+  const isDuplicate = existingNames.some(name => name === trimmedName && name !== currentName)
+
   if (isDuplicate) {
     return { isValid: false, message: '计划表名称已存在，请使用其他名称' }
   }
-  
+
   return { isValid: true }
 }
 
@@ -86,6 +84,6 @@ export function getPlanTypeLabel(planType: string): string {
     GeneralPlan: '通用计划表',
     CustomPlan: '自定义计划表',
   } as Record<string, string>
-  
+
   return labels[planType] || '计划表'
 }

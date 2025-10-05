@@ -16,8 +16,8 @@ export const WEBHOOK_TEMPLATES: WebhookTemplate[] = [
     method: 'POST',
     example: 'https://api.day.app/your_key/',
     headers: {
-      'Content-Type': 'application/json'
-    }
+      'Content-Type': 'application/json',
+    },
   },
   {
     name: 'Server酱 (微信推送)',
@@ -26,8 +26,8 @@ export const WEBHOOK_TEMPLATES: WebhookTemplate[] = [
     method: 'POST',
     example: 'https://sctapi.ftqq.com/your_key.send',
     headers: {
-      'Content-Type': 'application/json'
-    }
+      'Content-Type': 'application/json',
+    },
   },
   {
     name: '企业微信机器人',
@@ -36,8 +36,8 @@ export const WEBHOOK_TEMPLATES: WebhookTemplate[] = [
     method: 'POST',
     example: 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=your_key',
     headers: {
-      'Content-Type': 'application/json'
-    }
+      'Content-Type': 'application/json',
+    },
   },
   {
     name: 'DingTalk (钉钉机器人)',
@@ -46,8 +46,8 @@ export const WEBHOOK_TEMPLATES: WebhookTemplate[] = [
     method: 'POST',
     example: 'https://oapi.dingtalk.com/robot/send?access_token=your_token',
     headers: {
-      'Content-Type': 'application/json'
-    }
+      'Content-Type': 'application/json',
+    },
   },
   {
     name: 'Telegram Bot',
@@ -56,8 +56,8 @@ export const WEBHOOK_TEMPLATES: WebhookTemplate[] = [
     method: 'POST',
     example: 'https://api.telegram.org/bot{your_bot_token}/sendMessage',
     headers: {
-      'Content-Type': 'application/json'
-    }
+      'Content-Type': 'application/json',
+    },
   },
   {
     name: 'Discord Webhook',
@@ -66,8 +66,8 @@ export const WEBHOOK_TEMPLATES: WebhookTemplate[] = [
     method: 'POST',
     example: 'https://discord.com/api/webhooks/your_webhook_url',
     headers: {
-      'Content-Type': 'application/json'
-    }
+      'Content-Type': 'application/json',
+    },
   },
   {
     name: 'Slack Webhook',
@@ -76,8 +76,8 @@ export const WEBHOOK_TEMPLATES: WebhookTemplate[] = [
     method: 'POST',
     example: 'https://hooks.slack.com/services/your/webhook/url',
     headers: {
-      'Content-Type': 'application/json'
-    }
+      'Content-Type': 'application/json',
+    },
   },
   {
     name: 'PushPlus (微信推送)',
@@ -86,8 +86,8 @@ export const WEBHOOK_TEMPLATES: WebhookTemplate[] = [
     method: 'POST',
     example: 'http://www.pushplus.plus/send',
     headers: {
-      'Content-Type': 'application/json'
-    }
+      'Content-Type': 'application/json',
+    },
   },
   {
     name: '自定义JSON',
@@ -96,8 +96,8 @@ export const WEBHOOK_TEMPLATES: WebhookTemplate[] = [
     method: 'POST',
     example: 'https://your-api.com/webhook',
     headers: {
-      'Content-Type': 'application/json'
-    }
+      'Content-Type': 'application/json',
+    },
   },
   {
     name: '自定义GET请求',
@@ -105,8 +105,8 @@ export const WEBHOOK_TEMPLATES: WebhookTemplate[] = [
     template: 'title={title}&content={content}&time={datetime}',
     method: 'GET',
     example: 'https://your-api.com/notify',
-    headers: {}
-  }
+    headers: {},
+  },
 ]
 
 // 获取模板变量说明
@@ -115,5 +115,5 @@ export const TEMPLATE_VARIABLES = [
   { name: '{content}', description: '通知内容' },
   { name: '{datetime}', description: '完整日期时间 (YYYY-MM-DD HH:MM:SS)' },
   { name: '{date}', description: '日期 (YYYY-MM-DD)' },
-  { name: '{time}', description: '时间 (HH:MM:SS)' }
+  { name: '{time}', description: '时间 (HH:MM:SS)' },
 ]

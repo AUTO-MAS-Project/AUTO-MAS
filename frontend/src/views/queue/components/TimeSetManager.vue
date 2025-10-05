@@ -4,9 +4,9 @@
       <a-space>
         <a-button
           type="primary"
-          @click="addTimeSet"
           :loading="loading"
           :disabled="!props.queueId || props.queueId.trim() === ''"
+          @click="addTimeSet"
         >
           <template #icon>
             <PlusOutlined />
@@ -36,8 +36,8 @@
         ghost-class="ghost"
         chosen-class="chosen"
         drag-class="drag"
-        @end="onDragEnd"
         class="draggable-container"
+        @end="onDragEnd"
       >
         <template #item="{ element: record, index }">
           <div class="draggable-row" :class="{ 'row-dragging': loading }">
@@ -45,10 +45,10 @@
             <div class="row-cell status-cell">
               <a-select
                 v-model:value="record.enabled"
-                @change="updateTimeSetStatus(record)"
                 size="small"
                 style="width: 80px"
                 class="status-select"
+                @change="updateTimeSetStatus(record)"
               >
                 <a-select-option :value="true">启用</a-select-option>
                 <a-select-option :value="false">禁用</a-select-option>
@@ -60,17 +60,17 @@
                 format="HH:mm"
                 placeholder="请选择时间"
                 size="small"
-                @change="updateTimeSetTime(record)"
                 :disabled="loading"
+                @change="updateTimeSetTime(record)"
               />
             </div>
             <div class="row-cell actions-cell">
               <a-space>
                 <a-popconfirm
                   title="确定要删除这个定时吗？"
-                  @confirm="deleteTimeSet(record.id)"
                   ok-text="确定"
                   cancel-text="取消"
+                  @confirm="deleteTimeSet(record.id)"
                 >
                   <a-button size="middle" danger>
                     <DeleteOutlined />
@@ -1098,7 +1098,9 @@ const onDragEnd = async (evt: any) => {
   transition: background 0.2s ease;
 }
 
-[data-theme='dark'] .ant-picker-dropdown .ant-picker-time-panel-column::-webkit-scrollbar-thumb:hover {
+[data-theme='dark']
+  .ant-picker-dropdown
+  .ant-picker-time-panel-column::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.45);
 }
 </style>

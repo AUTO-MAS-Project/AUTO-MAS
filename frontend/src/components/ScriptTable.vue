@@ -8,11 +8,11 @@
       ghost-class="script-ghost"
       chosen-class="script-chosen"
       drag-class="script-drag"
-      @end="onScriptDragEnd"
       class="draggable-scripts"
+      @end="onScriptDragEnd"
     >
       <template #item="{ element: script }">
-        <div class="script-wrapper" :key="script.id">
+        <div :key="script.id" class="script-wrapper">
           <a-card :hoverable="true" class="script-card" :body-style="{ padding: '0' }">
             <!-- 脚本头部信息 -->
             <div class="script-header">
@@ -78,9 +78,9 @@
                 <a-popconfirm
                   title="确定要删除这个脚本吗？"
                   description="删除后将无法恢复，请谨慎操作"
-                  @confirm="handleDelete(script)"
                   ok-text="确定"
                   cancel-text="取消"
+                  @confirm="handleDelete(script)"
                 >
                   <a-button danger size="middle" class="action-button delete-button">
                     <template #icon>
@@ -93,7 +93,7 @@
             </div>
 
             <!-- 用户列表 -->
-            <div class="users-section" v-if="script.users && script.users.length > 0">
+            <div v-if="script.users && script.users.length > 0" class="users-section">
               <!-- 使用vuedraggable包装用户列表 -->
               <draggable
                 v-model="script.users"
@@ -102,11 +102,11 @@
                 ghost-class="user-ghost"
                 chosen-class="user-chosen"
                 drag-class="user-drag"
-                @end="(evt: any) => onUserDragEnd(evt, script)"
                 class="users-list"
+                @end="(evt: any) => onUserDragEnd(evt, script)"
               >
                 <template #item="{ element: user }">
-                  <div class="user-item" :key="user.id">
+                  <div :key="user.id" class="user-item">
                     <div class="user-info">
                       <div class="user-details-row">
                         <div class="user-name-section">
@@ -290,8 +290,8 @@
                           :checked="user.Info.Status"
                           :checked-children="'启用'"
                           :un-checked-children="'禁用'"
-                          @click="handleToggleUserStatus(user)"
                           class="status-switch"
+                          @click="handleToggleUserStatus(user)"
                         />
                       </div>
 
@@ -312,9 +312,9 @@
                         <a-popconfirm
                           title="确定要删除这个用户吗？"
                           description="删除后将无法恢复"
-                          @confirm="handleDeleteUser(user)"
                           ok-text="确定"
                           cancel-text="取消"
+                          @confirm="handleDeleteUser(user)"
                         >
                           <a-tooltip title="删除用户">
                             <a-button type="default" size="middle" danger class="user-action-btn">

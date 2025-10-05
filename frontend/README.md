@@ -50,7 +50,7 @@ yarn dev
 ### 构建
 
 ```bash
-yarn build   
+yarn build
 ```
 
 ## 技术栈
@@ -70,4 +70,3 @@ yarn lint          # 查看问题
 yarn lint:fix      # 自动修复
 yarn format        # 仅 Prettier 全量改格式（非必须）
 ```
-

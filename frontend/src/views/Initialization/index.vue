@@ -63,7 +63,7 @@ const serviceStarted = ref(false)
 // 镜像配置状态
 const mirrorConfigStatus = ref({
   source: 'fallback' as 'cloud' | 'fallback',
-  version: ''
+  version: '',
 })
 
 // 组件引用
@@ -86,7 +86,7 @@ async function enterApp() {
     // 设置初始化完成标记
     await setInitialized(true)
     console.log('设置初始化完成标记，准备进入应用...')
-    
+
     // 使用统一的进入应用函数
     await forceEnterApp('初始化完成后进入')
   } catch (error) {
@@ -186,9 +186,7 @@ async function checkEnvironment() {
 
     // 检查所有关键exe文件是否都存在
     const allExeFilesExist =
-      criticalFiles.pythonExists &&
-      criticalFiles.gitExists &&
-      criticalFiles.mainPyExists
+      criticalFiles.pythonExists && criticalFiles.gitExists && criticalFiles.mainPyExists
 
     console.log('关键exe文件状态检查:')
     console.log('- python.exe存在:', criticalFiles.pythonExists)
@@ -220,7 +218,7 @@ async function checkEnvironment() {
       console.log('  - python.exe缺失:', !criticalFiles.pythonExists)
       console.log('  - git.exe缺失:', !criticalFiles.gitExists)
       console.log('  - main.py缺失:', !criticalFiles.mainPyExists)
-      
+
       const missing = []
       if (!criticalFiles.pythonExists) missing.push('Python 环境')
       if (!criticalFiles.gitExists) missing.push('Git 工具')
@@ -230,7 +228,7 @@ async function checkEnvironment() {
       showEnvironmentIncomplete.value = true
       autoMode.value = false
     }
-      
+
     // 如果关键文件缺失，重置初始化状态
     if (!allExeFilesExist && config.init) {
       console.log('检测到关键exe文件缺失，重置初始化状态')
@@ -270,7 +268,7 @@ onMounted(async () => {
   const status = mirrorManager.getConfigStatus()
   mirrorConfigStatus.value = {
     source: status.source,
-    version: status.version || ''
+    version: status.version || '',
   }
   console.log('镜像配置状态:', mirrorConfigStatus.value)
 

@@ -3,9 +3,8 @@
 /* tslint:disable */
 /* eslint-disable */
 export type QueueGetIn = {
-    /**
-     * 队列ID, 未携带时表示获取所有队列数据
-     */
-    queueId?: (string | null);
-};
-
+  /**
+   * 队列ID, 未携带时表示获取所有队列数据
+   */
+  queueId?: string | null
+}

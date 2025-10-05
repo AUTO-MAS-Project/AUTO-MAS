@@ -3,9 +3,8 @@
 /* tslint:disable */
 /* eslint-disable */
 export type QueueReorderIn = {
-    /**
-     * 按新顺序排列的调度队列UID列表
-     */
-    indexList: Array<string>;
-};
-
+  /**
+   * 按新顺序排列的调度队列UID列表
+   */
+  indexList: Array<string>
+}

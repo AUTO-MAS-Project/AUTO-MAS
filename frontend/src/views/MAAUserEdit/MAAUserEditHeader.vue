@@ -22,15 +22,15 @@
         type="primary"
         ghost
         size="large"
-        @click="$emit('handleMAAConfig')"
         :loading="maaConfigLoading"
+        @click="$emit('handleMAAConfig')"
       >
         <template #icon>
           <SettingOutlined />
         </template>
         MAA配置
       </a-button>
-      <a-button size="large" @click="$emit('handleCancel')" class="cancel-button">
+      <a-button size="large" class="cancel-button" @click="$emit('handleCancel')">
         <template #icon>
           <ArrowLeftOutlined />
         </template>
@@ -39,9 +39,9 @@
       <a-button
         type="primary"
         size="large"
-        @click="$emit('handleSubmit')"
         :loading="loading"
         class="save-button"
+        @click="$emit('handleSubmit')"
       >
         <template #icon>
           <SaveOutlined />

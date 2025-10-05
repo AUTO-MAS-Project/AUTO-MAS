@@ -22,7 +22,13 @@ import TabEmulator from './TabEmulator.vue'
 const router = useRouter()
 const { themeMode, themeColor, themeColors, setThemeMode, setThemeColor } = useTheme()
 const { loading, getSettings, updateSettings } = useSettingsApi()
-const { restartPolling, updateVisible, updateData, latestVersion, checkUpdate: globalCheckUpdate } = useUpdateChecker()
+const {
+  restartPolling,
+  updateVisible,
+  updateData,
+  latestVersion,
+  checkUpdate: globalCheckUpdate,
+} = useUpdateChecker()
 
 // 活动标签
 const activeKey = ref('basic')
@@ -142,13 +148,13 @@ const loadSettings = async () => {
   const data = await getSettings()
   if (data) {
     Object.assign(settings, data)
-    
+
     // 同步配置到 Electron 主进程
     try {
       if ((window as any).electronAPI?.syncBackendConfig) {
         await (window as any).electronAPI.syncBackendConfig({
           UI: data.UI,
-          Start: data.Start
+          Start: data.Start,
         })
         console.log('后端配置已同步到 Electron')
       }
@@ -172,7 +178,7 @@ const saveSettings = async (category: keyof SettingsData, changes: any) => {
 const handleSettingChange = async (category: keyof SettingsData, key: string, value: any) => {
   const changes = { [key]: value }
   await saveSettings(category, changes)
-  
+
   // 处理托盘相关配置
   if (category === 'UI' && (key === 'IfShowTray' || key === 'IfToTray')) {
     try {
@@ -184,13 +190,13 @@ const handleSettingChange = async (category: keyof SettingsData, key: string, va
       message.error('托盘设置更新失败')
     }
   }
-  
+
   // 处理启动配置
   if (category === 'Start' && key === 'IfMinimizeDirectly') {
     try {
       if ((window as any).electronAPI?.syncBackendConfig) {
         await (window as any).electronAPI.syncBackendConfig({
-          Start: { [key]: value }
+          Start: { [key]: value },
         })
       }
     } catch (e) {
@@ -198,7 +204,7 @@ const handleSettingChange = async (category: keyof SettingsData, key: string, va
       message.error('启动配置同步失败')
     }
   }
-  
+
   if (category === 'Update' && key === 'IfAutoUpdate') {
     try {
       await restartPolling()
@@ -226,15 +232,15 @@ const checkUpdate = async () => {
   console.log('[Setting] 检查前状态:', {
     updateVisible: updateVisible.value,
     updateData: updateData.value,
-    latestVersion: latestVersion.value
+    latestVersion: latestVersion.value,
   })
-  
+
   try {
     await globalCheckUpdate(false, true) // silent=false, forceCheck=true
     console.log('[Setting] 全局更新检查完成，状态:', {
       updateVisible: updateVisible.value,
       updateData: updateData.value,
-      latestVersion: latestVersion.value
+      latestVersion: latestVersion.value,
     })
   } catch (error) {
     console.error('[Setting] 全局更新检查失败:', error)
@@ -300,7 +306,7 @@ onMounted(() => {
   <div class="settings-container">
     <div class="settings-header"><h1 class="page-title">设置</h1></div>
     <div class="settings-content">
-      <a-tabs v-model:activeKey="activeKey" type="card" :loading="loading" class="settings-tabs">
+      <a-tabs v-model:active-key="activeKey" type="card" :loading="loading" class="settings-tabs">
         <a-tab-pane key="basic" tab="界面设置">
           <TabBasic
             :settings="settings"

@@ -225,7 +225,7 @@ const toggleDevices = async (uuid: string) => {
     // 如果未展开，则加载并展开
     expandedEmulators.value.add(uuid)
     expandedEmulators.value = new Set(expandedEmulators.value)
-    
+
     // 如果还没有加载设备信息，则加载
     if (!devicesData.value[uuid]) {
       await loadDevices(uuid)
@@ -237,7 +237,7 @@ const toggleDevices = async (uuid: string) => {
 const loadDevices = async (uuid: string) => {
   loadingDevices.value.add(uuid)
   loadingDevices.value = new Set(loadingDevices.value)
-  
+
   try {
     // const response = await Service.getEmulatorDevicesApiSettingEmulatorDevicesPost({
     //   emulatorId: uuid,
@@ -249,7 +249,7 @@ const loadDevices = async (uuid: string) => {
     //   expandedEmulators.value.delete(uuid)
     //   expandedEmulators.value = new Set(expandedEmulators.value)
     // }
-    
+
     // 临时数据用于测试UI
     await new Promise(resolve => setTimeout(resolve, 500))
     devicesData.value[uuid] = {
@@ -388,8 +388,8 @@ const handleRemoveBossKey = () => {
           <a-button
             type="primary"
             :icon="h(SearchOutlined)"
-            @click="handleSearch"
             :loading="searching"
+            @click="handleSearch"
           >
             自动搜索
           </a-button>
@@ -435,11 +435,7 @@ const handleRemoveBossKey = () => {
                   </a-button>
                 </template>
                 <template v-else>
-                  <a-button
-                    type="link"
-                    size="small"
-                    @click="toggleDevices(element.uuid)"
-                  >
+                  <a-button type="link" size="small" @click="toggleDevices(element.uuid)">
                     {{ expandedEmulators.has(element.uuid) ? '折叠设备' : '查看设备' }}
                   </a-button>
                   <a-button
@@ -541,7 +537,7 @@ const handleRemoveBossKey = () => {
                   <a-button v-else type="primary" danger @click="stopRecordBossKey">
                     取消录制
                   </a-button>
-                  <a-button @click="handleSetBossKey" :disabled="recordingBossKey"> 设置 </a-button>
+                  <a-button :disabled="recordingBossKey" @click="handleSetBossKey"> 设置 </a-button>
                 </div>
                 <div
                   v-if="editingData.boss_keys && editingData.boss_keys.length > 0"
@@ -565,15 +561,21 @@ const handleRemoveBossKey = () => {
                 <h4>设备列表</h4>
                 <a-button
                   size="small"
-                  @click="refreshDevices(element.uuid)"
                   :loading="loadingDevices.has(element.uuid)"
+                  @click="refreshDevices(element.uuid)"
                 >
                   刷新
                 </a-button>
               </div>
 
               <a-spin :spinning="loadingDevices.has(element.uuid)">
-                <div v-if="!devicesData[element.uuid] || Object.keys(devicesData[element.uuid]).length === 0" class="empty-devices">
+                <div
+                  v-if="
+                    !devicesData[element.uuid] ||
+                    Object.keys(devicesData[element.uuid]).length === 0
+                  "
+                  class="empty-devices"
+                >
                   <a-empty description="暂无设备信息" />
                 </div>
 

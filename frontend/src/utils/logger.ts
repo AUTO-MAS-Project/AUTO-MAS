@@ -3,10 +3,10 @@ const LogLevel = {
   DEBUG: 'DEBUG',
   INFO: 'INFO',
   WARN: 'WARN',
-  ERROR: 'ERROR'
+  ERROR: 'ERROR',
 } as const
 
-export type LogLevel = typeof LogLevel[keyof typeof LogLevel]
+export type LogLevel = (typeof LogLevel)[keyof typeof LogLevel]
 export { LogLevel }
 
 class Logger {
@@ -76,11 +76,11 @@ class Logger {
 export const logger = new Logger()
 
 // 捕获未处理的错误（直接使用console，主进程会处理日志记录）
-window.addEventListener('error', (event) => {
+window.addEventListener('error', event => {
   console.error('未处理的错误:', event.error?.message || event.message, event.error?.stack)
 })
 
-window.addEventListener('unhandledrejection', (event) => {
+window.addEventListener('unhandledrejection', event => {
   console.error('未处理的Promise拒绝:', event.reason)
 })
 

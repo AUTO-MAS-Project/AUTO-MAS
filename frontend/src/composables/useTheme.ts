@@ -92,7 +92,7 @@ const updateCSSVariables = () => {
   if (isDark.value) {
     root.style.setProperty('--ant-color-primary', primaryColor)
     root.style.setProperty('--ant-color-primary-hover', hslLighten(primaryColor, 6))
-    root.style.setProperty('--ant-color-primary-bg', addAlpha(primaryColor, 0.10))
+    root.style.setProperty('--ant-color-primary-bg', addAlpha(primaryColor, 0.1))
     root.style.setProperty('--ant-color-text', 'rgba(255, 255, 255, 0.88)')
     root.style.setProperty('--ant-color-text-secondary', 'rgba(255, 255, 255, 0.65)')
     root.style.setProperty('--ant-color-text-tertiary', 'rgba(255, 255, 255, 0.45)')
@@ -107,7 +107,7 @@ const updateCSSVariables = () => {
   } else {
     root.style.setProperty('--ant-color-primary', primaryColor)
     root.style.setProperty('--ant-color-primary-hover', hslDarken(primaryColor, 6))
-    root.style.setProperty('--ant-color-primary-bg', addAlpha(primaryColor, 0.10))
+    root.style.setProperty('--ant-color-primary-bg', addAlpha(primaryColor, 0.1))
     root.style.setProperty('--ant-color-text', 'rgba(0, 0, 0, 0.88)')
     root.style.setProperty('--ant-color-text-secondary', 'rgba(0, 0, 0, 0.65)')
     root.style.setProperty('--ant-color-text-tertiary', 'rgba(0, 0, 0, 0.45)')
@@ -126,12 +126,20 @@ const updateCSSVariables = () => {
   const lumPrim = getLuminance(primaryColor)
   const hoverAlphaBase = isDark.value ? 0.22 : 0.14
   const selectedAlphaBase = isDark.value ? 0.38 : 0.26
-  const hoverAlpha = clamp01(hoverAlphaBase + (isDark.value ? (lumPrim > 0.65 ? -0.04 : 0) : (lumPrim < 0.30 ? 0.04 : 0)))
-  const selectedAlpha = clamp01(selectedAlphaBase + (isDark.value ? (lumPrim > 0.65 ? -0.05 : 0) : (lumPrim < 0.30 ? 0.05 : 0)))
+  const hoverAlpha = clamp01(
+    hoverAlphaBase + (isDark.value ? (lumPrim > 0.65 ? -0.04 : 0) : lumPrim < 0.3 ? 0.04 : 0)
+  )
+  const selectedAlpha = clamp01(
+    selectedAlphaBase + (isDark.value ? (lumPrim > 0.65 ? -0.05 : 0) : lumPrim < 0.3 ? 0.05 : 0)
+  )
 
   // 估算最终选中背景（混合算实际颜色用于对比度计算）
   const estimatedSelectedBg = blendColors(baseMenuBg, primaryColor, selectedAlpha)
-  const selectedTextColor = pickAccessibleColor('rgba(0,0,0,0.90)', 'rgba(255,255,255,0.92)', estimatedSelectedBg)
+  const selectedTextColor = pickAccessibleColor(
+    'rgba(0,0,0,0.90)',
+    'rgba(255,255,255,0.92)',
+    estimatedSelectedBg
+  )
   const hoverTextColor = menuTextColor
 
   root.style.setProperty('--app-sider-bg', siderBg)
@@ -154,7 +162,9 @@ const updateCSSVariables = () => {
 const addAlpha = (hex: string, alpha: number) => {
   const a = alpha > 1 ? alpha / 100 : alpha
   const clamped = Math.min(1, Math.max(0, a))
-  const alphaHex = Math.round(clamped * 255).toString(16).padStart(2, '0')
+  const alphaHex = Math.round(clamped * 255)
+    .toString(16)
+    .padStart(2, '0')
   return `${hex}${alphaHex}`
 }
 
@@ -209,17 +219,27 @@ const hexToRgba = (hex: string, alpha: number) => {
 
 // HSL 转换（感知更平滑）
 const rgbToHsl = (r: number, g: number, b: number) => {
-  r /= 255; g /= 255; b /= 255
-  const max = Math.max(r, g, b), min = Math.min(r, g, b)
-  let h = 0, s = 0
+  r /= 255
+  g /= 255
+  b /= 255
+  const max = Math.max(r, g, b),
+    min = Math.min(r, g, b)
+  let h = 0,
+    s = 0
   const l = (max + min) / 2
   const d = max - min
   if (d !== 0) {
     s = l > 0.5 ? d / (2 - max - min) : d / (max + min)
     switch (max) {
-      case r: h = (g - b) / d + (g < b ? 6 : 0); break
-      case g: h = (b - r) / d + 2; break
-      case b: h = (r - g) / d + 4; break
+      case r:
+        h = (g - b) / d + (g < b ? 6 : 0)
+        break
+      case g:
+        h = (b - r) / d + 2
+        break
+      case b:
+        h = (r - g) / d + 4
+        break
     }
     h /= 6
   }
@@ -235,16 +255,16 @@ const hslToRgb = (h: number, s: number, l: number) => {
   const hue2rgb = (p: number, q: number, t: number) => {
     if (t < 0) t += 1
     if (t > 1) t -= 1
-    if (t < 1/6) return p + (q - p) * 6 * t
-    if (t < 1/2) return q
-    if (t < 2/3) return p + (q - p) * (2/3 - t) * 6
+    if (t < 1 / 6) return p + (q - p) * 6 * t
+    if (t < 1 / 2) return q
+    if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6
     return p
   }
   const q = l < 0.5 ? l * (1 + s) : l + s - l * s
   const p = 2 * l - q
-  const r = hue2rgb(p, q, h + 1/3)
+  const r = hue2rgb(p, q, h + 1 / 3)
   const g = hue2rgb(p, q, h)
-  const b = hue2rgb(p, q, h - 1/3)
+  const b = hue2rgb(p, q, h - 1 / 3)
   return { r: Math.round(r * 255), g: Math.round(g * 255), b: Math.round(b * 255) }
 }
 
@@ -257,8 +277,8 @@ const hslAdjust = (hex: string, dl: number) => {
   return rgbToHex(nrgb.r, nrgb.g, nrgb.b)
 }
 
-const hslLighten = (hex: string, percent: number) => hslAdjust(hex, percent/100)
-const hslDarken = (hex: string, percent: number) => hslAdjust(hex, -percent/100)
+const hslLighten = (hex: string, percent: number) => hslAdjust(hex, percent / 100)
+const hslDarken = (hex: string, percent: number) => hslAdjust(hex, -percent / 100)
 
 // 对比度 (WCAG)
 const contrastRatio = (hex1: string, hex2: string) => {
@@ -271,15 +291,19 @@ const contrastRatio = (hex1: string, hex2: string) => {
 
 const rgbaExtractHex = (color: string) => {
   // 只支持 hex(#rrggbb) 直接返回；若 rgba 则忽略 alpha 并合成背景为黑假设
-  if (color.startsWith('#') && (color.length === 7)) return color
+  if (color.startsWith('#') && color.length === 7) return color
   // 简化：返回黑或白占位
   return '#000000'
 }
 
 const pickAccessibleColor = (c1: string, c2: string, bg: string, minRatio = 4.5) => {
   const hexBg = rgbaExtractHex(bg)
-  const hex1 = rgbaExtractHex(c1 === 'rgba(255,255,255,0.88)' ? '#ffffff' : (c1.includes('255,255,255') ? '#ffffff' : '#000000'))
-  const hex2 = rgbaExtractHex(c2 === 'rgba(255,255,255,0.88)' ? '#ffffff' : (c2.includes('255,255,255') ? '#ffffff' : '#000000'))
+  const hex1 = rgbaExtractHex(
+    c1 === 'rgba(255,255,255,0.88)' ? '#ffffff' : c1.includes('255,255,255') ? '#ffffff' : '#000000'
+  )
+  const hex2 = rgbaExtractHex(
+    c2 === 'rgba(255,255,255,0.88)' ? '#ffffff' : c2.includes('255,255,255') ? '#ffffff' : '#000000'
+  )
   const r1 = contrastRatio(hex1, hexBg)
   const r2 = contrastRatio(hex2, hexBg)
   // 优先满足 >= minRatio；都满足取更高；否则取更高
@@ -297,7 +321,7 @@ const deriveSiderBg = (primary: string, base: string, dark: boolean) => {
 }
 
 const deriveSiderBorder = (siderBg: string, primary: string, dark: boolean) => {
-  return dark ? blendColors(siderBg, primary, 0.30) : blendColors('#d9d9d9', primary, 0.25)
+  return dark ? blendColors(siderBg, primary, 0.3) : blendColors('#d9d9d9', primary, 0.25)
 }
 
 // 监听系统主题变化

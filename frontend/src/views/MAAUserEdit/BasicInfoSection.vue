@@ -172,7 +172,7 @@
     </a-row>
 
     <!-- 自定义基建配置文件选择 -->
-    <a-row :gutter="24" v-if="formData.Info.InfrastMode === 'Custom'">
+    <a-row v-if="formData.Info.InfrastMode === 'Custom'" :gutter="24">
       <a-col :span="24">
         <a-form-item name="infrastructureConfigFile">
           <template #label>
@@ -194,18 +194,18 @@
             <a-button
               type="primary"
               ghost
-              @click="$emit('selectInfrastructureConfig')"
               :disabled="loading"
               size="large"
+              @click="$emit('selectInfrastructureConfig')"
             >
               选择文件
             </a-button>
             <a-button
               type="primary"
-              @click="$emit('importInfrastructureConfig')"
               :disabled="loading || !infrastructureConfigPath || !isEdit"
               :loading="infrastructureImporting"
               size="large"
+              @click="$emit('importInfrastructureConfig')"
             >
               导入配置
             </a-button>

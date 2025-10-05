@@ -28,7 +28,7 @@ import {
   setMainWindow as setGitMainWindow,
   checkRepoStatus,
   cleanDepot,
-  getRepoInfo
+  getRepoInfo,
 } from './services/gitService'
 import { cleanOldLogs, getLogFiles, getLogPath, log, setupLogger } from './services/logService'
 
@@ -530,7 +530,7 @@ function createWindow() {
       }
       updateTrayVisibility(currentConfig)
     }
-    
+
     // 标记初次启动已完成
     isInitialStartup = false
   })
@@ -843,7 +843,7 @@ ipcMain.handle('get-theme-info', async () => {
       actualTheme,
       systemTheme,
       isDark: actualTheme === 'dark',
-      primaryColor: themeColors[themeColor] || themeColors.blue
+      primaryColor: themeColors[themeColor] || themeColors.blue,
     }
   } catch (error) {
     log.error('获取主题信息失败:', error)
@@ -853,7 +853,7 @@ ipcMain.handle('get-theme-info', async () => {
       actualTheme: 'light',
       systemTheme: 'light',
       isDark: false,
-      primaryColor: '#1677ff'
+      primaryColor: '#1677ff',
     }
   }
 })
@@ -899,7 +899,7 @@ let dialogCallbacks = new Map<string, (result: boolean) => void>()
 
 // 创建对话框窗口
 function createQuestionDialog(questionData: any): Promise<boolean> {
-  return new Promise((resolve) => {
+  return new Promise(resolve => {
     const messageId = questionData.messageId || 'dialog_' + Date.now()
 
     // 存储回调函数
@@ -910,7 +910,7 @@ function createQuestionDialog(questionData: any): Promise<boolean> {
       title: questionData.title || '操作确认',
       message: questionData.message || '是否要执行此操作？',
       options: questionData.options || ['确定', '取消'],
-      messageId: messageId
+      messageId: messageId,
     }
 
     // 获取主窗口的尺寸用于全屏显示
@@ -1010,10 +1010,7 @@ ipcMain.handle('move-window', async (_event, deltaX: number, deltaY: number) => 
   const dialogWindow = Array.from(dialogWindows.values()).pop()
   if (dialogWindow && !dialogWindow.isDestroyed()) {
     const currentBounds = dialogWindow.getBounds()
-    dialogWindow.setPosition(
-      currentBounds.x + deltaX,
-      currentBounds.y + deltaY
-    )
+    dialogWindow.setPosition(currentBounds.x + deltaX, currentBounds.y + deltaY)
   }
 })
 
@@ -1083,7 +1080,9 @@ ipcMain.handle('check-git-update', async () => {
           cwd: repoPath,
         })
         let output = ''
-        branchProc.stdout?.on('data', data => { output += data.toString() })
+        branchProc.stdout?.on('data', data => {
+          output += data.toString()
+        })
         branchProc.on('close', code => {
           if (code === 0) {
             resolve(output.trim())
@@ -1100,7 +1099,9 @@ ipcMain.handle('check-git-update', async () => {
           cwd: repoPath,
         })
         let output = ''
-        commitProc.stdout?.on('data', data => { output += data.toString() })
+        commitProc.stdout?.on('data', data => {
+          output += data.toString()
+        })
         commitProc.on('close', code => {
           if (code === 0) {
             resolve(output.trim())
@@ -1109,7 +1110,7 @@ ipcMain.handle('check-git-update', async () => {
           }
         })
         commitProc.on('error', () => resolve('unknown'))
-      })
+      }),
     ])
 
     log.info(`当前repo状态 - 分支: ${currentBranch}, commit: ${currentCommit.substring(0, 8)}...`)
@@ -1121,7 +1122,7 @@ ipcMain.handle('check-git-update', async () => {
       hasUpdate: true,
       currentBranch,
       currentCommit: currentCommit.substring(0, 8),
-      repoExists: true
+      repoExists: true,
     }
   } catch (error) {
     log.error('检查Git更新失败:', error)

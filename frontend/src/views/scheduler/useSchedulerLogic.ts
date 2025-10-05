@@ -7,11 +7,7 @@ import { useWebSocket, ExternalWSHandlers } from '@/composables/useWebSocket'
 import schedulerHandlers from './schedulerHandlers'
 import type { ComboBoxItem } from '@/api/models/ComboBoxItem'
 import type { QueueItem, Script } from './schedulerConstants'
-import {
-  type SchedulerTab,
-  type TaskMessage,
-  type SchedulerStatus,
-} from './schedulerConstants'
+import { type SchedulerTab, type TaskMessage, type SchedulerStatus } from './schedulerConstants'
 
 // 电源操作状态仍然保存到localStorage中，以便重启后保持用户设置
 const SCHEDULER_POWER_ACTION_KEY = 'scheduler-power-action'
@@ -81,10 +77,10 @@ export function useSchedulerLogic() {
   let tabCounter =
     schedulerTabs.value.length > 1
       ? Math.max(
-        ...schedulerTabs.value
-          .filter(tab => tab.key.startsWith('tab-'))
-          .map(tab => parseInt(tab.key.replace('tab-', '')) || 0)
-      ) + 1
+          ...schedulerTabs.value
+            .filter(tab => tab.key.startsWith('tab-'))
+            .map(tab => parseInt(tab.key.replace('tab-', '')) || 0)
+        ) + 1
       : 1
 
   // 任务选项
@@ -130,7 +126,6 @@ export function useSchedulerLogic() {
   }
 
   const createSchedulerTabForTask = (taskId: string) => {
-
     // 使用现有的addSchedulerTab函数创建新调度台，并传入特定的配置选项
     const newTab = addSchedulerTab({
       title: `调度台${tabCounter}`,
@@ -172,14 +167,13 @@ export function useSchedulerLogic() {
   watchTabsChanges()
 
   // Tab 管理
-  const addSchedulerTab = (options?: { title?: string, status?: string, websocketId?: string }) => {
+  const addSchedulerTab = (options?: { title?: string; status?: string; websocketId?: string }) => {
     tabCounter++
     const status = options?.status || '空闲'
     // 使用更安全的类型断言，确保状态值是有效的SchedulerStatus
-    const validStatus: SchedulerStatus =
-      ['空闲', '运行', '等待', '结束', '异常'].includes(status) ?
-        status as SchedulerStatus :
-        '空闲'
+    const validStatus: SchedulerStatus = ['空闲', '运行', '等待', '结束', '异常'].includes(status)
+      ? (status as SchedulerStatus)
+      : '空闲'
 
     const tab: SchedulerTab = {
       key: `tab-${tabCounter}`,
@@ -363,23 +357,33 @@ export function useSchedulerLogic() {
 
     // 如果已经有活动的订阅，先清理旧订阅
     if (tab.subscriptionId) {
-      console.log('[Scheduler] 检测到旧订阅，先清理:', { key: tab.key, oldSubscriptionId: tab.subscriptionId, newWebsocketId: tab.websocketId })
+      console.log('[Scheduler] 检测到旧订阅，先清理:', {
+        key: tab.key,
+        oldSubscriptionId: tab.subscriptionId,
+        newWebsocketId: tab.websocketId,
+      })
       ws.unsubscribe(tab.subscriptionId)
       tab.subscriptionId = null
     }
 
-    const subscriptionId = ws.subscribe(
-      { id: tab.websocketId },
-      (message) => handleWebSocketMessage(tab, message)
+    const subscriptionId = ws.subscribe({ id: tab.websocketId }, message =>
+      handleWebSocketMessage(tab, message)
     )
 
     // 将订阅ID保存到tab中，以便后续取消订阅
     tab.subscriptionId = subscriptionId
-    console.log('[Scheduler] 新建WebSocket订阅:', { key: tab.key, websocketId: tab.websocketId, subscriptionId })
+    console.log('[Scheduler] 新建WebSocket订阅:', {
+      key: tab.key,
+      websocketId: tab.websocketId,
+      subscriptionId,
+    })
 
     // 验证订阅是否成功建立
     if (!subscriptionId) {
-      console.error('[Scheduler] WebSocket订阅创建失败！', { key: tab.key, websocketId: tab.websocketId })
+      console.error('[Scheduler] WebSocket订阅创建失败！', {
+        key: tab.key,
+        websocketId: tab.websocketId,
+      })
       message.error('WebSocket订阅创建失败，可能无法接收任务消息')
     }
   }
@@ -448,7 +452,7 @@ export function useSchedulerLogic() {
       const wsMessage = {
         type: 'Update',
         id: tab.websocketId,
-        data: data
+        data: data,
       }
       console.log('传递 WebSocket 消息给 TaskOverviewPanel:', wsMessage)
       overviewPanel.handleWSMessage(wsMessage)
@@ -458,7 +462,10 @@ export function useSchedulerLogic() {
     try {
       if (data.task_dict && Array.isArray(data.task_dict)) {
         // 完整脚本+用户数据，直接保存
-        tab.overviewData = (data.task_dict as Script[]).map(s => ({ ...s, user_list: s.user_list ? [...s.user_list] : [] }))
+        tab.overviewData = (data.task_dict as Script[]).map(s => ({
+          ...s,
+          user_list: s.user_list ? [...s.user_list] : [],
+        }))
       } else if (data.user_list && Array.isArray(data.user_list)) {
         // 只有用户列表更新，合并到现有快照或创建默认脚本
         if (!tab.overviewData || tab.overviewData.length === 0) {
@@ -467,7 +474,8 @@ export function useSchedulerLogic() {
           let scriptStatus = '等待'
           if (userStatuses.includes('异常') || userStatuses.includes('失败')) scriptStatus = '异常'
           else if (userStatuses.includes('运行')) scriptStatus = '运行'
-          else if (userStatuses.length > 0 && userStatuses.every((s: string) => s === '已完成')) scriptStatus = '已完成'
+          else if (userStatuses.length > 0 && userStatuses.every((s: string) => s === '已完成'))
+            scriptStatus = '已完成'
           tab.overviewData = [
             {
               script_id: 'default-script',
@@ -482,7 +490,8 @@ export function useSchedulerLogic() {
           let scriptStatus = '等待'
           if (userStatuses.includes('异常') || userStatuses.includes('失败')) scriptStatus = '异常'
           else if (userStatuses.includes('运行')) scriptStatus = '运行'
-          else if (userStatuses.length > 0 && userStatuses.every((s: string) => s === '已完成')) scriptStatus = '已完成'
+          else if (userStatuses.length > 0 && userStatuses.every((s: string) => s === '已完成'))
+            scriptStatus = '已完成'
           // 更新第一个脚本
           tab.overviewData = [
             {
@@ -501,10 +510,11 @@ export function useSchedulerLogic() {
         if (tab.overviewData && tab.overviewData.length > 0) {
           // 根据任务名称或ID匹配更新状态
           const updatedOverviewData = tab.overviewData.map(script => {
-            const matchingTask = data.task_list.find((task: any) =>
-              task.name === script.name ||
-              task.id === script.script_id ||
-              task.script_id === script.script_id
+            const matchingTask = data.task_list.find(
+              (task: any) =>
+                task.name === script.name ||
+                task.id === script.script_id ||
+                task.script_id === script.script_id
             )
 
             if (matchingTask) {
@@ -519,17 +529,22 @@ export function useSchedulerLogic() {
           })
 
           // 如果有新的任务不在现有数据中，添加它们
-          const newTasks = data.task_list.filter((task: any) =>
-            !tab.overviewData!.some(script =>
-              task.name === script.name ||
-              task.id === script.script_id ||
-              task.script_id === script.script_id
-            )
+          const newTasks = data.task_list.filter(
+            (task: any) =>
+              !tab.overviewData!.some(
+                script =>
+                  task.name === script.name ||
+                  task.id === script.script_id ||
+                  task.script_id === script.script_id
+              )
           )
 
           if (newTasks.length > 0) {
             const convertedNewTasks: Script[] = newTasks.map((task: any) => ({
-              script_id: task.id || task.script_id || `task_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+              script_id:
+                task.id ||
+                task.script_id ||
+                `task_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
               name: task.name || '未知任务',
               status: task.status || '等待',
               user_list: task.user_list ? [...task.user_list] : [], // 使用后端提供的 user_list
@@ -541,7 +556,10 @@ export function useSchedulerLogic() {
         } else {
           // 如果没有现有数据，直接转换
           const converted: Script[] = data.task_list.map((task: any) => ({
-            script_id: task.id || task.script_id || `task_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            script_id:
+              task.id ||
+              task.script_id ||
+              `task_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
             name: task.name || '未知任务',
             status: task.status || '等待',
             user_list: task.user_list ? [...task.user_list] : [], // 使用后端提供的 user_list
@@ -557,7 +575,7 @@ export function useSchedulerLogic() {
           const syncMessage = {
             type: 'Update',
             id: tab.websocketId,
-            data: { task_dict: tab.overviewData }
+            data: { task_dict: tab.overviewData },
           }
           console.log('[Scheduler] 同步 task_list 更新到总览组件:', syncMessage)
           try {
@@ -578,10 +596,10 @@ export function useSchedulerLogic() {
       const newTaskQueue = data.task_dict.map((item: any) => ({
         name: item.name || '未知任务',
         status: item.status || '等待',
-      }));
+      }))
 
       // 初始化用户队列（仅包含运行状态下的用户）
-      const newUserQueue: QueueItem[] = [];
+      const newUserQueue: QueueItem[] = []
       data.task_dict.forEach((taskItem: any) => {
         if (taskItem.user_list && Array.isArray(taskItem.user_list)) {
           taskItem.user_list.forEach((user: any) => {
@@ -589,14 +607,14 @@ export function useSchedulerLogic() {
               newUserQueue.push({
                 name: `${taskItem.name}-${user.name}`,
                 status: user.status,
-              });
+              })
             }
-          });
+          })
         }
-      });
+      })
 
-      tab.taskQueue.splice(0, tab.taskQueue.length, ...newTaskQueue);
-      tab.userQueue.splice(0, tab.userQueue.length, ...newUserQueue);
+      tab.taskQueue.splice(0, tab.taskQueue.length, ...newTaskQueue)
+      tab.userQueue.splice(0, tab.userQueue.length, ...newUserQueue)
     }
 
     // 更新任务队列
@@ -604,8 +622,8 @@ export function useSchedulerLogic() {
       const newTaskQueue = data.task_list.map((item: any) => ({
         name: item.name || '未知任务',
         status: item.status || '未知',
-      }));
-      tab.taskQueue.splice(0, tab.taskQueue.length, ...newTaskQueue);
+      }))
+      tab.taskQueue.splice(0, tab.taskQueue.length, ...newTaskQueue)
     }
 
     // 更新用户队列
@@ -613,19 +631,19 @@ export function useSchedulerLogic() {
       const newUserQueue = data.user_list.map((item: any) => ({
         name: item.name || '未知用户',
         status: item.status || '未知',
-      }));
-      tab.userQueue.splice(0, tab.userQueue.length, ...newUserQueue);
+      }))
+      tab.userQueue.splice(0, tab.userQueue.length, ...newUserQueue)
     }
 
     // 处理日志 - 直接显示完整日志内容，覆盖上次显示的内容
     if (data.log) {
       if (typeof data.log === 'string') {
-        tab.lastLogContent = data.log;
+        tab.lastLogContent = data.log
       } else if (typeof data.log === 'object') {
-        if (data.log.Error) tab.lastLogContent = data.log.Error;
-        else if (data.log.Warning) tab.lastLogContent = data.log.Warning;
-        else if (data.log.Info) tab.lastLogContent = data.log.Info;
-        else tab.lastLogContent = JSON.stringify(data.log);
+        if (data.log.Error) tab.lastLogContent = data.log.Error
+        else if (data.log.Warning) tab.lastLogContent = data.log.Warning
+        else if (data.log.Info) tab.lastLogContent = data.log.Info
+        else tab.lastLogContent = JSON.stringify(data.log)
       }
     }
     saveTabsToStorage(schedulerTabs.value)
@@ -682,7 +700,11 @@ export function useSchedulerLogic() {
       }
 
       if (tab.subscriptionId) {
-        console.log('[Scheduler] 任务完成，清理WebSocket订阅:', { key: tab.key, subscriptionId: tab.subscriptionId, websocketId: tab.websocketId })
+        console.log('[Scheduler] 任务完成，清理WebSocket订阅:', {
+          key: tab.key,
+          subscriptionId: tab.subscriptionId,
+          websocketId: tab.websocketId,
+        })
         try {
           ws.unsubscribe(tab.subscriptionId)
         } catch (error) {
@@ -692,7 +714,10 @@ export function useSchedulerLogic() {
       }
 
       if (tab.websocketId) {
-        console.log('[Scheduler] 任务完成，清理websocketId:', { key: tab.key, websocketId: tab.websocketId })
+        console.log('[Scheduler] 任务完成，清理websocketId:', {
+          key: tab.key,
+          websocketId: tab.websocketId,
+        })
         tab.websocketId = null
       }
 
@@ -868,24 +893,28 @@ export function useSchedulerLogic() {
     // 注册 UI hooks 到 schedulerHandlers，使其能在 schedulerHandlers 检测到 pending 时回放到当前 UI
     try {
       schedulerHandlers.registerSchedulerUI({
-        onNewTab: (tab) => {
+        onNewTab: tab => {
           try {
             // 创建并订阅新调度台
-            const newTab = addSchedulerTab({ title: tab.title, status: '运行', websocketId: tab.websocketId })
+            const newTab = addSchedulerTab({
+              title: tab.title,
+              status: '运行',
+              websocketId: tab.websocketId,
+            })
             subscribeToTask(newTab)
             saveTabsToStorage(schedulerTabs.value)
           } catch (e) {
             console.warn('[Scheduler] registerSchedulerUI onNewTab error:', e)
           }
         },
-        onCountdown: (data) => {
+        onCountdown: data => {
           try {
             // 倒计时已移至全局组件处理，这里不再处理
             console.log('[Scheduler] 倒计时消息由全局组件处理:', data)
           } catch (e) {
             console.warn('[Scheduler] registerSchedulerUI onCountdown error:', e)
           }
-        }
+        },
       })
 
       // 回放 pending tabs（如果有的话）
@@ -893,7 +922,11 @@ export function useSchedulerLogic() {
       if (pending && pending.length > 0) {
         pending.forEach((taskId: string) => {
           try {
-            const newTab = addSchedulerTab({ title: `调度台${taskId}`, status: '运行', websocketId: taskId })
+            const newTab = addSchedulerTab({
+              title: `调度台${taskId}`,
+              status: '运行',
+              websocketId: taskId,
+            })
             subscribeToTask(newTab)
           } catch (e) {
             console.warn('[Scheduler] replay pending tab error:', e)
@@ -920,7 +953,10 @@ export function useSchedulerLogic() {
     try {
       schedulerTabs.value.forEach(tab => {
         if (tab.status === '运行' && tab.websocketId) {
-          console.log('[Scheduler] 初始化阶段为运行的标签恢复订阅:', { key: tab.key, websocketId: tab.websocketId })
+          console.log('[Scheduler] 初始化阶段为运行的标签恢复订阅:', {
+            key: tab.key,
+            websocketId: tab.websocketId,
+          })
           subscribeToTask(tab)
         }
       })
@@ -962,7 +998,7 @@ export function useSchedulerLogic() {
         status: tab.status,
         websocketId: tab.websocketId,
         subscriptionId: tab.subscriptionId,
-        hasSubscription: !!tab.subscriptionId
+        hasSubscription: !!tab.subscriptionId,
       })
     })
     console.log('[Scheduler Debug] WebSocket状态:', ws.status.value)
@@ -997,7 +1033,6 @@ export function useSchedulerLogic() {
     activeSchedulerTab,
     logRefs,
     // 将“运行/运行中”的用户标记为“等待”，并据此推导脚本状态
-
 
     taskOptionsLoading,
     taskOptions,
