@@ -2,11 +2,10 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { EmulatorInfo } from './EmulatorInfo';
 /**
- * 创建模拟器配置响应
+ * 获取模拟器状态响应
  */
-export type EmulatorCreateOut = {
+export type EmulatorStatusOut = {
     /**
      * 状态码
      */
@@ -20,12 +19,8 @@ export type EmulatorCreateOut = {
      */
     message?: string;
     /**
-     * 新创建的模拟器ID
+     * 模拟器状态信息
      */
-    emulatorId: string;
-    /**
-     * 模拟器配置数据
-     */
-    data: EmulatorInfo;
+    status_data?: Record<string, any>;
 };
 

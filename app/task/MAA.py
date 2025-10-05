@@ -37,7 +37,7 @@ from app.services import Notify, System
 from app.utils import get_logger, LogMonitor, ProcessManager
 from .skland import skland_sign_in
 
-from app.utils.emulator_manager import EmulatorManager
+from app.core.emulator_manager import EmulatorManager
 
 logger = get_logger("MAA 调度器")
 

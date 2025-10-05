@@ -3,12 +3,12 @@
 /* tslint:disable */
 /* eslint-disable */
 /**
- * 重新排序模拟器请求
+ * 获取模拟器状态请求
  */
-export type EmulatorReorderIn = {
+export type EmulatorStatusIn = {
     /**
-     * 重新排序后的模拟器ID列表
+     * 模拟器UUID，为空时获取所有模拟器状态
      */
-    indexList: Array<string>;
+    emulator_uuid?: (string | null);
 };
 

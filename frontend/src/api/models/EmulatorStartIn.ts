@@ -3,16 +3,20 @@
 /* tslint:disable */
 /* eslint-disable */
 /**
- * 更新模拟器配置请求
+ * 启动模拟器请求
  */
-export type EmulatorUpdateIn = {
+export type EmulatorStartIn = {
     /**
      * 模拟器UUID
      */
     emulator_uuid: string;
     /**
-     * 需要更新的模拟器配置数据
+     * 模拟器索引
      */
-    data: Record<string, any>;
+    index: string;
+    /**
+     * 启动包名(可选)
+     */
+    package_name?: string;
 };
 
