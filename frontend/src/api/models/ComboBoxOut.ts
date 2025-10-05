@@ -2,7 +2,8 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { ComboBoxItem } from './ComboBoxItem'
+import type { ComboBoxItem } from '@/api'
+
 export type ComboBoxOut = {
   /**
    * 状态码

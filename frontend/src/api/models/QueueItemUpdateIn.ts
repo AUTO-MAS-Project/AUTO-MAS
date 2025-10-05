@@ -2,7 +2,8 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { QueueItem } from './QueueItem'
+import type { QueueItem } from '@/api'
+
 export type QueueItemUpdateIn = {
   /**
    * 所属队列ID

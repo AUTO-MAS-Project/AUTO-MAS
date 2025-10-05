@@ -2,8 +2,8 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { TimeSet } from './TimeSet'
-import type { TimeSetIndexItem } from './TimeSetIndexItem'
+import type { TimeSet, TimeSetIndexItem } from '@/api'
+
 export type TimeSetGetOut = {
   /**
    * 状态码

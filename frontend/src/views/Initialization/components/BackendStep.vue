@@ -75,6 +75,7 @@
         </div>
         <div class="custom-mirror-input">
           <a-input-group compact>
+            <!--suppress LongLine -->
             <a-input
               v-model:value="customMirrorUrl"
               placeholder="输入镜像域名或完整Git地址，如：ghproxy.com 或 https://ghproxy.com/https://github.com/AUTO-MAS-Project/AUTO-MAS.git"
@@ -139,9 +140,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { getConfig, saveConfig } from '@/utils/config.ts'
-import { sortMirrorsBySpeedAndRecommendation, type MirrorConfig } from '@/config/mirrors.ts'
+import { type MirrorConfig, sortMirrorsBySpeedAndRecommendation } from '@/config/mirrors.ts'
 import { mirrorManager } from '@/utils/mirrorManager.ts'
 
 defineProps<{

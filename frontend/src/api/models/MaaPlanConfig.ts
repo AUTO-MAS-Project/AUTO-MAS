@@ -2,8 +2,8 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { MaaPlanConfig_Info } from './MaaPlanConfig_Info'
-import type { MaaPlanConfig_Item } from './MaaPlanConfig_Item'
+import type { MaaPlanConfig_Info, MaaPlanConfig_Item } from '@/api'
+
 export type MaaPlanConfig = {
   /**
    * 基础信息

@@ -2,7 +2,8 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { Webhook } from './Webhook'
+import type { Webhook } from '@/api'
+
 export type WebhookCreateOut = {
   /**
    * 状态码

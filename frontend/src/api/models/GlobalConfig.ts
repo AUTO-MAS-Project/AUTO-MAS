@@ -2,12 +2,15 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { GlobalConfig_Function } from './GlobalConfig_Function'
-import type { GlobalConfig_Notify } from './GlobalConfig_Notify'
-import type { GlobalConfig_Start } from './GlobalConfig_Start'
-import type { GlobalConfig_UI } from './GlobalConfig_UI'
-import type { GlobalConfig_Update } from './GlobalConfig_Update'
-import type { GlobalConfig_Voice } from './GlobalConfig_Voice'
+import type {
+  GlobalConfig_Function,
+  GlobalConfig_Notify,
+  GlobalConfig_Start,
+  GlobalConfig_UI,
+  GlobalConfig_Update,
+  GlobalConfig_Voice,
+} from '@/api'
+
 export type GlobalConfig = {
   /**
    * 功能相关配置

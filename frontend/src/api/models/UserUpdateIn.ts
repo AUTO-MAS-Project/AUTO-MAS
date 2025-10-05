@@ -2,8 +2,8 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { GeneralUserConfig } from './GeneralUserConfig'
-import type { MaaUserConfig } from './MaaUserConfig'
+import type { GeneralUserConfig, MaaUserConfig } from '@/api'
+
 export type UserUpdateIn = {
   /**
    * 所属脚本ID

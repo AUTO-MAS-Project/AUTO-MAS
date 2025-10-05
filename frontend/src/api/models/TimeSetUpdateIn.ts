@@ -2,7 +2,8 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { TimeSet } from './TimeSet'
+import type { TimeSet } from '@/api'
+
 export type TimeSetUpdateIn = {
   /**
    * 所属队列ID

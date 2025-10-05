@@ -2,10 +2,8 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { MaaUserConfig_Data } from './MaaUserConfig_Data'
-import type { MaaUserConfig_Info } from './MaaUserConfig_Info'
-import type { MaaUserConfig_Notify } from './MaaUserConfig_Notify'
-import type { MaaUserConfig_Task } from './MaaUserConfig_Task'
+import type { MaaUserConfig_Data, MaaUserConfig_Info, MaaUserConfig_Notify, MaaUserConfig_Task } from '@/api'
+
 export type MaaUserConfig = {
   /**
    * 基础信息

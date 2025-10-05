@@ -2,8 +2,8 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { GeneralConfig } from './GeneralConfig'
-import type { MaaConfig } from './MaaConfig'
+import type { GeneralConfig, MaaConfig } from '@/api'
+
 export type ScriptUpdateIn = {
   /**
    * 脚本ID
