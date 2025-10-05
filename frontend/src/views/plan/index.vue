@@ -57,6 +57,7 @@
             :current-mode="currentMode"
             :view-mode="viewMode"
             :options-loaded="!loading"
+            :plan-id="activePlanId"
             @update-table-data="handleTableDataUpdate"
           />
         </PlanConfig>
@@ -70,6 +71,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { usePlanApi } from '@/composables/usePlanApi'
+import { generateUniquePlanName, validatePlanName, getPlanTypeLabel } from '@/utils/planNameUtils'
 import PlanHeader from './components/PlanHeader.vue'
 import PlanSelector from './components/PlanSelector.vue'
 import PlanConfig from './components/PlanConfig.vue'
@@ -100,6 +102,7 @@ const viewMode = ref<'config' | 'simple'>('config')
 
 const isEditingPlanName = ref<boolean>(false)
 const loading = ref(true)
+const switching = ref(false)  // 添加切换状态
 
 // Use a record to match child component expectations
 const tableData = ref<Record<string, any>>({})
@@ -128,13 +131,18 @@ const debounce = <T extends (...args: any[]) => any>(func: T, wait: number): T =
 const handleAddPlan = async (planType: string = 'MaaPlanConfig') => {
   try {
     const response = await createPlan(planType)
-    const defaultName = getDefaultPlanName(planType)
-    const newPlan = { id: response.planId, name: defaultName, type: planType }
+    const uniqueName = getDefaultPlanName(planType)
+    const newPlan = { id: response.planId, name: uniqueName, type: planType }
     planList.value.push(newPlan)
     activePlanId.value = newPlan.id
-    currentPlanName.value = defaultName
+    currentPlanName.value = uniqueName
     await loadPlanData(newPlan.id)
-    message.info(`已创建新的${getPlanTypeLabel(planType)}，建议您修改为更有意义的名称`, 3)
+    // 如果生成的名称包含数字，说明有重名，提示用户
+    if (uniqueName.match(/\s\d+$/)) {
+      message.info(`已创建新的${getPlanTypeLabel(planType)}："${uniqueName}"，建议您修改为更有意义的名称`, 4)
+    } else {
+      message.success(`已创建新的${getPlanTypeLabel(planType)}："${uniqueName}"`)
+    }
   } catch (error) {
     console.error('添加计划失败:', error)
   }
@@ -186,6 +194,7 @@ const saveInBackground = async (planId: string) => {
       const planData: Record<string, any> = { ...(tableData.value || {}) }
       planData.Info = { Mode: currentMode.value, Name: currentPlanName.value, Type: planType }
 
+      console.log(`[计划表] 保存数据 (${planId}):`, planData)
       await updatePlan(planId, planData)
     } catch (error) {
       console.error('后台保存计划数据失败:', error)
@@ -214,20 +223,27 @@ const handleSave = async () => {
   await debouncedSave()
 }
 
-// 优化计划切换逻辑
+// 优化计划切换逻辑 - 异步保存，立即切换
 const onPlanChange = async (planId: string) => {
   if (planId === activePlanId.value) return
 
-  // 触发当前计划的异步保存，但不等待完成
-  if (activePlanId.value) {
-    saveInBackground(activePlanId.value).catch(error => {
-      console.warn('切换时保存当前计划失败:', error)
-    })
-  }
+  switching.value = true
+  try {
+    // 异步保存当前计划，不等待完成
+    if (activePlanId.value) {
+      saveInBackground(activePlanId.value).catch(error => {
+        console.error('切换时保存当前计划失败:', error)
+        message.warning('保存当前计划时出现问题，请检查数据是否完整')
+      })
+    }
 
-  // 立即切换到新计划
-  activePlanId.value = planId
-  await loadPlanData(planId)
+    // 立即切换到新计划，提升响应速度
+    console.log(`[计划表] 切换到新计划: ${planId}`)
+    activePlanId.value = planId
+    await loadPlanData(planId)
+  } finally {
+    switching.value = false
+  }
 }
 
 const startEditPlanName = () => {
@@ -242,13 +258,29 @@ const startEditPlanName = () => {
 }
 
 const finishEditPlanName = () => {
-  isEditingPlanName.value = false
   if (activePlanId.value) {
     const currentPlan = planList.value.find(plan => plan.id === activePlanId.value)
     if (currentPlan) {
-      currentPlan.name = currentPlanName.value || getDefaultPlanName(currentPlan.type)
+      const newName = currentPlanName.value?.trim() || ''
+      const existingNames = planList.value.map(plan => plan.name)
+      
+      // 验证新名称
+      const validation = validatePlanName(newName, existingNames, currentPlan.name)
+      
+      if (!validation.isValid) {
+        // 如果验证失败，显示错误消息并恢复原名称
+        message.error(validation.message || '计划表名称无效')
+        currentPlanName.value = currentPlan.name
+      } else {
+        // 如果验证成功，更新名称
+        currentPlan.name = newName
+        currentPlanName.value = newName
+        // 触发保存操作，确保名称被保存到后端
+        handleSave()
+      }
     }
   }
+  isEditingPlanName.value = false
 }
 
 const onModeChange = () => {
@@ -263,21 +295,36 @@ const handleTableDataUpdate = async (newData: Record<string, any>) => {
 
 const loadPlanData = async (planId: string) => {
   try {
+    // 总是从后端重新加载数据，确保数据一致性
     const response = await getPlans(planId)
     currentPlanData.value = response.data
-    if (response.data && response.data[planId]) {
-      const planData = response.data[planId] as PlanData
+    const planData = response.data[planId] as PlanData
+    console.log(`[计划表] 从后端加载数据 (${planId})`)
+    
+    if (planData) {
       if (planData.Info) {
         const apiName = planData.Info.Name || ''
-        if (!apiName && !currentPlanName.value) {
-          const currentPlan = planList.value.find(plan => plan.id === planId)
-          if (currentPlan) currentPlanName.value = currentPlan.name
+        const currentPlan = planList.value.find(plan => plan.id === planId)
+        
+        // 优先使用planList中的名称
+        if (currentPlan && currentPlan.name) {
+          currentPlanName.value = currentPlan.name
+          
+          if (apiName !== currentPlan.name) {
+            console.log(`[计划表] 同步名称: API="${apiName}" -> planList="${currentPlan.name}"`)
+          }
         } else if (apiName) {
           currentPlanName.value = apiName
+          if (currentPlan) {
+            currentPlan.name = apiName
+          }
         }
+        
         currentMode.value = planData.Info.Mode || 'ALL'
       }
-      tableData.value = planData
+      
+      // 标记这是初始加载，需要强制更新自定义关卡
+      tableData.value = { ...planData, _isInitialLoad: true }
     }
   } catch (error) {
     console.error('加载计划数据失败:', error)
@@ -288,17 +335,48 @@ const initPlans = async () => {
   try {
     const response = await getPlans()
     if (response.index && response.index.length > 0) {
+      // 优化：预先收集所有名称，避免O(n²)复杂度
+      const allPlanNames: string[] = []
+      
       planList.value = response.index.map((item: any) => {
         const planId = item.uid
         const planData = response.data[planId]
         const planType = item.type
-        const planName = planData?.Info?.Name || getDefaultPlanName(planType)
+        let planName = planData?.Info?.Name || ''
+        
+        // 如果API中没有名称，或者名称是默认的模板名称，则生成唯一名称
+        if (!planName || planName === '新 MAA 计划表' || planName === '新通用计划表' || planName === '新自定义计划表') {
+          planName = generateUniquePlanName(planType, allPlanNames)
+        }
+        
+        allPlanNames.push(planName)
         return { id: planId, name: planName, type: planType }
       })
+      
       const queryPlanId = (route.query.planId as string) || ''
       const target = queryPlanId ? planList.value.find(p => p.id === queryPlanId) : null
-      activePlanId.value = target ? target.id : planList.value[0].id
-      await loadPlanData(activePlanId.value)
+      const selectedPlanId = target ? target.id : planList.value[0].id
+      
+      // 优化：直接使用已获取的数据，避免重复API调用
+      activePlanId.value = selectedPlanId
+      const planData = response.data[selectedPlanId]
+      if (planData) {
+        currentPlanData.value = response.data
+        
+        // 直接设置数据，避免loadPlanData的重复调用
+        const selectedPlan = planList.value.find(plan => plan.id === selectedPlanId)
+        if (selectedPlan) {
+          currentPlanName.value = selectedPlan.name
+        }
+        
+        if (planData.Info) {
+          currentMode.value = planData.Info.Mode || 'ALL'
+        }
+        
+        console.log(`[计划表] 初始加载数据 (${selectedPlanId}):`, planData)
+        // 标记这是初始加载，需要强制更新自定义关卡
+        tableData.value = { ...planData, _isInitialLoad: true }
+      }
     } else {
       currentPlanData.value = null
     }
@@ -310,22 +388,12 @@ const initPlans = async () => {
   }
 }
 
-const getDefaultPlanName = (planType: string) =>
-  (
-    ({
-      MaaPlanConfig: '新 MAA 计划表',
-      GeneralPlan: '新通用计划表',
-      CustomPlan: '新自定义计划表',
-    }) as Record<string, string>
-  )[planType] || '新计划表'
-const getPlanTypeLabel = (planType: string) =>
-  (
-    ({
-      MaaPlanConfig: 'MAA计划表',
-      GeneralPlan: '通用计划表',
-      CustomPlan: '自定义计划表',
-    }) as Record<string, string>
-  )[planType] || '计划表'
+const getDefaultPlanName = (planType: string) => {
+  // 保持原来的逻辑，但添加重名检测
+  const existingNames = planList.value.map(plan => plan.name)
+  return generateUniquePlanName(planType, existingNames)
+}
+// getPlanTypeLabel 现在从 @/utils/planNameUtils 导入，删除本地定义
 
 watch(
   () => [currentPlanName.value, currentMode.value],

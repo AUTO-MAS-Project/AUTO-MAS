@@ -8,7 +8,7 @@
         <img src="@/assets/AUTO-MAS.ico" alt="AUTO-MAS" class="title-logo" />
         <span class="title-text">AUTO-MAS</span>
         <span class="version-text">
-          v{{ version }}
+          {{ version }}
           <span v-if="updateInfo?.if_need_update" class="update-hint" :title="getUpdateTooltip()">
             检测到更新 {{ updateInfo.latest_version }} 请尽快更新
           </span>
@@ -43,10 +43,12 @@
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { BorderOutlined, CloseOutlined, MinusOutlined } from '@ant-design/icons-vue'
 import { useTheme } from '@/composables/useTheme'
+import { useAppClosing } from '@/composables/useAppClosing'
 import type { UpdateCheckOut } from '@/api'
 import { Service, type VersionOut } from '@/api'
 
 const { isDark } = useTheme()
+const { showClosingOverlay } = useAppClosing()
 const isMaximized = ref(false)
 
 // 使用 import.meta.env 或直接定义版本号，确保打包后可用
@@ -118,6 +120,9 @@ const toggleMaximize = async () => {
 const closeWindow = async () => {
   try {
     console.log('开始关闭应用...')
+    
+    // 立即显示关闭遮罩
+    showClosingOverlay()
 
     // 先检查当前进程状态
     try {

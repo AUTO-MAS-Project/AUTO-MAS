@@ -140,7 +140,7 @@ const handleModeChange = (value: 'ALL' | 'Weekly') => {
 .config-table-container {
   border-radius: 8px;
   overflow: hidden;
-  border: 1px solid var(--ant-color-border-secondary);
+  /* border: 1px solid var(--ant-color-border-secondary); */
 }
 
 /* 深度样式 */

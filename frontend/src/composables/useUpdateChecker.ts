@@ -8,6 +8,7 @@ const version = (import.meta as any).env.VITE_APP_VERSION || '1.0.0'
 // 全局状态 - 在所有组件间共享
 const updateVisible = ref(false)
 const updateData = ref<Record<string, string[]>>({})
+const latestVersion = ref('')
 
 // 定时器相关 - 参考顶栏TitleBar.vue的实现
 const POLL_MS = 4 * 60 * 60 * 1000 // 4小时
@@ -31,39 +32,40 @@ const checkAutoUpdateEnabled = async (): Promise<boolean> => {
 }
 
 export function useUpdateChecker() {
-  
+
   // 执行一次更新检查 - 完全参考顶栏的 pollOnce 逻辑
   const pollOnce = async () => {
     if (isPolling.value) return
-    
+
     // 检查自动更新设置是否开启
     const autoUpdateEnabled = await checkAutoUpdateEnabled()
     if (!autoUpdateEnabled) {
       console.log('[useUpdateChecker] 自动检查更新已关闭，跳过定时检查')
       return
     }
-    
+
     isPolling.value = true
-    
+
     try {
       const response = await Service.checkUpdateApiUpdateCheckPost({
         current_version: version,
         if_force: false, // 定时检查不强制获取，和顶栏一致
       })
-      
+
       if (response.code === 200) {
         if (response.if_need_update) {
           // 检查是否已经有更新弹窗在显示，避免重复弹出
           if (updateVisible.value) {
             return
           }
-          
+
           // 检查是否为同一版本，避免同一版本重复弹出
           if (lastShownVersion === response.latest_version) {
             return
           }
-          
+
           updateData.value = response.update_info
+          latestVersion.value = response.latest_version
           updateVisible.value = true
           lastShownVersion = response.latest_version // 记录已显示的版本
         }
@@ -82,10 +84,11 @@ export function useUpdateChecker() {
         current_version: version,
         if_force: forceCheck,
       })
-      
+
       if (response.code === 200) {
         if (response.if_need_update) {
           updateData.value = response.update_info
+          latestVersion.value = response.latest_version
           updateVisible.value = true
         } else {
           if (!silent) {
@@ -118,20 +121,20 @@ export function useUpdateChecker() {
       console.log('[useUpdateChecker] 自动检查更新已关闭，不启动定时任务')
       return
     }
-    
+
     // 如果已经在检查中，则不重复启动
     if (updateCheckTimer) {
       console.log('[useUpdateChecker] 定时任务已存在，跳过启动')
       return
     }
-    
+
     console.log('[useUpdateChecker] 启动定时版本检查任务')
-    
+
     // 延迟3秒后再执行首次检查，确保后端已经完全启动
     setTimeout(async () => {
       await pollOnce()
     }, 3000)
-    
+
     // 每 4 小时检查一次更新
     updateCheckTimer = setInterval(pollOnce, POLL_MS)
   }
@@ -160,6 +163,7 @@ export function useUpdateChecker() {
   return {
     updateVisible,
     updateData,
+    latestVersion,
     checkUpdate,
     onUpdateConfirmed,
     startPolling,
@@ -173,6 +177,7 @@ export function useUpdateModal() {
   return {
     updateVisible,
     updateData,
+    latestVersion,
     onUpdateConfirmed: () => {
       updateVisible.value = false
     }

@@ -1,13 +1,13 @@
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2024-2025 DLmaster361
 #   Copyright © 2025 ClozyA
+#   Copyright © 2025 AUTO-MAS Team
 
 #   This file incorporates work covered by the following copyright and
 #   permission notice:
 #
 #       skland-checkin-ghaction Copyright © 2023 Yanstory
 #       https://github.com/Yanstory/skland-checkin-ghaction
-#   Copyright © 2025 AUTO-MAS Team
 
 #   This file is part of AUTO-MAS.
 
@@ -32,7 +32,7 @@ import json
 import hmac
 import asyncio
 import hashlib
-import requests
+import httpx
 from urllib import parse
 
 from app.core import Config
@@ -150,12 +150,11 @@ async def skland_sign_in(token) -> dict:
         :return: (cred, sign_token)
         """
 
-        rsp = requests.post(
-            cred_code_url,
-            json={"code": grant, "kind": 1},
-            headers=header_login,
-            proxies=Config.get_proxies(),
-        ).json()
+        async with httpx.AsyncClient(proxy=Config.get_proxy()) as client:
+            response = await client.post(
+                cred_code_url, json={"code": grant, "kind": 1}, headers=header_login
+            )
+            rsp = response.json()
         if rsp["code"] != 0:
             raise Exception(f"获得cred失败: {rsp.get('message')}")
         sign_token = rsp["data"]["token"]
@@ -169,12 +168,13 @@ async def skland_sign_in(token) -> dict:
         :param token: 你的skyland token
         :return: grant code
         """
-        rsp = requests.post(
-            grant_code_url,
-            json={"appCode": app_code, "token": token, "type": 0},
-            headers=header_login,
-            proxies=Config.get_proxies(),
-        ).json()
+        async with httpx.AsyncClient(proxy=Config.get_proxy()) as client:
+            response = await client.post(
+                grant_code_url,
+                json={"appCode": app_code, "token": token, "type": 0},
+                headers=header_login,
+            )
+            rsp = response.json()
         if rsp["status"] != 0:
             raise Exception(
                 f"使用token: {token[:3]}******{token[-3:]} 获得认证代码失败: {rsp.get('msg')}"
@@ -190,13 +190,14 @@ async def skland_sign_in(token) -> dict:
         :return: 角色列表
         """
         v = []
-        rsp = requests.get(
-            binding_url,
-            headers=get_sign_header(
-                binding_url, "get", None, copy_header(cred), sign_token
-            ),
-            proxies=Config.get_proxies(),
-        ).json()
+        async with httpx.AsyncClient(proxy=Config.get_proxy()) as client:
+            response = await client.get(
+                binding_url,
+                headers=get_sign_header(
+                    binding_url, "get", None, copy_header(cred), sign_token
+                ),
+            )
+            rsp = response.json()
         if rsp["code"] != 0:
             logger.error(f"请求角色列表出现问题: {rsp['message']}")
             if rsp.get("message") == "用户未登录":
@@ -227,14 +228,15 @@ async def skland_sign_in(token) -> dict:
                 "uid": character.get("uid"),
                 "gameId": character.get("channelMasterId"),
             }
-            rsp = requests.post(
-                sign_url,
-                headers=get_sign_header(
-                    sign_url, "post", body, copy_header(cred), sign_token
-                ),
-                json=body,
-                proxies=Config.get_proxies(),
-            ).json()
+            async with httpx.AsyncClient(proxy=Config.get_proxy()) as client:
+                response = await client.post(
+                    sign_url,
+                    headers=get_sign_header(
+                        sign_url, "post", body, copy_header(cred), sign_token
+                    ),
+                    json=body,
+                )
+                rsp = response.json()
 
             if rsp["code"] != 0:
 

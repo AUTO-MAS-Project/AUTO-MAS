@@ -12,6 +12,7 @@ dependencies = [
     "websockets==15.0.1",
     "aiofiles==24.1.0",
     "aiohttp==3.12.15",
+    "httpx[socks]==0.28.1",
     "gitpython==3.1.45",
     "plyer==2.1.0",
     "psutil==7.0.0",
@@ -19,7 +20,6 @@ dependencies = [
     "pywin32==310",
     "keyboard==0.13.5",
     "truststore==0.10.1",
-    "requests==2.32.4",
     "pillow==11.3.0",
     "packaging==25.0",
 ]

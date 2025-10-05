@@ -3,28 +3,39 @@ import { computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { ConfigProvider } from 'ant-design-vue'
 import { useTheme } from './composables/useTheme.ts'
-import { useUpdateModal } from './composables/useUpdateChecker.ts'
+import { useUpdateModal, useUpdateChecker } from './composables/useUpdateChecker.ts'
+import { useAppClosing } from './composables/useAppClosing.ts'
 import AppLayout from './components/AppLayout.vue'
 import TitleBar from './components/TitleBar.vue'
 import UpdateModal from './components/UpdateModal.vue'
 import DevDebugPanel from './components/DevDebugPanel.vue'
 import GlobalPowerCountdown from './components/GlobalPowerCountdown.vue'
 import WebSocketMessageListener from './components/WebSocketMessageListener.vue'
-import WebSocketDebugPanel from './components/WebSocketDebugPanel.vue'
+import AppClosingOverlay from './components/AppClosingOverlay.vue'
 import zhCN from 'ant-design-vue/es/locale/zh_CN'
 import { logger } from '@/utils/logger'
 
 const route = useRoute()
 const { antdTheme, initTheme } = useTheme()
-const { updateVisible, updateData, onUpdateConfirmed } = useUpdateModal()
+const { updateVisible, updateData, latestVersion, onUpdateConfirmed } = useUpdateModal()
+const { startPolling } = useUpdateChecker()
+const { isClosing } = useAppClosing()
 
 // 判断是否为初始化页面
 const isInitializationPage = computed(() => route.name === 'Initialization')
 
-onMounted(() => {
+onMounted(async () => {
   logger.info('App组件已挂载')
   initTheme()
   logger.info('主题初始化完成')
+  
+  // 启动自动更新检查器
+  try {
+    await startPolling()
+    logger.info('自动更新检查器已启动')
+  } catch (error) {
+    logger.error('启动自动更新检查器失败:', error)
+  }
 })
 </script>
 
@@ -47,6 +58,7 @@ onMounted(() => {
     <UpdateModal
       v-model:visible="updateVisible"
       :update-data="updateData"
+      :latest-version="latestVersion"
       @confirmed="onUpdateConfirmed"
     />
 
@@ -59,8 +71,8 @@ onMounted(() => {
     <!-- WebSocket 消息监听组件 -->
     <WebSocketMessageListener />
 
-    <!-- WebSocket 调试面板 (仅开发环境) -->
-    <WebSocketDebugPanel v-if="$route.query.debug === 'true'" />
+    <!-- 应用关闭遮罩 -->
+    <AppClosingOverlay :visible="isClosing" />
   </ConfigProvider>
 </template>
 

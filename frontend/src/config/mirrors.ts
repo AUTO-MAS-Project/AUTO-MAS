@@ -38,51 +38,21 @@ export const GIT_OFFICIAL_MIRRORS: MirrorConfig[] = [
  */
 export const GIT_MIRROR_MIRRORS: MirrorConfig[] = [
   {
-    key: 'ghproxy_cloudflare',
-    name: 'gh-proxy (Cloudflare)',
-    url: 'https://gh-proxy.com/https://github.com/AUTO-MAS-Project/AUTO-MAS.git',
+    key: 'gitee 镜像源',
+    name: 'gitee',
+    url: 'https://gitee.com/auto-mas-project/AUTO-MAS',
     speed: null,
     type: 'mirror',
     chinaConnectivity: 'good',
-    description: 'Cloudflare CDN 镜像，适合全球用户',
+    description: 'gitee 镜像源，更新会有少许延迟',
     recommended: true,
-  },
-  {
-    key: 'ghproxy_fastly',
-    name: 'gh-proxy (Fastly CDN)',
-    url: 'https://cdn.gh-proxy.com/https://github.com/AUTO-MAS-Project/AUTO-MAS.git',
-    speed: null,
-    type: 'mirror',
-    chinaConnectivity: 'good',
-    description: 'Fastly CDN 镜像服务',
-  },
-  {
-    key: 'ghproxy_edgeone',
-    name: 'gh-proxy (EdgeOne)',
-    url: 'https://edgeone.gh-proxy.com/https://github.com/AUTO-MAS-Project/AUTO-MAS.git',
-    speed: null,
-    type: 'mirror',
-    chinaConnectivity: 'good',
-    description: 'EdgeOne 镜像服务',
-  },
-  {
-    key: 'ghfast',
-    name: 'ghfast 镜像',
-    url: 'https://ghfast.top/https://github.com/AUTO-MAS-Project/AUTO-MAS.git',
-    speed: null,
-    type: 'mirror',
-    chinaConnectivity: 'good',
-    description: '第三方镜像服务',
   },
 ]
 
 /**
  * Git 仓库所有镜像源配置（按类型分组）
  */
-export const GIT_MIRRORS: MirrorConfig[] = [
-  ...GIT_MIRROR_MIRRORS,
-  ...GIT_OFFICIAL_MIRRORS,
-]
+export const GIT_MIRRORS: MirrorConfig[] = [...GIT_MIRROR_MIRRORS, ...GIT_OFFICIAL_MIRRORS]
 
 /**
  * Python 官方源配置（3.12.0 embed版本）
@@ -136,10 +106,7 @@ export const PYTHON_MIRROR_MIRRORS: MirrorConfig[] = [
 /**
  * Python 下载所有镜像源配置（按类型分组）
  */
-export const PYTHON_MIRRORS: MirrorConfig[] = [
-  ...PYTHON_MIRROR_MIRRORS,
-  ...PYTHON_OFFICIAL_MIRRORS,
-]
+export const PYTHON_MIRRORS: MirrorConfig[] = [...PYTHON_MIRROR_MIRRORS, ...PYTHON_OFFICIAL_MIRRORS]
 
 /**
  * PyPI pip 官方源配置
@@ -193,10 +160,7 @@ export const PIP_MIRROR_MIRRORS: MirrorConfig[] = [
 /**
  * PyPI pip 所有镜像源配置（按类型分组）
  */
-export const PIP_MIRRORS: MirrorConfig[] = [
-  ...PIP_MIRROR_MIRRORS,
-  ...PIP_OFFICIAL_MIRRORS,
-]
+export const PIP_MIRRORS: MirrorConfig[] = [...PIP_MIRROR_MIRRORS, ...PIP_OFFICIAL_MIRRORS]
 
 /**
  * API 服务端点配置
@@ -215,10 +179,10 @@ export const API_ENDPOINTS = {
  */
 export const DOWNLOAD_LINKS = {
   // get-pip.py 下载链接
-  getPip: 'http://221.236.27.82:10197/d/AUTO_MAA/get-pip.py',
+  getPip: 'https://download.auto-mas.top/d/AUTO_MAA/get-pip.py',
 
   // Git 客户端下载链接
-  git: 'http://221.236.27.82:10197/d/AUTO_MAA/git.zip',
+  git: 'https://download.auto-mas.top/d/AUTO_MAA/git.zip',
 }
 
 /**
@@ -289,7 +253,7 @@ export function getFastestMirror(type: keyof MirrorCategory): MirrorConfig | nul
  * 根据类型筛选镜像源
  */
 export function getMirrorsBySourceType(
-  type: keyof MirrorCategory, 
+  type: keyof MirrorCategory,
   sourceType: 'official' | 'mirror'
 ): MirrorConfig[] {
   const mirrors = getMirrorsByType(type)
@@ -326,7 +290,7 @@ export function sortMirrorsBySpeedAndRecommendation(mirrors: MirrorConfig[]): Mi
     // 推荐的排在前面
     if (a.recommended && !b.recommended) return -1
     if (!a.recommended && b.recommended) return 1
-    
+
     // 然后按速度排序
     const speedA = a.speed === null ? 9999 : a.speed
     const speedB = b.speed === null ? 9999 : b.speed

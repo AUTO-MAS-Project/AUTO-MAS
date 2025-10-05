@@ -428,10 +428,9 @@ class ConfigBase:
     子配置项可以是 `MultipleConfig` 的实例。
     """
 
-    def __init__(self, if_save_multi_config: bool = True):
+    def __init__(self):
 
         self.file: Optional[Path] = None
-        self.if_save_multi_config = if_save_multi_config
         self.is_locked = False
 
     async def connect(self, path: Path):
@@ -499,7 +498,10 @@ class ConfigBase:
             await self.save()
 
     async def toDict(
-        self, ignore_multi_config: bool = False, if_decrypt: bool = True
+        self,
+        ignore_multi_config: bool = False,
+        if_decrypt: bool = True,
+        if_for_save: bool = False,
     ) -> Dict[str, Any]:
         """将配置项转换为字典"""
 
@@ -514,7 +516,11 @@ class ConfigBase:
                 if item.name:
                     data[item.group][item.name] = item.getValue(if_decrypt)
 
-            elif not ignore_multi_config and isinstance(item, MultipleConfig):
+            elif (
+                not ignore_multi_config
+                and isinstance(item, MultipleConfig)
+                and (not if_for_save or (if_for_save and item.if_save_needed))
+            ):
 
                 if not data.get("SubConfigsInfo"):
                     data["SubConfigsInfo"] = {}
@@ -571,7 +577,7 @@ class ConfigBase:
         self.file.parent.mkdir(parents=True, exist_ok=True)
         self.file.write_text(
             json.dumps(
-                await self.toDict(not self.if_save_multi_config, if_decrypt=False),
+                await self.toDict(if_decrypt=False, if_for_save=True),
                 ensure_ascii=False,
                 indent=4,
             ),
@@ -623,7 +629,7 @@ class MultipleConfig(Generic[T]):
         子配置项的类型列表, 必须是 ConfigBase 的子类
     """
 
-    def __init__(self, sub_config_type: List[Type[T]]):
+    def __init__(self, sub_config_type: List[Type[T]], if_save_needed: bool = True):
 
         if not sub_config_type:
             raise ValueError("子配置项类型列表不能为空")
@@ -635,6 +641,7 @@ class MultipleConfig(Generic[T]):
                 )
 
         self.sub_config_type: List[Type[T]] = sub_config_type
+        self.if_save_needed = if_save_needed
         self.file: Path | None = None
         self.order: List[uuid.UUID] = []
         self.data: Dict[uuid.UUID, T] = {}

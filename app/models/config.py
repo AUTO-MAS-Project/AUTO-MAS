@@ -71,15 +71,18 @@ class EmulatorManagerConfig(ConfigBase):
 class Webhook(ConfigBase):
     """Webhook 配置"""
 
-    Info_Name = ConfigItem("Info", "Name", "")
-    Info_Enabled = ConfigItem("Info", "Enabled", True, BoolValidator())
+    def __init__(self) -> None:
+        super().__init__()
 
-    Data_Url = ConfigItem("Data", "Url", "", URLValidator())
-    Data_Template = ConfigItem("Data", "Template", "")
-    Data_Headers = ConfigItem("Data", "Headers", "{ }", JSONValidator())
-    Data_Method = ConfigItem(
-        "Data", "Method", "POST", OptionsValidator(["POST", "GET"])
-    )
+        self.Info_Name = ConfigItem("Info", "Name", "新自定义 Webhook 通知")
+        self.Info_Enabled = ConfigItem("Info", "Enabled", True, BoolValidator())
+
+        self.Data_Url = ConfigItem("Data", "Url", "", URLValidator())
+        self.Data_Template = ConfigItem("Data", "Template", "")
+        self.Data_Headers = ConfigItem("Data", "Headers", "{ }", JSONValidator())
+        self.Data_Method = ConfigItem(
+            "Data", "Method", "POST", OptionsValidator(["POST", "GET"])
+        )
 
 
 class GlobalConfig(ConfigBase):

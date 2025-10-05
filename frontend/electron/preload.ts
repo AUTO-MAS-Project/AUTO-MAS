@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   windowClose: () => ipcRenderer.invoke('window-close'),
   windowIsMaximized: () => ipcRenderer.invoke('window-is-maximized'),
   appQuit: () => ipcRenderer.invoke('app-quit'),
+  appRestart: () => ipcRenderer.invoke('app-restart'),
 
   // 进程管理
   getRelatedProcesses: () => ipcRenderer.invoke('get-related-processes'),
@@ -33,6 +34,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   installDependencies: (mirror?: string) => ipcRenderer.invoke('install-dependencies', mirror),
   cloneBackend: (repoUrl?: string) => ipcRenderer.invoke('clone-backend', repoUrl),
   updateBackend: (repoUrl?: string) => ipcRenderer.invoke('update-backend', repoUrl),
+
+  // 新增的git管理方法
+  checkRepoStatus: () => ipcRenderer.invoke('check-repo-status'),
+  cleanDepot: () => ipcRenderer.invoke('clean-depot'),
+  getRepoInfo: () => ipcRenderer.invoke('get-repo-info'),
   startBackend: () => ipcRenderer.invoke('start-backend'),
   stopBackend: () => ipcRenderer.invoke('stop-backend'),
 
@@ -47,6 +53,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 托盘设置实时更新
   updateTraySettings: (uiSettings: any) => ipcRenderer.invoke('update-tray-settings', uiSettings),
+
+  // 同步后端配置
+  syncBackendConfig: (backendSettings: any) => ipcRenderer.invoke('sync-backend-config', backendSettings),
 
   // 日志文件操作
   getLogPath: () => ipcRenderer.invoke('get-log-path'),
