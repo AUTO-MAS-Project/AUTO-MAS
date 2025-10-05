@@ -23,7 +23,7 @@
 import re
 import json
 import smtplib
-import requests
+import httpx
 from datetime import datetime
 from plyer import notification
 from email.header import Header
@@ -174,10 +174,9 @@ class Notification:
         params = {"title": title, "desp": content}
         headers = {"Content-Type": "application/json;charset=utf-8"}
 
-        response = requests.post(
-            url, json=params, headers=headers, timeout=10, proxies=Config.get_proxies()
-        )
-        result = response.json()
+        async with httpx.AsyncClient(proxy=Config.get_proxy()) as client:
+            response = await client.post(url, json=params, headers=headers)
+            result = response.json()
 
         if result.get("code") == 0:
             logger.success(f"Server酱推送通知成功: {title}")
@@ -279,41 +278,30 @@ class Notification:
         headers = {"Content-Type": "application/json"}
         headers.update(json.loads(webhook.get("Data", "Headers")))
 
-        if webhook.get("Data", "Method") == "POST":
-            if isinstance(data, dict):
-                response = requests.post(
-                    url=webhook.get("Data", "Url"),
-                    json=data,
-                    headers=headers,
-                    timeout=10,
-                    proxies=Config.get_proxies(),
+        async with httpx.AsyncClient(proxy=Config.get_proxy(), timeout=10) as client:
+            if webhook.get("Data", "Method") == "POST":
+                if isinstance(data, dict):
+                    response = await client.post(
+                        url=webhook.get("Data", "Url"), json=data, headers=headers
+                    )
+                elif isinstance(data, str):
+                    response = await client.post(
+                        url=webhook.get("Data", "Url"), content=data, headers=headers
+                    )
+            elif webhook.get("Data", "Method") == "GET":
+                if isinstance(data, dict):
+                    # Flatten params to ensure all values are str or list of str
+                    params = {}
+                    for k, v in data.items():
+                        if isinstance(v, (dict, list)):
+                            params[k] = json.dumps(v, ensure_ascii=False)
+                        else:
+                            params[k] = str(v)
+                else:
+                    params = {"message": str(data)}
+                response = await client.get(
+                    url=webhook.get("Data", "Url"), params=params, headers=headers
                 )
-            elif isinstance(data, str):
-                response = requests.post(
-                    url=webhook.get("Data", "Url"),
-                    data=data,
-                    headers=headers,
-                    timeout=10,
-                    proxies=Config.get_proxies(),
-                )
-        elif webhook.get("Data", "Method") == "GET":
-            if isinstance(data, dict):
-                # Flatten params to ensure all values are str or list of str
-                params = {}
-                for k, v in data.items():
-                    if isinstance(v, (dict, list)):
-                        params[k] = json.dumps(v, ensure_ascii=False)
-                    else:
-                        params[k] = str(v)
-            else:
-                params = {"message": str(data)}
-            response = requests.get(
-                url=webhook.get("Data", "Url"),
-                params=params,
-                headers=headers,
-                timeout=10,
-                proxies=Config.get_proxies(),
-            )
 
         # 检查响应
         if response.status_code == 200:
@@ -338,10 +326,9 @@ class Notification:
         content = f"{title}\n{content}"
         data = {"msgtype": "text", "text": {"content": content}}
 
-        response = requests.post(
-            url=webhook_url, json=data, timeout=10, proxies=Config.get_proxies()
-        )
-        info = response.json()
+        async with httpx.AsyncClient(proxy=Config.get_proxy()) as client:
+            response = await client.post(url=webhook_url, json=data)
+            info = response.json()
 
         if info["errcode"] == 0:
             logger.success(f"WebHook 推送通知成功: {title}")
@@ -377,10 +364,9 @@ class Notification:
             "image": {"base64": image_base64, "md5": image_md5},
         }
 
-        response = requests.post(
-            url=webhook_url, json=data, timeout=10, proxies=Config.get_proxies()
-        )
-        info = response.json()
+        async with httpx.AsyncClient(proxy=Config.get_proxy()) as client:
+            response = await client.post(url=webhook_url, json=data)
+            info = response.json()
 
         if info.get("errcode") == 0:
             logger.success(f"企业微信群机器人推送图片成功: {image_path.name}")

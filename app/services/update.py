@@ -25,7 +25,8 @@ import time
 import json
 import asyncio
 import zipfile
-import requests
+import httpx
+import aiofiles
 import subprocess
 from packaging import version
 from datetime import datetime, timedelta
@@ -71,11 +72,11 @@ class _UpdateHandler:
 
         logger.info("开始检查更新")
 
-        response = requests.get(
-            f"https://mirrorchyan.com/api/resources/AUTO_MAA/latest?user_agent=AutoMasGui&current_version={current_version}&cdk={Config.get('Update', 'MirrorChyanCDK')}&channel=stable",
-            timeout=10,
-            proxies=Config.get_proxies(),
-        )
+        # 使用 httpx 异步请求
+        async with httpx.AsyncClient(proxy=Config.get_proxy()) as client:
+            response = await client.get(
+                f"https://mirrorchyan.com/api/resources/AUTO_MAA/latest?user_agent=AutoMasGui&current_version={current_version}&cdk={Config.get('Update', 'MirrorChyanCDK')}&channel=stable"
+            )
         if response.status_code == 200:
             version_info = response.json()
         else:
@@ -130,6 +131,8 @@ class _UpdateHandler:
 
     async def download_update(self) -> None:
 
+        logger.info("收到前端下载请求")
+
         if self.is_locked:
             await Config.send_json(
                 WebSocketMessage(
@@ -182,15 +185,22 @@ class _UpdateHandler:
                 download_url = f"https://download.auto-mas.top/d/AUTO-MAS/AUTO-MAS_{self.remote_version}.zip"
 
             else:
-                with requests.get(
-                    self.mirror_chyan_download_url,
-                    allow_redirects=True,
-                    timeout=10,
-                    stream=True,
-                    proxies=Config.get_proxies(),
-                ) as response:
-                    if response.status_code == 200:
-                        download_url = response.url
+                # 使用 httpx 获取重定向后的 URL
+                async with httpx.AsyncClient(
+                    proxy=Config.get_proxy(), follow_redirects=True
+                ) as client:
+                    try:
+                        response = await client.get(self.mirror_chyan_download_url)
+                        if response.status_code == 200:
+                            download_url = str(response.url)
+                        else:
+                            logger.warning("MirrorChyan 重定向失败, 使用自建下载站")
+                            download_url = f"https://download.auto-mas.top/d/AUTO-MAS/AUTO-MAS_{self.remote_version}.zip"
+                    except Exception as e:
+                        logger.warning(
+                            f"MirrorChyan 获取下载链接失败: {e}, 使用自建下载站"
+                        )
+                        download_url = f"https://download.auto-mas.top/d/AUTO-MAS/AUTO-MAS_{self.remote_version}.zip"
         elif Config.get("Update", "Source") == "AutoSite":
             download_url = f"https://download.auto-mas.top/d/AUTO-MAS/AUTO-MAS_{self.remote_version}.zip"
 
@@ -219,58 +229,65 @@ class _UpdateHandler:
 
                 start_time = time.time()
 
-                response = requests.get(
-                    download_url, timeout=10, stream=True, proxies=Config.get_proxies()
-                )
+                # 使用 httpx 异步流式下载
+                async with httpx.AsyncClient(follow_redirects=True) as client:
+                    async with client.stream(
+                        "GET", download_url, timeout=30.0
+                    ) as response:
+                        status_code = response.status_code
 
-                if response.status_code not in [200, 206]:
+                        if status_code not in [200, 206]:
+                            if check_times != -1:
+                                check_times -= 1
 
-                    if check_times != -1:
-                        check_times -= 1
-
-                    logger.warning(
-                        f"连接失败: {download_url}, 状态码: {response.status_code}, 剩余重试次数: {check_times}"
-                    )
-
-                    await asyncio.sleep(1)
-                    continue
-
-                logger.info(f"连接成功: {download_url}, 状态码: {response.status_code}")
-
-                file_size = int(response.headers.get("content-length", 0))
-                downloaded_size = 0
-                last_download_size = 0
-                speed = 0
-                last_time = time.time()
-                with (Path.cwd() / "download.temp").open(mode="wb") as f:
-
-                    for chunk in response.iter_content(chunk_size=8192):
-
-                        f.write(chunk)
-                        downloaded_size += len(chunk)
-
-                        # 更新指定线程的下载进度, 每秒更新一次
-                        if time.time() - last_time >= 1.0:
-                            speed = (
-                                (downloaded_size - last_download_size)
-                                / (time.time() - last_time)
-                                / 1024
+                            logger.warning(
+                                f"连接失败: {download_url}, 状态码: {status_code}, 剩余重试次数: {check_times}"
                             )
-                            last_download_size = downloaded_size
-                            last_time = time.time()
+                            await asyncio.sleep(1)
+                            continue
 
-                            await Config.send_json(
-                                WebSocketMessage(
-                                    id="Update",
-                                    type="Update",
-                                    data={
-                                        "downloaded_size": downloaded_size,
-                                        "file_size": file_size,
-                                        "speed": speed,
-                                    },
-                                ).model_dump()
-                            )
+                        logger.info(f"连接成功: {download_url}, 状态码: {status_code}")
 
+                        file_size = int(response.headers.get("content-length", 0) or 0)
+                        downloaded_size = 0
+                        last_download_size = 0
+                        speed = 0
+                        last_time = time.time()
+
+                        # 使用 aiofiles 异步写入临时文件
+                        async with aiofiles.open(
+                            Path.cwd() / "download.temp", "wb"
+                        ) as f:
+                            async for chunk in response.aiter_bytes(chunk_size=8192):
+                                if not chunk:
+                                    continue
+                                await f.write(chunk)
+                                downloaded_size += len(chunk)
+
+                                # 更新指定线程的下载进度, 每秒更新一次
+                                if time.time() - last_time >= 1.0:
+                                    elapsed = time.time() - last_time
+                                    if elapsed <= 0:
+                                        elapsed = 1.0
+                                    speed = (
+                                        downloaded_size - last_download_size
+                                    ) / elapsed
+                                    last_download_size = downloaded_size
+                                    last_time = time.time()
+
+                                await Config.send_json(
+                                    WebSocketMessage(
+                                        id="Update",
+                                        type="Update",
+                                        data={
+                                            "downloaded_size": downloaded_size,
+                                            "file_size": file_size,
+                                            "speed": speed,
+                                        },
+                                    ).model_dump()
+                                )
+
+                # 重命名临时文件为最终包
                 (Path.cwd() / "download.temp").rename(
                     Path.cwd() / f"UpdatePack_{self.remote_version}.zip"
                 )

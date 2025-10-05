@@ -22,12 +22,12 @@
 
 import os
 import re
+import httpx
 import shutil
 import asyncio
 import uvicorn
 import sqlite3
 import calendar
-import requests
 import truststore
 from pathlib import Path
 from fastapi import WebSocket
@@ -583,14 +583,22 @@ class AppConfig(GlobalConfig):
             logger.error(f"{script_id} 不是通用脚本配置")
             raise TypeError(f"脚本 {script_id} 不是通用脚本配置")
 
-        response = requests.get(url, timeout=10, proxies=self.get_proxies())
-        if response.status_code == 200:
-            data = response.json()
-        else:
-            logger.warning(f"无法从 AUTO-MAS 服务器获取配置内容: {response.text}")
-            raise ConnectionError(
-                f"无法从 AUTO-MAS 服务器获取配置内容: {response.status_code}"
-            )
+        # 使用 httpx 异步请求
+        async with httpx.AsyncClient(proxy=Config.get_proxy()) as client:
+            try:
+                response = await client.get(url)
+                if response.status_code == 200:
+                    data = response.json()
+                else:
+                    logger.warning(
+                        f"无法从 AUTO-MAS 服务器获取配置内容: {response.text}"
+                    )
+                    raise ConnectionError(
+                        f"无法从 AUTO-MAS 服务器获取配置内容: {response.status_code}"
+                    )
+            except httpx.RequestError as e:
+                logger.warning(f"无法从 AUTO-MAS 服务器获取配置内容: {e}")
+                raise ConnectionError(f"无法从 AUTO-MAS 服务器获取配置内容: {e}")
 
         await self.ScriptConfig[uid].load(data)
         await self.ScriptConfig.save()
@@ -640,21 +648,24 @@ class AppConfig(GlobalConfig):
         }
         data = {"username": author, "description": description}
 
-        response = requests.post(
-            "https://share.auto-mas.top/api/upload/share",
-            files=files,
-            data=data,
-            timeout=10,
-            proxies=self.get_proxies(),
-        )
+        async with httpx.AsyncClient(proxy=Config.get_proxy()) as client:
+            try:
+                response = await client.post(
+                    "https://share.auto-mas.top/api/upload/share",
+                    files=files,
+                    data=data,
+                )
 
-        if response.status_code == 200:
-            logger.success("配置上传成功")
-        else:
-            logger.error(f"无法上传配置到 AUTO-MAS 服务器: {response.text}")
-            raise ConnectionError(
-                f"无法上传配置到 AUTO-MAS 服务器: {response.status_code} - {response.text}"
-            )
+                if response.status_code == 200:
+                    logger.success("配置上传成功")
+                else:
+                    logger.error(f"无法上传配置到 AUTO-MAS 服务器: {response.text}")
+                    raise ConnectionError(
+                        f"无法上传配置到 AUTO-MAS 服务器: {response.status_code} - {response.text}"
+                    )
+            except httpx.RequestError as e:
+                logger.error(f"无法上传配置到 AUTO-MAS 服务器: {e}")
+                raise ConnectionError(f"无法上传配置到 AUTO-MAS 服务器: {e}")
 
     async def get_user(
         self, script_id: str, user_id: Optional[str]
@@ -1210,12 +1221,21 @@ class AppConfig(GlobalConfig):
             dt = dt - timedelta(days=1)
         return dt.date()
 
-    def get_proxies(self) -> Dict[str, str]:
-        """获取代理设置"""
-        return {
-            "http": self.get("Update", "ProxyAddress"),
-            "https": self.get("Update", "ProxyAddress"),
-        }
+    def get_proxy(self) -> Optional[httpx.Proxy]:
+        """获取代理设置，返回适用于 httpx 的代理对象"""
+        proxy_addr = self.get("Update", "ProxyAddress")
+        if not proxy_addr:
+            return None
+
+        # 如果地址不包含协议，默认为 http
+        if not proxy_addr.startswith(("http://", "https://", "socks5://", "socks4://")):
+            proxy_addr = f"http://{proxy_addr}"
+
+        try:
+            return httpx.Proxy(proxy_addr)
+        except Exception as e:
+            logger.warning(f"代理配置无效: {proxy_addr}, 错误: {e}")
+            return None
 
     async def get_stage_info(
         self,
@@ -1313,19 +1333,18 @@ class AppConfig(GlobalConfig):
         logger.info("开始获取活动关卡信息")
 
         try:
-            response = requests.get(
-                "https://api.maa.plus/MaaAssistantArknights/api/stageAndTasksUpdateTime.json",
-                timeout=3 if if_start else 10,
-                proxies=self.get_proxies(),
-            )
-            if response.status_code == 200:
-                remote_time_stamp = datetime.strptime(
-                    str(response.json().get("timestamp", 20000101000000)),
-                    "%Y%m%d%H%M%S",
+            async with httpx.AsyncClient(proxy=self.get_proxy()) as client:
+                response = await client.get(
+                    "https://api.maa.plus/MaaAssistantArknights/api/stageAndTasksUpdateTime.json"
                 )
-            else:
-                logger.warning(f"无法从MAA服务器获取活动关卡时间戳:{response.text}")
-                remote_time_stamp = datetime.fromtimestamp(0)
+                if response.status_code == 200:
+                    remote_time_stamp = datetime.strptime(
+                        str(response.json().get("timestamp", 20000101000000)),
+                        "%Y%m%d%H%M%S",
+                    )
+                else:
+                    logger.warning(f"无法从MAA服务器获取活动关卡时间戳:{response.text}")
+                    remote_time_stamp = datetime.fromtimestamp(0)
         except Exception as e:
             logger.warning(f"无法从MAA服务器获取活动关卡时间戳: {e}")
             remote_time_stamp = datetime.fromtimestamp(0)
@@ -1347,20 +1366,19 @@ class AppConfig(GlobalConfig):
         logger.info("从远端更新关卡信息")
 
         try:
-            response = requests.get(
-                "https://api.maa.plus/MaaAssistantArknights/api/gui/StageActivity.json",
-                timeout=3 if if_start else 10,
-                proxies=self.get_proxies(),
-            )
-            if response.status_code == 200:
-                remote_activity_stage_info = (
-                    response.json().get("Official", {}).get("sideStoryStage", [])
+            async with httpx.AsyncClient(proxy=self.get_proxy()) as client:
+                response = await client.get(
+                    "https://api.maa.plus/MaaAssistantArknights/api/gui/StageActivity.json"
                 )
-                if_get_maa_stage = True
-            else:
-                logger.warning(f"无法从MAA服务器获取活动关卡信息:{response.text}")
-                if_get_maa_stage = False
-                remote_activity_stage_info = []
+                if response.status_code == 200:
+                    remote_activity_stage_info = (
+                        response.json().get("Official", {}).get("sideStoryStage", [])
+                    )
+                    if_get_maa_stage = True
+                else:
+                    logger.warning(f"无法从MAA服务器获取活动关卡信息:{response.text}")
+                    if_get_maa_stage = False
+                    remote_activity_stage_info = []
         except Exception as e:
             logger.warning(f"无法从MAA服务器获取活动关卡信息: {e}")
             if_get_maa_stage = False
@@ -1501,16 +1519,17 @@ class AppConfig(GlobalConfig):
         logger.info(f"开始从 AUTO-MAS 服务器获取公告信息")
 
         try:
-            response = requests.get(
-                "https://download.auto-mas.top/d/AUTO_MAS/Server/notice.json",
-                timeout=10,
-                proxies=self.get_proxies(),
-            )
-            if response.status_code == 200:
-                remote_notice = response.json()
-            else:
-                logger.warning(f"无法从 AUTO-MAS 服务器获取公告信息:{response.text}")
-                remote_notice = None
+            async with httpx.AsyncClient(proxy=self.get_proxy()) as client:
+                response = await client.get(
+                    "https://download.auto-mas.top/d/AUTO_MAS/Server/notice.json"
+                )
+                if response.status_code == 200:
+                    remote_notice = response.json()
+                else:
+                    logger.warning(
+                        f"无法从 AUTO-MAS 服务器获取公告信息:{response.text}"
+                    )
+                    remote_notice = None
         except Exception as e:
             logger.warning(f"无法从 AUTO-MAS 服务器获取公告信息: {e}")
             remote_notice = None
@@ -1554,18 +1573,17 @@ class AppConfig(GlobalConfig):
         logger.info(f"开始从 AUTO-MAS 服务器获取配置分享中心信息")
 
         try:
-            response = requests.get(
-                "https://share.auto-mas.top/api/list/config/general",
-                timeout=10,
-                proxies=self.get_proxies(),
-            )
-            if response.status_code == 200:
-                remote_web_config = response.json()
-            else:
-                logger.warning(
-                    f"无法从 AUTO-MAS 服务器获取配置分享中心信息:{response.text}"
+            async with httpx.AsyncClient(proxy=self.get_proxy()) as client:
+                response = await client.get(
+                    "https://share.auto-mas.top/api/list/config/general"
                 )
-                remote_web_config = None
+                if response.status_code == 200:
+                    remote_web_config = response.json()
+                else:
+                    logger.warning(
+                        f"无法从 AUTO-MAS 服务器获取配置分享中心信息:{response.text}"
+                    )
+                    remote_web_config = None
         except Exception as e:
             logger.warning(f"无法从 AUTO-MAS 服务器获取配置分享中心信息: {e}")
             remote_web_config = None
