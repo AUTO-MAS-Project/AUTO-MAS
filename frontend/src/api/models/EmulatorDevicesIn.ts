@@ -6,9 +6,8 @@
  * 获取模拟器设备信息请求
  */
 export type EmulatorDevicesIn = {
-    /**
-     * 模拟器UUID
-     */
-    emulator_uuid: string;
-};
-
+  /**
+   * 模拟器UUID
+   */
+  emulator_uuid: string
+}

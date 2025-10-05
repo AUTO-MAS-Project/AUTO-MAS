@@ -39,11 +39,7 @@ export function useUserApi() {
   }
 
   // 更新用户
-  const updateUser = async (
-    scriptId: string,
-    userId: string,
-    userData: any
-  ): Promise<boolean> => {
+  const updateUser = async (scriptId: string, userId: string, userData: any): Promise<boolean> => {
     loading.value = true
     error.value = null
 

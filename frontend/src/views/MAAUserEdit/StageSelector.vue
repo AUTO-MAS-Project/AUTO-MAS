@@ -1,10 +1,10 @@
 <template>
   <a-select
     :value="value"
-    @update:value="$emit('update:value', $event)"
     :disabled="loading"
     size="large"
     :placeholder="placeholder"
+    @update:value="$emit('update:value', $event)"
   >
     <template #dropdownRender="{ menuNode: menu }">
       <v-nodes :vnodes="menu" />
@@ -26,11 +26,7 @@
         </a-button>
       </a-space>
     </template>
-    <a-select-option
-      v-for="option in options"
-      :key="option.value"
-      :value="option.value"
-    >
+    <a-select-option v-for="option in options" :key="option.value" :value="option.value">
       <template v-if="option.label.includes('|')">
         <span>{{ option.label.split('|')[0] }}</span>
         <a-tag color="green" size="small" style="margin-left: 8px">
@@ -84,9 +80,7 @@ const inputRef = ref()
 const isCustomStage = (value: string) => {
   if (!value || value === '' || value === '-') return false
   // 检查是否在从API加载的关卡列表中
-  const predefinedStage = props.options.find(
-    option => option.value === value && !option.isCustom
-  )
+  const predefinedStage = props.options.find(option => option.value === value && !option.isCustom)
   return !predefinedStage
 }
 

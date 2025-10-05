@@ -12,7 +12,11 @@
           <span v-if="updateInfo?.if_need_update" class="update-hint" :title="getUpdateTooltip()">
             检测到更新 {{ updateInfo.latest_version }} 请尽快更新
           </span>
-          <span v-if="backendUpdateInfo?.if_need_update" class="update-hint" :title="getUpdateTooltip()">
+          <span
+            v-if="backendUpdateInfo?.if_need_update"
+            class="update-hint"
+            :title="getUpdateTooltip()"
+          >
             检测到更新后端有更新。请重启软件即可自动完成更新
           </span>
         </span>
@@ -25,13 +29,17 @@
     <!-- 右侧：窗口控制按钮 -->
     <div class="title-bar-right">
       <div class="window-controls">
-        <button class="control-button minimize-button" @click="minimizeWindow" title="最小化">
+        <button class="control-button minimize-button" title="最小化" @click="minimizeWindow">
           <MinusOutlined />
         </button>
-        <button class="control-button maximize-button" @click="toggleMaximize" :title="isMaximized ? '还原' : '最大化'">
+        <button
+          class="control-button maximize-button"
+          :title="isMaximized ? '还原' : '最大化'"
+          @click="toggleMaximize"
+        >
           <BorderOutlined />
         </button>
-        <button class="control-button close-button" @click="closeWindow" title="关闭">
+        <button class="control-button close-button" title="关闭" @click="closeWindow">
           <CloseOutlined />
         </button>
       </div>
@@ -120,7 +128,7 @@ const toggleMaximize = async () => {
 const closeWindow = async () => {
   try {
     console.log('开始关闭应用...')
-    
+
     // 立即显示关闭遮罩
     showClosingOverlay()
 
@@ -354,7 +362,18 @@ onBeforeUnmount(() => {
   font-weight: 600;
   margin-left: 4px;
   cursor: help;
-  background: linear-gradient(45deg, #ff1744, #ff5722, #ff9800, #ffc107, #4caf50, #00bcd4, #2196f3, #9c27b0, #ff1744);
+  background: linear-gradient(
+    45deg,
+    #ff1744,
+    #ff5722,
+    #ff9800,
+    #ffc107,
+    #4caf50,
+    #00bcd4,
+    #2196f3,
+    #9c27b0,
+    #ff1744
+  );
   background-size: 400% 400%;
   -webkit-background-clip: text;
   background-clip: text;
@@ -384,7 +403,18 @@ onBeforeUnmount(() => {
   left: -2px;
   right: -2px;
   bottom: -2px;
-  background: linear-gradient(45deg, #ff1744, #ff5722, #ff9800, #ffc107, #4caf50, #00bcd4, #2196f3, #9c27b0, #ff1744);
+  background: linear-gradient(
+    45deg,
+    #ff1744,
+    #ff5722,
+    #ff9800,
+    #ffc107,
+    #4caf50,
+    #00bcd4,
+    #2196f3,
+    #9c27b0,
+    #ff1744
+  );
   background-size: 400% 400%;
   border-radius: 6px;
   z-index: -1;
@@ -407,7 +437,7 @@ onBeforeUnmount(() => {
 }
 
 /* 为相邻的更新提示添加间距 */
-.update-hint+.update-hint {
+.update-hint + .update-hint {
   margin-left: 12px;
 }
 

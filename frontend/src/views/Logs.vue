@@ -6,7 +6,7 @@
           <h1>日志查看</h1>
           <p class="logs-description">查看和管理应用程序日志</p>
         </div>
-        <a-button @click="goBack" size="large">
+        <a-button size="large" @click="goBack">
           <template #icon>
             <ArrowLeftOutlined />
           </template>
@@ -14,7 +14,7 @@
         </a-button>
       </div>
     </div>
-    
+
     <LogViewer />
   </div>
 </template>

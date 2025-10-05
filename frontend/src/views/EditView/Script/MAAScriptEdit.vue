@@ -7,11 +7,7 @@
         </a-breadcrumb-item>
         <a-breadcrumb-item>
           <div class="breadcrumb-current">
-            <img
-              src="../../../assets/MAA.png"
-              alt="MAA"
-              class="breadcrumb-logo"
-            />
+            <img src="../../../assets/MAA.png" alt="MAA" class="breadcrumb-logo" />
             编辑脚本
           </div>
         </a-breadcrumb-item>
@@ -19,7 +15,7 @@
     </div>
 
     <a-space size="middle">
-      <a-button size="large" @click="handleCancel" class="cancel-button">
+      <a-button size="large" class="cancel-button" @click="handleCancel">
         <template #icon>
           <ArrowLeftOutlined />
         </template>
@@ -31,9 +27,7 @@
   <div class="script-edit-content">
     <a-card title="MAA脚本配置" :loading="pageLoading" class="config-card">
       <template #extra>
-        <a-tag color="blue" class="type-tag">
-          MAA
-        </a-tag>
+        <a-tag color="blue" class="type-tag"> MAA </a-tag>
       </template>
 
       <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
@@ -79,7 +73,7 @@
                     class="path-input"
                     readonly
                   />
-                  <a-button size="large" @click="selectMAAPath" class="path-button">
+                  <a-button size="large" class="path-button" @click="selectMAAPath">
                     <template #icon>
                       <FolderOpenOutlined />
                     </template>
@@ -138,7 +132,9 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="当用户本日代理成功次数达到该阀值时跳过代理，阈值为「0」时视为无代理次数上限">
+                  <a-tooltip
+                    title="当用户本日代理成功次数达到该阀值时跳过代理，阈值为「0」时视为无代理次数上限"
+                  >
                     <span class="form-label">
                       用户单日代理次数上限
                       <QuestionCircleOutlined class="help-icon" />
@@ -180,7 +176,9 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="每周剿灭达到上限后，本周剩余时间不在执行剿灭任务，本功能存在误判可能，请谨慎使用">
+                  <a-tooltip
+                    title="每周剿灭达到上限后，本周剩余时间不在执行剿灭任务，本功能存在误判可能，请谨慎使用"
+                  >
                     <span class="form-label">
                       每周剿灭仅执行到上限
                       <QuestionCircleOutlined class="help-icon" />
@@ -243,11 +241,11 @@
   </div>
   <a-float-button
     type="primary"
-    @click="handleSave"
     class="float-button"
     :style="{
       right: '24px',
     }"
+    @click="handleSave"
   >
     <template #icon>
       <SaveOutlined />

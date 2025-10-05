@@ -42,9 +42,9 @@ const {
             </div>
             <a-radio-group
               :value="themeMode"
-              @change="handleThemeModeChange"
               :options="themeModeOptions"
               size="large"
+              @change="handleThemeModeChange"
             />
           </div>
         </a-col>
@@ -58,9 +58,9 @@ const {
             </div>
             <a-select
               :value="themeColor"
-              @change="handleThemeColorChange"
               size="large"
               style="width: 100%"
+              @change="handleThemeColorChange"
             >
               <a-select-option
                 v-for="option in themeColorOptions"
@@ -100,9 +100,9 @@ const {
             </div>
             <a-select
               v-model:value="settings.UI.IfShowTray"
-              @change="(checked: any) => handleSettingChange('UI', 'IfShowTray', checked)"
               size="large"
               style="width: 100%"
+              @change="(checked: any) => handleSettingChange('UI', 'IfShowTray', checked)"
             >
               <a-select-option :value="true">是</a-select-option>
               <a-select-option :value="false">否</a-select-option>
@@ -119,9 +119,9 @@ const {
             </div>
             <a-select
               v-model:value="settings.UI.IfToTray"
-              @change="(checked: any) => handleSettingChange('UI', 'IfToTray', checked)"
               size="large"
               style="width: 100%"
+              @change="(checked: any) => handleSettingChange('UI', 'IfToTray', checked)"
             >
               <a-select-option :value="true">是</a-select-option>
               <a-select-option :value="false">否</a-select-option>

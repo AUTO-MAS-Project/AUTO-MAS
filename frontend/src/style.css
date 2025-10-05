@@ -1,94 +1,94 @@
 :root {
-    font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
-    line-height: 1.5;
-    font-weight: 400;
+  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
 
-    color-scheme: light dark;
+  color-scheme: light dark;
 
-    font-synthesis: none;
-    text-rendering: optimizeLegibility;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 
-    /* 默认浅色模式 CSS 变量 */
-    --ant-color-primary: #1677ff;
-    --ant-color-primary-hover: #4096ff;
-    --ant-color-primary-bg: #1677ff1a;
-    --ant-color-text: rgba(0, 0, 0, 0.88);
-    --ant-color-text-secondary: rgba(0, 0, 0, 0.65);
-    --ant-color-text-tertiary: rgba(0, 0, 0, 0.45);
-    --ant-color-bg-container: #ffffff;
-    --ant-color-bg-layout: #f5f5f5;
-    --ant-color-bg-elevated: #ffffff;
-    --ant-color-border: #d9d9d9;
-    --ant-color-border-secondary: #303030;
-    --ant-color-error: #ff4d4f;
-    --ant-color-success: #52c41a;
-    --ant-color-warning: #faad14;
+  /* 默认浅色模式 CSS 变量 */
+  --ant-color-primary: #1677ff;
+  --ant-color-primary-hover: #4096ff;
+  --ant-color-primary-bg: #1677ff1a;
+  --ant-color-text: rgba(0, 0, 0, 0.88);
+  --ant-color-text-secondary: rgba(0, 0, 0, 0.65);
+  --ant-color-text-tertiary: rgba(0, 0, 0, 0.45);
+  --ant-color-bg-container: #ffffff;
+  --ant-color-bg-layout: #f5f5f5;
+  --ant-color-bg-elevated: #ffffff;
+  --ant-color-border: #d9d9d9;
+  --ant-color-border-secondary: #303030;
+  --ant-color-error: #ff4d4f;
+  --ant-color-success: #52c41a;
+  --ant-color-warning: #faad14;
 }
 
 /* 深色模式默认变量 */
 :root.dark {
-    --ant-color-primary: #1677ff;
-    --ant-color-primary-hover: #4096ff;
-    --ant-color-primary-bg: #1677ff1a;
-    --ant-color-text: rgba(255, 255, 255, 0.88);
-    --ant-color-text-secondary: rgba(255, 255, 255, 0.65);
-    --ant-color-text-tertiary: rgba(255, 255, 255, 0.45);
-    --ant-color-bg-container: #141414;
-    --ant-color-bg-layout: #000000;
-    --ant-color-bg-elevated: #1f1f1f;
-    --ant-color-border: #424242;
-    --ant-color-border-secondary: #303030;
-    --ant-color-error: #ff4d4f;
-    --ant-color-success: #52c41a;
-    --ant-color-warning: #faad14;
+  --ant-color-primary: #1677ff;
+  --ant-color-primary-hover: #4096ff;
+  --ant-color-primary-bg: #1677ff1a;
+  --ant-color-text: rgba(255, 255, 255, 0.88);
+  --ant-color-text-secondary: rgba(255, 255, 255, 0.65);
+  --ant-color-text-tertiary: rgba(255, 255, 255, 0.45);
+  --ant-color-bg-container: #141414;
+  --ant-color-bg-layout: #000000;
+  --ant-color-bg-elevated: #1f1f1f;
+  --ant-color-border: #424242;
+  --ant-color-border-secondary: #303030;
+  --ant-color-error: #ff4d4f;
+  --ant-color-success: #52c41a;
+  --ant-color-warning: #faad14;
 }
 
 * {
-    box-sizing: border-box;
+  box-sizing: border-box;
 }
 
 body {
-    margin: 0;
-    min-width: 320px;
-    min-height: 100vh;
-    background-color: var(--ant-color-bg-layout);
-    color: var(--ant-color-text);
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background-color: var(--ant-color-bg-layout);
+  color: var(--ant-color-text);
 }
 
 #app {
-    width: 100%;
-    height: 100vh;
-    overflow: hidden;
+  width: 100%;
+  height: 100vh;
+  overflow: hidden;
 }
 
 /* 链接样式 */
 a {
-    color: var(--ant-color-primary);
-    text-decoration: none;
-    transition: color 0.3s ease;
+  color: var(--ant-color-primary);
+  text-decoration: none;
+  transition: color 0.3s ease;
 }
 
 a:hover {
-    color: var(--ant-color-primary-hover);
+  color: var(--ant-color-primary-hover);
 }
 
 /* 滚动条样式 */
 ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-    background: var(--ant-color-bg-layout);
+  background: var(--ant-color-bg-layout);
 }
 
 ::-webkit-scrollbar-thumb {
-    background: var(--ant-color-border);
-    border-radius: 3px;
+  background: var(--ant-color-border);
+  border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-    background: var(--ant-color-border-secondary);
+  background: var(--ant-color-border-secondary);
 }

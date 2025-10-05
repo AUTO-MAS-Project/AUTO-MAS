@@ -55,7 +55,7 @@ export function setupLogger() {
   // 禁用自动归档，因为我们按日期分文件
   log.transports.file.archiveLog = () => {
     /* do nothing */
-  };
+  }
 
   // 捕获未处理的异常和Promise拒绝
   log.catchErrors({
@@ -119,11 +119,11 @@ export function getLogPath(): string {
 export function getLogFiles(): string[] {
   const fs = require('fs')
   const logDir = getLogDirectory()
-  
+
   if (!fs.existsSync(logDir)) {
     return []
   }
-  
+
   const files = fs.readdirSync(logDir)
   return files
     .filter((file: string) => file.match(/^frontendlog-\d{4}-\d{2}-\d{2}\.log$/))
@@ -143,10 +143,13 @@ export function cleanOldLogs(daysToKeep: number = 7) {
   const files = fs.readdirSync(logDir)
   const now = new Date()
   const cutoffDate = new Date(now.getTime() - daysToKeep * 24 * 60 * 60 * 1000)
-  
+
   // 格式化截止日期为YYYY-MM-DD
-  const cutoffDateStr = cutoffDate.getFullYear() + '-' +
-    String(cutoffDate.getMonth() + 1).padStart(2, '0') + '-' +
+  const cutoffDateStr =
+    cutoffDate.getFullYear() +
+    '-' +
+    String(cutoffDate.getMonth() + 1).padStart(2, '0') +
+    '-' +
     String(cutoffDate.getDate()).padStart(2, '0')
 
   files.forEach((file: string) => {

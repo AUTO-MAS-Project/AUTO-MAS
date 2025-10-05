@@ -53,12 +53,12 @@ export class MirrorManager {
         lastUpdated: new Date().toISOString(),
         mirrors: { ...ALL_MIRRORS },
         apiEndpoints: { ...API_ENDPOINTS },
-        downloadLinks: { ...DOWNLOAD_LINKS }
+        downloadLinks: { ...DOWNLOAD_LINKS },
       }
 
       // 从云端初始化配置
       const config = await cloudConfigManager.initializeConfig(fallbackConfig)
-      
+
       // 更新本地配置
       this.mirrorConfigs = config.mirrors
       this.apiEndpoints = config.apiEndpoints
@@ -79,21 +79,21 @@ export class MirrorManager {
   async refreshCloudConfig(): Promise<{ success: boolean; error?: string }> {
     try {
       const result = await cloudConfigManager.refreshConfig()
-      
+
       if (result.success && result.config) {
         // 更新本地配置
         this.mirrorConfigs = result.config.mirrors
         this.apiEndpoints = result.config.apiEndpoints
         this.downloadLinks = result.config.downloadLinks
-        
+
         return { success: true }
       } else {
         return { success: false, error: result.error }
       }
     } catch (error) {
-      return { 
-        success: false, 
-        error: error instanceof Error ? error.message : '刷新配置失败' 
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : '刷新配置失败',
       }
     }
   }

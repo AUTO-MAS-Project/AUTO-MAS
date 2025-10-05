@@ -23,40 +23,40 @@ const isElectron = () => {
 
 // 发送用户选择结果到后端
 const sendResponse = (messageId: string, choice: boolean) => {
-  const response = {"choice": choice}
+  const response = { choice: choice }
   logger.info('[WebSocket消息监听器] 发送用户选择结果:', response)
 
   // 发送响应消息到后端
   sendRaw('Response', response, messageId)
 }
-  
+
 // 显示系统级问题对话框
 const showQuestion = async (questionData: any) => {
   const title = questionData.title || '操作提示'
   const message = questionData.message || ''
   const options = questionData.options || ['确定', '取消']
   const messageId = questionData.message_id || 'fallback_' + Date.now()
-  
+
   logger.info('[WebSocket消息监听器] 显示系统级对话框:', questionData)
-  
+
   if (!isElectron()) {
     logger.error('[WebSocket消息监听器] 不在 Electron 环境中，无法显示系统级对话框')
     // 在非 Electron 环境中，使用默认响应
     sendResponse(messageId, false)
     return
   }
-  
+
   try {
     // 调用 Electron API 显示系统级对话框
     const result = await (window as any).electronAPI.showQuestionDialog({
       title,
       message,
       options,
-      messageId
+      messageId,
     })
-    
+
     logger.info('[WebSocket消息监听器] 系统级对话框返回结果:', result)
-    
+
     // 发送结果到后端
     sendResponse(messageId, result)
   } catch (error) {
@@ -70,7 +70,14 @@ const showQuestion = async (questionData: any) => {
 const handleMessage = (message: WebSocketBaseMessage) => {
   try {
     logger.info('[WebSocket消息监听器] 收到Message类型消息:', message)
-    logger.info('[WebSocket消息监听器] 消息详情 - type:', message.type, 'id:', message.id, 'data:', message.data)
+    logger.info(
+      '[WebSocket消息监听器] 消息详情 - type:',
+      message.type,
+      'id:',
+      message.id,
+      'data:',
+      message.data
+    )
 
     // 解析消息数据
     if (message.data) {
@@ -103,11 +110,16 @@ const handleObjectMessage = (data: any) => {
   logger.info('[WebSocket消息监听器] 处理对象消息:', data)
 
   // 检查是否为Question类型的消息
-  logger.info('[WebSocket消息监听器] 检查消息类型 - data.type:', data.type, 'data.message_id:', data.message_id)
-  
+  logger.info(
+    '[WebSocket消息监听器] 检查消息类型 - data.type:',
+    data.type,
+    'data.message_id:',
+    data.message_id
+  )
+
   if (data.type === 'Question') {
     logger.info('[WebSocket消息监听器] 发现Question类型消息')
-    
+
     if (data.message_id) {
       logger.info('[WebSocket消息监听器] message_id存在，显示系统级对话框')
       showQuestion(data)
@@ -119,7 +131,7 @@ const handleObjectMessage = (data: any) => {
       logger.info('[WebSocket消息监听器] 使用备用ID显示对话框:', fallbackId)
       showQuestion({
         ...data,
-        message_id: fallbackId
+        message_id: fallbackId,
       })
       return
     }
@@ -167,7 +179,7 @@ onMounted(() => {
 
   // 使用新的 subscribe API，订阅 Message 类型的消息（注意大写M）
   subscriptionId = subscribe({ type: 'Message' }, handleMessage)
-  
+
   logger.info('[WebSocket消息监听器~~] 订阅ID:', subscriptionId)
   logger.info('[WebSocket消息监听器~~] 订阅过滤器:', { type: 'Message' })
 })
@@ -181,5 +193,3 @@ onUnmounted(() => {
   }
 })
 </script>
-
-

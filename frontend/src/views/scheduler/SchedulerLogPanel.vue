@@ -4,17 +4,17 @@
       <h3>日志</h3>
       <div class="log-controls">
         <a-space size="small">
-          <a-button 
-            @click="toggleLogMode" 
+          <a-button
             size="small"
             :type="logMode === 'follow' ? 'primary' : 'default'"
+            @click="toggleLogMode"
           >
             {{ logMode === 'follow' ? '保持最新' : '自由浏览' }}
           </a-button>
         </a-space>
       </div>
     </div>
-    <div class="log-content" ref="logContentRef" @scroll="onScroll">
+    <div ref="logContentRef" class="log-content" @scroll="onScroll">
       <div v-if="!logContent" class="empty-state">
         <div class="empty-content">
           <div class="empty-image-container">
@@ -50,7 +50,6 @@ const emit = defineEmits<Emits>()
 const logContentRef = ref<HTMLElement | null>(null)
 // 默认为保持最新
 const logMode = ref<LogMode>('follow')
-
 
 const toggleLogMode = () => {
   logMode.value = logMode.value === 'follow' ? 'browse' : 'follow'
@@ -164,12 +163,10 @@ onUnmounted(() => {
     background: var(--ant-color-bg-container, #1f1f1f);
     border: 1px solid var(--ant-color-border, #424242);
   }
-  
+
   .section-header {
     border-bottom: 1px solid var(--ant-color-border, #424242);
   }
-  
-
 
   .log-text {
     color: var(--ant-color-text, #ffffff);
@@ -180,11 +177,11 @@ onUnmounted(() => {
   .log-panel {
     border-radius: 8px;
   }
-  
+
   .section-header {
     padding: 12px;
   }
-  
+
   .log-content {
     padding: 12px;
   }

@@ -15,13 +15,13 @@
     </div>
 
     <a-space size="middle">
-      <a-button size="large" type="primary" @click="showUploadModal" class="upload-button">
+      <a-button size="large" type="primary" class="upload-button" @click="showUploadModal">
         <template #icon>
           <CloudUploadOutlined />
         </template>
         分享当前配置到配置分享站
       </a-button>
-      <a-button size="large" @click="handleCancel" class="cancel-button">
+      <a-button size="large" class="cancel-button" @click="handleCancel">
         <template #icon>
           <ArrowLeftOutlined />
         </template>
@@ -33,9 +33,7 @@
   <div class="script-edit-content">
     <a-card title="通用脚本配置" :loading="pageLoading" class="config-card">
       <template #extra>
-        <a-tag color="green" class="type-tag">
-          General
-        </a-tag>
+        <a-tag color="green" class="type-tag"> General </a-tag>
       </template>
 
       <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
@@ -81,7 +79,7 @@
                     class="path-input"
                     readonly
                   />
-                  <a-button size="large" @click="selectRootPath" class="path-button">
+                  <a-button size="large" class="path-button" @click="selectRootPath">
                     <template #icon>
                       <FolderOpenOutlined />
                     </template>
@@ -117,7 +115,7 @@
                     class="path-input"
                     readonly
                   />
-                  <a-button size="large" @click="selectScriptPath" class="path-button">
+                  <a-button size="large" class="path-button" @click="selectScriptPath">
                     <template #icon>
                       <FileOutlined />
                     </template>
@@ -165,7 +163,13 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="generalConfig.Script.ConfigPathMode === 'Folder' ? '脚本配置文件所在的文件夹路径' : '脚本配置文件的路径'">
+                  <a-tooltip
+                    :title="
+                      generalConfig.Script.ConfigPathMode === 'Folder'
+                        ? '脚本配置文件所在的文件夹路径'
+                        : '脚本配置文件的路径'
+                    "
+                  >
                     <span class="form-label">
                       配置文件路径
                       <QuestionCircleOutlined class="help-icon" />
@@ -175,17 +179,23 @@
                 <a-input-group compact class="path-input-group">
                   <a-input
                     v-model:value="generalConfig.Script.ConfigPath"
-                    :placeholder="generalConfig.Script.ConfigPathMode === 'Folder' ? '请选择配置文件夹' : '请选择配置文件'"
+                    :placeholder="
+                      generalConfig.Script.ConfigPathMode === 'Folder'
+                        ? '请选择配置文件夹'
+                        : '请选择配置文件'
+                    "
                     size="large"
                     class="path-input"
                     readonly
                   />
-                  <a-button size="large" @click="selectConfigPath" class="path-button">
+                  <a-button size="large" class="path-button" @click="selectConfigPath">
                     <template #icon>
                       <FolderOpenOutlined v-if="generalConfig.Script.ConfigPathMode === 'Folder'" />
                       <FileOutlined v-else />
                     </template>
-                    {{ generalConfig.Script.ConfigPathMode === 'Folder' ? '选择文件夹' : '选择文件' }}
+                    {{
+                      generalConfig.Script.ConfigPathMode === 'Folder' ? '选择文件夹' : '选择文件'
+                    }}
                   </a-button>
                 </a-input-group>
               </a-form-item>
@@ -244,7 +254,7 @@
                     class="path-input"
                     readonly
                   />
-                  <a-button size="large" @click="selectLogPath" class="path-button">
+                  <a-button size="large" class="path-button" @click="selectLogPath">
                     <template #icon>
                       <FolderOpenOutlined />
                     </template>
@@ -339,7 +349,9 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="若填写，且日志文本信息中任意任务成功日志先于任务异常日志出现，则视为任务成功，否则若脚本进程结束时，日志文本信息中不存在任何任务成功日志，则视为任务失败；若留空，且在脚本进程结束时，日志文本信息中不存在任意任务异常日志，则视为任务成功">
+                  <a-tooltip
+                    title="若填写，且日志文本信息中任意任务成功日志先于任务异常日志出现，则视为任务成功，否则若脚本进程结束时，日志文本信息中不存在任何任务成功日志，则视为任务失败；若留空，且在脚本进程结束时，日志文本信息中不存在任意任务异常日志，则视为任务成功"
+                  >
                     <span class="form-label">
                       任务成功日志
                       <QuestionCircleOutlined class="help-icon" />
@@ -431,7 +443,7 @@
                     class="path-input"
                     readonly
                   />
-                  <a-button size="large" @click="selectGamePath" class="path-button">
+                  <a-button size="large" class="path-button" @click="selectGamePath">
                     <template #icon>
                       <FileOutlined />
                     </template>
@@ -509,7 +521,9 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="当用户本日代理成功次数达到该阀值时跳过代理，阈值为「0」时视为无代理次数上限">
+                  <a-tooltip
+                    title="当用户本日代理成功次数达到该阀值时跳过代理，阈值为「0」时视为无代理次数上限"
+                  >
                     <span class="form-label">
                       单日代理次数上限
                       <QuestionCircleOutlined class="help-icon" />
@@ -573,11 +587,11 @@
   </div>
   <a-float-button
     type="primary"
-    @click="handleSave"
     class="float-button"
     :style="{
       right: '24px',
     }"
+    @click="handleSave"
   >
     <template #icon>
       <SaveOutlined />
@@ -589,10 +603,10 @@
     v-model:open="uploadModalVisible"
     title="上传脚本配置到云端"
     :confirm-loading="uploadLoading"
+    width="600px"
+    :mask-closable="false"
     @ok="handleUpload"
     @cancel="handleUploadCancel"
-    width="600px"
-    :maskClosable="false"
   >
     <a-form
       ref="uploadFormRef"
@@ -638,7 +652,8 @@
       <a-alert message="分享说明" type="info">
         <template #description>
           <p>
-            所有<span style="font-weight: bold;"> 敏感信息 </span>均会在上传前自动移除，上传内容仅包含脚本配置的非敏感信息。上传且通过审核后，其他用户可以下载并使用您的脚本配置。请确保配置信息准确且描述清晰。
+            所有<span style="font-weight: bold"> 敏感信息 </span
+            >均会在上传前自动移除，上传内容仅包含脚本配置的非敏感信息。上传且通过审核后，其他用户可以下载并使用您的脚本配置。请确保配置信息准确且描述清晰。
           </p>
         </template>
       </a-alert>
@@ -819,7 +834,7 @@ const pathUtils = {
     }
 
     return normalized
-  }
+  },
 }
 
 // 路径验证函数
@@ -842,7 +857,7 @@ const validatePath = (rootPath: string, targetPath: string, pathName: string): b
 const pathRelations = reactive({
   scriptPathRelative: '',
   configPathRelative: '',
-  logPathRelative: ''
+  logPathRelative: '',
 })
 
 // 更新相对路径关系
@@ -856,15 +871,24 @@ const updatePathRelations = () => {
   }
 
   if (generalConfig.Script.ScriptPath && generalConfig.Script.ScriptPath !== '.') {
-    pathRelations.scriptPathRelative = pathUtils.getRelativePath(rootPath, generalConfig.Script.ScriptPath)
+    pathRelations.scriptPathRelative = pathUtils.getRelativePath(
+      rootPath,
+      generalConfig.Script.ScriptPath
+    )
   }
 
   if (generalConfig.Script.ConfigPath && generalConfig.Script.ConfigPath !== '.') {
-    pathRelations.configPathRelative = pathUtils.getRelativePath(rootPath, generalConfig.Script.ConfigPath)
+    pathRelations.configPathRelative = pathUtils.getRelativePath(
+      rootPath,
+      generalConfig.Script.ConfigPath
+    )
   }
 
   if (generalConfig.Script.LogPath && generalConfig.Script.LogPath !== '.') {
-    pathRelations.logPathRelative = pathUtils.getRelativePath(rootPath, generalConfig.Script.LogPath)
+    pathRelations.logPathRelative = pathUtils.getRelativePath(
+      rootPath,
+      generalConfig.Script.LogPath
+    )
   }
 }
 
@@ -961,7 +985,11 @@ const setupConfigPathModeWatcher = () => {
   stopConfigPathModeWatcher = watch(
     () => generalConfig.Script.ConfigPathMode,
     (newMode, oldMode) => {
-      if (newMode !== oldMode && generalConfig.Script.ConfigPath && generalConfig.Script.ConfigPath !== '.') {
+      if (
+        newMode !== oldMode &&
+        generalConfig.Script.ConfigPath &&
+        generalConfig.Script.ConfigPath !== '.'
+      ) {
         // 当配置文件类型改变时，重置为根目录路径
         const rootPath = generalConfig.Info.RootPath
         if (rootPath && rootPath !== '.') {

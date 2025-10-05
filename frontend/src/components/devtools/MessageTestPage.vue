@@ -5,15 +5,15 @@
     <div class="test-section">
       <h4>测试消息弹窗</h4>
       <div class="test-controls">
-        <button class="test-btn primary" @click="triggerQuestionModal" :disabled="isTesting">
+        <button class="test-btn primary" :disabled="isTesting" @click="triggerQuestionModal">
           {{ isTesting ? '测试中...' : '触发Question弹窗' }}
         </button>
 
-        <button class="test-btn secondary" @click="triggerCustomModal" :disabled="isTesting">
+        <button class="test-btn secondary" :disabled="isTesting" @click="triggerCustomModal">
           自定义消息测试
         </button>
 
-        <button class="test-btn warning" @click="directTriggerModal" :disabled="isTesting">
+        <button class="test-btn warning" :disabled="isTesting" @click="directTriggerModal">
           直接触发测试
         </button>
       </div>
@@ -21,7 +21,9 @@
       <div class="test-info">
         <p>点击按钮测试全屏消息选择弹窗功能</p>
         <p>最后响应: {{ lastResponse || '暂无' }}</p>
-        <p>连接状态: <span :class="connectionStatusClass">{{ connectionStatus }}</span></p>
+        <p>
+          连接状态: <span :class="connectionStatusClass">{{ connectionStatus }}</span>
+        </p>
       </div>
     </div>
 
@@ -48,8 +50,8 @@
         </div>
         <button
           class="test-btn primary"
-          @click="sendCustomMessage"
           :disabled="!customMessage.title || !customMessage.message"
+          @click="sendCustomMessage"
         >
           发送自定义消息
         </button>
@@ -94,7 +96,7 @@ const updateConnectionStatus = () => {
   try {
     const connInfo = getConnectionInfo()
     connectionStatus.value = connInfo.status
-    
+
     switch (connInfo.status) {
       case '已连接':
         connectionStatusClass.value = 'status-connected'
@@ -149,11 +151,13 @@ const directTriggerModal = () => {
 
   try {
     // 直接触发浏览器的confirm对话框作为备用测试
-    const result = confirm('这是直接触发的测试弹窗。\n\n如果WebSocket消息弹窗无法正常工作，这个方法可以用来验证基本功能。\n\n点击"确定"继续，点击"取消"退出。')
-    
+    const result = confirm(
+      '这是直接触发的测试弹窗。\n\n如果WebSocket消息弹窗无法正常工作，这个方法可以用来验证基本功能。\n\n点击"确定"继续，点击"取消"退出。'
+    )
+
     lastResponse.value = result ? '用户选择: 确认 (直接触发)' : '用户选择: 取消 (直接触发)'
     addTestHistory('直接触发测试', result ? '确认' : '取消')
-    
+
     logger.info('[调试工具] 直接触发测试完成，结果:', result)
   } catch (error: any) {
     logger.error('[调试工具] 直接触发测试失败:', error)
@@ -168,33 +172,37 @@ const directTriggerModal = () => {
 // 直接调用弹窗API测试功能
 const simulateMessage = (messageData: any) => {
   logger.info('[调试工具] 直接测试弹窗功能:', messageData)
-  
+
   try {
     // 检查是否在Electron环境
     if (typeof window !== 'undefined' && (window as any).electronAPI?.showQuestionDialog) {
       // 直接调用Electron的弹窗API进行测试
-      (window as any).electronAPI.showQuestionDialog({
-        title: messageData.title || '测试标题',
-        message: messageData.message || '测试消息',
-        options: messageData.options || ['确定', '取消'],
-        messageId: messageData.message_id || 'test-' + Date.now()
-      }).then((result: boolean) => {
-        logger.info('[调试工具] 弹窗测试结果:', result)
-        const choice = result ? '确认' : '取消'
-        lastResponse.value = `用户选择: ${choice}`
-        addTestHistory('弹窗测试', choice)
-      }).catch((error: any) => {
-        logger.error('[调试工具] 弹窗测试失败:', error)
-        lastResponse.value = '弹窗测试失败: ' + (error?.message || '未知错误')
-      })
+      ;(window as any).electronAPI
+        .showQuestionDialog({
+          title: messageData.title || '测试标题',
+          message: messageData.message || '测试消息',
+          options: messageData.options || ['确定', '取消'],
+          messageId: messageData.message_id || 'test-' + Date.now(),
+        })
+        .then((result: boolean) => {
+          logger.info('[调试工具] 弹窗测试结果:', result)
+          const choice = result ? '确认' : '取消'
+          lastResponse.value = `用户选择: ${choice}`
+          addTestHistory('弹窗测试', choice)
+        })
+        .catch((error: any) => {
+          logger.error('[调试工具] 弹窗测试失败:', error)
+          lastResponse.value = '弹窗测试失败: ' + (error?.message || '未知错误')
+        })
     } else {
       logger.warn('[调试工具] 不在Electron环境中或API不可用，使用浏览器confirm作为备用')
-      const result = confirm(`${messageData.title || '测试'}\n\n${messageData.message || '这是测试消息'}`)
+      const result = confirm(
+        `${messageData.title || '测试'}\n\n${messageData.message || '这是测试消息'}`
+      )
       const choice = result ? '确认' : '取消'
       lastResponse.value = `用户选择: ${choice} (浏览器备用)`
       addTestHistory('浏览器备用测试', choice)
     }
-    
   } catch (error: any) {
     logger.error('[调试工具] 测试弹窗失败:', error)
     lastResponse.value = '测试失败: ' + (error?.message || '未知错误')
@@ -279,7 +287,7 @@ const sendCustomMessage = () => {
 // 监听响应消息
 const handleResponseMessage = (message: any) => {
   logger.info('[调试工具] 收到响应消息:', message)
-  
+
   if (message.data && message.data.choice !== undefined) {
     const choice = message.data.choice ? '确认' : '取消'
     lastResponse.value = `用户选择: ${choice}`
@@ -290,18 +298,18 @@ const handleResponseMessage = (message: any) => {
 // 组件挂载时订阅响应消息
 onMounted(() => {
   logger.info('[调试工具] 初始化消息测试页面')
-  
+
   // 订阅Response类型的消息来监听用户的选择结果
   responseSubscriptionId = subscribe({ type: 'Response' }, handleResponseMessage)
-  
+
   // 初始化连接状态
   updateConnectionStatus()
-  
+
   // 定期更新连接状态
   const statusTimer = setInterval(updateConnectionStatus, 2000)
-  
+
   logger.info('[调试工具] 已订阅Response消息，订阅ID:', responseSubscriptionId)
-  
+
   // 清理定时器
   onUnmounted(() => {
     clearInterval(statusTimer)

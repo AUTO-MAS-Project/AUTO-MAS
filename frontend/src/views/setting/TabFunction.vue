@@ -2,7 +2,14 @@
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type { SettingsData } from '@/types/settings'
 
-const { settings, historyRetentionOptions, updateSourceOptions, voiceTypeOptions, handleSettingChange, checkUpdate } = defineProps<{
+const {
+  settings,
+  historyRetentionOptions,
+  updateSourceOptions,
+  voiceTypeOptions,
+  handleSettingChange,
+  checkUpdate,
+} = defineProps<{
   settings: SettingsData
   historyRetentionOptions: { label: string; value: number }[]
   updateSourceOptions: { label: string; value: string }[]
@@ -29,9 +36,9 @@ const { settings, historyRetentionOptions, updateSourceOptions, voiceTypeOptions
             </div>
             <a-select
               v-model:value="settings.Start.IfSelfStart"
-              @change="(checked: any) => handleSettingChange('Start', 'IfSelfStart', checked)"
               size="large"
-              style="width:100%"
+              style="width: 100%"
+              @change="(checked: any) => handleSettingChange('Start', 'IfSelfStart', checked)"
             >
               <a-select-option :value="true">是</a-select-option>
               <a-select-option :value="false">否</a-select-option>
@@ -48,9 +55,11 @@ const { settings, historyRetentionOptions, updateSourceOptions, voiceTypeOptions
             </div>
             <a-select
               v-model:value="settings.Start.IfMinimizeDirectly"
-              @change="(checked: any) => handleSettingChange('Start', 'IfMinimizeDirectly', checked)"
               size="large"
-              style="width:100%"
+              style="width: 100%"
+              @change="
+                (checked: any) => handleSettingChange('Start', 'IfMinimizeDirectly', checked)
+              "
             >
               <a-select-option :value="true">是</a-select-option>
               <a-select-option :value="false">否</a-select-option>
@@ -76,10 +85,12 @@ const { settings, historyRetentionOptions, updateSourceOptions, voiceTypeOptions
             </div>
             <a-select
               v-model:value="settings.Function.HistoryRetentionTime"
-              @change="(value: any) => handleSettingChange('Function', 'HistoryRetentionTime', value)"
               :options="historyRetentionOptions"
               size="large"
               style="width: 100%"
+              @change="
+                (value: any) => handleSettingChange('Function', 'HistoryRetentionTime', value)
+              "
             />
           </div>
         </a-col>
@@ -93,9 +104,9 @@ const { settings, historyRetentionOptions, updateSourceOptions, voiceTypeOptions
             </div>
             <a-select
               v-model:value="settings.Function.IfAllowSleep"
-              @change="(checked: any) => handleSettingChange('Function', 'IfAllowSleep', checked)"
               size="large"
               style="width: 100%"
+              @change="(checked: any) => handleSettingChange('Function', 'IfAllowSleep', checked)"
             >
               <a-select-option :value="true">是</a-select-option>
               <a-select-option :value="false">否</a-select-option>
@@ -114,9 +125,9 @@ const { settings, historyRetentionOptions, updateSourceOptions, voiceTypeOptions
             </div>
             <a-select
               v-model:value="settings.Function.IfSilence"
-              @change="(checked: any) => handleSettingChange('Function', 'IfSilence', checked)"
               size="large"
               style="width: 100%"
+              @change="(checked: any) => handleSettingChange('Function', 'IfSilence', checked)"
             >
               <a-select-option :value="true">是</a-select-option>
               <a-select-option :value="false">否</a-select-option>
@@ -127,16 +138,18 @@ const { settings, historyRetentionOptions, updateSourceOptions, voiceTypeOptions
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
               <span class="form-label">模拟器老板键</span>
-              <a-tooltip title="程序依靠模拟器老板键隐藏模拟器窗口，需要开启静默模式后才能填写，请直接输入文字，多个键位之间请用『+』隔开">
+              <a-tooltip
+                title="程序依靠模拟器老板键隐藏模拟器窗口，需要开启静默模式后才能填写，请直接输入文字，多个键位之间请用『+』隔开"
+              >
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
             <a-input
               v-model:value="settings.Function.BossKey"
-              @blur="handleSettingChange('Function', 'BossKey', settings.Function.BossKey)"
               :disabled="!settings.Function.IfSilence"
               placeholder="请输入对应模拟器老板键，例如: Alt+Q"
               size="large"
+              @blur="handleSettingChange('Function', 'BossKey', settings.Function.BossKey)"
             />
           </div>
         </a-col>
@@ -149,16 +162,36 @@ const { settings, historyRetentionOptions, updateSourceOptions, voiceTypeOptions
               <a-tooltip>
                 <template #title>
                   <div style="max-width: 300px">
-                    <p>开启本项即代表您已完整阅读并同意以下协议，并授权本程序在其认定需要时以其认定合适的方法替您处理相关弹窗：</p>
+                    <p>
+                      开启本项即代表您已完整阅读并同意以下协议，并授权本程序在其认定需要时以其认定合适的方法替您处理相关弹窗：
+                    </p>
                     <ul style="margin: 8px 0; padding-left: 16px">
                       <li>
-                        <a href="https://www.bilibili.com/protocal/licence.html" target="_blank" class="tooltip-link" @click.stop>《哔哩哔哩弹幕网用户使用协议》</a>
+                        <a
+                          href="https://www.bilibili.com/protocal/licence.html"
+                          target="_blank"
+                          class="tooltip-link"
+                          @click.stop
+                          >《哔哩哔哩弹幕网用户使用协议》</a
+                        >
                       </li>
                       <li>
-                        <a href="https://www.bilibili.com/blackboard/privacy-pc.html" target="_blank" class="tooltip-link" @click.stop>《哔哩哔哩隐私政策》</a>
+                        <a
+                          href="https://www.bilibili.com/blackboard/privacy-pc.html"
+                          target="_blank"
+                          class="tooltip-link"
+                          @click.stop
+                          >《哔哩哔哩隐私政策》</a
+                        >
                       </li>
                       <li>
-                        <a href="https://game.bilibili.com/yhxy" target="_blank" class="tooltip-link" @click.stop>《哔哩哔哩游戏中心用户协议》</a>
+                        <a
+                          href="https://game.bilibili.com/yhxy"
+                          target="_blank"
+                          class="tooltip-link"
+                          @click.stop
+                          >《哔哩哔哩游戏中心用户协议》</a
+                        >
                       </li>
                     </ul>
                   </div>
@@ -168,9 +201,11 @@ const { settings, historyRetentionOptions, updateSourceOptions, voiceTypeOptions
             </div>
             <a-select
               v-model:value="settings.Function.IfAgreeBilibili"
-              @change="(checked: any) => handleSettingChange('Function', 'IfAgreeBilibili', checked)"
               size="large"
               style="width: 100%"
+              @change="
+                (checked: any) => handleSettingChange('Function', 'IfAgreeBilibili', checked)
+              "
             >
               <a-select-option :value="true">是</a-select-option>
               <a-select-option :value="false">否</a-select-option>
@@ -187,9 +222,11 @@ const { settings, historyRetentionOptions, updateSourceOptions, voiceTypeOptions
             </div>
             <a-select
               v-model:value="settings.Function.IfSkipMumuSplashAds"
-              @change="(checked: any) => handleSettingChange('Function', 'IfSkipMumuSplashAds', checked)"
               size="large"
               style="width: 100%"
+              @change="
+                (checked: any) => handleSettingChange('Function', 'IfSkipMumuSplashAds', checked)
+              "
             >
               <a-select-option :value="true">是</a-select-option>
               <a-select-option :value="false">否</a-select-option>
@@ -203,10 +240,12 @@ const { settings, historyRetentionOptions, updateSourceOptions, voiceTypeOptions
     <div class="form-section">
       <div class="section-header">
         <h3>更新配置</h3>
-        <a-button type="primary" @click="checkUpdate" size="small" class="section-update-button">
+        <a-button type="primary" size="small" class="section-update-button" @click="checkUpdate">
           <template #icon>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z" />
+              <path
+                d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"
+              />
             </svg>
           </template>
           检查更新
@@ -223,9 +262,9 @@ const { settings, historyRetentionOptions, updateSourceOptions, voiceTypeOptions
             </div>
             <a-select
               v-model:value="settings.Update.IfAutoUpdate"
-              @change="(checked: any) => handleSettingChange('Update', 'IfAutoUpdate', checked)"
               size="large"
-              style="width:100%"
+              style="width: 100%"
+              @change="(checked: any) => handleSettingChange('Update', 'IfAutoUpdate', checked)"
             >
               <a-select-option :value="true">是</a-select-option>
               <a-select-option :value="false">否</a-select-option>
@@ -242,10 +281,10 @@ const { settings, historyRetentionOptions, updateSourceOptions, voiceTypeOptions
             </div>
             <a-select
               v-model:value="settings.Update.Source"
-              @change="(value: any) => handleSettingChange('Update', 'Source', value)"
               :options="updateSourceOptions"
               size="large"
-              style="width:100%"
+              style="width: 100%"
+              @change="(value: any) => handleSettingChange('Update', 'Source', value)"
             />
           </div>
         </a-col>
@@ -255,15 +294,17 @@ const { settings, historyRetentionOptions, updateSourceOptions, voiceTypeOptions
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
               <span class="form-label">网络代理地址</span>
-              <a-tooltip title="使用网络代理软件时，若出现网络连接问题，请尝试设置代理地址，此设置全局生效">
+              <a-tooltip
+                title="使用网络代理软件时，若出现网络连接问题，请尝试设置代理地址，此设置全局生效"
+              >
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
             <a-input
               v-model:value="settings.Update.ProxyAddress"
-              @blur="handleSettingChange('Update', 'ProxyAddress', settings.Update.ProxyAddress)"
               placeholder="请输入网络代理地址"
               size="large"
+              @blur="handleSettingChange('Update', 'ProxyAddress', settings.Update.ProxyAddress)"
             />
           </div>
         </a-col>
@@ -275,7 +316,13 @@ const { settings, historyRetentionOptions, updateSourceOptions, voiceTypeOptions
                 <template #title>
                   <div>
                     Mirror酱CDK是使用Mirror源进行高速下载的凭证，可前往
-                    <a href="https://mirrorchyan.com/zh/get-start?source=auto-mas-setting" target="_blank" class="tooltip-link" @click.stop>Mirror酱官网</a>
+                    <a
+                      href="https://mirrorchyan.com/zh/get-start?source=auto-mas-setting"
+                      target="_blank"
+                      class="tooltip-link"
+                      @click.stop
+                      >Mirror酱官网</a
+                    >
                     获取
                   </div>
                 </template>
@@ -284,11 +331,13 @@ const { settings, historyRetentionOptions, updateSourceOptions, voiceTypeOptions
             </div>
             <a-input-password
               v-model:value="settings.Update.MirrorChyanCDK"
-              @blur="handleSettingChange('Update','MirrorChyanCDK', settings.Update.MirrorChyanCDK)"
               :disabled="settings.Update.Source !== 'MirrorChyan'"
               placeholder="使用Mirror源时请输入Mirror酱CDK"
-              :visibilityToggle="true"
+              :visibility-toggle="true"
               size="large"
+              @blur="
+                handleSettingChange('Update', 'MirrorChyanCDK', settings.Update.MirrorChyanCDK)
+              "
             />
           </div>
         </a-col>
@@ -311,9 +360,9 @@ const { settings, historyRetentionOptions, updateSourceOptions, voiceTypeOptions
             </div>
             <a-select
               v-model:value="settings.Voice.Enabled"
-              @change="(checked: any) => handleSettingChange('Voice', 'Enabled', checked)"
               size="large"
-              style="width:100%"
+              style="width: 100%"
+              @change="(checked: any) => handleSettingChange('Voice', 'Enabled', checked)"
             >
               <a-select-option :value="true">是</a-select-option>
               <a-select-option :value="false">否</a-select-option>
@@ -330,11 +379,11 @@ const { settings, historyRetentionOptions, updateSourceOptions, voiceTypeOptions
             </div>
             <a-select
               v-model:value="settings.Voice.Type"
-              @change="(value: any) => handleSettingChange('Voice', 'Type', value)"
               :options="voiceTypeOptions"
               :disabled="!settings.Voice.Enabled"
               size="large"
-              style="width:100%"
+              style="width: 100%"
+              @change="(value: any) => handleSettingChange('Voice', 'Type', value)"
             />
           </div>
         </a-col>

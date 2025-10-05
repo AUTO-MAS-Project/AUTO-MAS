@@ -17,6 +17,6 @@ export default defineConfig({
   },
   define: {
     // 在编译时将版本号注入到环境变量中
-    'import.meta.env.VITE_APP_VERSION': JSON.stringify(packageJson.version)
-  }
+    'import.meta.env.VITE_APP_VERSION': JSON.stringify(packageJson.version),
+  },
 })

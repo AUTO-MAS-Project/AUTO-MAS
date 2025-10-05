@@ -20,27 +20,35 @@
               <a-spin :spinning="true" size="small" />
               <span class="download-title">下载进度</span>
             </div>
-            <div class="progress-percent" :class="{ 'animate-pulse': downloadProgressPercent > 0 && downloadProgressPercent < 100 }">
+            <div
+              class="progress-percent"
+              :class="{
+                'animate-pulse': downloadProgressPercent > 0 && downloadProgressPercent < 100,
+              }"
+            >
               {{ downloadProgressPercent.toFixed(1) }}%
             </div>
           </div>
-          
-          <a-progress 
-            :percent="downloadProgressPercent" 
+
+          <a-progress
+            :percent="downloadProgressPercent"
             :show-info="false"
             stroke-color="var(--ant-color-primary)"
             trail-color="var(--ant-color-fill-secondary)"
             :stroke-width="8"
             class="progress-bar"
           />
-          
+
           <!-- 进度信息行 -->
           <div class="progress-info-row">
             <div class="left-info">
-              <span class="file-progress">{{ formatBytes(downloadProgress.downloaded_size) }} / {{ formatBytes(downloadProgress.file_size) }}</span>
+              <span class="file-progress"
+                >{{ formatBytes(downloadProgress.downloaded_size) }} /
+                {{ formatBytes(downloadProgress.file_size) }}</span
+              >
               <span class="download-speed">{{ formatSpeed(downloadProgress.speed) }}</span>
             </div>
-            <div class="right-info" v-if="estimatedTimeRemaining">
+            <div v-if="estimatedTimeRemaining" class="right-info">
               <span class="eta-label">预计剩余时间</span>
               <span class="eta-value">{{ estimatedTimeRemaining }}</span>
             </div>
@@ -51,19 +59,13 @@
       <!-- 下载失败区域 -->
       <div v-if="downloadFailed" class="download-failed-section">
         <div class="failed-icon">
-          <a-result
-            status="error"
-            title="下载失败"
-            :sub-title="failureReason"
-          >
+          <a-result status="error" title="下载失败" :sub-title="failureReason">
             <template #extra>
               <div class="failed-actions">
-                <a-button @click="handleRetry" type="primary" :loading="isRetrying">
+                <a-button type="primary" :loading="isRetrying" @click="handleRetry">
                   重试下载
                 </a-button>
-                <a-button @click="handleCancel">
-                  取消
-                </a-button>
+                <a-button @click="handleCancel"> 取消 </a-button>
               </div>
             </template>
           </a-result>
@@ -72,19 +74,13 @@
 
       <!-- 下载成功区域 -->
       <div v-if="downloadCompleted" class="download-success-section">
-        <a-result
-          status="success"
-          title="下载完成"
-          sub-title="更新包已下载完成，是否立即安装？"
-        >
+        <a-result status="success" title="下载完成" sub-title="更新包已下载完成，是否立即安装？">
           <template #extra>
             <div class="success-actions">
-              <a-button @click="handleInstall" type="primary" :loading="isInstalling">
+              <a-button type="primary" :loading="isInstalling" @click="handleInstall">
                 立即安装
               </a-button>
-              <a-button @click="handleLater">
-                稍后安装
-              </a-button>
+              <a-button @click="handleLater"> 稍后安装 </a-button>
             </div>
           </template>
         </a-result>
@@ -137,7 +133,7 @@ let downloadTimeout: NodeJS.Timeout | null = null
 const downloadProgress = ref({
   downloaded_size: 0,
   file_size: 0,
-  speed: 0
+  speed: 0,
 })
 
 // 计算下载进度百分比
@@ -154,14 +150,14 @@ const downloadProgressPercent = computed(() => {
 const estimatedTimeRemaining = computed(() => {
   const progress = downloadProgress.value
   const speed = progress.speed
-  
+
   if (speed <= 0 || progress.downloaded_size <= 0 || progress.file_size <= 0) {
     return ''
   }
-  
+
   const remainingBytes = progress.file_size - progress.downloaded_size
   const remainingSeconds = remainingBytes / speed
-  
+
   if (remainingSeconds < 60) {
     return `${Math.ceil(remainingSeconds)}秒`
   } else if (remainingSeconds < 3600) {
@@ -178,7 +174,7 @@ const estimatedTimeRemaining = computed(() => {
 // 计算属性 - 响应式地接收外部 visible 状态
 const visible = computed({
   get: () => props.visible,
-  set: (value: boolean) => emit('update:visible', value)
+  set: (value: boolean) => emit('update:visible', value),
 })
 
 // 格式化字节大小
@@ -193,12 +189,12 @@ const formatBytes = (bytes: number) => {
 // 格式化速度
 const formatSpeed = (bytesPerSecond: number) => {
   if (bytesPerSecond === 0) return '0 B/s'
-  
+
   const k = 1024
   const sizes = ['B/s', 'KB/s', 'MB/s', 'GB/s']
   const i = Math.floor(Math.log(bytesPerSecond) / Math.log(k))
   const value = bytesPerSecond / Math.pow(k, i)
-  
+
   return parseFloat(value.toFixed(1)) + ' ' + sizes[i]
 }
 
@@ -209,10 +205,10 @@ const resetState = () => {
     clearTimeout(downloadTimeout)
     downloadTimeout = null
   }
-  
+
   // 停止WebSocket健康检查
   stopWebSocketHealthCheck()
-  
+
   isDownloading.value = false
   downloadFailed.value = false
   downloadCompleted.value = false
@@ -222,32 +218,32 @@ const resetState = () => {
   downloadProgress.value = {
     downloaded_size: 0,
     file_size: 0,
-    speed: 0
+    speed: 0,
   }
 }
 
 // 开始下载
 const startDownload = async () => {
   console.log('[UpdateDownloadModal] 开始下载流程')
-  
+
   // 确保WebSocket订阅已建立
   ensureWebSocketSubscription()
-  
+
   // 验证WebSocket连接状态
   console.log('[UpdateDownloadModal] WebSocket连接准备就绪，开始下载...')
-  
+
   resetState()
   isDownloading.value = true
-  
+
   try {
     // 确保有版本信息，如果没有则先检查更新
     if (!props.latestVersion) {
       console.log('[UpdateDownloadModal] 没有版本信息，先检查更新')
       const checkResult = await Service.checkUpdateApiUpdateCheckPost({
         current_version: (import.meta as any).env?.VITE_APP_VERSION || '1.0.0',
-        if_force: false
+        if_force: false,
       })
-      
+
       if (checkResult.code !== 200 || !checkResult.if_need_update) {
         downloadFailed.value = true
         isDownloading.value = false
@@ -255,11 +251,11 @@ const startDownload = async () => {
         return
       }
     }
-    
+
     console.log('[UpdateDownloadModal] 调用下载API')
     const res = await Service.downloadUpdateApiUpdateDownloadPost()
     console.log('[UpdateDownloadModal] API响应:', res)
-    
+
     if (res.code !== 200) {
       console.log('[UpdateDownloadModal] 下载请求失败:', res.message)
       downloadFailed.value = true
@@ -267,21 +263,24 @@ const startDownload = async () => {
       failureReason.value = res.message || '下载请求失败'
     } else {
       console.log('[UpdateDownloadModal] 下载请求成功，等待WebSocket进度更新')
-      
+
       // 启动WebSocket健康检查
       startWebSocketHealthCheck()
-      
+
       // 设置下载超时（5分钟）
-      downloadTimeout = setTimeout(() => {
-        if (isDownloading.value) {
-          console.log('[UpdateDownloadModal] 下载超时，取消WebSocket订阅')
-          isDownloading.value = false
-          downloadFailed.value = true
-          failureReason.value = '下载超时，请检查网络连接或稍后重试'
-          stopWebSocketHealthCheck()
-          cancelWebSocketSubscription()
-        }
-      }, 5 * 60 * 1000) // 5分钟超时
+      downloadTimeout = setTimeout(
+        () => {
+          if (isDownloading.value) {
+            console.log('[UpdateDownloadModal] 下载超时，取消WebSocket订阅')
+            isDownloading.value = false
+            downloadFailed.value = true
+            failureReason.value = '下载超时，请检查网络连接或稍后重试'
+            stopWebSocketHealthCheck()
+            cancelWebSocketSubscription()
+          }
+        },
+        5 * 60 * 1000
+      ) // 5分钟超时
     }
   } catch (err) {
     console.error('[UpdateDownloadModal] 启动下载失败:', err)
@@ -339,20 +338,20 @@ const handleInstall = async () => {
 const handleUpdateMessage = (wsMessage: any) => {
   console.log('[UpdateDownloadModal] 收到WebSocket消息:', wsMessage)
   console.log('[UpdateDownloadModal] 消息类型:', wsMessage.type, '消息ID:', wsMessage.id)
-  
+
   if (wsMessage.id === 'Update') {
     if (wsMessage.type === 'Update') {
       // 更新下载进度
       console.log('[UpdateDownloadModal] 更新下载进度:', wsMessage.data)
       const { downloaded_size, file_size, speed } = wsMessage.data
-      
+
       // 使用Object.assign确保响应式更新
       Object.assign(downloadProgress.value, {
         downloaded_size: downloaded_size || 0,
         file_size: file_size || 0,
-        speed: speed || 0
+        speed: speed || 0,
       })
-      
+
       // 强制触发Vue的响应式更新
       nextTick(() => {
         console.log('[UpdateDownloadModal] 进度更新后状态:', {
@@ -360,19 +359,18 @@ const handleUpdateMessage = (wsMessage: any) => {
           百分比: downloadProgressPercent.value.toFixed(2) + '%',
           正在下载: isDownloading.value,
           订阅ID: updateSubscriptionId,
-          时间戳: new Date().toISOString()
+          时间戳: new Date().toISOString(),
         })
       })
-      
     } else if (wsMessage.type === 'Signal') {
       console.log('[UpdateDownloadModal] 收到Signal消息:', wsMessage.data)
-      
+
       // 清除下载超时
       if (downloadTimeout) {
         clearTimeout(downloadTimeout)
         downloadTimeout = null
       }
-      
+
       if (wsMessage.data.Accomplish) {
         // 下载完成 - 取消WebSocket订阅
         console.log('[UpdateDownloadModal] 下载完成，取消WebSocket订阅')
@@ -380,7 +378,6 @@ const handleUpdateMessage = (wsMessage: any) => {
         downloadCompleted.value = true
         stopWebSocketHealthCheck()
         cancelWebSocketSubscription()
-        
       } else if (wsMessage.data.Failed) {
         // 下载失败 - 取消WebSocket订阅
         console.log('[UpdateDownloadModal] 下载失败:', wsMessage.data.Failed)
@@ -390,7 +387,6 @@ const handleUpdateMessage = (wsMessage: any) => {
         stopWebSocketHealthCheck()
         cancelWebSocketSubscription()
       }
-      
     } else if (wsMessage.type === 'Info') {
       console.log('[UpdateDownloadModal] 收到Info消息:', wsMessage.data)
       if (wsMessage.data.Error) {
@@ -409,7 +405,7 @@ const ensureWebSocketSubscription = () => {
     try {
       updateSubscriptionId = subscribe({ id: 'Update' }, handleUpdateMessage)
       console.log('[UpdateDownloadModal] WebSocket订阅ID:', updateSubscriptionId)
-      
+
       // 添加测试消息处理函数来验证订阅是否工作
       console.log('[UpdateDownloadModal] 订阅创建完成，等待WebSocket消息...')
     } catch (error) {
@@ -439,7 +435,7 @@ const cancelWebSocketSubscription = () => {
 const startWebSocketHealthCheck = () => {
   // 清除之前的检查
   stopWebSocketHealthCheck()
-  
+
   console.log('[UpdateDownloadModal] 启动WebSocket健康检查')
   wsHealthCheckInterval = setInterval(() => {
     if (isDownloading.value) {
@@ -463,26 +459,29 @@ const stopWebSocketHealthCheck = () => {
 }
 
 // 监听 visible 变化
-watch(() => props.visible, (newVisible) => {
-  console.log('[UpdateDownloadModal] visible变化:', newVisible)
-  console.log('[UpdateDownloadModal] 当前props:', {
-    visible: props.visible,
-    latestVersion: props.latestVersion,
-    updateData: props.updateData
-  })
-  
-  if (newVisible) {
-    console.log('[UpdateDownloadModal] 窗口显示，确保WebSocket订阅并开始下载')
-    // 确保WebSocket订阅处于活动状态
-    ensureWebSocketSubscription()
-    // 开始下载
-    startDownload()
-  } else {
-    console.log('[UpdateDownloadModal] 窗口隐藏，重置状态但保持订阅')
-    // 隐藏时重置状态，但不取消订阅（因为可能还在下载）
-    resetState()
+watch(
+  () => props.visible,
+  newVisible => {
+    console.log('[UpdateDownloadModal] visible变化:', newVisible)
+    console.log('[UpdateDownloadModal] 当前props:', {
+      visible: props.visible,
+      latestVersion: props.latestVersion,
+      updateData: props.updateData,
+    })
+
+    if (newVisible) {
+      console.log('[UpdateDownloadModal] 窗口显示，确保WebSocket订阅并开始下载')
+      // 确保WebSocket订阅处于活动状态
+      ensureWebSocketSubscription()
+      // 开始下载
+      startDownload()
+    } else {
+      console.log('[UpdateDownloadModal] 窗口隐藏，重置状态但保持订阅')
+      // 隐藏时重置状态，但不取消订阅（因为可能还在下载）
+      resetState()
+    }
   }
-})
+)
 
 // 组件挂载时订阅 WebSocket 消息
 onMounted(() => {
@@ -493,16 +492,16 @@ onMounted(() => {
 // 组件卸载时取消订阅
 onUnmounted(() => {
   console.log('[UpdateDownloadModal] 组件卸载，清理资源')
-  
+
   // 清理下载超时
   if (downloadTimeout) {
     clearTimeout(downloadTimeout)
     downloadTimeout = null
   }
-  
+
   // 停止WebSocket健康检查
   stopWebSocketHealthCheck()
-  
+
   // 清理WebSocket订阅
   cancelWebSocketSubscription()
 })
@@ -567,7 +566,13 @@ onUnmounted(() => {
   font-size: 24px;
   font-weight: 700;
   color: var(--ant-color-primary);
-  font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+  font-family:
+    'SF Pro Display',
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    'Roboto',
+    sans-serif;
 }
 
 .progress-bar {
@@ -638,14 +643,13 @@ onUnmounted(() => {
   font-size: 13px;
 }
 
-
-
 .animate-pulse {
   animation: pulse 2s ease-in-out infinite;
 }
 
 @keyframes pulse {
-  0%, 100% {
+  0%,
+  100% {
     opacity: 1;
     transform: scale(1);
   }

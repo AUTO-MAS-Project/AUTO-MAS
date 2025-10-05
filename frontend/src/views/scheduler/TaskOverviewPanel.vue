@@ -2,10 +2,10 @@
   <div class="overview-panel">
     <div class="section-header">
       <h3>任务总览</h3>
-<!--      <a-badge :count="totalTaskCount" :overflow-count="99" />-->
+      <!--      <a-badge :count="totalTaskCount" :overflow-count="99" />-->
     </div>
     <div class="overview-content">
-      <TaskTree :task-data="taskData" ref="taskTreeRef" />
+      <TaskTree ref="taskTreeRef" :task-data="taskData" />
     </div>
   </div>
 </template>
@@ -42,29 +42,27 @@ interface WSMessage {
 const taskData = ref<Script[]>([])
 const taskTreeRef = ref()
 
-
-
 // 处理 WebSocket 消息
 const handleWSMessage = (message: WSMessage) => {
   console.log('TaskOverviewPanel 收到 WebSocket 消息:', message)
-  
+
   if (message.type === 'Update') {
     // 处理 task_dict 数据（完整的脚本和用户数据）
     if (message.data?.task_dict) {
       console.log('更新任务数据 (task_dict):', message.data.task_dict)
       taskData.value = message.data.task_dict
       console.log('设置后的 taskData:', taskData.value)
-      
+
       // 更新展开状态
       if (taskTreeRef.value) {
         taskTreeRef.value.updateExpandedScripts()
       }
     }
-    
+
     // 处理 user_list 数据（只有用户状态更新）
     else if (message.data?.user_list && Array.isArray(message.data.user_list)) {
       console.log('更新用户列表 (user_list):', message.data.user_list)
-      
+
       // 如果还没有脚本数据，创建一个默认脚本来包含这些用户
       if (taskData.value.length === 0) {
         // 根据用户状态推导脚本状态
@@ -77,13 +75,15 @@ const handleWSMessage = (message: WSMessage) => {
         } else if (userStatuses.every(s => s === '已完成')) {
           scriptStatus = '已完成'
         }
-        
-        taskData.value = [{
-          script_id: 'default-script',
-          name: '新 MAA 脚本', // 使用你提供的脚本名称
-          status: scriptStatus,
-          user_list: message.data.user_list
-        }]
+
+        taskData.value = [
+          {
+            script_id: 'default-script',
+            name: '新 MAA 脚本', // 使用你提供的脚本名称
+            status: scriptStatus,
+            user_list: message.data.user_list,
+          },
+        ]
       } else {
         // 更新现有脚本的用户列表
         // 假设所有用户都属于第一个脚本（根据你的使用场景）
@@ -102,79 +102,88 @@ const handleWSMessage = (message: WSMessage) => {
           }
         }
       }
-      
+
       console.log('更新后的 taskData:', taskData.value)
-      
+
       // 更新展开状态
       if (taskTreeRef.value) {
         taskTreeRef.value.updateExpandedScripts()
       }
     }
-    
+
     // 处理 task_list 数据
     else if (message.data?.task_list && Array.isArray(message.data.task_list)) {
       console.log('更新任务列表 (task_list):', message.data.task_list)
-      
+
       // 如果已有任务数据，尝试合并状态更新而不是完全替换
       if (taskData.value && taskData.value.length > 0) {
         // 创建一个更新后的任务数据副本
         const updatedTaskData = taskData.value.map(existingTask => {
-          const matchingTask = message.data?.task_list?.find((task: any) => 
-            task.name === existingTask.name || 
-            task.id === existingTask.script_id ||
-            task.script_id === existingTask.script_id
+          const matchingTask = message.data?.task_list?.find(
+            (task: any) =>
+              task.name === existingTask.name ||
+              task.id === existingTask.script_id ||
+              task.script_id === existingTask.script_id
           )
-          
+
           if (matchingTask) {
             return {
               ...existingTask,
               status: matchingTask.status || existingTask.status,
               // 如果 task_list 包含 user_list，则使用新的用户列表，否则保持现有的
-              user_list: matchingTask.user_list ? [...matchingTask.user_list] : existingTask.user_list,
+              user_list: matchingTask.user_list
+                ? [...matchingTask.user_list]
+                : existingTask.user_list,
             }
           }
           return existingTask
         })
-        
+
         // 添加新的任务（不在现有数据中的）
-        const newTasks = (message.data?.task_list || []).filter((task: any) => 
-          !taskData.value.some(existingTask => 
-            task.name === existingTask.name || 
-            task.id === existingTask.script_id ||
-            task.script_id === existingTask.script_id
-          )
+        const newTasks = (message.data?.task_list || []).filter(
+          (task: any) =>
+            !taskData.value.some(
+              existingTask =>
+                task.name === existingTask.name ||
+                task.id === existingTask.script_id ||
+                task.script_id === existingTask.script_id
+            )
         )
-        
+
         if (newTasks.length > 0) {
           const convertedNewTasks = newTasks.map((task: any) => ({
-            script_id: task.id || task.script_id || `task_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            script_id:
+              task.id ||
+              task.script_id ||
+              `task_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
             name: task.name || '未知任务',
             status: task.status || '等待',
-            user_list: task.user_list ? [...task.user_list] : [] // 使用后端提供的 user_list
+            user_list: task.user_list ? [...task.user_list] : [], // 使用后端提供的 user_list
           }))
           updatedTaskData.push(...convertedNewTasks)
         }
-        
+
         taskData.value = updatedTaskData
       } else {
         // 如果没有现有数据，直接转换
         taskData.value = (message.data?.task_list || []).map((task: any) => ({
-          script_id: task.id || task.script_id || `task_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          script_id:
+            task.id ||
+            task.script_id ||
+            `task_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
           name: task.name || '未知任务',
           status: task.status || '等待',
-          user_list: task.user_list ? [...task.user_list] : [] // 使用后端提供的 user_list
+          user_list: task.user_list ? [...task.user_list] : [], // 使用后端提供的 user_list
         }))
       }
-      
+
       console.log('处理后的 taskData:', taskData.value)
-      
+
       // 更新展开状态
       if (taskTreeRef.value) {
         taskTreeRef.value.updateExpandedScripts()
       }
-    }
-    
-    else {
+    } else {
       console.log('收到未识别格式的更新数据:', message.data)
     }
   }
@@ -184,7 +193,7 @@ const handleWSMessage = (message: WSMessage) => {
 defineExpose({
   handleWSMessage,
   expandAll: () => taskTreeRef.value?.expandAll(),
-  collapseAll: () => taskTreeRef.value?.collapseAll()
+  collapseAll: () => taskTreeRef.value?.collapseAll(),
 })
 </script>
 
@@ -230,29 +239,23 @@ defineExpose({
   height: 100%;
 }
 
-
-
 /* 暗色模式适配 */
 @media (prefers-color-scheme: dark) {
   .overview-panel {
     background: var(--ant-color-bg-container, #1f1f1f);
     border: 1px solid var(--ant-color-border, #424242);
   }
-  
+
   .section-header {
     border-bottom: 1px solid var(--ant-color-border, #424242);
   }
-  
-
-
-
 }
 
 @media (max-width: 768px) {
   .overview-panel {
     border-radius: 8px;
   }
-  
+
   .section-header {
     padding: 12px;
   }

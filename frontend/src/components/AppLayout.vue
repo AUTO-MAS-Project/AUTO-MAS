@@ -10,17 +10,17 @@
     >
       <div class="sider-content">
         <a-menu
+          v-model:selected-keys="selectedKeys"
           mode="inline"
           :theme="isDark ? 'dark' : 'light'"
-          v-model:selectedKeys="selectedKeys"
           :items="mainMenuItems"
           @click="onMenuClick"
         />
         <a-menu
+          v-model:selected-keys="selectedKeys"
           mode="inline"
           :theme="isDark ? 'dark' : 'light'"
           class="bottom-menu"
-          v-model:selectedKeys="selectedKeys"
           :items="bottomMenuItems"
           @click="onMenuClick"
         />

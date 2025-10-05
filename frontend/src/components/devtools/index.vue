@@ -22,9 +22,9 @@
         <button
           v-for="tab in tabs"
           :key="tab.key"
-          @click="setActiveTab(tab.key)"
           class="tab-btn"
           :class="{ active: activeTab === tab.key }"
+          @click="setActiveTab(tab.key)"
         >
           {{ tab.icon }} {{ tab.title }}
         </button>
@@ -57,9 +57,9 @@ const tabs = [
 
 // 开发环境检测
 const isDev = ref(
-  process.env.NODE_ENV === 'development' || 
-  (import.meta as any).env?.DEV === true ||
-  window.location.hostname === 'localhost'
+  process.env.NODE_ENV === 'development' ||
+    (import.meta as any).env?.DEV === true ||
+    window.location.hostname === 'localhost'
 )
 
 // 面板状态

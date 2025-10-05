@@ -26,7 +26,8 @@ function getAppVersion(appRoot: string): string {
     console.log('📋 强制复制文件到根目录...')
     try {
       const appVersion = app.getVersion()
-      if (appVersion && appVersion !== '1.0.0') { // 避免使用默认版本
+      if (appVersion && appVersion !== '1.0.0') {
+        // 避免使用默认版本
         console.log(`✅ 从 app.getVersion() 获取版本号: ${appVersion}`)
         return appVersion
       }
@@ -159,7 +160,7 @@ async function cleanOldLocalBranches(
 
   try {
     // 1. 获取所有本地分支
-    const localBranches = await new Promise<string[]>((resolve) => {
+    const localBranches = await new Promise<string[]>(resolve => {
       const proc = spawn(gitPath, ['branch', '--format=%(refname:short)'], {
         stdio: 'pipe',
         env: gitEnv,
@@ -208,7 +209,7 @@ async function cleanOldLocalBranches(
     // 4. 删除老分支
     for (const branch of branchesToDelete) {
       console.log(`🗑️ 删除分支: ${branch}`)
-      await new Promise<void>((resolve) => {
+      await new Promise<void>(resolve => {
         const proc = spawn(gitPath, ['branch', '-D', branch], {
           stdio: 'pipe',
           env: gitEnv,
@@ -299,7 +300,9 @@ async function copySelectedFiles(sourcePath: string, targetPath: string, branchN
     }
   }
 
-  console.log(`✅ 强制复制操作完成 - 成功: ${successCount}, 跳过: ${skipCount}, 总计: ${itemsToCopy.length}`)
+  console.log(
+    `✅ 强制复制操作完成 - 成功: ${successCount}, 跳过: ${skipCount}, 总计: ${itemsToCopy.length}`
+  )
 }
 
 // 获取Git环境变量配置
@@ -372,28 +375,32 @@ export async function checkRepoStatus(appRoot: string): Promise<{
 
     // 获取当前分支和commit信息
     const [currentBranch, currentCommit] = await Promise.all([
-      new Promise<string>((resolve) => {
+      new Promise<string>(resolve => {
         const proc = spawn(gitPath, ['branch', '--show-current'], {
           stdio: 'pipe',
           env: gitEnv,
           cwd: repoPath,
         })
         let output = ''
-        proc.stdout?.on('data', data => { output += data.toString() })
+        proc.stdout?.on('data', data => {
+          output += data.toString()
+        })
         proc.on('close', () => resolve(output.trim() || 'unknown'))
         proc.on('error', () => resolve('unknown'))
       }),
-      new Promise<string>((resolve) => {
+      new Promise<string>(resolve => {
         const proc = spawn(gitPath, ['rev-parse', 'HEAD'], {
           stdio: 'pipe',
           env: gitEnv,
           cwd: repoPath,
         })
         let output = ''
-        proc.stdout?.on('data', data => { output += data.toString() })
+        proc.stdout?.on('data', data => {
+          output += data.toString()
+        })
         proc.on('close', () => resolve(output.trim() || 'unknown'))
         proc.on('error', () => resolve('unknown'))
-      })
+      }),
     ])
 
     console.log(`repo状态 - 分支: ${currentBranch}, commit: ${currentCommit.substring(0, 8)}`)
@@ -402,14 +409,14 @@ export async function checkRepoStatus(appRoot: string): Promise<{
       exists: true,
       isGitRepo: true,
       currentBranch,
-      currentCommit: currentCommit.substring(0, 8)
+      currentCommit: currentCommit.substring(0, 8),
     }
   } catch (error) {
     console.error('检查repo状态失败:', error)
     return {
       exists: false,
       isGitRepo: false,
-      error: error instanceof Error ? error.message : String(error)
+      error: error instanceof Error ? error.message : String(error),
     }
   }
 }
@@ -455,7 +462,7 @@ export async function getRepoInfo(appRoot: string): Promise<{
     const info = {
       depotExists: fs.existsSync(repoPath), // 为了对外接口兼容，保留这个字段
       repoExists: fs.existsSync(repoPath),
-      isGitRepo: fs.existsSync(path.join(repoPath, '.git'))
+      isGitRepo: fs.existsSync(path.join(repoPath, '.git')),
     }
 
     if (info.isGitRepo) {
@@ -465,33 +472,45 @@ export async function getRepoInfo(appRoot: string): Promise<{
 
         // 获取详细信息
         const [branch, commit, remoteUrl] = await Promise.all([
-          new Promise<string>((resolve) => {
+          new Promise<string>(resolve => {
             const proc = spawn(gitPath, ['branch', '--show-current'], {
-              stdio: 'pipe', env: gitEnv, cwd: repoPath
+              stdio: 'pipe',
+              env: gitEnv,
+              cwd: repoPath,
             })
             let output = ''
-            proc.stdout?.on('data', data => { output += data.toString() })
+            proc.stdout?.on('data', data => {
+              output += data.toString()
+            })
             proc.on('close', () => resolve(output.trim() || 'unknown'))
             proc.on('error', () => resolve('unknown'))
           }),
-          new Promise<string>((resolve) => {
+          new Promise<string>(resolve => {
             const proc = spawn(gitPath, ['rev-parse', 'HEAD'], {
-              stdio: 'pipe', env: gitEnv, cwd: repoPath
+              stdio: 'pipe',
+              env: gitEnv,
+              cwd: repoPath,
             })
             let output = ''
-            proc.stdout?.on('data', data => { output += data.toString() })
+            proc.stdout?.on('data', data => {
+              output += data.toString()
+            })
             proc.on('close', () => resolve(output.trim().substring(0, 8) || 'unknown'))
             proc.on('error', () => resolve('unknown'))
           }),
-          new Promise<string>((resolve) => {
+          new Promise<string>(resolve => {
             const proc = spawn(gitPath, ['remote', 'get-url', 'origin'], {
-              stdio: 'pipe', env: gitEnv, cwd: repoPath
+              stdio: 'pipe',
+              env: gitEnv,
+              cwd: repoPath,
             })
             let output = ''
-            proc.stdout?.on('data', data => { output += data.toString() })
+            proc.stdout?.on('data', data => {
+              output += data.toString()
+            })
             proc.on('close', () => resolve(output.trim() || 'unknown'))
             proc.on('error', () => resolve('unknown'))
-          })
+          }),
         ])
 
         // 获取最后更新时间（.git/FETCH_HEAD文件的修改时间）
@@ -513,8 +532,8 @@ export async function getRepoInfo(appRoot: string): Promise<{
             currentBranch: branch,
             currentCommit: commit,
             remoteUrl,
-            lastUpdate
-          }
+            lastUpdate,
+          },
         }
       }
     }
@@ -745,14 +764,15 @@ export async function cloneBackend(
       }
 
       // 1. 动态配置git仓库fetch范围（仅目标分支和默认分支）
-      const branchesToFetch = targetBranch === DEFAULT_BRANCH
-        ? [targetBranch]
-        : [targetBranch, DEFAULT_BRANCH]
+      const branchesToFetch =
+        targetBranch === DEFAULT_BRANCH ? [targetBranch] : [targetBranch, DEFAULT_BRANCH]
 
       console.log(`🔧 配置git仓库fetch范围: ${branchesToFetch.join(', ')}...`)
 
       // 构建 fetch refspec
-      const refspecs = branchesToFetch.map(branch => `+refs/heads/${branch}:refs/remotes/origin/${branch}`)
+      const refspecs = branchesToFetch.map(
+        branch => `+refs/heads/${branch}:refs/remotes/origin/${branch}`
+      )
       const refspecString = refspecs.join(' ')
 
       await new Promise<void>((resolve, reject) => {
@@ -781,7 +801,7 @@ export async function cloneBackend(
       // 如果需要多个分支，添加额外的refspec
       if (branchesToFetch.length > 1) {
         for (let i = 1; i < refspecs.length; i++) {
-          await new Promise<void>((resolve) => {
+          await new Promise<void>(resolve => {
             const proc = spawn(gitPath, ['config', '--add', 'remote.origin.fetch', refspecs[i]], {
               stdio: 'pipe',
               env: gitEnv,
@@ -805,14 +825,18 @@ export async function cloneBackend(
       // 逐个获取指定分支
       for (const branch of branchesToFetch) {
         console.log(`📥 获取分支: ${branch}`)
-        await new Promise<void>((resolve) => {
+        await new Promise<void>(resolve => {
           const proc = spawn(gitPath, ['fetch', 'origin', branch, '--force'], {
             stdio: 'pipe',
             env: gitEnv,
             cwd: repoPath,
           })
-          proc.stdout?.on('data', d => console.log(`git fetch ${branch} stdout:`, d.toString().trim()))
-          proc.stderr?.on('data', d => console.log(`git fetch ${branch} stderr:`, d.toString().trim()))
+          proc.stdout?.on('data', d =>
+            console.log(`git fetch ${branch} stdout:`, d.toString().trim())
+          )
+          proc.stderr?.on('data', d =>
+            console.log(`git fetch ${branch} stderr:`, d.toString().trim())
+          )
           proc.on('close', code => {
             console.log(`git fetch ${branch} 退出码: ${code}`)
             if (code === 0) {
@@ -860,13 +884,21 @@ export async function cloneBackend(
       // 4. 设置上游分支跟踪
       console.log(`🔗 设置分支上游跟踪: ${targetBranch} -> origin/${targetBranch}`)
       await new Promise<void>((resolve, reject) => {
-        const proc = spawn(gitPath, ['branch', '--set-upstream-to', `origin/${targetBranch}`, targetBranch], {
-          stdio: 'pipe',
-          env: gitEnv,
-          cwd: repoPath,
-        })
-        proc.stdout?.on('data', d => console.log('git branch --set-upstream stdout:', d.toString().trim()))
-        proc.stderr?.on('data', d => console.log('git branch --set-upstream stderr:', d.toString().trim()))
+        const proc = spawn(
+          gitPath,
+          ['branch', '--set-upstream-to', `origin/${targetBranch}`, targetBranch],
+          {
+            stdio: 'pipe',
+            env: gitEnv,
+            cwd: repoPath,
+          }
+        )
+        proc.stdout?.on('data', d =>
+          console.log('git branch --set-upstream stdout:', d.toString().trim())
+        )
+        proc.stderr?.on('data', d =>
+          console.log('git branch --set-upstream stderr:', d.toString().trim())
+        )
         proc.on('close', code => {
           console.log(`git branch --set-upstream 退出码: ${code}`)
           if (code === 0) {
@@ -994,15 +1026,21 @@ export async function cloneBackend(
       // 克隆后配置额外分支获取（如果需要）
       if (targetBranch !== DEFAULT_BRANCH) {
         console.log(`🔧 添加默认分支 ${DEFAULT_BRANCH} 的fetch配置...`)
-        await new Promise<void>((resolve) => {
-          const proc = spawn(gitPath, [
-            'config', '--add', 'remote.origin.fetch',
-            `+refs/heads/${DEFAULT_BRANCH}:refs/remotes/origin/${DEFAULT_BRANCH}`
-          ], {
-            stdio: 'pipe',
-            env: gitEnv,
-            cwd: repoPath,
-          })
+        await new Promise<void>(resolve => {
+          const proc = spawn(
+            gitPath,
+            [
+              'config',
+              '--add',
+              'remote.origin.fetch',
+              `+refs/heads/${DEFAULT_BRANCH}:refs/remotes/origin/${DEFAULT_BRANCH}`,
+            ],
+            {
+              stdio: 'pipe',
+              env: gitEnv,
+              cwd: repoPath,
+            }
+          )
           proc.on('close', code => {
             console.log(`添加默认分支配置退出码: ${code}`)
             if (code === 0) {
@@ -1020,14 +1058,18 @@ export async function cloneBackend(
 
         // 获取默认分支
         console.log(`📥 获取默认分支 ${DEFAULT_BRANCH}...`)
-        await new Promise<void>((resolve) => {
+        await new Promise<void>(resolve => {
           const proc = spawn(gitPath, ['fetch', 'origin', DEFAULT_BRANCH], {
             stdio: 'pipe',
             env: gitEnv,
             cwd: repoPath,
           })
-          proc.stdout?.on('data', d => console.log(`fetch ${DEFAULT_BRANCH} stdout:`, d.toString().trim()))
-          proc.stderr?.on('data', d => console.log(`fetch ${DEFAULT_BRANCH} stderr:`, d.toString().trim()))
+          proc.stdout?.on('data', d =>
+            console.log(`fetch ${DEFAULT_BRANCH} stdout:`, d.toString().trim())
+          )
+          proc.stderr?.on('data', d =>
+            console.log(`fetch ${DEFAULT_BRANCH} stderr:`, d.toString().trim())
+          )
           proc.on('close', code => {
             console.log(`fetch ${DEFAULT_BRANCH} 退出码: ${code}`)
             if (code === 0) {
