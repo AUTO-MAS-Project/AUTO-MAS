@@ -77,6 +77,11 @@ export default [
 
   // -------- 全局规则调整 ----------
   {
+    // 允许使用行内配置注释（如 eslint-disable）
+    linterOptions: {
+      noInlineConfig: false,
+      reportUnusedDisableDirectives: 'warn',
+    },
     rules: {
       // 关掉换行符报错
       'linebreak-style': 'off',
@@ -103,6 +108,8 @@ export default [
       'node_modules/**',
       '**/*.d.ts',
       '**/*.js',
+      // 忽略自动生成的 API 文件
+      'src/api/*',
     ],
   },
 ]
