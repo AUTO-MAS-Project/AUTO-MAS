@@ -4,6 +4,18 @@
 /* eslint-disable */
 import type { ComboBoxOut } from '../models/ComboBoxOut';
 import type { DispatchIn } from '../models/DispatchIn';
+import type { EmulatorDeleteIn } from '../models/EmulatorDeleteIn';
+import type { EmulatorDevicesIn } from '../models/EmulatorDevicesIn';
+import type { EmulatorDevicesOut } from '../models/EmulatorDevicesOut';
+import type { EmulatorGetOut } from '../models/EmulatorGetOut';
+import type { EmulatorOutBase } from '../models/EmulatorOutBase';
+import type { EmulatorSearchOut } from '../models/EmulatorSearchOut';
+import type { EmulatorStartIn } from '../models/EmulatorStartIn';
+import type { EmulatorStartOut } from '../models/EmulatorStartOut';
+import type { EmulatorStatusIn } from '../models/EmulatorStatusIn';
+import type { EmulatorStatusOut } from '../models/EmulatorStatusOut';
+import type { EmulatorStopIn } from '../models/EmulatorStopIn';
+import type { EmulatorUpdateIn } from '../models/EmulatorUpdateIn';
 import type { GetStageIn } from '../models/GetStageIn';
 import type { HistoryDataGetIn } from '../models/HistoryDataGetIn';
 import type { HistoryDataGetOut } from '../models/HistoryDataGetOut';
@@ -64,6 +76,13 @@ import type { UserReorderIn } from '../models/UserReorderIn';
 import type { UserSetIn } from '../models/UserSetIn';
 import type { UserUpdateIn } from '../models/UserUpdateIn';
 import type { VersionOut } from '../models/VersionOut';
+import type { WebhookCreateOut } from '../models/WebhookCreateOut';
+import type { WebhookDeleteIn } from '../models/WebhookDeleteIn';
+import type { WebhookGetIn } from '../models/WebhookGetIn';
+import type { WebhookGetOut } from '../models/WebhookGetOut';
+import type { WebhookReorderIn } from '../models/WebhookReorderIn';
+import type { WebhookTestIn } from '../models/WebhookTestIn';
+import type { WebhookUpdateIn } from '../models/WebhookUpdateIn';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
@@ -212,7 +231,7 @@ export class Service {
      * @returns ScriptGetOut Successful Response
      * @throws ApiError
      */
-    public static getScriptsApiScriptsGetPost(
+    public static getScriptApiScriptsGetPost(
         requestBody: ScriptGetIn,
     ): CancelablePromise<ScriptGetOut> {
         return __request(OpenAPI, {
@@ -995,18 +1014,17 @@ export class Service {
         });
     }
     /**
-     * 创建自定义Webhook
-     * 创建自定义Webhook
+     * 查询 webhook 配置
      * @param requestBody
-     * @returns OutBase Successful Response
+     * @returns WebhookGetOut Successful Response
      * @throws ApiError
      */
-    public static createWebhookApiSettingWebhookCreatePost(
-        requestBody: Record<string, any>,
-    ): CancelablePromise<OutBase> {
+    public static getWebhookApiSettingWebhookGetPost(
+        requestBody: WebhookGetIn,
+    ): CancelablePromise<WebhookGetOut> {
         return __request(OpenAPI, {
             method: 'POST',
-            url: '/api/setting/webhook/create',
+            url: '/api/setting/webhook/get',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -1015,14 +1033,24 @@ export class Service {
         });
     }
     /**
-     * 更新自定义Webhook
-     * 更新自定义Webhook
+     * 添加定时项
+     * @returns WebhookCreateOut Successful Response
+     * @throws ApiError
+     */
+    public static addWebhookApiSettingWebhookAddPost(): CancelablePromise<WebhookCreateOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/setting/webhook/add',
+        });
+    }
+    /**
+     * 更新定时项
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
      */
     public static updateWebhookApiSettingWebhookUpdatePost(
-        requestBody: Record<string, any>,
+        requestBody: WebhookUpdateIn,
     ): CancelablePromise<OutBase> {
         return __request(OpenAPI, {
             method: 'POST',
@@ -1035,14 +1063,13 @@ export class Service {
         });
     }
     /**
-     * 删除自定义Webhook
-     * 删除自定义Webhook
+     * 删除定时项
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
      */
     public static deleteWebhookApiSettingWebhookDeletePost(
-        requestBody: Record<string, any>,
+        requestBody: WebhookDeleteIn,
     ): CancelablePromise<OutBase> {
         return __request(OpenAPI, {
             method: 'POST',
@@ -1055,18 +1082,193 @@ export class Service {
         });
     }
     /**
-     * 测试自定义Webhook
+     * 重新排序定时项
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static reorderWebhookApiSettingWebhookOrderPost(
+        requestBody: WebhookReorderIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/setting/webhook/order',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 测试Webhook配置
      * 测试自定义Webhook
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
      */
     public static testWebhookApiSettingWebhookTestPost(
-        requestBody: Record<string, any>,
+        requestBody: WebhookTestIn,
     ): CancelablePromise<OutBase> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/setting/webhook/test',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 查询全部模拟器配置
+     * 查询模拟器配置
+     * @returns EmulatorGetOut Successful Response
+     * @throws ApiError
+     */
+    public static getEmulatorsApiSettingEmulatorGetPost(): CancelablePromise<EmulatorGetOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/setting/emulator/get',
+        });
+    }
+    /**
+     * 添加模拟器配置
+     * 添加新的模拟器配置
+     * @returns EmulatorOutBase Successful Response
+     * @throws ApiError
+     */
+    public static addEmulatorApiSettingEmulatorAddPost(): CancelablePromise<EmulatorOutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/setting/emulator/add',
+        });
+    }
+    /**
+     * 更新模拟器配置
+     * 更新模拟器配置
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static updateEmulatorApiSettingEmulatorUpdatePost(
+        requestBody: EmulatorUpdateIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/setting/emulator/update',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 删除模拟器配置
+     * 删除模拟器配置
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static deleteEmulatorApiSettingEmulatorDeletePost(
+        requestBody: EmulatorDeleteIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/setting/emulator/delete',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取模拟器设备信息
+     * 获取指定模拟器下的所有设备信息
+     * @param requestBody
+     * @returns EmulatorDevicesOut Successful Response
+     * @throws ApiError
+     */
+    public static getEmulatorDevicesApiSettingEmulatorDevicesPost(
+        requestBody: EmulatorDevicesIn,
+    ): CancelablePromise<EmulatorDevicesOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/setting/emulator/devices',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 自动搜索模拟器
+     * 自动搜索系统中安装的模拟器
+     * @returns EmulatorSearchOut Successful Response
+     * @throws ApiError
+     */
+    public static searchEmulatorsApiSettingEmulatorSearchPost(): CancelablePromise<EmulatorSearchOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/setting/emulator/search',
+        });
+    }
+    /**
+     * 启动指定模拟器
+     * 根据UUID和索引启动指定模拟器
+     * @param requestBody
+     * @returns EmulatorStartOut Successful Response
+     * @throws ApiError
+     */
+    public static startEmulatorApiSettingEmulatorStartPost(
+        requestBody: EmulatorStartIn,
+    ): CancelablePromise<EmulatorStartOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/setting/emulator/start',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 关闭指定模拟器
+     * 根据UUID和索引关闭指定模拟器
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static stopEmulatorApiSettingEmulatorStopPost(
+        requestBody: EmulatorStopIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/setting/emulator/stop',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取模拟器状态
+     * 获取指定UUID的模拟器状态，或获取所有模拟器状态（不传UUID时）
+     * @param requestBody
+     * @returns EmulatorStatusOut Successful Response
+     * @throws ApiError
+     */
+    public static getEmulatorStatusApiApiSettingEmulatorStatusPost(
+        requestBody: EmulatorStatusIn,
+    ): CancelablePromise<EmulatorStatusOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/setting/emulator/status',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

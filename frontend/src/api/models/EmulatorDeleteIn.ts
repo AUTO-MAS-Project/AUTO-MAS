@@ -7,8 +7,8 @@
  */
 export type EmulatorDeleteIn = {
     /**
-     * 模拟器ID
+     * 模拟器UUID
      */
-    emulatorId: string;
+    emulator_uuid: string;
 };
 

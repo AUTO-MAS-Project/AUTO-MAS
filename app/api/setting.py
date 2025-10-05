@@ -42,6 +42,8 @@ from app.models.schema import (
     WebhookDeleteIn,
     WebhookReorderIn,
     WebhookTestIn,
+    EmulatorGetOut,
+    EmulatorIndexItem,
     EmulatorOutBase,
     EmulatorUpdateIn,
     EmulatorDeleteIn,
@@ -52,6 +54,8 @@ from app.models.schema import (
     EmulatorStartIn,
     EmulatorStartOut,
     EmulatorStopIn,
+    EmulatorStatusIn,
+    EmulatorStatusOut,
 )
 from app.models.config import Webhook as WebhookConfig
 
@@ -227,20 +231,37 @@ async def test_webhook(webhook: WebhookTestIn = Body(...)) -> OutBase:
 @router.post(
     "/emulator/get",
     summary="查询全部模拟器配置",
-    response_model=OutBase,
+    response_model=EmulatorGetOut,
     status_code=200,
 )
-async def get_emulators() -> OutBase:
+async def get_emulators() -> EmulatorGetOut:
     """查询模拟器配置"""
 
     try:
-        data = await emulator_manager.config.toDict()
-        return OutBase(message=str(data))
+        data_dict = await emulator_manager.config.toDict()
+
+        # 从字典中移除 'instances' 键（它是列表类型，不是配置数据）
+        instances_list = data_dict.pop("instances", [])
+
+        # 构建索引列表（从instances或剩余的键中获取）
+        if instances_list:
+            index = [
+                EmulatorIndexItem(uuid=str(item["uid"])) for item in instances_list
+            ]
+        else:
+            index = [EmulatorIndexItem(uuid=str(uuid)) for uuid in data_dict.keys()]
+
+        # 将UUID键转换为字符串
+        data = {str(uuid): config for uuid, config in data_dict.items()}  # type: ignore
+
+        return EmulatorGetOut(index=index, data=data)
     except Exception as e:
-        return OutBase(
+        return EmulatorGetOut(
             code=500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
+            index=[],
+            data={},
         )
 
 
@@ -499,4 +520,75 @@ async def stop_emulator(emulator: EmulatorStopIn = Body(...)) -> OutBase:
     except Exception as e:
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+        )
+
+
+@router.post(
+    "/emulator/status",
+    summary="获取模拟器状态",
+    response_model=EmulatorStatusOut,
+    status_code=200,
+)
+async def get_emulator_status_api(
+    emulator: EmulatorStatusIn = Body(...),
+) -> EmulatorStatusOut:
+    """获取指定UUID的模拟器状态，或获取所有模拟器状态（不传UUID时）"""
+
+    try:
+        # 如果没有提供UUID，获取所有模拟器状态
+        if emulator.emulator_uuid is None or emulator.emulator_uuid == "":
+            success, result = await emulator_manager.get_all_emulator_status()
+
+            if success:
+                return EmulatorStatusOut(
+                    message="成功获取所有模拟器状态",
+                    status_data=result,  # type: ignore
+                )
+            else:
+                return EmulatorStatusOut(
+                    code=500,
+                    status="error",
+                    message=str(result),
+                    status_data=result,  # type: ignore
+                )
+
+        # 验证UUID格式
+        try:
+            emulator_uuid = uuid_module.UUID(emulator.emulator_uuid)
+        except ValueError:
+            return EmulatorStatusOut(
+                code=400,
+                status="error",
+                message=f"无效的UUID格式: {emulator.emulator_uuid}",
+                status_data={},
+            )
+
+        # 检查模拟器配置是否存在
+        if emulator_uuid not in emulator_manager.config:
+            return EmulatorStatusOut(
+                code=404,
+                status="error",
+                message=f"未找到UUID为 {emulator.emulator_uuid} 的模拟器配置",
+                status_data={},
+            )
+
+        # 获取指定模拟器状态
+        success, result = await emulator_manager.get_emulator_status(str(emulator_uuid))
+
+        if success:
+            return EmulatorStatusOut(
+                message=f"成功获取模拟器 {emulator.emulator_uuid} 的状态",
+                status_data=result,  # type: ignore
+            )
+        else:
+            return EmulatorStatusOut(
+                code=500, status="error", message=str(result), status_data={}
+            )
+
+    except Exception as e:
+        return EmulatorStatusOut(
+            code=500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            status_data={},
         )

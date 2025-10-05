@@ -39,6 +39,7 @@
 import {
   CalendarOutlined,
   ControlOutlined,
+  DatabaseOutlined,
   FileTextOutlined,
   HistoryOutlined,
   HomeOutlined,
@@ -65,6 +66,7 @@ const mainMenuItems = [
   { key: '/home', label: '主页', icon: icon(HomeOutlined) },
   { key: '/scripts', label: '脚本管理', icon: icon(FileTextOutlined) },
   { key: '/plans', label: '计划管理', icon: icon(CalendarOutlined) },
+  { key: '/emulators', label: '模拟器管理', icon: icon(DatabaseOutlined) },
   { key: '/queue', label: '调度队列', icon: icon(UnorderedListOutlined) },
   { key: '/scheduler', label: '调度中心', icon: icon(ControlOutlined) },
 ]
