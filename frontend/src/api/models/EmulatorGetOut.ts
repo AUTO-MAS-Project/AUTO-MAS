@@ -26,6 +26,6 @@ export type EmulatorGetOut = {
     /**
      * 模拟器数据字典
      */
-    data?: Record<string, Record<string, any>>;
+    data?: Record<string, any>;
 };
 
