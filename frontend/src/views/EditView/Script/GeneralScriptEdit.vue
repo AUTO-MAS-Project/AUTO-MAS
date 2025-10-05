@@ -33,7 +33,7 @@
   <div class="script-edit-content">
     <a-card title="通用脚本配置" :loading="pageLoading" class="config-card">
       <template #extra>
-        <a-tag color="green" class="type-tag"> General</a-tag>
+        <a-tag color="green" class="type-tag"> General </a-tag>
       </template>
 
       <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
@@ -662,14 +662,14 @@
 </template>
 
 <script setup lang="ts">
-import { nextTick, onMounted, reactive, ref, watch } from 'vue'
+import { onMounted, reactive, ref, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
 import { message } from 'ant-design-vue'
-import type { GeneralScriptConfig, ScriptType } from '@/types/script.ts'
-import { useScriptApi } from '@/composables/useScriptApi.ts'
-import type { ScriptUploadIn } from '@/api'
-import { Service } from '@/api'
+import type { GeneralScriptConfig, ScriptType } from '../../../types/script.ts'
+import { useScriptApi } from '../../../composables/useScriptApi.ts'
+import { Service } from '../../../api'
+import type { ScriptUploadIn } from '../../../api'
 import {
   ArrowLeftOutlined,
   CloudUploadOutlined,

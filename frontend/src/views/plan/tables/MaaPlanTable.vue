@@ -88,8 +88,8 @@
           <template v-if="column.key === 'globalControl'">
             <a-space>
               <a-button ghost size="small" type="primary" @click="enableAllStages(record.key)"
-                >开
-              </a-button>
+                >开</a-button
+              >
               <a-button size="small" danger @click="disableAllStages(record.key)">关</a-button>
             </a-space>
           </template>
@@ -148,12 +148,13 @@
 
 <script setup lang="ts">
 import { ref, watch } from 'vue'
+import { message } from 'ant-design-vue'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import {
-  STAGE_DAILY_INFO,
-  TIME_KEYS,
-  type TimeKey,
   usePlanDataCoordinator,
+  TIME_KEYS,
+  STAGE_DAILY_INFO,
+  type TimeKey,
 } from '@/composables/usePlanDataCoordinator'
 
 interface Props {
