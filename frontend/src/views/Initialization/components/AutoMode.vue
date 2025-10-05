@@ -69,11 +69,11 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
-import { getConfig } from '@/utils/config'
-import { mirrorManager } from '@/utils/mirrorManager'
-import { useUpdateChecker } from '@/composables/useUpdateChecker'
-import { connectAfterBackendStart } from '@/composables/useWebSocket'
-import { forceEnterApp } from '@/utils/appEntry'
+import { getConfig } from '@/utils/config.ts'
+import { mirrorManager } from '@/utils/mirrorManager.ts'
+import { useUpdateChecker } from '@/composables/useUpdateChecker.ts'
+import { connectAfterBackendStart } from '@/composables/useWebSocket.ts'
+import { forceEnterApp } from '@/utils/appEntry.ts'
 import { message } from 'ant-design-vue'
 
 // Props

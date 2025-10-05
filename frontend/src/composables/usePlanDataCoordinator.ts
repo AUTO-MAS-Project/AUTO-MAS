@@ -46,6 +46,7 @@ export interface PlanDataState {
     custom_stage_1: string
     custom_stage_2: string
     custom_stage_3: string
+    custom_stage_4: string
   }
 }
 
@@ -83,51 +84,12 @@ export function usePlanDataCoordinator() {
   // 当前计划表ID
   const currentPlanId = ref<string>('default')
   
-  // localStorage 相关函数
-  const CUSTOM_STAGE_KEY_PREFIX = 'maa_custom_stage_definitions_'
-  
-  const getStorageKey = (): string => {
-    return `${CUSTOM_STAGE_KEY_PREFIX}${currentPlanId.value}`
-  }
-  
   const getDefaultCustomStageDefinitions = () => ({
     custom_stage_1: '',
     custom_stage_2: '',
     custom_stage_3: '',
+    custom_stage_4: '',
   })
-
-  const loadCustomStageDefinitionsFromStorage = () => {
-    try {
-      const storageKey = getStorageKey()
-      const stored = localStorage.getItem(storageKey)
-      if (stored) {
-        const parsed = JSON.parse(stored)
-        // 确保包含所有必需的键
-        return {
-          custom_stage_1: parsed.custom_stage_1 || '',
-          custom_stage_2: parsed.custom_stage_2 || '',
-          custom_stage_3: parsed.custom_stage_3 || '',
-        }
-      }
-    } catch (error) {
-      console.error('[自定义关卡] localStorage 恢复失败:', error)
-    }
-    
-    return getDefaultCustomStageDefinitions()
-  }
-  
-  const saveCustomStageDefinitionsToStorage = (definitions: Record<string, string>) => {
-    try {
-      const storageKey = getStorageKey()
-      localStorage.setItem(storageKey, JSON.stringify(definitions))
-      // 只在开发环境输出详细日志
-      if (process.env.NODE_ENV === 'development') {
-        console.log(`[自定义关卡] 保存到 localStorage (${currentPlanId.value})`)
-      }
-    } catch (error) {
-      console.error('[自定义关卡] localStorage 保存失败:', error)
-    }
-  }
 
   // 单一数据源
   const planData = ref<PlanDataState>({
@@ -137,7 +99,7 @@ export function usePlanDataCoordinator() {
       type: 'MaaPlanConfig'
     },
     timeConfigs: {} as Record<TimeKey, any>,
-    customStageDefinitions: loadCustomStageDefinitionsFromStorage()
+    customStageDefinitions: getDefaultCustomStageDefinitions()
   })
 
   // 初始化时间配置
@@ -161,7 +123,7 @@ export function usePlanDataCoordinator() {
   initializeTimeConfigs()
 
   // 从API数据转换为内部数据结构
-  const fromApiData = (apiData: MaaPlanConfig) => {
+  const fromApiData = (apiData: MaaPlanConfig, forceUpdateCustomStages = false) => {
     // 更新基础信息
     if (apiData.Info) {
       planData.value.info.name = apiData.Info.Name || ''
@@ -189,35 +151,67 @@ export function usePlanDataCoordinator() {
       }
     })
 
-    // 更新自定义关卡定义
-    const customStages = (apiData.ALL as any)?.customStageDefinitions
-    if (customStages && typeof customStages === 'object') {
-      // 只在开发环境输出详细日志
-      if (process.env.NODE_ENV === 'development') {
-        console.log(`[自定义关卡] 从后端数据恢复 (${currentPlanId.value})`)
+    // 从所有时间配置中推断自定义关卡定义
+    const inferredStages = new Set<string>()
+    
+    TIME_KEYS.forEach(timeKey => {
+      const timeData = apiData[timeKey] as MaaPlanConfig_Item
+      if (timeData) {
+        // 检查所有关卡字段
+        const stageFields = ['Stage', 'Stage_1', 'Stage_2', 'Stage_3', 'Stage_Remain']
+        stageFields.forEach(field => {
+          const stageValue = timeData[field as keyof MaaPlanConfig_Item] as string
+          if (stageValue && stageValue !== '-') {
+            // 如果不是标准关卡，则认为是自定义关卡
+            const isStandardStage = STAGE_DAILY_INFO.some(stage => stage.value === stageValue)
+            if (!isStandardStage) {
+              inferredStages.add(stageValue)
+            }
+          }
+        })
       }
-      const newDefinitions = {
-        custom_stage_1: customStages.custom_stage_1 || '',
-        custom_stage_2: customStages.custom_stage_2 || '',
-        custom_stage_3: customStages.custom_stage_3 || '',
+    })
+    
+    // 根据参数决定是否更新自定义关卡定义
+    if (forceUpdateCustomStages) {
+      // 强制更新：完全从配置推断（用于初始加载或切换计划）
+      const inferredArray = Array.from(inferredStages).sort()
+      planData.value.customStageDefinitions = {
+        custom_stage_1: inferredArray[0] || '',
+        custom_stage_2: inferredArray[1] || '',
+        custom_stage_3: inferredArray[2] || '',
+        custom_stage_4: inferredArray[3] || '',
       }
       
-      // 只有当定义真的不同时才更新和保存
-      const hasChanged = JSON.stringify(newDefinitions) !== JSON.stringify(planData.value.customStageDefinitions)
-      
-      if (hasChanged) {
-        planData.value.customStageDefinitions = newDefinitions
-        // 同步到 localStorage
-        saveCustomStageDefinitionsToStorage(planData.value.customStageDefinitions)
+      if (inferredStages.size > 0) {
+        console.log(`[自定义关卡] 从配置数据推断出 ${inferredStages.size} 个关卡:`, Array.from(inferredStages))
       }
     } else {
-      // 只在开发环境输出日志
-      if (process.env.NODE_ENV === 'development') {
-        console.log(`[自定义关卡] 使用 localStorage 数据 (${currentPlanId.value})`)
+      // 智能合并：保留现有定义，只添加新发现的关卡
+      const currentCustomStages = new Set<string>()
+      Object.values(planData.value.customStageDefinitions).forEach(stage => {
+        if (stage && stage.trim()) {
+          currentCustomStages.add(stage)
+        }
+      })
+      
+      // 找出新发现的关卡（在推断中但不在当前定义中）
+      const newStages = Array.from(inferredStages).filter(stage => !currentCustomStages.has(stage))
+      
+      if (newStages.length > 0) {
+        // 将新关卡添加到空的槽位中
+        const currentDefinitions = { ...planData.value.customStageDefinitions }
+        const emptySlots = Object.keys(currentDefinitions).filter(key => !currentDefinitions[key as keyof typeof currentDefinitions])
+        
+        newStages.forEach((stage, index) => {
+          if (index < emptySlots.length) {
+            currentDefinitions[emptySlots[index] as keyof typeof currentDefinitions] = stage
+          }
+        })
+        
+        planData.value.customStageDefinitions = currentDefinitions
+        console.log(`[自定义关卡] 添加新发现的关卡:`, newStages)
       }
-      // 如果后端没有自定义关卡定义，使用 localStorage 中的值
-      const storedDefinitions = loadCustomStageDefinitionsFromStorage()
-      planData.value.customStageDefinitions = storedDefinitions
     }
   }
 
@@ -243,10 +237,7 @@ export function usePlanDataCoordinator() {
       }
     })
 
-    // 在ALL中包含自定义关卡定义
-    if (result.ALL) {
-      (result.ALL as any).customStageDefinitions = planData.value.customStageDefinitions
-    }
+    // 不保存自定义关卡定义到后端，它们会在加载时重新推断
 
     return result
   }
@@ -432,8 +423,8 @@ export function usePlanDataCoordinator() {
     // 按简化视图的实际显示顺序重新分配
     const sortedStages: string[] = []
     
-    // 1. 先添加自定义关卡（按 custom_stage_1, custom_stage_2, custom_stage_3 的顺序）
-    for (let i = 1; i <= 3; i++) {
+    // 1. 先添加自定义关卡（按 custom_stage_1, custom_stage_2, custom_stage_3, custom_stage_4 的顺序）
+    for (let i = 1; i <= 4; i++) {
       const key = `custom_stage_${i}` as keyof typeof planData.value.customStageDefinitions
       const stageName = planData.value.customStageDefinitions[key]
       if (stageName && stageName.trim() && enabledStages.includes(stageName)) {
@@ -464,19 +455,13 @@ export function usePlanDataCoordinator() {
 
 
   // 更新自定义关卡定义
-  const updateCustomStageDefinition = (index: 1 | 2 | 3, name: string) => {
+  const updateCustomStageDefinition = (index: 1 | 2 | 3 | 4, name: string) => {
     const key = `custom_stage_${index}` as keyof typeof planData.value.customStageDefinitions
     const oldName = planData.value.customStageDefinitions[key]
     
-    // 只在开发环境输出详细日志
-    if (process.env.NODE_ENV === 'development') {
-      console.log(`[自定义关卡] 保存关卡-${index}: "${oldName}" -> "${name}"`)
-    }
+    console.log(`[自定义关卡] 更新关卡-${index}: "${oldName}" -> "${name}"`)
     
     planData.value.customStageDefinitions[key] = name
-    
-    // 保存到 localStorage
-    saveCustomStageDefinitionsToStorage(planData.value.customStageDefinitions)
 
     // 如果名称改变了，需要更新所有引用
     if (oldName !== name) {
@@ -494,16 +479,9 @@ export function usePlanDataCoordinator() {
   // 更新计划表ID
   const updatePlanId = (newPlanId: string) => {
     if (currentPlanId.value !== newPlanId) {
-      // 只在开发环境输出日志
-      if (process.env.NODE_ENV === 'development') {
-        console.log(`[自定义关卡] 计划表切换: ${currentPlanId.value} -> ${newPlanId}`)
-      }
-
+      console.log(`[计划表] 切换: ${currentPlanId.value} -> ${newPlanId}`)
       currentPlanId.value = newPlanId
-      
-      // 重新加载自定义关卡定义
-      const newDefinitions = loadCustomStageDefinitionsFromStorage()
-      planData.value.customStageDefinitions = newDefinitions
+      // 注意：自定义关卡定义将在 fromApiData 中从后端数据重新推断
     }
   }
 
