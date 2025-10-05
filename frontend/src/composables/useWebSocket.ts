@@ -294,7 +294,7 @@ const showReconnectFailureModal = () => {
       // 显示关闭遮罩
       const { showClosingOverlay } = useAppClosing()
       showClosingOverlay()
-      
+
       // 重启整个应用
       if ((window.electronAPI as any)?.appRestart) {
         ; (window.electronAPI as any).appRestart()
@@ -373,7 +373,7 @@ const handleBackendFailure = async () => {
         // 显示关闭遮罩
         const { showClosingOverlay } = useAppClosing()
         showClosingOverlay()
-        
+
         if ((window.electronAPI as any)?.appRestart) {
           ; (window.electronAPI as any).appRestart()
         } else if ((window.electronAPI as any)?.windowClose) {
@@ -579,12 +579,18 @@ const handleMessage = (raw: WebSocketBaseMessage) => {
 
   let dispatched = false
 
+  // 使用副本进行迭代，防止在处理函数中修改订阅列表导致的问题
+  const subscriptionsCopy = new Map(global.subscriptions.value)
+
   // 分发给所有匹配的订阅者
-  global.subscriptions.value.forEach((subscription) => {
+  subscriptionsCopy.forEach((subscription) => {
     if (messageMatchesFilter(raw, subscription.filter)) {
       try {
-        subscription.handler(raw)
-        dispatched = true
+        // 再次检查订阅是否仍然存在，因为在同一个事件循环中它可能已被删除
+        if (global.subscriptions.value.has(subscription.subscriptionId)) {
+          subscription.handler(raw)
+          dispatched = true
+        }
       } catch (e) {
         warn(`订阅处理器错误 [${subscription.subscriptionId}]:`, e)
       }
