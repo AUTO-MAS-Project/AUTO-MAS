@@ -2,8 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { QueueConfig_Info } from '@/api'
-
+import type { QueueConfig_Info } from './QueueConfig_Info'
 export type QueueConfig = {
   /**
    * 队列信息

@@ -2,8 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { MaaPlanConfig } from '@/api'
-
+import type { MaaPlanConfig } from './MaaPlanConfig'
 export type PlanUpdateIn = {
   /**
    * 计划ID

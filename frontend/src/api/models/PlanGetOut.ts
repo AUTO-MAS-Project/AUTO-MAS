@@ -2,8 +2,8 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { MaaPlanConfig, PlanIndexItem } from '@/api'
-
+import type { MaaPlanConfig } from './MaaPlanConfig'
+import type { PlanIndexItem } from './PlanIndexItem'
 export type PlanGetOut = {
   /**
    * 状态码

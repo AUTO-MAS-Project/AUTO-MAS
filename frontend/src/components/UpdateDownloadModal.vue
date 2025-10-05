@@ -1,4 +1,3 @@
-<!--suppress ALL -->
 <template>
   <a-modal
     v-model:open="visible"
@@ -66,7 +65,7 @@
                 <a-button type="primary" :loading="isRetrying" @click="handleRetry">
                   重试下载
                 </a-button>
-                <a-button @click="handleCancel"> 取消</a-button>
+                <a-button @click="handleCancel"> 取消 </a-button>
               </div>
             </template>
           </a-result>
@@ -81,7 +80,7 @@
               <a-button type="primary" :loading="isInstalling" @click="handleInstall">
                 立即安装
               </a-button>
-              <a-button @click="handleLater"> 稍后安装</a-button>
+              <a-button @click="handleLater"> 稍后安装 </a-button>
             </div>
           </template>
         </a-result>
@@ -91,7 +90,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { message } from 'ant-design-vue'
 import { Service } from '@/api/services/Service.ts'
 import { subscribe, unsubscribe } from '@/composables/useWebSocket'

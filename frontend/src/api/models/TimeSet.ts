@@ -2,8 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { TimeSet_Info } from '@/api'
-
+import type { TimeSet_Info } from './TimeSet_Info'
 export type TimeSet = {
   /**
    * 时间项

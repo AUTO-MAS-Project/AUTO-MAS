@@ -2,8 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { EmulatorIndexItem } from '@/api'
-
+import type { EmulatorIndexItem } from './EmulatorIndexItem'
 /**
  * 获取模拟器列表响应
  */
