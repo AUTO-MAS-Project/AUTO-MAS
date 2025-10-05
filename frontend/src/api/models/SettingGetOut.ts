@@ -2,8 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { GlobalConfig } from '@/api'
-
+import type { GlobalConfig } from './GlobalConfig'
 export type SettingGetOut = {
   /**
    * 状态码

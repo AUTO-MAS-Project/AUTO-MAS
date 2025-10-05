@@ -2,8 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { QueueItem } from '@/api'
-
+import type { QueueItem } from './QueueItem'
 export type QueueItemCreateOut = {
   /**
    * 状态码

@@ -27,7 +27,7 @@
   <div class="script-edit-content">
     <a-card title="MAA脚本配置" :loading="pageLoading" class="config-card">
       <template #extra>
-        <a-tag color="blue" class="type-tag"> MAA</a-tag>
+        <a-tag color="blue" class="type-tag"> MAA </a-tag>
       </template>
 
       <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
@@ -258,8 +258,8 @@ import { onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
 import { message } from 'ant-design-vue'
-import type { MAAScriptConfig, ScriptType } from '@/types/script.ts'
-import { useScriptApi } from '@/composables/useScriptApi.ts'
+import type { MAAScriptConfig, ScriptType } from '../../../types/script.ts'
+import { useScriptApi } from '../../../composables/useScriptApi.ts'
 import {
   ArrowLeftOutlined,
   FolderOpenOutlined,

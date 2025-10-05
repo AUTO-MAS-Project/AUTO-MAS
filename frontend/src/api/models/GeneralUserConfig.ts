@@ -2,8 +2,9 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { GeneralUserConfig_Data, GeneralUserConfig_Info, GeneralUserConfig_Notify } from '@/api'
-
+import type { GeneralUserConfig_Data } from './GeneralUserConfig_Data'
+import type { GeneralUserConfig_Info } from './GeneralUserConfig_Info'
+import type { GeneralUserConfig_Notify } from './GeneralUserConfig_Notify'
 export type GeneralUserConfig = {
   /**
    * 用户信息

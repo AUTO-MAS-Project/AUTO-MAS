@@ -2,8 +2,9 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { GeneralConfig, MaaConfig, ScriptIndexItem } from '@/api'
-
+import type { GeneralConfig } from './GeneralConfig'
+import type { MaaConfig } from './MaaConfig'
+import type { ScriptIndexItem } from './ScriptIndexItem'
 export type ScriptGetOut = {
   /**
    * 状态码
