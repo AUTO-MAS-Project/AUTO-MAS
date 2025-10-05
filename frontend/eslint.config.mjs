@@ -95,6 +95,14 @@ export default [
 
   // 忽略产物目录
   {
-    ignores: ['dist/**', 'dist-electron/**', 'out/**', 'build/**', 'node_modules/**', '**/*.d.ts'],
+    ignores: [
+      'dist/**',
+      'dist-electron/**',
+      'out/**',
+      'build/**',
+      'node_modules/**',
+      '**/*.d.ts',
+      '**/*.js',
+    ],
   },
 ]
