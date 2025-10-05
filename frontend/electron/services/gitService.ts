@@ -11,7 +11,7 @@ export function setMainWindow(window: BrowserWindow) {
   mainWindow = window
 }
 
-const gitDownloadUrl = 'https://download.auto-mas.top/d/AUTO_MAS/git.zip'
+const gitDownloadUrl = 'https://download.auto-mas.top/d/AUTO-MAS/git.zip'
 
 // 默认分支名称（作为备用分支）
 const DEFAULT_BRANCH = 'feature/refactor'
