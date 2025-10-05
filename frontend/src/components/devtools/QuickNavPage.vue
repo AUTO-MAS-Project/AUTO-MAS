@@ -63,7 +63,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, getCurrentInstance } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 const route = useRoute()
@@ -111,27 +111,63 @@ const navigateToManualPath = () => {
 }
 
 const openDevtool = () => {
-    window.electronAPI.openDevTools()
+  try {
+    if ((window as any).electronAPI?.openDevTools) {
+      (window as any).electronAPI.openDevTools()
+      console.log('✅ 开发者工具已打开')
+    } else {
+      console.warn('⚠️ 开发者工具API不可用')
+    }
+  } catch (error) {
+    console.error('❌ 打开开发者工具失败:', error)
+  }
 }
 
 // 清除本地存储
 const clearStorage = () => {
-  if (confirm('确定要清除所有本地存储数据吗？')) {
-    localStorage.clear()
-    sessionStorage.clear()
-    console.log('本地存储已清除')
+  try {
+    const confirmed = confirm('确定要清除所有本地存储数据吗？这将清除应用的所有缓存数据。')
+    if (confirmed) {
+      localStorage.clear()
+      sessionStorage.clear()
+      // 清除IndexedDB（如果有）
+      if (window.indexedDB) {
+        // 这里可以添加更复杂的IndexedDB清理逻辑
+      }
+      console.log('✅ 本地存储已清除')
+      alert('本地存储已清除，建议刷新页面')
+    }
+  } catch (error) {
+    console.error('❌ 清除存储失败:', error)
   }
 }
 
 // 重新加载页面
 const reloadPage = () => {
-  window.location.reload()
+  try {
+    console.log('🔄 页面重新加载中...')
+    window.location.reload()
+  } catch (error) {
+    console.error('❌ 页面重载失败:', error)
+  }
 }
 
-// 切换控制台（仅在开发环境有效）
+// 切换控制台（显示有用的调试信息）
 const toggleConsole = () => {
-  if (process.env.NODE_ENV === 'development') {
-    console.log('控制台切换功能仅在开发环境可用')
+  try {
+    console.group('🔧 调试信息')
+    console.log('当前URL:', window.location.href)
+    console.log('用户代理:', navigator.userAgent)
+    console.log('开发模式:', process.env.NODE_ENV === 'development')
+    console.log('Vue版本:', getCurrentInstance()?.appContext.app.version || 'Unknown')
+    console.log('localStorage项目数:', Object.keys(localStorage).length)
+    console.log('sessionStorage项目数:', Object.keys(sessionStorage).length)
+    if ((window as any).wsDebug) {
+      console.log('WebSocket调试:', (window as any).wsDebug)
+    }
+    console.groupEnd()
+  } catch (error) {
+    console.error('❌ 获取调试信息失败:', error)
   }
 }
 </script>

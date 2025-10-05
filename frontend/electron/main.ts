@@ -22,7 +22,14 @@ import {
   setMainWindow as setPythonMainWindow,
   startBackend,
 } from './services/pythonService'
-import { cloneBackend, downloadGit, setMainWindow as setGitMainWindow } from './services/gitService'
+import {
+  cloneBackend,
+  downloadGit,
+  setMainWindow as setGitMainWindow,
+  checkRepoStatus,
+  cleanDepot,
+  getRepoInfo
+} from './services/gitService'
 import { cleanOldLogs, getLogFiles, getLogPath, log, setupLogger } from './services/logService'
 
 // 强制清理相关进程的函数
@@ -100,6 +107,7 @@ function restartAsAdmin(): void {
 let tray: Tray | null = null
 let isQuitting = false
 let saveWindowStateTimeout: NodeJS.Timeout | null = null
+let isInitialStartup = true // 标记是否为初次启动
 
 // 配置接口
 interface AppConfig {
@@ -499,8 +507,33 @@ function createWindow() {
   setGitMainWindow(win)
   log.info('主窗口创建完成，服务引用已设置')
 
-  // 根据配置初始化托盘
+  // 初始托盘配置（使用文件配置）
   updateTrayVisibility(config)
+
+  // 等待窗口准备完成后再初始化托盘和处理启动配置
+  win.webContents.once('did-finish-load', () => {
+    // 重新加载配置以确保获取最新配置
+    const currentConfig = loadConfig()
+
+    // 根据配置初始化托盘
+    updateTrayVisibility(currentConfig)
+
+    // 处理启动后直接最小化（只在初次启动时执行）
+    if (isInitialStartup && currentConfig.Start.IfMinimizeDirectly) {
+      if (currentConfig.UI.IfToTray) {
+        win.hide()
+        win.setSkipTaskbar(true)
+        log.info('应用初次启动后直接最小化到托盘')
+      } else {
+        win.minimize()
+        log.info('应用初次启动后直接最小化')
+      }
+      updateTrayVisibility(currentConfig)
+    }
+    
+    // 标记初次启动已完成
+    isInitialStartup = false
+  })
 }
 
 // 保存窗口状态（带防抖）
@@ -569,6 +602,14 @@ ipcMain.handle('window-close', () => {
     isQuitting = true
     mainWindow.close()
   }
+})
+
+// 添加应用重启处理器
+ipcMain.handle('app-restart', () => {
+  console.log('重启应用程序...')
+  isQuitting = true
+  app.relaunch()
+  app.exit(0)
 })
 
 // 添加强制退出处理器
@@ -755,10 +796,10 @@ ipcMain.handle('get-theme-info', async () => {
   try {
     const appRoot = getAppRoot()
     const configPath = path.join(appRoot, 'config', 'frontend_config.json')
-    
+
     let themeMode = 'system'
     let themeColor = 'blue'
-    
+
     // 尝试从配置文件读取主题设置
     if (fs.existsSync(configPath)) {
       try {
@@ -770,19 +811,19 @@ ipcMain.handle('get-theme-info', async () => {
         log.warn('读取主题配置失败，使用默认值:', error)
       }
     }
-    
+
     // 检测系统主题
     const systemTheme = nativeTheme.shouldUseDarkColors ? 'dark' : 'light'
-    
+
     // 确定实际使用的主题
     let actualTheme = themeMode
     if (themeMode === 'system') {
       actualTheme = systemTheme
     }
-    
+
     const themeColors: Record<string, string> = {
       blue: '#1677ff',
-      purple: '#722ed1', 
+      purple: '#722ed1',
       cyan: '#13c2c2',
       green: '#52c41a',
       magenta: '#eb2f96',
@@ -795,7 +836,7 @@ ipcMain.handle('get-theme-info', async () => {
       lime: '#a0d911',
       gold: '#faad14',
     }
-    
+
     return {
       themeMode,
       themeColor,
@@ -808,7 +849,7 @@ ipcMain.handle('get-theme-info', async () => {
     log.error('获取主题信息失败:', error)
     return {
       themeMode: 'system',
-      themeColor: 'blue', 
+      themeColor: 'blue',
       actualTheme: 'light',
       systemTheme: 'light',
       isDark: false,
@@ -822,9 +863,9 @@ ipcMain.handle('get-theme', async () => {
   try {
     const appRoot = getAppRoot()
     const configPath = path.join(appRoot, 'config', 'frontend_config.json')
-    
+
     let themeMode = 'system'
-    
+
     // 尝试从配置文件读取主题设置
     if (fs.existsSync(configPath)) {
       try {
@@ -835,16 +876,16 @@ ipcMain.handle('get-theme', async () => {
         log.warn('读取主题配置失败，使用默认值:', error)
       }
     }
-    
+
     // 检测系统主题
     const systemTheme = nativeTheme.shouldUseDarkColors ? 'dark' : 'light'
-    
+
     // 确定实际使用的主题
     let actualTheme = themeMode
     if (themeMode === 'system') {
       actualTheme = systemTheme
     }
-    
+
     return actualTheme
   } catch (error) {
     log.error('获取对话框主题失败:', error)
@@ -860,10 +901,10 @@ let dialogCallbacks = new Map<string, (result: boolean) => void>()
 function createQuestionDialog(questionData: any): Promise<boolean> {
   return new Promise((resolve) => {
     const messageId = questionData.messageId || 'dialog_' + Date.now()
-    
+
     // 存储回调函数
     dialogCallbacks.set(messageId, resolve)
-    
+
     // 准备对话框数据
     const dialogData = {
       title: questionData.title || '操作确认',
@@ -871,13 +912,13 @@ function createQuestionDialog(questionData: any): Promise<boolean> {
       options: questionData.options || ['确定', '取消'],
       messageId: messageId
     }
-    
+
     // 获取主窗口的尺寸用于全屏显示
     let windowBounds = { width: 800, height: 600, x: 100, y: 100 }
     if (mainWindow && !mainWindow.isDestroyed()) {
       windowBounds = mainWindow.getBounds()
     }
-    
+
     // 创建对话框窗口 - 小尺寸可拖动窗口
     const dialogWindow = new BrowserWindow({
       width: 400,
@@ -899,23 +940,23 @@ function createQuestionDialog(questionData: any): Promise<boolean> {
         preload: path.join(__dirname, 'preload.js'),
       },
     })
-    
+
     // 存储窗口引用
     dialogWindows.set(messageId, dialogWindow)
-    
+
     // 编码对话框数据
     const encodedData = encodeURIComponent(JSON.stringify(dialogData))
-    
+
     // 加载对话框页面
     const dialogUrl = `file://${path.join(__dirname, '../public/dialog.html')}?data=${encodedData}`
     dialogWindow.loadURL(dialogUrl)
-    
+
     // 窗口准备好后显示
     dialogWindow.once('ready-to-show', () => {
       dialogWindow.show()
       dialogWindow.focus()
     })
-    
+
     // 窗口关闭时清理
     dialogWindow.on('closed', () => {
       dialogWindows.delete(messageId)
@@ -925,7 +966,7 @@ function createQuestionDialog(questionData: any): Promise<boolean> {
         callback(false) // 默认返回 false (取消)
       }
     })
-    
+
     log.info(`全屏对话框窗口已创建: ${messageId}`)
   })
 }
@@ -946,20 +987,20 @@ ipcMain.handle('show-question-dialog', async (_event, questionData) => {
 // 处理对话框响应
 ipcMain.handle('dialog-response', async (_event, messageId: string, choice: boolean) => {
   log.info(`收到对话框响应: ${messageId} = ${choice}`)
-  
+
   const callback = dialogCallbacks.get(messageId)
   if (callback) {
     dialogCallbacks.delete(messageId)
     callback(choice)
   }
-  
+
   // 关闭对话框窗口
   const dialogWindow = dialogWindows.get(messageId)
   if (dialogWindow && !dialogWindow.isDestroyed()) {
     dialogWindow.close()
   }
   dialogWindows.delete(messageId)
-  
+
   return true
 })
 
@@ -982,28 +1023,48 @@ ipcMain.handle('download-git', async () => {
   return downloadGit(appRoot)
 })
 
+// 新增的git管理方法
+ipcMain.handle('check-repo-status', async () => {
+  const appRoot = getAppRoot()
+  const { checkRepoStatus } = await import('./services/gitService')
+  return checkRepoStatus(appRoot)
+})
+
+ipcMain.handle('clean-depot', async () => {
+  const appRoot = getAppRoot()
+  const { cleanDepot } = await import('./services/gitService')
+  return cleanDepot(appRoot)
+})
+
+ipcMain.handle('get-repo-info', async () => {
+  const appRoot = getAppRoot()
+  const { getRepoInfo } = await import('./services/gitService')
+  return getRepoInfo(appRoot)
+})
+
 ipcMain.handle('check-git-update', async () => {
   try {
     const appRoot = getAppRoot()
+    const repoPath = path.join(appRoot, 'repo')
 
-    // 检查是否为Git仓库
-    const gitDir = path.join(appRoot, '.git')
+    // 检查repo是否为Git仓库
+    const gitDir = path.join(repoPath, '.git')
     if (!fs.existsSync(gitDir)) {
-      log.info('不是Git仓库，跳过更新检查')
-      return { hasUpdate: false }
+      log.info('repo不存在或不是Git仓库，需要重新克隆')
+      return { hasUpdate: true, needsClone: true }
     }
 
     // 检查Git可执行文件是否存在
     const gitPath = path.join(appRoot, 'environment', 'git', 'bin', 'git.exe')
     if (!fs.existsSync(gitPath)) {
-      log.warn('Git可执行文件不存在，无法检查更新')
+      log.warn('Git可执行文件不存在，需要先安装Git')
       return { hasUpdate: false, error: 'Git可执行文件不存在' }
     }
 
     // 获取Git环境变量
     const gitEnv = {
       ...process.env,
-      PATH: `${path.join(appRoot, 'environment', 'git', 'bin')};${path.join(appRoot, 'environment', 'git', 'mingw64', 'bin')};${process.env.PATH}`,
+      PATH: `${path.join(appRoot, 'environment', 'git', 'bin')};${path.join(appRoot, 'environment', 'git', 'mingw64', 'bin')};${path.join(appRoot, 'environment', 'git', 'mingw64', 'libexec', 'git-core')};${process.env.PATH}`,
       GIT_EXEC_PATH: path.join(appRoot, 'environment', 'git', 'mingw64', 'libexec', 'git-core'),
       HOME: process.env.USERPROFILE || process.env.HOME,
       GIT_CONFIG_NOSYSTEM: '1',
@@ -1011,46 +1072,60 @@ ipcMain.handle('check-git-update', async () => {
       GIT_ASKPASS: '',
     }
 
-    log.info('开始检查Git仓库更新（跳过fetch，避免直接访问GitHub）...')
+    log.info('检查repo中的Git仓库状态...')
 
-    // 不执行fetch，直接检查本地状态
-    // 这样避免了直接访问GitHub，而是在后续的pull操作中使用镜像站
-
-    // 获取当前HEAD的commit hash
-    const currentCommit = await new Promise<string>((resolve, reject) => {
-      const revParseProc = spawn(gitPath, ['rev-parse', 'HEAD'], {
-        stdio: 'pipe',
-        env: gitEnv,
-        cwd: appRoot,
+    // 获取当前分支名和commit hash
+    const [currentBranch, currentCommit] = await Promise.all([
+      new Promise<string>((resolve, reject) => {
+        const branchProc = spawn(gitPath, ['branch', '--show-current'], {
+          stdio: 'pipe',
+          env: gitEnv,
+          cwd: repoPath,
+        })
+        let output = ''
+        branchProc.stdout?.on('data', data => { output += data.toString() })
+        branchProc.on('close', code => {
+          if (code === 0) {
+            resolve(output.trim())
+          } else {
+            resolve('unknown') // 如果获取失败，使用默认值
+          }
+        })
+        branchProc.on('error', () => resolve('unknown'))
+      }),
+      new Promise<string>((resolve, reject) => {
+        const commitProc = spawn(gitPath, ['rev-parse', 'HEAD'], {
+          stdio: 'pipe',
+          env: gitEnv,
+          cwd: repoPath,
+        })
+        let output = ''
+        commitProc.stdout?.on('data', data => { output += data.toString() })
+        commitProc.on('close', code => {
+          if (code === 0) {
+            resolve(output.trim())
+          } else {
+            resolve('unknown')
+          }
+        })
+        commitProc.on('error', () => resolve('unknown'))
       })
+    ])
 
-      let output = ''
-      revParseProc.stdout?.on('data', data => {
-        output += data.toString()
-      })
+    log.info(`当前repo状态 - 分支: ${currentBranch}, commit: ${currentCommit.substring(0, 8)}...`)
 
-      revParseProc.on('close', code => {
-        if (code === 0) {
-          resolve(output.trim())
-        } else {
-          reject(new Error(`git rev-parse失败，退出码: ${code}`))
-        }
-      })
-
-      revParseProc.on('error', reject)
-    })
-
-    log.info(`当前本地commit: ${currentCommit}`)
-
-    // 由于我们跳过了fetch步骤（避免直接访问GitHub），
-    // 我们无法准确知道远程是否有更新
-    // 因此返回true，让后续的pull操作通过镜像站来检查和获取更新
-    // 如果没有更新，pull操作会很快完成且不会有实际变化
-    log.info('跳过远程检查，返回hasUpdate=true以触发镜像站更新流程')
-    return { hasUpdate: true, skipReason: 'avoided_github_access' }
+    // 由于我们使用镜像站更新，且新的更新逻辑会自动处理分支切换和代码同步，
+    // 我们直接返回true让更新流程来处理一切
+    log.info('返回hasUpdate=true，让更新流程处理分支切换和代码同步')
+    return {
+      hasUpdate: true,
+      currentBranch,
+      currentCommit: currentCommit.substring(0, 8),
+      repoExists: true
+    }
   } catch (error) {
     log.error('检查Git更新失败:', error)
-    // 如果检查失败，返回true以触发更新流程，确保代码是最新的
+    // 如果检查失败，返回true以触发更新流程
     return { hasUpdate: true, error: error instanceof Error ? error.message : String(error) }
   }
 })
@@ -1111,6 +1186,35 @@ ipcMain.handle('update-tray-settings', async (_event, uiSettings) => {
     return true
   } catch (error) {
     log.error('更新托盘设置失败:', error)
+    throw error
+  }
+})
+
+// 新增：同步后端配置的IPC处理器
+ipcMain.handle('sync-backend-config', async (_event, backendSettings) => {
+  try {
+    const currentConfig = loadConfig()
+
+    // 同步UI配置
+    if (backendSettings.UI) {
+      currentConfig.UI = { ...currentConfig.UI, ...backendSettings.UI }
+    }
+
+    // 同步Start配置
+    if (backendSettings.Start) {
+      currentConfig.Start = { ...currentConfig.Start, ...backendSettings.Start }
+    }
+
+    // 保存到前端配置文件
+    saveConfig(currentConfig)
+
+    // 更新托盘状态
+    updateTrayVisibility(currentConfig)
+
+    log.info('后端配置已同步:', backendSettings)
+    return true
+  } catch (error) {
+    log.error('同步后端配置失败:', error)
     throw error
   }
 })

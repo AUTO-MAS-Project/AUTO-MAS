@@ -68,7 +68,7 @@ async function installPip(pythonPath: string, appRoot: string): Promise<void> {
   console.log('pip未安装，开始安装...')
 
   const getPipPath = path.join(pythonPath, 'get-pip.py')
-  const getPipUrl = 'https://download.auto-mas.top/d/AUTO_MAS/get-pip.py'
+  const getPipUrl = 'https://download.auto-mas.top/d/AUTO-MAS/get-pip.py'
 
   console.log(`Python可执行文件路径: ${pythonExe}`)
   console.log(`get-pip.py下载URL: ${getPipUrl}`)

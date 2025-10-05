@@ -70,6 +70,7 @@ class MaaManager:
 
         self.maa_logs = []
         self.maa_result = "Wait"
+        self.log_start_time = datetime.now()
         self.maa_update_package = ""
 
     async def configure(self):
@@ -823,7 +824,7 @@ class MaaManager:
                             ).model_dump()
                         )
                         result = await self.get_message(uid, "Response")
-                        if result.get("data", {}).get("choice", False):
+                        if not result.get("data", {}).get("choice", False):
                             break
 
                 # 登录成功, 录入人工排查情况

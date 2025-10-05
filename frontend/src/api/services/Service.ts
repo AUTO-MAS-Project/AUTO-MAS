@@ -80,6 +80,7 @@ import type { WebhookCreateOut } from '../models/WebhookCreateOut';
 import type { WebhookDeleteIn } from '../models/WebhookDeleteIn';
 import type { WebhookGetIn } from '../models/WebhookGetIn';
 import type { WebhookGetOut } from '../models/WebhookGetOut';
+import type { WebhookInBase } from '../models/WebhookInBase';
 import type { WebhookReorderIn } from '../models/WebhookReorderIn';
 import type { WebhookTestIn } from '../models/WebhookTestIn';
 import type { WebhookUpdateIn } from '../models/WebhookUpdateIn';
@@ -484,6 +485,101 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/user/infrastructure',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 查询 webhook 配置
+     * @param requestBody
+     * @returns WebhookGetOut Successful Response
+     * @throws ApiError
+     */
+    public static getWebhookApiScriptsWebhookGetPost(
+        requestBody: WebhookGetIn,
+    ): CancelablePromise<WebhookGetOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/webhook/get',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 添加webhook项
+     * @param requestBody
+     * @returns WebhookCreateOut Successful Response
+     * @throws ApiError
+     */
+    public static addWebhookApiScriptsWebhookAddPost(
+        requestBody: WebhookInBase,
+    ): CancelablePromise<WebhookCreateOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/webhook/add',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 更新webhook项
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static updateWebhookApiScriptsWebhookUpdatePost(
+        requestBody: WebhookUpdateIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/webhook/update',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 删除webhook项
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static deleteWebhookApiScriptsWebhookDeletePost(
+        requestBody: WebhookDeleteIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/webhook/delete',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 重新排序webhook项
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static reorderWebhookApiScriptsWebhookOrderPost(
+        requestBody: WebhookReorderIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/webhook/order',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -1033,7 +1129,7 @@ export class Service {
         });
     }
     /**
-     * 添加定时项
+     * 添加webhook项
      * @returns WebhookCreateOut Successful Response
      * @throws ApiError
      */
@@ -1044,7 +1140,7 @@ export class Service {
         });
     }
     /**
-     * 更新定时项
+     * 更新webhook项
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
@@ -1063,7 +1159,7 @@ export class Service {
         });
     }
     /**
-     * 删除定时项
+     * 删除webhook项
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
@@ -1082,7 +1178,7 @@ export class Service {
         });
     }
     /**
-     * 重新排序定时项
+     * 重新排序webhook项
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
