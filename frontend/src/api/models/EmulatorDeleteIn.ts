@@ -6,9 +6,8 @@
  * 删除模拟器配置请求
  */
 export type EmulatorDeleteIn = {
-    /**
-     * 模拟器UUID
-     */
-    emulator_uuid: string;
-};
-
+  /**
+   * 模拟器UUID
+   */
+  emulator_uuid: string
+}

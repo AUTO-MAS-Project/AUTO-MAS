@@ -8,8 +8,7 @@
     :z-index="9999"
     class="update-modal"
   >
-
-  <div class="update-container">
+    <div class="update-container">
       <!-- 更新内容展示 -->
       <div class="update-content">
         <div
@@ -23,9 +22,7 @@
       <div class="update-footer">
         <div class="update-actions">
           <a-button @click="handleCancel">暂不更新</a-button>
-          <a-button type="primary" @click="handleDownload">
-            下载更新
-          </a-button>
+          <a-button type="primary" @click="handleDownload"> 下载更新 </a-button>
         </div>
       </div>
     </div>
@@ -62,8 +59,6 @@ const emit = defineEmits<{
   'update:visible': [value: boolean]
 }>()
 
-
-
 // 内部状态
 const hasUpdate = ref(false)
 const showDownloadModal = ref(false)
@@ -76,7 +71,7 @@ const latestVersion = computed(() => {
 // 计算属性 - 响应式地接收外部 visible 状态
 const visible = computed({
   get: () => props.visible,
-  set: (value: boolean) => emit('update:visible', value)
+  set: (value: boolean) => emit('update:visible', value),
 })
 
 // 计算属性 - 转换 updateData 为 markdown
@@ -89,11 +84,7 @@ const md = new MarkdownIt({ html: true, linkify: true, typographer: true })
 const renderMarkdown = (content: string) => md.render(content)
 
 /** 将接口的 update_info 对象转成 Markdown 文本 */
-function updateInfoToMarkdown(
-  info: unknown,
-  version?: string,
-  header = '更新内容'
-): string {
+function updateInfoToMarkdown(info: unknown, version?: string, header = '更新内容'): string {
   // 如果后端直接给了字符串，直接返回
   if (typeof info === 'string') return info
 
@@ -112,9 +103,7 @@ function updateInfoToMarkdown(
 
   // 希望按这个顺序展示；其余未知键追加在后
   const preferredOrder = ['修复BUG', '程序优化', '新增功能']
-  const keys = Array.from(
-    new Set([...preferredOrder, ...Object.keys(obj)])
-  )
+  const keys = Array.from(new Set([...preferredOrder, ...Object.keys(obj)]))
 
   for (const key of keys) {
     const val = obj[key]
@@ -136,8 +125,6 @@ function updateInfoToMarkdown(
   return lines.join('\n')
 }
 
-
-
 // 初始化检查
 if (props.updateData && Object.keys(props.updateData).length > 0) {
   hasUpdate.value = true
@@ -149,7 +136,7 @@ const handleDownload = () => {
   console.log('[UpdateModal] 当前props:', {
     updateData: props.updateData,
     latestVersion: props.latestVersion,
-    visible: props.visible
+    visible: props.visible,
   })
   // 关闭当前窗口，显示下载窗口
   visible.value = false
@@ -178,7 +165,6 @@ const handleInstallRequested = () => {
   showDownloadModal.value = false
   emit('confirmed')
 }
-
 </script>
 
 <style scoped>
@@ -202,28 +188,28 @@ const handleInstallRequested = () => {
 /* Firefox：细滚动条 & 低对比 */
 :deep(.update-content) {
   scrollbar-width: thin;
-  scrollbar-color: rgba(255,255,255,0.14) transparent; /* 拇指颜色 / 轨道颜色 */
+  scrollbar-color: rgba(255, 255, 255, 0.14) transparent; /* 拇指颜色 / 轨道颜色 */
 }
 
 /* WebKit（Chrome/Edge）：细、半透明、悬停时稍亮 */
 :deep(.update-content::-webkit-scrollbar) {
-  width: 8px;                /* 滚动条更细 */
+  width: 8px; /* 滚动条更细 */
 }
 
 :deep(.update-content::-webkit-scrollbar-track) {
-  background: transparent;   /* 轨道透明，不显眼 */
+  background: transparent; /* 轨道透明，不显眼 */
 }
 
 :deep(.update-content::-webkit-scrollbar-thumb) {
-  background: rgba(255,255,255,0.12); /* 深色模式下更淡 */
+  background: rgba(255, 255, 255, 0.12); /* 深色模式下更淡 */
   border-radius: 8px;
   border: 2px solid transparent;
-  background-clip: padding-box;      /* 让边缘更柔和 */
+  background-clip: padding-box; /* 让边缘更柔和 */
 }
 
 /* 悬停时略微提升对比度，便于发现 */
 :deep(.update-content:hover::-webkit-scrollbar-thumb) {
-  background: rgba(255,255,255,0.22);
+  background: rgba(255, 255, 255, 0.22);
 }
 .markdown-content {
   line-height: 1.6;

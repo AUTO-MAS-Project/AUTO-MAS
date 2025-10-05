@@ -14,9 +14,9 @@ const copyAllInfo = async () => {
     const copyText = [
       `软件版本：${version}`,
       `后端日期：${backendUpdateInfo?.current_time || '未知'}`,
-      `后端哈希：${backendUpdateInfo?.current_hash || '未知'}`
+      `后端哈希：${backendUpdateInfo?.current_hash || '未知'}`,
     ].join('\n')
-    
+
     await navigator.clipboard.writeText(copyText)
     message.success('版本信息已复制到剪贴板')
   } catch (err) {
@@ -26,7 +26,7 @@ const copyAllInfo = async () => {
     textArea.value = [
       `软件版本：${version}`,
       `后端日期：${backendUpdateInfo?.current_time || '未知'}`,
-      `后端哈希：${backendUpdateInfo?.current_hash || '未知'}`
+      `后端哈希：${backendUpdateInfo?.current_hash || '未知'}`,
     ].join('\n')
     document.body.appendChild(textArea)
     textArea.select()
@@ -64,7 +64,12 @@ const copyAllInfo = async () => {
             <div class="link-content">
               <h4>GitHub仓库</h4>
               <p>查看源代码、提交issue和捐赠</p>
-              <a href="https://github.com/AUTO-MAS-Project/AUTO-MAS" target="_blank" class="link-button">访问仓库</a>
+              <a
+                href="https://github.com/AUTO-MAS-Project/AUTO-MAS"
+                target="_blank"
+                class="link-button"
+                >访问仓库</a
+              >
             </div>
           </div>
         </div>
@@ -74,7 +79,9 @@ const copyAllInfo = async () => {
             <div class="link-content">
               <h4>用户QQ群</h4>
               <p>加入社区，获取帮助和交流</p>
-              <a href="https://qm.qq.com/q/bd9fISNoME" target="_blank" class="link-button">加入群聊</a>
+              <a href="https://qm.qq.com/q/bd9fISNoME" target="_blank" class="link-button"
+                >加入群聊</a
+              >
             </div>
           </div>
         </div>
@@ -103,32 +110,24 @@ const copyAllInfo = async () => {
         <div class="app-info-right">
           <div class="info-item">
             <span class="info-label">软件版本：</span>
-            <a-tag 
-              color="blue" 
-              class="info-badge"
-              @click="copyAllInfo"
-            >
+            <a-tag color="blue" class="info-badge" @click="copyAllInfo">
               {{ version }}
             </a-tag>
           </div>
           <div class="info-item">
             <span class="info-label">后端日期：</span>
-            <a-tag 
-              color="orange" 
-              class="info-badge"
-              @click="copyAllInfo"
-            >
+            <a-tag color="orange" class="info-badge" @click="copyAllInfo">
               {{ backendUpdateInfo?.current_time || '未知' }}
             </a-tag>
           </div>
           <div class="info-item">
             <span class="info-label">后端哈希：</span>
-            <a-tag 
-              color="purple" 
-              class="info-badge"
-              @click="copyAllInfo"
-            >
-              {{ backendUpdateInfo?.current_hash ? backendUpdateInfo.current_hash.substring(0, 8) : '未知' }}
+            <a-tag color="purple" class="info-badge" @click="copyAllInfo">
+              {{
+                backendUpdateInfo?.current_hash
+                  ? backendUpdateInfo.current_hash.substring(0, 8)
+                  : '未知'
+              }}
             </a-tag>
           </div>
         </div>
@@ -196,34 +195,31 @@ const copyAllInfo = async () => {
   transform: translateY(0);
 }
 
-
-
 /* 响应式布局 */
 @media (max-width: 768px) {
   .app-info-container {
     flex-direction: column;
     gap: 24px;
   }
-  
+
   .app-info-left,
   .app-info-right {
     min-width: auto;
   }
-  
+
   .badge-item {
     flex-direction: column;
     align-items: flex-start;
     gap: 8px;
   }
-  
+
   .badge-label {
     min-width: auto;
   }
-  
+
   .info-badge {
     align-self: stretch;
     justify-content: center;
   }
 }
-
 </style>

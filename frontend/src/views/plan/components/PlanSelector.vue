@@ -18,8 +18,8 @@
             :key="plan.id"
             :type="activePlanId === plan.id ? 'primary' : 'default'"
             size="large"
-            @click="handlePlanClick(plan.id)"
             class="plan-button"
+            @click="handlePlanClick(plan.id)"
           >
             <span class="plan-name">{{ plan.name }}</span>
             <a-tag v-if="shouldShowPlanTypeTag()" size="small" color="blue" class="plan-type-tag">

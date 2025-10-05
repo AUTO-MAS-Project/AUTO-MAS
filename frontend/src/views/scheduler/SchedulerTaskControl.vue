@@ -12,18 +12,22 @@
             show-search
             :filter-option="filterTaskOption"
             :disabled="disabled"
-            @change="onTaskChange"
             size="large"
+            @change="onTaskChange"
           />
           <a-select
             v-model:value="localSelectedMode"
             placeholder="选择模式"
             style="width: 120px"
             :disabled="disabled"
-            @change="onModeChange"
             size="large"
+            @change="onModeChange"
           >
-            <a-select-option v-for="option in modeOptions" :key="option.value" :value="option.value">
+            <a-select-option
+              v-for="option in modeOptions"
+              :key="option.value"
+              :value="option.value"
+            >
               {{ option.label }}
             </a-select-option>
           </a-select>
@@ -31,11 +35,13 @@
         <div class="control-spacer"></div>
         <a-space size="middle">
           <a-button
-            @click="onAction"
             :type="status === '运行' ? 'default' : 'primary'"
             :danger="status === '运行'"
-            :disabled="status === '运行' ? false : (!localSelectedTaskId || !localSelectedMode || disabled)"
+            :disabled="
+              status === '运行' ? false : !localSelectedTaskId || !localSelectedMode || disabled
+            "
             size="large"
+            @click="onAction"
           >
             <template #icon>
               <StopOutlined v-if="status === '运行'" />
@@ -160,11 +166,11 @@ const filterTaskOption = (input: string, option: any) => {
     flex-direction: column;
     align-items: stretch;
   }
-  
+
   .control-spacer {
     display: none;
   }
-  
+
   .control-card {
     padding: 12px;
   }

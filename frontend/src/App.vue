@@ -28,7 +28,7 @@ onMounted(async () => {
   logger.info('App组件已挂载')
   initTheme()
   logger.info('主题初始化完成')
-  
+
   // 启动自动更新检查器
   try {
     await startPolling()

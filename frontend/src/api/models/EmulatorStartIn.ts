@@ -6,17 +6,16 @@
  * 启动模拟器请求
  */
 export type EmulatorStartIn = {
-    /**
-     * 模拟器UUID
-     */
-    emulator_uuid: string;
-    /**
-     * 模拟器索引
-     */
-    index: string;
-    /**
-     * 启动包名(可选)
-     */
-    package_name?: string;
-};
-
+  /**
+   * 模拟器UUID
+   */
+  emulator_uuid: string
+  /**
+   * 模拟器索引
+   */
+  index: string
+  /**
+   * 启动包名(可选)
+   */
+  package_name?: string
+}

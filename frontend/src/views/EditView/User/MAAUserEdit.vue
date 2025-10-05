@@ -103,8 +103,8 @@
           <SkylandConfigSection :form-data="formData" :loading="loading" />
 
           <!-- 通知配置组件 -->
-          <NotifyConfigSection 
-            :form-data="formData" 
+          <NotifyConfigSection
+            :form-data="formData"
             :loading="loading"
             :script-id="scriptId"
             :user-id="userId"
@@ -115,11 +115,11 @@
 
     <a-float-button
       type="primary"
-      @click="handleSubmit"
       class="float-button"
       :style="{
         right: '24px',
       }"
+      @click="handleSubmit"
     >
       <template #icon>
         <SaveOutlined />
@@ -790,31 +790,28 @@ const handleMAAConfig = async () => {
       const wsId = response.websocketId
 
       // 订阅 websocket
-      const subscriptionId = subscribe(
-        { id: wsId },
-        (wsMessage: any) => {
-          if (wsMessage.type === 'error') {
-            console.error(
-              `用户 ${formData.Info?.Name || formData.userName} MAA配置错误:`,
-              wsMessage.data
-            )
-            message.error(`MAA配置连接失败: ${wsMessage.data}`)
-            unsubscribe(subscriptionId)
-            maaSubscriptionId.value = null
-            maaWebsocketId.value = null
-            showMAAConfigMask.value = false
-            return
-          }
-
-          if (wsMessage.data && wsMessage.data.Accomplish) {
-            message.success(`用户 ${formData.Info?.Name || formData.userName} 的配置已完成`)
-            unsubscribe(subscriptionId)
-            maaSubscriptionId.value = null
-            maaWebsocketId.value = null
-            showMAAConfigMask.value = false
-          }
+      const subscriptionId = subscribe({ id: wsId }, (wsMessage: any) => {
+        if (wsMessage.type === 'error') {
+          console.error(
+            `用户 ${formData.Info?.Name || formData.userName} MAA配置错误:`,
+            wsMessage.data
+          )
+          message.error(`MAA配置连接失败: ${wsMessage.data}`)
+          unsubscribe(subscriptionId)
+          maaSubscriptionId.value = null
+          maaWebsocketId.value = null
+          showMAAConfigMask.value = false
+          return
         }
-      )
+
+        if (wsMessage.data && wsMessage.data.Accomplish) {
+          message.success(`用户 ${formData.Info?.Name || formData.userName} 的配置已完成`)
+          unsubscribe(subscriptionId)
+          maaSubscriptionId.value = null
+          maaWebsocketId.value = null
+          showMAAConfigMask.value = false
+        }
+      })
 
       maaSubscriptionId.value = subscriptionId
       maaWebsocketId.value = wsId

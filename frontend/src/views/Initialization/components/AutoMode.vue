@@ -21,32 +21,14 @@
           :message="`更新失败，${retryCountdown} 秒后重试 (第 ${currentRetryCount}/${maxRetries} 次)`"
         />
         <div class="retry-actions">
-          <a-button
-            @click="retryNow"
-            type="primary"
-            size="small"
-          >
-            立即重试
-          </a-button>
+          <a-button type="primary" size="small" @click="retryNow"> 立即重试 </a-button>
         </div>
       </div>
     </div>
 
     <div class="auto-actions">
-      <a-button 
-        @click="handleSwitchToManual" 
-        type="primary" 
-        size="large"
-      >
-        重新配置环境
-      </a-button>
-      <a-button 
-        @click="handleForceEnter" 
-        type="default" 
-        size="large"
-      >
-        强行进入应用
-      </a-button>
+      <a-button type="primary" size="large" @click="handleSwitchToManual"> 重新配置环境 </a-button>
+      <a-button type="default" size="large" @click="handleForceEnter"> 强行进入应用 </a-button>
     </div>
   </div>
 
@@ -158,7 +140,7 @@ async function handleForceEnterConfirm() {
   clearTimers()
   aborted.value = true
   forceEnterVisible.value = false
-  
+
   await forceEnterApp('自动模式-强行进入确认')
 }
 
@@ -267,7 +249,6 @@ async function startAutoProcess() {
     setTimeout(() => {
       props.onAutoComplete()
     }, 500)
-
   } catch (error) {
     console.error('自动启动流程失败', error)
 
@@ -302,11 +283,11 @@ async function checkGitUpdate(): Promise<boolean> {
 async function tryUpdateBackendWithRetry(config: any): Promise<boolean> {
   // 获取所有Git镜像源
   const allGitMirrors = mirrorManager.getMirrors('git')
-  
+
   // 加载用户的自定义镜像源
   const customMirrors = config.customGitMirrors || []
   const combinedMirrors = [...allGitMirrors, ...customMirrors]
-  
+
   // 分离镜像源和官方源（GitHub）
   const mirrorSources = combinedMirrors.filter(m => m.type === 'mirror')
   const officialSources = combinedMirrors.filter(m => m.type === 'official')
@@ -333,11 +314,14 @@ async function tryUpdateBackendWithRetry(config: any): Promise<boolean> {
   const otherOfficialSources = officialSources.filter(m => m.key !== config.selectedGitMirror)
   mirrorsToTry = [...mirrorsToTry, ...otherOfficialSources]
 
-  console.log('准备尝试的Git源（镜像源优先）:', mirrorsToTry.map(m => `${m.name} (${m.type})`))
+  console.log(
+    '准备尝试的Git源（镜像源优先）:',
+    mirrorsToTry.map(m => `${m.name} (${m.type})`)
+  )
 
   for (let i = 0; i < mirrorsToTry.length; i++) {
     if (aborted.value) return false
-    
+
     const mirror = mirrorsToTry[i]
     const sourceType = mirror.type === 'mirror' ? '镜像源' : '官方源'
     progressText.value = `正在使用 ${mirror.name} ${sourceType}更新代码... (${i + 1}/${mirrorsToTry.length})`
@@ -345,7 +329,7 @@ async function tryUpdateBackendWithRetry(config: any): Promise<boolean> {
     try {
       console.log(`尝试使用${sourceType}: ${mirror.name} (${mirror.url})`)
       const result = await window.electronAPI.updateBackend(mirror.url)
-      
+
       if (result.success) {
         console.log(`使用${sourceType} ${mirror.name} 更新成功`)
         message.success(`使用 ${mirror.name} ${sourceType}更新代码成功`)
@@ -365,7 +349,7 @@ async function tryUpdateBackendWithRetry(config: any): Promise<boolean> {
       }
     }
   }
-  
+
   console.error('所有Git源（镜像源和官方源）都无法更新代码')
   return false
 }
@@ -374,27 +358,30 @@ async function tryUpdateBackendWithRetry(config: any): Promise<boolean> {
 async function tryInstallDependenciesWithRetry(config: any): Promise<boolean> {
   // 获取所有PIP镜像源
   const allPipMirrors = mirrorManager.getMirrors('pip')
-  
+
   // 优先使用用户选择的镜像源
   const selectedMirror = allPipMirrors.find(m => m.key === config.selectedPipMirror)
   let mirrorsToTry = selectedMirror ? [selectedMirror] : []
-  
+
   // 添加其他镜像源作为备选
   const otherMirrors = allPipMirrors.filter(m => m.key !== config.selectedPipMirror)
   mirrorsToTry = [...mirrorsToTry, ...otherMirrors]
-  
-  console.log('准备尝试的PIP镜像源:', mirrorsToTry.map(m => m.name))
-  
+
+  console.log(
+    '准备尝试的PIP镜像源:',
+    mirrorsToTry.map(m => m.name)
+  )
+
   for (let i = 0; i < mirrorsToTry.length; i++) {
     if (aborted.value) return false
-    
+
     const mirror = mirrorsToTry[i]
     progressText.value = `正在使用 ${mirror.name} 安装依赖... (${i + 1}/${mirrorsToTry.length})`
-    
+
     try {
       console.log(`尝试使用PIP镜像源: ${mirror.name} (${mirror.url})`)
       const result = await window.electronAPI.installDependencies(mirror.key)
-      
+
       if (result.success) {
         console.log(`使用PIP镜像源 ${mirror.name} 安装成功`)
         message.success(`使用 ${mirror.name} 安装依赖成功`)
@@ -414,7 +401,7 @@ async function tryInstallDependenciesWithRetry(config: any): Promise<boolean> {
       }
     }
   }
-  
+
   console.error('所有PIP镜像源都无法安装依赖')
   return false
 }
@@ -425,7 +412,7 @@ async function startBackendService() {
   if (!result.success) {
     throw new Error(`后端服务启动失败: ${result.error}`)
   }
-  
+
   // 后端启动成功，建立WebSocket连接
   console.log('后端启动成功，正在建立WebSocket连接...')
   const wsConnected = await connectAfterBackendStart()
@@ -434,7 +421,7 @@ async function startBackendService() {
   } else {
     console.log('WebSocket连接建立成功')
   }
-  
+
   // WebSocket连接完成后，启动版本检查定时任务
   console.log('启动版本检查定时任务...')
   await startPolling()
@@ -537,15 +524,15 @@ onUnmounted(() => {
     min-height: auto;
     padding: 10px;
   }
-  
+
   .header {
     margin-bottom: 20px;
   }
-  
+
   .header h1 {
     font-size: 32px;
   }
-  
+
   .logo {
     width: 80px;
     height: 80px;
@@ -557,7 +544,7 @@ onUnmounted(() => {
     flex-direction: column;
     align-items: center;
   }
-  
+
   .auto-actions .ant-btn {
     width: 200px;
   }

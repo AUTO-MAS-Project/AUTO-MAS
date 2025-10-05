@@ -19,7 +19,11 @@ export interface ElectronAPI {
 
   // 初始化相关API
   checkEnvironment: () => Promise<any>
-  checkCriticalFiles: () => Promise<{ pythonExists: boolean; gitExists: boolean; mainPyExists: boolean }>
+  checkCriticalFiles: () => Promise<{
+    pythonExists: boolean
+    gitExists: boolean
+    mainPyExists: boolean
+  }>
   checkGitUpdate: () => Promise<{ hasUpdate: boolean; error?: string }>
   downloadPython: (mirror?: string) => Promise<any>
   installPip: () => Promise<any>
@@ -105,7 +109,6 @@ export interface ElectronAPI {
   onDownloadProgress: (callback: (progress: any) => void) => void
   removeDownloadProgressListener: () => void
 }
-
 
 declare global {
   interface Window {

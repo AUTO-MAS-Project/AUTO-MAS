@@ -6,9 +6,8 @@
  * 获取模拟器状态请求
  */
 export type EmulatorStatusIn = {
-    /**
-     * 模拟器UUID，为空时获取所有模拟器状态
-     */
-    emulator_uuid?: (string | null);
-};
-
+  /**
+   * 模拟器UUID，为空时获取所有模拟器状态
+   */
+  emulator_uuid?: string | null
+}

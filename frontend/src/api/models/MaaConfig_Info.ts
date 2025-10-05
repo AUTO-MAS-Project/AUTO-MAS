@@ -3,13 +3,12 @@
 /* tslint:disable */
 /* eslint-disable */
 export type MaaConfig_Info = {
-    /**
-     * 脚本名称
-     */
-    Name?: (string | null);
-    /**
-     * 脚本路径
-     */
-    Path?: (string | null);
-};
-
+  /**
+   * 脚本名称
+   */
+  Name?: string | null
+  /**
+   * 脚本路径
+   */
+  Path?: string | null
+}

@@ -13,8 +13,6 @@
 </template>
 
 <script setup lang="ts">
-
-
 async function handleRestartAsAdmin() {
   try {
     await window.electronAPI.restartAsAdmin()

@@ -55,7 +55,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   updateTraySettings: (uiSettings: any) => ipcRenderer.invoke('update-tray-settings', uiSettings),
 
   // 同步后端配置
-  syncBackendConfig: (backendSettings: any) => ipcRenderer.invoke('sync-backend-config', backendSettings),
+  syncBackendConfig: (backendSettings: any) =>
+    ipcRenderer.invoke('sync-backend-config', backendSettings),
 
   // 日志文件操作
   getLogPath: () => ipcRenderer.invoke('get-log-path'),
@@ -73,8 +74,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   showItemInFolder: (filePath: string) => ipcRenderer.invoke('show-item-in-folder', filePath),
 
   // 对话框相关
-  showQuestionDialog: (questionData: any) => ipcRenderer.invoke('show-question-dialog', questionData),
-  dialogResponse: (messageId: string, choice: boolean) => ipcRenderer.invoke('dialog-response', messageId, choice),
+  showQuestionDialog: (questionData: any) =>
+    ipcRenderer.invoke('show-question-dialog', questionData),
+  dialogResponse: (messageId: string, choice: boolean) =>
+    ipcRenderer.invoke('dialog-response', messageId, choice),
   resizeDialogWindow: (height: number) => ipcRenderer.invoke('resize-dialog-window', height),
   moveWindow: (deltaX: number, deltaY: number) => ipcRenderer.invoke('move-window', deltaX, deltaY),
 

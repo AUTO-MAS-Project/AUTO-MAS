@@ -11,7 +11,8 @@ const props = defineProps<{
   testingNotify: boolean
 }>()
 
-const { settings, sendTaskResultTimeOptions, handleSettingChange, testNotify, testingNotify } = props
+const { settings, sendTaskResultTimeOptions, handleSettingChange, testNotify, testingNotify } =
+  props
 
 // 处理 Webhook 变化
 const handleWebhookChange = async () => {
@@ -24,7 +25,14 @@ const handleWebhookChange = async () => {
     <div class="form-section">
       <div class="section-header">
         <h3>通知内容</h3>
-        <a-button type="primary" :loading="testingNotify" @click="testNotify" size="small" class="section-update-button primary-style">发送测试通知</a-button>
+        <a-button
+          type="primary"
+          :loading="testingNotify"
+          size="small"
+          class="section-update-button primary-style"
+          @click="testNotify"
+          >发送测试通知</a-button
+        >
       </div>
       <a-row :gutter="24">
         <a-col :span="8">
@@ -37,10 +45,10 @@ const handleWebhookChange = async () => {
             </div>
             <a-select
               v-model:value="settings.Notify.SendTaskResultTime"
-              @change="(value: any) => handleSettingChange('Notify', 'SendTaskResultTime', value)"
               :options="sendTaskResultTimeOptions"
               size="large"
               style="width: 100%"
+              @change="(value: any) => handleSettingChange('Notify', 'SendTaskResultTime', value)"
             />
           </div>
         </a-col>
@@ -54,9 +62,9 @@ const handleWebhookChange = async () => {
             </div>
             <a-select
               v-model:value="settings.Notify.IfSendStatistic"
-              @change="(checked: any) => handleSettingChange('Notify', 'IfSendStatistic', checked)"
               size="large"
               style="width: 100%"
+              @change="(checked: any) => handleSettingChange('Notify', 'IfSendStatistic', checked)"
             >
               <a-select-option :value="true">是</a-select-option>
               <a-select-option :value="false">否</a-select-option>
@@ -73,9 +81,9 @@ const handleWebhookChange = async () => {
             </div>
             <a-select
               v-model:value="settings.Notify.IfSendSixStar"
-              @change="(checked: any) => handleSettingChange('Notify', 'IfSendSixStar', checked)"
               size="large"
               style="width: 100%"
+              @change="(checked: any) => handleSettingChange('Notify', 'IfSendSixStar', checked)"
             >
               <a-select-option :value="true">是</a-select-option>
               <a-select-option :value="false">否</a-select-option>
@@ -100,9 +108,9 @@ const handleWebhookChange = async () => {
             </div>
             <a-select
               v-model:value="settings.Notify.IfPushPlyer"
-              @change="(checked: any) => handleSettingChange('Notify', 'IfPushPlyer', checked)"
               size="large"
               style="width: 100%"
+              @change="(checked: any) => handleSettingChange('Notify', 'IfPushPlyer', checked)"
             >
               <a-select-option :value="true">是</a-select-option>
               <a-select-option :value="false">否</a-select-option>
@@ -135,9 +143,9 @@ const handleWebhookChange = async () => {
             </div>
             <a-select
               v-model:value="settings.Notify.IfSendMail"
-              @change="(checked: any) => handleSettingChange('Notify', 'IfSendMail', checked)"
               size="large"
               style="width: 100%"
+              @change="(checked: any) => handleSettingChange('Notify', 'IfSendMail', checked)"
             >
               <a-select-option :value="true">是</a-select-option>
               <a-select-option :value="false">否</a-select-option>
@@ -154,10 +162,16 @@ const handleWebhookChange = async () => {
             </div>
             <a-input
               v-model:value="settings.Notify.SMTPServerAddress"
-              @blur="handleSettingChange('Notify', 'SMTPServerAddress', settings.Notify.SMTPServerAddress)"
               :disabled="!settings.Notify.IfSendMail"
               placeholder="请输入发信邮箱SMTP服务器地址"
               size="large"
+              @blur="
+                handleSettingChange(
+                  'Notify',
+                  'SMTPServerAddress',
+                  settings.Notify.SMTPServerAddress
+                )
+              "
             />
           </div>
         </a-col>
@@ -173,10 +187,10 @@ const handleWebhookChange = async () => {
             </div>
             <a-input
               v-model:value="settings.Notify.FromAddress"
-              @blur="handleSettingChange('Notify', 'FromAddress', settings.Notify.FromAddress)"
               :disabled="!settings.Notify.IfSendMail"
               placeholder="请输入发信邮箱地址"
               size="large"
+              @blur="handleSettingChange('Notify', 'FromAddress', settings.Notify.FromAddress)"
             />
           </div>
         </a-col>
@@ -190,10 +204,16 @@ const handleWebhookChange = async () => {
             </div>
             <a-input-password
               v-model:value="settings.Notify.AuthorizationCode"
-              @blur="handleSettingChange('Notify', 'AuthorizationCode', settings.Notify.AuthorizationCode)"
               :disabled="!settings.Notify.IfSendMail"
               placeholder="请输入发信邮箱授权码"
               size="large"
+              @blur="
+                handleSettingChange(
+                  'Notify',
+                  'AuthorizationCode',
+                  settings.Notify.AuthorizationCode
+                )
+              "
             />
           </div>
         </a-col>
@@ -209,10 +229,10 @@ const handleWebhookChange = async () => {
             </div>
             <a-input
               v-model:value="settings.Notify.ToAddress"
-              @blur="handleSettingChange('Notify', 'ToAddress', settings.Notify.ToAddress)"
               :disabled="!settings.Notify.IfSendMail"
               placeholder="请输入收信邮箱地址"
               size="large"
+              @blur="handleSettingChange('Notify', 'ToAddress', settings.Notify.ToAddress)"
             />
           </div>
         </a-col>
@@ -245,9 +265,9 @@ const handleWebhookChange = async () => {
             </div>
             <a-select
               v-model:value="settings.Notify.IfServerChan"
-              @change="(checked: any) => handleSettingChange('Notify', 'IfServerChan', checked)"
               size="large"
               style="width: 100%"
+              @change="(checked: any) => handleSettingChange('Notify', 'IfServerChan', checked)"
             >
               <a-select-option :value="true">是</a-select-option>
               <a-select-option :value="false">否</a-select-option>
@@ -267,10 +287,10 @@ const handleWebhookChange = async () => {
             </div>
             <a-input
               v-model:value="settings.Notify.ServerChanKey"
-              @blur="handleSettingChange('Notify', 'ServerChanKey', settings.Notify.ServerChanKey)"
               :disabled="!settings.Notify.IfServerChan"
               placeholder="请输入Server酱SendKey"
               size="large"
+              @blur="handleSettingChange('Notify', 'ServerChanKey', settings.Notify.ServerChanKey)"
             />
           </div>
         </a-col>
@@ -289,10 +309,7 @@ const handleWebhookChange = async () => {
           文档
         </a>
       </div>
-      <WebhookManager 
-        mode="global"
-        @change="handleWebhookChange"
-      />
+      <WebhookManager mode="global" @change="handleWebhookChange" />
     </div>
 
     <!-- 测试按钮已移至“通知内容”标题右侧 -->
@@ -341,8 +358,14 @@ const handleWebhookChange = async () => {
   font-weight: 500;
   border-radius: 4px; /* same radius as doc-link */
   box-shadow: 0 2px 8px rgba(22, 119, 255, 0.18);
-  transition: transform 0.16s ease, box-shadow 0.16s ease;
-  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover)) !important;
+  transition:
+    transform 0.16s ease,
+    box-shadow 0.16s ease;
+  background: linear-gradient(
+    135deg,
+    var(--ant-color-primary),
+    var(--ant-color-primary-hover)
+  ) !important;
   border: 1px solid var(--ant-color-primary) !important; /* subtle border to match doc-link rhythm */
   color: #fff !important;
 }
@@ -362,6 +385,4 @@ const handleWebhookChange = async () => {
     margin-top: 4px;
   }
 }
-
 </style>
-

@@ -2,7 +2,7 @@
   <a-card title="任务列表" class="queue-item-card">
     <template #extra>
       <a-space>
-        <a-button type="primary" @click="addQueueItem" :loading="loading">
+        <a-button type="primary" :loading="loading" @click="addQueueItem">
           <template #icon>
             <PlusOutlined />
           </template>
@@ -30,8 +30,8 @@
         ghost-class="ghost"
         chosen-class="chosen"
         drag-class="drag"
-        @end="onDragEnd"
         class="draggable-container"
+        @end="onDragEnd"
       >
         <template #item="{ element: record, index }">
           <div class="draggable-row" :class="{ 'row-dragging': loading }">
@@ -39,22 +39,22 @@
             <div class="row-cell script-cell">
               <a-select
                 v-model:value="record.script"
-                @change="updateQueueItemScript(record)"
                 size="small"
                 style="width: 200px"
                 class="script-select"
                 placeholder="请选择脚本"
                 :options="scriptOptions"
                 allow-clear
+                @change="updateQueueItemScript(record)"
               />
             </div>
             <div class="row-cell actions-cell">
               <a-space>
                 <a-popconfirm
                   title="确定要删除这个任务吗？"
-                  @confirm="deleteQueueItem(record.id)"
                   ok-text="确定"
                   cancel-text="取消"
+                  @confirm="deleteQueueItem(record.id)"
                 >
                   <a-button size="middle" danger>
                     <DeleteOutlined />
@@ -804,5 +804,4 @@ onMounted(() => {
 .script-select :deep(.ant-select-item) {
   padding: 8px 12px !important;
 }
-
 </style>

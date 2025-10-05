@@ -32,7 +32,6 @@ const checkAutoUpdateEnabled = async (): Promise<boolean> => {
 }
 
 export function useUpdateChecker() {
-
   // 执行一次更新检查 - 完全参考顶栏的 pollOnce 逻辑
   const pollOnce = async () => {
     if (isPolling.value) return
@@ -168,7 +167,7 @@ export function useUpdateChecker() {
     onUpdateConfirmed,
     startPolling,
     stopPolling,
-    restartPolling
+    restartPolling,
   }
 }
 
@@ -180,6 +179,6 @@ export function useUpdateModal() {
     latestVersion,
     onUpdateConfirmed: () => {
       updateVisible.value = false
-    }
+    },
   }
 }

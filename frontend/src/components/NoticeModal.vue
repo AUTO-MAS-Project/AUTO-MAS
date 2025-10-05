@@ -11,10 +11,10 @@
     <div v-if="notices.length > 0" class="notice-container">
       <!-- 公告标签页 - 竖直布局 -->
       <a-tabs
-        v-model:activeKey="activeNoticeKey"
+        v-model:active-key="activeNoticeKey"
         tab-position="left"
         class="notice-tabs"
-        :tabBarStyle="{ width: '200px' }"
+        :tab-bar-style="{ width: '200px' }"
       >
         <a-tab-pane
           v-for="(content, title) in noticeData"
@@ -26,8 +26,8 @@
             <div
               ref="markdownContentRef"
               class="markdown-content"
-              v-html="renderMarkdown(content)"
               @click="handleLinkClick"
+              v-html="renderMarkdown(content)"
             ></div>
           </div>
         </a-tab-pane>
@@ -42,9 +42,9 @@
         <div class="notice-actions">
           <a-button
             type="primary"
-            @click="confirmNotices"
             :loading="confirming"
             class="confirm-button"
+            @click="confirmNotices"
           >
             我知道了
           </a-button>
@@ -164,7 +164,7 @@ watch(
 )
 
 // 监听弹窗显示状态，重置到第一个公告并播放音频
-watch(visible, async (newVisible) => {
+watch(visible, async newVisible => {
   if (newVisible && notices.value.length > 0) {
     activeNoticeKey.value = notices.value[0]
     // 当公告模态框显示时播放音频

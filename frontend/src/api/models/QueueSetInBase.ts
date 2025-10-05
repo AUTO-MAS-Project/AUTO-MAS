@@ -3,9 +3,8 @@
 /* tslint:disable */
 /* eslint-disable */
 export type QueueSetInBase = {
-    /**
-     * 所属队列ID
-     */
-    queueId: string;
-};
-
+  /**
+   * 所属队列ID
+   */
+  queueId: string
+}

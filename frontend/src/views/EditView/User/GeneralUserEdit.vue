@@ -21,15 +21,15 @@
         type="primary"
         ghost
         size="large"
-        @click="handleGeneralConfig"
         :loading="generalConfigLoading"
+        @click="handleGeneralConfig"
       >
         <template #icon>
           <SettingOutlined />
         </template>
         通用配置
       </a-button>
-      <a-button size="large" @click="handleCancel" class="cancel-button">
+      <a-button size="large" class="cancel-button" @click="handleCancel">
         <template #icon>
           <ArrowLeftOutlined />
         </template>
@@ -38,9 +38,9 @@
       <a-button
         type="primary"
         size="large"
-        @click="handleSubmit"
         :loading="loading"
         class="save-button"
+        @click="handleSubmit"
       >
         <template #icon>
           <SaveOutlined />
@@ -200,9 +200,9 @@
                   />
                   <a-button
                     size="large"
-                    @click="selectScriptBeforeTask"
                     :disabled="loading || !formData.Info.IfScriptBeforeTask"
                     class="path-button"
+                    @click="selectScriptBeforeTask"
                   >
                     <template #icon>
                       <FileOutlined />
@@ -242,9 +242,9 @@
                   />
                   <a-button
                     size="large"
-                    @click="selectScriptAfterTask"
                     :disabled="loading || !formData.Info.IfScriptAfterTask"
                     class="path-button"
+                    @click="selectScriptAfterTask"
                   >
                     <template #icon>
                       <FileOutlined />
@@ -342,11 +342,11 @@
 
   <a-float-button
     type="primary"
-    @click="handleSubmit"
     class="float-button"
     :style="{
       right: '24px',
     }"
+    @click="handleSubmit"
   >
     <template #icon>
       <SaveOutlined />
@@ -612,28 +612,25 @@ const handleGeneralConfig = async () => {
       console.debug('订阅 websocketId:', wsId)
 
       // 订阅 websocket
-      const subscriptionId = subscribe(
-        { id: wsId },
-        (wsMessage: any) => {
-          if (wsMessage.type === 'error') {
-            console.error(`用户 ${formData.userName} 通用配置错误:`, wsMessage.data)
-            message.error(`通用配置连接失败: ${wsMessage.data}`)
-            unsubscribe(subscriptionId)
-            generalSubscriptionId.value = null
-            generalWebsocketId.value = null
-            showGeneralConfigMask.value = false
-            return
-          }
-
-          if (wsMessage.data && wsMessage.data.Accomplish) {
-            message.success(`用户 ${formData.userName} 的配置已完成`)
-            unsubscribe(subscriptionId)
-            generalSubscriptionId.value = null
-            generalWebsocketId.value = null
-            showGeneralConfigMask.value = false
-          }
+      const subscriptionId = subscribe({ id: wsId }, (wsMessage: any) => {
+        if (wsMessage.type === 'error') {
+          console.error(`用户 ${formData.userName} 通用配置错误:`, wsMessage.data)
+          message.error(`通用配置连接失败: ${wsMessage.data}`)
+          unsubscribe(subscriptionId)
+          generalSubscriptionId.value = null
+          generalWebsocketId.value = null
+          showGeneralConfigMask.value = false
+          return
         }
-      )
+
+        if (wsMessage.data && wsMessage.data.Accomplish) {
+          message.success(`用户 ${formData.userName} 的配置已完成`)
+          unsubscribe(subscriptionId)
+          generalSubscriptionId.value = null
+          generalWebsocketId.value = null
+          showGeneralConfigMask.value = false
+        }
+      })
 
       generalSubscriptionId.value = subscriptionId
       generalWebsocketId.value = wsId

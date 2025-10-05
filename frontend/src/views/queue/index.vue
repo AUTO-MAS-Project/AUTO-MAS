@@ -73,8 +73,8 @@
                 :key="queue.id"
                 :type="activeQueueId === queue.id ? 'primary' : 'default'"
                 size="large"
-                @click="onQueueChange(queue.id)"
                 class="queue-button"
+                @click="onQueueChange(queue.id)"
               >
                 {{ queue.name }}
               </a-button>
@@ -89,7 +89,7 @@
           <div class="queue-title-container">
             <div v-if="!isEditingQueueName" class="queue-title-display">
               <span class="queue-title-text">{{ currentQueueName || '队列配置' }}</span>
-              <a-button type="text" size="small" @click="startEditQueueName" class="queue-edit-btn">
+              <a-button type="text" size="small" class="queue-edit-btn" @click="startEditQueueName">
                 <template #icon>
                   <EditOutlined />
                 </template>
@@ -97,13 +97,13 @@
             </div>
             <div v-else class="queue-title-edit">
               <a-input
+                ref="queueNameInputRef"
                 v-model:value="currentQueueName"
                 placeholder="请输入队列名称"
                 class="queue-title-input"
-                @blur="finishEditQueueName"
-                @pressEnter="finishEditQueueName"
                 :maxlength="50"
-                ref="queueNameInputRef"
+                @blur="finishEditQueueName"
+                @press-enter="finishEditQueueName"
               />
             </div>
           </div>
@@ -122,9 +122,9 @@
                 </div>
                 <a-select
                   v-model:value="currentStartUpEnabled"
-                  @change="onQueueSwitchChange"
                   style="width: 100%"
                   size="large"
+                  @change="onQueueSwitchChange"
                 >
                   <a-select-option :value="true">是</a-select-option>
                   <a-select-option :value="false">否</a-select-option>
@@ -141,9 +141,9 @@
                 </div>
                 <a-select
                   v-model:value="currentTimeEnabled"
-                  @change="onQueueSwitchChange"
                   style="width: 100%"
                   size="large"
+                  @change="onQueueSwitchChange"
                 >
                   <a-select-option :value="true">是</a-select-option>
                   <a-select-option :value="false">否</a-select-option>
@@ -160,11 +160,11 @@
                 </div>
                 <a-select
                   v-model:value="currentAfterAccomplish"
-                  @change="onAfterAccomplishChange"
                   style="width: 100%"
                   :options="afterAccomplishOptions"
                   placeholder="请选择操作"
                   size="large"
+                  @change="onAfterAccomplishChange"
                 />
               </div>
             </a-col>

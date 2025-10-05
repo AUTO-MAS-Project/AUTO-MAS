@@ -46,11 +46,11 @@ export function useAudioPlayer() {
 
       // 构建音频URL
       const audioUrl = `${API_ENDPOINTS.local}/api/res/sounds/${soundPath}.wav`
-      
+
       // 创建新的音频对象
       const audio = new Audio(audioUrl)
       currentAudio.value = audio
-      
+
       // 设置音频事件监听器
       audio.addEventListener('loadstart', () => {
         isPlaying.value = true
@@ -61,7 +61,7 @@ export function useAudioPlayer() {
         currentAudio.value = null
       })
 
-      audio.addEventListener('error', (e) => {
+      audio.addEventListener('error', e => {
         console.error('音频播放失败:', e)
         message.error(`音频播放失败: ${soundPath}`)
         isPlaying.value = false
@@ -71,7 +71,6 @@ export function useAudioPlayer() {
       // 播放音频
       await audio.play()
       return true
-
     } catch (error) {
       console.error('播放音频时发生错误:', error)
       message.error('音频播放失败，请检查网络连接')
@@ -94,6 +93,6 @@ export function useAudioPlayer() {
     isPlaying,
     loading,
     playSound,
-    stopSound
+    stopSound,
   }
 }

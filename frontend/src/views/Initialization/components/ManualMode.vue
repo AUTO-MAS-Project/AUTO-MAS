@@ -74,15 +74,15 @@
       <!-- 步骤 1: Python 环境 -->
       <PythonStep
         v-if="currentStep === 1"
-        :python-installed="pythonInstalled"
         ref="pythonStepRef"
+        :python-installed="pythonInstalled"
       />
 
       <!-- 步骤 2: Git 工具 -->
-      <GitStep v-if="currentStep === 2" :git-installed="gitInstalled" ref="gitStepRef" />
+      <GitStep v-if="currentStep === 2" ref="gitStepRef" :git-installed="gitInstalled" />
 
       <!-- 步骤 3: 源码获取 -->
-      <BackendStep v-if="currentStep === 3" :backend-exists="backendExists" ref="backendStepRef" />
+      <BackendStep v-if="currentStep === 3" ref="backendStepRef" :backend-exists="backendExists" />
 
       <!-- 步骤 4: 依赖安装 -->
       <DependenciesStep v-if="currentStep === 4" ref="dependenciesStepRef" />
@@ -105,8 +105,8 @@
         v-if="currentStep < 5"
         size="large"
         type="primary"
-        @click="handleNextStep"
         :loading="isProcessing"
+        @click="handleNextStep"
       >
         {{ getNextButtonText() }}
       </a-button>
@@ -116,8 +116,8 @@
         v-if="currentStep === 5"
         type="default"
         size="large"
-        @click="handleNextStep"
         :loading="isProcessing"
+        @click="handleNextStep"
       >
         重新启动服务
       </a-button>
@@ -148,8 +148,6 @@ import BackendStep from './BackendStep.vue'
 import DependenciesStep from './DependenciesStep.vue'
 import ServiceStep from './ServiceStep.vue'
 import { connectAfterBackendStart } from '@/composables/useWebSocket.ts'
-
-
 
 // Props
 interface Props {
@@ -401,7 +399,7 @@ async function autoStartBackendService() {
         serviceStepRef.value.serviceProgress = 100
         serviceStepRef.value.serviceStatus = '后端服务启动成功，正在建立WebSocket连接...'
       }
-      
+
       // 后端启动成功，建立WebSocket连接
       console.log('后端自动启动成功，正在建立WebSocket连接...')
       const wsConnected = await connectAfterBackendStart()
@@ -410,11 +408,11 @@ async function autoStartBackendService() {
       } else {
         console.log('WebSocket连接建立成功')
       }
-      
+
       // WebSocket连接完成后，启动版本检查定时任务
       console.log('启动版本检查定时任务...')
       await startPolling()
-      
+
       if (serviceStepRef.value) {
         serviceStepRef.value.serviceStatus = '后端服务启动成功，即将进入主页...'
       }
@@ -463,7 +461,7 @@ async function startBackendService() {
         serviceStepRef.value.serviceProgress = 100
         serviceStepRef.value.serviceStatus = '后端服务启动成功，正在建立WebSocket连接...'
       }
-      
+
       // 后端启动成功，建立WebSocket连接
       console.log('后端手动启动成功，正在建立WebSocket连接...')
       const wsConnected = await connectAfterBackendStart()
@@ -472,11 +470,11 @@ async function startBackendService() {
       } else {
         console.log('WebSocket连接建立成功')
       }
-      
+
       // WebSocket连接完成后，启动版本检查定时任务
       console.log('启动版本检查定时任务...')
       await startPolling()
-      
+
       if (serviceStepRef.value) {
         serviceStepRef.value.serviceStatus = '后端服务启动成功，即将进入主页...'
       }

@@ -59,7 +59,7 @@ export function useTemplateApi() {
     try {
       const response = await Service.importScriptFromWebApiScriptsImportWebPost({
         scriptId,
-        url
+        url,
       })
 
       if (response.code !== 200) {
@@ -86,6 +86,6 @@ export function useTemplateApi() {
     loading,
     error,
     getWebConfigTemplates,
-    importScriptFromWeb
+    importScriptFromWeb,
   }
 }

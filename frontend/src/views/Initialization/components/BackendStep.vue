@@ -31,7 +31,7 @@
               </div>
             </div>
             <div class="mirror-description">{{ mirror.description }}</div>
-<!--            <div class="mirror-url">{{ mirror.url }}</div>-->
+            <!--            <div class="mirror-url">{{ mirror.url }}</div>-->
           </div>
         </div>
       </div>
@@ -62,7 +62,7 @@
               </div>
             </div>
             <div class="mirror-description">{{ mirror.description }}</div>
-<!--            <div class="mirror-url">{{ mirror.url }}</div>-->
+            <!--            <div class="mirror-url">{{ mirror.url }}</div>-->
           </div>
         </div>
       </div>
@@ -79,21 +79,21 @@
               v-model:value="customMirrorUrl"
               placeholder="输入镜像域名或完整Git地址，如：ghproxy.com 或 https://ghproxy.com/https://github.com/AUTO-MAS-Project/AUTO-MAS.git"
               style="width: calc(100% - 100px)"
-              @pressEnter="addCustomMirror"
+              @press-enter="addCustomMirror"
             />
-            <a-button 
-              type="primary" 
-              @click="addCustomMirror"
+            <a-button
+              type="primary"
               :loading="addingCustomMirror"
               style="width: 100px"
+              @click="addCustomMirror"
             >
               添加
             </a-button>
           </a-input-group>
         </div>
-        
+
         <!-- 显示自定义镜像源 -->
-        <div v-if="customMirrors.length > 0" class="mirror-grid" style="margin-top: 16px;">
+        <div v-if="customMirrors.length > 0" class="mirror-grid" style="margin-top: 16px">
           <div
             v-for="mirror in customMirrors"
             :key="mirror.key"
@@ -113,9 +113,9 @@
                   <span v-else-if="mirror.speed === 9999">超时</span>
                   <span v-else>{{ mirror.speed }}ms</span>
                 </div>
-                <a-button 
-                  type="text" 
-                  size="small" 
+                <a-button
+                  type="text"
+                  size="small"
                   danger
                   @click.stop="removeCustomMirror(mirror.key)"
                 >
@@ -129,7 +129,7 @@
       </div>
 
       <div class="test-actions">
-        <a-button @click="testGitMirrorSpeed" :loading="testingGitSpeed" type="primary">
+        <a-button :loading="testingGitSpeed" type="primary" @click="testGitMirrorSpeed">
           {{ testingGitSpeed ? '测速中...' : '重新测速' }}
         </a-button>
         <span class="test-note">3秒无响应视为超时</span>
@@ -141,10 +141,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { getConfig, saveConfig } from '@/utils/config.ts'
-import { 
-  sortMirrorsBySpeedAndRecommendation,
-  type MirrorConfig 
-} from '@/config/mirrors.ts'
+import { sortMirrorsBySpeedAndRecommendation, type MirrorConfig } from '@/config/mirrors.ts'
 import { mirrorManager } from '@/utils/mirrorManager.ts'
 
 defineProps<{
@@ -158,7 +155,9 @@ const officialMirrors = computed(() => gitMirrors.value.filter(m => m.type === '
 const mirrorMirrors = computed(() => gitMirrors.value.filter(m => m.type === 'mirror'))
 
 // 按速度和推荐排序的镜像源
-const sortedOfficialMirrors = computed(() => sortMirrorsBySpeedAndRecommendation(officialMirrors.value))
+const sortedOfficialMirrors = computed(() =>
+  sortMirrorsBySpeedAndRecommendation(officialMirrors.value)
+)
 const sortedMirrorMirrors = computed(() => sortMirrorsBySpeedAndRecommendation(mirrorMirrors.value))
 
 const selectedGitMirror = ref('ghproxy_edgeone')
@@ -174,10 +173,10 @@ async function loadMirrorConfig() {
   try {
     // 从镜像管理器获取最新的Git镜像源配置（包含云端数据）
     const cloudMirrors = mirrorManager.getMirrors('git')
-    
+
     const config = await getConfig()
     selectedGitMirror.value = config.selectedGitMirror || 'ghproxy_edgeone'
-    
+
     // 加载自定义镜像源
     if (config.customGitMirrors && Array.isArray(config.customGitMirrors)) {
       customMirrors.value = config.customGitMirrors
@@ -187,11 +186,14 @@ async function loadMirrorConfig() {
       // 只使用云端镜像源
       gitMirrors.value = [...cloudMirrors]
     }
-    
+
     console.log('Git镜像源配置已加载:', selectedGitMirror.value)
     console.log('云端镜像源已加载:', cloudMirrors.length, '个')
     console.log('自定义镜像源已加载:', customMirrors.value.length, '个')
-    console.log('云端Git镜像源详情:', cloudMirrors.map(m => ({ name: m.name, key: m.key })))
+    console.log(
+      '云端Git镜像源详情:',
+      cloudMirrors.map(m => ({ name: m.name, key: m.key }))
+    )
   } catch (error) {
     console.warn('加载Git镜像源配置失败:', error)
   }
@@ -200,9 +202,9 @@ async function loadMirrorConfig() {
 // 保存镜像源选择
 async function saveMirrorConfig() {
   try {
-    await saveConfig({ 
+    await saveConfig({
       selectedGitMirror: selectedGitMirror.value,
-      customGitMirrors: customMirrors.value
+      customGitMirrors: customMirrors.value,
     })
     console.log('Git镜像源配置已保存:', selectedGitMirror.value)
     console.log('自定义镜像源已保存:', customMirrors.value.length, '个')
@@ -264,26 +266,29 @@ function getSpeedClass(speed: number | null) {
 // 处理自定义镜像源URL
 function processCustomMirrorUrl(input: string): string {
   const trimmedInput = input.trim()
-  
+
   // 如果已经是完整的Git地址且以.git结尾，直接返回
-  if (trimmedInput.includes('github.com/AUTO-MAS-Project/AUTO-MAS') && trimmedInput.endsWith('.git')) {
+  if (
+    trimmedInput.includes('github.com/AUTO-MAS-Project/AUTO-MAS') &&
+    trimmedInput.endsWith('.git')
+  ) {
     return trimmedInput
   }
-  
+
   // 如果是完整的Git地址但没有.git结尾，添加.git
   if (trimmedInput.includes('github.com/AUTO-MAS-Project/AUTO-MAS')) {
     return trimmedInput.endsWith('.git') ? trimmedInput : trimmedInput + '.git'
   }
-  
+
   // 如果只是域名，拼接完整地址
   let domain = trimmedInput
-  
+
   // 移除协议前缀
   domain = domain.replace(/^https?:\/\//, '')
-  
+
   // 移除尾部斜杠
   domain = domain.replace(/\/$/, '')
-  
+
   // 拼接完整地址
   return `https://${domain}/https://github.com/AUTO-MAS-Project/AUTO-MAS.git`
 }
@@ -293,27 +298,27 @@ async function addCustomMirror() {
   if (!customMirrorUrl.value.trim()) {
     return
   }
-  
+
   addingCustomMirror.value = true
-  
+
   try {
     const processedUrl = processCustomMirrorUrl(customMirrorUrl.value)
-    
+
     // 检查是否已存在
     const existingMirror = [...gitMirrors.value, ...customMirrors.value].find(
       m => m.url === processedUrl
     )
-    
+
     if (existingMirror) {
       console.warn('镜像源已存在:', processedUrl)
       customMirrorUrl.value = ''
       return
     }
-    
+
     // 生成镜像源配置
     const customKey = `custom_${Date.now()}`
     const customName = extractDomainName(customMirrorUrl.value)
-    
+
     const newMirror: MirrorConfig = {
       key: customKey,
       name: `${customName} (自定义)`,
@@ -321,27 +326,26 @@ async function addCustomMirror() {
       speed: null,
       type: 'mirror',
       chinaConnectivity: 'good',
-      description: `用户自定义的镜像源: ${customName}`
+      description: `用户自定义的镜像源: ${customName}`,
     }
-    
+
     // 添加到自定义镜像源列表
     customMirrors.value.push(newMirror)
-    
+
     // 更新完整的镜像源列表（云端 + 自定义）
     const cloudMirrors = mirrorManager.getMirrors('git')
     gitMirrors.value = [...cloudMirrors, ...customMirrors.value]
-    
+
     // 自动选择新添加的镜像源
     selectedGitMirror.value = customKey
-    
+
     // 保存配置
     await saveMirrorConfig()
-    
+
     // 清空输入框
     customMirrorUrl.value = ''
-    
+
     console.log('自定义镜像源添加成功:', newMirror)
-    
   } catch (error) {
     console.error('添加自定义镜像源失败:', error)
   } finally {
@@ -354,13 +358,13 @@ function extractDomainName(url: string): string {
   try {
     // 移除协议前缀
     let domain = url.replace(/^https?:\/\//, '')
-    
+
     // 如果包含路径，只取域名部分
     domain = domain.split('/')[0]
-    
+
     // 移除端口号
     domain = domain.split(':')[0]
-    
+
     return domain || '自定义镜像'
   } catch {
     return '自定义镜像'
@@ -372,21 +376,20 @@ async function removeCustomMirror(key: string) {
   try {
     // 从自定义镜像源列表中移除
     customMirrors.value = customMirrors.value.filter(m => m.key !== key)
-    
+
     // 更新完整的镜像源列表（云端 + 自定义）
     const cloudMirrors = mirrorManager.getMirrors('git')
     gitMirrors.value = [...cloudMirrors, ...customMirrors.value]
-    
+
     // 如果当前选中的是被删除的镜像源，切换到默认镜像源
     if (selectedGitMirror.value === key) {
       selectedGitMirror.value = 'ghproxy_edgeone'
     }
-    
+
     // 保存配置
     await saveMirrorConfig()
-    
+
     console.log('自定义镜像源删除成功:', key)
-    
   } catch (error) {
     console.error('删除自定义镜像源失败:', error)
   }
@@ -422,7 +425,6 @@ onMounted(async () => {
   font-size: 20px;
   font-weight: 600;
   color: var(--ant-color-text);
-
 }
 
 .install-section {
@@ -440,7 +442,6 @@ onMounted(async () => {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 16px;
-
 }
 
 .mirror-card {
@@ -482,8 +483,6 @@ onMounted(async () => {
   color: var(--ant-color-text);
 }
 
-
-
 .speed-badge {
   padding: 4px 8px;
   border-radius: 4px;
@@ -523,7 +522,6 @@ onMounted(async () => {
   color: var(--ant-color-text-tertiary);
   word-break: break-all;
 }
-
 
 .section-header {
   display: flex;
