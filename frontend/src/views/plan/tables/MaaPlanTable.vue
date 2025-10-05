@@ -1,30 +1,5 @@
 <template>
   <div>
-    <!-- 自定义关卡设置区域 -->
-    <a-card size="small" style="margin-bottom: 16px">
-      <a-space wrap :size="[16, 8]">
-        <div v-for="i in 4" :key="i" class="custom-stage-input-group">
-          <span style="white-space: nowrap">自定义关卡 {{ i }}</span>
-          <a-input
-            v-model:value="tempCustomStages[`custom_stage_${i}` as keyof typeof tempCustomStages]"
-            placeholder="输入关卡名称"
-            size="small"
-            style="width: 120px"
-            :maxlength="50"
-            allowClear
-            @pressEnter="saveCustomStage(i as 1 | 2 | 3 | 4)"
-          />
-          <a-button
-            size="small"
-            type="primary"
-            @click="saveCustomStage(i as 1 | 2 | 3 | 4)"
-            :disabled="!hasCustomStageChanged(i as 1 | 2 | 3 | 4)"
-          >
-            保存
-          </a-button>
-        </div>
-      </a-space>
-    </a-card>
 
     <!-- 配置视图 -->
     <div v-show="viewMode === 'config'" class="config-table-wrapper">
@@ -141,12 +116,41 @@
         </template>
       </a-table>
     </div>
+
+    <!-- 自定义关卡设置区域 -->
+    <div class="custom-stage-section" style="margin-top: 16px">
+      <a-row :gutter="24">
+        <a-col v-for="i in 4" :key="i" :span="6">
+          <a-form-item :colon="false" class="compact-form-item">
+            <template #label>
+              <a-tooltip title="关卡选择中可选的自定义关卡号">
+                <span class="form-label">
+                  自定义关卡 {{ i }}
+                  <QuestionCircleOutlined class="help-icon" />
+                </span>
+              </a-tooltip>
+            </template>
+            <a-input
+              v-model:value="tempCustomStages[`custom_stage_${i}` as keyof typeof tempCustomStages]"
+              placeholder="输入关卡号"
+              :maxlength="50"
+              allowClear
+              size="large"
+              class="modern-input"
+              @input="onCustomStageInput(i as 1 | 2 | 3 | 4)"
+              @pressEnter="onCustomStageInput(i as 1 | 2 | 3 | 4)"
+            />
+          </a-form-item>
+        </a-col>
+      </a-row>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
+import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import {
   usePlanDataCoordinator,
   TIME_KEYS,
@@ -178,6 +182,8 @@ const tempCustomStages = ref({
   custom_stage_3: '',
   custom_stage_4: '',
 })
+
+
 
 // 配置视图列定义
 const configColumns = [
@@ -219,23 +225,29 @@ const updateConfigValue = (rowKey: string, timeKey: TimeKey, value: any) => {
   emitUpdate()
 }
 
-// 自定义关卡管理
-const hasCustomStageChanged = (index: 1 | 2 | 3 | 4): boolean => {
-  const key = `custom_stage_${index}` as keyof typeof tempCustomStages.value
-  return tempCustomStages.value[key] !== coordinator.planData.customStageDefinitions[key]
-}
+// 防抖函数
+const debounceTimers = ref<Record<string, NodeJS.Timeout>>({})
 
-const saveCustomStage = (index: 1 | 2 | 3 | 4) => {
+// 自定义关卡管理 - 实时保存（防抖）
+const onCustomStageInput = (index: 1 | 2 | 3 | 4) => {
   const key = `custom_stage_${index}` as keyof typeof tempCustomStages.value
-  const newValue = tempCustomStages.value[key].trim()
-
-  // 更新自定义关卡定义
-  coordinator.updateCustomStageDefinition(index, newValue)
+  const timerKey = `custom_stage_${index}`
   
-  // 保存到后端
-  emitUpdate()
-
-  message.success(newValue ? `自定义关卡-${index} 已保存` : `自定义关卡-${index} 已删除`)
+  // 清除之前的定时器
+  if (debounceTimers.value[timerKey]) {
+    clearTimeout(debounceTimers.value[timerKey])
+  }
+  
+  // 设置新的防抖定时器
+  debounceTimers.value[timerKey] = setTimeout(() => {
+    const newValue = tempCustomStages.value[key].trim()
+    
+    // 实时更新自定义关卡定义
+    coordinator.updateCustomStageDefinition(index, newValue)
+    
+    // 实时保存到后端
+    emitUpdate()
+  }, 500) // 500ms 防抖延迟
 }
 
 // 连战次数选项
@@ -493,11 +505,71 @@ watch(
   margin-inline-start: 0 !important;
 }
 
-.custom-stage-input-group {
+/* 自定义关卡样式 - 与表格风格保持一致 */
+.custom-stage-section {
+  padding: 16px 20px;
+  border-radius: 6px;
+  background: var(--ant-color-bg-container);
+  border: 1px solid var(--ant-color-border);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+  min-height: auto;
+  height: auto;
+}
+
+/* 紧凑的表单项样式 */
+.compact-form-item {
+  margin-bottom: 0 !important;
+}
+
+.compact-form-item :deep(.ant-form-item-label) {
+  padding-bottom: 4px;
+  line-height: 1.2;
+}
+
+.compact-form-item :deep(.ant-form-item-control) {
+  line-height: 1.2;
+}
+
+.form-label {
   display: flex;
   align-items: center;
   gap: 8px;
+  font-weight: 600;
+  color: var(--ant-color-text);
+  font-size: 14px;
 }
+
+.help-icon {
+  color: var(--ant-color-text-tertiary);
+  font-size: 14px;
+  cursor: help;
+  transition: color 0.3s ease;
+}
+
+.help-icon:hover {
+  color: var(--ant-color-primary);
+}
+
+
+
+.modern-input {
+  border-radius: 4px;
+  border: 1px solid var(--ant-color-border);
+  background: var(--ant-color-bg-container);
+  transition: all 0.2s ease;
+}
+
+.modern-input:hover {
+  border-color: var(--ant-color-primary-hover);
+}
+
+.modern-input:focus,
+.modern-input.ant-input-focused {
+  border-color: var(--ant-color-primary);
+  box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.2);
+}
+
+
 
 .task-tag {
   margin: 0;
