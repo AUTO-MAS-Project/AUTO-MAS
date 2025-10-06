@@ -680,9 +680,8 @@ const buttonFixedStyle = { width: '28px', height: '28px', padding: 0 }
 }
 
 .history-content {
-  /* 避免 tooltip 在局部弹出时引起外层出现滚动条 */
-  height: calc(80vh - 200px);
-  overflow: hidden;
+  height: 53vh;
+  overflow: auto;
 }
 
 .empty-state {
@@ -973,6 +972,7 @@ const buttonFixedStyle = { width: '28px', height: '28px', padding: 0 }
   word-break: break-all;
   overflow-wrap: anywhere;
   max-width: 100%;
+  height: 100%;
   font-size: inherit;
   line-height: inherit;
 }
