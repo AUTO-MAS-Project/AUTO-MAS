@@ -334,12 +334,6 @@ class GeneralUserConfig_Notify(BaseModel):
         default=None, description="是否使用Server酱推送"
     )
     ServerChanKey: Optional[str] = Field(default=None, description="ServerChanKey")
-    IfCompanyWebHookBot: Optional[bool] = Field(
-        default=None, description="是否使用Webhook推送"
-    )
-    CompanyWebHookBotUrl: Optional[str] = Field(
-        default=None, description="企微Webhook Bot URL"
-    )
 
 
 class MaaUserConfig(BaseModel):
