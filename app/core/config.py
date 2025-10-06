@@ -50,6 +50,7 @@ from app.models.config import (
     CLASS_BOOK,
     Webhook,
     TimeSet,
+    EmulatorManagerConfig,
 )
 from app.utils.constants import (
     RESOURCE_STAGE_INFO,
@@ -120,6 +121,7 @@ class AppConfig(GlobalConfig):
         )
         self.PlanConfig = MultipleConfig([MaaPlanConfig], if_save_needed=False)
         self.QueueConfig = MultipleConfig([QueueConfig], if_save_needed=False)
+        self.EmulatorData = MultipleConfig([EmulatorManagerConfig])
         QueueItem.related_config["ScriptConfig"] = self.ScriptConfig
         MaaUserConfig.related_config["PlanConfig"] = self.PlanConfig
 
