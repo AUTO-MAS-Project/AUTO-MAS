@@ -26,12 +26,12 @@ import sys
 import ctypes
 import logging
 from pathlib import Path
+from app.utils import get_logger
 
 current_dir = Path(__file__).resolve().parent
 if str(current_dir) not in sys.path:
     sys.path.insert(0, str(current_dir))
 
-from app.utils import get_logger
 
 logger = get_logger("主程序")
 
@@ -58,15 +58,13 @@ def is_admin() -> bool:
     """检查当前程序是否以管理员身份运行"""
     try:
         return ctypes.windll.shell32.IsUserAnAdmin()
-    except:
+    except:  # noqa: E722
         return False
 
 
 @logger.catch
 def main():
-
     if is_admin():
-
         import asyncio
         import uvicorn
         from fastapi import FastAPI
@@ -75,7 +73,6 @@ def main():
 
         @asynccontextmanager
         async def lifespan(app: FastAPI):
-
             from app.core import Config, MainTimer, TaskManager
             from app.services import System
             from app.models.schema import WebSocketMessage
@@ -161,7 +158,6 @@ def main():
         )
 
         async def run_server():
-
             config = uvicorn.Config(
                 app, host="0.0.0.0", port=36163, log_level="info", log_config=None
             )
@@ -175,7 +171,6 @@ def main():
         asyncio.run(run_server())
 
     else:
-
         ctypes.windll.shell32.ShellExecuteW(
             None, "runas", sys.executable, os.path.realpath(sys.argv[0]), None, 1
         )
@@ -183,5 +178,4 @@ def main():
 
 
 if __name__ == "__main__":
-
     main()
