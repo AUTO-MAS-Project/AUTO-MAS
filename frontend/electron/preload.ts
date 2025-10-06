@@ -37,7 +37,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 新增的git管理方法
   checkRepoStatus: () => ipcRenderer.invoke('check-repo-status'),
-  cleanDepot: () => ipcRenderer.invoke('clean-depot'),
+  cleanRepo: () => ipcRenderer.invoke('clean-repo'),
   getRepoInfo: () => ipcRenderer.invoke('get-repo-info'),
   startBackend: () => ipcRenderer.invoke('start-backend'),
   stopBackend: () => ipcRenderer.invoke('stop-backend'),
