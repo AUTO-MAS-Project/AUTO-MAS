@@ -74,7 +74,6 @@ def main():
         @asynccontextmanager
         async def lifespan(app: FastAPI):
             from app.core import Config, MainTimer, TaskManager
-            from app.core.emulator_manager import EmulatorManager
             from app.services import System
             from app.models.schema import WebSocketMessage
 
