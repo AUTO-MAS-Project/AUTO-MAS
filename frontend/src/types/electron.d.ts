@@ -42,11 +42,10 @@ export interface ElectronAPI {
     currentCommit?: string
     error?: string
   }>
-  cleanDepot: () => Promise<{ success: boolean; error?: string }>
+  cleanRepo: () => Promise<{ success: boolean; error?: string }>
   getRepoInfo: () => Promise<{
     success: boolean
     info?: {
-      depotExists: boolean
       repoExists: boolean
       isGitRepo: boolean
       currentBranch?: string
