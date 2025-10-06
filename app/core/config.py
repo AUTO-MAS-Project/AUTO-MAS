@@ -33,12 +33,31 @@ from pathlib import Path
 from fastapi import WebSocket
 from collections import defaultdict
 from datetime import datetime, timedelta, date
-from typing import Literal, Optional, Union, Dict, Any,List
+from typing import Literal, Optional, Union, Dict, Any, List
 import uuid
 import json
 
-from app.models.config import *
-from app.utils.constants import *
+from app.models.config import (
+    GeneralConfig,
+    MaaConfig,
+    MaaPlanConfig,
+    QueueConfig,
+    QueueItem,
+    MaaUserConfig,
+    GeneralUserConfig,
+    GlobalConfig,
+    MultipleConfig,
+    CLASS_BOOK,
+    Webhook,
+    TimeSet,
+)
+from app.utils.constants import (
+    RESOURCE_STAGE_INFO,
+    RESOURCE_STAGE_DROP_INFO,
+    MATERIALS_MAP,
+    TYPE_BOOK,
+    RESOURCE_STAGE_DATE_TEXT,
+)
 from app.utils import get_logger
 
 logger = get_logger("配置管理")
@@ -1518,7 +1537,7 @@ class AppConfig(GlobalConfig):
             logger.info("一小时内已进行过一次检查, 直接使用缓存的公告信息")
             return False, local_notice.get("notice_dict", {})
 
-        logger.info(f"开始从 AUTO-MAS 服务器获取公告信息")
+        logger.info("开始从 AUTO-MAS 服务器获取公告信息")
 
         try:
             async with httpx.AsyncClient(proxy=self.get_proxy()) as client:
@@ -1571,7 +1590,7 @@ class AppConfig(GlobalConfig):
             logger.info("一小时内已进行过一次检查, 直接使用缓存的配置分享中心信息")
             return local_web_config
 
-        logger.info(f"开始从 AUTO-MAS 服务器获取配置分享中心信息")
+        logger.info("开始从 AUTO-MAS 服务器获取配置分享中心信息")
 
         try:
             async with httpx.AsyncClient(proxy=self.get_proxy()) as client:
@@ -1905,6 +1924,8 @@ class AppConfig(GlobalConfig):
                     date_name = f"{year}年 第{week}周"
                 elif mode == "按月合并":
                     date_name = date.strftime("%Y年 %m月")
+                else:
+                    raise ValueError("无效的合并模式")
 
                 if date_name not in history_dict:
                     history_dict[date_name] = {}
