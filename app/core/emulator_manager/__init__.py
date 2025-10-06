@@ -4,11 +4,11 @@ from app.core import Config
 from app.models.config import EmulatorManagerConfig
 from app.utils import get_logger
 
-from app.core.emulator_manager.mumu import MumuManager
-from app.core.emulator_manager.ldplayer import LDManager
-from app.core.emulator_manager.general import GeneralDeviceManager
-from app.core.emulator_manager.utils import BaseDevice, DeviceStatus
-from app.core.emulator_manager.emulator_search import search_emulators
+from .mumu import MumuManager
+from .ldplayer import LDManager
+from .general import GeneralDeviceManager
+from .utils import BaseDevice, DeviceStatus
+from .emulator_search import search_emulators
 from typing import Literal
 
 logger = get_logger("模拟器管理")

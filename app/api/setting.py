@@ -140,7 +140,6 @@ async def test_notify() -> OutBase:
     status_code=200,
 )
 async def get_webhook(webhook: WebhookGetIn = Body(...)) -> WebhookGetOut:
-
     try:
         index, data = await Config.get_webhook(None, None, webhook.webhookId)
         index = [WebhookIndexItem(**_) for _ in index]
@@ -163,7 +162,6 @@ async def get_webhook(webhook: WebhookGetIn = Body(...)) -> WebhookGetOut:
     status_code=200,
 )
 async def add_webhook() -> WebhookCreateOut:
-
     try:
         uid, config = await Config.add_webhook(None, None)
         data = Webhook(**(await config.toDict()))
@@ -182,7 +180,6 @@ async def add_webhook() -> WebhookCreateOut:
     "/webhook/update", summary="更新webhook项", response_model=OutBase, status_code=200
 )
 async def update_webhook(webhook: WebhookUpdateIn = Body(...)) -> OutBase:
-
     try:
         await Config.update_webhook(
             None, None, webhook.webhookId, webhook.data.model_dump(exclude_unset=True)
@@ -198,7 +195,6 @@ async def update_webhook(webhook: WebhookUpdateIn = Body(...)) -> OutBase:
     "/webhook/delete", summary="删除webhook项", response_model=OutBase, status_code=200
 )
 async def delete_webhook(webhook: WebhookDeleteIn = Body(...)) -> OutBase:
-
     try:
         await Config.del_webhook(None, None, webhook.webhookId)
     except Exception as e:
@@ -215,7 +211,6 @@ async def delete_webhook(webhook: WebhookDeleteIn = Body(...)) -> OutBase:
     status_code=200,
 )
 async def reorder_webhook(webhook: WebhookReorderIn = Body(...)) -> OutBase:
-
     try:
         await Config.reorder_webhook(None, None, webhook.indexList)
     except Exception as e:
@@ -292,8 +287,8 @@ async def add_emulator() -> EmulatorOutBase:
     """添加新的模拟器配置"""
 
     try:
-
         uuid, new_config = await emulator_manager.config.add(EmulatorManagerConfig)
+        await emulator_manager.config.save()
         data = await new_config.toDict() if new_config else dict()
         return EmulatorOutBase(
             code=200,
@@ -324,6 +319,7 @@ async def update_emulator(emulator: EmulatorUpdateIn = Body(...)) -> OutBase:
     try:
         # 将字符串UUID转换为UUID对象
         emulator_uuid = uuid_module.UUID(emulator.emulator_uuid)
+        emulator_config = emulator.emulator_data
 
         # 检查UUID是否存在
         if emulator_uuid not in emulator_manager.config:
@@ -333,11 +329,8 @@ async def update_emulator(emulator: EmulatorUpdateIn = Body(...)) -> OutBase:
                 message=f"未找到UUID为 {emulator.emulator_uuid} 的模拟器配置",
             )
 
-        # 获取配置实例(从 MultipleConfig 中直接获取)
-        config_instance = emulator_manager.config[emulator_uuid]
-
-        # 直接加载字典数据,配置会自动保存
-        await config_instance.load(emulator.data)
+        await emulator_manager.config[emulator_uuid].load(emulator_config)
+        await emulator_manager.config.save()
 
         return OutBase(code=200, status="success", message="模拟器配置更新成功")
 
