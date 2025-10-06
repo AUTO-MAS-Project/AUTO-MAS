@@ -69,6 +69,12 @@ const mainMenuItems = [
   { key: '/emulators', label: '模拟器管理', icon: icon(DatabaseOutlined) },
   { key: '/queue', label: '调度队列', icon: icon(UnorderedListOutlined) },
   { key: '/scheduler', label: '调度中心', icon: icon(ControlOutlined) },
+  // 开发模式下添加测试路由
+  ...(process.env.NODE_ENV === 'development' ||
+  (import.meta as any).env?.DEV === true ||
+  window.location.hostname === 'localhost'
+    ? [{ key: '/TestRouter', label: '测试路由', icon: icon(SettingOutlined) }]
+    : []),
 ]
 const bottomMenuItems = [
   { key: '/history', label: '历史记录', icon: icon(HistoryOutlined) },

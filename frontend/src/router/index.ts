@@ -92,6 +92,12 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '调度中心' },
   },
   {
+    path: '/TestRouter',
+    name: 'TestRouter',
+    component: () => import('../views/TestRouter.vue'),
+    meta: { title: '测试路由' },
+  },
+  {
     path: '/history',
     name: 'History',
     component: () => import('../views/History.vue'),
