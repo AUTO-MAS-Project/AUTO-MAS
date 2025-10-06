@@ -28,6 +28,9 @@
 
     <div class="auto-actions">
       <a-button type="primary" size="large" @click="handleSwitchToManual"> 重新配置环境 </a-button>
+      <a-button type="default" size="large" @click="handleSkipUpdateAndStart">
+        不进行更新，直接启动后端
+      </a-button>
       <a-button type="default" size="large" @click="handleForceEnter"> 强行进入应用 </a-button>
     </div>
   </div>
@@ -50,13 +53,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
-import { getConfig } from '@/utils/config.ts'
-import { mirrorManager } from '@/utils/mirrorManager.ts'
 import { useUpdateChecker } from '@/composables/useUpdateChecker.ts'
 import { connectAfterBackendStart } from '@/composables/useWebSocket.ts'
 import { forceEnterApp } from '@/utils/appEntry.ts'
+import { getConfig } from '@/utils/config.ts'
+import { mirrorManager } from '@/utils/mirrorManager.ts'
 import { message } from 'ant-design-vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 
 // Props
 interface Props {
@@ -142,6 +145,42 @@ async function handleForceEnterConfirm() {
   forceEnterVisible.value = false
 
   await forceEnterApp('自动模式-强行进入确认')
+}
+
+// 跳过更新，直接启动后端
+async function handleSkipUpdateAndStart() {
+  try {
+    clearTimers()
+    aborted.value = true
+    showRetryCountdown.value = false
+
+    // 重置进度状态
+    progress.value = 0
+    progressStatus.value = 'normal'
+    currentRetryCount.value = 0
+
+    progressText.value = '跳过更新，直接启动后端服务...'
+    progress.value = 50
+
+    // 直接启动后端服务
+    await startBackendService()
+
+    progressText.value = '启动完成！'
+    progress.value = 100
+    progressStatus.value = 'success'
+
+    console.log('跳过更新直接启动完成，即将进入应用')
+
+    // 延迟0.5秒后自动进入应用
+    setTimeout(() => {
+      props.onAutoComplete()
+    }, 500)
+  } catch (error) {
+    console.error('跳过更新直接启动失败', error)
+    progressText.value = `启动失败: ${error instanceof Error ? error.message : String(error)}`
+    progressStatus.value = 'exception'
+    message.error('后端启动失败，请检查环境配置')
+  }
 }
 
 // 事件处理 - 增强重新配置环境按钮功能
@@ -547,6 +586,12 @@ onUnmounted(() => {
 
   .auto-actions .ant-btn {
     width: 200px;
+  }
+}
+
+@media (max-width: 900px) {
+  .auto-actions {
+    justify-content: center;
   }
 }
 </style>
