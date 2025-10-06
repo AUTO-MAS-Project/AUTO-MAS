@@ -889,7 +889,7 @@ class EmulatorUpdateIn(BaseModel):
     """更新模拟器配置请求"""
 
     emulator_uuid: str = Field(..., description="模拟器UUID")
-    data: dict = Field(..., description="需要更新的模拟器配置数据")
+    emulator_data: dict = Field(..., description="需要更新的模拟器配置数据")
 
 
 class EmulatorDeleteIn(BaseModel):
