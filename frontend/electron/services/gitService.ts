@@ -128,19 +128,23 @@ async function checkBranchExists(
   }
 }
 
-// 递归复制目录，包括文件和隐藏文件
+// 递归复制目录，包括文件和隐藏文件（完全替换模式）
 function copyDirSync(src: string, dest: string) {
+  // 确保目标目录存在
   if (!fs.existsSync(dest)) {
     fs.mkdirSync(dest, { recursive: true })
   }
+  
   const entries = fs.readdirSync(src, { withFileTypes: true })
   for (const entry of entries) {
     const srcPath = path.join(src, entry.name)
     const destPath = path.join(dest, entry.name)
+    
     if (entry.isDirectory()) {
+      // 递归复制子目录
       copyDirSync(srcPath, destPath)
     } else {
-      // 直接覆盖写，不需要先删除
+      // 复制文件（直接覆盖）
       fs.copyFileSync(srcPath, destPath)
     }
   }
@@ -249,10 +253,11 @@ async function cleanOldLocalBranches(
 
 // 强制复制指定的文件和文件夹到目标目录（强制替换）
 async function copySelectedFiles(sourcePath: string, targetPath: string, branchName: string) {
-  console.log(`=== 开始强制复制选定文件（强制替换模式） ===`)
+  console.log(`=== 开始强制复制选定文件（完全替换模式） ===`)
   console.log(`源路径: ${sourcePath}`)
   console.log(`目标路径: ${targetPath}`)
   console.log(`分支: ${branchName}`)
+  console.log(`⚠️  注意: 此操作将完全删除目标文件/目录后重新复制，确保清理多余文件`)
 
   // 需要复制的文件和文件夹列表
   const itemsToCopy = ['app', 'res', 'main.py', 'requirements.txt', 'LICENSE', 'README.md', '.git']
@@ -273,10 +278,14 @@ async function copySelectedFiles(sourcePath: string, targetPath: string, branchN
     console.log(`🔄 强制复制: ${item}`)
 
     try {
+      const isSourceDir = fs.statSync(srcPath).isDirectory()
+
       // 强制删除目标文件/目录（如果存在）
       if (fs.existsSync(dstPath)) {
-        console.log(`  - 🗑️ 强制删除现有文件/目录: ${item}`)
-        if (fs.statSync(dstPath).isDirectory()) {
+        const isTargetDir = fs.statSync(dstPath).isDirectory()
+        console.log(`  - 🗑️ 强制删除现有${isTargetDir ? '目录' : '文件'}: ${item}`)
+        
+        if (isTargetDir) {
           fs.rmSync(dstPath, { recursive: true, force: true })
         } else {
           fs.unlinkSync(dstPath)
@@ -284,8 +293,9 @@ async function copySelectedFiles(sourcePath: string, targetPath: string, branchN
       }
 
       // 强制复制文件或目录
-      if (fs.statSync(srcPath).isDirectory()) {
-        console.log(`  - 📁 强制复制目录: ${item}`)
+      if (isSourceDir) {
+        console.log(`  - 📁 完全替换复制目录: ${item}`)
+        // 确保目标目录不存在，然后完整复制
         copyDirSync(srcPath, dstPath)
       } else {
         console.log(`  - 📄 强制复制文件: ${item}`)
@@ -340,8 +350,47 @@ function isGitRepository(dirPath: string): boolean {
   return fs.existsSync(gitDir)
 }
 
+// 检查网络连接（通过访问GitHub来测试）
+async function checkNetworkConnection(gitPath: string, gitEnv: any, repoUrl: string): Promise<boolean> {
+  console.log('=== 检查网络连接 ===')
+  try {
+    return new Promise<boolean>(resolve => {
+      const proc = spawn(gitPath, ['ls-remote', '--heads', repoUrl], {
+        stdio: 'pipe',
+        env: gitEnv,
+      })
+      
+      let hasOutput = false
+      proc.stdout?.on('data', () => {
+        hasOutput = true
+      })
+      
+      proc.on('close', code => {
+        const isConnected = code === 0 && hasOutput
+        console.log(`网络连接检查 - 退出码: ${code}, 有输出: ${hasOutput}, 连接状态: ${isConnected ? '正常' : '异常'}`)
+        resolve(isConnected)
+      })
+      
+      proc.on('error', error => {
+        console.log('网络连接检查进程错误:', error)
+        resolve(false)
+      })
+      
+      // 5秒超时
+      setTimeout(() => {
+        proc.kill()
+        console.log('网络连接检查超时')
+        resolve(false)
+      }, 5000)
+    })
+  } catch (error) {
+    console.error('网络连接检查异常:', error)
+    return false
+  }
+}
+
 // 下载Git
-// 检查depot/repo目录状态
+// 检查repo目录状态
 export async function checkRepoStatus(appRoot: string): Promise<{
   exists: boolean
   isGitRepo: boolean
@@ -422,7 +471,7 @@ export async function checkRepoStatus(appRoot: string): Promise<{
 }
 
 // 清理repo目录
-export async function cleanDepot(appRoot: string): Promise<{ success: boolean; error?: string }> {
+export async function cleanRepo(appRoot: string): Promise<{ success: boolean; error?: string }> {
   try {
     const repoPath = path.join(appRoot, 'repo')
 
@@ -437,7 +486,7 @@ export async function cleanDepot(appRoot: string): Promise<{ success: boolean; e
     return { success: true }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error)
-    console.error('清理depot目录失败:', errorMessage)
+    console.error('清理repo目录失败:', errorMessage)
     return { success: false, error: errorMessage }
   }
 }
@@ -446,7 +495,6 @@ export async function cleanDepot(appRoot: string): Promise<{ success: boolean; e
 export async function getRepoInfo(appRoot: string): Promise<{
   success: boolean
   info?: {
-    depotExists: boolean
     repoExists: boolean
     isGitRepo: boolean
     currentBranch?: string
@@ -460,7 +508,6 @@ export async function getRepoInfo(appRoot: string): Promise<{
     const repoPath = path.join(appRoot, 'repo')
 
     const info = {
-      depotExists: fs.existsSync(repoPath), // 为了对外接口兼容，保留这个字段
       repoExists: fs.existsSync(repoPath),
       isGitRepo: fs.existsSync(path.join(repoPath, '.git')),
     }
@@ -722,6 +769,14 @@ export async function cloneBackend(
       })
     })
 
+    // 检查网络连接
+    console.log('=== 检查网络连接 ===')
+    const isNetworkAvailable = await checkNetworkConnection(gitPath, gitEnv, repoUrl)
+    if (!isNetworkAvailable) {
+      throw new Error('网络连接不可用，请检查网络连接后重试')
+    }
+    console.log('✅ 网络连接正常')
+
     // 获取版本号并确定目标分支
     const version = getAppVersion(appRoot)
     console.log(`=== 分支选择逻辑 ===`)
@@ -773,84 +828,110 @@ export async function cloneBackend(
       const refspecs = branchesToFetch.map(
         branch => `+refs/heads/${branch}:refs/remotes/origin/${branch}`
       )
-      const refspecString = refspecs.join(' ')
 
-      await new Promise<void>((resolve, reject) => {
-        const proc = spawn(gitPath, ['config', 'remote.origin.fetch', refspecs[0]], {
+      // 先清理现有的fetch配置
+      await new Promise<void>((resolve) => {
+        const proc = spawn(gitPath, ['config', '--unset-all', 'remote.origin.fetch'], {
           stdio: 'pipe',
           env: gitEnv,
           cwd: repoPath,
         })
-        proc.stdout?.on('data', d => console.log('git config stdout:', d.toString().trim()))
-        proc.stderr?.on('data', d => console.log('git config stderr:', d.toString().trim()))
+        proc.stdout?.on('data', d => console.log('git config --unset-all stdout:', d.toString().trim()))
+        proc.stderr?.on('data', d => console.log('git config --unset-all stderr:', d.toString().trim()))
         proc.on('close', code => {
-          console.log(`git config fetch 退出码: ${code}`)
+          console.log(`git config --unset-all 退出码: ${code}`)
           if (code === 0) {
-            console.log(`✅ git fetch范围配置成功: ${branchesToFetch.join(', ')}`)
+            console.log(`✅ 清理现有fetch配置成功`)
           } else {
-            console.log(`⚠️ git fetch范围配置失败，但继续执行`)
+            console.log(`⚠️ 清理现有fetch配置失败或无配置需要清理`)
           }
           resolve() // 无论成功失败都继续
         })
         proc.on('error', error => {
-          console.log('⚠️ git config 进程错误，但继续执行:', error)
+          console.log('⚠️ git config --unset-all 进程错误，但继续执行:', error)
           resolve()
         })
       })
 
-      // 如果需要多个分支，添加额外的refspec
-      if (branchesToFetch.length > 1) {
-        for (let i = 1; i < refspecs.length; i++) {
-          await new Promise<void>(resolve => {
-            const proc = spawn(gitPath, ['config', '--add', 'remote.origin.fetch', refspecs[i]], {
-              stdio: 'pipe',
-              env: gitEnv,
-              cwd: repoPath,
-            })
-            proc.on('close', () => {
-              console.log(`✅ 添加fetch配置: ${refspecs[i]}`)
-              resolve()
-            })
-            proc.on('error', () => {
-              console.log(`⚠️ 添加fetch配置失败: ${refspecs[i]}`)
-              resolve()
-            })
+      // 重新设置fetch配置
+      for (const refspec of refspecs) {
+        await new Promise<void>((resolve) => {
+          const proc = spawn(gitPath, ['config', '--add', 'remote.origin.fetch', refspec], {
+            stdio: 'pipe',
+            env: gitEnv,
+            cwd: repoPath,
           })
-        }
+          proc.stdout?.on('data', d => console.log('git config --add stdout:', d.toString().trim()))
+          proc.stderr?.on('data', d => console.log('git config --add stderr:', d.toString().trim()))
+          proc.on('close', code => {
+            console.log(`git config --add 退出码: ${code}`)
+            if (code === 0) {
+              console.log(`✅ 添加fetch配置成功: ${refspec}`)
+            } else {
+              console.log(`⚠️ 添加fetch配置失败: ${refspec}`)
+            }
+            resolve()
+          })
+          proc.on('error', error => {
+            console.log('⚠️ git config --add 进程错误:', error)
+            resolve()
+          })
+        })
       }
 
       // 2. 只获取指定分支的远程信息
       console.log(`📥 获取指定分支的远程信息: ${branchesToFetch.join(', ')}...`)
 
-      // 逐个获取指定分支
+      // 逐个获取指定分支（关键操作，失败时抛出错误）
+      let fetchSuccessCount = 0
       for (const branch of branchesToFetch) {
         console.log(`📥 获取分支: ${branch}`)
-        await new Promise<void>(resolve => {
+        await new Promise<void>((resolve, reject) => {
           const proc = spawn(gitPath, ['fetch', 'origin', branch, '--force'], {
             stdio: 'pipe',
             env: gitEnv,
             cwd: repoPath,
           })
+          
+          let errorOutput = ''
           proc.stdout?.on('data', d =>
             console.log(`git fetch ${branch} stdout:`, d.toString().trim())
           )
-          proc.stderr?.on('data', d =>
-            console.log(`git fetch ${branch} stderr:`, d.toString().trim())
-          )
+          proc.stderr?.on('data', d => {
+            const stderr = d.toString().trim()
+            console.log(`git fetch ${branch} stderr:`, stderr)
+            errorOutput += stderr
+          })
+          
           proc.on('close', code => {
             console.log(`git fetch ${branch} 退出码: ${code}`)
             if (code === 0) {
               console.log(`✅ 成功获取分支: ${branch}`)
+              fetchSuccessCount++
+              resolve()
             } else {
-              console.log(`⚠️ 获取分支 ${branch} 失败，但继续`)
+              console.error(`❌ 获取分支 ${branch} 失败`)
+              const isNetworkError = errorOutput.includes('unable to access') || 
+                                   errorOutput.includes('Could not resolve host') ||
+                                   errorOutput.includes('Connection refused') ||
+                                   errorOutput.includes('network is unreachable')
+              if (isNetworkError) {
+                reject(new Error(`网络连接失败: 无法获取分支 ${branch}`))
+              } else {
+                reject(new Error(`获取分支 ${branch} 失败: ${errorOutput}`))
+              }
             }
-            resolve() // 无论成功失败都继续
           })
+          
           proc.on('error', error => {
-            console.log(`⚠️ git fetch ${branch} 进程错误:`, error)
-            resolve()
+            console.error(`❌ git fetch ${branch} 进程错误:`, error)
+            reject(error)
           })
         })
+      }
+      
+      if (fetchSuccessCount === 0) {
+        throw new Error('所有分支获取都失败，可能是网络问题')
       }
 
       console.log(`✅ 指定分支获取完成`)
@@ -961,7 +1042,7 @@ export async function cloneBackend(
     } else {
       console.log('=== 克隆新的Git仓库 ===')
 
-      // 不是 git 仓库，直接克隆到 depot/repo 目录
+      // 不是 git 仓库，直接克隆到 repo 目录
       console.log(`仓库目录: ${repoPath}`)
 
       if (fs.existsSync(repoPath)) {
@@ -1005,8 +1086,15 @@ export async function cloneBackend(
             cwd: appRoot,
           }
         )
+        
+        let errorOutput = ''
         proc.stdout?.on('data', d => console.log('git clone stdout:', d.toString().trim()))
-        proc.stderr?.on('data', d => console.log('git clone stderr:', d.toString().trim()))
+        proc.stderr?.on('data', d => {
+          const stderr = d.toString().trim()
+          console.log('git clone stderr:', stderr)
+          errorOutput += stderr
+        })
+        
         proc.on('close', code => {
           console.log(`git clone 退出码: ${code}`)
           if (code === 0) {
@@ -1014,9 +1102,18 @@ export async function cloneBackend(
             resolve()
           } else {
             console.error('❌ 代码克隆失败')
-            reject(new Error(`git clone失败，退出码: ${code}`))
+            const isNetworkError = errorOutput.includes('unable to access') || 
+                                 errorOutput.includes('Could not resolve host') ||
+                                 errorOutput.includes('Connection refused') ||
+                                 errorOutput.includes('network is unreachable')
+            if (isNetworkError) {
+              reject(new Error(`网络连接失败: 无法克隆代码仓库`))
+            } else {
+              reject(new Error(`代码克隆失败: ${errorOutput}`))
+            }
           }
         })
+        
         proc.on('error', error => {
           console.error('❌ git clone 进程错误:', error)
           reject(error)
@@ -1056,7 +1153,7 @@ export async function cloneBackend(
           })
         })
 
-        // 获取默认分支
+        // 获取默认分支（非关键操作，失败不影响主流程）
         console.log(`📥 获取默认分支 ${DEFAULT_BRANCH}...`)
         await new Promise<void>(resolve => {
           const proc = spawn(gitPath, ['fetch', 'origin', DEFAULT_BRANCH], {
@@ -1075,7 +1172,7 @@ export async function cloneBackend(
             if (code === 0) {
               console.log(`✅ 成功获取默认分支 ${DEFAULT_BRANCH}`)
             } else {
-              console.log(`⚠️ 获取默认分支 ${DEFAULT_BRANCH} 失败`)
+              console.log(`⚠️ 获取默认分支 ${DEFAULT_BRANCH} 失败，但不影响主流程`)
             }
             resolve()
           })

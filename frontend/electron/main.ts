@@ -27,7 +27,7 @@ import {
   downloadGit,
   setMainWindow as setGitMainWindow,
   checkRepoStatus,
-  cleanDepot,
+  cleanRepo,
   getRepoInfo,
 } from './services/gitService'
 import { cleanOldLogs, getLogFiles, getLogPath, log, setupLogger } from './services/logService'
@@ -1027,10 +1027,10 @@ ipcMain.handle('check-repo-status', async () => {
   return checkRepoStatus(appRoot)
 })
 
-ipcMain.handle('clean-depot', async () => {
+ipcMain.handle('clean-repo', async () => {
   const appRoot = getAppRoot()
-  const { cleanDepot } = await import('./services/gitService')
-  return cleanDepot(appRoot)
+  const { cleanRepo } = await import('./services/gitService')
+  return cleanRepo(appRoot)
 })
 
 ipcMain.handle('get-repo-info', async () => {
