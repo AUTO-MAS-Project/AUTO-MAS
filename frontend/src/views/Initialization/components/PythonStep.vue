@@ -2,7 +2,7 @@
   <div class="step-panel">
     <h3>Python 运行环境</h3>
     <div v-if="!pythonInstalled" class="install-section">
-      <p>需要安装 Python 3.13.0 运行环境</p>
+      <p>需要下载并解压免安装的 Python 3.13.0 运行环境</p>
 
       <!-- 镜像源 -->
       <div class="mirror-section">
@@ -75,7 +75,7 @@
       </div>
     </div>
     <div v-else class="already-installed">
-      <a-result status="success" title="Python已成功安装，无需继续安装" />
+      <a-result status="success" title="Python已成功下载，无需继续安装" />
       <!--            <div class="reinstall-section">-->
       <!--                <a-button type="primary" danger @click="handleForceReinstall" :loading="reinstalling">-->
       <!--                    {{ reinstalling ? '正在重新安装...' : '强制重新安装' }}-->
@@ -87,10 +87,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { type MirrorConfig, sortMirrorsBySpeedAndRecommendation } from '@/config/mirrors.ts'
 import { getConfig, saveConfig } from '@/utils/config.ts'
-import { sortMirrorsBySpeedAndRecommendation, type MirrorConfig } from '@/config/mirrors.ts'
 import { mirrorManager } from '@/utils/mirrorManager.ts'
+import { computed, onMounted, ref } from 'vue'
 
 const props = defineProps<{
   pythonInstalled: boolean
