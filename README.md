@@ -62,7 +62,7 @@
 
 访问AUTO_MAA官方文档站以获取使用指南和项目相关信息
 
-- [AUTO_MAA官方文档站](https://clozya.github.io/AUTOMAA_docs)
+- [AUTO_MAA官方文档站](https://doc.auto-mas.top)
 
 ---
 
