@@ -1,5 +1,4 @@
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
-#   Copyright © 2024-2025 DLmaster361
 #   Copyright © 2025 MoeSnowyFox
 #   Copyright © 2025 AUTO-MAS Team
 
@@ -24,26 +23,10 @@ __version__ = "5.0.0"
 __author__ = "DLmaster361 <DLmaster_361@163.com>"
 __license__ = "GPL-3.0 license"
 
+from .mumu import MumuManager
+from .ldplayer import LDManager
+from .tools import search_all_emulators
 
-from .constants import *
-from .logger import get_logger
-from .ImageUtils import ImageUtils
-from .LogMonitor import LogMonitor, strptime
-from .ProcessManager import ProcessManager
-from .security import dpapi_encrypt, dpapi_decrypt
-from .emulator import MumuManager, LDManager, search_all_emulators, EMULATOR_TYPE_BOOK
+EMULATOR_TYPE_BOOK = {"mumu": MumuManager, "ldplayer": LDManager}
 
-__all__ = [
-    "constants",
-    "get_logger",
-    "ImageUtils",
-    "LogMonitor",
-    "ProcessManager",
-    "dpapi_encrypt",
-    "dpapi_decrypt",
-    "strptime",
-    "MumuManager",
-    "LDManager",
-    "search_all_emulators",
-    "EMULATOR_TYPE_BOOK",
-]
+__all__ = ["MumuManager", "LDManager", "search_all_emulators", "EMULATOR_TYPE_BOOK"]
