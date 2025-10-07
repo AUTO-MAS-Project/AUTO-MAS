@@ -28,14 +28,16 @@ from .broadcast import Broadcast
 from .config import Config, MaaConfig, GeneralConfig, MaaUserConfig, GeneralUserConfig
 from .timer import MainTimer
 from .task_manager import TaskManager
+from .emulator_manager import EmulatorManager
 
 __all__ = [
     "Broadcast",
     "Config",
     "MaaConfig",
     "GeneralConfig",
-    "MainTimer",
-    "TaskManager",
     "MaaUserConfig",
     "GeneralUserConfig",
+    "MainTimer",
+    "TaskManager",
+    "EmulatorManager",
 ]

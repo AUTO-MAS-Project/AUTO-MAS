@@ -22,10 +22,67 @@
 
 
 from datetime import datetime
+from pathlib import Path
 
 
 TYPE_BOOK = {"MaaConfig": "MAA", "GeneralConfig": "通用"}
 """配置类型映射表"""
+
+
+EMULATOR_PATH_BOOK = {
+    "mumu": {
+        "name": "MuMu模拟器",
+        "executables": ["MuMuManager.exe", "MuMuPlayer.exe"],
+        "registry_paths": [
+            r"SOFTWARE\NetEase\MuMu Player 12",
+            r"SOFTWARE\NetEase\MuMuPlayer-12.0",
+        ],
+        "default_paths": [
+            r"C:\Program Files\Netease\MuMu Player 12",
+            r"C:\Program Files (x86)\Netease\MuMu Player 12",
+            (Path.home() / "AppData/Local/MuMu Player 12").as_posix(),
+        ],
+    },
+    "ldplayer": {
+        "name": "雷电模拟器",
+        "executables": ["LDPlayer.exe", "dnplayer.exe"],
+        "registry_paths": [r"SOFTWARE\ChangZhi", r"SOFTWARE\leidian\ldplayer"],
+        "default_paths": [
+            r"C:\LDPlayer\LDPlayer4.0",
+            r"C:\Program Files\LDPlayer",
+            r"D:\LDPlayer\LDPlayer4.0",
+        ],
+    },
+    "nox": {
+        "name": "夜神模拟器",
+        "executables": ["Nox.exe", "NoxVMHandle.exe"],
+        "registry_paths": [r"SOFTWARE\BigNox\VirtualBox"],
+        "default_paths": [
+            r"C:\Program Files\Nox\bin",
+            r"C:\Program Files (x86)\Nox\bin",
+            r"D:\Program Files\Nox\bin",
+        ],
+    },
+    "memu": {
+        "name": "逍遥模拟器",
+        "executables": ["MEmu.exe", "MemuManager.exe"],
+        "registry_paths": [r"SOFTWARE\Microvirt\MEmu"],
+        "default_paths": [
+            r"C:\Program Files\Microvirt\MEmu",
+            r"D:\Program Files\Microvirt\MEmu",
+        ],
+    },
+    "bluestacks": {
+        "name": "BlueStacks",
+        "executables": ["BlueStacks.exe", "HD-Player.exe"],
+        "registry_paths": [r"SOFTWARE\BlueStacks", r"SOFTWARE\BlueStacks_nxt"],
+        "default_paths": [
+            r"C:\Program Files\BlueStacks",
+            r"C:\Program Files\BlueStacks_nxt",
+        ],
+    },
+}
+"""模拟器文件常规路径信息"""
 
 RESOURCE_STAGE_INFO = [
     {"value": "-", "text": "当前/上次", "days": [1, 2, 3, 4, 5, 6, 7]},

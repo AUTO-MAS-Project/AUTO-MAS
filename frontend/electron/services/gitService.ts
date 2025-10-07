@@ -134,12 +134,12 @@ function copyDirSync(src: string, dest: string) {
   if (!fs.existsSync(dest)) {
     fs.mkdirSync(dest, { recursive: true })
   }
-  
+
   const entries = fs.readdirSync(src, { withFileTypes: true })
   for (const entry of entries) {
     const srcPath = path.join(src, entry.name)
     const destPath = path.join(dest, entry.name)
-    
+
     if (entry.isDirectory()) {
       // 递归复制子目录
       copyDirSync(srcPath, destPath)
@@ -284,7 +284,7 @@ async function copySelectedFiles(sourcePath: string, targetPath: string, branchN
       if (fs.existsSync(dstPath)) {
         const isTargetDir = fs.statSync(dstPath).isDirectory()
         console.log(`  - 🗑️ 强制删除现有${isTargetDir ? '目录' : '文件'}: ${item}`)
-        
+
         if (isTargetDir) {
           fs.rmSync(dstPath, { recursive: true, force: true })
         } else {
@@ -359,23 +359,23 @@ async function checkNetworkConnection(gitPath: string, gitEnv: any, repoUrl: str
         stdio: 'pipe',
         env: gitEnv,
       })
-      
+
       let hasOutput = false
       proc.stdout?.on('data', () => {
         hasOutput = true
       })
-      
+
       proc.on('close', code => {
         const isConnected = code === 0 && hasOutput
         console.log(`网络连接检查 - 退出码: ${code}, 有输出: ${hasOutput}, 连接状态: ${isConnected ? '正常' : '异常'}`)
         resolve(isConnected)
       })
-      
+
       proc.on('error', error => {
         console.log('网络连接检查进程错误:', error)
         resolve(false)
       })
-      
+
       // 5秒超时
       setTimeout(() => {
         proc.kill()
@@ -892,7 +892,7 @@ export async function cloneBackend(
             env: gitEnv,
             cwd: repoPath,
           })
-          
+
           let errorOutput = ''
           proc.stdout?.on('data', d =>
             console.log(`git fetch ${branch} stdout:`, d.toString().trim())
@@ -902,7 +902,7 @@ export async function cloneBackend(
             console.log(`git fetch ${branch} stderr:`, stderr)
             errorOutput += stderr
           })
-          
+
           proc.on('close', code => {
             console.log(`git fetch ${branch} 退出码: ${code}`)
             if (code === 0) {
@@ -911,10 +911,10 @@ export async function cloneBackend(
               resolve()
             } else {
               console.error(`❌ 获取分支 ${branch} 失败`)
-              const isNetworkError = errorOutput.includes('unable to access') || 
-                                   errorOutput.includes('Could not resolve host') ||
-                                   errorOutput.includes('Connection refused') ||
-                                   errorOutput.includes('network is unreachable')
+              const isNetworkError = errorOutput.includes('unable to access') ||
+                errorOutput.includes('Could not resolve host') ||
+                errorOutput.includes('Connection refused') ||
+                errorOutput.includes('network is unreachable')
               if (isNetworkError) {
                 reject(new Error(`网络连接失败: 无法获取分支 ${branch}`))
               } else {
@@ -922,14 +922,14 @@ export async function cloneBackend(
               }
             }
           })
-          
+
           proc.on('error', error => {
             console.error(`❌ git fetch ${branch} 进程错误:`, error)
             reject(error)
           })
         })
       }
-      
+
       if (fetchSuccessCount === 0) {
         throw new Error('所有分支获取都失败，可能是网络问题')
       }
@@ -1086,7 +1086,7 @@ export async function cloneBackend(
             cwd: appRoot,
           }
         )
-        
+
         let errorOutput = ''
         proc.stdout?.on('data', d => console.log('git clone stdout:', d.toString().trim()))
         proc.stderr?.on('data', d => {
@@ -1094,7 +1094,7 @@ export async function cloneBackend(
           console.log('git clone stderr:', stderr)
           errorOutput += stderr
         })
-        
+
         proc.on('close', code => {
           console.log(`git clone 退出码: ${code}`)
           if (code === 0) {
@@ -1102,10 +1102,10 @@ export async function cloneBackend(
             resolve()
           } else {
             console.error('❌ 代码克隆失败')
-            const isNetworkError = errorOutput.includes('unable to access') || 
-                                 errorOutput.includes('Could not resolve host') ||
-                                 errorOutput.includes('Connection refused') ||
-                                 errorOutput.includes('network is unreachable')
+            const isNetworkError = errorOutput.includes('unable to access') ||
+              errorOutput.includes('Could not resolve host') ||
+              errorOutput.includes('Connection refused') ||
+              errorOutput.includes('network is unreachable')
             if (isNetworkError) {
               reject(new Error(`网络连接失败: 无法克隆代码仓库`))
             } else {
@@ -1113,7 +1113,7 @@ export async function cloneBackend(
             }
           }
         })
-        
+
         proc.on('error', error => {
           console.error('❌ git clone 进程错误:', error)
           reject(error)
