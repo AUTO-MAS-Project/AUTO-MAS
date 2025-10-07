@@ -27,5 +27,6 @@ __license__ = "GPL-3.0 license"
 from .ConfigBase import *
 from .config import *
 from .schema import *
+from .emulator import *
 
-__all__ = ["ConfigBase", "config", "schema"]
+__all__ = ["ConfigBase", "config", "schema", "emulator"]

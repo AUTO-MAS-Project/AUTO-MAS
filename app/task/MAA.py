@@ -64,7 +64,6 @@ class MaaManager:
         self.ws_id = ws_id
 
         self.maa_process_manager = ProcessManager()
-        self.emulator_manager = EmulatorManager()
         self.wait_event = asyncio.Event()
         self.message_queue = asyncio.Queue()
 

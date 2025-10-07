@@ -40,31 +40,33 @@ from .ConfigBase import (
 )
 
 
-class EmulatorManagerConfig(ConfigBase):
-    """模拟器管理配置"""
+class EmulatorConfig(ConfigBase):
+    """模拟器配置"""
 
     def __init__(self) -> None:
         super().__init__()
-        self.Info_Name = ConfigItem("Info", "Name", "新多开器")
 
-        EmulatorType = [
+        self.Info_Name = ConfigItem("Info", "Name", "新模拟器")
+        self.Info_Path = ConfigItem("Info", "Path", "", FileValidator())
+
+        self.Data_Type = ConfigItem(
+            "Data",
+            "Type",
             "general",
-            "mumu",
-            "ldplayer",
-            "nox",  # 以下都是骗你的, 根本没有写~~
-            "memu",
-            "blueStacks",
-        ]
-
-        self.Info_Type = ConfigItem(
-            "Info", "Type", "general", OptionsValidator(EmulatorType)
+            OptionsValidator(
+                [
+                    "general",
+                    "mumu",
+                    "ldplayer",
+                    "nox",  # 以下都是骗你的, 根本没有写~~
+                    "memu",
+                    "blueStacks",
+                ]
+            ),
         )
-        self.Data_Path = ConfigItem("Data", "Path", "")
-
-        self.Data_Boss_keys = ConfigItem("Data", "Boss_keys", "[]", JSONValidator(list))
-
-        self.Data_max_wait_time = ConfigItem(
-            "Data", "max_wait_time", 60, RangeValidator(-1, 9999)
+        self.Data_BossKey = ConfigItem("Data", "BossKey", "[ ]", JSONValidator(list))
+        self.Data_MaxWaitTime = ConfigItem(
+            "Data", "MaxWaitTime", 60, RangeValidator(-1, 9999)
         )
 
 
@@ -83,112 +85,6 @@ class Webhook(ConfigBase):
         self.Data_Method = ConfigItem(
             "Data", "Method", "POST", OptionsValidator(["POST", "GET"])
         )
-
-
-class GlobalConfig(ConfigBase):
-    """全局配置"""
-
-    Function_HistoryRetentionTime = ConfigItem(
-        "Function",
-        "HistoryRetentionTime",
-        0,
-        OptionsValidator([7, 15, 30, 60, 90, 180, 365, 0]),
-    )
-    Function_IfAllowSleep = ConfigItem(
-        "Function", "IfAllowSleep", False, BoolValidator()
-    )
-    Function_IfSilence = ConfigItem("Function", "IfSilence", False, BoolValidator())
-    Function_BossKey = ConfigItem("Function", "BossKey", "")
-    Function_IfAgreeBilibili = ConfigItem(
-        "Function", "IfAgreeBilibili", False, BoolValidator()
-    )
-    Function_IfSkipMumuSplashAds = ConfigItem(
-        "Function", "IfSkipMumuSplashAds", False, BoolValidator()
-    )
-
-    Voice_Enabled = ConfigItem("Voice", "Enabled", False, BoolValidator())
-    Voice_Type = ConfigItem(
-        "Voice", "Type", "simple", OptionsValidator(["simple", "noisy"])
-    )
-
-    Start_IfSelfStart = ConfigItem("Start", "IfSelfStart", False, BoolValidator())
-    Start_IfMinimizeDirectly = ConfigItem(
-        "Start", "IfMinimizeDirectly", False, BoolValidator()
-    )
-
-    UI_IfShowTray = ConfigItem("UI", "IfShowTray", False, BoolValidator())
-    UI_IfToTray = ConfigItem("UI", "IfToTray", False, BoolValidator())
-
-    Notify_SendTaskResultTime = ConfigItem(
-        "Notify",
-        "SendTaskResultTime",
-        "不推送",
-        OptionsValidator(["不推送", "任何时刻", "仅失败时"]),
-    )
-    Notify_IfSendStatistic = ConfigItem(
-        "Notify", "IfSendStatistic", False, BoolValidator()
-    )
-    Notify_IfSendSixStar = ConfigItem("Notify", "IfSendSixStar", False, BoolValidator())
-    Notify_IfPushPlyer = ConfigItem("Notify", "IfPushPlyer", False, BoolValidator())
-    Notify_IfSendMail = ConfigItem("Notify", "IfSendMail", False, BoolValidator())
-    Notify_SMTPServerAddress = ConfigItem("Notify", "SMTPServerAddress", "")
-    Notify_AuthorizationCode = ConfigItem(
-        "Notify", "AuthorizationCode", "", EncryptValidator()
-    )
-    Notify_FromAddress = ConfigItem("Notify", "FromAddress", "")
-    Notify_ToAddress = ConfigItem("Notify", "ToAddress", "")
-    Notify_IfServerChan = ConfigItem("Notify", "IfServerChan", False, BoolValidator())
-    Notify_ServerChanKey = ConfigItem("Notify", "ServerChanKey", "")
-    Notify_CustomWebhooks = MultipleConfig([Webhook])
-
-    Update_IfAutoUpdate = ConfigItem("Update", "IfAutoUpdate", False, BoolValidator())
-    Update_Source = ConfigItem(
-        "Update",
-        "Source",
-        "GitHub",
-        OptionsValidator(["GitHub", "MirrorChyan", "AutoSite"]),
-    )
-    Update_ProxyAddress = ConfigItem("Update", "ProxyAddress", "")
-    Update_MirrorChyanCDK = ConfigItem(
-        "Update", "MirrorChyanCDK", "", EncryptValidator()
-    )
-
-    Data_UID = ConfigItem("Data", "UID", str(uuid.uuid4()), UUIDValidator())
-    Data_LastStatisticsUpload = ConfigItem(
-        "Data",
-        "LastStatisticsUpload",
-        "2000-01-01 00:00:00",
-        DateTimeValidator("%Y-%m-%d %H:%M:%S"),
-    )
-    Data_LastStageUpdated = ConfigItem(
-        "Data",
-        "LastStageUpdated",
-        "2000-01-01 00:00:00",
-        DateTimeValidator("%Y-%m-%d %H:%M:%S"),
-    )
-    Data_StageTimeStamp = ConfigItem(
-        "Data",
-        "StageTimeStamp",
-        "2000-01-01 00:00:00",
-        DateTimeValidator("%Y-%m-%d %H:%M:%S"),
-    )
-    Data_Stage = ConfigItem("Data", "Stage", "{ }", JSONValidator())
-    Data_LastNoticeUpdated = ConfigItem(
-        "Data",
-        "LastNoticeUpdated",
-        "2000-01-01 00:00:00",
-        DateTimeValidator("%Y-%m-%d %H:%M:%S"),
-    )
-    Data_IfShowNotice = ConfigItem("Data", "IfShowNotice", True, BoolValidator())
-    Data_Notice = ConfigItem("Data", "Notice", "{ }", JSONValidator())
-    Data_LastWebConfigUpdated = ConfigItem(
-        "Data",
-        "LastWebConfigUpdated",
-        "2000-01-01 00:00:00",
-        DateTimeValidator("%Y-%m-%d %H:%M:%S"),
-    )
-    Data_WebConfig = ConfigItem("Data", "WebConfig", "{ }", JSONValidator())
-    EmulatorData = MultipleConfig([EmulatorManagerConfig])
 
 
 class QueueItem(ConfigBase):
@@ -614,10 +510,122 @@ class GeneralConfig(ConfigBase):
         self.UserData = MultipleConfig([GeneralUserConfig])
 
 
-CLASS_BOOK = {
-    "MAA": MaaConfig,
-    "MaaPlan": MaaPlanConfig,
-    "General": GeneralConfig,
-    "EmulatorManager": EmulatorManagerConfig,
-}
+class GlobalConfig(ConfigBase):
+    """全局配置"""
+
+    Function_HistoryRetentionTime = ConfigItem(
+        "Function",
+        "HistoryRetentionTime",
+        0,
+        OptionsValidator([7, 15, 30, 60, 90, 180, 365, 0]),
+    )
+    Function_IfAllowSleep = ConfigItem(
+        "Function", "IfAllowSleep", False, BoolValidator()
+    )
+    Function_IfSilence = ConfigItem("Function", "IfSilence", False, BoolValidator())
+    Function_BossKey = ConfigItem("Function", "BossKey", "")
+    Function_IfAgreeBilibili = ConfigItem(
+        "Function", "IfAgreeBilibili", False, BoolValidator()
+    )
+    Function_IfSkipMumuSplashAds = ConfigItem(
+        "Function", "IfSkipMumuSplashAds", False, BoolValidator()
+    )
+
+    Voice_Enabled = ConfigItem("Voice", "Enabled", False, BoolValidator())
+    Voice_Type = ConfigItem(
+        "Voice", "Type", "simple", OptionsValidator(["simple", "noisy"])
+    )
+
+    Start_IfSelfStart = ConfigItem("Start", "IfSelfStart", False, BoolValidator())
+    Start_IfMinimizeDirectly = ConfigItem(
+        "Start", "IfMinimizeDirectly", False, BoolValidator()
+    )
+
+    UI_IfShowTray = ConfigItem("UI", "IfShowTray", False, BoolValidator())
+    UI_IfToTray = ConfigItem("UI", "IfToTray", False, BoolValidator())
+
+    Notify_SendTaskResultTime = ConfigItem(
+        "Notify",
+        "SendTaskResultTime",
+        "不推送",
+        OptionsValidator(["不推送", "任何时刻", "仅失败时"]),
+    )
+    Notify_IfSendStatistic = ConfigItem(
+        "Notify", "IfSendStatistic", False, BoolValidator()
+    )
+    Notify_IfSendSixStar = ConfigItem("Notify", "IfSendSixStar", False, BoolValidator())
+    Notify_IfPushPlyer = ConfigItem("Notify", "IfPushPlyer", False, BoolValidator())
+    Notify_IfSendMail = ConfigItem("Notify", "IfSendMail", False, BoolValidator())
+    Notify_SMTPServerAddress = ConfigItem("Notify", "SMTPServerAddress", "")
+    Notify_AuthorizationCode = ConfigItem(
+        "Notify", "AuthorizationCode", "", EncryptValidator()
+    )
+    Notify_FromAddress = ConfigItem("Notify", "FromAddress", "")
+    Notify_ToAddress = ConfigItem("Notify", "ToAddress", "")
+    Notify_IfServerChan = ConfigItem("Notify", "IfServerChan", False, BoolValidator())
+    Notify_ServerChanKey = ConfigItem("Notify", "ServerChanKey", "")
+    Notify_CustomWebhooks = MultipleConfig([Webhook])
+
+    Update_IfAutoUpdate = ConfigItem("Update", "IfAutoUpdate", False, BoolValidator())
+    Update_Source = ConfigItem(
+        "Update",
+        "Source",
+        "GitHub",
+        OptionsValidator(["GitHub", "MirrorChyan", "AutoSite"]),
+    )
+    Update_ProxyAddress = ConfigItem("Update", "ProxyAddress", "")
+    Update_MirrorChyanCDK = ConfigItem(
+        "Update", "MirrorChyanCDK", "", EncryptValidator()
+    )
+
+    Data_UID = ConfigItem("Data", "UID", str(uuid.uuid4()), UUIDValidator())
+    Data_LastStatisticsUpload = ConfigItem(
+        "Data",
+        "LastStatisticsUpload",
+        "2000-01-01 00:00:00",
+        DateTimeValidator("%Y-%m-%d %H:%M:%S"),
+    )
+    Data_LastStageUpdated = ConfigItem(
+        "Data",
+        "LastStageUpdated",
+        "2000-01-01 00:00:00",
+        DateTimeValidator("%Y-%m-%d %H:%M:%S"),
+    )
+    Data_StageTimeStamp = ConfigItem(
+        "Data",
+        "StageTimeStamp",
+        "2000-01-01 00:00:00",
+        DateTimeValidator("%Y-%m-%d %H:%M:%S"),
+    )
+    Data_Stage = ConfigItem("Data", "Stage", "{ }", JSONValidator())
+    Data_LastNoticeUpdated = ConfigItem(
+        "Data",
+        "LastNoticeUpdated",
+        "2000-01-01 00:00:00",
+        DateTimeValidator("%Y-%m-%d %H:%M:%S"),
+    )
+    Data_IfShowNotice = ConfigItem("Data", "IfShowNotice", True, BoolValidator())
+    Data_Notice = ConfigItem("Data", "Notice", "{ }", JSONValidator())
+    Data_LastWebConfigUpdated = ConfigItem(
+        "Data",
+        "LastWebConfigUpdated",
+        "2000-01-01 00:00:00",
+        DateTimeValidator("%Y-%m-%d %H:%M:%S"),
+    )
+    Data_WebConfig = ConfigItem("Data", "WebConfig", "{ }", JSONValidator())
+
+    EmulatorData = MultipleConfig([EmulatorConfig])
+
+    ScriptConfig = MultipleConfig([MaaConfig, GeneralConfig], if_save_needed=False)
+    PlanConfig = MultipleConfig([MaaPlanConfig], if_save_needed=False)
+    QueueConfig = MultipleConfig([QueueConfig], if_save_needed=False)
+
+    def __init__(self):
+        super().__init__()
+
+        QueueItem.related_config["ScriptConfig"] = self.ScriptConfig
+        MaaUserConfig.related_config["PlanConfig"] = self.PlanConfig
+
+
+CLASS_BOOK = {"MAA": MaaConfig, "MaaPlan": MaaPlanConfig, "General": GeneralConfig}
 """配置类映射表"""

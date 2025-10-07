@@ -46,11 +46,10 @@ from app.models.config import (
     MaaUserConfig,
     GeneralUserConfig,
     GlobalConfig,
-    MultipleConfig,
     CLASS_BOOK,
     Webhook,
     TimeSet,
-    EmulatorManagerConfig,
+    EmulatorConfig,
 )
 from app.utils.constants import (
     RESOURCE_STAGE_INFO,
@@ -115,15 +114,6 @@ class AppConfig(GlobalConfig):
         self.silence_dict: Dict[Path, datetime] = {}
         self.if_ignore_silence: List[uuid.UUID] = []
         self.temp_task: List[asyncio.Task] = []
-
-        self.ScriptConfig = MultipleConfig(
-            [MaaConfig, GeneralConfig], if_save_needed=False
-        )
-        self.PlanConfig = MultipleConfig([MaaPlanConfig], if_save_needed=False)
-        self.QueueConfig = MultipleConfig([QueueConfig], if_save_needed=False)
-        self.EmulatorData = MultipleConfig([EmulatorManagerConfig])
-        QueueItem.related_config["ScriptConfig"] = self.ScriptConfig
-        MaaUserConfig.related_config["PlanConfig"] = self.PlanConfig
 
         truststore.inject_into_ssl()
 
@@ -1236,6 +1226,64 @@ class AppConfig(GlobalConfig):
                 .Notify_CustomWebhooks.setOrder(list(map(uuid.UUID, index_list)))
             )
             await self.ScriptConfig.save()
+
+    async def get_emulator(self, emulator_id: Optional[str]) -> tuple[list, dict]:
+        """获取emulator配置"""
+        logger.info(f"获取全局emulator设置: {emulator_id}")
+
+        if emulator_id is None:
+            data = await self.EmulatorData.toDict()
+        else:
+            data = await self.EmulatorData.get(uuid.UUID(emulator_id))
+
+        index = data.pop("instances", [])
+        return list(index), data
+
+    async def add_emulator(self) -> tuple[uuid.UUID, EmulatorConfig]:
+        """添加emulator配置"""
+        logger.info("添加全局emulator配置")
+
+        uid, config = await self.EmulatorData.add(EmulatorConfig)
+        await self.save()
+        return uid, config
+
+    async def update_emulator(
+        self, emulator_id: str, data: Dict[str, Dict[str, Any]]
+    ) -> None:
+        """更新 emulator 配置"""
+
+        emulator_uid = uuid.UUID(emulator_id)
+
+        logger.info(f"更新 emulator 全局配置: {emulator_id}")
+
+        for group, items in data.items():
+            for name, value in items.items():
+                logger.debug(
+                    f"更新全局 emulator:{emulator_id} - {group}.{name} = {value}"
+                )
+                await self.EmulatorData[emulator_uid].set(group, name, value)
+
+        await self.save()
+
+    async def del_emulator(self, emulator_id: str) -> None:
+        """删除 emulator 配置"""
+
+        emulator_uid = uuid.UUID(emulator_id)
+
+        logger.info(f"删除全局 emulator 配置: {emulator_id}")
+
+        # 检查代码等待实现
+
+        await self.EmulatorData.remove(emulator_uid)
+        await self.save()
+
+    async def reorder_emulator(self, index_list: list[str]) -> None:
+        """重新排序 emulator"""
+
+        logger.info(f"重新排序全局 emulator: {index_list}")
+
+        await self.EmulatorData.setOrder(list(map(uuid.UUID, index_list)))
+        await self.save()
 
     def server_date(self) -> date:
         """
