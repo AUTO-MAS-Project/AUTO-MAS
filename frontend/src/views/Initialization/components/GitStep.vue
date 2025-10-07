@@ -6,14 +6,14 @@
       <div class="git-info">
         <a-alert
           message="Git 工具信息"
-          description="将安装便携版 Git 工具，以实现后端代码更新。"
+          description="将下载并解压便携版 Git 工具，以实现后端代码更新。"
           type="info"
           show-icon
         />
       </div>
     </div>
     <div v-else class="already-installed">
-      <a-result status="success" title="Git已成功安装，无需继续安装" />
+      <a-result status="success" title="Git已成功下载，无需继续安装" />
       <!--      <div class="reinstall-section">-->
       <!--        <a-button type="primary" danger @click="handleForceReinstall" :loading="reinstalling">-->
       <!--          {{ reinstalling ? '正在重新安装...' : '强制重新安装' }}-->
