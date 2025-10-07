@@ -22,7 +22,6 @@ import shutil
 from pathlib import Path
 from datetime import datetime, timedelta
 from jinja2 import Environment, FileSystemLoader
-from typing import Literal
 
 from app.core import Broadcast, Config, MaaConfig, MaaUserConfig
 from app.models.schema import WebSocketMessage
@@ -36,7 +35,6 @@ logger = get_logger("MAA 调度器")
 
 METHOD_BOOK = {"NoAction": "8", "ExitGame": "9", "ExitEmulator": "12"}
 MOOD_BOOK = {"Annihilation": "剿灭", "Routine": "日常"}
-maa_mode_type = Literal["自动代理", "手动代理", "设置脚本"]
 
 
 class MaaManager:
@@ -44,13 +42,13 @@ class MaaManager:
 
     def __init__(
         self,
-        mode: maa_mode_type,
+        mode: str,
         script_id: uuid.UUID,
         user_id: uuid.UUID | None,
         ws_id: str,
     ):
         super().__init__()
-        self.mode: maa_mode_type = mode
+        self.mode: str = mode
         self.script_id = script_id
         self.user_id = user_id
         self.ws_id = ws_id
