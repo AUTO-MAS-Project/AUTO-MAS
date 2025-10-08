@@ -25,8 +25,19 @@ __license__ = "GPL-3.0 license"
 
 from .mumu import MumuManager
 from .ldplayer import LDManager
+from .general import GeneralDeviceManager
 from .tools import search_all_emulators
 
-EMULATOR_TYPE_BOOK = {"mumu": MumuManager, "ldplayer": LDManager}
+EMULATOR_TYPE_BOOK = {
+    "mumu": MumuManager,
+    "ldplayer": LDManager,
+    "general": GeneralDeviceManager,
+}
 
-__all__ = ["MumuManager", "LDManager", "search_all_emulators", "EMULATOR_TYPE_BOOK"]
+__all__ = [
+    "MumuManager",
+    "LDManager",
+    "GeneralDeviceManager",
+    "search_all_emulators",
+    "EMULATOR_TYPE_BOOK",
+]

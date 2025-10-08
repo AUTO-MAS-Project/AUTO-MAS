@@ -102,7 +102,7 @@ class MumuManager(DeviceBase):
         if result.returncode != 0:
             raise RuntimeError(f"命令执行失败: {result}")
 
-        for _ in range(self.config.get("Info", "MaxWaitTime") * 10):
+        for _ in range(self.config.get("Data", "MaxWaitTime") * 10):
             status = await self.get_status(idx)
             if status == DeviceStatus.ERROR or status == DeviceStatus.UNKNOWN:
                 logger.error(f"模拟器{idx}启动失败，状态码: {status}")
@@ -147,7 +147,7 @@ class MumuManager(DeviceBase):
         # 参考命令 MuMuManager.exe control -v 2 shutdown
         if result.returncode != 0:
             return True, DeviceStatus.OFFLINE
-        for _ in range(self.config.get("Info", "MaxWaitTime") * 10):
+        for _ in range(self.config.get("Data", "MaxWaitTime") * 10):
             status = await self.get_status(idx)
             if status == DeviceStatus.ERROR or status == DeviceStatus.UNKNOWN:
                 return False, status

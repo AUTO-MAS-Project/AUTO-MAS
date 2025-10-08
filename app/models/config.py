@@ -229,8 +229,13 @@ class MaaUserConfig(ConfigBase):
             "Info", "SklandToken", "", EncryptValidator()
         )
 
-        self.Emulator_Uuid = ConfigItem("Emulator", "uuid", "")
-        self.Emulator_index = ConfigItem("Emulator", "index", "")
+        self.Emulator_Id = ConfigItem(
+            "Emulator",
+            "Id",
+            "-",
+            MultipleUIDValidator("-", self.related_config, "EmulatorData"),
+        )
+        self.Emulator_Index = ConfigItem("Emulator", "Index", "")
 
         self.Data_LastProxyDate = ConfigItem(
             "Data", "LastProxyDate", "2000-01-01", DateTimeValidator("%Y-%m-%d")
@@ -625,6 +630,7 @@ class GlobalConfig(ConfigBase):
 
         QueueItem.related_config["ScriptConfig"] = self.ScriptConfig
         MaaUserConfig.related_config["PlanConfig"] = self.PlanConfig
+        MaaUserConfig.related_config["EmulatorData"] = self.EmulatorData
 
 
 CLASS_BOOK = {"MAA": MaaConfig, "MaaPlan": MaaPlanConfig, "General": GeneralConfig}
