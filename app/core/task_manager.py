@@ -24,16 +24,47 @@ import uuid
 import asyncio
 from functools import partial
 from typing import Dict, Optional, Literal
+from dataclasses import dataclass, field, asdict
+from datetime import datetime
 
-from .config import Config, MaaConfig, GeneralConfig, QueueConfig
+from .config import Config, MaaConfig, GeneralConfig
 from app.services import System
 from app.models.schema import WebSocketMessage
 from app.utils import get_logger
-from app.task import *
+from app.task import MaaManager, GeneralManager
 from app.utils.constants import POWER_SIGN_MAP
 
 
 logger = get_logger("业务调度")
+
+
+@dataclass
+class TaskInfo:
+    """任务信息(可变对象)"""
+
+    task_id: str
+    script_id: str = ""
+    mode: str = ""
+    status: str = "初始化"
+    progress: dict = field(default_factory=lambda: {"current": 0, "total": 0})
+    current_user: Optional[dict] = None
+    logs: list = field(default_factory=list)
+    start_time: datetime = field(default_factory=datetime.now)
+    update_time: datetime = field(default_factory=datetime.now)
+
+    def update(self, **kwargs):
+        """辅助更新方法,自动更新时间戳"""
+        for key, value in kwargs.items():
+            if hasattr(self, key):
+                setattr(self, key, value)
+        self.update_time = datetime.now()
+
+    def to_dict(self):
+        """转为可序列化的字典"""
+        data = asdict(self)
+        data["start_time"] = self.start_time.isoformat()
+        data["update_time"] = self.update_time.isoformat()
+        return data
 
 
 class _TaskManager:
@@ -43,6 +74,7 @@ class _TaskManager:
         super().__init__()
 
         self.task_dict: Dict[uuid.UUID, asyncio.Task] = {}
+        self.task_info_dict: Dict[uuid.UUID, TaskInfo] = {}
 
     async def add_task(
         self, mode: Literal["自动代理", "人工排查", "设置脚本"], uid: str
@@ -94,15 +126,26 @@ class _TaskManager:
     async def run_task(
         self, mode: str, task_id: uuid.UUID, actual_id: Optional[uuid.UUID]
     ):
-
         logger.info(f"开始运行任务: {task_id}, 模式: {mode}")
 
-        if mode == "设置脚本":
+        # 初始化任务信息
+        task_info = TaskInfo(
+            task_id=str(task_id),
+            script_id=str(actual_id or task_id),
+            mode=mode,
+            status="初始化",
+        )
+        self.task_info_dict[task_id] = task_info
 
+        if mode == "设置脚本":
             if isinstance(Config.ScriptConfig[task_id], MaaConfig):
-                task_item = MaaManager(mode, task_id, actual_id, str(task_id))
+                task_item = MaaManager(
+                    mode, task_id, actual_id, str(task_id), task_info
+                )
             elif isinstance(Config.ScriptConfig[task_id], GeneralConfig):
-                task_item = GeneralManager(mode, task_id, actual_id, str(task_id))
+                task_item = GeneralManager(
+                    mode, task_id, actual_id, str(task_id), task_info
+                )
             else:
                 logger.error(
                     f"不支持的脚本类型: {type(Config.ScriptConfig[task_id]).__name__}"
@@ -135,10 +178,8 @@ class _TaskManager:
                 )
 
         else:
-
             # 初始化任务列表
             if task_id in Config.QueueConfig:
-
                 task_list = []
                 for queue_item in Config.QueueConfig[task_id].QueueItem.values():
                     if queue_item.get("Info", "ScriptId") == "-":
@@ -166,7 +207,6 @@ class _TaskManager:
                     )
 
             elif actual_id is not None and actual_id in Config.ScriptConfig:
-
                 task_list = [
                     {
                         "script_id": str(actual_id),
@@ -186,6 +226,8 @@ class _TaskManager:
                         ],
                     }
                 ]
+            else:
+                task_list = []
 
             await Config.send_json(
                 WebSocketMessage(
@@ -198,12 +240,10 @@ class _TaskManager:
                 task.pop("user_list", None)
 
             for task in task_list:
-
                 script_id = uuid.UUID(task["script_id"])
 
                 # 检查任务是否在运行列表中
                 if script_id in self.task_dict:
-
                     task["status"] = "跳过"
                     await Config.send_json(
                         WebSocketMessage(
@@ -217,7 +257,6 @@ class _TaskManager:
 
                 # 检查任务对应脚本是否仍存在
                 if script_id in self.task_dict:
-
                     task["status"] = "异常"
                     await Config.send_json(
                         WebSocketMessage(
@@ -238,10 +277,23 @@ class _TaskManager:
                 )
                 logger.info(f"任务开始: {script_id}")
 
+                # 为子任务创建独立的任务信息
+                sub_task_info = TaskInfo(
+                    task_id=str(script_id),
+                    script_id=str(script_id),
+                    mode=mode,
+                    status="运行",
+                )
+                self.task_info_dict[script_id] = sub_task_info
+
                 if isinstance(Config.ScriptConfig[script_id], MaaConfig):
-                    task_item = MaaManager(mode, script_id, None, str(task_id))
+                    task_item = MaaManager(
+                        mode, script_id, None, str(task_id), sub_task_info
+                    )
                 elif isinstance(Config.ScriptConfig[script_id], GeneralConfig):
-                    task_item = GeneralManager(mode, script_id, actual_id, str(task_id))
+                    task_item = GeneralManager(
+                        mode, script_id, actual_id, str(task_id), sub_task_info
+                    )
                 else:
                     logger.error(
                         f"不支持的脚本类型: {type(Config.ScriptConfig[script_id]).__name__}"
@@ -305,6 +357,38 @@ class _TaskManager:
                 raise ValueError("任务未在运行")
             self.task_dict[uid].cancel()
 
+    def get_task_info(self, task_id: uuid.UUID) -> Optional[dict]:
+        """
+        获取任务信息
+
+        :param task_id: 任务ID
+        :return: 任务信息字典,如果任务不存在则返回None
+        """
+        info = self.task_info_dict.get(task_id)
+        return info.to_dict() if info else None
+
+    def get_all_task_info(self) -> Dict[str, dict]:
+        """
+        获取所有任务信息
+
+        :return: 所有任务信息字典
+        """
+        return {
+            str(task_id): info.to_dict()
+            for task_id, info in self.task_info_dict.items()
+        }
+
+    async def _cleanup_task_info(self, task_id: uuid.UUID, delay: int = 300):
+        """
+        延迟清理任务信息(可选)
+
+        :param task_id: 任务ID
+        :param delay: 延迟时间(秒),默认5分钟
+        """
+        await asyncio.sleep(delay)
+        self.task_info_dict.pop(task_id, None)
+        logger.debug(f"已清理任务信息: {task_id}")
+
     async def remove_task(
         self, task: asyncio.Task, mode: str, task_id: uuid.UUID
     ) -> None:
@@ -328,7 +412,13 @@ class _TaskManager:
             await task
         except asyncio.CancelledError:
             logger.info(f"任务 {task_id} 已结束")
-        self.task_dict.pop(task_id)
+        self.task_dict.pop(task_id, None)
+
+        # 清理任务信息
+        if task_id in self.task_info_dict:
+            self.task_info_dict[task_id].update(status="已完成")
+            # 可选:延迟删除或保留一段时间供查询
+            # asyncio.create_task(self._cleanup_task_info(task_id, delay=300))
 
         await Config.send_json(
             WebSocketMessage(
@@ -337,7 +427,6 @@ class _TaskManager:
         )
 
         if mode == "自动代理" and task_id in Config.QueueConfig:
-
             if Config.power_sign == "NoAction":
                 Config.power_sign = Config.QueueConfig[task_id].get(
                     "Info", "AfterAccomplish"
@@ -368,7 +457,6 @@ class _TaskManager:
 
         logger.info("开始运行启动时任务")
         for uid, queue in Config.QueueConfig.items():
-
             if queue.get("Info", "StartUpEnabled") and uid not in self.task_dict:
                 logger.info(f"启动时需要运行的队列：{uid}")
                 task_id = await TaskManager.add_task("自动代理", str(uid))

@@ -131,7 +131,6 @@ class _EmulatorManager:
 
         data = {}
         for emulator_id in emulator_range:
-
             temp_emulator = await self.get_emulator_instance(emulator_id)
             data[emulator_id] = await temp_emulator.get_all_info()
 

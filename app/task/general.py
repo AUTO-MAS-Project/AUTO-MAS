@@ -29,7 +29,7 @@ import subprocess
 from pathlib import Path
 from datetime import datetime, timedelta
 from jinja2 import Environment, FileSystemLoader
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, TYPE_CHECKING
 
 
 from app.core import Config, GeneralConfig, GeneralUserConfig
@@ -38,6 +38,9 @@ from app.models.ConfigBase import MultipleConfig
 from app.services import Notify, System
 from app.utils import get_logger, LogMonitor, ProcessManager, strptime
 
+# 导入 TaskInfo 类型
+if TYPE_CHECKING:
+    from app.core.task_manager import TaskInfo
 
 logger = get_logger("通用调度器")
 
@@ -46,7 +49,12 @@ class GeneralManager:
     """通用脚本调度器"""
 
     def __init__(
-        self, mode: str, script_id: uuid.UUID, user_id: Optional[uuid.UUID], ws_id: str
+        self,
+        mode: str,
+        script_id: uuid.UUID,
+        user_id: Optional[uuid.UUID],
+        ws_id: str,
+        TaskInfo: "TaskInfo | None" = None,
     ):
         super(GeneralManager, self).__init__()
 
@@ -54,6 +62,7 @@ class GeneralManager:
         self.script_id = script_id
         self.user_id = user_id
         self.ws_id = ws_id
+        self.task_info = TaskInfo  # 保存任务信息引用
 
         self.game_process_manager = ProcessManager()
         self.general_process_manager = ProcessManager()
@@ -188,7 +197,6 @@ class GeneralManager:
 
         # 整理用户数据, 筛选需代理的用户
         if self.mode != "设置脚本":
-
             self.user_list: List[Dict[str, str]] = [
                 {
                     "user_id": str(uid),
@@ -204,7 +212,6 @@ class GeneralManager:
 
         # 自动代理模式
         if self.mode == "自动代理":
-
             # 执行情况预处理
             for _ in self.user_list:
                 if (
@@ -222,9 +229,7 @@ class GeneralManager:
 
             # 开始代理
             for self.index, user in enumerate(self.user_list):
-
                 try:
-
                     self.cur_user_data = self.user_config[uuid.UUID(user["user_id"])]
 
                     if (self.script_config.get("Run", "ProxyTimesLimit") == 0) or (
@@ -260,7 +265,6 @@ class GeneralManager:
                         Path.cwd()
                         / f"data/{self.script_id}/{user['user_id']}/ConfigFile"
                     ).exists():
-
                         logger.error(f"用户: {user['user_id']} - 未找到配置文件")
                         await Config.send_json(
                             WebSocketMessage(
@@ -274,7 +278,6 @@ class GeneralManager:
 
                     # 尝试次数循环
                     for i in range(self.script_config.get("Run", "RunTimesLimit")):
-
                         if self.run_book:
                             break
 
@@ -303,7 +306,6 @@ class GeneralManager:
 
                         # 启动游戏/模拟器
                         if self.script_config.get("Game", "Enabled"):
-
                             try:
                                 logger.info(
                                     f"启动游戏/模拟器: {self.game_path}, 参数: {self.script_config.get('Game','Arguments')}"
@@ -334,11 +336,14 @@ class GeneralManager:
                                 logger.info(
                                     f"更新静默进程标记: {self.game_path}, 标记有效时间: {datetime.now() + timedelta(seconds=self.script_config.get('Game', 'WaitTime') + 10)}"
                                 )
-                                Config.silence_dict[
-                                    self.game_path
-                                ] = datetime.now() + timedelta(
-                                    seconds=self.script_config.get("Game", "WaitTime")
-                                    + 10
+                                Config.silence_dict[self.game_path] = (
+                                    datetime.now()
+                                    + timedelta(
+                                        seconds=self.script_config.get(
+                                            "Game", "WaitTime"
+                                        )
+                                        + 10
+                                    )
                                 )
 
                             await Config.send_json(
@@ -379,7 +384,6 @@ class GeneralManager:
 
                         # 处理通用脚本结果
                         if self.general_result == "Success!":
-
                             # 标记任务完成
                             self.run_book = True
 
@@ -415,7 +419,6 @@ class GeneralManager:
                                 "Success",
                                 "Always",
                             ]:
-
                                 if (
                                     self.script_config.get("Script", "ConfigPathMode")
                                     == "Folder"
@@ -481,7 +484,6 @@ class GeneralManager:
                                 "Failure",
                                 "Always",
                             ]:
-
                                 if (
                                     self.script_config.get("Script", "ConfigPathMode")
                                     == "Folder"
@@ -539,7 +541,6 @@ class GeneralManager:
 
         # 设置通用脚本模式
         elif self.mode == "设置脚本":
-
             # 配置通用脚本
             await self.set_general()
             # 创建通用脚本任务
@@ -643,7 +644,6 @@ class GeneralManager:
             and hasattr(self, "index")
             and self.user_list[self.index]["status"] == "运行"
         ):
-
             self.general_result = "用户手动中止任务"
 
             # 更新脚本配置文件
@@ -651,7 +651,6 @@ class GeneralManager:
                 "Failure",
                 "Always",
             ]:
-
                 if self.script_config.get("Script", "ConfigPathMode") == "Folder":
                     shutil.copytree(
                         self.script_config_path,
@@ -690,7 +689,6 @@ class GeneralManager:
 
         # 导出结果
         if self.mode == "自动代理":
-
             # 更新用户数据
             await Config.ScriptConfig[self.script_id].UserData.load(
                 await self.user_config.toDict()
@@ -754,7 +752,6 @@ class GeneralManager:
                 )
 
         elif self.mode == "设置脚本":
-
             (Path.cwd() / f"data/{self.script_id}/{self.user_id}/ConfigFile").mkdir(
                 parents=True, exist_ok=True
             )
@@ -777,6 +774,8 @@ class GeneralManager:
                 logger.success(
                     f"通用脚本配置已保存到: {Path.cwd() / f'data/{self.script_id}/{self.user_id}/ConfigFile' / self.script_config_path.name}"
                 )
+            result_text = ""
+        else:
             result_text = ""
 
         # 复原通用脚本配置文件
@@ -816,7 +815,6 @@ class GeneralManager:
 
         # 更新日志
         if await self.general_process_manager.is_running():
-
             await Config.send_json(
                 WebSocketMessage(
                     id=self.ws_id, type="Update", data={"log": log}
@@ -824,7 +822,6 @@ class GeneralManager:
             )
 
         if "自动代理" in self.mode:
-
             # 获取最近一条日志的时间
             latest_time = self.log_start_time
             for _ in self.general_logs[::-1]:
@@ -845,7 +842,6 @@ class GeneralManager:
                     self.general_result = "Success!"
                     break
             else:
-
                 if datetime.now() - latest_time > timedelta(
                     minutes=self.script_config.get("Run", "RunTimeLimit")
                 ):
@@ -866,7 +862,6 @@ class GeneralManager:
         logger.info(f"通用脚本日志分析结果: {self.general_result}")
 
         if self.general_result != "Wait":
-
             logger.info(f"MAA 任务结果: {self.general_result}, 日志锁已释放")
             self.wait_event.set()
 
@@ -1032,7 +1027,6 @@ class GeneralManager:
                 )
 
         elif mode == "统计信息":
-
             message_text = (
                 f"开始时间: {message['start_time']}\n"
                 f"结束时间: {message['end_time']}\n"
@@ -1048,7 +1042,6 @@ class GeneralManager:
 
             # 发送全局通知
             if Config.get("Notify", "IfSendStatistic"):
-
                 if Config.get("Notify", "IfSendMail"):
                     await Notify.send_mail(
                         "网页", title, message_html, Config.get("Notify", "ToAddress")
@@ -1071,7 +1064,6 @@ class GeneralManager:
             if self.cur_user_data.get("Notify", "Enabled") and self.cur_user_data.get(
                 "Notify", "IfSendStatistic"
             ):
-
                 # 发送邮件通知
                 if self.cur_user_data.get("Notify", "IfSendMail"):
                     if self.cur_user_data.get("Notify", "ToAddress"):
@@ -1082,7 +1074,7 @@ class GeneralManager:
                             self.cur_user_data.get("Notify", "ToAddress"),
                         )
                     else:
-                        logger.error(f"用户邮箱地址为空, 无法发送用户单独的邮件通知")
+                        logger.error("用户邮箱地址为空, 无法发送用户单独的邮件通知")
 
                 # 发送ServerChan通知
                 if self.cur_user_data.get("Notify", "IfServerChan"):
