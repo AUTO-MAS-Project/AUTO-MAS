@@ -106,7 +106,7 @@ class LDManager(DeviceBase):
         if result.returncode != 0:
             raise RuntimeError(f"命令执行失败: {result}")
 
-        for _ in range(self.config.get("Info", "MaxWaitTime") * 10):
+        for _ in range(self.config.get("Data", "MaxWaitTime") * 10):
 
             Ok, info, status = await self.get_device_info(idx)
             if status == DeviceStatus.ERROR or status == DeviceStatus.UNKNOWN:
@@ -155,7 +155,7 @@ class LDManager(DeviceBase):
         if result.returncode != 0:
             return True, DeviceStatus.OFFLINE
 
-        for _ in range(self.config.get("Info", "MaxWaitTime") * 10):
+        for _ in range(self.config.get("Data", "MaxWaitTime") * 10):
             Ok, info, status = await self.get_device_info(idx)
             if status == DeviceStatus.ERROR or status == DeviceStatus.UNKNOWN:
                 return False, status

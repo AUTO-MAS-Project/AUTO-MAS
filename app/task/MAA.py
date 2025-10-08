@@ -1154,9 +1154,9 @@ class MaaManager:
                 plan_data.get("SeriesNumb", "0")
             )
             if mode == "Annihilation":
-                data["Configurations"]["Default"]["MainFunction.Stage1"] = (
-                    "Annihilation"
-                )
+                data["Configurations"]["Default"][
+                    "MainFunction.Stage1"
+                ] = "Annihilation"
                 data["Configurations"]["Default"]["MainFunction.Stage2"] = ""
                 data["Configurations"]["Default"]["MainFunction.Stage3"] = ""
                 data["Configurations"]["Default"]["Fight.RemainingSanityStage"] = ""
@@ -1170,9 +1170,9 @@ class MaaManager:
                 data["Configurations"]["Default"]["Penguin.IsDrGrandet"] = "False"
                 data["Configurations"]["Default"]["GUI.CustomStageCode"] = "True"
                 data["Configurations"]["Default"]["GUI.UseAlternateStage"] = "False"
-                data["Configurations"]["Default"]["Fight.UseRemainingSanityStage"] = (
-                    "False"
-                )
+                data["Configurations"]["Default"][
+                    "Fight.UseRemainingSanityStage"
+                ] = "False"
                 data["Configurations"]["Default"]["Fight.UseExpiringMedicine"] = "True"
                 data["Configurations"]["Default"]["GUI.HideSeries"] = "False"
             elif mode == "Routine":
@@ -1206,18 +1206,18 @@ class MaaManager:
                 if self.cur_user_data.get("Info", "Mode") == "简洁":
                     data["Configurations"]["Default"]["Penguin.IsDrGrandet"] = "False"
                     data["Configurations"]["Default"]["GUI.CustomStageCode"] = "True"
-                    data["Configurations"]["Default"]["Fight.UseExpiringMedicine"] = (
-                        "True"
-                    )
+                    data["Configurations"]["Default"][
+                        "Fight.UseExpiringMedicine"
+                    ] = "True"
                     if self.cur_user_data.get("Info", "InfrastMode") == "Custom":
                         infra_path = (
                             Path.cwd()
                             / f"data/{self.script_id}/{self.user_list[self.index]['user_id']}/Infrastructure/infrastructure.json"
                         )
                         if infra_path.exists():
-                            data["Configurations"]["Default"]["Infrast.InfrastMode"] = (
-                                "Custom"
-                            )
+                            data["Configurations"]["Default"][
+                                "Infrast.InfrastMode"
+                            ] = "Custom"
                             data["Configurations"]["Default"][
                                 "Infrast.CustomInfrastPlanIndex"
                             ] = self.cur_user_data.get("Data", "CustomInfrastPlanIndex")
@@ -1284,19 +1284,19 @@ class MaaManager:
                     self.cur_user_data.get("Info", "Id")
                 )
             data["Configurations"]["Default"]["TaskQueue.WakeUp.IsChecked"] = "True"
-            data["Configurations"]["Default"]["TaskQueue.Recruiting.IsChecked"] = (
-                "False"
-            )
+            data["Configurations"]["Default"][
+                "TaskQueue.Recruiting.IsChecked"
+            ] = "False"
             data["Configurations"]["Default"]["TaskQueue.Base.IsChecked"] = "False"
             data["Configurations"]["Default"]["TaskQueue.Combat.IsChecked"] = "False"
             data["Configurations"]["Default"]["TaskQueue.Mission.IsChecked"] = "False"
             data["Configurations"]["Default"]["TaskQueue.Mall.IsChecked"] = "False"
-            data["Configurations"]["Default"]["TaskQueue.AutoRoguelike.IsChecked"] = (
-                "False"
-            )
-            data["Configurations"]["Default"]["TaskQueue.Reclamation.IsChecked"] = (
-                "False"
-            )
+            data["Configurations"]["Default"][
+                "TaskQueue.AutoRoguelike.IsChecked"
+            ] = "False"
+            data["Configurations"]["Default"][
+                "TaskQueue.Reclamation.IsChecked"
+            ] = "False"
         elif self.mode == "设置脚本":
             data["Configurations"]["Default"]["MainFunction.PostActions"] = "0"
             data["Configurations"]["Default"]["Start.RunDirectly"] = "False"
@@ -1307,19 +1307,19 @@ class MaaManager:
             if Config.get("Function", "IfSilence"):
                 data["Global"]["Start.MinimizeDirectly"] = "False"
             data["Configurations"]["Default"]["TaskQueue.WakeUp.IsChecked"] = "False"
-            data["Configurations"]["Default"]["TaskQueue.Recruiting.IsChecked"] = (
-                "False"
-            )
+            data["Configurations"]["Default"][
+                "TaskQueue.Recruiting.IsChecked"
+            ] = "False"
             data["Configurations"]["Default"]["TaskQueue.Base.IsChecked"] = "False"
             data["Configurations"]["Default"]["TaskQueue.Combat.IsChecked"] = "False"
             data["Configurations"]["Default"]["TaskQueue.Mission.IsChecked"] = "False"
             data["Configurations"]["Default"]["TaskQueue.Mall.IsChecked"] = "False"
-            data["Configurations"]["Default"]["TaskQueue.AutoRoguelike.IsChecked"] = (
-                "False"
-            )
-            data["Configurations"]["Default"]["TaskQueue.Reclamation.IsChecked"] = (
-                "False"
-            )
+            data["Configurations"]["Default"][
+                "TaskQueue.AutoRoguelike.IsChecked"
+            ] = "False"
+            data["Configurations"]["Default"][
+                "TaskQueue.Reclamation.IsChecked"
+            ] = "False"
         elif mode == "Update":
             data["Configurations"]["Default"]["MainFunction.PostActions"] = "0"
             data["Configurations"]["Default"]["Start.RunDirectly"] = "False"
@@ -1332,19 +1332,19 @@ class MaaManager:
             data["Global"]["VersionUpdate.AutoDownloadUpdatePackage"] = "False"
             data["Global"]["VersionUpdate.AutoInstallUpdatePackage"] = "True"
             data["Configurations"]["Default"]["TaskQueue.WakeUp.IsChecked"] = "False"
-            data["Configurations"]["Default"]["TaskQueue.Recruiting.IsChecked"] = (
-                "False"
-            )
+            data["Configurations"]["Default"][
+                "TaskQueue.Recruiting.IsChecked"
+            ] = "False"
             data["Configurations"]["Default"]["TaskQueue.Base.IsChecked"] = "False"
             data["Configurations"]["Default"]["TaskQueue.Combat.IsChecked"] = "False"
             data["Configurations"]["Default"]["TaskQueue.Mission.IsChecked"] = "False"
             data["Configurations"]["Default"]["TaskQueue.Mall.IsChecked"] = "False"
-            data["Configurations"]["Default"]["TaskQueue.AutoRoguelike.IsChecked"] = (
-                "False"
-            )
-            data["Configurations"]["Default"]["TaskQueue.Reclamation.IsChecked"] = (
-                "False"
-            )
+            data["Configurations"]["Default"][
+                "TaskQueue.AutoRoguelike.IsChecked"
+            ] = "False"
+            data["Configurations"]["Default"][
+                "TaskQueue.Reclamation.IsChecked"
+            ] = "False"
         if self.mode != "设置脚本" and mode != "Update" and self.if_open_emulator:
             self.if_open_emulator = False
         with self.maa_set_path.open(mode="w", encoding="utf-8") as f:
