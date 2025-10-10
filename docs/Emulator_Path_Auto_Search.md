@@ -2,7 +2,11 @@
 
 ## 功能概述
 
-当用户更新模拟器配置时,如果修改了模拟器路径,系统会自动搜索上下文件夹,智能定位到模拟器主程序所在的根目录。这个功能可以帮助用户即使选择了子目录或可执行文件路径,也能自动调整到正确的模拟器安装目录。
+当用户更新模拟器配置时,如果修改了模拟器路径,系统会自动搜索上下文件夹,智能定位到模拟器主程序所在的根目录。
+
+**新增功能**: 系统现在支持解析 Windows 快捷方式 (`.lnk` 文件)。如果用户选择了快捷方式文件,系统会自动解析获取真实目标路径,然后再进行根目录搜索。
+
+这个功能可以帮助用户即使选择了子目录、可执行文件或快捷方式,也能自动调整到正确的模拟器安装目录。
 
 ## 使用场景
 
@@ -21,12 +25,29 @@
 - **自动调整为**: `C:\LDPlayer4.0`
 - **原因**: 系统向上搜索找到包含模拟器可执行文件的根目录
 
-### 场景 4: 用户已选择正确路径
+### 场景 4: 用户选择了快捷方式 ⭐ 新功能
+- **输入**: `C:\Users\用户名\Desktop\MuMu模拟器.lnk`
+- **解析为**: `C:\Program Files\MuMu Player 12\MuMuPlayer.exe`
+- **最终调整为**: `C:\Program Files\MuMu Player 12`
+- **原因**: 系统先解析快捷方式获取真实路径,再搜索根目录
+
+### 场景 5: 用户已选择正确路径
 - **输入**: `C:\MuMu Player 12`
 - **保持不变**: `C:\MuMu Player 12`
 - **原因**: 路径已经是正确的根目录,无需调整
 
 ## 工作原理
+
+### 快捷方式解析 ⭐ 新功能
+
+在进行路径搜索前,系统会首先检测输入路径是否为 Windows 快捷方式 (`.lnk` 文件):
+
+1. **检测快捷方式**: 如果文件扩展名为 `.lnk`
+2. **解析目标路径**: 
+   - 优先使用 `pywin32` 库 (`win32com.client`) 解析
+   - 如果未安装 `pywin32`,则使用 PowerShell 作为备用方法
+3. **验证目标**: 检查解析后的目标路径是否存在
+4. **继续处理**: 使用解析后的真实路径进行后续的根目录搜索
 
 ### 搜索策略
 
@@ -80,22 +101,46 @@ POST /api/setting/emulator/update
 系统会记录路径搜索和调整的详细信息:
 
 ```
-[INFO] 检测到路径修改: C:\MuMu Player 12\shell, 模拟器类型: mumu
-[INFO] 开始搜索MuMu模拟器根目录,起始路径: C:\MuMu Player 12\shell
-[DEBUG] 当前目录有效: C:\MuMu Player 12\shell
-[DEBUG] 父目录有效: C:\MuMu Player 12
-[INFO] 找到模拟器根目录 (直接包含1个exe,子目录1个): C:\MuMu Player 12
-[INFO] 路径已自动调整: C:\MuMu Player 12\shell -> C:\MuMu Player 12
+[INFO] 检测到快捷方式文件: C:\Users\用户名\Desktop\MuMu模拟器.lnk
+[INFO] 解析快捷方式: C:\Users\用户名\Desktop\MuMu模拟器.lnk -> C:\Program Files\MuMu Player 12\MuMuPlayer.exe
+[INFO] 检测到路径修改: C:\Program Files\MuMu Player 12\MuMuPlayer.exe, 模拟器类型: mumu
+[INFO] 开始搜索MuMu模拟器根目录,起始路径: C:\Program Files\MuMu Player 12
+[DEBUG] 当前目录有效: C:\Program Files\MuMu Player 12
+[INFO] 找到模拟器根目录 (直接包含1个exe,子目录1个): C:\Program Files\MuMu Player 12
+[INFO] 路径已自动调整: C:\Program Files\MuMu Player 12\MuMuPlayer.exe -> C:\Program Files\MuMu Player 12
 ```
 
 ## 实现细节
 
 ### 核心函数
 
+#### `resolve_lnk_path(lnk_path)` ⭐ 新增
+
+**功能**: 解析 Windows 快捷方式文件
+
+**参数**:
+- `lnk_path`: 快捷方式文件路径
+
+**返回值**:
+- 快捷方式指向的目标路径,如果解析失败则返回原路径
+
+**解析方法**:
+1. **主方法**: 使用 `win32com.client` (需要 pywin32 库)
+2. **备用方法**: 使用 PowerShell 脚本解析
+
+**使用示例**:
+```python
+from app.utils.emulator import resolve_lnk_path
+
+# 解析快捷方式
+target = resolve_lnk_path("C:\\Users\\用户名\\Desktop\\MuMu模拟器.lnk")
+# 返回: "C:\\Program Files\\MuMu Player 12\\MuMuPlayer.exe"
+```
+
 #### `find_emulator_root_path(input_path, emulator_type, max_levels=5)`
 
 **参数**:
-- `input_path`: 用户输入的路径(可能是文件或目录)
+- `input_path`: 用户输入的路径(可能是文件、快捷方式或目录)
 - `emulator_type`: 模拟器类型 (`mumu`, `ldplayer`, `nox`, 等)
 - `max_levels`: 向上搜索的最大层级数(默认5层)
 
@@ -105,6 +150,13 @@ POST /api/setting/emulator/update
 **使用示例**:
 ```python
 from app.utils.emulator import find_emulator_root_path
+
+# 从快捷方式搜索
+root_path = await find_emulator_root_path(
+    "C:\\Users\\用户名\\Desktop\\MuMu模拟器.lnk", 
+    "mumu"
+)
+# 返回: "C:\\Program Files\\MuMu Player 12"
 
 # 从子目录搜索
 root_path = await find_emulator_root_path(
@@ -159,6 +211,21 @@ python test\utils\test_path_search_standalone.py
 2. **路径有效性**: 输入的路径必须存在,否则返回原路径
 3. **模拟器类型**: 必须提供正确的模拟器类型,否则无法识别应该查找哪些文件
 4. **搜索深度**: 默认向上搜索5层,如果超出这个范围可能找不到根目录
+5. **快捷方式解析**: 
+   - 优先使用 `pywin32` 库,如果未安装会自动降级为 PowerShell 方法
+   - PowerShell 方法可能稍慢,但无需额外依赖
+   - 快捷方式目标必须存在,否则返回原路径
+
+## 依赖项
+
+### 可选依赖
+
+- **pywin32** (推荐): 提供更快速的快捷方式解析
+  ```bash
+  pip install pywin32
+  ```
+  
+- **PowerShell** (系统自带): 作为快捷方式解析的备用方法,Windows 系统默认包含
 
 ## 未来改进
 

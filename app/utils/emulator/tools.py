@@ -32,6 +32,79 @@ from app.utils import get_logger
 logger = get_logger("模拟器管理工具")
 
 
+def resolve_lnk_path(lnk_path: str) -> str:
+    """
+    解析Windows快捷方式(.lnk)文件,获取目标路径
+
+    Parameters
+    ----------
+    lnk_path : str
+        快捷方式文件路径
+
+    Returns
+    -------
+    str
+        快捷方式指向的目标路径,如果解析失败则返回原路径
+    """
+
+    if not lnk_path.lower().endswith(".lnk"):
+        return lnk_path
+
+    if not os.path.exists(lnk_path):
+        logger.warning(f"快捷方式文件不存在: {lnk_path}")
+        return lnk_path
+
+    try:
+        import win32com.client
+
+        shell = win32com.client.Dispatch("WScript.Shell")
+        shortcut = shell.CreateShortCut(lnk_path)
+        target_path = shortcut.Targetpath
+
+        if target_path and os.path.exists(target_path):
+            logger.info(f"解析快捷方式: {lnk_path} -> {target_path}")
+            return target_path
+        else:
+            logger.warning(f"快捷方式目标路径无效: {target_path}")
+            return lnk_path
+
+    except ImportError:
+        logger.warning("未安装 pywin32,尝试使用备用方法解析快捷方式")
+
+        # 备用方法:使用 PowerShell 解析快捷方式
+        try:
+            ps_command = f"""
+$shell = New-Object -ComObject WScript.Shell
+$shortcut = $shell.CreateShortcut("{lnk_path}")
+$shortcut.TargetPath
+"""
+            result = subprocess.run(
+                ["powershell", "-Command", ps_command],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                encoding="utf-8",
+                errors="replace",
+            )
+
+            if result.returncode == 0 and result.stdout.strip():
+                target_path = result.stdout.strip()
+                if os.path.exists(target_path):
+                    logger.info(
+                        f"解析快捷方式(PowerShell): {lnk_path} -> {target_path}"
+                    )
+                    return target_path
+
+        except Exception as e:
+            logger.warning(f"使用PowerShell解析快捷方式失败: {e}")
+
+        return lnk_path
+
+    except Exception as e:
+        logger.warning(f"解析快捷方式失败: {e}")
+        return lnk_path
+
+
 async def search_all_emulators() -> List[Dict[str, str]]:
     """搜索所有支持的模拟器"""
 
@@ -155,7 +228,7 @@ async def find_emulator_root_path(
     Parameters
     ----------
     input_path : str
-        用户输入的路径(可能是exe文件或某个子目录)
+        用户输入的路径(可能是exe文件、快捷方式或某个子目录)
     emulator_type : str
         模拟器类型(mumu, ldplayer, nox等)
     max_levels : int, optional
@@ -170,6 +243,14 @@ async def find_emulator_root_path(
     if not input_path or not os.path.exists(input_path):
         logger.warning(f"输入路径无效: {input_path}")
         return input_path
+
+    # 如果是快捷方式,先解析获取真实路径
+    if input_path.lower().endswith(".lnk"):
+        logger.info(f"检测到快捷方式文件: {input_path}")
+        input_path = resolve_lnk_path(input_path)
+        if not os.path.exists(input_path):
+            logger.warning(f"快捷方式解析后的路径无效: {input_path}")
+            return input_path
 
     # 获取模拟器配置信息
     if emulator_type not in EMULATOR_PATH_BOOK:
