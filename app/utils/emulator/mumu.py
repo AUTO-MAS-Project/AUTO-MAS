@@ -40,8 +40,9 @@ class MumuManager(DeviceBase):
     """
 
     def __init__(self, config: EmulatorConfig) -> None:
+        self.exe_path = Path(config.get("Info", "Path"), "shell/MuMuManager.exe")
 
-        if not Path(config.get("Info", "Path")).exists():
+        if not self.exe_path.exists():
             raise FileNotFoundError(
                 f"MuMuManager.exe文件不存在: {config.get('Info', 'Path')}"
             )
