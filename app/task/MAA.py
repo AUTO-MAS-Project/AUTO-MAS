@@ -23,13 +23,12 @@ from pathlib import Path
 from datetime import datetime, timedelta
 from jinja2 import Environment, FileSystemLoader
 
-from app.core import Broadcast, Config, MaaConfig, MaaUserConfig
+from app.core import Broadcast, Config, MaaConfig, MaaUserConfig, EmulatorManager
 from app.models.schema import WebSocketMessage
 from app.models.ConfigBase import MultipleConfig
 from app.services import Notify, System
 from app.utils import get_logger, LogMonitor, ProcessManager
 from .skland import skland_sign_in
-from app.core.emulator_manager import EmulatorManager
 
 # 导入 TaskInfo 类型
 from typing import TYPE_CHECKING
@@ -413,13 +412,12 @@ class MaaManager:
                         if self.if_open_emulator_process:
                             (
                                 OK,
-                                e,
-                                self.adb_dict,
-                            ) = await self.emulator_manager.start_emulator(
+                                info,
+                            ) = await EmulatorManager.open_emulator(
                                 self.emulator_uuid, self.emulator_index
                             )
                             if not OK:
-                                logger.exception(f"启动模拟器时出现异常: {e}")
+                                logger.exception(f"启动模拟器时出现异常: {info}")
                                 await Config.send_json(
                                     WebSocketMessage(
                                         id=self.ws_id,
@@ -474,7 +472,7 @@ class MaaManager:
                             await self.maa_process_manager.kill(if_force=True)
                             await System.kill_process(self.maa_exe_path)
                             logger.info("任务结束后再次中止模拟器进程:")
-                            await self.emulator_manager.close_emulator(
+                            await EmulatorManager.close_emulator(
                                 self.emulator_uuid, self.emulator_index
                             )
                             self.if_open_emulator = True
@@ -490,7 +488,7 @@ class MaaManager:
                         await self._disconnect_adb(self.ADB_path, self.ADB_address)
                         if self.if_kill_emulator:
                             logger.info("任务结束后再次中止模拟器进程:")
-                            await self.emulator_manager.close_emulator(
+                            await EmulatorManager.close_emulator(
                                 self.emulator_uuid, self.emulator_index
                             )
                             self.if_open_emulator = True
