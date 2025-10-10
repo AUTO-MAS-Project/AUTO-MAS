@@ -776,6 +776,11 @@ const buttonFixedStyle = { width: '28px', height: '28px', padding: 0 }
   flex-direction: column;
 }
 
+/* 隐藏所有滚动条 */
+*::-webkit-scrollbar {
+  display: none; /* Chrome, Safari and Opera */
+}
+
 .no-selection {
   flex: 1;
   display: flex;
