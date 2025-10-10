@@ -128,14 +128,145 @@ async def _validate_emulator_path(path: str, executables: List[str]) -> bool:
 
     path_obj = Path(path)
 
-    # 检查是否存在任何一个可执行文件
+    # 检查当前目录是否直接包含任何可执行文件
     for executable in executables:
         if (path_obj / executable).exists():
             return True
 
-        # 也检查子目录
-        for subdir in path_obj.iterdir():
-            if subdir.is_dir() and (subdir / executable).exists():
-                return True
+    # 仅检查一级子目录(不递归)
+    try:
+        for item in path_obj.iterdir():
+            if item.is_dir():
+                for executable in executables:
+                    if (item / executable).exists():
+                        return True
+    except PermissionError:
+        pass
 
     return False
+
+
+async def find_emulator_root_path(
+    input_path: str, emulator_type: str, max_levels: int = 5
+) -> str:
+    """
+    从给定路径向上或向下搜索模拟器根目录
+
+    Parameters
+    ----------
+    input_path : str
+        用户输入的路径(可能是exe文件或某个子目录)
+    emulator_type : str
+        模拟器类型(mumu, ldplayer, nox等)
+    max_levels : int, optional
+        向上搜索的最大层级数, by default 5
+
+    Returns
+    -------
+    str
+        找到的模拟器根目录路径,如果未找到则返回原路径
+    """
+
+    if not input_path or not os.path.exists(input_path):
+        logger.warning(f"输入路径无效: {input_path}")
+        return input_path
+
+    # 获取模拟器配置信息
+    if emulator_type not in EMULATOR_PATH_BOOK:
+        logger.warning(f"不支持的模拟器类型: {emulator_type}")
+        return input_path
+
+    config = EMULATOR_PATH_BOOK[emulator_type]
+    executables = config["executables"]
+
+    path_obj = Path(input_path)
+
+    # 如果输入的是文件,先获取其父目录
+    if path_obj.is_file():
+        path_obj = path_obj.parent
+
+    logger.info(f"开始搜索{config['name']}根目录,起始路径: {path_obj}")
+
+    # 1. 首先向上搜索,找到最顶层包含所需文件的目录
+    candidates = []
+
+    # 检查当前目录
+    if await _validate_emulator_path(str(path_obj), executables):
+        candidates.append(path_obj)
+        logger.debug(f"当前目录有效: {path_obj}")
+
+    # 向上搜索父目录
+    current = path_obj
+    for _ in range(max_levels):
+        parent = current.parent
+        if parent == current:  # 已到达根目录
+            break
+
+        if await _validate_emulator_path(str(parent), executables):
+            candidates.append(parent)
+            logger.debug(f"父目录有效: {parent}")
+
+        current = parent
+
+    # 如果找到了候选目录,优先返回直接包含更多可执行文件的目录
+    if candidates:
+        # 为每个候选目录计算直接包含的可执行文件数量
+        candidate_scores = []
+        for candidate in candidates:
+            direct_exe_count = sum(
+                1 for exe in executables if (candidate / exe).exists()
+            )
+            subfolder_exe_count = 0
+            try:
+                for item in candidate.iterdir():
+                    if item.is_dir():
+                        subfolder_exe_count += sum(
+                            1 for exe in executables if (item / exe).exists()
+                        )
+            except PermissionError:
+                pass
+
+            candidate_scores.append(
+                {
+                    "path": candidate,
+                    "direct_count": direct_exe_count,
+                    "subfolder_count": subfolder_exe_count,
+                    "depth": len(candidate.parts),
+                }
+            )
+
+        # 排序:优先选择直接包含更多可执行文件的,其次选择子目录包含更多的,最后按深度
+        candidate_scores.sort(
+            key=lambda x: (x["direct_count"], x["subfolder_count"], -x["depth"]),
+            reverse=True,
+        )
+
+        result = str(candidate_scores[0]["path"])
+        logger.info(
+            f"找到模拟器根目录 (直接包含{candidate_scores[0]['direct_count']}个exe,子目录{candidate_scores[0]['subfolder_count']}个): {result}"
+        )
+        return result
+
+    # 2. 如果向上没找到,尝试向下搜索子目录(深度1层)
+    try:
+        for subdir in path_obj.iterdir():
+            if subdir.is_dir():
+                if await _validate_emulator_path(str(subdir), executables):
+                    logger.info(f"在子目录找到根目录: {subdir}")
+                    return str(subdir)
+    except PermissionError:
+        pass
+
+    # 3. 检查兄弟目录
+    if path_obj.parent != path_obj:
+        try:
+            for sibling in path_obj.parent.iterdir():
+                if sibling.is_dir() and sibling != path_obj:
+                    if await _validate_emulator_path(str(sibling), executables):
+                        logger.info(f"在兄弟目录找到根目录: {sibling}")
+                        return str(sibling)
+        except PermissionError:
+            pass
+
+    logger.warning(f"未能找到{config['name']}根目录,返回原路径: {input_path}")
+    return input_path
