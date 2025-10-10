@@ -59,6 +59,7 @@ from app.utils.constants import (
     RESOURCE_STAGE_DATE_TEXT,
 )
 from app.utils import get_logger
+from app.utils.emulator import find_emulator_root_path
 
 logger = get_logger("配置管理")
 
@@ -1255,6 +1256,35 @@ class AppConfig(GlobalConfig):
         emulator_uid = uuid.UUID(emulator_id)
 
         logger.info(f"更新 emulator 全局配置: {emulator_id}")
+
+        # 如果路径被修改,尝试自动搜索模拟器根目录
+        if "Info" in data and "Path" in data["Info"]:
+            input_path = data["Info"]["Path"]
+
+            # 获取模拟器类型
+            emulator_type = None
+            if "Data" in data and "Type" in data["Data"]:
+                # 如果本次更新中包含类型信息
+                emulator_type = data["Data"]["Type"]
+            else:
+                # 否则从现有配置中获取
+                emulator_type = await self.EmulatorData[emulator_uid].get(
+                    "Data", "Type"
+                )
+
+            if input_path and emulator_type:
+                logger.info(
+                    f"检测到路径修改: {input_path}, 模拟器类型: {emulator_type}"
+                )
+                # 搜索并调整为正确的根目录
+                corrected_path = await find_emulator_root_path(
+                    input_path, emulator_type
+                )
+                if corrected_path != input_path:
+                    logger.info(f"路径已自动调整: {input_path} -> {corrected_path}")
+                    data["Info"]["Path"] = corrected_path
+                else:
+                    logger.debug(f"路径未调整,保持原值: {input_path}")
 
         for group, items in data.items():
             for name, value in items.items():
