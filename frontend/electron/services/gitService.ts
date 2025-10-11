@@ -710,6 +710,234 @@ export async function downloadGit(appRoot: string): Promise<{ success: boolean; 
   }
 }
 
+// 快速安装：下载预打包源码
+export async function downloadQuickSource(appRoot: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const sourceUrl = 'https://download.auto-mas.top/d/AUTO-MAS/repo.zip'
+    const downloadPath = path.join(appRoot, 'temp', 'repo.zip')
+    
+    // 确保临时目录存在
+    const tempDir = path.dirname(downloadPath)
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true })
+    }
+
+    if (mainWindow) {
+      mainWindow.webContents.send('download-progress', {
+        step: 2,
+        progress: 50,
+        status: 'downloading',
+        message: '开始下载源码包...',
+      })
+    }
+    
+    const { downloadFile } = await import('./downloadService')
+    await downloadFile(sourceUrl, downloadPath)
+    
+    if (mainWindow) {
+      mainWindow.webContents.send('download-progress', {
+        step: 2,
+        progress: 60,
+        status: 'completed',
+        message: '源码包下载完成',
+      })
+    }
+    
+    return { success: true }
+  } catch (error) {
+    const errorMsg = `源码包下载失败: ${error instanceof Error ? error.message : String(error)}`
+    console.error(errorMsg)
+    if (mainWindow) {
+      mainWindow.webContents.send('download-progress', {
+        step: 2,
+        progress: 0,
+        status: 'error',
+        message: errorMsg,
+      })
+    }
+    return { success: false, error: errorMsg }
+  }
+}
+
+// 快速安装：解压预打包源码
+export async function extractQuickSource(appRoot: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const zipPath = path.join(appRoot, 'temp', 'repo.zip')
+    const tempExtractPath = path.join(appRoot, 'temp', 'repo')
+    
+    if (mainWindow) {
+      mainWindow.webContents.send('download-progress', {
+        step: 3,
+        progress: 70,
+        status: 'extracting',
+        message: '开始解压源码包...',
+      })
+    }
+    
+    if (!fs.existsSync(zipPath)) {
+      throw new Error('源码包文件不存在')
+    }
+
+    // 先解压到临时目录
+    const AdmZip = (await import('adm-zip')).default
+    const zip = new AdmZip(zipPath)
+    zip.extractAllTo(tempExtractPath, true)
+    
+    // 查找解压后的实际目录（可能包含版本号等）
+    const extractedItems = fs.readdirSync(tempExtractPath)
+    let sourceDir = tempExtractPath
+    
+    // 如果解压后只有一个目录，进入该目录
+    if (extractedItems.length === 1) {
+      const itemPath = path.join(tempExtractPath, extractedItems[0])
+      if (fs.statSync(itemPath).isDirectory()) {
+        sourceDir = itemPath
+      }
+    }
+    
+    // 复制文件到应用根目录，但跳过已存在的关键文件
+    await copySourceFiles(sourceDir, appRoot)
+    
+    // 清理临时文件
+    fs.unlinkSync(zipPath)
+    if (fs.existsSync(tempExtractPath)) {
+      fs.rmSync(tempExtractPath, { recursive: true, force: true })
+    }
+    
+    if (mainWindow) {
+      mainWindow.webContents.send('download-progress', {
+        step: 3,
+        progress: 80,
+        status: 'completed',
+        message: '源码包解压完成',
+      })
+    }
+    
+    return { success: true }
+  } catch (error) {
+    const errorMsg = `源码包解压失败: ${error instanceof Error ? error.message : String(error)}`
+    console.error(errorMsg)
+    if (mainWindow) {
+      mainWindow.webContents.send('download-progress', {
+        step: 3,
+        progress: 0,
+        status: 'error',
+        message: errorMsg,
+      })
+    }
+    return { success: false, error: errorMsg }
+  }
+}
+
+// 快速安装：更新源码到最新版本
+export async function updateQuickSource(appRoot: string, repoUrl?: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    if (mainWindow) {
+      mainWindow.webContents.send('download-progress', {
+        step: 4,
+        progress: 85,
+        status: 'updating',
+        message: '正在更新到最新代码...',
+      })
+    }
+    
+    // 使用现有的cloneBackend函数，它会自动判断是pull还是clone
+    const result = await cloneBackend(appRoot, repoUrl)
+    
+    if (result.success) {
+      if (mainWindow) {
+        mainWindow.webContents.send('download-progress', {
+          step: 4,
+          progress: 90,
+          status: 'completed',
+          message: '代码更新完成',
+        })
+      }
+      return { success: true }
+    } else {
+      // 如果更新失败，不要抛出错误，只是记录警告
+      console.warn('代码更新失败，但继续安装流程:', result.error)
+      if (mainWindow) {
+        mainWindow.webContents.send('download-progress', {
+          step: 4,
+          progress: 90,
+          status: 'warning',
+          message: '代码更新失败，使用下载的版本继续',
+        })
+      }
+      return { success: true } // 返回成功，继续后续流程
+    }
+  } catch (error) {
+    // 更新失败不影响整体流程
+    console.warn('代码更新异常，但继续安装流程:', error)
+    if (mainWindow) {
+      mainWindow.webContents.send('download-progress', {
+        step: 4,
+        progress: 90,
+        status: 'warning',
+        message: '代码更新失败，使用下载的版本继续',
+      })
+    }
+    return { success: true }
+  }
+}
+
+// 复制源码文件，跳过已存在的关键文件
+async function copySourceFiles(sourceDir: string, targetDir: string) {
+  const skipFiles = [
+    'frontend', // 跳过前端目录，避免覆盖当前运行的前端
+    'node_modules',
+    '.git',
+    'temp',
+    'debug',
+    'data',
+    'history',
+    'config', // 跳过配置目录，保留用户配置
+  ]
+  
+  const items = fs.readdirSync(sourceDir)
+  
+  for (const item of items) {
+    if (skipFiles.includes(item)) {
+      console.log(`跳过文件/目录: ${item}`)
+      continue
+    }
+    
+    const sourcePath = path.join(sourceDir, item)
+    const targetPath = path.join(targetDir, item)
+    
+    if (fs.statSync(sourcePath).isDirectory()) {
+      // 递归复制目录
+      if (!fs.existsSync(targetPath)) {
+        fs.mkdirSync(targetPath, { recursive: true })
+      }
+      await copyDirectoryRecursive(sourcePath, targetPath)
+    } else {
+      // 复制文件
+      fs.copyFileSync(sourcePath, targetPath)
+    }
+  }
+}
+
+// 递归复制目录
+async function copyDirectoryRecursive(sourceDir: string, targetDir: string) {
+  const items = fs.readdirSync(sourceDir)
+  
+  for (const item of items) {
+    const sourcePath = path.join(sourceDir, item)
+    const targetPath = path.join(targetDir, item)
+    
+    if (fs.statSync(sourcePath).isDirectory()) {
+      if (!fs.existsSync(targetPath)) {
+        fs.mkdirSync(targetPath, { recursive: true })
+      }
+      await copyDirectoryRecursive(sourcePath, targetPath)
+    } else {
+      fs.copyFileSync(sourcePath, targetPath)
+    }
+  }
+}
+
 // 克隆后端代码（替换原有核心逻辑）
 export async function cloneBackend(
   appRoot: string,

@@ -34,6 +34,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   installDependencies: (mirror?: string) => ipcRenderer.invoke('install-dependencies', mirror),
   cloneBackend: (repoUrl?: string) => ipcRenderer.invoke('clone-backend', repoUrl),
   updateBackend: (repoUrl?: string) => ipcRenderer.invoke('update-backend', repoUrl),
+  // 快速安装相关
+  downloadQuickEnvironment: () => ipcRenderer.invoke('download-quick-environment'),
+  extractQuickEnvironment: () => ipcRenderer.invoke('extract-quick-environment'),
+  downloadQuickSource: () => ipcRenderer.invoke('download-quick-source'),
+  extractQuickSource: () => ipcRenderer.invoke('extract-quick-source'),
+  updateQuickSource: (repoUrl?: string) => ipcRenderer.invoke('update-quick-source', repoUrl),
 
   // 新增的git管理方法
   checkRepoStatus: () => ipcRenderer.invoke('check-repo-status'),
