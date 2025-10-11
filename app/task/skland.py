@@ -9,6 +9,9 @@
 #       skland-checkin-ghaction Copyright © 2023 Yanstory
 #       https://github.com/Yanstory/skland-checkin-ghaction
 
+#       skland-daily-attendance Copyright © 2023-2025 enpitsuLin
+#       https://github.com/enpitsuLin/skland-daily-attendance
+
 #   This file is part of AUTO-MAS.
 
 #   AUTO-MAS is free software: you can redistribute it and/or modify
@@ -37,6 +40,7 @@ from urllib import parse
 
 from app.core import Config
 from app.utils.logger import get_logger
+from app.utils.device_id import get_cached_device_id
 
 logger = get_logger("森空岛签到任务")
 
@@ -47,8 +51,8 @@ async def skland_sign_in(token) -> dict:
     app_code = "4ca99fa6b56cc2ba"
     # 用于获取grant code
     grant_code_url = "https://as.hypergryph.com/user/oauth2/v2/grant"
-    # 用于获取cred
-    cred_code_url = "https://zonai.skland.com/api/v1/user/auth/generate_cred_by_code"
+    # 用于获取cred - 更新为新的Web端点
+    cred_code_url = "https://zonai.skland.com/web/v1/user/auth/generate_cred_by_code"
     # 查询角色绑定
     binding_url = "https://zonai.skland.com/api/v1/game/player/binding"
     # 签到接口
@@ -57,40 +61,51 @@ async def skland_sign_in(token) -> dict:
     # 基础请求头
     header = {
         "cred": "",
-        "User-Agent": "Skland/1.5.1 (com.hypergryph.skland; build:100501001; Android 34;) Okhttp/4.11.0",
+        "User-Agent": "Skland/1.21.0 (com.hypergryph.skland; build:102100065; iOS 17.6.0; ) Alamofire/5.7.1",
         "Accept-Encoding": "gzip",
         "Connection": "close",
+        "Content-Type": "application/json",
     }
     header_login = header.copy()
     header_for_sign = {
         "platform": "1",
         "timestamp": "",
         "dId": "",
-        "vName": "1.5.1",
+        "vName": "1.21.0",
     }
 
-    def generate_signature(token_for_sign: str, path, body_or_query):
+    def generate_signature(
+        token_for_sign: str, path, body_or_query, custom_header=None
+    ):
         """
         生成请求签名
 
         :param token_for_sign: 用于加密的token
         :param path: 请求路径（如 /api/v1/game/player/binding）
         :param body_or_query: GET用query字符串, POST用body字符串
+        :param custom_header: 自定义签名头部（可选）
         :return: (sign, 新的header_for_sign字典)
         """
 
-        t = str(int(time.time()) - 2)  # 时间戳, -2秒以防服务器时间不一致
+        # 时间戳减去2秒以防服务器时间不一致，按照JS的实现方式
+        # (Date.now() - 2 * MILLISECOND_PER_SECOND).toString().slice(0, -3)
+        t = str(int(time.time() * 1000 - 2000))[:-3]  # 去掉毫秒部分
         token_bytes = token_for_sign.encode("utf-8")
-        header_ca = dict(header_for_sign)
+
+        # 使用自定义头部或默认头部
+        header_ca = dict(custom_header if custom_header else header_for_sign)
         header_ca["timestamp"] = t
         header_ca_str = json.dumps(header_ca, separators=(",", ":"))
-        s = path + body_or_query + t + header_ca_str  # 拼接原始字符串
+
+        # 按照新的规范拼接字符串
+        s = path + body_or_query + t + header_ca_str
+
         # HMAC-SHA256 + MD5得到最终sign
         hex_s = hmac.new(token_bytes, s.encode("utf-8"), hashlib.sha256).hexdigest()
-        md5 = hashlib.md5(hex_s.encode("utf-8")).hexdigest()
-        return md5, header_ca
+        md5_hash = hashlib.md5(hex_s.encode("utf-8")).hexdigest()
+        return md5_hash, header_ca
 
-    def get_sign_header(url: str, method, body, old_header, sign_token):
+    async def get_sign_header(url: str, method, body, old_header, sign_token):
         """
         获取带签名的请求头
 
@@ -104,26 +119,46 @@ async def skland_sign_in(token) -> dict:
 
         h = json.loads(json.dumps(old_header))
         p = parse.urlparse(url)
+
+        # 获取设备ID并创建临时签名头
+        device_id = await get_cached_device_id()
+        temp_header_for_sign = dict(header_for_sign)
+        temp_header_for_sign["dId"] = device_id
+
         if method.lower() == "get":
-            sign, header_ca = generate_signature(sign_token, p.path, p.query)
-        else:
+            query = p.query or ""
             sign, header_ca = generate_signature(
-                sign_token, p.path, json.dumps(body) if body else ""
+                sign_token, p.path, query, temp_header_for_sign
             )
+        else:
+            body_str = json.dumps(body) if body else ""
+            sign, header_ca = generate_signature(
+                sign_token, p.path, body_str, temp_header_for_sign
+            )
+
+        # 添加签名和其他头部
         h["sign"] = sign
-        for i in header_ca:
-            h[i] = header_ca[i]
+        for key, value in header_ca.items():
+            h[key] = value
+
+        # 重要：删除token头部，这是新API的要求
+        if "token" in h:
+            del h["token"]
+
         return h
 
-    def copy_header(cred):
+    def copy_header(cred, token=None):
         """
-        复制请求头并添加cred
+        复制请求头并添加cred和token
 
         :param cred: 当前会话的cred
+        :param token: 当前会话的token（用于签名）
         :return: 新的请求头
         """
         v = json.loads(json.dumps(header))
         v["cred"] = cred
+        if token:
+            v["token"] = token
         return v
 
     async def login_by_token(token_code):
@@ -150,9 +185,24 @@ async def skland_sign_in(token) -> dict:
         :return: (cred, sign_token)
         """
 
+        # 获取设备ID
+        device_id = await get_cached_device_id()
+
+        # Web端点需要特殊的请求头
+        web_headers = {
+            "content-type": "application/json",
+            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
+            "referer": "https://www.skland.com/",
+            "origin": "https://www.skland.com",
+            "dId": device_id,
+            "platform": "3",
+            "timestamp": str(int(time.time())),
+            "vName": "1.0.0",
+        }
+
         async with httpx.AsyncClient(proxy=Config.get_proxy()) as client:
             response = await client.post(
-                cred_code_url, json={"code": grant, "kind": 1}, headers=header_login
+                cred_code_url, json={"code": grant, "kind": 1}, headers=web_headers
             )
             rsp = response.json()
         if rsp["code"] != 0:
@@ -193,8 +243,8 @@ async def skland_sign_in(token) -> dict:
         async with httpx.AsyncClient(proxy=Config.get_proxy()) as client:
             response = await client.get(
                 binding_url,
-                headers=get_sign_header(
-                    binding_url, "get", None, copy_header(cred), sign_token
+                headers=await get_sign_header(
+                    binding_url, "get", None, copy_header(cred, sign_token), sign_token
                 ),
             )
             rsp = response.json()
@@ -210,6 +260,51 @@ async def skland_sign_in(token) -> dict:
             v.extend(i.get("bindingList"))
         return v
 
+    async def check_attendance_today(cred, sign_token, uid, game_id) -> bool:
+        """
+        检查今天是否已经签到
+
+        :param cred: 当前cred
+        :param sign_token: 当前sign_token
+        :param uid: 角色uid
+        :param game_id: 游戏ID
+        :return: True表示今天已签到，False表示未签到
+        """
+        query_params = {"uid": uid, "gameId": game_id}
+        query_url = f"{sign_url}?uid={uid}&gameId={game_id}"
+
+        try:
+            async with httpx.AsyncClient(proxy=Config.get_proxy()) as client:
+                response = await client.get(
+                    query_url,
+                    headers=await get_sign_header(
+                        query_url,
+                        "get",
+                        None,
+                        copy_header(cred, sign_token),
+                        sign_token,
+                    ),
+                )
+                rsp = response.json()
+
+            if rsp["code"] != 0:
+                logger.warning(f"检查签到状态失败: {rsp.get('message')}")
+                return False
+
+            # 检查今天是否已经签到
+            records = rsp["data"].get("records", [])
+            today = time.time() // 86400 * 86400  # 今天0点的时间戳
+
+            for record in records:
+                record_time = int(record.get("ts", 0))
+                if record_time >= today:
+                    return True
+
+            return False
+        except Exception as e:
+            logger.warning(f"检查签到状态异常: {e}")
+            return False
+
     async def do_sign(cred, sign_token) -> dict:
         """
         对所有绑定的角色进行签到
@@ -223,34 +318,54 @@ async def skland_sign_in(token) -> dict:
         result = {"成功": [], "重复": [], "失败": [], "总计": len(characters)}
 
         for character in characters:
+            character_name = (
+                f"{character.get('nickName')}（{character.get('channelName')}）"
+            )
+            uid = character.get("uid")
+            game_id = character.get("channelMasterId")
+
+            # 先检查今天是否已经签到
+            if await check_attendance_today(cred, sign_token, uid, game_id):
+                result["重复"].append(character_name)
+                logger.info(f"{character_name} 今天已经签到过了")
+                await asyncio.sleep(1)
+                continue
 
             body = {
-                "uid": character.get("uid"),
-                "gameId": character.get("channelMasterId"),
+                "uid": uid,
+                "gameId": game_id,
             }
-            async with httpx.AsyncClient(proxy=Config.get_proxy()) as client:
-                response = await client.post(
-                    sign_url,
-                    headers=get_sign_header(
-                        sign_url, "post", body, copy_header(cred), sign_token
-                    ),
-                    json=body,
-                )
-                rsp = response.json()
 
-            if rsp["code"] != 0:
+            try:
+                async with httpx.AsyncClient(proxy=Config.get_proxy()) as client:
+                    sign_headers = await get_sign_header(
+                        sign_url,
+                        "post",
+                        body,
+                        copy_header(cred, sign_token),
+                        sign_token,
+                    )
+                    response = await client.post(
+                        sign_url,
+                        headers=sign_headers,
+                        content=json.dumps(body),  # 使用content而不是json参数避免冲突
+                    )
+                    rsp = response.json()
 
-                result[
-                    "重复" if rsp.get("message") == "请勿重复签到！" else "失败"
-                ].append(
-                    f"{character.get("nickName")}（{character.get("channelName")}）"
-                )
+                if rsp["code"] != 0:
+                    if rsp.get("message") == "请勿重复签到！":
+                        result["重复"].append(character_name)
+                        logger.info(f"{character_name} 重复签到")
+                    else:
+                        result["失败"].append(character_name)
+                        logger.error(f"{character_name} 签到失败: {rsp.get('message')}")
+                else:
+                    result["成功"].append(character_name)
+                    logger.info(f"{character_name} 签到成功")
 
-            else:
-
-                result["成功"].append(
-                    f"{character.get("nickName")}（{character.get("channelName")}）"
-                )
+            except Exception as e:
+                result["失败"].append(character_name)
+                logger.error(f"{character_name} 签到异常: {e}")
 
             await asyncio.sleep(3)
 
