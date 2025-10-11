@@ -933,9 +933,15 @@ class GeneralManager:
 
             # 根据文件类型选择执行方式
             if script_path.suffix.lower() == ".py":
-                cmd = [sys.executable, script_path]
-            elif script_path.suffix.lower() in [".bat", ".cmd", ".exe"]:
+                cmd = [sys.executable, str(script_path)]
+                use_shell = False
+            elif script_path.suffix.lower() in [".bat", ".cmd"]:
+                # bat/cmd 脚本使用 cmd.exe 执行，并传递 admin 参数跳过权限检查
+                cmd = ["cmd.exe", "/c", str(script_path), "admin"]
+                use_shell = False
+            elif script_path.suffix.lower() == ".exe":
                 cmd = [str(script_path)]
+                use_shell = False
             elif script_path.suffix.lower() == "":
                 logger.warning(f"{task_name}脚本没有指定后缀名, 无法执行")
                 return False
@@ -948,26 +954,33 @@ class GeneralManager:
             result = subprocess.run(
                 cmd,
                 cwd=script_path.parent,
-                stdin=subprocess.DEVNULL,
+                stdin=subprocess.PIPE,  # 使用 PIPE 而不是 DEVNULL，自动提供空输入
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 creationflags=(
                     subprocess.CREATE_NO_WINDOW
                     if Config.get("Function", "IfSilence")
                     else 0
                 ),
                 timeout=600,
-                capture_output=True,
-                errors="ignore",
+                shell=use_shell,
+                text=True,
+                encoding='utf-8',
+                errors='replace',  # 使用 replace 而不是 ignore，避免输出丢失
+                input='',  # 自动发送空输入，解决 pause 等待问题
             )
 
             if result.returncode == 0:
                 logger.info(f"{task_name}执行成功")
-                if result.stdout.strip():
-                    logger.info(f"{task_name}输出: {result.stdout}")
+                if result.stdout and result.stdout.strip():
+                    logger.info(f"{task_name}输出:\n{result.stdout}")
                 return True
             else:
                 logger.error(f"{task_name}执行失败, 返回码: {result.returncode}")
-                if result.stderr.strip():
-                    logger.error(f"{task_name}错误输出: {result.stderr}")
+                if result.stdout and result.stdout.strip():
+                    logger.warning(f"{task_name}标准输出:\n{result.stdout}")
+                if result.stderr and result.stderr.strip():
+                    logger.error(f"{task_name}错误输出:\n{result.stderr}")
                 return False
 
         except subprocess.TimeoutExpired:
