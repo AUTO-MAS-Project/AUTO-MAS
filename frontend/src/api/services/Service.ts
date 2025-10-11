@@ -16,6 +16,7 @@ import type { EmulatorStatusIn } from '../models/EmulatorStatusIn'
 import type { EmulatorStatusOut } from '../models/EmulatorStatusOut'
 import type { EmulatorStopIn } from '../models/EmulatorStopIn'
 import type { EmulatorUpdateIn } from '../models/EmulatorUpdateIn'
+import type { EmulatorUpdateOut } from '../models/EmulatorUpdateOut'
 import type { GetStageIn } from '../models/GetStageIn'
 import type { HistoryDataGetIn } from '../models/HistoryDataGetIn'
 import type { HistoryDataGetOut } from '../models/HistoryDataGetOut'
@@ -1230,12 +1231,12 @@ export class Service {
    * 更新模拟器配置
    * 更新模拟器配置
    * @param requestBody
-   * @returns OutBase Successful Response
+   * @returns EmulatorUpdateOut Successful Response
    * @throws ApiError
    */
   public static updateEmulatorApiSettingEmulatorUpdatePost(
     requestBody: EmulatorUpdateIn
-  ): CancelablePromise<OutBase> {
+  ): CancelablePromise<EmulatorUpdateOut> {
     return __request(OpenAPI, {
       method: 'POST',
       url: '/api/setting/emulator/update',
