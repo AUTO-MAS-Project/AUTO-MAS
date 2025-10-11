@@ -23,7 +23,8 @@ from pathlib import Path
 from datetime import datetime, timedelta
 from jinja2 import Environment, FileSystemLoader
 
-from app.core import Broadcast, Config, MaaConfig, MaaUserConfig, EmulatorManager
+from app.core import Broadcast, Config, MaaConfig, MaaUserConfig
+from app.core.emulator_manager import EmulatorManager
 from app.models.schema import WebSocketMessage
 from app.models.ConfigBase import MultipleConfig
 from app.services import Notify, System
