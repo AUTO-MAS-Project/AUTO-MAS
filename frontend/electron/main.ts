@@ -21,6 +21,8 @@ import {
   installPipPackage,
   setMainWindow as setPythonMainWindow,
   startBackend,
+  downloadQuickEnvironment,
+  extractQuickEnvironment,
 } from './services/pythonService'
 import {
   cloneBackend,
@@ -29,6 +31,9 @@ import {
   checkRepoStatus,
   cleanRepo,
   getRepoInfo,
+  downloadQuickSource,
+  extractQuickSource,
+  updateQuickSource,
 } from './services/gitService'
 import { cleanOldLogs, getLogFiles, getLogPath, log, setupLogger } from './services/logService'
 
@@ -1018,6 +1023,32 @@ ipcMain.handle('move-window', async (_event, deltaX: number, deltaY: number) => 
 ipcMain.handle('download-git', async () => {
   const appRoot = getAppRoot()
   return downloadGit(appRoot)
+})
+
+// 快速安装相关
+ipcMain.handle('download-quick-environment', async () => {
+  const appRoot = getAppRoot()
+  return downloadQuickEnvironment(appRoot)
+})
+
+ipcMain.handle('extract-quick-environment', async () => {
+  const appRoot = getAppRoot()
+  return extractQuickEnvironment(appRoot)
+})
+
+ipcMain.handle('download-quick-source', async () => {
+  const appRoot = getAppRoot()
+  return downloadQuickSource(appRoot)
+})
+
+ipcMain.handle('extract-quick-source', async () => {
+  const appRoot = getAppRoot()
+  return extractQuickSource(appRoot)
+})
+
+ipcMain.handle('update-quick-source', async (_event, repoUrl) => {
+  const appRoot = getAppRoot()
+  return updateQuickSource(appRoot, repoUrl)
 })
 
 // 新增的git管理方法

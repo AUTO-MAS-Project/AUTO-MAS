@@ -22,6 +22,9 @@ export function downloadFile(url: string, outputPath: string): Promise<void> {
       .get(url, response => {
         const totalSize = parseInt(response.headers['content-length'] || '0', 10)
         let downloadedSize = 0
+        let startTime = Date.now()
+        let lastTime = startTime
+        let lastDownloaded = 0
 
         console.log(`文件大小: ${totalSize} bytes`)
 
@@ -30,14 +33,38 @@ export function downloadFile(url: string, outputPath: string): Promise<void> {
         response.on('data', chunk => {
           downloadedSize += chunk.length
           const progress = totalSize ? Math.round((downloadedSize / totalSize) * 100) : 0
-
-          // console.log(`下载进度: ${progress}% (${downloadedSize}/${totalSize})`)
+          
+          // 计算下载速度
+          const currentTime = Date.now()
+          const timeDiff = (currentTime - lastTime) / 1000 // 转换为秒
+          const sizeDiff = downloadedSize - lastDownloaded
+          
+          let speed = 0
+          let speedText = ''
+          
+          if (timeDiff > 0.5) { // 每0.5秒更新一次速度
+            speed = sizeDiff / timeDiff // bytes per second
+            
+            if (speed > 1024 * 1024) {
+              speedText = `${(speed / (1024 * 1024)).toFixed(1)} MB/s`
+            } else if (speed > 1024) {
+              speedText = `${(speed / 1024).toFixed(1)} KB/s`
+            } else {
+              speedText = `${speed.toFixed(0)} B/s`
+            }
+            
+            lastTime = currentTime
+            lastDownloaded = downloadedSize
+          }
 
           if (mainWindow) {
             mainWindow.webContents.send('download-progress', {
               progress,
               status: 'downloading',
               message: `下载中... ${progress}%`,
+              speed: speedText,
+              downloadedSize,
+              totalSize,
             })
           }
         })

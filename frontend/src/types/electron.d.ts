@@ -33,6 +33,13 @@ export interface ElectronAPI {
   updateBackend: (repoUrl?: string) => Promise<any>
   startBackend: () => Promise<{ success: boolean; error?: string }>
   stopBackend?: () => Promise<{ success: boolean; error?: string }>
+  
+  // 快速安装相关
+  downloadQuickEnvironment: () => Promise<{ success: boolean; error?: string }>
+  extractQuickEnvironment: () => Promise<{ success: boolean; error?: string }>
+  downloadQuickSource: () => Promise<{ success: boolean; error?: string }>
+  extractQuickSource: () => Promise<{ success: boolean; error?: string }>
+  updateQuickSource: (repoUrl?: string) => Promise<{ success: boolean; error?: string }>
 
   // 新增的git管理方法
   checkRepoStatus: () => Promise<{
