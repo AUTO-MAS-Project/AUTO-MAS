@@ -966,7 +966,7 @@ class GeneralManager:
                 text=True,
                 encoding='utf-8',
                 errors='replace',  # 使用 replace 而不是 ignore，避免输出丢失
-                input='',  # 自动发送空输入，解决 pause 等待问题（会自动设置 stdin=PIPE）
+                input='\n',  # 发送换行符，使 pause/input() 自动继续（会自动设置 stdin=PIPE，因此不必在使用stdin参数）
             )
 
             if result.returncode == 0:
