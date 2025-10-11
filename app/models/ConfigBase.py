@@ -127,7 +127,6 @@ class DateTimeValidator(ConfigValidator):
 
 
 class JSONValidator(ConfigValidator):
-
     def __init__(self, tpye: type[dict] | type[list] = dict) -> None:
         self.type = tpye
 
@@ -178,6 +177,9 @@ class FileValidator(ConfigValidator):
     def validate(self, value: Any) -> bool:
         if not isinstance(value, str):
             return False
+        # 允许空字符串(表示未设置路径)
+        if value == "":
+            return True
         if not Path(value).is_absolute():
             return False
         if Path(value).suffix == ".lnk":
@@ -187,6 +189,9 @@ class FileValidator(ConfigValidator):
     def correct(self, value: Any) -> str:
         if not isinstance(value, str):
             value = str(Path.cwd())
+        # 空字符串直接返回
+        if value == "":
+            return ""
         if not Path(value).is_absolute():
             value = Path(value).resolve().as_posix()
         if Path(value).suffix == ".lnk":
@@ -273,7 +278,6 @@ class URLValidator(ConfigValidator):
         self.default = default
 
     def validate(self, value: Any) -> bool:
-
         if value == self.default:
             return True
 
@@ -301,7 +305,6 @@ class URLValidator(ConfigValidator):
         return True
 
     def correct(self, value: Any) -> str:
-
         if self.validate(value):
             return value
 
@@ -429,7 +432,6 @@ class ConfigBase:
     """
 
     def __init__(self):
-
         self.file: Optional[Path] = None
         self.is_locked = False
 
@@ -510,7 +512,6 @@ class ConfigBase:
             item = getattr(self, name)
 
             if isinstance(item, ConfigItem):
-
                 if not data.get(item.group):
                     data[item.group] = {}
                 if item.name:
@@ -521,7 +522,6 @@ class ConfigBase:
                 and isinstance(item, MultipleConfig)
                 and (not if_for_save or (if_for_save and item.if_save_needed))
             ):
-
                 if not data.get("SubConfigsInfo"):
                     data["SubConfigsInfo"] = {}
                 data["SubConfigsInfo"][name] = await item.toDict()
@@ -630,7 +630,6 @@ class MultipleConfig(Generic[T]):
     """
 
     def __init__(self, sub_config_type: List[Type[T]], if_save_needed: bool = True):
-
         if not sub_config_type:
             raise ValueError("子配置项类型列表不能为空")
 
@@ -724,14 +723,12 @@ class MultipleConfig(Generic[T]):
         self.data = {}
 
         for instance in data["instances"]:
-
             if not isinstance(instance, dict) or not data.get(instance.get("uid")):
                 continue
 
             type_name = instance.get("type", self.sub_config_type[0].__name__)
 
             for class_type in self.sub_config_type:
-
                 if class_type.__name__ == type_name:
                     self.order.append(uuid.UUID(instance["uid"]))
                     self.data[self.order[-1]] = class_type()
@@ -739,7 +736,6 @@ class MultipleConfig(Generic[T]):
                     break
 
             else:
-
                 raise ValueError(f"未知的子配置类型: {type_name}")
 
         if self.file:
