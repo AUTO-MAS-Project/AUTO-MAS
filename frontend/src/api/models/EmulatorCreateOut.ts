@@ -3,13 +3,25 @@
 /* tslint:disable */
 /* eslint-disable */
 import type { EmulatorConfig } from './EmulatorConfig';
-export type EmulatorUpdateIn = {
+export type EmulatorCreateOut = {
     /**
-     * 模拟器 ID
+     * 状态码
+     */
+    code?: number;
+    /**
+     * 操作状态
+     */
+    status?: string;
+    /**
+     * 操作消息
+     */
+    message?: string;
+    /**
+     * 新创建的模拟器 ID
      */
     emulatorId: string;
     /**
-     * 模拟器更新数据
+     * 模拟器配置数据
      */
     data: EmulatorConfig;
 };
