@@ -3,9 +3,15 @@
     <!-- 管理员权限检查 -->
     <AdminCheck v-if="!isAdmin" />
 
+    <!-- 安装模式选择 -->
+    <InstallModeSelection
+      v-if="showModeSelection"
+      :on-mode-selected="handleModeSelected"
+    />
+
     <!-- 环境不完整页面 -->
     <EnvironmentIncomplete
-      v-if="showEnvironmentIncomplete"
+      v-else-if="showEnvironmentIncomplete"
       :missing-components="missingComponents"
       :on-switch-to-manual="switchToManualMode"
     />
@@ -15,6 +21,13 @@
       v-else-if="autoMode"
       :on-switch-to-manual="switchToManualMode"
       :on-auto-complete="enterApp"
+    />
+
+    <!-- 快速安装模式 -->
+    <QuickInstallMode
+      v-else-if="quickInstallMode"
+      :on-switch-to-manual="switchToManualMode"
+      :on-quick-complete="enterApp"
     />
 
     <!-- 手动初始化模式 -->
@@ -41,6 +54,8 @@ import AdminCheck from '@/views/Initialization/components/AdminCheck.vue'
 import AutoMode from '@/views/Initialization/components/AutoMode.vue'
 import ManualMode from '@/views/Initialization/components/ManualMode.vue'
 import EnvironmentIncomplete from '@/views/Initialization/components/EnvironmentIncomplete.vue'
+import InstallModeSelection from '@/views/Initialization/components/InstallModeSelection.vue'
+import QuickInstallMode from '@/views/Initialization/components/QuickInstallMode.vue'
 import type { DownloadProgress } from '@/types/initialization.ts'
 import { mirrorManager } from '@/utils/mirrorManager.ts'
 import { forceEnterApp } from '@/utils/appEntry.ts'
@@ -52,6 +67,8 @@ const isAdmin = ref(true)
 const autoMode = ref(false)
 const showEnvironmentIncomplete = ref(false)
 const missingComponents = ref<string[]>([])
+const showModeSelection = ref(false)
+const quickInstallMode = ref(false)
 
 // 安装状态
 const pythonInstalled = ref(false)
@@ -77,7 +94,22 @@ async function skipToHome() {
 function switchToManualMode() {
   showEnvironmentIncomplete.value = false
   autoMode.value = false
-  console.log('切换到手动模式')
+  quickInstallMode.value = false
+  showModeSelection.value = true
+  console.log('切换到安装模式选择')
+}
+
+// 处理安装模式选择
+function handleModeSelected(mode: 'quick' | 'manual') {
+  showModeSelection.value = false
+  if (mode === 'quick') {
+    quickInstallMode.value = true
+    autoMode.value = false
+  } else {
+    quickInstallMode.value = false
+    autoMode.value = false
+  }
+  console.log('选择安装模式:', mode)
 }
 
 // 进入应用
@@ -202,10 +234,12 @@ async function checkEnvironment() {
     console.log('- 是否第一次启动:', isFirst)
     console.log('- 所有关键文件存在:', allExeFilesExist)
 
-    // 第一次启动时，无论文件是否存在都直接进入手动模式
+    // 第一次启动时，显示安装模式选择
     if (isFirst) {
-      console.log('第一次启动，直接进入手动模式')
+      console.log('第一次启动，显示安装模式选择')
+      showModeSelection.value = true
       autoMode.value = false
+      quickInstallMode.value = false
       showEnvironmentIncomplete.value = false
     } else if (allExeFilesExist) {
       // 不是第一次启动且所有关键exe文件都存在，进入自动模式

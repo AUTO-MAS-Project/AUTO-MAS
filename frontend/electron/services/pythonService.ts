@@ -174,6 +174,105 @@ async function installPip(pythonPath: string, appRoot: string): Promise<void> {
   console.log('pip安装和验证完成')
 }
 
+// 快速安装：下载预打包环境
+export async function downloadQuickEnvironment(appRoot: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const environmentUrl = 'https://download.auto-mas.top/d/AUTO-MAS/environment.zip'
+    const downloadPath = path.join(appRoot, 'temp', 'environment.zip')
+    
+    // 确保临时目录存在
+    const tempDir = path.dirname(downloadPath)
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true })
+    }
+
+    if (mainWindow) {
+      mainWindow.webContents.send('download-progress', {
+        step: 0,
+        progress: 10,
+        status: 'downloading',
+        message: '开始下载环境包...',
+      })
+    }
+    
+    await downloadFile(environmentUrl, downloadPath)
+    
+    if (mainWindow) {
+      mainWindow.webContents.send('download-progress', {
+        step: 0,
+        progress: 20,
+        status: 'completed',
+        message: '环境包下载完成',
+      })
+    }
+    
+    return { success: true }
+  } catch (error) {
+    const errorMsg = `环境包下载失败: ${error instanceof Error ? error.message : String(error)}`
+    console.error(errorMsg)
+    if (mainWindow) {
+      mainWindow.webContents.send('download-progress', {
+        step: 0,
+        progress: 0,
+        status: 'error',
+        message: errorMsg,
+      })
+    }
+    return { success: false, error: errorMsg }
+  }
+}
+
+// 快速安装：解压预打包环境
+export async function extractQuickEnvironment(appRoot: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const zipPath = path.join(appRoot, 'temp', 'environment.zip')
+    const extractPath = appRoot
+    
+    if (mainWindow) {
+      mainWindow.webContents.send('download-progress', {
+        step: 1,
+        progress: 30,
+        status: 'extracting',
+        message: '开始解压环境包...',
+      })
+    }
+    
+    if (!fs.existsSync(zipPath)) {
+      throw new Error('环境包文件不存在')
+    }
+
+    // 使用AdmZip解压
+    const zip = new AdmZip(zipPath)
+    zip.extractAllTo(extractPath, true)
+    
+    // 删除临时文件
+    fs.unlinkSync(zipPath)
+    
+    if (mainWindow) {
+      mainWindow.webContents.send('download-progress', {
+        step: 1,
+        progress: 40,
+        status: 'completed',
+        message: '环境包解压完成',
+      })
+    }
+    
+    return { success: true }
+  } catch (error) {
+    const errorMsg = `环境包解压失败: ${error instanceof Error ? error.message : String(error)}`
+    console.error(errorMsg)
+    if (mainWindow) {
+      mainWindow.webContents.send('download-progress', {
+        step: 1,
+        progress: 0,
+        status: 'error',
+        message: errorMsg,
+      })
+    }
+    return { success: false, error: errorMsg }
+  }
+}
+
 // 下载Python
 export async function downloadPython(
   appRoot: string,
@@ -322,8 +421,8 @@ export async function installDependencies(
 
     if (mainWindow) {
       mainWindow.webContents.send('download-progress', {
-        type: 'dependencies',
-        progress: 0,
+        step: 5,
+        progress: 91,
         status: 'downloading',
         message: '正在安装Python依赖包...',
       })
@@ -373,8 +472,8 @@ export async function installDependencies(
 
         if (mainWindow) {
           mainWindow.webContents.send('download-progress', {
-            type: 'dependencies',
-            progress: 50,
+            step: 5,
+            progress: 92,
             status: 'downloading',
             message: '正在安装依赖包...',
           })
@@ -403,8 +502,8 @@ export async function installDependencies(
 
     if (mainWindow) {
       mainWindow.webContents.send('download-progress', {
-        type: 'dependencies',
-        progress: 100,
+        step: 5,
+        progress: 94,
         status: 'completed',
         message: 'Python依赖安装完成',
       })
@@ -415,7 +514,7 @@ export async function installDependencies(
     const errorMessage = error instanceof Error ? error.message : String(error)
     if (mainWindow) {
       mainWindow.webContents.send('download-progress', {
-        type: 'dependencies',
+        step: 5,
         progress: 0,
         status: 'error',
         message: `依赖安装失败: ${errorMessage}`,
