@@ -3,12 +3,13 @@
 /* tslint:disable */
 /* eslint-disable */
 export type ScriptUrlIn = {
-  /**
-   * 脚本ID
-   */
-  scriptId: string
-  /**
-   * 配置文件URL
-   */
-  url: string
-}
+    /**
+     * 脚本ID
+     */
+    scriptId: string;
+    /**
+     * 配置文件URL
+     */
+    url: string;
+};
+

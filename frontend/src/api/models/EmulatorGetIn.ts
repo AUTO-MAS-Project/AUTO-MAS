@@ -2,10 +2,10 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-export type QueueItem_Info = {
+export type EmulatorGetIn = {
     /**
-     * 任务所对应的脚本ID, 为None时表示未选择
+     * 模拟器ID, 未携带时表示获取所有模拟器数据
      */
-    ScriptId?: (string | null);
+    emulatorId?: (string | null);
 };
 

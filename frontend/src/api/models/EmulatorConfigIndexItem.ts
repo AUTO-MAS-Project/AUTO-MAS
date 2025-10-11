@@ -2,14 +2,14 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-export type UserGetIn = {
+export type EmulatorConfigIndexItem = {
     /**
-     * 所属脚本ID
+     * 唯一标识符
      */
-    scriptId: string;
+    uid: string;
     /**
-     * 用户ID, 未携带时表示获取所有用户数据
+     * 配置类型
      */
-    userId?: (string | null);
+    type: string;
 };
 
