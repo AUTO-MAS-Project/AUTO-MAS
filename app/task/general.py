@@ -954,7 +954,6 @@ class GeneralManager:
             result = subprocess.run(
                 cmd,
                 cwd=script_path.parent,
-                stdin=subprocess.PIPE,  # 使用 PIPE 而不是 DEVNULL，自动提供空输入
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 creationflags=(
@@ -967,7 +966,7 @@ class GeneralManager:
                 text=True,
                 encoding='utf-8',
                 errors='replace',  # 使用 replace 而不是 ignore，避免输出丢失
-                input='',  # 自动发送空输入，解决 pause 等待问题
+                input='',  # 自动发送空输入，解决 pause 等待问题（会自动设置 stdin=PIPE）
             )
 
             if result.returncode == 0:
