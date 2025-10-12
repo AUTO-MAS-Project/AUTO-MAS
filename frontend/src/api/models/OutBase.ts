@@ -3,16 +3,17 @@
 /* tslint:disable */
 /* eslint-disable */
 export type OutBase = {
-  /**
-   * 状态码
-   */
-  code?: number
-  /**
-   * 操作状态
-   */
-  status?: string
-  /**
-   * 操作消息
-   */
-  message?: string
-}
+    /**
+     * 状态码
+     */
+    code?: number;
+    /**
+     * 操作状态
+     */
+    status?: string;
+    /**
+     * 操作消息
+     */
+    message?: string;
+};
+

@@ -3,12 +3,13 @@
 /* tslint:disable */
 /* eslint-disable */
 export type TimeSetIndexItem = {
-  /**
-   * 唯一标识符
-   */
-  uid: string
-  /**
-   * 配置类型
-   */
-  type: string
-}
+    /**
+     * 唯一标识符
+     */
+    uid: string;
+    /**
+     * 配置类型
+     */
+    type: string;
+};
+
