@@ -3,12 +3,13 @@
 /* tslint:disable */
 /* eslint-disable */
 export type ScriptFileIn = {
-  /**
-   * 脚本ID
-   */
-  scriptId: string
-  /**
-   * 配置文件路径
-   */
-  jsonFile: string
-}
+    /**
+     * 脚本ID
+     */
+    scriptId: string;
+    /**
+     * 配置文件路径
+     */
+    jsonFile: string;
+};
+

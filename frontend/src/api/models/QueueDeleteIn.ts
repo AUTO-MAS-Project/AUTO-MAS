@@ -3,8 +3,9 @@
 /* tslint:disable */
 /* eslint-disable */
 export type QueueDeleteIn = {
-  /**
-   * 队列ID
-   */
-  queueId: string
-}
+    /**
+     * 队列ID
+     */
+    queueId: string;
+};
+

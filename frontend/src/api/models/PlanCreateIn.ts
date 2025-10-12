@@ -3,5 +3,6 @@
 /* tslint:disable */
 /* eslint-disable */
 export type PlanCreateIn = {
-  type: string
-}
+    type: string;
+};
+

@@ -664,6 +664,11 @@ class EmulatorUpdateIn(BaseModel):
     data: EmulatorConfig = Field(..., description="模拟器更新数据")
 
 
+class EmulatorUpdateOut(OutBase):
+    correctedPath: Optional[str] = Field(None, description="更正后的模拟器路径")
+    detectedType: Optional[str] = Field(None, description="检测到的模拟器类型")
+
+
 class EmulatorDeleteIn(BaseModel):
     emulatorId: str = Field(..., description="模拟器 ID")
 

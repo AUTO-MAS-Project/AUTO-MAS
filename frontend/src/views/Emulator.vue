@@ -162,7 +162,21 @@ const handleSave = async (uuid: string) => {
       data: configData,
     })
     if (response.code === 200) {
-      message.success('保存成功')
+      // 如果后端返回了更正的路径,则更新到编辑数据中
+      if (response.correctedPath) {
+        editingData.value.path = response.correctedPath
+        message.success(`路径已自动更正为: ${response.correctedPath}`)
+      }
+      // 如果后端返回了检测到的类型,则更新到编辑数据中
+      if (response.detectedType) {
+        editingData.value.type = response.detectedType
+        message.info(`检测到模拟器类型: ${response.detectedType}`)
+      }
+      
+      if (!response.correctedPath && !response.detectedType) {
+        message.success('保存成功')
+      }
+      
       await loadEmulators()
       editingId.value = null
     } else {
@@ -377,15 +391,25 @@ const stopEmulator = async (uuid: string, index: string) => {
 const selectEmulatorPath = async () => {
   try {
     if (!window.electronAPI) {
-      message.error('文件选择功能不可用，请在 Electron 环境中运行')
+      message.error('文件选择功能不可用,请在 Electron 环境中运行')
       return
     }
 
+    // 允许选择任意类型:可执行文件、快捷方式、文件夹
     const paths = await (window.electronAPI as any).selectFile([
       { name: '可执行文件', extensions: ['exe'] },
+      { name: '快捷方式', extensions: ['lnk'] },
       { name: '所有文件', extensions: ['*'] },
     ])
-    if (paths && paths.length > 0) {
+    
+    // 如果没有选择文件,尝试选择文件夹
+    if (!paths || paths.length === 0) {
+      const folders = await (window.electronAPI as any).selectFolder()
+      if (folders && folders.length > 0) {
+        editingData.value.path = folders[0]
+        message.success('模拟器路径选择成功')
+      }
+    } else {
       editingData.value.path = paths[0]
       message.success('模拟器路径选择成功')
     }
