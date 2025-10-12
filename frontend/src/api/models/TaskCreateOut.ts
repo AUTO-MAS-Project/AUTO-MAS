@@ -3,20 +3,21 @@
 /* tslint:disable */
 /* eslint-disable */
 export type TaskCreateOut = {
-  /**
-   * 状态码
-   */
-  code?: number
-  /**
-   * 操作状态
-   */
-  status?: string
-  /**
-   * 操作消息
-   */
-  message?: string
-  /**
-   * 新创建的任务ID
-   */
-  websocketId: string
-}
+    /**
+     * 状态码
+     */
+    code?: number;
+    /**
+     * 操作状态
+     */
+    status?: string;
+    /**
+     * 操作消息
+     */
+    message?: string;
+    /**
+     * 新创建的任务ID
+     */
+    websocketId: string;
+};
+
