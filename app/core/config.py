@@ -121,8 +121,8 @@ class AppConfig(GlobalConfig):
         await self.check_data()
 
         await self.connect(self.config_path / "Config.json")
-        await self.ScriptConfig.connect(self.config_path / "ScriptConfig.json")
         await self.PlanConfig.connect(self.config_path / "PlanConfig.json")
+        await self.ScriptConfig.connect(self.config_path / "ScriptConfig.json")
         await self.QueueConfig.connect(self.config_path / "QueueConfig.json")
 
         from .task_manager import TaskManager

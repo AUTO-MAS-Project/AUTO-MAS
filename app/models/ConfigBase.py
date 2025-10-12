@@ -524,7 +524,7 @@ class ConfigBase:
 
                 if not data.get("SubConfigsInfo"):
                     data["SubConfigsInfo"] = {}
-                data["SubConfigsInfo"][name] = await item.toDict()
+                data["SubConfigsInfo"][name] = await item.toDict(if_decrypt=if_decrypt)
 
         return data
 
@@ -799,7 +799,7 @@ class MultipleConfig(Generic[T]):
 
         self.file.parent.mkdir(parents=True, exist_ok=True)
         self.file.write_text(
-            json.dumps(await self.toDict(), ensure_ascii=False, indent=4),
+            json.dumps(await self.toDict(if_decrypt=False), ensure_ascii=False, indent=4),
             encoding="utf-8",
         )
 
