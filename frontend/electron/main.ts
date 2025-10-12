@@ -1,3 +1,4 @@
+import { exec, spawn } from 'child_process'
 import {
   app,
   BrowserWindow,
@@ -10,32 +11,28 @@ import {
   shell,
   Tray,
 } from 'electron'
-import * as path from 'path'
 import * as fs from 'fs'
-import { exec, spawn } from 'child_process'
-import { checkEnvironment, getAppRoot } from './services/environmentService'
+import * as path from 'path'
 import { setMainWindow as setDownloadMainWindow } from './services/downloadService'
+import { checkEnvironment, getAppRoot } from './services/environmentService'
+import {
+  cloneBackend,
+  downloadGit,
+  downloadQuickSource,
+  extractQuickSource,
+  setMainWindow as setGitMainWindow,
+  updateQuickSource,
+} from './services/gitService'
+import { cleanOldLogs, getLogFiles, getLogPath, log, setupLogger } from './services/logService'
 import {
   downloadPython,
+  downloadQuickEnvironment,
+  extractQuickEnvironment,
   installDependencies,
   installPipPackage,
   setMainWindow as setPythonMainWindow,
   startBackend,
-  downloadQuickEnvironment,
-  extractQuickEnvironment,
 } from './services/pythonService'
-import {
-  cloneBackend,
-  downloadGit,
-  setMainWindow as setGitMainWindow,
-  checkRepoStatus,
-  cleanRepo,
-  getRepoInfo,
-  downloadQuickSource,
-  extractQuickSource,
-  updateQuickSource,
-} from './services/gitService'
-import { cleanOldLogs, getLogFiles, getLogPath, log, setupLogger } from './services/logService'
 
 // 强制清理相关进程的函数
 async function forceKillRelatedProcesses(): Promise<void> {
@@ -1422,6 +1419,9 @@ if (!gotTheLock) {
   app.quit()
   process.exit(0)
 }
+
+// 在沙箱环境下运行会导致无法启动子进程，强制禁用沙箱
+app.commandLine.appendSwitch('no-sandbox')
 
 app.on('second-instance', () => {
   if (mainWindow) {
