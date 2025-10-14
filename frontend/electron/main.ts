@@ -358,7 +358,7 @@ function createWindow() {
     titleBarStyle: 'hidden',
     icon: path.join(__dirname, '../public/AUTO-MAS.ico'),
     autoHideMenuBar: true,
-    show: !config.Start.IfMinimizeDirectly,
+    show: false, // 修改：始终不自动显示，等待 ready-to-show 事件
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
@@ -510,8 +510,10 @@ function createWindow() {
   // 初始托盘配置（使用文件配置）
   updateTrayVisibility(config)
 
-  // 等待窗口准备完成后再初始化托盘和处理启动配置
-  win.webContents.once('did-finish-load', () => {
+  // 使用 ready-to-show 事件来显示窗口，避免闪烁
+  win.once('ready-to-show', () => {
+    log.info('窗口内容已准备就绪')
+
     // 重新加载配置以确保获取最新配置
     const currentConfig = loadConfig()
 
@@ -529,6 +531,10 @@ function createWindow() {
         log.info('应用初次启动后直接最小化')
       }
       updateTrayVisibility(currentConfig)
+    } else {
+      // 如果不是启动时最小化，显示窗口
+      win.show()
+      log.info('窗口已显示')
     }
     
     // 标记初次启动已完成
@@ -931,7 +937,7 @@ function createQuestionDialog(questionData: any): Promise<boolean> {
       alwaysOnTop: true,
       show: false,
       frame: false,
-      modal: mainWindow ? true : false,
+      modal: !!mainWindow,
       parent: mainWindow || undefined,
       icon: path.join(__dirname, '../public/AUTO-MAS.ico'),
       webPreferences: {
