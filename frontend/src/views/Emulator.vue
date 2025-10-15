@@ -74,7 +74,7 @@ const bossKeyInput = ref('')
 const loadEmulators = async () => {
   loading.value = true
   try {
-    const response = await Service.getEmulatorsApiSettingEmulatorGetPost()
+    const response = await Service.getEmulatorApiSettingEmulatorGetPost({ emulatorId: null })
     if (response.code === 200 && 'index' in response && 'data' in response) {
       emulatorIndex.value = response.index as any[]
       emulatorData.value = response.data as Record<string, any>
@@ -172,11 +172,11 @@ const handleSave = async (uuid: string) => {
         editingData.value.type = response.detectedType
         message.info(`检测到模拟器类型: ${response.detectedType}`)
       }
-      
+
       if (!response.correctedPath && !response.detectedType) {
         message.success('保存成功')
       }
-      
+
       await loadEmulators()
       editingId.value = null
     } else {
@@ -401,7 +401,7 @@ const selectEmulatorPath = async () => {
       { name: '快捷方式', extensions: ['lnk'] },
       { name: '所有文件', extensions: ['*'] },
     ])
-    
+
     // 如果没有选择文件,尝试选择文件夹
     if (!paths || paths.length === 0) {
       const folders = await (window.electronAPI as any).selectFolder()
@@ -507,12 +507,7 @@ const handleRemoveBossKey = () => {
     <div class="page-header">
       <h1>模拟器管理</h1>
       <div class="header-actions">
-        <a-button
-          type="primary"
-          :icon="h(SearchOutlined)"
-          :loading="searching"
-          @click="handleSearch"
-        >
+        <a-button type="primary" :icon="h(SearchOutlined)" :loading="searching" @click="handleSearch">
           自动搜索
         </a-button>
         <a-button type="primary" :icon="h(PlusOutlined)" @click="handleAdd"> 添加模拟器 </a-button>
@@ -534,21 +529,11 @@ const handleRemoveBossKey = () => {
                 <span v-if="editingId !== element.uuid">{{
                   emulatorData[element.uuid]?.Info?.Name || '未命名'
                 }}</span>
-                <a-input
-                  v-else
-                  v-model:value="editingData.name"
-                  placeholder="模拟器名称"
-                  style="max-width: 300px"
-                />
+                <a-input v-else v-model:value="editingData.name" placeholder="模拟器名称" style="max-width: 300px" />
               </div>
               <div class="card-actions">
                 <template v-if="editingId === element.uuid">
-                  <a-button
-                    type="primary"
-                    size="small"
-                    :icon="h(SaveOutlined)"
-                    @click="handleSave(element.uuid)"
-                  >
+                  <a-button type="primary" size="small" :icon="h(SaveOutlined)" @click="handleSave(element.uuid)">
                     保存
                   </a-button>
                   <a-button size="small" :icon="h(CloseOutlined)" @click="handleCancel">
@@ -559,20 +544,11 @@ const handleRemoveBossKey = () => {
                   <a-button type="link" size="small" @click="toggleDevices(element.uuid)">
                     {{ expandedEmulators.has(element.uuid) ? '折叠设备' : '查看设备' }}
                   </a-button>
-                  <a-button
-                    type="link"
-                    size="small"
-                    :icon="h(EditOutlined)"
-                    @click="handleEdit(element.uuid)"
-                  >
+                  <a-button type="link" size="small" :icon="h(EditOutlined)" @click="handleEdit(element.uuid)">
                     编辑
                   </a-button>
-                  <a-popconfirm
-                    title="确定要删除此模拟器配置吗？"
-                    ok-text="确定"
-                    cancel-text="取消"
-                    @confirm="handleDelete(element.uuid)"
-                  >
+                  <a-popconfirm title="确定要删除此模拟器配置吗？" ok-text="确定" cancel-text="取消"
+                    @confirm="handleDelete(element.uuid)">
                     <a-button type="link" danger size="small" :icon="h(DeleteOutlined)">
                       删除
                     </a-button>
@@ -591,12 +567,8 @@ const handleRemoveBossKey = () => {
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </div>
-                    <a-select
-                      v-model:value="editingData.type"
-                      placeholder="选择模拟器类型"
-                      :options="emulatorTypeOptions"
-                      style="width: 100%"
-                    />
+                    <a-select v-model:value="editingData.type" placeholder="选择模拟器类型" :options="emulatorTypeOptions"
+                      style="width: 100%" />
                   </div>
                 </a-col>
                 <a-col :span="12">
@@ -607,14 +579,8 @@ const handleRemoveBossKey = () => {
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </div>
-                    <a-input-number
-                      v-model:value="editingData.max_wait_time"
-                      placeholder="输入最大等待时间"
-                      style="width: 100%"
-                      :min="10"
-                      :max="300"
-                      :step="5"
-                    />
+                    <a-input-number v-model:value="editingData.max_wait_time" placeholder="输入最大等待时间" style="width: 100%"
+                      :min="10" :max="300" :step="5" />
                   </div>
                 </a-col>
               </a-row>
@@ -627,11 +593,7 @@ const handleRemoveBossKey = () => {
                   </a-tooltip>
                 </div>
                 <div style="display: flex; gap: 8px">
-                  <a-input
-                    v-model:value="editingData.path"
-                    placeholder="输入模拟器路径"
-                    :disabled="true"
-                  />
+                  <a-input v-model:value="editingData.path" placeholder="输入模拟器路径" :disabled="true" />
                   <a-button @click="selectEmulatorPath">选择路径</a-button>
                 </div>
               </div>
@@ -644,14 +606,8 @@ const handleRemoveBossKey = () => {
                   </a-tooltip>
                 </div>
                 <div style="display: flex; gap: 8px; margin-bottom: 8px">
-                  <a-input
-                    v-model:value="bossKeyInput"
-                    :placeholder="
-                      recordingBossKey ? '请按下快捷键组合...' : '输入快捷键，如 Ctrl+Q'
-                    "
-                    :disabled="recordingBossKey"
-                    @press-enter="handleSetBossKey"
-                  />
+                  <a-input v-model:value="bossKeyInput" :placeholder="recordingBossKey ? '请按下快捷键组合...' : '输入快捷键，如 Ctrl+Q'
+                    " :disabled="recordingBossKey" @press-enter="handleSetBossKey" />
                   <a-button v-if="!recordingBossKey" type="default" @click="startRecordBossKey">
                     录制
                   </a-button>
@@ -660,16 +616,8 @@ const handleRemoveBossKey = () => {
                   </a-button>
                   <a-button :disabled="recordingBossKey" @click="handleSetBossKey"> 设置 </a-button>
                 </div>
-                <div
-                  v-if="editingData.boss_keys && editingData.boss_keys.length > 0"
-                  class="boss-key-list"
-                >
-                  <a-tag
-                    v-for="key in editingData.boss_keys"
-                    :key="key"
-                    closable
-                    @close="handleRemoveBossKey()"
-                  >
+                <div v-if="editingData.boss_keys && editingData.boss_keys.length > 0" class="boss-key-list">
+                  <a-tag v-for="key in editingData.boss_keys" :key="key" closable @close="handleRemoveBossKey()">
                     {{ key }}
                   </a-tag>
                 </div>
@@ -680,33 +628,22 @@ const handleRemoveBossKey = () => {
             <div v-if="expandedEmulators.has(element.uuid)" class="devices-section">
               <div class="devices-header">
                 <h4>设备列表</h4>
-                <a-button
-                  size="small"
-                  :icon="h(ReloadOutlined)"
-                  :loading="loadingDevices.has(element.uuid)"
-                  @click="refreshDevices(element.uuid)"
-                >
+                <a-button size="small" :icon="h(ReloadOutlined)" :loading="loadingDevices.has(element.uuid)"
+                  @click="refreshDevices(element.uuid)">
                   刷新
                 </a-button>
               </div>
 
               <a-spin :spinning="loadingDevices.has(element.uuid)">
-                <div
-                  v-if="
-                    !devicesData[element.uuid] ||
-                    Object.keys(devicesData[element.uuid]).length === 0
-                  "
-                  class="empty-devices"
-                >
+                <div v-if="
+                  !devicesData[element.uuid] ||
+                  Object.keys(devicesData[element.uuid]).length === 0
+                " class="empty-devices">
                   <a-empty description="暂无设备信息" />
                 </div>
 
                 <div v-else class="devices-grid">
-                  <div
-                    v-for="(device, index) in devicesData[element.uuid]"
-                    :key="index"
-                    class="device-card-item"
-                  >
+                  <div v-for="(device, index) in devicesData[element.uuid]" :key="index" class="device-card-item">
                     <div class="device-header">
                       <span class="device-index">设备 #{{ index }}</span>
                       <a-tag :color="device.status === '0' ? 'success' : 'default'">
@@ -724,24 +661,14 @@ const handleRemoveBossKey = () => {
                       </div>
                     </div>
                     <div class="device-actions">
-                      <a-button
-                        type="primary"
-                        size="small"
-                        :icon="h(PlayCircleOutlined)"
-                        :loading="startingDevices.has(`${element.uuid}-${index}`)"
-                        :disabled="device.status === '0'"
-                        @click="startEmulator(element.uuid, String(index))"
-                      >
+                      <a-button type="primary" size="small" :icon="h(PlayCircleOutlined)"
+                        :loading="startingDevices.has(`${element.uuid}-${index}`)" :disabled="device.status === '0'"
+                        @click="startEmulator(element.uuid, String(index))">
                         启动
                       </a-button>
-                      <a-button
-                        danger
-                        size="small"
-                        :icon="h(StopOutlined)"
-                        :loading="stoppingDevices.has(`${element.uuid}-${index}`)"
-                        :disabled="device.status !== '0'"
-                        @click="stopEmulator(element.uuid, String(index))"
-                      >
+                      <a-button danger size="small" :icon="h(StopOutlined)"
+                        :loading="stoppingDevices.has(`${element.uuid}-${index}`)" :disabled="device.status !== '0'"
+                        @click="stopEmulator(element.uuid, String(index))">
                         关闭
                       </a-button>
                     </div>
