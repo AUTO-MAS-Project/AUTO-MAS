@@ -76,7 +76,7 @@ class GetStageIn(BaseModel):
 
 class EmulatorConfigIndexItem(BaseModel):
     uid: str = Field(..., description="唯一标识符")
-    type: Literal["Emulator"] = Field(..., description="配置类型")
+    type: Literal["EmulatorConfig"] = Field(..., description="配置类型")
 
 
 class EmulatorConfig_Info(BaseModel):
