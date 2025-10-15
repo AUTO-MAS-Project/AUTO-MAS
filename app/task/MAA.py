@@ -19,8 +19,9 @@
 
 #   Contact: DLmaster_361@163.com
 
-
+import os
 import json
+import tempfile
 import uuid
 import asyncio
 import subprocess
@@ -1876,6 +1877,7 @@ class MaaManager:
 
         return data
 
+
     def agree_bilibili(self, if_agree):
         """向MAA写入Bilibili协议相关任务"""
         logger.info(f"Bilibili协议相关任务状态: {'启用' if if_agree else '禁用'}")
@@ -1900,8 +1902,24 @@ class MaaManager:
             if "BilibiliAgreement_AUTO" in data["StartUpThemes"]["next"]:
                 data["StartUpThemes"]["next"].remove("BilibiliAgreement_AUTO")
 
-        with self.maa_tasks_path.open(mode="w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=4)
+        temp_fd, temp_path = tempfile.mkstemp(
+            dir=self.maa_tasks_path.parent,
+            prefix=".tmp_",
+            suffix=".json",
+            text=True
+        )
+        os.close(temp_fd)  # 关闭原文件描述符
+
+        try:
+            with open(temp_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=4)
+            os.replace(temp_path, self.maa_tasks_path)
+        except Exception:
+            try:
+                os.unlink(temp_path)
+            except FileNotFoundError:
+                pass
+            raise
 
     async def push_notification(self, mode: str, title: str, message) -> None:
         """通过所有渠道推送通知"""
