@@ -43,6 +43,8 @@ from app.models.schema import (
     EmulatorReorderIn,
     EmulatorOperateIn,
     EmulatorStatusOut,
+    EmulatorSearchOut,
+    EmulatorSearchResult,
     WebhookGetOut,
     WebhookIndexItem,
     Webhook,
@@ -263,6 +265,29 @@ async def get_emulator_status(emulator: EmulatorGetIn = Body(...)) -> EmulatorSt
             data={},
         )
     return EmulatorStatusOut(data=data)
+
+
+@router.post(
+    "/emulator/search",
+    summary="搜索已安装的模拟器",
+    response_model=EmulatorSearchOut,
+    status_code=200,
+)
+async def search_emulators() -> EmulatorSearchOut:
+    """自动搜索系统中已安装的模拟器"""
+    try:
+        from app.utils import search_all_emulators
+
+        emulators = await search_all_emulators()
+        results = [EmulatorSearchResult(**emulator) for emulator in emulators]
+        return EmulatorSearchOut(emulators=results)
+    except Exception as e:
+        return EmulatorSearchOut(
+            code=500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            emulators=[],
+        )
 
 
 @router.post(

@@ -24,15 +24,12 @@
 
       <!-- 进度条 -->
       <div class="progress-section">
-        <a-progress 
-          :percent="currentProgress" 
-          :status="progressStatus"
-          :show-info="true"
-        />
+        <a-progress :percent="currentProgress" :status="progressStatus" :show-info="true" />
         <div class="progress-text">{{ progressText }}</div>
         <div v-if="downloadSpeed" class="download-speed">{{ downloadSpeed }}</div>
         <div v-if="downloadInfo" class="download-info">
-          {{ formatFileSize(downloadInfo.downloadedSize) }} / {{ formatFileSize(downloadInfo.totalSize) }}
+          {{ formatFileSize(downloadInfo.downloadedSize) }} /
+          {{ formatFileSize(downloadInfo.totalSize) }}
         </div>
       </div>
 
@@ -74,7 +71,7 @@
 
       <!-- 详细信息 -->
       <div v-if="showDetails" class="details-section">
-        <a-collapse v-model:activeKey="activeDetailsKey">
+        <a-collapse v-model:active-key="activeDetailsKey">
           <a-collapse-panel key="1" header="查看详细信息">
             <div class="detail-logs">
               <div v-for="(log, index) in detailLogs" :key="index" class="log-item">
@@ -99,11 +96,7 @@
     </div>
 
     <div class="step-actions">
-      <a-button
-        type="default"
-        size="large"
-        @click="handleSwitchToManual"
-      >
+      <a-button type="default" size="large" @click="handleSwitchToManual">
         切换到手动安装
       </a-button>
 
@@ -156,7 +149,15 @@ const downloadInfo = ref<{ downloadedSize: number; totalSize: number } | null>(n
 const showPipMirrorSelection = ref(false)
 const selectedPipMirror = ref('tsinghua')
 const testingPipSpeed = ref(false)
-const pipMirrors = ref<Array<{ key: string; name: string; description: string; speed?: number | null; recommended?: boolean }>>([])
+const pipMirrors = ref<
+  Array<{
+    key: string
+    name: string
+    description: string
+    speed?: number | null
+    recommended?: boolean
+  }>
+>([])
 
 // 详细信息
 const showDetails = ref(false)
@@ -174,7 +175,7 @@ const stepTitles = [
   '解压源码包',
   '更新代码',
   '安装依赖',
-  '启动服务'
+  '启动服务',
 ]
 
 function getCurrentStepTitle() {
@@ -186,7 +187,7 @@ function addLog(message: string) {
   const now = new Date()
   const time = now.toLocaleTimeString()
   detailLogs.value.push({ time, message })
-  
+
   // 限制日志数量
   if (detailLogs.value.length > 100) {
     detailLogs.value = detailLogs.value.slice(-100)
@@ -194,7 +195,11 @@ function addLog(message: string) {
 }
 
 // 更新进度
-function updateProgress(progress: number, text: string, status: 'normal' | 'exception' | 'success' = 'normal') {
+function updateProgress(
+  progress: number,
+  text: string,
+  status: 'normal' | 'exception' | 'success' = 'normal'
+) {
   currentProgress.value = progress
   progressText.value = text
   progressStatus.value = status
@@ -242,7 +247,7 @@ async function startQuickInstall() {
     currentStep.value = 0
     currentStepDescription.value = '正在从下载站获取预打包的Python和Git环境...'
     updateProgress(10, '开始下载环境包...')
-    
+
     await downloadEnvironmentPackage()
     updateProgress(20, '环境包下载完成')
 
@@ -250,7 +255,7 @@ async function startQuickInstall() {
     currentStep.value = 1
     currentStepDescription.value = '正在解压环境包到本地目录...'
     updateProgress(30, '开始解压环境包...')
-    
+
     await extractEnvironmentPackage()
     updateProgress(40, '环境包解压完成')
 
@@ -258,7 +263,7 @@ async function startQuickInstall() {
     currentStep.value = 2
     currentStepDescription.value = '正在从下载站获取最新的源码包...'
     updateProgress(50, '开始下载源码包...')
-    
+
     await downloadSourcePackage()
     updateProgress(60, '源码包下载完成')
 
@@ -266,7 +271,7 @@ async function startQuickInstall() {
     currentStep.value = 3
     currentStepDescription.value = '正在解压源码包...'
     updateProgress(70, '开始解压源码包...')
-    
+
     await extractSourcePackage()
     updateProgress(75, '源码包解压完成')
 
@@ -274,7 +279,7 @@ async function startQuickInstall() {
     currentStep.value = 4
     currentStepDescription.value = '正在更新到最新代码...'
     updateProgress(80, '开始更新代码...')
-    
+
     await updateSourceCode()
     updateProgress(85, '代码更新完成')
 
@@ -282,7 +287,7 @@ async function startQuickInstall() {
     currentStep.value = 5
     currentStepDescription.value = '正在准备安装Python依赖包...'
     updateProgress(87, '准备安装依赖...')
-    
+
     // 显示pip镜像源选择
     console.log('开始显示pip镜像源选择...')
     await showPipMirrorSelectionStep()
@@ -293,24 +298,23 @@ async function startQuickInstall() {
     currentStepDescription.value = '正在启动后端服务...'
     updateProgress(95, '开始启动服务...')
     console.log('开始启动后端服务...')
-    
+
     await startBackendService()
     console.log('后端服务启动完成')
     updateProgress(100, '快速安装完成！', 'success')
 
     stepStatus.value = 'finish'
-    
+
     // 延迟1秒后进入应用
     setTimeout(() => {
       props.onQuickComplete()
     }, 1000)
-
   } catch (error) {
     console.error('快速安装失败:', error)
     stepStatus.value = 'error'
     progressStatus.value = 'exception'
     errorMessage.value = error instanceof Error ? error.message : String(error)
-    
+
     notification.error({
       message: '快速安装失败',
       description: errorMessage.value,
@@ -327,11 +331,11 @@ async function downloadEnvironmentPackage() {
   if (!result.success) {
     throw new Error(`环境包下载失败: ${result.error}`)
   }
-  
+
   // 更新配置状态
-  await saveConfig({ 
+  await saveConfig({
     pythonInstalled: true,
-    gitInstalled: true 
+    gitInstalled: true,
   })
 }
 
@@ -357,7 +361,7 @@ async function extractSourcePackage() {
   if (!result.success) {
     throw new Error(`源码包解压失败: ${result.error}`)
   }
-  
+
   // 更新配置状态
   await saveConfig({ backendExists: true })
 }
@@ -374,19 +378,19 @@ async function updateSourceCode() {
 // 显示pip镜像源选择步骤
 async function showPipMirrorSelectionStep() {
   console.log('开始显示pip镜像源选择步骤...')
-  
+
   // 加载pip镜像源
   await loadPipMirrors()
   console.log('pip镜像源加载完成')
-  
+
   // 显示镜像源选择界面
   showPipMirrorSelection.value = true
-  
+
   // 自动开始测速
   setTimeout(() => {
     testPipMirrorSpeed()
   }, 500)
-  
+
   // 等待用户选择或自动继续
   return new Promise<void>((resolve, reject) => {
     console.log('设置quickInstallPipResolve回调函数...')
@@ -402,7 +406,7 @@ async function showPipMirrorSelectionStep() {
         reject(error)
       }
     }
-    
+
     // 设置超时，防止无限等待
     setTimeout(() => {
       if (showPipMirrorSelection.value) {
@@ -428,7 +432,7 @@ async function loadPipMirrors() {
   // 从镜像管理器获取pip镜像源
   const { mirrorManager } = await import('@/utils/mirrorManager')
   pipMirrors.value = mirrorManager.getMirrors('pip')
-  
+
   // 从配置中加载用户选择
   const { getConfig } = await import('@/utils/config')
   const config = await getConfig()
@@ -440,7 +444,9 @@ async function testPipMirrorSpeed() {
   testingPipSpeed.value = true
   try {
     const promises = pipMirrors.value.map(async mirror => {
-      mirror.speed = await testMirrorWithTimeout(mirror.url || `https://${mirror.key}.pypi.org/simple/`)
+      mirror.speed = await testMirrorWithTimeout(
+        mirror.url || `https://${mirror.key}.pypi.org/simple/`
+      )
       return mirror
     })
 
@@ -452,7 +458,7 @@ async function testPipMirrorSpeed() {
       if (!a.recommended && b.recommended) return 1
       return (a.speed || 9999) - (b.speed || 9999)
     })
-    
+
     const fastest = sortedMirrors.find(m => m.speed !== 9999)
     if (fastest) {
       selectedPipMirror.value = fastest.key
@@ -487,25 +493,25 @@ async function testMirrorWithTimeout(url: string, timeout = 3000): Promise<numbe
 async function proceedWithDependencyInstall() {
   console.log('开始执行依赖安装流程...')
   showPipMirrorSelection.value = false
-  
+
   // 保存用户选择
   const { saveConfig } = await import('@/utils/config')
   await saveConfig({ selectedPipMirror: selectedPipMirror.value })
-  
+
   updateProgress(91, '开始安装依赖...')
   console.log('开始调用installDependencies...')
-  
+
   // 安装依赖
   const result = await window.electronAPI.installDependencies(selectedPipMirror.value)
   console.log('installDependencies调用完成，结果:', result)
-  
+
   if (!result.success) {
     throw new Error(`依赖安装失败: ${result.error}`)
   }
-  
+
   updateProgress(94, '依赖安装完成')
   console.log('依赖安装成功，更新配置状态...')
-  
+
   // 更新配置状态
   await saveConfig({ dependenciesInstalled: true })
   console.log('依赖安装流程完成')
@@ -540,27 +546,31 @@ function handleDownloadProgress(progress: any) {
       currentStep.value = progress.step
     }
   }
-  
+
   // 更新下载速度和文件信息
   if (progress.speed) {
     downloadSpeed.value = progress.speed
   }
-  
+
   if (progress.downloadedSize && progress.totalSize) {
     downloadInfo.value = {
       downloadedSize: progress.downloadedSize,
-      totalSize: progress.totalSize
+      totalSize: progress.totalSize,
     }
   }
-  
-  updateProgress(progress.progress, progress.message, progress.status === 'error' ? 'exception' : 'normal')
+
+  updateProgress(
+    progress.progress,
+    progress.message,
+    progress.status === 'error' ? 'exception' : 'normal'
+  )
 }
 
 // 组件挂载时开始安装
 onMounted(() => {
   // 监听下载进度
   window.electronAPI.onDownloadProgress(handleDownloadProgress)
-  
+
   // 开始快速安装
   startQuickInstall()
 })
@@ -571,7 +581,7 @@ onUnmounted(() => {
   if ((window as any).quickInstallPipResolve) {
     delete (window as any).quickInstallPipResolve
   }
-  
+
   // 移除下载进度监听
   window.electronAPI.removeDownloadProgressListener()
 })
@@ -826,7 +836,7 @@ onUnmounted(() => {
   .mirror-grid {
     grid-template-columns: 1fr;
   }
-  
+
   .test-actions {
     flex-direction: column;
     align-items: stretch;
