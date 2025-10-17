@@ -687,6 +687,18 @@ class EmulatorStatusOut(OutBase):
     data: Dict[str, dict] = Field(..., description="模拟器状态信息")
 
 
+class EmulatorSearchResult(BaseModel):
+    type: str = Field(..., description="模拟器类型")
+    path: str = Field(..., description="模拟器路径")
+    name: str = Field(..., description="模拟器名称")
+
+
+class EmulatorSearchOut(OutBase):
+    emulators: List[EmulatorSearchResult] = Field(
+        default_factory=list, description="搜索到的模拟器列表"
+    )
+
+
 class WebhookInBase(BaseModel):
     scriptId: Optional[str] = Field(
         default=None, description="所属脚本ID, 获取全局设置的Webhook数据时无需携带"

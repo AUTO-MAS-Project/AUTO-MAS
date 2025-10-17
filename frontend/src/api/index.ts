@@ -20,6 +20,8 @@ export type { EmulatorGetIn } from './models/EmulatorGetIn';
 export type { EmulatorGetOut } from './models/EmulatorGetOut';
 export { EmulatorOperateIn } from './models/EmulatorOperateIn';
 export type { EmulatorReorderIn } from './models/EmulatorReorderIn';
+export type { EmulatorSearchOut } from './models/EmulatorSearchOut';
+export type { EmulatorSearchResult } from './models/EmulatorSearchResult';
 export type { EmulatorStatusOut } from './models/EmulatorStatusOut';
 export type { EmulatorUpdateIn } from './models/EmulatorUpdateIn';
 export type { EmulatorUpdateOut } from './models/EmulatorUpdateOut';

@@ -4,10 +4,7 @@
     <AdminCheck v-if="!isAdmin" />
 
     <!-- 安装模式选择 -->
-    <InstallModeSelection
-      v-if="showModeSelection"
-      :on-mode-selected="handleModeSelected"
-    />
+    <InstallModeSelection v-if="showModeSelection" :on-mode-selected="handleModeSelected" />
 
     <!-- 环境不完整页面 -->
     <EnvironmentIncomplete
