@@ -10,6 +10,7 @@ import type { EmulatorGetIn } from '../models/EmulatorGetIn';
 import type { EmulatorGetOut } from '../models/EmulatorGetOut';
 import type { EmulatorOperateIn } from '../models/EmulatorOperateIn';
 import type { EmulatorReorderIn } from '../models/EmulatorReorderIn';
+import type { EmulatorSearchOut } from '../models/EmulatorSearchOut';
 import type { EmulatorStatusOut } from '../models/EmulatorStatusOut';
 import type { EmulatorUpdateIn } from '../models/EmulatorUpdateIn';
 import type { EmulatorUpdateOut } from '../models/EmulatorUpdateOut';
@@ -1229,6 +1230,18 @@ export class Service {
             errors: {
                 422: `Validation Error`,
             },
+        });
+    }
+    /**
+     * 搜索已安装的模拟器
+     * 自动搜索系统中已安装的模拟器
+     * @returns EmulatorSearchOut Successful Response
+     * @throws ApiError
+     */
+    public static searchEmulatorsApiSettingEmulatorSearchPost(): CancelablePromise<EmulatorSearchOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/setting/emulator/search',
         });
     }
     /**

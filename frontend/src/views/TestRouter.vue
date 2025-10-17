@@ -62,7 +62,7 @@
         <a-col :span="6">
           <a-form-item label=" " style="margin-bottom: 0" :colon="false">
             <a-space>
-              <a-button type="primary" @click="handleSearch" :loading="searchLoading">
+              <a-button type="primary" :loading="searchLoading" @click="handleSearch">
                 <template #icon>
                   <SearchOutlined />
                 </template>
@@ -87,7 +87,7 @@
         <div class="date-sidebar">
           <!-- 日期折叠列表 -->
           <div class="date-list">
-            <a-collapse v-model:activeKey="activeKeys" ghost accordion>
+            <a-collapse v-model:active-key="activeKeys" ghost accordion>
               <a-collapse-panel
                 v-for="dateGroup in historyData"
                 :key="dateGroup.date"
@@ -156,13 +156,55 @@ const currentJsonFile = ref('')
 
 // 快捷时间选择预设（改用枚举值）
 const timePresets = [
-  { key: 'today', label: '今天', startDate: () => dayjs().format('YYYY-MM-DD'), endDate: () => dayjs().format('YYYY-MM-DD'), mode: HistorySearchIn.mode.DAILY },
-  { key: 'yesterday', label: '昨天', startDate: () => dayjs().subtract(1, 'day').format('YYYY-MM-DD'), endDate: () => dayjs().subtract(1, 'day').format('YYYY-MM-DD'), mode: HistorySearchIn.mode.DAILY },
-  { key: 'week', label: '最近一周', startDate: () => dayjs().subtract(7, 'day').format('YYYY-MM-DD'), endDate: () => dayjs().format('YYYY-MM-DD'), mode: HistorySearchIn.mode.DAILY },
-  { key: 'month', label: '最近一个月', startDate: () => dayjs().subtract(1, 'month').format('YYYY-MM-DD'), endDate: () => dayjs().format('YYYY-MM-DD'), mode: HistorySearchIn.mode.WEEKLY },
-  { key: 'twoMonths', label: '最近两个月', startDate: () => dayjs().subtract(2, 'month').format('YYYY-MM-DD'), endDate: () => dayjs().format('YYYY-MM-DD'), mode: HistorySearchIn.mode.WEEKLY },
-  { key: 'threeMonths', label: '最近三个月', startDate: () => dayjs().subtract(3, 'month').format('YYYY-MM-DD'), endDate: () => dayjs().format('YYYY-MM-DD'), mode: HistorySearchIn.mode.MONTHLY },
-  { key: 'halfYear', label: '最近半年', startDate: () => dayjs().subtract(6, 'month').format('YYYY-MM-DD'), endDate: () => dayjs().format('YYYY-MM-DD'), mode: HistorySearchIn.mode.MONTHLY },
+  {
+    key: 'today',
+    label: '今天',
+    startDate: () => dayjs().format('YYYY-MM-DD'),
+    endDate: () => dayjs().format('YYYY-MM-DD'),
+    mode: HistorySearchIn.mode.DAILY,
+  },
+  {
+    key: 'yesterday',
+    label: '昨天',
+    startDate: () => dayjs().subtract(1, 'day').format('YYYY-MM-DD'),
+    endDate: () => dayjs().subtract(1, 'day').format('YYYY-MM-DD'),
+    mode: HistorySearchIn.mode.DAILY,
+  },
+  {
+    key: 'week',
+    label: '最近一周',
+    startDate: () => dayjs().subtract(7, 'day').format('YYYY-MM-DD'),
+    endDate: () => dayjs().format('YYYY-MM-DD'),
+    mode: HistorySearchIn.mode.DAILY,
+  },
+  {
+    key: 'month',
+    label: '最近一个月',
+    startDate: () => dayjs().subtract(1, 'month').format('YYYY-MM-DD'),
+    endDate: () => dayjs().format('YYYY-MM-DD'),
+    mode: HistorySearchIn.mode.WEEKLY,
+  },
+  {
+    key: 'twoMonths',
+    label: '最近两个月',
+    startDate: () => dayjs().subtract(2, 'month').format('YYYY-MM-DD'),
+    endDate: () => dayjs().format('YYYY-MM-DD'),
+    mode: HistorySearchIn.mode.WEEKLY,
+  },
+  {
+    key: 'threeMonths',
+    label: '最近三个月',
+    startDate: () => dayjs().subtract(3, 'month').format('YYYY-MM-DD'),
+    endDate: () => dayjs().format('YYYY-MM-DD'),
+    mode: HistorySearchIn.mode.MONTHLY,
+  },
+  {
+    key: 'halfYear',
+    label: '最近半年',
+    startDate: () => dayjs().subtract(6, 'month').format('YYYY-MM-DD'),
+    endDate: () => dayjs().format('YYYY-MM-DD'),
+    mode: HistorySearchIn.mode.MONTHLY,
+  },
 ]
 
 // 搜索表单（默认按日合并）
@@ -465,5 +507,4 @@ const buttonFixedStyle = { width: '28px', height: '28px', padding: 0 }
   font-weight: 600;
   font-size: 14px;
 }
-
 </style>

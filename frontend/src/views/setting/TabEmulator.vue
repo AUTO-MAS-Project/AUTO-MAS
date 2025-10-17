@@ -176,22 +176,46 @@ onMounted(() => {
           <div v-for="element in emulatorIndex" :key="element.uid" class="emulator-card">
             <div class="card-header">
               <div class="card-title">
-                <span v-if="editingId !== element.uid">{{ emulatorData[element.uid]?.Info?.Name || '未命名' }}</span>
-                <a-input v-else-if="editingData.Info" v-model:value="editingData.Info.Name" placeholder="模拟器名称"
-                  style="max-width: 300px" />
+                <span v-if="editingId !== element.uid">{{
+                  emulatorData[element.uid]?.Info?.Name || '未命名'
+                }}</span>
+                <a-input
+                  v-else-if="editingData.Info"
+                  v-model:value="editingData.Info.Name"
+                  placeholder="模拟器名称"
+                  style="max-width: 300px"
+                />
               </div>
               <div class="card-actions">
                 <template v-if="editingId === element.uid">
-                  <a-button type="primary" size="small" :icon="h(SaveOutlined)"
-                    @click="handleSave(element.uid)">保存</a-button>
-                  <a-button size="small" :icon="h(CloseOutlined)" @click="handleCancel">取消</a-button>
+                  <a-button
+                    type="primary"
+                    size="small"
+                    :icon="h(SaveOutlined)"
+                    @click="handleSave(element.uid)"
+                    >保存</a-button
+                  >
+                  <a-button size="small" :icon="h(CloseOutlined)" @click="handleCancel"
+                    >取消</a-button
+                  >
                 </template>
                 <template v-else>
-                  <a-button type="link" size="small" :icon="h(EditOutlined)"
-                    @click="handleEdit(element.uid)">编辑</a-button>
-                  <a-popconfirm title="确定要删除此模拟器配置吗？" ok-text="确定" cancel-text="取消"
-                    @confirm="handleDelete(element.uid)">
-                    <a-button type="link" danger size="small" :icon="h(DeleteOutlined)">删除</a-button>
+                  <a-button
+                    type="link"
+                    size="small"
+                    :icon="h(EditOutlined)"
+                    @click="handleEdit(element.uid)"
+                    >编辑</a-button
+                  >
+                  <a-popconfirm
+                    title="确定要删除此模拟器配置吗？"
+                    ok-text="确定"
+                    cancel-text="取消"
+                    @confirm="handleDelete(element.uid)"
+                  >
+                    <a-button type="link" danger size="small" :icon="h(DeleteOutlined)"
+                      >删除</a-button
+                    >
                   </a-popconfirm>
                 </template>
               </div>
@@ -206,8 +230,12 @@ onMounted(() => {
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </div>
-                    <a-select v-model:value="editingData.Data.Type" placeholder="选择模拟器类型" :options="emulatorTypeOptions"
-                      style="width: 100%" />
+                    <a-select
+                      v-model:value="editingData.Data.Type"
+                      placeholder="选择模拟器类型"
+                      :options="emulatorTypeOptions"
+                      style="width: 100%"
+                    />
                   </div>
                 </a-col>
                 <a-col :span="12">
@@ -218,8 +246,14 @@ onMounted(() => {
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </div>
-                    <a-input-number v-model:value="editingData.Data.MaxWaitTime" placeholder="输入最大等待时间"
-                      style="width: 100%" :min="10" :max="300" :step="5" />
+                    <a-input-number
+                      v-model:value="editingData.Data.MaxWaitTime"
+                      placeholder="输入最大等待时间"
+                      style="width: 100%"
+                      :min="10"
+                      :max="300"
+                      :step="5"
+                    />
                   </div>
                 </a-col>
               </a-row>
@@ -231,7 +265,11 @@ onMounted(() => {
                   </a-tooltip>
                 </div>
                 <div style="display: flex; gap: 8px">
-                  <a-input v-model:value="editingData.Info.Path" placeholder="输入模拟器路径" :disabled="true" />
+                  <a-input
+                    v-model:value="editingData.Info.Path"
+                    placeholder="输入模拟器路径"
+                    :disabled="true"
+                  />
                   <a-button @click="selectEmulatorPath">选择路径</a-button>
                 </div>
               </div>
@@ -242,7 +280,10 @@ onMounted(() => {
                     <QuestionCircleOutlined class="help-icon" />
                   </a-tooltip>
                 </div>
-                <a-input v-model:value="editingData.Data.BossKey" placeholder="输入快捷键，如 Ctrl+Q" />
+                <a-input
+                  v-model:value="editingData.Data.BossKey"
+                  placeholder="输入快捷键，如 Ctrl+Q"
+                />
               </div>
             </div>
           </div>
@@ -257,31 +298,31 @@ onMounted(() => {
   padding: 24px;
   background: var(--bg-color-container);
   border-radius: 8px;
-  min-height: 100vh
+  min-height: 100vh;
 }
 
 .form-section {
   background: var(--bg-color-elevated);
   padding: 24px;
   border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1)
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 .section-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 16px
+  margin-bottom: 16px;
 }
 
 .section-header h3 {
   color: var(--text-color-primary);
-  margin: 0
+  margin: 0;
 }
 
 .empty-state {
   text-align: center;
-  padding: 48px 0
+  padding: 48px 0;
 }
 
 .emulator-card {
@@ -290,59 +331,59 @@ onMounted(() => {
   border-radius: 8px;
   margin-bottom: 16px;
   padding: 16px;
-  transition: all 0.3s
+  transition: all 0.3s;
 }
 
 .emulator-card:hover {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  border-color: var(--border-color-hover)
+  border-color: var(--border-color-hover);
 }
 
 .card-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 16px
+  margin-bottom: 16px;
 }
 
 .card-title {
   display: flex;
   align-items: center;
-  color: var(--text-color-primary)
+  color: var(--text-color-primary);
 }
 
 .card-title span {
   font-size: 16px;
-  font-weight: 600
+  font-weight: 600;
 }
 
 .card-actions {
   display: flex;
-  gap: 8px
+  gap: 8px;
 }
 
 .card-content {
-  margin-top: 16px
+  margin-top: 16px;
 }
 
 .form-item-vertical {
-  margin-bottom: 16px
+  margin-bottom: 16px;
 }
 
 .form-label-wrapper {
   display: flex;
   align-items: center;
-  margin-bottom: 8px
+  margin-bottom: 8px;
 }
 
 .form-label {
   font-weight: 500;
   margin-right: 8px;
-  color: var(--text-color-primary)
+  color: var(--text-color-primary);
 }
 
 .help-icon {
-  color: var(--text-color-tertiary)
+  color: var(--text-color-tertiary);
 }
 
 :root {
@@ -353,7 +394,7 @@ onMounted(() => {
   --text-color-primary: rgba(0, 0, 0, 0.88);
   --text-color-secondary: rgba(0, 0, 0, 0.65);
   --text-color-tertiary: rgba(0, 0, 0, 0.45);
-  --primary-color: #1890ff
+  --primary-color: #1890ff;
 }
 
 html.dark {
@@ -364,19 +405,19 @@ html.dark {
   --text-color-primary: rgba(255, 255, 255, 0.88);
   --text-color-secondary: rgba(255, 255, 255, 0.65);
   --text-color-tertiary: rgba(255, 255, 255, 0.45);
-  --primary-color: #1890ff
+  --primary-color: #1890ff;
 }
 
 html.dark .emulator-card {
-  background: #1a1a1a
+  background: #1a1a1a;
 }
 
 html.dark .form-section {
   background: #0a0a0a;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3)
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
 html.dark .emulator-card:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4)
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 }
 </style>

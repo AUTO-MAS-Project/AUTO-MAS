@@ -49,6 +49,7 @@
 ### 任务调度与定时器
 
 - `app/core/task_manager.py`（关键）
+
   - `TaskInfo`：运行态元数据（状态/进度/日志/时间戳）
   - `TaskManager`
     - `add_task(mode, uid)`：解析模式（设置脚本/自动代理/人工排查），检查冲突并创建 asyncio 任务
@@ -60,6 +61,7 @@
     - `start_startup_queue()`：启动时自动拉起勾选 `StartUpEnabled` 的队列，并向前端发送 `id="TaskManager" type="Signal" data={ newTask }`
 
 - `app/core/timer.py`
+
   - `MainTimer.second_task()`：每秒任务 → `set_silence()` + `timed_start()`
     - `set_silence()`：若启用静默模式，模拟 BossKey 隐藏模拟器窗口
     - `timed_start()`：命中 `QueueConfig` 的时间项则调用 `TaskManager.add_task("自动代理")`
@@ -71,6 +73,7 @@
 ### 配置系统与模型
 
 - `app/core/config.py`（体量大，职责核心）
+
   - `AppConfig`（对外通过 `Config` 单例使用）
     - 目录结构、日志/DB/Config 初始化
     - 版本字符串、Git 版本查询（若存在 git 仓库）
@@ -125,6 +128,7 @@
 ### 主进程与预加载（Electron）
 
 - `frontend/electron/main.ts`
+
   - 环境管理：检查/下载 Python、Git、依赖安装、快速安装包处理
   - 后端进程：`startBackend/stopBackend`（通过 child_process 启动/终止 Python 后端）
   - 托盘/窗口：创建窗口、托盘、标题栏、主题/多屏缩放最小尺寸适配、窗口状态持久化
@@ -142,11 +146,13 @@
 ### 渲染进程（Vue 应用）
 
 - `frontend/src/main.ts`
+
   - 设置 `OpenAPI.BASE`（REST 基础 URL）
   - 初始化镜像管理器与调度中心逻辑（预加载 handler）
   - 注册路由、AntD、全局错误处理
 
 - `frontend/src/router/index.ts`
+
   - 路由表（初始化/主页/脚本/计划/队列/调度中心/模拟器/历史/设置/日志等）
   - 路由守卫：未初始化时强制进入初始化页；首次进入时优先落地初始化页
 
@@ -193,7 +199,7 @@
 
 > 仅列出核心或常用入口；更多辅助/工具文件可按名称直观理解，或通过 IDE 全局检索快速定位。
 
-### 后端（app/*）
+### 后端（app/\*）
 
 - `main.py`：后端入口、权限/服务/生命周期管理
 - `app/api/`
@@ -224,7 +230,7 @@
 - `app/task/`
   - `MAA.py`/`general.py` 等：具体任务执行器（被 `TaskManager` 调用）
 
-### 前端（frontend/*）
+### 前端（frontend/\*）
 
 - `electron/`
   - `main.ts`：主进程入口、环境/后端进程/托盘/窗口/IPC
@@ -272,10 +278,10 @@
 
 > 本文与上述文档互补：本文更偏架构与导航，其他文档提供具体实现与示例。
 
-
 ## 1. 数据契约（Data Contract）
 
 ### 1.1 WebSocketMessage（后端 → 前端）
+
 ```json
 {
   "id": "<string>",
@@ -283,44 +289,84 @@
   "data": { "...": "对象，因 type 而异" }
 }
 ```
+
 - 来源：`app/models/schema.py::WebSocketMessage`
 - 约束：`type ∈ {Update, Message, Info, Signal}`，`id`用于订阅过滤与路由
 - 典型 id：`TaskManager`（系统级）；任务运行时用具体 `task_id`
 
 常见数据体（data）示例：
+
 - Update.task_dict（队列构建后一次性下发）
+
 ```json
 {
   "task_dict": [
-    { "script_id": "<uuid>", "status": "等待|运行|完成|跳过|异常", "name": "<string>", "user_list": [
-        { "user_id": "<uuid>", "status": "等待|运行|完成|跳过|异常", "name": "<string>" }
-    ]}
+    {
+      "script_id": "<uuid>",
+      "status": "等待|运行|完成|跳过|异常",
+      "name": "<string>",
+      "user_list": [
+        {
+          "user_id": "<uuid>",
+          "status": "等待|运行|完成|跳过|异常",
+          "name": "<string>"
+        }
+      ]
+    }
   ]
 }
 ```
+
 - Update.task_list（运行中反复更新，清理掉 user_list 初值后逐项推进）
+
 ```json
-{ "task_list": [ { "script_id": "<uuid>", "status": "等待|运行|完成|跳过|异常", "name": "<string>" } ] }
+{
+  "task_list": [
+    {
+      "script_id": "<uuid>",
+      "status": "等待|运行|完成|跳过|异常",
+      "name": "<string>"
+    }
+  ]
+}
 ```
+
 - Update.user_list（当前运行脚本的活跃用户列表，仅在该脚本运行时出现）
+
 ```json
-{ "user_list": [ { "user_id": "<uuid>", "status": "运行|完成|异常", "name": "<string>" } ] }
+{
+  "user_list": [
+    { "user_id": "<uuid>", "status": "运行|完成|异常", "name": "<string>" }
+  ]
+}
 ```
+
 - Update.log（逐条或批量追加日志）
+
 ```json
 { "log": "<string>" }
 ```
+
 - Info
+
 ```json
 { "Error": "错误信息" }
 { "Warning": "警告信息" }
 { "Info": "普通信息" }
 ```
+
 - Message（弹框请求）
+
 ```json
-{ "type": "Info|Warning|Error|Countdown", "title": "<string>", "message": "<string>" }
+{
+  "type": "Info|Warning|Error|Countdown",
+  "title": "<string>",
+  "message": "<string>"
+}
 ```
+
 - Signal
+
 ```json
 { "Accomplish": "无描述" }
 { "Ping": "无描述" }
@@ -331,25 +377,39 @@
 ```
 
 ### 1.2 REST（前端 → 后端）
+
 - 创建任务：`POST /api/dispatch/start`（`app/api/dispatch.py::add_task`）
+
 ```json
 {
   "mode": "自动代理|人工排查|设置脚本",
   "taskId": "<queue_id|script_id|user_id>"
 }
 ```
+
 响应：
+
 ```json
-{ "code":200, "status":"success", "message":"操作成功", "websocketId":"<task_uuid>" }
+{
+  "code": 200,
+  "status": "success",
+  "message": "操作成功",
+  "websocketId": "<task_uuid>"
+}
 ```
+
 - 停止任务：`POST /api/dispatch/stop`
+
 ```json
 { "taskId": "<task_uuid|ALL>" }
 ```
+
 - 设置电源标志：`POST /api/dispatch/set/power`
+
 ```json
 { "signal": "NoAction|Shutdown|ShutdownForce|Hibernate|Sleep|KillSelf" }
 ```
+
 - 脚本/队列/计划/用户/模拟器/Webhook 等 CRUD：详见 `app/api/*.py` 与 `app/models/schema.py`
 
 ---
@@ -358,20 +418,21 @@
 
 以“应用启动 → 自动拉起启动队列 → 前端创建调度台 → 任务执行/收尾”为例：
 
-1) Electron 主进程拉起后端 → Python `main.py` 完成 lifespan 初始化
-2) 前端渲染端建立 WS 到 `/api/core/ws`
-3) 后端记录连接并启动心跳；`TaskManager.start_startup_queue()` 遍历勾选 StartUpEnabled 的队列：
+1. Electron 主进程拉起后端 → Python `main.py` 完成 lifespan 初始化
+2. 前端渲染端建立 WS 到 `/api/core/ws`
+3. 后端记录连接并启动心跳；`TaskManager.start_startup_queue()` 遍历勾选 StartUpEnabled 的队列：
    - 为每个队列调用 `TaskManager.add_task("自动代理", queue_id)`
    - 通过 WS 发送：`{ id:"TaskManager", type:"Signal", data:{ "newTask": "<task_uuid>" } }`
-4) 前端 `useWebSocket` 分发给 `schedulerHandlers`，自动创建调度台 Tab，并订阅 `id=<task_uuid>` 消息
-5) 后端 `run_task()`：
+4. 前端 `useWebSocket` 分发给 `schedulerHandlers`，自动创建调度台 Tab，并订阅 `id=<task_uuid>` 消息
+5. 后端 `run_task()`：
    - 构建 `task_list` → WS Update 下发
    - 逐脚本执行（MAA/General Manager）→ 周期性 WS Update/Info/Message
-6) 子任务完成/异常 → 更新 `task_list` → WS Update
-7) 队列跑完 → WS Signal: Accomplish
-8) 若全局 `Config.power_sign` 非 `NoAction` 且任务清空 → WS Message Countdown → `System.start_power_task()`
+6. 子任务完成/异常 → 更新 `task_list` → WS Update
+7. 队列跑完 → WS Signal: Accomplish
+8. 若全局 `Config.power_sign` 非 `NoAction` 且任务清空 → WS Message Countdown → `System.start_power_task()`
 
 时序要点：
+
 - WS 为单连接；重连采用前端指数退避 + 后端超时 Ping/Pong
 - 首次连接即触发启动队列；断线后后端进程会自杀式退出（KillSelf），由前端负责重启
 
@@ -380,11 +441,13 @@
 ## 3. 状态机与心跳（State Machine & Heartbeat）
 
 ### 3.1 前端 WebSocket 状态（`useWebSocket.ts`）
+
 - WebSocketStatus：`连接中` → `已连接` → `已断开` | `连接错误`
 - Auto Reconnect：最大 5 次，退避系数 1.5，上限 30s；失败弹窗提供“重启应用/重启后端”
 - BackendStatus：`unknown|starting|running|stopped|error`，周期检测，失败自动尝试重启后端
 
 ### 3.2 心跳
+
 - 前端：定时发送 `Signal: Ping`
 - 后端：收到 Ping 立即回 `Pong`；若超时则主动断连
 
@@ -406,9 +469,9 @@
 - 新增后端 REST：在 `app/api/<feature>.py` 增加路由 + 入参/出参模型（`app/models/schema.py`）；在 `main.py` 自动注册
 - 新增后端 WS 推送：在任何协程中引入 `from app.core import Config`，调用 `await Config.send_json(WebSocketMessage(...).model_dump())`
 - 新增任务类型：
-  1) 在 `app/task/` 增加 Manager（参考 `MAA.py`/`general.py`）
-  2) 在 `TaskManager.run_task()` 中按类型分支创建 Manager
-  3) 在前端 `schedulerHandlers` 添加对应消息处理
+  1. 在 `app/task/` 增加 Manager（参考 `MAA.py`/`general.py`）
+  2. 在 `TaskManager.run_task()` 中按类型分支创建 Manager
+  3. 在前端 `schedulerHandlers` 添加对应消息处理
 - 扩展前端订阅：`useWebSocket.subscribe({ type?, id?, needCache? }, handler)`；需要回放历史时置 `needCache: true`
 - 接入新弹窗类型：前端在 `WebSocketMessageListener` / `schedulerHandlers` 里按 `Message.data.type` 分支处理
 - 接入外部资源：后端通过 `app.mount('/api/res/...', StaticFiles(...))` 暴露；前端直接 HTTP 访问
@@ -422,7 +485,7 @@
 - WebSocket 消息模型：`app/models/schema.py::WebSocketMessage`
 - 任务调度入口：`app/core/task_manager.py::TaskManager.add_task/run_task/remove_task/start_startup_queue`
 - 每秒/每小时任务：`app/core/timer.py::MainTimer.second_task/hour_task`
-- 配置中心：`app/core/config.py::AppConfig`（CRUD/迁移/发送WS）
+- 配置中心：`app/core/config.py::AppConfig`（CRUD/迁移/发送 WS）
 - 电源与系统操作：`app/services/system.py`
 - Electron 主进程：`frontend/electron/main.ts`（后端启动/窗口/托盘/IPC）
 - WebSocket 客户端：`frontend/src/composables/useWebSocket.ts`
@@ -431,22 +494,24 @@
 
 ---
 
-## 7. 常见开发任务模板（AI可复用）
+## 7. 常见开发任务模板（AI 可复用）
 
 - 新增“系统公告”推送：
-  1) 后端定义 REST：`app/api/notification.py`，写一个 `POST /api/notification/broadcast` 接口
-  2) 调用 `Config.send_json(WebSocketMessage(id:"Main", type:"Message", data:{ type:"Info", title:"公告", message:"..." }))`
-  3) 前端在 `WebSocketMessageListener` 增加 `Message` 分支对 `id=="Main"` 进行弹窗
+
+  1. 后端定义 REST：`app/api/notification.py`，写一个 `POST /api/notification/broadcast` 接口
+  2. 调用 `Config.send_json(WebSocketMessage(id:"Main", type:"Message", data:{ type:"Info", title:"公告", message:"..." }))`
+  3. 前端在 `WebSocketMessageListener` 增加 `Message` 分支对 `id=="Main"` 进行弹窗
 
 - 新增“任务进度条”字段：
-  1) 扩展 `TaskInfo.progress` 的结构；在 `MaaManager/GeneralManager` 中按阶段更新
-  2) 通过 WS `Update` 推送 `{ progress: { current, total } }`
-  3) 前端 `schedulerHandlers` 消费并渲染进度条
+
+  1. 扩展 `TaskInfo.progress` 的结构；在 `MaaManager/GeneralManager` 中按阶段更新
+  2. 通过 WS `Update` 推送 `{ progress: { current, total } }`
+  3. 前端 `schedulerHandlers` 消费并渲染进度条
 
 - 接入第三方模拟器：
-  1) 在 `app/models/schema.py` 的 `EmulatorConfig_Data.Type` 枚举中增加类型
-  2) `app/utils/emulator/` 增加路径/窗口识别逻辑
-  3) `app/services/system.py` 补充相应操作
+  1. 在 `app/models/schema.py` 的 `EmulatorConfig_Data.Type` 枚举中增加类型
+  2. `app/utils/emulator/` 增加路径/窗口识别逻辑
+  3. `app/services/system.py` 补充相应操作
 
 ---
 
@@ -465,3 +530,5 @@
 - 单通道 WS + 单连接，确保状态一致性与简化并发
 - 强契约（Pydantic）+ 明确的类型定义，保证前后端数据面稳定
 - 异步化（AsyncIO）+ 解耦（Broadcast/WS/REST），降低耦合便于扩展
+
+如果你需要生成 openapi, 请让用户进行生成
