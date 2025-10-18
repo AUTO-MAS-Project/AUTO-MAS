@@ -28,5 +28,6 @@ from .ConfigBase import *
 from .config import *
 from .schema import *
 from .emulator import *
+from .task import *
 
-__all__ = ["ConfigBase", "config", "schema", "emulator"]
+__all__ = ["ConfigBase", "config", "schema", "emulator", "task"]

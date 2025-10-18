@@ -26,10 +26,10 @@ __license__ = "GPL-3.0 license"
 
 from .broadcast import Broadcast
 from .config import Config, MaaConfig, GeneralConfig, MaaUserConfig, GeneralUserConfig
-from .timer import MainTimer
-from .task_manager import TaskManager
 from .emulator_manager import EmulatorManager
+from .task_manager import TaskManager
 
+from .timer import MainTimer
 __all__ = [
     "Broadcast",
     "Config",

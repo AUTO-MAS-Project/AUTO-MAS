@@ -25,7 +25,6 @@ __author__ = "DLmaster361 <DLmaster_361@163.com>"
 __license__ = "GPL-3.0 license"
 
 
-from .general import GeneralManager
-from .MAA import MaaManager
+from .manager import MaaManager
 
-__all__ = ["GeneralManager", "MaaManager"]
+__all__ = ["MaaManager"]
