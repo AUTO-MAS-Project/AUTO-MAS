@@ -24,8 +24,9 @@ __version__ = "5.0.0"
 __author__ = "DLmaster361 <DLmaster_361@163.com>"
 __license__ = "GPL-3.0 license"
 
+from .bilibili import agree_bilibili
+from .notify import push_notification
+from .skland import skland_sign_in
+from .UpdateMAA import update_maa
 
-from .general import GeneralManager
-from .MAA import MaaManager
-
-__all__ = ["GeneralManager", "MaaManager"]
+__all__ = ["agree_bilibili", "push_notification", "skland_sign_in", "update_maa"]

@@ -32,6 +32,7 @@ import truststore
 from pathlib import Path
 from fastapi import WebSocket
 from collections import defaultdict
+from jinja2 import Environment, FileSystemLoader
 from datetime import datetime, timedelta, date
 from typing import Literal, Optional, Union, Dict, Any, List
 import uuid
@@ -51,6 +52,7 @@ from app.models.config import (
     TimeSet,
     EmulatorConfig,
 )
+from app.models.schema import WebSocketMessage
 from app.utils.constants import (
     RESOURCE_STAGE_INFO,
     RESOURCE_STAGE_DROP_INFO,
@@ -107,6 +109,10 @@ class AppConfig(GlobalConfig):
             logger.warning(f"Git仓库初始化失败: {e}")
             self.repo = None
 
+        self.notify_env = Environment(
+            loader=FileSystemLoader(str(Path.cwd() / "res/html"))
+        )
+
         self.server: Optional[uvicorn.Server] = None
         self.websocket: Optional[WebSocket] = None
         self.power_sign: Literal[
@@ -134,13 +140,13 @@ class AppConfig(GlobalConfig):
         await self.check_data()
 
         await self.connect(self.config_path / "Config.json")
-        await self.ScriptConfig.connect(self.config_path / "ScriptConfig.json")
         await self.PlanConfig.connect(self.config_path / "PlanConfig.json")
+        await self.ScriptConfig.connect(self.config_path / "ScriptConfig.json")
         await self.QueueConfig.connect(self.config_path / "QueueConfig.json")
 
-        from .task_manager import TaskManager
+        # from .task_manager import TaskManager
 
-        self.task_dict = TaskManager.task_dict
+        # self.task_dict = TaskManager.task_dict
 
         logger.info("程序初始化完成")
 
@@ -419,6 +425,20 @@ class AppConfig(GlobalConfig):
         else:
             await Config.websocket.send_json(data)
 
+    async def send_websocket_message(
+        self,
+        id: str,
+        type: Literal["Update", "Message", "Info", "Signal"],
+        data: Dict[str, Any],
+    ) -> None:
+        """通过WebSocket发送消息"""
+        if Config.websocket is None:
+            logger.warning("WebSocket 未连接")
+        else:
+            await Config.websocket.send_json(
+                WebSocketMessage(id=id, type=type, data=data).model_dump()
+            )
+
     async def get_git_version(self) -> tuple[bool, str, str]:
         """获取Git版本信息，如果Git不可用则返回默认值"""
 
@@ -477,7 +497,7 @@ class AppConfig(GlobalConfig):
 
         uid = uuid.UUID(script_id)
 
-        if uid in self.task_dict:
+        if self.ScriptConfig[uid].is_locked:
             raise RuntimeError(f"脚本 {script_id} 正在运行, 无法更新配置项")
 
         for group, items in data.items():
@@ -494,7 +514,7 @@ class AppConfig(GlobalConfig):
 
         uid = uuid.UUID(script_id)
 
-        if uid in self.task_dict:
+        if self.ScriptConfig[uid].is_locked:
             raise RuntimeError(f"脚本 {script_id} 正在运行, 无法删除")
 
         # 删除脚本相关的队列项
@@ -1586,12 +1606,13 @@ class AppConfig(GlobalConfig):
                 }
             )
         for uid, script in self.ScriptConfig.items():
-            data.append(
-                {
-                    "label": f"脚本 - {TYPE_BOOK[type(script).__name__]} - {script.get('Info', 'Name')}",
-                    "value": str(uid),
-                }
-            )
+            if not script.is_locked:
+                data.append(
+                    {
+                        "label": f"脚本 - {TYPE_BOOK[type(script).__name__]} - {script.get('Info', 'Name')}",
+                        "value": str(uid),
+                    }
+                )
         logger.success("任务下拉框信息获取成功")
 
         return data

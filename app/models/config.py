@@ -617,7 +617,7 @@ class GlobalConfig(ConfigBase):
         "2000-01-01 00:00:00",
         DateTimeValidator("%Y-%m-%d %H:%M:%S"),
     )
-    Data_WebConfig = ConfigItem("Data", "WebConfig", "{ }", JSONValidator())
+    Data_WebConfig = ConfigItem("Data", "WebConfig", "[ ]", JSONValidator(list))
 
     EmulatorData = MultipleConfig([EmulatorConfig])
 
