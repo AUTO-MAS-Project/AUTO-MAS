@@ -2,12 +2,10 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-/**
- * 模拟器索引项
- */
-export type EmulatorIndexItem = {
-  /**
-   * 模拟器UUID
-   */
-  uuid: string
-}
+export type EmulatorReorderIn = {
+    /**
+     * 模拟器 ID列表, 按新顺序排列
+     */
+    indexList: Array<string>;
+};
+

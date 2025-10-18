@@ -38,10 +38,13 @@ from app.models.schema import (
     EmulatorConfigIndexItem,
     EmulatorCreateOut,
     EmulatorUpdateIn,
+    EmulatorUpdateOut,
     EmulatorDeleteIn,
     EmulatorReorderIn,
     EmulatorOperateIn,
     EmulatorStatusOut,
+    EmulatorSearchOut,
+    EmulatorSearchResult,
     WebhookGetOut,
     WebhookIndexItem,
     Webhook,
@@ -129,7 +132,6 @@ async def test_notify() -> OutBase:
     status_code=200,
 )
 async def get_emulator(emulator: EmulatorGetIn = Body(...)) -> EmulatorGetOut:
-
     try:
         index, data = await Config.get_emulator(emulator.emulatorId)
         index = [EmulatorConfigIndexItem(**_) for _ in index]
@@ -152,7 +154,6 @@ async def get_emulator(emulator: EmulatorGetIn = Body(...)) -> EmulatorGetOut:
     status_code=200,
 )
 async def add_emulator() -> EmulatorCreateOut:
-
     try:
         uid, config = await Config.add_emulator()
         data = EmulatorConfig(**(await config.toDict()))
@@ -168,26 +169,33 @@ async def add_emulator() -> EmulatorCreateOut:
 
 
 @router.post(
-    "/emulator/update", summary="更新模拟器项", response_model=OutBase, status_code=200
+    "/emulator/update",
+    summary="更新模拟器项",
+    response_model=EmulatorUpdateOut,
+    status_code=200,
 )
-async def update_emulator(emulator: EmulatorUpdateIn = Body(...)) -> OutBase:
-
+async def update_emulator(emulator: EmulatorUpdateIn = Body(...)) -> EmulatorUpdateOut:
     try:
-        await Config.update_emulator(
+        corrected_path, detected_type = await Config.update_emulator(
             emulator.emulatorId, emulator.data.model_dump(exclude_unset=True)
         )
-    except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+        return EmulatorUpdateOut(
+            correctedPath=corrected_path, detectedType=detected_type
         )
-    return OutBase()
+    except Exception as e:
+        return EmulatorUpdateOut(
+            code=500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            correctedPath=None,
+            detectedType=None,
+        )
 
 
 @router.post(
     "/emulator/delete", summary="删除模拟器项", response_model=OutBase, status_code=200
 )
 async def delete_emulator(emulator: EmulatorDeleteIn = Body(...)) -> OutBase:
-
     try:
         await Config.del_emulator(emulator.emulatorId)
     except Exception as e:
@@ -204,7 +212,6 @@ async def delete_emulator(emulator: EmulatorDeleteIn = Body(...)) -> OutBase:
     status_code=200,
 )
 async def reorder_emulator(emulator: EmulatorReorderIn = Body(...)) -> OutBase:
-
     try:
         await Config.reorder_emulator(emulator.indexList)
     except Exception as e:
@@ -221,7 +228,6 @@ async def reorder_emulator(emulator: EmulatorReorderIn = Body(...)) -> OutBase:
     status_code=200,
 )
 async def operation_emulator(emulator: EmulatorOperateIn = Body(...)) -> OutBase:
-
     try:
         if emulator.operate == "open":
             success, info = await EmulatorManager.open_emulator(
@@ -249,7 +255,6 @@ async def operation_emulator(emulator: EmulatorOperateIn = Body(...)) -> OutBase
     status_code=200,
 )
 async def get_emulator_status(emulator: EmulatorGetIn = Body(...)) -> EmulatorStatusOut:
-
     try:
         data = await EmulatorManager.get_emulator_status(emulator.emulatorId)
     except Exception as e:
@@ -263,13 +268,35 @@ async def get_emulator_status(emulator: EmulatorGetIn = Body(...)) -> EmulatorSt
 
 
 @router.post(
+    "/emulator/search",
+    summary="搜索已安装的模拟器",
+    response_model=EmulatorSearchOut,
+    status_code=200,
+)
+async def search_emulators() -> EmulatorSearchOut:
+    """自动搜索系统中已安装的模拟器"""
+    try:
+        from app.utils import search_all_emulators
+
+        emulators = await search_all_emulators()
+        results = [EmulatorSearchResult(**emulator) for emulator in emulators]
+        return EmulatorSearchOut(emulators=results)
+    except Exception as e:
+        return EmulatorSearchOut(
+            code=500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            emulators=[],
+        )
+
+
+@router.post(
     "/webhook/get",
     summary="查询 webhook 配置",
     response_model=WebhookGetOut,
     status_code=200,
 )
 async def get_webhook(webhook: WebhookGetIn = Body(...)) -> WebhookGetOut:
-
     try:
         index, data = await Config.get_webhook(None, None, webhook.webhookId)
         index = [WebhookIndexItem(**_) for _ in index]
@@ -292,7 +319,6 @@ async def get_webhook(webhook: WebhookGetIn = Body(...)) -> WebhookGetOut:
     status_code=200,
 )
 async def add_webhook() -> WebhookCreateOut:
-
     try:
         uid, config = await Config.add_webhook(None, None)
         data = Webhook(**(await config.toDict()))
@@ -311,7 +337,6 @@ async def add_webhook() -> WebhookCreateOut:
     "/webhook/update", summary="更新webhook项", response_model=OutBase, status_code=200
 )
 async def update_webhook(webhook: WebhookUpdateIn = Body(...)) -> OutBase:
-
     try:
         await Config.update_webhook(
             None, None, webhook.webhookId, webhook.data.model_dump(exclude_unset=True)
@@ -327,7 +352,6 @@ async def update_webhook(webhook: WebhookUpdateIn = Body(...)) -> OutBase:
     "/webhook/delete", summary="删除webhook项", response_model=OutBase, status_code=200
 )
 async def delete_webhook(webhook: WebhookDeleteIn = Body(...)) -> OutBase:
-
     try:
         await Config.del_webhook(None, None, webhook.webhookId)
     except Exception as e:
@@ -344,7 +368,6 @@ async def delete_webhook(webhook: WebhookDeleteIn = Body(...)) -> OutBase:
     status_code=200,
 )
 async def reorder_webhook(webhook: WebhookReorderIn = Body(...)) -> OutBase:
-
     try:
         await Config.reorder_webhook(None, None, webhook.indexList)
     except Exception as e:
