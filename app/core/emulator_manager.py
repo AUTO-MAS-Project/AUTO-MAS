@@ -23,7 +23,7 @@
 import uuid
 
 
-from app.core import Config
+from .config import Config
 from app.models.emulator import DeviceBase, DeviceStatus
 from app.utils import EMULATOR_TYPE_BOOK
 

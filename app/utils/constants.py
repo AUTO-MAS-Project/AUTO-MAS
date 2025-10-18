@@ -28,6 +28,15 @@ from pathlib import Path
 TYPE_BOOK = {"MaaConfig": "MAA", "GeneralConfig": "通用"}
 """配置类型映射表"""
 
+MAA_RUN_MOOD_BOOK = {"Annihilation": "剿灭", "Routine": "日常"}
+"""MAA运行模式映射表"""
+
+MAA_TASK_TRANSITION_METHOD_BOOK = {
+    "NoAction": "8",
+    "ExitGame": "9",
+    "ExitEmulator": "9",
+}
+"""MAA任务切换方式映射表"""
 
 EMULATOR_PATH_BOOK = {
     "mumu": {
