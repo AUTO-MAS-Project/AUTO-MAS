@@ -3,12 +3,13 @@
 /* tslint:disable */
 /* eslint-disable */
 export type UpdateCheckIn = {
-  /**
-   * 当前前端版本号
-   */
-  current_version: string
-  /**
-   * 是否强制拉取更新信息
-   */
-  if_force?: boolean
-}
+    /**
+     * 当前前端版本号
+     */
+    current_version: string;
+    /**
+     * 是否强制拉取更新信息
+     */
+    if_force?: boolean;
+};
+

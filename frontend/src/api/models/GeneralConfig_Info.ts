@@ -3,12 +3,13 @@
 /* tslint:disable */
 /* eslint-disable */
 export type GeneralConfig_Info = {
-  /**
-   * 脚本名称
-   */
-  Name?: string | null
-  /**
-   * 脚本根目录
-   */
-  RootPath?: string | null
-}
+    /**
+     * 脚本名称
+     */
+    Name?: (string | null);
+    /**
+     * 脚本根目录
+     */
+    RootPath?: (string | null);
+};
+

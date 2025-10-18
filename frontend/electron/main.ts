@@ -1,3 +1,4 @@
+import { exec, spawn } from 'child_process'
 import {
   app,
   BrowserWindow,
@@ -10,27 +11,28 @@ import {
   shell,
   Tray,
 } from 'electron'
-import * as path from 'path'
 import * as fs from 'fs'
-import { exec, spawn } from 'child_process'
-import { checkEnvironment, getAppRoot } from './services/environmentService'
+import * as path from 'path'
 import { setMainWindow as setDownloadMainWindow } from './services/downloadService'
+import { checkEnvironment, getAppRoot } from './services/environmentService'
+import {
+  cloneBackend,
+  downloadGit,
+  downloadQuickSource,
+  extractQuickSource,
+  setMainWindow as setGitMainWindow,
+  updateQuickSource,
+} from './services/gitService'
+import { cleanOldLogs, getLogFiles, getLogPath, log, setupLogger } from './services/logService'
 import {
   downloadPython,
+  downloadQuickEnvironment,
+  extractQuickEnvironment,
   installDependencies,
   installPipPackage,
   setMainWindow as setPythonMainWindow,
   startBackend,
 } from './services/pythonService'
-import {
-  cloneBackend,
-  downloadGit,
-  setMainWindow as setGitMainWindow,
-  checkRepoStatus,
-  cleanRepo,
-  getRepoInfo,
-} from './services/gitService'
-import { cleanOldLogs, getLogFiles, getLogPath, log, setupLogger } from './services/logService'
 
 // 强制清理相关进程的函数
 async function forceKillRelatedProcesses(): Promise<void> {
@@ -1020,6 +1022,32 @@ ipcMain.handle('download-git', async () => {
   return downloadGit(appRoot)
 })
 
+// 快速安装相关
+ipcMain.handle('download-quick-environment', async () => {
+  const appRoot = getAppRoot()
+  return downloadQuickEnvironment(appRoot)
+})
+
+ipcMain.handle('extract-quick-environment', async () => {
+  const appRoot = getAppRoot()
+  return extractQuickEnvironment(appRoot)
+})
+
+ipcMain.handle('download-quick-source', async () => {
+  const appRoot = getAppRoot()
+  return downloadQuickSource(appRoot)
+})
+
+ipcMain.handle('extract-quick-source', async () => {
+  const appRoot = getAppRoot()
+  return extractQuickSource(appRoot)
+})
+
+ipcMain.handle('update-quick-source', async (_event, repoUrl) => {
+  const appRoot = getAppRoot()
+  return updateQuickSource(appRoot, repoUrl)
+})
+
 // 新增的git管理方法
 ipcMain.handle('check-repo-status', async () => {
   const appRoot = getAppRoot()
@@ -1391,6 +1419,9 @@ if (!gotTheLock) {
   app.quit()
   process.exit(0)
 }
+
+// 在沙箱环境下运行会导致无法启动子进程，强制禁用沙箱
+app.commandLine.appendSwitch('no-sandbox')
 
 app.on('second-instance', () => {
   if (mainWindow) {
