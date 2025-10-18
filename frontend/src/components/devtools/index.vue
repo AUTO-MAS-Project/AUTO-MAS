@@ -1,12 +1,8 @@
 <template>
-  <div
-    v-if="isDev"
-    class="debug-panel"
-    :class="{ collapsed: isCollapsed, dragging: isDragging }"
-    :style="{ left: `${panelPosition.x}px`, top: `${panelPosition.y}px` }"
-  >
+  <div v-if="isDev" class="debug-panel" :class="{ collapsed: isCollapsed, dragging: isDragging }"
+    :style="{ left: `${panelPosition.x}px`, top: `${panelPosition.y}px` }">
     <div class="debug-header">
-      <span class="debug-title drag-handle" @mousedown="handleDragStart">
+      <span class="debug-title drag-handle" @mousedown="startDrag">
         调试面板 <span v-if="isDragging" class="drag-indicator">📌</span>
       </span>
       <div class="header-actions">
@@ -19,13 +15,8 @@
     <div v-if="!isCollapsed" class="debug-content" @mousedown.stop>
       <!-- 页面切换选项卡 -->
       <div class="debug-tabs">
-        <button
-          v-for="tab in tabs"
-          :key="tab.key"
-          class="tab-btn"
-          :class="{ active: activeTab === tab.key }"
-          @click="setActiveTab(tab.key)"
-        >
+        <button v-for="tab in tabs" :key="tab.key" class="tab-btn" :class="{ active: activeTab === tab.key }"
+          @click="setActiveTab(tab.key)">
           {{ tab.icon }} {{ tab.title }}
         </button>
       </div>
@@ -39,7 +30,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import { useEventListener, useDraggable, useWindowSize } from '@vueuse/core'
 import RouteInfoPage from './RouteInfoPage.vue'
 import EnvironmentPage from './EnvironmentPage.vue'
 import QuickNavPage from './QuickNavPage.vue'
@@ -58,8 +50,8 @@ const tabs = [
 // 开发环境检测
 const isDev = ref(
   process.env.NODE_ENV === 'development' ||
-    (import.meta as any).env?.DEV === true ||
-    window.location.hostname === 'localhost'
+  (import.meta as any).env?.DEV === true ||
+  window.location.hostname === 'localhost'
 )
 
 // 面板状态
@@ -92,6 +84,9 @@ const setActiveTab = (tabKey: string) => {
   activeTab.value = tabKey
 }
 
+// 使用 VueUse 的 useWindowSize 监听窗口大小
+const { width: windowWidth, height: windowHeight } = useWindowSize()
+
 // 拖拽开始
 const handleDragStart = (e: MouseEvent) => {
   isDragging.value = true
@@ -101,9 +96,6 @@ const handleDragStart = (e: MouseEvent) => {
     startPanelX: panelPosition.value.x,
     startPanelY: panelPosition.value.y,
   }
-
-  document.addEventListener('mousemove', handleDragMove)
-  document.addEventListener('mouseup', handleDragEnd)
 
   // 防止文本选择
   e.preventDefault()
@@ -123,8 +115,8 @@ const handleDragMove = (e: MouseEvent) => {
   const panelWidth = isCollapsed.value ? 120 : 350
   const panelHeight = 400 // 预估高度
 
-  newX = Math.max(0, Math.min(window.innerWidth - panelWidth, newX))
-  newY = Math.max(0, Math.min(window.innerHeight - panelHeight, newY))
+  newX = Math.max(0, Math.min(windowWidth.value - panelWidth, newX))
+  newY = Math.max(0, Math.min(windowHeight.value - panelHeight, newY))
 
   panelPosition.value.x = newX
   panelPosition.value.y = newY
@@ -133,51 +125,69 @@ const handleDragMove = (e: MouseEvent) => {
 // 拖拽结束
 const handleDragEnd = () => {
   isDragging.value = false
-  document.removeEventListener('mousemove', handleDragMove)
-  document.removeEventListener('mouseup', handleDragEnd)
+}
+
+// 使用 VueUse 的 useEventListener 管理拖拽事件
+let cleanupDrag: (() => void) | null = null
+
+const startDrag = (e: MouseEvent) => {
+  handleDragStart(e)
+
+  const cleanupMove = useEventListener(document, 'mousemove', handleDragMove)
+  const cleanupUp = useEventListener(document, 'mouseup', () => {
+    handleDragEnd()
+    if (cleanupDrag) {
+      cleanupDrag()
+      cleanupDrag = null
+    }
+  })
+
+  cleanupDrag = () => {
+    cleanupMove()
+    cleanupUp()
+  }
 }
 
 // 切换面板状态
 const toggleCollapse = () => {
   isCollapsed.value = !isCollapsed.value
+
+  // 当折叠状态改变时，调整位置以适应新尺寸
+  const panelWidth = isCollapsed.value ? 120 : 350
+  const panelHeight = 400
+
+  panelPosition.value.x = Math.max(
+    0,
+    Math.min(windowWidth.value - panelWidth, panelPosition.value.x)
+  )
+  panelPosition.value.y = Math.max(
+    0,
+    Math.min(windowHeight.value - panelHeight, panelPosition.value.y)
+  )
 }
 
+// 使用 VueUse 的 useEventListener 监听键盘快捷键
+useEventListener(document, 'keydown', (e: KeyboardEvent) => {
+  // Ctrl + Shift + D 切换调试面板
+  if (e.ctrlKey && e.shiftKey && e.key === 'D') {
+    e.preventDefault()
+    toggleCollapse()
+  }
+})
+
 onMounted(() => {
-  // 添加键盘快捷键
-  const handleKeyPress = (e: KeyboardEvent) => {
-    // Ctrl + Shift + D 切换调试面板
-    if (e.ctrlKey && e.shiftKey && e.key === 'D') {
-      e.preventDefault()
-      toggleCollapse()
-    }
-  }
+  // 初始化时确保面板在可见区域
+  const panelWidth = isCollapsed.value ? 120 : 350
+  const panelHeight = 400
 
-  document.addEventListener('keydown', handleKeyPress)
-
-  // 窗口大小改变时重新调整位置
-  const handleResize = () => {
-    const panelWidth = isCollapsed.value ? 120 : 350
-    const panelHeight = 400
-
-    panelPosition.value.x = Math.max(
-      0,
-      Math.min(window.innerWidth - panelWidth, panelPosition.value.x)
-    )
-    panelPosition.value.y = Math.max(
-      0,
-      Math.min(window.innerHeight - panelHeight, panelPosition.value.y)
-    )
-  }
-
-  window.addEventListener('resize', handleResize)
-
-  // 清理函数
-  onUnmounted(() => {
-    document.removeEventListener('keydown', handleKeyPress)
-    window.removeEventListener('resize', handleResize)
-    document.removeEventListener('mousemove', handleDragMove)
-    document.removeEventListener('mouseup', handleDragEnd)
-  })
+  panelPosition.value.x = Math.max(
+    0,
+    Math.min(windowWidth.value - panelWidth, panelPosition.value.x)
+  )
+  panelPosition.value.y = Math.max(
+    0,
+    Math.min(windowHeight.value - panelHeight, panelPosition.value.y)
+  )
 })
 </script>
 
@@ -302,6 +312,7 @@ onMounted(() => {
   0% {
     transform: translateY(0);
   }
+
   100% {
     transform: translateY(-2px);
   }
