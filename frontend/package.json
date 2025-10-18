@@ -78,6 +78,7 @@
     "@ant-design/icons-vue": "^7.0.1",
     "@types/adm-zip": "^0.5.7",
     "@types/markdown-it": "^14.1.2",
+    "@vueuse/core": "^13.9.0",
     "adm-zip": "^0.5.16",
     "ant-design-vue": "4.x",
     "axios": "^1.11.0",
@@ -85,6 +86,7 @@
     "electron-log": "^5.4.3",
     "form-data": "^4.0.4",
     "markdown-it": "^14.1.0",
+    "pinia": "^3.0.3",
     "vue": "^3.5.17",
     "vue-router": "4",
     "vuedraggable": "^4.1.0"

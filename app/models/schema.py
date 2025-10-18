@@ -76,7 +76,7 @@ class GetStageIn(BaseModel):
 
 class EmulatorConfigIndexItem(BaseModel):
     uid: str = Field(..., description="唯一标识符")
-    type: Literal["Emulator"] = Field(..., description="配置类型")
+    type: Literal["EmulatorConfig"] = Field(..., description="配置类型")
 
 
 class EmulatorConfig_Info(BaseModel):
@@ -664,6 +664,11 @@ class EmulatorUpdateIn(BaseModel):
     data: EmulatorConfig = Field(..., description="模拟器更新数据")
 
 
+class EmulatorUpdateOut(OutBase):
+    correctedPath: Optional[str] = Field(None, description="更正后的模拟器路径")
+    detectedType: Optional[str] = Field(None, description="检测到的模拟器类型")
+
+
 class EmulatorDeleteIn(BaseModel):
     emulatorId: str = Field(..., description="模拟器 ID")
 
@@ -680,6 +685,18 @@ class EmulatorOperateIn(BaseModel):
 
 class EmulatorStatusOut(OutBase):
     data: Dict[str, dict] = Field(..., description="模拟器状态信息")
+
+
+class EmulatorSearchResult(BaseModel):
+    type: str = Field(..., description="模拟器类型")
+    path: str = Field(..., description="模拟器路径")
+    name: str = Field(..., description="模拟器名称")
+
+
+class EmulatorSearchOut(OutBase):
+    emulators: List[EmulatorSearchResult] = Field(
+        default_factory=list, description="搜索到的模拟器列表"
+    )
 
 
 class WebhookInBase(BaseModel):

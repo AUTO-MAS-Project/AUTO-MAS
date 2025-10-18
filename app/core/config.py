@@ -1270,12 +1270,15 @@ class AppConfig(GlobalConfig):
 
     async def update_emulator(
         self, emulator_id: str, data: Dict[str, Dict[str, Any]]
-    ) -> None:
-        """更新 emulator 配置"""
+    ) -> tuple[Optional[str], Optional[str]]:
+        """更新 emulator 配置,返回 (更正后的路径, 检测到的类型)"""
 
         emulator_uid = uuid.UUID(emulator_id)
 
         logger.info(f"更新 emulator 全局配置: {emulator_id}")
+
+        corrected_path = None
+        detected_type = None
 
         # 如果路径被修改,尝试自动搜索模拟器根目录
         if "Info" in data and "Path" in data["Info"]:
@@ -1286,6 +1289,7 @@ class AppConfig(GlobalConfig):
             if "Data" in data and "Type" in data["Data"]:
                 # 如果本次更新中包含类型信息
                 emulator_type = data["Data"]["Type"]
+                detected_type = emulator_type
             else:
                 # 否则从现有配置中获取
                 emulator_type = await self.EmulatorData[emulator_uid].get(
@@ -1297,12 +1301,11 @@ class AppConfig(GlobalConfig):
                     f"检测到路径修改: {input_path}, 模拟器类型: {emulator_type}"
                 )
                 # 搜索并调整为正确的根目录
-                corrected_path = await find_emulator_root_path(
-                    input_path, emulator_type
-                )
-                if corrected_path != input_path:
-                    logger.info(f"路径已自动调整: {input_path} -> {corrected_path}")
-                    data["Info"]["Path"] = corrected_path
+                found_path = await find_emulator_root_path(input_path, emulator_type)
+                if found_path != input_path:
+                    logger.info(f"路径已自动调整: {input_path} -> {found_path}")
+                    data["Info"]["Path"] = found_path
+                    corrected_path = found_path
                 else:
                     logger.debug(f"路径未调整,保持原值: {input_path}")
 
@@ -1314,6 +1317,8 @@ class AppConfig(GlobalConfig):
                 await self.EmulatorData[emulator_uid].set(group, name, value)
 
         await self.save()
+
+        return (corrected_path, detected_type)
 
     async def del_emulator(self, emulator_id: str) -> None:
         """删除 emulator 配置"""

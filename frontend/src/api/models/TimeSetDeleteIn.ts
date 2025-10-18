@@ -3,12 +3,13 @@
 /* tslint:disable */
 /* eslint-disable */
 export type TimeSetDeleteIn = {
-  /**
-   * 所属队列ID
-   */
-  queueId: string
-  /**
-   * 时间设置ID
-   */
-  timeSetId: string
-}
+    /**
+     * 所属队列ID
+     */
+    queueId: string;
+    /**
+     * 时间设置ID
+     */
+    timeSetId: string;
+};
+
