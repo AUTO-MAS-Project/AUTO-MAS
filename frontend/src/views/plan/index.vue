@@ -8,12 +8,8 @@
     <!-- 主要内容 -->
     <div v-else class="plans-main">
       <!-- 页面头部 -->
-      <PlanHeader
-        :plan-list="planList"
-        :active-plan-id="activePlanId"
-        @add-plan="handleAddPlan"
-        @remove-plan="handleRemovePlan"
-      />
+      <PlanHeader :plan-list="planList" :active-plan-id="activePlanId" @add-plan="handleAddPlan"
+        @remove-plan="handleRemovePlan" />
 
       <!-- 空状态 -->
       <div v-if="!planList.length || !currentPlanData" class="empty-state">
@@ -31,35 +27,18 @@
       <!-- 计划内容 -->
       <div v-else class="plans-content">
         <!-- 计划选择器 -->
-        <PlanSelector
-          :plan-list="planList"
-          :active-plan-id="activePlanId"
-          @plan-change="onPlanChange"
-        />
+        <PlanSelector :plan-list="planList" :active-plan-id="activePlanId" @plan-change="onPlanChange" />
 
         <!-- 计划配置 -->
-        <PlanConfig
-          :current-plan-name="currentPlanName"
-          :current-mode="currentMode"
-          :view-mode="viewMode"
-          :is-editing-plan-name="isEditingPlanName"
-          @update:current-plan-name="currentPlanName = $event"
-          @update:current-mode="currentMode = $event"
-          @update:view-mode="viewMode = $event"
-          @start-edit-plan-name="startEditPlanName"
-          @finish-edit-plan-name="finishEditPlanName"
-          @mode-change="onModeChange"
-        >
+        <PlanConfig :current-plan-name="currentPlanName" :current-mode="currentMode" :view-mode="viewMode"
+          :is-editing-plan-name="isEditingPlanName" @update:current-plan-name="currentPlanName = $event"
+          @update:current-mode="currentMode = $event" @update:view-mode="viewMode = $event"
+          @start-edit-plan-name="startEditPlanName" @finish-edit-plan-name="finishEditPlanName"
+          @mode-change="onModeChange">
           <!-- 动态渲染不同类型的表格 -->
-          <component
-            :is="currentTableComponent"
-            :table-data="tableData"
-            :current-mode="currentMode"
-            :view-mode="viewMode"
-            :options-loaded="!loading"
-            :plan-id="activePlanId"
-            @update-table-data="handleTableDataUpdate"
-          />
+          <component :is="currentTableComponent" :table-data="tableData" :current-mode="currentMode"
+            :view-mode="viewMode" :options-loaded="!loading" :plan-id="activePlanId"
+            @update-table-data="handleTableDataUpdate" />
         </PlanConfig>
       </div>
     </div>
@@ -68,6 +47,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useDebounceFn, useEventListener } from '@vueuse/core'
 import { useRoute } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { usePlanApi } from '@/composables/usePlanApi'
@@ -118,15 +98,6 @@ const currentTableComponent = computed(() => {
       return MaaPlanTable
   }
 })
-
-// 添加防抖工具函数
-const debounce = <T extends (...args: any[]) => any>(func: T, wait: number): T => {
-  let timeout: NodeJS.Timeout | null = null
-  return ((...args: any[]) => {
-    if (timeout) clearTimeout(timeout)
-    timeout = setTimeout(() => func(...args), wait)
-  }) as T
-}
 
 const handleAddPlan = async (planType: string = 'MaaPlanConfig') => {
   try {
@@ -212,8 +183,8 @@ const saveInBackground = async (planId: string) => {
   return savePromise
 }
 
-// 防抖保存函数
-const debouncedSave = debounce(async () => {
+// 使用 VueUse 的 useDebounceFn 替换手写的 debounce
+const debouncedSave = useDebounceFn(async () => {
   if (!activePlanId.value) return
   await saveInBackground(activePlanId.value)
 }, 300)
@@ -536,6 +507,7 @@ onUnmounted(() => {
     opacity: 0;
     transform: translateY(30px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -543,11 +515,13 @@ onUnmounted(() => {
 }
 
 @keyframes pulse {
+
   0%,
   100% {
     opacity: 0.6;
     transform: scale(1);
   }
+
   50% {
     opacity: 0.8;
     transform: scale(1.05);
