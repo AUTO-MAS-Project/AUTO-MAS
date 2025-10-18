@@ -1,7 +1,8 @@
 <!-- eslint-disable vue/multi-word-component-names -->
 <script setup lang="ts">
 // 挂载和卸载键盘监听
-import { h, onMounted, onUnmounted, ref } from 'vue'
+import { h, onMounted, ref } from 'vue'
+import { useEventListener } from '@vueuse/core'
 import { message } from 'ant-design-vue'
 import {
   CloseOutlined,
@@ -493,15 +494,12 @@ const handleKeyUp = (event: KeyboardEvent) => {
   }
 }
 
+// 使用 VueUse 的 useEventListener 替代手动管理事件监听器
+useEventListener(document, 'keydown', handleKeyDown)
+useEventListener(document, 'keyup', handleKeyUp)
+
 onMounted(() => {
   loadEmulators()
-  document.addEventListener('keydown', handleKeyDown)
-  document.addEventListener('keyup', handleKeyUp)
-})
-
-onUnmounted(() => {
-  document.removeEventListener('keydown', handleKeyDown)
-  document.removeEventListener('keyup', handleKeyUp)
 })
 
 const handleSetBossKey = () => {

@@ -1,4 +1,5 @@
 import { computed, ref, watch } from 'vue'
+import { useLocalStorage } from '@vueuse/core'
 import { message, Modal, notification } from 'ant-design-vue'
 import { Service } from '@/api/services/Service'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
@@ -8,9 +9,6 @@ import schedulerHandlers from './schedulerHandlers'
 import type { ComboBoxItem } from '@/api/models/ComboBoxItem'
 import type { QueueItem, Script } from './schedulerConstants'
 import { type SchedulerTab, type TaskMessage, type SchedulerStatus } from './schedulerConstants'
-
-// 电源操作状态仍然保存到localStorage中，以便重启后保持用户设置
-const SCHEDULER_POWER_ACTION_KEY = 'scheduler-power-action'
 
 // 使用内存变量存储调度台状态，而不是localStorage
 let schedulerTabsMemory: SchedulerTab[] = []
@@ -39,32 +37,10 @@ const loadTabsFromStorage = (): SchedulerTab[] => {
   return schedulerTabsMemory
 }
 
-// 从本地存储加载电源操作状态
-const loadPowerActionFromStorage = (): PowerIn.signal => {
-  try {
-    const stored = localStorage.getItem(SCHEDULER_POWER_ACTION_KEY)
-    if (stored) {
-      return stored as PowerIn.signal
-    }
-  } catch (e) {
-    console.error('Failed to load power action from storage:', e)
-  }
-  return PowerIn.signal.NO_ACTION
-}
-
 // 保存调度台状态到内存
 const saveTabsToStorage = (tabs: SchedulerTab[]) => {
   // 保存到内存变量而不是localStorage
   schedulerTabsMemory = tabs
-}
-
-// 保存电源操作状态到本地存储
-const savePowerActionToStorage = (powerAction: PowerIn.signal) => {
-  try {
-    localStorage.setItem(SCHEDULER_POWER_ACTION_KEY, powerAction)
-  } catch (e) {
-    console.error('Failed to save power action to storage:', e)
-  }
 }
 
 export function useSchedulerLogic() {
@@ -77,18 +53,22 @@ export function useSchedulerLogic() {
   let tabCounter =
     schedulerTabs.value.length > 1
       ? Math.max(
-          ...schedulerTabs.value
-            .filter(tab => tab.key.startsWith('tab-'))
-            .map(tab => parseInt(tab.key.replace('tab-', '')) || 0)
-        ) + 1
+        ...schedulerTabs.value
+          .filter(tab => tab.key.startsWith('tab-'))
+          .map(tab => parseInt(tab.key.replace('tab-', '')) || 0)
+      ) + 1
       : 1
 
   // 任务选项
   const taskOptionsLoading = ref(false)
   const taskOptions = ref<ComboBoxItem[]>([])
 
-  // 电源操作 - 从本地存储加载或使用默认值
-  const powerAction = ref<PowerIn.signal>(loadPowerActionFromStorage())
+  // 使用 VueUse 的 useLocalStorage 替代手动的 localStorage 操作
+  // 电源操作状态持久化到 localStorage
+  const powerAction = useLocalStorage<PowerIn.signal>(
+    'scheduler-power-action',
+    PowerIn.signal.NO_ACTION
+  )
   // 注意：电源倒计时弹窗已移至全局组件 GlobalPowerCountdown.vue
   // 这里保留引用以避免破坏现有代码，但实际功能由全局组件处理
   const powerCountdownVisible = ref(false)
@@ -776,7 +756,7 @@ export function useSchedulerLogic() {
   // 电源操作
   const onPowerActionChange = async (value: PowerIn.signal) => {
     powerAction.value = value
-    savePowerActionToStorage(value)
+    // useLocalStorage 会自动同步到 localStorage，无需手动保存
 
     // 调用API设置电源操作
     try {
@@ -817,9 +797,8 @@ export function useSchedulerLogic() {
         return
     }
 
-    // 更新显示状态和本地存储，但不发送API请求
+    // 更新显示状态，useLocalStorage 会自动同步到 localStorage
     powerAction.value = newPowerAction
-    savePowerActionToStorage(newPowerAction)
     console.log('[Scheduler] 电源操作显示已更新为:', newPowerAction)
   }
 
@@ -1024,7 +1003,7 @@ export function useSchedulerLogic() {
       }
     })
     saveTabsToStorage(schedulerTabs.value)
-    savePowerActionToStorage(powerAction.value)
+    // useLocalStorage 会自动同步 powerAction，无需手动保存
   }
 
   return {

@@ -2,67 +2,39 @@
   <div>
     <!-- 配置视图 -->
     <div v-show="viewMode === 'config'" class="config-table-wrapper">
-      <a-table
-        :key="`config-table-${currentMode}`"
-        :columns="configColumns"
-        :data-source="coordinator.configViewData.value"
-        :pagination="false"
-        :class="['config-table', `mode-${currentMode}`]"
-        size="middle"
-        :bordered="true"
-        :scroll="{ x: 'max-content' }"
-      >
+      <a-table :key="`config-table-${currentMode}`" :columns="configColumns"
+        :data-source="coordinator.configViewData.value" :pagination="false"
+        :class="['config-table', `mode-${currentMode}`]" size="middle" :bordered="true" :scroll="{ x: 'max-content' }">
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'taskName'">
             {{ record.taskName }}
           </template>
 
           <template v-else-if="record.taskName === '吃理智药'">
-            <a-input-number
-              :value="(record as any)[column.key]"
-              size="small"
-              :min="0"
-              :max="999"
-              class="config-input-number"
-              :controls="false"
-              :bordered="false"
+            <a-input-number :value="(record as any)[column.key]" size="small" :min="0" :max="999"
+              class="config-input-number" :controls="false" :bordered="false"
               :disabled="isColumnDisabled(column.key as string)"
-              @update:value="updateConfigValue(record.key, column.key as TimeKey, $event)"
-            />
+              @update:value="updateConfigValue(record.key, column.key as TimeKey, $event)" />
           </template>
 
           <template v-else>
-            <a-select
-              :value="(record as any)[column.key]"
-              size="small"
-              :class="[
-                'config-select',
-                {
-                  'custom-stage-selected': isCustomStage((record as any)[column.key]),
-                },
-              ]"
-              allow-clear
-              :bordered="false"
-              :disabled="isColumnDisabled(column.key as string)"
-              @update:value="updateConfigValue(record.key, column.key as TimeKey, $event)"
-            >
-              <a-select-option
-                v-for="option in getSelectOptions(
-                  column.key as string,
-                  record.taskName,
-                  (record as any)[column.key] as string
-                )"
-                :key="option.value"
-                :value="option.value"
-                :disabled="option.disabled"
-                :class="{ 'custom-stage-option': isCustomStage(option.value) }"
-              >
-                <span
-                  :style="{
-                    color: isCustomStage(option.value) ? 'var(--ant-color-primary)' : undefined,
-                    fontWeight: isCustomStage(option.value) ? '500' : 'normal',
-                  }"
-                >
+            <a-select :value="(record as any)[column.key]" size="small" :class="[
+              'config-select',
+              {
+                'custom-stage-selected': isCustomStage((record as any)[column.key]),
+              },
+            ]" allow-clear :bordered="false" :disabled="isColumnDisabled(column.key as string)"
+              @update:value="updateConfigValue(record.key, column.key as TimeKey, $event)">
+              <a-select-option v-for="option in getSelectOptions(
+                column.key as string,
+                record.taskName,
+                (record as any)[column.key] as string
+              )" :key="option.value" :value="option.value" :disabled="option.disabled"
+                :class="{ 'custom-stage-option': isCustomStage(option.value) }">
+                <span :style="{
+                  color: isCustomStage(option.value) ? 'var(--ant-color-primary)' : undefined,
+                  fontWeight: isCustomStage(option.value) ? '500' : 'normal',
+                }">
                   {{ option.label }}
                 </span>
               </a-select-option>
@@ -74,43 +46,28 @@
 
     <!-- 简化视图 -->
     <div v-show="viewMode === 'simple'" class="simple-table-wrapper">
-      <a-table
-        :key="`simple-table-${currentMode}`"
-        :columns="simpleColumns"
-        :data-source="coordinator.simpleViewData.value"
-        :pagination="false"
-        class="simple-table"
-        size="small"
-        :bordered="true"
-        :scroll="{ x: 'max-content' }"
-      >
+      <a-table :key="`simple-table-${currentMode}`" :columns="simpleColumns"
+        :data-source="coordinator.simpleViewData.value" :pagination="false" class="simple-table" size="small"
+        :bordered="true" :scroll="{ x: 'max-content' }">
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'globalControl'">
             <a-space>
-              <a-button ghost size="small" type="primary" @click="enableAllStages(record.key)"
-                >开</a-button
-              >
+              <a-button ghost size="small" type="primary" @click="enableAllStages(record.key)">开</a-button>
               <a-button size="small" danger @click="disableAllStages(record.key)">关</a-button>
             </a-space>
           </template>
 
           <template v-else-if="column.key === 'taskName'">
-            <a-tag
-              :color="getStageTagColor(record.taskName, record.isCustom)"
-              class="task-tag"
-              :class="{ 'custom-stage-tag': record.isCustom }"
-            >
+            <a-tag :color="getStageTagColor(record.taskName, record.isCustom)" class="task-tag"
+              :class="{ 'custom-stage-tag': record.isCustom }">
               {{ record.taskName }}
             </a-tag>
           </template>
 
           <template v-else>
-            <a-switch
-              v-if="isStageAvailable(record.key, column.key as string)"
-              :checked="record[column.key]"
+            <a-switch v-if="isStageAvailable(record.key, column.key as string)" :checked="record[column.key]"
               :disabled="isSwitchDisabled(column.key as string, record)"
-              @change="handleStageToggle(record.key, column.key as TimeKey, $event)"
-            />
+              @change="handleStageToggle(record.key, column.key as TimeKey, $event)" />
           </template>
         </template>
       </a-table>
@@ -129,16 +86,9 @@
                 </span>
               </a-tooltip>
             </template>
-            <a-input
-              v-model:value="tempCustomStages[`custom_stage_${i}` as keyof typeof tempCustomStages]"
-              placeholder="输入关卡号"
-              :maxlength="50"
-              allow-clear
-              size="large"
-              class="modern-input"
-              @input="onCustomStageInput(i as 1 | 2 | 3 | 4)"
-              @press-enter="onCustomStageInput(i as 1 | 2 | 3 | 4)"
-            />
+            <a-input v-model:value="tempCustomStages[`custom_stage_${i}` as keyof typeof tempCustomStages]"
+              placeholder="输入关卡号" :maxlength="50" allow-clear size="large" class="modern-input"
+              @input="onCustomStageInput(i as 1 | 2 | 3 | 4)" @press-enter="onCustomStageInput(i as 1 | 2 | 3 | 4)" />
           </a-form-item>
         </a-col>
       </a-row>
@@ -148,6 +98,7 @@
 
 <script setup lang="ts">
 import { ref, watch } from 'vue'
+import { useDebounceFn } from '@vueuse/core'
 import { message } from 'ant-design-vue'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import {
@@ -222,21 +173,10 @@ const updateConfigValue = (rowKey: string, timeKey: TimeKey, value: any) => {
   emitUpdate()
 }
 
-// 防抖函数
-const debounceTimers = ref<Record<string, NodeJS.Timeout>>({})
-
-// 自定义关卡管理 - 实时保存（防抖）
-const onCustomStageInput = (index: 1 | 2 | 3 | 4) => {
-  const key = `custom_stage_${index}` as keyof typeof tempCustomStages.value
-  const timerKey = `custom_stage_${index}`
-
-  // 清除之前的定时器
-  if (debounceTimers.value[timerKey]) {
-    clearTimeout(debounceTimers.value[timerKey])
-  }
-
-  // 设置新的防抖定时器
-  debounceTimers.value[timerKey] = setTimeout(() => {
+// 为每个自定义关卡创建独立的防抖函数
+const createDebouncedCustomStageUpdate = (index: 1 | 2 | 3 | 4) => {
+  return useDebounceFn(() => {
+    const key = `custom_stage_${index}` as keyof typeof tempCustomStages.value
     const newValue = tempCustomStages.value[key].trim()
 
     // 实时更新自定义关卡定义
@@ -244,7 +184,19 @@ const onCustomStageInput = (index: 1 | 2 | 3 | 4) => {
 
     // 实时保存到后端
     emitUpdate()
-  }, 500) // 500ms 防抖延迟
+  }, 500)
+}
+
+const debouncedCustomStageUpdates = {
+  1: createDebouncedCustomStageUpdate(1),
+  2: createDebouncedCustomStageUpdate(2),
+  3: createDebouncedCustomStageUpdate(3),
+  4: createDebouncedCustomStageUpdate(4),
+}
+
+// 自定义关卡管理 - 实时保存（防抖）
+const onCustomStageInput = (index: 1 | 2 | 3 | 4) => {
+  debouncedCustomStageUpdates[index]()
 }
 
 // 连战次数选项
