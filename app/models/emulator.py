@@ -105,7 +105,7 @@ class DeviceBase(ABC):
         ...
 
     @abstractmethod
-    async def getInfo(self, idx: str) -> dict[str, DeviceInfo]:
+    async def getInfo(self, idx: str | None) -> dict[str, DeviceInfo]:
         """
         获取设备信息
 
