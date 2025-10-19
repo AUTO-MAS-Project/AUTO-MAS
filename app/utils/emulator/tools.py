@@ -115,14 +115,18 @@ async def search_all_emulators() -> List[Dict[str, str]]:
         try:
             emulator_path = await _search_emulator(emulator_type, config)
             if emulator_path:
+                # 自动修正路径到根目录
+                corrected_path = await find_emulator_root_path(
+                    emulator_path, emulator_type
+                )
                 found_emulators.append(
                     {
                         "type": emulator_type,
-                        "path": emulator_path,
-                        "name": f"{config['name']} ({emulator_path})",
+                        "path": corrected_path,
+                        "name": f"{config['name']} ({corrected_path})",
                     }
                 )
-                logger.info(f"找到{config['name']}: {emulator_path}")
+                logger.info(f"找到{config['name']}: {corrected_path}")
         except Exception as e:
             logger.warning(f"搜索{config['name']}时出错: {e}")
 
