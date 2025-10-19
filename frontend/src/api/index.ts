@@ -24,7 +24,6 @@ export type { EmulatorSearchOut } from './models/EmulatorSearchOut';
 export type { EmulatorSearchResult } from './models/EmulatorSearchResult';
 export type { EmulatorStatusOut } from './models/EmulatorStatusOut';
 export type { EmulatorUpdateIn } from './models/EmulatorUpdateIn';
-export type { EmulatorUpdateOut } from './models/EmulatorUpdateOut';
 export type { GeneralConfig } from './models/GeneralConfig';
 export type { GeneralConfig_Game } from './models/GeneralConfig_Game';
 export type { GeneralConfig_Info } from './models/GeneralConfig_Info';
