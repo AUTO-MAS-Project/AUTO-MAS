@@ -5,6 +5,9 @@
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "concurrently \"vite\" \"yarn watch:main\" \"yarn electron-dev\"",
+    "dev:fullstack": "concurrently \"yarn backend\" \"vite\" \"yarn watch:main\" \"yarn electron-dev:wait\"",
+    "backend": "python ../main.py",
+    "electron-dev:wait": "wait-on http://localhost:5173 http://localhost:36163 && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron .",
     "watch:main": "tsc -p tsconfig.electron.json --watch",
     "electron-dev": "wait-on http://localhost:5173 && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron .",
     "build:main": "tsc -p tsconfig.electron.json",
