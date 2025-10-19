@@ -126,9 +126,37 @@ class ManualInspectTask(TaskExecuteBase):
 
         while True:
 
-            emulator_info = await self.emulator_manager.open(
-                self.script_config.get("Emulator", "Index")
-            )
+            try:
+                emulator_info = await self.emulator_manager.open(
+                    self.script_config.get("Emulator", "Index")
+                )
+            except Exception as e:
+
+                logger.exception(
+                    f"用户: {self.cur_user_item.user_id} - 模拟器启动失败: {e}"
+                )
+                self.script_info.log = f"模拟器启动失败: {e}\n正在中止相关程序\n请等待"
+                await self.emulator_manager.close(
+                    self.script_config.get("Emulator", "Index")
+                )
+
+                uid = str(uuid.uuid4())
+                await Config.send_websocket_message(
+                    id=self.task_info.task_id,
+                    type="Message",
+                    data={
+                        "message_id": uid,
+                        "type": "Question",
+                        "title": "操作提示",
+                        "message": "模拟器启动失败, 是否重试？",
+                        "options": ["是", "否"],
+                    },
+                )
+                result = await self._wait_for_user_response(uid)
+                if not result.get("data", {}).get("choice", False):
+                    break
+                continue
+
             await self.set_maa(emulator_info)
 
             logger.info(f"启动MAA进程: {self.maa_exe_path}")
