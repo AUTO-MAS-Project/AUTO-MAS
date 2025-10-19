@@ -25,7 +25,7 @@
       </div>
       <div class="info-item">
         <span class="label">窗口尺寸:</span>
-        <span class="value">{{ windowSize }}</span>
+        <span class="value">{{ windowWidth }}x{{ windowHeight }}</span>
       </div>
     </div>
 
@@ -45,7 +45,8 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, version } from 'vue'
+import { onMounted, ref, version } from 'vue'
+import { useIntervalFn, useWindowSize } from '@vueuse/core'
 
 // Vue版本
 const vueVersion = ref(version)
@@ -59,18 +60,15 @@ const currentTime = ref('')
 // 环境信息
 const userAgent = ref('')
 const screenResolution = ref('')
-const windowSize = ref('')
 const memoryInfo = ref('')
 const loadTime = ref('')
+
+// 使用 VueUse 的 useWindowSize 监听窗口大小
+const { width: windowWidth, height: windowHeight } = useWindowSize()
 
 // 更新时间
 const updateTime = () => {
   currentTime.value = new Date().toLocaleString()
-}
-
-// 更新窗口尺寸
-const updateWindowSize = () => {
-  windowSize.value = `${window.innerWidth}x${window.innerHeight}`
 }
 
 // 获取内存信息
@@ -98,8 +96,15 @@ const getLoadTime = () => {
   return '未知'
 }
 
-// 定时器
-let timeInterval: NodeJS.Timeout
+// 使用 VueUse 的 useIntervalFn 替代 setInterval
+const { pause: pauseInterval, resume: resumeInterval } = useIntervalFn(
+  () => {
+    updateTime()
+    updateMemoryInfo()
+  },
+  1000,
+  { immediate: false }
+)
 
 onMounted(() => {
   // 初始化环境信息
@@ -107,26 +112,12 @@ onMounted(() => {
   screenResolution.value = `${screen.width}x${screen.height}`
   loadTime.value = getLoadTime()
 
-  // 更新时间和窗口尺寸
+  // 更新时间和内存信息
   updateTime()
-  updateWindowSize()
   updateMemoryInfo()
 
-  // 设置定时器
-  timeInterval = setInterval(() => {
-    updateTime()
-    updateMemoryInfo()
-  }, 1000)
-
-  // 监听窗口大小变化
-  window.addEventListener('resize', updateWindowSize)
-})
-
-onUnmounted(() => {
-  if (timeInterval) {
-    clearInterval(timeInterval)
-  }
-  window.removeEventListener('resize', updateWindowSize)
+  // 启动定时器
+  resumeInterval()
 })
 </script>
 
