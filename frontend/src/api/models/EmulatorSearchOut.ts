@@ -2,7 +2,8 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-export type EmulatorUpdateOut = {
+import type { EmulatorSearchResult } from './EmulatorSearchResult';
+export type EmulatorSearchOut = {
     /**
      * 状态码
      */
@@ -16,12 +17,8 @@ export type EmulatorUpdateOut = {
      */
     message?: string;
     /**
-     * 更正后的模拟器路径
+     * 搜索到的模拟器列表
      */
-    correctedPath?: (string | null);
-    /**
-     * 检测到的模拟器类型
-     */
-    detectedType?: (string | null);
+    emulators?: Array<EmulatorSearchResult>;
 };
 
