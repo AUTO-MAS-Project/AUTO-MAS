@@ -27,10 +27,11 @@ import shutil
 from pathlib import Path
 from datetime import datetime
 
-from app.core import Config, Broadcast, EmulatorManager
+from app.core import Config, Broadcast
 from app.models.task import TaskExecuteBase, ScriptItem, LogRecord
 from app.models.ConfigBase import MultipleConfig
 from app.models.config import MaaConfig, MaaUserConfig
+from app.models.emulator import DeviceInfo, DeviceBase
 from app.services import Notify, System
 from app.utils import get_logger, LogMonitor, ProcessManager
 from .tools import agree_bilibili
@@ -46,6 +47,7 @@ class ManualInspectTask(TaskExecuteBase):
         script_info: ScriptItem,
         script_config: MaaConfig,
         user_config: MultipleConfig[MaaUserConfig],
+        emulator_manager: DeviceBase,
     ):
         super().__init__()
 
@@ -56,16 +58,13 @@ class ManualInspectTask(TaskExecuteBase):
         self.script_info = script_info
         self.script_config = script_config
         self.user_config = user_config
+        self.emulator_manager = emulator_manager
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
         self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
         self.cur_user_config = self.user_config[self.cur_user_uid]
         self.check_result = "-"
 
     async def check(self) -> str:
-
-        if self.cur_user_config.get("Emulator", "Id") == "-":
-            self.cur_user_item.status = "异常"
-            return "用户未绑定模拟器"
 
         if (
             self.cur_user_config.get("Info", "Mode") == "详细"
@@ -94,8 +93,6 @@ class ManualInspectTask(TaskExecuteBase):
         self.maa_log_path = self.maa_root_path / "debug/gui.log"
         self.maa_exe_path = self.maa_root_path / "MAA.exe"
         self.maa_tasks_path = self.maa_root_path / "resource/tasks/tasks.json"
-
-        self.emulator_id = self.cur_user_config.get("Emulator", "Id")
 
         self.run_book = {"SignIn": False, "PassCheck": False}
 
@@ -129,9 +126,10 @@ class ManualInspectTask(TaskExecuteBase):
 
         while True:
 
-            await EmulatorManager.open_emulator(self.emulator_id, "1")
-
-            await self.set_maa()
+            emulator_info = await self.emulator_manager.open(
+                self.script_config.get("Emulator", "Index")
+            )
+            await self.set_maa(emulator_info)
 
             logger.info(f"启动MAA进程: {self.maa_exe_path}")
             self.log_start_time = datetime.now()
@@ -158,7 +156,9 @@ class ManualInspectTask(TaskExecuteBase):
                 )
 
                 await self.maa_process_manager.kill(if_force=True)
-                await EmulatorManager.close_emulator(self.emulator_id, "1")
+                await self.emulator_manager.close(
+                    self.script_config.get("Emulator", "Index")
+                )
                 await System.kill_process(self.maa_exe_path)
 
                 uid = str(uuid.uuid4())
@@ -178,6 +178,10 @@ class ManualInspectTask(TaskExecuteBase):
                     break
 
         if self.run_book["SignIn"]:
+
+            await self.emulator_manager.setVisible(
+                self.script_config.get("Emulator", "Index"), True
+            )
             uid = str(uuid.uuid4())
             await Config.send_websocket_message(
                 id=self.task_info.task_id,
@@ -206,7 +210,7 @@ class ManualInspectTask(TaskExecuteBase):
             else:
                 self.message_queue.task_done()
 
-    async def set_maa(self):
+    async def set_maa(self, emulator_info: DeviceInfo):
         """配置MAA运行参数"""
         logger.info(f"开始配置MAA运行参数: 人工排查")
 
@@ -245,6 +249,10 @@ class ManualInspectTask(TaskExecuteBase):
         for i in range(1, 9):
             maa_set["Global"][f"Timer.Timer{i}"] = "False"
 
+        if emulator_info.adb_address != "Unknown":
+            maa_set["Configurations"]["Default"][
+                "Connect.Address"
+            ] = emulator_info.adb_address
         maa_set["Configurations"]["Default"]["MainFunction.PostActions"] = "8"
         maa_set["Configurations"]["Default"]["Start.RunDirectly"] = "True"
         maa_set["Global"]["Start.MinimizeDirectly"] = "True"
@@ -322,17 +330,6 @@ class ManualInspectTask(TaskExecuteBase):
         await System.kill_process(self.maa_exe_path)
         await self.maa_log_monitor.stop()
         await agree_bilibili(self.maa_tasks_path, False)
-        if self.script_info.current_index == len(
-            self.script_info.user_list
-        ) - 1 or self.cur_user_config.get("Emulator", "Id") != self.user_config[
-            uuid.UUID(
-                self.script_info.user_list[self.script_info.current_index + 1].user_id
-            )
-        ].get(
-            "Emulator", "Id"
-        ):
-            logger.info("任务结束退出模拟器")
-            await EmulatorManager.close_emulator(self.emulator_id, "1")
 
         if self.run_book["SignIn"] and self.run_book["PassCheck"]:
             logger.info(f"用户 {self.cur_user_uid} 通过人工排查")

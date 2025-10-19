@@ -26,7 +26,7 @@ import subprocess
 from pathlib import Path
 
 
-from app.models.emulator import DeviceStatus, DeviceBase
+from app.models.emulator import DeviceStatus, DeviceInfo, DeviceBase
 from app.models.config import EmulatorConfig
 from app.utils.logger import get_logger
 
@@ -40,7 +40,7 @@ class MumuManager(DeviceBase):
     """
 
     def __init__(self, config: EmulatorConfig) -> None:
-        self.exe_path = Path(config.get("Info", "Path")) / "shell/MuMuManager.exe"
+        self.exe_path = Path(config.get("Info", "Path"))
 
         if not self.exe_path.exists():
             raise FileNotFoundError(
@@ -54,29 +54,19 @@ class MumuManager(DeviceBase):
 
         self.emulator_path = Path(config.get("Info", "Path"))
 
-    async def open(self, idx: str, package_name: str = "") -> tuple[bool, int, dict]:
-        """
-        启动指定模拟器
+    async def open(self, idx: str, package_name: str = "") -> DeviceInfo:
 
-        Parameters
-        ----------
-        idx : str
-            模拟器序号
-        package_name : str, optional
-            启动指定包名, by default ""
+        for _ in range(self.config.get("Data", "MaxWaitTime") * 10):
 
-        Returns
-        -------
-        tuple[bool, int, dict]
-            是否成功, 当前状态码, 设备信息
-        """
+            status = await self.getStatus(idx)
+            if status == DeviceStatus.ONLINE:
+                return (await self.getInfo(idx))[idx]
+            elif status == DeviceStatus.OFFLINE:
+                break
+            await asyncio.sleep(0.1)
 
-        status = await self.get_status(idx)
-        if status != DeviceStatus.OFFLINE:
-            logger.error(
-                f"模拟器{idx}未处于关闭状态，当前状态码: {status}, 需求状态码: {DeviceStatus.OFFLINE}"
-            )
-            return False, status, {}
+        else:
+            raise RuntimeError(f"模拟器{idx}无法启动, 当前状态码: {status}")
 
         result = subprocess.run(
             (
@@ -97,45 +87,28 @@ class MumuManager(DeviceBase):
             encoding="utf-8",
             errors="replace",
         )
-
         # 参考命令 MuMuManager.exe control -v 2 launch
-        logger.debug(f"启动结果:{result}")
+
         if result.returncode != 0:
             raise RuntimeError(f"命令执行失败: {result}")
 
         for _ in range(self.config.get("Data", "MaxWaitTime") * 10):
-            status = await self.get_status(idx)
-            if status == DeviceStatus.ERROR or status == DeviceStatus.UNKNOWN:
-                logger.error(f"模拟器{idx}启动失败，状态码: {status}")
-                return False, status, {}
+
+            status = await self.getStatus(idx)
+            if status in [DeviceStatus.ERROR, DeviceStatus.UNKNOWN]:
+                raise RuntimeError(f"模拟器{idx}启动失败, 状态码: {status}")
             if status == DeviceStatus.ONLINE:
-                Ok, info = await self.get_device_info(idx)
-                logger.debug(info)
-                if Ok:
-                    data = json.loads(info)
-                    adb_port = data.get("adb_port")
-                    adb_host_ip = data.get("adb_host_ip")
-                    if adb_port and adb_host_ip:
-                        return (
-                            True,
-                            status,
-                            {"adb_port": adb_port, "adb_host_ip": adb_host_ip},
-                        )
-
-                return True, status, {}
+                return (await self.getInfo(idx))[idx]
             await asyncio.sleep(0.1)
+        else:
+            raise RuntimeError(f"模拟器{idx}启动超时, 当前状态码: {status}")
 
-        return False, DeviceStatus.UNKNOWN, {}
+    async def close(self, idx: str) -> DeviceStatus:
 
-    async def close(self, idx: str) -> tuple[bool, int]:
-        """
-        关闭指定模拟器
-        Returns:
-            tuple[bool, int]: 是否成功, 当前状态码
-        """
-        status = await self.get_status(idx)
-        if status != DeviceStatus.ONLINE and status != DeviceStatus.STARTING:
-            return False, DeviceStatus.NOT_FOUND
+        status = await self.getStatus(idx)
+        if status not in [DeviceStatus.ONLINE, DeviceStatus.STARTING]:
+            logger.warning(f"设备{idx}未在线，当前状态: {status}")
+            return status
 
         result = subprocess.run(
             [self.emulator_path, "control", "-v", idx, "shutdown"],
@@ -144,49 +117,115 @@ class MumuManager(DeviceBase):
             encoding="utf-8",
             errors="replace",
         )
-
         # 参考命令 MuMuManager.exe control -v 2 shutdown
+
         if result.returncode != 0:
-            return True, DeviceStatus.OFFLINE
+            raise RuntimeError(f"命令执行失败: {result}")
+
         for _ in range(self.config.get("Data", "MaxWaitTime") * 10):
-            status = await self.get_status(idx)
-            if status == DeviceStatus.ERROR or status == DeviceStatus.UNKNOWN:
-                return False, status
+
+            status = await self.getStatus(idx)
+            if status in [DeviceStatus.ERROR, DeviceStatus.UNKNOWN]:
+                raise RuntimeError(f"模拟器{idx}关闭失败, 状态码: {status}")
             if status == DeviceStatus.OFFLINE:
-                return True, DeviceStatus.OFFLINE
+                return DeviceStatus.OFFLINE
             await asyncio.sleep(0.1)
 
-        return False, DeviceStatus.UNKNOWN
-
-    async def get_status(self, idx: str, data: str | None = None) -> int:
-        if not data:
-            Ok, result_str = await self.get_device_info(idx)
-            logger.debug(f"获取状态结果{result_str}")
         else:
-            Ok, result_str = True, data
+            raise RuntimeError(f"模拟器{idx}关闭超时, 当前状态码: {status}")
 
+    async def getStatus(self, idx: str, data: str | None = None) -> DeviceStatus:
+
+        if data is None:
+            try:
+                data = await self.get_device_info(idx)
+            except Exception as e:
+                logger.error(f"获取模拟器{idx}信息失败: {e}")
+                return DeviceStatus.ERROR
         try:
-            result_json = json.loads(result_str)
-
-            if Ok:
-                if result_json["is_android_started"]:
-                    return DeviceStatus.STARTING
-                elif result_json["is_process_started"]:
-                    return DeviceStatus.ONLINE
-                else:
-                    return DeviceStatus.OFFLINE
-
-            else:
-                if result_json["errmsg"] == "unknown error":
-                    return DeviceStatus.UNKNOWN
-                else:
-                    return DeviceStatus.ERROR
-
+            data_json = json.loads(data)
         except json.JSONDecodeError as e:
             logger.error(f"JSON解析错误: {e}")
             return DeviceStatus.UNKNOWN
 
-    async def get_device_info(self, idx: str) -> tuple[bool, str]:
+        if data_json["is_android_started"]:
+            return DeviceStatus.STARTING
+        elif data_json["is_process_started"]:
+            return DeviceStatus.ONLINE
+        else:
+            return DeviceStatus.OFFLINE
+
+    async def getInfo(self, idx: str | None) -> dict[str, DeviceInfo]:
+
+        data = await self.get_device_info(idx or "all")
+
+        data_json = json.loads(data)
+
+        result: dict[str, DeviceInfo] = {}
+
+        if not data_json:
+            return result
+
+        if isinstance(data_json, dict) and "index" in data_json and "name" in data_json:
+            index = data_json["index"]
+            name = data_json["name"]
+            status = await self.getStatus(index, data)
+            adb_address = (
+                f"{data_json.get('adb_host_ip')}:{data_json.get('adb_port')}"
+                if data_json.get("adb_host_ip", None)
+                and data_json.get("adb_port", None)
+                else "Unknown"
+            )
+            result[index] = DeviceInfo(
+                title=name, status=status, adb_address=adb_address
+            )
+
+        elif isinstance(data_json, dict):
+            for value in data_json.values():
+                if isinstance(value, dict) and "index" in value and "name" in value:
+                    index = value["index"]
+                    name = value["name"]
+                    status = await self.getStatus(index)
+                    adb_address = (
+                        f"{value.get('adb_host_ip')}:{value.get('adb_port')}"
+                        if value.get("adb_host_ip", None)
+                        and value.get("adb_port", None)
+                        else "Unknown"
+                    )
+                    result[index] = DeviceInfo(
+                        title=name, status=status, adb_address=adb_address
+                    )
+
+        return result
+
+    async def setVisible(self, idx: str, is_visible: bool) -> DeviceStatus:
+
+        status = await self.getStatus(idx)
+        if status != DeviceStatus.ONLINE:
+            logger.warning(f"设备{idx}未在线，当前状态码: {status}")
+            return status
+
+        result = subprocess.run(
+            [
+                self.emulator_path,
+                "control",
+                "-v",
+                idx,
+                "show_window" if is_visible else "hide_window",
+            ],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        if result.returncode != 0:
+            raise RuntimeError(f"命令执行失败: {result}")
+
+        return await self.getStatus(idx)
+
+    async def get_device_info(self, idx: str) -> str:
+
+        logger.info(f"开始获取模拟器{idx}信息")
         result = subprocess.run(
             [self.emulator_path, "info", "-v", idx],
             capture_output=True,
@@ -194,86 +233,8 @@ class MumuManager(DeviceBase):
             encoding="utf-8",
             errors="replace",
         )
-        logger.debug(f"获取模拟器{idx}信息: {result}")
         if result.returncode != 0:
-            return False, result.stdout.strip()
-        else:
-            return True, result.stdout.strip()
-
-    async def _get_all_info(self) -> str:
-        result = subprocess.run(
-            [self.emulator_path, "info", "-v", "all"],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-        )
-        # self.logger.debug(f"result{result.stdout.strip()}")
-        if result.returncode != 0:
+            logger.error(f"获取模拟器{idx}信息失败: {result.stdout.strip()}")
             raise RuntimeError(f"命令执行失败: {result}")
+
         return result.stdout.strip()
-
-    async def get_all_info(self) -> dict[str, dict[str, str]]:
-        json_data = await self._get_all_info()
-        data = json.loads(json_data)
-
-        result: dict[str, dict[str, str]] = {}
-
-        if not data:
-            return result
-
-        if isinstance(data, dict) and "index" in data and "name" in data:
-            index = data["index"]
-            name = data["name"]
-            status = self.get_status(index, json_data)
-            result[index] = {
-                "title": name,
-                "status": str(status),
-            }
-
-        elif isinstance(data, dict):
-            for key, value in data.items():
-                if isinstance(value, dict) and "index" in value and "name" in value:
-                    index = value["index"]
-                    name = value["name"]
-                    status = await self.get_status(index)
-                    result[index] = {
-                        "title": name,
-                        "status": str(status),
-                    }
-
-        return result
-
-    async def hide_device(self, idx: str) -> tuple[bool, int]:
-        """隐藏设备窗口"""
-        status = await self.get_status(idx)
-        if status != DeviceStatus.ONLINE:
-            return False, status
-        result = subprocess.run(
-            [self.emulator_path, "control", "-v", idx, "hide_window"],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-        )
-        if result.returncode != 0:
-            return False, status
-        return True, DeviceStatus.ONLINE
-
-    async def show_device(self, idx: str) -> tuple[bool, int]:
-        """显示设备窗口"""
-        status = await self.get_status(idx)
-        if status != DeviceStatus.ONLINE:
-            return False, status
-
-        result = subprocess.run(
-            [self.emulator_path, "control", "-v", idx, "show_window"],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-        )
-
-        if result.returncode != 0:
-            return False, status
-        return True, DeviceStatus.ONLINE

@@ -114,12 +114,14 @@ class GeneralManager(TaskExecuteBase):
 
     async def main_task(self):
 
-        check_result = await self.check()
-        if check_result != "Pass":
-            logger.error(f"未通过配置检查: {check_result}")
+        self.check_result = await self.check()
+        if self.check_result != "Pass":
+            logger.error(f"未通过配置检查: {self.check_result}")
             await Config.send_json(
                 WebSocketMessage(
-                    id=self.task_info.task_id, type="Info", data={"Error": check_result}
+                    id=self.task_info.task_id,
+                    type="Info",
+                    data={"Error": self.check_result},
                 ).model_dump()
             )
             return
@@ -140,12 +142,13 @@ class GeneralManager(TaskExecuteBase):
     async def final_task(self):
         """运行结束后的收尾工作"""
 
+        if self.check_result != "Pass":
+            self.script_info.status = "异常"
+            return self.check_result
+
         logger.info("通用脚本任务已结束, 开始执行后续操作")
         await Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].unlock()
         logger.success(f"已解锁脚本配置 {self.script_info.script_id}")
-
-        if self.check_result != "Success!":
-            return self.check_result
 
         if self.task_info.mode == "自动代理":
 
@@ -218,6 +221,8 @@ class GeneralManager(TaskExecuteBase):
             logger.info(f"复原通用脚本配置文件: {self.temp_path / 'config.temp'}")
             shutil.copy(self.temp_path / "config.temp", self.script_config_path)
             shutil.rmtree(self.temp_path)
+
+        self.script_info.status = "完成"
 
     async def on_crash(self, e: Exception):
 

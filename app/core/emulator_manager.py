@@ -24,7 +24,7 @@ import uuid
 
 
 from .config import Config
-from app.models.emulator import DeviceBase, DeviceStatus
+from app.models.emulator import DeviceBase
 from app.utils import EMULATOR_TYPE_BOOK
 
 from app.utils import get_logger
@@ -37,14 +37,6 @@ class _EmulatorManager:
     """模拟器实例管理器"""
 
     async def get_emulator_instance(self, emulator_id: str) -> DeviceBase:
-        """
-        创建模拟器管理器实例
-
-        Parameters
-        ----------
-        emulator_id : str
-            配置项的UUID
-        """
 
         emulator_uid = uuid.UUID(emulator_id)
 
@@ -55,86 +47,36 @@ class _EmulatorManager:
             raise ValueError(f"不支持的模拟器类型: {config.get('Data', 'Type')}")
 
     async def open_emulator(self, emulator_id: str, index: str, package_name: str = ""):
-        """
-        根据UUID和模拟器索引打开指定模拟器
-
-        Parameters
-        ----------
-        emulator_id : str
-            配置项的UUID
-        index : str
-            模拟器索引
-        package_name : str, optional
-            启动指定包名, by default ""
-        """
 
         temp_emulator = await self.get_emulator_instance(emulator_id)
         if temp_emulator is None:
             raise KeyError(f"未找到UUID为 {emulator_id} 的模拟器配置")
 
-        # 调用模拟器实例的start方法启动指定索引的模拟器
-        success, status, info = await temp_emulator.open(index, package_name)
-
-        if success:
-            logger.success(
-                f"成功启动模拟器，索引: {index}，状态: {DeviceStatus(status).name}"
-            )
-        else:
-            logger.error(
-                f"启动模拟器失败，索引: {index}，状态: {DeviceStatus(status).name}"
-            )
-
-        return success, info
+        # 调用模拟器实例的open方法启动指定索引的模拟器
+        return await temp_emulator.open(index, package_name)
 
     async def close_emulator(self, emulator_id: str, index: str):
-        """
-        根据UUID和模拟器索引关闭指定模拟器
-
-        Parameters
-        ----------
-        emulator_id : str
-            配置项的UUID
-        index : str
-            模拟器索引
-        """
 
         temp_emulator = await self.get_emulator_instance(emulator_id)
         if temp_emulator is None:
             raise KeyError(f"未找到UUID为 {emulator_id} 的模拟器配置")
 
         # 调用模拟器实例的close方法关闭指定索引的模拟器
-        success, status = await temp_emulator.close(index)
+        return await temp_emulator.close(index)
 
-        if success:
-            logger.success(
-                f"成功关闭模拟器，索引: {index}，状态: {DeviceStatus(status).name}"
-            )
-        else:
-            logger.error(
-                f"关闭模拟器失败，索引: {index}，状态: {DeviceStatus(status).name}"
-            )
+    # async def get_status(self, emulator_id: str | None = None):
 
-        return success, status
+    #     if emulator_id is None:
+    #         emulator_range = list(map(str, Config.EmulatorData.keys()))
+    #     else:
+    #         emulator_range = [emulator_id]
 
-    async def get_emulator_status(self, emulator_id: str | None = None):
-        """
-        获取模拟器的状态
+    #     data = {}
+    #     for emulator_id in emulator_range:
+    #         temp_emulator = await self.get_emulator_instance(emulator_id)
+    #         data[emulator_id] = await temp_emulator.get_all_info()
 
-        Returns:
-            tuple[bool, str]: (是否成功, 状态信息)
-        """
-
-        if emulator_id is None:
-            emulator_range = list(map(str, Config.EmulatorData.keys()))
-        else:
-            emulator_range = [emulator_id]
-
-        data = {}
-        for emulator_id in emulator_range:
-            temp_emulator = await self.get_emulator_instance(emulator_id)
-            data[emulator_id] = await temp_emulator.get_all_info()
-
-        return data
+    #     return data
 
 
 EmulatorManager = _EmulatorManager()
