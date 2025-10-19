@@ -28,6 +28,7 @@ from .core import router as core_router
 from .info import router as info_router
 from .scripts import router as scripts_router
 from .plan import router as plan_router
+from .emulator import router as emulator_router
 from .queue import router as queue_router
 from .dispatch import router as dispatch_router
 from .history import router as history_router
@@ -39,6 +40,7 @@ __all__ = [
     "info_router",
     "scripts_router",
     "plan_router",
+    "emulator_router",
     "queue_router",
     "dispatch_router",
     "history_router",

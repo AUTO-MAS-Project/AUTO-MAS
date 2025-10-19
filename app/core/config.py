@@ -140,6 +140,7 @@ class AppConfig(GlobalConfig):
         await self.check_data()
 
         await self.connect(self.config_path / "Config.json")
+        await self.EmulatorConfig.connect(self.config_path / "EmulatorConfig.json")
         await self.PlanConfig.connect(self.config_path / "PlanConfig.json")
         await self.ScriptConfig.connect(self.config_path / "ScriptConfig.json")
         await self.QueueConfig.connect(self.config_path / "QueueConfig.json")
@@ -874,6 +875,115 @@ class AppConfig(GlobalConfig):
 
         await self.PlanConfig.setOrder(list(map(uuid.UUID, index_list)))
 
+    async def get_emulator(self, emulator_id: Optional[str]) -> tuple[list, dict]:
+        """获取emulator配置"""
+        logger.info(f"获取全局emulator设置: {emulator_id}")
+
+        if emulator_id is None:
+            data = await self.EmulatorConfig.toDict()
+        else:
+            data = await self.EmulatorConfig.get(uuid.UUID(emulator_id))
+
+        index = data.pop("instances", [])
+        return list(index), data
+
+    async def add_emulator(self) -> tuple[uuid.UUID, EmulatorConfig]:
+        """添加emulator配置"""
+        logger.info("添加全局emulator配置")
+
+        uid, config = await self.EmulatorConfig.add(EmulatorConfig)
+        await self.EmulatorConfig.save()
+        return uid, config
+
+    async def update_emulator(
+        self, emulator_id: str, data: Dict[str, Dict[str, Any]]
+    ) -> None:
+        """更新 emulator 配置"""
+
+        emulator_uid = uuid.UUID(emulator_id)
+
+        logger.info(f"更新 emulator 配置: {emulator_id}")
+
+        # 如果路径被修改,尝试自动搜索模拟器根目录
+        if "Info" in data and "Path" in data["Info"]:
+            input_path = data["Info"]["Path"]
+
+            # 获取模拟器类型
+            emulator_type = None
+            if "Data" in data and "Type" in data["Data"]:
+                # 如果本次更新中包含类型信息
+                emulator_type = data["Data"]["Type"]
+            else:
+                # 否则从现有配置中获取
+                emulator_type = await self.EmulatorConfig[emulator_uid].get(
+                    "Data", "Type"
+                )
+
+            if input_path and emulator_type:
+                logger.info(
+                    f"检测到路径修改: {input_path}, 模拟器类型: {emulator_type}"
+                )
+                # 搜索并调整为正确的根目录
+                found_path = await find_emulator_root_path(input_path, emulator_type)
+                if found_path != input_path:
+                    logger.info(f"路径已自动调整: {input_path} -> {found_path}")
+                    data["Info"]["Path"] = found_path
+                else:
+                    logger.debug(f"路径未调整,保持原值: {input_path}")
+
+        for group, items in data.items():
+            for name, value in items.items():
+                logger.debug(
+                    f"更新全局 emulator:{emulator_id} - {group}.{name} = {value}"
+                )
+                await self.EmulatorConfig[emulator_uid].set(group, name, value)
+
+        await self.EmulatorConfig.save()
+
+    async def del_emulator(self, emulator_id: str) -> None:
+        """删除 emulator 配置"""
+
+        emulator_uid = uuid.UUID(emulator_id)
+
+        logger.info(f"删除全局 emulator 配置: {emulator_id}")
+
+        script_list = []
+
+        for script in self.ScriptConfig.values():
+            if isinstance(script, MaaConfig):
+                if script.get("Emulator", "Id") == str(emulator_id):
+                    if script.is_locked:
+                        raise RuntimeError(
+                            f"脚本 {script.get('Info','Name')} 正在使用此模拟器且被锁定, 无法完成删除"
+                        )
+                    script_list.append(script)
+            if isinstance(script, GeneralConfig):
+                if script.get("Game", "Type") == "Emulator" and script.get(
+                    "Game", "EmulatorId"
+                ) == str(emulator_id):
+                    if script.is_locked:
+                        raise RuntimeError(
+                            f"脚本 {script.get('Info','Name')} 正在使用此模拟器且被锁定, 无法完成删除"
+                        )
+                    script_list.append(script)
+
+        for script in script_list:
+            if isinstance(script, MaaConfig):
+                await script.set("Emulator", "Id", "-")
+            elif isinstance(script, GeneralConfig):
+                await script.set("Game", "EmulatorId", "-")
+
+        await self.EmulatorConfig.remove(emulator_uid)
+        await self.EmulatorConfig.save()
+
+    async def reorder_emulator(self, index_list: list[str]) -> None:
+        """重新排序 emulator"""
+
+        logger.info(f"重新排序全局 emulator: {index_list}")
+
+        await self.EmulatorConfig.setOrder(list(map(uuid.UUID, index_list)))
+        await self.EmulatorConfig.save()
+
     async def add_queue(self) -> tuple[uuid.UUID, QueueConfig]:
         """添加调度队列"""
 
@@ -1247,98 +1357,6 @@ class AppConfig(GlobalConfig):
                 .Notify_CustomWebhooks.setOrder(list(map(uuid.UUID, index_list)))
             )
             await self.ScriptConfig.save()
-
-    async def get_emulator(self, emulator_id: Optional[str]) -> tuple[list, dict]:
-        """获取emulator配置"""
-        logger.info(f"获取全局emulator设置: {emulator_id}")
-
-        if emulator_id is None:
-            data = await self.EmulatorData.toDict()
-        else:
-            data = await self.EmulatorData.get(uuid.UUID(emulator_id))
-
-        index = data.pop("instances", [])
-        return list(index), data
-
-    async def add_emulator(self) -> tuple[uuid.UUID, EmulatorConfig]:
-        """添加emulator配置"""
-        logger.info("添加全局emulator配置")
-
-        uid, config = await self.EmulatorData.add(EmulatorConfig)
-        await self.save()
-        return uid, config
-
-    async def update_emulator(
-        self, emulator_id: str, data: Dict[str, Dict[str, Any]]
-    ) -> tuple[Optional[str], Optional[str]]:
-        """更新 emulator 配置,返回 (更正后的路径, 检测到的类型)"""
-
-        emulator_uid = uuid.UUID(emulator_id)
-
-        logger.info(f"更新 emulator 全局配置: {emulator_id}")
-
-        corrected_path = None
-        detected_type = None
-
-        # 如果路径被修改,尝试自动搜索模拟器根目录
-        if "Info" in data and "Path" in data["Info"]:
-            input_path = data["Info"]["Path"]
-
-            # 获取模拟器类型
-            emulator_type = None
-            if "Data" in data and "Type" in data["Data"]:
-                # 如果本次更新中包含类型信息
-                emulator_type = data["Data"]["Type"]
-                detected_type = emulator_type
-            else:
-                # 否则从现有配置中获取
-                emulator_type = await self.EmulatorData[emulator_uid].get(
-                    "Data", "Type"
-                )
-
-            if input_path and emulator_type:
-                logger.info(
-                    f"检测到路径修改: {input_path}, 模拟器类型: {emulator_type}"
-                )
-                # 搜索并调整为正确的根目录
-                found_path = await find_emulator_root_path(input_path, emulator_type)
-                if found_path != input_path:
-                    logger.info(f"路径已自动调整: {input_path} -> {found_path}")
-                    data["Info"]["Path"] = found_path
-                    corrected_path = found_path
-                else:
-                    logger.debug(f"路径未调整,保持原值: {input_path}")
-
-        for group, items in data.items():
-            for name, value in items.items():
-                logger.debug(
-                    f"更新全局 emulator:{emulator_id} - {group}.{name} = {value}"
-                )
-                await self.EmulatorData[emulator_uid].set(group, name, value)
-
-        await self.save()
-
-        return (corrected_path, detected_type)
-
-    async def del_emulator(self, emulator_id: str) -> None:
-        """删除 emulator 配置"""
-
-        emulator_uid = uuid.UUID(emulator_id)
-
-        logger.info(f"删除全局 emulator 配置: {emulator_id}")
-
-        # 检查代码等待实现
-
-        await self.EmulatorData.remove(emulator_uid)
-        await self.save()
-
-    async def reorder_emulator(self, index_list: list[str]) -> None:
-        """重新排序 emulator"""
-
-        logger.info(f"重新排序全局 emulator: {index_list}")
-
-        await self.EmulatorData.setOrder(list(map(uuid.UUID, index_list)))
-        await self.save()
 
     def server_date(self) -> date:
         """
