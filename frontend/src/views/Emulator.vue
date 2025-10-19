@@ -1,18 +1,16 @@
 <!-- eslint-disable vue/multi-word-component-names -->
 <script setup lang="ts">
 // 挂载和卸载键盘监听
-import { h, onMounted, ref } from 'vue'
-import { useEventListener } from '@vueuse/core'
+import { h, onMounted, onUnmounted, ref } from 'vue'
+import { useDebounceFn, useEventListener } from '@vueuse/core'
 import { message } from 'ant-design-vue'
 import {
-  CloseOutlined,
   DeleteOutlined,
-  EditOutlined,
+  FolderOpenOutlined,
   PlayCircleOutlined,
   PlusOutlined,
   QuestionCircleOutlined,
   ReloadOutlined,
-  SaveOutlined,
   SearchOutlined,
   StopOutlined,
 } from '@ant-design/icons-vue'
@@ -74,20 +72,59 @@ const loadingDevices = ref<Set<string>>(new Set())
 const startingDevices = ref<Set<string>>(new Set())
 const stoppingDevices = ref<Set<string>>(new Set())
 
-// 编辑状态
-const editingId = ref<string | null>(null)
-const editingData = ref<EmulatorInfo>({
-  name: '',
-  type: '',
-  path: '',
-  max_wait_time: 60,
-  boss_keys: [],
-})
+// 每个模拟器的编辑数据（使用 Map 存储）
+const editingDataMap = ref<Map<string, EmulatorInfo>>(new Map())
 
-// 老板键录制状态
-const recordingBossKey = ref(false)
-const recordedKeys = ref<Set<string>>(new Set())
-const bossKeyInput = ref('')
+// 自动保存状态
+const savingMap = ref<Map<string, boolean>>(new Map())
+
+// 老板键录制状态（为每个模拟器单独管理）
+const recordingBossKeyMap = ref<Map<string, boolean>>(new Map())
+const recordedKeysMap = ref<Map<string, Set<string>>>(new Map())
+const bossKeyInputMap = ref<Record<string, string>>({})
+
+// 获取当前模拟器的编辑数据
+const getEditingData = (uuid: string): EmulatorInfo => {
+  if (!editingDataMap.value.has(uuid)) {
+    const configData = emulatorData.value[uuid]
+    editingDataMap.value.set(uuid, {
+      name: configData?.Info?.Name || '',
+      type: configData?.Data?.Type || '',
+      path: configData?.Info?.Path || '',
+      max_wait_time: configData?.Data?.MaxWaitTime || 60,
+      boss_keys: safeJsonParse(configData?.Data?.BossKey, []),
+    })
+  }
+  return editingDataMap.value.get(uuid)!
+}
+
+// 同步名称到显示数据（立即更新 Tab 标题）
+const syncNameToDisplay = (uuid: string, name: string) => {
+  // 更新 emulatorData 中的名称（Tab 标题使用）
+  if (emulatorData.value[uuid]?.Info) {
+    emulatorData.value[uuid].Info.Name = name
+  }
+  // 注意: emulatorIndex 只包含 uid 和 type，不包含 name
+  // name 的显示由 emulatorData[uuid]?.Info?.Name 提供
+}
+
+// 自动保存（使用 VueUse 的 useDebounceFn 实现防抖）
+// 注意：useDebounceFn 返回的是防抖函数本身，不是带控制方法的对象
+const autoSaveFn = useDebounceFn((uuid: string) => {
+  handleSave(uuid, true) // true 表示静默保存
+}, 1000)
+
+// 封装防抖保存调用
+const autoSave = (uuid: string) => {
+  autoSaveFn(uuid)
+}
+
+// 立即保存（不防抖）- 直接调用 handleSave，绕过防抖
+const saveImmediately = async (uuid: string, skipReload = false) => {
+  // 直接执行保存，不经过防抖
+  // skipReload: 在Tab切换等场景下，跳过重新加载以避免干扰切换流程
+  await handleSave(uuid, true, skipReload)
+}
 
 // 加载模拟器列表
 const loadEmulators = async () => {
@@ -97,6 +134,23 @@ const loadEmulators = async () => {
     if (response.code === 200 && 'index' in response && 'data' in response) {
       emulatorIndex.value = (response.index as EmulatorConfigIndexItem[]) || []
       emulatorData.value = (response.data as Record<string, any>) || {}
+
+      // 初始化所有模拟器的编辑数据
+      emulatorIndex.value.forEach(item => {
+        const configData = emulatorData.value[item.uid]
+        const bossKeys = safeJsonParse(configData?.Data?.BossKey, [])
+        editingDataMap.value.set(item.uid, {
+          name: configData?.Info?.Name || '',
+          type: configData?.Data?.Type || '',
+          path: configData?.Info?.Path || '',
+          max_wait_time: configData?.Data?.MaxWaitTime || 60,
+          boss_keys: bossKeys,
+        })
+        // 同步 boss_keys 到输入框显示
+        if (bossKeys.length > 0) {
+          bossKeyInputMap.value[item.uid] = bossKeys[0]
+        }
+      })
     } else {
       message.error(response.message || '加载模拟器配置失败')
     }
@@ -110,27 +164,15 @@ const loadEmulators = async () => {
 
 // 添加模拟器
 const handleAdd = async () => {
-  // 如果有正在编辑的模拟器，先保存
-  if (editingId.value) {
-    await handleSave(editingId.value)
-  }
-
   try {
     const response = await Service.addEmulatorApiSettingEmulatorAddPost()
     if (response.code === 200) {
       message.success('添加成功')
       await loadEmulators()
-      // 自动进入编辑模式，焦点切换到新模拟器
-      editingId.value = response.emulatorId
-      // 将后端返回的分组结构转换为扁平结构
-      const configData = response.data
-      editingData.value = {
-        name: configData?.Info?.Name || '',
-        type: configData?.Data?.Type || '',
-        path: configData?.Info?.Path || '',
-        max_wait_time: configData?.Data?.MaxWaitTime || 60,
-        boss_keys: safeJsonParse(configData?.Data?.BossKey, []),
-      }
+      // 自动切换到新模拟器
+      activeKey.value = response.emulatorId
+      saveActiveKey(activeKey.value)
+      await loadDevices(response.emulatorId)
     } else {
       message.error(response.message || '添加失败')
     }
@@ -140,45 +182,27 @@ const handleAdd = async () => {
   }
 }
 
-// 开始编辑
-const handleEdit = async (uuid: string) => {
-  // 如果有正在编辑的其他模拟器，先保存
-  if (editingId.value && editingId.value !== uuid) {
-    await handleSave(editingId.value)
-  }
-
-  editingId.value = uuid
-
-  // 将后端的分组结构转换为扁平结构供前端编辑
-  const configData = emulatorData.value[uuid]
-  editingData.value = {
-    name: configData?.Info?.Name || '',
-    type: configData?.Data?.Type || '',
-    path: configData?.Info?.Path || '',
-    max_wait_time: configData?.Data?.MaxWaitTime || 60,
-    boss_keys: safeJsonParse(configData?.Data?.BossKey, []),
-  }
-}
-
 // 保存编辑
-const handleSave = async (uuid: string) => {
+const handleSave = async (uuid: string, silent = false, skipReload = false) => {
+  const editData = editingDataMap.value.get(uuid)
+  if (!editData) {
+    if (!silent) message.error('未找到编辑数据')
+    return
+  }
+
+  savingMap.value.set(uuid, true)
+
   try {
     // 将前端的扁平结构转换为后端需要的分组结构
     const configData = {
       Info: {
-        Name: editingData.value.name,
-        Path: editingData.value.path,
+        Name: editData.name,
+        Path: editData.path,
       },
       Data: {
-        Type: editingData.value.type as
-          | 'general'
-          | 'mumu'
-          | 'ldplayer'
-          | 'nox'
-          | 'memu'
-          | 'blueStacks',
-        MaxWaitTime: editingData.value.max_wait_time,
-        BossKey: JSON.stringify(editingData.value.boss_keys),
+        Type: editData.type as 'general' | 'mumu' | 'ldplayer' | 'nox' | 'memu' | 'blueStacks',
+        MaxWaitTime: editData.max_wait_time,
+        BossKey: JSON.stringify(editData.boss_keys),
       },
     }
 
@@ -187,44 +211,21 @@ const handleSave = async (uuid: string) => {
       data: configData,
     })
     if (response.code === 200) {
-      // 如果后端返回了更正的路径,则更新到编辑数据中
-      if (response.correctedPath) {
-        editingData.value.path = response.correctedPath
-        message.success(`路径已自动更正为: ${response.correctedPath}`)
-      }
-      // 如果后端返回了检测到的类型,则更新到编辑数据中
-      if (response.detectedType) {
-        editingData.value.type = response.detectedType
-        message.info(`检测到模拟器类型: ${response.detectedType}`)
-      }
+      if (!silent) message.success('保存成功')
 
-      if (!response.correctedPath && !response.detectedType) {
-        message.success('保存成功')
+      // 保存成功后重新从后端获取最新配置（除非明确跳过）
+      if (!skipReload) {
+        await loadEmulators()
       }
-
-      await loadEmulators()
-      editingId.value = null
     } else {
-      message.error(response.message || '保存失败')
+      if (!silent) message.error(response.message || '保存失败')
     }
   } catch (e) {
     console.error('保存模拟器配置失败', e)
-    message.error('保存模拟器配置失败')
+    if (!silent) message.error('保存模拟器配置失败')
+  } finally {
+    savingMap.value.set(uuid, false)
   }
-}
-
-// 取消编辑
-const handleCancel = () => {
-  editingId.value = null
-  editingData.value = {
-    name: '',
-    type: '',
-    path: '',
-    max_wait_time: 60,
-    boss_keys: [],
-  }
-  recordingBossKey.value = false
-  recordedKeys.value.clear()
 }
 
 // 删除模拟器
@@ -415,30 +416,26 @@ const stopEmulator = async (uuid: string, index: string) => {
 }
 
 // 路径选择
-const selectEmulatorPath = async () => {
+const selectEmulatorPath = async (uuid: string) => {
   try {
     if (!window.electronAPI) {
       message.error('文件选择功能不可用,请在 Electron 环境中运行')
       return
     }
 
-    // 允许选择任意类型:可执行文件、快捷方式、文件夹
+    const editData = editingDataMap.value.get(uuid)
+    if (!editData) return
+
+    // 选择任意文件
     const paths = await (window.electronAPI as any).selectFile([
-      { name: '可执行文件', extensions: ['exe'] },
-      { name: '快捷方式', extensions: ['lnk'] },
       { name: '所有文件', extensions: ['*'] },
     ])
 
-    // 如果没有选择文件,尝试选择文件夹
-    if (!paths || paths.length === 0) {
-      const folders = await (window.electronAPI as any).selectFolder()
-      if (folders && folders.length > 0) {
-        editingData.value.path = folders[0]
-        message.success('模拟器路径选择成功')
-      }
-    } else {
-      editingData.value.path = paths[0]
+    if (paths && paths.length > 0) {
+      editData.path = paths[0]
       message.success('模拟器路径选择成功')
+      // 触发自动保存
+      autoSave(uuid)
     }
   } catch (error) {
     console.error('选择模拟器路径失败:', error)
@@ -447,23 +444,28 @@ const selectEmulatorPath = async () => {
 }
 
 // 开始录制老板键
-const startRecordBossKey = () => {
-  recordingBossKey.value = true
-  recordedKeys.value.clear()
-  bossKeyInput.value = ''
+const startRecordBossKey = (uuid: string) => {
+  recordingBossKeyMap.value.set(uuid, true)
+  recordedKeysMap.value.set(uuid, new Set())
+  bossKeyInputMap.value[uuid] = ''
   message.info('请按下快捷键组合...')
 }
 
 // 停止录制老板键
-const stopRecordBossKey = () => {
-  recordingBossKey.value = false
-  recordedKeys.value.clear()
-  bossKeyInput.value = ''
+const stopRecordBossKey = (uuid: string) => {
+  recordingBossKeyMap.value.delete(uuid)
+  recordedKeysMap.value.delete(uuid)
+  delete bossKeyInputMap.value[uuid]
 }
 
 // 键盘事件处理
 const handleKeyDown = (event: KeyboardEvent) => {
-  if (!recordingBossKey.value) return
+  // 检查是否有正在录制的模拟器
+  const recordingUuid = Array.from(recordingBossKeyMap.value.entries()).find(
+    ([, recording]) => recording
+  )?.[0]
+
+  if (!recordingUuid) return
 
   event.preventDefault()
   event.stopPropagation()
@@ -484,23 +486,36 @@ const handleKeyDown = (event: KeyboardEvent) => {
   }
 
   if (keys.length > 0) {
-    recordedKeys.value = new Set(keys)
+    recordedKeysMap.value.set(recordingUuid, new Set(keys))
   }
 }
 
 const handleKeyUp = (event: KeyboardEvent) => {
-  if (!recordingBossKey.value) return
+  // 检查是否有正在录制的模拟器
+  const recordingUuid = Array.from(recordingBossKeyMap.value.entries()).find(
+    ([, recording]) => recording
+  )?.[0]
+
+  if (!recordingUuid) return
 
   event.preventDefault()
   event.stopPropagation()
 
   // 如果已经记录了按键，停止录制并设置为老板键
-  if (recordedKeys.value.size > 0) {
-    const keyCombo = Array.from(recordedKeys.value).join('+')
-    editingData.value.boss_keys = [keyCombo]
-    message.success(`已设置老板键: ${keyCombo}`)
-    recordingBossKey.value = false
-    recordedKeys.value.clear()
+  const recordedKeys = recordedKeysMap.value.get(recordingUuid)
+  if (recordedKeys && recordedKeys.size > 0) {
+    const keyCombo = Array.from(recordedKeys).join('+')
+    const editData = editingDataMap.value.get(recordingUuid)
+    if (editData) {
+      // 设置为唯一的老板键（替换而不是追加）
+      editData.boss_keys = [keyCombo]
+      // 同时更新输入框显示
+      bossKeyInputMap.value[recordingUuid] = keyCombo
+      message.success(`老板键已设置为: ${keyCombo}`)
+      autoSave(recordingUuid)
+    }
+    recordingBossKeyMap.value.delete(recordingUuid)
+    recordedKeysMap.value.delete(recordingUuid)
   }
 }
 
@@ -531,6 +546,11 @@ const onEmulatorsLoaded = async () => {
 
 // Tab 切换时自动加载设备信息并保存状态
 const onTabChange = async (key: string) => {
+  // 切换前先立即保存当前 Tab 的数据（跳过重新加载以避免干扰切换）
+  if (activeKey.value && editingDataMap.value.has(activeKey.value)) {
+    await saveImmediately(activeKey.value, true) // true = skipReload
+  }
+
   activeKey.value = key
   saveActiveKey(key)
   // 如果切换到已有的模拟器 Tab,加载其设备信息
@@ -538,6 +558,13 @@ const onTabChange = async (key: string) => {
     await loadDevices(key)
   }
 }
+
+// 组件卸载时保存所有数据
+onUnmounted(async () => {
+  // 立即保存所有有数据的模拟器（防抖会自动失效）
+  const savePromises = Array.from(editingDataMap.value.keys()).map(uuid => handleSave(uuid, true))
+  await Promise.all(savePromises)
+})
 
 // 重写 handleAdd:添加后自动切换到新Tab并加载
 const handleAddWithSwitch = async () => {
@@ -567,23 +594,37 @@ onMounted(async () => {
   await onEmulatorsLoaded()
 })
 
-const handleSetBossKey = () => {
-  if (bossKeyInput.value.trim()) {
-    editingData.value.boss_keys = [bossKeyInput.value.trim()]
-    bossKeyInput.value = ''
-    message.success('老板键已设置')
+const handleSetBossKey = (uuid: string) => {
+  // 如果正在录制，不处理手动输入
+  if (recordingBossKeyMap.value.get(uuid)) {
+    return
+  }
+
+  const bossKeyInput = bossKeyInputMap.value[uuid] || ''
+  if (bossKeyInput.trim()) {
+    const editData = editingDataMap.value.get(uuid)
+    if (editData) {
+      // 设置为唯一的老板键（替换而不是追加）
+      editData.boss_keys = [bossKeyInput.trim()]
+      message.success(`老板键已设置为: ${bossKeyInput.trim()}`)
+      autoSave(uuid)
+      // 不清空输入框，保持显示
+      // bossKeyInputMap.value[uuid] = ''
+    }
   }
 }
 
-const handleRemoveBossKey = (key?: string) => {
-  if (key) {
-    // 删除指定的老板键
-    editingData.value.boss_keys = editingData.value.boss_keys.filter(k => k !== key)
-    message.success(`老板键 ${key} 已删除`)
-  } else {
-    // 清空所有老板键
-    editingData.value.boss_keys = []
-    message.success('老板键已清除')
+// 处理输入框变化，同步到 boss_keys
+const handleBossKeyInputChange = (uuid: string) => {
+  const bossKeyInput = bossKeyInputMap.value[uuid] || ''
+  const editData = editingDataMap.value.get(uuid)
+  if (editData) {
+    if (bossKeyInput.trim()) {
+      editData.boss_keys = [bossKeyInput.trim()]
+    } else {
+      editData.boss_keys = []
+    }
+    autoSave(uuid)
   }
 }
 </script>
@@ -639,187 +680,128 @@ const handleRemoveBossKey = (key?: string) => {
                 <div class="section-header">
                   <h3>多开器配置</h3>
                   <div class="section-actions">
-                    <template v-if="editingId === element.uid">
-                      <a-button
-                        type="primary"
-                        size="small"
-                        :icon="h(SaveOutlined)"
-                        @click="handleSave(element.uid)"
-                      >
-                        保存
+                    <a-spin v-if="savingMap.get(element.uid)" size="small" />
+                    <a-popconfirm
+                      title="确定要删除此模拟器配置吗？"
+                      ok-text="确定"
+                      cancel-text="取消"
+                      @confirm="handleDelete(element.uid)"
+                    >
+                      <a-button type="link" danger size="small" :icon="h(DeleteOutlined)">
+                        删除
                       </a-button>
-                      <a-button size="small" :icon="h(CloseOutlined)" @click="handleCancel">
-                        取消
-                      </a-button>
-                    </template>
-                    <template v-else>
-                      <a-button
-                        type="link"
-                        size="small"
-                        :icon="h(EditOutlined)"
-                        @click="handleEdit(element.uid)"
-                      >
-                        编辑配置
-                      </a-button>
-                      <a-popconfirm
-                        title="确定要删除此模拟器配置吗？"
-                        ok-text="确定"
-                        cancel-text="取消"
-                        @confirm="handleDelete(element.uid)"
-                      >
-                        <a-button type="link" danger size="small" :icon="h(DeleteOutlined)">
-                          删除
-                        </a-button>
-                      </a-popconfirm>
-                    </template>
+                    </a-popconfirm>
                   </div>
                 </div>
 
-                <!-- 只读模式 -->
-                <div v-if="editingId !== element.uid" class="config-display">
+                <!-- 直接可编辑的配置表单（无边框） -->
+                <div class="config-form">
                   <a-descriptions :column="2" bordered size="small">
                     <a-descriptions-item label="模拟器名称">
-                      {{ emulatorData[element.uid]?.Info?.Name || '-' }}
+                      <a-input
+                        v-model:value="getEditingData(element.uid).name"
+                        placeholder="输入模拟器名称"
+                        size="small"
+                        :bordered="false"
+                        @input="syncNameToDisplay(element.uid, getEditingData(element.uid).name)"
+                        @change="autoSave(element.uid)"
+                      />
                     </a-descriptions-item>
-                    <a-descriptions-item label="模拟器类型">
-                      {{
-                        emulatorTypeOptions.find(
-                          opt => opt.value === emulatorData[element.uid]?.Data?.Type
-                        )?.label || '-'
-                      }}
+                    <a-descriptions-item>
+                      <template #label>
+                        <span>模拟器类型</span>
+                        <a-tooltip title="如: MuMu12, BlueStacks, LDPlayer等">
+                          <QuestionCircleOutlined style="margin-left: 4px" />
+                        </a-tooltip>
+                      </template>
+                      <a-select
+                        v-model:value="getEditingData(element.uid).type"
+                        placeholder="选择模拟器类型"
+                        :options="emulatorTypeOptions"
+                        size="small"
+                        :bordered="false"
+                        style="width: 100%"
+                        @change="autoSave(element.uid)"
+                      />
                     </a-descriptions-item>
                     <a-descriptions-item label="模拟器路径" :span="2">
-                      {{ emulatorData[element.uid]?.Info?.Path || '-' }}
-                    </a-descriptions-item>
-                    <a-descriptions-item label="最大等待时间">
-                      {{ emulatorData[element.uid]?.Data?.MaxWaitTime || 60 }} 秒
-                    </a-descriptions-item>
-                    <a-descriptions-item label="老板键">
-                      <span
-                        v-if="safeJsonParse(emulatorData[element.uid]?.Data?.BossKey).length > 0"
+                      <a-input
+                        v-model:value="getEditingData(element.uid).path"
+                        placeholder="输入或选择模拟器路径"
+                        size="small"
+                        :bordered="false"
+                        @change="autoSave(element.uid)"
                       >
-                        <a-tag
-                          v-for="key in safeJsonParse(emulatorData[element.uid]?.Data?.BossKey)"
-                          :key="key"
-                        >
-                          {{ key }}
-                        </a-tag>
-                      </span>
-                      <span v-else>-</span>
+                        <template #suffix>
+                          <FolderOpenOutlined
+                            style="cursor: pointer; color: #1890ff"
+                            @click="selectEmulatorPath(element.uid)"
+                          />
+                        </template>
+                      </a-input>
                     </a-descriptions-item>
-                  </a-descriptions>
-                </div>
-
-                <!-- 编辑模式 -->
-                <div v-else class="config-form">
-                  <a-form layout="vertical">
-                    <a-row :gutter="16">
-                      <a-col :span="12">
-                        <a-form-item label="模拟器名称">
-                          <a-input v-model:value="editingData.name" placeholder="输入模拟器名称" />
-                        </a-form-item>
-                      </a-col>
-                      <a-col :span="12">
-                        <a-form-item>
-                          <template #label>
-                            <span>模拟器类型</span>
-                            <a-tooltip title="如: MuMu12, BlueStacks, LDPlayer等">
-                              <QuestionCircleOutlined style="margin-left: 4px" />
-                            </a-tooltip>
-                          </template>
-                          <a-select
-                            v-model:value="editingData.type"
-                            placeholder="选择模拟器类型"
-                            :options="emulatorTypeOptions"
-                          />
-                        </a-form-item>
-                      </a-col>
-                    </a-row>
-
-                    <a-row :gutter="16">
-                      <a-col :span="12">
-                        <a-form-item>
-                          <template #label>
-                            <span>最大等待时间（秒）</span>
-                            <a-tooltip title="启动模拟器后的最大等待时间">
-                              <QuestionCircleOutlined style="margin-left: 4px" />
-                            </a-tooltip>
-                          </template>
-                          <a-input-number
-                            v-model:value="editingData.max_wait_time"
-                            placeholder="输入最大等待时间"
-                            style="width: 100%"
-                            :min="10"
-                            :max="300"
-                            :step="5"
-                          />
-                        </a-form-item>
-                      </a-col>
-                      <a-col :span="12">
-                        <a-form-item>
-                          <template #label>
-                            <span>模拟器路径</span>
-                            <a-tooltip title="模拟器可执行文件的完整路径">
-                              <QuestionCircleOutlined style="margin-left: 4px" />
-                            </a-tooltip>
-                          </template>
-                          <div style="display: flex; gap: 8px">
-                            <a-input
-                              v-model:value="editingData.path"
-                              placeholder="输入模拟器路径"
-                              disabled
-                            />
-                            <a-button @click="selectEmulatorPath">选择</a-button>
-                          </div>
-                        </a-form-item>
-                      </a-col>
-                    </a-row>
-
-                    <a-form-item>
+                    <a-descriptions-item>
+                      <template #label>
+                        <span>最大等待时间</span>
+                        <a-tooltip title="启动模拟器后的最大等待时间">
+                          <QuestionCircleOutlined style="margin-left: 4px" />
+                        </a-tooltip>
+                      </template>
+                      <a-input-number
+                        v-model:value="getEditingData(element.uid).max_wait_time"
+                        placeholder="输入最大等待时间"
+                        size="small"
+                        :bordered="false"
+                        style="width: 100%"
+                        :min="10"
+                        :max="300"
+                        :step="5"
+                        suffix="秒"
+                        @change="autoSave(element.uid)"
+                      />
+                    </a-descriptions-item>
+                    <a-descriptions-item>
                       <template #label>
                         <span>老板键</span>
                         <a-tooltip title="快速隐藏模拟器的快捷键组合">
                           <QuestionCircleOutlined style="margin-left: 4px" />
                         </a-tooltip>
                       </template>
-                      <div style="display: flex; gap: 8px; margin-bottom: 8px">
-                        <a-input
-                          v-model:value="bossKeyInput"
-                          :placeholder="
-                            recordingBossKey ? '请按下快捷键组合...' : '输入快捷键，如 Ctrl+Q'
-                          "
-                          :disabled="recordingBossKey"
-                          @press-enter="handleSetBossKey"
-                        />
-                        <a-button
-                          v-if="!recordingBossKey"
-                          type="default"
-                          @click="startRecordBossKey"
-                        >
-                          录制
-                        </a-button>
-                        <a-button v-else type="primary" danger @click="stopRecordBossKey">
-                          取消录制
-                        </a-button>
-                        <a-button :disabled="recordingBossKey" @click="handleSetBossKey">
-                          设置
-                        </a-button>
-                      </div>
-                      <div
-                        v-if="editingData.boss_keys && editingData.boss_keys.length > 0"
-                        class="boss-key-list"
+                      <a-input
+                        v-model:value="bossKeyInputMap[element.uid]"
+                        :placeholder="
+                          recordingBossKeyMap.get(element.uid)
+                            ? '请按下快捷键组合...'
+                            : '输入格式如 Ctrl+Q，按回车添加'
+                        "
+                        size="small"
+                        :bordered="false"
+                        :disabled="recordingBossKeyMap.get(element.uid)"
+                        @press-enter="handleSetBossKey(element.uid)"
+                        @change="handleBossKeyInputChange(element.uid)"
                       >
-                        <a-tag
-                          v-for="key in editingData.boss_keys"
-                          :key="key"
-                          closable
-                          @close="handleRemoveBossKey(key)"
-                        >
-                          {{ key }}
-                        </a-tag>
-                      </div>
-                    </a-form-item>
-                  </a-form>
+                        <template #suffix>
+                          <a-button
+                            v-if="!recordingBossKeyMap.get(element.uid)"
+                            type="default"
+                            size="small"
+                            @click="startRecordBossKey(element.uid)"
+                          >
+                            录制
+                          </a-button>
+                          <a-button
+                            v-else
+                            type="primary"
+                            danger
+                            size="small"
+                            @click="stopRecordBossKey(element.uid)"
+                          >
+                            取消录制
+                          </a-button>
+                        </template>
+                      </a-input>
+                    </a-descriptions-item>
+                  </a-descriptions>
                 </div>
               </div>
 
@@ -1085,6 +1067,44 @@ const handleRemoveBossKey = (key?: string) => {
 
 .config-form {
   margin-top: 12px;
+}
+
+/* 无边框输入优化 */
+.config-form :deep(.ant-input-borderless),
+.config-form :deep(.ant-input-number-borderless),
+.config-form :deep(.ant-select-borderless .ant-select-selector) {
+  background: transparent;
+  padding: 0;
+}
+
+.config-form :deep(.ant-input-borderless:hover),
+.config-form :deep(.ant-input-number-borderless:hover) {
+  background: var(--bg-color-elevated);
+}
+
+.config-form :deep(.ant-input-borderless:focus),
+.config-form :deep(.ant-input-number-borderless:focus) {
+  background: var(--bg-color-elevated);
+  box-shadow: none;
+}
+
+.config-form :deep(.ant-select-borderless:hover .ant-select-selector) {
+  background: var(--bg-color-elevated) !important;
+}
+
+.config-form :deep(.ant-select-focused.ant-select-borderless .ant-select-selector) {
+  background: var(--bg-color-elevated) !important;
+  box-shadow: none !important;
+}
+
+/* 文件夹图标样式 */
+.config-form :deep(.anticon-folder-open) {
+  transition: all 0.3s;
+}
+
+.config-form :deep(.anticon-folder-open:hover) {
+  color: #40a9ff !important;
+  transform: scale(1.1);
 }
 
 /* 设备列表区域 */
