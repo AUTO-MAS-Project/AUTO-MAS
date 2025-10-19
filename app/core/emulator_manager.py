@@ -21,7 +21,8 @@
 
 
 import uuid
-
+import asyncio
+from typing import Literal
 
 from .config import Config
 from app.models.emulator import DeviceBase
@@ -40,43 +41,51 @@ class _EmulatorManager:
 
         emulator_uid = uuid.UUID(emulator_id)
 
-        config = Config.EmulatorData[emulator_uid]
+        config = Config.EmulatorConfig[emulator_uid]
         if config.get("Data", "Type") in EMULATOR_TYPE_BOOK:
             return EMULATOR_TYPE_BOOK[config.get("Data", "Type")](config)
         else:
             raise ValueError(f"不支持的模拟器类型: {config.get('Data', 'Type')}")
 
-    async def open_emulator(self, emulator_id: str, index: str, package_name: str = ""):
+    async def operate_emulator(
+        self, operate: Literal["open", "close"], emulator_id: str, index: str
+    ):
 
-        temp_emulator = await self.get_emulator_instance(emulator_id)
-        if temp_emulator is None:
-            raise KeyError(f"未找到UUID为 {emulator_id} 的模拟器配置")
+        asyncio.create_task(self.operate_emulator_task(operate, emulator_id, index))
 
-        # 调用模拟器实例的open方法启动指定索引的模拟器
-        return await temp_emulator.open(index, package_name)
+    async def operate_emulator_task(
+        self, operate: Literal["open", "close"], emulator_id: str, index: str
+    ):
 
-    async def close_emulator(self, emulator_id: str, index: str):
+        try:
+            temp_emulator = await self.get_emulator_instance(emulator_id)
+            if temp_emulator is None:
+                raise KeyError(f"未找到UUID为 {emulator_id} 的模拟器配置")
 
-        temp_emulator = await self.get_emulator_instance(emulator_id)
-        if temp_emulator is None:
-            raise KeyError(f"未找到UUID为 {emulator_id} 的模拟器配置")
+            if operate == "open":
+                await temp_emulator.open(index)
+            elif operate == "close":
+                await temp_emulator.close(index)
+        except Exception as e:
+            await Config.send_websocket_message(
+                id="EmulatorManager",
+                type="Info",
+                data={"error": f"模拟器操作失败: {str(e)}"},
+            )
 
-        # 调用模拟器实例的close方法关闭指定索引的模拟器
-        return await temp_emulator.close(index)
+    async def get_status(self, emulator_id: str | None = None):
 
-    # async def get_status(self, emulator_id: str | None = None):
+        if emulator_id is None:
+            emulator_range = list(map(str, Config.EmulatorConfig.keys()))
+        else:
+            emulator_range = [emulator_id]
 
-    #     if emulator_id is None:
-    #         emulator_range = list(map(str, Config.EmulatorData.keys()))
-    #     else:
-    #         emulator_range = [emulator_id]
+        data = {}
+        for emulator_id in emulator_range:
+            temp_emulator = await self.get_emulator_instance(emulator_id)
+            data[emulator_id] = await temp_emulator.getInfo(None)
 
-    #     data = {}
-    #     for emulator_id in emulator_range:
-    #         temp_emulator = await self.get_emulator_instance(emulator_id)
-    #         data[emulator_id] = await temp_emulator.get_all_info()
-
-    #     return data
+        return data
 
 
 EmulatorManager = _EmulatorManager()

@@ -40,9 +40,8 @@ class MumuManager(DeviceBase):
     """
 
     def __init__(self, config: EmulatorConfig) -> None:
-        self.exe_path = Path(config.get("Info", "Path"))
 
-        if not self.exe_path.exists():
+        if not (Path(config.get("Info", "Path")) / "MuMuManager.exe").exists():
             raise FileNotFoundError(
                 f"MuMuManager.exe文件不存在: {config.get('Info', 'Path')}"
             )
@@ -52,9 +51,11 @@ class MumuManager(DeviceBase):
 
         self.config = config
 
-        self.emulator_path = Path(config.get("Info", "Path"))
+        self.emulator_path = Path(config.get("Info", "Path")) / "MuMuManager.exe"
 
     async def open(self, idx: str, package_name: str = "") -> DeviceInfo:
+
+        logger.info(f"开始启动模拟器{idx} - {package_name}")
 
         for _ in range(self.config.get("Data", "MaxWaitTime") * 10):
 
@@ -225,7 +226,6 @@ class MumuManager(DeviceBase):
 
     async def get_device_info(self, idx: str) -> str:
 
-        logger.info(f"开始获取模拟器{idx}信息")
         result = subprocess.run(
             [self.emulator_path, "info", "-v", idx],
             capture_output=True,

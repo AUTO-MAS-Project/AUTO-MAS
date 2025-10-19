@@ -66,7 +66,7 @@ class EmulatorConfig(ConfigBase):
         )
         self.Data_BossKey = ConfigItem("Data", "BossKey", "[ ]", JSONValidator(list))
         self.Data_MaxWaitTime = ConfigItem(
-            "Data", "MaxWaitTime", 60, RangeValidator(-1, 9999)
+            "Data", "MaxWaitTime", 60, RangeValidator(1, 9999)
         )
 
 
@@ -294,7 +294,7 @@ class MaaConfig(ConfigBase):
             "Emulator",
             "Id",
             "-",
-            MultipleUIDValidator("-", self.related_config, "EmulatorData"),
+            MultipleUIDValidator("-", self.related_config, "EmulatorConfig"),
         )
         self.Emulator_Index = ConfigItem("Emulator", "Index", "")
 
@@ -509,7 +509,7 @@ class GeneralConfig(ConfigBase):
             "Game",
             "EmulatorId",
             "-",
-            MultipleUIDValidator("-", self.related_config, "EmulatorData"),
+            MultipleUIDValidator("-", self.related_config, "EmulatorConfig"),
         )
         self.Game_EmulatorIndex = ConfigItem("Game", "EmulatorIndex", "")
 
@@ -630,8 +630,7 @@ class GlobalConfig(ConfigBase):
     )
     Data_WebConfig = ConfigItem("Data", "WebConfig", "[ ]", JSONValidator(list))
 
-    EmulatorData = MultipleConfig([EmulatorConfig])
-
+    EmulatorConfig = MultipleConfig([EmulatorConfig], if_save_needed=False)
     PlanConfig = MultipleConfig([MaaPlanConfig], if_save_needed=False)
     ScriptConfig = MultipleConfig([MaaConfig, GeneralConfig], if_save_needed=False)
     QueueConfig = MultipleConfig([QueueConfig], if_save_needed=False)
@@ -639,8 +638,8 @@ class GlobalConfig(ConfigBase):
     def __init__(self):
         super().__init__()
 
-        MaaConfig.related_config["EmulatorData"] = self.EmulatorData
-        GeneralConfig.related_config["EmulatorData"] = self.EmulatorData
+        MaaConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
+        GeneralConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         MaaUserConfig.related_config["PlanConfig"] = self.PlanConfig
         QueueItem.related_config["ScriptConfig"] = self.ScriptConfig
 

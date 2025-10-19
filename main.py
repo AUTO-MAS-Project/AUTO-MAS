@@ -114,6 +114,7 @@ def main():
             info_router,
             scripts_router,
             plan_router,
+            emulator_router,
             queue_router,
             dispatch_router,
             history_router,
@@ -140,6 +141,7 @@ def main():
         app.include_router(info_router)
         app.include_router(scripts_router)
         app.include_router(plan_router)
+        app.include_router(emulator_router)
         app.include_router(queue_router)
         app.include_router(dispatch_router)
         app.include_router(history_router)
