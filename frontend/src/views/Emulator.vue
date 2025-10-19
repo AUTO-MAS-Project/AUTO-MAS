@@ -338,7 +338,10 @@ const loadDevices = async (uuid: string) => {
     })
 
     if (response.code === 200) {
-      devicesData.value[uuid] = response.data || {}
+      // 后端返回的data是 { "模拟器UUID": { "设备索引": {...} } }
+      // 需要提取当前模拟器的设备列表
+      const allDevicesData = response.data || {}
+      devicesData.value[uuid] = allDevicesData[uuid] || {}
     } else {
       message.error(response.message || '获取设备信息失败')
     }
@@ -859,8 +862,8 @@ const handleBossKeyInputChange = (uuid: string) => {
                     >
                       <div class="device-header">
                         <span class="device-index">设备 #{{ index }}</span>
-                        <a-tag :color="device.status === '0' ? 'success' : 'default'">
-                          {{ device.status === '0' ? '在线' : '离线' }}
+                        <a-tag :color="device.status === 2 ? 'success' : 'default'">
+                          {{ device.status === 2 ? '在线' : '离线' }}
                         </a-tag>
                       </div>
                       <div class="device-info">
@@ -869,8 +872,8 @@ const handleBossKeyInputChange = (uuid: string) => {
                           <span class="info-value">{{ device.title }}</span>
                         </div>
                         <div class="info-item">
-                          <span class="info-label">状态码:</span>
-                          <span class="info-value">{{ device.status }}</span>
+                          <span class="info-label">ADB地址:</span>
+                          <span class="info-value">{{ device.adb_address || 'Unknown' }}</span>
                         </div>
                       </div>
                       <div class="device-actions">
@@ -879,7 +882,7 @@ const handleBossKeyInputChange = (uuid: string) => {
                           size="small"
                           :icon="h(PlayCircleOutlined)"
                           :loading="startingDevices.has(`${element.uid}-${index}`)"
-                          :disabled="device.status === '0'"
+                          :disabled="device.status === 2"
                           @click="startEmulator(element.uid, String(index))"
                         >
                           启动
@@ -889,7 +892,7 @@ const handleBossKeyInputChange = (uuid: string) => {
                           size="small"
                           :icon="h(StopOutlined)"
                           :loading="stoppingDevices.has(`${element.uid}-${index}`)"
-                          :disabled="device.status !== '0'"
+                          :disabled="device.status !== 2"
                           @click="stopEmulator(element.uid, String(index))"
                         >
                           关闭
