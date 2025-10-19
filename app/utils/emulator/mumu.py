@@ -40,7 +40,6 @@ class MumuManager(DeviceBase):
     """
 
     def __init__(self, config: EmulatorConfig) -> None:
-
         if not (Path(config.get("Info", "Path")) / "MuMuManager.exe").exists():
             raise FileNotFoundError(
                 f"MuMuManager.exe文件不存在: {config.get('Info', 'Path')}"
@@ -54,11 +53,10 @@ class MumuManager(DeviceBase):
         self.emulator_path = Path(config.get("Info", "Path")) / "MuMuManager.exe"
 
     async def open(self, idx: str, package_name: str = "") -> DeviceInfo:
-
         logger.info(f"开始启动模拟器{idx} - {package_name}")
 
+        status = DeviceStatus.UNKNOWN  # 初始化status变量
         for _ in range(self.config.get("Data", "MaxWaitTime") * 10):
-
             status = await self.getStatus(idx)
             if status == DeviceStatus.ONLINE:
                 return (await self.getInfo(idx))[idx]
@@ -94,7 +92,6 @@ class MumuManager(DeviceBase):
             raise RuntimeError(f"命令执行失败: {result}")
 
         for _ in range(self.config.get("Data", "MaxWaitTime") * 10):
-
             status = await self.getStatus(idx)
             if status in [DeviceStatus.ERROR, DeviceStatus.UNKNOWN]:
                 raise RuntimeError(f"模拟器{idx}启动失败, 状态码: {status}")
@@ -105,7 +102,6 @@ class MumuManager(DeviceBase):
             raise RuntimeError(f"模拟器{idx}启动超时, 当前状态码: {status}")
 
     async def close(self, idx: str) -> DeviceStatus:
-
         status = await self.getStatus(idx)
         if status not in [DeviceStatus.ONLINE, DeviceStatus.STARTING]:
             logger.warning(f"设备{idx}未在线，当前状态: {status}")
@@ -124,7 +120,6 @@ class MumuManager(DeviceBase):
             raise RuntimeError(f"命令执行失败: {result}")
 
         for _ in range(self.config.get("Data", "MaxWaitTime") * 10):
-
             status = await self.getStatus(idx)
             if status in [DeviceStatus.ERROR, DeviceStatus.UNKNOWN]:
                 raise RuntimeError(f"模拟器{idx}关闭失败, 状态码: {status}")
@@ -136,7 +131,6 @@ class MumuManager(DeviceBase):
             raise RuntimeError(f"模拟器{idx}关闭超时, 当前状态码: {status}")
 
     async def getStatus(self, idx: str, data: str | None = None) -> DeviceStatus:
-
         if data is None:
             try:
                 data = await self.get_device_info(idx)
@@ -159,7 +153,6 @@ class MumuManager(DeviceBase):
             return DeviceStatus.OFFLINE
 
     async def getInfo(self, idx: str | None) -> dict[str, DeviceInfo]:
-
         data = await self.get_device_info(idx or "all")
 
         data_json = json.loads(data)
@@ -202,7 +195,6 @@ class MumuManager(DeviceBase):
         return result
 
     async def setVisible(self, idx: str, is_visible: bool) -> DeviceStatus:
-
         status = await self.getStatus(idx)
         if status not in [DeviceStatus.STARTING, DeviceStatus.ONLINE]:
             logger.warning(f"设备{idx}未在线，当前状态码: {status}")
@@ -227,7 +219,6 @@ class MumuManager(DeviceBase):
         return await self.getStatus(idx)
 
     async def get_device_info(self, idx: str) -> str:
-
         result = subprocess.run(
             [self.emulator_path, "info", "-v", idx],
             capture_output=True,
