@@ -13,14 +13,8 @@
       <!-- 计划按钮组 -->
       <div class="plan-buttons-container">
         <a-space wrap size="middle">
-          <a-button
-            v-for="plan in planList"
-            :key="plan.id"
-            :type="activePlanId === plan.id ? 'primary' : 'default'"
-            size="large"
-            class="plan-button"
-            @click="handlePlanClick(plan.id)"
-          >
+          <a-button v-for="plan in planList" :key="plan.id" :type="activePlanId === plan.id ? 'primary' : 'default'"
+            size="large" class="plan-button" @click="handlePlanClick(plan.id)">
             <span class="plan-name">{{ plan.name }}</span>
             <a-tag v-if="shouldShowPlanTypeTag()" size="small" color="blue" class="plan-type-tag">
               {{ getPlanTypeLabel(plan.type) }}
@@ -33,6 +27,8 @@
 </template>
 
 <script setup lang="ts">
+import { useDebounceFn } from '@vueuse/core'
+
 interface Plan {
   id: string
   name: string
@@ -51,16 +47,8 @@ interface Emits {
 const props = defineProps<Props>()
 const emit = defineEmits<Emits>()
 
-// 防抖点击处理
-const debounce = <T extends (...args: any[]) => any>(func: T, wait: number): T => {
-  let timeout: NodeJS.Timeout | null = null
-  return ((...args: any[]) => {
-    if (timeout) clearTimeout(timeout)
-    timeout = setTimeout(() => func(...args), wait)
-  }) as T
-}
-
-const handlePlanClick = debounce((planId: string) => {
+// 使用 VueUse 的 useDebounceFn 替换手写的 debounce
+const handlePlanClick = useDebounceFn((planId: string) => {
   if (planId === props.activePlanId) return
   emit('plan-change', planId)
 }, 100)
