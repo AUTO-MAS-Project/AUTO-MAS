@@ -22,7 +22,7 @@ export namespace EmulatorOperateIn {
      */
     export enum operate {
         OPEN = 'open',
-        STOP = 'stop',
+        CLOSE = 'close',
     }
 }
 
