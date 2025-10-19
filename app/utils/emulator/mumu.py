@@ -150,9 +150,11 @@ class MumuManager(DeviceBase):
             return DeviceStatus.UNKNOWN
 
         if data_json["is_android_started"]:
-            return DeviceStatus.STARTING
-        elif data_json["is_process_started"]:
+            logger.debug(f"模拟器{idx}在线")
             return DeviceStatus.ONLINE
+        elif data_json["is_process_started"]:
+            logger.debug(f"模拟器{idx}开启中")
+            return DeviceStatus.STARTING
         else:
             return DeviceStatus.OFFLINE
 
@@ -202,7 +204,7 @@ class MumuManager(DeviceBase):
     async def setVisible(self, idx: str, is_visible: bool) -> DeviceStatus:
 
         status = await self.getStatus(idx)
-        if status != DeviceStatus.ONLINE:
+        if status not in [DeviceStatus.STARTING, DeviceStatus.ONLINE]:
             logger.warning(f"设备{idx}未在线，当前状态码: {status}")
             return status
 
