@@ -72,10 +72,6 @@ class AutoProxyTask(TaskExecuteBase):
             self.cur_user_item.status = "跳过"
             return "今日代理次数已达上限, 跳过该用户"
 
-        # if self.cur_user_config.get("Emulator", "Id") == "-":
-        #     self.cur_user_item.status = "异常"
-        #     return "用户未绑定模拟器"
-
         if not (
             Path.cwd()
             / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile"

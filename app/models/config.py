@@ -58,9 +58,9 @@ class EmulatorConfig(ConfigBase):
                     "general",
                     "mumu",
                     "ldplayer",
-                    "nox",  # 以下都是骗你的, 根本没有写~~
-                    "memu",
-                    "blueStacks",
+                    # "nox",  # 以下都是骗你的, 根本没有写~~
+                    # "memu",
+                    # "blueStacks",
                 ]
             ),
         )
@@ -229,14 +229,6 @@ class MaaUserConfig(ConfigBase):
             "Info", "SklandToken", "", EncryptValidator()
         )
 
-        self.Emulator_Id = ConfigItem(
-            "Emulator",
-            "Id",
-            "-",
-            MultipleUIDValidator("-", self.related_config, "EmulatorData"),
-        )
-        self.Emulator_Index = ConfigItem("Emulator", "Index", "")
-
         self.Data_LastProxyDate = ConfigItem(
             "Data", "LastProxyDate", "2000-01-01", DateTimeValidator("%Y-%m-%d")
         )
@@ -290,11 +282,21 @@ class MaaUserConfig(ConfigBase):
 class MaaConfig(ConfigBase):
     """MAA配置"""
 
+    related_config: dict[str, MultipleConfig] = {}
+
     def __init__(self) -> None:
         super().__init__()
 
         self.Info_Name = ConfigItem("Info", "Name", "新 MAA 脚本")
         self.Info_Path = ConfigItem("Info", "Path", str(Path.cwd()), FolderValidator())
+
+        self.Emulator_Id = ConfigItem(
+            "Emulator",
+            "Id",
+            "-",
+            MultipleUIDValidator("-", self.related_config, "EmulatorData"),
+        )
+        self.Emulator_Index = ConfigItem("Emulator", "Index", "")
 
         self.Run_TaskTransitionMethod = ConfigItem(
             "Run",
@@ -448,6 +450,8 @@ class GeneralUserConfig(ConfigBase):
 class GeneralConfig(ConfigBase):
     """通用配置"""
 
+    related_config: dict[str, MultipleConfig] = {}
+
     def __init__(self) -> None:
         super().__init__()
 
@@ -501,6 +505,13 @@ class GeneralConfig(ConfigBase):
         self.Game_IfForceClose = ConfigItem(
             "Game", "IfForceClose", False, BoolValidator()
         )
+        self.Game_EmulatorId = ConfigItem(
+            "Game",
+            "EmulatorId",
+            "-",
+            MultipleUIDValidator("-", self.related_config, "EmulatorData"),
+        )
+        self.Game_EmulatorIndex = ConfigItem("Game", "EmulatorIndex", "")
 
         self.Run_ProxyTimesLimit = ConfigItem(
             "Run", "ProxyTimesLimit", 0, RangeValidator(0, 9999)
@@ -621,16 +632,17 @@ class GlobalConfig(ConfigBase):
 
     EmulatorData = MultipleConfig([EmulatorConfig])
 
-    ScriptConfig = MultipleConfig([MaaConfig, GeneralConfig], if_save_needed=False)
     PlanConfig = MultipleConfig([MaaPlanConfig], if_save_needed=False)
+    ScriptConfig = MultipleConfig([MaaConfig, GeneralConfig], if_save_needed=False)
     QueueConfig = MultipleConfig([QueueConfig], if_save_needed=False)
 
     def __init__(self):
         super().__init__()
 
-        QueueItem.related_config["ScriptConfig"] = self.ScriptConfig
+        MaaConfig.related_config["EmulatorData"] = self.EmulatorData
+        GeneralConfig.related_config["EmulatorData"] = self.EmulatorData
         MaaUserConfig.related_config["PlanConfig"] = self.PlanConfig
-        MaaUserConfig.related_config["EmulatorData"] = self.EmulatorData
+        QueueItem.related_config["ScriptConfig"] = self.ScriptConfig
 
 
 CLASS_BOOK = {"MAA": MaaConfig, "MaaPlan": MaaPlanConfig, "General": GeneralConfig}

@@ -20,6 +20,7 @@
 
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
 from enum import IntEnum
 
 
@@ -40,86 +41,96 @@ class DeviceStatus(IntEnum):
     """未知状态"""
 
 
-# class ExeRunner:
-#     def __init__(self, exe_path, encoding) -> None:
-#         """
-#         指定 exe 路径
-#         !请传入绝对路径，使用/分隔路径
-#         """
-#         if not os.path.isfile(exe_path):
-#             raise FileNotFoundError(f"找不到文件: {exe_path}")
-#         self.exe_path = os.path.abspath(exe_path)  # 转为绝对路径
-#         self.encoding = encoding
+@dataclass
+class DeviceInfo:
 
-#     def run(self, *args) -> subprocess.CompletedProcess[str]:
-#         """
-#         执行命令，返回结果
-#         """
-#         cmd = [self.exe_path] + list(args)
-#         print(f"执行: {' '.join(cmd)}")
-
-#         result = subprocess.run(
-#             cmd,
-#             capture_output=True,
-#             text=True,
-#             encoding=self.encoding,
-#             errors="replace",
-#         )
-#         return result
+    title: str
+    status: DeviceStatus
+    adb_address: str
 
 
 class DeviceBase(ABC):
 
     @abstractmethod
-    async def open(self, idx: str, package_name: str) -> tuple[bool, int, dict]:
+    async def open(self, idx: str, package_name: str = "") -> DeviceInfo:
         """
         启动设备
-        返回值: (是否成功, 状态码, 启动信息)
+
+        Parameters
+        ----------
+        idx : str
+            设备索引
+        package_name : str
+            启动的应用包名
+
+        Returns
+        -------
+        DeviceInfo
+            设备信息
         """
         ...
 
     @abstractmethod
-    async def close(self, idx: str) -> tuple[bool, int]:
+    async def close(self, idx: str) -> DeviceStatus:
         """
         关闭设备或服务
-        返回值: (是否成功, 状态码)
+
+        Parameters
+        ----------
+        idx : str
+            设备索引
+
+        Returns
+        -------
+        DeviceStatus
+            设备状态
         """
         ...
 
     @abstractmethod
-    async def get_status(self, idx: str) -> int:
+    async def getStatus(self, idx: str) -> DeviceStatus:
         """
         获取指定模拟器当前状态
-        返回值: 状态码
+
+        Parameters
+        ----------
+        idx : str
+            设备索引
+
+        Returns
+        -------
+        DeviceStatus
+            设备状态
         """
         ...
 
     @abstractmethod
-    async def hide_device(self, idx: str) -> tuple[bool, int]:
-        """
-        隐藏设备窗口
-        返回值: (是否成功, 状态码)
-        """
-        ...
-
-    @abstractmethod
-    async def show_device(self, idx: str) -> tuple[bool, int]:
-        """
-        显示设备窗口
-        返回值: (是否成功, 状态码)
-        """
-        ...
-
-    async def get_all_info(self) -> dict[str, dict[str, str]]:
+    async def getInfo(self, idx: str) -> dict[str, DeviceInfo]:
         """
         获取设备信息
-        返回值: 设备字典
-        结构示例:
-        {
-            "0":{
-                "title": 模拟器名字,
-                "status": "1"
-            }
-        }
+
+        Returns
+        -------
+        dict[str, DeviceInfo]
+            设备信息字典，键为设备索引，值为设备信息
+        """
+        ...
+
+    @abstractmethod
+    async def setVisible(self, idx: str, is_visible: bool) -> DeviceStatus:
+        """
+        设置设备窗口可见性
+
+        Parameters
+        ----------
+        idx : str
+            设备索引
+        is_visible : bool
+            是否可见
+
+        Returns
+        -------
+        DeviceStatus
+            设备状态
         """
         ...

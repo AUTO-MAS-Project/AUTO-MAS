@@ -25,7 +25,7 @@ import shutil
 from pathlib import Path
 from datetime import datetime
 
-from app.core import Config
+from app.core import Config, EmulatorManager
 from app.models.schema import WebSocketMessage
 from app.models.task import TaskExecuteBase, ScriptItem, UserItem
 from app.models.ConfigBase import MultipleConfig
@@ -68,6 +68,13 @@ class MaaManager(TaskExecuteBase):
             Config.ScriptConfig[uuid.UUID(self.script_info.script_id)], MaaConfig
         ):
             return "脚本配置类型错误, 不是MAA脚本类型"
+        if (
+            Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
+                "Emulator", "Id"
+            )
+            == "-"
+        ):
+            return "未设置模拟器配置, 请检查脚本配置中的模拟器设置！"
         if not (
             Path(
                 Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
@@ -110,6 +117,11 @@ class MaaManager(TaskExecuteBase):
         )
         self.temp_path = Path.cwd() / f"data/{self.script_info.script_id}/Temp"
 
+        # 初始化模拟器管理器
+        self.emulator_manager = await EmulatorManager.get_emulator_instance(
+            self.script_config.get("Emulator", "Id")
+        )
+
         # 备份原始配置
         self.temp_path.mkdir(parents=True, exist_ok=True)
         if self.maa_set_path.exists():
@@ -137,12 +149,14 @@ class MaaManager(TaskExecuteBase):
 
     async def main_task(self):
 
-        check_result = await self.check()
-        if check_result != "Pass":
-            logger.error(f"未通过配置检查: {check_result}")
+        self.check_result = await self.check()
+        if self.check_result != "Pass":
+            logger.error(f"未通过配置检查: {self.check_result}")
             await Config.send_json(
                 WebSocketMessage(
-                    id=self.task_info.task_id, type="Info", data={"Error": check_result}
+                    id=self.task_info.task_id,
+                    type="Info",
+                    data={"Error": self.check_result},
                 ).model_dump()
             )
             return
@@ -155,7 +169,10 @@ class MaaManager(TaskExecuteBase):
 
         for self.script_info.current_index in range(len(self.script_info.user_list)):
             task = METHOD_BOOK[self.task_info.mode](
-                self.script_info, self.script_config, self.user_config
+                self.script_info,
+                self.script_config,
+                self.user_config,
+                self.emulator_manager,
             )
             await task.execute()
             await task.accomplish.wait()
@@ -163,18 +180,19 @@ class MaaManager(TaskExecuteBase):
     async def final_task(self):
         """运行结束后的收尾工作"""
 
+        if self.check_result != "Pass":
+            self.script_info.status = "异常"
+            return self.check_result
+
         logger.info("MAA 主任务已结束, 开始执行后续操作")
         await Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].unlock()
         logger.success(f"已解锁脚本配置 {self.script_info.script_id}")
 
-        if self.check_result != "Success!":
-            return self.check_result
-
-        # if self.mode == "人工排查" and self.script_id in Config.if_ignore_silence:
-        #     Config.if_ignore_silence.remove(self.script_id)
-
         if self.task_info.mode in ["自动代理", "人工排查"]:
 
+            await self.emulator_manager.close(
+                self.script_config.get("Emulator", "Index")
+            )
             await Config.ScriptConfig[
                 uuid.UUID(self.script_info.script_id)
             ].UserData.load(await self.user_config.toDict())
@@ -233,6 +251,8 @@ class MaaManager(TaskExecuteBase):
         if (self.temp_path / "gui.json").exists():
             shutil.copy(self.temp_path / "gui.json", self.maa_set_path)
         shutil.rmtree(self.temp_path, ignore_errors=True)
+
+        self.script_info.status = "完成"
 
     async def on_crash(self, e: Exception):
 
