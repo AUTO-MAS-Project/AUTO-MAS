@@ -130,7 +130,7 @@ const saveImmediately = async (uuid: string, skipReload = false) => {
 const loadEmulators = async () => {
   loading.value = true
   try {
-    const response = await Service.getEmulatorApiSettingEmulatorGetPost({ emulatorId: null })
+    const response = await Service.getEmulatorApiEmulatorGetPost({ emulatorId: null })
     if (response.code === 200 && 'index' in response && 'data' in response) {
       emulatorIndex.value = (response.index as EmulatorConfigIndexItem[]) || []
       emulatorData.value = (response.data as Record<string, any>) || {}
@@ -165,7 +165,7 @@ const loadEmulators = async () => {
 // 添加模拟器
 const handleAdd = async () => {
   try {
-    const response = await Service.addEmulatorApiSettingEmulatorAddPost()
+    const response = await Service.addEmulatorApiEmulatorAddPost()
     if (response.code === 200) {
       message.success('添加成功')
       await loadEmulators()
@@ -206,7 +206,7 @@ const handleSave = async (uuid: string, silent = false, skipReload = false) => {
       },
     }
 
-    const response = await Service.updateEmulatorApiSettingEmulatorUpdatePost({
+    const response = await Service.updateEmulatorApiEmulatorUpdatePost({
       emulatorId: uuid,
       data: configData,
     })
@@ -231,7 +231,7 @@ const handleSave = async (uuid: string, silent = false, skipReload = false) => {
 // 删除模拟器
 const handleDelete = async (uuid: string) => {
   try {
-    const response = await Service.deleteEmulatorApiSettingEmulatorDeletePost({
+    const response = await Service.deleteEmulatorApiEmulatorDeletePost({
       emulatorId: uuid,
     })
     if (response.code === 200) {
@@ -266,7 +266,7 @@ const handleDelete = async (uuid: string) => {
 const handleSearch = async () => {
   searching.value = true
   try {
-    const response = await Service.searchEmulatorsApiSettingEmulatorSearchPost()
+    const response = await Service.searchEmulatorsApiEmulatorEmulatorSearchPost()
     if (response.code === 200) {
       searchResults.value = response.emulators || []
       if (searchResults.value.length > 0) {
@@ -289,10 +289,10 @@ const handleSearch = async () => {
 // 从搜索结果导入
 const handleImportFromSearch = async (result: EmulatorSearchResult) => {
   try {
-    const response = await Service.addEmulatorApiSettingEmulatorAddPost()
+    const response = await Service.addEmulatorApiEmulatorAddPost()
     if (response.code === 200) {
       // 更新新添加的模拟器配置，使用分组结构
-      const updateResponse = await Service.updateEmulatorApiSettingEmulatorUpdatePost({
+      const updateResponse = await Service.updateEmulatorApiEmulatorUpdatePost({
         emulatorId: response.emulatorId,
         data: {
           Info: {
@@ -333,7 +333,7 @@ const loadDevices = async (uuid: string) => {
   loadingDevices.value = new Set(loadingDevices.value)
 
   try {
-    const response = await Service.getEmulatorStatusApiSettingEmulatorStatusPost({
+    const response = await Service.getStatusApiEmulatorStatusPost({
       emulatorId: uuid,
     })
 
@@ -364,7 +364,7 @@ const startEmulator = async (uuid: string, index: string) => {
   startingDevices.value = new Set(startingDevices.value)
 
   try {
-    const response = await Service.operationEmulatorApiSettingEmulatorOperatePost({
+    const response = await Service.operationEmulatorApiEmulatorOperatePost({
       emulatorId: uuid,
       operate: 'open' as any,
       index: index,
@@ -393,9 +393,9 @@ const stopEmulator = async (uuid: string, index: string) => {
   stoppingDevices.value = new Set(stoppingDevices.value)
 
   try {
-    const response = await Service.operationEmulatorApiSettingEmulatorOperatePost({
+    const response = await Service.operationEmulatorApiEmulatorOperatePost({
       emulatorId: uuid,
-      operate: 'stop' as any,
+      operate: 'close' as any,
       index: index,
     })
 
