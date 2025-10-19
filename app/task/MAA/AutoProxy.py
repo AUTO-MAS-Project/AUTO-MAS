@@ -242,9 +242,30 @@ class AutoProxyTask(TaskExecuteBase):
                     f"用户 {self.cur_user_item.name} - 模式: {self.mode} - 尝试次数: {i + 1}/{self.script_config.get('Run', 'RunTimesLimit')}"
                 )
 
-                emulator_info = await self.emulator_manager.open(
-                    self.script_config.get("Emulator", "Index")
-                )
+                try:
+                    emulator_info = await self.emulator_manager.open(
+                        self.script_config.get("Emulator", "Index")
+                    )
+                except Exception as e:
+                    logger.exception(f"用户: {self.cur_user_uid} - 模拟器启动失败: {e}")
+                    self.script_info.log = (
+                        f"模拟器启动失败: {e}\n正在中止相关程序\n请等待"
+                    )
+                    self.cur_user_item.log_record[self.log_start_time] = LogRecord(
+                        [f"模拟器启动失败: {e}", "未执行代理任务"], "模拟器启动失败"
+                    )
+
+                    await self.emulator_manager.close(
+                        self.script_config.get("Emulator", "Index")
+                    )
+                    await Notify.push_plyer(
+                        "用户自动代理出现异常！",
+                        f"用户 {self.cur_user_item.name} 的{MAA_RUN_MOOD_BOOK[self.mode]}部分出现一次异常",
+                        f"{self.cur_user_item.name}的{MAA_RUN_MOOD_BOOK[self.mode]}出现异常",
+                        3,
+                    )
+                    continue
+
                 if Config.get("Function", "IfSilence"):
                     await self.emulator_manager.setVisible(
                         self.script_config.get("Emulator", "Index"), False
