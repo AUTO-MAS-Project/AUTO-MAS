@@ -27,10 +27,11 @@ import shutil
 from pathlib import Path
 from datetime import datetime, timedelta
 
-from app.core import Config, EmulatorManager
+from app.core import Config
 from app.models.task import TaskExecuteBase, ScriptItem, LogRecord
 from app.models.ConfigBase import MultipleConfig
 from app.models.config import MaaConfig, MaaUserConfig
+from app.models.emulator import DeviceInfo, DeviceBase
 from app.utils.constants import MAA_RUN_MOOD_BOOK, MAA_TASK_TRANSITION_METHOD_BOOK
 from app.services import Notify, System
 from app.utils import get_logger, LogMonitor, ProcessManager
@@ -47,6 +48,7 @@ class AutoProxyTask(TaskExecuteBase):
         script_info: ScriptItem,
         script_config: MaaConfig,
         user_config: MultipleConfig[MaaUserConfig],
+        emulator_manager: DeviceBase,
     ):
         super().__init__()
 
@@ -57,6 +59,7 @@ class AutoProxyTask(TaskExecuteBase):
         self.script_info = script_info
         self.script_config = script_config
         self.user_config = user_config
+        self.emulator_manager = emulator_manager
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
         self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
         self.cur_user_config = self.user_config[self.cur_user_uid]
@@ -73,10 +76,6 @@ class AutoProxyTask(TaskExecuteBase):
         ):
             self.cur_user_item.status = "跳过"
             return "今日代理次数已达上限, 跳过该用户"
-
-        if self.cur_user_config.get("Emulator", "Id") == "-":
-            self.cur_user_item.status = "异常"
-            return "用户未绑定模拟器"
 
         if (
             self.cur_user_config.get("Info", "Mode") == "详细"
@@ -102,8 +101,6 @@ class AutoProxyTask(TaskExecuteBase):
         self.maa_log_path = self.maa_root_path / "debug/gui.log"
         self.maa_exe_path = self.maa_root_path / "MAA.exe"
         self.maa_tasks_path = self.maa_root_path / "resource/tasks/tasks.json"
-
-        self.emulator_id = self.cur_user_config.get("Emulator", "Id")
 
         self.run_book = {
             "Annihilation": self.cur_user_config.get("Info", "Annihilation") == "Close",
@@ -245,9 +242,15 @@ class AutoProxyTask(TaskExecuteBase):
                     f"用户 {self.cur_user_item.name} - 模式: {self.mode} - 尝试次数: {i + 1}/{self.script_config.get('Run', 'RunTimesLimit')}"
                 )
 
-                await EmulatorManager.open_emulator(self.emulator_id, "1")
+                emulator_info = await self.emulator_manager.open(
+                    self.script_config.get("Emulator", "Index")
+                )
+                if Config.get("Function", "IfSilence"):
+                    await self.emulator_manager.setVisible(
+                        self.script_config.get("Emulator", "Index"), False
+                    )
 
-                await self.set_maa()
+                await self.set_maa(emulator_info)
 
                 logger.info(f"启动MAA进程: {self.maa_exe_path}")
                 self.log_start_time = datetime.now()
@@ -275,7 +278,9 @@ class AutoProxyTask(TaskExecuteBase):
                     )
 
                     await self.maa_process_manager.kill(if_force=True)
-                    await EmulatorManager.close_emulator(self.emulator_id, "1")
+                    await self.emulator_manager.close(
+                        self.script_config.get("Emulator", "Index")
+                    )
                     await System.kill_process(self.maa_exe_path)
 
                     await Notify.push_plyer(
@@ -284,13 +289,6 @@ class AutoProxyTask(TaskExecuteBase):
                         f"{self.cur_user_item.name}的{MAA_RUN_MOOD_BOOK[self.mode]}出现异常",
                         3,
                     )
-
-                if (
-                    self.script_config.get("Run", "TaskTransitionMethod")
-                    == "ExitEmulator"
-                ):
-                    logger.info("任务结束退出模拟器")
-                    await EmulatorManager.close_emulator(self.emulator_id, "1")
 
                 maa_set = json.loads(self.maa_set_path.read_text(encoding="utf-8"))
 
@@ -306,7 +304,7 @@ class AutoProxyTask(TaskExecuteBase):
                     )
                     logger.info("更新动作结束")
 
-    async def set_maa(self):
+    async def set_maa(self, emulator_info: DeviceInfo):
         """配置MAA运行参数"""
 
         logger.info(f"开始配置MAA运行参数: {self.mode}")
@@ -346,6 +344,10 @@ class AutoProxyTask(TaskExecuteBase):
         for i in range(1, 9):
             maa_set["Global"][f"Timer.Timer{i}"] = "False"
 
+        if emulator_info.adb_address != "Unknown":
+            maa_set["Configurations"]["Default"][
+                "Connect.Address"
+            ] = emulator_info.adb_address
         maa_set["Configurations"]["Default"]["MainFunction.PostActions"] = (
             MAA_TASK_TRANSITION_METHOD_BOOK[
                 self.script_config.get("Run", "TaskTransitionMethod")
@@ -620,20 +622,11 @@ class AutoProxyTask(TaskExecuteBase):
         await System.kill_process(self.maa_exe_path)
         await self.maa_log_monitor.stop()
         await agree_bilibili(self.maa_tasks_path, False)
-        if (
-            self.script_config.get("Run", "TaskTransitionMethod") == "ExitEmulator"
-            or self.script_info.current_index == len(self.script_info.user_list) - 1
-            or self.cur_user_config.get("Emulator", "Id")
-            != self.user_config[
-                uuid.UUID(
-                    self.script_info.user_list[
-                        self.script_info.current_index + 1
-                    ].user_id
-                )
-            ].get("Emulator", "Id")
-        ):
-            logger.info("任务结束退出模拟器")
-            await EmulatorManager.close_emulator(self.emulator_id, "1")
+        if self.script_config.get("Run", "TaskTransitionMethod") == "ExitEmulator":
+            logger.info("用户任务结束, 关闭模拟器")
+            await self.emulator_manager.close(
+                self.script_config.get("Emulator", "Index")
+            )
 
         user_logs_list = []
         if_six_star = False

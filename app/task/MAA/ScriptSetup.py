@@ -28,6 +28,7 @@ from app.core import Broadcast, Config
 from app.models.task import TaskExecuteBase, ScriptItem
 from app.models.ConfigBase import MultipleConfig
 from app.models.config import MaaConfig, MaaUserConfig
+from app.models.emulator import DeviceBase
 from app.services import System
 from app.utils import get_logger, ProcessManager
 
@@ -42,6 +43,7 @@ class ScriptSetupTask(TaskExecuteBase):
         script_info: ScriptItem,
         script_config: MaaConfig,
         user_config: MultipleConfig[MaaUserConfig],
+        emulator_manager: DeviceBase,
     ):
         super().__init__()
 
