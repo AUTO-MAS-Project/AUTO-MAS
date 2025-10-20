@@ -375,6 +375,11 @@ class MaaConfig_Info(BaseModel):
     Path: Optional[str] = Field(default=None, description="脚本路径")
 
 
+class MaaConfig_Emulator(BaseModel):
+    Id: Optional[str] = Field(default=None, description="模拟器ID")
+    Index: Optional[str] = Field(default=None, description="模拟器多开实例索引")
+
+
 class MaaConfig_Run(BaseModel):
     TaskTransitionMethod: Optional[Literal["NoAction", "ExitGame", "ExitEmulator"]] = (
         Field(default=None, description="简洁任务间切换方式")
@@ -393,6 +398,9 @@ class MaaConfig_Run(BaseModel):
 
 class MaaConfig(BaseModel):
     Info: Optional[MaaConfig_Info] = Field(default=None, description="脚本基础信息")
+    Emulator: Optional[MaaConfig_Emulator] = Field(
+        default=None, description="模拟器配置"
+    )
     Run: Optional[MaaConfig_Run] = Field(default=None, description="脚本运行配置")
 
 
@@ -467,6 +475,8 @@ class GeneralConfig_Game(BaseModel):
     IfForceClose: Optional[bool] = Field(
         default=None, description="是否强制关闭游戏/模拟器进程"
     )
+    EmulatorId: Optional[str] = Field(default=None, description="模拟器ID")
+    EmulatorIndex: Optional[str] = Field(default=None, description="模拟器多开实例索引")
 
 
 class GeneralConfig_Run(BaseModel):
