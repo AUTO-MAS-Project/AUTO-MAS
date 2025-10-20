@@ -26,12 +26,12 @@ import sys
 import ctypes
 import logging
 from pathlib import Path
-from app.utils import get_logger
 
 current_dir = Path(__file__).resolve().parent
 if str(current_dir) not in sys.path:
     sys.path.insert(0, str(current_dir))
 
+from app.utils import get_logger
 
 logger = get_logger("主程序")
 
