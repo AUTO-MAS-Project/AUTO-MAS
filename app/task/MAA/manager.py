@@ -174,8 +174,7 @@ class MaaManager(TaskExecuteBase):
                 self.user_config,
                 self.emulator_manager,
             )
-            await task.execute()
-            await task.accomplish.wait()
+            await self.spawn(task)
 
     async def final_task(self):
         """运行结束后的收尾工作"""

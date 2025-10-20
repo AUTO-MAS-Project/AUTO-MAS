@@ -31,9 +31,7 @@ interface WSMessage {
   type: string
   id: string
   data: {
-    task_dict?: Script[]
-    user_list?: User[]
-    task_list?: any[]
+    task_info?: any[]
   }
   fullMessage?: any
 }
@@ -47,137 +45,19 @@ const handleWSMessage = (message: WSMessage) => {
   console.log('TaskOverviewPanel 收到 WebSocket 消息:', message)
 
   if (message.type === 'Update') {
-    // 处理 task_dict 数据（完整的脚本和用户数据）
-    if (message.data?.task_dict) {
-      console.log('更新任务数据 (task_dict):', message.data.task_dict)
-      taskData.value = message.data.task_dict
+    // 处理 task_info 数据（完整的脚本和用户数据）
+    if (message.data?.task_info && Array.isArray(message.data.task_info)) {
+      console.log('更新任务数据 (task_info):', message.data.task_info)
+      
+      // 转换后端的 task_info 格式到前端的 Script 格式
+      taskData.value = message.data.task_info.map((task: any, index: number) => ({
+        script_id: task.script_id || `script_${index}`,
+        name: task.name || '未知脚本',
+        status: task.status || '等待',
+        user_list: task.userList ? [...task.userList] : [], // 注意：后端使用 userList，前端使用 user_list
+      }))
+      
       console.log('设置后的 taskData:', taskData.value)
-
-      // 更新展开状态
-      if (taskTreeRef.value) {
-        taskTreeRef.value.updateExpandedScripts()
-      }
-    }
-
-    // 处理 user_list 数据（只有用户状态更新）
-    else if (message.data?.user_list && Array.isArray(message.data.user_list)) {
-      console.log('更新用户列表 (user_list):', message.data.user_list)
-
-      // 如果还没有脚本数据，创建一个默认脚本来包含这些用户
-      if (taskData.value.length === 0) {
-        // 根据用户状态推导脚本状态
-        const userStatuses = message.data.user_list.map(u => u.status)
-        let scriptStatus = '等待'
-        if (userStatuses.includes('异常') || userStatuses.includes('失败')) {
-          scriptStatus = '异常'
-        } else if (userStatuses.includes('运行')) {
-          scriptStatus = '运行'
-        } else if (userStatuses.every(s => s === '已完成')) {
-          scriptStatus = '已完成'
-        }
-
-        taskData.value = [
-          {
-            script_id: 'default-script',
-            name: '新 MAA 脚本', // 使用你提供的脚本名称
-            status: scriptStatus,
-            user_list: message.data.user_list,
-          },
-        ]
-      } else {
-        // 更新现有脚本的用户列表
-        // 假设所有用户都属于第一个脚本（根据你的使用场景）
-        if (taskData.value[0]) {
-          taskData.value[0].user_list = message.data.user_list
-          // 根据用户状态更新脚本状态
-          const userStatuses = message.data.user_list.map(u => u.status)
-          if (userStatuses.includes('异常') || userStatuses.includes('失败')) {
-            taskData.value[0].status = '异常'
-          } else if (userStatuses.includes('运行')) {
-            taskData.value[0].status = '运行'
-          } else if (userStatuses.every(s => s === '已完成')) {
-            taskData.value[0].status = '已完成'
-          } else {
-            taskData.value[0].status = '等待'
-          }
-        }
-      }
-
-      console.log('更新后的 taskData:', taskData.value)
-
-      // 更新展开状态
-      if (taskTreeRef.value) {
-        taskTreeRef.value.updateExpandedScripts()
-      }
-    }
-
-    // 处理 task_list 数据
-    else if (message.data?.task_list && Array.isArray(message.data.task_list)) {
-      console.log('更新任务列表 (task_list):', message.data.task_list)
-
-      // 如果已有任务数据，尝试合并状态更新而不是完全替换
-      if (taskData.value && taskData.value.length > 0) {
-        // 创建一个更新后的任务数据副本
-        const updatedTaskData = taskData.value.map(existingTask => {
-          const matchingTask = message.data?.task_list?.find(
-            (task: any) =>
-              task.name === existingTask.name ||
-              task.id === existingTask.script_id ||
-              task.script_id === existingTask.script_id
-          )
-
-          if (matchingTask) {
-            return {
-              ...existingTask,
-              status: matchingTask.status || existingTask.status,
-              // 如果 task_list 包含 user_list，则使用新的用户列表，否则保持现有的
-              user_list: matchingTask.user_list
-                ? [...matchingTask.user_list]
-                : existingTask.user_list,
-            }
-          }
-          return existingTask
-        })
-
-        // 添加新的任务（不在现有数据中的）
-        const newTasks = (message.data?.task_list || []).filter(
-          (task: any) =>
-            !taskData.value.some(
-              existingTask =>
-                task.name === existingTask.name ||
-                task.id === existingTask.script_id ||
-                task.script_id === existingTask.script_id
-            )
-        )
-
-        if (newTasks.length > 0) {
-          const convertedNewTasks = newTasks.map((task: any) => ({
-            script_id:
-              task.id ||
-              task.script_id ||
-              `task_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-            name: task.name || '未知任务',
-            status: task.status || '等待',
-            user_list: task.user_list ? [...task.user_list] : [], // 使用后端提供的 user_list
-          }))
-          updatedTaskData.push(...convertedNewTasks)
-        }
-
-        taskData.value = updatedTaskData
-      } else {
-        // 如果没有现有数据，直接转换
-        taskData.value = (message.data?.task_list || []).map((task: any) => ({
-          script_id:
-            task.id ||
-            task.script_id ||
-            `task_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-          name: task.name || '未知任务',
-          status: task.status || '等待',
-          user_list: task.user_list ? [...task.user_list] : [], // 使用后端提供的 user_list
-        }))
-      }
-
-      console.log('处理后的 taskData:', taskData.value)
 
       // 更新展开状态
       if (taskTreeRef.value) {
