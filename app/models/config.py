@@ -296,7 +296,7 @@ class MaaConfig(ConfigBase):
             "-",
             MultipleUIDValidator("-", self.related_config, "EmulatorConfig"),
         )
-        self.Emulator_Index = ConfigItem("Emulator", "Index", "")
+        self.Emulator_Index = ConfigItem("Emulator", "Index", "-")
 
         self.Run_TaskTransitionMethod = ConfigItem(
             "Run",
@@ -511,7 +511,7 @@ class GeneralConfig(ConfigBase):
             "-",
             MultipleUIDValidator("-", self.related_config, "EmulatorConfig"),
         )
-        self.Game_EmulatorIndex = ConfigItem("Game", "EmulatorIndex", "")
+        self.Game_EmulatorIndex = ConfigItem("Game", "EmulatorIndex", "-")
 
         self.Run_ProxyTimesLimit = ConfigItem(
             "Run", "ProxyTimesLimit", 0, RangeValidator(0, 9999)
