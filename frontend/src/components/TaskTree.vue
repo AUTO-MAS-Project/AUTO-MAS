@@ -510,12 +510,12 @@ defineExpose({
   }
 }
 
-/* 动画效果 */
+/* 动画效果已移除 - 避免WebSocket刷新时的闪烁 */
 .user-list {
-  animation: slideDown 0.3s ease-out;
+  /* animation: slideDown 0.3s ease-out; */
 }
 
-@keyframes slideDown {
+/* @keyframes slideDown {
   from {
     opacity: 0;
     transform: translateY(-10px);
@@ -524,13 +524,13 @@ defineExpose({
     opacity: 1;
     transform: translateY(0);
   }
-}
+} */
 
 .script-card {
-  animation: fadeIn 0.3s ease-out;
+  /* animation: fadeIn 0.3s ease-out; */
 }
 
-@keyframes fadeIn {
+/* @keyframes fadeIn {
   from {
     opacity: 0;
     transform: translateY(10px);
@@ -539,7 +539,7 @@ defineExpose({
     opacity: 1;
     transform: translateY(0);
   }
-}
+} */
 
 /* 空状态样式 */
 .empty-state {

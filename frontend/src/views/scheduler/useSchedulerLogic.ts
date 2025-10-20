@@ -410,7 +410,7 @@ export function useSchedulerLogic() {
         // 即使是未知类型的消息，也尝试处理其中可能包含的有效数据
         if (data) {
           // 尝试处理可能的任务队列更新
-          if (data.task_dict || data.task_list || data.user_list) {
+          if (data.task_info) {
             handleUpdateMessage(tab, data)
           }
           // 尝试处理可能的日志信息
@@ -440,149 +440,36 @@ export function useSchedulerLogic() {
 
     // 同步维护 任务总览 快照 overviewData（用于路由返回后的快速恢复）
     try {
-      if (data.task_dict && Array.isArray(data.task_dict)) {
+      if (data.task_info && Array.isArray(data.task_info)) {
         // 完整脚本+用户数据，直接保存
-        tab.overviewData = (data.task_dict as Script[]).map(s => ({
-          ...s,
-          user_list: s.user_list ? [...s.user_list] : [],
+        tab.overviewData = (data.task_info as any[]).map(s => ({
+          script_id: s.script_id || `script_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          name: s.name || '未知脚本',
+          status: s.status || '等待',
+          user_list: s.userList ? [...s.userList] : [],
         }))
-      } else if (data.user_list && Array.isArray(data.user_list)) {
-        // 只有用户列表更新，合并到现有快照或创建默认脚本
-        if (!tab.overviewData || tab.overviewData.length === 0) {
-          const users = data.user_list
-          const userStatuses = users.map((u: any) => u.status)
-          let scriptStatus = '等待'
-          if (userStatuses.includes('异常') || userStatuses.includes('失败')) scriptStatus = '异常'
-          else if (userStatuses.includes('运行')) scriptStatus = '运行'
-          else if (userStatuses.length > 0 && userStatuses.every((s: string) => s === '已完成'))
-            scriptStatus = '已完成'
-          tab.overviewData = [
-            {
-              script_id: 'default-script',
-              name: '新 MAA 脚本',
-              status: scriptStatus,
-              user_list: users,
-            },
-          ]
-        } else {
-          const users = data.user_list
-          const userStatuses = users.map((u: any) => u.status)
-          let scriptStatus = '等待'
-          if (userStatuses.includes('异常') || userStatuses.includes('失败')) scriptStatus = '异常'
-          else if (userStatuses.includes('运行')) scriptStatus = '运行'
-          else if (userStatuses.length > 0 && userStatuses.every((s: string) => s === '已完成'))
-            scriptStatus = '已完成'
-          // 更新第一个脚本
-          tab.overviewData = [
-            {
-              ...(tab.overviewData[0] || { script_id: 'default-script', name: '新 MAA 脚本' }),
-              status: scriptStatus,
-              user_list: users,
-            },
-            ...tab.overviewData.slice(1),
-          ]
-        }
-      } else if (data.task_list && Array.isArray(data.task_list)) {
-        // 修复：更完善的 task_list 处理逻辑
-        console.log('[Scheduler] 处理 task_list 更新:', data.task_list)
-
-        // 如果已有 overviewData，尝试合并状态信息
-        if (tab.overviewData && tab.overviewData.length > 0) {
-          // 根据任务名称或ID匹配更新状态
-          const updatedOverviewData = tab.overviewData.map(script => {
-            const matchingTask = data.task_list.find(
-              (task: any) =>
-                task.name === script.name ||
-                task.id === script.script_id ||
-                task.script_id === script.script_id
-            )
-
-            if (matchingTask) {
-              return {
-                ...script,
-                status: matchingTask.status || script.status,
-                // 如果 task_list 包含 user_list，则使用新的用户列表，否则保持现有的
-                user_list: matchingTask.user_list ? [...matchingTask.user_list] : script.user_list,
-              }
-            }
-            return script
-          })
-
-          // 如果有新的任务不在现有数据中，添加它们
-          const newTasks = data.task_list.filter(
-            (task: any) =>
-              !tab.overviewData!.some(
-                script =>
-                  task.name === script.name ||
-                  task.id === script.script_id ||
-                  task.script_id === script.script_id
-              )
-          )
-
-          if (newTasks.length > 0) {
-            const convertedNewTasks: Script[] = newTasks.map((task: any) => ({
-              script_id:
-                task.id ||
-                task.script_id ||
-                `task_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-              name: task.name || '未知任务',
-              status: task.status || '等待',
-              user_list: task.user_list ? [...task.user_list] : [], // 使用后端提供的 user_list
-            }))
-            updatedOverviewData.push(...convertedNewTasks)
-          }
-
-          tab.overviewData = updatedOverviewData
-        } else {
-          // 如果没有现有数据，直接转换
-          const converted: Script[] = data.task_list.map((task: any) => ({
-            script_id:
-              task.id ||
-              task.script_id ||
-              `task_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-            name: task.name || '未知任务',
-            status: task.status || '等待',
-            user_list: task.user_list ? [...task.user_list] : [], // 使用后端提供的 user_list
-          }))
-          tab.overviewData = converted
-        }
-
-        console.log('[Scheduler] 更新后的 overviewData:', tab.overviewData)
-
-        // 立即同步更新到总览组件
-        const overviewPanel = overviewRefs.value.get(tab.key)
-        if (overviewPanel && overviewPanel.handleWSMessage && tab.overviewData) {
-          const syncMessage = {
-            type: 'Update',
-            id: tab.websocketId,
-            data: { task_dict: tab.overviewData },
-          }
-          console.log('[Scheduler] 同步 task_list 更新到总览组件:', syncMessage)
-          try {
-            overviewPanel.handleWSMessage(syncMessage)
-          } catch (e) {
-            console.warn('[Scheduler] 同步 task_list 到总览组件失败:', e)
-          }
-        }
+      } else {
+        // 如果没有task_info数据，保持现有数据不变
+        console.log('[Scheduler] 没有task_info数据，保持现有overviewData')
       }
     } catch (e) {
       console.warn('[Scheduler] 维护 overviewData 快照时出现问题:', e)
     }
 
     // 处理 队列与日志 显示
-    // 处理task_dict初始化消息
-    if (data.task_dict && Array.isArray(data.task_dict)) {
+    // 处理task_info初始化消息
+    if (data.task_info && Array.isArray(data.task_info)) {
       // 初始化任务队列 - 保持原始状态
-      const newTaskQueue = data.task_dict.map((item: any) => ({
+      const newTaskQueue = data.task_info.map((item: any) => ({
         name: item.name || '未知任务',
         status: item.status || '等待',
       }))
 
       // 初始化用户队列（仅包含运行状态下的用户）
       const newUserQueue: QueueItem[] = []
-      data.task_dict.forEach((taskItem: any) => {
-        if (taskItem.user_list && Array.isArray(taskItem.user_list)) {
-          taskItem.user_list.forEach((user: any) => {
+      data.task_info.forEach((taskItem: any) => {
+        if (taskItem.userList && Array.isArray(taskItem.userList)) {
+          taskItem.userList.forEach((user: any) => {
             if (user.status === '运行') {
               newUserQueue.push({
                 name: `${taskItem.name}-${user.name}`,
@@ -597,36 +484,35 @@ export function useSchedulerLogic() {
       tab.userQueue.splice(0, tab.userQueue.length, ...newUserQueue)
     }
 
-    // 更新任务队列
-    if (data.task_list && Array.isArray(data.task_list)) {
-      const newTaskQueue = data.task_list.map((item: any) => ({
-        name: item.name || '未知任务',
-        status: item.status || '未知',
-      }))
-      tab.taskQueue.splice(0, tab.taskQueue.length, ...newTaskQueue)
-    }
-
-    // 更新用户队列
-    if (data.user_list && Array.isArray(data.user_list)) {
-      const newUserQueue = data.user_list.map((item: any) => ({
-        name: item.name || '未知用户',
-        status: item.status || '未知',
-      }))
-      tab.userQueue.splice(0, tab.userQueue.length, ...newUserQueue)
-    }
-
     // 处理日志 - 直接显示完整日志内容，覆盖上次显示的内容
     if (data.log) {
       if (typeof data.log === 'string') {
-        tab.lastLogContent = data.log
+        const newContent = data.log
+        if (tab.lastLogContent !== newContent) {
+          tab.lastLogContent = newContent
+          console.log('[Scheduler] 更新日志内容:', {
+            tabKey: tab.key,
+            contentLength: newContent.length
+          })
+        }
       } else if (typeof data.log === 'object') {
-        if (data.log.Error) tab.lastLogContent = data.log.Error
-        else if (data.log.Warning) tab.lastLogContent = data.log.Warning
-        else if (data.log.Info) tab.lastLogContent = data.log.Info
-        else tab.lastLogContent = JSON.stringify(data.log)
+        let newContent = ''
+        if (data.log.Error) newContent = data.log.Error
+        else if (data.log.Warning) newContent = data.log.Warning
+        else if (data.log.Info) newContent = data.log.Info
+        else newContent = JSON.stringify(data.log)
+
+        if (tab.lastLogContent !== newContent) {
+          tab.lastLogContent = newContent
+          console.log('[Scheduler] 更新日志对象:', {
+            tabKey: tab.key,
+            contentLength: newContent.length
+          })
+        }
       }
     }
-    saveTabsToStorage(schedulerTabs.value)
+    // 移除可能导致递归更新的 saveTabsToStorage 调用
+    // saveTabsToStorage(schedulerTabs.value)
   }
 
   const handleInfoMessage = (data: any) => {
@@ -714,12 +600,8 @@ export function useSchedulerLogic() {
     // }
   }
 
-  const onLogScroll = (tab: SchedulerTab) => {
-    const el = logRefs.value.get(tab.key)
-    if (!el) return
-
-    const threshold = 5
-    tab.isLogAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight <= threshold
+  const onLogScroll = (isAtBottom: boolean, tab: SchedulerTab) => {
+    tab.isLogAtBottom = isAtBottom
   }
 
   const setLogRef = (el: HTMLElement | null, key: string) => {
@@ -740,7 +622,14 @@ export function useSchedulerLogic() {
         const wsMessage = {
           type: 'Update',
           id: tab.websocketId,
-          data: { task_dict: tab.overviewData },
+          data: {
+            task_info: tab.overviewData?.map(s => ({
+              script_id: s.script_id,
+              name: s.name,
+              status: s.status,
+              userList: s.user_list, // 转换回后端格式
+            }))
+          },
         }
         try {
           el.handleWSMessage(wsMessage)

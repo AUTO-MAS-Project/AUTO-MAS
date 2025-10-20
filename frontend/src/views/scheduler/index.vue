@@ -99,7 +99,7 @@
                   :log-content="tab.lastLogContent"
                   :tab-key="tab.key"
                   :is-log-at-bottom="tab.isLogAtBottom"
-                  @scroll="onLogScroll(tab)"
+                  @scroll="(isAtBottom: boolean) => onLogScroll(isAtBottom, tab)"
                   @set-ref="setLogRef"
                 />
               </div>

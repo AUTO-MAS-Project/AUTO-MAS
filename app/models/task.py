@@ -118,57 +118,73 @@ class TaskItem(ABC):
         """统一回调入口"""
         raise NotImplementedError("子类必须实现 on_change")
 
+    @property
+    def asdict(self) -> list:
+        """将 TaskItem 转换为字典形式"""
+        return [
+            {
+                "name": script_item.name,
+                "status": script_item.status,
+                "userList": [
+                    {
+                        "name": user_item.name,
+                        "status": user_item.status,
+                    }
+                    for user_item in script_item.user_list
+                ],
+            }
+            for script_item in self.script_list
+        ]
+
 
 @dataclass
 class TaskExecuteBase(ABC):
-    """任务执行基类"""
-
     task: asyncio.Task | None = None
+    _task_group: asyncio.TaskGroup | None = None
     accomplish: asyncio.Event = field(default_factory=asyncio.Event)
 
     @abstractmethod
-    async def main_task(self):
-        """脚本任务主体"""
-        raise NotImplementedError("子类必须实现 main_task 方法")
-
+    async def main_task(self): ...
     @abstractmethod
-    async def final_task(self):
-        """脚本任务收尾工作"""
-        raise NotImplementedError("子类必须实现 final_task 方法")
-
+    async def final_task(self): ...
     @abstractmethod
-    async def on_crash(self, e: Exception):
-        """脚本任务崩溃处理"""
-        raise NotImplementedError("子类必须实现 on_crash 方法")
+    async def on_crash(self, e): ...
 
-    async def do_main_task(self):
-        """执行脚本任务"""
-
-        self.accomplish.clear()
+    async def _execute_task(self, parent_tg: asyncio.TaskGroup):
+        self._task_group = parent_tg
         try:
             await self.main_task()
         except Exception as e:
             await self.on_crash(e)
-            raise e
-
-    async def do_final_task(self):
-        """执行收尾工作"""
-        try:
-            await self.final_task()
-        except Exception as e:
-            await self.on_crash(e)
+            raise
         finally:
-            self.accomplish.set()
+            self._task_group = None
+            try:
+                await asyncio.shield(self.final_task())
+            except Exception as e:
+                await self.on_crash(e)
+            finally:
+                self.accomplish.set()
 
-    async def execute(self):
-        """执行子任务"""
+    def spawn(self, child: TaskExecuteBase) -> asyncio.Task:
+        if self._task_group is None:
+            raise RuntimeError("子任务必须在主任务中启动")
+        return self._task_group.create_task(child._execute_task(self._task_group))
 
+    def execute(self):
+        if self.task is not None and not self.task.done():
+            raise RuntimeError("任务已在运行")
+
+        if self._task_group is not None:
+            raise RuntimeError("execute() 仅可由顶层任务调用，子任务请使用 spawn()")
+
+        async def _root_coro():
+            async with asyncio.TaskGroup() as tg:
+                self.task = tg.create_task(self._execute_task(tg))
+
+        self.task = asyncio.create_task(_root_coro())
+
+    def cancel(self) -> bool:
         if self.task is None or self.task.done():
-            self.task = asyncio.create_task(self.do_main_task())
-            self.task.add_done_callback(
-                lambda t: asyncio.create_task(self.do_final_task())
-            )
-        else:
-            raise RuntimeError("任务已在运行中")
-
-        return self.task
+            return False
+        return self.task.cancel()

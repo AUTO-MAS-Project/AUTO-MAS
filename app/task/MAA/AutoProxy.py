@@ -559,7 +559,7 @@ class AutoProxyTask(TaskExecuteBase):
     async def check_log(self, log_content: list[str]) -> None:
         """日志回调"""
 
-        log = "\n".join(log_content)
+        log = "".join(log_content)
         self.cur_user_log.content = log_content
         self.script_info.log = log
 
