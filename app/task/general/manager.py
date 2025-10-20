@@ -136,8 +136,7 @@ class GeneralManager(TaskExecuteBase):
             task = METHOD_BOOK[self.task_info.mode](
                 self.script_info, self.script_config, self.user_config
             )
-            await task.execute()
-            await task.accomplish.wait()
+            await self.spawn(task)
 
     async def final_task(self):
         """运行结束后的收尾工作"""

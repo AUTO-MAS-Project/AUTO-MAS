@@ -45,7 +45,7 @@ class TaskInfo(TaskItem):
         await Config.send_websocket_message(
             id=self.task_id,
             type="Update",
-            data={"task_info": [asdict(item) for item in self.script_list]},
+            data={"task_info": self.asdict},
         )
         if self.current_index != -1:
             await Config.send_websocket_message(
@@ -101,7 +101,9 @@ class Task(TaskExecuteBase):
         )
 
         # 依次运行任务
-        for script_item in self.task_info.script_list:
+        for self.task_info.current_index, script_item in enumerate(
+            self.task_info.script_list
+        ):
             current_script_uid = uuid.UUID(script_item.script_id)
 
             # 检查任务对应脚本是否仍存在
@@ -148,8 +150,7 @@ class Task(TaskExecuteBase):
                 continue
 
             # 运行任务
-            await task_item.execute()
-            await task_item.accomplish.wait()
+            await self.spawn(task_item)
 
     async def final_task(self) -> None:
         """
@@ -167,12 +168,10 @@ class Task(TaskExecuteBase):
 
         logger.info(f"任务结束: {self.task_info.task_id}")
 
-        await Config.send_json(
-            WebSocketMessage(
-                id=str(self.task_info.task_id),
-                type="Signal",
-                data={"Accomplish": "等待填充"},
-            ).model_dump()
+        await Config.send_websocket_message(
+            id=str(self.task_info.task_id),
+            type="Signal",
+            data={"Accomplish": "等待填充"},
         )
 
         if self.task_info.mode == "自动代理" and self.task_info.queue_id is not None:
@@ -260,7 +259,7 @@ class _TaskManager:
             user_id=str(user_uid) if user_uid else None,
         )
         self.task_handler[task_uid] = Task(self.task_info[task_uid])
-        await self.task_handler[task_uid].execute()
+        self.task_handler[task_uid].execute()
         asyncio.create_task(self.clean_task(task_uid))
 
         return task_uid
@@ -273,16 +272,14 @@ class _TaskManager:
 
         if len(self.task_handler) == 0 and Config.power_sign != "NoAction":
             logger.info(f"所有任务已结束，准备执行电源操作: {Config.power_sign}")
-            await Config.send_json(
-                WebSocketMessage(
-                    id="Main",
-                    type="Message",
-                    data={
-                        "type": "Countdown",
-                        "title": f"{POWER_SIGN_MAP[Config.power_sign]}倒计时",
-                        "message": f"程序将在倒计时结束后执行 {POWER_SIGN_MAP[Config.power_sign]} 操作",
-                    },
-                ).model_dump()
+            await Config.send_websocket_message(
+                id="Main",
+                type="Message",
+                data={
+                    "type": "Countdown",
+                    "title": f"{POWER_SIGN_MAP[Config.power_sign]}倒计时",
+                    "message": f"程序将在倒计时结束后执行 {POWER_SIGN_MAP[Config.power_sign]} 操作",
+                },
             )
             await System.start_power_task()
 
@@ -297,16 +294,16 @@ class _TaskManager:
 
         if task_id == "ALL":
             for task_item in self.task_handler.values():
-                if task_item.task is not None and not task_item.task.done():
-                    task_item.task.cancel()
-                    await task_item.accomplish.wait()
+                task_item.cancel()
+                await task_item.accomplish.wait()
         else:
             uid = uuid.UUID(task_id)
             if uid not in self.task_handler:
                 raise ValueError("未找到对应任务")
-            task_item = self.task_handler[uid]
-            if task_item.task is not None and not task_item.task.done():
-                task_item.task.cancel()
+            self.task_handler[uid].cancel()
+            logger.info(f"等待任务 {task_id} 结束...")
+            await self.task_handler[uid].accomplish.wait()
+            logger.info(f"任务 {task_id} 已结束")
 
     async def start_startup_queue(self):
         """开始运行启动时运行的调度队列"""
