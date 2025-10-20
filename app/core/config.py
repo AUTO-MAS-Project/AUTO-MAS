@@ -1665,6 +1665,36 @@ class AppConfig(GlobalConfig):
 
         return data
 
+    async def get_emulator_combox(self):
+        """获取模拟器下拉框信息"""
+
+        logger.info("开始获取模拟器下拉框信息")
+        data = [{"label": "未选择", "value": "-"}]
+        for uid, emulator in self.EmulatorConfig.items():
+            data.append({"label": emulator.get("Info", "Name"), "value": str(uid)})
+        logger.success("模拟器下拉框信息获取成功")
+        return data
+
+    async def get_emulator_devices_combox(self, emulator_id: str):
+        """获取模拟器多开实例下拉框信息"""
+
+        logger.info("开始获取模拟器下拉框信息")
+
+        data = [{"label": "未选择", "value": "-"}]
+
+        from .emulator_manager import EmulatorManager
+
+        for index, device in (
+            await (await EmulatorManager.get_emulator_instance(emulator_id)).getInfo(
+                None
+            )
+        ).items():
+            data.append({"label": device.title, "value": index})
+
+        logger.success("模拟器下拉框信息获取成功")
+
+        return data
+
     async def get_notice(self) -> tuple[bool, Dict[str, str]]:
         """获取公告信息"""
 
