@@ -72,6 +72,14 @@ const loadingDevices = ref<Set<string>>(new Set())
 const startingDevices = ref<Set<string>>(new Set())
 const stoppingDevices = ref<Set<string>>(new Set())
 
+// 设备信息缓存（带过期时间）
+interface DeviceCache {
+  data: Record<string, Record<string, any>>
+  timestamp: number
+}
+const devicesCacheMap = ref<Map<string, DeviceCache>>(new Map())
+const CACHE_DURATION = 30000 // 缓存30秒
+
 // 每个模拟器的编辑数据（使用 Map 存储）
 const editingDataMap = ref<Map<string, EmulatorInfo>>(new Map())
 
@@ -327,8 +335,18 @@ const handleImportFromSearch = async (result: EmulatorSearchResult) => {
 //   await loadDevices(uuid)
 // }
 
-// 加载设备信息 - 使用新的status API
-const loadDevices = async (uuid: string) => {
+// 加载设备信息 - 使用新的status API（带缓存）
+const loadDevices = async (uuid: string, forceRefresh = false) => {
+  // 检查缓存是否有效
+  if (!forceRefresh) {
+    const cache = devicesCacheMap.value.get(uuid)
+    if (cache && Date.now() - cache.timestamp < CACHE_DURATION) {
+      // 使用缓存数据
+      devicesData.value[uuid] = cache.data
+      return
+    }
+  }
+
   loadingDevices.value.add(uuid)
   loadingDevices.value = new Set(loadingDevices.value)
 
@@ -341,7 +359,14 @@ const loadDevices = async (uuid: string) => {
       // 后端返回的data是 { "模拟器UUID": { "设备索引": {...} } }
       // 需要提取当前模拟器的设备列表
       const allDevicesData = response.data || {}
-      devicesData.value[uuid] = allDevicesData[uuid] || {}
+      const currentDevices = allDevicesData[uuid] || {}
+      devicesData.value[uuid] = currentDevices
+
+      // 更新缓存
+      devicesCacheMap.value.set(uuid, {
+        data: currentDevices,
+        timestamp: Date.now(),
+      })
     } else {
       message.error(response.message || '获取设备信息失败')
     }
@@ -356,7 +381,7 @@ const loadDevices = async (uuid: string) => {
 
 // 刷新设备信息
 const refreshDevices = async (uuid: string) => {
-  await loadDevices(uuid)
+  await loadDevices(uuid, true) // 强制刷新，忽略缓存
   message.success('刷新成功')
 }
 
@@ -375,8 +400,8 @@ const startEmulator = async (uuid: string, index: string) => {
 
     if (response.code === 200) {
       message.success(response.message || `模拟器 ${index} 启动成功`)
-      // 刷新设备状态
-      await loadDevices(uuid)
+      // 刷新设备状态（强制刷新）
+      await loadDevices(uuid, true)
     } else {
       message.error(response.message || '启动失败')
     }
@@ -404,8 +429,8 @@ const stopEmulator = async (uuid: string, index: string) => {
 
     if (response.code === 200) {
       message.success(response.message || `模拟器 ${index} 已关闭`)
-      // 刷新设备状态
-      await loadDevices(uuid)
+      // 刷新设备状态（强制刷新）
+      await loadDevices(uuid, true)
     } else {
       message.error(response.message || '关闭失败')
     }
@@ -766,11 +791,12 @@ const handleBossKeyInputChange = (uuid: string) => {
                     <a-descriptions-item>
                       <template #label>
                         <span>老板键</span>
-                        <a-tooltip title="快速隐藏模拟器的快捷键组合">
+                        <a-tooltip title="快速隐藏模拟器的快捷键组合（MuMu模拟器不支持）">
                           <QuestionCircleOutlined style="margin-left: 4px" />
                         </a-tooltip>
                       </template>
                       <a-input
+                        v-if="getEditingData(element.uid).type !== 'mumu'"
                         v-model:value="bossKeyInputMap[element.uid]"
                         :placeholder="
                           recordingBossKeyMap.get(element.uid)
@@ -803,6 +829,9 @@ const handleBossKeyInputChange = (uuid: string) => {
                           </a-button>
                         </template>
                       </a-input>
+                      <span v-else style="color: var(--text-color-tertiary); font-size: 12px">
+                        MuMu模拟器不支持老板键功能
+                      </span>
                     </a-descriptions-item>
                   </a-descriptions>
                 </div>
@@ -811,7 +840,18 @@ const handleBossKeyInputChange = (uuid: string) => {
               <!-- 设备列表区域 -->
               <div class="devices-section">
                 <div class="section-header">
-                  <h3>设备列表</h3>
+                  <h3>
+                    设备列表
+                    <span
+                      v-if="
+                        devicesCacheMap.get(element.uid) &&
+                        Date.now() - devicesCacheMap.get(element.uid)!.timestamp < CACHE_DURATION
+                      "
+                      class="cache-indicator"
+                    >
+                      (已缓存)
+                    </span>
+                  </h3>
                   <a-button
                     size="small"
                     :icon="h(ReloadOutlined)"
@@ -855,50 +895,73 @@ const handleBossKeyInputChange = (uuid: string) => {
                   </div>
 
                   <div v-else class="devices-grid">
-                    <div
-                      v-for="(device, index) in devicesData[element.uid]"
-                      :key="index"
-                      class="device-card-item"
+                    <a-table
+                      :data-source="
+                        Object.entries(devicesData[element.uid]).map(([index, device]) => ({
+                          key: index,
+                          index,
+                          ...device,
+                        }))
+                      "
+                      :columns="[
+                        {
+                          title: '设备',
+                          dataIndex: 'index',
+                          key: 'index',
+                          width: 60,
+                          customRender: ({ text }: any) => `#${text}`,
+                        },
+                        {
+                          title: '状态',
+                          dataIndex: 'status',
+                          key: 'status',
+                          width: 60,
+                        },
+                        { title: '名称', dataIndex: 'title', key: 'title', ellipsis: true },
+                        {
+                          title: 'ADB地址',
+                          dataIndex: 'adb_address',
+                          key: 'adb_address',
+                          ellipsis: true,
+                        },
+                        { title: '操作', key: 'action', width: 140 },
+                      ]"
+                      :pagination="false"
+                      size="small"
+                      :scroll="{ x: 'max-content' }"
                     >
-                      <div class="device-header">
-                        <span class="device-index">设备 #{{ index }}</span>
-                        <a-tag :color="device.status === 2 ? 'success' : 'default'">
-                          {{ device.status === 2 ? '在线' : '离线' }}
-                        </a-tag>
-                      </div>
-                      <div class="device-info">
-                        <div class="info-item">
-                          <span class="info-label">名称:</span>
-                          <span class="info-value">{{ device.title }}</span>
-                        </div>
-                        <div class="info-item">
-                          <span class="info-label">ADB地址:</span>
-                          <span class="info-value">{{ device.adb_address || 'Unknown' }}</span>
-                        </div>
-                      </div>
-                      <div class="device-actions">
-                        <a-button
-                          type="primary"
-                          size="small"
-                          :icon="h(PlayCircleOutlined)"
-                          :loading="startingDevices.has(`${element.uid}-${index}`)"
-                          :disabled="device.status === 2"
-                          @click="startEmulator(element.uid, String(index))"
-                        >
-                          启动
-                        </a-button>
-                        <a-button
-                          danger
-                          size="small"
-                          :icon="h(StopOutlined)"
-                          :loading="stoppingDevices.has(`${element.uid}-${index}`)"
-                          :disabled="device.status !== 2"
-                          @click="stopEmulator(element.uid, String(index))"
-                        >
-                          关闭
-                        </a-button>
-                      </div>
-                    </div>
+                      <template #bodyCell="{ column, record }">
+                        <template v-if="column.key === 'status'">
+                          <a-tag :color="record.status === 2 ? 'success' : 'default'" size="small">
+                            {{ record.status === 2 ? '在线' : '离线' }}
+                          </a-tag>
+                        </template>
+                        <template v-else-if="column.key === 'action'">
+                          <a-space :size="4">
+                            <a-button
+                              type="primary"
+                              size="small"
+                              :icon="h(PlayCircleOutlined)"
+                              :loading="startingDevices.has(`${element.uid}-${record.index}`)"
+                              :disabled="record.status === 2"
+                              @click="startEmulator(element.uid, String(record.index))"
+                            >
+                              启动
+                            </a-button>
+                            <a-button
+                              danger
+                              size="small"
+                              :icon="h(StopOutlined)"
+                              :loading="stoppingDevices.has(`${element.uid}-${record.index}`)"
+                              :disabled="record.status !== 2"
+                              @click="stopEmulator(element.uid, String(record.index))"
+                            >
+                              关闭
+                            </a-button>
+                          </a-space>
+                        </template>
+                      </template>
+                    </a-table>
                   </div>
                 </a-spin>
               </div>
@@ -1034,7 +1097,7 @@ const handleBossKeyInputChange = (uuid: string) => {
 .tab-content {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
 }
 
 /* 配置区域 */
@@ -1042,21 +1105,30 @@ const handleBossKeyInputChange = (uuid: string) => {
   background: var(--bg-color-container);
   border: 1px solid var(--border-color);
   border-radius: 8px;
-  padding: 12px;
+  padding: 8px 12px;
 }
 
 .section-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 
 .section-header h3 {
   margin: 0;
   color: var(--text-color-primary);
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cache-indicator {
+  font-size: 12px;
+  color: var(--text-color-tertiary);
+  font-weight: 400;
 }
 
 .section-actions {
@@ -1065,11 +1137,11 @@ const handleBossKeyInputChange = (uuid: string) => {
 }
 
 .config-display {
-  margin-top: 12px;
+  margin-top: 8px;
 }
 
 .config-form {
-  margin-top: 12px;
+  margin-top: 8px;
 }
 
 /* 无边框输入优化 */
@@ -1115,7 +1187,7 @@ const handleBossKeyInputChange = (uuid: string) => {
   background: var(--bg-color-container);
   border: 1px solid var(--border-color);
   border-radius: 8px;
-  padding: 12px;
+  padding: 8px 12px;
 }
 
 .empty-devices {
@@ -1124,69 +1196,25 @@ const handleBossKeyInputChange = (uuid: string) => {
 }
 
 .devices-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 12px;
   margin-top: 12px;
 }
 
-.device-card-item {
-  background: var(--bg-color-elevated);
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  padding: 10px;
-  transition: all 0.3s;
+.devices-grid :deep(.ant-table) {
+  font-size: 13px;
 }
 
-.device-card-item:hover {
-  border-color: var(--primary-color);
-  box-shadow: 0 2px 8px rgba(24, 144, 255, 0.1);
-}
-
-.device-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 8px;
-}
-
-.device-index {
+.devices-grid :deep(.ant-table-thead > tr > th) {
+  padding: 8px 12px;
+  background: var(--bg-color-container);
   font-weight: 500;
-  color: var(--text-color-primary);
 }
 
-.device-info {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin-bottom: 10px;
+.devices-grid :deep(.ant-table-tbody > tr > td) {
+  padding: 6px 12px;
 }
 
-.info-item {
-  display: flex;
-  align-items: center;
-}
-
-.info-label {
-  color: var(--text-color-secondary);
-  margin-right: 8px;
-  min-width: 60px;
-  font-size: 12px;
-}
-
-.info-value {
-  color: var(--text-color-primary);
-  font-size: 12px;
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.device-actions {
-  display: flex;
-  gap: 8px;
-  justify-content: flex-end;
+.devices-grid :deep(.ant-table-tbody > tr:hover > td) {
+  background: var(--bg-color-elevated);
 }
 
 /* 老板键列表 */
@@ -1227,9 +1255,5 @@ html.dark .devices-section {
 html.dark .page-content {
   background: #0a0a0a;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-}
-
-html.dark .device-card-item:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 }
 </style>
