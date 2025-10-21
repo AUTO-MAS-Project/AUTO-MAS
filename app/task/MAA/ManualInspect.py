@@ -98,8 +98,6 @@ class ManualInspectTask(TaskExecuteBase):
 
     async def main_task(self):
         """人工排查模式主逻辑"""
-        # logger.info("人工排查任务开始, 屏蔽静默操作")
-        # Config.if_ignore_silence.append(self.script_id)
 
         # 初始化每日代理状态
         self.curdate = Config.server_date().strftime("%Y-%m-%d")

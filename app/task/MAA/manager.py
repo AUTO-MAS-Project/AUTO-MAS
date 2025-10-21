@@ -68,13 +68,15 @@ class MaaManager(TaskExecuteBase):
             Config.ScriptConfig[uuid.UUID(self.script_info.script_id)], MaaConfig
         ):
             return "脚本配置类型错误, 不是MAA脚本类型"
-        if (
-            Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
-                "Emulator", "Id"
-            )
-            == "-"
-        ):
-            return "未设置模拟器配置, 请检查脚本配置中的模拟器设置！"
+        if Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
+            "Emulator", "Id"
+        ) == "-" or Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
+            "Emulator", "Index"
+        ) in [
+            "",
+            "-",
+        ]:
+            return "未完成模拟器配置, 请检查脚本配置中的模拟器设置！"
         if not (
             Path(
                 Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
