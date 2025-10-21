@@ -293,7 +293,8 @@ class _TaskManager:
         logger.info(f"中止任务: {task_id}")
 
         if task_id == "ALL":
-            for task_item in self.task_handler.values():
+            task_item_list = list(self.task_handler.values())
+            for task_item in task_item_list:
                 task_item.cancel()
                 await task_item.accomplish.wait()
         else:
