@@ -241,6 +241,10 @@ class AutoProxyTask(TaskExecuteBase):
                 logger.info(
                     f"用户 {self.cur_user_item.name} - 模式: {self.mode} - 尝试次数: {i + 1}/{self.script_config.get('Run', 'RunTimesLimit')}"
                 )
+                self.log_start_time = datetime.now()
+                self.cur_user_item.log_record[self.log_start_time] = (
+                    self.cur_user_log
+                ) = LogRecord()
 
                 try:
                     emulator_info = await self.emulator_manager.open(
@@ -248,16 +252,20 @@ class AutoProxyTask(TaskExecuteBase):
                     )
                 except Exception as e:
                     logger.exception(f"用户: {self.cur_user_uid} - 模拟器启动失败: {e}")
-                    self.script_info.log = (
-                        f"模拟器启动失败: {e}\n正在中止相关程序\n请等待"
+                    await Config.send_websocket_message(
+                        id=self.task_info.task_id,
+                        type="Info",
+                        data={"Error": f"启动模拟器时出现异常: {e}"},
                     )
-                    self.cur_user_item.log_record[self.log_start_time] = LogRecord(
-                        [f"模拟器启动失败: {e}", "未执行代理任务"], "模拟器启动失败"
-                    )
+                    self.cur_user_log.content = [
+                        "模拟器启动失败, MAA 未实际运行, 无日志记录"
+                    ]
+                    self.cur_user_log.status = "模拟器启动失败"
 
                     await self.emulator_manager.close(
                         self.script_config.get("Emulator", "Index")
                     )
+
                     await Notify.push_plyer(
                         "用户自动代理出现异常！",
                         f"用户 {self.cur_user_item.name} 的{MAA_RUN_MOOD_BOOK[self.mode]}部分出现一次异常",
@@ -274,10 +282,6 @@ class AutoProxyTask(TaskExecuteBase):
                 await self.set_maa(emulator_info)
 
                 logger.info(f"启动MAA进程: {self.maa_exe_path}")
-                self.log_start_time = datetime.now()
-                self.cur_user_item.log_record[self.log_start_time] = (
-                    self.cur_user_log
-                ) = LogRecord()
                 self.wait_event.clear()
                 await self.maa_process_manager.open_process(self.maa_exe_path, [], 0)
                 await self.maa_log_monitor.start(self.maa_log_path, self.log_start_time)

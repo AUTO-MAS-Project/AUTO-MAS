@@ -30,6 +30,7 @@ from app.core import Config
 from app.models.task import TaskExecuteBase, ScriptItem, LogRecord
 from app.models.ConfigBase import MultipleConfig
 from app.models.config import GeneralConfig, GeneralUserConfig
+from app.models.emulator import DeviceBase
 from app.services import Notify, System
 from app.utils import get_logger, LogMonitor, ProcessManager, strptime
 from .tools import execute_script_task
@@ -45,6 +46,7 @@ class AutoProxyTask(TaskExecuteBase):
         script_info: ScriptItem,
         script_config: GeneralConfig,
         user_config: MultipleConfig[GeneralUserConfig],
+        game_manager: ProcessManager | DeviceBase | None,
     ):
         super().__init__()
 
@@ -55,6 +57,7 @@ class AutoProxyTask(TaskExecuteBase):
         self.script_info = script_info
         self.script_config = script_config
         self.user_config = user_config
+        self.game_manager = game_manager
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
         self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
         self.cur_user_config = self.user_config[self.cur_user_uid]
@@ -82,7 +85,6 @@ class AutoProxyTask(TaskExecuteBase):
 
     async def prepare(self):
 
-        self.game_process_manager = ProcessManager()
         self.general_process_manager = ProcessManager()
         self.wait_event = asyncio.Event()
         self.user_start_time = datetime.now()
@@ -113,9 +115,6 @@ class AutoProxyTask(TaskExecuteBase):
 
         self.script_exe_path = path_list[0] if len(path_list) > 0 else self.script_path
         self.script_arguments = arguments_list[0] if len(arguments_list) > 0 else []
-        self.script_set_exe_path = (
-            path_list[1] if len(path_list) > 1 else self.script_path
-        )
         self.script_set_arguments = arguments_list[1] if len(arguments_list) > 1 else []
 
         self.script_config_path = Path(self.script_config.get("Script", "ConfigPath"))
@@ -193,8 +192,6 @@ class AutoProxyTask(TaskExecuteBase):
             )
             self.wait_event.clear()
 
-            # await EmulatorManager.open_emulator(self.emulator_id, "1")
-
             # 执行任务前脚本
             if self.cur_user_config.get("Info", "IfScriptBeforeTask"):
                 await execute_script_task(
@@ -203,18 +200,28 @@ class AutoProxyTask(TaskExecuteBase):
                 )
 
             # 启动游戏/模拟器
-            if self.script_config.get("Game", "Enabled"):
+            if self.game_manager is not None:
                 try:
-                    logger.info(
-                        f"启动游戏/模拟器: {self.game_path}, 参数: {self.script_config.get('Game','Arguments')}"
-                    )
-                    await self.game_process_manager.open_process(
-                        self.game_path,
-                        str(self.script_config.get("Game", "Arguments")).split(" "),
-                        0,
-                    )
+                    if isinstance(self.game_manager, ProcessManager):
+                        logger.info(
+                            f"启动游戏: {self.game_path}, 参数: {self.script_config.get('Game','Arguments')}"
+                        )
+                        await self.game_manager.open_process(
+                            self.game_path,
+                            str(self.script_config.get("Game", "Arguments")).split(" "),
+                            0,
+                        )
+                    elif isinstance(self.game_manager, DeviceBase):
+                        logger.info(
+                            f"启动模拟器: {self.script_config.get('Game', 'EmulatorIndex')}"
+                        )
+                        await self.game_manager.open(
+                            self.script_config.get("Game", "EmulatorIndex"),
+                        )
                 except Exception as e:
-                    logger.exception(f"启动游戏/模拟器时出现异常: {e}")
+                    logger.exception(
+                        f"用户: {self.cur_user_uid} - 游戏/模拟器启动失败: {e}"
+                    )
                     await Config.send_websocket_message(
                         id=self.task_info.task_id,
                         type="Info",
@@ -223,9 +230,23 @@ class AutoProxyTask(TaskExecuteBase):
                     self.cur_user_log.content = [
                         "游戏/模拟器启动失败, 通用脚本未实际运行, 无日志记录"
                     ]
-                    self.cur_user_log.status = "游戏/模拟器启动失败"
+                    self.cur_user_log.status = "模拟器启动失败"
+
+                    if isinstance(self.game_manager, ProcessManager):
+                        await self.game_manager.kill()
+                    elif isinstance(self.game_manager, DeviceBase):
+                        await self.game_manager.close(
+                            self.script_config.get("Game", "EmulatorIndex"),
+                        )
+
+                    await Notify.push_plyer(
+                        "用户自动代理出现异常！",
+                        f"用户 {self.cur_user_item.name} 的自动代理出现一次异常",
+                        f"{self.cur_user_item.name}的自动代理出现异常",
+                        3,
+                    )
                     continue
-                # 更新静默进程标记有效时间(未实现)
+
                 self.script_info.log = f"正在等待游戏/模拟器完成启动\n请等待{self.script_config.get('Game', 'WaitTime')}s"
                 await asyncio.sleep(self.script_config.get("Game", "WaitTime"))
 
@@ -253,17 +274,9 @@ class AutoProxyTask(TaskExecuteBase):
                 self.script_info.log = (
                     "检测到通用脚本进程完成代理任务\n正在等待相关程序结束\n请等待"
                 )
+
                 # 中止相关程序
-                logger.info(f"中止相关程序: {self.script_exe_path}")
-                await self.general_process_manager.kill()
-                await System.kill_process(self.script_exe_path)
-                if self.script_config.get("Game", "Enabled"):
-                    logger.info(
-                        f"中止游戏/模拟器进程: {list(self.game_process_manager.tracked_pids)}"
-                    )
-                    await self.game_process_manager.kill()
-                    if self.script_config.get("Game", "IfForceClose"):
-                        await System.kill_process(self.game_path)
+                await self.close_script_process()
 
                 await asyncio.sleep(10)
 
@@ -283,16 +296,7 @@ class AutoProxyTask(TaskExecuteBase):
                 )
 
                 # 中止相关程序
-                logger.info(f"中止相关程序: {self.script_exe_path}")
-                await self.general_process_manager.kill()
-                await System.kill_process(self.script_exe_path)
-                if self.script_config.get("Game", "Enabled"):
-                    logger.info(
-                        f"中止游戏/模拟器进程: {list(self.game_process_manager.tracked_pids)}"
-                    )
-                    await self.game_process_manager.kill()
-                    if self.script_config.get("Game", "IfForceClose"):
-                        await System.kill_process(self.game_path)
+                await self.close_script_process()
 
                 await Notify.push_plyer(
                     "用户自动代理出现异常！",
@@ -333,6 +337,21 @@ class AutoProxyTask(TaskExecuteBase):
                 / self.script_config_path.name,
             )
         logger.success("通用脚本配置文件已更新")
+
+    async def close_script_process(self):
+        logger.info(f"中止相关程序: {self.script_exe_path}")
+        await self.general_process_manager.kill()
+        await System.kill_process(self.script_exe_path)
+        if self.game_manager is not None:
+            logger.info("中止游戏/模拟器进程")
+            if isinstance(self.game_manager, ProcessManager):
+                await self.game_manager.kill()
+                if self.script_config.get("Game", "IfForceClose"):
+                    await System.kill_process(self.game_path)
+            elif isinstance(self.game_manager, DeviceBase):
+                await self.game_manager.close(
+                    self.script_config.get("Game", "EmulatorIndex"),
+                )
 
     async def set_general(self) -> None:
         """配置通用脚本运行参数"""
@@ -380,25 +399,25 @@ class AutoProxyTask(TaskExecuteBase):
 
         for success_sign in self.success_log:
             if success_sign in log:
-                self.general_result = "Success!"
+                self.cur_user_log.status = "Success!"
                 break
         else:
             if datetime.now() - latest_time > timedelta(
                 minutes=self.script_config.get("Run", "RunTimeLimit")
             ):
-                self.general_result = "脚本进程超时"
+                self.cur_user_log.status = "脚本进程超时"
             else:
                 for error_sign in self.error_log:
                     if error_sign in log:
-                        self.general_result = f"异常日志: {error_sign}"
+                        self.cur_user_log.status = f"异常日志: {error_sign}"
                         break
                 else:
                     if await self.general_process_manager.is_running():
-                        self.general_result = "通用脚本正常运行中"
+                        self.cur_user_log.status = "通用脚本正常运行中"
                     elif self.success_log:
-                        self.general_result = "脚本在完成任务前退出"
+                        self.cur_user_log.status = "脚本在完成任务前退出"
                     else:
-                        self.general_result = "Success!"
+                        self.cur_user_log.status = "Success!"
 
         logger.debug(f"通用脚本日志分析结果: {self.cur_user_log.status}")
         if self.cur_user_log.status != "通用脚本正常运行中":
@@ -407,24 +426,23 @@ class AutoProxyTask(TaskExecuteBase):
 
     async def final_task(self):
 
-        # await self.cur_user_config.set(
-        #     "Data",
-        #     "CustomInfrastPlanIndex",
-        #     data["Configurations"]["Default"]["Infrast.CustomInfrastPlanIndex"],
-        # )
-
         if self.check_result != "Pass":
             return
 
         # 结束各子任务
         await self.general_process_manager.kill(if_force=True)
         await System.kill_process(self.script_exe_path)
-        await System.kill_process(self.script_set_exe_path)
-        await self.game_process_manager.kill()
         await self.general_log_monitor.stop()
         del self.general_process_manager
-        del self.game_process_manager
         del self.general_log_monitor
+        if self.game_manager is not None:
+            if isinstance(self.game_manager, ProcessManager):
+                await self.game_manager.kill()
+            elif isinstance(self.game_manager, DeviceBase):
+                await self.game_manager.close(
+                    self.script_config.get("Game", "EmulatorIndex"),
+                )
+            del self.game_manager
 
         user_logs_list = []
         for t, log_item in self.cur_user_item.log_record.items():
