@@ -20,8 +20,9 @@
 #   Contact: DLmaster_361@163.com
 
 
-import asyncio
+import shlex
 import shutil
+import asyncio
 from pathlib import Path
 
 from app.core import Config
@@ -69,21 +70,22 @@ class ScriptSetupTask(TaskExecuteBase):
         path_list = []
 
         for argument in [
-            _.strip()
-            for _ in str(self.script_config.get("Script", "Arguments")).split("|")
-            if _.strip()
+            part.strip()
+            for part in str(self.script_config.get("Script", "Arguments")).split("|")
+            if part.strip()
         ]:
-            arg = [_.strip() for _ in argument.split("%") if _.strip()]
-            if len(arg) > 1:
-                path_list.append((self.script_path / arg[0]).resolve())
-                arguments_list.append(
-                    [_.strip() for _ in arg[1].split(" ") if _.strip()]
-                )
-            elif len(arg) > 0:
-                path_list.append(self.script_path)
-                arguments_list.append(
-                    [_.strip() for _ in arg[0].split(" ") if _.strip()]
-                )
+            arg_parts = [
+                part.strip() for part in argument.split("%", 1) if part.strip()
+            ]
+
+            path_list.append(
+                (
+                    self.script_path / arg_parts[0]
+                    if len(arg_parts) > 1
+                    else self.script_path
+                ).resolve()
+            )
+            arguments_list.append(shlex.split(arg_parts[-1]))
 
         self.script_arguments = arguments_list[0] if len(arguments_list) > 0 else []
         self.script_set_exe_path = (

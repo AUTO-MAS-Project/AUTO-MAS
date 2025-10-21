@@ -37,6 +37,7 @@ from .ConfigBase import (
     JSONValidator,
     URLValidator,
     UserNameValidator,
+    AdvancedArgumentValidator,
 )
 
 
@@ -463,7 +464,9 @@ class GeneralConfig(ConfigBase):
         self.Script_ScriptPath = ConfigItem(
             "Script", "ScriptPath", str(Path.cwd()), FileValidator()
         )
-        self.Script_Arguments = ConfigItem("Script", "Arguments", "")
+        self.Script_Arguments = ConfigItem(
+            "Script", "Arguments", "", AdvancedArgumentValidator()
+        )
         self.Script_IfTrackProcess = ConfigItem(
             "Script", "IfTrackProcess", False, BoolValidator()
         )

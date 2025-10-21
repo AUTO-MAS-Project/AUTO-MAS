@@ -23,6 +23,7 @@
 
 import json
 import uuid
+import shlex
 import win32com.client
 from copy import deepcopy
 from urllib.parse import urlparse
@@ -304,19 +305,26 @@ class URLValidator(ConfigValidator):
 
         return True
 
+
+class AdvancedArgumentValidator(ConfigValidator):
+
+    def validate(self, value: Any) -> bool:
+        if not isinstance(value, str):
+            return False
+        try:
+            for segment in value.split("|"):
+                segment = segment.strip()
+                if not segment:
+                    continue
+                param_str = segment.split("%", 1)[-1].strip()
+                shlex.split(param_str)
+            return True
+        except ValueError:
+            return False
+
     def correct(self, value: Any) -> str:
-        if self.validate(value):
-            return value
 
-        if isinstance(value, str):
-            # 简单尝试：若看起来像域名，加上 https://
-            stripped = value.strip()
-            if stripped and not stripped.startswith(("http://", "https://")):
-                candidate = f"https://{stripped}"
-                if self.validate(candidate):
-                    return candidate
-
-        return self.default
+        return value if self.validate(value) else ""
 
 
 class ConfigItem:
@@ -795,7 +803,9 @@ class MultipleConfig(Generic[T]):
 
         self.file.parent.mkdir(parents=True, exist_ok=True)
         self.file.write_text(
-            json.dumps(await self.toDict(if_decrypt=False), ensure_ascii=False, indent=4),
+            json.dumps(
+                await self.toDict(if_decrypt=False), ensure_ascii=False, indent=4
+            ),
             encoding="utf-8",
         )
 

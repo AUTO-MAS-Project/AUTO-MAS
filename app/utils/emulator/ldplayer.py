@@ -21,11 +21,12 @@
 
 
 import json
-import asyncio
 import psutil
+import asyncio
+import win32gui
 import keyboard
 import subprocess
-import win32gui
+from datetime import datetime, timedelta
 from pydantic import BaseModel
 from pathlib import Path
 
@@ -69,8 +70,13 @@ class LDManager(DeviceBase):
         self.emulator_path = Path(config.get("Info", "Path"))
 
     async def open(self, idx: str, package_name="") -> DeviceInfo:
+        logger.info(f"开始启动模拟器{idx} - {package_name}")
 
-        for _ in range(self.config.get("Data", "MaxWaitTime") * 10):
+        status = DeviceStatus.UNKNOWN  # 初始化status变量
+        t = datetime.now()
+        while datetime.now() - t < timedelta(
+            seconds=self.config.get("Data", "MaxWaitTime")
+        ):
 
             status = await self.getStatus(idx)
             if status == DeviceStatus.ONLINE:
@@ -105,7 +111,10 @@ class LDManager(DeviceBase):
         if result.returncode != 0:
             raise RuntimeError(f"命令执行失败: {result}")
 
-        for _ in range(self.config.get("Data", "MaxWaitTime") * 10):
+        t = datetime.now()
+        while datetime.now() - t < timedelta(
+            seconds=self.config.get("Data", "MaxWaitTime")
+        ):
 
             status = await self.getStatus(idx)
             if status in [DeviceStatus.ERROR, DeviceStatus.UNKNOWN]:
@@ -136,7 +145,10 @@ class LDManager(DeviceBase):
         if result.returncode != 0:
             raise RuntimeError(f"命令执行失败: {result}")
 
-        for _ in range(self.config.get("Data", "MaxWaitTime") * 10):
+        t = datetime.now()
+        while datetime.now() - t < timedelta(
+            seconds=self.config.get("Data", "MaxWaitTime")
+        ):
 
             status = await self.getStatus(idx)
             if status in [DeviceStatus.ERROR, DeviceStatus.UNKNOWN]:
@@ -173,7 +185,7 @@ class LDManager(DeviceBase):
         else:
             return DeviceStatus.UNKNOWN
 
-    async def getInfo(self, idx: str) -> dict[str, DeviceInfo]:
+    async def getInfo(self, idx: str | None) -> dict[str, DeviceInfo]:
 
         data = await self.get_device_info(idx)
         result: dict[str, DeviceInfo] = {}
@@ -192,11 +204,19 @@ class LDManager(DeviceBase):
 
         status = await self.getStatus(idx)
         if status != DeviceStatus.ONLINE:
-            raise RuntimeError(f"设备{idx}未在线，当前状态码: {status}")
+            logger.warning(f"设备{idx}未在线，当前状态码: {status}")
+            return status
 
         result = (await self.get_device_info(idx))[idx]
 
-        for _ in range(self.config.get("Data", "MaxWaitTime") * 2):
+        t = datetime.now()
+        while datetime.now() - t < timedelta(
+            seconds=self.config.get("Data", "MaxWaitTime")
+        ):
+
+            # 检查窗口可见性是否符合预期
+            if win32gui.IsWindowVisible(result.top_hwnd) == is_visible:
+                return status
 
             try:
                 keyboard.press_and_release(
@@ -209,10 +229,6 @@ class LDManager(DeviceBase):
                 logger.error(f"发送BOSS键失败: {e}")
 
             await asyncio.sleep(0.5)
-
-            # 检查窗口可见性是否符合预期
-            if win32gui.IsWindowVisible(result.top_hwnd) == is_visible:
-                return status
 
         else:
             raise RuntimeError(f"隐藏设备{idx}窗口超时")
