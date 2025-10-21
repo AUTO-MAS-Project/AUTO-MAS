@@ -24,10 +24,11 @@ import asyncio
 import shutil
 from pathlib import Path
 
-from app.core import Broadcast, Config
+from app.core import Config
 from app.models.task import TaskExecuteBase, ScriptItem
 from app.models.ConfigBase import MultipleConfig
 from app.models.config import GeneralConfig, GeneralUserConfig
+from app.models.emulator import DeviceBase
 from app.services import System
 from app.utils import get_logger, ProcessManager
 
@@ -42,6 +43,7 @@ class ScriptSetupTask(TaskExecuteBase):
         script_info: ScriptItem,
         script_config: GeneralConfig,
         user_config: MultipleConfig[GeneralUserConfig],
+        game_manager: ProcessManager | DeviceBase | None,
     ):
         super().__init__()
 
@@ -52,6 +54,7 @@ class ScriptSetupTask(TaskExecuteBase):
         self.script_info = script_info
         self.script_config = script_config
         self.user_config = user_config
+        self.game_manager = game_manager
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
 
     async def prepare(self):
@@ -82,7 +85,6 @@ class ScriptSetupTask(TaskExecuteBase):
                     [_.strip() for _ in arg[0].split(" ") if _.strip()]
                 )
 
-        self.script_exe_path = path_list[0] if len(path_list) > 0 else self.script_path
         self.script_arguments = arguments_list[0] if len(arguments_list) > 0 else []
         self.script_set_exe_path = (
             path_list[1] if len(path_list) > 1 else self.script_path
@@ -151,7 +153,6 @@ class ScriptSetupTask(TaskExecuteBase):
     async def final_task(self):
 
         await self.general_process_manager.kill(if_force=True)
-        await System.kill_process(self.script_exe_path)
         await System.kill_process(self.script_set_exe_path)
         del self.general_process_manager
 

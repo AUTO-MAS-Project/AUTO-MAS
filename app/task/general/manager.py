@@ -25,13 +25,12 @@ import shutil
 from pathlib import Path
 from datetime import datetime
 
-from app.core import Config
-from app.models.schema import WebSocketMessage
+from app.core import Config, EmulatorManager
 from app.models.task import TaskExecuteBase, ScriptItem, UserItem
 from app.models.ConfigBase import MultipleConfig
 from app.models.config import GeneralConfig, GeneralUserConfig
 from app.services import Notify
-from app.utils import get_logger
+from app.utils import get_logger, ProcessManager
 from .tools import push_notification
 from .AutoProxy import AutoProxyTask
 from .ScriptSetup import ScriptSetupTask
@@ -66,6 +65,37 @@ class GeneralManager(TaskExecuteBase):
             Config.ScriptConfig[uuid.UUID(self.script_info.script_id)], GeneralConfig
         ):
             return "脚本配置类型错误, 不是通用脚本类型"
+        if Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
+            "Game", "Enabled"
+        ):
+            if (
+                Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
+                    "Game", "Type"
+                )
+                == "Emulator"
+            ) and (
+                Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
+                    "Game", "EmulatorId"
+                )
+                == "-"
+                or Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
+                    "Game", "EmulatorIndex"
+                )
+                in ["", "-"]
+            ):
+                return "未完成模拟器配置, 请检查脚本配置中的模拟器设置！"
+            elif (
+                Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
+                    "Game", "Type"
+                )
+                == "Client"
+            ) and not Path(
+                Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
+                    "Game", "Path"
+                )
+            ).exists():
+                return "未完成游戏配置, 请检查脚本配置中的游戏设置！"
+
         return "Pass"
 
     async def prepare(self):
@@ -80,6 +110,27 @@ class GeneralManager(TaskExecuteBase):
 
         self.script_config_path = Path(self.script_config.get("Script", "ConfigPath"))
         self.temp_path = Path.cwd() / f"data/{self.script_info.script_id}/Temp"
+
+        if Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
+            "Game", "Enabled"
+        ):
+            if (
+                Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
+                    "Game", "Type"
+                )
+                == "Emulator"
+            ):
+                self.emulator_manager = await EmulatorManager.get_emulator_instance(
+                    self.script_config.get("Game", "EmulatorId")
+                )
+
+            elif (
+                Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
+                    "Game", "Type"
+                )
+                == "Client"
+            ):
+                self.game_process_manager = ProcessManager()
 
         # 备份原始配置
         logger.info(f"记录通用脚本配置文件: {self.script_config_path}")
@@ -117,12 +168,10 @@ class GeneralManager(TaskExecuteBase):
         self.check_result = await self.check()
         if self.check_result != "Pass":
             logger.error(f"未通过配置检查: {self.check_result}")
-            await Config.send_json(
-                WebSocketMessage(
-                    id=self.task_info.task_id,
-                    type="Info",
-                    data={"Error": self.check_result},
-                ).model_dump()
+            await Config.send_websocket_message(
+                id=self.task_info.task_id,
+                type="Info",
+                data={"Error": self.check_result},
             )
             return
 
@@ -134,8 +183,20 @@ class GeneralManager(TaskExecuteBase):
 
         for self.script_info.current_index in range(len(self.script_info.user_list)):
             task = METHOD_BOOK[self.task_info.mode](
-                self.script_info, self.script_config, self.user_config
+                self.script_info,
+                self.script_config,
+                self.user_config,
+                (
+                    (
+                        self.emulator_manager
+                        if (self.script_config.get("Game", "Type") == "Emulator")
+                        else self.game_process_manager
+                    )
+                    if self.script_config.get("Game", "Enabled")
+                    else None
+                ),
             )
+
             await self.spawn(task)
 
     async def final_task(self):
