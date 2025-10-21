@@ -20,13 +20,18 @@
 #   Contact: DLmaster_361@163.com
 
 
+import re
+import json
+import shlex
+import win32gui
 import asyncio
+import keyboard
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, Any
 
 from app.utils.ProcessManager import ProcessManager
-from app.models.emulator import DeviceStatus, DeviceBase
+from app.models.emulator import DeviceStatus, DeviceBase, DeviceInfo
 from app.models.config import EmulatorConfig
 from app.utils.logger import get_logger
 
@@ -41,126 +46,63 @@ class GeneralDeviceManager(DeviceBase):
     def __init__(self, config: EmulatorConfig) -> None:
 
         if not Path(config.get("Info", "Path")).exists():
-            raise FileNotFoundError(
-                f"MuMuManager.exe文件不存在: {config.get('Info', 'Path')}"
-            )
+            raise FileNotFoundError(f"模拟器文件不存在: {config.get('Info', 'Path')}")
 
-        if config.get("Data", "Type") != "mumu":
-            raise ValueError("配置的模拟器类型不是mumu")
+        if config.get("Data", "Type") != "general":
+            raise ValueError("配置的模拟器类型不是通用类型")
 
         self.config = config
         self.emulator_path = Path(config.get("Info", "Path"))
         self.process_managers: Dict[str, ProcessManager] = {}
         self.device_info: Dict[str, Dict[str, Any]] = {}
 
-    async def open(self, idx: str) -> tuple[bool, int, dict]:
-        """
-        启动设备
-
-        Args:
-            idx: 设备ID
-
-        Returns:
-            tuple[bool, int, dict]: (是否成功, 状态码, 启动信息)
-        """
+    async def open(self, idx: str) -> DeviceInfo:
 
         # 检查是否已经在运行
-        current_status = await self.get_status(idx)
-        if current_status in [DeviceStatus.ONLINE, DeviceStatus.STARTING]:
+        current_status = await self.getStatus(idx)
+        if current_status == DeviceStatus.ONLINE:
             logger.warning(f"设备{idx}已经在运行，状态: {current_status}")
-            return False, current_status, {}
+            return (await self.getInfo(idx))[idx]
 
         # 创建进程管理器
         if idx not in self.process_managers:
             self.process_managers[idx] = ProcessManager()
 
-        # 准备启动参数
+        args, _ = self.parse_index(idx)
 
         # 启动进程
         await self.process_managers[idx].open_process(
-            self.emulator_path, idx.split(), tracking_time=0
+            self.emulator_path, args, tracking_time=0
         )
 
         # 等待进程启动
-        start_time = datetime.now()
+        await asyncio.sleep(self.config.get("Data", "MaxWaitTime"))
 
-        while datetime.now() - start_time < timedelta(
-            seconds=self.config.get("Data", "MaxWaitTime")
-        ):
-            if await self.process_managers[idx].is_running():
-                self.device_info[idx] = {
-                    "title": f"{self.config.get('Info', 'Name')}_{idx}",
-                    "status": str(DeviceStatus.ONLINE),
-                    "pid": self.process_managers[idx].main_pid,
-                    "start_time": start_time.isoformat(),
-                }
+        return (await self.getInfo(idx))[idx]
 
-                logger.info(f"设备{idx}启动成功")
-                return True, DeviceStatus.ONLINE, self.device_info[idx]
+    async def close(self, idx: str) -> DeviceStatus:
 
-            await asyncio.sleep(0.1)
-
-        logger.error(f"设备{idx}启动超时")
-        return False, DeviceStatus.ERROR, {}
-
-    async def close(self, idx: str) -> tuple[bool, int]:
-        """
-        关闭设备或服务
-
-        Args:
-            idx: 设备ID
-
-        Returns:
-            tuple[bool, int]: (是否成功, 状态码)
-        """
-
-        if idx not in self.process_managers:
-            logger.warning(f"设备{idx}的进程管理器不存在")
-            return False, DeviceStatus.NOT_FOUND
-
-        # 检查进程是否在运行
-        if not await self.process_managers[idx].is_running():
-            logger.info(f"设备{idx}进程已经停止")
-            return True, DeviceStatus.OFFLINE
+        status = await self.getStatus(idx)
+        if status == DeviceStatus.OFFLINE:
+            logger.warning(f"设备{idx}未在线，当前状态: {status}")
+            return status
 
         # 终止进程
         await self.process_managers[idx].kill(if_force=False)
 
         # 等待进程完全停止
-        stop_time = datetime.now()
-
-        while datetime.now() - stop_time < timedelta(
+        t = datetime.now()
+        while datetime.now() - t < timedelta(
             seconds=self.config.get("Data", "MaxWaitTime")
         ):
             if not await self.process_managers[idx].is_running():
-                # 清理设备信息
-                if idx in self.device_info:
-                    del self.device_info[idx]
-
-                logger.info(f"设备{idx}已成功关闭")
-                return True, DeviceStatus.OFFLINE
+                return DeviceStatus.OFFLINE
 
             await asyncio.sleep(0.1)
+        else:
+            raise RuntimeError(f"关闭设备{idx}超时")
 
-        # 强制终止
-        logger.warning(f"设备{idx}未能正常关闭，尝试强制终止")
-        await self.process_managers[idx].kill(if_force=True)
-
-        if idx in self.device_info:
-            del self.device_info[idx]
-
-        return True, DeviceStatus.OFFLINE
-
-    async def get_status(self, idx: str) -> int:
-        """
-        获取指定设备当前状态
-
-        Args:
-            idx: 设备ID
-
-        Returns:
-            int: 状态码
-        """
+    async def getStatus(self, idx: str) -> DeviceStatus:
 
         if idx not in self.process_managers:
             return DeviceStatus.OFFLINE
@@ -170,84 +112,79 @@ class GeneralDeviceManager(DeviceBase):
         else:
             return DeviceStatus.OFFLINE
 
-    async def hide_device(self, idx: str):
-        """
-        隐藏设备窗口
+    async def getInfo(self, idx: str | None) -> Dict[str, DeviceInfo]:
 
-        Args:
-            idx: 设备ID
+        data = {}
+        for index in self.process_managers:
+            if idx is not None and index != idx:
+                continue
+            data[index] = DeviceInfo(
+                title=f"{self.config.get('Info', 'Name')}_{index}",
+                status=await self.getStatus(index),
+                adb_address=self.parse_index(index)[1],
+            )
+        return data
 
-        Returns:
-            tuple[bool, int]: (是否成功, 状态码)
-        """
-        # try:
-        #     status = await self.get_status(idx)
-        #     if status != DeviceStatus.ONLINE:
-        #         return False, status
+    async def setVisible(self, idx: str, is_visible: bool) -> DeviceStatus:
 
-        #     if (
-        #         idx not in self.process_managers
-        #         or not self.process_managers[idx].main_pid
-        #     ):
-        #         return False, DeviceStatus.NOT_FOUND
+        status = await self.getStatus(idx)
+        if status != DeviceStatus.ONLINE:
+            logger.warning(f"设备{idx}未在线，当前状态码: {status}")
+            return status
 
-        #     # 窗口隐藏功能（简化实现）
-        #     # 注意：完整的窗口隐藏功能需要更复杂的Windows API调用
-        #     self.logger.info(f"设备{idx}窗口隐藏请求已处理（简化实现）")
-        #     return True, DeviceStatus.ONLINE
+        t = datetime.now()
+        while datetime.now() - t < timedelta(
+            seconds=self.config.get("Data", "MaxWaitTime")
+        ):
 
-        #     self.logger.info(f"设备{idx}窗口已隐藏")
-        #     return True, DeviceStatus.ONLINE
+            # 检查窗口可见性是否符合预期
+            if (
+                win32gui.IsWindowVisible(self.process_managers[idx].main_pid)
+                == is_visible
+            ):
+                return status
 
-        # except ImportError:
-        #     self.logger.warning("隐藏窗口功能需要pywin32库")
-        #     return False, DeviceStatus.ERROR
-        # except Exception as e:
-        #     self.logger.error(f"隐藏设备{idx}窗口失败: {str(e)}")
-        #     return False, DeviceStatus.ERROR
+            try:
+                keyboard.press_and_release(
+                    "+".join(
+                        _.strip().lower()
+                        for _ in json.loads(self.config.get("Info", "BossKeys"))
+                    )
+                )  # 老板键
+            except Exception as e:
+                logger.error(f"发送BOSS键失败: {e}")
 
-    async def show_device(self, idx: str):
-        """
-        显示设备窗口
+            await asyncio.sleep(0.5)
 
-        Args:
-            idx: 设备ID
+        else:
+            raise RuntimeError(f"隐藏设备{idx}窗口超时")
 
-        Returns:
-            tuple[bool, int]: (是否成功, 状态码)
-        """
-        # try:
-        #     status = await self.get_status(idx)
-        #     if status != DeviceStatus.ONLINE:
-        #         return False, status
+    def parse_index(self, idx: str):
 
-        #     if (
-        #         idx not in self.process_managers
-        #         or not self.process_managers[idx].main_pid
-        #     ):
-        #         return False, DeviceStatus.NOT_FOUND
+        if "|" not in idx:
+            raise ValueError("缺少 '|' 分隔符")
 
-        #     # 窗口显示功能（简化实现）
-        #     # 注意：完整的窗口显示功能需要更复杂的Windows API调用
-        #     self.logger.info(f"设备{idx}窗口显示请求已处理（简化实现）")
-        #     return True, DeviceStatus.ONLINE
+        cmd_part, addr_part = idx.split("|", 1)
+        args = shlex.split(cmd_part.strip())
 
-        #     self.logger.info(f"设备{idx}窗口已显示")
-        #     return True, DeviceStatus.ONLINE
+        addr = addr_part.replace("：", ":").replace("。", ".")
+        addr = re.sub(r"\s+", "", addr)
 
-        # except ImportError:
-        #     self.logger.warning("显示窗口功能需要pywin32库")
-        #     return False, DeviceStatus.ERROR
-        # except Exception as e:
-        #     self.logger.error(f"显示设备{idx}窗口失败: {str(e)}")
-        #     return False, DeviceStatus.ERROR
+        if addr in {"usb", "local", "shell"} or addr.startswith("emulator-"):
+            return args, addr
 
-    async def get_all_info(self) -> dict[str, dict[str, str]]:
-        """
-        获取所有设备信息
-        """
+        if ":" not in addr:
+            raise ValueError(f"ADB 地址缺少端口: {addr}")
 
-        return {}
+        i = addr.rfind(":")
+        host, port_str = addr[:i], addr[i + 1 :]
+
+        if not port_str.isdigit() or not (1 <= int(port_str) <= 65535):
+            raise ValueError(f"无效端口: {port_str}")
+        if not host:
+            raise ValueError("主机名为空")
+
+        return args, f"{host}:{port_str}"
 
     async def cleanup(self) -> None:
         """

@@ -23,6 +23,7 @@
 import json
 import asyncio
 import subprocess
+from datetime import datetime, timedelta
 from pathlib import Path
 
 
@@ -56,7 +57,10 @@ class MumuManager(DeviceBase):
         logger.info(f"开始启动模拟器{idx} - {package_name}")
 
         status = DeviceStatus.UNKNOWN  # 初始化status变量
-        for _ in range(self.config.get("Data", "MaxWaitTime") * 10):
+        t = datetime.now()
+        while datetime.now() - t < timedelta(
+            seconds=self.config.get("Data", "MaxWaitTime")
+        ):
             status = await self.getStatus(idx)
             if status == DeviceStatus.ONLINE:
                 return (await self.getInfo(idx))[idx]
@@ -91,7 +95,10 @@ class MumuManager(DeviceBase):
         if result.returncode != 0:
             raise RuntimeError(f"命令执行失败: {result}")
 
-        for _ in range(self.config.get("Data", "MaxWaitTime") * 10):
+        t = datetime.now()
+        while datetime.now() - t < timedelta(
+            seconds=self.config.get("Data", "MaxWaitTime")
+        ):
             status = await self.getStatus(idx)
             if status in [DeviceStatus.ERROR, DeviceStatus.UNKNOWN]:
                 raise RuntimeError(f"模拟器{idx}启动失败, 状态码: {status}")
@@ -119,7 +126,10 @@ class MumuManager(DeviceBase):
         if result.returncode != 0:
             raise RuntimeError(f"命令执行失败: {result}")
 
-        for _ in range(self.config.get("Data", "MaxWaitTime") * 10):
+        t = datetime.now()
+        while datetime.now() - t < timedelta(
+            seconds=self.config.get("Data", "MaxWaitTime")
+        ):
             status = await self.getStatus(idx)
             if status in [DeviceStatus.ERROR, DeviceStatus.UNKNOWN]:
                 raise RuntimeError(f"模拟器{idx}关闭失败, 状态码: {status}")
