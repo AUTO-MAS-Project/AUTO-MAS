@@ -21,9 +21,15 @@
 #   Contact: DLmaster_361@163.com
 
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+
+UTC4 = timezone(timedelta(hours=4))
+"""东4区时区对象"""
+
+UTC8 = timezone(timedelta(hours=8))
+"""东8区时区对象"""
 
 TYPE_BOOK = {"MaaConfig": "MAA", "GeneralConfig": "通用"}
 """配置类型映射表"""

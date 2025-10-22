@@ -19,8 +19,10 @@
 #   Contact: DLmaster_361@163.com
 
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime
 import uuid
+
+from app.utils.constants import UTC4
 from .ConfigBase import (
     ConfigBase,
     MultipleConfig,
@@ -384,10 +386,8 @@ class MaaPlanConfig(ConfigBase):
             return self.config_item_dict["ALL"][name]
 
         elif self.get("Info", "Mode") == "Weekly":
-            dt = datetime.now()
-            if dt.time() < datetime.min.time().replace(hour=4):
-                dt = dt - timedelta(days=1)
-            today = dt.strftime("%A")
+
+            today = datetime.now(tz=UTC4).strftime("%A")
 
             if today in self.config_item_dict:
                 return self.config_item_dict[today][name]

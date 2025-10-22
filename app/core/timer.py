@@ -20,13 +20,11 @@
 #   Contact: DLmaster_361@163.com
 
 import asyncio
-import keyboard
 from datetime import datetime
 
-from app.services import Matomo, System
+from app.services import Matomo
 from app.utils import get_logger
-from app.models.schema import WebSocketMessage
-from .config import Config, QueueConfig
+from .config import Config
 from .task_manager import TaskManager
 
 
@@ -41,7 +39,6 @@ class _MainTimer:
 
         while True:
 
-            # await self.set_silence()
             await self.timed_start()
 
             await asyncio.sleep(1)
@@ -97,12 +94,8 @@ class _MainTimer:
                     await queue.set("Data", "LastTimedStart", curtime)
                     await Config.QueueConfig.save()
 
-                    await Config.send_json(
-                        WebSocketMessage(
-                            id="TaskManager",
-                            type="Signal",
-                            data={"newTask": str(task_id)},
-                        ).model_dump()
+                    await Config.send_websocket_message(
+                        id="TaskManager", type="Signal", data={"newTask": str(task_id)}
                     )
 
 
