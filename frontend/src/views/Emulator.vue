@@ -93,13 +93,13 @@ const bossKeyInputMap = ref<Record<string, string>>({})
 
 // 设备状态枚举定义（与后端保持一致）
 const DeviceStatus = {
-  ONLINE: 0,      // 设备在线
-  OFFLINE: 1,     // 设备离线
-  STARTING: 2,    // 设备开启中
-  CLOSING: 3,     // 设备关闭中
-  ERROR: 4,       // 错误
-  NOT_FOUND: 5,   // 未找到设备
-  UNKNOWN: 10,    // 未知状态
+  ONLINE: 0, // 设备在线
+  OFFLINE: 1, // 设备离线
+  STARTING: 2, // 设备开启中
+  CLOSING: 3, // 设备关闭中
+  ERROR: 4, // 错误
+  NOT_FOUND: 5, // 未找到设备
+  UNKNOWN: 10, // 未知状态
 } as const
 
 // 获取设备状态显示信息
@@ -126,16 +126,17 @@ const getDeviceStatusInfo = (status: number) => {
 
 // 判断设备是否可以启动
 const canStartDevice = (status: number) => {
-  return status === DeviceStatus.OFFLINE || 
-         status === DeviceStatus.ERROR || 
-         status === DeviceStatus.NOT_FOUND ||
-         status === DeviceStatus.UNKNOWN
+  return (
+    status === DeviceStatus.OFFLINE ||
+    status === DeviceStatus.ERROR ||
+    status === DeviceStatus.NOT_FOUND ||
+    status === DeviceStatus.UNKNOWN
+  )
 }
 
 // 判断设备是否可以关闭
 const canStopDevice = (status: number) => {
-  return status === DeviceStatus.ONLINE || 
-         status === DeviceStatus.STARTING
+  return status === DeviceStatus.ONLINE || status === DeviceStatus.STARTING
 }
 
 // 获取当前模拟器的编辑数据
@@ -248,6 +249,9 @@ const handleSave = async (uuid: string, silent = false, skipReload = false) => {
   savingMap.value.set(uuid, true)
 
   try {
+    // 记录保存前的路径，用于判断后端是否进行了自动纠正
+    const originalInputPath = editData.path || ''
+
     // 将前端的扁平结构转换为后端需要的分组结构
     const configData = {
       Info: {
@@ -271,6 +275,11 @@ const handleSave = async (uuid: string, silent = false, skipReload = false) => {
       // 保存成功后重新从后端获取最新配置（除非明确跳过）
       if (!skipReload) {
         await loadEmulators()
+        // 加载完成后，读取该项最新路径，与保存前输入对比，若已被后端纠正则提示一次
+        const newPath = (emulatorData.value[uuid]?.Info?.Path as string) || ''
+        if (!silent && originalInputPath && newPath && originalInputPath !== newPath) {
+          message.info(`路径已自动调整: ${originalInputPath} -> ${newPath}`)
+        }
       }
     } else {
       if (!silent) message.error(response.message || '保存失败')
@@ -509,8 +518,8 @@ const selectEmulatorPath = async (uuid: string) => {
     if (paths && paths.length > 0) {
       editData.path = paths[0]
       message.success('模拟器路径选择成功')
-      // 触发自动保存
-      autoSave(uuid)
+      // 立刻保存并从后端获取被纠正后的路径
+      await handleSave(uuid, false /* silent */)
     }
   } catch (error) {
     console.error('选择模拟器路径失败:', error)
@@ -805,7 +814,8 @@ const handleBossKeyInputChange = (uuid: string) => {
                         placeholder="输入或选择模拟器路径"
                         size="small"
                         :bordered="false"
-                        @change="autoSave(element.uid)"
+                        @change="saveImmediately(element.uid)"
+                        @press-enter="saveImmediately(element.uid)"
                       >
                         <template #suffix>
                           <FolderOpenOutlined
@@ -979,10 +989,7 @@ const handleBossKeyInputChange = (uuid: string) => {
                     >
                       <template #bodyCell="{ column, record }">
                         <template v-if="column.key === 'status'">
-                          <a-tag 
-                            :color="getDeviceStatusInfo(record.status).color" 
-                            size="small"
-                          >
+                          <a-tag :color="getDeviceStatusInfo(record.status).color" size="small">
                             {{ getDeviceStatusInfo(record.status).text }}
                           </a-tag>
                         </template>
