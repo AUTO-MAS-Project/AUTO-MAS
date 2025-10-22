@@ -16,10 +16,6 @@ export type GlobalConfig_Function = {
      */
     IfSilence?: (boolean | null);
     /**
-     * 模拟器老板键
-     */
-    BossKey?: (string | null);
-    /**
      * 同意哔哩哔哩用户协议
      */
     IfAgreeBilibili?: (boolean | null);
