@@ -83,7 +83,13 @@ class MumuManager(DeviceBase):
                     package_name,
                 ]
                 if package_name
-                else [self.emulator_path, "control", "-v", idx, "launch"]
+                else [
+                    self.emulator_path,
+                    "control",
+                    "-v",
+                    idx,
+                    "launch",
+                ]
             ),
             capture_output=True,
             text=True,
@@ -115,7 +121,13 @@ class MumuManager(DeviceBase):
             return status
 
         result = subprocess.run(
-            [self.emulator_path, "control", "-v", idx, "shutdown"],
+            [
+                self.emulator_path,
+                "control",
+                "-v",
+                idx,
+                "shutdown",
+            ],
             capture_output=True,
             text=True,
             encoding="utf-8",
