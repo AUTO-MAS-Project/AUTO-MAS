@@ -50,6 +50,7 @@ export type { HistorySearchOut } from './models/HistorySearchOut';
 export type { HTTPValidationError } from './models/HTTPValidationError';
 export type { InfoOut } from './models/InfoOut';
 export type { MaaConfig } from './models/MaaConfig';
+export type { MaaConfig_Emulator } from './models/MaaConfig_Emulator';
 export type { MaaConfig_Info } from './models/MaaConfig_Info';
 export type { MaaConfig_Run } from './models/MaaConfig_Run';
 export type { MaaPlanConfig } from './models/MaaPlanConfig';

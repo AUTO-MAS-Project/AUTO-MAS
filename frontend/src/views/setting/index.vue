@@ -17,7 +17,6 @@ import TabFunction from './TabFunction.vue'
 import TabNotify from './TabNotify.vue'
 import TabAdvanced from './TabAdvanced.vue'
 import TabOthers from './TabOthers.vue'
-import TabEmulator from './TabEmulator.vue'
 
 const router = useRouter()
 const { themeMode, themeColor, themeColors, setThemeMode, setThemeColor } = useTheme()
@@ -350,9 +349,6 @@ onMounted(() => {
         </a-tab-pane>
         <a-tab-pane key="others" tab="其他设置">
           <TabOthers :version="version" :backend-update-info="backendUpdateInfo" />
-        </a-tab-pane>
-        <a-tab-pane key="emulator" tab="模拟器设置">
-          <TabEmulator :settings="settings" :handle-setting-change="handleSettingChange" />
         </a-tab-pane>
       </a-tabs>
     </div>
