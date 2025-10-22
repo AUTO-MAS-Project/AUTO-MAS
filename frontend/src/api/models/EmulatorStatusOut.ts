@@ -2,6 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { DeviceInfo } from './DeviceInfo';
 export type EmulatorStatusOut = {
     /**
      * 状态码
@@ -16,8 +17,8 @@ export type EmulatorStatusOut = {
      */
     message?: string;
     /**
-     * 模拟器状态信息
+     * 模拟器状态信息, 外层key为模拟器ID, 内层key为设备索引, value为设备信息
      */
-    data: Record<string, Record<string, any>>;
+    data: Record<string, Record<string, DeviceInfo>>;
 };
 
