@@ -91,6 +91,53 @@ const recordingBossKeyMap = ref<Map<string, boolean>>(new Map())
 const recordedKeysMap = ref<Map<string, Set<string>>>(new Map())
 const bossKeyInputMap = ref<Record<string, string>>({})
 
+// 设备状态枚举定义（与后端保持一致）
+const DeviceStatus = {
+  ONLINE: 0,      // 设备在线
+  OFFLINE: 1,     // 设备离线
+  STARTING: 2,    // 设备开启中
+  CLOSING: 3,     // 设备关闭中
+  ERROR: 4,       // 错误
+  NOT_FOUND: 5,   // 未找到设备
+  UNKNOWN: 10,    // 未知状态
+} as const
+
+// 获取设备状态显示信息
+const getDeviceStatusInfo = (status: number) => {
+  switch (status) {
+    case DeviceStatus.ONLINE:
+      return { text: '在线', color: 'success' }
+    case DeviceStatus.OFFLINE:
+      return { text: '离线', color: 'default' }
+    case DeviceStatus.STARTING:
+      return { text: '启动中', color: 'processing' }
+    case DeviceStatus.CLOSING:
+      return { text: '关闭中', color: 'warning' }
+    case DeviceStatus.ERROR:
+      return { text: '错误', color: 'error' }
+    case DeviceStatus.NOT_FOUND:
+      return { text: '未找到', color: 'error' }
+    case DeviceStatus.UNKNOWN:
+      return { text: '未知', color: 'default' }
+    default:
+      return { text: '未知', color: 'default' }
+  }
+}
+
+// 判断设备是否可以启动
+const canStartDevice = (status: number) => {
+  return status === DeviceStatus.OFFLINE || 
+         status === DeviceStatus.ERROR || 
+         status === DeviceStatus.NOT_FOUND ||
+         status === DeviceStatus.UNKNOWN
+}
+
+// 判断设备是否可以关闭
+const canStopDevice = (status: number) => {
+  return status === DeviceStatus.ONLINE || 
+         status === DeviceStatus.STARTING
+}
+
 // 获取当前模拟器的编辑数据
 const getEditingData = (uuid: string): EmulatorInfo => {
   if (!editingDataMap.value.has(uuid)) {
@@ -932,8 +979,11 @@ const handleBossKeyInputChange = (uuid: string) => {
                     >
                       <template #bodyCell="{ column, record }">
                         <template v-if="column.key === 'status'">
-                          <a-tag :color="record.status === 2 ? 'success' : 'default'" size="small">
-                            {{ record.status === 2 ? '在线' : '离线' }}
+                          <a-tag 
+                            :color="getDeviceStatusInfo(record.status).color" 
+                            size="small"
+                          >
+                            {{ getDeviceStatusInfo(record.status).text }}
                           </a-tag>
                         </template>
                         <template v-else-if="column.key === 'action'">
@@ -943,7 +993,7 @@ const handleBossKeyInputChange = (uuid: string) => {
                               size="small"
                               :icon="h(PlayCircleOutlined)"
                               :loading="startingDevices.has(`${element.uid}-${record.index}`)"
-                              :disabled="record.status === 2"
+                              :disabled="!canStartDevice(record.status)"
                               @click="startEmulator(element.uid, String(record.index))"
                             >
                               启动
@@ -953,7 +1003,7 @@ const handleBossKeyInputChange = (uuid: string) => {
                               size="small"
                               :icon="h(StopOutlined)"
                               :loading="stoppingDevices.has(`${element.uid}-${record.index}`)"
-                              :disabled="record.status !== 2"
+                              :disabled="!canStopDevice(record.status)"
                               @click="stopEmulator(element.uid, String(record.index))"
                             >
                               关闭
