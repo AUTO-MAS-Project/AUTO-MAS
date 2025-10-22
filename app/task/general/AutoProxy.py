@@ -451,7 +451,7 @@ class AutoProxyTask(TaskExecuteBase):
 
             log_path = (
                 Path.cwd()
-                / f"history/{self.curdate}/{self.cur_user_uid}/{t.strftime('%H-%M-%S')}.log"
+                / f"history/{self.curdate}/{self.cur_user_item.name}/{t.strftime('%H-%M-%S')}.log"
             )
             user_logs_list.append(log_path.with_suffix(".json"))
 
