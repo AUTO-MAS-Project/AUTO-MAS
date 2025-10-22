@@ -293,7 +293,7 @@ async def find_emulator_root_path(
 
         current = parent
 
-    # 如果找到了候选目录,优先返回直接包含更多可执行文件的目录
+    # 如果找到了候选目录,优先返回直接包含可执行文件的目录（而非通过子目录间接包含）
     if candidates:
         # 为每个候选目录计算直接包含的可执行文件数量
         candidate_scores = []
@@ -320,9 +320,16 @@ async def find_emulator_root_path(
                 }
             )
 
-        # 排序:优先选择直接包含更多可执行文件的,其次选择子目录包含更多的,最后按深度
+        # 排序策略：优先选择直接包含 exe 的目录（direct_count > 0）
+        # 对于直接包含 exe 的目录：按深度排序，选择最接近输入路径的（depth 越大越好）
+        # 对于仅通过子目录间接包含的目录：排在后面，按 subfolder_count 和 depth 排序
         candidate_scores.sort(
-            key=lambda x: (x["direct_count"], x["subfolder_count"], -x["depth"]),
+            key=lambda x: (
+                x["direct_count"] > 0,      # 直接包含 exe 的目录优先
+                x["direct_count"],           # 直接包含数量越多越好
+                -x["depth"],                 # 深度越大（越接近输入）越好
+                x["subfolder_count"],        # 子目录包含数量作为次要因素
+            ),
             reverse=True,
         )
 
@@ -333,25 +340,54 @@ async def find_emulator_root_path(
         return result
 
     # 2. 如果向上没找到,尝试向下搜索子目录(深度1层)
+    # 优先查找直接包含 exe 的子目录
+    direct_subdir = None
+    indirect_subdir = None
     try:
         for subdir in path_obj.iterdir():
             if subdir.is_dir():
-                if await _validate_emulator_path(str(subdir), executables):
-                    logger.info(f"在子目录找到根目录: {subdir}")
-                    return str(subdir)
+                # 检查子目录是否直接包含 exe
+                has_direct = any((subdir / exe).exists() for exe in executables)
+                if has_direct:
+                    direct_subdir = subdir
+                    break
+                # 如果没有直接包含，检查是否通过子目录间接包含
+                if indirect_subdir is None and await _validate_emulator_path(str(subdir), executables):
+                    indirect_subdir = subdir
     except PermissionError:
         pass
 
-    # 3. 检查兄弟目录
+    if direct_subdir:
+        logger.info(f"在子目录找到根目录(直接包含exe): {direct_subdir}")
+        return str(direct_subdir)
+    elif indirect_subdir:
+        logger.info(f"在子目录找到根目录(通过子目录): {indirect_subdir}")
+        return str(indirect_subdir)
+
+    # 3. 检查兄弟目录（同样优先直接包含 exe 的目录）
+    direct_sibling = None
+    indirect_sibling = None
     if path_obj.parent != path_obj:
         try:
             for sibling in path_obj.parent.iterdir():
                 if sibling.is_dir() and sibling != path_obj:
-                    if await _validate_emulator_path(str(sibling), executables):
-                        logger.info(f"在兄弟目录找到根目录: {sibling}")
-                        return str(sibling)
+                    # 检查兄弟目录是否直接包含 exe
+                    has_direct = any((sibling / exe).exists() for exe in executables)
+                    if has_direct:
+                        direct_sibling = sibling
+                        break
+                    # 如果没有直接包含，检查是否通过子目录间接包含
+                    if indirect_sibling is None and await _validate_emulator_path(str(sibling), executables):
+                        indirect_sibling = sibling
         except PermissionError:
             pass
+
+    if direct_sibling:
+        logger.info(f"在兄弟目录找到根目录(直接包含exe): {direct_sibling}")
+        return str(direct_sibling)
+    elif indirect_sibling:
+        logger.info(f"在兄弟目录找到根目录(通过子目录): {indirect_sibling}")
+        return str(indirect_sibling)
 
     logger.warning(f"未能找到{config['name']}根目录,返回原路径: {input_path}")
     return input_path
