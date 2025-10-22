@@ -8,13 +8,17 @@ export interface MAAScriptConfig {
     Path: string
   }
   Run: {
-    ADBSearchRange: number
-    AnnihilationTimeLimit: number
-    AnnihilationWeeklyLimit: boolean
-    ProxyTimesLimit: number
-    RoutineTimeLimit: number
-    RunTimesLimit: number
     TaskTransitionMethod: string
+    ProxyTimesLimit: number
+    ADBSearchRange: number
+    RunTimesLimit: number
+    AnnihilationTimeLimit: number
+    RoutineTimeLimit: number
+    AnnihilationWeeklyLimit: boolean
+  }
+  Emulator: {
+    Id: string
+    Index: string
   }
   SubConfigsInfo: {
     UserData: {
@@ -32,6 +36,8 @@ export interface GeneralScriptConfig {
     Path: string
     Type: string
     WaitTime: number
+    EmulatorId: string
+    EmulatorIndex: string
   }
   Info: {
     Name: string

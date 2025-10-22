@@ -85,6 +85,69 @@
           </a-row>
         </div>
 
+        <!-- 模拟器管理 -->
+        <div class="form-section">
+          <div class="section-header">
+            <h3>模拟器管理</h3>
+          </div>
+          <a-row :gutter="24">
+            <a-col :span="12">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip title="选择要使用的模拟器">
+                    <span class="form-label">
+                      模拟器选择
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-select
+                  v-model:value="maaConfig.Emulator.Id"
+                  size="large"
+                  placeholder="请选择模拟器"
+                  :loading="emulatorLoading"
+                  @change="handleEmulatorChange"
+                >
+                  <a-select-option
+                    v-for="item in emulatorOptions"
+                    :key="item.value"
+                    :value="item.value"
+                  >
+                    {{ item.label }}
+                  </a-select-option>
+                </a-select>
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip title="选择模拟器的具体实例">
+                    <span class="form-label">
+                      模拟器实例
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-select
+                  v-model:value="maaConfig.Emulator.Index"
+                  size="large"
+                  placeholder="请先选择模拟器"
+                  :loading="emulatorDeviceLoading"
+                  :disabled="!maaConfig.Emulator.Id"
+                >
+                  <a-select-option
+                    v-for="item in emulatorDeviceOptions"
+                    :key="item.value"
+                    :value="item.value"
+                  >
+                    {{ item.label }}
+                  </a-select-option>
+                </a-select>
+              </a-form-item>
+            </a-col>
+          </a-row>
+        </div>
+
         <!-- 运行配置 -->
         <div class="form-section">
           <div class="section-header">
@@ -111,27 +174,6 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="使用mumu模拟器时设为3，其他模拟器设为0">
-                    <span class="form-label">
-                      ADB端口号搜索范围
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
-                </template>
-                <a-input-number
-                  v-model:value="maaConfig.Run.ADBSearchRange"
-                  :min="0"
-                  :max="3"
-                  size="large"
-                  class="modern-number-input"
-                  style="width: 100%"
-                />
-              </a-form-item>
-            </a-col>
-
-            <a-col :span="8">
-              <a-form-item>
-                <template #label>
                   <a-tooltip
                     title="当用户本日代理成功次数达到该阀值时跳过代理，阈值为「0」时视为无代理次数上限"
                   >
@@ -145,28 +187,6 @@
                   v-model:value="maaConfig.Run.ProxyTimesLimit"
                   :min="0"
                   :max="999"
-                  size="large"
-                  class="modern-number-input"
-                  style="width: 100%"
-                />
-              </a-form-item>
-            </a-col>
-          </a-row>
-          <a-row :gutter="24">
-            <a-col :span="8">
-              <a-form-item>
-                <template #label>
-                  <a-tooltip title="执行剿灭代理任务时，MAA日志无变化时间超过该阀值视为超时">
-                    <span class="form-label">
-                      剿灭代理超时限制（分钟）
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
-                </template>
-                <a-input-number
-                  v-model:value="maaConfig.Run.AnnihilationTimeLimit"
-                  :min="1"
-                  :max="9999"
                   size="large"
                   class="modern-number-input"
                   style="width: 100%"
@@ -192,8 +212,27 @@
               </a-form-item>
             </a-col>
           </a-row>
-
           <a-row :gutter="24">
+            <a-col :span="8">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip title="执行剿灭代理任务时，MAA日志无变化时间超过该阀值视为超时">
+                    <span class="form-label">
+                      剿灭代理超时限制（分钟）
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-input-number
+                  v-model:value="maaConfig.Run.AnnihilationTimeLimit"
+                  :min="1"
+                  :max="9999"
+                  size="large"
+                  class="modern-number-input"
+                  style="width: 100%"
+                />
+              </a-form-item>
+            </a-col>
             <a-col :span="8">
               <a-form-item>
                 <template #label>
@@ -236,6 +275,7 @@
             </a-col>
           </a-row>
         </div>
+
       </a-form>
     </a-card>
   </div>
@@ -260,6 +300,7 @@ import type { FormInstance } from 'ant-design-vue'
 import { message } from 'ant-design-vue'
 import type { MAAScriptConfig, ScriptType } from '../../../types/script.ts'
 import { useScriptApi } from '../../../composables/useScriptApi.ts'
+import { Service, type ComboBoxItem } from '../../../api'
 import {
   ArrowLeftOutlined,
   FolderOpenOutlined,
@@ -287,13 +328,17 @@ const maaConfig = reactive<MAAScriptConfig>({
     Path: '.',
   },
   Run: {
-    ADBSearchRange: 0,
-    AnnihilationTimeLimit: 40,
-    AnnihilationWeeklyLimit: true,
-    ProxyTimesLimit: 0,
-    RoutineTimeLimit: 10,
-    RunTimesLimit: 3,
     TaskTransitionMethod: 'ExitEmulator',
+    ProxyTimesLimit: 0,
+    ADBSearchRange: 0,
+    RunTimesLimit: 3,
+    AnnihilationTimeLimit: 40,
+    RoutineTimeLimit: 10,
+    AnnihilationWeeklyLimit: true,
+  },
+  Emulator: {
+    Id: '',
+    Index: '',
   },
   SubConfigsInfo: {
     UserData: {
@@ -307,8 +352,15 @@ const rules = {
   type: [{ required: true, message: '请选择脚本类型', trigger: 'change' }],
 }
 
+// 模拟器相关状态
+const emulatorLoading = ref(false)
+const emulatorDeviceLoading = ref(false)
+const emulatorOptions = ref<ComboBoxItem[]>([])
+const emulatorDeviceOptions = ref<ComboBoxItem[]>([])
+
 onMounted(async () => {
   await loadScript()
+  await loadEmulatorOptions()
 })
 
 const loadScript = async () => {
@@ -341,6 +393,11 @@ const loadScript = async () => {
       formData.name = scriptDetail.name
 
       Object.assign(maaConfig, scriptDetail.config as MAAScriptConfig)
+      
+      // 如果已经有选择的模拟器，加载对应的设备选项
+      if (maaConfig.Emulator?.Id) {
+        await loadEmulatorDeviceOptions(maaConfig.Emulator.Id)
+      }
     }
   } catch (error) {
     console.error('加载脚本失败:', error)
@@ -369,6 +426,56 @@ const handleSave = async () => {
 
 const handleCancel = () => {
   router.push('/scripts')
+}
+
+// 模拟器相关方法
+const loadEmulatorOptions = async () => {
+  emulatorLoading.value = true
+  try {
+    const response = await Service.getEmulatorComboxApiInfoComboxEmulatorPost()
+    if (response && response.code === 200) {
+      emulatorOptions.value = response.data || []
+    } else {
+      message.error('加载模拟器选项失败')
+    }
+  } catch (error) {
+    console.error('加载模拟器选项失败:', error)
+    message.error('加载模拟器选项失败')
+  } finally {
+    emulatorLoading.value = false
+  }
+}
+
+const loadEmulatorDeviceOptions = async (emulatorId: string) => {
+  if (!emulatorId) return
+  
+  emulatorDeviceLoading.value = true
+  try {
+    const response = await Service.getEmulatorDevicesComboxApiInfoComboxEmulatorDevicesPost({
+      emulatorId: emulatorId
+    })
+    if (response && response.code === 200) {
+      emulatorDeviceOptions.value = response.data || []
+    } else {
+      message.error('加载模拟器实例选项失败')
+    }
+  } catch (error) {
+    console.error('加载模拟器实例选项失败:', error)
+    message.error('加载模拟器实例选项失败')
+  } finally {
+    emulatorDeviceLoading.value = false
+  }
+}
+
+const handleEmulatorChange = async (emulatorId: string) => {
+  // 清空模拟器实例选择
+  maaConfig.Emulator.Index = ''
+  emulatorDeviceOptions.value = []
+  
+  // 加载新的模拟器实例选项
+  if (emulatorId) {
+    await loadEmulatorDeviceOptions(emulatorId)
+  }
 }
 
 // 文件选择方法

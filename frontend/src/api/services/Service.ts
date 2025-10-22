@@ -161,6 +161,36 @@ export class Service {
         });
     }
     /**
+     * 获取可选模拟器下拉框信息
+     * @returns ComboBoxOut Successful Response
+     * @throws ApiError
+     */
+    public static getEmulatorComboxApiInfoComboxEmulatorPost(): CancelablePromise<ComboBoxOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/info/combox/emulator',
+        });
+    }
+    /**
+     * 获取可选模拟器多开实例下拉框信息
+     * @param requestBody
+     * @returns ComboBoxOut Successful Response
+     * @throws ApiError
+     */
+    public static getEmulatorDevicesComboxApiInfoComboxEmulatorDevicesPost(
+        requestBody: EmulatorDeleteIn,
+    ): CancelablePromise<ComboBoxOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/info/combox/emulator/devices',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 获取通知信息
      * @returns NoticeOut Successful Response
      * @throws ApiError
