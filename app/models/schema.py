@@ -131,7 +131,6 @@ class GlobalConfig_Function(BaseModel):
     )
     IfAllowSleep: Optional[bool] = Field(default=None, description="允许休眠")
     IfSilence: Optional[bool] = Field(default=None, description="静默模式")
-    BossKey: Optional[str] = Field(default=None, description="模拟器老板键")
     IfAgreeBilibili: Optional[bool] = Field(
         default=None, description="同意哔哩哔哩用户协议"
     )
@@ -385,7 +384,6 @@ class MaaConfig_Run(BaseModel):
         Field(default=None, description="简洁任务间切换方式")
     )
     ProxyTimesLimit: Optional[int] = Field(default=None, description="每日代理次数限制")
-    ADBSearchRange: Optional[int] = Field(default=None, description="ADB端口搜索范围")
     RunTimesLimit: Optional[int] = Field(default=None, description="重试次数限制")
     AnnihilationTimeLimit: Optional[int] = Field(
         default=None, description="剿灭超时限制"

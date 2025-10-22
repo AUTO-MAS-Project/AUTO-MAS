@@ -12,10 +12,6 @@ export type MaaConfig_Run = {
      */
     ProxyTimesLimit?: (number | null);
     /**
-     * ADB端口搜索范围
-     */
-    ADBSearchRange?: (number | null);
-    /**
      * 重试次数限制
      */
     RunTimesLimit?: (number | null);

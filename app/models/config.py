@@ -308,9 +308,6 @@ class MaaConfig(ConfigBase):
         self.Run_ProxyTimesLimit = ConfigItem(
             "Run", "ProxyTimesLimit", 0, RangeValidator(0, 9999)
         )
-        self.Run_ADBSearchRange = ConfigItem(
-            "Run", "ADBSearchRange", 0, RangeValidator(0, 3)
-        )
         self.Run_RunTimesLimit = ConfigItem(
             "Run", "RunTimesLimit", 3, RangeValidator(1, 9999)
         )
@@ -542,7 +539,6 @@ class GlobalConfig(ConfigBase):
         "Function", "IfAllowSleep", False, BoolValidator()
     )
     Function_IfSilence = ConfigItem("Function", "IfSilence", False, BoolValidator())
-    Function_BossKey = ConfigItem("Function", "BossKey", "")
     Function_IfAgreeBilibili = ConfigItem(
         "Function", "IfAgreeBilibili", False, BoolValidator()
     )
