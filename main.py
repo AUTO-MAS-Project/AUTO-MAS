@@ -78,7 +78,7 @@ def main():
             from app.models.schema import WebSocketMessage
 
             await Config.init_config()
-            await Config.get_stage(if_start=True)
+            await Config.get_stage()
             await Config.clean_old_history()
             second_timer = asyncio.create_task(MainTimer.second_task())
             hour_timer = asyncio.create_task(MainTimer.hour_task())
