@@ -1372,7 +1372,6 @@ class AppConfig(GlobalConfig):
             )
             await self.ScriptConfig.save()
 
-
     def get_proxy(self) -> Optional[httpx.Proxy]:
         """获取代理设置，返回适用于 httpx 的代理对象"""
         proxy_addr = self.get("Update", "ProxyAddress")
@@ -1444,7 +1443,7 @@ class AppConfig(GlobalConfig):
         logger.info("获取代理情况概览信息")
 
         history_index = await self.search_history(
-            "按日合并", datetime.now(tz=UTC4), datetime.now(tz=UTC4)
+            "按日合并", datetime.now(tz=UTC4).date(), datetime.now(tz=UTC4).date()
         )
         if datetime.now(tz=UTC4).strftime("%Y年 %m月 %d日") not in history_index:
             return {}
@@ -1471,9 +1470,7 @@ class AppConfig(GlobalConfig):
             }
         return overview
 
-    async def get_stage(
-        self, if_start: bool = False
-    ) -> Optional[Dict[str, List[Dict[str, str]]]]:
+    async def get_stage(self) -> Optional[Dict[str, List[Dict[str, str]]]]:
         """更新活动关卡信息"""
 
         if datetime.now() - timedelta(hours=1) < datetime.strptime(
