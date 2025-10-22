@@ -52,7 +52,6 @@ const refreshingConfig = ref(false)
 const settings = reactive<SettingsData>({
   UI: { IfShowTray: false, IfToTray: false },
   Function: {
-    BossKey: '',
     HistoryRetentionTime: 0,
     IfAgreeBilibili: false,
     IfAllowSleep: false,

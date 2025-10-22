@@ -488,14 +488,24 @@
             <a-col v-if="generalConfig.Game.Type === 'Emulator'" :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="选择模拟器的具体实例">
+                  <a-tooltip :title="emulatorDeviceOptions.length === 0 && !emulatorDeviceLoading ? '不支持自动扫描实例的模拟器，请手动输入实例信息' : '选择模拟器的具体实例'">
                     <span class="form-label">
                       模拟器实例
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
+                <!-- 当API返回空列表时显示输入框 -->
+                <a-input
+                  v-if="emulatorDeviceOptions.length === 0 && !emulatorDeviceLoading && generalConfig.Game.EmulatorId"
+                  v-model:value="generalConfig.Game.EmulatorIndex"
+                  size="large"
+                  placeholder="请输入实例信息，格式：启动附加命令 | ADB地址"
+                  class="modern-input"
+                />
+                <!-- 正常情况下显示下拉框 -->
                 <a-select
+                  v-else
                   v-model:value="generalConfig.Game.EmulatorIndex"
                   size="large"
                   placeholder="请先选择模拟器"
