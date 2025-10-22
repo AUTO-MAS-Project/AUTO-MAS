@@ -143,7 +143,12 @@
                       <span class="record-count"
                         >{{ selectedUserData.index?.length || 0 }} 条记录</span
                       >
-                      <HistoryOutlined />
+                      <a-popover>
+                        <template #content>
+                          <p>计时规则：4:00-28:00</p>
+                        </template>
+                        <HistoryOutlined />
+                      </a-popover>
                     </a-space>
                   </template>
                   <div class="records-list">
