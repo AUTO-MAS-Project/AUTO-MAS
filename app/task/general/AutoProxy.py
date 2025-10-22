@@ -34,6 +34,7 @@ from app.models.config import GeneralConfig, GeneralUserConfig
 from app.models.emulator import DeviceBase
 from app.services import Notify, System
 from app.utils import get_logger, LogMonitor, ProcessManager, strptime
+from app.utils.constants import UTC4
 from .tools import execute_script_task
 
 logger = get_logger("通用脚本自动代理")
@@ -160,7 +161,7 @@ class AutoProxyTask(TaskExecuteBase):
         """自动代理模式主逻辑"""
 
         # 初始化每日代理状态
-        self.curdate = Config.server_date().strftime("%Y-%m-%d")
+        self.curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
         if self.cur_user_config.get("Data", "LastProxyDate") != self.curdate:
             await self.cur_user_config.set("Data", "LastProxyDate", self.curdate)
             await self.cur_user_config.set("Data", "ProxyTimes", 0)
@@ -449,9 +450,10 @@ class AutoProxyTask(TaskExecuteBase):
         user_logs_list = []
         for t, log_item in self.cur_user_item.log_record.items():
 
+            dt = t.replace(tzinfo=datetime.now().astimezone().tzinfo).astimezone(UTC4)
             log_path = (
                 Path.cwd()
-                / f"history/{self.curdate}/{self.cur_user_item.name}/{t.strftime('%H-%M-%S')}.log"
+                / f"history/{dt.strftime('%Y-%m-%d')}/{self.cur_user_item.name}/{dt.strftime('%H-%M-%S')}.log"
             )
             user_logs_list.append(log_path.with_suffix(".json"))
 

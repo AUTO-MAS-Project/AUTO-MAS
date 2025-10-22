@@ -27,10 +27,13 @@ from pathlib import Path
 from app.services import System
 
 
-async def update_maa(maa_path: Path, maa_update_package: str):
+async def update_maa(maa_path: Path):
     """更新 MAA 主程序"""
 
-    if not (maa_path / maa_update_package).exists():
+    maa_set = json.loads((maa_path / "config/gui.json").read_text(encoding="utf-8"))
+    maa_update_package = maa_set.get("Global", {}).get("VersionUpdate.package", "")
+
+    if not maa_update_package or not (maa_path / maa_update_package).exists():
         return
 
     await System.kill_process(maa_path / "MAA.exe")

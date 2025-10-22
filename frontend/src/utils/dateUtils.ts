@@ -8,43 +8,49 @@ export function getTodayWeekday(): number {
 }
 
 /**
- * 获取指定日期是星期几
- * @param {Date} utcDate UTC时间
- * @returns {number} 返回数字的星期几 (0-6, 0表示星期日)
+ * 获取指定UTC偏移量的当前时间
+ * @param {number} utcOffset UTC偏移量（小时），例如：-4表示UTC-4，8表示UTC+8，0表示UTC时间
+ * @returns {Date} 返回指定时区的当前时间Date对象
  */
-export function getWeekday(utcDate: Date): number {
-  const today = new Date(utcDate.getTime() + 4 * 3600000)
-  return today.getDay()
-}
-
-/**
- * 获取东12区当前时间
- * @returns {Date} 返回东12区当前时间的Date对象
- */
-export function _getEastTwelveZoneTime(): Date {
+export function getTimeByUTCOffset(utcOffset: number): Date {
   const now = new Date()
-  // 获取UTC时间，然后加上12小时
-  const utcTime = now.getTime() + now.getTimezoneOffset() * 60000
-  return new Date(utcTime + 4 * 3600000)
+  // UTC偏移量转换为分钟
+  const offsetMinutes = utcOffset * 60
+  return new Date(now.getTime() + (now.getTimezoneOffset() + offsetMinutes) * 60 * 1000)
 }
 
 /**
- * 获取东12区今天是星期几
- * @returns {number} 返回数字的星期几 (0-6, 0表示星期日)
+ * 获取指定UTC偏移量的当前日期字符串（YYYY-MM-DD格式）
+ * @param {number} utcOffset UTC偏移量（小时）
+ * @returns {string} 返回格式为YYYY-MM-DD的日期字符串
  */
-export function getTodayWeekdayEast12(): number {
-  const east12Time = _getEastTwelveZoneTime()
-  return east12Time.getDay()
+export function getDateStringByUTCOffset(utcOffset: number): string {
+  const time = getTimeByUTCOffset(utcOffset)
+  return time.toISOString().split('T')[0]
 }
 
 /**
- * 获取东12区指定UTC时间对应的星期几
- * @param {Date} utcDate UTC时间
+ * 获取指定UTC偏移量的本周一日期字符串（YYYY-MM-DD格式）
+ * @param {number} utcOffset UTC偏移量（小时）
+ * @returns {string} 返回格式为YYYY-MM-DD的本周一日期字符串
+ */
+export function getWeekStartByUTCOffset(utcOffset: number): string {
+  const time = getTimeByUTCOffset(utcOffset)
+  const startOfWeek = new Date(time)
+  const day = startOfWeek.getDay()
+  const diff = startOfWeek.getDate() - day + (day === 0 ? -6 : 1) // 如果是周日，调整为上周一
+  startOfWeek.setDate(diff)
+  return startOfWeek.toISOString().split('T')[0]
+}
+
+/**
+ * 获取指定UTC偏移量的今天是星期几
+ * @param {number} utcOffset UTC偏移量（小时）
  * @returns {number} 返回数字的星期几 (0-6, 0表示星期日)
  */
-export function getWeekdayEast12(utcDate: Date): number {
-  const east12Time = new Date(utcDate.getTime() + 4 * 3600000)
-  return east12Time.getDay()
+export function getWeekdayByUTCOffset(utcOffset: number): number {
+  const time = getTimeByUTCOffset(utcOffset)
+  return time.getDay()
 }
 
 /**

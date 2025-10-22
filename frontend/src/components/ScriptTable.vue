@@ -114,10 +114,30 @@
                           <!-- 只有MAA脚本才显示服务器标签 -->
                           <a-tag
                             v-if="script.type === 'MAA'"
-                            :color="user.Info.Server === 'Official' ? 'blue' : 'purple'"
+                            :color="getServerTagColor(user.Info.Server)"
                             class="server-tag"
                           >
-                            {{ user.Info.Server === 'Official' ? '官服' : 'B服' }}
+                            {{ getServerDisplayName(user.Info.Server) }}
+                          </a-tag>
+                          
+                          <!-- 账号标签 -->
+                          <a-tag
+                            v-if="script.type === 'MAA'"
+                            :color="getServerTagColor(user.Info.Server)"
+                            class="clickable-tag"
+                            @click="handleUserIdClick(user)"
+                          >
+                            {{ getUserIdDisplayText(user) }}
+                          </a-tag>
+                          
+                          <!-- 密码标签 -->
+                          <a-tag
+                            v-if="script.type === 'MAA'"
+                            :color="getServerTagColor(user.Info.Server)"
+                            class="clickable-tag"
+                            @click="handlePasswordClick(user)"
+                          >
+                            {{ getPasswordDisplayText(user) }}
                           </a-tag>
                         </div>
 
@@ -131,20 +151,26 @@
                               user.Info.Annihilation !== ''
                             "
                             class="info-tag"
-                            color="cyan"
+                            :color="getAnnihilationTagColor(user.Info.Annihilation, user.Data?.LastAnnihilationDate)"
                           >
-                            剿灭：{{
-                              ANNIHILATION_MAP[user.Info.Annihilation] ?? user.Info.Annihilation
-                            }}
+                            剿灭：{{ getAnnihilationDisplayText(user.Info.Annihilation, user.Data?.LastAnnihilationDate) }}
+                          </a-tag>
+
+                          <!-- 日常代理 -->
+                          <a-tag
+                            class="info-tag"
+                            :color="getRoutineTagColor(user.Data?.LastProxyDate)"
+                          >
+                            日常：{{ getRoutineDisplayText(user.Data?.LastProxyDate, user.Data?.ProxyTimes) }}
                           </a-tag>
 
                           <!-- 森空岛签到 -->
                           <a-tag
                             v-if="user.Info.IfSkland !== undefined && user.Info.IfSkland !== null"
                             class="info-tag"
-                            :color="user.Info.IfSkland ? 'green' : 'blue'"
+                            :color="getSklandTagColor(user.Info.IfSkland, user.Data?.LastSklandDate)"
                           >
-                            森空岛: {{ user.Info.IfSkland ? '开启' : '关闭' }}
+                            森空岛: {{ getSklandDisplayText(user.Info.IfSkland, user.Data?.LastSklandDate) }}
                           </a-tag>
 
                           <!-- 剩余天数 -->
@@ -168,25 +194,24 @@
                             class="info-tag"
                             color="purple"
                           >
-                            基建: {{ user.Info.InfrastMode === 'Normal' ? '普通' : '自定义' }}
+                            基建: {{ getInfrastModeDisplayName(user.Info.InfrastMode) }}
                           </a-tag>
 
                           <!-- 关卡信息 - 根据是否使用计划表配置显示不同内容 -->
-                          <template v-if="user.Info.Stage === '1-7' && props.currentPlanData">
-                            <!-- 计划表模式信息 -->
+                          <template v-if="user.Info.StageMode && user.Info.StageMode !== 'Fixed' && props.currentPlanData">
+                            <!-- 计划表名称 -->
                             <a-tag
-                              v-if="props.currentPlanData.Info?.Mode"
+                              v-if="props.currentPlanData.Info?.Name"
                               class="info-tag"
-                              color="purple"
+                              color="green"
                             >
-                              模式:
-                              {{ props.currentPlanData.Info.Mode === 'ALL' ? '全局' : '周计划' }}
+                              计划表: {{ props.currentPlanData.Info.Name }}
                             </a-tag>
 
                             <!-- 显示计划表中的所有关卡 -->
                             <template v-for="(stageInfo, index) in getAllPlanStages()" :key="index">
                               <a-tag class="info-tag" color="green">
-                                {{ stageInfo.label }}: {{ stageInfo.value }}
+                                {{ getStageDisplayLabel(stageInfo.label) }}: {{ stageInfo.value }}
                               </a-tag>
                             </template>
 
@@ -194,71 +219,41 @@
                             <a-tag
                               v-if="getAllPlanStages().length === 0"
                               class="info-tag"
-                              color="orange"
+                              color="green"
                             >
-                              关卡: 计划表未配置
+                              主关卡: 计划表未配置
                             </a-tag>
                           </template>
 
-                          <!-- 用户自定义关卡 -->
+                          <!-- 固定模式的关卡显示 -->
                           <template v-else>
+                            <!-- 主关卡 -->
                             <a-tag
-                              v-if="user.Info.Stage"
+                              v-if="getMainStageDisplay(user)"
                               class="info-tag"
-                              :color="getStageTagColor(user.Info.Stage)"
+                              color="blue"
                             >
-                              关卡: {{ getDisplayStage(user.Info.Stage) }}
+                              主关卡: {{ getMainStageDisplay(user) }}
+                            </a-tag>
+
+                            <!-- 备选关卡（合并显示） -->
+                            <a-tag
+                              v-if="getBackupStages(user).length > 0"
+                              class="info-tag"
+                              color="blue"
+                            >
+                              备选: {{ getBackupStages(user).join(', ') }}
+                            </a-tag>
+
+                            <!-- 剩余关卡 -->
+                            <a-tag
+                              v-if="getRemainStageDisplay(user)"
+                              class="info-tag"
+                              color="blue"
+                            >
+                              剩余: {{ getRemainStageDisplay(user) }}
                             </a-tag>
                           </template>
-
-                          <!-- 额外关卡 - 只有不为-或空时才显示 -->
-                          <a-tag
-                            v-if="
-                              user.Info.Stage_1 &&
-                              user.Info.Stage_1 !== '-' &&
-                              user.Info.Stage_1 !== ''
-                            "
-                            class="info-tag"
-                            color="geekblue"
-                          >
-                            关卡1: {{ user.Info.Stage_1 }}
-                          </a-tag>
-
-                          <a-tag
-                            v-if="
-                              user.Info.Stage_2 &&
-                              user.Info.Stage_2 !== '-' &&
-                              user.Info.Stage_2 !== ''
-                            "
-                            class="info-tag"
-                            color="geekblue"
-                          >
-                            关卡2: {{ user.Info.Stage_2 }}
-                          </a-tag>
-
-                          <a-tag
-                            v-if="
-                              user.Info.Stage_3 &&
-                              user.Info.Stage_3 !== '-' &&
-                              user.Info.Stage_3 !== ''
-                            "
-                            class="info-tag"
-                            color="geekblue"
-                          >
-                            关卡3: {{ user.Info.Stage_3 }}
-                          </a-tag>
-
-                          <a-tag
-                            v-if="
-                              user.Info.Stage_Remain &&
-                              user.Info.Stage_Remain !== '-' &&
-                              user.Info.Stage_Remain !== ''
-                            "
-                            class="info-tag"
-                            color="geekblue"
-                          >
-                            剩余关卡: {{ user.Info.Stage_Remain }}
-                          </a-tag>
 
                           <a-tag class="info-tag" color="magenta">
                             备注: {{ truncateText(user.Info.Notes) }}
@@ -358,6 +353,7 @@ import draggable from 'vuedraggable'
 import { ref, watch } from 'vue'
 import { Service } from '@/api'
 import { message } from 'ant-design-vue'
+import { getDateStringByUTCOffset, getWeekStartByUTCOffset } from '@/utils/dateUtils'
 
 interface Props {
   scripts: Script[]
@@ -398,6 +394,10 @@ const emit = defineEmits<Emits>()
 
 // 本地脚本列表状态
 const localScripts = ref<Script[]>([])
+
+// 账号信息展开状态管理 - 使用用户ID作为key
+const expandedUserIds = ref<Set<string>>(new Set())
+const expandedUserPasswords = ref<Set<string>>(new Set())
 
 // 监听props变化，更新本地状态
 watch(
@@ -445,6 +445,80 @@ const truncateText = (text: string, maxLength: number = 10): string => {
   return text.length > maxLength ? text.substring(0, maxLength) + '...' : text
 }
 
+// 处理账号ID点击
+const handleUserIdClick = async (user: any) => {
+  const userId = user.id
+  const userIdValue = user.Info.Id || ''
+  
+  // 切换展开状态
+  if (expandedUserIds.value.has(userId)) {
+    expandedUserIds.value.delete(userId)
+  } else {
+    expandedUserIds.value.add(userId)
+  }
+  
+  // 只有在有值的情况下才复制到剪贴板
+  if (userIdValue) {
+    try {
+      await navigator.clipboard.writeText(userIdValue)
+      message.success('账号已复制到剪贴板')
+    } catch (error) {
+      message.error('复制失败')
+    }
+  }
+}
+
+// 处理密码点击
+const handlePasswordClick = async (user: any) => {
+  const userId = user.id
+  const passwordValue = user.Info.Password || ''
+  
+  // 切换展开状态
+  if (expandedUserPasswords.value.has(userId)) {
+    expandedUserPasswords.value.delete(userId)
+  } else {
+    expandedUserPasswords.value.add(userId)
+  }
+  
+  // 只有在有值的情况下才复制到剪贴板
+  if (passwordValue) {
+    try {
+      await navigator.clipboard.writeText(passwordValue)
+      message.success('密码已复制到剪贴板')
+    } catch (error) {
+      message.error('复制失败')
+    }
+  }
+}
+
+// 获取账号ID显示文本
+const getUserIdDisplayText = (user: any): string => {
+  const userId = user.id
+  const userIdValue = user.Info.Id || ''
+  
+  if (expandedUserIds.value.has(userId)) {
+    // 展开状态：显示完整内容或未设置
+    return userIdValue ? `账号: ${userIdValue}` : '账号: 未设置'
+  } else {
+    // 隐藏状态：只显示标题
+    return '账号'
+  }
+}
+
+// 获取密码显示文本
+const getPasswordDisplayText = (user: any): string => {
+  const userId = user.id
+  const passwordValue = user.Info.Password || ''
+  
+  if (expandedUserPasswords.value.has(userId)) {
+    // 展开状态：显示完整内容或未设置
+    return passwordValue ? `密码: ${passwordValue}` : '密码: 未设置'
+  } else {
+    // 隐藏状态：只显示标题
+    return '密码'
+  }
+}
+
 // 获取剩余天数的颜色
 const getRemainingDayColor = (remainedDay: number): string => {
   if (remainedDay === -1) return 'gold'
@@ -456,9 +530,199 @@ const getRemainingDayColor = (remainedDay: number): string => {
 }
 
 // 获取关卡标签颜色
-const getStageTagColor = (stage: string): string => {
-  if (stage === '1-7') return 'green' // 使用计划表配置用绿色
+const getStageTagColor = (stage: string, stageMode?: string): string => {
+  // 如果使用计划表模式（stageMode不是'Fixed'），用绿色
+  if (stageMode && stageMode !== 'Fixed') return 'green'
   return 'blue' // 自定义关卡用蓝色
+}
+
+// 获取服务器标签颜色
+const getServerTagColor = (server: string): string => {
+  switch (server) {
+    case 'Official':
+      return 'blue'
+    case 'Bilibili':
+      return 'purple'
+    case 'YoStarEN':
+      return 'green'
+    case 'YoStarJP':
+      return 'red'
+    case 'YoStarKR':
+      return 'orange'
+    case 'txwy':
+      return 'gold'
+    default:
+      return 'gray'
+  }
+}
+
+// 获取服务器显示名称
+const getServerDisplayName = (server: string): string => {
+  switch (server) {
+    case 'Official':
+      return '官服'
+    case 'Bilibili':
+      return 'B服'
+    case 'YoStarEN':
+      return '国际服'
+    case 'YoStarJP':
+      return '日服'
+    case 'YoStarKR':
+      return '韩服'
+    case 'txwy':
+      return '繁中服'
+    default:
+      return server || '未知'
+  }
+}
+
+// 获取基建模式显示名称
+const getInfrastModeDisplayName = (mode: string): string => {
+  switch (mode) {
+    case 'Normal':
+      return '普通'
+    case 'Rotation':
+      return '轮班'
+    case 'Custom':
+      return '自定义'
+    default:
+      return mode || '未知'
+  }
+}
+
+// 检查是否完成了本周剿灭
+const isAnnihilationCompletedThisWeek = (lastAnnihilationDate: string): boolean => {
+  if (!lastAnnihilationDate) return false
+  
+  // 使用东4区时区获取本周一的日期字符串
+  const mondayDateStr = getWeekStartByUTCOffset(4)
+  
+  // 检查最后剿灭日期是否 >= 本周一（基于日期字符串比较）
+  return lastAnnihilationDate >= mondayDateStr
+}
+
+// 获取剿灭标签颜色
+const getAnnihilationTagColor = (annihilation: string, lastAnnihilationDate?: string): string => {
+  if (annihilation === 'Close') return 'red'
+  return isAnnihilationCompletedThisWeek(lastAnnihilationDate || '') ? 'green' : 'orange'
+}
+
+// 获取剿灭显示文本
+const getAnnihilationDisplayText = (annihilation: string, lastAnnihilationDate?: string): string => {
+  if (annihilation === 'Close') return '关闭'
+  return isAnnihilationCompletedThisWeek(lastAnnihilationDate || '') ? '已完成' : '未完成'
+}
+
+// 检查是否完成了今日森空岛签到
+const isSklandCompletedToday = (lastSklandDate: string): boolean => {
+  if (!lastSklandDate) return false
+  
+  // 森空岛使用东8区时间（UTC+8）
+  const todayUTC8 = getDateStringByUTCOffset(8)
+  
+  // 直接比较日期字符串
+  return lastSklandDate === todayUTC8
+}
+
+// 获取森空岛标签颜色
+const getSklandTagColor = (ifSkland: boolean, lastSklandDate?: string): string => {
+  if (!ifSkland) return 'red'
+  return isSklandCompletedToday(lastSklandDate || '') ? 'green' : 'orange'
+}
+
+// 获取森空岛显示文本
+const getSklandDisplayText = (ifSkland: boolean, lastSklandDate?: string): string => {
+  if (!ifSkland) return '关闭'
+  return isSklandCompletedToday(lastSklandDate || '') ? '已签到' : '未签到'
+}
+
+// 检查是否完成了今日日常代理
+const isRoutineCompletedToday = (lastProxyDate: string): boolean => {
+  if (!lastProxyDate) return false
+  
+  // 使用东4区时区获取今日的日期字符串
+  const todayEast4 = getDateStringByUTCOffset(4)
+  
+  // 直接比较日期字符串
+  return lastProxyDate === todayEast4
+}
+
+// 获取日常代理标签颜色
+const getRoutineTagColor = (lastProxyDate?: string): string => {
+  return isRoutineCompletedToday(lastProxyDate || '') ? 'green' : 'orange'
+}
+
+// 获取日常代理显示文本
+const getRoutineDisplayText = (lastProxyDate?: string, proxyTimes?: number): string => {
+  if (isRoutineCompletedToday(lastProxyDate || '')) {
+    const times = proxyTimes || 0
+    return `已代理${times}次`
+  } else {
+    return '未代理'
+  }
+}
+
+// 获取主关卡显示文本
+const getMainStageDisplay = (user: any): string => {
+  // 如果使用计划表模式
+  if (user.Info.StageMode && user.Info.StageMode !== 'Fixed' && props.currentPlanData) {
+    const planStage = getCurrentPlanStage()
+    if (planStage && planStage !== '-') {
+      return planStage
+    }
+    return '计划表配置'
+  }
+  
+  // 固定模式，显示用户自定义关卡
+  if (user.Info.Stage && user.Info.Stage !== '-' && user.Info.Stage !== '') {
+    return user.Info.Stage
+  }
+  
+  return ''
+}
+
+// 获取备选关卡列表（过滤掉无效值）
+const getBackupStages = (user: any): string[] => {
+  const stages = [user.Info.Stage_1, user.Info.Stage_2, user.Info.Stage_3]
+  return stages.filter(stage => 
+    stage && 
+    stage !== '-' && 
+    stage !== '' && 
+    stage !== '当前' && 
+    stage !== '上次' && 
+    stage !== '未选择'
+  )
+}
+
+// 获取剩余关卡显示文本
+const getRemainStageDisplay = (user: any): string => {
+  if (
+    user.Info.Stage_Remain && 
+    user.Info.Stage_Remain !== '-' && 
+    user.Info.Stage_Remain !== '' &&
+    user.Info.Stage_Remain !== '当前' && 
+    user.Info.Stage_Remain !== '上次' && 
+    user.Info.Stage_Remain !== '未选择'
+  ) {
+    return user.Info.Stage_Remain
+  }
+  return ''
+}
+
+// 获取统一的关卡显示标签
+const getStageDisplayLabel = (originalLabel: string): string => {
+  switch (originalLabel) {
+    case '关卡':
+      return '主关卡'
+    case '关卡1':
+    case '关卡2':
+    case '关卡3':
+      return '备选'
+    case '剩余关卡':
+      return '剩余'
+    default:
+      return originalLabel
+  }
 }
 
 // 获取剩余天数的显示文本
@@ -469,11 +733,11 @@ const getRemainingDayText = (remainedDay: number): string => {
 }
 
 // 获取关卡的显示文本
-const getDisplayStage = (stage: string): string => {
+const getDisplayStage = (stage: string, stageMode?: string): string => {
   if (stage === '-') return '未选择'
 
-  // 如果是默认值且有计划表数据，显示计划表中的实际关卡
-  if (stage === '1-7' && props.currentPlanData) {
+  // 如果使用计划表模式且有计划表数据，显示计划表中的实际关卡
+  if (stageMode && stageMode !== 'Fixed' && props.currentPlanData) {
     const planStage = getCurrentPlanStage()
     if (planStage && planStage !== '-') {
       return planStage
@@ -1034,6 +1298,21 @@ const onUserDragEnd = async (_evt: any, script: Script) => {
 
   .info-tag {
     font-size: 10px;
+  }
+
+  .clickable-tag {
+    cursor: pointer;
+    user-select: none;
+    transition: all 0.2s ease;
+  }
+
+  .clickable-tag:hover {
+    transform: scale(1.05);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  }
+
+  .clickable-tag:active {
+    transform: scale(0.95);
   }
 }
 </style>

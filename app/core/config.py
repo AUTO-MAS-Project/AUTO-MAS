@@ -54,6 +54,8 @@ from app.models.config import (
 )
 from app.models.schema import WebSocketMessage
 from app.utils.constants import (
+    UTC4,
+    UTC8,
     RESOURCE_STAGE_INFO,
     RESOURCE_STAGE_DROP_INFO,
     MATERIALS_MAP,
@@ -118,8 +120,6 @@ class AppConfig(GlobalConfig):
         self.power_sign: Literal[
             "NoAction", "Shutdown", "ShutdownForce", "Hibernate", "Sleep", "KillSelf"
         ] = "NoAction"
-        self.silence_dict: Dict[Path, datetime] = {}
-        self.if_ignore_silence: List[uuid.UUID] = []
         self.temp_task: List[asyncio.Task] = []
 
         truststore.inject_into_ssl()
@@ -682,7 +682,7 @@ class AppConfig(GlobalConfig):
 
         files = {
             "file": (
-                f"{config_name}&&{author}&&{description}&&{int(datetime.now().timestamp() * 1000)}.json",
+                f"{config_name}&&{author}&&{description}&&{int(datetime.now(tz=UTC8).timestamp() * 1000)}.json",
                 json.dumps(temp, ensure_ascii=False),
                 "application/json",
             )
@@ -1372,18 +1372,6 @@ class AppConfig(GlobalConfig):
             )
             await self.ScriptConfig.save()
 
-    def server_date(self) -> date:
-        """
-        获取当前的服务器日期
-
-        :return: 当前的服务器日期
-        :rtype: date
-        """
-
-        dt = datetime.now()
-        if dt.time() < datetime.min.time().replace(hour=4):
-            dt = dt - timedelta(days=1)
-        return dt.date()
 
     def get_proxy(self) -> Optional[httpx.Proxy]:
         """获取代理设置，返回适用于 httpx 的代理对象"""
@@ -1426,7 +1414,7 @@ class AppConfig(GlobalConfig):
             await self.get_stage()
 
         if type == "Info":
-            today = self.server_date().isoweekday()
+            today = datetime.now(tz=UTC4).isoweekday()
             res_stage_info = []
             for stage in RESOURCE_STAGE_INFO:
                 if (
@@ -1440,7 +1428,7 @@ class AppConfig(GlobalConfig):
             }
         elif type == "Today":
             data = json.loads(self.get("Data", "Stage")).get(
-                self.server_date().strftime("%A"), []
+                datetime.now(tz=UTC4).strftime("%A"), []
             )
             for combox in data:
                 combox["label"] = RESOURCE_STAGE_DATE_TEXT.get(
@@ -1456,14 +1444,14 @@ class AppConfig(GlobalConfig):
         logger.info("获取代理情况概览信息")
 
         history_index = await self.search_history(
-            "按日合并", self.server_date(), self.server_date()
+            "按日合并", datetime.now(tz=UTC4), datetime.now(tz=UTC4)
         )
-        if self.server_date().strftime("%Y年 %m月 %d日") not in history_index:
+        if datetime.now(tz=UTC4).strftime("%Y年 %m月 %d日") not in history_index:
             return {}
         history_data = {
             k: await self.merge_statistic_info(v)
             for k, v in history_index[
-                self.server_date().strftime("%Y年 %m月 %d日")
+                datetime.now(tz=UTC4).strftime("%Y年 %m月 %d日")
             ].items()
         }
         overview = {}
@@ -1505,20 +1493,20 @@ class AppConfig(GlobalConfig):
                     remote_time_stamp = datetime.strptime(
                         str(response.json().get("timestamp", 20000101000000)),
                         "%Y%m%d%H%M%S",
-                    )
+                    ).replace(tzinfo=UTC8)
                 else:
                     logger.warning(f"无法从MAA服务器获取活动关卡时间戳:{response.text}")
-                    remote_time_stamp = datetime.fromtimestamp(0)
+                    remote_time_stamp = datetime.fromtimestamp(0, tz=UTC8)
         except Exception as e:
             logger.warning(f"无法从MAA服务器获取活动关卡时间戳: {e}")
-            remote_time_stamp = datetime.fromtimestamp(0)
+            remote_time_stamp = datetime.fromtimestamp(0, tz=UTC8)
 
         local_time_stamp = datetime.strptime(
             self.get("Data", "StageTimeStamp"), "%Y-%m-%d %H:%M:%S"
-        )
+        ).replace(tzinfo=UTC8)
 
         # 本地关卡信息无需更新, 直接返回本地数据
-        if datetime.fromtimestamp(0) < remote_time_stamp <= local_time_stamp:
+        if datetime.fromtimestamp(0, tz=UTC8) < remote_time_stamp <= local_time_stamp:
             logger.info("使用本地关卡信息")
             await self.set(
                 "Data", "LastStageUpdated", datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -1554,11 +1542,11 @@ class AppConfig(GlobalConfig):
             if (
                 datetime.strptime(
                     stage["Activity"]["UtcStartTime"], "%Y/%m/%d %H:%M:%S"
-                )
-                < datetime.now()
+                ).replace(tzinfo=UTC8)
+                < datetime.now(tz=UTC8)
                 < datetime.strptime(
                     stage["Activity"]["UtcExpireTime"], "%Y/%m/%d %H:%M:%S"
-                )
+                ).replace(tzinfo=UTC8)
             ):
                 activity_stage_combox.append(
                     {"label": stage["Display"], "value": stage["Value"]}
@@ -1737,13 +1725,13 @@ class AppConfig(GlobalConfig):
 
         local_time_stamp = datetime.strptime(
             local_notice.get("time", "2000-01-01 00:00"), "%Y-%m-%d %H:%M"
-        )
+        ).replace(tzinfo=UTC8)
         remote_time_stamp = datetime.strptime(
             remote_notice.get("time", "2000-01-01 00:00"), "%Y-%m-%d %H:%M"
-        )
+        ).replace(tzinfo=UTC8)
 
         # 本地公告信息需更新且持续展示
-        if local_time_stamp < remote_time_stamp < datetime.now():
+        if local_time_stamp < remote_time_stamp < datetime.now(tz=UTC8):
             logger.info("要求展示本地公告信息")
             await self.set(
                 "Data", "Notice", json.dumps(remote_notice, ensure_ascii=False)
@@ -2025,16 +2013,13 @@ class AppConfig(GlobalConfig):
 
                 # 录入运行结果
                 elif key in ["maa_result", "general_result"]:
-                    actual_date = datetime.strptime(
-                        f"{json_file.parent.parent.name} {json_file.stem}",
-                        "%Y-%m-%d %H-%M-%S",
-                    ) + timedelta(
-                        days=(
-                            1
-                            if datetime.strptime(json_file.stem, "%H-%M-%S").time()
-                            < datetime.min.time().replace(hour=4)
-                            else 0
+                    actual_date = (
+                        datetime.strptime(
+                            f"{json_file.parent.parent.name} {json_file.stem}",
+                            "%Y-%m-%d %H-%M-%S",
                         )
+                        .replace(tzinfo=UTC4)
+                        .astimezone()
                     )
 
                     if single_data[key] != "Success!":
@@ -2142,8 +2127,8 @@ class AppConfig(GlobalConfig):
 
             try:
                 # 只检查 `YYYY-MM-DD` 格式的文件夹
-                folder_date = datetime.strptime(date_folder.name, "%Y-%m-%d")
-                if datetime.now() - folder_date > timedelta(
+                folder_date = datetime.strptime(date_folder.name, "%Y-%m-%d").date()
+                if datetime.now(tz=UTC4).date() - folder_date > timedelta(
                     days=self.get("Function", "HistoryRetentionTime")
                 ):
                     shutil.rmtree(date_folder, ignore_errors=True)

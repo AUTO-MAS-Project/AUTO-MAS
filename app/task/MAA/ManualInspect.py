@@ -32,8 +32,9 @@ from app.models.task import TaskExecuteBase, ScriptItem, LogRecord
 from app.models.ConfigBase import MultipleConfig
 from app.models.config import MaaConfig, MaaUserConfig
 from app.models.emulator import DeviceInfo, DeviceBase
-from app.services import Notify, System
+from app.services import System
 from app.utils import get_logger, LogMonitor, ProcessManager
+from app.utils.constants import UTC4
 from .tools import agree_bilibili
 
 logger = get_logger("MAA 人工排查")
@@ -100,7 +101,7 @@ class ManualInspectTask(TaskExecuteBase):
         """人工排查模式主逻辑"""
 
         # 初始化每日代理状态
-        self.curdate = Config.server_date().strftime("%Y-%m-%d")
+        self.curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
         if self.cur_user_config.get("Data", "LastProxyDate") != self.curdate:
             await self.cur_user_config.set("Data", "LastProxyDate", self.curdate)
             await self.cur_user_config.set("Data", "ProxyTimes", 0)
