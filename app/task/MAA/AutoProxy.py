@@ -35,6 +35,7 @@ from app.models.emulator import DeviceInfo, DeviceBase
 from app.utils.constants import MAA_RUN_MOOD_BOOK, MAA_TASK_TRANSITION_METHOD_BOOK
 from app.services import Notify, System
 from app.utils import get_logger, LogMonitor, ProcessManager
+from app.utils.constants import UTC4, UTC8
 from .tools import skland_sign_in, push_notification, agree_bilibili, update_maa
 
 logger = get_logger("MAA 自动代理")
@@ -113,7 +114,7 @@ class AutoProxyTask(TaskExecuteBase):
         """自动代理模式主逻辑"""
 
         # 初始化每日代理状态
-        self.curdate = Config.server_date().strftime("%Y-%m-%d")
+        self.curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
         if self.cur_user_config.get("Data", "LastProxyDate") != self.curdate:
             await self.cur_user_config.set("Data", "LastProxyDate", self.curdate)
             await self.cur_user_config.set("Data", "ProxyTimes", 0)
@@ -140,7 +141,7 @@ class AutoProxyTask(TaskExecuteBase):
             self.cur_user_config.get("Info", "IfSkland")
             and self.cur_user_config.get("Info", "SklandToken")
             and self.cur_user_config.get("Data", "LastSklandDate")
-            != datetime.now().strftime("%Y-%m-%d")
+            != datetime.now(tz=UTC8).strftime("%Y-%m-%d")
         ):
             self.script_info.log = "正在执行森空岛签到中\n请稍候~"
             skland_result = await skland_sign_in(
@@ -169,7 +170,7 @@ class AutoProxyTask(TaskExecuteBase):
                 )
             if skland_result["总计"] > 0 and len(skland_result["失败"]) == 0:
                 await self.cur_user_config.set(
-                    "Data", "LastSklandDate", datetime.now().strftime("%Y-%m-%d")
+                    "Data", "LastSklandDate", datetime.now(tz=UTC8).strftime("%Y-%m-%d")
                 )
         elif self.cur_user_config.get("Info", "IfSkland"):
             logger.warning(
@@ -193,7 +194,9 @@ class AutoProxyTask(TaskExecuteBase):
                 and datetime.strptime(
                     self.cur_user_config.get("Data", "LastAnnihilationDate"),
                     "%Y-%m-%d",
-                ).isocalendar()[:2]
+                )
+                .replace(tzinfo=UTC4)
+                .isocalendar()[:2]
                 == datetime.strptime(self.curdate, "%Y-%m-%d").isocalendar()[:2]
             ):
                 logger.info(
@@ -315,19 +318,7 @@ class AutoProxyTask(TaskExecuteBase):
                         3,
                     )
 
-                maa_set = json.loads(self.maa_set_path.read_text(encoding="utf-8"))
-
-                if maa_set["Global"]["VersionUpdate.package"]:
-
-                    logger.info("检测到MAA更新, 正在执行更新动作")
-
-                    self.script_info.log = (
-                        "检测到MAA存在更新\nMAA正在执行更新动作\n请等待10s"
-                    )
-                    await update_maa(
-                        self.maa_root_path, maa_set["Global"]["VersionUpdate.package"]
-                    )
-                    logger.info("更新动作结束")
+                await update_maa(self.maa_root_path)
 
     async def set_maa(self, emulator_info: DeviceInfo):
         """配置MAA运行参数"""
@@ -657,9 +648,10 @@ class AutoProxyTask(TaskExecuteBase):
         if_six_star = False
         for t, log_item in self.cur_user_item.log_record.items():
 
+            dt = t.replace(tzinfo=datetime.now().astimezone().tzinfo).astimezone(UTC4)
             log_path = (
                 Path.cwd()
-                / f"history/{self.curdate}/{self.cur_user_item.name}/{t.strftime('%H-%M-%S')}.log"
+                / f"history/{dt.strftime('%Y-%m-%d')}/{self.cur_user_item.name}/{dt.strftime('%H-%M-%S')}.log"
             )
             user_logs_list.append(log_path.with_suffix(".json"))
 
