@@ -9,6 +9,7 @@ export type { OpenAPIConfig } from './core/OpenAPI';
 
 export type { ComboBoxItem } from './models/ComboBoxItem';
 export type { ComboBoxOut } from './models/ComboBoxOut';
+export type { DeviceInfo } from './models/DeviceInfo';
 export type { DispatchIn } from './models/DispatchIn';
 export type { EmulatorConfig } from './models/EmulatorConfig';
 export type { EmulatorConfig_Data } from './models/EmulatorConfig_Data';

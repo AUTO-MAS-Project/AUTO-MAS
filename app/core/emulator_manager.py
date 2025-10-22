@@ -22,10 +22,11 @@
 
 import uuid
 import asyncio
-from typing import Literal
+from typing import Dict, Literal
 
 from .config import Config
 from app.models.emulator import DeviceBase
+from app.models.schema import DeviceInfo as SchemaDeviceInfo
 from app.utils import EMULATOR_TYPE_BOOK
 
 from app.utils import get_logger
@@ -73,7 +74,9 @@ class _EmulatorManager:
                 data={"error": f"模拟器操作失败: {str(e)}"},
             )
 
-    async def get_status(self, emulator_id: str | None = None):
+    async def get_status(
+        self, emulator_id: str | None = None
+    ) -> Dict[str, Dict[str, SchemaDeviceInfo]]:
 
         if emulator_id is None:
             emulator_range = list(map(str, Config.EmulatorConfig.keys()))
@@ -83,7 +86,18 @@ class _EmulatorManager:
         data = {}
         for emulator_id in emulator_range:
             temp_emulator = await self.get_emulator_instance(emulator_id)
-            data[emulator_id] = await temp_emulator.getInfo(None)
+            emulator_device_info = await temp_emulator.getInfo(None)
+
+            # 转换 EmulatorDeviceInfo 到 SchemaDeviceInfo
+            converted_devices = {}
+            for device_index, device_info in emulator_device_info.items():
+                converted_devices[device_index] = SchemaDeviceInfo(
+                    title=device_info.title,
+                    status=int(device_info.status),
+                    adb_address=device_info.adb_address,
+                )
+
+            data[emulator_id] = converted_devices
 
         return data
 
