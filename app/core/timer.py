@@ -105,41 +105,5 @@ class _MainTimer:
                         ).model_dump()
                     )
 
-    # @logger.catch()
-    # async def set_silence(self):
-    #     """静默模式通过模拟老板键来隐藏模拟器窗口"""
-
-    #     if (
-    #         len(Config.if_ignore_silence) == 0
-    #         and Config.get("Function", "IfSilence")
-    #         and Config.get("Function", "BossKey") != ""
-    #     ):
-
-    #         windows = await System.get_window_info()
-
-    #         emulator_windows = []
-    #         for window in windows:
-    #             for emulator_path, endtime in Config.silence_dict.items():
-    #                 if (
-    #                     datetime.now() < endtime
-    #                     and str(emulator_path) in window
-    #                     and window[0] != "新通知"  # 此处排除雷电名为新通知的窗口
-    #                 ):
-    #                     emulator_windows.append(window)
-
-    #         if emulator_windows:
-
-    #             logger.info(f"检测到模拟器窗口: {emulator_windows}")
-    #             try:
-    #                 keyboard.press_and_release(
-    #                     "+".join(
-    #                         _.strip().lower()
-    #                         for _ in Config.get("Function", "BossKey").split("+")
-    #                     )
-    #                 )
-    #                 logger.info(f"模拟按键: {Config.get('Function', 'BossKey')}")
-    #             except Exception as e:
-    #                 logger.exception(f"模拟按键时出错: {e}")
-
 
 MainTimer = _MainTimer()
