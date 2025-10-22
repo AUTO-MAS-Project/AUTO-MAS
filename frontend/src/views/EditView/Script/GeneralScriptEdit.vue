@@ -419,13 +419,18 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select v-model:value="generalConfig.Game.Type" size="large">
+                <a-select 
+                  v-model:value="generalConfig.Game.Type" 
+                  size="large"
+                  @change="handleGameTypeChange"
+                >
                   <a-select-option value="Emulator">安卓模拟器</a-select-option>
                   <a-select-option value="Client">PC客户端</a-select-option>
                 </a-select>
               </a-form-item>
             </a-col>
-            <a-col :span="8">
+            <!-- PC客户端相关字段 -->
+            <a-col v-if="generalConfig.Game.Type === 'Client'" :span="8">
               <a-form-item>
                 <template #label>
                   <a-tooltip title="游戏可执行文件的路径">
@@ -452,9 +457,65 @@
                 </a-input-group>
               </a-form-item>
             </a-col>
+            <!-- 模拟器相关字段 -->
+            <a-col v-if="generalConfig.Game.Type === 'Emulator'" :span="8">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip title="选择要使用的模拟器">
+                    <span class="form-label">
+                      模拟器选择
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-select
+                  v-model:value="generalConfig.Game.EmulatorId"
+                  size="large"
+                  placeholder="请选择模拟器"
+                  :loading="emulatorLoading"
+                  @change="handleEmulatorChange"
+                >
+                  <a-select-option
+                    v-for="item in emulatorOptions"
+                    :key="item.value"
+                    :value="item.value"
+                  >
+                    {{ item.label }}
+                  </a-select-option>
+                </a-select>
+              </a-form-item>
+            </a-col>
+            <a-col v-if="generalConfig.Game.Type === 'Emulator'" :span="8">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip title="选择模拟器的具体实例">
+                    <span class="form-label">
+                      模拟器实例
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-select
+                  v-model:value="generalConfig.Game.EmulatorIndex"
+                  size="large"
+                  placeholder="请先选择模拟器"
+                  :loading="emulatorDeviceLoading"
+                  :disabled="!generalConfig.Game.EmulatorId"
+                >
+                  <a-select-option
+                    v-for="item in emulatorDeviceOptions"
+                    :key="item.value"
+                    :value="item.value"
+                  >
+                    {{ item.label }}
+                  </a-select-option>
+                </a-select>
+              </a-form-item>
+            </a-col>
           </a-row>
 
-          <a-row :gutter="24">
+          <!-- PC客户端独有的第二行配置 -->
+          <a-row v-if="generalConfig.Game.Type === 'Client'" :gutter="24">
             <a-col :span="8">
               <a-form-item>
                 <template #label>
@@ -668,7 +729,7 @@ import type { FormInstance } from 'ant-design-vue'
 import { message } from 'ant-design-vue'
 import type { GeneralScriptConfig, ScriptType } from '../../../types/script.ts'
 import { useScriptApi } from '../../../composables/useScriptApi.ts'
-import { Service } from '../../../api'
+import { Service, type ComboBoxItem } from '../../../api'
 import type { ScriptUploadIn } from '../../../api'
 import {
   ArrowLeftOutlined,
@@ -935,6 +996,8 @@ const generalConfig = reactive<GeneralScriptConfig>({
     Path: '.',
     Type: 'Emulator',
     WaitTime: 0,
+    EmulatorId: '',
+    EmulatorIndex: '',
   },
   Info: {
     Name: '',
@@ -971,6 +1034,12 @@ const rules = {
   name: [{ required: true, message: '请输入脚本名称', trigger: 'blur' }],
   type: [{ required: true, message: '请选择脚本类型', trigger: 'change' }],
 }
+
+// 模拟器相关状态
+const emulatorLoading = ref(false)
+const emulatorDeviceLoading = ref(false)
+const emulatorOptions = ref<ComboBoxItem[]>([])
+const emulatorDeviceOptions = ref<ComboBoxItem[]>([])
 
 // 延迟注册 ConfigPathMode watcher（在加载脚本并完成初始化后再注册）
 let stopConfigPathModeWatcher: (() => void) | null = null
@@ -1028,6 +1097,10 @@ watch(
 
 onMounted(async () => {
   await loadScript()
+  // 只有当游戏平台类型为模拟器时才加载模拟器选项
+  if (generalConfig.Game.Type === 'Emulator') {
+    await loadEmulatorOptions()
+  }
   // 在脚本加载完成并完成初始化后，再注册 ConfigPathMode 的 watcher，避免初始化阶段触发重置逻辑
   setupConfigPathModeWatcher()
 })
@@ -1068,6 +1141,11 @@ const loadScript = async () => {
       setTimeout(() => {
         updatePathRelations()
       }, 100)
+      
+      // 如果已经有选择的模拟器，且游戏类型为模拟器，则加载对应的设备选项
+      if (generalConfig.Game?.Type === 'Emulator' && generalConfig.Game?.EmulatorId) {
+        await loadEmulatorDeviceOptions(generalConfig.Game.EmulatorId)
+      }
     }
   } catch (error) {
     console.error('加载脚本失败:', error)
@@ -1100,6 +1178,75 @@ const handleSave = async () => {
 
 const handleCancel = () => {
   router.push('/scripts')
+}
+
+// 模拟器相关方法
+const loadEmulatorOptions = async () => {
+  emulatorLoading.value = true
+  try {
+    const response = await Service.getEmulatorComboxApiInfoComboxEmulatorPost()
+    if (response && response.code === 200) {
+      emulatorOptions.value = response.data || []
+    } else {
+      message.error('加载模拟器选项失败')
+    }
+  } catch (error) {
+    console.error('加载模拟器选项失败:', error)
+    message.error('加载模拟器选项失败')
+  } finally {
+    emulatorLoading.value = false
+  }
+}
+
+const loadEmulatorDeviceOptions = async (emulatorId: string) => {
+  if (!emulatorId) return
+  
+  emulatorDeviceLoading.value = true
+  try {
+    const response = await Service.getEmulatorDevicesComboxApiInfoComboxEmulatorDevicesPost({
+      emulatorId: emulatorId
+    })
+    if (response && response.code === 200) {
+      emulatorDeviceOptions.value = response.data || []
+    } else {
+      message.error('加载模拟器实例选项失败')
+    }
+  } catch (error) {
+    console.error('加载模拟器实例选项失败:', error)
+    message.error('加载模拟器实例选项失败')
+  } finally {
+    emulatorDeviceLoading.value = false
+  }
+}
+
+const handleEmulatorChange = async (emulatorId: string) => {
+  // 清空模拟器实例选择
+  generalConfig.Game.EmulatorIndex = ''
+  emulatorDeviceOptions.value = []
+  
+  // 加载新的模拟器实例选项
+  if (emulatorId) {
+    await loadEmulatorDeviceOptions(emulatorId)
+  }
+}
+
+const handleGameTypeChange = async (gameType: string) => {
+  // 当游戏平台类型改变时，清空相关字段
+  if (gameType === 'Emulator') {
+    // 切换到模拟器时，清空PC客户端相关字段
+    generalConfig.Game.Path = '.'
+    generalConfig.Game.Arguments = ''
+    generalConfig.Game.WaitTime = 0
+    generalConfig.Game.IfForceClose = false
+    // 加载模拟器选项
+    await loadEmulatorOptions()
+  } else if (gameType === 'Client') {
+    // 切换到PC客户端时，清空模拟器相关字段
+    generalConfig.Game.EmulatorId = ''
+    generalConfig.Game.EmulatorIndex = ''
+    emulatorDeviceOptions.value = []
+    emulatorOptions.value = []
+  }
 }
 
 const selectRootPath = async () => {

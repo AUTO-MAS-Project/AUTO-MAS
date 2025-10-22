@@ -27,5 +27,13 @@ export type GeneralConfig_Game = {
      * 是否强制关闭游戏/模拟器进程
      */
     IfForceClose?: (boolean | null);
+    /**
+     * 模拟器ID
+     */
+    EmulatorId?: (string | null);
+    /**
+     * 模拟器多开实例索引
+     */
+    EmulatorIndex?: (string | null);
 };
 
