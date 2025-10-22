@@ -75,7 +75,7 @@ const {
         <h3>功能设置</h3>
       </div>
       <a-row :gutter="24">
-        <a-col :span="12">
+        <a-col :span="8">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
               <span class="form-label">历史记录保留时间</span>
@@ -94,28 +94,7 @@ const {
             />
           </div>
         </a-col>
-        <a-col :span="12">
-          <div class="form-item-vertical">
-            <div class="form-label-wrapper">
-              <span class="form-label">运行时阻止系统休眠</span>
-              <a-tooltip title="程序运行时阻止系统进入休眠状态，不影响电脑进入熄屏">
-                <QuestionCircleOutlined class="help-icon" />
-              </a-tooltip>
-            </div>
-            <a-select
-              v-model:value="settings.Function.IfAllowSleep"
-              size="large"
-              style="width: 100%"
-              @change="(checked: any) => handleSettingChange('Function', 'IfAllowSleep', checked)"
-            >
-              <a-select-option :value="true">是</a-select-option>
-              <a-select-option :value="false">否</a-select-option>
-            </a-select>
-          </div>
-        </a-col>
-      </a-row>
-      <a-row :gutter="24">
-        <a-col :span="12">
+        <a-col :span="8">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
               <span class="form-label">静默模式</span>
@@ -134,23 +113,23 @@ const {
             </a-select>
           </div>
         </a-col>
-        <a-col :span="12">
+        <a-col :span="8">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
-              <span class="form-label">模拟器老板键</span>
-              <a-tooltip
-                title="程序依靠模拟器老板键隐藏模拟器窗口，需要开启静默模式后才能填写，请直接输入文字，多个键位之间请用『+』隔开"
-              >
+              <span class="form-label">运行时阻止系统休眠</span>
+              <a-tooltip title="程序运行时阻止系统进入休眠状态，不影响电脑进入熄屏">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-input
-              v-model:value="settings.Function.BossKey"
-              :disabled="!settings.Function.IfSilence"
-              placeholder="请输入对应模拟器老板键，例如: Alt+Q"
+            <a-select
+              v-model:value="settings.Function.IfAllowSleep"
               size="large"
-              @blur="handleSettingChange('Function', 'BossKey', settings.Function.BossKey)"
-            />
+              style="width: 100%"
+              @change="(checked: any) => handleSettingChange('Function', 'IfAllowSleep', checked)"
+            >
+              <a-select-option :value="true">是</a-select-option>
+              <a-select-option :value="false">否</a-select-option>
+            </a-select>
           </div>
         </a-col>
       </a-row>

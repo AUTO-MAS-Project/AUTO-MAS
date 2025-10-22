@@ -16,7 +16,6 @@ export interface SettingsData {
     IfToTray: boolean
   }
   Function: {
-    BossKey: string
     HistoryRetentionTime: number
     IfAgreeBilibili: boolean
     IfAllowSleep: boolean
