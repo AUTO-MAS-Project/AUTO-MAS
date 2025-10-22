@@ -178,6 +178,7 @@
             v-if="activeQueueId && currentQueueData"
             :queue-id="activeQueueId"
             :time-sets="currentTimeSets"
+            style="font-size: 20px"
             @refresh="refreshTimeSets"
           />
         </div>
@@ -188,6 +189,7 @@
             v-if="activeQueueId && currentQueueData"
             :queue-id="activeQueueId"
             :queue-items="currentQueueItems"
+            style="font-size: 20px"
             @refresh="refreshQueueItems"
           />
         </div>
