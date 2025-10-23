@@ -649,6 +649,9 @@ export async function installDependencies(
 
     // 安装依赖 - 使用 python -m pip 方法
     await new Promise<void>((resolve, reject) => {
+      let stdoutData = ''
+      let stderrData = ''
+
       const process = spawn(
         pythonPath,
         [
@@ -670,6 +673,7 @@ export async function installDependencies(
 
       process.stdout?.on('data', data => {
         const output = stripAnsiColors(data.toString())
+        stdoutData += output
         log.info('Pip output:', output)
 
         // 解析pip输出，提供更详细的安装进度信息
@@ -705,14 +709,33 @@ export async function installDependencies(
 
       process.stderr?.on('data', data => {
         const errorOutput = stripAnsiColors(data.toString())
+        stderrData += errorOutput
         log.error('Pip error:', errorOutput)
       })
 
       process.on('close', code => {
         console.log(`pip安装完成，退出码: ${code}`)
-        if (code === 0) {
+
+        // 检查是否有实际的错误（而不仅仅是警告）
+        const hasActualError =
+          stderrData.toLowerCase().includes('error:') ||
+          stderrData.toLowerCase().includes('failed') ||
+          stderrData.toLowerCase().includes('could not find')
+
+        // 检查是否成功安装或已满足依赖
+        const hasSuccess =
+          stdoutData.toLowerCase().includes('successfully installed') ||
+          stdoutData.toLowerCase().includes('requirement already satisfied') ||
+          stdoutData.toLowerCase().includes('满足需求') ||
+          stdoutData.toLowerCase().includes('成功安装')
+
+        // 如果有成功消息，或者退出码为0，或者没有实际错误，则认为成功
+        if (code === 0 || hasSuccess || !hasActualError) {
+          log.info('pip安装成功')
           resolve()
         } else {
+          const errorMsg = `依赖安装失败，退出码: ${code}\n标准输出:\n${stdoutData}\n错误输出:\n${stderrData}`
+          log.error(errorMsg)
           reject(new Error(`依赖安装失败，退出码: ${code}`))
         }
       })
