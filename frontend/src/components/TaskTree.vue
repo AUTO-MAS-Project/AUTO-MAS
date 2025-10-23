@@ -8,7 +8,7 @@
       </div>
     </div>
     <div v-else class="task-tree">
-      <div v-for="script in taskData" :key="script.script_id" class="script-card">
+      <div v-for="script in taskData" :key="`script-${script.script_id}`" class="script-card">
         <!-- 脚本级别 -->
         <div class="script-header" @click="toggleScript(script.script_id)">
           <div class="script-content">
@@ -33,12 +33,8 @@
               <span class="no-users-text">暂无用户</span>
             </div>
           </div>
-          <div
-            v-for="(user, index) in script.user_list"
-            :key="user.user_id"
-            class="user-item"
-            :class="{ 'last-item': index === script.user_list.length - 1 }"
-          >
+          <div v-for="(user, index) in script.user_list" :key="`user-${script.script_id}-${user.user_id}`"
+            class="user-item" :class="{ 'last-item': index === script.user_list.length - 1 }">
             <div class="user-content">
               <span class="user-name">{{ user.name }}</span>
               <a-tag :color="getStatusColor(user.status)" size="small" class="status-tag">
@@ -124,15 +120,7 @@ const getStatusColor = (status: string) => {
   return 'default'
 }
 
-// 初始化时展开所有脚本
-const initExpandedScripts = () => {
-  console.log('初始化展开脚本，数据:', props.taskData)
-  props.taskData.forEach(script => {
-    console.log('添加展开脚本:', script.script_id, script.name)
-    expandedScripts.value.add(script.script_id)
-  })
-  console.log('展开的脚本集合:', Array.from(expandedScripts.value))
-}
+// 移除未使用的初始化函数
 
 // 监听数据变化，自动展开新的脚本
 const updateExpandedScripts = () => {
@@ -146,17 +134,29 @@ const updateExpandedScripts = () => {
   console.log('更新后展开的脚本集合:', Array.from(expandedScripts.value))
 }
 
-// 监听 taskData 变化
+// 监听 taskData 变化 - 移除防抖，直接比较数据差异
 watch(
   () => props.taskData,
-  newData => {
+  (newData, oldData) => {
     console.log('TaskData 发生变化:', newData)
+
     if (newData && newData.length > 0) {
-      updateExpandedScripts()
+      // 只有在脚本数量发生变化时才更新展开状态
+      const oldScriptIds = new Set(oldData?.map(s => s.script_id) || [])
+      const newScriptIds = new Set(newData.map(s => s.script_id))
+
+      // 检查是否有新的脚本
+      const hasNewScripts = [...newScriptIds].some(id => !oldScriptIds.has(id))
+
+      if (hasNewScripts || oldData?.length !== newData.length) {
+        updateExpandedScripts()
+      }
     }
   },
-  { immediate: true, deep: true }
+  { immediate: true, deep: true } // 改回deep watch确保能检测到所有变化
 )
+
+// 移除定时器和未使用变量
 
 // 暴露方法供父组件调用
 defineExpose({
@@ -197,7 +197,8 @@ defineExpose({
   border-radius: 8px;
   border: 1px solid var(--ant-color-border-secondary);
   overflow: hidden;
-  transition: all 0.3s ease;
+  /* 移除transition避免数据更新时的闪烁 */
+  /* transition: all 0.3s ease; */
 }
 
 .script-card:hover {
@@ -208,20 +209,17 @@ defineExpose({
 .script-header {
   cursor: pointer;
   padding: 12px 16px;
-  background: linear-gradient(
-    135deg,
-    var(--ant-color-fill-quaternary) 0%,
-    var(--ant-color-fill-tertiary) 100%
-  );
-  transition: all 0.2s ease;
+  background: linear-gradient(135deg,
+      var(--ant-color-fill-quaternary) 0%,
+      var(--ant-color-fill-tertiary) 100%);
+  /* 保留hover过渡，但减少时间 */
+  transition: background 0.1s ease;
 }
 
 .script-header:hover {
-  background: linear-gradient(
-    135deg,
-    var(--ant-color-fill-tertiary) 0%,
-    var(--ant-color-fill-secondary) 100%
-  );
+  background: linear-gradient(135deg,
+      var(--ant-color-fill-tertiary) 0%,
+      var(--ant-color-fill-secondary) 100%);
 }
 
 .script-content {
@@ -302,7 +300,8 @@ defineExpose({
   align-items: center;
   justify-content: space-between;
   padding: 10px 16px;
-  transition: all 0.2s ease;
+  /* 保留hover过渡，但减少时间 */
+  transition: background-color 0.1s ease;
 }
 
 .user-content:hover {
@@ -511,35 +510,18 @@ defineExpose({
 }
 
 /* 动画效果已移除 - 避免WebSocket刷新时的闪烁 */
-.user-list {
-  /* animation: slideDown 0.3s ease-out; */
-}
-
-/* @keyframes slideDown {
-  from {
-    opacity: 0;
-    transform: translateY(-10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+/* .user-list {
+  animation: slideDown 0.3s ease-out;
 } */
 
-.script-card {
-  /* animation: fadeIn 0.3s ease-out; */
-}
+/* 移除script-card的额外样式，避免渲染问题 */
 
-/* @keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-} */
+/* 优化状态标签的渲染 - 移除可能导致问题的属性 */
+.status-tag {
+  /* 防止标签内容变化时的布局抖动 */
+  min-width: 40px;
+  text-align: center;
+}
 
 /* 空状态样式 */
 .empty-state {
