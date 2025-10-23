@@ -292,7 +292,6 @@ class MaaUserConfig_Info(BaseModel):
             "LungmenDowntown@Annihilation",
         ]
     ] = Field(default=None, description="剿灭模式")
-    Routine: Optional[bool] = Field(default=None, description="是否启用日常")
     InfrastMode: Optional[Literal["Normal", "Rotation", "Custom"]] = Field(
         default=None, description="基建模式"
     )
@@ -688,6 +687,7 @@ class EmulatorOperateIn(BaseModel):
 
 class DeviceStatus(BaseModel):
     """设备状态枚举"""
+
     ONLINE: int = Field(default=0, description="设备在线")
     OFFLINE: int = Field(default=1, description="设备离线")
     STARTING: int = Field(default=2, description="设备开启中")
@@ -699,6 +699,7 @@ class DeviceStatus(BaseModel):
 
 class DeviceInfo(BaseModel):
     """设备信息"""
+
     title: str = Field(..., description="设备标题/名称")
     status: int = Field(..., description="设备状态, 参考DeviceStatus枚举值")
     adb_address: str = Field(..., description="ADB连接地址")
@@ -706,8 +707,8 @@ class DeviceInfo(BaseModel):
 
 class EmulatorStatusOut(OutBase):
     data: Dict[str, Dict[str, DeviceInfo]] = Field(
-        ..., 
-        description="模拟器状态信息, 外层key为模拟器ID, 内层key为设备索引, value为设备信息"
+        ...,
+        description="模拟器状态信息, 外层key为模拟器ID, 内层key为设备索引, value为设备信息",
     )
 
 

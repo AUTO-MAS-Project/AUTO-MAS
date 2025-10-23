@@ -112,7 +112,6 @@ export function useScriptApi() {
                   Status: any
                   RemainedDay: any
                   Annihilation: any
-                  Routine: any
                   InfrastMode: any
                   InfrastPath: any
                   Password: any
@@ -245,8 +244,6 @@ export function useScriptApi() {
                           maaUserData.Info?.Annihilation !== undefined
                             ? maaUserData.Info.Annihilation
                             : 'Annihilation',
-                        Routine:
-                          maaUserData.Info?.Routine !== undefined ? maaUserData.Info.Routine : true,
                         InfrastMode:
                           maaUserData.Info?.InfrastMode !== undefined
                             ? maaUserData.Info.InfrastMode

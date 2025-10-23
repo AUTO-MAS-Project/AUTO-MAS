@@ -24,7 +24,7 @@ import asyncio
 import shutil
 from pathlib import Path
 
-from app.core import Broadcast, Config
+from app.core import Config
 from app.models.task import TaskExecuteBase, ScriptItem
 from app.models.ConfigBase import MultipleConfig
 from app.models.config import MaaConfig, MaaUserConfig

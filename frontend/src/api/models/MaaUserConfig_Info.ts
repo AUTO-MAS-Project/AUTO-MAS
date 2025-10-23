@@ -36,10 +36,6 @@ export type MaaUserConfig_Info = {
      */
     Annihilation?: ('Close' | 'Annihilation' | 'Chernobog@Annihilation' | 'LungmenOutskirts@Annihilation' | 'LungmenDowntown@Annihilation' | null);
     /**
-     * 是否启用日常
-     */
-    Routine?: (boolean | null);
-    /**
      * 基建模式
      */
     InfrastMode?: ('Normal' | 'Rotation' | 'Custom' | null);

@@ -201,7 +201,6 @@ class MaaUserConfig(ConfigBase):
                 ]
             ),
         )
-        self.Info_Routine = ConfigItem("Info", "Routine", True, BoolValidator())
         self.Info_InfrastMode = ConfigItem(
             "Info",
             "InfrastMode",
