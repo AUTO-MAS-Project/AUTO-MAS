@@ -30,7 +30,7 @@
 
       <template #actions="{ row }">
         <t-popconfirm content="确定要删除这个任务吗？" @confirm="deleteQueueItem(row.id)">
-          <t-button theme="danger" variant="outline" size="small">
+          <t-button theme="danger" variant="outline" size="medium">
             <template #icon><t-icon name="delete" /></template>
             删除
           </t-button>
