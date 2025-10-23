@@ -434,7 +434,6 @@ const getDefaultMAAUserData = () => ({
     Mode: '简洁',
     InfrastMode: 'Normal',
     InfrastPath: '',
-    Routine: true,
     Annihilation: 'Annihilation',
     Stage: '1-7',
     StageMode: 'Fixed',

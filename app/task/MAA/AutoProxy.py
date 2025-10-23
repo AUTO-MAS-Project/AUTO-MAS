@@ -105,8 +105,7 @@ class AutoProxyTask(TaskExecuteBase):
 
         self.run_book = {
             "Annihilation": self.cur_user_config.get("Info", "Annihilation") == "Close",
-            "Routine": self.cur_user_config.get("Info", "Mode") == "详细"
-            and not self.cur_user_config.get("Info", "Routine"),
+            "Routine": False,
             "IfAnnihilationAccomplish": False,
         }
 
