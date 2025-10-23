@@ -141,7 +141,7 @@ import { useWebSocket } from '@/composables/useWebSocket.ts'
 import { Service } from '@/api'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn.ts'
 import { GetStageIn } from '@/api/models/GetStageIn.ts'
-import { getWeekdayByUTCOffset } from '@/utils/dateUtils.ts'
+import { getWeekdayInTimezone } from '@/utils/dateUtils.ts'
 
 // 导入拆分的组件
 import MAAUserEditHeader from '../../MAAUserEdit/MAAUserEditHeader.vue'
@@ -397,7 +397,7 @@ const getPlanCurrentConfig = (planData: any) => {
     return planData.ALL || null
   } else if (mode === 'Weekly') {
     // 使用东4区时区的今天是星期几（已经是数字0-6）
-    const todayWeekday = getWeekdayByUTCOffset(4)
+    const todayWeekday = getWeekdayInTimezone(4)
 
     const weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
     const today = weekdays[todayWeekday]
