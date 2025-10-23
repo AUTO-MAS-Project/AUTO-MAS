@@ -32,7 +32,10 @@ const warn = (...args: any[]) => {
 
 // 强制日志输出，用于诊断重连问题
 const forceLog = (...args: any[]) => {
-  console.log('[WebSocket-FORCE]', ...args)
+  // 在生产环境中只输出重要的日志
+  if (DEBUG || args[0]?.includes?.('重复消息') || args[0]?.includes?.('订阅')) {
+    console.log('[WebSocket-FORCE]', ...args)
+  }
 }
 const forceWarn = (...args: any[]) => {
   console.warn('[WebSocket-FORCE]', ...args)
@@ -102,6 +105,11 @@ interface GlobalWSStorage {
   lastDisconnectTime: number
   reconnectFailureModalShown: boolean
   autoRestartTimer?: number // 添加自动重启定时器
+  // 全局订阅ID，避免重复订阅
+  globalTaskManagerSubscriptionId?: string
+  globalMainSubscriptionId?: string
+  // 消息去重
+  lastProcessedMessages?: Map<string, number>
 }
 
 const WS_STORAGE_KEY = Symbol.for('GLOBAL_WEBSOCKET_PERSISTENT')
@@ -136,6 +144,11 @@ const initGlobalStorage = (): GlobalWSStorage => ({
   lastDisconnectTime: 0,
   reconnectFailureModalShown: false,
   autoRestartTimer: undefined, // 初始化自动重启定时器
+  // 初始化全局订阅ID
+  globalTaskManagerSubscriptionId: undefined,
+  globalMainSubscriptionId: undefined,
+  // 初始化消息去重
+  lastProcessedMessages: undefined,
 })
 
 const getGlobalStorage = (): GlobalWSStorage => {
@@ -766,23 +779,74 @@ const handleMessage = (raw: WebSocketBaseMessage) => {
   const global = getGlobalStorage()
   const now = Date.now()
 
+  // 强制输出消息处理信息，包含订阅数量
+  const subscriptionCount = global.subscriptions.value.size
+  console.log(`[WS-MSG] 处理消息: type=${raw.type}, id=${raw.id}, 订阅数=${subscriptionCount}`)
+
   if (DEBUG) {
     log('收到原始消息:', { type: raw.type, id: raw.id, data: raw.data })
   }
 
+  // 添加消息去重机制，防止同一消息被重复处理
+  // 对于Update类型的消息，使用更精确的去重策略
+  let messageKey: string
+  if (raw.type === 'Update' && raw.data?.task_info) {
+    // 对于任务更新消息，基于任务信息内容生成哈希
+    const taskInfoHash = JSON.stringify(raw.data.task_info.map((task: any) => ({
+      script_id: task.script_id,
+      name: task.name,
+      status: task.status,
+      userCount: task.userList?.length || 0
+    })))
+    messageKey = `${raw.type}_${raw.id}_${taskInfoHash}`
+  } else {
+    messageKey = `${raw.type}_${raw.id}_${JSON.stringify(raw.data)}`
+  }
+
+  if (!global.lastProcessedMessages) {
+    global.lastProcessedMessages = new Map()
+  }
+
+  // 检查是否在最近200ms内处理过相同的消息（增加时间窗口）
+  const lastProcessed = global.lastProcessedMessages.get(messageKey)
+  if (lastProcessed && now - lastProcessed < 200) {
+    console.warn(`[WS-MSG] 重复消息被过滤: ${messageKey.substring(0, 100)}...`)
+    return
+  }
+  global.lastProcessedMessages.set(messageKey, now)
+
+  // 清理过期的消息记录（保留最近2秒的记录）
+  for (const [key, timestamp] of global.lastProcessedMessages.entries()) {
+    if (now - timestamp > 2000) {
+      global.lastProcessedMessages.delete(key)
+    }
+  }
+
   let dispatched = false
+  let matchingSubscriptions = 0
 
   // 使用副本进行迭代，防止在处理函数中修改订阅列表导致的问题
   const subscriptionsCopy = new Map(global.subscriptions.value)
 
+  // 输出所有订阅的详细信息
+  console.log(`[WS-MSG] 当前所有订阅:`)
+  subscriptionsCopy.forEach((subscription, id) => {
+    console.log(`  - ${id}: ${JSON.stringify(subscription.filter)}`)
+  })
+
   // 分发给所有匹配的订阅者
   subscriptionsCopy.forEach(subscription => {
     if (messageMatchesFilter(raw, subscription.filter)) {
+      matchingSubscriptions++
+      console.log(`[WS-MSG] 匹配订阅: ${subscription.subscriptionId}`)
       try {
         // 再次检查订阅是否仍然存在，因为在同一个事件循环中它可能已被删除
         if (global.subscriptions.value.has(subscription.subscriptionId)) {
           subscription.handler(raw)
           dispatched = true
+          console.log(`[WS-MSG] 已分发给: ${subscription.subscriptionId}`)
+        } else {
+          console.warn(`[WS-MSG] 订阅已被删除: ${subscription.subscriptionId}`)
         }
       } catch (e) {
         warn(`订阅处理器错误 [${subscription.subscriptionId}]:`, e)
@@ -1268,28 +1332,31 @@ export const ExternalWSHandlers = {
   },
 }
 
-// 存储全局订阅ID，避免重复订阅
-let globalTaskManagerSubscriptionId: string | null = null
-let globalMainSubscriptionId: string | null = null
+// 将订阅ID存储在全局存储中，避免模块重载导致的变量重置
 
 const initializeGlobalSubscriptions = () => {
   const global = getGlobalStorage()
 
+  forceLog('initializeGlobalSubscriptions被调用')
+  forceLog(`当前订阅数量: ${global.subscriptions.value.size}`)
+  forceLog(`现有TaskManager订阅ID: ${global.globalTaskManagerSubscriptionId}`)
+  forceLog(`现有Main订阅ID: ${global.globalMainSubscriptionId}`)
+
   // 清理旧的订阅
-  if (globalTaskManagerSubscriptionId) {
-    unsubscribe(globalTaskManagerSubscriptionId)
-    globalTaskManagerSubscriptionId = null
-    log('清理旧的TaskManager订阅')
+  if (global.globalTaskManagerSubscriptionId) {
+    unsubscribe(global.globalTaskManagerSubscriptionId)
+    global.globalTaskManagerSubscriptionId = undefined
+    forceLog('清理旧的TaskManager订阅')
   }
 
-  if (globalMainSubscriptionId) {
-    unsubscribe(globalMainSubscriptionId)
-    globalMainSubscriptionId = null
-    log('清理旧的Main订阅')
+  if (global.globalMainSubscriptionId) {
+    unsubscribe(global.globalMainSubscriptionId)
+    global.globalMainSubscriptionId = undefined
+    forceLog('清理旧的Main订阅')
   }
 
   // 创建新的订阅
-  globalTaskManagerSubscriptionId = subscribe({ id: 'TaskManager' }, (msg: WebSocketBaseMessage) => {
+  global.globalTaskManagerSubscriptionId = subscribe({ id: 'TaskManager' }, (msg: WebSocketBaseMessage) => {
     try {
       ExternalWSHandlers.taskManagerMessage(msg)
     } catch (e) {
@@ -1297,7 +1364,7 @@ const initializeGlobalSubscriptions = () => {
     }
   })
 
-  globalMainSubscriptionId = subscribe({ id: 'Main' }, (msg: WebSocketBaseMessage) => {
+  global.globalMainSubscriptionId = subscribe({ id: 'Main' }, (msg: WebSocketBaseMessage) => {
     if (msg.type === 'Signal' && msg.data) {
       if (msg.data.Pong) {
         getGlobalStorage().lastPingTime = 0
@@ -1326,7 +1393,8 @@ const initializeGlobalSubscriptions = () => {
     }
   })
 
-  log(`全局订阅已初始化: TaskManager=${globalTaskManagerSubscriptionId}, Main=${globalMainSubscriptionId}`)
+  forceLog(`全局订阅已初始化: TaskManager=${global.globalTaskManagerSubscriptionId}, Main=${global.globalMainSubscriptionId}`)
+  forceLog(`初始化后订阅数量: ${global.subscriptions.value.size}`)
 }
 
 // ====== Vue Hook ======

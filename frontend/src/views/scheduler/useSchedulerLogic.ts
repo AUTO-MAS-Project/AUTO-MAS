@@ -426,6 +426,22 @@ export function useSchedulerLogic() {
   }
 
   const handleUpdateMessage = (tab: SchedulerTab, data: any) => {
+    // 添加消息去重机制
+    const messageKey = `${tab.key}_${JSON.stringify(data.task_info || {})}`
+    const currentTime = Date.now()
+
+    // 检查是否是重复消息
+    if (!tab.lastMessageHash) tab.lastMessageHash = ''
+    if (!tab.lastMessageTime) tab.lastMessageTime = 0
+
+    if (tab.lastMessageHash === messageKey && currentTime - tab.lastMessageTime < 100) {
+      console.log('重复的Update消息被过滤:', tab.key)
+      return
+    }
+
+    tab.lastMessageHash = messageKey
+    tab.lastMessageTime = currentTime
+
     // 直接将 WebSocket 消消息传递给 TaskOverviewPanel
     const overviewPanel = overviewRefs.value.get(tab.key)
     if (overviewPanel && overviewPanel.handleWSMessage) {
