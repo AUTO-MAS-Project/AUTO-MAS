@@ -64,8 +64,8 @@ try {
 
 // 注册插件
 app.use(Antd)
-app.use(router)
 app.use(TDesign)
+app.use(router)
 
 // 全局错误处理
 app.config.errorHandler = (err, instance, info) => {

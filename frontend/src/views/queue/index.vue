@@ -364,6 +364,7 @@ onMounted(fetchQueues)
   display: flex;
   gap: 16px;
   margin-top: 8px;
+  align-items: stretch;
 }
 .table-card {
   flex: 1;
