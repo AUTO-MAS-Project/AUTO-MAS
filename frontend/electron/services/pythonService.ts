@@ -6,6 +6,7 @@ import AdmZip from 'adm-zip'
 import { downloadFile } from './downloadService'
 import { ChildProcessWithoutNullStreams } from 'node:child_process'
 import { log, stripAnsiColors } from './logService'
+import * as crypto from 'crypto'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -179,7 +180,7 @@ export async function downloadQuickEnvironment(appRoot: string): Promise<{ succe
   try {
     const environmentUrl = 'https://download.auto-mas.top/d/AUTO-MAS/environment.zip'
     const downloadPath = path.join(appRoot, 'temp', 'environment.zip')
-    
+
     // 确保临时目录存在
     const tempDir = path.dirname(downloadPath)
     if (!fs.existsSync(tempDir)) {
@@ -194,9 +195,9 @@ export async function downloadQuickEnvironment(appRoot: string): Promise<{ succe
         message: '开始下载环境包...',
       })
     }
-    
+
     await downloadFile(environmentUrl, downloadPath)
-    
+
     if (mainWindow) {
       mainWindow.webContents.send('download-progress', {
         step: 0,
@@ -205,7 +206,7 @@ export async function downloadQuickEnvironment(appRoot: string): Promise<{ succe
         message: '环境包下载完成',
       })
     }
-    
+
     return { success: true }
   } catch (error) {
     const errorMsg = `环境包下载失败: ${error instanceof Error ? error.message : String(error)}`
@@ -227,7 +228,7 @@ export async function extractQuickEnvironment(appRoot: string): Promise<{ succes
   try {
     const zipPath = path.join(appRoot, 'temp', 'environment.zip')
     const extractPath = appRoot
-    
+
     if (mainWindow) {
       mainWindow.webContents.send('download-progress', {
         step: 1,
@@ -236,7 +237,7 @@ export async function extractQuickEnvironment(appRoot: string): Promise<{ succes
         message: '开始解压环境包...',
       })
     }
-    
+
     if (!fs.existsSync(zipPath)) {
       throw new Error('环境包文件不存在')
     }
@@ -244,10 +245,10 @@ export async function extractQuickEnvironment(appRoot: string): Promise<{ succes
     // 使用AdmZip解压
     const zip = new AdmZip(zipPath)
     zip.extractAllTo(extractPath, true)
-    
+
     // 删除临时文件
     fs.unlinkSync(zipPath)
-    
+
     if (mainWindow) {
       mainWindow.webContents.send('download-progress', {
         step: 1,
@@ -256,7 +257,7 @@ export async function extractQuickEnvironment(appRoot: string): Promise<{ succes
         message: '环境包解压完成',
       })
     }
-    
+
     return { success: true }
   } catch (error) {
     const errorMsg = `环境包解压失败: ${error instanceof Error ? error.message : String(error)}`
@@ -398,13 +399,72 @@ const pipMirrorUrls = {
   douban: 'https://pypi.douban.com/simple/',
 }
 
+// 依赖校验相关函数
+function getRequirementsHash(requirementsPath: string): string {
+  if (!fs.existsSync(requirementsPath)) {
+    throw new Error('requirements.txt文件不存在')
+  }
+
+  const content = fs.readFileSync(requirementsPath, 'utf-8')
+  return crypto.createHash('sha256').update(content.trim()).digest('hex')
+}
+
+function getLastInstallHash(appRoot: string): string | null {
+  const hashFilePath = path.join(appRoot, 'environment', '.requirements_hash')
+  if (!fs.existsSync(hashFilePath)) {
+    return null
+  }
+
+  try {
+    return fs.readFileSync(hashFilePath, 'utf-8').trim()
+  } catch (error) {
+    console.warn('读取依赖哈希文件失败:', error)
+    return null
+  }
+}
+
+function saveInstallHash(appRoot: string, hash: string): void {
+  const environmentPath = path.join(appRoot, 'environment')
+  const hashFilePath = path.join(environmentPath, '.requirements_hash')
+
+  // 确保environment目录存在
+  if (!fs.existsSync(environmentPath)) {
+    fs.mkdirSync(environmentPath, { recursive: true })
+  }
+
+  try {
+    fs.writeFileSync(hashFilePath, hash, 'utf-8')
+    console.log('依赖哈希已保存:', hash)
+  } catch (error) {
+    console.warn('保存依赖哈希文件失败:', error)
+  }
+}
+
+function checkRequirementsChanged(appRoot: string): { changed: boolean; currentHash: string; lastHash: string | null } {
+  const requirementsPath = path.join(appRoot, 'requirements.txt')
+  const currentHash = getRequirementsHash(requirementsPath)
+  const lastHash = getLastInstallHash(appRoot)
+
+  const changed = lastHash === null || currentHash !== lastHash
+
+  console.log('依赖校验结果:', {
+    changed,
+    currentHash: currentHash.substring(0, 8) + '...',
+    lastHash: lastHash ? lastHash.substring(0, 8) + '...' : 'null'
+  })
+
+  return { changed, currentHash, lastHash }
+}
+
 // 安装Python依赖
 export async function installDependencies(
   appRoot: string,
-  mirror = 'tsinghua'
+  mirror = 'tsinghua',
+  forceInstall = false
 ): Promise<{
   success: boolean
   error?: string
+  skipped?: boolean
 }> {
   try {
     const pythonPath = path.join(appRoot, 'environment', 'python', 'python.exe')
@@ -418,6 +478,24 @@ export async function installDependencies(
     if (!fs.existsSync(requirementsPath)) {
       throw new Error('requirements.txt文件不存在')
     }
+
+    // 检查依赖是否发生更改
+    const { changed, currentHash } = checkRequirementsChanged(appRoot)
+
+    if (!forceInstall && !changed) {
+      console.log('requirements.txt未发生更改，跳过依赖安装')
+      if (mainWindow) {
+        mainWindow.webContents.send('download-progress', {
+          step: 5,
+          progress: 94,
+          status: 'completed',
+          message: 'requirements.txt未更改，跳过依赖安装',
+        })
+      }
+      return { success: true, skipped: true }
+    }
+
+    console.log(forceInstall ? '强制安装Python依赖' : 'requirements.txt已更改，开始安装依赖')
 
     if (mainWindow) {
       mainWindow.webContents.send('download-progress', {
@@ -500,6 +578,9 @@ export async function installDependencies(
       })
     })
 
+    // 安装成功后保存当前requirements的哈希值
+    saveInstallHash(appRoot, currentHash)
+
     if (mainWindow) {
       mainWindow.webContents.send('download-progress', {
         step: 5,
@@ -521,6 +602,47 @@ export async function installDependencies(
       })
     }
     return { success: false, error: errorMessage }
+  }
+}
+
+// 检查依赖状态
+export function checkDependencyStatus(appRoot: string): {
+  requirementsExists: boolean
+  hasChanged: boolean
+  currentHash?: string
+  lastHash?: string | null
+} {
+  const requirementsPath = path.join(appRoot, 'requirements.txt')
+
+  if (!fs.existsSync(requirementsPath)) {
+    return {
+      requirementsExists: false,
+      hasChanged: false
+    }
+  }
+
+  const { changed, currentHash, lastHash } = checkRequirementsChanged(appRoot)
+
+  return {
+    requirementsExists: true,
+    hasChanged: changed,
+    currentHash,
+    lastHash
+  }
+}
+
+// 强制重新安装依赖
+export async function forceReinstallDependencies(
+  appRoot: string,
+  mirror = 'tsinghua'
+): Promise<{
+  success: boolean
+  error?: string
+}> {
+  const result = await installDependencies(appRoot, mirror, true)
+  return {
+    success: result.success,
+    error: result.error
   }
 }
 
