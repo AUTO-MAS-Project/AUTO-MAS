@@ -51,7 +51,7 @@ class MumuManager(DeviceBase):
 
         self.config = config
 
-        self.emulator_path = Path(config.get("Info", "Path")) / "MuMuManager.exe"
+        self.emulator_path = Path(config.get("Info", "Path")) / "shell/MuMuManager.exe"
 
     async def open(self, idx: str, package_name: str = "") -> DeviceInfo:
         logger.info(f"开始启动模拟器{idx} - {package_name}")

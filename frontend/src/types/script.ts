@@ -102,7 +102,6 @@ export interface User {
     Notes: string
     Password: string
     RemainedDay: number
-    Routine: boolean
     SeriesNumb: string
     Server: string
     SklandToken: string
