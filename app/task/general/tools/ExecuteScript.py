@@ -22,6 +22,7 @@
 
 import os
 import sys
+import asyncio
 import subprocess
 from pathlib import Path
 
@@ -44,14 +45,11 @@ async def execute_script_task(script_path: Path, task_name: str) -> bool:
         # 根据文件类型选择执行方式
         if script_path.suffix.lower() == ".py":
             cmd = [sys.executable, str(script_path)]
-            use_shell = False
         elif script_path.suffix.lower() in [".bat", ".cmd"]:
             # bat/cmd 脚本使用 cmd.exe 执行，并传递 admin 参数跳过权限检查
             cmd = ["cmd.exe", "/c", str(script_path), "admin"]
-            use_shell = False
         elif script_path.suffix.lower() == ".exe":
             cmd = [str(script_path)]
-            use_shell = False
         elif script_path.suffix.lower() == "":
             logger.warning(f"{task_name}脚本没有指定后缀名, 无法执行")
             return False
@@ -60,41 +58,49 @@ async def execute_script_task(script_path: Path, task_name: str) -> bool:
             os.startfile(str(script_path))
             return True
 
-        # 执行脚本并等待结束
-        result = subprocess.run(
-            cmd,
+        # 创建异步子进程
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
             cwd=script_path.parent,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            stdin=asyncio.subprocess.PIPE,
             creationflags=(
                 subprocess.CREATE_NO_WINDOW
                 if Config.get("Function", "IfSilence")
                 else 0
             ),
-            timeout=600,
-            shell=use_shell,
-            text=True,
-            encoding="utf-8",
-            errors="replace",  # 使用 replace 而不是 ignore，避免输出丢失
-            input="\n",  # 发送换行符，使 pause/input() 自动继续（会自动设置 stdin=PIPE，因此不必在使用stdin参数）
         )
 
-        if result.returncode == 0:
-            logger.info(f"{task_name}执行成功")
-            if result.stdout and result.stdout.strip():
-                logger.info(f"{task_name}输出:\n{result.stdout}")
-            return True
-        else:
-            logger.error(f"{task_name}执行失败, 返回码: {result.returncode}")
-            if result.stdout and result.stdout.strip():
-                logger.warning(f"{task_name}标准输出:\n{result.stdout}")
-            if result.stderr and result.stderr.strip():
-                logger.error(f"{task_name}错误输出:\n{result.stderr}")
+        # 异步等待进程完成(带超时)
+        try:
+            stdout, stderr = await asyncio.wait_for(
+                process.communicate(input=b"\n"),  # 发送换行符，使 pause/input() 自动继续
+                timeout=600
+            )
+        except asyncio.TimeoutError:
+            process.kill()
+            await process.wait()
+            logger.error(f"{task_name}执行超时")
             return False
 
-    except subprocess.TimeoutExpired:
-        logger.error(f"{task_name}执行超时")
-        return False
+        # 解码输出
+        stdout_text = stdout.decode("utf-8", errors="replace").strip()
+        stderr_text = stderr.decode("utf-8", errors="replace").strip()
+
+        if process.returncode == 0:
+            logger.info(f"{task_name}执行成功")
+            if stdout_text:
+                logger.info(f"{task_name}输出:\n{stdout_text}")
+            return True
+        else:
+            logger.error(f"{task_name}执行失败, 返回码: {process.returncode}")
+            if stdout_text:
+                logger.warning(f"{task_name}标准输出:\n{stdout_text}")
+            if stderr_text:
+                logger.error(f"{task_name}错误输出:\n{stderr_text}")
+            return False
+
     except Exception as e:
         logger.exception(f"执行{task_name}时出现异常: {e}")
         return False
