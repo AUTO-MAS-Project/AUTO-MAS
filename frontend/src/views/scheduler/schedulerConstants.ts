@@ -85,6 +85,9 @@ export interface SchedulerTab {
   lastLogContent: string
   // 新增：任务总览快照（用于路由返回时快速恢复显示）
   overviewData?: Script[]
+  // 新增：消息去重相关字段
+  lastMessageHash?: string
+  lastMessageTime?: number
 }
 
 export interface TaskMessage {
