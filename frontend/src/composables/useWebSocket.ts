@@ -93,6 +93,7 @@ interface GlobalWSStorage {
   isAutoReconnecting: boolean
   lastDisconnectTime: number
   reconnectFailureModalShown: boolean
+  autoRestartTimer?: number // 添加自动重启定时器
 }
 
 const WS_STORAGE_KEY = Symbol.for('GLOBAL_WEBSOCKET_PERSISTENT')
@@ -126,6 +127,7 @@ const initGlobalStorage = (): GlobalWSStorage => ({
   isAutoReconnecting: false,
   lastDisconnectTime: 0,
   reconnectFailureModalShown: false,
+  autoRestartTimer: undefined, // 初始化自动重启定时器
 })
 
 const getGlobalStorage = (): GlobalWSStorage => {
@@ -293,14 +295,76 @@ const showReconnectFailureModal = () => {
   global.reconnectFailureModalShown = true
   global.isAutoReconnecting = false
 
+  // 清除之前的自动重启定时器（如果存在）
+  if (global.autoRestartTimer) {
+    clearTimeout(global.autoRestartTimer)
+    global.autoRestartTimer = undefined
+  }
+
+  // 设置10秒后自动重启后端服务
+  let autoRestartExecuted = false
+  global.autoRestartTimer = window.setTimeout(async () => {
+    if (!autoRestartExecuted) {
+      autoRestartExecuted = true
+      log('用户10秒内无响应，自动重启后端服务')
+
+      // 关闭可能存在的弹窗
+      Modal.destroyAll()
+
+      // 执行重启后端服务的逻辑
+      global.reconnectFailureModalShown = false
+      resetReconnectState()
+
+      try {
+        const success = await restartBackend()
+        if (success) {
+          log('自动重启后端成功，开始重新连接')
+          setConnectionPermission(true, '后端重启后重连')
+
+          setTimeout(async () => {
+            try {
+              const connected = await connectGlobalWebSocket('后端重启后重连')
+              if (connected) {
+                log('自动重启后端后WebSocket重连成功')
+                setTimeout(() => {
+                  setConnectionPermission(false, '正常运行中')
+                }, 1000)
+                startBackendMonitoring()
+              } else {
+                warn('自动重启后端后WebSocket重连失败，启动自动重连')
+                startAutoReconnect()
+              }
+            } catch (e) {
+              warn('自动重启后端后重连异常:', e)
+              startAutoReconnect()
+            }
+          }, RESTART_DELAY)
+        } else {
+          warn('自动重启后端失败，启动自动重连')
+          startAutoReconnect()
+        }
+      } catch (e) {
+        warn('自动重启后端异常:', e)
+        startAutoReconnect()
+      }
+    }
+  }, 10000) // 10秒
+
   Modal.confirm({
     title: 'WebSocket连接异常',
-    content: 'WebSocket连接已断开且多次重连失败，这可能是因为后端服务异常。请选择处理方式：',
+    content: 'WebSocket连接已断开且多次重连失败，这可能是因为后端服务异常。请选择处理方式：（10秒后将自动重启后端服务）',
     okText: '重启整个应用',
     cancelText: '重启后端服务',
     centered: true,
     maskClosable: false,
     onOk: () => {
+      // 清除自动重启定时器
+      if (global.autoRestartTimer) {
+        clearTimeout(global.autoRestartTimer)
+        global.autoRestartTimer = undefined
+      }
+      autoRestartExecuted = true
+
       log('用户选择重启整个应用')
       // 显示关闭遮罩
       const { showClosingOverlay } = useAppClosing()
@@ -316,6 +380,13 @@ const showReconnectFailureModal = () => {
       }
     },
     onCancel: async () => {
+      // 清除自动重启定时器
+      if (global.autoRestartTimer) {
+        clearTimeout(global.autoRestartTimer)
+        global.autoRestartTimer = undefined
+      }
+      autoRestartExecuted = true
+
       log('用户选择重启后端服务')
       // 重置重连状态并重启后端服务
       global.reconnectFailureModalShown = false
@@ -368,6 +439,14 @@ const resetReconnectState = () => {
   )
   global.wsReconnectAttempts = 0
   global.reconnectFailureModalShown = false
+
+  // 清除自动重启定时器
+  if (global.autoRestartTimer) {
+    clearTimeout(global.autoRestartTimer)
+    global.autoRestartTimer = undefined
+    log('已清除自动重启定时器')
+  }
+
   stopAutoReconnect()
   log(`重连状态已重置，当前自动重连状态: ${global.isAutoReconnecting}`)
 }
