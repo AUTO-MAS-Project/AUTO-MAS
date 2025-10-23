@@ -95,101 +95,101 @@ export function useScriptApi() {
   const getScriptsWithUsers = async (): Promise<
     Awaited<
       | {
-          uid: string
-          type: string
-          name: string
-          config: MaaConfig | GeneralConfig
-          users: (
-            | {
-                id: string
-                name: any
-                Info: {
-                  Name: any
-                  Id: any
-                  Mode: any
-                  StageMode: any
-                  Server: any
-                  Status: any
-                  RemainedDay: any
-                  Annihilation: any
-                  InfrastMode: any
-                  InfrastPath: any
-                  Password: any
-                  Notes: any
-                  MedicineNumb: any
-                  SeriesNumb: any
-                  Stage: any
-                  Stage_1: any
-                  Stage_2: any
-                  Stage_3: any
-                  Stage_Remain: any
-                  IfSkland: any
-                  SklandToken: any
-                }
-                Task: {
-                  IfWakeUp: any
-                  IfRecruiting: any
-                  IfBase: any
-                  IfCombat: any
-                  IfMall: any
-                  IfMission: any
-                  IfAutoRoguelike: any
-                  IfReclamation: any
-                }
-                Notify: {
-                  Enabled: any
-                  IfSendStatistic: any
-                  IfSendSixStar: any
-                  IfSendMail: any
-                  ToAddress: any
-                  IfServerChan: any
-                  ServerChanKey: any
-                  CustomWebhooks: any
-                }
-                Data: {
-                  LastAnnihilationDate: any
-                  LastProxyDate: any
-                  LastSklandDate: any
-                  CustomInfrastPlanIndex: any
-                  IfPassCheck: any
-                  ProxyTimes: any
-                }
-              }
-            | {
-                id: string
-                name: any
-                Info: {
-                  Name: any
-                  Status: any
-                  RemainedDay: any
-                  IfScriptBeforeTask: any
-                  ScriptBeforeTask: any
-                  IfScriptAfterTask: any
-                  ScriptAfterTask: any
-                  Notes: any
-                }
-                Notify: {
-                  Enabled: any
-                  IfSendStatistic: any
-                  IfSendMail: any
-                  ToAddress: any
-                  IfServerChan: any
-                  ServerChanKey: any
-                  CustomWebhooks: any
-                }
-                Data: { LastProxyDate: any; ProxyTimes: any }
-              }
-            | null
-          )[]
-        }
+        uid: string
+        type: string
+        name: string
+        config: MaaConfig | GeneralConfig
+        users: (
+          | {
+            id: string
+            name: any
+            Info: {
+              Name: any
+              Id: any
+              Mode: any
+              StageMode: any
+              Server: any
+              Status: any
+              RemainedDay: any
+              Annihilation: any
+              InfrastMode: any
+              InfrastPath: any
+              Password: any
+              Notes: any
+              MedicineNumb: any
+              SeriesNumb: any
+              Stage: any
+              Stage_1: any
+              Stage_2: any
+              Stage_3: any
+              Stage_Remain: any
+              IfSkland: any
+              SklandToken: any
+            }
+            Task: {
+              IfWakeUp: any
+              IfRecruiting: any
+              IfBase: any
+              IfCombat: any
+              IfMall: any
+              IfMission: any
+              IfAutoRoguelike: any
+              IfReclamation: any
+            }
+            Notify: {
+              Enabled: any
+              IfSendStatistic: any
+              IfSendSixStar: any
+              IfSendMail: any
+              ToAddress: any
+              IfServerChan: any
+              ServerChanKey: any
+              CustomWebhooks: any
+            }
+            Data: {
+              LastAnnihilationDate: any
+              LastProxyDate: any
+              LastSklandDate: any
+              CustomInfrastPlanIndex: any
+              IfPassCheck: any
+              ProxyTimes: any
+            }
+          }
+          | {
+            id: string
+            name: any
+            Info: {
+              Name: any
+              Status: any
+              RemainedDay: any
+              IfScriptBeforeTask: any
+              ScriptBeforeTask: any
+              IfScriptAfterTask: any
+              ScriptAfterTask: any
+              Notes: any
+            }
+            Notify: {
+              Enabled: any
+              IfSendStatistic: any
+              IfSendMail: any
+              ToAddress: any
+              IfServerChan: any
+              ServerChanKey: any
+              CustomWebhooks: any
+            }
+            Data: { LastProxyDate: any; ProxyTimes: any }
+          }
+          | null
+        )[]
+      }
       | { uid: string; type: string; name: string; config: MaaConfig | GeneralConfig; users: any[] }
       | {
-          uid: string
-          type: string
-          name: string
-          config: MaaConfig | GeneralConfig
-          users: any[]
-        }
+        uid: string
+        type: string
+        name: string
+        config: MaaConfig | GeneralConfig
+        users: any[]
+      }
     >[]
   > => {
     loading.value = true

@@ -10,7 +10,6 @@ import {
   PlayCircleOutlined,
   PlusOutlined,
   QuestionCircleOutlined,
-  ReloadOutlined,
   SearchOutlined,
   StopOutlined,
 } from '@ant-design/icons-vue'
@@ -72,13 +71,51 @@ const loadingDevices = ref<Set<string>>(new Set())
 const startingDevices = ref<Set<string>>(new Set())
 const stoppingDevices = ref<Set<string>>(new Set())
 
-// 设备信息缓存（带过期时间）
-interface DeviceCache {
-  data: Record<string, Record<string, any>>
-  timestamp: number
+// 轮询相关状态
+const pollingTimer = ref<NodeJS.Timeout | null>(null)
+const POLLING_INTERVAL = 5000 // 5秒轮询一次
+
+// 轮询获取所有模拟器的设备状态
+const pollDevicesStatus = async () => {
+  // 只在有模拟器时轮询
+  if (emulatorIndex.value.length === 0) {
+    return
+  }
+
+  // 静默获取设备状态，不显示loading
+  try {
+    for (const emulator of emulatorIndex.value) {
+      const response = await Service.getStatusApiEmulatorStatusPost({
+        emulatorId: emulator.uid,
+      })
+
+      if (response.code === 200) {
+        const allDevicesData = response.data || {}
+        const currentDevices = allDevicesData[emulator.uid] || {}
+        devicesData.value[emulator.uid] = currentDevices
+      }
+    }
+  } catch (e) {
+    // 轮询时的错误静默处理，避免频繁弹错误提示
+    console.warn('轮询设备状态时出错:', e)
+  }
 }
-const devicesCacheMap = ref<Map<string, DeviceCache>>(new Map())
-const CACHE_DURATION = 30000 // 缓存30秒
+
+// 启动轮询
+const startPolling = () => {
+  if (pollingTimer.value) {
+    clearInterval(pollingTimer.value)
+  }
+  pollingTimer.value = setInterval(pollDevicesStatus, POLLING_INTERVAL)
+}
+
+// 停止轮询
+const stopPolling = () => {
+  if (pollingTimer.value) {
+    clearInterval(pollingTimer.value)
+    pollingTimer.value = null
+  }
+}
 
 // 每个模拟器的编辑数据（使用 Map 存储）
 const editingDataMap = ref<Map<string, EmulatorInfo>>(new Map())
@@ -391,18 +428,8 @@ const handleImportFromSearch = async (result: EmulatorSearchResult) => {
 //   await loadDevices(uuid)
 // }
 
-// 加载设备信息 - 使用新的status API（带缓存）
-const loadDevices = async (uuid: string, forceRefresh = false) => {
-  // 检查缓存是否有效
-  if (!forceRefresh) {
-    const cache = devicesCacheMap.value.get(uuid)
-    if (cache && Date.now() - cache.timestamp < CACHE_DURATION) {
-      // 使用缓存数据
-      devicesData.value[uuid] = cache.data
-      return
-    }
-  }
-
+// 加载设备信息 - 简化版，不使用缓存
+const loadDevices = async (uuid: string) => {
   loadingDevices.value.add(uuid)
   loadingDevices.value = new Set(loadingDevices.value)
 
@@ -417,12 +444,6 @@ const loadDevices = async (uuid: string, forceRefresh = false) => {
       const allDevicesData = response.data || {}
       const currentDevices = allDevicesData[uuid] || {}
       devicesData.value[uuid] = currentDevices
-
-      // 更新缓存
-      devicesCacheMap.value.set(uuid, {
-        data: currentDevices,
-        timestamp: Date.now(),
-      })
     } else {
       message.error(response.message || '获取设备信息失败')
     }
@@ -435,11 +456,7 @@ const loadDevices = async (uuid: string, forceRefresh = false) => {
   }
 }
 
-// 刷新设备信息
-const refreshDevices = async (uuid: string) => {
-  await loadDevices(uuid, true) // 强制刷新，忽略缓存
-  message.success('刷新成功')
-}
+// refreshDevices 函数已删除，改为轮询机制
 
 // 启动模拟器
 const startEmulator = async (uuid: string, index: string) => {
@@ -456,8 +473,8 @@ const startEmulator = async (uuid: string, index: string) => {
 
     if (response.code === 200) {
       message.success(response.message || `模拟器 ${index} 启动成功`)
-      // 刷新设备状态（强制刷新）
-      await loadDevices(uuid, true)
+      // 刷新设备状态
+      await loadDevices(uuid)
     } else {
       message.error(response.message || '启动失败')
     }
@@ -485,8 +502,8 @@ const stopEmulator = async (uuid: string, index: string) => {
 
     if (response.code === 200) {
       message.success(response.message || `模拟器 ${index} 已关闭`)
-      // 刷新设备状态（强制刷新）
-      await loadDevices(uuid, true)
+      // 刷新设备状态
+      await loadDevices(uuid)
     } else {
       message.error(response.message || '关闭失败')
     }
@@ -643,8 +660,10 @@ const onTabChange = async (key: string) => {
   }
 }
 
-// 组件卸载时保存所有数据
+// 组件卸载时保存所有数据并停止轮询
 onUnmounted(async () => {
+  // 停止轮询
+  stopPolling()
   // 立即保存所有有数据的模拟器（防抖会自动失效）
   const savePromises = Array.from(editingDataMap.value.keys()).map(uuid => handleSave(uuid, true))
   await Promise.all(savePromises)
@@ -676,6 +695,8 @@ const handleSearchAndImport = async (result: EmulatorSearchResult) => {
 onMounted(async () => {
   await loadEmulators()
   await onEmulatorsLoaded()
+  // 启动轮询
+  startPolling()
 })
 
 const handleSetBossKey = (uuid: string) => {
@@ -725,30 +746,18 @@ const handleBossKeyInputChange = (uuid: string) => {
         <div v-if="emulatorIndex.length === 0" class="empty-state-large">
           <a-empty />
           <a-space direction="horizontal" :size="16">
-            <a-button
-              type="primary"
-              size="large"
-              :icon="h(SearchOutlined)"
-              :loading="searching"
-              @click="handleSearch"
-            >
-              自动搜索多开器
+            <a-button type="primary" size="large" :icon="h(SearchOutlined)" :loading="searching" @click="handleSearch">
+              自动搜索模拟器
             </a-button>
             <a-button size="large" :icon="h(PlusOutlined)" @click="handleAddWithSwitch">
-              手动添加多开器
+              手动添加模拟器
             </a-button>
           </a-space>
         </div>
 
         <!-- Tab 模式：有模拟器时显示 Tabs -->
-        <a-tabs
-          v-else
-          v-model:active-key="activeKey"
-          type="editable-card"
-          hide-add
-          class="emulator-tabs"
-          @change="onTabChange"
-        >
+        <a-tabs v-else v-model:active-key="activeKey" type="editable-card" hide-add class="emulator-tabs"
+          @change="onTabChange">
           <!-- 每个模拟器一个 Tab -->
           <a-tab-pane v-for="element in emulatorIndex" :key="element.uid" :closable="false">
             <template #tab>
@@ -762,15 +771,11 @@ const handleBossKeyInputChange = (uuid: string) => {
               <!-- 配置区域 -->
               <div class="config-section">
                 <div class="section-header">
-                  <h3>多开器配置</h3>
+                  <h3>模拟器配置</h3>
                   <div class="section-actions">
                     <a-spin v-if="savingMap.get(element.uid)" size="small" />
-                    <a-popconfirm
-                      title="确定要删除此模拟器配置吗？"
-                      ok-text="确定"
-                      cancel-text="取消"
-                      @confirm="handleDelete(element.uid)"
-                    >
+                    <a-popconfirm title="确定要删除此模拟器配置吗？" ok-text="确定" cancel-text="取消"
+                      @confirm="handleDelete(element.uid)">
                       <a-button type="link" danger size="small" :icon="h(DeleteOutlined)">
                         删除
                       </a-button>
@@ -782,14 +787,9 @@ const handleBossKeyInputChange = (uuid: string) => {
                 <div class="config-form">
                   <a-descriptions :column="2" bordered size="small">
                     <a-descriptions-item label="模拟器名称">
-                      <a-input
-                        v-model:value="getEditingData(element.uid).name"
-                        placeholder="输入模拟器名称"
-                        size="small"
-                        :bordered="false"
-                        @input="syncNameToDisplay(element.uid, getEditingData(element.uid).name)"
-                        @change="autoSave(element.uid)"
-                      />
+                      <a-input v-model:value="getEditingData(element.uid).name" placeholder="输入模拟器名称" size="small"
+                        :bordered="false" @input="syncNameToDisplay(element.uid, getEditingData(element.uid).name)"
+                        @change="autoSave(element.uid)" />
                     </a-descriptions-item>
                     <a-descriptions-item>
                       <template #label>
@@ -798,30 +798,17 @@ const handleBossKeyInputChange = (uuid: string) => {
                           <QuestionCircleOutlined style="margin-left: 4px" />
                         </a-tooltip>
                       </template>
-                      <a-select
-                        v-model:value="getEditingData(element.uid).type"
-                        placeholder="选择模拟器类型"
-                        :options="emulatorTypeOptions"
-                        size="small"
-                        :bordered="false"
-                        style="width: 100%"
-                        @change="autoSave(element.uid)"
-                      />
+                      <a-select v-model:value="getEditingData(element.uid).type" placeholder="选择模拟器类型"
+                        :options="emulatorTypeOptions" size="small" :bordered="false" style="width: 100%"
+                        @change="autoSave(element.uid)" />
                     </a-descriptions-item>
                     <a-descriptions-item label="模拟器路径" :span="2">
-                      <a-input
-                        v-model:value="getEditingData(element.uid).path"
-                        placeholder="输入或选择模拟器路径"
-                        size="small"
-                        :bordered="false"
-                        @change="saveImmediately(element.uid)"
-                        @press-enter="saveImmediately(element.uid)"
-                      >
+                      <a-input v-model:value="getEditingData(element.uid).path" placeholder="输入或选择模拟器路径" size="small"
+                        :bordered="false" @change="saveImmediately(element.uid)"
+                        @press-enter="saveImmediately(element.uid)">
                         <template #suffix>
-                          <FolderOpenOutlined
-                            style="cursor: pointer; color: #1890ff"
-                            @click="selectEmulatorPath(element.uid)"
-                          />
+                          <FolderOpenOutlined style="cursor: pointer; color: #1890ff"
+                            @click="selectEmulatorPath(element.uid)" />
                         </template>
                       </a-input>
                     </a-descriptions-item>
@@ -832,18 +819,9 @@ const handleBossKeyInputChange = (uuid: string) => {
                           <QuestionCircleOutlined style="margin-left: 4px" />
                         </a-tooltip>
                       </template>
-                      <a-input-number
-                        v-model:value="getEditingData(element.uid).max_wait_time"
-                        placeholder="输入最大等待时间"
-                        size="small"
-                        :bordered="false"
-                        style="width: 100%"
-                        :min="10"
-                        :max="300"
-                        :step="5"
-                        suffix="秒"
-                        @change="autoSave(element.uid)"
-                      />
+                      <a-input-number v-model:value="getEditingData(element.uid).max_wait_time" placeholder="输入最大等待时间"
+                        size="small" :bordered="false" style="width: 100%" :min="10" :max="300" :step="5" suffix="秒"
+                        @change="autoSave(element.uid)" />
                     </a-descriptions-item>
                     <a-descriptions-item>
                       <template #label>
@@ -852,36 +830,18 @@ const handleBossKeyInputChange = (uuid: string) => {
                           <QuestionCircleOutlined style="margin-left: 4px" />
                         </a-tooltip>
                       </template>
-                      <a-input
-                        v-if="getEditingData(element.uid).type !== 'mumu'"
-                        v-model:value="bossKeyInputMap[element.uid]"
-                        :placeholder="
-                          recordingBossKeyMap.get(element.uid)
-                            ? '请按下快捷键组合...'
-                            : '输入格式如 Ctrl+Q，按回车添加'
-                        "
-                        size="small"
-                        :bordered="false"
-                        :disabled="recordingBossKeyMap.get(element.uid)"
-                        @press-enter="handleSetBossKey(element.uid)"
-                        @change="handleBossKeyInputChange(element.uid)"
-                      >
+                      <a-input v-if="getEditingData(element.uid).type !== 'mumu'"
+                        v-model:value="bossKeyInputMap[element.uid]" :placeholder="recordingBossKeyMap.get(element.uid)
+                          ? '请按下快捷键组合...'
+                          : '输入格式如 Ctrl+Q，按回车添加'
+                          " size="small" :bordered="false" :disabled="recordingBossKeyMap.get(element.uid)"
+                        @press-enter="handleSetBossKey(element.uid)" @change="handleBossKeyInputChange(element.uid)">
                         <template #suffix>
-                          <a-button
-                            v-if="!recordingBossKeyMap.get(element.uid)"
-                            type="default"
-                            size="small"
-                            @click="startRecordBossKey(element.uid)"
-                          >
+                          <a-button v-if="!recordingBossKeyMap.get(element.uid)" type="default" size="small"
+                            @click="startRecordBossKey(element.uid)">
                             录制
                           </a-button>
-                          <a-button
-                            v-else
-                            type="primary"
-                            danger
-                            size="small"
-                            @click="stopRecordBossKey(element.uid)"
-                          >
+                          <a-button v-else type="primary" danger size="small" @click="stopRecordBossKey(element.uid)">
                             取消录制
                           </a-button>
                         </template>
@@ -895,72 +855,33 @@ const handleBossKeyInputChange = (uuid: string) => {
               </div>
 
               <!-- 设备列表区域 -->
-              <div class="devices-section">
-                <div class="section-header">
-                  <h3>
-                    设备列表
-                    <span
-                      v-if="
-                        devicesCacheMap.get(element.uid) &&
-                        Date.now() - devicesCacheMap.get(element.uid)!.timestamp < CACHE_DURATION
-                      "
-                      class="cache-indicator"
-                    >
-                      (已缓存)
-                    </span>
-                  </h3>
-                  <a-button
-                    size="small"
-                    :icon="h(ReloadOutlined)"
-                    :loading="loadingDevices.has(element.uid)"
-                    @click="refreshDevices(element.uid)"
-                  >
-                    刷新
-                  </a-button>
+              <div class="devices-panel">
+                <div class="panel-header">
+                  <h4 class="panel-title">设备列表</h4>
                 </div>
 
                 <a-spin :spinning="loadingDevices.has(element.uid)">
-                  <div
-                    v-if="
-                      !devicesData[element.uid] ||
-                      Object.keys(devicesData[element.uid]).length === 0
-                    "
-                    class="empty-devices"
-                  >
+                  <div v-if="
+                    !devicesData[element.uid] ||
+                    Object.keys(devicesData[element.uid]).length === 0
+                  " class="empty-devices">
                     <a-empty description="暂无设备信息">
                       <template #extra>
-                        <a-space>
-                          <a-button
-                            type="primary"
-                            size="small"
-                            :icon="h(ReloadOutlined)"
-                            :loading="loadingDevices.has(element.uid)"
-                            @click="refreshDevices(element.uid)"
-                          >
-                            刷新设备列表
-                          </a-button>
-                          <a-button
-                            size="small"
-                            :icon="h(PlayCircleOutlined)"
-                            @click="startEmulator(element.uid, '0')"
-                          >
-                            启动多开器
-                          </a-button>
-                        </a-space>
+                        <a-button type="primary" size="small" :icon="h(PlayCircleOutlined)"
+                          @click="startEmulator(element.uid, '0')">
+                          启动模拟器
+                        </a-button>
                       </template>
                     </a-empty>
                   </div>
 
                   <div v-else class="devices-grid">
-                    <a-table
-                      :data-source="
-                        Object.entries(devicesData[element.uid]).map(([index, device]) => ({
-                          key: index,
-                          index,
-                          ...device,
-                        }))
-                      "
-                      :columns="[
+                    <a-table :data-source="Object.entries(devicesData[element.uid]).map(([index, device]) => ({
+                      key: index,
+                      index,
+                      ...device,
+                    }))
+                      " :columns="[
                         {
                           title: '设备',
                           dataIndex: 'index',
@@ -982,11 +903,7 @@ const handleBossKeyInputChange = (uuid: string) => {
                           ellipsis: true,
                         },
                         { title: '操作', key: 'action', width: 140 },
-                      ]"
-                      :pagination="false"
-                      size="small"
-                      :scroll="{ x: 'max-content' }"
-                    >
+                      ]" :pagination="false" size="small" :scroll="{ x: 'max-content', y: 'calc(100vh - 560px)' }">
                       <template #bodyCell="{ column, record }">
                         <template v-if="column.key === 'status'">
                           <a-tag :color="getDeviceStatusInfo(record.status).color" size="small">
@@ -995,24 +912,16 @@ const handleBossKeyInputChange = (uuid: string) => {
                         </template>
                         <template v-else-if="column.key === 'action'">
                           <a-space :size="4">
-                            <a-button
-                              type="primary"
-                              size="small"
-                              :icon="h(PlayCircleOutlined)"
+                            <a-button type="primary" size="small" :icon="h(PlayCircleOutlined)"
                               :loading="startingDevices.has(`${element.uid}-${record.index}`)"
                               :disabled="!canStartDevice(record.status)"
-                              @click="startEmulator(element.uid, String(record.index))"
-                            >
+                              @click="startEmulator(element.uid, String(record.index))">
                               启动
                             </a-button>
-                            <a-button
-                              danger
-                              size="small"
-                              :icon="h(StopOutlined)"
+                            <a-button danger size="small" :icon="h(StopOutlined)"
                               :loading="stoppingDevices.has(`${element.uid}-${record.index}`)"
                               :disabled="!canStopDevice(record.status)"
-                              @click="stopEmulator(element.uid, String(record.index))"
-                            >
+                              @click="stopEmulator(element.uid, String(record.index))">
                               关闭
                             </a-button>
                           </a-space>
@@ -1079,9 +988,11 @@ const handleBossKeyInputChange = (uuid: string) => {
 
 <style scoped>
 .emulator-page {
-  padding: 16px;
-  background: var(--bg-color-container);
-  min-height: 100vh;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--ant-color-bg-layout);
 }
 
 .page-header {
@@ -1089,32 +1000,40 @@ const handleBossKeyInputChange = (uuid: string) => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 16px;
+  padding: 0;
 }
 
 .page-header h1 {
-  color: var(--text-color-primary);
-  margin: 0;
-  font-size: 22px;
-  font-weight: 600;
+  margin: 0 0 8px 0;
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--ant-color-text);
+  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .page-content {
-  background: var(--bg-color-elevated);
-  padding: 16px;
-  border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  min-height: 500px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+  box-shadow: none;
 }
 
 /* 空状态样式 */
 .empty-state-large {
-  text-align: center;
-  padding: 120px 0;
-  min-height: 400px;
+  height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-direction: column;
+  text-align: center;
+  padding: 60px 20px;
 }
 
 .empty-state {
@@ -1124,7 +1043,22 @@ const handleBossKeyInputChange = (uuid: string) => {
 
 /* Tab 样式 */
 .emulator-tabs {
-  min-height: 500px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background-color: var(--ant-color-bg-container);
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  border: 1px solid var(--ant-color-border-secondary);
+}
+
+.emulator-tabs :deep(.ant-tabs) {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--ant-color-bg-container);
 }
 
 .emulator-tabs :deep(.ant-tabs-nav) {
@@ -1133,11 +1067,13 @@ const handleBossKeyInputChange = (uuid: string) => {
 
 /* 禁止 Tab 内容滚动 */
 .emulator-tabs :deep(.ant-tabs-content) {
-  overflow: visible !important;
+  flex: 1;
+  overflow: hidden;
 }
 
 .emulator-tabs :deep(.ant-tabs-tabpane) {
-  overflow: visible !important;
+  height: 100%;
+  overflow: hidden;
 }
 
 .tab-title {
@@ -1146,47 +1082,50 @@ const handleBossKeyInputChange = (uuid: string) => {
 
 .tab-extra-actions {
   display: flex;
-  gap: 4px;
+  gap: 8px;
   align-items: center;
-  padding-right: 8px;
+  padding-right: 0;
 }
 
 .tab-content {
+  height: calc(100vh - 248px);
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
+  overflow: hidden;
 }
 
 /* 配置区域 */
 .config-section {
-  background: var(--bg-color-container);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  padding: 8px 12px;
+  background-color: var(--ant-color-bg-container);
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  border: 1px solid var(--ant-color-border-secondary);
+  padding: 16px;
+  overflow: hidden;
+  flex-shrink: 0;
 }
 
 .section-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 8px;
+  margin-bottom: 16px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--ant-color-border-secondary);
 }
 
 .section-header h3 {
   margin: 0;
-  color: var(--text-color-primary);
-  font-size: 14px;
-  font-weight: 500;
+  color: var(--ant-color-text);
+  font-size: 16px;
+  font-weight: 600;
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.cache-indicator {
-  font-size: 12px;
-  color: var(--text-color-tertiary);
-  font-weight: 400;
-}
+
 
 .section-actions {
   display: flex;
@@ -1194,11 +1133,11 @@ const handleBossKeyInputChange = (uuid: string) => {
 }
 
 .config-display {
-  margin-top: 8px;
+  margin-top: 0;
 }
 
 .config-form {
-  margin-top: 8px;
+  margin-top: 0;
 }
 
 /* 无边框输入优化 */
@@ -1239,31 +1178,97 @@ const handleBossKeyInputChange = (uuid: string) => {
   transform: scale(1.1);
 }
 
-/* 设备列表区域 */
-.devices-section {
-  background: var(--bg-color-container);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  padding: 8px 12px;
+/* 设备面板 */
+.devices-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.panel-header {
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--ant-color-border);
+}
+
+.panel-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ant-color-text);
 }
 
 .empty-devices {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   padding: 48px 0;
   text-align: center;
 }
 
 .devices-grid {
-  margin-top: 12px;
+  flex: 1;
+  overflow: hidden;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .devices-grid :deep(.ant-table) {
   font-size: 13px;
+  margin-bottom: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.devices-grid :deep(.ant-table-container) {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.devices-grid :deep(.ant-table-content) {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.devices-grid :deep(.ant-table-body) {
+  flex: 1;
+  overflow-y: auto !important;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ant-color-border) transparent;
+  min-height: 0;
+}
+
+.devices-grid :deep(.ant-table-body)::-webkit-scrollbar {
+  width: 6px;
+}
+
+.devices-grid :deep(.ant-table-body)::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.devices-grid :deep(.ant-table-body)::-webkit-scrollbar-thumb {
+  background-color: var(--ant-color-border);
+  border-radius: 3px;
+}
+
+.devices-grid :deep(.ant-table-body)::-webkit-scrollbar-thumb:hover {
+  background-color: var(--ant-color-border-secondary);
 }
 
 .devices-grid :deep(.ant-table-thead > tr > th) {
   padding: 8px 12px;
   background: var(--bg-color-container);
   font-weight: 500;
+  position: sticky;
+  top: 0;
+  z-index: 10;
 }
 
 .devices-grid :deep(.ant-table-tbody > tr > td) {
@@ -1312,5 +1317,35 @@ html.dark .devices-section {
 html.dark .page-content {
   background: #0a0a0a;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+/* 响应式 - 移动端适配 */
+@media (max-width: 768px) {
+  .page-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .emulator-tabs {
+    padding: 12px;
+  }
+
+  .tab-content {
+    height: calc(100vh - 188px);
+    gap: 12px;
+  }
+
+  .config-section {
+    padding: 12px;
+  }
+
+  .devices-section {
+    padding: 12px 12px 8px 12px;
+  }
+
+  .devices-grid :deep(.ant-table) {
+    font-size: 12px;
+  }
 }
 </style>
