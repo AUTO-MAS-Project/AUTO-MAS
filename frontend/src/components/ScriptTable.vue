@@ -353,7 +353,13 @@ import draggable from 'vuedraggable'
 import { ref, watch } from 'vue'
 import { Service } from '@/api'
 import { message } from 'ant-design-vue'
-import { getDateStringByUTCOffset, getWeekStartByUTCOffset } from '@/utils/dateUtils'
+import { 
+  getWeekStartInTimezone, 
+  getTodayInTimezone, 
+  isDateInRange, 
+  isDateEqual,
+  getWeekdayInTimezone
+} from '@/utils/dateUtils'
 
 interface Props {
   scripts: Script[]
@@ -594,11 +600,11 @@ const getInfrastModeDisplayName = (mode: string): string => {
 const isAnnihilationCompletedThisWeek = (lastAnnihilationDate: string): boolean => {
   if (!lastAnnihilationDate) return false
   
-  // 使用东4区时区获取本周一的日期字符串
-  const mondayDateStr = getWeekStartByUTCOffset(4)
+  // 使用东4区时区获取本周一的Date对象
+  const mondayDate = getWeekStartInTimezone(4)
   
-  // 检查最后剿灭日期是否 >= 本周一（基于日期字符串比较）
-  return lastAnnihilationDate >= mondayDateStr
+  // 检查最后剿灭日期是否 >= 本周一（基于Date对象比较）
+  return isDateInRange(lastAnnihilationDate, mondayDate, new Date(), 4)
 }
 
 // 获取剿灭标签颜色
@@ -618,10 +624,10 @@ const isSklandCompletedToday = (lastSklandDate: string): boolean => {
   if (!lastSklandDate) return false
   
   // 森空岛使用东8区时间（UTC+8）
-  const todayUTC8 = getDateStringByUTCOffset(8)
+  const todayUTC8 = getTodayInTimezone(8)
   
-  // 直接比较日期字符串
-  return lastSklandDate === todayUTC8
+  // 基于Date对象比较
+  return isDateEqual(lastSklandDate, todayUTC8, 8)
 }
 
 // 获取森空岛标签颜色
@@ -640,11 +646,11 @@ const getSklandDisplayText = (ifSkland: boolean, lastSklandDate?: string): strin
 const isRoutineCompletedToday = (lastProxyDate: string): boolean => {
   if (!lastProxyDate) return false
   
-  // 使用东4区时区获取今日的日期字符串
-  const todayEast4 = getDateStringByUTCOffset(4)
+  // 使用东4区时区获取今日的Date对象
+  const todayEast4 = getTodayInTimezone(4)
   
-  // 直接比较日期字符串
-  return lastProxyDate === todayEast4
+  // 基于Date对象比较
+  return isDateEqual(lastProxyDate, todayEast4, 4)
 }
 
 // 获取日常代理标签颜色
@@ -757,8 +763,8 @@ const getCurrentPlanStage = (): string => {
   let timeKey = 'ALL'
 
   if (planMode === 'Weekly') {
-    // 如果是周模式，根据当前星期几获取对应配置
-    const today = new Date().getDay() // 0=Sunday, 1=Monday, ...
+    // 如果是周模式，根据东4区时区的当前星期几获取对应配置
+    const today = getWeekdayInTimezone(4) // 0=Sunday, 1=Monday, ...
     const dayMap = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
     timeKey = dayMap[today]
   }
@@ -792,8 +798,8 @@ const getAllPlanStages = (): Array<{ label: string; value: string }> => {
   let timeKey = 'ALL'
 
   if (planMode === 'Weekly') {
-    // 如果是周模式，根据当前星期几获取对应配置
-    const today = new Date().getDay() // 0=Sunday, 1=Monday, ...
+    // 如果是周模式，根据东4区时区的当前星期几获取对应配置
+    const today = getWeekdayInTimezone(4) // 0=Sunday, 1=Monday, ...
     const dayMap = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
     timeKey = dayMap[today]
   }
