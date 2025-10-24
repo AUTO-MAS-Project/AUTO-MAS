@@ -3,7 +3,7 @@ import * as fs from 'fs'
 import { spawn } from 'child_process'
 import { BrowserWindow } from 'electron'
 import AdmZip from 'adm-zip'
-import { downloadFile } from './downloadService'
+import { downloadFile, downloadFileMultiThread } from './downloadService'
 import { ChildProcessWithoutNullStreams } from 'node:child_process'
 import { log, stripAnsiColors } from './logService'
 import * as crypto from 'crypto'
@@ -12,6 +12,87 @@ let mainWindow: BrowserWindow | null = null
 
 export function setMainWindow(window: BrowserWindow) {
   mainWindow = window
+}
+
+// 通用的智能下载函数，带有自动回退机制
+async function downloadWithFallback(
+  url: string,
+  outputPath: string,
+  threadCount: number = 6,
+  progressInfo?: { type?: string; step?: number; message?: string }
+): Promise<void> {
+  // 对于小文件（< 5MB），直接使用单线程下载
+  const minSizeForMultiThread = 5 * 1024 * 1024 // 5MB
+
+  try {
+    console.log(`开始智能下载: ${url}`)
+
+    // 先尝试获取文件大小
+    let useMultiThread = true
+    try {
+      const https = require('https')
+      const http = require('http')
+      const client = url.startsWith('https') ? https : http
+
+      const fileSize = await new Promise<number>((resolve, reject) => {
+        const req = client.request(url, { method: 'HEAD' }, (response: any) => {
+          const size = parseInt(response.headers['content-length'] || '0', 10)
+          resolve(size)
+        })
+        req.on('error', () => resolve(0)) // 如果获取失败，默认使用多线程
+        req.setTimeout(5000, () => {
+          req.destroy()
+          resolve(0)
+        })
+        req.end()
+      })
+
+      if (fileSize > 0 && fileSize < minSizeForMultiThread) {
+        console.log(`文件大小 ${(fileSize / 1024 / 1024).toFixed(2)} MB < 5MB，使用单线程下载`)
+        useMultiThread = false
+      } else if (fileSize > 0) {
+        // 根据文件大小智能调整线程数
+        const fileSizeMB = fileSize / 1024 / 1024
+        let optimalThreads = threadCount
+
+        if (fileSizeMB < 20) {
+          optimalThreads = Math.min(4, threadCount) // 小于20MB使用最多4线程
+        } else if (fileSizeMB < 100) {
+          optimalThreads = Math.min(6, threadCount) // 小于100MB使用最多6线程
+        } else {
+          optimalThreads = threadCount // 大文件使用指定线程数
+        }
+
+        threadCount = optimalThreads
+        console.log(`文件大小 ${fileSizeMB.toFixed(2)} MB，使用 ${threadCount} 线程下载`)
+      }
+    } catch (error) {
+      console.log('无法获取文件大小，默认使用多线程下载')
+    }
+
+    if (useMultiThread) {
+      await downloadFileMultiThread(url, outputPath, threadCount)
+      console.log(`多线程下载成功: ${outputPath}`)
+    } else {
+      await downloadFile(url, outputPath)
+      console.log(`单线程下载成功: ${outputPath}`)
+    }
+  } catch (multiThreadError) {
+    console.warn(`多线程下载失败，回退到单线程下载:`, multiThreadError)
+
+    if (mainWindow && progressInfo) {
+      mainWindow.webContents.send('download-progress', {
+        type: progressInfo.type,
+        step: progressInfo.step,
+        progress: 10,
+        status: 'downloading',
+        message: progressInfo.message || '回退到单线程下载...',
+      })
+    }
+
+    await downloadFile(url, outputPath)
+    console.log(`单线程下载成功: ${outputPath}`)
+  }
 }
 
 // Python镜像源URL映射
@@ -59,9 +140,15 @@ async function installPip(pythonPath: string, appRoot: string): Promise<void> {
 
   // 检查pip是否已安装
   if (isPipInstalled(pythonPath)) {
-    console.log('pip已经安装，跳过安装步骤')
-    console.log('检测到pip.exe文件存在，认为pip安装成功')
-    console.log('pip检查完成')
+    console.log('pip已安装，跳过安装过程')
+    if (mainWindow) {
+      mainWindow.webContents.send('download-progress', {
+        type: 'pip',
+        progress: 100,
+        status: 'completed',
+        message: 'pip 已安装完成',
+      })
+    }
     return
   }
 
@@ -77,7 +164,11 @@ async function installPip(pythonPath: string, appRoot: string): Promise<void> {
   // 下载get-pip.py
   console.log('开始下载get-pip.py...')
   try {
-    await downloadFile(getPipUrl, getPipPath)
+    // 智能下载get-pip.py，自动选择最佳下载方式
+    await downloadWithFallback(getPipUrl, getPipPath, 4, {
+      type: 'pip',
+      message: '回退到单线程下载get-pip.py...'
+    })
     console.log('get-pip.py下载完成')
 
     // 检查下载的文件大小
@@ -192,11 +283,15 @@ export async function downloadQuickEnvironment(appRoot: string): Promise<{ succe
         step: 0,
         progress: 10,
         status: 'downloading',
-        message: '开始下载环境包...',
+        message: '开始多线程下载环境包...',
       })
     }
 
-    await downloadFile(environmentUrl, downloadPath)
+    // 智能下载环境包，自动选择最佳线程数
+    await downloadWithFallback(environmentUrl, downloadPath, 8, {
+      step: 0,
+      message: '回退到单线程下载环境包...'
+    })
 
     if (mainWindow) {
       mainWindow.webContents.send('download-progress', {
@@ -293,7 +388,7 @@ export async function downloadPython(
         type: 'python',
         progress: 0,
         status: 'downloading',
-        message: '开始下载Python...',
+        message: '开始多线程下载Python...',
       })
     }
 
@@ -302,7 +397,11 @@ export async function downloadPython(
       pythonMirrorUrls[mirror as keyof typeof pythonMirrorUrls] || pythonMirrorUrls.ustc
     const zipPath = path.join(environmentPath, 'python.zip')
 
-    await downloadFile(pythonUrl, zipPath)
+    // 智能下载Python，自动选择最佳线程数
+    await downloadWithFallback(pythonUrl, zipPath, 6, {
+      type: 'python',
+      message: '回退到单线程下载Python...'
+    })
 
     // 检查下载的Python文件大小
     const stats = fs.statSync(zipPath)
@@ -371,7 +470,7 @@ export async function downloadPython(
         type: 'python',
         progress: 100,
         status: 'completed',
-        message: 'Python和pip安装完成',
+        message: 'Python 和 pip 安装完成',
       })
     }
 
@@ -483,19 +582,19 @@ export async function installDependencies(
     const { changed, currentHash } = checkRequirementsChanged(appRoot)
 
     if (!forceInstall && !changed) {
-      console.log('requirements.txt未发生更改，跳过依赖安装')
+      console.log('依赖包已是最新版本，跳过安装过程')
       if (mainWindow) {
         mainWindow.webContents.send('download-progress', {
           step: 5,
-          progress: 94,
+          progress: 100,
           status: 'completed',
-          message: 'requirements.txt未更改，跳过依赖安装',
+          message: '依赖包安装完成',
         })
       }
       return { success: true, skipped: true }
     }
 
-    console.log(forceInstall ? '强制安装Python依赖' : 'requirements.txt已更改，开始安装依赖')
+    console.log(forceInstall ? '强制重新安装Python依赖包' : '检测到依赖包更新，开始安装新版本')
 
     if (mainWindow) {
       mainWindow.webContents.send('download-progress', {
@@ -510,26 +609,51 @@ export async function installDependencies(
     const pipMirrorUrl =
       pipMirrorUrls[mirror as keyof typeof pipMirrorUrls] || pipMirrorUrls.tsinghua
 
-    // 使用Scripts文件夹中的pip.exe
-    const pythonDir = path.join(appRoot, 'environment', 'python')
-    const pipExePath = path.join(pythonDir, 'Scripts', 'pip.exe')
-
     console.log(`开始安装Python依赖`)
-    console.log(`Python目录: ${pythonDir}`)
-    console.log(`pip.exe路径: ${pipExePath}`)
+    console.log(`Python可执行文件: ${pythonPath}`)
     console.log(`requirements.txt路径: ${requirementsPath}`)
     console.log(`pip镜像源: ${pipMirrorUrl}`)
 
-    // 检查pip.exe是否存在
-    if (!fs.existsSync(pipExePath)) {
-      throw new Error(`pip.exe不存在: ${pipExePath}`)
-    }
+    // 检查 Python 是否能运行 pip 命令
+    console.log('检查 Python 是否支持 pip 模块...')
+    await new Promise<void>((resolve, reject) => {
+      const checkProcess = spawn(pythonPath, ['-m', 'pip', '--version'], {
+        cwd: backendPath,
+        stdio: 'pipe',
+      })
 
-    // 安装依赖 - 直接使用pip.exe而不是python -m pip
+      checkProcess.stdout?.on('data', data => {
+        const output = stripAnsiColors(data.toString())
+        log.info('pip版本检查输出:', output)
+      })
+
+      checkProcess.stderr?.on('data', data => {
+        const errorOutput = stripAnsiColors(data.toString())
+        log.warn('pip版本检查错误:', errorOutput)
+      })
+
+      checkProcess.on('close', code => {
+        if (code === 0) {
+          console.log('pip模块可用，继续安装依赖')
+          resolve()
+        } else {
+          reject(new Error(`Python无法运行pip模块，退出码: ${code}。请确保pip已正确安装。`))
+        }
+      })
+
+      checkProcess.on('error', error => {
+        console.error('pip检查进程错误:', error)
+        reject(new Error(`检查pip可用性时出错: ${error.message}`))
+      })
+    })
+
+    // 安装依赖 - 使用 python -m pip 方法
     await new Promise<void>((resolve, reject) => {
       const process = spawn(
-        pipExePath,
+        pythonPath,
         [
+          '-m',
+          'pip',
           'install',
           '-r',
           requirementsPath,
@@ -548,12 +672,33 @@ export async function installDependencies(
         const output = stripAnsiColors(data.toString())
         log.info('Pip output:', output)
 
-        if (mainWindow) {
+        // 解析pip输出，提供更详细的安装进度信息
+        if (output.includes('Collecting')) {
+          const packageMatch = output.match(/Collecting\s+([^\s]+)/)
+          if (packageMatch && mainWindow) {
+            mainWindow.webContents.send('download-progress', {
+              step: 5,
+              progress: 92,
+              status: 'downloading',
+              message: `正在下载 ${packageMatch[1]} 包...`,
+            })
+          }
+        } else if (output.includes('Installing')) {
+          const packageMatch = output.match(/Installing\s+collected\s+packages:|Successfully\s+installed/)
+          if (packageMatch && mainWindow) {
+            mainWindow.webContents.send('download-progress', {
+              step: 5,
+              progress: 93,
+              status: 'installing',
+              message: '正在安装依赖包...',
+            })
+          }
+        } else if (mainWindow) {
           mainWindow.webContents.send('download-progress', {
             step: 5,
             progress: 92,
             status: 'downloading',
-            message: '正在安装依赖包...',
+            message: '正在处理依赖包...',
           })
         }
       })
@@ -586,7 +731,7 @@ export async function installDependencies(
         step: 5,
         progress: 94,
         status: 'completed',
-        message: 'Python依赖安装完成',
+        message: 'Python 依赖安装完成',
       })
     }
 
@@ -673,7 +818,7 @@ export async function installPipPackage(
         type: 'pip',
         progress: 100,
         status: 'completed',
-        message: 'pip安装完成',
+        message: 'pip 安装完成',
       })
     }
 
