@@ -3,12 +3,93 @@ import * as fs from 'fs'
 import { spawn } from 'child_process'
 import { BrowserWindow, app } from 'electron'
 import AdmZip from 'adm-zip'
-import { downloadFile } from './downloadService'
+import { downloadFile, downloadFileMultiThread } from './downloadService'
 
 let mainWindow: BrowserWindow | null = null
 
 export function setMainWindow(window: BrowserWindow) {
   mainWindow = window
+}
+
+// 通用的智能下载函数，带有自动回退机制
+async function downloadWithFallback(
+  url: string,
+  outputPath: string,
+  threadCount: number = 6,
+  progressInfo?: { type?: string; step?: number; message?: string }
+): Promise<void> {
+  // 对于小文件（< 5MB），直接使用单线程下载
+  const minSizeForMultiThread = 5 * 1024 * 1024 // 5MB
+
+  try {
+    console.log(`开始智能下载: ${url}`)
+
+    // 先尝试获取文件大小
+    let useMultiThread = true
+    try {
+      const https = require('https')
+      const http = require('http')
+      const client = url.startsWith('https') ? https : http
+
+      const fileSize = await new Promise<number>((resolve, reject) => {
+        const req = client.request(url, { method: 'HEAD' }, (response: any) => {
+          const size = parseInt(response.headers['content-length'] || '0', 10)
+          resolve(size)
+        })
+        req.on('error', () => resolve(0)) // 如果获取失败，默认使用多线程
+        req.setTimeout(5000, () => {
+          req.destroy()
+          resolve(0)
+        })
+        req.end()
+      })
+
+      if (fileSize > 0 && fileSize < minSizeForMultiThread) {
+        console.log(`文件大小 ${(fileSize / 1024 / 1024).toFixed(2)} MB < 5MB，使用单线程下载`)
+        useMultiThread = false
+      } else if (fileSize > 0) {
+        // 根据文件大小智能调整线程数
+        const fileSizeMB = fileSize / 1024 / 1024
+        let optimalThreads = threadCount
+
+        if (fileSizeMB < 20) {
+          optimalThreads = Math.min(4, threadCount) // 小于20MB使用最多4线程
+        } else if (fileSizeMB < 100) {
+          optimalThreads = Math.min(6, threadCount) // 小于100MB使用最多6线程
+        } else {
+          optimalThreads = threadCount // 大文件使用指定线程数
+        }
+
+        threadCount = optimalThreads
+        console.log(`文件大小 ${fileSizeMB.toFixed(2)} MB，使用 ${threadCount} 线程下载`)
+      }
+    } catch (error) {
+      console.log('无法获取文件大小，默认使用多线程下载')
+    }
+
+    if (useMultiThread) {
+      await downloadFileMultiThread(url, outputPath, threadCount)
+      console.log(`多线程下载成功: ${outputPath}`)
+    } else {
+      await downloadFile(url, outputPath)
+      console.log(`单线程下载成功: ${outputPath}`)
+    }
+  } catch (multiThreadError) {
+    console.warn(`多线程下载失败，回退到单线程下载:`, multiThreadError)
+
+    if (mainWindow && progressInfo) {
+      mainWindow.webContents.send('download-progress', {
+        type: progressInfo.type,
+        step: progressInfo.step,
+        progress: 10,
+        status: 'downloading',
+        message: progressInfo.message || '回退到单线程下载...',
+      })
+    }
+
+    await downloadFile(url, outputPath)
+    console.log(`单线程下载成功: ${outputPath}`)
+  }
 }
 
 const gitDownloadUrl = 'https://download.auto-mas.top/d/AUTO-MAS/git.zip'
@@ -1366,13 +1447,16 @@ export async function downloadGit(appRoot: string): Promise<{ success: boolean; 
         type: 'git',
         progress: 0,
         status: 'downloading',
-        message: '开始下载Git...',
+        message: '开始多线程下载Git...',
       })
     }
 
-    // 使用自定义Git压缩包
+    // 智能下载Git压缩包，自动选择最佳下载方式
     const zipPath = path.join(environmentPath, 'git.zip')
-    await downloadFile(gitDownloadUrl, zipPath)
+    await downloadWithFallback(gitDownloadUrl, zipPath, 6, {
+      type: 'git',
+      message: '回退到单线程下载Git...'
+    })
 
     if (mainWindow) {
       mainWindow.webContents.send('download-progress', {
@@ -1486,12 +1570,15 @@ export async function downloadQuickSource(appRoot: string): Promise<{ success: b
         step: 2,
         progress: 50,
         status: 'downloading',
-        message: '开始下载源码包...',
+        message: '开始多线程下载源码包...',
       })
     }
 
-    const { downloadFile } = await import('./downloadService')
-    await downloadFile(sourceUrl, downloadPath)
+    // 智能下载源码包，自动选择最佳下载方式
+    await downloadWithFallback(sourceUrl, downloadPath, 8, {
+      step: 2,
+      message: '回退到单线程下载源码包...'
+    })
 
     if (mainWindow) {
       mainWindow.webContents.send('download-progress', {
