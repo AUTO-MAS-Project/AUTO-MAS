@@ -51,16 +51,19 @@ EMULATOR_PATH_BOOK = {
         "registry_paths": [
             r"SOFTWARE\NetEase\MuMu Player 12",
             r"SOFTWARE\NetEase\MuMuPlayer-12.0",
+            r"SOFTWARE\NetEase\MuMu\nx_main",  # mumu5
         ],
         "default_paths": [
             r"C:\Program Files\Netease\MuMu Player 12",
+            r"C:\Program Files (x86)\Netease\MuMu Player 12",
+            r"C:\Program Files\Netease\MuMu\nx_main",
             r"C:\Program Files (x86)\Netease\MuMu Player 12",
             (Path.home() / "AppData/Local/MuMu Player 12").as_posix(),
         ],
     },
     "ldplayer": {
         "name": "雷电模拟器",
-        "executables": ["LDPlayer.exe", "dnplayer.exe"],
+        "executables": ["ldconsole.exe", "LDPlayer.exe", "dnplayer.exe"],
         "registry_paths": [r"SOFTWARE\ChangZhi", r"SOFTWARE\leidian\ldplayer"],
         "default_paths": [
             r"C:\LDPlayer\LDPlayer4.0",

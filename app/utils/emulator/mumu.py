@@ -41,7 +41,7 @@ class MumuManager(DeviceBase):
     """
 
     def __init__(self, config: EmulatorConfig) -> None:
-        if not (Path(config.get("Info", "Path")) / "shell/MuMuManager.exe").exists():
+        if not (Path(config.get("Info", "Path"))).exists():
             raise FileNotFoundError(
                 f"MuMuManager.exe文件不存在: {config.get('Info', 'Path')}"
             )
@@ -51,7 +51,7 @@ class MumuManager(DeviceBase):
 
         self.config = config
 
-        self.emulator_path = Path(config.get("Info", "Path")) / "shell/MuMuManager.exe"
+        self.emulator_path = Path(config.get("Info", "Path"))
 
     async def open(self, idx: str, package_name: str = "") -> DeviceInfo:
         logger.info(f"开始启动模拟器{idx} - {package_name}")
@@ -104,7 +104,9 @@ class MumuManager(DeviceBase):
             status = await self.getStatus(idx)
             if status in [DeviceStatus.ERROR, DeviceStatus.UNKNOWN]:
                 raise RuntimeError(f"模拟器{idx}启动失败, 状态码: {status}")
-            elif Config.get("Function", "IfSilence") and status == DeviceStatus.STARTING:
+            elif (
+                Config.get("Function", "IfSilence") and status == DeviceStatus.STARTING
+            ):
                 await self.setVisible(idx, False)
             elif status == DeviceStatus.ONLINE:
                 return (await self.getInfo(idx))[idx]
