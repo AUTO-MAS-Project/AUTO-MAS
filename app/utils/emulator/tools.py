@@ -224,10 +224,10 @@ async def _validate_emulator_path(path: str, executables: List[str]) -> bool:
 
 
 async def find_emulator_root_path(
-    input_path: str, emulator_type: str, max_levels: int = 5
+    input_path: str, emulator_type: str, max_levels: int = 3
 ) -> str:
     """
-    从给定路径向上或向下搜索模拟器根目录
+    从给定路径向上或向下搜索模拟器主管理器程序的完整路径
 
     Parameters
     ----------
@@ -236,12 +236,25 @@ async def find_emulator_root_path(
     emulator_type : str
         模拟器类型(mumu, ldplayer, nox等)
     max_levels : int, optional
-        向上搜索的最大层级数, by default 5
+        向上搜索的最大层级数, by default 3
 
     Returns
     -------
     str
-        找到的模拟器根目录路径,如果未找到则返回原路径
+        找到的模拟器主管理器程序的完整路径（如 C:/MuMu/MuMuManager.exe），如果未找到则返回原路径
+
+    Notes
+    -----
+    - 向上搜索：最多3层父目录
+    - 向下搜索：仅1层子目录
+    - 返回主管理器程序的完整文件路径（不是文件夹路径）
+    - 优先级：包含主管理器程序的目录 > exe数量多的 > 深度小的
+
+    Examples
+    --------
+    >>> # MuMu模拟器，主程序是 MuMuManager.exe
+    >>> find_emulator_root_path("C:/MuMu/shell/MuMuPlayer.exe", "mumu")
+    "C:/MuMu/MuMuManager.exe"  # 返回主程序的完整路径
     """
 
     if not input_path or not os.path.exists(input_path):
@@ -263,6 +276,8 @@ async def find_emulator_root_path(
 
     config = EMULATOR_PATH_BOOK[emulator_type]
     executables = config["executables"]
+    # 第一个可执行文件是主管理器程序（优先级最高）
+    primary_exe = executables[0]
 
     path_obj = Path(input_path)
 
@@ -270,124 +285,173 @@ async def find_emulator_root_path(
     if path_obj.is_file():
         path_obj = path_obj.parent
 
-    logger.info(f"开始搜索{config['name']}根目录,起始路径: {path_obj}")
+    logger.info(
+        f"开始搜索{config['name']}根目录,起始路径: {path_obj}, 主程序: {primary_exe}"
+    )
 
-    # 1. 首先向上搜索,找到最顶层包含所需文件的目录
+    # 1. 首先向上搜索,找到直接包含关键exe的目录（最多3层）
     candidates = []
 
-    # 检查当前目录
-    if await _validate_emulator_path(str(path_obj), executables):
-        candidates.append(path_obj)
-        logger.debug(f"当前目录有效: {path_obj}")
+    # 检查当前目录是否直接包含exe
+    has_primary = (path_obj / primary_exe).exists()
+    direct_exe_count = sum(1 for exe in executables if (path_obj / exe).exists())
+    if direct_exe_count > 0:
+        candidates.append(
+            {
+                "path": path_obj,
+                "has_primary": has_primary,
+                "direct_count": direct_exe_count,
+                "depth": len(path_obj.parts),
+            }
+        )
+        logger.debug(
+            f"当前目录直接包含{direct_exe_count}个exe{'(含主程序)' if has_primary else ''}: {path_obj}"
+        )
 
-    # 向上搜索父目录
+    # 向上搜索父目录（最多3层）
     current = path_obj
-    for _ in range(max_levels):
+    for level in range(max_levels):
         parent = current.parent
         if parent == current:  # 已到达根目录
             break
 
-        if await _validate_emulator_path(str(parent), executables):
-            candidates.append(parent)
-            logger.debug(f"父目录有效: {parent}")
+        # 只接受直接包含exe的目录
+        has_primary = (parent / primary_exe).exists()
+        direct_exe_count = sum(1 for exe in executables if (parent / exe).exists())
+        if direct_exe_count > 0:
+            candidates.append(
+                {
+                    "path": parent,
+                    "has_primary": has_primary,
+                    "direct_count": direct_exe_count,
+                    "depth": len(parent.parts),
+                }
+            )
+            logger.debug(
+                f"父目录(第{level+1}层)直接包含{direct_exe_count}个exe{'(含主程序)' if has_primary else ''}: {parent}"
+            )
 
         current = parent
 
-    # 如果找到了候选目录,优先返回直接包含可执行文件的目录（而非通过子目录间接包含）
+    # 如果找到了候选目录，选择最优的
     if candidates:
-        # 为每个候选目录计算直接包含的可执行文件数量
-        candidate_scores = []
-        for candidate in candidates:
-            direct_exe_count = sum(
-                1 for exe in executables if (candidate / exe).exists()
-            )
-            subfolder_exe_count = 0
-            try:
-                for item in candidate.iterdir():
-                    if item.is_dir():
-                        subfolder_exe_count += sum(
-                            1 for exe in executables if (item / exe).exists()
-                        )
-            except PermissionError:
-                pass
-
-            candidate_scores.append(
-                {
-                    "path": candidate,
-                    "direct_count": direct_exe_count,
-                    "subfolder_count": subfolder_exe_count,
-                    "depth": len(candidate.parts),
-                }
-            )
-
-        # 排序策略：优先选择直接包含 exe 的目录（direct_count > 0）
-        # 对于直接包含 exe 的目录：按深度排序，选择最接近输入路径的（depth 越大越好）
-        # 对于仅通过子目录间接包含的目录：排在后面，按 subfolder_count 和 depth 排序
-        candidate_scores.sort(
+        # 排序策略（优先级从高到低）：
+        # 1. 是否包含主管理器程序（has_primary 为 True 优先）
+        # 2. 直接包含的exe数量越多越好
+        # 3. 深度越小（越靠近根目录）越好，因为通常是安装根目录
+        candidates.sort(
             key=lambda x: (
-                x["direct_count"] > 0,      # 直接包含 exe 的目录优先
-                x["direct_count"],           # 直接包含数量越多越好
-                -x["depth"],                 # 深度越大（越接近输入）越好
-                x["subfolder_count"],        # 子目录包含数量作为次要因素
+                x["has_primary"],  # 包含主程序的目录绝对优先
+                x["direct_count"],  # exe数量越多越好
+                -x["depth"],  # 深度越小越好（取负号使其降序）
             ),
             reverse=True,
         )
 
-        result = str(candidate_scores[0]["path"])
+        best_dir = candidates[0]["path"]
+        # 返回主管理器程序的完整路径
+        primary_exe_path = best_dir / primary_exe
+
+        # 验证主程序文件是否真实存在
+        if not primary_exe_path.exists():
+            logger.warning(
+                f"最佳候选目录不包含主程序文件: {primary_exe_path}, "
+                f"has_primary={candidates[0]['has_primary']}, "
+                f"尝试查找包含主程序的候选目录"
+            )
+            # 尝试找到真正包含主程序的候选目录
+            for candidate in candidates:
+                test_path = candidate["path"] / primary_exe
+                if test_path.exists():
+                    primary_exe_path = test_path
+                    logger.info(f"找到包含主程序的候选目录: {candidate['path']}")
+                    break
+            else:
+                # 如果所有候选目录都不包含主程序文件，返回原路径
+                logger.error(f"所有候选目录都不包含主程序 {primary_exe}，返回原路径")
+                return input_path
+
+        result = str(primary_exe_path)
         logger.info(
-            f"找到模拟器根目录 (直接包含{candidate_scores[0]['direct_count']}个exe,子目录{candidate_scores[0]['subfolder_count']}个): {result}"
+            f"找到模拟器主程序(直接包含{candidates[0]['direct_count']}个exe, "
+            f"{'包含主程序' if candidates[0]['has_primary'] else '不含主程序'}): {result}"
         )
         return result
 
-    # 2. 如果向上没找到,尝试向下搜索子目录(深度1层)
-    # 优先查找直接包含 exe 的子目录
-    direct_subdir = None
-    indirect_subdir = None
+    # 2. 如果向上没找到,尝试向下搜索子目录(仅1层，且必须直接包含exe，优先主程序)
+    best_subdir = None
+    best_score = (-1, 0)  # (has_primary, exe_count)
     try:
         for subdir in path_obj.iterdir():
             if subdir.is_dir():
-                # 检查子目录是否直接包含 exe
-                has_direct = any((subdir / exe).exists() for exe in executables)
-                if has_direct:
-                    direct_subdir = subdir
-                    break
-                # 如果没有直接包含，检查是否通过子目录间接包含
-                if indirect_subdir is None and await _validate_emulator_path(str(subdir), executables):
-                    indirect_subdir = subdir
+                # 只接受直接包含 exe 的子目录
+                has_primary = (subdir / primary_exe).exists()
+                direct_count = sum(1 for exe in executables if (subdir / exe).exists())
+                if direct_count > 0:
+                    score = (has_primary, direct_count)
+                    if score > best_score:
+                        best_score = score
+                        best_subdir = subdir
     except PermissionError:
         pass
 
-    if direct_subdir:
-        logger.info(f"在子目录找到根目录(直接包含exe): {direct_subdir}")
-        return str(direct_subdir)
-    elif indirect_subdir:
-        logger.info(f"在子目录找到根目录(通过子目录): {indirect_subdir}")
-        return str(indirect_subdir)
+    if best_subdir:
+        # 返回主管理器程序的完整路径
+        primary_exe_path = best_subdir / primary_exe
 
-    # 3. 检查兄弟目录（同样优先直接包含 exe 的目录）
-    direct_sibling = None
-    indirect_sibling = None
+        # 验证主程序文件是否真实存在
+        if not primary_exe_path.exists():
+            logger.warning(
+                f"子目录不包含主程序文件: {primary_exe_path}, "
+                f"has_primary={best_score[0]}, 跳过"
+            )
+        else:
+            result = str(primary_exe_path)
+            logger.info(
+                f"在子目录找到主程序(直接包含{best_score[1]}个exe, "
+                f"{'包含主程序' if best_score[0] else '不含主程序'}): {result}"
+            )
+            return result
+
+    # 3. 检查兄弟目录（必须直接包含 exe，优先主程序）
+    best_sibling = None
+    best_score = (-1, 0)  # (has_primary, exe_count)
     if path_obj.parent != path_obj:
         try:
             for sibling in path_obj.parent.iterdir():
                 if sibling.is_dir() and sibling != path_obj:
-                    # 检查兄弟目录是否直接包含 exe
-                    has_direct = any((sibling / exe).exists() for exe in executables)
-                    if has_direct:
-                        direct_sibling = sibling
-                        break
-                    # 如果没有直接包含，检查是否通过子目录间接包含
-                    if indirect_sibling is None and await _validate_emulator_path(str(sibling), executables):
-                        indirect_sibling = sibling
+                    # 只接受直接包含 exe 的兄弟目录
+                    has_primary = (sibling / primary_exe).exists()
+                    direct_count = sum(
+                        1 for exe in executables if (sibling / exe).exists()
+                    )
+                    if direct_count > 0:
+                        score = (has_primary, direct_count)
+                        if score > best_score:
+                            best_score = score
+                            best_sibling = sibling
         except PermissionError:
             pass
 
-    if direct_sibling:
-        logger.info(f"在兄弟目录找到根目录(直接包含exe): {direct_sibling}")
-        return str(direct_sibling)
-    elif indirect_sibling:
-        logger.info(f"在兄弟目录找到根目录(通过子目录): {indirect_sibling}")
-        return str(indirect_sibling)
+    if best_sibling:
+        # 返回主管理器程序的完整路径
+        primary_exe_path = best_sibling / primary_exe
 
-    logger.warning(f"未能找到{config['name']}根目录,返回原路径: {input_path}")
+        # 验证主程序文件是否真实存在
+        if not primary_exe_path.exists():
+            logger.warning(
+                f"兄弟目录不包含主程序文件: {primary_exe_path}, "
+                f"has_primary={best_score[0]}, 跳过"
+            )
+        else:
+            result = str(primary_exe_path)
+            logger.info(
+                f"在兄弟目录找到主程序(直接包含{best_score[1]}个exe, "
+                f"{'包含主程序' if best_score[0] else '不含主程序'}): {result}"
+            )
+            return result
+
+    logger.warning(
+        f"未能找到{config['name']}主程序（必须直接包含关键exe），返回原路径: {input_path}"
+    )
     return input_path
