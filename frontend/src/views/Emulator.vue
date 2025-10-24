@@ -1,8 +1,9 @@
 <!-- eslint-disable vue/multi-word-component-names -->
 <script setup lang="ts">
 // 挂载和卸载键盘监听
-import { h, onMounted, onUnmounted, ref } from 'vue'
+import { h, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useDebounceFn, useEventListener } from '@vueuse/core'
+import { useRoute } from 'vue-router'
 import { message } from 'ant-design-vue'
 import {
   DeleteOutlined,
@@ -75,6 +76,9 @@ const stoppingDevices = ref<Set<string>>(new Set())
 const pollingTimer = ref<NodeJS.Timeout | null>(null)
 const POLLING_INTERVAL = 5000 // 5秒轮询一次
 
+// 路由监听
+const route = useRoute()
+
 // 轮询获取所有模拟器的设备状态
 const pollDevicesStatus = async () => {
   // 只在有模拟器时轮询
@@ -107,6 +111,7 @@ const startPolling = () => {
     clearInterval(pollingTimer.value)
   }
   pollingTimer.value = setInterval(pollDevicesStatus, POLLING_INTERVAL)
+  console.log('模拟器页面轮询已启动')
 }
 
 // 停止轮询
@@ -114,6 +119,7 @@ const stopPolling = () => {
   if (pollingTimer.value) {
     clearInterval(pollingTimer.value)
     pollingTimer.value = null
+    console.log('模拟器页面轮询已停止')
   }
 }
 
@@ -624,8 +630,23 @@ const handleKeyUp = (event: KeyboardEvent) => {
 useEventListener(document, 'keydown', handleKeyDown)
 useEventListener(document, 'keyup', handleKeyUp)
 
-onMounted(() => {
-  loadEmulators()
+// 监听路由变化，控制轮询启停
+watch(() => route.path, (newPath) => {
+  if (newPath === '/emulators') {
+    // 进入模拟器页面，启动轮询
+    console.log('进入模拟器页面，启动轮询')
+    startPolling()
+  } else {
+    // 离开模拟器页面，停止轮询
+    console.log('离开模拟器页面，停止轮询')
+    stopPolling()
+  }
+}, { immediate: true })
+
+onMounted(async () => {
+  await loadEmulators()
+  await onEmulatorsLoaded()
+  // 轮询的启动由路由监听器控制，这里不需要手动启动
 })
 
 // 监听加载完成后自动选中第一个 Tab 或加载设备信息
@@ -691,13 +712,7 @@ const handleSearchAndImport = async (result: EmulatorSearchResult) => {
   }
 }
 
-// 重写 loadEmulators,加载后自动选择第一个（挂载时使用）
-onMounted(async () => {
-  await loadEmulators()
-  await onEmulatorsLoaded()
-  // 启动轮询
-  startPolling()
-})
+
 
 const handleSetBossKey = (uuid: string) => {
   // 如果正在录制，不处理手动输入
