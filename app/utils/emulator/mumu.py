@@ -56,6 +56,8 @@ class MumuManager(DeviceBase):
     async def open(self, idx: str, package_name: str = "") -> DeviceInfo:
         logger.info(f"开始启动模拟器{idx} - {package_name}")
 
+        from app.core import Config
+
         status = DeviceStatus.UNKNOWN  # 初始化status变量
         t = datetime.now()
         while datetime.now() - t < timedelta(
@@ -83,13 +85,7 @@ class MumuManager(DeviceBase):
                     package_name,
                 ]
                 if package_name
-                else [
-                    self.emulator_path,
-                    "control",
-                    "-v",
-                    idx,
-                    "launch",
-                ]
+                else [self.emulator_path, "control", "-v", idx, "launch"]
             ),
             capture_output=True,
             text=True,
@@ -108,7 +104,9 @@ class MumuManager(DeviceBase):
             status = await self.getStatus(idx)
             if status in [DeviceStatus.ERROR, DeviceStatus.UNKNOWN]:
                 raise RuntimeError(f"模拟器{idx}启动失败, 状态码: {status}")
-            if status == DeviceStatus.ONLINE:
+            elif Config.get("Function", "IfSilence") and status == DeviceStatus.STARTING:
+                await self.setVisible(idx, False)
+            elif status == DeviceStatus.ONLINE:
                 return (await self.getInfo(idx))[idx]
             await asyncio.sleep(0.1)
         else:
@@ -166,10 +164,8 @@ class MumuManager(DeviceBase):
             return DeviceStatus.UNKNOWN
 
         if data_json["is_android_started"]:
-            logger.debug(f"模拟器{idx}在线")
             return DeviceStatus.ONLINE
         elif data_json["is_process_started"]:
-            logger.debug(f"模拟器{idx}开启中")
             return DeviceStatus.STARTING
         else:
             return DeviceStatus.OFFLINE
