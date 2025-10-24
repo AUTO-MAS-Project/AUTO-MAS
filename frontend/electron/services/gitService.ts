@@ -150,20 +150,217 @@ function copyDirSync(src: string, dest: string) {
   }
 }
 
-// 清理本地老分支（保留指定分支）
-async function cleanOldLocalBranches(
+// 优化存储：删除不必要的 git 对象和引用
+async function optimizeGitStorage(
+  gitPath: string,
+  gitEnv: any,
+  repoPath: string
+): Promise<void> {
+  console.log('=== 开始优化 Git 存储 ===')
+
+  try {
+    // 1. 删除所有 reflog（引用日志）
+    console.log('🗑️ 删除所有 reflog...')
+    await new Promise<void>(resolve => {
+      const proc = spawn(gitPath, ['reflog', 'expire', '--expire=now', '--all'], {
+        stdio: 'pipe',
+        env: gitEnv,
+        cwd: repoPath,
+      })
+
+      proc.stdout?.on('data', data => {
+        console.log(`reflog expire stdout:`, data.toString().trim())
+      })
+
+      proc.stderr?.on('data', data => {
+        console.log(`reflog expire stderr:`, data.toString().trim())
+      })
+
+      proc.on('close', code => {
+        if (code === 0) {
+          console.log('✅ reflog 删除完成')
+        } else {
+          console.log('⚠️ reflog 删除失败，但继续')
+        }
+        resolve()
+      })
+
+      proc.on('error', error => {
+        console.log('⚠️ reflog 删除出错:', error)
+        resolve()
+      })
+    })
+
+    // 2. 删除所有标签
+    console.log('🗑️ 删除所有标签...')
+    await new Promise<void>(resolve => {
+      const proc = spawn(gitPath, ['tag', '-l'], {
+        stdio: 'pipe',
+        env: gitEnv,
+        cwd: repoPath,
+      })
+
+      let output = ''
+      proc.stdout?.on('data', data => {
+        output += data.toString()
+      })
+
+      proc.on('close', code => {
+        if (code === 0 && output.trim()) {
+          const tags = output.split('\n').filter(tag => tag.trim())
+          if (tags.length > 0) {
+            console.log(`发现标签: ${tags.join(', ')}`)
+            // 删除所有标签
+            const deleteProc = spawn(gitPath, ['tag', '-d', ...tags], {
+              stdio: 'pipe',
+              env: gitEnv,
+              cwd: repoPath,
+            })
+            deleteProc.on('close', deleteCode => {
+              if (deleteCode === 0) {
+                console.log('✅ 所有标签删除完成')
+              } else {
+                console.log('⚠️ 标签删除失败，但继续')
+              }
+              resolve()
+            })
+            deleteProc.on('error', () => resolve())
+          } else {
+            console.log('✅ 没有标签需要删除')
+            resolve()
+          }
+        } else {
+          console.log('✅ 没有标签需要删除')
+          resolve()
+        }
+      })
+
+      proc.on('error', error => {
+        console.log('⚠️ 获取标签列表出错:', error)
+        resolve()
+      })
+    })
+
+    // 3. 强制垃圾回收和压缩
+    console.log('🧹 执行强制垃圾回收和压缩...')
+    await new Promise<void>(resolve => {
+      const proc = spawn(gitPath, ['gc', '--aggressive', '--prune=now'], {
+        stdio: 'pipe',
+        env: gitEnv,
+        cwd: repoPath,
+      })
+
+      proc.stdout?.on('data', data => {
+        console.log(`gc stdout:`, data.toString().trim())
+      })
+
+      proc.stderr?.on('data', data => {
+        console.log(`gc stderr:`, data.toString().trim())
+      })
+
+      proc.on('close', code => {
+        if (code === 0) {
+          console.log('✅ 垃圾回收和压缩完成')
+        } else {
+          console.log('⚠️ 垃圾回收失败，但继续')
+        }
+        resolve()
+      })
+
+      proc.on('error', error => {
+        console.log('⚠️ 垃圾回收出错:', error)
+        resolve()
+      })
+    })
+
+    console.log('✅ Git 存储优化完成')
+  } catch (error) {
+    console.error('❌ Git 存储优化失败:', error)
+  }
+}
+
+// 配置浅克隆仓库，只跟踪指定分支
+async function configureShallowRepository(
   gitPath: string,
   gitEnv: any,
   repoPath: string,
-  currentBranch: string,
-  defaultBranch: string
+  targetBranch: string
 ): Promise<void> {
-  console.log('=== 开始清理本地老分支 ===')
-  console.log(`当前分支: ${currentBranch}`)
-  console.log(`默认分支: ${defaultBranch}`)
+  console.log(`🔧 配置浅克隆仓库，只跟踪分支: ${targetBranch}`)
 
   try {
-    // 1. 获取所有本地分支
+    // 设置只拉取目标分支的配置
+    const targetRefspec = `+refs/heads/${targetBranch}:refs/remotes/origin/${targetBranch}`
+    await new Promise<void>((resolve) => {
+      const proc = spawn(gitPath, ['config', '--add', 'remote.origin.fetch', targetRefspec], {
+        stdio: 'pipe',
+        env: gitEnv,
+        cwd: repoPath,
+      })
+      proc.stdout?.on('data', d => console.log('git config --add stdout:', d.toString().trim()))
+      proc.stderr?.on('data', d => console.log('git config --add stderr:', d.toString().trim()))
+      proc.on('close', code => {
+        console.log(`git config --add 退出码: ${code}`)
+        if (code === 0) {
+          console.log(`✅ 设置目标分支fetch配置成功: ${targetRefspec}`)
+        } else {
+          console.log(`⚠️ 设置目标分支fetch配置失败: ${targetRefspec}`)
+        }
+        resolve()
+      })
+      proc.on('error', error => {
+        console.log('⚠️ git config --add 进程错误:', error)
+        resolve()
+      })
+    })
+
+    // 设置浅克隆相关配置
+    const shallowConfigs = [
+      ['core.preloadindex', 'true'],
+      ['core.fscache', 'true'],
+      ['gc.auto', '0'],  // 禁用自动垃圾回收
+      ['fetch.prune', 'true'],  // 自动清理远程已删除的分支
+      ['fetch.pruneTags', 'true'],  // 自动清理远程已删除的标签
+    ]
+
+    for (const [key, value] of shallowConfigs) {
+      await new Promise<void>((resolve) => {
+        const proc = spawn(gitPath, ['config', key, value], {
+          stdio: 'pipe',
+          env: gitEnv,
+          cwd: repoPath,
+        })
+        proc.on('close', code => {
+          if (code === 0) {
+            console.log(`✅ 设置配置 ${key}=${value}`)
+          } else {
+            console.log(`⚠️ 设置配置 ${key}=${value} 失败`)
+          }
+          resolve()
+        })
+        proc.on('error', () => resolve())
+      })
+    }
+
+    console.log('✅ 浅克隆仓库配置完成')
+  } catch (error) {
+    console.error('❌ 配置浅克隆仓库失败:', error)
+  }
+}
+
+// 极致优化拉取后的存储清理
+async function optimizePostPullStorage(
+  gitPath: string,
+  gitEnv: any,
+  repoPath: string,
+  targetBranch: string
+): Promise<void> {
+  console.log('=== 开始拉取后极致存储优化 ===')
+  console.log(`目标分支: ${targetBranch}`)
+
+  try {
+    // 1. 删除除目标分支外的所有本地分支
+    console.log('🗑️ 删除其他本地分支...')
     const localBranches = await new Promise<string[]>(resolve => {
       const proc = spawn(gitPath, ['branch', '--format=%(refname:short)'], {
         stdio: 'pipe',
@@ -181,37 +378,16 @@ async function cleanOldLocalBranches(
           const branches = output
             .split('\n')
             .map(line => line.trim())
-            .filter(line => line && !line.startsWith('*'))
-          console.log(`发现本地分支: ${branches.join(', ')}`)
+            .filter(line => line && line !== targetBranch)
           resolve(branches)
         } else {
-          console.log('⚠️ 获取本地分支失败')
           resolve([])
         }
       })
-
-      proc.on('error', error => {
-        console.log('⚠️ 获取本地分支出错:', error)
-        resolve([])
-      })
+      proc.on('error', () => resolve([]))
     })
 
-    // 2. 确定需要保留的分支
-    const branchesToKeep = new Set([currentBranch, defaultBranch])
-    console.log(`需要保留的分支: ${Array.from(branchesToKeep).join(', ')}`)
-
-    // 3. 找出需要删除的分支
-    const branchesToDelete = localBranches.filter(branch => !branchesToKeep.has(branch))
-
-    if (branchesToDelete.length === 0) {
-      console.log('✅ 没有需要清理的老分支')
-      return
-    }
-
-    console.log(`需要删除的老分支: ${branchesToDelete.join(', ')}`)
-
-    // 4. 删除老分支
-    for (const branch of branchesToDelete) {
+    for (const branch of localBranches) {
       console.log(`🗑️ 删除分支: ${branch}`)
       await new Promise<void>(resolve => {
         const proc = spawn(gitPath, ['branch', '-D', branch], {
@@ -219,34 +395,617 @@ async function cleanOldLocalBranches(
           env: gitEnv,
           cwd: repoPath,
         })
-
-        proc.stdout?.on('data', data => {
-          console.log(`删除分支 ${branch} stdout:`, data.toString().trim())
-        })
-
-        proc.stderr?.on('data', data => {
-          console.log(`删除分支 ${branch} stderr:`, data.toString().trim())
-        })
-
-        proc.on('close', code => {
-          if (code === 0) {
-            console.log(`✅ 成功删除分支: ${branch}`)
-          } else {
-            console.log(`⚠️ 删除分支 ${branch} 失败，但继续`)
-          }
-          resolve()
-        })
-
-        proc.on('error', error => {
-          console.log(`⚠️ 删除分支 ${branch} 出错:`, error)
-          resolve()
-        })
+        proc.on('close', () => resolve())
+        proc.on('error', () => resolve())
       })
     }
 
-    console.log('✅ 本地老分支清理完成')
+    // 2. 删除除目标分支外的所有远程跟踪分支
+    console.log('🗑️ 删除其他远程跟踪分支...')
+    const remoteRefs = await new Promise<string[]>(resolve => {
+      const proc = spawn(gitPath, ['for-each-ref', '--format=%(refname)', 'refs/remotes'], {
+        stdio: 'pipe',
+        env: gitEnv,
+        cwd: repoPath,
+      })
+
+      let output = ''
+      proc.stdout?.on('data', data => {
+        output += data.toString()
+      })
+
+      proc.on('close', code => {
+        if (code === 0 && output.trim()) {
+          const refs = output.split('\n')
+            .filter(ref => ref.trim())
+            .filter(ref => !ref.includes(`refs/remotes/origin/${targetBranch}`))
+          resolve(refs)
+        } else {
+          resolve([])
+        }
+      })
+      proc.on('error', () => resolve([]))
+    })
+
+    for (const ref of remoteRefs) {
+      await new Promise<void>(resolve => {
+        const proc = spawn(gitPath, ['update-ref', '-d', ref], {
+          stdio: 'pipe',
+          env: gitEnv,
+          cwd: repoPath,
+        })
+        proc.on('close', () => resolve())
+        proc.on('error', () => resolve())
+      })
+    }
+
+    // 3. 删除所有标签
+    console.log('🗑️ 删除所有标签...')
+    const tags = await new Promise<string[]>(resolve => {
+      const proc = spawn(gitPath, ['tag', '-l'], {
+        stdio: 'pipe',
+        env: gitEnv,
+        cwd: repoPath,
+      })
+
+      let output = ''
+      proc.stdout?.on('data', data => {
+        output += data.toString()
+      })
+
+      proc.on('close', code => {
+        if (code === 0 && output.trim()) {
+          const tagList = output.split('\n').filter(tag => tag.trim())
+          resolve(tagList)
+        } else {
+          resolve([])
+        }
+      })
+      proc.on('error', () => resolve([]))
+    })
+
+    if (tags.length > 0) {
+      await new Promise<void>(resolve => {
+        const proc = spawn(gitPath, ['tag', '-d', ...tags], {
+          stdio: 'pipe',
+          env: gitEnv,
+          cwd: repoPath,
+        })
+        proc.on('close', () => {
+          console.log('✅ 所有标签删除完成')
+          resolve()
+        })
+        proc.on('error', () => resolve())
+      })
+    }
+
+    // 4. 删除所有reflog
+    console.log('🗑️ 删除所有reflog...')
+    await new Promise<void>(resolve => {
+      const proc = spawn(gitPath, ['reflog', 'expire', '--expire=now', '--all'], {
+        stdio: 'pipe',
+        env: gitEnv,
+        cwd: repoPath,
+      })
+      proc.on('close', () => {
+        console.log('✅ reflog删除完成')
+        resolve()
+      })
+      proc.on('error', () => resolve())
+    })
+
+    // 5. 确保仓库为浅克隆状态
+    console.log('🔄 确保仓库为浅克隆状态...')
+    const currentCommitHash = await new Promise<string>(resolve => {
+      const proc = spawn(gitPath, ['rev-parse', 'HEAD'], {
+        stdio: 'pipe',
+        env: gitEnv,
+        cwd: repoPath,
+      })
+
+      let output = ''
+      proc.stdout?.on('data', data => {
+        output += data.toString()
+      })
+
+      proc.on('close', () => {
+        resolve(output.trim())
+      })
+      proc.on('error', () => resolve(''))
+    })
+
+    if (currentCommitHash) {
+      try {
+        const shallowPath = path.join(repoPath, '.git', 'shallow')
+        fs.writeFileSync(shallowPath, currentCommitHash + '\n')
+        console.log('✅ 更新shallow文件，确保浅克隆状态')
+      } catch (error) {
+        console.log('⚠️ 更新shallow文件失败:', error)
+      }
+    }
+
+    // 6. 执行激进的垃圾回收
+    console.log('🧹 执行激进垃圾回收...')
+    await new Promise<void>(resolve => {
+      const proc = spawn(gitPath, ['gc', '--aggressive', '--prune=now'], {
+        stdio: 'pipe',
+        env: gitEnv,
+        cwd: repoPath,
+      })
+      proc.on('close', () => {
+        console.log('✅ 激进垃圾回收完成')
+        resolve()
+      })
+      proc.on('error', () => resolve())
+    })
+
+    // 7. 重新打包以最小化存储
+    console.log('📦 重新打包以最小化存储...')
+    await new Promise<void>(resolve => {
+      const proc = spawn(gitPath, ['repack', '-a', '-d', '-f', '--depth=1', '--window=1'], {
+        stdio: 'pipe',
+        env: gitEnv,
+        cwd: repoPath,
+      })
+      proc.on('close', () => {
+        console.log('✅ 仓库重新打包完成')
+        resolve()
+      })
+      proc.on('error', () => resolve())
+    })
+
+    // 8. 显示优化效果
+    await showStorageOptimizationResult(gitPath, gitEnv, repoPath)
+
+    console.log('✅ 拉取后极致存储优化完成')
   } catch (error) {
-    console.error('❌ 清理本地老分支失败:', error)
+    console.error('❌ 拉取后存储优化失败:', error)
+  }
+}
+
+// 显示存储优化结果
+async function showStorageOptimizationResult(
+  gitPath: string,
+  gitEnv: any,
+  repoPath: string
+): Promise<void> {
+  console.log('=== 存储优化结果统计 ===')
+
+  try {
+    // 获取仓库大小
+    const gitDirPath = path.join(repoPath, '.git')
+    if (fs.existsSync(gitDirPath)) {
+      const getDirectorySize = (dirPath: string): number => {
+        let totalSize = 0
+        try {
+          const items = fs.readdirSync(dirPath)
+          for (const item of items) {
+            const itemPath = path.join(dirPath, item)
+            const stats = fs.statSync(itemPath)
+            if (stats.isDirectory()) {
+              totalSize += getDirectorySize(itemPath)
+            } else {
+              totalSize += stats.size
+            }
+          }
+        } catch (error) {
+          // 忽略权限错误等
+        }
+        return totalSize
+      }
+
+      const gitDirSize = getDirectorySize(gitDirPath)
+      const gitDirSizeMB = (gitDirSize / 1024 / 1024).toFixed(2)
+      console.log(`📊 .git目录大小: ${gitDirSizeMB} MB`)
+    }
+
+    // 获取分支数量
+    const branchCount = await new Promise<number>(resolve => {
+      const proc = spawn(gitPath, ['branch', '-a'], {
+        stdio: 'pipe',
+        env: gitEnv,
+        cwd: repoPath,
+      })
+
+      let output = ''
+      proc.stdout?.on('data', data => {
+        output += data.toString()
+      })
+
+      proc.on('close', () => {
+        const branches = output.split('\n').filter(line => line.trim())
+        resolve(branches.length)
+      })
+      proc.on('error', () => resolve(0))
+    })
+
+    // 获取commit数量
+    const commitCount = await new Promise<number>(resolve => {
+      const proc = spawn(gitPath, ['rev-list', '--count', 'HEAD'], {
+        stdio: 'pipe',
+        env: gitEnv,
+        cwd: repoPath,
+      })
+
+      let output = ''
+      proc.stdout?.on('data', data => {
+        output += data.toString()
+      })
+
+      proc.on('close', () => {
+        const count = parseInt(output.trim()) || 0
+        resolve(count)
+      })
+      proc.on('error', () => resolve(0))
+    })
+
+    // 检查是否为浅克隆
+    const isShallow = fs.existsSync(path.join(repoPath, '.git', 'shallow'))
+
+    console.log(`📈 优化结果:`)
+    console.log(`   - 分支数量: ${branchCount}`)
+    console.log(`   - commit数量: ${commitCount}`)
+    console.log(`   - 浅克隆状态: ${isShallow ? '✅ 是' : '❌ 否'}`)
+    console.log(`   - 存储优化: ${commitCount === 1 ? '✅ 最优（仅保留最新commit）' : '⚠️ 可进一步优化'}`)
+
+  } catch (error) {
+    console.log('⚠️ 获取优化结果统计失败:', error)
+  }
+}
+
+// 优化的分支和历史清理函数 - 极致存储优化版本
+async function cleanOldLocalBranches(
+  gitPath: string,
+  gitEnv: any,
+  repoPath: string,
+  currentBranch: string,
+  defaultBranch: string
+): Promise<void> {
+  console.log('=== 开始极致存储优化清理 ===')
+  console.log(`当前分支: ${currentBranch}`)
+  console.log(`目标: 只保留当前分支的最新commit，删除所有历史数据`)
+
+  try {
+    // 1. 删除所有远程分支引用（除了当前分支）
+    console.log('🗑️ 清理所有远程分支引用...')
+    await new Promise<void>(resolve => {
+      const proc = spawn(gitPath, ['remote', 'prune', 'origin'], {
+        stdio: 'pipe',
+        env: gitEnv,
+        cwd: repoPath,
+      })
+      proc.on('close', () => resolve())
+      proc.on('error', () => resolve())
+    })
+
+    // 2. 删除所有本地分支（除了当前分支）
+    const localBranches = await new Promise<string[]>(resolve => {
+      const proc = spawn(gitPath, ['branch', '--format=%(refname:short)'], {
+        stdio: 'pipe',
+        env: gitEnv,
+        cwd: repoPath,
+      })
+
+      let output = ''
+      proc.stdout?.on('data', data => {
+        output += data.toString()
+      })
+
+      proc.on('close', code => {
+        if (code === 0) {
+          const branches = output
+            .split('\n')
+            .map(line => line.trim())
+            .filter(line => line && line !== currentBranch)
+          console.log(`发现需要删除的分支: ${branches.join(', ')}`)
+          resolve(branches)
+        } else {
+          resolve([])
+        }
+      })
+      proc.on('error', () => resolve([]))
+    })
+
+    // 删除所有其他分支
+    for (const branch of localBranches) {
+      console.log(`🗑️ 删除分支: ${branch}`)
+      await new Promise<void>(resolve => {
+        const proc = spawn(gitPath, ['branch', '-D', branch], {
+          stdio: 'pipe',
+          env: gitEnv,
+          cwd: repoPath,
+        })
+        proc.on('close', () => resolve())
+        proc.on('error', () => resolve())
+      })
+    }
+
+    // 3. 删除所有标签
+    console.log('🗑️ 删除所有标签...')
+    const tags = await new Promise<string[]>(resolve => {
+      const proc = spawn(gitPath, ['tag', '-l'], {
+        stdio: 'pipe',
+        env: gitEnv,
+        cwd: repoPath,
+      })
+
+      let output = ''
+      proc.stdout?.on('data', data => {
+        output += data.toString()
+      })
+
+      proc.on('close', code => {
+        if (code === 0 && output.trim()) {
+          const tagList = output.split('\n').filter(tag => tag.trim())
+          console.log(`发现标签: ${tagList.join(', ')}`)
+          resolve(tagList)
+        } else {
+          resolve([])
+        }
+      })
+      proc.on('error', () => resolve([]))
+    })
+
+    if (tags.length > 0) {
+      await new Promise<void>(resolve => {
+        const proc = spawn(gitPath, ['tag', '-d', ...tags], {
+          stdio: 'pipe',
+          env: gitEnv,
+          cwd: repoPath,
+        })
+        proc.on('close', () => {
+          console.log('✅ 所有标签删除完成')
+          resolve()
+        })
+        proc.on('error', () => resolve())
+      })
+    }
+
+    // 4. 创建孤立分支，彻底删除历史记录
+    console.log('🔄 创建孤立分支，彻底删除历史记录...')
+
+    // 获取当前HEAD的内容
+    const currentCommitMessage = await new Promise<string>(resolve => {
+      const proc = spawn(gitPath, ['log', '-1', '--pretty=format:%s'], {
+        stdio: 'pipe',
+        env: gitEnv,
+        cwd: repoPath,
+      })
+
+      let output = ''
+      proc.stdout?.on('data', data => {
+        output += data.toString()
+      })
+
+      proc.on('close', () => {
+        resolve(output.trim() || 'Latest optimized commit')
+      })
+      proc.on('error', () => resolve('Latest optimized commit'))
+    })
+
+    // 创建孤立分支
+    await new Promise<void>(resolve => {
+      const proc = spawn(gitPath, ['checkout', '--orphan', 'temp-optimized'], {
+        stdio: 'pipe',
+        env: gitEnv,
+        cwd: repoPath,
+      })
+      proc.on('close', () => {
+        console.log('✅ 孤立分支创建完成')
+        resolve()
+      })
+      proc.on('error', () => resolve())
+    })
+
+    // 添加所有文件到新分支
+    await new Promise<void>(resolve => {
+      const proc = spawn(gitPath, ['add', '-A'], {
+        stdio: 'pipe',
+        env: gitEnv,
+        cwd: repoPath,
+      })
+      proc.on('close', () => resolve())
+      proc.on('error', () => resolve())
+    })
+
+    // 提交到新分支
+    await new Promise<void>(resolve => {
+      const proc = spawn(gitPath, ['commit', '-m', `Optimized: ${currentCommitMessage} (history removed)`], {
+        stdio: 'pipe',
+        env: gitEnv,
+        cwd: repoPath,
+      })
+      proc.on('close', () => {
+        console.log('✅ 新分支提交完成')
+        resolve()
+      })
+      proc.on('error', () => resolve())
+    })
+
+    // 删除原分支
+    await new Promise<void>(resolve => {
+      const proc = spawn(gitPath, ['branch', '-D', currentBranch], {
+        stdio: 'pipe',
+        env: gitEnv,
+        cwd: repoPath,
+      })
+      proc.on('close', () => resolve())
+      proc.on('error', () => resolve())
+    })
+
+    // 重命名新分支为原分支名
+    await new Promise<void>(resolve => {
+      const proc = spawn(gitPath, ['branch', '-m', currentBranch], {
+        stdio: 'pipe',
+        env: gitEnv,
+        cwd: repoPath,
+      })
+      proc.on('close', () => {
+        console.log(`✅ 分支重命名为 ${currentBranch} 完成`)
+        resolve()
+      })
+      proc.on('error', () => resolve())
+    })
+
+    // 5. 删除所有reflog（引用日志）
+    console.log('🗑️ 删除所有reflog...')
+    await new Promise<void>(resolve => {
+      const proc = spawn(gitPath, ['reflog', 'expire', '--expire=now', '--all'], {
+        stdio: 'pipe',
+        env: gitEnv,
+        cwd: repoPath,
+      })
+      proc.on('close', () => {
+        console.log('✅ reflog删除完成')
+        resolve()
+      })
+      proc.on('error', () => resolve())
+    })
+
+    // 6. 删除所有远程跟踪分支引用（除了当前分支）
+    console.log('🗑️ 删除其他远程跟踪分支引用...')
+    const remoteRefs = await new Promise<string[]>(resolve => {
+      const proc = spawn(gitPath, ['for-each-ref', '--format=%(refname)', 'refs/remotes'], {
+        stdio: 'pipe',
+        env: gitEnv,
+        cwd: repoPath,
+      })
+
+      let output = ''
+      proc.stdout?.on('data', data => {
+        output += data.toString()
+      })
+
+      proc.on('close', code => {
+        if (code === 0 && output.trim()) {
+          const refs = output.split('\n')
+            .filter(ref => ref.trim())
+            .filter(ref => !ref.includes(`refs/remotes/origin/${currentBranch}`)) // 保留当前分支的远程引用
+          console.log(`发现需要删除的远程引用: ${refs.join(', ')}`)
+          resolve(refs)
+        } else {
+          resolve([])
+        }
+      })
+      proc.on('error', () => resolve([]))
+    })
+
+    // 逐个删除其他远程引用
+    for (const ref of remoteRefs) {
+      await new Promise<void>(resolve => {
+        const proc = spawn(gitPath, ['update-ref', '-d', ref], {
+          stdio: 'pipe',
+          env: gitEnv,
+          cwd: repoPath,
+        })
+        proc.on('close', () => resolve())
+        proc.on('error', () => resolve())
+      })
+    }
+
+    // 7. 重新配置远程仓库，只跟踪当前分支
+    console.log(`🔧 重新配置远程仓库，只跟踪分支: ${currentBranch}`)
+
+    // 清除现有的fetch配置
+    await new Promise<void>(resolve => {
+      const proc = spawn(gitPath, ['config', '--unset-all', 'remote.origin.fetch'], {
+        stdio: 'pipe',
+        env: gitEnv,
+        cwd: repoPath,
+      })
+      proc.on('close', () => resolve())
+      proc.on('error', () => resolve())
+    })
+
+    // 设置只拉取当前分支的配置
+    const targetRefspec = `+refs/heads/${currentBranch}:refs/remotes/origin/${currentBranch}`
+    await new Promise<void>(resolve => {
+      const proc = spawn(gitPath, ['config', '--add', 'remote.origin.fetch', targetRefspec], {
+        stdio: 'pipe',
+        env: gitEnv,
+        cwd: repoPath,
+      })
+      proc.on('close', () => {
+        console.log(`✅ 设置单分支fetch配置: ${targetRefspec}`)
+        resolve()
+      })
+      proc.on('error', () => resolve())
+    })
+
+    // 8. 转换为浅克隆仓库（如果还不是）
+    console.log('🔄 转换为浅克隆仓库...')
+    await new Promise<void>(resolve => {
+      const proc = spawn(gitPath, ['config', 'core.repositoryformatversion', '0'], {
+        stdio: 'pipe',
+        env: gitEnv,
+        cwd: repoPath,
+      })
+      proc.on('close', () => resolve())
+      proc.on('error', () => resolve())
+    })
+
+    // 创建shallow文件，标记为浅克隆
+    const currentCommitHash = await new Promise<string>(resolve => {
+      const proc = spawn(gitPath, ['rev-parse', 'HEAD'], {
+        stdio: 'pipe',
+        env: gitEnv,
+        cwd: repoPath,
+      })
+
+      let output = ''
+      proc.stdout?.on('data', data => {
+        output += data.toString()
+      })
+
+      proc.on('close', () => {
+        resolve(output.trim())
+      })
+      proc.on('error', () => resolve(''))
+    })
+
+    if (currentCommitHash) {
+      try {
+        const shallowPath = path.join(repoPath, '.git', 'shallow')
+        fs.writeFileSync(shallowPath, currentCommitHash + '\n')
+        console.log('✅ 创建shallow文件，标记为浅克隆')
+      } catch (error) {
+        console.log('⚠️ 创建shallow文件失败:', error)
+      }
+    }
+
+    // 9. 执行激进的垃圾回收和压缩
+    console.log('🧹 执行激进垃圾回收和压缩...')
+    await new Promise<void>(resolve => {
+      const proc = spawn(gitPath, ['gc', '--aggressive', '--prune=now'], {
+        stdio: 'pipe',
+        env: gitEnv,
+        cwd: repoPath,
+      })
+      proc.on('close', () => {
+        console.log('✅ 激进垃圾回收完成')
+        resolve()
+      })
+      proc.on('error', () => resolve())
+    })
+
+    // 10. 重新打包仓库以最小化存储
+    console.log('📦 重新打包仓库以最小化存储...')
+    await new Promise<void>(resolve => {
+      const proc = spawn(gitPath, ['repack', '-a', '-d', '-f', '--depth=1', '--window=1'], {
+        stdio: 'pipe',
+        env: gitEnv,
+        cwd: repoPath,
+      })
+      proc.on('close', () => {
+        console.log('✅ 仓库重新打包完成')
+        resolve()
+      })
+      proc.on('error', () => resolve())
+    })
+
+    console.log('✅ 极致存储优化完成：只保留当前分支最新commit，删除所有历史数据和其他分支')
+  } catch (error) {
+    console.error('❌ 极致存储优化失败:', error)
     // 不抛出错误，继续执行后续步骤
   }
 }
@@ -715,7 +1474,7 @@ export async function downloadQuickSource(appRoot: string): Promise<{ success: b
   try {
     const sourceUrl = 'https://download.auto-mas.top/d/AUTO-MAS/repo.zip'
     const downloadPath = path.join(appRoot, 'temp', 'repo.zip')
-    
+
     // 确保临时目录存在
     const tempDir = path.dirname(downloadPath)
     if (!fs.existsSync(tempDir)) {
@@ -730,10 +1489,10 @@ export async function downloadQuickSource(appRoot: string): Promise<{ success: b
         message: '开始下载源码包...',
       })
     }
-    
+
     const { downloadFile } = await import('./downloadService')
     await downloadFile(sourceUrl, downloadPath)
-    
+
     if (mainWindow) {
       mainWindow.webContents.send('download-progress', {
         step: 2,
@@ -742,7 +1501,7 @@ export async function downloadQuickSource(appRoot: string): Promise<{ success: b
         message: '源码包下载完成',
       })
     }
-    
+
     return { success: true }
   } catch (error) {
     const errorMsg = `源码包下载失败: ${error instanceof Error ? error.message : String(error)}`
@@ -764,7 +1523,7 @@ export async function extractQuickSource(appRoot: string): Promise<{ success: bo
   try {
     const zipPath = path.join(appRoot, 'temp', 'repo.zip')
     const tempExtractPath = path.join(appRoot, 'temp', 'repo')
-    
+
     if (mainWindow) {
       mainWindow.webContents.send('download-progress', {
         step: 3,
@@ -773,7 +1532,7 @@ export async function extractQuickSource(appRoot: string): Promise<{ success: bo
         message: '开始解压源码包...',
       })
     }
-    
+
     if (!fs.existsSync(zipPath)) {
       throw new Error('源码包文件不存在')
     }
@@ -782,11 +1541,11 @@ export async function extractQuickSource(appRoot: string): Promise<{ success: bo
     const AdmZip = (await import('adm-zip')).default
     const zip = new AdmZip(zipPath)
     zip.extractAllTo(tempExtractPath, true)
-    
+
     // 查找解压后的实际目录（可能包含版本号等）
     const extractedItems = fs.readdirSync(tempExtractPath)
     let sourceDir = tempExtractPath
-    
+
     // 如果解压后只有一个目录，进入该目录
     if (extractedItems.length === 1) {
       const itemPath = path.join(tempExtractPath, extractedItems[0])
@@ -794,16 +1553,16 @@ export async function extractQuickSource(appRoot: string): Promise<{ success: bo
         sourceDir = itemPath
       }
     }
-    
+
     // 复制文件到应用根目录，但跳过已存在的关键文件
     await copySourceFiles(sourceDir, appRoot)
-    
+
     // 清理临时文件
     fs.unlinkSync(zipPath)
     if (fs.existsSync(tempExtractPath)) {
       fs.rmSync(tempExtractPath, { recursive: true, force: true })
     }
-    
+
     if (mainWindow) {
       mainWindow.webContents.send('download-progress', {
         step: 3,
@@ -812,7 +1571,7 @@ export async function extractQuickSource(appRoot: string): Promise<{ success: bo
         message: '源码包解压完成',
       })
     }
-    
+
     return { success: true }
   } catch (error) {
     const errorMsg = `源码包解压失败: ${error instanceof Error ? error.message : String(error)}`
@@ -840,10 +1599,10 @@ export async function updateQuickSource(appRoot: string, repoUrl?: string): Prom
         message: '正在更新到最新代码...',
       })
     }
-    
+
     // 使用现有的cloneBackend函数，它会自动判断是pull还是clone
     const result = await cloneBackend(appRoot, repoUrl)
-    
+
     if (result.success) {
       if (mainWindow) {
         mainWindow.webContents.send('download-progress', {
@@ -894,18 +1653,18 @@ async function copySourceFiles(sourceDir: string, targetDir: string) {
     'history',
     'config', // 跳过配置目录，保留用户配置
   ]
-  
+
   const items = fs.readdirSync(sourceDir)
-  
+
   for (const item of items) {
     if (skipFiles.includes(item)) {
       console.log(`跳过文件/目录: ${item}`)
       continue
     }
-    
+
     const sourcePath = path.join(sourceDir, item)
     const targetPath = path.join(targetDir, item)
-    
+
     if (fs.statSync(sourcePath).isDirectory()) {
       // 递归复制目录
       if (!fs.existsSync(targetPath)) {
@@ -922,11 +1681,11 @@ async function copySourceFiles(sourceDir: string, targetDir: string) {
 // 递归复制目录
 async function copyDirectoryRecursive(sourceDir: string, targetDir: string) {
   const items = fs.readdirSync(sourceDir)
-  
+
   for (const item of items) {
     const sourcePath = path.join(sourceDir, item)
     const targetPath = path.join(targetDir, item)
-    
+
     if (fs.statSync(sourcePath).isDirectory()) {
       if (!fs.existsSync(targetPath)) {
         fs.mkdirSync(targetPath, { recursive: true })
@@ -1046,18 +1805,10 @@ export async function cloneBackend(
         })
       }
 
-      // 1. 动态配置git仓库fetch范围（仅目标分支和默认分支）
-      const branchesToFetch =
-        targetBranch === DEFAULT_BRANCH ? [targetBranch] : [targetBranch, DEFAULT_BRANCH]
+      // 1. 优化配置：只拉取目标分支的最新 commit
+      console.log(`🔧 优化配置git仓库，只拉取目标分支: ${targetBranch}`)
 
-      console.log(`🔧 配置git仓库fetch范围: ${branchesToFetch.join(', ')}...`)
-
-      // 构建 fetch refspec
-      const refspecs = branchesToFetch.map(
-        branch => `+refs/heads/${branch}:refs/remotes/origin/${branch}`
-      )
-
-      // 先清理现有的fetch配置
+      // 清理现有的fetch配置
       await new Promise<void>((resolve) => {
         const proc = spawn(gitPath, ['config', '--unset-all', 'remote.origin.fetch'], {
           stdio: 'pipe',
@@ -1073,7 +1824,7 @@ export async function cloneBackend(
           } else {
             console.log(`⚠️ 清理现有fetch配置失败或无配置需要清理`)
           }
-          resolve() // 无论成功失败都继续
+          resolve()
         })
         proc.on('error', error => {
           console.log('⚠️ git config --unset-all 进程错误，但继续执行:', error)
@@ -1081,88 +1832,65 @@ export async function cloneBackend(
         })
       })
 
-      // 重新设置fetch配置
-      for (const refspec of refspecs) {
-        await new Promise<void>((resolve) => {
-          const proc = spawn(gitPath, ['config', '--add', 'remote.origin.fetch', refspec], {
-            stdio: 'pipe',
-            env: gitEnv,
-            cwd: repoPath,
-          })
-          proc.stdout?.on('data', d => console.log('git config --add stdout:', d.toString().trim()))
-          proc.stderr?.on('data', d => console.log('git config --add stderr:', d.toString().trim()))
-          proc.on('close', code => {
-            console.log(`git config --add 退出码: ${code}`)
-            if (code === 0) {
-              console.log(`✅ 添加fetch配置成功: ${refspec}`)
-            } else {
-              console.log(`⚠️ 添加fetch配置失败: ${refspec}`)
-            }
-            resolve()
-          })
-          proc.on('error', error => {
-            console.log('⚠️ git config --add 进程错误:', error)
-            resolve()
-          })
+      // 设置只拉取目标分支的配置
+      await configureShallowRepository(gitPath, gitEnv, repoPath, targetBranch)
+
+      // 2. 极致优化拉取：只获取目标分支的最新 commit（depth=1，无历史）
+      console.log(`📥 极致优化拉取目标分支最新 commit: ${targetBranch}`)
+
+      await new Promise<void>((resolve, reject) => {
+        const proc = spawn(gitPath, [
+          'fetch',
+          'origin',
+          targetBranch,
+          '--depth=1',           // 只拉取最新commit
+          '--no-tags',           // 不拉取标签
+          '--force',             // 强制更新
+          '--prune',             // 清理远程已删除的分支
+          '--prune-tags',        // 清理远程已删除的标签
+          '--update-shallow'     // 更新浅克隆
+        ], {
+          stdio: 'pipe',
+          env: gitEnv,
+          cwd: repoPath,
         })
-      }
 
-      // 2. 只获取指定分支的远程信息
-      console.log(`📥 获取指定分支的远程信息: ${branchesToFetch.join(', ')}...`)
-
-      // 逐个获取指定分支（关键操作，失败时抛出错误）
-      let fetchSuccessCount = 0
-      for (const branch of branchesToFetch) {
-        console.log(`📥 获取分支: ${branch}`)
-        await new Promise<void>((resolve, reject) => {
-          const proc = spawn(gitPath, ['fetch', 'origin', branch, '--force'], {
-            stdio: 'pipe',
-            env: gitEnv,
-            cwd: repoPath,
-          })
-
-          let errorOutput = ''
-          proc.stdout?.on('data', d =>
-            console.log(`git fetch ${branch} stdout:`, d.toString().trim())
-          )
-          proc.stderr?.on('data', d => {
-            const stderr = d.toString().trim()
-            console.log(`git fetch ${branch} stderr:`, stderr)
-            errorOutput += stderr
-          })
-
-          proc.on('close', code => {
-            console.log(`git fetch ${branch} 退出码: ${code}`)
-            if (code === 0) {
-              console.log(`✅ 成功获取分支: ${branch}`)
-              fetchSuccessCount++
-              resolve()
-            } else {
-              console.error(`❌ 获取分支 ${branch} 失败`)
-              const isNetworkError = errorOutput.includes('unable to access') ||
-                errorOutput.includes('Could not resolve host') ||
-                errorOutput.includes('Connection refused') ||
-                errorOutput.includes('network is unreachable')
-              if (isNetworkError) {
-                reject(new Error(`网络连接失败: 无法获取分支 ${branch}`))
-              } else {
-                reject(new Error(`获取分支 ${branch} 失败: ${errorOutput}`))
-              }
-            }
-          })
-
-          proc.on('error', error => {
-            console.error(`❌ git fetch ${branch} 进程错误:`, error)
-            reject(error)
-          })
+        let errorOutput = ''
+        proc.stdout?.on('data', d =>
+          console.log(`git fetch ${targetBranch} stdout:`, d.toString().trim())
+        )
+        proc.stderr?.on('data', d => {
+          const stderr = d.toString().trim()
+          console.log(`git fetch ${targetBranch} stderr:`, stderr)
+          errorOutput += stderr
         })
-      }
 
-      if (fetchSuccessCount === 0) {
-        throw new Error('所有分支获取都失败，可能是网络问题')
-      }
+        proc.on('close', code => {
+          console.log(`git fetch ${targetBranch} 退出码: ${code}`)
+          if (code === 0) {
+            console.log(`✅ 成功获取分支最新 commit: ${targetBranch}`)
+            resolve()
+          } else {
+            console.error(`❌ 获取分支 ${targetBranch} 失败`)
+            const isNetworkError = errorOutput.includes('unable to access') ||
+              errorOutput.includes('Could not resolve host') ||
+              errorOutput.includes('Connection refused') ||
+              errorOutput.includes('network is unreachable')
+            if (isNetworkError) {
+              reject(new Error(`网络连接失败: 无法获取分支 ${targetBranch}`))
+            } else {
+              reject(new Error(`获取分支 ${targetBranch} 失败: ${errorOutput}`))
+            }
+          }
+        })
 
-      console.log(`✅ 指定分支获取完成`)
+        proc.on('error', error => {
+          console.error(`❌ git fetch ${targetBranch} 进程错误:`, error)
+          reject(error)
+        })
+      })
+
+      console.log(`✅ 目标分支最新 commit 获取完成`)
 
       // 3. 强制切换到目标分支并设置远程跟踪
       console.log(`🔀 强制切换到目标分支: ${targetBranch}`)
@@ -1249,9 +1977,9 @@ export async function cloneBackend(
         })
       })
 
-      // 6. 清理本地老分支（保留当前分支和默认分支）
-      console.log('🧹 清理本地老分支...')
-      await cleanOldLocalBranches(gitPath, gitEnv, repoPath, targetBranch, DEFAULT_BRANCH)
+      // 6. 拉取后极致存储优化：删除其他分支和历史 commit
+      console.log('🧹 拉取后极致存储优化：删除其他分支和历史 commit...')
+      await optimizePostPullStorage(gitPath, gitEnv, repoPath, targetBranch)
 
       // 7. 复制指定文件和文件夹到根目录
       console.log('📋 复制文件到根目录...')
@@ -1290,8 +2018,8 @@ export async function cloneBackend(
         })
       }
 
-      console.log(`📥 开始克隆代码到仓库目录...`)
-      console.log(`克隆参数: --single-branch --branch ${targetBranch} (只克隆目标分支)`)
+      console.log(`📥 开始优化克隆代码到仓库目录...`)
+      console.log(`优化克隆参数: --single-branch --depth=1 --branch ${targetBranch} (只克隆目标分支最新 commit)`)
 
       await new Promise<void>((resolve, reject) => {
         const proc = spawn(
@@ -1301,8 +2029,10 @@ export async function cloneBackend(
             '--progress',
             '--verbose',
             '--single-branch',
-            '--depth',
-            '1',
+            '--depth=1',
+            '--shallow-submodules',
+            '--no-tags',
+            '--filter=blob:none',  // 只拉取树对象，不拉取blob对象（进一步减少存储）
             '--branch',
             targetBranch,
             repoUrl,
@@ -1326,10 +2056,10 @@ export async function cloneBackend(
         proc.on('close', code => {
           console.log(`git clone 退出码: ${code}`)
           if (code === 0) {
-            console.log('✅ 代码克隆成功')
+            console.log('✅ 优化克隆成功：只包含最新 commit，无历史记录')
             resolve()
           } else {
-            console.error('❌ 代码克隆失败')
+            console.error('❌ 优化克隆失败')
             const isNetworkError = errorOutput.includes('unable to access') ||
               errorOutput.includes('Could not resolve host') ||
               errorOutput.includes('Connection refused') ||
@@ -1348,72 +2078,15 @@ export async function cloneBackend(
         })
       })
 
-      // 克隆后配置额外分支获取（如果需要）
-      if (targetBranch !== DEFAULT_BRANCH) {
-        console.log(`🔧 添加默认分支 ${DEFAULT_BRANCH} 的fetch配置...`)
-        await new Promise<void>(resolve => {
-          const proc = spawn(
-            gitPath,
-            [
-              'config',
-              '--add',
-              'remote.origin.fetch',
-              `+refs/heads/${DEFAULT_BRANCH}:refs/remotes/origin/${DEFAULT_BRANCH}`,
-            ],
-            {
-              stdio: 'pipe',
-              env: gitEnv,
-              cwd: repoPath,
-            }
-          )
-          proc.on('close', code => {
-            console.log(`添加默认分支配置退出码: ${code}`)
-            if (code === 0) {
-              console.log(`✅ 成功添加默认分支 ${DEFAULT_BRANCH} 的fetch配置`)
-            } else {
-              console.log(`⚠️ 添加默认分支配置失败`)
-            }
-            resolve()
-          })
-          proc.on('error', error => {
-            console.log('⚠️ 添加默认分支配置错误:', error)
-            resolve()
-          })
-        })
+      // 克隆后进一步优化：确保只保留目标分支
+      console.log(`🔧 克隆后优化：确保只保留目标分支 ${targetBranch}`)
 
-        // 获取默认分支（非关键操作，失败不影响主流程）
-        console.log(`📥 获取默认分支 ${DEFAULT_BRANCH}...`)
-        await new Promise<void>(resolve => {
-          const proc = spawn(gitPath, ['fetch', 'origin', DEFAULT_BRANCH], {
-            stdio: 'pipe',
-            env: gitEnv,
-            cwd: repoPath,
-          })
-          proc.stdout?.on('data', d =>
-            console.log(`fetch ${DEFAULT_BRANCH} stdout:`, d.toString().trim())
-          )
-          proc.stderr?.on('data', d =>
-            console.log(`fetch ${DEFAULT_BRANCH} stderr:`, d.toString().trim())
-          )
-          proc.on('close', code => {
-            console.log(`fetch ${DEFAULT_BRANCH} 退出码: ${code}`)
-            if (code === 0) {
-              console.log(`✅ 成功获取默认分支 ${DEFAULT_BRANCH}`)
-            } else {
-              console.log(`⚠️ 获取默认分支 ${DEFAULT_BRANCH} 失败，但不影响主流程`)
-            }
-            resolve()
-          })
-          proc.on('error', error => {
-            console.log(`⚠️ fetch ${DEFAULT_BRANCH} 错误:`, error)
-            resolve()
-          })
-        })
-      }
+      // 配置浅克隆仓库
+      await configureShallowRepository(gitPath, gitEnv, repoPath, targetBranch)
 
-      // 2. 清理本地老分支（保留当前分支和默认分支）
-      console.log('🧹 清理本地老分支...')
-      await cleanOldLocalBranches(gitPath, gitEnv, repoPath, targetBranch, DEFAULT_BRANCH)
+      // 2. 克隆后极致存储优化：删除其他分支和历史 commit
+      console.log('🧹 克隆后极致存储优化：删除其他分支和历史 commit...')
+      await optimizePostPullStorage(gitPath, gitEnv, repoPath, targetBranch)
 
       // 3. 强制复制指定文件和文件夹到根目录
       console.log('📋 强制复制文件到根目录...')
