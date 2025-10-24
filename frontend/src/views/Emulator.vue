@@ -42,9 +42,9 @@ const emulatorTypeOptions = [
   { value: 'general', label: '通用模拟器' },
   { value: 'mumu', label: 'MuMu模拟器' },
   { value: 'ldplayer', label: '雷电模拟器' },
-  { value: 'nox', label: '夜神模拟器' },
-  { value: 'memu', label: '逍遥模拟器' },
-  { value: 'blueStacks', label: 'BlueStacks' },
+  // { value: 'nox', label: '夜神模拟器' },
+  // { value: 'memu', label: '逍遥模拟器' },
+  // { value: 'blueStacks', label: 'BlueStacks' },
 ]
 
 // 数据状态
