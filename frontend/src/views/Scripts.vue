@@ -29,14 +29,16 @@
     <div class="header-left">
       <h1 class="page-title">脚本管理</h1>
     </div>
-    <a-space size="middle">
-      <a-button type="primary" size="large" class="link" @click="handleAddScript">
-        <template #icon>
-          <PlusOutlined />
-        </template>
-        新建脚本
-      </a-button>
-    </a-space>
+    <div class="header-actions">
+      <a-space size="middle">
+        <a-button type="primary" size="large" class="link" @click="handleAddScript">
+          <template #icon>
+            <PlusOutlined />
+          </template>
+          新建脚本
+        </a-button>
+      </a-space>
+    </div>
   </div>
 
   <!-- 空状态 -->
@@ -793,16 +795,48 @@ const handleToggleUserStatus = async (user: User) => {
 
 .scripts-header {
   display: flex;
-  align-items: center;
   justify-content: space-between;
+  align-items: flex-end;
   margin-bottom: 24px;
+  padding: 0 4px;
+}
+
+.header-left {
+  flex: 1;
+  min-width: 0;
+}
+
+.header-actions {
+  flex-shrink: 0;
+  margin-left: 16px;
+}
+
+@media (max-width: 768px) {
+  .page-title {
+    font-size: 24px;
+  }
+
+  .scripts-header {
+    padding: 0 2px;
+  }
+
+  .header-actions {
+    margin-left: 8px;
+  }
 }
 
 .page-title {
-  font-size: 24px;
-  font-weight: 500;
-  margin: 0;
+  margin: 0 0 8px 0;
+  font-size: 32px;
+  font-weight: 700;
   color: var(--ant-color-text);
+  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .type-select-modal,
