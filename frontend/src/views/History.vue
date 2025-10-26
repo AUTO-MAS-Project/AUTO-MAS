@@ -310,7 +310,7 @@
                         </template>
                       </a-button>
                     </a-tooltip>
-                    <a-tooltip :get-popup-container="tooltipContainer">
+                    <a-tooltip title="字体大小" :get-popup-container="tooltipContainer">
                       <a-select
                         v-model:value="logFontSize"
                         size="small"
@@ -319,15 +319,32 @@
                         :options="logFontSizeOptions.map(v => ({ value: v, label: v + 'px' }))"
                       />
                     </a-tooltip>
+                    <a-tooltip title="搜索快捷键: Ctrl+F" :get-popup-container="tooltipContainer">
+                      <a-button
+                        size="small"
+                        type="text"
+                        :class="{ 'no-hover-shift': true }"
+                        :style="buttonFixedStyle"
+                      >
+                        <template #icon>
+                          <SearchOutlined />
+                        </template>
+                      </a-button>
+                    </a-tooltip>
                   </a-space>
                 </template>
                 <a-spin :spinning="detailLoading">
                   <div
                     v-if="currentDetail?.log_content"
                     class="log-content"
-                    :style="{ fontSize: logFontSize + 'px' }"
                   >
-                    <pre>{{ currentDetail.log_content }}</pre>
+                    <vue-monaco-editor
+                      v-model:value="currentDetail.log_content"
+                      :theme="logLanguage === 'logfile' ? (isDark ? 'log-dark' : 'log-light') : (isDark ? 'vs-dark' : 'vs')"
+                      :options="monacoOptions"
+                      height="100%"
+                      :language="logLanguage"
+                    />
                   </div>
                   <div v-else class="no-log">
                     <a-empty
@@ -364,12 +381,18 @@ import { Service } from '@/api/services/Service'
 import { HistorySearchIn, type HistoryData } from '@/api' // 调整：枚举需要值导入
 import dayjs from 'dayjs'
 import NodataImage from '@/assets/NoData.png'
+import { VueMonacoEditor } from '@guolao/vue-monaco-editor'
+import { useTheme } from '@/composables/useTheme'
+import * as monaco from 'monaco-editor'
 
 // 响应式数据
 const searchLoading = ref(false)
 const detailLoading = ref(false)
 const activeKeys = ref<string[]>([])
 const currentPreset = ref('week') // 当前选中的快捷选项
+
+// 主题相关
+const { isDark } = useTheme()
 
 // 选中的用户相关数据
 const selectedUser = ref('')
@@ -471,6 +494,8 @@ const currentStatistics = computed(() => {
 
 // 页面加载时自动搜索
 onMounted(() => {
+  // 注册自定义日志语言
+  registerLogLanguage()
   handleSearch()
 })
 
@@ -647,6 +672,142 @@ const handleOpenLogDirectory = async () => {
 // 日志字体大小（恢复）
 const logFontSize = ref(14)
 const logFontSizeOptions = [12, 13, 14, 16, 18, 20]
+
+// 语言注册状态
+let isLanguageRegistered = false
+
+// 注册自定义日志语言
+const registerLogLanguage = () => {
+  if (isLanguageRegistered) return
+  
+  try {
+    // 注册日志语言
+    monaco.languages.register({ id: 'logfile' })
+
+    // 定义语法高亮规则
+    monaco.languages.setMonarchTokensProvider('logfile', {
+      tokenizer: {
+        root: [
+          // 时间戳 (各种格式)
+          [/\d{4}-\d{2}-\d{2}[\sT]\d{2}:\d{2}:\d{2}(\.\d{3})?/, 'timestamp'],
+          [/\d{2}:\d{2}:\d{2}(\.\d{3})?/, 'timestamp'],
+          [/\[\d{4}-\d{2}-\d{2}[\sT]\d{2}:\d{2}:\d{2}(\.\d{3})?\]/, 'timestamp'],
+          
+          // 日志级别
+          [/\b(ERROR|FATAL|CRITICAL)\b/i, 'log-error'],
+          [/\b(WARN|WARNING)\b/i, 'log-warning'],
+          [/\b(INFO|INFORMATION)\b/i, 'log-info'],
+          [/\b(DEBUG|TRACE|VERBOSE)\b/i, 'log-debug'],
+          
+          // 括号内的内容 (通常是模块名或线程名)
+          [/\[[^\]]+\]/, 'log-module'],
+          [/\([^)]+\)/, 'log-module'],
+          
+          // IP 地址
+          [/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/, 'log-ip'],
+          
+          // URL
+          [/https?:\/\/[^\s]+/, 'log-url'],
+          
+          // 文件路径
+          [/[A-Za-z]:[\\\/][^\s]+/, 'log-path'],
+          [/\/[^\s]*\.[a-zA-Z0-9]+/, 'log-path'],
+          
+          // 数字
+          [/\b\d+\b/, 'log-number'],
+          
+          // 异常和错误关键词
+          [/\b(Exception|Error|Failed|Failure|Timeout|Abort)\b/i, 'log-error-keyword'],
+          
+          // 成功关键词
+          [/\b(Success|Complete|Completed|OK|Done|Finished)\b/i, 'log-success'],
+        ]
+      }
+    })
+
+    // 定义主题颜色
+    monaco.editor.defineTheme('log-light', {
+      base: 'vs',
+      inherit: true,
+      rules: [
+        { token: 'timestamp', foreground: '0066cc', fontStyle: 'bold' },
+        { token: 'log-error', foreground: 'ff0000', fontStyle: 'bold' },
+        { token: 'log-warning', foreground: 'ff8800', fontStyle: 'bold' },
+        { token: 'log-info', foreground: '0088cc', fontStyle: 'bold' },
+        { token: 'log-debug', foreground: '888888' },
+        { token: 'log-module', foreground: '8800cc' },
+        { token: 'log-ip', foreground: '00aa00' },
+        { token: 'log-url', foreground: '0066cc', textDecoration: 'underline' },
+        { token: 'log-path', foreground: '666666' },
+        { token: 'log-number', foreground: '0066cc' },
+        { token: 'log-error-keyword', foreground: 'cc0000' },
+        { token: 'log-success', foreground: '00aa00' },
+      ],
+      colors: {}
+    })
+
+    monaco.editor.defineTheme('log-dark', {
+      base: 'vs-dark',
+      inherit: true,
+      rules: [
+        { token: 'timestamp', foreground: '4fc3f7', fontStyle: 'bold' },
+        { token: 'log-error', foreground: 'f44336', fontStyle: 'bold' },
+        { token: 'log-warning', foreground: 'ff9800', fontStyle: 'bold' },
+        { token: 'log-info', foreground: '2196f3', fontStyle: 'bold' },
+        { token: 'log-debug', foreground: '9e9e9e' },
+        { token: 'log-module', foreground: '9c27b0' },
+        { token: 'log-ip', foreground: '4caf50' },
+        { token: 'log-url', foreground: '03dac6', textDecoration: 'underline' },
+        { token: 'log-path', foreground: 'bdbdbd' },
+        { token: 'log-number', foreground: '64b5f6' },
+        { token: 'log-error-keyword', foreground: 'ef5350' },
+        { token: 'log-success', foreground: '66bb6a' },
+      ],
+      colors: {}
+    })
+
+    isLanguageRegistered = true
+    console.log('Log language registered successfully')
+  } catch (error) {
+    console.error('Failed to register log language:', error)
+  }
+}
+
+// 智能检测日志语言
+const logLanguage = computed(() => {
+  if (!currentDetail.value?.log_content) return 'logfile'
+  
+  const content = currentDetail.value.log_content
+  
+  // 检测其他特殊格式
+  if (content.includes('<?xml') || content.includes('<html')) return 'xml'
+  if (content.includes('{') && content.includes('}') && content.includes('"')) return 'json'
+  if (content.includes('#!/bin/bash') || content.includes('#!/bin/sh')) return 'shell'
+  
+  // 默认使用日志语言，因为大部分内容都是日志
+  return 'logfile'
+})
+
+// Monaco Editor 配置
+const monacoOptions = computed(() => ({
+  readOnly: true,
+  fontSize: logFontSize.value,
+  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace',
+  lineHeight: 1.5,
+  wordWrap: 'on',
+  scrollBeyondLastLine: false,
+  minimap: { enabled: false },
+  scrollbar: {
+    vertical: 'auto',
+    horizontal: 'auto',
+    verticalScrollbarSize: 8,
+    horizontalScrollbarSize: 8,
+  },
+  find: {
+    addExtraSpaceOnTop: false,
+  },
+  automaticLayout: true,
+}))
 
 // Tooltip 容器：避免挂载到 body 造成全局滚动条闪烁与布局抖动
 const tooltipContainer = (triggerNode: HTMLElement) => triggerNode?.parentElement || document.body
@@ -954,6 +1115,7 @@ const buttonFixedStyle = { width: '28px', height: '28px', padding: 0 }
   flex-direction: column;
   border: 1px solid var(--ant-color-border);
   border-radius: 8px;
+  height: 600px;
 }
 
 .log-card :deep(.ant-card-body) {
@@ -961,30 +1123,28 @@ const buttonFixedStyle = { width: '28px', height: '28px', padding: 0 }
   display: flex;
   flex-direction: column;
   padding: 12px;
+  height: calc(100% - 60px);
 }
 
 .log-content {
   flex: 1;
-  max-height: 500px;
-  overflow-y: auto;
-  /* 新增: 防止超长无空格字符串把容器撑宽 */
-  overflow-x: auto; /* 横向单独滚动，而不是撑出布局 */
-  word-break: break-all;
-  overflow-wrap: anywhere;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
-  line-height: 1.5;
+  height: 500px;
+  min-height: 500px;
+  overflow: hidden;
+  border-radius: 6px;
+  border: 1px solid var(--ant-color-border-secondary);
 }
 
-.log-content pre {
-  margin: 0;
-  white-space: pre-wrap;
-  word-wrap: break-word;
-  word-break: break-all;
-  overflow-wrap: anywhere;
-  max-width: 100%;
-  height: 100%;
-  font-size: inherit;
-  line-height: inherit;
+.log-content :deep(.monaco-editor) {
+  border-radius: 6px;
+}
+
+.log-content :deep(.monaco-editor .margin) {
+  background-color: transparent;
+}
+
+.log-content :deep(.monaco-editor .monaco-editor-background) {
+  background-color: var(--ant-color-bg-container);
 }
 
 /* 恢复字体选择器样式 */
