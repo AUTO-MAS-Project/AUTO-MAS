@@ -90,6 +90,7 @@
     "form-data": "^4.0.4",
     "markdown-it": "^14.1.0",
     "pinia": "^3.0.3",
+    "tdesign-icons-vue-next": "^0.2.5",
     "tdesign-vue-next": "^1.17.1",
     "vue": "^3.5.17",
     "vue-router": "4",
