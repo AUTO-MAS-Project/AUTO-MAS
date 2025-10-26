@@ -444,7 +444,7 @@ class AutoProxyTask(TaskExecuteBase):
             plan_data = {
                 "MedicineNumb": plan.get_current_info("MedicineNumb").getValue(),
                 "SeriesNumb": plan.get_current_info("SeriesNumb").getValue(),
-                "Stage": plan.get_current_info("Ssstage").getValue(),
+                "Stage": plan.get_current_info("Stage").getValue(),
                 "Stage_1": plan.get_current_info("Stage_1").getValue(),
                 "Stage_2": plan.get_current_info("Stage_2").getValue(),
                 "Stage_3": plan.get_current_info("Stage_3").getValue(),
