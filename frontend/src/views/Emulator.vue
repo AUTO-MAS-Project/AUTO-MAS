@@ -1,18 +1,19 @@
-<!-- eslint-disable -->
+<!-- eslint-disable vue/multi-word-component-names -->
 <script setup lang="ts">
 // 挂载和卸载键盘监听
-import { onMounted, onUnmounted, ref, watch } from 'vue'
+import { h, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useDebounceFn, useEventListener } from '@vueuse/core'
 import { useRoute } from 'vue-router'
-import { MessagePlugin } from 'tdesign-vue-next'
+import { message } from 'ant-design-vue'
 import {
-  AddIcon,
-  SearchIcon,
-  DeleteIcon,
-  HelpCircleIcon,
-  PlayCircleIcon,
-  StopCircleIcon,
-} from 'tdesign-icons-vue-next'
+  DeleteOutlined,
+  FolderOpenOutlined,
+  PlayCircleOutlined,
+  PlusOutlined,
+  QuestionCircleOutlined,
+  SearchOutlined,
+  StopOutlined,
+} from '@ant-design/icons-vue'
 import type { EmulatorConfigIndexItem, EmulatorSearchResult } from '@/api'
 import { Service } from '@/api'
 
@@ -72,7 +73,7 @@ const startingDevices = ref<Set<string>>(new Set())
 const stoppingDevices = ref<Set<string>>(new Set())
 
 // 轮询相关状态
-const pollingTimer = ref<number | null>(null)
+const pollingTimer = ref<NodeJS.Timeout | null>(null)
 const POLLING_INTERVAL = 5000 // 5秒轮询一次
 
 // 路由监听
@@ -107,16 +108,16 @@ const pollDevicesStatus = async () => {
 // 启动轮询
 const startPolling = () => {
   if (pollingTimer.value) {
-    window.clearInterval(pollingTimer.value)
+    clearInterval(pollingTimer.value)
   }
-  pollingTimer.value = window.setInterval(pollDevicesStatus, POLLING_INTERVAL)
+  pollingTimer.value = setInterval(pollDevicesStatus, POLLING_INTERVAL)
   console.log('模拟器页面轮询已启动')
 }
 
 // 停止轮询
 const stopPolling = () => {
   if (pollingTimer.value) {
-    window.clearInterval(pollingTimer.value)
+    clearInterval(pollingTimer.value)
     pollingTimer.value = null
     console.log('模拟器页面轮询已停止')
   }
@@ -250,11 +251,11 @@ const loadEmulators = async () => {
         }
       })
     } else {
-  MessagePlugin.error(response.message || '加载模拟器配置失败')
+      message.error(response.message || '加载模拟器配置失败')
     }
   } catch (e) {
     console.error('加载模拟器配置失败', e)
-  MessagePlugin.error('加载模拟器配置失败')
+    message.error('加载模拟器配置失败')
   } finally {
     loading.value = false
   }
@@ -265,18 +266,18 @@ const handleAdd = async () => {
   try {
     const response = await Service.addEmulatorApiEmulatorAddPost()
     if (response.code === 200) {
-  MessagePlugin.success('添加成功')
+      message.success('添加成功')
       await loadEmulators()
       // 自动切换到新模拟器
       activeKey.value = response.emulatorId
       saveActiveKey(activeKey.value)
       await loadDevices(response.emulatorId)
     } else {
-  MessagePlugin.error(response.message || '添加失败')
+      message.error(response.message || '添加失败')
     }
   } catch (e) {
     console.error('添加模拟器失败', e)
-  MessagePlugin.error('添加模拟器失败')
+    message.error('添加模拟器失败')
   }
 }
 
@@ -284,7 +285,7 @@ const handleAdd = async () => {
 const handleSave = async (uuid: string, silent = false, skipReload = false) => {
   const editData = editingDataMap.value.get(uuid)
   if (!editData) {
-  if (!silent) MessagePlugin.error('未找到编辑数据')
+    if (!silent) message.error('未找到编辑数据')
     return
   }
 
@@ -312,7 +313,7 @@ const handleSave = async (uuid: string, silent = false, skipReload = false) => {
       data: configData,
     })
     if (response.code === 200) {
-  if (!silent) MessagePlugin.success('保存成功')
+      if (!silent) message.success('保存成功')
 
       // 保存成功后重新从后端获取最新配置（除非明确跳过）
       if (!skipReload) {
@@ -320,15 +321,15 @@ const handleSave = async (uuid: string, silent = false, skipReload = false) => {
         // 加载完成后，读取该项最新路径，与保存前输入对比，若已被后端纠正则提示一次
         const newPath = (emulatorData.value[uuid]?.Info?.Path as string) || ''
         if (!silent && originalInputPath && newPath && originalInputPath !== newPath) {
-          MessagePlugin.info(`路径已自动调整: ${originalInputPath} -> ${newPath}`)
+          message.info(`路径已自动调整: ${originalInputPath} -> ${newPath}`)
         }
       }
     } else {
-  if (!silent) MessagePlugin.error(response.message || '保存失败')
+      if (!silent) message.error(response.message || '保存失败')
     }
   } catch (e) {
-  console.error('保存模拟器配置失败', e)
-  if (!silent) MessagePlugin.error('保存模拟器配置失败')
+    console.error('保存模拟器配置失败', e)
+    if (!silent) message.error('保存模拟器配置失败')
   } finally {
     savingMap.value.set(uuid, false)
   }
@@ -341,7 +342,7 @@ const handleDelete = async (uuid: string) => {
       emulatorId: uuid,
     })
     if (response.code === 200) {
-  MessagePlugin.success('删除成功')
+      message.success('删除成功')
 
       // 如果删除的是当前激活的 Tab，需要跳转到其他 Tab
       if (activeKey.value === uuid) {
@@ -360,11 +361,11 @@ const handleDelete = async (uuid: string) => {
 
       await loadEmulators()
     } else {
-  MessagePlugin.error(response.message || '删除失败')
+      message.error(response.message || '删除失败')
     }
   } catch (e) {
-  console.error('删除模拟器失败', e)
-  MessagePlugin.error('删除模拟器失败')
+    console.error('删除模拟器失败', e)
+    message.error('删除模拟器失败')
   }
 }
 
@@ -372,21 +373,21 @@ const handleDelete = async (uuid: string) => {
 const handleSearch = async () => {
   searching.value = true
   try {
-  const response = await Service.searchEmulatorsApiEmulatorEmulatorSearchPost()
+    const response = await Service.searchEmulatorsApiEmulatorEmulatorSearchPost()
     if (response.code === 200) {
       searchResults.value = response.emulators || []
       if (searchResults.value.length > 0) {
         showSearchModal.value = true
-        MessagePlugin.success(`找到 ${searchResults.value.length} 个模拟器`)
+        message.success(`找到 ${searchResults.value.length} 个模拟器`)
       } else {
-        MessagePlugin.info('未找到已安装的模拟器')
+        message.info('未找到已安装的模拟器')
       }
     } else {
-      MessagePlugin.error(response.message || '搜索失败')
+      message.error(response.message || '搜索失败')
     }
   } catch (e) {
     console.error('搜索模拟器失败', e)
-    MessagePlugin.error('搜索模拟器失败')
+    message.error('搜索模拟器失败')
   } finally {
     searching.value = false
   }
@@ -413,18 +414,18 @@ const handleImportFromSearch = async (result: EmulatorSearchResult) => {
         },
       })
       if (updateResponse.code === 200) {
-  MessagePlugin.success('导入成功')
+        message.success('导入成功')
         await loadEmulators()
         showSearchModal.value = false
       } else {
-        MessagePlugin.error(updateResponse.message || '导入失败')
+        message.error(updateResponse.message || '导入失败')
       }
     } else {
-      MessagePlugin.error(response.message || '导入失败')
+      message.error(response.message || '导入失败')
     }
   } catch (e) {
     console.error('导入模拟器失败', e)
-  MessagePlugin.error('导入模拟器失败')
+    message.error('导入模拟器失败')
   }
 }
 
@@ -450,11 +451,11 @@ const loadDevices = async (uuid: string) => {
       const currentDevices = allDevicesData[uuid] || {}
       devicesData.value[uuid] = currentDevices
     } else {
-      MessagePlugin.error(response.message || '获取设备信息失败')
+      message.error(response.message || '获取设备信息失败')
     }
   } catch (e) {
     console.error('获取设备信息失败', e)
-    MessagePlugin.error('获取设备信息失败')
+    message.error('获取设备信息失败')
   } finally {
     loadingDevices.value.delete(uuid)
     loadingDevices.value = new Set(loadingDevices.value)
@@ -477,15 +478,15 @@ const startEmulator = async (uuid: string, index: string) => {
     })
 
     if (response.code === 200) {
-      MessagePlugin.success(response.message || `模拟器 ${index} 启动成功`)
+      message.success(response.message || `模拟器 ${index} 启动成功`)
       // 刷新设备状态
       await loadDevices(uuid)
     } else {
-      MessagePlugin.error(response.message || '启动失败')
+      message.error(response.message || '启动失败')
     }
   } catch (e) {
     console.error('启动模拟器失败', e)
-    MessagePlugin.error('启动模拟器失败')
+    message.error('启动模拟器失败')
   } finally {
     startingDevices.value.delete(deviceKey)
     startingDevices.value = new Set(startingDevices.value)
@@ -506,15 +507,15 @@ const stopEmulator = async (uuid: string, index: string) => {
     })
 
     if (response.code === 200) {
-      MessagePlugin.success(response.message || `模拟器 ${index} 已关闭`)
+      message.success(response.message || `模拟器 ${index} 已关闭`)
       // 刷新设备状态
       await loadDevices(uuid)
     } else {
-      MessagePlugin.error(response.message || '关闭失败')
+      message.error(response.message || '关闭失败')
     }
   } catch (e) {
     console.error('关闭模拟器失败', e)
-    MessagePlugin.error('关闭模拟器失败')
+    message.error('关闭模拟器失败')
   } finally {
     stoppingDevices.value.delete(deviceKey)
     stoppingDevices.value = new Set(stoppingDevices.value)
@@ -525,7 +526,7 @@ const stopEmulator = async (uuid: string, index: string) => {
 const selectEmulatorPath = async (uuid: string) => {
   try {
     if (!window.electronAPI) {
-      MessagePlugin.error('文件选择功能不可用,请在 Electron 环境中运行')
+      message.error('文件选择功能不可用,请在 Electron 环境中运行')
       return
     }
 
@@ -539,13 +540,13 @@ const selectEmulatorPath = async (uuid: string) => {
 
     if (paths && paths.length > 0) {
       editData.path = paths[0]
-      MessagePlugin.success('模拟器路径选择成功')
+      message.success('模拟器路径选择成功')
       // 立刻保存并从后端获取被纠正后的路径
       await handleSave(uuid, false /* silent */)
     }
   } catch (error) {
     console.error('选择模拟器路径失败:', error)
-    MessagePlugin.error('选择文件失败')
+    message.error('选择文件失败')
   }
 }
 
@@ -554,7 +555,7 @@ const startRecordBossKey = (uuid: string) => {
   recordingBossKeyMap.value.set(uuid, true)
   recordedKeysMap.value.set(uuid, new Set())
   bossKeyInputMap.value[uuid] = ''
-  MessagePlugin.info('请按下快捷键组合...')
+  message.info('请按下快捷键组合...')
 }
 
 // 停止录制老板键
@@ -617,7 +618,7 @@ const handleKeyUp = (event: KeyboardEvent) => {
       editData.boss_keys = [keyCombo]
       // 同时更新输入框显示
       bossKeyInputMap.value[recordingUuid] = keyCombo
-  MessagePlugin.success(`老板键已设置为: ${keyCombo}`)
+      message.success(`老板键已设置为: ${keyCombo}`)
       autoSave(recordingUuid)
     }
     recordingBossKeyMap.value.delete(recordingUuid)
@@ -725,7 +726,7 @@ const handleSetBossKey = (uuid: string) => {
     if (editData) {
       // 设置为唯一的老板键（替换而不是追加）
       editData.boss_keys = [bossKeyInput.trim()]
-      MessagePlugin.success(`老板键已设置为: ${bossKeyInput.trim()}`)
+      message.success(`老板键已设置为: ${bossKeyInput.trim()}`)
       autoSave(uuid)
       // 不清空输入框，保持显示
       // bossKeyInputMap.value[uuid] = ''
@@ -749,38 +750,36 @@ const handleBossKeyInputChange = (uuid: string) => {
 </script>
 
 <template>
-  <!-- eslint-disable -->
   <div class="emulator-page">
     <div class="page-header">
       <h1>模拟器管理</h1>
     </div>
 
     <div class="page-content">
-      <t-loading :loading="loading">
+      <a-spin :spinning="loading">
         <!-- 空状态：无模拟器时居中显示大按钮 -->
         <div v-if="emulatorIndex.length === 0" class="empty-state-large">
-          <t-empty />
-          <t-space :size="16">
-            <t-button theme="primary" size="large" :loading="searching" @click="handleSearch">
-              <template #icon>
-                <SearchIcon />
-              </template>
+          <a-empty />
+          <a-space direction="horizontal" :size="16">
+            <a-button type="primary" size="large" :icon="h(SearchOutlined)" :loading="searching" @click="handleSearch">
               自动搜索模拟器
-            </t-button>
-            <t-button size="large" @click="handleAddWithSwitch">
-              <template #icon>
-                <AddIcon />
-              </template>
+            </a-button>
+            <a-button size="large" :icon="h(PlusOutlined)" @click="handleAddWithSwitch">
               手动添加模拟器
-            </t-button>
-          </t-space>
+            </a-button>
+          </a-space>
         </div>
 
         <!-- Tab 模式：有模拟器时显示 Tabs -->
-        <t-tabs v-else v-model:value="activeKey" theme="card" class="emulator-tabs" @change="onTabChange">
+        <a-tabs v-else v-model:active-key="activeKey" type="editable-card" hide-add class="emulator-tabs"
+          @change="onTabChange">
           <!-- 每个模拟器一个 Tab -->
-          <t-tab-panel v-for="element in emulatorIndex" :key="element.uid" :value="element.uid"
-            :label="emulatorData[element.uid]?.Info?.Name || '未命名'">
+          <a-tab-pane v-for="element in emulatorIndex" :key="element.uid" :closable="false">
+            <template #tab>
+              <span class="tab-title">
+                {{ emulatorData[element.uid]?.Info?.Name || '未命名' }}
+              </span>
+            </template>
 
             <!-- Tab 内容：配置 + 设备列表 -->
             <div class="tab-content">
@@ -789,88 +788,84 @@ const handleBossKeyInputChange = (uuid: string) => {
                 <div class="section-header">
                   <h3>模拟器配置</h3>
                   <div class="section-actions">
-                    <t-loading v-if="savingMap.get(element.uid)" size="small" :loading="true" />
-                    <t-popconfirm theme="danger" content="确定要删除此模拟器配置吗？" @confirm="handleDelete(element.uid)">
-                      <t-button variant="text" theme="danger" size="small">
-                        <template #icon>
-                          <DeleteIcon />
-                        </template>
+                    <a-spin v-if="savingMap.get(element.uid)" size="small" />
+                    <a-popconfirm title="确定要删除此模拟器配置吗？" ok-text="确定" cancel-text="取消"
+                      @confirm="handleDelete(element.uid)">
+                      <a-button type="link" danger size="small" :icon="h(DeleteOutlined)">
                         删除
-                      </t-button>
-                    </t-popconfirm>
+                      </a-button>
+                    </a-popconfirm>
                   </div>
                 </div>
 
                 <!-- 直接可编辑的配置表单（无边框） -->
                 <div class="config-form">
-                  <t-descriptions :column="2" bordered size="small">
-                    <t-descriptions-item label="模拟器名称">
-                      <t-input v-model="getEditingData(element.uid).name" placeholder="输入模拟器名称" size="small"
-                        :borderless="true"
-                        @input="syncNameToDisplay(element.uid, getEditingData(element.uid).name)"
+                  <a-descriptions :column="2" bordered size="small">
+                    <a-descriptions-item label="模拟器名称">
+                      <a-input v-model:value="getEditingData(element.uid).name" placeholder="输入模拟器名称" size="small"
+                        :bordered="false" @input="syncNameToDisplay(element.uid, getEditingData(element.uid).name)"
                         @change="autoSave(element.uid)" />
-                    </t-descriptions-item>
-                    <t-descriptions-item>
+                    </a-descriptions-item>
+                    <a-descriptions-item>
                       <template #label>
                         <span>模拟器类型</span>
-                        <t-tooltip content="如: MuMu12, BlueStacks, LDPlayer等">
-                          <HelpCircleIcon style="margin-left: 4px" />
-                        </t-tooltip>
+                        <a-tooltip title="如: MuMu12, BlueStacks, LDPlayer等">
+                          <QuestionCircleOutlined style="margin-left: 4px" />
+                        </a-tooltip>
                       </template>
-                      <t-select v-model="getEditingData(element.uid).type" placeholder="选择模拟器类型"
-                        :options="emulatorTypeOptions" size="small" :borderless="true" style="width: 100%"
+                      <a-select v-model:value="getEditingData(element.uid).type" placeholder="选择模拟器类型"
+                        :options="emulatorTypeOptions" size="small" :bordered="false" style="width: 100%"
                         @change="autoSave(element.uid)" />
-                    </t-descriptions-item>
-                    <t-descriptions-item label="模拟器路径" :span="2">
-                      <t-input v-model="getEditingData(element.uid).path" placeholder="输入或选择模拟器路径" size="small"
-                        :borderless="true" @change="saveImmediately(element.uid)" @enter="saveImmediately(element.uid)">
+                    </a-descriptions-item>
+                    <a-descriptions-item label="模拟器路径" :span="2">
+                      <a-input v-model:value="getEditingData(element.uid).path" placeholder="输入或选择模拟器路径" size="small"
+                        :bordered="false" @change="saveImmediately(element.uid)"
+                        @press-enter="saveImmediately(element.uid)">
                         <template #suffix>
-                          <t-button size="small" variant="text" @click="selectEmulatorPath(element.uid)">选择</t-button>
+                          <FolderOpenOutlined style="cursor: pointer; color: #1890ff"
+                            @click="selectEmulatorPath(element.uid)" />
                         </template>
-                      </t-input>
-                    </t-descriptions-item>
-                    <t-descriptions-item>
+                      </a-input>
+                    </a-descriptions-item>
+                    <a-descriptions-item>
                       <template #label>
                         <span>最大等待时间</span>
-                        <t-tooltip content="启动模拟器后的最大等待时间">
-                          <HelpCircleIcon style="margin-left: 4px" />
-                        </t-tooltip>
+                        <a-tooltip title="启动模拟器后的最大等待时间">
+                          <QuestionCircleOutlined style="margin-left: 4px" />
+                        </a-tooltip>
                       </template>
-                      <t-input-number v-model="getEditingData(element.uid).max_wait_time" placeholder="输入最大等待时间"
-                        size="small" :borderless="true" style="width: 100%" :min="10" :max="300" :step="5">
-                        <template #suffix>秒</template>
-                      </t-input-number>
-                    </t-descriptions-item>
-                    <t-descriptions-item>
+                      <a-input-number v-model:value="getEditingData(element.uid).max_wait_time" placeholder="输入最大等待时间"
+                        size="small" :bordered="false" style="width: 100%" :min="10" :max="300" :step="5" suffix="秒"
+                        @change="autoSave(element.uid)" />
+                    </a-descriptions-item>
+                    <a-descriptions-item>
                       <template #label>
                         <span>老板键</span>
-                        <t-tooltip content="快速隐藏模拟器的快捷键组合（MuMu模拟器不支持）">
-                          <HelpCircleIcon style="margin-left: 4px" />
-                        </t-tooltip>
+                        <a-tooltip title="快速隐藏模拟器的快捷键组合（MuMu模拟器不支持）">
+                          <QuestionCircleOutlined style="margin-left: 4px" />
+                        </a-tooltip>
                       </template>
-                      <template v-if="getEditingData(element.uid).type !== 'mumu'">
-                        <t-input v-model="bossKeyInputMap[element.uid]"
-                          :placeholder="recordingBossKeyMap.get(element.uid)
-                            ? '请按下快捷键组合...'
-                            : '输入格式如 Ctrl+Q，按回车添加'" size="small" :borderless="true"
-                          :disabled="recordingBossKeyMap.get(element.uid)" @enter="handleSetBossKey(element.uid)"
-                          @change="handleBossKeyInputChange(element.uid)">
-                          <template #suffix>
-                            <t-button v-if="!recordingBossKeyMap.get(element.uid)" size="small" variant="outline"
-                              @click="startRecordBossKey(element.uid)">
-                              录制
-                            </t-button>
-                            <t-button v-else size="small" theme="danger" @click="stopRecordBossKey(element.uid)">
-                              取消录制
-                            </t-button>
-                          </template>
-                        </t-input>
-                      </template>
+                      <a-input v-if="getEditingData(element.uid).type !== 'mumu'"
+                        v-model:value="bossKeyInputMap[element.uid]" :placeholder="recordingBossKeyMap.get(element.uid)
+                          ? '请按下快捷键组合...'
+                          : '输入格式如 Ctrl+Q，按回车添加'
+                          " size="small" :bordered="false" :disabled="recordingBossKeyMap.get(element.uid)"
+                        @press-enter="handleSetBossKey(element.uid)" @change="handleBossKeyInputChange(element.uid)">
+                        <template #suffix>
+                          <a-button v-if="!recordingBossKeyMap.get(element.uid)" type="default" size="small"
+                            @click="startRecordBossKey(element.uid)">
+                            录制
+                          </a-button>
+                          <a-button v-else type="primary" danger size="small" @click="stopRecordBossKey(element.uid)">
+                            取消录制
+                          </a-button>
+                        </template>
+                      </a-input>
                       <span v-else style="color: var(--text-color-tertiary); font-size: 12px">
                         MuMu模拟器不支持老板键功能
                       </span>
-                    </t-descriptions-item>
-                  </t-descriptions>
+                    </a-descriptions-item>
+                  </a-descriptions>
                 </div>
               </div>
 
@@ -880,112 +875,129 @@ const handleBossKeyInputChange = (uuid: string) => {
                   <h4 class="panel-title">设备列表</h4>
                 </div>
 
-                <t-loading :loading="loadingDevices.has(element.uid)">
+                <a-spin :spinning="loadingDevices.has(element.uid)">
                   <div v-if="
                     !devicesData[element.uid] ||
                     Object.keys(devicesData[element.uid]).length === 0
                   " class="empty-devices">
-                    <t-empty description="暂无设备信息">
-                      <template #action>
-                        <t-button theme="primary" size="small" @click="startEmulator(element.uid, '0')">
-                          <template #icon><PlayCircleIcon /></template>
+                    <a-empty description="暂无设备信息">
+                      <template #extra>
+                        <a-button type="primary" size="small" :icon="h(PlayCircleOutlined)"
+                          @click="startEmulator(element.uid, '0')">
                           启动模拟器
-                        </t-button>
+                        </a-button>
                       </template>
-                    </t-empty>
+                    </a-empty>
                   </div>
 
                   <div v-else class="devices-grid">
-                    <t-table
-                      :data="Object.entries(devicesData[element.uid]).map(([index, device]) => ({
-                        key: index,
-                        index,
-                        ...device,
-                      }))"
-                      :columns="[
-                        { title: '设备', colKey: 'index', width: 80 },
-                        { title: '状态', colKey: 'status', width: 80 },
-                        { title: '名称', colKey: 'title' },
-                        { title: 'ADB地址', colKey: 'adb_address' },
-                        { title: '操作', colKey: 'action', width: 160 },
-                      ]"
-                      size="small"
-                      row-key="key"
-                      :hover="true"
-                      :pagination="false"
-                    >
-                      <template #index="{ row }">
-                        <span>#{{ row.index }}</span>
+                    <a-table :data-source="Object.entries(devicesData[element.uid]).map(([index, device]) => ({
+                      key: index,
+                      index,
+                      ...device,
+                    }))
+                      " :columns="[
+                        {
+                          title: '设备',
+                          dataIndex: 'index',
+                          key: 'index',
+                          width: 60,
+                          customRender: ({ text }: any) => `#${text}`,
+                        },
+                        {
+                          title: '状态',
+                          dataIndex: 'status',
+                          key: 'status',
+                          width: 60,
+                        },
+                        { title: '名称', dataIndex: 'title', key: 'title', ellipsis: true },
+                        {
+                          title: 'ADB地址',
+                          dataIndex: 'adb_address',
+                          key: 'adb_address',
+                          ellipsis: true,
+                        },
+                        { title: '操作', key: 'action', width: 140 },
+                      ]" :pagination="false" size="small" :scroll="{ x: 'max-content', y: 'calc(100vh - 560px)' }">
+                      <template #bodyCell="{ column, record }">
+                        <template v-if="column.key === 'status'">
+                          <a-tag :color="getDeviceStatusInfo(record.status).color" size="small">
+                            {{ getDeviceStatusInfo(record.status).text }}
+                          </a-tag>
+                        </template>
+                        <template v-else-if="column.key === 'action'">
+                          <a-space :size="4">
+                            <a-button type="primary" size="small" :icon="h(PlayCircleOutlined)"
+                              :loading="startingDevices.has(`${element.uid}-${record.index}`)"
+                              :disabled="!canStartDevice(record.status)"
+                              @click="startEmulator(element.uid, String(record.index))">
+                              启动
+                            </a-button>
+                            <a-button danger size="small" :icon="h(StopOutlined)"
+                              :loading="stoppingDevices.has(`${element.uid}-${record.index}`)"
+                              :disabled="!canStopDevice(record.status)"
+                              @click="stopEmulator(element.uid, String(record.index))">
+                              关闭
+                            </a-button>
+                          </a-space>
+                        </template>
                       </template>
-                      <template #status="{ row }">
-                        <t-tag :theme="getDeviceStatusInfo(row.status).color === 'error' ? 'danger' :
-                          getDeviceStatusInfo(row.status).color === 'warning' ? 'warning' :
-                          getDeviceStatusInfo(row.status).color === 'success' ? 'success' : 'default'" size="small"
-                          variant="light">
-                          {{ getDeviceStatusInfo(row.status).text }}
-                        </t-tag>
-                      </template>
-                      <template #action="{ row }">
-                        <t-space :size="4">
-                          <t-button theme="primary" size="small"
-                            :loading="startingDevices.has(`${element.uid}-${row.index}`)"
-                            :disabled="!canStartDevice(row.status)"
-                            @click="startEmulator(element.uid, String(row.index))">
-                            <template #icon><PlayCircleIcon /></template>
-                            启动
-                          </t-button>
-                          <t-button theme="danger" size="small"
-                            :loading="stoppingDevices.has(`${element.uid}-${row.index}`)"
-                            :disabled="!canStopDevice(row.status)"
-                            @click="stopEmulator(element.uid, String(row.index))">
-                            <template #icon><StopCircleIcon /></template>
-                            关闭
-                          </t-button>
-                        </t-space>
-                      </template>
-                    </t-table>
+                    </a-table>
                   </div>
-                </t-loading>
+                </a-spin>
               </div>
             </div>
-          </t-tab-panel>
+          </a-tab-pane>
 
           <!-- 添加模拟器的特殊 Tab -->
-          <template #operations>
+          <template #rightExtra>
             <div class="tab-extra-actions">
-              <t-dropdown :options="[
-                { content: '自动搜索模拟器', value: 'search' },
-                { content: '手动添加多开器', value: 'add' },
-              ]" @click="(data:any) => (data?.value === 'search' ? handleSearch() : handleAddWithSwitch())">
-                <t-button variant="text" size="small">
-                  <template #icon><AddIcon /></template>
-                </t-button>
-              </t-dropdown>
+              <a-dropdown :trigger="['hover']" placement="bottomRight">
+                <a-button type="text" size="small" :icon="h(PlusOutlined)" />
+                <template #overlay>
+                  <a-menu>
+                    <a-menu-item key="search" @click="handleSearch">
+                      <template #icon>
+                        <SearchOutlined />
+                      </template>
+                      自动搜索模拟器
+                    </a-menu-item>
+                    <a-menu-item key="add" @click="handleAddWithSwitch">
+                      <template #icon>
+                        <PlusOutlined />
+                      </template>
+                      手动添加多开器
+                    </a-menu-item>
+                  </a-menu>
+                </template>
+              </a-dropdown>
             </div>
           </template>
-        </t-tabs>
-      </t-loading>
+        </a-tabs>
+      </a-spin>
     </div>
 
     <!-- 搜索结果导入模态框 -->
-    <t-dialog v-model:visible="showSearchModal" header="搜索到的模拟器" width="600px" :footer="false">
-      <t-loading :loading="searching">
+    <a-modal v-model:visible="showSearchModal" title="搜索到的模拟器" width="600" :footer="null">
+      <a-spin :spinning="searching">
         <div v-if="searchResults.length === 0" class="empty-state">
-          <t-empty description="未找到任何模拟器" />
+          <a-empty description="未找到任何模拟器" />
         </div>
-        <div v-else class="search-list">
-          <div v-for="item in searchResults" :key="item.path" class="search-item">
-            <div class="search-item-meta">
-              <div class="title">{{ item.name }}</div>
-              <div class="desc">{{ item.type }} - {{ item.path }}</div>
-            </div>
-            <div class="search-item-action">
-              <t-button theme="primary" size="small" @click="handleSearchAndImport(item)">导入</t-button>
-            </div>
-          </div>
-        </div>
-      </t-loading>
-    </t-dialog>
+
+        <a-list v-else item-layout="horizontal" :data-source="searchResults">
+          <template #renderItem="{ item }">
+            <a-list-item>
+              <template #actions>
+                <a-button type="primary" size="small" @click="handleSearchAndImport(item)">
+                  导入
+                </a-button>
+              </template>
+              <a-list-item-meta :title="item.name" :description="`${item.type} - ${item.path}`" />
+            </a-list-item>
+          </template>
+        </a-list>
+      </a-spin>
+    </a-modal>
   </div>
 </template>
 
@@ -1127,6 +1139,8 @@ const handleBossKeyInputChange = (uuid: string) => {
   align-items: center;
   gap: 8px;
 }
+
+
 
 .section-actions {
   display: flex;
@@ -1278,28 +1292,6 @@ const handleBossKeyInputChange = (uuid: string) => {
 
 .devices-grid :deep(.ant-table-tbody > tr:hover > td) {
   background: var(--bg-color-elevated);
-}
-
-/* 搜索结果列表样式 */
-.search-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.search-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 8px 12px;
-  border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
-}
-.search-item-meta .title {
-  font-weight: 600;
-}
-.search-item-meta .desc {
-  color: var(--text-color-tertiary);
-  font-size: 12px;
 }
 
 /* 老板键列表 */
