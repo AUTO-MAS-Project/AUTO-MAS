@@ -47,7 +47,7 @@
       <!-- 操作 -->
       <template #actionsSlot="{ row }">
         <t-popconfirm content="确定要删除这个定时吗？" @confirm="deleteTimeSet(row.id)">
-          <t-button theme="danger" variant="outline" size="medium">
+          <t-button theme="danger" variant="outline" size="small">
             <template #icon><t-icon name="delete" /></template>
             删除
           </t-button>
