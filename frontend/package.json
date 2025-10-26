@@ -79,6 +79,7 @@
   },
   "dependencies": {
     "@ant-design/icons-vue": "^7.0.1",
+    "@guolao/vue-monaco-editor": "^1.6.0",
     "@types/adm-zip": "^0.5.7",
     "@types/markdown-it": "^14.1.2",
     "@vueuse/core": "^13.9.0",
@@ -89,6 +90,7 @@
     "electron-log": "^5.4.3",
     "form-data": "^4.0.4",
     "markdown-it": "^14.1.0",
+    "monaco-editor": "^0.54.0",
     "pinia": "^3.0.3",
     "vue": "^3.5.17",
     "vue-router": "4",
