@@ -22,7 +22,7 @@
 
 import json
 import asyncio
-import subprocess
+import contextlib
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -53,6 +53,49 @@ class MumuManager(DeviceBase):
 
         self.emulator_path = Path(config.get("Info", "Path"))
 
+    async def _run_cmd(self, args: list[str | Path], timeout: float | None = None):
+        """以异步方式执行 MuMuManager 命令，返回与 subprocess.run 类似的对象。
+
+        - 不使用 shell，避免注入风险。
+        - 接受 Path 或 str 参数；输出按 utf-8 + replace 解码，保持与原实现一致。
+        - 可选超时：超时将终止子进程并抛出 asyncio.TimeoutError。
+        """
+        # 将 Path/其他可路径对象转为字符串
+        str_args = [str(a) for a in args]
+
+        proc = await asyncio.create_subprocess_exec(
+            *str_args,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        # NOTE: 默认不设超时，由上层逻辑通过 MaxWaitTime 进行整体控制；此处保留 timeout 以便未来扩展。
+        try:
+            stdout_b, stderr_b = await asyncio.wait_for(
+                proc.communicate(), timeout=timeout
+            )
+        except asyncio.TimeoutError:
+            with contextlib.suppress(ProcessLookupError):
+                proc.kill()
+            await proc.wait()
+            raise
+
+        stdout = (stdout_b or b"").decode("utf-8", "replace")
+        stderr = (stderr_b or b"").decode("utf-8", "replace")
+        rc = proc.returncode if proc.returncode is not None else await proc.wait()
+
+        class _Result:
+            __slots__ = ("returncode", "stdout", "stderr")
+
+            def __init__(self, returncode: int, stdout: str, stderr: str) -> None:
+                self.returncode = returncode
+                self.stdout = stdout
+                self.stderr = stderr
+
+            def __repr__(self) -> str:  # 便于日志显示
+                return f"Result(rc={self.returncode}, stdout={len(self.stdout)}B, stderr={len(self.stderr)}B)"
+
+        return _Result(rc, stdout, stderr)
+
     async def open(self, idx: str, package_name: str = "") -> DeviceInfo:
         logger.info(f"开始启动模拟器{idx} - {package_name}")
 
@@ -73,7 +116,7 @@ class MumuManager(DeviceBase):
         else:
             raise RuntimeError(f"模拟器{idx}无法启动, 当前状态码: {status}")
 
-        result = subprocess.run(
+        result = await self._run_cmd(
             (
                 [
                     self.emulator_path,
@@ -86,11 +129,7 @@ class MumuManager(DeviceBase):
                 ]
                 if package_name
                 else [self.emulator_path, "control", "-v", idx, "launch"]
-            ),
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
+            )
         )
         # 参考命令 MuMuManager.exe control -v 2 launch
 
@@ -120,18 +159,14 @@ class MumuManager(DeviceBase):
             logger.warning(f"设备{idx}未在线，当前状态: {status}")
             return status
 
-        result = subprocess.run(
+        result = await self._run_cmd(
             [
                 self.emulator_path,
                 "control",
                 "-v",
                 idx,
                 "shutdown",
-            ],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
+            ]
         )
         # 参考命令 MuMuManager.exe control -v 2 shutdown
 
@@ -220,18 +255,14 @@ class MumuManager(DeviceBase):
             logger.warning(f"设备{idx}未在线，当前状态码: {status}")
             return status
 
-        result = subprocess.run(
+        result = await self._run_cmd(
             [
                 self.emulator_path,
                 "control",
                 "-v",
                 idx,
                 "show_window" if is_visible else "hide_window",
-            ],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
+            ]
         )
         if result.returncode != 0:
             raise RuntimeError(f"命令执行失败: {result}")
@@ -239,13 +270,7 @@ class MumuManager(DeviceBase):
         return await self.getStatus(idx)
 
     async def get_device_info(self, idx: str) -> str:
-        result = subprocess.run(
-            [self.emulator_path, "info", "-v", idx],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-        )
+        result = await self._run_cmd([self.emulator_path, "info", "-v", idx])
         if result.returncode != 0:
             logger.error(f"获取模拟器{idx}信息失败: {result.stdout.strip()}")
             raise RuntimeError(f"命令执行失败: {result}")

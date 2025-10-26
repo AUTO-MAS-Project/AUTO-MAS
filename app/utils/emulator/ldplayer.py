@@ -23,9 +23,9 @@
 import json
 import psutil
 import asyncio
+import contextlib
 import win32gui
 import keyboard
-import subprocess
 from datetime import datetime, timedelta
 from pydantic import BaseModel
 from pathlib import Path
@@ -56,7 +56,6 @@ class LDManager(DeviceBase):
     """
 
     def __init__(self, config: EmulatorConfig) -> None:
-
         if not Path(config.get("Info", "Path")).exists():
             raise FileNotFoundError(
                 f"LDPlayerManager.exe文件不存在: {config.get('Info', 'Path')}"
@@ -69,6 +68,42 @@ class LDManager(DeviceBase):
 
         self.emulator_path = Path(config.get("Info", "Path"))
 
+    async def _run_cmd(self, args: list[str | Path], timeout: float | None = None):
+        """以异步方式执行 dnconsole 命令，返回与 subprocess.run 类似的对象。"""
+        str_args = [str(a) for a in args]
+        proc = await asyncio.create_subprocess_exec(
+            *str_args,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            stdout_b, stderr_b = await asyncio.wait_for(
+                proc.communicate(), timeout=timeout
+            )
+        except asyncio.TimeoutError:
+            with contextlib.suppress(ProcessLookupError):
+                proc.kill()
+            await proc.wait()
+            raise
+
+        # 雷电控制台输出为 GBK
+        stdout = (stdout_b or b"").decode("gbk", "replace")
+        stderr = (stderr_b or b"").decode("gbk", "replace")
+        rc = proc.returncode if proc.returncode is not None else await proc.wait()
+
+        class _Result:
+            __slots__ = ("returncode", "stdout", "stderr")
+
+            def __init__(self, returncode: int, stdout: str, stderr: str) -> None:
+                self.returncode = returncode
+                self.stdout = stdout
+                self.stderr = stderr
+
+            def __repr__(self) -> str:
+                return f"Result(rc={self.returncode}, stdout={len(self.stdout)}B, stderr={len(self.stderr)}B)"
+
+        return _Result(rc, stdout, stderr)
+
     async def open(self, idx: str, package_name="") -> DeviceInfo:
         logger.info(f"开始启动模拟器{idx} - {package_name}")
 
@@ -77,7 +112,6 @@ class LDManager(DeviceBase):
         while datetime.now() - t < timedelta(
             seconds=self.config.get("Data", "MaxWaitTime")
         ):
-
             status = await self.getStatus(idx)
             if status == DeviceStatus.ONLINE:
                 return (await self.getInfo(idx))[idx]
@@ -88,7 +122,7 @@ class LDManager(DeviceBase):
         else:
             raise RuntimeError(f"模拟器{idx}无法启动, 当前状态码: {status}")
 
-        result = subprocess.run(
+        result = await self._run_cmd(
             (
                 [
                     self.emulator_path,
@@ -100,11 +134,7 @@ class LDManager(DeviceBase):
                 ]
                 if package_name
                 else [self.emulator_path, "launch", "--index", idx]
-            ),
-            capture_output=True,
-            text=True,
-            encoding="gbk",
-            errors="replace",
+            )
         )
         # 参考命令 dnconsole.exe launch --index 0
 
@@ -115,7 +145,6 @@ class LDManager(DeviceBase):
         while datetime.now() - t < timedelta(
             seconds=self.config.get("Data", "MaxWaitTime")
         ):
-
             status = await self.getStatus(idx)
             if status in [DeviceStatus.ERROR, DeviceStatus.UNKNOWN]:
                 raise RuntimeError(f"模拟器{idx}启动失败, 状态码: {status}")
@@ -127,19 +156,12 @@ class LDManager(DeviceBase):
             raise RuntimeError(f"模拟器{idx}启动超时, 当前状态码: {status}")
 
     async def close(self, idx: str) -> DeviceStatus:
-
         status = await self.getStatus(idx)
         if status not in [DeviceStatus.ONLINE, DeviceStatus.STARTING]:
             logger.warning(f"设备{idx}未在线，当前状态: {status}")
             return status
 
-        result = subprocess.run(
-            [self.emulator_path, "quit", "--index", idx],
-            capture_output=True,
-            text=True,
-            encoding="gbk",
-            errors="replace",
-        )
+        result = await self._run_cmd([self.emulator_path, "quit", "--index", idx])
         # 参考命令 dnconsole.exe quit --index 0
 
         if result.returncode != 0:
@@ -149,7 +171,6 @@ class LDManager(DeviceBase):
         while datetime.now() - t < timedelta(
             seconds=self.config.get("Data", "MaxWaitTime")
         ):
-
             status = await self.getStatus(idx)
             if status in [DeviceStatus.ERROR, DeviceStatus.UNKNOWN]:
                 raise RuntimeError(f"模拟器{idx}关闭失败, 状态码: {status}")
@@ -163,7 +184,6 @@ class LDManager(DeviceBase):
     async def getStatus(
         self, idx: str, data: LDPlayerDevice | None = None
     ) -> DeviceStatus:
-
         if data is None:
             try:
                 data = (await self.get_device_info(idx))[idx]
@@ -186,12 +206,10 @@ class LDManager(DeviceBase):
             return DeviceStatus.UNKNOWN
 
     async def getInfo(self, idx: str | None) -> dict[str, DeviceInfo]:
-
         data = await self.get_device_info(idx)
         result: dict[str, DeviceInfo] = {}
 
         for idx, info in data.items():
-
             status = await self.getStatus(idx, info)
             adb_port = f"127.0.0.1:{await self.get_adb_ports(info.vbox_pid)}"
             result[idx] = DeviceInfo(
@@ -201,7 +219,6 @@ class LDManager(DeviceBase):
         return result
 
     async def setVisible(self, idx: str, is_visible: bool) -> DeviceStatus:
-
         status = await self.getStatus(idx)
         if status != DeviceStatus.ONLINE:
             logger.warning(f"设备{idx}未在线，当前状态码: {status}")
@@ -213,7 +230,6 @@ class LDManager(DeviceBase):
         while datetime.now() - t < timedelta(
             seconds=self.config.get("Data", "MaxWaitTime")
         ):
-
             # 检查窗口可见性是否符合预期
             if win32gui.IsWindowVisible(result.top_hwnd) == is_visible:
                 return status
@@ -236,13 +252,7 @@ class LDManager(DeviceBase):
     async def get_device_info(self, idx: str | None) -> dict[str, LDPlayerDevice]:
         """获取模拟器的信息"""
 
-        result = subprocess.run(
-            [self.emulator_path, "list2"],
-            capture_output=True,
-            text=True,
-            encoding="gbk",
-            errors="replace",
-        )
+        result = await self._run_cmd([self.emulator_path, "list2"])
 
         # logger.debug(f"全部信息{result.stdout.strip()}")
         if result.returncode != 0:
