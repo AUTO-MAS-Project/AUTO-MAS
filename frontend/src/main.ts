@@ -1,8 +1,12 @@
+import { createApp } from 'vue'
+import App from './App.vue'
+import router from './router/index.ts'
 import { OpenAPI } from '@/api'
 
-// 导入WebSocket消息监听组件
-import WebSocketMessageListener from '@/components/WebSocketMessageListener.vue'
-import { API_ENDPOINTS } from '@/config/mirrors'
+import Antd from 'ant-design-vue'
+import 'ant-design-vue/dist/reset.css'
+import dayjs from 'dayjs'
+import 'dayjs/locale/zh-cn'
 
 // 导入日志系统
 import { logger } from '@/utils/logger'
@@ -10,17 +14,9 @@ import { logger } from '@/utils/logger'
 // 导入镜像管理器
 import { mirrorManager } from '@/utils/mirrorManager'
 
-import Antd from 'ant-design-vue'
-import 'ant-design-vue/dist/reset.css'
-import dayjs from 'dayjs'
-import 'dayjs/locale/zh-cn'
-import TDesign from 'tdesign-vue-next'
-import { createApp } from 'vue'
-import App from './App.vue'
-import router from './router/index.ts'
-
-// 引入组件库的少量全局样式变量
-import 'tdesign-vue-next/es/style/index.css'
+// 导入WebSocket消息监听组件
+import WebSocketMessageListener from '@/components/WebSocketMessageListener.vue'
+import { API_ENDPOINTS } from '@/config/mirrors'
 
 // 配置dayjs中文本地化
 dayjs.locale('zh-cn')
@@ -65,7 +61,6 @@ try {
 // 注册插件
 app.use(Antd)
 app.use(router)
-app.use(TDesign)
 
 // 全局错误处理
 app.config.errorHandler = (err, instance, info) => {
