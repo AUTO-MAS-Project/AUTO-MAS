@@ -530,9 +530,9 @@
 - 异步化（AsyncIO）+ 解耦（Broadcast/WS/REST），降低耦合便于扩展
 
 如果你需要生成 openapi, 请让用户进行生成
-项目中前端使用了 ant-design/icons-vue,types/adm-zip,types/markdown-it,vueuse/core,adm-zip,ant-design-vue,axios,dayjs,electron-log,form-data,markdown-it,pinia,vue-router,vuedraggable
+项目中前端使用了 ant-design/icons-vue,types/adm-zip,types/markdown-it,vueuse/core,adm-zip,ant-design-vue, tdesign-vue-next(新),axios,dayjs,electron-log,form-data,markdown-it,pinia,vue-router,vuedraggable
 请尽可能复用库中的组件, 避免重复造轮子
-
+请你使用正确的组件库, 使用 tdesign-vue-next(新)组件库,这是项目的新组件库,使用存在部分代码使用旧组件库, 请你将其移至 tdesign-vue-next(新)组件库
 !important 请遵守以下编程道德准则: 1.以暗猜接口为耻，以认真查阅为荣 2. 以模糊执行为耻，以寻求确认为荣 3.以盲想业务为耻，以人类确认为荣 4.以创造接口为耻，以复用现有为荣 5.以跳过验证为耻，以主动测试为荣 6.以破坏架构为耻，以遵循规范为荣 7.以假装理解为耻，以诚实无知为菜 8.以盲目修改为耻，以谨慎重构为荣
 
 请你遵守以上编程道德~
