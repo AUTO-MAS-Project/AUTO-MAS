@@ -3,7 +3,9 @@
     <div class="queue-main">
       <!-- 顶部标题 -->
       <div class="queue-header">
-        <h1 class="page-title">调度队列</h1>
+        <div class="header-left">
+          <h1 class="page-title">调度队列</h1>
+        </div>
         <div class="header-actions">
           <t-space>
             <t-button theme="primary" size="large" @click="handleAddQueue">
@@ -319,13 +321,47 @@ onMounted(fetchQueues)
 .queue-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
+  align-items: flex-end;
+  margin-bottom: 24px;
+  padding: 0 4px;
 }
+
 .page-title {
-  font-size: 26px;
+  margin: 0 0 8px 0;
+  font-size: 32px;
   font-weight: 700;
   color: var(--td-text-color-primary);
+  background: linear-gradient(135deg, var(--td-brand-color), var(--td-brand-color-hover, #4787f0));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.header-left {
+  flex: 1;
+  min-width: 0;
+}
+
+.header-actions {
+  flex-shrink: 0;
+  margin-left: 16px;
+}
+
+@media (max-width: 768px) {
+  .page-title {
+    font-size: 24px;
+  }
+
+  .queue-header {
+    padding: 0 2px;
+  }
+
+  .header-actions {
+    margin-left: 8px;
+  }
 }
 .card-title {
   display: flex;
