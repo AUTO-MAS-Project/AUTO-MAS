@@ -215,6 +215,13 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.time-set-card {
+  margin-bottom: 16px;
+}
+.t-table {
+  margin-top: 8px;
+}
+
 .t-time-picker {
   width: 100%;
 }
