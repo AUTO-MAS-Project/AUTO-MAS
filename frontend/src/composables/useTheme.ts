@@ -1,5 +1,5 @@
+import { ref, computed, watch } from 'vue'
 import { theme } from 'ant-design-vue'
-import { computed, ref, watch } from 'vue'
 
 export type ThemeMode = 'system' | 'light' | 'dark'
 export type ThemeColor =
@@ -43,19 +43,6 @@ const getSystemTheme = () => {
   return window.matchMedia('(prefers-color-scheme: dark)').matches
 }
 
-// 更新TDesign主题
-const updateTDesignTheme = (isDarkMode: boolean) => {
-  // 设置TDesign的主题模式
-  const htmlElement = document.documentElement
-
-  if (isDarkMode) {
-    // 添加TDesign深色主题类名
-    htmlElement.setAttribute('theme-mode', 'dark')
-  } else {
-    // 设置为浅色主题
-    htmlElement.setAttribute('theme-mode', 'light')
-  }
-}
 // 更新主题
 const updateTheme = () => {
   let shouldBeDark: boolean
@@ -74,9 +61,6 @@ const updateTheme = () => {
   } else {
     document.documentElement.classList.remove('dark')
   }
-
-  // 更新TDesign主题
-  updateTDesignTheme(shouldBeDark)
 
   // 更新CSS变量
   updateCSSVariables()
@@ -350,9 +334,7 @@ mediaQuery.addEventListener('change', () => {
 
 // 监听主题模式和颜色变化
 watch(themeMode, updateTheme, { immediate: true })
-watch(themeColor, () => {
-  updateTheme()
-})
+watch(themeColor, updateTheme)
 
 // Ant Design 主题配置
 const antdTheme = computed(() => ({
