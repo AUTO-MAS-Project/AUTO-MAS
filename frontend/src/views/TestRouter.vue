@@ -1,456 +1,194 @@
 <template>
-  <!--标题-->
-  <div class="history-header">
-    <div class="header-title">
-      <h1>历史记录</h1>
+  <div class="ocr-debug-page">
+    <!-- 标题 -->
+    <div class="page-header">
+      <h1>OCR 功能测试页面</h1>
+      <p class="description">在此测试窗口截图功能</p>
     </div>
-  </div>
 
-  <a-flex vertical="vertical">
-    <!-- 中上部：时间选择器 -->
-    <a-card size="small" title="筛选条件">
-      <!-- 快捷时间选择 -->
-      <div class="quick-time-section">
-        <a-form-item label="快捷选择" style="margin-bottom: 16px">
-          <a-space wrap>
-            <a-button
-              v-for="preset in timePresets"
-              :key="preset.key"
-              :type="currentPreset === preset.key ? 'primary' : 'default'"
-              size="middle"
-              @click="handleQuickTimeSelect(preset)"
-            >
-              {{ preset.label }}
+    <!-- 参数配置卡片 -->
+    <a-card title="截图参数配置" class="config-card">
+      <a-form :model="formData" layout="vertical">
+        <a-row :gutter="16">
+          <a-col :span="24">
+            <a-form-item label="窗口标题" required>
+              <a-input
+                v-model:value="formData.window_title"
+                placeholder="请输入窗口标题关键字（如：记事本、Chrome）"
+              />
+            </a-form-item>
+          </a-col>
+        </a-row>
+
+        <a-row :gutter="16">
+          <a-col :span="12">
+            <a-form-item label="宽高比 - 宽度">
+              <a-input-number
+                v-model:value="formData.aspect_ratio_width"
+                :min="1"
+                :max="32"
+                style="width: 100%"
+              />
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item label="宽高比 - 高度">
+              <a-input-number
+                v-model:value="formData.aspect_ratio_height"
+                :min="1"
+                :max="32"
+                style="width: 100%"
+              />
+            </a-form-item>
+          </a-col>
+        </a-row>
+
+        <a-row :gutter="16">
+          <a-col :span="24">
+            <a-form-item label="预处理模式">
+              <a-switch
+                v-model:checked="formData.should_preprocess"
+                checked-children="启用"
+                un-checked-children="禁用"
+              />
+              <span style="margin-left: 12px; color: var(--ant-color-text-secondary)">
+                启用时将排除窗口边框和标题栏
+              </span>
+            </a-form-item>
+          </a-col>
+        </a-row>
+
+        <a-form-item>
+          <a-space>
+            <a-button type="primary" :loading="loading" @click="handleScreenshot">
+              <template #icon>
+                <CameraOutlined />
+              </template>
+              获取截图
+            </a-button>
+            <a-button @click="handleReset">
+              <template #icon>
+                <ClearOutlined />
+              </template>
+              重置参数
             </a-button>
           </a-space>
         </a-form-item>
-      </div>
-
-      <!-- 详细筛选条件 -->
-      <a-row :gutter="16" :align="'middle'">
-        <a-col :span="6">
-          <a-form-item label="合并模式" style="margin-bottom: 0">
-            <a-select v-model:value="searchForm.mode" style="width: 100%">
-              <a-select-option value="按日合并">按日合并</a-select-option>
-              <a-select-option value="按周合并">按周合并</a-select-option>
-              <a-select-option value="按月合并">按月合并</a-select-option>
-            </a-select>
-          </a-form-item>
-        </a-col>
-        <a-col :span="6">
-          <a-form-item label="开始日期" style="margin-bottom: 0">
-            <a-date-picker
-              v-model:value="searchForm.startDate"
-              style="width: 100%"
-              format="YYYY-MM-DD"
-              value-format="YYYY-MM-DD"
-              @change="handleDateChange"
-            />
-          </a-form-item>
-        </a-col>
-        <a-col :span="6">
-          <a-form-item label="结束日期" style="margin-bottom: 0">
-            <a-date-picker
-              v-model:value="searchForm.endDate"
-              style="width: 100%"
-              format="YYYY-MM-DD"
-              value-format="YYYY-MM-DD"
-              @change="handleDateChange"
-            />
-          </a-form-item>
-        </a-col>
-        <a-col :span="6">
-          <a-form-item label=" " style="margin-bottom: 0" :colon="false">
-            <a-space>
-              <a-button type="primary" :loading="searchLoading" @click="handleSearch">
-                <template #icon>
-                  <SearchOutlined />
-                </template>
-                搜索
-              </a-button>
-              <a-button @click="handleReset">
-                <template #icon>
-                  <ClearOutlined />
-                </template>
-                重置
-              </a-button>
-            </a-space>
-          </a-form-item>
-        </a-col>
-      </a-row>
+      </a-form>
     </a-card>
 
-    <!-- 中下部分：列表 -->
-    <a-flex class="history-content">
-      <div class="history-layout">
-        <!-- 中下部分：左侧日期列表 -->
-        <div class="date-sidebar">
-          <!-- 日期折叠列表 -->
-          <div class="date-list">
-            <a-collapse v-model:active-key="activeKeys" ghost accordion>
-              <a-collapse-panel
-                v-for="dateGroup in historyData"
-                :key="dateGroup.date"
-                class="date-panel"
-              >
-                <template #header>
-                  <div class="date-header">
-                    <span class="date-text">{{ dateGroup.date }}</span>
-                  </div>
-                </template>
+    <!-- 截图结果展示 -->
+    <a-card v-if="screenshotResult" title="截图结果" class="result-card">
+      <a-descriptions bordered :column="2">
+        <a-descriptions-item label="状态">
+          <a-tag :color="screenshotResult.code === 200 ? 'success' : 'error'">
+            {{ screenshotResult.status }}
+          </a-tag>
+        </a-descriptions-item>
+        <a-descriptions-item label="消息">
+          {{ screenshotResult.message }}
+        </a-descriptions-item>
+        <a-descriptions-item label="截图区域">
+          {{ screenshotResult.region ? `(${screenshotResult.region.join(', ')})` : 'N/A' }}
+        </a-descriptions-item>
+        <a-descriptions-item label="图片尺寸">
+          {{ screenshotResult.image_width }} × {{ screenshotResult.image_height }}
+        </a-descriptions-item>
+      </a-descriptions>
 
-                <div class="user-list">
-                  <div
-                    v-for="(userData, username) in dateGroup.users"
-                    :key="username"
-                    class="user-item"
-                    :class="{ active: selectedUser === `${dateGroup.date}-${username}` }"
-                    @click="handleSelectUser(dateGroup.date, username, userData)"
-                  >
-                    <div class="user-info">
-                      <span class="username">{{ username }}</span>
-                    </div>
-                  </div>
-                </div>
-              </a-collapse-panel>
-            </a-collapse>
-          </div>
-        </div>
+      <!-- 图片展示 -->
+      <div v-if="screenshotResult.image_base64" class="image-container">
+        <h3>截图预览：</h3>
+        <img
+          :src="`data:image/png;base64,${screenshotResult.image_base64}`"
+          alt="截图"
+          class="screenshot-image"
+        />
       </div>
-      <!--这里有个spin-->
-    </a-flex>
-  </a-flex>
+      <a-empty v-else description="未获取到截图数据" />
+    </a-card>
+  </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive } from 'vue'
 import { message } from 'ant-design-vue'
-import {
-  SearchOutlined,
-  ClearOutlined,
-  HistoryOutlined,
-  UserOutlined,
-  GiftOutlined,
-  FileSearchOutlined,
-  RightOutlined,
-  FolderOpenOutlined,
-  FileOutlined,
-} from '@ant-design/icons-vue'
-import { Service } from '@/api/services/Service'
-import { HistorySearchIn, type HistoryData } from '@/api' // 调整：枚举需要值导入
-import dayjs from 'dayjs'
-import NodataImage from '@/assets/NoData.png'
+import { CameraOutlined, ClearOutlined } from '@ant-design/icons-vue'
+import { OcrService } from '@/api/services/OcrService'
+import type { OCRScreenshotIn } from '@/api/models/OCRScreenshotIn'
+import type { OCRScreenshotOut } from '@/api/models/OCRScreenshotOut'
 
-// 响应式数据
-const searchLoading = ref(false)
-const detailLoading = ref(false)
-const activeKeys = ref<string[]>([])
-const currentPreset = ref('week') // 当前选中的快捷选项
-
-// 选中的用户相关数据
-const selectedUser = ref('')
-const selectedUserData = ref<HistoryData | null>(null)
-const selectedRecordIndex = ref(-1)
-const currentDetail = ref<HistoryData | null>(null)
-const currentJsonFile = ref('')
-
-// 快捷时间选择预设（改用枚举值）
-const timePresets = [
-  {
-    key: 'today',
-    label: '今天',
-    startDate: () => dayjs().format('YYYY-MM-DD'),
-    endDate: () => dayjs().format('YYYY-MM-DD'),
-    mode: HistorySearchIn.mode.DAILY,
-  },
-  {
-    key: 'yesterday',
-    label: '昨天',
-    startDate: () => dayjs().subtract(1, 'day').format('YYYY-MM-DD'),
-    endDate: () => dayjs().subtract(1, 'day').format('YYYY-MM-DD'),
-    mode: HistorySearchIn.mode.DAILY,
-  },
-  {
-    key: 'week',
-    label: '最近一周',
-    startDate: () => dayjs().subtract(7, 'day').format('YYYY-MM-DD'),
-    endDate: () => dayjs().format('YYYY-MM-DD'),
-    mode: HistorySearchIn.mode.DAILY,
-  },
-  {
-    key: 'month',
-    label: '最近一个月',
-    startDate: () => dayjs().subtract(1, 'month').format('YYYY-MM-DD'),
-    endDate: () => dayjs().format('YYYY-MM-DD'),
-    mode: HistorySearchIn.mode.WEEKLY,
-  },
-  {
-    key: 'twoMonths',
-    label: '最近两个月',
-    startDate: () => dayjs().subtract(2, 'month').format('YYYY-MM-DD'),
-    endDate: () => dayjs().format('YYYY-MM-DD'),
-    mode: HistorySearchIn.mode.WEEKLY,
-  },
-  {
-    key: 'threeMonths',
-    label: '最近三个月',
-    startDate: () => dayjs().subtract(3, 'month').format('YYYY-MM-DD'),
-    endDate: () => dayjs().format('YYYY-MM-DD'),
-    mode: HistorySearchIn.mode.MONTHLY,
-  },
-  {
-    key: 'halfYear',
-    label: '最近半年',
-    startDate: () => dayjs().subtract(6, 'month').format('YYYY-MM-DD'),
-    endDate: () => dayjs().format('YYYY-MM-DD'),
-    mode: HistorySearchIn.mode.MONTHLY,
-  },
-]
-
-// 搜索表单（默认按日合并）
-const searchForm = reactive({
-  mode: HistorySearchIn.mode.DAILY as HistorySearchIn.mode,
-  startDate: dayjs().subtract(7, 'day').format('YYYY-MM-DD'),
-  endDate: dayjs().format('YYYY-MM-DD'),
+// 表单数据
+const formData = reactive<OCRScreenshotIn>({
+  window_title: '',
+  should_preprocess: true,
+  aspect_ratio_width: 16,
+  aspect_ratio_height: 9,
 })
 
-// 历史记录数据
-interface HistoryDateGroup {
-  date: string
-  users: Record<string, HistoryData>
-}
+// 加载状态
+const loading = ref(false)
 
-const historyData = ref<HistoryDateGroup[]>([])
+// 截图结果
+const screenshotResult = ref<OCRScreenshotOut | null>(null)
 
-// 当前显示的统计数据（根据是否选中记录条目来决定显示用户总计还是单条记录的数据）
-const currentStatistics = computed(() => {
-  if (selectedRecordIndex.value >= 0 && currentDetail.value) {
-    // 显示选中记录的统计数据
-    return {
-      recruit_statistics: currentDetail.value.recruit_statistics,
-      drop_statistics: currentDetail.value.drop_statistics,
-    }
-  } else if (selectedUserData.value) {
-    // 显示用户总计统计数据
-    return {
-      recruit_statistics: selectedUserData.value.recruit_statistics,
-      drop_statistics: selectedUserData.value.drop_statistics,
-    }
-  } else {
-    // 没有选中任何数据
-    return {
-      recruit_statistics: null,
-      drop_statistics: null,
-    }
-  }
-})
-
-// 页面加载时自动搜索
-onMounted(() => {
-  handleSearch()
-})
-
-// 搜索历史记录
-const handleSearch = async () => {
-  if (!searchForm.startDate || !searchForm.endDate) {
-    message.error('请选择开始日期和结束日期')
+// 获取截图
+const handleScreenshot = async () => {
+  if (!formData.window_title.trim()) {
+    message.error('请输入窗口标题')
     return
   }
 
   try {
-    searchLoading.value = true
-    const response = await Service.searchHistoryApiHistorySearchPost({
-      mode: searchForm.mode,
-      start_date: searchForm.startDate,
-      end_date: searchForm.endDate,
+    loading.value = true
+    screenshotResult.value = null
+
+    const response = await OcrService.getScreenshotApiOcrScreenshotPost({
+      window_title: formData.window_title,
+      should_preprocess: formData.should_preprocess,
+      aspect_ratio_width: formData.aspect_ratio_width,
+      aspect_ratio_height: formData.aspect_ratio_height,
     })
 
-    if (response.code === 200) {
-      // 转换数据格式
-      historyData.value = Object.entries(response.data)
-        .map(([date, users]) => ({
-          date,
-          users,
-        }))
-        .sort((a, b) => b.date.localeCompare(a.date)) // 按日期倒序排列
+    screenshotResult.value = response
 
-      message.success('搜索完成')
+    if (response.code === 200) {
+      message.success('截图获取成功！')
     } else {
-      message.error(response.message || '搜索失败')
+      message.error(response.message || '截图失败')
     }
   } catch (error) {
-    console.error('搜索历史记录失败:', error)
-    message.error('搜索历史记录失败')
+    console.error('获取截图失败:', error)
+    message.error(`获取截图失败: ${error}`)
   } finally {
-    searchLoading.value = false
+    loading.value = false
   }
 }
 
-// 重置搜索条件
+// 重置参数
 const handleReset = () => {
-  searchForm.mode = HistorySearchIn.mode.DAILY
-  searchForm.startDate = dayjs().subtract(7, 'day').format('YYYY-MM-DD')
-  searchForm.endDate = dayjs().format('YYYY-MM-DD')
-  historyData.value = []
-  activeKeys.value = []
+  formData.window_title = ''
+  formData.should_preprocess = true
+  formData.aspect_ratio_width = 16
+  formData.aspect_ratio_height = 9
+  screenshotResult.value = null
 }
-
-// 快捷时间选择处理
-const handleQuickTimeSelect = (preset: (typeof timePresets)[0]) => {
-  currentPreset.value = preset.key
-  searchForm.startDate = preset.startDate()
-  searchForm.endDate = preset.endDate()
-  searchForm.mode = preset.mode
-
-  // 自动搜索
-  handleSearch()
-}
-
-// 日期变化处理（手动选择日期时清除快捷选择状态）
-const handleDateChange = () => {
-  currentPreset.value = ''
-}
-
-// 选择用户处理（修正乱码注释）
-const handleSelectUser = async (date: string, username: string, userData: HistoryData) => {
-  selectedUser.value = `${date}-${username}`
-  selectedUserData.value = userData
-  selectedRecordIndex.value = -1
-  currentDetail.value = null
-  currentJsonFile.value = ''
-}
-
-// 选择记录处理
-const handleSelectRecord = async (index: number, record: any) => {
-  selectedRecordIndex.value = index
-  currentJsonFile.value = record.jsonFile
-  await loadUserLog(record.jsonFile)
-}
-
-// 加载用户日志
-const loadUserLog = async (jsonFile: string) => {
-  try {
-    detailLoading.value = true
-    const response = await Service.getHistoryDataApiHistoryDataPost({
-      jsonPath: jsonFile,
-    })
-
-    if (response.code === 200) {
-      currentDetail.value = response.data
-    } else {
-      message.error(response.message || '获取详细日志失败')
-      currentDetail.value = null
-    }
-  } catch (error) {
-    console.error('获取历史记录详情失败:', error)
-    message.error('获取历史记录详情失败')
-    currentDetail.value = null
-  } finally {
-    detailLoading.value = false
-  }
-}
-
-// 打开日志文件
-const handleOpenLogFile = async () => {
-  if (!currentJsonFile.value) {
-    message.warning('请先选择一条记录')
-    return
-  }
-
-  try {
-    // 将 .json 扩展名替换为 .log
-    const logFilePath = currentJsonFile.value.replace(/\.json$/, '.log')
-
-    console.log('尝试打开日志文件:', logFilePath)
-    console.log('electronAPI 可用性:', !!window.electronAPI)
-    console.log(
-      'openFile 方法可用性:',
-      !!(window.electronAPI && (window.electronAPI as any).openFile)
-    )
-
-    // 调用系统API打开文件
-    if (window.electronAPI && (window.electronAPI as any).openFile) {
-      await (window.electronAPI as any).openFile(logFilePath)
-      message.success('日志文件已打开')
-    } else {
-      const errorMsg = !window.electronAPI
-        ? '当前环境不支持打开文件功能（electronAPI 不可用）'
-        : '当前环境不支持打开文件功能（openFile 方法不可用）'
-      console.error(errorMsg)
-      message.error(errorMsg)
-    }
-  } catch (error) {
-    console.error('打开日志文件失败:', error)
-    message.error(`打开日志文件失败: ${error}`)
-  }
-}
-
-// 打开日志文件所在目录
-const handleOpenLogDirectory = async () => {
-  if (!currentJsonFile.value) {
-    message.warning('请先选择一条记录')
-    return
-  }
-
-  try {
-    // 将 .json 扩展名替换为 .log
-    const logFilePath = currentJsonFile.value.replace(/\.json$/, '.log')
-
-    console.log('尝试打开日志文件目录:', logFilePath)
-    console.log('electronAPI 可用性:', !!window.electronAPI)
-    console.log(
-      'showItemInFolder 方法可用性:',
-      !!(window.electronAPI && (window.electronAPI as any).showItemInFolder)
-    )
-
-    // 调用系统API打开目录并选中文件
-    if (window.electronAPI && (window.electronAPI as any).showItemInFolder) {
-      await (window.electronAPI as any).showItemInFolder(logFilePath)
-      message.success('日志文件目录已打开')
-    } else {
-      const errorMsg = !window.electronAPI
-        ? '当前环境不支持打开目录功能（electronAPI 不可用）'
-        : '当前环境不支持打开目录功能（showItemInFolder 方法不可用）'
-      console.error(errorMsg)
-      message.error(errorMsg)
-    }
-  } catch (error) {
-    console.error('打开日志文件目录失败:', error)
-    message.error(`��开日志文件目录失败: ${error}`)
-  }
-}
-
-// 日志字体大小（恢复）
-const logFontSize = ref(14)
-const logFontSizeOptions = [12, 13, 14, 16, 18, 20]
-
-// Tooltip 容器：避免挂载到 body 造成全局滚动条闪烁与布局抖动
-const tooltipContainer = (triggerNode: HTMLElement) => triggerNode?.parentElement || document.body
-// 固定 button 尺寸，避免 hover/tooltip 状态导致宽度高度微调
-const buttonFixedStyle = { width: '28px', height: '28px', padding: 0 }
 </script>
 
 <style scoped>
-/*标题父元素的父元素（？？？）*/
-.history-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 32px;
-  padding: 0 8px;
+.ocr-debug-page {
+  padding: 24px;
+  max-width: 1400px;
+  margin: 0 auto;
 }
 
-/*标题父元素*/
-.header-title {
-  display: flex;
-  align-items: center;
-  gap: 16px;
+.page-header {
+  margin-bottom: 24px;
 }
 
-/*标题*/
-.header-title h1 {
-  margin: 0;
-  font-size: 32px;
+.page-header h1 {
+  margin: 0 0 8px 0;
+  font-size: 28px;
   font-weight: 700;
   color: var(--ant-color-text);
   background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
@@ -459,52 +197,38 @@ const buttonFixedStyle = { width: '28px', height: '28px', padding: 0 }
   background-clip: text;
 }
 
-/* 中下部分:左侧日期列表 */
-.history-content {
-  height: calc(80vh - 200px);
-  overflow: hidden;
-}
-
-.history-layout {
-  display: flex;
-  gap: 16px;
-  height: 100%;
-}
-
-/* 左侧日期栏 */
-.date-sidebar {
-  width: 200px;
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.date-list {
-  flex: 1;
-  overflow-y: auto;
-  border: 1px solid var(--ant-color-border);
-  border-radius: 8px;
-  background: var(--ant-color-bg-container);
-}
-
-.date-panel {
-  border-bottom: 1px solid var(--ant-color-border-secondary);
-}
-
-.date-panel:last-child {
-  border-bottom: none;
-}
-
-.date-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  width: 100%;
-}
-
-.date-text {
-  font-weight: 600;
+.description {
+  margin: 0;
+  color: var(--ant-color-text-secondary);
   font-size: 14px;
+}
+
+.config-card {
+  margin-bottom: 24px;
+}
+
+.result-card {
+  margin-top: 24px;
+}
+
+.image-container {
+  margin-top: 24px;
+  padding: 16px;
+  background: var(--ant-color-bg-layout);
+  border-radius: 8px;
+}
+
+.image-container h3 {
+  margin: 0 0 16px 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.screenshot-image {
+  max-width: 100%;
+  height: auto;
+  border: 1px solid var(--ant-color-border);
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 </style>
