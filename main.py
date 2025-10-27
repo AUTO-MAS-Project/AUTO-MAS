@@ -120,6 +120,7 @@ def main():
             history_router,
             setting_router,
             update_router,
+            ocr_router,
         )
 
         app = FastAPI(
@@ -147,6 +148,7 @@ def main():
         app.include_router(history_router)
         app.include_router(setting_router)
         app.include_router(update_router)
+        app.include_router(ocr_router)
 
         app.mount(
             "/api/res/materials",
