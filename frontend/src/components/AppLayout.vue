@@ -16,6 +16,16 @@
           :items="mainMenuItems"
           @click="onMenuClick"
         />
+        <!-- 测试路由分隔区域 -->
+        <a-menu
+          v-if="isDevelopment"
+          v-model:selected-keys="selectedKeys"
+          mode="inline"
+          :theme="isDark ? 'dark' : 'light'"
+          class="dev-menu"
+          :items="devMenuItems"
+          @click="onMenuClick"
+        />
         <a-menu
           v-model:selected-keys="selectedKeys"
           mode="inline"
@@ -62,6 +72,15 @@ const { isRouteLocked, triggerBlockCallback } = useRouteLock()
 // 工具：生成菜单项
 const icon = (Comp: any) => () => h(Comp)
 
+// 判断是否为开发环境
+const isDevelopment = computed(() => {
+  return (
+    process.env.NODE_ENV === 'development' ||
+    (import.meta as any).env?.DEV === true ||
+    window.location.hostname === 'localhost'
+  )
+})
+
 const mainMenuItems = [
   { key: '/home', label: '主页', icon: icon(HomeOutlined) },
   { key: '/scripts', label: '脚本管理', icon: icon(FileTextOutlined) },
@@ -69,24 +88,29 @@ const mainMenuItems = [
   { key: '/emulators', label: '模拟器管理', icon: icon(DatabaseOutlined) },
   { key: '/queue', label: '调度队列', icon: icon(UnorderedListOutlined) },
   { key: '/scheduler', label: '调度中心', icon: icon(ControlOutlined) },
-  // 开发模式下添加测试路由
-  ...(process.env.NODE_ENV === 'development' ||
-  (import.meta as any).env?.DEV === true ||
-  window.location.hostname === 'localhost'
-    ? [{ key: '/TestRouter', label: '测试路由', icon: icon(SettingOutlined) }]
-    : []),
 ]
+
+// 开发环境专用菜单项
+const devMenuItems = [
+  { key: '/TestRouter', label: '测试路由', icon: icon(SettingOutlined) },
+  { key: '/OCRdev', label: 'OCR测试', icon: icon(SettingOutlined) },
+]
+
 const bottomMenuItems = [
   { key: '/history', label: '历史记录', icon: icon(HistoryOutlined) },
   { key: '/settings', label: '设置', icon: icon(SettingOutlined) },
 ]
 
-const allItems = [...mainMenuItems, ...bottomMenuItems]
+const allItems = computed(() => [
+  ...mainMenuItems,
+  ...(isDevelopment.value ? devMenuItems : []),
+  ...bottomMenuItems,
+])
 
 // 选中项：根据当前路径前缀匹配
 const selectedKeys = computed(() => {
   const path = route.path
-  const matched = allItems.find(i => path.startsWith(String(i.key)))
+  const matched = allItems.value.find(i => path.startsWith(String(i.key)))
   return [matched?.key || '/home']
 })
 
@@ -168,6 +192,13 @@ const onMenuClick: MenuProps['onClick'] = info => {
 .sider-content :deep(.ant-menu-light .ant-menu-item::after),
 .sider-content :deep(.ant-menu-dark .ant-menu-item::after) {
   display: none;
+}
+
+/* 开发菜单区域 - 添加上边距以创建视觉分隔 */
+.dev-menu {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--ant-color-border);
 }
 
 .bottom-menu {
