@@ -665,7 +665,7 @@ const handleOpenLogDirectory = async () => {
     }
   } catch (error) {
     console.error('打开日志文件目录失败:', error)
-    message.error(`��开日志文件目录失败: ${error}`)
+    message.error(`打开日志文件目录失败: ${error}`)
   }
 }
 
