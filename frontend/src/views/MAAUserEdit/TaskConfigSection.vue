@@ -39,12 +39,12 @@
       <a-col :span="6">
         <a-form-item name="ifAutoRoguelike">
           <template #label>
-            <a-tooltip title="未完全适配，请谨慎使用">
+            <a-tooltip title="你也许需要注意：长时间的自动肉鸽可能会导致你自动调度任务被取消">
               <span>自动肉鸽 </span>
               <QuestionCircleOutlined class="help-icon" />
             </a-tooltip>
           </template>
-          <a-switch v-model:checked="formData.Task.IfAutoRoguelike" :disabled="true" />
+          <a-switch v-model:checked="formData.Task.IfAutoRoguelike" :disabled="loading" />
         </a-form-item>
       </a-col>
       <a-col :span="6">
