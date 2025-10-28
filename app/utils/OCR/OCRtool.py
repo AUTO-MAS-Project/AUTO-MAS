@@ -11,7 +11,18 @@ import subprocess
 from pathlib import Path
 
 from app.utils import get_logger
-from app.utils.exception import WindowsNotFoundException, WindowsNotFocusException
+from app.utils.exception import (
+    WindowsNotFoundException,
+    WindowsNotFocusException,
+    OCRNotFoundTitleException,
+    ADBFileNotFoundException,
+    ADBCommandFailedException,
+    ADBDeviceNotFoundException,
+    ADBConnectionFailedException,
+    ADBTimeoutException,
+    ADBScreenshotException,
+    ImageProcessException
+)
 
 # OCR入门指南！
 # ┌────────────────────────────┐
@@ -754,14 +765,14 @@ class OCRTool:
             bool: 是否找到图片内容。
 
         Raises:
-            ValueError: 如果 title 参数为 None 且类的全局 title 也未设置。
+            OCRNotFoundTitleException: 如果 title 参数为 None 且类的全局 title 也未设置。
         """
         import time
 
         # 使用传入的 title 或类的全局 title
         window_title = title or cls.title
         if not window_title:
-            raise ValueError("必须提供 title 参数或通过 set_title() 设置全局 title")
+            raise OCRNotFoundTitleException("必须提供 title 参数或通过 set_title() 设置全局 title")
 
         for attempt in range(retry_times):
             try:
@@ -803,14 +814,14 @@ class OCRTool:
             bool: 是否找到列表中任意一张图片的内容。
 
         Raises:
-            ValueError: 如果 title 参数为 None 且类的全局 title 也未设置。
+            OCRNotFoundTitleException: 如果 title 参数为 None 且类的全局 title 也未设置。
         """
         import time
 
         # 使用传入的 title 或类的全局 title
         window_title = title or cls.title
         if not window_title:
-            raise ValueError("必须提供 title 参数或通过 set_title() 设置全局 title")
+            raise OCRNotFoundTitleException("必须提供 title 参数或通过 set_title() 设置全局 title")
 
         for attempt in range(retry_times):
             try:
@@ -852,14 +863,14 @@ class OCRTool:
             bool: 是否找到列表中所有图片的内容。
 
         Raises:
-            ValueError: 如果 title 参数为 None 且类的全局 title 也未设置。
+            OCRNotFoundTitleException: 如果 title 参数为 None 且类的全局 title 也未设置。
         """
         import time
 
         # 使用传入的 title 或类的全局 title
         window_title = title or cls.title
         if not window_title:
-            raise ValueError("必须提供 title 参数或通过 set_title() 设置全局 title")
+            raise OCRNotFoundTitleException("必须提供 title 参数或通过 set_title() 设置全局 title")
 
         for attempt in range(retry_times):
             try:
@@ -908,14 +919,14 @@ class OCRTool:
             bool: 是否成功找到并点击图像位置。
 
         Raises:
-            ValueError: 如果 title 参数为 None 且类的全局 title 也未设置。
+            OCRNotFoundTitleException: 如果 title 参数为 None 且类的全局 title 也未设置。
         """
         import time
 
         # 使用传入的 title 或类的全局 title
         window_title = title or cls.title
         if not window_title:
-            raise ValueError("必须提供 title 参数或通过 set_title() 设置全局 title")
+            raise OCRNotFoundTitleException("必须提供 title 参数或通过 set_title() 设置全局 title")
 
         for attempt in range(retry_times):
             try:
@@ -961,7 +972,7 @@ class OCRTool:
             bool: 是否成功找到并点击文字位置。
 
         Raises:
-            ValueError: 如果 title 参数为 None 且类的全局 title 也未设置。
+            OCRNotFoundTitleException: 如果 title 参数为 None 且类的全局 title 也未设置。
         """
         import time
         import numpy as np
@@ -969,7 +980,7 @@ class OCRTool:
         # 使用传入的 title 或类的全局 title
         window_title = title or cls.title
         if not window_title:
-            raise ValueError("必须提供 title 参数或通过 set_title() 设置全局 title")
+            raise OCRNotFoundTitleException("必须提供 title 参数或通过 set_title() 设置全局 title")
 
         for attempt in range(retry_times):
             try:
