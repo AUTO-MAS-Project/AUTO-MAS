@@ -98,6 +98,12 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '测试路由' },
   },
   {
+    path: '/OCRdev',
+    name: 'OCRdev',
+    component: () => import('../views/OCRdev.vue'),
+    meta: { title: 'OCR测试' },
+  },
+  {
     path: '/history',
     name: 'History',
     component: () => import('../views/History.vue'),
