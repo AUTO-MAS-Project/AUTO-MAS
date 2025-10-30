@@ -324,7 +324,7 @@ function createWindow() {
 
   const config = loadConfig()
 
-  // 解析配置
+  // 解���配置
   const [cfgW, cfgH] = config.UI.size.split(',').map((s: string) => parseInt(s.trim(), 10) || 1600)
   const [cfgX, cfgY] = config.UI.location
     .split(',')
@@ -360,16 +360,27 @@ function createWindow() {
     titleBarStyle: 'hidden',
     icon: path.join(__dirname, '../public/AUTO-MAS.ico'),
     autoHideMenuBar: true,
-    show: !config.Start.IfMinimizeDirectly,
+    show: false, // 改为 false，等待页面加载完成后再显示
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#000000' : '#ffffff', // 根据系统主题设置背景色
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
       contextIsolation: true,
+      backgroundThrottling: false, // 防止后台节流
     },
   })
 
   // 把局部的 win 赋值给模块级（供其他模块/函数用）
   mainWindow = win
+
+  // 页面加载完成后再显示窗口，避免白屏闪烁
+  win.webContents.on('did-finish-load', () => {
+    // 根据配置决定是否显示窗口
+    if (!config.Start.IfMinimizeDirectly) {
+      win.show()
+      log.info('页面加载完成，窗口已显示')
+    }
+  })
 
   // 根据显示器动态更新最小尺寸/边界
   const recomputeMinSize = () => {
