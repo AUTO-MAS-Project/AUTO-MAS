@@ -664,6 +664,7 @@ export async function installDependencies(
           pipMirrorUrl,
           '--trusted-host',
           new URL(pipMirrorUrl).hostname,
+          '--no-warn-script-location', // 抑制脚本路径警告
         ],
         {
           cwd: backendPath,
