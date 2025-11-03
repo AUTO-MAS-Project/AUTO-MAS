@@ -808,19 +808,43 @@ class AppConfig(GlobalConfig):
         if not isinstance(self.ScriptConfig[script_uid], MaaConfig):
             raise TypeError(f"脚本 {script_id} 不是 MAA 脚本, 无法设置基建配置")
 
-        (Path.cwd() / f"data/{script_id}/{user_id}/Infrastructure").mkdir(
-            parents=True, exist_ok=True
+        infrast_data = json.loads(json_path.read_text(encoding="utf-8"))
+
+        if len(infrast_data.get("plans", [])) == 0:
+            raise ValueError("未找到有效的基建排班信息")
+
+        await self.ScriptConfig[script_uid].UserData[user_uid].set(
+            "Data", "CustomInfrast", json.dumps(infrast_data, ensure_ascii=False)
         )
-        shutil.copy(
-            json_path,
-            Path.cwd()
-            / f"data/{script_id}/{user_id}/Infrastructure/infrastructure.json",
-        )
-        await (
-            self.ScriptConfig[script_uid]
-            .UserData[user_uid]
-            .set("Info", "InfrastPath", str(json_path))
-        )
+        await self.ScriptConfig.save()
+
+    async def get_user_combox_infrastructure(
+        self, script_id: str, user_id: str
+    ) -> list[dict]:
+        logger.info(f"获取用户自定义基建排班下拉框信息: {script_id} - {user_id}")
+
+        script_uid = uuid.UUID(script_id)
+        user_uid = uuid.UUID(user_id)
+
+        script_config = self.ScriptConfig[script_uid]
+
+        # 根据脚本类型选择添加对应用户配置
+        if not isinstance(script_config, MaaConfig):
+            raise TypeError(f"不支持的脚本配置类型: {type(script_config)}")
+
+        logger.info("开始获取用户自定义基建排班下拉框信息")
+
+        data = []
+        for i, plan in enumerate(
+            json.loads(
+                script_config.UserData[user_uid].get("Data", "CustomInfrast")
+            ).get("plans", [])
+        ):
+            data.append({"label": plan.get("name", f"排班 {i+1}"), "value": str(i)})
+
+        logger.success("用户自定义基建排班下拉框信息获取成功")
+
+        return data
 
     async def add_plan(
         self, script: Literal["MaaPlan"]
