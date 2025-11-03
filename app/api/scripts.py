@@ -284,6 +284,26 @@ async def import_infrastructure(user: UserSetIn = Body(...)) -> OutBase:
 
 
 @router.post(
+    "/user/combox/infrastructure",
+    summary="用户自定义基建排班可选项",
+    response_model=ComboBoxOut,
+    status_code=200,
+)
+async def get_user_combox_infrastructure(user: UserDeleteIn = Body(...)) -> ComboBoxOut:
+
+    try:
+        raw_data = await Config.get_user_combox_infrastructure(
+            user.scriptId, user.userId
+        )
+        data = [ComboBoxItem(**item) for item in raw_data] if raw_data else []
+    except Exception as e:
+        return ComboBoxOut(
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}", data=[]
+        )
+    return ComboBoxOut(data=data)
+
+
+@router.post(
     "/webhook/get",
     summary="查询 webhook 配置",
     response_model=WebhookGetOut,

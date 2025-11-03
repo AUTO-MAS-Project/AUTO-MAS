@@ -55,9 +55,10 @@
             :server-options="serverOptions"
             :infrastructure-config-path="infrastructureConfigPath"
             :infrastructure-importing="infrastructureImporting"
+            :infrastructure-options="infrastructureOptions"
+            :infrastructure-options-loading="infrastructureOptionsLoading"
             :is-edit="isEdit"
-            @select-infrastructure-config="selectInfrastructureConfig"
-            @import-infrastructure-config="importInfrastructureConfig"
+            @select-and-import-infrastructure-config="selectAndImportInfrastructureConfig"
           />
 
           <!-- 关卡配置组件 -->
@@ -179,6 +180,8 @@ let maaConfigTimeout: number | null = null
 // 基建配置文件相关
 const infrastructureConfigPath = ref('')
 const infrastructureImporting = ref(false)
+const infrastructureOptions = ref<Array<{ label: string; value: string }>>([])
+const infrastructureOptionsLoading = ref(false)
 
 // 服务器选项
 const serverOptions = [
@@ -433,7 +436,8 @@ const getDefaultMAAUserData = () => ({
     Status: true,
     Mode: '简洁',
     InfrastMode: 'Normal',
-    InfrastPath: '',
+    InfrastName: '',
+    InfrastIndex: '',
     Annihilation: 'Annihilation',
     Stage: '1-7',
     StageMode: 'Fixed',
@@ -467,7 +471,6 @@ const getDefaultMAAUserData = () => ({
     CustomWebhooks: [],
   },
   Data: {
-    CustomInfrastPlanIndex: '',
     IfPassCheck: false,
     LastAnnihilationDate: '',
     LastProxyDate: '',
@@ -516,6 +519,8 @@ watch(
   },
   { immediate: true }
 )
+
+// 基建配置名称和索引保持独立，不自动同步
 
 watch(
   () => formData.userName,
@@ -606,6 +611,9 @@ const loadUserData = async () => {
           InfoId: formData.Info.Id,
           fullData: formData,
         })
+        
+        // 加载基建配置选项
+        await loadInfrastructureOptions()
       } else {
         message.error('用户不存在')
         handleCancel()
@@ -648,52 +656,74 @@ const loadStageModeOptions = async () => {
   }
 }
 
-// 选择基建配置文件
-const selectInfrastructureConfig = async () => {
-  try {
-    const path = await (window as any).electronAPI?.selectFile([
-      { name: 'JSON 文件', extensions: ['json'] },
-      { name: '所有文件', extensions: ['*'] },
-    ])
-    if (path && path.length > 0) {
-      infrastructureConfigPath.value = path
-      formData.Info.InfrastPath = path[0]
-      message.success('文件选择成功')
-    }
-  } catch (error) {
-    console.error('文件选择失败:', error)
-    message.error('文件选择失败')
-  }
-}
-
-// 导入基建配置
-const importInfrastructureConfig = async () => {
-  if (!infrastructureConfigPath.value) {
-    message.warning('请先选择配置文件')
-    return
-  }
+// 选择并导入基建配置文件
+const selectAndImportInfrastructureConfig = async () => {
   if (!isEdit.value) {
     message.warning('请先保存用户后再导入配置')
     return
   }
+  
   try {
-    infrastructureImporting.value = true
-    const result = await Service.importInfrastructureApiScriptsUserInfrastructurePost({
-      scriptId: scriptId,
-      userId: userId,
-      jsonFile: infrastructureConfigPath.value[0],
-    })
-    if (result && result.code === 200) {
-      message.success('基建配置导入成功')
-      infrastructureConfigPath.value = ''
-    } else {
-      message.error('基建配置导入失败')
+    // 选择文件
+    const path = await (window as any).electronAPI?.selectFile([
+      { name: 'JSON 文件', extensions: ['json'] },
+      { name: '所有文件', extensions: ['*'] },
+    ])
+    
+    if (path && path.length > 0) {
+      infrastructureImporting.value = true
+      
+      // 直接导入配置
+      const result = await Service.importInfrastructureApiScriptsUserInfrastructurePost({
+        scriptId: scriptId,
+        userId: userId,
+        jsonFile: path[0],
+      })
+      
+      if (result && result.code === 200) {
+        // 从文件路径中提取文件名作为 InfrastName
+        const fileName = path[0].split('\\').pop()?.split('/').pop() || ''
+        formData.Info.InfrastName = fileName.replace('.json', '')
+        // 清空 InfrastIndex，等待用户从下拉框中选择
+        formData.Info.InfrastIndex = ''
+        
+        message.success('基建配置导入成功')
+        
+        // 重新加载基建配置选项
+        await loadInfrastructureOptions()
+      } else {
+        message.error('基建配置导入失败')
+      }
     }
   } catch (error) {
     console.error('基建配置导入失败:', error)
     message.error('基建配置导入失败')
   } finally {
     infrastructureImporting.value = false
+  }
+}
+
+// 加载基建配置选项
+const loadInfrastructureOptions = async () => {
+  if (!isEdit.value) return
+  
+  try {
+    infrastructureOptionsLoading.value = true
+    const result = await Service.getUserComboxInfrastructureApiScriptsUserComboxInfrastructurePost({
+      scriptId: scriptId,
+      userId: userId
+    })
+    
+    if (result && result.code === 200 && result.data) {
+      infrastructureOptions.value = result.data.map((item: any) => ({
+        label: item.label,
+        value: item.value
+      }))
+    }
+  } catch (error) {
+    console.error('加载基建配置选项失败:', error)
+  } finally {
+    infrastructureOptionsLoading.value = false
   }
 }
 
@@ -713,12 +743,9 @@ const handleSubmit = async () => {
       isEdit: isEdit.value,
     })
 
-    // 排除 InfrastPath 字段
-    const { InfrastPath, ...infoWithoutInfrastPath } = formData.Info
-
-    // 构建提交数据
+    // 构建提交数据，包含所有 Info 字段
     const userData = {
-      Info: { ...infoWithoutInfrastPath },
+      Info: { ...formData.Info },
       Task: { ...formData.Task },
       Notify: { ...formData.Notify },
       Data: { ...formData.Data },
@@ -1041,6 +1068,14 @@ onMounted(() => {
   loadScriptInfo()
   loadStageModeOptions()
   loadStageOptions()
+  
+  // 如果是编辑模式，在用户数据加载后会自动加载基建配置选项
+  // 如果是新建模式，也尝试加载基建配置选项（如果已经有用户ID）
+  if (isEdit.value) {
+    // 编辑模式会在 loadUserData 中加载
+  } else {
+    // 新建模式暂时不加载，等保存后再加载
+  }
 
   // 设置StageMode变化监听器
   watch(

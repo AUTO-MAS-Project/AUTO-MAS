@@ -84,7 +84,6 @@ export interface User {
   id: string
   name: string
   Data: {
-    CustomInfrastPlanIndex: string
     IfPassCheck: boolean
     LastAnnihilationDate: string
     LastProxyDate: string
@@ -96,6 +95,8 @@ export interface User {
     Id: string
     IfSkland: boolean
     InfrastMode: string
+    InfrastName: string
+    InfrastIndex: string
     MedicineNumb: number
     Mode: string
     Name: string
