@@ -295,7 +295,8 @@ class MaaUserConfig_Info(BaseModel):
     InfrastMode: Optional[Literal["Normal", "Rotation", "Custom"]] = Field(
         default=None, description="基建模式"
     )
-    InfrastPath: Optional[str] = Field(default=None, description="自定义基建文件路径")
+    InfrastName: Optional[str] = Field(default=None, description="基建方案名称")
+    InfrastIndex: Optional[str] = Field(default=None, description="基建方案索引")
     Password: Optional[str] = Field(default=None, description="密码")
     Notes: Optional[str] = Field(default=None, description="备注")
     MedicineNumb: Optional[int] = Field(default=None, description="吃理智药数量")

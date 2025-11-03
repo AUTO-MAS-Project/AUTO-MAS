@@ -18,9 +18,11 @@
 
 #   Contact: DLmaster_361@163.com
 
+
+import uuid
+import json
 from pathlib import Path
 from datetime import datetime
-import uuid
 
 from app.utils.constants import UTC4
 from .ConfigBase import (
@@ -31,6 +33,7 @@ from .ConfigBase import (
     BoolValidator,
     OptionsValidator,
     RangeValidator,
+    VirtualConfigValidator,
     FileValidator,
     FolderValidator,
     EncryptValidator,
@@ -207,8 +210,11 @@ class MaaUserConfig(ConfigBase):
             "Normal",
             OptionsValidator(["Normal", "Rotation", "Custom"]),
         )
-        self.Info_InfrastPath = ConfigItem(
-            "Info", "InfrastPath", str(Path.cwd()), FileValidator()
+        self.Info_InfrastName = ConfigItem(
+            "Info", "InfrastName", "-", VirtualConfigValidator(self.getInfrastName)
+        )
+        self.Info_InfrastIndex = ConfigItem(
+            "Info", "InfrastIndex", "0", VirtualConfigValidator(self.getInfrastIndex)
         )
         self.Info_Password = ConfigItem("Info", "Password", "", EncryptValidator())
         self.Info_Notes = ConfigItem("Info", "Notes", "无")
@@ -244,8 +250,8 @@ class MaaUserConfig(ConfigBase):
             "Data", "ProxyTimes", 0, RangeValidator(0, 9999)
         )
         self.Data_IfPassCheck = ConfigItem("Data", "IfPassCheck", True, BoolValidator())
-        self.Data_CustomInfrastPlanIndex = ConfigItem(
-            "Data", "CustomInfrastPlanIndex", "0"
+        self.Data_CustomInfrast = ConfigItem(
+            "Data", "CustomInfrast", "{ }", JSONValidator(dict)
         )
 
         self.Task_IfWakeUp = ConfigItem("Task", "IfWakeUp", True, BoolValidator())
@@ -279,6 +285,42 @@ class MaaUserConfig(ConfigBase):
         )
         self.Notify_ServerChanKey = ConfigItem("Notify", "ServerChanKey", "")
         self.Notify_CustomWebhooks = MultipleConfig([Webhook])
+
+    def getInfrastName(self, v) -> str:
+
+        if self.get("Info", "InfrastMode") != "Custom":
+            return "未使用自定义基建模式"
+
+        infrast_data = json.loads(self.get("Data", "CustomInfrast"))
+        if infrast_data.get("title", None) and infrast_data.get("description", None):
+            return f"{infrast_data['title']} - {infrast_data['description']}"
+        elif infrast_data.get("title", None):
+            return infrast_data["title"]
+        else:
+            return "未命名自定义基建"
+
+    def getInfrastIndex(self, v) -> str:
+
+        if self.get("Info", "InfrastMode") != "Custom":
+            return "-1"
+
+        infrast_data = json.loads(self.get("Data", "CustomInfrast"))
+
+        if len(infrast_data.get("plans", [])) == 0:
+            return "-1"
+
+        for i, plan in enumerate(infrast_data.get("plans", [])):
+
+            for t in plan.get("period", []):
+                if (
+                    datetime.strptime(t[0], "%H:%M").time()
+                    <= datetime.now().time()
+                    <= datetime.strptime(t[1], "%H:%M").time()
+                ):
+                    return str(i)
+
+        else:
+            return v
 
 
 class MaaConfig(ConfigBase):

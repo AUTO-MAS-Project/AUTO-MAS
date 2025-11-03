@@ -173,46 +173,54 @@
 
     <!-- 自定义基建配置文件选择 -->
     <a-row v-if="formData.Info.InfrastMode === 'Custom'" :gutter="24">
-      <a-col :span="24">
+      <a-col :span="12">
         <a-form-item name="infrastructureConfigFile">
           <template #label>
-            <a-tooltip title="选择自定义基建配置JSON文件">
+            <a-tooltip title="自定义基建配置名称与描述">
               <span class="form-label">
-                基建配置文件
+                自定义基建名称
                 <QuestionCircleOutlined class="help-icon" />
               </span>
             </a-tooltip>
           </template>
           <div style="display: flex; gap: 12px; align-items: center">
             <a-input
-              v-model:value="formData.Info.InfrastPath"
-              placeholder="请选择基建配置JSON文件"
+              v-model:value="formData.Info.InfrastName"
+              placeholder="自定义基建名称"
               readonly
               size="large"
               style="flex: 1"
             />
             <a-button
               type="primary"
-              ghost
-              :disabled="loading"
-              size="large"
-              @click="$emit('selectInfrastructureConfig')"
-            >
-              选择文件
-            </a-button>
-            <a-button
-              type="primary"
-              :disabled="loading || !infrastructureConfigPath || !isEdit"
+              :disabled="loading || !isEdit"
               :loading="infrastructureImporting"
               size="large"
-              @click="$emit('importInfrastructureConfig')"
+              @click="$emit('selectAndImportInfrastructureConfig')"
             >
-              导入配置
+              选择并导入
             </a-button>
           </div>
-          <div style="color: #999; font-size: 12px; margin-top: 4px">
-            请选择有效的基建配置JSON文件，点击「导入配置」按钮将其应用到当前用户。如果已经导入，可以忽略此选择框。
-          </div>
+        </a-form-item>
+      </a-col>
+      <a-col :span="12">
+        <a-form-item name="infrastructureIndex">
+          <template #label>
+            <a-tooltip title="从已导入的基建配置中选择当前的排班">
+              <span class="form-label">
+                自定义基建排班
+                <QuestionCircleOutlined class="help-icon" />
+              </span>
+            </a-tooltip>
+          </template>
+          <a-select
+            v-model:value="formData.Info.InfrastIndex"
+            placeholder="请选择自定义基建排班"
+            :disabled="loading"
+            :loading="infrastructureOptionsLoading"
+            :options="infrastructureOptions"
+            size="large"
+          />
         </a-form-item>
       </a-col>
     </a-row>
@@ -246,12 +254,13 @@ defineProps<{
   serverOptions: any[]
   infrastructureConfigPath: string
   infrastructureImporting: boolean
+  infrastructureOptions: Array<{ label: string; value: string }>
+  infrastructureOptionsLoading: boolean
   isEdit: boolean
 }>()
 
 defineEmits<{
-  selectInfrastructureConfig: []
-  importInfrastructureConfig: []
+  selectAndImportInfrastructureConfig: []
 }>()
 </script>
 

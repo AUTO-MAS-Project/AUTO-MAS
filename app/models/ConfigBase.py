@@ -24,12 +24,13 @@
 import json
 import uuid
 import shlex
+import inspect
 import win32com.client
 from copy import deepcopy
 from urllib.parse import urlparse
 from datetime import datetime
 from pathlib import Path
-from typing import List, Any, Dict, Union, Optional, TypeVar, Generic, Type
+from typing import List, Any, Dict, Union, Optional, TypeVar, Generic, Type, Callable
 
 
 from app.utils import dpapi_encrypt, dpapi_decrypt
@@ -163,6 +164,38 @@ class EncryptValidator(ConfigValidator):
 
     def correct(self, value: Any) -> Any:
         return value if self.validate(value) else dpapi_encrypt("数据损坏, 请重新设置")
+
+
+class VirtualConfigValidator(ConfigValidator):
+    """虚拟配置验证器"""
+
+    def __init__(self, function: Callable[[Any], str]):
+        self.function = function
+
+    def validate(self, value: Any) -> bool:
+
+        # 获取调用栈信息
+        frame = inspect.currentframe()
+        if frame is None:
+            return True
+        try:
+            # 获取调用者的帧信息
+            caller_frame = frame.f_back
+            if caller_frame is None:
+                return True
+
+            caller_method = caller_frame.f_code.co_name
+
+            # 根据调用者进行不同的验证逻辑
+            if caller_method == "getValue":
+                return False
+            else:
+                return True
+        finally:
+            del frame
+
+    def correct(self, value: Any) -> str:
+        return self.function(value)
 
 
 class BoolValidator(OptionsValidator):
@@ -359,7 +392,9 @@ class ConfigItem:
         self.validator = validator or ConfigValidator()
         self.is_locked = False
 
-        if not self.validator.validate(self.value):
+        if not self.validator.validate(self.value) and not isinstance(
+            self.validator, VirtualConfigValidator
+        ):
             raise ValueError(
                 f"配置项 '{self.group}.{self.name}' 的默认值 '{self.value}' 不合法"
             )

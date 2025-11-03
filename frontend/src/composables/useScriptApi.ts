@@ -113,7 +113,8 @@ export function useScriptApi() {
               RemainedDay: any
               Annihilation: any
               InfrastMode: any
-              InfrastPath: any
+              InfrastName: any
+              InfrastIndex: any
               Password: any
               Notes: any
               MedicineNumb: any
@@ -150,7 +151,6 @@ export function useScriptApi() {
               LastAnnihilationDate: any
               LastProxyDate: any
               LastSklandDate: any
-              CustomInfrastPlanIndex: any
               IfPassCheck: any
               ProxyTimes: any
             }
@@ -248,9 +248,13 @@ export function useScriptApi() {
                           maaUserData.Info?.InfrastMode !== undefined
                             ? maaUserData.Info.InfrastMode
                             : 'Normal',
-                        InfrastPath:
-                          maaUserData.Info?.InfrastPath !== undefined
-                            ? maaUserData.Info.InfrastPath
+                        InfrastName:
+                          maaUserData.Info?.InfrastName !== undefined
+                            ? maaUserData.Info.InfrastName
+                            : '',
+                        InfrastIndex:
+                          maaUserData.Info?.InfrastIndex !== undefined
+                            ? maaUserData.Info.InfrastIndex
                             : '',
                         Password:
                           maaUserData.Info?.Password !== undefined ? maaUserData.Info.Password : '',
@@ -359,10 +363,6 @@ export function useScriptApi() {
                         LastSklandDate:
                           maaUserData.Data?.LastSklandDate !== undefined
                             ? maaUserData.Data.LastSklandDate
-                            : '',
-                        CustomInfrastPlanIndex:
-                          maaUserData.Data?.CustomInfrastPlanIndex !== undefined
-                            ? maaUserData.Data.CustomInfrastPlanIndex
                             : '',
                         IfPassCheck:
                           maaUserData.Data?.IfPassCheck !== undefined

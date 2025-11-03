@@ -520,6 +520,25 @@ export class Service {
         });
     }
     /**
+     * 用户自定义基建排班可选项
+     * @param requestBody
+     * @returns ComboBoxOut Successful Response
+     * @throws ApiError
+     */
+    public static getUserComboxInfrastructureApiScriptsUserComboxInfrastructurePost(
+        requestBody: UserDeleteIn,
+    ): CancelablePromise<ComboBoxOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/user/combox/infrastructure',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 查询 webhook 配置
      * @param requestBody
      * @returns WebhookGetOut Successful Response

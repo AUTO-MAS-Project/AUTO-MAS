@@ -862,7 +862,7 @@ const handleBossKeyInputChange = (uuid: string) => {
                         </template>
                       </a-input>
                       <span v-else style="color: var(--text-color-tertiary); font-size: 12px">
-                        MuMu模拟器不支持老板键功能
+                        MuMu模拟器无需配置老板键
                       </span>
                     </a-descriptions-item>
                   </a-descriptions>

@@ -506,17 +506,22 @@ class AutoProxyTask(TaskExecuteBase):
             maa_set["Configurations"]["Default"]["GUI.CustomStageCode"] = "True"
             maa_set["Configurations"]["Default"]["Fight.UseExpiringMedicine"] = "True"
             if self.cur_user_config.get("Info", "InfrastMode") == "Custom":
-                infra_path = (
+                infrast_path = (
                     Path.cwd()
-                    / f"maa_set/{self.script_info.script_id}/{self.cur_user_config}/Infrastructure/infrastructure.json"
+                    / f"data/{self.script_info.script_id}/{self.cur_user_uid}/Infrastructure/infrastructure.json"
                 )
-                if infra_path.exists():
+                if self.cur_user_config.get("Info", "InfrastIndex") != "-1":
+                    infrast_path.parent.mkdir(parents=True, exist_ok=True)
+                    infrast_path.write_text(
+                        self.cur_user_config.get("Data", "CustomInfrast"),
+                        encoding="utf-8",
+                    )
                     maa_set["Configurations"]["Default"][
                         "Infrast.InfrastMode"
                     ] = "Custom"
                     maa_set["Configurations"]["Default"][
                         "Infrast.CustomInfrastPlanIndex"
-                    ] = self.cur_user_config.get("Data", "CustomInfrastPlanIndex")
+                    ] = self.cur_user_config.get("Info", "InfrastIndex")
                     maa_set["Configurations"]["Default"][
                         "Infrast.DefaultInfrast"
                     ] = "user_defined"
@@ -525,16 +530,16 @@ class AutoProxyTask(TaskExecuteBase):
                     ] = "False"
                     maa_set["Configurations"]["Default"][
                         "Infrast.CustomInfrastFile"
-                    ] = str(infra_path)
+                    ] = str(infrast_path)
                 else:
                     logger.warning(
-                        f"未选择用户 {self.cur_user_item.name} 的自定义基建配置文件"
+                        f"用户 {self.cur_user_item.name} 的自定义基建配置文件解析失败, 将使用普通基建模式"
                     )
                     await Config.send_websocket_message(
                         id=self.task_info.task_id,
                         type="Info",
                         data={
-                            "warning": f"未选择用户 {self.cur_user_item.name} 的自定义基建配置文件"
+                            "Warning": f"未能解析用户 {self.cur_user_item.name} 的自定义基建配置文件"
                         },
                     )
                     maa_set["Configurations"]["Default"][
@@ -624,12 +629,6 @@ class AutoProxyTask(TaskExecuteBase):
 
     async def final_task(self):
 
-        # await self.cur_user_config.set(
-        #     "Data",
-        #     "CustomInfrastPlanIndex",
-        #     data["Configurations"]["Default"]["Infrast.CustomInfrastPlanIndex"],
-        # )
-
         if self.check_result != "Pass":
             return
 
@@ -714,6 +713,21 @@ class AutoProxyTask(TaskExecuteBase):
                 "ProxyTimes",
                 self.cur_user_config.get("Data", "ProxyTimes") + 1,
             )
+
+            if self.cur_user_config.get("Info", "InfrastIndex") != "-1":
+                await self.cur_user_config.set(
+                    "Info",
+                    "InfrastIndex",
+                    str(
+                        (int(self.cur_user_config.get("Info", "InfrastIndex")) + 1)
+                        % len(
+                            json.loads(
+                                self.cur_user_config.get("Data", "CustomInfrast")
+                            ).get("plans", [])
+                        )
+                    ),
+                )
+
             self.cur_user_item.status = "完成"
             logger.success(f"用户 {self.cur_user_uid} 的自动代理任务已完成")
             await Notify.push_plyer(
