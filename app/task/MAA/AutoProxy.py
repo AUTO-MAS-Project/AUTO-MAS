@@ -677,6 +677,11 @@ class AutoProxyTask(TaskExecuteBase):
             if (self.run_book["Annihilation"] and self.run_book["Routine"])
             else "代理任务未全部完成"
         )
+
+        # 判断是否成功
+        if_success = self.run_book["Annihilation"] and self.run_book["Routine"]
+        success_symbol = "√" if if_success else "X"
+
         try:
             if if_six_star:
                 await push_notification(
@@ -687,7 +692,7 @@ class AutoProxyTask(TaskExecuteBase):
                 )
             await push_notification(
                 "统计信息",
-                f"{datetime.now().strftime('%m-%d')} | 用户 {self.cur_user_item.name} 的自动代理统计报告",
+                f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  {self.cur_user_item.name} 的自动代理统计报告",
                 statistics,
                 self.cur_user_config,
             )
