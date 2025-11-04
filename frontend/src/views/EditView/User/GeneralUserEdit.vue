@@ -18,6 +18,7 @@
 
     <a-space size="middle">
       <a-button
+        v-if="!showGeneralConfigMask"
         type="primary"
         ghost
         size="large"
@@ -28,6 +29,18 @@
           <SettingOutlined />
         </template>
         通用配置
+      </a-button>
+      <a-button
+        v-if="showGeneralConfigMask"
+        type="default"
+        size="large"
+        disabled
+        style="color: #52c41a; border-color: #52c41a"
+      >
+        <template #icon>
+          <SettingOutlined />
+        </template>
+        正在配置
       </a-button>
       <a-button size="large" class="cancel-button" @click="handleCancel">
         <template #icon>

@@ -1238,7 +1238,7 @@ export const connectAfterBackendStart = async (): Promise<boolean> => {
   return false
 }
 
-// 强制连接模式，用于强行进入应用时
+// 强制连接模式，用于跳过初始化时
 export const forceConnectWebSocket = async (): Promise<boolean> => {
   log('强制WebSocket连接模式开始')
 
