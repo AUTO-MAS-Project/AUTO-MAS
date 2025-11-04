@@ -660,39 +660,40 @@ const handleGeneralConfig = async () => {
       message.success(`已开始配置用户 ${formData.userName} 的通用设置`)
 
       // 设置 30 分钟超时自动断开
-      generalConfigTimeout = window.setTimeout(async () => {
-        if (generalSubscriptionId.value && generalWebsocketId.value) {
-          // 超时后自动保存配置
-          message.warning(
-            '用户 ${formData.userName} 的配置会话已超时（30分钟），正在自动保存配置...'
-          )
-          console.warn('配置会话已超时，自动执行保存操作')
+      generalConfigTimeout = window.setTimeout(
+        async () => {
+          if (generalSubscriptionId.value && generalWebsocketId.value) {
+            // 超时后自动保存配置
+            message.warning(`用户 ${formData.userName} 的配置会话已超时（30分钟），正在自动保存配置...`)
+            console.warn('配置会话已超时，自动执行保存操作')
 
-          try {
-            const websocketId = generalWebsocketId.value
-            const response = await Service.stopTaskApiDispatchStopPost({ taskId: websocketId })
+            try {
+              const websocketId = generalWebsocketId.value
+              const response = await Service.stopTaskApiDispatchStopPost({ taskId: websocketId })
 
-            if (response && response.code === 200) {
-              if (generalSubscriptionId.value) {
-                unsubscribe(generalSubscriptionId.value)
-                generalSubscriptionId.value = null
+              if (response && response.code === 200) {
+                if (generalSubscriptionId.value) {
+                  unsubscribe(generalSubscriptionId.value)
+                  generalSubscriptionId.value = null
+                }
+                generalWebsocketId.value = null
+                showGeneralConfigMask.value = false
+                configTimedOut.value = false
+                message.success('配置会话超时，已自动保存配置')
+              } else {
+                message.error(response?.message || '自动保存配置失败，请手动保存')
               }
-              generalWebsocketId.value = null
-              showGeneralConfigMask.value = false
-              configTimedOut.value = false
-              message.success('配置会话超时，已自动保存配置')
-            } else {
-              message.error(response?.message || '自动保存配置失败，请手动保存')
+            } catch (error) {
+              console.error('超时自动保存配置失败:', error)
+              message.error('自动保存配置失败，请手动保存')
+              // 失败时保留按钮让用户手动操作
+              configTimedOut.value = true
             }
-          } catch (error) {
-            console.error('超时自动保存配置失败:', error)
-            message.error('自动保存配置失败，请手动保存')
-            // 失败时保留按钮让用户手动操作
-            configTimedOut.value = true
           }
-        }
-        generalConfigTimeout = null
-      }, 1 * 1000)
+          generalConfigTimeout = null
+        },
+        30 * 60 * 1000
+      )
     } else {
       message.error(response?.message || '启动通用配置失败')
       showGeneralConfigMask.value = false
