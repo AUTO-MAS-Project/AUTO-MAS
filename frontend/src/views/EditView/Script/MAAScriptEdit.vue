@@ -56,7 +56,7 @@
               </a-form-item>
             </a-col>
             <a-col :span="16">
-              <a-form-item name="path">
+              <a-form-item name="path" :rules="rules.path">
                 <template #label>
                   <a-tooltip title="选择MAA.exe所在的文件夹路径">
                     <span class="form-label">
@@ -67,7 +67,7 @@
                 </template>
                 <a-input-group compact class="path-input-group">
                   <a-input
-                    v-model:value="maaConfig.Info.Path"
+                    v-model:value="formData.path"
                     placeholder="请选择MAA.exe所在的文件夹"
                     size="large"
                     class="path-input"
@@ -329,6 +329,12 @@ const scriptId = route.params.id as string
 const formData = reactive({
   name: '',
   type: 'MAA' as ScriptType,
+  get path() {
+    return maaConfig.Info.Path
+  },
+  set path(value) {
+    maaConfig.Info.Path = value
+  },
 })
 
 // MAA配置
@@ -360,6 +366,7 @@ const maaConfig = reactive<MAAScriptConfig>({
 const rules = {
   name: [{ required: true, message: '请输入脚本名称', trigger: 'blur' }],
   type: [{ required: true, message: '请选择脚本类型', trigger: 'change' }],
+  path: [{ required: true, message: '请选择MAA路径', trigger: 'blur' }],
 }
 
 // 模拟器相关状态

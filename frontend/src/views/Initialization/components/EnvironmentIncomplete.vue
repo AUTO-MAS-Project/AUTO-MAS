@@ -40,7 +40,7 @@
               重新配置环境
             </a-button>
             <a-button size="large" style="margin-left: 16px" @click="handleForceEnter">
-              强行进入应用
+              跳过初始化
             </a-button>
           </div>
         </template>
@@ -66,7 +66,7 @@ function handleReconfigure() {
   props.onSwitchToManual()
 }
 
-// 强行进入应用
+// 跳过初始化
 async function handleForceEnter() {
   await forceEnterApp('环境不完整-强行进入')
 }

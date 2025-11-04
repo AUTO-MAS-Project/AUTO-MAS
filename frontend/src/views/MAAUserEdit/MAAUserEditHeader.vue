@@ -18,7 +18,7 @@
 
     <a-space size="middle">
       <a-button
-        v-if="userMode !== '简洁'"
+        v-if="userMode !== '简洁' && !showMaaConfigMask"
         type="primary"
         ghost
         size="large"
@@ -29,6 +29,18 @@
           <SettingOutlined />
         </template>
         MAA配置
+      </a-button>
+      <a-button
+        v-if="userMode !== '简洁' && showMaaConfigMask"
+        type="default"
+        size="large"
+        disabled
+        style="color: #52c41a; border-color: #52c41a"
+      >
+        <template #icon>
+          <SettingOutlined />
+        </template>
+        正在配置
       </a-button>
       <a-button size="large" class="cancel-button" @click="$emit('handleCancel')">
         <template #icon>
@@ -61,6 +73,7 @@ defineProps<{
   isEdit: boolean
   userMode: string
   maaConfigLoading: boolean
+  showMaaConfigMask: boolean
   loading: boolean
 }>()
 

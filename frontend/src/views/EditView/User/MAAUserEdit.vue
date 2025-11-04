@@ -33,6 +33,7 @@
       :is-edit="isEdit"
       :user-mode="formData.Info.Mode"
       :maa-config-loading="maaConfigLoading"
+      :show-maa-config-mask="showMAAConfigMask"
       :loading="loading"
       @handle-m-a-a-config="handleMAAConfig"
       @handle-cancel="handleCancel"

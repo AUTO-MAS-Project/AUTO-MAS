@@ -62,7 +62,7 @@
               </a-form-item>
             </a-col>
             <a-col :span="16">
-              <a-form-item name="rootPath">
+              <a-form-item name="rootPath" :rules="rules.rootPath">
                 <template #label>
                   <a-tooltip title="脚本的根目录路径，其余路径将基于此目录自动调整">
                     <span class="form-label">
@@ -73,7 +73,7 @@
                 </template>
                 <a-input-group compact class="path-input-group">
                   <a-input
-                    v-model:value="generalConfig.Info.RootPath"
+                    v-model:value="formData.rootPath"
                     placeholder="请选择脚本根目录"
                     size="large"
                     class="path-input"
@@ -98,7 +98,7 @@
           </div>
           <a-row :gutter="24">
             <a-col :span="12">
-              <a-form-item>
+              <a-form-item name="scriptPath" :rules="rules.scriptPath">
                 <template #label>
                   <a-tooltip title="脚本主程序文件路径">
                     <span class="form-label">
@@ -109,7 +109,7 @@
                 </template>
                 <a-input-group compact class="path-input-group">
                   <a-input
-                    v-model:value="generalConfig.Script.ScriptPath"
+                    v-model:value="formData.scriptPath"
                     placeholder="请选择脚本主程序文件"
                     size="large"
                     class="path-input"
@@ -161,7 +161,7 @@
           </a-row>
           <a-row :gutter="24">
             <a-col :span="12">
-              <a-form-item>
+              <a-form-item name="configPath" :rules="rules.configPath">
                 <template #label>
                   <a-tooltip
                     :title="
@@ -178,7 +178,7 @@
                 </template>
                 <a-input-group compact class="path-input-group">
                   <a-input
-                    v-model:value="generalConfig.Script.ConfigPath"
+                    v-model:value="formData.configPath"
                     :placeholder="
                       generalConfig.Script.ConfigPathMode === 'Folder'
                         ? '请选择配置文件夹'
@@ -237,7 +237,7 @@
           </a-row>
           <a-row :gutter="24">
             <a-col :span="12">
-              <a-form-item>
+              <a-form-item name="logPath" :rules="rules.logPath">
                 <template #label>
                   <a-tooltip title="脚本用于存放日志信息的文件路径">
                     <span class="form-label">
@@ -248,7 +248,7 @@
                 </template>
                 <a-input-group compact class="path-input-group">
                   <a-input
-                    v-model:value="generalConfig.Script.LogPath"
+                    v-model:value="formData.logPath"
                     placeholder="请选择日志文件"
                     size="large"
                     class="path-input"
@@ -285,7 +285,7 @@
 
           <a-row :gutter="24">
             <a-col :span="6">
-              <a-form-item>
+              <a-form-item name="logTimeStart" :rules="rules.logTimeStart">
                 <template #label>
                   <a-tooltip title="脚本日志时间戳起始位置">
                     <span class="form-label">
@@ -295,7 +295,7 @@
                   </a-tooltip>
                 </template>
                 <a-input-number
-                  v-model:value="generalConfig.Script.LogTimeStart"
+                  v-model:value="formData.logTimeStart"
                   :min="1"
                   :max="9999"
                   size="large"
@@ -305,7 +305,7 @@
               </a-form-item>
             </a-col>
             <a-col :span="6">
-              <a-form-item>
+              <a-form-item name="logTimeEnd" :rules="rules.logTimeEnd">
                 <template #label>
                   <a-tooltip title="脚本日志时间戳结束位置">
                     <span class="form-label">
@@ -315,7 +315,7 @@
                   </a-tooltip>
                 </template>
                 <a-input-number
-                  v-model:value="generalConfig.Script.LogTimeEnd"
+                  v-model:value="formData.logTimeEnd"
                   :min="1"
                   :max="9999"
                   size="large"
@@ -326,7 +326,7 @@
             </a-col>
 
             <a-col :span="12">
-              <a-form-item>
+              <a-form-item name="logTimeFormat" :rules="rules.logTimeFormat">
                 <template #label>
                   <a-tooltip title="脚本日志文件中时间戳的格式">
                     <span class="form-label">
@@ -336,7 +336,7 @@
                   </a-tooltip>
                 </template>
                 <a-input
-                  v-model:value="generalConfig.Script.LogTimeFormat"
+                  v-model:value="formData.logTimeFormat"
                   placeholder="请输入脚本日志时间戳格式"
                   size="large"
                   class="modern-input"
@@ -367,7 +367,7 @@
               </a-form-item>
             </a-col>
             <a-col :span="12">
-              <a-form-item>
+              <a-form-item name="errorLog" :rules="rules.errorLog">
                 <template #label>
                   <a-tooltip title="若任务异常日志先于任务成功日志出现，则视为任务失败">
                     <span class="form-label">
@@ -377,7 +377,7 @@
                   </a-tooltip>
                 </template>
                 <a-input
-                  v-model:value="generalConfig.Script.ErrorLog"
+                  v-model:value="formData.errorLog"
                   placeholder="请输入脚本失败日志，以「 | 」进行分割"
                   size="large"
                   class="modern-input"
@@ -995,6 +995,54 @@ const isInitializing = ref(false)
 const formData = reactive({
   name: '',
   type: 'General' as ScriptType,
+  get rootPath() {
+    return generalConfig.Info.RootPath
+  },
+  set rootPath(value) {
+    generalConfig.Info.RootPath = value
+  },
+  get scriptPath() {
+    return generalConfig.Script.ScriptPath
+  },
+  set scriptPath(value) {
+    generalConfig.Script.ScriptPath = value
+  },
+  get configPath() {
+    return generalConfig.Script.ConfigPath
+  },
+  set configPath(value) {
+    generalConfig.Script.ConfigPath = value
+  },
+  get logPath() {
+    return generalConfig.Script.LogPath
+  },
+  set logPath(value) {
+    generalConfig.Script.LogPath = value
+  },
+  get logTimeStart() {
+    return generalConfig.Script.LogTimeStart
+  },
+  set logTimeStart(value) {
+    generalConfig.Script.LogTimeStart = value
+  },
+  get logTimeEnd() {
+    return generalConfig.Script.LogTimeEnd
+  },
+  set logTimeEnd(value) {
+    generalConfig.Script.LogTimeEnd = value
+  },
+  get logTimeFormat() {
+    return generalConfig.Script.LogTimeFormat
+  },
+  set logTimeFormat(value) {
+    generalConfig.Script.LogTimeFormat = value
+  },
+  get errorLog() {
+    return generalConfig.Script.ErrorLog
+  },
+  set errorLog(value) {
+    generalConfig.Script.ErrorLog = value
+  },
 })
 
 // General配置
@@ -1043,6 +1091,14 @@ const generalConfig = reactive<GeneralScriptConfig>({
 const rules = {
   name: [{ required: true, message: '请输入脚本名称', trigger: 'blur' }],
   type: [{ required: true, message: '请选择脚本类型', trigger: 'change' }],
+  rootPath: [{ required: true, message: '请选择脚本根目录', trigger: 'blur' }],
+  scriptPath: [{ required: true, message: '请选择主程序路径', trigger: 'blur' }],
+  configPath: [{ required: true, message: '请选择配置文件路径', trigger: 'blur' }],
+  logPath: [{ required: true, message: '请选择日志文件路径', trigger: 'blur' }],
+  logTimeStart: [{ required: true, message: '请输入日志时间戳起始位置', trigger: 'blur' }],
+  logTimeEnd: [{ required: true, message: '请输入日志时间戳结束位置', trigger: 'blur' }],
+  logTimeFormat: [{ required: true, message: '请输入日志时间戳格式', trigger: 'blur' }],
+  errorLog: [{ required: true, message: '请输入任务失败日志', trigger: 'blur' }],
 }
 
 // 模拟器相关状态
