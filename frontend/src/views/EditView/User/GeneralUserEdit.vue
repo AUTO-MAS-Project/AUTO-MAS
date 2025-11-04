@@ -417,6 +417,7 @@ const generalConfigLoading = ref(false)
 const generalSubscriptionId = ref<string | null>(null)
 const generalWebsocketId = ref<string | null>(null)
 const showGeneralConfigMask = ref(false)
+const configTimedOut = ref(false) // 新增：标记是否已超时
 let generalConfigTimeout: number | null = null
 
 // 通用脚本默认用户数据
@@ -606,6 +607,7 @@ const handleGeneralConfig = async () => {
       generalSubscriptionId.value = null
       generalWebsocketId.value = null
       showGeneralConfigMask.value = false
+      configTimedOut.value = false
       if (generalConfigTimeout) {
         window.clearTimeout(generalConfigTimeout)
         generalConfigTimeout = null
@@ -633,6 +635,7 @@ const handleGeneralConfig = async () => {
           generalSubscriptionId.value = null
           generalWebsocketId.value = null
           showGeneralConfigMask.value = false
+          configTimedOut.value = false
           return
         }
 
@@ -642,34 +645,62 @@ const handleGeneralConfig = async () => {
           generalSubscriptionId.value = null
           generalWebsocketId.value = null
           showGeneralConfigMask.value = false
+          configTimedOut.value = false
+          if (generalConfigTimeout) {
+            window.clearTimeout(generalConfigTimeout)
+            generalConfigTimeout = null
+          }
         }
       })
 
       generalSubscriptionId.value = subscriptionId
       generalWebsocketId.value = wsId
       showGeneralConfigMask.value = true
+      configTimedOut.value = false
       message.success(`已开始配置用户 ${formData.userName} 的通用设置`)
 
       // 设置 30 分钟超时自动断开
-      generalConfigTimeout = window.setTimeout(
-        () => {
-          if (generalSubscriptionId.value) {
-            unsubscribe(generalSubscriptionId.value)
-            generalSubscriptionId.value = null
-            generalWebsocketId.value = null
-            showGeneralConfigMask.value = false
-            message.info(`用户 ${formData.userName} 的配置会话已超时断开`)
+      generalConfigTimeout = window.setTimeout(async () => {
+        if (generalSubscriptionId.value && generalWebsocketId.value) {
+          // 超时后自动保存配置
+          message.warning(
+            '用户 ${formData.userName} 的配置会话已超时（30分钟），正在自动保存配置...'
+          )
+          console.warn('配置会话已超时，自动执行保存操作')
+
+          try {
+            const websocketId = generalWebsocketId.value
+            const response = await Service.stopTaskApiDispatchStopPost({ taskId: websocketId })
+
+            if (response && response.code === 200) {
+              if (generalSubscriptionId.value) {
+                unsubscribe(generalSubscriptionId.value)
+                generalSubscriptionId.value = null
+              }
+              generalWebsocketId.value = null
+              showGeneralConfigMask.value = false
+              configTimedOut.value = false
+              message.success('配置会话超时，已自动保存配置')
+            } else {
+              message.error(response?.message || '自动保存配置失败，请手动保存')
+            }
+          } catch (error) {
+            console.error('超时自动保存配置失败:', error)
+            message.error('自动保存配置失败，请手动保存')
+            // 失败时保留按钮让用户手动操作
+            configTimedOut.value = true
           }
-          generalConfigTimeout = null
-        },
-        30 * 60 * 1000
-      )
+        }
+        generalConfigTimeout = null
+      }, 1 * 1000)
     } else {
       message.error(response?.message || '启动通用配置失败')
+      showGeneralConfigMask.value = false
     }
   } catch (error) {
     console.error('启动通用配置失败:', error)
     message.error('启动通用配置失败')
+    showGeneralConfigMask.value = false
   } finally {
     generalConfigLoading.value = false
   }
@@ -691,6 +722,7 @@ const handleSaveGeneralConfig = async () => {
       }
       generalWebsocketId.value = null
       showGeneralConfigMask.value = false
+      configTimedOut.value = false
       if (generalConfigTimeout) {
         window.clearTimeout(generalConfigTimeout)
         generalConfigTimeout = null
@@ -755,6 +787,7 @@ const handleCancel = () => {
     generalSubscriptionId.value = null
     generalWebsocketId.value = null
     showGeneralConfigMask.value = false
+    configTimedOut.value = false
     if (generalConfigTimeout) {
       window.clearTimeout(generalConfigTimeout)
       generalConfigTimeout = null
