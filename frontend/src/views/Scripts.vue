@@ -845,6 +845,34 @@ const handleToggleUserStatus = async (user: User) => {
   text-align: left;
 }
 
+.type-select-modal :deep(.ant-modal-header),
+.general-mode-modal :deep(.ant-modal-header),
+.template-select-modal :deep(.ant-modal-header) {
+  border-bottom: 2px solid var(--ant-color-border-secondary);
+  padding: 20px 24px;
+}
+
+.type-select-modal :deep(.ant-modal-title),
+.general-mode-modal :deep(.ant-modal-title),
+.template-select-modal :deep(.ant-modal-title) {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--ant-color-text);
+}
+
+.type-select-modal :deep(.ant-modal-body),
+.general-mode-modal :deep(.ant-modal-body),
+.template-select-modal :deep(.ant-modal-body) {
+  padding: 24px;
+}
+
+.type-select-modal :deep(.ant-modal-footer),
+.general-mode-modal :deep(.ant-modal-footer),
+.template-select-modal :deep(.ant-modal-footer) {
+  padding: 16px 24px;
+  border-top: 1px solid var(--ant-color-border-secondary);
+}
+
 .type-selection,
 .mode-selection,
 .template-selection {
@@ -867,19 +895,49 @@ const handleToggleUserStatus = async (user: User) => {
   height: auto;
   display: flex;
   align-items: center;
-  padding: 12px;
-  border: 1px solid var(--ant-color-border);
-  border-radius: 8px;
-  margin-bottom: 8px;
+  padding: 16px;
+  border: 2px solid var(--ant-color-border);
+  border-radius: 12px;
+  margin-bottom: 12px;
   cursor: pointer;
-  transition: all 0.3s;
+  transition: border-color 0.2s, background-color 0.2s;
   background: var(--ant-color-bg-container);
+  position: relative;
+  overflow: hidden;
 }
 
 .type-option:hover,
 .mode-option:hover {
   border-color: var(--ant-color-primary);
   background: var(--ant-color-primary-bg);
+}
+
+.type-option:deep(.ant-radio-button-input:checked + .ant-radio-button-wrapper),
+.mode-option:deep(.ant-radio-button-input:checked + .ant-radio-button-wrapper) {
+  border-color: var(--ant-color-primary) !important;
+  background: var(--ant-color-primary-bg) !important;
+}
+
+/* 选中状态样式 */
+.type-radio-group :deep(.ant-radio-button-wrapper-checked) {
+  border-color: var(--ant-color-primary) !important;
+  background: var(--ant-color-primary-bg) !important;
+}
+
+.mode-radio-group :deep(.ant-radio-button-wrapper-checked) {
+  border-color: var(--ant-color-primary) !important;
+  background: var(--ant-color-primary-bg) !important;
+}
+
+/* 选中状态的文字颜色增强 */
+.type-radio-group :deep(.ant-radio-button-wrapper-checked) .type-title {
+  color: var(--ant-color-primary);
+  font-weight: 600;
+}
+
+.mode-radio-group :deep(.ant-radio-button-wrapper-checked) .mode-title {
+  color: var(--ant-color-primary);
+  font-weight: 600;
 }
 
 .type-content,
@@ -891,14 +949,16 @@ const handleToggleUserStatus = async (user: User) => {
 
 .type-logo-container,
 .mode-icon {
-  width: 40px;
-  height: 40px;
-  margin-right: 12px;
+  width: 48px;
+  height: 48px;
+  margin-right: 16px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 6px;
+  border-radius: 8px;
   background: var(--ant-color-primary-bg);
+  transition: background-color 0.2s;
+  flex-shrink: 0;
 }
 
 .type-logo {
@@ -907,7 +967,7 @@ const handleToggleUserStatus = async (user: User) => {
 }
 
 .mode-icon {
-  font-size: 20px;
+  font-size: 24px;
   color: var(--ant-color-primary);
 }
 
@@ -920,15 +980,16 @@ const handleToggleUserStatus = async (user: User) => {
 .mode-title {
   font-size: 16px;
   font-weight: 500;
-  margin: 0 0 4px;
+  margin: 0 0 6px;
   color: var(--ant-color-text);
 }
 
 .type-description,
 .mode-description {
-  font-size: 14px;
+  font-size: 13px;
   color: var(--ant-color-text-secondary);
   margin: 0;
+  line-height: 1.4;
 }
 
 .templates-container {
@@ -991,8 +1052,10 @@ const handleToggleUserStatus = async (user: User) => {
   padding: 16px;
   border-bottom: 1px solid var(--ant-color-border);
   cursor: pointer;
-  transition: background-color 0.3s;
+  transition: background-color 0.2s, border-left-color 0.2s;
   background: var(--ant-color-bg-container);
+  position: relative;
+  border-left: 3px solid transparent;
 }
 
 .template-item:last-child {
@@ -1001,11 +1064,17 @@ const handleToggleUserStatus = async (user: User) => {
 
 .template-item:hover {
   background: var(--ant-color-primary-bg);
+  border-left-color: var(--ant-color-primary-hover);
 }
 
 .template-item.selected {
   background: var(--ant-color-primary-bg);
-  border-color: var(--ant-color-primary);
+  border-left-color: var(--ant-color-primary);
+}
+
+.template-item.selected .template-name {
+  color: var(--ant-color-primary);
+  font-weight: 600;
 }
 
 .template-content {
@@ -1081,4 +1150,6 @@ const handleToggleUserStatus = async (user: User) => {
   color: var(--ant-color-text-tertiary);
   margin-top: 4px;
 }
+
+
 </style>
