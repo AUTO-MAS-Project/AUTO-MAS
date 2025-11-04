@@ -734,363 +734,6 @@ async function showStorageOptimizationResult(
   }
 }
 
-// 优化的分支和历史清理函数 - 极致存储优化版本
-async function cleanOldLocalBranches(
-  gitPath: string,
-  gitEnv: any,
-  repoPath: string,
-  currentBranch: string,
-  defaultBranch: string
-): Promise<void> {
-  console.log('=== 开始极致存储优化清理 ===')
-  console.log(`当前分支: ${currentBranch}`)
-  console.log(`目标: 只保留当前分支的最新commit，删除所有历史数据`)
-
-  try {
-    // 1. 删除所有远程分支引用（除了当前分支）
-    console.log('🗑️ 清理所有远程分支引用...')
-    await new Promise<void>(resolve => {
-      const proc = spawn(gitPath, ['remote', 'prune', 'origin'], {
-        stdio: 'pipe',
-        env: gitEnv,
-        cwd: repoPath,
-      })
-      proc.on('close', () => resolve())
-      proc.on('error', () => resolve())
-    })
-
-    // 2. 删除所有本地分支（除了当前分支）
-    const localBranches = await new Promise<string[]>(resolve => {
-      const proc = spawn(gitPath, ['branch', '--format=%(refname:short)'], {
-        stdio: 'pipe',
-        env: gitEnv,
-        cwd: repoPath,
-      })
-
-      let output = ''
-      proc.stdout?.on('data', data => {
-        output += data.toString()
-      })
-
-      proc.on('close', code => {
-        if (code === 0) {
-          const branches = output
-            .split('\n')
-            .map(line => line.trim())
-            .filter(line => line && line !== currentBranch)
-          console.log(`发现需要删除的分支: ${branches.join(', ')}`)
-          resolve(branches)
-        } else {
-          resolve([])
-        }
-      })
-      proc.on('error', () => resolve([]))
-    })
-
-    // 删除所有其他分支
-    for (const branch of localBranches) {
-      console.log(`🗑️ 删除分支: ${branch}`)
-      await new Promise<void>(resolve => {
-        const proc = spawn(gitPath, ['branch', '-D', branch], {
-          stdio: 'pipe',
-          env: gitEnv,
-          cwd: repoPath,
-        })
-        proc.on('close', () => resolve())
-        proc.on('error', () => resolve())
-      })
-    }
-
-    // 3. 删除所有标签
-    console.log('🗑️ 删除所有标签...')
-    const tags = await new Promise<string[]>(resolve => {
-      const proc = spawn(gitPath, ['tag', '-l'], {
-        stdio: 'pipe',
-        env: gitEnv,
-        cwd: repoPath,
-      })
-
-      let output = ''
-      proc.stdout?.on('data', data => {
-        output += data.toString()
-      })
-
-      proc.on('close', code => {
-        if (code === 0 && output.trim()) {
-          const tagList = output.split('\n').filter(tag => tag.trim())
-          console.log(`发现标签: ${tagList.join(', ')}`)
-          resolve(tagList)
-        } else {
-          resolve([])
-        }
-      })
-      proc.on('error', () => resolve([]))
-    })
-
-    if (tags.length > 0) {
-      await new Promise<void>(resolve => {
-        const proc = spawn(gitPath, ['tag', '-d', ...tags], {
-          stdio: 'pipe',
-          env: gitEnv,
-          cwd: repoPath,
-        })
-        proc.on('close', () => {
-          console.log('✅ 所有标签删除完成')
-          resolve()
-        })
-        proc.on('error', () => resolve())
-      })
-    }
-
-    // 4. 创建孤立分支，彻底删除历史记录
-    console.log('🔄 创建孤立分支，彻底删除历史记录...')
-
-    // 获取当前HEAD的内容
-    const currentCommitMessage = await new Promise<string>(resolve => {
-      const proc = spawn(gitPath, ['log', '-1', '--pretty=format:%s'], {
-        stdio: 'pipe',
-        env: gitEnv,
-        cwd: repoPath,
-      })
-
-      let output = ''
-      proc.stdout?.on('data', data => {
-        output += data.toString()
-      })
-
-      proc.on('close', () => {
-        resolve(output.trim() || 'Latest optimized commit')
-      })
-      proc.on('error', () => resolve('Latest optimized commit'))
-    })
-
-    // 创建孤立分支
-    await new Promise<void>(resolve => {
-      const proc = spawn(gitPath, ['checkout', '--orphan', 'temp-optimized'], {
-        stdio: 'pipe',
-        env: gitEnv,
-        cwd: repoPath,
-      })
-      proc.on('close', () => {
-        console.log('✅ 孤立分支创建完成')
-        resolve()
-      })
-      proc.on('error', () => resolve())
-    })
-
-    // 添加所有文件到新分支
-    await new Promise<void>(resolve => {
-      const proc = spawn(gitPath, ['add', '-A'], {
-        stdio: 'pipe',
-        env: gitEnv,
-        cwd: repoPath,
-      })
-      proc.on('close', () => resolve())
-      proc.on('error', () => resolve())
-    })
-
-    // 提交到新分支
-    await new Promise<void>(resolve => {
-      const proc = spawn(gitPath, ['commit', '-m', `Optimized: ${currentCommitMessage} (history removed)`], {
-        stdio: 'pipe',
-        env: gitEnv,
-        cwd: repoPath,
-      })
-      proc.on('close', () => {
-        console.log('✅ 新分支提交完成')
-        resolve()
-      })
-      proc.on('error', () => resolve())
-    })
-
-    // 删除原分支
-    await new Promise<void>(resolve => {
-      const proc = spawn(gitPath, ['branch', '-D', currentBranch], {
-        stdio: 'pipe',
-        env: gitEnv,
-        cwd: repoPath,
-      })
-      proc.on('close', () => resolve())
-      proc.on('error', () => resolve())
-    })
-
-    // 重命名新分支为原分支名
-    await new Promise<void>(resolve => {
-      const proc = spawn(gitPath, ['branch', '-m', currentBranch], {
-        stdio: 'pipe',
-        env: gitEnv,
-        cwd: repoPath,
-      })
-      proc.on('close', () => {
-        console.log(`✅ 分支重命名为 ${currentBranch} 完成`)
-        resolve()
-      })
-      proc.on('error', () => resolve())
-    })
-
-    // 5. 删除所有reflog（引用日志）
-    console.log('🗑️ 删除所有reflog...')
-    await new Promise<void>(resolve => {
-      const proc = spawn(gitPath, ['reflog', 'expire', '--expire=now', '--all'], {
-        stdio: 'pipe',
-        env: gitEnv,
-        cwd: repoPath,
-      })
-      proc.on('close', () => {
-        console.log('✅ reflog删除完成')
-        resolve()
-      })
-      proc.on('error', () => resolve())
-    })
-
-    // 6. 删除所有远程跟踪分支引用（除了当前分支）
-    console.log('🗑️ 删除其他远程跟踪分支引用...')
-    const remoteRefs = await new Promise<string[]>(resolve => {
-      const proc = spawn(gitPath, ['for-each-ref', '--format=%(refname)', 'refs/remotes'], {
-        stdio: 'pipe',
-        env: gitEnv,
-        cwd: repoPath,
-      })
-
-      let output = ''
-      proc.stdout?.on('data', data => {
-        output += data.toString()
-      })
-
-      proc.on('close', code => {
-        if (code === 0 && output.trim()) {
-          const refs = output.split('\n')
-            .filter(ref => ref.trim())
-            .filter(ref => !ref.includes(`refs/remotes/origin/${currentBranch}`)) // 保留当前分支的远程引用
-          console.log(`发现需要删除的远程引用: ${refs.join(', ')}`)
-          resolve(refs)
-        } else {
-          resolve([])
-        }
-      })
-      proc.on('error', () => resolve([]))
-    })
-
-    // 逐个删除其他远程引用
-    for (const ref of remoteRefs) {
-      await new Promise<void>(resolve => {
-        const proc = spawn(gitPath, ['update-ref', '-d', ref], {
-          stdio: 'pipe',
-          env: gitEnv,
-          cwd: repoPath,
-        })
-        proc.on('close', () => resolve())
-        proc.on('error', () => resolve())
-      })
-    }
-
-    // 7. 重新配置远程仓库，只跟踪当前分支
-    console.log(`🔧 重新配置远程仓库，只跟踪分支: ${currentBranch}`)
-
-    // 清除现有的fetch配置
-    await new Promise<void>(resolve => {
-      const proc = spawn(gitPath, ['config', '--unset-all', 'remote.origin.fetch'], {
-        stdio: 'pipe',
-        env: gitEnv,
-        cwd: repoPath,
-      })
-      proc.on('close', () => resolve())
-      proc.on('error', () => resolve())
-    })
-
-    // 设置只拉取当前分支的配置
-    const targetRefspec = `+refs/heads/${currentBranch}:refs/remotes/origin/${currentBranch}`
-    await new Promise<void>(resolve => {
-      const proc = spawn(gitPath, ['config', '--add', 'remote.origin.fetch', targetRefspec], {
-        stdio: 'pipe',
-        env: gitEnv,
-        cwd: repoPath,
-      })
-      proc.on('close', () => {
-        console.log(`✅ 设置单分支fetch配置: ${targetRefspec}`)
-        resolve()
-      })
-      proc.on('error', () => resolve())
-    })
-
-    // 8. 转换为浅克隆仓库（如果还不是）
-    console.log('🔄 转换为浅克隆仓库...')
-    await new Promise<void>(resolve => {
-      const proc = spawn(gitPath, ['config', 'core.repositoryformatversion', '0'], {
-        stdio: 'pipe',
-        env: gitEnv,
-        cwd: repoPath,
-      })
-      proc.on('close', () => resolve())
-      proc.on('error', () => resolve())
-    })
-
-    // 创建shallow文件，标记为浅克隆
-    const currentCommitHash = await new Promise<string>(resolve => {
-      const proc = spawn(gitPath, ['rev-parse', 'HEAD'], {
-        stdio: 'pipe',
-        env: gitEnv,
-        cwd: repoPath,
-      })
-
-      let output = ''
-      proc.stdout?.on('data', data => {
-        output += data.toString()
-      })
-
-      proc.on('close', () => {
-        resolve(output.trim())
-      })
-      proc.on('error', () => resolve(''))
-    })
-
-    if (currentCommitHash) {
-      try {
-        const shallowPath = path.join(repoPath, '.git', 'shallow')
-        fs.writeFileSync(shallowPath, currentCommitHash + '\n')
-        console.log('✅ 创建shallow文件，标记为浅克隆')
-      } catch (error) {
-        console.log('⚠️ 创建shallow文件失败:', error)
-      }
-    }
-
-    // 9. 执行激进的垃圾回收和压缩
-    console.log('🧹 执行激进垃圾回收和压缩...')
-    await new Promise<void>(resolve => {
-      const proc = spawn(gitPath, ['gc', '--aggressive', '--prune=now'], {
-        stdio: 'pipe',
-        env: gitEnv,
-        cwd: repoPath,
-      })
-      proc.on('close', () => {
-        console.log('✅ 激进垃圾回收完成')
-        resolve()
-      })
-      proc.on('error', () => resolve())
-    })
-
-    // 10. 重新打包仓库以最小化存储
-    console.log('📦 重新打包仓库以最小化存储...')
-    await new Promise<void>(resolve => {
-      const proc = spawn(gitPath, ['repack', '-a', '-d', '-f', '--depth=1', '--window=1'], {
-        stdio: 'pipe',
-        env: gitEnv,
-        cwd: repoPath,
-      })
-      proc.on('close', () => {
-        console.log('✅ 仓库重新打包完成')
-        resolve()
-      })
-      proc.on('error', () => resolve())
-    })
-
-    console.log('✅ 极致存储优化完成：只保留当前分支最新commit，删除所有历史数据和其他分支')
-  } catch (error) {
-    console.error('❌ 极致存储优化失败:', error)
-    // 不抛出错误，继续执行后续步骤
-  }
-}
-
 // 强制复制指定的文件和文件夹到目标目录（强制替换）
 async function copySelectedFiles(sourcePath: string, targetPath: string, branchName: string) {
   console.log(`=== 开始强制复制选定文件（完全替换模式） ===`)
@@ -1188,45 +831,6 @@ function getGitEnvironment(appRoot: string) {
 function isGitRepository(dirPath: string): boolean {
   const gitDir = path.join(dirPath, '.git')
   return fs.existsSync(gitDir)
-}
-
-// 检查网络连接（通过访问GitHub来测试）
-async function checkNetworkConnection(gitPath: string, gitEnv: any, repoUrl: string): Promise<boolean> {
-  console.log('=== 检查网络连接 ===')
-  try {
-    return new Promise<boolean>(resolve => {
-      const proc = spawn(gitPath, ['ls-remote', '--heads', repoUrl], {
-        stdio: 'pipe',
-        env: gitEnv,
-      })
-
-      let hasOutput = false
-      proc.stdout?.on('data', () => {
-        hasOutput = true
-      })
-
-      proc.on('close', code => {
-        const isConnected = code === 0 && hasOutput
-        console.log(`网络连接检查 - 退出码: ${code}, 有输出: ${hasOutput}, 连接状态: ${isConnected ? '正常' : '异常'}`)
-        resolve(isConnected)
-      })
-
-      proc.on('error', error => {
-        console.log('网络连接检查进程错误:', error)
-        resolve(false)
-      })
-
-      // 5秒超时
-      setTimeout(() => {
-        proc.kill()
-        console.log('网络连接检查超时')
-        resolve(false)
-      }, 5000)
-    })
-  } catch (error) {
-    console.error('网络连接检查异常:', error)
-    return false
-  }
 }
 
 // 下载Git
@@ -1843,14 +1447,6 @@ export async function cloneBackend(
       })
     })
 
-    // 检查网络连接
-    console.log('=== 检查网络连接 ===')
-    const isNetworkAvailable = await checkNetworkConnection(gitPath, gitEnv, repoUrl)
-    if (!isNetworkAvailable) {
-      throw new Error('网络连接不可用，请检查网络连接后重试')
-    }
-    console.log('✅ 网络连接正常')
-
     // 获取版本号并确定目标分支
     const version = getAppVersion(appRoot)
     console.log(`=== 分支选择逻辑 ===`)
@@ -1858,6 +1454,21 @@ export async function cloneBackend(
 
     let targetBranch = 'feature/refactor' // 默认分支
     console.log(`默认分支: ${targetBranch}`)
+
+    // 首先检查网络连接（通过检查默认分支是否存在）
+    console.log('=== 检查网络连接和仓库访问权限 ===')
+    const defaultBranchExists = await checkBranchExists(gitPath, gitEnv, repoUrl, targetBranch)
+    if (!defaultBranchExists) {
+      // 尝试检查其他可能的默认分支
+      const mainBranchExists = await checkBranchExists(gitPath, gitEnv, repoUrl, 'main')
+      if (!mainBranchExists) {
+        throw new Error('网络连接不可用或无法访问远程仓库，请检查网络连接后重试')
+      }
+      // 如果 main 分支存在但 feature/refactor 不存在，则使用 main
+      targetBranch = 'main'
+      console.log('⚠️ 默认分支 feature/refactor 不存在，改用 main 分支')
+    }
+    console.log('✅ 网络连接正常，可以访问远程仓库')
 
     if (version !== '获取版本失败！') {
       // 检查版本对应的分支是否存在
@@ -1870,7 +1481,7 @@ export async function cloneBackend(
         console.log(`⚠️ 版本分支 ${version} 不存在，使用默认分支: ${targetBranch}`)
       }
     } else {
-      console.log('⚠️ 版本号获取失败，使用默认分支: feature/refactor')
+      console.log('⚠️ 版本号获取失败，使用默认分支')
     }
 
     console.log(`=== 最终选择分支: ${targetBranch} ===`)
