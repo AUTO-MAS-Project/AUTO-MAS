@@ -45,11 +45,11 @@ export async function enterApp(
 }
 
 /**
- * 强行进入应用（忽略WebSocket连接状态）
+ * 跳过初始化（忽略WebSocket连接状态）
  * @param reason 进入原因
  */
 export async function forceEnterApp(reason: string = '强行进入'): Promise<void> {
-  console.log(`🚀 ${reason}：强行进入应用流程开始`)
+  console.log(`🚀 ${reason}：跳过初始化流程开始`)
   console.log(`📡 ${reason}：尝试强制建立WebSocket连接...`)
 
   try {
@@ -70,7 +70,7 @@ export async function forceEnterApp(reason: string = '强行进入'): Promise<vo
   // 无论WebSocket是否成功，都进入应用
   console.log(`🏠 ${reason}：跳转到主页...`)
   router.push('/home')
-  console.log(`✨ ${reason}：已强行进入应用`)
+  console.log(`✨ ${reason}：已跳过初始化`)
 }
 
 /**

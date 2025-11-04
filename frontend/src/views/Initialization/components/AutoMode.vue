@@ -29,13 +29,13 @@
     <div class="auto-actions">
       <a-button type="primary" size="large" @click="handleSwitchToManual"> 重新配置环境 </a-button>
       <a-button type="default" size="large" @click="handleSkipUpdateAndStart">
-        不进行更新，直接启动后端
+        跳过更新
       </a-button>
-      <a-button type="default" size="large" @click="handleForceEnter"> 强行进入应用 </a-button>
+      <a-button type="default" size="large" @click="handleForceEnter"> 跳过初始化 </a-button>
     </div>
   </div>
 
-  <!-- 强行进入应用弹窗 -->
+  <!-- 跳过初始化弹窗 -->
   <a-modal
     v-model:open="forceEnterVisible"
     title="警告"
@@ -131,7 +131,7 @@ function retryNow() {
   startAutoProcess()
 }
 
-// 点击"强行进入应用"按钮，显示弹窗
+// 点击"跳过初始化"按钮，显示弹窗
 function handleForceEnter() {
   clearTimers()
   showRetryCountdown.value = false

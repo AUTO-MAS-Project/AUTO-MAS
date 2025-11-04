@@ -48,15 +48,15 @@
                 </a-button>
                 <a-button
                   v-if="script.type === 'MAA' && props.activeConnections.has(script.id)"
-                  type="primary"
+                  type="default"
                   size="middle"
-                  style="background: #52c41a; border-color: #52c41a"
-                  @click="handleSaveMAAConfig(script)"
+                  disabled
+                  style="color: #52c41a; border-color: #52c41a"
                 >
                   <template #icon>
-                    <SaveOutlined />
+                    <SettingOutlined />
                   </template>
-                  保存配置
+                  正在配置
                 </a-button>
                 <a-button type="default" size="middle" @click="handleEdit(script)">
                   <template #icon>
