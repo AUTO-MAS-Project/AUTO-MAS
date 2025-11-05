@@ -647,7 +647,85 @@ export async function installDependencies(
       })
     })
 
+    // 🆕 先安装基础构建工具：pip、setuptools、wheel
+    console.log('正在升级 pip、setuptools 和 wheel...')
+    if (mainWindow) {
+      mainWindow.webContents.send('download-progress', {
+        step: 5,
+        progress: 90,
+        status: 'downloading',
+        message: '正在安装基础构建工具（pip、setuptools、wheel）...',
+      })
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      let stdoutData = ''
+      let stderrData = ''
+
+      const upgradeProcess = spawn(
+        pythonPath,
+        [
+          '-m',
+          'pip',
+          'install',
+          '--upgrade',
+          'pip',
+          'setuptools',
+          'wheel',
+          '-i',
+          pipMirrorUrl,
+          '--trusted-host',
+          new URL(pipMirrorUrl).hostname,
+        ],
+        {
+          cwd: backendPath,
+          stdio: 'pipe',
+        }
+      )
+
+      upgradeProcess.stdout?.on('data', data => {
+        const output = stripAnsiColors(data.toString())
+        stdoutData += output
+        log.info('升级基础工具输出:', output)
+      })
+
+      upgradeProcess.stderr?.on('data', data => {
+        const errorOutput = stripAnsiColors(data.toString())
+        stderrData += errorOutput
+        log.warn('升级基础工具错误:', errorOutput)
+      })
+
+      upgradeProcess.on('close', code => {
+        console.log(`基础工具升级完成，退出码: ${code}`)
+        if (code === 0) {
+          log.info('基础构建工具安装成功')
+          resolve()
+        } else {
+          // 即使失败也继续，因为可能已经存在
+          log.warn(`基础工具升级退出码非0 (${code})，但继续安装依赖`)
+          resolve()
+        }
+      })
+
+      upgradeProcess.on('error', error => {
+        console.error('升级基础工具进程错误:', error)
+        // 不阻塞流程，继续安装
+        log.warn('升级基础工具失败，继续安装依赖:', error)
+        resolve()
+      })
+    })
+
     // 安装依赖 - 使用 python -m pip 方法
+    console.log('开始安装 requirements.txt 中的依赖包...')
+    if (mainWindow) {
+      mainWindow.webContents.send('download-progress', {
+        step: 5,
+        progress: 91,
+        status: 'downloading',
+        message: '正在安装Python依赖包...',
+      })
+    }
+
     await new Promise<void>((resolve, reject) => {
       let stdoutData = ''
       let stderrData = ''
