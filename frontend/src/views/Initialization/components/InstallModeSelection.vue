@@ -74,6 +74,11 @@
       <a-button type="primary" size="large" :disabled="!selectedMode" @click="handleConfirm">
         {{ selectedMode === 'quick' ? '开始快速安装' : '开始手动安装' }}
       </a-button>
+
+      <!-- 直接打开后端按钮 -->
+      <a-button style="margin-left: 12px" type="default" size="large" @click="handleOpenBackend">
+        直接打开后端
+      </a-button>
     </div>
 
     <div class="additional-info">
@@ -91,12 +96,24 @@
         type="info"
         show-icon
       />
+
+      <a-alert
+        v-if="showOpenBackendTip"
+        message="直接打开后端说明"
+        description="如果您已经手动配置好环境，可以直接打开后端文件夹查看和管理后端代码。"
+        type="info"
+        show-icon
+        style="margin-top: 16px"
+        closable
+        @close="showOpenBackendTip = false"
+      />
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref } from 'vue'
+import { message } from 'ant-design-vue'
 
 // Props
 interface Props {
@@ -107,11 +124,27 @@ const props = defineProps<Props>()
 
 // 状态
 const selectedMode = ref<'quick' | 'manual' | null>(null)
+const showOpenBackendTip = ref(false)
 
 // 处理确认
 function handleConfirm() {
   if (selectedMode.value) {
     props.onModeSelected(selectedMode.value)
+  }
+}
+
+async function handleOpenBackend() {
+  try {
+    showOpenBackendTip.value = true
+    const result = await window.electronAPI.openBackendFolder()
+    if (result.success) {
+      message.success('已打开后端文件夹')
+    } else {
+      message.error(result.error || '打开后端文件夹失败')
+    }
+  } catch (error) {
+    console.error('打开后端文件夹失败:', error)
+    message.error('打开后端文件夹失败')
   }
 }
 </script>

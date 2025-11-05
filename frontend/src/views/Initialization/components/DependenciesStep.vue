@@ -73,6 +73,19 @@
         </a-button>
         <span class="test-note">3秒无响应视为超时</span>
       </div>
+
+      <!-- 跳过按钮 -->
+      <div class="skip-section">
+        <a-alert
+          message="跳过此步骤"
+          description="如果您已经手动安装了 Python 依赖包，可以跳过此步骤。跳过后将标记依赖为已安装。"
+          type="warning"
+          show-icon
+        />
+        <a-button style="margin-top: 12px" type="dashed" danger @click="handleSkip">
+          跳过安装依赖包
+        </a-button>
+      </div>
     </div>
   </div>
 </template>
@@ -170,6 +183,20 @@ async function testPipMirrorSpeed() {
   }
 }
 
+const emit = defineEmits<{
+  skip: []
+}>()
+
+async function handleSkip() {
+  try {
+    await saveConfig({ dependenciesInstalled: true })
+    console.log('用户跳过依赖安装步骤')
+    emit('skip')
+  } catch (error) {
+    console.error('保存配置失败:', error)
+  }
+}
+
 function getSpeedClass(speed: number | null) {
   if (speed === null) return 'speed-unknown'
   if (speed === 9999) return 'speed-timeout'
@@ -181,6 +208,7 @@ function getSpeedClass(speed: number | null) {
 defineExpose({
   selectedPipMirror,
   testPipMirrorSpeed,
+  handleSkip,
 })
 
 // 组件挂载时加载配置并自动开始测速
@@ -309,5 +337,13 @@ onMounted(async () => {
 .test-note {
   font-size: 12px;
   color: var(--ant-color-text-tertiary);
+}
+
+.skip-section {
+  margin-top: 24px;
+}
+
+.skip-section a-alert {
+  margin-bottom: 12px;
 }
 </style>
