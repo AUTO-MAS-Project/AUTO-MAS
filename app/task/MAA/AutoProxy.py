@@ -171,7 +171,9 @@ class AutoProxyTask(TaskExecuteBase):
                 await self.cur_user_config.set(
                     "Data", "LastSklandDate", datetime.now(tz=UTC8).strftime("%Y-%m-%d")
                 )
-        elif self.cur_user_config.get("Info", "IfSkland"):
+        elif self.cur_user_config.get("Info", "IfSkland") and self.cur_user_config.get(
+            "Data", "LastSklandDate"
+        ) != datetime.now(tz=UTC8).strftime("%Y-%m-%d"):
             logger.warning(
                 f"用户: {self.cur_user_uid} - 未配置森空岛签到Token, 跳过森空岛签到"
             )
