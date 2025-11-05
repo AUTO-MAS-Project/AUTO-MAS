@@ -1,7 +1,9 @@
-name: mirrorchyan
+name: mirrorchyan_release_note
 
 on:
   workflow_dispatch:
+  release:
+    types: [edited]
 
 jobs:
   mirrorchyan:
@@ -9,13 +11,11 @@ jobs:
 
     steps:
       - id: uploading
-        uses: MirrorChyan/uploading-action@v1
+        uses: MirrorChyan/release-note-action@v1
         with:
-          filetype: latest-release
-          filename: "AUTO_MAA*.zip"
-          mirrorchyan_rid: AUTO_MAA
+          mirrorchyan_rid: AUTO_MAS
 
           owner: AUTO-MAS-Project
           repo: AUTO-MAS
-          github_token: ${{ secrets.GITHUB_TOKEN }}
           upload_token: ${{ secrets.MirrorChyanUploadToken }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
