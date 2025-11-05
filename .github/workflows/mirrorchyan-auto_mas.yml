@@ -12,8 +12,8 @@ jobs:
         uses: MirrorChyan/uploading-action@v1
         with:
           filetype: latest-release
-          filename: "AUTO_MAA*.zip"
-          mirrorchyan_rid: AUTO_MAA
+          filename: "AUTO_MAS*"
+          mirrorchyan_rid: AUTO_MAS
 
           owner: AUTO-MAS-Project
           repo: AUTO-MAS

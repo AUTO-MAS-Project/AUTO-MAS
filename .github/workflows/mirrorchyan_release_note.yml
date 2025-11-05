@@ -15,5 +15,7 @@ jobs:
         with:
           mirrorchyan_rid: AUTO_MAA
 
+          owner: AUTO-MAS-Project
+          repo: AUTO-MAS
           upload_token: ${{ secrets.MirrorChyanUploadToken }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
