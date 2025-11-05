@@ -11,9 +11,11 @@ node_modules
 dist
 dist-ssr
 *.local
+package-lock.json
+yarn.lock
 
 # Editor directories and files
-.vscode/*
+.vscode
 !.vscode/extensions.json
 .idea
 .DS_Store
@@ -24,5 +26,6 @@ dist-ssr
 *.sw?
 
 dist-electron
+environment
 .yarn
 .yarnrc.yml
