@@ -223,47 +223,67 @@ async function checkEnvironment() {
     console.log('- main.py存在:', criticalFiles.mainPyExists)
     console.log('- 所有关键文件存在:', allExeFilesExist)
 
-    // 页面模式判断逻辑：
-    // 1. 第一次启动 -> 直接进入手动模式
-    // 2. 非第一次启动 + 文件完整 -> 自动模式
-    // 3. 非第一次启动 + 文件缺失 -> 环境不完整页面
-    console.log('页面模式判断条件:')
-    console.log('- 是否第一次启动:', isFirst)
-    console.log('- 所有关键文件存在:', allExeFilesExist)
+    // 🆕 智能初始化逻辑：
+    // 1. 如果所有关键文件都存在（Full版本或已安装过）
+    //    - 直接进入自动模式（会自动检查更新、安装依赖并启动）
+    // 2. 如果关键文件部分或全部缺失
+    //    - 第一次启动 → 安装模式选择
+    //    - 非第一次启动 → 环境不完整页面
 
-    // 第一次启动时，显示安装模式选择
-    if (isFirst) {
-      console.log('第一次启动，显示安装模式选择')
-      showModeSelection.value = true
-      autoMode.value = false
-      quickInstallMode.value = false
-      showEnvironmentIncomplete.value = false
-    } else if (allExeFilesExist) {
-      // 不是第一次启动且所有关键exe文件都存在，进入自动模式
-      console.log('进入自动模式，开始自动启动流程')
+    console.log('🎯 智能初始化判断:')
+    console.log('- 第一次启动:', isFirst)
+    console.log('- 所有关键文件存在:', allExeFilesExist)
+    console.log('- 依赖已安装:', dependenciesInstalled.value)
+
+    if (allExeFilesExist) {
+      // 环境完整（Full 版本或已安装过）
+      console.log('✅ 检测到完整环境，进入自动模式')
+
+      // 如果是第一次启动且环境完整，说明是 Full 版本
+      if (isFirst) {
+        console.log('🎉 检测到预装环境（Full版本），自动配置初始化状态')
+        // 更新配置，标记不再是第一次启动
+        await saveConfig({
+          isFirstLaunch: false,
+          pythonInstalled: true,
+          gitInstalled: true,
+          backendExists: true,
+        })
+      }
+
+      // 直接进入自动模式，会自动检查并安装缺失的依赖
       autoMode.value = true
       showEnvironmentIncomplete.value = false
+      showModeSelection.value = false
+      quickInstallMode.value = false
     } else {
-      // 不是第一次启动但关键文件缺失，显示环境不完整页面
-      console.log('环境损坏，显示环境不完整页面')
-      console.log('  - python.exe缺失:', !criticalFiles.pythonExists)
-      console.log('  - git.exe缺失:', !criticalFiles.gitExists)
-      console.log('  - main.py缺失:', !criticalFiles.mainPyExists)
+      // 环境不完整
+      if (isFirst) {
+        // 第一次启动且环境不完整 → 安装模式选择（Lite版本）
+        console.log('📋 第一次启动且环境不完整（Lite版本），显示安装模式选择')
+        showModeSelection.value = true
+        autoMode.value = false
+        quickInstallMode.value = false
+        showEnvironmentIncomplete.value = false
+      } else {
+        // 非第一次启动但环境损坏 → 环境不完整页面
+        console.log('⚠️ 环境损坏，显示环境不完整页面')
 
-      const missing = []
-      if (!criticalFiles.pythonExists) missing.push('Python 环境')
-      if (!criticalFiles.gitExists) missing.push('Git 工具')
-      if (!criticalFiles.mainPyExists) missing.push('后端代码')
+        const missing = []
+        if (!criticalFiles.pythonExists) missing.push('Python 环境')
+        if (!criticalFiles.gitExists) missing.push('Git 工具')
+        if (!criticalFiles.mainPyExists) missing.push('后端代码')
 
-      missingComponents.value = missing
-      showEnvironmentIncomplete.value = true
-      autoMode.value = false
-    }
+        missingComponents.value = missing
+        showEnvironmentIncomplete.value = true
+        autoMode.value = false
+        showModeSelection.value = false
+        quickInstallMode.value = false
 
-    // 如果关键文件缺失，重置初始化状态
-    if (!allExeFilesExist && config.init) {
-      console.log('检测到关键exe文件缺失，重置初始化状态')
-      await saveConfig({ init: false })
+        // 重置初始化状态
+        console.log('重置初始化状态')
+        await saveConfig({ init: false })
+      }
     }
   } catch (error) {
     const errorMsg = `环境检查失败: ${error instanceof Error ? error.message : String(error)}`
