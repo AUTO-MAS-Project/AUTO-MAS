@@ -82,10 +82,19 @@
       <GitStep v-if="currentStep === 2" ref="gitStepRef" :git-installed="gitInstalled" />
 
       <!-- 步骤 3: 源码获取 -->
-      <BackendStep v-if="currentStep === 3" ref="backendStepRef" :backend-exists="backendExists" />
+      <BackendStep
+        v-if="currentStep === 3"
+        ref="backendStepRef"
+        :backend-exists="backendExists"
+        @skip="handleBackendSkip"
+      />
 
       <!-- 步骤 4: 依赖安装 -->
-      <DependenciesStep v-if="currentStep === 4" ref="dependenciesStepRef" />
+      <DependenciesStep
+        v-if="currentStep === 4"
+        ref="dependenciesStepRef"
+        @skip="handleDependenciesSkip"
+      />
 
       <!-- 步骤 5: 启动服务 -->
       <ServiceStep v-if="currentStep === 5" ref="serviceStepRef" />
@@ -518,6 +527,36 @@ function handleDownloadProgress(progress: any) {
 
   // 通知父组件
   props.onProgressUpdate(progress)
+}
+
+// 处理后端代码获取跳过
+function handleBackendSkip() {
+  console.log('用户跳过后端代码获取步骤')
+  notification.success({
+    message: '已跳过',
+    description: '已标记后端代码为已存在，进入下一步',
+    duration: 3,
+  })
+  // 直接进入下一步
+  if (currentStep.value < 5) {
+    currentStep.value++
+    autoStartSpeedTest()
+  }
+}
+
+// 处理依赖安装跳过
+function handleDependenciesSkip() {
+  console.log('用户跳过依赖安装步骤')
+  notification.success({
+    message: '已跳过',
+    description: '已标记依赖为已安装，进入下一步',
+    duration: 3,
+  })
+  // 直接进入下一步
+  if (currentStep.value < 5) {
+    currentStep.value++
+    autoStartSpeedTest()
+  }
 }
 
 // 暴露给父组件的方法

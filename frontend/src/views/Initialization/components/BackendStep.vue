@@ -134,6 +134,19 @@
         </a-button>
         <span class="test-note">3秒无响应视为超时</span>
       </div>
+
+      <!-- 跳过按钮 -->
+      <div class="skip-section">
+        <a-alert
+          message="跳过此步骤"
+          description="如果您已经手动下载了后端代码，可以跳过此步骤。跳过后将标记后端代码为已存在。"
+          type="warning"
+          show-icon
+        />
+        <a-button style="margin-top: 12px" type="dashed" danger @click="handleSkip">
+          跳过获取后端源码
+        </a-button>
+      </div>
     </div>
   </div>
 </template>
@@ -395,10 +408,25 @@ async function removeCustomMirror(key: string) {
   }
 }
 
+const emit = defineEmits<{
+  skip: []
+}>()
+
+async function handleSkip() {
+  try {
+    await saveConfig({ backendExists: true })
+    console.log('用户跳过后端代码获取步骤')
+    emit('skip')
+  } catch (error) {
+    console.error('保存配置失败:', error)
+  }
+}
+
 defineExpose({
   selectedGitMirror,
   testGitMirrorSpeed,
   gitMirrors,
+  handleSkip,
 })
 
 // 组件挂载时加载配置并自动开始测速
@@ -577,5 +605,13 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.skip-section {
+  margin-top: 24px;
+}
+
+.skip-section a-alert {
+  margin-bottom: 12px;
 }
 </style>
