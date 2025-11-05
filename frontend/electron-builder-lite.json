@@ -1,7 +1,7 @@
 {
   "extends": null,
   "appId": "top.auto-mas.frontend",
-  "productName": "AUTO-MAS-Lite",
+  "productName": "AUTO-MAS",
   "asar": true,
   "asarUnpack": [],
   "extraMetadata": {
