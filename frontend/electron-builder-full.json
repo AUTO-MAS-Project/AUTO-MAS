@@ -28,7 +28,7 @@
       "filter": ["**/*"]
     },
     {
-      "from": "environment",
+      "from": "node_modules/electron/dist/environment",
       "to": "../environment",
       "filter": ["**/*"]
     }
@@ -46,7 +46,12 @@
       }
     ],
     "icon": "public/AUTO-MAS.ico",
-    "artifactName": "AUTO-MAS-Full-Setup-${version}-${arch}.${ext}"
+    "artifactName": "AUTO-MAS-Full-Setup-${version}-${arch}.${ext}",
+    "signAndEditExecutable": true,
+    "signIgnore": [
+      "environment/**/*.exe",
+      "environment/**/*.dll"
+    ]
   },
   "nsis": {
     "oneClick": false,
