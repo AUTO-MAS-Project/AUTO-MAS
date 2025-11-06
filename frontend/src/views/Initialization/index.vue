@@ -199,6 +199,33 @@ async function checkEnvironment() {
     gitInstalled.value = criticalFiles.gitExists
     backendExists.value = criticalFiles.mainPyExists
 
+    // 🆕 如果检测到python或git存在，立即保存到配置文件中
+    const needsConfigUpdate =
+      criticalFiles.pythonExists || criticalFiles.gitExists || criticalFiles.mainPyExists
+    if (needsConfigUpdate) {
+      console.log('检测到已安装的组件，更新配置文件...')
+      const configUpdate: any = {}
+
+      if (criticalFiles.pythonExists) {
+        console.log('✅ 检测到 Python 已安装（environment/python）')
+        configUpdate.pythonInstalled = true
+      }
+
+      if (criticalFiles.gitExists) {
+        console.log('✅ 检测到 Git 已安装（environment/git）')
+        configUpdate.gitInstalled = true
+      }
+
+      if (criticalFiles.mainPyExists) {
+        console.log('✅ 检测到后端代码已存在（main.py）')
+        configUpdate.backendExists = true
+      }
+
+      // 保存配置
+      await saveConfig(configUpdate)
+      console.log('配置已更新:', configUpdate)
+    }
+
     // 依赖安装状态从配置文件读取，但在手动模式中会重新安装
     const config = await getConfig()
     dependenciesInstalled.value = config.dependenciesInstalled || false
