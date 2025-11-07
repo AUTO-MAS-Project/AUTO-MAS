@@ -12,7 +12,6 @@
           <a-select
             v-model:value="powerAction"
             style="width: 140px"
-            :disabled="!canChangePowerAction"
             size="large"
             @change="onPowerActionChange"
           >
