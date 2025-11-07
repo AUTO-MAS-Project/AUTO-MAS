@@ -95,7 +95,7 @@ async function downloadWithFallback(
 const gitDownloadUrl = 'https://download.auto-mas.top/d/AUTO-MAS/git.zip'
 
 // 默认分支名称（作为备用分支）
-const DEFAULT_BRANCH = 'feature/refactor'
+const DEFAULT_BRANCH = 'dev'
 
 // 获取应用版本号
 function getAppVersion(appRoot: string): string {
@@ -805,32 +805,196 @@ function getGitEnvironment(appRoot: string) {
   const mingw64BinPath = path.join(gitDir, 'mingw64', 'bin')
   const gitCorePath = path.join(gitDir, 'mingw64', 'libexec', 'git-core')
 
-  return {
+  // 获取代理配置（同步版本）
+  let proxyConfig: { httpProxy?: string; httpsProxy?: string } = {}
+  try {
+    const configPath = path.join(appRoot, 'config', 'Config.json')
+    if (fs.existsSync(configPath)) {
+      const config = JSON.parse(fs.readFileSync(configPath, 'utf8'))
+      const proxyAddress = config?.Update?.ProxyAddress
+
+      if (proxyAddress && proxyAddress.trim()) {
+        let proxyUrl = proxyAddress.trim()
+
+        // 自动添加协议前缀
+        if (!proxyUrl.startsWith('http://') && !proxyUrl.startsWith('https://') && !proxyUrl.startsWith('socks5://')) {
+          proxyUrl = `http://${proxyUrl}`
+        }
+
+        console.log(`✅ 检测到代理配置: ${proxyUrl}`)
+        proxyConfig = {
+          httpProxy: proxyUrl,
+          httpsProxy: proxyUrl
+        }
+      }
+    }
+  } catch (error) {
+    console.warn('读取代理配置失败:', error)
+  }
+
+  const env: { [key: string]: string | undefined } = {
     ...process.env,
     // 修复remote-https问题的关键：确保所有Git相关路径都在PATH中
     PATH: `${binPath};${mingw64BinPath};${gitCorePath};${process.env.PATH}`,
     GIT_EXEC_PATH: gitCorePath,
     GIT_TEMPLATE_DIR: path.join(gitDir, 'mingw64', 'share', 'git-core', 'templates'),
     HOME: process.env.USERPROFILE || process.env.HOME,
-    // // SSL证书路径
-    // GIT_SSL_CAINFO: path.join(gitDir, 'mingw64', 'ssl', 'certs', 'ca-bundle.crt'),
     // 禁用系统Git配置
     GIT_CONFIG_NOSYSTEM: '1',
     // 禁用交互式认证
     GIT_TERMINAL_PROMPT: '0',
     GIT_ASKPASS: '',
-    // // 修复remote-https问题的关键环境变量
-    // CURL_CA_BUNDLE: path.join(gitDir, 'mingw64', 'ssl', 'certs', 'ca-bundle.crt'),
     // 确保Git能找到所有必要的程序
     GIT_HTTP_LOW_SPEED_LIMIT: '0',
     GIT_HTTP_LOW_SPEED_TIME: '0',
   }
+
+  // 添加代理环境变量
+  if (proxyConfig.httpProxy) {
+    env.HTTP_PROXY = proxyConfig.httpProxy
+    env.http_proxy = proxyConfig.httpProxy
+    console.log(`✅ 设置Git HTTP代理: ${proxyConfig.httpProxy}`)
+  }
+
+  if (proxyConfig.httpsProxy) {
+    env.HTTPS_PROXY = proxyConfig.httpsProxy
+    env.https_proxy = proxyConfig.httpsProxy
+    console.log(`✅ 设置Git HTTPS代理: ${proxyConfig.httpsProxy}`)
+  }
+
+  return env
 }
 
 // 检查是否为Git仓库
 function isGitRepository(dirPath: string): boolean {
   const gitDir = path.join(dirPath, '.git')
   return fs.existsSync(gitDir)
+}
+
+// 检查Git仓库状态和完整性
+async function checkGitRepositoryHealth(
+  gitPath: string,
+  gitEnv: any,
+  repoPath: string
+): Promise<{
+  isHealthy: boolean
+  issues: string[]
+  currentBranch?: string
+  workingTreeClean?: boolean
+}> {
+  console.log('=== 检查Git仓库健康状态 ===')
+  const issues: string[] = []
+
+  try {
+    // 1. 检查当前分支
+    const currentBranch = await new Promise<string>((resolve) => {
+      const proc = spawn(gitPath, ['branch', '--show-current'], {
+        stdio: 'pipe',
+        env: gitEnv,
+        cwd: repoPath,
+      })
+      let output = ''
+      proc.stdout?.on('data', data => { output += data.toString() })
+      proc.on('close', code => {
+        if (code === 0) {
+          resolve(output.trim())
+        } else {
+          issues.push('无法获取当前分支信息')
+          resolve('')
+        }
+      })
+      proc.on('error', () => {
+        issues.push('获取当前分支时进程错误')
+        resolve('')
+      })
+    })
+
+    // 2. 检查工作树状态
+    const workingTreeClean = await new Promise<boolean>((resolve) => {
+      const proc = spawn(gitPath, ['status', '--porcelain'], {
+        stdio: 'pipe',
+        env: gitEnv,
+        cwd: repoPath,
+      })
+      let output = ''
+      proc.stdout?.on('data', data => { output += data.toString() })
+      proc.on('close', code => {
+        if (code === 0) {
+          const isClean = output.trim() === ''
+          if (!isClean) {
+            issues.push(`工作树不干净，有未提交的更改: ${output.trim()}`)
+          }
+          resolve(isClean)
+        } else {
+          issues.push('无法检查工作树状态')
+          resolve(false)
+        }
+      })
+      proc.on('error', () => {
+        issues.push('检查工作树状态时进程错误')
+        resolve(false)
+      })
+    })
+
+    // 3. 检查远程仓库连接
+    const remoteAccessible = await new Promise<boolean>((resolve) => {
+      const proc = spawn(gitPath, ['remote', 'show', 'origin'], {
+        stdio: 'pipe',
+        env: gitEnv,
+        cwd: repoPath,
+      })
+      proc.on('close', code => {
+        if (code !== 0) {
+          issues.push('无法访问远程仓库 origin')
+        }
+        resolve(code === 0)
+      })
+      proc.on('error', () => {
+        issues.push('检查远程仓库时进程错误')
+        resolve(false)
+      })
+    })
+
+    // 4. 检查Git对象数据库完整性
+    const objectDbHealthy = await new Promise<boolean>((resolve) => {
+      const proc = spawn(gitPath, ['fsck', '--quick'], {
+        stdio: 'pipe',
+        env: gitEnv,
+        cwd: repoPath,
+      })
+      proc.on('close', code => {
+        if (code !== 0) {
+          issues.push('Git对象数据库存在问题，需要修复')
+        }
+        resolve(code === 0)
+      })
+      proc.on('error', () => {
+        issues.push('检查Git对象数据库时进程错误')
+        resolve(false)
+      })
+    })
+
+    const isHealthy = issues.length === 0
+    console.log(`Git仓库健康状态: ${isHealthy ? '✅ 健康' : '❌ 有问题'}`)
+    if (issues.length > 0) {
+      console.log('发现的问题:')
+      issues.forEach(issue => console.log(`  - ${issue}`))
+    }
+
+    return {
+      isHealthy,
+      issues,
+      currentBranch,
+      workingTreeClean
+    }
+  } catch (error) {
+    console.error('检查Git仓库健康状态时出错:', error)
+    issues.push(`健康检查异常: ${error instanceof Error ? error.message : String(error)}`)
+    return {
+      isHealthy: false,
+      issues
+    }
+  }
 }
 
 // 下载Git
@@ -936,6 +1100,316 @@ export async function cleanRepo(appRoot: string): Promise<{ success: boolean; er
 }
 
 // 获取repo信息（用于调试和状态显示）
+// Git故障自动恢复函数
+export async function autoRecoverFromGitFailure(
+  appRoot: string,
+  repoUrl: string = 'https://github.com/AUTO-MAS-Project/AUTO-MAS.git'
+): Promise<{ success: boolean; message: string }> {
+  console.log('=== 开始Git故障自动恢复 ===')
+
+  try {
+    const repoPath = path.join(appRoot, 'repo')
+
+    // 1. 清理损坏的仓库
+    if (fs.existsSync(repoPath)) {
+      console.log('🗑️ 清理可能损坏的仓库目录...')
+      fs.rmSync(repoPath, { recursive: true, force: true })
+      console.log('✅ 仓库目录清理完成')
+    }
+
+    // 2. 重新检查Git环境
+    console.log('🔧 重新检查Git环境...')
+    const gitEnv = getGitEnvironment(appRoot)
+    const diagnosis = await diagnoseAndFixGitIssues(appRoot, gitEnv)
+
+    if (!diagnosis.success) {
+      return {
+        success: false,
+        message: `环境检查失败: ${diagnosis.error}`
+      }
+    }
+
+    // 3. 使用配置的镜像源URL
+    const actualRepoUrl = await getConfiguredRepoUrl(appRoot, repoUrl)
+    console.log(`🔄 尝试重新克隆仓库: ${actualRepoUrl}`)
+    const cloneResult = await cloneBackend(appRoot, actualRepoUrl)
+
+    if (cloneResult.success) {
+      return {
+        success: true,
+        message: '✅ Git故障自动恢复成功，仓库已重新克隆'
+      }
+    } else {
+      return {
+        success: false,
+        message: `自动恢复失败: ${cloneResult.error}`
+      }
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    console.error('❌ 自动恢复过程出错:', errorMsg)
+    return {
+      success: false,
+      message: `自动恢复异常: ${errorMsg}`
+    }
+  }
+}
+
+// 诊断和修复Git checkout问题
+export async function diagnoseAndFixGitIssues(appRoot: string, gitEnv?: any): Promise<{
+  success: boolean
+  diagnostics: string[]
+  fixes: string[]
+  error?: string
+}> {
+  const diagnostics: string[] = []
+  const fixes: string[] = []
+
+  try {
+    const repoPath = path.join(appRoot, 'repo')
+    const gitPath = path.join(appRoot, 'environment', 'git', 'bin', 'git.exe')
+
+    diagnostics.push(`检查路径: ${repoPath}`)
+    diagnostics.push(`Git可执行文件: ${gitPath}`)
+
+    // 1. 检查基本文件存在性
+    if (!fs.existsSync(gitPath)) {
+      diagnostics.push('❌ Git可执行文件不存在')
+      fixes.push('需要重新下载安装Git')
+      return { success: false, diagnostics, fixes, error: 'Git可执行文件不存在' }
+    }
+    diagnostics.push('✅ Git可执行文件存在')
+
+    if (!fs.existsSync(repoPath)) {
+      diagnostics.push('❌ 仓库目录不存在')
+      fixes.push('将重新克隆仓库')
+      return { success: true, diagnostics, fixes }
+    }
+    diagnostics.push('✅ 仓库目录存在')
+
+    // 使用传入的gitEnv或获取新的环境配置
+    const actualGitEnv = gitEnv || getGitEnvironment(appRoot)
+
+    // 2. 检查Git可用性
+    const gitWorking = await new Promise<{ working: boolean; version?: string; error?: string }>((resolve) => {
+      const proc = spawn(gitPath, ['--version'], { env: actualGitEnv, stdio: 'pipe' })
+      let output = ''
+      let error = ''
+
+      proc.stdout?.on('data', data => { output += data.toString() })
+      proc.stderr?.on('data', data => { error += data.toString() })
+
+      proc.on('close', code => {
+        resolve({
+          working: code === 0,
+          version: output.trim(),
+          error: error.trim()
+        })
+      })
+      proc.on('error', err => {
+        resolve({ working: false, error: err.message })
+      })
+    })
+
+    if (!gitWorking.working) {
+      diagnostics.push(`❌ Git无法运行: ${gitWorking.error}`)
+      fixes.push('检查Git安装完整性，可能需要重新安装Git')
+      return { success: false, diagnostics, fixes, error: gitWorking.error }
+    }
+    diagnostics.push(`✅ Git正常工作: ${gitWorking.version}`)
+
+    // 3. 检查仓库状态
+    if (fs.existsSync(path.join(repoPath, '.git'))) {
+      diagnostics.push('✅ 是Git仓库')
+
+      // 运行健康检查
+      const healthCheck = await checkGitRepositoryHealth(gitPath, actualGitEnv, repoPath)
+      if (!healthCheck.isHealthy) {
+        diagnostics.push('❌ Git仓库健康检查失败')
+        healthCheck.issues.forEach(issue => diagnostics.push(`  - ${issue}`))
+        fixes.push('将清理并重新克隆仓库')
+      } else {
+        diagnostics.push('✅ Git仓库健康状态良好')
+      }
+    } else {
+      diagnostics.push('❌ 不是Git仓库')
+      fixes.push('将重新克隆仓库')
+    }
+
+    return { success: true, diagnostics, fixes }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    diagnostics.push(`❌ 诊断过程出错: ${errorMsg}`)
+    return { success: false, diagnostics, fixes, error: errorMsg }
+  }
+}
+
+// 优化前端配置，自动选择最佳镜像源
+export async function optimizeFrontendGitConfig(appRoot: string): Promise<{
+  success: boolean
+  oldMirror?: string
+  newMirror?: string
+  message: string
+}> {
+  try {
+    const configPath = path.join(appRoot, 'config', 'frontend_config.json')
+
+    if (!fs.existsSync(configPath)) {
+      return { success: false, message: '前端配置文件不存在' }
+    }
+
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'))
+    const currentMirror = config.selectedGitMirror || 'github'
+
+    // 如果已经是推荐的镜像源，则无需优化
+    if (currentMirror !== 'github') {
+      return {
+        success: true,
+        oldMirror: currentMirror,
+        newMirror: currentMirror,
+        message: `当前已使用加速镜像源: ${currentMirror}`
+      }
+    }
+
+    // 选择最佳镜像源
+    const bestMirror = selectBestMirror()
+
+    // 更新配置
+    config.selectedGitMirror = bestMirror.key
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8')
+
+    console.log(`✅ 已自动优化Git镜像源配置: ${currentMirror} -> ${bestMirror.key}`)
+    console.log(`优化理由: ${bestMirror.reason}`)
+
+    return {
+      success: true,
+      oldMirror: currentMirror,
+      newMirror: bestMirror.key,
+      message: `已自动优化为 ${bestMirror.key}，${bestMirror.reason}`
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    console.error('优化前端Git配置失败:', errorMsg)
+    return { success: false, message: `优化失败: ${errorMsg}` }
+  }
+}
+
+// 验证镜像站配置是否真正生效的测试函数
+export async function verifyMirrorConfiguration(appRoot: string): Promise<{
+  success: boolean
+  currentMirror: string
+  effectiveUrl: string
+  isUsingAccelerator: boolean
+  details: string[]
+}> {
+  const details: string[] = []
+
+  try {
+    // 1. 检查前端配置
+    const configPath = path.join(appRoot, 'config', 'frontend_config.json')
+    if (!fs.existsSync(configPath)) {
+      return {
+        success: false,
+        currentMirror: 'unknown',
+        effectiveUrl: '',
+        isUsingAccelerator: false,
+        details: ['前端配置文件不存在']
+      }
+    }
+
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'))
+    const selectedMirror = config.selectedGitMirror || 'github'
+    details.push(`前端配置的镜像源: ${selectedMirror}`)
+
+    // 2. 获取实际生效的仓库URL
+    const effectiveUrl = await getConfiguredRepoUrl(appRoot, 'main')
+    details.push(`实际生效的仓库URL: ${effectiveUrl}`)
+
+    // 3. 判断是否使用了加速站
+    const isUsingAccelerator = !effectiveUrl.includes('github.com') ||
+      effectiveUrl.includes('gh-proxy.com') ||
+      effectiveUrl.includes('ghproxy') ||
+      effectiveUrl.includes('gitee.com') ||
+      effectiveUrl.includes('ghfast.top')
+    details.push(`是否使用加速站: ${isUsingAccelerator ? '是' : '否'}`)
+
+    // 4. 如果没有使用加速站但配置了非GitHub镜像，说明配置可能有问题
+    if (!isUsingAccelerator && selectedMirror !== 'github') {
+      details.push(`⚠️  配置了镜像源${selectedMirror}但实际仍使用GitHub，配置可能未生效`)
+    }
+
+    // 5. 检查环境变量
+    const gitEnv = getGitEnvironment(appRoot)
+    if (gitEnv.https_proxy) {
+      details.push(`Git代理设置: ${gitEnv.https_proxy}`)
+    }
+
+    return {
+      success: true,
+      currentMirror: selectedMirror,
+      effectiveUrl,
+      isUsingAccelerator,
+      details
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    return {
+      success: false,
+      currentMirror: 'unknown',
+      effectiveUrl: '',
+      isUsingAccelerator: false,
+      details: [`验证失败: ${errorMsg}`]
+    }
+  }
+}
+
+// 为前端提供的综合Git状态和故障排除接口
+export async function getGitStatusAndTroubleshoot(appRoot: string): Promise<{
+  success: boolean
+  repoInfo?: {
+    repoExists: boolean
+    isGitRepo: boolean
+    currentBranch?: string
+    currentCommit?: string
+    remoteUrl?: string
+    lastUpdate?: string
+  }
+  diagnostics?: string[]
+  fixes?: string[]
+  canAutoRecover?: boolean
+  error?: string
+}> {
+  try {
+    console.log('=== 获取Git状态并进行故障排除 ===')
+
+    // 1. 获取基本仓库信息
+    const repoInfo = await getRepoInfo(appRoot)
+
+    // 2. 运行诊断
+    const gitEnv = getGitEnvironment(appRoot)
+    const diagnosis = await diagnoseAndFixGitIssues(appRoot, gitEnv)
+
+    // 3. 判断是否可以自动恢复
+    const canAutoRecover = !diagnosis.success || diagnosis.fixes.length > 0
+
+    return {
+      success: true,
+      repoInfo: repoInfo.info,
+      diagnostics: diagnosis.diagnostics,
+      fixes: diagnosis.fixes,
+      canAutoRecover,
+      error: diagnosis.error
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    console.error('获取Git状态和故障排除失败:', errorMsg)
+    return {
+      success: false,
+      error: errorMsg
+    }
+  }
+}
+
 export async function getRepoInfo(appRoot: string): Promise<{
   success: boolean
   info?: {
@@ -1388,6 +1862,115 @@ async function copyDirectoryRecursive(sourceDir: string, targetDir: string) {
   }
 }
 
+// Git镜像源配置映射（与云端配置保持同步）
+const GIT_MIRROR_URLS = {
+  // 官方源
+  'github': 'https://github.com/AUTO-MAS-Project/AUTO-MAS.git',
+
+  // 国内镜像源
+  'gitee': 'https://gitee.com/auto-mas-project/AUTO-MAS.git',
+  'gitee 镜像源': 'https://gitee.com/auto-mas-project/AUTO-MAS.git',
+
+  // GitHub加速站（gh-proxy系列）
+  'ghproxy_cloudflare': 'https://gh-proxy.com/https://github.com/AUTO-MAS-Project/AUTO-MAS.git',
+  'ghproxy_fastly': 'https://cdn.gh-proxy.com/https://github.com/AUTO-MAS-Project/AUTO-MAS.git',
+  'ghproxy_edgeone': 'https://edgeone.gh-proxy.com/https://github.com/AUTO-MAS-Project/AUTO-MAS.git',
+
+  // 第三方加速站
+  'ghfast': 'https://ghfast.top/https://github.com/AUTO-MAS-Project/AUTO-MAS.git',
+
+  // 兼容老配置
+  'ghproxy_net': 'https://ghproxy.net/https://github.com/AUTO-MAS-Project/AUTO-MAS.git',
+  'hub_fastgit': 'https://hub.fastgit.xyz/AUTO-MAS-Project/AUTO-MAS.git',
+} as const
+
+// 智能选择最佳镜像源
+function selectBestMirror(): { key: string; url: string; reason: string } {
+  // 中国大陆用户推荐的加速站优先级（从高到低）
+  const recommendedMirrors = [
+    { key: 'gitee', reason: '国内gitee镜像，稳定性好' },
+    { key: 'ghproxy_cloudflare', reason: 'Cloudflare CDN加速，全球覆盖' },
+    { key: 'ghproxy_fastly', reason: 'Fastly CDN加速，速度快' },
+    { key: 'ghproxy_edgeone', reason: 'EdgeOne加速，腾讯云CDN' },
+    { key: 'ghfast', reason: '第三方GitHub加速站' },
+  ]
+
+  // 选择第一个可用的镜像
+  for (const mirror of recommendedMirrors) {
+    const url = GIT_MIRROR_URLS[mirror.key as keyof typeof GIT_MIRROR_URLS]
+    if (url) {
+      return { key: mirror.key, url, reason: mirror.reason }
+    }
+  }
+
+  // 如果都不可用，回退到GitHub官方
+  return {
+    key: 'github',
+    url: GIT_MIRROR_URLS.github,
+    reason: 'GitHub官方源（可能需要科学上网）'
+  }
+}
+
+// 获取配置的Git仓库URL
+async function getConfiguredRepoUrl(appRoot: string, defaultUrl: string): Promise<string> {
+  console.log(`=== Git镜像源配置 ===`)
+
+  try {
+    const configPath = path.join(appRoot, 'config', 'frontend_config.json')
+    if (fs.existsSync(configPath)) {
+      const config = JSON.parse(fs.readFileSync(configPath, 'utf8'))
+      let selectedMirror = config.selectedGitMirror || 'github'
+
+      console.log(`配置中的镜像源: ${selectedMirror}`)
+
+      // 如果配置的是GitHub官方源，建议自动切换到加速站
+      if (selectedMirror === 'github') {
+        const bestMirror = selectBestMirror()
+        console.log(`⚡ 检测到GitHub官方源，推荐使用加速站: ${bestMirror.key}`)
+        console.log(`推荐理由: ${bestMirror.reason}`)
+
+        // 可以选择是否强制切换到加速站
+        // 这里暂时保持用户配置，但给出建议
+        console.log(`💡 建议: 可在前端界面切换到 ${bestMirror.key} 以获得更好的下载速度`)
+      }
+
+      // 从映射表中获取对应的URL
+      const mirrorUrl = GIT_MIRROR_URLS[selectedMirror as keyof typeof GIT_MIRROR_URLS]
+
+      if (mirrorUrl) {
+        console.log(`✅ 使用配置的镜像源: ${selectedMirror} -> ${mirrorUrl}`)
+        return mirrorUrl
+      } else {
+        console.warn(`⚠️ 未知的镜像源配置: ${selectedMirror}`)
+
+        // 检查是否为自定义URL（包含http或https）
+        if (selectedMirror.includes('http://') || selectedMirror.includes('https://')) {
+          console.log(`✅ 使用自定义镜像源URL: ${selectedMirror}`)
+          return selectedMirror
+        }
+
+        // 如果配置的镜像源无效，自动选择最佳镜像
+        console.log(`🔄 配置无效，自动选择最佳镜像源...`)
+        const bestMirror = selectBestMirror()
+        console.log(`✅ 自动选择: ${bestMirror.key} -> ${bestMirror.url}`)
+        console.log(`选择原因: ${bestMirror.reason}`)
+        return bestMirror.url
+      }
+    } else {
+      console.log('前端配置文件不存在，自动选择最佳镜像源')
+      const bestMirror = selectBestMirror()
+      console.log(`✅ 自动选择: ${bestMirror.key} -> ${bestMirror.url}`)
+      console.log(`选择原因: ${bestMirror.reason}`)
+      return bestMirror.url
+    }
+  } catch (error) {
+    console.warn('读取Git镜像源配置失败，自动选择最佳镜像源:', error)
+    const bestMirror = selectBestMirror()
+    console.log(`✅ 异常恢复选择: ${bestMirror.key} -> ${bestMirror.url}`)
+    return bestMirror.url
+  }
+}
+
 // 克隆后端代码（替换原有核心逻辑）
 export async function cloneBackend(
   appRoot: string,
@@ -1398,14 +1981,57 @@ export async function cloneBackend(
 }> {
   console.log('=== 开始克隆/更新后端代码 ===')
   console.log(`应用根目录: ${appRoot}`)
-  console.log(`仓库URL: ${repoUrl}`)
+  console.log(`默认仓库URL: ${repoUrl}`)
+  console.log('📋 执行顺序：1.镜像站配置 → 2.环境配置 → 3.诊断 → 4.分支选择 → 5.Git操作')
 
   try {
+    // 🎯 第一步：立即配置镜像站和加速站，确保在所有检查之前完成
+    console.log('=== 第一步：配置镜像站和加速站 ===')
+    const actualRepoUrl = await getConfiguredRepoUrl(appRoot, repoUrl)
+    console.log(`✅ 镜像站配置完成，实际使用的仓库URL: ${actualRepoUrl}`)
+
+    // 验证是否使用了加速站
+    const isUsingAccelerator = !actualRepoUrl.includes('github.com') ||
+      actualRepoUrl.includes('gh-proxy.com') ||
+      actualRepoUrl.includes('ghproxy') ||
+      actualRepoUrl.includes('gitee.com') ||
+      actualRepoUrl.includes('ghfast.top')
+
+    if (isUsingAccelerator) {
+      console.log(`🚀 已启用加速站，预计下载速度将显著提升`)
+    } else {
+      console.log(`⚠️ 当前使用GitHub官方源，如遇网络问题建议切换到镜像加速站`)
+    }
+
+    // 更新repoUrl变量为实际配置的URL，后续所有操作都使用这个URL
+    repoUrl = actualRepoUrl
+
+    // 🔧 第二步：预配置Git环境（包括代理设置）
+    console.log('=== 第二步：预配置Git环境和代理 ===')
     const repoPath = path.join(appRoot, 'repo')
     const gitPath = path.join(appRoot, 'environment', 'git', 'bin', 'git.exe')
+    const gitEnv = getGitEnvironment(appRoot) // 这里会配置代理环境变量
 
+    console.log(`✅ Git环境配置完成`)
     console.log(`Git可执行文件路径: ${gitPath}`)
     console.log(`仓库路径: ${repoPath}`)
+    console.log(`使用仓库URL: ${repoUrl}`)
+
+    // 🔍 第三步：环境和仓库诊断
+    console.log('=== 第三步：运行环境诊断 ===')
+    const diagnosis = await diagnoseAndFixGitIssues(appRoot, gitEnv)
+
+    console.log('📋 诊断结果:')
+    diagnosis.diagnostics.forEach(item => console.log(`  ${item}`))
+
+    if (diagnosis.fixes.length > 0) {
+      console.log('🔧 建议修复:')
+      diagnosis.fixes.forEach(fix => console.log(`  ${fix}`))
+    }
+
+    if (!diagnosis.success) {
+      throw new Error(`环境诊断失败: ${diagnosis.error}`)
+    }
 
     if (!fs.existsSync(gitPath)) {
       const error = `Git可执行文件不存在: ${gitPath}`
@@ -1414,36 +2040,55 @@ export async function cloneBackend(
     }
 
     console.log('✅ Git可执行文件存在')
-    const gitEnv = getGitEnvironment(appRoot)
-    console.log('✅ Git环境变量配置完成')
+    console.log('✅ Git环境变量配置完成（已在第二步配置）')
 
     // 检查 git 是否可用
     console.log('=== 检查Git是否可用 ===')
+    console.log(`Git可执行文件: ${gitPath}`)
+    console.log(`Git PATH环境: ${gitEnv.PATH?.split(';')[0]}`)
+    console.log(`Git GIT_EXEC_PATH: ${gitEnv.GIT_EXEC_PATH}`)
+
     await new Promise<void>((resolve, reject) => {
-      const proc = spawn(gitPath, ['--version'], { env: gitEnv })
+      const proc = spawn(gitPath, ['--version'], {
+        env: gitEnv,
+        stdio: 'pipe'
+      })
+
+      let versionOutput = ''
+      let errorOutput = ''
 
       proc.stdout?.on('data', data => {
-        console.log(`git --version output: ${data.toString().trim()}`)
+        const output = data.toString().trim()
+        versionOutput += output
+        console.log(`git --version output: ${output}`)
       })
 
       proc.stderr?.on('data', data => {
-        console.log(`git --version error: ${data.toString().trim()}`)
+        const output = data.toString().trim()
+        errorOutput += output
+        console.log(`git --version error: ${output}`)
       })
 
       proc.on('close', code => {
         console.log(`git --version 退出码: ${code}`)
         if (code === 0) {
-          console.log('✅ Git可用')
+          console.log(`✅ Git可用，版本: ${versionOutput}`)
           resolve()
         } else {
           console.error('❌ Git无法正常运行')
-          reject(new Error('git 无法正常运行'))
+          const error = errorOutput || '未知错误'
+          reject(new Error(`Git无法正常运行，退出码: ${code}，错误: ${error}`))
         }
       })
 
       proc.on('error', error => {
         console.error('❌ Git进程启动失败:', error)
-        reject(error)
+        console.error('可能的原因:')
+        console.error('  1. Git可执行文件不存在或损坏')
+        console.error('  2. 缺少必要的DLL文件')
+        console.error('  3. 权限不足')
+        console.error('  4. 环境变量配置错误')
+        reject(new Error(`Git进程启动失败: ${error.message}`))
       })
     })
 
@@ -1452,39 +2097,62 @@ export async function cloneBackend(
     console.log(`=== 分支选择逻辑 ===`)
     console.log(`当前应用版本: ${version}`)
 
-    let targetBranch = 'feature/refactor' // 默认分支
+    let targetBranch = DEFAULT_BRANCH // 使用常量定义的默认分支
     console.log(`默认分支: ${targetBranch}`)
 
-    // 首先检查网络连接（通过检查默认分支是否存在）
-    console.log('=== 检查网络连接和仓库访问权限 ===')
-    const defaultBranchExists = await checkBranchExists(gitPath, gitEnv, repoUrl, targetBranch)
-    if (!defaultBranchExists) {
-      // 尝试检查其他可能的默认分支
-      const mainBranchExists = await checkBranchExists(gitPath, gitEnv, repoUrl, 'main')
-      if (!mainBranchExists) {
-        throw new Error('网络连接不可用或无法访问远程仓库，请检查网络连接后重试')
-      }
-      // 如果 main 分支存在但 feature/refactor 不存在，则使用 main
-      targetBranch = 'main'
-      console.log('⚠️ 默认分支 feature/refactor 不存在，改用 main 分支')
-    }
-    console.log('✅ 网络连接正常，可以访问远程仓库')
+    // 分支选择策略：优先版本分支，其次默认分支，最后fallback到main
+    console.log('=== 开始智能分支选择 ===')
 
+    let selectedBranch = null
+    let selectionReason = ''
+
+    // 1. 优先测试版本号分支（如果版本号有效）
     if (version !== '获取版本失败！') {
-      // 检查版本对应的分支是否存在
-      console.log(`开始检查版本分支是否存在...`)
+      console.log(`🎯 第一优先级：检查版本分支 ${version}`)
       const versionBranchExists = await checkBranchExists(gitPath, gitEnv, repoUrl, version)
       if (versionBranchExists) {
-        targetBranch = version
-        console.log(`🎯 将使用版本分支: ${targetBranch}`)
+        selectedBranch = version
+        selectionReason = `版本分支 ${version} 存在且可访问`
+        console.log(`✅ ${selectionReason}`)
       } else {
-        console.log(`⚠️ 版本分支 ${version} 不存在，使用默认分支: ${targetBranch}`)
+        console.log(`❌ 版本分支 ${version} 不存在`)
       }
     } else {
-      console.log('⚠️ 版本号获取失败，使用默认分支')
+      console.log('⚠️ 版本号获取失败，跳过版本分支检测')
     }
 
+    // 2. 如果版本分支不可用，测试默认分支
+    if (!selectedBranch) {
+      console.log(`🔄 第二优先级：检查默认分支 ${targetBranch}`)
+      const defaultBranchExists = await checkBranchExists(gitPath, gitEnv, repoUrl, targetBranch)
+      if (defaultBranchExists) {
+        selectedBranch = targetBranch
+        selectionReason = `默认分支 ${targetBranch} 存在且可访问`
+        console.log(`✅ ${selectionReason}`)
+      } else {
+        console.log(`❌ 默认分支 ${targetBranch} 不存在`)
+      }
+    }
+
+    // 3. 最后的fallback：尝试main分支
+    if (!selectedBranch) {
+      console.log(`🆘 最后选择：尝试 main 分支作为fallback`)
+      const mainBranchExists = await checkBranchExists(gitPath, gitEnv, repoUrl, 'main')
+      if (mainBranchExists) {
+        selectedBranch = 'main'
+        selectionReason = 'fallback到main分支'
+        console.log(`✅ ${selectionReason}`)
+      } else {
+        console.log(`❌ main 分支也不存在`)
+        throw new Error('网络连接不可用或无法访问远程仓库，所有候选分支都不可用，请检查网络连接后重试')
+      }
+    }
+
+    targetBranch = selectedBranch
+    console.log('✅ 网络连接正常，可以访问远程仓库')
+
     console.log(`=== 最终选择分支: ${targetBranch} ===`)
+    console.log(`选择原因: ${selectionReason}`)
 
     // 检查是否为Git仓库
     const isRepo = isGitRepository(repoPath)
@@ -1493,6 +2161,28 @@ export async function cloneBackend(
     // ==== 下面是关键逻辑 ====
     if (isRepo) {
       console.log('=== 更新现有Git仓库 ===')
+
+      // 首先检查Git仓库健康状态
+      const healthCheck = await checkGitRepositoryHealth(gitPath, gitEnv, repoPath)
+      if (!healthCheck.isHealthy) {
+        console.warn('⚠️ Git仓库存在问题，启动自动恢复流程')
+        console.log('发现的问题:')
+        healthCheck.issues.forEach(issue => console.log(`  - ${issue}`))
+
+        // 尝试自动恢复
+        console.log('� 启动Git故障自动恢复...')
+        const recoveryResult = await autoRecoverFromGitFailure(appRoot, repoUrl)
+
+        if (recoveryResult.success) {
+          console.log(`✅ ${recoveryResult.message}`)
+          return { success: true }
+        } else {
+          console.error(`❌ ${recoveryResult.message}`)
+          throw new Error(recoveryResult.message)
+        }
+      }
+
+      console.log('✅ Git仓库健康状态良好，继续更新流程')
 
       if (mainWindow) {
         mainWindow.webContents.send('download-progress', {
@@ -1574,6 +2264,16 @@ export async function cloneBackend(
               errorOutput.includes('Could not resolve host') ||
               errorOutput.includes('Connection refused') ||
               errorOutput.includes('network is unreachable')
+
+            // Git fetch 失败时进行快速诊断
+            console.log('=== Git fetch 失败，进行快速诊断 ===')
+            diagnoseAndFixGitIssues(appRoot).then((fetchDiagnosis) => {
+              console.log('🔍 Fetch失败诊断:')
+              fetchDiagnosis.diagnostics.forEach(item => console.log(`  ${item}`))
+            }).catch(diagError => {
+              console.error('诊断过程出错:', diagError)
+            })
+
             if (isNetworkError) {
               reject(new Error(`网络连接失败: 无法获取分支 ${targetBranch}`))
             } else {
@@ -1592,27 +2292,88 @@ export async function cloneBackend(
 
       // 3. 强制切换到目标分支并设置远程跟踪
       console.log(`🔀 强制切换到目标分支: ${targetBranch}`)
+
+      // 先检查远程分支是否存在
+      console.log(`🔍 检查远程分支是否存在: origin/${targetBranch}`)
+      const remoteBranchExists = await new Promise<boolean>((resolve) => {
+        const proc = spawn(gitPath, ['branch', '-r', '--list', `origin/${targetBranch}`], {
+          stdio: 'pipe',
+          env: gitEnv,
+          cwd: repoPath,
+        })
+        let output = ''
+        proc.stdout?.on('data', data => {
+          output += data.toString()
+        })
+        proc.on('close', code => {
+          const exists = output.trim().includes(`origin/${targetBranch}`)
+          console.log(`远程分支 origin/${targetBranch} ${exists ? '存在' : '不存在'}`)
+          resolve(exists)
+        })
+        proc.on('error', () => resolve(false))
+      })
+
+      if (!remoteBranchExists) {
+        console.error(`❌ 远程分支 origin/${targetBranch} 不存在，无法切换`)
+        throw new Error(`远程分支 origin/${targetBranch} 不存在`)
+      }
+
       await new Promise<void>((resolve, reject) => {
         const proc = spawn(gitPath, ['checkout', '-B', targetBranch, `origin/${targetBranch}`], {
           stdio: 'pipe',
           env: gitEnv,
           cwd: repoPath,
         })
-        proc.stdout?.on('data', d => console.log('git checkout stdout:', d.toString().trim()))
-        proc.stderr?.on('data', d => console.log('git checkout stderr:', d.toString().trim()))
+
+        let stdoutOutput = ''
+        let stderrOutput = ''
+
+        proc.stdout?.on('data', d => {
+          const output = d.toString().trim()
+          stdoutOutput += output
+          console.log('git checkout stdout:', output)
+        })
+
+        proc.stderr?.on('data', d => {
+          const output = d.toString().trim()
+          stderrOutput += output
+          console.log('git checkout stderr:', output)
+        })
+
         proc.on('close', code => {
           console.log(`git checkout 退出码: ${code}`)
+          console.log(`git checkout 完整输出:`)
+          console.log(`  stdout: ${stdoutOutput}`)
+          console.log(`  stderr: ${stderrOutput}`)
+
           if (code === 0) {
             console.log(`✅ 成功切换到分支: ${targetBranch}`)
             resolve()
           } else {
             console.error(`❌ 切换分支失败: ${targetBranch}`)
-            reject(new Error(`git checkout失败，退出码: ${code}`))
+            const errorDetails = stderrOutput || stdoutOutput || '无详细错误信息'
+
+            // Git checkout 失败时进行详细诊断
+            console.log('=== Git checkout 失败，开始详细诊断 ===')
+            diagnoseAndFixGitIssues(appRoot).then((failureDiagnosis) => {
+              console.log('🔍 失败后诊断结果:')
+              failureDiagnosis.diagnostics.forEach(item => console.log(`  ${item}`))
+
+              if (failureDiagnosis.fixes.length > 0) {
+                console.log('💡 建议的修复措施:')
+                failureDiagnosis.fixes.forEach(fix => console.log(`  ${fix}`))
+              }
+            }).catch(diagError => {
+              console.error('诊断过程也出错了:', diagError)
+            })
+
+            reject(new Error(`Git checkout失败，退出码: ${code}，错误详情: ${errorDetails}`))
           }
         })
+
         proc.on('error', error => {
           console.error('❌ git checkout 进程错误:', error)
-          reject(error)
+          reject(new Error(`Git checkout进程启动失败: ${error.message}`))
         })
       })
 
@@ -1762,6 +2523,21 @@ export async function cloneBackend(
               errorOutput.includes('Could not resolve host') ||
               errorOutput.includes('Connection refused') ||
               errorOutput.includes('network is unreachable')
+
+            // Git clone 失败时进行诊断
+            console.log('=== Git clone 失败，进行环境诊断 ===')
+            diagnoseAndFixGitIssues(appRoot).then((cloneDiagnosis) => {
+              console.log('🔍 Clone失败诊断:')
+              cloneDiagnosis.diagnostics.forEach(item => console.log(`  ${item}`))
+
+              if (cloneDiagnosis.fixes.length > 0) {
+                console.log('💡 针对克隆失败的建议:')
+                cloneDiagnosis.fixes.forEach(fix => console.log(`  ${fix}`))
+              }
+            }).catch(diagError => {
+              console.error('诊断过程出错:', diagError)
+            })
+
             if (isNetworkError) {
               reject(new Error(`网络连接失败: 无法克隆代码仓库`))
             } else {
@@ -1818,5 +2594,88 @@ export async function cloneBackend(
       })
     }
     return { success: false, error: errorMessage }
+  }
+}
+
+// 完整的镜像站配置检查和优化流程
+export async function checkAndOptimizeMirrorConfiguration(appRoot: string): Promise<{
+  success: boolean
+  actions: string[]
+  finalStatus: {
+    mirror: string
+    url: string
+    isAccelerated: boolean
+  }
+  message: string
+}> {
+  const actions: string[] = []
+
+  try {
+    // 1. 先验证当前配置状态
+    actions.push('🔍 检查当前镜像站配置状态...')
+    const verification = await verifyMirrorConfiguration(appRoot)
+
+    actions.push(`当前镜像源: ${verification.currentMirror}`)
+    actions.push(`实际URL: ${verification.effectiveUrl}`)
+    actions.push(`使用加速站: ${verification.isUsingAccelerator ? '是' : '否'}`)
+
+    // 2. 如果没有使用加速站，尝试优化配置
+    if (!verification.isUsingAccelerator) {
+      actions.push('⚡ 检测到未使用加速站，开始优化配置...')
+
+      const optimization = await optimizeFrontendGitConfig(appRoot)
+      if (optimization.success) {
+        actions.push(`✅ ${optimization.message}`)
+
+        // 3. 重新验证优化后的配置
+        actions.push('🔄 验证优化后的配置...')
+        const newVerification = await verifyMirrorConfiguration(appRoot)
+
+        return {
+          success: true,
+          actions,
+          finalStatus: {
+            mirror: newVerification.currentMirror,
+            url: newVerification.effectiveUrl,
+            isAccelerated: newVerification.isUsingAccelerator
+          },
+          message: newVerification.isUsingAccelerator
+            ? '✅ 镜像站配置已优化并正确生效'
+            : '⚠️ 配置已优化但可能需要重启应用生效'
+        }
+      } else {
+        actions.push(`❌ 优化失败: ${optimization.message}`)
+      }
+    } else {
+      actions.push('✅ 当前已正确使用加速站，无需优化')
+    }
+
+    return {
+      success: true,
+      actions,
+      finalStatus: {
+        mirror: verification.currentMirror,
+        url: verification.effectiveUrl,
+        isAccelerated: verification.isUsingAccelerator
+      },
+      message: verification.isUsingAccelerator
+        ? '当前镜像站配置正常'
+        : '建议重启应用以确保配置生效'
+    }
+
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    actions.push(`❌ 检查过程出错: ${errorMsg}`)
+
+    return {
+      success: false,
+      actions,
+      finalStatus: {
+        mirror: 'unknown',
+        url: '',
+        isAccelerated: false
+      },
+      message: `检查失败: ${errorMsg}`
+    }
   }
 }
