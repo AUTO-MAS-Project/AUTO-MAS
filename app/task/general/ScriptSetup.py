@@ -33,7 +33,7 @@ from app.models.emulator import DeviceBase
 from app.services import System
 from app.utils import get_logger, ProcessManager
 
-logger = get_logger("MAA 脚本设置")
+logger = get_logger("通用脚本设置")
 
 
 class ScriptSetupTask(TaskExecuteBase):
