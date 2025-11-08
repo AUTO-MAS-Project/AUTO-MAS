@@ -52,9 +52,14 @@ class EmulatorConfig(ConfigBase):
     def __init__(self) -> None:
         super().__init__()
 
+        ## Info ------------------------------------------------------------
+        ## 模拟器名称
         self.Info_Name = ConfigItem("Info", "Name", "新模拟器")
+        ## 模拟器路径
         self.Info_Path = ConfigItem("Info", "Path", "", FileValidator())
 
+        ## Data ------------------------------------------------------------
+        ## 模拟器类型
         self.Data_Type = ConfigItem(
             "Data",
             "Type",
@@ -70,7 +75,9 @@ class EmulatorConfig(ConfigBase):
                 ]
             ),
         )
+        ## 老板键快捷键配置
         self.Data_BossKey = ConfigItem("Data", "BossKey", "[ ]", JSONValidator(list))
+        ## 最大等待时间（秒）
         self.Data_MaxWaitTime = ConfigItem(
             "Data", "MaxWaitTime", 60, RangeValidator(1, 9999)
         )
@@ -82,12 +89,20 @@ class Webhook(ConfigBase):
     def __init__(self) -> None:
         super().__init__()
 
+        ## Info ------------------------------------------------------------
+        ## Webhook 名称
         self.Info_Name = ConfigItem("Info", "Name", "新自定义 Webhook 通知")
+        ## 是否启用
         self.Info_Enabled = ConfigItem("Info", "Enabled", True, BoolValidator())
 
+        ## Data ------------------------------------------------------------
+        ## Webhook URL 地址
         self.Data_Url = ConfigItem("Data", "Url", "", URLValidator())
+        ## 消息模板
         self.Data_Template = ConfigItem("Data", "Template", "")
+        ## 请求头
         self.Data_Headers = ConfigItem("Data", "Headers", "{ }", JSONValidator())
+        ## 请求方法
         self.Data_Method = ConfigItem(
             "Data", "Method", "POST", OptionsValidator(["POST", "GET"])
         )
@@ -101,6 +116,8 @@ class QueueItem(ConfigBase):
     def __init__(self) -> None:
         super().__init__()
 
+        ## Info ------------------------------------------------------------
+        ## 脚本 ID
         self.Info_ScriptId = ConfigItem(
             "Info",
             "ScriptId",
@@ -115,7 +132,10 @@ class TimeSet(ConfigBase):
     def __init__(self) -> None:
         super().__init__()
 
+        ## Info ------------------------------------------------------------
+        ## 是否启用
         self.Info_Enabled = ConfigItem("Info", "Enabled", False, BoolValidator())
+        ## 时间点
         self.Info_Time = ConfigItem("Info", "Time", "00:00", DateTimeValidator("%H:%M"))
 
 
@@ -125,13 +145,18 @@ class QueueConfig(ConfigBase):
     def __init__(self) -> None:
         super().__init__()
 
+        ## Info ------------------------------------------------------------
+        ## 队列名称
         self.Info_Name = ConfigItem("Info", "Name", "新队列")
+        ## 是否启用定时启动
         self.Info_TimeEnabled = ConfigItem(
             "Info", "TimeEnabled", False, BoolValidator()
         )
+        ## 是否在启动时自动运行
         self.Info_StartUpEnabled = ConfigItem(
             "Info", "StartUpEnabled", False, BoolValidator()
         )
+        ## 完成后操作
         self.Info_AfterAccomplish = ConfigItem(
             "Info",
             "AfterAccomplish",
@@ -148,6 +173,8 @@ class QueueConfig(ConfigBase):
             ),
         )
 
+        ## Data ------------------------------------------------------------
+        ## 上次定时启动时间
         self.Data_LastTimedStart = ConfigItem(
             "Data",
             "LastTimedStart",
@@ -167,17 +194,23 @@ class MaaUserConfig(ConfigBase):
     def __init__(self) -> None:
         super().__init__()
 
+        ## Info ------------------------------------------------------------
+        ## 用户名称
         self.Info_Name = ConfigItem("Info", "Name", "新用户", UserNameValidator())
+        ## 用户 ID
         self.Info_Id = ConfigItem("Info", "Id", "")
+        ## 脚本模式
         self.Info_Mode = ConfigItem(
             "Info", "Mode", "简洁", OptionsValidator(["简洁", "详细"])
         )
+        ## 关卡模式
         self.Info_StageMode = ConfigItem(
             "Info",
             "StageMode",
             "Fixed",
             MultipleUIDValidator("Fixed", self.related_config, "PlanConfig"),
         )
+        ## 游戏服务器
         self.Info_Server = ConfigItem(
             "Info",
             "Server",
@@ -186,10 +219,13 @@ class MaaUserConfig(ConfigBase):
                 ["Official", "Bilibili", "YoStarEN", "YoStarJP", "YoStarKR", "txwy"]
             ),
         )
+        ## 是否启用
         self.Info_Status = ConfigItem("Info", "Status", True, BoolValidator())
+        ## 剩余天数
         self.Info_RemainedDay = ConfigItem(
             "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
         )
+        ## 剿灭模式
         self.Info_Annihilation = ConfigItem(
             "Info",
             "Annihilation",
@@ -204,86 +240,125 @@ class MaaUserConfig(ConfigBase):
                 ]
             ),
         )
+        ## 基建模式
         self.Info_InfrastMode = ConfigItem(
             "Info",
             "InfrastMode",
             "Normal",
             OptionsValidator(["Normal", "Rotation", "Custom"]),
         )
+        ## 基建配置名称
         self.Info_InfrastName = ConfigItem(
             "Info", "InfrastName", "-", VirtualConfigValidator(self.getInfrastName)
         )
+        ## 基建配置索引
         self.Info_InfrastIndex = ConfigItem(
             "Info", "InfrastIndex", "0", VirtualConfigValidator(self.getInfrastIndex)
         )
+        ## 密码
         self.Info_Password = ConfigItem("Info", "Password", "", EncryptValidator())
+        ## 备注
         self.Info_Notes = ConfigItem("Info", "Notes", "无")
+        ## 理智药数量
         self.Info_MedicineNumb = ConfigItem(
             "Info", "MedicineNumb", 0, RangeValidator(0, 9999)
         )
+        ## 使用源石数量
         self.Info_SeriesNumb = ConfigItem(
             "Info",
             "SeriesNumb",
             "0",
             OptionsValidator(["0", "6", "5", "4", "3", "2", "1", "-1"]),
         )
+        ## 关卡
         self.Info_Stage = ConfigItem("Info", "Stage", "-")
+        ## 关卡 1
         self.Info_Stage_1 = ConfigItem("Info", "Stage_1", "-")
+        ## 关卡 2
         self.Info_Stage_2 = ConfigItem("Info", "Stage_2", "-")
+        ## 关卡 3
         self.Info_Stage_3 = ConfigItem("Info", "Stage_3", "-")
+        ## 备用关卡
         self.Info_Stage_Remain = ConfigItem("Info", "Stage_Remain", "-")
+        ## 是否启用森空岛签到
         self.Info_IfSkland = ConfigItem("Info", "IfSkland", False, BoolValidator())
+        ## 森空岛 Token
         self.Info_SklandToken = ConfigItem(
             "Info", "SklandToken", "", EncryptValidator()
         )
 
+        ## Data ------------------------------------------------------------
+        ## 上次代理日期
         self.Data_LastProxyDate = ConfigItem(
             "Data", "LastProxyDate", "2000-01-01", DateTimeValidator("%Y-%m-%d")
         )
+        ## 上次剿灭日期
         self.Data_LastAnnihilationDate = ConfigItem(
             "Data", "LastAnnihilationDate", "2000-01-01", DateTimeValidator("%Y-%m-%d")
         )
+        ## 上次森空岛签到日期
         self.Data_LastSklandDate = ConfigItem(
             "Data", "LastSklandDate", "2000-01-01", DateTimeValidator("%Y-%m-%d")
         )
+        ## 代理次数
         self.Data_ProxyTimes = ConfigItem(
             "Data", "ProxyTimes", 0, RangeValidator(0, 9999)
         )
+        ## 是否通过检查
         self.Data_IfPassCheck = ConfigItem("Data", "IfPassCheck", True, BoolValidator())
+        ## 自定义基建配置
         self.Data_CustomInfrast = ConfigItem(
             "Data", "CustomInfrast", "{ }", JSONValidator(dict)
         )
 
+        ## Task ------------------------------------------------------------
+        ## 是否 自动唤醒
         self.Task_IfWakeUp = ConfigItem("Task", "IfWakeUp", True, BoolValidator())
+        ## 是否公招
         self.Task_IfRecruiting = ConfigItem(
             "Task", "IfRecruiting", True, BoolValidator()
         )
+        ## 是否基建
         self.Task_IfBase = ConfigItem("Task", "IfBase", True, BoolValidator())
+        ## 是否刷图
         self.Task_IfCombat = ConfigItem("Task", "IfCombat", True, BoolValidator())
+        ## 是否商店
         self.Task_IfMall = ConfigItem("Task", "IfMall", True, BoolValidator())
+        ## 是否任务
         self.Task_IfMission = ConfigItem("Task", "IfMission", True, BoolValidator())
+        ## 是否自动肉鸽
         self.Task_IfAutoRoguelike = ConfigItem(
             "Task", "IfAutoRoguelike", False, BoolValidator()
         )
+        ## 是否生息演算
         self.Task_IfReclamation = ConfigItem(
             "Task", "IfReclamation", False, BoolValidator()
         )
 
+        ## Notify ----------------------------------------------------------
+        ## 是否启用通知
         self.Notify_Enabled = ConfigItem("Notify", "Enabled", False, BoolValidator())
+        ## 是否发送统计信息
         self.Notify_IfSendStatistic = ConfigItem(
             "Notify", "IfSendStatistic", False, BoolValidator()
         )
+        ## 是否发送六星通知
         self.Notify_IfSendSixStar = ConfigItem(
             "Notify", "IfSendSixStar", False, BoolValidator()
         )
+        ## 是否发送邮件
         self.Notify_IfSendMail = ConfigItem(
             "Notify", "IfSendMail", False, BoolValidator()
         )
+        ## 收件地址
         self.Notify_ToAddress = ConfigItem("Notify", "ToAddress", "")
+        ## 是否启用 Server 酱
         self.Notify_IfServerChan = ConfigItem(
             "Notify", "IfServerChan", False, BoolValidator()
         )
+        ## Server 酱密钥
         self.Notify_ServerChanKey = ConfigItem("Notify", "ServerChanKey", "")
+        ## 自定义 Webhook 列表
         self.Notify_CustomWebhooks = MultipleConfig([Webhook])
 
     def getInfrastName(self, v) -> str:
@@ -331,35 +406,48 @@ class MaaConfig(ConfigBase):
     def __init__(self) -> None:
         super().__init__()
 
+        ## Info ------------------------------------------------------------
+        ## MAA 脚本名称
         self.Info_Name = ConfigItem("Info", "Name", "新 MAA 脚本")
+        ## MAA 路径
         self.Info_Path = ConfigItem("Info", "Path", str(Path.cwd()), FolderValidator())
 
+        ## Emulator --------------------------------------------------------
+        ## 模拟器 ID
         self.Emulator_Id = ConfigItem(
             "Emulator",
             "Id",
             "-",
             MultipleUIDValidator("-", self.related_config, "EmulatorConfig"),
         )
+        ## 模拟器索引
         self.Emulator_Index = ConfigItem("Emulator", "Index", "-")
 
+        ## Run -------------------------------------------------------------
+        ## 任务切换方式
         self.Run_TaskTransitionMethod = ConfigItem(
             "Run",
             "TaskTransitionMethod",
             "ExitEmulator",
             OptionsValidator(["NoAction", "ExitGame", "ExitEmulator"]),
         )
+        ## 代理次数限制
         self.Run_ProxyTimesLimit = ConfigItem(
             "Run", "ProxyTimesLimit", 0, RangeValidator(0, 9999)
         )
+        ## 运行次数限制
         self.Run_RunTimesLimit = ConfigItem(
             "Run", "RunTimesLimit", 3, RangeValidator(1, 9999)
         )
+        ## 剿灭时间限制（分钟）
         self.Run_AnnihilationTimeLimit = ConfigItem(
             "Run", "AnnihilationTimeLimit", 40, RangeValidator(1, 9999)
         )
+        ## 日常时间限制（分钟）
         self.Run_RoutineTimeLimit = ConfigItem(
             "Run", "RoutineTimeLimit", 10, RangeValidator(1, 9999)
         )
+        ## 是否限制剿灭每周一次
         self.Run_AnnihilationWeeklyLimit = ConfigItem(
             "Run", "AnnihilationWeeklyLimit", True, BoolValidator()
         )
@@ -373,7 +461,10 @@ class MaaPlanConfig(ConfigBase):
     def __init__(self) -> None:
         super().__init__()
 
+        ## Info ------------------------------------------------------------
+        ## 计划表名称
         self.Info_Name = ConfigItem("Info", "Name", "新 MAA 计划表")
+        ## 计划表模式
         self.Info_Mode = ConfigItem(
             "Info", "Mode", "ALL", OptionsValidator(["ALL", "Weekly"])
         )
@@ -392,19 +483,26 @@ class MaaPlanConfig(ConfigBase):
         ]:
             self.config_item_dict[group] = {}
 
+            ## 理智药数量
             self.config_item_dict[group]["MedicineNumb"] = ConfigItem(
                 group, "MedicineNumb", 0, RangeValidator(0, 9999)
             )
+            ## 源石数量
             self.config_item_dict[group]["SeriesNumb"] = ConfigItem(
                 group,
                 "SeriesNumb",
                 "0",
                 OptionsValidator(["0", "6", "5", "4", "3", "2", "1", "-1"]),
             )
+            ## 关卡
             self.config_item_dict[group]["Stage"] = ConfigItem(group, "Stage", "-")
+            ## 关卡 1
             self.config_item_dict[group]["Stage_1"] = ConfigItem(group, "Stage_1", "-")
+            ## 关卡 2
             self.config_item_dict[group]["Stage_2"] = ConfigItem(group, "Stage_2", "-")
+            ## 关卡 3
             self.config_item_dict[group]["Stage_3"] = ConfigItem(group, "Stage_3", "-")
+            ## 备用关卡
             self.config_item_dict[group]["Stage_Remain"] = ConfigItem(
                 group, "Stage_Remain", "-"
             )
@@ -445,44 +543,64 @@ class GeneralUserConfig(ConfigBase):
     def __init__(self) -> None:
         super().__init__()
 
+        ## Info ------------------------------------------------------------
+        ## 用户名称
         self.Info_Name = ConfigItem("Info", "Name", "新用户", UserNameValidator())
+        ## 是否启用
         self.Info_Status = ConfigItem("Info", "Status", True, BoolValidator())
+        ## 剩余天数
         self.Info_RemainedDay = ConfigItem(
             "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
         )
+        ## 是否在任务前执行脚本
         self.Info_IfScriptBeforeTask = ConfigItem(
             "Info", "IfScriptBeforeTask", False, BoolValidator()
         )
+        ## 任务前脚本路径
         self.Info_ScriptBeforeTask = ConfigItem(
             "Info", "ScriptBeforeTask", str(Path.cwd()), FileValidator()
         )
+        ## 是否在任务后执行脚本
         self.Info_IfScriptAfterTask = ConfigItem(
             "Info", "IfScriptAfterTask", False, BoolValidator()
         )
+        ## 任务后脚本路径
         self.Info_ScriptAfterTask = ConfigItem(
             "Info", "ScriptAfterTask", str(Path.cwd()), FileValidator()
         )
+        ## 备注
         self.Info_Notes = ConfigItem("Info", "Notes", "无")
 
+        ## Data ------------------------------------------------------------
+        ## 上次代理日期
         self.Data_LastProxyDate = ConfigItem(
             "Data", "LastProxyDate", "2000-01-01", DateTimeValidator("%Y-%m-%d")
         )
+        ## 代理次数
         self.Data_ProxyTimes = ConfigItem(
             "Data", "ProxyTimes", 0, RangeValidator(0, 9999)
         )
 
+        ## Notify ----------------------------------------------------------
+        ## 是否启用通知
         self.Notify_Enabled = ConfigItem("Notify", "Enabled", False, BoolValidator())
+        ## 是否发送统计信息
         self.Notify_IfSendStatistic = ConfigItem(
             "Notify", "IfSendStatistic", False, BoolValidator()
         )
+        ## 是否发送邮件
         self.Notify_IfSendMail = ConfigItem(
             "Notify", "IfSendMail", False, BoolValidator()
         )
+        ## 收件地址
         self.Notify_ToAddress = ConfigItem("Notify", "ToAddress", "")
+        ## 是否启用 Server 酱
         self.Notify_IfServerChan = ConfigItem(
             "Notify", "IfServerChan", False, BoolValidator()
         )
+        ## Server 酱密钥
         self.Notify_ServerChanKey = ConfigItem("Notify", "ServerChanKey", "")
+        ## 自定义 Webhook 列表
         self.Notify_CustomWebhooks = MultipleConfig([Webhook])
 
 
@@ -494,72 +612,102 @@ class GeneralConfig(ConfigBase):
     def __init__(self) -> None:
         super().__init__()
 
+        ## Info ------------------------------------------------------------
+        ## 脚本名称
         self.Info_Name = ConfigItem("Info", "Name", "新通用脚本")
+        ## 根目录路径
         self.Info_RootPath = ConfigItem(
             "Info", "RootPath", str(Path.cwd()), FileValidator()
         )
 
+        ## Script ----------------------------------------------------------
+        ## 脚本路径
         self.Script_ScriptPath = ConfigItem(
             "Script", "ScriptPath", str(Path.cwd()), FileValidator()
         )
+        ## 脚本参数
         self.Script_Arguments = ConfigItem(
             "Script", "Arguments", "", AdvancedArgumentValidator()
         )
+        ## 是否追踪进程
         self.Script_IfTrackProcess = ConfigItem(
             "Script", "IfTrackProcess", False, BoolValidator()
         )
+        ## 配置文件路径
         self.Script_ConfigPath = ConfigItem(
             "Script", "ConfigPath", str(Path.cwd()), FileValidator()
         )
+        ## 配置路径模式
         self.Script_ConfigPathMode = ConfigItem(
             "Script", "ConfigPathMode", "File", OptionsValidator(["File", "Folder"])
         )
+        ## 更新配置模式
         self.Script_UpdateConfigMode = ConfigItem(
             "Script",
             "UpdateConfigMode",
             "Never",
             OptionsValidator(["Never", "Success", "Failure", "Always"]),
         )
+        ## 日志路径
         self.Script_LogPath = ConfigItem(
             "Script", "LogPath", str(Path.cwd()), FileValidator()
         )
+        ## 日志路径格式
         self.Script_LogPathFormat = ConfigItem("Script", "LogPathFormat", "%Y-%m-%d")
+        ## 日志时间起始行
         self.Script_LogTimeStart = ConfigItem(
             "Script", "LogTimeStart", 1, RangeValidator(1, 9999)
         )
+        ## 日志时间结束行
         self.Script_LogTimeEnd = ConfigItem(
             "Script", "LogTimeEnd", 1, RangeValidator(1, 9999)
         )
+        ## 日志时间格式
         self.Script_LogTimeFormat = ConfigItem(
             "Script", "LogTimeFormat", "%Y-%m-%d %H:%M:%S"
         )
+        ## 成功日志匹配
         self.Script_SuccessLog = ConfigItem("Script", "SuccessLog", "")
+        ## 错误日志匹配
         self.Script_ErrorLog = ConfigItem("Script", "ErrorLog", "")
 
+        ## Game ------------------------------------------------------------
+        ## 是否启用游戏
         self.Game_Enabled = ConfigItem("Game", "Enabled", False, BoolValidator())
+        ## 游戏类型
         self.Game_Type = ConfigItem(
             "Game", "Type", "Emulator", OptionsValidator(["Emulator", "Client"])
         )
+        ## 游戏路径
         self.Game_Path = ConfigItem("Game", "Path", str(Path.cwd()), FileValidator())
+        ## 游戏启动参数
         self.Game_Arguments = ConfigItem("Game", "Arguments", "")
+        ## 等待时间（秒）
         self.Game_WaitTime = ConfigItem("Game", "WaitTime", 0, RangeValidator(0, 9999))
+        ## 是否强制关闭
         self.Game_IfForceClose = ConfigItem(
             "Game", "IfForceClose", False, BoolValidator()
         )
+        ## 模拟器 ID
         self.Game_EmulatorId = ConfigItem(
             "Game",
             "EmulatorId",
             "-",
             MultipleUIDValidator("-", self.related_config, "EmulatorConfig"),
         )
+        ## 模拟器索引
         self.Game_EmulatorIndex = ConfigItem("Game", "EmulatorIndex", "-")
 
+        ## Run -------------------------------------------------------------
+        ## 代理次数限制
         self.Run_ProxyTimesLimit = ConfigItem(
             "Run", "ProxyTimesLimit", 0, RangeValidator(0, 9999)
         )
+        ## 运行次数限制
         self.Run_RunTimesLimit = ConfigItem(
             "Run", "RunTimesLimit", 3, RangeValidator(1, 9999)
         )
+        ## 运行时间限制（分钟）
         self.Run_RunTimeLimit = ConfigItem(
             "Run", "RunTimeLimit", 10, RangeValidator(1, 9999)
         )
@@ -570,109 +718,158 @@ class GeneralConfig(ConfigBase):
 class GlobalConfig(ConfigBase):
     """全局配置"""
 
+    ## Function ---------------------------------------------------------
+    ## 历史记录保留时间（天）
     Function_HistoryRetentionTime = ConfigItem(
         "Function",
         "HistoryRetentionTime",
         0,
         OptionsValidator([7, 15, 30, 60, 90, 180, 365, 0]),
     )
+    ## 是否允许睡眠
     Function_IfAllowSleep = ConfigItem(
         "Function", "IfAllowSleep", False, BoolValidator()
     )
+    ## 是否启用静默模式
     Function_IfSilence = ConfigItem("Function", "IfSilence", False, BoolValidator())
+    ## 是否同意 Bilibili 协议
     Function_IfAgreeBilibili = ConfigItem(
         "Function", "IfAgreeBilibili", False, BoolValidator()
     )
+    ## 是否跳过 MuMu 启动广告
     Function_IfSkipMumuSplashAds = ConfigItem(
         "Function", "IfSkipMumuSplashAds", False, BoolValidator()
     )
 
+    ## Voice ------------------------------------------------------------
+    ## 是否启用语音
     Voice_Enabled = ConfigItem("Voice", "Enabled", False, BoolValidator())
+    ## 语音类型
     Voice_Type = ConfigItem(
         "Voice", "Type", "simple", OptionsValidator(["simple", "noisy"])
     )
 
+    ## Start ------------------------------------------------------------
+    ## 是否自动启动
     Start_IfSelfStart = ConfigItem("Start", "IfSelfStart", False, BoolValidator())
+    ## 是否启动时直接最小化
     Start_IfMinimizeDirectly = ConfigItem(
         "Start", "IfMinimizeDirectly", False, BoolValidator()
     )
 
+    ## UI ---------------------------------------------------------------
+    ## 是否显示托盘图标
     UI_IfShowTray = ConfigItem("UI", "IfShowTray", False, BoolValidator())
+    ## 是否关闭到托盘
     UI_IfToTray = ConfigItem("UI", "IfToTray", False, BoolValidator())
 
+    ## Notify -----------------------------------------------------------
+    ## 任务结果推送时间
     Notify_SendTaskResultTime = ConfigItem(
         "Notify",
         "SendTaskResultTime",
         "不推送",
         OptionsValidator(["不推送", "任何时刻", "仅失败时"]),
     )
+    ## 是否发送统计信息
     Notify_IfSendStatistic = ConfigItem(
         "Notify", "IfSendStatistic", False, BoolValidator()
     )
+    ## 是否发送六星通知
     Notify_IfSendSixStar = ConfigItem("Notify", "IfSendSixStar", False, BoolValidator())
+    ## 是否推送到 PushPlus
     Notify_IfPushPlyer = ConfigItem("Notify", "IfPushPlyer", False, BoolValidator())
+    ## 是否发送邮件
     Notify_IfSendMail = ConfigItem("Notify", "IfSendMail", False, BoolValidator())
+    ## SMTP 服务器地址
     Notify_SMTPServerAddress = ConfigItem("Notify", "SMTPServerAddress", "")
+    ## 邮箱授权码
     Notify_AuthorizationCode = ConfigItem(
         "Notify", "AuthorizationCode", "", EncryptValidator()
     )
+    ## 发件地址
     Notify_FromAddress = ConfigItem("Notify", "FromAddress", "")
+    ## 收件地址
     Notify_ToAddress = ConfigItem("Notify", "ToAddress", "")
+    ## 是否启用 Server 酱
     Notify_IfServerChan = ConfigItem("Notify", "IfServerChan", False, BoolValidator())
+    ## Server 酱密钥
     Notify_ServerChanKey = ConfigItem("Notify", "ServerChanKey", "")
+    ## 自定义 Webhook 列表
     Notify_CustomWebhooks = MultipleConfig([Webhook])
 
+    ## Update -----------------------------------------------------------
+    ## 是否自动更新
     Update_IfAutoUpdate = ConfigItem("Update", "IfAutoUpdate", False, BoolValidator())
+    ## 更新源
     Update_Source = ConfigItem(
         "Update",
         "Source",
         "GitHub",
         OptionsValidator(["GitHub", "MirrorChyan", "AutoSite"]),
     )
+    ## 代理地址
     Update_ProxyAddress = ConfigItem("Update", "ProxyAddress", "")
+    ## 镜像站 CDK
     Update_MirrorChyanCDK = ConfigItem(
         "Update", "MirrorChyanCDK", "", EncryptValidator()
     )
 
+    ## Data -------------------------------------------------------------
+    ## 唯一标识符
     Data_UID = ConfigItem("Data", "UID", str(uuid.uuid4()), UUIDValidator())
+    ## 上次统计上传时间
     Data_LastStatisticsUpload = ConfigItem(
         "Data",
         "LastStatisticsUpload",
         "2000-01-01 00:00:00",
         DateTimeValidator("%Y-%m-%d %H:%M:%S"),
     )
+    ## 上次关卡更新时间
     Data_LastStageUpdated = ConfigItem(
         "Data",
         "LastStageUpdated",
         "2000-01-01 00:00:00",
         DateTimeValidator("%Y-%m-%d %H:%M:%S"),
     )
+    ## 关卡时间戳
     Data_StageTimeStamp = ConfigItem(
         "Data",
         "StageTimeStamp",
         "2000-01-01 00:00:00",
         DateTimeValidator("%Y-%m-%d %H:%M:%S"),
     )
+    ## 关卡数据
     Data_Stage = ConfigItem("Data", "Stage", "{ }", JSONValidator())
+    ## 上次公告更新时间
     Data_LastNoticeUpdated = ConfigItem(
         "Data",
         "LastNoticeUpdated",
         "2000-01-01 00:00:00",
         DateTimeValidator("%Y-%m-%d %H:%M:%S"),
     )
+    ## 是否显示公告
     Data_IfShowNotice = ConfigItem("Data", "IfShowNotice", True, BoolValidator())
+    ## 公告内容
     Data_Notice = ConfigItem("Data", "Notice", "{ }", JSONValidator())
+    ## 上次 Web 配置更新时间
     Data_LastWebConfigUpdated = ConfigItem(
         "Data",
         "LastWebConfigUpdated",
         "2000-01-01 00:00:00",
         DateTimeValidator("%Y-%m-%d %H:%M:%S"),
     )
+    ## Web 配置
     Data_WebConfig = ConfigItem("Data", "WebConfig", "[ ]", JSONValidator(list))
 
+    ## Config -----------------------------------------------------------
+    ## 模拟器配置列表
     EmulatorConfig = MultipleConfig([EmulatorConfig], if_save_needed=False)
+    ## 计划表配置列表
     PlanConfig = MultipleConfig([MaaPlanConfig], if_save_needed=False)
+    ## 脚本配置列表
     ScriptConfig = MultipleConfig([MaaConfig, GeneralConfig], if_save_needed=False)
+    ## 队列配置列表
     QueueConfig = MultipleConfig([QueueConfig], if_save_needed=False)
 
     def __init__(self):
