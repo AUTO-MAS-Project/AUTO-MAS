@@ -25,8 +25,8 @@ from datetime import datetime, timedelta, date
 from pathlib import Path
 from typing import Callable, Optional, List, Awaitable
 
-from .constants import TIME_FIELDS
-from .logger import get_logger
+from app.utils.constants import TIME_FIELDS
+from app.utils.logger import get_logger
 
 logger = get_logger("日志监控器")
 
