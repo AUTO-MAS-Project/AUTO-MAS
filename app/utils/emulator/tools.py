@@ -289,22 +289,16 @@ async def find_emulator_root_path(
         f"开始搜索{config['name']}根目录,起始路径: {path_obj}, 主程序: {primary_exe}"
     )
 
-    # 1. 首先向上搜索,找到直接包含主管理器程序的目录（最多3层）
+    # 1. 首先检查当前目录是否直接包含主管理器程序
+    # 如果用户给的就是正确的主程序路径，直接返回
+    primary_exe_path = path_obj / primary_exe
+    if primary_exe_path.exists():
+        result = str(primary_exe_path)
+        logger.info(f"当前目录直接包含主程序: {result}")
+        return result
+
+    # 2. 向上搜索父目录，找到直接包含主管理器程序的目录（最多3层）
     candidates = []
-
-    # 检查当前目录是否直接包含主管理器程序
-    if (path_obj / primary_exe).exists():
-        candidates.append(
-            {
-                "path": path_obj,
-                "depth": len(path_obj.parts),
-            }
-        )
-        logger.debug(
-            f"当前目录直接包含主程序: {path_obj}"
-        )
-
-    # 向上搜索父目录（最多3层）
     current = path_obj
     for level in range(max_levels):
         parent = current.parent
@@ -312,15 +306,18 @@ async def find_emulator_root_path(
             break
 
         # 只接受直接包含主管理器程序的目录
-        if (parent / primary_exe).exists():
+        parent_exe_path = parent / primary_exe
+        if parent_exe_path.exists():
             candidates.append(
                 {
                     "path": parent,
+                    "exe_path": parent_exe_path,
                     "depth": len(parent.parts),
+                    "level": level + 1,
                 }
             )
             logger.debug(
-                f"父目录(第{level+1}层)直接包含主程序: {parent}"
+                f"父目录(第{level+1}层)直接包含主程序: {parent_exe_path}"
             )
 
         current = parent
@@ -328,69 +325,39 @@ async def find_emulator_root_path(
     # 如果找到了候选目录，选择最优的（深度最小的，即最接近根目录的）
     if candidates:
         # 排序策略：深度越小越好（越靠近根目录）
-        candidates.sort(
-            key=lambda x: x["depth"],  # 深度越小越好
-        )
+        candidates.sort(key=lambda x: x["depth"])
 
-        best_dir = candidates[0]["path"]
-        # 返回主管理器程序的完整路径
-        primary_exe_path = best_dir / primary_exe
-
-        # 验证主程序文件是否真实存在
-        if not primary_exe_path.exists():
-            logger.error(f"候选目录不包含主程序文件: {primary_exe_path}")
-            return input_path
-
-        result = str(primary_exe_path)
+        best_candidate = candidates[0]
+        result = str(best_candidate["exe_path"])
         logger.info(
-            f"找到模拟器主程序: {result}"
+            f"找到模拟器主程序(向上第{best_candidate['level']}层): {result}"
         )
         return result
 
-    # 2. 如果向上没找到,尝试向下搜索子目录(仅1层，且必须直接包含主管理器程序)
-    best_subdir = None
+    # 3. 如果向上没找到，尝试向下搜索子目录（仅1层，且必须直接包含主管理器程序）
     try:
         for subdir in path_obj.iterdir():
             if subdir.is_dir():
+                subdir_exe_path = subdir / primary_exe
                 # 只接受直接包含主管理器程序的子目录
-                if (subdir / primary_exe).exists():
-                    best_subdir = subdir
-                    break  # 找到第一个就停止
+                if subdir_exe_path.exists():
+                    result = str(subdir_exe_path)
+                    logger.info(f"在子目录找到主程序: {result}")
+                    return result
     except PermissionError:
         pass
 
-    if best_subdir:
-        # 返回主管理器程序的完整路径
-        primary_exe_path = best_subdir / primary_exe
-
-        # 验证主程序文件是否真实存在
-        if not primary_exe_path.exists():
-            logger.warning(
-                f"子目录不包含主程序文件: {primary_exe_path}"
-            )
-        else:
-            result = str(primary_exe_path)
-            logger.info(
-                f"在子目录找到主程序: {result}"
-            )
-            return result
-
-    # 3. 检查兄弟目录（必须直接包含主管理器程序）
+    # 4. 检查兄弟目录（必须直接包含主管理器程序）
     if path_obj.parent != path_obj:
         try:
             for sibling in path_obj.parent.iterdir():
                 if sibling.is_dir() and sibling != path_obj:
+                    sibling_exe_path = sibling / primary_exe
                     # 只接受直接包含主管理器程序的兄弟目录
-                    if (sibling / primary_exe).exists():
-                        primary_exe_path = sibling / primary_exe
-                        
-                        # 验证主程序文件是否真实存在
-                        if primary_exe_path.exists():
-                            result = str(primary_exe_path)
-                            logger.info(
-                                f"在兄弟目录找到主程序: {result}"
-                            )
-                            return result
+                    if sibling_exe_path.exists():
+                        result = str(sibling_exe_path)
+                        logger.info(f"在兄弟目录找到主程序: {result}")
+                        return result
         except PermissionError:
             pass
 
