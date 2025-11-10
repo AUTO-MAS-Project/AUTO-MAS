@@ -334,13 +334,10 @@
                   </a-space>
                 </template>
                 <a-spin :spinning="detailLoading">
-                  <div
-                    v-if="currentDetail?.log_content"
-                    class="log-content"
-                  >
+                  <div v-if="currentDetail?.log_content" class="log-content">
                     <vue-monaco-editor
                       v-model:value="currentDetail.log_content"
-                      :theme="logLanguage === 'logfile' ? (isDark ? 'log-dark' : 'log-light') : (isDark ? 'vs-dark' : 'vs')"
+                      :theme="isDark ? 'vs-dark' : 'vs'"
                       :options="monacoOptions"
                       height="100%"
                       :language="logLanguage"
@@ -364,26 +361,26 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, computed } from 'vue'
-import { message } from 'ant-design-vue'
-import {
-  SearchOutlined,
-  ClearOutlined,
-  HistoryOutlined,
-  UserOutlined,
-  GiftOutlined,
-  FileSearchOutlined,
-  RightOutlined,
-  FolderOpenOutlined,
-  FileOutlined,
-} from '@ant-design/icons-vue'
+import { type HistoryData, HistorySearchIn } from '@/api' // 调整：枚举需要值导入
 import { Service } from '@/api/services/Service'
-import { HistorySearchIn, type HistoryData } from '@/api' // 调整：枚举需要值导入
-import dayjs from 'dayjs'
 import NodataImage from '@/assets/NoData.png'
-import { VueMonacoEditor } from '@guolao/vue-monaco-editor'
 import { useTheme } from '@/composables/useTheme'
+import {
+  ClearOutlined,
+  FileOutlined,
+  FileSearchOutlined,
+  FolderOpenOutlined,
+  GiftOutlined,
+  HistoryOutlined,
+  RightOutlined,
+  SearchOutlined,
+  UserOutlined,
+} from '@ant-design/icons-vue'
+import { VueMonacoEditor } from '@guolao/vue-monaco-editor'
+import { message } from 'ant-design-vue'
+import dayjs from 'dayjs'
 import * as monaco from 'monaco-editor'
+import { computed, onMounted, reactive, ref } from 'vue'
 
 // 响应式数据
 const searchLoading = ref(false)
@@ -679,7 +676,7 @@ let isLanguageRegistered = false
 // 注册自定义日志语言
 const registerLogLanguage = () => {
   if (isLanguageRegistered) return
-  
+
   try {
     // 注册日志语言
     monaco.languages.register({ id: 'logfile' })
@@ -692,37 +689,37 @@ const registerLogLanguage = () => {
           [/\d{4}-\d{2}-\d{2}[\sT]\d{2}:\d{2}:\d{2}(\.\d{3})?/, 'timestamp'],
           [/\d{2}:\d{2}:\d{2}(\.\d{3})?/, 'timestamp'],
           [/\[\d{4}-\d{2}-\d{2}[\sT]\d{2}:\d{2}:\d{2}(\.\d{3})?\]/, 'timestamp'],
-          
+
           // 日志级别
           [/\b(ERROR|FATAL|CRITICAL)\b/i, 'log-error'],
           [/\b(WARN|WARNING)\b/i, 'log-warning'],
           [/\b(INFO|INFORMATION)\b/i, 'log-info'],
           [/\b(DEBUG|TRACE|VERBOSE)\b/i, 'log-debug'],
-          
+
           // 括号内的内容 (通常是模块名或线程名)
           [/\[[^\]]+\]/, 'log-module'],
           [/\([^)]+\)/, 'log-module'],
-          
+
           // IP 地址
           [/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/, 'log-ip'],
-          
+
           // URL
           [/https?:\/\/[^\s]+/, 'log-url'],
-          
+
           // 文件路径
           [/[A-Za-z]:[\\\/][^\s]+/, 'log-path'],
           [/\/[^\s]*\.[a-zA-Z0-9]+/, 'log-path'],
-          
+
           // 数字
           [/\b\d+\b/, 'log-number'],
-          
+
           // 异常和错误关键词
           [/\b(Exception|Error|Failed|Failure|Timeout|Abort)\b/i, 'log-error-keyword'],
-          
+
           // 成功关键词
           [/\b(Success|Complete|Completed|OK|Done|Finished)\b/i, 'log-success'],
-        ]
-      }
+        ],
+      },
     })
 
     // 定义主题颜色
@@ -743,7 +740,7 @@ const registerLogLanguage = () => {
         { token: 'log-error-keyword', foreground: 'cc0000' },
         { token: 'log-success', foreground: '00aa00' },
       ],
-      colors: {}
+      colors: {},
     })
 
     monaco.editor.defineTheme('log-dark', {
@@ -763,7 +760,7 @@ const registerLogLanguage = () => {
         { token: 'log-error-keyword', foreground: 'ef5350' },
         { token: 'log-success', foreground: '66bb6a' },
       ],
-      colors: {}
+      colors: {},
     })
 
     isLanguageRegistered = true
@@ -776,14 +773,14 @@ const registerLogLanguage = () => {
 // 智能检测日志语言
 const logLanguage = computed(() => {
   if (!currentDetail.value?.log_content) return 'logfile'
-  
+
   const content = currentDetail.value.log_content
-  
+
   // 检测其他特殊格式
   if (content.includes('<?xml') || content.includes('<html')) return 'xml'
   if (content.includes('{') && content.includes('}') && content.includes('"')) return 'json'
   if (content.includes('#!/bin/bash') || content.includes('#!/bin/sh')) return 'shell'
-  
+
   // 默认使用日志语言，因为大部分内容都是日志
   return 'logfile'
 })
