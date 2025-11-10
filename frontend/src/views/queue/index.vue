@@ -65,21 +65,17 @@
         </template>
 
         <div class="queue-selection-container">
-          <!-- 队列按钮组 -->
-          <div class="queue-buttons-container">
-            <a-space wrap size="middle">
-              <a-button
-                v-for="queue in queueList"
-                :key="queue.id"
-                :type="activeQueueId === queue.id ? 'primary' : 'default'"
-                size="large"
-                class="queue-button"
-                @click="onQueueChange(queue.id)"
-              >
-                {{ queue.name }}
-              </a-button>
-            </a-space>
-          </div>
+          <a-space wrap size="middle">
+            <a-button
+              v-for="queue in queueList"
+              :key="queue.id"
+              :type="activeQueueId === queue.id ? 'primary' : 'default'"
+              size="large"
+              @click="onQueueChange(queue.id)"
+            >
+              {{ queue.name }}
+            </a-button>
+          </a-space>
         </div>
       </a-card>
 
@@ -172,26 +168,24 @@
         </div>
         <a-divider />
 
-        <!-- 定时项管理 -->
-        <div class="config-section">
-          <TimeSetManager
-            v-if="activeQueueId && currentQueueData"
-            :queue-id="activeQueueId"
-            :time-sets="currentTimeSets"
-            style="font-size: 20px"
-            @refresh="refreshTimeSets"
-          />
-        </div>
-
-        <!-- 队列项管理 -->
-        <div class="config-section">
-          <QueueItemManager
-            v-if="activeQueueId && currentQueueData"
-            :queue-id="activeQueueId"
-            :queue-items="currentQueueItems"
-            style="font-size: 20px"
-            @refresh="refreshQueueItems"
-          />
+        <!-- 定时项和队列项管理 - 左右两列布局 -->
+        <div class="managers-container">
+          <div class="manager-column">
+            <TimeSetManager
+              v-if="activeQueueId && currentQueueData"
+              :queue-id="activeQueueId"
+              :time-sets="currentTimeSets"
+              @refresh="refreshTimeSets"
+            />
+          </div>
+          <div class="manager-column">
+            <QueueItemManager
+              v-if="activeQueueId && currentQueueData"
+              :queue-id="activeQueueId"
+              :queue-items="currentQueueItems"
+              @refresh="refreshQueueItems"
+            />
+          </div>
         </div>
       </a-card>
     </div>
@@ -657,12 +651,6 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.queue-container {
-  min-height: 100vh;
-  background: var(--ant-color-bg-layout);
-  padding: 24px;
-}
-
 .loading-container {
   display: flex;
   justify-content: center;
@@ -672,41 +660,22 @@ onMounted(async () => {
 
 .queue-main {
   margin: 0 auto;
+  padding: 24px;
 }
 
 /* 页面头部 */
 .queue-header {
   display: flex;
   justify-content: space-between;
-  align-items: flex-end;
+  align-items: center;
   margin-bottom: 24px;
-  padding: 0 4px;
-}
-
-.header-left {
-  flex: 1;
 }
 
 .page-title {
-  margin: 0 0 8px 0;
+  margin: 0;
   font-size: 32px;
   font-weight: 700;
   color: var(--ant-color-text);
-  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-
-.page-description {
-  margin: 0;
-  font-size: 16px;
-  color: var(--ant-color-text-secondary);
-  line-height: 1.5;
-}
-
-.header-actions {
-  flex-shrink: 0;
 }
 
 /* 空状态 */
@@ -714,96 +683,30 @@ onMounted(async () => {
   display: flex;
   justify-content: center;
   align-items: center;
-  min-height: 500px;
+  min-height: 400px;
   padding: 60px 20px;
-  background: linear-gradient(135deg, rgba(24, 144, 255, 0.02), rgba(24, 144, 255, 0.01));
-  border-radius: 16px;
-  margin: 20px 0;
 }
 
 .empty-content {
   text-align: center;
-  max-width: 480px;
-  animation: fadeInUp 0.8s ease-out;
-}
-
-.empty-image-container {
-  position: relative;
-  margin-bottom: 32px;
-  display: inline-block;
-}
-
-.empty-image-container::before {
-  content: '';
-  position: absolute;
-  top: -20px;
-  left: -20px;
-  right: -20px;
-  bottom: -20px;
-  background: radial-gradient(circle, rgba(24, 144, 255, 0.1) 0%, transparent 70%);
-  border-radius: 50%;
-  animation: pulse 3s ease-in-out infinite;
 }
 
 .empty-image {
   max-width: 200px;
   height: auto;
-  opacity: 0.9;
-  filter: drop-shadow(0 8px 24px rgba(0, 0, 0, 0.1));
-  transition: all 0.3s ease;
-  position: relative;
-  z-index: 1;
-}
-
-.empty-image:hover {
-  transform: translateY(-4px);
-  filter: drop-shadow(0 12px 32px rgba(0, 0, 0, 0.15));
-}
-
-.empty-text-content {
-  margin-top: 16px;
+  margin-bottom: 24px;
 }
 
 .empty-title {
   font-size: 24px;
   font-weight: 600;
-  color: var(--ant-color-text);
   margin: 0 0 12px 0;
-  background: linear-gradient(135deg, var(--ant-color-text), var(--ant-color-text-secondary));
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
 }
 
 .empty-description {
   font-size: 16px;
   color: var(--ant-color-text-secondary);
-  line-height: 1.6;
   margin: 0;
-  opacity: 0.8;
-}
-
-@keyframes fadeInUp {
-  from {
-    opacity: 0;
-    transform: translateY(30px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes pulse {
-  0%,
-  100% {
-    opacity: 0.6;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 0.8;
-    transform: scale(1.05);
-  }
 }
 
 /* 队列内容 */
@@ -813,11 +716,11 @@ onMounted(async () => {
   gap: 24px;
 }
 
-/* 队列选择卡片 */
-.queue-selector-card {
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+/* 卡片样式 */
+.queue-selector-card,
+.queue-config-card {
   border-radius: 12px;
-  border: 1px solid var(--ant-color-border-secondary);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
 }
 
 .card-title {
@@ -829,43 +732,12 @@ onMounted(async () => {
 }
 
 .queue-selection-container {
-  padding: 16px;
-}
-
-/* 队列按钮组 */
-.queue-buttons-container {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin-bottom: 16px;
-}
-
-.queue-button {
-  flex: 1 1 120px;
-  border-radius: 8px;
-  transition: all 0.2s ease;
-}
-
-/* 队列配置卡片 */
-.queue-config-card {
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  border-radius: 12px;
-  border: 1px solid var(--ant-color-border-secondary);
-  min-height: 600px;
-}
-
-.status-label {
-  color: var(--ant-color-text-secondary);
-  font-size: 14px;
-  font-weight: 500;
+  padding: 8px;
 }
 
 /* 队列名称编辑 */
 .queue-title-container {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 16px;
+  margin-bottom: 0;
 }
 
 .queue-title-display {
@@ -877,33 +749,25 @@ onMounted(async () => {
 .queue-title-text {
   font-size: 18px;
   font-weight: 600;
-  color: var(--ant-color-text);
 }
 
 .queue-edit-btn {
   color: var(--ant-color-primary);
-  padding: 0;
 }
 
-/* 队列名称输入框 */
 .queue-title-input {
-  flex: 1;
   max-width: 400px;
-  border-radius: 8px;
-  transition: all 0.2s ease;
 }
 
 /* 配置区域 */
 .config-section {
-  margin-bottom: 12px;
+  margin-bottom: 24px;
 }
 
-/* 垂直排列的表单项 */
 .form-item-vertical {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  margin-bottom: 16px;
 }
 
 .form-label-wrapper {
@@ -912,52 +776,32 @@ onMounted(async () => {
   gap: 8px;
 }
 
-/* 表单标签 */
 .form-label {
   font-weight: 600;
-  color: var(--ant-color-text);
   font-size: 14px;
 }
 
 .help-icon {
-  color: #8c8c8c;
-  font-size: 14px;
-}
-
-/* 完成后操作配置 */
-.after-accomplish-settings {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.setting-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.setting-label {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.setting-title {
-  font-size: 16px;
-  font-weight: 500;
-  color: var(--ant-color-text);
-}
-
-.setting-description {
-  font-size: 14px;
   color: var(--ant-color-text-secondary);
+  font-size: 14px;
+}
+
+/* 定时项和队列项管理容器 - 左右两列布局 */
+.managers-container {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  margin-top: 24px;
+}
+
+.manager-column {
+  min-width: 0;
 }
 
 /* 响应式设计 */
 @media (max-width: 1200px) {
-  .queue-container {
-    padding: 16px;
+  .managers-container {
+    grid-template-columns: 1fr;
   }
 
   .queue-header {
@@ -965,69 +809,15 @@ onMounted(async () => {
     align-items: flex-start;
     gap: 16px;
   }
-
-  .page-title {
-    font-size: 28px;
-  }
 }
 
 @media (max-width: 768px) {
-  .queue-container {
+  .queue-main {
     padding: 12px;
   }
 
   .page-title {
     font-size: 24px;
-  }
-
-  .page-description {
-    font-size: 14px;
-  }
-
-  .queue-title-input {
-    max-width: 100%;
-  }
-
-  .header-actions {
-    width: 100%;
-    display: flex;
-    justify-content: center;
-  }
-}
-
-/* 深度样式使用全局CSS变量 */
-.queue-selector-card :deep(.ant-card-head) {
-  border-bottom: 1px solid var(--ant-color-border-secondary);
-  padding: 16px 24px;
-}
-
-.queue-config-card :deep(.ant-card-head) {
-  border-bottom: 1px solid var(--ant-color-border-secondary);
-  padding: 16px 24px;
-}
-
-.queue-config-card :deep(.ant-card-head-title) {
-  font-size: 18px;
-  font-weight: 600;
-}
-
-.queue-title-input :deep(.ant-input) {
-  font-size: 16px;
-  font-weight: 500;
-}
-
-.queue-title-input :deep(.ant-input:focus) {
-  box-shadow: 0 0 0 2px var(--ant-color-primary-bg);
-}
-
-/* 深色模式适配 */
-@media (prefers-color-scheme: dark) {
-  .queue-selector-card {
-    background: var(--ant-color-bg-container);
-  }
-
-  .queue-config-card {
-    background: var(--ant-color-bg-container);
   }
 }
 </style>
