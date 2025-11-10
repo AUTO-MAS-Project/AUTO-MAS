@@ -70,10 +70,6 @@
                 </template>
                 导出日志（log格式）
               </a-button>
-              <!--                <a-button @click="scrollToBottom" :disabled="!logs">-->
-              <!--                  <template #icon><DownOutlined /></template>-->
-              <!--                  跳转底部-->
-              <!--                </a-button>-->
             </a-space>
           </div>
         </a-col>
@@ -86,10 +82,16 @@
         <span>日志内容</span>
       </template>
 
-      <div class="log-content" :class="{ 'word-wrap': wordWrap }">
+      <div class="log-content">
         <a-spin :spinning="loading" tip="加载日志中..." class="log-spin">
-          <div v-if="displayLogs" ref="logContainer" class="log-container">
-            <pre class="log-text" v-html="displayContent"></pre>
+          <div v-if="displayLogs" class="monaco-container">
+            <vue-monaco-editor
+              v-model:value="logs"
+              :language="editorLanguage"
+              :theme="isDark ? 'vs-dark' : 'vs'"
+              :options="editorOptions"
+              @mount="handleEditorMount"
+            />
           </div>
           <a-empty
             v-else
@@ -104,15 +106,19 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
-import { message, Empty } from 'ant-design-vue'
-import {
-  DeleteOutlined,
-  ClearOutlined,
-  FolderOpenOutlined,
-  ExportOutlined,
-} from '@ant-design/icons-vue'
+import { useTheme } from '@/composables/useTheme.ts'
 import { logger } from '@/utils/logger'
+import {
+  ClearOutlined,
+  DeleteOutlined,
+  ExportOutlined,
+  FolderOpenOutlined,
+} from '@ant-design/icons-vue'
+import { VueMonacoEditor } from '@guolao/vue-monaco-editor'
+import { Empty, message } from 'ant-design-vue'
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
+
+const { isDark } = useTheme()
 
 // 响应式数据
 const logs = ref('')
@@ -123,15 +129,42 @@ const logLines = ref(500)
 const loading = ref(false)
 const clearing = ref(false)
 const cleaning = ref(false)
-const autoRefresh = ref(true)
 const wordWrap = ref(true)
-const logContainer = ref<HTMLElement>()
+
+// Monaco Editor 实例
+let editorInstance: any = null
+
+// Monaco Editor 配置
+const editorOptions = computed(() => ({
+  readOnly: true,
+  minimap: { enabled: true },
+  scrollBeyondLastLine: false,
+  fontSize: 13,
+  fontFamily: 'Consolas, Monaco, Courier New, monospace',
+  lineNumbers: 'on',
+  wordWrap: wordWrap.value ? 'on' : 'off',
+  automaticLayout: true,
+  scrollbar: {
+    vertical: 'visible',
+    horizontal: 'visible',
+    useShadows: false,
+    verticalScrollbarSize: 10,
+    horizontalScrollbarSize: 10,
+  },
+  renderWhitespace: 'none',
+  contextmenu: true,
+  folding: true,
+}))
+const editorLanguage = computed(() => {
+  // 如果你的日志很多是 JSON 行，可以自动切换
+  const s = logs.value?.trim()
+  return s && (s.startsWith('{') || s.startsWith('[')) ? 'json' : 'log'
+})
 
 // 自动刷新定时器
 let autoRefreshTimer: NodeJS.Timeout | null = null
 
 // 计算属性
-
 const displayLogs = computed(() => {
   const hasContent = logs.value && logs.value.trim().length > 0
   console.log('displayLogs computed:', {
@@ -144,11 +177,14 @@ const displayLogs = computed(() => {
   return hasContent
 })
 
-const displayContent = computed(() => {
-  if (!logs.value) return ''
-  // 转义HTML特殊字符
-  return logs.value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-})
+// 处理编辑器挂载
+const handleEditorMount = (editor: any) => {
+  editorInstance = editor
+  // 滚动到底部
+  nextTick(() => {
+    scrollToBottom()
+  })
+}
 
 // 格式化日志文件名显示
 const formatLogFileName = (fileName: string) => {
@@ -205,7 +241,6 @@ const refreshLogs = async () => {
     logs.value = logContent || ''
 
     // 日志内容已更新
-
     // 自动滚动到底部
     await nextTick()
     scrollToBottom()
@@ -309,16 +344,14 @@ const exportLogs = async () => {
 
 // 滚动到底部
 const scrollToBottom = () => {
-  if (logContainer.value) {
-    // 使用 nextTick 确保DOM已更新
+  if (editorInstance) {
     nextTick(() => {
-      if (logContainer.value) {
-        logContainer.value.scrollTop = logContainer.value.scrollHeight
-        // 添加平滑滚动效果
-        logContainer.value.scrollTo({
-          top: logContainer.value.scrollHeight,
-          behavior: 'smooth',
-        })
+      if (editorInstance) {
+        const lineCount = editorInstance.getModel()?.getLineCount()
+        if (lineCount) {
+          editorInstance.revealLine(lineCount)
+          editorInstance.setScrollTop(editorInstance.getScrollHeight())
+        }
       }
     })
   }
@@ -364,11 +397,9 @@ onUnmounted(() => {
 .log-viewer {
   padding: 16px;
   height: 85vh;
-  /* 减少整体高度 */
   display: flex;
   flex-direction: column;
   gap: 12px;
-  /* 减少间距 */
 }
 
 .toolbar-card {
@@ -414,7 +445,6 @@ onUnmounted(() => {
   flex-direction: column;
   min-height: 0;
   padding: 12px;
-  /* 减少内边距 */
 }
 
 .log-content {
@@ -434,13 +464,15 @@ onUnmounted(() => {
   min-height: 0;
 }
 
-.log-container {
+.monaco-container {
   flex: 1;
-  overflow: auto;
-  padding: 12px;
-  background: var(--ant-color-bg-elevated);
-  border-radius: 4px;
   min-height: 0;
+  height: 100%;
+  width: 100%;
+}
+
+.monaco-container :deep(.monaco-editor) {
+  height: 100% !important;
 }
 
 .log-empty {
@@ -448,41 +480,6 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-}
-
-.log-text {
-  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-  font-size: 12px;
-  line-height: 1.5;
-  margin: 0;
-  white-space: pre;
-  color: var(--ant-color-text);
-  word-break: break-all;
-}
-
-.word-wrap .log-text {
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-/* 滚动条样式 - 适配深色模式 */
-.log-container::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-.log-container::-webkit-scrollbar-track {
-  background: var(--ant-color-bg-container);
-  border-radius: 4px;
-}
-
-.log-container::-webkit-scrollbar-thumb {
-  background: var(--ant-color-border);
-  border-radius: 4px;
-}
-
-.log-container::-webkit-scrollbar-thumb:hover {
-  background: var(--ant-color-border-secondary);
 }
 
 /* 空状态样式 */
@@ -515,68 +512,11 @@ onUnmounted(() => {
   background: #1f1f1f;
 }
 
-[data-theme='dark'] .log-container {
-  background: #141414;
-}
-
-[data-theme='dark'] .log-text {
-  color: #e6e6e6;
-}
-
-[data-theme='dark'] .log-container::-webkit-scrollbar-track {
-  background: #262626;
-}
-
-[data-theme='dark'] .log-container::-webkit-scrollbar-thumb {
-  background: #434343;
-}
-
-[data-theme='dark'] .log-container::-webkit-scrollbar-thumb:hover {
-  background: #595959;
-}
-
 /* 响应式调整 */
 @media (max-width: 768px) {
   .log-viewer {
     padding: 8px;
     gap: 8px;
   }
-
-  .log-text {
-    font-size: 11px;
-  }
-}
-
-/* 日志级别颜色 - 适配深色模式 */
-.log-text {
-  /* ERROR 级别 - 红色 */
-  --log-error-color: #ff4d4f;
-  --log-error-bg: rgba(255, 77, 79, 0.1);
-
-  /* WARN 级别 - 橙色 */
-  --log-warn-color: #fa8c16;
-  --log-warn-bg: rgba(250, 140, 22, 0.1);
-
-  /* INFO 级别 - 蓝色 */
-  --log-info-color: #1890ff;
-  --log-info-bg: rgba(24, 144, 255, 0.1);
-
-  /* DEBUG 级别 - 绿色 */
-  --log-debug-color: #52c41a;
-  --log-debug-bg: rgba(82, 196, 26, 0.1);
-}
-
-[data-theme='dark'] .log-text {
-  --log-error-color: #ff7875;
-  --log-error-bg: rgba(255, 120, 117, 0.15);
-
-  --log-warn-color: #ffa940;
-  --log-warn-bg: rgba(255, 169, 64, 0.15);
-
-  --log-info-color: #40a9ff;
-  --log-info-bg: rgba(64, 169, 255, 0.15);
-
-  --log-debug-color: #73d13d;
-  --log-debug-bg: rgba(115, 209, 61, 0.15);
 }
 </style>
