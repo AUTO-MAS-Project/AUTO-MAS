@@ -1,7 +1,7 @@
 {
   "extends": null,
   "appId": "top.auto-mas.frontend",
-  "productName": "AUTO-MAS-Full",
+  "productName": "AUTO-MAS",
   "asar": true,
   "asarUnpack": [],
   "extraMetadata": {
@@ -46,12 +46,7 @@
       }
     ],
     "icon": "public/AUTO-MAS.ico",
-    "artifactName": "AUTO-MAS-Full-Setup-${version}-${arch}.${ext}",
-    "signAndEditExecutable": true,
-    "signIgnore": [
-      "environment/**/*.exe",
-      "environment/**/*.dll"
-    ]
+    "artifactName": "AUTO-MAS-Full-Setup-${version}-${arch}.${ext}"
   },
   "nsis": {
     "oneClick": false,
