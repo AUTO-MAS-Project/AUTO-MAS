@@ -123,9 +123,7 @@ export function useSchedulerLogic() {
   }
 
   // 计算属性
-  const canChangePowerAction = computed(() => {
-    return !schedulerTabs.value.some(tab => tab.status === '运行')
-  })
+
 
   const currentTab = computed(() => {
     return schedulerTabs.value.find(tab => tab.key === activeSchedulerTab.value)
@@ -928,7 +926,6 @@ export function useSchedulerLogic() {
     messageResponse,
 
     // 计算属性
-    canChangePowerAction,
     currentTab,
 
     // Tab 管理

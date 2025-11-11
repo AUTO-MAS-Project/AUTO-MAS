@@ -12,7 +12,6 @@
           <a-select
             v-model:value="powerAction"
             style="width: 140px"
-            :disabled="!canChangePowerAction"
             size="large"
             @change="onPowerActionChange"
           >
@@ -157,10 +156,6 @@ const {
   messageModalVisible,
   currentMessage,
   messageResponse,
-
-  // 计算属性
-  canChangePowerAction,
-
   // Tab 管理
   addSchedulerTab,
   removeSchedulerTab,
