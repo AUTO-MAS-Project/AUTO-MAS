@@ -198,37 +198,37 @@
                           </a-tag>
 
                           <!-- 关卡信息 - 根据是否使用计划表配置显示不同内容 -->
-                          <template v-if="user.Info.StageMode && user.Info.StageMode !== 'Fixed' && props.currentPlanData">
+                          <template v-if="user.Info.StageMode && user.Info.StageMode !== 'Fixed'">
                             <!-- 主关卡 -->
                             <a-tag
-                              v-if="getPlanMainStageDisplay()"
+                              v-if="getUserPlanMainStageDisplay(user)"
                               class="info-tag"
                               color="green"
                             >
-                              主关卡: {{ getPlanMainStageDisplay() }}
+                              主关卡: {{ getUserPlanMainStageDisplay(user) }}
                             </a-tag>
 
                             <!-- 备选关卡（合并显示） -->
                             <a-tag
-                              v-if="getPlanBackupStages().length > 0"
+                              v-if="getUserPlanBackupStages(user).length > 0"
                               class="info-tag"
                               color="green"
                             >
-                              备选: {{ getPlanBackupStages().join(', ') }}
+                              备选: {{ getUserPlanBackupStages(user).join(', ') }}
                             </a-tag>
 
                             <!-- 剩余关卡 -->
                             <a-tag
-                              v-if="getPlanRemainStageDisplay()"
+                              v-if="getUserPlanRemainStageDisplay(user)"
                               class="info-tag"
                               color="green"
                             >
-                              剩余: {{ getPlanRemainStageDisplay() }}
+                              剩余: {{ getUserPlanRemainStageDisplay(user) }}
                             </a-tag>
 
                             <!-- 如果没有配置任何关卡，显示提示 -->
                             <a-tag
-                              v-if="!getPlanMainStageDisplay() && getPlanBackupStages().length === 0 && !getPlanRemainStageDisplay()"
+                              v-if="!getUserPlanMainStageDisplay(user) && getUserPlanBackupStages(user).length === 0 && !getUserPlanRemainStageDisplay(user)"
                               class="info-tag"
                               color="green"
                             >
@@ -375,7 +375,7 @@ import {
 interface Props {
   scripts: Script[]
   activeConnections: Map<string, { subscriptionId: string; websocketId: string }>
-  currentPlanData?: Record<string, any> | null
+  allPlansData?: Record<string, Record<string, any>>
 }
 
 interface Emits {
@@ -630,7 +630,7 @@ const getAnnihilationDisplayText = (annihilation: string, lastAnnihilationDate?:
   return isAnnihilationCompletedThisWeek(lastAnnihilationDate || '') ? '已完成' : '未完成'
 }
 
-// 检查是否完成了今日森空岛签到
+// 检查是否完成了今日日常代理
 const isSklandCompletedToday = (lastSklandDate: string): boolean => {
   if (!lastSklandDate) return false
   
@@ -765,6 +765,23 @@ const getDisplayStage = (stage: string, stageMode?: string): string => {
   return stage
 }
 
+// 获取用户对应的计划表数据
+const getUserPlanData = (user: any): Record<string, any> | null => {
+  if (!user.Info.StageMode || user.Info.StageMode === 'Fixed') {
+    return null
+  }
+
+  // StageMode 存储的就是计划表的ID
+  const planId = user.Info.StageMode
+
+  // 从 allPlansData 中获取对应的计划表数据
+  if (props.allPlansData && props.allPlansData[planId]) {
+    return props.allPlansData[planId]
+  }
+
+  return null
+}
+
 // 从计划表获取当前关卡
 const getCurrentPlanStage = (): string => {
   if (!props.currentPlanData) return ''
@@ -800,57 +817,13 @@ const getCurrentPlanStage = (): string => {
   return ''
 }
 
-// 从计划表获取所有配置的关卡
-const getAllPlanStages = (): Array<{ label: string; value: string }> => {
-  if (!props.currentPlanData) return []
+// 从用户的计划表获取主关卡显示文本
+const getUserPlanMainStageDisplay = (user: any): string => {
+  const planData = getUserPlanData(user)
+  if (!planData) return ''
 
   // 根据当前时间确定使用哪个时间段的配置
-  const planMode = props.currentPlanData.Info?.Mode || 'ALL'
-  let timeKey = 'ALL'
-
-  if (planMode === 'Weekly') {
-    // 如果是周模式，根据东4区时区的当前星期几获取对应配置
-    const today = getWeekdayInTimezone(4) // 0=Sunday, 1=Monday, ...
-    const dayMap = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
-    timeKey = dayMap[today]
-  }
-
-  // 从计划表获取关卡配置
-  const timeConfig = props.currentPlanData[timeKey]
-  if (!timeConfig) return []
-
-  const stages: Array<{ label: string; value: string }> = []
-
-  // 主关卡
-  if (timeConfig.Stage && timeConfig.Stage !== '-') {
-    stages.push({ label: '关卡', value: timeConfig.Stage })
-  }
-
-  // 备选关卡
-  if (timeConfig.Stage_1 && timeConfig.Stage_1 !== '-') {
-    stages.push({ label: '关卡1', value: timeConfig.Stage_1 })
-  }
-  if (timeConfig.Stage_2 && timeConfig.Stage_2 !== '-') {
-    stages.push({ label: '关卡2', value: timeConfig.Stage_2 })
-  }
-  if (timeConfig.Stage_3 && timeConfig.Stage_3 !== '-') {
-    stages.push({ label: '关卡3', value: timeConfig.Stage_3 })
-  }
-
-  // 剩余关卡
-  if (timeConfig.Stage_Remain && timeConfig.Stage_Remain !== '-') {
-    stages.push({ label: '剩余关卡', value: timeConfig.Stage_Remain })
-  }
-
-  return stages
-}
-
-// 获取计划表主关卡显示文本
-const getPlanMainStageDisplay = (): string => {
-  if (!props.currentPlanData) return ''
-
-  // 根据当前时间确定使用哪个时间段的配置
-  const planMode = props.currentPlanData.Info?.Mode || 'ALL'
+  const planMode = planData.Info?.Mode || 'ALL'
   let timeKey = 'ALL'
 
   if (planMode === 'Weekly') {
@@ -859,7 +832,7 @@ const getPlanMainStageDisplay = (): string => {
     timeKey = dayMap[today]
   }
 
-  const timeConfig = props.currentPlanData[timeKey]
+  const timeConfig = planData[timeKey]
   if (!timeConfig) return ''
 
   if (timeConfig.Stage && timeConfig.Stage !== '-') {
@@ -868,12 +841,13 @@ const getPlanMainStageDisplay = (): string => {
   return ''
 }
 
-// 获取计划表备选关卡列表
-const getPlanBackupStages = (): string[] => {
-  if (!props.currentPlanData) return []
+// 从用户的计划表获取备选关卡列表
+const getUserPlanBackupStages = (user: any): string[] => {
+  const planData = getUserPlanData(user)
+  if (!planData) return []
 
   // 根据当前时间确定使用哪个时间段的配置
-  const planMode = props.currentPlanData.Info?.Mode || 'ALL'
+  const planMode = planData.Info?.Mode || 'ALL'
   let timeKey = 'ALL'
 
   if (planMode === 'Weekly') {
@@ -882,7 +856,7 @@ const getPlanBackupStages = (): string[] => {
     timeKey = dayMap[today]
   }
 
-  const timeConfig = props.currentPlanData[timeKey]
+  const timeConfig = planData[timeKey]
   if (!timeConfig) return []
 
   const backupStages: string[] = []
@@ -900,12 +874,13 @@ const getPlanBackupStages = (): string[] => {
   return backupStages
 }
 
-// 获取计划表剩余关卡显示文本
-const getPlanRemainStageDisplay = (): string => {
-  if (!props.currentPlanData) return ''
+// 从用户的计划表获取剩余关卡显示文本
+const getUserPlanRemainStageDisplay = (user: any): string => {
+  const planData = getUserPlanData(user)
+  if (!planData) return ''
 
   // 根据当前时间确定使用哪个时间段的配置
-  const planMode = props.currentPlanData.Info?.Mode || 'ALL'
+  const planMode = planData.Info?.Mode || 'ALL'
   let timeKey = 'ALL'
 
   if (planMode === 'Weekly') {
@@ -914,7 +889,7 @@ const getPlanRemainStageDisplay = (): string => {
     timeKey = dayMap[today]
   }
 
-  const timeConfig = props.currentPlanData[timeKey]
+  const timeConfig = planData[timeKey]
   if (!timeConfig) return ''
 
   if (timeConfig.Stage_Remain && timeConfig.Stage_Remain !== '-') {
@@ -923,63 +898,39 @@ const getPlanRemainStageDisplay = (): string => {
   return ''
 }
 
-// 处理脚本拖拽结束
-const onScriptDragEnd = async () => {
-  try {
-    // 获取当前脚本ID顺序
-    const currentScriptIds = localScripts.value.map(script => script.id)
-    // 获取原始脚本ID顺序
-    const originalScriptIds = props.scripts.map(script => script.id)
+// 从计划表获取当前关卡
+const getCurrentPlanStageOld = (): string => {
+  if (!props.currentPlanData) return ''
 
-    // 检查顺序是否发生变化
-    const hasOrderChanged =
-      currentScriptIds.length !== originalScriptIds.length ||
-      currentScriptIds.some((id, index) => id !== originalScriptIds[index])
+  // 根据当前时间确定使用哪个时间段的配置
+  const planMode = props.currentPlanData.Info?.Mode || 'ALL'
+  let timeKey = 'ALL'
 
-    // 如果顺序没有变化，则不触发后端更新
-    if (!hasOrderChanged) {
-      console.log('脚本顺序未发生变化，跳过后端更新')
-      return
-    }
-
-    // 顺序发生变化，调用后端API更新
-    await Service.reorderScriptApiScriptsOrderPost({
-      indexList: currentScriptIds,
-    })
-
-    // 通知父组件脚本顺序已更改
-    emit('scriptsReordered', localScripts.value)
-
-    message.success('脚本排序已保存')
-  } catch (error) {
-    console.error('保存脚本排序失败:', error)
-    message.error('保存脚本排序失败')
-
-    // 恢复原始顺序
-    localScripts.value = [...props.scripts]
+  if (planMode === 'Weekly') {
+    // 如果是周模式，根据东4区时区的当前星期几获取对应配置
+    const today = getWeekdayInTimezone(4) // 0=Sunday, 1=Monday, ...
+    const dayMap = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+    timeKey = dayMap[today]
   }
-}
 
-// 处理用户拖拽结束
-const onUserDragEnd = async (_evt: any, script: Script) => {
-  try {
-    const userIds = script.users?.map(user => user.id) || []
-    await Service.reorderUserApiScriptsUserOrderPost({
-      scriptId: script.id,
-      indexList: userIds,
-    })
+  // 从计划表获取关卡配置
+  const timeConfig = props.currentPlanData[timeKey]
+  if (!timeConfig) return ''
 
-    message.success('用户排序已保存')
-  } catch (error) {
-    console.error('保存用户排序失败:', error)
-    message.error('保存用户排序失败')
+  // 获取主要关卡
+  if (timeConfig.Stage && timeConfig.Stage !== '-') {
+    return timeConfig.Stage
+  }
 
-    // 恢复原始顺序 - 找到原始脚本并恢复用户顺序
-    const originalScript = props.scripts.find(s => s.id === script.id)
-    if (originalScript && originalScript.users) {
-      script.users = [...originalScript.users]
+  // 如果主要关卡为空，尝试获取第一个备选关卡
+  const backupStages = [timeConfig.Stage_1, timeConfig.Stage_2, timeConfig.Stage_3]
+  for (const stage of backupStages) {
+    if (stage && stage !== '-') {
+      return stage
     }
   }
+
+  return ''
 }
 </script>
 
