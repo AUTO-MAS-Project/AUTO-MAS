@@ -58,7 +58,7 @@
   <ScriptTable
     :scripts="scripts"
     :active-connections="activeConnections"
-    :current-plan-data="currentPlanData"
+    :all-plans-data="allPlansData"
     @edit="handleEditScript"
     @delete="handleDeleteScript"
     @add-user="handleAddUser"
@@ -278,8 +278,8 @@ const md = new MarkdownIt({
 const scripts = ref<Script[]>([])
 // 增加：标记是否已经完成过一次脚本列表加载（成功或失败都算一次）
 const loadedOnce = ref(false)
-// 当前计划表数据
-const currentPlanData = ref<Record<string, any> | null>(null)
+// 所有计划表数据 (planId -> planData)
+const allPlansData = ref<Record<string, Record<string, any>>>({})
 const typeSelectVisible = ref(false)
 const generalModeSelectVisible = ref(false)
 const templateSelectVisible = ref(false)
@@ -346,14 +346,13 @@ const loadScripts = async () => {
   }
 }
 
-// 加载当前计划表数据
+// 加载所有计划表数据
 const loadCurrentPlan = async () => {
   try {
     const response = await getPlans()
-    if (response.data && response.index && response.index.length > 0) {
-      // 获取第一个计划表的数据
-      const firstPlanId = response.index[0].uid
-      currentPlanData.value = response.data[firstPlanId] || null
+    if (response.data) {
+      // 加载所有计划表数据
+      allPlansData.value = response.data
     }
   } catch (error) {
     console.error('加载计划表数据失败:', error)
@@ -900,7 +899,9 @@ const handleToggleUserStatus = async (user: User) => {
   border-radius: 12px;
   margin-bottom: 12px;
   cursor: pointer;
-  transition: border-color 0.2s, background-color 0.2s;
+  transition:
+    border-color 0.2s,
+    background-color 0.2s;
   background: var(--ant-color-bg-container);
   position: relative;
   overflow: hidden;
@@ -1052,7 +1053,9 @@ const handleToggleUserStatus = async (user: User) => {
   padding: 16px;
   border-bottom: 1px solid var(--ant-color-border);
   cursor: pointer;
-  transition: background-color 0.2s, border-left-color 0.2s;
+  transition:
+    background-color 0.2s,
+    border-left-color 0.2s;
   background: var(--ant-color-bg-container);
   position: relative;
   border-left: 3px solid transparent;
@@ -1150,6 +1153,4 @@ const handleToggleUserStatus = async (user: User) => {
   color: var(--ant-color-text-tertiary);
   margin-top: 4px;
 }
-
-
 </style>
