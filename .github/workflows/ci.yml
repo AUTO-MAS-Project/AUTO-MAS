@@ -105,14 +105,29 @@ jobs:
           Get-ChildItem -Path dist -Recurse -File | Select-Object FullName, @{Name="Size(MB)";Expression={[math]::Round($_.Length/1MB,2)}}
         shell: pwsh
 
-      - name: 上传构建产物
+      - name: 上传 安装包
         uses: actions/upload-artifact@v4
         with:
-          name: AUTO-MAS-Lite-Build-${{ github.sha }}
-          path: |
-            frontend/dist/*.exe
-            frontend/dist/*.zip
-            frontend/dist/win-unpacked/**
+          name: AUTO-MAS-Lite-EXE-${{ github.sha }}
+          path: frontend/dist/*.exe
+          retention-days: 7
+          compression-level: 6
+          if-no-files-found: error
+
+      - name: 上传 压缩包
+        uses: actions/upload-artifact@v4
+        with:
+          name: AUTO-MAS-Lite-ZIP-${{ github.sha }}
+          path: frontend/dist/*.zip
+          retention-days: 7
+          compression-level: 6
+          if-no-files-found: error
+
+      - name: 上传 绿色直装包
+        uses: actions/upload-artifact@v4
+        with:
+          name: AUTO-MAS-Lite-win-unpacked-${{ github.sha }}
+          path: frontend/dist/win-unpacked/**
           retention-days: 7
           compression-level: 6
           if-no-files-found: error
