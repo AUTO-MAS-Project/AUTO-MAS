@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+  pull_request:
+    branches:
+      - main
+      - dev
+
+jobs:
+  # 后端测试
+  backend-test:
+    name: 后端测试
+    runs-on: windows-latest
+
+    steps:
+      - name: 签出代码
+        uses: actions/checkout@v4
+
+      - name: 设置python环境
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: 安装python依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+  # 前端构建
+  frontend-build:
+    name: 前端构建
+    runs-on: windows-latest
+
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: 签出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Node.js 环境
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'yarn'
+          cache-dependency-path: frontend/yarn.lock
+
+      - name: 安装依赖
+        run: yarn install --frozen-lockfile
+
+      - name: 执行 Lite 构建
+        run: yarn build:lite
+        env:
+          NODE_ENV: production
+
+      - name: 检查构建产物
+        run: |
+          if (!(Test-Path "dist")) { 
+            echo "❌ dist 目录未生成"
+            exit 1 
+          }
+          echo "✅ 构建产物生成成功"
+        shell: pwsh
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: AUTO-MAS-Lite-Build
+          path: |
+            frontend/dist/
+          retention-days: 7
+
