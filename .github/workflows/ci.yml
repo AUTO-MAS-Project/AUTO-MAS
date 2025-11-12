@@ -107,7 +107,7 @@ jobs:
             ${{ runner.os }}-tsc-
 
       - name: 执行 Lite 构建
-        run: yarn build:lite
+        run: yarn build:main && yarn vite build && electron-builder --config electron-builder-lite.json --publish never
         env:
           NODE_ENV: production
 
@@ -117,7 +117,10 @@ jobs:
             echo "❌ dist 目录未生成"
             exit 1 
           }
-          echo "✅ 构建产物生成成功"
+          Write-Host "✅ 构建产物生成成功"
+          Write-Host ""
+          Write-Host "构建产物列表:"
+          Get-ChildItem -Path dist -Recurse -File | Select-Object FullName, @{Name="Size(MB)";Expression={[math]::Round($_.Length/1MB,2)}}
         shell: pwsh
 
       - name: 上传构建产物
@@ -125,7 +128,11 @@ jobs:
         with:
           name: AUTO-MAS-Lite-Build-${{ github.sha }}
           path: |
-            frontend/dist/
+            frontend/dist/*.exe
+            frontend/dist/*.zip
+            frontend/dist/*.yml
+            frontend/dist/*.yaml
           retention-days: 7
-          compression-level: 9
+          compression-level: 6
+          if-no-files-found: error
 
