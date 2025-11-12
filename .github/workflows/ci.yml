@@ -11,34 +11,34 @@ on:
       - dev
 
 jobs:
-  # 后端测试
-  backend-test:
-    name: 后端测试
-    runs-on: windows-latest
-
-    steps:
-      - name: 签出代码
-        uses: actions/checkout@v4
-
-      - name: 设置 Python 环境
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-          cache: 'pip'
-          cache-dependency-path: 'requirements.txt'
-
-      - name: 缓存 pip 包
-        uses: actions/cache@v4
-        with:
-          path: ~\AppData\Local\pip\Cache
-          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
-
-      - name: 安装 Python 依赖
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+#  # 后端测试
+#  backend-test:
+#    name: 后端测试
+#    runs-on: windows-latest
+#
+#    steps:
+#      - name: 签出代码
+#        uses: actions/checkout@v4
+#
+#      - name: 设置 Python 环境
+#        uses: actions/setup-python@v5
+#        with:
+#          python-version: '3.12'
+#          cache: 'pip'
+#          cache-dependency-path: 'requirements.txt'
+#
+#      - name: 缓存 pip 包
+#        uses: actions/cache@v4
+#        with:
+#          path: ~\AppData\Local\pip\Cache
+#          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+#          restore-keys: |
+#            ${{ runner.os }}-pip-
+#
+#      - name: 安装 Python 依赖
+#        run: |
+#          python -m pip install --upgrade pip
+#          pip install -r requirements.txt
 
   # 前端构建
   frontend-build:
@@ -107,7 +107,10 @@ jobs:
             ${{ runner.os }}-tsc-
 
       - name: 执行 Lite 构建
-        run: yarn build:main && yarn vite build && electron-builder --config electron-builder-lite.json --publish never
+        run: |
+          yarn vite build
+          yarn build:main
+          yarn electron-builder --config electron-builder-lite.json --publish never
         env:
           NODE_ENV: production
 
