@@ -20,13 +20,22 @@ jobs:
       - name: 签出代码
         uses: actions/checkout@v4
 
-      - name: 设置python环境
+      - name: 设置 Python 环境
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
           cache: 'pip'
+          cache-dependency-path: 'requirements.txt'
 
-      - name: 安装python依赖
+      - name: 缓存 pip 包
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\pip\Cache
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: 安装 Python 依赖
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
@@ -48,11 +57,54 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'yarn'
-          cache-dependency-path: frontend/yarn.lock
+
+      - name: 启用 Corepack
+        run: corepack enable
+
+      - name: 设置 Yarn 版本
+        run: corepack prepare yarn@4.9.1 --activate
+
+      - name: 获取 Yarn 缓存目录
+        id: yarn-cache-dir-path
+        run: echo "dir=$(yarn config get cacheFolder)" >> $GITHUB_OUTPUT
+        shell: bash
+
+      - name: 缓存 Yarn 依赖
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.yarn-cache-dir-path.outputs.dir }}
+          key: ${{ runner.os }}-yarn-${{ hashFiles('**/yarn.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-yarn-
+
+      - name: 缓存 node_modules
+        uses: actions/cache@v4
+        with:
+          path: frontend/node_modules
+          key: ${{ runner.os }}-node-modules-${{ hashFiles('frontend/yarn.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-node-modules-
 
       - name: 安装依赖
-        run: yarn install --frozen-lockfile
+        run: yarn install --immutable
+
+      - name: 缓存 Vite 构建
+        uses: actions/cache@v4
+        with:
+          path: frontend/node_modules/.vite
+          key: ${{ runner.os }}-vite-${{ hashFiles('frontend/src/**') }}
+          restore-keys: |
+            ${{ runner.os }}-vite-
+
+      - name: 缓存 TypeScript 构建
+        uses: actions/cache@v4
+        with:
+          path: |
+            frontend/dist-electron
+            frontend/.tsbuildinfo
+          key: ${{ runner.os }}-tsc-${{ hashFiles('frontend/electron/**', 'frontend/tsconfig.electron.json') }}
+          restore-keys: |
+            ${{ runner.os }}-tsc-
 
       - name: 执行 Lite 构建
         run: yarn build:lite
@@ -71,8 +123,9 @@ jobs:
       - name: 上传构建产物
         uses: actions/upload-artifact@v4
         with:
-          name: AUTO-MAS-Lite-Build
+          name: AUTO-MAS-Lite-Build-${{ github.sha }}
           path: |
             frontend/dist/
           retention-days: 7
+          compression-level: 9
 
