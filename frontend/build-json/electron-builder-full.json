@@ -1,0 +1,59 @@
+{
+  "extends": null,
+  "appId": "top.auto-mas.frontend",
+  "productName": "AUTO-MAS",
+  "asar": true,
+  "asarUnpack": [],
+  "extraMetadata": {
+    "env": "prod"
+  },
+  "files": [
+    "dist/**",
+    "dist-electron/**",
+    "public/**",
+    "!src/**",
+    "!**/*.map"
+  ],
+  "publish": [
+    {
+      "provider": "github",
+      "owner": "AUTO-MAS-Project",
+      "repo": "AUTO-MAS"
+    }
+  ],
+  "extraResources": [
+    {
+      "from": "src/assets",
+      "to": "assets",
+      "filter": ["**/*"]
+    },
+    {
+      "from": "node_modules/electron/dist/environment",
+      "to": "../environment",
+      "filter": ["**/*"]
+    }
+  ],
+  "win": {
+    "requestedExecutionLevel": "requireAdministrator",
+    "target": [
+      {
+        "target": "nsis",
+        "arch": ["x64"]
+      },
+      {
+        "target": "zip",
+        "arch": ["x64"]
+      }
+    ],
+    "icon": "public/AUTO-MAS.ico",
+    "artifactName": "AUTO-MAS-Full-Setup-${version}-${arch}.${ext}"
+  },
+  "nsis": {
+    "oneClick": false,
+    "perMachine": true,
+    "allowToChangeInstallationDirectory": true,
+    "createDesktopShortcut": true,
+    "shortcutName": "AUTO-MAS",
+    "differentialPackage": true
+  }
+}

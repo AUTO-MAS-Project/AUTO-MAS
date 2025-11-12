@@ -1,88 +1,185 @@
-#   AUTO_MAA:A MAA Multi Account Management and Automation Tool
+#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2024-2025 DLmaster361
+#   Copyright © 2025 MoeSnowyFox
+#   Copyright © 2025 AUTO-MAS Team
 
-#   This file is part of AUTO_MAA.
+#   This file is part of AUTO-MAS.
 
-#   AUTO_MAA is free software: you can redistribute it and/or modify
+#   AUTO-MAS is free software: you can redistribute it and/or modify
 #   it under the terms of the GNU General Public License as published
 #   by the Free Software Foundation, either version 3 of the License,
 #   or (at your option) any later version.
 
-#   AUTO_MAA is distributed in the hope that it will be useful,
+#   AUTO-MAS is distributed in the hope that it will be useful,
 #   but WITHOUT ANY WARRANTY; without even the implied warranty
 #   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
 #   the GNU General Public License for more details.
 
 #   You should have received a copy of the GNU General Public License
-#   along with AUTO_MAA. If not, see <https://www.gnu.org/licenses/>.
+#   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
 #   Contact: DLmaster_361@163.com
-
-"""
-AUTO_MAA
-AUTO_MAA主程序
-v4.4
-作者：DLmaster_361
-"""
-
-# 屏蔽广告
-import builtins
-
-original_print = builtins.print
-
-
-def no_print(*args, **kwargs):
-    if (
-        args
-        and isinstance(args[0], str)
-        and "QFluentWidgets Pro is now released." in args[0]
-    ):
-        return
-    return original_print(*args, **kwargs)
-
-
-builtins.print = no_print
 
 
 import os
 import sys
 import ctypes
-from PySide6.QtWidgets import QApplication
-from qfluentwidgets import FluentTranslator
+import logging
+from pathlib import Path
 
-from app.core.logger import logger
+current_dir = Path(__file__).resolve().parent
+if str(current_dir) not in sys.path:
+    sys.path.insert(0, str(current_dir))
+
+from app.utils import get_logger
+
+logger = get_logger("主程序")
+
+
+class InterceptHandler(logging.Handler):
+    def emit(self, record):
+        # 获取对应 loguru 的 level
+        try:
+            level = logger.level(record.levelname).name
+        except ValueError:
+            level = record.levelno
+        # 转发日志
+        logger.opt(depth=6, exception=record.exc_info).log(level, record.getMessage())
+
+
+# 拦截标准 logging
+logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)
+for name in ("uvicorn", "uvicorn.error", "uvicorn.access", "fastapi"):
+    logging.getLogger(name).handlers = [InterceptHandler()]
+    logging.getLogger(name).propagate = False
 
 
 def is_admin() -> bool:
     """检查当前程序是否以管理员身份运行"""
     try:
         return ctypes.windll.shell32.IsUserAnAdmin()
-    except:
+    except:  # noqa: E722
         return False
 
 
 @logger.catch
 def main():
-
-    application = QApplication(sys.argv)
-
-    translator = FluentTranslator()
-    application.installTranslator(translator)
-
-    from app.ui.main_window import AUTO_MAA
-
-    window = AUTO_MAA()
-    window.show_ui("显示主窗口", if_start=True)
-    window.start_up_task()
-    sys.exit(application.exec())
-
-
-if __name__ == "__main__":
-
     if is_admin():
-        main()
+        import asyncio
+        import uvicorn
+        from fastapi import FastAPI
+        from fastapi.staticfiles import StaticFiles
+        from contextlib import asynccontextmanager
+
+        @asynccontextmanager
+        async def lifespan(app: FastAPI):
+            from app.core import Config, MainTimer, TaskManager
+            from app.services import System
+            from app.models.schema import WebSocketMessage
+
+            await Config.init_config()
+            await Config.get_stage()
+            await Config.clean_old_history()
+            second_timer = asyncio.create_task(MainTimer.second_task())
+            hour_timer = asyncio.create_task(MainTimer.hour_task())
+            await System.set_Sleep()
+            await System.set_SelfStart()
+
+            yield
+
+            await TaskManager.stop_task("ALL")
+            second_timer.cancel()
+            hour_timer.cancel()
+            try:
+                await second_timer
+                await hour_timer
+            except asyncio.CancelledError:
+                logger.info("主业务定时器已关闭")
+
+            from app.services import Matomo
+
+            await Matomo.close()
+
+            await Config.send_json(
+                WebSocketMessage(
+                    id="Main", type="Signal", data={"Closed": "后端已安全关闭"}
+                ).model_dump()
+            )
+
+            logger.info("AUTO-MAS 后端程序关闭")
+
+        from fastapi.middleware.cors import CORSMiddleware
+        from app.api import (
+            core_router,
+            info_router,
+            scripts_router,
+            plan_router,
+            emulator_router,
+            queue_router,
+            dispatch_router,
+            history_router,
+            setting_router,
+            update_router,
+            ocr_router,
+        )
+
+        app = FastAPI(
+            title="AUTO-MAS",
+            description="API for managing automation scripts, plans, and tasks",
+            version="1.0.0",
+            lifespan=lifespan,
+        )
+
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["*"],  # 允许所有域名跨域访问
+            allow_credentials=True,
+            allow_methods=["*"],  # 允许所有请求方法, 如 GET、POST、PUT、DELETE
+            allow_headers=["*"],  # 允许所有请求头
+        )
+
+        app.include_router(core_router)
+        app.include_router(info_router)
+        app.include_router(scripts_router)
+        app.include_router(plan_router)
+        app.include_router(emulator_router)
+        app.include_router(queue_router)
+        app.include_router(dispatch_router)
+        app.include_router(history_router)
+        app.include_router(setting_router)
+        app.include_router(update_router)
+        app.include_router(ocr_router)
+
+        app.mount(
+            "/api/res/materials",
+            StaticFiles(directory=str(Path.cwd() / "res/images/materials")),
+            name="materials",
+        )
+        app.mount(
+            "/api/res/sounds",
+            StaticFiles(directory=str(Path.cwd() / "res/sounds")),
+            name="sounds",
+        )
+
+        async def run_server():
+            config = uvicorn.Config(
+                app, host="0.0.0.0", port=36163, log_level="info", log_config=None
+            )
+            server = uvicorn.Server(config)
+
+            from app.core import Config
+
+            Config.server = server
+            await server.serve()
+
+        asyncio.run(run_server())
+
     else:
         ctypes.windll.shell32.ShellExecuteW(
             None, "runas", sys.executable, os.path.realpath(sys.argv[0]), None, 1
         )
         sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()
