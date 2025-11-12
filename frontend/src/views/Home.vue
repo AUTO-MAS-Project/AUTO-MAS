@@ -352,13 +352,26 @@ const getActivityTimeStatus = (expireTime: string): 'normal' | 'warning' | 'ende
   }
 }
 
-// 获取倒计时样式 - 如果剩余时间小于2天则显示红色
+// 获取代理时间戳 - 解析后端返回的中文日期格式
 const getProxyTimestamp = (dateStr: string) => {
   if (!dateStr) return Date.now()
 
-  //  兜底：尝试让浏览器自己解析
-  const t = new Date(dateStr).getTime()
-  return Number.isNaN(t) ? Date.now() : t
+  // 处理后端返回的中文日期格式: "2025年11月05日 16:02:00"
+  try {
+    // 将中文日期格式转换为标准格式
+    const standardFormat = dateStr
+      .replace(/年/g, '-')
+      .replace(/月/g, '-')
+      .replace(/日/g, '')
+      .trim()
+    
+    const t = new Date(standardFormat).getTime()
+    return Number.isNaN(t) ? Date.now() : t
+  } catch {
+    // 兜底：尝试让浏览器自己解析
+    const t = new Date(dateStr).getTime()
+    return Number.isNaN(t) ? Date.now() : t
+  }
 }
 
 // 倒计时结束回调
