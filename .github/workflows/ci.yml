@@ -11,38 +11,9 @@ on:
       - dev
 
 jobs:
-#  # 后端测试
-#  backend-test:
-#    name: 后端测试
-#    runs-on: windows-latest
-#
-#    steps:
-#      - name: 签出代码
-#        uses: actions/checkout@v4
-#
-#      - name: 设置 Python 环境
-#        uses: actions/setup-python@v5
-#        with:
-#          python-version: '3.12'
-#          cache: 'pip'
-#          cache-dependency-path: 'requirements.txt'
-#
-#      - name: 缓存 pip 包
-#        uses: actions/cache@v4
-#        with:
-#          path: ~\AppData\Local\pip\Cache
-#          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
-#          restore-keys: |
-#            ${{ runner.os }}-pip-
-#
-#      - name: 安装 Python 依赖
-#        run: |
-#          python -m pip install --upgrade pip
-#          pip install -r requirements.txt
-
-  # 前端构建
-  frontend-build:
-    name: 前端构建
+  # 构建
+  build:
+    name: 构建
     runs-on: windows-latest
 
     defaults:
@@ -88,10 +59,13 @@ jobs:
       - name: 安装依赖
         run: yarn install --immutable
 
+      - name: 构建vite项目
+        run: yarn vite build
+
       - name: 缓存 Vite 构建
         uses: actions/cache@v4
         with:
-          path: frontend/node_modules/.vite
+          path: frontend/dist/assets
           key: ${{ runner.os }}-vite-${{ hashFiles('frontend/src/**') }}
           restore-keys: |
             ${{ runner.os }}-vite-
@@ -101,18 +75,23 @@ jobs:
         with:
           path: |
             frontend/dist-electron
-            frontend/.tsbuildinfo
-          key: ${{ runner.os }}-tsc-${{ hashFiles('frontend/electron/**', 'frontend/tsconfig.electron.json') }}
+          key: ${{ runner.os }}-tsc-${{ hashFiles('frontend/electron/**') }}
           restore-keys: |
             ${{ runner.os }}-tsc-
 
       - name: 执行 Lite 构建
         run: |
-          yarn vite build
           yarn build:main
-          yarn electron-builder --config electron-builder-lite.json --publish never
+          yarn electron-builder --config build-json/electron-builder-lite.json --publish never
         env:
           NODE_ENV: production
+
+#      - name: 执行 Full 构建
+#        run: |
+#          yarn build:main
+#          yarn electron-builder --config build-json/electron-builder-full-ci.json --publish never
+#        env:
+#          NODE_ENV: production
 
       - name: 检查构建产物
         run: |
@@ -133,8 +112,7 @@ jobs:
           path: |
             frontend/dist/*.exe
             frontend/dist/*.zip
-            frontend/dist/*.yml
-            frontend/dist/*.yaml
+            frontend/dist/win-unpacked/**
           retention-days: 7
           compression-level: 6
           if-no-files-found: error
