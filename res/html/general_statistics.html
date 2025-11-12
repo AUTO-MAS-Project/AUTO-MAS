@@ -1,0 +1,199 @@
+<!-- general_statistics.html -->
+<html>
+
+<head>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background-color: #f4f4f4;
+        }
+
+        .container {
+            position: relative;
+            max-width: 600px;
+            margin: auto;
+            border: 1px solid #ddd;
+            padding: 20px;
+            background-color: #ffffff;
+            border-radius: 10px;
+            box-shadow: 2px 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        table,
+        th,
+        td {
+            border: 1px solid #ddd;
+        }
+
+        th,
+        td {
+            padding: 12px 8px;
+            text-align: left;
+            background-color: #f9f9f9;
+        }
+
+        th {
+            background-color: #009faa;
+            color: white;
+        }
+
+        tr:nth-child(even) {
+            background-color: #f4f4f4;
+        }
+
+        tr:hover {
+            background-color: #eaeaea;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px;
+        }
+
+        .logo {
+            text-align: right;
+        }
+
+        .logo img {
+            max-width: 100%;
+            height: auto;
+        }
+
+        .logo {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+        }
+
+        .logo img {
+            width: 150px;
+            height: auto;
+        }
+
+        .content {
+            margin-top: 60px;
+            padding: 10px;
+        }
+
+        h2 {
+            font-size: 24px;
+            color: #009faa;
+        }
+
+        .redhighlight {
+            font-weight: bold;
+            color: red;
+        }
+
+        .greenhighlight {
+            font-weight: bold;
+            color: green;
+        }
+
+        .footer {
+            display: flex;
+            justify-content: space-around;
+            margin-top: 20px;
+            text-align: center;
+            padding-top: 10px;
+            border-top: 1px solid #ddd;
+        }
+
+        .button {
+            display: inline-block;
+            margin: 5px;
+            padding: 10px 15px;
+            background-color: #009faa;
+            color: #ffffff;
+            text-decoration: none;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+
+        .button:hover {
+            background-color: #007f8c;
+        }
+
+        @media only screen and (max-width: 600px) {
+            body {
+                padding: 10px;
+            }
+
+            .container {
+                border-radius: 0;
+                box-shadow: none;
+            }
+
+            .header,
+            .content,
+            .footer {
+                text-align: center;
+            }
+
+            .logo {
+                position: static;
+                margin-top: 10px;
+            }
+
+            .logo img {
+                width: 50%;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="header">
+            <h2>自动代理统计报告</h2>
+            <!-- 右上角的可点击图片 -->
+            <a href="https://auto-mas.top/" class="logo">
+                <img src="https://www.auto-mas.top/resources/icon.png" alt="AUTO-MAS">
+            </a>
+        </div>
+
+        <div class="content">
+            <p><strong>代理信息：</strong>{{ user_info }}</p>
+            <p><strong>开始时间：</strong>{{ start_time }}</p>
+            <p><strong>结束时间：</strong>{{ end_time }}</p>
+            <p><strong>执行结果：</strong>
+                {% if user_result == '代理成功' %}
+                <span class="greenhighlight">{{ user_result }}</span>
+                {% elif user_result == '代理失败' %}
+                <span class="redhighlight">{{ user_result }}</span>
+                {% else %}
+                {{ user_result }}
+                {% endif %}
+            </p>
+
+        </div>
+
+        <p style="margin-top: 20px; text-align: center;">AUTO-MAS 敬上</p>
+
+        <!-- 底部链接 -->
+        <div class="footer">
+            <div>
+                <p><strong>软件仓库：</strong></p>
+                <a href="https://github.com/AUTO-MAS-Project/AUTO-MAS" class="button">AUTO-MAS GitHub</a>
+            </div>
+            <div>
+                <p><strong>文档站：</strong></p>
+                <a href="https://doc.auto-mas.top/" class="button">AUTO-MAS 文档站</a>
+            </div>
+        </div>
+    </div>
+</body>
+
+</html>

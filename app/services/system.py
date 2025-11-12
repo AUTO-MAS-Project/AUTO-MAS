@@ -1,33 +1,28 @@
-#   AUTO_MAA:A MAA Multi Account Management and Automation Tool
+#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2024-2025 DLmaster361
+#   Copyright © 2025 AUTO-MAS Team
 
-#   This file is part of AUTO_MAA.
+#   This file is part of AUTO-MAS.
 
-#   AUTO_MAA is free software: you can redistribute it and/or modify
+#   AUTO-MAS is free software: you can redistribute it and/or modify
 #   it under the terms of the GNU General Public License as published
 #   by the Free Software Foundation, either version 3 of the License,
 #   or (at your option) any later version.
 
-#   AUTO_MAA is distributed in the hope that it will be useful,
+#   AUTO-MAS is distributed in the hope that it will be useful,
 #   but WITHOUT ANY WARRANTY; without even the implied warranty
 #   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
 #   the GNU General Public License for more details.
 
 #   You should have received a copy of the GNU General Public License
-#   along with AUTO_MAA. If not, see <https://www.gnu.org/licenses/>.
+#   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
 #   Contact: DLmaster_361@163.com
 
-"""
-AUTO_MAA
-AUTO_MAA系统服务
-v4.4
-作者：DLmaster_361
-"""
 
-from PySide6.QtWidgets import QApplication
 import sys
 import ctypes
+import asyncio
 import win32gui
 import win32process
 import psutil
@@ -36,24 +31,28 @@ import tempfile
 import getpass
 from datetime import datetime
 from pathlib import Path
+from typing import Literal, Optional
 
-from app.core import Config, logger
+from app.core import Config
+from app.models.schema import WebSocketMessage
+from app.utils.logger import get_logger
+
+logger = get_logger("系统服务")
 
 
 class _SystemHandler:
 
     ES_CONTINUOUS = 0x80000000
     ES_SYSTEM_REQUIRED = 0x00000001
+    countdown = 60
 
-    def __init__(self):
+    def __init__(self) -> None:
+        self.power_task: Optional[asyncio.Task] = None
 
-        self.set_Sleep()
-        self.set_SelfStart()
-
-    def set_Sleep(self) -> None:
+    async def set_Sleep(self) -> None:
         """同步系统休眠状态"""
 
-        if Config.get(Config.function_IfAllowSleep):
+        if Config.get("Function", "IfAllowSleep"):
             # 设置系统电源状态
             ctypes.windll.kernel32.SetThreadExecutionState(
                 self.ES_CONTINUOUS | self.ES_SYSTEM_REQUIRED
@@ -62,10 +61,10 @@ class _SystemHandler:
             # 恢复系统电源状态
             ctypes.windll.kernel32.SetThreadExecutionState(self.ES_CONTINUOUS)
 
-    def set_SelfStart(self) -> None:
+    async def set_SelfStart(self) -> None:
         """同步开机自启"""
 
-        if Config.get(Config.start_IfSelfStart) and not self.is_startup():
+        if Config.get("Start", "IfSelfStart") and not await self.is_startup():
 
             # 创建任务计划
             try:
@@ -80,8 +79,8 @@ class _SystemHandler:
                     <RegistrationInfo>
                         <Date>{current_time}</Date>
                         <Author>{current_user}</Author>
-                        <Description>AUTO_MAA自启动服务</Description>
-                        <URI>\\AUTO_MAA_AutoStart</URI>
+                        <Description>AUTO-MAS自启动服务</Description>
+                        <URI>\\AUTO-MAS_AutoStart</URI>
                     </RegistrationInfo>
                     <Triggers>
                         <LogonTrigger>
@@ -116,7 +115,7 @@ class _SystemHandler:
                     </Settings>
                     <Actions Context="Author">
                         <Exec>
-                            <Command>"{Config.app_path_sys}"</Command>
+                            <Command>"{Path.cwd() / 'AUTO-MAS.exe'}"</Command>
                         </Exec>
                     </Actions>
                 </Task>"""
@@ -134,7 +133,7 @@ class _SystemHandler:
                             "schtasks",
                             "/create",
                             "/tn",
-                            "AUTO_MAA_AutoStart",
+                            "AUTO-MAS_AutoStart",
                             "/xml",
                             xml_file,
                             "/f",
@@ -147,14 +146,10 @@ class _SystemHandler:
 
                     if result.returncode == 0:
                         logger.success(
-                            f"程序自启动任务计划已创建: {Config.app_path_sys}",
-                            module="系统服务",
+                            f"程序自启动任务计划已创建: {Path.cwd() / 'AUTO-MAS.exe'}"
                         )
                     else:
-                        logger.error(
-                            f"程序自启动任务计划创建失败: {result.stderr}",
-                            module="系统服务",
-                        )
+                        logger.error(f"程序自启动任务计划创建失败: {result.stderr}")
 
                 finally:
                     # 删除临时文件
@@ -164,14 +159,14 @@ class _SystemHandler:
                         pass
 
             except Exception as e:
-                logger.exception(f"程序自启动任务计划创建失败: {e}", module="系统服务")
+                logger.exception(f"程序自启动任务计划创建失败: {e}")
 
-        elif not Config.get(Config.start_IfSelfStart) and self.is_startup():
+        elif not Config.get("Start", "IfSelfStart") and await self.is_startup():
 
             try:
 
                 result = subprocess.run(
-                    ["schtasks", "/delete", "/tn", "AUTO_MAA_AutoStart", "/f"],
+                    ["schtasks", "/delete", "/tn", "AUTO-MAS_AutoStart", "/f"],
                     creationflags=subprocess.CREATE_NO_WINDOW,
                     stdin=subprocess.DEVNULL,
                     capture_output=True,
@@ -179,90 +174,129 @@ class _SystemHandler:
                 )
 
                 if result.returncode == 0:
-                    logger.success("程序自启动任务计划已删除", module="系统服务")
+                    logger.success("程序自启动任务计划已删除")
                 else:
-                    logger.error(
-                        f"程序自启动任务计划删除失败: {result.stderr}",
-                        module="系统服务",
-                    )
+                    logger.error(f"程序自启动任务计划删除失败: {result.stderr}")
 
             except Exception as e:
-                logger.exception(f"程序自启动任务计划删除失败: {e}", module="系统服务")
+                logger.exception(f"程序自启动任务计划删除失败: {e}")
 
-    def set_power(self, mode) -> None:
+    async def set_power(
+        self,
+        mode: Literal[
+            "NoAction", "Shutdown", "ShutdownForce", "Hibernate", "Sleep", "KillSelf"
+        ],
+    ) -> None:
         """
         执行系统电源操作
 
-        :param mode: 电源操作模式，支持 "NoAction", "Shutdown", "Hibernate", "Sleep", "KillSelf", "ShutdownForce"
+        :param mode: 电源操作
         """
 
         if sys.platform.startswith("win"):
 
             if mode == "NoAction":
 
-                logger.info("不执行系统电源操作", module="系统服务")
+                logger.info("不执行系统电源操作")
 
             elif mode == "Shutdown":
 
-                self.kill_emulator_processes()
-                logger.info("执行关机操作", module="系统服务")
+                await self.kill_emulator_processes()
+                logger.info("执行关机操作")
                 subprocess.run(["shutdown", "/s", "/t", "0"])
 
             elif mode == "ShutdownForce":
-                logger.info("执行强制关机操作", module="系统服务")
+                logger.info("执行强制关机操作")
                 subprocess.run(["shutdown", "/s", "/t", "0", "/f"])
 
             elif mode == "Hibernate":
 
-                logger.info("执行休眠操作", module="系统服务")
+                logger.info("执行休眠操作")
                 subprocess.run(["shutdown", "/h"])
 
             elif mode == "Sleep":
 
-                logger.info("执行睡眠操作", module="系统服务")
+                logger.info("执行睡眠操作")
                 subprocess.run(
                     ["rundll32.exe", "powrprof.dll,SetSuspendState", "0,1,0"]
                 )
 
-            elif mode == "KillSelf":
+            elif mode == "KillSelf" and Config.server is not None:
 
-                logger.info("执行退出主程序操作", module="系统服务")
-                Config.main_window.close()
-                QApplication.quit()
-                sys.exit(0)
+                logger.info("执行退出主程序操作")
+                Config.server.should_exit = True
 
         elif sys.platform.startswith("linux"):
 
             if mode == "NoAction":
 
-                logger.info("不执行系统电源操作", module="系统服务")
+                logger.info("不执行系统电源操作")
 
             elif mode == "Shutdown":
 
-                logger.info("执行关机操作", module="系统服务")
+                logger.info("执行关机操作")
                 subprocess.run(["shutdown", "-h", "now"])
 
             elif mode == "Hibernate":
 
-                logger.info("执行休眠操作", module="系统服务")
+                logger.info("执行休眠操作")
                 subprocess.run(["systemctl", "hibernate"])
 
             elif mode == "Sleep":
 
-                logger.info("执行睡眠操作", module="系统服务")
+                logger.info("执行睡眠操作")
                 subprocess.run(["systemctl", "suspend"])
 
-            elif mode == "KillSelf":
+            elif mode == "KillSelf" and Config.server is not None:
 
-                logger.info("执行退出主程序操作", module="系统服务")
-                Config.main_window.close()
-                QApplication.quit()
-                sys.exit(0)
+                logger.info("执行退出主程序操作")
+                Config.server.should_exit = True
 
-    def kill_emulator_processes(self):
+    async def _power_task(
+        self,
+        power_sign: Literal[
+            "NoAction", "Shutdown", "ShutdownForce", "Hibernate", "Sleep", "KillSelf"
+        ],
+    ) -> None:
+        """电源任务"""
+
+        await asyncio.sleep(self.countdown)
+        if power_sign == "KillSelf":
+            await Config.send_json(
+                WebSocketMessage(
+                    id="Main", type="Signal", data={"RequestClose": "请求前端关闭"}
+                ).model_dump()
+            )
+        await self.set_power(power_sign)
+
+    async def start_power_task(self):
+        """开始电源任务"""
+
+        if self.power_task is None or self.power_task.done():
+            self.power_task = asyncio.create_task(self._power_task(Config.power_sign))
+            logger.info(
+                f"电源任务已启动, {self.countdown}秒后执行: {Config.power_sign}"
+            )
+        else:
+            logger.warning("已有电源任务在运行, 请勿重复启动")
+
+    async def cancel_power_task(self):
+        """取消电源任务"""
+
+        if self.power_task is not None and not self.power_task.done():
+            self.power_task.cancel()
+            try:
+                await self.power_task
+            except asyncio.CancelledError:
+                logger.info("电源任务已取消")
+        else:
+            logger.warning("当前无电源任务在运行")
+            raise RuntimeError("当前无电源任务在运行")
+
+    async def kill_emulator_processes(self):
         """这里暂时仅支持 MuMu 模拟器"""
 
-        logger.info("正在清除模拟器进程", module="系统服务")
+        logger.info("正在清除模拟器进程")
 
         keywords = ["Nemu", "nemu", "emulator", "MuMu"]
         for proc in psutil.process_iter(["pid", "name"]):
@@ -270,21 +304,18 @@ class _SystemHandler:
                 pname = proc.info["name"].lower()
                 if any(keyword.lower() in pname for keyword in keywords):
                     proc.kill()
-                    logger.info(
-                        f"已关闭 MuMu 模拟器进程: {proc.info['name']}",
-                        module="系统服务",
-                    )
+                    logger.info(f"已关闭 MuMu 模拟器进程: {proc.info['name']}")
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 continue
 
-        logger.success("模拟器进程清除完成", module="系统服务")
+        logger.success("模拟器进程清除完成")
 
-    def is_startup(self) -> bool:
+    async def is_startup(self) -> bool:
         """判断程序是否已经开机自启"""
 
         try:
             result = subprocess.run(
-                ["schtasks", "/query", "/tn", "AUTO_MAA_AutoStart"],
+                ["schtasks", "/query", "/tn", "AUTO-MAS_AutoStart"],
                 creationflags=subprocess.CREATE_NO_WINDOW,
                 stdin=subprocess.DEVNULL,
                 capture_output=True,
@@ -292,10 +323,10 @@ class _SystemHandler:
             )
             return result.returncode == 0
         except Exception as e:
-            logger.exception(f"检查任务计划程序失败: {e}", module="系统服务")
+            logger.exception(f"检查任务计划程序失败: {e}")
             return False
 
-    def get_window_info(self) -> list:
+    async def get_window_info(self) -> list:
         """获取当前前台窗口信息"""
 
         def callback(hwnd, window_info):
@@ -309,16 +340,16 @@ class _SystemHandler:
         win32gui.EnumWindows(callback, window_info)
         return window_info
 
-    def kill_process(self, path: Path) -> None:
+    async def kill_process(self, path: Path) -> None:
         """
         根据路径中止进程
 
         :param path: 进程路径
         """
 
-        logger.info(f"开始中止进程: {path}", module="系统服务")
+        logger.info(f"开始中止进程: {path}")
 
-        for pid in self.search_pids(path):
+        for pid in await self.search_pids(path):
             killprocess = subprocess.Popen(
                 f"taskkill /F /T /PID {pid}",
                 shell=True,
@@ -326,9 +357,9 @@ class _SystemHandler:
             )
             killprocess.wait()
 
-        logger.success(f"进程已中止: {path}", module="系统服务")
+        logger.success(f"进程已中止: {path}")
 
-    def search_pids(self, path: Path) -> list:
+    async def search_pids(self, path: Path) -> list:
         """
         根据路径查找进程PID
 
@@ -336,7 +367,7 @@ class _SystemHandler:
         :return: 匹配的进程PID列表
         """
 
-        logger.info(f"开始查找进程 PID: {path}", module="系统服务")
+        logger.info(f"开始查找进程 PID: {path}")
 
         pids = []
         for proc in psutil.process_iter(["pid", "exe"]):
@@ -344,7 +375,7 @@ class _SystemHandler:
                 if proc.info["exe"] and proc.info["exe"].lower() == str(path).lower():
                     pids.append(proc.info["pid"])
             except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-                # 进程可能在此期间已结束或无法访问，忽略这些异常
+                # 进程可能在此期间已结束或无法访问, 忽略这些异常
                 pass
         return pids
 
