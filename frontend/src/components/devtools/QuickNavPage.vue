@@ -38,6 +38,10 @@
         <button class="action-btn" @click="reloadPage">重新加载</button>
         <button class="action-btn" @click="toggleConsole">切换控制台</button>
         <button class="action-btn" @click="openDevtool">打开开发者工具</button>
+        <!-- 新增：3s 后触发 Popup 弹窗 -->
+        <button class="action-btn" :disabled="isPopupScheduled" @click="schedulePopup">
+          {{ isPopupScheduled ? '已计划：3s 后弹窗...' : '3s 后触发 Popup' }}
+        </button>
       </div>
     </div>
 
@@ -63,7 +67,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, getCurrentInstance } from 'vue'
+import { computed, getCurrentInstance, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 const route = useRoute()
@@ -169,6 +173,30 @@ const toggleConsole = () => {
   } catch (error) {
     console.error('❌ 获取调试信息失败:', error)
   }
+}
+
+// 新增：3s 后触发 Popup 弹窗
+const isPopupScheduled = ref(false)
+const schedulePopup = () => {
+  if (isPopupScheduled.value) return
+  isPopupScheduled.value = true
+
+  setTimeout(() => {
+    const data = {
+      title: '调试弹窗',
+      message: '这是在 3 秒后自动触发的 Popup 测试弹窗。',
+      options: ['确定', '取消'],
+      messageId: '',
+    }
+
+    router.push({
+      path: '/popup',
+      query: { data: encodeURIComponent(JSON.stringify(data)) },
+    })
+
+    // 计划触发一次后即可再次使用
+    isPopupScheduled.value = false
+  }, 3000)
 }
 </script>
 
