@@ -37,6 +37,6 @@ jobs:
           mirrorchyan_rid: AUTO-MAS-Update
 
           owner: AUTO-MAS-Project
-          repo: AUTO-MAS-Update
+          repo: AUTO-MAS
           upload_token: ${{ secrets.MirrorChyanUploadToken }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
