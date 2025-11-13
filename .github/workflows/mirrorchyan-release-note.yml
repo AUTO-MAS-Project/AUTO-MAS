@@ -1,0 +1,21 @@
+name: MirrorChyan Release 内容同步
+
+on:
+  workflow_dispatch:
+  release:
+    types: [edited]
+
+jobs:
+  mirrorchyan:
+    runs-on: macos-latest
+
+    steps:
+      - id: uploading
+        uses: MirrorChyan/release-note-action@v1
+        with:
+          mirrorchyan_rid: AUTO_MAS
+
+          owner: AUTO-MAS-Project
+          repo: AUTO-MAS
+          upload_token: ${{ secrets.MirrorChyanUploadToken }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
