@@ -19,12 +19,10 @@
 
 #   Contact: DLmaster_361@163.com
 
-name: MirrorChyan 更新版本说明
+name: MirrorChyan 上传最新版本
 
 on:
   workflow_dispatch:
-  release:
-    types: [edited]
 
 jobs:
   mirrorchyan:
@@ -32,11 +30,13 @@ jobs:
 
     steps:
       - id: uploading
-        uses: MirrorChyan/release-note-action@v1
+        uses: MirrorChyan/uploading-action@v1
         with:
+          filetype: latest-release
+          filename: "AUTO-MAS-Lite-Setup-*.exe"
           mirrorchyan_rid: AUTO-MAS-Update
 
           owner: AUTO-MAS-Project
-          repo: AUTO-MAS
-          upload_token: ${{ secrets.MirrorChyanUploadToken }}
+          repo: AUTO-MAS-Update
           github_token: ${{ secrets.GITHUB_TOKEN }}
+          upload_token: ${{ secrets.MirrorChyanUploadToken }}
