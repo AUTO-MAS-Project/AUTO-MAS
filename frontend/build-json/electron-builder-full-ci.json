@@ -3,6 +3,7 @@
   "appId": "top.auto-mas.frontend",
   "productName": "AUTO-MAS",
   "asar": true,
+  "afterAllArtifactBuild": "./scripts/post-build.js",
   "asarUnpack": [],
   "extraMetadata": {
     "env": "prod"
@@ -57,7 +58,7 @@
     "icon": "public/AUTO-MAS.ico"
   },
   "nsis": {
-    "artifactName": "AUTO-MAS-Full-Setup-v${version}.${ext}",
+    "artifactName": "AUTO-MAS-Full-Setup-v${version}-${arch}.${ext}",
     "oneClick": false,
     "perMachine": true,
     "allowToChangeInstallationDirectory": true,
