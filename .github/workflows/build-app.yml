@@ -31,7 +31,7 @@ permissions:
 jobs:
 
   build:
-    name: 构建并发布
+    name: 构建并发布 AUTO-MAS
     runs-on: windows-latest
     if: github.repository == 'AUTO-MAS-Project/AUTO-MAS' && (github.ref_name == 'main' || github.ref_name == 'dev')
 
@@ -209,7 +209,7 @@ jobs:
 
       - name: 触发 MirrorChyan 版本发布工作流
         run: |
-          gh workflow run --repo $GITHUB_REPOSITORY mirrorchyan
-          gh workflow run --repo $GITHUB_REPOSITORY mirrorchyan_release_note
+          gh workflow run "MirrorChyan 上传最新版本" --repo $GITHUB_REPOSITORY
+          gh workflow run "MirrorChyan 更新版本说明" --repo $GITHUB_REPOSITORY
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
