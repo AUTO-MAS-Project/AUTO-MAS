@@ -193,7 +193,7 @@ jobs:
         uses: MirrorChyan/uploading-action@v1
         with:
           filetype: local
-          filename: "AUTO-MAS-Lite-Setup-*"
+          filename: AUTO-MAS-Lite-Setup-${{ needs.build.outputs.version_tag }}-x64.zip
           version_name: ${{ needs.build.outputs.version_tag }}
           mirrorchyan_rid: AUTO_MAS
           upload_token: ${{ secrets.MirrorChyanUploadToken }}
