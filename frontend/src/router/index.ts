@@ -1,8 +1,8 @@
 import type { RouteRecordRaw } from 'vue-router'
 import { createRouter, createWebHistory } from 'vue-router'
-// 同步导入调度中心，保证其模块级导出（如 handler 注册点）在应用初始化时可用
-import SchedulerView from '../views/scheduler/index.vue'
 import { isAppInitialized } from '@/utils/config'
+// 同步导入调度中心，保证其模块级导出（如 handler 注册点）在应用初始化时可用
+const SchedulerView = () => import('../views/scheduler/index.vue') // 改为异步按需加载，避免在 Popup/对话框窗口模式下提前执行调度中心相关逻辑
 
 let needInitLanding = true
 
@@ -88,7 +88,7 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/scheduler',
     name: 'Scheduler',
-    component: SchedulerView,
+    component: SchedulerView, // 现在是异步函数，按需加载
     meta: { title: '调度中心' },
   },
   {
@@ -131,7 +131,7 @@ const routes: RouteRecordRaw[] = [
     path: '/popup',
     name: 'Popup',
     component: () => import('../views/Popup.vue'),
-    meta: { title: '对话框' },
+    meta: { title: '对话框', skipInit: true, skipGuard: true },
   },
 ]
 
@@ -144,8 +144,14 @@ const router = createRouter({
 router.beforeEach(async (to, from, next) => {
   console.log('路由守卫：', { to: to.path, from: from.path })
 
+  // Popup 路由：跳过所有守卫检查，直接放行
+  if (to.path === '/popup') {
+    next('/popup')
+    return
+  }
+
   // 如果目标就是初始化页，放行并清除一次性标记，避免反复跳转
-  if (to.path === '/initialization') {
+  if (to.path === '/initialization' && to.path !== '/popup') {
     needInitLanding = false
     next()
     return

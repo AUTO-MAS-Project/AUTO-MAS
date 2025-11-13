@@ -4,8 +4,13 @@ window.addEventListener('DOMContentLoaded', () => {
   console.log('预加载脚本已加载')
 })
 
+// 检查是否为对话框窗口
+const isDialogWindow = process.argv.includes('--is-dialog-window')
+
 // 暴露安全的 API 给渲染进程
 contextBridge.exposeInMainWorld('electronAPI', {
+  // 窗口类型标识
+  isDialogWindow: () => isDialogWindow,
   openDevTools: () => ipcRenderer.invoke('open-dev-tools'),
   selectFolder: () => ipcRenderer.invoke('select-folder'),
   selectFile: (filters?: any[]) => ipcRenderer.invoke('select-file', filters),

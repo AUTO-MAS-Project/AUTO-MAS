@@ -1,5 +1,8 @@
 // Electron API 类型定义
 export interface ElectronAPI {
+  // 窗口类型标识
+  isDialogWindow: () => boolean
+
   openDevTools: () => Promise<void>
   selectFolder: () => Promise<string | null>
   selectFile: (filters?: any[]) => Promise<string[]>

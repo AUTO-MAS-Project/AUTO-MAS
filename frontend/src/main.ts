@@ -18,44 +18,59 @@ import { mirrorManager } from '@/utils/mirrorManager'
 import WebSocketMessageListener from '@/components/WebSocketMessageListener.vue'
 import { API_ENDPOINTS } from '@/config/mirrors'
 
-// 配置dayjs中文本地化
-dayjs.locale('zh-cn')
+// 检查是否为 popup 路由（对话框窗口）
+const isPopupRoute = window.location.hash.startsWith('#/popup')
+// 检查是否为对话框窗口（通过 Electron 参数）
+const isDialogWindow = window.electronAPI?.isDialogWindow?.() || false
 
-// 配置API基础URL
-OpenAPI.BASE = API_ENDPOINTS.local
+if (isPopupRoute || isDialogWindow) {
+  // Popup 路由或对话框窗口：跳过所有初始化，只做最基本的设置
+  logger.info('检测到 Popup 路由或对话框窗口，跳过完整初始化')
+} else {
+  // 正常路由：执行完整初始化
+  // 配置dayjs中文本地化
+  dayjs.locale('zh-cn')
 
-// 记录应用启动
-logger.info('前端应用开始初始化')
-logger.info(`API基础URL: ${OpenAPI.BASE}`)
+  // 配置API基础URL
+  OpenAPI.BASE = API_ENDPOINTS.local
 
-// 初始化镜像管理器（异步）
-mirrorManager
-  .initialize()
-  .then(() => {
-    logger.info('镜像管理器初始化完成')
-  })
-  .catch(error => {
-    logger.error('镜像管理器初始化失败:', error)
-  })
+  // 记录应用启动
+  logger.info('前端应用开始初始化')
+  logger.info(`API基础URL: ${OpenAPI.BASE}`)
+
+  // 初始化镜像管理器（异步）
+  mirrorManager
+    .initialize()
+    .then(() => {
+      logger.info('镜像管理器初始化完成')
+    })
+    .catch(error => {
+      logger.error('镜像管理器初始化失败:', error)
+    })
+}
 
 // 创建应用实例
 const app = createApp(App)
 
-// 提前初始化调度中心逻辑（使 handler 在前端初始化阶段就被注册）
-try {
-  // 动态导入以避免循环引用问题
-  const { useSchedulerLogic } = await import('./views/scheduler/useSchedulerLogic')
-  try {
-    const scheduler = useSchedulerLogic()
-    // 初始化并加载任务选项（不阻塞主流程，但希望尽早完成）
-    scheduler.initialize()
-    logger.info('Scheduler logic initialized at app startup')
-  } catch (e) {
-    logger.warn('Scheduler logic init failed at startup:', e)
-  }
-} catch (e) {
-  // 如果导入失败（例如构建/路径问题），记录并继续，避免阻塞应用启动
-  logger.warn('Failed to pre-import scheduler logic:', e)
+// 提前初始化调度中心逻辑（仅在非 popup 路由和非对话框窗口）
+if (!isPopupRoute && !isDialogWindow) {
+  ;(async () => {
+    try {
+      // 动态导入以避免循环引用问题
+      const { useSchedulerLogic } = await import('./views/scheduler/useSchedulerLogic')
+      try {
+        const scheduler = useSchedulerLogic()
+        // 初始化并加载任务选项（不阻塞主流程，但希望尽早完成）
+        scheduler.initialize()
+        logger.info('Scheduler logic initialized at app startup')
+      } catch (e) {
+        logger.warn('Scheduler logic init failed at startup:', e)
+      }
+    } catch (e) {
+      // 如果导入失败（例如构建/路径问题），记录并继续，避免阻塞应用启动
+      logger.warn('Failed to pre-import scheduler logic:', e)
+    }
+  })()
 }
 
 // 注册插件
