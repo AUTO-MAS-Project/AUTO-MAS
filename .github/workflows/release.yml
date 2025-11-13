@@ -103,6 +103,7 @@ jobs:
           Get-ChildItem -Path dist -Recurse -File | Select-Object FullName, @{Name="Size(MB)";Expression={[math]::Round($_.Length/1MB,2)}}
         shell: pwsh
 
+
       - name: 设定 RELEASE_TAG（兼容 push tag 与 release 事件）
         id: set_tag
         run: |
@@ -118,7 +119,7 @@ jobs:
         with:
           tag: ${{ env.RELEASE_TAG }}
           name: ${{ env.RELEASE_TAG }}
-          artifacts: "frontend/dist/*.exe,frontend/dist/*.zip,frontend/dist/win-unpacked/**/*"
+          artifacts: "frontend/dist/*.exe,frontend/dist/*.zip"
           allowUpdates: true
           token: ${{ secrets.GITHUB_TOKEN }}
 
