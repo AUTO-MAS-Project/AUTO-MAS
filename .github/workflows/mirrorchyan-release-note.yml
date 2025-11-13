@@ -34,7 +34,7 @@ jobs:
       - id: uploading
         uses: MirrorChyan/release-note-action@v1
         with:
-          mirrorchyan_rid: AUTO-MAS-Update
+          mirrorchyan_rid: AUTO_MAS
 
           owner: AUTO-MAS-Project
           repo: AUTO-MAS
