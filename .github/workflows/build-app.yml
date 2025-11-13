@@ -190,7 +190,7 @@ jobs:
           retention-days: 30
 
   release:
-    name: 发布 AUTO-MAS
+    name: 发布 GitHub 发行版
     runs-on: ubuntu-latest
     needs: build
     steps:
@@ -231,9 +231,31 @@ jobs:
           files: artifacts/*
           prerelease: ${{ needs.build.outputs.is_prerelease }}
 
-      - name: 触发 MirrorChyan 版本发布工作流
-        run: |
-          gh workflow run "MirrorChyan 上传最新版本" --repo ${{ github.repository }}
-          gh workflow run "MirrorChyan 更新版本说明" --repo ${{ github.repository }}
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  mirrorchyan:
+    name: 发布 MirrorChyan 版本
+    runs-on: macos-latest
+    needs: [build, release]
+
+    steps:
+      - name: 下载构建产物
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifacts
+          path: artifacts
+
+      - name: 上传发行版文件
+        uses: MirrorChyan/uploading-action@v1
+        with:
+          filetype: local
+          filename: "artifacts/AUTO-MAS-Lite-Setup-*.exe"
+          version_name: ${{ needs.build.outputs.version_tag }}
+          mirrorchyan_rid: AUTO-MAS-Update
+          upload_token: ${{ secrets.MirrorChyanUploadToken }}
+
+      - name: 上传版本说明
+        uses: MirrorChyan/release-note-action@v1
+        with:
+          version_name: ${{ needs.build.outputs.version_tag }}
+          release_note: ${{ needs.build.outputs.version_changelog }}
+          mirrorchyan_rid: AUTO-MAS-Update
+          upload_token: ${{ secrets.MirrorChyanUploadToken }}
