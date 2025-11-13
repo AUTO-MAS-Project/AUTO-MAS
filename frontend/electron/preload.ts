@@ -84,8 +84,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('show-question-dialog', questionData),
   dialogResponse: (messageId: string, choice: boolean) =>
     ipcRenderer.invoke('dialog-response', messageId, choice),
-  resizeDialogWindow: (height: number) => ipcRenderer.invoke('resize-dialog-window', height),
-  moveWindow: (deltaX: number, deltaY: number) => ipcRenderer.invoke('move-window', deltaX, deltaY),
 
   // 主题信息获取
   getThemeInfo: () => ipcRenderer.invoke('get-theme-info'),
