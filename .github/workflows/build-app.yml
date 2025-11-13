@@ -185,7 +185,6 @@ jobs:
         with:
           name: build-artifacts
           path: |
-            frontend/dist/*.exe
             frontend/dist/*.zip
           retention-days: 30
 
@@ -247,7 +246,7 @@ jobs:
         uses: MirrorChyan/uploading-action@v1
         with:
           filetype: local
-          filename: "artifacts/AUTO-MAS-Lite-Setup-*.exe"
+          filename: "artifacts/AUTO-MAS-Lite-Setup-*.zip"
           version_name: ${{ needs.build.outputs.version_tag }}
           mirrorchyan_rid: AUTO_MAS
           upload_token: ${{ secrets.MirrorChyanUploadToken }}
