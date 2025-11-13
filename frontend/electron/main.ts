@@ -953,6 +953,7 @@ function createQuestionDialog(questionData: any): Promise<boolean> {
         nodeIntegration: false,
         contextIsolation: true,
         preload: path.join(__dirname, 'preload.js'),
+        additionalArguments: ['--is-dialog-window'], // 标记为对话框窗口
       },
     })
 
