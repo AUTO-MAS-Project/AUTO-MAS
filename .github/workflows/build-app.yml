@@ -118,6 +118,7 @@ jobs:
       - name: 生成版本信息
         id: generate_version_info
         run: |
+          node -e "
           const fs = require('fs');
           const path = require('path');
 
@@ -127,17 +128,17 @@ jobs:
           function versionText(versionNumb) {
             while (versionNumb.length < 4) versionNumb.push(0);
             if (versionNumb[3] === 0) {
-              return `v${versionNumb.slice(0, 3).join('.')}`;
+              return \`v\${versionNumb.slice(0, 3).join('.')}\`;
             } else {
-              return `v${versionNumb.slice(0, 3).join('.')}-beta.${versionNumb[3]}`;
+              return \`v\${versionNumb.slice(0, 3).join('.')}-beta.\${versionNumb[3]}\`;
             }
           }
 
           function versionInfoMarkdown(info) {
             let md = '';
             for (const [key, values] of Object.entries(info)) {
-              md += `## ${key}\n`;
-              for (const v of values) md += `- ${v}\n`;
+              md += \`## \${key}\\n\`;
+              for (const v of values) md += \`- \${v}\\n\`;
             }
             return md;
           }
@@ -156,11 +157,11 @@ jobs:
           const changelog = versionInfoMarkdown(allVersionInfo);
 
           const outputPath = process.env.GITHUB_OUTPUT;
-          fs.appendFileSync(outputPath, `version_tag=${versionTag}\n`);
-          fs.appendFileSync(outputPath, `is_prerelease=${isPrerelease}\n`);
-          fs.appendFileSync(outputPath, `version_changelog<<EOF\n${changelog}\nEOF\n`);
-        shell: node
-
+          fs.appendFileSync(outputPath, \`version_tag=\${versionTag}\\n\`);
+          fs.appendFileSync(outputPath, \`is_prerelease=\${isPrerelease}\\n\`);
+          fs.appendFileSync(outputPath, \`version_changelog<<EOF\\n\${changelog}\\nEOF\\n\`);
+          "
+        shell: pwsh
 
       - name: 创建 Release 分支并推送 Tag
         run: |
