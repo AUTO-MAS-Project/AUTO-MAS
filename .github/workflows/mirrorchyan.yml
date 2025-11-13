@@ -34,7 +34,7 @@ jobs:
         with:
           filetype: latest-release
           filename: "AUTO-MAS-Lite-Setup-*.exe"
-          mirrorchyan_rid: AUTO-MAS-Update
+          mirrorchyan_rid: AUTO_MAS
 
           owner: AUTO-MAS-Project
           repo: AUTO-MAS
