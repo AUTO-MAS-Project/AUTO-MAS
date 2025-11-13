@@ -127,6 +127,12 @@ const routes: RouteRecordRaw[] = [
     component: () => import('../views/MirrorTest.vue'),
     meta: { title: '镜像配置测试' },
   },
+  {
+    path: '/popup',
+    name: 'Popup',
+    component: () => import('../views/Popup.vue'),
+    meta: { title: '对话框' },
+  },
 ]
 
 const router = createRouter({
