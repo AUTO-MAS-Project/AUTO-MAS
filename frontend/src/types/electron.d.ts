@@ -1,5 +1,8 @@
 // Electron API 类型定义
 export interface ElectronAPI {
+  // 窗口类型标识
+  isDialogWindow: () => boolean
+
   openDevTools: () => Promise<void>
   selectFolder: () => Promise<string | null>
   selectFile: (filters?: any[]) => Promise<string[]>
@@ -33,7 +36,7 @@ export interface ElectronAPI {
   updateBackend: (repoUrl?: string) => Promise<any>
   startBackend: () => Promise<{ success: boolean; error?: string }>
   stopBackend?: () => Promise<{ success: boolean; error?: string }>
-  
+
   // 快速安装相关
   downloadQuickEnvironment: () => Promise<{ success: boolean; error?: string }>
   extractQuickEnvironment: () => Promise<{ success: boolean; error?: string }>
@@ -99,7 +102,6 @@ export interface ElectronAPI {
     messageId?: string
   }) => Promise<boolean>
   dialogResponse: (messageId: string, choice: boolean) => Promise<boolean>
-  resizeDialogWindow: (height: number) => Promise<void>
 
   // 主题信息获取
   getThemeInfo: () => Promise<{
