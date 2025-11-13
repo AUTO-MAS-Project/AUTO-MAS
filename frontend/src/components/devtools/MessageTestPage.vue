@@ -16,6 +16,15 @@
         <button class="test-btn warning" :disabled="isTesting" @click="directTriggerModal">
           直接触发测试
         </button>
+
+        <!-- 新增：3s 后触发 Question 弹窗（复用已有逻辑） -->
+        <button
+          class="test-btn secondary"
+          :disabled="isTesting || isDelayed"
+          @click="scheduleQuestionModal"
+        >
+          {{ isDelayed ? '已计划：3s 后触发...' : '3s 后触发Question弹窗' }}
+        </button>
       </div>
 
       <div class="test-info">
@@ -85,6 +94,10 @@ const testHistory = ref<Array<{ time: string; title: string; result: string }>>(
 const connectionStatus = ref('检查中...')
 const connectionStatusClass = ref('status-checking')
 
+// 新增：延时触发状态与定时器
+const isDelayed = ref(false)
+let delayTimer: number | undefined
+
 // 自定义消息
 const customMessage = ref({
   title: '操作确认',
@@ -113,7 +126,7 @@ const updateConnectionStatus = () => {
       default:
         connectionStatusClass.value = 'status-unknown'
     }
-  } catch (error) {
+  } catch {
     connectionStatus.value = '获取失败'
     connectionStatusClass.value = 'status-error'
   }
@@ -233,6 +246,16 @@ const triggerQuestionModal = () => {
   }, 1000)
 }
 
+// 新增：3s 后触发 Question 弹窗（复用已有逻辑）
+const scheduleQuestionModal = () => {
+  if (isDelayed.value) return
+  isDelayed.value = true
+  delayTimer = window.setTimeout(() => {
+    triggerQuestionModal()
+    isDelayed.value = false
+  }, 3000)
+}
+
 // 触发自定义弹窗
 const triggerCustomModal = () => {
   isTesting.value = true
@@ -321,6 +344,11 @@ onUnmounted(() => {
   if (responseSubscriptionId) {
     unsubscribe(responseSubscriptionId)
     logger.info('[调试工具] 已取消Response消息订阅')
+  }
+  // 清理延时触发定时器
+  if (delayTimer) {
+    clearTimeout(delayTimer)
+    delayTimer = undefined
   }
 })
 </script>
@@ -631,7 +659,7 @@ onUnmounted(() => {
 }
 
 /* 高对比度模式适配 */
-@media (prefers-contrast: high) {
+@media (prefers-contrast: more) {
   .test-section {
     border-width: 2px;
     border-color: rgba(255, 255, 255, 0.3);
