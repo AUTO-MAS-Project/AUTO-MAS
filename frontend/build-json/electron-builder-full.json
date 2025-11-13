@@ -38,15 +38,16 @@
     "target": [
       {
         "target": "nsis",
-        "arch": ["x64"]
+        "arch": ["x64"],
+        "artifactName": "AUTO-MAS-Full-Setup-${version}-${arch}.${ext}"
       },
       {
         "target": "zip",
-        "arch": ["x64"]
+        "arch": ["x64"],
+        "artifactName": "AUTO-MAS-Full-${version}-${arch}.${ext}"
       }
     ],
     "icon": "public/AUTO-MAS.ico",
-    "artifactName": "AUTO-MAS-Full-Setup-${version}-${arch}.${ext}"
   },
   "nsis": {
     "oneClick": false,
