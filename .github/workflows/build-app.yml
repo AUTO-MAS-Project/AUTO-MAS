@@ -249,7 +249,7 @@ jobs:
           filetype: local
           filename: "artifacts/AUTO-MAS-Lite-Setup-*.exe"
           version_name: ${{ needs.build.outputs.version_tag }}
-          mirrorchyan_rid: AUTO-MAS
+          mirrorchyan_rid: AUTO_MAS
           upload_token: ${{ secrets.MirrorChyanUploadToken }}
 
       - name: 上传版本说明
@@ -257,5 +257,5 @@ jobs:
         with:
           version_name: ${{ needs.build.outputs.version_tag }}
           release_note: ${{ needs.build.outputs.version_changelog }}
-          mirrorchyan_rid: AUTO-MAS
+          mirrorchyan_rid: AUTO_MAS
           upload_token: ${{ secrets.MirrorChyanUploadToken }}
