@@ -27,7 +27,7 @@ on:
 jobs:
 
   build:
-    name: 构建
+    name: 构建并发布
     runs-on: windows-latest
 
     defaults:
@@ -90,7 +90,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-tsc-
 
-      - name: 构建 Vite 项目
+      - name: 构建 Vite 项目yarn build:main
         if: steps.cache-vite.outputs.cache-hit != 'true'
         run: yarn vite build
 
@@ -190,14 +190,14 @@ jobs:
             frontend/dist/*.zip
           prerelease: ${{ steps.generate_version_info.outputs.is_prerelease }}
 
-      - name: 上传精简包到 MirrorChyan
+      - name: 上传精简包到 MirrorChyan 更新通道
         id: uploading
         uses: MirrorChyan/uploading-action@v1
         with:
           filetype: local
           filename: "frontend/dist/AUTO-MAS-Lite-Setup-*"
           version_name: ${{ steps.generate_version_info.outputs.version_tag }}
-          mirrorchyan_rid: AUTO-MAS-Lite
+          mirrorchyan_rid: AUTO-MAS-Update
           upload_token: ${{ secrets.MirrorChyanUploadToken }}
 
 
