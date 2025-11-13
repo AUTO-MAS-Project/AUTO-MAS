@@ -1,12 +1,17 @@
-name: CI
+name: Release
 
 on:
-  workflow_dispatch:  # 仅手动触发
+  push:
+    tags:
+      - 'v*'          # 在推送 tag（例如 v1.2.3）时触发
+  release:
+    types:
+      - published     # Release 发布/更新时触发
+      - edited
 
 jobs:
-  # 构建
-  build:
-    name: 构建
+  build-and-release:
+    name: 构建并发布到 Release
     runs-on: windows-latest
 
     defaults:
@@ -79,13 +84,6 @@ jobs:
         env:
           NODE_ENV: production
 
-#      - name: 执行 Full 构建
-#        run: |
-#          yarn build:main
-#          yarn electron-builder --config build-json/electron-builder-full-ci.json --publish never
-#        env:
-#          NODE_ENV: production
-
       - name: 检查构建产物
         run: |
           if (!(Test-Path "dist")) { 
@@ -98,30 +96,22 @@ jobs:
           Get-ChildItem -Path dist -Recurse -File | Select-Object FullName, @{Name="Size(MB)";Expression={[math]::Round($_.Length/1MB,2)}}
         shell: pwsh
 
-      - name: 上传 安装包
-        uses: actions/upload-artifact@v4
-        with:
-          name: AUTO-MAS-Lite-EXE-${{ github.sha }}
-          path: frontend/dist/*.exe
-          retention-days: 7
-          compression-level: 6
-          if-no-files-found: error
+      - name: 设定 RELEASE_TAG（兼容 push tag 与 release 事件）
+        id: set_tag
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            echo "RELEASE_TAG=${{ github.event.release.tag_name }}" >> $GITHUB_ENV
+          else
+            echo "RELEASE_TAG=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+          fi
+        shell: bash
 
-      - name: 上传 压缩包
-        uses: actions/upload-artifact@v4
+      - name: 创建或更新 GitHub Release 并上传构建产物
+        uses: ncipollo/release-action@v1
         with:
-          name: AUTO-MAS-Lite-ZIP-${{ github.sha }}
-          path: frontend/dist/*.zip
-          retention-days: 7
-          compression-level: 6
-          if-no-files-found: error
-
-      - name: 上传 绿色直装包
-        uses: actions/upload-artifact@v4
-        with:
-          name: AUTO-MAS-Lite-win-unpacked-${{ github.sha }}
-          path: frontend/dist/win-unpacked/**
-          retention-days: 7
-          compression-level: 6
-          if-no-files-found: error
+          tag: ${{ env.RELEASE_TAG }}
+          name: ${{ env.RELEASE_TAG }}
+          artifacts: "frontend/dist/*.exe,frontend/dist/*.zip,frontend/dist/win-unpacked/**/*"
+          allowUpdates: true
+          token: ${{ secrets.GITHUB_TOKEN }}
 
