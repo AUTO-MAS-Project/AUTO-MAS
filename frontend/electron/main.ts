@@ -906,11 +906,11 @@ ipcMain.handle('get-theme', async () => {
   }
 })
 
-// 全局存储对话框窗口引用和回调
+// 全局存储对话框窗口和回调
 let dialogWindows = new Map<string, BrowserWindow>()
 let dialogCallbacks = new Map<string, (result: boolean) => void>()
 
-// 创建对话框窗口
+// 创建对话框窗口（独立窗口，加载 Vue popup 路由）
 function createQuestionDialog(questionData: any): Promise<boolean> {
   return new Promise(resolve => {
     const messageId = questionData.messageId || 'dialog_' + Date.now()
@@ -926,19 +926,19 @@ function createQuestionDialog(questionData: any): Promise<boolean> {
       messageId: messageId,
     }
 
-    // 获取主窗口的尺寸用于全屏显示
+    // 获取主窗口的位置用于居中显示
     let windowBounds = { width: 800, height: 600, x: 100, y: 100 }
     if (mainWindow && !mainWindow.isDestroyed()) {
       windowBounds = mainWindow.getBounds()
     }
 
-    // 创建对话框窗口 - 小尺寸可拖动窗口
+    // 创建对话框窗口
     const dialogWindow = new BrowserWindow({
-      width: 400,
-      height: 145,
-      x: windowBounds.x + (windowBounds.width - 400) / 2, // 居中显示
-      y: windowBounds.y + (windowBounds.height - 200) / 2,
-      resizable: false, // 不允许改变大小
+      width: 500,
+      height: 240,
+      x: windowBounds.x + (windowBounds.width - 500) / 2,
+      y: windowBounds.y + (windowBounds.height - 240) / 2,
+      resizable: false,
       minimizable: false,
       maximizable: false,
       alwaysOnTop: true,
@@ -946,6 +946,8 @@ function createQuestionDialog(questionData: any): Promise<boolean> {
       frame: false,
       modal: mainWindow ? true : false,
       parent: mainWindow || undefined,
+      transparent: true,
+      backgroundColor: '#00000000',
       icon: path.join(__dirname, '../public/AUTO-MAS.ico'),
       webPreferences: {
         nodeIntegration: false,
@@ -960,9 +962,13 @@ function createQuestionDialog(questionData: any): Promise<boolean> {
     // 编码对话框数据
     const encodedData = encodeURIComponent(JSON.stringify(dialogData))
 
-    // 加载对话框页面
-    const dialogUrl = `file://${path.join(__dirname, '../public/dialog.html')}?data=${encodedData}`
-    dialogWindow.loadURL(dialogUrl)
+    // 加载 Vue 应用的 popup 路由
+    const devServer = process.env.VITE_DEV_SERVER_URL
+    const popupUrl = devServer
+      ? `${devServer}#/popup?data=${encodedData}`
+      : `file://${path.join(__dirname, '../dist/index.html')}#/popup?data=${encodedData}`
+
+    dialogWindow.loadURL(popupUrl)
 
     // 窗口准备好后显示
     dialogWindow.once('ready-to-show', () => {
@@ -980,7 +986,7 @@ function createQuestionDialog(questionData: any): Promise<boolean> {
       }
     })
 
-    log.info(`全屏对话框窗口已创建: ${messageId}`)
+    log.info(`对话框窗口已创建: ${messageId}`)
   })
 }
 
