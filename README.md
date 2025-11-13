@@ -87,8 +87,3 @@
 
 - QQ交流群：[957750551](https://qm.qq.com/q/bd9fISNoME)
 
----
-
-如果喜欢这个项目的话，给作者来杯咖啡吧！
-
-![payid](resources/images/README/payid.png "payid")
