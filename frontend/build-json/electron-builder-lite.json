@@ -25,26 +25,32 @@
     {
       "from": "src/assets",
       "to": "assets",
-      "filter": ["**/*"]
+      "filter": [
+        "**/*"
+      ]
     }
   ],
   "win": {
     "requestedExecutionLevel": "requireAdministrator",
+    "artifactName": "AUTO-MAS-Lite-v${version}-${arch}.${ext}",
     "target": [
       {
         "target": "nsis",
-        "arch": ["x64"],
-        "artifactName": "AUTO-MAS-Lite-Setup-${version}-${arch}.${ext}"
+        "arch": [
+          "x64"
+        ]
       },
       {
         "target": "zip",
-        "arch": ["x64"],
-        "artifactName": "AUTO-MAS-Lite-${version}-${arch}.${ext}"
+        "arch": [
+          "x64"
+        ]
       }
     ],
     "icon": "public/AUTO-MAS.ico"
   },
   "nsis": {
+    "artifactName": "AUTO-MAS-Lite-Setup-v${version}.${ext}",
     "oneClick": false,
     "perMachine": true,
     "allowToChangeInstallationDirectory": true,
