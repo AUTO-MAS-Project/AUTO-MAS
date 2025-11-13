@@ -53,65 +53,12 @@ jobs:
         with:
           node-version: '20'
 
-      - name: 设置 Yarn 版本
+      - name: 构建应用程序
         run: |
           corepack enable
           corepack prepare yarn@4.9.1 --activate
-
-      - name: 获取 Yarn 缓存目录
-        id: yarn-cache-dir-path
-        run: echo "dir=$(yarn config get cacheFolder)" >> $GITHUB_OUTPUT
-        shell: bash
-
-      - name: 缓存 Yarn 依赖
-        uses: actions/cache@v4
-        with:
-          path: ${{ steps.yarn-cache-dir-path.outputs.dir }}
-          key: ${{ runner.os }}-yarn-${{ hashFiles('**/yarn.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-yarn-
-
-      - name: 缓存 node_modules
-        uses: actions/cache@v4
-        with:
-          path: frontend/node_modules
-          key: ${{ runner.os }}-node-modules-${{ hashFiles('frontend/yarn.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-node-modules-
-
-      - name: 安装依赖
-        run: yarn install --immutable
-
-      - name: 恢复 Vite 构建缓存
-        id: cache-vite
-        uses: actions/cache@v4
-        with:
-          path: frontend/dist
-          key: ${{ runner.os }}-vite-${{ hashFiles('frontend/src/**', 'frontend/index.html', 'frontend/vite.config.ts') }}
-          restore-keys: |
-            ${{ runner.os }}-vite-
-
-      - name: 恢复 TypeScript 构建缓存
-        id: cache-tsc
-        uses: actions/cache@v4
-        with:
-          path: frontend/dist-electron
-          key: ${{ runner.os }}-tsc-${{ hashFiles('frontend/electron/**', 'frontend/tsconfig.electron.json') }}
-          restore-keys: |
-            ${{ runner.os }}-tsc-
-
-      - name: 构建 Vite 项目
-        if: steps.cache-vite.outputs.cache-hit != 'true'
-        run: yarn vite build
-
-      - name: 构建 TypeScript 主进程
-        if: steps.cache-tsc.outputs.cache-hit != 'true'
-        run: yarn build:main
-
-      - name: 执行 Electron Builder 打包
-        run: yarn electron-builder --config build-json/electron-builder-lite.json --publish never
-        env:
-          NODE_ENV: production
+          yarn install
+          yarn build:lite
 
       - name: 检查构建产物
         run: |
@@ -240,13 +187,13 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: build-artifacts
-          path: artifacts
+          path: .
 
       - name: 上传发行版文件
         uses: MirrorChyan/uploading-action@v1
         with:
           filetype: local
-          filename: "artifacts/AUTO-MAS-Lite-Setup-*.zip"
+          filename: "AUTO-MAS-Lite-Setup-*"
           version_name: ${{ needs.build.outputs.version_tag }}
           mirrorchyan_rid: AUTO_MAS
           upload_token: ${{ secrets.MirrorChyanUploadToken }}
