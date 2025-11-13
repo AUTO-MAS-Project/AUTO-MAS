@@ -25,31 +25,39 @@
     {
       "from": "src/assets",
       "to": "assets",
-      "filter": ["**/*"]
+      "filter": [
+        "**/*"
+      ]
     },
     {
       "from": "node_modules/electron/dist/environment",
       "to": "../environment",
-      "filter": ["**/*"]
+      "filter": [
+        "**/*"
+      ]
     }
   ],
   "win": {
     "requestedExecutionLevel": "requireAdministrator",
+    "artifactName": "AUTO-MAS-Full-v${version}-${arch}.${ext}",
     "target": [
       {
         "target": "nsis",
-        "arch": ["x64"],
-        "artifactName": "AUTO-MAS-Full-Setup-${version}-${arch}.${ext}"
+        "arch": [
+          "x64"
+        ]
       },
       {
         "target": "zip",
-        "arch": ["x64"],
-        "artifactName": "AUTO-MAS-Full-${version}-${arch}.${ext}"
+        "arch": [
+          "x64"
+        ]
       }
     ],
-    "icon": "public/AUTO-MAS.ico",
+    "icon": "public/AUTO-MAS.ico"
   },
   "nsis": {
+    "artifactName": "AUTO-MAS-Full-Setup-v${version}.${ext}",
     "oneClick": false,
     "perMachine": true,
     "allowToChangeInstallationDirectory": true,
