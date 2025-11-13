@@ -9,6 +9,9 @@ on:
       - published     # Release 发布/更新时触发
       - edited
 
+permissions:
+  contents: write  # 允许创建和更新 Release
+
 jobs:
   build-and-release:
     name: 构建并发布到 Release
