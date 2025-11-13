@@ -24,6 +24,10 @@ name: 构建并发布应用程序
 on:
   workflow_dispatch:
 
+permissions:
+  contents: write
+  actions: write
+
 jobs:
 
   build:
@@ -175,6 +179,9 @@ jobs:
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
 
+          $repoUrl = "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+          git remote set-url origin $repoUrl
+
           $newBranch = "release/${{ steps.generate_version_info.outputs.version_tag }}"
           $tagName = "${{ steps.generate_version_info.outputs.version_tag }}"
 
@@ -183,6 +190,7 @@ jobs:
 
           git checkout -b $newBranch
           git push origin $newBranch
+
           git tag $tagName
           git push origin $tagName
         shell: pwsh
