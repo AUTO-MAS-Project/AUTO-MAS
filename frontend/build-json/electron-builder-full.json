@@ -3,7 +3,6 @@
   "appId": "top.auto-mas.frontend",
   "productName": "AUTO-MAS",
   "asar": true,
-  "afterAllArtifactBuild": "./scripts/post-build.js",
   "asarUnpack": [],
   "extraMetadata": {
     "env": "prod"
