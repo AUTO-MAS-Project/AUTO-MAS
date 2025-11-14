@@ -178,7 +178,7 @@ jobs:
           prerelease: ${{ needs.build.outputs.is_prerelease }}
 
   mirrorchyan:
-    name: 发布 MirrorChyan 版本
+    name: 推送 MirrorChyan 版本
     runs-on: macos-latest
     needs: [build, release]
 
@@ -197,6 +197,8 @@ jobs:
           version_name: ${{ needs.build.outputs.version_tag }}
           mirrorchyan_rid: AUTO_MAS
           upload_token: ${{ secrets.MirrorChyanUploadToken }}
+          os: windows
+          arch: x64
 
       - name: 上传版本说明
         uses: MirrorChyan/release-note-action@v1
