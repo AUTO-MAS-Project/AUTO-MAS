@@ -133,6 +133,7 @@ jobs:
           name: build-artifacts
           path: |
             frontend/dist/*.zip
+            frontend/dist/*.exe
           retention-days: 30
 
   release:
@@ -193,10 +194,12 @@ jobs:
         uses: MirrorChyan/uploading-action@v1
         with:
           filetype: local
-          filename: AUTO-MAS-Lite-Setup-${{ needs.build.outputs.version_tag }}-x64.zip
+          filename: AUTO-MAS-Lite-Setup-${{ needs.build.outputs.version_tag }}-x64.exe
           version_name: ${{ needs.build.outputs.version_tag }}
           mirrorchyan_rid: AUTO_MAS
           upload_token: ${{ secrets.MirrorChyanUploadToken }}
+          os: windows
+          arch: x64
 
       - name: 上传版本说明
         uses: MirrorChyan/release-note-action@v1

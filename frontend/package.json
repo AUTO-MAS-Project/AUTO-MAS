@@ -33,7 +33,6 @@
     },
     "appId": "top.auto-mas.frontend",
     "productName": "AUTO-MAS",
-    "afterAllArtifactBuild": "./scripts/post-build.js",
     "files": [
       "dist/**",
       "dist-electron/**",
