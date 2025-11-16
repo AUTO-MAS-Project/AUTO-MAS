@@ -50,9 +50,11 @@
 
     <a-steps :current="displayCurrentStep" :status="stepStatus" class="init-steps">
       <a-step title="设置主题" />
-      <a-step title="环境安装" description="Python, pip, Git" />
-      <a-step title="后端更新" description="拉取源码, 安装依赖" />
-      <a-step title="后端启动" />
+      <a-step title="配置环境" />
+      <a-step title="Git 工具" />
+      <a-step title="获取源码" />
+      <a-step title="安装依赖" />
+      <a-step title="启动服务" />
     </a-steps>
 
     <!--    &lt;!&ndash; 全局进度条 &ndash;&gt;-->
@@ -69,47 +71,33 @@
       <!-- 步骤 0: 主题设置 -->
       <ThemeStep v-if="currentStep === 0" ref="themeStepRef" />
 
-      <!-- 步骤 1: 环境安装 (Python + pip + Git) -->
-      <div v-if="currentStep === 1" class="process-group">
-        <h3>环境安装过程</h3>
-        <p class="process-desc">安装 Python 运行环境、pip 包管理器和 Git 工具</p>
-        
-        <!-- Python 环境 -->
-        <PythonStep
-          ref="pythonStepRef"
-          :python-installed="pythonInstalled"
-        />
-        
-        <!-- Git 工具 -->
-        <GitStep
-          ref="gitStepRef"
-          :git-installed="gitInstalled"
-          style="margin-top: 20px"
-        />
-      </div>
+      <!-- 步骤 1: Python 环境 -->
+      <PythonStep
+        v-if="currentStep === 1"
+        ref="pythonStepRef"
+        :python-installed="pythonInstalled"
+      />
 
-      <!-- 步骤 2: 后端更新 (获取源码 + 安装依赖) -->
-      <div v-if="currentStep === 2" class="process-group">
-        <h3>后端更新过程</h3>
-        <p class="process-desc">拉取最新源码并安装 Python 依赖包</p>
-        
-        <!-- 源码获取 -->
-        <BackendStep
-          ref="backendStepRef"
-          :backend-exists="backendExists"
-          @skip="handleBackendSkip"
-        />
-        
-        <!-- 依赖安装 -->
-        <DependenciesStep
-          ref="dependenciesStepRef"
-          @skip="handleDependenciesSkip"
-          style="margin-top: 20px"
-        />
-      </div>
+      <!-- 步骤 2: Git 工具 -->
+      <GitStep v-if="currentStep === 2" ref="gitStepRef" :git-installed="gitInstalled" />
 
-      <!-- 步骤 3: 后端启动 -->
-      <ServiceStep v-if="currentStep === 3" ref="serviceStepRef" />
+      <!-- 步骤 3: 源码获取 -->
+      <BackendStep
+        v-if="currentStep === 3"
+        ref="backendStepRef"
+        :backend-exists="backendExists"
+        @skip="handleBackendSkip"
+      />
+
+      <!-- 步骤 4: 依赖安装 -->
+      <DependenciesStep
+        v-if="currentStep === 4"
+        ref="dependenciesStepRef"
+        @skip="handleDependenciesSkip"
+      />
+
+      <!-- 步骤 5: 启动服务 -->
+      <ServiceStep v-if="currentStep === 5" ref="serviceStepRef" />
     </div>
 
     <div class="step-actions">
@@ -123,7 +111,7 @@
       </a-button>
 
       <a-button
-        v-if="currentStep < 3"
+        v-if="currentStep < 5"
         size="large"
         type="primary"
         :loading="isProcessing"
@@ -132,9 +120,9 @@
         {{ getNextButtonText() }}
       </a-button>
 
-      <!-- 第4步重新启动服务按钮 -->
+      <!-- 第6步重新启动服务按钮 -->
       <a-button
-        v-if="currentStep === 3"
+        v-if="currentStep === 5"
         type="default"
         size="large"
         :loading="isProcessing"
@@ -241,35 +229,38 @@ async function handleNextStep() {
         console.log('执行主题设置')
         await themeStepRef.value?.saveSettings()
         break
-      case 1: // 环境安装 (Python + Git)
-        console.log('执行环境安装')
-        // 先安装 Python（如果需要）
+      case 1: // Python 环境
+        console.log('执行Python环境安装')
         if (!props.pythonInstalled) {
           await installPython()
         }
-        // 再安装 Git（如果需要）
+        break
+      case 2: // Git 工具
+        console.log('执行Git工具安装')
         if (!props.gitInstalled) {
           await installGit()
         }
         break
-      case 2: // 后端更新 (源码获取 + 依赖安装)
-        console.log('执行后端更新')
-        // 先获取或更新源码
+      case 3: // 源码获取
+        console.log('执行源码获取')
         if (!props.backendExists) {
           await cloneBackend()
         } else {
           await updateBackend()
         }
-        // 再安装依赖
+        break
+      case 4: // 依赖安装
+        console.log('执行依赖安装')
+        // 总是执行依赖安装，确保环境完整
         await installDependencies()
         break
-      case 3: // 启动服务
+      case 5: // 启动服务
         console.log('执行启动服务')
         await startBackendService()
         break
     }
 
-    if (currentStep.value < 3) {
+    if (currentStep.value < 5) {
       currentStep.value++
       // 进入新步骤时自动开始测速
       await autoStartSpeedTest()
@@ -288,22 +279,14 @@ function getNextButtonText() {
     case 0:
       return '下一步'
     case 1:
-      if (!props.pythonInstalled && !props.gitInstalled) {
-        return '安装环境'
-      } else if (!props.pythonInstalled) {
-        return '安装 Python'
-      } else if (!props.gitInstalled) {
-        return '安装 Git'
-      } else {
-        return '下一步'
-      }
+      return props.pythonInstalled ? '下一步' : '安装 Python'
     case 2:
-      if (!props.backendExists) {
-        return '获取代码并安装依赖'
-      } else {
-        return '更新代码并安装依赖'
-      }
+      return props.gitInstalled ? '下一步' : '安装 Git'
     case 3:
+      return props.backendExists ? '更新代码' : '获取代码'
+    case 4:
+      return props.dependenciesInstalled ? '重新安装依赖' : '安装依赖'
+    case 5:
       return '启动服务'
     default:
       return '下一步'
@@ -315,28 +298,26 @@ async function autoStartSpeedTest() {
   // 延迟一下确保组件已经挂载
   setTimeout(async () => {
     switch (currentStep.value) {
-      case 1: // 环境安装
-        // Python镜像测速
+      case 1: // Python 环境
         if (!props.pythonInstalled && pythonStepRef.value?.testPythonMirrorSpeed) {
           console.log('自动开始Python镜像测速')
           await pythonStepRef.value.testPythonMirrorSpeed()
         }
-        // Git不需要测速，使用固定下载源
         break
-      case 2: // 后端更新
-        // Git仓库镜像测速
+      case 3: // 源码获取
         if (backendStepRef.value?.testGitMirrorSpeed) {
           console.log('自动开始Git镜像测速')
           await backendStepRef.value.testGitMirrorSpeed()
         }
-        // Pip镜像测速
+        break
+      case 4: // 依赖安装
         if (!props.dependenciesInstalled && dependenciesStepRef.value?.testPipMirrorSpeed) {
           console.log('自动开始pip镜像测速')
           await dependenciesStepRef.value.testPipMirrorSpeed()
         }
         break
-      case 3: // 启动服务 - 自动启动后端
-        console.log('进入第4步，自动启动后端服务')
+      case 5: // 启动服务 - 自动启动后端
+        console.log('进入第六步，自动启动后端服务')
         await autoStartBackendService()
         break
     }
@@ -556,7 +537,11 @@ function handleBackendSkip() {
     description: '已标记后端代码为已存在，进入下一步',
     duration: 3,
   })
-  // 跳过不再进入下一步，因为后端更新和依赖安装是合并在同一步骤
+  // 直接进入下一步
+  if (currentStep.value < 5) {
+    currentStep.value++
+    autoStartSpeedTest()
+  }
 }
 
 // 处理依赖安装跳过
@@ -567,7 +552,11 @@ function handleDependenciesSkip() {
     description: '已标记依赖为已安装，进入下一步',
     duration: 3,
   })
-  // 跳过不再进入下一步，因为后端更新和依赖安装是合并在同一步骤
+  // 直接进入下一步
+  if (currentStep.value < 5) {
+    currentStep.value++
+    autoStartSpeedTest()
+  }
 }
 
 // 暴露给父组件的方法
@@ -623,25 +612,6 @@ watch(errorMessage, val => {
   display: flex;
   flex-direction: column;
   justify-content: center;
-}
-
-.process-group {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.process-group h3 {
-  font-size: 20px;
-  font-weight: 600;
-  color: var(--ant-color-text);
-  margin: 0;
-}
-
-.process-desc {
-  font-size: 14px;
-  color: var(--ant-color-text-secondary);
-  margin: 0 0 16px 0;
 }
 
 .step-actions {
