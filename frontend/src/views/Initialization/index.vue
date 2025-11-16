@@ -3,9 +3,6 @@
     <!-- 管理员权限检查 -->
     <AdminCheck v-if="!isAdmin" />
 
-    <!-- 安装模式选择 -->
-    <InstallModeSelection v-if="showModeSelection" :on-mode-selected="handleModeSelected" />
-
     <!-- 环境不完整页面 -->
     <EnvironmentIncomplete
       v-else-if="showEnvironmentIncomplete"
@@ -13,21 +10,7 @@
       :on-switch-to-manual="switchToManualMode"
     />
 
-    <!-- 自动初始化模式 -->
-    <AutoMode
-      v-else-if="autoMode"
-      :on-switch-to-manual="switchToManualMode"
-      :on-auto-complete="enterApp"
-    />
-
-    <!-- 快速安装模式 -->
-    <QuickInstallMode
-      v-else-if="quickInstallMode"
-      :on-switch-to-manual="switchToManualMode"
-      :on-quick-complete="enterApp"
-    />
-
-    <!-- 手动初始化模式 -->
+    <!-- 手动初始化模式 (统一入口) -->
     <ManualMode
       v-else
       ref="manualModeRef"
@@ -48,11 +31,8 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { getConfig, saveConfig, setInitialized } from '@/utils/config.ts'
 import AdminCheck from '@/views/Initialization/components/AdminCheck.vue'
-import AutoMode from '@/views/Initialization/components/AutoMode.vue'
 import ManualMode from '@/views/Initialization/components/ManualMode.vue'
 import EnvironmentIncomplete from '@/views/Initialization/components/EnvironmentIncomplete.vue'
-import InstallModeSelection from '@/views/Initialization/components/InstallModeSelection.vue'
-import QuickInstallMode from '@/views/Initialization/components/QuickInstallMode.vue'
 import type { DownloadProgress } from '@/types/initialization.ts'
 import { mirrorManager } from '@/utils/mirrorManager.ts'
 import { forceEnterApp } from '@/utils/appEntry.ts'
@@ -61,11 +41,8 @@ const router = useRouter()
 
 // 基础状态
 const isAdmin = ref(true)
-const autoMode = ref(false)
 const showEnvironmentIncomplete = ref(false)
 const missingComponents = ref<string[]>([])
-const showModeSelection = ref(false)
-const quickInstallMode = ref(false)
 
 // 安装状态
 const pythonInstalled = ref(false)
@@ -73,12 +50,6 @@ const gitInstalled = ref(false)
 const backendExists = ref(false)
 const dependenciesInstalled = ref(false)
 const serviceStarted = ref(false)
-
-// 镜像配置状态
-const mirrorConfigStatus = ref({
-  source: 'fallback' as 'cloud' | 'fallback',
-  version: '',
-})
 
 // 组件引用
 const manualModeRef = ref()
@@ -90,23 +61,7 @@ async function skipToHome() {
 
 function switchToManualMode() {
   showEnvironmentIncomplete.value = false
-  autoMode.value = false
-  quickInstallMode.value = false
-  showModeSelection.value = true
-  console.log('切换到安装模式选择')
-}
-
-// 处理安装模式选择
-function handleModeSelected(mode: 'quick' | 'manual') {
-  showModeSelection.value = false
-  if (mode === 'quick') {
-    quickInstallMode.value = true
-    autoMode.value = false
-  } else {
-    quickInstallMode.value = false
-    autoMode.value = false
-  }
-  console.log('选择安装模式:', mode)
+  console.log('切换到手动模式')
 }
 
 // 进入应用
@@ -250,74 +205,42 @@ async function checkEnvironment() {
     console.log('- main.py存在:', criticalFiles.mainPyExists)
     console.log('- 所有关键文件存在:', allExeFilesExist)
 
-    // 🆕 智能初始化逻辑：
-    // 1. 如果所有关键文件都存在（Full版本或已安装过）
-    //    - 直接进入自动模式（会自动检查更新、安装依赖并启动）
-    // 2. 如果关键文件部分或全部缺失
-    //    - 第一次启动 → 安装模式选择
-    //    - 非第一次启动 → 环境不完整页面
+    // 🆕 新的初始化逻辑：统一进入手动模式
+    // 1. 如果关键文件部分或全部缺失且非第一次启动 → 显示环境不完整页面
+    // 2. 其他情况 → 进入手动模式
+    if (!allExeFilesExist && !isFirst) {
+      // 非第一次启动但环境损坏 → 环境不完整页面
+      console.log('⚠️ 环境损坏，显示环境不完整页面')
 
-    console.log('🎯 智能初始化判断:')
-    console.log('- 第一次启动:', isFirst)
-    console.log('- 所有关键文件存在:', allExeFilesExist)
-    console.log('- 依赖已安装:', dependenciesInstalled.value)
+      const missing = []
+      if (!criticalFiles.pythonExists) missing.push('Python 环境')
+      if (!criticalFiles.gitExists) missing.push('Git 工具')
+      if (!criticalFiles.mainPyExists) missing.push('后端代码')
 
-    if (allExeFilesExist) {
-      // 环境完整（Full 版本或已安装过）
-      console.log('✅ 检测到完整环境，进入自动模式')
+      missingComponents.value = missing
+      showEnvironmentIncomplete.value = true
 
-      // 如果是第一次启动且环境完整，说明是 Full 版本
-      if (isFirst) {
-        console.log('🎉 检测到预装环境（Full版本），自动配置初始化状态')
-        // 更新配置，标记不再是第一次启动
-        await saveConfig({
-          isFirstLaunch: false,
-          pythonInstalled: true,
-          gitInstalled: true,
-          backendExists: true,
-        })
-      }
-
-      // 直接进入自动模式，会自动检查并安装缺失的依赖
-      autoMode.value = true
-      showEnvironmentIncomplete.value = false
-      showModeSelection.value = false
-      quickInstallMode.value = false
+      // 重置初始化状态
+      console.log('重置初始化状态')
+      await saveConfig({ init: false })
     } else {
-      // 环境不完整
+      // 所有其他情况：进入手动模式
+      console.log('✅ 进入手动初始化模式')
+      
+      // 如果是第一次启动，标记不再是第一次
       if (isFirst) {
-        // 第一次启动且环境不完整 → 安装模式选择（Lite版本）
-        console.log('📋 第一次启动且环境不完整（Lite版本），显示安装模式选择')
-        showModeSelection.value = true
-        autoMode.value = false
-        quickInstallMode.value = false
-        showEnvironmentIncomplete.value = false
-      } else {
-        // 非第一次启动但环境损坏 → 环境不完整页面
-        console.log('⚠️ 环境损坏，显示环境不完整页面')
-
-        const missing = []
-        if (!criticalFiles.pythonExists) missing.push('Python 环境')
-        if (!criticalFiles.gitExists) missing.push('Git 工具')
-        if (!criticalFiles.mainPyExists) missing.push('后端代码')
-
-        missingComponents.value = missing
-        showEnvironmentIncomplete.value = true
-        autoMode.value = false
-        showModeSelection.value = false
-        quickInstallMode.value = false
-
-        // 重置初始化状态
-        console.log('重置初始化状态')
-        await saveConfig({ init: false })
+        console.log('首次启动，更新配置')
+        await saveConfig({ isFirstLaunch: false })
       }
+      
+      showEnvironmentIncomplete.value = false
     }
   } catch (error) {
     const errorMsg = `环境检查失败: ${error instanceof Error ? error.message : String(error)}`
     console.error(errorMsg)
-
-    // 检查失败时强制进入手动模式
-    autoMode.value = false
+    
+    // 检查失败时进入手动模式
+    showEnvironmentIncomplete.value = false
   }
 }
 
@@ -342,13 +265,10 @@ function handleProgressUpdate(progress: DownloadProgress) {
 onMounted(async () => {
   console.log('初始化页面 onMounted 开始')
 
-  // 更新镜像配置状态
+  // 初始化镜像管理器（使用本地配置）
+  await mirrorManager.initialize()
   const status = mirrorManager.getConfigStatus()
-  mirrorConfigStatus.value = {
-    source: status.source,
-    version: status.version || '',
-  }
-  console.log('镜像配置状态:', mirrorConfigStatus.value)
+  console.log('镜像配置状态:', status)
 
   // 测试配置系统
   try {
