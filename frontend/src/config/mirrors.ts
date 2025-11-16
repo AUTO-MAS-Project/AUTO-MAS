@@ -7,6 +7,7 @@ export interface MirrorConfig {
   key: string
   name: string
   url: string
+  speed?: number | null // Optional speed test result (kept for backward compatibility)
   type: 'official' | 'mirror'
   chinaConnectivity?: 'poor' | 'good' | 'excellent'
   description?: string
