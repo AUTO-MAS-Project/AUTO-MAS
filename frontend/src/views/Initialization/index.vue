@@ -1,398 +1,748 @@
 <template>
   <div class="initialization-page">
-    <!-- 管理员权限检查 -->
-    <AdminCheck v-if="!isAdmin" />
+    <div class="header">
+      <a-typography-title :level="3">
+        欢迎使用 AUTO-MAS，正在自动配置您的运行环境
+      </a-typography-title>
+    </div>
 
-    <!-- 安装模式选择 -->
-    <InstallModeSelection v-if="showModeSelection" :on-mode-selected="handleModeSelected" />
+    <a-steps :current="currentStepIndex" :status="stepStatus" class="init-steps">
+      <a-step v-for="step in steps" :key="step.key" :title="step.title" />
+    </a-steps>
 
-    <!-- 环境不完整页面 -->
-    <EnvironmentIncomplete
-      v-else-if="showEnvironmentIncomplete"
-      :missing-components="missingComponents"
-      :on-switch-to-manual="switchToManualMode"
-    />
+    <div class="step-content">
+      <!-- 当前步骤内容 -->
+      <component 
+        :is="currentStepComponent" 
+        v-bind="currentStepProps"
+        @update:selected-mirror="handleMirrorSelect"
+        @retry="handleRetry"
+        @skip="handleSkip"
+        @complete="handleBackendComplete"
+        @error="handleBackendError"
+      />
+    </div>
 
-    <!-- 自动初始化模式 -->
-    <AutoMode
-      v-else-if="autoMode"
-      :on-switch-to-manual="switchToManualMode"
-      :on-auto-complete="enterApp"
-    />
-
-    <!-- 快速安装模式 -->
-    <QuickInstallMode
-      v-else-if="quickInstallMode"
-      :on-switch-to-manual="switchToManualMode"
-      :on-quick-complete="enterApp"
-    />
-
-    <!-- 手动初始化模式 -->
-    <ManualMode
-      v-else
-      ref="manualModeRef"
-      :python-installed="pythonInstalled"
-      :git-installed="gitInstalled"
-      :backend-exists="backendExists"
-      :dependencies-installed="dependenciesInstalled"
-      :service-started="serviceStarted"
-      :on-skip-to-home="skipToHome"
-      :on-enter-app="enterApp"
-      :on-progress-update="handleProgressUpdate"
-    />
+    <!-- 步骤操作按钮区域 - 后端启动完成后会自动进入应用，不需要手动按钮 -->
+    <div class="step-actions"></div>
   </div>
+
+  <!-- 跳过初始化弹窗 -->
+  <a-modal
+    v-model:open="forceEnterVisible"
+    title="警告"
+    ok-text="我知道我在做什么"
+    cancel-text="取消"
+    @ok="handleForceEnterConfirm"
+  >
+    <a-alert
+      message="注意"
+      description="你正在尝试跳过初始化流程，可能导致程序无法正常运行。请确保你已经手动完成了所有配置。"
+      type="warning"
+      show-icon
+    />
+  </a-modal>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
-import { getConfig, saveConfig, setInitialized } from '@/utils/config.ts'
-import AdminCheck from '@/views/Initialization/components/AdminCheck.vue'
-import AutoMode from '@/views/Initialization/components/AutoMode.vue'
-import ManualMode from '@/views/Initialization/components/ManualMode.vue'
-import EnvironmentIncomplete from '@/views/Initialization/components/EnvironmentIncomplete.vue'
-import InstallModeSelection from '@/views/Initialization/components/InstallModeSelection.vue'
-import QuickInstallMode from '@/views/Initialization/components/QuickInstallMode.vue'
-import type { DownloadProgress } from '@/types/initialization.ts'
-import { mirrorManager } from '@/utils/mirrorManager.ts'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { message } from 'ant-design-vue'
 import { forceEnterApp } from '@/utils/appEntry.ts'
+import { setInitialized } from '@/utils/config.ts'
+import { mirrorManager } from '@/utils/mirrorManager.ts'
+import StepPanel from './components/StepPanel.vue'
+import BackendStartStep from './components/BackendStartStep.vue'
+import type { MirrorConfig } from '@/types/mirror'
 
-const router = useRouter()
+// ==================== 步骤定义 ====================
+const steps = [
+  { key: 'python', title: 'Python 安装', canSkip: false },
+  { key: 'pip', title: 'Pip 安装', canSkip: false },
+  { key: 'git', title: 'Git 安装', canSkip: false },
+  { key: 'repository', title: '源码拉取', canSkip: true },
+  { key: 'dependency', title: '依赖安装', canSkip: true },
+  { key: 'backend', title: '后端启动', canSkip: true },
+]
 
-// 基础状态
-const isAdmin = ref(true)
-const autoMode = ref(false)
-const showEnvironmentIncomplete = ref(false)
-const missingComponents = ref<string[]>([])
-const showModeSelection = ref(false)
-const quickInstallMode = ref(false)
+// ==================== 状态管理 ====================
+const currentStepIndex = ref(0)
+const stepStatus = ref<'wait' | 'process' | 'finish' | 'error'>('process')
+const initCompleted = ref(false)
+const forceEnterVisible = ref(false)
+const targetBranch = ref('dev')
 
-// 安装状态
-const pythonInstalled = ref(false)
-const gitInstalled = ref(false)
-const backendExists = ref(false)
-const dependenciesInstalled = ref(false)
-const serviceStarted = ref(false)
+// 各步骤状态
+interface StepState {
+  status: 'waiting' | 'processing' | 'success' | 'failed'
+  message: string
+  progress: number
+  showMirrorSelection: boolean
+  mirrors: MirrorConfig[]
+  selectedMirror: string
+  countdown: number
+  currentMirror: string
+  downloadSpeed: string
+  downloadSize: string
+  installMessage: string
+  installProgress: number
+  deployMessage: string
+  deployProgress: number
+  operationDesc: string
+  checkInfo?: {
+    exeExists?: boolean
+    canRun?: boolean
+    version?: string
+    exists?: boolean
+    isGitRepo?: boolean
+    isHealthy?: boolean
+    requirementsExists?: boolean
+    needsInstall?: boolean
+  }
+  mirrorProgress?: {
+    current: number
+    total: number
+  }
+}
 
-// 镜像配置状态
-const mirrorConfigStatus = ref({
-  source: 'fallback' as 'cloud' | 'fallback',
-  version: '',
+const stepStates = ref<Record<string, StepState>>({
+  python: { status: 'waiting', message: '', progress: 0, showMirrorSelection: false, mirrors: [], selectedMirror: '', countdown: 0, currentMirror: '', downloadSpeed: '', downloadSize: '', installMessage: '', installProgress: 0, deployMessage: '', deployProgress: 0, operationDesc: '' },
+  pip: { status: 'waiting', message: '', progress: 0, showMirrorSelection: false, mirrors: [], selectedMirror: '', countdown: 0, currentMirror: '', downloadSpeed: '', downloadSize: '', installMessage: '', installProgress: 0, deployMessage: '', deployProgress: 0, operationDesc: '' },
+  git: { status: 'waiting', message: '', progress: 0, showMirrorSelection: false, mirrors: [], selectedMirror: '', countdown: 0, currentMirror: '', downloadSpeed: '', downloadSize: '', installMessage: '', installProgress: 0, deployMessage: '', deployProgress: 0, operationDesc: '' },
+  repository: { status: 'waiting', message: '', progress: 0, showMirrorSelection: false, mirrors: [], selectedMirror: '', countdown: 0, currentMirror: '', downloadSpeed: '', downloadSize: '', installMessage: '', installProgress: 0, deployMessage: '', deployProgress: 0, operationDesc: '' },
+  dependency: { status: 'waiting', message: '', progress: 0, showMirrorSelection: false, mirrors: [], selectedMirror: '', countdown: 0, currentMirror: '', downloadSpeed: '', downloadSize: '', installMessage: '', installProgress: 0, deployMessage: '', deployProgress: 0, operationDesc: '' },
+  backend: { status: 'waiting', message: '', progress: 0, showMirrorSelection: false, mirrors: [], selectedMirror: '', countdown: 0, currentMirror: '', downloadSpeed: '', downloadSize: '', installMessage: '', installProgress: 0, deployMessage: '', deployProgress: 0, operationDesc: '' },
 })
 
-// 组件引用
-const manualModeRef = ref()
+// 倒计时定时器
+let countdownTimer: NodeJS.Timeout | null = null
 
-// 基础功能函数
-async function skipToHome() {
-  await forceEnterApp('跳过初始化直接进入')
-}
+// ==================== 计算属性 ====================
+const currentStep = computed(() => steps[currentStepIndex.value])
 
-function switchToManualMode() {
-  showEnvironmentIncomplete.value = false
-  autoMode.value = false
-  quickInstallMode.value = false
-  showModeSelection.value = true
-  console.log('切换到安装模式选择')
-}
+const currentStepComponent = computed(() => {
+  // 后端启动步骤使用专门的组件
+  if (currentStep.value.key === 'backend') {
+    return BackendStartStep
+  }
+  return StepPanel
+})
 
-// 处理安装模式选择
-function handleModeSelected(mode: 'quick' | 'manual') {
-  showModeSelection.value = false
-  if (mode === 'quick') {
-    quickInstallMode.value = true
-    autoMode.value = false
+const currentStepProps = computed(() => {
+  const state = stepStates.value[currentStep.value.key]
+  const step = currentStep.value
+  
+  // 对于环境安装步骤（Python/Pip/Git），失败时不显示镜像源选择
+  const isEnvironmentStep = ['python', 'pip', 'git'].includes(step.key)
+  
+  return {
+    title: step.title,
+    status: state.status,
+    message: state.message,
+    progress: state.progress,
+    showProgress: true,
+    progressStatus: (state.status === 'failed' ? 'exception' : 'normal') as 'normal' | 'exception' | 'success',
+    successTitle: `${step.title}完成`,
+    showMirrorSelection: state.showMirrorSelection && !isEnvironmentStep, // 环境安装步骤失败时不显示镜像源选择
+    showSkipButton: step.canSkip && state.status === 'failed', // 只有可跳过的步骤且失败时才显示跳过按钮
+    mirrors: state.mirrors,
+    selectedMirror: state.selectedMirror,
+    countdown: state.countdown,
+    currentMirror: state.currentMirror,
+    downloadSpeed: state.downloadSpeed,
+    downloadSize: state.downloadSize,
+    installMessage: state.installMessage,
+    installProgress: state.installProgress,
+    deployMessage: state.deployMessage,
+    deployProgress: state.deployProgress,
+    operationDesc: state.operationDesc,
+    checkInfo: state.checkInfo,
+    mirrorProgress: state.mirrorProgress
+  }
+})
+
+// ==================== 方法 ====================
+
+// 格式化速度
+function formatSpeed(bytesPerSecond: number): string {
+  if (bytesPerSecond < 1024) {
+    return `${Math.round(bytesPerSecond)} B/s`
+  } else if (bytesPerSecond < 1024 * 1024) {
+    const kb = bytesPerSecond / 1024
+    return `${kb < 10 ? kb.toFixed(2) : kb.toFixed(1)} KB/s`
   } else {
-    quickInstallMode.value = false
-    autoMode.value = false
-  }
-  console.log('选择安装模式:', mode)
-}
-
-// 进入应用
-async function enterApp() {
-  try {
-    // 设置初始化完成标记
-    await setInitialized(true)
-    console.log('设置初始化完成标记，准备进入应用...')
-
-    // 使用统一的进入应用函数
-    await forceEnterApp('初始化完成后进入')
-  } catch (error) {
-    console.error('进入应用失败:', error)
-    // 即使出错也强制进入
-    await forceEnterApp('初始化失败后强制进入')
+    const mb = bytesPerSecond / 1024 / 1024
+    return `${mb < 10 ? mb.toFixed(2) : mb.toFixed(1)} MB/s`
   }
 }
 
-// 检查关键文件是否存在
-async function checkCriticalFiles() {
-  try {
-    console.log('🔍 正在调用 window.electronAPI.checkCriticalFiles()...')
-
-    // 检查API是否存在
-    if (!window.electronAPI.checkCriticalFiles) {
-      console.warn('⚠️ window.electronAPI.checkCriticalFiles 不存在，使用配置文件状态')
-      // 如果API不存在，从配置文件读取状态
-      const config = await getConfig()
-      return {
-        pythonExists: config.pythonInstalled || false,
-        gitExists: config.gitInstalled || false,
-        mainPyExists: config.backendExists || false,
-      }
-    }
-
-    // 检查关键文件
-    const criticalFiles = await window.electronAPI.checkCriticalFiles()
-
-    console.log('🔍 electronAPI.checkCriticalFiles() 原始返回结果:', criticalFiles)
-    console.log('🔍 详细检查结果:')
-    console.log('  - pythonExists:', criticalFiles.pythonExists, typeof criticalFiles.pythonExists)
-    console.log('  - gitExists:', criticalFiles.gitExists, typeof criticalFiles.gitExists)
-    console.log('  - mainPyExists:', criticalFiles.mainPyExists, typeof criticalFiles.mainPyExists)
-
-    const result = {
-      pythonExists: criticalFiles.pythonExists,
-      gitExists: criticalFiles.gitExists,
-      mainPyExists: criticalFiles.mainPyExists,
-    }
-
-    console.log('🔍 最终返回结果:', result)
-    return result
-  } catch (error) {
-    console.error('❌ 检查关键文件失败，使用配置文件状态:', error)
-
-    // 如果检查失败，从配置文件读取状态
-    try {
-      const config = await getConfig()
-      console.log('📄 使用配置文件中的状态:', {
-        pythonInstalled: config.pythonInstalled,
-        gitInstalled: config.gitInstalled,
-        backendExists: config.backendExists,
-      })
-      return {
-        pythonExists: config.pythonInstalled || false,
-        gitExists: config.gitInstalled || false,
-        mainPyExists: config.backendExists || false,
-      }
-    } catch (configError) {
-      console.error('❌ 读取配置文件也失败了:', configError)
-      return {
-        pythonExists: false,
-        gitExists: false,
-        mainPyExists: false,
-      }
-    }
-  }
-}
-
-// 检查环境状态
-async function checkEnvironment() {
-  try {
-    // 每次都重新检查关键exe文件是否存在，不依赖持久化配置
-    const criticalFiles = await checkCriticalFiles()
-
-    console.log('关键文件检查结果:', criticalFiles)
-
-    // 直接根据exe文件存在性设置状态
-    pythonInstalled.value = criticalFiles.pythonExists
-    gitInstalled.value = criticalFiles.gitExists
-    backendExists.value = criticalFiles.mainPyExists
-
-    // 🆕 如果检测到python或git存在，立即保存到配置文件中
-    const needsConfigUpdate =
-      criticalFiles.pythonExists || criticalFiles.gitExists || criticalFiles.mainPyExists
-    if (needsConfigUpdate) {
-      console.log('检测到已安装的组件，更新配置文件...')
-      const configUpdate: any = {}
-
-      if (criticalFiles.pythonExists) {
-        console.log('✅ 检测到 Python 已安装（environment/python）')
-        configUpdate.pythonInstalled = true
-      }
-
-      if (criticalFiles.gitExists) {
-        console.log('✅ 检测到 Git 已安装（environment/git）')
-        configUpdate.gitInstalled = true
-      }
-
-      if (criticalFiles.mainPyExists) {
-        console.log('✅ 检测到后端代码已存在（main.py）')
-        configUpdate.backendExists = true
-      }
-
-      // 保存配置
-      await saveConfig(configUpdate)
-      console.log('配置已更新:', configUpdate)
-    }
-
-    // 依赖安装状态从配置文件读取，但在手动模式中会重新安装
-    const config = await getConfig()
-    dependenciesInstalled.value = config.dependenciesInstalled || false
-
-    console.log('📊 最终状态设置:')
-    console.log('  - pythonInstalled:', pythonInstalled.value)
-    console.log('  - gitInstalled:', gitInstalled.value)
-    console.log('  - backendExists:', backendExists.value)
-    console.log('  - dependenciesInstalled:', dependenciesInstalled.value)
-
-    // 检查是否第一次启动
-    const isFirst = config.isFirstLaunch
-    console.log('是否第一次启动:', isFirst)
-
-    // 检查所有关键exe文件是否都存在
-    const allExeFilesExist =
-      criticalFiles.pythonExists && criticalFiles.gitExists && criticalFiles.mainPyExists
-
-    console.log('关键exe文件状态检查:')
-    console.log('- python.exe存在:', criticalFiles.pythonExists)
-    console.log('- git.exe存在:', criticalFiles.gitExists)
-    console.log('- main.py存在:', criticalFiles.mainPyExists)
-    console.log('- 所有关键文件存在:', allExeFilesExist)
-
-    // 🆕 智能初始化逻辑：
-    // 1. 如果所有关键文件都存在（Full版本或已安装过）
-    //    - 直接进入自动模式（会自动检查更新、安装依赖并启动）
-    // 2. 如果关键文件部分或全部缺失
-    //    - 第一次启动 → 安装模式选择
-    //    - 非第一次启动 → 环境不完整页面
-
-    console.log('🎯 智能初始化判断:')
-    console.log('- 第一次启动:', isFirst)
-    console.log('- 所有关键文件存在:', allExeFilesExist)
-    console.log('- 依赖已安装:', dependenciesInstalled.value)
-
-    if (allExeFilesExist) {
-      // 环境完整（Full 版本或已安装过）
-      console.log('✅ 检测到完整环境，进入自动模式')
-
-      // 如果是第一次启动且环境完整，说明是 Full 版本
-      if (isFirst) {
-        console.log('🎉 检测到预装环境（Full版本），自动配置初始化状态')
-        // 更新配置，标记不再是第一次启动
-        await saveConfig({
-          isFirstLaunch: false,
-          pythonInstalled: true,
-          gitInstalled: true,
-          backendExists: true,
-        })
-      }
-
-      // 直接进入自动模式，会自动检查并安装缺失的依赖
-      autoMode.value = true
-      showEnvironmentIncomplete.value = false
-      showModeSelection.value = false
-      quickInstallMode.value = false
-    } else {
-      // 环境不完整
-      if (isFirst) {
-        // 第一次启动且环境不完整 → 安装模式选择（Lite版本）
-        console.log('📋 第一次启动且环境不完整（Lite版本），显示安装模式选择')
-        showModeSelection.value = true
-        autoMode.value = false
-        quickInstallMode.value = false
-        showEnvironmentIncomplete.value = false
-      } else {
-        // 非第一次启动但环境损坏 → 环境不完整页面
-        console.log('⚠️ 环境损坏，显示环境不完整页面')
-
-        const missing = []
-        if (!criticalFiles.pythonExists) missing.push('Python 环境')
-        if (!criticalFiles.gitExists) missing.push('Git 工具')
-        if (!criticalFiles.mainPyExists) missing.push('后端代码')
-
-        missingComponents.value = missing
-        showEnvironmentIncomplete.value = true
-        autoMode.value = false
-        showModeSelection.value = false
-        quickInstallMode.value = false
-
-        // 重置初始化状态
-        console.log('重置初始化状态')
-        await saveConfig({ init: false })
-      }
-    }
-  } catch (error) {
-    const errorMsg = `环境检查失败: ${error instanceof Error ? error.message : String(error)}`
-    console.error(errorMsg)
-
-    // 检查失败时强制进入手动模式
-    autoMode.value = false
-  }
-}
-
-// 检查管理员权限
-async function checkAdminPermission() {
-  try {
-    const adminStatus = await window.electronAPI.checkAdmin()
-    isAdmin.value = adminStatus
-    console.log('管理员权限检查结果:', adminStatus)
-  } catch (error) {
-    console.error('检查管理员权限失败:', error)
-    isAdmin.value = false
+// 格式化大小
+function formatSize(bytes: number): string {
+  if (bytes < 1024) {
+    return `${Math.round(bytes)} B`
+  } else if (bytes < 1024 * 1024) {
+    const kb = bytes / 1024
+    return `${kb < 10 ? kb.toFixed(2) : kb.toFixed(1)} KB`
+  } else if (bytes < 1024 * 1024 * 1024) {
+    const mb = bytes / 1024 / 1024
+    return `${mb < 10 ? mb.toFixed(2) : mb.toFixed(1)} MB`
+  } else {
+    const gb = bytes / 1024 / 1024 / 1024
+    return `${gb < 10 ? gb.toFixed(2) : gb.toFixed(1)} GB`
   }
 }
 
 // 处理进度更新
-function handleProgressUpdate(progress: DownloadProgress) {
-  // 这里可以处理全局的进度更新逻辑
-  console.log('进度更新:', progress)
+function handleProgress(stepKey: string, progressData: any) {
+  const state = stepStates.value[stepKey]
+  if (!state) return
+
+  const { stage, progress, message: msg, details } = progressData
+
+  // 更新状态
+  if (progress >= 100) {
+    // 进度达到 100%，标记为成功
+    state.status = 'success'
+    state.message = msg || '完成'
+    state.progress = 100
+    state.currentMirror = ''
+    state.downloadSpeed = ''
+    state.downloadSize = ''
+    state.installMessage = ''
+    state.installProgress = 0
+    state.deployMessage = ''
+    state.deployProgress = 0
+    state.operationDesc = ''
+    console.log(`[${stepKey}] ✅ 完成 - 100%`)
+  } else if (progress > 0) {
+    // 进度更新中
+    state.status = 'processing'
+    state.message = msg
+    // 控制进度条显示为整数
+    state.progress = Math.round(progress)
+
+    // 处理详细信息
+    if (details) {
+      if (details.checkInfo) {
+        state.checkInfo = details.checkInfo
+      }
+      if (details.currentMirror) {
+        state.currentMirror = details.currentMirror
+      }
+      if (details.mirrorProgress) {
+        state.mirrorProgress = details.mirrorProgress
+      }
+      if (details.downloadSpeed) {
+        state.downloadSpeed = formatSpeed(details.downloadSpeed)
+      }
+      if (details.downloadSize) {
+        state.downloadSize = formatSize(details.downloadSize)
+      }
+      if (details.operationDesc) {
+        state.operationDesc = details.operationDesc
+      }
+    }
+    
+    // 根据阶段更新安装信息
+    if (stage === 'install') {
+      state.installMessage = msg
+      state.installProgress = Math.round(progress)
+      state.deployMessage = ''
+      state.deployProgress = 0
+    } else if (stage === 'deploy') {
+      // 部署阶段
+      state.deployMessage = msg
+      state.deployProgress = Math.round(progress)
+      state.installMessage = ''
+      state.installProgress = 0
+    } else {
+      // 其他阶段清空安装和部署信息
+      state.installMessage = ''
+      state.installProgress = 0
+      state.deployMessage = ''
+      state.deployProgress = 0
+    }
+    
+    console.log(`[${stepKey}] ${msg} - ${Math.round(progress)}%`)
+  } else if (progress === 0) {
+    // 进度为 0，只在还没有进度时才重置
+    // 避免在安装过程中因为某些中间步骤发送 progress: 0 导致进度条跳回0
+    if (state.progress === 0 || state.status === 'waiting') {
+      state.status = 'processing'
+      state.message = msg || '准备中...'
+      state.progress = 0
+      console.log(`[${stepKey}] 开始 - ${msg}`)
+    } else {
+      // 如果已经有进度了，忽略 progress: 0 的更新，保持当前进度
+      console.log(`[${stepKey}] 忽略 progress: 0 更新（当前进度: ${state.progress}%）`)
+    }
+  }
+}
+
+// 执行单个步骤
+async function executeStep(stepKey: string): Promise<boolean> {
+  const state = stepStates.value[stepKey]
+  state.status = 'processing'
+  state.progress = 0
+  state.message = '正在执行...'
+
+  try {
+    let result: any
+
+    switch (stepKey) {
+      case 'python':
+        result = await (window.electronAPI as any).v2InstallPython(state.selectedMirror)
+        break
+      case 'pip':
+        result = await (window.electronAPI as any).v2InstallPip(state.selectedMirror)
+        break
+      case 'git':
+        result = await (window.electronAPI as any).v2InstallGit(state.selectedMirror)
+        break
+      case 'repository':
+        result = await (window.electronAPI as any).v2PullRepository(targetBranch.value, state.selectedMirror)
+        break
+      case 'dependency':
+        result = await (window.electronAPI as any).v2InstallDependencies(state.selectedMirror)
+        break
+      case 'backend':
+        // 后端启动由BackendStartStep组件处理
+        // 该组件会触发 complete 事件，由 handleBackendComplete 处理
+        // 这里直接返回 true，让循环结束
+        // 但不触发自动进入应用，由 handleBackendComplete 控制
+        return true
+      default:
+        throw new Error(`未知步骤: ${stepKey}`)
+    }
+
+    if (result.success) {
+      // 确保进度更新到 100%
+      state.status = 'success'
+      state.progress = 100
+      state.message = '阶段完成'
+      state.currentMirror = ''
+      state.downloadSpeed = ''
+      state.downloadSize = ''
+      state.installMessage = ''
+      state.installProgress = 0
+      state.operationDesc = ''
+      
+      console.log(`✅ 步骤 ${stepKey} 完成`)
+      
+      // 显示成功状态，让用户看到阶段完成
+      await new Promise(resolve => setTimeout(resolve, 600))
+      
+      return true
+    } else {
+      throw new Error(result.error || '执行失败')
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    console.error(`步骤 ${stepKey} 失败:`, errorMsg)
+    
+    state.status = 'failed'
+    state.message = errorMsg
+    state.showMirrorSelection = true
+    
+    // 开始倒计时
+    startCountdown(stepKey)
+    
+    return false
+  }
+}
+
+// 开始初始化流程
+async function startInitialization() {
+  console.log('开始 V2 初始化流程...')
+  
+  try {
+    // 依次执行每个步骤
+    for (let i = 0; i < steps.length; i++) {
+      const step = steps[i]
+      currentStepIndex.value = i
+      
+      console.log(`执行步骤 ${i + 1}/${steps.length}: ${step.title}`)
+      
+      const success = await executeStep(step.key)
+      
+      if (!success) {
+        // 步骤失败，等待用户重试
+        stepStatus.value = 'error'
+        console.log(`步骤 ${step.title} 失败，等待用户重试`)
+        return
+      }
+      
+      console.log(`步骤 ${step.title} 完成`)
+    }
+    
+    // 所有步骤完成
+    // 注意：不在这里进入应用，由 handleBackendComplete 处理
+    console.log('✅ V2 初始化流程执行完成，等待后端启动完成...')
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    console.error('❌ V2 初始化失败:', errorMsg)
+    stepStatus.value = 'error'
+    message.error('初始化失败')
+  }
+}
+
+function handleMirrorSelect(mirrorKey: string) {
+  const state = stepStates.value[currentStep.value.key]
+  if (state) {
+    state.selectedMirror = mirrorKey
+  }
+}
+
+async function handleSkip() {
+  const stepKey = currentStep.value.key
+  const state = stepStates.value[stepKey]
+  
+  console.log(`跳过步骤: ${stepKey}`)
+  
+  if (state) {
+    // 清除倒计时
+    if (countdownTimer) {
+      clearInterval(countdownTimer)
+      countdownTimer = null
+    }
+    
+    // 标记为已跳过
+    state.status = 'success'
+    state.progress = 100
+    state.message = '已跳过'
+    state.showMirrorSelection = false
+    state.countdown = 0
+    
+    message.warning(`已跳过 ${currentStep.value.title}`)
+    
+    // 等待一下让用户看到跳过状态
+    await new Promise(resolve => setTimeout(resolve, 500))
+    
+    // 继续执行后续步骤
+    for (let i = currentStepIndex.value + 1; i < steps.length; i++) {
+      const step = steps[i]
+      currentStepIndex.value = i
+      
+      console.log(`执行步骤 ${i + 1}/${steps.length}: ${step.title}`)
+      
+      const stepSuccess = await executeStep(step.key)
+      
+      if (!stepSuccess) {
+        stepStatus.value = 'error'
+        return
+      }
+    }
+    
+    // 所有步骤完成
+    console.log('✅ V2 初始化流程执行完成，等待后端启动完成...')
+  }
+}
+
+async function handleRetry() {
+  const stepKey = currentStep.value.key
+  const state = stepStates.value[stepKey]
+  
+  if (state) {
+    // 清除倒计时
+    if (countdownTimer) {
+      clearInterval(countdownTimer)
+      countdownTimer = null
+    }
+    
+    // 重置状态
+    state.showMirrorSelection = false
+    state.countdown = 0
+    
+    console.log(`重试 ${stepKey}，使用镜像源: ${state.selectedMirror}`)
+    
+    // 重新执行当前步骤
+    const success = await executeStep(stepKey)
+    
+    if (success) {
+      // 继续执行后续步骤
+      for (let i = currentStepIndex.value + 1; i < steps.length; i++) {
+        const step = steps[i]
+        currentStepIndex.value = i
+        
+        console.log(`执行步骤 ${i + 1}/${steps.length}: ${step.title}`)
+        
+        const stepSuccess = await executeStep(step.key)
+        
+        if (!stepSuccess) {
+          stepStatus.value = 'error'
+          return
+        }
+      }
+      
+      // 所有步骤完成
+      console.log('✅ V2 初始化流程执行完成，等待后端启动完成...')
+    }
+  }
+}
+
+// 处理后端启动完成
+async function handleBackendComplete() {
+  console.log('后端启动完成，准备进入应用')
+  const state = stepStates.value.backend
+  state.status = 'success'
+  state.progress = 100
+  state.message = '后端服务启动成功'
+  
+  // 标记初始化完成
+  initCompleted.value = true
+  stepStatus.value = 'finish'
+  message.success('初始化完成')
+  
+  console.log('等待后端服务完全稳定...')
+  
+  // 延迟进入应用，确保：
+  // 1. 后端服务完全启动
+  // 2. WebSocket 连接已建立
+  // 3. 版本检查任务已启动
+  // 4. 所有初始化工作已完成
+  await new Promise(resolve => setTimeout(resolve, 2000))
+  
+  console.log('准备进入主应用界面')
+  enterApp()
+}
+
+// 处理后端启动错误
+function handleBackendError(error: string) {
+  console.error('后端启动失败:', error)
+  const state = stepStates.value.backend
+  state.status = 'failed'
+  state.message = error
+  stepStatus.value = 'error'
+}
+
+function startCountdown(stepKey: string) {
+  const state = stepStates.value[stepKey]
+  if (!state) return
+  
+  state.countdown = 60
+  
+  countdownTimer = setInterval(() => {
+    state.countdown--
+    if (state.countdown <= 0) {
+      if (countdownTimer) {
+        clearInterval(countdownTimer)
+        countdownTimer = null
+      }
+      // 自动重试
+      handleRetry()
+    }
+  }, 1000)
+}
+
+async function handleForceEnterConfirm() {
+  forceEnterVisible.value = false
+  console.log('用户确认跳过初始化')
+  await forceEnterApp('V2初始化-强行进入确认')
+}
+
+async function enterApp() {
+  try {
+    await setInitialized(true)
+    console.log('设置初始化完成标记，准备进入应用...')
+    await forceEnterApp('V2初始化完成后进入')
+  } catch (error) {
+    console.error('进入应用失败:', error)
+    await forceEnterApp('V2初始化失败后强制进入')
+  }
+}
+
+// ==================== 生命周期 ====================
+// 从后端加载镜像源配置
+async function loadMirrorConfigs() {
+  const api = window.electronAPI as any
+  
+  try {
+    console.log('正在从后端加载镜像源配置...')
+    
+    // 先初始化镜像服务
+    await api.v2InitMirrors()
+    
+    // 并行获取所有镜像源配置
+    const [pythonMirrors, getPipMirrors, gitMirrors, repoMirrors, pipMirrors] = await Promise.all([
+      api.v2GetMirrors('python'),      // Python 安装包
+      api.v2GetMirrors('get_pip'),     // get-pip.py 脚本
+      api.v2GetMirrors('git'),         // Git 安装包
+      api.v2GetMirrors('repo'),        // Git 仓库
+      api.v2GetMirrors('pip_mirror'),  // PyPI 镜像源
+    ])
+    
+    // 转换后端镜像源格式为前端格式
+    const convertMirror = (mirror: any) => ({
+      key: mirror.name,
+      name: mirror.name,
+      url: mirror.url,
+      type: mirror.type,
+      description: mirror.description,
+      recommended: mirror.type === 'mirror',
+    })
+    
+    // 设置各步骤的镜像源配置
+    stepStates.value.python.mirrors = pythonMirrors.map(convertMirror)
+    stepStates.value.pip.mirrors = getPipMirrors.map(convertMirror)
+    stepStates.value.git.mirrors = gitMirrors.map(convertMirror)
+    stepStates.value.repository.mirrors = repoMirrors.map(convertMirror)
+    stepStates.value.dependency.mirrors = pipMirrors.map(convertMirror)
+    
+    console.log('✅ 镜像源配置加载完成')
+    console.log('Python 镜像源:', stepStates.value.python.mirrors.map(m => m.name))
+    console.log('Pip 镜像源:', stepStates.value.pip.mirrors.map(m => m.name))
+    console.log('Git 镜像源:', stepStates.value.git.mirrors.map(m => m.name))
+    console.log('Repository 镜像源:', stepStates.value.repository.mirrors.map(m => m.name))
+    console.log('Dependency 镜像源:', stepStates.value.dependency.mirrors.map(m => m.name))
+  } catch (error) {
+    console.error('❌ 加载镜像源配置失败:', error)
+    // 如果加载失败，使用本地兜底配置
+    stepStates.value.python.mirrors = mirrorManager.getMirrors('python')
+    stepStates.value.pip.mirrors = mirrorManager.getMirrors('get_pip')
+    stepStates.value.git.mirrors = mirrorManager.getMirrors('git_package')
+    stepStates.value.repository.mirrors = mirrorManager.getMirrors('git')
+    stepStates.value.dependency.mirrors = mirrorManager.getMirrors('pip')
+    console.log('⚠️ 使用本地兜底配置')
+  }
 }
 
 onMounted(async () => {
-  console.log('初始化页面 onMounted 开始')
-
-  // 更新镜像配置状态
-  const status = mirrorManager.getConfigStatus()
-  mirrorConfigStatus.value = {
-    source: status.source,
-    version: status.version || '',
-  }
-  console.log('镜像配置状态:', mirrorConfigStatus.value)
-
-  // 测试配置系统
-  try {
-    console.log('测试配置系统...')
-    const testConfig = await getConfig()
-    console.log('当前配置:', testConfig)
-  } catch (error) {
-    console.error('配置系统测试失败:', error)
-  }
-
-  // 检查管理员权限
-  await checkAdminPermission()
-
-  if (isAdmin.value) {
-    // 延迟检查环境，确保页面完全加载
-    setTimeout(async () => {
-      console.log('开始环境检查')
-      await checkEnvironment()
-    }, 100)
-  }
-
-  window.electronAPI.onDownloadProgress(handleProgressUpdate)
-  console.log('初始化页面 onMounted 完成')
+  console.log('V2 初始化界面已加载')
+  
+  const api = window.electronAPI as any
+  
+  // 加载镜像源配置
+  await loadMirrorConfigs()
+  
+  // 监听各步骤进度
+  api.onV2PythonProgress?.((progress: any) => handleProgress('python', progress))
+  api.onV2PipProgress?.((progress: any) => handleProgress('pip', progress))
+  api.onV2GitProgress?.((progress: any) => handleProgress('git', progress))
+  api.onV2RepositoryProgress?.((progress: any) => handleProgress('repository', progress))
+  api.onV2DependencyProgress?.((progress: any) => handleProgress('dependency', progress))
+  
+  // 监听后端日志和状态
+  api.onV2BackendLog?.((log: string) => {
+    console.log(`[Backend] ${log}`)
+  })
+  
+  api.onV2BackendStatus?.((status: any) => {
+    console.log(`[Backend] 状态更新: ${status.isRunning ? '运行中' : '已停止'}`)
+    if (status.isRunning) {
+      const state = stepStates.value.backend
+      state.status = 'success'
+      state.progress = 100
+      state.message = `后端服务已启动，PID: ${status.pid}`
+    }
+  })
+  
+  // 延迟启动初始化
+  setTimeout(() => {
+    startInitialization()
+  }, 500)
 })
 
 onUnmounted(() => {
-  window.electronAPI.removeDownloadProgressListener()
+  console.log('V2 初始化界面卸载')
+  
+  // 清除倒计时
+  if (countdownTimer) {
+    clearInterval(countdownTimer)
+    countdownTimer = null
+  }
+  
+  const api = window.electronAPI as any
+  
+  // 移除监听器
+  api.removeV2PythonProgressListener?.()
+  api.removeV2PipProgressListener?.()
+  api.removeV2GitProgressListener?.()
+  api.removeV2RepositoryProgressListener?.()
+  api.removeV2DependencyProgressListener?.()
+  api.removeV2BackendLogListener?.()
+  api.removeV2BackendStatusListener?.()
 })
 </script>
 
 <style scoped>
 .initialization-page {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  width: 100%;
+  height: 100%;
   padding: 20px;
   box-sizing: border-box;
-  width: 100%;
-  min-height: 100%;
   background-color: var(--ant-color-bg-layout);
   color: var(--ant-color-text);
+}
+
+.header {
+  text-align: center;
+  margin-bottom: 20px;
+  width: 100%;
+  max-width: 1000px;
+}
+
+.header h3 {
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--ant-color-text);
+}
+
+.init-steps {
+  margin-bottom: 20px;
+  width: 100%;
+  max-width: 1000px;
+}
+
+.step-content {
+  background-color: var(--ant-color-bg-container);
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 8px;
+  padding: 24px;
+  min-height: 400px;
+  width: 100%;
+  max-width: 1000px;
+  box-sizing: border-box;
+}
+
+.step-actions {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  margin-top: 20px;
+  width: 100%;
+  max-width: 1000px;
 }
 
 /* 响应式优化 */
 @media (max-width: 768px) {
   .initialization-page {
+    gap: 15px;
     padding: 10px;
+  }
+
+  .header h3 {
+    font-size: 20px;
+  }
+
+  .init-steps {
+    :deep(.ant-steps-item-title) {
+      white-space: normal;
+    }
+  }
+
+  .step-content {
+    padding: 16px;
+    min-height: 300px;
+  }
+}
+
+@media (max-width: 480px) {
+  .step-actions {
+    flex-direction: column;
+    align-items: stretch;
   }
 }
 </style>

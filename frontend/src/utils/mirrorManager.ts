@@ -3,30 +3,28 @@
  * 提供动态获取和更新镜像源配置的功能
  */
 
-import {
-  ALL_MIRRORS,
-  API_ENDPOINTS,
-  DOWNLOAD_LINKS,
-  type MirrorConfig,
-  type MirrorCategory,
-  getMirrorUrl,
-  updateMirrorSpeed,
-  sortMirrorsBySpeed,
-  getFastestMirror,
-} from '@/config/mirrors'
-import { cloudConfigManager, type CloudMirrorConfig } from './cloudConfigManager'
+import type { MirrorConfig, MirrorCategory, CloudMirrorConfig } from '@/types/mirror'
+import { cloudConfigManager } from './cloudConfigManager'
+
+/**
+ * 默认 API 端点配置
+ */
+const DEFAULT_API_ENDPOINTS = {
+  local: 'http://localhost:36163',
+  websocket: 'ws://localhost:36163',
+}
+
 
 /**
  * 镜像源管理器类
  */
 export class MirrorManager {
   private static instance: MirrorManager
-  private mirrorConfigs: MirrorCategory = { ...ALL_MIRRORS }
-  private apiEndpoints = { ...API_ENDPOINTS }
-  private downloadLinks = { ...DOWNLOAD_LINKS }
+  private mirrorConfigs: MirrorCategory = {}
+  private apiEndpoints = { ...DEFAULT_API_ENDPOINTS }
   private isInitialized = false
 
-  private constructor() {}
+  private constructor() { }
 
   /**
    * 获取单例实例
@@ -51,18 +49,22 @@ export class MirrorManager {
       const fallbackConfig: CloudMirrorConfig = {
         version: '1.0.0-local',
         lastUpdated: new Date().toISOString(),
-        mirrors: { ...ALL_MIRRORS },
-        apiEndpoints: { ...API_ENDPOINTS },
-        downloadLinks: { ...DOWNLOAD_LINKS },
+        mirrors: {
+          python: [],
+          get_pip: [],
+          git: [],
+          repo: [],
+          pip_mirror: [],
+        },
+        apiEndpoints: { ...DEFAULT_API_ENDPOINTS },
       }
 
       // 从云端初始化配置
       const config = await cloudConfigManager.initializeConfig(fallbackConfig)
 
-      // 更新本地配置
-      this.mirrorConfigs = config.mirrors
-      this.apiEndpoints = config.apiEndpoints
-      this.downloadLinks = config.downloadLinks
+      // 转换并更新本地配置
+      this.mirrorConfigs = this.convertMirrorConfig(config.mirrors)
+      this.apiEndpoints = config.apiEndpoints || DEFAULT_API_ENDPOINTS
 
       this.isInitialized = true
       console.log('镜像管理器初始化完成')
@@ -81,10 +83,9 @@ export class MirrorManager {
       const result = await cloudConfigManager.refreshConfig()
 
       if (result.success && result.config) {
-        // 更新本地配置
-        this.mirrorConfigs = result.config.mirrors
-        this.apiEndpoints = result.config.apiEndpoints
-        this.downloadLinks = result.config.downloadLinks
+        // 转换并更新本地配置
+        this.mirrorConfigs = this.convertMirrorConfig(result.config.mirrors)
+        this.apiEndpoints = result.config.apiEndpoints || DEFAULT_API_ENDPOINTS
 
         return { success: true }
       } else {
@@ -106,6 +107,37 @@ export class MirrorManager {
   }
 
   /**
+   * 转换后端 MirrorSource 为前端 MirrorConfig
+   */
+  private convertMirrorConfig(mirrors: {
+    python: any[]
+    get_pip: any[]
+    git: any[]
+    repo: any[]
+    pip_mirror: any[]
+  }): MirrorCategory {
+    const convert = (sources: any[]): MirrorConfig[] => {
+      return sources.map(source => ({
+        key: source.name,
+        name: source.name,
+        url: source.url,
+        type: source.type,
+        description: source.description,
+        recommended: source.type === 'mirror',
+        speed: null,
+      }))
+    }
+
+    return {
+      python: convert(mirrors.python || []),
+      get_pip: convert(mirrors.get_pip || []),
+      git: convert(mirrors.git || []),
+      repo: convert(mirrors.repo || []),
+      pip_mirror: convert(mirrors.pip_mirror || []),
+    }
+  }
+
+  /**
    * 获取指定类型的镜像源列表
    */
   getMirrors(type: keyof MirrorCategory): MirrorConfig[] {
@@ -116,28 +148,40 @@ export class MirrorManager {
    * 获取镜像源URL
    */
   getMirrorUrl(type: keyof MirrorCategory, key: string): string {
-    return getMirrorUrl(type, key)
+    const mirrors = this.getMirrors(type)
+    const mirror = mirrors.find(m => m.key === key)
+    return mirror?.url || mirrors[0]?.url || ''
   }
 
   /**
    * 更新镜像源速度
    */
   updateMirrorSpeed(type: keyof MirrorCategory, key: string, speed: number): void {
-    updateMirrorSpeed(type, key, speed)
+    const mirrors = this.getMirrors(type)
+    const mirror = mirrors.find(m => m.key === key)
+    if (mirror) {
+      mirror.speed = speed
+    }
   }
 
   /**
    * 获取最快的镜像源
    */
   getFastestMirror(type: keyof MirrorCategory): MirrorConfig | null {
-    return getFastestMirror(type)
+    const mirrors = this.getMirrors(type)
+    const sortedMirrors = this.sortMirrorsBySpeed(mirrors)
+    return sortedMirrors.find(m => m.speed !== null && m.speed !== 9999) || null
   }
 
   /**
    * 按速度排序镜像源
    */
   sortMirrorsBySpeed(mirrors: MirrorConfig[]): MirrorConfig[] {
-    return sortMirrorsBySpeed(mirrors)
+    return [...mirrors].sort((a, b) => {
+      const speedA = a.speed === null || a.speed === undefined ? 9999 : a.speed
+      const speedB = b.speed === null || b.speed === undefined ? 9999 : b.speed
+      return speedA - speedB
+    })
   }
 
   /**
@@ -185,16 +229,17 @@ export class MirrorManager {
   /**
    * 获取API端点
    */
-  getApiEndpoint(key: keyof typeof API_ENDPOINTS): string {
+  getApiEndpoint(key: keyof typeof DEFAULT_API_ENDPOINTS): string {
     return this.apiEndpoints[key]
   }
 
   /**
-   * 获取下载链接
+   * 获取所有API端点
    */
-  getDownloadLink(key: keyof typeof DOWNLOAD_LINKS): string {
-    return this.downloadLinks[key] || ''
+  getApiEndpoints() {
+    return { ...this.apiEndpoints }
   }
+
 
   /**
    * 动态更新镜像源配置（用于从API获取最新配置）
@@ -206,7 +251,7 @@ export class MirrorManager {
   /**
    * 动态更新API端点配置
    */
-  updateApiEndpoints(endpoints: Partial<typeof API_ENDPOINTS>): void {
+  updateApiEndpoints(endpoints: Partial<typeof DEFAULT_API_ENDPOINTS>): void {
     this.apiEndpoints = { ...this.apiEndpoints, ...endpoints }
   }
 
@@ -241,7 +286,6 @@ export class MirrorManager {
     return {
       mirrors: this.mirrorConfigs,
       apiEndpoints: this.apiEndpoints,
-      downloadLinks: this.downloadLinks,
     }
   }
 }

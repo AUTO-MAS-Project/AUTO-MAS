@@ -4,7 +4,7 @@
  */
 
 import { OpenAPI } from '@/api'
-import type { MirrorConfig } from '@/config/mirrors'
+import type { MirrorConfig } from '@/types/mirror'
 
 export interface MirrorApiResponse {
   git?: MirrorConfig[]
