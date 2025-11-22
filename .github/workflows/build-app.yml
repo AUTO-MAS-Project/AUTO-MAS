@@ -60,18 +60,6 @@ jobs:
           yarn install
           yarn build
 
-      - name: 检查构建产物
-        run: |
-          if (!(Test-Path "dist")) { 
-            echo "ERROR: dist 目录未生成"
-            exit 1 
-          }
-          Write-Host "SUCCESS: 构建产物生成成功"
-          Write-Host ""
-          Write-Host "构建产物列表:"
-          Get-ChildItem -Path dist -Recurse -File | Select-Object FullName, @{Name="Size(MB)";Expression={[math]::Round($_.Length/1MB,2)}}
-        shell: pwsh
-
       - name: 生成版本信息
         id: generate_version_info
         run: |
@@ -127,12 +115,104 @@ jobs:
           Remove-Item $tempScript
         shell: pwsh
 
+      - name: 生成安装包配置信息
+        run: |
+          @"
+          #define MyAppName "AUTO-MAS"
+          #define MyAppVersion "${{ steps.generate_version_info.outputs.version_tag }}"
+          #define MyAppPublisher "AUTO-MAS Team"
+          #define MyAppURL "https://auto-mas.top/"
+          #define MyAppExeName "AUTO-MAS.exe"
+          #define MyAppPath "${{ github.workspace }}\frontend\dist\win-unpacked"
+          #define OutputDir "${{ github.workspace }}"
+
+          [Setup]
+          AppId={{D116A92A-E174-4699-B777-61C5FD837B19}
+          AppName={#MyAppName}
+          AppVersion={#MyAppVersion}
+          AppVerName={#MyAppName}
+          AppPublisher={#MyAppPublisher}
+          AppPublisherURL={#MyAppURL}
+          AppSupportURL={#MyAppURL}
+          AppUpdatesURL={#MyAppURL}
+          DefaultDirName={autopf}\{#MyAppName}
+          UninstallDisplayIcon={app}\{#MyAppExeName}
+          ArchitecturesAllowed=x64compatible
+          ArchitecturesInstallIn64BitMode=x64compatible
+          DisableProgramGroupPage=yes
+          LicenseFile={#MyAppPath}\LICENSE
+          PrivilegesRequired=admin
+          OutputDir={#OutputDir}
+          OutputBaseFilename=AUTO-MAS-Setup
+          SetupIconFile={#MyAppPath}\res\icons\AUTO-MAS.ico
+          SolidCompression=yes
+          WizardStyle=modern
+          AppMutex=AUTO_MAA_Installer_Mutex
+
+          [Languages]
+          Name: "Chinese"; MessagesFile: "{#MyAppPath}\res\docs\ChineseSimplified.isl"
+          Name: "English"; MessagesFile: "compiler:Default.isl"
+
+          [Tasks]
+          Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
+
+          [Files]
+          Source: "{#MyAppPath}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+
+          [Icons]
+          Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
+          Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
+
+          [Run]
+          Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall runascurrentuser
+
+          [Code]
+
+          procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+          begin
+            if CurUninstallStep = usPostUninstall then
+            begin
+              DelTree(ExpandConstant('{app}'), True, True, True);
+            end;
+          end;
+          "@ | Out-File -FilePath "AUTO-MAS.iss" -Encoding UTF8
+        shell: pwsh
+
+      - name: 生成精简安装程序
+        uses: Minionguyjpro/Inno-Setup-Action@v1.2.5
+        with:
+          path: AUTO-MAS.iss
+
+      - name: 生成精简压缩包
+        run: |
+          Compress-Archive -Path AUTO-MAS-Setup.exe -DestinationPath AUTO-MAS-Lite-Setup-${{ steps.generate_version_info.outputs.version_tag }}-x64.zip -Force
+          Compress-Archive -Path ${{ github.workspace }}/frontend/dist/win-unpacked/* -DestinationPath AUTO-MAS-Lite-${{ steps.generate_version_info.outputs.version_tag }}-x64.zip -Force
+          Remove-Item AUTO-MAS-Setup.exe
+        shell: pwsh
+
+      - name: 获取完整环境
+        run: |
+          Invoke-WebRequest -Uri https://download.auto-mas.top/d/AUTO-MAS/Environment/environment.zip -OutFile environment.zip
+          Expand-Archive -Path environment.zip -DestinationPath ${{ github.workspace }}/frontend/dist/win-unpacked -Force
+        shell: pwsh
+
+      - name: 生成完整安装程序
+        uses: Minionguyjpro/Inno-Setup-Action@v1.2.5
+        with:
+          path: AUTO-MAS.iss
+
+      - name: 生成完整压缩包
+        run: |
+          Compress-Archive -Path AUTO-MAS-Setup.exe -DestinationPath AUTO-MAS-Full-Setup-${{ steps.generate_version_info.outputs.version_tag }}-x64.zip -Force
+          Compress-Archive -Path ${{ github.workspace }}/frontend/dist/win-unpacked/* -DestinationPath AUTO-MAS-Full-${{ steps.generate_version_info.outputs.version_tag }}-x64.zip -Force
+          Remove-Item AUTO-MAS-Setup.exe
+        shell: pwsh
+
       - name: 上传构建产物
         uses: actions/upload-artifact@v4
         with:
           name: build-artifacts
-          path: |
-            frontend/dist/*.zip
+          path: AUTO-MAS-*-x64.zip
           retention-days: 30
 
   release:
