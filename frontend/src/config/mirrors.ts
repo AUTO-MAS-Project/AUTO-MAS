@@ -23,13 +23,13 @@ export interface MirrorCategory {
  */
 export const GIT_OFFICIAL_MIRRORS: MirrorConfig[] = [
   {
-    key: 'github',
+    key: 'GitHub 官方',
     name: 'GitHub 官方',
     url: 'https://github.com/AUTO-MAS-Project/AUTO-MAS.git',
     speed: null,
     type: 'official',
     chinaConnectivity: 'poor',
-    description: '官方源，在中国大陆连通性不佳，可能需要科学上网',
+    description: 'GitHub 官方仓库',
   },
 ]
 
@@ -38,13 +38,13 @@ export const GIT_OFFICIAL_MIRRORS: MirrorConfig[] = [
  */
 export const GIT_MIRROR_MIRRORS: MirrorConfig[] = [
   {
-    key: 'gitee 镜像源',
-    name: 'gitee',
+    key: 'Gitee 镜像',
+    name: 'Gitee 镜像',
     url: 'https://gitee.com/auto-mas-project/AUTO-MAS',
     speed: null,
     type: 'mirror',
     chinaConnectivity: 'good',
-    description: 'gitee 镜像源，更新会有少许延迟',
+    description: 'Gitee 镜像源，国内访问速度快',
     recommended: true,
   },
 ]
@@ -59,13 +59,13 @@ export const GIT_MIRRORS: MirrorConfig[] = [...GIT_MIRROR_MIRRORS, ...GIT_OFFICI
  */
 export const PYTHON_OFFICIAL_MIRRORS: MirrorConfig[] = [
   {
-    key: 'official',
+    key: 'Python 官方',
     name: 'Python 官方',
     url: 'https://www.python.org/ftp/python/3.12.0/python-3.12.0-embed-amd64.zip',
     speed: null,
     type: 'official',
     chinaConnectivity: 'poor',
-    description: 'Python 官方下载源，在中国大陆连通性不佳',
+    description: 'Python 官方下载源',
   },
 ]
 
@@ -74,7 +74,7 @@ export const PYTHON_OFFICIAL_MIRRORS: MirrorConfig[] = [
  */
 export const PYTHON_MIRROR_MIRRORS: MirrorConfig[] = [
   {
-    key: 'aliyun',
+    key: '阿里云镜像',
     name: '阿里云镜像',
     url: 'https://mirrors.aliyun.com/python-release/windows/python-3.12.0-embed-amd64.zip',
     speed: null,
@@ -84,22 +84,13 @@ export const PYTHON_MIRROR_MIRRORS: MirrorConfig[] = [
     recommended: true,
   },
   {
-    key: 'tsinghua',
+    key: '清华 TUNA 镜像',
     name: '清华 TUNA 镜像',
     url: 'https://mirrors.tuna.tsinghua.edu.cn/python/3.12.0/python-3.12.0-embed-amd64.zip',
     speed: null,
     type: 'mirror',
     chinaConnectivity: 'excellent',
-    description: '清华大学开源软件镜像站，国内访问速度快',
-  },
-  {
-    key: 'huawei',
-    name: '华为云镜像',
-    url: 'https://mirrors.huaweicloud.com/repository/toolkit/python/3.12.0/python-3.12.0-embed-amd64.zip',
-    speed: null,
-    type: 'mirror',
-    chinaConnectivity: 'excellent',
-    description: '华为云镜像服务，国内访问稳定',
+    description: '清华大学开源软件镜像站',
   },
 ]
 
@@ -113,13 +104,13 @@ export const PYTHON_MIRRORS: MirrorConfig[] = [...PYTHON_MIRROR_MIRRORS, ...PYTH
  */
 export const PIP_OFFICIAL_MIRRORS: MirrorConfig[] = [
   {
-    key: 'official',
+    key: 'PyPI 官方',
     name: 'PyPI 官方',
     url: 'https://pypi.org/simple/',
     speed: null,
     type: 'official',
     chinaConnectivity: 'poor',
-    description: 'PyPI 官方源，在中国大陆连通性不佳，下载速度慢',
+    description: 'PyPI 官方源',
   },
 ]
 
@@ -128,32 +119,23 @@ export const PIP_OFFICIAL_MIRRORS: MirrorConfig[] = [
  */
 export const PIP_MIRROR_MIRRORS: MirrorConfig[] = [
   {
-    key: 'aliyun',
+    key: '阿里云',
     name: '阿里云',
     url: 'https://mirrors.aliyun.com/pypi/simple/',
     speed: null,
     type: 'mirror',
     chinaConnectivity: 'excellent',
-    description: '阿里云 PyPI 镜像，国内访问速度快',
+    description: '阿里云 PyPI 镜像',
     recommended: true,
   },
   {
-    key: 'tsinghua',
+    key: '清华大学',
     name: '清华大学',
     url: 'https://pypi.tuna.tsinghua.edu.cn/simple/',
     speed: null,
     type: 'mirror',
     chinaConnectivity: 'excellent',
-    description: '清华大学 PyPI 镜像，国内访问速度快',
-  },
-  {
-    key: 'ustc',
-    name: '中科大',
-    url: 'https://pypi.mirrors.ustc.edu.cn/simple/',
-    speed: null,
-    type: 'mirror',
-    chinaConnectivity: 'excellent',
-    description: '中科大 PyPI 镜像，国内访问稳定',
+    description: '清华大学 PyPI 镜像',
   },
 ]
 
@@ -161,6 +143,69 @@ export const PIP_MIRROR_MIRRORS: MirrorConfig[] = [
  * PyPI pip 所有镜像源配置（按类型分组）
  */
 export const PIP_MIRRORS: MirrorConfig[] = [...PIP_MIRROR_MIRRORS, ...PIP_OFFICIAL_MIRRORS]
+
+/**
+ * get-pip.py 官方源配置
+ */
+export const GET_PIP_OFFICIAL_MIRRORS: MirrorConfig[] = [
+  {
+    key: 'PyPA 官方',
+    name: 'PyPA 官方',
+    url: 'https://bootstrap.pypa.io/get-pip.py',
+    speed: null,
+    type: 'official',
+    chinaConnectivity: 'poor',
+    description: 'PyPA 官方 get-pip 脚本',
+  },
+]
+
+/**
+ * get-pip.py 镜像源配置
+ */
+export const GET_PIP_MIRROR_MIRRORS: MirrorConfig[] = [
+  {
+    key: '自建下载站',
+    name: '自建下载站',
+    url: 'https://download.auto-mas.top/d/AUTO-MAS/get-pip.py',
+    speed: null,
+    type: 'mirror',
+    chinaConnectivity: 'excellent',
+    description: '项目自建下载站，国内访问速度快',
+    recommended: true,
+  },
+]
+
+/**
+ * get-pip.py 所有镜像源配置
+ */
+export const GET_PIP_MIRRORS: MirrorConfig[] = [...GET_PIP_MIRROR_MIRRORS, ...GET_PIP_OFFICIAL_MIRRORS]
+
+/**
+ * Git 安装包官方源配置
+ * 注意：目前后端只支持自建下载站，官方源暂不可用
+ */
+export const GIT_PACKAGE_OFFICIAL_MIRRORS: MirrorConfig[] = []
+
+/**
+ * Git 安装包镜像源配置
+ */
+export const GIT_PACKAGE_MIRROR_MIRRORS: MirrorConfig[] = [
+  {
+    key: '自建下载站',
+    name: '自建下载站',
+    url: 'https://download.auto-mas.top/d/AUTO-MAS/git.zip',
+    speed: null,
+    type: 'mirror',
+    chinaConnectivity: 'excellent',
+    description: '项目自建下载站，国内访问速度快',
+    recommended: true,
+  },
+]
+
+/**
+ * Git 安装包所有镜像源配置
+ */
+export const GIT_PACKAGE_MIRRORS: MirrorConfig[] = [...GIT_PACKAGE_MIRROR_MIRRORS, ...GIT_PACKAGE_OFFICIAL_MIRRORS]
 
 /**
  * API 服务端点配置
@@ -192,6 +237,8 @@ export const ALL_MIRRORS: MirrorCategory = {
   git: GIT_MIRRORS,
   python: PYTHON_MIRRORS,
   pip: PIP_MIRRORS,
+  get_pip: GET_PIP_MIRRORS,
+  git_package: GIT_PACKAGE_MIRRORS,
 }
 
 /**

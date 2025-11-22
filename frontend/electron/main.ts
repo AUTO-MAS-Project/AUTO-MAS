@@ -13,26 +13,9 @@ import {
 } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
-import { setMainWindow as setDownloadMainWindow } from './services/downloadService'
 import { checkEnvironment, getAppRoot } from './services/environmentService'
-import {
-  cloneBackend,
-  downloadGit,
-  downloadQuickSource,
-  extractQuickSource,
-  setMainWindow as setGitMainWindow,
-  updateQuickSource,
-} from './services/gitService'
 import { cleanOldLogs, getLogFiles, getLogPath, log, setupLogger } from './services/logService'
-import {
-  downloadPython,
-  downloadQuickEnvironment,
-  extractQuickEnvironment,
-  installDependencies,
-  installPipPackage,
-  setMainWindow as setPythonMainWindow,
-  startBackend,
-} from './services/pythonService'
+import { registerInitializationHandlers, cleanupInitializationResources } from './ipc/initializationHandlers'
 
 // 强制清理相关进程的函数
 async function forceKillRelatedProcesses(): Promise<void> {
@@ -514,11 +497,12 @@ function createWindow() {
   win.on('maximize', saveWindowState)
   win.on('unmaximize', saveWindowState)
 
-  // 设置各个服务的主窗口引用（此处 win 一定存在，可直接传）
-  setDownloadMainWindow(win)
-  setPythonMainWindow(win)
-  setGitMainWindow(win)
-  log.info('主窗口创建完成，服务引用已设置')
+  // 主窗口创建完成
+  log.info('主窗口创建完成')
+
+  // 注册 V2 初始化处理器
+  registerInitializationHandlers(win)
+  log.info('V2 初始化处理器已注册')
 
   // 初始托盘配置（使用文件配置）
   updateTrayVisibility(config)
@@ -778,31 +762,8 @@ ipcMain.handle('check-critical-files', async () => {
   }
 })
 
-// Python相关
-ipcMain.handle('download-python', async (_event, mirror = 'tsinghua') => {
-  const appRoot = getAppRoot()
-  return downloadPython(appRoot, mirror)
-})
-
-ipcMain.handle('install-pip', async () => {
-  const appRoot = getAppRoot()
-  return installPipPackage(appRoot)
-})
-
-ipcMain.handle('install-dependencies', async (_event, mirror = 'tsinghua') => {
-  const appRoot = getAppRoot()
-  return installDependencies(appRoot, mirror)
-})
-
-ipcMain.handle('start-backend', async () => {
-  const appRoot = getAppRoot()
-  return startBackend(appRoot)
-})
-
-ipcMain.handle('stop-backend', async () => {
-  const { stopBackend } = await import('./services/pythonService')
-  return stopBackend()
-})
+// Python相关 - 已迁移到 v2 初始化服务
+// 这些 IPC 处理器已在 initializationHandlers.ts 中实现
 
 // 获取当前主题信息
 ipcMain.handle('get-theme-info', async () => {
@@ -1034,164 +995,11 @@ ipcMain.handle('move-window', async (_event, deltaX: number, deltaY: number) => 
   }
 })
 
-// Git相关
-ipcMain.handle('download-git', async () => {
-  const appRoot = getAppRoot()
-  return downloadGit(appRoot)
-})
+// Git相关 - 已迁移到 v2 初始化服务
+// 这些 IPC 处理器已在 initializationHandlers.ts 中实现
 
-// 快速安装相关
-ipcMain.handle('download-quick-environment', async () => {
-  const appRoot = getAppRoot()
-  return downloadQuickEnvironment(appRoot)
-})
-
-ipcMain.handle('extract-quick-environment', async () => {
-  const appRoot = getAppRoot()
-  return extractQuickEnvironment(appRoot)
-})
-
-ipcMain.handle('download-quick-source', async () => {
-  const appRoot = getAppRoot()
-  return downloadQuickSource(appRoot)
-})
-
-ipcMain.handle('extract-quick-source', async () => {
-  const appRoot = getAppRoot()
-  return extractQuickSource(appRoot)
-})
-
-ipcMain.handle('update-quick-source', async (_event, repoUrl) => {
-  const appRoot = getAppRoot()
-  return updateQuickSource(appRoot, repoUrl)
-})
-
-// 新增的git管理方法
-ipcMain.handle('check-repo-status', async () => {
-  const appRoot = getAppRoot()
-  const { checkRepoStatus } = await import('./services/gitService')
-  return checkRepoStatus(appRoot)
-})
-
-ipcMain.handle('clean-repo', async () => {
-  const appRoot = getAppRoot()
-  const { cleanRepo } = await import('./services/gitService')
-  return cleanRepo(appRoot)
-})
-
-ipcMain.handle('get-repo-info', async () => {
-  const appRoot = getAppRoot()
-  const { getRepoInfo } = await import('./services/gitService')
-  return getRepoInfo(appRoot)
-})
-
-ipcMain.handle('check-git-update', async () => {
-  try {
-    const appRoot = getAppRoot()
-    const repoPath = path.join(appRoot, 'repo')
-
-    // 检查repo是否为Git仓库
-    const gitDir = path.join(repoPath, '.git')
-    if (!fs.existsSync(gitDir)) {
-      log.info('repo不存在或不是Git仓库，需要重新克隆')
-      return { hasUpdate: true, needsClone: true }
-    }
-
-    // 检查Git可执行文件是否存在
-    const gitPath = path.join(appRoot, 'environment', 'git', 'bin', 'git.exe')
-    if (!fs.existsSync(gitPath)) {
-      log.warn('Git可执行文件不存在，需要先安装Git')
-      return { hasUpdate: false, error: 'Git可执行文件不存在' }
-    }
-
-    // 获取Git环境变量
-    const gitEnv = {
-      ...process.env,
-      PATH: `${path.join(appRoot, 'environment', 'git', 'bin')};${path.join(appRoot, 'environment', 'git', 'mingw64', 'bin')};${path.join(appRoot, 'environment', 'git', 'mingw64', 'libexec', 'git-core')};${process.env.PATH}`,
-      GIT_EXEC_PATH: path.join(appRoot, 'environment', 'git', 'mingw64', 'libexec', 'git-core'),
-      HOME: process.env.USERPROFILE || process.env.HOME,
-      GIT_CONFIG_NOSYSTEM: '1',
-      GIT_TERMINAL_PROMPT: '0',
-      GIT_ASKPASS: '',
-    }
-
-    log.info('检查repo中的Git仓库状态...')
-
-    // 获取当前分支名和commit hash
-    const [currentBranch, currentCommit] = await Promise.all([
-      new Promise<string>((resolve, reject) => {
-        const branchProc = spawn(gitPath, ['branch', '--show-current'], {
-          stdio: 'pipe',
-          env: gitEnv,
-          cwd: repoPath,
-        })
-        let output = ''
-        branchProc.stdout?.on('data', data => {
-          output += data.toString()
-        })
-        branchProc.on('close', code => {
-          if (code === 0) {
-            resolve(output.trim())
-          } else {
-            resolve('unknown') // 如果获取失败，使用默认值
-          }
-        })
-        branchProc.on('error', () => resolve('unknown'))
-      }),
-      new Promise<string>((resolve, reject) => {
-        const commitProc = spawn(gitPath, ['rev-parse', 'HEAD'], {
-          stdio: 'pipe',
-          env: gitEnv,
-          cwd: repoPath,
-        })
-        let output = ''
-        commitProc.stdout?.on('data', data => {
-          output += data.toString()
-        })
-        commitProc.on('close', code => {
-          if (code === 0) {
-            resolve(output.trim())
-          } else {
-            resolve('unknown')
-          }
-        })
-        commitProc.on('error', () => resolve('unknown'))
-      }),
-    ])
-
-    log.info(`当前repo状态 - 分支: ${currentBranch}, commit: ${currentCommit.substring(0, 8)}...`)
-
-    // 由于我们使用镜像站更新，且新的更新逻辑会自动处理分支切换和代码同步，
-    // 我们直接返回true让更新流程来处理一切
-    log.info('返回hasUpdate=true，让更新流程处理分支切换和代码同步')
-    return {
-      hasUpdate: true,
-      currentBranch,
-      currentCommit: currentCommit.substring(0, 8),
-      repoExists: true,
-    }
-  } catch (error) {
-    log.error('检查Git更新失败:', error)
-    // 如果检查失败，返回true以触发更新流程
-    return { hasUpdate: true, error: error instanceof Error ? error.message : String(error) }
-  }
-})
-
-ipcMain.handle(
-  'clone-backend',
-  async (_event, repoUrl = 'https://github.com/AUTO-MAS-Project/AUTO-MAS.git') => {
-    const appRoot = getAppRoot()
-    return cloneBackend(appRoot, repoUrl)
-  }
-)
-
-ipcMain.handle(
-  'update-backend',
-  async (_event, repoUrl = 'https://github.com/AUTO-MAS-Project/AUTO-MAS.git') => {
-    const appRoot = getAppRoot()
-    return cloneBackend(appRoot, repoUrl) // 使用相同的逻辑，会自动判断是pull还是clone
-  }
-)
+// Git 更新检查和仓库管理 - 已迁移到 v2 初始化服务
+// 这些 IPC 处理器已在 initializationHandlers.ts 中实现
 
 // 配置文件操作
 ipcMain.handle('save-config', async (_event, config) => {
@@ -1464,6 +1272,14 @@ app.on('before-quit', async event => {
 
     // 清理托盘
     destroyTray()
+
+    // 清理 V2 初始化资源
+    try {
+      await cleanupInitializationResources()
+      log.info('V2 初始化资源清理完成')
+    } catch (e) {
+      log.error('V2 资源清理失败:', e)
+    }
 
     // 立即开始强制清理，不等待优雅关闭
     log.info('开始强制清理所有相关进程')
