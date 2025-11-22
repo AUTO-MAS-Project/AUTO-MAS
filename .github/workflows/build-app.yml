@@ -124,7 +124,7 @@ jobs:
           #define MyAppURL "https://auto-mas.top/"
           #define MyAppExeName "AUTO-MAS.exe"
           #define MyAppPath "${{ github.workspace }}\frontend\dist\win-unpacked"
-          #define OutputDir "${{ github.workspace }}"
+          #define RootPath "${{ github.workspace }}"
 
           [Setup]
           AppId={{D116A92A-E174-4699-B777-61C5FD837B19}
@@ -140,17 +140,17 @@ jobs:
           ArchitecturesAllowed=x64compatible
           ArchitecturesInstallIn64BitMode=x64compatible
           DisableProgramGroupPage=yes
-          LicenseFile={#MyAppPath}\LICENSE
+          LicenseFile={#RootPath}\LICENSE
           PrivilegesRequired=admin
-          OutputDir={#OutputDir}
+          OutputDir={#RootPath}
           OutputBaseFilename=AUTO-MAS-Setup
-          SetupIconFile={#MyAppPath}\res\icons\AUTO-MAS.ico
+          SetupIconFile={#RootPath}\res\icons\AUTO-MAS.ico
           SolidCompression=yes
           WizardStyle=modern
           AppMutex=AUTO_MAA_Installer_Mutex
 
           [Languages]
-          Name: "Chinese"; MessagesFile: "{#MyAppPath}\res\docs\ChineseSimplified.isl"
+          Name: "Chinese"; MessagesFile: "{#RootPath}\res\docs\ChineseSimplified.isl"
           Name: "English"; MessagesFile: "compiler:Default.isl"
 
           [Tasks]
