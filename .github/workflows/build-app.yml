@@ -179,9 +179,19 @@ jobs:
         shell: pwsh
 
       - name: 生成精简安装程序
-        uses: Minionguyjpro/Inno-Setup-Action@v1.2.5
-        with:
-          path: AUTO-MAS.iss
+        run: |
+          choco install --yes inno-setup
+          $iscc = (Get-Command iscc -ErrorAction SilentlyContinue).Path
+          if (-not $iscc) {
+            $iscc = Get-ChildItem "C:\Program Files*" -Recurse -Name "iscc.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($iscc) { $iscc = "C:\$iscc" }
+          }
+          if (-not $iscc -or -not (Test-Path $iscc)) {
+            throw "❌ 未找到 iscc.exe，Inno Setup 安装可能失败。"
+          }
+          Write-Host "🔍 找到 iscc.exe: $iscc"
+          & $iscc /v /O"${{ github.workspace }}" /F"AUTO-MAS-Setup" "AUTO-MAS.iss"
+        shell: pwsh
 
       - name: 生成精简压缩包
         run: |
