@@ -6,6 +6,7 @@ const {
   settings,
   historyRetentionOptions,
   updateSourceOptions,
+  updateChannelOptions,
   voiceTypeOptions,
   handleSettingChange,
   checkUpdate,
@@ -13,6 +14,7 @@ const {
   settings: SettingsData
   historyRetentionOptions: { label: string; value: number }[]
   updateSourceOptions: { label: string; value: string }[]
+  updateChannelOptions: { label: string; value: string }[]
   voiceTypeOptions: { label: string; value: string }[]
   handleSettingChange: (category: keyof SettingsData, key: string, value: any) => Promise<void>
   checkUpdate: () => Promise<void>
@@ -231,7 +233,7 @@ const {
         </a-button>
       </div>
       <a-row :gutter="24">
-        <a-col :span="12">
+        <a-col :span="8">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
               <span class="form-label">自动检查更新</span>
@@ -250,7 +252,7 @@ const {
             </a-select>
           </div>
         </a-col>
-        <a-col :span="12">
+        <a-col :span="8">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
               <span class="form-label">更新源</span>
@@ -264,6 +266,23 @@ const {
               size="large"
               style="width: 100%"
               @change="(value: any) => handleSettingChange('Update', 'Source', value)"
+            />
+          </div>
+        </a-col>
+        <a-col :span="8">
+          <div class="form-item-vertical">
+            <div class="form-label-wrapper">
+              <span class="form-label">更新渠道</span>
+              <a-tooltip title="稳定版：BUG 较少，无法第一时间体验新功能；公测版：包含最新功能，但可能存在较多 BUG">
+                <QuestionCircleOutlined class="help-icon" />
+              </a-tooltip>
+            </div>
+            <a-select
+              v-model:value="settings.Update.Channel"
+              :options="updateChannelOptions"
+              size="large"
+              style="width: 100%"
+              @change="(value: any) => handleSettingChange('Update', 'Channel', value)"
             />
           </div>
         </a-col>
