@@ -123,7 +123,7 @@ jobs:
           #define MyAppPublisher "AUTO-MAS Team"
           #define MyAppURL "https://auto-mas.top/"
           #define MyAppExeName "AUTO-MAS.exe"
-          #define MyAppPath "${{ github.workspace }}\frontend\dist\win-unpacked"
+          #define MyAppPath "${{ github.workspace }}/frontend/dist/win-unpacked"
           #define RootPath "${{ github.workspace }}"
 
           [Setup]
