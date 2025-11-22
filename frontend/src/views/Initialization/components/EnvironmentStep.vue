@@ -100,7 +100,23 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { sortMirrorsBySpeedAndRecommendation, type MirrorConfig } from '@/config/mirrors.ts'
+import type { MirrorConfig } from '@/types/mirror'
+
+/**
+ * 根据速度和推荐度排序镜像源
+ */
+function sortMirrorsBySpeedAndRecommendation(mirrors: MirrorConfig[]): MirrorConfig[] {
+  return [...mirrors].sort((a, b) => {
+    // 推荐的排在前面
+    if (a.recommended && !b.recommended) return -1
+    if (!a.recommended && b.recommended) return 1
+
+    // 然后按速度排序
+    const speedA = a.speed === null || a.speed === undefined ? 9999 : a.speed
+    const speedB = b.speed === null || b.speed === undefined ? 9999 : b.speed
+    return speedA - speedB
+  })
+}
 
 const props = defineProps<{
   title: string
