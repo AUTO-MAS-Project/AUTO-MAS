@@ -3,15 +3,7 @@
  * 负责从云端拉取最新的镜像站配置，如果失败则使用本地兜底配置
  */
 
-import type { MirrorCategory } from '@/config/mirrors'
-
-export interface CloudMirrorConfig {
-  version: string
-  lastUpdated: string
-  mirrors: MirrorCategory
-  apiEndpoints: Record<string, string>
-  downloadLinks: Record<string, string>
-}
+import type { CloudMirrorConfig } from '@/types/mirror'
 
 export class CloudConfigManager {
   private static instance: CloudConfigManager
@@ -20,7 +12,7 @@ export class CloudConfigManager {
   private currentConfig: CloudMirrorConfig | null = null
   private fetchTimeout = 10000 // 10秒超时
 
-  private constructor() {}
+  private constructor() { }
 
   static getInstance(): CloudConfigManager {
     if (!CloudConfigManager.instance) {

@@ -224,7 +224,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { MirrorConfig } from '@/config/mirrors.ts'
+import type { MirrorConfig } from '@/types/mirror'
 
 interface CheckInfo {
   // 环境检查信息（Python/Pip/Git）
