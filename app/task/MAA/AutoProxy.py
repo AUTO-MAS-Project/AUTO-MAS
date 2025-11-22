@@ -577,13 +577,13 @@ class AutoProxyTask(TaskExecuteBase):
         if self.mode == "Annihilation" and "任务出错: 刷理智" in log:
             self.run_book["IfAnnihilationAccomplish"] = True
 
-        if "任务出错: StartUp" in log or "任务出错: 开始唤醒" in log:
-            self.cur_user_item.log_record[self.log_start_time].status = (
-                "MAA未能正确登录PRTS"
-            )
-        elif "任务已全部完成！" in log:
-            if "完成任务: StartUp" in log or "完成任务: 开始唤醒" in log:
-                self.task_dict["WakeUp"] = "False"
+        # if "任务出错: StartUp" in log or "任务出错: 开始唤醒" in log:
+        #     self.cur_user_item.log_record[self.log_start_time].status = (
+        #         "MAA未能正确登录PRTS"
+        #     )
+        if "任务已全部完成！" in log:
+            # if "完成任务: StartUp" in log or "完成任务: 开始唤醒" in log:
+            self.task_dict["WakeUp"] = "False"
             if "完成任务: Recruit" in log or "完成任务: 自动公招" in log:
                 self.task_dict["Recruiting"] = "False"
             if "完成任务: Infrast" in log or "完成任务: 基建换班" in log:
