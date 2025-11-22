@@ -56,6 +56,7 @@ jobs:
           corepack prepare yarn@4.9.1 --activate
           yarn install
           yarn build
+        shell: pwsh
 
       - name: 生成版本信息
         id: generate_version_info
@@ -112,8 +113,10 @@ jobs:
           Remove-Item $tempScript
         shell: pwsh
 
-      - name: 生成安装包配置信息
+      - name: 准备 Inno Setup
         run: |
+          choco install innosetup -y
+          echo "C:\Program Files (x86)\Inno Setup 6" >> $env:GITHUB_PATH
           @"
           #define MyAppName "AUTO-MAS"
           #define MyAppVersion "${{ steps.generate_version_info.outputs.version_tag }}"
@@ -175,13 +178,9 @@ jobs:
           "@ | Out-File -FilePath AUTO-MAS.iss -Encoding UTF8
         shell: pwsh
 
-      - name: 生成精简安装程序
-        uses: Minionguyjpro/Inno-Setup-Action@v1.2.7
-        with:
-          path: AUTO-MAS.iss
-
-      - name: 生成精简压缩包
+      - name: 构建精简安装包
         run: |
+          iscc AUTO-MAS.iss
           Compress-Archive -Path AUTO-MAS-Setup.exe -DestinationPath AUTO-MAS-Lite-Setup-${{ steps.generate_version_info.outputs.version_tag }}-x64.zip -Force
           Compress-Archive -Path .\frontend\dist\win-unpacked\* -DestinationPath AUTO-MAS-Lite-${{ steps.generate_version_info.outputs.version_tag }}-x64.zip -Force
           Remove-Item AUTO-MAS-Setup.exe
@@ -202,13 +201,9 @@ jobs:
         run: Expand-Archive -Path environment.zip -DestinationPath .\frontend\dist\win-unpacked -Force
         shell: pwsh
 
-      - name: 生成完整安装程序
-        uses: Minionguyjpro/Inno-Setup-Action@v1.2.7
-        with:
-          path: AUTO-MAS.iss
-
-      - name: 生成完整压缩包
+      - name: 构建完整安装包
         run: |
+          iscc AUTO-MAS.iss
           Compress-Archive -Path AUTO-MAS-Setup.exe -DestinationPath AUTO-MAS-Full-Setup-${{ steps.generate_version_info.outputs.version_tag }}-x64.zip -Force
           Compress-Archive -Path .\frontend\dist\win-unpacked\* -DestinationPath AUTO-MAS-Full-${{ steps.generate_version_info.outputs.version_tag }}-x64.zip -Force
           Remove-Item AUTO-MAS-Setup.exe
