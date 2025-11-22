@@ -109,7 +109,7 @@ class _UpdateHandler:
                 re.sub(
                     r"^<!--\s*(.*?)\s*-->$",
                     r"\1",
-                    version_info["data"]["release_note"].splitlines()[0],
+                    version_info["data"]["release_note"].splitlines()[0].strip(),
                 )
             )
 
