@@ -58,7 +58,7 @@ jobs:
           corepack enable
           corepack prepare yarn@4.9.1 --activate
           yarn install
-          yarn build:lite
+          yarn build
 
       - name: 检查构建产物
         run: |
