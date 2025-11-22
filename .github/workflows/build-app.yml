@@ -187,10 +187,19 @@ jobs:
           Remove-Item AUTO-MAS-Setup.exe
         shell: pwsh
 
-      - name: 获取完整环境
-        run: |
-          Invoke-WebRequest -Uri https://download.auto-mas.top/d/AUTO-MAS/Environment/environment.zip -OutFile environment.zip
-          Expand-Archive -Path environment.zip -DestinationPath .\frontend\dist\win-unpacked -Force
+      - name: 缓存完整环境
+        id: cache-environment
+        uses: actions/cache@v4
+        with:
+          path: environment.zip
+          key: environment-zip
+
+      - name: 下载完整环境
+        if: steps.cache-environment.outputs.cache-hit != 'true'
+        run: Invoke-WebRequest -Uri https://download.auto-mas.top/d/AUTO-MAS/Environment/environment.zip -OutFile environment.zip
+    
+      - name: 部署完整环境
+        run: Expand-Archive -Path environment.zip -DestinationPath .\frontend\dist\win-unpacked -Force
         shell: pwsh
 
       - name: 生成完整安装程序
