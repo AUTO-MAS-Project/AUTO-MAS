@@ -2,8 +2,8 @@
   <div class="step-panel">
     <h3>镜像源配置</h3>
     <div class="install-section">
-      <p>正在从云端获取镜像源配置...</p>
       <div class="mirror-status">
+        <a-spin v-if="loading" size="large" tip="正在从云端获取镜像源配置..." />
         <a-result
           v-else-if="success"
           status="success"
