@@ -116,6 +116,86 @@ export interface ElectronAPI {
   // 监听下载进度
   onDownloadProgress: (callback: (progress: any) => void) => void
   removeDownloadProgressListener: () => void
+
+  // ==================== V2 初始化 API ====================
+
+  // 单步初始化API
+  v2InitMirrors: () => Promise<{ success: boolean; error?: string }>
+  v2InstallPython: (selectedMirror?: string) => Promise<{ success: boolean; error?: string }>
+  v2InstallPip: (selectedMirror?: string) => Promise<{ success: boolean; error?: string }>
+  v2InstallGit: (selectedMirror?: string) => Promise<{ success: boolean; error?: string }>
+  v2PullRepository: (targetBranch?: string, selectedMirror?: string) => Promise<{ success: boolean; error?: string }>
+  v2InstallDependencies: (selectedMirror?: string) => Promise<{ success: boolean; error?: string; skipped?: boolean }>
+  v2GetMirrors: (type: string) => Promise<any[]>
+
+  // 完整初始化流程（保留用于兼容）
+  v2Initialize: (targetBranch?: string, startBackend?: boolean) => Promise<{
+    success: boolean
+    error?: string
+    completedStages: string[]
+    failedStage?: string
+  }>
+
+  // 仅更新模式
+  v2UpdateOnly: (targetBranch?: string) => Promise<{
+    success: boolean
+    error?: string
+    completedStages: string[]
+    failedStage?: string
+  }>
+
+  // 后端服务管理
+  v2BackendStart: () => Promise<{ success: boolean; error?: string }>
+  v2BackendStop: () => Promise<{ success: boolean; error?: string }>
+  v2BackendRestart: () => Promise<{ success: boolean; error?: string }>
+  v2BackendStatus: () => Promise<{
+    isRunning: boolean
+    pid?: number
+    startTime?: Date
+    wsConnected: boolean
+    lastPingTime?: Date
+    error?: string
+  }>
+
+  // 清理资源
+  v2Cleanup: () => Promise<{ success: boolean }>
+
+  // 监听单步进度
+  onV2PythonProgress: (callback: (progress: any) => void) => void
+  removeV2PythonProgressListener?: () => void
+  onV2PipProgress: (callback: (progress: any) => void) => void
+  removeV2PipProgressListener?: () => void
+  onV2GitProgress: (callback: (progress: any) => void) => void
+  removeV2GitProgressListener?: () => void
+  onV2RepositoryProgress: (callback: (progress: any) => void) => void
+  removeV2RepositoryProgressListener?: () => void
+  onV2DependencyProgress: (callback: (progress: any) => void) => void
+  removeV2DependencyProgressListener?: () => void
+
+  // 监听 V2 初始化进度（保留用于兼容）
+  onV2InitializationProgress: (callback: (progress: {
+    stage: string
+    stageIndex: number
+    totalStages: number
+    progress: number
+    message: string
+  }) => void) => void
+  removeV2InitializationProgressListener?: () => void
+
+  // 监听 V2 后端日志
+  onV2BackendLog: (callback: (log: string) => void) => void
+  removeV2BackendLogListener?: () => void
+
+  // 监听 V2 后端状态
+  onV2BackendStatus: (callback: (status: {
+    isRunning: boolean
+    pid?: number
+    startTime?: Date
+    wsConnected: boolean
+    lastPingTime?: Date
+    error?: string
+  }) => void) => void
+  removeV2BackendStatusListener?: () => void
 }
 
 declare global {
