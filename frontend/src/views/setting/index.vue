@@ -79,6 +79,7 @@ const settings = reactive<SettingsData>({
   Update: {
     IfAutoUpdate: false,
     Source: 'GitHub',
+    Channel: 'Stable',
     ProxyAddress: '',
     MirrorChyanCDK: '',
   },
@@ -106,6 +107,11 @@ const updateSourceOptions = [
   { label: 'GitHub', value: 'GitHub' },
   { label: 'Mirror酱', value: 'MirrorChyan' },
   { label: '自建下载站', value: 'AutoSite' },
+]
+
+const updateChannelOptions = [
+  { label: '稳定版', value: 'Stable' },
+  { label: '公测版', value: 'Beta' },
 ]
 
 const voiceTypeOptions = [
@@ -322,6 +328,7 @@ onMounted(() => {
             :settings="settings"
             :history-retention-options="historyRetentionOptions"
             :update-source-options="updateSourceOptions"
+            :update-channel-options="updateChannelOptions"
             :voice-type-options="voiceTypeOptions"
             :handle-setting-change="handleSettingChange"
             :check-update="checkUpdate"

@@ -12,6 +12,10 @@ export type GlobalConfig_Update = {
      */
     Source?: ('GitHub' | 'MirrorChyan' | 'AutoSite' | null);
     /**
+     * 更新渠道: 稳定版, 测试版
+     */
+    Channel?: ('Stable' | 'Beta' | null);
+    /**
      * 网络代理地址
      */
     ProxyAddress?: (string | null);
