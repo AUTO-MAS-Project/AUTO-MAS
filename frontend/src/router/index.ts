@@ -15,7 +15,7 @@ const routes = [
     path: '/initialization',
     name: 'Initialization',
     component: () => import('../views/Initialization/index.vue'),
-    meta: { title: '初始化' },
+    meta: { title: 'AUTO-MAS 初始化' },
   },
   {
     path: '/home',

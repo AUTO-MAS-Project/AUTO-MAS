@@ -41,6 +41,7 @@ export interface SettingsData {
   Update: {
     IfAutoUpdate: boolean
     Source: string
+    Channel: string
     ProxyAddress: string
     MirrorChyanCDK: string
   }
