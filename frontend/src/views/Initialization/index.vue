@@ -52,7 +52,7 @@ import { setInitialized } from '@/utils/config.ts'
 import { mirrorManager } from '@/utils/mirrorManager.ts'
 import StepPanel from './components/StepPanel.vue'
 import BackendStartStep from './components/BackendStartStep.vue'
-import type { MirrorConfig } from '@/config/mirrors.ts'
+import type { MirrorConfig } from '@/types/mirror'
 
 // ==================== 步骤定义 ====================
 const steps = [

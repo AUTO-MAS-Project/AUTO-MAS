@@ -242,7 +242,7 @@ import { Service } from '@/api/services/Service'
 import NoticeModal from '@/components/NoticeModal.vue'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 import dayjs from 'dayjs'
-import { API_ENDPOINTS } from '@/config/mirrors.ts'
+import { mirrorManager } from '@/utils/mirrorManager'
 
 interface ActivityInfo {
   Tip: string
@@ -386,7 +386,7 @@ const getMaterialImage = (dropName: string) => {
     return ''
   }
   // 直接拼接后端图片接口地址
-  return `${API_ENDPOINTS.local}/api/res/materials/${dropName}.png`
+  return `${mirrorManager.getApiEndpoint('local')}/api/res/materials/${dropName}.png`
 }
 
 const handleImageError = (event: Event) => {

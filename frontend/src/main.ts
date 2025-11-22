@@ -16,7 +16,6 @@ import { mirrorManager } from '@/utils/mirrorManager'
 
 // 导入WebSocket消息监听组件
 import WebSocketMessageListener from '@/components/WebSocketMessageListener.vue'
-import { API_ENDPOINTS } from '@/config/mirrors'
 
 // 检查是否为 popup 路由（对话框窗口）
 const isPopupRoute = window.location.hash.startsWith('#/popup')
@@ -32,7 +31,7 @@ if (isPopupRoute || isDialogWindow) {
   dayjs.locale('zh-cn')
 
   // 配置API基础URL
-  OpenAPI.BASE = API_ENDPOINTS.local
+  OpenAPI.BASE = mirrorManager.getApiEndpoint('local')
 
   // 记录应用启动
   logger.info('前端应用开始初始化')
@@ -54,7 +53,7 @@ const app = createApp(App)
 
 // 提前初始化调度中心逻辑（仅在非 popup 路由和非对话框窗口）
 if (!isPopupRoute && !isDialogWindow) {
-  ;(async () => {
+  ; (async () => {
     try {
       // 动态导入以避免循环引用问题
       const { useSchedulerLogic } = await import('./views/scheduler/useSchedulerLogic')
