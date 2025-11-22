@@ -40,10 +40,6 @@ jobs:
       is_prerelease: ${{ steps.generate_version_info.outputs.is_prerelease }}
       version_changelog: ${{ steps.generate_version_info.outputs.version_changelog }}
 
-    defaults:
-      run:
-        working-directory: frontend
-
     steps:
       - name: 签出代码
         uses: actions/checkout@v4
@@ -55,6 +51,7 @@ jobs:
 
       - name: 构建应用程序
         run: |
+          cd frontend
           corepack enable
           corepack prepare yarn@4.9.1 --activate
           yarn install
@@ -175,25 +172,25 @@ jobs:
               DelTree(ExpandConstant('{app}'), True, True, True);
             end;
           end;
-          "@ | Out-File -FilePath ${{ github.workspace }}/AUTO-MAS.iss -Encoding UTF8
+          "@ | Out-File -FilePath AUTO-MAS.iss -Encoding UTF8
         shell: pwsh
 
       - name: 生成精简安装程序
         uses: Minionguyjpro/Inno-Setup-Action@v1.2.7
         with:
-          path: ${{ github.workspace }}/AUTO-MAS.iss
+          path: AUTO-MAS.iss
 
       - name: 生成精简压缩包
         run: |
-          Compress-Archive -Path ${{ github.workspace }}/AUTO-MAS-Setup.exe -DestinationPath ${{ github.workspace }}/AUTO-MAS-Lite-Setup-${{ steps.generate_version_info.outputs.version_tag }}-x64.zip -Force
-          Compress-Archive -Path ${{ github.workspace }}/frontend/dist/win-unpacked/* -DestinationPath ${{ github.workspace }}/AUTO-MAS-Lite-${{ steps.generate_version_info.outputs.version_tag }}-x64.zip -Force
-          Remove-Item ${{ github.workspace }}/AUTO-MAS-Setup.exe
+          Compress-Archive -Path AUTO-MAS-Setup.exe -DestinationPath AUTO-MAS-Lite-Setup-${{ steps.generate_version_info.outputs.version_tag }}-x64.zip -Force
+          Compress-Archive -Path .\frontend\dist\win-unpacked\* -DestinationPath AUTO-MAS-Lite-${{ steps.generate_version_info.outputs.version_tag }}-x64.zip -Force
+          Remove-Item AUTO-MAS-Setup.exe
         shell: pwsh
 
       - name: 获取完整环境
         run: |
           Invoke-WebRequest -Uri https://download.auto-mas.top/d/AUTO-MAS/Environment/environment.zip -OutFile environment.zip
-          Expand-Archive -Path environment.zip -DestinationPath ${{ github.workspace }}/frontend/dist/win-unpacked -Force
+          Expand-Archive -Path environment.zip -DestinationPath .\frontend\dist\win-unpacked -Force
         shell: pwsh
 
       - name: 生成完整安装程序
@@ -203,16 +200,16 @@ jobs:
 
       - name: 生成完整压缩包
         run: |
-          Compress-Archive -Path ${{ github.workspace }}/AUTO-MAS-Setup.exe -DestinationPath ${{ github.workspace }}/AUTO-MAS-Full-Setup-${{ steps.generate_version_info.outputs.version_tag }}-x64.zip -Force
-          Compress-Archive -Path ${{ github.workspace }}/frontend/dist/win-unpacked/* -DestinationPath ${{ github.workspace }}/AUTO-MAS-Full-${{ steps.generate_version_info.outputs.version_tag }}-x64.zip -Force
-          Remove-Item ${{ github.workspace }}/AUTO-MAS-Setup.exe
+          Compress-Archive -Path AUTO-MAS-Setup.exe -DestinationPath AUTO-MAS-Full-Setup-${{ steps.generate_version_info.outputs.version_tag }}-x64.zip -Force
+          Compress-Archive -Path .\frontend\dist\win-unpacked\* -DestinationPath AUTO-MAS-Full-${{ steps.generate_version_info.outputs.version_tag }}-x64.zip -Force
+          Remove-Item AUTO-MAS-Setup.exe
         shell: pwsh
 
       - name: 上传构建产物
         uses: actions/upload-artifact@v4
         with:
           name: build-artifacts
-          path: ${{ github.workspace }}/AUTO-MAS-*-x64.zip
+          path: AUTO-MAS-*-x64.zip
           retention-days: 30
 
   release:
