@@ -808,6 +808,10 @@ class GlobalConfig(ConfigBase):
         "GitHub",
         OptionsValidator(["GitHub", "MirrorChyan", "AutoSite"]),
     )
+    ## 更新频道
+    Update_Channel = ConfigItem(
+        "Update", "Channel", "Stable", OptionsValidator(["Stable", "Beta"])
+    )
     ## 代理地址
     Update_ProxyAddress = ConfigItem("Update", "ProxyAddress", "")
     ## 镜像站 CDK

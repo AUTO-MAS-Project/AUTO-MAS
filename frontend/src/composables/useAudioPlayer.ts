@@ -1,7 +1,7 @@
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { useSettingsApi } from '@/composables/useSettingsApi'
-import { API_ENDPOINTS } from '@/config/mirrors'
+import { mirrorManager } from '@/utils/mirrorManager'
 
 export function useAudioPlayer() {
   const { getSettings } = useSettingsApi()
@@ -45,7 +45,7 @@ export function useAudioPlayer() {
       stopCurrentAudio()
 
       // 构建音频URL
-      const audioUrl = `${API_ENDPOINTS.local}/api/res/sounds/${soundPath}.wav`
+      const audioUrl = `${mirrorManager.getApiEndpoint('local')}/api/res/sounds/${soundPath}.wav`
 
       // 创建新的音频对象
       const audio = new Audio(audioUrl)
