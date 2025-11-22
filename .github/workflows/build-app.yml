@@ -194,7 +194,7 @@ jobs:
         shell: pwsh
 
       - name: 生成完整安装程序
-        uses: Minionguyjpro/Inno-Setup-Action@v1.2.5
+        uses: Minionguyjpro/Inno-Setup-Action@v1.2.7
         with:
           path: AUTO-MAS.iss
 
