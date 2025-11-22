@@ -670,7 +670,6 @@ onUnmounted(() => {
   align-items: center;
   gap: 20px;
   width: 100%;
-  min-height: 100vh;
   padding: 20px;
   box-sizing: border-box;
   background-color: var(--ant-color-bg-layout);
