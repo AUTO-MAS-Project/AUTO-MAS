@@ -101,7 +101,7 @@ jobs:
               allVersionInfo[key].push(...value);
             }
           }
-          const changelog = versionInfoMarkdown(allVersionInfo);
+          const changelog = `<!--${JSON.stringify(version.version_info, null, 0)}-->\n${versionInfoMarkdown(allVersionInfo)}`;
 
           const outputPath = process.env.GITHUB_OUTPUT;
           fs.appendFileSync(outputPath, ``version_tag=`${versionTag}\n``);
