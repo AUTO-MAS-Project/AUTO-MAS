@@ -1,5 +1,5 @@
 /**
- * 依赖安装服务 V2
+ * 依赖安装服务
  * 重构版本 - 独立实现依赖安装
  */
 
@@ -7,7 +7,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 import * as crypto from 'crypto'
 import { spawn } from 'child_process'
-import { MirrorServiceV2, MirrorSource } from './mirrorService'
+import { MirrorService, MirrorSource } from './mirrorService'
 import { MirrorRotationService, NetworkOperationCallback, NetworkOperationProgress } from './mirrorRotationService'
 
 // ==================== 类型定义 ====================
@@ -40,10 +40,10 @@ export class DependencyService {
     private pythonExe: string
     private requirementsPath: string
     private hashFilePath: string
-    private mirrorService: MirrorServiceV2
+    private mirrorService: MirrorService
     private rotationService: MirrorRotationService
 
-    constructor(appRoot: string, mirrorService: MirrorServiceV2) {
+    constructor(appRoot: string, mirrorService: MirrorService) {
         this.appRoot = appRoot
         this.pythonExe = path.join(appRoot, 'environment', 'python', 'python.exe')
         this.requirementsPath = path.join(appRoot, 'requirements.txt')
