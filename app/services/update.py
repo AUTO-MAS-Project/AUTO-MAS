@@ -37,6 +37,7 @@ from app.core import Config
 from app.models.schema import WebSocketMessage
 from app.utils.constants import MIRROR_ERROR_INFO
 from app.utils.logger import get_logger
+from .system import System
 
 logger = get_logger("更新服务")
 
@@ -75,7 +76,7 @@ class _UpdateHandler:
         # 使用 httpx 异步请求
         async with httpx.AsyncClient(proxy=Config.get_proxy()) as client:
             response = await client.get(
-                f"https://mirrorchyan.com/api/resources/AUTO_MAA/latest?user_agent=AutoMasGui&current_version={current_version}&cdk={Config.get('Update', 'MirrorChyanCDK')}&channel=stable"
+                f"https://mirrorchyan.com/api/resources/AUTO_MAS/latest?user_agent=AutoMasGui&os=win&arch=x64&current_version={current_version}&cdk={Config.get('Update', 'MirrorChyanCDK') if Config.get('Update', 'Source') == 'MirrorChyan' else ''}&channel=beta"
             )
         if response.status_code == 200:
             version_info = response.json()
@@ -108,7 +109,7 @@ class _UpdateHandler:
                 re.sub(
                     r"^<!--\s*(.*?)\s*-->$",
                     r"\1",
-                    version_info["data"]["release_note"].splitlines()[0],
+                    version_info["data"]["release_note"].splitlines()[0].strip(),
                 )
             )
 
@@ -176,13 +177,13 @@ class _UpdateHandler:
 
         if Config.get("Update", "Source") == "GitHub":
 
-            download_url = f"https://github.com/AUTO-MAS-Project/AUTO-MAS/releases/download/{self.remote_version}/AUTO-MAS_{self.remote_version}.zip"
+            download_url = f"https://github.com/AUTO-MAS-Project/AUTO-MAS/releases/download/{self.remote_version}/AUTO-MAS-Lite-Setup-{self.remote_version}-x64.zip"
 
         elif Config.get("Update", "Source") == "MirrorChyan":
 
             if self.mirror_chyan_download_url is None:
                 logger.warning("MirrorChyan 未返回下载链接, 使用自建下载站")
-                download_url = f"https://download.auto-mas.top/d/AUTO-MAS/AUTO-MAS_{self.remote_version}.zip"
+                download_url = f"https://download.auto-mas.top/d/AUTO-MAS/AUTO-MAS-Lite-Setup-{self.remote_version}-x64.zip"
 
             else:
                 # 使用 httpx 获取重定向后的 URL
@@ -195,14 +196,14 @@ class _UpdateHandler:
                             download_url = str(response.url)
                         else:
                             logger.warning("MirrorChyan 重定向失败, 使用自建下载站")
-                            download_url = f"https://download.auto-mas.top/d/AUTO-MAS/AUTO-MAS_{self.remote_version}.zip"
+                            download_url = f"https://download.auto-mas.top/d/AUTO-MAS/AUTO-MAS-Lite-Setup-{self.remote_version}-x64.zip"
                     except Exception as e:
                         logger.warning(
                             f"MirrorChyan 获取下载链接失败: {e}, 使用自建下载站"
                         )
-                        download_url = f"https://download.auto-mas.top/d/AUTO-MAS/AUTO-MAS_{self.remote_version}.zip"
+                        download_url = f"https://download.auto-mas.top/d/AUTO-MAS/AUTO-MAS-Lite-Setup-{self.remote_version}-x64.zip"
         elif Config.get("Update", "Source") == "AutoSite":
-            download_url = f"https://download.auto-mas.top/d/AUTO-MAS/AUTO-MAS_{self.remote_version}.zip"
+            download_url = f"https://download.auto-mas.top/d/AUTO-MAS/AUTO-MAS-Lite-Setup-{self.remote_version}-x64.zip"
 
         else:
             await Config.send_json(
@@ -396,11 +397,20 @@ class _UpdateHandler:
         logger.info("启动更新程序")
         self.is_locked = False
         subprocess.Popen(
-            [Path.cwd() / "AUTO-MAS-Setup.exe"],
+            [
+                Path.cwd() / "AUTO-MAS-Setup.exe",
+                "/SP-",
+                "/SILENT",
+                "/NOCANCEL",
+                "/FORCECLOSEAPPLICATIONS",
+                "/LANG=Chinese",
+                f"/DIR={Path.cwd()}",
+            ],
             creationflags=subprocess.CREATE_NEW_PROCESS_GROUP
             | subprocess.DETACHED_PROCESS
             | subprocess.CREATE_NO_WINDOW,
         )
+        await System.set_power("KillSelf")
 
 
 Updater = _UpdateHandler()
