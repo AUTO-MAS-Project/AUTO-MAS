@@ -414,18 +414,19 @@
                 <template #label>
                   <a-tooltip title="游戏在哪个平台上运行">
                     <span class="form-label">
-                      游戏平台类型
+                      启动方式
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select 
-                  v-model:value="generalConfig.Game.Type" 
+                <a-select
+                  v-model:value="generalConfig.Game.Type"
                   size="large"
                   @change="handleGameTypeChange"
                 >
-                  <a-select-option value="Emulator">安卓模拟器</a-select-option>
+                  <a-select-option value="Emulator">模拟器</a-select-option>
                   <a-select-option value="Client">PC客户端</a-select-option>
+                  <a-select-option value="URL">URL协议(如Starward)</a-select-option>
                 </a-select>
               </a-form-item>
             </a-col>
@@ -485,6 +486,27 @@
                 </a-select>
               </a-form-item>
             </a-col>
+
+            <a-col v-if="generalConfig.Game.Type === 'URL'" :span="8">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip title="自定义协议的URL">
+                    <span class="form-label">
+                      URL地址
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-input-group class="path-input-group">
+                  <a-input
+                    v-model:value="generalConfig.Game.URL"
+                    placeholder="请输入URL参数，如：starward://startgame/xxxx"
+                    size="large"
+                  />
+                </a-input-group>
+              </a-form-item>
+            </a-col>
+
             <a-col v-if="generalConfig.Game.Type === 'Emulator'" :span="8">
               <a-form-item>
                 <template #label>
@@ -524,7 +546,7 @@
             </a-col>
           </a-row>
 
-          <!-- PC客户端独有的第二行配置 -->
+          <!-- PC客户端独有的配置 -->
           <a-row v-if="generalConfig.Game.Type === 'Client'" :gutter="24">
             <a-col :span="8">
               <a-form-item>
@@ -583,6 +605,29 @@
           </a-row>
         </div>
 
+        <!-- 自定义协议独有的选项 -->
+        <a-row v-if="generalConfig.Game.Type === 'URL'" :gutter="24">
+          <a-col :span="8">
+            <a-form-item>
+              <template #label>
+                <a-tooltip
+                  title="进程名称，如StarRail.exe，必须填写否则可能无法正确监测进程状态。开启游戏后，打开任务管理器查看程序详细信息即可获得。"
+                >
+                  <span class="form-label">
+                    进程名称
+                    <QuestionCircleOutlined class="help-icon" />
+                  </span>
+                </a-tooltip>
+              </template>
+              <a-input
+                v-model:value="generalConfig.Game.ProcessName"
+                placeholder="比如 StarRail.exe"
+                size="large"
+                class="modern-input"
+              />
+            </a-form-item>
+          </a-col>
+        </a-row>
         <!-- 运行配置 -->
         <div class="form-section">
           <div class="section-header">
@@ -1056,6 +1101,8 @@ const generalConfig = reactive<GeneralScriptConfig>({
     WaitTime: 0,
     EmulatorId: '',
     EmulatorIndex: '',
+    URL: '',
+    ProcessName: ''
   },
   Info: {
     Name: '',
@@ -1299,15 +1346,27 @@ const handleEmulatorChange = async (emulatorId: string) => {
 const handleGameTypeChange = async (gameType: string) => {
   // 当游戏平台类型改变时，清空相关字段
   if (gameType === 'Emulator') {
-    // 切换到模拟器时，清空PC客户端相关字段
+    // 切换到模拟器时，清空PC客户端和URL相关字段
     generalConfig.Game.Path = '.'
+    generalConfig.Game.URL = ''
     generalConfig.Game.Arguments = ''
     generalConfig.Game.WaitTime = 0
     generalConfig.Game.IfForceClose = false
     // 加载模拟器选项
     await loadEmulatorOptions()
   } else if (gameType === 'Client') {
-    // 切换到PC客户端时，清空模拟器相关字段
+    // 切换到PC客户端时，清空模拟器和URL相关字段
+    generalConfig.Game.URL = ''
+    generalConfig.Game.EmulatorId = ''
+    generalConfig.Game.EmulatorIndex = ''
+    emulatorDeviceOptions.value = []
+    emulatorOptions.value = []
+  } else if (gameType === 'URL') {
+    // 切换到URL时，清空PC客户端和模拟器相关字段
+    generalConfig.Game.Path = '.'
+    generalConfig.Game.Arguments = ''
+    generalConfig.Game.WaitTime = 0
+    generalConfig.Game.IfForceClose = false
     generalConfig.Game.EmulatorId = ''
     generalConfig.Game.EmulatorIndex = ''
     emulatorDeviceOptions.value = []
