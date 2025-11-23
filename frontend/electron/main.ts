@@ -500,9 +500,9 @@ function createWindow() {
   // 主窗口创建完成
   log.info('主窗口创建完成')
 
-  // 注册 V2 初始化处理器
+  // 注册初始化处理器
   registerInitializationHandlers(win)
-  log.info('V2 初始化处理器已注册')
+  log.info('初始化处理器已注册')
 
   // 初始托盘配置（使用文件配置）
   updateTrayVisibility(config)
@@ -762,7 +762,7 @@ ipcMain.handle('check-critical-files', async () => {
   }
 })
 
-// Python相关 - 已迁移到 v2 初始化服务
+// Python相关 - 已迁移到初始化服务
 // 这些 IPC 处理器已在 initializationHandlers.ts 中实现
 
 // 获取当前主题信息
@@ -995,10 +995,10 @@ ipcMain.handle('move-window', async (_event, deltaX: number, deltaY: number) => 
   }
 })
 
-// Git相关 - 已迁移到 v2 初始化服务
+// Git相关 - 已迁移到初始化服务
 // 这些 IPC 处理器已在 initializationHandlers.ts 中实现
 
-// Git 更新检查和仓库管理 - 已迁移到 v2 初始化服务
+// Git 更新检查和仓库管理 - 已迁移到初始化服务
 // 这些 IPC 处理器已在 initializationHandlers.ts 中实现
 
 // 配置文件操作
@@ -1273,12 +1273,12 @@ app.on('before-quit', async event => {
     // 清理托盘
     destroyTray()
 
-    // 清理 V2 初始化资源
+    // 清理初始化资源
     try {
       await cleanupInitializationResources()
-      log.info('V2 初始化资源清理完成')
+      log.info('初始化资源清理完成')
     } catch (e) {
-      log.error('V2 资源清理失败:', e)
+      log.error('资源清理失败:', e)
     }
 
     // 立即开始强制清理，不等待优雅关闭

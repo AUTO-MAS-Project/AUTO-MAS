@@ -1,12 +1,12 @@
 /**
- * 源码拉取服务 V2
+ * 源码拉取服务
  * 重构版本 - 独立实现仓库拉取和部署
  */
 
 import * as fs from 'fs'
 import * as path from 'path'
 import { spawn } from 'child_process'
-import { MirrorServiceV2, MirrorSource } from './mirrorService'
+import { MirrorService, MirrorSource } from './mirrorService'
 import { MirrorRotationService, NetworkOperationCallback, NetworkOperationProgress } from './mirrorRotationService'
 
 // ==================== 类型定义 ====================
@@ -38,11 +38,11 @@ export class RepositoryService {
     private appRoot: string
     private repoPath: string
     private gitExe: string
-    private mirrorService: MirrorServiceV2
+    private mirrorService: MirrorService
     private rotationService: MirrorRotationService
     private targetBranch: string
 
-    constructor(appRoot: string, mirrorService: MirrorServiceV2, targetBranch: string = 'dev') {
+    constructor(appRoot: string, mirrorService: MirrorService, targetBranch: string = 'dev') {
         this.appRoot = appRoot
         this.repoPath = path.join(appRoot, 'repo')
         this.gitExe = path.join(appRoot, 'environment', 'git', 'bin', 'git.exe')

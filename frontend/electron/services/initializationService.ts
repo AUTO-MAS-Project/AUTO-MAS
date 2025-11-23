@@ -1,9 +1,9 @@
 /**
- * 初始化总流程服务 V2
+ * 初始化总流程服务
  * 重构版本 - 协调所有初始化步骤
  */
 
-import { MirrorServiceV2 } from './mirrorService'
+import { MirrorService } from './mirrorService'
 import { PythonInstaller, PipInstaller, GitInstaller } from './environmentService'
 import { RepositoryService } from './repositoryService'
 import { DependencyService } from './dependencyService'
@@ -40,13 +40,13 @@ export interface InitializationResult {
 
 export class InitializationService {
     private appRoot: string
-    private mirrorService: MirrorServiceV2
+    private mirrorService: MirrorService
     private backendService: BackendService
     private targetBranch: string
 
     constructor(appRoot: string, targetBranch: string = 'dev') {
         this.appRoot = appRoot
-        this.mirrorService = new MirrorServiceV2(appRoot)
+        this.mirrorService = new MirrorService(appRoot)
         this.backendService = new BackendService(appRoot)
         this.targetBranch = targetBranch
     }
@@ -400,7 +400,7 @@ export class InitializationService {
     /**
      * 获取镜像源服务实例（用于外部访问）
      */
-    getMirrorService(): MirrorServiceV2 {
+    getMirrorService(): MirrorService {
         return this.mirrorService
     }
 
