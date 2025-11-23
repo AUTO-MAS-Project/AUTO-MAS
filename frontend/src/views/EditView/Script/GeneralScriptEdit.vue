@@ -1102,7 +1102,7 @@ const generalConfig = reactive<GeneralScriptConfig>({
     EmulatorId: '',
     EmulatorIndex: '',
     URL: '',
-    ProcessName: ''
+    ProcessName: '',
   },
   Info: {
     Name: '',
