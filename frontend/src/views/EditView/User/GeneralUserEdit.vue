@@ -386,14 +386,6 @@ import { Service } from '@/api'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn.ts'
 import WebhookManager from '@/components/WebhookManager.vue'
 
-// 扩展 Window 接口以支持 Electron API
-declare global {
-  interface Window {
-    electronAPI: {
-      selectFile: (filters: Array<{ name: string; extensions: string[] }>) => Promise<string[]>
-    }
-  }
-}
 
 const router = useRouter()
 const route = useRoute()
