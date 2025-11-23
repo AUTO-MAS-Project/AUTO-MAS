@@ -76,7 +76,7 @@ class _UpdateHandler:
         # 使用 httpx 异步请求
         async with httpx.AsyncClient(proxy=Config.get_proxy()) as client:
             response = await client.get(
-                f"https://mirrorchyan.com/api/resources/AUTO_MAS/latest?user_agent=AutoMasGui&os=win&arch=x64&current_version={current_version}&cdk={Config.get('Update', 'MirrorChyanCDK') if Config.get('Update', 'Source') == 'MirrorChyan' else ''}&channel=beta"
+                f"https://mirrorchyan.com/api/resources/AUTO_MAS/latest?user_agent=AutoMasGui&os=win&arch=x64&current_version={current_version}&cdk={Config.get('Update', 'MirrorChyanCDK') if Config.get('Update', 'Source') == 'MirrorChyan' else ''}&channel={Config.get('Update', 'Channel')}"
             )
         if response.status_code == 200:
             version_info = response.json()
@@ -184,24 +184,9 @@ class _UpdateHandler:
             if self.mirror_chyan_download_url is None:
                 logger.warning("MirrorChyan 未返回下载链接, 使用自建下载站")
                 download_url = f"https://download.auto-mas.top/d/AUTO-MAS/AUTO-MAS-Lite-Setup-{self.remote_version}-x64.zip"
-
             else:
-                # 使用 httpx 获取重定向后的 URL
-                async with httpx.AsyncClient(
-                    proxy=Config.get_proxy(), follow_redirects=True
-                ) as client:
-                    try:
-                        response = await client.get(self.mirror_chyan_download_url)
-                        if response.status_code == 200:
-                            download_url = str(response.url)
-                        else:
-                            logger.warning("MirrorChyan 重定向失败, 使用自建下载站")
-                            download_url = f"https://download.auto-mas.top/d/AUTO-MAS/AUTO-MAS-Lite-Setup-{self.remote_version}-x64.zip"
-                    except Exception as e:
-                        logger.warning(
-                            f"MirrorChyan 获取下载链接失败: {e}, 使用自建下载站"
-                        )
-                        download_url = f"https://download.auto-mas.top/d/AUTO-MAS/AUTO-MAS-Lite-Setup-{self.remote_version}-x64.zip"
+                download_url = self.mirror_chyan_download_url
+
         elif Config.get("Update", "Source") == "AutoSite":
             download_url = f"https://download.auto-mas.top/d/AUTO-MAS/AUTO-MAS-Lite-Setup-{self.remote_version}-x64.zip"
 
@@ -315,7 +300,7 @@ class _UpdateHandler:
                 if check_times != -1:
                     check_times -= 1
 
-                logger.info(
+                logger.exception(
                     f"下载出错: {download_url}, 错误信息: {e}, 剩余重试次数: {check_times}"
                 )
                 await asyncio.sleep(1)
