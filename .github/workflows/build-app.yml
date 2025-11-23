@@ -62,32 +62,32 @@ jobs:
         id: generate_version_info
         run: |
           $tempScript = "temp_version_script.js"
-          @"
+          '@
           const fs = require('fs');
           const path = require('path');
 
           let versionPath = '../res/version.json';
           if (!fs.existsSync(versionPath)) {
-            versionPath = 'res/version.json';
+          versionPath = 'res/version.json';
           }
           const version = JSON.parse(fs.readFileSync(versionPath, 'utf8'));
 
           function versionText(versionNumb) {
-            while (versionNumb.length < 4) versionNumb.push(0);
-            if (versionNumb[3] === 0) {
-              return ``v`${versionNumb.slice(0, 3).join('.')}``;
-            } else {
-              return ``v`${versionNumb.slice(0, 3).join('.')}-beta.`${versionNumb[3]}``;
-            }
+          while (versionNumb.length < 4) versionNumb.push(0);
+          if (versionNumb[3] === 0) {
+              return `v${versionNumb.slice(0, 3).join('.')}`;
+          } else {
+              return `v${versionNumb.slice(0, 3).join('.')}-beta.${versionNumb[3]}`;
+          }
           }
 
           function versionInfoMarkdown(info) {
-            let md = '';
-            for (const [key, values] of Object.entries(info)) {
-              md += ``## `${key}\n``;
-              for (const v of values) md += ``- `${v}\n``;
-            }
-            return md;
+          let md = '';
+          for (const [key, values] of Object.entries(info)) {
+              md += `## ${key}\n`;
+              for (const v of values) md += `- ${v}\n`;
+          }
+          return md;
           }
 
           const mainVersionNumb = version.main_version.split('.').map(Number);
@@ -96,18 +96,18 @@ jobs:
 
           const allVersionInfo = {};
           for (const v_i of Object.values(version.version_info)) {
-            for (const [key, value] of Object.entries(v_i)) {
+          for (const [key, value] of Object.entries(v_i)) {
               if (!allVersionInfo[key]) allVersionInfo[key] = [];
               allVersionInfo[key].push(...value);
-            }
+          }
           }
           const changelog = `<!--${JSON.stringify(version.version_info, null, 0)}-->\n${versionInfoMarkdown(allVersionInfo)}`;
 
           const outputPath = process.env.GITHUB_OUTPUT;
-          fs.appendFileSync(outputPath, ``version_tag=`${versionTag}\n``);
-          fs.appendFileSync(outputPath, ``is_prerelease=`${isPrerelease}\n``);
-          fs.appendFileSync(outputPath, ``version_changelog<<EOF\n`${changelog}\nEOF\n``);
-          "@ | Out-File -FilePath $tempScript -Encoding UTF8
+          fs.appendFileSync(outputPath, `version_tag=${versionTag}\n`);
+          fs.appendFileSync(outputPath, `is_prerelease=${isPrerelease}\n`);
+          fs.appendFileSync(outputPath, `version_changelog<<EOF\n${changelog}\nEOF\n`);
+          '@ | Out-File -FilePath $tempScript -Encoding UTF8
 
           node $tempScript
           Remove-Item $tempScript
