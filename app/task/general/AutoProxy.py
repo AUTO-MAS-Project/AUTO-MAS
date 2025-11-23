@@ -134,6 +134,8 @@ class AutoProxyTask(TaskExecuteBase):
             self.script_log_path.parent.mkdir(parents=True, exist_ok=True)
             self.script_log_path.touch(exist_ok=True)
         self.game_path = Path(self.script_config.get("Game", "Path"))
+        self.game_url = self.script_config.get("Game", "URL")
+        self.game_process_name = self.script_config.get("Game", "ProcessName")
         self.log_time_range = (
             self.script_config.get("Script", "LogTimeStart") - 1,
             self.script_config.get("Script", "LogTimeEnd"),
@@ -206,14 +208,23 @@ class AutoProxyTask(TaskExecuteBase):
             if self.game_manager is not None:
                 try:
                     if isinstance(self.game_manager, ProcessManager):
-                        logger.info(
-                            f"启动游戏: {self.game_path}, 参数: {self.script_config.get('Game','Arguments')}"
-                        )
-                        await self.game_manager.open_process(
-                            self.game_path,
-                            str(self.script_config.get("Game", "Arguments")).split(" "),
-                            0,
-                        )
+
+                        if self.script_config.get("Game", "Type") == "URL":
+                            logger.info(f"启动游戏: {self.game_process_name}, 参数{self.game_url}")
+                            await self.game_manager.open_protocol(
+                                protocol_uri= self.game_url,
+                                tracking_time=10,
+                                process_name= self.game_process_name
+                            )
+                        else:
+                            logger.info(
+                                f"启动游戏: {self.game_path}, 参数: {self.script_config.get('Game','Arguments')}"
+                            )
+                            await self.game_manager.open_process(
+                                self.game_path,
+                                str(self.script_config.get("Game", "Arguments")).split(" "),
+                                0,
+                            )
                     elif isinstance(self.game_manager, DeviceBase):
                         logger.info(
                             f"启动模拟器: {self.script_config.get('Game', 'EmulatorIndex')}"
