@@ -117,19 +117,19 @@ export interface ElectronAPI {
   onDownloadProgress: (callback: (progress: any) => void) => void
   removeDownloadProgressListener: () => void
 
-  // ==================== V2 初始化 API ====================
+  // ==================== 初始化 API ====================
 
   // 单步初始化API
-  v2InitMirrors: () => Promise<{ success: boolean; error?: string }>
-  v2InstallPython: (selectedMirror?: string) => Promise<{ success: boolean; error?: string }>
-  v2InstallPip: (selectedMirror?: string) => Promise<{ success: boolean; error?: string }>
-  v2InstallGit: (selectedMirror?: string) => Promise<{ success: boolean; error?: string }>
-  v2PullRepository: (targetBranch?: string, selectedMirror?: string) => Promise<{ success: boolean; error?: string }>
-  v2InstallDependencies: (selectedMirror?: string) => Promise<{ success: boolean; error?: string; skipped?: boolean }>
-  v2GetMirrors: (type: string) => Promise<any[]>
+  initMirrors: () => Promise<{ success: boolean; error?: string }>
+  installPython: (selectedMirror?: string) => Promise<{ success: boolean; error?: string }>
+  installPip: (selectedMirror?: string) => Promise<{ success: boolean; error?: string }>
+  installGit: (selectedMirror?: string) => Promise<{ success: boolean; error?: string }>
+  pullRepository: (targetBranch?: string, selectedMirror?: string) => Promise<{ success: boolean; error?: string }>
+  installDependencies: (selectedMirror?: string) => Promise<{ success: boolean; error?: string; skipped?: boolean }>
+  getMirrors: (type: string) => Promise<any[]>
 
   // 完整初始化流程（保留用于兼容）
-  v2Initialize: (targetBranch?: string, startBackend?: boolean) => Promise<{
+  initialize: (targetBranch?: string, startBackend?: boolean) => Promise<{
     success: boolean
     error?: string
     completedStages: string[]
@@ -137,7 +137,7 @@ export interface ElectronAPI {
   }>
 
   // 仅更新模式
-  v2UpdateOnly: (targetBranch?: string) => Promise<{
+  updateOnly: (targetBranch?: string) => Promise<{
     success: boolean
     error?: string
     completedStages: string[]
@@ -145,10 +145,10 @@ export interface ElectronAPI {
   }>
 
   // 后端服务管理
-  v2BackendStart: () => Promise<{ success: boolean; error?: string }>
-  v2BackendStop: () => Promise<{ success: boolean; error?: string }>
-  v2BackendRestart: () => Promise<{ success: boolean; error?: string }>
-  v2BackendStatus: () => Promise<{
+  backendStart: () => Promise<{ success: boolean; error?: string }>
+  backendStop: () => Promise<{ success: boolean; error?: string }>
+  backendRestart: () => Promise<{ success: boolean; error?: string }>
+  backendStatus: () => Promise<{
     isRunning: boolean
     pid?: number
     startTime?: Date
@@ -158,36 +158,36 @@ export interface ElectronAPI {
   }>
 
   // 清理资源
-  v2Cleanup: () => Promise<{ success: boolean }>
+  cleanup: () => Promise<{ success: boolean }>
 
   // 监听单步进度
-  onV2PythonProgress: (callback: (progress: any) => void) => void
-  removeV2PythonProgressListener?: () => void
-  onV2PipProgress: (callback: (progress: any) => void) => void
-  removeV2PipProgressListener?: () => void
-  onV2GitProgress: (callback: (progress: any) => void) => void
-  removeV2GitProgressListener?: () => void
-  onV2RepositoryProgress: (callback: (progress: any) => void) => void
-  removeV2RepositoryProgressListener?: () => void
-  onV2DependencyProgress: (callback: (progress: any) => void) => void
-  removeV2DependencyProgressListener?: () => void
+  onPythonProgress: (callback: (progress: any) => void) => void
+  removePythonProgressListener?: () => void
+  onPipProgress: (callback: (progress: any) => void) => void
+  removePipProgressListener?: () => void
+  onGitProgress: (callback: (progress: any) => void) => void
+  removeGitProgressListener?: () => void
+  onRepositoryProgress: (callback: (progress: any) => void) => void
+  removeRepositoryProgressListener?: () => void
+  onDependencyProgress: (callback: (progress: any) => void) => void
+  removeDependencyProgressListener?: () => void
 
-  // 监听 V2 初始化进度（保留用于兼容）
-  onV2InitializationProgress: (callback: (progress: {
+  // 监听初始化进度（保留用于兼容）
+  onInitializationProgress: (callback: (progress: {
     stage: string
     stageIndex: number
     totalStages: number
     progress: number
     message: string
   }) => void) => void
-  removeV2InitializationProgressListener?: () => void
+  removeInitializationProgressListener?: () => void
 
-  // 监听 V2 后端日志
-  onV2BackendLog: (callback: (log: string) => void) => void
-  removeV2BackendLogListener?: () => void
+  // 监听后端日志
+  onBackendLog: (callback: (log: string) => void) => void
+  removeBackendLogListener?: () => void
 
-  // 监听 V2 后端状态
-  onV2BackendStatus: (callback: (status: {
+  // 监听后端状态
+  onBackendStatus: (callback: (status: {
     isRunning: boolean
     pid?: number
     startTime?: Date
@@ -195,7 +195,7 @@ export interface ElectronAPI {
     lastPingTime?: Date
     error?: string
   }) => void) => void
-  removeV2BackendStatusListener?: () => void
+  removeBackendStatusListener?: () => void
 }
 
 declare global {
