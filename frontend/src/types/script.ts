@@ -38,6 +38,8 @@ export interface GeneralScriptConfig {
     WaitTime: number
     EmulatorId: string
     EmulatorIndex: string
+    URL: string
+    ProcessName: string
   }
   Info: {
     Name: string
