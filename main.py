@@ -85,6 +85,12 @@ def main():
             await System.set_Sleep()
             await System.set_SelfStart()
 
+            if (Path.cwd() / "AUTO-MAS-Setup.exe").exists():
+                try:
+                    (Path.cwd() / "AUTO-MAS-Setup.exe").unlink()
+                except Exception as e:
+                    logger.error(f"删除AUTO-MAS-Setup.exe失败: {e}")
+
             yield
 
             await TaskManager.stop_task("ALL")
