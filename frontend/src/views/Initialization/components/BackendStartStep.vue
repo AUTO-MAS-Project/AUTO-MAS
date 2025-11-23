@@ -116,7 +116,7 @@ async function startBackend() {
     statusMessage.value = '正在启动后端进程...'
     progress.value = 10
     
-    const result = await (window.electronAPI as any).v2BackendStart()
+    const result = await (window.electronAPI as any).backendStart()
     
     if (!result.success) {
       throw new Error(result.error || '后端启动失败')
@@ -125,7 +125,7 @@ async function startBackend() {
     console.log('✅ 后端进程启动成功')
     
     // 获取后端状态
-    const backendStatus = await (window.electronAPI as any).v2BackendStatus()
+    const backendStatus = await (window.electronAPI as any).backendStatus()
     backendPid.value = backendStatus.pid
     
     status.value = 'running'
@@ -177,7 +177,7 @@ async function startBackend() {
     
     try {
       // 尝试获取后端状态来验证连接
-      const finalStatus = await (window.electronAPI as any).v2BackendStatus()
+      const finalStatus = await (window.electronAPI as any).backendStatus()
       if (!finalStatus.isRunning) {
         throw new Error('后端服务未在运行状态')
       }

@@ -8,7 +8,7 @@ import * as fs from 'fs'
 import { app } from 'electron'
 import { spawn } from 'child_process'
 import AdmZip from 'adm-zip'
-import { MirrorServiceV2 } from './mirrorService'
+import { MirrorService } from './mirrorService'
 import { SmartDownloader, ProgressCallback } from './downloadService'
 import { MirrorRotationService, NetworkOperationCallback } from './mirrorRotationService'
 
@@ -73,11 +73,11 @@ export type InstallProgressCallback = (progress: InstallProgress) => void
 
 abstract class BaseEnvironmentInstaller {
   protected appRoot: string
-  protected mirrorService: MirrorServiceV2
+  protected mirrorService: MirrorService
   protected downloader: SmartDownloader
   protected rotationService: MirrorRotationService
 
-  constructor(appRoot: string, mirrorService: MirrorServiceV2) {
+  constructor(appRoot: string, mirrorService: MirrorService) {
     this.appRoot = appRoot
     this.mirrorService = mirrorService
     this.downloader = new SmartDownloader()
@@ -201,7 +201,7 @@ export class PythonInstaller extends BaseEnvironmentInstaller {
   private readonly pythonPath: string
   private readonly pythonExe: string
 
-  constructor(appRoot: string, mirrorService: MirrorServiceV2) {
+  constructor(appRoot: string, mirrorService: MirrorService) {
     super(appRoot, mirrorService)
     this.pythonPath = path.join(appRoot, 'environment', 'python')
     this.pythonExe = path.join(this.pythonPath, 'python.exe')
@@ -348,7 +348,7 @@ export class PipInstaller extends BaseEnvironmentInstaller {
   private readonly pythonExe: string
   private readonly pipExe: string
 
-  constructor(appRoot: string, mirrorService: MirrorServiceV2) {
+  constructor(appRoot: string, mirrorService: MirrorService) {
     super(appRoot, mirrorService)
     this.pythonPath = path.join(appRoot, 'environment', 'python')
     this.pythonExe = path.join(this.pythonPath, 'python.exe')
@@ -505,7 +505,7 @@ export class GitInstaller extends BaseEnvironmentInstaller {
   private readonly gitPath: string
   private readonly gitExe: string
 
-  constructor(appRoot: string, mirrorService: MirrorServiceV2) {
+  constructor(appRoot: string, mirrorService: MirrorService) {
     super(appRoot, mirrorService)
     this.gitPath = path.join(appRoot, 'environment', 'git')
     this.gitExe = path.join(this.gitPath, 'bin', 'git.exe')

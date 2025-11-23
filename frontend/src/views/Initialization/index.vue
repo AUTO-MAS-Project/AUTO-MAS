@@ -290,19 +290,19 @@ async function executeStep(stepKey: string): Promise<boolean> {
 
     switch (stepKey) {
       case 'python':
-        result = await (window.electronAPI as any).v2InstallPython(state.selectedMirror)
+        result = await (window.electronAPI as any).installPython(state.selectedMirror)
         break
       case 'pip':
-        result = await (window.electronAPI as any).v2InstallPip(state.selectedMirror)
+        result = await (window.electronAPI as any).installPip(state.selectedMirror)
         break
       case 'git':
-        result = await (window.electronAPI as any).v2InstallGit(state.selectedMirror)
+        result = await (window.electronAPI as any).installGit(state.selectedMirror)
         break
       case 'repository':
-        result = await (window.electronAPI as any).v2PullRepository(targetBranch.value, state.selectedMirror)
+        result = await (window.electronAPI as any).pullRepository(targetBranch.value, state.selectedMirror)
         break
       case 'dependency':
-        result = await (window.electronAPI as any).v2InstallDependencies(state.selectedMirror)
+        result = await (window.electronAPI as any).installDependencies(state.selectedMirror)
         break
       case 'backend':
         // 后端启动由BackendStartStep组件处理
@@ -352,7 +352,7 @@ async function executeStep(stepKey: string): Promise<boolean> {
 
 // 开始初始化流程
 async function startInitialization() {
-  console.log('开始 V2 初始化流程...')
+  console.log('开始初始化流程...')
   
   try {
     // 依次执行每个步骤
@@ -376,10 +376,10 @@ async function startInitialization() {
     
     // 所有步骤完成
     // 注意：不在这里进入应用，由 handleBackendComplete 处理
-    console.log('✅ V2 初始化流程执行完成，等待后端启动完成...')
+    console.log('✅ 初始化流程执行完成，等待后端启动完成...')
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
-    console.error('❌ V2 初始化失败:', errorMsg)
+    console.error('❌ 初始化失败:', errorMsg)
     stepStatus.value = 'error'
     message.error('初始化失败')
   }
@@ -433,7 +433,7 @@ async function handleSkip() {
     }
     
     // 所有步骤完成
-    console.log('✅ V2 初始化流程执行完成，等待后端启动完成...')
+    console.log('✅ 初始化流程执行完成，等待后端启动完成...')
   }
 }
 
@@ -474,7 +474,7 @@ async function handleRetry() {
       }
       
       // 所有步骤完成
-      console.log('✅ V2 初始化流程执行完成，等待后端启动完成...')
+      console.log('✅ 初始化流程执行完成，等待后端启动完成...')
     }
   }
 }
@@ -536,17 +536,17 @@ function startCountdown(stepKey: string) {
 async function handleForceEnterConfirm() {
   forceEnterVisible.value = false
   console.log('用户确认跳过初始化')
-  await forceEnterApp('V2初始化-强行进入确认')
+  await forceEnterApp('初始化-强行进入确认')
 }
 
 async function enterApp() {
   try {
     await setInitialized(true)
     console.log('设置初始化完成标记，准备进入应用...')
-    await forceEnterApp('V2初始化完成后进入')
+    await forceEnterApp('初始化完成后进入')
   } catch (error) {
     console.error('进入应用失败:', error)
-    await forceEnterApp('V2初始化失败后强制进入')
+    await forceEnterApp('初始化失败后强制进入')
   }
 }
 
@@ -559,15 +559,15 @@ async function loadMirrorConfigs() {
     console.log('正在从后端加载镜像源配置...')
     
     // 先初始化镜像服务
-    await api.v2InitMirrors()
+    await api.initMirrors()
     
     // 并行获取所有镜像源配置
     const [pythonMirrors, getPipMirrors, gitMirrors, repoMirrors, pipMirrors] = await Promise.all([
-      api.v2GetMirrors('python'),      // Python 安装包
-      api.v2GetMirrors('get_pip'),     // get-pip.py 脚本
-      api.v2GetMirrors('git'),         // Git 安装包
-      api.v2GetMirrors('repo'),        // Git 仓库
-      api.v2GetMirrors('pip_mirror'),  // PyPI 镜像源
+      api.getMirrors('python'),      // Python 安装包
+      api.getMirrors('get_pip'),     // get-pip.py 脚本
+      api.getMirrors('git'),         // Git 安装包
+      api.getMirrors('repo'),        // Git 仓库
+      api.getMirrors('pip_mirror'),  // PyPI 镜像源
     ])
     
     // 转换后端镜像源格式为前端格式
@@ -606,7 +606,7 @@ async function loadMirrorConfigs() {
 }
 
 onMounted(async () => {
-  console.log('V2 初始化界面已加载')
+  console.log('初始化界面已加载')
   
   const api = window.electronAPI as any
   
@@ -614,18 +614,18 @@ onMounted(async () => {
   await loadMirrorConfigs()
   
   // 监听各步骤进度
-  api.onV2PythonProgress?.((progress: any) => handleProgress('python', progress))
-  api.onV2PipProgress?.((progress: any) => handleProgress('pip', progress))
-  api.onV2GitProgress?.((progress: any) => handleProgress('git', progress))
-  api.onV2RepositoryProgress?.((progress: any) => handleProgress('repository', progress))
-  api.onV2DependencyProgress?.((progress: any) => handleProgress('dependency', progress))
+  api.onPythonProgress?.((progress: any) => handleProgress('python', progress))
+  api.onPipProgress?.((progress: any) => handleProgress('pip', progress))
+  api.onGitProgress?.((progress: any) => handleProgress('git', progress))
+  api.onRepositoryProgress?.((progress: any) => handleProgress('repository', progress))
+  api.onDependencyProgress?.((progress: any) => handleProgress('dependency', progress))
   
   // 监听后端日志和状态
-  api.onV2BackendLog?.((log: string) => {
+  api.onBackendLog?.((log: string) => {
     console.log(`[Backend] ${log}`)
   })
-  
-  api.onV2BackendStatus?.((status: any) => {
+
+  api.onBackendStatus?.((status: any) => {
     console.log(`[Backend] 状态更新: ${status.isRunning ? '运行中' : '已停止'}`)
     if (status.isRunning) {
       const state = stepStates.value.backend
@@ -642,7 +642,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
-  console.log('V2 初始化界面卸载')
+  console.log('初始化界面卸载')
   
   // 清除倒计时
   if (countdownTimer) {
@@ -653,13 +653,13 @@ onUnmounted(() => {
   const api = window.electronAPI as any
   
   // 移除监听器
-  api.removeV2PythonProgressListener?.()
-  api.removeV2PipProgressListener?.()
-  api.removeV2GitProgressListener?.()
-  api.removeV2RepositoryProgressListener?.()
-  api.removeV2DependencyProgressListener?.()
-  api.removeV2BackendLogListener?.()
-  api.removeV2BackendStatusListener?.()
+  api.removePythonProgressListener?.()
+  api.removePipProgressListener?.()
+  api.removeGitProgressListener?.()
+  api.removeRepositoryProgressListener?.()
+  api.removeDependencyProgressListener?.()
+  api.removeBackendLogListener?.()
+  api.removeBackendStatusListener?.()
 })
 </script>
 
