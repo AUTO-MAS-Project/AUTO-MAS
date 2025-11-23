@@ -147,7 +147,7 @@ jobs:
           SetupIconFile={#RootPath}\res\icons\AUTO-MAS.ico
           SolidCompression=yes
           WizardStyle=modern
-          AppMutex=AUTO_MAA_Installer_Mutex
+          AppMutex=AUTO_MAS_Installer_Mutex
 
           [Languages]
           Name: "Chinese"; MessagesFile: "{#RootPath}\res\docs\ChineseSimplified.isl"
