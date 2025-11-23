@@ -92,7 +92,7 @@ class ProcessManager:
             raise RuntimeError(f"无法启动协议 {protocol_uri}: {e}")
 
         # 等待一小段时间让进程启动
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(3)
 
         # 查找新启动的进程
         after_pids = set(p.pid for p in psutil.process_iter())
