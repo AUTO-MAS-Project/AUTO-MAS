@@ -95,6 +95,20 @@ class GeneralManager(TaskExecuteBase):
                 )
             ).exists():
                 return "未完成游戏配置, 请检查脚本配置中的游戏设置！"
+            elif (
+                Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
+                    "Game", "Type"
+                )
+                == "URL"
+            ) and (
+                not Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
+                    "Game", "URL"
+                )
+                or not Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
+                    "Game", "ProcessName"
+                )
+            ):
+                return "未完成URL配置, 请检查脚本配置中的URL和进程名称设置！"
 
         return "Pass"
 

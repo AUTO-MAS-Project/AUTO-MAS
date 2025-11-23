@@ -467,10 +467,12 @@ class GeneralConfig_Game(BaseModel):
     Enabled: Optional[bool] = Field(
         default=None, description="游戏/模拟器相关功能是否启用"
     )
-    Type: Optional[Literal["Emulator", "Client"]] = Field(
-        default=None, description="类型: 模拟器, PC端"
+    Type: Optional[Literal["Emulator", "Client", "URL"]] = Field(
+        default=None, description="类型: 模拟器, PC端, URL协议"
     )
     Path: Optional[str] = Field(default=None, description="游戏/模拟器程序路径")
+    URL: Optional[str] = Field(default=None, description="自定义协议URL")
+    ProcessName: Optional[str] = Field(default=None, description="游戏进程名称")
     Arguments: Optional[str] = Field(default=None, description="游戏/模拟器启动参数")
     WaitTime: Optional[int] = Field(default=None, description="游戏/模拟器等待启动时间")
     IfForceClose: Optional[bool] = Field(
