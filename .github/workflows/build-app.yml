@@ -230,33 +230,33 @@ jobs:
           name: build-artifacts
           path: artifacts
 
-      # - name: 创建发行版分支与标签
-      #   run: |
-      #     git config --global user.name 'github-actions[bot]'
-      #     git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+      - name: 创建发行版分支与标签
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
 
-      #     git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
 
-      #     NEW_BRANCH="release/${{ needs.build.outputs.version_tag }}"
-      #     TAG_NAME="${{ needs.build.outputs.version_tag }}"
+          NEW_BRANCH="release/${{ needs.build.outputs.version_tag }}"
+          TAG_NAME="${{ needs.build.outputs.version_tag }}"
 
-      #     echo "Creating branch: $NEW_BRANCH"
-      #     echo "Creating tag: $TAG_NAME"
+          echo "Creating branch: $NEW_BRANCH"
+          echo "Creating tag: $TAG_NAME"
 
-      #     git checkout -b "$NEW_BRANCH"
-      #     git push origin "$NEW_BRANCH"
+          git checkout -b "$NEW_BRANCH"
+          git push origin "$NEW_BRANCH"
 
-      #     git tag "$TAG_NAME"
-      #     git push origin "$TAG_NAME"
+          git tag "$TAG_NAME"
+          git push origin "$TAG_NAME"
 
-      # - name: 发布发行版
-      #   uses: softprops/action-gh-release@v2
-      #   with:
-      #     token: ${{ secrets.GITHUB_TOKEN }}
-      #     tag_name: ${{ needs.build.outputs.version_tag }}
-      #     body: ${{ needs.build.outputs.version_changelog }}
-      #     files: artifacts/*
-      #     prerelease: ${{ needs.build.outputs.is_prerelease }}
+      - name: 发布发行版
+        uses: softprops/action-gh-release@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          tag_name: ${{ needs.build.outputs.version_tag }}
+          body: ${{ needs.build.outputs.version_changelog }}
+          files: artifacts/*
+          prerelease: ${{ needs.build.outputs.is_prerelease }}
 
   mirror:
     name: 推送镜像版本
@@ -270,16 +270,16 @@ jobs:
           name: build-artifacts
           path: .
 
-      # - name: 上传精简安装包
-      #   uses: MirrorChyan/uploading-action@v1
-      #   with:
-      #     filetype: local
-      #     filename: AUTO-MAS-Lite-Setup-${{ needs.build.outputs.version_tag }}-x64.zip
-      #     version_name: ${{ needs.build.outputs.version_tag }}
-      #     mirrorchyan_rid: AUTO_MAS
-      #     upload_token: ${{ secrets.MirrorChyanUploadToken }}
-      #     os: windows
-      #     arch: x64
+      - name: 上传精简安装包
+        uses: MirrorChyan/uploading-action@v1
+        with:
+          filetype: local
+          filename: AUTO-MAS-Lite-Setup-${{ needs.build.outputs.version_tag }}-x64.zip
+          version_name: ${{ needs.build.outputs.version_tag }}
+          mirrorchyan_rid: AUTO_MAS
+          upload_token: ${{ secrets.MirrorChyanUploadToken }}
+          os: windows
+          arch: x64
 
       - name: 上传完整安装包
         uses: MirrorChyan/uploading-action@v1
@@ -314,4 +314,4 @@ jobs:
             --arg arch "x64" \
             '{version: $version, res_id: $res_id, channel: $channel, os: $os, arch: $arch}')
 
-          curl -X POST "https://update.auto-mas.top/update" -H "Content-Type: application/json" -d "$PAYLOAD"
+          curl -X POST "${{ secrets.UPDATE_URL }}" -H "Content-Type: application/json" -d "$PAYLOAD"
