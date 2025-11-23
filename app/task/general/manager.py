@@ -132,6 +132,14 @@ class GeneralManager(TaskExecuteBase):
             ):
                 self.game_process_manager = ProcessManager()
 
+            elif (
+                    Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
+                        "Game", "Type"
+                    )
+                    == "URL"
+            ):
+                self.game_process_manager = ProcessManager()
+
         # 备份原始配置
         logger.info(f"记录通用脚本配置文件: {self.script_config_path}")
         self.temp_path.mkdir(parents=True, exist_ok=True)

@@ -21,10 +21,12 @@
 
 
 import asyncio
+import os
 import psutil
 import subprocess
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Optional
 
 
 class ProcessManager:
@@ -61,6 +63,72 @@ class ProcessManager:
         )
 
         await self.start_monitoring(process.pid, tracking_time)
+
+    async def open_protocol(
+        self, protocol_uri: str, tracking_time: int = 60, process_name: Optional[str] = None
+    ) -> None:
+        """
+        使用自定义协议启动程序并监视该进程
+
+        Parameters
+        ----------
+        protocol_uri: 自定义协议URL (例如: "Starward://xxxxx")
+        tracking_time: 子进程追踪持续时间（秒）
+        process_name: 可选，要监视的进程名称（例如: "Starward.exe"）。
+                     如果未提供，将尝试从协议中提取或监视所有新启动的进程
+        """
+
+        # 记录启动前的进程列表
+        before_pids = set(p.pid for p in psutil.process_iter())
+
+        # 使用 os.startfile 或 subprocess 启动协议
+        try:
+            # 在 Windows 上使用 os.startfile 打开协议
+            if os.name == 'nt':
+                os.startfile(protocol_uri)
+            else:
+                raise NotImplementedError("仅支持 Windows 平台的自定义协议启动")
+        except Exception as e:
+            raise RuntimeError(f"无法启动协议 {protocol_uri}: {e}")
+
+        # 等待一小段时间让进程启动
+        await asyncio.sleep(0.5)
+
+        # 查找新启动的进程
+        after_pids = set(p.pid for p in psutil.process_iter())
+        new_pids = after_pids - before_pids
+
+        target_pid = None
+
+        # 如果提供了进程名称，查找匹配的进程
+        if process_name:
+            for pid in new_pids:
+                try:
+                    proc = psutil.Process(pid)
+                    if proc.name().lower() == process_name.lower():
+                        target_pid = pid
+                        break
+                except psutil.NoSuchProcess:
+                    continue
+
+            # 如果在新进程中没找到，在所有进程中查找
+            if target_pid is None:
+                for proc in psutil.process_iter(['pid', 'name']):
+                    try:
+                        if proc.info['name'].lower() == process_name.lower():
+                            target_pid = proc.info['pid']
+                            break
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        continue
+        else:
+            # 如果没有提供进程名称，尝试使用第一个新进程
+            if new_pids:
+                target_pid = list(new_pids)[0]
+
+        if target_pid:
+            await self.start_monitoring(target_pid, tracking_time)
+        else:
+            raise RuntimeError(f"无法找到由协议 {protocol_uri} 启动的进程")
 
     async def start_monitoring(self, pid: int, tracking_time: int = 60) -> None:
         """
