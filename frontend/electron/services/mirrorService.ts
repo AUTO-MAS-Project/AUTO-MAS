@@ -1,5 +1,5 @@
 /**
- * 镜像源管理服务 V2
+ * 镜像源管理服务
  * 重构版本 - 独立实现，不依赖旧有方法
  */
 
@@ -114,7 +114,7 @@ const DEFAULT_MIRROR_CONFIG: MirrorConfig = {
 
 // ==================== 镜像源管理类 ====================
 
-export class MirrorServiceV2 {
+export class MirrorService {
     private mirrorConfig: MirrorConfig
     private localConfigPath: string
 
