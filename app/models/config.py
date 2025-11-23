@@ -676,8 +676,9 @@ class GeneralConfig(ConfigBase):
         self.Game_Enabled = ConfigItem("Game", "Enabled", False, BoolValidator())
         ## 游戏类型
         self.Game_Type = ConfigItem(
-            "Game", "Type", "Emulator", OptionsValidator(["Emulator", "Client"])
+            "Game", "Type", "Emulator", OptionsValidator(["Emulator", "Client", "URL"])
         )
+        self.Game_ProcessName = ConfigItem("Game", "ProcessName", "")
         ## 游戏路径
         self.Game_Path = ConfigItem("Game", "Path", str(Path.cwd()), FileValidator())
         ## 游戏启动参数
