@@ -224,6 +224,9 @@ class _SystemHandler:
             elif mode == "KillSelf" and Config.server is not None:
 
                 logger.info("执行退出主程序操作")
+                await Config.send_websocket_message(
+                    id="Main", type="Signal", data={"RequestClose": "请求前端关闭"}
+                )
                 Config.server.should_exit = True
 
         elif sys.platform.startswith("linux"):
@@ -250,6 +253,9 @@ class _SystemHandler:
             elif mode == "KillSelf" and Config.server is not None:
 
                 logger.info("执行退出主程序操作")
+                await Config.send_websocket_message(
+                    id="Main", type="Signal", data={"RequestClose": "请求前端关闭"}
+                )
                 Config.server.should_exit = True
 
     async def _power_task(
@@ -261,12 +267,6 @@ class _SystemHandler:
         """电源任务"""
 
         await asyncio.sleep(self.countdown)
-        if power_sign == "KillSelf":
-            await Config.send_json(
-                WebSocketMessage(
-                    id="Main", type="Signal", data={"RequestClose": "请求前端关闭"}
-                ).model_dump()
-            )
         await self.set_power(power_sign)
 
     async def start_power_task(self):
