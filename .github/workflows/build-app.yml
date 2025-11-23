@@ -62,7 +62,7 @@ jobs:
         id: generate_version_info
         run: |
           $tempScript = "temp_version_script.js"
-          '@
+          @'
           const fs = require('fs');
           const path = require('path');
 
