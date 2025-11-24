@@ -21,6 +21,7 @@
 #   Contact: DLmaster_361@163.com
 
 
+import os
 import json
 import uuid
 import shlex
@@ -226,6 +227,8 @@ class FileValidator(ConfigValidator):
         # 空字符串直接返回
         if value == "":
             return ""
+        if "%APPDATA%" in value:
+            value = value.replace("%APPDATA%", os.getenv("APPDATA") or "")
         if not Path(value).is_absolute():
             value = Path(value).resolve().as_posix()
         if Path(value).suffix == ".lnk":
@@ -246,11 +249,17 @@ class FolderValidator(ConfigValidator):
             return False
         if not Path(value).is_absolute():
             return False
+        if not Path(value).is_dir():
+            return False
         return True
 
     def correct(self, value: Any) -> str:
         if not isinstance(value, str):
             value = str(Path.cwd())
+        if "%APPDATA%" in value:
+            value = value.replace("%APPDATA%", os.getenv("APPDATA") or "")
+        if not Path(value).is_dir():
+            value = Path(value).with_stem("")
         return Path(value).resolve().as_posix()
 
 
