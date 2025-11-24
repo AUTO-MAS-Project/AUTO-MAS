@@ -69,7 +69,11 @@ const currentStepIndex = ref(0)
 const stepStatus = ref<'wait' | 'process' | 'finish' | 'error'>('process')
 const initCompleted = ref(false)
 const forceEnterVisible = ref(false)
-const targetBranch = ref('dev')
+const isDev = import.meta.env.DEV
+const appVersion = import.meta.env.VITE_APP_VERSION
+const targetBranch = ref(isDev ? 'dev' : `release/${appVersion}`)
+
+console.log(`当前环境: ${isDev ? '开发环境' : '生产环境'}, 目标分支: ${targetBranch.value}`)
 
 // 各步骤状态
 interface StepState {
