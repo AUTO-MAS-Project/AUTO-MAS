@@ -244,7 +244,15 @@ onUnmounted(() => {
 <style scoped>
 .step-panel {
   padding: 20px;
-  min-height: 300px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.step-panel * {
+  box-sizing: border-box;
 }
 
 .step-panel h3 {
@@ -258,6 +266,10 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 20px;
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
 }
 
 .start-progress {
@@ -266,6 +278,11 @@ onUnmounted(() => {
   align-items: center;
   gap: 16px;
   padding: 40px 0;
+}
+
+.start-progress :deep(.ant-progress) {
+  width: 98%;
+  min-width: 200px;
 }
 
 .status-text {
@@ -280,8 +297,10 @@ onUnmounted(() => {
 
 .status-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 16px;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .status-item {
