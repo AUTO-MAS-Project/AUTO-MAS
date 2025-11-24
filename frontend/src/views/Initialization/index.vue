@@ -705,10 +705,15 @@ onUnmounted(() => {
   border: 1px solid var(--ant-color-border-secondary);
   border-radius: 8px;
   padding: 24px;
-  min-height: 400px;
+  /* min-height: 400px; Remove fixed min-height to allow shrinking on small screens */
+  flex: 1; /* Take available vertical space */
+  min-height: 0; /* Allow shrinking below content size */
   width: 100%;
   max-width: 1000px;
   box-sizing: border-box;
+  display: flex; /* Enable flex for children (StepPanel) */
+  flex-direction: column;
+  overflow: hidden; /* Ensure content stays within border */
 }
 
 .step-actions {

@@ -221,7 +221,9 @@ const handleSettingChange = async (category: keyof SettingsData, key: string, va
 }
 
 // 主题
-const handleThemeModeChange = (e: any) => setThemeMode(e.target.value as ThemeMode)
+const handleThemeModeChange = (value: SelectValue) => {
+  if (typeof value === 'string') setThemeMode(value as ThemeMode)
+}
 const handleThemeColorChange = (value: SelectValue) => {
   if (typeof value === 'string') setThemeColor(value as ThemeColor)
 }
