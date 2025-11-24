@@ -22,6 +22,7 @@
 
 import os
 import re
+import sys
 import httpx
 import shutil
 import asyncio
@@ -698,10 +699,12 @@ class AppConfig(GlobalConfig):
                         Path(confg["Info"]["RootPath"])
                     )
                 )
-            if Path(confg["Script"][path]).is_relative_to(Path("%APPDATA%")):
+            if sys.platform == "win32" and Path(confg["Script"][path]).is_relative_to(
+                Path(os.environ["APPDATA"])
+            ):
                 confg["Script"][
                     path
-                ] = f"%APPDATA%/{Path(confg["Script"][path]).relative_to(Path("%APPDATA%"))}"
+                ] = f"%APPDATA%/{Path(confg["Script"][path]).relative_to(Path(os.environ["APPDATA"]))}"
         confg["Info"]["RootPath"] = str(Path(r"C:/脚本根目录"))
 
         return confg
