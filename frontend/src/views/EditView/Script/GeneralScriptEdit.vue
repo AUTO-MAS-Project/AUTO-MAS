@@ -953,6 +953,9 @@ const pathUtils = {
   },
 }
 
+// AppData 路径
+const appDataPath = ref('')
+
 // 路径验证函数
 const validatePath = (rootPath: string, targetPath: string, pathName: string): boolean => {
   if (!targetPath || targetPath === '.') return true
@@ -961,8 +964,17 @@ const validatePath = (rootPath: string, targetPath: string, pathName: string): b
     return false
   }
 
-  if (!pathUtils.isSubPath(rootPath, targetPath)) {
-    message.error(`${pathName}必须是脚本根目录的子路径`)
+  // 检查是否在根目录下
+  const isUnderRoot = pathUtils.isSubPath(rootPath, targetPath)
+  
+  // 检查是否在 AppData 下
+  let isUnderAppData = false
+  if (appDataPath.value) {
+    isUnderAppData = pathUtils.isSubPath(appDataPath.value, targetPath)
+  }
+
+  if (!isUnderRoot && !isUnderAppData) {
+    message.error(`${pathName}必须是脚本根目录或 AppData 目录的子路径`)
     return false
   }
 
@@ -1209,6 +1221,15 @@ watch(
 )
 
 onMounted(async () => {
+  // 获取 AppData 路径
+  if (window.electronAPI) {
+    try {
+      appDataPath.value = await window.electronAPI.getAppPath('appData')
+    } catch (error) {
+      console.error('获取 AppData 路径失败:', error)
+    }
+  }
+
   await loadScript()
   // 只有当游戏平台类型为模拟器时才加载模拟器选项
   if (generalConfig.Game.Type === 'Emulator') {

@@ -832,6 +832,16 @@ ipcMain.handle('get-theme-info', async () => {
   }
 })
 
+// 获取应用路径
+ipcMain.handle('get-app-path', async (_event, name: any) => {
+  try {
+    return app.getPath(name)
+  } catch (error) {
+    log.error(`获取路径 ${name} 失败:`, error)
+    return ''
+  }
+})
+
 // 获取对话框专用的主题信息
 ipcMain.handle('get-theme', async () => {
   try {
