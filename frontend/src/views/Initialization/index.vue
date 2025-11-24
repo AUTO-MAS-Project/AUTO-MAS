@@ -436,8 +436,14 @@ async function handleSkip() {
       }
     }
     
-    // 所有步骤完成
-    console.log('✅ 初始化流程执行完成，等待后端启动完成...')
+    // 如果跳过的步骤是后端步骤，或者我们已经完成了所有步骤
+    if (stepKey === 'backend' || currentStepIndex.value === steps.length - 1) {
+      console.log('Backend step skipped or all steps completed. Entering app...')
+      enterApp()
+    } else {
+      // 所有步骤完成
+      console.log('✅ 初始化流程执行完成，等待后端启动完成...')
+    }
   }
 }
 
