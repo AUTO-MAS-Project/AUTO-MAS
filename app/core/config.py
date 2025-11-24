@@ -591,19 +591,7 @@ class AppConfig(GlobalConfig):
             ignore_multi_config=True, if_decrypt=False
         )
 
-        # 移除配置中可能存在的隐私信息
-        temp["Info"]["Name"] = Path(file_path).stem
-        for path in ["ScriptPath", "ConfigPath", "LogPath"]:
-            if Path(temp["Script"][path]).is_relative_to(
-                Path(temp["Info"]["RootPath"])
-            ):
-                temp["Script"][path] = str(
-                    Path(r"C:/脚本根目录")
-                    / Path(temp["Script"][path]).relative_to(
-                        Path(temp["Info"]["RootPath"])
-                    )
-                )
-        temp["Info"]["RootPath"] = str(Path(r"C:/脚本根目录"))
+        temp = await self.remove_privacy_info(temp, Path(file_path).stem)
 
         file_path.write_text(
             json.dumps(temp, ensure_ascii=False, indent=4), encoding="utf-8"
@@ -666,19 +654,7 @@ class AppConfig(GlobalConfig):
             ignore_multi_config=True, if_decrypt=False
         )
 
-        # 移除配置中可能存在的隐私信息
-        temp["Info"]["Name"] = config_name
-        for path in ["ScriptPath", "ConfigPath", "LogPath"]:
-            if Path(temp["Script"][path]).is_relative_to(
-                Path(temp["Info"]["RootPath"])
-            ):
-                temp["Script"][path] = str(
-                    Path(r"C:/脚本根目录")
-                    / Path(temp["Script"][path]).relative_to(
-                        Path(temp["Info"]["RootPath"])
-                    )
-                )
-        temp["Info"]["RootPath"] = str(Path(r"C:/脚本根目录"))
+        temp = await self.remove_privacy_info(temp, config_name)
 
         files = {
             "file": (
@@ -707,6 +683,28 @@ class AppConfig(GlobalConfig):
             except httpx.RequestError as e:
                 logger.error(f"无法上传配置到 AUTO-MAS 服务器: {e}")
                 raise ConnectionError(f"无法上传配置到 AUTO-MAS 服务器: {e}")
+
+    async def remove_privacy_info(self, confg: dict, name: str) -> dict:
+        """移除配置中可能存在的隐私信息"""
+
+        confg["Info"]["Name"] = name
+        for path in ["ScriptPath", "ConfigPath", "LogPath"]:
+            if Path(confg["Script"][path]).is_relative_to(
+                Path(confg["Info"]["RootPath"])
+            ):
+                confg["Script"][path] = str(
+                    Path(r"C:/脚本根目录")
+                    / Path(confg["Script"][path]).relative_to(
+                        Path(confg["Info"]["RootPath"])
+                    )
+                )
+            if Path(confg["Script"][path]).is_relative_to(Path("%APPDATA%")):
+                confg["Script"][
+                    path
+                ] = f"%APPDATA%/{Path(confg["Script"][path]).relative_to(Path("%APPDATA%"))}"
+        confg["Info"]["RootPath"] = str(Path(r"C:/脚本根目录"))
+
+        return confg
 
     async def get_user(
         self, script_id: str, user_id: Optional[str]

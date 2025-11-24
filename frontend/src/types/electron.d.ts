@@ -112,6 +112,7 @@ export interface ElectronAPI {
     isDark: boolean
     primaryColor: string
   }>
+  getAppPath: (name: string) => Promise<string>
 
   // 监听下载进度
   onDownloadProgress: (callback: (progress: any) => void) => void

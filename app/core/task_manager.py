@@ -26,7 +26,6 @@ from typing import Dict, Literal
 
 from .config import Config, MaaConfig, GeneralConfig
 from app.services import System
-from app.models.schema import WebSocketMessage
 from app.models.task import TaskItem, ScriptItem, UserItem, TaskExecuteBase
 from app.utils import get_logger
 from app.task import MaaManager, GeneralManager
@@ -177,10 +176,8 @@ class Task(TaskExecuteBase):
                 Config.power_sign = Config.QueueConfig[
                     uuid.UUID(self.task_info.queue_id)
                 ].get("Info", "AfterAccomplish")
-                await Config.send_json(
-                    WebSocketMessage(
-                        id="Main", type="Update", data={"PowerSign": Config.power_sign}
-                    ).model_dump()
+                await Config.send_websocket_message(
+                    id="Main", type="Update", data={"PowerSign": Config.power_sign}
                 )
 
     async def on_crash(self, e: Exception) -> None:
@@ -312,10 +309,8 @@ class _TaskManager:
             if queue.get("Info", "StartUpEnabled"):
                 logger.info(f"启动时需要运行的队列：{uid}")
                 task_id = await TaskManager.add_task("自动代理", str(uid))
-                await Config.send_json(
-                    WebSocketMessage(
-                        id="TaskManager", type="Signal", data={"newTask": str(task_id)}
-                    ).model_dump()
+                await Config.send_websocket_message(
+                    id="TaskManager", type="Signal", data={"newTask": str(task_id)}
                 )
 
         logger.success("启动时任务开始运行")

@@ -90,6 +90,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 主题信息获取
   getThemeInfo: () => ipcRenderer.invoke('get-theme-info'),
   getTheme: () => ipcRenderer.invoke('get-theme'),
+  getAppPath: (name: string) => ipcRenderer.invoke('get-app-path', name),
 
   // 监听下载进度
   onDownloadProgress: (callback: (progress: any) => void) => {

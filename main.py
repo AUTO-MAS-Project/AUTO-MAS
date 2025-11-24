@@ -106,12 +106,6 @@ def main():
 
             await Matomo.close()
 
-            await Config.send_json(
-                WebSocketMessage(
-                    id="Main", type="Signal", data={"Closed": "后端已安全关闭"}
-                ).model_dump()
-            )
-
             logger.info("AUTO-MAS 后端程序关闭")
 
         from fastapi.middleware.cors import CORSMiddleware
