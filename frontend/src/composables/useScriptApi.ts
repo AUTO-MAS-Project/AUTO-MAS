@@ -1,6 +1,6 @@
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
-import { type GeneralConfig, type MaaConfig, ScriptCreateIn, Service } from '@/api'
+import { type GeneralConfig, type MaaConfig, ScriptCreateIn, type ScriptReorderIn, Service } from '@/api'
 import type { ScriptDetail, ScriptType } from '@/types/script'
 
 export function useScriptApi() {
@@ -597,6 +597,37 @@ export function useScriptApi() {
     }
   }
 
+  // 重新排序脚本
+  const reorderScript = async (scriptIds: string[]): Promise<boolean> => {
+    // loading.value = true // 排序通常不需要全屏loading，或者可以使用局部loading
+    error.value = null
+
+    try {
+      const requestData: ScriptReorderIn = {
+        indexList: scriptIds,
+      }
+
+      const response = await Service.reorderScriptApiScriptsOrderPost(requestData)
+
+      if (response.code !== 200) {
+        const errorMsg = response.message || '脚本排序失败'
+        message.error(errorMsg)
+        throw new Error(errorMsg)
+      }
+
+      return true
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : '脚本排序失败'
+      error.value = errorMsg
+      if (!err.message?.includes('HTTP error')) {
+        message.error(errorMsg)
+      }
+      return false
+    } finally {
+      // loading.value = false
+    }
+  }
+
   return {
     loading,
     error,
@@ -606,5 +637,6 @@ export function useScriptApi() {
     getScript,
     deleteScript,
     updateScript,
+    reorderScript,
   }
 }

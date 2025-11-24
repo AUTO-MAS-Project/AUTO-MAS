@@ -1,7 +1,7 @@
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { Service } from '@/api'
-import type { UserInBase, UserCreateOut, UserUpdateIn, UserDeleteIn, UserGetIn } from '@/api'
+import type { UserInBase, UserCreateOut, UserUpdateIn, UserDeleteIn, UserGetIn, UserReorderIn } from '@/api'
 
 export function useUserApi() {
   const loading = ref(false)
@@ -140,6 +140,38 @@ export function useUserApi() {
     }
   }
 
+  // 重新排序用户
+  const reorderUser = async (scriptId: string, userIds: string[]): Promise<boolean> => {
+    // loading.value = true
+    error.value = null
+
+    try {
+      const requestData: UserReorderIn = {
+        scriptId,
+        indexList: userIds,
+      }
+
+      const response = await Service.reorderUserApiScriptsUserOrderPost(requestData)
+
+      if (response.code !== 200) {
+        const errorMsg = response.message || '用户排序失败'
+        message.error(errorMsg)
+        throw new Error(errorMsg)
+      }
+
+      return true
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : '用户排序失败'
+      error.value = errorMsg
+      if (!err.message?.includes('HTTP error')) {
+        message.error(errorMsg)
+      }
+      return false
+    } finally {
+      // loading.value = false
+    }
+  }
+
   return {
     loading,
     error,
@@ -147,5 +179,6 @@ export function useUserApi() {
     getUsers,
     updateUser,
     deleteUser,
+    reorderUser,
   }
 }
