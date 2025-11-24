@@ -148,6 +148,7 @@ class MumuManager(DeviceBase):
             ):
                 await self.setVisible(idx, False)
             elif status == DeviceStatus.ONLINE:
+                await asyncio.sleep(3)  # 等待模拟器的 ADB 等服务完全启动
                 return (await self.getInfo(idx))[idx]
             await asyncio.sleep(0.1)
         else:

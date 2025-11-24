@@ -149,6 +149,7 @@ class LDManager(DeviceBase):
             if status in [DeviceStatus.ERROR, DeviceStatus.UNKNOWN]:
                 raise RuntimeError(f"模拟器{idx}启动失败, 状态码: {status}")
             if status == DeviceStatus.ONLINE:
+                await asyncio.sleep(3)  # 等待模拟器的 ADB 等服务完全启动
                 return (await self.getInfo(idx))[idx]
 
             await asyncio.sleep(0.1)
