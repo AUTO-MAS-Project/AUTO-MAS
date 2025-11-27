@@ -14,7 +14,7 @@ export type GlobalConfig_Update = {
     /**
      * 更新渠道: 稳定版, 测试版
      */
-    Channel?: ('Stable' | 'Beta' | null);
+    Channel?: ('stable' | 'beta' | null);
     /**
      * 网络代理地址
      */

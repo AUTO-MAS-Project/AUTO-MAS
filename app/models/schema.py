@@ -187,7 +187,7 @@ class GlobalConfig_Update(BaseModel):
     Source: Optional[Literal["GitHub", "MirrorChyan", "AutoSite"]] = Field(
         default=None, description="更新源: GitHub源, Mirror酱源, 自建源"
     )
-    Channel: Optional[Literal["Stable", "Beta"]] = Field(
+    Channel: Optional[Literal["stable", "beta"]] = Field(
         default=None, description="更新渠道: 稳定版, 测试版"
     )
     ProxyAddress: Optional[str] = Field(default=None, description="网络代理地址")

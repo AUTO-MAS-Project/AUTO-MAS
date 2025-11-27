@@ -814,7 +814,7 @@ class GlobalConfig(ConfigBase):
     )
     ## 更新频道
     Update_Channel = ConfigItem(
-        "Update", "Channel", "Stable", OptionsValidator(["Stable", "Beta"])
+        "Update", "Channel", "stable", OptionsValidator(["stable", "beta"])
     )
     ## 代理地址
     Update_ProxyAddress = ConfigItem("Update", "ProxyAddress", "")
