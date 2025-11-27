@@ -110,8 +110,8 @@ const updateSourceOptions = [
 ]
 
 const updateChannelOptions = [
-  { label: '稳定版', value: 'Stable' },
-  { label: '公测版', value: 'Beta' },
+  { label: '稳定版', value: 'stable' },
+  { label: '公测版', value: 'beta' },
 ]
 
 const voiceTypeOptions = [
