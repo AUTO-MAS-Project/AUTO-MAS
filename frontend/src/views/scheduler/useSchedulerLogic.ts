@@ -63,12 +63,8 @@ export function useSchedulerLogic() {
   const taskOptionsLoading = ref(false)
   const taskOptions = ref<ComboBoxItem[]>([])
 
-  // 使用 VueUse 的 useLocalStorage 替代手动的 localStorage 操作
-  // 电源操作状态持久化到 localStorage
-  const powerAction = useLocalStorage<PowerIn.signal>(
-    'scheduler-power-action',
-    PowerIn.signal.NO_ACTION
-  )
+  // 电源操作状态
+  const powerAction = ref<PowerIn.signal>(PowerIn.signal.NO_ACTION)
   // 注意：电源倒计时弹窗已移至全局组件 GlobalPowerCountdown.vue
   // 这里保留引用以避免破坏现有代码，但实际功能由全局组件处理
   const powerCountdownVisible = ref(false)
