@@ -29,6 +29,7 @@ import type { PlanGetOut } from '../models/PlanGetOut';
 import type { PlanReorderIn } from '../models/PlanReorderIn';
 import type { PlanUpdateIn } from '../models/PlanUpdateIn';
 import type { PowerIn } from '../models/PowerIn';
+import type { PowerOut } from '../models/PowerOut';
 import type { QueueCreateOut } from '../models/QueueCreateOut';
 import type { QueueDeleteIn } from '../models/QueueDeleteIn';
 import type { QueueGetIn } from '../models/QueueGetIn';
@@ -1178,6 +1179,17 @@ export class Service {
             errors: {
                 422: `Validation Error`,
             },
+        });
+    }
+    /**
+     * 获取电源标志
+     * @returns PowerOut Successful Response
+     * @throws ApiError
+     */
+    public static getPowerApiDispatchGetPowerPost(): CancelablePromise<PowerOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/dispatch/get/power',
         });
     }
     /**

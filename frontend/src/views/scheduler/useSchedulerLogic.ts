@@ -762,6 +762,34 @@ export function useSchedulerLogic() {
     }
   }
 
+  // 获取电源状态
+  const getPowerState = async () => {
+    try {
+      const response = await Service.getPowerApiDispatchGetPowerPost()
+      if (response.code === 200 && response.signal) {
+        // 将后端返回的 PowerOut.signal 转换为 PowerIn.signal
+        const signalMap: Record<string, PowerIn.signal> = {
+          'NoAction': PowerIn.signal.NO_ACTION,
+          'KillSelf': PowerIn.signal.KILL_SELF,
+          'Sleep': PowerIn.signal.SLEEP,
+          'Hibernate': PowerIn.signal.HIBERNATE,
+          'Shutdown': PowerIn.signal.SHUTDOWN,
+          'ShutdownForce': PowerIn.signal.SHUTDOWN_FORCE,
+        }
+        const mappedSignal = signalMap[response.signal]
+        if (mappedSignal) {
+          powerAction.value = mappedSignal
+          console.log('[Scheduler] 已从后端获取电源状态:', mappedSignal)
+        } else {
+          console.warn('[Scheduler] 未知的电源信号:', response.signal)
+        }
+      }
+    } catch (error) {
+      console.error('[Scheduler] 获取电源状态失败:', error)
+      // 失败时不显示错误消息，使用默认值
+    }
+  }
+
   // 初始化函数
   const initialize = () => {
     // 设置全局WebSocket的消息处理函数
@@ -769,6 +797,9 @@ export function useSchedulerLogic() {
     ExternalWSHandlers.taskManagerMessage = handleTaskManagerMessage
     ExternalWSHandlers.mainMessage = handleMainMessage
     console.log('[Scheduler] 已设置全局WebSocket消息处理函数')
+
+    // 获取后端当前的电源状态
+    getPowerState()
 
     // 注册 UI hooks 到 schedulerHandlers，使其能在 schedulerHandlers 检测到 pending 时回放到当前 UI
     try {
@@ -951,6 +982,7 @@ export function useSchedulerLogic() {
     // 初始化与清理
     initialize,
     loadTaskOptions,
+    getPowerState,
     cleanup,
 
     // 任务总览面板引用管理

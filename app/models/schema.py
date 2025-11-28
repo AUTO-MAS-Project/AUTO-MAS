@@ -936,6 +936,12 @@ class PowerIn(BaseModel):
     ] = Field(..., description="电源操作信号")
 
 
+class PowerOut(OutBase):
+    signal: Literal[
+        "NoAction", "Shutdown", "ShutdownForce", "Hibernate", "Sleep", "KillSelf"
+    ] = Field(..., description="电源操作信号")
+
+
 class HistorySearchIn(BaseModel):
     mode: Literal["按日合并", "按周合并", "按月合并"] = Field(
         ..., description="合并模式"
