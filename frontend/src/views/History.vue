@@ -81,7 +81,7 @@
   </div>
 
   <!-- 历史记录内容区域 -->
-  <div class="history-content">
+  <div>
     <a-spin :spinning="searchLoading">
       <div v-if="historyData.length === 0 && !searchLoading" class="empty-state">
         <img src="@/assets/NoData.png" alt="无数据" class="empty-image" />
@@ -842,10 +842,7 @@ const buttonFixedStyle = { width: '28px', height: '28px', padding: 0 }
   margin-bottom: 24px;
 }
 
-.history-content {
-  height: 53vh;
-  overflow: auto;
-}
+
 
 .empty-state {
   text-align: center;
