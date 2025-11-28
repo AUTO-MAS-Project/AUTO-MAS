@@ -16,6 +16,14 @@ export type GeneralConfig_Game = {
      */
     Path?: (string | null);
     /**
+     * 自定义协议URL
+     */
+    URL?: (string | null);
+    /**
+     * 游戏进程名称
+     */
+    ProcessName?: (string | null);
+    /**
      * 游戏/模拟器启动参数
      */
     Arguments?: (string | null);
@@ -35,13 +43,5 @@ export type GeneralConfig_Game = {
      * 模拟器多开实例索引
      */
     EmulatorIndex?: (string | null);
-    /**
-     * 自定义协议URL
-     */
-    URL?: (string | null);
-    /**
-     * 游戏进程名称
-     */
-    ProcessName?: (string | null);
 };
 

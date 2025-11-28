@@ -60,6 +60,23 @@ async def stop_task(task: DispatchIn = Body(...)) -> OutBase:
 
 
 @router.post(
+    "/get/power", summary="获取电源标志", response_model=PowerOut, status_code=200
+)
+async def get_power() -> PowerOut:
+
+    try:
+        signal = Config.power_sign
+    except Exception as e:
+        return PowerOut(
+            code=500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            signal="NoAction",
+        )
+    return PowerOut(signal=signal)
+
+
+@router.post(
     "/set/power", summary="设置电源标志", response_model=OutBase, status_code=200
 )
 async def set_power(task: PowerIn = Body(...)) -> OutBase:
