@@ -71,7 +71,7 @@ class ScriptSetupTask(TaskExecuteBase):
 
         await self.set_maa()
         logger.info(f"启动MAA进程: {self.maa_exe_path}")
-        await self.maa_process_manager.open_process(self.maa_exe_path, [], 0)
+        await self.maa_process_manager.open_process([self.maa_exe_path.as_posix()])
         self.wait_event.clear()
         await self.wait_event.wait()
 

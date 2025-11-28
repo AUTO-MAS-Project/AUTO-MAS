@@ -29,7 +29,7 @@ from .constants import *
 from .logger import get_logger
 from .ImageUtils import ImageUtils
 from app.utils.LogMonitor.LogMonitor import LogMonitor, strptime
-from .ProcessManager import ProcessManager
+from .ProcessManager import ProcessManager, ProcessInfo
 from .security import dpapi_encrypt, dpapi_decrypt
 from .emulator import MumuManager, LDManager, search_all_emulators, EMULATOR_TYPE_BOOK
 
@@ -39,6 +39,7 @@ __all__ = [
     "ImageUtils",
     "LogMonitor",
     "ProcessManager",
+    "ProcessInfo",
     "dpapi_encrypt",
     "dpapi_decrypt",
     "strptime",

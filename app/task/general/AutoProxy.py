@@ -33,7 +33,7 @@ from app.models.ConfigBase import MultipleConfig
 from app.models.config import GeneralConfig, GeneralUserConfig
 from app.models.emulator import DeviceBase
 from app.services import Notify, System
-from app.utils import get_logger, LogMonitor, ProcessManager, strptime
+from app.utils import get_logger, LogMonitor, ProcessManager, ProcessInfo, strptime
 from app.utils.constants import UTC4
 from .tools import execute_script_task
 
@@ -210,20 +210,21 @@ class AutoProxyTask(TaskExecuteBase):
                     if isinstance(self.game_manager, ProcessManager):
 
                         if self.script_config.get("Game", "Type") == "URL":
-                            logger.info(f"启动游戏: {self.game_process_name}, 参数{self.game_url}")
+                            logger.info(
+                                f"启动游戏: {self.game_process_name}, 参数{self.game_url}"
+                            )
                             await self.game_manager.open_protocol(
-                                protocol_uri= self.game_url,
-                                tracking_time=10,
-                                process_name= self.game_process_name
+                                self.game_url, ProcessInfo(name=self.game_process_name)
                             )
                         else:
                             logger.info(
                                 f"启动游戏: {self.game_path}, 参数: {self.script_config.get('Game','Arguments')}"
                             )
                             await self.game_manager.open_process(
-                                self.game_path,
-                                str(self.script_config.get("Game", "Arguments")).split(" "),
-                                0,
+                                [self.game_path.as_posix()]
+                                + str(
+                                    self.script_config.get("Game", "Arguments")
+                                ).split(" ")
                             )
                     elif isinstance(self.game_manager, DeviceBase):
                         logger.info(
@@ -270,11 +271,7 @@ class AutoProxyTask(TaskExecuteBase):
             )
 
             await self.general_process_manager.open_process(
-                self.script_exe_path,
-                self.script_arguments,
-                tracking_time=(
-                    60 if self.script_config.get("Script", "IfTrackProcess") else 0
-                ),
+                [self.script_exe_path.as_posix()] + self.script_arguments
             )
             await self.general_log_monitor.start(
                 self.script_log_path, self.log_start_time

@@ -72,7 +72,7 @@ class GeneralDeviceManager(DeviceBase):
 
         # 启动进程
         await self.process_managers[idx].open_process(
-            self.emulator_path, args, tracking_time=0
+            [self.emulator_path.as_posix()] + args
         )
 
         # 等待进程启动
@@ -138,7 +138,7 @@ class GeneralDeviceManager(DeviceBase):
         ):
 
             # 检查窗口可见性是否符合预期
-            if (
+            if self.process_managers[idx].main_pid is not None and (
                 win32gui.IsWindowVisible(self.process_managers[idx].main_pid)
                 == is_visible
             ):
