@@ -20,13 +20,38 @@
 #   Contact: DLmaster_361@163.com
 
 
-import asyncio
 import os
 import psutil
-import subprocess
+import asyncio
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional
+
+
+@dataclass
+class ProcessInfo:
+    pid: int | None = None
+    name: str | None = None
+    exe: str | None = None
+    cmdline: list[str] | None = None
+
+
+def match_process(proc: psutil.Process, target: ProcessInfo) -> bool:
+    """检查进程是否与目标进程信息匹配"""
+
+    try:
+        if target.pid is not None and proc.pid != target.pid:
+            return False
+        if target.name is not None and proc.name().lower() != target.name.lower():
+            return False
+        if target.exe is not None and proc.exe().lower() != target.exe.lower():
+            return False
+        if target.cmdline is not None and proc.cmdline() != target.cmdline:
+            return False
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
+        return False
+
+    return True
 
 
 class ProcessManager:
@@ -35,190 +60,129 @@ class ProcessManager:
     def __init__(self):
         super().__init__()
 
-        self.main_pid = None
-        self.tracked_pids = set()
-        self.check_task = None
-        self.track_end_time = datetime.now()
+        self.process: asyncio.subprocess.Process | None = None
+        self.target_process: psutil.Process | None = None
+
+    @property
+    def main_pid(self) -> int | None:
+        """获取主进程的 PID"""
+
+        if self.target_process is not None:
+            return self.target_process.pid
+        if self.process is not None:
+            return self.process.pid
+        return None
 
     async def open_process(
-        self, path: Path, args: list = [], tracking_time: int = 60
+        self, cmd: list[str], target_process: ProcessInfo | None = None
     ) -> None:
         """
-        启动一个新进程并返回其pid, 并开始监视该进程
+        使用命令行启动子进程, 多级派生类型进程需要目标进程信息进行跟踪
 
-        Parameters
-        ----------
-        path: 可执行文件的路径
-        args: 启动参数列表
-        tracking_time: 子进程追踪持续时间（秒）
+        Args:
+            path (Path): 可执行文件路径
+            args (list, optional): 启动参数列表
+            target_process (TargetProcess | None, optional): 期望目标进程信息
         """
 
-        process = subprocess.Popen(
-            [path, *args],
-            cwd=path.parent,
-            creationflags=subprocess.CREATE_NO_WINDOW,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+        if await self.is_running():
+            raise RuntimeError("无法同时管理多个进程")
+
+        if (
+            target_process is not None
+            and target_process.pid is None
+            and target_process.name is None
+            and target_process.cmdline is None
+            and target_process.exe is None
+        ):
+            raise ValueError("目标进程信息不完整")
+
+        await self.clear()
+
+        self.process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=Path(cmd[0]).parent if Path(cmd[0]).is_file() else None,
         )
 
-        await self.start_monitoring(process.pid, tracking_time)
+        if target_process is not None:
+
+            await self.track_process(
+                target_process, datetime.now() + timedelta(seconds=60)
+            )
 
     async def open_protocol(
-        self, protocol_uri: str, tracking_time: int = 60, process_name: Optional[str] = None
+        self, protocol_url: str, target_process: ProcessInfo
     ) -> None:
         """
-        使用自定义协议启动程序并监视该进程
+        使用自定义协议启动子进程, 需要目标进程信息进行跟踪
 
-        Parameters
-        ----------
-        protocol_uri: 自定义协议URL (例如: "Starward://xxxxx")
-        tracking_time: 子进程追踪持续时间（秒）
-        process_name: 可选，要监视的进程名称（例如: "Starward.exe"）。
-                     如果未提供，将尝试从协议中提取或监视所有新启动的进程
+        Args:
+            protocol_url (str): 自定义协议 URL
+            target_process (ProcessInfo): 期望目标进程信息
         """
-
-        # 记录启动前的进程列表
-        before_pids = set(p.pid for p in psutil.process_iter())
 
         # 使用 os.startfile 或 subprocess 启动协议
         try:
             # 在 Windows 上使用 os.startfile 打开协议
-            if os.name == 'nt':
-                os.startfile(protocol_uri)
+            if os.name == "nt":
+                os.startfile(protocol_url)
             else:
                 raise NotImplementedError("仅支持 Windows 平台的自定义协议启动")
         except Exception as e:
-            raise RuntimeError(f"无法启动协议 {protocol_uri}: {e}")
+            raise RuntimeError(f"无法启动协议 {protocol_url}: {e}")
 
-        # 等待一小段时间让进程启动
-        await asyncio.sleep(3)
+        await self.track_process(target_process, datetime.now() + timedelta(seconds=60))
 
-        # 查找新启动的进程
-        after_pids = set(p.pid for p in psutil.process_iter())
-        new_pids = after_pids - before_pids
-
-        target_pid = None
-
-        # 如果提供了进程名称，查找匹配的进程
-        if process_name:
-            for pid in new_pids:
-                try:
-                    proc = psutil.Process(pid)
-                    if proc.name().lower() == process_name.lower():
-                        target_pid = pid
-                        break
-                except psutil.NoSuchProcess:
-                    continue
-
-            # 如果在新进程中没找到，在所有进程中查找
-            if target_pid is None:
-                for proc in psutil.process_iter(['pid', 'name']):
-                    try:
-                        if proc.info['name'].lower() == process_name.lower():
-                            target_pid = proc.info['pid']
-                            break
-                    except (psutil.NoSuchProcess, psutil.AccessDenied):
-                        continue
-        else:
-            # 如果没有提供进程名称，尝试使用第一个新进程
-            if new_pids:
-                target_pid = list(new_pids)[0]
-
-        if target_pid:
-            await self.start_monitoring(target_pid, tracking_time)
-        else:
-            raise RuntimeError(f"无法找到由协议 {protocol_uri} 启动的进程")
-
-    async def start_monitoring(self, pid: int, tracking_time: int = 60) -> None:
-        """
-        启动进程监视器, 跟踪指定的主进程及其子进程
-
-        :param pid: 被监视进程的PID
-        :param tracking_time: 子进程追踪持续时间（秒）
-        """
-
-        await self.clear()
-
-        self.main_pid = pid
-        self.tracking_time = tracking_time
-
-        # 扫描并记录所有相关进程
-        try:
-            # 获取主进程
-            main_proc = psutil.Process(self.main_pid)
-            self.tracked_pids.add(self.main_pid)
-
-            # 递归获取所有子进程
-            if tracking_time:
-                for child in main_proc.children(recursive=True):
-                    self.tracked_pids.add(child.pid)
-
-        except psutil.NoSuchProcess:
-            pass
-
-        # 启动持续追踪任务
-        if tracking_time > 0:
-            self.track_end_time = datetime.now() + timedelta(seconds=tracking_time)
-            self.check_task = asyncio.create_task(self.track_processes())
-
-    async def track_processes(self) -> None:
+    async def track_process(
+        self, target_process: ProcessInfo, track_end_time: datetime
+    ) -> None:
         """更新子进程列表"""
 
-        while datetime.now() < self.track_end_time:
-            current_pids = set(self.tracked_pids)
-            for pid in current_pids:
+        while datetime.now() < track_end_time:
+            for proc in psutil.process_iter(["pid", "name", "exe", "cmdline"]):
                 try:
-                    proc = psutil.Process(pid)
-                    for child in proc.children():
-                        if child.pid not in self.tracked_pids:
-                            # 新发现的子进程
-                            self.tracked_pids.add(child.pid)
-                except psutil.NoSuchProcess:
+                    if match_process(proc, target_process):
+                        self.target_process = proc
+                        return
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
                     continue
             await asyncio.sleep(0.1)
+        else:
+            raise RuntimeError("未能在指定时间内找到目标进程")
 
     async def is_running(self) -> bool:
-        """检查所有跟踪的进程是否还在运行"""
+        """检查当前管理的进程是否仍在运行"""
 
-        for pid in self.tracked_pids:
-            try:
-                proc = psutil.Process(pid)
-                if proc.is_running():
-                    return True
-            except psutil.NoSuchProcess:
-                continue
-
+        if self.target_process is not None:
+            return self.target_process.is_running()
+        if self.process is not None:
+            return self.process.returncode is None
         return False
 
     async def kill(self, if_force: bool = False) -> None:
         """停止监视器并中止所有跟踪的进程"""
 
-        for pid in self.tracked_pids:
+        if self.target_process is not None and self.target_process.is_running():
             try:
-                proc = psutil.Process(pid)
                 if if_force:
-                    kill_process = subprocess.Popen(
-                        ["taskkill", "/F", "/T", "/PID", str(pid)],
-                        creationflags=subprocess.CREATE_NO_WINDOW,
-                    )
-                    kill_process.wait()
-                proc.terminate()
-            except psutil.NoSuchProcess:
-                continue
+                    self.target_process.kill()
+                else:
+                    self.target_process.terminate()
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+        if self.process is not None and self.process.returncode is None:
+            if if_force:
+                self.process.kill()
+            else:
+                self.process.terminate()
+            await self.process.wait()
 
         await self.clear()
 
     async def clear(self) -> None:
-        """清空跟踪的进程列表"""
+        """清空跟踪的进程信息"""
 
-        if self.check_task is not None and not self.check_task.done():
-            self.check_task.cancel()
-
-            try:
-                await self.check_task
-            except asyncio.CancelledError:
-                pass
-
-        self.main_pid = None
-        self.tracked_pids.clear()
+        self.process = None
+        self.target_process = None

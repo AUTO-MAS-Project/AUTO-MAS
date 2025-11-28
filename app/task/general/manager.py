@@ -138,20 +138,9 @@ class GeneralManager(TaskExecuteBase):
                     self.script_config.get("Game", "EmulatorId")
                 )
 
-            elif (
-                Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
-                    "Game", "Type"
-                )
-                == "Client"
-            ):
-                self.game_process_manager = ProcessManager()
-
-            elif (
-                    Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
-                        "Game", "Type"
-                    )
-                    == "URL"
-            ):
+            elif Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
+                "Game", "Type"
+            ) in ["Client", "URL"]:
                 self.game_process_manager = ProcessManager()
 
         # 备份原始配置

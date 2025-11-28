@@ -165,7 +165,7 @@ class ManualInspectTask(TaskExecuteBase):
                 LogRecord()
             )
             self.wait_event.clear()
-            await self.maa_process_manager.open_process(self.maa_exe_path, [], 0)
+            await self.maa_process_manager.open_process([self.maa_exe_path.as_posix()])
             await self.maa_log_monitor.start(self.maa_log_path, self.log_start_time)
             await self.wait_event.wait()
             await self.maa_log_monitor.stop()
