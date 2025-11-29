@@ -10,37 +10,55 @@ import type { ComboBoxItem } from '@/api/models/ComboBoxItem'
 import type { QueueItem, Script } from './schedulerConstants'
 import { type SchedulerTab, type TaskMessage, type SchedulerStatus } from './schedulerConstants'
 
-// 使用内存变量存储调度台状态，而不是localStorage
-let schedulerTabsMemory: SchedulerTab[] = []
+// 使用 sessionStorage 存储调度台状态，支持页面刷新时保留数据
+// sessionStorage 在页面刷新时保留数据，但在关闭标签页/重启应用时清除
+const SCHEDULER_TABS_KEY = 'scheduler-tabs-session'
 
-// 从内存加载调度台状态
+// 从 sessionStorage 加载调度台状态
 const loadTabsFromStorage = (): SchedulerTab[] => {
-  // 如果内存中没有状态，则初始化默认状态
-  if (schedulerTabsMemory.length === 0) {
-    schedulerTabsMemory = [
-      {
-        key: 'main',
-        title: '主调度台',
-        closable: false,
-        status: '空闲',
-        selectedTaskId: null,
-        selectedMode: TaskCreateIn.mode.AutoMode,
-        websocketId: null,
-        taskQueue: [],
-        userQueue: [],
-        logs: [],
-        isLogAtBottom: true,
-        lastLogContent: '',
-      },
-    ]
+  try {
+    const saved = sessionStorage.getItem(SCHEDULER_TABS_KEY)
+    if (saved) {
+      const parsed = JSON.parse(saved)
+      // 验证数据格式
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        console.log('[Scheduler] 从 sessionStorage 恢复调度台状态:', parsed.length, '个调度台')
+        return parsed
+      }
+    }
+  } catch (error) {
+    console.warn('[Scheduler] 从 sessionStorage 加载调度台状态失败:', error)
+    // 清除损坏的数据
+    sessionStorage.removeItem(SCHEDULER_TABS_KEY)
   }
-  return schedulerTabsMemory
+
+  // 如果没有保存的状态或加载失败，返回默认状态
+  console.log('[Scheduler] 初始化默认调度台状态')
+  return [
+    {
+      key: 'main',
+      title: '主调度台',
+      closable: false,
+      status: '空闲',
+      selectedTaskId: null,
+      selectedMode: TaskCreateIn.mode.AutoMode,
+      websocketId: null,
+      taskQueue: [],
+      userQueue: [],
+      logs: [],
+      isLogAtBottom: true,
+      lastLogContent: '',
+    },
+  ]
 }
 
-// 保存调度台状态到内存
+// 保存调度台状态到 sessionStorage
 const saveTabsToStorage = (tabs: SchedulerTab[]) => {
-  // 保存到内存变量而不是localStorage
-  schedulerTabsMemory = tabs
+  try {
+    sessionStorage.setItem(SCHEDULER_TABS_KEY, JSON.stringify(tabs))
+  } catch (error) {
+    console.error('[Scheduler] 保存调度台状态到 sessionStorage 失败:', error)
+  }
 }
 
 export function useSchedulerLogic() {
@@ -50,14 +68,19 @@ export function useSchedulerLogic() {
   const activeSchedulerTab = ref(schedulerTabs.value[0]?.key || 'main')
   const logRefs = ref(new Map<string, HTMLElement>())
   const overviewRefs = ref(new Map<string, any>()) // 任务总览面板引用
-  let tabCounter =
-    schedulerTabs.value.length > 1
-      ? Math.max(
-        ...schedulerTabs.value
-          .filter(tab => tab.key.startsWith('tab-'))
-          .map(tab => parseInt(tab.key.replace('tab-', '')) || 0)
-      ) + 1
-      : 1
+
+  // 从现有调度台中计算最大编号，确保新建调度台编号不重复
+  let tabCounter = 1
+  if (schedulerTabs.value.length > 1) {
+    const tabNumbers = schedulerTabs.value
+      .filter(tab => tab.key.startsWith('tab-'))
+      .map(tab => parseInt(tab.key.replace('tab-', '')) || 0)
+
+    if (tabNumbers.length > 0) {
+      tabCounter = Math.max(...tabNumbers) + 1
+      console.log('[Scheduler] 从现有调度台恢复 tabCounter:', tabCounter)
+    }
+  }
 
   // 任务选项
   const taskOptionsLoading = ref(false)
@@ -94,19 +117,21 @@ export function useSchedulerLogic() {
     if (type === 'Signal' && data && data.newTask) {
       // 收到新任务信号，自动创建调度台
       const taskId = data.newTask
-      console.log('[Scheduler] 收到新任务信号，任务ID:', taskId)
+      const queueId = data.queueId
+      console.log('[Scheduler] 收到新任务信号，任务ID:', taskId, '队列ID:', queueId)
 
       // 创建新的调度台
-      createSchedulerTabForTask(taskId)
+      createSchedulerTabForTask(taskId, queueId)
     }
   }
 
-  const createSchedulerTabForTask = (taskId: string) => {
+  const createSchedulerTabForTask = (taskId: string, queueId?: string) => {
     // 使用现有的addSchedulerTab函数创建新调度台，并传入特定的配置选项
     const newTab = addSchedulerTab({
       title: `调度台${tabCounter}`,
       status: '运行',
       websocketId: taskId,
+      selectedTaskId: queueId, // 传入队列ID作为选中的任务ID
     })
 
     // 立即订阅该任务的WebSocket消息
@@ -143,7 +168,7 @@ export function useSchedulerLogic() {
   watchTabsChanges()
 
   // Tab 管理
-  const addSchedulerTab = (options?: { title?: string; status?: string; websocketId?: string }) => {
+  const addSchedulerTab = (options?: { title?: string; status?: string; websocketId?: string; selectedTaskId?: string }) => {
     tabCounter++
     const status = options?.status || '空闲'
     // 使用更安全的类型断言，确保状态值是有效的SchedulerStatus
@@ -156,7 +181,7 @@ export function useSchedulerLogic() {
       title: options?.title || `调度台${tabCounter}`,
       closable: true,
       status: validStatus,
-      selectedTaskId: options?.websocketId || null,
+      selectedTaskId: options?.selectedTaskId || options?.websocketId || null,
       selectedMode: TaskCreateIn.mode.AutoMode,
       websocketId: options?.websocketId || null,
       taskQueue: [],
@@ -811,6 +836,7 @@ export function useSchedulerLogic() {
               title: tab.title,
               status: '运行',
               websocketId: tab.websocketId,
+              selectedTaskId: tab.queueId,
             })
             subscribeToTask(newTab)
             saveTabsToStorage(schedulerTabs.value)
@@ -831,12 +857,16 @@ export function useSchedulerLogic() {
       // 回放 pending tabs（如果有的话）
       const pending = schedulerHandlers.consumePendingTabIds()
       if (pending && pending.length > 0) {
-        pending.forEach((taskId: string) => {
+        pending.forEach((item: any) => {
           try {
+            const taskId = typeof item === 'string' ? item : item.taskId
+            const queueId = typeof item === 'string' ? undefined : item.queueId
+
             const newTab = addSchedulerTab({
-              title: `调度台${taskId}`,
+              title: `调度台自动-${taskId}`,
               status: '运行',
               websocketId: taskId,
+              selectedTaskId: queueId,
             })
             subscribeToTask(newTab)
           } catch (e) {
