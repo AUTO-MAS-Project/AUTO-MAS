@@ -21,12 +21,21 @@ export function registerSchedulerUI(hooks: UIHooks) {
 }
 
 // helper: push pending tab id to localStorage
-function pushPendingTab(taskId: string) {
+function pushPendingTab(taskInfo: string | { taskId: string; queueId?: string }) {
   try {
     const raw = localStorage.getItem(PENDING_TABS_KEY)
     const arr = raw ? JSON.parse(raw) : []
-    if (!arr.includes(taskId)) {
-      arr.push(taskId)
+
+    const newId = typeof taskInfo === 'string' ? taskInfo : taskInfo.taskId
+
+    // Check if already exists
+    const exists = arr.some((item: any) => {
+      const id = typeof item === 'string' ? item : item.taskId
+      return id === newId
+    })
+
+    if (!exists) {
+      arr.push(taskInfo)
       localStorage.setItem(PENDING_TABS_KEY, JSON.stringify(arr))
     }
   } catch (e) {
@@ -34,7 +43,7 @@ function pushPendingTab(taskId: string) {
   }
 }
 
-function popPendingTabs(): string[] {
+function popPendingTabs(): any[] {
   try {
     const raw = localStorage.getItem(PENDING_TABS_KEY)
     if (!raw) return []
@@ -79,13 +88,19 @@ export function handleTaskManagerMessage(wsMessage: any) {
   try {
     if (type === 'Signal' && data && data.newTask) {
       const taskId = String(data.newTask)
-      // 将任务 ID 写入 pending 队列，UI 在挂载时会回放
-      pushPendingTab(taskId)
+      const queueId = data.queueId ? String(data.queueId) : undefined
+
+      // 将任务 ID 和 队列 ID 写入 pending 队列，UI 在挂载时会回放
+      pushPendingTab({ taskId, queueId })
 
       // 如果 UI 已注册回调，则立即通知
       if (uiHooks.onNewTab) {
         try {
-          uiHooks.onNewTab({ title: `调度台自动-${taskId}`, websocketId: taskId })
+          uiHooks.onNewTab({
+            title: `调度台自动-${taskId}`,
+            websocketId: taskId,
+            queueId: queueId
+          })
         } catch (e) {
           console.warn('[SchedulerHandlers] onNewTab handler error:', e)
         }
@@ -162,7 +177,7 @@ async function handleRequestClose() {
 }
 
 // UI 在挂载时调用，消费并回放 pending 数据
-export function consumePendingTabIds(): string[] {
+export function consumePendingTabIds(): any[] {
   return popPendingTabs()
 }
 
