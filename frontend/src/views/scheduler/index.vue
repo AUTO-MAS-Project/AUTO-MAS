@@ -80,12 +80,15 @@
             <SchedulerTaskControl
               v-model:selected-task-id="tab.selectedTaskId"
               v-model:selected-mode="tab.selectedMode"
+              v-model:running-task-label="tab.runningTaskLabel"
+              v-model:running-mode-label="tab.runningModeLabel"
               :task-options="taskOptions"
               :task-options-loading="taskOptionsLoading"
               :status="tab.status"
               :disabled="tab.status === '运行'"
               @start="startTask(tab)"
               @stop="stopTask(tab)"
+              @refresh-tasks="loadTaskOptions"
             />
 
             <!-- 状态展示区域 -->

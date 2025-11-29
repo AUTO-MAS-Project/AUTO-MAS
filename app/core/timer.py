@@ -97,7 +97,12 @@ class _MainTimer:
                     await Config.send_websocket_message(
                         id="TaskManager",
                         type="Signal",
-                        data={"newTask": str(task_id), "queueId": str(uid)},
+                        data={
+                            "newTask": str(task_id),
+                            "queueId": str(uid),
+                            "taskName": f"队列 - {queue.get('Info', 'Name')}",
+                            "taskType": "定时代理",
+                        },
                     )
 
 

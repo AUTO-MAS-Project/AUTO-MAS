@@ -310,7 +310,14 @@ class _TaskManager:
                 logger.info(f"启动时需要运行的队列：{uid}")
                 task_id = await TaskManager.add_task("自动代理", str(uid))
                 await Config.send_websocket_message(
-                    id="TaskManager", type="Signal", data={"newTask": str(task_id)}
+                    id="TaskManager",
+                    type="Signal",
+                    data={
+                        "newTask": str(task_id),
+                        "queueId": str(uid),
+                        "taskName": f"队列 - {queue.get('Info', 'Name')}",
+                        "taskType": "启动时代理",
+                    },
                 )
 
         logger.success("启动时任务开始运行")
