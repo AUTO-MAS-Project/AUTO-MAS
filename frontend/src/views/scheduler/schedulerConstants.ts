@@ -88,6 +88,9 @@ export interface SchedulerTab {
   // 新增：消息去重相关字段
   lastMessageHash?: string
   lastMessageTime?: number
+  // 新增：运行时任务/模式文本快照（用于持久化显示）
+  runningTaskLabel?: string
+  runningModeLabel?: string
 }
 
 export interface TaskMessage {
