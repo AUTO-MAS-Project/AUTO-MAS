@@ -118,14 +118,16 @@ export function useSchedulerLogic() {
       // 收到新任务信号，自动创建调度台
       const taskId = data.newTask
       const queueId = data.queueId
-      console.log('[Scheduler] 收到新任务信号，任务ID:', taskId, '队列ID:', queueId)
+      const taskName = data.taskName
+      const taskType = data.taskType
+      console.log('[Scheduler] 收到新任务信号，任务ID:', taskId, '队列ID:', queueId, '任务名称:', taskName, '任务类型:', taskType)
 
       // 创建新的调度台
-      createSchedulerTabForTask(taskId, queueId)
+      createSchedulerTabForTask(taskId, queueId, taskName, taskType)
     }
   }
 
-  const createSchedulerTabForTask = (taskId: string, queueId?: string) => {
+  const createSchedulerTabForTask = (taskId: string, queueId?: string, taskName?: string, taskType?: string) => {
     // 使用现有的addSchedulerTab函数创建新调度台，并传入特定的配置选项
     const newTab = addSchedulerTab({
       title: `调度台${tabCounter}`,
@@ -133,6 +135,10 @@ export function useSchedulerLogic() {
       websocketId: taskId,
       selectedTaskId: queueId, // 传入队列ID作为选中的任务ID
     })
+
+    // 设置运行时文本快照，确保自动启动的任务也能正确显示
+    if (taskName) newTab.runningTaskLabel = taskName
+    if (taskType) newTab.runningModeLabel = taskType
 
     // 立即订阅该任务的WebSocket消息
     subscribeToTask(newTab)
