@@ -97,15 +97,16 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, watch, onMounted, computed } from 'vue'
 import { useDebounceFn } from '@vueuse/core'
 import { message } from 'ant-design-vue'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import {
   usePlanDataCoordinator,
   TIME_KEYS,
-  STAGE_DAILY_INFO,
   type TimeKey,
+  preloadAllStageOptions,
+  getCachedStageOptions,
 } from '@/composables/usePlanDataCoordinator'
 
 interface Props {
@@ -131,6 +132,20 @@ const tempCustomStages = ref({
   custom_stage_2: '',
   custom_stage_3: '',
   custom_stage_4: '',
+})
+
+// 用于触发下拉框选项刷新的响应式变量
+const customStageVersion = ref(0)
+
+// 计算属性：获取当前的自定义关卡列表（用于响应式更新）
+const currentCustomStages = computed(() => {
+  // 访问 customStageVersion 以触发响应式更新
+  // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+  customStageVersion.value
+  
+  return Object.values(coordinator.planData.customStageDefinitions).filter(
+    stageName => stageName?.trim()
+  )
 })
 
 // 配置视图列定义
@@ -196,6 +211,10 @@ const debouncedCustomStageUpdates = {
 
 // 自定义关卡管理 - 实时保存（防抖）
 const onCustomStageInput = (index: 1 | 2 | 3 | 4) => {
+  // 立即触发下拉框选项刷新
+  customStageVersion.value++
+  
+  // 防抖保存到后端
   debouncedCustomStageUpdates[index]()
 }
 
@@ -228,19 +247,16 @@ const getSelectOptions = (
     return SERIES_OPTIONS
   }
 
-  // 关卡选择选项
-  const dayNumber = getDayNumber(columnKey)
-  const baseOptions: SelectOption[] = (
-    dayNumber === 0
-      ? STAGE_DAILY_INFO
-      : STAGE_DAILY_INFO.filter(stage => stage.days.includes(dayNumber))
-  ).map(stage => ({ label: stage.text, value: stage.value }))
+  // 关卡选择选项 - 从 API 缓存获取
+  const cachedOptions = getCachedStageOptions(columnKey as TimeKey)
+  const baseOptions: SelectOption[] = cachedOptions.map(option => ({
+    label: option.label,
+    value: option.value || '-',
+  }))
 
-  // 添加自定义关卡选项
-  Object.values(coordinator.planData.customStageDefinitions).forEach(stageName => {
-    if (stageName?.trim()) {
-      baseOptions.push({ label: stageName, value: stageName })
-    }
+  // 添加自定义关卡选项（使用计算属性以确保响应式）
+  currentCustomStages.value.forEach(stageName => {
+    baseOptions.push({ label: stageName, value: stageName })
   })
 
   // 标记已使用的关卡
@@ -287,10 +303,12 @@ const isColumnDisabled = (columnKey: string): boolean => {
 const isStageAvailable = (stageKey: string, columnKey: string) => {
   if (columnKey === 'ALL') return true
 
-  const stage = STAGE_DAILY_INFO.find(s => s.value === stageKey)
-  if (stage) {
-    const dayNumber = getDayNumber(columnKey)
-    return stage.days.includes(dayNumber)
+  // 从 API 缓存中检查关卡是否在该时间维度可用
+  const cachedOptions = getCachedStageOptions(columnKey as TimeKey)
+  const isInCache = cachedOptions.some(option => option.value === stageKey)
+  
+  if (isInCache) {
+    return true
   }
 
   // 自定义关卡在所有时间段都可用
@@ -409,9 +427,16 @@ watch(
   () => coordinator.planData.customStageDefinitions,
   newDefinitions => {
     tempCustomStages.value = { ...newDefinitions }
+    // 触发下拉框选项刷新
+    customStageVersion.value++
   },
   { deep: true }
 )
+
+// 组件挂载时预加载关卡选项
+onMounted(async () => {
+  await preloadAllStageOptions()
+})
 </script>
 
 <style scoped>
