@@ -633,5 +633,5 @@ async def skland_sign_in(token) -> dict:
         # 依次签到
         return await do_sign(cred, sign_token)
     except Exception as e:
-        logger.exception(f"森空岛签到失败: {e}")
+        logger.error(f"森空岛签到失败: {e}")
         return {"成功": [], "重复": [], "失败": [], "总计": 0}
