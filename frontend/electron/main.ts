@@ -14,17 +14,18 @@ import {
 import * as fs from 'fs'
 import * as path from 'path'
 import { checkEnvironment, getAppRoot } from './services/environmentService'
-import { cleanOldLogs, getLogFiles, getLogPath, log, setupLogger } from './services/logService'
+import { logService } from './services/logService'
 import { registerInitializationHandlers, cleanupInitializationResources } from './ipc/initializationHandlers'
+import { logManagementService } from './services/logManagementService'
 
 // 强制清理相关进程的函数
 async function forceKillRelatedProcesses(): Promise<void> {
   try {
     const { killAllRelatedProcesses } = await import('./utils/processManager')
     await killAllRelatedProcesses()
-    log.info('所有相关进程已清理')
+    logService.info('进程管理', '所有相关进程已清理')
   } catch (error) {
-    log.error('清理进程时出错:', error)
+    logService.error('进程管理', `清理进程时出错: ${error}`)
 
     // 备用清理方法
     if (process.platform === 'win32') {
@@ -35,9 +36,9 @@ async function forceKillRelatedProcesses(): Promise<void> {
         // 使用更简单的命令强制结束相关进程
         exec(`taskkill /f /im python.exe`, error => {
           if (error) {
-            log.warn('备用清理方法失败:', error.message)
+            logService.warn('进程管理', `备用清理方法失败: ${error.message}`)
           } else {
-            log.info('备用清理方法执行成功')
+            logService.info('进程管理', '备用清理方法执行成功')
           }
           resolve()
         })
@@ -138,7 +139,7 @@ function loadConfig(): AppConfig {
       return { ...defaultConfig, ...config }
     }
   } catch (error) {
-    log.error('加载配置失败:', error)
+    logService.error('配置管理', '加载配置失败')
   }
   return defaultConfig
 }
@@ -156,7 +157,7 @@ function saveConfig(config: AppConfig) {
 
     fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8')
   } catch (error) {
-    log.error('保存配置失败:', error)
+    logService.error('配置管理', '保存配置失败')
   }
 }
 
@@ -180,7 +181,7 @@ function createTray() {
       if (fs.existsSync(iconPath)) {
         trayIcon = nativeImage.createFromPath(iconPath)
         if (!trayIcon.isEmpty()) {
-          log.info(`成功加载托盘图标: ${iconPath}`)
+          logService.info('托盘管理', `成功加载托盘图标: ${iconPath}`)
           break
         }
       }
@@ -188,11 +189,11 @@ function createTray() {
 
     // 如果所有路径都失败，创建一个默认图标
     if (!trayIcon || trayIcon.isEmpty()) {
-      log.warn('无法加载托盘图标，使用默认图标')
+      logService.warn('托盘管理', '无法加载托盘图标，使用默认图标')
       trayIcon = nativeImage.createEmpty()
     }
   } catch (error) {
-    log.error('加载托盘图标失败:', error)
+    logService.error('托盘管理', '加载托盘图标失败')
     trayIcon = nativeImage.createEmpty()
   }
 
@@ -288,26 +289,26 @@ function updateTrayVisibility(config: AppConfig) {
   // 特殊情况：如果没有窗口显示且没有托盘，强制显示托盘避免程序成为幽灵
   if (!shouldShowTray && (!mainWindow || !mainWindow.isVisible()) && !tray) {
     shouldShowTray = true
-    log.warn('防幽灵机制：强制显示托盘图标')
+    logService.warn('托盘管理', '防幽灵机制：强制显示托盘图标')
   }
 
   if (shouldShowTray && !tray) {
     createTray()
-    log.info('托盘图标已创建')
+    logService.info('托盘管理', '托盘图标已创建')
   } else if (!shouldShowTray && tray) {
     destroyTray()
-    log.info('托盘图标已销毁')
+    logService.info('托盘管理', '托盘图标已销毁')
   }
 }
 
 let mainWindow: Electron.BrowserWindow | null = null
 
 function createWindow() {
-  log.info('开始创建主窗口')
+  logService.info('窗口管理', '开始创建主窗口')
 
   const config = loadConfig()
 
-  // 解���配置
+  // 解析配置
   const [cfgW, cfgH] = config.UI.size.split(',').map((s: string) => parseInt(s.trim(), 10) || 1600)
   const [cfgX, cfgY] = config.UI.location
     .split(',')
@@ -361,7 +362,7 @@ function createWindow() {
     // 根据配置决定是否显示窗口
     if (!config.Start.IfMinimizeDirectly) {
       win.show()
-      log.info('页面加载完成，窗口已显示')
+      logService.info('窗口管理', '页面加载完成，窗口已显示')
     }
   })
 
@@ -403,11 +404,11 @@ function createWindow() {
   win.setMenuBarVisibility(false)
   const devServer = process.env.VITE_DEV_SERVER_URL
   if (devServer) {
-    log.info(`加载开发服务器: ${devServer}`)
+    logService.info('窗口管理', `加载开发服务器: ${devServer}`)
     win.loadURL(devServer)
   } else {
     const indexHtmlPath = path.join(app.getAppPath(), 'dist', 'index.html')
-    log.info(`加载生产环境页面: ${indexHtmlPath}`)
+    logService.info('窗口管理', `加载生产环境页面: ${indexHtmlPath}`)
     win.loadFile(indexHtmlPath)
   }
 
@@ -420,7 +421,7 @@ function createWindow() {
       win.hide()
       win.setSkipTaskbar(true)
       updateTrayVisibility(currentConfig)
-      log.info('窗口已最小化到托盘，任务栏图标已隐藏')
+      logService.info('窗口管理', '窗口已最小化到托盘，任务栏图标已隐藏')
     } else {
       // 立即保存窗口状态，不使用防抖
       if (!win.isDestroyed()) {
@@ -436,16 +437,16 @@ function createWindow() {
           config.UI.maximized = isMaximized
 
           saveConfig(config)
-          log.info('窗口状态已保存')
+          logService.info('窗口管理', '窗口状态已保存')
         } catch (error) {
-          log.error('保存窗口状态失败:', error)
+          logService.error('窗口管理', '保存窗口状态失败')
         }
       }
     }
   })
 
   win.on('closed', () => {
-    log.info('主窗口已关闭')
+    logService.info('窗口管理', '主窗口已关闭')
     // 清理监听（可选）
     screen.removeListener('display-metrics-changed', recomputeMinSize)
     // 置空模块级引用
@@ -453,12 +454,12 @@ function createWindow() {
 
     // 如果是正在退出，立即执行进程清理
     if (isQuitting) {
-      log.info('窗口关闭，执行最终清理')
+      logService.info('窗口管理', '窗口关闭，执行最终清理')
       setTimeout(async () => {
         try {
           await forceKillRelatedProcesses()
         } catch (e) {
-          log.error('最终清理失败:', e)
+          logService.error('窗口管理', '最终清理失败')
         }
         process.exit(0)
       }, 100)
@@ -471,7 +472,7 @@ function createWindow() {
       win.hide()
       win.setSkipTaskbar(true)
       updateTrayVisibility(currentConfig)
-      log.info('窗口已最小化到托盘，任务栏图标已隐藏')
+      logService.info('窗口管理', '窗口已最小化到托盘，任务栏图标已隐藏')
     }
   })
 
@@ -479,14 +480,14 @@ function createWindow() {
     const currentConfig = loadConfig()
     win.setSkipTaskbar(false)
     updateTrayVisibility(currentConfig)
-    log.info('窗口已显示，任务栏图标已恢复')
+    logService.info('窗口管理', '窗口已显示，任务栏图标已恢复')
   })
 
   win.on('hide', () => {
     const currentConfig = loadConfig()
     if (currentConfig.UI.IfToTray) {
       win.setSkipTaskbar(true)
-      log.info('窗口已隐藏，任务栏图标已隐藏')
+      logService.info('窗口管理', '窗口已隐藏，任务栏图标已隐藏')
     }
     updateTrayVisibility(currentConfig)
   })
@@ -498,11 +499,11 @@ function createWindow() {
   win.on('unmaximize', saveWindowState)
 
   // 主窗口创建完成
-  log.info('主窗口创建完成')
+  logService.info('窗口管理', '主窗口创建完成')
 
   // 注册初始化处理器
   registerInitializationHandlers(win)
-  log.info('初始化处理器已注册')
+  logService.info('应用初始化', '初始化处理器已注册')
 
   // 初始托盘配置（使用文件配置）
   updateTrayVisibility(config)
@@ -520,10 +521,10 @@ function createWindow() {
       if (currentConfig.UI.IfToTray) {
         win.hide()
         win.setSkipTaskbar(true)
-        log.info('应用初次启动后直接最小化到托盘')
+        logService.info('应用启动', '应用初次启动后直接最小化到托盘')
       } else {
         win.minimize()
-        log.info('应用初次启动后直接最小化')
+        logService.info('应用启动', '应用初次启动后直接最小化')
       }
       updateTrayVisibility(currentConfig)
     }
@@ -547,7 +548,7 @@ function saveWindowState() {
     try {
       // 再次检查窗口是否存在且未销毁
       if (!mainWindow || mainWindow.isDestroyed()) {
-        log.warn('窗口已销毁，跳过保存状态')
+        logService.warn('窗口管理', '窗口已销毁，跳过保存状态')
         return
       }
 
@@ -563,9 +564,9 @@ function saveWindowState() {
       config.UI.maximized = isMaximized
 
       saveConfig(config)
-      log.info('窗口状态已保存')
+      logService.info('窗口管理', '窗口状态已保存')
     } catch (error) {
-      log.error('保存窗口状态失败:', error)
+      logService.error('窗口管理', '保存窗口状态失败')
     }
   }, 500)
 }
@@ -603,7 +604,7 @@ ipcMain.handle('window-close', () => {
 
 // 添加应用重启处理器
 ipcMain.handle('app-restart', () => {
-  console.log('重启应用程序...')
+  logService.info('应用控制', '重启应用程序...')
   isQuitting = true
   app.relaunch()
   app.exit(0)
@@ -621,7 +622,7 @@ ipcMain.handle('get-related-processes', async () => {
     const { getRelatedProcesses } = await import('./utils/processManager')
     return await getRelatedProcesses()
   } catch (error) {
-    log.error('获取进程信息失败:', error)
+    logService.error('进程管理', '获取进程信息失败')
     return []
   }
 })
@@ -631,21 +632,21 @@ ipcMain.handle('kill-all-processes', async () => {
     await forceKillRelatedProcesses()
     return { success: true }
   } catch (error) {
-    log.error('强制清理进程失败:', error)
+    logService.error('进程管理', '强制清理进程失败')
     return { success: false, error: error instanceof Error ? error.message : String(error) }
   }
 })
 
 // 添加一个测试用的强制退出命令
 ipcMain.handle('force-exit', async () => {
-  log.info('收到强制退出命令')
+  logService.info('应用控制', '收到强制退出命令')
   isQuitting = true
 
   // 立即清理进程
   try {
     await forceKillRelatedProcesses()
   } catch (e) {
-    log.error('强制清理失败:', e)
+    logService.error('进程管理', '强制清理失败')
   }
 
   // 强制退出
@@ -686,10 +687,10 @@ ipcMain.handle('open-url', async (_event, url: string) => {
     return { success: true }
   } catch (error) {
     if (error instanceof Error) {
-      console.error('打开链接失败:', error.message)
+      logService.error('文件系统', `打开链接失败: ${error.message}`)
       return { success: false, error: error.message }
     } else {
-      console.error('未知错误:', error)
+      logService.error('文件系统', `未知错误: ${error}`)
       return { success: false, error: String(error) }
     }
   }
@@ -700,7 +701,7 @@ ipcMain.handle('open-file', async (_event, filePath: string) => {
   try {
     await shell.openPath(filePath)
   } catch (error) {
-    console.error('打开文件失败:', error)
+    logService.error('文件系统', `打开文件失败: ${error}`)
     throw error
   }
 })
@@ -710,7 +711,7 @@ ipcMain.handle('show-item-in-folder', async (_event, filePath: string) => {
   try {
     shell.showItemInFolder(filePath)
   } catch (error) {
-    console.error('显示文件所在目录失败:', error)
+    logService.error('文件系统', `显示文件所在目录失败: ${error}`)
     throw error
   }
 })
@@ -749,10 +750,10 @@ ipcMain.handle('check-critical-files', async () => {
       mainPyExists,
     }
 
-    log.info('关键文件检查结果:', result)
+    logService.info('环境检查', '关键文件检查结果')
     return result
   } catch (error) {
-    log.error('检查关键文件失败:', error)
+    logService.error('环境检查', '检查关键文件失败')
     return {
       pythonExists: false,
       pipExists: false,
@@ -782,7 +783,7 @@ ipcMain.handle('get-theme-info', async () => {
         themeMode = config.themeMode || 'system'
         themeColor = config.themeColor || 'blue'
       } catch (error) {
-        log.warn('读取主题配置失败，使用默认值:', error)
+        logService.warn('主题管理', '读取主题配置失败，使用默认值')
       }
     }
 
@@ -820,7 +821,7 @@ ipcMain.handle('get-theme-info', async () => {
       primaryColor: themeColors[themeColor] || themeColors.blue,
     }
   } catch (error) {
-    log.error('获取主题信息失败:', error)
+    logService.error('主题管理', '获取主题信息失败')
     return {
       themeMode: 'system',
       themeColor: 'blue',
@@ -837,7 +838,7 @@ ipcMain.handle('get-app-path', async (_event, name: any) => {
   try {
     return app.getPath(name)
   } catch (error) {
-    log.error(`获取路径 ${name} 失败:`, error)
+    logService.error('文件系统', `获取路径 ${name} 失败`)
     return ''
   }
 })
@@ -857,7 +858,7 @@ ipcMain.handle('get-theme', async () => {
         const config = JSON.parse(configData)
         themeMode = config.themeMode || 'system'
       } catch (error) {
-        log.warn('读取主题配置失败，使用默认值:', error)
+        logService.warn('主题管理', '读取主题配置失败，使用默认值')
       }
     }
 
@@ -872,7 +873,7 @@ ipcMain.handle('get-theme', async () => {
 
     return actualTheme
   } catch (error) {
-    log.error('获取对话框主题失败:', error)
+    logService.error('主题管理', '获取对话框主题失败')
     return nativeTheme.shouldUseDarkColors ? 'dark' : 'light'
   }
 })
@@ -958,26 +959,26 @@ function createQuestionDialog(questionData: any): Promise<boolean> {
       }
     })
 
-    log.info(`对话框窗口已创建: ${messageId}`)
+    logService.info('对话框管理', `对话框窗口已创建: ${messageId}`)
   })
 }
 
 // 显示问题对话框
 ipcMain.handle('show-question-dialog', async (_event, questionData) => {
-  log.info('收到显示对话框请求:', questionData)
+  logService.info('对话框管理', '收到显示对话框请求')
   try {
     const result = await createQuestionDialog(questionData)
-    log.info(`对话框结果: ${result}`)
+    logService.info('对话框管理', `对话框结果: ${result}`)
     return result
   } catch (error) {
-    log.error('创建对话框失败:', error)
+    logService.error('对话框管理', '创建对话框失败')
     return false
   }
 })
 
 // 处理对话框响应
 ipcMain.handle('dialog-response', async (_event, messageId: string, choice: boolean) => {
-  log.info(`收到对话框响应: ${messageId} = ${choice}`)
+  logService.info('对话框管理', `收到对话框响应`)
 
   const callback = dialogCallbacks.get(messageId)
   if (callback) {
@@ -1024,14 +1025,14 @@ ipcMain.handle('save-config', async (_event, config) => {
     }
 
     fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8')
-    console.log(`配置已保存到: ${configPath}`)
+    logService.info('配置管理', `配置已保存到: ${configPath}`)
 
     // 如果是UI配置更新，需要更新托盘状态
     if (config.UI) {
       updateTrayVisibility(config)
     }
   } catch (error) {
-    console.error('保存配置文件失败:', error)
+    logService.error('配置管理', '保存配置文件失败')
     throw error
   }
 })
@@ -1047,10 +1048,10 @@ ipcMain.handle('update-tray-settings', async (_event, uiSettings) => {
     // 立即更新托盘状态
     updateTrayVisibility(currentConfig)
 
-    log.info('托盘设置已更新:', uiSettings)
+    logService.info('托盘管理', '托盘设置已更新')
     return true
   } catch (error) {
-    log.error('更新托盘设置失败:', error)
+    logService.error('托盘管理', '更新托盘设置失败')
     throw error
   }
 })
@@ -1076,10 +1077,10 @@ ipcMain.handle('sync-backend-config', async (_event, backendSettings) => {
     // 更新托盘状态
     updateTrayVisibility(currentConfig)
 
-    log.info('后端配置已同步:', backendSettings)
+    logService.info('配置管理', '后端配置已同步')
     return true
   } catch (error) {
-    log.error('同步后端配置失败:', error)
+    logService.error('配置管理', '同步后端配置失败')
     throw error
   }
 })
@@ -1091,13 +1092,13 @@ ipcMain.handle('load-config', async () => {
 
     if (fs.existsSync(configPath)) {
       const config = fs.readFileSync(configPath, 'utf8')
-      console.log(`从文件加载配置: ${configPath}`)
+      logService.info('配置管理', `从文件加载配置: ${configPath}`)
       return JSON.parse(config)
     }
 
     return null
   } catch (error) {
-    console.error('加载配置文件失败:', error)
+    logService.error('配置管理', '加载配置文件失败')
     return null
   }
 })
@@ -1109,10 +1110,10 @@ ipcMain.handle('reset-config', async () => {
 
     if (fs.existsSync(configPath)) {
       fs.unlinkSync(configPath)
-      console.log(`配置文件已删除: ${configPath}`)
+      logService.info('配置管理', `配置文件已删除: ${configPath}`)
     }
   } catch (error) {
-    console.error('重置配置文件失败:', error)
+    logService.error('配置管理', '重置配置文件失败')
     throw error
   }
 })
@@ -1120,18 +1121,18 @@ ipcMain.handle('reset-config', async () => {
 // 日志文件操作
 ipcMain.handle('get-log-path', async () => {
   try {
-    return getLogPath()
+    return logService.getLogPath()
   } catch (error) {
-    log.error('获取日志路径失败:', error)
+    logService.error('日志管理', '获取日志路径失败')
     throw error
   }
 })
 
 ipcMain.handle('get-log-files', async _event => {
   try {
-    return getLogFiles()
+    return logService.getLogFiles()
   } catch (error) {
-    log.error('获取日志文件列表失败:', error)
+    logService.error('日志管理', '获取日志文件列表失败')
     throw error
   }
 })
@@ -1146,7 +1147,7 @@ ipcMain.handle('get-logs', async (_event, lines?: number, fileName?: string) => 
       logFilePath = path.join(appRoot, 'logs', fileName)
     } else {
       // 否则使用当前日志文件
-      logFilePath = getLogPath()
+      logFilePath = logService.getLogPath()
     }
 
     if (!fs.existsSync(logFilePath)) {
@@ -1162,7 +1163,7 @@ ipcMain.handle('get-logs', async (_event, lines?: number, fileName?: string) => 
 
     return logs
   } catch (error) {
-    log.error('读取日志文件失败:', error)
+    logService.error('日志管理', '读取日志文件失败')
     throw error
   }
 })
@@ -1177,28 +1178,210 @@ ipcMain.handle('clear-logs', async (_event, fileName?: string) => {
       logFilePath = path.join(appRoot, 'logs', fileName)
     } else {
       // 否则清空当前日志文件
-      logFilePath = getLogPath()
+      logFilePath = logService.getLogPath()
     }
 
     if (fs.existsSync(logFilePath)) {
       fs.writeFileSync(logFilePath, '', 'utf8')
-      log.info(`日志文件已清空: ${fileName || '当前文件'}`)
+      logService.info('日志管理', `日志文件已清空: ${fileName || '当前文件'}`)
     }
   } catch (error) {
-    log.error('清空日志文件失败:', error)
+    logService.error('日志管理', '清空日志文件失败')
     throw error
   }
 })
 
 ipcMain.handle('clean-old-logs', async (_event, daysToKeep = 7) => {
   try {
-    cleanOldLogs(daysToKeep)
-    log.info(`已清理${daysToKeep}天前的旧日志文件`)
+    logService.cleanOldLogs()
+    logService.info('日志管理', `已清理${daysToKeep}天前的旧日志文件`)
   } catch (error) {
-    log.error('清理旧日志文件失败:', error)
+    logService.error('日志管理', '清理旧日志文件失败')
     throw error
   }
 })
+
+// 日志解析相关的IPC处理程序 - 恢复后端日志处理
+ipcMain.handle('log:parseBackendLog', async (_event, logLine: string) => {
+  try {
+    // 动态导入LoguruBackendLogParser
+    const { LoguruBackendLogParser } = await import('./utils/loguruBackendLogParser')
+    const parser = LoguruBackendLogParser.getInstance()
+    const parsedLog = parser.parse(logLine)
+
+    return {
+      timestamp: parsedLog.timestamp,
+      level: parsedLog.level,
+      module: parsedLog.module,
+      message: parsedLog.message,
+      source: parsedLog.source,
+      originalLog: parsedLog.originalLog,
+      isValid: parsedLog.isValid
+    }
+  } catch (error) {
+    console.error('后端日志解析失败:', error)
+    return { timestamp: new Date(), level: 'ERROR', module: '解析器', message: `解析失败: ${error}` }
+  }
+})
+
+ipcMain.handle('log:processLogColors', async (_event, logContent: string, enableColorHighlight: boolean) => {
+  try {
+    // 动态导入ColorProcessor
+    const { ColorProcessor } = await import('./utils/colorProcessor')
+
+    if (enableColorHighlight) {
+      // 处理HTML颜色标签
+      return ColorProcessor.htmlToAnsi(logContent)
+    } else {
+      // 移除颜色标签
+      return ColorProcessor.stripHtmlColors(logContent)
+    }
+  } catch (error) {
+    console.error('后端日志颜色处理失败:', error)
+    return logContent // 出错时返回原始内容
+  }
+})
+
+// 检查是否已经是格式化后的日志
+function isAlreadyFormattedLog(logData: string): boolean {
+  if (!logData || !logData.trim()) {
+    return false
+  }
+
+  // 检查是否包含HTML颜色标签（更全面的检测）
+  const hasColorTags = /<(\w+?)>.*?<\/\1>/.test(logData)
+  if (hasColorTags) {
+    return true
+  }
+
+  // 检查是否包含嵌套的日志格式（两个时间戳和两个模块名）
+  const hasNestedFormat = /\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}.*\|\s*\w+.*\|.*\|.*\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}.*\|\s*\w+.*\|/.test(logData)
+  if (hasNestedFormat) {
+    return true
+  }
+
+  // 检查是否包含ANSI颜色代码
+  const hasAnsiColors = /\x1b\[[0-9;]*m/.test(logData)
+  if (hasAnsiColors) {
+    return true
+  }
+
+  // 检查是否已经是标准格式的日志（时间戳 | 级别 | 模块 | 消息）
+  const hasStandardFormat = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}\s*\|\s*\w+\s*\|\s*\w+\s*\|/.test(logData)
+  if (hasStandardFormat) {
+    // 进一步检查是否包含HTML标签，如果包含则认为是已格式化的
+    return /<[^>]+>/.test(logData)
+  }
+
+  return false
+}
+
+// 处理HTML颜色标签，转换为Monaco Editor可显示的HTML
+function processHtmlColorTags(logLine: string): string {
+  // 将HTML颜色标签转换为Monaco Editor支持的HTML格式
+  return logLine.replace(/<(\w+?)>(.*?)<\/\1>/g, (match, color, content) => {
+    // 根据颜色标签类型设置样式
+    let style = ''
+
+    switch (color.toLowerCase()) {
+      case 'level':
+        // 对于level标签，需要根据日志级别设置颜色
+        const levelMatch = content.trim().match(/^(\w+)/)
+        if (levelMatch) {
+          const level = levelMatch[1].toUpperCase()
+          style = getLevelStyle(level)
+        } else {
+          // 如果无法提取日志级别，使用默认样式
+          style = 'color: #666666; font-weight: bold;'
+        }
+        break
+      case 'green':
+        style = 'color: #52c41a; font-weight: bold;'
+        break
+      case 'cyan':
+        style = 'color: #1890ff; font-weight: bold;'
+        break
+      case 'red':
+        style = 'color: #ff4d4f; font-weight: bold;'
+        break
+      case 'yellow':
+        style = 'color: #faad14; font-weight: bold;'
+        break
+      case 'blue':
+        style = 'color: #1890ff; font-weight: bold;'
+        break
+      case 'magenta':
+        style = 'color: #722ed1; font-weight: bold;'
+        break
+      default:
+        style = `color: #666666; font-weight: bold;`
+    }
+
+    return `<span style="${style}">${content}</span>`
+  })
+}
+
+// 为解析后的日志添加颜色
+function addColorsToParsedLog(parsedLog: any): string {
+  const timestamp = parsedLog.timestamp ? parsedLog.timestamp.toISOString().replace('T', ' ').substring(0, 23) : ''
+  const level = parsedLog.level || 'INFO'
+  const module = parsedLog.module || '未知模块'
+  const message = parsedLog.message || ''
+
+  const levelStyle = getLevelStyle(level)
+  const moduleStyle = 'color: #1890ff; background-color: #f0f5ff; padding: 2px 6px; border-radius: 3px;'
+
+  return `${timestamp} | <span style="${levelStyle}">${level}</span> | <span style="${moduleStyle}">${module}</span> | ${message}`
+}
+
+// 获取日志级别对应的样式
+function getLevelStyle(level: string): string {
+  switch (level.toUpperCase()) {
+    case 'DEBUG':
+      return 'color: #666666; background-color: #f8f8f8; padding: 2px 6px; border-radius: 3px; font-weight: bold;'
+    case 'INFO':
+      return 'color: #52c41a; background-color: #f6ffed; padding: 2px 6px; border-radius: 3px; font-weight: bold;'
+    case 'WARN':
+      return 'color: #faad14; background-color: #fffbe6; padding: 2px 6px; border-radius: 3px; font-weight: bold;'
+    case 'ERROR':
+      return 'color: #ff4d4f; background-color: #fff2f0; padding: 2px 6px; border-radius: 3px; font-weight: bold;'
+    default:
+      return 'color: #666666; background-color: #f5f5f5; padding: 2px 6px; border-radius: 3px; font-weight: bold;'
+  }
+}
+
+// 处理ANSI颜色代码，转换为HTML格式
+function processAnsiColors(logLine: string): string {
+  // 使用ColorProcessor处理ANSI颜色代码
+  const { ColorProcessor } = require('./utils/colorProcessor')
+  const htmlLine = ColorProcessor.htmlToAnsi(logLine)
+
+  // 如果包含ANSI代码，将其转换为HTML
+  if (logLine.includes('\x1b[')) {
+    // 简单的ANSI到HTML转换
+    return logLine
+      .replace(/\x1b\[31m/g, '<span style="color: #ff4d4f;">') // 红色
+      .replace(/\x1b\[32m/g, '<span style="color: #52c41a;">') // 绿色
+      .replace(/\x1b\[33m/g, '<span style="color: #faad14;">') // 黄色
+      .replace(/\x1b\[34m/g, '<span style="color: #1890ff;">') // 蓝色
+      .replace(/\x1b\[35m/g, '<span style="color: #722ed1;">') // 紫色
+      .replace(/\x1b\[36m/g, '<span style="color: #13c2c2;">') // 青色
+      .replace(/\x1b\[37m/g, '<span style="color: #ffffff;">') // 白色
+      .replace(/\x1b\[90m/g, '<span style="color: #666666;">') // 亮黑(灰色)
+      .replace(/\x1b\[91m/g, '<span style="color: #ff7875;">') // 亮红
+      .replace(/\x1b\[92m/g, '<span style="color: #95de64;">') // 亮绿
+      .replace(/\x1b\[93m/g, '<span style="color: #fff566;">') // 亮黄
+      .replace(/\x1b\[94m/g, '<span style="color: #69c0ff;">') // 亮蓝
+      .replace(/\x1b\[95m/g, '<span style="color: #b37feb;">') // 亮紫
+      .replace(/\x1b\[96m/g, '<span style="color: #5cdbd3;">') // 亮青
+      .replace(/\x1b\[97m/g, '<span style="color: #ffffff;">') // 亮白
+      .replace(/\x1b\[0m/g, '</span>') // 重置
+      .replace(/\x1b\[1m/g, '<span style="font-weight: bold;">') // 粗体
+      .replace(/\x1b\[22m/g, '</span>') // 取消粗体
+  }
+
+  return htmlLine
+}
 
 // 保留原有的日志操作方法以兼容现有代码
 ipcMain.handle('save-logs-to-file', async (_event, logs: string) => {
@@ -1213,9 +1396,9 @@ ipcMain.handle('save-logs-to-file', async (_event, logs: string) => {
 
     const logFilePath = path.join(logsDir, 'app.log')
     fs.writeFileSync(logFilePath, logs, 'utf8')
-    log.info(`日志已保存到: ${logFilePath}`)
+    logService.info('日志管理', `日志已保存到: ${logFilePath}`)
   } catch (error) {
-    log.error('保存日志文件失败:', error)
+    logService.error('日志管理', '保存日志文件失败')
     throw error
   }
 })
@@ -1227,13 +1410,13 @@ ipcMain.handle('load-logs-from-file', async () => {
 
     if (fs.existsSync(logFilePath)) {
       const logs = fs.readFileSync(logFilePath, 'utf8')
-      log.info(`从文件加载日志: ${logFilePath}`)
+      logService.info('日志管理', `从文件加载日志: ${logFilePath}`)
       return logs
     }
 
     return null
   } catch (error) {
-    log.error('加载日志文件失败:', error)
+    logService.error('日志管理', '加载日志文件失败')
     return null
   }
 })
@@ -1272,7 +1455,7 @@ app.on('before-quit', async event => {
     event.preventDefault()
     isQuitting = true
 
-    log.info('应用准备退出')
+    logService.info('应用生命周期', '应用准备退出')
 
     // 清理定时器
     if (saveWindowStateTimeout) {
@@ -1286,13 +1469,13 @@ app.on('before-quit', async event => {
     // 清理初始化资源
     try {
       await cleanupInitializationResources()
-      log.info('初始化资源清理完成')
+      logService.info('应用生命周期', '初始化资源清理完成')
     } catch (e) {
-      log.error('资源清理失败:', e)
+      logService.error('应用生命周期', '资源清理失败')
     }
 
     // 立即开始强制清理，不等待优雅关闭
-    log.info('开始强制清理所有相关进程')
+    logService.info('应用生命周期', '开始强制清理所有相关进程')
 
     try {
       // 并行执行多种清理方法
@@ -1332,12 +1515,12 @@ app.on('before-quit', async event => {
       const timeoutPromise = new Promise(resolve => setTimeout(resolve, 3000))
       await Promise.race([Promise.all(cleanupPromises), timeoutPromise])
 
-      log.info('进程清理完成')
+      logService.info('应用生命周期', '进程清理完成')
     } catch (e) {
-      log.error('进程清理时出错:', e)
+      logService.error('应用生命周期', '进程清理时出错')
     }
 
-    log.info('应用强制退出')
+    logService.info('应用生命周期', '应用强制退出')
 
     // 使用 process.exit 而不是 app.exit，更加强制
     setTimeout(() => {
@@ -1346,39 +1529,292 @@ app.on('before-quit', async event => {
   }
 })
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   // 初始化日志系统
-  setupLogger()
+  logService.initialize()
+
+  // 初始化日志管理服务
+  try {
+    await logManagementService.initialize()
+
+    // 设置日志管理服务的事件监听
+    logManagementService.on('log-added', (log) => {
+      // 可以在这里处理新添加的日志
+    })
+
+    logManagementService.on('error', (error) => {
+      logService.error('日志管理服务', `错误: ${error}`)
+    })
+
+    logService.info('日志管理服务', '日志管理服务初始化完成')
+  } catch (error) {
+    logService.error('日志管理服务', `初始化失败: ${error}`)
+  }
 
   // 清理7天前的旧日志
-  cleanOldLogs(7)
+  logService.cleanOldLogs()
 
-  log.info('应用启动')
-  log.info(`应用版本: ${app.getVersion()}`)
-  log.info(`Electron版本: ${process.versions.electron}`)
-  log.info(`Node版本: ${process.versions.node}`)
-  log.info(`平台: ${process.platform}`)
+  logService.info('应用启动', `应用版本: ${app.getVersion()}`)
+  logService.info('应用启动', `Electron版本: ${process.versions.electron}`)
+  logService.info('应用启动', `Node版本: ${process.versions.node}`)
+  logService.info('应用启动', `平台: ${process.platform}`)
 
   // 检查管理员权限
   if (!isRunningAsAdmin()) {
-    log.warn('应用未以管理员权限运行')
-    console.log('应用未以管理员权限运行')
+    logService.warn('应用启动', '应用未以管理员权限运行')
     // 在生产环境中，可以选择是否强制要求管理员权限
     // 这里先创建窗口，让用户选择是否重新启动
   } else {
-    log.info('应用以管理员权限运行')
+    logService.info('应用启动', '应用以管理员权限运行')
   }
 
   createWindow()
 })
 
-app.on('window-all-closed', () => {
+app.on('window-all-closed', async () => {
   if (process.platform !== 'darwin') {
     isQuitting = true
+
+    // 销毁日志管理服务
+    try {
+      await logManagementService.destroy()
+      logService.info('应用退出', '日志管理服务已销毁')
+    } catch (error) {
+      logService.error('应用退出', `销毁日志管理服务失败: ${error}`)
+    }
+
     app.quit()
   }
 })
 
 app.on('activate', () => {
   if (mainWindow === null) createWindow()
+})
+
+// 日志管理服务IPC处理器
+ipcMain.handle('logManagement:initialize', async (_, config) => {
+  try {
+    // logManagementService.initialize() is already called above
+    return { success: true }
+  } catch (error) {
+    logService.error('日志管理服务', `初始化失败: ${error}`)
+    return { success: false, error: String(error) }
+  }
+})
+
+ipcMain.handle('logManagement:processLog', async (_, rawLog, source) => {
+  try {
+    const result = await logManagementService.processLog(rawLog, source)
+    return result
+  } catch (error) {
+    logService.error('日志管理服务', `处理日志失败: ${error}`)
+    return { success: false, error: String(error) }
+  }
+})
+
+ipcMain.handle('logManagement:processBatchLogs', async (_, rawLogs, source) => {
+  try {
+    const result = await logManagementService.processBatchLogs(rawLogs, source)
+    return result
+  } catch (error) {
+    logService.error('日志管理服务', `批量处理日志失败: ${error}`)
+    return { success: false, error: String(error) }
+  }
+})
+
+ipcMain.handle('logManagement:subscribe', async (_, id, filter) => {
+  try {
+    const callback = (logs: any[]) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('log-update', logs)
+      }
+    }
+
+    logManagementService.subscribe(id, callback, filter)
+    return { success: true }
+  } catch (error) {
+    logService.error('日志管理服务', `订阅失败: ${error}`)
+    return { success: false, error: String(error) }
+  }
+})
+
+ipcMain.handle('logManagement:unsubscribe', async (_, id) => {
+  try {
+    logManagementService.unsubscribe(id)
+    return { success: true }
+  } catch (error) {
+    logService.error('日志管理服务', `取消订阅失败: ${error}`)
+    return { success: false, error: String(error) }
+  }
+})
+
+ipcMain.handle('logManagement:toggleSubscriber', async (_, id, enabled) => {
+  try {
+    logManagementService.toggleSubscriber(id, enabled)
+    return { success: true }
+  } catch (error) {
+    logService.error('日志管理服务', `切换订阅者状态失败: ${error}`)
+    return { success: false, error: String(error) }
+  }
+})
+
+ipcMain.handle('logManagement:getLogs', async (_, conditions, limit, offset) => {
+  try {
+    const logs = logManagementService.getLogs(conditions, limit, offset)
+    return { success: true, data: logs }
+  } catch (error) {
+    logService.error('日志管理服务', `获取日志失败: ${error}`)
+    return { success: false, error: String(error) }
+  }
+})
+
+ipcMain.handle('logManagement:exportLogs', async (_, conditions, format) => {
+  try {
+    const exportedData = await logManagementService.exportLogs(conditions, format)
+    return { success: true, data: exportedData }
+  } catch (error) {
+    logService.error('日志管理服务', `导出日志失败: ${error}`)
+    return { success: false, error: String(error) }
+  }
+})
+
+ipcMain.handle('logManagement:clearLogs', async () => {
+  try {
+    logManagementService.clearLogs()
+    return { success: true }
+  } catch (error) {
+    logService.error('日志管理服务', `清空日志失败: ${error}`)
+    return { success: false, error: String(error) }
+  }
+})
+
+ipcMain.handle('logManagement:getStats', async () => {
+  try {
+    const stats = logManagementService.getStats()
+    return { success: true, data: stats }
+  } catch (error) {
+    logService.error('日志管理服务', `获取统计信息失败: ${error}`)
+    return { success: false, error: String(error) }
+  }
+})
+
+ipcMain.handle('logManagement:resetStats', async () => {
+  try {
+    logManagementService.resetStats()
+    return { success: true }
+  } catch (error) {
+    logService.error('日志管理服务', `重置统计信息失败: ${error}`)
+    return { success: false, error: String(error) }
+  }
+})
+
+ipcMain.handle('logManagement:getConfig', async () => {
+  try {
+    const config = logManagementService.getConfig()
+    return { success: true, data: config }
+  } catch (error) {
+    logService.error('日志管理服务', `获取配置失败: ${error}`)
+    return { success: false, error: String(error) }
+  }
+})
+
+ipcMain.handle('logManagement:updateConfig', async (_, config) => {
+  try {
+    logManagementService.updateConfig(config)
+    return { success: true }
+  } catch (error) {
+    logService.error('日志管理服务', `更新配置失败: ${error}`)
+    return { success: false, error: String(error) }
+  }
+})
+
+ipcMain.handle('logManagement:getSubscribers', async () => {
+  try {
+    const subscribers = logManagementService.getSubscribers()
+    return { success: true, data: subscribers }
+  } catch (error) {
+    logService.error('日志管理服务', `获取订阅者失败: ${error}`)
+    return { success: false, error: String(error) }
+  }
+})
+
+// 日志管道IPC处理器
+ipcMain.handle('logPipeline:getConfig', async () => {
+  try {
+    const config = logManagementService.getConfig()
+    return { success: true, data: config.pipelineConfig }
+  } catch (error) {
+    logService.error('日志管道', `获取配置失败: ${error}`)
+    return { success: false, error: String(error) }
+  }
+})
+
+ipcMain.handle('logPipeline:updateConfig', async (_, config) => {
+  try {
+    logManagementService.updateConfig({ pipelineConfig: config })
+    return { success: true }
+  } catch (error) {
+    logService.error('日志管道', `更新配置失败: ${error}`)
+    return { success: false, error: String(error) }
+  }
+})
+
+ipcMain.handle('logPipeline:getParserStats', async () => {
+  try {
+    const stats = logManagementService.getStats()
+    return { success: true, data: stats.parserStats }
+  } catch (error) {
+    logService.error('日志管道', `获取解析器统计失败: ${error}`)
+    return { success: false, error: String(error) }
+  }
+})
+
+ipcMain.handle('logPipeline:toggleParser', async (_, parserName, enabled) => {
+  try {
+    // 这里需要实现解析器切换逻辑
+    return { success: true }
+  } catch (error) {
+    logService.error('日志管道', `切换解析器失败: ${error}`)
+    return { success: false, error: String(error) }
+  }
+})
+
+ipcMain.handle('logPipeline:clearCache', async () => {
+  try {
+    // 这里需要实现缓存清理逻辑
+    return { success: true }
+  } catch (error) {
+    logService.error('日志管道', `清理缓存失败: ${error}`)
+    return { success: false, error: String(error) }
+  }
+})
+
+ipcMain.handle('logPipeline:getCacheStats', async () => {
+  try {
+    const stats = logManagementService.getStats()
+    return { success: true, data: stats.cacheStats }
+  } catch (error) {
+    logService.error('日志管道', `获取缓存统计失败: ${error}`)
+    return { success: false, error: String(error) }
+  }
+})
+
+ipcMain.handle('logPipeline:flush', async () => {
+  try {
+    // 这里需要实现刷新逻辑
+    return { success: true }
+  } catch (error) {
+    logService.error('日志管道', `刷新失败: ${error}`)
+    return { success: false, error: String(error) }
+  }
+})
+
+ipcMain.handle('logPipeline:getBatchStats', async () => {
+  try {
+    const stats = logManagementService.getStats()
+    return { success: true, data: stats.batchStats }
+  } catch (error) {
+    logService.error('日志管道', `获取批处理统计失败: ${error}`)
+    return { success: false, error: String(error) }
+  }
 })

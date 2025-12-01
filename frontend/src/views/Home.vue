@@ -243,6 +243,9 @@ import NoticeModal from '@/components/NoticeModal.vue'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 import dayjs from 'dayjs'
 import { mirrorManager } from '@/utils/mirrorManager'
+import { getLogger } from '@/utils/logger'
+
+const logger = getLogger('首页')
 
 interface ActivityInfo {
   Tip: string
@@ -414,7 +417,7 @@ const fetchActivityData = async () => {
       error.value = response.message || '获取数据失败'
     }
   } catch (err) {
-    console.error('获取数据失败:', err)
+    logger.error('获取数据失败:', err)
     error.value = '网络请求失败，请检查连接'
   } finally {
     loading.value = false
@@ -456,10 +459,10 @@ const fetchNoticeData = async () => {
         await playSound('simple/announcement_display')
       }
     } else {
-      console.warn('获取公告失败:', response.message)
+      logger.warn('获取公告失败:', response.message)
     }
   } catch (error) {
-    console.error('获取公告失败:', error)
+    logger.error('获取公告失败:', error)
   }
 }
 
@@ -489,7 +492,7 @@ const showNotice = async () => {
       message.error(response.message || '获取公告失败')
     }
   } catch (error) {
-    console.error('显示公告失败:', error)
+    logger.error('显示公告失败:', error)
     message.error('显示公告失败，请稍后重试')
   } finally {
     noticeLoading.value = false

@@ -2,6 +2,9 @@ import { ref } from 'vue'
 import { message } from 'ant-design-vue'
 import type { PlanCreateIn, PlanDeleteIn, PlanGetIn, PlanReorderIn, PlanUpdateIn } from '@/api'
 import { Service } from '@/api'
+import { getLogger } from '@/utils/logger'
+
+const logger = getLogger('计划API')
 
 export function usePlanApi() {
   const loading = ref(false)
@@ -13,7 +16,7 @@ export function usePlanApi() {
       const params: PlanGetIn = planId ? { planId } : {}
       return await Service.getPlanApiPlanGetPost(params)
     } catch (error) {
-      console.error('获取计划失败:', error)
+      logger.error('获取计划失败:', error)
       message.error('获取计划失败')
       throw error
     } finally {
@@ -32,7 +35,7 @@ export function usePlanApi() {
       // message.success('创建计划成功')
       return await Service.addPlanApiPlanAddPost(params)
     } catch (error) {
-      console.error('创建计划失败:', error)
+      logger.error('创建计划失败:', error)
       message.error('创建计划失败')
       throw error
     } finally {
@@ -48,7 +51,7 @@ export function usePlanApi() {
       // message.success('更新计划成功')
       return await Service.updatePlanApiPlanUpdatePost(params)
     } catch (error) {
-      console.error('更新计划失败:', error)
+      logger.error('更新计划失败:', error)
       message.error('更新计划失败')
       throw error
     } finally {
@@ -65,7 +68,7 @@ export function usePlanApi() {
       message.success('删除计划成功')
       return response
     } catch (error) {
-      console.error('删除计划失败:', error)
+      logger.error('删除计划失败:', error)
       message.error('删除计划失败')
       throw error
     } finally {
@@ -82,7 +85,7 @@ export function usePlanApi() {
       message.success('重新排序成功')
       return response
     } catch (error) {
-      console.error('重新排序失败:', error)
+      logger.error('重新排序失败:', error)
       message.error('重新排序失败')
       throw error
     } finally {

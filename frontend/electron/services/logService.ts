@@ -1,171 +1,280 @@
-import log from 'electron-log'
-import * as path from 'path'
-import { getAppRoot } from './environmentService'
+/**
+ * 主进程日志服务
+ * 集成格式化器、颜色处理器和文件管理器，实现统一的日志处理逻辑
+ */
 
-// 移除ANSI颜色转义字符的函数
-function stripAnsiColors(text: string): string {
-  // 匹配ANSI转义序列的正则表达式 - 更完整的模式
-  const ansiRegex = /\x1b\[[0-9;]*[mGKHF]|\x1b\[[\d;]*[A-Za-z]/g
-  return text.replace(ansiRegex, '')
-}
+import { ipcMain } from 'electron'
+import { LogFormatter, LogEntry } from '../utils/logFormatter'
+import { ColorProcessor } from '../utils/colorProcessor'
+import { LogFileManager } from '../utils/logFileManager'
 
-// 获取应用安装目录下的日志路径
-function getLogDirectory(): string {
-  const appRoot = getAppRoot()
-  return path.join(appRoot, 'logs')
-}
+export class LogService {
+  private static instance: LogService
+  private isInitialized = false
 
-// 获取当前日期的日志文件名 - 使用ISO 8601格式
-function getTodayLogFileName(): string {
-  const today = new Date()
-  const year = today.getFullYear()
-  const month = String(today.getMonth() + 1).padStart(2, '0')
-  const day = String(today.getDate()).padStart(2, '0')
-  return `frontendlog-${year}-${month}-${day}.log`
-}
+  private constructor() { }
 
-// 配置日志系统
-export function setupLogger() {
-  // 设置日志文件路径到软件安装目录
-  const logPath = getLogDirectory()
-
-  // 确保日志目录存在
-  const fs = require('fs')
-  if (!fs.existsSync(logPath)) {
-    fs.mkdirSync(logPath, { recursive: true })
-  }
-
-  // 配置日志格式
-  log.transports.file.format = '[{y}-{m}-{d} {h}:{i}:{s}.{ms}] [{level}] {text}'
-  log.transports.console.format = '[{y}-{m}-{d} {h}:{i}:{s}.{ms}] [{level}] {text}'
-
-  // 设置主进程日志文件路径和名称 - 按日期分文件
-  log.transports.file.resolvePathFn = () => {
-    const fileName = getTodayLogFileName()
-    return path.join(logPath, fileName)
-  }
-
-  // 设置日志级别
-  log.transports.file.level = 'debug'
-  log.transports.console.level = 'debug'
-
-  // 设置文件大小限制 (50MB，因为按日期分文件，可以设置更大)
-  log.transports.file.maxSize = 50 * 1024 * 1024
-
-  // 禁用自动归档，因为我们按日期分文件
-  log.transports.file.archiveLog = () => {
-    /* do nothing */
-  }
-
-  // 捕获未处理的异常和Promise拒绝
-  log.catchErrors({
-    showDialog: false,
-    onError: (options: any) => {
-      log.error('未处理的错误:', options.error)
-      log.error('版本信息:', options.versions)
-      log.error('进程类型:', options.processType)
-    },
-  })
-
-  // 重写console方法，将所有控制台输出重定向到日志
-  const originalConsole = {
-    log: console.log,
-    error: console.error,
-    warn: console.warn,
-    info: console.info,
-    debug: console.debug,
-  }
-
-  console.log = (...args) => {
-    log.info(...args)
-    originalConsole.log(...args)
-  }
-
-  console.error = (...args) => {
-    log.error(...args)
-    originalConsole.error(...args)
-  }
-
-  console.warn = (...args) => {
-    log.warn(...args)
-    originalConsole.warn(...args)
-  }
-
-  console.info = (...args) => {
-    log.info(...args)
-    originalConsole.info(...args)
-  }
-
-  console.debug = (...args) => {
-    log.debug(...args)
-    originalConsole.debug(...args)
-  }
-
-  log.info('日志系统初始化完成')
-  log.info(`日志文件路径: ${path.join(logPath, getTodayLogFileName())}`)
-
-  return log
-}
-
-// 导出日志实例和工具函数
-export { log, stripAnsiColors }
-
-// 获取当前日志文件路径
-export function getLogPath(): string {
-  return path.join(getLogDirectory(), getTodayLogFileName())
-}
-
-// 获取所有日志文件列表
-export function getLogFiles(): string[] {
-  const fs = require('fs')
-  const logDir = getLogDirectory()
-
-  if (!fs.existsSync(logDir)) {
-    return []
-  }
-
-  const files = fs.readdirSync(logDir)
-  return files
-    .filter((file: string) => file.match(/^frontendlog-\d{4}-\d{2}-\d{2}\.log$/))
-    .sort()
-    .reverse() // 最新的在前面
-}
-
-// 清理旧日志文件
-export function cleanOldLogs(daysToKeep: number = 7) {
-  const fs = require('fs')
-  const logDir = getLogDirectory()
-
-  if (!fs.existsSync(logDir)) {
-    return
-  }
-
-  const files = fs.readdirSync(logDir)
-  const now = new Date()
-  const cutoffDate = new Date(now.getTime() - daysToKeep * 24 * 60 * 60 * 1000)
-
-  // 格式化截止日期为YYYY-MM-DD
-  const cutoffDateStr =
-    cutoffDate.getFullYear() +
-    '-' +
-    String(cutoffDate.getMonth() + 1).padStart(2, '0') +
-    '-' +
-    String(cutoffDate.getDate()).padStart(2, '0')
-
-  files.forEach((file: string) => {
-    // 匹配日志文件名格式 frontendlog-YYYY-MM-DD.log
-    const match = file.match(/^frontendlog-(\d{4}-\d{2}-\d{2})\.log$/)
-    if (match) {
-      const fileDateStr = match[1]
-      if (fileDateStr < cutoffDateStr) {
-        const filePath = path.join(logDir, file)
-        try {
-          fs.unlinkSync(filePath)
-          log.info(`已删除旧日志文件: ${file}`)
-        } catch (error) {
-          log.error(`删除旧日志文件失败: ${file}`, error)
-        }
-      }
+  static getInstance(): LogService {
+    if (!LogService.instance) {
+      LogService.instance = new LogService()
     }
-  })
+    return LogService.instance
+  }
+
+  /**
+   * 初始化日志服务
+   */
+  initialize(): void {
+    if (this.isInitialized) {
+      return
+    }
+
+    // 确保debug目录存在
+    LogFileManager.ensureDebugDir()
+
+    // 设置定时任务：每天检查是否需要轮转日志
+    this.setupRotationSchedule()
+
+    // 注册IPC处理器
+    this.registerIpcHandlers()
+
+    // 捕获未处理的异常和Promise拒绝
+    this.setupErrorHandling()
+
+    this.isInitialized = true
+    this.info('日志服务', '日志服务初始化完成')
+  }
+
+  /**
+   * 设置日志轮转定时任务
+   */
+  private setupRotationSchedule(): void {
+    // 每天凌晨2点检查是否需要轮转日志
+    const now = new Date()
+    const tomorrow = new Date(now)
+    tomorrow.setDate(tomorrow.getDate() + 1)
+    tomorrow.setHours(2, 0, 0, 0)
+
+    const msUntilTomorrow = tomorrow.getTime() - now.getTime()
+
+    setTimeout(() => {
+      this.checkAndRotateLogs()
+      // 设置每24小时执行一次
+      setInterval(() => {
+        this.checkAndRotateLogs()
+      }, 24 * 60 * 60 * 1000)
+    }, msUntilTomorrow)
+  }
+
+  /**
+   * 检查并轮转日志
+   */
+  private async checkAndRotateLogs(): Promise<void> {
+    try {
+      if (LogFileManager.shouldRotate()) {
+        await LogFileManager.rotateLog()
+      }
+      LogFileManager.cleanOldLogs()
+    } catch (error) {
+      this.error('日志服务', `日志轮转失败: ${error}`)
+    }
+  }
+
+  /**
+   * 设置错误处理
+   */
+  private setupErrorHandling(): void {
+    process.on('uncaughtException', (error) => {
+      this.error('未捕获异常', `${error.message}\n${error.stack}`)
+    })
+
+    process.on('unhandledRejection', (reason) => {
+      this.error('未处理的Promise拒绝', String(reason))
+    })
+  }
+
+  /**
+   * 注册IPC处理器
+   */
+  private registerIpcHandlers(): void {
+    // 在测试环境中，ipcMain可能未定义，跳过注册
+    if (!ipcMain) {
+      return
+    }
+
+    // 获取日志文件路径
+    ipcMain.handle('log:getPath', () => {
+      return LogFileManager.getCurrentLogPath()
+    })
+
+    // 获取日志文件列表
+    ipcMain.handle('log:getFiles', () => {
+      return LogFileManager.getLogFiles()
+    })
+
+    // 获取日志内容
+    ipcMain.handle('log:getContent', (_, lines?: number, fileName?: string) => {
+      return LogFileManager.getLogContent(fileName, lines)
+    })
+
+    // 清空日志
+    ipcMain.handle('log:clear', (_, fileName?: string) => {
+      if (!fileName || fileName === 'frontend.log') {
+        LogFileManager.clearCurrentLog()
+      }
+    })
+
+    // 清理旧日志
+    ipcMain.handle('log:cleanOldLogs', () => {
+      LogFileManager.cleanOldLogs()
+    })
+
+    // 记录日志（来自渲染进程）
+    ipcMain.handle('log:write', (_, level: string, module: string, message: string) => {
+      this.writeLog(level, module, message)
+    })
+  }
+
+  /**
+   * 写入日志
+   * @param level 日志级别
+   * @param module 模块名
+   * @param message 日志消息
+   */
+  writeLog(level: string, module: string, message: string): void {
+
+    const entry = LogFormatter.createLogEntry(level, module, message)
+
+    // 格式化为带颜色的字符串（用于控制台输出）
+    const coloredMessage = LogFormatter.formatWithColors(entry)
+    const ansiMessage = ColorProcessor.htmlToAnsi(coloredMessage)
+
+    // 输出到控制台
+    console.log(ansiMessage)
+
+    // 格式化为无颜色的字符串（用于文件存储）
+    const plainMessage = LogFormatter.formatWithoutColors(entry)
+    LogFileManager.writeLog(plainMessage)
+  }
+
+  /**
+   * TRACE级别日志
+   * @param module 模块名
+   * @param message 日志消息
+   */
+  trace(module: string, message: string): void {
+    this.writeLog('TRACE', module, message)
+  }
+
+  /**
+   * DEBUG级别日志
+   * @param module 模块名
+   * @param message 日志消息
+   */
+  debug(module: string, message: string): void {
+    this.writeLog('DEBUG', module, message)
+  }
+
+  /**
+   * INFO级别日志
+   * @param module 模块名
+   * @param message 日志消息
+   */
+  info(module: string, message: string): void {
+    this.writeLog('INFO', module, message)
+  }
+
+  /**
+   * WARN级别日志
+   * @param module 模块名
+   * @param message 日志消息
+   */
+  warn(module: string, message: string): void {
+    this.writeLog('WARN', module, message)
+  }
+
+  /**
+   * ERROR级别日志
+   * @param module 模块名
+   * @param message 日志消息
+   */
+  error(module: string, message: string): void {
+    this.writeLog('ERROR', module, message)
+  }
+
+  /**
+   * CRITICAL级别日志
+   * @param module 模块名
+   * @param message 日志消息
+   */
+  critical(module: string, message: string): void {
+    this.writeLog('CRITICAL', module, message)
+  }
+
+  /**
+   * SUCCESS级别日志
+   * @param module 模块名
+   * @param message 日志消息
+   */
+  success(module: string, message: string): void {
+    this.writeLog('SUCCESS', module, message)
+  }
+
+  /**
+   * 获取日志文件路径
+   */
+  getLogPath(): string {
+    return LogFileManager.getCurrentLogPath()
+  }
+
+  /**
+   * 获取日志文件列表
+   */
+  getLogFiles(): string[] {
+    return LogFileManager.getLogFiles()
+  }
+
+  /**
+   * 获取日志内容
+   * @param lines 行数限制
+   * @param fileName 文件名
+   */
+  getLogContent(lines?: number, fileName?: string): string {
+    return LogFileManager.getLogContent(fileName, lines)
+  }
+
+  /**
+   * 清空日志
+   * @param fileName 文件名
+   */
+  clearLogs(fileName?: string): void {
+    if (!fileName || fileName === 'frontend.log') {
+      LogFileManager.clearCurrentLog()
+    }
+  }
+
+  /**
+   * 清理旧日志
+   */
+  cleanOldLogs(): void {
+    LogFileManager.cleanOldLogs()
+  }
 }
+
+// 导出单例实例
+export const logService = LogService.getInstance()
+
+// 导出便捷函数
+export const setupLogger = () => logService.initialize()
+export const trace = (module: string, message: string) => logService.trace(module, message)
+export const debug = (module: string, message: string) => logService.debug(module, message)
+export const info = (module: string, message: string) => logService.info(module, message)
+export const warn = (module: string, message: string) => logService.warn(module, message)
+export const error = (module: string, message: string) => logService.error(module, message)
+export const critical = (module: string, message: string) => logService.critical(module, message)
+export const success = (module: string, message: string) => logService.success(module, message)
+export const getLogPath = () => logService.getLogPath()
+export const getLogFiles = () => logService.getLogFiles()
+export const getLogs = (lines?: number, fileName?: string) => logService.getLogContent(lines, fileName)
+export const clearLogs = (fileName?: string) => logService.clearLogs(fileName)
+export const cleanOldLogs = () => logService.cleanOldLogs()

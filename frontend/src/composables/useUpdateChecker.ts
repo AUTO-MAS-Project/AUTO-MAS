@@ -1,6 +1,9 @@
 import { ref, onUnmounted } from 'vue'
 import { Service } from '@/api'
+import { getLogger } from '@/utils/logger'
 import { message } from 'ant-design-vue'
+
+const logger = getLogger('更新检查器')
 
 // 获取版本号，优先使用环境变量，否则使用一个测试版本
 const version = (import.meta as any).env.VITE_APP_VERSION || '1.0.0'
@@ -26,7 +29,7 @@ const checkAutoUpdateEnabled = async (): Promise<boolean> => {
       return response.data.Update?.IfAutoUpdate || false
     }
   } catch (error) {
-    console.warn('[useUpdateChecker] 获取自动更新设置失败:', error)
+    logger.warn('[useUpdateChecker] 获取自动更新设置失败:', error)
   }
   return false
 }
@@ -39,7 +42,7 @@ export function useUpdateChecker() {
     // 检查自动更新设置是否开启
     const autoUpdateEnabled = await checkAutoUpdateEnabled()
     if (!autoUpdateEnabled) {
-      console.log('[useUpdateChecker] 自动检查更新已关闭，跳过定时检查')
+      logger.info('[useUpdateChecker] 自动检查更新已关闭，跳过定时检查')
       return
     }
 
@@ -70,7 +73,7 @@ export function useUpdateChecker() {
         }
       }
     } catch (error: any) {
-      console.error('[useUpdateChecker] 定时更新检查失败:', error?.message)
+      logger.error('[useUpdateChecker] 定时更新检查失败:', error?.message)
     } finally {
       isPolling.value = false
     }
@@ -100,7 +103,7 @@ export function useUpdateChecker() {
         }
       }
     } catch (error: any) {
-      console.error('[useUpdateChecker] 手动更新检查失败:', error?.message)
+      logger.error('[useUpdateChecker] 手动更新检查失败:', error?.message)
       if (!silent) {
         message.error('获取更新失败！')
       }
@@ -117,17 +120,17 @@ export function useUpdateChecker() {
     // 检查自动更新设置是否开启
     const autoUpdateEnabled = await checkAutoUpdateEnabled()
     if (!autoUpdateEnabled) {
-      console.log('[useUpdateChecker] 自动检查更新已关闭，不启动定时任务')
+      logger.info('[useUpdateChecker] 自动检查更新已关闭，不启动定时任务')
       return
     }
 
     // 如果已经在检查中，则不重复启动
     if (updateCheckTimer) {
-      console.log('[useUpdateChecker] 定时任务已存在，跳过启动')
+      logger.info('[useUpdateChecker] 定时任务已存在，跳过启动')
       return
     }
 
-    console.log('[useUpdateChecker] 启动定时版本检查任务')
+    logger.info('[useUpdateChecker] 启动定时版本检查任务')
 
     // 延迟3秒后再执行首次检查，确保后端已经完全启动
     setTimeout(async () => {
@@ -143,13 +146,13 @@ export function useUpdateChecker() {
     if (updateCheckTimer) {
       clearInterval(updateCheckTimer)
       updateCheckTimer = null
-      console.log('[useUpdateChecker] 停止定时版本检查任务')
+      logger.info('[useUpdateChecker] 停止定时版本检查任务')
     }
   }
 
   // 重新启动定时检查器（当设置变更时调用）
   const restartPolling = async () => {
-    console.log('[useUpdateChecker] 重新启动定时检查任务')
+    logger.info('[useUpdateChecker] 重新启动定时检查任务')
     stopPolling() // 先停止现有任务
     await startPolling() // 再根据设置重新启动
   }

@@ -28,6 +28,9 @@
 import { onMounted, onUnmounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { useTheme } from '@/composables/useTheme'
+import { getLogger } from '@/utils/logger'
+
+const logger = getLogger('弹窗对话框')
 
 defineOptions({
   name: 'PopupDialog',
@@ -52,7 +55,7 @@ onMounted(() => {
       options.value = dialogData.options || ['确定', '取消']
       messageId.value = dialogData.messageId || ''
     } catch (error) {
-      console.error('解析对话框数据失败:', error)
+      logger.error('解析对话框数据失败:', error)
     }
   }
 
@@ -83,7 +86,7 @@ const handleChoice = async (choice: boolean) => {
       await window.electronAPI.dialogResponse(messageId.value, choice)
       // 窗口会被主进程关闭，不需要手动导航
     } catch (error) {
-      console.error('发送对话框响应失败:', error)
+      logger.error('发送对话框响应失败:', error)
     }
   }
 }

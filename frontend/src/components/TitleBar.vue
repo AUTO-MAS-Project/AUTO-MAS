@@ -54,6 +54,9 @@ import { useTheme } from '@/composables/useTheme'
 import { useAppClosing } from '@/composables/useAppClosing'
 import type { UpdateCheckOut } from '@/api'
 import { Service, type VersionOut } from '@/api'
+import { getLogger } from '@/utils/logger'
+
+const logger = getLogger('标题栏')
 
 const { isDark } = useTheme()
 const { showClosingOverlay } = useAppClosing()
@@ -77,7 +80,7 @@ const getAppVersion = async () => {
     updateInfo.value = ver
     return ver || '获取版本失败！'
   } catch (error) {
-    console.error('Failed to get app version:', error)
+    logger.error('Failed to get app version:', error)
     return '获取前端版本失败！'
   }
 }
@@ -86,7 +89,7 @@ const getBackendVersion = async () => {
   try {
     backendUpdateInfo.value = await Service.getGitVersionApiInfoVersionPost()
   } catch (error) {
-    console.error('Failed to get backend version:', error)
+    logger.error('Failed to get backend version:', error)
     return '获取后端版本失败！'
   }
 }
@@ -112,7 +115,7 @@ const minimizeWindow = async () => {
   try {
     await window.electronAPI?.windowMinimize()
   } catch (error) {
-    console.error('Failed to minimize window:', error)
+    logger.error('Failed to minimize window:', error)
   }
 }
 
@@ -121,13 +124,13 @@ const toggleMaximize = async () => {
     await window.electronAPI?.windowMaximize()
     isMaximized.value = (await window.electronAPI?.windowIsMaximized()) || false
   } catch (error) {
-    console.error('Failed to toggle maximize:', error)
+    logger.error('Failed to toggle maximize:', error)
   }
 }
 
 const closeWindow = async () => {
   try {
-    console.log('开始关闭应用...')
+    logger.info('开始关闭应用...')
 
     // 立即显示关闭遮罩
     showClosingOverlay()
@@ -135,22 +138,22 @@ const closeWindow = async () => {
     // 先检查当前进程状态
     try {
       const processes = await window.electronAPI?.getRelatedProcesses()
-      console.log('关闭前的进程状态:', processes)
+      logger.debug('关闭前的进程状态:', processes)
     } catch (e) {
-      console.warn('无法获取进程状态:', e)
+      logger.warn('无法获取进程状态:', e)
     }
 
     // 异步调用后端关闭API，不等待响应
     Service.closeApiCoreClosePost().catch(error => {
-      console.warn('Backend close API failed (this is expected):', error)
+      logger.warn('Backend close API failed (this is expected):', error)
     })
 
     // 使用更激进的强制退出方法
     try {
-      console.log('执行强制退出...')
+      logger.info('执行强制退出...')
       await window.electronAPI?.forceExit()
     } catch (error) {
-      console.error('强制退出失败，尝试备用方法:', error)
+      logger.error('强制退出失败，尝试备用方法:', error)
 
       // 备用方法：先尝试正常关闭
       try {
@@ -159,11 +162,11 @@ const closeWindow = async () => {
           await window.electronAPI?.appQuit()
         }, 500)
       } catch (backupError) {
-        console.error('备用方法也失败:', backupError)
+        logger.error('备用方法也失败:', backupError)
       }
     }
   } catch (error) {
-    console.error('关闭应用失败:', error)
+    logger.error('关闭应用失败:', error)
   }
 }
 
@@ -174,10 +177,10 @@ const pollOnce = async () => {
     const [appRes, backendRes] = await Promise.allSettled([getAppVersion(), getBackendVersion()])
 
     if (appRes.status === 'rejected') {
-      console.error('getAppVersion failed:', appRes.reason)
+      logger.error('getAppVersion failed:', appRes.reason)
     }
     if (backendRes.status === 'rejected') {
-      console.error('getBackendVersion failed:', backendRes.reason)
+      logger.error('getBackendVersion failed:', backendRes.reason)
     }
   } finally {
     polling.value = false
@@ -188,7 +191,7 @@ onMounted(async () => {
   try {
     isMaximized.value = (await window.electronAPI?.windowIsMaximized()) || false
   } catch (error) {
-    console.error('Failed to get window state:', error)
+    logger.error('Failed to get window state:', error)
   }
   // 初始化立即跑一次
   await pollOnce()
