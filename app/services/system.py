@@ -34,7 +34,6 @@ from pathlib import Path
 from typing import Literal, Optional
 
 from app.core import Config
-from app.models.schema import WebSocketMessage
 from app.utils.logger import get_logger
 
 logger = get_logger("系统服务")

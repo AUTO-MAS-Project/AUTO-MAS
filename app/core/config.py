@@ -146,10 +146,6 @@ class AppConfig(GlobalConfig):
         await self.ScriptConfig.connect(self.config_path / "ScriptConfig.json")
         await self.QueueConfig.connect(self.config_path / "QueueConfig.json")
 
-        # from .task_manager import TaskManager
-
-        # self.task_dict = TaskManager.task_dict
-
         logger.info("程序初始化完成")
 
     async def check_data(self) -> None:

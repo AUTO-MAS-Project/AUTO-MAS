@@ -75,7 +75,6 @@ def main():
         async def lifespan(app: FastAPI):
             from app.core import Config, MainTimer, TaskManager
             from app.services import System
-            from app.models.schema import WebSocketMessage
 
             await Config.init_config()
             await Config.get_stage()
