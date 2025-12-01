@@ -81,7 +81,7 @@ const handleMessage = (message: WebSocketBaseMessage) => {
 
     // 解析消息数据
     if (message.data) {
-      console.log('[WebSocket消息监听器] 消息数据:', message.data)
+      logger.info('[WebSocket消息监听器] 消息数据:', message.data)
 
       // 根据具体的消息内容进行处理
       if (typeof message.data === 'object') {

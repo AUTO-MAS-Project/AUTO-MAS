@@ -12,6 +12,9 @@ import { ref, computed } from 'vue'
 import type { MaaPlanConfig, MaaPlanConfig_Item, ComboBoxItem } from '@/api'
 import { Service } from '@/api'
 import { GetStageIn } from '@/api'
+import { getLogger } from '@/utils/logger'
+
+const logger = getLogger('计划数据协调器')
 
 // 时间维度常量
 export const TIME_KEYS = [
@@ -103,11 +106,11 @@ export async function loadStageOptions(timeKey: TimeKey): Promise<ComboBoxItem[]
       stageOptionsCache.value[timeKey] = response.data
       return response.data
     } else {
-      console.error(`[关卡选项] 加载失败 (${timeKey}):`, response.message)
+      logger.error(`[关卡选项] 加载失败 (${timeKey}):`, response.message)
       return []
     }
   } catch (error) {
-    console.error(`[关卡选项] 加载异常 (${timeKey}):`, error)
+    logger.error(`[关卡选项] 加载异常 (${timeKey}):`, error)
     return []
   }
 }
@@ -116,13 +119,13 @@ export async function loadStageOptions(timeKey: TimeKey): Promise<ComboBoxItem[]
 export async function preloadAllStageOptions(): Promise<void> {
   const loadPromises = TIME_KEYS.map(timeKey => loadStageOptions(timeKey))
   await Promise.all(loadPromises)
-  console.log('[关卡选项] 预加载完成')
+  logger.info('[关卡选项] 预加载完成')
 }
 
 // 清除缓存（用于刷新数据）
 export function clearStageOptionsCache(): void {
   stageOptionsCache.value = {}
-  console.log('[关卡选项] 缓存已清除')
+  logger.info('[关卡选项] 缓存已清除')
 }
 
 // 获取缓存的关卡选项
@@ -238,7 +241,7 @@ export function usePlanDataCoordinator() {
       }
 
       if (inferredStages.size > 0) {
-        console.log(
+        logger.info(
           `[自定义关卡] 从配置数据推断出 ${inferredStages.size} 个关卡:`,
           Array.from(inferredStages)
         )
@@ -269,7 +272,7 @@ export function usePlanDataCoordinator() {
         })
 
         planData.value.customStageDefinitions = currentDefinitions
-        console.log(`[自定义关卡] 添加新发现的关卡:`, newStages)
+        logger.info(`[自定义关卡] 添加新发现的关卡:`, newStages)
       }
     }
   }
@@ -511,7 +514,7 @@ export function usePlanDataCoordinator() {
 
     // 只在开发环境输出排序日志
     if (process.env.NODE_ENV === 'development') {
-      console.log(`[关卡排序] ${timeKey}:`, sortedStages.join(' → '))
+      logger.debug(`[关卡排序] ${timeKey}:`, sortedStages.join(' → '))
     }
   }
 
@@ -520,7 +523,7 @@ export function usePlanDataCoordinator() {
     const key = `custom_stage_${index}` as keyof typeof planData.value.customStageDefinitions
     const oldName = planData.value.customStageDefinitions[key]
 
-    console.log(`[自定义关卡] 更新关卡-${index}: "${oldName}" -> "${name}"`)
+    logger.info(`[自定义关卡] 更新关卡-${index}: "${oldName}" -> "${name}"`)
 
     planData.value.customStageDefinitions[key] = name
 
@@ -540,7 +543,7 @@ export function usePlanDataCoordinator() {
   // 更新计划表ID
   const updatePlanId = (newPlanId: string) => {
     if (currentPlanId.value !== newPlanId) {
-      console.log(`[计划表] 切换: ${currentPlanId.value} -> ${newPlanId}`)
+      logger.info(`[计划表] 切换: ${currentPlanId.value} -> ${newPlanId}`)
       currentPlanId.value = newPlanId
       // 注意：自定义关卡定义将在 fromApiData 中从后端数据重新推断
     }

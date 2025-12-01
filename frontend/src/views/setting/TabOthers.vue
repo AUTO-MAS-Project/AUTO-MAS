@@ -2,6 +2,9 @@
 import { HomeOutlined, GithubOutlined, QqOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import type { VersionOut } from '@/api'
+import { getLogger } from '@/utils/logger'
+
+const logger = getLogger('设置-其他')
 
 const { version, backendUpdateInfo } = defineProps<{
   version: string
@@ -20,7 +23,7 @@ const copyAllInfo = async () => {
     await navigator.clipboard.writeText(copyText)
     message.success('版本信息已复制到剪贴板')
   } catch (err) {
-    console.error('复制失败:', err)
+    logger.error('复制失败:', err)
     // 降级方案：创建临时input元素
     const textArea = document.createElement('textarea')
     textArea.value = [
@@ -34,7 +37,7 @@ const copyAllInfo = async () => {
       document.execCommand('copy')
       message.success('版本信息已复制到剪贴板')
     } catch (fallbackErr) {
-      console.error('降级复制也失败:', fallbackErr)
+      logger.error('降级复制也失败:', fallbackErr)
       message.error('复制失败')
     }
     document.body.removeChild(textArea)

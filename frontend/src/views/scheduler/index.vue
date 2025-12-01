@@ -147,6 +147,9 @@ import { useSchedulerLogic } from './useSchedulerLogic'
 import SchedulerTaskControl from './SchedulerTaskControl.vue'
 import SchedulerLogPanel from './SchedulerLogPanel.vue'
 import TaskOverviewPanel from './TaskOverviewPanel.vue'
+import { getLogger } from '@/utils/logger'
+
+const logger = getLogger('调度中心')
 
 // 使用业务逻辑层
 const {
@@ -214,7 +217,7 @@ onMounted(() => {
   // 开发环境下导入调试工具
   if (process.env.NODE_ENV === 'development') {
     import('@/utils/scheduler-debug').then(() => {
-      console.log(
+      logger.info(
         '调度中心调试工具已加载，使用 debugScheduler() 和 testWebSocketConnection() 进行调试'
       )
     })

@@ -2,6 +2,9 @@ import { ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { type GeneralConfig, type MaaConfig, ScriptCreateIn, type ScriptReorderIn, Service } from '@/api'
 import type { ScriptDetail, ScriptType } from '@/types/script'
+import { getLogger } from '@/utils/logger'
+
+const logger = getLogger('脚本API')
 
 export function useScriptApi() {
   const loading = ref(false)
@@ -33,7 +36,7 @@ export function useScriptApi() {
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : '添加脚本失败'
       error.value = errorMsg
-      if (!err.message?.includes('HTTP error')) {
+      if (err instanceof Error && !err.message.includes('HTTP error')) {
         message.error(errorMsg)
       }
       return null
@@ -80,7 +83,7 @@ export function useScriptApi() {
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : '获取脚本列表失败'
       error.value = errorMsg
-      if (!err.message?.includes('HTTP error')) {
+      if (err instanceof Error && !err.message.includes('HTTP error')) {
         message.error(errorMsg)
       }
       return []
@@ -472,7 +475,7 @@ export function useScriptApi() {
               }
             }
           } catch (err) {
-            console.warn(`获取脚本 ${script.uid} 的用户数据失败:`, err)
+            logger.warn(`获取脚本 ${script.uid} 的用户数据失败:`, err)
             return {
               ...script,
               users: [],
@@ -485,7 +488,7 @@ export function useScriptApi() {
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : '获取脚本列表失败'
       error.value = errorMsg
-      if (!err.message?.includes('HTTP error')) {
+      if (err instanceof Error && !err.message.includes('HTTP error')) {
         message.error(errorMsg)
       }
       return []
@@ -527,7 +530,7 @@ export function useScriptApi() {
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : '获取脚本详情失败'
       error.value = errorMsg
-      if (!err.message?.includes('HTTP error')) {
+      if (err instanceof Error && !err.message.includes('HTTP error')) {
         message.error(errorMsg)
       }
       return null
@@ -554,7 +557,7 @@ export function useScriptApi() {
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : '删除脚本失败'
       error.value = errorMsg
-      if (!err.message?.includes('HTTP error')) {
+      if (err instanceof Error && !err.message.includes('HTTP error')) {
         message.error(errorMsg)
       }
       return false
@@ -588,7 +591,7 @@ export function useScriptApi() {
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : '更新脚本失败'
       error.value = errorMsg
-      if (!err.message?.includes('HTTP error')) {
+      if (err instanceof Error && !err.message.includes('HTTP error')) {
         message.error(errorMsg)
       }
       return false
@@ -619,7 +622,7 @@ export function useScriptApi() {
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : '脚本排序失败'
       error.value = errorMsg
-      if (!err.message?.includes('HTTP error')) {
+      if (err instanceof Error && !err.message.includes('HTTP error')) {
         message.error(errorMsg)
       }
       return false

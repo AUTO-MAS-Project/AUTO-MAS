@@ -209,7 +209,10 @@ import {
   QuestionCircleOutlined,
 } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
+import { getLogger } from '@/utils/logger'
 import { nextTick, onMounted, ref, watch } from 'vue'
+
+const logger = getLogger('调度队列')
 
 // 队列列表和当前选中的队列
 const queueList = ref<Array<{ id: string; name: string }>>([])
@@ -250,7 +253,7 @@ const fetchQueues = async () => {
     const response = await Service.getQueuesApiQueueGetPost({})
     if (response.code === 200) {
       // 处理队列数据
-      console.log('API Response:', response) // 调试日志
+      logger.debug('API Response:', response) // 调试日志
 
       if (response.index && response.index.length > 0) {
         queueList.value = response.index.map((item: any, index: number) => {
@@ -258,13 +261,13 @@ const fetchQueues = async () => {
             // API响应格式: {"uid": "xxx", "type": "QueueConfig"}
             const queueId = item.uid
             const queueName = response.data[queueId]?.Info?.Name || `新调度队列`
-            console.log('Queue ID:', queueId, 'Name:', queueName, 'Type:', typeof queueId) // 调试日志
+            logger.debug('Queue ID:', queueId, 'Name:', queueName, 'Type:', typeof queueId) // 调试日志
             return {
               id: queueId,
               name: queueName,
             }
           } catch (itemError) {
-            console.warn('解析队列项失败:', itemError, item)
+            logger.warn('解析队列项失败:', itemError, item)
             return {
               id: `queue_${index}`,
               name: `新调度队列`,
@@ -275,26 +278,26 @@ const fetchQueues = async () => {
         // 如果有队列且没有选中的队列，默认选中第一个
         if (queueList.value.length > 0 && !activeQueueId.value) {
           activeQueueId.value = queueList.value[0].id
-          console.log('Selected queue ID:', activeQueueId.value) // 调试日志
+          logger.debug('Selected queue ID:', activeQueueId.value) // 调试日志
           // 使用nextTick确保DOM更新后再加载数据
           nextTick(() => {
             loadQueueData(activeQueueId.value).catch(error => {
-              console.error('加载队列数据失败:', error)
+              logger.error('加载队列数据失败:', error)
             })
           })
         }
       } else {
-        console.log('No queues found in response') // 调试日志
+        logger.debug('No queues found in response') // 调试日志
         queueList.value = []
         currentQueueData.value = null
       }
     } else {
-      console.error('API响应错误:', response)
+      logger.error('API响应错误:', response)
       queueList.value = []
       currentQueueData.value = null
     }
   } catch (error) {
-    console.error('获取队列列表失败:', error)
+    logger.error('获取队列列表失败:', error)
     queueList.value = []
     currentQueueData.value = null
   } finally {
@@ -335,17 +338,17 @@ const loadQueueData = async (queueId: string) => {
       try {
         await refreshTimeSets()
       } catch (timeError) {
-        console.error('刷新定时项失败:', timeError)
+        logger.error('刷新定时项失败:', timeError)
       }
 
       try {
         await refreshQueueItems()
       } catch (itemError) {
-        console.error('刷新队列项失败:', itemError)
+        logger.error('刷新队列项失败:', itemError)
       }
     }
   } catch (error) {
-    console.error('加载队列数据失败:', error)
+    logger.error('加载队列数据失败:', error)
     // 不显示错误消息，避免干扰用户体验
   }
 }
@@ -364,7 +367,7 @@ const refreshTimeSets = async () => {
     })
 
     if (response.code !== 200) {
-      console.error('获取定时项数据失败:', response)
+      logger.error('获取定时项数据失败:', response)
       // 不清空数组，避免骨架屏闪现
       return
     }
@@ -397,7 +400,7 @@ const refreshTimeSets = async () => {
             })
           }
         } catch (itemError) {
-          console.warn('解析单个定时项失败:', itemError, item)
+          logger.warn('解析单个定时项失败:', itemError, item)
         }
       })
     }
@@ -406,9 +409,9 @@ const refreshTimeSets = async () => {
     await nextTick()
     // 直接替换数组内容，而不是清空再赋值，避免骨架屏闪现
     currentTimeSets.value.splice(0, currentTimeSets.value.length, ...timeSets)
-    console.log('刷新后的定时项数据:', timeSets) // 调试日志
+    logger.debug('刷新后的定时项数据:', timeSets) // 调试日志
   } catch (error) {
-    console.error('刷新定时项列表失败:', error)
+    logger.error('刷新定时项列表失败:', error)
     // 不清空数组，避免骨架屏闪现
   }
 }
@@ -427,7 +430,7 @@ const refreshQueueItems = async () => {
     })
 
     if (response.code !== 200) {
-      console.error('获取队列项数据失败:', response)
+      logger.error('获取队列项数据失败:', response)
       // 不清空数组，避免骨架屏闪现
       return
     }
@@ -449,7 +452,7 @@ const refreshQueueItems = async () => {
             })
           }
         } catch (itemError) {
-          console.warn('解析单个队列项失败:', itemError, item)
+          logger.warn('解析单个队列项失败:', itemError, item)
         }
       })
     }
@@ -458,9 +461,9 @@ const refreshQueueItems = async () => {
     await nextTick()
     // 直接替换数组内容，而不是清空再赋值，避免骨架屏闪现
     currentQueueItems.value.splice(0, currentQueueItems.value.length, ...queueItems)
-    console.log('刷新后的队列项数据:', queueItems) // 调试日志
+    logger.debug('刷新后的队列项数据:', queueItems) // 调试日志
   } catch (error) {
-    console.error('刷新队列项列表失败:', error)
+    logger.error('刷新队列项列表失败:', error)
     // 不清空数组，避免骨架屏闪现
   }
 }
@@ -540,7 +543,7 @@ const handleAddQueue = async () => {
       message.error('队列创建失败: ' + (response.message || '未知错误'))
     }
   } catch (error) {
-    console.error('添加队列失败:', error)
+    logger.error('添加队列失败:', error)
     message.error('添加队列失败: ' + (error?.message || '网络错误'))
   }
 }
@@ -568,7 +571,7 @@ const handleRemoveQueue = async (queueId: string) => {
       message.error('删除队列失败: ' + (response.message || '未知错误'))
     }
   } catch (error) {
-    console.error('删除队列失败:', error)
+    logger.error('删除队列失败:', error)
     message.error('删除队列失败: ' + (error?.message || '网络错误'))
   }
 }
@@ -586,7 +589,7 @@ const onQueueChange = async (queueId: string) => {
 
     await loadQueueData(queueId)
   } catch (error) {
-    console.error('队列切换失败:', error)
+    logger.error('队列切换失败:', error)
   }
 }
 
@@ -596,7 +599,7 @@ const autoSave = async () => {
   try {
     await saveQueueData()
   } catch (error) {
-    console.error('自动保存失败:', error)
+    logger.error('自动保存失败:', error)
   }
 }
 
@@ -624,7 +627,7 @@ const saveQueueData = async () => {
       throw new Error(response.message || '保存失败')
     }
   } catch (error) {
-    console.error('保存队列数据失败:', error)
+    logger.error('保存队列数据失败:', error)
     throw error
   }
 }
@@ -650,7 +653,7 @@ onMounted(async () => {
   try {
     await fetchQueues()
   } catch (error) {
-    console.error('初始化失败:', error)
+    logger.error('初始化失败:', error)
     loading.value = false
   }
 })

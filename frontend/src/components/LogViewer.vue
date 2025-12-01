@@ -29,6 +29,20 @@
               <a-select-option :value="1000">最近1000行</a-select-option>
               <a-select-option :value="0">显示全部</a-select-option>
             </a-select>
+
+            <a-checkbox
+              v-model:checked="enableColorHighlight"
+              @change="onColorHighlightChange"
+            >
+              启用颜色高亮
+            </a-checkbox>
+
+            <a-switch
+              v-model:checked="useNewSystem"
+              checked-children="新系统"
+              un-checked-children="旧系统"
+              @change="onSystemChange"
+            />
           </a-space>
         </a-col>
 
@@ -70,8 +84,72 @@
                 </template>
                 导出日志（log格式）
               </a-button>
+
+              <a-button @click="goToLogSystemSettings" v-if="useNewSystem">
+                <template #icon>
+                  <SettingOutlined />
+                </template>
+                日志系统设置
+              </a-button>
+
+              <a-button @click="refreshLogs" v-if="!useNewSystem">
+                <template #icon>
+                  <ReloadOutlined />
+                </template>
+                刷新日志
+              </a-button>
             </a-space>
           </div>
+        </a-col>
+      </a-row>
+    </a-card>
+
+    <!-- 日志过滤器 - 仅在新系统显示 -->
+    <a-card class="filter-card" v-if="useNewSystem">
+      <template #title>
+        <span><SyncOutlined /> 日志过滤器</span>
+      </template>
+      <a-row :gutter="16">
+        <a-col :span="6">
+          <a-select
+            v-model:value="selectedLogLevel"
+            placeholder="过滤日志级别"
+            allowClear
+            style="width: 100%"
+            @change="applyFilters"
+          >
+            <a-select-option v-for="level in logLevels" :key="level" :value="level">
+              {{ level }}
+            </a-select-option>
+          </a-select>
+        </a-col>
+        <a-col :span="6">
+          <a-select
+            v-model:value="selectedLogSource"
+            placeholder="过滤日志来源"
+            allowClear
+            style="width: 100%"
+            @change="applyFilters"
+          >
+            <a-select-option v-for="source in logSources" :key="source" :value="source">
+              {{ source }}
+            </a-select-option>
+          </a-select>
+        </a-col>
+        <a-col :span="8">
+          <a-input
+            v-model:value="searchKeyword"
+            placeholder="搜索关键词..."
+            allowClear
+            @change="applyFilters"
+          />
+        </a-col>
+        <a-col :span="4">
+          <a-switch
+            v-model:checked="autoScroll"
+            checked-children="自动滚动"
+            un-checked-children="手动滚动"
+          />
         </a-col>
       </a-row>
     </a-card>
@@ -80,11 +158,45 @@
     <a-card class="log-content-card">
       <template #title>
         <span>日志内容</span>
+        <template #extra v-if="useNewSystem">
+          <a-space>
+            <a-statistic title="总日志数" :value="stats.total" />
+            <a-statistic title="过滤后" :value="stats.filtered" />
+          </a-space>
+        </template>
       </template>
 
       <div class="log-content">
         <a-spin :spinning="loading" tip="加载日志中..." class="log-spin">
-          <div v-if="displayLogs" class="monaco-container">
+          <!-- 新系统显示 -->
+          <div v-if="useNewSystem && hasLogs" class="new-log-container">
+            <div
+              v-for="(log, index) in filteredLogs"
+              :key="index"
+              class="log-entry"
+              :class="`log-${log.level.toLowerCase()}`"
+              @click="selectLog(log, index)"
+            >
+              <div class="log-header">
+                <span class="log-timestamp">{{ formatTimestamp(log.timestamp) }}</span>
+                <span class="log-level" :class="`level-${log.level.toLowerCase()}`">
+                  {{ log.level }}
+                </span>
+                <span class="log-source">{{ log.source || 'unknown' }}</span>
+                <span class="log-module">{{ log.module }}</span>
+              </div>
+              <div class="log-message" v-html="log.coloredLog || log.message"></div>
+            </div>
+            <a-empty
+              v-if="useNewSystem && isEmpty"
+              description="暂无日志内容"
+              :image="Empty.PRESENTED_IMAGE_SIMPLE"
+              class="log-empty"
+            />
+          </div>
+          
+          <!-- 旧系统显示 -->
+          <div v-if="!useNewSystem && displayLogs" class="monaco-container">
             <vue-monaco-editor
               v-model:value="logs"
               :language="editorLanguage"
@@ -94,7 +206,7 @@
             />
           </div>
           <a-empty
-            v-else
+            v-if="!useNewSystem && !displayLogs"
             description="暂无日志内容"
             :image="Empty.PRESENTED_IMAGE_SIMPLE"
             class="log-empty"
@@ -107,18 +219,61 @@
 
 <script setup lang="ts">
 import { useTheme } from '@/composables/useTheme.ts'
-import { logger } from '@/utils/logger'
+import { getLogger } from '@/utils/logger'
 import {
   ClearOutlined,
   DeleteOutlined,
   ExportOutlined,
   FolderOpenOutlined,
+  SettingOutlined,
+  ReloadOutlined,
+  SyncOutlined,
 } from '@ant-design/icons-vue'
 import { VueMonacoEditor } from '@guolao/vue-monaco-editor'
 import { Empty, message } from 'ant-design-vue'
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
+import type { ParsedLogEntry, LogLevel, LogSource } from '@/types/log'
+import { useLogViewer } from '@/composables/useLogViewer'
+
+// 导入日志处理工具类型
+interface ParsedBackendLog {
+  timestamp?: Date
+  level?: string
+  module?: string
+  message?: string
+  coloredLog?: string
+  isValid: boolean
+  originalLog: string
+}
 
 const { isDark } = useTheme()
+const router = useRouter()
+const moduleLogger = getLogger('日志查看器')
+// 导入全局logger实例以访问日志文件操作方法
+import logger from '@/utils/logger'
+
+// 系统切换
+const useNewSystem = ref(true)
+
+// 使用新的日志查看器组合式函数
+const {
+  refresh,
+  clear,
+  export: exportLogsFromComposable,
+  filteredLogs,
+  stats,
+  hasLogs,
+  isEmpty,
+  logLevels,
+  logSources,
+  config: logViewerConfig
+} = useLogViewer({
+  enableVirtualScroll: true,
+  autoRefresh: true,
+  refreshInterval: 2000,
+  maxLogs: 10000
+})
 
 // 响应式数据
 const logs = ref('')
@@ -130,9 +285,30 @@ const loading = ref(false)
 const clearing = ref(false)
 const cleaning = ref(false)
 const wordWrap = ref(true)
+const enableColorHighlight = ref(true)
+const selectedLogLevel = ref<string>('')
+const selectedLogSource = ref<string>('')
+const searchKeyword = ref('')
+const autoScroll = ref(true)
 
 // Monaco Editor 实例
 let editorInstance: any = null
+
+// 日志颜色处理 - 使用IPC调用后端处理
+const processLogColors = async (logContent: string): Promise<string> => {
+  if (!enableColorHighlight.value || !logContent) {
+    return logContent
+  }
+  
+  try {
+    // 通过IPC调用后端的日志颜色处理
+    return await window.electronAPI.processLogColors(logContent, enableColorHighlight.value)
+  } catch (error) {
+    console.error('处理日志颜色失败:', error)
+    return logContent
+  }
+}
+
 
 // Monaco Editor 配置
 const editorOptions = computed(() => ({
@@ -141,21 +317,45 @@ const editorOptions = computed(() => ({
   scrollBeyondLastLine: false,
   fontSize: 13,
   fontFamily: 'Consolas, Monaco, Courier New, monospace',
-  lineNumbers: 'on',
-  wordWrap: wordWrap.value ? 'on' : 'off',
+  lineNumbers: 'on' as any,
+  wordWrap: (wordWrap.value ? 'on' : 'off') as any,
   automaticLayout: true,
   scrollbar: {
-    vertical: 'visible',
-    horizontal: 'visible',
+    vertical: 'visible' as any,
+    horizontal: 'visible' as any,
     useShadows: false,
     verticalScrollbarSize: 10,
     horizontalScrollbarSize: 10,
   },
-  renderWhitespace: 'none',
+  renderWhitespace: 'none' as any,
   contextmenu: true,
   folding: true,
+  // 启用HTML内联渲染以支持颜色显示
+  renderControlCharacters: false,
+  renderLineHighlight: 'none' as any,
+  // 禁用一些可能影响颜色显示的功能
+  occurrencesHighlight: 'off' as any,
+  codeLens: false,
+  lightbulb: { enabled: 'off' as any },
+  // 优化性能
+  smoothScrolling: true,
+  cursorBlinking: 'smooth' as any,
+  // 确保颜色正确显示
+  experimental: {
+    async: true,
+  },
 }))
 const editorLanguage = computed(() => {
+  // 如果启用了颜色高亮，使用HTML模式以支持自定义颜色
+  if (enableColorHighlight.value) {
+    return 'html'
+  }
+  
+  // 如果日志内容包含HTML标签，也使用HTML模式
+  if (logs.value && logs.value.includes('<')) {
+    return 'html'
+  }
+  
   // 如果你的日志很多是 JSON 行，可以自动切换
   const s = logs.value?.trim()
   return s && (s.startsWith('{') || s.startsWith('[')) ? 'json' : 'log'
@@ -167,7 +367,7 @@ let autoRefreshTimer: NodeJS.Timeout | null = null
 // 计算属性
 const displayLogs = computed(() => {
   const hasContent = logs.value && logs.value.trim().length > 0
-  console.log('displayLogs computed:', {
+  moduleLogger.debug('displayLogs computed:', {
     hasLogs: !!logs.value,
     logsLength: logs.value?.length || 0,
     trimmedLength: logs.value?.trim().length || 0,
@@ -188,7 +388,8 @@ const handleEditorMount = (editor: any) => {
 
 // 格式化日志文件名显示
 const formatLogFileName = (fileName: string) => {
-  const match = fileName.match(/^frontendlog-(\d{4}-\d{2}-\d{2})\.log$/)
+  // 支持新格式: frontend.log.YYYY-MM-DD.gz
+  const match = fileName.match(/^frontend\.log\.(\d{4}-\d{2}-\d{2})\.gz$/)
   if (match) {
     const [, dateStr] = match
     // 转换为更友好的中文显示
@@ -201,6 +402,21 @@ const formatLogFileName = (fileName: string) => {
     }
     return date.toLocaleDateString('zh-CN', options)
   }
+  
+  // 兼容旧格式: frontendlog-YYYY-MM-DD.log
+  const oldMatch = fileName.match(/^frontendlog-(\d{4}-\d{2}-\d{2})\.log$/)
+  if (oldMatch) {
+    const [, dateStr] = oldMatch
+    const date = new Date(dateStr + 'T00:00:00')
+    const options: Intl.DateTimeFormatOptions = {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      weekday: 'short',
+    }
+    return date.toLocaleDateString('zh-CN', options)
+  }
+  
   return fileName
 }
 
@@ -220,16 +436,75 @@ const onLogFileChange = () => {
   refreshLogs()
 }
 
+// 颜色高亮开关变化
+const onColorHighlightChange = () => {
+  // 重新获取并处理日志内容
+  if (useNewSystem.value) {
+    refresh()
+  } else {
+    refreshLogs()
+  }
+}
+
+// 系统切换
+const onSystemChange = (useNew: boolean) => {
+  if (useNew) {
+    message.info('已切换到新日志系统')
+    refresh()
+  } else {
+    message.info('已切换到旧日志系统')
+    refreshLogs()
+  }
+}
+
+// 应用过滤器
+const applyFilters = () => {
+  // 过滤逻辑已在useLogViewer中处理
+  moduleLogger.debug('应用过滤器', {
+    level: selectedLogLevel.value,
+    source: selectedLogSource.value,
+    keyword: searchKeyword.value
+  })
+}
+
+// 选择日志
+const selectLog = (log: ParsedLogEntry, index: number) => {
+  moduleLogger.debug('选中日志:', log, index)
+  // 可以在这里实现日志详情显示
+}
+
+// 格式化时间戳
+const formatTimestamp = (timestamp: Date) => {
+  return timestamp.toLocaleTimeString('zh-CN', {
+    hour12: false,
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  })
+}
+
+// 跳转到日志系统设置
+const goToLogSystemSettings = () => {
+  // 使用路由跳转到设置页面的日志系统标签
+  try {
+    router.push('/setting?tab=logsystem')
+  } catch (error) {
+    moduleLogger.error('路由跳转失败:', error)
+    // 降级方案
+    message.info('请手动前往设置页面的日志系统标签')
+  }
+}
+
 // 刷新日志
 const refreshLogs = async () => {
   loading.value = true
   try {
-    console.log('开始获取日志，文件:', selectedLogFile.value, '行数限制:', logLines.value)
+    logger.debug('开始获取日志，文件:', selectedLogFile.value, '行数限制:', logLines.value)
     const logContent = await logger.getLogs(
       logLines.value || undefined,
       selectedLogFile.value || undefined
     )
-    console.log('获取到的日志内容:', {
+    logger.debug('获取到的日志内容:', {
       type: typeof logContent,
       length: logContent?.length || 0,
       isNull: logContent === null,
@@ -238,16 +513,20 @@ const refreshLogs = async () => {
       preview: logContent?.substring(0, 200) || 'no content',
     })
 
-    logs.value = logContent || ''
-
+    // 应用颜色处理
+    if (logContent) {
+      logs.value = await processLogColors(logContent)
+    } else {
+      logs.value = ''
+    }
+    
     // 日志内容已更新
     // 自动滚动到底部
     await nextTick()
     scrollToBottom()
   } catch (error) {
-    console.error('获取日志失败:', error)
-    message.error(`获取日志失败: ${error}`)
     logger.error('获取日志失败:', error)
+    message.error(`获取日志失败: ${error}`)
     logs.value = ''
   } finally {
     loading.value = false
@@ -512,11 +791,101 @@ onUnmounted(() => {
   background: #1f1f1f;
 }
 
+/* 新日志系统样式 */
+.filter-card {
+  margin-bottom: 12px;
+}
+
+.new-log-container {
+  height: 100%;
+  overflow-y: auto;
+  padding: 8px;
+}
+
+.log-entry {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--ant-color-border);
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.log-entry:hover {
+  background-color: var(--ant-color-bg-layout);
+}
+
+.log-entry:last-child {
+  border-bottom: none;
+}
+
+.log-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 4px;
+  font-size: 12px;
+  color: var(--ant-color-text-secondary);
+}
+
+.log-timestamp {
+  font-family: monospace;
+}
+
+.log-level {
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: bold;
+  font-size: 10px;
+  color: white;
+}
+
+.level-debug {
+  background-color: #999;
+}
+
+.level-info {
+  background-color: #1890ff;
+}
+
+.level-warn {
+  background-color: #fa8c16;
+}
+
+.level-error {
+  background-color: #f5222d;
+}
+
+.level-critical {
+  background-color: #722ed1;
+}
+
+.log-source {
+  background-color: var(--ant-color-bg-layout);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.log-module {
+  font-weight: bold;
+}
+
+.log-message {
+  font-family: monospace;
+  font-size: 13px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
 /* 响应式调整 */
 @media (max-width: 768px) {
   .log-viewer {
     padding: 8px;
     gap: 8px;
+  }
+  
+  .log-header {
+    flex-wrap: wrap;
+    gap: 6px;
   }
 }
 </style>

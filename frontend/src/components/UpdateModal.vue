@@ -43,6 +43,9 @@
 import { computed, ref } from 'vue'
 import MarkdownIt from 'markdown-it'
 import UpdateDownloadModal from './UpdateDownloadModal.vue'
+import { getLogger } from '@/utils/logger'
+
+const logger = getLogger('更新模态框')
 
 // Props 定义
 interface Props {
@@ -132,8 +135,8 @@ if (props.updateData && Object.keys(props.updateData).length > 0) {
 
 // 处理下载按钮点击
 const handleDownload = () => {
-  console.log('[UpdateModal] 点击下载按钮')
-  console.log('[UpdateModal] 当前props:', {
+  logger.info('[UpdateModal] 点击下载按钮')
+  logger.info('[UpdateModal] 当前props:', {
     updateData: props.updateData,
     latestVersion: props.latestVersion,
     visible: props.visible,
@@ -141,7 +144,7 @@ const handleDownload = () => {
   // 关闭当前窗口，显示下载窗口
   visible.value = false
   showDownloadModal.value = true
-  console.log('[UpdateModal] 设置showDownloadModal为true:', showDownloadModal.value)
+  logger.info('[UpdateModal] 设置showDownloadModal为true:', showDownloadModal.value)
 }
 
 // 关闭弹窗
