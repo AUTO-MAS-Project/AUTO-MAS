@@ -2,6 +2,9 @@ import { ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { Service } from '@/api'
 import type { UserInBase, UserCreateOut, UserUpdateIn, UserDeleteIn, UserGetIn, UserReorderIn } from '@/api'
+import { getLogger } from '@/utils/logger'
+
+const logger = getLogger('用户API')
 
 export function useUserApi() {
   const loading = ref(false)
@@ -29,7 +32,7 @@ export function useUserApi() {
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : '添加用户失败'
       error.value = errorMsg
-      if (!err.message?.includes('HTTP error')) {
+      if (err && err.message && !err.message.includes('HTTP error')) {
         message.error(errorMsg)
       }
       return null
@@ -50,13 +53,13 @@ export function useUserApi() {
         data: userData,
       }
 
-      console.log('发送更新用户请求:', requestData)
+      logger.info('发送更新用户请求:', requestData)
       const response = await Service.updateUserApiScriptsUserUpdatePost(requestData)
-      console.log('更新用户响应:', response)
+      logger.info('更新用户响应:', response)
 
       if (response.code !== 200) {
         const errorMsg = response.message || '更新用户失败'
-        console.error('更新用户失败:', errorMsg)
+        logger.error('更新用户失败:', errorMsg)
         message.error(errorMsg)
         throw new Error(errorMsg)
       }
@@ -66,7 +69,7 @@ export function useUserApi() {
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : '更新用户失败'
       error.value = errorMsg
-      if (!err.message?.includes('HTTP error')) {
+      if (err && err.message && !err.message.includes('HTTP error')) {
         message.error(errorMsg)
       }
       return false
@@ -98,7 +101,7 @@ export function useUserApi() {
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : '获取用户列表失败'
       error.value = errorMsg
-      if (!err.message?.includes('HTTP error')) {
+      if (err && err.message && !err.message.includes('HTTP error')) {
         message.error(errorMsg)
       }
       return null
@@ -131,7 +134,7 @@ export function useUserApi() {
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : '删除用户失败'
       error.value = errorMsg
-      if (!err.message?.includes('HTTP error')) {
+      if (err && err.message && !err.message.includes('HTTP error')) {
         message.error(errorMsg)
       }
       return false
@@ -163,7 +166,7 @@ export function useUserApi() {
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : '用户排序失败'
       error.value = errorMsg
-      if (!err.message?.includes('HTTP error')) {
+      if (err && err.message && !err.message.includes('HTTP error')) {
         message.error(errorMsg)
       }
       return false

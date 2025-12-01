@@ -2,6 +2,9 @@ import { ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { useSettingsApi } from '@/composables/useSettingsApi'
 import { mirrorManager } from '@/utils/mirrorManager'
+import { getLogger } from '@/utils/logger'
+
+const logger = getLogger('音频播放器')
 
 export function useAudioPlayer() {
   const { getSettings } = useSettingsApi()
@@ -27,7 +30,7 @@ export function useAudioPlayer() {
    */
   const playSound = async (soundPath: string): Promise<boolean> => {
     if (!soundPath) {
-      console.warn('音频路径不能为空')
+      logger.warn('音频路径不能为空')
       return false
     }
 
@@ -37,7 +40,7 @@ export function useAudioPlayer() {
       // 首先检查语音设置
       const settings = await getSettings()
       if (!settings?.Voice?.Enabled) {
-        console.log('语音功能已禁用，跳过音频播放')
+        logger.info('语音功能已禁用，跳过音频播放')
         return false
       }
 
@@ -62,7 +65,7 @@ export function useAudioPlayer() {
       })
 
       audio.addEventListener('error', e => {
-        console.error('音频播放失败:', e)
+        logger.error('音频播放失败:', e)
         message.error(`音频播放失败: ${soundPath}`)
         isPlaying.value = false
         currentAudio.value = null
@@ -72,7 +75,7 @@ export function useAudioPlayer() {
       await audio.play()
       return true
     } catch (error) {
-      console.error('播放音频时发生错误:', error)
+      logger.error('播放音频时发生错误:', error)
       message.error('音频播放失败，请检查网络连接')
       isPlaying.value = false
       currentAudio.value = null

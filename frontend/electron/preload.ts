@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
 window.addEventListener('DOMContentLoaded', () => {
-  console.log('预加载脚本已加载')
+  // 预加载脚本已加载
 })
 
 // 检查是否为对话框窗口
@@ -67,11 +67,68 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('sync-backend-config', backendSettings),
 
   // 日志文件操作
-  getLogPath: () => ipcRenderer.invoke('get-log-path'),
-  getLogFiles: () => ipcRenderer.invoke('get-log-files'),
-  getLogs: (lines?: number, fileName?: string) => ipcRenderer.invoke('get-logs', lines, fileName),
-  clearLogs: (fileName?: string) => ipcRenderer.invoke('clear-logs', fileName),
-  cleanOldLogs: (daysToKeep?: number) => ipcRenderer.invoke('clean-old-logs', daysToKeep),
+  getLogPath: () => ipcRenderer.invoke('log:getPath'),
+  getLogFiles: () => ipcRenderer.invoke('log:getFiles'),
+  getLogs: (lines?: number, fileName?: string) => ipcRenderer.invoke('log:getContent', lines, fileName),
+  clearLogs: (fileName?: string) => ipcRenderer.invoke('log:clear', fileName),
+  cleanOldLogs: (daysToKeep?: number) => ipcRenderer.invoke('log:cleanOldLogs'),
+
+  // 日志写入
+  logWrite: (level: string, module: string, message: string) => ipcRenderer.invoke('log:write', level, module, message),
+
+  // 日志解析
+  parseBackendLog: (logLine: string) => ipcRenderer.invoke('log:parseBackendLog', logLine),
+  processLogColors: (logContent: string, enableColorHighlight: boolean) => ipcRenderer.invoke('log:processLogColors', logContent, enableColorHighlight),
+
+  // 日志管理服务
+  logManagement: {
+    // 初始化
+    initialize: (config?: any) => ipcRenderer.invoke('logManagement:initialize', config),
+
+    // 日志处理
+    processLog: (rawLog: string, source?: string) => ipcRenderer.invoke('logManagement:processLog', rawLog, source),
+    processBatchLogs: (rawLogs: string[], source?: string) => ipcRenderer.invoke('logManagement:processBatchLogs', rawLogs, source),
+
+    // 日志订阅
+    subscribe: (id: string, filter?: any) => ipcRenderer.invoke('logManagement:subscribe', id, filter),
+    unsubscribe: (id: string) => ipcRenderer.invoke('logManagement:unsubscribe', id),
+    toggleSubscriber: (id: string, enabled: boolean) => ipcRenderer.invoke('logManagement:toggleSubscriber', id, enabled),
+
+    // 日志获取
+    getLogs: (conditions?: any, limit?: number, offset?: number) => ipcRenderer.invoke('logManagement:getLogs', conditions, limit, offset),
+    exportLogs: (conditions?: any, format?: string) => ipcRenderer.invoke('logManagement:exportLogs', conditions, format),
+    clearLogs: () => ipcRenderer.invoke('logManagement:clearLogs'),
+
+    // 统计信息
+    getStats: () => ipcRenderer.invoke('logManagement:getStats'),
+    resetStats: () => ipcRenderer.invoke('logManagement:resetStats'),
+
+    // 配置管理
+    getConfig: () => ipcRenderer.invoke('logManagement:getConfig'),
+    updateConfig: (config: any) => ipcRenderer.invoke('logManagement:updateConfig', config),
+
+    // 订阅者管理
+    getSubscribers: () => ipcRenderer.invoke('logManagement:getSubscribers')
+  },
+
+  // 日志管道
+  logPipeline: {
+    // 配置
+    getConfig: () => ipcRenderer.invoke('logPipeline:getConfig'),
+    updateConfig: (config: any) => ipcRenderer.invoke('logPipeline:updateConfig', config),
+
+    // 解析器管理
+    getParserStats: () => ipcRenderer.invoke('logPipeline:getParserStats'),
+    toggleParser: (parserName: string, enabled: boolean) => ipcRenderer.invoke('logPipeline:toggleParser', parserName, enabled),
+
+    // 缓存管理
+    clearCache: () => ipcRenderer.invoke('logPipeline:clearCache'),
+    getCacheStats: () => ipcRenderer.invoke('logPipeline:getCacheStats'),
+
+    // 批处理
+    flush: () => ipcRenderer.invoke('logPipeline:flush'),
+    getBatchStats: () => ipcRenderer.invoke('logPipeline:getBatchStats')
+  },
 
   // 保留原有方法以兼容现有代码
   saveLogsToFile: (logs: string) => ipcRenderer.invoke('save-logs-to-file', logs),
@@ -174,8 +231,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.removeAllListeners('initialization-progress')
   },
 
-  // 监听后端日志
-  onBackendLog: (callback: (log: string) => void) => {
+  // 监听后端日志 - 恢复功能
+  onBackendLog: (callback: (log: any) => void) => {
     ipcRenderer.on('backend-log', (_, log) => callback(log))
   },
   removeBackendLogListener: () => {
@@ -188,5 +245,29 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   removeBackendStatusListener: () => {
     ipcRenderer.removeAllListeners('backend-status')
+  },
+
+  // 监听日志管理服务事件
+  onLogManagementEvent: (callback: (event: string, data: any) => void) => {
+    ipcRenderer.on('log-management-event', (_, event, data) => callback(event, data))
+  },
+  removeLogManagementEventListener: () => {
+    ipcRenderer.removeAllListeners('log-management-event')
+  },
+
+  // 监听日志更新
+  onLogUpdate: (callback: (logs: any[]) => void) => {
+    ipcRenderer.on('log-update', (_, logs) => callback(logs))
+  },
+  removeLogUpdateListener: () => {
+    ipcRenderer.removeAllListeners('log-update')
+  },
+
+  // 监听日志统计更新
+  onLogStatsUpdate: (callback: (stats: any) => void) => {
+    ipcRenderer.on('log-stats-update', (_, stats) => callback(stats))
+  },
+  removeLogStatsUpdateListener: () => {
+    ipcRenderer.removeAllListeners('log-stats-update')
   },
 })

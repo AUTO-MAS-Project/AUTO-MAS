@@ -90,6 +90,9 @@ import { message } from 'ant-design-vue'
 import { ArrowLeftOutlined } from '@ant-design/icons-vue'
 import { mirrorManager } from '@/utils/mirrorManager'
 import { cloudConfigManager, type CloudMirrorConfig } from '@/utils/cloudConfigManager'
+import { getLogger } from '@/utils/logger'
+
+const logger = getLogger('镜像测试')
 
 const router = useRouter()
 

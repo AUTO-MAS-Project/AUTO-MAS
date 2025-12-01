@@ -782,6 +782,7 @@ import { onMounted, reactive, ref, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
 import { message } from 'ant-design-vue'
+import { getLogger } from '@/utils/logger'
 import type { GeneralScriptConfig, ScriptType } from '../../../types/script.ts'
 import { useScriptApi } from '../../../composables/useScriptApi.ts'
 import { Service, type ComboBoxItem } from '../../../api'
@@ -794,6 +795,8 @@ import {
   QuestionCircleOutlined,
   SaveOutlined,
 } from '@ant-design/icons-vue'
+
+const logger = getLogger('通用脚本编辑')
 
 const route = useRoute()
 const router = useRouter()
@@ -1226,7 +1229,7 @@ onMounted(async () => {
     try {
       appDataPath.value = await window.electronAPI.getAppPath('appData')
     } catch (error) {
-      console.error('获取 AppData 路径失败:', error)
+      logger.error('获取 AppData 路径失败:', error)
     }
   }
 
@@ -1282,7 +1285,7 @@ const loadScript = async () => {
       }
     }
   } catch (error) {
-    console.error('加载脚本失败:', error)
+    logger.error('加载脚本失败:', error)
     message.error('加载脚本失败')
     router.push('/scripts')
   } finally {
@@ -1306,7 +1309,7 @@ const handleSave = async () => {
       router.push('/scripts')
     }
   } catch (error) {
-    console.error('保存失败:', error)
+    logger.error('保存失败:', error)
   }
 }
 
@@ -1325,7 +1328,7 @@ const loadEmulatorOptions = async () => {
       message.error('加载模拟器选项失败')
     }
   } catch (error) {
-    console.error('加载模拟器选项失败:', error)
+    logger.error('加载模拟器选项失败:', error)
     message.error('加载模拟器选项失败')
   } finally {
     emulatorLoading.value = false
@@ -1346,7 +1349,7 @@ const loadEmulatorDeviceOptions = async (emulatorId: string) => {
       message.error('加载模拟器实例选项失败')
     }
   } catch (error) {
-    console.error('加载模拟器实例选项失败:', error)
+    logger.error('加载模拟器实例选项失败:', error)
     message.error('加载模拟器实例选项失败')
   } finally {
     emulatorDeviceLoading.value = false
@@ -1427,7 +1430,7 @@ const selectRootPath = async () => {
       }
     }
   } catch (error) {
-    console.error('选择根路径失败:', error)
+    logger.error('选择根路径失败:', error)
     message.error('选择文件夹失败')
   }
 }
@@ -1448,7 +1451,7 @@ const selectGamePath = async () => {
       message.success('游戏路径选择成功')
     }
   } catch (error) {
-    console.error('选择游戏路径失败:', error)
+    logger.error('选择游戏路径失败:', error)
     message.error('选择文件失败')
   }
 }
@@ -1475,7 +1478,7 @@ const selectScriptPath = async () => {
       }
     }
   } catch (error) {
-    console.error('选择脚本路径失败:', error)
+    logger.error('选择脚本路径失败:', error)
     message.error('选择文件失败')
   }
 }
@@ -1518,7 +1521,7 @@ const selectConfigPath = async () => {
       }
     }
   } catch (error) {
-    console.error('选择配置路径失败:', error)
+    logger.error('选择配置路径失败:', error)
     const typeText = generalConfig.Script.ConfigPathMode === 'Folder' ? '文件夹' : '文件'
     message.error(`选择${typeText}失败`)
   }
@@ -1543,7 +1546,7 @@ const selectLogPath = async () => {
       }
     }
   } catch (error) {
-    console.error('选择日志路径失败:', error)
+    logger.error('选择日志路径失败:', error)
     message.error('选择文件失败')
   }
 }
@@ -1601,7 +1604,7 @@ const handleUpload = async () => {
     uploadForm.author = ''
     uploadForm.description = ''
   } catch (error) {
-    console.error('上传失败:', error)
+    logger.error('上传失败:', error)
     message.error('上传失败，请检查网络连接或稍后重试')
   } finally {
     uploadLoading.value = false

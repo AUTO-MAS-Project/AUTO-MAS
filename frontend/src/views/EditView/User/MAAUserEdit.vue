@@ -144,6 +144,10 @@ import { Service } from '@/api'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn.ts'
 import { GetStageIn } from '@/api/models/GetStageIn.ts'
 import { getWeekdayInTimezone } from '@/utils/dateUtils.ts'
+import { logger } from '@/utils/logger'
+import { getLogger } from '@/utils/logger'
+
+const maaUserLogger = getLogger('MAA用户编辑')
 
 // 导入拆分的组件
 import MAAUserEditHeader from '../../MAAUserEdit/MAAUserEditHeader.vue'
@@ -406,7 +410,7 @@ const getPlanCurrentConfig = (planData: any) => {
     const weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
     const today = weekdays[todayWeekday]
 
-    console.log('计划表周模式调试:', {
+    maaUserLogger.debug('计划表周模式调试:', {
       东4区星期几: todayWeekday,
       星期: today,
       计划数据: planData,
@@ -557,7 +561,7 @@ const loadScriptInfo = async () => {
       handleCancel()
     }
   } catch (error) {
-    console.error('加载脚本信息失败:', error)
+    maaUserLogger.error('加载脚本信息失败:', error)
     message.error('加载脚本信息失败')
   }
 }
@@ -605,7 +609,7 @@ const loadUserData = async () => {
           }
         })
 
-        console.log('用户数据加载成功:', {
+        maaUserLogger.info('用户数据加载成功:', {
           userName: formData.userName,
           userId: formData.userId,
           InfoName: formData.Info.Name,
@@ -624,7 +628,7 @@ const loadUserData = async () => {
       handleCancel()
     }
   } catch (error) {
-    console.error('加载用户数据失败:', error)
+    maaUserLogger.error('加载用户数据失败:', error)
     message.error('加载用户数据失败')
   }
 }
@@ -641,7 +645,7 @@ const loadStageOptions = async () => {
       }))
     }
   } catch (error) {
-    console.error('加载关卡选项失败:', error)
+    maaUserLogger.error('加载关卡选项失败:', error)
   }
 }
 
@@ -652,7 +656,7 @@ const loadStageModeOptions = async () => {
       stageModeOptions.value = response.data
     }
   } catch (error) {
-    console.error('加载关卡配置模式选项失败:', error)
+    maaUserLogger.error('加载关卡配置模式选项失败:', error)
     // 保持默认的固定选项
   }
 }
@@ -697,7 +701,7 @@ const selectAndImportInfrastructureConfig = async () => {
       }
     }
   } catch (error) {
-    console.error('基建配置导入失败:', error)
+    maaUserLogger.error('基建配置导入失败:', error)
     message.error('基建配置导入失败')
   } finally {
     infrastructureImporting.value = false
@@ -722,7 +726,7 @@ const loadInfrastructureOptions = async () => {
       }))
     }
   } catch (error) {
-    console.error('加载基建配置选项失败:', error)
+    maaUserLogger.error('加载基建配置选项失败:', error)
   } finally {
     infrastructureOptionsLoading.value = false
   }
@@ -736,7 +740,7 @@ const handleSubmit = async () => {
     formData.Info.Name = formData.userName
     formData.Info.Id = formData.userId
 
-    console.log('提交前的表单数据:', {
+    maaUserLogger.info('提交前的表单数据:', {
       userName: formData.userName,
       userId: formData.userId,
       InfoName: formData.Info.Name,
@@ -766,7 +770,7 @@ const handleSubmit = async () => {
         // 创建成功后立即更新用户数据
         try {
           const updateResult = await updateUser(scriptId, result.userId, userData)
-          console.log('用户数据更新结果:', updateResult)
+          maaUserLogger.info('用户数据更新结果:', updateResult)
 
           if (updateResult) {
             message.success('用户创建成功')
@@ -776,13 +780,13 @@ const handleSubmit = async () => {
             // 不跳转，让用户可以重新保存
           }
         } catch (updateError) {
-          console.error('更新用户数据时发生错误:', updateError)
+          maaUserLogger.error('更新用户数据时发生错误:', updateError)
           message.error('用户创建成功，但数据更新失败，请手动编辑用户信息')
         }
       }
     }
   } catch (error) {
-    console.error('表单验证失败:', error)
+    maaUserLogger.error('表单验证失败:', error)
   }
 }
 
@@ -819,7 +823,7 @@ const handleMAAConfig = async () => {
       // 订阅 websocket
       const subscriptionId = subscribe({ id: wsId }, (wsMessage: any) => {
         if (wsMessage.type === 'error') {
-          console.error(
+          maaUserLogger.error(
             `用户 ${formData.Info?.Name || formData.userName} MAA配置错误:`,
             wsMessage.data
           )
@@ -863,7 +867,7 @@ const handleMAAConfig = async () => {
       message.error(response?.message || '启动MAA配置失败')
     }
   } catch (error) {
-    console.error('启动MAA配置失败:', error)
+    maaUserLogger.error('启动MAA配置失败:', error)
     message.error('启动MAA配置失败')
   } finally {
     maaConfigLoading.value = false
@@ -895,7 +899,7 @@ const handleSaveMAAConfig = async () => {
       message.error(response.message || '保存配置失败')
     }
   } catch (error) {
-    console.error('保存MAA配置失败:', error)
+    maaUserLogger.error('保存MAA配置失败:', error)
     message.error('保存MAA配置失败')
   }
 }
@@ -1098,7 +1102,7 @@ onMounted(() => {
             // 新增：保存完整的计划数据用于悬浮提示
             fullPlanData.value = planData
 
-            console.log('计划配置加载成功:', {
+            maaUserLogger.info('计划配置加载成功:', {
               planId: newStageMode,
               currentConfig,
               planModeConfigValue: planModeConfig.value,
@@ -1114,7 +1118,7 @@ onMounted(() => {
             planModeConfig.value = null
           }
         } catch (error) {
-          console.error('加载计划配置失败:', error)
+          maaUserLogger.error('加载计划配置失败:', error)
           message.error('加载计划配置时发生错误')
           planModeConfig.value = null
         }

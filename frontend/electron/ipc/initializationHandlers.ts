@@ -6,6 +6,7 @@
 import { ipcMain, BrowserWindow } from 'electron'
 import { getAppRoot } from '../services/environmentService'
 import { InitializationService, BackendService } from '../services'
+import { logService } from '../services/logService'
 
 // 全局实例
 let initService: InitializationService | null = null
@@ -43,18 +44,17 @@ export function registerInitializationHandlers(mainWindow: BrowserWindow) {
     // ==================== 镜像源初始化 ====================
 
     ipcMain.handle('init-mirrors', async (event) => {
-        console.log('=== 初始化镜像源 ===')
         const appRoot = getAppRoot()
         const initService = getInitService()
         const mirrorService = initService.getMirrorService()
 
         try {
             await mirrorService.initialize()
-            console.log('✅ 镜像源初始化成功')
+            logService.info('初始化处理器', '镜像源初始化成功')
             return { success: true }
         } catch (error) {
             const errorMsg = error instanceof Error ? error.message : String(error)
-            console.error('❌ 镜像源初始化失败:', errorMsg)
+            logService.error('初始化处理器', `镜像源初始化失败: ${errorMsg}`)
             return { success: false, error: errorMsg }
         }
     })
@@ -62,9 +62,8 @@ export function registerInitializationHandlers(mainWindow: BrowserWindow) {
     // ==================== Python 安装 ====================
 
     ipcMain.handle('install-python', async (event, selectedMirror?: string) => {
-        console.log('=== 安装 Python ===')
         if (selectedMirror) {
-            console.log(`使用指定镜像源: ${selectedMirror}`)
+            logService.info('初始化处理器', `使用指定镜像源安装Python: ${selectedMirror}`)
         }
         const appRoot = getAppRoot()
         const initService = getInitService()
@@ -77,16 +76,18 @@ export function registerInitializationHandlers(mainWindow: BrowserWindow) {
             event.sender.send('python-progress', progress)
         }, selectedMirror)
 
-        console.log(`Python 安装结果: ${result.success ? '成功' : '失败'}`)
+        if (!result.success) {
+            logService.error('初始化处理器', `Python安装失败: ${result.error}`)
+        }
+
         return result
     })
 
     // ==================== Pip 安装 ====================
 
     ipcMain.handle('install-pip', async (event, selectedMirror?: string) => {
-        console.log('=== 安装 Pip ===')
         if (selectedMirror) {
-            console.log(`使用指定镜像源: ${selectedMirror}`)
+            logService.info('初始化处理器', `使用指定镜像源安装Pip: ${selectedMirror}`)
         }
         const appRoot = getAppRoot()
         const initService = getInitService()
@@ -99,16 +100,18 @@ export function registerInitializationHandlers(mainWindow: BrowserWindow) {
             event.sender.send('pip-progress', progress)
         }, selectedMirror)
 
-        console.log(`Pip 安装结果: ${result.success ? '成功' : '失败'}`)
+        if (!result.success) {
+            logService.error('初始化处理器', `Pip安装失败: ${result.error}`)
+        }
+
         return result
     })
 
     // ==================== Git 安装 ====================
 
     ipcMain.handle('install-git', async (event, selectedMirror?: string) => {
-        console.log('=== 安装 Git ===')
         if (selectedMirror) {
-            console.log(`使用指定镜像源: ${selectedMirror}`)
+            logService.info('初始化处理器', `使用指定镜像源安装Git: ${selectedMirror}`)
         }
         const appRoot = getAppRoot()
         const initService = getInitService()
@@ -121,16 +124,18 @@ export function registerInitializationHandlers(mainWindow: BrowserWindow) {
             event.sender.send('git-progress', progress)
         }, selectedMirror)
 
-        console.log(`Git 安装结果: ${result.success ? '成功' : '失败'}`)
+        if (!result.success) {
+            logService.error('初始化处理器', `Git安装失败: ${result.error}`)
+        }
+
         return result
     })
 
     // ==================== 源码拉取 ====================
 
     ipcMain.handle('pull-repository', async (event, targetBranch: string = 'dev', selectedMirror?: string) => {
-        console.log('=== 拉取源码 ===')
         if (selectedMirror) {
-            console.log(`使用指定镜像源: ${selectedMirror}`)
+            logService.info('初始化处理器', `使用指定镜像源拉取源码: ${selectedMirror}`)
         }
         const appRoot = getAppRoot()
         const initService = getInitService(targetBranch)
@@ -143,16 +148,18 @@ export function registerInitializationHandlers(mainWindow: BrowserWindow) {
             event.sender.send('repository-progress', progress)
         }, selectedMirror)
 
-        console.log(`源码拉取结果: ${result.success ? '成功' : '失败'}`)
+        if (!result.success) {
+            logService.error('初始化处理器', `源码拉取失败: ${result.error}`)
+        }
+
         return result
     })
 
     // ==================== 依赖安装 ====================
 
     ipcMain.handle('install-dependencies', async (event, selectedMirror?: string) => {
-        console.log('=== 安装依赖 ===')
         if (selectedMirror) {
-            console.log(`使用指定镜像源: ${selectedMirror}`)
+            logService.info('初始化处理器', `使用指定镜像源安装依赖: ${selectedMirror}`)
         }
         const appRoot = getAppRoot()
         const initService = getInitService()
@@ -165,14 +172,16 @@ export function registerInitializationHandlers(mainWindow: BrowserWindow) {
             event.sender.send('dependency-progress', progress)
         }, selectedMirror)
 
-        console.log(`依赖安装结果: ${result.success ? '成功' : '失败'}`)
+        if (!result.success) {
+            logService.error('初始化处理器', `依赖安装失败: ${result.error}`)
+        }
+
         return result
     })
 
     // ==================== 获取镜像源列表 ====================
 
     ipcMain.handle('get-mirrors', async (event, type: string) => {
-        console.log(`=== 获取镜像源列表: ${type} ===`)
         const initService = getInitService()
         const mirrorService = initService.getMirrorService()
 
@@ -183,9 +192,7 @@ export function registerInitializationHandlers(mainWindow: BrowserWindow) {
     // ==================== 完整初始化流程（保留用于兼容） ====================
 
     ipcMain.handle('initialize', async (event, targetBranch: string = 'dev', startBackend: boolean = true) => {
-        console.log('=== 初始化开始 ===')
-        console.log(`目标分支: ${targetBranch}`)
-        console.log(`启动后端: ${startBackend}`)
+        logService.info('初始化处理器', `开始初始化 - 目标分支: ${targetBranch}, 启动后端: ${startBackend}`)
 
         const initService = getInitService(targetBranch)
 
@@ -198,7 +205,7 @@ export function registerInitializationHandlers(mainWindow: BrowserWindow) {
             // 保存后端服务实例
             backendService = initService.getBackendService()
 
-            // 设置日志回调
+            // 恢复日志回调设置
             backendService.setLogCallback((log) => {
                 event.sender.send('backend-log', log)
             })
@@ -207,15 +214,11 @@ export function registerInitializationHandlers(mainWindow: BrowserWindow) {
             backendService.setStatusCallback((status) => {
                 event.sender.send('backend-status', status)
             })
-        }
 
-        console.log('=== 初始化完成 ===')
-        console.log(`结果: ${result.success ? '成功' : '失败'}`)
-        if (!result.success) {
-            console.error(`错误: ${result.error}`)
-            console.error(`失败阶段: ${result.failedStage}`)
+            logService.info('初始化处理器', `初始化成功完成，阶段: ${result.completedStages.join(', ')}`)
+        } else {
+            logService.error('初始化处理器', `初始化失败 - 错误: ${result.error}, 失败阶段: ${result.failedStage}`)
         }
-        console.log(`完成阶段: ${result.completedStages.join(', ')}`)
 
         return result
     })
@@ -223,8 +226,7 @@ export function registerInitializationHandlers(mainWindow: BrowserWindow) {
     // ==================== 仅更新模式 ====================
 
     ipcMain.handle('update-only', async (event, targetBranch: string = 'dev') => {
-        console.log('=== 仅更新模式 ===')
-        console.log(`目标分支: ${targetBranch}`)
+        logService.info('初始化处理器', `开始更新模式 - 目标分支: ${targetBranch}`)
 
         const initService = getInitService(targetBranch)
 
@@ -232,8 +234,9 @@ export function registerInitializationHandlers(mainWindow: BrowserWindow) {
             event.sender.send('initialization-progress', progress)
         })
 
-        console.log('=== 更新完成 ===')
-        console.log(`结果: ${result.success ? '成功' : '失败'}`)
+        if (!result.success) {
+            logService.error('初始化处理器', `更新失败: ${result.error}`)
+        }
 
         return result
     })
@@ -241,57 +244,62 @@ export function registerInitializationHandlers(mainWindow: BrowserWindow) {
     // ==================== 后端服务管理 ====================
 
     ipcMain.handle('backend-start', async (event) => {
-        console.log('=== 启动后端 ===')
+        logService.info('初始化处理器', '启动后端服务')
 
         const backend = getBackendService()
 
-        // 设置回调
+        // 恢复日志回调设置
         backend.setLogCallback((log) => {
             event.sender.send('backend-log', log)
         })
 
+        // 设置状态回调
         backend.setStatusCallback((status) => {
             event.sender.send('backend-status', status)
         })
 
         const result = await backend.startBackend()
 
-        console.log(`后端启动结果: ${result.success ? '成功' : '失败'}`)
         if (!result.success) {
-            console.error(`错误: ${result.error}`)
+            logService.error('初始化处理器', `后端启动失败: ${result.error}`)
         }
 
         return result
     })
 
     ipcMain.handle('backend-stop', async () => {
-        console.log('=== 停止后端 ===')
+        logService.info('初始化处理器', '停止后端服务')
 
         const backend = getBackendService()
         const result = await backend.stopBackend()
 
-        console.log(`后端停止结果: ${result.success ? '成功' : '失败'}`)
+        if (!result.success) {
+            logService.error('初始化处理器', `后端停止失败: ${result.error}`)
+        }
 
         return result
     })
 
     ipcMain.handle('backend-restart', async (event) => {
-        console.log('=== 重启后端 ===')
+        logService.info('初始化处理器', '重启后端服务')
 
         const backend = getBackendService()
 
-        // 重新设置回调
+        // 恢复日志回调重新设置
         backend.setLogCallback((log) => {
             event.sender.send('backend-log', log)
         })
 
+        // 设置状态回调
         backend.setStatusCallback((status) => {
             event.sender.send('backend-status', status)
         })
 
         const result = await backend.restartBackend()
 
-        console.log(`后端重启结果: ${result.success ? '成功' : '失败'}`)
+        if (!result.success) {
+            logService.error('初始化处理器', `后端重启失败: ${result.error}`)
+        }
 
         return result
     })
@@ -304,7 +312,7 @@ export function registerInitializationHandlers(mainWindow: BrowserWindow) {
     // ==================== 清理 ====================
 
     ipcMain.handle('cleanup', async () => {
-        console.log('=== 清理资源 ===')
+        logService.info('初始化处理器', '清理初始化资源')
 
         if (backendService) {
             await backendService.cleanup()
@@ -313,7 +321,7 @@ export function registerInitializationHandlers(mainWindow: BrowserWindow) {
 
         initService = null
 
-        console.log('✅ 资源清理完成')
+        logService.info('初始化处理器', '资源清理完成')
 
         return { success: true }
     })
@@ -323,7 +331,7 @@ export function registerInitializationHandlers(mainWindow: BrowserWindow) {
  * 清理所有资源（应用退出时调用）
  */
 export async function cleanupInitializationResources() {
-    console.log('=== 清理初始化资源 ===')
+    logService.info('初始化处理器', '清理初始化资源')
 
     if (backendService) {
         await backendService.cleanup()
@@ -332,5 +340,5 @@ export async function cleanupInitializationResources() {
 
     initService = null
 
-    console.log('✅ 初始化资源清理完成')
+    logService.info('初始化处理器', '初始化资源清理完成')
 }

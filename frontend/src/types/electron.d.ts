@@ -86,6 +86,13 @@ export interface ElectronAPI {
   clearLogs: (fileName?: string) => Promise<void>
   cleanOldLogs: (daysToKeep?: number) => Promise<void>
 
+  // 日志写入
+  logWrite: (level: string, module: string, message: string) => Promise<void>
+
+  // 日志解析
+  parseBackendLog: (logLine: string) => Promise<any>
+  processLogColors: (logContent: string, enableColorHighlight: boolean) => Promise<string>
+
   // 保留原有方法以兼容现有代码
   saveLogsToFile: (logs: string) => Promise<void>
   loadLogsFromFile: () => Promise<string | null>

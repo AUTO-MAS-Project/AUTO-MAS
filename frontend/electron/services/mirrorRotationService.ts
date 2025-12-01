@@ -5,6 +5,18 @@
 
 import { MirrorSource } from './mirrorService'
 
+// 导入日志服务
+import { logService } from './logService'
+
+// 使用日志服务的日志记录器
+const logger = {
+    error: (message: string, ...args: any[]) => logService.error('镜像轮替服务', `${message} ${args.length > 0 ? JSON.stringify(args) : ''}`),
+    warn: (message: string, ...args: any[]) => logService.warn('镜像轮替服务', `${message} ${args.length > 0 ? JSON.stringify(args) : ''}`),
+    info: (message: string, ...args: any[]) => logService.info('镜像轮替服务', `${message} ${args.length > 0 ? JSON.stringify(args) : ''}`),
+    debug: (message: string, ...args: any[]) => logService.debug('镜像轮替服务', `${message} ${args.length > 0 ? JSON.stringify(args) : ''}`),
+    log: (message: string, ...args: any[]) => logService.info('镜像轮替服务', `${message} ${args.length > 0 ? JSON.stringify(args) : ''}`)
+}
+
 // ==================== 类型定义 ====================
 
 export interface NetworkOperationProgress {
@@ -40,10 +52,10 @@ export class MirrorRotationService {
         onProgress?: MirrorRotationProgressCallback,
         preferredMirrorName?: string
     ): Promise<{ success: boolean; result?: any; error?: string; usedMirror?: MirrorSource }> {
-        console.log('=== 开始镜像源轮替 ===')
-        console.log(`可用镜像源数量: ${mirrors.length}`)
+        logger.info('=== 开始镜像源轮替 ===')
+        logger.info(`可用镜像源数量: ${mirrors.length}`)
         if (preferredMirrorName) {
-            console.log(`指定镜像源: ${preferredMirrorName}（仅使用该镜像源）`)
+            logger.info(`指定镜像源: ${preferredMirrorName}（仅使用该镜像源）`)
         }
 
         if (mirrors.length === 0) {
@@ -55,11 +67,11 @@ export class MirrorRotationService {
         if (preferredMirrorName) {
             const selectedMirror = mirrors.find(m => m.name === preferredMirrorName)
             if (!selectedMirror) {
-                console.error(`❌ 未找到指定的镜像源: ${preferredMirrorName}`)
+                logger.error(`❌ 未找到指定的镜像源: ${preferredMirrorName}`)
                 return { success: false, error: `未找到指定的镜像源: ${preferredMirrorName}` }
             }
             sortedMirrors = [selectedMirror]
-            console.log(`✅ 找到指定镜像源，将仅使用该镜像源进行操作`)
+            logger.info(`✅ 找到指定镜像源，将仅使用该镜像源进行操作`)
         } else {
             // 重新排序镜像源：优先使用配置的镜像源
             sortedMirrors = this.sortMirrors(mirrors, preferredMirrorName)
@@ -68,8 +80,8 @@ export class MirrorRotationService {
         // 依次尝试每个镜像源
         for (let i = 0; i < sortedMirrors.length; i++) {
             const mirror = sortedMirrors[i]
-            console.log(`\n尝试镜像源 [${i + 1}/${sortedMirrors.length}]: ${mirror.name}`)
-            console.log(`URL: ${mirror.url}`)
+            logger.info(`\n尝试镜像源 [${i + 1}/${sortedMirrors.length}]: ${mirror.name}`)
+            logger.info(`URL: ${mirror.url}`)
 
             try {
                 // 执行网络操作
@@ -86,23 +98,23 @@ export class MirrorRotationService {
                 })
 
                 if (result.success) {
-                    console.log(`✅ 镜像源 ${mirror.name} 操作成功`)
+                    logger.info(`✅ 镜像源 ${mirror.name} 操作成功`)
                     return {
                         success: true,
                         result: result.result,
                         usedMirror: mirror
                     }
                 } else {
-                    console.warn(`⚠️ 镜像源 ${mirror.name} 操作失败: ${result.error}`)
+                    logger.warn(`⚠️ 镜像源 ${mirror.name} 操作失败: ${result.error}`)
                 }
             } catch (error) {
                 const errorMsg = error instanceof Error ? error.message : String(error)
-                console.error(`❌ 镜像源 ${mirror.name} 发生异常: ${errorMsg}`)
+                logger.error(`❌ 镜像源 ${mirror.name} 发生异常: ${errorMsg}`)
             }
         }
 
         // 所有镜像源都失败
-        console.error('❌ 所有镜像源都尝试失败')
+        logger.error('❌ 所有镜像源都尝试失败')
         return {
             success: false,
             error: preferredMirrorName
@@ -171,7 +183,7 @@ export class MirrorRotationService {
         responseTime?: number
         error?: string
     }>> {
-        console.log('=== 批量测试镜像源 ===')
+        logger.info('=== 批量测试镜像源 ===')
 
         const results = await Promise.all(
             mirrors.map(async (mirror) => {

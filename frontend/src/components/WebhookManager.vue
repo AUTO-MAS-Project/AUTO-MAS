@@ -201,6 +201,10 @@ import {
 import type { CustomWebhook } from '@/types/settings'
 import { TEMPLATE_VARIABLES, WEBHOOK_TEMPLATES } from '@/utils/webhookTemplates'
 import { Service } from '@/api/services/Service'
+import { logger } from '@/utils/logger'
+import { getLogger } from '@/utils/logger'
+
+const webhookLogger = getLogger('Webhook管理器')
 
 // 定义内部使用的Webhook类型
 interface WebhookItem {
@@ -311,7 +315,7 @@ const loadWebhooks = async () => {
       })
     }
   } catch (error) {
-    console.error('加载Webhook失败:', error)
+    webhookLogger.error('加载Webhook失败:', error)
     message.error('加载Webhook配置失败')
   } finally {
     loading.value = false
@@ -352,10 +356,10 @@ const showAddModal = async () => {
         formData.enabled = true
         formData.headersList = []
 
-        console.log('创建新Webhook，ID:', response.webhookId)
+        webhookLogger.info('创建新Webhook，ID:', response.webhookId)
       }
     } catch (error) {
-      console.error('创建Webhook失败:', error)
+      webhookLogger.error('创建Webhook失败:', error)
       message.error('创建Webhook失败')
       return
     }
@@ -435,7 +439,7 @@ const toggleWebhookEnabled = async (webhook: WebhookItem) => {
       await loadWebhooks()
       message.success(`Webhook "${webhook.name}" 已${newEnabled ? '启用' : '禁用'}`)
     } catch (error) {
-      console.error('更新Webhook状态失败:', error)
+      webhookLogger.error('更新Webhook状态失败:', error)
       message.error('更新Webhook状态失败')
       // 恢复原状态
       webhook.enabled = !newEnabled
@@ -484,7 +488,7 @@ const deleteWebhook = (webhook: WebhookItem) => {
           await loadWebhooks()
           message.success('Webhook 删除成功')
         } catch (error) {
-          console.error('删除Webhook失败:', error)
+          webhookLogger.error('删除Webhook失败:', error)
           message.error('删除Webhook失败')
         }
       } else {
@@ -528,7 +532,7 @@ const testWebhook = async (webhook: WebhookItem) => {
       message.error(`Webhook 测试失败: ${response.message || '未知错误'}`)
     }
   } catch (error: any) {
-    console.error('Webhook测试错误:', error)
+    webhookLogger.error('Webhook测试错误:', error)
     message.error(
       `Webhook 测试失败: ${error.response?.data?.message || error.message || '网络错误'}`
     )
@@ -659,7 +663,7 @@ const handleSubmit = async () => {
           resetForm()
         }, 100)
       } catch (error) {
-        console.error('保存Webhook失败:', error)
+        webhookLogger.error('保存Webhook失败:', error)
         message.error('保存Webhook失败')
       }
     } else {
@@ -695,7 +699,7 @@ const handleSubmit = async () => {
       }, 100)
     }
   } catch (error) {
-    console.error('表单验证失败:', error)
+    webhookLogger.error('表单验证失败:', error)
   } finally {
     submitting.value = false
   }

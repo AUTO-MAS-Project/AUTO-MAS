@@ -26,11 +26,13 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
+import { getLogger } from '@/utils/logger'
 
 defineOptions({
   name: 'TestRouterView',
 })
 
+const logger = getLogger('测试路由')
 const lastResult = ref<boolean | null>(null)
 
 const testBasicDialog = async () => {
@@ -41,9 +43,9 @@ const testBasicDialog = async () => {
       options: ['确定', '取消'],
     })
     lastResult.value = result
-    console.log('基础对话框结果:', result)
+    logger.info('基础对话框结果:', result)
   } catch (error) {
-    console.error('显示对话框失败:', error)
+    logger.error('显示对话框失败:', error)
   }
 }
 
@@ -55,9 +57,9 @@ const testCustomDialog = async () => {
       options: ['保存', '不保存'],
     })
     lastResult.value = result
-    console.log('自定义对话框结果:', result)
+    logger.info('自定义对话框结果:', result)
   } catch (error) {
-    console.error('显示对话框失败:', error)
+    logger.error('显示对话框失败:', error)
   }
 }
 
@@ -74,9 +76,9 @@ const testLongMessage = async () => {
       options: ['继续', '取消'],
     })
     lastResult.value = result
-    console.log('长消息对话框结果:', result)
+    logger.info('长消息对话框结果:', result)
   } catch (error) {
-    console.error('显示对话框失败:', error)
+    logger.error('显示对话框失败:', error)
   }
 }
 </script>

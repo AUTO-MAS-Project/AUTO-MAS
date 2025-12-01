@@ -3,6 +3,9 @@ import { ref, type Ref } from 'vue'
 import schedulerHandlers from '@/views/scheduler/schedulerHandlers'
 import { Modal } from 'ant-design-vue'
 import { useAppClosing } from '@/composables/useAppClosing'
+import { getLogger } from '@/utils/logger'
+
+const logger = getLogger('WebSocket连接')
 
 // ====== 配置项 ======
 const BASE_WS_URL = 'ws://localhost:36163/api/core/ws'
@@ -24,21 +27,21 @@ const WS_RECONNECT_BACKOFF = 1.5 // WebSocket重连退避倍数
 const DEBUG = process.env.NODE_ENV === 'development'
 
 const log = (...args: any[]) => {
-  if (DEBUG) console.log('[WebSocket]', ...args)
+  if (DEBUG) logger.debug('[WebSocket]', ...args)
 }
 const warn = (...args: any[]) => {
-  if (DEBUG) console.warn('[WebSocket]', ...args)
+  if (DEBUG) logger.warn('[WebSocket]', ...args)
 }
 
 // 强制日志输出，用于诊断重连问题
 const forceLog = (...args: any[]) => {
   // 在生产环境中只输出重要的日志
   if (DEBUG || args[0]?.includes?.('重复消息') || args[0]?.includes?.('订阅')) {
-    console.log('[WebSocket-FORCE]', ...args)
+    logger.info('[WebSocket-FORCE]', ...args)
   }
 }
 const forceWarn = (...args: any[]) => {
-  console.warn('[WebSocket-FORCE]', ...args)
+  logger.warn('[WebSocket-FORCE]', ...args)
 }
 
 // ====== 类型定义 ======
@@ -781,7 +784,7 @@ const handleMessage = (raw: WebSocketBaseMessage) => {
 
   // 强制输出消息处理信息，包含订阅数量
   const subscriptionCount = global.subscriptions.value.size
-  console.log(`[WS-MSG] 处理消息: type=${raw.type}, id=${raw.id}, 订阅数=${subscriptionCount}`)
+  logger.info(`[WS-MSG] 处理消息: type=${raw.type}, id=${raw.id}, 订阅数=${subscriptionCount}`)
 
   if (DEBUG) {
     log('收到原始消息:', { type: raw.type, id: raw.id, data: raw.data })
@@ -810,7 +813,7 @@ const handleMessage = (raw: WebSocketBaseMessage) => {
   // 检查是否在最近200ms内处理过相同的消息（增加时间窗口）
   const lastProcessed = global.lastProcessedMessages.get(messageKey)
   if (lastProcessed && now - lastProcessed < 200) {
-    console.warn(`[WS-MSG] 重复消息被过滤: ${messageKey.substring(0, 100)}...`)
+    logger.warn(`[WS-MSG] 重复消息被过滤: ${messageKey.substring(0, 100)}...`)
     return
   }
   global.lastProcessedMessages.set(messageKey, now)
@@ -829,24 +832,24 @@ const handleMessage = (raw: WebSocketBaseMessage) => {
   const subscriptionsCopy = new Map(global.subscriptions.value)
 
   // 输出所有订阅的详细信息
-  console.log(`[WS-MSG] 当前所有订阅:`)
+  logger.info(`[WS-MSG] 当前所有订阅:`)
   subscriptionsCopy.forEach((subscription, id) => {
-    console.log(`  - ${id}: ${JSON.stringify(subscription.filter)}`)
+    logger.info(`  - ${id}: ${JSON.stringify(subscription.filter)}`)
   })
 
   // 分发给所有匹配的订阅者
   subscriptionsCopy.forEach(subscription => {
     if (messageMatchesFilter(raw, subscription.filter)) {
       matchingSubscriptions++
-      console.log(`[WS-MSG] 匹配订阅: ${subscription.subscriptionId}`)
+      logger.info(`[WS-MSG] 匹配订阅: ${subscription.subscriptionId}`)
       try {
         // 再次检查订阅是否仍然存在，因为在同一个事件循环中它可能已被删除
         if (global.subscriptions.value.has(subscription.subscriptionId)) {
           subscription.handler(raw)
           dispatched = true
-          console.log(`[WS-MSG] 已分发给: ${subscription.subscriptionId}`)
+          logger.info(`[WS-MSG] 已分发给: ${subscription.subscriptionId}`)
         } else {
-          console.warn(`[WS-MSG] 订阅已被删除: ${subscription.subscriptionId}`)
+          logger.warn(`[WS-MSG] 订阅已被删除: ${subscription.subscriptionId}`)
         }
       } catch (e) {
         warn(`订阅处理器错误 [${subscription.subscriptionId}]:`, e)

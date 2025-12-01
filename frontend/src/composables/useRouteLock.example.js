@@ -1,6 +1,10 @@
 // 使用示例：在任何组件中使用路由锁定功能
 
 import { useRouteLock } from '@/composables/useRouteLock'
+import { logger } from '@/utils/logger'
+import { getLogger } from '@/utils/logger'
+
+const routeLockLogger = getLogger('路由锁定示例')
 
 export default {
   setup() {
@@ -10,7 +14,7 @@ export default {
     const startEditing = () => {
       lockRoute(targetRoute => {
         // 用户尝试切换路由时的回调
-        console.log(`用户尝试切换到 ${targetRoute}，但表单正在编辑中`)
+        routeLockLogger.info(`用户尝试切换到 ${targetRoute}，但表单正在编辑中`)
 
         // 可以显示确认对话框
         if (confirm('表单正在编辑中，确定要离开吗？')) {
@@ -30,7 +34,7 @@ export default {
         // 保存成功后解锁路由
         unlockRoute()
       } catch (error) {
-        console.error('保存失败', error)
+        routeLockLogger.error('保存失败', error)
       }
     }
 

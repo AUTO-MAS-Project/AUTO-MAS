@@ -35,6 +35,10 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { Service } from '@/api'
 import { ExternalWSHandlers } from '@/composables/useWebSocket'
+import { logger } from '@/utils/logger'
+import { getLogger } from '@/utils/logger'
+
+const powerCountdownLogger = getLogger('全局电源倒计时')
 
 // 响应式状态
 const visible = ref(false)
@@ -47,7 +51,7 @@ let countdownTimer: ReturnType<typeof setInterval> | null = null
 
 // 启动倒计时
 const startCountdown = (data: any) => {
-  console.log('[GlobalPowerCountdown] 启动倒计时:', data)
+  powerCountdownLogger.info('[GlobalPowerCountdown] 启动倒计时:', data)
 
   // 清除之前的计时器
   if (countdownTimer) {
@@ -67,7 +71,7 @@ const startCountdown = (data: any) => {
   countdownTimer = setInterval(() => {
     if (countdown.value !== undefined && countdown.value > 0) {
       countdown.value--
-      console.log('[GlobalPowerCountdown] 倒计时:', countdown.value)
+      powerCountdownLogger.debug('[GlobalPowerCountdown] 倒计时:', countdown.value)
 
       // 倒计时结束
       if (countdown.value <= 0) {
@@ -76,7 +80,7 @@ const startCountdown = (data: any) => {
           countdownTimer = null
         }
         visible.value = false
-        console.log('[GlobalPowerCountdown] 倒计时结束，弹窗关闭')
+        powerCountdownLogger.info('[GlobalPowerCountdown] 倒计时结束，弹窗关闭')
       }
     }
   }, 1000)
@@ -84,7 +88,7 @@ const startCountdown = (data: any) => {
 
 // 取消电源操作
 const handleCancel = async () => {
-  console.log('[GlobalPowerCountdown] 用户取消电源操作')
+  powerCountdownLogger.info('[GlobalPowerCountdown] 用户取消电源操作')
 
   // 清除倒计时器
   if (countdownTimer) {
@@ -98,9 +102,9 @@ const handleCancel = async () => {
   // 调用取消电源操作的API
   try {
     await Service.cancelPowerTaskApiDispatchCancelPowerPost()
-    console.log('[GlobalPowerCountdown] 电源操作已取消')
+    powerCountdownLogger.info('[GlobalPowerCountdown] 电源操作已取消')
   } catch (error) {
-    console.error('[GlobalPowerCountdown] 取消电源操作失败:', error)
+    powerCountdownLogger.error('[GlobalPowerCountdown] 取消电源操作失败:', error)
   }
 }
 
@@ -111,7 +115,7 @@ const handleMainMessage = (message: any) => {
   const { type, data } = message
 
   if (type === 'Message' && data && data.type === 'Countdown') {
-    console.log('[GlobalPowerCountdown] 收到倒计时消息:', data)
+    powerCountdownLogger.info('[GlobalPowerCountdown] 收到倒计时消息:', data)
     startCountdown(data)
   }
 }
@@ -135,7 +139,7 @@ onMounted(() => {
       try {
         originalMainHandler(message)
       } catch (e) {
-        console.warn('[GlobalPowerCountdown] 原有Main消息处理器出错:', e)
+        powerCountdownLogger.warn('[GlobalPowerCountdown] 原有Main消息处理器出错:', e)
       }
     }
 
@@ -143,12 +147,12 @@ onMounted(() => {
     handleMainMessage(message)
   }
 
-  console.log('[GlobalPowerCountdown] 全局电源倒计时组件已挂载')
+  powerCountdownLogger.info('[GlobalPowerCountdown] 全局电源倒计时组件已挂载')
 })
 
 onUnmounted(() => {
   cleanup()
-  console.log('[GlobalPowerCountdown] 全局电源倒计时组件已卸载')
+  powerCountdownLogger.info('[GlobalPowerCountdown] 全局电源倒计时组件已卸载')
 })
 </script>
 

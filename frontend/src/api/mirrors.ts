@@ -5,6 +5,9 @@
 
 import { OpenAPI } from '@/api'
 import type { MirrorConfig } from '@/types/mirror'
+import { getLogger } from '@/utils/logger'
+
+const logger = getLogger('镜像API')
 
 export interface MirrorApiResponse {
   git?: MirrorConfig[]
@@ -40,7 +43,7 @@ export async function fetchMirrorConfig(): Promise<MirrorApiResponse> {
 
     return await response.json()
   } catch (error) {
-    console.warn('获取镜像源配置失败，使用默认配置:', error)
+    logger.warn('获取镜像源配置失败，使用默认配置:', error)
     throw error
   }
 }
