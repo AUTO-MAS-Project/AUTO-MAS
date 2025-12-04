@@ -1024,23 +1024,32 @@ const updatePathRelations = () => {
 }
 
 // 根据新的根目录更新所有路径
+// 注意：只更新原本就是根目录子目录的路径，不更新 AppData 等外部目录下的路径
 const updatePathsBasedOnRoot = (newRootPath: string) => {
   if (!newRootPath || newRootPath === '.') return
 
+  // 检查相对路径是否表示在根目录内部（不以 .. 开头）
+  const isInternalPath = (relativePath: string): boolean => {
+    if (!relativePath || relativePath === '.') return false
+    // 如果相对路径以 .. 开头，说明该路径不在根目录下
+    return !relativePath.startsWith('..')
+  }
+
   // 根据保存的相对路径关系重新计算绝对路径
-  if (pathRelations.scriptPathRelative) {
+  // 只有当路径确实在原根目录内部时才更新
+  if (pathRelations.scriptPathRelative && isInternalPath(pathRelations.scriptPathRelative)) {
     const newScriptPath = pathUtils.resolvePath(newRootPath, pathRelations.scriptPathRelative)
     const normalizedScriptPath = pathUtils.normalizePath(newScriptPath)
     generalConfig.Script.ScriptPath = normalizedScriptPath
   }
 
-  if (pathRelations.configPathRelative) {
+  if (pathRelations.configPathRelative && isInternalPath(pathRelations.configPathRelative)) {
     const newConfigPath = pathUtils.resolvePath(newRootPath, pathRelations.configPathRelative)
     const normalizedConfigPath = pathUtils.normalizePath(newConfigPath)
     generalConfig.Script.ConfigPath = normalizedConfigPath
   }
 
-  if (pathRelations.logPathRelative) {
+  if (pathRelations.logPathRelative && isInternalPath(pathRelations.logPathRelative)) {
     const newLogPath = pathUtils.resolvePath(newRootPath, pathRelations.logPathRelative)
     const normalizedLogPath = pathUtils.normalizePath(newLogPath)
     generalConfig.Script.LogPath = normalizedLogPath
