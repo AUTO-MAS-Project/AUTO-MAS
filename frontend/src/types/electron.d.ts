@@ -1,8 +1,5 @@
 // Electron API 类型定义
 export interface ElectronAPI {
-  // 窗口类型标识
-  isDialogWindow: () => boolean
-
   openDevTools: () => Promise<void>
   selectFolder: () => Promise<string | null>
   selectFile: (filters?: any[]) => Promise<string[]>
@@ -13,12 +10,12 @@ export interface ElectronAPI {
   windowMaximize: () => Promise<void>
   windowClose: () => Promise<void>
   windowIsMaximized: () => Promise<boolean>
+  windowFocus: () => Promise<void>
   appQuit: () => Promise<void>
 
   // 进程管理
   getRelatedProcesses: () => Promise<any[]>
   killAllProcesses: () => Promise<{ success: boolean; error?: string }>
-  forceExit: () => Promise<{ success: boolean }>
 
   // 初始化相关API
   checkEnvironment: () => Promise<any>
@@ -35,7 +32,7 @@ export interface ElectronAPI {
   cloneBackend: (repoUrl?: string) => Promise<any>
   updateBackend: (repoUrl?: string) => Promise<any>
   startBackend: () => Promise<{ success: boolean; error?: string }>
-  stopBackend?: () => Promise<{ success: boolean; error?: string }>
+  stopBackend: () => Promise<{ success: boolean; error?: string }>
 
   // 快速安装相关
   downloadQuickEnvironment: () => Promise<{ success: boolean; error?: string }>
@@ -86,6 +83,13 @@ export interface ElectronAPI {
   clearLogs: (fileName?: string) => Promise<void>
   cleanOldLogs: (daysToKeep?: number) => Promise<void>
 
+  // 日志写入
+  logWrite: (level: string, module: string, message: string) => Promise<void>
+
+  // 日志解析
+  parseBackendLog: (logLine: string) => Promise<any>
+  processLogColors: (logContent: string, enableColorHighlight: boolean) => Promise<string>
+
   // 保留原有方法以兼容现有代码
   saveLogsToFile: (logs: string) => Promise<void>
   loadLogsFromFile: () => Promise<string | null>
@@ -93,15 +97,6 @@ export interface ElectronAPI {
   // 文件系统操作
   openFile: (filePath: string) => Promise<void>
   showItemInFolder: (filePath: string) => Promise<void>
-
-  // 对话框相关
-  showQuestionDialog: (questionData: {
-    title?: string
-    message?: string
-    options?: string[]
-    messageId?: string
-  }) => Promise<boolean>
-  dialogResponse: (messageId: string, choice: boolean) => Promise<boolean>
 
   // 主题信息获取
   getThemeInfo: () => Promise<{
@@ -112,6 +107,7 @@ export interface ElectronAPI {
     isDark: boolean
     primaryColor: string
   }>
+  getAppPath: (name: string) => Promise<string>
 
   // 监听下载进度
   onDownloadProgress: (callback: (progress: any) => void) => void

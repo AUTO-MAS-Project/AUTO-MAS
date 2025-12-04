@@ -414,18 +414,19 @@
                 <template #label>
                   <a-tooltip title="游戏在哪个平台上运行">
                     <span class="form-label">
-                      游戏平台类型
+                      启动方式
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select 
-                  v-model:value="generalConfig.Game.Type" 
+                <a-select
+                  v-model:value="generalConfig.Game.Type"
                   size="large"
                   @change="handleGameTypeChange"
                 >
-                  <a-select-option value="Emulator">安卓模拟器</a-select-option>
+                  <a-select-option value="Emulator">模拟器</a-select-option>
                   <a-select-option value="Client">PC客户端</a-select-option>
+                  <a-select-option value="URL">URL协议(如Starward)</a-select-option>
                 </a-select>
               </a-form-item>
             </a-col>
@@ -485,6 +486,27 @@
                 </a-select>
               </a-form-item>
             </a-col>
+
+            <a-col v-if="generalConfig.Game.Type === 'URL'" :span="8">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip title="自定义协议的URL">
+                    <span class="form-label">
+                      URL地址
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-input-group class="path-input-group">
+                  <a-input
+                    v-model:value="generalConfig.Game.URL"
+                    placeholder="请输入URL参数，如：starward://startgame/xxxx"
+                    size="large"
+                  />
+                </a-input-group>
+              </a-form-item>
+            </a-col>
+
             <a-col v-if="generalConfig.Game.Type === 'Emulator'" :span="8">
               <a-form-item>
                 <template #label>
@@ -524,7 +546,7 @@
             </a-col>
           </a-row>
 
-          <!-- PC客户端独有的第二行配置 -->
+          <!-- PC客户端独有的配置 -->
           <a-row v-if="generalConfig.Game.Type === 'Client'" :gutter="24">
             <a-col :span="8">
               <a-form-item>
@@ -583,6 +605,29 @@
           </a-row>
         </div>
 
+        <!-- 自定义协议独有的选项 -->
+        <a-row v-if="generalConfig.Game.Type === 'URL'" :gutter="24">
+          <a-col :span="8">
+            <a-form-item>
+              <template #label>
+                <a-tooltip
+                  title="进程名称，如StarRail.exe，必须填写否则可能无法正确监测进程状态。开启游戏后，打开任务管理器查看程序详细信息即可获得。"
+                >
+                  <span class="form-label">
+                    进程名称
+                    <QuestionCircleOutlined class="help-icon" />
+                  </span>
+                </a-tooltip>
+              </template>
+              <a-input
+                v-model:value="generalConfig.Game.ProcessName"
+                placeholder="比如 StarRail.exe"
+                size="large"
+                class="modern-input"
+              />
+            </a-form-item>
+          </a-col>
+        </a-row>
         <!-- 运行配置 -->
         <div class="form-section">
           <div class="section-header">
@@ -737,6 +782,7 @@ import { onMounted, reactive, ref, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
 import { message } from 'ant-design-vue'
+import { getLogger } from '@/utils/logger'
 import type { GeneralScriptConfig, ScriptType } from '../../../types/script.ts'
 import { useScriptApi } from '../../../composables/useScriptApi.ts'
 import { Service, type ComboBoxItem } from '../../../api'
@@ -749,6 +795,8 @@ import {
   QuestionCircleOutlined,
   SaveOutlined,
 } from '@ant-design/icons-vue'
+
+const logger = getLogger('通用脚本编辑')
 
 const route = useRoute()
 const router = useRouter()
@@ -908,6 +956,9 @@ const pathUtils = {
   },
 }
 
+// AppData 路径
+const appDataPath = ref('')
+
 // 路径验证函数
 const validatePath = (rootPath: string, targetPath: string, pathName: string): boolean => {
   if (!targetPath || targetPath === '.') return true
@@ -916,8 +967,17 @@ const validatePath = (rootPath: string, targetPath: string, pathName: string): b
     return false
   }
 
-  if (!pathUtils.isSubPath(rootPath, targetPath)) {
-    message.error(`${pathName}必须是脚本根目录的子路径`)
+  // 检查是否在根目录下
+  const isUnderRoot = pathUtils.isSubPath(rootPath, targetPath)
+  
+  // 检查是否在 AppData 下
+  let isUnderAppData = false
+  if (appDataPath.value) {
+    isUnderAppData = pathUtils.isSubPath(appDataPath.value, targetPath)
+  }
+
+  if (!isUnderRoot && !isUnderAppData) {
+    message.error(`${pathName}必须是脚本根目录或 AppData 目录的子路径`)
     return false
   }
 
@@ -964,23 +1024,32 @@ const updatePathRelations = () => {
 }
 
 // 根据新的根目录更新所有路径
+// 注意：只更新原本就是根目录子目录的路径，不更新 AppData 等外部目录下的路径
 const updatePathsBasedOnRoot = (newRootPath: string) => {
   if (!newRootPath || newRootPath === '.') return
 
+  // 检查相对路径是否表示在根目录内部（不以 .. 开头）
+  const isInternalPath = (relativePath: string): boolean => {
+    if (!relativePath || relativePath === '.') return false
+    // 如果相对路径以 .. 开头，说明该路径不在根目录下
+    return !relativePath.startsWith('..')
+  }
+
   // 根据保存的相对路径关系重新计算绝对路径
-  if (pathRelations.scriptPathRelative) {
+  // 只有当路径确实在原根目录内部时才更新
+  if (pathRelations.scriptPathRelative && isInternalPath(pathRelations.scriptPathRelative)) {
     const newScriptPath = pathUtils.resolvePath(newRootPath, pathRelations.scriptPathRelative)
     const normalizedScriptPath = pathUtils.normalizePath(newScriptPath)
     generalConfig.Script.ScriptPath = normalizedScriptPath
   }
 
-  if (pathRelations.configPathRelative) {
+  if (pathRelations.configPathRelative && isInternalPath(pathRelations.configPathRelative)) {
     const newConfigPath = pathUtils.resolvePath(newRootPath, pathRelations.configPathRelative)
     const normalizedConfigPath = pathUtils.normalizePath(newConfigPath)
     generalConfig.Script.ConfigPath = normalizedConfigPath
   }
 
-  if (pathRelations.logPathRelative) {
+  if (pathRelations.logPathRelative && isInternalPath(pathRelations.logPathRelative)) {
     const newLogPath = pathUtils.resolvePath(newRootPath, pathRelations.logPathRelative)
     const normalizedLogPath = pathUtils.normalizePath(newLogPath)
     generalConfig.Script.LogPath = normalizedLogPath
@@ -1056,6 +1125,8 @@ const generalConfig = reactive<GeneralScriptConfig>({
     WaitTime: 0,
     EmulatorId: '',
     EmulatorIndex: '',
+    URL: '',
+    ProcessName: '',
   },
   Info: {
     Name: '',
@@ -1162,6 +1233,15 @@ watch(
 )
 
 onMounted(async () => {
+  // 获取 AppData 路径
+  if (window.electronAPI) {
+    try {
+      appDataPath.value = await window.electronAPI.getAppPath('appData')
+    } catch (error) {
+      logger.error('获取 AppData 路径失败:', error)
+    }
+  }
+
   await loadScript()
   // 只有当游戏平台类型为模拟器时才加载模拟器选项
   if (generalConfig.Game.Type === 'Emulator') {
@@ -1214,7 +1294,7 @@ const loadScript = async () => {
       }
     }
   } catch (error) {
-    console.error('加载脚本失败:', error)
+    logger.error('加载脚本失败:', error)
     message.error('加载脚本失败')
     router.push('/scripts')
   } finally {
@@ -1238,7 +1318,7 @@ const handleSave = async () => {
       router.push('/scripts')
     }
   } catch (error) {
-    console.error('保存失败:', error)
+    logger.error('保存失败:', error)
   }
 }
 
@@ -1257,7 +1337,7 @@ const loadEmulatorOptions = async () => {
       message.error('加载模拟器选项失败')
     }
   } catch (error) {
-    console.error('加载模拟器选项失败:', error)
+    logger.error('加载模拟器选项失败:', error)
     message.error('加载模拟器选项失败')
   } finally {
     emulatorLoading.value = false
@@ -1278,7 +1358,7 @@ const loadEmulatorDeviceOptions = async (emulatorId: string) => {
       message.error('加载模拟器实例选项失败')
     }
   } catch (error) {
-    console.error('加载模拟器实例选项失败:', error)
+    logger.error('加载模拟器实例选项失败:', error)
     message.error('加载模拟器实例选项失败')
   } finally {
     emulatorDeviceLoading.value = false
@@ -1299,15 +1379,27 @@ const handleEmulatorChange = async (emulatorId: string) => {
 const handleGameTypeChange = async (gameType: string) => {
   // 当游戏平台类型改变时，清空相关字段
   if (gameType === 'Emulator') {
-    // 切换到模拟器时，清空PC客户端相关字段
+    // 切换到模拟器时，清空PC客户端和URL相关字段
     generalConfig.Game.Path = '.'
+    generalConfig.Game.URL = ''
     generalConfig.Game.Arguments = ''
     generalConfig.Game.WaitTime = 0
     generalConfig.Game.IfForceClose = false
     // 加载模拟器选项
     await loadEmulatorOptions()
   } else if (gameType === 'Client') {
-    // 切换到PC客户端时，清空模拟器相关字段
+    // 切换到PC客户端时，清空模拟器和URL相关字段
+    generalConfig.Game.URL = ''
+    generalConfig.Game.EmulatorId = ''
+    generalConfig.Game.EmulatorIndex = ''
+    emulatorDeviceOptions.value = []
+    emulatorOptions.value = []
+  } else if (gameType === 'URL') {
+    // 切换到URL时，清空PC客户端和模拟器相关字段
+    generalConfig.Game.Path = '.'
+    generalConfig.Game.Arguments = ''
+    generalConfig.Game.WaitTime = 0
+    generalConfig.Game.IfForceClose = false
     generalConfig.Game.EmulatorId = ''
     generalConfig.Game.EmulatorIndex = ''
     emulatorDeviceOptions.value = []
@@ -1347,7 +1439,7 @@ const selectRootPath = async () => {
       }
     }
   } catch (error) {
-    console.error('选择根路径失败:', error)
+    logger.error('选择根路径失败:', error)
     message.error('选择文件夹失败')
   }
 }
@@ -1368,7 +1460,7 @@ const selectGamePath = async () => {
       message.success('游戏路径选择成功')
     }
   } catch (error) {
-    console.error('选择游戏路径失败:', error)
+    logger.error('选择游戏路径失败:', error)
     message.error('选择文件失败')
   }
 }
@@ -1395,7 +1487,7 @@ const selectScriptPath = async () => {
       }
     }
   } catch (error) {
-    console.error('选择脚本路径失败:', error)
+    logger.error('选择脚本路径失败:', error)
     message.error('选择文件失败')
   }
 }
@@ -1438,7 +1530,7 @@ const selectConfigPath = async () => {
       }
     }
   } catch (error) {
-    console.error('选择配置路径失败:', error)
+    logger.error('选择配置路径失败:', error)
     const typeText = generalConfig.Script.ConfigPathMode === 'Folder' ? '文件夹' : '文件'
     message.error(`选择${typeText}失败`)
   }
@@ -1463,7 +1555,7 @@ const selectLogPath = async () => {
       }
     }
   } catch (error) {
-    console.error('选择日志路径失败:', error)
+    logger.error('选择日志路径失败:', error)
     message.error('选择文件失败')
   }
 }
@@ -1521,7 +1613,7 @@ const handleUpload = async () => {
     uploadForm.author = ''
     uploadForm.description = ''
   } catch (error) {
-    console.error('上传失败:', error)
+    logger.error('上传失败:', error)
     message.error('上传失败，请检查网络连接或稍后重试')
   } finally {
     uploadLoading.value = false

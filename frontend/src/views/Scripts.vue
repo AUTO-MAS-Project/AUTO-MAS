@@ -260,6 +260,9 @@ import { usePlanApi } from '@/composables/usePlanApi'
 import { Service } from '@/api/services/Service'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import MarkdownIt from 'markdown-it'
+import { getLogger } from '@/utils/logger'
+
+const logger = getLogger('脚本管理')
 
 const router = useRouter()
 const { addScript, deleteScript, getScriptsWithUsers } = useScriptApi()
@@ -338,7 +341,7 @@ const loadScripts = async () => {
       createTime: detail.createTime || new Date().toLocaleString(),
     }))
   } catch (error) {
-    console.error('加载脚本列表失败:', error)
+    logger.error('加载脚本列表失败:', error)
     message.error('加载脚本列表失败')
   } finally {
     // 首次加载结束（不论成功失败）后置位，避免初始闪烁
@@ -355,7 +358,7 @@ const loadCurrentPlan = async () => {
       allPlansData.value = response.data
     }
   } catch (error) {
-    console.error('加载计划表数据失败:', error)
+    logger.error('加载计划表数据失败:', error)
     // 不显示错误消息，因为计划表数据是可选的
   }
 }
@@ -393,7 +396,7 @@ const handleConfirmAddScript = async () => {
       })
     }
   } catch (error) {
-    console.error('添加脚本失败:', error)
+    logger.error('添加脚本失败:', error)
   } finally {
     addLoading.value = false
   }
@@ -425,7 +428,7 @@ const handleConfirmGeneralMode = async () => {
         })
       }
     } catch (error) {
-      console.error('添加脚本失败:', error)
+      logger.error('添加脚本失败:', error)
     } finally {
       addLoading.value = false
     }
@@ -438,7 +441,7 @@ const loadTemplates = async () => {
     templates.value = await getWebConfigTemplates()
     selectedTemplate.value = null
   } catch (error) {
-    console.error('加载模板列表失败:', error)
+    logger.error('加载模板列表失败:', error)
   } finally {
     templateLoading.value = false
   }
@@ -476,7 +479,7 @@ const handleConfirmTemplate = async () => {
       router.push(`/scripts/${createResult.scriptId}/edit/general`)
     }
   } catch (error) {
-    console.error('使用模板创建脚本失败:', error)
+    logger.error('使用模板创建脚本失败:', error)
   } finally {
     templateLoading.value = false
   }
@@ -575,7 +578,7 @@ const handleStartMAAConfig = async (script: Script) => {
       const subscriptionId = subscribe({ id: response.websocketId }, (wsMessage: any) => {
         // 处理错误消息
         if (wsMessage.type === 'error') {
-          console.error(`脚本 ${script.name} 连接错误:`, wsMessage.data)
+          logger.error(`脚本 ${script.name} 连接错误:`, wsMessage.data)
           message.error(`MAA配置连接失败: ${wsMessage.data}`)
           activeConnections.value.delete(script.id)
           // 连接错误时隐藏遮罩
@@ -622,7 +625,7 @@ const handleStartMAAConfig = async (script: Script) => {
       message.error(response.message || '启动MAA配置失败')
     }
   } catch (error) {
-    console.error('启动MAA配置失败:', error)
+    logger.error('启动MAA配置失败:', error)
     message.error('启动MAA配置失败')
   }
 }
@@ -654,7 +657,7 @@ const handleSaveMAAConfig = async (script: Script) => {
       message.error(response.message || '保存配置失败')
     }
   } catch (error) {
-    console.error('保存MAA配置失败:', error)
+    logger.error('保存MAA配置失败:', error)
     message.error('保存MAA配置失败')
   }
 }
@@ -683,7 +686,7 @@ const handleToggleUserStatus = async (user: User) => {
       user.Info.Status = newStatus
     }
   } catch (error) {
-    console.error('更新用户状态失败:', error)
+    logger.error('更新用户状态失败:', error)
     message.error('更新用户状态失败')
   }
 }

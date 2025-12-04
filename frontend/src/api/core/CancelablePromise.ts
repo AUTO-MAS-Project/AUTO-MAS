@@ -2,6 +2,9 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import { getLogger } from '@/utils/logger'
+
+const logger = getLogger('可取消Promise')
 export class CancelError extends Error {
 
     constructor(message: string) {
@@ -117,7 +120,7 @@ export class CancelablePromise<T> implements Promise<T> {
                     cancelHandler();
                 }
             } catch (error) {
-                console.warn('Cancellation threw an error', error);
+                logger.warn('Cancellation threw an error', error);
                 return;
             }
         }

@@ -84,6 +84,7 @@ export type { PlanIndexItem } from './models/PlanIndexItem';
 export type { PlanReorderIn } from './models/PlanReorderIn';
 export type { PlanUpdateIn } from './models/PlanUpdateIn';
 export { PowerIn } from './models/PowerIn';
+export { PowerOut } from './models/PowerOut';
 export type { QueueConfig } from './models/QueueConfig';
 export type { QueueConfig_Info } from './models/QueueConfig_Info';
 export type { QueueCreateOut } from './models/QueueCreateOut';

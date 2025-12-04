@@ -7,6 +7,18 @@ import * as fs from 'fs'
 import * as https from 'https'
 import * as http from 'http'
 
+// 导入日志服务
+import { logService } from './logService'
+
+// 使用日志服务的日志记录器
+const logger = {
+    error: (message: string, ...args: any[]) => logService.error('下载服务', `${message} ${args.length > 0 ? JSON.stringify(args) : ''}`),
+    warn: (message: string, ...args: any[]) => logService.warn('下载服务', `${message} ${args.length > 0 ? JSON.stringify(args) : ''}`),
+    info: (message: string, ...args: any[]) => logService.info('下载服务', `${message} ${args.length > 0 ? JSON.stringify(args) : ''}`),
+    debug: (message: string, ...args: any[]) => logService.debug('下载服务', `${message} ${args.length > 0 ? JSON.stringify(args) : ''}`),
+    log: (message: string, ...args: any[]) => logService.info('下载服务', `${message} ${args.length > 0 ? JSON.stringify(args) : ''}`)
+}
+
 // ==================== 类型定义 ====================
 
 export interface DownloadProgress {
@@ -40,9 +52,9 @@ export class SmartDownloader {
         savePath: string,
         onProgress?: ProgressCallback
     ): Promise<{ success: boolean; error?: string }> {
-        console.log('=== 开始智能下载 ===')
-        console.log(`URL: ${url}`)
-        console.log(`保存路径: ${savePath}`)
+        logger.info('=== 开始智能下载 ===')
+        logger.info(`URL: ${url}`)
+        logger.info(`保存路径: ${savePath}`)
 
         try {
             // 1. 获取文件头信息
@@ -52,8 +64,8 @@ export class SmartDownloader {
                 throw new Error('URL 返回的不是文件类型')
             }
 
-            console.log(`文件大小: ${(fileInfo.size / 1024 / 1024).toFixed(2)} MB`)
-            console.log(`支持 Range: ${fileInfo.supportsRange}`)
+            logger.info(`文件大小: ${(fileInfo.size / 1024 / 1024).toFixed(2)} MB`)
+            logger.info(`支持 Range: ${fileInfo.supportsRange}`)
 
             // 2. 判断下载方式
             const useMultiThread =
@@ -61,15 +73,15 @@ export class SmartDownloader {
                 fileInfo.size > this.MIN_SIZE_FOR_MULTITHREAD
 
             if (useMultiThread) {
-                console.log('✅ 使用多线程下载')
+                logger.info('✅ 使用多线程下载')
                 return await this.multiThreadDownload(url, savePath, fileInfo.size, onProgress)
             } else {
-                console.log('✅ 使用单线程下载')
+                logger.info('✅ 使用单线程下载')
                 return await this.singleThreadDownload(url, savePath, fileInfo.size, onProgress)
             }
         } catch (error) {
             const errorMsg = error instanceof Error ? error.message : String(error)
-            console.error('❌ 下载失败:', errorMsg)
+            logger.error('❌ 下载失败:', errorMsg)
             return { success: false, error: errorMsg }
         }
     }
@@ -176,7 +188,7 @@ export class SmartDownloader {
                         })
                     }
 
-                    console.log('✅ 单线程下载完成')
+                    logger.info('✅ 单线程下载完成')
                     resolve({ success: true })
                 })
 
@@ -234,7 +246,7 @@ export class SmartDownloader {
                 })
             }
 
-            console.log(`分片信息: ${chunks.length} 个分片`)
+            logger.info(`分片信息: ${chunks.length} 个分片`)
 
             // 进度监控
             let lastTime = Date.now()
@@ -289,7 +301,7 @@ export class SmartDownloader {
             }
 
             // 合并分片
-            console.log('开始合并分片...')
+            logger.info('开始合并分片...')
             const writeStream = fs.createWriteStream(savePath)
 
             for (const chunk of chunks) {
@@ -304,11 +316,11 @@ export class SmartDownloader {
                 writeStream.on('error', reject)
             })
 
-            console.log('✅ 多线程下载完成')
+            logger.info('✅ 多线程下载完成')
             return { success: true }
         } catch (error) {
             const errorMsg = error instanceof Error ? error.message : String(error)
-            console.error('❌ 多线程下载失败:', errorMsg)
+            logger.error('❌ 多线程下载失败:', errorMsg)
 
             // 清理不完整的文件
             if (fs.existsSync(savePath)) {

@@ -34,9 +34,8 @@ from typing import List, Dict, Optional
 from pathlib import Path
 
 from app.core import Config
-from app.models.schema import WebSocketMessage
 from app.utils.constants import MIRROR_ERROR_INFO
-from app.utils.logger import get_logger
+from app.utils import get_logger
 from .system import System
 
 logger = get_logger("更新服务")
@@ -76,7 +75,7 @@ class _UpdateHandler:
         # 使用 httpx 异步请求
         async with httpx.AsyncClient(proxy=Config.get_proxy()) as client:
             response = await client.get(
-                f"https://mirrorchyan.com/api/resources/AUTO_MAS/latest?user_agent=AutoMasGui&os=win&arch=x64&current_version={current_version}&cdk={Config.get('Update', 'MirrorChyanCDK') if Config.get('Update', 'Source') == 'MirrorChyan' else ''}&channel={Config.get('Update', 'Channel')}"
+                f"https://mirrorchyan.com/api/resources/AUTO_MAS/latest?user_agent=AutoMasGui&os=win&arch=x64&current_version={current_version}&cdk={Config.get('Update', 'MirrorChyanCDK') if Config.get('Update', 'Source') == 'MirrorChyan' else ''}&channel=beta"
             )
         if response.status_code == 200:
             version_info = response.json()
@@ -135,24 +134,20 @@ class _UpdateHandler:
         logger.info("收到前端下载请求")
 
         if self.is_locked:
-            await Config.send_json(
-                WebSocketMessage(
-                    id="Update",
-                    type="Signal",
-                    data={"Failed": "已有更新任务在进行中, 请勿重复操作"},
-                ).model_dump()
+            await Config.send_websocket_message(
+                id="Update",
+                type="Signal",
+                data={"Failed": "已有更新任务在进行中, 请勿重复操作"},
             )
             return None
 
         self.is_locked = True
 
         if self.remote_version is None:
-            await Config.send_json(
-                WebSocketMessage(
-                    id="Update",
-                    type="Signal",
-                    data={"Failed": "未检测到可用的远程版本, 请先检查更新"},
-                ).model_dump()
+            await Config.send_websocket_message(
+                id="Update",
+                type="Signal",
+                data={"Failed": "未检测到可用的远程版本, 请先检查更新"},
             )
             self.is_locked = False
             return None
@@ -161,16 +156,14 @@ class _UpdateHandler:
             logger.info(
                 f"更新包已存在: {Path.cwd() / f'UpdatePack_{self.remote_version}.zip'}"
             )
-            await Config.send_json(
-                WebSocketMessage(
-                    id="Update",
-                    type="Signal",
-                    data={
-                        "Accomplish": str(
-                            Path.cwd() / f"UpdatePack_{self.remote_version}.zip"
-                        )
-                    },
-                ).model_dump()
+            await Config.send_websocket_message(
+                id="Update",
+                type="Signal",
+                data={
+                    "Accomplish": str(
+                        Path.cwd() / f"UpdatePack_{self.remote_version}.zip"
+                    )
+                },
             )
             self.is_locked = False
             return None
@@ -191,14 +184,12 @@ class _UpdateHandler:
             download_url = f"https://download.auto-mas.top/d/AUTO-MAS/AUTO-MAS-Lite-Setup-{self.remote_version}-x64.zip"
 
         else:
-            await Config.send_json(
-                WebSocketMessage(
-                    id="Update",
-                    type="Signal",
-                    data={
-                        "Failed": f"未知的下载源: {Config.get('Update', 'Source')}, 请检查配置文件"
-                    },
-                ).model_dump()
+            await Config.send_websocket_message(
+                id="Update",
+                type="Signal",
+                data={
+                    "Failed": f"未知的下载源: {Config.get('Update', 'Source')}, 请检查配置文件"
+                },
             )
             self.is_locked = False
             return None
@@ -261,16 +252,14 @@ class _UpdateHandler:
                                     last_download_size = downloaded_size
                                     last_time = time.time()
 
-                                await Config.send_json(
-                                    WebSocketMessage(
-                                        id="Update",
-                                        type="Update",
-                                        data={
-                                            "downloaded_size": downloaded_size,
-                                            "file_size": file_size,
-                                            "speed": speed,
-                                        },
-                                    ).model_dump()
+                                await Config.send_websocket_message(
+                                    id="Update",
+                                    type="Update",
+                                    data={
+                                        "downloaded_size": downloaded_size,
+                                        "file_size": file_size,
+                                        "speed": speed,
+                                    },
                                 )
 
                 # 重命名临时文件为最终包
@@ -281,16 +270,14 @@ class _UpdateHandler:
                 logger.success(
                     f"下载完成: {download_url}, 实际下载大小: {downloaded_size} 字节, 耗时: {time.time() - start_time:.2f} 秒, 保存位置: {Path.cwd() / f'UpdatePack_{self.remote_version}.zip'}"
                 )
-                await Config.send_json(
-                    WebSocketMessage(
-                        id="Update",
-                        type="Signal",
-                        data={
-                            "Accomplish": str(
-                                Path.cwd() / f"UpdatePack_{self.remote_version}.zip"
-                            )
-                        },
-                    ).model_dump()
+                await Config.send_websocket_message(
+                    id="Update",
+                    type="Signal",
+                    data={
+                        "Accomplish": str(
+                            Path.cwd() / f"UpdatePack_{self.remote_version}.zip"
+                        )
+                    },
                 )
                 self.is_locked = False
                 break
@@ -309,24 +296,18 @@ class _UpdateHandler:
 
             if (Path.cwd() / "download.temp").exists():
                 (Path.cwd() / "download.temp").unlink()
-            await Config.send_json(
-                WebSocketMessage(
-                    id="Update",
-                    type="Signal",
-                    data={"Failed": f"下载失败: {download_url}"},
-                ).model_dump()
+            await Config.send_websocket_message(
+                id="Update", type="Signal", data={"Failed": f"下载失败: {download_url}"}
             )
             self.is_locked = False
 
     async def install_update(self):
 
         if self.is_locked:
-            await Config.send_json(
-                WebSocketMessage(
-                    id="Update",
-                    type="Signal",
-                    data={"Failed": "已有更新任务在进行中, 请勿重复操作"},
-                ).model_dump()
+            await Config.send_websocket_message(
+                id="Update",
+                type="Signal",
+                data={"Failed": "已有更新任务在进行中, 请勿重复操作"},
             )
             return None
 
@@ -341,12 +322,10 @@ class _UpdateHandler:
         logger.info(f"检测到的更新包: {versions.values()}")
 
         if not versions:
-            await Config.send_json(
-                WebSocketMessage(
-                    id="Update",
-                    type="Signal",
-                    data={"Failed": "未检测到更新包, 请先下载更新"},
-                ).model_dump()
+            await Config.send_websocket_message(
+                id="Update",
+                type="Signal",
+                data={"Failed": "未检测到更新包, 请先下载更新"},
             )
             self.is_locked = False
             return None
@@ -360,12 +339,10 @@ class _UpdateHandler:
                 zip_ref.extractall(Path.cwd())
         except Exception as e:
             logger.error(f"解压失败, {type(e).__name__}: {e}")
-            await Config.send_json(
-                WebSocketMessage(
-                    id="Update",
-                    type="Info",
-                    data={"Error": f"解压失败, {type(e).__name__}: {e}"},
-                ).model_dump()
+            await Config.send_websocket_message(
+                id="Update",
+                type="Info",
+                data={"Error": f"解压失败, {type(e).__name__}: {e}"},
             )
             self.is_locked = False
             return None

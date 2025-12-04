@@ -5,6 +5,9 @@
 
 import type { MirrorConfig, MirrorCategory, CloudMirrorConfig } from '@/types/mirror'
 import { cloudConfigManager } from './cloudConfigManager'
+import { getLogger } from '@/utils/logger'
+
+const logger = getLogger('镜像管理器')
 
 /**
  * 默认 API 端点配置
@@ -67,9 +70,9 @@ export class MirrorManager {
       this.apiEndpoints = config.apiEndpoints || DEFAULT_API_ENDPOINTS
 
       this.isInitialized = true
-      console.log('镜像管理器初始化完成')
+      logger.info('镜像管理器初始化完成')
     } catch (error) {
-      console.error('镜像管理器初始化失败:', error)
+      logger.error('镜像管理器初始化失败:', error)
       // 使用默认配置
       this.isInitialized = true
     }
@@ -272,10 +275,10 @@ export class MirrorManager {
         // 更新API端点
         if (config.apiEndpoints) this.updateApiEndpoints(config.apiEndpoints)
 
-        console.log('镜像源配置已从API更新')
+        logger.info('镜像源配置已从API更新')
       }
     } catch (error) {
-      console.warn('从API获取镜像源配置失败:', error)
+      logger.warn('从API获取镜像源配置失败:', error)
     }
   }
 

@@ -80,12 +80,15 @@
             <SchedulerTaskControl
               v-model:selected-task-id="tab.selectedTaskId"
               v-model:selected-mode="tab.selectedMode"
+              v-model:running-task-label="tab.runningTaskLabel"
+              v-model:running-mode-label="tab.runningModeLabel"
               :task-options="taskOptions"
               :task-options-loading="taskOptionsLoading"
               :status="tab.status"
               :disabled="tab.status === '运行'"
               @start="startTask(tab)"
               @stop="stopTask(tab)"
+              @refresh-tasks="loadTaskOptions"
             />
 
             <!-- 状态展示区域 -->
@@ -144,6 +147,9 @@ import { useSchedulerLogic } from './useSchedulerLogic'
 import SchedulerTaskControl from './SchedulerTaskControl.vue'
 import SchedulerLogPanel from './SchedulerLogPanel.vue'
 import TaskOverviewPanel from './TaskOverviewPanel.vue'
+import { getLogger } from '@/utils/logger'
+
+const logger = getLogger('调度中心')
 
 // 使用业务逻辑层
 const {
@@ -211,7 +217,7 @@ onMounted(() => {
   // 开发环境下导入调试工具
   if (process.env.NODE_ENV === 'development') {
     import('@/utils/scheduler-debug').then(() => {
-      console.log(
+      logger.info(
         '调度中心调试工具已加载，使用 debugScheduler() 和 testWebSocketConnection() 进行调试'
       )
     })

@@ -364,6 +364,8 @@ import draggable from 'vuedraggable'
 import { ref, watch } from 'vue'
 import { Service } from '@/api'
 import { message } from 'ant-design-vue'
+import { useScriptApi } from '@/composables/useScriptApi'
+import { useUserApi } from '@/composables/useUserApi'
 import { 
   getWeekStartInTimezone, 
   getTodayInTimezone, 
@@ -376,6 +378,7 @@ interface Props {
   scripts: Script[]
   activeConnections: Map<string, { subscriptionId: string; websocketId: string }>
   allPlansData?: Record<string, Record<string, any>>
+  currentPlanData?: Record<string, any>
 }
 
 interface Emits {
@@ -931,6 +934,25 @@ const getCurrentPlanStageOld = (): string => {
   }
 
   return ''
+}
+const { reorderScript } = useScriptApi()
+const { reorderUser } = useUserApi()
+
+const onScriptDragEnd = async () => {
+  const scriptIds = localScripts.value.map(s => s.id)
+  const success = await reorderScript(scriptIds)
+  if (success) {
+    message.success('脚本排序已更新')
+    emit('scriptsReordered', localScripts.value)
+  }
+}
+
+const onUserDragEnd = async (evt: any, script: Script) => {
+  const userIds = script.users.map(u => u.id)
+  const success = await reorderUser(script.id, userIds)
+  if (success) {
+    message.success('用户排序已更新')
+  }
 }
 </script>
 

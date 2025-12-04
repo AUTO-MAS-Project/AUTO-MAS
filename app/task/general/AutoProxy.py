@@ -33,7 +33,7 @@ from app.models.ConfigBase import MultipleConfig
 from app.models.config import GeneralConfig, GeneralUserConfig
 from app.models.emulator import DeviceBase
 from app.services import Notify, System
-from app.utils import get_logger, LogMonitor, ProcessManager, strptime
+from app.utils import get_logger, LogMonitor, ProcessManager, ProcessInfo, strptime
 from app.utils.constants import UTC4
 from .tools import execute_script_task
 
@@ -134,6 +134,8 @@ class AutoProxyTask(TaskExecuteBase):
             self.script_log_path.parent.mkdir(parents=True, exist_ok=True)
             self.script_log_path.touch(exist_ok=True)
         self.game_path = Path(self.script_config.get("Game", "Path"))
+        self.game_url = self.script_config.get("Game", "URL")
+        self.game_process_name = self.script_config.get("Game", "ProcessName")
         self.log_time_range = (
             self.script_config.get("Script", "LogTimeStart") - 1,
             self.script_config.get("Script", "LogTimeEnd"),
@@ -193,7 +195,6 @@ class AutoProxyTask(TaskExecuteBase):
             self.cur_user_item.log_record[self.log_start_time] = self.cur_user_log = (
                 LogRecord()
             )
-            self.wait_event.clear()
 
             # 执行任务前脚本
             if self.cur_user_config.get("Info", "IfScriptBeforeTask"):
@@ -206,14 +207,24 @@ class AutoProxyTask(TaskExecuteBase):
             if self.game_manager is not None:
                 try:
                     if isinstance(self.game_manager, ProcessManager):
-                        logger.info(
-                            f"启动游戏: {self.game_path}, 参数: {self.script_config.get('Game','Arguments')}"
-                        )
-                        await self.game_manager.open_process(
-                            self.game_path,
-                            str(self.script_config.get("Game", "Arguments")).split(" "),
-                            0,
-                        )
+
+                        if self.script_config.get("Game", "Type") == "URL":
+                            logger.info(
+                                f"启动游戏: {self.game_process_name}, 参数{self.game_url}"
+                            )
+                            await self.game_manager.open_protocol(
+                                self.game_url, ProcessInfo(name=self.game_process_name)
+                            )
+                        else:
+                            logger.info(
+                                f"启动游戏: {self.game_path}, 参数: {self.script_config.get('Game','Arguments')}"
+                            )
+                            await self.game_manager.open_process(
+                                self.game_path,
+                                *str(self.script_config.get("Game", "Arguments")).split(
+                                    " "
+                                ),
+                            )
                     elif isinstance(self.game_manager, DeviceBase):
                         logger.info(
                             f"启动模拟器: {self.script_config.get('Game', 'EmulatorIndex')}"
@@ -258,12 +269,9 @@ class AutoProxyTask(TaskExecuteBase):
                 f"运行脚本任务: {self.script_exe_path}, 参数: {self.script_arguments}"
             )
 
+            self.wait_event.clear()
             await self.general_process_manager.open_process(
-                self.script_exe_path,
-                self.script_arguments,
-                tracking_time=(
-                    60 if self.script_config.get("Script", "IfTrackProcess") else 0
-                ),
+                self.script_exe_path, *self.script_arguments
             )
             await self.general_log_monitor.start(
                 self.script_log_path, self.log_start_time
@@ -432,10 +440,12 @@ class AutoProxyTask(TaskExecuteBase):
         if self.check_result != "Pass":
             return
 
+        logger.debug("开始进入结束通用脚本任务进程")
+
         # 结束各子任务
-        await self.general_process_manager.kill(if_force=True)
-        await System.kill_process(self.script_exe_path)
         await self.general_log_monitor.stop()
+        await self.general_process_manager.kill()
+        await System.kill_process(self.script_exe_path)
         del self.general_process_manager
         del self.general_log_monitor
         if self.game_manager is not None:
@@ -456,6 +466,10 @@ class AutoProxyTask(TaskExecuteBase):
                 / f"history/{dt.strftime('%Y-%m-%d')}/{self.cur_user_item.name}/{dt.strftime('%H-%M-%S')}.log"
             )
             user_logs_list.append(log_path.with_suffix(".json"))
+
+            if len(log_item.content) == 0:
+                log_item.content = ["未捕获到任何日志内容"]
+                log_item.status = "未捕获到日志"
 
             await Config.save_general_log(
                 log_path,

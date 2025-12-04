@@ -83,6 +83,9 @@ import { message } from 'ant-design-vue'
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons-vue'
 import draggable from 'vuedraggable'
 import { Service } from '@/api'
+import { getLogger } from '@/utils/logger'
+
+const logger = getLogger('队列项管理')
 
 // Props
 interface Props {
@@ -140,21 +143,21 @@ watch(
 // 加载脚本选项
 const loadOptions = async () => {
   try {
-    console.log('开始加载脚本选项...')
+    logger.info('开始加载脚本选项...')
     // 使用正确的API获取脚本下拉框选项
     const scriptsResponse = await Service.getScriptComboxApiInfoComboxScriptPost()
-    console.log('脚本API响应:', scriptsResponse)
+    logger.debug('脚本API响应:', scriptsResponse)
 
     if (scriptsResponse.code === 200) {
-      console.log('脚本API响应数据:', scriptsResponse.data)
+      logger.debug('脚本API响应数据:', scriptsResponse.data)
       // 直接使用接口返回的combox选项
       scriptOptions.value = scriptsResponse.data || []
-      console.log('处理后的脚本选项:', scriptOptions.value)
+      logger.debug('处理后的脚本选项:', scriptOptions.value)
     } else {
-      console.error('脚本API响应错误:', scriptsResponse)
+      logger.error('脚本API响应错误:', scriptsResponse)
     }
   } catch (error) {
-    console.error('加载脚本选项失败:', error)
+    logger.error('加载脚本选项失败:', error)
   }
 }
 
@@ -180,7 +183,7 @@ const updateQueueItemScript = async (record: any) => {
       message.error('脚本更新失败: ' + (response.message || '未知错误'))
     }
   } catch (error: any) {
-    console.error('更新脚本失败:', error)
+    logger.error('更新脚本失败:', error)
     message.error('更新脚本失败: ' + (error?.message || '网络错误'))
   } finally {
     loading.value = false
@@ -204,7 +207,7 @@ const addQueueItem = async () => {
       message.error('任务添加失败: ' + (createResponse.message || '未知错误'))
     }
   } catch (error: any) {
-    console.error('添加任务失败:', error)
+    logger.error('添加任务失败:', error)
     message.error('添加任务失败: ' + (error?.message || '网络错误'))
   } finally {
     loading.value = false
@@ -227,7 +230,7 @@ const deleteQueueItem = async (itemId: string) => {
       message.error('删除队列项失败: ' + (response.message || '未知错误'))
     }
   } catch (error: any) {
-    console.error('删除队列项失败:', error)
+    logger.error('删除队列项失败:', error)
     message.error('删除队列项失败: ' + (error?.message || '网络错误'))
   }
 }
@@ -261,7 +264,7 @@ const onDragEnd = async (evt: any) => {
       emit('refresh')
     }
   } catch (error: any) {
-    console.error('拖拽排序失败:', error)
+    logger.error('拖拽排序失败:', error)
     message.error('更新任务顺序失败: ' + (error?.message || '网络错误'))
     // 如果失败，刷新数据恢复原状态
     emit('refresh')
