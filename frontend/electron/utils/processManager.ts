@@ -19,13 +19,18 @@ export async function getRelatedProcesses(): Promise<ProcessInfo[]> {
       return
     }
 
-    const appRoot = getAppRoot()
-    const pythonExePath = path.join(appRoot, 'environment', 'python', 'python.exe')
+    const appRoot = getAppRoot().replace(/\\/g, '\\\\')
 
-    // 使用 wmic 获取详细的进程信息
-    const cmd = `wmic process where "Name='python.exe' or Name='AUTO-MAS.exe' or CommandLine like '%main.py%'" get ProcessId,Name,CommandLine /format:csv`
+    // 使用 PowerShell 获取进程信息
+    const psCommand = `
+      Get-CimInstance Win32_Process | Where-Object {
+        $_.Name -eq 'python.exe' -or 
+        $_.Name -eq 'AUTO-MAS.exe' -or 
+        ($_.CommandLine -ne $null -and $_.CommandLine -like '*main.py*')
+      } | Select-Object ProcessId, Name, CommandLine | ConvertTo-Json -Compress
+    `.replace(/\n/g, ' ')
 
-    exec(cmd, (error, stdout, stderr) => {
+    exec(`powershell -NoProfile -Command "${psCommand}"`, { encoding: 'utf8' }, (error, stdout, stderr) => {
       if (error) {
         logService.error('进程管理', `获取进程信息失败: ${error}`)
         resolve([])
@@ -33,14 +38,25 @@ export async function getRelatedProcesses(): Promise<ProcessInfo[]> {
       }
 
       const processes: ProcessInfo[] = []
-      const lines = stdout.split('\n').filter(line => line.trim() && !line.startsWith('Node'))
 
-      for (const line of lines) {
-        const parts = line.split(',')
-        if (parts.length >= 4) {
-          const commandLine = parts[1] || ''
-          const name = parts[2] || ''
-          const pid = parseInt(parts[3]) || 0
+      try {
+        if (!stdout.trim()) {
+          resolve([])
+          return
+        }
+
+        // PowerShell 返回的可能是单个对象或数组
+        let parsed = JSON.parse(stdout.trim())
+        if (!Array.isArray(parsed)) {
+          parsed = [parsed]
+        }
+
+        const pythonExePath = path.join(getAppRoot(), 'environment', 'python', 'python.exe')
+
+        for (const proc of parsed) {
+          const pid = proc.ProcessId || 0
+          const name = proc.Name || ''
+          const commandLine = proc.CommandLine || ''
 
           if (
             pid > 0 &&
@@ -51,6 +67,8 @@ export async function getRelatedProcesses(): Promise<ProcessInfo[]> {
             processes.push({ pid, name, commandLine })
           }
         }
+      } catch (parseError) {
+        logService.error('进程管理', `解析进程信息失败: ${parseError}`)
       }
 
       resolve(processes)

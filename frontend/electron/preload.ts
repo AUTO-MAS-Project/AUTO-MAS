@@ -27,7 +27,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 进程管理
   getRelatedProcesses: () => ipcRenderer.invoke('get-related-processes'),
   killAllProcesses: () => ipcRenderer.invoke('kill-all-processes'),
-  forceExit: () => ipcRenderer.invoke('force-exit'),
 
   // 初始化相关API
   checkEnvironment: () => ipcRenderer.invoke('check-environment'),
@@ -43,12 +42,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   extractQuickSource: () => ipcRenderer.invoke('extract-quick-source'),
   updateQuickSource: (repoUrl?: string) => ipcRenderer.invoke('update-quick-source', repoUrl),
 
-  // 新增的git管理方法
+  // 仓库管理
   checkRepoStatus: () => ipcRenderer.invoke('check-repo-status'),
   cleanRepo: () => ipcRenderer.invoke('clean-repo'),
   getRepoInfo: () => ipcRenderer.invoke('get-repo-info'),
-  startBackend: () => ipcRenderer.invoke('start-backend'),
-  stopBackend: () => ipcRenderer.invoke('stop-backend'),
+
+  // 后端管理
+  startBackend: () => ipcRenderer.invoke('backend-start'),
+  stopBackend: () => ipcRenderer.invoke('backend-stop'),
 
   // 管理员权限相关
   checkAdmin: () => ipcRenderer.invoke('check-admin'),

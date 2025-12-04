@@ -9,6 +9,7 @@ import * as path from 'path'
 import { spawn, ChildProcessWithoutNullStreams } from 'child_process'
 
 import { logService } from './logService'
+import { killAllRelatedProcesses } from '../utils/processManager'
 // 导入新的日志处理组件
 import { LoguruBackendLogParser } from '../utils/loguruBackendLogParser'
 import { BackendLogCapture } from '../utils/backendLogCapture'
@@ -159,61 +160,93 @@ export class BackendService {
 
     /**
      * 停止后端服务
+     * 通过调用 /api/core/close 接口优雅关闭后端
      */
     async stopBackend(): Promise<{ success: boolean; error?: string }> {
-        if (!this.backendProcess || this.backendProcess.killed) {
-            logService.info('后端服务', '后端服务未运行')
+        const pid = this.backendProcess?.pid
+        const hasTrackedProcess = this.backendProcess && !this.backendProcess.killed
+
+        if (hasTrackedProcess) {
+            logService.info('后端服务', `停止后端服务，PID: ${pid}`)
+        } else {
+            logService.info('后端服务', '尝试停止后端服务（未追踪到进程，可能是外部启动的）')
+        }
+
+        // 第一步：尝试通过 API 优雅关闭（无论是否追踪到进程）
+        let apiSuccess = false
+        try {
+            logService.info('后端服务', '尝试通过 /api/core/close 接口关闭后端')
+            const controller = new AbortController()
+            const apiTimeout = setTimeout(() => controller.abort(), 5000) // 增加到5秒
+
+            const response = await fetch('http://localhost:36163/api/core/close', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                signal: controller.signal
+            })
+            clearTimeout(apiTimeout)
+
+            if (response.ok) {
+                logService.info('后端服务', 'API 关闭请求发送成功，等待后端退出')
+                apiSuccess = true
+            } else {
+                logService.warn('后端服务', `API 关闭请求返回错误: ${response.status}`)
+            }
+        } catch (e: any) {
+            // API 调用失败（可能后端已经崩溃或网络不可达）
+            const errorMsg = e instanceof Error ? `${e.name}: ${e.message}` : String(e)
+            logService.warn('后端服务', `API 关闭请求失败: ${errorMsg}`)
+
+            // 检查具体错误类型
+            if (e?.cause?.code === 'ECONNREFUSED') {
+                logService.warn('后端服务', '连接被拒绝，后端可能未运行或已关闭')
+            } else if (e instanceof Error && e.name === 'AbortError') {
+                logService.warn('后端服务', 'API 请求超时，后端可能无响应')
+            } else if (e?.cause) {
+                logService.warn('后端服务', `底层错误: ${e.cause.code || e.cause.message || e.cause}`)
+            }
+        }
+
+        // 如果没有追踪到进程
+        if (!hasTrackedProcess) {
+            if (apiSuccess) {
+                // API 成功，等待一段时间让后端退出
+                await new Promise(resolve => setTimeout(resolve, 2000))
+                logService.info('后端服务', '后端服务应该已经关闭')
+            } else {
+                // API 失败，尝试强制清理
+                logService.info('后端服务', 'API 调用失败，尝试强制清理相关进程')
+                await killAllRelatedProcesses()
+            }
             return { success: true }
         }
 
+        // 第二步：等待进程自行退出，或超时后强制结束
         return new Promise((resolve) => {
-            const pid = this.backendProcess!.pid
-            logService.info('后端服务', `停止后端服务，PID: ${pid}`)
-
-            // 设置超时强制结束
-            const timeout = setTimeout(() => {
-                logService.warn('后端服务', '停止超时，强制结束进程')
-                try {
-                    if (this.backendProcess && !this.backendProcess.killed) {
-                        if (process.platform === 'win32') {
-                            // Windows 使用 taskkill
-                            const { exec } = require('child_process')
-                            exec(`taskkill /f /t /pid ${pid}`, (error: any) => {
-                                if (error) {
-                                    logService.error('后端服务', `taskkill 失败: ${error}`)
-                                }
-                            })
-                        } else {
-                            this.backendProcess.kill('SIGKILL')
-                        }
-                    }
-                } catch (e) {
-                    logService.error('后端服务', `强制结束失败: ${e}`)
-                }
+            // 设置超时强制结束（5秒，给后端足够时间清理）
+            const timeout = setTimeout(async () => {
+                logService.warn('后端服务', '等待后端退出超时，强制清理所有相关进程')
+                await killAllRelatedProcesses()
                 this.backendProcess = null
                 this.startTime = null
                 resolve({ success: true })
             }, 2000)
 
             // 监听进程退出
-            this.backendProcess!.once('exit', (code, signal) => {
+            if (this.backendProcess) {
+                this.backendProcess.once('exit', (code, signal) => {
+                    clearTimeout(timeout)
+                    logService.info('后端服务', `后端服务已退出，code: ${code}, signal: ${signal}`)
+                    this.backendProcess = null
+                    this.startTime = null
+                    this.notifyStatusChange()
+                    resolve({ success: true })
+                })
+            } else {
                 clearTimeout(timeout)
-                logService.info('后端服务', `后端服务已退出，code: ${code}, signal: ${signal}`)
-                this.backendProcess = null
-                this.startTime = null
-                this.notifyStatusChange()
                 resolve({ success: true })
-            })
-
-            // 发送终止信号
-            try {
-                this.backendProcess!.kill('SIGTERM')
-            } catch (e) {
-                clearTimeout(timeout)
-                logService.error('后端服务', `发送终止信号失败: ${e}`)
-                this.backendProcess = null
-                this.startTime = null
-                resolve({ success: false, error: String(e) })
             }
         })
     }
