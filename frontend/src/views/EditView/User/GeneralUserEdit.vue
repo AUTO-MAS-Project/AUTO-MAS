@@ -384,16 +384,12 @@ import { useScriptApi } from '@/composables/useScriptApi.ts'
 import { useWebSocket } from '@/composables/useWebSocket.ts'
 import { Service } from '@/api'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn.ts'
+import { logger } from '@/utils/logger'
+import { getLogger } from '@/utils/logger'
 import WebhookManager from '@/components/WebhookManager.vue'
 
-// 扩展 Window 接口以支持 Electron API
-declare global {
-  interface Window {
-    electronAPI: {
-      selectFile: (filters: Array<{ name: string; extensions: string[] }>) => Promise<string[]>
-    }
-  }
-}
+const generalUserLogger = getLogger('通用用户编辑')
+
 
 const router = useRouter()
 const route = useRoute()
@@ -504,7 +500,7 @@ const loadScriptInfo = async () => {
       handleCancel()
     }
   } catch (error) {
-    console.error('加载脚本信息失败:', error)
+    generalUserLogger.error('加载脚本信息失败:', error)
     message.error('加载脚本信息失败')
   }
 }
@@ -533,7 +529,7 @@ const loadUserData = async () => {
         await nextTick()
         formData.userName = formData.Info.Name || ''
 
-        console.log('用户数据加载成功:', {
+        generalUserLogger.info('用户数据加载成功:', {
           userName: formData.userName,
           InfoName: formData.Info.Name,
           fullData: formData,
@@ -547,7 +543,7 @@ const loadUserData = async () => {
       handleCancel()
     }
   } catch (error) {
-    console.error('加载用户数据失败:', error)
+    generalUserLogger.error('加载用户数据失败:', error)
     message.error('加载用户数据失败')
   }
 }
@@ -579,13 +575,13 @@ const handleSubmit = async () => {
             message.error('用户创建成功，但数据更新失败，请手动编辑用户信息')
           }
         } catch (updateError) {
-          console.error('更新用户数据时发生错误:', updateError)
+          generalUserLogger.error('更新用户数据时发生错误:', updateError)
           message.error('用户创建成功，但数据更新失败，请手动编辑用户信息')
         }
       }
     }
   } catch (error) {
-    console.error('表单验证失败:', error)
+    generalUserLogger.error('表单验证失败:', error)
   }
 }
 
@@ -620,16 +616,16 @@ const handleGeneralConfig = async () => {
       mode: TaskCreateIn.mode.SettingScriptMode,
     })
 
-    console.debug('通用配置 start 接口返回:', response)
+    generalUserLogger.debug('通用配置 start 接口返回:', response)
     if (response && response.websocketId) {
       const wsId = response.websocketId
 
-      console.debug('订阅 websocketId:', wsId)
+      generalUserLogger.debug('订阅 websocketId:', wsId)
 
       // 订阅 websocket
       const subscriptionId = subscribe({ id: wsId }, (wsMessage: any) => {
         if (wsMessage.type === 'error') {
-          console.error(`用户 ${formData.userName} 通用配置错误:`, wsMessage.data)
+          generalUserLogger.error(`用户 ${formData.userName} 通用配置错误:`, wsMessage.data)
           message.error(`通用配置连接失败: ${wsMessage.data}`)
           unsubscribe(subscriptionId)
           generalSubscriptionId.value = null
@@ -665,7 +661,7 @@ const handleGeneralConfig = async () => {
           if (generalSubscriptionId.value && generalWebsocketId.value) {
             // 超时后自动保存配置
             message.warning(`用户 ${formData.userName} 的配置会话已超时（30分钟），正在自动保存配置...`)
-            console.warn('配置会话已超时，自动执行保存操作')
+            generalUserLogger.warn('配置会话已超时，自动执行保存操作')
 
             try {
               const websocketId = generalWebsocketId.value
@@ -684,7 +680,7 @@ const handleGeneralConfig = async () => {
                 message.error(response?.message || '自动保存配置失败，请手动保存')
               }
             } catch (error) {
-              console.error('超时自动保存配置失败:', error)
+              generalUserLogger.error('超时自动保存配置失败:', error)
               message.error('自动保存配置失败，请手动保存')
               // 失败时保留按钮让用户手动操作
               configTimedOut.value = true
@@ -699,7 +695,7 @@ const handleGeneralConfig = async () => {
       showGeneralConfigMask.value = false
     }
   } catch (error) {
-    console.error('启动通用配置失败:', error)
+    generalUserLogger.error('启动通用配置失败:', error)
     message.error('启动通用配置失败')
     showGeneralConfigMask.value = false
   } finally {
@@ -733,7 +729,7 @@ const handleSaveGeneralConfig = async () => {
       message.error(response.message || '保存配置失败')
     }
   } catch (error) {
-    console.error('保存通用配置失败:', error)
+    generalUserLogger.error('保存通用配置失败:', error)
     message.error('保存通用配置失败')
   }
 }
@@ -752,7 +748,7 @@ const selectScriptBeforeTask = async () => {
       message.success('任务前脚本路径选择成功')
     }
   } catch (error) {
-    console.error('选择任务前脚本失败:', error)
+    generalUserLogger.error('选择任务前脚本失败:', error)
     message.error('选择文件失败')
   }
 }
@@ -770,7 +766,7 @@ const selectScriptAfterTask = async () => {
       message.success('任务后脚本路径选择成功')
     }
   } catch (error) {
-    console.error('选择任务后脚本失败:', error)
+    generalUserLogger.error('选择任务后脚本失败:', error)
     message.error('选择文件失败')
   }
 }
@@ -778,7 +774,7 @@ const selectScriptAfterTask = async () => {
 // 处理 Webhook 变化
 const handleWebhookChange = () => {
   // 这里可以添加额外的处理逻辑，比如验证或保存
-  console.log('User webhooks changed:', formData.Notify.CustomWebhooks)
+  generalUserLogger.info('User webhooks changed:', formData.Notify.CustomWebhooks)
   // 注意：实际保存会在用户点击保存按钮时进行，这里只是更新本地数据
 }
 

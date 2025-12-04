@@ -51,7 +51,7 @@ async def connect_websocket(websocket: WebSocket):
 
         try:
 
-            data = await asyncio.wait_for(websocket.receive_json(), timeout=1000005.0)
+            data = await asyncio.wait_for(websocket.receive_json(), timeout=15.0)
             if data.get("type") == "Signal" and "Pong" in data.get("data", {}):
                 last_pong = time.monotonic()
             elif data.get("type") == "Signal" and "Ping" in data.get("data", {}):
@@ -79,7 +79,7 @@ async def connect_websocket(websocket: WebSocket):
             break
 
     Config.websocket = None
-    await System.set_power("KillSelf")
+    await System.set_power("KillSelf", from_frontend=True)
 
 
 @router.post("/close")
@@ -87,7 +87,9 @@ async def close():
     """关闭后端程序"""
 
     try:
-        await System.set_power("KillSelf")
+        if Config.websocket is not None:
+            await Config.websocket.close(code=1000, reason="正常关闭")
+        await System.set_power("KillSelf", from_frontend=True)
     except Exception as e:
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"

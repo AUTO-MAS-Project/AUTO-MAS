@@ -100,6 +100,9 @@ import { DeleteOutlined, PlusOutlined } from '@ant-design/icons-vue'
 import draggable from 'vuedraggable'
 import { Service } from '@/api'
 import dayjs from 'dayjs'
+import { getLogger } from '@/utils/logger'
+
+const logger = getLogger('定时项管理')
 
 // Props
 interface Props {
@@ -231,7 +234,7 @@ const addTimeSet = async () => {
       message.error('创建定时项失败: ' + (createResponse.message || '未知错误'))
     }
   } catch (error: any) {
-    console.error('添加定时项失败:', error)
+    logger.error('添加定时项失败:', error)
     message.error('添加定时项失败: ' + (error?.message || '网络错误'))
   } finally {
     loading.value = false
@@ -263,7 +266,7 @@ const updateTimeSetTime = async (timeSet: any) => {
       timeSet.timeValue = parseTimeString(timeSet.time)
     }
   } catch (error: any) {
-    console.error('更新时间失败:', error)
+    logger.error('更新时间失败:', error)
     message.error('更新时间失败: ' + (error?.message || '网络错误'))
     // 回滚时间值
     timeSet.timeValue = parseTimeString(timeSet.time)
@@ -291,7 +294,7 @@ const updateTimeSetStatus = async (timeSet: any) => {
       timeSet.enabled = !timeSet.enabled
     }
   } catch (error: any) {
-    console.error('更新状态失败:', error)
+    logger.error('更新状态失败:', error)
     message.error('更新状态失败: ' + (error?.message || '网络错误'))
     // 回滚状态
     timeSet.enabled = !timeSet.enabled
@@ -314,7 +317,7 @@ const deleteTimeSet = async (timeSetId: string) => {
       message.error('删除定时项失败: ' + (response.message || '未知错误'))
     }
   } catch (error: any) {
-    console.error('删除定时项失败:', error)
+    logger.error('删除定时项失败:', error)
     message.error('删除定时项失败: ' + (error?.message || '网络错误'))
   }
 }
@@ -348,7 +351,7 @@ const onDragEnd = async (evt: any) => {
       emit('refresh')
     }
   } catch (error: any) {
-    console.error('拖拽排序失败:', error)
+    logger.error('拖拽排序失败:', error)
     message.error('更新定时顺序失败: ' + (error?.message || '网络错误'))
     // 如果失败，刷新数据恢复原状态
     emit('refresh')

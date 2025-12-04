@@ -81,7 +81,7 @@
   </div>
 
   <!-- 历史记录内容区域 -->
-  <div class="history-content">
+  <div>
     <a-spin :spinning="searchLoading">
       <div v-if="historyData.length === 0 && !searchLoading" class="empty-state">
         <img src="@/assets/NoData.png" alt="无数据" class="empty-image" />
@@ -381,6 +381,9 @@ import { message } from 'ant-design-vue'
 import dayjs from 'dayjs'
 import * as monaco from 'monaco-editor'
 import { computed, onMounted, reactive, ref } from 'vue'
+import { getLogger } from '@/utils/logger'
+
+const logger = getLogger('历史记录')
 
 // 响应式数据
 const searchLoading = ref(false)
@@ -525,7 +528,7 @@ const handleSearch = async () => {
       message.error(response.message || '搜索失败')
     }
   } catch (error) {
-    console.error('搜索历史记录失败:', error)
+    logger.error('搜索历史记录失败:', error)
     message.error('搜索历史记录失败')
   } finally {
     searchLoading.value = false
@@ -588,7 +591,7 @@ const loadUserLog = async (jsonFile: string) => {
       currentDetail.value = null
     }
   } catch (error) {
-    console.error('获取历史记录详情失败:', error)
+    logger.error('获取历史记录详情失败:', error)
     message.error('获取历史记录详情失败')
     currentDetail.value = null
   } finally {
@@ -607,9 +610,9 @@ const handleOpenLogFile = async () => {
     // 将 .json 扩展名替换为 .log
     const logFilePath = currentJsonFile.value.replace(/\.json$/, '.log')
 
-    console.log('尝试打开日志文件:', logFilePath)
-    console.log('electronAPI 可用性:', !!window.electronAPI)
-    console.log(
+    logger.info('尝试打开日志文件:', logFilePath)
+    logger.info('electronAPI 可用性:', !!window.electronAPI)
+    logger.info(
       'openFile 方法可用性:',
       !!(window.electronAPI && (window.electronAPI as any).openFile)
     )
@@ -622,11 +625,11 @@ const handleOpenLogFile = async () => {
       const errorMsg = !window.electronAPI
         ? '当前环境不支持打开文件功能（electronAPI 不可用）'
         : '当前环境不支持打开文件功能（openFile 方法不可用）'
-      console.error(errorMsg)
+      logger.error(errorMsg)
       message.error(errorMsg)
     }
   } catch (error) {
-    console.error('打开日志文件失败:', error)
+    logger.error('打开日志文件失败:', error)
     message.error(`打开日志文件失败: ${error}`)
   }
 }
@@ -642,9 +645,9 @@ const handleOpenLogDirectory = async () => {
     // 将 .json 扩展名替换为 .log
     const logFilePath = currentJsonFile.value.replace(/\.json$/, '.log')
 
-    console.log('尝试打开日志文件目录:', logFilePath)
-    console.log('electronAPI 可用性:', !!window.electronAPI)
-    console.log(
+    logger.info('尝试打开日志文件目录:', logFilePath)
+    logger.info('electronAPI 可用性:', !!window.electronAPI)
+    logger.info(
       'showItemInFolder 方法可用性:',
       !!(window.electronAPI && (window.electronAPI as any).showItemInFolder)
     )
@@ -657,11 +660,11 @@ const handleOpenLogDirectory = async () => {
       const errorMsg = !window.electronAPI
         ? '当前环境不支持打开目录功能（electronAPI 不可用）'
         : '当前环境不支持打开目录功能（showItemInFolder 方法不可用）'
-      console.error(errorMsg)
+      logger.error(errorMsg)
       message.error(errorMsg)
     }
   } catch (error) {
-    console.error('打开日志文件目录失败:', error)
+    logger.error('打开日志文件目录失败:', error)
     message.error(`打开日志文件目录失败: ${error}`)
   }
 }
@@ -764,9 +767,9 @@ const registerLogLanguage = () => {
     })
 
     isLanguageRegistered = true
-    console.log('Log language registered successfully')
+    logger.info('Log language registered successfully')
   } catch (error) {
-    console.error('Failed to register log language:', error)
+    logger.error('Failed to register log language:', error)
   }
 }
 
@@ -842,10 +845,7 @@ const buttonFixedStyle = { width: '28px', height: '28px', padding: 0 }
   margin-bottom: 24px;
 }
 
-.history-content {
-  height: 53vh;
-  overflow: auto;
-}
+
 
 .empty-state {
   text-align: center;

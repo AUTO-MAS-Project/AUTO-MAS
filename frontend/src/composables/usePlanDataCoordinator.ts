@@ -9,7 +9,12 @@
  */
 
 import { ref, computed } from 'vue'
-import type { MaaPlanConfig, MaaPlanConfig_Item } from '@/api'
+import type { MaaPlanConfig, MaaPlanConfig_Item, ComboBoxItem } from '@/api'
+import { Service } from '@/api'
+import { GetStageIn } from '@/api'
+import { getLogger } from '@/utils/logger'
+
+const logger = getLogger('计划数据协调器')
 
 // 时间维度常量
 export const TIME_KEYS = [
@@ -69,25 +74,64 @@ export interface StageAvailability {
   days: number[]
 }
 
-export const STAGE_DAILY_INFO: StageAvailability[] = [
-  { value: '-', text: '当前/上次', days: [1, 2, 3, 4, 5, 6, 7] },
-  { value: '1-7', text: '1-7', days: [1, 2, 3, 4, 5, 6, 7] },
-  { value: 'R8-11', text: 'R8-11', days: [1, 2, 3, 4, 5, 6, 7] },
-  { value: '12-17-HARD', text: '12-17-HARD', days: [1, 2, 3, 4, 5, 6, 7] },
-  { value: 'LS-6', text: '经验-6/5', days: [1, 2, 3, 4, 5, 6, 7] },
-  { value: 'CE-6', text: '龙门币-6/5', days: [2, 4, 6, 7] },
-  { value: 'AP-5', text: '红票-5', days: [1, 4, 6, 7] },
-  { value: 'CA-5', text: '技能-5', days: [2, 3, 5, 7] },
-  { value: 'SK-5', text: '碳-5', days: [1, 3, 5, 6] },
-  { value: 'PR-A-1', text: '奶/盾芯片', days: [1, 4, 5, 7] },
-  { value: 'PR-A-2', text: '奶/盾芯片组', days: [1, 4, 5, 7] },
-  { value: 'PR-B-1', text: '术/狙芯片', days: [1, 2, 5, 6] },
-  { value: 'PR-B-2', text: '术/狙芯片组', days: [1, 2, 5, 6] },
-  { value: 'PR-C-1', text: '先/辅芯片', days: [3, 4, 6, 7] },
-  { value: 'PR-C-2', text: '先/辅芯片组', days: [3, 4, 6, 7] },
-  { value: 'PR-D-1', text: '近/特芯片', days: [2, 3, 6, 7] },
-  { value: 'PR-D-2', text: '近/特芯片组', days: [2, 3, 6, 7] },
-]
+// 标准关卡选项缓存（按时间维度）
+const stageOptionsCache = ref<Record<string, ComboBoxItem[]>>({})
+
+// 加载标准关卡选项
+export async function loadStageOptions(timeKey: TimeKey): Promise<ComboBoxItem[]> {
+  // 如果已缓存，直接返回
+  if (stageOptionsCache.value[timeKey]) {
+    return stageOptionsCache.value[timeKey]
+  }
+
+  try {
+    // 映射时间维度到 API 参数
+    const typeMap: Record<TimeKey, GetStageIn.type> = {
+      ALL: GetStageIn.type.ALL,
+      Monday: GetStageIn.type.MONDAY,
+      Tuesday: GetStageIn.type.TUESDAY,
+      Wednesday: GetStageIn.type.WEDNESDAY,
+      Thursday: GetStageIn.type.THURSDAY,
+      Friday: GetStageIn.type.FRIDAY,
+      Saturday: GetStageIn.type.SATURDAY,
+      Sunday: GetStageIn.type.SUNDAY,
+    }
+
+    const response = await Service.getStageComboxApiInfoComboxStagePost({
+      type: typeMap[timeKey],
+    })
+
+    if (response.code === 200 || response.code === undefined) {
+      // 缓存结果
+      stageOptionsCache.value[timeKey] = response.data
+      return response.data
+    } else {
+      logger.error(`[关卡选项] 加载失败 (${timeKey}):`, response.message)
+      return []
+    }
+  } catch (error) {
+    logger.error(`[关卡选项] 加载异常 (${timeKey}):`, error)
+    return []
+  }
+}
+
+// 预加载所有时间维度的关卡选项
+export async function preloadAllStageOptions(): Promise<void> {
+  const loadPromises = TIME_KEYS.map(timeKey => loadStageOptions(timeKey))
+  await Promise.all(loadPromises)
+  logger.info('[关卡选项] 预加载完成')
+}
+
+// 清除缓存（用于刷新数据）
+export function clearStageOptionsCache(): void {
+  stageOptionsCache.value = {}
+  logger.info('[关卡选项] 缓存已清除')
+}
+
+// 获取缓存的关卡选项
+export function getCachedStageOptions(timeKey: TimeKey): ComboBoxItem[] {
+  return stageOptionsCache.value[timeKey] || []
+}
 
 /**
  * 计划表数据协调器
@@ -175,7 +219,8 @@ export function usePlanDataCoordinator() {
           const stageValue = timeData[field as keyof MaaPlanConfig_Item] as string
           if (stageValue && stageValue !== '-') {
             // 如果不是标准关卡，则认为是自定义关卡
-            const isStandardStage = STAGE_DAILY_INFO.some(stage => stage.value === stageValue)
+            const cachedOptions = getCachedStageOptions(timeKey)
+            const isStandardStage = cachedOptions.some(option => option.value === stageValue)
             if (!isStandardStage) {
               inferredStages.add(stageValue)
             }
@@ -196,7 +241,7 @@ export function usePlanDataCoordinator() {
       }
 
       if (inferredStages.size > 0) {
-        console.log(
+        logger.info(
           `[自定义关卡] 从配置数据推断出 ${inferredStages.size} 个关卡:`,
           Array.from(inferredStages)
         )
@@ -227,7 +272,7 @@ export function usePlanDataCoordinator() {
         })
 
         planData.value.customStageDefinitions = currentDefinitions
-        console.log(`[自定义关卡] 添加新发现的关卡:`, newStages)
+        logger.info(`[自定义关卡] 添加新发现的关卡:`, newStages)
       }
     }
   }
@@ -358,22 +403,25 @@ export function usePlanDataCoordinator() {
       }
     })
 
-    // 添加标准关卡
-    STAGE_DAILY_INFO.filter(stage => stage.value !== '-').forEach(stage => {
-      const stageStates: Record<string, boolean> = {}
-      TIME_KEYS.forEach(timeKey => {
-        const config = planData.value.timeConfigs[timeKey]
-        stageStates[timeKey] = Object.values(config.stages).includes(stage.value)
-      })
+    // 添加标准关卡（从 ALL 的缓存中获取所有标准关卡）
+    const allStageOptions = getCachedStageOptions('ALL')
+    allStageOptions
+      .filter(option => option.value && option.value !== '-')
+      .forEach(option => {
+        const stageStates: Record<string, boolean> = {}
+        TIME_KEYS.forEach(timeKey => {
+          const config = planData.value.timeConfigs[timeKey]
+          stageStates[timeKey] = Object.values(config.stages).includes(option.value!)
+        })
 
-      result.push({
-        key: stage.value,
-        taskName: stage.text,
-        isCustom: false,
-        stageName: stage.value,
-        ...stageStates,
+        result.push({
+          key: option.value!,
+          taskName: option.label,
+          isCustom: false,
+          stageName: option.value!,
+          ...stageStates,
+        })
       })
-    })
 
     return result
   })
@@ -447,12 +495,15 @@ export function usePlanDataCoordinator() {
       }
     }
 
-    // 2. 再添加标准关卡（按STAGE_DAILY_INFO的顺序，跳过'-'）
-    STAGE_DAILY_INFO.filter(stage => stage.value !== '-').forEach(stage => {
-      if (enabledStages.includes(stage.value)) {
-        sortedStages.push(stage.value)
-      }
-    })
+    // 2. 再添加标准关卡（按 ALL 缓存的顺序，跳过'-'）
+    const allStageOptions = getCachedStageOptions('ALL')
+    allStageOptions
+      .filter(option => option.value && option.value !== '-')
+      .forEach(option => {
+        if (enabledStages.includes(option.value!)) {
+          sortedStages.push(option.value!)
+        }
+      })
 
     // 3. 按顺序分配到槽位：第1个→primary，第2个→backup1，第3个→backup2，第4个→backup3
     sortedStages.forEach((stageName, index) => {
@@ -463,7 +514,7 @@ export function usePlanDataCoordinator() {
 
     // 只在开发环境输出排序日志
     if (process.env.NODE_ENV === 'development') {
-      console.log(`[关卡排序] ${timeKey}:`, sortedStages.join(' → '))
+      logger.debug(`[关卡排序] ${timeKey}:`, sortedStages.join(' → '))
     }
   }
 
@@ -472,7 +523,7 @@ export function usePlanDataCoordinator() {
     const key = `custom_stage_${index}` as keyof typeof planData.value.customStageDefinitions
     const oldName = planData.value.customStageDefinitions[key]
 
-    console.log(`[自定义关卡] 更新关卡-${index}: "${oldName}" -> "${name}"`)
+    logger.info(`[自定义关卡] 更新关卡-${index}: "${oldName}" -> "${name}"`)
 
     planData.value.customStageDefinitions[key] = name
 
@@ -492,7 +543,7 @@ export function usePlanDataCoordinator() {
   // 更新计划表ID
   const updatePlanId = (newPlanId: string) => {
     if (currentPlanId.value !== newPlanId) {
-      console.log(`[计划表] 切换: ${currentPlanId.value} -> ${newPlanId}`)
+      logger.info(`[计划表] 切换: ${currentPlanId.value} -> ${newPlanId}`)
       currentPlanId.value = newPlanId
       // 注意：自定义关卡定义将在 fromApiData 中从后端数据重新推断
     }

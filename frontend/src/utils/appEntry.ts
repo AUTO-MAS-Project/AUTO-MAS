@@ -1,6 +1,9 @@
 // appEntry.ts - 统一的应用进入逻辑
 import router from '@/router'
 import { connectAfterBackendStart, forceConnectWebSocket } from '@/composables/useWebSocket'
+import { getLogger } from '@/utils/logger'
+
+const logger = getLogger('应用入口')
 
 /**
  * 统一的进入应用函数，会自动尝试建立WebSocket连接
@@ -12,7 +15,7 @@ export async function enterApp(
   reason: string = '正常进入',
   forceEnter: boolean = true
 ): Promise<boolean> {
-  console.log(`${reason}：开始进入应用流程，尝试建立WebSocket连接...`)
+  logger.info(`${reason}：开始进入应用流程，尝试建立WebSocket连接...`)
 
   let wsConnected = false
 
@@ -20,26 +23,26 @@ export async function enterApp(
     // 尝试建立WebSocket连接
     wsConnected = await connectAfterBackendStart()
     if (wsConnected) {
-      console.log(`${reason}：WebSocket连接建立成功`)
+      logger.info(`${reason}：WebSocket连接建立成功`)
     } else {
-      console.warn(`${reason}：WebSocket连接建立失败`)
+      logger.warn(`${reason}：WebSocket连接建立失败`)
     }
   } catch (error) {
-    console.error(`${reason}：WebSocket连接尝试失败:`, error)
+    logger.error(`${reason}：WebSocket连接尝试失败:`, error)
   }
 
   // 决定是否进入应用
   if (wsConnected || forceEnter) {
     if (!wsConnected && forceEnter) {
-      console.warn(`${reason}：WebSocket连接失败，但强制进入应用`)
+      logger.warn(`${reason}：WebSocket连接失败，但强制进入应用`)
     }
 
     // 跳转到主页
     router.push('/home')
-    console.log(`${reason}：已进入应用`)
+    logger.info(`${reason}：已进入应用`)
     return true
   } else {
-    console.error(`${reason}：WebSocket连接失败且不允许强制进入`)
+    logger.error(`${reason}：WebSocket连接失败且不允许强制进入`)
     return false
   }
 }
@@ -49,28 +52,28 @@ export async function enterApp(
  * @param reason 进入原因
  */
 export async function forceEnterApp(reason: string = '强行进入'): Promise<void> {
-  console.log(`🚀 ${reason}：跳过初始化流程开始`)
-  console.log(`📡 ${reason}：尝试强制建立WebSocket连接...`)
+  logger.info(`🚀 ${reason}：跳过初始化流程开始`)
+  logger.info(`📡 ${reason}：尝试强制建立WebSocket连接...`)
 
   try {
     // 使用强制连接模式
     const wsConnected = await forceConnectWebSocket()
     if (wsConnected) {
-      console.log(`✅ ${reason}：强制WebSocket连接成功！`)
+      logger.info(`✅ ${reason}：强制WebSocket连接成功！`)
     } else {
-      console.warn(`⚠️  ${reason}：强制WebSocket连接失败，但继续进入应用`)
+      logger.warn(`⚠️  ${reason}：强制WebSocket连接失败，但继续进入应用`)
     }
 
     // 等待一下确保连接状态稳定
     await new Promise(resolve => setTimeout(resolve, 500))
   } catch (error) {
-    console.error(`❌ ${reason}：强制WebSocket连接异常:`, error)
+    logger.error(`❌ ${reason}：强制WebSocket连接异常:`, error)
   }
 
   // 无论WebSocket是否成功，都进入应用
-  console.log(`🏠 ${reason}：跳转到主页...`)
+  logger.info(`🏠 ${reason}：跳转到主页...`)
   router.push('/home')
-  console.log(`✨ ${reason}：已跳过初始化`)
+  logger.info(`✨ ${reason}：已跳过初始化`)
 }
 
 /**

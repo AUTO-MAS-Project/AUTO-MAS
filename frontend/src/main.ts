@@ -17,42 +17,31 @@ import { mirrorManager } from '@/utils/mirrorManager'
 // 导入WebSocket消息监听组件
 import WebSocketMessageListener from '@/components/WebSocketMessageListener.vue'
 
-// 检查是否为 popup 路由（对话框窗口）
-const isPopupRoute = window.location.hash.startsWith('#/popup')
-// 检查是否为对话框窗口（通过 Electron 参数）
-const isDialogWindow = window.electronAPI?.isDialogWindow?.() || false
+// 正常路由：执行完整初始化
+// 配置dayjs中文本地化
+dayjs.locale('zh-cn')
 
-if (isPopupRoute || isDialogWindow) {
-  // Popup 路由或对话框窗口：跳过所有初始化，只做最基本的设置
-  logger.info('检测到 Popup 路由或对话框窗口，跳过完整初始化')
-} else {
-  // 正常路由：执行完整初始化
-  // 配置dayjs中文本地化
-  dayjs.locale('zh-cn')
+// 配置API基础URL
+OpenAPI.BASE = mirrorManager.getApiEndpoint('local')
 
-  // 配置API基础URL
-  OpenAPI.BASE = mirrorManager.getApiEndpoint('local')
+// 记录应用启动
+logger.info('前端应用开始初始化')
+logger.info(`API基础URL: ${OpenAPI.BASE}`)
 
-  // 记录应用启动
-  logger.info('前端应用开始初始化')
-  logger.info(`API基础URL: ${OpenAPI.BASE}`)
-
-  // 初始化镜像管理器（异步）
-  mirrorManager
-    .initialize()
-    .then(() => {
-      logger.info('镜像管理器初始化完成')
-    })
-    .catch(error => {
-      logger.error('镜像管理器初始化失败:', error)
-    })
-}
+// 初始化镜像管理器（异步）
+mirrorManager
+  .initialize()
+  .then(() => {
+    logger.info('镜像管理器初始化完成')
+  })
+  .catch(error => {
+    logger.error('镜像管理器初始化失败:', error)
+  })
 
 // 创建应用实例
 const app = createApp(App)
 
-// 提前初始化调度中心逻辑（仅在非 popup 路由和非对话框窗口）
-if (!isPopupRoute && !isDialogWindow) {
+  // 提前初始化调度中心逻辑
   ; (async () => {
     try {
       // 动态导入以避免循环引用问题
@@ -70,7 +59,6 @@ if (!isPopupRoute && !isDialogWindow) {
       logger.warn('Failed to pre-import scheduler logic:', e)
     }
   })()
-}
 
 // 注册插件
 app.use(Antd)

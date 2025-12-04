@@ -16,6 +16,9 @@ import {
 } from '@ant-design/icons-vue'
 import type { EmulatorConfigIndexItem, EmulatorSearchResult } from '@/api'
 import { Service } from '@/api'
+import { getLogger } from '@/utils/logger'
+
+const logger = getLogger('模拟器管理')
 
 // 编辑数据接口
 interface EmulatorInfo {
@@ -32,7 +35,7 @@ const safeJsonParse = (jsonString: string | null | undefined, fallback: any = []
   try {
     return JSON.parse(jsonString)
   } catch (e) {
-    console.error('JSON 解析失败:', e)
+    logger.error('JSON 解析失败:', e)
     return fallback
   }
 }
@@ -101,7 +104,7 @@ const pollDevicesStatus = async () => {
     }
   } catch (e) {
     // 轮询时的错误静默处理，避免频繁弹错误提示
-    console.warn('轮询设备状态时出错:', e)
+    logger.warn('轮询设备状态时出错:', e)
   }
 }
 
@@ -111,7 +114,7 @@ const startPolling = () => {
     clearInterval(pollingTimer.value)
   }
   pollingTimer.value = setInterval(pollDevicesStatus, POLLING_INTERVAL)
-  console.log('模拟器页面轮询已启动')
+  logger.info('模拟器页面轮询已启动')
 }
 
 // 停止轮询
@@ -119,7 +122,7 @@ const stopPolling = () => {
   if (pollingTimer.value) {
     clearInterval(pollingTimer.value)
     pollingTimer.value = null
-    console.log('模拟器页面轮询已停止')
+    logger.info('模拟器页面轮询已停止')
   }
 }
 
@@ -254,7 +257,7 @@ const loadEmulators = async () => {
       message.error(response.message || '加载模拟器配置失败')
     }
   } catch (e) {
-    console.error('加载模拟器配置失败', e)
+    logger.error('加载模拟器配置失败', e)
     message.error('加载模拟器配置失败')
   } finally {
     loading.value = false
@@ -276,7 +279,7 @@ const handleAdd = async () => {
       message.error(response.message || '添加失败')
     }
   } catch (e) {
-    console.error('添加模拟器失败', e)
+    logger.error('添加模拟器失败', e)
     message.error('添加模拟器失败')
   }
 }
@@ -328,7 +331,7 @@ const handleSave = async (uuid: string, silent = false, skipReload = false) => {
       if (!silent) message.error(response.message || '保存失败')
     }
   } catch (e) {
-    console.error('保存模拟器配置失败', e)
+    logger.error('保存模拟器配置失败', e)
     if (!silent) message.error('保存模拟器配置失败')
   } finally {
     savingMap.value.set(uuid, false)
@@ -364,7 +367,7 @@ const handleDelete = async (uuid: string) => {
       message.error(response.message || '删除失败')
     }
   } catch (e) {
-    console.error('删除模拟器失败', e)
+    logger.error('删除模拟器失败', e)
     message.error('删除模拟器失败')
   }
 }
@@ -386,7 +389,7 @@ const handleSearch = async () => {
       message.error(response.message || '搜索失败')
     }
   } catch (e) {
-    console.error('搜索模拟器失败', e)
+    logger.error('搜索模拟器失败', e)
     message.error('搜索模拟器失败')
   } finally {
     searching.value = false
@@ -424,7 +427,7 @@ const handleImportFromSearch = async (result: EmulatorSearchResult) => {
       message.error(response.message || '导入失败')
     }
   } catch (e) {
-    console.error('导入模拟器失败', e)
+    logger.error('导入模拟器失败', e)
     message.error('导入模拟器失败')
   }
 }
@@ -454,7 +457,7 @@ const loadDevices = async (uuid: string) => {
       message.error(response.message || '获取设备信息失败')
     }
   } catch (e) {
-    console.error('获取设备信息失败', e)
+    logger.error('获取设备信息失败', e)
     message.error('获取设备信息失败')
   } finally {
     loadingDevices.value.delete(uuid)
@@ -485,7 +488,7 @@ const startEmulator = async (uuid: string, index: string) => {
       message.error(response.message || '启动失败')
     }
   } catch (e) {
-    console.error('启动模拟器失败', e)
+    logger.error('启动模拟器失败', e)
     message.error('启动模拟器失败')
   } finally {
     startingDevices.value.delete(deviceKey)
@@ -514,7 +517,7 @@ const stopEmulator = async (uuid: string, index: string) => {
       message.error(response.message || '关闭失败')
     }
   } catch (e) {
-    console.error('关闭模拟器失败', e)
+    logger.error('关闭模拟器失败', e)
     message.error('关闭模拟器失败')
   } finally {
     stoppingDevices.value.delete(deviceKey)
@@ -545,7 +548,7 @@ const selectEmulatorPath = async (uuid: string) => {
       await handleSave(uuid, false /* silent */)
     }
   } catch (error) {
-    console.error('选择模拟器路径失败:', error)
+    logger.error('选择模拟器路径失败:', error)
     message.error('选择文件失败')
   }
 }
@@ -634,11 +637,11 @@ useEventListener(document, 'keyup', handleKeyUp)
 watch(() => route.path, (newPath) => {
   if (newPath === '/emulators') {
     // 进入模拟器页面，启动轮询
-    console.log('进入模拟器页面，启动轮询')
+    logger.info('进入模拟器页面，启动轮询')
     startPolling()
   } else {
     // 离开模拟器页面，停止轮询
-    console.log('离开模拟器页面，停止轮询')
+    logger.info('离开模拟器页面，停止轮询')
     stopPolling()
   }
 }, { immediate: true })

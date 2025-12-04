@@ -1,13 +1,25 @@
 /**
- * 初始化总流程服务 V2
+ * 初始化总流程服务
  * 重构版本 - 协调所有初始化步骤
  */
 
-import { MirrorServiceV2 } from './mirrorService'
+import { MirrorService } from './mirrorService'
 import { PythonInstaller, PipInstaller, GitInstaller } from './environmentService'
 import { RepositoryService } from './repositoryService'
 import { DependencyService } from './dependencyService'
 import { BackendService } from './backendService'
+
+// 导入日志服务
+import { logService } from './logService'
+
+// 使用日志服务的日志记录器
+const logger = {
+    error: (message: string, ...args: any[]) => logService.error('初始化服务', `${message} ${args.length > 0 ? JSON.stringify(args) : ''}`),
+    warn: (message: string, ...args: any[]) => logService.warn('初始化服务', `${message} ${args.length > 0 ? JSON.stringify(args) : ''}`),
+    info: (message: string, ...args: any[]) => logService.info('初始化服务', `${message} ${args.length > 0 ? JSON.stringify(args) : ''}`),
+    debug: (message: string, ...args: any[]) => logService.debug('初始化服务', `${message} ${args.length > 0 ? JSON.stringify(args) : ''}`),
+    log: (message: string, ...args: any[]) => logService.info('初始化服务', `${message} ${args.length > 0 ? JSON.stringify(args) : ''}`)
+}
 
 // ==================== 类型定义 ====================
 
@@ -40,13 +52,13 @@ export interface InitializationResult {
 
 export class InitializationService {
     private appRoot: string
-    private mirrorService: MirrorServiceV2
+    private mirrorService: MirrorService
     private backendService: BackendService
     private targetBranch: string
 
     constructor(appRoot: string, targetBranch: string = 'dev') {
         this.appRoot = appRoot
-        this.mirrorService = new MirrorServiceV2(appRoot)
+        this.mirrorService = new MirrorService(appRoot)
         this.backendService = new BackendService(appRoot)
         this.targetBranch = targetBranch
     }
@@ -287,7 +299,7 @@ export class InitializationService {
             }
         } catch (error) {
             const errorMsg = error instanceof Error ? error.message : String(error)
-            console.error('初始化失败:', errorMsg)
+            logger.error('初始化失败:', errorMsg)
 
             return {
                 success: false,
@@ -387,7 +399,7 @@ export class InitializationService {
             }
         } catch (error) {
             const errorMsg = error instanceof Error ? error.message : String(error)
-            console.error('更新失败:', errorMsg)
+            logger.error('更新失败:', errorMsg)
 
             return {
                 success: false,
@@ -400,7 +412,7 @@ export class InitializationService {
     /**
      * 获取镜像源服务实例（用于外部访问）
      */
-    getMirrorService(): MirrorServiceV2 {
+    getMirrorService(): MirrorService {
         return this.mirrorService
     }
 

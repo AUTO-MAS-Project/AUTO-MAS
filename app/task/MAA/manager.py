@@ -26,7 +26,6 @@ from pathlib import Path
 from datetime import datetime
 
 from app.core import Config, EmulatorManager
-from app.models.schema import WebSocketMessage
 from app.models.task import TaskExecuteBase, ScriptItem, UserItem
 from app.models.ConfigBase import MultipleConfig
 from app.models.config import MaaConfig, MaaUserConfig
@@ -154,12 +153,10 @@ class MaaManager(TaskExecuteBase):
         self.check_result = await self.check()
         if self.check_result != "Pass":
             logger.error(f"未通过配置检查: {self.check_result}")
-            await Config.send_json(
-                WebSocketMessage(
-                    id=self.task_info.task_id,
-                    type="Info",
-                    data={"Error": self.check_result},
-                ).model_dump()
+            await Config.send_websocket_message(
+                id=self.task_info.task_id,
+                type="Info",
+                data={"Error": self.check_result},
             )
             return
 
