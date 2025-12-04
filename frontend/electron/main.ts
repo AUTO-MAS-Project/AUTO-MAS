@@ -602,6 +602,22 @@ ipcMain.handle('window-close', () => {
   }
 })
 
+// 窗口聚焦（从托盘/最小化状态恢复并激活到前台）
+ipcMain.handle('window-focus', () => {
+  if (mainWindow) {
+    // 如果窗口最小化，先恢复
+    if (mainWindow.isMinimized()) {
+      mainWindow.restore()
+    }
+    // 恢复任务栏图标
+    mainWindow.setSkipTaskbar(false)
+    // 显示窗口
+    mainWindow.show()
+    // 聚焦窗口
+    mainWindow.focus()
+  }
+})
+
 // 添加应用重启处理器
 ipcMain.handle('app-restart', () => {
   logService.info('应用控制', '重启应用程序...')
@@ -855,134 +871,6 @@ ipcMain.handle('get-theme', async () => {
   } catch (error) {
     logService.error('主题管理', '获取对话框主题失败')
     return nativeTheme.shouldUseDarkColors ? 'dark' : 'light'
-  }
-})
-
-// 全局存储对话框窗口和回调
-let dialogWindows = new Map<string, BrowserWindow>()
-let dialogCallbacks = new Map<string, (result: boolean) => void>()
-
-// 创建对话框窗口（独立窗口，加载 Vue popup 路由）
-function createQuestionDialog(questionData: any): Promise<boolean> {
-  return new Promise(resolve => {
-    const messageId = questionData.messageId || 'dialog_' + Date.now()
-
-    // 存储回调函数
-    dialogCallbacks.set(messageId, resolve)
-
-    // 准备对话框数据
-    const dialogData = {
-      title: questionData.title || '操作确认',
-      message: questionData.message || '是否要执行此操作？',
-      options: questionData.options || ['确定', '取消'],
-      messageId: messageId,
-    }
-
-    // 获取主窗口的位置用于居中显示
-    let windowBounds = { width: 800, height: 600, x: 100, y: 100 }
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      windowBounds = mainWindow.getBounds()
-    }
-
-    // 创建对话框窗口
-    const dialogWindow = new BrowserWindow({
-      width: 500,
-      height: 240,
-      x: windowBounds.x + (windowBounds.width - 500) / 2,
-      y: windowBounds.y + (windowBounds.height - 240) / 2,
-      resizable: false,
-      minimizable: false,
-      maximizable: false,
-      alwaysOnTop: true,
-      show: false,
-      frame: false,
-      modal: mainWindow ? true : false,
-      parent: mainWindow || undefined,
-      transparent: true,
-      backgroundColor: '#00000000',
-      icon: path.join(__dirname, '../public/AUTO-MAS.ico'),
-      webPreferences: {
-        nodeIntegration: false,
-        contextIsolation: true,
-        preload: path.join(__dirname, 'preload.js'),
-        additionalArguments: ['--is-dialog-window'], // 标记为对话框窗口
-      },
-    })
-
-    // 存储窗口引用
-    dialogWindows.set(messageId, dialogWindow)
-
-    // 编码对话框数据
-    const encodedData = encodeURIComponent(JSON.stringify(dialogData))
-
-    // 加载 Vue 应用的 popup 路由
-    const devServer = process.env.VITE_DEV_SERVER_URL
-    const popupUrl = devServer
-      ? `${devServer}#/popup?data=${encodedData}`
-      : `file://${path.join(__dirname, '../dist/index.html')}#/popup?data=${encodedData}`
-
-    dialogWindow.loadURL(popupUrl)
-
-    // 窗口准备好后显示
-    dialogWindow.once('ready-to-show', () => {
-      dialogWindow.show()
-      dialogWindow.focus()
-    })
-
-    // 窗口关闭时清理
-    dialogWindow.on('closed', () => {
-      dialogWindows.delete(messageId)
-      const callback = dialogCallbacks.get(messageId)
-      if (callback) {
-        dialogCallbacks.delete(messageId)
-        callback(false) // 默认返回 false (取消)
-      }
-    })
-
-    logService.info('对话框管理', `对话框窗口已创建: ${messageId}`)
-  })
-}
-
-// 显示问题对话框
-ipcMain.handle('show-question-dialog', async (_event, questionData) => {
-  logService.info('对话框管理', '收到显示对话框请求')
-  try {
-    const result = await createQuestionDialog(questionData)
-    logService.info('对话框管理', `对话框结果: ${result}`)
-    return result
-  } catch (error) {
-    logService.error('对话框管理', '创建对话框失败')
-    return false
-  }
-})
-
-// 处理对话框响应
-ipcMain.handle('dialog-response', async (_event, messageId: string, choice: boolean) => {
-  logService.info('对话框管理', `收到对话框响应`)
-
-  const callback = dialogCallbacks.get(messageId)
-  if (callback) {
-    dialogCallbacks.delete(messageId)
-    callback(choice)
-  }
-
-  // 关闭对话框窗口
-  const dialogWindow = dialogWindows.get(messageId)
-  if (dialogWindow && !dialogWindow.isDestroyed()) {
-    dialogWindow.close()
-  }
-  dialogWindows.delete(messageId)
-
-  return true
-})
-
-// 移动对话框窗口
-ipcMain.handle('move-window', async (_event, deltaX: number, deltaY: number) => {
-  // 获取当前活动的对话框窗口（最后创建的）
-  const dialogWindow = Array.from(dialogWindows.values()).pop()
-  if (dialogWindow && !dialogWindow.isDestroyed()) {
-    const currentBounds = dialogWindow.getBounds()
-    dialogWindow.setPosition(currentBounds.x + deltaX, currentBounds.y + deltaY)
   }
 })
 

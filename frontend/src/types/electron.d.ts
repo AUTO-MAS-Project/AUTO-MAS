@@ -1,8 +1,5 @@
 // Electron API 类型定义
 export interface ElectronAPI {
-  // 窗口类型标识
-  isDialogWindow: () => boolean
-
   openDevTools: () => Promise<void>
   selectFolder: () => Promise<string | null>
   selectFile: (filters?: any[]) => Promise<string[]>
@@ -13,6 +10,7 @@ export interface ElectronAPI {
   windowMaximize: () => Promise<void>
   windowClose: () => Promise<void>
   windowIsMaximized: () => Promise<boolean>
+  windowFocus: () => Promise<void>
   appQuit: () => Promise<void>
 
   // 进程管理
@@ -99,15 +97,6 @@ export interface ElectronAPI {
   // 文件系统操作
   openFile: (filePath: string) => Promise<void>
   showItemInFolder: (filePath: string) => Promise<void>
-
-  // 对话框相关
-  showQuestionDialog: (questionData: {
-    title?: string
-    message?: string
-    options?: string[]
-    messageId?: string
-  }) => Promise<boolean>
-  dialogResponse: (messageId: string, choice: boolean) => Promise<boolean>
 
   // 主题信息获取
   getThemeInfo: () => Promise<{
