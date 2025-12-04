@@ -467,6 +467,10 @@ class AutoProxyTask(TaskExecuteBase):
             )
             user_logs_list.append(log_path.with_suffix(".json"))
 
+            if len(log_item.content) == 0:
+                log_item.content = ["未捕获到任何日志内容"]
+                log_item.status = "未捕获到日志"
+
             await Config.save_general_log(
                 log_path,
                 log_item.content,
