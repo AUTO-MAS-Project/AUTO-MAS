@@ -18,7 +18,6 @@ export interface ElectronAPI {
   // 进程管理
   getRelatedProcesses: () => Promise<any[]>
   killAllProcesses: () => Promise<{ success: boolean; error?: string }>
-  forceExit: () => Promise<{ success: boolean }>
 
   // 初始化相关API
   checkEnvironment: () => Promise<any>
@@ -35,7 +34,7 @@ export interface ElectronAPI {
   cloneBackend: (repoUrl?: string) => Promise<any>
   updateBackend: (repoUrl?: string) => Promise<any>
   startBackend: () => Promise<{ success: boolean; error?: string }>
-  stopBackend?: () => Promise<{ success: boolean; error?: string }>
+  stopBackend: () => Promise<{ success: boolean; error?: string }>
 
   // 快速安装相关
   downloadQuickEnvironment: () => Promise<{ success: boolean; error?: string }>

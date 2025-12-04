@@ -637,26 +637,6 @@ ipcMain.handle('kill-all-processes', async () => {
   }
 })
 
-// 添加一个测试用的强制退出命令
-ipcMain.handle('force-exit', async () => {
-  logService.info('应用控制', '收到强制退出命令')
-  isQuitting = true
-
-  // 立即清理进程
-  try {
-    await forceKillRelatedProcesses()
-  } catch (e) {
-    logService.error('进程管理', '强制清理失败')
-  }
-
-  // 强制退出
-  setTimeout(() => {
-    process.exit(0)
-  }, 500)
-
-  return { success: true }
-})
-
 ipcMain.handle('window-is-maximized', () => {
   return mainWindow ? mainWindow.isMaximized() : false
 })
@@ -1483,14 +1463,16 @@ app.on('before-quit', async event => {
         // 方法1: 使用我们的进程管理器
         forceKillRelatedProcesses(),
 
-        // 方法2: 直接使用 taskkill 命令
+        // 方法2: 直接使用 taskkill 和 PowerShell 命令
         new Promise<void>(resolve => {
           if (process.platform === 'win32') {
             const appRoot = getAppRoot()
+            const escapedAppRoot = appRoot.replace(/\\/g, '\\\\')
             const commands = [
               `taskkill /f /im python.exe`,
-              `wmic process where "CommandLine like '%main.py%'" delete`,
-              `wmic process where "CommandLine like '%${appRoot.replace(/\\/g, '\\\\')}%'" delete`,
+              // 使用 PowerShell 代替 wmic
+              `powershell -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*main.py*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"`,
+              `powershell -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*${escapedAppRoot}*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"`,
             ]
 
             let completed = 0

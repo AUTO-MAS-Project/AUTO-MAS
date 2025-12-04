@@ -176,6 +176,7 @@ class _SystemHandler:
         mode: Literal[
             "NoAction", "Shutdown", "ShutdownForce", "Hibernate", "Sleep", "KillSelf"
         ],
+        from_frontend: bool = False,
     ) -> None:
         """
         执行系统电源操作
@@ -214,9 +215,10 @@ class _SystemHandler:
             elif mode == "KillSelf" and Config.server is not None:
 
                 logger.info("执行退出主程序操作")
-                await Config.send_websocket_message(
-                    id="Main", type="Signal", data={"RequestClose": "请求前端关闭"}
-                )
+                if not from_frontend:
+                    await Config.send_websocket_message(
+                        id="Main", type="Signal", data={"RequestClose": "请求前端关闭"}
+                    )
                 Config.server.should_exit = True
 
         elif sys.platform.startswith("linux"):
@@ -243,9 +245,10 @@ class _SystemHandler:
             elif mode == "KillSelf" and Config.server is not None:
 
                 logger.info("执行退出主程序操作")
-                await Config.send_websocket_message(
-                    id="Main", type="Signal", data={"RequestClose": "请求前端关闭"}
-                )
+                if not from_frontend:
+                    await Config.send_websocket_message(
+                        id="Main", type="Signal", data={"RequestClose": "请求前端关闭"}
+                    )
                 Config.server.should_exit = True
 
     async def _power_task(

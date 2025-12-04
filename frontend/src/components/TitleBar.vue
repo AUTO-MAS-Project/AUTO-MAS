@@ -132,39 +132,21 @@ const closeWindow = async () => {
   try {
     logger.info('开始关闭应用...')
 
-    // 立即显示关闭遮罩
+    // 显示关闭遮罩
     showClosingOverlay()
 
-    // 先检查当前进程状态
+    // 第一步：停止后端服务（通过 /api/core/close 优雅关闭）
     try {
-      const processes = await window.electronAPI?.getRelatedProcesses()
-      logger.debug('关闭前的进程状态:', processes)
-    } catch (e) {
-      logger.warn('无法获取进程状态:', e)
-    }
-
-    // 异步调用后端关闭API，不等待响应
-    Service.closeApiCoreClosePost().catch(error => {
-      logger.warn('Backend close API failed (this is expected):', error)
-    })
-
-    // 使用更激进的强制退出方法
-    try {
-      logger.info('执行强制退出...')
-      await window.electronAPI?.forceExit()
+      logger.info('正在停止后端服务...')
+      await window.electronAPI?.stopBackend()
+      logger.info('后端服务已停止')
     } catch (error) {
-      logger.error('强制退出失败，尝试备用方法:', error)
-
-      // 备用方法：先尝试正常关闭
-      try {
-        await window.electronAPI?.windowClose()
-        setTimeout(async () => {
-          await window.electronAPI?.appQuit()
-        }, 500)
-      } catch (backupError) {
-        logger.error('备用方法也失败:', backupError)
-      }
+      logger.warn('停止后端失败:', error)
     }
+
+    // 第二步：退出 Electron 应用
+    logger.info('正在退出应用...')
+    await window.electronAPI?.appQuit()
   } catch (error) {
     logger.error('关闭应用失败:', error)
   }

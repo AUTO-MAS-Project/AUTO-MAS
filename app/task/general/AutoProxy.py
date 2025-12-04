@@ -445,9 +445,7 @@ class AutoProxyTask(TaskExecuteBase):
         # 结束各子任务
         await self.general_log_monitor.stop()
         await self.general_process_manager.kill()
-        logger.info("结束通用脚本任务进程------------111")
         await System.kill_process(self.script_exe_path)
-        logger.info("结束通用脚本任务进程------------2222")
         del self.general_process_manager
         del self.general_log_monitor
         if self.game_manager is not None:
