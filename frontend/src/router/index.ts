@@ -1,5 +1,8 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
 import { isAppInitialized } from '@/utils/config'
+import { getLogger } from '@/utils/logger'
+
+const logger = getLogger('路由管理')
 
 // 异步按需加载调度中心，避免弹窗窗口提前执行相关逻辑
 const SchedulerView = () => import('../views/scheduler/index.vue')
@@ -125,12 +128,6 @@ const routes = [
     component: () => import('../views/MirrorTest.vue'),
     meta: { title: '镜像配置测试' },
   },
-  {
-    path: '/popup',
-    name: 'Popup',
-    component: () => import('../views/Popup.vue'),
-    meta: { title: '对话框', skipInit: true, skipGuard: true },
-  },
 ]
 
 const router = createRouter({
@@ -139,10 +136,10 @@ const router = createRouter({
 })
 
 router.beforeEach(async (to, from, next) => {
-  console.log('路由守卫：', { to: to.path, from: from.path })
+  logger.info('路由守卫：', { to: to.path, from: from.path })
 
-  // Popup 或声明跳过的路由：直接放行
-  if (to.path === '/popup' || (to.meta as any)?.skipGuard) {
+  // 声明跳过的路由：直接放行
+  if ((to.meta as any)?.skipGuard) {
     next()
     return
   }
@@ -157,7 +154,7 @@ router.beforeEach(async (to, from, next) => {
   if (isDev) return next()
 
   const initialized = await isAppInitialized()
-  console.log('检查初始化状态：', initialized)
+  logger.info('检查初始化状态：', initialized)
   if (!initialized) {
     needInitLanding = false
     next('/initialization')

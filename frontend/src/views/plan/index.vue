@@ -71,6 +71,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useDebounceFn } from '@vueuse/core'
 import { useRoute } from 'vue-router'
 import { message } from 'ant-design-vue'
+import { getLogger } from '@/utils/logger'
 import { usePlanApi } from '@/composables/usePlanApi'
 import { generateUniquePlanName, getPlanTypeLabel, validatePlanName } from '@/utils/planNameUtils'
 import PlanHeader from './components/PlanHeader.vue'
@@ -79,6 +80,8 @@ import PlanConfig from './components/PlanConfig.vue'
 import MaaPlanTable from './tables/MaaPlanTable.vue'
 // import GeneralPlanTable from './tables/GeneralPlanTable.vue'
 // import CustomPlanTable from './tables/CustomPlanTable.vue'
+
+const logger = getLogger('计划管理')
 
 interface PlanData {
   [key: string]: any
@@ -139,7 +142,7 @@ const handleAddPlan = async (planType: string = 'MaaPlanConfig') => {
       message.success(`已创建新的${getPlanTypeLabel(planType)}："${uniqueName}"`)
     }
   } catch (error) {
-    console.error('添加计划失败:', error)
+    logger.error('添加计划失败:', error)
   }
 }
 
@@ -159,7 +162,7 @@ const handleRemovePlan = async (planId: string) => {
       }
     }
   } catch (error) {
-    console.error('删除计划失败:', error)
+    logger.error('删除计划失败:', error)
   }
 }
 
@@ -189,10 +192,10 @@ const saveInBackground = async (planId: string) => {
       const planData: Record<string, any> = { ...(tableData.value || {}) }
       planData.Info = { Mode: currentMode.value, Name: currentPlanName.value, Type: planType }
 
-      console.log(`[计划表] 保存数据 (${planId}):`, planData)
+      logger.info(`[计划表] 保存数据 (${planId}):`, planData)
       await updatePlan(planId, planData)
     } catch (error) {
-      console.error('后台保存计划数据失败:', error)
+      logger.error('后台保存计划数据失败:', error)
       // 不显示错误消息，避免打断用户操作
     } finally {
       savingQueue.value.delete(planId)
@@ -227,13 +230,13 @@ const onPlanChange = async (planId: string) => {
     // 异步保存当前计划，不等待完成
     if (activePlanId.value) {
       saveInBackground(activePlanId.value).catch(error => {
-        console.error('切换时保存当前计划失败:', error)
+        logger.error('切换时保存当前计划失败:', error)
         message.warning('保存当前计划时出现问题，请检查数据是否完整')
       })
     }
 
     // 立即切换到新计划，提升响应速度
-    console.log(`[计划表] 切换到新计划: ${planId}`)
+    logger.info(`[计划表] 切换到新计划: ${planId}`)
     activePlanId.value = planId
     await loadPlanData(planId)
   } finally {
@@ -294,7 +297,7 @@ const loadPlanData = async (planId: string) => {
     const response = await getPlans(planId)
     currentPlanData.value = response.data
     const planData = response.data[planId] as PlanData
-    console.log(`[计划表] 从后端加载数据 (${planId})`)
+    logger.info(`[计划表] 从后端加载数据 (${planId})`)
 
     if (planData) {
       if (planData.Info) {
@@ -306,7 +309,7 @@ const loadPlanData = async (planId: string) => {
           currentPlanName.value = currentPlan.name
 
           if (apiName !== currentPlan.name) {
-            console.log(`[计划表] 同步名称: API="${apiName}" -> planList="${currentPlan.name}"`)
+            logger.info(`[计划表] 同步名称: API="${apiName}" -> planList="${currentPlan.name}"`)
           }
         } else if (apiName) {
           currentPlanName.value = apiName
@@ -322,7 +325,7 @@ const loadPlanData = async (planId: string) => {
       tableData.value = { ...planData, _isInitialLoad: true }
     }
   } catch (error) {
-    console.error('加载计划数据失败:', error)
+    logger.error('加载计划数据失败:', error)
   }
 }
 
@@ -373,7 +376,7 @@ const initPlans = async () => {
           currentMode.value = planData.Info.Mode || 'ALL'
         }
 
-        console.log(`[计划表] 初始加载数据 (${selectedPlanId}):`, planData)
+        logger.info(`[计划表] 初始加载数据 (${selectedPlanId}):`, planData)
         // 标记这是初始加载，需要强制更新自定义关卡
         tableData.value = { ...planData, _isInitialLoad: true }
       }
@@ -381,7 +384,7 @@ const initPlans = async () => {
       currentPlanData.value = null
     }
   } catch (error) {
-    console.error('初始化计划失败:', error)
+    logger.error('初始化计划失败:', error)
     currentPlanData.value = null
   } finally {
     loading.value = false

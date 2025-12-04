@@ -165,7 +165,7 @@ class ManualInspectTask(TaskExecuteBase):
                 LogRecord()
             )
             self.wait_event.clear()
-            await self.maa_process_manager.open_process(self.maa_exe_path, [], 0)
+            await self.maa_process_manager.open_process(self.maa_exe_path)
             await self.maa_log_monitor.start(self.maa_log_path, self.log_start_time)
             await self.wait_event.wait()
             await self.maa_log_monitor.stop()
@@ -182,7 +182,7 @@ class ManualInspectTask(TaskExecuteBase):
                     f"{self.cur_user_log.status}\n正在中止相关程序\n请等待"
                 )
 
-                await self.maa_process_manager.kill(if_force=True)
+                await self.maa_process_manager.kill()
                 await self.emulator_manager.close(
                     self.script_config.get("Emulator", "Index")
                 )
@@ -241,7 +241,7 @@ class ManualInspectTask(TaskExecuteBase):
         """配置MAA运行参数"""
         logger.info(f"开始配置MAA运行参数: 人工排查")
 
-        await self.maa_process_manager.kill(if_force=True)
+        await self.maa_process_manager.kill()
         await System.kill_process(self.maa_exe_path)
 
         if self.cur_user_config.get("Info", "Server") == "Bilibili":
@@ -353,9 +353,9 @@ class ManualInspectTask(TaskExecuteBase):
         if self.check_result != "Pass":
             return
 
-        await self.maa_process_manager.kill(if_force=True)
-        await System.kill_process(self.maa_exe_path)
         await self.maa_log_monitor.stop()
+        await self.maa_process_manager.kill()
+        await System.kill_process(self.maa_exe_path)
         await agree_bilibili(self.maa_tasks_path, False)
 
         if self.run_book["SignIn"] and self.run_book["PassCheck"]:

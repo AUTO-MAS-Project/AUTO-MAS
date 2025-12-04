@@ -21,10 +21,12 @@
 
 import json
 import asyncio
-import subprocess
 from pathlib import Path
 
 from app.services import System
+from app.utils import ProcessRunner, get_logger
+
+logger = get_logger("MAA 更新工具")
 
 
 async def update_maa(maa_path: Path):
@@ -70,9 +72,7 @@ async def update_maa(maa_path: Path):
         json.dumps(maa_set, ensure_ascii=False, indent=4), encoding="utf-8"
     )
 
-    subprocess.Popen(
-        [maa_path / "MAA.exe"],
-        creationflags=subprocess.CREATE_NO_WINDOW,
-    )
-    await asyncio.sleep(10)
-    await System.kill_process(maa_path / "MAA.exe")
+    try:
+        await ProcessRunner.run_process(maa_path / "MAA.exe", timeout=10)
+    except Exception as e:
+        logger.info(f"MAA 更新任务结束: {e}")

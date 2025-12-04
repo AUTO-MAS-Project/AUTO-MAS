@@ -95,6 +95,20 @@ class GeneralManager(TaskExecuteBase):
                 )
             ).exists():
                 return "未完成游戏配置, 请检查脚本配置中的游戏设置！"
+            elif (
+                Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
+                    "Game", "Type"
+                )
+                == "URL"
+            ) and (
+                not Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
+                    "Game", "URL"
+                )
+                or not Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
+                    "Game", "ProcessName"
+                )
+            ):
+                return "未完成URL配置, 请检查脚本配置中的URL和进程名称设置！"
 
         return "Pass"
 
@@ -124,12 +138,9 @@ class GeneralManager(TaskExecuteBase):
                     self.script_config.get("Game", "EmulatorId")
                 )
 
-            elif (
-                Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
-                    "Game", "Type"
-                )
-                == "Client"
-            ):
+            elif Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
+                "Game", "Type"
+            ) in ["Client", "URL"]:
                 self.game_process_manager = ProcessManager()
 
         # 备份原始配置

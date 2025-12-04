@@ -4,18 +4,19 @@
       <div class="control-row">
         <a-space size="middle">
           <a-select
+            v-if="status !== '运行'"
             v-model:value="localSelectedTaskId"
             placeholder="选择任务项"
             style="width: 200px"
             :loading="taskOptionsLoading"
             :options="taskOptions"
-            show-search
-            :filter-option="filterTaskOption"
             :disabled="disabled"
             size="large"
             @change="onTaskChange"
+            @dropdownVisibleChange="onDropdownVisibleChange"
           />
           <a-select
+            v-if="status !== '运行'"
             v-model:value="localSelectedMode"
             placeholder="选择模式"
             style="width: 120px"
@@ -31,6 +32,17 @@
               {{ option.label }}
             </a-select-option>
           </a-select>
+          <div v-else class="running-info">
+            <span class="info-item">
+              <span class="label">任务：</span>
+              <span class="value">{{ runningTaskLabel }}</span>
+            </span>
+            <span class="divider">|</span>
+            <span class="info-item">
+              <span class="label">模式：</span>
+              <span class="value">{{ runningModeLabel }}</span>
+            </span>
+          </div>
         </a-space>
         <div class="control-spacer"></div>
         <a-space size="middle">
@@ -69,6 +81,8 @@ interface Props {
   taskOptionsLoading: boolean
   status: SchedulerStatus
   disabled?: boolean
+  runningTaskLabel?: string
+  runningModeLabel?: string
 }
 
 interface Emits {
@@ -79,6 +93,14 @@ interface Emits {
   (e: 'start'): void
 
   (e: 'stop'): void
+
+  (e: 'update:runningTaskLabel', value: string): void
+
+  (e: 'update:runningTaskLabel', value: string): void
+
+  (e: 'update:runningModeLabel', value: string): void
+
+  (e: 'refresh-tasks'): void
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -93,6 +115,27 @@ const localSelectedMode = ref(props.selectedMode)
 
 // 模式选项
 const modeOptions = TASK_MODE_OPTIONS
+
+// 运行时的显示文本 - 直接使用 props，不再需要本地 ref
+// const runningTaskLabel = ref('')
+// const runningModeLabel = ref('')
+
+// 监听状态变化，记录运行时的文本信息
+watch(
+  () => props.status,
+  (newStatus) => {
+    if (newStatus === '运行') {
+      const taskOption = props.taskOptions.find(opt => opt.value === props.selectedTaskId)
+      const taskLabel = taskOption?.label || props.selectedTaskId || ''
+      emit('update:runningTaskLabel', taskLabel)
+
+      const modeOption = modeOptions.find(opt => opt.value === props.selectedMode)
+      const modeLabel = modeOption?.label || props.selectedMode || ''
+      emit('update:runningModeLabel', modeLabel)
+    }
+  }
+)
+
 
 // 监听 props 变化，同步到本地状态
 watch(
@@ -129,9 +172,11 @@ const onAction = () => {
   }
 }
 
-// 任务选项过滤
-const filterTaskOption = (input: string, option: any) => {
-  return (option?.label || '').toLowerCase().includes(input.toLowerCase())
+// 下拉框展开时刷新任务列表
+const onDropdownVisibleChange = (open: boolean) => {
+  if (open) {
+    emit('refresh-tasks')
+  }
 }
 </script>
 
@@ -174,5 +219,32 @@ const filterTaskOption = (input: string, option: any) => {
   .control-card {
     padding: 12px;
   }
+}
+
+.running-info {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 8px;
+}
+
+.info-item {
+  display: flex;
+  align-items: center;
+  font-size: 16px;
+}
+
+.info-item .label {
+  color: var(--ant-color-text-secondary);
+  margin-right: 4px;
+}
+
+.info-item .value {
+  color: var(--ant-color-text);
+  font-weight: 500;
+}
+
+.divider {
+  color: var(--ant-color-border);
 }
 </style>
