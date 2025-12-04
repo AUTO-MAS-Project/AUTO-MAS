@@ -1,34 +1,25 @@
 <template>
   <div class="test-page">
-    <h3 class="page-title">🔧 消息弹窗测试</h3>
+    <h3 class="page-title">🔧 应用内弹窗测试</h3>
 
     <div class="test-section">
-      <h4>测试消息弹窗</h4>
+      <h4>测试弹窗队列</h4>
       <div class="test-controls">
-        <button class="test-btn primary" :disabled="isTesting" @click="triggerQuestionModal">
-          {{ isTesting ? '测试中...' : '触发Question弹窗' }}
+        <button class="test-btn primary" :disabled="isTesting" @click="triggerSingleModal">
+          {{ isTesting ? '测试中...' : '触发单个弹窗' }}
         </button>
 
-        <button class="test-btn secondary" :disabled="isTesting" @click="triggerCustomModal">
-          自定义消息测试
+        <button class="test-btn secondary" :disabled="isTesting" @click="triggerMultipleModals">
+          触发多个弹窗(队列测试)
         </button>
 
-        <button class="test-btn warning" :disabled="isTesting" @click="directTriggerModal">
-          直接触发测试
-        </button>
-
-        <!-- 新增：3s 后触发 Question 弹窗（复用已有逻辑） -->
-        <button
-          class="test-btn secondary"
-          :disabled="isTesting || isDelayed"
-          @click="scheduleQuestionModal"
-        >
-          {{ isDelayed ? '已计划：3s 后触发...' : '3s 后触发Question弹窗' }}
+        <button class="test-btn warning" :disabled="isTesting" @click="triggerDelayedModal">
+          3秒后触发弹窗
         </button>
       </div>
 
       <div class="test-info">
-        <p>点击按钮测试全屏消息选择弹窗功能</p>
+        <p>点击按钮测试应用内弹窗功能（支持队列）</p>
         <p>最后响应: {{ lastResponse || '暂无' }}</p>
         <p>
           连接状态: <span :class="connectionStatusClass">{{ connectionStatus }}</span>
@@ -37,7 +28,7 @@
     </div>
 
     <div class="test-section">
-      <h4>自定义测试消息</h4>
+      <h4>自定义弹窗消息</h4>
       <div class="custom-form">
         <div class="form-group">
           <label>标题:</label>
@@ -57,12 +48,23 @@
             rows="3"
           ></textarea>
         </div>
+        <div class="form-group">
+          <label>发送数量:</label>
+          <input
+            v-model.number="sendCount"
+            type="number"
+            min="1"
+            max="10"
+            class="form-input"
+            style="width: 80px"
+          />
+        </div>
         <button
           class="test-btn primary"
           :disabled="!customMessage.title || !customMessage.message"
           @click="sendCustomMessage"
         >
-          发送自定义消息
+          发送自定义弹窗
         </button>
       </div>
     </div>
@@ -76,6 +78,9 @@
         </div>
         <div v-if="testHistory.length === 0" class="no-history">暂无测试历史</div>
       </div>
+      <button v-if="testHistory.length > 0" class="test-btn secondary" style="margin-top: 8px" @click="clearHistory">
+        清空历史
+      </button>
     </div>
   </div>
 </template>
@@ -94,8 +99,10 @@ const testHistory = ref<Array<{ time: string; title: string; result: string }>>(
 const connectionStatus = ref('检查中...')
 const connectionStatusClass = ref('status-checking')
 
-// 新增：延时触发状态与定时器
-const isDelayed = ref(false)
+// 发送数量
+const sendCount = ref(1)
+
+// 延时触发定时器
 let delayTimer: number | undefined
 
 // 自定义消息
@@ -152,159 +159,168 @@ const addTestHistory = (title: string, result: string) => {
     title,
     result,
   })
-  // 保持最多10条历史记录
-  if (testHistory.value.length > 10) {
-    testHistory.value = testHistory.value.slice(0, 10)
+  // 保持最多20条历史记录
+  if (testHistory.value.length > 20) {
+    testHistory.value = testHistory.value.slice(0, 20)
   }
 }
 
-// 直接触发弹窗（备用方法）
-const directTriggerModal = () => {
-  isTesting.value = true
+// 清空历史
+const clearHistory = () => {
+  testHistory.value = []
+}
 
-  try {
-    // 直接触发浏览器的confirm对话框作为备用测试
-    const result = confirm(
-      '这是直接触发的测试弹窗。\n\n如果WebSocket消息弹窗无法正常工作，这个方法可以用来验证基本功能。\n\n点击"确定"继续，点击"取消"退出。'
-    )
+// 检查调试接口是否可用
+const isDebugApiAvailable = () => {
+  return typeof (window as any).__debugShowQuestion === 'function'
+}
 
-    lastResponse.value = result ? '用户选择: 确认 (直接触发)' : '用户选择: 取消 (直接触发)'
-    addTestHistory('直接触发测试', result ? '确认' : '取消')
-
-    logger.info('[调试工具] 直接触发测试完成，结果:', result)
-  } catch (error: any) {
-    logger.error('[调试工具] 直接触发测试失败:', error)
-    lastResponse.value = '直接触发失败: ' + (error?.message || '未知错误')
+// 通过调试接口触发弹窗（直接在前端触发，不经过后端）
+const triggerModalViaDebugApi = (messageData: {
+  title: string
+  message: string
+  options?: string[]
+  message_id?: string
+}) => {
+  const debugShowQuestion = (window as any).__debugShowQuestion
+  
+  if (!debugShowQuestion) {
+    logger.warn('[调试工具] 调试接口不可用，WebSocketMessageListener 可能未挂载')
+    lastResponse.value = '错误: 调试接口不可用'
+    addTestHistory('触发失败', '调试接口不可用')
+    return null
   }
 
-  setTimeout(() => {
-    isTesting.value = false
-  }, 1000)
-}
-
-// 直接调用弹窗API测试功能
-const simulateMessage = (messageData: any) => {
-  logger.info('[调试工具] 直接测试弹窗功能:', messageData)
-
-  try {
-    // 检查是否在Electron环境
-    if (typeof window !== 'undefined' && (window as any).electronAPI?.showQuestionDialog) {
-      // 直接调用Electron的弹窗API进行测试
-      ;(window as any).electronAPI
-        .showQuestionDialog({
-          title: messageData.title || '测试标题',
-          message: messageData.message || '测试消息',
-          options: messageData.options || ['确定', '取消'],
-          messageId: messageData.message_id || 'test-' + Date.now(),
-        })
-        .then((result: boolean) => {
-          logger.info('[调试工具] 弹窗测试结果:', result)
-          const choice = result ? '确认' : '取消'
-          lastResponse.value = `用户选择: ${choice}`
-          addTestHistory('弹窗测试', choice)
-        })
-        .catch((error: any) => {
-          logger.error('[调试工具] 弹窗测试失败:', error)
-          lastResponse.value = '弹窗测试失败: ' + (error?.message || '未知错误')
-        })
-    } else {
-      logger.warn('[调试工具] 不在Electron环境中或API不可用，使用浏览器confirm作为备用')
-      const result = confirm(
-        `${messageData.title || '测试'}\n\n${messageData.message || '这是测试消息'}`
-      )
-      const choice = result ? '确认' : '取消'
-      lastResponse.value = `用户选择: ${choice} (浏览器备用)`
-      addTestHistory('浏览器备用测试', choice)
-    }
-  } catch (error: any) {
-    logger.error('[调试工具] 测试弹窗失败:', error)
-    lastResponse.value = '测试失败: ' + (error?.message || '未知错误')
-  }
-}
-
-// 触发标准Question弹窗
-const triggerQuestionModal = () => {
-  isTesting.value = true
-
-  const testMessageData = {
-    message_id: generateId(),
-    type: 'Question',
-    title: '测试提示',
-    message: '这是一个测试消息，请选择您的操作。',
+  const messageId = messageData.message_id || generateId()
+  
+  const questionData = {
+    title: messageData.title,
+    message: messageData.message,
+    options: messageData.options || ['确定', '取消'],
+    message_id: messageId,
   }
 
-  logger.info('[调试工具] 发送测试Question消息:', testMessageData)
-
-  // 直接模拟接收消息
-  simulateMessage(testMessageData)
-
-  lastResponse.value = '已发送测试Question消息'
-  addTestHistory('标准Question测试', '已发送')
-
-  setTimeout(() => {
-    isTesting.value = false
-  }, 1000)
+  logger.info('[调试工具] 通过调试接口触发弹窗:', questionData)
+  
+  // 直接调用 WebSocketMessageListener 的 showQuestion 函数
+  debugShowQuestion(questionData)
+  
+  addTestHistory(`触发弹窗: ${messageData.title}`, `ID: ${messageId.slice(-6)}`)
+  
+  return messageId
 }
 
-// 新增：3s 后触发 Question 弹窗（复用已有逻辑）
-const scheduleQuestionModal = () => {
-  if (isDelayed.value) return
-  isDelayed.value = true
-  delayTimer = window.setTimeout(() => {
-    triggerQuestionModal()
-    isDelayed.value = false
-  }, 3000)
-}
-
-// 触发自定义弹窗
-const triggerCustomModal = () => {
-  isTesting.value = true
-
-  const testMessageData = {
-    message_id: generateId(),
-    type: 'Question',
-    title: '自定义测试',
-    message:
-      '这是一个自定义的测试消息，用于验证弹窗的不同内容显示。您可以测试长文本、特殊字符等情况。',
-  }
-
-  logger.info('[调试工具] 发送自定义测试消息:', testMessageData)
-
-  simulateMessage(testMessageData)
-
-  lastResponse.value = '已发送自定义测试消息'
-  addTestHistory('自定义内容测试', '已发送')
-
-  setTimeout(() => {
-    isTesting.value = false
-  }, 1000)
-}
-
-// 发送完全自定义的消息
-const sendCustomMessage = () => {
-  if (!customMessage.value.title || !customMessage.value.message) {
+// 触发单个弹窗
+const triggerSingleModal = () => {
+  if (!isDebugApiAvailable()) {
+    lastResponse.value = '错误: 调试接口不可用，请确保应用已完全加载'
     return
   }
 
   isTesting.value = true
 
-  const testMessageData = {
-    message_id: generateId(),
-    type: 'Question',
-    title: customMessage.value.title,
-    message: customMessage.value.message,
-  }
+  triggerModalViaDebugApi({
+    title: '测试提示',
+    message: '这是一个测试弹窗消息，请选择您的操作。',
+    options: ['确定', '取消'],
+  })
 
-  logger.info('[调试工具] 发送用户自定义消息:', testMessageData)
-
-  simulateMessage(testMessageData)
-
-  lastResponse.value = `已发送自定义消息: ${customMessage.value.title}`
-  addTestHistory(`自定义: ${customMessage.value.title}`, '已发送')
+  lastResponse.value = '已触发单个弹窗'
 
   setTimeout(() => {
     isTesting.value = false
-  }, 1000)
+  }, 500)
+}
+
+// 触发多个弹窗（测试队列）
+const triggerMultipleModals = () => {
+  if (!isDebugApiAvailable()) {
+    lastResponse.value = '错误: 调试接口不可用，请确保应用已完全加载'
+    return
+  }
+
+  isTesting.value = true
+
+  // 依次发送3个弹窗消息
+  triggerModalViaDebugApi({
+    title: '第1个弹窗',
+    message: '这是队列中的第1个弹窗。\n\n处理完后会自动显示下一个。',
+    options: ['继续', '取消'],
+  })
+
+  triggerModalViaDebugApi({
+    title: '第2个弹窗',
+    message: '这是队列中的第2个弹窗。\n\n还有1个弹窗在等待。',
+    options: ['知道了', '跳过'],
+  })
+
+  triggerModalViaDebugApi({
+    title: '第3个弹窗',
+    message: '这是队列中的最后一个弹窗。\n\n队列测试完成！',
+    options: ['完成', '关闭'],
+  })
+
+  lastResponse.value = '已触发3个弹窗到队列'
+
+  setTimeout(() => {
+    isTesting.value = false
+  }, 500)
+}
+
+// 延迟触发弹窗
+const triggerDelayedModal = () => {
+  isTesting.value = true
+  lastResponse.value = '3秒后将触发弹窗...'
+  addTestHistory('延迟触发', '等待3秒')
+
+  delayTimer = window.setTimeout(() => {
+    if (!isDebugApiAvailable()) {
+      lastResponse.value = '错误: 调试接口不可用'
+      isTesting.value = false
+      return
+    }
+
+    triggerModalViaDebugApi({
+      title: '延迟弹窗',
+      message: '这是一个延迟3秒后触发的弹窗。\n\n用于测试异步场景。',
+      options: ['收到', '关闭'],
+    })
+    lastResponse.value = '延迟弹窗已触发'
+    isTesting.value = false
+  }, 3000)
+}
+
+// 发送自定义弹窗
+const sendCustomMessage = () => {
+  if (!customMessage.value.title || !customMessage.value.message) {
+    return
+  }
+
+  if (!isDebugApiAvailable()) {
+    lastResponse.value = '错误: 调试接口不可用，请确保应用已完全加载'
+    return
+  }
+
+  isTesting.value = true
+
+  const count = Math.min(Math.max(sendCount.value, 1), 10)
+  
+  for (let i = 0; i < count; i++) {
+    const title = count > 1 ? `${customMessage.value.title} (${i + 1}/${count})` : customMessage.value.title
+    triggerModalViaDebugApi({
+      title,
+      message: customMessage.value.message,
+      options: ['确定', '取消'],
+    })
+  }
+
+  lastResponse.value = count > 1 
+    ? `已触发 ${count} 个自定义弹窗` 
+    : `已触发自定义弹窗: ${customMessage.value.title}`
+
+  setTimeout(() => {
+    isTesting.value = false
+  }, 500)
 }
 
 // 监听响应消息
