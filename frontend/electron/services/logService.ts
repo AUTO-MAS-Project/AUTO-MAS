@@ -154,7 +154,12 @@ export class LogService {
 
     // 格式化为无颜色的字符串（用于文件存储）
     const plainMessage = LogFormatter.formatWithoutColors(entry)
-    LogFileManager.writeLog(plainMessage)
+
+    // 只有当日志级别不是 'TRACE' 或 'DEBUG' 时才写入文件（不区分大小写）
+    const upperLevel = level.toUpperCase()
+    if (upperLevel !== 'TRACE' && upperLevel !== 'DEBUG') {
+      LogFileManager.writeLog(plainMessage)
+    }
   }
 
   /**

@@ -272,7 +272,6 @@ const updateWsStatus = () => {
 
 // 处理WebSocket消息
 const handleWsMessage = (message: WebSocketBaseMessage) => {
-  logger.info('[后端调试] 收到WebSocket消息:', message)
 
   // 添加到消息列表
   wsMessages.value.unshift({

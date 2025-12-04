@@ -70,11 +70,13 @@ class ModuleLogger {
     consoleMethod(`[${this.moduleName}] ${formattedMessage}`)
 
     // 移除后端日志处理，只保留前端日志
-    // 通过IPC发送到主进程进行统一处理
+    // DEBUG级别日志只输出到控制台，不写入文件
+    // 其他级别日志通过IPC发送到主进程进行统一处理
     if ((window as any).electronAPI) {
       try {
         // 只处理前端日志，不处理后端日志
-        if (this.moduleName !== 'backend' && this.moduleName !== '后端') {
+        // DEBUG级别日志不写入文件，只输出到控制台
+        if (this.moduleName !== 'backend' && this.moduleName !== '后端' && level !== LogLevel.DEBUG) {
           await (window as any).electronAPI.logWrite(level, this.moduleName, formattedMessage)
         }
       } catch (error) {

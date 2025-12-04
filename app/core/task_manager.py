@@ -56,6 +56,7 @@ class Task(TaskExecuteBase):
     def __init__(self, task_info: TaskInfo):
         super().__init__()
         self.task_info = task_info
+        self.is_closing = False
 
     async def prepare(self):
 
@@ -289,13 +290,18 @@ class _TaskManager:
         if task_id == "ALL":
             task_item_list = list(self.task_handler.values())
             for task_item in task_item_list:
-                task_item.cancel()
-                await task_item.accomplish.wait()
+                if not task_item.is_closing:
+                    task_item.cancel()
+                    task_item.is_closing = True
+                    await task_item.accomplish.wait()
         else:
             uid = uuid.UUID(task_id)
             if uid not in self.task_handler:
                 raise ValueError("未找到对应任务")
+            if self.task_handler[uid].is_closing:
+                raise RuntimeError("任务已在中止中")
             self.task_handler[uid].cancel()
+            self.task_handler[uid].is_closing = True
             logger.info(f"等待任务 {task_id} 结束...")
             await self.task_handler[uid].accomplish.wait()
             logger.info(f"任务 {task_id} 已结束")

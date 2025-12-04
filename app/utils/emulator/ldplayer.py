@@ -32,7 +32,7 @@ from pathlib import Path
 
 from app.models.emulator import DeviceStatus, DeviceInfo, DeviceBase
 from app.models.config import EmulatorConfig
-from app.utils.logger import get_logger
+from app.utils import ProcessRunner, get_logger
 
 logger = get_logger("雷电模拟器管理")
 
@@ -68,42 +68,6 @@ class LDManager(DeviceBase):
 
         self.emulator_path = Path(config.get("Info", "Path"))
 
-    async def _run_cmd(self, args: list[str | Path], timeout: float | None = None):
-        """以异步方式执行 dnconsole 命令，返回与 subprocess.run 类似的对象。"""
-        str_args = [str(a) for a in args]
-        proc = await asyncio.create_subprocess_exec(
-            *str_args,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        try:
-            stdout_b, stderr_b = await asyncio.wait_for(
-                proc.communicate(), timeout=timeout
-            )
-        except asyncio.TimeoutError:
-            with contextlib.suppress(ProcessLookupError):
-                proc.kill()
-            await proc.wait()
-            raise
-
-        # 雷电控制台输出为 GBK
-        stdout = (stdout_b or b"").decode("gbk", "replace")
-        stderr = (stderr_b or b"").decode("gbk", "replace")
-        rc = proc.returncode if proc.returncode is not None else await proc.wait()
-
-        class _Result:
-            __slots__ = ("returncode", "stdout", "stderr")
-
-            def __init__(self, returncode: int, stdout: str, stderr: str) -> None:
-                self.returncode = returncode
-                self.stdout = stdout
-                self.stderr = stderr
-
-            def __repr__(self) -> str:
-                return f"Result(rc={self.returncode}, stdout={len(self.stdout)}B, stderr={len(self.stderr)}B)"
-
-        return _Result(rc, stdout, stderr)
-
     async def open(self, idx: str, package_name="") -> DeviceInfo:
         logger.info(f"开始启动模拟器{idx} - {package_name}")
 
@@ -122,24 +86,19 @@ class LDManager(DeviceBase):
         else:
             raise RuntimeError(f"模拟器{idx}无法启动, 当前状态码: {status}")
 
-        result = await self._run_cmd(
-            (
-                [
-                    self.emulator_path,
-                    "launch",
-                    "--index",
-                    idx,
-                    "--packagename",
-                    f'"{package_name}"',
-                ]
-                if package_name
-                else [self.emulator_path, "launch", "--index", idx]
-            )
+        result = await ProcessRunner.run_process(
+            self.emulator_path,
+            "launch",
+            "--index",
+            idx,
+            *(["--packagename", f'"{package_name}"'] if package_name else []),
+            timeout=self.config.get("Data", "MaxWaitTime"),
+            if_merge_std=True,
         )
         # 参考命令 dnconsole.exe launch --index 0
 
         if result.returncode != 0:
-            raise RuntimeError(f"命令执行失败: {result}")
+            raise RuntimeError(f"命令执行失败: {result.stdout}")
 
         t = datetime.now()
         while datetime.now() - t < timedelta(
@@ -162,12 +121,18 @@ class LDManager(DeviceBase):
             logger.warning(f"设备{idx}未在线，当前状态: {status}")
             return status
 
-        result = await self._run_cmd([self.emulator_path, "quit", "--index", idx])
+        result = await ProcessRunner.run_process(
+            self.emulator_path,
+            "quit",
+            "--index",
+            idx,
+            timeout=self.config.get("Data", "MaxWaitTime"),
+            if_merge_std=True,
+        )
         # 参考命令 dnconsole.exe quit --index 0
 
         if result.returncode != 0:
-            raise RuntimeError(f"命令执行失败: {result}")
-
+            raise RuntimeError(f"命令执行失败: {result.stdout}")
         t = datetime.now()
         while datetime.now() - t < timedelta(
             seconds=self.config.get("Data", "MaxWaitTime")
@@ -253,12 +218,16 @@ class LDManager(DeviceBase):
     async def get_device_info(self, idx: str | None) -> dict[str, LDPlayerDevice]:
         """获取模拟器的信息"""
 
-        result = await self._run_cmd([self.emulator_path, "list2"])
+        result = await ProcessRunner.run_process(
+            self.emulator_path,
+            "list2",
+            timeout=self.config.get("Data", "MaxWaitTime"),
+            if_merge_std=True,
+        )
 
         # logger.debug(f"全部信息{result.stdout.strip()}")
         if result.returncode != 0:
-            raise RuntimeError(f"命令执行失败: {result}")
-
+            raise RuntimeError(f"命令执行失败: {result.stdout}")
         emulators: dict[str, LDPlayerDevice] = {}
         data = result.stdout.strip()
 
