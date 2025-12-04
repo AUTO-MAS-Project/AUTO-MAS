@@ -80,7 +80,7 @@ except ImportError:
 
 
 class AppConfig(GlobalConfig):
-    VERSION = [5, 0, 0, 4]
+    VERSION = [5, 0, 0, 5]
 
     def __init__(self) -> None:
         super().__init__()
