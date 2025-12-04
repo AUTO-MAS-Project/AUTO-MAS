@@ -23,11 +23,10 @@
 import os
 import sys
 import asyncio
-import subprocess
 from pathlib import Path
 
-from app.core import Config
-from app.utils import get_logger
+from app.utils import ProcessRunner, get_logger
+from app.utils.constants import CREATION_FLAGS
 
 logger = get_logger("自定义脚本执行工具")
 
@@ -59,46 +58,17 @@ async def execute_script_task(script_path: Path, task_name: str) -> bool:
             return True
 
         # 创建异步子进程
-        process = await asyncio.create_subprocess_exec(
-            *cmd,
-            cwd=script_path.parent,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            stdin=asyncio.subprocess.PIPE,
-            creationflags=(
-                subprocess.CREATE_NO_WINDOW
-                if Config.get("Function", "IfSilence")
-                else 0
-            ),
+        result = await ProcessRunner.run_process(
+            *cmd, cwd=script_path.parent, timeout=600
         )
 
-        # 异步等待进程完成(带超时)
-        try:
-            stdout, stderr = await asyncio.wait_for(
-                process.communicate(input=b"\n"),  # 发送换行符，使 pause/input() 自动继续
-                timeout=600
-            )
-        except asyncio.TimeoutError:
-            process.kill()
-            await process.wait()
-            logger.error(f"{task_name}执行超时")
-            return False
-
-        # 解码输出
-        stdout_text = stdout.decode("utf-8", errors="replace").strip()
-        stderr_text = stderr.decode("utf-8", errors="replace").strip()
-
-        if process.returncode == 0:
-            logger.info(f"{task_name}执行成功")
-            if stdout_text:
-                logger.info(f"{task_name}输出:\n{stdout_text}")
+        if result.returncode == 0:
+            logger.success(f"{task_name}执行成功, 输出:\n{result.stdout}")
             return True
         else:
-            logger.error(f"{task_name}执行失败, 返回码: {process.returncode}")
-            if stdout_text:
-                logger.warning(f"{task_name}标准输出:\n{stdout_text}")
-            if stderr_text:
-                logger.error(f"{task_name}错误输出:\n{stderr_text}")
+            logger.error(f"{task_name}执行失败({result.returncode}):")
+            logger.error(f"  - 标准输出:{result.stdout}")
+            logger.error(f"  - 错误输出:{result.stderr}")
             return False
 
     except Exception as e:

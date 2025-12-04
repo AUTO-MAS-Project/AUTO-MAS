@@ -1,82 +1,136 @@
 <template>
   <div class="test-container">
-    <h2>å¯¹è¯æ¡†æµ‹è¯•é¡µé¢</h2>
+    <h2>¶Ô»°¿ò²âÊÔÒ³Ãæ</h2>
 
     <div class="test-section">
-      <h3>æµ‹è¯• showQuestionDialog</h3>
-      <p>ç‚¹å‡»ä¸‹é¢çš„æŒ‰é’®æµ‹è¯•ä¸åŒç±»å‹çš„å¯¹è¯æ¡†</p>
+      <h3>²âÊÔÓ¦ÓÃÄÚµ¯´°</h3>
+      <p>µã»÷ÏÂÃæµÄ°´Å¥²âÊÔ²»Í¬ÀàĞÍµÄ¶Ô»°¿ò</p>
 
       <div class="button-group">
-        <button class="test-button" @click="testBasicDialog">åŸºç¡€å¯¹è¯æ¡†</button>
-
-        <button class="test-button" @click="testCustomDialog">è‡ªå®šä¹‰é€‰é¡¹</button>
-
-        <button class="test-button" @click="testLongMessage">é•¿æ¶ˆæ¯æµ‹è¯•</button>
+        <Button type="primary" @click="testBasicDialog">»ù´¡¶Ô»°¿ò</Button>
+        <Button type="primary" @click="testCustomDialog">×Ô¶¨ÒåÑ¡Ïî</Button>
+        <Button type="primary" @click="testLongMessage">³¤ÏûÏ¢²âÊÔ</Button>
       </div>
 
       <div v-if="lastResult !== null" class="result">
-        <h4>ä¸Šæ¬¡é€‰æ‹©ç»“æœï¼š</h4>
+        <h4>ÉÏ´ÎÑ¡Ôñ½á¹û£º</h4>
         <p :class="lastResult ? 'success' : 'cancel'">
-          {{ lastResult ? 'âœ“ ç¡®è®¤' : 'âœ— å–æ¶ˆ' }}
+          {{ lastResult ? ' È·ÈÏ' : ' È¡Ïû' }}
         </p>
       </div>
     </div>
+
+    <!-- Ó¦ÓÃÄÚµ¯´° -->
+    <Modal
+      v-model:open="isModalOpen"
+      :title="modalTitle"
+      :closable="false"
+      :maskClosable="false"
+      :keyboard="true"
+      centered
+    >
+      <p class="modal-message">{{ modalMessage }}</p>
+      <template #footer>
+        <Button
+          v-for="(option, index) in modalOptions"
+          :key="index"
+          :type="index === 0 ? 'primary' : 'default'"
+          @click="handleChoice(index === 0)"
+        >
+          {{ option }}
+        </Button>
+      </template>
+    </Modal>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref } from 'vue'
+import { Modal, Button } from 'ant-design-vue'
+import { getLogger } from '@/utils/logger'
 
 defineOptions({
   name: 'TestRouterView',
 })
 
+const logger = getLogger('²âÊÔÂ·ÓÉ')
 const lastResult = ref<boolean | null>(null)
+
+// Modal ×´Ì¬
+const isModalOpen = ref(false)
+const modalTitle = ref('')
+const modalMessage = ref('')
+const modalOptions = ref<string[]>([])
+let resolvePromise: ((value: boolean) => void) | null = null
+
+// ÏÔÊ¾µ¯´°²¢·µ»Ø Promise
+const showModal = (options: {
+  title: string
+  message: string
+  buttonOptions?: string[]
+}): Promise<boolean> => {
+  return new Promise(resolve => {
+    modalTitle.value = options.title
+    modalMessage.value = options.message
+    modalOptions.value = options.buttonOptions || ['È·¶¨', 'È¡Ïû']
+    resolvePromise = resolve
+    isModalOpen.value = true
+  })
+}
+
+// ´¦ÀíÓÃ»§Ñ¡Ôñ
+const handleChoice = (choice: boolean) => {
+  isModalOpen.value = false
+  if (resolvePromise) {
+    resolvePromise(choice)
+    resolvePromise = null
+  }
+}
 
 const testBasicDialog = async () => {
   try {
-    const result = await window.electronAPI.showQuestionDialog({
-      title: 'åŸºç¡€ç¡®è®¤',
-      message: 'è¿™æ˜¯ä¸€ä¸ªåŸºç¡€çš„ç¡®è®¤å¯¹è¯æ¡†',
-      options: ['ç¡®å®š', 'å–æ¶ˆ'],
+    const result = await showModal({
+      title: '»ù´¡È·ÈÏ',
+      message: 'ÕâÊÇÒ»¸ö»ù´¡µÄÈ·ÈÏ¶Ô»°¿ò',
+      buttonOptions: ['È·¶¨', 'È¡Ïû'],
     })
     lastResult.value = result
-    console.log('åŸºç¡€å¯¹è¯æ¡†ç»“æœ:', result)
+    logger.info('»ù´¡¶Ô»°¿ò½á¹û:', result)
   } catch (error) {
-    console.error('æ˜¾ç¤ºå¯¹è¯æ¡†å¤±è´¥:', error)
+    logger.error('ÏÔÊ¾¶Ô»°¿òÊ§°Ü:', error)
   }
 }
 
 const testCustomDialog = async () => {
   try {
-    const result = await window.electronAPI.showQuestionDialog({
-      title: 'è‡ªå®šä¹‰é€‰é¡¹',
-      message: 'æ˜¯å¦è¦ä¿å­˜æ›´æ”¹ï¼Ÿ',
-      options: ['ä¿å­˜', 'ä¸ä¿å­˜'],
+    const result = await showModal({
+      title: '×Ô¶¨ÒåÑ¡Ïî',
+      message: 'ÊÇ·ñÒª±£´æ¸ü¸Ä£¿',
+      buttonOptions: ['±£´æ', '²»±£´æ'],
     })
     lastResult.value = result
-    console.log('è‡ªå®šä¹‰å¯¹è¯æ¡†ç»“æœ:', result)
+    logger.info('×Ô¶¨Òå¶Ô»°¿ò½á¹û:', result)
   } catch (error) {
-    console.error('æ˜¾ç¤ºå¯¹è¯æ¡†å¤±è´¥:', error)
+    logger.error('ÏÔÊ¾¶Ô»°¿òÊ§°Ü:', error)
   }
 }
 
 const testLongMessage = async () => {
   try {
-    const result = await window.electronAPI.showQuestionDialog({
-      title: 'é•¿æ¶ˆæ¯æµ‹è¯•',
-      message: `è¿™æ˜¯ä¸€ä¸ªåŒ…å«è¾ƒé•¿æ¶ˆæ¯çš„å¯¹è¯æ¡†æµ‹è¯•ã€‚
+    const result = await showModal({
+      title: '³¤ÏûÏ¢²âÊÔ',
+      message: `ÕâÊÇÒ»¸ö°üº¬½Ï³¤ÏûÏ¢µÄ¶Ô»°¿ò²âÊÔ¡£
 
-æ¶ˆæ¯ï¿½ï¿½ï¿½ä»¥åŒ…å«å¤šè¡Œæ–‡æœ¬ï¼Œ
-ç”¨äºæ˜¾ç¤ºæ›´è¯¦ç»†çš„ä¿¡æ¯ã€‚
+ÏûÏ¢¿ÉÒÔ°üº¬¶àĞĞÎÄ±¾£¬
+ÓÃÓÚÏÔÊ¾¸üÏêÏ¸µÄĞÅÏ¢¡£
 
-æ˜¯å¦è¦ç»§ç»­æ‰§è¡Œæ­¤æ“ä½œï¼Ÿ`,
-      options: ['ç»§ç»­', 'å–æ¶ˆ'],
+ÊÇ·ñÒª¼ÌĞøÖ´ĞĞ´Ë²Ù×÷£¿`,
+      buttonOptions: ['¼ÌĞø', 'È¡Ïû'],
     })
     lastResult.value = result
-    console.log('é•¿æ¶ˆæ¯å¯¹è¯æ¡†ç»“æœ:', result)
+    logger.info('³¤ÏûÏ¢¶Ô»°¿ò½á¹û:', result)
   } catch (error) {
-    console.error('æ˜¾ç¤ºå¯¹è¯æ¡†å¤±è´¥:', error)
+    logger.error('ÏÔÊ¾¶Ô»°¿òÊ§°Ü:', error)
   }
 }
 </script>
@@ -118,23 +172,13 @@ p {
   flex-wrap: wrap;
 }
 
-.test-button {
-  padding: 8px 16px;
-  background: #1677ff;
-  color: white;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
+.modal-message {
   font-size: 14px;
-  transition: background 0.2s;
-}
-
-.test-button:hover {
-  background: #4096ff;
-}
-
-.test-button:active {
-  background: #0958d9;
+  line-height: 1.6;
+  color: var(--text-secondary, #595959);
+  margin: 0;
+  word-wrap: break-word;
+  white-space: pre-wrap;
 }
 
 .result {
@@ -164,7 +208,7 @@ p {
   color: #ff4d4f;
 }
 
-/* æš—è‰²æ¨¡å¼æ”¯æŒ */
+/* °µÉ«Ä£Ê½Ö§³Ö */
 @media (prefers-color-scheme: dark) {
   h2 {
     color: #ffffff;

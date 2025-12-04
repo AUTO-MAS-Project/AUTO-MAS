@@ -10,6 +10,18 @@ import { spawn } from 'child_process'
 import { MirrorService, MirrorSource } from './mirrorService'
 import { MirrorRotationService, NetworkOperationCallback, NetworkOperationProgress } from './mirrorRotationService'
 
+// 导入日志服务
+import { logService } from './logService'
+
+// 使用日志服务的日志记录器
+const logger = {
+    error: (message: string, ...args: any[]) => logService.error('依赖服务', `${message} ${args.length > 0 ? JSON.stringify(args) : ''}`),
+    warn: (message: string, ...args: any[]) => logService.warn('依赖服务', `${message} ${args.length > 0 ? JSON.stringify(args) : ''}`),
+    info: (message: string, ...args: any[]) => logService.info('依赖服务', `${message} ${args.length > 0 ? JSON.stringify(args) : ''}`),
+    debug: (message: string, ...args: any[]) => logService.debug('依赖服务', `${message} ${args.length > 0 ? JSON.stringify(args) : ''}`),
+    log: (message: string, ...args: any[]) => logService.info('依赖服务', `${message} ${args.length > 0 ? JSON.stringify(args) : ''}`)
+}
+
 // ==================== 类型定义 ====================
 
 export interface DependencyCheckResult {
@@ -81,7 +93,7 @@ export class DependencyService {
             })
 
             if (!forceInstall && !checkResult.needsInstall) {
-                console.log('✅ 依赖已是最新版本，跳过安装')
+                logger.info('✅ 依赖已是最新版本，跳过安装')
                 onProgress?.({
                     stage: 'check',
                     progress: 100,
@@ -93,7 +105,7 @@ export class DependencyService {
                 return { success: true, skipped: true }
             }
 
-            console.log('依赖检查结果:', checkResult)
+            logger.info('依赖检查结果:', checkResult)
 
             // 第二步：安装依赖
             // 不在这里发送 progress: 0，避免进度条跳回0
@@ -128,7 +140,7 @@ export class DependencyService {
             return { success: true }
         } catch (error) {
             const errorMsg = error instanceof Error ? error.message : String(error)
-            console.error('依赖安装失败:', errorMsg)
+            logger.error('依赖安装失败:', errorMsg)
             return { success: false, error: errorMsg }
         }
     }
@@ -137,21 +149,21 @@ export class DependencyService {
      * 检查依赖状态
      */
     private async checkDependencies(): Promise<DependencyCheckResult> {
-        console.log('=== 检查依赖状态 ===')
+        logger.info('=== 检查依赖状态 ===')
 
         // 检查 requirements.txt 是否存在
         if (!fs.existsSync(this.requirementsPath)) {
-            console.log('requirements.txt 不存在')
+            logger.info('requirements.txt 不存在')
             return { requirementsExists: false, needsInstall: false }
         }
 
         // 计算当前哈希
         const currentHash = this.calculateHash()
-        console.log(`当前哈希: ${currentHash.substring(0, 8)}...`)
+        logger.info(`当前哈希: ${currentHash.substring(0, 8)}...`)
 
         // 读取上次安装的哈希
         const lastHash = this.loadHash()
-        console.log(`上次哈希: ${lastHash ? lastHash.substring(0, 8) + '...' : 'null'}`)
+        logger.info(`上次哈希: ${lastHash ? lastHash.substring(0, 8) + '...' : 'null'}`)
 
         // 判断是否需要安装
         const needsInstall = lastHash === null || currentHash !== lastHash
@@ -182,7 +194,7 @@ export class DependencyService {
             }
             return fs.readFileSync(this.hashFilePath, 'utf-8').trim()
         } catch (error) {
-            console.warn('读取哈希文件失败:', error)
+            logger.warn('读取哈希文件失败:', error)
             return null
         }
     }
@@ -197,9 +209,9 @@ export class DependencyService {
                 fs.mkdirSync(dir, { recursive: true })
             }
             fs.writeFileSync(this.hashFilePath, hash, 'utf-8')
-            console.log('✅ 哈希值已保存')
+            logger.info('✅ 哈希值已保存')
         } catch (error) {
-            console.warn('保存哈希文件失败:', error)
+            logger.warn('保存哈希文件失败:', error)
         }
     }
 
@@ -247,7 +259,7 @@ export class DependencyService {
             return { success: false, error: result.error }
         }
 
-        console.log(`✅ 依赖安装完成，使用镜像源: ${result.usedMirror?.name}`)
+        logger.info(`✅ 依赖安装完成，使用镜像源: ${result.usedMirror?.name}`)
         return { success: true }
     }
 
@@ -255,17 +267,17 @@ export class DependencyService {
      * 确保基础工具已安装（setuptools, wheel）
      */
     private async ensureBasicTools(mirror: MirrorSource): Promise<void> {
-        console.log('=== 检查基础工具 ===')
+        logger.info('=== 检查基础工具 ===')
 
         // 检查 setuptools 和 wheel 是否已安装
         const toolsInstalled = await this.checkBasicTools()
 
         if (toolsInstalled) {
-            console.log('✅ 基础工具已安装')
+            logger.info('✅ 基础工具已安装')
             return
         }
 
-        console.log('正在安装基础工具...')
+        logger.info('正在安装基础工具...')
 
         await new Promise<void>((resolve, reject) => {
             const hostname = new URL(mirror.url).hostname
@@ -287,26 +299,26 @@ export class DependencyService {
             })
 
             proc.stdout?.on('data', (data) => {
-                console.log('setuptools/wheel:', data.toString().trim())
+                logger.info('setuptools/wheel:', data.toString().trim())
             })
 
             proc.stderr?.on('data', (data) => {
-                console.log('setuptools/wheel error:', data.toString().trim())
+                logger.info('setuptools/wheel error:', data.toString().trim())
             })
 
             proc.on('close', (code) => {
                 if (code === 0) {
-                    console.log('✅ 基础工具安装完成')
+                    logger.info('✅ 基础工具安装完成')
                     resolve()
                 } else {
                     // 即使失败也继续，因为可能已经存在
-                    console.log('⚠️ 基础工具安装失败，但继续')
+                    logger.warn('⚠️ 基础工具安装失败，但继续')
                     resolve()
                 }
             })
 
             proc.on('error', (error) => {
-                console.warn('基础工具安装进程错误:', error)
+                logger.warn('基础工具安装进程错误:', error)
                 resolve()
             })
         })
@@ -374,7 +386,7 @@ export class DependencyService {
             proc.stdout?.on('data', (data) => {
                 const output = data.toString().trim()
                 stdoutData += output
-                console.log('pip install:', output)
+                logger.info('pip install:', output)
 
                 // 解析pip输出，统计安装进度
                 // 匹配 "Collecting xxx" 来统计总包数
@@ -406,11 +418,11 @@ export class DependencyService {
             proc.stderr?.on('data', (data) => {
                 const output = data.toString().trim()
                 stderrData += output
-                console.log('pip install error:', output)
+                logger.info('pip install error:', output)
             })
 
             proc.on('close', (code) => {
-                console.log(`pip install 退出码: ${code}`)
+                logger.info(`pip install 退出码: ${code}`)
 
                 // 检查是否有实际错误
                 const hasActualError =
@@ -424,7 +436,7 @@ export class DependencyService {
                     stdoutData.toLowerCase().includes('requirement already satisfied')
 
                 if (code === 0 || hasSuccess || !hasActualError) {
-                    console.log('✅ 依赖安装成功')
+                    logger.info('✅ 依赖安装成功')
                     resolve()
                 } else {
                     reject(new Error(`依赖安装失败，退出码: ${code}`))

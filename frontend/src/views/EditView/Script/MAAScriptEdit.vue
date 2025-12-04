@@ -308,6 +308,7 @@ import { onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
 import { message } from 'ant-design-vue'
+import { getLogger } from '@/utils/logger'
 import type { MAAScriptConfig, ScriptType } from '../../../types/script.ts'
 import { useScriptApi } from '../../../composables/useScriptApi.ts'
 import { Service, type ComboBoxItem } from '../../../api'
@@ -317,6 +318,8 @@ import {
   QuestionCircleOutlined,
   SaveOutlined,
 } from '@ant-design/icons-vue'
+
+const logger = getLogger('MAA脚本编辑')
 
 const route = useRoute()
 const router = useRouter()
@@ -417,7 +420,7 @@ const loadScript = async () => {
       }
     }
   } catch (error) {
-    console.error('加载脚本失败:', error)
+    logger.error('加载脚本失败:', error)
     message.error('加载脚本失败')
     router.push('/scripts')
   } finally {
@@ -437,7 +440,7 @@ const handleSave = async () => {
       router.push('/scripts')
     }
   } catch (error) {
-    console.error('保存失败:', error)
+    logger.error('保存失败:', error)
   }
 }
 
@@ -456,7 +459,7 @@ const loadEmulatorOptions = async () => {
       message.error('加载模拟器选项失败')
     }
   } catch (error) {
-    console.error('加载模拟器选项失败:', error)
+    logger.error('加载模拟器选项失败:', error)
     message.error('加载模拟器选项失败')
   } finally {
     emulatorLoading.value = false
@@ -477,7 +480,7 @@ const loadEmulatorDeviceOptions = async (emulatorId: string) => {
       message.error('加载模拟器实例选项失败')
     }
   } catch (error) {
-    console.error('加载模拟器实例选项失败:', error)
+    logger.error('加载模拟器实例选项失败:', error)
     message.error('加载模拟器实例选项失败')
   } finally {
     emulatorDeviceLoading.value = false
@@ -509,7 +512,7 @@ const selectMAAPath = async () => {
       message.success('MAA路径选择成功')
     }
   } catch (error) {
-    console.error('选择MAA路径失败:', error)
+    logger.error('选择MAA路径失败:', error)
     message.error('选择文件夹失败')
   }
 }

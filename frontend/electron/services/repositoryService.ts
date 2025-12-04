@@ -9,6 +9,18 @@ import { spawn } from 'child_process'
 import { MirrorService, MirrorSource } from './mirrorService'
 import { MirrorRotationService, NetworkOperationCallback, NetworkOperationProgress } from './mirrorRotationService'
 
+// 导入日志服务
+import { logService } from './logService'
+
+// 使用日志服务的日志记录器
+const logger = {
+    error: (message: string, ...args: any[]) => logService.error('仓库服务', `${message} ${args.length > 0 ? JSON.stringify(args) : ''}`),
+    warn: (message: string, ...args: any[]) => logService.warn('仓库服务', `${message} ${args.length > 0 ? JSON.stringify(args) : ''}`),
+    info: (message: string, ...args: any[]) => logService.info('仓库服务', `${message} ${args.length > 0 ? JSON.stringify(args) : ''}`),
+    debug: (message: string, ...args: any[]) => logService.debug('仓库服务', `${message} ${args.length > 0 ? JSON.stringify(args) : ''}`),
+    log: (message: string, ...args: any[]) => logService.info('仓库服务', `${message} ${args.length > 0 ? JSON.stringify(args) : ''}`)
+}
+
 // ==================== 类型定义 ====================
 
 export interface RepositoryCheckResult {
@@ -64,7 +76,7 @@ export class RepositoryService {
                 details: {}
             })
             const checkResult = await this.checkRepository()
-            console.log('仓库检查结果:', checkResult)
+            logger.info('仓库检查结果:', checkResult)
 
             // 上报检查结果
             onProgress?.({
@@ -128,7 +140,7 @@ export class RepositoryService {
             return deployResult
         } catch (error) {
             const errorMsg = error instanceof Error ? error.message : String(error)
-            console.error('源码拉取失败:', errorMsg)
+            logger.error('源码拉取失败:', errorMsg)
             return { success: false, error: errorMsg }
         }
     }
@@ -137,18 +149,18 @@ export class RepositoryService {
      * 检查本地仓库状态
      */
     private async checkRepository(): Promise<RepositoryCheckResult> {
-        console.log('=== 检查本地仓库 ===')
+        logger.info('=== 检查本地仓库 ===')
 
         // 检查 repo 文件夹是否存在
         if (!fs.existsSync(this.repoPath)) {
-            console.log('repo 文件夹不存在')
+            logger.info('repo 文件夹不存在')
             return { exists: false, isGitRepo: false, isHealthy: false }
         }
 
         // 检查是否为 Git 仓库
         const gitDir = path.join(this.repoPath, '.git')
         if (!fs.existsSync(gitDir)) {
-            console.log('repo 文件夹存在但不是 Git 仓库')
+            logger.info('repo 文件夹存在但不是 Git 仓库')
             // 清理无效的 repo 文件夹
             fs.rmSync(this.repoPath, { recursive: true, force: true })
             return { exists: false, isGitRepo: false, isHealthy: false }
@@ -160,16 +172,16 @@ export class RepositoryService {
             const currentBranch = await this.getCurrentBranch()
 
             if (isHealthy) {
-                console.log(`✅ 本地仓库健康，当前分支: ${currentBranch}`)
+                logger.info(`✅ 本地仓库健康，当前分支: ${currentBranch}`)
                 return { exists: true, isGitRepo: true, isHealthy: true, currentBranch }
             } else {
-                console.log('⚠️ 本地仓库存在问题，需要清理')
+                logger.warn('⚠️ 本地仓库存在问题，需要清理')
                 // 清理有问题的仓库
                 fs.rmSync(this.repoPath, { recursive: true, force: true })
                 return { exists: false, isGitRepo: false, isHealthy: false }
             }
         } catch (error) {
-            console.error('检查仓库健康状态失败:', error)
+            logger.error('检查仓库健康状态失败:', error)
             // 清理有问题的仓库
             fs.rmSync(this.repoPath, { recursive: true, force: true })
             return { exists: false, isGitRepo: false, isHealthy: false }
@@ -258,7 +270,7 @@ export class RepositoryService {
             return { success: false, error: result.error }
         }
 
-        console.log(`✅ 仓库拉取完成，使用镜像源: ${result.usedMirror?.name}`)
+        logger.info(`✅ 仓库拉取完成，使用镜像源: ${result.usedMirror?.name}`)
         return { success: true }
     }
 
@@ -269,7 +281,7 @@ export class RepositoryService {
         mirror: MirrorSource,
         onProgress: (progress: NetworkOperationProgress) => void
     ): Promise<{ success: boolean; error?: string }> {
-        console.log('=== 更新现有仓库 ===')
+        logger.info('=== 更新现有仓库 ===')
 
         try {
             // 1. 确认目标分支是否存在
@@ -300,7 +312,7 @@ export class RepositoryService {
             return { success: true }
         } catch (error) {
             const errorMsg = error instanceof Error ? error.message : String(error)
-            console.error('更新仓库失败:', errorMsg)
+            logger.error('更新仓库失败:', errorMsg)
             return { success: false, error: errorMsg }
         }
     }
@@ -312,7 +324,7 @@ export class RepositoryService {
         mirror: MirrorSource,
         onProgress: (progress: NetworkOperationProgress) => void
     ): Promise<{ success: boolean; error?: string }> {
-        console.log('=== 克隆新仓库 ===')
+        logger.info('=== 克隆新仓库 ===')
 
         try {
             // 1. 确认目标分支是否存在
@@ -331,7 +343,7 @@ export class RepositoryService {
             return { success: true }
         } catch (error) {
             const errorMsg = error instanceof Error ? error.message : String(error)
-            console.error('克隆仓库失败:', errorMsg)
+            logger.error('克隆仓库失败:', errorMsg)
             return { success: false, error: errorMsg }
         }
     }
@@ -347,7 +359,7 @@ export class RepositoryService {
 
             // 设置 30 秒超时
             const timeout = setTimeout(() => {
-                console.warn('⚠️ 检查远程分支超时，终止进程')
+                logger.warn('⚠️ 检查远程分支超时，终止进程')
                 proc.kill()
                 resolve(false)
             }, 30000)
@@ -386,7 +398,7 @@ export class RepositoryService {
 
             proc.on('close', (code) => {
                 if (code === 0) {
-                    console.log('✅ 远程仓库配置完成')
+                    logger.info('✅ 远程仓库配置完成')
                     resolve()
                 } else {
                     reject(new Error('配置远程仓库失败'))
@@ -421,7 +433,7 @@ export class RepositoryService {
 
             proc.on('close', (code) => {
                 if (code === 0) {
-                    console.log('✅ 浅克隆配置完成')
+                    logger.info('✅ 浅克隆配置完成')
                     resolve()
                 } else {
                     reject(new Error('配置浅克隆失败'))
@@ -450,19 +462,19 @@ export class RepositoryService {
 
             // 设置 60 秒超时（fetch 可能需要更长时间）
             const timeout = setTimeout(() => {
-                console.warn('⚠️ 拉取最新提交超时，终止进程')
+                logger.warn('⚠️ 拉取最新提交超时，终止进程')
                 proc.kill()
                 reject(new Error('拉取最新提交超时'))
             }, 60000)
 
             proc.stdout?.on('data', (data) => {
-                console.log('fetch:', data.toString().trim())
+                logger.info('fetch:', data.toString().trim())
             })
 
             proc.on('close', (code) => {
                 clearTimeout(timeout)
                 if (code === 0) {
-                    console.log('✅ 拉取最新提交完成')
+                    logger.info('✅ 拉取最新提交完成')
                     resolve()
                 } else {
                     reject(new Error('拉取最新提交失败'))
@@ -488,7 +500,7 @@ export class RepositoryService {
 
             proc.on('close', (code) => {
                 if (code === 0) {
-                    console.log('✅ 切换分支完成')
+                    logger.info('✅ 切换分支完成')
                     resolve()
                 } else {
                     reject(new Error('切换分支失败'))
@@ -523,19 +535,19 @@ export class RepositoryService {
 
             // 设置 120 秒超时（clone 可能需要较长时间）
             const timeout = setTimeout(() => {
-                console.warn('⚠️ 克隆仓库超时，终止进程')
+                logger.warn('⚠️ 克隆仓库超时，终止进程')
                 proc.kill()
                 reject(new Error('克隆仓库超时'))
             }, 120000)
 
             proc.stdout?.on('data', (data) => {
-                console.log('clone:', data.toString().trim())
+                logger.info('clone:', data.toString().trim())
             })
 
             proc.on('close', (code) => {
                 clearTimeout(timeout)
                 if (code === 0) {
-                    console.log('✅ 克隆仓库完成')
+                    logger.info('✅ 克隆仓库完成')
                     resolve()
                 } else {
                     reject(new Error('克隆仓库失败'))
@@ -553,25 +565,25 @@ export class RepositoryService {
      * 部署仓库
      */
     private async deployRepository(onProgress?: (progress: number, message: string) => void): Promise<{ success: boolean; error?: string }> {
-        console.log('=== 部署仓库 ===')
+        logger.info('=== 部署仓库 ===')
 
         try {
             // 1. 优化仓库存储
             onProgress?.(30, '优化仓库存储...')
-            console.log('优化仓库存储...')
+            logger.info('优化仓库存储...')
             await this.optimizeStorage()
 
             // 2. 复制到根目录
             onProgress?.(60, '复制文件到根目录...')
-            console.log('复制文件到根目录...')
+            logger.info('复制文件到根目录...')
             await this.copyToRoot()
 
             onProgress?.(100, '部署完成')
-            console.log('✅ 仓库部署完成')
+            logger.info('✅ 仓库部署完成')
             return { success: true }
         } catch (error) {
             const errorMsg = error instanceof Error ? error.message : String(error)
-            console.error('部署仓库失败:', errorMsg)
+            logger.error('部署仓库失败:', errorMsg)
             return { success: false, error: errorMsg }
         }
     }
@@ -587,7 +599,7 @@ export class RepositoryService {
                 stdio: 'pipe'
             })
             proc.on('close', () => {
-                console.log('✅ reflog 清理完成')
+                logger.info('✅ reflog 清理完成')
                 resolve()
             })
             proc.on('error', () => resolve())
@@ -600,7 +612,7 @@ export class RepositoryService {
                 stdio: 'pipe'
             })
             proc.on('close', () => {
-                console.log('✅ 垃圾回收完成')
+                logger.info('✅ 垃圾回收完成')
                 resolve()
             })
             proc.on('error', () => resolve())
@@ -618,7 +630,7 @@ export class RepositoryService {
             const dstPath = path.join(this.appRoot, item)
 
             if (!fs.existsSync(srcPath)) {
-                console.log(`⚠️ 源文件不存在，跳过: ${item}`)
+                logger.warn(`⚠️ 源文件不存在，跳过: ${item}`)
                 continue
             }
 
@@ -639,9 +651,9 @@ export class RepositoryService {
                     fs.copyFileSync(srcPath, dstPath)
                 }
 
-                console.log(`✅ 复制完成: ${item}`)
+                logger.info(`✅ 复制完成: ${item}`)
             } catch (error) {
-                console.error(`❌ 复制失败: ${item}`, error)
+                logger.error(`❌ 复制失败: ${item}`, error)
                 throw error
             }
         }
