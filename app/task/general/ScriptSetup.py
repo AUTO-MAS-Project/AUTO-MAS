@@ -104,7 +104,7 @@ class ScriptSetupTask(TaskExecuteBase):
             f"运行脚本任务: {self.script_set_exe_path}, 参数: {self.script_set_arguments}"
         )
         await self.general_process_manager.open_process(
-            [self.script_set_exe_path.as_posix()] + self.script_set_arguments
+            self.script_set_exe_path, *self.script_set_arguments
         )
 
         # 等待用户完成配置
@@ -150,7 +150,7 @@ class ScriptSetupTask(TaskExecuteBase):
 
     async def final_task(self):
 
-        await self.general_process_manager.kill(if_force=True)
+        await self.general_process_manager.kill()
         await System.kill_process(self.script_set_exe_path)
         del self.general_process_manager
 

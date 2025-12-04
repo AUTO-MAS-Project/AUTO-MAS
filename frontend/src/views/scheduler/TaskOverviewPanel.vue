@@ -68,7 +68,6 @@ const deepEqual = (obj1: any, obj2: any): boolean => {
 
 // 处理 WebSocket 消息
 const handleWSMessage = (message: WSMessage) => {
-  logger.info('TaskOverviewPanel 收到 WebSocket 消息:', message)
 
   if (message.type === 'Update') {
     // 处理 task_info 数据（完整的脚本和用户数据）
@@ -91,8 +90,6 @@ const handleWSMessage = (message: WSMessage) => {
       } else {
         logger.debug('数据内容完全相同，跳过更新')
       }
-    } else {
-      logger.warn('收到未识别格式的更新数据:', message.data)
     }
   }
 }

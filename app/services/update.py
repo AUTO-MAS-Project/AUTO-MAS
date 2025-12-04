@@ -35,7 +35,7 @@ from pathlib import Path
 
 from app.core import Config
 from app.utils.constants import MIRROR_ERROR_INFO
-from app.utils.logger import get_logger
+from app.utils import get_logger
 from .system import System
 
 logger = get_logger("更新服务")

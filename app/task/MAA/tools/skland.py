@@ -49,7 +49,7 @@ from typing import Dict, Any
 
 from app.core import Config
 from app.utils.constants import SKLAND_SM_CONFIG, BROWSER_ENV, DES_RULE
-from app.utils.logger import get_logger
+from app.utils import get_logger
 
 logger = get_logger("森空岛签到任务")
 

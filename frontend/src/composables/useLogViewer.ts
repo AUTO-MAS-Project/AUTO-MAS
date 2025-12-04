@@ -382,16 +382,19 @@ export function useLogViewer(config: LogViewerConfig = {}) {
 
     const selectLog = (log: ParsedLogEntry, index: number) => {
         // 可以在这里实现日志选中的逻辑
+        // 使用console.log是因为这是用户交互相关的调试信息，不是应用日志
         console.log('选中日志:', log, index)
     }
 
     const scrollToTop = () => {
         // 滚动到顶部的逻辑需要在使用此组合式函数的组件中实现
+        // 使用console.log是因为这是用户交互相关的调试信息，不是应用日志
         console.log('滚动到顶部')
     }
 
     const scrollToBottom = () => {
         // 滚动到底部的逻辑需要在使用此组合式函数的组件中实现
+        // 使用console.log是因为这是用户交互相关的调试信息，不是应用日志
         console.log('滚动到底部')
     }
 

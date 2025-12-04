@@ -71,8 +71,8 @@ class ScriptSetupTask(TaskExecuteBase):
 
         await self.set_maa()
         logger.info(f"启动MAA进程: {self.maa_exe_path}")
-        await self.maa_process_manager.open_process([self.maa_exe_path.as_posix()])
         self.wait_event.clear()
+        await self.maa_process_manager.open_process(self.maa_exe_path)
         await self.wait_event.wait()
 
     async def set_maa(self):
@@ -80,7 +80,7 @@ class ScriptSetupTask(TaskExecuteBase):
 
         logger.info(f"开始配置MAA运行参数: 设置脚本 {self.cur_user_item.user_id}")
 
-        await self.maa_process_manager.kill(if_force=True)
+        await self.maa_process_manager.kill()
         await System.kill_process(self.maa_exe_path)
 
         if (
@@ -135,7 +135,7 @@ class ScriptSetupTask(TaskExecuteBase):
 
     async def final_task(self):
 
-        await self.maa_process_manager.kill(if_force=True)
+        await self.maa_process_manager.kill()
         await System.kill_process(self.maa_exe_path)
 
         (

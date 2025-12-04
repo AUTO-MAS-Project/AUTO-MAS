@@ -23,9 +23,14 @@
 import os
 import psutil
 import asyncio
+import contextlib
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
+
+
+from .tools import decode_bytes
+from .constants import CREATION_FLAGS
 
 
 @dataclass
@@ -34,6 +39,13 @@ class ProcessInfo:
     name: str | None = None
     exe: str | None = None
     cmdline: list[str] | None = None
+
+
+@dataclass
+class ProcessResult:
+    stdout: str
+    stderr: str
+    returncode: int
 
 
 def match_process(proc: psutil.Process, target: ProcessInfo) -> bool:
@@ -65,7 +77,7 @@ class ProcessManager:
 
     @property
     def main_pid(self) -> int | None:
-        """获取主进程的 PID"""
+        """主进程的 PID"""
 
         if self.target_process is not None:
             return self.target_process.pid
@@ -73,8 +85,22 @@ class ProcessManager:
             return self.process.pid
         return None
 
+    @property
+    def main_process(self) -> psutil.Process | asyncio.subprocess.Process | None:
+        """主进程对象"""
+
+        if self.target_process is not None:
+            return self.target_process
+        if self.process is not None:
+            return self.process
+        return None
+
     async def open_process(
-        self, cmd: list[str], target_process: ProcessInfo | None = None
+        self,
+        program: Path | str,
+        *args: str,
+        cwd: Path | None = None,
+        target_process: ProcessInfo | None = None,
     ) -> None:
         """
         使用命令行启动子进程, 多级派生类型进程需要目标进程信息进行跟踪
@@ -100,10 +126,13 @@ class ProcessManager:
         await self.clear()
 
         self.process = await asyncio.create_subprocess_exec(
-            *cmd,
+            program,
+            *args,
+            cwd=cwd or (Path(program).parent if Path(program).is_file() else None),
+            stdin=asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            cwd=Path(cmd[0]).parent if Path(cmd[0]).is_file() else None,
+            stderr=asyncio.subprocess.STDOUT,
+            creationflags=CREATION_FLAGS,
         )
 
         if target_process is not None:
@@ -161,23 +190,32 @@ class ProcessManager:
             return self.process.returncode is None
         return False
 
-    async def kill(self, if_force: bool = False) -> None:
+    async def kill(self) -> None:
         """停止监视器并中止所有跟踪的进程"""
 
         if self.target_process is not None and self.target_process.is_running():
-            try:
-                if if_force:
-                    self.target_process.kill()
-                else:
+            with contextlib.suppress(psutil.NoSuchProcess, psutil.AccessDenied):
+                try:
                     self.target_process.terminate()
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                pass
+                    await asyncio.get_running_loop().run_in_executor(
+                        None, self.target_process.wait, 3
+                    )
+                except psutil.TimeoutExpired:
+                    self.target_process.kill()
+                    with contextlib.suppress(psutil.TimeoutExpired):
+                        await asyncio.get_running_loop().run_in_executor(
+                            None, self.target_process.wait, 3
+                        )
+
         if self.process is not None and self.process.returncode is None:
-            if if_force:
-                self.process.kill()
-            else:
-                self.process.terminate()
-            await self.process.wait()
+            with contextlib.suppress(ProcessLookupError):
+                try:
+                    self.process.terminate()
+                    await asyncio.wait_for(self.process.wait(), timeout=3)
+                except asyncio.TimeoutError:
+                    self.process.kill()
+                    with contextlib.suppress(asyncio.TimeoutError):
+                        await asyncio.wait_for(self.process.wait(), timeout=3)
 
         await self.clear()
 
@@ -186,3 +224,48 @@ class ProcessManager:
 
         self.process = None
         self.target_process = None
+
+
+class ProcessRunner:
+    """用于运行子进程并获取结果的实用程序类"""
+
+    @staticmethod
+    async def run_process(
+        program: Path | str,
+        *args: str,
+        cwd: Path | None = None,
+        timeout: float = 60,
+        if_merge_std: bool = False,
+    ) -> ProcessResult:
+        """运行子进程并获取结果"""
+
+        process = await asyncio.create_subprocess_exec(
+            program,
+            *args,
+            cwd=cwd or (Path(program).parent if Path(program).is_file() else None),
+            stdin=asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=(
+                asyncio.subprocess.STDOUT if if_merge_std else asyncio.subprocess.PIPE
+            ),
+            creationflags=CREATION_FLAGS,
+        )
+        try:
+            stdout, stderr = await asyncio.wait_for(
+                process.communicate(), timeout=timeout
+            )
+        except asyncio.TimeoutError:
+            with contextlib.suppress(ProcessLookupError):
+                process.kill()
+            await process.wait()
+            raise
+
+        return ProcessResult(
+            stdout=decode_bytes(stdout),
+            stderr=decode_bytes(stderr),
+            returncode=(
+                process.returncode
+                if process.returncode is not None
+                else await process.wait()
+            ),
+        )

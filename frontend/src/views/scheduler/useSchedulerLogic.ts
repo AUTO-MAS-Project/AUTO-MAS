@@ -403,8 +403,6 @@ export function useSchedulerLogic() {
 
     const { id, type, data } = wsMessage
 
-    logger.info('[Scheduler] 收到WebSocket消息:', { id, type, data, tabId: tab.websocketId })
-
     // 处理全局消息（如电源操作倒计时）
     if (id === 'Main' && type === 'Message' && data?.type === 'Countdown') {
       logger.info('[Scheduler] 收到全局倒计时消息:', data)

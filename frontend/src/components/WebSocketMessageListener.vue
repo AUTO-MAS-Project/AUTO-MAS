@@ -10,6 +10,7 @@ import { onMounted, onUnmounted } from 'vue'
 import { useWebSocket, type WebSocketBaseMessage } from '@/composables/useWebSocket'
 import { logger } from '@/utils/logger'
 
+
 // WebSocket hook
 const { subscribe, unsubscribe, sendRaw } = useWebSocket()
 
@@ -69,20 +70,23 @@ const showQuestion = async (questionData: any) => {
 // 消息处理函数
 const handleMessage = (message: WebSocketBaseMessage) => {
   try {
-    logger.info('[WebSocket消息监听器] 收到Message类型消息:', message)
-    logger.info(
-      '[WebSocket消息监听器] 消息详情 - type:',
-      message.type,
-      'id:',
-      message.id,
-      'data:',
-      message.data
-    )
+    // 只打印摘要信息，避免打印完整消息内容
+    const dataSize = message.data ? (typeof message.data === 'string' ? message.data.length : JSON.stringify(message.data).length) : 0
+    logger.info('[WebSocket消息监听器] 收到Message类型消息:', {
+      type: message.type,
+      id: message.id,
+      dataSize: `${dataSize} bytes`
+    })
+
+    // 打印详细信息
+    logger.debug('[WebSocket消息监听器] 消息详情:', {
+      type: message.type,
+      id: message.id,
+      data: message.data
+    })
 
     // 解析消息数据
     if (message.data) {
-      logger.info('[WebSocket消息监听器] 消息数据:', message.data)
-
       // 根据具体的消息内容进行处理
       if (typeof message.data === 'object') {
         // 处理对象类型的数据
@@ -107,10 +111,11 @@ const handleMessage = (message: WebSocketBaseMessage) => {
 
 // 处理对象类型的消息
 const handleObjectMessage = (data: any) => {
-  logger.info('[WebSocket消息监听器] 处理对象消息:', data)
+  // 打印完整对象内容
+  logger.debug('[WebSocket消息监听器] 处理对象消息:', data)
 
   // 检查是否为Question类型的消息
-  logger.info(
+  logger.debug(
     '[WebSocket消息监听器] 检查消息类型 - data.type:',
     data.type,
     'data.message_id:',
@@ -125,7 +130,7 @@ const handleObjectMessage = (data: any) => {
       showQuestion(data)
       return
     } else {
-      logger.warn('[WebSocket消息监听器] Question消息缺少message_id字段:', data)
+      logger.warn('[WebSocket消息监听器] Question消息缺少message_id字段')
       // 即使缺少message_id，也尝试显示对话框，使用当前时间戳作为ID
       const fallbackId = 'fallback_' + Date.now()
       logger.info('[WebSocket消息监听器] 使用备用ID显示对话框:', fallbackId)
@@ -139,15 +144,15 @@ const handleObjectMessage = (data: any) => {
 
   // 根据对象的属性进行不同处理
   if (data.action) {
-    logger.info('[WebSocket消息监听器] 消息动作:', data.action)
+    logger.debug('[WebSocket消息监听器] 消息动作:', data.action)
   }
 
   if (data.status) {
-    logger.info('[WebSocket消息监听器] 消息状态:', data.status)
+    logger.debug('[WebSocket消息监听器] 消息状态:', data.status)
   }
 
   if (data.content) {
-    logger.info('[WebSocket消息监听器] 消息内容:', data.content)
+    logger.debug('[WebSocket消息监听器] 消息内容:', data.content)
   }
 
   // 可以根据具体需求添加更多处理逻辑
@@ -155,22 +160,23 @@ const handleObjectMessage = (data: any) => {
 
 // 处理字符串类型的消息
 const handleStringMessage = (data: string) => {
-  logger.info('[WebSocket消息监听器] 处理字符串消息:', data)
+  // 记录字符串消息
+  logger.debug('[WebSocket消息监听器] 处理字符串消息:', data)
 
   try {
     // 尝试解析JSON字符串
     const parsed = JSON.parse(data)
-    logger.info('[WebSocket消息监听器] 解析后的JSON:', parsed)
+    logger.debug('[WebSocket消息监听器] 解析后的JSON:', parsed)
     handleObjectMessage(parsed)
   } catch (error) {
     // 不是JSON格式，作为普通字符串处理
-    logger.info('[WebSocket消息监听器] 普通字符串消息:', data)
+    logger.debug('[WebSocket消息监听器] 普通字符串消息:', data)
   }
 }
 
 // 处理其他类型的消息
 const handleOtherMessage = (data: any) => {
-  logger.info('[WebSocket消息监听器] 处理其他类型消息:', typeof data, data)
+  logger.debug('[WebSocket消息监听器] 处理其他类型消息:', typeof data, data)
 }
 
 // 组件挂载时订阅消息
