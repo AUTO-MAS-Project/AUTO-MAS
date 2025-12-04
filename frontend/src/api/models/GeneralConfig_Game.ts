@@ -8,13 +8,21 @@ export type GeneralConfig_Game = {
      */
     Enabled?: (boolean | null);
     /**
-     * 类型: 模拟器, PC端
+     * 类型: 模拟器, PC端, URL协议
      */
-    Type?: ('Emulator' | 'Client' | null);
+    Type?: ('Emulator' | 'Client' | 'URL' | null);
     /**
      * 游戏/模拟器程序路径
      */
     Path?: (string | null);
+    /**
+     * 自定义协议URL
+     */
+    URL?: (string | null);
+    /**
+     * 游戏进程名称
+     */
+    ProcessName?: (string | null);
     /**
      * 游戏/模拟器启动参数
      */

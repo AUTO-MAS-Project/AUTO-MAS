@@ -7,16 +7,22 @@ import * as path from 'path'
 import * as fs from 'fs'
 import { app } from 'electron'
 import { spawn } from 'child_process'
-import AdmZip from 'adm-zip'
-import { MirrorServiceV2 } from './mirrorService'
+import AdmZip = require('adm-zip')
+import { MirrorService } from './mirrorService'
 import { SmartDownloader, ProgressCallback } from './downloadService'
 import { MirrorRotationService, NetworkOperationCallback } from './mirrorRotationService'
+
+import { logService } from './logService'
 
 // ==================== 工具函数 ====================
 
 // 获取应用根目录
 export function getAppRoot(): string {
-  return process.env.NODE_ENV === 'development' ? process.cwd() : path.dirname(app.getPath('exe'))
+  // 在测试环境中，app可能未定义，直接使用当前工作目录
+  if (process.env.NODE_ENV === 'development' || !app) {
+    return process.cwd()
+  }
+  return path.dirname(app.getPath('exe'))
 }
 
 // 检查环境
@@ -73,11 +79,11 @@ export type InstallProgressCallback = (progress: InstallProgress) => void
 
 abstract class BaseEnvironmentInstaller {
   protected appRoot: string
-  protected mirrorService: MirrorServiceV2
+  protected mirrorService: MirrorService
   protected downloader: SmartDownloader
   protected rotationService: MirrorRotationService
 
-  constructor(appRoot: string, mirrorService: MirrorServiceV2) {
+  constructor(appRoot: string, mirrorService: MirrorService) {
     this.appRoot = appRoot
     this.mirrorService = mirrorService
     this.downloader = new SmartDownloader()
@@ -109,7 +115,7 @@ abstract class BaseEnvironmentInstaller {
       })
 
       if (checkResult.exeExists && checkResult.canRun) {
-        console.log('✅ 环境已存在且可正常运行，跳过安装')
+        logService.info('环境服务', '✅ 环境已存在且可正常运行，跳过安装')
         onProgress?.({
           stage: 'check',
           progress: 100,
@@ -121,7 +127,7 @@ abstract class BaseEnvironmentInstaller {
         return { success: true }
       }
 
-      console.log('环境检查结果:', checkResult)
+      logService.info('环境服务', `环境检查结果: ${JSON.stringify(checkResult)}`)
 
       // 第二步：下载安装包
       onProgress?.({
@@ -174,7 +180,7 @@ abstract class BaseEnvironmentInstaller {
       return installResult
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
-      console.error('环境安装失败:', errorMsg)
+      logService.error('环境服务', `环境安装失败: ${errorMsg}`)
       return { success: false, error: errorMsg }
     }
   }
@@ -201,18 +207,18 @@ export class PythonInstaller extends BaseEnvironmentInstaller {
   private readonly pythonPath: string
   private readonly pythonExe: string
 
-  constructor(appRoot: string, mirrorService: MirrorServiceV2) {
+  constructor(appRoot: string, mirrorService: MirrorService) {
     super(appRoot, mirrorService)
     this.pythonPath = path.join(appRoot, 'environment', 'python')
     this.pythonExe = path.join(this.pythonPath, 'python.exe')
   }
 
   protected async checkEnvironment(): Promise<EnvironmentCheckResult> {
-    console.log('=== 检查 Python 环境 ===')
+    logService.info('环境服务', '=== 检查 Python 环境 ===')
 
     // 检查 exe 文件是否存在
     const exeExists = fs.existsSync(this.pythonExe)
-    console.log(`Python 可执行文件存在: ${exeExists}`)
+    logService.info('环境服务', `Python 可执行文件存在: ${exeExists}`)
 
     if (!exeExists) {
       return { exeExists: false, canRun: false }
@@ -221,10 +227,10 @@ export class PythonInstaller extends BaseEnvironmentInstaller {
     // 检查能否正常运行
     try {
       const version = await this.getPythonVersion()
-      console.log(`Python 版本: ${version}`)
+      logService.info('环境服务', `Python 版本: ${version}`)
       return { exeExists: true, canRun: true, version }
     } catch (error) {
-      console.error('Python 无法正常运行:', error)
+      logService.error('环境服务', `Python 无法正常运行: ${error}`)
       return { exeExists: true, canRun: false, error: String(error) }
     }
   }
@@ -254,7 +260,7 @@ export class PythonInstaller extends BaseEnvironmentInstaller {
   }
 
   protected async downloadPackage(onProgress?: ProgressCallback, selectedMirror?: string): Promise<{ success: boolean; error?: string }> {
-    console.log('=== 下载 Python 安装包 ===')
+    logService.info('环境服务', '=== 下载 Python 安装包 ===')
 
     const mirrors = this.mirrorService.getMirrors('python')
     const tempZipPath = path.join(this.appRoot, 'temp', 'python.zip')
@@ -292,12 +298,12 @@ export class PythonInstaller extends BaseEnvironmentInstaller {
       return { success: false, error: result.error }
     }
 
-    console.log(`✅ Python 安装包下载完成，使用镜像源: ${result.usedMirror?.name}`)
+    logService.info('环境服务', `✅ Python 安装包下载完成，使用镜像源: ${result.usedMirror?.name}`)
     return { success: true }
   }
 
   protected async installEnvironment(onProgress?: (progress: number, message: string) => void): Promise<{ success: boolean; error?: string }> {
-    console.log('=== 安装 Python 环境 ===')
+    logService.info('环境服务', '=== 安装 Python 环境 ===')
 
     const tempZipPath = path.join(this.appRoot, 'temp', 'python.zip')
 
@@ -310,10 +316,10 @@ export class PythonInstaller extends BaseEnvironmentInstaller {
 
       // 解压 Python
       onProgress?.(30, '正在解压 Python...')
-      console.log('正在解压 Python...')
+      logService.info('环境服务', '正在解压 Python...')
       const zip = new AdmZip(tempZipPath)
       zip.extractAllTo(this.pythonPath, true)
-      console.log('✅ Python 解压完成')
+      logService.info('环境服务', '✅ Python 解压完成')
 
       // 启用 site-packages 支持
       onProgress?.(70, '配置 Python 环境...')
@@ -322,7 +328,7 @@ export class PythonInstaller extends BaseEnvironmentInstaller {
         let content = fs.readFileSync(pthFile, 'utf-8')
         content = content.replace(/^#import site/m, 'import site')
         fs.writeFileSync(pthFile, content, 'utf-8')
-        console.log('✅ 已启用 site-packages 支持')
+        logService.info('环境服务', '✅ 已启用 site-packages 支持')
       }
 
       // 清理临时文件
@@ -335,7 +341,7 @@ export class PythonInstaller extends BaseEnvironmentInstaller {
       return { success: true }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
-      console.error('Python 安装失败:', errorMsg)
+      logService.error('环境服务', `Python 安装失败: ${errorMsg}`)
       return { success: false, error: errorMsg }
     }
   }
@@ -348,7 +354,7 @@ export class PipInstaller extends BaseEnvironmentInstaller {
   private readonly pythonExe: string
   private readonly pipExe: string
 
-  constructor(appRoot: string, mirrorService: MirrorServiceV2) {
+  constructor(appRoot: string, mirrorService: MirrorService) {
     super(appRoot, mirrorService)
     this.pythonPath = path.join(appRoot, 'environment', 'python')
     this.pythonExe = path.join(this.pythonPath, 'python.exe')
@@ -356,11 +362,11 @@ export class PipInstaller extends BaseEnvironmentInstaller {
   }
 
   protected async checkEnvironment(): Promise<EnvironmentCheckResult> {
-    console.log('=== 检查 Pip 环境 ===')
+    logService.info('环境服务', '=== 检查 Pip 环境 ===')
 
     // 检查 pip.exe 是否存在
     const exeExists = fs.existsSync(this.pipExe)
-    console.log(`Pip 可执行文件存在: ${exeExists}`)
+    logService.info('环境服务', `Pip 可执行文件存在: ${exeExists}`)
 
     if (!exeExists) {
       return { exeExists: false, canRun: false }
@@ -369,10 +375,10 @@ export class PipInstaller extends BaseEnvironmentInstaller {
     // 检查能否正常运行
     try {
       const version = await this.getPipVersion()
-      console.log(`Pip 版本: ${version}`)
+      logService.info('环境服务', `Pip 版本: ${version}`)
       return { exeExists: true, canRun: true, version }
     } catch (error) {
-      console.error('Pip 无法正常运行:', error)
+      logService.error('环境服务', `Pip 无法正常运行: ${error}`)
       return { exeExists: true, canRun: false, error: String(error) }
     }
   }
@@ -402,7 +408,7 @@ export class PipInstaller extends BaseEnvironmentInstaller {
   }
 
   protected async downloadPackage(onProgress?: ProgressCallback, selectedMirror?: string): Promise<{ success: boolean; error?: string }> {
-    console.log('=== 下载 get-pip.py ===')
+    logService.info('环境服务', '=== 下载 get-pip.py ===')
 
     const mirrors = this.mirrorService.getMirrors('get_pip')
     const getPipPath = path.join(this.pythonPath, 'get-pip.py')
@@ -434,12 +440,12 @@ export class PipInstaller extends BaseEnvironmentInstaller {
       return { success: false, error: result.error }
     }
 
-    console.log(`✅ get-pip.py 下载完成，使用镜像源: ${result.usedMirror?.name}`)
+    logService.info('环境服务', `✅ get-pip.py 下载完成，使用镜像源: ${result.usedMirror?.name}`)
     return { success: true }
   }
 
   protected async installEnvironment(onProgress?: (progress: number, message: string) => void): Promise<{ success: boolean; error?: string }> {
-    console.log('=== 安装 Pip ===')
+    logService.info('环境服务', '=== 安装 Pip ===')
 
     const getPipPath = path.join(this.pythonPath, 'get-pip.py')
 
@@ -456,7 +462,7 @@ export class PipInstaller extends BaseEnvironmentInstaller {
 
         proc.stdout?.on('data', (data) => {
           const output = data.toString().trim()
-          console.log('pip 安装输出:', output)
+          logService.info('环境服务', `pip 安装输出: ${output}`)
 
           // 根据输出更新进度
           if (!progressReported && output.includes('Collecting')) {
@@ -468,12 +474,12 @@ export class PipInstaller extends BaseEnvironmentInstaller {
         })
 
         proc.stderr?.on('data', (data) => {
-          console.log('pip 安装错误:', data.toString().trim())
+          logService.error('环境服务', `pip 安装错误: ${data.toString().trim()}`)
         })
 
         proc.on('close', (code) => {
           if (code === 0) {
-            console.log('✅ Pip 安装成功')
+            logService.info('环境服务', '✅ Pip 安装成功')
             resolve()
           } else {
             reject(new Error(`Pip 安装失败，退出码: ${code}`))
@@ -493,7 +499,7 @@ export class PipInstaller extends BaseEnvironmentInstaller {
       return { success: true }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
-      console.error('Pip 安装失败:', errorMsg)
+      logService.error('环境服务', `Pip 安装失败: ${errorMsg}`)
       return { success: false, error: errorMsg }
     }
   }
@@ -505,18 +511,18 @@ export class GitInstaller extends BaseEnvironmentInstaller {
   private readonly gitPath: string
   private readonly gitExe: string
 
-  constructor(appRoot: string, mirrorService: MirrorServiceV2) {
+  constructor(appRoot: string, mirrorService: MirrorService) {
     super(appRoot, mirrorService)
     this.gitPath = path.join(appRoot, 'environment', 'git')
     this.gitExe = path.join(this.gitPath, 'bin', 'git.exe')
   }
 
   protected async checkEnvironment(): Promise<EnvironmentCheckResult> {
-    console.log('=== 检查 Git 环境 ===')
+    logService.info('环境服务', '=== 检查 Git 环境 ===')
 
     // 检查 git.exe 是否存在
     const exeExists = fs.existsSync(this.gitExe)
-    console.log(`Git 可执行文件存在: ${exeExists}`)
+    logService.info('环境服务', `Git 可执行文件存在: ${exeExists}`)
 
     if (!exeExists) {
       return { exeExists: false, canRun: false }
@@ -525,10 +531,10 @@ export class GitInstaller extends BaseEnvironmentInstaller {
     // 检查能否正常运行
     try {
       const version = await this.getGitVersion()
-      console.log(`Git 版本: ${version}`)
+      logService.info('环境服务', `Git 版本: ${version}`)
       return { exeExists: true, canRun: true, version }
     } catch (error) {
-      console.error('Git 无法正常运行:', error)
+      logService.error('环境服务', `Git 无法正常运行: ${error}`)
       return { exeExists: true, canRun: false, error: String(error) }
     }
   }
@@ -558,7 +564,7 @@ export class GitInstaller extends BaseEnvironmentInstaller {
   }
 
   protected async downloadPackage(onProgress?: ProgressCallback, selectedMirror?: string): Promise<{ success: boolean; error?: string }> {
-    console.log('=== 下载 Git 安装包 ===')
+    logService.info('环境服务', '=== 下载 Git 安装包 ===')
 
     const mirrors = this.mirrorService.getMirrors('git')
     const tempZipPath = path.join(this.appRoot, 'temp', 'git.zip')
@@ -596,12 +602,12 @@ export class GitInstaller extends BaseEnvironmentInstaller {
       return { success: false, error: result.error }
     }
 
-    console.log(`✅ Git 安装包下载完成，使用镜像源: ${result.usedMirror?.name}`)
+    logService.info('环境服务', `✅ Git 安装包下载完成，使用镜像源: ${result.usedMirror?.name}`)
     return { success: true }
   }
 
   protected async installEnvironment(onProgress?: (progress: number, message: string) => void): Promise<{ success: boolean; error?: string }> {
-    console.log('=== 安装 Git 环境 ===')
+    logService.info('环境服务', '=== 安装 Git 环境 ===')
 
     const tempZipPath = path.join(this.appRoot, 'temp', 'git.zip')
 
@@ -615,7 +621,7 @@ export class GitInstaller extends BaseEnvironmentInstaller {
 
       // 解压到临时目录
       onProgress?.(30, '正在解压 Git...')
-      console.log('正在解压 Git...')
+      logService.info('环境服务', '正在解压 Git...')
       const zip = new AdmZip(tempZipPath)
       zip.extractAllTo(tempExtractPath, true)
 
@@ -661,7 +667,7 @@ export class GitInstaller extends BaseEnvironmentInstaller {
         onProgress?.(itemProgress, `移动文件 ${i + 1}/${totalItems}...`)
       }
 
-      console.log('✅ Git 解压完成')
+      logService.info('环境服务', '✅ Git 解压完成')
 
       // 清理临时文件
       onProgress?.(90, '清理临时文件...')
@@ -676,7 +682,7 @@ export class GitInstaller extends BaseEnvironmentInstaller {
       return { success: true }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
-      console.error('Git 安装失败:', errorMsg)
+      logService.error('环境服务', `Git 安装失败: ${errorMsg}`)
       return { success: false, error: errorMsg }
     }
   }

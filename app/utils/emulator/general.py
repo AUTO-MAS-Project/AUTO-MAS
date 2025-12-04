@@ -33,7 +33,7 @@ from typing import Dict, Any
 from app.utils.ProcessManager import ProcessManager
 from app.models.emulator import DeviceStatus, DeviceBase, DeviceInfo
 from app.models.config import EmulatorConfig
-from app.utils.logger import get_logger
+from app.utils import get_logger
 
 logger = get_logger("通用模拟器管理")
 
@@ -71,9 +71,7 @@ class GeneralDeviceManager(DeviceBase):
         args, _ = self.parse_index(idx)
 
         # 启动进程
-        await self.process_managers[idx].open_process(
-            self.emulator_path, args, tracking_time=0
-        )
+        await self.process_managers[idx].open_process(self.emulator_path, *args)
 
         # 等待进程启动
         await asyncio.sleep(self.config.get("Data", "MaxWaitTime"))
@@ -88,7 +86,7 @@ class GeneralDeviceManager(DeviceBase):
             return status
 
         # 终止进程
-        await self.process_managers[idx].kill(if_force=False)
+        await self.process_managers[idx].kill()
 
         # 等待进程完全停止
         t = datetime.now()
@@ -138,7 +136,7 @@ class GeneralDeviceManager(DeviceBase):
         ):
 
             # 检查窗口可见性是否符合预期
-            if (
+            if self.process_managers[idx].main_pid is not None and (
                 win32gui.IsWindowVisible(self.process_managers[idx].main_pid)
                 == is_visible
             ):
@@ -195,7 +193,7 @@ class GeneralDeviceManager(DeviceBase):
         for idx, pm in self.process_managers.items():
             try:
                 if await pm.is_running():
-                    await pm.kill(if_force=True)
+                    await pm.kill()
             except Exception as e:
                 logger.error(f"清理设备{idx}资源失败: {str(e)}")
 

@@ -4,6 +4,9 @@
 
 // no types needed here to avoid circular/unused imports
 import { useAppClosing } from '@/composables/useAppClosing'
+import { getLogger } from '@/utils/logger'
+
+const logger = getLogger('调度器处理器')
 
 const PENDING_TABS_KEY = 'scheduler-pending-tabs'
 const PENDING_COUNTDOWN_KEY = 'scheduler-pending-countdown'
@@ -21,12 +24,21 @@ export function registerSchedulerUI(hooks: UIHooks) {
 }
 
 // helper: push pending tab id to localStorage
-function pushPendingTab(taskId: string) {
+function pushPendingTab(taskInfo: string | { taskId: string; queueId?: string }) {
   try {
     const raw = localStorage.getItem(PENDING_TABS_KEY)
     const arr = raw ? JSON.parse(raw) : []
-    if (!arr.includes(taskId)) {
-      arr.push(taskId)
+
+    const newId = typeof taskInfo === 'string' ? taskInfo : taskInfo.taskId
+
+    // Check if already exists
+    const exists = arr.some((item: any) => {
+      const id = typeof item === 'string' ? item : item.taskId
+      return id === newId
+    })
+
+    if (!exists) {
+      arr.push(taskInfo)
       localStorage.setItem(PENDING_TABS_KEY, JSON.stringify(arr))
     }
   } catch (e) {
@@ -34,7 +46,7 @@ function pushPendingTab(taskId: string) {
   }
 }
 
-function popPendingTabs(): string[] {
+function popPendingTabs(): any[] {
   try {
     const raw = localStorage.getItem(PENDING_TABS_KEY)
     if (!raw) return []
@@ -79,20 +91,26 @@ export function handleTaskManagerMessage(wsMessage: any) {
   try {
     if (type === 'Signal' && data && data.newTask) {
       const taskId = String(data.newTask)
-      // 将任务 ID 写入 pending 队列，UI 在挂载时会回放
-      pushPendingTab(taskId)
+      const queueId = data.queueId ? String(data.queueId) : undefined
+
+      // 将任务 ID 和 队列 ID 写入 pending 队列，UI 在挂载时会回放
+      pushPendingTab({ taskId, queueId })
 
       // 如果 UI 已注册回调，则立即通知
       if (uiHooks.onNewTab) {
         try {
-          uiHooks.onNewTab({ title: `调度台自动-${taskId}`, websocketId: taskId })
+          uiHooks.onNewTab({
+            title: `调度台自动-${taskId}`,
+            websocketId: taskId,
+            queueId: queueId
+          })
         } catch (e) {
-          console.warn('[SchedulerHandlers] onNewTab handler error:', e)
+          logger.warn('[SchedulerHandlers] onNewTab handler error:', e)
         }
       }
     }
   } catch (e) {
-    console.warn('[SchedulerHandlers] handleTaskManagerMessage error:', e)
+    logger.warn('[SchedulerHandlers] handleTaskManagerMessage error:', e)
   }
 }
 
@@ -102,7 +120,7 @@ export function handleMainMessage(wsMessage: any) {
   try {
     if (type === 'Signal' && data && data.RequestClose) {
       // 处理后端请求前端关闭的信号
-      console.log('收到后端关闭请求，开始执行应用自杀...')
+      logger.info('收到后端关闭请求，开始执行应用自杀...')
       handleRequestClose()
     } else if (type === 'Message' && data && data.type === 'Countdown') {
       // 存储倒计时消息，供 UI 回放
@@ -111,7 +129,7 @@ export function handleMainMessage(wsMessage: any) {
         try {
           uiHooks.onCountdown(data)
         } catch (e) {
-          console.warn('[SchedulerHandlers] onCountdown handler error:', e)
+          logger.warn('[SchedulerHandlers] onCountdown handler error:', e)
         }
       }
     } else if (type === 'Update' && data && data.PowerSign !== undefined) {
@@ -119,14 +137,14 @@ export function handleMainMessage(wsMessage: any) {
       savePowerAction(String(data.PowerSign))
     }
   } catch (e) {
-    console.warn('[SchedulerHandlers] handleMainMessage error:', e)
+    logger.warn('[SchedulerHandlers] handleMainMessage error:', e)
   }
 }
 
 // 处理后端请求关闭的函数
 async function handleRequestClose() {
   try {
-    console.log('开始执行前端自杀流程...')
+    logger.info('开始执行前端自杀流程...')
 
     // 显示关闭遮罩
     const { showClosingOverlay } = useAppClosing()
@@ -134,11 +152,11 @@ async function handleRequestClose() {
 
     // 使用更激进的强制退出方法
     if (window.electronAPI?.forceExit) {
-      console.log('执行强制退出...')
+      logger.info('执行强制退出...')
       await window.electronAPI.forceExit()
     } else if (window.electronAPI?.windowClose) {
       // 备用方法：先尝试正常关闭
-      console.log('执行窗口关闭...')
+      logger.info('执行窗口关闭...')
       await window.electronAPI.windowClose()
       setTimeout(async () => {
         if (window.electronAPI?.appQuit) {
@@ -147,22 +165,22 @@ async function handleRequestClose() {
       }, 500)
     } else {
       // 最后的备用方法
-      console.log('使用页面重载作为最后手段...')
+      logger.info('使用页面重载作为最后手段...')
       window.location.reload()
     }
   } catch (error) {
-    console.error('执行自杀流程失败:', error)
+    logger.error('执行自杀流程失败:', error)
     // 如果所有方法都失败，尝试页面重载
     try {
       window.location.reload()
     } catch (e) {
-      console.error('页面重载也失败:', e)
+      logger.error('页面重载也失败:', e)
     }
   }
 }
 
 // UI 在挂载时调用，消费并回放 pending 数据
-export function consumePendingTabIds(): string[] {
+export function consumePendingTabIds(): any[] {
   return popPendingTabs()
 }
 

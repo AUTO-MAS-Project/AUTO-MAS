@@ -10,6 +10,9 @@ import { useSettingsApi } from '@/composables/useSettingsApi'
 import { useUpdateChecker } from '@/composables/useUpdateChecker.ts'
 import { Service, type VersionOut } from '@/api'
 import { mirrorManager } from '@/utils/mirrorManager'
+import { getLogger } from '@/utils/logger'
+
+const logger = getLogger('设置')
 
 // 引入拆分后的 Tab 组件
 import TabBasic from './TabBasic.vue'
@@ -17,6 +20,7 @@ import TabFunction from './TabFunction.vue'
 import TabNotify from './TabNotify.vue'
 import TabAdvanced from './TabAdvanced.vue'
 import TabOthers from './TabOthers.vue'
+import LogSystemSettings from './LogSystemSettings.vue'
 
 const router = useRouter()
 const { themeMode, themeColor, themeColors, setThemeMode, setThemeColor } = useTheme()
@@ -110,8 +114,8 @@ const updateSourceOptions = [
 ]
 
 const updateChannelOptions = [
-  { label: '稳定版', value: 'Stable' },
-  { label: '公测版', value: 'Beta' },
+  { label: '稳定版', value: 'stable' },
+  { label: '公测版', value: 'beta' },
 ]
 
 const voiceTypeOptions = [
@@ -160,10 +164,10 @@ const loadSettings = async () => {
           UI: data.UI,
           Start: data.Start,
         })
-        console.log('后端配置已同步到 Electron')
+        logger.info('后端配置已同步到 Electron')
       }
     } catch (e) {
-      console.error('同步配置到 Electron 失败', e)
+      logger.error('同步配置到 Electron 失败', e)
     }
   }
 }
@@ -174,7 +178,7 @@ const saveSettings = async (category: keyof SettingsData, changes: any) => {
     const result = await updateSettings(updateData)
     if (!result) message.error('设置保存失败')
   } catch (e) {
-    console.error(e)
+    logger.error('设置保存失败', e)
     message.error('设置保存失败')
   }
 }
@@ -190,7 +194,7 @@ const handleSettingChange = async (category: keyof SettingsData, key: string, va
         await (window as any).electronAPI.updateTraySettings({ [key]: value })
       }
     } catch (e) {
-      console.error('更新托盘失败', e)
+      logger.error('更新托盘失败', e)
       message.error('托盘设置更新失败')
     }
   }
@@ -204,7 +208,7 @@ const handleSettingChange = async (category: keyof SettingsData, key: string, va
         })
       }
     } catch (e) {
-      console.error('同步启动配置失败', e)
+      logger.error('同步启动配置失败', e)
       message.error('启动配置同步失败')
     }
   }
@@ -214,14 +218,16 @@ const handleSettingChange = async (category: keyof SettingsData, key: string, va
       await restartPolling()
       message.success(value ? '已启用自动检查更新' : '已禁用自动检查更新')
     } catch (e) {
-      console.error('重启更新检查失败', e)
+      logger.error('重启更新检查失败', e)
       message.error('更新检查设置变更失败')
     }
   }
 }
 
 // 主题
-const handleThemeModeChange = (e: any) => setThemeMode(e.target.value as ThemeMode)
+const handleThemeModeChange = (value: SelectValue) => {
+  if (typeof value === 'string') setThemeMode(value as ThemeMode)
+}
 const handleThemeColorChange = (value: SelectValue) => {
   if (typeof value === 'string') setThemeColor(value as ThemeColor)
 }
@@ -232,8 +238,8 @@ const openDevTools = () => (window as any).electronAPI?.openDevTools?.()
 
 // 更新检查 - 使用全局更新检查器
 const checkUpdate = async () => {
-  console.log('[Setting] 使用全局更新检查器进行手动检查')
-  console.log('[Setting] 检查前状态:', {
+  logger.info('[Setting] 使用全局更新检查器进行手动检查')
+  logger.info('[Setting] 检查前状态:', {
     updateVisible: updateVisible.value,
     updateData: updateData.value,
     latestVersion: latestVersion.value,
@@ -241,13 +247,13 @@ const checkUpdate = async () => {
 
   try {
     await globalCheckUpdate(false, true) // silent=false, forceCheck=true
-    console.log('[Setting] 全局更新检查完成，状态:', {
+    logger.info('[Setting] 全局更新检查完成，状态:', {
       updateVisible: updateVisible.value,
       updateData: updateData.value,
       latestVersion: latestVersion.value,
     })
   } catch (error) {
-    console.error('[Setting] 全局更新检查失败:', error)
+    logger.error('[Setting] 全局更新检查失败:', error)
   }
 }
 
@@ -258,7 +264,7 @@ const getBackendVersion = async () => {
   try {
     backendUpdateInfo.value = await Service.getGitVersionApiInfoVersionPost()
   } catch (e) {
-    console.error('获取后端版本失败', e)
+    logger.error('获取后端版本失败', e)
   }
 }
 
@@ -275,7 +281,7 @@ const refreshMirrorConfig = async () => {
       updateMirrorConfigStatus()
     } else message.warning(result.error || '刷新失败，继续使用当前配置')
   } catch (e) {
-    console.error('刷新镜像配置失败', e)
+    logger.error('刷新镜像配置失败', e)
     message.error('刷新镜像配置失败')
   } finally {
     refreshingConfig.value = false
@@ -292,7 +298,7 @@ const testNotify = async () => {
     if (res?.code && res.code !== 200) message.warning(res?.message || '测试通知发送结果未知')
     else message.success('测试通知已发送')
   } catch (e) {
-    console.error('测试通知发送失败', e)
+    logger.error('测试通知发送失败', e)
     message.error('测试通知发送失败')
   } finally {
     testingNotify.value = false
@@ -352,6 +358,9 @@ onMounted(() => {
             :refresh-mirror-config="refreshMirrorConfig"
             :go-to-mirror-test="goToMirrorTest"
           />
+        </a-tab-pane>
+        <a-tab-pane key="logsystem" tab="日志系统">
+          <LogSystemSettings />
         </a-tab-pane>
         <a-tab-pane key="others" tab="其他设置">
           <TabOthers :version="version" :backend-update-info="backendUpdateInfo" />

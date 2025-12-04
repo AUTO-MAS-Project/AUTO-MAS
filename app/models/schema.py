@@ -187,7 +187,7 @@ class GlobalConfig_Update(BaseModel):
     Source: Optional[Literal["GitHub", "MirrorChyan", "AutoSite"]] = Field(
         default=None, description="更新源: GitHub源, Mirror酱源, 自建源"
     )
-    Channel: Optional[Literal["Stable", "Beta"]] = Field(
+    Channel: Optional[Literal["stable", "beta"]] = Field(
         default=None, description="更新渠道: 稳定版, 测试版"
     )
     ProxyAddress: Optional[str] = Field(default=None, description="网络代理地址")
@@ -467,10 +467,12 @@ class GeneralConfig_Game(BaseModel):
     Enabled: Optional[bool] = Field(
         default=None, description="游戏/模拟器相关功能是否启用"
     )
-    Type: Optional[Literal["Emulator", "Client"]] = Field(
-        default=None, description="类型: 模拟器, PC端"
+    Type: Optional[Literal["Emulator", "Client", "URL"]] = Field(
+        default=None, description="类型: 模拟器, PC端, URL协议"
     )
     Path: Optional[str] = Field(default=None, description="游戏/模拟器程序路径")
+    URL: Optional[str] = Field(default=None, description="自定义协议URL")
+    ProcessName: Optional[str] = Field(default=None, description="游戏进程名称")
     Arguments: Optional[str] = Field(default=None, description="游戏/模拟器启动参数")
     WaitTime: Optional[int] = Field(default=None, description="游戏/模拟器等待启动时间")
     IfForceClose: Optional[bool] = Field(
@@ -929,6 +931,12 @@ class WebSocketMessage(BaseModel):
 
 
 class PowerIn(BaseModel):
+    signal: Literal[
+        "NoAction", "Shutdown", "ShutdownForce", "Hibernate", "Sleep", "KillSelf"
+    ] = Field(..., description="电源操作信号")
+
+
+class PowerOut(OutBase):
     signal: Literal[
         "NoAction", "Shutdown", "ShutdownForce", "Hibernate", "Sleep", "KillSelf"
     ] = Field(..., description="电源操作信号")

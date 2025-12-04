@@ -51,6 +51,10 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { CaretDownOutlined, CaretRightOutlined } from '@ant-design/icons-vue'
+import { logger } from '@/utils/logger'
+import { getLogger } from '@/utils/logger'
+
+const taskTreeLogger = getLogger('任务树组件')
 
 interface User {
   user_id: string
@@ -124,21 +128,21 @@ const getStatusColor = (status: string) => {
 
 // 监听数据变化，自动展开新的脚本
 const updateExpandedScripts = () => {
-  console.log('更新展开脚本，当前数据:', props.taskData)
+  taskTreeLogger.info('更新展开脚本，当前数据:', props.taskData)
   props.taskData.forEach(script => {
     if (!expandedScripts.value.has(script.script_id)) {
-      console.log('添加新脚本到展开列表:', script.script_id, script.name)
+      taskTreeLogger.info('添加新脚本到展开列表:', script.script_id, script.name)
       expandedScripts.value.add(script.script_id)
     }
   })
-  console.log('更新后展开的脚本集合:', Array.from(expandedScripts.value))
+  taskTreeLogger.info('更新后展开的脚本集合:', Array.from(expandedScripts.value))
 }
 
 // 监听 taskData 变化 - 移除防抖，直接比较数据差异
 watch(
   () => props.taskData,
   (newData, oldData) => {
-    console.log('TaskData 发生变化:', newData)
+    taskTreeLogger.info('TaskData 发生变化:', newData)
 
     if (newData && newData.length > 0) {
       // 只有在脚本数量发生变化时才更新展开状态

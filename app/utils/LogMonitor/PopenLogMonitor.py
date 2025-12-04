@@ -25,7 +25,7 @@ from subprocess import Popen
 from typing import Callable, Optional, List, Awaitable, Literal
 
 from app.utils.constants import TIME_FIELDS
-from app.utils.logger import get_logger
+from app.utils import get_logger
 
 logger = get_logger("进程日志监控器")
 
@@ -73,7 +73,9 @@ class PopenLogMonitor:
         # 获取对应的输出流
         stream = getattr(self.process, self.stream_type)
         if stream is None:
-            raise ValueError(f"进程的 {self.stream_type} 流未被捕获（需要在创建 Popen 时设置为 PIPE）")
+            raise ValueError(
+                f"进程的 {self.stream_type} 流未被捕获（需要在创建 Popen 时设置为 PIPE）"
+            )
 
         logger.info(f"开始监控进程 {self.stream_type} 输出")
 
@@ -89,12 +91,16 @@ class PopenLogMonitor:
                     # 读取剩余的输出
                     remaining = stream.read()
                     if remaining:
-                        for line in remaining.decode(self.encoding, errors='replace').splitlines(keepends=True):
+                        for line in remaining.decode(
+                            self.encoding, errors="replace"
+                        ).splitlines(keepends=True):
                             if not if_log_start:
                                 try:
                                     entry_time = strptime(
                                         line[
-                                            self.time_stamp_range[0] : self.time_stamp_range[1]
+                                            self.time_stamp_range[
+                                                0
+                                            ] : self.time_stamp_range[1]
                                         ],
                                         self.time_format,
                                         self.last_callback_time,
@@ -128,7 +134,7 @@ class PopenLogMonitor:
                     continue
 
                 try:
-                    line = line_bytes.decode(self.encoding, errors='replace')
+                    line = line_bytes.decode(self.encoding, errors="replace")
                 except UnicodeDecodeError as e:
                     logger.error(f"解码错误: {e}")
                     continue
@@ -137,9 +143,7 @@ class PopenLogMonitor:
                 if not if_log_start:
                     try:
                         entry_time = strptime(
-                            line[
-                                self.time_stamp_range[0] : self.time_stamp_range[1]
-                            ],
+                            line[self.time_stamp_range[0] : self.time_stamp_range[1]],
                             self.time_format,
                             self.last_callback_time,
                         )
@@ -175,7 +179,7 @@ class PopenLogMonitor:
         self,
         process: Popen,
         start_time: datetime,
-        stream_type: Literal["stdout", "stderr"] = "stdout"
+        stream_type: Literal["stdout", "stderr"] = "stdout",
     ) -> None:
         """启动监控
 
@@ -208,4 +212,3 @@ class PopenLogMonitor:
 
         logger.success("进程日志监控任务已停止")
         self.task = None
-

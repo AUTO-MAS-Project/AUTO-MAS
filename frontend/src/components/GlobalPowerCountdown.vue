@@ -1,40 +1,52 @@
 <template>
-  <!-- 电源操作倒计时全屏弹窗 -->
-  <div v-if="visible" class="power-countdown-overlay">
-    <div class="power-countdown-container">
-      <div class="countdown-content">
-        <div class="warning-icon">⚠️</div>
-        <h2 class="countdown-title">{{ title }}</h2>
-        <p class="countdown-message">{{ message }}</p>
-        <div v-if="countdown !== undefined" class="countdown-timer">
-          <span class="countdown-number">{{ countdown }}</span>
-          <span class="countdown-unit">秒</span>
-        </div>
-        <div v-else class="countdown-timer">
-          <span class="countdown-text">等待后端倒计时...</span>
-        </div>
-        <a-progress
-          v-if="countdown !== undefined"
-          :percent="Math.max(0, Math.min(100, ((60 - countdown) / 60) * 100))"
-          :show-info="false"
-          :stroke-color="(countdown || 0) <= 10 ? '#ff4d4f' : '#1890ff'"
-          :stroke-width="8"
-          class="countdown-progress"
-        />
-        <div class="countdown-actions">
-          <a-button type="primary" size="large" class="cancel-button" @click="handleCancel">
-            取消操作
-          </a-button>
-        </div>
+  <!-- 电源操作倒计时弹窗 - 使用 Ant Design Vue Modal -->
+  <a-modal
+    v-model:open="visible"
+    :title="null"
+    :footer="null"
+    :closable="false"
+    :keyboard="false"
+    :mask-closable="false"
+    :mask="{ blur: true }"
+    :width="480"
+    centered
+    wrap-class-name="power-countdown-modal"
+  >
+    <div class="countdown-content">
+      <div class="warning-icon">⚠️</div>
+      <h2 class="countdown-title">{{ title }}</h2>
+      <p class="countdown-message">{{ message }}</p>
+      <div v-if="countdown !== undefined" class="countdown-timer">
+        <span class="countdown-number">{{ countdown }}</span>
+        <span class="countdown-unit">秒</span>
+      </div>
+      <div v-else class="countdown-timer">
+        <span class="countdown-text">等待后端倒计时...</span>
+      </div>
+      <a-progress
+        v-if="countdown !== undefined"
+        :percent="Math.max(0, Math.min(100, ((60 - countdown) / 60) * 100))"
+        :show-info="false"
+        :stroke-color="(countdown || 0) <= 10 ? '#ff4d4f' : '#1890ff'"
+        :stroke-width="8"
+        class="countdown-progress"
+      />
+      <div class="countdown-actions">
+        <a-button type="primary" size="large" class="cancel-button" @click="handleCancel">
+          取消操作
+        </a-button>
       </div>
     </div>
-  </div>
+  </a-modal>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
 import { Service } from '@/api'
-import { ExternalWSHandlers } from '@/composables/useWebSocket'
+import { subscribe, unsubscribe } from '@/composables/useWebSocket'
+import { getLogger } from '@/utils/logger'
+
+const powerCountdownLogger = getLogger('全局电源倒计时')
 
 // 响应式状态
 const visible = ref(false)
@@ -44,16 +56,33 @@ const countdown = ref<number | undefined>(undefined)
 
 // 倒计时定时器
 let countdownTimer: ReturnType<typeof setInterval> | null = null
+// WebSocket 订阅 ID
+let subscriptionId: string | null = null
+
+// 激活窗口到前台
+const focusWindow = async () => {
+  try {
+    if (window.electronAPI?.windowFocus) {
+      await window.electronAPI.windowFocus()
+      powerCountdownLogger.info('[GlobalPowerCountdown] 窗口已激活到前台')
+    }
+  } catch (error) {
+    powerCountdownLogger.warn('[GlobalPowerCountdown] 激活窗口失败:', error)
+  }
+}
 
 // 启动倒计时
 const startCountdown = (data: any) => {
-  console.log('[GlobalPowerCountdown] 启动倒计时:', data)
+  powerCountdownLogger.info('[GlobalPowerCountdown] 启动倒计时:', data)
 
   // 清除之前的计时器
   if (countdownTimer) {
     clearInterval(countdownTimer)
     countdownTimer = null
   }
+
+  // 激活窗口到前台（即使在托盘状态）
+  focusWindow()
 
   // 显示倒计时弹窗
   visible.value = true
@@ -67,7 +96,7 @@ const startCountdown = (data: any) => {
   countdownTimer = setInterval(() => {
     if (countdown.value !== undefined && countdown.value > 0) {
       countdown.value--
-      console.log('[GlobalPowerCountdown] 倒计时:', countdown.value)
+      powerCountdownLogger.debug('[GlobalPowerCountdown] 倒计时:', countdown.value)
 
       // 倒计时结束
       if (countdown.value <= 0) {
@@ -76,7 +105,7 @@ const startCountdown = (data: any) => {
           countdownTimer = null
         }
         visible.value = false
-        console.log('[GlobalPowerCountdown] 倒计时结束，弹窗关闭')
+        powerCountdownLogger.info('[GlobalPowerCountdown] 倒计时结束，弹窗关闭')
       }
     }
   }, 1000)
@@ -84,7 +113,7 @@ const startCountdown = (data: any) => {
 
 // 取消电源操作
 const handleCancel = async () => {
-  console.log('[GlobalPowerCountdown] 用户取消电源操作')
+  powerCountdownLogger.info('[GlobalPowerCountdown] 用户取消电源操作')
 
   // 清除倒计时器
   if (countdownTimer) {
@@ -98,21 +127,9 @@ const handleCancel = async () => {
   // 调用取消电源操作的API
   try {
     await Service.cancelPowerTaskApiDispatchCancelPowerPost()
-    console.log('[GlobalPowerCountdown] 电源操作已取消')
+    powerCountdownLogger.info('[GlobalPowerCountdown] 电源操作已取消')
   } catch (error) {
-    console.error('[GlobalPowerCountdown] 取消电源操作失败:', error)
-  }
-}
-
-// 处理Main消息的函数
-const handleMainMessage = (message: any) => {
-  if (!message || typeof message !== 'object') return
-
-  const { type, data } = message
-
-  if (type === 'Message' && data && data.type === 'Countdown') {
-    console.log('[GlobalPowerCountdown] 收到倒计时消息:', data)
-    startCountdown(data)
+    powerCountdownLogger.error('[GlobalPowerCountdown] 取消电源操作失败:', error)
   }
 }
 
@@ -122,62 +139,51 @@ const cleanup = () => {
     clearInterval(countdownTimer)
     countdownTimer = null
   }
+  if (subscriptionId) {
+    unsubscribe(subscriptionId)
+    subscriptionId = null
+  }
 }
 
 // 生命周期
 onMounted(() => {
-  // 替换全局Main消息处理器，添加倒计时处理
-  const originalMainHandler = ExternalWSHandlers.mainMessage
+  // 直接订阅 Main 消息，处理倒计时
+  subscriptionId = subscribe({ id: 'Main' }, (msg: any) => {
+    if (!msg || typeof msg !== 'object') return
 
-  ExternalWSHandlers.mainMessage = (message: any) => {
-    // 先调用原有的处理逻辑
-    if (typeof originalMainHandler === 'function') {
-      try {
-        originalMainHandler(message)
-      } catch (e) {
-        console.warn('[GlobalPowerCountdown] 原有Main消息处理器出错:', e)
-      }
+    const { type, data } = msg
+
+    if (type === 'Message' && data && data.type === 'Countdown') {
+      powerCountdownLogger.info('[GlobalPowerCountdown] 收到倒计时消息:', data)
+      startCountdown(data)
     }
+  })
 
-    // 然后处理倒计时消息
-    handleMainMessage(message)
-  }
-
-  console.log('[GlobalPowerCountdown] 全局电源倒计时组件已挂载')
+  powerCountdownLogger.info('[GlobalPowerCountdown] 全局电源倒计时组件已挂载, subscriptionId:', subscriptionId)
 })
 
 onUnmounted(() => {
   cleanup()
-  console.log('[GlobalPowerCountdown] 全局电源倒计时组件已卸载')
+  powerCountdownLogger.info('[GlobalPowerCountdown] 全局电源倒计时组件已卸载')
 })
 </script>
 
-<style scoped>
-/* 电源操作倒计时全屏弹窗样式 */
-.power-countdown-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.8);
-  backdrop-filter: blur(8px);
-  z-index: 10000; /* 确保在所有其他内容之上 */
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  animation: fadeIn 0.3s ease-out;
+<style>
+/* 电源操作倒计时 Modal 全局样式 */
+.power-countdown-modal .ant-modal-content {
+  padding: 48px;
+  border-radius: 16px;
 }
 
-.power-countdown-container {
-  background: var(--ant-color-bg-container);
-  border-radius: 16px;
-  padding: 48px;
-  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.2);
+.power-countdown-modal .ant-modal-body {
+  padding: 0;
+}
+</style>
+
+<style scoped>
+/* 倒计时内容样式 */
+.countdown-content {
   text-align: center;
-  max-width: 500px;
-  width: 90%;
-  animation: slideIn 0.3s ease-out;
 }
 
 .countdown-content .warning-icon {
@@ -246,26 +252,6 @@ onUnmounted(() => {
 }
 
 /* 动画效果 */
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-@keyframes slideIn {
-  from {
-    opacity: 0;
-    transform: translateY(-20px) scale(0.95);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
 @keyframes pulse {
   0%,
   100% {
@@ -278,11 +264,6 @@ onUnmounted(() => {
 
 /* 响应式 - 移动端适配 */
 @media (max-width: 768px) {
-  .power-countdown-container {
-    padding: 32px 24px;
-    margin: 16px;
-  }
-
   .countdown-title {
     font-size: 24px;
   }
