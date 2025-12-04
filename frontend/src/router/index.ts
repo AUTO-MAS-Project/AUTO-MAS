@@ -128,12 +128,6 @@ const routes = [
     component: () => import('../views/MirrorTest.vue'),
     meta: { title: '镜像配置测试' },
   },
-  {
-    path: '/popup',
-    name: 'Popup',
-    component: () => import('../views/Popup.vue'),
-    meta: { title: '对话框', skipInit: true, skipGuard: true },
-  },
 ]
 
 const router = createRouter({
@@ -144,8 +138,8 @@ const router = createRouter({
 router.beforeEach(async (to, from, next) => {
   logger.info('路由守卫：', { to: to.path, from: from.path })
 
-  // Popup 或声明跳过的路由：直接放行
-  if (to.path === '/popup' || (to.meta as any)?.skipGuard) {
+  // 声明跳过的路由：直接放行
+  if ((to.meta as any)?.skipGuard) {
     next()
     return
   }

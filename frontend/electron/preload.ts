@@ -4,13 +4,8 @@ window.addEventListener('DOMContentLoaded', () => {
   // 预加载脚本已加载
 })
 
-// 检查是否为对话框窗口
-const isDialogWindow = process.argv.includes('--is-dialog-window')
-
 // 暴露安全的 API 给渲染进程
 contextBridge.exposeInMainWorld('electronAPI', {
-  // 窗口类型标识
-  isDialogWindow: () => isDialogWindow,
   openDevTools: () => ipcRenderer.invoke('open-dev-tools'),
   selectFolder: () => ipcRenderer.invoke('select-folder'),
   selectFile: (filters?: any[]) => ipcRenderer.invoke('select-file', filters),
@@ -21,6 +16,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   windowMaximize: () => ipcRenderer.invoke('window-maximize'),
   windowClose: () => ipcRenderer.invoke('window-close'),
   windowIsMaximized: () => ipcRenderer.invoke('window-is-maximized'),
+  windowFocus: () => ipcRenderer.invoke('window-focus'),
   appQuit: () => ipcRenderer.invoke('app-quit'),
   appRestart: () => ipcRenderer.invoke('app-restart'),
 
@@ -138,12 +134,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 文件系统操作
   openFile: (filePath: string) => ipcRenderer.invoke('open-file', filePath),
   showItemInFolder: (filePath: string) => ipcRenderer.invoke('show-item-in-folder', filePath),
-
-  // 对话框相关
-  showQuestionDialog: (questionData: any) =>
-    ipcRenderer.invoke('show-question-dialog', questionData),
-  dialogResponse: (messageId: string, choice: boolean) =>
-    ipcRenderer.invoke('dialog-response', messageId, choice),
 
   // 主题信息获取
   getThemeInfo: () => ipcRenderer.invoke('get-theme-info'),
