@@ -29,7 +29,7 @@ import time
 from typing import Dict, Any, Optional
 
 from app.core import Config
-from app.utils.logger import get_logger
+from app.utils import get_logger
 
 logger = get_logger("信息上报")
 

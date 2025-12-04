@@ -339,8 +339,6 @@ const handleInstall = async () => {
 
 // WebSocket 消息处理
 const handleUpdateMessage = (wsMessage: any) => {
-  logger.debug('[UpdateDownloadModal] 收到WebSocket消息:', wsMessage)
-  logger.debug('[UpdateDownloadModal] 消息类型:', wsMessage.type, '消息ID:', wsMessage.id)
 
   if (wsMessage.id === 'Update') {
     if (wsMessage.type === 'Update') {

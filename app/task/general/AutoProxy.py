@@ -195,7 +195,6 @@ class AutoProxyTask(TaskExecuteBase):
             self.cur_user_item.log_record[self.log_start_time] = self.cur_user_log = (
                 LogRecord()
             )
-            self.wait_event.clear()
 
             # 执行任务前脚本
             if self.cur_user_config.get("Info", "IfScriptBeforeTask"):
@@ -221,10 +220,10 @@ class AutoProxyTask(TaskExecuteBase):
                                 f"启动游戏: {self.game_path}, 参数: {self.script_config.get('Game','Arguments')}"
                             )
                             await self.game_manager.open_process(
-                                [self.game_path.as_posix()]
-                                + str(
-                                    self.script_config.get("Game", "Arguments")
-                                ).split(" ")
+                                self.game_path,
+                                *str(self.script_config.get("Game", "Arguments")).split(
+                                    " "
+                                ),
                             )
                     elif isinstance(self.game_manager, DeviceBase):
                         logger.info(
@@ -270,8 +269,9 @@ class AutoProxyTask(TaskExecuteBase):
                 f"运行脚本任务: {self.script_exe_path}, 参数: {self.script_arguments}"
             )
 
+            self.wait_event.clear()
             await self.general_process_manager.open_process(
-                [self.script_exe_path.as_posix()] + self.script_arguments
+                self.script_exe_path, *self.script_arguments
             )
             await self.general_log_monitor.start(
                 self.script_log_path, self.log_start_time
@@ -440,10 +440,14 @@ class AutoProxyTask(TaskExecuteBase):
         if self.check_result != "Pass":
             return
 
+        logger.debug("开始进入结束通用脚本任务进程")
+
         # 结束各子任务
-        await self.general_process_manager.kill(if_force=True)
-        await System.kill_process(self.script_exe_path)
         await self.general_log_monitor.stop()
+        await self.general_process_manager.kill()
+        logger.info("结束通用脚本任务进程------------111")
+        await System.kill_process(self.script_exe_path)
+        logger.info("结束通用脚本任务进程------------2222")
         del self.general_process_manager
         del self.general_log_monitor
         if self.game_manager is not None:
