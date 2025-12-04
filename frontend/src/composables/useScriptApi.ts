@@ -1,7 +1,10 @@
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
-import { type GeneralConfig, type MaaConfig, ScriptCreateIn, Service } from '@/api'
+import { type GeneralConfig, type MaaConfig, ScriptCreateIn, type ScriptReorderIn, Service } from '@/api'
 import type { ScriptDetail, ScriptType } from '@/types/script'
+import { getLogger } from '@/utils/logger'
+
+const logger = getLogger('脚本API')
 
 export function useScriptApi() {
   const loading = ref(false)
@@ -33,7 +36,7 @@ export function useScriptApi() {
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : '添加脚本失败'
       error.value = errorMsg
-      if (!err.message?.includes('HTTP error')) {
+      if (err instanceof Error && !err.message.includes('HTTP error')) {
         message.error(errorMsg)
       }
       return null
@@ -80,7 +83,7 @@ export function useScriptApi() {
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : '获取脚本列表失败'
       error.value = errorMsg
-      if (!err.message?.includes('HTTP error')) {
+      if (err instanceof Error && !err.message.includes('HTTP error')) {
         message.error(errorMsg)
       }
       return []
@@ -472,7 +475,7 @@ export function useScriptApi() {
               }
             }
           } catch (err) {
-            console.warn(`获取脚本 ${script.uid} 的用户数据失败:`, err)
+            logger.warn(`获取脚本 ${script.uid} 的用户数据失败:`, err)
             return {
               ...script,
               users: [],
@@ -485,7 +488,7 @@ export function useScriptApi() {
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : '获取脚本列表失败'
       error.value = errorMsg
-      if (!err.message?.includes('HTTP error')) {
+      if (err instanceof Error && !err.message.includes('HTTP error')) {
         message.error(errorMsg)
       }
       return []
@@ -527,7 +530,7 @@ export function useScriptApi() {
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : '获取脚本详情失败'
       error.value = errorMsg
-      if (!err.message?.includes('HTTP error')) {
+      if (err instanceof Error && !err.message.includes('HTTP error')) {
         message.error(errorMsg)
       }
       return null
@@ -554,7 +557,7 @@ export function useScriptApi() {
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : '删除脚本失败'
       error.value = errorMsg
-      if (!err.message?.includes('HTTP error')) {
+      if (err instanceof Error && !err.message.includes('HTTP error')) {
         message.error(errorMsg)
       }
       return false
@@ -588,12 +591,43 @@ export function useScriptApi() {
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : '更新脚本失败'
       error.value = errorMsg
-      if (!err.message?.includes('HTTP error')) {
+      if (err instanceof Error && !err.message.includes('HTTP error')) {
         message.error(errorMsg)
       }
       return false
     } finally {
       loading.value = false
+    }
+  }
+
+  // 重新排序脚本
+  const reorderScript = async (scriptIds: string[]): Promise<boolean> => {
+    // loading.value = true // 排序通常不需要全屏loading，或者可以使用局部loading
+    error.value = null
+
+    try {
+      const requestData: ScriptReorderIn = {
+        indexList: scriptIds,
+      }
+
+      const response = await Service.reorderScriptApiScriptsOrderPost(requestData)
+
+      if (response.code !== 200) {
+        const errorMsg = response.message || '脚本排序失败'
+        message.error(errorMsg)
+        throw new Error(errorMsg)
+      }
+
+      return true
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : '脚本排序失败'
+      error.value = errorMsg
+      if (err instanceof Error && !err.message.includes('HTTP error')) {
+        message.error(errorMsg)
+      }
+      return false
+    } finally {
+      // loading.value = false
     }
   }
 
@@ -606,5 +640,6 @@ export function useScriptApi() {
     getScript,
     deleteScript,
     updateScript,
+    reorderScript,
   }
 }

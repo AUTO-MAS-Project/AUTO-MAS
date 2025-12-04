@@ -21,7 +21,7 @@
  */
 
 // 镜像源服务
-export { MirrorServiceV2, MirrorSource, MirrorConfig, CloudMirrorConfig } from './mirrorService'
+export { MirrorService, MirrorSource, MirrorConfig, CloudMirrorConfig } from './mirrorService'
 
 // 下载服务
 export { SmartDownloader, DownloadProgress, ProgressCallback } from './downloadService'

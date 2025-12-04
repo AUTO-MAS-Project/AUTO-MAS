@@ -49,7 +49,7 @@ from typing import Dict, Any
 
 from app.core import Config
 from app.utils.constants import SKLAND_SM_CONFIG, BROWSER_ENV, DES_RULE
-from app.utils.logger import get_logger
+from app.utils import get_logger
 
 logger = get_logger("森空岛签到任务")
 
@@ -633,5 +633,5 @@ async def skland_sign_in(token) -> dict:
         # 依次签到
         return await do_sign(cred, sign_token)
     except Exception as e:
-        logger.exception(f"森空岛签到失败: {e}")
+        logger.error(f"森空岛签到失败: {e}")
         return {"成功": [], "重复": [], "失败": [], "总计": 0}

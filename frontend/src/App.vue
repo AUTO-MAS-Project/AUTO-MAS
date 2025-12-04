@@ -23,19 +23,8 @@ const { isClosing } = useAppClosing()
 
 // 判断是否为初始化页面
 const isInitializationPage = computed(() => route.name === 'Initialization')
-// 判断是否为 popup 页面（对话框）
-const isPopupPage = computed(() => route.name === 'Popup')
-// 检查是否为对话框窗口（通过 Electron 参数）
-const isDialogWindow = window.electronAPI?.isDialogWindow?.() || false
 
 onMounted(async () => {
-  // Popup 页面或对话框窗口跳过所有初始化
-  if (isPopupPage.value || isDialogWindow) {
-    logger.info('Popup页面或对话框窗口：跳过初始化')
-    initTheme() // 只初始化主题
-    return
-  }
-
   logger.info('App组件已挂载')
   initTheme()
   logger.info('主题初始化完成')
@@ -52,12 +41,8 @@ onMounted(async () => {
 
 <template>
   <ConfigProvider :theme="antdTheme" :locale="zhCN">
-    <!-- Popup 页面或对话框窗口：极简布局，只显示内容 -->
-    <div v-if="isPopupPage || isDialogWindow" class="popup-wrapper">
-      <router-view />
-    </div>
     <!-- 初始化页面使用带标题栏的全屏布局 -->
-    <div v-else-if="isInitializationPage" class="initialization-container">
+    <div v-if="isInitializationPage" class="initialization-container">
       <TitleBar />
       <div class="initialization-content">
         <router-view />
@@ -69,28 +54,26 @@ onMounted(async () => {
       <AppLayout />
     </div>
 
-    <!-- 全局组件（Popup 页面和对话框窗口不加载） -->
-    <template v-if="!isPopupPage && !isDialogWindow">
-      <!-- 全局更新模态框 -->
-      <UpdateModal
-        v-model:visible="updateVisible"
-        :update-data="updateData"
-        :latest-version="latestVersion"
-        @confirmed="onUpdateConfirmed"
-      />
+    <!-- 全局组件 -->
+    <!-- 全局更新模态框 -->
+    <UpdateModal
+      v-model:visible="updateVisible"
+      :update-data="updateData"
+      :latest-version="latestVersion"
+      @confirmed="onUpdateConfirmed"
+    />
 
-      <!-- 开发环境调试面板 -->
-      <DevDebugPanel />
+    <!-- 开发环境调试面板 -->
+    <DevDebugPanel />
 
-      <!-- 全局电源倒计时弹窗 -->
-      <GlobalPowerCountdown />
+    <!-- 全局电源倒计时弹窗 -->
+    <GlobalPowerCountdown />
 
-      <!-- WebSocket 消息监听组件 -->
-      <WebSocketMessageListener />
+    <!-- WebSocket 消息监听组件 -->
+    <WebSocketMessageListener />
 
-      <!-- 应用关闭遮罩 -->
-      <AppClosingOverlay :visible="isClosing" />
-    </template>
+    <!-- 应用关闭遮罩 -->
+    <AppClosingOverlay :visible="isClosing" />
   </ConfigProvider>
 </template>
 
@@ -124,12 +107,5 @@ onMounted(async () => {
 /* 隐藏 Webkit 浏览器的滚动条 */
 .initialization-content::-webkit-scrollbar {
   display: none;
-}
-
-/* Popup 页面极简布局 */
-.popup-wrapper {
-  width: 100vw;
-  height: 100vh;
-  overflow: hidden;
 }
 </style>

@@ -84,7 +84,11 @@
 </template>
 
 <script setup lang="ts">
+import { logger } from '@/utils/logger'
+import { getLogger } from '@/utils/logger'
 import WebhookManager from '@/components/WebhookManager.vue'
+
+const webhookLogger = getLogger('通知配置组件')
 
 const props = defineProps<{
   formData: any
@@ -96,7 +100,7 @@ const props = defineProps<{
 // 处理 Webhook 变化
 const handleWebhookChange = () => {
   // 这里可以添加额外的处理逻辑，比如验证或保存
-  console.log('User webhooks changed for script:', props.scriptId, 'user:', props.userId)
+  webhookLogger.info('User webhooks changed for script:', props.scriptId, 'user:', props.userId)
   // 注意：实际保存会在用户点击保存按钮时进行，这里只是更新本地数据
 }
 </script>

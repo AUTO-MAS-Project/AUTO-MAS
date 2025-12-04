@@ -4,6 +4,9 @@
  */
 
 import type { CloudMirrorConfig } from '@/types/mirror'
+import { getLogger } from '@/utils/logger'
+
+const logger = getLogger('云端配置管理器')
 
 export class CloudConfigManager {
   private static instance: CloudConfigManager
@@ -35,12 +38,12 @@ export class CloudConfigManager {
     const startTime = Date.now()
 
     try {
-      console.log(`正在从云端拉取镜像站配置... (超时时间: ${this.fetchTimeout}ms)`)
-      console.log(`请求URL: ${this.cloudConfigUrl}`)
+      logger.info(`正在从云端拉取镜像站配置... (超时时间: ${this.fetchTimeout}ms)`)
+      logger.info(`请求URL: ${this.cloudConfigUrl}`)
 
       const controller = new AbortController()
       const timeoutId = setTimeout(() => {
-        console.warn(`网络请求超时 (${this.fetchTimeout}ms)`)
+        logger.warn(`网络请求超时 (${this.fetchTimeout}ms)`)
         controller.abort()
       }, this.fetchTimeout)
 
@@ -68,14 +71,14 @@ export class CloudConfigManager {
       }
 
       this.currentConfig = config
-      console.log(`云端配置拉取成功 (耗时: ${responseTime}ms, 版本: ${config.version})`)
+      logger.info(`云端配置拉取成功 (耗时: ${responseTime}ms, 版本: ${config.version})`)
       return config
     } catch (error) {
       const responseTime = Date.now() - startTime
       if (error instanceof Error && error.name === 'AbortError') {
-        console.warn(`云端配置拉取超时 (耗时: ${responseTime}ms)`)
+        logger.warn(`云端配置拉取超时 (耗时: ${responseTime}ms)`)
       } else {
-        console.warn(`云端配置拉取失败 (耗时: ${responseTime}ms):`, error)
+        logger.warn(`云端配置拉取失败 (耗时: ${responseTime}ms):`, error)
       }
       return null
     }
@@ -134,16 +137,16 @@ export class CloudConfigManager {
 
     // 如果第一次失败，等待2秒后重试一次
     if (!cloudConfig) {
-      console.log('首次拉取云端配置失败，2秒后重试...')
+      logger.info('首次拉取云端配置失败，2秒后重试...')
       await new Promise(resolve => setTimeout(resolve, 2000))
       cloudConfig = await this.fetchCloudConfig()
     }
 
     if (cloudConfig) {
-      console.log('使用云端配置')
+      logger.info('使用云端配置')
       return cloudConfig
     } else {
-      console.log('云端配置拉取失败，使用本地兜底配置')
+      logger.info('云端配置拉取失败，使用本地兜底配置')
       return fallbackConfig
     }
   }

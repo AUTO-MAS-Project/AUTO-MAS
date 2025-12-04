@@ -19,7 +19,7 @@ const {
   themeColor: ThemeColor
   themeModeOptions: { label: string; value: string }[]
   themeColorOptions: { label: string; value: string; color: string }[]
-  handleThemeModeChange: (e: any) => void
+  handleThemeModeChange: (value: SelectValue) => void
   handleThemeColorChange: (value: SelectValue) => void
   handleSettingChange: (category: keyof SettingsData, key: string, value: any) => Promise<void>
 }>()
@@ -40,12 +40,20 @@ const {
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-radio-group
+            <a-select
               :value="themeMode"
-              :options="themeModeOptions"
               size="large"
+              style="width: 100%"
               @change="handleThemeModeChange"
-            />
+            >
+              <a-select-option
+                v-for="option in themeModeOptions"
+                :key="option.value"
+                :value="option.value"
+              >
+                {{ option.label }}
+              </a-select-option>
+            </a-select>
           </div>
         </a-col>
         <a-col :span="12">

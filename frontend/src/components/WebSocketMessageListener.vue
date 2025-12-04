@@ -1,14 +1,46 @@
 <template>
-  <div style="display: none">
-    <!-- 这是一个隐藏的监听组件，不需要UI -->
-    <!-- 现在使用系统级对话框窗口而不是应用内弹窗 -->
-  </div>
+  <!-- 应用内弹窗组件 -->
+  <Modal
+    v-model:open="isModalOpen"
+    :title="currentModal?.title || '操作提示'"
+    :closable="false"
+    :maskClosable="false"
+    :keyboard="true"
+    centered
+    @ok="handleOk"
+    @cancel="handleCancel"
+  >
+    <p class="modal-message">{{ currentModal?.message || '' }}</p>
+    <!-- 显示队列中还有多少待处理的弹窗 -->
+    <p v-if="modalQueue.length > 0" class="modal-queue-hint">
+      还有 {{ modalQueue.length }} 条消息待处理
+    </p>
+    <template #footer>
+      <Button
+        v-for="(option, index) in (currentModal?.options || ['确定', '取消'])"
+        :key="index"
+        :type="index === 0 ? 'primary' : 'default'"
+        @click="handleChoice(index === 0)"
+      >
+        {{ option }}
+      </Button>
+    </template>
+  </Modal>
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted } from 'vue'
+import { onMounted, onUnmounted, ref, watch } from 'vue'
+import { Modal, Button } from 'ant-design-vue'
 import { useWebSocket, type WebSocketBaseMessage } from '@/composables/useWebSocket'
 import { logger } from '@/utils/logger'
+
+// 弹窗数据接口
+interface ModalData {
+  messageId: string
+  title: string
+  message: string
+  options: string[]
+}
 
 // WebSocket hook
 const { subscribe, unsubscribe, sendRaw } = useWebSocket()
@@ -16,73 +48,131 @@ const { subscribe, unsubscribe, sendRaw } = useWebSocket()
 // 存储订阅ID用于取消订阅
 let subscriptionId: string
 
+// Modal 队列状态
+const modalQueue = ref<ModalData[]>([])
+const currentModal = ref<ModalData | null>(null)
+const isModalOpen = ref(false)
+
 // 检查是否在 Electron 环境中
 const isElectron = () => {
   return typeof window !== 'undefined' && (window as any).electronAPI
 }
 
+// 激活窗口到前台
+const focusWindow = async () => {
+  try {
+    if (window.electronAPI?.windowFocus) {
+      await window.electronAPI.windowFocus()
+      logger.info('[WebSocket消息监听器] 窗口已激活到前台')
+    }
+  } catch (error) {
+    logger.warn('[WebSocket消息监听器] 激活窗口失败:', error)
+  }
+}
+
 // 发送用户选择结果到后端
 const sendResponse = (messageId: string, choice: boolean) => {
   const response = { choice: choice }
-  logger.info('[WebSocket消息监听器] 发送用户选择结果:', response)
+  logger.info('[WebSocket消息监听器] 发送用户选择结果:', { messageId, response })
 
   // 发送响应消息到后端
   sendRaw('Response', response, messageId)
 }
 
-// 显示系统级问题对话框
+// 处理确认按钮
+const handleOk = () => {
+  handleChoice(true)
+}
+
+// 处理取消按钮
+const handleCancel = () => {
+  handleChoice(false)
+}
+
+// 处理用户选择
+const handleChoice = (choice: boolean) => {
+  if (currentModal.value) {
+    sendResponse(currentModal.value.messageId, choice)
+    logger.info('[WebSocket消息监听器] 弹窗已处理:', currentModal.value.messageId)
+  }
+  
+  // 关闭当前弹窗
+  isModalOpen.value = false
+  currentModal.value = null
+  
+  // 显示队列中的下一个弹窗
+  showNextModal()
+}
+
+// 显示队列中的下一个弹窗
+const showNextModal = async () => {
+  if (modalQueue.value.length > 0) {
+    // 从队列头部取出下一个弹窗
+    const nextModal = modalQueue.value.shift()!
+    logger.info('[WebSocket消息监听器] 显示队列中的下一个弹窗:', nextModal.messageId, `剩余队列: ${modalQueue.value.length}`)
+    
+    // 激活窗口
+    await focusWindow()
+    
+    // 设置当前弹窗并显示
+    currentModal.value = nextModal
+    isModalOpen.value = true
+  }
+}
+
+// 添加弹窗到队列
 const showQuestion = async (questionData: any) => {
   const title = questionData.title || '操作提示'
   const message = questionData.message || ''
   const options = questionData.options || ['确定', '取消']
   const messageId = questionData.message_id || 'fallback_' + Date.now()
 
-  logger.info('[WebSocket消息监听器] 显示系统级对话框:', questionData)
-
-  if (!isElectron()) {
-    logger.error('[WebSocket消息监听器] 不在 Electron 环境中，无法显示系统级对话框')
-    // 在非 Electron 环境中，使用默认响应
-    sendResponse(messageId, false)
-    return
+  const modalData: ModalData = {
+    messageId,
+    title,
+    message,
+    options,
   }
 
-  try {
-    // 调用 Electron API 显示系统级对话框
-    const result = await (window as any).electronAPI.showQuestionDialog({
-      title,
-      message,
-      options,
-      messageId,
-    })
+  logger.info('[WebSocket消息监听器] 收到弹窗请求:', modalData.messageId)
 
-    logger.info('[WebSocket消息监听器] 系统级对话框返回结果:', result)
-
-    // 发送结果到后端
-    sendResponse(messageId, result)
-  } catch (error) {
-    logger.error('[WebSocket消息监听器] 显示系统级对话框失败:', error)
-    // 出错时发送默认响应
-    sendResponse(messageId, false)
+  // 如果当前没有显示弹窗，直接显示
+  if (!isModalOpen.value && !currentModal.value) {
+    logger.info('[WebSocket消息监听器] 直接显示弹窗:', modalData.messageId)
+    
+    // 激活窗口
+    await focusWindow()
+    
+    // 设置当前弹窗并显示
+    currentModal.value = modalData
+    isModalOpen.value = true
+  } else {
+    // 否则加入队列
+    modalQueue.value.push(modalData)
+    logger.info('[WebSocket消息监听器] 弹窗已加入队列:', modalData.messageId, `当前队列长度: ${modalQueue.value.length}`)
   }
 }
 
 // 消息处理函数
 const handleMessage = (message: WebSocketBaseMessage) => {
   try {
-    logger.info('[WebSocket消息监听器] 收到Message类型消息:', message)
-    logger.info(
-      '[WebSocket消息监听器] 消息详情 - type:',
-      message.type,
-      'id:',
-      message.id,
-      'data:',
-      message.data
-    )
+    // 只打印摘要信息，避免打印完整消息内容
+    const dataSize = message.data ? (typeof message.data === 'string' ? message.data.length : JSON.stringify(message.data).length) : 0
+    logger.info('[WebSocket消息监听器] 收到Message类型消息:', {
+      type: message.type,
+      id: message.id,
+      dataSize: `${dataSize} bytes`
+    })
+
+    // 打印详细信息
+    logger.debug('[WebSocket消息监听器] 消息详情:', {
+      type: message.type,
+      id: message.id,
+      data: message.data
+    })
 
     // 解析消息数据
     if (message.data) {
-      console.log('[WebSocket消息监听器] 消息数据:', message.data)
-
       // 根据具体的消息内容进行处理
       if (typeof message.data === 'object') {
         // 处理对象类型的数据
@@ -107,10 +197,11 @@ const handleMessage = (message: WebSocketBaseMessage) => {
 
 // 处理对象类型的消息
 const handleObjectMessage = (data: any) => {
-  logger.info('[WebSocket消息监听器] 处理对象消息:', data)
+  // 打印完整对象内容
+  logger.debug('[WebSocket消息监听器] 处理对象消息:', data)
 
   // 检查是否为Question类型的消息
-  logger.info(
+  logger.debug(
     '[WebSocket消息监听器] 检查消息类型 - data.type:',
     data.type,
     'data.message_id:',
@@ -121,14 +212,14 @@ const handleObjectMessage = (data: any) => {
     logger.info('[WebSocket消息监听器] 发现Question类型消息')
 
     if (data.message_id) {
-      logger.info('[WebSocket消息监听器] message_id存在，显示系统级对话框')
+      logger.info('[WebSocket消息监听器] message_id存在，显示应用内弹窗')
       showQuestion(data)
       return
     } else {
-      logger.warn('[WebSocket消息监听器] Question消息缺少message_id字段:', data)
+      logger.warn('[WebSocket消息监听器] Question消息缺少message_id字段')
       // 即使缺少message_id，也尝试显示对话框，使用当前时间戳作为ID
       const fallbackId = 'fallback_' + Date.now()
-      logger.info('[WebSocket消息监听器] 使用备用ID显示对话框:', fallbackId)
+      logger.info('[WebSocket消息监听器] 使用备用ID显示弹窗:', fallbackId)
       showQuestion({
         ...data,
         message_id: fallbackId,
@@ -139,15 +230,15 @@ const handleObjectMessage = (data: any) => {
 
   // 根据对象的属性进行不同处理
   if (data.action) {
-    logger.info('[WebSocket消息监听器] 消息动作:', data.action)
+    logger.debug('[WebSocket消息监听器] 消息动作:', data.action)
   }
 
   if (data.status) {
-    logger.info('[WebSocket消息监听器] 消息状态:', data.status)
+    logger.debug('[WebSocket消息监听器] 消息状态:', data.status)
   }
 
   if (data.content) {
-    logger.info('[WebSocket消息监听器] 消息内容:', data.content)
+    logger.debug('[WebSocket消息监听器] 消息内容:', data.content)
   }
 
   // 可以根据具体需求添加更多处理逻辑
@@ -155,22 +246,23 @@ const handleObjectMessage = (data: any) => {
 
 // 处理字符串类型的消息
 const handleStringMessage = (data: string) => {
-  logger.info('[WebSocket消息监听器] 处理字符串消息:', data)
+  // 记录字符串消息
+  logger.debug('[WebSocket消息监听器] 处理字符串消息:', data)
 
   try {
     // 尝试解析JSON字符串
     const parsed = JSON.parse(data)
-    logger.info('[WebSocket消息监听器] 解析后的JSON:', parsed)
+    logger.debug('[WebSocket消息监听器] 解析后的JSON:', parsed)
     handleObjectMessage(parsed)
   } catch (error) {
     // 不是JSON格式，作为普通字符串处理
-    logger.info('[WebSocket消息监听器] 普通字符串消息:', data)
+    logger.debug('[WebSocket消息监听器] 普通字符串消息:', data)
   }
 }
 
 // 处理其他类型的消息
 const handleOtherMessage = (data: any) => {
-  logger.info('[WebSocket消息监听器] 处理其他类型消息:', typeof data, data)
+  logger.debug('[WebSocket消息监听器] 处理其他类型消息:', typeof data, data)
 }
 
 // 组件挂载时订阅消息
@@ -182,6 +274,10 @@ onMounted(() => {
 
   logger.info('[WebSocket消息监听器~~] 订阅ID:', subscriptionId)
   logger.info('[WebSocket消息监听器~~] 订阅过滤器:', { type: 'Message' })
+
+  // 暴露调试接口到 window 对象（仅用于开发调试）
+  ;(window as any).__debugShowQuestion = showQuestion
+  logger.debug('[WebSocket消息监听器] 已暴露调试接口: window.__debugShowQuestion')
 })
 
 // 组件卸载时取消订阅
@@ -191,5 +287,27 @@ onUnmounted(() => {
   if (subscriptionId) {
     unsubscribe(subscriptionId)
   }
+  // 清理调试接口
+  delete (window as any).__debugShowQuestion
 })
 </script>
+
+<style scoped>
+.modal-message {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-secondary, #595959);
+  margin: 0;
+  word-wrap: break-word;
+  white-space: pre-wrap;
+}
+
+.modal-queue-hint {
+  font-size: 12px;
+  color: var(--text-tertiary, #8c8c8c);
+  margin-top: 12px;
+  margin-bottom: 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-secondary, #f0f0f0);
+}
+</style>

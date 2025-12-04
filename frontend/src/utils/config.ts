@@ -1,4 +1,7 @@
 import type { ThemeMode, ThemeColor } from '@/composables/useTheme'
+import { getLogger } from '@/utils/logger'
+
+const logger = getLogger('配置管理')
 
 export interface FrontendConfig {
   // 基础配置
@@ -42,7 +45,7 @@ async function getConfigInternal(): Promise<FrontendConfig> {
     // 优先从文件读取配置
     const fileConfig = await window.electronAPI.loadConfig()
     if (fileConfig) {
-      console.log('从文件加载配置:', fileConfig)
+      logger.info('从文件加载配置:', fileConfig)
       return { ...DEFAULT_CONFIG, ...fileConfig }
     }
 
@@ -55,19 +58,19 @@ async function getConfigInternal(): Promise<FrontendConfig> {
     if (localConfig) {
       const parsed = JSON.parse(localConfig)
       config = { ...config, ...parsed }
-      console.log('从localStorage迁移配置:', parsed)
+      logger.info('从localStorage迁移配置:', parsed)
     }
 
     if (themeConfig) {
       const parsed = JSON.parse(themeConfig)
       config.themeMode = parsed.themeMode || 'system'
       config.themeColor = parsed.themeColor || 'blue'
-      console.log('从localStorage迁移主题配置:', parsed)
+      logger.info('从localStorage迁移主题配置:', parsed)
     }
 
     return config
   } catch (error) {
-    console.error('读取配置失败:', error)
+    logger.error('读取配置失败:', error)
     return { ...DEFAULT_CONFIG }
   }
 }
@@ -85,9 +88,9 @@ export async function getConfig(): Promise<FrontendConfig> {
       localStorage.removeItem('app-config')
       localStorage.removeItem('theme-settings')
       localStorage.removeItem('app-initialized')
-      console.log('配置已从localStorage迁移到文件')
+      logger.info('配置已从localStorage迁移到文件')
     } catch (error) {
-      console.error('迁移配置失败:', error)
+      logger.error('迁移配置失败:', error)
     }
   }
 
@@ -97,14 +100,14 @@ export async function getConfig(): Promise<FrontendConfig> {
 // 保存配置
 export async function saveConfig(config: Partial<FrontendConfig>): Promise<void> {
   try {
-    console.log('开始保存配置:', config)
+    logger.info('开始保存配置:', config)
     const currentConfig = await getConfigInternal() // 使用内部函数避免递归
     const newConfig = { ...currentConfig, ...config }
-    console.log('合并后的配置:', newConfig)
+    logger.info('合并后的配置:', newConfig)
     await window.electronAPI.saveConfig(newConfig)
-    console.log('配置保存成功')
+    logger.info('配置保存成功')
   } catch (error) {
-    console.error('保存配置失败:', error)
+    logger.error('保存配置失败:', error)
     throw error
   }
 }
@@ -117,16 +120,16 @@ export async function resetConfig(): Promise<void> {
     localStorage.removeItem('theme-settings')
     localStorage.removeItem('app-initialized')
   } catch (error) {
-    console.error('重置配置失败:', error)
+    logger.error('重置配置失败:', error)
   }
 }
 
 // 检查是否已初始化
 export async function isAppInitialized(): Promise<boolean> {
   const config = await getConfig()
-  console.log('isAppInitialized 检查配置:', config)
-  console.log('init 字段值:', config.init)
-  console.log('init === true:', config.init === true)
+  logger.info('isAppInitialized 检查配置:', config)
+  logger.info('init 字段值:', config.init)
+  logger.info('init === true:', config.init === true)
   return config.init === true
 }
 

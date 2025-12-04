@@ -676,10 +676,14 @@ class GeneralConfig(ConfigBase):
         self.Game_Enabled = ConfigItem("Game", "Enabled", False, BoolValidator())
         ## 游戏类型
         self.Game_Type = ConfigItem(
-            "Game", "Type", "Emulator", OptionsValidator(["Emulator", "Client"])
+            "Game", "Type", "Emulator", OptionsValidator(["Emulator", "Client", "URL"])
         )
         ## 游戏路径
         self.Game_Path = ConfigItem("Game", "Path", str(Path.cwd()), FileValidator())
+        ## 自定义协议URL
+        self.Game_URL = ConfigItem("Game", "URL", "")
+        ## 游戏进程名称
+        self.Game_ProcessName = ConfigItem("Game", "ProcessName", "")
         ## 游戏启动参数
         self.Game_Arguments = ConfigItem("Game", "Arguments", "")
         ## 等待时间（秒）
@@ -810,7 +814,7 @@ class GlobalConfig(ConfigBase):
     )
     ## 更新频道
     Update_Channel = ConfigItem(
-        "Update", "Channel", "Stable", OptionsValidator(["Stable", "Beta"])
+        "Update", "Channel", "stable", OptionsValidator(["stable", "beta"])
     )
     ## 代理地址
     Update_ProxyAddress = ConfigItem("Update", "ProxyAddress", "")

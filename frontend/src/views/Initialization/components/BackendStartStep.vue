@@ -69,6 +69,9 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { connectAfterBackendStart } from '@/composables/useWebSocket'
 import { useUpdateChecker } from '@/composables/useUpdateChecker'
+import { getLogger } from '@/utils/logger'
+
+const logger = getLogger('后端启动步骤')
 
 // ==================== Props & Emits ====================
 interface Props {
@@ -106,8 +109,6 @@ const { startPolling } = useUpdateChecker()
  * 启动后端服务
  */
 async function startBackend() {
-  console.log('=== 开始启动后端服务 ===')
-  
   status.value = 'starting'
   emit('update:status', 'starting')
   
@@ -116,16 +117,14 @@ async function startBackend() {
     statusMessage.value = '正在启动后端进程...'
     progress.value = 10
     
-    const result = await (window.electronAPI as any).v2BackendStart()
+    const result = await (window.electronAPI as any).backendStart()
     
     if (!result.success) {
       throw new Error(result.error || '后端启动失败')
     }
     
-    console.log('✅ 后端进程启动成功')
-    
     // 获取后端状态
-    const backendStatus = await (window.electronAPI as any).v2BackendStatus()
+    const backendStatus = await (window.electronAPI as any).backendStatus()
     backendPid.value = backendStatus.pid
     
     status.value = 'running'
@@ -136,16 +135,14 @@ async function startBackend() {
     statusMessage.value = '正在建立WebSocket连接...'
     progress.value = 40
     
-    console.log('开始建立WebSocket连接...')
     const connected = await connectAfterBackendStart()
     
     if (!connected) {
-      console.warn('⚠️ WebSocket连接建立失败')
+      logger.warn('WebSocket连接建立失败')
       wsConnected.value = false
       // WebSocket 连接失败不应该阻止继续，但需要警告
       // throw new Error('WebSocket连接建立失败，请检查后端服务')
     } else {
-      console.log('✅ WebSocket连接建立成功')
       wsConnected.value = true
     }
     
@@ -155,16 +152,13 @@ async function startBackend() {
     statusMessage.value = '正在启动版本检查任务...'
     progress.value = 70
     
-    console.log('启动版本检查定时任务...')
     await startPolling()
     pollingStarted.value = true
-    console.log('✅ 版本检查任务已启动')
     
     progress.value = 85
     
     // 第四步：等待后端完全就绪
     statusMessage.value = '等待后端服务完全就绪...'
-    console.log('等待后端服务完全就绪...')
     
     // 等待额外的时间确保后端完全启动
     await new Promise(resolve => setTimeout(resolve, 2000))
@@ -173,17 +167,15 @@ async function startBackend() {
     
     // 第五步：验证后端连接
     statusMessage.value = '验证后端连接...'
-    console.log('验证后端连接...')
     
     try {
       // 尝试获取后端状态来验证连接
-      const finalStatus = await (window.electronAPI as any).v2BackendStatus()
+      const finalStatus = await (window.electronAPI as any).backendStatus()
       if (!finalStatus.isRunning) {
         throw new Error('后端服务未在运行状态')
       }
-      console.log('✅ 后端连接验证成功')
     } catch (error) {
-      console.warn('⚠️ 后端连接验证失败，但继续执行:', error)
+      logger.warn('后端连接验证失败，但继续执行:', error)
     }
     
     progress.value = 100
@@ -194,10 +186,8 @@ async function startBackend() {
     emit('update:status', 'success')
     progressStatus.value = 'success'
     
-    console.log('=== 后端服务启动完成 ===')
-    console.log(`- 后端进程 PID: ${backendPid.value}`)
-    console.log(`- WebSocket 连接: ${wsConnected.value ? '已连接' : '未连接'}`)
-    console.log(`- 版本检查任务: ${pollingStarted.value ? '已启动' : '未启动'}`)
+    // 合并完成信息到一行日志
+    logger.info(`后端服务启动完成 - PID: ${backendPid.value}, WebSocket: ${wsConnected.value ? '已连接' : '未连接'}, 版本检查: ${pollingStarted.value ? '已启动' : '未启动'}`)
     
     // 延迟1秒后通知完成，让用户看到成功状态
     setTimeout(() => {
@@ -206,7 +196,7 @@ async function startBackend() {
     
   } catch (error) {
     const errMsg = error instanceof Error ? error.message : String(error)
-    console.error('❌ 后端启动失败:', errMsg)
+    logger.error('后端启动失败:', errMsg)
     
     status.value = 'failed'
     emit('update:status', 'failed')
@@ -220,7 +210,6 @@ async function startBackend() {
  * 重试启动
  */
 async function handleRetry() {
-  console.log('重试启动后端服务')
   errorMessage.value = ''
   progress.value = 0
   progressStatus.value = 'normal'
@@ -229,7 +218,16 @@ async function handleRetry() {
 
 // ==================== 生命周期 ====================
 onMounted(() => {
-  console.log('BackendStartStep 组件已挂载')
+  // 监听后端日志，帮助诊断日志捕获问题
+  const api = window.electronAPI as any
+  api.onBackendLog?.((log: string) => {
+    logger.debug('后端启动步骤', `收到后端日志: ${log.substring(0, 100)}...`)
+  })
+  
+  api.onBackendStatus?.((status: any) => {
+    logger.debug('后端启动步骤', `收到后端状态: ${JSON.stringify(status)}`)
+  })
+  
   // 自动开始启动
   setTimeout(() => {
     startBackend()
@@ -237,14 +235,25 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  console.log('BackendStartStep 组件已卸载')
+  // 清理监听器
+  const api = window.electronAPI as any
+  api.removeBackendLogListener?.()
+  api.removeBackendStatusListener?.()
 })
 </script>
 
 <style scoped>
 .step-panel {
   padding: 20px;
-  min-height: 300px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.step-panel * {
+  box-sizing: border-box;
 }
 
 .step-panel h3 {
@@ -258,6 +267,10 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 20px;
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
 }
 
 .start-progress {
@@ -266,6 +279,11 @@ onUnmounted(() => {
   align-items: center;
   gap: 16px;
   padding: 40px 0;
+}
+
+.start-progress :deep(.ant-progress) {
+  width: 98%;
+  min-width: 200px;
 }
 
 .status-text {
@@ -280,8 +298,10 @@ onUnmounted(() => {
 
 .status-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 16px;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .status-item {

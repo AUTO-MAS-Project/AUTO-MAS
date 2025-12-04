@@ -306,9 +306,15 @@ const officialMirrors = computed(() => props.mirrors.filter((m: MirrorConfig) =>
 <style scoped>
 .step-panel {
   padding: 20px;
-  min-height: 300px;
+  height: 100%;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.step-panel * {
+  box-sizing: border-box;
 }
 
 .step-panel h3 {
@@ -318,7 +324,24 @@ const officialMirrors = computed(() => props.mirrors.filter((m: MirrorConfig) =>
   margin-bottom: 20px;
 }
 
-.processing-state,
+.processing-state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 20px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  width: 100%;
+  min-height: 0;
+}
+
+.processing-state :deep(.ant-progress) {
+  width: 98%;
+  min-width: 200px;
+}
+
 .success-state,
 .failed-state,
 .simple-failed-state {
@@ -328,6 +351,9 @@ const officialMirrors = computed(() => props.mirrors.filter((m: MirrorConfig) =>
   align-items: center;
   justify-content: center;
   gap: 20px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  width: 100%;
 }
 
 .status-text {
@@ -368,8 +394,10 @@ const officialMirrors = computed(() => props.mirrors.filter((m: MirrorConfig) =>
 
 .mirror-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 16px;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .mirror-card {

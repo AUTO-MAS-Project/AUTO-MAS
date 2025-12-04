@@ -1,6 +1,7 @@
 import { exec } from 'child_process'
 import * as path from 'path'
 import { getAppRoot } from '../services/environmentService'
+import { logService } from '../services/logService'
 
 export interface ProcessInfo {
   pid: number
@@ -18,28 +19,44 @@ export async function getRelatedProcesses(): Promise<ProcessInfo[]> {
       return
     }
 
-    const appRoot = getAppRoot()
-    const pythonExePath = path.join(appRoot, 'environment', 'python', 'python.exe')
+    const appRoot = getAppRoot().replace(/\\/g, '\\\\')
 
-    // 使用 wmic 获取详细的进程信息
-    const cmd = `wmic process where "Name='python.exe' or Name='AUTO-MAS.exe' or CommandLine like '%main.py%'" get ProcessId,Name,CommandLine /format:csv`
+    // 使用 PowerShell 获取进程信息
+    const psCommand = `
+      Get-CimInstance Win32_Process | Where-Object {
+        $_.Name -eq 'python.exe' -or 
+        $_.Name -eq 'AUTO-MAS.exe' -or 
+        ($_.CommandLine -ne $null -and $_.CommandLine -like '*main.py*')
+      } | Select-Object ProcessId, Name, CommandLine | ConvertTo-Json -Compress
+    `.replace(/\n/g, ' ')
 
-    exec(cmd, (error, stdout, stderr) => {
+    exec(`powershell -NoProfile -Command "${psCommand}"`, { encoding: 'utf8' }, (error, stdout, stderr) => {
       if (error) {
-        console.error('获取进程信息失败:', error)
+        logService.error('进程管理', `获取进程信息失败: ${error}`)
         resolve([])
         return
       }
 
       const processes: ProcessInfo[] = []
-      const lines = stdout.split('\n').filter(line => line.trim() && !line.startsWith('Node'))
 
-      for (const line of lines) {
-        const parts = line.split(',')
-        if (parts.length >= 4) {
-          const commandLine = parts[1] || ''
-          const name = parts[2] || ''
-          const pid = parseInt(parts[3]) || 0
+      try {
+        if (!stdout.trim()) {
+          resolve([])
+          return
+        }
+
+        // PowerShell 返回的可能是单个对象或数组
+        let parsed = JSON.parse(stdout.trim())
+        if (!Array.isArray(parsed)) {
+          parsed = [parsed]
+        }
+
+        const pythonExePath = path.join(getAppRoot(), 'environment', 'python', 'python.exe')
+
+        for (const proc of parsed) {
+          const pid = proc.ProcessId || 0
+          const name = proc.Name || ''
+          const commandLine = proc.CommandLine || ''
 
           if (
             pid > 0 &&
@@ -50,6 +67,8 @@ export async function getRelatedProcesses(): Promise<ProcessInfo[]> {
             processes.push({ pid, name, commandLine })
           }
         }
+      } catch (parseError) {
+        logService.error('进程管理', `解析进程信息失败: ${parseError}`)
       }
 
       resolve(processes)
@@ -69,10 +88,10 @@ export async function killProcess(pid: number): Promise<boolean> {
 
     exec(`taskkill /f /t /pid ${pid}`, error => {
       if (error) {
-        console.error(`结束进程 ${pid} 失败:`, error.message)
+        logService.error('进程管理', `结束进程 ${pid} 失败: ${error.message}`)
         resolve(false)
       } else {
-        console.log(`进程 ${pid} 已结束`)
+        logService.info('进程管理', `进程 ${pid} 已结束`)
         resolve(true)
       }
     })
@@ -83,22 +102,20 @@ export async function killProcess(pid: number): Promise<boolean> {
  * 强制结束所有相关进程
  */
 export async function killAllRelatedProcesses(): Promise<void> {
-  console.log('开始清理所有相关进程...')
+  logService.info('进程管理', '开始清理所有相关进程...')
 
   const processes = await getRelatedProcesses()
-  console.log(`找到 ${processes.length} 个相关进程:`)
+  logService.info('进程管理', `找到 ${processes.length} 个相关进程:`)
 
   for (const proc of processes) {
-    console.log(
-      `- PID: ${proc.pid}, Name: ${proc.name}, CMD: ${proc.commandLine.substring(0, 100)}...`
-    )
+    logService.info('进程管理', `- PID: ${proc.pid}, Name: ${proc.name}, CMD: ${proc.commandLine.substring(0, 100)}...`)
   }
 
   // 并行结束所有进程
   const killPromises = processes.map(proc => killProcess(proc.pid))
   await Promise.all(killPromises)
 
-  console.log('进程清理完成')
+  logService.info('进程管理', '进程清理完成')
 }
 
 /**

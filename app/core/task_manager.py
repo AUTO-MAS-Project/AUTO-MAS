@@ -26,7 +26,6 @@ from typing import Dict, Literal
 
 from .config import Config, MaaConfig, GeneralConfig
 from app.services import System
-from app.models.schema import WebSocketMessage
 from app.models.task import TaskItem, ScriptItem, UserItem, TaskExecuteBase
 from app.utils import get_logger
 from app.task import MaaManager, GeneralManager
@@ -57,6 +56,7 @@ class Task(TaskExecuteBase):
     def __init__(self, task_info: TaskInfo):
         super().__init__()
         self.task_info = task_info
+        self.is_closing = False
 
     async def prepare(self):
 
@@ -177,10 +177,8 @@ class Task(TaskExecuteBase):
                 Config.power_sign = Config.QueueConfig[
                     uuid.UUID(self.task_info.queue_id)
                 ].get("Info", "AfterAccomplish")
-                await Config.send_json(
-                    WebSocketMessage(
-                        id="Main", type="Update", data={"PowerSign": Config.power_sign}
-                    ).model_dump()
+                await Config.send_websocket_message(
+                    id="Main", type="Update", data={"PowerSign": Config.power_sign}
                 )
 
     async def on_crash(self, e: Exception) -> None:
@@ -292,13 +290,18 @@ class _TaskManager:
         if task_id == "ALL":
             task_item_list = list(self.task_handler.values())
             for task_item in task_item_list:
-                task_item.cancel()
-                await task_item.accomplish.wait()
+                if not task_item.is_closing:
+                    task_item.cancel()
+                    task_item.is_closing = True
+                    await task_item.accomplish.wait()
         else:
             uid = uuid.UUID(task_id)
             if uid not in self.task_handler:
                 raise ValueError("未找到对应任务")
+            if self.task_handler[uid].is_closing:
+                raise RuntimeError("任务已在中止中")
             self.task_handler[uid].cancel()
+            self.task_handler[uid].is_closing = True
             logger.info(f"等待任务 {task_id} 结束...")
             await self.task_handler[uid].accomplish.wait()
             logger.info(f"任务 {task_id} 已结束")
@@ -312,10 +315,15 @@ class _TaskManager:
             if queue.get("Info", "StartUpEnabled"):
                 logger.info(f"启动时需要运行的队列：{uid}")
                 task_id = await TaskManager.add_task("自动代理", str(uid))
-                await Config.send_json(
-                    WebSocketMessage(
-                        id="TaskManager", type="Signal", data={"newTask": str(task_id)}
-                    ).model_dump()
+                await Config.send_websocket_message(
+                    id="TaskManager",
+                    type="Signal",
+                    data={
+                        "newTask": str(task_id),
+                        "queueId": str(uid),
+                        "taskName": f"队列 - {queue.get('Info', 'Name')}",
+                        "taskType": "启动时代理",
+                    },
                 )
 
         logger.success("启动时任务开始运行")

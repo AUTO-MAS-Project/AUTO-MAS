@@ -1,5 +1,5 @@
 /**
- * 镜像源管理服务 V2
+ * 镜像源管理服务
  * 重构版本 - 独立实现，不依赖旧有方法
  */
 
@@ -7,6 +7,18 @@ import * as fs from 'fs'
 import * as path from 'path'
 import * as https from 'https'
 import * as http from 'http'
+
+// 导入日志服务
+import { logService } from './logService'
+
+// 使用日志服务的日志记录器
+const logger = {
+    error: (message: string, ...args: any[]) => logService.error('镜像源服务', `${message} ${args.length > 0 ? JSON.stringify(args) : ''}`),
+    warn: (message: string, ...args: any[]) => logService.warn('镜像源服务', `${message} ${args.length > 0 ? JSON.stringify(args) : ''}`),
+    info: (message: string, ...args: any[]) => logService.info('镜像源服务', `${message} ${args.length > 0 ? JSON.stringify(args) : ''}`),
+    debug: (message: string, ...args: any[]) => logService.debug('镜像源服务', `${message} ${args.length > 0 ? JSON.stringify(args) : ''}`),
+    log: (message: string, ...args: any[]) => logService.info('镜像源服务', `${message} ${args.length > 0 ? JSON.stringify(args) : ''}`)
+}
 
 // ==================== 类型定义 ====================
 
@@ -114,7 +126,7 @@ const DEFAULT_MIRROR_CONFIG: MirrorConfig = {
 
 // ==================== 镜像源管理类 ====================
 
-export class MirrorServiceV2 {
+export class MirrorService {
     private mirrorConfig: MirrorConfig
     private localConfigPath: string
 
@@ -128,7 +140,7 @@ export class MirrorServiceV2 {
      * 尝试从云端下载，失败则使用本地默认配置
      */
     async initialize(): Promise<void> {
-        console.log('=== 初始化镜像源配置 ===')
+        logger.info('=== 初始化镜像源配置 ===')
 
         try {
             // 尝试从云端下载配置
@@ -136,11 +148,11 @@ export class MirrorServiceV2 {
             if (cloudConfig) {
                 this.mirrorConfig = cloudConfig.mirrors
                 this.saveLocalConfig(cloudConfig)
-                console.log('✅ 成功从云端加载镜像源配置')
+                logger.info('✅ 成功从云端加载镜像源配置')
                 return
             }
         } catch (error) {
-            console.warn('⚠️ 从云端下载配置失败:', error)
+            logger.warn('⚠️ 从云端下载配置失败:', error)
         }
 
         // 尝试加载本地缓存配置
@@ -148,15 +160,15 @@ export class MirrorServiceV2 {
             const localConfig = this.loadLocalConfig()
             if (localConfig) {
                 this.mirrorConfig = localConfig.mirrors
-                console.log('✅ 使用本地缓存的镜像源配置')
+                logger.info('✅ 使用本地缓存的镜像源配置')
                 return
             }
         } catch (error) {
-            console.warn('⚠️ 加载本地配置失败:', error)
+            logger.warn('⚠️ 加载本地配置失败:', error)
         }
 
         // 使用默认配置
-        console.log('✅ 使用默认镜像源配置')
+        logger.info('✅ 使用默认镜像源配置')
     }
 
     /**
@@ -165,13 +177,13 @@ export class MirrorServiceV2 {
     private downloadCloudConfig(): Promise<CloudMirrorConfig | null> {
         return new Promise((resolve) => {
             const url = 'https://download.auto-mas.top/d/AUTO-MAS/Server/mirror.json'
-            console.log(`正在从云端下载镜像源配置: ${url}`)
+            logger.info(`正在从云端下载镜像源配置: ${url}`)
 
             const client = url.startsWith('https') ? https : http
 
             const req = client.get(url, { timeout: 10000 }, (response) => {
                 if (response.statusCode !== 200) {
-                    console.warn(`云端配置下载失败，状态码: ${response.statusCode}`)
+                    logger.warn(`云端配置下载失败，状态码: ${response.statusCode}`)
                     resolve(null)
                     return
                 }
@@ -184,22 +196,22 @@ export class MirrorServiceV2 {
                 response.on('end', () => {
                     try {
                         const config = JSON.parse(data) as CloudMirrorConfig
-                        console.log(`✅ 云端配置下载成功，版本: ${config.version}`)
+                        logger.info(`✅ 云端配置下载成功，版本: ${config.version}`)
                         resolve(config)
                     } catch (error) {
-                        console.error('解析云端配置失败:', error)
+                        logger.error('解析云端配置失败:', error)
                         resolve(null)
                     }
                 })
             })
 
             req.on('error', (error) => {
-                console.warn('云端配置下载请求失败:', error.message)
+                logger.warn('云端配置下载请求失败:', error.message)
                 resolve(null)
             })
 
             req.on('timeout', () => {
-                console.warn('云端配置下载超时')
+                logger.warn('云端配置下载超时')
                 req.destroy()
                 resolve(null)
             })
@@ -216,9 +228,9 @@ export class MirrorServiceV2 {
                 fs.mkdirSync(configDir, { recursive: true })
             }
             fs.writeFileSync(this.localConfigPath, JSON.stringify(config, null, 2), 'utf-8')
-            console.log('✅ 镜像源配置已保存到本地')
+            logger.info('✅ 镜像源配置已保存到本地')
         } catch (error) {
-            console.error('保存本地配置失败:', error)
+            logger.error('保存本地配置失败:', error)
         }
     }
 
@@ -233,7 +245,7 @@ export class MirrorServiceV2 {
             const data = fs.readFileSync(this.localConfigPath, 'utf-8')
             return JSON.parse(data) as CloudMirrorConfig
         } catch (error) {
-            console.error('加载本地配置失败:', error)
+            logger.error('加载本地配置失败:', error)
             return null
         }
     }
