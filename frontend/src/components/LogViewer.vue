@@ -158,12 +158,12 @@
     <a-card class="log-content-card">
       <template #title>
         <span>日志内容</span>
-        <template #extra v-if="useNewSystem">
-          <a-space>
-            <a-statistic title="总日志数" :value="stats.total" />
-            <a-statistic title="过滤后" :value="stats.filtered" />
-          </a-space>
-        </template>
+      </template>
+      <template #extra v-if="useNewSystem">
+        <a-space>
+          <a-statistic title="总日志数" :value="stats.total" />
+          <a-statistic title="过滤后" :value="stats.filtered" />
+        </a-space>
       </template>
 
       <div class="log-content">
