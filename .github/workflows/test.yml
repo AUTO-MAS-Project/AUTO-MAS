@@ -1,0 +1,366 @@
+#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+#   Copyright © 2024-2025 DLmaster361
+#   Copyright © 2025 AUTO-MAS Team
+
+#   This file is part of AUTO-MAS.
+
+#   AUTO-MAS is free software: you can redistribute it and/or modify
+#   it under the terms of the GNU General Public License as published
+#   by the Free Software Foundation, either version 3 of the License,
+#   or (at your option) any later version.
+
+#   AUTO-MAS is distributed in the hope that it will be useful,
+#   but WITHOUT ANY WARRANTY; without even the implied warranty
+#   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
+#   the GNU General Public License for more details.
+
+#   You should have received a copy of the GNU General Public License
+#   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
+
+#   Contact: DLmaster_361@163.com
+
+name: Test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+
+  build:
+    name: 构建 Windows 版本
+    runs-on: windows-latest
+    if: github.repository == 'AUTO-MAS-Project/AUTO-MAS' && (github.ref_name == 'main' || github.ref_name == 'dev')
+    
+    outputs:
+      version_tag: ${{ steps.generate_version_info.outputs.version_tag }}
+      is_prerelease: ${{ steps.generate_version_info.outputs.is_prerelease }}
+      version_changelog: ${{ steps.generate_version_info.outputs.version_changelog }}
+
+    steps:
+      - name: 签出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Node.js 环境
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # - name: 构建应用程序
+      #   run: |
+      #     cd frontend
+      #     corepack enable
+      #     corepack prepare yarn@4.9.1 --activate
+      #     yarn install
+      #     yarn build
+      #     Move-Item -Path "dist\win-unpacked\AUTO-MAS.exe" -Destination "..\AUTO-MAS.exe"
+      #   shell: pwsh
+
+      # - name: 上传未签名主程序
+      #   id: upload-unsigned-main-program
+      #   uses: actions/upload-artifact@v4
+      #   with: 
+      #       name: AUTO-MAS
+      #       path: AUTO-MAS.exe
+
+      # - name: 签名主程序
+      #   uses: signpath/github-action-submit-signing-request@v2.0
+      #   with:
+      #       api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
+      #       organization-id: '787a1d5f-6177-4f30-9559-d2646473584a'
+      #       project-slug: 'AUTO_MAA'
+      #       signing-policy-slug: 'test-signing'
+      #       artifact-configuration-slug: "AUTO-MAS"
+      #       github-artifact-id: '${{ steps.upload-unsigned-main-program.outputs.artifact-id }}'
+      #       wait-for-completion: true
+      #       output-artifact-directory: 'frontend\dist\win-unpacked'
+
+      - name: 生成版本信息
+        id: generate_version_info
+        run: |
+          $tempScript = "temp_version_script.js"
+          @'
+          const fs = require('fs');
+          const path = require('path');
+
+          let versionPath = '../res/version.json';
+          if (!fs.existsSync(versionPath)) {
+          versionPath = 'res/version.json';
+          }
+          const version = JSON.parse(fs.readFileSync(versionPath, 'utf8'));
+
+          function versionText(versionNumb) {
+          while (versionNumb.length < 4) versionNumb.push(0);
+          if (versionNumb[3] === 0) {
+              return `v${versionNumb.slice(0, 3).join('.')}`;
+          } else {
+              return `v${versionNumb.slice(0, 3).join('.')}-beta.${versionNumb[3]}`;
+          }
+          }
+
+          function versionInfoMarkdown(info) {
+          let md = '';
+          for (const [key, values] of Object.entries(info)) {
+              md += `## ${key}\n`;
+              for (const v of values) md += `- ${v}\n`;
+          }
+          return md;
+          }
+
+          const mainVersionNumb = version.main_version.split('.').map(Number);
+          const versionTag = versionText(mainVersionNumb);
+          const isPrerelease = versionTag.includes('-beta');
+
+          const allVersionInfo = {};
+          for (const v_i of Object.values(version.version_info)) {
+          for (const [key, value] of Object.entries(v_i)) {
+              if (!allVersionInfo[key]) allVersionInfo[key] = [];
+              allVersionInfo[key].push(...value);
+          }
+          }
+          const changelog = `<!--${JSON.stringify(version.version_info, null, 0)}-->\n${versionInfoMarkdown(allVersionInfo)}`;
+
+          const outputPath = process.env.GITHUB_OUTPUT;
+          fs.appendFileSync(outputPath, `version_tag=${versionTag}\n`);
+          fs.appendFileSync(outputPath, `is_prerelease=${isPrerelease}\n`);
+          fs.appendFileSync(outputPath, `version_changelog<<EOF\n${changelog}\nEOF\n`);
+          '@ | Out-File -FilePath $tempScript -Encoding UTF8
+
+          node $tempScript
+          Remove-Item $tempScript
+        shell: pwsh
+
+      # - name: 准备 Inno Setup
+      #   run: |
+      #     choco install innosetup -y
+      #     echo "C:\Program Files (x86)\Inno Setup 6" >> $env:GITHUB_PATH
+      #     @"
+      #     #define MyAppName "AUTO-MAS"
+      #     #define MyAppVersion "${{ steps.generate_version_info.outputs.version_tag }}"
+      #     #define MyAppPublisher "AUTO-MAS Team"
+      #     #define MyAppURL "https://auto-mas.top/"
+      #     #define MyAppExeName "AUTO-MAS.exe"
+      #     #define MyAppPath "${{ github.workspace }}\frontend\dist\win-unpacked"
+      #     #define RootPath "${{ github.workspace }}"
+
+      #     [Setup]
+      #     AppId={{D116A92A-E174-4699-B777-61C5FD837B19}
+      #     AppName={#MyAppName}
+      #     AppVersion={#MyAppVersion}
+      #     AppVerName={#MyAppName}
+      #     AppPublisher={#MyAppPublisher}
+      #     AppPublisherURL={#MyAppURL}
+      #     AppSupportURL={#MyAppURL}
+      #     AppUpdatesURL={#MyAppURL}
+      #     DefaultDirName={autopf}\{#MyAppName}
+      #     UninstallDisplayIcon={app}\{#MyAppExeName}
+      #     ArchitecturesAllowed=x64compatible
+      #     ArchitecturesInstallIn64BitMode=x64compatible
+      #     DisableProgramGroupPage=yes
+      #     LicenseFile={#RootPath}\LICENSE
+      #     PrivilegesRequired=admin
+      #     OutputDir={#RootPath}
+      #     OutputBaseFilename=AUTO-MAS-Setup
+      #     SetupIconFile={#RootPath}\res\icons\AUTO-MAS.ico
+      #     SolidCompression=yes
+      #     WizardStyle=modern
+      #     AppMutex=AUTO_MAS_Installer_Mutex
+
+      #     [Languages]
+      #     Name: "Chinese"; MessagesFile: "{#RootPath}\res\docs\ChineseSimplified.isl"
+      #     Name: "English"; MessagesFile: "compiler:Default.isl"
+
+      #     [Tasks]
+      #     Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
+
+      #     [Files]
+      #     Source: "{#MyAppPath}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+
+      #     [Icons]
+      #     Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
+      #     Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
+
+      #     [Run]
+      #     Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall runascurrentuser
+
+      #     [Code]
+
+      #     procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+      #     begin
+      #       if CurUninstallStep = usPostUninstall then
+      #       begin
+      #         DelTree(ExpandConstant('{app}'), True, True, True);
+      #       end;
+      #     end;
+      #     "@ | Out-File -FilePath AUTO-MAS.iss -Encoding UTF8
+      #   shell: pwsh
+
+      # - name: 构建精简安装包
+      #   run: |
+      #     iscc AUTO-MAS.iss
+      #     Rename-Item -Path AUTO-MAS-Setup.exe -NewName AUTO-MAS-Lite-Setup.exe
+      #     Compress-Archive -Path .\frontend\dist\win-unpacked\* -DestinationPath AUTO-MAS-Lite-${{ steps.generate_version_info.outputs.version_tag }}-x64.zip -Force
+      #   shell: pwsh
+
+      # - name: 缓存完整环境
+      #   id: cache-environment
+      #   uses: actions/cache@v4
+      #   with:
+      #     path: environment.zip
+      #     key: environment-zip
+
+      # - name: 下载完整环境
+      #   if: steps.cache-environment.outputs.cache-hit != 'true'
+      #   run: Invoke-WebRequest -Uri https://download.auto-mas.top/d/AUTO-MAS/Environment/environment.zip -OutFile environment.zip
+    
+      # - name: 部署完整环境
+      #   run: Expand-Archive -Path environment.zip -DestinationPath .\frontend\dist\win-unpacked -Force
+      #   shell: pwsh
+
+      # - name: 构建完整安装包
+      #   run: |
+      #     iscc AUTO-MAS.iss
+      #     Rename-Item -Path AUTO-MAS-Setup.exe -NewName AUTO-MAS-Full-Setup.exe
+      #     Compress-Archive -Path .\frontend\dist\win-unpacked\* -DestinationPath AUTO-MAS-Full-${{ steps.generate_version_info.outputs.version_tag }}-x64.zip -Force
+      #   shell: pwsh
+
+      # - name: 上传未签名安装程序
+      #   id: upload-unsigned-setup-program
+      #   uses: actions/upload-artifact@v4
+      #   with:
+      #     name: AUTO-MAS-Unsigned-Setup
+      #     path: |
+      #       AUTO-MAS-Lite-Setup.exe
+      #       AUTO-MAS-Full-Setup.exe
+
+      # - name: 签名安装程序
+      #   uses: signpath/github-action-submit-signing-request@v2.0
+      #   with:
+      #       api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
+      #       organization-id: '787a1d5f-6177-4f30-9559-d2646473584a'
+      #       project-slug: 'AUTO_MAA'
+      #       signing-policy-slug: 'test-signing'
+      #       artifact-configuration-slug: "AUTO-MAS-Setup"
+      #       github-artifact-id: '${{ steps.upload-unsigned-setup-program.outputs.artifact-id }}'
+      #       wait-for-completion: true
+      #       output-artifact-directory: 'Signed'
+
+      # - name: 创建安装程序压缩包
+      #   run: |
+      #     Move-Item -Path .\Signed\AUTO-MAS-Lite-Setup.exe -Destination AUTO-MAS-Setup.exe
+      #     Compress-Archive -Path AUTO-MAS-Setup.exe -DestinationPath AUTO-MAS-Lite-Setup-${{ steps.generate_version_info.outputs.version_tag }}-x64.zip -Force
+      #     Remove-Item AUTO-MAS-Setup.exe
+      #     Move-Item -Path .\Signed\AUTO-MAS-Full-Setup.exe -Destination AUTO-MAS-Setup.exe
+      #     Compress-Archive -Path AUTO-MAS-Setup.exe -DestinationPath AUTO-MAS-Full-Setup-${{ steps.generate_version_info.outputs.version_tag }}-x64.zip -Force
+      #     Remove-Item AUTO-MAS-Setup.exe
+      #   shell: pwsh
+
+      # - name: 上传构建产物
+      #   uses: actions/upload-artifact@v4
+      #   with:
+      #     name: build-artifacts
+      #     path: AUTO-MAS-*-x64.zip
+      #     retention-days: 30
+
+  release:
+    name: 发布 GitHub 发行版
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: 签出代码
+        uses: actions/checkout@v4
+
+      # - name: 下载构建产物
+      #   uses: actions/download-artifact@v4
+      #   with:
+      #     name: build-artifacts
+      #     path: artifacts
+
+      # - name: 创建发行版分支与标签
+      #   run: |
+      #     git config --global user.name 'github-actions[bot]'
+      #     git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+
+      #     git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+
+      #     NEW_BRANCH="release/${{ needs.build.outputs.version_tag }}"
+      #     TAG_NAME="${{ needs.build.outputs.version_tag }}"
+
+      #     echo "Creating branch: $NEW_BRANCH"
+      #     echo "Creating tag: $TAG_NAME"
+
+      #     git checkout -b "$NEW_BRANCH"
+      #     git push origin "$NEW_BRANCH"
+
+      #     git tag "$TAG_NAME"
+      #     git push origin "$TAG_NAME"
+
+      # - name: 发布发行版
+      #   uses: softprops/action-gh-release@v2
+      #   with:
+      #     token: ${{ secrets.GITHUB_TOKEN }}
+      #     tag_name: ${{ needs.build.outputs.version_tag }}
+      #     body: ${{ needs.build.outputs.version_changelog }}
+      #     files: artifacts/*
+      #     prerelease: ${{ needs.build.outputs.is_prerelease }}
+
+  mirror:
+    name: 推送镜像版本
+    runs-on: macos-latest
+    needs: [build, release]
+
+    steps:
+      # - name: 下载构建产物
+      #   uses: actions/download-artifact@v4
+      #   with:
+      #     name: build-artifacts
+      #     path: .
+
+      # - name: 上传精简安装包
+      #   uses: MirrorChyan/uploading-action@v1
+      #   with:
+      #     filetype: local
+      #     filename: AUTO-MAS-Lite-Setup-${{ needs.build.outputs.version_tag }}-x64.zip
+      #     version_name: ${{ needs.build.outputs.version_tag }}
+      #     mirrorchyan_rid: AUTO_MAS
+      #     upload_token: ${{ secrets.MirrorChyanUploadToken }}
+      #     os: windows
+      #     arch: x64
+
+      # - name: 上传完整安装包
+      #   uses: MirrorChyan/uploading-action@v1
+      #   with:
+      #     filetype: local
+      #     filename: AUTO-MAS-Full-Setup-${{ needs.build.outputs.version_tag }}-x64.zip
+      #     version_name: ${{ needs.build.outputs.version_tag }}
+      #     mirrorchyan_rid: AUTO_MAS
+      #     upload_token: ${{ secrets.MirrorChyanUploadToken }}
+
+      # - name: 上传版本说明
+      #   uses: MirrorChyan/release-note-action@v1
+      #   with:
+      #     version_name: ${{ needs.build.outputs.version_tag }}
+      #     release_note: ${{ needs.build.outputs.version_changelog }}
+      #     mirrorchyan_rid: AUTO_MAS
+      #     upload_token: ${{ secrets.MirrorChyanUploadToken }}
+
+      - name: 触发自建源更新
+        run: |
+          if [ "${{ needs.build.outputs.is_prerelease }}" = "true" ]; then
+            CHANNEL="beta"
+          else
+            CHANNEL="stable"
+          fi
+
+          PAYLOAD=$(jq -n \
+            --arg version "${{ needs.build.outputs.version_tag }}" \
+            --arg res_id "AUTO_MAS" \
+            --arg channel "$CHANNEL" \
+            --arg os "macos" \
+            --arg arch "x64" \
+            '{version: $version, res_id: $res_id, channel: $channel, os: $os, arch: $arch}')
+
+          curl -X POST "${{ secrets.UPDATE_URL }}" -H "Content-Type: application/json" -d "$PAYLOAD"
