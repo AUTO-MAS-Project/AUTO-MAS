@@ -359,8 +359,8 @@ jobs:
             --arg version "${{ needs.build.outputs.version_tag }}" \
             --arg res_id "AUTO_MAS" \
             --arg channel "$CHANNEL" \
-            --arg os "macos" \
+            --arg os "win" \
             --arg arch "x64" \
             '{version: $version, res_id: $res_id, channel: $channel, os: $os, arch: $arch}')
 
-          curl -X POST "${{ secrets.UPDATE_URL }}" -H "Content-Type: application/json" -d "$PAYLOAD"
+          curl -X POST "${{ secrets.UPDATE_URL }}" -H "Content-Type: application/json" -d "$PAYLOAD" --connect-timeout 30 --max-time 600
