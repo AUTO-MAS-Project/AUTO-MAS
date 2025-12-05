@@ -85,13 +85,6 @@
                 导出日志（log格式）
               </a-button>
 
-              <a-button @click="goToLogSystemSettings" v-if="useNewSystem">
-                <template #icon>
-                  <SettingOutlined />
-                </template>
-                日志系统设置
-              </a-button>
-
               <a-button @click="refreshLogs" v-if="!useNewSystem">
                 <template #icon>
                   <ReloadOutlined />
@@ -225,14 +218,12 @@ import {
   DeleteOutlined,
   ExportOutlined,
   FolderOpenOutlined,
-  SettingOutlined,
   ReloadOutlined,
   SyncOutlined,
 } from '@ant-design/icons-vue'
 import { VueMonacoEditor } from '@guolao/vue-monaco-editor'
 import { Empty, message } from 'ant-design-vue'
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
 import type { ParsedLogEntry, LogLevel, LogSource } from '@/types/log'
 import { useLogViewer } from '@/composables/useLogViewer'
 
@@ -248,7 +239,6 @@ interface ParsedBackendLog {
 }
 
 const { isDark } = useTheme()
-const router = useRouter()
 const moduleLogger = getLogger('日志查看器')
 // 导入全局logger实例以访问日志文件操作方法
 import logger from '@/utils/logger'
@@ -481,18 +471,6 @@ const formatTimestamp = (timestamp: Date) => {
     minute: '2-digit',
     second: '2-digit'
   })
-}
-
-// 跳转到日志系统设置
-const goToLogSystemSettings = () => {
-  // 使用路由跳转到设置页面的日志系统标签
-  try {
-    router.push('/setting?tab=logsystem')
-  } catch (error) {
-    moduleLogger.error('路由跳转失败:', error)
-    // 降级方案
-    message.info('请手动前往设置页面的日志系统标签')
-  }
 }
 
 // 刷新日志
