@@ -35,7 +35,7 @@ from pathlib import Path
 
 from app.core import Config
 from app.utils.constants import MIRROR_ERROR_INFO
-from app.utils import get_logger
+from app.utils import ProcessRunner, get_logger
 from .system import System
 
 logger = get_logger("更新服务")
@@ -355,6 +355,15 @@ class _UpdateHandler:
         for f in versions.values():
             if (Path.cwd() / f).exists():
                 (Path.cwd() / f).unlink()
+
+        logger.info("正在清理旧版本注册表项")
+        await ProcessRunner.run_process(
+            "reg",
+            "delete",
+            r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{D116A92A-E174-4699-B777-61C5FD837B19}_is1",
+            "/f",
+        )
+        logger.success("清理完成")
 
         logger.info("启动更新程序")
         self.is_locked = False
