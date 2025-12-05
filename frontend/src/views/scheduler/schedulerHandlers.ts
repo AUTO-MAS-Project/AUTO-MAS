@@ -143,40 +143,15 @@ export function handleMainMessage(wsMessage: any) {
 
 // 处理后端请求关闭的函数
 async function handleRequestClose() {
-  try {
-    logger.info('开始执行前端自杀流程...')
+  logger.info('开始执行前端关闭流程...')
 
-    // 显示关闭遮罩
-    const { showClosingOverlay } = useAppClosing()
-    showClosingOverlay()
+  // 显示关闭遮罩
+  const { showClosingOverlay } = useAppClosing()
+  showClosingOverlay()
 
-    // 使用更激进的强制退出方法
-    if (window.electronAPI?.forceExit) {
-      logger.info('执行强制退出...')
-      await window.electronAPI.forceExit()
-    } else if (window.electronAPI?.windowClose) {
-      // 备用方法：先尝试正常关闭
-      logger.info('执行窗口关闭...')
-      await window.electronAPI.windowClose()
-      setTimeout(async () => {
-        if (window.electronAPI?.appQuit) {
-          await window.electronAPI.appQuit()
-        }
-      }, 500)
-    } else {
-      // 最后的备用方法
-      logger.info('使用页面重载作为最后手段...')
-      window.location.reload()
-    }
-  } catch (error) {
-    logger.error('执行自杀流程失败:', error)
-    // 如果所有方法都失败，尝试页面重载
-    try {
-      window.location.reload()
-    } catch (e) {
-      logger.error('页面重载也失败:', e)
-    }
-  }
+  // 退出应用
+  logger.info('正在退出应用...')
+  await window.electronAPI?.appQuit()
 }
 
 // UI 在挂载时调用，消费并回放 pending 数据
