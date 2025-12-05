@@ -273,7 +273,7 @@ class AutoProxyTask(TaskExecuteBase):
             await self.general_process_manager.open_process(
                 self.script_exe_path, *self.script_arguments
             )
-            await self.general_log_monitor.start(
+            await self.general_log_monitor.start_monitor_file(
                 self.script_log_path, self.log_start_time
             )
             await self.wait_event.wait()
