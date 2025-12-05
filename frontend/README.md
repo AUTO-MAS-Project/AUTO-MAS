@@ -49,12 +49,8 @@ yarn dev
 
 ### 构建
 
-由于FULL要从开发环境中抽取environment等文件，所以你必须先成功运行dev并完成初始化才能构建FULL版本。
 ```bash
-yarn build:lite
-```
-```bash
-yarn build:full
+yarn build
 ```
 
 ## 技术栈
