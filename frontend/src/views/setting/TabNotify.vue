@@ -2,6 +2,7 @@
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type { SettingsData } from '@/types/settings'
 import WebhookManager from '@/components/WebhookManager.vue'
+import { handleExternalLink } from '@/utils/openExternal'
 
 const props = defineProps<{
   settings: SettingsData
@@ -125,9 +126,9 @@ const handleWebhookChange = async () => {
         <h3>邮件通知</h3>
         <a
           href="https://doc.auto-mas.top/docs/advanced-features.html#smtp-%E9%82%AE%E4%BB%B6%E6%8E%A8%E9%80%81%E6%B8%A0%E9%81%93"
-          target="_blank"
           class="section-doc-link"
           title="查看电子邮箱配置文档"
+          @click="handleExternalLink"
         >
           文档
         </a>
@@ -244,9 +245,9 @@ const handleWebhookChange = async () => {
         <h3>Server酱通知</h3>
         <a
           href="https://doc.auto-mas.top/docs/advanced-features.html#serverchan-%E9%80%9A%E7%9F%A5%E6%8E%A8%E9%80%81%E6%B8%A0%E9%81%93"
-          target="_blank"
           class="section-doc-link"
           title="查看Server酱配置文档"
+          @click="handleExternalLink"
         >
           文档
         </a>
@@ -302,9 +303,9 @@ const handleWebhookChange = async () => {
         <h3>自定义 Webhook 通知</h3>
         <a
           href="https://doc.auto-mas.top/docs/advanced-features.html#%E8%87%AA%E5%AE%9A%E4%B9%89webhook%E9%80%9A%E7%9F%A5"
-          target="_blank"
           class="section-doc-link"
           title="查看自定义Webhook配置文档"
+          @click="handleExternalLink"
         >
           文档
         </a>
