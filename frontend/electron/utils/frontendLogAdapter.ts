@@ -527,44 +527,8 @@ export class FrontendLogAdapter extends EventEmitter {
             // 直接调用前端日志方法，不使用IPC或logManagementService
             const { logService } = require('../services/logService')
 
-            // 简化适配逻辑，直接调用前端日志方法
-            // 确保使用解析后的日志级别调用对应的方法
-            switch (logEntry.level) {
-                case LogLevel.TRACE:
-                    logService.trace(logEntry.module, logEntry.message)
-                    break
-                case LogLevel.DEBUG:
-                    logService.debug(logEntry.module, logEntry.message)
-                    break
-                case LogLevel.INFO:
-                    logService.info(logEntry.module, logEntry.message)
-                    break
-                case LogLevel.WARN:
-                    logService.warn(logEntry.module, logEntry.message)
-                    break
-                case LogLevel.ERROR:
-                    logService.error(logEntry.module, logEntry.message)
-                    break
-                case LogLevel.CRITICAL:
-                    // 使用专门的critical方法，如果不存在则使用error
-                    if (typeof logService.critical === 'function') {
-                        logService.critical(logEntry.module, logEntry.message)
-                    } else {
-                        logService.error(logEntry.module, logEntry.message)
-                    }
-                    break
-                case LogLevel.SUCCESS:
-                    // 使用专门的success方法，如果不存在则使用info
-                    if (typeof logService.success === 'function') {
-                        logService.success(logEntry.module, logEntry.message)
-                    } else {
-                        logService.info(logEntry.module, logEntry.message)
-                    }
-                    break
-                default:
-                    logService.info(logEntry.module, logEntry.message)
-                    break
-            }
+            // 使用 writeLog 方法，直接传递 source 参数
+            logService.writeLog(logEntry.level, logEntry.module, logEntry.message, logEntry.source)
 
             this.stats.frontendOutput++
         } catch (error) {
@@ -582,45 +546,9 @@ export class FrontendLogAdapter extends EventEmitter {
             // 直接调用前端日志方法，不使用IPC或logManagementService
             const { logService } = require('../services/logService')
 
-            // 简化适配逻辑，直接调用前端日志方法
+            // 使用 writeLog 方法批量处理，直接传递 source 参数
             for (const logEntry of logEntries) {
-                // 确保使用解析后的日志级别调用对应的方法
-                switch (logEntry.level) {
-                    case LogLevel.TRACE:
-                        logService.trace(logEntry.module, logEntry.message)
-                        break
-                    case LogLevel.DEBUG:
-                        logService.debug(logEntry.module, logEntry.message)
-                        break
-                    case LogLevel.INFO:
-                        logService.info(logEntry.module, logEntry.message)
-                        break
-                    case LogLevel.WARN:
-                        logService.warn(logEntry.module, logEntry.message)
-                        break
-                    case LogLevel.ERROR:
-                        logService.error(logEntry.module, logEntry.message)
-                        break
-                    case LogLevel.CRITICAL:
-                        // 使用专门的critical方法，如果不存在则使用error
-                        if (typeof logService.critical === 'function') {
-                            logService.critical(logEntry.module, logEntry.message)
-                        } else {
-                            logService.error(logEntry.module, logEntry.message)
-                        }
-                        break
-                    case LogLevel.SUCCESS:
-                        // 使用专门的success方法，如果不存在则使用info
-                        if (typeof logService.success === 'function') {
-                            logService.success(logEntry.module, logEntry.message)
-                        } else {
-                            logService.info(logEntry.module, logEntry.message)
-                        }
-                        break
-                    default:
-                        logService.info(logEntry.module, logEntry.message)
-                        break
-                }
+                logService.writeLog(logEntry.level, logEntry.module, logEntry.message, logEntry.source)
             }
 
             this.stats.frontendOutput += logEntries.length
