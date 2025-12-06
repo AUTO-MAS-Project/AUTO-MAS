@@ -249,7 +249,7 @@ export class LogFormatter {
     private static getModuleColorTag(entry: LogEntry | ParsedLogEntry): string {
         // 检查是否有 source 字段（ParsedLogEntry）
         const source = 'source' in entry ? entry.source : undefined
-        
+
         if (source === LogSource.BACKEND) {
             return 'orange'  // 后端日志使用橙色
         } else if (source === LogSource.FRONTEND) {
@@ -257,7 +257,7 @@ export class LogFormatter {
         } else if (source === LogSource.SYSTEM) {
             return 'cyan'    // 系统日志使用青色
         }
-        
+
         // 默认使用青色（兼容旧代码）
         return 'cyan'
     }

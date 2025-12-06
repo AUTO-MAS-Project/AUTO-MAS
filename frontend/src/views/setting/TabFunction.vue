@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type { SettingsData } from '@/types/settings'
+import { handleExternalLink } from '@/utils/openExternal'
 
 const {
   settings,
@@ -150,27 +151,24 @@ const {
                       <li>
                         <a
                           href="https://www.bilibili.com/protocal/licence.html"
-                          target="_blank"
                           class="tooltip-link"
-                          @click.stop
+                          @click="handleExternalLink"
                           >《哔哩哔哩弹幕网用户使用协议》</a
                         >
                       </li>
                       <li>
                         <a
                           href="https://www.bilibili.com/blackboard/privacy-pc.html"
-                          target="_blank"
                           class="tooltip-link"
-                          @click.stop
+                          @click="handleExternalLink"
                           >《哔哩哔哩隐私政策》</a
                         >
                       </li>
                       <li>
                         <a
                           href="https://game.bilibili.com/yhxy"
-                          target="_blank"
                           class="tooltip-link"
-                          @click.stop
+                          @click="handleExternalLink"
                           >《哔哩哔哩游戏中心用户协议》</a
                         >
                       </li>
@@ -316,9 +314,8 @@ const {
                     Mirror酱CDK是使用Mirror源进行高速下载的凭证，可前往
                     <a
                       href="https://mirrorchyan.com/zh/get-start?source=auto-mas-setting"
-                      target="_blank"
                       class="tooltip-link"
-                      @click.stop
+                      @click="handleExternalLink"
                       >Mirror酱官网</a
                     >
                     获取

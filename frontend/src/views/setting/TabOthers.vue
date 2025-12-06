@@ -3,6 +3,7 @@ import { HomeOutlined, GithubOutlined, QqOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import type { VersionOut } from '@/api'
 import { getLogger } from '@/utils/logger'
+import { handleExternalLink } from '@/utils/openExternal'
 
 const logger = getLogger('设置-其他')
 
@@ -57,7 +58,7 @@ const copyAllInfo = async () => {
             <div class="link-content">
               <h4>软件官网</h4>
               <p>查看最新版本和功能介绍</p>
-              <a href="https://auto-mas.top" target="_blank" class="link-button">访问官网</a>
+              <a href="https://auto-mas.top" class="link-button" @click="handleExternalLink">访问官网</a>
             </div>
           </div>
         </div>
@@ -69,8 +70,8 @@ const copyAllInfo = async () => {
               <p>查看源代码、提交issue和捐赠</p>
               <a
                 href="https://github.com/AUTO-MAS-Project/AUTO-MAS"
-                target="_blank"
                 class="link-button"
+                @click="handleExternalLink"
                 >访问仓库</a
               >
             </div>
@@ -82,7 +83,7 @@ const copyAllInfo = async () => {
             <div class="link-content">
               <h4>用户QQ群</h4>
               <p>加入社区，获取帮助和交流</p>
-              <a href="https://qm.qq.com/q/bd9fISNoME" target="_blank" class="link-button"
+              <a href="https://qm.qq.com/q/bd9fISNoME" class="link-button" @click="handleExternalLink"
                 >加入群聊</a
               >
             </div>
