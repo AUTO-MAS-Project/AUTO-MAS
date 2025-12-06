@@ -121,18 +121,20 @@ class AutoProxyTask(TaskExecuteBase):
         self.script_set_arguments = arguments_list[1] if len(arguments_list) > 1 else []
 
         self.script_config_path = Path(self.script_config.get("Script", "ConfigPath"))
-        self.script_log_path = (
-            Path(self.script_config.get("Script", "LogPath")).with_stem(
-                datetime.now().strftime(
-                    self.script_config.get("Script", "LogPathFormat")
-                )
-            )
-            if self.script_config.get("Script", "LogPathFormat")
-            else Path(self.script_config.get("Script", "LogPath"))
-        )
+
+        self.script_log_path = Path(self.script_config.get("Script", "LogPath"))
+        log_format = self.script_config.get("Script", "LogPathFormat")
+        if log_format:
+            log_file_name = datetime.now().strftime(log_format)
+            try:
+                datetime.strptime(self.script_log_path.stem, log_format)
+                self.script_log_path = self.script_log_path.with_stem(log_file_name)
+            except ValueError:
+                self.script_log_path = self.script_log_path.with_name(log_file_name)
         if not self.script_log_path.exists():
             self.script_log_path.parent.mkdir(parents=True, exist_ok=True)
             self.script_log_path.touch(exist_ok=True)
+
         self.game_path = Path(self.script_config.get("Game", "Path"))
         self.game_url = self.script_config.get("Game", "URL")
         self.game_process_name = self.script_config.get("Game", "ProcessName")
@@ -357,7 +359,9 @@ class AutoProxyTask(TaskExecuteBase):
             logger.info("中止游戏/模拟器进程")
             if isinstance(self.game_manager, ProcessManager):
                 await self.game_manager.kill()
-                if self.script_config.get("Game", "IfForceClose"):
+                if self.script_config.get(
+                    "Game", "Type"
+                ) == "Client" and self.script_config.get("Game", "IfForceClose"):
                     await System.kill_process(self.game_path)
             elif isinstance(self.game_manager, DeviceBase):
                 await self.game_manager.close(

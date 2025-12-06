@@ -275,7 +275,7 @@
                 </template>
                 <a-input
                   v-model:value="generalConfig.Script.LogPathFormat"
-                  placeholder="日志文件名格式"
+                  placeholder="日志文件名格式，文件名固定时留空"
                   size="large"
                   class="modern-input"
                 />

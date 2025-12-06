@@ -654,11 +654,11 @@ class GeneralConfig(ConfigBase):
         )
         ## 日志路径格式
         self.Script_LogPathFormat = ConfigItem("Script", "LogPathFormat", "%Y-%m-%d")
-        ## 日志时间起始行
+        ## 日志时间戳开始位置
         self.Script_LogTimeStart = ConfigItem(
             "Script", "LogTimeStart", 1, RangeValidator(1, 9999)
         )
-        ## 日志时间结束行
+        ## 日志时间戳结束位置
         self.Script_LogTimeEnd = ConfigItem(
             "Script", "LogTimeEnd", 1, RangeValidator(1, 9999)
         )
