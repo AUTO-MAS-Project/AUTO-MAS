@@ -37,7 +37,6 @@
       :loading="loading"
       @handle-m-a-a-config="handleMAAConfig"
       @handle-cancel="handleCancel"
-      @handle-submit="handleSubmit"
     />
 
     <div class="user-edit-content">
@@ -114,19 +113,6 @@
         </a-form>
       </a-card>
     </div>
-
-    <a-float-button
-      type="primary"
-      class="float-button"
-      :style="{
-        right: '24px',
-      }"
-      @click="handleSubmit"
-    >
-      <template #icon>
-        <SaveOutlined />
-      </template>
-    </a-float-button>
   </div>
 </template>
 
@@ -166,11 +152,13 @@ const { subscribe, unsubscribe } = useWebSocket()
 
 const formRef = ref<FormInstance>()
 const loading = computed(() => userLoading.value)
+const isInitializing = ref(true) // 标记是否正在初始化
+const isSaving = ref(false) // 标记是否正在保存
 
 // 路由参数
 const scriptId = route.params.scriptId as string
-const userId = route.params.userId as string
-const isEdit = computed(() => !!userId)
+let userId = route.params.userId as string
+const isEdit = ref(!!userId) // 使用 ref 以便在创建后更新
 
 // 脚本信息
 const scriptName = ref('')
@@ -545,6 +533,48 @@ watch(
   }
 )
 
+// 实时保存函数（带防抖）
+let saveTimer: NodeJS.Timeout | null = null
+const autoSave = async () => {
+  if (isInitializing.value || isSaving.value || !userId) return
+  
+  // 清除之前的定时器
+  if (saveTimer) {
+    clearTimeout(saveTimer)
+  }
+  
+  // 设置新的定时器，500ms 后保存
+  saveTimer = setTimeout(async () => {
+    isSaving.value = true
+    try {
+      // 确保扁平化字段同步到嵌套数据
+      formData.Info.Name = formData.userName
+      formData.Info.Id = formData.userId
+      
+      const userData = {
+        Info: { ...formData.Info },
+        Task: { ...formData.Task },
+        Notify: { ...formData.Notify },
+        Data: { ...formData.Data },
+      }
+      
+      await updateUser(scriptId, userId, userData)
+      maaUserLogger.info('用户配置已自动保存')
+    } catch (error) {
+      maaUserLogger.error('自动保存失败:', error)
+    } finally {
+      isSaving.value = false
+    }
+  }, 500)
+}
+
+// 监听表单数据变化，自动保存
+watch(() => formData.userName, autoSave)
+watch(() => formData.userId, autoSave)
+watch(() => formData.Info, autoSave, { deep: true })
+watch(() => formData.Task, autoSave, { deep: true })
+watch(() => formData.Notify, autoSave, { deep: true })
+
 // 加载脚本信息
 const loadScriptInfo = async () => {
   try {
@@ -555,6 +585,9 @@ const loadScriptInfo = async () => {
       // 如果是编辑模式，加载用户数据
       if (isEdit.value) {
         await loadUserData()
+      } else {
+        // 新增模式：立即创建用户获取 ID
+        await createUserImmediately()
       }
     } else {
       message.error('脚本不存在')
@@ -563,6 +596,32 @@ const loadScriptInfo = async () => {
   } catch (error) {
     maaUserLogger.error('加载脚本信息失败:', error)
     message.error('加载脚本信息失败')
+  }
+}
+
+// 新增模式下立即创建用户
+const createUserImmediately = async () => {
+  try {
+    const result = await addUser(scriptId)
+    if (result && result.userId) {
+      userId = result.userId
+      isEdit.value = true
+      // 更新路由，但不刷新页面
+      router.replace({
+        name: route.name || undefined,
+        params: { ...route.params, userId: result.userId },
+      })
+      maaUserLogger.info('用户已创建，ID:', result.userId)
+      // 加载新创建用户的数据
+      await loadUserData()
+    } else {
+      message.error('创建用户失败')
+      handleCancel()
+    }
+  } catch (error) {
+    maaUserLogger.error('创建用户失败:', error)
+    message.error('创建用户失败')
+    handleCancel()
   }
 }
 
@@ -619,6 +678,9 @@ const loadUserData = async () => {
         
         // 加载基建配置选项
         await loadInfrastructureOptions()
+        
+        // 数据加载完成，允许自动保存
+        isInitializing.value = false
       } else {
         message.error('用户不存在')
         handleCancel()
@@ -732,69 +794,7 @@ const loadInfrastructureOptions = async () => {
   }
 }
 
-const handleSubmit = async () => {
-  try {
-    await formRef.value?.validate()
-
-    // 确保扁平化字段同步到嵌套数据
-    formData.Info.Name = formData.userName
-    formData.Info.Id = formData.userId
-
-    maaUserLogger.info('提交前的表单数据:', {
-      userName: formData.userName,
-      userId: formData.userId,
-      InfoName: formData.Info.Name,
-      InfoId: formData.Info.Id,
-      isEdit: isEdit.value,
-    })
-
-    // 构建提交数据，包含所有 Info 字段
-    const userData = {
-      Info: { ...formData.Info },
-      Task: { ...formData.Task },
-      Notify: { ...formData.Notify },
-      Data: { ...formData.Data },
-    }
-
-    if (isEdit.value) {
-      // 编辑模式
-      const result = await updateUser(scriptId, userId, userData)
-      if (result) {
-        message.success('用户更新成功')
-        handleCancel()
-      }
-    } else {
-      // 添加模式
-      const result = await addUser(scriptId)
-      if (result) {
-        // 创建成功后立即更新用户数据
-        try {
-          const updateResult = await updateUser(scriptId, result.userId, userData)
-          maaUserLogger.info('用户数据更新结果:', updateResult)
-
-          if (updateResult) {
-            message.success('用户创建成功')
-            handleCancel()
-          } else {
-            message.error('用户创建成功，但数据更新失败，请手动编辑用户信息')
-            // 不跳转，让用户可以重新保存
-          }
-        } catch (updateError) {
-          maaUserLogger.error('更新用户数据时发生错误:', updateError)
-          message.error('用户创建成功，但数据更新失败，请手动编辑用户信息')
-        }
-      }
-    }
-  } catch (error) {
-    maaUserLogger.error('表单验证失败:', error)
-  }
-}
-
 const handleMAAConfig = async () => {
-  if (!isEdit.value) {
-    message.warning('请先保存用户后再进行MAA配置')
-    return
-  }
 
   try {
     maaConfigLoading.value = true
