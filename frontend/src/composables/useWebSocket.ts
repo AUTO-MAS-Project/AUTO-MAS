@@ -771,44 +771,8 @@ const handleMessage = (raw: WebSocketBaseMessage) => {
   const global = getGlobalStorage()
   const now = Date.now()
 
-  // 强制输出消息处理信息，包含订阅数量
   const subscriptionCount = global.subscriptions.value.size
-  logger.info(`处理消息: type=${raw.type}, id=${raw.id}, 订阅数=${subscriptionCount}`)
-
-  // 添加消息去重机制，防止同一消息被重复处理
-  // 对于Update类型的消息，使用更精确的去重策略
-  let messageKey: string
-  if (raw.type === 'Update' && raw.data?.task_info) {
-    // 对于任务更新消息，基于任务信息内容生成哈希
-    const taskInfoHash = JSON.stringify(raw.data.task_info.map((task: any) => ({
-      script_id: task.script_id,
-      name: task.name,
-      status: task.status,
-      userCount: task.userList?.length || 0
-    })))
-    messageKey = `${raw.type}_${raw.id}_${taskInfoHash}`
-  } else {
-    messageKey = `${raw.type}_${raw.id}_${JSON.stringify(raw.data)}`
-  }
-
-  if (!global.lastProcessedMessages) {
-    global.lastProcessedMessages = new Map()
-  }
-
-  // 检查是否在最近200ms内处理过相同的消息（增加时间窗口）
-  const lastProcessed = global.lastProcessedMessages.get(messageKey)
-  if (lastProcessed && now - lastProcessed < 200) {
-    logger.warn(`重复消息被过滤: ${messageKey.substring(0, 100)}...`)
-    return
-  }
-  global.lastProcessedMessages.set(messageKey, now)
-
-  // 清理过期的消息记录（保留最近2秒的记录）
-  for (const [key, timestamp] of global.lastProcessedMessages.entries()) {
-    if (now - timestamp > 2000) {
-      global.lastProcessedMessages.delete(key)
-    }
-  }
+  logger.debug(`处理消息: type=${raw.type}, id=${raw.id}, 订阅数=${subscriptionCount}`)
 
   let dispatched = false
   let matchingSubscriptions = 0
