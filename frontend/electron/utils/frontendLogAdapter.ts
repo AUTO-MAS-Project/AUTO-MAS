@@ -91,7 +91,7 @@ export class FrontendLogAdapter extends EventEmitter {
         super()
 
         this.config = {
-            enableConsole: true,   // 启用控制台输出
+            enableConsole: false,  // 禁用控制台输出（避免重复，logService 会输出）
             enableFile: false,     // 禁用文件输出（避免重复写入）
             enableFrontend: true,  // 保留前端输出
             enableIPC: true,

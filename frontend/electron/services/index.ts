@@ -74,6 +74,5 @@ export {
     BackendService,
     BackendStatus,
     BackendStartOptions,
-    BackendLogCallback,
     BackendStatusCallback
 } from './backendService'
