@@ -48,18 +48,6 @@
         </template>
         返回
       </a-button>
-      <a-button
-        type="primary"
-        size="large"
-        :loading="loading"
-        class="save-button"
-        @click="handleSubmit"
-      >
-        <template #icon>
-          <SaveOutlined />
-        </template>
-        {{ isEdit ? '保存修改' : '创建用户' }}
-      </a-button>
     </a-space>
   </div>
 
@@ -352,19 +340,6 @@
       </a-form>
     </a-card>
   </div>
-
-  <a-float-button
-    type="primary"
-    class="float-button"
-    :style="{
-      right: '24px',
-    }"
-    @click="handleSubmit"
-  >
-    <template #icon>
-      <SaveOutlined />
-    </template>
-  </a-float-button>
 </template>
 
 <script setup lang="ts">
@@ -399,11 +374,13 @@ const { subscribe, unsubscribe } = useWebSocket()
 
 const formRef = ref<FormInstance>()
 const loading = computed(() => userLoading.value)
+const isInitializing = ref(true) // 标记是否正在初始化
+const isSaving = ref(false) // 标记是否正在保存
 
 // 路由参数
 const scriptId = route.params.scriptId as string
-const userId = route.params.userId as string
-const isEdit = computed(() => !!userId)
+let userId = route.params.userId as string
+const isEdit = ref(!!userId) // 使用 ref 以便在创建后更新
 
 // 脚本信息
 const scriptName = ref('')
@@ -484,6 +461,42 @@ watch(
   }
 )
 
+// 实时保存函数（带防抖）
+let saveTimer: NodeJS.Timeout | null = null
+const autoSave = async () => {
+  if (isInitializing.value || isSaving.value || !userId) return
+  
+  // 清除之前的定时器
+  if (saveTimer) {
+    clearTimeout(saveTimer)
+  }
+  
+  // 设置新的定时器，500ms 后保存
+  saveTimer = setTimeout(async () => {
+    isSaving.value = true
+    try {
+      formData.Info.Name = formData.userName
+      const userData = {
+        Info: { ...formData.Info },
+        Notify: { ...formData.Notify },
+        Data: { ...formData.Data },
+      }
+      
+      await updateUser(scriptId, userId, userData)
+      generalUserLogger.info('用户配置已自动保存')
+    } catch (error) {
+      generalUserLogger.error('自动保存失败:', error)
+    } finally {
+      isSaving.value = false
+    }
+  }, 500)
+}
+
+// 监听表单数据变化，自动保存
+watch(() => formData.userName, autoSave)
+watch(() => formData.Info, autoSave, { deep: true })
+watch(() => formData.Notify, autoSave, { deep: true })
+
 // 加载脚本信息
 const loadScriptInfo = async () => {
   try {
@@ -494,6 +507,9 @@ const loadScriptInfo = async () => {
       // 如果是编辑模式，加载用户数据
       if (isEdit.value) {
         await loadUserData()
+      } else {
+        // 新增模式：立即创建用户获取 ID
+        await createUserImmediately()
       }
     } else {
       message.error('脚本不存在')
@@ -502,6 +518,32 @@ const loadScriptInfo = async () => {
   } catch (error) {
     generalUserLogger.error('加载脚本信息失败:', error)
     message.error('加载脚本信息失败')
+  }
+}
+
+// 新增模式下立即创建用户
+const createUserImmediately = async () => {
+  try {
+    const result = await addUser(scriptId)
+    if (result && result.userId) {
+      userId = result.userId
+      isEdit.value = true
+      // 更新路由，但不刷新页面
+      router.replace({
+        name: route.name || undefined,
+        params: { ...route.params, userId: result.userId },
+      })
+      generalUserLogger.info('用户已创建，ID:', result.userId)
+      // 加载新创建用户的数据
+      await loadUserData()
+    } else {
+      message.error('创建用户失败')
+      handleCancel()
+    }
+  } catch (error) {
+    generalUserLogger.error('创建用户失败:', error)
+    message.error('创建用户失败')
+    handleCancel()
   }
 }
 
@@ -534,6 +576,9 @@ const loadUserData = async () => {
           InfoName: formData.Info.Name,
           fullData: formData,
         })
+        
+        // 数据加载完成，允许自动保存
+        isInitializing.value = false
       } else {
         message.error('用户不存在')
         handleCancel()
@@ -548,48 +593,7 @@ const loadUserData = async () => {
   }
 }
 
-const handleSubmit = async () => {
-  try {
-    await formRef.value?.validate()
-    formData.Info.Name = formData.userName
-    const userData = {
-      Info: { ...formData.Info },
-      Notify: { ...formData.Notify },
-      Data: { ...formData.Data },
-    }
-    if (isEdit.value) {
-      const result = await updateUser(scriptId, userId, userData)
-      if (result) {
-        message.success('用户更新成功')
-        handleCancel()
-      }
-    } else {
-      const result = await addUser(scriptId)
-      if (result) {
-        try {
-          const updateResult = await updateUser(scriptId, result.userId, userData)
-          if (updateResult) {
-            message.success('用户创建成功')
-            handleCancel()
-          } else {
-            message.error('用户创建成功，但数据更新失败，请手动编辑用户信息')
-          }
-        } catch (updateError) {
-          generalUserLogger.error('更新用户数据时发生错误:', updateError)
-          message.error('用户创建成功，但数据更新失败，请手动编辑用户信息')
-        }
-      }
-    }
-  } catch (error) {
-    generalUserLogger.error('表单验证失败:', error)
-  }
-}
-
 const handleGeneralConfig = async () => {
-  if (!isEdit.value) {
-    message.warning('请先保存用户后再进行通用配置')
-    return
-  }
 
   try {
     generalConfigLoading.value = true
