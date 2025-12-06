@@ -178,10 +178,6 @@ export interface ElectronAPI {
   }) => void) => void
   removeInitializationProgressListener?: () => void
 
-  // 监听后端日志
-  onBackendLog: (callback: (log: string) => void) => void
-  removeBackendLogListener?: () => void
-
   // 监听后端状态
   onBackendStatus: (callback: (status: {
     isRunning: boolean

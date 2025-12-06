@@ -218,11 +218,7 @@ async function handleRetry() {
 
 // ==================== 生命周期 ====================
 onMounted(() => {
-  // 监听后端日志，帮助诊断日志捕获问题
   const api = window.electronAPI as any
-  api.onBackendLog?.((log: string) => {
-    logger.debug('后端启动步骤', `收到后端日志: ${log.substring(0, 100)}...`)
-  })
   
   api.onBackendStatus?.((status: any) => {
     logger.debug('后端启动步骤', `收到后端状态: ${JSON.stringify(status)}`)
@@ -237,7 +233,6 @@ onMounted(() => {
 onUnmounted(() => {
   // 清理监听器
   const api = window.electronAPI as any
-  api.removeBackendLogListener?.()
   api.removeBackendStatusListener?.()
 })
 </script>
