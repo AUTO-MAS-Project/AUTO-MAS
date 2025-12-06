@@ -19,6 +19,7 @@ export interface LogEntry {
     level: string
     module: string
     message: string
+    source?: LogSource  // 日志来源，用于区分后端/前端/系统日志
 }
 
 // 颜色样式映射
@@ -44,9 +45,9 @@ const LOG_LEVEL_COLORS: ColorStyle = {
 
 // 模块颜色映射
 const MODULE_COLORS: ColorStyle = {
-    '后端': { color: '#1890ff', background: '#f0f5ff' },
-    '前端': { color: '#722ed1', background: '#f9f0ff' },
-    '系统': { color: '#13c2c2', background: '#e6fffb' }
+    '后端': { color: '#fa8c16', background: '#fff7e6', fontWeight: 'bold' },  // 橙色 - 后端日志
+    '前端': { color: '#722ed1', background: '#f9f0ff', fontWeight: 'bold' },  // 紫色 - 前端日志
+    '系统': { color: '#13c2c2', background: '#e6fffb', fontWeight: 'bold' }   // 青色 - 系统日志
 }
 
 // 缓存已格式化的字符串，提高性能
@@ -72,7 +73,9 @@ export class LogFormatter {
         const module = entry.module
         const message = entry.message
 
-        const formatted = `<green>${time}</green> | <level>${level}</level> | <cyan>${module}</cyan> | <level>${message}</level>`
+        // 根据日志来源选择模块颜色标签
+        const moduleColorTag = this.getModuleColorTag(entry)
+        const formatted = `<green>${time}</green> | <level>${level}</level> | <${moduleColorTag}>${module}</${moduleColorTag}> | <level>${message}</level>`
 
         // 缓存结果
         if (formatCache.size >= MAX_CACHE_SIZE) {
@@ -133,8 +136,9 @@ export class LogFormatter {
 
             return formatted
         } else if (includeColors) {
-            // 标签格式
-            let formatted = `<green>${time}</green> | <level>${level}</level> | <cyan>${module}</cyan> | <level>${message}</level>`
+            // 标签格式 - 根据日志来源选择模块颜色标签
+            const moduleColorTag = this.getModuleColorTag(entry)
+            let formatted = `<green>${time}</green> | <level>${level}</level> | <${moduleColorTag}>${module}</${moduleColorTag}> | <level>${message}</level>`
 
             // 添加元数据
             if (includeMetadata && entry.metadata) {
@@ -238,6 +242,27 @@ export class LogFormatter {
     }
 
     /**
+     * 获取模块颜色标签
+     * @param entry 日志条目
+     * @returns 颜色标签名称
+     */
+    private static getModuleColorTag(entry: LogEntry | ParsedLogEntry): string {
+        // 检查是否有 source 字段（ParsedLogEntry）
+        const source = 'source' in entry ? entry.source : undefined
+        
+        if (source === LogSource.BACKEND) {
+            return 'orange'  // 后端日志使用橙色
+        } else if (source === LogSource.FRONTEND) {
+            return 'purple'  // 前端日志使用紫色
+        } else if (source === LogSource.SYSTEM) {
+            return 'cyan'    // 系统日志使用青色
+        }
+        
+        // 默认使用青色（兼容旧代码）
+        return 'cyan'
+    }
+
+    /**
      * 获取模块对应的HTML样式
      * @param module 模块名
      * @param source 日志来源
@@ -269,14 +294,16 @@ export class LogFormatter {
      * @param level 日志级别
      * @param module 模块名
      * @param message 日志消息
+     * @param source 日志来源
      * @returns 日志条目
      */
-    static createLogEntry(level: string, module: string, message: string): LogEntry {
+    static createLogEntry(level: string, module: string, message: string, source?: LogSource): LogEntry {
         return {
             timestamp: new Date(),
             level: level.toUpperCase(),
             module,
-            message
+            message,
+            source
         }
     }
 
