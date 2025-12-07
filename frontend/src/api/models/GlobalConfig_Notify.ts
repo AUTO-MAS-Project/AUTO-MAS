@@ -24,6 +24,18 @@ export type GlobalConfig_Notify = {
      */
     IfSendMail?: (boolean | null);
     /**
+     * 是否发送Koishi通知
+     */
+    IfSendKoishi?: (boolean | null);
+    /**
+     * Koishi服务器地址
+     */
+    KoishiServerAddress?: (string | null);
+    /**
+     * Koishi Token
+     */
+    KoishiToken?: (string | null);
+    /**
      * SMTP服务器地址
      */
     SMTPServerAddress?: (string | null);

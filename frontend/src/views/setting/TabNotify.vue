@@ -300,6 +300,75 @@ const handleWebhookChange = async () => {
 
     <div class="form-section">
       <div class="section-header">
+        <h3>Koishi通知</h3>
+      </div>
+      <a-row :gutter="24">
+        <a-col :span="12">
+          <div class="form-item-vertical">
+            <div class="form-label-wrapper">
+              <span class="form-label">启用Koishi通知</span>
+              <a-tooltip title="使用Koishi推送通知">
+                <QuestionCircleOutlined class="help-icon" />
+              </a-tooltip>
+            </div>
+            <a-select
+              v-model:value="settings.Notify.IfSendKoishi"
+              size="large"
+              style="width: 100%"
+              @change="(checked: any) => handleSettingChange('Notify', 'IfSendKoishi', checked)"
+            >
+              <a-select-option :value="true">是</a-select-option>
+              <a-select-option :value="false">否</a-select-option>
+            </a-select>
+          </div>
+        </a-col>
+      </a-row>
+      <a-row :gutter="24">
+        <a-col :span="12">
+          <div class="form-item-vertical">
+            <div class="form-label-wrapper">
+              <span class="form-label">Koishi服务器地址</span>
+              <a-tooltip title="Koishi服务器的地址">
+                <QuestionCircleOutlined class="help-icon" />
+              </a-tooltip>
+            </div>
+            <a-input
+              v-model:value="settings.Notify.KoishiServerAddress"
+              :disabled="!settings.Notify.IfSendKoishi"
+              placeholder="请输入Koishi服务器地址"
+              size="large"
+              @blur="
+                handleSettingChange(
+                  'Notify',
+                  'KoishiServerAddress',
+                  settings.Notify.KoishiServerAddress
+                )
+              "
+            />
+          </div>
+        </a-col>
+        <a-col :span="12">
+          <div class="form-item-vertical">
+            <div class="form-label-wrapper">
+              <span class="form-label">Koishi Token</span>
+              <a-tooltip title="Koishi的访问令牌">
+                <QuestionCircleOutlined class="help-icon" />
+              </a-tooltip>
+            </div>
+            <a-input-password
+              v-model:value="settings.Notify.KoishiToken"
+              :disabled="!settings.Notify.IfSendKoishi"
+              placeholder="请输入Koishi Token"
+              size="large"
+              @blur="handleSettingChange('Notify', 'KoishiToken', settings.Notify.KoishiToken)"
+            />
+          </div>
+        </a-col>
+      </a-row>
+    </div>
+
+    <div class="form-section">
+      <div class="section-header">
         <h3>自定义 Webhook 通知</h3>
         <a
           href="https://doc.auto-mas.top/docs/advanced-features.html#%E8%87%AA%E5%AE%9A%E4%B9%89webhook%E9%80%9A%E7%9F%A5"
@@ -313,7 +382,7 @@ const handleWebhookChange = async () => {
       <WebhookManager mode="global" @change="handleWebhookChange" />
     </div>
 
-    <!-- 测试按钮已移至“通知内容”标题右侧 -->
+    <!-- 测试按钮已移至"通知内容"标题右侧 -->
   </div>
 </template>
 
