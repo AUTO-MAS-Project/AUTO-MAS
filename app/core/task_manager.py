@@ -262,10 +262,15 @@ class _TaskManager:
     async def clean_task(self, task_uid: uuid.UUID) -> None:
 
         await self.task_handler[task_uid].accomplish.wait()
+        power_enabled = bool(self.task_info[task_uid].mode != "设置脚本")
         self.task_info.pop(task_uid, None)
         self.task_handler.pop(task_uid, None)
 
-        if len(self.task_handler) == 0 and Config.power_sign != "NoAction":
+        if (
+            power_enabled
+            and len(self.task_handler) == 0
+            and Config.power_sign != "NoAction"
+        ):
             logger.info(f"所有任务已结束，准备执行电源操作: {Config.power_sign}")
             await Config.send_websocket_message(
                 id="Main",
