@@ -4,9 +4,9 @@
       <h3>森空岛配置</h3>
       <a
         href="https://doc.auto-mas.top/docs/advanced-features.html#%E8%8E%B7%E5%8F%96%E9%B9%B0%E8%A7%92%E7%BD%91%E7%BB%9C%E9%80%9A%E8%A1%8C%E8%AF%81%E7%99%BB%E5%BD%95%E5%87%AD%E8%AF%81"
-        target="_blank"
         class="section-doc-link"
         title="查看森空岛签到配置文档"
+        @click="handleExternalLink"
       >
         文档
       </a>
@@ -37,6 +37,8 @@
 </template>
 
 <script setup lang="ts">
+import { handleExternalLink } from '@/utils/openExternal'
+
 defineProps<{
   formData: any
   loading: boolean

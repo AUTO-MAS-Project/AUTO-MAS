@@ -23,6 +23,8 @@ export class ColorProcessor {
         'magenta': '\x1b[35m',
         'cyan': '\x1b[36m',
         'white': '\x1b[37m',
+        'orange': '\x1b[38;5;214m',   // 橙色 - 用于后端日志模块名
+        'purple': '\x1b[35m',          // 紫色 - 用于前端日志模块名
 
         // 亮色
         'bright-black': '\x1b[90m',

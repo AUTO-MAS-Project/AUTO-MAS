@@ -48,24 +48,12 @@
         </template>
         返回
       </a-button>
-      <a-button
-        type="primary"
-        size="large"
-        :loading="loading"
-        class="save-button"
-        @click="$emit('handleSubmit')"
-      >
-        <template #icon>
-          <SaveOutlined />
-        </template>
-        {{ isEdit ? '保存修改' : '创建用户' }}
-      </a-button>
     </a-space>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ArrowLeftOutlined, SaveOutlined, SettingOutlined } from '@ant-design/icons-vue'
+import { ArrowLeftOutlined, SettingOutlined } from '@ant-design/icons-vue'
 
 defineProps<{
   scriptId: string
@@ -80,7 +68,6 @@ defineProps<{
 defineEmits<{
   handleMAAConfig: []
   handleCancel: []
-  handleSubmit: []
 }>()
 </script>
 

@@ -72,7 +72,7 @@ jobs:
             api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
             organization-id: '787a1d5f-6177-4f30-9559-d2646473584a'
             project-slug: 'AUTO_MAA'
-            signing-policy-slug: 'test-signing'
+            signing-policy-slug: 'release-signing'
             artifact-configuration-slug: "AUTO-MAS"
             github-artifact-id: '${{ steps.upload-unsigned-main-program.outputs.artifact-id }}'
             wait-for-completion: true
@@ -242,7 +242,7 @@ jobs:
             api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
             organization-id: '787a1d5f-6177-4f30-9559-d2646473584a'
             project-slug: 'AUTO_MAA'
-            signing-policy-slug: 'test-signing'
+            signing-policy-slug: ${{ steps.generate_version_info.outputs.is_prerelease == 'true' && 'test-signing' || 'release-signing' }}
             artifact-configuration-slug: "AUTO-MAS-Setup"
             github-artifact-id: '${{ steps.upload-unsigned-setup-program.outputs.artifact-id }}'
             wait-for-completion: true
@@ -303,7 +303,22 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           tag_name: ${{ needs.build.outputs.version_tag }}
-          body: ${{ needs.build.outputs.version_changelog }}
+          body: |
+            ${{ needs.build.outputs.version_changelog }}
+
+            ## 代码签名策略（Code signing policy）
+
+            Free code signing provided by [SignPath.io](https://signpath.io/), certificate by [SignPath Foundation](https://signpath.org/)
+
+            - 审批人（Approvers）: [DLmaster (@DLmaster361)](https://github.com/DLmaster361)
+
+            ## 隐私政策（Privacy policy）
+
+            除非用户、安装者或使用者特别要求，否则本程序不会将任何信息传输到其他网络系统。
+
+            This program will not transfer any information to other networked systems unless specifically requested by the user or the person installing or operating it.
+
+            [已有 Mirror酱 CDK ？前往 Mirror酱 高速下载](https://mirrorchyan.com/zh/projects?rid=AUTO_MAS&source=auto-mas-release)
           files: artifacts/*
           prerelease: ${{ needs.build.outputs.is_prerelease }}
 
