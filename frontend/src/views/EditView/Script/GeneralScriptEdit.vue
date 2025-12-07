@@ -275,7 +275,7 @@
                 </template>
                 <a-input
                   v-model:value="generalConfig.Script.LogPathFormat"
-                  placeholder="日志文件名格式"
+                  placeholder="日志文件名格式，文件名固定时留空"
                   size="large"
                   class="modern-input"
                 />
@@ -701,18 +701,6 @@
       </a-form>
     </a-card>
   </div>
-  <a-float-button
-    type="primary"
-    class="float-button"
-    :style="{
-      right: '24px',
-    }"
-    @click="handleSave"
-  >
-    <template #icon>
-      <SaveOutlined />
-    </template>
-  </a-float-button>
 
   <!-- 上传脚本弹窗 -->
   <a-modal
@@ -793,7 +781,6 @@ import {
   FileOutlined,
   FolderOpenOutlined,
   QuestionCircleOutlined,
-  SaveOutlined,
 } from '@ant-design/icons-vue'
 
 const logger = getLogger('通用脚本编辑')
@@ -804,6 +791,8 @@ const { getScript, updateScript, loading } = useScriptApi()
 
 const formRef = ref<FormInstance>()
 const uploadFormRef = ref<FormInstance>()
+const isInitializing = ref(true) // 标记是否正在初始化
+const isSaving = ref(false) // 标记是否正在保存
 
 // 路径处理工具函数
 const pathUtils = {
@@ -1058,9 +1047,6 @@ const updatePathsBasedOnRoot = (newRootPath: string) => {
 const pageLoading = ref(false)
 const scriptId = route.params.id as string
 
-// 在初始化（从接口加载数据）期间阻止某些 watcher 生效
-const isInitializing = ref(false)
-
 const formData = reactive({
   name: '',
   type: 'General' as ScriptType,
@@ -1213,6 +1199,35 @@ const setupConfigPathModeWatcher = () => {
   )
 }
 
+// 实时保存函数（带防抖）
+let saveTimer: NodeJS.Timeout | null = null
+const autoSave = async () => {
+  if (isInitializing.value || isSaving.value) return
+  
+  // 清除之前的定时器
+  if (saveTimer) {
+    clearTimeout(saveTimer)
+  }
+  
+  // 设置新的定时器，500ms 后保存
+  saveTimer = setTimeout(async () => {
+    isSaving.value = true
+    try {
+      generalConfig.Info.Name = formData.name
+      await updateScript(scriptId, generalConfig)
+      logger.info('配置已自动保存')
+    } catch (error) {
+      logger.error('自动保存失败:', error)
+    } finally {
+      isSaving.value = false
+    }
+  }, 500)
+}
+
+// 监听配置变化，自动保存（排除根目录变化的 watch，因为它有自己的逻辑）
+watch(() => formData.name, autoSave)
+watch(generalConfig, autoSave, { deep: true })
+
 // 监听根目录变化，自动调整其他路径以保持相对关系
 watch(
   () => generalConfig.Info.RootPath,
@@ -1249,6 +1264,8 @@ onMounted(async () => {
   }
   // 在脚本加载完成并完成初始化后，再注册 ConfigPathMode 的 watcher，避免初始化阶段触发重置逻辑
   setupConfigPathModeWatcher()
+  // 初始化完成后允许自动保存
+  isInitializing.value = false
 })
 
 const loadScript = async () => {
@@ -1302,23 +1319,6 @@ const loadScript = async () => {
     // 初始化完成，等待一次 nextTick 以确保所有由赋值触发的 watcher
     // 在 isInitializing 为 true 时被调度并能正确跳过，然后再清除初始化标志
     await nextTick()
-    isInitializing.value = false
-  }
-}
-
-const handleSave = async () => {
-  try {
-    await formRef.value?.validate()
-
-    generalConfig.Info.Name = formData.name
-
-    const result = await updateScript(scriptId, generalConfig)
-    if (result) {
-      message.success('脚本更新成功')
-      router.push('/scripts')
-    }
-  } catch (error) {
-    logger.error('保存失败:', error)
   }
 }
 
