@@ -32,7 +32,6 @@ export interface BackendStartOptions {
     timeout?: number // 启动超时时间（毫秒）
 }
 
-export type BackendLogCallback = (log: string) => void
 export type BackendStatusCallback = (status: BackendStatus) => void
 
 // ==================== 后端服务管理类 ====================
@@ -41,7 +40,6 @@ export class BackendService {
     private appRoot: string
     private backendProcess: ChildProcessWithoutNullStreams | null = null
     private startTime: Date | null = null
-    private logCallback: BackendLogCallback | null = null
     private statusCallback: BackendStatusCallback | null = null
 
     // 新的日志处理组件
@@ -283,13 +281,6 @@ export class BackendService {
             pid: this.backendProcess?.pid,
             startTime: this.startTime || undefined,
         }
-    }
-
-    /**
-     * 设置日志回调
-     */
-    setLogCallback(callback: BackendLogCallback): void {
-        this.logCallback = callback
     }
 
     /**

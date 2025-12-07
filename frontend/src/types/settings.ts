@@ -28,6 +28,9 @@ export interface SettingsData {
     IfSendSixStar: boolean
     IfPushPlyer: boolean
     IfSendMail: boolean
+    IfSendKoishi: boolean
+    KoishiServerAddress: string
+    KoishiToken: string
     SMTPServerAddress: string
     AuthorizationCode: string
     FromAddress: string

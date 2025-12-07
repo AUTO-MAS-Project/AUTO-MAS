@@ -140,10 +140,11 @@ export class LogService {
    * @param level 日志级别
    * @param module 模块名
    * @param message 日志消息
+   * @param source 日志来源（可选）
    */
-  writeLog(level: string, module: string, message: string): void {
+  writeLog(level: string, module: string, message: string, source?: string): void {
 
-    const entry = LogFormatter.createLogEntry(level, module, message)
+    const entry = LogFormatter.createLogEntry(level, module, message, source as any)
 
     // 格式化为带颜色的字符串（用于控制台输出）
     const coloredMessage = LogFormatter.formatWithColors(entry)

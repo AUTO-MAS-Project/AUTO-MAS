@@ -205,11 +205,6 @@ export function registerInitializationHandlers(mainWindow: BrowserWindow) {
             // 保存后端服务实例
             backendService = initService.getBackendService()
 
-            // 恢复日志回调设置
-            backendService.setLogCallback((log) => {
-                event.sender.send('backend-log', log)
-            })
-
             // 设置状态回调
             backendService.setStatusCallback((status) => {
                 event.sender.send('backend-status', status)
@@ -248,11 +243,6 @@ export function registerInitializationHandlers(mainWindow: BrowserWindow) {
 
         const backend = getBackendService()
 
-        // 恢复日志回调设置
-        backend.setLogCallback((log) => {
-            event.sender.send('backend-log', log)
-        })
-
         // 设置状态回调
         backend.setStatusCallback((status) => {
             event.sender.send('backend-status', status)
@@ -284,11 +274,6 @@ export function registerInitializationHandlers(mainWindow: BrowserWindow) {
         logService.info('初始化处理器', '重启后端服务')
 
         const backend = getBackendService()
-
-        // 恢复日志回调重新设置
-        backend.setLogCallback((log) => {
-            event.sender.send('backend-log', log)
-        })
 
         // 设置状态回调
         backend.setStatusCallback((status) => {

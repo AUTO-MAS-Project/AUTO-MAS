@@ -654,11 +654,11 @@ class GeneralConfig(ConfigBase):
         )
         ## 日志路径格式
         self.Script_LogPathFormat = ConfigItem("Script", "LogPathFormat", "%Y-%m-%d")
-        ## 日志时间起始行
+        ## 日志时间戳开始位置
         self.Script_LogTimeStart = ConfigItem(
             "Script", "LogTimeStart", 1, RangeValidator(1, 9999)
         )
-        ## 日志时间结束行
+        ## 日志时间戳结束位置
         self.Script_LogTimeEnd = ConfigItem(
             "Script", "LogTimeEnd", 1, RangeValidator(1, 9999)
         )
@@ -781,10 +781,16 @@ class GlobalConfig(ConfigBase):
     )
     ## 是否发送六星通知
     Notify_IfSendSixStar = ConfigItem("Notify", "IfSendSixStar", False, BoolValidator())
-    ## 是否推送到 PushPlus
+    ## 是否推送系统通知
     Notify_IfPushPlyer = ConfigItem("Notify", "IfPushPlyer", False, BoolValidator())
     ## 是否发送邮件
     Notify_IfSendMail = ConfigItem("Notify", "IfSendMail", False, BoolValidator())
+    ## 是否发送Koishi通知
+    Notify_IfSendKoishi = ConfigItem("Notify", "IfSendKoishi", False, BoolValidator())
+    ## Koishi 服务器地址
+    Notify_KoishiServerAddress = ConfigItem("Notify", "KoishiServerAddress", "http://localhost:5140/onebot", URLValidator())
+    ## Koishi Token
+    Notify_KoishiToken = ConfigItem("Notify", "KoishiToken", "")
     ## SMTP 服务器地址
     Notify_SMTPServerAddress = ConfigItem("Notify", "SMTPServerAddress", "")
     ## 邮箱授权码

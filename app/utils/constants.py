@@ -21,6 +21,7 @@
 #   Contact: DLmaster_361@163.com
 
 
+import re
 import sys
 import locale
 import subprocess
@@ -567,3 +568,7 @@ ENCODINGS = [
 
 CREATION_FLAGS = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
 """创建子进程的标志"""
+
+
+ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
+"""匹配ANSI控制字符的正则表达式"""

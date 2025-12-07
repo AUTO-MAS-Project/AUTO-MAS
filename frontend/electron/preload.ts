@@ -222,14 +222,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.removeAllListeners('initialization-progress')
   },
 
-  // 监听后端日志 - 恢复功能
-  onBackendLog: (callback: (log: any) => void) => {
-    ipcRenderer.on('backend-log', (_, log) => callback(log))
-  },
-  removeBackendLogListener: () => {
-    ipcRenderer.removeAllListeners('backend-log')
-  },
-
   // 监听后端状态
   onBackendStatus: (callback: (status: any) => void) => {
     ipcRenderer.on('backend-status', (_, status) => callback(status))
