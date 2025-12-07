@@ -270,6 +270,7 @@ class _SystemHandler:
             logger.info(
                 f"电源任务已启动, {self.countdown}秒后执行: {Config.power_sign}"
             )
+            Config.power_sign = "NoAction"
         else:
             logger.warning("已有电源任务在运行, 请勿重复启动")
 
