@@ -632,32 +632,6 @@ onMounted(async () => {
   api.onGitProgress?.((progress: any) => handleProgress('git', progress))
   api.onRepositoryProgress?.((progress: any) => handleProgress('repository', progress))
   api.onDependencyProgress?.((progress: any) => handleProgress('dependency', progress))
-  
-  // 恢复后端日志监听，添加改进的去重逻辑避免重复日志
-  let lastLogTime = 0
-  let lastLogHash = ''
-  api.onBackendLog?.((log: string) => {
-    const currentTime = Date.now()
-    const logHash = simpleHash(log)
-    
-    // 只有在100ms内完全相同的日志才被认为是重复的
-    if (logHash !== lastLogHash || currentTime - lastLogTime > 100) {
-      logger.info(`[Backend] ${log}`)
-      lastLogTime = currentTime
-      lastLogHash = logHash
-    }
-  })
-  
-  // 简单的字符串哈希函数
-  function simpleHash(str: string): string {
-    let hash = 0
-    for (let i = 0; i < str.length; i++) {
-      const char = str.charCodeAt(i)
-      hash = ((hash << 5) - hash) + char
-      hash = hash & hash // 转换为32位整数
-    }
-    return hash.toString()
-  }
 
   api.onBackendStatus?.((status: any) => {
     logger.info(`[Backend] 状态更新: ${status.isRunning ? '运行中' : '已停止'}`)
@@ -692,7 +666,6 @@ onUnmounted(() => {
   api.removeGitProgressListener?.()
   api.removeRepositoryProgressListener?.()
   api.removeDependencyProgressListener?.()
-  api.removeBackendLogListener?.()
   api.removeBackendStatusListener?.()
 })
 </script>

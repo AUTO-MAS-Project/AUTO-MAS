@@ -289,22 +289,10 @@
       </a-form>
     </a-card>
   </div>
-  <a-float-button
-    type="primary"
-    class="float-button"
-    :style="{
-      right: '24px',
-    }"
-    @click="handleSave"
-  >
-    <template #icon>
-      <SaveOutlined />
-    </template>
-  </a-float-button>
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
 import { message } from 'ant-design-vue'
@@ -316,7 +304,6 @@ import {
   ArrowLeftOutlined,
   FolderOpenOutlined,
   QuestionCircleOutlined,
-  SaveOutlined,
 } from '@ant-design/icons-vue'
 
 const logger = getLogger('MAA脚本编辑')
@@ -328,6 +315,8 @@ const { getScript, updateScript, loading } = useScriptApi()
 const formRef = ref<FormInstance>()
 const pageLoading = ref(false)
 const scriptId = route.params.id as string
+const isInitializing = ref(true) // 标记是否正在初始化
+const isSaving = ref(false) // 标记是否正在保存
 
 const formData = reactive({
   name: '',
@@ -378,9 +367,40 @@ const emulatorDeviceLoading = ref(false)
 const emulatorOptions = ref<ComboBoxItem[]>([])
 const emulatorDeviceOptions = ref<ComboBoxItem[]>([])
 
+// 实时保存函数（带防抖）
+let saveTimer: NodeJS.Timeout | null = null
+const autoSave = async () => {
+  if (isInitializing.value || isSaving.value) return
+  
+  // 清除之前的定时器
+  if (saveTimer) {
+    clearTimeout(saveTimer)
+  }
+  
+  // 设置新的定时器，500ms 后保存
+  saveTimer = setTimeout(async () => {
+    isSaving.value = true
+    try {
+      maaConfig.Info.Name = formData.name
+      await updateScript(scriptId, maaConfig)
+      logger.info('配置已自动保存')
+    } catch (error) {
+      logger.error('自动保存失败:', error)
+    } finally {
+      isSaving.value = false
+    }
+  }, 500)
+}
+
+// 监听配置变化，自动保存
+watch(() => formData.name, autoSave)
+watch(maaConfig, autoSave, { deep: true })
+
 onMounted(async () => {
   await loadScript()
   await loadEmulatorOptions()
+  // 初始化完成后允许自动保存
+  isInitializing.value = false
 })
 
 const loadScript = async () => {
@@ -425,22 +445,6 @@ const loadScript = async () => {
     router.push('/scripts')
   } finally {
     pageLoading.value = false
-  }
-}
-
-const handleSave = async () => {
-  try {
-    await formRef.value?.validate()
-
-    maaConfig.Info.Name = formData.name
-
-    const result = await updateScript(scriptId, maaConfig)
-    if (result) {
-      message.success('脚本更新成功')
-      router.push('/scripts')
-    }
-  } catch (error) {
-    logger.error('保存失败:', error)
   }
 }
 
