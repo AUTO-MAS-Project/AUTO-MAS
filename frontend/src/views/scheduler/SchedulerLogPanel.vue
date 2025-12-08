@@ -39,6 +39,7 @@ interface Props {
   logContent: string
   tabKey: string
   isLogAtBottom: boolean
+  externalLogMode?: 'follow' | 'browse' // 外部控制的日志模式
 }
 
 interface Emits {
@@ -55,6 +56,19 @@ const emit = defineEmits<Emits>()
 const logContentRef = ref<HTMLElement | null>(null)
 // 根据 isLogAtBottom 属性初始化模式
 const logMode = ref<LogMode>('follow')
+
+// 监听外部控制的日志模式变化
+watch(
+  () => props.externalLogMode,
+  (newMode) => {
+    if (newMode && logMode.value !== newMode) {
+      logMode.value = newMode
+      if (newMode === 'follow') {
+        setTimeout(handleAutoScroll, 10)
+      }
+    }
+  }
+)
 
 const toggleLogMode = () => {
   if (logMode.value === 'follow') {

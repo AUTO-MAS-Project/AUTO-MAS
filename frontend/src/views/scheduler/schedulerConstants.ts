@@ -91,6 +91,8 @@ export interface SchedulerTab {
   // 新增：运行时任务/模式文本快照（用于持久化显示）
   runningTaskLabel?: string
   runningModeLabel?: string
+  // 新增：日志显示模式
+  logMode?: 'follow' | 'browse'
 }
 
 export interface TaskMessage {
