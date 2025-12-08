@@ -101,6 +101,7 @@
                   :log-content="tab.lastLogContent"
                   :tab-key="tab.key"
                   :is-log-at-bottom="tab.isLogAtBottom"
+                  :external-log-mode="tab.logMode"
                   @scroll="(isAtBottom: boolean) => onLogScroll(isAtBottom, tab)"
                   @set-ref="setLogRef"
                 />

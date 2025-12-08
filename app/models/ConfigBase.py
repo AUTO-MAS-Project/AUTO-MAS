@@ -259,7 +259,7 @@ class FolderValidator(ConfigValidator):
         if "%APPDATA%" in value:
             value = value.replace("%APPDATA%", os.getenv("APPDATA") or "")
         if not Path(value).is_dir():
-            value = Path(value).with_stem("")
+            value = Path(value).with_suffix("")
         return Path(value).resolve().as_posix()
 
 
