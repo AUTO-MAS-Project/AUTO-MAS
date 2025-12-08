@@ -142,7 +142,7 @@ class AutoProxyTask(TaskExecuteBase):
             and self.cur_user_config.get("Data", "LastSklandDate")
             != datetime.now(tz=UTC8).strftime("%Y-%m-%d")
         ):
-            self.script_info.log = "正在执行森空岛签到中\n请稍候~"
+            self.script_info.log = "正在执行森空岛签到"
             skland_result = await skland_sign_in(
                 self.cur_user_config.get("Info", "SklandToken")
             )
@@ -251,6 +251,7 @@ class AutoProxyTask(TaskExecuteBase):
                 ) = LogRecord()
 
                 try:
+                    self.script_info.log = "正在启动模拟器"
                     emulator_info = await self.emulator_manager.open(
                         self.script_config.get("Emulator", "Index")
                     )
@@ -298,14 +299,14 @@ class AutoProxyTask(TaskExecuteBase):
                     self.run_book[self.mode] = True
                     logger.info(f"用户: {self.cur_user_uid} - MAA进程完成代理任务")
                     self.script_info.log = (
-                        "检测到MAA进程完成代理任务\n正在等待相关程序结束\n请等待"
+                        "检测到 MAA 完成代理任务\n正在等待相关程序结束"
                     )
                 else:
                     logger.error(
                         f"用户: {self.cur_user_uid} - 代理任务异常: {self.cur_user_log.status}"
                     )
                     self.script_info.log = (
-                        f"{self.cur_user_log.status}\n正在中止相关程序\n请等待"
+                        f"{self.cur_user_log.status}\n正在中止相关程序"
                     )
 
                     await self.maa_process_manager.kill()
@@ -581,7 +582,7 @@ class AutoProxyTask(TaskExecuteBase):
 
         if "任务出错: StartUp" in log or "任务出错: 开始唤醒" in log:
             self.cur_user_item.log_record[self.log_start_time].status = (
-                "MAA未能正确登录PRTS"
+                "MAA 未能正确登录 PRTS"
             )
         elif "任务已全部完成！" in log:
             if "完成任务: StartUp" in log or "完成任务: 开始唤醒" in log:
@@ -607,22 +608,22 @@ class AutoProxyTask(TaskExecuteBase):
             if all(v == "False" for v in self.task_dict.values()):
                 self.cur_user_log.status = "Success!"
             else:
-                self.cur_user_log.status = "MAA部分任务执行失败"
+                self.cur_user_log.status = "MAA 部分任务执行失败"
         elif "请 ｢检查连接设置｣ → ｢尝试重启模拟器与 ADB｣ → ｢重启电脑｣" in log:
-            self.cur_user_log.status = "MAA的ADB连接异常"
+            self.cur_user_log.status = "MAA 的 ADB 连接异常"
         elif "未检测到任何模拟器" in log:
-            self.cur_user_log.status = "MAA未检测到任何模拟器"
+            self.cur_user_log.status = "MAA 未检测到任何模拟器"
         elif "已停止" in log:
-            self.cur_user_log.status = "MAA在完成任务前中止"
+            self.cur_user_log.status = "MAA 在完成任务前中止"
         elif (
             "MaaAssistantArknights GUI exited" in log
             or not await self.maa_process_manager.is_running()
         ):
-            self.cur_user_log.status = "MAA在完成任务前退出"
+            self.cur_user_log.status = "MAA 在完成任务前退出"
         elif datetime.now() - latest_time > timedelta(
             minutes=self.script_config.get("Run", f"{self.mode}TimeLimit")
         ):
-            self.cur_user_log.status = "MAA进程超时"
+            self.cur_user_log.status = "MAA 进程超时"
         else:
             self.cur_user_log.status = "MAA 正常运行中"
 
@@ -678,7 +679,7 @@ class AutoProxyTask(TaskExecuteBase):
         statistics["maa_result"] = (
             "代理任务全部完成"
             if (self.run_book["Annihilation"] and self.run_book["Routine"])
-            else "代理任务未全部完成"
+            else self.cur_user_item.result
         )
 
         # 判断是否成功

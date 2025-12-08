@@ -32,7 +32,7 @@ from typing import List, Optional
 class LogRecord:
 
     content: list[str] = field(default_factory=list)
-    status: str = "-"
+    status: str = "未开始监看日志"
 
 
 @dataclass
@@ -54,6 +54,18 @@ class UserItem:
             if ti is not None:
                 asyncio.create_task(ti.on_change())
 
+    @property
+    def result(self) -> str:
+        """用户代理情况的简要结果"""
+        if not self.log_record:
+            return "未开始运行"
+        return " | ".join(
+            [
+                f"{t.strftime('%H:%M')} - {log.status}"
+                for t, log in self.log_record.items()
+            ]
+        )
+
 
 @dataclass
 class ScriptItem:
@@ -64,7 +76,6 @@ class ScriptItem:
     user_list: List[UserItem] = field(default_factory=list)  # 用户信息列表
     current_index: int = -1  # 当前执行的用户索引，-1 表示未开始
     log: str = ""  # 脚本执行日志
-    result: str = "暂无"  # 脚本执行结果
     _task_item_ref: Optional[weakref.ReferenceType[TaskItem]] = None
 
     def __setattr__(self, name, value):
@@ -84,6 +95,14 @@ class ScriptItem:
         if self._task_item_ref is None:
             return None
         return self._task_item_ref()
+
+    @property
+    def result(self) -> str:
+        """脚本代理情况的简要结果"""
+
+        if not self.user_list:
+            return "用户未加载"
+        return "\n".join([f"{user.name}：{user.result}" for user in self.user_list])
 
 
 @dataclass
@@ -136,6 +155,21 @@ class TaskItem(ABC):
             }
             for script_item in self.script_list
         ]
+
+    @property
+    def result(self) -> str:
+        """任务执行情况的简要结果"""
+
+        if not self.script_list:
+            return "任务未加载"
+        return "\n\n\n".join(
+            [
+                f"{script.name}：\n\n"
+                f"    已完成用户数：{sum(1 for user in script.user_list if user.status == '完成')}；未完成用户数：{sum(1 for user in script.user_list if user.status != '完成')}\n\n"
+                f"    {script.result.replace('\n', '\n    ')}"
+                for script in self.script_list
+            ]
+        )
 
 
 @dataclass

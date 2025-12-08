@@ -43,18 +43,9 @@ async def push_notification(
     ):
         message_text = (
             f"任务开始时间: {message['start_time']}, 结束时间: {message['end_time']}\n"
-            f"已完成数: {message['completed_count']}, 未完成数: {message['uncompleted_count']}\n"
+            f"已完成数: {message['completed_count']}, 未完成数: {message['uncompleted_count']}\n\n"
+            f"{message['result']}"
         )
-        if len(message["failed_user"]) > 0:
-            message_text += (
-                "未成功的用户: \n" + "\n".join(message["failed_user"]) + "\n"
-            )
-        if len(message["waiting_user"]) > 0:
-            message_text += (
-                "\n未开始的用户: \n" + "\n".join(message["waiting_user"]) + "\n"
-            )
-        message["failed_user"] = "、".join(message["failed_user"])
-        message["waiting_user"] = "、".join(message["waiting_user"])
         template = Config.notify_env.get_template("MAA_result.html")
         message_html = template.render(message)
         serverchan_message = message_text.replace("\n", "\n\n")

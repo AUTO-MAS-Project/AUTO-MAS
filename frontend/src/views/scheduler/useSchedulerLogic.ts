@@ -51,6 +51,7 @@ const loadTabsFromStorage = (): SchedulerTab[] => {
       logs: [],
       isLogAtBottom: true,
       lastLogContent: '',
+      logMode: 'follow',
     },
   ]
 }
@@ -142,6 +143,7 @@ export function useSchedulerLogic() {
     // 设置运行时文本快照，确保自动启动的任务也能正确显示
     if (taskName) newTab.runningTaskLabel = taskName
     if (taskType) newTab.runningModeLabel = taskType
+    newTab.logMode = 'follow' // 任务开始时设置日志为保持最新模式
 
     // 立即订阅该任务的WebSocket消息
     subscribeToTask(newTab)
@@ -332,6 +334,7 @@ export function useSchedulerLogic() {
         tab.logs.splice(0)
         tab.isLogAtBottom = true
         tab.lastLogContent = ''
+        tab.logMode = 'follow' // 任务开始时设置日志为保持最新模式
 
         subscribeToTask(tab)
         message.success('任务启动成功')
@@ -597,6 +600,18 @@ export function useSchedulerLogic() {
     // 这确保了调度台状态与实际任务执行状态严格同步
     if (data && data.Accomplish) {
       logger.info('[Scheduler] 收到Accomplish信号，设置任务状态为结束')
+
+      // 清空日志并显示原始代理结果信息
+      const resultText = data.Accomplish
+      if (resultText && typeof resultText === 'string') {
+        tab.lastLogContent = resultText
+        logger.info('[Scheduler] 已清空日志并显示任务结果')
+      }
+
+      // 切换日志模式为自由浏览
+      tab.logMode = 'browse'
+      logger.info('[Scheduler] 已切换日志模式为自由浏览')
+
       // 使用Vue的响应式更新方式
       tab.status = '结束'
       logger.info('[Scheduler] 已更新tab.status为结束，当前tab状态:', tab.status)

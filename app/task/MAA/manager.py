@@ -214,8 +214,7 @@ class MaaManager(TaskExecuteBase):
                 "end_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "completed_count": len(over_user),
                 "uncompleted_count": len(error_user) + len(wait_user),
-                "failed_user": error_user,
-                "waiting_user": wait_user,
+                "result": self.script_info.result,
             }
 
             await Notify.push_plyer(
@@ -233,17 +232,6 @@ class MaaManager(TaskExecuteBase):
                     type="Info",
                     data={"Error": f"推送代理结果时出现异常: {e}"},
                 )
-
-            # text = (
-            #     f"任务开始时间: {result['start_time']}, 结束时间: {result['end_time']}\n"
-            #     f"已完成数: {result['completed_count']}, 未完成数: {result['uncompleted_count']}\n"
-            # )
-            # if error_user:
-            #     text += (
-            #         f"{self.mode[2:4]}未成功的用户: \n" + "\n".join(error_user) + "\n"
-            #     )
-            # if wait_user:
-            #     text += f"\n未开始{self.mode[2:4]}的用户: \n" + "\n".join(wait_user)
 
         # 还原配置
         if (self.temp_path / "gui.json").exists():
