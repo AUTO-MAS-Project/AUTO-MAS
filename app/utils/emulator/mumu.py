@@ -22,6 +22,7 @@
 
 import json
 import asyncio
+import contextlib
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -29,8 +30,6 @@ from pathlib import Path
 from app.models.emulator import DeviceStatus, DeviceInfo, DeviceBase
 from app.models.config import EmulatorConfig
 from app.utils import ProcessRunner, get_logger
-
-from app.utils.emulator.auto_close_mumunxmain import auto_close_mumunxmain
 
 
 logger = get_logger("MuMu模拟器管理")
@@ -54,7 +53,6 @@ class MumuManager(DeviceBase):
 
         self.emulator_path = Path(config.get("Info", "Path"))
 
-    @auto_close_mumunxmain()
     async def open(self, idx: str, package_name: str = "") -> DeviceInfo:
         logger.info(f"开始启动模拟器{idx} - {package_name}")
 
@@ -108,7 +106,6 @@ class MumuManager(DeviceBase):
         else:
             raise RuntimeError(f"模拟器{idx}启动超时, 当前状态码: {status}")
 
-    @auto_close_mumunxmain()
     async def close(self, idx: str) -> DeviceStatus:
         status = await self.getStatus(idx)
         if status not in [DeviceStatus.ONLINE, DeviceStatus.STARTING]:
@@ -143,7 +140,6 @@ class MumuManager(DeviceBase):
         else:
             raise RuntimeError(f"模拟器{idx}关闭超时, 当前状态码: {status}")
 
-    @auto_close_mumunxmain()
     async def getStatus(self, idx: str, data: str | None = None) -> DeviceStatus:
         if data is None:
             try:
@@ -164,7 +160,6 @@ class MumuManager(DeviceBase):
         else:
             return DeviceStatus.OFFLINE
 
-    @auto_close_mumunxmain()
     async def getInfo(self, idx: str | None) -> dict[str, DeviceInfo]:
         data = await self.get_device_info(idx or "all")
 
@@ -207,7 +202,6 @@ class MumuManager(DeviceBase):
 
         return result
 
-    @auto_close_mumunxmain()
     async def setVisible(self, idx: str, is_visible: bool) -> DeviceStatus:
         status = await self.getStatus(idx)
         if status not in [DeviceStatus.STARTING, DeviceStatus.ONLINE]:
@@ -228,7 +222,6 @@ class MumuManager(DeviceBase):
 
         return await self.getStatus(idx)
 
-    @auto_close_mumunxmain()
     async def get_device_info(self, idx: str) -> str:
         result = await ProcessRunner.run_process(
             self.emulator_path,
