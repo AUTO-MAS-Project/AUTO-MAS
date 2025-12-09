@@ -172,7 +172,7 @@ watch(visible, async newVisible => {
   if (newVisible && notices.value.length > 0) {
     activeNoticeKey.value = notices.value[0]
     // 当公告模态框显示时播放音频
-    await playSound('simple/announcement_display')
+    await playSound('announcement_display')
   }
 })
 </script>
