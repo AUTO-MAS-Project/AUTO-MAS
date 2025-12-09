@@ -49,15 +49,13 @@
 
 以上细则是本项目对GPL的相关补充与强调。未提及的以 GPL 为准，发生冲突的以本细则为准。如有不清楚的部分，请发 Issues 询问。若发生纠纷，相关内容也没有在 Issues 上提及的，AUTO-MAS Team 拥有最终解释权。
 
----
-
-# 使用方法
+## 使用方法
 
 访问 AUTO-MAS 官方文档站以获取使用指南和更多项目相关信息
 
 - [AUTO-MAS 官方文档站](https://doc.auto-mas.top)
 
-# 代码签名策略（Code signing policy）
+## 代码签名策略（Code signing policy）
 
 免费代码签名由 [SignPath.io](https://signpath.io/) 提供，证书由 [SignPath Foundation](https://signpath.org/) 提供。
 
@@ -65,7 +63,7 @@ Free code signing provided by [SignPath.io](https://signpath.io/), certificate b
 
 - 审批人（Approvers）: [DLmaster (@DLmaster361)](https://github.com/DLmaster361)
 
-# 隐私政策（Privacy policy）
+## 隐私政策（Privacy policy）
 
 为更好地提供服务，AUTO-MAS 将自动收集以下信息：
 
