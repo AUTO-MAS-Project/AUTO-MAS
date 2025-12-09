@@ -3,6 +3,7 @@ import { message } from 'ant-design-vue'
 import { type GeneralConfig, type MaaConfig, ScriptCreateIn, type ScriptReorderIn, Service } from '@/api'
 import type { ScriptDetail, ScriptType } from '@/types/script'
 import { getLogger } from '@/utils/logger'
+import { useAudioPlayer } from '@/composables/useAudioPlayer'
 
 const logger = getLogger('脚本API')
 
@@ -27,6 +28,10 @@ export function useScriptApi() {
         message.error(errorMsg)
         throw new Error(errorMsg)
       }
+
+      // 播放添加脚本成功音频
+      const { playSound } = useAudioPlayer()
+      await playSound('add_script_instance')
 
       return {
         scriptId: response.scriptId,
@@ -552,6 +557,10 @@ export function useScriptApi() {
         message.error(errorMsg)
         throw new Error(errorMsg)
       }
+
+      // 播放删除脚本成功音频
+      const { playSound } = useAudioPlayer()
+      await playSound('delete_script_instance')
 
       return true
     } catch (err) {

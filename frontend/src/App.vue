@@ -5,6 +5,7 @@ import { ConfigProvider } from 'ant-design-vue'
 import { useTheme } from './composables/useTheme.ts'
 import { useUpdateChecker, useUpdateModal } from './composables/useUpdateChecker.ts'
 import { useAppClosing } from './composables/useAppClosing.ts'
+import { useAudioPlayer } from './composables/useAudioPlayer.ts'
 import AppLayout from './components/AppLayout.vue'
 import TitleBar from './components/TitleBar.vue'
 import UpdateModal from './components/UpdateModal.vue'
@@ -20,6 +21,7 @@ const { antdTheme, initTheme } = useTheme()
 const { updateVisible, updateData, latestVersion, onUpdateConfirmed } = useUpdateModal()
 const { startPolling } = useUpdateChecker()
 const { isClosing } = useAppClosing()
+const { playSound } = useAudioPlayer()
 
 // 判断是否为初始化页面
 const isInitializationPage = computed(() => route.name === 'Initialization')
@@ -35,6 +37,11 @@ onMounted(async () => {
     logger.info('自动更新检查器已启动')
   } catch (error) {
     logger.error('启动自动更新检查器失败:', error)
+  }
+
+  // 播放欢迎音频（非初始化页面时）
+  if (!isInitializationPage.value) {
+    await playSound('welcome_back')
   }
 })
 </script>

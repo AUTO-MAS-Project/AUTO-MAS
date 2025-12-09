@@ -210,9 +210,11 @@ import {
 } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import { getLogger } from '@/utils/logger'
+import { useAudioPlayer } from '@/composables/useAudioPlayer'
 import { nextTick, onMounted, ref, watch } from 'vue'
 
 const logger = getLogger('调度队列')
+const { playSound } = useAudioPlayer()
 
 // 队列列表和当前选中的队列
 const queueList = ref<Array<{ id: string; name: string }>>([])
@@ -523,6 +525,11 @@ const handleAddQueue = async () => {
     const response = await Service.addQueueApiQueueAddPost()
 
     if (response.code === 200 && response.queueId) {
+      // 播放添加队列成功音频
+      const { useAudioPlayer } = await import('@/composables/useAudioPlayer')
+      const { playSound } = useAudioPlayer()
+      await playSound('add_queue')
+
       const defaultName = '新队列'
       const newQueue = {
         id: response.queueId,
@@ -554,6 +561,11 @@ const handleRemoveQueue = async (queueId: string) => {
     const response = await Service.deleteQueueApiQueueDeletePost({ queueId })
 
     if (response.code === 200) {
+      // 播放删除队列成功音频
+      const { useAudioPlayer } = await import('@/composables/useAudioPlayer')
+      const { playSound } = useAudioPlayer()
+      await playSound('delete_queue')
+
       const index = queueList.value.findIndex(queue => queue.id === queueId)
       if (index > -1) {
         queueList.value.splice(index, 1)
