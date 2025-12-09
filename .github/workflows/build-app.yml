@@ -308,15 +308,27 @@ jobs:
 
             ## 代码签名策略（Code signing policy）
 
-            Free code signing provided by [SignPath.io](https://signpath.io/), certificate by [SignPath Foundation](https://signpath.org/)
+            免费代码签名由 [SignPath.io](https://signpath.io/) 提供，证书由 [SignPath Foundation](https://signpath.org/) 提供。
+
+            Free code signing provided by [SignPath.io](https://signpath.io/), certificate by [SignPath Foundation](https://signpath.org/).
 
             - 审批人（Approvers）: [DLmaster (@DLmaster361)](https://github.com/DLmaster361)
 
             ## 隐私政策（Privacy policy）
 
-            除非用户、安装者或使用者特别要求，否则本程序不会将任何信息传输到其他网络系统。
+            为更好地提供服务，AUTO-MAS 将自动收集以下信息：
 
-            This program will not transfer any information to other networked systems unless specifically requested by the user or the person installing or operating it.
+            - 软件版本号
+            - 运行时错误信息
+
+            AUTO-MAS 尊重并保护用户隐私，上报的所有信息均经过匿名化处理，不包含任何个人身份信息。所收集的数据存储于 AUTO-MAS 官方服务器，不会传输至任何第三方机构或设施。
+
+            To better serve you, AUTO-MAS will automatically collect the following information:
+
+            - Software version number
+            - Runtime error information
+
+            AUTO-MAS respects and protects user privacy, all collected information has been anonymized and does not contain any personal identity information. All collected data is stored on the official server of AUTO-MAS, and will not be transmitted to any third-party institution or facility.
 
             [已有 Mirror酱 CDK ？前往 Mirror酱 高速下载](https://mirrorchyan.com/zh/projects?rid=AUTO_MAS&source=auto-mas-release)
           files: artifacts/*
