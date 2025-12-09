@@ -3,6 +3,7 @@ import { message } from 'ant-design-vue'
 import type { PlanCreateIn, PlanDeleteIn, PlanGetIn, PlanReorderIn, PlanUpdateIn } from '@/api'
 import { Service } from '@/api'
 import { getLogger } from '@/utils/logger'
+import { useAudioPlayer } from '@/composables/useAudioPlayer'
 
 const logger = getLogger('计划API')
 
@@ -32,8 +33,14 @@ export function usePlanApi() {
         type = 'MaaPlan'
       }
       const params: PlanCreateIn = { type }
+      const response = await Service.addPlanApiPlanAddPost(params)
+
+      // 播放添加计划成功音频
+      const { playSound } = useAudioPlayer()
+      await playSound('add_schedule')
+
       // message.success('创建计划成功')
-      return await Service.addPlanApiPlanAddPost(params)
+      return response
     } catch (error) {
       logger.error('创建计划失败:', error)
       message.error('创建计划失败')
@@ -65,6 +72,11 @@ export function usePlanApi() {
     try {
       const params: PlanDeleteIn = { planId }
       const response = await Service.deletePlanApiPlanDeletePost(params)
+
+      // 播放删除计划成功音频
+      const { playSound } = useAudioPlayer()
+      await playSound('delete_schedule')
+
       message.success('删除计划成功')
       return response
     } catch (error) {
