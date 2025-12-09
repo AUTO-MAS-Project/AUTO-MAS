@@ -3,6 +3,7 @@ import { message } from 'ant-design-vue'
 import { Service } from '@/api'
 import type { UserInBase, UserCreateOut, UserUpdateIn, UserDeleteIn, UserGetIn, UserReorderIn } from '@/api'
 import { getLogger } from '@/utils/logger'
+import { useAudioPlayer } from '@/composables/useAudioPlayer'
 
 const logger = getLogger('用户API')
 
@@ -27,6 +28,10 @@ export function useUserApi() {
         message.error(errorMsg)
         throw new Error(errorMsg)
       }
+
+      // 播放添加用户成功音频
+      const { playSound } = useAudioPlayer()
+      await playSound('add_user')
 
       return response
     } catch (err) {
@@ -128,6 +133,10 @@ export function useUserApi() {
         message.error(errorMsg)
         throw new Error(errorMsg)
       }
+
+      // 播放删除用户成功音频
+      const { playSound } = useAudioPlayer()
+      await playSound('delete_user')
 
       // message.success(response.message || '用户删除成功')
       return true

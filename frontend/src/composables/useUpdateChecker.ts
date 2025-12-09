@@ -2,6 +2,7 @@ import { ref, onUnmounted } from 'vue'
 import { Service } from '@/api'
 import { getLogger } from '@/utils/logger'
 import { message } from 'ant-design-vue'
+import { useAudioPlayer } from '@/composables/useAudioPlayer'
 
 const logger = getLogger('更新检查器')
 
@@ -66,6 +67,10 @@ export function useUpdateChecker() {
             return
           }
 
+          // 播放有新版本音频
+          const { playSound } = useAudioPlayer()
+          await playSound('new_version_available')
+
           updateData.value = response.update_info
           latestVersion.value = response.latest_version
           updateVisible.value = true
@@ -81,6 +86,7 @@ export function useUpdateChecker() {
 
   // 手动检查更新（用于设置页面按钮）
   const checkUpdate = async (silent = false, forceCheck = false) => {
+    const { playSound } = useAudioPlayer()
     try {
       const response = await Service.checkUpdateApiUpdateCheckPost({
         current_version: version,
@@ -89,11 +95,15 @@ export function useUpdateChecker() {
 
       if (response.code === 200) {
         if (response.if_need_update) {
+          // 播放有新版本音频
+          await playSound('new_version_available')
           updateData.value = response.update_info
           latestVersion.value = response.latest_version
           updateVisible.value = true
         } else {
+          // 播放无新版本音频
           if (!silent) {
+            await playSound('no_new_version')
             message.success('暂无更新~')
           }
         }
