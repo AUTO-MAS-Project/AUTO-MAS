@@ -3,6 +3,7 @@ import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type { ThemeColor, ThemeMode } from '@/composables/useTheme'
 import type { SettingsData } from '@/types/settings'
 import type { SelectValue } from 'ant-design-vue/es/select'
+import LogHighlightSettings from '@/components/LogHighlightSettings.vue'
 
 const {
   settings,
@@ -40,17 +41,8 @@ const {
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-select
-              :value="themeMode"
-              size="large"
-              style="width: 100%"
-              @change="handleThemeModeChange"
-            >
-              <a-select-option
-                v-for="option in themeModeOptions"
-                :key="option.value"
-                :value="option.value"
-              >
+            <a-select :value="themeMode" size="large" style="width: 100%" @change="handleThemeModeChange">
+              <a-select-option v-for="option in themeModeOptions" :key="option.value" :value="option.value">
                 {{ option.label }}
               </a-select-option>
             </a-select>
@@ -64,26 +56,15 @@ const {
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-select
-              :value="themeColor"
-              size="large"
-              style="width: 100%"
-              @change="handleThemeColorChange"
-            >
-              <a-select-option
-                v-for="option in themeColorOptions"
-                :key="option.value"
-                :value="option.value"
-              >
+            <a-select :value="themeColor" size="large" style="width: 100%" @change="handleThemeColorChange">
+              <a-select-option v-for="option in themeColorOptions" :key="option.value" :value="option.value">
                 <div style="display: flex; align-items: center; gap: 8px">
-                  <div
-                    :style="{
-                      width: '16px',
-                      height: '16px',
-                      borderRadius: '50%',
-                      backgroundColor: option.color,
-                    }"
-                  />
+                  <div :style="{
+                    width: '16px',
+                    height: '16px',
+                    borderRadius: '50%',
+                    backgroundColor: option.color,
+                  }" />
                   {{ option.label }}
                 </div>
               </a-select-option>
@@ -106,12 +87,8 @@ const {
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-select
-              v-model:value="settings.UI.IfShowTray"
-              size="large"
-              style="width: 100%"
-              @change="(checked: any) => handleSettingChange('UI', 'IfShowTray', checked)"
-            >
+            <a-select v-model:value="settings.UI.IfShowTray" size="large" style="width: 100%"
+              @change="(checked: any) => handleSettingChange('UI', 'IfShowTray', checked)">
               <a-select-option :value="true">是</a-select-option>
               <a-select-option :value="false">否</a-select-option>
             </a-select>
@@ -125,18 +102,21 @@ const {
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-select
-              v-model:value="settings.UI.IfToTray"
-              size="large"
-              style="width: 100%"
-              @change="(checked: any) => handleSettingChange('UI', 'IfToTray', checked)"
-            >
+            <a-select v-model:value="settings.UI.IfToTray" size="large" style="width: 100%"
+              @change="(checked: any) => handleSettingChange('UI', 'IfToTray', checked)">
               <a-select-option :value="true">是</a-select-option>
               <a-select-option :value="false">否</a-select-option>
             </a-select>
           </div>
         </a-col>
       </a-row>
+    </div>
+
+    <div class="form-section">
+      <div class="section-header">
+        <h3>日志高亮颜色</h3>
+      </div>
+      <LogHighlightSettings />
     </div>
   </div>
 </template>
