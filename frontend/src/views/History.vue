@@ -12,13 +12,9 @@
       <div class="quick-time-section">
         <a-form-item label="快捷选择" style="margin-bottom: 16px">
           <a-space wrap>
-            <a-button
-              v-for="preset in timePresets"
-              :key="preset.key"
-              :type="currentPreset === preset.key ? 'primary' : 'default'"
-              size="middle"
-              @click="handleQuickTimeSelect(preset)"
-            >
+            <a-button v-for="preset in timePresets" :key="preset.key"
+              :type="currentPreset === preset.key ? 'primary' : 'default'" size="middle"
+              @click="handleQuickTimeSelect(preset)">
               {{ preset.label }}
             </a-button>
           </a-space>
@@ -38,24 +34,14 @@
         </a-col>
         <a-col :span="6">
           <a-form-item label="开始日期" style="margin-bottom: 0">
-            <a-date-picker
-              v-model:value="searchForm.startDate"
-              style="width: 100%"
-              format="YYYY-MM-DD"
-              value-format="YYYY-MM-DD"
-              @change="handleDateChange"
-            />
+            <a-date-picker v-model:value="searchForm.startDate" style="width: 100%" format="YYYY-MM-DD"
+              value-format="YYYY-MM-DD" @change="handleDateChange" />
           </a-form-item>
         </a-col>
         <a-col :span="6">
           <a-form-item label="结束日期" style="margin-bottom: 0">
-            <a-date-picker
-              v-model:value="searchForm.endDate"
-              style="width: 100%"
-              format="YYYY-MM-DD"
-              value-format="YYYY-MM-DD"
-              @change="handleDateChange"
-            />
+            <a-date-picker v-model:value="searchForm.endDate" style="width: 100%" format="YYYY-MM-DD"
+              value-format="YYYY-MM-DD" @change="handleDateChange" />
           </a-form-item>
         </a-col>
         <a-col :span="6">
@@ -93,11 +79,7 @@
           <!-- 日期折叠列表 -->
           <div class="date-list">
             <a-collapse v-model:active-key="activeKeys" ghost accordion>
-              <a-collapse-panel
-                v-for="dateGroup in historyData"
-                :key="dateGroup.date"
-                class="date-panel"
-              >
+              <a-collapse-panel v-for="dateGroup in historyData" :key="dateGroup.date" class="date-panel">
                 <template #header>
                   <div class="date-header">
                     <span class="date-text">{{ dateGroup.date }}</span>
@@ -105,13 +87,9 @@
                 </template>
 
                 <div class="user-list">
-                  <div
-                    v-for="(userData, username) in dateGroup.users"
-                    :key="username"
-                    class="user-item"
+                  <div v-for="(userData, username) in dateGroup.users" :key="username" class="user-item"
                     :class="{ active: selectedUser === `${dateGroup.date}-${username}` }"
-                    @click="handleSelectUser(dateGroup.date, username, userData)"
-                  >
+                    @click="handleSelectUser(dateGroup.date, username, userData)">
                     <div class="user-info">
                       <span class="username">{{ username }}</span>
                     </div>
@@ -140,9 +118,7 @@
                 <a-card size="small" title="记录条目" class="records-card">
                   <template #extra>
                     <a-space>
-                      <span class="record-count"
-                        >{{ selectedUserData.index?.length || 0 }} 条记录</span
-                      >
+                      <span class="record-count">{{ selectedUserData.index?.length || 0 }} 条记录</span>
                       <a-popover>
                         <template #content>
                           <p>计时规则：4:00-28:00</p>
@@ -152,38 +128,25 @@
                     </a-space>
                   </template>
                   <div class="records-list">
-                    <div
-                      v-for="(record, index) in selectedUserData.index || []"
-                      :key="record.jsonFile"
-                      class="record-item"
-                      :class="{
+                    <div v-for="(record, index) in selectedUserData.index || []" :key="record.jsonFile"
+                      class="record-item" :class="{
                         active: selectedRecordIndex === index,
                         success: record.status === '完成',
                         error: record.status === '异常',
-                      }"
-                      @click="handleSelectRecord(index, record)"
-                    >
+                      }" @click="handleSelectRecord(index, record)">
                       <div class="record-info">
                         <div class="record-header">
                           <span class="record-time">{{ record.date }}</span>
-                          <a-tooltip
-                            v-if="
-                              record.status === '异常' &&
-                              selectedUserData?.error_info &&
-                              selectedUserData.error_info[record.date]
-                            "
-                            :title="selectedUserData.error_info[record.date]"
-                            placement="topLeft"
-                          >
+                          <a-tooltip v-if="
+                            record.status === '异常' &&
+                            selectedUserData?.error_info &&
+                            selectedUserData.error_info[record.date]
+                          " :title="selectedUserData.error_info[record.date]" placement="topLeft">
                             <a-tag color="error" size="small" class="error-tag-with-tooltip">
                               {{ record.status }}
                             </a-tag>
                           </a-tooltip>
-                          <a-tag
-                            v-else
-                            :color="record.status === '完成' ? 'success' : 'error'"
-                            size="small"
-                          >
+                          <a-tag v-else :color="record.status === '完成' ? 'success' : 'error'" size="small">
                             {{ record.status }}
                           </a-tag>
                         </div>
@@ -211,27 +174,15 @@
                   </template>
                   <div v-if="currentStatistics.recruit_statistics" class="recruit-stats">
                     <a-row :gutter="8">
-                      <a-col
-                        v-for="(count, star) in currentStatistics.recruit_statistics"
-                        :key="star"
-                        :span="8"
-                      >
-                        <a-statistic
-                          :title="`${star}星`"
-                          :value="count"
-                          :value-style="{ fontSize: '16px' }"
-                        />
+                      <a-col v-for="(count, star) in currentStatistics.recruit_statistics" :key="star" :span="8">
+                        <a-statistic :title="`${star}星`" :value="count" :value-style="{ fontSize: '16px' }" />
                       </a-col>
                     </a-row>
                   </div>
                   <div v-else class="no-data">
-                    <a-empty
-                      description="暂无公招数据"
-                      :image="NodataImage"
-                      :image-style="{
-                        height: '60px',
-                      }"
-                    />
+                    <a-empty description="暂无公招数据" :image="NodataImage" :image-style="{
+                      height: '60px',
+                    }" />
                   </div>
                 </a-card>
 
@@ -247,31 +198,20 @@
                   </template>
                   <div v-if="currentStatistics.drop_statistics" class="drop-stats">
                     <a-collapse size="small" ghost>
-                      <a-collapse-panel
-                        v-for="(drops, stage) in currentStatistics.drop_statistics"
-                        :key="stage"
-                        :header="stage"
-                      >
+                      <a-collapse-panel v-for="(drops, stage) in currentStatistics.drop_statistics" :key="stage"
+                        :header="stage">
                         <a-row :gutter="8">
                           <a-col v-for="(count, item) in drops" :key="item" :span="12">
-                            <a-statistic
-                              :title="item"
-                              :value="count"
-                              :value-style="{ fontSize: '14px' }"
-                            />
+                            <a-statistic :title="item" :value="count" :value-style="{ fontSize: '14px' }" />
                           </a-col>
                         </a-row>
                       </a-collapse-panel>
                     </a-collapse>
                   </div>
                   <div v-else class="no-data">
-                    <a-empty
-                      description="暂无掉落数据"
-                      :image="NodataImage"
-                      :image-style="{
-                        height: '60px',
-                      }"
-                    />
+                    <a-empty description="暂无掉落数据" :image="NodataImage" :image-style="{
+                      height: '60px',
+                    }" />
                   </div>
                 </a-card>
               </div>
@@ -283,49 +223,28 @@
                 <template #extra>
                   <a-space>
                     <a-tooltip title="打开日志文件" :get-popup-container="tooltipContainer">
-                      <a-button
-                        size="small"
-                        type="text"
-                        :disabled="!currentJsonFile"
-                        :class="{ 'no-hover-shift': true }"
-                        :style="buttonFixedStyle"
-                        @click="handleOpenLogFile"
-                      >
+                      <a-button size="small" type="text" :disabled="!currentJsonFile"
+                        :class="{ 'no-hover-shift': true }" :style="buttonFixedStyle" @click="handleOpenLogFile">
                         <template #icon>
                           <FileOutlined />
                         </template>
                       </a-button>
                     </a-tooltip>
                     <a-tooltip title="打开日志文件所在目录" :get-popup-container="tooltipContainer">
-                      <a-button
-                        size="small"
-                        type="text"
-                        :disabled="!currentJsonFile"
-                        :class="{ 'no-hover-shift': true }"
-                        :style="buttonFixedStyle"
-                        @click="handleOpenLogDirectory"
-                      >
+                      <a-button size="small" type="text" :disabled="!currentJsonFile"
+                        :class="{ 'no-hover-shift': true }" :style="buttonFixedStyle" @click="handleOpenLogDirectory">
                         <template #icon>
                           <FolderOpenOutlined />
                         </template>
                       </a-button>
                     </a-tooltip>
                     <a-tooltip title="字体大小" :get-popup-container="tooltipContainer">
-                      <a-select
-                        v-model:value="logFontSize"
-                        size="small"
-                        class="log-font-size-select"
-                        style="width: 72px"
-                        :options="logFontSizeOptions.map(v => ({ value: v, label: v + 'px' }))"
-                      />
+                      <a-select :value="editorConfig.fontSize" size="small" class="log-font-size-select"
+                        style="width: 72px" :options="fontSizeOptions.map(v => ({ value: v, label: v + 'px' }))"
+                        @change="(v: number) => setEditorConfig({ fontSize: v })" />
                     </a-tooltip>
                     <a-tooltip title="搜索快捷键: Ctrl+F" :get-popup-container="tooltipContainer">
-                      <a-button
-                        size="small"
-                        type="text"
-                        :class="{ 'no-hover-shift': true }"
-                        :style="buttonFixedStyle"
-                      >
+                      <a-button size="small" type="text" :class="{ 'no-hover-shift': true }" :style="buttonFixedStyle">
                         <template #icon>
                           <SearchOutlined />
                         </template>
@@ -335,20 +254,11 @@
                 </template>
                 <a-spin :spinning="detailLoading">
                   <div v-if="currentDetail?.log_content" class="log-content">
-                    <vue-monaco-editor
-                      v-model:value="currentDetail.log_content"
-                      :theme="isDark ? 'vs-dark' : 'vs'"
-                      :options="monacoOptions"
-                      height="100%"
-                      :language="logLanguage"
-                    />
+                    <vue-monaco-editor v-model:value="currentDetail.log_content" :theme="editorTheme"
+                      :options="monacoOptions" height="100%" language="logfile" @before-mount="registerLogLanguage" />
                   </div>
                   <div v-else class="no-log">
-                    <a-empty
-                      description="未选择日志，请从左边记录条目中选择"
-                      :image="NodataImage"
-                      :image-style="{ height: '60px' }"
-                    />
+                    <a-empty description="未选择日志，请从左边记录条目中选择" :image="NodataImage" :image-style="{ height: '60px' }" />
                   </div>
                 </a-spin>
               </a-card>
@@ -379,9 +289,9 @@ import {
 import { VueMonacoEditor } from '@guolao/vue-monaco-editor'
 import { message } from 'ant-design-vue'
 import dayjs from 'dayjs'
-import * as monaco from 'monaco-editor'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { getLogger } from '@/utils/logger'
+import { useLogHighlight } from '@/composables/useLogHighlight'
 
 const logger = getLogger('历史记录')
 
@@ -393,6 +303,12 @@ const currentPreset = ref('week') // 当前选中的快捷选项
 
 // 主题相关
 const { isDark } = useTheme()
+
+// 日志高亮
+const { registerLogLanguage, editorTheme, editorConfig, setEditorConfig } = useLogHighlight()
+
+// 字体大小选项
+const fontSizeOptions = [11, 12, 13, 14, 15, 16, 18, 20]
 
 // 选中的用户相关数据
 const selectedUser = ref('')
@@ -494,8 +410,6 @@ const currentStatistics = computed(() => {
 
 // 页面加载时自动搜索
 onMounted(() => {
-  // 注册自定义日志语言
-  registerLogLanguage()
   handleSearch()
 })
 
@@ -669,131 +583,16 @@ const handleOpenLogDirectory = async () => {
   }
 }
 
-// 日志字体大小（恢复）
-const logFontSize = ref(14)
-const logFontSizeOptions = [12, 13, 14, 16, 18, 20]
 
-// 语言注册状态
-let isLanguageRegistered = false
 
-// 注册自定义日志语言
-const registerLogLanguage = () => {
-  if (isLanguageRegistered) return
 
-  try {
-    // 注册日志语言
-    monaco.languages.register({ id: 'logfile' })
-
-    // 定义语法高亮规则
-    monaco.languages.setMonarchTokensProvider('logfile', {
-      tokenizer: {
-        root: [
-          // 时间戳 (各种格式)
-          [/\d{4}-\d{2}-\d{2}[\sT]\d{2}:\d{2}:\d{2}(\.\d{3})?/, 'timestamp'],
-          [/\d{2}:\d{2}:\d{2}(\.\d{3})?/, 'timestamp'],
-          [/\[\d{4}-\d{2}-\d{2}[\sT]\d{2}:\d{2}:\d{2}(\.\d{3})?\]/, 'timestamp'],
-
-          // 日志级别
-          [/\b(ERROR|FATAL|CRITICAL)\b/i, 'log-error'],
-          [/\b(WARN|WARNING)\b/i, 'log-warning'],
-          [/\b(INFO|INFORMATION)\b/i, 'log-info'],
-          [/\b(DEBUG|TRACE|VERBOSE)\b/i, 'log-debug'],
-
-          // 括号内的内容 (通常是模块名或线程名)
-          [/\[[^\]]+\]/, 'log-module'],
-          [/\([^)]+\)/, 'log-module'],
-
-          // IP 地址
-          [/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/, 'log-ip'],
-
-          // URL
-          [/https?:\/\/[^\s]+/, 'log-url'],
-
-          // 文件路径
-          [/[A-Za-z]:[\\\/][^\s]+/, 'log-path'],
-          [/\/[^\s]*\.[a-zA-Z0-9]+/, 'log-path'],
-
-          // 数字
-          [/\b\d+\b/, 'log-number'],
-
-          // 异常和错误关键词
-          [/\b(Exception|Error|Failed|Failure|Timeout|Abort)\b/i, 'log-error-keyword'],
-
-          // 成功关键词
-          [/\b(Success|Complete|Completed|OK|Done|Finished)\b/i, 'log-success'],
-        ],
-      },
-    })
-
-    // 定义主题颜色
-    monaco.editor.defineTheme('log-light', {
-      base: 'vs',
-      inherit: true,
-      rules: [
-        { token: 'timestamp', foreground: '0066cc', fontStyle: 'bold' },
-        { token: 'log-error', foreground: 'ff0000', fontStyle: 'bold' },
-        { token: 'log-warning', foreground: 'ff8800', fontStyle: 'bold' },
-        { token: 'log-info', foreground: '0088cc', fontStyle: 'bold' },
-        { token: 'log-debug', foreground: '888888' },
-        { token: 'log-module', foreground: '8800cc' },
-        { token: 'log-ip', foreground: '00aa00' },
-        { token: 'log-url', foreground: '0066cc', textDecoration: 'underline' },
-        { token: 'log-path', foreground: '666666' },
-        { token: 'log-number', foreground: '0066cc' },
-        { token: 'log-error-keyword', foreground: 'cc0000' },
-        { token: 'log-success', foreground: '00aa00' },
-      ],
-      colors: {},
-    })
-
-    monaco.editor.defineTheme('log-dark', {
-      base: 'vs-dark',
-      inherit: true,
-      rules: [
-        { token: 'timestamp', foreground: '4fc3f7', fontStyle: 'bold' },
-        { token: 'log-error', foreground: 'f44336', fontStyle: 'bold' },
-        { token: 'log-warning', foreground: 'ff9800', fontStyle: 'bold' },
-        { token: 'log-info', foreground: '2196f3', fontStyle: 'bold' },
-        { token: 'log-debug', foreground: '9e9e9e' },
-        { token: 'log-module', foreground: '9c27b0' },
-        { token: 'log-ip', foreground: '4caf50' },
-        { token: 'log-url', foreground: '03dac6', textDecoration: 'underline' },
-        { token: 'log-path', foreground: 'bdbdbd' },
-        { token: 'log-number', foreground: '64b5f6' },
-        { token: 'log-error-keyword', foreground: 'ef5350' },
-        { token: 'log-success', foreground: '66bb6a' },
-      ],
-      colors: {},
-    })
-
-    isLanguageRegistered = true
-    logger.info('Log language registered successfully')
-  } catch (error) {
-    logger.error('Failed to register log language:', error)
-  }
-}
-
-// 智能检测日志语言
-const logLanguage = computed(() => {
-  if (!currentDetail.value?.log_content) return 'logfile'
-
-  const content = currentDetail.value.log_content
-
-  // 检测其他特殊格式
-  if (content.includes('<?xml') || content.includes('<html')) return 'xml'
-  if (content.includes('{') && content.includes('}') && content.includes('"')) return 'json'
-  if (content.includes('#!/bin/bash') || content.includes('#!/bin/sh')) return 'shell'
-
-  // 默认使用日志语言，因为大部分内容都是日志
-  return 'logfile'
-})
 
 // Monaco Editor 配置
 const monacoOptions = computed(() => ({
   readOnly: true,
-  fontSize: logFontSize.value,
-  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace',
-  lineHeight: 1.5,
+  fontSize: editorConfig.value.fontSize,
+  fontFamily: editorConfig.value.fontFamily,
+  lineHeight: editorConfig.value.lineHeight * editorConfig.value.fontSize,
   wordWrap: 'on',
   scrollBeyondLastLine: false,
   minimap: { enabled: false },
@@ -912,7 +711,8 @@ const buttonFixedStyle = { width: '28px', height: '28px', padding: 0 }
 }
 
 .user-item:hover {
-  background: rgba(0, 0, 0, 0.04); /* 移除未知 CSS 变量 */
+  background: rgba(0, 0, 0, 0.04);
+  /* 移除未知 CSS 变量 */
   border-color: var(--ant-color-border);
 }
 
@@ -941,7 +741,8 @@ const buttonFixedStyle = { width: '28px', height: '28px', padding: 0 }
 
 /* 隐藏所有滚动条 */
 *::-webkit-scrollbar {
-  display: none; /* Chrome, Safari and Opera */
+  display: none;
+  /* Chrome, Safari and Opera */
 }
 
 .no-selection {
@@ -960,15 +761,19 @@ const buttonFixedStyle = { width: '28px', height: '28px', padding: 0 }
   display: flex;
   gap: 16px;
   min-height: 0;
-  min-width: 0; /* 确保子项 flex:1 时可以收缩 */
-  overflow: hidden; /* 避免被长行撑出 */
+  min-width: 0;
+  /* 确保子项 flex:1 时可以收缩 */
+  overflow: hidden;
+  /* 避免被长行撑出 */
 }
 
 /* 记录条目区域 */
 .records-area {
   width: 400px;
-  flex-shrink: 1; /* 新增: 允许一定程度收缩 */
-  min-width: 260px; /* 给一个合理下限 */
+  flex-shrink: 1;
+  /* 新增: 允许一定程度收缩 */
+  min-width: 260px;
+  /* 给一个合理下限 */
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -1012,7 +817,8 @@ const buttonFixedStyle = { width: '28px', height: '28px', padding: 0 }
 }
 
 .record-item:hover {
-  background: rgba(0, 0, 0, 0.04); /* 移除未知 CSS 变量 */
+  background: rgba(0, 0, 0, 0.04);
+  /* 移除未知 CSS 变量 */
 }
 
 .record-item.active {
@@ -1101,7 +907,8 @@ const buttonFixedStyle = { width: '28px', height: '28px', padding: 0 }
 .log-area {
   flex: 1;
   /* 允许在父级 flex 宽度不足时压缩，避免整体被撑出视口 */
-  min-width: 0; /* 修改: 原来是 300px，导致在内容渲染后无法收缩 */
+  min-width: 0;
+  /* 修改: 原来是 300px，导致在内容渲染后无法收缩 */
   display: flex;
   flex-direction: column;
 }
@@ -1165,8 +972,10 @@ const buttonFixedStyle = { width: '28px', height: '28px', padding: 0 }
 
 /* 防止按钮在获得焦点/激活时出现位移（如出现 outline 或行高变化导致的抖动） */
 .no-hover-shift {
-  line-height: 1; /* 固定行高 */
+  line-height: 1;
+  /* 固定行高 */
 }
+
 .no-hover-shift :deep(.ant-btn-icon) {
   display: flex;
   align-items: center;
@@ -1205,10 +1014,12 @@ const buttonFixedStyle = { width: '28px', height: '28px', padding: 0 }
   .history-layout {
     flex-direction: column;
   }
+
   .records-area {
     width: 100%;
     min-width: 0;
   }
+
   .log-area {
     width: 100%;
     min-width: 0;
