@@ -22,7 +22,6 @@
 
 import json
 import asyncio
-import contextlib
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -30,6 +29,8 @@ from pathlib import Path
 from app.models.emulator import DeviceStatus, DeviceInfo, DeviceBase
 from app.models.config import EmulatorConfig
 from app.utils import ProcessRunner, get_logger
+
+from app.utils.emulator.mumu_tools import auto_close_mumunxmain
 
 
 logger = get_logger("MuMu模拟器管理")
@@ -53,6 +54,7 @@ class MumuManager(DeviceBase):
 
         self.emulator_path = Path(config.get("Info", "Path"))
 
+    @auto_close_mumunxmain()
     async def open(self, idx: str, package_name: str = "") -> DeviceInfo:
         logger.info(f"开始启动模拟器{idx} - {package_name}")
 
