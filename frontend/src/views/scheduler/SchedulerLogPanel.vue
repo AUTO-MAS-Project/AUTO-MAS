@@ -4,22 +4,13 @@
       <h3>日志</h3>
       <div class="log-controls">
         <a-space size="small">
-          <a-button
-            size="small"
-            :type="logMode === 'follow' ? 'primary' : 'default'"
-            @click="toggleLogMode"
-          >
+          <a-button size="small" :type="logMode === 'follow' ? 'primary' : 'default'" @click="toggleLogMode">
             {{ logMode === 'follow' ? '保持最新' : '自由浏览' }}
           </a-button>
         </a-space>
       </div>
     </div>
-    <div 
-      ref="logContentRef" 
-      class="log-content" 
-      :class="{ 'log-locked': logMode === 'follow' }"
-      @scroll="onScroll"
-    >
+    <div ref="logContentRef" class="log-content" :class="{ 'log-locked': logMode === 'follow' }">
       <div v-if="!logContent" class="empty-state">
         <div class="empty-content">
           <div class="empty-image-container">
@@ -27,13 +18,18 @@
           </div>
         </div>
       </div>
-      <pre v-else class="log-text" :key="logContent.length">{{ logContent }}</pre>
+      <div v-else class="monaco-container">
+        <vue-monaco-editor :value="logContent" language="logfile" :theme="editorTheme" :options="editorOptions"
+          @before-mount="handleBeforeMount" @mount="handleEditorMount" />
+      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, nextTick, watch, onMounted, onUnmounted } from 'vue'
+import { useLogHighlight } from '@/composables/useLogHighlight'
+import { VueMonacoEditor } from '@guolao/vue-monaco-editor'
+import { computed, nextTick, onMounted, onUnmounted, ref, toRefs, watch } from 'vue'
 
 interface Props {
   logContent: string
@@ -53,7 +49,18 @@ type LogMode = 'follow' | 'browse'
 const props = defineProps<Props>()
 const emit = defineEmits<Emits>()
 
+// 解构 props 以便在模板中直接使用（保持响应性）
+const { logContent, tabKey } = toRefs(props)
+
+// 使用日志高亮 composable
+const { registerLogLanguage, editorTheme, editorConfig } = useLogHighlight()
+
 const logContentRef = ref<HTMLElement | null>(null)
+
+// 在编辑器挂载前注册语言
+const handleBeforeMount = (monaco: any) => {
+  registerLogLanguage(monaco)
+}
 // 根据 isLogAtBottom 属性初始化模式
 const logMode = ref<LogMode>('follow')
 
@@ -70,6 +77,47 @@ watch(
   }
 )
 
+// Monaco Editor 实例
+let editorInstance: any = null
+
+// Monaco Editor 配置
+const editorOptions = computed(() => ({
+  readOnly: true,
+  minimap: { enabled: false },
+  scrollBeyondLastLine: false,
+  fontSize: editorConfig.value.fontSize,
+  fontFamily: editorConfig.value.fontFamily,
+  lineHeight: editorConfig.value.lineHeight * editorConfig.value.fontSize,
+  lineNumbers: 'on' as const,
+  wordWrap: 'on' as const,
+  automaticLayout: true,
+  scrollbar: {
+    vertical: 'visible' as const,
+    horizontal: 'visible' as const,
+    useShadows: false,
+    verticalScrollbarSize: 10,
+    horizontalScrollbarSize: 10,
+  },
+  renderWhitespace: 'none' as const,
+  contextmenu: true,
+  folding: false,
+  renderLineHighlight: 'none' as const,
+  occurrencesHighlight: 'off' as const,
+  codeLens: false,
+  lightbulb: { enabled: 'off' as const },
+  smoothScrolling: true,
+  cursorBlinking: 'smooth' as const,
+}))
+
+// 处理编辑器挂载
+const handleEditorMount = (editor: any) => {
+  editorInstance = editor
+  // 初始滚动到底部
+  if (logMode.value === 'follow' && props.logContent) {
+    nextTick(() => scrollToBottom())
+  }
+}
+
 const toggleLogMode = () => {
   if (logMode.value === 'follow') {
     // 从保持最新切换到自由浏览
@@ -78,42 +126,20 @@ const toggleLogMode = () => {
     // 从自由浏览切换到保持最新
     logMode.value = 'follow'
     // 简单延迟滚动，避免nextTick的递归风险
-    setTimeout(handleAutoScroll, 10)
+    setTimeout(scrollToBottom, 10)
   }
 }
 
-// 简化的滚动函数
+// 滚动到底部
 const scrollToBottom = () => {
-  if (logContentRef.value) {
-    logContentRef.value.scrollTop = logContentRef.value.scrollHeight
-    emit('scroll', true)
-  }
-}
-
-const onScroll = () => {
-  if (!logContentRef.value) return
-  
-  const { scrollTop, scrollHeight, clientHeight } = logContentRef.value
-  const isAtBottom = Math.abs(scrollHeight - clientHeight - scrollTop) < 5
-  
-  // 保持最新模式：锁定在底部
-  if (logMode.value === 'follow') {
-    // 如果不在底部，立即滚动回底部（不使用任何异步方法）
-    if (!isAtBottom) {
-      logContentRef.value.scrollTop = logContentRef.value.scrollHeight
+  if (editorInstance) {
+    const lineCount = editorInstance.getModel()?.getLineCount()
+    if (lineCount) {
+      editorInstance.revealLine(lineCount)
+      editorInstance.setScrollTop(editorInstance.getScrollHeight())
     }
-    emit('scroll', true)
-  } else {
-    // 自由浏览模式：正常响应
-    emit('scroll', isAtBottom)
   }
-}
-
-// 使用一个统一的滚动处理函数，避免多个watch造成递归
-const handleAutoScroll = () => {
-  if (logMode.value === 'follow' && logContentRef.value && props.logContent) {
-    logContentRef.value.scrollTop = logContentRef.value.scrollHeight
-  }
+  emit('scroll', true)
 }
 
 // 只监听日志内容变化
@@ -122,28 +148,22 @@ watch(
   () => {
     if (logMode.value === 'follow') {
       // 使用简单的延迟，避免nextTick可能导致的递归
-      setTimeout(handleAutoScroll, 10)
+      setTimeout(scrollToBottom, 10)
     }
   }
 )
-
-// 移除 watchEffect 避免与 watch 产生递归冲突
 
 // 组件挂载时设置引用
 onMounted(() => {
   if (logContentRef.value) {
     emit('setRef', logContentRef.value, props.tabKey)
-    
-    // 简单的初始滚动
-    if (logMode.value === 'follow' && props.logContent) {
-      setTimeout(handleAutoScroll, 100)
-    }
   }
 })
 
 // 组件卸载前清理引用
 onUnmounted(() => {
   emit('setRef', null, props.tabKey)
+  editorInstance = null
 })
 </script>
 
@@ -182,12 +202,20 @@ onUnmounted(() => {
 
 .log-content {
   flex: 1;
-  overflow-y: auto;
-  padding: 16px;
+  overflow: hidden;
   font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace;
   font-size: 14px;
   line-height: 1.5;
   transition: all 0.2s ease;
+}
+
+.monaco-container {
+  height: 100%;
+  width: 100%;
+}
+
+.monaco-container :deep(.monaco-editor) {
+  height: 100% !important;
 }
 
 /* 保持最新模式：滚动条样式调整，表示锁定状态 */
@@ -199,8 +227,6 @@ onUnmounted(() => {
   background-color: var(--ant-color-primary) !important;
   border-radius: 6px;
 }
-
-
 
 .log-text {
   margin: 0;
