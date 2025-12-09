@@ -47,7 +47,7 @@
 - **衍生：** AUTO-MAS 允许任何人对软件本体或软件部分代码进行二次开发或利用。但依据GPL，相关成果再次分发时也必须使用GPL或兼容的协议开源。
 - **图像：** `AUTO-MAS 图标` 并不适用开源协议，著作权归 [NARINpopo](https://space.bilibili.com/1877154) 画师所有，商业使用权归 [DLmaster (@DLmaster361)](https://github.com/DLmaster361) 所有，软件用户仅拥有非商业使用权。不得以开源协议已授权为由在未经授权的情况下使用 `AUTO-MAS 图标`，不得在未经授权的情况下将 `AUTO-MAS 图标` 用于任何商业用途。
 
-以上细则是本项目对GPL的相关补充与强调。未提及的以GPL为准，发生冲突的以本细则为准。如有不清楚的部分，请发Issues询问。若发生纠纷，相关内容也没有在Issues上提及的，AUTO-MAS Team 拥有最终解释权。
+以上细则是本项目对GPL的相关补充与强调。未提及的以 GPL 为准，发生冲突的以本细则为准。如有不清楚的部分，请发 Issues 询问。若发生纠纷，相关内容也没有在 Issues 上提及的，AUTO-MAS Team 拥有最终解释权。
 
 ---
 
@@ -55,7 +55,32 @@
 
 访问 AUTO-MAS 官方文档站以获取使用指南和更多项目相关信息
 
-- [AUTO-MAS官方文档站](https://doc.auto-mas.top)
+- [AUTO-MAS 官方文档站](https://doc.auto-mas.top)
+
+# 代码签名策略（Code signing policy）
+
+免费代码签名由 [SignPath.io](https://signpath.io/) 提供，证书由 [SignPath Foundation](https://signpath.org/) 提供。
+
+Free code signing provided by [SignPath.io](https://signpath.io/), certificate by [SignPath Foundation](https://signpath.org/).
+
+- 审批人（Approvers）: [DLmaster (@DLmaster361)](https://github.com/DLmaster361)
+
+# 隐私政策（Privacy policy）
+
+为更好地提供服务，AUTO-MAS 将自动收集以下信息：
+
+- 软件版本号
+- 运行时错误信息
+
+AUTO-MAS 尊重并保护用户隐私，上报的所有信息均经过匿名化处理，不包含任何个人身份信息。所收集的数据存储于 AUTO-MAS 官方服务器，不会传输至任何第三方机构或设施。
+
+To better serve you, AUTO-MAS will automatically collect the following information:
+
+- Software version number
+- Runtime error information
+
+AUTO-MAS respects and protects user privacy, all collected information has been anonymized and does not contain any personal identity information. All collected data is stored on the official server of AUTO-MAS, and will not be transmitted to any third-party institution or facility.
+
 
 ---
 
