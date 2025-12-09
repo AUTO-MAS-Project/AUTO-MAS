@@ -34,11 +34,11 @@ export function usePlanApi() {
       }
       const params: PlanCreateIn = { type }
       const response = await Service.addPlanApiPlanAddPost(params)
-      
+
       // 播放添加计划成功音频
       const { playSound } = useAudioPlayer()
       await playSound('add_schedule')
-      
+
       // message.success('创建计划成功')
       return response
     } catch (error) {
@@ -72,11 +72,11 @@ export function usePlanApi() {
     try {
       const params: PlanDeleteIn = { planId }
       const response = await Service.deletePlanApiPlanDeletePost(params)
-      
+
       // 播放删除计划成功音频
       const { playSound } = useAudioPlayer()
       await playSound('delete_schedule')
-      
+
       message.success('删除计划成功')
       return response
     } catch (error) {

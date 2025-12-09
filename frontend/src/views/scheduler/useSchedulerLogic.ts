@@ -338,11 +338,11 @@ export function useSchedulerLogic() {
         tab.logMode = 'follow' // 任务开始时设置日志为保持最新模式
 
         subscribeToTask(tab)
-        
+
         // 播放任务启动成功音频
         const { playSound } = useAudioPlayer()
         await playSound('task_started')
-        
+
         message.success('任务启动成功')
         saveTabsToStorage(schedulerTabs.value)
       } else {
@@ -574,10 +574,10 @@ export function useSchedulerLogic() {
 
   const handleInfoMessage = async (data: any) => {
     const { playSound } = useAudioPlayer()
-    
+
     if (data.Error) {
       const errorMsg = String(data.Error).toLowerCase()
-      
+
       // 根据错误内容匹配具体的 noisy 模式音频
       if (errorMsg.includes('adb') && (errorMsg.includes('连接') || errorMsg.includes('connection'))) {
         await playSound('maa_adb_connection_error')
@@ -597,7 +597,7 @@ export function useSchedulerLogic() {
         // 默认错误音频
         await playSound('error_occurred')
       }
-      
+
       notification.error({ message: '任务错误', description: data.Error })
     } else if (data.Warning) {
       // 播放异常音频
@@ -605,7 +605,7 @@ export function useSchedulerLogic() {
       notification.warning({ message: '任务警告', description: data.Warning })
     } else if (data.Info) {
       const infoMsg = String(data.Info).toLowerCase()
-      
+
       // 匹配成功信息的 noisy 模式音频
       if (infoMsg.includes('skland') || infoMsg.includes('森空岛')) {
         if (infoMsg.includes('签到成功') || infoMsg.includes('checkin success') || infoMsg.includes('成功')) {
@@ -620,7 +620,7 @@ export function useSchedulerLogic() {
       } else if (infoMsg.includes('adb') && infoMsg.includes('失败')) {
         await playSound('adb_failed')
       }
-      
+
       notification.info({ message: '任务信息', description: data.Info })
     }
   }
