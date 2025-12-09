@@ -55,7 +55,7 @@
 
 - [AUTO-MAS 官方文档站](https://doc.auto-mas.top)
 
-## 代码签名策略（Code signing policy）
+## 代码签名策略 / Code signing policy
 
 免费代码签名由 [SignPath.io](https://signpath.io/) 提供，证书由 [SignPath Foundation](https://signpath.org/) 提供。
 
@@ -63,7 +63,7 @@ Free code signing provided by [SignPath.io](https://signpath.io/), certificate b
 
 - 审批人（Approvers）: [DLmaster (@DLmaster361)](https://github.com/DLmaster361)
 
-## 隐私政策（Privacy policy）
+## 隐私政策 / Privacy policy
 
 为更好地提供服务，AUTO-MAS 将自动收集以下信息：
 
@@ -104,9 +104,9 @@ AUTO-MAS respects and protects user privacy, all collected information has been 
 
 [![Star History Chart](https://api.star-history.com/svg?repos=AUTO-MAS-Project/AUTO-MAS&type=Date)](https://star-history.com/#AUTO-MAS-Project/AUTO-MAS&Date)
 
-## 交流与赞助
+## 官方社区
 
-欢迎加入AUTO-MAS项目组，欢迎反馈bug
+欢迎加入 AUTO-MAS 项目组官方社群！
 
-- QQ交流群：[957750551](https://qm.qq.com/q/bd9fISNoME)
-
+- QQ 交流群：[957750551](https://qm.qq.com/q/bd9fISNoME)
+- Telegram：[@AUTO_MAS_top](https://t.me/AUTO_MAS_top)
