@@ -24,7 +24,7 @@ from app.services import Notify
 from app.utils import get_logger
 from app.models.config import GeneralUserConfig
 
-logger = get_logger("MAA 通知工具")
+logger = get_logger("通用通知工具")
 
 
 async def push_notification(
@@ -45,17 +45,10 @@ async def push_notification(
         message_text = (
             f"任务开始时间: {message['start_time']}, 结束时间: {message['end_time']}\n"
             f"已完成数: {message['completed_count']}, 未完成数: {message['uncompleted_count']}\n\n"
+            f"{message['result']}"
         )
 
-        if len(message["failed_user"]) > 0:
-            message_text += f"未成功的用户: \n{"\n".join(message['failed_user'])}\n"
-        if len(message["waiting_user"]) > 0:
-            message_text += f"\n未开始的用户: \n{"\n".join(message['waiting_user'])}\n"
-
         # 生成HTML通知内容
-        message["failed_user"] = "、".join(message["failed_user"])
-        message["waiting_user"] = "、".join(message["waiting_user"])
-
         template = Config.notify_env.get_template("general_result.html")
         message_html = template.render(message)
 

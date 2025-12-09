@@ -126,6 +126,7 @@ class ManualInspectTask(TaskExecuteBase):
         while True:
 
             try:
+                self.script_info.log = "正在启动模拟器"
                 emulator_info = await self.emulator_manager.open(
                     self.script_config.get("Emulator", "Index")
                 )
@@ -134,7 +135,7 @@ class ManualInspectTask(TaskExecuteBase):
                 logger.exception(
                     f"用户: {self.cur_user_item.user_id} - 模拟器启动失败: {e}"
                 )
-                self.script_info.log = f"模拟器启动失败: {e}\n正在中止相关程序\n请等待"
+                self.script_info.log = f"模拟器启动失败: {e}\n正在中止相关程序"
                 await self.emulator_manager.close(
                     self.script_config.get("Emulator", "Index")
                 )
@@ -180,9 +181,7 @@ class ManualInspectTask(TaskExecuteBase):
                 logger.error(
                     f"用户: {self.cur_user_item.user_id} - MAA进程异常: {self.cur_user_log.status}"
                 )
-                self.script_info.log = (
-                    f"{self.cur_user_log.status}\n正在中止相关程序\n请等待"
-                )
+                self.script_info.log = f"{self.cur_user_log.status}\n正在中止相关程序"
 
                 await self.maa_process_manager.kill()
                 await self.emulator_manager.close(
@@ -332,16 +331,16 @@ class ManualInspectTask(TaskExecuteBase):
         if "完成任务: StartUp" in log or "完成任务: 开始唤醒" in log:
             self.cur_user_log.status = "Success!"
         elif "请 ｢检查连接设置｣ → ｢尝试重启模拟器与 ADB｣ → ｢重启电脑｣" in log:
-            self.cur_user_log.status = "MAA的ADB连接异常"
+            self.cur_user_log.status = "MAA 的 ADB 连接异常"
         elif "未检测到任何模拟器" in log:
-            self.cur_user_log.status = "MAA未检测到任何模拟器"
+            self.cur_user_log.status = "MAA 未检测到任何模拟器"
         elif "已停止" in log:
-            self.cur_user_log.status = "MAA在完成任务前中止"
+            self.cur_user_log.status = "MAA 在完成任务前中止"
         elif (
             "MaaAssistantArknights GUI exited" in log
             or not await self.maa_process_manager.is_running()
         ):
-            self.cur_user_log.status = "MAA在完成任务前退出"
+            self.cur_user_log.status = "MAA 在完成任务前退出"
         else:
             self.cur_user_log.status = "MAA 正常运行中"
 

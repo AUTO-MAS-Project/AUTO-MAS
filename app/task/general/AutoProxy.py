@@ -205,6 +205,7 @@ class AutoProxyTask(TaskExecuteBase):
                     "脚本前任务",
                 )
 
+            self.script_info.log = f"正在启动游戏 / 模拟器"
             # 启动游戏/模拟器
             if self.game_manager is not None:
                 try:
@@ -227,12 +228,16 @@ class AutoProxyTask(TaskExecuteBase):
                                     " "
                                 ),
                             )
+                            self.script_info.log = f"正在等待游戏完成启动\n请等待{self.script_config.get('Game', 'WaitTime')}s"
+                            await asyncio.sleep(
+                                self.script_config.get("Game", "WaitTime")
+                            )
                     elif isinstance(self.game_manager, DeviceBase):
                         logger.info(
                             f"启动模拟器: {self.script_config.get('Game', 'EmulatorIndex')}"
                         )
                         await self.game_manager.open(
-                            self.script_config.get("Game", "EmulatorIndex"),
+                            self.script_config.get("Game", "EmulatorIndex")
                         )
                 except Exception as e:
                     logger.exception(
@@ -263,9 +268,6 @@ class AutoProxyTask(TaskExecuteBase):
                     )
                     continue
 
-                self.script_info.log = f"正在等待游戏/模拟器完成启动\n请等待{self.script_config.get('Game', 'WaitTime')}s"
-                await asyncio.sleep(self.script_config.get("Game", "WaitTime"))
-
             await self.set_general()
             logger.info(
                 f"运行脚本任务: {self.script_exe_path}, 参数: {self.script_arguments}"
@@ -285,7 +287,7 @@ class AutoProxyTask(TaskExecuteBase):
                 self.run_book = True
                 logger.info(f"用户: {self.cur_user_uid} - 通用脚本进程完成代理任务")
                 self.script_info.log = (
-                    "检测到通用脚本进程完成代理任务\n正在等待相关程序结束\n请等待"
+                    "检测到通用脚本进程完成代理任务\n正在等待相关程序结束"
                 )
 
                 # 中止相关程序
@@ -304,9 +306,7 @@ class AutoProxyTask(TaskExecuteBase):
                 logger.error(
                     f"用户: {self.cur_user_uid} - 代理任务异常: {self.cur_user_log.status}"
                 )
-                self.script_info.log = (
-                    f"{self.cur_user_log.status}\n正在中止相关程序\n请等待"
-                )
+                self.script_info.log = f"{self.cur_user_log.status}\n正在中止相关程序"
 
                 # 中止相关程序
                 await self.close_script_process()

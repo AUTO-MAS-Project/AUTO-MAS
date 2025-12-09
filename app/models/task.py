@@ -32,16 +32,18 @@ from typing import List, Optional
 class LogRecord:
 
     content: list[str] = field(default_factory=list)
-    status: str = "-"
+    status: str = "未开始监看日志"
 
 
 @dataclass
 class UserItem:
 
-    user_id: str
-    name: str
-    status: str
-    log_record: dict[datetime, LogRecord] = field(default_factory=dict)
+    user_id: str  # 用户ID
+    name: str  # 用户名称
+    status: str  # 用户执行状态
+    log_record: dict[datetime, LogRecord] = field(
+        default_factory=dict
+    )  # 用户本次代理的全部日志记录
     _task_item_ref: Optional[weakref.ReferenceType[TaskItem]] = None
 
     def __setattr__(self, name, value):
@@ -52,18 +54,28 @@ class UserItem:
             if ti is not None:
                 asyncio.create_task(ti.on_change())
 
+    @property
+    def result(self) -> str:
+        """用户代理情况的简要结果"""
+        if not self.log_record:
+            return "未开始运行"
+        return " | ".join(
+            [
+                f"{t.strftime('%H:%M')} - {log.status}"
+                for t, log in self.log_record.items()
+            ]
+        )
+
 
 @dataclass
 class ScriptItem:
 
-    script_id: str
-    name: str
-    status: str
-    task_handler: TaskExecuteBase | None = None
-    user_list: List[UserItem] = field(default_factory=list)
-    current_index: int = -1
-    log: str = ""
-    result: str = "暂无"
+    script_id: str  # 脚本ID
+    name: str  # 脚本名称
+    status: str  # 脚本执行状态
+    user_list: List[UserItem] = field(default_factory=list)  # 用户信息列表
+    current_index: int = -1  # 当前执行的用户索引，-1 表示未开始
+    log: str = ""  # 脚本执行日志
     _task_item_ref: Optional[weakref.ReferenceType[TaskItem]] = None
 
     def __setattr__(self, name, value):
@@ -84,18 +96,26 @@ class ScriptItem:
             return None
         return self._task_item_ref()
 
+    @property
+    def result(self) -> str:
+        """脚本代理情况的简要结果"""
+
+        if not self.user_list:
+            return "用户未加载"
+        return "\n".join([f"{user.name}：{user.result}" for user in self.user_list])
+
 
 @dataclass
 class TaskItem(ABC):
+    """任务信息基类，管理任务的信息和脚本列表"""
 
-    mode: str
-    task_id: str
-    queue_id: str | None
-    script_id: str | None
-    user_id: str | None
-    task_handler: TaskExecuteBase | None = None
-    script_list: List[ScriptItem] = field(default_factory=list)
-    current_index: int = -1
+    mode: str  # 任务模式
+    task_id: str  # 任务唯一标识符
+    queue_id: str | None  # 执行的队列ID
+    script_id: str | None  # 执行的脚本ID
+    user_id: str | None  # 执行的用户ID
+    script_list: List[ScriptItem] = field(default_factory=list)  # 脚本信息列表
+    current_index: int = -1  # 当前执行的脚本索引，-1 表示未开始
 
     def __setattr__(self, name, value):
         super().__setattr__(name, value)
@@ -135,6 +155,21 @@ class TaskItem(ABC):
             }
             for script_item in self.script_list
         ]
+
+    @property
+    def result(self) -> str:
+        """任务执行情况的简要结果"""
+
+        if not self.script_list:
+            return "任务未加载"
+        return "\n\n\n".join(
+            [
+                f"{script.name}：\n\n"
+                f"    已完成用户数：{sum(1 for user in script.user_list if user.status == '完成')}；未完成用户数：{sum(1 for user in script.user_list if user.status != '完成')}\n\n"
+                f"    {script.result.replace('\n', '\n    ')}"
+                for script in self.script_list
+            ]
+        )
 
 
 @dataclass
