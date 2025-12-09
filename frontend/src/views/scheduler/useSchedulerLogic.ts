@@ -5,6 +5,7 @@ import { Service } from '@/api/services/Service'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { PowerIn } from '@/api/models/PowerIn'
 import { useWebSocket, ExternalWSHandlers } from '@/composables/useWebSocket'
+import { useAudioPlayer } from '@/composables/useAudioPlayer'
 import schedulerHandlers from './schedulerHandlers'
 import type { ComboBoxItem } from '@/api/models/ComboBoxItem'
 import type { QueueItem, Script } from './schedulerConstants'
@@ -337,6 +338,11 @@ export function useSchedulerLogic() {
         tab.logMode = 'follow' // 任务开始时设置日志为保持最新模式
 
         subscribeToTask(tab)
+        
+        // 播放任务启动成功音频
+        const { playSound } = useAudioPlayer()
+        await playSound('task_started')
+        
         message.success('任务启动成功')
         saveTabsToStorage(schedulerTabs.value)
       } else {
@@ -353,6 +359,10 @@ export function useSchedulerLogic() {
 
     try {
       await Service.stopTaskApiDispatchStopPost({ taskId: tab.websocketId })
+
+      // 播放任务中止音频
+      const { playSound } = useAudioPlayer()
+      await playSound('maa_task_aborted')
 
       // 等待后端通过 WebSocket 发送真实结束/更新信号进行同步
       message.info('正在停止任务，请稍候...')
@@ -562,12 +572,55 @@ export function useSchedulerLogic() {
     // saveTabsToStorage(schedulerTabs.value)
   }
 
-  const handleInfoMessage = (data: any) => {
+  const handleInfoMessage = async (data: any) => {
+    const { playSound } = useAudioPlayer()
+    
     if (data.Error) {
+      const errorMsg = String(data.Error).toLowerCase()
+      
+      // 根据错误内容匹配具体的 noisy 模式音频
+      if (errorMsg.includes('adb') && (errorMsg.includes('连接') || errorMsg.includes('connection'))) {
+        await playSound('maa_adb_connection_error')
+      } else if (errorMsg.includes('模拟器') && (errorMsg.includes('未检测') || errorMsg.includes('not detected') || errorMsg.includes('找不到'))) {
+        await playSound('maa_no_emulator_detected')
+      } else if (errorMsg.includes('登录') && errorMsg.includes('失败')) {
+        await playSound('maa_prts_login_failed')
+      } else if (errorMsg.includes('超时') || errorMsg.includes('timeout')) {
+        await playSound('maa_process_timeout')
+      } else if (errorMsg.includes('部分') && errorMsg.includes('失败')) {
+        await playSound('maa_partial_task_failed')
+      } else if (errorMsg.includes('异常') && errorMsg.includes('退出')) {
+        await playSound('maa_task_exited')
+      } else if (errorMsg.includes('子任务') && errorMsg.includes('失败')) {
+        await playSound('subtask_failed')
+      } else {
+        // 默认错误音频
+        await playSound('error_occurred')
+      }
+      
       notification.error({ message: '任务错误', description: data.Error })
     } else if (data.Warning) {
+      // 播放异常音频
+      await playSound('exception_occurred')
       notification.warning({ message: '任务警告', description: data.Warning })
     } else if (data.Info) {
+      const infoMsg = String(data.Info).toLowerCase()
+      
+      // 匹配成功信息的 noisy 模式音频
+      if (infoMsg.includes('skland') || infoMsg.includes('森空岛')) {
+        if (infoMsg.includes('签到成功') || infoMsg.includes('checkin success') || infoMsg.includes('成功')) {
+          await playSound('skland_checkin_success')
+        } else if (infoMsg.includes('签到失败') || infoMsg.includes('checkin failed') || infoMsg.includes('失败')) {
+          await playSound('skland_checkin_failed')
+        }
+      } else if (infoMsg.includes('六星') || infoMsg.includes('6星') || infoMsg.includes('six star')) {
+        await playSound('six_star_report')
+      } else if (infoMsg.includes('adb') && infoMsg.includes('成功')) {
+        await playSound('adb_success')
+      } else if (infoMsg.includes('adb') && infoMsg.includes('失败')) {
+        await playSound('adb_failed')
+      }
+      
       notification.info({ message: '任务信息', description: data.Info })
     }
   }
@@ -593,7 +646,7 @@ export function useSchedulerLogic() {
     }
   }
 
-  const handleSignalMessage = (tab: SchedulerTab, data: any) => {
+  const handleSignalMessage = async (tab: SchedulerTab, data: any) => {
     logger.debug('[Scheduler] 处理Signal消息:', data)
 
     // 只有收到WebSocket的Accomplish信号才将任务标记为结束状态
@@ -645,6 +698,10 @@ export function useSchedulerLogic() {
         })
         tab.websocketId = null
       }
+
+      // 播放任务完成音频
+      const { playSound } = useAudioPlayer()
+      await playSound('task_completed')
 
       message.success('任务完成')
       saveTabsToStorage(schedulerTabs.value)

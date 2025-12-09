@@ -25,12 +25,26 @@ export function useAudioPlayer() {
   }
 
   /**
-   * 播放音频
-   * @param soundPath 音频路径，例如: "noisy/welcome" 或 "welcome"
+   * 检查音频文件是否存在
+   * @param audioUrl 音频URL
+   * @returns 文件是否存在
    */
-  const playSound = async (soundPath: string): Promise<boolean> => {
-    if (!soundPath) {
-      logger.warn('音频路径不能为空')
+  const checkAudioExists = async (audioUrl: string): Promise<boolean> => {
+    try {
+      const response = await fetch(audioUrl, { method: 'HEAD' })
+      return response.ok
+    } catch {
+      return false
+    }
+  }
+
+  /**
+   * 播放音频
+   * @param fileName 音频文件名（不含路径和扩展名），例如: "announcement_display" 或 "welcome_back"
+   */
+  const playSound = async (fileName: string): Promise<boolean> => {
+    if (!fileName) {
+      logger.warn('音频文件名不能为空')
       return false
     }
 
@@ -47,8 +61,28 @@ export function useAudioPlayer() {
       // 停止当前播放的音频
       stopCurrentAudio()
 
-      // 构建音频URL
-      const audioUrl = `${mirrorManager.getApiEndpoint('local')}/api/res/sounds/${soundPath}.wav`
+      const baseUrl = mirrorManager.getApiEndpoint('local')
+      let audioUrl: string | null = null
+
+      // 1. 优先检查 both 路径
+      const bothUrl = `${baseUrl}/api/res/sounds/both/${fileName}.wav`
+      if (await checkAudioExists(bothUrl)) {
+        audioUrl = bothUrl
+        logger.info(`使用 both 路径播放音频: ${fileName}`)
+      } else {
+        // 2. 根据语音类型查找对应路径
+        const voiceType = settings?.Voice?.Type || 'simple'
+        const typeUrl = `${baseUrl}/api/res/sounds/${voiceType}/${fileName}.wav`
+
+        if (await checkAudioExists(typeUrl)) {
+          audioUrl = typeUrl
+          logger.info(`使用 ${voiceType} 路径播放音频: ${fileName}`)
+        } else {
+          // 3. 如果都找不到，记录调试日志并返回
+          logger.debug(`音频文件未找到: ${fileName} (已尝试 both 和 ${voiceType} 路径)`)
+          return false
+        }
+      }
 
       // 创建新的音频对象
       const audio = new Audio(audioUrl)
@@ -65,8 +99,8 @@ export function useAudioPlayer() {
       })
 
       audio.addEventListener('error', e => {
-        logger.error('音频播放失败:', e)
-        message.error(`音频播放失败: ${soundPath}`)
+        logger.error(`音频播放失败: ${fileName}`, e)
+        message.error(`音频播放失败: ${fileName}`)
         isPlaying.value = false
         currentAudio.value = null
       })
@@ -75,7 +109,7 @@ export function useAudioPlayer() {
       await audio.play()
       return true
     } catch (error) {
-      logger.error('播放音频时发生错误:', error)
+      logger.error(`播放音频时发生错误: ${fileName}`, error)
       message.error('音频播放失败，请检查网络连接')
       isPlaying.value = false
       currentAudio.value = null
