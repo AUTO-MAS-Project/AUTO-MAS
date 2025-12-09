@@ -523,6 +523,11 @@ const handleSearch = async () => {
         }))
         .sort((a, b) => b.date.localeCompare(a.date)) // 按日期倒序排列
 
+      // 播放历史记录查询成功音频
+      const { useAudioPlayer } = await import('@/composables/useAudioPlayer')
+      const { playSound } = useAudioPlayer()
+      await playSound('history_query')
+
       message.success('搜索完成')
     } else {
       message.error(response.message || '搜索失败')

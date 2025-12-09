@@ -456,7 +456,7 @@ const fetchNoticeData = async () => {
         noticeData.value = response.data
         noticeVisible.value = true
         // 播放公告展示音频
-        await playSound('simple/announcement_display')
+        await playSound('announcement_display')
       }
     } else {
       logger.warn('获取公告失败:', response.message)
@@ -484,7 +484,7 @@ const showNotice = async () => {
         noticeData.value = response.data
         noticeVisible.value = true
         // 手动查看公告时也播放音频
-        await playSound('simple/announcement_display')
+        await playSound('announcement_display')
       } else {
         message.info('暂无公告信息')
       }
