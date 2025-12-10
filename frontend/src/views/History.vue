@@ -598,12 +598,12 @@ const monacoOptions = computed(() => ({
   fontSize: editorConfig.value.fontSize,
   fontFamily: 'SFMono-Regular, Consolas, Liberation Mono, Menlo, Courier, monospace',
   lineHeight: editorConfig.value.lineHeight * editorConfig.value.fontSize,
-  wordWrap: 'on',
+  wordWrap: 'on' as const,
   scrollBeyondLastLine: false,
   minimap: { enabled: false },
   scrollbar: {
-    vertical: 'auto',
-    horizontal: 'auto',
+    vertical: 'auto' as const,
+    horizontal: 'auto' as const,
     verticalScrollbarSize: 8,
     horizontalScrollbarSize: 8,
   },
@@ -611,6 +611,10 @@ const monacoOptions = computed(() => ({
     addExtraSpaceOnTop: false,
   },
   automaticLayout: true,
+  unicodeHighlight: {
+    ambiguousCharacters: false,
+    invisibleCharacters: false,
+  },
 }))
 
 // Tooltip 容器：避免挂载到 body 造成全局滚动条闪烁与布局抖动

@@ -71,7 +71,7 @@ watch(
     if (newMode && logMode.value !== newMode) {
       logMode.value = newMode
       if (newMode === 'follow') {
-        setTimeout(handleAutoScroll, 10)
+        setTimeout(scrollToBottom, 10)
       }
     }
   }
@@ -104,9 +104,12 @@ const editorOptions = computed(() => ({
   renderLineHighlight: 'none' as const,
   occurrencesHighlight: 'off' as const,
   codeLens: false,
-  lightbulb: { enabled: 'off' as const },
   smoothScrolling: true,
   cursorBlinking: 'smooth' as const,
+  unicodeHighlight: {
+    ambiguousCharacters: false,
+    invisibleCharacters: false,
+  },
 }))
 
 // 处理编辑器挂载
