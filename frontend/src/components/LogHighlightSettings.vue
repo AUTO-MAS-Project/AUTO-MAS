@@ -233,8 +233,7 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
             <div class="section-title">预览效果</div>
             <div class="preview-content" :class="editingTheme === 'dark' ? 'preview-dark' : 'preview-light'" :style="{
                 fontSize: editorConfig.fontSize + 'px',
-                lineHeight: editorConfig.lineHeight,
-                fontFamily: editorConfig.fontFamily
+                lineHeight: editorConfig.lineHeight
             }">
                 <div class="preview-line">
                     <span
@@ -505,6 +504,7 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
     padding: 12px;
     border-radius: 6px;
     overflow-x: auto;
+    font-family: SFMono-Regular, Consolas, 'Liberation Mono', Menlo, Courier, monospace;
 }
 
 .preview-light {
