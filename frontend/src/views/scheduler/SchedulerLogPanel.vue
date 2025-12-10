@@ -86,7 +86,7 @@ const editorOptions = computed(() => ({
   minimap: { enabled: false },
   scrollBeyondLastLine: false,
   fontSize: editorConfig.value.fontSize,
-  fontFamily: editorConfig.value.fontFamily,
+  fontFamily: 'SFMono-Regular, Consolas, Liberation Mono, Menlo, Courier, monospace',
   lineHeight: editorConfig.value.lineHeight * editorConfig.value.fontSize,
   lineNumbers: 'on' as const,
   wordWrap: 'on' as const,
