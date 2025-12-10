@@ -114,7 +114,7 @@ const {
 
     <div class="form-section">
       <div class="section-header">
-        <h3>日志高亮颜色</h3>
+        <h3>日志样式</h3>
       </div>
       <LogHighlightSettings />
     </div>

@@ -132,27 +132,17 @@ const fontSizeOptions = [11, 12, 13, 14, 15, 16, 18, 20]
 
 // 行高选项
 const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
-
-// 字体选项
-const fontFamilyOptions = [
-    { label: '默认等宽', value: 'SFMono-Regular, Consolas, Liberation Mono, Menlo, Courier, monospace' },
-    { label: 'Consolas', value: 'Consolas, monospace' },
-    { label: 'Monaco', value: 'Monaco, monospace' },
-    { label: 'Fira Code', value: 'Fira Code, monospace' },
-    { label: 'JetBrains Mono', value: 'JetBrains Mono, monospace' },
-    { label: 'Source Code Pro', value: 'Source Code Pro, monospace' },
-]
 </script>
 
 <template>
     <div class="log-highlight-settings">
-        <!-- 编辑器配置 -->
-        <div class="config-section">
-            <div class="section-title">编辑器配置</div>
-            <a-row :gutter="16">
-                <a-col :span="8">
-                    <div class="config-item">
-                        <span class="config-label">字体大小</span>
+        <!-- 文本配置 -->
+        <div class="config-section no-border">
+            <div class="section-title">文本配置</div>
+            <div class="text-config-grid">
+                <div class="text-config-item">
+                    <div class="text-config-label">字体大小</div>
+                    <div class="text-config-control">
                         <a-select :value="editorConfig.fontSize" size="small" style="width: 100%"
                             @change="(v: number) => setEditorConfig({ fontSize: v })">
                             <a-select-option v-for="size in fontSizeOptions" :key="size" :value="size">
@@ -160,10 +150,10 @@ const fontFamilyOptions = [
                             </a-select-option>
                         </a-select>
                     </div>
-                </a-col>
-                <a-col :span="8">
-                    <div class="config-item">
-                        <span class="config-label">行高</span>
+                </div>
+                <div class="text-config-item">
+                    <div class="text-config-label">行高</div>
+                    <div class="text-config-control">
                         <a-select :value="editorConfig.lineHeight" size="small" style="width: 100%"
                             @change="(v: number) => setEditorConfig({ lineHeight: v })">
                             <a-select-option v-for="h in lineHeightOptions" :key="h" :value="h">
@@ -171,50 +161,28 @@ const fontFamilyOptions = [
                             </a-select-option>
                         </a-select>
                     </div>
-                </a-col>
-                <a-col :span="8">
-                    <div class="config-item">
-                        <span class="config-label">字体</span>
-                        <a-select :value="editorConfig.fontFamily" size="small" style="width: 100%"
-                            @change="(v: string) => setEditorConfig({ fontFamily: v })">
-                            <a-select-option v-for="font in fontFamilyOptions" :key="font.value" :value="font.value">
-                                {{ font.label }}
-                            </a-select-option>
-                        </a-select>
-                    </div>
-                </a-col>
-            </a-row>
-        </div>
-
-        <!-- 字体样式 -->
-        <div class="config-section">
-            <div class="section-title">字体样式</div>
-            <a-row :gutter="16">
-                <a-col :span="6">
+                </div>
+            </div>
+            <div class="text-style-checkboxes">
+                <div class="checkbox-row">
                     <a-checkbox :checked="styles.timestampBold"
                         @change="(e: any) => setStyles({ timestampBold: e.target.checked })">
                         时间戳加粗
                     </a-checkbox>
-                </a-col>
-                <a-col :span="6">
                     <a-checkbox :checked="styles.levelBold"
                         @change="(e: any) => setStyles({ levelBold: e.target.checked })">
                         日志级别加粗
                     </a-checkbox>
-                </a-col>
-                <a-col :span="6">
                     <a-checkbox :checked="styles.keywordBold"
                         @change="(e: any) => setStyles({ keywordBold: e.target.checked })">
                         关键词加粗
                     </a-checkbox>
-                </a-col>
-                <a-col :span="6">
                     <a-checkbox :checked="styles.urlUnderline"
                         @change="(e: any) => setStyles({ urlUnderline: e.target.checked })">
                         URL 下划线
                     </a-checkbox>
-                </a-col>
-            </a-row>
+                </div>
+            </div>
         </div>
 
         <!-- 颜色配置 -->
@@ -359,6 +327,10 @@ const fontFamilyOptions = [
     border-bottom: 1px solid var(--ant-color-border-secondary);
 }
 
+.config-section.no-border {
+    border-bottom: none;
+}
+
 .config-section:last-child {
     border-bottom: none;
     margin-bottom: 0;
@@ -388,6 +360,55 @@ const fontFamilyOptions = [
     gap: 12px;
 }
 
+/* 文本配置样式 */
+.text-config-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.text-config-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 10px;
+    background: var(--ant-color-bg-container);
+    border: 1px solid var(--ant-color-border);
+    border-radius: 4px;
+}
+
+.text-config-label {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--ant-color-text);
+    flex-shrink: 0;
+}
+
+.text-config-control {
+    flex: 1;
+    max-width: 120px;
+    margin-left: 12px;
+}
+
+.text-style-checkboxes {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding-left: 4px;
+}
+
+.checkbox-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+}
+
+.checkbox-row :deep(.ant-checkbox-wrapper) {
+    font-size: 14px;
+}
+
+/* 原有颜色配置样式 */
 .config-item {
     display: flex;
     flex-direction: column;
