@@ -21,7 +21,11 @@
 
 
 import json
+import psutil
 import asyncio
+import win32gui
+import win32con
+import win32process
 import contextlib
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -73,6 +77,8 @@ class MumuManager(DeviceBase):
         else:
             raise RuntimeError(f"模拟器{idx}无法启动, 当前状态码: {status}")
 
+        is_mumu_nx_exists = await self.find_mumu_nx_window() is not None
+
         result = await ProcessRunner.run_process(
             self.emulator_path,
             "control",
@@ -87,6 +93,9 @@ class MumuManager(DeviceBase):
 
         if result.returncode != 0:
             raise RuntimeError(f"命令执行失败: {result.stdout}")
+
+        if not is_mumu_nx_exists:
+            await self.close_mumu_nx_window()
 
         t = datetime.now()
         while datetime.now() - t < timedelta(
@@ -236,3 +245,50 @@ class MumuManager(DeviceBase):
             raise RuntimeError(f"命令执行失败: {result.stdout.strip()}")
 
         return result.stdout.strip()
+
+    async def find_mumu_nx_window(self) -> int | None:
+        """
+        查找 MuMu 多开器窗口
+
+        Returns:
+            int | None: 窗口句柄，未找到返回 None
+        """
+
+        def enum_cb(hwnd: int, result_list: list[int | None]) -> bool:
+            if result_list[0] is not None:
+                return False  # 已找到，停止枚举
+            if not win32gui.IsWindowVisible(hwnd) or win32gui.GetParent(hwnd) != 0:
+                return True
+            if win32gui.GetWindowText(hwnd) != "MuMu模拟器":
+                return True
+            try:
+                _, pid = win32process.GetWindowThreadProcessId(hwnd)
+                proc_name = psutil.Process(pid).name().lower()
+                if proc_name == "mumunxmain.exe":
+                    result_list[0] = hwnd
+                    return False
+            except (psutil.NoSuchProcess, psutil.AccessDenied, OSError):
+                pass
+            return True
+
+        result: list[int | None] = [None]
+        with contextlib.suppress(Exception):
+            # EnumWindows 在回调返回 False 时抛出异常，属正常行为
+            win32gui.EnumWindows(enum_cb, result)
+        return result[0]
+
+    async def close_mumu_nx_window(self) -> None:
+        """
+        关闭 MuMu 多开器窗口
+        """
+
+        logger.debug("正在关闭 MuMu 多开器窗口...")
+
+        t = datetime.now()
+        while datetime.now() - t < timedelta(seconds=10):
+            hwnd = await self.find_mumu_nx_window()
+            logger.debug(f"MuMu 多开器窗口句柄: {hwnd}")
+            if hwnd is not None:
+                win32gui.PostMessage(hwnd, win32con.WM_CLOSE, 0, 0)
+                return
+            await asyncio.sleep(0.1)
