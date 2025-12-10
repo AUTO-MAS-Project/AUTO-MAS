@@ -596,7 +596,7 @@ const handleOpenLogDirectory = async () => {
 const monacoOptions = computed(() => ({
   readOnly: true,
   fontSize: editorConfig.value.fontSize,
-  fontFamily: editorConfig.value.fontFamily,
+  fontFamily: 'SFMono-Regular, Consolas, Liberation Mono, Menlo, Courier, monospace',
   lineHeight: editorConfig.value.lineHeight * editorConfig.value.fontSize,
   wordWrap: 'on',
   scrollBeyondLastLine: false,
