@@ -137,7 +137,7 @@ class ProcessManager:
 
         if target_process is not None:
 
-            await self.track_process(
+            await self.search_process(
                 target_process, datetime.now() + timedelta(seconds=60)
             )
 
@@ -162,14 +162,16 @@ class ProcessManager:
         except Exception as e:
             raise RuntimeError(f"无法启动协议 {protocol_url}: {e}")
 
-        await self.track_process(target_process, datetime.now() + timedelta(seconds=60))
+        await self.search_process(
+            target_process, datetime.now() + timedelta(seconds=60)
+        )
 
-    async def track_process(
-        self, target_process: ProcessInfo, track_end_time: datetime
+    async def search_process(
+        self, target_process: ProcessInfo, search_end_time: datetime
     ) -> None:
-        """更新子进程列表"""
+        """查找目标进程"""
 
-        while datetime.now() < track_end_time:
+        while datetime.now() < search_end_time:
             for proc in psutil.process_iter(["pid", "name", "exe", "cmdline"]):
                 try:
                     if match_process(proc, target_process):
