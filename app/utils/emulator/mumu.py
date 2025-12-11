@@ -95,6 +95,7 @@ class MumuManager(DeviceBase):
             raise RuntimeError(f"命令执行失败: {result.stdout}")
 
         if not is_mumu_nx_exists:
+            logger.info("关闭 MuMuNX 窗口")
             await self.close_mumu_nx_window()
 
         t = datetime.now()
@@ -282,12 +283,9 @@ class MumuManager(DeviceBase):
         关闭 MuMu 多开器窗口
         """
 
-        logger.debug("正在关闭 MuMu 多开器窗口...")
-
         t = datetime.now()
         while datetime.now() - t < timedelta(seconds=10):
             hwnd = await self.find_mumu_nx_window()
-            logger.debug(f"MuMu 多开器窗口句柄: {hwnd}")
             if hwnd is not None:
                 win32gui.PostMessage(hwnd, win32con.WM_CLOSE, 0, 0)
                 return
