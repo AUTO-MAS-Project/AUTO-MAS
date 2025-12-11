@@ -31,16 +31,17 @@ from app.models.ConfigBase import MultipleConfig
 from app.models.config import GeneralConfig, GeneralUserConfig
 from app.services import Notify
 from app.utils import get_logger, ProcessManager
+from app.utils.constants import TASK_MODE_ZH
 from .tools import push_notification
 from .AutoProxy import AutoProxyTask
-from .ScriptSetup import ScriptSetupTask
+from .ScriptConfig import ScriptConfigTask
 
 
 logger = get_logger("通用调度器")
 
-METHOD_BOOK: dict[str, type[AutoProxyTask | ScriptSetupTask]] = {
-    "自动代理": AutoProxyTask,
-    "设置脚本": ScriptSetupTask,
+METHOD_BOOK: dict[str, type[AutoProxyTask | ScriptConfigTask]] = {
+    "AutoProxy": AutoProxyTask,
+    "ScriptConfig": ScriptConfigTask,
 }
 
 
@@ -155,7 +156,7 @@ class GeneralManager(TaskExecuteBase):
                 shutil.copy(self.script_config_path, self.temp_path / "config.temp")
 
         # 构建用户列表
-        if self.task_info.mode == "设置脚本":
+        if self.task_info.mode == "ScriptConfig":
             self.script_info.user_list = [
                 UserItem(
                     user_id=self.task_info.user_id or "Default", name="", status="等待"
@@ -221,7 +222,7 @@ class GeneralManager(TaskExecuteBase):
         await Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].unlock()
         logger.success(f"已解锁脚本配置 {self.script_info.script_id}")
 
-        if self.task_info.mode == "自动代理":
+        if self.task_info.mode == "AutoProxy":
 
             await Config.ScriptConfig[
                 uuid.UUID(self.script_info.script_id)
@@ -238,9 +239,9 @@ class GeneralManager(TaskExecuteBase):
                 u.name for u in self.script_info.user_list if u.status == "等待"
             ]
 
-            title = f"{datetime.now().strftime('%m-%d')} | {self.script_info.name or '空白'}的{self.task_info.mode}任务报告"
+            title = f"{datetime.now().strftime('%m-%d')} | {self.script_info.name or '空白'}的{TASK_MODE_ZH[self.task_info.mode]}任务报告"
             result = {
-                "title": f"{self.task_info.mode}任务报告",
+                "title": f"{TASK_MODE_ZH[self.task_info.mode]}任务报告",
                 "script_name": self.script_info.name or "空白",
                 "start_time": self.begin_time,
                 "end_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),

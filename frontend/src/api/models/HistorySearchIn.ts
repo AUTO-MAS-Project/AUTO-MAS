@@ -21,9 +21,9 @@ export namespace HistorySearchIn {
      * 合并模式
      */
     export enum mode {
-        DAILY = '按日合并',
-        WEEKLY = '按周合并',
-        MONTHLY = '按月合并',
+        DAILY = 'DAILY',
+        WEEKLY = 'WEEKLY',
+        MONTHLY = 'MONTHLY',
     }
 }
 
