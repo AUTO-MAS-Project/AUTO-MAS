@@ -30,7 +30,11 @@ router = APIRouter(prefix="/api/queue", tags=["调度队列管理"])
 
 
 @router.post(
-    "/add", summary="添加调度队列", response_model=QueueCreateOut, status_code=200
+    "/add",
+    tags=["Add"],
+    summary="添加调度队列",
+    response_model=QueueCreateOut,
+    status_code=200,
 )
 async def add_queue() -> QueueCreateOut:
 
@@ -49,7 +53,11 @@ async def add_queue() -> QueueCreateOut:
 
 
 @router.post(
-    "/get", summary="查询调度队列配置信息", response_model=QueueGetOut, status_code=200
+    "/get",
+    tags=["Get"],
+    summary="查询调度队列配置信息",
+    response_model=QueueGetOut,
+    status_code=200,
 )
 async def get_queues(queue: QueueGetIn = Body(...)) -> QueueGetOut:
 
@@ -69,7 +77,11 @@ async def get_queues(queue: QueueGetIn = Body(...)) -> QueueGetOut:
 
 
 @router.post(
-    "/update", summary="更新调度队列配置信息", response_model=OutBase, status_code=200
+    "/update",
+    tags=["Update"],
+    summary="更新调度队列配置信息",
+    response_model=OutBase,
+    status_code=200,
 )
 async def update_queue(queue: QueueUpdateIn = Body(...)) -> OutBase:
 
@@ -84,7 +96,13 @@ async def update_queue(queue: QueueUpdateIn = Body(...)) -> OutBase:
     return OutBase()
 
 
-@router.post("/delete", summary="删除调度队列", response_model=OutBase, status_code=200)
+@router.post(
+    "/delete",
+    tags=["Delete"],
+    summary="删除调度队列",
+    response_model=OutBase,
+    status_code=200,
+)
 async def delete_queue(queue: QueueDeleteIn = Body(...)) -> OutBase:
 
     try:
@@ -96,7 +114,13 @@ async def delete_queue(queue: QueueDeleteIn = Body(...)) -> OutBase:
     return OutBase()
 
 
-@router.post("/order", summary="重新排序", response_model=OutBase, status_code=200)
+@router.post(
+    "/order",
+    tags=["Update"],
+    summary="重新排序",
+    response_model=OutBase,
+    status_code=200,
+)
 async def reorder_queue(script: QueueReorderIn = Body(...)) -> OutBase:
 
     try:
@@ -109,7 +133,11 @@ async def reorder_queue(script: QueueReorderIn = Body(...)) -> OutBase:
 
 
 @router.post(
-    "/time/get", summary="查询定时项", response_model=TimeSetGetOut, status_code=200
+    "/time/get",
+    tags=["Get"],
+    summary="查询定时项",
+    response_model=TimeSetGetOut,
+    status_code=200,
 )
 async def get_time_set(time: TimeSetGetIn = Body(...)) -> TimeSetGetOut:
 
@@ -129,7 +157,11 @@ async def get_time_set(time: TimeSetGetIn = Body(...)) -> TimeSetGetOut:
 
 
 @router.post(
-    "/time/add", summary="添加定时项", response_model=TimeSetCreateOut, status_code=200
+    "/time/add",
+    tags=["Add"],
+    summary="添加定时项",
+    response_model=TimeSetCreateOut,
+    status_code=200,
 )
 async def add_time_set(time: QueueSetInBase = Body(...)) -> TimeSetCreateOut:
 
@@ -139,7 +171,11 @@ async def add_time_set(time: QueueSetInBase = Body(...)) -> TimeSetCreateOut:
 
 
 @router.post(
-    "/time/update", summary="更新定时项", response_model=OutBase, status_code=200
+    "/time/update",
+    tags=["Update"],
+    summary="更新定时项",
+    response_model=OutBase,
+    status_code=200,
 )
 async def update_time_set(time: TimeSetUpdateIn = Body(...)) -> OutBase:
 
@@ -155,7 +191,11 @@ async def update_time_set(time: TimeSetUpdateIn = Body(...)) -> OutBase:
 
 
 @router.post(
-    "/time/delete", summary="删除定时项", response_model=OutBase, status_code=200
+    "/time/delete",
+    tags=["Delete"],
+    summary="删除定时项",
+    response_model=OutBase,
+    status_code=200,
 )
 async def delete_time_set(time: TimeSetDeleteIn = Body(...)) -> OutBase:
 
@@ -169,7 +209,11 @@ async def delete_time_set(time: TimeSetDeleteIn = Body(...)) -> OutBase:
 
 
 @router.post(
-    "/time/order", summary="重新排序定时项", response_model=OutBase, status_code=200
+    "/time/order",
+    tags=["Update"],
+    summary="重新排序定时项",
+    response_model=OutBase,
+    status_code=200,
 )
 async def reorder_time_set(time: TimeSetReorderIn = Body(...)) -> OutBase:
 
@@ -183,7 +227,11 @@ async def reorder_time_set(time: TimeSetReorderIn = Body(...)) -> OutBase:
 
 
 @router.post(
-    "/item/get", summary="查询队列项", response_model=QueueItemGetOut, status_code=200
+    "/item/get",
+    tags=["Get"],
+    summary="查询队列项",
+    response_model=QueueItemGetOut,
+    status_code=200,
 )
 async def get_item(item: QueueItemGetIn = Body(...)) -> QueueItemGetOut:
 
@@ -204,6 +252,7 @@ async def get_item(item: QueueItemGetIn = Body(...)) -> QueueItemGetOut:
 
 @router.post(
     "/item/add",
+    tags=["Add"],
     summary="添加队列项",
     response_model=QueueItemCreateOut,
     status_code=200,
@@ -216,7 +265,11 @@ async def add_item(item: QueueSetInBase = Body(...)) -> QueueItemCreateOut:
 
 
 @router.post(
-    "/item/update", summary="更新队列项", response_model=OutBase, status_code=200
+    "/item/update",
+    tags=["Update"],
+    summary="更新队列项",
+    response_model=OutBase,
+    status_code=200,
 )
 async def update_item(item: QueueItemUpdateIn = Body(...)) -> OutBase:
 
@@ -232,7 +285,11 @@ async def update_item(item: QueueItemUpdateIn = Body(...)) -> OutBase:
 
 
 @router.post(
-    "/item/delete", summary="删除队列项", response_model=OutBase, status_code=200
+    "/item/delete",
+    tags=["Delete"],
+    summary="删除队列项",
+    response_model=OutBase,
+    status_code=200,
 )
 async def delete_item(item: QueueItemDeleteIn = Body(...)) -> OutBase:
 
@@ -246,7 +303,11 @@ async def delete_item(item: QueueItemDeleteIn = Body(...)) -> OutBase:
 
 
 @router.post(
-    "/item/order", summary="重新排序队列项", response_model=OutBase, status_code=200
+    "/item/order",
+    tags=["Update"],
+    summary="重新排序队列项",
+    response_model=OutBase,
+    status_code=200,
 )
 async def reorder_item(item: QueueItemReorderIn = Body(...)) -> OutBase:
 

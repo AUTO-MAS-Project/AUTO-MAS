@@ -196,6 +196,9 @@ class _TaskManager:
         Args:
             mode (str): 任务模式
             id (str): 任务项对应的配置 ID
+
+        Returns:
+            uuid.UUID: 任务 UID
         """
 
         uid = uuid.UUID(id)

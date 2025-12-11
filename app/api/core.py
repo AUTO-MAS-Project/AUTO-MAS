@@ -82,8 +82,13 @@ async def connect_websocket(websocket: WebSocket):
     await System.set_power("KillSelf", from_frontend=True)
 
 
-@router.post("/close")
-async def close():
+@router.post(
+    "/close",
+    summary="关闭后端程序",
+    response_model=OutBase,
+    status_code=200,
+)
+async def close() -> OutBase:
     """关闭后端程序"""
 
     try:

@@ -23,7 +23,7 @@
 import os
 import psutil
 import asyncio
-import contextlib
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -196,7 +196,7 @@ class ProcessManager:
         """停止监视器并中止所有跟踪的进程"""
 
         if self.target_process is not None and self.target_process.is_running():
-            with contextlib.suppress(psutil.NoSuchProcess, psutil.AccessDenied):
+            with suppress(psutil.NoSuchProcess, psutil.AccessDenied):
                 try:
                     self.target_process.terminate()
                     await asyncio.get_running_loop().run_in_executor(
@@ -204,19 +204,19 @@ class ProcessManager:
                     )
                 except psutil.TimeoutExpired:
                     self.target_process.kill()
-                    with contextlib.suppress(psutil.TimeoutExpired):
+                    with suppress(psutil.TimeoutExpired):
                         await asyncio.get_running_loop().run_in_executor(
                             None, self.target_process.wait, 3
                         )
 
         if self.process is not None and self.process.returncode is None:
-            with contextlib.suppress(ProcessLookupError):
+            with suppress(ProcessLookupError):
                 try:
                     self.process.terminate()
                     await asyncio.wait_for(self.process.wait(), timeout=3)
                 except asyncio.TimeoutError:
                     self.process.kill()
-                    with contextlib.suppress(asyncio.TimeoutError):
+                    with suppress(asyncio.TimeoutError):
                         await asyncio.wait_for(self.process.wait(), timeout=3)
 
         await self.clear()
@@ -257,7 +257,7 @@ class ProcessRunner:
                 process.communicate(), timeout=timeout
             )
         except asyncio.TimeoutError:
-            with contextlib.suppress(ProcessLookupError):
+            with suppress(ProcessLookupError):
                 process.kill()
             await process.wait()
             raise

@@ -31,6 +31,7 @@ router = APIRouter(prefix="/api/info", tags=["信息获取"])
 
 @router.post(
     "/version",
+    tags=["Get"],
     summary="获取后端git版本信息",
     response_model=VersionOut,
     status_code=200,
@@ -57,6 +58,7 @@ async def get_git_version() -> VersionOut:
 
 @router.post(
     "/combox/stage",
+    tags=["Get"],
     summary="获取关卡号下拉框信息",
     response_model=ComboBoxOut,
     status_code=200,
@@ -81,6 +83,7 @@ async def get_stage_combox(
 
 @router.post(
     "/combox/script",
+    tags=["Get"],
     summary="获取脚本下拉框信息",
     response_model=ComboBoxOut,
     status_code=200,
@@ -99,6 +102,7 @@ async def get_script_combox() -> ComboBoxOut:
 
 @router.post(
     "/combox/task",
+    tags=["Get"],
     summary="获取可选任务下拉框信息",
     response_model=ComboBoxOut,
     status_code=200,
@@ -117,6 +121,7 @@ async def get_task_combox() -> ComboBoxOut:
 
 @router.post(
     "/combox/plan",
+    tags=["Get"],
     summary="获取可选计划下拉框信息",
     response_model=ComboBoxOut,
     status_code=200,
@@ -135,6 +140,7 @@ async def get_plan_combox() -> ComboBoxOut:
 
 @router.post(
     "/combox/emulator",
+    tags=["Get"],
     summary="获取可选模拟器下拉框信息",
     response_model=ComboBoxOut,
     status_code=200,
@@ -153,6 +159,7 @@ async def get_emulator_combox() -> ComboBoxOut:
 
 @router.post(
     "/combox/emulator/devices",
+    tags=["Get"],
     summary="获取可选模拟器多开实例下拉框信息",
     response_model=ComboBoxOut,
     status_code=200,
@@ -171,7 +178,11 @@ async def get_emulator_devices_combox(
 
 
 @router.post(
-    "/notice/get", summary="获取通知信息", response_model=NoticeOut, status_code=200
+    "/notice/get",
+    tags=["Get"],
+    summary="获取通知信息",
+    response_model=NoticeOut,
+    status_code=200,
 )
 async def get_notice_info() -> NoticeOut:
 
@@ -189,7 +200,11 @@ async def get_notice_info() -> NoticeOut:
 
 
 @router.post(
-    "/notice/confirm", summary="确认通知", response_model=OutBase, status_code=200
+    "/notice/confirm",
+    tags=["Action"],
+    summary="确认通知",
+    response_model=OutBase,
+    status_code=200,
 )
 async def confirm_notice() -> OutBase:
 
@@ -218,6 +233,7 @@ async def confirm_notice() -> OutBase:
 
 @router.post(
     "/webconfig",
+    tags=["Get"],
     summary="获取配置分享中心的配置信息",
     response_model=InfoOut,
     status_code=200,
@@ -234,7 +250,11 @@ async def get_web_config() -> InfoOut:
 
 
 @router.post(
-    "/get/overview", summary="信息总览", response_model=InfoOut, status_code=200
+    "/get/overview",
+    tags=["Get"],
+    summary="信息总览",
+    response_model=InfoOut,
+    status_code=200,
 )
 async def get_overview() -> InfoOut:
     try:

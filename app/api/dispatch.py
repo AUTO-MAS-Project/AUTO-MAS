@@ -31,7 +31,11 @@ router = APIRouter(prefix="/api/dispatch", tags=["任务调度"])
 
 
 @router.post(
-    "/start", summary="添加任务", response_model=TaskCreateOut, status_code=200
+    "/start",
+    tags=["Action"],
+    summary="添加任务",
+    response_model=TaskCreateOut,
+    status_code=200,
 )
 async def add_task(task: TaskCreateIn = Body(...)) -> TaskCreateOut:
 
@@ -39,15 +43,18 @@ async def add_task(task: TaskCreateIn = Body(...)) -> TaskCreateOut:
         task_id = await TaskManager.add_task(task.mode, task.taskId)
     except Exception as e:
         return TaskCreateOut(
-            code=500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-            websocketId="",
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}", taskId=""
         )
-    return TaskCreateOut(websocketId=str(task_id))
+    return TaskCreateOut(taskId=str(task_id))
 
 
-@router.post("/stop", summary="中止任务", response_model=OutBase, status_code=200)
+@router.post(
+    "/stop",
+    tags=["Action"],
+    summary="中止任务",
+    response_model=OutBase,
+    status_code=200,
+)
 async def stop_task(task: DispatchIn = Body(...)) -> OutBase:
 
     try:
@@ -60,7 +67,11 @@ async def stop_task(task: DispatchIn = Body(...)) -> OutBase:
 
 
 @router.post(
-    "/get/power", summary="获取电源标志", response_model=PowerOut, status_code=200
+    "/get/power",
+    tags=["Get"],
+    summary="获取电源标志",
+    response_model=PowerOut,
+    status_code=200,
 )
 async def get_power() -> PowerOut:
 
@@ -77,7 +88,11 @@ async def get_power() -> PowerOut:
 
 
 @router.post(
-    "/set/power", summary="设置电源标志", response_model=OutBase, status_code=200
+    "/set/power",
+    tags=["Action"],
+    summary="设置电源标志",
+    response_model=OutBase,
+    status_code=200,
 )
 async def set_power(task: PowerIn = Body(...)) -> OutBase:
 
@@ -91,7 +106,11 @@ async def set_power(task: PowerIn = Body(...)) -> OutBase:
 
 
 @router.post(
-    "/cancel/power", summary="取消电源任务", response_model=OutBase, status_code=200
+    "/cancel/power",
+    tags=["Action"],
+    summary="取消电源任务",
+    response_model=OutBase,
+    status_code=200,
 )
 async def cancel_power_task() -> OutBase:
 
