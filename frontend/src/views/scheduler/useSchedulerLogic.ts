@@ -320,7 +320,7 @@ export function useSchedulerLogic() {
 
       if (response.code === 200) {
         tab.status = '运行'
-        tab.websocketId = response.websocketId
+        tab.websocketId = response.taskId
 
         // 确保清理任何可能存在的旧订阅
         if (tab.subscriptionId) {

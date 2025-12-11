@@ -621,8 +621,8 @@ const handleGeneralConfig = async () => {
     })
 
     generalUserLogger.debug('通用配置 start 接口返回:', response)
-    if (response && response.websocketId) {
-      const wsId = response.websocketId
+    if (response && response.taskId) {
+      const wsId = response.taskId
 
       generalUserLogger.debug('订阅 websocketId:', wsId)
 

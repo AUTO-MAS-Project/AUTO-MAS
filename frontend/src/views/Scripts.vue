@@ -575,7 +575,7 @@ const handleStartMAAConfig = async (script: Script) => {
       currentConfigScript.value = script
 
       // 订阅WebSocket消息
-      const subscriptionId = subscribe({ id: response.websocketId }, (wsMessage: any) => {
+      const subscriptionId = subscribe({ id: response.taskId }, (wsMessage: any) => {
         // 处理错误消息
         if (wsMessage.type === 'error') {
           logger.error(`脚本 ${script.name} 连接错误:`, wsMessage.data)
@@ -600,7 +600,7 @@ const handleStartMAAConfig = async (script: Script) => {
       // 记录连接和subscriptionId
       activeConnections.value.set(script.id, {
         subscriptionId,
-        websocketId: response.websocketId,
+        websocketId: response.taskId,
       })
       message.success(`已启动 ${script.name} 的MAA配置`)
 

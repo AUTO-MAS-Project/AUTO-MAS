@@ -43,7 +43,11 @@ router = APIRouter(prefix="/api/emulator", tags=["模拟器管理"])
 
 
 @router.post(
-    "/get", summary="查询模拟器配置", response_model=EmulatorGetOut, status_code=200
+    "/get",
+    tags=["Get"],
+    summary="查询模拟器配置",
+    response_model=EmulatorGetOut,
+    status_code=200,
 )
 async def get_emulator(emulator: EmulatorGetIn = Body(...)) -> EmulatorGetOut:
     try:
@@ -62,7 +66,11 @@ async def get_emulator(emulator: EmulatorGetIn = Body(...)) -> EmulatorGetOut:
 
 
 @router.post(
-    "/add", summary="添加模拟器项", response_model=EmulatorCreateOut, status_code=200
+    "/add",
+    tags=["Add"],
+    summary="添加模拟器项",
+    response_model=EmulatorCreateOut,
+    status_code=200,
 )
 async def add_emulator() -> EmulatorCreateOut:
     try:
@@ -79,7 +87,13 @@ async def add_emulator() -> EmulatorCreateOut:
     return EmulatorCreateOut(emulatorId=str(uid), data=data)
 
 
-@router.post("/update", summary="更新模拟器项", response_model=OutBase, status_code=200)
+@router.post(
+    "/update",
+    tags=["Update"],
+    summary="更新模拟器项",
+    response_model=OutBase,
+    status_code=200,
+)
 async def update_emulator(emulator: EmulatorUpdateIn = Body(...)) -> OutBase:
     try:
         await Config.update_emulator(
@@ -92,7 +106,13 @@ async def update_emulator(emulator: EmulatorUpdateIn = Body(...)) -> OutBase:
     return OutBase()
 
 
-@router.post("/delete", summary="删除模拟器项", response_model=OutBase, status_code=200)
+@router.post(
+    "/delete",
+    tags=["Delete"],
+    summary="删除模拟器项",
+    response_model=OutBase,
+    status_code=200,
+)
 async def delete_emulator(emulator: EmulatorDeleteIn = Body(...)) -> OutBase:
     try:
         await Config.del_emulator(emulator.emulatorId)
@@ -104,7 +124,11 @@ async def delete_emulator(emulator: EmulatorDeleteIn = Body(...)) -> OutBase:
 
 
 @router.post(
-    "/order", summary="重新排序模拟器项", response_model=OutBase, status_code=200
+    "/order",
+    tags=["Update"],
+    summary="重新排序模拟器项",
+    response_model=OutBase,
+    status_code=200,
 )
 async def reorder_emulator(emulator: EmulatorReorderIn = Body(...)) -> OutBase:
     try:
@@ -116,7 +140,13 @@ async def reorder_emulator(emulator: EmulatorReorderIn = Body(...)) -> OutBase:
     return OutBase()
 
 
-@router.post("/operate", summary="操作模拟器", response_model=OutBase, status_code=200)
+@router.post(
+    "/operate",
+    tags=["Action"],
+    summary="操作模拟器",
+    response_model=OutBase,
+    status_code=200,
+)
 async def operation_emulator(emulator: EmulatorOperateIn = Body(...)) -> OutBase:
     try:
         await EmulatorManager.operate_emulator(
@@ -131,6 +161,7 @@ async def operation_emulator(emulator: EmulatorOperateIn = Body(...)) -> OutBase
 
 @router.post(
     "/status",
+    tags=["Get"],
     summary="查询模拟器状态",
     response_model=EmulatorStatusOut,
     status_code=200,
@@ -147,6 +178,7 @@ async def get_status(emulator: EmulatorGetIn = Body(...)) -> EmulatorStatusOut:
 
 @router.post(
     "/emulator/search",
+    tags=["Get"],
     summary="搜索已安装的模拟器",
     response_model=EmulatorSearchOut,
     status_code=200,

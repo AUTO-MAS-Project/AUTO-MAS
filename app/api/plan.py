@@ -30,7 +30,11 @@ router = APIRouter(prefix="/api/plan", tags=["计划管理"])
 
 
 @router.post(
-    "/add", summary="添加计划表", response_model=PlanCreateOut, status_code=200
+    "/add",
+    tags=["Add"],
+    summary="添加计划表",
+    response_model=PlanCreateOut,
+    status_code=200,
 )
 async def add_plan(plan: PlanCreateIn = Body(...)) -> PlanCreateOut:
 
@@ -48,7 +52,13 @@ async def add_plan(plan: PlanCreateIn = Body(...)) -> PlanCreateOut:
     return PlanCreateOut(planId=str(uid), data=data)
 
 
-@router.post("/get", summary="查询计划表", response_model=PlanGetOut, status_code=200)
+@router.post(
+    "/get",
+    tags=["Get"],
+    summary="查询计划表",
+    response_model=PlanGetOut,
+    status_code=200,
+)
 async def get_plan(plan: PlanGetIn = Body(...)) -> PlanGetOut:
 
     try:
@@ -67,7 +77,11 @@ async def get_plan(plan: PlanGetIn = Body(...)) -> PlanGetOut:
 
 
 @router.post(
-    "/update", summary="更新计划表配置信息", response_model=OutBase, status_code=200
+    "/update",
+    tags=["Update"],
+    summary="更新计划表配置信息",
+    response_model=OutBase,
+    status_code=200,
 )
 async def update_plan(plan: PlanUpdateIn = Body(...)) -> OutBase:
 
@@ -80,7 +94,13 @@ async def update_plan(plan: PlanUpdateIn = Body(...)) -> OutBase:
     return OutBase()
 
 
-@router.post("/delete", summary="删除计划表", response_model=OutBase, status_code=200)
+@router.post(
+    "/delete",
+    tags=["Delete"],
+    summary="删除计划表",
+    response_model=OutBase,
+    status_code=200,
+)
 async def delete_plan(plan: PlanDeleteIn = Body(...)) -> OutBase:
 
     try:
@@ -93,7 +113,11 @@ async def delete_plan(plan: PlanDeleteIn = Body(...)) -> OutBase:
 
 
 @router.post(
-    "/order", summary="重新排序计划表", response_model=OutBase, status_code=200
+    "/order",
+    tags=["Update"],
+    summary="重新排序计划表",
+    response_model=OutBase,
+    status_code=200,
 )
 async def reorder_plan(plan: PlanReorderIn = Body(...)) -> OutBase:
 

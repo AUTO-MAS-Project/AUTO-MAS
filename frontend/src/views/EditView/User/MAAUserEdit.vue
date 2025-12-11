@@ -817,8 +817,8 @@ const handleMAAConfig = async () => {
       mode: TaskCreateIn.mode.SCRIPT_CONFIG,
     })
 
-    if (response && response.websocketId) {
-      const wsId = response.websocketId
+    if (response && response.taskId) {
+      const wsId = response.taskId
 
       // 订阅 websocket
       const subscriptionId = subscribe({ id: wsId }, (wsMessage: any) => {

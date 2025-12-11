@@ -923,7 +923,7 @@ class TaskCreateIn(DispatchIn):
 
 
 class TaskCreateOut(OutBase):
-    websocketId: str = Field(..., description="新创建的任务ID")
+    taskId: str = Field(..., description="新创建的任务ID")
 
 
 class WebSocketMessage(BaseModel):

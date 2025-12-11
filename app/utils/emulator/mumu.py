@@ -26,7 +26,7 @@ import asyncio
 import win32gui
 import win32con
 import win32process
-import contextlib
+from contextlib import suppress
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -272,7 +272,7 @@ class MumuManager(DeviceBase):
             return True
 
         result: list[int | None] = [None]
-        with contextlib.suppress(Exception):
+        with suppress(Exception):
             # EnumWindows 在回调返回 False 时抛出异常，属正常行为
             win32gui.EnumWindows(enum_cb, result)
         return result[0]
