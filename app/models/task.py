@@ -25,7 +25,7 @@ import weakref
 from datetime import datetime
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import List, Optional, Literal
 
 
 @dataclass
@@ -109,7 +109,7 @@ class ScriptItem:
 class TaskItem(ABC):
     """任务信息基类，管理任务的信息和脚本列表"""
 
-    mode: str  # 任务模式
+    mode: Literal["AutoProxy", "ManualReview", "ScriptConfig"]  # 任务模式
     task_id: str  # 任务唯一标识符
     queue_id: str | None  # 执行的队列ID
     script_id: str | None  # 执行的脚本ID

@@ -31,18 +31,19 @@ from app.models.ConfigBase import MultipleConfig
 from app.models.config import MaaConfig, MaaUserConfig
 from app.services import Notify
 from app.utils import get_logger
+from app.utils.constants import TASK_MODE_ZH
 from .tools import push_notification
 from .AutoProxy import AutoProxyTask
-from .ManualInspect import ManualInspectTask
-from .ScriptSetup import ScriptSetupTask
+from .ManualReview import ManualReviewTask
+from .ScriptConfig import ScriptConfigTask
 
 
 logger = get_logger("MAA 调度器")
 
-METHOD_BOOK: dict[str, type[AutoProxyTask | ManualInspectTask | ScriptSetupTask]] = {
-    "自动代理": AutoProxyTask,
-    "人工排查": ManualInspectTask,
-    "设置脚本": ScriptSetupTask,
+METHOD_BOOK: dict[str, type[AutoProxyTask | ManualReviewTask | ScriptConfigTask]] = {
+    "AutoProxy": AutoProxyTask,
+    "ManualReview": ManualReviewTask,
+    "ScriptConfig": ScriptConfigTask,
 }
 
 
@@ -95,7 +96,7 @@ class MaaManager(TaskExecuteBase):
         ).exists():
             return "MAA配置文件不存在, 请检查MAA路径设置！"
         if (
-            self.task_info.mode != "设置脚本" or self.task_info.user_id is not None
+            self.task_info.mode != "ScriptConfig" or self.task_info.user_id is not None
         ) and not (
             Path.cwd()
             / f"data/{self.script_info.script_id}/Default/ConfigFile/gui.json"
@@ -129,7 +130,7 @@ class MaaManager(TaskExecuteBase):
             shutil.copy(self.maa_set_path, self.temp_path / "gui.json")
 
         # 构建用户列表
-        if self.task_info.mode == "设置脚本":
+        if self.task_info.mode == "ScriptConfig":
             self.script_info.user_list = [
                 UserItem(
                     user_id=self.task_info.user_id or "Default", name="", status="等待"
@@ -186,7 +187,7 @@ class MaaManager(TaskExecuteBase):
         await Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].unlock()
         logger.success(f"已解锁脚本配置 {self.script_info.script_id}")
 
-        if self.task_info.mode in ["自动代理", "人工排查"]:
+        if self.task_info.mode in ["AutoProxy", "ManualReview"]:
 
             await self.emulator_manager.close(
                 self.script_config.get("Emulator", "Index")
@@ -206,9 +207,9 @@ class MaaManager(TaskExecuteBase):
                 u.name for u in self.script_info.user_list if u.status == "等待"
             ]
 
-            title = f"{datetime.now().strftime('%m-%d')} | {self.script_info.name or '空白'}的{self.task_info.mode}任务报告"
+            title = f"{datetime.now().strftime('%m-%d')} | {self.script_info.name or '空白'}的{TASK_MODE_ZH[self.task_info.mode]}任务报告"
             result = {
-                "title": f"{self.task_info.mode}任务报告",
+                "title": f"{TASK_MODE_ZH[self.task_info.mode]}任务报告",
                 "script_name": self.script_info.name or "空白",
                 "start_time": self.begin_time,
                 "end_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),

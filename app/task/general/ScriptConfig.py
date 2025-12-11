@@ -36,7 +36,7 @@ from app.utils import get_logger, ProcessManager
 logger = get_logger("通用脚本设置")
 
 
-class ScriptSetupTask(TaskExecuteBase):
+class ScriptConfigTask(TaskExecuteBase):
     """脚本设置模式"""
 
     def __init__(
