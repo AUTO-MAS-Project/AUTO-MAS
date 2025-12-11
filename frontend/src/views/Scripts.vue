@@ -566,7 +566,7 @@ const handleStartMAAConfig = async (script: Script) => {
     // 调用启动配置任务API
     const response = await Service.addTaskApiDispatchStartPost({
       taskId: script.id,
-      mode: TaskCreateIn.mode.SettingScriptMode,
+      mode: TaskCreateIn.mode.SCRIPT_CONFIG,
     })
 
     if (response.code === 200) {

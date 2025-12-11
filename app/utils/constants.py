@@ -572,3 +572,10 @@ CREATION_FLAGS = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
 
 ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
 """匹配ANSI控制字符的正则表达式"""
+
+TASK_MODE_ZH = {
+    "AutoProxy": "自动代理",
+    "ManualReview": "人工排查",
+    "ScriptConfig": "脚本配置",
+}
+"""任务模式中文映射表"""
