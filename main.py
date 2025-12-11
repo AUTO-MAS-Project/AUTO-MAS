@@ -68,6 +68,7 @@ def main():
         import asyncio
         import uvicorn
         from fastapi import FastAPI
+        from fastapi_mcp import FastApiMCP
         from fastapi.staticfiles import StaticFiles
         from contextlib import asynccontextmanager
 
@@ -159,6 +160,17 @@ def main():
             StaticFiles(directory=str(Path.cwd() / "res/sounds")),
             name="sounds",
         )
+
+        mcp = FastApiMCP(
+            app,
+            name="AUTO-MAS MCP",
+            description="MCP server for AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software",
+            describe_full_response_schema=True,
+            describe_all_responses=True,
+            exclude_tags=["Delete"],
+        )
+
+        mcp.mount_http()
 
         async def run_server():
             config = uvicorn.Config(

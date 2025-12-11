@@ -47,7 +47,13 @@ from app.models.config import Webhook as WebhookConfig
 router = APIRouter(prefix="/api/setting", tags=["全局设置"])
 
 
-@router.post("/get", summary="查询配置", response_model=SettingGetOut, status_code=200)
+@router.post(
+    "/get",
+    tags=["Get"],
+    summary="查询配置",
+    response_model=SettingGetOut,
+    status_code=200,
+)
 async def get_scripts() -> SettingGetOut:
     """查询配置"""
 
@@ -63,7 +69,13 @@ async def get_scripts() -> SettingGetOut:
     return SettingGetOut(data=GlobalConfig(**data))
 
 
-@router.post("/update", summary="更新配置", response_model=OutBase, status_code=200)
+@router.post(
+    "/update",
+    tags=["Update"],
+    summary="更新配置",
+    response_model=OutBase,
+    status_code=200,
+)
 async def update_script(script: SettingUpdateIn = Body(...)) -> OutBase:
     """更新配置"""
 
@@ -98,7 +110,11 @@ async def update_script(script: SettingUpdateIn = Body(...)) -> OutBase:
 
 
 @router.post(
-    "/test_notify", summary="测试通知", response_model=OutBase, status_code=200
+    "/test_notify",
+    tags=["Action"],
+    summary="测试通知",
+    response_model=OutBase,
+    status_code=200,
 )
 async def test_notify() -> OutBase:
     """测试通知"""
@@ -114,6 +130,7 @@ async def test_notify() -> OutBase:
 
 @router.post(
     "/webhook/get",
+    tags=["Get"],
     summary="查询 webhook 配置",
     response_model=WebhookGetOut,
     status_code=200,
@@ -136,6 +153,7 @@ async def get_webhook(webhook: WebhookGetIn = Body(...)) -> WebhookGetOut:
 
 @router.post(
     "/webhook/add",
+    tags=["Add"],
     summary="添加webhook项",
     response_model=WebhookCreateOut,
     status_code=200,
@@ -156,7 +174,11 @@ async def add_webhook() -> WebhookCreateOut:
 
 
 @router.post(
-    "/webhook/update", summary="更新webhook项", response_model=OutBase, status_code=200
+    "/webhook/update",
+    tags=["Update"],
+    summary="更新webhook项",
+    response_model=OutBase,
+    status_code=200,
 )
 async def update_webhook(webhook: WebhookUpdateIn = Body(...)) -> OutBase:
     try:
@@ -171,7 +193,11 @@ async def update_webhook(webhook: WebhookUpdateIn = Body(...)) -> OutBase:
 
 
 @router.post(
-    "/webhook/delete", summary="删除webhook项", response_model=OutBase, status_code=200
+    "/webhook/delete",
+    tags=["Delete"],
+    summary="删除webhook项",
+    response_model=OutBase,
+    status_code=200,
 )
 async def delete_webhook(webhook: WebhookDeleteIn = Body(...)) -> OutBase:
     try:
@@ -185,6 +211,7 @@ async def delete_webhook(webhook: WebhookDeleteIn = Body(...)) -> OutBase:
 
 @router.post(
     "/webhook/order",
+    tags=["Update"],
     summary="重新排序webhook项",
     response_model=OutBase,
     status_code=200,
@@ -200,7 +227,11 @@ async def reorder_webhook(webhook: WebhookReorderIn = Body(...)) -> OutBase:
 
 
 @router.post(
-    "/webhook/test", summary="测试Webhook配置", response_model=OutBase, status_code=200
+    "/webhook/test",
+    tags=["Action"],
+    summary="测试Webhook配置",
+    response_model=OutBase,
+    status_code=200,
 )
 async def test_webhook(webhook: WebhookTestIn = Body(...)) -> OutBase:
     """测试自定义Webhook"""
