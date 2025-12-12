@@ -75,7 +75,7 @@ class _UpdateHandler:
         # 使用 httpx 异步请求
         async with httpx.AsyncClient(proxy=Config.get_proxy()) as client:
             response = await client.get(
-                f"https://mirrorchyan.com/api/resources/AUTO_MAS/latest?user_agent=AutoMasGui&os=win&arch=x64&current_version={current_version}&cdk={Config.get('Update', 'MirrorChyanCDK') if Config.get('Update', 'Source') == 'MirrorChyan' else ''}&channel=beta"
+                f"https://mirrorchyan.com/api/resources/AUTO_MAS/latest?user_agent=AutoMasGui&os=win&arch=x64&current_version={current_version}&cdk={Config.get('Update', 'MirrorChyanCDK') if Config.get('Update', 'Source') == 'MirrorChyan' else ''}&channel={Config.get('Update', 'Channel')}"
             )
         if response.status_code == 200:
             version_info = response.json()
