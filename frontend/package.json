@@ -1,7 +1,7 @@
 {
   "name": "frontend",
   "private": true,
-  "version": "v5.0.0-beta.5",
+  "version": "v5.0.0",
   "description": "A Multi-Script, Multi-Config Management and Automation Software",
   "author": "AUTO-MAS Team",
   "main": "dist-electron/main.js",
