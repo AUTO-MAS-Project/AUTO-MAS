@@ -814,11 +814,11 @@ const handleMAAConfig = async () => {
     // 调用后端启动任务接口，传入 userId 作为 taskId 与设置模式
     const response = await Service.addTaskApiDispatchStartPost({
       taskId: userId,
-      mode: TaskCreateIn.mode.SettingScriptMode,
+      mode: TaskCreateIn.mode.SCRIPT_CONFIG,
     })
 
-    if (response && response.websocketId) {
-      const wsId = response.websocketId
+    if (response && response.taskId) {
+      const wsId = response.taskId
 
       // 订阅 websocket
       const subscriptionId = subscribe({ id: wsId }, (wsMessage: any) => {

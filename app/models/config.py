@@ -788,7 +788,9 @@ class GlobalConfig(ConfigBase):
     ## 是否发送Koishi通知
     Notify_IfSendKoishi = ConfigItem("Notify", "IfSendKoishi", False, BoolValidator())
     ## Koishi 服务器地址
-    Notify_KoishiServerAddress = ConfigItem("Notify", "KoishiServerAddress", "http://localhost:5140/onebot", URLValidator())
+    Notify_KoishiServerAddress = ConfigItem(
+        "Notify", "KoishiServerAddress", "http://localhost:5140/onebot", URLValidator()
+    )
     ## Koishi Token
     Notify_KoishiToken = ConfigItem("Notify", "KoishiToken", "")
     ## SMTP 服务器地址

@@ -32,7 +32,11 @@ router = APIRouter(prefix="/api/update", tags=["软件更新"])
 
 
 @router.post(
-    "/check", summary="检查更新", response_model=UpdateCheckOut, status_code=200
+    "/check",
+    tags=["Get"],
+    summary="检查更新",
+    response_model=UpdateCheckOut,
+    status_code=200,
 )
 async def check_update(version: UpdateCheckIn = Body(...)) -> UpdateCheckOut:
 
@@ -54,7 +58,13 @@ async def check_update(version: UpdateCheckIn = Body(...)) -> UpdateCheckOut:
     )
 
 
-@router.post("/download", summary="下载更新", response_model=OutBase, status_code=200)
+@router.post(
+    "/download",
+    tags=["Action"],
+    summary="下载更新",
+    response_model=OutBase,
+    status_code=200,
+)
 async def download_update() -> OutBase:
 
     try:
@@ -68,7 +78,13 @@ async def download_update() -> OutBase:
     return OutBase()
 
 
-@router.post("/install", summary="安装更新", response_model=OutBase, status_code=200)
+@router.post(
+    "/install",
+    tags=["Action"],
+    summary="安装更新",
+    response_model=OutBase,
+    status_code=200,
+)
 async def install_update() -> OutBase:
 
     try:
