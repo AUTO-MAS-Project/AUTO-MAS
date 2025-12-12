@@ -150,18 +150,6 @@ class Task(TaskExecuteBase):
             await self.spawn(task_item)
 
     async def final_task(self) -> None:
-        """
-        处理任务结束后的收尾工作
-
-        Parameters
-        ----------
-        task : asyncio.Task
-            任务对象
-        mode : str
-            任务模式
-        task_id : uuid.UUID
-            任务ID
-        """
 
         logger.info(f"任务结束: {self.task_info.task_id}")
 
@@ -171,7 +159,7 @@ class Task(TaskExecuteBase):
             data={"Accomplish": self.task_info.result},
         )
 
-        if self.task_info.mode == "自动代理" and self.task_info.queue_id is not None:
+        if self.task_info.mode == "AutoProxy" and self.task_info.queue_id is not None:
 
             if Config.power_sign == "NoAction":
                 Config.power_sign = Config.QueueConfig[
@@ -200,18 +188,22 @@ class _TaskManager:
         self.task_handler: Dict[uuid.UUID, Task] = {}
 
     async def add_task(
-        self, mode: Literal["自动代理", "人工排查", "设置脚本"], id: str
+        self, mode: Literal["AutoProxy", "ManualReview", "ScriptConfig"], id: str
     ) -> uuid.UUID:
         """
-        添加任务
+        添加任务, 根据 id 值搜索实际指向的任务配置
 
-        :param mode: 任务模式
-        :param id: 任务UID
+        Args:
+            mode (str): 任务模式
+            id (str): 任务项对应的配置 ID
+
+        Returns:
+            uuid.UUID: 任务 UID
         """
 
         uid = uuid.UUID(id)
 
-        if mode == "设置脚本":
+        if mode == "ScriptConfig":
             if uid in Config.ScriptConfig:
                 task_uid = uuid.uuid4()
                 queue_id = None
@@ -262,7 +254,7 @@ class _TaskManager:
     async def clean_task(self, task_uid: uuid.UUID) -> None:
 
         await self.task_handler[task_uid].accomplish.wait()
-        power_enabled = bool(self.task_info[task_uid].mode != "设置脚本")
+        power_enabled = bool(self.task_info[task_uid].mode != "ScriptConfig")
         self.task_info.pop(task_uid, None)
         self.task_handler.pop(task_uid, None)
 
@@ -319,7 +311,7 @@ class _TaskManager:
 
             if queue.get("Info", "StartUpEnabled"):
                 logger.info(f"启动时需要运行的队列：{uid}")
-                task_id = await TaskManager.add_task("自动代理", str(uid))
+                task_id = await TaskManager.add_task("AutoProxy", str(uid))
                 await Config.send_websocket_message(
                     id="TaskManager",
                     type="Signal",

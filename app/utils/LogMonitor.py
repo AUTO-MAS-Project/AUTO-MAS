@@ -21,7 +21,7 @@
 
 import asyncio
 import aiofiles
-import contextlib
+from contextlib import suppress
 from datetime import datetime, timedelta, date
 from pathlib import Path
 from typing import Callable, Optional, List, Awaitable
@@ -100,7 +100,7 @@ class LogMonitor:
                     async for bline in f:
                         line = decode_bytes(bline)
                         if not if_log_start:
-                            with contextlib.suppress(IndexError, ValueError):
+                            with suppress(IndexError, ValueError):
                                 entry_time = strptime(
                                     line[
                                         self.time_stamp_range[

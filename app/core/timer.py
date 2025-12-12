@@ -90,7 +90,7 @@ class _MainTimer:
                     "Info", "Time"
                 ):
                     logger.info(f"定时唤起任务：{uid}")
-                    task_id = await TaskManager.add_task("自动代理", str(uid))
+                    task_id = await TaskManager.add_task("AutoProxy", str(uid))
                     await queue.set("Data", "LastTimedStart", curtime)
                     await Config.QueueConfig.save()
 

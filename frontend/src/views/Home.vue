@@ -645,10 +645,11 @@ onMounted(() => {
 }
 
 .stage-info {
-  flex-shrink: 0;
+  flex: 1;
   margin-right: 16px;
   text-align: center;
-  min-width: 80px;
+  min-width: 50px;
+  max-width: 80px;
 }
 
 .stage-name {
@@ -661,7 +662,7 @@ onMounted(() => {
 .drop-info {
   display: flex;
   align-items: center;
-  flex: 1;
+  flex: 2;
 }
 
 .drop-image {
@@ -684,7 +685,7 @@ onMounted(() => {
 
 .drop-details {
   flex: 1;
-  min-width: 0;
+  min-width: 70px;
 }
 
 .drop-name {
@@ -779,14 +780,14 @@ onMounted(() => {
   }
 }
 
-@media (max-width: 1200px) {
+@media (max-width: 1240px) {
   .activity-list,
   .resource-list {
     grid-template-columns: repeat(3, 1fr);
   }
 }
 
-@media (max-width: 768px) {
+@media (max-width: 800px) {
   .header {
     flex-direction: column;
     gap: 16px;

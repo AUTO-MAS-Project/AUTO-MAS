@@ -173,8 +173,10 @@ class GlobalConfig_Notify(BaseModel):
     IfPushPlyer: Optional[bool] = Field(default=None, description="是否推送系统通知")
     IfSendMail: Optional[bool] = Field(default=None, description="是否发送邮件通知")
     IfSendKoishi: Optional[bool] = Field(default=None, description="是否发送Koishi通知")
-    KoishiServerAddress: Optional[str] = Field(default=None,description="Koishi服务器地址")
-    KoishiToken: Optional[str] = Field(default=None,description="Koishi Token")
+    KoishiServerAddress: Optional[str] = Field(
+        default=None, description="Koishi服务器地址"
+    )
+    KoishiToken: Optional[str] = Field(default=None, description="Koishi Token")
     SMTPServerAddress: Optional[str] = Field(default=None, description="SMTP服务器地址")
     AuthorizationCode: Optional[str] = Field(default=None, description="SMTP授权码")
     FromAddress: Optional[str] = Field(default=None, description="邮件发送地址")
@@ -536,7 +538,7 @@ class MaaPlanConfig(BaseModel):
 
 class HistoryIndexItem(BaseModel):
     date: str = Field(..., description="日期")
-    status: Literal["完成", "异常"] = Field(..., description="状态")
+    status: Literal["DONE", "ERROR"] = Field(..., description="状态")
     jsonFile: str = Field(..., description="对应JSON文件")
 
 
@@ -915,13 +917,13 @@ class DispatchIn(BaseModel):
 
 
 class TaskCreateIn(DispatchIn):
-    mode: Literal["自动代理", "人工排查", "设置脚本"] = Field(
+    mode: Literal["AutoProxy", "ManualReview", "ScriptConfig"] = Field(
         ..., description="任务模式"
     )
 
 
 class TaskCreateOut(OutBase):
-    websocketId: str = Field(..., description="新创建的任务ID")
+    taskId: str = Field(..., description="新创建的任务ID")
 
 
 class WebSocketMessage(BaseModel):
@@ -946,9 +948,7 @@ class PowerOut(OutBase):
 
 
 class HistorySearchIn(BaseModel):
-    mode: Literal["按日合并", "按周合并", "按月合并"] = Field(
-        ..., description="合并模式"
-    )
+    mode: Literal["DAILY", "WEEKLY", "MONTHLY"] = Field(..., description="合并模式")
     start_date: str = Field(..., description="开始日期, 格式YYYY-MM-DD")
     end_date: str = Field(..., description="结束日期, 格式YYYY-MM-DD")
 

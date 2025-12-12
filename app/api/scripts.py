@@ -35,7 +35,11 @@ USER_BOOK = {"MaaConfig": MaaUserConfig, "GeneralConfig": GeneralUserConfig}
 
 
 @router.post(
-    "/add", summary="添加脚本", response_model=ScriptCreateOut, status_code=200
+    "/add",
+    tags=["Add"],
+    summary="添加脚本",
+    response_model=ScriptCreateOut,
+    status_code=200,
 )
 async def add_script(script: ScriptCreateIn = Body(...)) -> ScriptCreateOut:
 
@@ -54,7 +58,11 @@ async def add_script(script: ScriptCreateIn = Body(...)) -> ScriptCreateOut:
 
 
 @router.post(
-    "/get", summary="查询脚本配置信息", response_model=ScriptGetOut, status_code=200
+    "/get",
+    tags=["Get"],
+    summary="查询脚本配置信息",
+    response_model=ScriptGetOut,
+    status_code=200,
 )
 async def get_script(script: ScriptGetIn = Body(...)) -> ScriptGetOut:
 
@@ -79,7 +87,11 @@ async def get_script(script: ScriptGetIn = Body(...)) -> ScriptGetOut:
 
 
 @router.post(
-    "/update", summary="更新脚本配置信息", response_model=OutBase, status_code=200
+    "/update",
+    tags=["Update"],
+    summary="更新脚本配置信息",
+    response_model=OutBase,
+    status_code=200,
 )
 async def update_script(script: ScriptUpdateIn = Body(...)) -> OutBase:
 
@@ -94,7 +106,13 @@ async def update_script(script: ScriptUpdateIn = Body(...)) -> OutBase:
     return OutBase()
 
 
-@router.post("/delete", summary="删除脚本", response_model=OutBase, status_code=200)
+@router.post(
+    "/delete",
+    tags=["Delete"],
+    summary="删除脚本",
+    response_model=OutBase,
+    status_code=200,
+)
 async def delete_script(script: ScriptDeleteIn = Body(...)) -> OutBase:
 
     try:
@@ -106,7 +124,13 @@ async def delete_script(script: ScriptDeleteIn = Body(...)) -> OutBase:
     return OutBase()
 
 
-@router.post("/order", summary="重新排序脚本", response_model=OutBase, status_code=200)
+@router.post(
+    "/order",
+    tags=["Update"],
+    summary="重新排序脚本",
+    response_model=OutBase,
+    status_code=200,
+)
 async def reorder_script(script: ScriptReorderIn = Body(...)) -> OutBase:
 
     try:
@@ -119,7 +143,11 @@ async def reorder_script(script: ScriptReorderIn = Body(...)) -> OutBase:
 
 
 @router.post(
-    "/import/file", summary="从文件加载脚本", response_model=OutBase, status_code=200
+    "/import/file",
+    tags=["Update"],
+    summary="从文件加载脚本配置",
+    response_model=OutBase,
+    status_code=200,
 )
 async def import_script_from_file(script: ScriptFileIn = Body(...)) -> OutBase:
 
@@ -133,7 +161,11 @@ async def import_script_from_file(script: ScriptFileIn = Body(...)) -> OutBase:
 
 
 @router.post(
-    "/export/file", summary="导出脚本到文件", response_model=OutBase, status_code=200
+    "/export/file",
+    tags=["Action"],
+    summary="导出脚本配置到文件",
+    response_model=OutBase,
+    status_code=200,
 )
 async def export_script_to_file(script: ScriptFileIn = Body(...)) -> OutBase:
 
@@ -147,7 +179,11 @@ async def export_script_to_file(script: ScriptFileIn = Body(...)) -> OutBase:
 
 
 @router.post(
-    "/import/web", summary="从网络加载脚本", response_model=OutBase, status_code=200
+    "/import/web",
+    tags=["Update"],
+    summary="从网络加载脚本配置",
+    response_model=OutBase,
+    status_code=200,
 )
 async def import_script_from_web(script: ScriptUrlIn = Body(...)) -> OutBase:
 
@@ -161,7 +197,11 @@ async def import_script_from_web(script: ScriptUrlIn = Body(...)) -> OutBase:
 
 
 @router.post(
-    "/Upload/web", summary="上传脚本配置到网络", response_model=OutBase, status_code=200
+    "/Upload/web",
+    tags=["Action"],
+    summary="上传脚本配置到网络",
+    response_model=OutBase,
+    status_code=200,
 )
 async def upload_script_to_web(script: ScriptUploadIn = Body(...)) -> OutBase:
 
@@ -177,7 +217,11 @@ async def upload_script_to_web(script: ScriptUploadIn = Body(...)) -> OutBase:
 
 
 @router.post(
-    "/user/get", summary="查询用户", response_model=UserGetOut, status_code=200
+    "/user/get",
+    tags=["Get"],
+    summary="查询用户",
+    response_model=UserGetOut,
+    status_code=200,
 )
 async def get_user(user: UserGetIn = Body(...)) -> UserGetOut:
 
@@ -202,7 +246,11 @@ async def get_user(user: UserGetIn = Body(...)) -> UserGetOut:
 
 
 @router.post(
-    "/user/add", summary="添加用户", response_model=UserCreateOut, status_code=200
+    "/user/add",
+    tags=["Add"],
+    summary="添加用户",
+    response_model=UserCreateOut,
+    status_code=200,
 )
 async def add_user(user: UserInBase = Body(...)) -> UserCreateOut:
 
@@ -223,7 +271,11 @@ async def add_user(user: UserInBase = Body(...)) -> UserCreateOut:
 
 
 @router.post(
-    "/user/update", summary="更新用户配置信息", response_model=OutBase, status_code=200
+    "/user/update",
+    tags=["Update"],
+    summary="更新用户配置信息",
+    response_model=OutBase,
+    status_code=200,
 )
 async def update_user(user: UserUpdateIn = Body(...)) -> OutBase:
 
@@ -239,7 +291,11 @@ async def update_user(user: UserUpdateIn = Body(...)) -> OutBase:
 
 
 @router.post(
-    "/user/delete", summary="删除用户", response_model=OutBase, status_code=200
+    "/user/delete",
+    tags=["Delete"],
+    summary="删除用户",
+    response_model=OutBase,
+    status_code=200,
 )
 async def delete_user(user: UserDeleteIn = Body(...)) -> OutBase:
 
@@ -253,7 +309,11 @@ async def delete_user(user: UserDeleteIn = Body(...)) -> OutBase:
 
 
 @router.post(
-    "/user/order", summary="重新排序用户", response_model=OutBase, status_code=200
+    "/user/order",
+    tags=["Update"],
+    summary="重新排序用户",
+    response_model=OutBase,
+    status_code=200,
 )
 async def reorder_user(user: UserReorderIn = Body(...)) -> OutBase:
 
@@ -268,6 +328,7 @@ async def reorder_user(user: UserReorderIn = Body(...)) -> OutBase:
 
 @router.post(
     "/user/infrastructure",
+    tags=["Update"],
     summary="导入基建配置文件",
     response_model=OutBase,
     status_code=200,
@@ -285,6 +346,7 @@ async def import_infrastructure(user: UserSetIn = Body(...)) -> OutBase:
 
 @router.post(
     "/user/combox/infrastructure",
+    tags=["Get"],
     summary="用户自定义基建排班可选项",
     response_model=ComboBoxOut,
     status_code=200,
@@ -305,6 +367,7 @@ async def get_user_combox_infrastructure(user: UserDeleteIn = Body(...)) -> Comb
 
 @router.post(
     "/webhook/get",
+    tags=["Get"],
     summary="查询 webhook 配置",
     response_model=WebhookGetOut,
     status_code=200,
@@ -330,6 +393,7 @@ async def get_webhook(webhook: WebhookGetIn = Body(...)) -> WebhookGetOut:
 
 @router.post(
     "/webhook/add",
+    tags=["Add"],
     summary="添加webhook项",
     response_model=WebhookCreateOut,
     status_code=200,
@@ -351,7 +415,11 @@ async def add_webhook(webhook: WebhookInBase = Body(...)) -> WebhookCreateOut:
 
 
 @router.post(
-    "/webhook/update", summary="更新webhook项", response_model=OutBase, status_code=200
+    "/webhook/update",
+    tags=["Update"],
+    summary="更新webhook项",
+    response_model=OutBase,
+    status_code=200,
 )
 async def update_webhook(webhook: WebhookUpdateIn = Body(...)) -> OutBase:
 
@@ -370,7 +438,11 @@ async def update_webhook(webhook: WebhookUpdateIn = Body(...)) -> OutBase:
 
 
 @router.post(
-    "/webhook/delete", summary="删除webhook项", response_model=OutBase, status_code=200
+    "/webhook/delete",
+    tags=["Delete"],
+    summary="删除webhook项",
+    response_model=OutBase,
+    status_code=200,
 )
 async def delete_webhook(webhook: WebhookDeleteIn = Body(...)) -> OutBase:
 
@@ -385,6 +457,7 @@ async def delete_webhook(webhook: WebhookDeleteIn = Body(...)) -> OutBase:
 
 @router.post(
     "/webhook/order",
+    tags=["Update"],
     summary="重新排序webhook项",
     response_model=OutBase,
     status_code=200,

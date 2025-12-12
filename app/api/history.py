@@ -33,6 +33,7 @@ router = APIRouter(prefix="/api/history", tags=["历史记录"])
 
 @router.post(
     "/search",
+    tags=["Get"],
     summary="搜索历史记录总览信息",
     response_model=HistorySearchOut,
     status_code=200,
@@ -66,6 +67,7 @@ async def search_history(history: HistorySearchIn) -> HistorySearchOut:
 
 @router.post(
     "/data",
+    tags=["Get"],
     summary="从指定文件内获取历史记录数据",
     response_model=HistoryDataGetOut,
     status_code=200,

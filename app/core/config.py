@@ -80,7 +80,7 @@ except ImportError:
 
 
 class AppConfig(GlobalConfig):
-    VERSION = [5, 0, 0, 5]
+    VERSION = [5, 0, 0, 0]
 
     def __init__(self) -> None:
         super().__init__()
@@ -1464,7 +1464,7 @@ class AppConfig(GlobalConfig):
         logger.info("获取代理情况概览信息")
 
         history_index = await self.search_history(
-            "按日合并", datetime.now(tz=UTC4).date(), datetime.now(tz=UTC4).date()
+            "DAILY", datetime.now(tz=UTC4).date(), datetime.now(tz=UTC4).date()
         )
         if datetime.now(tz=UTC4).strftime("%Y年 %m月 %d日") not in history_index:
             return {}
@@ -2050,7 +2050,7 @@ class AppConfig(GlobalConfig):
                     data["index"][actual_date] = {
                         "date": actual_date.strftime("%Y年%m月%d日 %H:%M:%S"),
                         "status": (
-                            "完成" if single_data[key] == "Success!" else "异常"
+                            "DONE" if single_data[key] == "Success!" else "ERROR"
                         ),
                         "jsonFile": str(json_file),
                     }
@@ -2066,14 +2066,19 @@ class AppConfig(GlobalConfig):
 
         return result
 
-    async def search_history(self, mode: str, start_date: date, end_date: date) -> dict:
+    async def search_history(
+        self,
+        mode: Literal["DAILY", "WEEKLY", "MONTHLY"],
+        start_date: date,
+        end_date: date,
+    ) -> dict:
         """
-        搜索指定范围内的历史记录
+        搜索指定时间范围内的历史记录
 
-        :param mode: 合并模式（按日合并、按周合并、按月合并）
-        :param start_date: 开始日期
-        :param end_date: 结束日期
-        :return: 搜索到的历史记录字典
+        Args:
+            mode (Literal["DAILY", "WEEKLY", "MONTHLY"]): 合并模式
+            start_date (date): 开始日期
+            end_date (date): 结束日期
         """
 
         logger.info(
@@ -2092,12 +2097,12 @@ class AppConfig(GlobalConfig):
                 if not (start_date <= date <= end_date):
                     continue  # 只统计在范围内的日期
 
-                if mode == "按日合并":
+                if mode == "DAILY":
                     date_name = date.strftime("%Y年 %m月 %d日")
-                elif mode == "按周合并":
+                elif mode == "WEEKLY":
                     year, week, _ = date.isocalendar()
                     date_name = f"{year}年 第{week}周"
-                elif mode == "按月合并":
+                elif mode == "MONTHLY":
                     date_name = date.strftime("%Y年 %m月")
                 else:
                     raise ValueError("无效的合并模式")
