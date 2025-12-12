@@ -98,7 +98,7 @@ AUTO-MAS respects and protects user privacy, all collected information has been 
 
 </a>
 
-![Alt](https://repobeats.axiom.co/api/embed/6c2f834141eff1ac297db70d12bd11c6236a58a5.svg "Repobeats analytics image")
+![Alt](https://repobeats.axiom.co/api/embed/faac2ed458f7eebe0b7f31432224514d50367152.svg "Repobeats analytics image")
 
 ## Star History
 

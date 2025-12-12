@@ -131,23 +131,23 @@
                     <div v-for="(record, index) in selectedUserData.index || []" :key="record.jsonFile"
                       class="record-item" :class="{
                         active: selectedRecordIndex === index,
-                        success: record.status === '完成',
-                        error: record.status === '异常',
+                        success: record.status === 'DONE',
+                        error: record.status === 'ERROR',
                       }" @click="handleSelectRecord(index, record)">
                       <div class="record-info">
                         <div class="record-header">
                           <span class="record-time">{{ record.date }}</span>
                           <a-tooltip v-if="
-                            record.status === '异常' &&
+                            record.status === 'ERROR' &&
                             selectedUserData?.error_info &&
                             selectedUserData.error_info[record.date]
                           " :title="selectedUserData.error_info[record.date]" placement="topLeft">
                             <a-tag color="error" size="small" class="error-tag-with-tooltip">
-                              {{ record.status }}
+                              失败
                             </a-tag>
                           </a-tooltip>
-                          <a-tag v-else :color="record.status === '完成' ? 'success' : 'error'" size="small">
-                            {{ record.status }}
+                          <a-tag v-else :color="record.status === 'DONE' ? 'success' : 'error'" size="small">
+                            {{ record.status === 'DONE' ? '完成' : '失败' }}
                           </a-tag>
                         </div>
                         <div class="record-file">{{ record.jsonFile }}</div>
@@ -596,14 +596,14 @@ const handleOpenLogDirectory = async () => {
 const monacoOptions = computed(() => ({
   readOnly: true,
   fontSize: editorConfig.value.fontSize,
-  fontFamily: editorConfig.value.fontFamily,
+  fontFamily: 'SFMono-Regular, Consolas, Liberation Mono, Menlo, Courier, monospace',
   lineHeight: editorConfig.value.lineHeight * editorConfig.value.fontSize,
-  wordWrap: 'on',
+  wordWrap: 'on' as const,
   scrollBeyondLastLine: false,
   minimap: { enabled: false },
   scrollbar: {
-    vertical: 'auto',
-    horizontal: 'auto',
+    vertical: 'auto' as const,
+    horizontal: 'auto' as const,
     verticalScrollbarSize: 8,
     horizontalScrollbarSize: 8,
   },
@@ -611,6 +611,10 @@ const monacoOptions = computed(() => ({
     addExtraSpaceOnTop: false,
   },
   automaticLayout: true,
+  unicodeHighlight: {
+    ambiguousCharacters: false,
+    invisibleCharacters: false,
+  },
 }))
 
 // Tooltip 容器：避免挂载到 body 造成全局滚动条闪烁与布局抖动

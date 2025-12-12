@@ -409,6 +409,23 @@ const ANNIHILATION_MAP: Record<string, string> = {
   Close: '关闭',
 }
 
+// 常见资源关卡映射
+const STAGE_NAME_MAP: Record<string, string> = {
+  'LS-6': '经验',
+  'CE-6': '龙门币',
+  'AP-5': '红票',
+  'CA-5': '技能',
+  'SK-5': '碳',
+  'PR-A-1': '奶/盾芯片',
+  'PR-A-2': '奶/盾芯片组',
+  'PR-B-1': '术/狙芯片',
+  'PR-B-2': '术/狙芯片组',
+  'PR-C-1': '先/辅芯片',
+  'PR-C-2': '先/辅芯片组',
+  'PR-D-1': '近/特芯片',
+  'PR-D-2': '近/特芯片组',
+}
+
 const props = defineProps<Props>()
 const emit = defineEmits<Emits>()
 
@@ -547,6 +564,12 @@ const getRemainingDayColor = (remainedDay: number): string => {
   if (remainedDay <= 7) return 'yellow'
   if (remainedDay <= 30) return 'blue'
   return 'green'
+}
+
+// 将关卡代码转换为中文名称（如果有映射的话）
+const convertStageNameToChinese = (stageName: string): string => {
+  if (!stageName) return stageName
+  return STAGE_NAME_MAP[stageName] || stageName
 }
 
 // 获取关卡标签颜色
@@ -688,14 +711,14 @@ const getMainStageDisplay = (user: any): string => {
   if (user.Info.StageMode && user.Info.StageMode !== 'Fixed' && props.currentPlanData) {
     const planStage = getCurrentPlanStage()
     if (planStage && planStage !== '-') {
-      return planStage
+      return convertStageNameToChinese(planStage)
     }
     return '计划表配置'
   }
   
   // 固定模式，显示用户自定义关卡
   if (user.Info.Stage && user.Info.Stage !== '-' && user.Info.Stage !== '') {
-    return user.Info.Stage
+    return convertStageNameToChinese(user.Info.Stage)
   }
   
   return ''
@@ -704,14 +727,16 @@ const getMainStageDisplay = (user: any): string => {
 // 获取备选关卡列表（过滤掉无效值）
 const getBackupStages = (user: any): string[] => {
   const stages = [user.Info.Stage_1, user.Info.Stage_2, user.Info.Stage_3]
-  return stages.filter(stage => 
-    stage && 
-    stage !== '-' && 
-    stage !== '' && 
-    stage !== '当前' && 
-    stage !== '上次' && 
-    stage !== '未选择'
-  )
+  return stages
+    .filter(stage => 
+      stage && 
+      stage !== '-' && 
+      stage !== '' && 
+      stage !== '当前' && 
+      stage !== '上次' && 
+      stage !== '未选择'
+    )
+    .map(stage => convertStageNameToChinese(stage))
 }
 
 // 获取剩余关卡显示文本
@@ -724,7 +749,7 @@ const getRemainStageDisplay = (user: any): string => {
     user.Info.Stage_Remain !== '上次' && 
     user.Info.Stage_Remain !== '未选择'
   ) {
-    return user.Info.Stage_Remain
+    return convertStageNameToChinese(user.Info.Stage_Remain)
   }
   return ''
 }
@@ -839,7 +864,7 @@ const getUserPlanMainStageDisplay = (user: any): string => {
   if (!timeConfig) return ''
 
   if (timeConfig.Stage && timeConfig.Stage !== '-') {
-    return timeConfig.Stage
+    return convertStageNameToChinese(timeConfig.Stage)
   }
   return ''
 }
@@ -865,13 +890,13 @@ const getUserPlanBackupStages = (user: any): string[] => {
   const backupStages: string[] = []
   
   if (timeConfig.Stage_1 && timeConfig.Stage_1 !== '-') {
-    backupStages.push(timeConfig.Stage_1)
+    backupStages.push(convertStageNameToChinese(timeConfig.Stage_1))
   }
   if (timeConfig.Stage_2 && timeConfig.Stage_2 !== '-') {
-    backupStages.push(timeConfig.Stage_2)
+    backupStages.push(convertStageNameToChinese(timeConfig.Stage_2))
   }
   if (timeConfig.Stage_3 && timeConfig.Stage_3 !== '-') {
-    backupStages.push(timeConfig.Stage_3)
+    backupStages.push(convertStageNameToChinese(timeConfig.Stage_3))
   }
 
   return backupStages
@@ -896,7 +921,7 @@ const getUserPlanRemainStageDisplay = (user: any): string => {
   if (!timeConfig) return ''
 
   if (timeConfig.Stage_Remain && timeConfig.Stage_Remain !== '-') {
-    return timeConfig.Stage_Remain
+    return convertStageNameToChinese(timeConfig.Stage_Remain)
   }
   return ''
 }

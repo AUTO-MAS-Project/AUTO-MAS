@@ -871,9 +871,9 @@ const onDragEnd = async (evt: any) => {
 }
 
 .actions-cell {
-  width: 180px;
-  min-width: 180px;
-  max-width: 180px;
+  width: 120px;
+  min-width: 120px;
+  max-width: 120px;
 }
 
 .draggable-container {
@@ -934,9 +934,9 @@ const onDragEnd = async (evt: any) => {
 }
 
 .row-cell.actions-cell {
-  width: 180px;
-  min-width: 180px;
-  max-width: 180px;
+  width: 120px;
+  min-width: 120px;
+  max-width: 120px;
 }
 
 /* 拖拽状态样式 */

@@ -45,7 +45,7 @@ const loadTabsFromStorage = (): SchedulerTab[] => {
       closable: false,
       status: '空闲',
       selectedTaskId: null,
-      selectedMode: TaskCreateIn.mode.AutoMode,
+      selectedMode: TaskCreateIn.mode.AUTO_PROXY,
       websocketId: null,
       taskQueue: [],
       userQueue: [],
@@ -194,7 +194,7 @@ export function useSchedulerLogic() {
       closable: true,
       status: validStatus,
       selectedTaskId: options?.selectedTaskId || options?.websocketId || null,
-      selectedMode: TaskCreateIn.mode.AutoMode,
+      selectedMode: TaskCreateIn.mode.AUTO_PROXY,
       websocketId: options?.websocketId || null,
       taskQueue: [],
       userQueue: [],
@@ -320,7 +320,7 @@ export function useSchedulerLogic() {
 
       if (response.code === 200) {
         tab.status = '运行'
-        tab.websocketId = response.websocketId
+        tab.websocketId = response.taskId
 
         // 确保清理任何可能存在的旧订阅
         if (tab.subscriptionId) {

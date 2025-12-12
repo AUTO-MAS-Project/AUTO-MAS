@@ -40,7 +40,7 @@ from .tools import agree_bilibili
 logger = get_logger("MAA 人工排查")
 
 
-class ManualInspectTask(TaskExecuteBase):
+class ManualReviewTask(TaskExecuteBase):
     """人工排查模式"""
 
     def __init__(

@@ -24,16 +24,15 @@ import sys
 import ctypes
 import asyncio
 import psutil
-import contextlib
 import subprocess
 import tempfile
 import getpass
+from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 from typing import Literal, Optional
 
 from app.core import Config
-from app.utils.constants import CREATION_FLAGS
 from app.utils import ProcessRunner, get_logger
 
 logger = get_logger("系统服务")
@@ -150,7 +149,7 @@ class _SystemHandler:
 
             finally:
                 # 删除临时文件
-                with contextlib.suppress(Exception):
+                with suppress(Exception):
                     Path(xml_file).unlink()
 
         elif not Config.get("Start", "IfSelfStart") and await self.is_startup():
@@ -356,7 +355,7 @@ class _SystemHandler:
 
         pids = []
         for proc in psutil.process_iter(["pid", "exe"]):
-            with contextlib.suppress(
+            with suppress(
                 psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess
             ):  # 进程可能在此期间已结束或无法访问, 忽略这些异常
                 if proc.info["exe"] and proc.info["exe"].lower() == str(path).lower():

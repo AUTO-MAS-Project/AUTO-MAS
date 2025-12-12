@@ -330,6 +330,11 @@ const editorOptions = computed(() => ({
   // 优化性能
   smoothScrolling: true,
   cursorBlinking: 'smooth' as any,
+  // 禁用 Unicode 混淆字符警告
+  unicodeHighlight: {
+    ambiguousCharacters: false,
+    invisibleCharacters: false,
+  },
   // 确保颜色正确显示
   experimental: {
     async: true,

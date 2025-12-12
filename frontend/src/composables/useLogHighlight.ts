@@ -6,37 +6,37 @@ export interface LogHighlightColors {
   // 时间相关
   timestamp: string
   date: string
-  
+
   // 日志级别
   error: string
   warning: string
   info: string
   debug: string
   trace: string
-  
+
   // 结构元素
   module: string
   bracket: string
-  
+
   // 网络相关
   ip: string
   url: string
   port: string
-  
+
   // 文件系统
   path: string
   filename: string
-  
+
   // 数据类型
   number: string
   string: string
   boolean: string
   uuid: string
-  
+
   // 关键词
   errorKeyword: string
   success: string
-  
+
   // 特殊内容
   stackTrace: string
   json: string
@@ -56,7 +56,6 @@ export interface LogHighlightStyles {
 export interface LogEditorConfig {
   fontSize: number
   lineHeight: number
-  fontFamily: string
 }
 
 // 默认浅色主题颜色
@@ -64,37 +63,37 @@ const defaultLightColors: LogHighlightColors = {
   // 时间相关
   timestamp: '0066cc',
   date: '0066cc',
-  
+
   // 日志级别
   error: 'ff0000',
   warning: 'ff8800',
   info: '0088cc',
   debug: '888888',
   trace: 'aaaaaa',
-  
+
   // 结构元素
   module: '8800cc',
   bracket: '666666',
-  
+
   // 网络相关
   ip: '00aa00',
   url: '0066cc',
   port: '009688',
-  
+
   // 文件系统
   path: '666666',
   filename: '795548',
-  
+
   // 数据类型
   number: '0066cc',
   string: 'a31515',
   boolean: '0000ff',
   uuid: '607d8b',
-  
+
   // 关键词
   errorKeyword: 'cc0000',
   success: '00aa00',
-  
+
   // 特殊内容
   stackTrace: 'b71c1c',
   json: '6a1b9a',
@@ -107,37 +106,37 @@ const defaultDarkColors: LogHighlightColors = {
   // 时间相关
   timestamp: '4fc3f7',
   date: '4fc3f7',
-  
+
   // 日志级别
   error: 'f44336',
   warning: 'ff9800',
   info: '2196f3',
   debug: '9e9e9e',
   trace: '757575',
-  
+
   // 结构元素
   module: 'ce93d8',
   bracket: '9e9e9e',
-  
+
   // 网络相关
   ip: '4caf50',
   url: '03dac6',
   port: '26a69a',
-  
+
   // 文件系统
   path: 'bdbdbd',
   filename: 'bcaaa4',
-  
+
   // 数据类型
   number: '64b5f6',
   string: 'ce9178',
   boolean: '569cd6',
   uuid: '90a4ae',
-  
+
   // 关键词
   errorKeyword: 'ef5350',
   success: '66bb6a',
-  
+
   // 特殊内容
   stackTrace: 'ff8a80',
   json: 'b39ddb',
@@ -157,7 +156,6 @@ const defaultStyles: LogHighlightStyles = {
 const defaultEditorConfig: LogEditorConfig = {
   fontSize: 13,
   lineHeight: 1.5,
-  fontFamily: 'SFMono-Regular, Consolas, Liberation Mono, Menlo, Courier, monospace',
 }
 
 // 存储键名
@@ -179,7 +177,7 @@ const loadConfig = () => {
     const savedDark = localStorage.getItem(STORAGE_KEY_DARK)
     const savedStyles = localStorage.getItem(STORAGE_KEY_STYLES)
     const savedEditor = localStorage.getItem(STORAGE_KEY_EDITOR)
-    
+
     if (savedLight) {
       lightColors.value = { ...defaultLightColors, ...JSON.parse(savedLight) }
     }
@@ -251,7 +249,7 @@ export function useLogHighlight() {
       // 检查语言是否已注册
       const languages = monaco.languages.getLanguages()
       const isRegistered = languages.some((lang: any) => lang.id === 'logfile')
-      
+
       if (!isRegistered) {
         // 注册日志语言
         monaco.languages.register({ id: 'logfile' })
@@ -262,12 +260,12 @@ export function useLogHighlight() {
             root: [
               // UUID
               [/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/, 'uuid'],
-              
+
               // 时间戳 (各种格式)
               [/\d{4}-\d{2}-\d{2}[\sT]\d{2}:\d{2}:\d{2}(\.\d{1,6})?([+-]\d{2}:?\d{2}|Z)?/, 'timestamp'],
               [/\d{2}:\d{2}:\d{2}(\.\d{1,6})?/, 'timestamp'],
               [/\[\d{4}-\d{2}-\d{2}[\sT]\d{2}:\d{2}:\d{2}(\.\d{1,6})?\]/, 'timestamp'],
-              
+
               // 日期
               [/\d{4}[-\/]\d{2}[-\/]\d{2}/, 'date'],
 
@@ -286,23 +284,23 @@ export function useLogHighlight() {
 
               // JSON 对象/数组
               [/\{[^{}]*\}/, 'json'],
-              
+
               // 变量赋值 key=value
               [/\b\w+(?==)/, 'variable'],
-              
+
               // 括号内的内容 (通常是模块名或线程名)
               [/\[[^\]]+\]/, 'log-module'],
               [/\([^)]+\)/, 'bracket'],
 
               // URL (在 IP 之前匹配)
               [/https?:\/\/[^\s]+/, 'log-url'],
-              
+
               // IP:Port
               [/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d{1,5}\b/, 'port'],
-              
+
               // IP 地址
               [/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/, 'log-ip'],
-              
+
               // 端口号 (独立的)
               [/:\d{2,5}\b/, 'port'],
 
@@ -329,7 +327,7 @@ export function useLogHighlight() {
 
               // 成功关键词
               [/\b(Success|Successful|Complete|Completed|OK|Done|Finished|Passed|Accepted|Approved)\b/i, 'log-success'],
-              
+
               // 操作符
               [/[=<>!]+/, 'operator'],
             ],
@@ -465,18 +463,18 @@ export function useLogHighlight() {
     currentColors,
     defaultLightColors,
     defaultDarkColors,
-    
+
     // 样式配置
     styles: computed(() => styles.value),
     defaultStyles,
-    
+
     // 编辑器配置
     editorConfig: computed(() => editorConfig.value),
     defaultEditorConfig,
-    
+
     // 主题
     editorTheme,
-    
+
     // 方法
     registerLogLanguage,
     setLightColors,

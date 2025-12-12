@@ -172,27 +172,30 @@
         </div>
         <a-divider />
 
-        <!-- 定时项管理 -->
-        <div class="config-section">
-          <TimeSetManager
-            v-if="activeQueueId && currentQueueData"
-            :queue-id="activeQueueId"
-            :time-sets="currentTimeSets"
-            style="font-size: 20px"
-            @refresh="refreshTimeSets"
-          />
-        </div>
+        <!-- 定时项与队列项并排布局 -->
+        <a-row :gutter="24" class="managers-row">
+          <!-- 定时项管理 -->
+          <a-col :span="12" class="manager-col">
+            <TimeSetManager
+              v-if="activeQueueId && currentQueueData"
+              :queue-id="activeQueueId"
+              :time-sets="currentTimeSets"
+              style="font-size: 14px"
+              @refresh="refreshTimeSets"
+            />
+          </a-col>
 
-        <!-- 队列项管理 -->
-        <div class="config-section">
-          <QueueItemManager
-            v-if="activeQueueId && currentQueueData"
-            :queue-id="activeQueueId"
-            :queue-items="currentQueueItems"
-            style="font-size: 20px"
-            @refresh="refreshQueueItems"
-          />
-        </div>
+          <!-- 队列项管理 -->
+          <a-col :span="12" class="manager-col">
+            <QueueItemManager
+              v-if="activeQueueId && currentQueueData"
+              :queue-id="activeQueueId"
+              :queue-items="currentQueueItems"
+              style="font-size: 14px"
+              @refresh="refreshQueueItems"
+            />
+          </a-col>
+        </a-row>
       </a-card>
     </div>
   </div>
@@ -911,6 +914,17 @@ onMounted(async () => {
 /* 配置区域 */
 .config-section {
   margin-bottom: 12px;
+}
+
+/* 定时项与队列项并排布局 */
+.managers-row {
+  margin-bottom: 24px;
+}
+
+.manager-col {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
 }
 
 /* 垂直排列的表单项 */
