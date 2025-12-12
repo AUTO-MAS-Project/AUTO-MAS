@@ -90,6 +90,11 @@ def main():
                     (Path.cwd() / "AUTO-MAS-Setup.exe").unlink()
                 except Exception as e:
                     logger.error(f"删除AUTO-MAS-Setup.exe失败: {e}")
+            if (Path.cwd() / "AUTO_MAA.exe").exists():
+                try:
+                    (Path.cwd() / "AUTO_MAA.exe").unlink()
+                except Exception as e:
+                    logger.error(f"删除AUTO_MAA.exe失败: {e}")
 
             yield
 
