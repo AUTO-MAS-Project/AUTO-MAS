@@ -159,14 +159,14 @@ abstract class BaseEnvironmentInstaller {
         message: '正在安装环境...',
         details: {}
       })
-      const installResult = await this.installEnvironment((progress, message) => {
+      const installResult = await this.installEnvironment((progress, message, details) => {
         onProgress?.({
           stage: 'install',
           progress,
           message,
-          details: {}
+          details: details || {}
         })
-      })
+      }, selectedMirror)
 
       if (installResult.success) {
         onProgress?.({
@@ -198,7 +198,10 @@ abstract class BaseEnvironmentInstaller {
   /**
    * 安装环境（抽象方法）
    */
-  protected abstract installEnvironment(onProgress?: (progress: number, message: string) => void): Promise<{ success: boolean; error?: string }>
+  protected abstract installEnvironment(
+    onProgress?: (progress: number, message: string, details?: any) => void,
+    selectedMirror?: string
+  ): Promise<{ success: boolean; error?: string }>
 }
 
 // ==================== Python 环境安装器 ====================
@@ -302,7 +305,10 @@ export class PythonInstaller extends BaseEnvironmentInstaller {
     return { success: true }
   }
 
-  protected async installEnvironment(onProgress?: (progress: number, message: string) => void): Promise<{ success: boolean; error?: string }> {
+  protected async installEnvironment(
+    onProgress?: (progress: number, message: string, details?: any) => void,
+    selectedMirror?: string
+  ): Promise<{ success: boolean; error?: string }> {
     logService.info('环境服务', '=== 安装 Python 环境 ===')
 
     const tempZipPath = path.join(this.appRoot, 'temp', 'python.zip')
@@ -444,64 +450,98 @@ export class PipInstaller extends BaseEnvironmentInstaller {
     return { success: true }
   }
 
-  protected async installEnvironment(onProgress?: (progress: number, message: string) => void): Promise<{ success: boolean; error?: string }> {
+  protected async installEnvironment(
+    onProgress?: (progress: number, message: string, details?: any) => void,
+    selectedMirror?: string
+  ): Promise<{ success: boolean; error?: string }> {
     logService.info('环境服务', '=== 安装 Pip ===')
 
     const getPipPath = path.join(this.pythonPath, 'get-pip.py')
+    const mirrors = this.mirrorService.getMirrors('pip_mirror')
 
-    try {
-      // 执行 pip 安装
-      onProgress?.(20, '正在执行 get-pip.py...')
-      await new Promise<void>((resolve, reject) => {
-        const proc = spawn(this.pythonExe, [getPipPath], {
-          cwd: this.pythonPath,
-          stdio: 'pipe'
+    // 定义pip安装操作
+    const installOperation: NetworkOperationCallback = async (mirror, onOpProgress) => {
+      try {
+        onOpProgress({ progress: 0, description: `使用 ${mirror.name} 安装 pip...` })
+
+        // 执行 pip 安装，使用指定的镜像源
+        await new Promise<void>((resolve, reject) => {
+          const hostname = new URL(mirror.url).hostname
+
+          const proc = spawn(this.pythonExe, [
+            getPipPath,
+            '-i',
+            mirror.url,
+            '--trusted-host',
+            hostname
+          ], {
+            cwd: this.pythonPath,
+            stdio: 'pipe'
+          })
+
+          proc.stdout?.on('data', (data) => {
+            const output = data.toString().trim()
+            logService.info('环境服务', `pip 安装输出: ${output}`)
+
+            // 根据输出更新进度
+            if (output.includes('Collecting')) {
+              onOpProgress({ progress: 40, description: '正在下载 pip 组件...' })
+            } else if (output.includes('Installing')) {
+              onOpProgress({ progress: 70, description: '正在安装 pip...' })
+            }
+          })
+
+          proc.stderr?.on('data', (data) => {
+            logService.error('环境服务', `pip 安装错误: ${data.toString().trim()}`)
+          })
+
+          proc.on('close', (code) => {
+            if (code === 0) {
+              logService.info('环境服务', '✅ Pip 安装成功')
+              onOpProgress({ progress: 100, description: 'Pip 安装完成' })
+              resolve()
+            } else {
+              reject(new Error(`Pip 安装失败，退出码: ${code}`))
+            }
+          })
+
+          proc.on('error', reject)
         })
 
-        let progressReported = false
-
-        proc.stdout?.on('data', (data) => {
-          const output = data.toString().trim()
-          logService.info('环境服务', `pip 安装输出: ${output}`)
-
-          // 根据输出更新进度
-          if (!progressReported && output.includes('Collecting')) {
-            onProgress?.(40, '正在下载 pip 组件...')
-            progressReported = true
-          } else if (output.includes('Installing')) {
-            onProgress?.(70, '正在安装 pip...')
-          }
-        })
-
-        proc.stderr?.on('data', (data) => {
-          logService.error('环境服务', `pip 安装错误: ${data.toString().trim()}`)
-        })
-
-        proc.on('close', (code) => {
-          if (code === 0) {
-            logService.info('环境服务', '✅ Pip 安装成功')
-            resolve()
-          } else {
-            reject(new Error(`Pip 安装失败，退出码: ${code}`))
-          }
-        })
-
-        proc.on('error', reject)
-      })
-
-      // 清理临时文件
-      onProgress?.(90, '清理临时文件...')
-      if (fs.existsSync(getPipPath)) {
-        fs.unlinkSync(getPipPath)
+        return { success: true }
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error)
+        return { success: false, error: errorMsg }
       }
-
-      onProgress?.(100, 'Pip 安装完成')
-      return { success: true }
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error)
-      logService.error('环境服务', `Pip 安装失败: ${errorMsg}`)
-      return { success: false, error: errorMsg }
     }
+
+    // 使用镜像源轮替执行安装
+    const result = await this.rotationService.execute(mirrors, installOperation, (rotationProgress) => {
+      const totalProgress = rotationProgress.operationProgress.progress
+      const message = rotationProgress.operationProgress.description
+      const details = {
+        currentMirror: rotationProgress.currentMirror.name,
+        mirrorProgress: {
+          current: rotationProgress.mirrorIndex + 1,
+          total: rotationProgress.totalMirrors
+        },
+        operationDesc: rotationProgress.operationProgress.description
+      }
+      onProgress?.(totalProgress, message, details)
+    }, selectedMirror)
+
+    if (!result.success) {
+      return { success: false, error: result.error }
+    }
+
+    // 清理临时文件
+    logService.info('环境服务', '清理临时文件...')
+    if (fs.existsSync(getPipPath)) {
+      fs.unlinkSync(getPipPath)
+    }
+
+    logService.info('环境服务', `✅ Pip 安装完成，使用镜像源: ${result.usedMirror?.name}`)
+    return { success: true }
   }
 }
 
@@ -606,7 +646,10 @@ export class GitInstaller extends BaseEnvironmentInstaller {
     return { success: true }
   }
 
-  protected async installEnvironment(onProgress?: (progress: number, message: string) => void): Promise<{ success: boolean; error?: string }> {
+  protected async installEnvironment(
+    onProgress?: (progress: number, message: string, details?: any) => void,
+    selectedMirror?: string
+  ): Promise<{ success: boolean; error?: string }> {
     logService.info('环境服务', '=== 安装 Git 环境 ===')
 
     const tempZipPath = path.join(this.appRoot, 'temp', 'git.zip')
