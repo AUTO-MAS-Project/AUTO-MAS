@@ -25,6 +25,7 @@ import shlex
 import shutil
 import asyncio
 from pathlib import Path
+from contextlib import suppress
 from datetime import datetime, timedelta
 
 from app.core import Config
@@ -123,17 +124,15 @@ class AutoProxyTask(TaskExecuteBase):
         self.script_config_path = Path(self.script_config.get("Script", "ConfigPath"))
 
         self.script_log_path = Path(self.script_config.get("Script", "LogPath"))
-        log_format = self.script_config.get("Script", "LogPathFormat")
-        if log_format:
-            log_file_name = datetime.now().strftime(log_format)
+        self.log_format = self.script_config.get("Script", "LogPathFormat")
+        if self.log_format:
+            log_file_name = datetime.now().strftime(self.log_format)
             try:
-                datetime.strptime(self.script_log_path.stem, log_format)
+                datetime.strptime(self.script_log_path.stem, self.log_format)
                 self.script_log_path = self.script_log_path.with_stem(log_file_name)
+                self.log_format = f"{self.log_format}{self.script_log_path.suffix}"
             except ValueError:
                 self.script_log_path = self.script_log_path.with_name(log_file_name)
-        if not self.script_log_path.exists():
-            self.script_log_path.parent.mkdir(parents=True, exist_ok=True)
-            self.script_log_path.touch(exist_ok=True)
 
         self.game_path = Path(self.script_config.get("Game", "Path"))
         self.game_url = self.script_config.get("Game", "URL")
@@ -274,9 +273,33 @@ class AutoProxyTask(TaskExecuteBase):
             )
 
             self.wait_event.clear()
+            t = datetime.now()
             await self.general_process_manager.open_process(
                 self.script_exe_path, *self.script_arguments
             )
+
+            # 含时分秒的日志文件需要捕获日志文件生成
+            if any(_ in self.log_format for _ in ("%H", "%M", "%S", "%f")):
+
+                if_get_file = False
+
+                while datetime.now() - t < timedelta(minutes=1):
+
+                    for log_file in self.script_log_path.parent.iterdir():
+                        if log_file.is_file():
+                            with suppress(ValueError):
+                                log_dt = strptime(log_file.name, self.log_format, t)
+
+                            if log_dt >= t:
+                                self.script_log_path = log_file
+                                if_get_file = True
+                                break
+                    else:
+                        await asyncio.sleep(1)
+
+                    if if_get_file:
+                        break
+
             await self.general_log_monitor.start_monitor_file(
                 self.script_log_path, self.log_start_time
             )
