@@ -1946,7 +1946,7 @@ class AppConfig(GlobalConfig):
 
         # 保存日志
         log_path.parent.mkdir(parents=True, exist_ok=True)
-        log_path.write_text("\n".join(logs), encoding="utf-8")
+        log_path.write_text("".join(logs), encoding="utf-8")
         # 保存统计数据
         log_path.with_suffix(".json").write_text(
             json.dumps(data, ensure_ascii=False, indent=4), encoding="utf-8"
@@ -1975,7 +1975,7 @@ class AppConfig(GlobalConfig):
 
         # 保存日志
         log_path.parent.mkdir(parents=True, exist_ok=True)
-        log_path.with_suffix(".log").write_text("\n".join(logs), encoding="utf-8")
+        log_path.with_suffix(".log").write_text("".join(logs), encoding="utf-8")
         log_path.with_suffix(".json").write_text(
             json.dumps(data, ensure_ascii=False, indent=4), encoding="utf-8"
         )
