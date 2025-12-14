@@ -78,8 +78,9 @@ const handleCollapseChange = (keys: string | string[]) => {
 
 <style scoped>
 .date-sidebar {
-  width: 220px;
-  flex-shrink: 0;
+  flex: 0 0 25%;
+  min-width: 200px;
+  max-width: 300px;
   display: flex;
   flex-direction: column;
   background: var(--ant-color-bg-container);
@@ -237,13 +238,7 @@ const handleCollapseChange = (keys: string | string[]) => {
   color: var(--ant-color-text-secondary);
 }
 
-@media (max-width: 1100px) {
-  .date-sidebar {
-    width: 100%;
-    max-height: 240px;
-    flex-shrink: 0;
-  }
-}
+
 </style>
 
 <style>

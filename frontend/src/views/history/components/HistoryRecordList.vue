@@ -38,24 +38,20 @@
           <div class="record-content">
             <div class="record-main">
               <span class="record-time">{{ record.date }}</span>
-              <a-tooltip
-                v-if="record.status === 'ERROR' && errorInfo && errorInfo[record.date]"
-                :title="errorInfo[record.date]"
-                placement="topLeft"
-              >
-                <a-tag color="error" size="small" class="status-tag clickable">
-                  <CloseCircleOutlined /> 失败
-                </a-tag>
-              </a-tooltip>
               <a-tag
-                v-else
                 :color="record.status === 'DONE' ? 'success' : 'error'"
                 size="small"
                 class="status-tag"
               >
                 <CheckCircleOutlined v-if="record.status === 'DONE'" />
                 <CloseCircleOutlined v-else />
-                {{ record.status === 'DONE' ? '完成' : '失败' }}
+                {{
+                  record.status === 'DONE'
+                    ? '完成'
+                    : record.status === 'ERROR' && errorInfo && errorInfo[record.date]
+                      ? `失败: ${errorInfo[record.date]}`
+                      : '失败'
+                }}
               </a-tag>
             </div>
             <div class="record-file">{{ record.jsonFile }}</div>
@@ -267,10 +263,9 @@ defineEmits<{
   align-items: center;
   gap: 4px;
   font-size: 11px;
-}
-
-.status-tag.clickable {
-  cursor: help;
+  max-width: 100%;
+  white-space: normal;
+  word-break: break-word;
 }
 
 .record-file {
