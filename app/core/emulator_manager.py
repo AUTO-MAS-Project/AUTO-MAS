@@ -25,6 +25,7 @@ import asyncio
 from typing import Dict, Literal
 
 from .config import Config
+from app.models.config import EmulatorConfig
 from app.models.emulator import DeviceBase
 from app.models.schema import DeviceInfo as SchemaDeviceInfo
 from app.utils import EMULATOR_TYPE_BOOK
@@ -42,7 +43,8 @@ class _EmulatorManager:
 
         emulator_uid = uuid.UUID(emulator_id)
 
-        config = Config.EmulatorConfig[emulator_uid]
+        config = EmulatorConfig()
+        await config.load(await Config.EmulatorConfig[emulator_uid].toDict())
         if config.get("Data", "Type") in EMULATOR_TYPE_BOOK:
             return EMULATOR_TYPE_BOOK[config.get("Data", "Type")](config)
         else:
