@@ -210,11 +210,4 @@ const handleSelectRecord = async (index: number, record: any) => {
   min-height: 0;
   overflow: hidden;
 }
-
-@media (max-width: 900px) {
-  .content-layout {
-    flex-direction: column;
-    overflow-y: auto;
-  }
-}
 </style>
