@@ -48,15 +48,32 @@
 </template>
 
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
-import { BorderOutlined, CloseOutlined, MinusOutlined } from '@ant-design/icons-vue'
-import { useTheme } from '@/composables/useTheme'
-import { useAppClosing } from '@/composables/useAppClosing'
 import type { UpdateCheckOut } from '@/api'
 import { Service, type VersionOut } from '@/api'
+import { useAppClosing } from '@/composables/useAppClosing'
+import { useTheme } from '@/composables/useTheme'
 import { getLogger } from '@/utils/logger'
+import { BorderOutlined, CloseOutlined, MinusOutlined } from '@ant-design/icons-vue'
+import { Modal } from 'ant-design-vue'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 
 const logger = getLogger('标题栏')
+
+// 检查是否有运行中的队列任务
+const hasRunningTasks = (): boolean => {
+  try {
+    const saved = sessionStorage.getItem('scheduler-tabs-session')
+    if (saved) {
+      const tabs = JSON.parse(saved)
+      if (Array.isArray(tabs)) {
+        return tabs.some((tab: any) => tab.status === '运行')
+      }
+    }
+  } catch (error) {
+    logger.warn('检查运行任务状态失败:', error)
+  }
+  return false
+}
 
 const { isDark } = useTheme()
 const { showClosingOverlay } = useAppClosing()
@@ -128,27 +145,39 @@ const toggleMaximize = async () => {
   }
 }
 
-const closeWindow = async () => {
+// 执行实际的关闭操作
+const doCloseWindow = async () => {
   try {
     logger.info('开始关闭应用...')
 
     // 显示关闭遮罩
     showClosingOverlay()
 
-    // 第一步：停止后端服务（通过 /api/core/close 优雅关闭）
-    try {
-      logger.info('正在停止后端服务...')
-      await window.electronAPI?.stopBackend()
-      logger.info('后端服务已停止')
-    } catch (error) {
-      logger.warn('停止后端失败:', error)
-    }
-
-    // 第二步：退出 Electron 应用
+    // 直接关闭窗口，后台清理由主进程处理
     logger.info('正在退出应用...')
     await window.electronAPI?.appQuit()
   } catch (error) {
     logger.error('关闭应用失败:', error)
+  }
+}
+
+const closeWindow = async () => {
+  // 检查是否有运行中的队列任务
+  if (hasRunningTasks()) {
+    Modal.confirm({
+      title: '确认关闭',
+      content: '队列正在运行中，确认关闭AUTO-MAS吗？',
+      okText: '确认关闭',
+      cancelText: '取消',
+      okType: 'danger',
+      centered: true,
+      onOk: () => {
+        doCloseWindow()
+      },
+    })
+  } else {
+    // 没有运行中的任务，直接关闭
+    await doCloseWindow()
   }
 }
 
