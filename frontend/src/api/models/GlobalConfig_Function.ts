@@ -20,8 +20,8 @@ export type GlobalConfig_Function = {
      */
     IfAgreeBilibili?: (boolean | null);
     /**
-     * 跳过Mumu模拟器启动广告
+     * 屏蔽模拟器广告
      */
-    IfSkipMumuSplashAds?: (boolean | null);
+    IfBlockAd?: (boolean | null);
 };
 

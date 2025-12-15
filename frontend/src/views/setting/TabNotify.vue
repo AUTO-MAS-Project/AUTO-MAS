@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
-import type { SettingsData } from '@/types/settings'
+import type { GlobalConfig } from '@/api'
 import WebhookManager from '@/components/WebhookManager.vue'
 import { handleExternalLink } from '@/utils/openExternal'
 
 const props = defineProps<{
-  settings: SettingsData
+  settings: GlobalConfig
   sendTaskResultTimeOptions: { label: string; value: string }[]
-  handleSettingChange: (category: keyof SettingsData, key: string, value: any) => Promise<void>
+  handleSettingChange: (category: keyof GlobalConfig, key: string, value: any) => Promise<void>
   testNotify: () => Promise<void>
   testingNotify: boolean
 }>()
@@ -17,7 +17,7 @@ const { settings, sendTaskResultTimeOptions, handleSettingChange, testNotify, te
 
 // 处理 Webhook 变化
 const handleWebhookChange = async () => {
-  await handleSettingChange('Notify', 'CustomWebhooks', settings.Notify.CustomWebhooks)
+  // Webhook 变化由 WebhookManager 组件内部处理，这里不需要额外处理
 }
 </script>
 
@@ -45,7 +45,7 @@ const handleWebhookChange = async () => {
               </a-tooltip>
             </div>
             <a-select
-              v-model:value="settings.Notify.SendTaskResultTime"
+              :value="settings.Notify?.SendTaskResultTime"
               :options="sendTaskResultTimeOptions"
               size="large"
               style="width: 100%"
@@ -62,7 +62,7 @@ const handleWebhookChange = async () => {
               </a-tooltip>
             </div>
             <a-select
-              v-model:value="settings.Notify.IfSendStatistic"
+              :value="settings.Notify?.IfSendStatistic"
               size="large"
               style="width: 100%"
               @change="(checked: any) => handleSettingChange('Notify', 'IfSendStatistic', checked)"
@@ -81,7 +81,7 @@ const handleWebhookChange = async () => {
               </a-tooltip>
             </div>
             <a-select
-              v-model:value="settings.Notify.IfSendSixStar"
+              :value="settings.Notify?.IfSendSixStar"
               size="large"
               style="width: 100%"
               @change="(checked: any) => handleSettingChange('Notify', 'IfSendSixStar', checked)"
@@ -108,7 +108,7 @@ const handleWebhookChange = async () => {
               </a-tooltip>
             </div>
             <a-select
-              v-model:value="settings.Notify.IfPushPlyer"
+              :value="settings.Notify?.IfPushPlyer"
               size="large"
               style="width: 100%"
               @change="(checked: any) => handleSettingChange('Notify', 'IfPushPlyer', checked)"
@@ -143,7 +143,7 @@ const handleWebhookChange = async () => {
               </a-tooltip>
             </div>
             <a-select
-              v-model:value="settings.Notify.IfSendMail"
+              :value="settings.Notify?.IfSendMail"
               size="large"
               style="width: 100%"
               @change="(checked: any) => handleSettingChange('Notify', 'IfSendMail', checked)"
@@ -162,17 +162,11 @@ const handleWebhookChange = async () => {
               </a-tooltip>
             </div>
             <a-input
-              v-model:value="settings.Notify.SMTPServerAddress"
-              :disabled="!settings.Notify.IfSendMail"
+              :value="settings.Notify?.SMTPServerAddress"
+              :disabled="!settings.Notify?.IfSendMail"
               placeholder="请输入发信邮箱SMTP服务器地址"
               size="large"
-              @blur="
-                handleSettingChange(
-                  'Notify',
-                  'SMTPServerAddress',
-                  settings.Notify.SMTPServerAddress
-                )
-              "
+              @blur="(e: any) => handleSettingChange('Notify', 'SMTPServerAddress', e.target.value)"
             />
           </div>
         </a-col>
@@ -187,11 +181,11 @@ const handleWebhookChange = async () => {
               </a-tooltip>
             </div>
             <a-input
-              v-model:value="settings.Notify.FromAddress"
-              :disabled="!settings.Notify.IfSendMail"
+              :value="settings.Notify?.FromAddress"
+              :disabled="!settings.Notify?.IfSendMail"
               placeholder="请输入发信邮箱地址"
               size="large"
-              @blur="handleSettingChange('Notify', 'FromAddress', settings.Notify.FromAddress)"
+              @blur="(e: any) => handleSettingChange('Notify', 'FromAddress', e.target.value)"
             />
           </div>
         </a-col>
@@ -204,17 +198,11 @@ const handleWebhookChange = async () => {
               </a-tooltip>
             </div>
             <a-input-password
-              v-model:value="settings.Notify.AuthorizationCode"
-              :disabled="!settings.Notify.IfSendMail"
+              :value="settings.Notify?.AuthorizationCode"
+              :disabled="!settings.Notify?.IfSendMail"
               placeholder="请输入发信邮箱授权码"
               size="large"
-              @blur="
-                handleSettingChange(
-                  'Notify',
-                  'AuthorizationCode',
-                  settings.Notify.AuthorizationCode
-                )
-              "
+              @blur="(e: any) => handleSettingChange('Notify', 'AuthorizationCode', e.target.value)"
             />
           </div>
         </a-col>
@@ -229,11 +217,11 @@ const handleWebhookChange = async () => {
               </a-tooltip>
             </div>
             <a-input
-              v-model:value="settings.Notify.ToAddress"
-              :disabled="!settings.Notify.IfSendMail"
+              :value="settings.Notify?.ToAddress"
+              :disabled="!settings.Notify?.IfSendMail"
               placeholder="请输入收信邮箱地址"
               size="large"
-              @blur="handleSettingChange('Notify', 'ToAddress', settings.Notify.ToAddress)"
+              @blur="(e: any) => handleSettingChange('Notify', 'ToAddress', e.target.value)"
             />
           </div>
         </a-col>
@@ -265,7 +253,7 @@ const handleWebhookChange = async () => {
               </a-tooltip>
             </div>
             <a-select
-              v-model:value="settings.Notify.IfServerChan"
+              :value="settings.Notify?.IfServerChan"
               size="large"
               style="width: 100%"
               @change="(checked: any) => handleSettingChange('Notify', 'IfServerChan', checked)"
@@ -287,11 +275,11 @@ const handleWebhookChange = async () => {
               </a-tooltip>
             </div>
             <a-input
-              v-model:value="settings.Notify.ServerChanKey"
-              :disabled="!settings.Notify.IfServerChan"
+              :value="settings.Notify?.ServerChanKey"
+              :disabled="!settings.Notify?.IfServerChan"
               placeholder="请输入Server酱SendKey"
               size="large"
-              @blur="handleSettingChange('Notify', 'ServerChanKey', settings.Notify.ServerChanKey)"
+              @blur="(e: any) => handleSettingChange('Notify', 'ServerChanKey', e.target.value)"
             />
           </div>
         </a-col>
@@ -312,7 +300,7 @@ const handleWebhookChange = async () => {
               </a-tooltip>
             </div>
             <a-select
-              v-model:value="settings.Notify.IfSendKoishi"
+              :value="settings.Notify?.IfSendKoishi"
               size="large"
               style="width: 100%"
               @change="(checked: any) => handleSettingChange('Notify', 'IfSendKoishi', checked)"
@@ -333,17 +321,11 @@ const handleWebhookChange = async () => {
               </a-tooltip>
             </div>
             <a-input
-              v-model:value="settings.Notify.KoishiServerAddress"
-              :disabled="!settings.Notify.IfSendKoishi"
+              :value="settings.Notify?.KoishiServerAddress"
+              :disabled="!settings.Notify?.IfSendKoishi"
               placeholder="请输入Koishi服务器地址"
               size="large"
-              @blur="
-                handleSettingChange(
-                  'Notify',
-                  'KoishiServerAddress',
-                  settings.Notify.KoishiServerAddress
-                )
-              "
+              @blur="(e: any) => handleSettingChange('Notify', 'KoishiServerAddress', e.target.value)"
             />
           </div>
         </a-col>
@@ -356,11 +338,11 @@ const handleWebhookChange = async () => {
               </a-tooltip>
             </div>
             <a-input-password
-              v-model:value="settings.Notify.KoishiToken"
-              :disabled="!settings.Notify.IfSendKoishi"
+              :value="settings.Notify?.KoishiToken"
+              :disabled="!settings.Notify?.IfSendKoishi"
               placeholder="请输入Koishi Token"
               size="large"
-              @blur="handleSettingChange('Notify', 'KoishiToken', settings.Notify.KoishiToken)"
+              @blur="(e: any) => handleSettingChange('Notify', 'KoishiToken', e.target.value)"
             />
           </div>
         </a-col>
