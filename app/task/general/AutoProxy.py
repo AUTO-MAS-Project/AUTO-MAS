@@ -256,12 +256,12 @@ class AutoProxyTask(TaskExecuteBase):
                         await self.game_manager.kill()
                     elif isinstance(self.game_manager, DeviceBase):
                         await self.game_manager.close(
-                            self.script_config.get("Game", "EmulatorIndex"),
+                            self.script_config.get("Game", "EmulatorIndex")
                         )
 
                     await Notify.push_plyer(
                         "用户自动代理出现异常！",
-                        f"用户 {self.cur_user_item.name} 的自动代理出现一次异常",
+                        f"用户 {self.cur_user_item.name} 自动代理时模拟器启动失败",
                         f"{self.cur_user_item.name}的自动代理出现异常",
                         3,
                     )
@@ -292,6 +292,9 @@ class AutoProxyTask(TaskExecuteBase):
 
                             if log_dt >= t:
                                 self.script_log_path = log_file
+                                logger.success(
+                                    f"成功定位到日志文件: {self.script_log_path}"
+                                )
                                 if_get_file = True
                                 break
                     else:
@@ -299,6 +302,24 @@ class AutoProxyTask(TaskExecuteBase):
 
                     if if_get_file:
                         break
+                else:
+                    logger.error(f"用户: {self.cur_user_uid} - 未找到日志文件")
+                    await Config.send_websocket_message(
+                        id=self.task_info.task_id,
+                        type="Info",
+                        data={"Error": "未找到指定日志文件"},
+                    )
+                    self.cur_user_log.content = ["未找到日志文件, 无日志记录"]
+                    self.cur_user_log.status = "未找到日志文件"
+
+                    await self.close_script_process()
+                    await Notify.push_plyer(
+                        "用户自动代理出现异常！",
+                        f"用户 {self.cur_user_item.name} 自动代理时未找到日志文件",
+                        f"{self.cur_user_item.name}的自动代理出现异常",
+                        3,
+                    )
+                    continue
 
             await self.general_log_monitor.start_monitor_file(
                 self.script_log_path, self.log_start_time
