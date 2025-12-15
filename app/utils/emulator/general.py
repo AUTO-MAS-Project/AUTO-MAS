@@ -146,7 +146,7 @@ class GeneralDeviceManager(DeviceBase):
                 keyboard.press_and_release(
                     "+".join(
                         _.strip().lower()
-                        for _ in json.loads(self.config.get("Info", "BossKeys"))
+                        for _ in json.loads(self.config.get("Data", "BossKey"))
                     )
                 )  # 老板键
             except Exception as e:
