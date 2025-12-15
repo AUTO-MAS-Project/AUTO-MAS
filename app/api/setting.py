@@ -85,22 +85,8 @@ async def update_script(script: SettingUpdateIn = Body(...)) -> OutBase:
 
         if data.get("Start", {}).get("IfSelfStart", None) is not None:
             await System.set_SelfStart()
-        if data.get("Function", None) is not None:
-            function = data["Function"]
-            if function.get("IfAllowSleep", None) is not None:
-                await System.set_Sleep()
-            if function.get("IfSkipMumuSplashAds", None) is not None:
-                MuMu_splash_ads_path = (
-                    Path(os.getenv("APPDATA") or "")
-                    / "Netease/MuMuPlayer-12.0/data/startupImage"
-                )
-                if Config.get("Function", "IfSkipMumuSplashAds"):
-                    if MuMu_splash_ads_path.exists() and MuMu_splash_ads_path.is_dir():
-                        shutil.rmtree(MuMu_splash_ads_path)
-                    MuMu_splash_ads_path.touch()
-                else:
-                    if MuMu_splash_ads_path.exists() and MuMu_splash_ads_path.is_file():
-                        MuMu_splash_ads_path.unlink()
+        if data.get("Function", {}).get("IfAllowSleep", None) is not None:
+            await System.set_Sleep()
 
     except Exception as e:
         return OutBase(

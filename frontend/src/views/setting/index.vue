@@ -5,7 +5,7 @@ import { message } from 'ant-design-vue'
 import type { ThemeColor, ThemeMode } from '@/composables/useTheme'
 import { useTheme } from '@/composables/useTheme'
 import type { SelectValue } from 'ant-design-vue/es/select'
-import type { SettingsData } from '@/types/settings'
+import type { GlobalConfig } from '@/api'
 import { useSettingsApi } from '@/composables/useSettingsApi'
 import { useUpdateChecker } from '@/composables/useUpdateChecker.ts'
 import { Service, type VersionOut } from '@/api'
@@ -52,41 +52,8 @@ const mirrorConfigStatus = ref<MirrorConfigStatus>({
 })
 const refreshingConfig = ref(false)
 
-const settings = reactive<SettingsData>({
-  UI: { IfShowTray: false, IfToTray: false },
-  Function: {
-    HistoryRetentionTime: 0,
-    IfAgreeBilibili: false,
-    IfAllowSleep: false,
-    IfSilence: false,
-    IfSkipMumuSplashAds: false,
-  },
-  Notify: {
-    SendTaskResultTime: '不推送',
-    IfSendStatistic: false,
-    IfSendSixStar: false,
-    IfPushPlyer: false,
-    IfSendMail: false,
-    SMTPServerAddress: '',
-    AuthorizationCode: '',
-    FromAddress: '',
-    ToAddress: '',
-    IfServerChan: false,
-    ServerChanKey: '',
-    ServerChanChannel: '',
-    ServerChanTag: '',
-    CustomWebhooks: [],
-  },
-  Voice: { Enabled: false, Type: 'simple' },
-  Start: { IfSelfStart: false, IfMinimizeDirectly: false },
-  Update: {
-    IfAutoUpdate: false,
-    Source: 'GitHub',
-    Channel: 'Stable',
-    ProxyAddress: '',
-    MirrorChyanCDK: '',
-  },
-})
+// 设置数据 - 从API获取，不再使用硬编码初值
+const settings = reactive<GlobalConfig>({})
 
 // 下拉选项
 const historyRetentionOptions = [
@@ -171,20 +138,40 @@ const loadSettings = async () => {
   }
 }
 
-const saveSettings = async (category: keyof SettingsData, changes: any) => {
+// 保存设置 - 只发送修改的字段（遵循最小原则）
+const saveSettings = async (category: keyof GlobalConfig, changes: any): Promise<boolean> => {
   try {
-    const updateData = { [category]: changes }
+    const updateData: GlobalConfig = { [category]: changes }
     const result = await updateSettings(updateData)
-    if (!result) message.error('设置保存失败')
+    if (!result) {
+      message.error('设置保存失败')
+      return false
+    }
+    return true
   } catch (e) {
     logger.error('设置保存失败', e)
     message.error('设置保存失败')
+    return false
   }
 }
 
-const handleSettingChange = async (category: keyof SettingsData, key: string, value: any) => {
+// 刷新设置数据
+const refreshSettings = async () => {
+  const data = await getSettings()
+  if (data) {
+    Object.assign(settings, data)
+  }
+}
+
+const handleSettingChange = async (category: keyof GlobalConfig, key: string, value: any) => {
+  // 只发送修改的字段
   const changes = { [key]: value }
-  await saveSettings(category, changes)
+  const success = await saveSettings(category, changes)
+  
+  // 更新成功后重新获取最新配置
+  if (success) {
+    await refreshSettings()
+  }
 
   // 处理托盘相关配置
   if (category === 'UI' && (key === 'IfShowTray' || key === 'IfToTray')) {
