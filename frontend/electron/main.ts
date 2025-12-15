@@ -1312,7 +1312,12 @@ app.commandLine.appendSwitch('no-sandbox')
 
 app.on('second-instance', () => {
   if (mainWindow) {
-    if (mainWindow.isMinimized()) mainWindow.restore()
+    // 如果窗口最小化，先恢复
+    if (mainWindow.isMinimized()) {
+      mainWindow.restore()
+    }
+    mainWindow.setSkipTaskbar(false)
+    mainWindow.show()
     mainWindow.focus()
   }
 })
