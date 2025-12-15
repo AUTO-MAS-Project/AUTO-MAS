@@ -30,7 +30,6 @@ from contextlib import suppress
 from datetime import datetime, timedelta
 from pathlib import Path
 
-
 from app.models.emulator import DeviceStatus, DeviceInfo, DeviceBase
 from app.models.config import EmulatorConfig
 from app.utils import ProcessRunner, get_logger

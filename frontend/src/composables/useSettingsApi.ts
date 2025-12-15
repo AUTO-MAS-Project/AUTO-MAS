@@ -1,19 +1,18 @@
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
-import { Service } from '@/api'
-import type { SettingsData } from '@/types/script'
+import { GetService, UpdateService, type GlobalConfig } from '@/api'
 
 export function useSettingsApi() {
   const loading = ref(false)
   const error = ref<string | null>(null)
 
   // 获取设置
-  const getSettings = async (): Promise<SettingsData | null> => {
+  const getSettings = async (): Promise<GlobalConfig | null> => {
     loading.value = true
     error.value = null
 
     try {
-      const response = await Service.getScriptsApiSettingGetPost()
+      const response = await GetService.getScriptsApiSettingGetPost()
 
       // 根据code判断是否成功（非200就是不成功）
       if (response.code !== 200) {
@@ -22,8 +21,8 @@ export function useSettingsApi() {
         throw new Error(errorMsg)
       }
 
-      return response.data as SettingsData
-    } catch (err) {
+      return response.data
+    } catch (err: any) {
       const errorMsg = err instanceof Error ? err.message : '获取设置失败'
       error.value = errorMsg
       if (!err.message?.includes('HTTP error')) {
@@ -35,13 +34,13 @@ export function useSettingsApi() {
     }
   }
 
-  // 更新设置
-  const updateSettings = async (settings: Partial<SettingsData>): Promise<boolean> => {
+  // 更新设置 - 只发送修改的字段
+  const updateSettings = async (settings: GlobalConfig): Promise<boolean> => {
     loading.value = true
     error.value = null
 
     try {
-      const response = await Service.updateScriptApiSettingUpdatePost({
+      const response = await UpdateService.updateScriptApiSettingUpdatePost({
         data: settings,
       })
 
@@ -54,7 +53,7 @@ export function useSettingsApi() {
 
       message.success(response.message || '设置修改成功')
       return true
-    } catch (err) {
+    } catch (err: any) {
       const errorMsg = err instanceof Error ? err.message : '设置修改失败'
       error.value = errorMsg
       if (!err.message?.includes('HTTP error')) {

@@ -155,4 +155,9 @@ export type { WebhookTestIn } from './models/WebhookTestIn';
 export type { WebhookUpdateIn } from './models/WebhookUpdateIn';
 
 export { Service } from './services/Service';
+export { ActionService } from './services/ActionService';
+export { AddService } from './services/AddService';
+export { DeleteService } from './services/DeleteService';
+export { GetService } from './services/GetService';
 export { OcrService } from './services/OcrService';
+export { UpdateService } from './services/UpdateService';
