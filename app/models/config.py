@@ -395,7 +395,7 @@ class MaaUserConfig(ConfigBase):
                     return str(i)
 
         else:
-            return v
+            return v or "0"
 
 
 class MaaConfig(ConfigBase):
