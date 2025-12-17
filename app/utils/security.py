@@ -20,8 +20,36 @@
 #   Contact: DLmaster_361@163.com
 
 
+import re
 import base64
 import win32crypt
+
+
+def sanitize_log_message(message: str) -> str:
+    """
+    从日志消息中移除敏感信息
+
+    :param message: 原始日志消息
+    :type message: str
+    :return: 过滤后的日志消息
+    :rtype: str
+    """
+    # 定义需要过滤的敏感参数模式
+    sensitive_patterns = [
+        (r"(cdk=)[^&\s]+", r"\1***"),  # cdk参数
+        (r"(password=)[^&\s]+", r"\1***"),  # password参数
+        (r"(token=)[^&\s]+", r"\1***"),  # token参数
+        (r"(api_key=)[^&\s]+", r"\1***"),  # api_key参数
+        (r"(secret=)[^&\s]+", r"\1***"),  # secret参数
+    ]
+
+    sanitized_message = message
+    for pattern, replacement in sensitive_patterns:
+        sanitized_message = re.sub(
+            pattern, replacement, sanitized_message, flags=re.IGNORECASE
+        )
+
+    return sanitized_message
 
 
 def dpapi_encrypt(

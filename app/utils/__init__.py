@@ -30,7 +30,7 @@ from .logger import get_logger
 from .ImageUtils import ImageUtils
 from .LogMonitor import LogMonitor, strptime
 from .ProcessManager import ProcessManager, ProcessRunner, ProcessInfo, ProcessResult
-from .security import dpapi_encrypt, dpapi_decrypt
+from .security import dpapi_encrypt, dpapi_decrypt, sanitize_log_message
 from .emulator import MumuManager, LDManager, search_all_emulators, EMULATOR_TYPE_BOOK
 from .tools import decode_bytes
 
@@ -45,6 +45,7 @@ __all__ = [
     "ProcessResult",
     "dpapi_encrypt",
     "dpapi_decrypt",
+    "sanitize_log_message",
     "strptime",
     "MumuManager",
     "LDManager",
