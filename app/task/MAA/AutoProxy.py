@@ -332,11 +332,13 @@ class AutoProxyTask(TaskExecuteBase):
         await self.maa_process_manager.kill()
         await System.kill_process(self.maa_exe_path)
 
+        # 哔哩哔哩用户协议
         if self.cur_user_config.get("Info", "Server") == "Bilibili":
             await agree_bilibili(self.maa_tasks_path, True)
         else:
             await agree_bilibili(self.maa_tasks_path, False)
 
+        # 基础配置内容
         if self.cur_user_config.get("Info", "Mode") == "简洁":
             shutil.copy(
                 (
@@ -356,34 +358,52 @@ class AutoProxyTask(TaskExecuteBase):
 
         maa_set = json.loads(self.maa_set_path.read_text(encoding="utf-8"))
 
+        # 多配置使用默认配置
         if maa_set["Current"] != "Default":
             maa_set["Configurations"]["Default"] = maa_set["Configurations"][
                 maa_set["Current"]
             ]
             maa_set["Current"] = "Default"
+
+        # 关闭所有定时
         for i in range(1, 9):
             maa_set["Global"][f"Timer.Timer{i}"] = "False"
 
+        # 矫正 ADB 地址
         if emulator_info.adb_address != "Unknown":
             maa_set["Configurations"]["Default"][
                 "Connect.Address"
             ] = emulator_info.adb_address
+
+        # 任务间切换方式
         maa_set["Configurations"]["Default"]["MainFunction.PostActions"] = (
             MAA_TASK_TRANSITION_METHOD_BOOK[
                 self.script_config.get("Run", "TaskTransitionMethod")
             ]
         )
+
+        # 直接运行任务
         maa_set["Configurations"]["Default"]["Start.RunDirectly"] = "True"
         maa_set["Configurations"]["Default"]["Start.OpenEmulatorAfterLaunch"] = "False"
 
+        # 更新配置
         maa_set["Global"]["VersionUpdate.ScheduledUpdateCheck"] = "False"
         maa_set["Global"]["VersionUpdate.AutoDownloadUpdatePackage"] = "True"
         maa_set["Global"]["VersionUpdate.AutoInstallUpdatePackage"] = "False"
 
+        # 刷理智强制配置项
+        maa_set["Configurations"]["Default"]["Penguin.IsDrGrandet"] = "False"
+        maa_set["Configurations"]["Default"]["GUI.HideSeries"] = "False"
+        maa_set["Configurations"]["Default"]["GUI.AllowUseStoneSave"] = "False"
+        maa_set["Configurations"]["Default"]["GUI.HideUnavailableStage"] = "False"
+
+        # 静默模式相关配置
         if Config.get("Function", "IfSilence"):
             maa_set["Global"]["Start.MinimizeDirectly"] = "True"
             maa_set["Global"]["GUI.UseTray"] = "True"
             maa_set["Global"]["GUI.MinimizeToTray"] = "True"
+
+        # 服务器与账号切换
         maa_set["Configurations"]["Default"]["Start.ClientType"] = (
             self.cur_user_config.get("Info", "Server")
         )
@@ -393,11 +413,12 @@ class AutoProxyTask(TaskExecuteBase):
                 if len(self.cur_user_config.get("Info", "Id")) == 11
                 else self.cur_user_config.get("Info", "Id")
             )
-
         elif self.cur_user_config.get("Info", "Server") == "Bilibili":
             maa_set["Configurations"]["Default"]["Start.AccountName"] = (
                 self.cur_user_config.get("Info", "Id")
             )
+
+        # 任务配置
         maa_set["Configurations"]["Default"]["TaskQueue.WakeUp.IsChecked"] = "True"
         maa_set["Configurations"]["Default"]["TaskQueue.Recruiting.IsChecked"] = (
             self.task_dict["Recruiting"]
@@ -420,6 +441,8 @@ class AutoProxyTask(TaskExecuteBase):
         maa_set["Configurations"]["Default"]["TaskQueue.Reclamation.IsChecked"] = (
             self.task_dict["Reclamation"]
         )
+
+        # 任务顺序
         if (
             self.mode == "Annihilation"
             or self.cur_user_config.get("Info", "Mode") == "简洁"
@@ -432,6 +455,8 @@ class AutoProxyTask(TaskExecuteBase):
             maa_set["Configurations"]["Default"]["TaskQueue.Order.Mission"] = "5"
             maa_set["Configurations"]["Default"]["TaskQueue.Order.AutoRoguelike"] = "6"
             maa_set["Configurations"]["Default"]["TaskQueue.Order.Reclamation"] = "7"
+
+        # 加载关卡号配置
         if self.cur_user_config.get("Info", "StageMode") == "Fixed":
             plan_data = {
                 "MedicineNumb": self.cur_user_config.get("Info", "MedicineNumb"),
@@ -455,36 +480,45 @@ class AutoProxyTask(TaskExecuteBase):
                 "Stage_3": plan.get_current_info("Stage_3").getValue(),
                 "Stage_Remain": plan.get_current_info("Stage_Remain").getValue(),
             }
+
+        # 刷理智相关配置项
+        # 理智药相关
         maa_set["Configurations"]["Default"]["MainFunction.UseMedicine"] = (
             "False" if plan_data.get("MedicineNumb", 0) == 0 else "True"
         )
         maa_set["Configurations"]["Default"]["MainFunction.UseMedicine.Quantity"] = str(
             plan_data.get("MedicineNumb", 0)
         )
-        maa_set["Configurations"]["Default"]["MainFunction.Series.Quantity"] = (
-            plan_data.get("SeriesNumb", "0")
-        )
         if self.mode == "Annihilation":
+            # 关卡配置
             maa_set["Configurations"]["Default"]["MainFunction.Stage1"] = "Annihilation"
             maa_set["Configurations"]["Default"]["MainFunction.Stage2"] = ""
             maa_set["Configurations"]["Default"]["MainFunction.Stage3"] = ""
             maa_set["Configurations"]["Default"]["Fight.RemainingSanityStage"] = ""
-            maa_set["Configurations"]["Default"]["MainFunction.Series.Quantity"] = "1"
             maa_set["Configurations"]["Default"][
                 "MainFunction.Annihilation.UseCustom"
             ] = "True"
             maa_set["Configurations"]["Default"]["MainFunction.Annihilation.Stage"] = (
                 self.cur_user_config.get("Info", "Annihilation")
             )
-            maa_set["Configurations"]["Default"]["Penguin.IsDrGrandet"] = "False"
-            maa_set["Configurations"]["Default"]["GUI.CustomStageCode"] = "True"
+
+            # 附加配置
+            maa_set["Configurations"]["Default"]["MainFunction.TimesLimited"] = "False"
+            maa_set["Configurations"]["Default"]["MainFunction.Drops.Enable"] = "False"
+            maa_set["Configurations"]["Default"]["MainFunction.Series.Quantity"] = "1"
+
+            maa_set["Configurations"]["Default"]["GUI.CustomStageCode"] = "False"
             maa_set["Configurations"]["Default"]["GUI.UseAlternateStage"] = "False"
+            maa_set["Configurations"]["Default"]["Fight.UseExpiringMedicine"] = "True"
             maa_set["Configurations"]["Default"][
                 "Fight.UseRemainingSanityStage"
             ] = "False"
-            maa_set["Configurations"]["Default"]["Fight.UseExpiringMedicine"] = "True"
-            maa_set["Configurations"]["Default"]["GUI.HideSeries"] = "False"
+
         elif self.mode == "Routine":
+            # 关卡配置
+            maa_set["Configurations"]["Default"]["MainFunction.Series.Quantity"] = (
+                plan_data.get("SeriesNumb", "0")
+            )
             maa_set["Configurations"]["Default"]["MainFunction.Stage1"] = (
                 plan_data.get("Stage") if plan_data.get("Stage", "-") != "-" else ""
             )
@@ -506,10 +540,21 @@ class AutoProxyTask(TaskExecuteBase):
             maa_set["Configurations"]["Default"]["Fight.UseRemainingSanityStage"] = (
                 "True" if plan_data.get("Stage_Remain", "-") != "-" else "False"
             )
-
-            maa_set["Configurations"]["Default"]["Penguin.IsDrGrandet"] = "False"
             maa_set["Configurations"]["Default"]["GUI.CustomStageCode"] = "True"
-            maa_set["Configurations"]["Default"]["Fight.UseExpiringMedicine"] = "True"
+
+            # 简洁模式下托管的配置
+            if self.cur_user_config.get("Info", "Mode") == "简洁":
+                maa_set["Configurations"]["Default"][
+                    "MainFunction.TimesLimited"
+                ] = "False"
+                maa_set["Configurations"]["Default"][
+                    "MainFunction.Drops.Enable"
+                ] = "False"
+                maa_set["Configurations"]["Default"][
+                    "Fight.UseExpiringMedicine"
+                ] = "True"
+
+            # 基建配置
             if self.cur_user_config.get("Info", "InfrastMode") == "Custom":
                 infrast_path = (
                     Path.cwd()
