@@ -180,7 +180,11 @@ class LDManager(DeviceBase):
             result[idx] = DeviceInfo(
                 title=info.title,
                 status=status,
-                adb_address=f"127.0.0.1:{adb_port}" if adb_port != 0 else "Unknown",
+                adb_address=(
+                    f"127.0.0.1:{adb_port}"
+                    if adb_port != 0
+                    else f"emulator-{5554 + int(idx) * 2}"
+                ),
             )
 
         return result
