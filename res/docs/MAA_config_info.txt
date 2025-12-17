@@ -21,6 +21,9 @@
 #刷理智
 "MainFunction.UseMedicine": "True"        #吃理智药
 "MainFunction.UseMedicine.Quantity": "999"        #吃理智药数量
+"MainFunction.TimesLimited": "True"        #指定次数
+"MainFunction.TimesLimited.Quantity": "4"        #指定次数
+"MainFunction.Drops.Enable": "True"        #指定材料
 "MainFunction.Stage1": ""        #主关卡
 "MainFunction.Stage2": ""        #备选关卡1
 "MainFunction.Stage3": ""        #备选关卡2
