@@ -514,7 +514,6 @@ class AppConfig(GlobalConfig):
 
         for group, items in data.items():
             for name, value in items.items():
-                logger.debug(f"更新脚本配置: {script_id} - {group}.{name} = {value}")
                 await self.ScriptConfig[uid].set(group, name, value)
 
         await self.ScriptConfig.save()
@@ -756,7 +755,6 @@ class AppConfig(GlobalConfig):
 
         for group, items in data.items():
             for name, value in items.items():
-                logger.debug(f"更新脚本配置: {script_id} - {group}.{name} = {value}")
                 await (
                     self.ScriptConfig[script_uid]
                     .UserData[user_uid]
@@ -874,7 +872,6 @@ class AppConfig(GlobalConfig):
 
         for group, items in data.items():
             for name, value in items.items():
-                logger.debug(f"更新计划表配置: {plan_id} - {group}.{name} = {value}")
                 await self.PlanConfig[plan_uid].set(group, name, value)
 
         await self.PlanConfig.save()
@@ -964,13 +961,10 @@ class AppConfig(GlobalConfig):
                     logger.info(f"路径已自动调整: {input_path} -> {found_path}")
                     data["Info"]["Path"] = found_path
                 else:
-                    logger.debug(f"路径未调整,保持原值: {input_path}")
+                    logger.debug(f"路径未调整, 保持原值: {input_path}")
 
         for group, items in data.items():
             for name, value in items.items():
-                logger.debug(
-                    f"更新全局 emulator:{emulator_id} - {group}.{name} = {value}"
-                )
                 await self.EmulatorConfig[emulator_uid].set(group, name, value)
 
         await self.EmulatorConfig.save()
@@ -1050,7 +1044,6 @@ class AppConfig(GlobalConfig):
 
         for group, items in data.items():
             for name, value in items.items():
-                logger.debug(f"更新调度队列配置: {queue_id} - {group}.{name} = {value}")
                 await self.QueueConfig[queue_uid].set(group, name, value)
 
         await self.QueueConfig.save()
@@ -1109,7 +1102,6 @@ class AppConfig(GlobalConfig):
 
         for group, items in data.items():
             for name, value in items.items():
-                logger.debug(f"更新时间设置配置: {queue_id} - {group}.{name} = {value}")
                 await (
                     self.QueueConfig[queue_uid]
                     .TimeSet[time_set_uid]
@@ -1183,7 +1175,6 @@ class AppConfig(GlobalConfig):
 
         for group, items in data.items():
             for name, value in items.items():
-                logger.debug(f"更新队列项配置: {queue_id} - {group}.{name} = {value}")
                 await (
                     self.QueueConfig[queue_uid]
                     .QueueItem[queue_item_uid]
@@ -1229,7 +1220,6 @@ class AppConfig(GlobalConfig):
 
         for group, items in data.items():
             for name, value in items.items():
-                logger.debug(f"更新全局设置 - {group}.{name} = {value}")
                 await self.set(group, name, value)
 
         logger.success("全局设置更新成功")
@@ -1314,9 +1304,6 @@ class AppConfig(GlobalConfig):
 
             for group, items in data.items():
                 for name, value in items.items():
-                    logger.debug(
-                        f"更新全局 webhook:{webhook_id} - {group}.{name} = {value}"
-                    )
                     await self.Notify_CustomWebhooks[webhook_uid].set(
                         group, name, value
                     )
@@ -1331,9 +1318,6 @@ class AppConfig(GlobalConfig):
 
             for group, items in data.items():
                 for name, value in items.items():
-                    logger.debug(
-                        f"更新用户 webhook: {script_id} - {user_id} - {webhook_id} - {group}.{name} = {value}"
-                    )
                     await (
                         self.ScriptConfig[script_uid]
                         .UserData[user_uid]
