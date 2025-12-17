@@ -226,7 +226,6 @@ class LDManager(DeviceBase):
             if_merge_std=True,
         )
 
-        # logger.debug(f"全部信息{result.stdout.strip()}")
         if result.returncode != 0:
             raise RuntimeError(f"命令执行失败: {result.stdout}")
         emulators: dict[str, LDPlayerDevice] = {}

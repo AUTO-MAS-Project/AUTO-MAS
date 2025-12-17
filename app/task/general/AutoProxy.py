@@ -488,8 +488,6 @@ class AutoProxyTask(TaskExecuteBase):
         if self.check_result != "Pass":
             return
 
-        logger.debug("开始进入结束通用脚本任务进程")
-
         # 结束各子任务
         await self.general_log_monitor.stop()
         await self.general_process_manager.kill()

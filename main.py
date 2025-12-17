@@ -31,7 +31,7 @@ current_dir = Path(__file__).resolve().parent
 if str(current_dir) not in sys.path:
     sys.path.insert(0, str(current_dir))
 
-from app.utils import get_logger
+from app.utils import get_logger, sanitize_log_message
 
 logger = get_logger("主程序")
 
@@ -43,8 +43,9 @@ class InterceptHandler(logging.Handler):
             level = logger.level(record.levelname).name
         except ValueError:
             level = record.levelno
-        # 转发日志
-        logger.opt(depth=6, exception=record.exc_info).log(level, record.getMessage())
+        # 过滤敏感信息并转发日志
+        sanitized_message = sanitize_log_message(record.getMessage())
+        logger.opt(depth=6, exception=record.exc_info).log(level, sanitized_message)
 
 
 # 拦截标准 logging
