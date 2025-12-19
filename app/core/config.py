@@ -1507,13 +1507,13 @@ class AppConfig(GlobalConfig):
             self.get("Data", "StageTimeStamp"), "%Y-%m-%d %H:%M:%S"
         ).replace(tzinfo=UTC8)
 
-        # 本地关卡信息无需更新, 直接返回本地数据
-        if datetime.fromtimestamp(0, tz=UTC8) < remote_time_stamp <= local_time_stamp:
-            logger.info("使用本地关卡信息")
-            await self.set(
-                "Data", "LastStageUpdated", datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            )
-            return json.loads(self.get("Data", "Stage"))
+        # # 本地关卡信息无需更新, 直接返回本地数据
+        # if datetime.fromtimestamp(0, tz=UTC8) < remote_time_stamp <= local_time_stamp:
+        #     logger.info("使用本地关卡信息")
+        #     await self.set(
+        #         "Data", "LastStageUpdated", datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        #     )
+        #     return json.loads(self.get("Data", "Stage"))
 
         # 需要更新关卡信息
         logger.info("从远端更新关卡信息")
@@ -1521,59 +1521,61 @@ class AppConfig(GlobalConfig):
         try:
             async with httpx.AsyncClient(proxy=self.get_proxy()) as client:
                 response = await client.get(
-                    "https://api.maa.plus/MaaAssistantArknights/api/gui/StageActivity.json"
+                    "https://api.maa.plus/MaaAssistantArknights/api/gui/StageActivityV2.json"
                 )
                 if response.status_code == 200:
                     remote_activity_stage_info = (
-                        response.json().get("Official", {}).get("sideStoryStage", [])
+                        response.json().get("Official", {}).get("sideStoryStage", {})
                     )
                     if_get_maa_stage = True
                 else:
                     logger.warning(f"无法从MAA服务器获取活动关卡信息:{response.text}")
                     if_get_maa_stage = False
-                    remote_activity_stage_info = []
+                    remote_activity_stage_info = {}
         except Exception as e:
             logger.warning(f"无法从MAA服务器获取活动关卡信息: {e}")
             if_get_maa_stage = False
-            remote_activity_stage_info = []
+            remote_activity_stage_info = {}
 
         activity_stage_drop_info = []
         activity_stage_combox = []
 
-        for stage in remote_activity_stage_info:
+        for side_story in remote_activity_stage_info.values():
             if (
                 datetime.strptime(
-                    stage["Activity"]["UtcStartTime"], "%Y/%m/%d %H:%M:%S"
+                    side_story["Activity"]["UtcStartTime"], "%Y/%m/%d %H:%M:%S"
                 ).replace(tzinfo=UTC8)
                 < datetime.now(tz=UTC8)
                 < datetime.strptime(
-                    stage["Activity"]["UtcExpireTime"], "%Y/%m/%d %H:%M:%S"
+                    side_story["Activity"]["UtcExpireTime"], "%Y/%m/%d %H:%M:%S"
                 ).replace(tzinfo=UTC8)
             ):
-                activity_stage_combox.append(
-                    {"label": stage["Display"], "value": stage["Value"]}
-                )
-
-                if "SSReopen" not in stage["Display"]:
-                    raw_drop = stage["Drop"]
-                    drop_id = re.sub(
-                        r"[\u200b\u200c\u200d\ufeff]", "", str(raw_drop).strip()
-                    )  # 去除不可见字符
-
-                    if drop_id.isdigit():
-                        drop_name = MATERIALS_MAP.get(drop_id, "未知材料")
-                    else:
-                        drop_name = f"DESC:{drop_id}"  # 非纯数字, 直接用文本.加一个DESC前缀方便前端区分
-
-                    activity_stage_drop_info.append(
-                        {
-                            "Display": stage["Display"],
-                            "Value": stage["Value"],
-                            "Drop": raw_drop,
-                            "DropName": drop_name,
-                            "Activity": stage["Activity"],
-                        }
+                for stage in side_story["Stages"]:
+                    activity_stage_combox.append(
+                        {"label": stage["Display"], "value": stage["Value"]}
                     )
+
+                    if "SSReopen" not in stage["Display"]:
+                        drop_id = re.sub(
+                            r"[\u200b\u200c\u200d\ufeff]",
+                            "",
+                            str(stage["Drop"]).strip(),
+                        )  # 去除不可见字符
+
+                        if drop_id.isdigit():
+                            drop_name = MATERIALS_MAP.get(drop_id, "未知材料")
+                        else:
+                            drop_name = f"DESC:{drop_id}"  # 非纯数字, 直接用文本.加一个DESC前缀方便前端区分
+
+                        activity_stage_drop_info.append(
+                            {
+                                "Display": stage["Display"],
+                                "Value": stage["Value"],
+                                "Drop": stage["Drop"],
+                                "DropName": drop_name,
+                                "Activity": side_story["Activity"],
+                            }
+                        )
 
         stage_data = {}
 
