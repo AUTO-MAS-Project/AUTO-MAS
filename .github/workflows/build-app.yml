@@ -88,38 +88,28 @@ jobs:
 
           let versionPath = '../res/version.json';
           if (!fs.existsSync(versionPath)) {
-          versionPath = 'res/version.json';
+              versionPath = 'res/version.json';
           }
           const version = JSON.parse(fs.readFileSync(versionPath, 'utf8'));
 
-          function versionText(versionNumb) {
-          while (versionNumb.length < 4) versionNumb.push(0);
-          if (versionNumb[3] === 0) {
-              return `v${versionNumb.slice(0, 3).join('.')}`;
-          } else {
-              return `v${versionNumb.slice(0, 3).join('.')}-beta.${versionNumb[3]}`;
-          }
-          }
-
           function versionInfoMarkdown(info) {
-          let md = '';
-          for (const [key, values] of Object.entries(info)) {
-              md += `## ${key}\n`;
-              for (const v of values) md += `- ${v}\n`;
-          }
-          return md;
+              let md = '';
+              for (const [key, values] of Object.entries(info)) {
+                  md += `## ${key}\n`;
+                  for (const v of values) md += `- ${v}\n`;
+              }
+              return md;
           }
 
-          const mainVersionNumb = version.main_version.split('.').map(Number);
-          const versionTag = versionText(mainVersionNumb);
+          const versionTag = version.version;
           const isPrerelease = versionTag.includes('-beta');
 
           const allVersionInfo = {};
           for (const v_i of Object.values(version.version_info)) {
-          for (const [key, value] of Object.entries(v_i)) {
-              if (!allVersionInfo[key]) allVersionInfo[key] = [];
-              allVersionInfo[key].push(...value);
-          }
+              for (const [key, value] of Object.entries(v_i)) {
+                  if (!allVersionInfo[key]) allVersionInfo[key] = [];
+                  allVersionInfo[key].push(...value);
+              }
           }
           const changelog = `<!--${JSON.stringify(version.version_info, null, 0)}-->\n${versionInfoMarkdown(allVersionInfo)}`;
 
