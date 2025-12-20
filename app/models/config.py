@@ -19,12 +19,14 @@
 #   Contact: DLmaster_361@163.com
 
 
+import re
 import uuid
 import json
+import calendar
 from pathlib import Path
 from datetime import datetime
 
-from app.utils.constants import UTC4
+from app.utils.constants import UTC4, UTC8, MATERIALS_MAP, RESOURCE_STAGE_INFO
 from .ConfigBase import (
     ConfigBase,
     MultipleConfig,
@@ -719,6 +721,67 @@ class GeneralConfig(ConfigBase):
         self.UserData = MultipleConfig([GeneralUserConfig])
 
 
+def getStage(raw) -> str:
+    """获取关卡信息"""
+
+    raw_data = json.loads(raw)
+
+    activity_stage_drop_info = []
+    activity_stage_combox = []
+
+    for side_story in raw_data.values():
+        if (
+            datetime.strptime(
+                side_story["Activity"]["UtcStartTime"], "%Y/%m/%d %H:%M:%S"
+            ).replace(tzinfo=UTC8)
+            < datetime.now(tz=UTC8)
+            < datetime.strptime(
+                side_story["Activity"]["UtcExpireTime"], "%Y/%m/%d %H:%M:%S"
+            ).replace(tzinfo=UTC8)
+        ):
+            for stage in side_story["Stages"]:
+                activity_stage_combox.append(
+                    {"label": stage["Display"], "value": stage["Value"]}
+                )
+
+                if "SSReopen" not in stage["Display"]:
+                    drop_id = re.sub(
+                        r"[\u200b\u200c\u200d\ufeff]",
+                        "",
+                        str(stage["Drop"]).strip(),
+                    )  # 去除不可见字符
+
+                    if drop_id.isdigit():
+                        drop_name = MATERIALS_MAP.get(drop_id, "未知材料")
+                    else:
+                        drop_name = f"DESC:{drop_id}"  # 非纯数字, 直接用文本.加一个DESC前缀方便前端区分
+
+                    activity_stage_drop_info.append(
+                        {
+                            "Display": stage["Display"],
+                            "Value": stage["Value"],
+                            "Drop": stage["Drop"],
+                            "DropName": drop_name,
+                            "Activity": side_story["Activity"],
+                        }
+                    )
+
+    stage_data = {"Info": activity_stage_drop_info}
+
+    for day in range(0, 8):
+        res_stage = []
+
+        for stage in RESOURCE_STAGE_INFO:
+            if day in stage["days"] or day == 0:
+                res_stage.append({"label": stage["text"], "value": stage["value"]})
+
+        stage_data[calendar.day_name[day - 1] if day > 0 else "ALL"] = (
+            res_stage[0:1] + activity_stage_combox + res_stage[1:]
+        )
+
+    return json.dumps(stage_data, ensure_ascii=False)
+
+
 class GlobalConfig(ConfigBase):
     """全局配置"""
 
@@ -854,7 +917,7 @@ class GlobalConfig(ConfigBase):
         DateTimeValidator("%Y-%m-%d %H:%M:%S"),
     )
     ## 关卡数据
-    Data_Stage = ConfigItem("Data", "Stage", "{ }", JSONValidator())
+    Data_Stage = ConfigItem("Data", "Stage", "{ }", VirtualConfigValidator(getStage))
     ## 上次公告更新时间
     Data_LastNoticeUpdated = ConfigItem(
         "Data",
