@@ -1,16 +1,8 @@
 <template>
   <div class="scripts-grid">
     <!-- 使用vuedraggable包装脚本列表 -->
-    <draggable
-      v-model="localScripts"
-      item-key="id"
-      :animation="200"
-      ghost-class="script-ghost"
-      chosen-class="script-chosen"
-      drag-class="script-drag"
-      class="draggable-scripts"
-      @end="onScriptDragEnd"
-    >
+    <draggable v-model="localScripts" item-key="id" :animation="200" ghost-class="script-ghost"
+      chosen-class="script-chosen" drag-class="script-drag" class="draggable-scripts" @end="onScriptDragEnd">
       <template #item="{ element: script }">
         <div :key="script.id" class="script-wrapper">
           <a-card :hoverable="true" class="script-card" :body-style="{ padding: '0' }">
@@ -18,12 +10,7 @@
             <div class="script-header">
               <div class="script-info">
                 <div class="script-logo-container">
-                  <img
-                    v-if="script.type === 'MAA'"
-                    src="@/assets/MAA.png"
-                    alt="MAA"
-                    class="script-logo"
-                  />
+                  <img v-if="script.type === 'MAA'" src="@/assets/MAA.png" alt="MAA" class="script-logo" />
                   <img v-else src="@/assets/AUTO-MAS.ico" alt="AUTO-MAS" class="script-logo" />
                 </div>
                 <div class="script-details">
@@ -34,25 +21,15 @@
                 </div>
               </div>
               <div class="header-actions">
-                <a-button
-                  v-if="script.type === 'MAA' && !props.activeConnections.has(script.id)"
-                  type="primary"
-                  ghost
-                  size="middle"
-                  @click="handleStartMAAConfig(script)"
-                >
+                <a-button v-if="script.type === 'MAA' && !props.activeConnections.has(script.id)" type="primary" ghost
+                  size="middle" @click="handleStartMAAConfig(script)">
                   <template #icon>
                     <SettingOutlined />
                   </template>
                   配置MAA
                 </a-button>
-                <a-button
-                  v-if="script.type === 'MAA' && props.activeConnections.has(script.id)"
-                  type="default"
-                  size="middle"
-                  disabled
-                  style="color: #52c41a; border-color: #52c41a"
-                >
+                <a-button v-if="script.type === 'MAA' && props.activeConnections.has(script.id)" type="default"
+                  size="middle" disabled style="color: #52c41a; border-color: #52c41a">
                   <template #icon>
                     <SettingOutlined />
                   </template>
@@ -64,24 +41,14 @@
                   </template>
                   编辑脚本
                 </a-button>
-                <a-button
-                  type="default"
-                  size="middle"
-                  class="action-button add-button"
-                  @click="handleAddUser(script)"
-                >
+                <a-button type="default" size="middle" class="action-button add-button" @click="handleAddUser(script)">
                   <template #icon>
                     <UserAddOutlined />
                   </template>
                   添加用户
                 </a-button>
-                <a-popconfirm
-                  title="确定要删除这个脚本吗？"
-                  description="删除后将无法恢复，请谨慎操作"
-                  ok-text="确定"
-                  cancel-text="取消"
-                  @confirm="handleDelete(script)"
-                >
+                <a-popconfirm title="确定要删除这个脚本吗？" description="删除后将无法恢复，请谨慎操作" ok-text="确定" cancel-text="取消"
+                  @confirm="handleDelete(script)">
                   <a-button danger size="middle" class="action-button delete-button">
                     <template #icon>
                       <DeleteOutlined />
@@ -95,16 +62,9 @@
             <!-- 用户列表 -->
             <div v-if="script.users && script.users.length > 0" class="users-section">
               <!-- 使用vuedraggable包装用户列表 -->
-              <draggable
-                v-model="script.users"
-                item-key="id"
-                :animation="200"
-                ghost-class="user-ghost"
-                chosen-class="user-chosen"
-                drag-class="user-drag"
-                class="users-list"
-                @end="(evt: any) => onUserDragEnd(evt, script)"
-              >
+              <draggable v-model="script.users" item-key="id" :animation="200" ghost-class="user-ghost"
+                chosen-class="user-chosen" drag-class="user-drag" class="users-list"
+                @end="(evt: any) => onUserDragEnd(evt, script)">
                 <template #item="{ element: user }">
                   <div :key="user.id" class="user-item">
                     <div class="user-info">
@@ -112,31 +72,20 @@
                         <div class="user-name-section">
                           <span class="user-name">{{ user.Info.Name }}</span>
                           <!-- 只有MAA脚本才显示服务器标签 -->
-                          <a-tag
-                            v-if="script.type === 'MAA'"
-                            :color="getServerTagColor(user.Info.Server)"
-                            class="server-tag"
-                          >
+                          <a-tag v-if="script.type === 'MAA'" :color="getServerTagColor(user.Info.Server)"
+                            class="server-tag">
                             {{ getServerDisplayName(user.Info.Server) }}
                           </a-tag>
-                          
+
                           <!-- 账号标签 -->
-                          <a-tag
-                            v-if="script.type === 'MAA'"
-                            :color="getServerTagColor(user.Info.Server)"
-                            class="clickable-tag"
-                            @click="handleUserIdClick(user)"
-                          >
+                          <a-tag v-if="script.type === 'MAA'" :color="getServerTagColor(user.Info.Server)"
+                            class="clickable-tag" @click="handleUserIdClick(user)">
                             {{ getUserIdDisplayText(user) }}
                           </a-tag>
-                          
+
                           <!-- 密码标签 -->
-                          <a-tag
-                            v-if="script.type === 'MAA'"
-                            :color="getServerTagColor(user.Info.Server)"
-                            class="clickable-tag"
-                            @click="handlePasswordClick(user)"
-                          >
+                          <a-tag v-if="script.type === 'MAA'" :color="getServerTagColor(user.Info.Server)"
+                            class="clickable-tag" @click="handlePasswordClick(user)">
                             {{ getPasswordDisplayText(user) }}
                           </a-tag>
                         </div>
@@ -144,94 +93,63 @@
                         <!-- 用户详细信息 - MAA脚本用户 -->
                         <div v-if="script.type === 'MAA'" class="user-info-tags">
                           <!-- 剿灭模式 -->
-                          <a-tag
-                            v-if="
-                              user.Info.Annihilation &&
-                              user.Info.Annihilation !== '-' &&
-                              user.Info.Annihilation !== ''
-                            "
-                            class="info-tag"
-                            :color="getAnnihilationTagColor(user.Info.Annihilation, user.Data?.LastAnnihilationDate)"
-                          >
+                          <a-tag v-if="
+                            user.Info.Annihilation &&
+                            user.Info.Annihilation !== '-' &&
+                            user.Info.Annihilation !== ''
+                          " class="info-tag"
+                            :color="getAnnihilationTagColor(user.Info.Annihilation, user.Data?.LastAnnihilationDate)">
                             剿灭：{{ getAnnihilationDisplayText(user.Info.Annihilation, user.Data?.LastAnnihilationDate) }}
                           </a-tag>
 
                           <!-- 日常代理 -->
-                          <a-tag
-                            class="info-tag"
-                            :color="getRoutineTagColor(user.Data?.LastProxyDate)"
-                          >
+                          <a-tag class="info-tag" :color="getRoutineTagColor(user.Data?.LastProxyDate)">
                             日常：{{ getRoutineDisplayText(user.Data?.LastProxyDate, user.Data?.ProxyTimes) }}
                           </a-tag>
 
                           <!-- 森空岛签到 -->
-                          <a-tag
-                            v-if="user.Info.IfSkland !== undefined && user.Info.IfSkland !== null"
-                            class="info-tag"
-                            :color="getSklandTagColor(user.Info.IfSkland, user.Data?.LastSklandDate)"
-                          >
+                          <a-tag v-if="user.Info.IfSkland !== undefined && user.Info.IfSkland !== null" class="info-tag"
+                            :color="getSklandTagColor(user.Info.IfSkland, user.Data?.LastSklandDate)">
                             森空岛: {{ getSklandDisplayText(user.Info.IfSkland, user.Data?.LastSklandDate) }}
                           </a-tag>
 
                           <!-- 剩余天数 -->
-                          <a-tag
-                            v-if="
-                              user.Info.RemainedDay !== undefined && user.Info.RemainedDay !== null
-                            "
-                            class="info-tag"
-                            :color="getRemainingDayColor(user.Info.RemainedDay)"
-                          >
+                          <a-tag v-if="
+                            user.Info.RemainedDay !== undefined && user.Info.RemainedDay !== null
+                          " class="info-tag" :color="getRemainingDayColor(user.Info.RemainedDay)">
                             {{ getRemainingDayText(user.Info.RemainedDay) }}
                           </a-tag>
 
                           <!-- 基建模式 -->
-                          <a-tag
-                            v-if="
-                              user.Info.InfrastMode &&
-                              user.Info.InfrastMode !== '-' &&
-                              user.Info.InfrastMode !== ''
-                            "
-                            class="info-tag"
-                            color="purple"
-                          >
-                            基建: {{ getInfrastModeDisplayName(user.Info.InfrastMode) }}
+                          <a-tag v-if="
+                            user.Info.InfrastMode &&
+                            user.Info.InfrastMode !== '-' &&
+                            user.Info.InfrastMode !== ''
+                          " class="info-tag" :color="user.Task.IfBase ? 'purple' : 'red'">
+                            基建: {{ user.Task.IfBase ? getInfrastModeDisplayName(user.Info.InfrastMode) : '关闭' }}
                           </a-tag>
 
                           <!-- 关卡信息 - 根据是否使用计划表配置显示不同内容 -->
                           <template v-if="user.Info.StageMode && user.Info.StageMode !== 'Fixed'">
                             <!-- 主关卡 -->
-                            <a-tag
-                              v-if="getUserPlanMainStageDisplay(user)"
-                              class="info-tag"
-                              color="green"
-                            >
+                            <a-tag v-if="getUserPlanMainStageDisplay(user)" class="info-tag" color="green">
                               主关卡: {{ getUserPlanMainStageDisplay(user) }}
                             </a-tag>
 
                             <!-- 备选关卡（合并显示） -->
-                            <a-tag
-                              v-if="getUserPlanBackupStages(user).length > 0"
-                              class="info-tag"
-                              color="green"
-                            >
+                            <a-tag v-if="getUserPlanBackupStages(user).length > 0" class="info-tag" color="green">
                               备选: {{ getUserPlanBackupStages(user).join(', ') }}
                             </a-tag>
 
                             <!-- 剩余关卡 -->
-                            <a-tag
-                              v-if="getUserPlanRemainStageDisplay(user)"
-                              class="info-tag"
-                              color="green"
-                            >
+                            <a-tag v-if="getUserPlanRemainStageDisplay(user)" class="info-tag" color="green">
                               剩余: {{ getUserPlanRemainStageDisplay(user) }}
                             </a-tag>
 
                             <!-- 如果没有配置任何关卡，显示提示 -->
                             <a-tag
                               v-if="!getUserPlanMainStageDisplay(user) && getUserPlanBackupStages(user).length === 0 && !getUserPlanRemainStageDisplay(user)"
-                              class="info-tag"
-                              color="green"
-                            >
+                              class="info-tag" color="green">
                               主关卡: 计划表未配置
                             </a-tag>
                           </template>
@@ -239,29 +157,17 @@
                           <!-- 固定模式的关卡显示 -->
                           <template v-else>
                             <!-- 主关卡 -->
-                            <a-tag
-                              v-if="getMainStageDisplay(user)"
-                              class="info-tag"
-                              color="blue"
-                            >
+                            <a-tag v-if="getMainStageDisplay(user)" class="info-tag" color="blue">
                               主关卡: {{ getMainStageDisplay(user) }}
                             </a-tag>
 
                             <!-- 备选关卡（合并显示） -->
-                            <a-tag
-                              v-if="getBackupStages(user).length > 0"
-                              class="info-tag"
-                              color="blue"
-                            >
+                            <a-tag v-if="getBackupStages(user).length > 0" class="info-tag" color="blue">
                               备选: {{ getBackupStages(user).join(', ') }}
                             </a-tag>
 
                             <!-- 剩余关卡 -->
-                            <a-tag
-                              v-if="getRemainStageDisplay(user)"
-                              class="info-tag"
-                              color="blue"
-                            >
+                            <a-tag v-if="getRemainStageDisplay(user)" class="info-tag" color="blue">
                               剩余: {{ getRemainStageDisplay(user) }}
                             </a-tag>
                           </template>
@@ -273,13 +179,9 @@
                         <!-- 用户详细信息 - 通用脚本用户 -->
                         <div v-if="script.type === 'General'" class="user-info-tags">
                           <!-- 剩余天数 -->
-                          <a-tag
-                            v-if="
-                              user.Info.RemainedDay !== undefined && user.Info.RemainedDay !== null
-                            "
-                            class="info-tag"
-                            :color="getRemainingDayColor(user.Info.RemainedDay)"
-                          >
+                          <a-tag v-if="
+                            user.Info.RemainedDay !== undefined && user.Info.RemainedDay !== null
+                          " class="info-tag" :color="getRemainingDayColor(user.Info.RemainedDay)">
                             {{ getRemainingDayText(user.Info.RemainedDay) }}
                           </a-tag>
 
@@ -292,36 +194,21 @@
 
                     <div class="user-controls">
                       <div class="user-status">
-                        <a-switch
-                          :checked="user.Info.Status"
-                          :checked-children="'启用'"
-                          :un-checked-children="'禁用'"
-                          class="status-switch"
-                          @click="handleToggleUserStatus(user)"
-                        />
+                        <a-switch :checked="user.Info.Status" :checked-children="'启用'" :un-checked-children="'禁用'"
+                          class="status-switch" @click="handleToggleUserStatus(user)" />
                       </div>
 
                       <div class="user-actions">
                         <a-tooltip title="编辑用户配置">
-                          <a-button
-                            type="default"
-                            size="middle"
-                            class="user-action-btn"
-                            @click="handleEditUser(user)"
-                          >
+                          <a-button type="default" size="middle" class="user-action-btn" @click="handleEditUser(user)">
                             <template #icon>
                               <EditOutlined />
                             </template>
                             编辑
                           </a-button>
                         </a-tooltip>
-                        <a-popconfirm
-                          title="确定要删除这个用户吗？"
-                          description="删除后将无法恢复"
-                          ok-text="确定"
-                          cancel-text="取消"
-                          @confirm="handleDeleteUser(user)"
-                        >
+                        <a-popconfirm title="确定要删除这个用户吗？" description="删除后将无法恢复" ok-text="确定" cancel-text="取消"
+                          @confirm="handleDeleteUser(user)">
                           <a-tooltip title="删除用户">
                             <a-button type="default" size="middle" danger class="user-action-btn">
                               <template #icon>
@@ -366,10 +253,10 @@ import { Service } from '@/api'
 import { message } from 'ant-design-vue'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useUserApi } from '@/composables/useUserApi'
-import { 
-  getWeekStartInTimezone, 
-  getTodayInTimezone, 
-  isDateInRange, 
+import {
+  getWeekStartInTimezone,
+  getTodayInTimezone,
+  isDateInRange,
   isDateEqual,
   getWeekdayInTimezone
 } from '@/utils/dateUtils'
@@ -486,14 +373,14 @@ const truncateText = (text: string, maxLength: number = 10): string => {
 const handleUserIdClick = async (user: any) => {
   const userId = user.id
   const userIdValue = user.Info.Id || ''
-  
+
   // 切换展开状态
   if (expandedUserIds.value.has(userId)) {
     expandedUserIds.value.delete(userId)
   } else {
     expandedUserIds.value.add(userId)
   }
-  
+
   // 只有在有值的情况下才复制到剪贴板
   if (userIdValue) {
     try {
@@ -509,14 +396,14 @@ const handleUserIdClick = async (user: any) => {
 const handlePasswordClick = async (user: any) => {
   const userId = user.id
   const passwordValue = user.Info.Password || ''
-  
+
   // 切换展开状态
   if (expandedUserPasswords.value.has(userId)) {
     expandedUserPasswords.value.delete(userId)
   } else {
     expandedUserPasswords.value.add(userId)
   }
-  
+
   // 只有在有值的情况下才复制到剪贴板
   if (passwordValue) {
     try {
@@ -532,7 +419,7 @@ const handlePasswordClick = async (user: any) => {
 const getUserIdDisplayText = (user: any): string => {
   const userId = user.id
   const userIdValue = user.Info.Id || ''
-  
+
   if (expandedUserIds.value.has(userId)) {
     // 展开状态：显示完整内容或未设置
     return userIdValue ? `账号: ${userIdValue}` : '账号: 未设置'
@@ -546,7 +433,7 @@ const getUserIdDisplayText = (user: any): string => {
 const getPasswordDisplayText = (user: any): string => {
   const userId = user.id
   const passwordValue = user.Info.Password || ''
-  
+
   if (expandedUserPasswords.value.has(userId)) {
     // 展开状态：显示完整内容或未设置
     return passwordValue ? `密码: ${passwordValue}` : '密码: 未设置'
@@ -623,9 +510,9 @@ const getServerDisplayName = (server: string): string => {
 const getInfrastModeDisplayName = (mode: string): string => {
   switch (mode) {
     case 'Normal':
-      return '普通'
+      return '常规'
     case 'Rotation':
-      return '轮班'
+      return '轮休'
     case 'Custom':
       return '自定义'
     default:
@@ -636,10 +523,10 @@ const getInfrastModeDisplayName = (mode: string): string => {
 // 检查是否完成了本周剿灭
 const isAnnihilationCompletedThisWeek = (lastAnnihilationDate: string): boolean => {
   if (!lastAnnihilationDate) return false
-  
+
   // 使用东4区时区获取本周一的Date对象
   const mondayDate = getWeekStartInTimezone(4)
-  
+
   // 检查最后剿灭日期是否 >= 本周一（基于Date对象比较）
   return isDateInRange(lastAnnihilationDate, mondayDate, new Date(), 4)
 }
@@ -659,10 +546,10 @@ const getAnnihilationDisplayText = (annihilation: string, lastAnnihilationDate?:
 // 检查是否完成了今日日常代理
 const isSklandCompletedToday = (lastSklandDate: string): boolean => {
   if (!lastSklandDate) return false
-  
+
   // 森空岛使用东8区时间（UTC+8）
   const todayUTC8 = getTodayInTimezone(8)
-  
+
   // 基于Date对象比较
   return isDateEqual(lastSklandDate, todayUTC8, 8)
 }
@@ -682,10 +569,10 @@ const getSklandDisplayText = (ifSkland: boolean, lastSklandDate?: string): strin
 // 检查是否完成了今日日常代理
 const isRoutineCompletedToday = (lastProxyDate: string): boolean => {
   if (!lastProxyDate) return false
-  
+
   // 使用东4区时区获取今日的Date对象
   const todayEast4 = getTodayInTimezone(4)
-  
+
   // 基于Date对象比较
   return isDateEqual(lastProxyDate, todayEast4, 4)
 }
@@ -715,12 +602,12 @@ const getMainStageDisplay = (user: any): string => {
     }
     return '计划表配置'
   }
-  
+
   // 固定模式，显示用户自定义关卡
   if (user.Info.Stage && user.Info.Stage !== '-' && user.Info.Stage !== '') {
     return convertStageNameToChinese(user.Info.Stage)
   }
-  
+
   return ''
 }
 
@@ -728,12 +615,12 @@ const getMainStageDisplay = (user: any): string => {
 const getBackupStages = (user: any): string[] => {
   const stages = [user.Info.Stage_1, user.Info.Stage_2, user.Info.Stage_3]
   return stages
-    .filter(stage => 
-      stage && 
-      stage !== '-' && 
-      stage !== '' && 
-      stage !== '当前' && 
-      stage !== '上次' && 
+    .filter(stage =>
+      stage &&
+      stage !== '-' &&
+      stage !== '' &&
+      stage !== '当前' &&
+      stage !== '上次' &&
       stage !== '未选择'
     )
     .map(stage => convertStageNameToChinese(stage))
@@ -742,11 +629,11 @@ const getBackupStages = (user: any): string[] => {
 // 获取剩余关卡显示文本
 const getRemainStageDisplay = (user: any): string => {
   if (
-    user.Info.Stage_Remain && 
-    user.Info.Stage_Remain !== '-' && 
+    user.Info.Stage_Remain &&
+    user.Info.Stage_Remain !== '-' &&
     user.Info.Stage_Remain !== '' &&
-    user.Info.Stage_Remain !== '当前' && 
-    user.Info.Stage_Remain !== '上次' && 
+    user.Info.Stage_Remain !== '当前' &&
+    user.Info.Stage_Remain !== '上次' &&
     user.Info.Stage_Remain !== '未选择'
   ) {
     return convertStageNameToChinese(user.Info.Stage_Remain)
@@ -888,7 +775,7 @@ const getUserPlanBackupStages = (user: any): string[] => {
   if (!timeConfig) return []
 
   const backupStages: string[] = []
-  
+
   if (timeConfig.Stage_1 && timeConfig.Stage_1 !== '-') {
     backupStages.push(convertStageNameToChinese(timeConfig.Stage_1))
   }
