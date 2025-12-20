@@ -67,8 +67,6 @@ class LogMonitor:
 
     async def monitor_file(self, log_file_path: Path, log_start_time: datetime):
         """监控日志文件的主循环"""
-        if log_file_path is None or not log_file_path.exists():
-            raise ValueError("日志文件路径未设置或文件不存在")
 
         logger.info(f"开始监控日志文件: {log_file_path}")
 
@@ -81,6 +79,7 @@ class LogMonitor:
             # 检查文件是否仍然存在
             if not log_file_path.exists():
                 logger.warning(f"日志文件不存在: {log_file_path}")
+                await self.do_callback()
                 await asyncio.sleep(1)
                 continue
 
@@ -91,6 +90,7 @@ class LogMonitor:
                     logger.warning(
                         f"日志文件今天未被修改: {date.fromtimestamp(log_file_path.stat().st_mtime)}"
                     )
+                    await self.do_callback()
                     await asyncio.sleep(1)
                     continue
 

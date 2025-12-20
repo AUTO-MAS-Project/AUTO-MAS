@@ -47,6 +47,7 @@
 
 <script lang="ts" setup>
 import {
+  ApiOutlined,
   CalendarOutlined,
   ControlOutlined,
   DatabaseOutlined,
@@ -94,6 +95,7 @@ const mainMenuItems = [
 const devMenuItems = [
   { key: '/TestRouter', label: '测试路由', icon: icon(SettingOutlined) },
   { key: '/OCRdev', label: 'OCR测试', icon: icon(SettingOutlined) },
+  { key: '/WSdev', label: 'WebSocket测试', icon: icon(ApiOutlined) },
 ]
 
 const bottomMenuItems = [

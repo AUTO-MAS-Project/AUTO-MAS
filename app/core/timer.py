@@ -59,8 +59,8 @@ class _MainTimer:
                 await Matomo.send_event(
                     "App",
                     "Version",
-                    Config.version(),
-                    1 if "beta" in Config.version() else 0,
+                    Config.VERSION,
+                    1 if "beta" in Config.VERSION else 0,
                 )
                 await Config.set(
                     "Data",

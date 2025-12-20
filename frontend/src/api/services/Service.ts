@@ -87,12 +87,12 @@ import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
 export class Service {
     /**
-     * Close
      * 关闭后端程序
-     * @returns any Successful Response
+     * 关闭后端程序
+     * @returns OutBase Successful Response
      * @throws ApiError
      */
-    public static closeApiCoreClosePost(): CancelablePromise<any> {
+    public static closeApiCoreClosePost(): CancelablePromise<OutBase> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/core/close',
@@ -331,7 +331,7 @@ export class Service {
         });
     }
     /**
-     * 从文件加载脚本
+     * 从文件加载脚本配置
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
@@ -350,7 +350,7 @@ export class Service {
         });
     }
     /**
-     * 导出脚本到文件
+     * 导出脚本配置到文件
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
@@ -369,7 +369,7 @@ export class Service {
         });
     }
     /**
-     * 从网络加载脚本
+     * 从网络加载脚本配置
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError

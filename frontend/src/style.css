@@ -93,3 +93,10 @@ a:hover {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--ant-color-border-secondary);
 }
+
+/* Electron 基于 Chromium，仅需 WebKit 滚动条隐藏 */
+*::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important;
+}
