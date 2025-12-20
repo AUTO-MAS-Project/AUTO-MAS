@@ -137,6 +137,24 @@ defineExpose({
   padding: 16px;
 }
 
+/* 滚动条样式 - 浅色 */
+.overview-content::-webkit-scrollbar {
+  width: 8px;
+}
+
+.overview-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.overview-content::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 4px;
+}
+
+.overview-content::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.25);
+}
+
 .empty-state-mini {
   display: flex;
   align-items: center;
@@ -164,5 +182,16 @@ defineExpose({
   .section-header {
     padding: 12px;
   }
+}
+</style>
+
+<style>
+/* 深色模式滚动条 - 需要全局样式 */
+.dark .overview-content::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15) !important;
+}
+
+.dark .overview-content::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25) !important;
 }
 </style>

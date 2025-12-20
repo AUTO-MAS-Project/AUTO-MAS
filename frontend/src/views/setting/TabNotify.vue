@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
-import type { SettingsData } from '@/types/settings'
+import type { GlobalConfig } from '@/api'
 import WebhookManager from '@/components/WebhookManager.vue'
 import { handleExternalLink } from '@/utils/openExternal'
 
 const props = defineProps<{
-  settings: SettingsData
+  settings: GlobalConfig
   sendTaskResultTimeOptions: { label: string; value: string }[]
-  handleSettingChange: (category: keyof SettingsData, key: string, value: any) => Promise<void>
+  handleSettingChange: (category: keyof GlobalConfig, key: string, value: any) => Promise<void>
   testNotify: () => Promise<void>
   testingNotify: boolean
 }>()
@@ -17,7 +17,7 @@ const { settings, sendTaskResultTimeOptions, handleSettingChange, testNotify, te
 
 // 处理 Webhook 变化
 const handleWebhookChange = async () => {
-  await handleSettingChange('Notify', 'CustomWebhooks', settings.Notify.CustomWebhooks)
+  // Webhook 变化由 WebhookManager 组件内部处理，这里不需要额外处理
 }
 </script>
 
@@ -26,14 +26,8 @@ const handleWebhookChange = async () => {
     <div class="form-section">
       <div class="section-header">
         <h3>通知内容</h3>
-        <a-button
-          type="primary"
-          :loading="testingNotify"
-          size="small"
-          class="section-update-button primary-style"
-          @click="testNotify"
-          >发送测试通知</a-button
-        >
+        <a-button type="primary" :loading="testingNotify" size="small" class="section-update-button primary-style"
+          @click="testNotify">发送测试通知</a-button>
       </div>
       <a-row :gutter="24">
         <a-col :span="8">
@@ -44,13 +38,9 @@ const handleWebhookChange = async () => {
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-select
-              v-model:value="settings.Notify.SendTaskResultTime"
-              :options="sendTaskResultTimeOptions"
-              size="large"
+            <a-select :value="settings.Notify?.SendTaskResultTime" :options="sendTaskResultTimeOptions" size="large"
               style="width: 100%"
-              @change="(value: any) => handleSettingChange('Notify', 'SendTaskResultTime', value)"
-            />
+              @change="(value: any) => handleSettingChange('Notify', 'SendTaskResultTime', value)" />
           </div>
         </a-col>
         <a-col :span="8">
@@ -61,12 +51,8 @@ const handleWebhookChange = async () => {
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-select
-              v-model:value="settings.Notify.IfSendStatistic"
-              size="large"
-              style="width: 100%"
-              @change="(checked: any) => handleSettingChange('Notify', 'IfSendStatistic', checked)"
-            >
+            <a-select :value="settings.Notify?.IfSendStatistic" size="large" style="width: 100%"
+              @change="(checked: any) => handleSettingChange('Notify', 'IfSendStatistic', checked)">
               <a-select-option :value="true">是</a-select-option>
               <a-select-option :value="false">否</a-select-option>
             </a-select>
@@ -80,12 +66,8 @@ const handleWebhookChange = async () => {
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-select
-              v-model:value="settings.Notify.IfSendSixStar"
-              size="large"
-              style="width: 100%"
-              @change="(checked: any) => handleSettingChange('Notify', 'IfSendSixStar', checked)"
-            >
+            <a-select :value="settings.Notify?.IfSendSixStar" size="large" style="width: 100%"
+              @change="(checked: any) => handleSettingChange('Notify', 'IfSendSixStar', checked)">
               <a-select-option :value="true">是</a-select-option>
               <a-select-option :value="false">否</a-select-option>
             </a-select>
@@ -107,12 +89,8 @@ const handleWebhookChange = async () => {
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-select
-              v-model:value="settings.Notify.IfPushPlyer"
-              size="large"
-              style="width: 100%"
-              @change="(checked: any) => handleSettingChange('Notify', 'IfPushPlyer', checked)"
-            >
+            <a-select :value="settings.Notify?.IfPushPlyer" size="large" style="width: 100%"
+              @change="(checked: any) => handleSettingChange('Notify', 'IfPushPlyer', checked)">
               <a-select-option :value="true">是</a-select-option>
               <a-select-option :value="false">否</a-select-option>
             </a-select>
@@ -124,12 +102,8 @@ const handleWebhookChange = async () => {
     <div class="form-section">
       <div class="section-header">
         <h3>邮件通知</h3>
-        <a
-          href="https://doc.auto-mas.top/docs/advanced-features.html#smtp-%E9%82%AE%E4%BB%B6%E6%8E%A8%E9%80%81%E6%B8%A0%E9%81%93"
-          class="section-doc-link"
-          title="查看电子邮箱配置文档"
-          @click="handleExternalLink"
-        >
+        <a href="https://doc.auto-mas.top/docsV5/advanced-features/notification.html#smtp-%E9%82%AE%E4%BB%B6%E6%8E%A8%E9%80%81%E6%B8%A0%E9%81%93"
+          class="section-doc-link" title="查看电子邮箱配置文档" @click="handleExternalLink">
           文档
         </a>
       </div>
@@ -142,12 +116,8 @@ const handleWebhookChange = async () => {
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-select
-              v-model:value="settings.Notify.IfSendMail"
-              size="large"
-              style="width: 100%"
-              @change="(checked: any) => handleSettingChange('Notify', 'IfSendMail', checked)"
-            >
+            <a-select :value="settings.Notify?.IfSendMail" size="large" style="width: 100%"
+              @change="(checked: any) => handleSettingChange('Notify', 'IfSendMail', checked)">
               <a-select-option :value="true">是</a-select-option>
               <a-select-option :value="false">否</a-select-option>
             </a-select>
@@ -161,19 +131,9 @@ const handleWebhookChange = async () => {
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-input
-              v-model:value="settings.Notify.SMTPServerAddress"
-              :disabled="!settings.Notify.IfSendMail"
-              placeholder="请输入发信邮箱SMTP服务器地址"
-              size="large"
-              @blur="
-                handleSettingChange(
-                  'Notify',
-                  'SMTPServerAddress',
-                  settings.Notify.SMTPServerAddress
-                )
-              "
-            />
+            <a-input :value="settings.Notify?.SMTPServerAddress" :disabled="!settings.Notify?.IfSendMail"
+              placeholder="请输入发信邮箱SMTP服务器地址" size="large"
+              @blur="(e: any) => handleSettingChange('Notify', 'SMTPServerAddress', e.target.value)" />
           </div>
         </a-col>
       </a-row>
@@ -186,13 +146,9 @@ const handleWebhookChange = async () => {
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-input
-              v-model:value="settings.Notify.FromAddress"
-              :disabled="!settings.Notify.IfSendMail"
-              placeholder="请输入发信邮箱地址"
-              size="large"
-              @blur="handleSettingChange('Notify', 'FromAddress', settings.Notify.FromAddress)"
-            />
+            <a-input :value="settings.Notify?.FromAddress" :disabled="!settings.Notify?.IfSendMail"
+              placeholder="请输入发信邮箱地址" size="large"
+              @blur="(e: any) => handleSettingChange('Notify', 'FromAddress', e.target.value)" />
           </div>
         </a-col>
         <a-col :span="12">
@@ -203,19 +159,9 @@ const handleWebhookChange = async () => {
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-input-password
-              v-model:value="settings.Notify.AuthorizationCode"
-              :disabled="!settings.Notify.IfSendMail"
-              placeholder="请输入发信邮箱授权码"
-              size="large"
-              @blur="
-                handleSettingChange(
-                  'Notify',
-                  'AuthorizationCode',
-                  settings.Notify.AuthorizationCode
-                )
-              "
-            />
+            <a-input-password :value="settings.Notify?.AuthorizationCode" :disabled="!settings.Notify?.IfSendMail"
+              placeholder="请输入发信邮箱授权码" size="large"
+              @blur="(e: any) => handleSettingChange('Notify', 'AuthorizationCode', e.target.value)" />
           </div>
         </a-col>
       </a-row>
@@ -228,13 +174,9 @@ const handleWebhookChange = async () => {
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-input
-              v-model:value="settings.Notify.ToAddress"
-              :disabled="!settings.Notify.IfSendMail"
-              placeholder="请输入收信邮箱地址"
-              size="large"
-              @blur="handleSettingChange('Notify', 'ToAddress', settings.Notify.ToAddress)"
-            />
+            <a-input :value="settings.Notify?.ToAddress" :disabled="!settings.Notify?.IfSendMail"
+              placeholder="请输入收信邮箱地址" size="large"
+              @blur="(e: any) => handleSettingChange('Notify', 'ToAddress', e.target.value)" />
           </div>
         </a-col>
       </a-row>
@@ -243,12 +185,8 @@ const handleWebhookChange = async () => {
     <div class="form-section">
       <div class="section-header">
         <h3>Server酱通知</h3>
-        <a
-          href="https://doc.auto-mas.top/docs/advanced-features.html#serverchan-%E9%80%9A%E7%9F%A5%E6%8E%A8%E9%80%81%E6%B8%A0%E9%81%93"
-          class="section-doc-link"
-          title="查看Server酱配置文档"
-          @click="handleExternalLink"
-        >
+        <a href="https://doc.auto-mas.top/docsV5/advanced-features/notification.html#serverchan-%E9%80%9A%E7%9F%A5%E6%8E%A8%E9%80%81%E6%B8%A0%E9%81%93"
+          class="section-doc-link" title="查看Server酱配置文档" @click="handleExternalLink">
           文档
         </a>
       </div>
@@ -264,12 +202,8 @@ const handleWebhookChange = async () => {
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-select
-              v-model:value="settings.Notify.IfServerChan"
-              size="large"
-              style="width: 100%"
-              @change="(checked: any) => handleSettingChange('Notify', 'IfServerChan', checked)"
-            >
+            <a-select :value="settings.Notify?.IfServerChan" size="large" style="width: 100%"
+              @change="(checked: any) => handleSettingChange('Notify', 'IfServerChan', checked)">
               <a-select-option :value="true">是</a-select-option>
               <a-select-option :value="false">否</a-select-option>
             </a-select>
@@ -286,13 +220,9 @@ const handleWebhookChange = async () => {
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-input
-              v-model:value="settings.Notify.ServerChanKey"
-              :disabled="!settings.Notify.IfServerChan"
-              placeholder="请输入Server酱SendKey"
-              size="large"
-              @blur="handleSettingChange('Notify', 'ServerChanKey', settings.Notify.ServerChanKey)"
-            />
+            <a-input :value="settings.Notify?.ServerChanKey" :disabled="!settings.Notify?.IfServerChan"
+              placeholder="请输入Server酱SendKey" size="large"
+              @blur="(e: any) => handleSettingChange('Notify', 'ServerChanKey', e.target.value)" />
           </div>
         </a-col>
       </a-row>
@@ -311,12 +241,8 @@ const handleWebhookChange = async () => {
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-select
-              v-model:value="settings.Notify.IfSendKoishi"
-              size="large"
-              style="width: 100%"
-              @change="(checked: any) => handleSettingChange('Notify', 'IfSendKoishi', checked)"
-            >
+            <a-select :value="settings.Notify?.IfSendKoishi" size="large" style="width: 100%"
+              @change="(checked: any) => handleSettingChange('Notify', 'IfSendKoishi', checked)">
               <a-select-option :value="true">是</a-select-option>
               <a-select-option :value="false">否</a-select-option>
             </a-select>
@@ -332,19 +258,9 @@ const handleWebhookChange = async () => {
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-input
-              v-model:value="settings.Notify.KoishiServerAddress"
-              :disabled="!settings.Notify.IfSendKoishi"
-              placeholder="请输入Koishi服务器地址"
-              size="large"
-              @blur="
-                handleSettingChange(
-                  'Notify',
-                  'KoishiServerAddress',
-                  settings.Notify.KoishiServerAddress
-                )
-              "
-            />
+            <a-input :value="settings.Notify?.KoishiServerAddress" :disabled="!settings.Notify?.IfSendKoishi"
+              placeholder="请输入Koishi服务器地址" size="large"
+              @blur="(e: any) => handleSettingChange('Notify', 'KoishiServerAddress', e.target.value)" />
           </div>
         </a-col>
         <a-col :span="12">
@@ -355,13 +271,9 @@ const handleWebhookChange = async () => {
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-input-password
-              v-model:value="settings.Notify.KoishiToken"
-              :disabled="!settings.Notify.IfSendKoishi"
-              placeholder="请输入Koishi Token"
-              size="large"
-              @blur="handleSettingChange('Notify', 'KoishiToken', settings.Notify.KoishiToken)"
-            />
+            <a-input-password :value="settings.Notify?.KoishiToken" :disabled="!settings.Notify?.IfSendKoishi"
+              placeholder="请输入Koishi Token" size="large"
+              @blur="(e: any) => handleSettingChange('Notify', 'KoishiToken', e.target.value)" />
           </div>
         </a-col>
       </a-row>
@@ -370,12 +282,8 @@ const handleWebhookChange = async () => {
     <div class="form-section">
       <div class="section-header">
         <h3>自定义 Webhook 通知</h3>
-        <a
-          href="https://doc.auto-mas.top/docs/advanced-features.html#%E8%87%AA%E5%AE%9A%E4%B9%89webhook%E9%80%9A%E7%9F%A5"
-          class="section-doc-link"
-          title="查看自定义Webhook配置文档"
-          @click="handleExternalLink"
-        >
+        <a href="https://doc.auto-mas.top/docsV5/advanced-features/notification.html" class="section-doc-link"
+          title="查看自定义Webhook配置文档" @click="handleExternalLink">
           文档
         </a>
       </div>
@@ -423,20 +331,22 @@ const handleWebhookChange = async () => {
 .section-header .section-update-button.primary-style {
   /* Keep gradient but match doc-link height/rounded corners for parity */
   height: 32px;
-  padding: 4px 8px; /* same vertical padding as doc-link */
-  font-size: 14px; /* same as doc-link for visual parity */
+  padding: 4px 8px;
+  /* same vertical padding as doc-link */
+  font-size: 14px;
+  /* same as doc-link for visual parity */
   font-weight: 500;
-  border-radius: 4px; /* same radius as doc-link */
+  border-radius: 4px;
+  /* same radius as doc-link */
   box-shadow: 0 2px 8px rgba(22, 119, 255, 0.18);
   transition:
     transform 0.16s ease,
     box-shadow 0.16s ease;
-  background: linear-gradient(
-    135deg,
-    var(--ant-color-primary),
-    var(--ant-color-primary-hover)
-  ) !important;
-  border: 1px solid var(--ant-color-primary) !important; /* subtle border to match doc-link rhythm */
+  background: linear-gradient(135deg,
+      var(--ant-color-primary),
+      var(--ant-color-primary-hover)) !important;
+  border: 1px solid var(--ant-color-primary) !important;
+  /* subtle border to match doc-link rhythm */
   color: #fff !important;
 }
 
@@ -451,6 +361,7 @@ const handleWebhookChange = async () => {
     align-items: flex-start;
     gap: 8px;
   }
+
   .section-header .section-update-button {
     margin-top: 4px;
   }

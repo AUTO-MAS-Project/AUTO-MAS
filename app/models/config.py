@@ -395,7 +395,7 @@ class MaaUserConfig(ConfigBase):
                     return str(i)
 
         else:
-            return v
+            return v or "0"
 
 
 class MaaConfig(ConfigBase):
@@ -740,10 +740,8 @@ class GlobalConfig(ConfigBase):
     Function_IfAgreeBilibili = ConfigItem(
         "Function", "IfAgreeBilibili", False, BoolValidator()
     )
-    ## 是否跳过 MuMu 启动广告
-    Function_IfSkipMumuSplashAds = ConfigItem(
-        "Function", "IfSkipMumuSplashAds", False, BoolValidator()
-    )
+    ## 是否屏蔽模拟器广告
+    Function_IfBlockAd = ConfigItem("Function", "IfBlockAd", False, BoolValidator())
 
     ## Voice ------------------------------------------------------------
     ## 是否启用语音

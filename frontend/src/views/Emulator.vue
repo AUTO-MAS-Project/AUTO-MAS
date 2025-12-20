@@ -920,7 +920,7 @@ const handleBossKeyInputChange = (uuid: string) => {
                           key: 'adb_address',
                           ellipsis: true,
                         },
-                        { title: '操作', key: 'action', width: 140 },
+                        { title: '操作', key: 'action', width: 100 },
                       ]" :pagination="false" size="small" :scroll="{ x: 'max-content', y: 'calc(100vh - 560px)' }">
                       <template #bodyCell="{ column, record }">
                         <template v-if="column.key === 'status'">
@@ -929,20 +929,19 @@ const handleBossKeyInputChange = (uuid: string) => {
                           </a-tag>
                         </template>
                         <template v-else-if="column.key === 'action'">
-                          <a-space :size="4">
-                            <a-button type="primary" size="small" :icon="h(PlayCircleOutlined)"
-                              :loading="startingDevices.has(`${element.uid}-${record.index}`)"
-                              :disabled="!canStartDevice(record.status)"
-                              @click="startEmulator(element.uid, String(record.index))">
-                              启动
-                            </a-button>
-                            <a-button danger size="small" :icon="h(StopOutlined)"
-                              :loading="stoppingDevices.has(`${element.uid}-${record.index}`)"
-                              :disabled="!canStopDevice(record.status)"
-                              @click="stopEmulator(element.uid, String(record.index))">
-                              关闭
-                            </a-button>
-                          </a-space>
+                          <a-button v-if="canStartDevice(record.status)" type="primary" :icon="h(PlayCircleOutlined)"
+                            :loading="startingDevices.has(`${element.uid}-${record.index}`)"
+                            @click="startEmulator(element.uid, String(record.index))">
+                            启动
+                          </a-button>
+                          <a-button v-else-if="canStopDevice(record.status)" danger :icon="h(StopOutlined)"
+                            :loading="stoppingDevices.has(`${element.uid}-${record.index}`)"
+                            @click="stopEmulator(element.uid, String(record.index))">
+                            关闭
+                          </a-button>
+                          <a-button v-else disabled>
+                            {{ getDeviceStatusInfo(record.status).text }}
+                          </a-button>
                         </template>
                       </template>
                     </a-table>
@@ -1236,7 +1235,7 @@ const handleBossKeyInputChange = (uuid: string) => {
 }
 
 .devices-grid :deep(.ant-table) {
-  font-size: 13px;
+  font-size: 14px;
   margin-bottom: 0;
   flex: 1;
   display: flex;

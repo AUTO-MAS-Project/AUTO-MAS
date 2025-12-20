@@ -21,13 +21,18 @@
 
 
 import uuid
+import shutil
 import asyncio
+from contextlib import suppress
+from pathlib import Path
 from typing import Dict, Literal
 
 from .config import Config
+from app.models.config import EmulatorConfig
 from app.models.emulator import DeviceBase
 from app.models.schema import DeviceInfo as SchemaDeviceInfo
-from app.utils import EMULATOR_TYPE_BOOK
+from app.utils import ProcessRunner, EMULATOR_TYPE_BOOK
+from app.utils.constants import EMULATOR_SPLASH_ADS_PATH_BOOK
 
 from app.utils import get_logger
 
@@ -42,8 +47,32 @@ class _EmulatorManager:
 
         emulator_uid = uuid.UUID(emulator_id)
 
-        config = Config.EmulatorConfig[emulator_uid]
+        config = EmulatorConfig()
+        await config.load(await Config.EmulatorConfig[emulator_uid].toDict())
+
         if config.get("Data", "Type") in EMULATOR_TYPE_BOOK:
+
+            # 设置模拟器广告
+            with suppress(Exception):
+                if config.get("Data", "Type") in EMULATOR_SPLASH_ADS_PATH_BOOK:
+                    ads_path = EMULATOR_SPLASH_ADS_PATH_BOOK[config.get("Data", "Type")]
+                    if Config.get("Function", "IfBlockAd"):
+                        if ads_path.is_dir():
+                            shutil.rmtree(ads_path)
+                        ads_path.parent.mkdir(parents=True, exist_ok=True)
+                        ads_path.touch()
+                    else:
+                        if ads_path.is_file():
+                            ads_path.unlink()
+                if config.get("Data", "Type") == "ldplayer":
+                    await ProcessRunner.run_process(
+                        Path(config.get("Info", "Path")),
+                        "globalsetting",
+                        "--cleanmode",
+                        "1" if Config.get("Function", "IfBlockAd") else "0",
+                        timeout=config.get("Data", "MaxWaitTime"),
+                    )
+
             return EMULATOR_TYPE_BOOK[config.get("Data", "Type")](config)
         else:
             raise ValueError(f"不支持的模拟器类型: {config.get('Data', 'Type')}")

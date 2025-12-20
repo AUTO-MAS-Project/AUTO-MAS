@@ -198,13 +198,23 @@ import {
   PlayCircleOutlined,
   PlusOutlined,
 } from '@ant-design/icons-vue'
-import type { CustomWebhook } from '@/types/settings'
 import { TEMPLATE_VARIABLES, WEBHOOK_TEMPLATES } from '@/utils/webhookTemplates'
 import { Service } from '@/api/services/Service'
 import { logger } from '@/utils/logger'
 import { getLogger } from '@/utils/logger'
 
 const webhookLogger = getLogger('Webhook管理器')
+
+// 定义Webhook类型（兼容旧props用）
+interface CustomWebhook {
+  id: string
+  name: string
+  url: string
+  template: string
+  enabled: boolean
+  headers?: Record<string, string>
+  method?: 'POST' | 'GET'
+}
 
 // 定义内部使用的Webhook类型
 interface WebhookItem {
