@@ -28,7 +28,6 @@ import shutil
 import asyncio
 import uvicorn
 import sqlite3
-import calendar
 import truststore
 from pathlib import Path
 from fastapi import WebSocket
@@ -59,7 +58,6 @@ from app.utils.constants import (
     UTC8,
     RESOURCE_STAGE_INFO,
     RESOURCE_STAGE_DROP_INFO,
-    MATERIALS_MAP,
     TYPE_BOOK,
     RESOURCE_STAGE_DATE_TEXT,
 )
@@ -146,7 +144,7 @@ class AppConfig(GlobalConfig):
             db = sqlite3.connect(self.database_path)
             cur = db.cursor()
             cur.execute("CREATE TABLE version(v text)")
-            cur.execute("INSERT INTO version VALUES(?)", ("v1.9",))
+            cur.execute("INSERT INTO version VALUES(?)", ("v1.10",))
             db.commit()
             cur.close()
             db.close()
@@ -157,7 +155,7 @@ class AppConfig(GlobalConfig):
         cur.execute("SELECT * FROM version WHERE True")
         version = cur.fetchall()
 
-        if version[0][0] != "v1.9":
+        if version[0][0] != "v1.10":
             logger.info(
                 "数据文件版本更新开始",
             )
@@ -400,6 +398,30 @@ class AppConfig(GlobalConfig):
 
                 cur.execute("DELETE FROM version WHERE v = ?", ("v1.8",))
                 cur.execute("INSERT INTO version VALUES(?)", ("v1.9",))
+                db.commit()
+            # v1.9-->v1.10
+            if version[0][0] == "v1.9" or if_streaming:
+                logger.info(
+                    "数据文件版本更新: v1.9-->v1.10",
+                )
+                if_streaming = True
+
+                if (Path.cwd() / "config/Config.json").exists():
+                    data = json.loads(
+                        (Path.cwd() / "config/Config.json").read_text(encoding="utf-8")
+                    )
+                    data["Data"]["LastStageUpdated"] = ""
+                    data["Data"]["StageTimeStamp"] = ""
+                    data["Data"]["Stage"] = "{ }"
+                    data["Function"]["IfBlockAd"] = data["Function"].get(
+                        "IfSkipMumuSplashAds", False
+                    )
+                    (Path.cwd() / "config/Config.json").write_text(
+                        json.dumps(data, ensure_ascii=False, indent=4), encoding="utf-8"
+                    )
+
+                cur.execute("DELETE FROM version WHERE v = ?", ("v1.9",))
+                cur.execute("INSERT INTO version VALUES(?)", ("v1.10",))
                 db.commit()
 
             cur.close()
@@ -1497,104 +1519,49 @@ class AppConfig(GlobalConfig):
             self.get("Data", "StageTimeStamp"), "%Y-%m-%d %H:%M:%S"
         ).replace(tzinfo=UTC8)
 
-        # # 本地关卡信息无需更新, 直接返回本地数据
-        # if datetime.fromtimestamp(0, tz=UTC8) < remote_time_stamp <= local_time_stamp:
-        #     logger.info("使用本地关卡信息")
-        #     await self.set(
-        #         "Data", "LastStageUpdated", datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        #     )
-        #     return json.loads(self.get("Data", "Stage"))
+        # 本地关卡信息无需更新, 直接返回本地数据
+        if datetime.fromtimestamp(0, tz=UTC8) < remote_time_stamp <= local_time_stamp:
+            logger.info("使用本地关卡信息")
+            await self.set(
+                "Data", "LastStageUpdated", datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            )
+            return json.loads(self.get("Data", "Stage"))
 
         # 需要更新关卡信息
         logger.info("从远端更新关卡信息")
-
         try:
             async with httpx.AsyncClient(proxy=self.get_proxy()) as client:
                 response = await client.get(
                     "https://api.maa.plus/MaaAssistantArknights/api/gui/StageActivityV2.json"
                 )
                 if response.status_code == 200:
-                    remote_activity_stage_info = (
-                        response.json().get("Official", {}).get("sideStoryStage", {})
+                    logger.success("成功获取远端活动关卡信息")
+                    await self.set(
+                        "Data",
+                        "LastStageUpdated",
+                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     )
-                    if_get_maa_stage = True
+                    await self.set(
+                        "Data",
+                        "StageTimeStamp",
+                        remote_time_stamp.strftime("%Y-%m-%d %H:%M:%S"),
+                    )
+                    await self.set(
+                        "Data",
+                        "Stage",
+                        json.dumps(
+                            response.json()
+                            .get("Official", {})
+                            .get("sideStoryStage", {}),
+                            ensure_ascii=False,
+                        ),
+                    )
                 else:
                     logger.warning(f"无法从MAA服务器获取活动关卡信息:{response.text}")
-                    if_get_maa_stage = False
-                    remote_activity_stage_info = {}
         except Exception as e:
             logger.warning(f"无法从MAA服务器获取活动关卡信息: {e}")
-            if_get_maa_stage = False
-            remote_activity_stage_info = {}
 
-        activity_stage_drop_info = []
-        activity_stage_combox = []
-
-        for side_story in remote_activity_stage_info.values():
-            if (
-                datetime.strptime(
-                    side_story["Activity"]["UtcStartTime"], "%Y/%m/%d %H:%M:%S"
-                ).replace(tzinfo=UTC8)
-                < datetime.now(tz=UTC8)
-                < datetime.strptime(
-                    side_story["Activity"]["UtcExpireTime"], "%Y/%m/%d %H:%M:%S"
-                ).replace(tzinfo=UTC8)
-            ):
-                for stage in side_story["Stages"]:
-                    activity_stage_combox.append(
-                        {"label": stage["Display"], "value": stage["Value"]}
-                    )
-
-                    if "SSReopen" not in stage["Display"]:
-                        drop_id = re.sub(
-                            r"[\u200b\u200c\u200d\ufeff]",
-                            "",
-                            str(stage["Drop"]).strip(),
-                        )  # 去除不可见字符
-
-                        if drop_id.isdigit():
-                            drop_name = MATERIALS_MAP.get(drop_id, "未知材料")
-                        else:
-                            drop_name = f"DESC:{drop_id}"  # 非纯数字, 直接用文本.加一个DESC前缀方便前端区分
-
-                        activity_stage_drop_info.append(
-                            {
-                                "Display": stage["Display"],
-                                "Value": stage["Value"],
-                                "Drop": stage["Drop"],
-                                "DropName": drop_name,
-                                "Activity": side_story["Activity"],
-                            }
-                        )
-
-        stage_data = {}
-
-        for day in range(0, 8):
-            res_stage = []
-
-            for stage in RESOURCE_STAGE_INFO:
-                if day in stage["days"] or day == 0:
-                    res_stage.append({"label": stage["text"], "value": stage["value"]})
-
-            stage_data[calendar.day_name[day - 1] if day > 0 else "ALL"] = (
-                res_stage[0:1] + activity_stage_combox + res_stage[1:]
-            )
-
-        stage_data["Info"] = activity_stage_drop_info
-
-        if if_get_maa_stage:
-            logger.success("成功获取远端活动关卡信息")
-            await self.set(
-                "Data", "LastStageUpdated", datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            )
-            await self.set(
-                "Data",
-                "StageTimeStamp",
-                remote_time_stamp.strftime("%Y-%m-%d %H:%M:%S"),
-            )
-            await self.set("Data", "Stage", json.dumps(stage_data, ensure_ascii=False))
-
-        return stage_data
+        return json.loads(self.get("Data", "Stage"))
 
     async def get_script_combox(self):
         """获取脚本下拉框信息"""
