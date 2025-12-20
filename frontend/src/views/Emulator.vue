@@ -929,25 +929,17 @@ const handleBossKeyInputChange = (uuid: string) => {
                           </a-tag>
                         </template>
                         <template v-else-if="column.key === 'action'">
-                          <a-button 
-                            v-if="canStartDevice(record.status)"
-                            type="primary" 
-                            :icon="h(PlayCircleOutlined)"
+                          <a-button v-if="canStartDevice(record.status)" type="primary" :icon="h(PlayCircleOutlined)"
                             :loading="startingDevices.has(`${element.uid}-${record.index}`)"
                             @click="startEmulator(element.uid, String(record.index))">
                             启动
                           </a-button>
-                          <a-button 
-                            v-else-if="canStopDevice(record.status)"
-                            danger 
-                            :icon="h(StopOutlined)"
+                          <a-button v-else-if="canStopDevice(record.status)" danger :icon="h(StopOutlined)"
                             :loading="stoppingDevices.has(`${element.uid}-${record.index}`)"
                             @click="stopEmulator(element.uid, String(record.index))">
                             关闭
                           </a-button>
-                          <a-button 
-                            v-else
-                            disabled>
+                          <a-button v-else disabled>
                             {{ getDeviceStatusInfo(record.status).text }}
                           </a-button>
                         </template>

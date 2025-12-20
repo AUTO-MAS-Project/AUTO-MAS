@@ -126,7 +126,7 @@
                             user.Info.InfrastMode !== '-' &&
                             user.Info.InfrastMode !== ''
                           " class="info-tag" :color="user.Task.IfBase ? 'purple' : 'red'">
-                            基建: {{ user.Task.IfBase ? getInfrastModeDisplayName(user.Info.InfrastMode) : '关闭' }}
+                            基建: {{ user.Task.IfBase ? getInfrastDisplayText(user) : '关闭' }}
                           </a-tag>
 
                           <!-- 关卡信息 - 根据是否使用计划表配置显示不同内容 -->
@@ -518,6 +518,25 @@ const getInfrastModeDisplayName = (mode: string): string => {
     default:
       return mode || '未知'
   }
+}
+
+// 获取基建显示文本
+const getInfrastDisplayText = (user: User): string => {
+  const mode = user.Info.InfrastMode
+
+  // 如果是自定义模式，只显示当前排班号
+  if (mode === 'Custom') {
+    // 显示排班索引
+    if (user.Info.InfrastIndex && user.Info.InfrastIndex !== '') {
+      return `排班 ${user.Info.InfrastIndex}`
+    }
+
+    // 没有排班信息时返回'自定义'
+    return '自定义'
+  }
+
+  // 非自定义模式，返回标准显示名称
+  return getInfrastModeDisplayName(mode)
 }
 
 // 检查是否完成了本周剿灭
