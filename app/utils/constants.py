@@ -22,6 +22,7 @@
 
 
 import re
+import os
 import sys
 import locale
 import subprocess
@@ -579,3 +580,10 @@ TASK_MODE_ZH = {
     "ScriptConfig": "脚本配置",
 }
 """任务模式中文映射表"""
+
+EMULATOR_SPLASH_ADS_PATH_BOOK = {
+    "mumu": Path(os.getenv("APPDATA") or "")
+    / "Netease/MuMuPlayer-12.0/data/startupImage",
+    "ldplayer": Path(os.getenv("APPDATA") or "") / "leidian9/cache",
+}
+"""模拟器启动时广告路径"""

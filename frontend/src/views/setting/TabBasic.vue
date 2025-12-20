@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type { ThemeColor, ThemeMode } from '@/composables/useTheme'
-import type { SettingsData } from '@/types/settings'
+import type { GlobalConfig } from '@/api'
 import type { SelectValue } from 'ant-design-vue/es/select'
 import LogHighlightSettings from '@/components/LogHighlightSettings.vue'
 
@@ -15,14 +15,14 @@ const {
   handleThemeColorChange,
   handleSettingChange,
 } = defineProps<{
-  settings: SettingsData
+  settings: GlobalConfig
   themeMode: ThemeMode | 'system'
   themeColor: ThemeColor
   themeModeOptions: { label: string; value: string }[]
   themeColorOptions: { label: string; value: string; color: string }[]
   handleThemeModeChange: (value: SelectValue) => void
   handleThemeColorChange: (value: SelectValue) => void
-  handleSettingChange: (category: keyof SettingsData, key: string, value: any) => Promise<void>
+  handleSettingChange: (category: keyof GlobalConfig, key: string, value: any) => Promise<void>
 }>()
 </script>
 
@@ -87,7 +87,7 @@ const {
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-select v-model:value="settings.UI.IfShowTray" size="large" style="width: 100%"
+            <a-select :value="settings.UI?.IfShowTray" size="large" style="width: 100%"
               @change="(checked: any) => handleSettingChange('UI', 'IfShowTray', checked)">
               <a-select-option :value="true">是</a-select-option>
               <a-select-option :value="false">否</a-select-option>
@@ -102,7 +102,7 @@ const {
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-select v-model:value="settings.UI.IfToTray" size="large" style="width: 100%"
+            <a-select :value="settings.UI?.IfToTray" size="large" style="width: 100%"
               @change="(checked: any) => handleSettingChange('UI', 'IfToTray', checked)">
               <a-select-option :value="true">是</a-select-option>
               <a-select-option :value="false">否</a-select-option>

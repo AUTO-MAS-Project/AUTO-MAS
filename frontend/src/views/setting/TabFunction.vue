@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
-import type { SettingsData } from '@/types/settings'
+import type { GlobalConfig } from '@/api'
 import { handleExternalLink } from '@/utils/openExternal'
 
 const {
@@ -12,12 +12,12 @@ const {
   handleSettingChange,
   checkUpdate,
 } = defineProps<{
-  settings: SettingsData
+  settings: GlobalConfig
   historyRetentionOptions: { label: string; value: number }[]
   updateSourceOptions: { label: string; value: string }[]
   updateChannelOptions: { label: string; value: string }[]
   voiceTypeOptions: { label: string; value: string }[]
-  handleSettingChange: (category: keyof SettingsData, key: string, value: any) => Promise<void>
+  handleSettingChange: (category: keyof GlobalConfig, key: string, value: any) => Promise<void>
   checkUpdate: () => Promise<void>
 }>()
 </script>
@@ -37,12 +37,8 @@ const {
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-select
-              v-model:value="settings.Start.IfSelfStart"
-              size="large"
-              style="width: 100%"
-              @change="(checked: any) => handleSettingChange('Start', 'IfSelfStart', checked)"
-            >
+            <a-select :value="settings.Start?.IfSelfStart" size="large" style="width: 100%"
+              @change="(checked: any) => handleSettingChange('Start', 'IfSelfStart', checked)">
               <a-select-option :value="true">是</a-select-option>
               <a-select-option :value="false">否</a-select-option>
             </a-select>
@@ -56,14 +52,9 @@ const {
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-select
-              v-model:value="settings.Start.IfMinimizeDirectly"
-              size="large"
-              style="width: 100%"
-              @change="
-                (checked: any) => handleSettingChange('Start', 'IfMinimizeDirectly', checked)
-              "
-            >
+            <a-select :value="settings.Start?.IfMinimizeDirectly" size="large" style="width: 100%" @change="
+              (checked: any) => handleSettingChange('Start', 'IfMinimizeDirectly', checked)
+            ">
               <a-select-option :value="true">是</a-select-option>
               <a-select-option :value="false">否</a-select-option>
             </a-select>
@@ -86,15 +77,10 @@ const {
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-select
-              v-model:value="settings.Function.HistoryRetentionTime"
-              :options="historyRetentionOptions"
-              size="large"
-              style="width: 100%"
-              @change="
+            <a-select :value="settings.Function?.HistoryRetentionTime" :options="historyRetentionOptions" size="large"
+              style="width: 100%" @change="
                 (value: any) => handleSettingChange('Function', 'HistoryRetentionTime', value)
-              "
-            />
+              " />
           </div>
         </a-col>
         <a-col :span="8">
@@ -105,12 +91,8 @@ const {
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-select
-              v-model:value="settings.Function.IfSilence"
-              size="large"
-              style="width: 100%"
-              @change="(checked: any) => handleSettingChange('Function', 'IfSilence', checked)"
-            >
+            <a-select :value="settings.Function?.IfSilence" size="large" style="width: 100%"
+              @change="(checked: any) => handleSettingChange('Function', 'IfSilence', checked)">
               <a-select-option :value="true">是</a-select-option>
               <a-select-option :value="false">否</a-select-option>
             </a-select>
@@ -124,12 +106,8 @@ const {
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-select
-              v-model:value="settings.Function.IfAllowSleep"
-              size="large"
-              style="width: 100%"
-              @change="(checked: any) => handleSettingChange('Function', 'IfAllowSleep', checked)"
-            >
+            <a-select :value="settings.Function?.IfAllowSleep" size="large" style="width: 100%"
+              @change="(checked: any) => handleSettingChange('Function', 'IfAllowSleep', checked)">
               <a-select-option :value="true">是</a-select-option>
               <a-select-option :value="false">否</a-select-option>
             </a-select>
@@ -149,28 +127,16 @@ const {
                     </p>
                     <ul style="margin: 8px 0; padding-left: 16px">
                       <li>
-                        <a
-                          href="https://www.bilibili.com/protocal/licence.html"
-                          class="tooltip-link"
-                          @click="handleExternalLink"
-                          >《哔哩哔哩弹幕网用户使用协议》</a
-                        >
+                        <a href="https://www.bilibili.com/protocal/licence.html" class="tooltip-link"
+                          @click="handleExternalLink">《哔哩哔哩弹幕网用户使用协议》</a>
                       </li>
                       <li>
-                        <a
-                          href="https://www.bilibili.com/blackboard/privacy-pc.html"
-                          class="tooltip-link"
-                          @click="handleExternalLink"
-                          >《哔哩哔哩隐私政策》</a
-                        >
+                        <a href="https://www.bilibili.com/blackboard/privacy-pc.html" class="tooltip-link"
+                          @click="handleExternalLink">《哔哩哔哩隐私政策》</a>
                       </li>
                       <li>
-                        <a
-                          href="https://game.bilibili.com/yhxy"
-                          class="tooltip-link"
-                          @click="handleExternalLink"
-                          >《哔哩哔哩游戏中心用户协议》</a
-                        >
+                        <a href="https://game.bilibili.com/yhxy" class="tooltip-link"
+                          @click="handleExternalLink">《哔哩哔哩游戏中心用户协议》</a>
                       </li>
                     </ul>
                   </div>
@@ -178,14 +144,9 @@ const {
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-select
-              v-model:value="settings.Function.IfAgreeBilibili"
-              size="large"
-              style="width: 100%"
-              @change="
-                (checked: any) => handleSettingChange('Function', 'IfAgreeBilibili', checked)
-              "
-            >
+            <a-select :value="settings.Function?.IfAgreeBilibili" size="large" style="width: 100%" @change="
+              (checked: any) => handleSettingChange('Function', 'IfAgreeBilibili', checked)
+            ">
               <a-select-option :value="true">是</a-select-option>
               <a-select-option :value="false">否</a-select-option>
             </a-select>
@@ -194,19 +155,29 @@ const {
         <a-col :span="12">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
-              <span class="form-label">屏蔽MuMu启动广告</span>
-              <a-tooltip title="MuMu模拟器启动时屏蔽启动广告">
+              <span class="form-label">屏蔽模拟器广告</span>
+              <a-tooltip>
+                <template #title>
+                  <div style="max-width: 300px">
+                    <p>
+                      屏蔽部分模拟器广告，支持的广告类型如下：
+                    </p>
+                    <ul style="margin: 8px 0; padding-left: 16px">
+                      <li>
+                        <strong>MuMu模拟器</strong>：启动时广告
+                      </li>
+                      <li>
+                        <strong>雷电模拟器</strong>：启动时广告、桌面广告
+                      </li>
+                    </ul>
+                  </div>
+                </template>
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-select
-              v-model:value="settings.Function.IfSkipMumuSplashAds"
-              size="large"
-              style="width: 100%"
-              @change="
-                (checked: any) => handleSettingChange('Function', 'IfSkipMumuSplashAds', checked)
-              "
-            >
+            <a-select :value="settings.Function?.IfBlockAd" size="large" style="width: 100%" @change="
+              (checked: any) => handleSettingChange('Function', 'IfBlockAd', checked)
+            ">
               <a-select-option :value="true">是</a-select-option>
               <a-select-option :value="false">否</a-select-option>
             </a-select>
@@ -223,8 +194,7 @@ const {
           <template #icon>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
               <path
-                d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"
-              />
+                d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z" />
             </svg>
           </template>
           检查更新
@@ -239,12 +209,8 @@ const {
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-select
-              v-model:value="settings.Update.IfAutoUpdate"
-              size="large"
-              style="width: 100%"
-              @change="(checked: any) => handleSettingChange('Update', 'IfAutoUpdate', checked)"
-            >
+            <a-select :value="settings.Update?.IfAutoUpdate" size="large" style="width: 100%"
+              @change="(checked: any) => handleSettingChange('Update', 'IfAutoUpdate', checked)">
               <a-select-option :value="true">是</a-select-option>
               <a-select-option :value="false">否</a-select-option>
             </a-select>
@@ -258,13 +224,8 @@ const {
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-select
-              v-model:value="settings.Update.Source"
-              :options="updateSourceOptions"
-              size="large"
-              style="width: 100%"
-              @change="(value: any) => handleSettingChange('Update', 'Source', value)"
-            />
+            <a-select :value="settings.Update?.Source" :options="updateSourceOptions" size="large" style="width: 100%"
+              @change="(value: any) => handleSettingChange('Update', 'Source', value)" />
           </div>
         </a-col>
         <a-col :span="8">
@@ -275,13 +236,8 @@ const {
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-select
-              v-model:value="settings.Update.Channel"
-              :options="updateChannelOptions"
-              size="large"
-              style="width: 100%"
-              @change="(value: any) => handleSettingChange('Update', 'Channel', value)"
-            />
+            <a-select :value="settings.Update?.Channel" :options="updateChannelOptions" size="large" style="width: 100%"
+              @change="(value: any) => handleSettingChange('Update', 'Channel', value)" />
           </div>
         </a-col>
       </a-row>
@@ -290,18 +246,12 @@ const {
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
               <span class="form-label">网络代理地址</span>
-              <a-tooltip
-                title="使用网络代理软件时，若出现网络连接问题，请尝试设置代理地址，此设置全局生效"
-              >
+              <a-tooltip title="使用网络代理软件时，若出现网络连接问题，请尝试设置代理地址，此设置全局生效">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-input
-              v-model:value="settings.Update.ProxyAddress"
-              placeholder="请输入网络代理地址"
-              size="large"
-              @blur="handleSettingChange('Update', 'ProxyAddress', settings.Update.ProxyAddress)"
-            />
+            <a-input :value="settings.Update?.ProxyAddress" placeholder="请输入网络代理地址" size="large"
+              @blur="(e: any) => handleSettingChange('Update', 'ProxyAddress', e.target.value)" />
           </div>
         </a-col>
         <a-col :span="12">
@@ -312,28 +262,18 @@ const {
                 <template #title>
                   <div>
                     Mirror酱CDK是使用Mirror源进行高速下载的凭证，可前往
-                    <a
-                      href="https://mirrorchyan.com/zh/get-start?source=auto-mas-setting"
-                      class="tooltip-link"
-                      @click="handleExternalLink"
-                      >Mirror酱官网</a
-                    >
+                    <a href="https://mirrorchyan.com/zh/get-start?source=auto-mas-setting" class="tooltip-link"
+                      @click="handleExternalLink">Mirror酱官网</a>
                     获取
                   </div>
                 </template>
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-input-password
-              v-model:value="settings.Update.MirrorChyanCDK"
-              :disabled="settings.Update.Source !== 'MirrorChyan'"
-              placeholder="使用Mirror源时请输入Mirror酱CDK"
-              :visibility-toggle="true"
-              size="large"
-              @blur="
-                handleSettingChange('Update', 'MirrorChyanCDK', settings.Update.MirrorChyanCDK)
-              "
-            />
+            <a-input-password :value="settings.Update?.MirrorChyanCDK"
+              :disabled="settings.Update?.Source !== 'MirrorChyan'" placeholder="使用Mirror源时请输入Mirror酱CDK"
+              :visibility-toggle="true" size="large"
+              @blur="(e: any) => handleSettingChange('Update', 'MirrorChyanCDK', e.target.value)" />
           </div>
         </a-col>
       </a-row>
@@ -353,12 +293,8 @@ const {
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-select
-              v-model:value="settings.Voice.Enabled"
-              size="large"
-              style="width: 100%"
-              @change="(checked: any) => handleSettingChange('Voice', 'Enabled', checked)"
-            >
+            <a-select :value="settings.Voice?.Enabled" size="large" style="width: 100%"
+              @change="(checked: any) => handleSettingChange('Voice', 'Enabled', checked)">
               <a-select-option :value="true">是</a-select-option>
               <a-select-option :value="false">否</a-select-option>
             </a-select>
@@ -372,14 +308,8 @@ const {
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-select
-              v-model:value="settings.Voice.Type"
-              :options="voiceTypeOptions"
-              :disabled="!settings.Voice.Enabled"
-              size="large"
-              style="width: 100%"
-              @change="(value: any) => handleSettingChange('Voice', 'Type', value)"
-            />
+            <a-select :value="settings.Voice?.Type" :options="voiceTypeOptions" :disabled="!settings.Voice?.Enabled"
+              size="large" style="width: 100%" @change="(value: any) => handleSettingChange('Voice', 'Type', value)" />
           </div>
         </a-col>
       </a-row>

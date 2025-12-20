@@ -107,7 +107,7 @@ const routes = [
   {
     path: '/history',
     name: 'History',
-    component: () => import('../views/History.vue'),
+    component: () => import('../views/history/index.vue'),
     meta: { title: '历史记录' },
   },
   {

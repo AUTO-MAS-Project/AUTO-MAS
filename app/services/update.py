@@ -252,15 +252,15 @@ class _UpdateHandler:
                                     last_download_size = downloaded_size
                                     last_time = time.time()
 
-                                await Config.send_websocket_message(
-                                    id="Update",
-                                    type="Update",
-                                    data={
-                                        "downloaded_size": downloaded_size,
-                                        "file_size": file_size,
-                                        "speed": speed,
-                                    },
-                                )
+                                    await Config.send_websocket_message(
+                                        id="Update",
+                                        type="Update",
+                                        data={
+                                            "downloaded_size": downloaded_size,
+                                            "file_size": file_size,
+                                            "speed": speed,
+                                        },
+                                    )
 
                 # 重命名临时文件为最终包
                 (Path.cwd() / "download.temp").rename(

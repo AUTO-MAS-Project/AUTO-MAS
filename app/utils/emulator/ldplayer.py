@@ -176,9 +176,15 @@ class LDManager(DeviceBase):
 
         for idx, info in data.items():
             status = await self.getStatus(idx, info)
-            adb_port = f"127.0.0.1:{await self.get_adb_ports(info.vbox_pid)}"
+            adb_port = await self.get_adb_ports(info.vbox_pid)
             result[idx] = DeviceInfo(
-                title=info.title, status=status, adb_address=adb_port
+                title=info.title,
+                status=status,
+                adb_address=(
+                    f"127.0.0.1:{adb_port}"
+                    if adb_port != 0
+                    else f"emulator-{5554 + int(idx) * 2}"
+                ),
             )
 
         return result
@@ -203,7 +209,7 @@ class LDManager(DeviceBase):
                 keyboard.press_and_release(
                     "+".join(
                         _.strip().lower()
-                        for _ in json.loads(self.config.get("Info", "BossKeys"))
+                        for _ in json.loads(self.config.get("Data", "BossKey"))
                     )
                 )  # 老板键
             except Exception as e:
@@ -224,7 +230,6 @@ class LDManager(DeviceBase):
             if_merge_std=True,
         )
 
-        # logger.debug(f"全部信息{result.stdout.strip()}")
         if result.returncode != 0:
             raise RuntimeError(f"命令执行失败: {result.stdout}")
         emulators: dict[str, LDPlayerDevice] = {}

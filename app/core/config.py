@@ -80,7 +80,7 @@ except ImportError:
 
 
 class AppConfig(GlobalConfig):
-    VERSION = [5, 0, 0, 0]
+    VERSION = "v5.0.1"
 
     def __init__(self) -> None:
         super().__init__()
@@ -88,7 +88,7 @@ class AppConfig(GlobalConfig):
         logger.info("")
         logger.info("===================================")
         logger.info("AUTO-MAS 后端应用程序")
-        logger.info(f"版本号:  {self.version()}")
+        logger.info(f"版本号:  {self.VERSION}")
         logger.info(f"工作目录:  {Path.cwd()}")
         logger.info("===================================")
 
@@ -124,16 +124,6 @@ class AppConfig(GlobalConfig):
         self.temp_task: List[asyncio.Task] = []
 
         truststore.inject_into_ssl()
-
-    def version(self) -> str:
-        """获取版本号字符串"""
-
-        if self.VERSION[3] == 0:
-            return f"v{'.'.join(str(_) for _ in self.VERSION[0:3])}"
-        else:
-            return (
-                f"v{'.'.join(str(_) for _ in self.VERSION[0:3])}-beta.{self.VERSION[3]}"
-            )
 
     async def init_config(self) -> None:
         """初始化配置管理"""
@@ -514,7 +504,6 @@ class AppConfig(GlobalConfig):
 
         for group, items in data.items():
             for name, value in items.items():
-                logger.debug(f"更新脚本配置: {script_id} - {group}.{name} = {value}")
                 await self.ScriptConfig[uid].set(group, name, value)
 
         await self.ScriptConfig.save()
@@ -756,7 +745,6 @@ class AppConfig(GlobalConfig):
 
         for group, items in data.items():
             for name, value in items.items():
-                logger.debug(f"更新脚本配置: {script_id} - {group}.{name} = {value}")
                 await (
                     self.ScriptConfig[script_uid]
                     .UserData[user_uid]
@@ -874,7 +862,6 @@ class AppConfig(GlobalConfig):
 
         for group, items in data.items():
             for name, value in items.items():
-                logger.debug(f"更新计划表配置: {plan_id} - {group}.{name} = {value}")
                 await self.PlanConfig[plan_uid].set(group, name, value)
 
         await self.PlanConfig.save()
@@ -964,13 +951,10 @@ class AppConfig(GlobalConfig):
                     logger.info(f"路径已自动调整: {input_path} -> {found_path}")
                     data["Info"]["Path"] = found_path
                 else:
-                    logger.debug(f"路径未调整,保持原值: {input_path}")
+                    logger.debug(f"路径未调整, 保持原值: {input_path}")
 
         for group, items in data.items():
             for name, value in items.items():
-                logger.debug(
-                    f"更新全局 emulator:{emulator_id} - {group}.{name} = {value}"
-                )
                 await self.EmulatorConfig[emulator_uid].set(group, name, value)
 
         await self.EmulatorConfig.save()
@@ -1050,7 +1034,6 @@ class AppConfig(GlobalConfig):
 
         for group, items in data.items():
             for name, value in items.items():
-                logger.debug(f"更新调度队列配置: {queue_id} - {group}.{name} = {value}")
                 await self.QueueConfig[queue_uid].set(group, name, value)
 
         await self.QueueConfig.save()
@@ -1109,7 +1092,6 @@ class AppConfig(GlobalConfig):
 
         for group, items in data.items():
             for name, value in items.items():
-                logger.debug(f"更新时间设置配置: {queue_id} - {group}.{name} = {value}")
                 await (
                     self.QueueConfig[queue_uid]
                     .TimeSet[time_set_uid]
@@ -1183,7 +1165,6 @@ class AppConfig(GlobalConfig):
 
         for group, items in data.items():
             for name, value in items.items():
-                logger.debug(f"更新队列项配置: {queue_id} - {group}.{name} = {value}")
                 await (
                     self.QueueConfig[queue_uid]
                     .QueueItem[queue_item_uid]
@@ -1229,7 +1210,6 @@ class AppConfig(GlobalConfig):
 
         for group, items in data.items():
             for name, value in items.items():
-                logger.debug(f"更新全局设置 - {group}.{name} = {value}")
                 await self.set(group, name, value)
 
         logger.success("全局设置更新成功")
@@ -1314,9 +1294,6 @@ class AppConfig(GlobalConfig):
 
             for group, items in data.items():
                 for name, value in items.items():
-                    logger.debug(
-                        f"更新全局 webhook:{webhook_id} - {group}.{name} = {value}"
-                    )
                     await self.Notify_CustomWebhooks[webhook_uid].set(
                         group, name, value
                     )
@@ -1331,9 +1308,6 @@ class AppConfig(GlobalConfig):
 
             for group, items in data.items():
                 for name, value in items.items():
-                    logger.debug(
-                        f"更新用户 webhook: {script_id} - {user_id} - {webhook_id} - {group}.{name} = {value}"
-                    )
                     await (
                         self.ScriptConfig[script_uid]
                         .UserData[user_uid]
@@ -1523,13 +1497,13 @@ class AppConfig(GlobalConfig):
             self.get("Data", "StageTimeStamp"), "%Y-%m-%d %H:%M:%S"
         ).replace(tzinfo=UTC8)
 
-        # 本地关卡信息无需更新, 直接返回本地数据
-        if datetime.fromtimestamp(0, tz=UTC8) < remote_time_stamp <= local_time_stamp:
-            logger.info("使用本地关卡信息")
-            await self.set(
-                "Data", "LastStageUpdated", datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            )
-            return json.loads(self.get("Data", "Stage"))
+        # # 本地关卡信息无需更新, 直接返回本地数据
+        # if datetime.fromtimestamp(0, tz=UTC8) < remote_time_stamp <= local_time_stamp:
+        #     logger.info("使用本地关卡信息")
+        #     await self.set(
+        #         "Data", "LastStageUpdated", datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        #     )
+        #     return json.loads(self.get("Data", "Stage"))
 
         # 需要更新关卡信息
         logger.info("从远端更新关卡信息")
@@ -1537,59 +1511,61 @@ class AppConfig(GlobalConfig):
         try:
             async with httpx.AsyncClient(proxy=self.get_proxy()) as client:
                 response = await client.get(
-                    "https://api.maa.plus/MaaAssistantArknights/api/gui/StageActivity.json"
+                    "https://api.maa.plus/MaaAssistantArknights/api/gui/StageActivityV2.json"
                 )
                 if response.status_code == 200:
                     remote_activity_stage_info = (
-                        response.json().get("Official", {}).get("sideStoryStage", [])
+                        response.json().get("Official", {}).get("sideStoryStage", {})
                     )
                     if_get_maa_stage = True
                 else:
                     logger.warning(f"无法从MAA服务器获取活动关卡信息:{response.text}")
                     if_get_maa_stage = False
-                    remote_activity_stage_info = []
+                    remote_activity_stage_info = {}
         except Exception as e:
             logger.warning(f"无法从MAA服务器获取活动关卡信息: {e}")
             if_get_maa_stage = False
-            remote_activity_stage_info = []
+            remote_activity_stage_info = {}
 
         activity_stage_drop_info = []
         activity_stage_combox = []
 
-        for stage in remote_activity_stage_info:
+        for side_story in remote_activity_stage_info.values():
             if (
                 datetime.strptime(
-                    stage["Activity"]["UtcStartTime"], "%Y/%m/%d %H:%M:%S"
+                    side_story["Activity"]["UtcStartTime"], "%Y/%m/%d %H:%M:%S"
                 ).replace(tzinfo=UTC8)
                 < datetime.now(tz=UTC8)
                 < datetime.strptime(
-                    stage["Activity"]["UtcExpireTime"], "%Y/%m/%d %H:%M:%S"
+                    side_story["Activity"]["UtcExpireTime"], "%Y/%m/%d %H:%M:%S"
                 ).replace(tzinfo=UTC8)
             ):
-                activity_stage_combox.append(
-                    {"label": stage["Display"], "value": stage["Value"]}
-                )
-
-                if "SSReopen" not in stage["Display"]:
-                    raw_drop = stage["Drop"]
-                    drop_id = re.sub(
-                        r"[\u200b\u200c\u200d\ufeff]", "", str(raw_drop).strip()
-                    )  # 去除不可见字符
-
-                    if drop_id.isdigit():
-                        drop_name = MATERIALS_MAP.get(drop_id, "未知材料")
-                    else:
-                        drop_name = f"DESC:{drop_id}"  # 非纯数字, 直接用文本.加一个DESC前缀方便前端区分
-
-                    activity_stage_drop_info.append(
-                        {
-                            "Display": stage["Display"],
-                            "Value": stage["Value"],
-                            "Drop": raw_drop,
-                            "DropName": drop_name,
-                            "Activity": stage["Activity"],
-                        }
+                for stage in side_story["Stages"]:
+                    activity_stage_combox.append(
+                        {"label": stage["Display"], "value": stage["Value"]}
                     )
+
+                    if "SSReopen" not in stage["Display"]:
+                        drop_id = re.sub(
+                            r"[\u200b\u200c\u200d\ufeff]",
+                            "",
+                            str(stage["Drop"]).strip(),
+                        )  # 去除不可见字符
+
+                        if drop_id.isdigit():
+                            drop_name = MATERIALS_MAP.get(drop_id, "未知材料")
+                        else:
+                            drop_name = f"DESC:{drop_id}"  # 非纯数字, 直接用文本.加一个DESC前缀方便前端区分
+
+                        activity_stage_drop_info.append(
+                            {
+                                "Display": stage["Display"],
+                                "Value": stage["Value"],
+                                "Drop": stage["Drop"],
+                                "DropName": drop_name,
+                                "Activity": side_story["Activity"],
+                            }
+                        )
 
         stage_data = {}
 
@@ -1720,7 +1696,7 @@ class AppConfig(GlobalConfig):
         try:
             async with httpx.AsyncClient(proxy=self.get_proxy()) as client:
                 response = await client.get(
-                    "https://download.auto-mas.top/d/AUTO-MAS/Server/notice.json"
+                    "https://api.auto-mas.top/file/Server/notice.json"
                 )
                 if response.status_code == 200:
                     remote_notice = response.json()
@@ -1946,7 +1922,7 @@ class AppConfig(GlobalConfig):
 
         # 保存日志
         log_path.parent.mkdir(parents=True, exist_ok=True)
-        log_path.write_text("\n".join(logs), encoding="utf-8")
+        log_path.write_text("".join(logs), encoding="utf-8")
         # 保存统计数据
         log_path.with_suffix(".json").write_text(
             json.dumps(data, ensure_ascii=False, indent=4), encoding="utf-8"
@@ -1975,7 +1951,7 @@ class AppConfig(GlobalConfig):
 
         # 保存日志
         log_path.parent.mkdir(parents=True, exist_ok=True)
-        log_path.with_suffix(".log").write_text("\n".join(logs), encoding="utf-8")
+        log_path.with_suffix(".log").write_text("".join(logs), encoding="utf-8")
         log_path.with_suffix(".json").write_text(
             json.dumps(data, ensure_ascii=False, indent=4), encoding="utf-8"
         )

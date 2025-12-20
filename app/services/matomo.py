@@ -70,7 +70,7 @@ class _MatomoHandler:
             "h": time.strftime("%H"),
             "m": time.strftime("%M"),
             "s": time.strftime("%S"),
-            "ua": f"AUTO-MAS/{Config.version()} ({platform.system()} {platform.release()})",
+            "ua": f"AUTO-MAS/{Config.VERSION} ({platform.system()} {platform.release()})",
         }
 
         # 添加自定义变量

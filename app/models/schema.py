@@ -134,9 +134,7 @@ class GlobalConfig_Function(BaseModel):
     IfAgreeBilibili: Optional[bool] = Field(
         default=None, description="同意哔哩哔哩用户协议"
     )
-    IfSkipMumuSplashAds: Optional[bool] = Field(
-        default=None, description="跳过Mumu模拟器启动广告"
-    )
+    IfBlockAd: Optional[bool] = Field(default=None, description="屏蔽模拟器广告")
 
 
 class GlobalConfig_Voice(BaseModel):

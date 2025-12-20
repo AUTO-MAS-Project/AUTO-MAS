@@ -25,6 +25,7 @@ import shlex
 import shutil
 import asyncio
 from pathlib import Path
+from contextlib import suppress
 from datetime import datetime, timedelta
 
 from app.core import Config
@@ -123,17 +124,13 @@ class AutoProxyTask(TaskExecuteBase):
         self.script_config_path = Path(self.script_config.get("Script", "ConfigPath"))
 
         self.script_log_path = Path(self.script_config.get("Script", "LogPath"))
-        log_format = self.script_config.get("Script", "LogPathFormat")
-        if log_format:
-            log_file_name = datetime.now().strftime(log_format)
-            try:
-                datetime.strptime(self.script_log_path.stem, log_format)
-                self.script_log_path = self.script_log_path.with_stem(log_file_name)
-            except ValueError:
-                self.script_log_path = self.script_log_path.with_name(log_file_name)
-        if not self.script_log_path.exists():
-            self.script_log_path.parent.mkdir(parents=True, exist_ok=True)
-            self.script_log_path.touch(exist_ok=True)
+        self.log_format = self.script_config.get("Script", "LogPathFormat")
+        if self.log_format:
+            with suppress(ValueError):
+                datetime.strptime(self.script_log_path.stem, self.log_format)
+                self.log_format = f"{self.log_format}{self.script_log_path.suffix}"
+        else:
+            self.log_format = self.script_log_path.name
 
         self.game_path = Path(self.script_config.get("Game", "Path"))
         self.game_url = self.script_config.get("Game", "URL")
@@ -257,12 +254,12 @@ class AutoProxyTask(TaskExecuteBase):
                         await self.game_manager.kill()
                     elif isinstance(self.game_manager, DeviceBase):
                         await self.game_manager.close(
-                            self.script_config.get("Game", "EmulatorIndex"),
+                            self.script_config.get("Game", "EmulatorIndex")
                         )
 
                     await Notify.push_plyer(
                         "用户自动代理出现异常！",
-                        f"用户 {self.cur_user_item.name} 的自动代理出现一次异常",
+                        f"用户 {self.cur_user_item.name} 自动代理时模拟器启动失败",
                         f"{self.cur_user_item.name}的自动代理出现异常",
                         3,
                     )
@@ -274,9 +271,50 @@ class AutoProxyTask(TaskExecuteBase):
             )
 
             self.wait_event.clear()
+            t = datetime.now()
             await self.general_process_manager.open_process(
                 self.script_exe_path, *self.script_arguments
             )
+
+            # 等待日志文件生成
+            self.script_info.log = "正在等待脚本日志文件生成"
+            if_get_file = False
+            while datetime.now() - t < timedelta(minutes=1):
+
+                for log_file in self.script_log_path.parent.iterdir():
+                    if log_file.is_file():
+                        with suppress(ValueError):
+                            if strptime(log_file.name, self.log_format, t) >= t:
+                                self.script_log_path = log_file
+                                logger.success(
+                                    f"成功定位到日志文件: {self.script_log_path}"
+                                )
+                                if_get_file = True
+                                break
+                else:
+                    await asyncio.sleep(1)
+
+                if if_get_file:
+                    break
+            else:
+                logger.error(f"用户: {self.cur_user_uid} - 未找到日志文件")
+                await Config.send_websocket_message(
+                    id=self.task_info.task_id,
+                    type="Info",
+                    data={"Error": "未找到指定日志文件"},
+                )
+                self.cur_user_log.content = ["未找到日志文件, 无日志记录"]
+                self.cur_user_log.status = "未找到日志文件"
+
+                await self.close_script_process()
+                await Notify.push_plyer(
+                    "用户自动代理出现异常！",
+                    f"用户 {self.cur_user_item.name} 自动代理时未找到日志文件",
+                    f"{self.cur_user_item.name}的自动代理出现异常",
+                    3,
+                )
+                continue
+
             await self.general_log_monitor.start_monitor_file(
                 self.script_log_path, self.log_start_time
             )
@@ -443,8 +481,6 @@ class AutoProxyTask(TaskExecuteBase):
 
         if self.check_result != "Pass":
             return
-
-        logger.debug("开始进入结束通用脚本任务进程")
 
         # 结束各子任务
         await self.general_log_monitor.stop()
