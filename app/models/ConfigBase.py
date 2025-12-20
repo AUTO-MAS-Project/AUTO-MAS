@@ -196,7 +196,10 @@ class VirtualConfigValidator(ConfigValidator):
             del frame
 
     def correct(self, value: Any) -> str:
-        return self.function(value)
+        try:
+            return self.function(value)
+        except Exception as e:
+            return str(e)
 
 
 class BoolValidator(OptionsValidator):
@@ -567,7 +570,9 @@ class ConfigBase:
                 if not data.get(item.group):
                     data[item.group] = {}
                 if item.name:
-                    data[item.group][item.name] = item.getValue(if_decrypt)
+                    data[item.group][item.name] = (
+                        item.value if if_for_save else item.getValue(if_decrypt)
+                    )
 
             elif (
                 not ignore_multi_config
