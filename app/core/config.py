@@ -1472,10 +1472,13 @@ class AppConfig(GlobalConfig):
         }
         overview = {}
         for user, data in history_data.items():
-            last_proxy_date = max(
-                datetime.strptime(_["date"], "%Y年%m月%d日 %H:%M:%S")
-                for _ in data.get("index", [])
-            ).strftime("%Y年%m月%d日 %H:%M:%S")
+            index_data = data.get("index", [])
+            if index_data:
+                last_proxy_date = max(
+                    datetime.strptime(_["date"], "%Y年%m月%d日 %H:%M:%S") for _ in index_data
+                ).strftime("%Y年%m月%d日 %H:%M:%S")
+            else:
+                last_proxy_date = "暂无代理数据"
             proxy_times = len(data.get("index", []))
             error_info = data.get("error_info", {})
             error_times = len(error_info)
