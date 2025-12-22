@@ -20,13 +20,8 @@
             新建队列
           </a-button>
 
-          <a-popconfirm
-            v-if="queueList.length > 0"
-            title="确定要删除这个队列吗？"
-            ok-text="确定"
-            cancel-text="取消"
-            @confirm="handleRemoveQueue(activeQueueId)"
-          >
+          <a-popconfirm v-if="queueList.length > 0" title="确定要删除这个队列吗？" ok-text="确定" cancel-text="取消"
+            @confirm="handleRemoveQueue(activeQueueId)">
             <a-button danger size="large" :disabled="!activeQueueId">
               <template #icon>
                 <DeleteOutlined />
@@ -68,14 +63,9 @@
           <!-- 队列按钮组 -->
           <div class="queue-buttons-container">
             <a-space wrap size="middle">
-              <a-button
-                v-for="queue in queueList"
-                :key="queue.id"
-                :type="activeQueueId === queue.id ? 'primary' : 'default'"
-                size="large"
-                class="queue-button"
-                @click="onQueueChange(queue.id)"
-              >
+              <a-button v-for="queue in queueList" :key="queue.id"
+                :type="activeQueueId === queue.id ? 'primary' : 'default'" size="large" class="queue-button"
+                @click="onQueueChange(queue.id)">
                 {{ queue.name }}
               </a-button>
             </a-space>
@@ -96,15 +86,9 @@
               </a-button>
             </div>
             <div v-else class="queue-title-edit">
-              <a-input
-                ref="queueNameInputRef"
-                v-model:value="currentQueueName"
-                placeholder="请输入队列名称"
-                class="queue-title-input"
-                :maxlength="50"
-                @blur="finishEditQueueName"
-                @press-enter="finishEditQueueName"
-              />
+              <a-input ref="queueNameInputRef" v-model:value="currentQueueName" placeholder="请输入队列名称"
+                class="queue-title-input" :maxlength="50" @blur="finishEditQueueName"
+                @press-enter="finishEditQueueName" />
             </div>
           </div>
         </template>
@@ -120,12 +104,8 @@
                     <QuestionCircleOutlined class="help-icon" />
                   </a-tooltip>
                 </div>
-                <a-select
-                  v-model:value="currentStartUpEnabled"
-                  style="width: 100%"
-                  size="large"
-                  @change="(value: any) => handleConfigChange('StartUpEnabled', value)"
-                >
+                <a-select v-model:value="currentStartUpEnabled" style="width: 100%" size="large"
+                  @change="(value: any) => handleConfigChange('StartUpEnabled', value)">
                   <a-select-option :value="true">是</a-select-option>
                   <a-select-option :value="false">否</a-select-option>
                 </a-select>
@@ -139,12 +119,8 @@
                     <QuestionCircleOutlined class="help-icon" />
                   </a-tooltip>
                 </div>
-                <a-select
-                  v-model:value="currentTimeEnabled"
-                  style="width: 100%"
-                  size="large"
-                  @change="(value: any) => handleConfigChange('TimeEnabled', value)"
-                >
+                <a-select v-model:value="currentTimeEnabled" style="width: 100%" size="large"
+                  @change="(value: any) => handleConfigChange('TimeEnabled', value)">
                   <a-select-option :value="true">是</a-select-option>
                   <a-select-option :value="false">否</a-select-option>
                 </a-select>
@@ -158,14 +134,9 @@
                     <QuestionCircleOutlined class="help-icon" />
                   </a-tooltip>
                 </div>
-                <a-select
-                  v-model:value="currentAfterAccomplish"
-                  style="width: 100%"
-                  :options="afterAccomplishOptions"
-                  placeholder="请选择操作"
-                  size="large"
-                  @change="(value: any) => handleConfigChange('AfterAccomplish', value)"
-                />
+                <a-select v-model:value="currentAfterAccomplish" style="width: 100%" :options="afterAccomplishOptions"
+                  placeholder="请选择操作" size="large"
+                  @change="(value: any) => handleConfigChange('AfterAccomplish', value)" />
               </div>
             </a-col>
           </a-row>
@@ -176,24 +147,14 @@
         <a-row :gutter="24" class="managers-row">
           <!-- 定时项管理 -->
           <a-col :span="12" class="manager-col">
-            <TimeSetManager
-              v-if="activeQueueId && currentQueueData"
-              :queue-id="activeQueueId"
-              :time-sets="currentTimeSets"
-              style="font-size: 14px"
-              @refresh="refreshTimeSets"
-            />
+            <TimeSetManager v-if="activeQueueId && currentQueueData" :queue-id="activeQueueId"
+              :time-sets="currentTimeSets" style="font-size: 14px" @refresh="refreshTimeSets" />
           </a-col>
 
           <!-- 队列项管理 -->
           <a-col :span="12" class="manager-col">
-            <QueueItemManager
-              v-if="activeQueueId && currentQueueData"
-              :queue-id="activeQueueId"
-              :queue-items="currentQueueItems"
-              style="font-size: 14px"
-              @refresh="refreshQueueItems"
-            />
+            <QueueItemManager v-if="activeQueueId && currentQueueData" :queue-id="activeQueueId"
+              :queue-items="currentQueueItems" style="font-size: 14px" @refresh="refreshQueueItems" />
           </a-col>
         </a-row>
       </a-card>
@@ -600,20 +561,20 @@ const onQueueChange = async (queueId: string) => {
 // 刷新当前队列配置 - 保存成功后调用
 const refreshQueueConfig = async () => {
   if (!activeQueueId.value) return
-  
+
   try {
     const response = await Service.getQueuesApiQueueGetPost({})
     if (response.code === 200 && response.data && response.data[activeQueueId.value]) {
       currentQueueData.value = response.data
       const queueData = response.data[activeQueueId.value]
-      
+
       // 更新本地状态
       if (queueData.Info) {
         currentQueueName.value = queueData.Info.Name || ''
         currentStartUpEnabled.value = queueData.Info.StartUpEnabled ?? false
         currentTimeEnabled.value = queueData.Info.TimeEnabled ?? false
         currentAfterAccomplish.value = queueData.Info.AfterAccomplish ?? 'NoAction'
-        
+
         // 更新队列列表中的名称
         const currentQueue = queueList.value.find(queue => queue.id === activeQueueId.value)
         if (currentQueue) {
@@ -629,7 +590,7 @@ const refreshQueueConfig = async () => {
 // 即时保存单个字段变更 - 只发送修改的字段（遵循最小原则）
 const handleSaveChange = async (key: string, value: any): Promise<boolean> => {
   if (!activeQueueId.value) return false
-  
+
   try {
     // 构建只包含变更字段的数据
     const queueData: Record<string, any> = {
@@ -645,7 +606,7 @@ const handleSaveChange = async (key: string, value: any): Promise<boolean> => {
       message.error(response.message || '保存失败')
       return false
     }
-    
+
     // 保存成功后重新获取最新配置
     await refreshQueueConfig()
     return true
@@ -801,6 +762,7 @@ onMounted(async () => {
     opacity: 0;
     transform: translateY(30px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -808,11 +770,13 @@ onMounted(async () => {
 }
 
 @keyframes pulse {
+
   0%,
   100% {
     opacity: 0.6;
     transform: scale(1);
   }
+
   50% {
     opacity: 0.8;
     transform: scale(1.05);

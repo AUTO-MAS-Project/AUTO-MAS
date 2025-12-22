@@ -531,11 +531,25 @@ const handleStartMAAConfig = async (script: Script) => {
           return
         }
 
-        // 处理配置完成消息（兼容任何结构）
-        if (wsMessage.data && wsMessage.data.Accomplish) {
-          message.success(`${script.name} 配置已完成`)
+        // 处理Info类型的错误消息（显示错误但不取消订阅，等待Signal消息）
+        if (wsMessage.type === 'Info' && wsMessage.data && wsMessage.data.Error) {
+          logger.error(`脚本 ${script.name} 配置异常:`, wsMessage.data.Error)
+          message.error(`MAA配置失败: ${wsMessage.data.Error}`)
+          // 不取消订阅，等待Signal类型的Accomplish消息
+          return
+        }
+
+        // 处理任务结束消息（Signal类型且包含Accomplish字段）
+        if (wsMessage.type === 'Signal' && wsMessage.data && wsMessage.data.Accomplish !== undefined) {
+          logger.info(`脚本 ${script.name} 配置任务已结束`)
+          // 根据结果显示不同消息
+          const result = wsMessage.data.Accomplish
+          if (result && !result.includes('异常') && !result.includes('错误')) {
+            message.success(`${script.name} 配置已完成`)
+          }
+          // 清理连接
+          unsubscribe(subscriptionId)
           activeConnections.value.delete(script.id)
-          // 自动隐藏遮罩
           showMAAConfigMask.value = false
           currentConfigScript.value = null
         }

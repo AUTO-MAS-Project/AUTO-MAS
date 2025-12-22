@@ -12,7 +12,8 @@
         <span style="font-weight: 500">森空岛签到</span>
       </a-col>
       <a-col :span="18">
-        <a-switch v-model:checked="formData.Info.IfSkland" :disabled="loading" @change="emitSave('Info.IfSkland', formData.Info.IfSkland)" />
+        <a-switch v-model:checked="formData.Info.IfSkland" :disabled="loading"
+          @change="emitSave('Info.IfSkland', formData.Info.IfSkland)" />
         <span class="switch-description">开启后将启用森空岛签到功能</span>
       </a-col>
     </a-row>
