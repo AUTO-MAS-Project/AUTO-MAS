@@ -100,6 +100,8 @@ class ScriptConfigTask(TaskExecuteBase):
             )
 
         maa_set = json.loads(self.maa_set_path.read_text(encoding="utf-8"))
+
+        # 多配置使用默认配置
         if maa_set["Current"] != "Default":
             maa_set["Configurations"]["Default"] = maa_set["Configurations"][
                 maa_set["Current"]
@@ -108,14 +110,24 @@ class ScriptConfigTask(TaskExecuteBase):
         for i in range(1, 9):
             maa_set["Global"][f"Timer.Timer{i}"] = "False"
 
+        # 任务间切换方式
         maa_set["Configurations"]["Default"]["MainFunction.PostActions"] = "0"
+
+        # 不直接运行任务
+        maa_set["Configurations"]["Default"]["Start.StartGame"] = "True"
         maa_set["Configurations"]["Default"]["Start.RunDirectly"] = "False"
         maa_set["Configurations"]["Default"]["Start.OpenEmulatorAfterLaunch"] = "False"
+
+        # 更新配置
         maa_set["Global"]["VersionUpdate.ScheduledUpdateCheck"] = "False"
         maa_set["Global"]["VersionUpdate.AutoDownloadUpdatePackage"] = "False"
         maa_set["Global"]["VersionUpdate.AutoInstallUpdatePackage"] = "False"
+
+        # 静默模式相关配置
         if Config.get("Function", "IfSilence"):
             maa_set["Global"]["Start.MinimizeDirectly"] = "False"
+
+        # 任务配置
         maa_set["Configurations"]["Default"]["TaskQueue.WakeUp.IsChecked"] = "False"
         maa_set["Configurations"]["Default"]["TaskQueue.Recruiting.IsChecked"] = "False"
         maa_set["Configurations"]["Default"]["TaskQueue.Base.IsChecked"] = "False"
@@ -128,6 +140,7 @@ class ScriptConfigTask(TaskExecuteBase):
         maa_set["Configurations"]["Default"][
             "TaskQueue.Reclamation.IsChecked"
         ] = "False"
+
         self.maa_set_path.write_text(
             json.dumps(maa_set, ensure_ascii=False, indent=4), encoding="utf-8"
         )
