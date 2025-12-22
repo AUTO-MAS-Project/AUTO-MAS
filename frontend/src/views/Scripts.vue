@@ -282,11 +282,11 @@ const loadScripts = async () => {
     // 将 ScriptDetail 转换为 Script 格式（为了兼容现有的表格组件）
     scripts.value = scriptDetails.map(detail => ({
       id: detail.uid,
-      type: detail.type,
+      type: detail.type as ScriptType,
       name: detail.name,
       config: detail.config,
-      users: detail.users || [],
-      createTime: detail.createTime || new Date().toLocaleString(),
+      users: (detail.users || []).filter((user): user is NonNullable<typeof user> => user !== null),
+      createTime: new Date().toLocaleString(),
     }))
   } catch (error) {
     logger.error('加载脚本列表失败:', error)

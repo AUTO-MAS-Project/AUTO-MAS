@@ -288,7 +288,6 @@ const loadQueueData = async (queueId: string) => {
       if (currentQueue) {
         currentQueueName.value = currentQueue.name
       }
-      currentQueueEnabled.value = queueData.enabled ?? true
 
       // 使用nextTick确保DOM更新后再加载数据
       await nextTick()
@@ -350,7 +349,7 @@ const refreshTimeSets = async () => {
           const timeSetData = response.data[timeSetId]
           if (timeSetData?.Info) {
             // 解析时间字符串 "HH:mm"
-            const originalTimeString = timeSetData.Info.Set || timeSetData.Info.Time || '00:00'
+            const originalTimeString = timeSetData.Info.Time || '00:00'
             const [hours = 0, minutes = 0] = originalTimeString.split(':').map(Number)
 
             // 创建标准化的时间字符串
@@ -362,7 +361,6 @@ const refreshTimeSets = async () => {
               id: timeSetId,
               time: timeString,
               enabled: Boolean(timeSetData.Info.Enabled),
-              description: timeSetData.Info?.Description || '',
             })
           }
         } catch (itemError) {
@@ -504,7 +502,7 @@ const handleAddQueue = async () => {
     }
   } catch (error) {
     logger.error('添加队列失败:', error)
-    message.error('添加队列失败: ' + (error?.message || '网络错误'))
+    message.error('添加队列失败: ' + (error instanceof Error ? error.message : '网络错误'))
   }
 }
 
@@ -537,7 +535,7 @@ const handleRemoveQueue = async (queueId: string) => {
     }
   } catch (error) {
     logger.error('删除队列失败:', error)
-    message.error('删除队列失败: ' + (error?.message || '网络错误'))
+    message.error('删除队列失败: ' + (error instanceof Error ? error.message : '网络错误'))
   }
 }
 
