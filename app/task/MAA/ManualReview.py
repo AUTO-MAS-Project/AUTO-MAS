@@ -269,27 +269,42 @@ class ManualReviewTask(TaskExecuteBase):
 
         maa_set = json.loads(self.maa_set_path.read_text(encoding="utf-8"))
 
+        # 多配置使用默认配置
         if maa_set["Current"] != "Default":
             maa_set["Configurations"]["Default"] = maa_set["Configurations"][
                 maa_set["Current"]
             ]
             maa_set["Current"] = "Default"
+
+        # 关闭所有定时
         for i in range(1, 9):
             maa_set["Global"][f"Timer.Timer{i}"] = "False"
 
+        # 矫正 ADB 地址
         if emulator_info.adb_address != "Unknown":
             maa_set["Configurations"]["Default"][
                 "Connect.Address"
             ] = emulator_info.adb_address
+
+        # 任务间切换方式
         maa_set["Configurations"]["Default"]["MainFunction.PostActions"] = "8"
+
+        # 直接运行任务
+        maa_set["Configurations"]["Default"]["Start.StartGame"] = "True"
         maa_set["Configurations"]["Default"]["Start.RunDirectly"] = "True"
-        maa_set["Global"]["Start.MinimizeDirectly"] = "True"
+        maa_set["Configurations"]["Default"]["Start.OpenEmulatorAfterLaunch"] = "False"
+
+        # 静默模式相关配置
         maa_set["Global"]["GUI.UseTray"] = "True"
         maa_set["Global"]["GUI.MinimizeToTray"] = "True"
-        maa_set["Configurations"]["Default"]["Start.OpenEmulatorAfterLaunch"] = "False"
+        maa_set["Global"]["Start.MinimizeDirectly"] = "True"
+
+        # 更新配置
         maa_set["Global"]["VersionUpdate.ScheduledUpdateCheck"] = "False"
         maa_set["Global"]["VersionUpdate.AutoDownloadUpdatePackage"] = "False"
         maa_set["Global"]["VersionUpdate.AutoInstallUpdatePackage"] = "False"
+
+        # 服务器与账号切换
         maa_set["Configurations"]["Default"]["Start.ClientType"] = (
             self.cur_user_config.get("Info", "Server")
         )
@@ -303,6 +318,8 @@ class ManualReviewTask(TaskExecuteBase):
             maa_set["Configurations"]["Default"]["Start.AccountName"] = (
                 self.cur_user_config.get("Info", "Id")
             )
+
+        # 任务配置
         maa_set["Configurations"]["Default"]["TaskQueue.WakeUp.IsChecked"] = "True"
         maa_set["Configurations"]["Default"]["TaskQueue.Recruiting.IsChecked"] = "False"
         maa_set["Configurations"]["Default"]["TaskQueue.Base.IsChecked"] = "False"
