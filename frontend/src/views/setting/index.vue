@@ -9,7 +9,6 @@ import type { GlobalConfig } from '@/api'
 import { useSettingsApi } from '@/composables/useSettingsApi'
 import { useUpdateChecker } from '@/composables/useUpdateChecker.ts'
 import { Service, type VersionOut } from '@/api'
-import { mirrorManager } from '@/utils/mirrorManager'
 import { getLogger } from '@/utils/logger'
 
 const logger = getLogger('设置')
@@ -36,21 +35,6 @@ const {
 const activeKey = ref('basic')
 const version = (import.meta as any).env?.VITE_APP_VERSION || '获取版本失败！'
 const backendUpdateInfo = ref<VersionOut | null>(null)
-
-// 镜像配置状态
-type MirrorConfigStatus = {
-  isUsingCloudConfig: boolean
-  version?: string
-  lastUpdated?: string
-  source: 'cloud' | 'fallback'
-}
-const mirrorConfigStatus = ref<MirrorConfigStatus>({
-  isUsingCloudConfig: false,
-  version: undefined,
-  lastUpdated: undefined,
-  source: 'fallback',
-})
-const refreshingConfig = ref(false)
 
 // 设置数据 - 从API获取，不再使用硬编码初值
 const settings = reactive<GlobalConfig>({})
@@ -253,26 +237,6 @@ const getBackendVersion = async () => {
   }
 }
 
-// 镜像配置
-const updateMirrorConfigStatus = () => {
-  mirrorConfigStatus.value = mirrorManager.getConfigStatus()
-}
-const refreshMirrorConfig = async () => {
-  refreshingConfig.value = true
-  try {
-    const result = await mirrorManager.refreshCloudConfig()
-    if (result.success) {
-      updateMirrorConfigStatus()
-    } else message.warning(result.error || '刷新失败，继续使用当前配置')
-  } catch (e) {
-    logger.error('刷新镜像配置失败', e)
-    message.error('刷新镜像配置失败')
-  } finally {
-    refreshingConfig.value = false
-  }
-}
-const goToMirrorTest = () => router.push('/mirror-test')
-
 // 通知测试
 const testingNotify = ref(false)
 const testNotify = async () => {
@@ -292,7 +256,6 @@ const testNotify = async () => {
 onMounted(() => {
   loadSettings()
   getBackendVersion()
-  updateMirrorConfigStatus()
 })
 </script>
 
@@ -320,9 +283,7 @@ onMounted(() => {
             :handle-setting-change="handleSettingChange" :test-notify="testNotify" :testing-notify="testingNotify" />
         </a-tab-pane>
         <a-tab-pane key="advanced" tab="高级设置">
-          <TabAdvanced :go-to-logs="goToLogs" :open-dev-tools="openDevTools" :mirror-config-status="mirrorConfigStatus"
-            :refreshing-config="refreshingConfig" :refresh-mirror-config="refreshMirrorConfig"
-            :go-to-mirror-test="goToMirrorTest" />
+          <TabAdvanced :go-to-logs="goToLogs" :open-dev-tools="openDevTools" />
         </a-tab-pane>
         <a-tab-pane key="others" tab="其他设置">
           <TabOthers :version="version" :backend-update-info="backendUpdateInfo" />
@@ -341,29 +302,55 @@ onMounted(() => {
   width: 100%;
   max-width: none;
   margin: 0;
-  padding: 20px;
+  padding: 0;
   box-sizing: border-box;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
 .settings-header {
-  margin-bottom: 24px;
+  margin-bottom: 16px;
+  padding: 0 4px;
 }
 
 .page-title {
   margin: 0;
   font-size: 32px;
-  font-weight: 600;
+  font-weight: 700;
   color: var(--ant-color-text);
+  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .settings-content {
   background: var(--ant-color-bg-container);
-  border-radius: 12px;
+  border-radius: 12px 12px 0 0;
   width: 100%;
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .settings-tabs {
   margin: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 12px;
+}
+
+.settings-tabs :deep(.ant-tabs-nav) {
+  padding: 0;
+  margin: 0;
+}
+
+.settings-tabs :deep(.ant-tabs-content-holder) {
+  flex: 1;
+  overflow: auto;
 }
 
 .settings-tabs :deep(.ant-tabs-card > .ant-tabs-nav .ant-tabs-tab) {

@@ -37,7 +37,7 @@ export function useUserApi() {
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : '添加用户失败'
       error.value = errorMsg
-      if (err && err.message && !err.message.includes('HTTP error')) {
+      if (err instanceof Error && !err.message.includes('HTTP error')) {
         message.error(errorMsg)
       }
       return null
@@ -73,7 +73,7 @@ export function useUserApi() {
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : '更新用户失败'
       error.value = errorMsg
-      if (err && err.message && !err.message.includes('HTTP error')) {
+      if (err instanceof Error && !err.message.includes('HTTP error')) {
         message.error(errorMsg)
       }
       return false
@@ -105,7 +105,7 @@ export function useUserApi() {
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : '获取用户列表失败'
       error.value = errorMsg
-      if (err && err.message && !err.message.includes('HTTP error')) {
+      if (err instanceof Error && !err.message.includes('HTTP error')) {
         message.error(errorMsg)
       }
       return null
@@ -141,7 +141,7 @@ export function useUserApi() {
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : '删除用户失败'
       error.value = errorMsg
-      if (err && err.message && !err.message.includes('HTTP error')) {
+      if (err instanceof Error && !err.message.includes('HTTP error')) {
         message.error(errorMsg)
       }
       return false
@@ -173,7 +173,7 @@ export function useUserApi() {
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : '用户排序失败'
       error.value = errorMsg
-      if (err && err.message && !err.message.includes('HTTP error')) {
+      if (err instanceof Error && !err.message.includes('HTTP error')) {
         message.error(errorMsg)
       }
       return false
