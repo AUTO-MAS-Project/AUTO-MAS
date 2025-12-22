@@ -83,7 +83,9 @@ class AutoProxyTask(TaskExecuteBase):
             / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile"
         ).exists():
             self.cur_user_item.status = "异常"
-            return "未找到用户的通用脚本配置文件"
+            return (
+                "未找到用户的通用脚本配置文件，请先在用户配置页完成 「通用配置」 步骤"
+            )
         return "Pass"
 
     async def prepare(self):

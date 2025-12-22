@@ -42,6 +42,28 @@ TYPE_BOOK = {"MaaConfig": "MAA", "GeneralConfig": "通用"}
 MAA_RUN_MOOD_BOOK = {"Annihilation": "剿灭", "Routine": "日常"}
 """MAA运行模式映射表"""
 
+MAA_TASKS = [
+    "WakeUp",
+    "Recruiting",
+    "Base",
+    "Combat",
+    "Mission",
+    "Mall",
+    "AutoRoguelike",
+    "Reclamation",
+]
+"""MAA任务列表"""
+
+ARKNIGHTS_PACKAGE_NAME = {
+    "Official": "com.hypergryph.arknights",
+    "Bilibili": "com.hypergryph.arknights.bilibili",
+    "YoStarEN": "com.YoStarEN.Arknights",
+    "YoStarJP": "com.YoStarJP.Arknights",
+    "YoStarKR": "com.YoStarKR.Arknights",
+    "txwy": "tw.txwy.and.arknights",
+}
+"""明日方舟包名映射表"""
+
 MAA_TASK_TRANSITION_METHOD_BOOK = {
     "NoAction": "8",
     "ExitGame": "9",
