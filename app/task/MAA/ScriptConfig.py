@@ -31,6 +31,7 @@ from app.models.config import MaaConfig, MaaUserConfig
 from app.models.emulator import DeviceBase
 from app.services import System
 from app.utils import get_logger, ProcessManager
+from app.utils.constants import MAA_TASKS
 
 logger = get_logger("MAA 脚本设置")
 
@@ -128,19 +129,10 @@ class ScriptConfigTask(TaskExecuteBase):
             maa_set["Global"]["Start.MinimizeDirectly"] = "False"
 
         # 任务配置
-        maa_set["Configurations"]["Default"]["TaskQueue.WakeUp.IsChecked"] = "False"
-        maa_set["Configurations"]["Default"]["TaskQueue.Recruiting.IsChecked"] = "False"
-        maa_set["Configurations"]["Default"]["TaskQueue.Base.IsChecked"] = "False"
-        maa_set["Configurations"]["Default"]["TaskQueue.Combat.IsChecked"] = "False"
-        maa_set["Configurations"]["Default"]["TaskQueue.Mission.IsChecked"] = "False"
-        maa_set["Configurations"]["Default"]["TaskQueue.Mall.IsChecked"] = "False"
-        maa_set["Configurations"]["Default"][
-            "TaskQueue.AutoRoguelike.IsChecked"
-        ] = "False"
-        maa_set["Configurations"]["Default"][
-            "TaskQueue.Reclamation.IsChecked"
-        ] = "False"
-
+        for task in MAA_TASKS:
+            maa_set["Configurations"]["Default"][
+                f"TaskQueue.{task}.IsChecked"
+            ] = "False"
         self.maa_set_path.write_text(
             json.dumps(maa_set, ensure_ascii=False, indent=4), encoding="utf-8"
         )

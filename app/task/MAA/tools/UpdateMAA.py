@@ -20,11 +20,11 @@
 #   Contact: DLmaster_361@163.com
 
 import json
-import asyncio
 from pathlib import Path
 
 from app.services import System
 from app.utils import ProcessRunner, get_logger
+from app.utils.constants import MAA_TASKS
 
 logger = get_logger("MAA 更新工具")
 
@@ -49,24 +49,25 @@ async def update_maa(maa_path: Path):
     for i in range(1, 9):
         maa_set["Global"][f"Timer.Timer{i}"] = "False"
 
+    # 不直接运行任务
     maa_set["Configurations"]["Default"]["MainFunction.PostActions"] = "0"
     maa_set["Configurations"]["Default"]["Start.RunDirectly"] = "False"
     maa_set["Configurations"]["Default"]["Start.OpenEmulatorAfterLaunch"] = "False"
-    maa_set["Global"]["Start.MinimizeDirectly"] = "True"
+
+    # 静默模式相关配置
     maa_set["Global"]["GUI.UseTray"] = "True"
     maa_set["Global"]["GUI.MinimizeToTray"] = "True"
+    maa_set["Global"]["Start.MinimizeDirectly"] = "True"
+
+    # 更新配置
     maa_set["Global"]["VersionUpdate.package"] = maa_update_package
     maa_set["Global"]["VersionUpdate.ScheduledUpdateCheck"] = "False"
     maa_set["Global"]["VersionUpdate.AutoDownloadUpdatePackage"] = "False"
     maa_set["Global"]["VersionUpdate.AutoInstallUpdatePackage"] = "True"
-    maa_set["Configurations"]["Default"]["TaskQueue.WakeUp.IsChecked"] = "False"
-    maa_set["Configurations"]["Default"]["TaskQueue.Recruiting.IsChecked"] = "False"
-    maa_set["Configurations"]["Default"]["TaskQueue.Base.IsChecked"] = "False"
-    maa_set["Configurations"]["Default"]["TaskQueue.Combat.IsChecked"] = "False"
-    maa_set["Configurations"]["Default"]["TaskQueue.Mission.IsChecked"] = "False"
-    maa_set["Configurations"]["Default"]["TaskQueue.Mall.IsChecked"] = "False"
-    maa_set["Configurations"]["Default"]["TaskQueue.AutoRoguelike.IsChecked"] = "False"
-    maa_set["Configurations"]["Default"]["TaskQueue.Reclamation.IsChecked"] = "False"
+
+    # 任务配置
+    for task in MAA_TASKS:
+        maa_set["Configurations"]["Default"][f"TaskQueue.{task}.IsChecked"] = "False"
 
     (maa_path / "config/gui.json").write_text(
         json.dumps(maa_set, ensure_ascii=False, indent=4), encoding="utf-8"
