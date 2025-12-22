@@ -12,7 +12,7 @@
         <span style="font-weight: 500">森空岛签到</span>
       </a-col>
       <a-col :span="18">
-        <a-switch v-model:checked="formData.Info.IfSkland" :disabled="loading" />
+        <a-switch v-model:checked="formData.Info.IfSkland" :disabled="loading" @change="emitSave('Info.IfSkland', formData.Info.IfSkland)" />
         <span class="switch-description">开启后将启用森空岛签到功能</span>
       </a-col>
     </a-row>
@@ -20,7 +20,8 @@
       <a-col :span="24">
         <span style="font-weight: 500">森空岛Token</span>
         <a-input-password v-model:value="formData.Info.SklandToken" :disabled="loading || !formData.Info.IfSkland"
-          placeholder="请输入森空岛Token" size="large" style="margin-top: 8px; width: 100%" allow-clear />
+          placeholder="请输入森空岛Token" size="large" style="margin-top: 8px; width: 100%" allow-clear
+          @blur="emitSave('Info.SklandToken', formData.Info.SklandToken)" />
       </a-col>
     </a-row>
   </div>
@@ -33,6 +34,14 @@ defineProps<{
   formData: any
   loading: boolean
 }>()
+
+const emit = defineEmits<{
+  save: [key: string, value: any]
+}>()
+
+const emitSave = (key: string, value: any) => {
+  emit('save', key, value)
+}
 </script>
 
 <style scoped>

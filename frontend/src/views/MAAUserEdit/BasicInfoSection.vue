@@ -20,6 +20,7 @@
             :disabled="loading"
             size="large"
             class="modern-input"
+            @blur="emitSave('userName', formData.userName)"
           />
         </a-form-item>
       </a-col>
@@ -38,6 +39,7 @@
             placeholder="请输入账号ID"
             :disabled="loading"
             size="large"
+            @blur="emitSave('userId', formData.userId)"
           />
         </a-form-item>
       </a-col>
@@ -54,7 +56,7 @@
               </span>
             </a-tooltip>
           </template>
-          <a-select v-model:value="formData.Info.Status" size="large">
+          <a-select v-model:value="formData.Info.Status" size="large" @change="emitSave('Info.Status', formData.Info.Status)">
             <a-select-option :value="true">是</a-select-option>
             <a-select-option :value="false">否</a-select-option>
           </a-select>
@@ -75,6 +77,7 @@
             placeholder="密码仅用于储存以防遗忘，此外无任何作用"
             :disabled="loading"
             size="large"
+            @blur="emitSave('Info.Password', formData.Info.Password)"
           />
         </a-form-item>
       </a-col>
@@ -97,6 +100,7 @@
             :disabled="loading"
             :options="serverOptions"
             size="large"
+            @change="emitSave('Info.Server', formData.Info.Server)"
           />
         </a-form-item>
       </a-col>
@@ -119,6 +123,7 @@
             :disabled="loading"
             size="large"
             style="width: 100%"
+            @change="emitSave('Info.RemainedDay', formData.Info.RemainedDay)"
           />
         </a-form-item>
       </a-col>
@@ -143,6 +148,7 @@
             ]"
             :disabled="loading"
             size="large"
+            @change="emitSave('Info.Mode', formData.Info.Mode)"
           />
         </a-form-item>
       </a-col>
@@ -166,6 +172,7 @@
             ]"
             :disabled="loading"
             size="large"
+            @change="emitSave('Info.InfrastMode', formData.Info.InfrastMode)"
           />
         </a-form-item>
       </a-col>
@@ -220,6 +227,7 @@
             :loading="infrastructureOptionsLoading"
             :options="infrastructureOptions"
             size="large"
+            @change="emitSave('Info.InfrastIndex', formData.Info.InfrastIndex)"
           />
         </a-form-item>
       </a-col>
@@ -240,6 +248,7 @@
         :rows="4"
         :disabled="loading"
         class="modern-input"
+        @blur="emitSave('Info.Notes', formData.Info.Notes)"
       />
     </a-form-item>
   </div>
@@ -259,9 +268,14 @@ defineProps<{
   isEdit: boolean
 }>()
 
-defineEmits<{
+const emit = defineEmits<{
   selectAndImportInfrastructureConfig: []
+  save: [key: string, value: any]
 }>()
+
+const emitSave = (key: string, value: any) => {
+  emit('save', key, value)
+}
 </script>
 
 <style scoped>

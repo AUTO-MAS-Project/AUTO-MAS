@@ -225,7 +225,6 @@ const addTimeSet = async () => {
       })
 
       if (updateResponse.code === 200) {
-        message.success('定时项添加成功')
         emit('refresh')
       } else {
         message.error('定时项添加失败: ' + (updateResponse.message || '未知错误'))
@@ -259,7 +258,6 @@ const updateTimeSetTime = async (timeSet: any) => {
     if (response.code === 200) {
       // 更新本地显示的时间
       timeSet.time = timeString
-      message.success('时间更新成功')
     } else {
       message.error('时间更新失败: ' + (response.message || '未知错误'))
       // 回滚时间值
@@ -287,7 +285,7 @@ const updateTimeSetStatus = async (timeSet: any) => {
     })
 
     if (response.code === 200) {
-      message.success('状态更新成功')
+      // 状态更新成功，无需通知
     } else {
       message.error('状态更新失败: ' + (response.message || '未知错误'))
       // 回滚状态
@@ -310,7 +308,6 @@ const deleteTimeSet = async (timeSetId: string) => {
     })
 
     if (response.code === 200) {
-      message.success('定时项删除成功')
       // 确保删除后刷新数据
       emit('refresh')
     } else {
@@ -342,7 +339,6 @@ const onDragEnd = async (evt: any) => {
     })
 
     if (response.code === 200) {
-      message.success('定时顺序已更新')
       // 刷新数据以确保与服务器同步
       emit('refresh')
     } else {

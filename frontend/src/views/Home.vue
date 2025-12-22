@@ -3,13 +3,7 @@
     <a-typography-title>{{ greeting }}</a-typography-title>
     <!-- 右上角公告按钮 -->
     <div class="header-actions">
-      <a-button
-        type="primary"
-        ghost
-        :loading="noticeLoading"
-        class="notice-button"
-        @click="showNotice"
-      >
+      <a-button type="primary" ghost :loading="noticeLoading" class="notice-button" @click="showNotice">
         <template #icon>
           <BellOutlined />
         </template>
@@ -19,20 +13,11 @@
   </div>
 
   <!-- 公告模态框 -->
-  <NoticeModal
-    v-model:visible="noticeVisible"
-    :notice-data="noticeData"
-    @confirmed="onNoticeConfirmed"
-  />
+  <NoticeModal v-model:visible="noticeVisible" :notice-data="noticeData" @confirmed="onNoticeConfirmed" />
 
   <div class="content">
     <!-- 当期活动关卡 -->
-    <a-card
-      v-if="activityData?.length"
-      title="当期活动关卡"
-      class="activity-card"
-      :loading="loading"
-    >
+    <a-card v-if="activityData?.length" title="当期活动关卡" class="activity-card" :loading="loading">
       <div v-if="error" class="error-message">
         <a-alert :message="error" type="error" show-icon closable @close="error = ''" />
       </div>
@@ -54,42 +39,25 @@
 
           <div class="activity-right">
             <!-- 活动已结束时显示提示 -->
-            <a-statistic-countdown
-              v-if="getActivityTimeStatus(currentActivity.UtcExpireTime) === 'ended'"
-              title=""
-              :value="getCountdownValue(currentActivity.UtcExpireTime)"
-              format="活动已结束"
-              :value-style="{
+            <a-statistic-countdown v-if="getActivityTimeStatus(currentActivity.UtcExpireTime) === 'ended'" title=""
+              :value="getCountdownValue(currentActivity.UtcExpireTime)" format="活动已结束" :value-style="{
                 color: '#ff4d4f',
                 fontWeight: 'bold',
                 fontSize: '18px',
-              }"
-              @finish="onCountdownFinish"
-            />
+              }" @finish="onCountdownFinish" />
 
             <!-- 剩余时间小于两天时显示炫彩倒计时 -->
-            <a-statistic-countdown
-              v-else-if="getActivityTimeStatus(currentActivity.UtcExpireTime) === 'warning'"
-              title="当期活动剩余时间"
-              :value="getCountdownValue(currentActivity.UtcExpireTime)"
-              format="D 天 H 时 m 分 ss 秒 SSS 毫秒"
-              class="rainbow-text"
-              @finish="onCountdownFinish"
-            />
+            <a-statistic-countdown v-else-if="getActivityTimeStatus(currentActivity.UtcExpireTime) === 'warning'"
+              title="当期活动剩余时间" :value="getCountdownValue(currentActivity.UtcExpireTime)"
+              format="D 天 H 时 m 分 ss 秒 SSS 毫秒" class="rainbow-text" @finish="onCountdownFinish" />
 
             <!-- 剩余时间大于等于两天时显示常规倒计时 -->
-            <a-statistic-countdown
-              v-else
-              title="当期活动剩余时间"
-              :value="getCountdownValue(currentActivity.UtcExpireTime)"
-              format="D 天 H 时 m 分"
-              :value-style="{
+            <a-statistic-countdown v-else title="当期活动剩余时间" :value="getCountdownValue(currentActivity.UtcExpireTime)"
+              format="D 天 H 时 m 分" :value-style="{
                 color: 'var(--ant-color-text)',
                 fontWeight: '600',
                 fontSize: '20px',
-              }"
-              @finish="onCountdownFinish"
-            />
+              }" @finish="onCountdownFinish" />
           </div>
         </div>
       </div>
@@ -102,16 +70,10 @@
 
           <div class="drop-info">
             <div class="drop-image">
-              <img
-                v-if="getMaterialImage(item.DropName.startsWith('DESC:') ? '30012' : item.DropName)"
-                :src="
-                  item.DropName.startsWith('DESC:')
-                    ? getMaterialImage('30012')
-                    : getMaterialImage(item.Drop)
-                "
-                :alt="item.DropName.startsWith('DESC:') ? '30012' : item.DropName"
-                @error="handleImageError"
-              />
+              <img v-if="getMaterialImage(item.DropName.startsWith('DESC:') ? '30012' : item.DropName)" :src="item.DropName.startsWith('DESC:')
+                  ? getMaterialImage('30012')
+                  : getMaterialImage(item.Drop)
+                " :alt="item.DropName.startsWith('DESC:') ? '30012' : item.DropName" @error="handleImageError" />
             </div>
 
             <div class="drop-details">
@@ -138,12 +100,8 @@
 
           <div class="drop-info">
             <div class="drop-image">
-              <img
-                v-if="getMaterialImage(item.Drop)"
-                :src="getMaterialImage(item.Drop)"
-                :alt="item.DropName"
-                @error="handleImageError"
-              />
+              <img v-if="getMaterialImage(item.Drop)" :src="getMaterialImage(item.Drop)" :alt="item.DropName"
+                @error="handleImageError" />
             </div>
 
             <div class="drop-details">
@@ -184,10 +142,7 @@
               <div class="proxy-stats">
                 <!-- 第一行：最后代理时间，独占一行 -->
                 <div class="stat-item full-width">
-                  <a-statistic
-                    title="最后代理时间"
-                    :value="formatProxyDisplay(proxy.LastProxyDate)"
-                  />
+                  <a-statistic title="最后代理时间" :value="formatProxyDisplay(proxy.LastProxyDate)" />
                 </div>
 
                 <!-- 第二行：代理次数 和 错误次数 -->
@@ -195,11 +150,8 @@
                   <a-statistic title="代理次数" :value="proxy.ProxyTimes" />
                 </div>
                 <div class="stat-item half-width">
-                  <a-statistic
-                    title="错误次数"
-                    :value="proxy.ErrorTimes"
-                    :value-style="{ color: proxy.ErrorTimes > 0 ? '#ff4d4f' : undefined }"
-                  />
+                  <a-statistic title="错误次数" :value="proxy.ErrorTimes"
+                    :value-style="{ color: proxy.ErrorTimes > 0 ? '#ff4d4f' : undefined }" />
                 </div>
               </div>
 
@@ -367,7 +319,7 @@ const getProxyTimestamp = (dateStr: string) => {
       .replace(/月/g, '-')
       .replace(/日/g, '')
       .trim()
-    
+
     const t = new Date(standardFormat).getTime()
     return Number.isNaN(t) ? Date.now() : t
   } catch {
@@ -469,7 +421,6 @@ const fetchNoticeData = async () => {
 // 公告确认回调
 const onNoticeConfirmed = () => {
   noticeVisible.value = false
-  // message.success('公告已确认')
 }
 
 // 显示公告的处理函数
@@ -767,6 +718,7 @@ onMounted(() => {
   0% {
     background-position: 0 50%;
   }
+
   100% {
     background-position: 100% 50%;
   }
@@ -774,6 +726,7 @@ onMounted(() => {
 
 /* 响应式设计 */
 @media (max-width: 1500px) {
+
   .activity-list,
   .resource-list {
     grid-template-columns: repeat(4, 1fr);
@@ -781,6 +734,7 @@ onMounted(() => {
 }
 
 @media (max-width: 1240px) {
+
   .activity-list,
   .resource-list {
     grid-template-columns: repeat(3, 1fr);

@@ -595,7 +595,6 @@ export function useScriptApi() {
         throw new Error(errorMsg)
       }
 
-      message.success(response.message || '脚本更新成功')
       return true
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : '更新脚本失败'
