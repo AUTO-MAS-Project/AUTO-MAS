@@ -829,8 +829,8 @@ const handleBossKeyInputChange = (uuid: string) => {
                         :bordered="false" @blur="
                           handleSaveChange(element.uid, 'path', getEditingData(element.uid).path)
                           " @press-enter="
-                          handleSaveChange(element.uid, 'path', getEditingData(element.uid).path)
-                          ">
+                            handleSaveChange(element.uid, 'path', getEditingData(element.uid).path)
+                            ">
                         <template #suffix>
                           <FolderOpenOutlined style="cursor: pointer; color: #1890ff"
                             @click="selectEmulatorPath(element.uid)" />
@@ -857,8 +857,8 @@ const handleBossKeyInputChange = (uuid: string) => {
                       </template>
                       <a-input v-if="getEditingData(element.uid).type !== 'mumu'"
                         v-model:value="bossKeyInputMap[element.uid]" :placeholder="recordingBossKeyMap.get(element.uid)
-                            ? '请按下快捷键组合...'
-                            : '输入格式如 Ctrl+Q，按回车添加'
+                          ? '请按下快捷键组合...'
+                          : '输入格式如 Ctrl+Q，按回车添加'
                           " size="small" :bordered="false" :disabled="recordingBossKeyMap.get(element.uid)"
                         @press-enter="handleSetBossKey(element.uid)" @blur="handleSetBossKey(element.uid)"
                         @input="handleBossKeyInputChange(element.uid)">

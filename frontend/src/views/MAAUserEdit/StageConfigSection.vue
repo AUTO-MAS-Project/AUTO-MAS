@@ -21,19 +21,13 @@
               </span>
             </a-tooltip>
           </template>
-          <a-select
-            v-model:value="formData.Info.Annihilation"
-            :options="[
-              { label: '关闭', value: 'Close' },
-              { label: '当期剿灭', value: 'Annihilation' },
-              { label: '切尔诺伯格', value: 'Chernobog@Annihilation' },
-              { label: '龙门外环', value: 'LungmenOutskirts@Annihilation' },
-              { label: '龙门市区', value: 'LungmenDowntown@Annihilation' },
-            ]"
-            :disabled="loading"
-            size="large"
-            @change="emitSave('Info.Annihilation', formData.Info.Annihilation)"
-          />
+          <a-select v-model:value="formData.Info.Annihilation" :options="[
+            { label: '关闭', value: 'Close' },
+            { label: '当期剿灭', value: 'Annihilation' },
+            { label: '切尔诺伯格', value: 'Chernobog@Annihilation' },
+            { label: '龙门外环', value: 'LungmenOutskirts@Annihilation' },
+            { label: '龙门市区', value: 'LungmenDowntown@Annihilation' },
+          ]" :disabled="loading" size="large" @change="emitSave('Info.Annihilation', formData.Info.Annihilation)" />
         </a-form-item>
       </a-col>
       <a-col :span="12">
@@ -46,13 +40,8 @@
               </span>
             </a-tooltip>
           </template>
-          <a-select
-            v-model:value="formData.Info.StageMode"
-            :options="stageModeOptions"
-            :disabled="loading"
-            size="large"
-            @change="emitSave('Info.StageMode', formData.Info.StageMode)"
-          />
+          <a-select v-model:value="formData.Info.StageMode" :options="stageModeOptions" :disabled="loading" size="large"
+            @change="emitSave('Info.StageMode', formData.Info.StageMode)" />
         </a-form-item>
       </a-col>
     </a-row>
@@ -78,25 +67,14 @@
             </a-tooltip>
           </div>
           <!-- 固定模式：显示输入框 -->
-          <a-input-number
-            v-else
-            :value="displayMedicineNumb"
-            :min="0"
-            :max="9999"
-            placeholder="0"
-            :disabled="loading"
-            size="large"
-            style="width: 100%"
-            @update:value="$emit('update-medicine-numb', $event)"
-          />
+          <a-input-number v-else :value="displayMedicineNumb" :min="0" :max="9999" placeholder="0" :disabled="loading"
+            size="large" style="width: 100%" @update:value="$emit('update-medicine-numb', $event)" />
         </a-form-item>
       </a-col>
       <a-col :span="6">
         <a-form-item name="mode">
           <template #label>
-            <a-tooltip
-              title="AUTO：自动识别关卡最大代理倍率，保持最大代理倍率且使用理智药后理智不溢出；数值（1~6）：按设定倍率执行代理；不切换：不调整游戏内代理倍率设定"
-            >
+            <a-tooltip title="AUTO：自动识别关卡最大代理倍率，保持最大代理倍率且使用理智药后理智不溢出；数值（1~6）：按设定倍率执行代理；不切换：不调整游戏内代理倍率设定">
               <span class="form-label">
                 连战次数
                 <QuestionCircleOutlined class="help-icon" />
@@ -122,23 +100,16 @@
             </a-tooltip>
           </div>
           <!-- 固定模式：显示选择框 -->
-          <a-select
-            v-else
-            :value="displaySeriesNumb"
-            :options="[
-              { label: 'AUTO', value: '0' },
-              { label: '1', value: '1' },
-              { label: '2', value: '2' },
-              { label: '3', value: '3' },
-              { label: '4', value: '4' },
-              { label: '5', value: '5' },
-              { label: '6', value: '6' },
-              { label: '不切换', value: '-1' },
-            ]"
-            :disabled="loading"
-            size="large"
-            @update:value="$emit('update-series-numb', $event)"
-          />
+          <a-select v-else :value="displaySeriesNumb" :options="[
+            { label: 'AUTO', value: '0' },
+            { label: '1', value: '1' },
+            { label: '2', value: '2' },
+            { label: '3', value: '3' },
+            { label: '4', value: '4' },
+            { label: '5', value: '5' },
+            { label: '6', value: '6' },
+            { label: '不切换', value: '-1' },
+          ]" :disabled="loading" size="large" @update:value="$emit('update-series-numb', $event)" />
         </a-form-item>
       </a-col>
 
@@ -165,15 +136,9 @@
             </a-tooltip>
           </div>
           <!-- 固定模式：显示选择框 -->
-          <StageSelector
-            v-else
-            :value="displayStage"
-            :options="stageOptions"
-            :loading="loading"
-            placeholder="选择或输入自定义关卡"
-            @update:value="$emit('update-stage', $event)"
-            @add-custom-stage="handleAddCustomStage"
-          />
+          <StageSelector v-else :value="displayStage" :options="stageOptions" :loading="loading"
+            placeholder="选择或输入自定义关卡" @update:value="$emit('update-stage', $event)"
+            @add-custom-stage="handleAddCustomStage" />
         </a-form-item>
       </a-col>
     </a-row>
@@ -201,15 +166,9 @@
             </a-tooltip>
           </div>
           <!-- 固定模式：显示选择框 -->
-          <StageSelector
-            v-else
-            :value="displayStage1"
-            :options="stageOptions"
-            :loading="loading"
-            placeholder="选择或输入自定义关卡"
-            @update:value="$emit('update-stage1', $event)"
-            @add-custom-stage="handleAddCustomStage1"
-          />
+          <StageSelector v-else :value="displayStage1" :options="stageOptions" :loading="loading"
+            placeholder="选择或输入自定义关卡" @update:value="$emit('update-stage1', $event)"
+            @add-custom-stage="handleAddCustomStage1" />
         </a-form-item>
       </a-col>
       <a-col :span="6">
@@ -235,15 +194,9 @@
             </a-tooltip>
           </div>
           <!-- 固定模式：显示选择框 -->
-          <StageSelector
-            v-else
-            :value="displayStage2"
-            :options="stageOptions"
-            :loading="loading"
-            placeholder="选择或输入自定义关卡"
-            @update:value="$emit('update-stage2', $event)"
-            @add-custom-stage="handleAddCustomStage2"
-          />
+          <StageSelector v-else :value="displayStage2" :options="stageOptions" :loading="loading"
+            placeholder="选择或输入自定义关卡" @update:value="$emit('update-stage2', $event)"
+            @add-custom-stage="handleAddCustomStage2" />
         </a-form-item>
       </a-col>
       <a-col :span="6">
@@ -269,15 +222,9 @@
             </a-tooltip>
           </div>
           <!-- 固定模式：显示选择框 -->
-          <StageSelector
-            v-else
-            :value="displayStage3"
-            :options="stageOptions"
-            :loading="loading"
-            placeholder="选择或输入自定义关卡"
-            @update:value="$emit('update-stage3', $event)"
-            @add-custom-stage="handleAddCustomStage3"
-          />
+          <StageSelector v-else :value="displayStage3" :options="stageOptions" :loading="loading"
+            placeholder="选择或输入自定义关卡" @update:value="$emit('update-stage3', $event)"
+            @add-custom-stage="handleAddCustomStage3" />
         </a-form-item>
       </a-col>
       <a-col :span="6">
@@ -303,15 +250,9 @@
             </a-tooltip>
           </div>
           <!-- 固定模式：显示选择框 -->
-          <StageSelector
-            v-else
-            :value="displayStageRemain"
-            :options="stageRemainOptions"
-            :loading="loading"
-            placeholder="选择或输入自定义关卡"
-            @update:value="$emit('update-stage-remain', $event)"
-            @add-custom-stage="handleAddCustomStageRemain"
-          />
+          <StageSelector v-else :value="displayStageRemain" :options="stageRemainOptions" :loading="loading"
+            placeholder="选择或输入自定义关卡" @update:value="$emit('update-stage-remain', $event)"
+            @add-custom-stage="handleAddCustomStageRemain" />
         </a-form-item>
       </a-col>
     </a-row>

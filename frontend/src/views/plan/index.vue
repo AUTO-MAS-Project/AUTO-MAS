@@ -148,7 +148,7 @@ const savePlanField = async (changes: Record<string, any>): Promise<boolean> => 
   if (!activePlanId.value) {
     return false
   }
-  
+
   try {
     logger.debug(`保存字段 (${activePlanId.value}):`, changes)
     await updatePlan(activePlanId.value, changes)
@@ -162,14 +162,14 @@ const savePlanField = async (changes: Record<string, any>): Promise<boolean> => 
 // 刷新计划数据
 const refreshPlanData = async () => {
   if (!activePlanId.value) return
-  
+
   try {
     const response = await getPlans(activePlanId.value)
     const planData = response.data[activePlanId.value]
     if (planData) {
       currentPlanData.value = response.data
       tableData.value = { ...planData, _isInitialLoad: true }
-      
+
       if (planData.Info) {
         currentMode.value = planData.Info.Mode || 'ALL'
         const currentPlan = planList.value.find(plan => plan.id === activePlanId.value)
@@ -188,7 +188,7 @@ const handlePlanChange = async (path: string, value: any) => {
   // 构建只包含修改字段的更新数据
   const changes = buildNestedObject(path, value)
   const success = await savePlanField(changes)
-  
+
   // 更新成功后重新获取最新配置
   if (success) {
     await refreshPlanData()
@@ -202,12 +202,12 @@ const buildNestedObject = (path: string, value: any): Record<string, any> => {
   const keys = path.split('.')
   const result: Record<string, any> = {}
   let current = result
-  
+
   for (let i = 0; i < keys.length - 1; i++) {
     current[keys[i]] = {}
     current = current[keys[i]]
   }
-  
+
   current[keys[keys.length - 1]] = value
   return result
 }

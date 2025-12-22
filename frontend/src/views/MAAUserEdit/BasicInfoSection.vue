@@ -14,14 +14,8 @@
               </span>
             </a-tooltip>
           </template>
-          <a-input
-            v-model:value="formData.userName"
-            placeholder="请输入用户名"
-            :disabled="loading"
-            size="large"
-            class="modern-input"
-            @blur="emitSave('userName', formData.userName)"
-          />
+          <a-input v-model:value="formData.userName" placeholder="请输入用户名" :disabled="loading" size="large"
+            class="modern-input" @blur="emitSave('userName', formData.userName)" />
         </a-form-item>
       </a-col>
       <a-col :span="12">
@@ -34,13 +28,8 @@
               </span>
             </a-tooltip>
           </template>
-          <a-input
-            v-model:value="formData.userId"
-            placeholder="请输入账号ID"
-            :disabled="loading"
-            size="large"
-            @blur="emitSave('userId', formData.userId)"
-          />
+          <a-input v-model:value="formData.userId" placeholder="请输入账号ID" :disabled="loading" size="large"
+            @blur="emitSave('userId', formData.userId)" />
         </a-form-item>
       </a-col>
     </a-row>
@@ -56,7 +45,8 @@
               </span>
             </a-tooltip>
           </template>
-          <a-select v-model:value="formData.Info.Status" size="large" @change="emitSave('Info.Status', formData.Info.Status)">
+          <a-select v-model:value="formData.Info.Status" size="large"
+            @change="emitSave('Info.Status', formData.Info.Status)">
             <a-select-option :value="true">是</a-select-option>
             <a-select-option :value="false">否</a-select-option>
           </a-select>
@@ -72,13 +62,8 @@
               </span>
             </a-tooltip>
           </template>
-          <a-input-password
-            v-model:value="formData.Info.Password"
-            placeholder="密码仅用于储存以防遗忘，此外无任何作用"
-            :disabled="loading"
-            size="large"
-            @blur="emitSave('Info.Password', formData.Info.Password)"
-          />
+          <a-input-password v-model:value="formData.Info.Password" placeholder="密码仅用于储存以防遗忘，此外无任何作用" :disabled="loading"
+            size="large" @blur="emitSave('Info.Password', formData.Info.Password)" />
         </a-form-item>
       </a-col>
     </a-row>
@@ -94,14 +79,8 @@
               </span>
             </a-tooltip>
           </template>
-          <a-select
-            v-model:value="formData.Info.Server"
-            placeholder="请选择服务器"
-            :disabled="loading"
-            :options="serverOptions"
-            size="large"
-            @change="emitSave('Info.Server', formData.Info.Server)"
-          />
+          <a-select v-model:value="formData.Info.Server" placeholder="请选择服务器" :disabled="loading"
+            :options="serverOptions" size="large" @change="emitSave('Info.Server', formData.Info.Server)" />
         </a-form-item>
       </a-col>
 
@@ -115,16 +94,9 @@
               </span>
             </a-tooltip>
           </template>
-          <a-input-number
-            v-model:value="formData.Info.RemainedDay"
-            :min="-1"
-            :max="9999"
-            placeholder="0"
-            :disabled="loading"
-            size="large"
-            style="width: 100%"
-            @change="emitSave('Info.RemainedDay', formData.Info.RemainedDay)"
-          />
+          <a-input-number v-model:value="formData.Info.RemainedDay" :min="-1" :max="9999" placeholder="0"
+            :disabled="loading" size="large" style="width: 100%"
+            @change="emitSave('Info.RemainedDay', formData.Info.RemainedDay)" />
         </a-form-item>
       </a-col>
     </a-row>
@@ -140,16 +112,10 @@
               </span>
             </a-tooltip>
           </template>
-          <a-select
-            v-model:value="formData.Info.Mode"
-            :options="[
-              { label: '简洁', value: '简洁' },
-              { label: '详细', value: '详细' },
-            ]"
-            :disabled="loading"
-            size="large"
-            @change="emitSave('Info.Mode', formData.Info.Mode)"
-          />
+          <a-select v-model:value="formData.Info.Mode" :options="[
+            { label: '简洁', value: '简洁' },
+            { label: '详细', value: '详细' },
+          ]" :disabled="loading" size="large" @change="emitSave('Info.Mode', formData.Info.Mode)" />
         </a-form-item>
       </a-col>
 
@@ -163,17 +129,11 @@
               </span>
             </a-tooltip>
           </template>
-          <a-select
-            v-model:value="formData.Info.InfrastMode"
-            :options="[
-              { label: '常规模式', value: 'Normal' },
-              { label: '一键轮休', value: 'Rotation' },
-              { label: '自定义基建', value: 'Custom' },
-            ]"
-            :disabled="loading"
-            size="large"
-            @change="emitSave('Info.InfrastMode', formData.Info.InfrastMode)"
-          />
+          <a-select v-model:value="formData.Info.InfrastMode" :options="[
+            { label: '常规模式', value: 'Normal' },
+            { label: '一键轮休', value: 'Rotation' },
+            { label: '自定义基建', value: 'Custom' },
+          ]" :disabled="loading" size="large" @change="emitSave('Info.InfrastMode', formData.Info.InfrastMode)" />
         </a-form-item>
       </a-col>
     </a-row>
@@ -191,20 +151,10 @@
             </a-tooltip>
           </template>
           <div style="display: flex; gap: 12px; align-items: center">
-            <a-input
-              v-model:value="formData.Info.InfrastName"
-              placeholder="自定义基建名称"
-              readonly
-              size="large"
-              style="flex: 1"
-            />
-            <a-button
-              type="primary"
-              :disabled="loading || !isEdit"
-              :loading="infrastructureImporting"
-              size="large"
-              @click="$emit('selectAndImportInfrastructureConfig')"
-            >
+            <a-input v-model:value="formData.Info.InfrastName" placeholder="自定义基建名称" readonly size="large"
+              style="flex: 1" />
+            <a-button type="primary" :disabled="loading || !isEdit" :loading="infrastructureImporting" size="large"
+              @click="$emit('selectAndImportInfrastructureConfig')">
               选择并导入
             </a-button>
           </div>
@@ -220,15 +170,9 @@
               </span>
             </a-tooltip>
           </template>
-          <a-select
-            v-model:value="formData.Info.InfrastIndex"
-            placeholder="请选择自定义基建排班"
-            :disabled="loading"
-            :loading="infrastructureOptionsLoading"
-            :options="infrastructureOptions"
-            size="large"
-            @change="emitSave('Info.InfrastIndex', formData.Info.InfrastIndex)"
-          />
+          <a-select v-model:value="formData.Info.InfrastIndex" placeholder="请选择自定义基建排班" :disabled="loading"
+            :loading="infrastructureOptionsLoading" :options="infrastructureOptions" size="large"
+            @change="emitSave('Info.InfrastIndex', formData.Info.InfrastIndex)" />
         </a-form-item>
       </a-col>
     </a-row>
@@ -242,14 +186,8 @@
           </span>
         </a-tooltip>
       </template>
-      <a-textarea
-        v-model:value="formData.Info.Notes"
-        placeholder="请输入备注信息"
-        :rows="4"
-        :disabled="loading"
-        class="modern-input"
-        @blur="emitSave('Info.Notes', formData.Info.Notes)"
-      />
+      <a-textarea v-model:value="formData.Info.Notes" placeholder="请输入备注信息" :rows="4" :disabled="loading"
+        class="modern-input" @blur="emitSave('Info.Notes', formData.Info.Notes)" />
     </a-form-item>
   </div>
 </template>

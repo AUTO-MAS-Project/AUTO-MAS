@@ -208,7 +208,7 @@ class _TaskManager:
                 task_uid = uuid.uuid4()
                 queue_id = None
                 script_uid = uid
-                user_uid = None
+                user_uid = "Default"
             else:
                 for script_id, script in Config.ScriptConfig.items():
                     if uid in script.UserData:
