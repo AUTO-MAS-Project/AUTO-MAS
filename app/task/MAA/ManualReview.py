@@ -34,7 +34,7 @@ from app.models.config import MaaConfig, MaaUserConfig
 from app.models.emulator import DeviceInfo, DeviceBase
 from app.services import System
 from app.utils import get_logger, LogMonitor, ProcessManager
-from app.utils.constants import UTC4
+from app.utils.constants import UTC4, MAA_TASKS, ARKNIGHTS_PACKAGE_NAME
 from .tools import agree_bilibili
 
 logger = get_logger("MAA 人工排查")
@@ -75,7 +75,7 @@ class ManualReviewTask(TaskExecuteBase):
             ).exists()
         ):
             self.cur_user_item.status = "异常"
-            return "未找到用户的 MAA 配置文件"
+            return "未找到用户的 MAA 配置文件，请先在用户配置页完成 「MAA配置」 步骤"
         return "Pass"
 
     async def prepare(self):
@@ -128,7 +128,8 @@ class ManualReviewTask(TaskExecuteBase):
             try:
                 self.script_info.log = "正在启动模拟器"
                 emulator_info = await self.emulator_manager.open(
-                    self.script_config.get("Emulator", "Index")
+                    self.script_config.get("Emulator", "Index"),
+                    ARKNIGHTS_PACKAGE_NAME[self.cur_user_config.get("Info", "Server")],
                 )
             except Exception as e:
 
@@ -320,18 +321,11 @@ class ManualReviewTask(TaskExecuteBase):
             )
 
         # 任务配置
+        for task in MAA_TASKS:
+            maa_set["Configurations"]["Default"][
+                f"TaskQueue.{task}.IsChecked"
+            ] = "False"
         maa_set["Configurations"]["Default"]["TaskQueue.WakeUp.IsChecked"] = "True"
-        maa_set["Configurations"]["Default"]["TaskQueue.Recruiting.IsChecked"] = "False"
-        maa_set["Configurations"]["Default"]["TaskQueue.Base.IsChecked"] = "False"
-        maa_set["Configurations"]["Default"]["TaskQueue.Combat.IsChecked"] = "False"
-        maa_set["Configurations"]["Default"]["TaskQueue.Mission.IsChecked"] = "False"
-        maa_set["Configurations"]["Default"]["TaskQueue.Mall.IsChecked"] = "False"
-        maa_set["Configurations"]["Default"][
-            "TaskQueue.AutoRoguelike.IsChecked"
-        ] = "False"
-        maa_set["Configurations"]["Default"][
-            "TaskQueue.Reclamation.IsChecked"
-        ] = "False"
 
         self.maa_set_path.write_text(
             json.dumps(maa_set, ensure_ascii=False, indent=4), encoding="utf-8"
