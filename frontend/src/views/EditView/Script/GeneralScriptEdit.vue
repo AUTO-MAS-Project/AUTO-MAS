@@ -58,6 +58,7 @@
                   placeholder="请输入脚本名称"
                   size="large"
                   class="modern-input"
+                  @blur="handleChange('Info', 'Name', formData.name)"
                 />
               </a-form-item>
             </a-col>
@@ -139,6 +140,7 @@
                   placeholder="请输入脚本启动参数"
                   size="large"
                   class="modern-input"
+                  @blur="handleChange('Script', 'Arguments', generalConfig.Script.Arguments)"
                 />
               </a-form-item>
             </a-col>
@@ -152,7 +154,7 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select v-model:value="generalConfig.Script.IfTrackProcess" size="large">
+                <a-select v-model:value="generalConfig.Script.IfTrackProcess" size="large" @change="handleChange('Script', 'IfTrackProcess', $event)">
                   <a-select-option :value="true">是</a-select-option>
                   <a-select-option :value="false">否</a-select-option>
                 </a-select>
@@ -210,7 +212,7 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select v-model:value="generalConfig.Script.ConfigPathMode" size="large">
+                <a-select v-model:value="generalConfig.Script.ConfigPathMode" size="large" @change="handleChange('Script', 'ConfigPathMode', $event)">
                   <a-select-option value="File">单文件</a-select-option>
                   <a-select-option value="Folder">文件夹</a-select-option>
                 </a-select>
@@ -226,7 +228,7 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select v-model:value="generalConfig.Script.UpdateConfigMode" size="large">
+                <a-select v-model:value="generalConfig.Script.UpdateConfigMode" size="large" @change="handleChange('Script', 'UpdateConfigMode', $event)">
                   <a-select-option value="Never">从不</a-select-option>
                   <a-select-option value="Success">成功时</a-select-option>
                   <a-select-option value="Failure">失败时</a-select-option>
@@ -278,6 +280,7 @@
                   placeholder="日志文件名格式，文件名固定时留空"
                   size="large"
                   class="modern-input"
+                  @blur="handleChange('Script', 'LogPathFormat', generalConfig.Script.LogPathFormat)"
                 />
               </a-form-item>
             </a-col>
@@ -301,6 +304,7 @@
                   size="large"
                   class="modern-number-input"
                   style="width: 100%"
+                  @change="handleChange('Script', 'LogTimeStart', $event)"
                 />
               </a-form-item>
             </a-col>
@@ -321,6 +325,7 @@
                   size="large"
                   class="modern-number-input"
                   style="width: 100%"
+                  @change="handleChange('Script', 'LogTimeEnd', $event)"
                 />
               </a-form-item>
             </a-col>
@@ -340,6 +345,7 @@
                   placeholder="请输入脚本日志时间戳格式"
                   size="large"
                   class="modern-input"
+                  @blur="handleChange('Script', 'LogTimeFormat', formData.logTimeFormat)"
                 />
               </a-form-item>
             </a-col>
@@ -363,6 +369,7 @@
                   placeholder="请输入脚本成功日志，以「 | 」进行分割"
                   size="large"
                   class="modern-input"
+                  @blur="handleChange('Script', 'SuccessLog', generalConfig.Script.SuccessLog)"
                 />
               </a-form-item>
             </a-col>
@@ -381,6 +388,7 @@
                   placeholder="请输入脚本失败日志，以「 | 」进行分割"
                   size="large"
                   class="modern-input"
+                  @blur="handleChange('Script', 'ErrorLog', formData.errorLog)"
                 />
               </a-form-item>
             </a-col>
@@ -403,7 +411,7 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select v-model:value="generalConfig.Game.Enabled" size="large">
+                <a-select v-model:value="generalConfig.Game.Enabled" size="large" @change="handleChange('Game', 'Enabled', $event)">
                   <a-select-option :value="true">是</a-select-option>
                   <a-select-option :value="false">否</a-select-option>
                 </a-select>
@@ -502,6 +510,7 @@
                     v-model:value="generalConfig.Game.URL"
                     placeholder="请输入URL参数，如：starward://startgame/xxxx"
                     size="large"
+                    @blur="handleChange('Game', 'URL', generalConfig.Game.URL)"
                   />
                 </a-input-group>
               </a-form-item>
@@ -524,6 +533,7 @@
                   size="large"
                   placeholder="请输入实例信息，格式：启动附加命令 | ADB地址"
                   class="modern-input"
+                  @blur="handleChange('Game', 'EmulatorIndex', generalConfig.Game.EmulatorIndex)"
                 />
                 <!-- 正常情况下显示下拉框 -->
                 <a-select
@@ -533,6 +543,7 @@
                   placeholder="请先选择模拟器"
                   :loading="emulatorDeviceLoading"
                   :disabled="!generalConfig.Game.EmulatorId"
+                  @change="handleChange('Game', 'EmulatorIndex', $event)"
                 >
                   <a-select-option
                     v-for="item in emulatorDeviceOptions"
@@ -563,6 +574,7 @@
                   placeholder="请输入启动参数"
                   size="large"
                   class="modern-input"
+                  @blur="handleChange('Game', 'Arguments', generalConfig.Game.Arguments)"
                 />
               </a-form-item>
             </a-col>
@@ -583,6 +595,7 @@
                   size="large"
                   class="modern-number-input"
                   style="width: 100%"
+                  @change="handleChange('Game', 'WaitTime', $event)"
                 />
               </a-form-item>
             </a-col>
@@ -596,7 +609,7 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select v-model:value="generalConfig.Game.IfForceClose" size="large">
+                <a-select v-model:value="generalConfig.Game.IfForceClose" size="large" @change="handleChange('Game', 'IfForceClose', $event)">
                   <a-select-option :value="true">是</a-select-option>
                   <a-select-option :value="false">否</a-select-option>
                 </a-select>
@@ -624,6 +637,7 @@
                 placeholder="比如 StarRail.exe"
                 size="large"
                 class="modern-input"
+                @blur="handleChange('Game', 'ProcessName', generalConfig.Game.ProcessName)"
               />
             </a-form-item>
           </a-col>
@@ -653,6 +667,7 @@
                   size="large"
                   class="modern-number-input"
                   style="width: 100%"
+                  @change="handleChange('Run', 'ProxyTimesLimit', $event)"
                 />
               </a-form-item>
             </a-col>
@@ -673,6 +688,7 @@
                   size="large"
                   class="modern-number-input"
                   style="width: 100%"
+                  @change="handleChange('Run', 'RunTimesLimit', $event)"
                 />
               </a-form-item>
             </a-col>
@@ -693,6 +709,7 @@
                   size="large"
                   class="modern-number-input"
                   style="width: 100%"
+                  @change="handleChange('Run', 'RunTimeLimit', $event)"
                 />
               </a-form-item>
             </a-col>
@@ -767,6 +784,7 @@
 
 <script setup lang="ts">
 import { onMounted, reactive, ref, watch, nextTick } from 'vue'
+import type { MAAScriptConfig } from '../../../types/script.ts'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
 import { message } from 'ant-design-vue'
@@ -1165,6 +1183,7 @@ const emulatorOptions = ref<ComboBoxItem[]>([])
 const emulatorDeviceOptions = ref<ComboBoxItem[]>([])
 
 // 延迟注册 ConfigPathMode watcher（在加载脚本并完成初始化后再注册）
+// 注意：此 watcher 用于业务逻辑处理（配置文件类型切换时重置路径），而非简单的配置自动保存
 let stopConfigPathModeWatcher: (() => void) | null = null
 
 const setupConfigPathModeWatcher = () => {
@@ -1174,9 +1193,11 @@ const setupConfigPathModeWatcher = () => {
     stopConfigPathModeWatcher = null
   }
 
+  // 监听配置文件类型变化，当从"单文件"切换到"文件夹"或反之时，自动重置路径
+  // 这是必要的业务逻辑，因为文件路径和文件夹路径不能混用
   stopConfigPathModeWatcher = watch(
     () => generalConfig.Script.ConfigPathMode,
-    (newMode, oldMode) => {
+    async (newMode, oldMode) => {
       if (
         newMode !== oldMode &&
         generalConfig.Script.ConfigPath &&
@@ -1184,51 +1205,80 @@ const setupConfigPathModeWatcher = () => {
       ) {
         // 当配置文件类型改变时，重置为根目录路径
         const rootPath = generalConfig.Info.RootPath
+        let newConfigPath: string
         if (rootPath && rootPath !== '.') {
+          newConfigPath = rootPath
           generalConfig.Script.ConfigPath = rootPath
           const typeText = newMode === 'Folder' ? '文件夹' : '文件'
           message.info(`配置文件类型已切换为${typeText}，路径已重置为根目录`)
         } else {
           // 如果没有设置根目录，则清空路径
+          newConfigPath = '.'
           generalConfig.Script.ConfigPath = '.'
           const typeText = newMode === 'Folder' ? '文件夹' : '文件'
           message.info(`配置文件类型已切换为${typeText}，请重新选择路径`)
+        }
+        
+        // 保存被重置的 ConfigPath（ConfigPathMode 已经通过 @change 保存了）
+        // 使用即时保存模式，而非 watch 自动保存
+        if (!isInitializing.value && !isSaving.value) {
+          isSaving.value = true
+          try {
+            const updateData = { Script: { ConfigPath: newConfigPath } }
+            const success = await updateScript(scriptId, updateData)
+            if (success) {
+              logger.info('配置路径已重置并保存')
+              await refreshScript()
+            }
+          } catch (error) {
+            logger.error('保存配置路径失败:', error)
+          } finally {
+            isSaving.value = false
+          }
         }
       }
     }
   )
 }
 
-// 实时保存函数（带防抖）
-let saveTimer: NodeJS.Timeout | null = null
-const autoSave = async () => {
+// 即时保存函数 - 只发送修改的字段（遵循最小原则）
+const handleChange = async (category: string, key: string, value: any) => {
   if (isInitializing.value || isSaving.value) return
   
-  // 清除之前的定时器
-  if (saveTimer) {
-    clearTimeout(saveTimer)
-  }
-  
-  // 设置新的定时器，500ms 后保存
-  saveTimer = setTimeout(async () => {
-    isSaving.value = true
-    try {
-      generalConfig.Info.Name = formData.name
-      await updateScript(scriptId, generalConfig)
-      logger.info('配置已自动保存')
-    } catch (error) {
-      logger.error('自动保存失败:', error)
-    } finally {
-      isSaving.value = false
+  isSaving.value = true
+  try {
+    // 构建只包含单个修改字段的更新数据（遵循最小原则）
+    const updateData: any = { [category]: { [key]: value } }
+    
+    const success = await updateScript(scriptId, updateData)
+    if (success) {
+      logger.info(`配置已保存: ${category}.${key}`)
+      // 保存成功后刷新数据
+      await refreshScript()
     }
-  }, 500)
+  } catch (error) {
+    logger.error('保存失败:', error)
+  } finally {
+    isSaving.value = false
+  }
 }
 
-// 监听配置变化，自动保存（排除根目录变化的 watch，因为它有自己的逻辑）
-watch(() => formData.name, autoSave)
-watch(generalConfig, autoSave, { deep: true })
+// 刷新脚本配置
+const refreshScript = async () => {
+  try {
+    const scriptDetail = await getScript(scriptId)
+    if (scriptDetail) {
+      Object.assign(generalConfig, scriptDetail.config as GeneralScriptConfig)
+      formData.name = scriptDetail.name
+    }
+  } catch (error) {
+    logger.error('刷新配置失败:', error)
+  }
+}
 
 // 监听根目录变化，自动调整其他路径以保持相对关系
+// 注意：此 watcher 用于维护路径间的相对关系（业务逻辑），而非配置自动保存
+// 实际的保存操作由用户选择路径后的 @blur/@change 事件触发
 watch(
   () => generalConfig.Info.RootPath,
   (newRootPath, oldRootPath) => {
@@ -1370,6 +1420,26 @@ const handleEmulatorChange = async (emulatorId: string) => {
   generalConfig.Game.EmulatorIndex = ''
   emulatorDeviceOptions.value = []
   
+  // 保存模拟器选择和清空的实例字段
+  isSaving.value = true
+  try {
+    const updateData = {
+      Game: {
+        EmulatorId: emulatorId,
+        EmulatorIndex: ''
+      }
+    }
+    const success = await updateScript(scriptId, updateData)
+    if (success) {
+      logger.info('模拟器配置已保存')
+      await refreshScript()
+    }
+  } catch (error) {
+    logger.error('保存模拟器配置失败:', error)
+  } finally {
+    isSaving.value = false
+  }
+  
   // 加载新的模拟器实例选项
   if (emulatorId) {
     await loadEmulatorDeviceOptions(emulatorId)
@@ -1377,6 +1447,9 @@ const handleEmulatorChange = async (emulatorId: string) => {
 }
 
 const handleGameTypeChange = async (gameType: string) => {
+  // 构建需要更新的字段对象
+  let updateFields: Record<string, any> = { Type: gameType }
+  
   // 当游戏平台类型改变时，清空相关字段
   if (gameType === 'Emulator') {
     // 切换到模拟器时，清空PC客户端和URL相关字段
@@ -1385,6 +1458,14 @@ const handleGameTypeChange = async (gameType: string) => {
     generalConfig.Game.Arguments = ''
     generalConfig.Game.WaitTime = 0
     generalConfig.Game.IfForceClose = false
+    updateFields = {
+      ...updateFields,
+      Path: '.',
+      URL: '',
+      Arguments: '',
+      WaitTime: 0,
+      IfForceClose: false
+    }
     // 加载模拟器选项
     await loadEmulatorOptions()
   } else if (gameType === 'Client') {
@@ -1394,6 +1475,12 @@ const handleGameTypeChange = async (gameType: string) => {
     generalConfig.Game.EmulatorIndex = ''
     emulatorDeviceOptions.value = []
     emulatorOptions.value = []
+    updateFields = {
+      ...updateFields,
+      URL: '',
+      EmulatorId: '',
+      EmulatorIndex: ''
+    }
   } else if (gameType === 'URL') {
     // 切换到URL时，清空PC客户端和模拟器相关字段
     generalConfig.Game.Path = '.'
@@ -1404,6 +1491,30 @@ const handleGameTypeChange = async (gameType: string) => {
     generalConfig.Game.EmulatorIndex = ''
     emulatorDeviceOptions.value = []
     emulatorOptions.value = []
+    updateFields = {
+      ...updateFields,
+      Path: '.',
+      Arguments: '',
+      WaitTime: 0,
+      IfForceClose: false,
+      EmulatorId: '',
+      EmulatorIndex: ''
+    }
+  }
+  
+  // 保存所有更改的字段
+  isSaving.value = true
+  try {
+    const updateData = { Game: updateFields }
+    const success = await updateScript(scriptId, updateData)
+    if (success) {
+      logger.info('游戏配置已保存')
+      await refreshScript()
+    }
+  } catch (error) {
+    logger.error('保存游戏配置失败:', error)
+  } finally {
+    isSaving.value = false
   }
 }
 
@@ -1433,8 +1544,43 @@ const selectRootPath = async () => {
       // 如果有保存的相对路径关系，根据新根目录更新其他路径
       if (oldRootPath && oldRootPath !== '.' && oldRootPath !== normalizedPath) {
         updatePathsBasedOnRoot(generalConfig.Info.RootPath)
+        
+        // 收集所有需要更新的字段
+        const updateFields: Record<string, any> = { RootPath: normalizedPath }
+        
+        // 检查哪些路径被自动调整了，将它们也加入更新
+        const scriptPathUpdates: Record<string, any> = {}
+        if (generalConfig.Script.ScriptPath && generalConfig.Script.ScriptPath !== '.') {
+          scriptPathUpdates.ScriptPath = generalConfig.Script.ScriptPath
+        }
+        if (generalConfig.Script.ConfigPath && generalConfig.Script.ConfigPath !== '.') {
+          scriptPathUpdates.ConfigPath = generalConfig.Script.ConfigPath
+        }
+        if (generalConfig.Script.LogPath && generalConfig.Script.LogPath !== '.') {
+          scriptPathUpdates.LogPath = generalConfig.Script.LogPath
+        }
+        
+        // 保存所有更改
+        isSaving.value = true
+        try {
+          const updateData: any = { Info: updateFields }
+          if (Object.keys(scriptPathUpdates).length > 0) {
+            updateData.Script = scriptPathUpdates
+          }
+          const success = await updateScript(scriptId, updateData)
+          if (success) {
+            logger.info('根路径及关联路径已保存')
+            await refreshScript()
+          }
+        } catch (error) {
+          logger.error('保存路径失败:', error)
+        } finally {
+          isSaving.value = false
+        }
         message.success('根路径选择成功，其他路径已自动调整以保持相对关系')
       } else {
+        // 保存根目录更改
+        await handleChange('Info', 'RootPath', normalizedPath)
         message.success('根路径选择成功')
       }
     }
@@ -1457,6 +1603,8 @@ const selectGamePath = async () => {
     ])
     if (paths && paths.length > 0) {
       generalConfig.Game.Path = paths[0]
+      // 保存游戏路径
+      await handleChange('Game', 'Path', paths[0])
       message.success('游戏路径选择成功')
     }
   } catch (error) {
@@ -1480,9 +1628,12 @@ const selectScriptPath = async () => {
       const path = paths[0]
       // 验证路径是否在根目录下
       if (validatePath(generalConfig.Info.RootPath, path, '主程序路径')) {
-        generalConfig.Script.ScriptPath = pathUtils.normalizePath(path)
+        const normalizedPath = pathUtils.normalizePath(path)
+        generalConfig.Script.ScriptPath = normalizedPath
         // 更新相对路径关系
         updatePathRelations()
+        // 保存脚本路径
+        await handleChange('Script', 'ScriptPath', normalizedPath)
         message.success('脚本路径选择成功')
       }
     }
@@ -1523,9 +1674,12 @@ const selectConfigPath = async () => {
       // 验证路径是否在根目录下
       const pathType = generalConfig.Script.ConfigPathMode === 'Folder' ? '配置文件夹' : '配置文件'
       if (validatePath(generalConfig.Info.RootPath, selectedPath, `${pathType}路径`)) {
-        generalConfig.Script.ConfigPath = pathUtils.normalizePath(selectedPath)
+        const normalizedPath = pathUtils.normalizePath(selectedPath)
+        generalConfig.Script.ConfigPath = normalizedPath
         // 更新相对路径关系
         updatePathRelations()
+        // 保存配置路径
+        await handleChange('Script', 'ConfigPath', normalizedPath)
         message.success(`${pathType}路径选择成功`)
       }
     }
@@ -1548,9 +1702,12 @@ const selectLogPath = async () => {
       const path = paths[0]
       // 验证路径是否在根目录下
       if (validatePath(generalConfig.Info.RootPath, path, '日志文件路径')) {
-        generalConfig.Script.LogPath = pathUtils.normalizePath(path)
+        const normalizedPath = pathUtils.normalizePath(path)
+        generalConfig.Script.LogPath = normalizedPath
         // 更新相对路径关系
         updatePathRelations()
+        // 保存日志路径
+        await handleChange('Script', 'LogPath', normalizedPath)
         message.success('日志路径选择成功')
       }
     }

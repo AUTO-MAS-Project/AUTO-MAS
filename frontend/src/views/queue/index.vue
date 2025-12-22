@@ -124,7 +124,7 @@
                   v-model:value="currentStartUpEnabled"
                   style="width: 100%"
                   size="large"
-                  @change="onQueueSwitchChange"
+                  @change="(value: any) => handleConfigChange('StartUpEnabled', value)"
                 >
                   <a-select-option :value="true">是</a-select-option>
                   <a-select-option :value="false">否</a-select-option>
@@ -143,7 +143,7 @@
                   v-model:value="currentTimeEnabled"
                   style="width: 100%"
                   size="large"
-                  @change="onQueueSwitchChange"
+                  @change="(value: any) => handleConfigChange('TimeEnabled', value)"
                 >
                   <a-select-option :value="true">是</a-select-option>
                   <a-select-option :value="false">否</a-select-option>
@@ -164,7 +164,7 @@
                   :options="afterAccomplishOptions"
                   placeholder="请选择操作"
                   size="large"
-                  @change="onAfterAccomplishChange"
+                  @change="(value: any) => handleConfigChange('AfterAccomplish', value)"
                 />
               </div>
             </a-col>
@@ -473,15 +473,17 @@ const refreshQueueItems = async () => {
   }
 }
 
-// 队列名称编辑失焦处理
-const onQueueNameBlur = () => {
-  // 当用户编辑完队列名称后，更新按钮显示的名称
+// 队列名称编辑失焦处理 - 保存到后端
+const onQueueNameBlur = async () => {
+  // 当用户编辑完队列名称后，更新按钮显示的名称并保存
   if (activeQueueId.value) {
     const currentQueue = queueList.value.find(queue => queue.id === activeQueueId.value)
     if (currentQueue) {
       currentQueue.name =
         currentQueueName.value || `队列 ${queueList.value.indexOf(currentQueue) + 1}`
     }
+    // 保存到后端
+    await handleSaveChange('Name', currentQueueName.value)
   }
 }
 
@@ -504,22 +506,9 @@ const finishEditQueueName = () => {
   onQueueNameBlur()
 }
 
-// 队列开关切换处理
-const onQueueSwitchChange = () => {
-  // 开关切换时自动保存
-  autoSave()
-}
-
-// 完成后操作切换处理
-const onAfterAccomplishChange = () => {
-  // 完成后操作切换时自动保存
-  autoSave()
-}
-
-// 队列状态切换处理
-const onQueueStatusChange = () => {
-  // 状态切换时自动保存
-  autoSave()
+// 统一的配置字段变更处理 - 即时保存单个字段
+const handleConfigChange = async (key: string, value: any) => {
+  await handleSaveChange(key, value)
 }
 
 // 添加队列
@@ -608,29 +597,43 @@ const onQueueChange = async (queueId: string) => {
   }
 }
 
-// 自动保存处理
-const autoSave = async () => {
+// 刷新当前队列配置 - 保存成功后调用
+const refreshQueueConfig = async () => {
   if (!activeQueueId.value) return
+  
   try {
-    await saveQueueData()
+    const response = await Service.getQueuesApiQueueGetPost({})
+    if (response.code === 200 && response.data && response.data[activeQueueId.value]) {
+      currentQueueData.value = response.data
+      const queueData = response.data[activeQueueId.value]
+      
+      // 更新本地状态
+      if (queueData.Info) {
+        currentQueueName.value = queueData.Info.Name || ''
+        currentStartUpEnabled.value = queueData.Info.StartUpEnabled ?? false
+        currentTimeEnabled.value = queueData.Info.TimeEnabled ?? false
+        currentAfterAccomplish.value = queueData.Info.AfterAccomplish ?? 'NoAction'
+        
+        // 更新队列列表中的名称
+        const currentQueue = queueList.value.find(queue => queue.id === activeQueueId.value)
+        if (currentQueue) {
+          currentQueue.name = queueData.Info.Name || currentQueue.name
+        }
+      }
+    }
   } catch (error) {
-    logger.error('自动保存失败:', error)
+    logger.error('刷新队列配置失败:', error)
   }
 }
 
-// 保存队列数据
-const saveQueueData = async () => {
-  if (!activeQueueId.value) return
-
+// 即时保存单个字段变更 - 只发送修改的字段（遵循最小原则）
+const handleSaveChange = async (key: string, value: any): Promise<boolean> => {
+  if (!activeQueueId.value) return false
+  
   try {
-    // 构建符合API要求的数据结构，包含开关状态和完成后操作
+    // 构建只包含变更字段的数据
     const queueData: Record<string, any> = {
-      Info: {
-        Name: currentQueueName.value,
-        StartUpEnabled: currentStartUpEnabled.value,
-        TimeEnabled: currentTimeEnabled.value,
-        AfterAccomplish: currentAfterAccomplish.value,
-      },
+      Info: { [key]: value },
     }
 
     const response = await Service.updateQueueApiQueueUpdatePost({
@@ -639,29 +642,21 @@ const saveQueueData = async () => {
     })
 
     if (response.code !== 200) {
-      throw new Error(response.message || '保存失败')
+      message.error(response.message || '保存失败')
+      return false
     }
+    
+    // 保存成功后重新获取最新配置
+    await refreshQueueConfig()
+    return true
   } catch (error) {
     logger.error('保存队列数据失败:', error)
-    throw error
+    message.error('保存队列数据失败')
+    return false
   }
 }
 
-// 自动保存功能
-watch(
-  () => [
-    currentQueueName.value,
-    currentQueueEnabled.value,
-    currentStartUpEnabled.value,
-    currentTimeEnabled.value,
-    currentAfterAccomplish.value,
-  ],
-  async () => {
-    await nextTick()
-    autoSave()
-  },
-  { deep: true }
-)
+// 注意：配置保存已改为即时保存，由各个 @change 事件触发，不再使用 watch 自动保存
 
 // 初始化
 onMounted(async () => {

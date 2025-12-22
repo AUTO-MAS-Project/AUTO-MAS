@@ -2,7 +2,7 @@
 <script setup lang="ts">
 // 挂载和卸载键盘监听
 import { h, onMounted, onUnmounted, ref, watch } from 'vue'
-import { useDebounceFn, useEventListener } from '@vueuse/core'
+import { useEventListener } from '@vueuse/core'
 import { useRoute } from 'vue-router'
 import { message } from 'ant-design-vue'
 import {
@@ -76,7 +76,7 @@ const startingDevices = ref<Set<string>>(new Set())
 const stoppingDevices = ref<Set<string>>(new Set())
 
 // 轮询相关状态
-const pollingTimer = ref<NodeJS.Timeout | null>(null)
+const pollingTimer = ref<ReturnType<typeof setTimeout> | null>(null)
 const POLLING_INTERVAL = 5000 // 5秒轮询一次
 
 // 路由监听
@@ -210,24 +210,6 @@ const syncNameToDisplay = (uuid: string, name: string) => {
   // name 的显示由 emulatorData[uuid]?.Info?.Name 提供
 }
 
-// 自动保存（使用 VueUse 的 useDebounceFn 实现防抖）
-// 注意：useDebounceFn 返回的是防抖函数本身，不是带控制方法的对象
-const autoSaveFn = useDebounceFn((uuid: string) => {
-  handleSave(uuid, true) // true 表示静默保存
-}, 1000)
-
-// 封装防抖保存调用
-const autoSave = (uuid: string) => {
-  autoSaveFn(uuid)
-}
-
-// 立即保存（不防抖）- 直接调用 handleSave，绕过防抖
-const saveImmediately = async (uuid: string, skipReload = false) => {
-  // 直接执行保存，不经过防抖
-  // skipReload: 在Tab切换等场景下，跳过重新加载以避免干扰切换流程
-  await handleSave(uuid, true, skipReload)
-}
-
 // 加载模拟器列表
 const loadEmulators = async () => {
   loading.value = true
@@ -269,7 +251,6 @@ const handleAdd = async () => {
   try {
     const response = await Service.addEmulatorApiEmulatorAddPost()
     if (response.code === 200) {
-      message.success('添加成功')
       await loadEmulators()
       // 自动切换到新模拟器
       activeKey.value = response.emulatorId
@@ -284,55 +265,73 @@ const handleAdd = async () => {
   }
 }
 
-// 保存编辑
-const handleSave = async (uuid: string, silent = false, skipReload = false) => {
-  const editData = editingDataMap.value.get(uuid)
-  if (!editData) {
-    if (!silent) message.error('未找到编辑数据')
-    return
-  }
+// 刷新模拟器配置 - 保存成功后调用
+const refreshEmulatorConfig = async (uuid?: string) => {
+  try {
+    const response = await Service.getEmulatorApiEmulatorGetPost({ emulatorId: uuid || null })
+    if (response.code === 200 && 'index' in response && 'data' in response) {
+      emulatorIndex.value = (response.index as EmulatorConfigIndexItem[]) || []
+      emulatorData.value = (response.data as Record<string, any>) || {}
 
+      // 更新编辑数据
+      emulatorIndex.value.forEach(item => {
+        const configData = emulatorData.value[item.uid]
+        const bossKeys = safeJsonParse(configData?.Data?.BossKey, [])
+        editingDataMap.value.set(item.uid, {
+          name: configData?.Info?.Name || '',
+          type: configData?.Data?.Type || '',
+          path: configData?.Info?.Path || '',
+          max_wait_time: configData?.Data?.MaxWaitTime || 60,
+          boss_keys: bossKeys,
+        })
+        // 同步 boss_keys 到输入框显示
+        if (bossKeys.length > 0) {
+          bossKeyInputMap.value[item.uid] = bossKeys[0]
+        }
+      })
+    }
+  } catch (e) {
+    logger.error('刷新模拟器配置失败', e)
+  }
+}
+
+// 即时保存函数 - 只发送修改的字段（遵循最小原则）
+const handleSaveChange = async (uuid: string, key: string, value: any) => {
   savingMap.value.set(uuid, true)
 
   try {
-    // 记录保存前的路径，用于判断后端是否进行了自动纠正
-    const originalInputPath = editData.path || ''
+    // 构建更新数据 - 只包含修改的字段
+    let configData: any = {}
 
-    // 将前端的扁平结构转换为后端需要的分组结构
-    const configData = {
-      Info: {
-        Name: editData.name,
-        Path: editData.path,
-      },
-      Data: {
-        Type: editData.type as 'general' | 'mumu' | 'ldplayer' | 'nox' | 'memu' | 'blueStacks',
-        MaxWaitTime: editData.max_wait_time,
-        BossKey: JSON.stringify(editData.boss_keys),
-      },
+    if (key === 'name') {
+      configData = { Info: { Name: value } }
+    } else if (key === 'path') {
+      configData = { Info: { Path: value } }
+    } else if (key === 'type') {
+      configData = {
+        Data: { Type: value as 'general' | 'mumu' | 'ldplayer' | 'nox' | 'memu' | 'blueStacks' },
+      }
+    } else if (key === 'max_wait_time') {
+      configData = { Data: { MaxWaitTime: value } }
+    } else if (key === 'boss_keys') {
+      configData = { Data: { BossKey: JSON.stringify(value) } }
     }
 
     const response = await Service.updateEmulatorApiEmulatorUpdatePost({
       emulatorId: uuid,
       data: configData,
     })
-    if (response.code === 200) {
-      if (!silent) message.success('保存成功')
 
-      // 保存成功后重新从后端获取最新配置（除非明确跳过）
-      if (!skipReload) {
-        await loadEmulators()
-        // 加载完成后，读取该项最新路径，与保存前输入对比，若已被后端纠正则提示一次
-        const newPath = (emulatorData.value[uuid]?.Info?.Path as string) || ''
-        if (!silent && originalInputPath && newPath && originalInputPath !== newPath) {
-          message.info(`路径已自动调整: ${originalInputPath} -> ${newPath}`)
-        }
-      }
+    if (response.code === 200) {
+      logger.info(`配置已保存: ${key}`)
+      // 保存成功后重新获取最新配置
+      await refreshEmulatorConfig(uuid)
     } else {
-      if (!silent) message.error(response.message || '保存失败')
+      message.error(response.message || '保存失败')
     }
   } catch (e) {
     logger.error('保存模拟器配置失败', e)
-    if (!silent) message.error('保存模拟器配置失败')
+    message.error('保存模拟器配置失败')
   } finally {
     savingMap.value.set(uuid, false)
   }
@@ -345,7 +344,6 @@ const handleDelete = async (uuid: string) => {
       emulatorId: uuid,
     })
     if (response.code === 200) {
-      message.success('删除成功')
 
       // 如果删除的是当前激活的 Tab，需要跳转到其他 Tab
       if (activeKey.value === uuid) {
@@ -542,10 +540,17 @@ const selectEmulatorPath = async (uuid: string) => {
     ])
 
     if (paths && paths.length > 0) {
+      const originalPath = editData.path
       editData.path = paths[0]
       message.success('模拟器路径选择成功')
       // 立刻保存并从后端获取被纠正后的路径
-      await handleSave(uuid, false /* silent */)
+      await handleSaveChange(uuid, 'path', paths[0])
+
+      // 检查路径是否被后端纠正
+      const newPath = editingDataMap.value.get(uuid)?.path || ''
+      if (paths[0] !== newPath && newPath) {
+        message.info(`路径已自动调整: ${paths[0]} -> ${newPath}`)
+      }
     }
   } catch (error) {
     logger.error('选择模拟器路径失败:', error)
@@ -600,7 +605,7 @@ const handleKeyDown = (event: KeyboardEvent) => {
   }
 }
 
-const handleKeyUp = (event: KeyboardEvent) => {
+const handleKeyUp = async (event: KeyboardEvent) => {
   // 检查是否有正在录制的模拟器
   const recordingUuid = Array.from(recordingBossKeyMap.value.entries()).find(
     ([, recording]) => recording
@@ -622,7 +627,8 @@ const handleKeyUp = (event: KeyboardEvent) => {
       // 同时更新输入框显示
       bossKeyInputMap.value[recordingUuid] = keyCombo
       message.success(`老板键已设置为: ${keyCombo}`)
-      autoSave(recordingUuid)
+      // 即时保存老板键
+      await handleSaveChange(recordingUuid, 'boss_keys', [keyCombo])
     }
     recordingBossKeyMap.value.delete(recordingUuid)
     recordedKeysMap.value.delete(recordingUuid)
@@ -634,17 +640,21 @@ useEventListener(document, 'keydown', handleKeyDown)
 useEventListener(document, 'keyup', handleKeyUp)
 
 // 监听路由变化，控制轮询启停
-watch(() => route.path, (newPath) => {
-  if (newPath === '/emulators') {
-    // 进入模拟器页面，启动轮询
-    logger.info('进入模拟器页面，启动轮询')
-    startPolling()
-  } else {
-    // 离开模拟器页面，停止轮询
-    logger.info('离开模拟器页面，停止轮询')
-    stopPolling()
-  }
-}, { immediate: true })
+watch(
+  () => route.path,
+  newPath => {
+    if (newPath === '/emulators') {
+      // 进入模拟器页面，启动轮询
+      logger.info('进入模拟器页面，启动轮询')
+      startPolling()
+    } else {
+      // 离开模拟器页面，停止轮询
+      logger.info('离开模拟器页面，停止轮询')
+      stopPolling()
+    }
+  },
+  { immediate: true }
+)
 
 onMounted(async () => {
   await loadEmulators()
@@ -671,11 +681,7 @@ const onEmulatorsLoaded = async () => {
 
 // Tab 切换时自动加载设备信息并保存状态
 const onTabChange = async (key: string) => {
-  // 切换前先立即保存当前 Tab 的数据（跳过重新加载以避免干扰切换）
-  if (activeKey.value && editingDataMap.value.has(activeKey.value)) {
-    await saveImmediately(activeKey.value, true) // true = skipReload
-  }
-
+  // 即时保存模式下，切换前无需额外保存，数据已在编辑完成时保存
   activeKey.value = key
   saveActiveKey(key)
   // 如果切换到已有的模拟器 Tab,加载其设备信息
@@ -684,13 +690,11 @@ const onTabChange = async (key: string) => {
   }
 }
 
-// 组件卸载时保存所有数据并停止轮询
-onUnmounted(async () => {
+// 组件卸载时停止轮询
+onUnmounted(() => {
   // 停止轮询
   stopPolling()
-  // 立即保存所有有数据的模拟器（防抖会自动失效）
-  const savePromises = Array.from(editingDataMap.value.keys()).map(uuid => handleSave(uuid, true))
-  await Promise.all(savePromises)
+  // 即时保存模式下，无需额外保存，数据已在编辑完成时保存
 })
 
 // 重写 handleAdd:添加后自动切换到新Tab并加载
@@ -715,9 +719,7 @@ const handleSearchAndImport = async (result: EmulatorSearchResult) => {
   }
 }
 
-
-
-const handleSetBossKey = (uuid: string) => {
+const handleSetBossKey = async (uuid: string) => {
   // 如果正在录制，不处理手动输入
   if (recordingBossKeyMap.value.get(uuid)) {
     return
@@ -730,14 +732,15 @@ const handleSetBossKey = (uuid: string) => {
       // 设置为唯一的老板键（替换而不是追加）
       editData.boss_keys = [bossKeyInput.trim()]
       message.success(`老板键已设置为: ${bossKeyInput.trim()}`)
-      autoSave(uuid)
+      // 即时保存老板键
+      await handleSaveChange(uuid, 'boss_keys', [bossKeyInput.trim()])
       // 不清空输入框，保持显示
       // bossKeyInputMap.value[uuid] = ''
     }
   }
 }
 
-// 处理输入框变化，同步到 boss_keys
+// 处理输入框变化，同步到 boss_keys（仅更新本地数据，不保存）
 const handleBossKeyInputChange = (uuid: string) => {
   const bossKeyInput = bossKeyInputMap.value[uuid] || ''
   const editData = editingDataMap.value.get(uuid)
@@ -747,7 +750,6 @@ const handleBossKeyInputChange = (uuid: string) => {
     } else {
       editData.boss_keys = []
     }
-    autoSave(uuid)
   }
 }
 </script>
@@ -807,7 +809,9 @@ const handleBossKeyInputChange = (uuid: string) => {
                     <a-descriptions-item label="模拟器名称">
                       <a-input v-model:value="getEditingData(element.uid).name" placeholder="输入模拟器名称" size="small"
                         :bordered="false" @input="syncNameToDisplay(element.uid, getEditingData(element.uid).name)"
-                        @change="autoSave(element.uid)" />
+                        @blur="
+                          handleSaveChange(element.uid, 'name', getEditingData(element.uid).name)
+                          " />
                     </a-descriptions-item>
                     <a-descriptions-item>
                       <template #label>
@@ -818,12 +822,15 @@ const handleBossKeyInputChange = (uuid: string) => {
                       </template>
                       <a-select v-model:value="getEditingData(element.uid).type" placeholder="选择模拟器类型"
                         :options="emulatorTypeOptions" size="small" :bordered="false" style="width: 100%"
-                        @change="autoSave(element.uid)" />
+                        @change="handleSaveChange(element.uid, 'type', $event)" />
                     </a-descriptions-item>
                     <a-descriptions-item label="模拟器路径" :span="2">
                       <a-input v-model:value="getEditingData(element.uid).path" placeholder="输入或选择模拟器路径" size="small"
-                        :bordered="false" @change="saveImmediately(element.uid)"
-                        @press-enter="saveImmediately(element.uid)">
+                        :bordered="false" @blur="
+                          handleSaveChange(element.uid, 'path', getEditingData(element.uid).path)
+                          " @press-enter="
+                          handleSaveChange(element.uid, 'path', getEditingData(element.uid).path)
+                          ">
                         <template #suffix>
                           <FolderOpenOutlined style="cursor: pointer; color: #1890ff"
                             @click="selectEmulatorPath(element.uid)" />
@@ -839,7 +846,7 @@ const handleBossKeyInputChange = (uuid: string) => {
                       </template>
                       <a-input-number v-model:value="getEditingData(element.uid).max_wait_time" placeholder="输入最大等待时间"
                         size="small" :bordered="false" style="width: 100%" :min="10" :max="300" :step="5" suffix="秒"
-                        @change="autoSave(element.uid)" />
+                        @change="handleSaveChange(element.uid, 'max_wait_time', $event)" />
                     </a-descriptions-item>
                     <a-descriptions-item>
                       <template #label>
@@ -850,10 +857,11 @@ const handleBossKeyInputChange = (uuid: string) => {
                       </template>
                       <a-input v-if="getEditingData(element.uid).type !== 'mumu'"
                         v-model:value="bossKeyInputMap[element.uid]" :placeholder="recordingBossKeyMap.get(element.uid)
-                          ? '请按下快捷键组合...'
-                          : '输入格式如 Ctrl+Q，按回车添加'
+                            ? '请按下快捷键组合...'
+                            : '输入格式如 Ctrl+Q，按回车添加'
                           " size="small" :bordered="false" :disabled="recordingBossKeyMap.get(element.uid)"
-                        @press-enter="handleSetBossKey(element.uid)" @change="handleBossKeyInputChange(element.uid)">
+                        @press-enter="handleSetBossKey(element.uid)" @blur="handleSetBossKey(element.uid)"
+                        @input="handleBossKeyInputChange(element.uid)">
                         <template #suffix>
                           <a-button v-if="!recordingBossKeyMap.get(element.uid)" type="default" size="small"
                             @click="startRecordBossKey(element.uid)">
@@ -1141,8 +1149,6 @@ const handleBossKeyInputChange = (uuid: string) => {
   align-items: center;
   gap: 8px;
 }
-
-
 
 .section-actions {
   display: flex;

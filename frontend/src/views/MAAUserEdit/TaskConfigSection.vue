@@ -6,34 +6,34 @@
     <a-row :gutter="24">
       <a-col :span="6">
         <a-form-item name="ifWakeUp" label="开始唤醒">
-          <a-switch v-model:checked="formData.Task.IfWakeUp" :disabled="loading" />
+          <a-switch v-model:checked="formData.Task.IfWakeUp" :disabled="loading" @change="emitSave('Task.IfWakeUp', formData.Task.IfWakeUp)" />
         </a-form-item>
       </a-col>
       <a-col :span="6">
         <a-form-item name="ifRecruiting" label="自动公招">
-          <a-switch v-model:checked="formData.Task.IfRecruiting" :disabled="loading" />
+          <a-switch v-model:checked="formData.Task.IfRecruiting" :disabled="loading" @change="emitSave('Task.IfRecruiting', formData.Task.IfRecruiting)" />
         </a-form-item>
       </a-col>
       <a-col :span="6">
         <a-form-item name="ifBase" label="基建换班">
-          <a-switch v-model:checked="formData.Task.IfBase" :disabled="loading" />
+          <a-switch v-model:checked="formData.Task.IfBase" :disabled="loading" @change="emitSave('Task.IfBase', formData.Task.IfBase)" />
         </a-form-item>
       </a-col>
       <a-col :span="6">
         <a-form-item name="ifCombat" label="刷理智">
-          <a-switch v-model:checked="formData.Task.IfCombat" :disabled="loading" />
+          <a-switch v-model:checked="formData.Task.IfCombat" :disabled="loading" @change="emitSave('Task.IfCombat', formData.Task.IfCombat)" />
         </a-form-item>
       </a-col>
     </a-row>
     <a-row :gutter="24">
       <a-col :span="6">
         <a-form-item name="ifMall" label="获取信用及购物">
-          <a-switch v-model:checked="formData.Task.IfMall" :disabled="loading" />
+          <a-switch v-model:checked="formData.Task.IfMall" :disabled="loading" @change="emitSave('Task.IfMall', formData.Task.IfMall)" />
         </a-form-item>
       </a-col>
       <a-col :span="6">
         <a-form-item name="ifMission" label="领取奖励">
-          <a-switch v-model:checked="formData.Task.IfMission" :disabled="loading" />
+          <a-switch v-model:checked="formData.Task.IfMission" :disabled="loading" @change="emitSave('Task.IfMission', formData.Task.IfMission)" />
         </a-form-item>
       </a-col>
       <a-col :span="6">
@@ -44,7 +44,7 @@
               <QuestionCircleOutlined class="help-icon" />
             </a-tooltip>
           </template>
-          <a-switch v-model:checked="formData.Task.IfAutoRoguelike" :disabled="loading" />
+          <a-switch v-model:checked="formData.Task.IfAutoRoguelike" :disabled="loading" @change="emitSave('Task.IfAutoRoguelike', formData.Task.IfAutoRoguelike)" />
         </a-form-item>
       </a-col>
       <a-col :span="6">
@@ -69,6 +69,14 @@ defineProps<{
   formData: any
   loading: boolean
 }>()
+
+const emit = defineEmits<{
+  save: [key: string, value: any]
+}>()
+
+const emitSave = (key: string, value: any) => {
+  emit('save', key, value)
+}
 </script>
 
 <style scoped>

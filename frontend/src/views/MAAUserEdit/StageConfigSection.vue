@@ -32,6 +32,7 @@
             ]"
             :disabled="loading"
             size="large"
+            @change="emitSave('Info.Annihilation', formData.Info.Annihilation)"
           />
         </a-form-item>
       </a-col>
@@ -50,6 +51,7 @@
             :options="stageModeOptions"
             :disabled="loading"
             size="large"
+            @change="emitSave('Info.StageMode', formData.Info.StageMode)"
           />
         </a-form-item>
       </a-col>
@@ -357,7 +359,12 @@ const emit = defineEmits<{
   'handle-add-custom-stage2': [stageName: string]
   'handle-add-custom-stage3': [stageName: string]
   'handle-add-custom-stage-remain': [stageName: string]
+  'save': [key: string, value: any]
 }>()
+
+const emitSave = (key: string, value: any) => {
+  emit('save', key, value)
+}
 
 // 事件处理函数
 const handleAddCustomStage = (stageName: string) => emit('handle-add-custom-stage', stageName)
