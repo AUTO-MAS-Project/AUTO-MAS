@@ -93,12 +93,6 @@ class ScriptConfigTask(TaskExecuteBase):
                 / f"data/{self.script_info.script_id}/{self.cur_user_item.user_id}/ConfigFile/gui.json",
                 self.maa_set_path,
             )
-        else:
-            shutil.copy(
-                Path.cwd()
-                / f"data/{self.script_info.script_id}/Default/ConfigFile/gui.json",
-                self.maa_set_path,
-            )
 
         maa_set = json.loads(self.maa_set_path.read_text(encoding="utf-8"))
 

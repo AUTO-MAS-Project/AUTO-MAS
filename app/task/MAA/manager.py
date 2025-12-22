@@ -96,11 +96,12 @@ class MaaManager(TaskExecuteBase):
         ).exists():
             return "MAA配置文件不存在, 请检查MAA路径设置！"
         if (
-            self.task_info.mode != "ScriptConfig" or self.task_info.user_id is not None
-        ) and not (
-            Path.cwd()
-            / f"data/{self.script_info.script_id}/Default/ConfigFile/gui.json"
-        ).exists():
+            self.task_info.mode != "ScriptConfig"
+            and not (
+                Path.cwd()
+                / f"data/{self.script_info.script_id}/Default/ConfigFile/gui.json"
+            ).exists()
+        ):
             return "未完成 MAA 全局设置, 请先设置 MAA！"
         return "Pass"
 

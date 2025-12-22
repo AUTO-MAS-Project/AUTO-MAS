@@ -1,34 +1,14 @@
 <template>
-  <a-modal
-    v-model:open="visible"
-    title="系统公告"
-    :width="800"
-    :footer="null"
-    :closable="false"
-    :mask-closable="false"
-    class="notice-modal"
-  >
+  <a-modal v-model:open="visible" title="系统公告" :width="800" :footer="null" :closable="false" :mask-closable="false"
+    class="notice-modal">
     <div v-if="notices.length > 0" class="notice-container">
       <!-- 公告标签页 - 竖直布局 -->
-      <a-tabs
-        v-model:active-key="activeNoticeKey"
-        tab-position="left"
-        class="notice-tabs"
-        :tab-bar-style="{ width: '200px' }"
-      >
-        <a-tab-pane
-          v-for="(content, title) in noticeData"
-          :key="title"
-          :tab="title"
-          class="notice-tab-pane"
-        >
+      <a-tabs v-model:active-key="activeNoticeKey" tab-position="left" class="notice-tabs"
+        :tab-bar-style="{ width: '200px' }">
+        <a-tab-pane v-for="(content, title) in noticeData" :key="title" :tab="title" class="notice-tab-pane">
           <div class="notice-content">
-            <div
-              ref="markdownContentRef"
-              class="markdown-content"
-              @click="handleLinkClick"
-              v-html="renderMarkdown(content)"
-            ></div>
+            <div ref="markdownContentRef" class="markdown-content" @click="handleLinkClick"
+              v-html="renderMarkdown(content)"></div>
           </div>
         </a-tab-pane>
       </a-tabs>
@@ -40,12 +20,7 @@
         </div>
 
         <div class="notice-actions">
-          <a-button
-            type="primary"
-            :loading="confirming"
-            class="confirm-button"
-            @click="confirmNotices"
-          >
+          <a-button type="primary" :loading="confirming" class="confirm-button" @click="confirmNotices">
             我知道了
           </a-button>
         </div>
@@ -114,7 +89,6 @@ const confirmNotices = async () => {
   try {
     const response = await Service.confirmNoticeApiInfoNoticeConfirmPost()
     if (response.code === 200) {
-      // message.success('公告已确认')
       visible.value = false
       emit('confirmed')
     } else {
@@ -209,8 +183,10 @@ watch(visible, async newVisible => {
   overflow-y: auto;
   padding-left: 16px;
   /* 隐藏滚动条但保持滚动功能 */
-  scrollbar-width: none; /* Firefox */
-  -ms-overflow-style: none; /* IE 和 Edge */
+  scrollbar-width: none;
+  /* Firefox */
+  -ms-overflow-style: none;
+  /* IE 和 Edge */
 }
 
 /* 隐藏 WebKit 浏览器的滚动条 */

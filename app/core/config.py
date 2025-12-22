@@ -948,32 +948,23 @@ class AppConfig(GlobalConfig):
 
         logger.info(f"更新 emulator 配置: {emulator_id}")
 
-        # 如果路径被修改,尝试自动搜索模拟器根目录
-        if "Info" in data and "Path" in data["Info"]:
+        # 如果路径被修改, 尝试自动搜索模拟器根目录
+        if data.get("Info", {}).get("Path", None) is not None:
             input_path = data["Info"]["Path"]
 
             # 获取模拟器类型
-            emulator_type = None
-            if "Data" in data and "Type" in data["Data"]:
-                # 如果本次更新中包含类型信息
-                emulator_type = data["Data"]["Type"]
-            else:
-                # 否则从现有配置中获取
-                emulator_type = await self.EmulatorConfig[emulator_uid].get(
-                    "Data", "Type"
-                )
+            emulator_type = data.get("Data", {}).get(
+                "Type", None
+            ) or self.EmulatorConfig[emulator_uid].get("Data", "Type")
 
-            if input_path and emulator_type:
-                logger.info(
-                    f"检测到路径修改: {input_path}, 模拟器类型: {emulator_type}"
-                )
-                # 搜索并调整为正确的根目录
-                found_path = await find_emulator_root_path(input_path, emulator_type)
-                if found_path != input_path:
-                    logger.info(f"路径已自动调整: {input_path} -> {found_path}")
-                    data["Info"]["Path"] = found_path
-                else:
-                    logger.debug(f"路径未调整, 保持原值: {input_path}")
+            logger.info(f"检测到路径修改: {input_path}, 模拟器类型: {emulator_type}")
+            # 搜索并调整为正确的根目录
+            found_path = await find_emulator_root_path(input_path, emulator_type)
+            if found_path != input_path:
+                logger.info(f"路径已自动调整: {input_path} -> {found_path}")
+                data["Info"]["Path"] = found_path
+            else:
+                logger.debug(f"路径未调整, 保持原值: {input_path}")
 
         for group, items in data.items():
             for name, value in items.items():
@@ -1475,7 +1466,8 @@ class AppConfig(GlobalConfig):
             index_data = data.get("index", [])
             if index_data:
                 last_proxy_date = max(
-                    datetime.strptime(_["date"], "%Y年%m月%d日 %H:%M:%S") for _ in index_data
+                    datetime.strptime(_["date"], "%Y年%m月%d日 %H:%M:%S")
+                    for _ in index_data
                 ).strftime("%Y年%m月%d日 %H:%M:%S")
             else:
                 last_proxy_date = "暂无代理数据"

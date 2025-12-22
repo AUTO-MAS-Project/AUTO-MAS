@@ -39,7 +39,6 @@ export function usePlanApi() {
       const { playSound } = useAudioPlayer()
       await playSound('add_schedule')
 
-      // message.success('创建计划成功')
       return response
     } catch (error) {
       logger.error('创建计划失败:', error)
@@ -55,7 +54,7 @@ export function usePlanApi() {
     loading.value = true
     try {
       const params: PlanUpdateIn = { planId, data }
-      // message.success('更新计划成功')
+
       return await Service.updatePlanApiPlanUpdatePost(params)
     } catch (error) {
       logger.error('更新计划失败:', error)
@@ -77,7 +76,6 @@ export function usePlanApi() {
       const { playSound } = useAudioPlayer()
       await playSound('delete_schedule')
 
-      message.success('删除计划成功')
       return response
     } catch (error) {
       logger.error('删除计划失败:', error)
@@ -94,7 +92,7 @@ export function usePlanApi() {
     try {
       const params: PlanReorderIn = { indexList }
       const response = await Service.reorderPlanApiPlanOrderPost(params)
-      message.success('重新排序成功')
+
       return response
     } catch (error) {
       logger.error('重新排序失败:', error)

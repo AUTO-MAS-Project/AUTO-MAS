@@ -663,6 +663,9 @@ class AutoProxyTask(TaskExecuteBase):
         if_six_star = False
         for t, log_item in self.cur_user_item.log_record.items():
 
+            if log_item.status == "MAA 正常运行中":
+                log_item.status = "任务被用户手动中止"
+
             dt = t.replace(tzinfo=datetime.now().astimezone().tzinfo).astimezone(UTC4)
             log_path = (
                 Path.cwd()
@@ -670,15 +673,7 @@ class AutoProxyTask(TaskExecuteBase):
             )
             user_logs_list.append(log_path.with_suffix(".json"))
 
-            if await Config.save_maa_log(
-                log_path,
-                log_item.content,
-                (
-                    log_item.status
-                    if log_item.status != "MAA 正常运行中"
-                    else "任务被用户手动中止"
-                ),
-            ):
+            if await Config.save_maa_log(log_path, log_item.content, log_item.status):
                 if_six_star = True
 
         if self.run_book["IfAnnihilationAccomplish"]:

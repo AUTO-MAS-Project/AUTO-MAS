@@ -38,7 +38,7 @@
           <!-- 动态渲染不同类型的表格 -->
           <component :is="currentTableComponent" :table-data="tableData" :current-mode="currentMode"
             :view-mode="viewMode" :options-loaded="!loading" :plan-id="activePlanId"
-            @update-table-data="handleTableDataUpdate" />
+            :handle-plan-change="handlePlanChange" />
         </PlanConfig>
       </div>
     </div>
@@ -46,8 +46,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { useDebounceFn } from '@vueuse/core'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { getLogger } from '@/utils/logger'
@@ -85,7 +84,6 @@ const viewMode = ref<'config' | 'simple'>('config')
 
 const isEditingPlanName = ref<boolean>(false)
 const loading = ref(true)
-const switching = ref(false) // 添加切换状态
 
 // Use a record to match child component expectations
 const tableData = ref<Record<string, any>>({})
@@ -145,81 +143,86 @@ const handleRemovePlan = async (planId: string) => {
   }
 }
 
-// 添加异步保存队列和状态管理
-const savingQueue = ref(new Set<string>())
-const savePromises = ref(new Map<string, Promise<void>>())
-
-// 异步保存函数
-const saveInBackground = async (planId: string) => {
-  // 如果已经在保存队列中，等待现有的保存完成
-  if (savingQueue.value.has(planId)) {
-    const existingPromise = savePromises.value.get(planId)
-    if (existingPromise) {
-      await existingPromise
-    }
-    return
-  }
-
-  savingQueue.value.add(planId)
-
-  const savePromise = (async () => {
-    try {
-      const currentPlan = planList.value.find(plan => plan.id === planId)
-      const planType = currentPlan?.type || 'MaaPlanConfig'
-
-      // Start from existing tableData, then overwrite Info explicitly
-      const planData: Record<string, any> = { ...(tableData.value || {}) }
-      planData.Info = { Mode: currentMode.value, Name: currentPlanName.value, Type: planType }
-
-      logger.debug(`保存数据 (${planId})`)
-      await updatePlan(planId, planData)
-    } catch (error) {
-      logger.error('后台保存计划数据失败:', error)
-      // 不显示错误消息，避免打断用户操作
-    } finally {
-      savingQueue.value.delete(planId)
-      savePromises.value.delete(planId)
-    }
-  })()
-
-  savePromises.value.set(planId, savePromise)
-  return savePromise
-}
-
-// 使用 VueUse 的 useDebounceFn 替换手写的 debounce
-const debouncedSave = useDebounceFn(async () => {
-  if (!activePlanId.value) return
-  await saveInBackground(activePlanId.value)
-}, 300)
-
-const handleSave = async () => {
+// 使用即时保存 - 只发送修改的字段（遵循最小原则）
+const savePlanField = async (changes: Record<string, any>): Promise<boolean> => {
   if (!activePlanId.value) {
-    message.warning('请先选择一个计划')
-    return
+    return false
   }
-  await debouncedSave()
+
+  try {
+    logger.debug(`保存字段 (${activePlanId.value}):`, changes)
+    await updatePlan(activePlanId.value, changes)
+    return true
+  } catch (error) {
+    logger.error('保存计划字段失败:', error)
+    return false
+  }
 }
 
-// 优化计划切换逻辑 - 异步保存，立即切换
+// 刷新计划数据
+const refreshPlanData = async () => {
+  if (!activePlanId.value) return
+
+  try {
+    const response = await getPlans(activePlanId.value)
+    const planData = response.data[activePlanId.value]
+    if (planData) {
+      currentPlanData.value = response.data
+      tableData.value = { ...planData, _isInitialLoad: true }
+
+      if (planData.Info) {
+        currentMode.value = planData.Info.Mode || 'ALL'
+        const currentPlan = planList.value.find(plan => plan.id === activePlanId.value)
+        if (currentPlan && planData.Info.Name) {
+          currentPlanName.value = planData.Info.Name
+        }
+      }
+    }
+  } catch (error) {
+    logger.error('刷新计划数据失败:', error)
+  }
+}
+
+// 处理计划字段变更 - 遵循设置页面的模式
+const handlePlanChange = async (path: string, value: any) => {
+  // 构建只包含修改字段的更新数据
+  const changes = buildNestedObject(path, value)
+  const success = await savePlanField(changes)
+
+  // 更新成功后重新获取最新配置
+  if (success) {
+    await refreshPlanData()
+  }
+}
+
+// 辅助函数：根据路径构建嵌套对象
+// 例如 "Info.Name" -> { Info: { Name: value } }
+// 例如 "Monday.stages.stage_1" -> { Monday: { stages: { stage_1: value } } }
+const buildNestedObject = (path: string, value: any): Record<string, any> => {
+  const keys = path.split('.')
+  const result: Record<string, any> = {}
+  let current = result
+
+  for (let i = 0; i < keys.length - 1; i++) {
+    current[keys[i]] = {}
+    current = current[keys[i]]
+  }
+
+  current[keys[keys.length - 1]] = value
+  return result
+}
+
+// 优化计划切换逻辑
 const onPlanChange = async (planId: string) => {
   if (planId === activePlanId.value) return
 
-  switching.value = true
   try {
-    // 异步保存当前计划，不等待完成
-    if (activePlanId.value) {
-      saveInBackground(activePlanId.value).catch(error => {
-        logger.error('切换时保存当前计划失败:', error)
-        message.warning('保存当前计划时出现问题，请检查数据是否完整')
-      })
-    }
-
-    // 立即切换到新计划，提升响应速度
+    // 立即切换到新计划
     logger.info(`[计划表] 切换到新计划: ${planId}`)
     activePlanId.value = planId
     await loadPlanData(planId)
-  } finally {
-    switching.value = false
+  } catch (error) {
+    logger.error('切换计划失败:', error)
   }
 }
 
@@ -234,7 +237,7 @@ const startEditPlanName = () => {
   }, 100)
 }
 
-const finishEditPlanName = () => {
+const finishEditPlanName = async () => {
   if (activePlanId.value) {
     const currentPlan = planList.value.find(plan => plan.id === activePlanId.value)
     if (currentPlan) {
@@ -249,25 +252,20 @@ const finishEditPlanName = () => {
         message.error(validation.message || '计划表名称无效')
         currentPlanName.value = currentPlan.name
       } else {
-        // 如果验证成功，更新名称
+        // 如果验证成功，更新名称并保存到后端
         currentPlan.name = newName
         currentPlanName.value = newName
-        // 触发保存操作，确保名称被保存到后端
-        handleSave()
+        // 只发送修改的字段
+        await handlePlanChange('Info.Name', newName)
       }
     }
   }
   isEditingPlanName.value = false
 }
 
-const onModeChange = () => {
-  handleSave()
-}
-
-const handleTableDataUpdate = async (newData: Record<string, any>) => {
-  tableData.value = newData
-  await nextTick()
-  handleSave()
+const onModeChange = async () => {
+  // 只发送修改的字段
+  await handlePlanChange('Info.Mode', currentMode.value)
 }
 
 const loadPlanData = async (planId: string) => {
@@ -377,14 +375,8 @@ const getDefaultPlanName = (planType: string) => {
 }
 // getPlanTypeLabel 现在从 @/utils/planNameUtils 导入，删除本地定义
 
-watch(
-  () => [currentPlanName.value, currentMode.value],
-  () => {
-    // await nextTick()
-    debouncedSave() // 直接调用即可，无需等待
-  },
-  { flush: 'post' }
-)
+// 注意：currentPlanName 和 currentMode 的变更保存由各自的 finish/change 事件处理
+// 直接调用 handlePlanChange 只发送修改的字段
 
 watch(
   () => route.query.planId,
@@ -398,24 +390,12 @@ watch(
   }
 )
 
-// 在组件卸载前确保所有保存操作完成
-const ensureAllSaved = async () => {
-  const pendingPromises = Array.from(savePromises.value.values())
-  if (pendingPromises.length > 0) {
-    await Promise.allSettled(pendingPromises)
-  }
-}
-
 onMounted(() => {
   initPlans()
-
-  // 监听页面卸载
-  window.addEventListener('beforeunload', ensureAllSaved)
 })
 
 onUnmounted(() => {
-  window.removeEventListener('beforeunload', ensureAllSaved)
-  ensureAllSaved()
+  // 组件卸载时的清理逻辑
 })
 </script>
 
