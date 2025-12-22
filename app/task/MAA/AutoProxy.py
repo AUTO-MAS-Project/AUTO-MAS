@@ -383,6 +383,7 @@ class AutoProxyTask(TaskExecuteBase):
         )
 
         # 直接运行任务
+        maa_set["Configurations"]["Default"]["Start.StartGame"] = "True"
         maa_set["Configurations"]["Default"]["Start.RunDirectly"] = "True"
         maa_set["Configurations"]["Default"]["Start.OpenEmulatorAfterLaunch"] = "False"
 
@@ -399,9 +400,9 @@ class AutoProxyTask(TaskExecuteBase):
 
         # 静默模式相关配置
         if Config.get("Function", "IfSilence"):
-            maa_set["Global"]["Start.MinimizeDirectly"] = "True"
             maa_set["Global"]["GUI.UseTray"] = "True"
             maa_set["Global"]["GUI.MinimizeToTray"] = "True"
+            maa_set["Global"]["Start.MinimizeDirectly"] = "True"
 
         # 服务器与账号切换
         maa_set["Configurations"]["Default"]["Start.ClientType"] = (

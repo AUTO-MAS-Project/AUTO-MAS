@@ -18,6 +18,8 @@
 "TaskQueue.Order.Mission": "5"
 "TaskQueue.Order.AutoRoguelike": "6"
 "TaskQueue.Order.Reclamation": "7"
+#开始唤醒
+"Start.StartGame"        #是否启动客户端
 #刷理智
 "MainFunction.UseMedicine": "True"        #吃理智药
 "MainFunction.UseMedicine.Quantity": "999"        #吃理智药数量
