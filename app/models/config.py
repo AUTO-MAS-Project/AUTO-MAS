@@ -909,13 +909,8 @@ class GlobalConfig(ConfigBase):
         "2000-01-01 00:00:00",
         DateTimeValidator("%Y-%m-%d %H:%M:%S"),
     )
-    ## 关卡时间戳
-    Data_StageTimeStamp = ConfigItem(
-        "Data",
-        "StageTimeStamp",
-        "2000-01-01 00:00:00",
-        DateTimeValidator("%Y-%m-%d %H:%M:%S"),
-    )
+    ## 关卡数据的版本标识符
+    Data_StageETag = ConfigItem("Data", "StageETag", "")
     ## 关卡数据
     Data_Stage = ConfigItem("Data", "Stage", "{ }", VirtualConfigValidator(getStage))
     ## 上次公告更新时间
@@ -925,6 +920,8 @@ class GlobalConfig(ConfigBase):
         "2000-01-01 00:00:00",
         DateTimeValidator("%Y-%m-%d %H:%M:%S"),
     )
+    ## 公告的版本标识符
+    Data_NoticeETag = ConfigItem("Data", "NoticeETag", "")
     ## 是否显示公告
     Data_IfShowNotice = ConfigItem("Data", "IfShowNotice", True, BoolValidator())
     ## 公告内容
