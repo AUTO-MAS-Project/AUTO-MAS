@@ -17,26 +17,15 @@
     </div>
 
     <a-space size="middle">
-      <a-button
-        v-if="!showGeneralConfigMask"
-        type="primary"
-        ghost
-        size="large"
-        :loading="generalConfigLoading"
-        @click="handleGeneralConfig"
-      >
+      <a-button v-if="!showGeneralConfigMask" type="primary" ghost size="large" :loading="generalConfigLoading"
+        @click="handleGeneralConfig">
         <template #icon>
           <SettingOutlined />
         </template>
         通用配置
       </a-button>
-      <a-button
-        v-if="showGeneralConfigMask"
-        type="default"
-        size="large"
-        disabled
-        style="color: #52c41a; border-color: #52c41a"
-      >
+      <a-button v-if="showGeneralConfigMask" type="default" size="large" disabled
+        style="color: #52c41a; border-color: #52c41a">
         <template #icon>
           <SettingOutlined />
         </template>
@@ -65,12 +54,7 @@
           配置完成后，请点击"保存配置"按钮来结束配置会话。
         </p>
         <div class="mask-actions">
-          <a-button
-            v-if="generalWebsocketId"
-            type="primary"
-            size="large"
-            @click="handleSaveGeneralConfig"
-          >
+          <a-button v-if="generalWebsocketId" type="primary" size="large" @click="handleSaveGeneralConfig">
             保存配置
           </a-button>
         </div>
@@ -97,13 +81,8 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input
-                  v-model:value="formData.userName"
-                  placeholder="请输入用户名"
-                  :disabled="loading"
-                  size="large"
-                  class="modern-input"
-                />
+                <a-input v-model:value="formData.userName" placeholder="请输入用户名" :disabled="loading" size="large"
+                  class="modern-input" @blur="handleFieldSave('userName', formData.userName)" />
               </a-form-item>
             </a-col>
             <a-col :span="6">
@@ -116,7 +95,8 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select v-model:value="formData.Info.Status" size="large">
+                <a-select v-model:value="formData.Info.Status" size="large"
+                  @change="handleFieldSave('Info.Status', formData.Info.Status)">
                   <a-select-option :value="true">是</a-select-option>
                   <a-select-option :value="false">否</a-select-option>
                 </a-select>
@@ -132,15 +112,9 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input-number
-                  v-model:value="formData.Info.RemainedDay"
-                  :min="-1"
-                  :max="9999"
-                  placeholder="-1"
-                  :disabled="loading"
-                  size="large"
-                  style="width: 100%"
-                />
+                <a-input-number v-model:value="formData.Info.RemainedDay" :min="-1" :max="9999" placeholder="-1"
+                  :disabled="loading" size="large" style="width: 100%"
+                  @change="handleFieldSave('Info.RemainedDay', formData.Info.RemainedDay)" />
               </a-form-item>
             </a-col>
             <a-col :span="12">
@@ -157,13 +131,8 @@
                 </span>
               </a-tooltip>
             </template>
-            <a-textarea
-              v-model:value="formData.Info.Notes"
-              placeholder="请输入备注信息"
-              :rows="4"
-              :disabled="loading"
-              class="modern-input"
-            />
+            <a-textarea v-model:value="formData.Info.Notes" placeholder="请输入备注信息" :rows="4" :disabled="loading"
+              class="modern-input" @blur="handleFieldSave('Info.Notes', formData.Info.Notes)" />
           </a-form-item>
         </div>
 
@@ -183,28 +152,15 @@
             </template>
             <a-row :gutter="24" align="middle">
               <a-col :span="4">
-                <a-switch
-                  v-model:checked="formData.Info.IfScriptBeforeTask"
-                  :disabled="loading"
-                  size="default"
-                />
+                <a-switch v-model:checked="formData.Info.IfScriptBeforeTask" :disabled="loading" size="default"
+                  @change="handleFieldSave('Info.IfScriptBeforeTask', formData.Info.IfScriptBeforeTask)" />
               </a-col>
               <a-col :span="20">
                 <a-input-group compact class="path-input-group">
-                  <a-input
-                    v-model:value="formData.Info.ScriptBeforeTask"
-                    placeholder="请选择脚本文件"
-                    :disabled="loading || !formData.Info.IfScriptBeforeTask"
-                    size="large"
-                    class="path-input"
-                    readonly
-                  />
-                  <a-button
-                    size="large"
-                    :disabled="loading || !formData.Info.IfScriptBeforeTask"
-                    class="path-button"
-                    @click="selectScriptBeforeTask"
-                  >
+                  <a-input v-model:value="formData.Info.ScriptBeforeTask" placeholder="请选择脚本文件"
+                    :disabled="loading || !formData.Info.IfScriptBeforeTask" size="large" class="path-input" readonly />
+                  <a-button size="large" :disabled="loading || !formData.Info.IfScriptBeforeTask" class="path-button"
+                    @click="selectScriptBeforeTask">
                     <template #icon>
                       <FileOutlined />
                     </template>
@@ -225,28 +181,15 @@
             </template>
             <a-row :gutter="24" align="middle">
               <a-col :span="4">
-                <a-switch
-                  v-model:checked="formData.Info.IfScriptAfterTask"
-                  :disabled="loading"
-                  size="default"
-                />
+                <a-switch v-model:checked="formData.Info.IfScriptAfterTask" :disabled="loading" size="default"
+                  @change="handleFieldSave('Info.IfScriptAfterTask', formData.Info.IfScriptAfterTask)" />
               </a-col>
               <a-col :span="20">
                 <a-input-group compact class="path-input-group">
-                  <a-input
-                    v-model:value="formData.Info.ScriptAfterTask"
-                    placeholder="请选择脚本文件"
-                    :disabled="loading || !formData.Info.IfScriptAfterTask"
-                    size="large"
-                    class="path-input"
-                    readonly
-                  />
-                  <a-button
-                    size="large"
-                    :disabled="loading || !formData.Info.IfScriptAfterTask"
-                    class="path-button"
-                    @click="selectScriptAfterTask"
-                  >
+                  <a-input v-model:value="formData.Info.ScriptAfterTask" placeholder="请选择脚本文件"
+                    :disabled="loading || !formData.Info.IfScriptAfterTask" size="large" class="path-input" readonly />
+                  <a-button size="large" :disabled="loading || !formData.Info.IfScriptAfterTask" class="path-button"
+                    @click="selectScriptAfterTask">
                     <template #icon>
                       <FileOutlined />
                     </template>
@@ -268,7 +211,8 @@
               <span style="font-weight: 500">启用通知</span>
             </a-col>
             <a-col :span="18">
-              <a-switch v-model:checked="formData.Notify.Enabled" :disabled="loading" />
+              <a-switch v-model:checked="formData.Notify.Enabled" :disabled="loading"
+                @change="handleFieldSave('Notify.Enabled', formData.Notify.Enabled)" />
               <span class="switch-description">启用后将发送任务通知</span>
             </a-col>
           </a-row>
@@ -279,10 +223,9 @@
               <span style="font-weight: 500">通知内容</span>
             </a-col>
             <a-col :span="18">
-              <a-checkbox
-                v-model:checked="formData.Notify.IfSendStatistic"
+              <a-checkbox v-model:checked="formData.Notify.IfSendStatistic"
                 :disabled="loading || !formData.Notify.Enabled"
-                >统计信息
+                @change="handleFieldSave('Notify.IfSendStatistic', formData.Notify.IfSendStatistic)">统计信息
               </a-checkbox>
             </a-col>
           </a-row>
@@ -290,51 +233,34 @@
           <!-- 邮件通知 -->
           <a-row :gutter="24" style="margin-top: 16px">
             <a-col :span="6">
-              <a-checkbox
-                v-model:checked="formData.Notify.IfSendMail"
-                :disabled="loading || !formData.Notify.Enabled"
-                >邮件通知
+              <a-checkbox v-model:checked="formData.Notify.IfSendMail" :disabled="loading || !formData.Notify.Enabled"
+                @change="handleFieldSave('Notify.IfSendMail', formData.Notify.IfSendMail)">邮件通知
               </a-checkbox>
             </a-col>
             <a-col :span="18">
-              <a-input
-                v-model:value="formData.Notify.ToAddress"
-                placeholder="请输入收件人邮箱地址"
-                :disabled="loading || !formData.Notify.Enabled || !formData.Notify.IfSendMail"
-                size="large"
-                style="width: 100%"
-              />
+              <a-input v-model:value="formData.Notify.ToAddress" placeholder="请输入收件人邮箱地址"
+                :disabled="loading || !formData.Notify.Enabled || !formData.Notify.IfSendMail" size="large"
+                style="width: 100%" @blur="handleFieldSave('Notify.ToAddress', formData.Notify.ToAddress)" />
             </a-col>
           </a-row>
 
           <!-- Server酱通知 -->
           <a-row :gutter="24" style="margin-top: 16px">
             <a-col :span="6">
-              <a-checkbox
-                v-model:checked="formData.Notify.IfServerChan"
-                :disabled="loading || !formData.Notify.Enabled"
-                >Server酱
+              <a-checkbox v-model:checked="formData.Notify.IfServerChan" :disabled="loading || !formData.Notify.Enabled"
+                @change="handleFieldSave('Notify.IfServerChan', formData.Notify.IfServerChan)">Server酱
               </a-checkbox>
             </a-col>
             <a-col :span="18">
-              <a-input
-                v-model:value="formData.Notify.ServerChanKey"
-                placeholder="请输入SENDKEY"
-                :disabled="loading || !formData.Notify.Enabled || !formData.Notify.IfServerChan"
-                size="large"
-                style="width: 100%"
-              />
+              <a-input v-model:value="formData.Notify.ServerChanKey" placeholder="请输入SENDKEY"
+                :disabled="loading || !formData.Notify.Enabled || !formData.Notify.IfServerChan" size="large"
+                style="width: 100%" @blur="handleFieldSave('Notify.ServerChanKey', formData.Notify.ServerChanKey)" />
             </a-col>
           </a-row>
 
           <!-- 自定义 Webhook 通知 -->
           <div style="margin-top: 16px">
-            <WebhookManager
-              mode="user"
-              :script-id="scriptId"
-              :user-id="userId"
-              @change="handleWebhookChange"
-            />
+            <WebhookManager mode="user" :script-id="scriptId" :user-id="userId" @change="handleWebhookChange" />
           </div>
         </div>
       </a-form>
@@ -461,41 +387,62 @@ watch(
   }
 )
 
-// 实时保存函数（带防抖）
-let saveTimer: NodeJS.Timeout | null = null
-const autoSave = async () => {
+// 即时保存单个字段变更
+const handleFieldSave = async (key: string, value: any) => {
   if (isInitializing.value || isSaving.value || !userId) return
-  
-  // 清除之前的定时器
-  if (saveTimer) {
-    clearTimeout(saveTimer)
-  }
-  
-  // 设置新的定时器，500ms 后保存
-  saveTimer = setTimeout(async () => {
-    isSaving.value = true
-    try {
-      formData.Info.Name = formData.userName
-      const userData = {
-        Info: { ...formData.Info },
-        Notify: { ...formData.Notify },
-        Data: { ...formData.Data },
-      }
-      
-      await updateUser(scriptId, userId, userData)
-      generalUserLogger.info('用户配置已自动保存')
-    } catch (error) {
-      generalUserLogger.error('自动保存失败:', error)
-    } finally {
-      isSaving.value = false
+
+  isSaving.value = true
+  try {
+    // 解析 key 路径，例如 "Info.Status" -> { Info: { Status: value } }
+    const parts = key.split('.')
+    let userData: Record<string, any> = {}
+    let current = userData
+
+    for (let i = 0; i < parts.length - 1; i++) {
+      current[parts[i]] = {}
+      current = current[parts[i]]
     }
-  }, 500)
+    current[parts[parts.length - 1]] = value
+
+    // 特殊处理：userName 需要同步到 Info.Name
+    if (key === 'userName') {
+      userData = { Info: { Name: value } }
+    }
+
+    await updateUser(scriptId, userId, userData)
+    // 刷新数据
+    await loadUserData()
+    generalUserLogger.info('用户配置已保存:', key)
+  } catch (error) {
+    generalUserLogger.error('保存失败:', error)
+  } finally {
+    isSaving.value = false
+  }
 }
 
-// 监听表单数据变化，自动保存
-watch(() => formData.userName, autoSave)
-watch(() => formData.Info, autoSave, { deep: true })
-watch(() => formData.Notify, autoSave, { deep: true })
+// 保存完整用户数据（仅用于特殊批量操作）
+const saveFullUserData = async () => {
+  if (isInitializing.value || isSaving.value || !userId) return
+
+  isSaving.value = true
+  try {
+    formData.Info.Name = formData.userName
+    const userData = {
+      Info: { ...formData.Info },
+      Notify: { ...formData.Notify },
+      Data: { ...formData.Data },
+    }
+
+    await updateUser(scriptId, userId, userData)
+    generalUserLogger.info('用户配置已保存')
+  } catch (error) {
+    generalUserLogger.error('保存失败:', error)
+  } finally {
+    isSaving.value = false
+  }
+}
+
+// 注意：移除了 watch 自动保存，现在由各控件的 @change/@blur 事件触发保存
 
 // 加载脚本信息
 const loadScriptInfo = async () => {
@@ -571,12 +518,8 @@ const loadUserData = async () => {
         await nextTick()
         formData.userName = formData.Info.Name || ''
 
-        generalUserLogger.info('用户数据加载成功:', {
-          userName: formData.userName,
-          InfoName: formData.Info.Name,
-          fullData: formData,
-        })
-        
+        generalUserLogger.info('用户数据加载成功')
+
         // 数据加载完成，允许自动保存
         isInitializing.value = false
       } else {
@@ -750,6 +693,7 @@ const selectScriptBeforeTask = async () => {
     if (path && path.length > 0) {
       formData.Info.ScriptBeforeTask = path[0]
       message.success('任务前脚本路径选择成功')
+      await handleFieldSave('Info.ScriptBeforeTask', path[0])
     }
   } catch (error) {
     generalUserLogger.error('选择任务前脚本失败:', error)
@@ -768,6 +712,7 @@ const selectScriptAfterTask = async () => {
     if (path && path.length > 0) {
       formData.Info.ScriptAfterTask = path[0]
       message.success('任务后脚本路径选择成功')
+      await handleFieldSave('Info.ScriptAfterTask', path[0])
     }
   } catch (error) {
     generalUserLogger.error('选择任务后脚本失败:', error)
@@ -777,9 +722,8 @@ const selectScriptAfterTask = async () => {
 
 // 处理 Webhook 变化
 const handleWebhookChange = () => {
-  // 这里可以添加额外的处理逻辑，比如验证或保存
+  // Webhook 有自己的保存逻辑，这里只记录日志
   generalUserLogger.info('User webhooks changed:', formData.Notify.CustomWebhooks)
-  // 注意：实际保存会在用户点击保存按钮时进行，这里只是更新本地数据
 }
 
 const handleCancel = () => {

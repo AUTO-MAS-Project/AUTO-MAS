@@ -202,7 +202,6 @@ const handleSettingChange = async (category: keyof GlobalConfig, key: string, va
   if (category === 'Update' && key === 'IfAutoUpdate') {
     try {
       await restartPolling()
-      message.success(value ? '已启用自动检查更新' : '已禁用自动检查更新')
     } catch (e) {
       logger.error('重启更新检查失败', e)
       message.error('更新检查设置变更失败')
@@ -263,7 +262,6 @@ const refreshMirrorConfig = async () => {
   try {
     const result = await mirrorManager.refreshCloudConfig()
     if (result.success) {
-      message.success('镜像配置刷新成功')
       updateMirrorConfigStatus()
     } else message.warning(result.error || '刷新失败，继续使用当前配置')
   } catch (e) {

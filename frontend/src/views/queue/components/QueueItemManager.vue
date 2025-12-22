@@ -177,7 +177,6 @@ const updateQueueItemScript = async (record: any) => {
     })
 
     if (response.code === 200) {
-      message.success('脚本更新成功')
       emit('refresh')
     } else {
       message.error('脚本更新失败: ' + (response.message || '未知错误'))
@@ -201,7 +200,6 @@ const addQueueItem = async () => {
     })
 
     if (createResponse.code === 200 && createResponse.queueItemId) {
-      message.success('任务添加成功')
       emit('refresh')
     } else {
       message.error('任务添加失败: ' + (createResponse.message || '未知错误'))
@@ -223,7 +221,6 @@ const deleteQueueItem = async (itemId: string) => {
     })
 
     if (response.code === 200) {
-      message.success('队列项删除成功')
       // 确保删除后刷新数据
       emit('refresh')
     } else {
@@ -255,7 +252,6 @@ const onDragEnd = async (evt: any) => {
     })
 
     if (response.code === 200) {
-      message.success('任务顺序已更新')
       // 刷新数据以确保与服务器同步
       emit('refresh')
     } else {

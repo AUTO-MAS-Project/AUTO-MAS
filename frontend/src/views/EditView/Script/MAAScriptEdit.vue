@@ -52,6 +52,7 @@
                   placeholder="请输入脚本名称"
                   size="large"
                   class="modern-input"
+                  @blur="handleChange('Info', 'Name', formData.name)"
                 />
               </a-form-item>
             </a-col>
@@ -106,7 +107,7 @@
                   size="large"
                   placeholder="请选择模拟器"
                   :loading="emulatorLoading"
-                  @change="handleEmulatorChange"
+                  @change="handleEmulatorSelectChange"
                 >
                   <a-select-option
                     v-for="item in emulatorOptions"
@@ -135,6 +136,7 @@
                   size="large"
                   placeholder="请输入实例信息，格式：启动附加命令 | ADB地址"
                   class="modern-input"
+                  @blur="handleChange('Emulator', 'Index', maaConfig.Emulator.Index)"
                 />
                 <!-- 正常情况下显示下拉框 -->
                 <a-select
@@ -144,6 +146,7 @@
                   placeholder="请先选择模拟器"
                   :loading="emulatorDeviceLoading"
                   :disabled="!maaConfig.Emulator.Id"
+                  @change="handleChange('Emulator', 'Index', $event)"
                 >
                   <a-select-option
                     v-for="item in emulatorDeviceOptions"
@@ -174,7 +177,7 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select v-model:value="maaConfig.Run.TaskTransitionMethod" size="large">
+                <a-select v-model:value="maaConfig.Run.TaskTransitionMethod" size="large" @change="handleChange('Run', 'TaskTransitionMethod', $event)">
                   <a-select-option value="ExitEmulator">重启模拟器</a-select-option>
                   <a-select-option value="ExitGame">重启明日方舟</a-select-option>
                   <a-select-option value="NoAction">直接切换账号</a-select-option>
@@ -200,6 +203,7 @@
                   size="large"
                   class="modern-number-input"
                   style="width: 100%"
+                  @change="handleChange('Run', 'ProxyTimesLimit', $event)"
                 />
               </a-form-item>
             </a-col>
@@ -215,7 +219,7 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select v-model:value="maaConfig.Run.AnnihilationWeeklyLimit" size="large">
+                <a-select v-model:value="maaConfig.Run.AnnihilationWeeklyLimit" size="large" @change="handleChange('Run', 'AnnihilationWeeklyLimit', $event)">
                   <a-select-option :value="true">是</a-select-option>
                   <a-select-option :value="false">否</a-select-option>
                 </a-select>
@@ -240,6 +244,7 @@
                   size="large"
                   class="modern-number-input"
                   style="width: 100%"
+                  @change="handleChange('Run', 'AnnihilationTimeLimit', $event)"
                 />
               </a-form-item>
             </a-col>
@@ -260,6 +265,7 @@
                   size="large"
                   class="modern-number-input"
                   style="width: 100%"
+                  @change="handleChange('Run', 'RoutineTimeLimit', $event)"
                 />
               </a-form-item>
             </a-col>
@@ -280,6 +286,7 @@
                   size="large"
                   class="modern-number-input"
                   style="width: 100%"
+                  @change="handleChange('Run', 'RunTimesLimit', $event)"
                 />
               </a-form-item>
             </a-col>
@@ -292,7 +299,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref, watch } from 'vue'
+import { onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
 import { message } from 'ant-design-vue'
@@ -367,34 +374,40 @@ const emulatorDeviceLoading = ref(false)
 const emulatorOptions = ref<ComboBoxItem[]>([])
 const emulatorDeviceOptions = ref<ComboBoxItem[]>([])
 
-// 实时保存函数（带防抖）
-let saveTimer: NodeJS.Timeout | null = null
-const autoSave = async () => {
+// 即时保存函数 - 只发送修改的字段（遵循最小原则）
+const handleChange = async (category: string, key: string, value: any) => {
   if (isInitializing.value || isSaving.value) return
   
-  // 清除之前的定时器
-  if (saveTimer) {
-    clearTimeout(saveTimer)
-  }
-  
-  // 设置新的定时器，500ms 后保存
-  saveTimer = setTimeout(async () => {
-    isSaving.value = true
-    try {
-      maaConfig.Info.Name = formData.name
-      await updateScript(scriptId, maaConfig)
-      logger.info('配置已自动保存')
-    } catch (error) {
-      logger.error('自动保存失败:', error)
-    } finally {
-      isSaving.value = false
+  isSaving.value = true
+  try {
+    // 构建只包含单个修改字段的更新数据（遵循最小原则）
+    const updateData: any = { [category]: { [key]: value } }
+    
+    const success = await updateScript(scriptId, updateData)
+    if (success) {
+      logger.info(`配置已保存: ${category}.${key}`)
+      // 保存成功后刷新数据
+      await refreshScript()
     }
-  }, 500)
+  } catch (error) {
+    logger.error('保存失败:', error)
+  } finally {
+    isSaving.value = false
+  }
 }
 
-// 监听配置变化，自动保存
-watch(() => formData.name, autoSave)
-watch(maaConfig, autoSave, { deep: true })
+// 刷新脚本配置
+const refreshScript = async () => {
+  try {
+    const scriptDetail = await getScript(scriptId)
+    if (scriptDetail) {
+      Object.assign(maaConfig, scriptDetail.config as MAAScriptConfig)
+      formData.name = scriptDetail.name
+    }
+  } catch (error) {
+    logger.error('刷新配置失败:', error)
+  }
+}
 
 onMounted(async () => {
   await loadScript()
@@ -491,10 +504,30 @@ const loadEmulatorDeviceOptions = async (emulatorId: string) => {
   }
 }
 
-const handleEmulatorChange = async (emulatorId: string) => {
+const handleEmulatorSelectChange = async (emulatorId: string) => {
   // 清空模拟器实例选择
   maaConfig.Emulator.Index = ''
   emulatorDeviceOptions.value = []
+  
+  // 保存模拟器选择和清空的实例字段
+  isSaving.value = true
+  try {
+    const updateData = {
+      Emulator: {
+        Id: emulatorId,
+        Index: ''
+      }
+    }
+    const success = await updateScript(scriptId, updateData)
+    if (success) {
+      logger.info('模拟器配置已保存')
+      await refreshScript()
+    }
+  } catch (error) {
+    logger.error('保存模拟器配置失败:', error)
+  } finally {
+    isSaving.value = false
+  }
   
   // 加载新的模拟器实例选项
   if (emulatorId) {
@@ -513,6 +546,8 @@ const selectMAAPath = async () => {
     const path = await (window.electronAPI as any).selectFolder()
     if (path) {
       maaConfig.Info.Path = path
+      // 选择路径后立即保存
+      await handleChange('Info', 'Path', path)
       message.success('MAA路径选择成功')
     }
   } catch (error) {
