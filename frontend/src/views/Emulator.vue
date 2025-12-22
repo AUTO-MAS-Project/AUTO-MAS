@@ -825,12 +825,8 @@ const handleBossKeyInputChange = (uuid: string) => {
                         @change="handleSaveChange(element.uid, 'type', $event)" />
                     </a-descriptions-item>
                     <a-descriptions-item label="模拟器路径" :span="2">
-                      <a-input v-model:value="getEditingData(element.uid).path" placeholder="输入或选择模拟器路径" size="small"
-                        :bordered="false" @blur="
-                          handleSaveChange(element.uid, 'path', getEditingData(element.uid).path)
-                          " @press-enter="
-                            handleSaveChange(element.uid, 'path', getEditingData(element.uid).path)
-                            ">
+                      <a-input v-model:value="getEditingData(element.uid).path" placeholder="请点击文件夹图标选择模拟器路径" size="small"
+                        :bordered="false" readonly>
                         <template #suffix>
                           <FolderOpenOutlined style="cursor: pointer; color: #1890ff"
                             @click="selectEmulatorPath(element.uid)" />
