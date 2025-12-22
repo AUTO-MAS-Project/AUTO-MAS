@@ -69,6 +69,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getLogs: (lines?: number, fileName?: string) => ipcRenderer.invoke('log:getContent', lines, fileName),
   clearLogs: (fileName?: string) => ipcRenderer.invoke('log:clear', fileName),
   cleanOldLogs: (daysToKeep?: number) => ipcRenderer.invoke('log:cleanOldLogs'),
+  exportLogs: () => ipcRenderer.invoke('export-logs'),
 
   // 日志写入
   logWrite: (level: string, module: string, message: string) => ipcRenderer.invoke('log:write', level, module, message),

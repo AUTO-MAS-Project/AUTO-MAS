@@ -122,12 +122,6 @@ const routes = [
     component: () => import('../views/Logs.vue'),
     meta: { title: '日志查看' },
   },
-  {
-    path: '/mirror-test',
-    name: 'MirrorTest',
-    component: () => import('../views/MirrorTest.vue'),
-    meta: { title: '镜像配置测试' },
-  },
 ]
 
 const router = createRouter({
