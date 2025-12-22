@@ -2,12 +2,8 @@
   <a-card title="定时列表" class="time-set-card">
     <template #extra>
       <a-space>
-        <a-button
-          type="primary"
-          :loading="loading"
-          :disabled="!props.queueId || props.queueId.trim() === ''"
-          @click="addTimeSet"
-        >
+        <a-button type="primary" :loading="loading" :disabled="!props.queueId || props.queueId.trim() === ''"
+          @click="addTimeSet">
           <template #icon>
             <PlusOutlined />
           </template>
@@ -27,51 +23,25 @@
       </div>
 
       <!-- 拖拽内容区域 -->
-      <draggable
-        v-model="timeSets"
-        group="timeSets"
-        item-key="id"
-        :animation="200"
-        :disabled="loading"
-        ghost-class="ghost"
-        chosen-class="chosen"
-        drag-class="drag"
-        class="draggable-container"
-        @end="onDragEnd"
-      >
+      <draggable v-model="timeSets" group="timeSets" item-key="id" :animation="200" :disabled="loading"
+        ghost-class="ghost" chosen-class="chosen" drag-class="drag" class="draggable-container" @end="onDragEnd">
         <template #item="{ element: record, index }">
           <div class="draggable-row" :class="{ 'row-dragging': loading }">
             <div class="row-cell index-cell">{{ index + 1 }}</div>
             <div class="row-cell status-cell">
-              <a-select
-                v-model:value="record.enabled"
-                size="small"
-                style="width: 80px"
-                class="status-select"
-                @change="updateTimeSetStatus(record)"
-              >
+              <a-select v-model:value="record.enabled" size="small" style="width: 80px" class="status-select"
+                @change="updateTimeSetStatus(record)">
                 <a-select-option :value="true">启用</a-select-option>
                 <a-select-option :value="false">禁用</a-select-option>
               </a-select>
             </div>
             <div class="row-cell time-cell">
-              <a-time-picker
-                v-model:value="record.timeValue"
-                format="HH:mm"
-                placeholder="请选择时间"
-                size="small"
-                :disabled="loading"
-                @change="updateTimeSetTime(record)"
-              />
+              <a-time-picker v-model:value="record.timeValue" format="HH:mm" placeholder="请选择时间" size="small"
+                :disabled="loading" @change="updateTimeSetTime(record)" />
             </div>
             <div class="row-cell actions-cell">
               <a-space>
-                <a-popconfirm
-                  title="确定要删除这个定时吗？"
-                  ok-text="确定"
-                  cancel-text="取消"
-                  @confirm="deleteTimeSet(record.id)"
-                >
+                <a-popconfirm title="确定要删除这个定时吗？" ok-text="确定" cancel-text="取消" @confirm="deleteTimeSet(record.id)">
                   <a-button size="middle" danger>
                     <DeleteOutlined />
                     删除
@@ -419,8 +389,10 @@ const onDragEnd = async (evt: any) => {
 :deep(.ant-table-content),
 :deep(.ant-table),
 :deep(.ant-table-tbody) {
-  scrollbar-width: none !important; /* Firefox */
-  -ms-overflow-style: none !important; /* IE/Edge */
+  scrollbar-width: none !important;
+  /* Firefox */
+  -ms-overflow-style: none !important;
+  /* IE/Edge */
 }
 
 :deep(.ant-table-wrapper)::-webkit-scrollbar,
@@ -429,7 +401,8 @@ const onDragEnd = async (evt: any) => {
 :deep(.ant-table-content)::-webkit-scrollbar,
 :deep(.ant-table)::-webkit-scrollbar,
 :deep(.ant-table-tbody)::-webkit-scrollbar {
-  display: none !important; /* Chrome/Safari */
+  display: none !important;
+  /* Chrome/Safari */
 }
 
 /* 列宽度控制 */
@@ -693,8 +666,7 @@ const onDragEnd = async (evt: any) => {
   padding: 8px 12px !important;
 }
 
-.status-select :deep(.ant-select-item-option-content) {
-}
+.status-select :deep(.ant-select-item-option-content) {}
 
 /* 时间显示样式 */
 .time-display {
@@ -1097,9 +1069,7 @@ const onDragEnd = async (evt: any) => {
   transition: background 0.2s ease;
 }
 
-[data-theme='dark']
-  .ant-picker-dropdown
-  .ant-picker-time-panel-column::-webkit-scrollbar-thumb:hover {
+[data-theme='dark'] .ant-picker-dropdown .ant-picker-time-panel-column::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.45);
 }
 </style>

@@ -579,11 +579,30 @@ const handleGeneralConfig = async () => {
           generalWebsocketId.value = null
           showGeneralConfigMask.value = false
           configTimedOut.value = false
+          if (generalConfigTimeout) {
+            window.clearTimeout(generalConfigTimeout)
+            generalConfigTimeout = null
+          }
           return
         }
 
-        if (wsMessage.data && wsMessage.data.Accomplish) {
-          message.success(`用户 ${formData.userName} 的配置已完成`)
+        // 处理Info类型的错误消息（显示错误但不取消订阅，等待Signal消息）
+        if (wsMessage.type === 'Info' && wsMessage.data && wsMessage.data.Error) {
+          generalUserLogger.error(`用户 ${formData.userName} 通用配置异常:`, wsMessage.data.Error)
+          message.error(`通用配置失败: ${wsMessage.data.Error}`)
+          // 不取消订阅，等待Signal类型的Accomplish消息
+          return
+        }
+
+        // 处理任务结束消息（Signal类型且包含Accomplish字段）
+        if (wsMessage.type === 'Signal' && wsMessage.data && wsMessage.data.Accomplish !== undefined) {
+          generalUserLogger.info(`用户 ${formData.userName} 通用配置任务已结束`)
+          // 根据结果显示不同消息
+          const result = wsMessage.data.Accomplish
+          if (result && !result.includes('异常') && !result.includes('错误')) {
+            message.success(`用户 ${formData.userName} 的配置已完成`)
+          }
+          // 清理连接
           unsubscribe(subscriptionId)
           generalSubscriptionId.value = null
           generalWebsocketId.value = null

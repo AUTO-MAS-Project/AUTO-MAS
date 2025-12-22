@@ -798,15 +798,43 @@ const handleMAAConfig = async () => {
           maaSubscriptionId.value = null
           maaWebsocketId.value = null
           showMAAConfigMask.value = false
+          if (maaConfigTimeout) {
+            window.clearTimeout(maaConfigTimeout)
+            maaConfigTimeout = null
+          }
           return
         }
 
-        if (wsMessage.data && wsMessage.data.Accomplish) {
-          message.success(`用户 ${formData.Info?.Name || formData.userName} 的配置已完成`)
+        // 处理Info类型的错误消息（显示错误但不取消订阅，等待Signal消息）
+        if (wsMessage.type === 'Info' && wsMessage.data && wsMessage.data.Error) {
+          maaUserLogger.error(
+            `用户 ${formData.Info?.Name || formData.userName} MAA配置异常:`,
+            wsMessage.data.Error
+          )
+          message.error(`MAA配置失败: ${wsMessage.data.Error}`)
+          // 不取消订阅，等待Signal类型的Accomplish消息
+          return
+        }
+
+        // 处理任务结束消息（Signal类型且包含Accomplish字段）
+        if (wsMessage.type === 'Signal' && wsMessage.data && wsMessage.data.Accomplish !== undefined) {
+          maaUserLogger.info(
+            `用户 ${formData.Info?.Name || formData.userName} MAA配置任务已结束`
+          )
+          // 根据结果显示不同消息
+          const result = wsMessage.data.Accomplish
+          if (result && !result.includes('异常') && !result.includes('错误')) {
+            message.success(`用户 ${formData.Info?.Name || formData.userName} 的配置已完成`)
+          }
+          // 清理连接
           unsubscribe(subscriptionId)
           maaSubscriptionId.value = null
           maaWebsocketId.value = null
           showMAAConfigMask.value = false
+          if (maaConfigTimeout) {
+            window.clearTimeout(maaConfigTimeout)
+            maaConfigTimeout = null
+          }
         }
       })
 
