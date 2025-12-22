@@ -411,7 +411,6 @@ class AppConfig(GlobalConfig):
                         (Path.cwd() / "config/Config.json").read_text(encoding="utf-8")
                     )
                     data["Data"]["LastStageUpdated"] = ""
-                    data["Data"]["StageTimeStamp"] = ""
                     data["Data"]["Stage"] = "{ }"
                     data["Function"]["IfBlockAd"] = data["Function"].get(
                         "IfSkipMumuSplashAds", False
@@ -621,7 +620,7 @@ class AppConfig(GlobalConfig):
             raise TypeError(f"脚本 {script_id} 不是通用脚本配置")
 
         # 使用 httpx 异步请求
-        async with httpx.AsyncClient(proxy=Config.get_proxy()) as client:
+        async with httpx.AsyncClient(proxy=Config.proxy) as client:
             try:
                 response = await client.get(url)
                 if response.status_code == 200:
@@ -673,7 +672,7 @@ class AppConfig(GlobalConfig):
         }
         data = {"username": author, "description": description}
 
-        async with httpx.AsyncClient(proxy=Config.get_proxy()) as client:
+        async with httpx.AsyncClient(proxy=Config.proxy) as client:
             try:
                 response = await client.post(
                     "https://share.auto-mas.top/api/upload/share",
@@ -1380,7 +1379,8 @@ class AppConfig(GlobalConfig):
             )
             await self.ScriptConfig.save()
 
-    def get_proxy(self) -> Optional[httpx.Proxy]:
+    @property
+    def proxy(self) -> Optional[httpx.Proxy]:
         """获取代理设置，返回适用于 httpx 的代理对象"""
         proxy_addr = self.get("Update", "ProxyAddress")
         if not proxy_addr:
@@ -1492,44 +1492,21 @@ class AppConfig(GlobalConfig):
             return json.loads(self.get("Data", "Stage"))
 
         logger.info("开始获取活动关卡信息")
-
         try:
-            async with httpx.AsyncClient(proxy=self.get_proxy()) as client:
+            async with httpx.AsyncClient(proxy=self.proxy) as client:
                 response = await client.get(
-                    "https://api.maa.plus/MaaAssistantArknights/api/stageAndTasksUpdateTime.json"
+                    "https://api.maa.plus/MaaAssistantArknights/api/gui/StageActivityV2.json",
+                    headers={"If-None-Match": self.get("Data", "StageETag")},
                 )
-                if response.status_code == 200:
-                    remote_time_stamp = datetime.strptime(
-                        str(response.json().get("timestamp", 20000101000000)),
-                        "%Y%m%d%H%M%S",
-                    ).replace(tzinfo=UTC8)
-                else:
-                    logger.warning(f"无法从MAA服务器获取活动关卡时间戳:{response.text}")
-                    remote_time_stamp = datetime.fromtimestamp(0, tz=UTC8)
-        except Exception as e:
-            logger.warning(f"无法从MAA服务器获取活动关卡时间戳: {e}")
-            remote_time_stamp = datetime.fromtimestamp(0, tz=UTC8)
 
-        local_time_stamp = datetime.strptime(
-            self.get("Data", "StageTimeStamp"), "%Y-%m-%d %H:%M:%S"
-        ).replace(tzinfo=UTC8)
-
-        # 本地关卡信息无需更新, 直接返回本地数据
-        if datetime.fromtimestamp(0, tz=UTC8) < remote_time_stamp <= local_time_stamp:
-            logger.info("使用本地关卡信息")
-            await self.set(
-                "Data", "LastStageUpdated", datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            )
-            return json.loads(self.get("Data", "Stage"))
-
-        # 需要更新关卡信息
-        logger.info("从远端更新关卡信息")
-        try:
-            async with httpx.AsyncClient(proxy=self.get_proxy()) as client:
-                response = await client.get(
-                    "https://api.maa.plus/MaaAssistantArknights/api/gui/StageActivityV2.json"
-                )
-                if response.status_code == 200:
+                if response.status_code == 304:
+                    logger.info("关卡信息未更新，使用本地缓存的活动关卡信息")
+                    await self.set(
+                        "Data",
+                        "LastStageUpdated",
+                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    )
+                elif response.status_code == 200:
                     logger.success("成功获取远端活动关卡信息")
                     await self.set(
                         "Data",
@@ -1538,8 +1515,10 @@ class AppConfig(GlobalConfig):
                     )
                     await self.set(
                         "Data",
-                        "StageTimeStamp",
-                        remote_time_stamp.strftime("%Y-%m-%d %H:%M:%S"),
+                        "StageETag",
+                        response.headers.get("ETag")
+                        or response.headers.get("etag")
+                        or "",
                     )
                     await self.set(
                         "Data",
@@ -1646,55 +1625,56 @@ class AppConfig(GlobalConfig):
     async def get_notice(self) -> tuple[bool, Dict[str, str]]:
         """获取公告信息"""
 
-        local_notice = json.loads(self.get("Data", "Notice"))
         if datetime.now() - timedelta(hours=1) < datetime.strptime(
             self.get("Data", "LastNoticeUpdated"), "%Y-%m-%d %H:%M:%S"
         ):
             logger.info("一小时内已进行过一次检查, 直接使用缓存的公告信息")
-            return False, local_notice.get("notice_dict", {})
+            return False, json.loads(self.get("Data", "Notice")).get("notice_dict", {})
 
         logger.info("开始从 AUTO-MAS 服务器获取公告信息")
-
         try:
-            async with httpx.AsyncClient(proxy=self.get_proxy()) as client:
+            async with httpx.AsyncClient(proxy=self.proxy) as client:
                 response = await client.get(
-                    "https://api.auto-mas.top/file/Server/notice.json"
+                    "https://api.auto-mas.top/file/Server/notice.json",
+                    headers={"If-None-Match": self.get("Data", "NoticeETag")},
                 )
-                if response.status_code == 200:
-                    remote_notice = response.json()
+                if response.status_code == 304:
+                    logger.info("公告未更新，使用本地缓存的公告信息")
+                    await self.set(
+                        "Data",
+                        "LastNoticeUpdated",
+                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    )
+                elif response.status_code == 200:
+                    logger.info("公告已更新，要求展示公告信息")
+                    await self.set(
+                        "Data",
+                        "LastNoticeUpdated",
+                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    )
+                    await self.set(
+                        "Data",
+                        "NoticeETag",
+                        response.headers.get("ETag")
+                        or response.headers.get("etag")
+                        or "",
+                    )
+                    await self.set("Data", "IfShowNotice", True)
+                    await self.set(
+                        "Data",
+                        "Notice",
+                        json.dumps(response.json(), ensure_ascii=False),
+                    )
                 else:
                     logger.warning(
                         f"无法从 AUTO-MAS 服务器获取公告信息:{response.text}"
                     )
-                    remote_notice = None
         except Exception as e:
             logger.warning(f"无法从 AUTO-MAS 服务器获取公告信息: {e}")
-            remote_notice = None
 
-        if remote_notice is None:
-            logger.warning("使用本地公告信息")
-            return False, local_notice.get("notice_dict", {})
-
-        await self.set(
-            "Data", "LastNoticeUpdated", datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        )
-
-        local_time_stamp = datetime.strptime(
-            local_notice.get("time", "2000-01-01 00:00"), "%Y-%m-%d %H:%M"
-        ).replace(tzinfo=UTC8)
-        remote_time_stamp = datetime.strptime(
-            remote_notice.get("time", "2000-01-01 00:00"), "%Y-%m-%d %H:%M"
-        ).replace(tzinfo=UTC8)
-
-        # 本地公告信息需更新且持续展示
-        if local_time_stamp < remote_time_stamp < datetime.now(tz=UTC8):
-            logger.info("要求展示本地公告信息")
-            await self.set(
-                "Data", "Notice", json.dumps(remote_notice, ensure_ascii=False)
-            )
-            await self.set("Data", "IfShowNotice", True)
-
-        return self.get("Data", "IfShowNotice"), remote_notice.get("notice_dict", {})
+        return self.get("Data", "IfShowNotice"), json.loads(
+            self.get("Data", "Notice")
+        ).get("notice_dict", {})
 
     async def get_web_config(self):
         """获取「AUTO-MAS 配置分享中心」配置"""
@@ -1709,7 +1689,7 @@ class AppConfig(GlobalConfig):
         logger.info("开始从 AUTO-MAS 服务器获取配置分享中心信息")
 
         try:
-            async with httpx.AsyncClient(proxy=self.get_proxy()) as client:
+            async with httpx.AsyncClient(proxy=self.proxy) as client:
                 response = await client.get(
                     "https://share.auto-mas.top/api/list/config/general"
                 )
