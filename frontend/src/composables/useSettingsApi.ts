@@ -25,7 +25,7 @@ export function useSettingsApi() {
     } catch (err: any) {
       const errorMsg = err instanceof Error ? err.message : '获取设置失败'
       error.value = errorMsg
-      if (!err.message?.includes('HTTP error')) {
+      if (err instanceof Error && !err.message.includes('HTTP error')) {
         message.error(errorMsg)
       }
       return null
@@ -55,7 +55,7 @@ export function useSettingsApi() {
     } catch (err: any) {
       const errorMsg = err instanceof Error ? err.message : '设置修改失败'
       error.value = errorMsg
-      if (!err.message?.includes('HTTP error')) {
+      if (err instanceof Error && !err.message.includes('HTTP error')) {
         message.error(errorMsg)
       }
       return false

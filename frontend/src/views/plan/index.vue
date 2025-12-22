@@ -218,7 +218,7 @@ const onPlanChange = async (planId: string) => {
 
   try {
     // 立即切换到新计划
-    logger.info(`[计划表] 切换到新计划: ${planId}`)
+    logger.info(`切换到新计划: ${planId}`)
     activePlanId.value = planId
     await loadPlanData(planId)
   } catch (error) {
@@ -274,7 +274,7 @@ const loadPlanData = async (planId: string) => {
     const response = await getPlans(planId)
     currentPlanData.value = response.data
     const planData = response.data[planId] as PlanData
-    logger.info(`[计划表] 从后端加载数据 (${planId})`)
+    logger.info(`从后端加载数据 (${planId})`)
 
     if (planData) {
       if (planData.Info) {
@@ -286,7 +286,7 @@ const loadPlanData = async (planId: string) => {
           currentPlanName.value = currentPlan.name
 
           if (apiName !== currentPlan.name) {
-            logger.info(`[计划表] 同步名称: API="${apiName}" -> planList="${currentPlan.name}"`)
+            logger.info(`同步名称: API="${apiName}" -> planList="${currentPlan.name}"`)
           }
         } else if (apiName) {
           currentPlanName.value = apiName
@@ -353,7 +353,7 @@ const initPlans = async () => {
           currentMode.value = planData.Info.Mode || 'ALL'
         }
 
-        logger.info(`[计划表] 初始加载数据 (${selectedPlanId}):`, planData)
+        logger.info(`初始加载数据 (${selectedPlanId})`)
         // 标记这是初始加载，需要强制更新自定义关卡
         tableData.value = { ...planData, _isInitialLoad: true }
       }

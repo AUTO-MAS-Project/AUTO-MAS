@@ -42,7 +42,7 @@ export function useTemplateApi() {
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : '获取模板列表失败'
       error.value = errorMsg
-      if (!err.message?.includes('HTTP error')) {
+      if (err instanceof Error && !err.message.includes('HTTP error')) {
         message.error(errorMsg)
       }
       return []
@@ -72,7 +72,7 @@ export function useTemplateApi() {
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : '导入配置失败'
       error.value = errorMsg
-      if (!err.message?.includes('HTTP error')) {
+      if (err instanceof Error && !err.message.includes('HTTP error')) {
         message.error(errorMsg)
       }
       return false

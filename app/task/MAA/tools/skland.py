@@ -454,7 +454,7 @@ async def skland_sign_in(token) -> dict:
             "vName": "1.0.0",
         }
 
-        async with httpx.AsyncClient(proxy=Config.get_proxy()) as client:
+        async with httpx.AsyncClient(proxy=Config.proxy) as client:
             response = await client.post(
                 cred_code_url, json={"code": grant, "kind": 1}, headers=web_headers
             )
@@ -472,7 +472,7 @@ async def skland_sign_in(token) -> dict:
         :param token: 你的skyland token
         :return: grant code
         """
-        async with httpx.AsyncClient(proxy=Config.get_proxy()) as client:
+        async with httpx.AsyncClient(proxy=Config.proxy) as client:
             response = await client.post(
                 grant_code_url,
                 json={"appCode": app_code, "token": token, "type": 0},
@@ -494,7 +494,7 @@ async def skland_sign_in(token) -> dict:
         :return: 角色列表
         """
         v = []
-        async with httpx.AsyncClient(proxy=Config.get_proxy()) as client:
+        async with httpx.AsyncClient(proxy=Config.proxy) as client:
             response = await client.get(
                 binding_url,
                 headers=await get_sign_header(
@@ -528,7 +528,7 @@ async def skland_sign_in(token) -> dict:
         query_url = f"{sign_url}?uid={uid}&gameId={game_id}"
 
         try:
-            async with httpx.AsyncClient(proxy=Config.get_proxy()) as client:
+            async with httpx.AsyncClient(proxy=Config.proxy) as client:
                 response = await client.get(
                     query_url,
                     headers=await get_sign_header(
@@ -591,7 +591,7 @@ async def skland_sign_in(token) -> dict:
             }
 
             try:
-                async with httpx.AsyncClient(proxy=Config.get_proxy()) as client:
+                async with httpx.AsyncClient(proxy=Config.proxy) as client:
                     sign_headers = await get_sign_header(
                         sign_url,
                         "post",
