@@ -460,7 +460,7 @@ watch(
 // 监听外部数据变化 - 这是数据的唯一来源
 watch(
   () => props.tableData,
-  newData => {
+  async newData => {
     if (newData) {
       // 检查是否是初始加载
       const isInitialLoad = (newData as any)._isInitialLoad === true
@@ -468,6 +468,16 @@ watch(
       // 清理标记后传递给协调器
       const cleanData = { ...newData }
       delete (cleanData as any)._isInitialLoad
+
+      // 如果是首次加载，确保先完成关卡选项的预加载，避免将标准关卡误判为自定义关卡
+      if (isInitialLoad) {
+        try {
+          await preloadAllStageOptions()
+        } catch (e) {
+          // 预加载失败时降级为不阻塞——仍然尝试加载配置
+          // 错误已由 preloadAllStageOptions 内部记录
+        }
+      }
 
       // 从后端数据加载到协调器
       coordinator.fromApiData(cleanData, isInitialLoad)
