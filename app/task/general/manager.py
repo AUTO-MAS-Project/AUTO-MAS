@@ -61,11 +61,26 @@ class GeneralManager(TaskExecuteBase):
     async def check(self) -> str:
         """校验通用脚本配置是否可用"""
         if self.task_info.mode not in METHOD_BOOK:
-            return "不支持的任务模式，请检查任务配置！"
+            return "不支持的任务模式, 请检查任务配置！"
         if not isinstance(
             Config.ScriptConfig[uuid.UUID(self.script_info.script_id)], GeneralConfig
         ):
             return "脚本配置类型错误, 不是通用脚本类型"
+        if (
+            Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
+                "Script", "IfTrackProcess"
+            )
+            and not Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
+                "Script", "TrackProcessName"
+            )
+            and not Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
+                "Script", "TrackProcessExe"
+            )
+            and not Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
+                "Script", "TrackProcessCmdline"
+            )
+        ):
+            return "开启追踪子进程后, 需至少填写一项追踪进程信息！"
         if Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
             "Game", "Enabled"
         ):

@@ -351,6 +351,22 @@ class URLValidator(ConfigValidator):
         return True
 
 
+class ArgumentValidator(ConfigValidator):
+
+    def validate(self, value: Any) -> bool:
+        if not isinstance(value, str):
+            return False
+        try:
+            shlex.split(value.strip())
+            return True
+        except ValueError:
+            return False
+
+    def correct(self, value: Any) -> str:
+
+        return value if self.validate(value) else ""
+
+
 class AdvancedArgumentValidator(ConfigValidator):
 
     def validate(self, value: Any) -> bool:

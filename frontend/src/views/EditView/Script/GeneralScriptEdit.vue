@@ -127,7 +127,7 @@
             <a-col :span="6">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="开启后仅在脚本进程及其所有子进程全部结束时认定脚本进程结束">
+                  <a-tooltip title="开启后仅在脚本的子进程结束时认定脚本进程结束">
                     <span class="form-label">
                       追踪子进程
                       <QuestionCircleOutlined class="help-icon" />
@@ -142,13 +142,78 @@
               </a-form-item>
             </a-col>
           </a-row>
+          <!-- 追踪子进程配置 -->
+          <a-row v-if="generalConfig.Script.IfTrackProcess" :gutter="24">
+            <a-col :span="8">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip title="要追踪的进程名称，打开脚本后启动任务管理器，在目标脚本进程右键，选择转到详细信息，填入名称栏中的内容即可，无法确认时可以留空">
+                    <span class="form-label">
+                      被追踪进程的名称
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-input v-model:value="generalConfig.Script.TrackProcessName" placeholder="请输入要追踪的进程名称" size="large"
+                  class="modern-input" @blur="
+                    handleChange(
+                      'Script',
+                      'TrackProcessName',
+                      generalConfig.Script.TrackProcessName
+                    )
+                    " />
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip title="要追踪的进程可执行文件路径，打开脚本后启动任务管理器，在目标脚本进程右键，选择「打开文件所在位置」，即可定位到可执行文件路径，无法确认时可以留空">
+                    <span class="form-label">
+                      被追踪进程的文件路径
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-input-group compact class="path-input-group">
+                  <a-input v-model:value="generalConfig.Script.TrackProcessExe" placeholder="请选择进程可执行文件路径" size="large" class="path-input" readonly />
+                  <a-button size="large" class="path-button" @click="selectTrackProcessExe">
+                    <template #icon>
+                      <FileOutlined />
+                    </template>
+                    选择文件
+                  </a-button>
+                </a-input-group>
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip
+                    title="要追踪的进程启动命令行参数，打开脚本后启动任务管理器，在目标脚本进程右键，选择「转到详细信息」，填入命令行栏中的内容即可，命令行栏不存在可以在标题栏右键，选择「选择列」，勾选命令行，无法确认时可以留空">
+                    <span class="form-label">
+                      追踪进程命令行参数
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-input v-model:value="generalConfig.Script.TrackProcessCmdline" placeholder="请输入进程启动命令行参数"
+                  size="large" class="modern-input" @blur="
+                    handleChange(
+                      'Script',
+                      'TrackProcessCmdline',
+                      generalConfig.Script.TrackProcessCmdline
+                    )
+                    " />
+              </a-form-item>
+            </a-col>
+          </a-row>
           <a-row :gutter="24">
             <a-col :span="12">
               <a-form-item name="configPath" :rules="rules.configPath">
                 <template #label>
                   <a-tooltip :title="generalConfig.Script.ConfigPathMode === 'Folder'
-                      ? '脚本配置文件所在的文件夹路径'
-                      : '脚本配置文件的路径'
+                    ? '脚本配置文件所在的文件夹路径'
+                    : '脚本配置文件的路径'
                     ">
                     <span class="form-label">
                       配置文件路径
@@ -158,8 +223,8 @@
                 </template>
                 <a-input-group compact class="path-input-group">
                   <a-input v-model:value="formData.configPath" :placeholder="generalConfig.Script.ConfigPathMode === 'Folder'
-                      ? '请选择配置文件夹'
-                      : '请选择配置文件'
+                    ? '请选择配置文件夹'
+                    : '请选择配置文件'
                     " size="large" class="path-input" readonly />
                   <a-button size="large" class="path-button" @click="selectConfigPath">
                     <template #icon>
@@ -244,8 +309,9 @@
                   </a-tooltip>
                 </template>
                 <a-input v-model:value="generalConfig.Script.LogPathFormat" placeholder="日志文件名格式，文件名固定时留空" size="large"
-                  class="modern-input"
-                  @blur="handleChange('Script', 'LogPathFormat', generalConfig.Script.LogPathFormat)" />
+                  class="modern-input" @blur="
+                    handleChange('Script', 'LogPathFormat', generalConfig.Script.LogPathFormat)
+                    " />
               </a-form-item>
             </a-col>
           </a-row>
@@ -434,8 +500,10 @@
             <a-col v-if="generalConfig.Game.Type === 'Emulator'" :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip
-                    :title="emulatorDeviceOptions.length === 0 && !emulatorDeviceLoading ? '不支持自动扫描实例的模拟器，请手动输入实例信息' : '选择模拟器的具体实例'">
+                  <a-tooltip :title="emulatorDeviceOptions.length === 0 && !emulatorDeviceLoading
+                    ? '不支持自动扫描实例的模拟器，请手动输入实例信息'
+                    : '选择模拟器的具体实例'
+                    ">
                     <span class="form-label">
                       模拟器实例
                       <QuestionCircleOutlined class="help-icon" />
@@ -443,9 +511,11 @@
                   </a-tooltip>
                 </template>
                 <!-- 当API返回空列表时显示输入框 -->
-                <a-input
-                  v-if="emulatorDeviceOptions.length === 0 && !emulatorDeviceLoading && generalConfig.Game.EmulatorId"
-                  v-model:value="generalConfig.Game.EmulatorIndex" size="large" placeholder="请输入实例信息，格式：启动附加命令 | ADB地址"
+                <a-input v-if="
+                  emulatorDeviceOptions.length === 0 &&
+                  !emulatorDeviceLoading &&
+                  generalConfig.Game.EmulatorId
+                " v-model:value="generalConfig.Game.EmulatorIndex" size="large" placeholder="请输入实例信息，格式：启动附加命令 | ADB地址"
                   class="modern-input"
                   @blur="handleChange('Game', 'EmulatorIndex', generalConfig.Game.EmulatorIndex)" />
                 <!-- 正常情况下显示下拉框 -->
@@ -980,6 +1050,9 @@ const generalConfig = reactive<GeneralScriptConfig>({
     ConfigPathMode: 'File',
     ErrorLog: '',
     IfTrackProcess: false,
+    TrackProcessName: '',
+    TrackProcessExe: '',
+    TrackProcessCmdline: '',
     LogPath: '.',
     LogPathFormat: '%Y-%m-%d',
     LogTimeEnd: 1,
@@ -1233,7 +1306,7 @@ const loadEmulatorDeviceOptions = async (emulatorId: string) => {
   emulatorDeviceLoading.value = true
   try {
     const response = await Service.getEmulatorDevicesComboxApiInfoComboxEmulatorDevicesPost({
-      emulatorId: emulatorId
+      emulatorId: emulatorId,
     })
     if (response && response.code === 200) {
       emulatorDeviceOptions.value = response.data || []
@@ -1259,8 +1332,8 @@ const handleEmulatorChange = async (emulatorId: string) => {
     const updateData = {
       Game: {
         EmulatorId: emulatorId,
-        EmulatorIndex: ''
-      }
+        EmulatorIndex: '',
+      },
     }
     const success = await updateScript(scriptId, updateData)
     if (success) {
@@ -1297,7 +1370,7 @@ const handleGameTypeChange = async (gameType: string) => {
       URL: '',
       Arguments: '',
       WaitTime: 0,
-      IfForceClose: false
+      IfForceClose: false,
     }
     // 加载模拟器选项
     await loadEmulatorOptions()
@@ -1312,7 +1385,7 @@ const handleGameTypeChange = async (gameType: string) => {
       ...updateFields,
       URL: '',
       EmulatorId: '',
-      EmulatorIndex: ''
+      EmulatorIndex: '',
     }
   } else if (gameType === 'URL') {
     // 切换到URL时，清空PC客户端和模拟器相关字段
@@ -1331,7 +1404,7 @@ const handleGameTypeChange = async (gameType: string) => {
       WaitTime: 0,
       IfForceClose: false,
       EmulatorId: '',
-      EmulatorIndex: ''
+      EmulatorIndex: '',
     }
   }
 
@@ -1472,6 +1545,34 @@ const selectScriptPath = async () => {
     }
   } catch (error) {
     logger.error('选择脚本路径失败:', error)
+    message.error('选择文件失败')
+  }
+}
+
+const selectTrackProcessExe = async () => {
+  try {
+    if (!window.electronAPI) {
+      message.error('文件选择功能不可用，请在 Electron 环境中运行')
+      return
+    }
+
+    const paths = await (window.electronAPI as any).selectFile([
+      { name: '可执行文件', extensions: ['exe'] },
+      { name: '所有文件', extensions: ['*'] },
+    ])
+    if (paths && paths.length > 0) {
+      const path = paths[0]
+      // 验证路径是否在根目录下（可选）
+      if (validatePath(generalConfig.Info.RootPath, path, '被追踪进程可执行文件路径')) {
+        const normalizedPath = pathUtils.normalizePath(path)
+        generalConfig.Script.TrackProcessExe = normalizedPath
+        // 保存被追踪进程可执行文件路径
+        await handleChange('Script', 'TrackProcessExe', normalizedPath)
+        message.success('被追踪进程可执行文件选择成功')
+      }
+    }
+  } catch (error) {
+    logger.error('选择被追踪进程可执行文件失败:', error)
     message.error('选择文件失败')
   }
 }

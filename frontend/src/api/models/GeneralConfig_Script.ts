@@ -16,6 +16,18 @@ export type GeneralConfig_Script = {
      */
     IfTrackProcess?: (boolean | null);
     /**
+     * 追踪进程名称
+     */
+    TrackProcessName?: (string | null);
+    /**
+     * 追踪进程文件路径
+     */
+    TrackProcessExe?: (string | null);
+    /**
+     * 追踪进程启动命令行参数
+     */
+    TrackProcessCmdline?: (string | null);
+    /**
      * 配置文件路径
      */
     ConfigPath?: (string | null);

@@ -123,6 +123,19 @@ class AutoProxyTask(TaskExecuteBase):
         self.script_arguments = arguments_list[0] if len(arguments_list) > 0 else []
         self.script_set_arguments = arguments_list[1] if len(arguments_list) > 1 else []
 
+        self.script_target_process_info = (
+            ProcessInfo(
+                name=self.script_config.get("Script", "TrackProcessName") or None,
+                exe=self.script_config.get("Script", "TrackProcessExe") or None,
+                cmdline=shlex.split(
+                    self.script_config.get("Script", "TrackProcessCmdline"), posix=False
+                )
+                or None,
+            )
+            if self.script_config.get("Script", "IfTrackProcess")
+            else None
+        )
+
         self.script_config_path = Path(self.script_config.get("Script", "ConfigPath"))
 
         self.script_log_path = Path(self.script_config.get("Script", "LogPath"))
@@ -275,7 +288,9 @@ class AutoProxyTask(TaskExecuteBase):
             self.wait_event.clear()
             t = datetime.now()
             await self.general_process_manager.open_process(
-                self.script_exe_path, *self.script_arguments
+                self.script_exe_path,
+                *self.script_arguments,
+                target_process=self.script_target_process_info,
             )
 
             # 等待日志文件生成
@@ -509,19 +524,14 @@ class AutoProxyTask(TaskExecuteBase):
             )
             user_logs_list.append(log_path.with_suffix(".json"))
 
+            if log_item.status == "通用脚本正常运行中":
+                log_item.status = "任务被用户手动中止"
+
             if len(log_item.content) == 0:
                 log_item.content = ["未捕获到任何日志内容"]
                 log_item.status = "未捕获到日志"
 
-            await Config.save_general_log(
-                log_path,
-                log_item.content,
-                (
-                    log_item.status
-                    if log_item.status != "通用脚本正常运行中"
-                    else "任务被用户手动中止"
-                ),
-            )
+            await Config.save_general_log(log_path, log_item.content, log_item.status)
 
         if self.run_book:
             if (

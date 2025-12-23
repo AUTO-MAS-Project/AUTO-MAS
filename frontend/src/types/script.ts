@@ -58,6 +58,9 @@ export interface GeneralScriptConfig {
     ConfigPathMode: string
     ErrorLog: string
     IfTrackProcess: boolean
+    TrackProcessName: string
+    TrackProcessExe: string
+    TrackProcessCmdline: string
     LogPath: string
     LogPathFormat: string
     LogTimeEnd: number
