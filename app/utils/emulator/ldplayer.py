@@ -68,7 +68,7 @@ class LDManager(DeviceBase):
         self.emulator_path = Path(config.get("Info", "Path"))
 
     async def open(self, idx: str, package_name="") -> DeviceInfo:
-        logger.info(f"开始启动模拟器{idx} - {package_name}")
+        logger.info(f"开始启动模拟器 {idx}  - {package_name}")
 
         status = DeviceStatus.UNKNOWN  # 初始化status变量
         t = datetime.now()
@@ -83,7 +83,7 @@ class LDManager(DeviceBase):
             await asyncio.sleep(0.1)
 
         else:
-            raise RuntimeError(f"模拟器{idx}无法启动, 当前状态码: {status}")
+            raise RuntimeError(f"模拟器 {idx} 无法启动, 当前状态码: {status}")
 
         result = await ProcessRunner.run_process(
             self.emulator_path,
@@ -104,8 +104,6 @@ class LDManager(DeviceBase):
             seconds=self.config.get("Data", "MaxWaitTime")
         ):
             status = await self.getStatus(idx)
-            if status in [DeviceStatus.ERROR, DeviceStatus.UNKNOWN]:
-                raise RuntimeError(f"模拟器{idx}启动失败, 状态码: {status}")
             if status == DeviceStatus.ONLINE:
                 await asyncio.sleep(
                     30
@@ -117,7 +115,9 @@ class LDManager(DeviceBase):
 
             await asyncio.sleep(0.1)
         else:
-            raise RuntimeError(f"模拟器{idx}启动超时, 当前状态码: {status}")
+            if status in [DeviceStatus.ERROR, DeviceStatus.UNKNOWN]:
+                raise RuntimeError(f"模拟器 {idx} 启动失败, 状态码: {status}")
+            raise RuntimeError(f"模拟器 {idx} 启动超时, 当前状态码: {status}")
 
     async def close(self, idx: str) -> DeviceStatus:
         status = await self.getStatus(idx)
@@ -142,14 +142,14 @@ class LDManager(DeviceBase):
             seconds=self.config.get("Data", "MaxWaitTime")
         ):
             status = await self.getStatus(idx)
-            if status in [DeviceStatus.ERROR, DeviceStatus.UNKNOWN]:
-                raise RuntimeError(f"模拟器{idx}关闭失败, 状态码: {status}")
             if status == DeviceStatus.OFFLINE:
                 return DeviceStatus.OFFLINE
             await asyncio.sleep(0.1)
 
         else:
-            raise RuntimeError(f"模拟器{idx}关闭超时, 当前状态码: {status}")
+            if status in [DeviceStatus.ERROR, DeviceStatus.UNKNOWN]:
+                raise RuntimeError(f"模拟器 {idx} 关闭失败, 状态码: {status}")
+            raise RuntimeError(f"模拟器 {idx} 关闭超时, 当前状态码: {status}")
 
     async def getStatus(
         self, idx: str, data: LDPlayerDevice | None = None
@@ -158,7 +158,7 @@ class LDManager(DeviceBase):
             try:
                 data = (await self.get_device_info(idx))[idx]
             except Exception as e:
-                logger.error(f"获取模拟器{idx}信息失败: {e}")
+                logger.error(f"获取模拟器 {idx} 信息失败: {e}")
                 return DeviceStatus.ERROR
 
         # 计算状态码
