@@ -745,23 +745,20 @@ def getStage(raw) -> str:
                 )
 
                 if "SSReopen" not in stage["Display"]:
-                    drop_id = re.sub(
-                        r"[\u200b\u200c\u200d\ufeff]",
-                        "",
-                        str(stage["Drop"]).strip(),
-                    )  # 去除不可见字符
 
-                    if drop_id.isdigit():
-                        drop_name = MATERIALS_MAP.get(drop_id, "未知材料")
+                    if stage["Drop"] in MATERIALS_MAP:
+                        drop_id = stage["Drop"]
+                    elif "玉" in stage["Drop"]:
+                        drop_id = "30012"
                     else:
-                        drop_name = f"DESC:{drop_id}"  # 非纯数字, 直接用文本.加一个DESC前缀方便前端区分
+                        drop_id = "NotFound"
 
                     activity_stage_drop_info.append(
                         {
                             "Display": stage["Display"],
                             "Value": stage["Value"],
-                            "Drop": stage["Drop"],
-                            "DropName": drop_name,
+                            "Drop": drop_id,
+                            "DropName": MATERIALS_MAP.get(stage["Drop"], stage["Drop"]),
                             "Activity": side_story["Activity"],
                         }
                     )

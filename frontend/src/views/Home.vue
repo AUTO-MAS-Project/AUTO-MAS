@@ -70,15 +70,13 @@
 
           <div class="drop-info">
             <div class="drop-image">
-              <img v-if="getMaterialImage(item.DropName.startsWith('DESC:') ? '30012' : item.DropName)" :src="item.DropName.startsWith('DESC:')
-                  ? getMaterialImage('30012')
-                  : getMaterialImage(item.Drop)
-                " :alt="item.DropName.startsWith('DESC:') ? '30012' : item.DropName" @error="handleImageError" />
+              <img v-if="getMaterialImage(item.Drop)" :src="getMaterialImage(item.Drop)" :alt="item.DropName"
+                @error="handleImageError" />
             </div>
 
             <div class="drop-details">
               <div class="drop-name">
-                {{ item.DropName.startsWith('DESC:') ? item.DropName.substring(5) : item.DropName }}
+                {{ item.DropName }}
               </div>
             </div>
           </div>
