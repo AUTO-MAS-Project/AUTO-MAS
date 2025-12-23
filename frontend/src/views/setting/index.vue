@@ -300,11 +300,10 @@ onMounted(() => {
 .settings-container {
   /* Allow the settings page to expand with the window width */
   width: 100%;
-  max-width: none;
   margin: 0;
   padding: 0;
   box-sizing: border-box;
-  height: 100%;
+  /* Use full viewport min-height so the page can grow and scroll */
   display: flex;
   flex-direction: column;
 }
@@ -327,10 +326,14 @@ onMounted(() => {
 
 .settings-content {
   background: var(--ant-color-bg-container);
-  border-radius: 12px 12px 0 0;
+  /* Rounded on all corners for a consistent card look */
+  border-radius: 12px;
   width: 100%;
   flex: 1;
-  overflow: hidden;
+  /* allow inner scrolling and cooperate with flexbox
+     min-height:0 prevents flex children from overflowing the container */
+  min-height: 0;
+  overflow: auto;
   display: flex;
   flex-direction: column;
 }
@@ -341,6 +344,8 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   padding: 12px;
+  /* ensure children with overflow:auto can scroll inside this flex item */
+  min-height: 0;
 }
 
 .settings-tabs :deep(.ant-tabs-nav) {

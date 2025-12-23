@@ -63,12 +63,8 @@ onMounted(async () => {
 
     <!-- 全局组件 -->
     <!-- 全局更新模态框 -->
-    <UpdateModal
-      v-model:visible="updateVisible"
-      :update-data="updateData"
-      :latest-version="latestVersion"
-      @confirmed="onUpdateConfirmed"
-    />
+    <UpdateModal v-model:visible="updateVisible" :update-data="updateData" :latest-version="latestVersion"
+      @confirmed="onUpdateConfirmed" />
 
     <!-- 开发环境调试面板 -->
     <DevDebugPanel />
@@ -107,8 +103,10 @@ onMounted(async () => {
   overflow-x: hidden;
   width: 100%;
   /* 隐藏滚动条但保留滚动功能 */
-  scrollbar-width: none; /* Firefox */
-  -ms-overflow-style: none; /* IE/Edge */
+  scrollbar-width: none;
+  /* Firefox */
+  -ms-overflow-style: none;
+  /* IE/Edge */
 }
 
 /* 隐藏 Webkit 浏览器的滚动条 */
