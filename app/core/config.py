@@ -819,6 +819,10 @@ class AppConfig(GlobalConfig):
         if len(infrast_data.get("plans", [])) == 0:
             raise ValueError("未找到有效的基建排班信息")
 
+        # 如果标题为默认标题, 则使用文件名作为标题
+        if infrast_data.get("title", "文件标题") == "文件标题":
+            infrast_data["title"] = json_path.stem
+
         await self.ScriptConfig[script_uid].UserData[user_uid].set(
             "Data", "CustomInfrast", json.dumps(infrast_data, ensure_ascii=False)
         )

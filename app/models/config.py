@@ -369,10 +369,15 @@ class MaaUserConfig(ConfigBase):
             return "未使用自定义基建模式"
 
         infrast_data = json.loads(self.get("Data", "CustomInfrast"))
-        if infrast_data.get("title", None) and infrast_data.get("description", None):
+        if (
+            infrast_data.get("title", "文件标题") != "文件标题"
+            and infrast_data.get("description", "文件描述") != "文件描述"
+        ):
             return f"{infrast_data['title']} - {infrast_data['description']}"
-        elif infrast_data.get("title", None):
+        elif infrast_data.get("title", "文件标题") != "文件标题":
             return infrast_data["title"]
+        elif infrast_data.get("id", None):
+            return infrast_data["id"]
         else:
             return "未命名自定义基建"
 
