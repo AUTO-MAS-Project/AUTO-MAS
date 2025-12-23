@@ -57,7 +57,7 @@ class MumuManager(DeviceBase):
         self.emulator_path = Path(config.get("Info", "Path"))
 
     async def open(self, idx: str, package_name: str = "") -> DeviceInfo:
-        logger.info(f"开始启动模拟器{idx} - {package_name}")
+        logger.info(f"开始启动模拟器 {idx}  - {package_name}")
 
         from app.core import Config
 
@@ -74,7 +74,7 @@ class MumuManager(DeviceBase):
             await asyncio.sleep(0.1)
 
         else:
-            raise RuntimeError(f"模拟器{idx}无法启动, 当前状态码: {status}")
+            raise RuntimeError(f"模拟器 {idx} 无法启动, 当前状态码: {status}")
 
         is_mumu_nx_exists = await self.find_mumu_nx_window() is not None
 
@@ -102,11 +102,7 @@ class MumuManager(DeviceBase):
             seconds=self.config.get("Data", "MaxWaitTime")
         ):
             status = await self.getStatus(idx)
-            if status in [DeviceStatus.ERROR, DeviceStatus.UNKNOWN]:
-                raise RuntimeError(f"模拟器{idx}启动失败, 状态码: {status}")
-            elif (
-                Config.get("Function", "IfSilence") and status == DeviceStatus.STARTING
-            ):
+            if Config.get("Function", "IfSilence") and status == DeviceStatus.STARTING:
                 await self.setVisible(idx, False)
             elif status == DeviceStatus.ONLINE:
                 await asyncio.sleep(
@@ -118,7 +114,9 @@ class MumuManager(DeviceBase):
                 return (await self.getInfo(idx))[idx]
             await asyncio.sleep(0.1)
         else:
-            raise RuntimeError(f"模拟器{idx}启动超时, 当前状态码: {status}")
+            if status in [DeviceStatus.ERROR, DeviceStatus.UNKNOWN]:
+                raise RuntimeError(f"模拟器 {idx} 启动失败, 状态码: {status}")
+            raise RuntimeError(f"模拟器 {idx} 启动超时, 当前状态码: {status}")
 
     async def close(self, idx: str) -> DeviceStatus:
         status = await self.getStatus(idx)
@@ -145,21 +143,21 @@ class MumuManager(DeviceBase):
             seconds=self.config.get("Data", "MaxWaitTime")
         ):
             status = await self.getStatus(idx)
-            if status in [DeviceStatus.ERROR, DeviceStatus.UNKNOWN]:
-                raise RuntimeError(f"模拟器{idx}关闭失败, 状态码: {status}")
             if status == DeviceStatus.OFFLINE:
                 return DeviceStatus.OFFLINE
             await asyncio.sleep(0.1)
 
         else:
-            raise RuntimeError(f"模拟器{idx}关闭超时, 当前状态码: {status}")
+            if status in [DeviceStatus.ERROR, DeviceStatus.UNKNOWN]:
+                raise RuntimeError(f"模拟器 {idx} 关闭失败, 状态码: {status}")
+            raise RuntimeError(f"模拟器 {idx} 关闭超时, 当前状态码: {status}")
 
     async def getStatus(self, idx: str, data: str | None = None) -> DeviceStatus:
         if data is None:
             try:
                 data = await self.get_device_info(idx)
             except Exception as e:
-                logger.error(f"获取模拟器{idx}信息失败: {e}")
+                logger.error(f"获取模拟器 {idx} 信息失败: {e}")
                 return DeviceStatus.ERROR
         try:
             data_json = json.loads(data)
@@ -246,7 +244,7 @@ class MumuManager(DeviceBase):
             if_merge_std=True,
         )
         if result.returncode != 0:
-            logger.error(f"获取模拟器{idx}信息失败: {result.stdout.strip()}")
+            logger.error(f"获取模拟器 {idx} 信息失败: {result.stdout.strip()}")
             raise RuntimeError(f"命令执行失败: {result.stdout.strip()}")
 
         return result.stdout.strip()

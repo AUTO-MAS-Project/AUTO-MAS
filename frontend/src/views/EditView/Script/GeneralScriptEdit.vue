@@ -175,7 +175,8 @@
                   </a-tooltip>
                 </template>
                 <a-input-group compact class="path-input-group">
-                  <a-input v-model:value="generalConfig.Script.TrackProcessExe" placeholder="请选择进程可执行文件路径" size="large" class="path-input" readonly />
+                  <a-input v-model:value="generalConfig.Script.TrackProcessExe" placeholder="请选择进程可执行文件路径" size="large"
+                    class="path-input" readonly />
                   <a-button size="large" class="path-button" @click="selectTrackProcessExe">
                     <template #icon>
                       <FileOutlined />
