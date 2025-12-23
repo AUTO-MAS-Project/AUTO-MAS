@@ -44,6 +44,7 @@ from .ConfigBase import (
     JSONValidator,
     URLValidator,
     UserNameValidator,
+    ArgumentValidator,
     AdvancedArgumentValidator,
 )
 
@@ -640,7 +641,14 @@ class GeneralConfig(ConfigBase):
         self.Script_IfTrackProcess = ConfigItem(
             "Script", "IfTrackProcess", False, BoolValidator()
         )
-        ## 配置文件路径
+        ## 追踪进程的名称
+        self.Script_TrackProcessName = ConfigItem("Script", "TrackProcessName", "")
+        ## 追踪进程的文件路径
+        self.Script_TrackProcessExe = ConfigItem("Script", "TrackProcessExe", "")
+        ## 追踪进程的启动命令行参数
+        self.Script_TrackProcessCmdline = ConfigItem(
+            "Script", "TrackProcessCmdline", "", ArgumentValidator()
+        )
         self.Script_ConfigPath = ConfigItem(
             "Script", "ConfigPath", str(Path.cwd()), FileValidator()
         )
@@ -692,7 +700,7 @@ class GeneralConfig(ConfigBase):
         ## 游戏进程名称
         self.Game_ProcessName = ConfigItem("Game", "ProcessName", "")
         ## 游戏启动参数
-        self.Game_Arguments = ConfigItem("Game", "Arguments", "")
+        self.Game_Arguments = ConfigItem("Game", "Arguments", "", ArgumentValidator())
         ## 等待时间（秒）
         self.Game_WaitTime = ConfigItem("Game", "WaitTime", 0, RangeValidator(0, 9999))
         ## 是否强制关闭

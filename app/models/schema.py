@@ -447,6 +447,11 @@ class GeneralConfig_Script(BaseModel):
     IfTrackProcess: Optional[bool] = Field(
         default=None, description="是否追踪脚本子进程"
     )
+    TrackProcessName: Optional[str] = Field(default=None, description="追踪进程名称")
+    TrackProcessExe: Optional[str] = Field(default=None, description="追踪进程文件路径")
+    TrackProcessCmdline: Optional[str] = Field(
+        default=None, description="追踪进程启动命令行参数"
+    )
     ConfigPath: Optional[str] = Field(default=None, description="配置文件路径")
     ConfigPathMode: Optional[Literal["File", "Folder"]] = Field(
         default=None, description="配置文件类型: 单个文件, 文件夹"

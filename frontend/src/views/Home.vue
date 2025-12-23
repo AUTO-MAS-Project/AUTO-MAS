@@ -383,15 +383,15 @@ const getProxyStatusColor = () => {
 const greeting = computed(() => {
   const hour = new Date().getHours()
   if (hour >= 5 && hour < 11) {
-    return '主人早上好喵~'
+    return '早上好，博士，咕~'
   } else if (hour >= 11 && hour < 14) {
-    return '主人中午好喵~'
+    return '中午好，博士，咕~'
   } else if (hour >= 14 && hour < 18) {
-    return '主人下午好喵~'
+    return '下午好，博士，咕~'
   } else if (hour >= 18 && hour < 23) {
-    return '主人晚上好喵~'
+    return '晚上好，博士，咕~'
   } else {
-    return '主人夜深了喵~早点休息喵~'
+    return '夜深了，博士，请注意休息，咕~'
   }
 })
 

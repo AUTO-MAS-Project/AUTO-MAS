@@ -695,7 +695,7 @@ class AppConfig(GlobalConfig):
         """移除配置中可能存在的隐私信息"""
 
         confg["Info"]["Name"] = name
-        for path in ["ScriptPath", "ConfigPath", "LogPath"]:
+        for path in ["ScriptPath", "ConfigPath", "LogPath", "TrackProcessExe"]:
             if Path(confg["Script"][path]).is_relative_to(
                 Path(confg["Info"]["RootPath"])
             ):

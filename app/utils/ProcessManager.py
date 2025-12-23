@@ -54,9 +54,9 @@ def match_process(proc: psutil.Process, target: ProcessInfo) -> bool:
     try:
         if target.pid is not None and proc.pid != target.pid:
             return False
-        if target.name is not None and proc.name().lower() != target.name.lower():
+        if target.name is not None and proc.name() != target.name:
             return False
-        if target.exe is not None and proc.exe().lower() != target.exe.lower():
+        if target.exe is not None and Path(proc.exe()) != Path(target.exe):
             return False
         if target.cmdline is not None and proc.cmdline() != target.cmdline:
             return False
@@ -181,7 +181,7 @@ class ProcessManager:
                     continue
             await asyncio.sleep(0.1)
         else:
-            raise RuntimeError("未能在指定时间内找到目标进程")
+            raise RuntimeError("未能在限定时间内找到目标进程")
 
     async def is_running(self) -> bool:
         """检查当前管理的进程是否仍在运行"""
