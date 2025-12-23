@@ -11,13 +11,12 @@
 
     <!-- 已选择用户时显示详情 -->
     <div v-else class="detail-content">
+      <!-- 统计信息卡片 -->
+      <UserStatisticsCard :recruit-statistics="recruitStatistics" :drop-statistics="dropStatistics" />
+
       <!-- 记录列表 -->
-      <HistoryRecordList
-        :records="records"
-        :selected-index="selectedRecordIndex"
-        :error-info="errorInfo"
-        @select="(index, record) => $emit('select-record', index, record)"
-      />
+      <HistoryRecordList :records="records" :selected-index="selectedRecordIndex" :error-info="errorInfo"
+        @select="(index, record) => $emit('select-record', index, record)" />
     </div>
   </div>
 </template>
@@ -25,6 +24,7 @@
 <script setup lang="ts">
 import { UserSwitchOutlined } from '@ant-design/icons-vue'
 import HistoryRecordList from './HistoryRecordList.vue'
+import UserStatisticsCard from './UserStatisticsCard.vue'
 
 interface RecordItem {
   date: string
@@ -37,6 +37,8 @@ interface Props {
   records: RecordItem[]
   selectedRecordIndex: number
   errorInfo: Record<string, string> | null
+  recruitStatistics: Record<string, number> | null
+  dropStatistics: Record<string, Record<string, number>> | null
 }
 
 defineProps<Props>()
