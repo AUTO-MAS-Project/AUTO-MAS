@@ -376,9 +376,9 @@ class MaaUserConfig(ConfigBase):
         ):
             return f"{infrast_data['title']} - {infrast_data['description']}"
         elif infrast_data.get("title", "文件标题") != "文件标题":
-            return infrast_data["title"]
+            return str(infrast_data["title"])
         elif infrast_data.get("id", None):
-            return infrast_data["id"]
+            return str(infrast_data["id"])
         else:
             return "未命名自定义基建"
 
