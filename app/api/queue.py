@@ -25,10 +25,12 @@ from fastapi import APIRouter, Body
 
 from app.core import Config
 from app.models.schema import *
+from app.api.ws_command import ws_command
 
 router = APIRouter(prefix="/api/queue", tags=["调度队列管理"])
 
 
+@ws_command("queue.add")
 @router.post(
     "/add",
     tags=["Add"],
@@ -52,6 +54,7 @@ async def add_queue() -> QueueCreateOut:
     return QueueCreateOut(queueId=str(uid), data=data)
 
 
+@ws_command("queue.get")
 @router.post(
     "/get",
     tags=["Get"],
