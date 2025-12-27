@@ -20,10 +20,7 @@
 #   Contact: DLmaster_361@163.com
 
 
-from pathlib import Path
-
-
-from .constants import ENCODINGS, CREATION_FLAGS
+from .constants import ENCODINGS
 
 
 def decode_bytes(data: bytes) -> str:

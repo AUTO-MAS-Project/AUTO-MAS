@@ -101,6 +101,7 @@ class ProcessManager:
         *args: str,
         cwd: Path | None = None,
         target_process: ProcessInfo | None = None,
+        capture_output: bool = False,
     ) -> None:
         """
         使用命令行启动子进程, 多级派生类型进程需要目标进程信息进行跟踪
@@ -130,8 +131,16 @@ class ProcessManager:
             *args,
             cwd=cwd or (Path(program).parent if Path(program).is_file() else None),
             stdin=asyncio.subprocess.DEVNULL,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
+            stdout=(
+                asyncio.subprocess.PIPE
+                if capture_output and target_process is None
+                else asyncio.subprocess.DEVNULL
+            ),
+            stderr=(
+                asyncio.subprocess.STDOUT
+                if capture_output and target_process is None
+                else asyncio.subprocess.DEVNULL
+            ),
             creationflags=CREATION_FLAGS,
         )
 
