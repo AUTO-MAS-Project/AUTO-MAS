@@ -72,6 +72,12 @@ async def push_notification(
         for webhook in Config.Notify_CustomWebhooks.values():
             await Notify.WebhookPush(title, f"{message_text}\n\nAUTO-MAS 敬上", webhook)
 
+        # 发送Koishi通知
+        if Config.get("Notify", "IfKoishiSupport"):
+            await Notify.send_koishi(
+                f"{title}\n\n{message_text}\n\nAUTO-MAS 敬上"
+            )
+
     elif mode == "统计信息":
         message_text = (
             f"开始时间: {message['start_time']}\n"
@@ -104,6 +110,12 @@ async def push_notification(
             for webhook in Config.Notify_CustomWebhooks.values():
                 await Notify.WebhookPush(
                     title, f"{message_text}\n\nAUTO-MAS 敬上", webhook
+                )
+
+            # 发送Koishi通知
+            if Config.get("Notify", "IfKoishiSupport"):
+                await Notify.send_koishi(
+                    f"{title}\n\n{message_text}\n\nAUTO-MAS 敬上"
                 )
 
         # 发送用户单独通知

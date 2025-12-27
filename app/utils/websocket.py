@@ -820,7 +820,7 @@ class WSClientManager:
         from app.core import Config
         
         # 检查是否启用 Koishi 通知
-        if not Config.get("Notify", "IfSendKoishi"):
+        if not Config.get("Notify", "IfKoishiSupport"):
             self._logger.info("Koishi 通知未启用，跳过系统客户端初始化")
             return False
         

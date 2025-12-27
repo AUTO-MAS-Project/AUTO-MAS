@@ -170,7 +170,7 @@ class GlobalConfig_Notify(BaseModel):
     )
     IfPushPlyer: Optional[bool] = Field(default=None, description="是否推送系统通知")
     IfSendMail: Optional[bool] = Field(default=None, description="是否发送邮件通知")
-    IfSendKoishi: Optional[bool] = Field(default=None, description="是否发送Koishi通知")
+    IfKoishiSupport: Optional[bool] = Field(default=None, description="是否启用Koishi支持")
     KoishiServerAddress: Optional[str] = Field(
         default=None, description="Koishi服务器地址"
     )

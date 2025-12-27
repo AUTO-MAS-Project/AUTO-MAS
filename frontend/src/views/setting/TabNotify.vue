@@ -241,8 +241,8 @@ const handleWebhookChange = async () => {
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-select :value="settings.Notify?.IfSendKoishi" size="large" style="width: 100%"
-              @change="(checked: any) => handleSettingChange('Notify', 'IfSendKoishi', checked)">
+            <a-select :value="settings.Notify?.IfKoishiSupport" size="large" style="width: 100%"
+              @change="(checked: any) => handleSettingChange('Notify', 'IfKoishiSupport', checked)">
               <a-select-option :value="true">是</a-select-option>
               <a-select-option :value="false">否</a-select-option>
             </a-select>
@@ -253,13 +253,13 @@ const handleWebhookChange = async () => {
         <a-col :span="12">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
-              <span class="form-label">Koishi服务器地址</span>
-              <a-tooltip title="Koishi服务器的地址">
+              <span class="form-label">Koishi WebSocket 地址</span>
+              <a-tooltip title="Koishi WebSocket 服务器地址，支持 ws:// 或 wss:// 协议">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-input :value="settings.Notify?.KoishiServerAddress" :disabled="!settings.Notify?.IfSendKoishi"
-              placeholder="请输入Koishi服务器地址" size="large"
+            <a-input :value="settings.Notify?.KoishiServerAddress" :disabled="!settings.Notify?.IfKoishiSupport"
+              placeholder="ws://localhost:5140/AUTO_MAS" size="large"
               @blur="(e: any) => handleSettingChange('Notify', 'KoishiServerAddress', e.target.value)" />
           </div>
         </a-col>
@@ -271,7 +271,7 @@ const handleWebhookChange = async () => {
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-input-password :value="settings.Notify?.KoishiToken" :disabled="!settings.Notify?.IfSendKoishi"
+            <a-input-password :value="settings.Notify?.KoishiToken" :disabled="!settings.Notify?.IfKoishiSupport"
               placeholder="请输入Koishi Token" size="large"
               @blur="(e: any) => handleSettingChange('Notify', 'KoishiToken', e.target.value)" />
           </div>

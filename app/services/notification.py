@@ -460,7 +460,7 @@ class Notification:
             )
 
         # 发送Koishi通知
-        if Config.get("Notify", "IfSendKoishi"):
+        if Config.get("Notify", "IfKoishiSupport"):
             await self.send_koishi(
                 "这是 AUTO-MAS 外部通知测试信息。如果你看到了这段内容, 说明 AUTO-MAS 的通知功能已经正确配置且可以正常工作！",
                 Config.get("Notify", "KoishiToken"),
