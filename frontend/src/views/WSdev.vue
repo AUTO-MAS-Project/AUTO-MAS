@@ -107,7 +107,7 @@
 
         <!-- 发送消息面板 -->
         <a-card title="发送消息" :bordered="false" class="send-card" style="margin-top: 16px">
-          <a-form layout="vertical" :disabled="!selectedClient || !isSelectedClientConnected">
+          <a-form layout="vertical">
             <a-form-item label="消息类型">
               <a-radio-group v-model:value="sendMode" button-style="solid">
                 <a-radio-button value="formatted">格式化消息</a-radio-button>
@@ -178,7 +178,6 @@
                 type="primary"
                 block
                 :loading="sending"
-                :disabled="!selectedClient || !isSelectedClientConnected"
                 @click="sendMessage"
               >
                 <template #icon><SendOutlined /></template>
