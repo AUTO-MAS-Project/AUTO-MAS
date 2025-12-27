@@ -323,6 +323,18 @@ class WebSocketClient:
                 self.logger.error(f"心跳循环异常: {type(e).__name__}: {e}")
                 break
 
+    def _get_backoff_delay(self) -> float:
+        """
+        计算指数退避延迟时间
+
+        Returns:
+            float: 延迟时间（秒），最大60秒
+        """
+        # 指数退避: base_interval * 2^(reconnect_count - 1)
+        delay = self.reconnect_interval * (2 ** (self._reconnect_count - 1))
+        # 限制最大延迟为60秒
+        return min(delay, 60.0)
+
     async def run(self):
         """
         运行 WebSocket 客户端（包含自动重连，使用指数退避策略）
