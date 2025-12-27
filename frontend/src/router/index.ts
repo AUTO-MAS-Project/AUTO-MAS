@@ -105,6 +105,12 @@ const routes = [
     meta: { title: 'OCR测试' },
   },
   {
+    path: '/WSdev',
+    name: 'WSdev',
+    component: () => import('../views/WSdev.vue'),
+    meta: { title: 'WSdev' },
+  },
+  {
     path: '/history',
     name: 'History',
     component: () => import('../views/history/index.vue'),
