@@ -208,6 +208,16 @@ class WebSocketClient:
                     await self._send_pong()
                     return
 
+            # 处理 command 类型消息
+            if data.get("type") == "command":
+                await self._handle_command(data)
+                # 同时也调用消息回调（如果有）
+                if self.on_message:
+                    result = self.on_message(data)
+                    if asyncio.iscoroutine(result):
+                        await result
+                return
+
             # 调用消息回调
             if self.on_message:
                 result = self.on_message(data)
@@ -218,6 +228,53 @@ class WebSocketClient:
             self.logger.warning(f"消息解析失败: {e}")
         except Exception as e:
             self.logger.error(f"处理消息时发生异常: {type(e).__name__}: {e}")
+
+    async def _handle_command(self, data: Dict[str, Any]):
+        """
+        处理 command 类型消息
+
+        Args:
+            data: 消息数据，格式为:
+                {
+                    "id": "Koishi",
+                    "type": "command",
+                    "data": {
+                        "endpoint": "queue.info",
+                        "params": {...}  # 可选
+                    }
+                }
+        """
+        try:
+            msg_id = data.get("id", "Unknown")
+            msg_data = data.get("data", {})
+            endpoint = msg_data.get("endpoint")
+            params = msg_data.get("params")
+
+            if not endpoint:
+                self.logger.warning(f"收到来自 [{msg_id}] 的 command 消息，但缺少 endpoint")
+                return
+
+            self.logger.info(f"收到来自 [{msg_id}] 的命令: {endpoint}")
+
+            # 调用命令执行器
+            from app.api.ws_command import execute_ws_command
+            result = await execute_ws_command(endpoint, params)
+
+            # 发送响应
+            response = {
+                "id": "Client",
+                "type": "response",
+                "data": {
+                    "endpoint": endpoint,
+                    "request_id": msg_id,
+                    **result
+                }
+            }
+            await self.send(response)
+            self.logger.debug(f"已响应命令 [{endpoint}]: success={result.get('success')}")
+
+        except Exception as e:
+            self.logger.error(f"处理命令时发生异常: {type(e).__name__}: {e}")
 
     async def _receive_loop(self):
         """消息接收循环"""
@@ -268,7 +325,7 @@ class WebSocketClient:
 
     async def run(self):
         """
-        运行 WebSocket 客户端（包含自动重连）
+        运行 WebSocket 客户端（包含自动重连，使用指数退避策略）
         """
         self._running = True
 
@@ -281,9 +338,13 @@ class WebSocketClient:
                     self.logger.error(f"已达到最大重连次数 ({self.max_reconnect_attempts})，停止重连")
                     break
 
-                self.logger.info(f"{self.reconnect_interval}秒后尝试重连... (第 {self._reconnect_count} 次)")
-                await asyncio.sleep(self.reconnect_interval)
+                delay = self._get_backoff_delay()
+                self.logger.info(f"{delay:.1f}秒后尝试重连... (第 {self._reconnect_count} 次)")
+                await asyncio.sleep(delay)
                 continue
+
+            # 连接成功，重置重连计数
+            self._reconnect_count = 0
 
             # 启动接收和心跳任务
             receive_task = asyncio.create_task(self._receive_loop())
@@ -328,8 +389,9 @@ class WebSocketClient:
                 self.logger.error(f"已达到最大重连次数 ({self.max_reconnect_attempts})，停止重连")
                 break
 
-            self.logger.info(f"{self.reconnect_interval}秒后尝试重连... (第 {self._reconnect_count} 次)")
-            await asyncio.sleep(self.reconnect_interval)
+            delay = self._get_backoff_delay()
+            self.logger.info(f"{delay:.1f}秒后尝试重连... (第 {self._reconnect_count} 次)")
+            await asyncio.sleep(delay)
 
         self.logger.info("WebSocket 客户端已停止")
 
