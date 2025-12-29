@@ -93,7 +93,7 @@ class MumuManager(DeviceBase):
         if result.returncode != 0:
             raise RuntimeError(f"命令执行失败: {result.stdout}")
 
-        if not is_mumu_nx_exists:
+        if not is_mumu_nx_exists and await self.find_mumu_nx_window() is not None:
             logger.info("关闭 MuMuNX 窗口")
             await self.close_mumu_nx_window()
 
