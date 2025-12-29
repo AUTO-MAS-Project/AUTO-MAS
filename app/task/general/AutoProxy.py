@@ -387,6 +387,7 @@ class AutoProxyTask(TaskExecuteBase):
                     Path(self.cur_user_config.get("Info", "ScriptAfterTask")),
                     "脚本后任务",
                 )
+            await asyncio.sleep(3)
 
     async def update_config(self):
 
