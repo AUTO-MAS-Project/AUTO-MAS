@@ -276,6 +276,7 @@ class AutoProxyTask(TaskExecuteBase):
                 logger.info(f"启动MAA进程: {self.maa_exe_path}")
                 self.wait_event.clear()
                 await self.maa_process_manager.open_process(self.maa_exe_path)
+                await asyncio.sleep(1)  # 等待 MAA 处理日志文件
                 await self.maa_log_monitor.start_monitor_file(
                     self.maa_log_path, self.log_start_time
                 )
