@@ -311,6 +311,7 @@ class AutoProxyTask(TaskExecuteBase):
                     )
 
                 await update_maa(self.maa_root_path)
+                await asyncio.sleep(3)
 
     async def set_maa(self, emulator_info: DeviceInfo):
         """配置MAA运行参数"""
