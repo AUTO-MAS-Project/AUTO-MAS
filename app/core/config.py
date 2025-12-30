@@ -609,7 +609,9 @@ class AppConfig(GlobalConfig):
             raise TypeError(f"脚本 {script_id} 不是通用脚本配置")
 
         # 使用 httpx 异步请求
-        async with httpx.AsyncClient(proxy=Config.get_proxy()) as client:
+        async with httpx.AsyncClient(
+            proxy=Config.get_proxy(), follow_redirects=True
+        ) as client:
             try:
                 response = await client.get(url)
                 if response.status_code == 200:
@@ -661,7 +663,9 @@ class AppConfig(GlobalConfig):
         }
         data = {"username": author, "description": description}
 
-        async with httpx.AsyncClient(proxy=Config.get_proxy()) as client:
+        async with httpx.AsyncClient(
+            proxy=Config.get_proxy(), follow_redirects=True
+        ) as client:
             try:
                 response = await client.post(
                     "https://share.auto-mas.top/api/upload/share",
@@ -1487,7 +1491,9 @@ class AppConfig(GlobalConfig):
         logger.info("开始获取活动关卡信息")
 
         try:
-            async with httpx.AsyncClient(proxy=self.get_proxy()) as client:
+            async with httpx.AsyncClient(
+                proxy=Config.get_proxy(), follow_redirects=True
+            ) as client:
                 response = await client.get(
                     "https://api.maa.plus/MaaAssistantArknights/api/stageAndTasksUpdateTime.json"
                 )
@@ -1704,7 +1710,9 @@ class AppConfig(GlobalConfig):
         logger.info("开始从 AUTO-MAS 服务器获取公告信息")
 
         try:
-            async with httpx.AsyncClient(proxy=self.get_proxy()) as client:
+            async with httpx.AsyncClient(
+                proxy=Config.get_proxy(), follow_redirects=True
+            ) as client:
                 response = await client.get(
                     "https://download.auto-mas.top/d/AUTO-MAS/Server/notice.json"
                 )
@@ -1757,7 +1765,9 @@ class AppConfig(GlobalConfig):
         logger.info("开始从 AUTO-MAS 服务器获取配置分享中心信息")
 
         try:
-            async with httpx.AsyncClient(proxy=self.get_proxy()) as client:
+            async with httpx.AsyncClient(
+                proxy=Config.get_proxy(), follow_redirects=True
+            ) as client:
                 response = await client.get(
                     "https://share.auto-mas.top/api/list/config/general"
                 )
