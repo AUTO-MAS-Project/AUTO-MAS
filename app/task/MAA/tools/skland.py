@@ -267,7 +267,7 @@ async def get_device_id() -> str:
     # 发送请求
     devices_info_url = f"{SKLAND_SM_CONFIG['protocol']}://{SKLAND_SM_CONFIG['apiHost']}{SKLAND_SM_CONFIG['apiPath']}"
 
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(proxy=Config.proxy) as client:
         response = await client.post(
             devices_info_url,
             json=body,
