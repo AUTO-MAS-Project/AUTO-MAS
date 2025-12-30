@@ -610,7 +610,7 @@ class AppConfig(GlobalConfig):
 
         # 使用 httpx 异步请求
         async with httpx.AsyncClient(
-            proxy=Config.get_proxy(), follow_redirects=True
+            proxy=self.get_proxy(), follow_redirects=True
         ) as client:
             try:
                 response = await client.get(url)
@@ -664,7 +664,7 @@ class AppConfig(GlobalConfig):
         data = {"username": author, "description": description}
 
         async with httpx.AsyncClient(
-            proxy=Config.get_proxy(), follow_redirects=True
+            proxy=self.get_proxy(), follow_redirects=True
         ) as client:
             try:
                 response = await client.post(
@@ -1492,7 +1492,7 @@ class AppConfig(GlobalConfig):
 
         try:
             async with httpx.AsyncClient(
-                proxy=Config.get_proxy(), follow_redirects=True
+                proxy=self.get_proxy(), follow_redirects=True
             ) as client:
                 response = await client.get(
                     "https://api.maa.plus/MaaAssistantArknights/api/stageAndTasksUpdateTime.json"
@@ -1711,7 +1711,7 @@ class AppConfig(GlobalConfig):
 
         try:
             async with httpx.AsyncClient(
-                proxy=Config.get_proxy(), follow_redirects=True
+                proxy=self.get_proxy(), follow_redirects=True
             ) as client:
                 response = await client.get(
                     "https://download.auto-mas.top/d/AUTO-MAS/Server/notice.json"
@@ -1766,7 +1766,7 @@ class AppConfig(GlobalConfig):
 
         try:
             async with httpx.AsyncClient(
-                proxy=Config.get_proxy(), follow_redirects=True
+                proxy=self.get_proxy(), follow_redirects=True
             ) as client:
                 response = await client.get(
                     "https://share.auto-mas.top/api/list/config/general"
