@@ -1,7 +1,7 @@
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { useSettingsApi } from '@/composables/useSettingsApi'
-import { mirrorManager } from '@/utils/mirrorManager'
+import { OpenAPI } from '@/api'
 import { getLogger } from '@/utils/logger'
 
 const logger = getLogger('音频播放器')
@@ -61,7 +61,7 @@ export function useAudioPlayer() {
       // 停止当前播放的音频
       stopCurrentAudio()
 
-      const baseUrl = mirrorManager.getApiEndpoint('local')
+      const baseUrl = OpenAPI.BASE
       let audioUrl: string | null = null
 
       // 1. 优先检查 both 路径
