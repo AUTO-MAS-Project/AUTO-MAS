@@ -243,7 +243,7 @@ export class MirrorService {
         etag?: string
     }> {
         return new Promise((resolve) => {
-            const targetUrl = url || 'https://download.auto-mas.top/d/AUTO-MAS/Server/mirror.json'
+            const targetUrl = url || 'https://api.auto-mas.top/file/Server/mirror.json'
             logger.info(`正在检查云端配置: ${targetUrl}`)
             if (currentEtag) {
                 logger.info(`当前 ETag: ${currentEtag}`)
