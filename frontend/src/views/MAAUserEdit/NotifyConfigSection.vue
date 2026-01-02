@@ -8,7 +8,8 @@
         <span style="font-weight: 500">启用通知</span>
       </a-col>
       <a-col :span="18">
-        <a-switch v-model:checked="formData.Notify.Enabled" :disabled="loading" />
+        <a-switch v-model:checked="formData.Notify.Enabled" :disabled="loading"
+          @change="emitSave('Notify.Enabled', formData.Notify.Enabled)" />
         <span class="switch-description">启用后将发送此用户的任务通知到选中的渠道</span>
       </a-col>
     </a-row>
@@ -18,15 +19,11 @@
         <span style="font-weight: 500">通知内容</span>
       </a-col>
       <a-col :span="18" style="display: flex; gap: 32px">
-        <a-checkbox
-          v-model:checked="formData.Notify.IfSendStatistic"
-          :disabled="loading || !formData.Notify.Enabled"
-          >统计信息
+        <a-checkbox v-model:checked="formData.Notify.IfSendStatistic" :disabled="loading || !formData.Notify.Enabled"
+          @change="emitSave('Notify.IfSendStatistic', formData.Notify.IfSendStatistic)">统计信息
         </a-checkbox>
-        <a-checkbox
-          v-model:checked="formData.Notify.IfSendSixStar"
-          :disabled="loading || !formData.Notify.Enabled"
-          >公开招募高资喜报
+        <a-checkbox v-model:checked="formData.Notify.IfSendSixStar" :disabled="loading || !formData.Notify.Enabled"
+          @change="emitSave('Notify.IfSendSixStar', formData.Notify.IfSendSixStar)">公开招募高资喜报
         </a-checkbox>
       </a-col>
     </a-row>
@@ -34,51 +31,34 @@
     <!-- 邮件通知 -->
     <a-row :gutter="24" style="margin-top: 16px">
       <a-col :span="6">
-        <a-checkbox
-          v-model:checked="formData.Notify.IfSendMail"
-          :disabled="loading || !formData.Notify.Enabled"
-          >邮件通知
+        <a-checkbox v-model:checked="formData.Notify.IfSendMail" :disabled="loading || !formData.Notify.Enabled"
+          @change="emitSave('Notify.IfSendMail', formData.Notify.IfSendMail)">邮件通知
         </a-checkbox>
       </a-col>
       <a-col :span="18">
-        <a-input
-          v-model:value="formData.Notify.ToAddress"
-          placeholder="请输入收件人邮箱地址"
-          :disabled="loading || !formData.Notify.Enabled || !formData.Notify.IfSendMail"
-          size="large"
-          style="width: 100%"
-        />
+        <a-input v-model:value="formData.Notify.ToAddress" placeholder="请输入收件人邮箱地址"
+          :disabled="loading || !formData.Notify.Enabled || !formData.Notify.IfSendMail" size="large"
+          style="width: 100%" @blur="emitSave('Notify.ToAddress', formData.Notify.ToAddress)" />
       </a-col>
     </a-row>
 
     <!-- Server酱通知 -->
     <a-row :gutter="24" style="margin-top: 16px">
       <a-col :span="6">
-        <a-checkbox
-          v-model:checked="formData.Notify.IfServerChan"
-          :disabled="loading || !formData.Notify.Enabled"
-          >Server酱
+        <a-checkbox v-model:checked="formData.Notify.IfServerChan" :disabled="loading || !formData.Notify.Enabled"
+          @change="emitSave('Notify.IfServerChan', formData.Notify.IfServerChan)">Server酱
         </a-checkbox>
       </a-col>
       <a-col :span="18" style="display: flex; gap: 8px">
-        <a-input
-          v-model:value="formData.Notify.ServerChanKey"
-          placeholder="请输入SENDKEY"
-          :disabled="loading || !formData.Notify.Enabled || !formData.Notify.IfServerChan"
-          size="large"
-          style="flex: 2"
-        />
+        <a-input v-model:value="formData.Notify.ServerChanKey" placeholder="请输入SENDKEY"
+          :disabled="loading || !formData.Notify.Enabled || !formData.Notify.IfServerChan" size="large" style="flex: 2"
+          @blur="emitSave('Notify.ServerChanKey', formData.Notify.ServerChanKey)" />
       </a-col>
     </a-row>
 
     <!-- 自定义 Webhook 通知 -->
     <div style="margin-top: 16px">
-      <WebhookManager
-        mode="user"
-        :script-id="props.scriptId"
-        :user-id="props.userId"
-        @change="handleWebhookChange"
-      />
+      <WebhookManager mode="user" :script-id="props.scriptId" :user-id="props.userId" @change="handleWebhookChange" />
     </div>
   </div>
 </template>
@@ -97,11 +77,18 @@ const props = defineProps<{
   userId?: string
 }>()
 
+const emit = defineEmits<{
+  save: [key: string, value: any]
+}>()
+
+const emitSave = (key: string, value: any) => {
+  emit('save', key, value)
+}
+
 // 处理 Webhook 变化
 const handleWebhookChange = () => {
-  // 这里可以添加额外的处理逻辑，比如验证或保存
+  // Webhook 有自己的保存逻辑，这里只记录日志
   webhookLogger.info('User webhooks changed for script:', props.scriptId, 'user:', props.userId)
-  // 注意：实际保存会在用户点击保存按钮时进行，这里只是更新本地数据
 }
 </script>
 

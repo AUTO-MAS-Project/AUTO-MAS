@@ -6,20 +6,11 @@
     </div>
 
     <!-- 搜索筛选区域 -->
-    <HistorySearchPanel
-      :mode="searchForm.mode"
-      :start-date="searchForm.startDate"
-      :end-date="searchForm.endDate"
-      :current-preset="currentPreset"
-      :loading="searchLoading"
-      @update:mode="searchForm.mode = $event"
-      @update:start-date="searchForm.startDate = $event"
-      @update:end-date="searchForm.endDate = $event"
-      @quick-select="handleQuickTimeSelect"
-      @search="handleSearch"
-      @reset="handleReset"
-      @date-change="handleDateChange"
-    />
+    <HistorySearchPanel :mode="searchForm.mode" :start-date="searchForm.startDate" :end-date="searchForm.endDate"
+      :current-preset="currentPreset" :loading="searchLoading" @update:mode="searchForm.mode = $event"
+      @update:start-date="searchForm.startDate = $event" @update:end-date="searchForm.endDate = $event"
+      @quick-select="handleQuickTimeSelect" @search="handleSearch" @reset="handleReset"
+      @date-change="handleDateChange" />
 
     <!-- 主内容区域 -->
     <div class="main-content">
@@ -34,47 +25,26 @@
         <!-- 数据展示 -->
         <div v-else class="content-layout">
           <!-- 左侧日期列表 -->
-          <HistoryDateSidebar
-            :history-data="historyData"
-            :active-keys="activeKeys"
-            :selected-user="selectedUser"
-            @update:active-keys="activeKeys = $event"
-            @select-user="handleSelectUser"
-          />
+          <HistoryDateSidebar :history-data="historyData" :active-keys="activeKeys" :selected-user="selectedUser"
+            @update:active-keys="activeKeys = $event" @select-user="handleSelectUser" />
 
           <!-- 右侧详情区域 -->
-          <HistoryDetailPanel
-            :has-user-selected="!!selectedUserData"
-            :records="selectedUserData?.index || []"
-            :selected-record-index="selectedRecordIndex"
-            :error-info="selectedUserData?.error_info || null"
-            @select-record="handleSelectRecord"
-          />
+          <HistoryDetailPanel :has-user-selected="!!selectedUserData" :records="selectedUserData?.index || []"
+            :selected-record-index="selectedRecordIndex" :error-info="selectedUserData?.error_info || null"
+            :recruit-statistics="selectedUserData?.recruit_statistics || null"
+            :drop-statistics="selectedUserData?.drop_statistics || null" @select-record="handleSelectRecord" />
         </div>
       </a-spin>
     </div>
 
     <!-- 日志弹窗 -->
-    <HistoryLogModal
-      :open="logModalOpen"
-      :log-content="currentDetail?.log_content || null"
-      :loading="detailLoading"
-      :has-file="!!currentJsonFile"
-      :record-date="currentRecordDate"
-      :record-status="currentRecordStatus"
-      :error-message="currentErrorMessage"
-      :recruit-statistics="currentDetail?.recruit_statistics || null"
-      :drop-statistics="currentDetail?.drop_statistics || null"
-      :font-size="editorConfig.fontSize"
-      :font-size-options="fontSizeOptions"
-      :editor-theme="editorTheme"
-      :monaco-options="monacoOptions"
-      :register-log-language="registerLogLanguage"
-      @close="logModalOpen = false"
-      @open-file="handleOpenLogFile"
-      @open-directory="handleOpenLogDirectory"
-      @update:font-size="setEditorConfig({ fontSize: $event })"
-    />
+    <HistoryLogModal :open="logModalOpen" :log-content="currentDetail?.log_content || null" :loading="detailLoading"
+      :has-file="!!currentJsonFile" :record-date="currentRecordDate" :record-status="currentRecordStatus"
+      :error-message="currentErrorMessage" :recruit-statistics="currentDetail?.recruit_statistics || null"
+      :drop-statistics="currentDetail?.drop_statistics || null" :font-size="editorConfig.fontSize"
+      :font-size-options="fontSizeOptions" :editor-theme="editorTheme" :monaco-options="monacoOptions"
+      :register-log-language="registerLogLanguage" @close="logModalOpen = false" @open-file="handleOpenLogFile"
+      @open-directory="handleOpenLogDirectory" @update:font-size="setEditorConfig({ fontSize: $event })" />
   </div>
 </template>
 

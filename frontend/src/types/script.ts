@@ -1,4 +1,6 @@
 // 脚本类型定义
+import type { MaaConfig, GeneralConfig } from '@/api'
+
 export type ScriptType = 'MAA' | 'General'
 
 // MAA脚本配置
@@ -56,6 +58,9 @@ export interface GeneralScriptConfig {
     ConfigPathMode: string
     ErrorLog: string
     IfTrackProcess: boolean
+    TrackProcessName: string
+    TrackProcessExe: string
+    TrackProcessCmdline: string
     LogPath: string
     LogPathFormat: string
     LogTimeEnd: number
@@ -77,7 +82,7 @@ export interface Script {
   id: string
   type: ScriptType
   name: string
-  config: MAAScriptConfig | GeneralScriptConfig
+  config: MaaConfig | GeneralConfig
   users: User[]
 }
 
@@ -181,7 +186,7 @@ export interface ScriptDetail {
   uid: string
   type: ScriptType
   name: string
-  config: MAAScriptConfig | GeneralScriptConfig
+  config: MaaConfig | GeneralConfig
   users?: User[]
   createTime?: string
 }

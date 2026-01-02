@@ -14,12 +14,7 @@
             配置完成后，请点击"保存配置"按钮来结束配置会话。
           </p>
           <div class="mask-actions">
-            <a-button
-              v-if="maaWebsocketId"
-              type="primary"
-              size="large"
-              @click="handleSaveMAAConfig"
-            >
+            <a-button v-if="maaWebsocketId" type="primary" size="large" @click="handleSaveMAAConfig">
               保存配置
             </a-button>
           </div>
@@ -27,89 +22,45 @@
       </div>
     </teleport>
     <!-- 头部组件 -->
-    <MAAUserEditHeader
-      :script-id="scriptId"
-      :script-name="scriptName"
-      :is-edit="isEdit"
-      :user-mode="formData.Info.Mode"
-      :maa-config-loading="maaConfigLoading"
-      :show-maa-config-mask="showMAAConfigMask"
-      :loading="loading"
-      @handle-m-a-a-config="handleMAAConfig"
-      @handle-cancel="handleCancel"
-    />
+    <MAAUserEditHeader :script-id="scriptId" :script-name="scriptName" :is-edit="isEdit" :user-mode="formData.Info.Mode"
+      :maa-config-loading="maaConfigLoading" :show-maa-config-mask="showMAAConfigMask" :loading="loading"
+      @handle-m-a-a-config="handleMAAConfig" @handle-cancel="handleCancel" />
 
     <div class="user-edit-content">
       <a-card class="config-card">
-        <a-form
-          ref="formRef"
-          :model="formData"
-          :rules="rules"
-          layout="vertical"
-          class="config-form"
-        >
+        <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
           <!-- 基本信息组件 -->
-          <BasicInfoSection
-            :form-data="formData"
-            :loading="loading"
-            :server-options="serverOptions"
-            :infrastructure-config-path="infrastructureConfigPath"
-            :infrastructure-importing="infrastructureImporting"
+          <BasicInfoSection :form-data="formData" :loading="loading" :server-options="serverOptions"
+            :infrastructure-config-path="infrastructureConfigPath" :infrastructure-importing="infrastructureImporting"
             :infrastructure-options="infrastructureOptions"
-            :infrastructure-options-loading="infrastructureOptionsLoading"
-            :is-edit="isEdit"
-            @select-and-import-infrastructure-config="selectAndImportInfrastructureConfig"
-          />
+            :infrastructure-options-loading="infrastructureOptionsLoading" :is-edit="isEdit"
+            @select-and-import-infrastructure-config="selectAndImportInfrastructureConfig" @save="handleFieldSave" />
 
           <!-- 关卡配置组件 -->
-          <StageConfigSection
-            :form-data="formData"
-            :loading="loading"
-            :stage-mode-options="stageModeOptions"
-            :stage-options="stageOptions"
-            :stage-remain-options="stageRemainOptions"
-            :is-plan-mode="isPlanMode"
-            :display-medicine-numb="displayMedicineNumb"
-            :display-series-numb="displaySeriesNumb"
-            :display-stage="displayStage"
-            :display-stage1="displayStage1"
-            :display-stage2="displayStage2"
-            :display-stage3="displayStage3"
-            :display-stage-remain="displayStageRemain"
-            :medicine-numb-tooltip="medicineNumbTooltip"
-            :series-numb-tooltip="seriesNumbTooltip"
-            :stage-tooltip="stageTooltip"
-            :stage1-tooltip="stage1Tooltip"
-            :stage2-tooltip="stage2Tooltip"
-            :stage3-tooltip="stage3Tooltip"
-            :stage-remain-tooltip="stageRemainTooltip"
-            @update-medicine-numb="updateMedicineNumb"
-            @update-series-numb="updateSeriesNumb"
-            @update-stage="updateStage"
-            @update-stage1="updateStage1"
-            @update-stage2="updateStage2"
-            @update-stage3="updateStage3"
-            @update-stage-remain="updateStageRemain"
-            @handle-add-custom-stage="addCustomStage"
-            @handle-add-custom-stage1="addCustomStage1"
-            @handle-add-custom-stage2="addCustomStage2"
-            @handle-add-custom-stage3="addCustomStage3"
-            @handle-add-custom-stage-remain="addCustomStageRemain"
-          />
+          <StageConfigSection :form-data="formData" :loading="loading" :stage-mode-options="stageModeOptions"
+            :stage-options="stageOptions" :stage-remain-options="stageRemainOptions" :is-plan-mode="isPlanMode"
+            :display-medicine-numb="displayMedicineNumb" :display-series-numb="displaySeriesNumb"
+            :display-stage="displayStage" :display-stage1="displayStage1" :display-stage2="displayStage2"
+            :display-stage3="displayStage3" :display-stage-remain="displayStageRemain"
+            :medicine-numb-tooltip="medicineNumbTooltip" :series-numb-tooltip="seriesNumbTooltip"
+            :stage-tooltip="stageTooltip" :stage1-tooltip="stage1Tooltip" :stage2-tooltip="stage2Tooltip"
+            :stage3-tooltip="stage3Tooltip" :stage-remain-tooltip="stageRemainTooltip"
+            @update-medicine-numb="updateMedicineNumb" @update-series-numb="updateSeriesNumb"
+            @update-stage="updateStage" @update-stage1="updateStage1" @update-stage2="updateStage2"
+            @update-stage3="updateStage3" @update-stage-remain="updateStageRemain"
+            @handle-add-custom-stage="addCustomStage" @handle-add-custom-stage1="addCustomStage1"
+            @handle-add-custom-stage2="addCustomStage2" @handle-add-custom-stage3="addCustomStage3"
+            @handle-add-custom-stage-remain="addCustomStageRemain" @save="handleFieldSave" />
 
           <!-- 任务配置组件 -->
-          <TaskConfigSection :form-data="formData" :loading="loading" />
+          <TaskConfigSection :form-data="formData" :loading="loading" @save="handleFieldSave" />
 
           <!-- 森空岛配置组件 -->
-          <SkylandConfigSection :form-data="formData" :loading="loading" />
+          <SkylandConfigSection :form-data="formData" :loading="loading" @save="handleFieldSave" />
 
           <!-- 通知配置组件 -->
-          <NotifyConfigSection
-            :form-data="formData"
-            :loading="loading"
-            :script-id="scriptId"
-            :user-id="userId"
-          />
+          <NotifyConfigSection :form-data="formData" :loading="loading" :script-id="scriptId" :user-id="userId"
+            @save="handleFieldSave" />
         </a-form>
       </a-card>
     </div>
@@ -533,47 +484,68 @@ watch(
   }
 )
 
-// 实时保存函数（带防抖）
-let saveTimer: NodeJS.Timeout | null = null
-const autoSave = async () => {
+// 即时保存单个字段变更
+const handleFieldSave = async (key: string, value: any) => {
   if (isInitializing.value || isSaving.value || !userId) return
-  
-  // 清除之前的定时器
-  if (saveTimer) {
-    clearTimeout(saveTimer)
-  }
-  
-  // 设置新的定时器，500ms 后保存
-  saveTimer = setTimeout(async () => {
-    isSaving.value = true
-    try {
-      // 确保扁平化字段同步到嵌套数据
-      formData.Info.Name = formData.userName
-      formData.Info.Id = formData.userId
-      
-      const userData = {
-        Info: { ...formData.Info },
-        Task: { ...formData.Task },
-        Notify: { ...formData.Notify },
-        Data: { ...formData.Data },
-      }
-      
-      await updateUser(scriptId, userId, userData)
-      maaUserLogger.info('用户配置已自动保存')
-    } catch (error) {
-      maaUserLogger.error('自动保存失败:', error)
-    } finally {
-      isSaving.value = false
+
+  isSaving.value = true
+  try {
+    // 解析 key 路径，例如 "Info.Status" -> { Info: { Status: value } }
+    const parts = key.split('.')
+    let userData: Record<string, any> = {}
+    let current = userData
+
+    for (let i = 0; i < parts.length - 1; i++) {
+      current[parts[i]] = {}
+      current = current[parts[i]]
     }
-  }, 500)
+    current[parts[parts.length - 1]] = value
+
+    // 特殊处理：userName 和 userId 需要同步到 Info
+    if (key === 'userName') {
+      userData = { Info: { Name: value } }
+    } else if (key === 'userId') {
+      userData = { Info: { Id: value } }
+    }
+
+    await updateUser(scriptId, userId, userData)
+    // 刷新数据
+    await loadUserData()
+    maaUserLogger.info('用户配置已保存:', key)
+  } catch (error) {
+    maaUserLogger.error('保存失败:', error)
+  } finally {
+    isSaving.value = false
+  }
 }
 
-// 监听表单数据变化，自动保存
-watch(() => formData.userName, autoSave)
-watch(() => formData.userId, autoSave)
-watch(() => formData.Info, autoSave, { deep: true })
-watch(() => formData.Task, autoSave, { deep: true })
-watch(() => formData.Notify, autoSave, { deep: true })
+// 保存完整用户数据（仅用于特殊批量操作）
+const saveFullUserData = async () => {
+  if (isInitializing.value || isSaving.value || !userId) return
+
+  isSaving.value = true
+  try {
+    // 确保扁平化字段同步到嵌套数据
+    formData.Info.Name = formData.userName
+    formData.Info.Id = formData.userId
+
+    const userData = {
+      Info: { ...formData.Info },
+      Task: { ...formData.Task },
+      Notify: { ...formData.Notify },
+      Data: { ...formData.Data },
+    }
+
+    await updateUser(scriptId, userId, userData)
+    maaUserLogger.info('用户配置已保存')
+  } catch (error) {
+    maaUserLogger.error('保存失败:', error)
+  } finally {
+    isSaving.value = false
+  }
+}
+
+// 注意：移除了 watch 自动保存，现在由子组件的 @save 事件触发保存
 
 // 加载脚本信息
 const loadScriptInfo = async () => {
@@ -668,17 +640,11 @@ const loadUserData = async () => {
           }
         })
 
-        maaUserLogger.info('用户数据加载成功:', {
-          userName: formData.userName,
-          userId: formData.userId,
-          InfoName: formData.Info.Name,
-          InfoId: formData.Info.Id,
-          fullData: formData,
-        })
-        
+        maaUserLogger.info('用户数据加载成功')
+
         // 加载基建配置选项
         await loadInfrastructureOptions()
-        
+
         // 数据加载完成，允许自动保存
         isInitializing.value = false
       } else {
@@ -729,33 +695,33 @@ const selectAndImportInfrastructureConfig = async () => {
     message.warning('请先保存用户后再导入配置')
     return
   }
-  
+
   try {
     // 选择文件
     const path = await (window as any).electronAPI?.selectFile([
       { name: 'JSON 文件', extensions: ['json'] },
       { name: '所有文件', extensions: ['*'] },
     ])
-    
+
     if (path && path.length > 0) {
       infrastructureImporting.value = true
-      
+
       // 直接导入配置
       const result = await Service.importInfrastructureApiScriptsUserInfrastructurePost({
         scriptId: scriptId,
         userId: userId,
         jsonFile: path[0],
       })
-      
+
       if (result && result.code === 200) {
         // 从文件路径中提取文件名作为 InfrastName
         const fileName = path[0].split('\\').pop()?.split('/').pop() || ''
         formData.Info.InfrastName = fileName.replace('.json', '')
         // 清空 InfrastIndex，等待用户从下拉框中选择
         formData.Info.InfrastIndex = ''
-        
+
         message.success('基建配置导入成功')
-        
+
         // 重新加载基建配置选项
         await loadInfrastructureOptions()
       } else {
@@ -773,14 +739,14 @@ const selectAndImportInfrastructureConfig = async () => {
 // 加载基建配置选项
 const loadInfrastructureOptions = async () => {
   if (!isEdit.value) return
-  
+
   try {
     infrastructureOptionsLoading.value = true
     const result = await Service.getUserComboxInfrastructureApiScriptsUserComboxInfrastructurePost({
       scriptId: scriptId,
       userId: userId
     })
-    
+
     if (result && result.code === 200 && result.data) {
       infrastructureOptions.value = result.data.map((item: any) => ({
         label: item.label,
@@ -832,15 +798,43 @@ const handleMAAConfig = async () => {
           maaSubscriptionId.value = null
           maaWebsocketId.value = null
           showMAAConfigMask.value = false
+          if (maaConfigTimeout) {
+            window.clearTimeout(maaConfigTimeout)
+            maaConfigTimeout = null
+          }
           return
         }
 
-        if (wsMessage.data && wsMessage.data.Accomplish) {
-          message.success(`用户 ${formData.Info?.Name || formData.userName} 的配置已完成`)
+        // 处理Info类型的错误消息（显示错误但不取消订阅，等待Signal消息）
+        if (wsMessage.type === 'Info' && wsMessage.data && wsMessage.data.Error) {
+          maaUserLogger.error(
+            `用户 ${formData.Info?.Name || formData.userName} MAA配置异常:`,
+            wsMessage.data.Error
+          )
+          message.error(`MAA配置失败: ${wsMessage.data.Error}`)
+          // 不取消订阅，等待Signal类型的Accomplish消息
+          return
+        }
+
+        // 处理任务结束消息（Signal类型且包含Accomplish字段）
+        if (wsMessage.type === 'Signal' && wsMessage.data && wsMessage.data.Accomplish !== undefined) {
+          maaUserLogger.info(
+            `用户 ${formData.Info?.Name || formData.userName} MAA配置任务已结束`
+          )
+          // 根据结果显示不同消息
+          const result = wsMessage.data.Accomplish
+          if (result && !result.includes('异常') && !result.includes('错误')) {
+            message.success(`用户 ${formData.Info?.Name || formData.userName} 的配置已完成`)
+          }
+          // 清理连接
           unsubscribe(subscriptionId)
           maaSubscriptionId.value = null
           maaWebsocketId.value = null
           showMAAConfigMask.value = false
+          if (maaConfigTimeout) {
+            window.clearTimeout(maaConfigTimeout)
+            maaConfigTimeout = null
+          }
         }
       })
 
@@ -1023,42 +1017,49 @@ const handleCancel = () => {
 const updateMedicineNumb = (value: number) => {
   if (!isPlanMode.value) {
     formData.Info.MedicineNumb = value
+    handleFieldSave('Info.MedicineNumb', value)
   }
 }
 
 const updateSeriesNumb = (value: string) => {
   if (!isPlanMode.value) {
     formData.Info.SeriesNumb = value
+    handleFieldSave('Info.SeriesNumb', value)
   }
 }
 
 const updateStage = (value: string) => {
   if (!isPlanMode.value) {
     formData.Info.Stage = value
+    handleFieldSave('Info.Stage', value)
   }
 }
 
 const updateStage1 = (value: string) => {
   if (!isPlanMode.value) {
     formData.Info.Stage_1 = value
+    handleFieldSave('Info.Stage_1', value)
   }
 }
 
 const updateStage2 = (value: string) => {
   if (!isPlanMode.value) {
     formData.Info.Stage_2 = value
+    handleFieldSave('Info.Stage_2', value)
   }
 }
 
 const updateStage3 = (value: string) => {
   if (!isPlanMode.value) {
     formData.Info.Stage_3 = value
+    handleFieldSave('Info.Stage_3', value)
   }
 }
 
 const updateStageRemain = (value: string) => {
   if (!isPlanMode.value) {
     formData.Info.Stage_Remain = value
+    handleFieldSave('Info.Stage_Remain', value)
   }
 }
 
@@ -1073,7 +1074,7 @@ onMounted(() => {
   loadScriptInfo()
   loadStageModeOptions()
   loadStageOptions()
-  
+
   // 如果是编辑模式，在用户数据加载后会自动加载基建配置选项
   // 如果是新建模式，也尝试加载基建配置选项（如果已经有用户ID）
   if (isEdit.value) {

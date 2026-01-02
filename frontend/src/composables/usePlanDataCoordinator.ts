@@ -543,7 +543,7 @@ export function usePlanDataCoordinator() {
   // 更新计划表ID
   const updatePlanId = (newPlanId: string) => {
     if (currentPlanId.value !== newPlanId) {
-      logger.info(`[计划表] 切换: ${currentPlanId.value} -> ${newPlanId}`)
+      logger.info(`切换: ${currentPlanId.value} -> ${newPlanId}`)
       currentPlanId.value = newPlanId
       // 注意：自定义关卡定义将在 fromApiData 中从后端数据重新推断
     }

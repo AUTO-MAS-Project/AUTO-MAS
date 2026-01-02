@@ -23,26 +23,16 @@
       </div>
 
       <div v-else class="records-scroll">
-        <div
-          v-for="(record, index) in records"
-          :key="record.jsonFile"
-          class="record-item"
-          :class="{
-            active: selectedIndex === index,
-            success: record.status === 'DONE',
-            error: record.status === 'ERROR',
-          }"
-          @click="$emit('select', index, record)"
-        >
+        <div v-for="(record, index) in records" :key="record.jsonFile" class="record-item" :class="{
+          active: selectedIndex === index,
+          success: record.status === 'DONE',
+          error: record.status === 'ERROR',
+        }" @click="$emit('select', index, record)">
           <div class="record-status-bar" :class="record.status === 'DONE' ? 'success' : 'error'" />
           <div class="record-content">
             <div class="record-main">
               <span class="record-time">{{ record.date }}</span>
-              <a-tag
-                :color="record.status === 'DONE' ? 'success' : 'error'"
-                size="small"
-                class="status-tag"
-              >
+              <a-tag :color="record.status === 'DONE' ? 'success' : 'error'" size="small" class="status-tag">
                 <CheckCircleOutlined v-if="record.status === 'DONE'" />
                 <CloseCircleOutlined v-else />
                 {{

@@ -20,13 +20,8 @@
             新建队列
           </a-button>
 
-          <a-popconfirm
-            v-if="queueList.length > 0"
-            title="确定要删除这个队列吗？"
-            ok-text="确定"
-            cancel-text="取消"
-            @confirm="handleRemoveQueue(activeQueueId)"
-          >
+          <a-popconfirm v-if="queueList.length > 0" title="确定要删除这个队列吗？" ok-text="确定" cancel-text="取消"
+            @confirm="handleRemoveQueue(activeQueueId)">
             <a-button danger size="large" :disabled="!activeQueueId">
               <template #icon>
                 <DeleteOutlined />
@@ -68,14 +63,9 @@
           <!-- 队列按钮组 -->
           <div class="queue-buttons-container">
             <a-space wrap size="middle">
-              <a-button
-                v-for="queue in queueList"
-                :key="queue.id"
-                :type="activeQueueId === queue.id ? 'primary' : 'default'"
-                size="large"
-                class="queue-button"
-                @click="onQueueChange(queue.id)"
-              >
+              <a-button v-for="queue in queueList" :key="queue.id"
+                :type="activeQueueId === queue.id ? 'primary' : 'default'" size="large" class="queue-button"
+                @click="onQueueChange(queue.id)">
                 {{ queue.name }}
               </a-button>
             </a-space>
@@ -96,15 +86,9 @@
               </a-button>
             </div>
             <div v-else class="queue-title-edit">
-              <a-input
-                ref="queueNameInputRef"
-                v-model:value="currentQueueName"
-                placeholder="请输入队列名称"
-                class="queue-title-input"
-                :maxlength="50"
-                @blur="finishEditQueueName"
-                @press-enter="finishEditQueueName"
-              />
+              <a-input ref="queueNameInputRef" v-model:value="currentQueueName" placeholder="请输入队列名称"
+                class="queue-title-input" :maxlength="50" @blur="finishEditQueueName"
+                @press-enter="finishEditQueueName" />
             </div>
           </div>
         </template>
@@ -120,12 +104,8 @@
                     <QuestionCircleOutlined class="help-icon" />
                   </a-tooltip>
                 </div>
-                <a-select
-                  v-model:value="currentStartUpEnabled"
-                  style="width: 100%"
-                  size="large"
-                  @change="onQueueSwitchChange"
-                >
+                <a-select v-model:value="currentStartUpEnabled" style="width: 100%" size="large"
+                  @change="(value: any) => handleConfigChange('StartUpEnabled', value)">
                   <a-select-option :value="true">是</a-select-option>
                   <a-select-option :value="false">否</a-select-option>
                 </a-select>
@@ -139,12 +119,8 @@
                     <QuestionCircleOutlined class="help-icon" />
                   </a-tooltip>
                 </div>
-                <a-select
-                  v-model:value="currentTimeEnabled"
-                  style="width: 100%"
-                  size="large"
-                  @change="onQueueSwitchChange"
-                >
+                <a-select v-model:value="currentTimeEnabled" style="width: 100%" size="large"
+                  @change="(value: any) => handleConfigChange('TimeEnabled', value)">
                   <a-select-option :value="true">是</a-select-option>
                   <a-select-option :value="false">否</a-select-option>
                 </a-select>
@@ -158,14 +134,9 @@
                     <QuestionCircleOutlined class="help-icon" />
                   </a-tooltip>
                 </div>
-                <a-select
-                  v-model:value="currentAfterAccomplish"
-                  style="width: 100%"
-                  :options="afterAccomplishOptions"
-                  placeholder="请选择操作"
-                  size="large"
-                  @change="onAfterAccomplishChange"
-                />
+                <a-select v-model:value="currentAfterAccomplish" style="width: 100%" :options="afterAccomplishOptions"
+                  placeholder="请选择操作" size="large"
+                  @change="(value: any) => handleConfigChange('AfterAccomplish', value)" />
               </div>
             </a-col>
           </a-row>
@@ -176,24 +147,14 @@
         <a-row :gutter="24" class="managers-row">
           <!-- 定时项管理 -->
           <a-col :span="12" class="manager-col">
-            <TimeSetManager
-              v-if="activeQueueId && currentQueueData"
-              :queue-id="activeQueueId"
-              :time-sets="currentTimeSets"
-              style="font-size: 14px"
-              @refresh="refreshTimeSets"
-            />
+            <TimeSetManager v-if="activeQueueId && currentQueueData" :queue-id="activeQueueId"
+              :time-sets="currentTimeSets" style="font-size: 14px" @refresh="refreshTimeSets" />
           </a-col>
 
           <!-- 队列项管理 -->
           <a-col :span="12" class="manager-col">
-            <QueueItemManager
-              v-if="activeQueueId && currentQueueData"
-              :queue-id="activeQueueId"
-              :queue-items="currentQueueItems"
-              style="font-size: 14px"
-              @refresh="refreshQueueItems"
-            />
+            <QueueItemManager v-if="activeQueueId && currentQueueData" :queue-id="activeQueueId"
+              :queue-items="currentQueueItems" style="font-size: 14px" @refresh="refreshQueueItems" />
           </a-col>
         </a-row>
       </a-card>
@@ -327,7 +288,6 @@ const loadQueueData = async (queueId: string) => {
       if (currentQueue) {
         currentQueueName.value = currentQueue.name
       }
-      currentQueueEnabled.value = queueData.enabled ?? true
 
       // 使用nextTick确保DOM更新后再加载数据
       await nextTick()
@@ -389,7 +349,7 @@ const refreshTimeSets = async () => {
           const timeSetData = response.data[timeSetId]
           if (timeSetData?.Info) {
             // 解析时间字符串 "HH:mm"
-            const originalTimeString = timeSetData.Info.Set || timeSetData.Info.Time || '00:00'
+            const originalTimeString = timeSetData.Info.Time || '00:00'
             const [hours = 0, minutes = 0] = originalTimeString.split(':').map(Number)
 
             // 创建标准化的时间字符串
@@ -401,7 +361,6 @@ const refreshTimeSets = async () => {
               id: timeSetId,
               time: timeString,
               enabled: Boolean(timeSetData.Info.Enabled),
-              description: timeSetData.Info?.Description || '',
             })
           }
         } catch (itemError) {
@@ -473,15 +432,17 @@ const refreshQueueItems = async () => {
   }
 }
 
-// 队列名称编辑失焦处理
-const onQueueNameBlur = () => {
-  // 当用户编辑完队列名称后，更新按钮显示的名称
+// 队列名称编辑失焦处理 - 保存到后端
+const onQueueNameBlur = async () => {
+  // 当用户编辑完队列名称后，更新按钮显示的名称并保存
   if (activeQueueId.value) {
     const currentQueue = queueList.value.find(queue => queue.id === activeQueueId.value)
     if (currentQueue) {
       currentQueue.name =
         currentQueueName.value || `队列 ${queueList.value.indexOf(currentQueue) + 1}`
     }
+    // 保存到后端
+    await handleSaveChange('Name', currentQueueName.value)
   }
 }
 
@@ -504,22 +465,9 @@ const finishEditQueueName = () => {
   onQueueNameBlur()
 }
 
-// 队列开关切换处理
-const onQueueSwitchChange = () => {
-  // 开关切换时自动保存
-  autoSave()
-}
-
-// 完成后操作切换处理
-const onAfterAccomplishChange = () => {
-  // 完成后操作切换时自动保存
-  autoSave()
-}
-
-// 队列状态切换处理
-const onQueueStatusChange = () => {
-  // 状态切换时自动保存
-  autoSave()
+// 统一的配置字段变更处理 - 即时保存单个字段
+const handleConfigChange = async (key: string, value: any) => {
+  await handleSaveChange(key, value)
 }
 
 // 添加队列
@@ -554,7 +502,7 @@ const handleAddQueue = async () => {
     }
   } catch (error) {
     logger.error('添加队列失败:', error)
-    message.error('添加队列失败: ' + (error?.message || '网络错误'))
+    message.error('添加队列失败: ' + (error instanceof Error ? error.message : '网络错误'))
   }
 }
 
@@ -587,7 +535,7 @@ const handleRemoveQueue = async (queueId: string) => {
     }
   } catch (error) {
     logger.error('删除队列失败:', error)
-    message.error('删除队列失败: ' + (error?.message || '网络错误'))
+    message.error('删除队列失败: ' + (error instanceof Error ? error.message : '网络错误'))
   }
 }
 
@@ -608,29 +556,43 @@ const onQueueChange = async (queueId: string) => {
   }
 }
 
-// 自动保存处理
-const autoSave = async () => {
+// 刷新当前队列配置 - 保存成功后调用
+const refreshQueueConfig = async () => {
   if (!activeQueueId.value) return
+
   try {
-    await saveQueueData()
+    const response = await Service.getQueuesApiQueueGetPost({})
+    if (response.code === 200 && response.data && response.data[activeQueueId.value]) {
+      currentQueueData.value = response.data
+      const queueData = response.data[activeQueueId.value]
+
+      // 更新本地状态
+      if (queueData.Info) {
+        currentQueueName.value = queueData.Info.Name || ''
+        currentStartUpEnabled.value = queueData.Info.StartUpEnabled ?? false
+        currentTimeEnabled.value = queueData.Info.TimeEnabled ?? false
+        currentAfterAccomplish.value = queueData.Info.AfterAccomplish ?? 'NoAction'
+
+        // 更新队列列表中的名称
+        const currentQueue = queueList.value.find(queue => queue.id === activeQueueId.value)
+        if (currentQueue) {
+          currentQueue.name = queueData.Info.Name || currentQueue.name
+        }
+      }
+    }
   } catch (error) {
-    logger.error('自动保存失败:', error)
+    logger.error('刷新队列配置失败:', error)
   }
 }
 
-// 保存队列数据
-const saveQueueData = async () => {
-  if (!activeQueueId.value) return
+// 即时保存单个字段变更 - 只发送修改的字段（遵循最小原则）
+const handleSaveChange = async (key: string, value: any): Promise<boolean> => {
+  if (!activeQueueId.value) return false
 
   try {
-    // 构建符合API要求的数据结构，包含开关状态和完成后操作
+    // 构建只包含变更字段的数据
     const queueData: Record<string, any> = {
-      Info: {
-        Name: currentQueueName.value,
-        StartUpEnabled: currentStartUpEnabled.value,
-        TimeEnabled: currentTimeEnabled.value,
-        AfterAccomplish: currentAfterAccomplish.value,
-      },
+      Info: { [key]: value },
     }
 
     const response = await Service.updateQueueApiQueueUpdatePost({
@@ -639,29 +601,21 @@ const saveQueueData = async () => {
     })
 
     if (response.code !== 200) {
-      throw new Error(response.message || '保存失败')
+      message.error(response.message || '保存失败')
+      return false
     }
+
+    // 保存成功后重新获取最新配置
+    await refreshQueueConfig()
+    return true
   } catch (error) {
     logger.error('保存队列数据失败:', error)
-    throw error
+    message.error('保存队列数据失败')
+    return false
   }
 }
 
-// 自动保存功能
-watch(
-  () => [
-    currentQueueName.value,
-    currentQueueEnabled.value,
-    currentStartUpEnabled.value,
-    currentTimeEnabled.value,
-    currentAfterAccomplish.value,
-  ],
-  async () => {
-    await nextTick()
-    autoSave()
-  },
-  { deep: true }
-)
+// 注意：配置保存已改为即时保存，由各个 @change 事件触发，不再使用 watch 自动保存
 
 // 初始化
 onMounted(async () => {
@@ -806,6 +760,7 @@ onMounted(async () => {
     opacity: 0;
     transform: translateY(30px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -813,11 +768,13 @@ onMounted(async () => {
 }
 
 @keyframes pulse {
+
   0%,
   100% {
     opacity: 0.6;
     transform: scale(1);
   }
+
   50% {
     opacity: 0.8;
     transform: scale(1.05);

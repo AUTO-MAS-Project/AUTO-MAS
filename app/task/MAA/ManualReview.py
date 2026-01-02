@@ -34,7 +34,7 @@ from app.models.config import MaaConfig, MaaUserConfig
 from app.models.emulator import DeviceInfo, DeviceBase
 from app.services import System
 from app.utils import get_logger, LogMonitor, ProcessManager
-from app.utils.constants import UTC4
+from app.utils.constants import UTC4, MAA_TASKS, ARKNIGHTS_PACKAGE_NAME
 from .tools import agree_bilibili
 
 logger = get_logger("MAA 人工排查")
@@ -75,7 +75,7 @@ class ManualReviewTask(TaskExecuteBase):
             ).exists()
         ):
             self.cur_user_item.status = "异常"
-            return "未找到用户的 MAA 配置文件"
+            return "未找到用户的 MAA 配置文件，请先在用户配置页完成 「MAA配置」 步骤"
         return "Pass"
 
     async def prepare(self):
@@ -128,7 +128,8 @@ class ManualReviewTask(TaskExecuteBase):
             try:
                 self.script_info.log = "正在启动模拟器"
                 emulator_info = await self.emulator_manager.open(
-                    self.script_config.get("Emulator", "Index")
+                    self.script_config.get("Emulator", "Index"),
+                    ARKNIGHTS_PACKAGE_NAME[self.cur_user_config.get("Info", "Server")],
                 )
             except Exception as e:
 
@@ -167,6 +168,7 @@ class ManualReviewTask(TaskExecuteBase):
             )
             self.wait_event.clear()
             await self.maa_process_manager.open_process(self.maa_exe_path)
+            await asyncio.sleep(1)  # 等待 MAA 处理日志文件
             await self.maa_log_monitor.start_monitor_file(
                 self.maa_log_path, self.log_start_time
             )
@@ -269,27 +271,42 @@ class ManualReviewTask(TaskExecuteBase):
 
         maa_set = json.loads(self.maa_set_path.read_text(encoding="utf-8"))
 
+        # 多配置使用默认配置
         if maa_set["Current"] != "Default":
             maa_set["Configurations"]["Default"] = maa_set["Configurations"][
                 maa_set["Current"]
             ]
             maa_set["Current"] = "Default"
+
+        # 关闭所有定时
         for i in range(1, 9):
             maa_set["Global"][f"Timer.Timer{i}"] = "False"
 
+        # 矫正 ADB 地址
         if emulator_info.adb_address != "Unknown":
             maa_set["Configurations"]["Default"][
                 "Connect.Address"
             ] = emulator_info.adb_address
+
+        # 任务间切换方式
         maa_set["Configurations"]["Default"]["MainFunction.PostActions"] = "8"
+
+        # 直接运行任务
+        maa_set["Configurations"]["Default"]["Start.StartGame"] = "True"
         maa_set["Configurations"]["Default"]["Start.RunDirectly"] = "True"
-        maa_set["Global"]["Start.MinimizeDirectly"] = "True"
+        maa_set["Configurations"]["Default"]["Start.OpenEmulatorAfterLaunch"] = "False"
+
+        # 静默模式相关配置
         maa_set["Global"]["GUI.UseTray"] = "True"
         maa_set["Global"]["GUI.MinimizeToTray"] = "True"
-        maa_set["Configurations"]["Default"]["Start.OpenEmulatorAfterLaunch"] = "False"
+        maa_set["Global"]["Start.MinimizeDirectly"] = "True"
+
+        # 更新配置
         maa_set["Global"]["VersionUpdate.ScheduledUpdateCheck"] = "False"
         maa_set["Global"]["VersionUpdate.AutoDownloadUpdatePackage"] = "False"
         maa_set["Global"]["VersionUpdate.AutoInstallUpdatePackage"] = "False"
+
+        # 服务器与账号切换
         maa_set["Configurations"]["Default"]["Start.ClientType"] = (
             self.cur_user_config.get("Info", "Server")
         )
@@ -303,18 +320,13 @@ class ManualReviewTask(TaskExecuteBase):
             maa_set["Configurations"]["Default"]["Start.AccountName"] = (
                 self.cur_user_config.get("Info", "Id")
             )
+
+        # 任务配置
+        for task in MAA_TASKS:
+            maa_set["Configurations"]["Default"][
+                f"TaskQueue.{task}.IsChecked"
+            ] = "False"
         maa_set["Configurations"]["Default"]["TaskQueue.WakeUp.IsChecked"] = "True"
-        maa_set["Configurations"]["Default"]["TaskQueue.Recruiting.IsChecked"] = "False"
-        maa_set["Configurations"]["Default"]["TaskQueue.Base.IsChecked"] = "False"
-        maa_set["Configurations"]["Default"]["TaskQueue.Combat.IsChecked"] = "False"
-        maa_set["Configurations"]["Default"]["TaskQueue.Mission.IsChecked"] = "False"
-        maa_set["Configurations"]["Default"]["TaskQueue.Mall.IsChecked"] = "False"
-        maa_set["Configurations"]["Default"][
-            "TaskQueue.AutoRoguelike.IsChecked"
-        ] = "False"
-        maa_set["Configurations"]["Default"][
-            "TaskQueue.Reclamation.IsChecked"
-        ] = "False"
 
         self.maa_set_path.write_text(
             json.dumps(maa_set, ensure_ascii=False, indent=4), encoding="utf-8"

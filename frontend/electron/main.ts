@@ -1069,6 +1069,74 @@ ipcMain.handle('clean-old-logs', async (_event, daysToKeep = 7) => {
   }
 })
 
+// 导出日志为压缩包
+ipcMain.handle('export-logs', async () => {
+  try {
+    const appRoot = getAppRoot()
+    const debugDir = path.join(appRoot, 'debug')
+    const AdmZip = require('adm-zip')
+
+    // 确保debug目录存在
+    if (!fs.existsSync(debugDir)) {
+      return { success: false, error: '日志目录不存在' }
+    }
+
+    // 生成压缩包文件名（包含时间戳）
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5)
+    const zipFileName = `logs_${timestamp}.zip`
+    const zipFilePath = path.join(debugDir, zipFileName)
+
+    // 创建 zip 对象
+    const zip = new AdmZip()
+    let fileCount = 0
+
+    // 添加 app.log 文件（如果存在）
+    const appLogPath = path.join(debugDir, 'app.log')
+    if (fs.existsSync(appLogPath)) {
+      zip.addLocalFile(appLogPath)
+      logService.info('日志导出', '已添加 app.log 到压缩包')
+      fileCount++
+    } else {
+      logService.warn('日志导出', 'app.log 文件不存在')
+    }
+
+    // 添加 frontend.log 文件（如果存在）
+    const frontendLogPath = path.join(debugDir, 'frontend.log')
+    if (fs.existsSync(frontendLogPath)) {
+      zip.addLocalFile(frontendLogPath)
+      logService.info('日志导出', '已添加 frontend.log 到压缩包')
+      fileCount++
+    } else {
+      logService.warn('日志导出', 'frontend.log 文件不存在')
+    }
+
+    // 如果没有任何日志文件，返回错误
+    if (fileCount === 0) {
+      return {
+        success: false,
+        error: '没有找到任何日志文件'
+      }
+    }
+
+    // 写入压缩包
+    zip.writeZip(zipFilePath)
+
+    logService.info('日志导出', `日志已导出至: ${zipFilePath}，包含 ${fileCount} 个文件`)
+
+    return {
+      success: true,
+      zipPath: zipFilePath,
+      message: `日志导出成功，包含 ${fileCount} 个文件`
+    }
+  } catch (error) {
+    logService.error('日志导出', `导出失败: ${error}`)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error)
+    }
+  }
+})
+
 // 日志解析相关的IPC处理程序 - 恢复后端日志处理
 ipcMain.handle('log:parseBackendLog', async (_event, logLine: string) => {
   try {
