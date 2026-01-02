@@ -540,7 +540,7 @@ async function handleLocalEnterApp() {
     // 尝试正常进入应用（会建立WebSocket连接）
     logger.info('准备正常进入应用...')
     const success = await enterApp('初始化完成后进入', true)
-    
+
     if (!success) {
       logger.warn('正常进入失败，尝试强制进入')
       await forceEnterApp('初始化完成后强制进入')

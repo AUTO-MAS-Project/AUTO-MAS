@@ -71,12 +71,8 @@ onMounted(async () => {
     <!-- 以下组件仅在初始化完成后挂载 -->
     <template v-if="isInitialized">
       <!-- 全局更新模态框 -->
-      <UpdateModal 
-        v-model:visible="updateVisible" 
-        :update-data="updateData" 
-        :latest-version="latestVersion"
-        @confirmed="onUpdateConfirmed" 
-      />
+      <UpdateModal v-model:visible="updateVisible" :update-data="updateData" :latest-version="latestVersion"
+        @confirmed="onUpdateConfirmed" />
 
       <!-- 全局电源倒计时弹窗 -->
       <GlobalPowerCountdown />
