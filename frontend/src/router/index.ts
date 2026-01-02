@@ -1,5 +1,5 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
-import { isAppInitialized } from '@/utils/config'
+import { useAppInitialization } from '@/composables/useAppInitialization'
 import { getLogger } from '@/utils/logger'
 
 const logger = getLogger('路由管理')
@@ -147,9 +147,9 @@ router.beforeEach(async (to, from, next) => {
   const isDev = import.meta.env.VITE_APP_ENV === 'dev'
   if (isDev) return next()
 
-  const initialized = await isAppInitialized()
-  logger.info('检查初始化状态：', initialized)
-  if (!initialized) {
+  const { isInitialized } = useAppInitialization()
+  logger.info('检查初始化状态：', isInitialized.value)
+  if (!isInitialized.value) {
     needInitLanding = false
     next('/initialization')
     return

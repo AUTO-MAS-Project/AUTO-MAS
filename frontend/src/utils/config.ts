@@ -4,11 +4,6 @@ import { getLogger } from '@/utils/logger'
 const logger = getLogger('配置管理')
 
 export interface FrontendConfig {
-  // 基础配置
-  isFirstLaunch: boolean
-  init: boolean
-  lastUpdateCheck?: string
-
   // 主题设置
   themeMode: ThemeMode
   themeColor: ThemeColor
@@ -17,26 +12,14 @@ export interface FrontendConfig {
   selectedGitMirror: string
   selectedPythonMirror: string
   selectedPipMirror: string
-
-  // 安装状态
-  pythonInstalled?: boolean
-  gitInstalled?: boolean
-  backendExists?: boolean
-  dependenciesInstalled?: boolean
 }
 
 const DEFAULT_CONFIG: FrontendConfig = {
-  isFirstLaunch: true,
-  init: false,
   themeMode: 'system',
   themeColor: 'blue',
   selectedGitMirror: 'github',
   selectedPythonMirror: 'tsinghua',
   selectedPipMirror: 'tsinghua',
-  pythonInstalled: false,
-  gitInstalled: false,
-  backendExists: false,
-  dependenciesInstalled: false,
 }
 
 // 读取配置（内部使用，不触发保存）
@@ -122,26 +105,6 @@ export async function resetConfig(): Promise<void> {
   } catch (error) {
     logger.error('重置配置失败:', error)
   }
-}
-
-// 检查是否已初始化
-export async function isAppInitialized(): Promise<boolean> {
-  const config = await getConfig()
-  logger.info('isAppInitialized 检查配置:', config)
-  logger.info('init 字段值:', config.init)
-  logger.info('init === true:', config.init === true)
-  return config.init === true
-}
-
-// 检查是否第一次启动
-export async function isFirstLaunch(): Promise<boolean> {
-  const config = await getConfig()
-  return config.isFirstLaunch === true
-}
-
-// 设置初始化完成
-export async function setInitialized(value: boolean = true): Promise<void> {
-  await saveConfig({ init: value, isFirstLaunch: false })
 }
 
 // 保存主题设置

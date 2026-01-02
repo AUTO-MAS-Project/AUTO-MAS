@@ -41,25 +41,6 @@ if (window.electronAPI?.getApiEndpoint) {
 // 创建应用实例
 const app = createApp(App)
 
-  // 提前初始化调度中心逻辑
-  ; (async () => {
-    try {
-      // 动态导入以避免循环引用问题
-      const { useSchedulerLogic } = await import('./views/scheduler/useSchedulerLogic')
-      try {
-        const scheduler = useSchedulerLogic()
-        // 初始化并加载任务选项（不阻塞主流程，但希望尽早完成）
-        scheduler.initialize()
-        logger.info('Scheduler logic initialized at app startup')
-      } catch (e) {
-        logger.warn('Scheduler logic init failed at startup:', e)
-      }
-    } catch (e) {
-      // 如果导入失败（例如构建/路径问题），记录并继续，避免阻塞应用启动
-      logger.warn('Failed to pre-import scheduler logic:', e)
-    }
-  })()
-
 // 注册插件
 app.use(Antd)
 app.use(router)

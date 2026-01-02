@@ -73,10 +73,10 @@ export class SmartDownloader {
                 fileInfo.size > this.MIN_SIZE_FOR_MULTITHREAD
 
             if (useMultiThread) {
-                logger.info('✅ 使用多线程下载')
+                logger.info('使用多线程下载')
                 return await this.multiThreadDownload(url, savePath, fileInfo.size, onProgress)
             } else {
-                logger.info('✅ 使用单线程下载')
+                logger.info('使用单线程下载')
                 return await this.singleThreadDownload(url, savePath, fileInfo.size, onProgress)
             }
         } catch (error) {
@@ -229,7 +229,7 @@ export class SmartDownloader {
                         })
                     }
 
-                    logger.info('✅ 单线程下载完成')
+                    logger.info('单线程下载完成')
                     resolve({ success: true })
                 })
 
@@ -364,12 +364,12 @@ export class SmartDownloader {
                     writeStream.on('error', reject)
                 })
 
-                logger.info('✅ 多线程下载完成')
+                logger.info('多线程下载完成')
                 return { success: true }
             } catch (downloadError) {
                 // 确保清理进度定时器
                 clearInterval(progressInterval)
-                
+
                 const errorMsg = downloadError instanceof Error ? downloadError.message : String(downloadError)
                 logger.error('❌ 分片下载失败:', errorMsg)
                 throw downloadError
@@ -442,7 +442,7 @@ export class SmartDownloader {
                 logger.error(`分片 ${chunk.index} 请求错误:`, err.message)
                 reject(new Error(`分片 ${chunk.index} 网络连接错误: ${err.message}`))
             })
-            
+
             req.on('timeout', () => {
                 logger.warn(`分片 ${chunk.index} 请求超时`)
                 req.destroy()

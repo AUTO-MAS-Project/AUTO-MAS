@@ -179,7 +179,7 @@ export class BackendService {
             // 从 MirrorService 获取 API 端点
             const apiEndpoint = this.mirrorService.getApiEndpoint('local')
             const apiUrl = `${apiEndpoint}/api/core/close`
-            
+
             logService.info('后端服务', `尝试通过 ${apiUrl} 接口关闭后端`)
             const controller = new AbortController()
             const apiTimeout = setTimeout(() => controller.abort(), 5000) // 增加到5秒

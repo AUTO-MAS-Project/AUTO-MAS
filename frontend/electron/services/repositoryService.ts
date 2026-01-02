@@ -172,7 +172,7 @@ export class RepositoryService {
             const currentBranch = await this.getCurrentBranch()
 
             if (isHealthy) {
-                logger.info(`✅ 本地仓库健康，当前分支: ${currentBranch}`)
+                logger.info(`本地仓库健康，当前分支: ${currentBranch}`)
                 return { exists: true, isGitRepo: true, isHealthy: true, currentBranch }
             } else {
                 logger.warn('⚠️ 本地仓库存在问题，需要清理')
@@ -270,7 +270,7 @@ export class RepositoryService {
             return { success: false, error: result.error }
         }
 
-        logger.info(`✅ 仓库拉取完成，使用镜像源: ${result.usedMirror?.name}`)
+        logger.info(`仓库拉取完成，使用镜像源: ${result.usedMirror?.name}`)
         return { success: true }
     }
 
@@ -398,7 +398,7 @@ export class RepositoryService {
 
             proc.on('close', (code) => {
                 if (code === 0) {
-                    logger.info('✅ 远程仓库配置完成')
+                    logger.info('远程仓库配置完成')
                     resolve()
                 } else {
                     reject(new Error('配置远程仓库失败'))
@@ -433,7 +433,7 @@ export class RepositoryService {
 
             proc.on('close', (code) => {
                 if (code === 0) {
-                    logger.info('✅ 浅克隆配置完成')
+                    logger.info('浅克隆配置完成')
                     resolve()
                 } else {
                     reject(new Error('配置浅克隆失败'))
@@ -474,7 +474,7 @@ export class RepositoryService {
             proc.on('close', (code) => {
                 clearTimeout(timeout)
                 if (code === 0) {
-                    logger.info('✅ 拉取最新提交完成')
+                    logger.info('拉取最新提交完成')
                     resolve()
                 } else {
                     reject(new Error('拉取最新提交失败'))
@@ -500,7 +500,7 @@ export class RepositoryService {
 
             proc.on('close', (code) => {
                 if (code === 0) {
-                    logger.info('✅ 切换分支完成')
+                    logger.info('切换分支完成')
                     resolve()
                 } else {
                     reject(new Error('切换分支失败'))
@@ -547,7 +547,7 @@ export class RepositoryService {
             proc.on('close', (code) => {
                 clearTimeout(timeout)
                 if (code === 0) {
-                    logger.info('✅ 克隆仓库完成')
+                    logger.info('克隆仓库完成')
                     resolve()
                 } else {
                     reject(new Error('克隆仓库失败'))
@@ -579,7 +579,7 @@ export class RepositoryService {
             await this.copyToRoot()
 
             onProgress?.(100, '部署完成')
-            logger.info('✅ 仓库部署完成')
+            logger.info('仓库部署完成')
             return { success: true }
         } catch (error) {
             const errorMsg = error instanceof Error ? error.message : String(error)
@@ -599,7 +599,7 @@ export class RepositoryService {
                 stdio: 'pipe'
             })
             proc.on('close', () => {
-                logger.info('✅ reflog 清理完成')
+                logger.info('reflog 清理完成')
                 resolve()
             })
             proc.on('error', () => resolve())
@@ -612,7 +612,7 @@ export class RepositoryService {
                 stdio: 'pipe'
             })
             proc.on('close', () => {
-                logger.info('✅ 垃圾回收完成')
+                logger.info('垃圾回收完成')
                 resolve()
             })
             proc.on('error', () => resolve())
@@ -651,7 +651,7 @@ export class RepositoryService {
                     fs.copyFileSync(srcPath, dstPath)
                 }
 
-                logger.info(`✅ 复制完成: ${item}`)
+                logger.info(`复制完成: ${item}`)
             } catch (error) {
                 logger.error(`❌ 复制失败: ${item}`, error)
                 throw error
