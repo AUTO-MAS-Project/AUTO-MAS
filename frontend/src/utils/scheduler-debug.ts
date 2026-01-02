@@ -34,11 +34,23 @@ export function debugScheduler() {
 }
 
 // 测试WebSocket连接
-export function testWebSocketConnection() {
+export async function testWebSocketConnection() {
   logger.info('=== 测试WebSocket连接 ===')
 
   try {
-    const ws = new WebSocket('ws://localhost:36163/api/core/ws')
+    // 从 Electron 获取 WebSocket 端点
+    let wsUrl = 'ws://localhost:36163/api/core/ws'
+    if (window.electronAPI?.getApiEndpoint) {
+      try {
+        const wsEndpoint = await window.electronAPI.getApiEndpoint('websocket')
+        wsUrl = `${wsEndpoint}/api/core/ws`
+        logger.info(`使用端点: ${wsUrl}`)
+      } catch (error) {
+        logger.warn('获取端点失败，使用默认值:', error)
+      }
+    }
+    
+    const ws = new WebSocket(wsUrl)
 
     ws.onopen = () => {
       logger.info('✅ WebSocket连接成功')

@@ -98,6 +98,17 @@ export class SmartDownloader {
             const client = url.startsWith('https') ? https : http
 
             const req = client.request(url, { method: 'HEAD', timeout: 10000 }, (response) => {
+                // 处理重定向 (301, 302, 307, 308)
+                if (response.statusCode && [301, 302, 307, 308].includes(response.statusCode)) {
+                    const redirectUrl = response.headers.location
+                    if (redirectUrl) {
+                        logger.debug(`跟随重定向: ${response.statusCode} -> ${redirectUrl}`)
+                        req.destroy() // 销毁原请求
+                        this.getFileInfo(redirectUrl).then(resolve).catch(reject)
+                        return
+                    }
+                }
+
                 const contentType = response.headers['content-type'] || ''
                 const contentLength = response.headers['content-length']
                 const acceptRanges = response.headers['accept-ranges']
@@ -139,6 +150,20 @@ export class SmartDownloader {
             let lastDownloaded = 0
 
             const req = client.get(url, (response) => {
+                // 处理重定向 (301, 302, 307, 308)
+                if (response.statusCode && [301, 302, 307, 308].includes(response.statusCode)) {
+                    const redirectUrl = response.headers.location
+                    if (redirectUrl) {
+                        logger.info(`跟随重定向: ${response.statusCode} -> ${redirectUrl}`)
+                        req.destroy() // 销毁原请求
+                        file.close()
+                        this.singleThreadDownload(redirectUrl, savePath, totalSize, onProgress)
+                            .then(resolve)
+                            .catch((error) => resolve({ success: false, error: error.message }))
+                        return
+                    }
+                }
+
                 if (response.statusCode !== 200) {
                     file.close()
                     fs.unlinkSync(savePath)
@@ -171,6 +196,22 @@ export class SmartDownloader {
                     }
                 })
 
+                response.on('end', () => {
+                    // response 的 end 事件会在数据传输完成时触发
+                    // 但 file 的 finish 事件会在文件写入完成时触发
+                    // 需要等待 file.close() 或 file.end() 触发 finish
+                })
+
+                response.on('error', (err) => {
+                    logger.error('响应流错误:', err.message)
+                    req.destroy()
+                    file.close()
+                    if (fs.existsSync(savePath)) {
+                        fs.unlinkSync(savePath)
+                    }
+                    resolve({ success: false, error: `网络错误: ${err.message}` })
+                })
+
                 file.on('finish', () => {
                     file.close()
 
@@ -193,21 +234,27 @@ export class SmartDownloader {
                 })
 
                 file.on('error', (err) => {
+                    logger.error('文件写入错误:', err.message)
+                    req.destroy()
                     file.close()
-                    fs.unlinkSync(savePath)
-                    resolve({ success: false, error: err.message })
+                    if (fs.existsSync(savePath)) {
+                        fs.unlinkSync(savePath)
+                    }
+                    resolve({ success: false, error: `文件写入错误: ${err.message}` })
                 })
             })
 
             req.on('error', (err) => {
+                logger.error('请求错误:', err.message)
                 file.close()
                 if (fs.existsSync(savePath)) {
                     fs.unlinkSync(savePath)
                 }
-                resolve({ success: false, error: err.message })
+                resolve({ success: false, error: `网络连接错误: ${err.message}` })
             })
 
             req.on('timeout', () => {
+                logger.warn('请求超时')
                 req.destroy()
                 file.close()
                 if (fs.existsSync(savePath)) {
@@ -276,48 +323,57 @@ export class SmartDownloader {
                 }
             }, 500)
 
-            // 并行下载所有分片
-            const downloadPromises = chunks.map(chunk => this.downloadChunk(url, chunk))
-            await Promise.all(downloadPromises)
+            try {
+                // 并行下载所有分片
+                const downloadPromises = chunks.map(chunk => this.downloadChunk(url, chunk))
+                await Promise.all(downloadPromises)
 
-            clearInterval(progressInterval)
+                clearInterval(progressInterval)
 
-            // 下载完成时，无论是否达到上报间隔，都执行最后一次进度上报
-            if (onProgress) {
-                const downloadedSize = chunks.reduce((total, chunk) => {
-                    return total + chunk.data.reduce((sum, buffer) => sum + buffer.length, 0)
-                }, 0)
+                // 下载完成时，无论是否达到上报间隔，都执行最后一次进度上报
+                if (onProgress) {
+                    const downloadedSize = chunks.reduce((total, chunk) => {
+                        return total + chunk.data.reduce((sum, buffer) => sum + buffer.length, 0)
+                    }, 0)
 
-                const currentTime = Date.now()
-                const timeDiff = (currentTime - lastTime) / 1000
-                const speed = timeDiff > 0 ? (downloadedSize - lastDownloaded) / timeDiff : 0
+                    const currentTime = Date.now()
+                    const timeDiff = (currentTime - lastTime) / 1000
+                    const speed = timeDiff > 0 ? (downloadedSize - lastDownloaded) / timeDiff : 0
 
-                onProgress({
-                    progress: 100,
-                    speed,
-                    downloadedSize: totalSize,
-                    totalSize
-                })
-            }
-
-            // 合并分片
-            logger.info('开始合并分片...')
-            const writeStream = fs.createWriteStream(savePath)
-
-            for (const chunk of chunks) {
-                for (const buffer of chunk.data) {
-                    writeStream.write(buffer)
+                    onProgress({
+                        progress: 100,
+                        speed,
+                        downloadedSize: totalSize,
+                        totalSize
+                    })
                 }
+
+                // 合并分片
+                logger.info('开始合并分片...')
+                const writeStream = fs.createWriteStream(savePath)
+
+                for (const chunk of chunks) {
+                    for (const buffer of chunk.data) {
+                        writeStream.write(buffer)
+                    }
+                }
+
+                await new Promise<void>((resolve, reject) => {
+                    writeStream.end()
+                    writeStream.on('finish', resolve)
+                    writeStream.on('error', reject)
+                })
+
+                logger.info('✅ 多线程下载完成')
+                return { success: true }
+            } catch (downloadError) {
+                // 确保清理进度定时器
+                clearInterval(progressInterval)
+                
+                const errorMsg = downloadError instanceof Error ? downloadError.message : String(downloadError)
+                logger.error('❌ 分片下载失败:', errorMsg)
+                throw downloadError
             }
-
-            await new Promise<void>((resolve, reject) => {
-                writeStream.end()
-                writeStream.on('finish', resolve)
-                writeStream.on('error', reject)
-            })
-
-            logger.info('✅ 多线程下载完成')
-            return { success: true }
         } catch (error) {
             const errorMsg = error instanceof Error ? error.message : String(error)
             logger.error('❌ 多线程下载失败:', errorMsg)
@@ -346,6 +402,19 @@ export class SmartDownloader {
             }
 
             const req = client.get(url, options, (response) => {
+                // 处理重定向 (301, 302, 307, 308)
+                if (response.statusCode && [301, 302, 307, 308].includes(response.statusCode)) {
+                    const redirectUrl = response.headers.location
+                    if (redirectUrl) {
+                        logger.debug(`分片 ${chunk.index} 跟随重定向: ${response.statusCode} -> ${redirectUrl}`)
+                        req.destroy() // 销毁原请求
+                        this.downloadChunk(redirectUrl, chunk)
+                            .then(resolve)
+                            .catch(reject)
+                        return
+                    }
+                }
+
                 if (response.statusCode !== 206) {
                     reject(new Error(`分片下载失败，状态码: ${response.statusCode}`))
                     return
@@ -362,13 +431,22 @@ export class SmartDownloader {
                     resolve()
                 })
 
-                response.on('error', reject)
+                response.on('error', (err) => {
+                    logger.error(`分片 ${chunk.index} 响应错误:`, err.message)
+                    req.destroy()
+                    reject(new Error(`分片 ${chunk.index} 网络错误: ${err.message}`))
+                })
             })
 
-            req.on('error', reject)
+            req.on('error', (err) => {
+                logger.error(`分片 ${chunk.index} 请求错误:`, err.message)
+                reject(new Error(`分片 ${chunk.index} 网络连接错误: ${err.message}`))
+            })
+            
             req.on('timeout', () => {
+                logger.warn(`分片 ${chunk.index} 请求超时`)
                 req.destroy()
-                reject(new Error('分片下载超时'))
+                reject(new Error(`分片 ${chunk.index} 下载超时`))
             })
         })
     }

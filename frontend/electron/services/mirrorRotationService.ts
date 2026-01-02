@@ -80,7 +80,7 @@ export class MirrorRotationService {
         // 依次尝试每个镜像源
         for (let i = 0; i < sortedMirrors.length; i++) {
             const mirror = sortedMirrors[i]
-            logger.info(`\n尝试镜像源 [${i + 1}/${sortedMirrors.length}]: ${mirror.name}`)
+            logger.info(`尝试镜像源 [${i + 1}/${sortedMirrors.length}]: ${mirror.name}`)
             logger.info(`URL: ${mirror.url}`)
 
             try {

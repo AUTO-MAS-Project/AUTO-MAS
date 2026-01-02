@@ -192,7 +192,7 @@ import { Service } from '@/api/services/Service'
 import NoticeModal from '@/components/NoticeModal.vue'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 import dayjs from 'dayjs'
-import { mirrorManager } from '@/utils/mirrorManager'
+import { OpenAPI } from '@/api'
 import { getLogger } from '@/utils/logger'
 
 const logger = getLogger('首页')
@@ -339,7 +339,7 @@ const getMaterialImage = (dropName: string) => {
     return ''
   }
   // 直接拼接后端图片接口地址
-  return `${mirrorManager.getApiEndpoint('local')}/api/res/materials/${dropName}.png`
+  return `${OpenAPI.BASE}/api/res/materials/${dropName}.png`
 }
 
 const handleImageError = (event: Event) => {
