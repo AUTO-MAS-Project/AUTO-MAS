@@ -26,78 +26,78 @@ const isTitlebarPolling = ref(false)
  * 获取前端版本和更新信息（用于标题栏显示）
  */
 const getAppVersion = async () => {
-  try {
-    const ver = await Service.checkUpdateApiUpdateCheckPost({
-      current_version: version,
-      if_force: false,
-    })
-    updateInfo.value = ver
-    return ver
-  } catch (error) {
-    logger.error('获取前端版本失败:', error)
-    return null
-  }
+    try {
+        const ver = await Service.checkUpdateApiUpdateCheckPost({
+            current_version: version,
+            if_force: false,
+        })
+        updateInfo.value = ver
+        return ver
+    } catch (error) {
+        logger.error('获取前端版本失败:', error)
+        return null
+    }
 }
 
 /**
  * 获取后端版本信息（用于标题栏显示）
  */
 const getBackendVersion = async () => {
-  try {
-    backendUpdateInfo.value = await Service.getGitVersionApiInfoVersionPost()
-  } catch (error) {
-    logger.error('获取后端版本失败:', error)
-  }
+    try {
+        backendUpdateInfo.value = await Service.getGitVersionApiInfoVersionPost()
+    } catch (error) {
+        logger.error('获取后端版本失败:', error)
+    }
 }
 
 /**
  * 执行一次标题栏版本信息检查
  */
 const pollTitlebarVersionOnce = async () => {
-  if (isTitlebarPolling.value) return
-  isTitlebarPolling.value = true
-  
-  try {
-    const [appRes, backendRes] = await Promise.allSettled([getAppVersion(), getBackendVersion()])
+    if (isTitlebarPolling.value) return
+    isTitlebarPolling.value = true
 
-    if (appRes.status === 'rejected') {
-      logger.error('获取前端版本失败:', appRes.reason)
+    try {
+        const [appRes, backendRes] = await Promise.allSettled([getAppVersion(), getBackendVersion()])
+
+        if (appRes.status === 'rejected') {
+            logger.error('获取前端版本失败:', appRes.reason)
+        }
+        if (backendRes.status === 'rejected') {
+            logger.error('获取后端版本失败:', backendRes.reason)
+        }
+    } finally {
+        isTitlebarPolling.value = false
     }
-    if (backendRes.status === 'rejected') {
-      logger.error('获取后端版本失败:', backendRes.reason)
-    }
-  } finally {
-    isTitlebarPolling.value = false
-  }
 }
 
 /**
  * 启动标题栏版本信息定时检查（10分钟一次）
  */
 export const startTitlebarVersionCheck = async () => {
-  if (titlebarPollTimer) {
-    logger.warn('标题栏版本检查定时器已存在，跳过启动')
-    return
-  }
+    if (titlebarPollTimer) {
+        logger.warn('标题栏版本检查定时器已存在，跳过启动')
+        return
+    }
 
-  logger.info('启动标题栏版本信息定时检查（每10分钟）')
+    logger.info('启动标题栏版本信息定时检查（每10分钟）')
 
-  // 立即执行一次
-  await pollTitlebarVersionOnce()
+    // 立即执行一次
+    await pollTitlebarVersionOnce()
 
-  // 启动定时器
-  titlebarPollTimer = window.setInterval(pollTitlebarVersionOnce, TITLEBAR_POLL_MS)
+    // 启动定时器
+    titlebarPollTimer = window.setInterval(pollTitlebarVersionOnce, TITLEBAR_POLL_MS)
 }
 
 /**
  * 停止标题栏版本信息定时检查
  */
 export const stopTitlebarVersionCheck = () => {
-  if (titlebarPollTimer) {
-    clearInterval(titlebarPollTimer)
-    titlebarPollTimer = null
-    logger.info('停止标题栏版本信息定时检查')
-  }
+    if (titlebarPollTimer) {
+        clearInterval(titlebarPollTimer)
+        titlebarPollTimer = null
+        logger.info('停止标题栏版本信息定时检查')
+    }
 }
 
 // ========== 版本更新检查相关（4小时）==========
