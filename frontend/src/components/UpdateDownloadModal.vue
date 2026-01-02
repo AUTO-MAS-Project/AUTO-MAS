@@ -1,15 +1,6 @@
 <template>
-  <a-modal
-    v-model:open="visible"
-    :title="`下载更新 ${latestVersion}`"
-    :width="600"
-    :footer="null"
-    :mask-closable="false"
-    :closable="false"
-    :z-index="9999"
-    class="update-download-modal"
-    centered
-  >
+  <a-modal v-model:open="visible" :title="`下载更新 ${latestVersion}`" :width="600" :footer="null" :mask-closable="false"
+    :closable="false" :z-index="9999" class="update-download-modal" centered>
     <div class="download-container">
       <!-- 下载进度区域 -->
       <div v-if="isDownloading" class="download-progress-section">
@@ -20,32 +11,21 @@
               <a-spin :spinning="true" size="small" />
               <span class="download-title">下载进度</span>
             </div>
-            <div
-              class="progress-percent"
-              :class="{
-                'animate-pulse': downloadProgressPercent > 0 && downloadProgressPercent < 100,
-              }"
-            >
+            <div class="progress-percent" :class="{
+              'animate-pulse': downloadProgressPercent > 0 && downloadProgressPercent < 100,
+            }">
               {{ downloadProgressPercent.toFixed(1) }}%
             </div>
           </div>
 
-          <a-progress
-            :percent="downloadProgressPercent"
-            :show-info="false"
-            stroke-color="var(--ant-color-primary)"
-            trail-color="var(--ant-color-fill-secondary)"
-            :stroke-width="8"
-            class="progress-bar"
-          />
+          <a-progress :percent="downloadProgressPercent" :show-info="false" stroke-color="var(--ant-color-primary)"
+            trail-color="var(--ant-color-fill-secondary)" :stroke-width="8" class="progress-bar" />
 
           <!-- 进度信息行 -->
           <div class="progress-info-row">
             <div class="left-info">
-              <span class="file-progress"
-                >{{ formatBytes(downloadProgress.downloaded_size) }} /
-                {{ formatBytes(downloadProgress.file_size) }}</span
-              >
+              <span class="file-progress">{{ formatBytes(downloadProgress.downloaded_size) }} /
+                {{ formatBytes(downloadProgress.file_size) }}</span>
               <span class="download-speed">{{ formatSpeed(downloadProgress.speed) }}</span>
             </div>
             <div v-if="estimatedTimeRemaining" class="right-info">
@@ -227,13 +207,13 @@ const resetState = () => {
 
 // 开始下载
 const startDownload = async () => {
-  logger.info('[UpdateDownloadModal] 开始下载流程')
+  logger.info('开始下载流程')
 
   // 确保WebSocket订阅已建立
   ensureWebSocketSubscription()
 
   // 验证WebSocket连接状态
-  logger.info('[UpdateDownloadModal] WebSocket连接准备就绪，开始下载...')
+  logger.info('WebSocket连接准备就绪，开始下载...')
 
   resetState()
   isDownloading.value = true
@@ -241,7 +221,7 @@ const startDownload = async () => {
   try {
     // 确保有版本信息，如果没有则先检查更新
     if (!props.latestVersion) {
-      logger.info('[UpdateDownloadModal] 没有版本信息，先检查更新')
+      logger.info('没有版本信息，先检查更新')
       const checkResult = await Service.checkUpdateApiUpdateCheckPost({
         current_version: (import.meta as any).env?.VITE_APP_VERSION || '1.0.0',
         if_force: false,
@@ -255,26 +235,26 @@ const startDownload = async () => {
       }
     }
 
-    logger.info('[UpdateDownloadModal] 调用下载API')
+    logger.info('调用下载API')
     const res = await Service.downloadUpdateApiUpdateDownloadPost()
-    logger.debug('[UpdateDownloadModal] API响应:', res)
+    logger.debug('API响应:', res)
 
     if (res.code !== 200) {
-      logger.error('[UpdateDownloadModal] 下载请求失败:', res.message)
+      logger.error('下载请求失败:', res.message)
       downloadFailed.value = true
       isDownloading.value = false
       failureReason.value = res.message || '下载请求失败'
     } else {
-      logger.info('[UpdateDownloadModal] 下载请求成功，等待WebSocket进度更新')
+      logger.info('下载请求成功，等待WebSocket进度更新')
 
       // 启动WebSocket健康检查
       startWebSocketHealthCheck()
 
-      // 设置下载超时（5分钟）
+      // 设置下载超时（2小时）
       downloadTimeout = setTimeout(
         () => {
           if (isDownloading.value) {
-            logger.warn('[UpdateDownloadModal] 下载超时，取消WebSocket订阅')
+            logger.warn('下载超时，取消WebSocket订阅')
             isDownloading.value = false
             downloadFailed.value = true
             failureReason.value = '下载超时，请检查网络连接或稍后重试'
@@ -282,11 +262,11 @@ const startDownload = async () => {
             cancelWebSocketSubscription()
           }
         },
-        5 * 60 * 1000
-      ) // 5分钟超时
+        2 * 60 * 60 * 1000
+      )
     }
   } catch (err) {
-    logger.error('[UpdateDownloadModal] 启动下载失败:', err)
+    logger.error('启动下载失败:', err)
     downloadFailed.value = true
     isDownloading.value = false
     failureReason.value = '网络请求失败，请检查网络连接'
@@ -343,7 +323,7 @@ const handleUpdateMessage = (wsMessage: any) => {
   if (wsMessage.id === 'Update') {
     if (wsMessage.type === 'Update') {
       // 更新下载进度
-      logger.debug('[UpdateDownloadModal] 更新下载进度:', wsMessage.data)
+      logger.debug('更新下载进度:', wsMessage.data)
       const { downloaded_size, file_size, speed } = wsMessage.data
 
       // 使用Object.assign确保响应式更新
@@ -355,7 +335,7 @@ const handleUpdateMessage = (wsMessage: any) => {
 
       // 强制触发Vue的响应式更新
       nextTick(() => {
-        logger.debug('[UpdateDownloadModal] 进度更新后状态:', {
+        logger.debug('进度更新后状态:', {
           进度: downloadProgress.value,
           百分比: downloadProgressPercent.value.toFixed(2) + '%',
           正在下载: isDownloading.value,
@@ -364,7 +344,7 @@ const handleUpdateMessage = (wsMessage: any) => {
         })
       })
     } else if (wsMessage.type === 'Signal') {
-      logger.debug('[UpdateDownloadModal] 收到Signal消息:', wsMessage.data)
+      logger.debug('收到Signal消息:', wsMessage.data)
 
       // 清除下载超时
       if (downloadTimeout) {
@@ -374,14 +354,14 @@ const handleUpdateMessage = (wsMessage: any) => {
 
       if (wsMessage.data.Accomplish) {
         // 下载完成 - 取消WebSocket订阅
-        logger.info('[UpdateDownloadModal] 下载完成，取消WebSocket订阅')
+        logger.info('下载完成，取消WebSocket订阅')
         isDownloading.value = false
         downloadCompleted.value = true
         stopWebSocketHealthCheck()
         cancelWebSocketSubscription()
       } else if (wsMessage.data.Failed) {
         // 下载失败 - 取消WebSocket订阅
-        logger.error('[UpdateDownloadModal] 下载失败:', wsMessage.data.Failed)
+        logger.error('下载失败:', wsMessage.data.Failed)
         isDownloading.value = false
         downloadFailed.value = true
         failureReason.value = wsMessage.data.Failed
@@ -389,7 +369,7 @@ const handleUpdateMessage = (wsMessage: any) => {
         cancelWebSocketSubscription()
       }
     } else if (wsMessage.type === 'Info') {
-      logger.debug('[UpdateDownloadModal] 收到Info消息:', wsMessage.data)
+      logger.debug('收到Info消息:', wsMessage.data)
       if (wsMessage.data.Error) {
         // 安装过程中的错误
         isInstalling.value = false
@@ -402,31 +382,31 @@ const handleUpdateMessage = (wsMessage: any) => {
 // 确保WebSocket订阅
 const ensureWebSocketSubscription = () => {
   if (!updateSubscriptionId) {
-    logger.info('[UpdateDownloadModal] 创建WebSocket订阅')
+    logger.info('创建WebSocket订阅')
     try {
       updateSubscriptionId = subscribe({ id: 'Update' }, handleUpdateMessage)
-      logger.debug('[UpdateDownloadModal] WebSocket订阅ID:', updateSubscriptionId)
+      logger.debug('WebSocket订阅ID:', updateSubscriptionId)
 
       // 添加测试消息处理函数来验证订阅是否工作
-      logger.debug('[UpdateDownloadModal] 订阅创建完成，等待WebSocket消息...')
+      logger.debug('订阅创建完成，等待WebSocket消息...')
     } catch (error) {
-      logger.error('[UpdateDownloadModal] 创建WebSocket订阅失败:', error)
+      logger.error('创建WebSocket订阅失败:', error)
     }
   } else {
-    logger.debug('[UpdateDownloadModal] WebSocket订阅已存在:', updateSubscriptionId)
+    logger.debug('WebSocket订阅已存在:', updateSubscriptionId)
     // 验证订阅是否仍然有效
-    logger.debug('[UpdateDownloadModal] 验证现有订阅是否有效')
+    logger.debug('验证现有订阅是否有效')
   }
 }
 
 // 取消WebSocket订阅
 const cancelWebSocketSubscription = () => {
   if (updateSubscriptionId) {
-    logger.info('[UpdateDownloadModal] 取消WebSocket订阅:', updateSubscriptionId)
+    logger.info('取消WebSocket订阅:', updateSubscriptionId)
     try {
       unsubscribe(updateSubscriptionId)
     } catch (error) {
-      logger.error('[UpdateDownloadModal] 取消WebSocket订阅失败:', error)
+      logger.error('取消WebSocket订阅失败:', error)
     }
     updateSubscriptionId = ''
   }
@@ -437,13 +417,13 @@ const startWebSocketHealthCheck = () => {
   // 清除之前的检查
   stopWebSocketHealthCheck()
 
-  logger.info('[UpdateDownloadModal] 启动WebSocket健康检查')
+  logger.info('启动WebSocket健康检查')
   wsHealthCheckInterval = setInterval(() => {
     if (isDownloading.value) {
-      logger.debug('[UpdateDownloadModal] WebSocket健康检查 - 订阅ID:', updateSubscriptionId)
+      logger.debug('WebSocket健康检查 - 订阅ID:', updateSubscriptionId)
       // 如果订阅丢失了，重新创建
       if (!updateSubscriptionId) {
-        logger.warn('[UpdateDownloadModal] 检测到WebSocket订阅丢失，重新创建')
+        logger.warn('检测到WebSocket订阅丢失，重新创建')
         ensureWebSocketSubscription()
       }
     }
@@ -453,7 +433,7 @@ const startWebSocketHealthCheck = () => {
 // 停止WebSocket健康检查
 const stopWebSocketHealthCheck = () => {
   if (wsHealthCheckInterval) {
-    logger.info('[UpdateDownloadModal] 停止WebSocket健康检查')
+    logger.info('停止WebSocket健康检查')
     clearInterval(wsHealthCheckInterval)
     wsHealthCheckInterval = null
   }
@@ -463,21 +443,21 @@ const stopWebSocketHealthCheck = () => {
 watch(
   () => props.visible,
   newVisible => {
-    logger.debug('[UpdateDownloadModal] visible变化:', newVisible)
-    logger.debug('[UpdateDownloadModal] 当前props:', {
+    logger.debug('visible变化:', newVisible)
+    logger.debug('当前props:', {
       visible: props.visible,
       latestVersion: props.latestVersion,
       updateData: props.updateData,
     })
 
     if (newVisible) {
-      logger.info('[UpdateDownloadModal] 窗口显示，确保WebSocket订阅并开始下载')
+      logger.info('窗口显示，确保WebSocket订阅并开始下载')
       // 确保WebSocket订阅处于活动状态
       ensureWebSocketSubscription()
       // 开始下载
       startDownload()
     } else {
-      logger.info('[UpdateDownloadModal] 窗口隐藏，重置状态但保持订阅')
+      logger.info('窗口隐藏，重置状态但保持订阅')
       // 隐藏时重置状态，但不取消订阅（因为可能还在下载）
       resetState()
     }
@@ -486,13 +466,13 @@ watch(
 
 // 组件挂载时订阅 WebSocket 消息
 onMounted(() => {
-  logger.debug('[UpdateDownloadModal] 组件挂载')
+  logger.debug('组件挂载')
   ensureWebSocketSubscription()
 })
 
 // 组件卸载时取消订阅
 onUnmounted(() => {
-  logger.debug('[UpdateDownloadModal] 组件卸载，清理资源')
+  logger.debug('组件卸载，清理资源')
 
   // 清理下载超时
   if (downloadTimeout) {
@@ -649,11 +629,13 @@ onUnmounted(() => {
 }
 
 @keyframes pulse {
+
   0%,
   100% {
     opacity: 1;
     transform: scale(1);
   }
+
   50% {
     opacity: 0.8;
     transform: scale(1.05);

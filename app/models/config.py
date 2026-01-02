@@ -44,6 +44,7 @@ from .ConfigBase import (
     JSONValidator,
     URLValidator,
     UserNameValidator,
+    ArgumentValidator,
     AdvancedArgumentValidator,
 )
 
@@ -369,10 +370,15 @@ class MaaUserConfig(ConfigBase):
             return "未使用自定义基建模式"
 
         infrast_data = json.loads(self.get("Data", "CustomInfrast"))
-        if infrast_data.get("title", None) and infrast_data.get("description", None):
+        if (
+            infrast_data.get("title", "文件标题") != "文件标题"
+            and infrast_data.get("description", "文件描述") != "文件描述"
+        ):
             return f"{infrast_data['title']} - {infrast_data['description']}"
-        elif infrast_data.get("title", None):
-            return infrast_data["title"]
+        elif infrast_data.get("title", "文件标题") != "文件标题":
+            return str(infrast_data["title"])
+        elif infrast_data.get("id", None):
+            return str(infrast_data["id"])
         else:
             return "未命名自定义基建"
 
@@ -635,7 +641,14 @@ class GeneralConfig(ConfigBase):
         self.Script_IfTrackProcess = ConfigItem(
             "Script", "IfTrackProcess", False, BoolValidator()
         )
-        ## 配置文件路径
+        ## 追踪进程的名称
+        self.Script_TrackProcessName = ConfigItem("Script", "TrackProcessName", "")
+        ## 追踪进程的文件路径
+        self.Script_TrackProcessExe = ConfigItem("Script", "TrackProcessExe", "")
+        ## 追踪进程的启动命令行参数
+        self.Script_TrackProcessCmdline = ConfigItem(
+            "Script", "TrackProcessCmdline", "", ArgumentValidator()
+        )
         self.Script_ConfigPath = ConfigItem(
             "Script", "ConfigPath", str(Path.cwd()), FileValidator()
         )
@@ -687,7 +700,7 @@ class GeneralConfig(ConfigBase):
         ## 游戏进程名称
         self.Game_ProcessName = ConfigItem("Game", "ProcessName", "")
         ## 游戏启动参数
-        self.Game_Arguments = ConfigItem("Game", "Arguments", "")
+        self.Game_Arguments = ConfigItem("Game", "Arguments", "", ArgumentValidator())
         ## 等待时间（秒）
         self.Game_WaitTime = ConfigItem("Game", "WaitTime", 0, RangeValidator(0, 9999))
         ## 是否强制关闭
@@ -745,23 +758,20 @@ def getStage(raw) -> str:
                 )
 
                 if "SSReopen" not in stage["Display"]:
-                    drop_id = re.sub(
-                        r"[\u200b\u200c\u200d\ufeff]",
-                        "",
-                        str(stage["Drop"]).strip(),
-                    )  # 去除不可见字符
 
-                    if drop_id.isdigit():
-                        drop_name = MATERIALS_MAP.get(drop_id, "未知材料")
+                    if stage["Drop"] in MATERIALS_MAP:
+                        drop_id = stage["Drop"]
+                    elif "玉" in stage["Drop"]:
+                        drop_id = "30012"
                     else:
-                        drop_name = f"DESC:{drop_id}"  # 非纯数字, 直接用文本.加一个DESC前缀方便前端区分
+                        drop_id = "NotFound"
 
                     activity_stage_drop_info.append(
                         {
                             "Display": stage["Display"],
                             "Value": stage["Value"],
-                            "Drop": stage["Drop"],
-                            "DropName": drop_name,
+                            "Drop": drop_id,
+                            "DropName": MATERIALS_MAP.get(stage["Drop"], stage["Drop"]),
                             "Activity": side_story["Activity"],
                         }
                     )
@@ -909,13 +919,8 @@ class GlobalConfig(ConfigBase):
         "2000-01-01 00:00:00",
         DateTimeValidator("%Y-%m-%d %H:%M:%S"),
     )
-    ## 关卡时间戳
-    Data_StageTimeStamp = ConfigItem(
-        "Data",
-        "StageTimeStamp",
-        "2000-01-01 00:00:00",
-        DateTimeValidator("%Y-%m-%d %H:%M:%S"),
-    )
+    ## 关卡数据的版本标识符
+    Data_StageETag = ConfigItem("Data", "StageETag", "")
     ## 关卡数据
     Data_Stage = ConfigItem("Data", "Stage", "{ }", VirtualConfigValidator(getStage))
     ## 上次公告更新时间
@@ -925,6 +930,8 @@ class GlobalConfig(ConfigBase):
         "2000-01-01 00:00:00",
         DateTimeValidator("%Y-%m-%d %H:%M:%S"),
     )
+    ## 公告的版本标识符
+    Data_NoticeETag = ConfigItem("Data", "NoticeETag", "")
     ## 是否显示公告
     Data_IfShowNotice = ConfigItem("Data", "IfShowNotice", True, BoolValidator())
     ## 公告内容

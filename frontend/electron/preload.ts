@@ -69,6 +69,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getLogs: (lines?: number, fileName?: string) => ipcRenderer.invoke('log:getContent', lines, fileName),
   clearLogs: (fileName?: string) => ipcRenderer.invoke('log:clear', fileName),
   cleanOldLogs: (daysToKeep?: number) => ipcRenderer.invoke('log:cleanOldLogs'),
+  exportLogs: () => ipcRenderer.invoke('export-logs'),
 
   // 日志写入
   logWrite: (level: string, module: string, message: string) => ipcRenderer.invoke('log:write', level, module, message),
@@ -160,6 +161,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   installDependencies: (selectedMirror?: string) =>
     ipcRenderer.invoke('install-dependencies', selectedMirror),
   getMirrors: (type: string) => ipcRenderer.invoke('get-mirrors', type),
+
+  // API 端点获取
+  getApiEndpoint: (key: string) => ipcRenderer.invoke('get-api-endpoint', key),
+  getApiEndpoints: () => ipcRenderer.invoke('get-api-endpoints'),
 
   // 完整初始化流程（保留用于兼容）
   initialize: (targetBranch?: string, startBackend?: boolean) =>

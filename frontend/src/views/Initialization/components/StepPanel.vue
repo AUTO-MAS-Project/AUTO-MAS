@@ -1,7 +1,7 @@
 <template>
   <div class="step-panel">
     <h3>{{ title }}</h3>
-    
+
     <!-- 进行中状态 -->
     <div v-if="status === 'processing'" class="processing-state">
       <div class="status-text">{{ message }}</div>
@@ -10,11 +10,12 @@
           <span>{{ percent }}%</span>
         </template>
       </a-progress>
-      
+
       <!-- 详细信息展示区域 -->
       <div class="detail-info-container">
         <!-- 环境检查信息（Python/Pip/Git） -->
-        <div v-if="checkInfo && (checkInfo.exeExists !== undefined || checkInfo.canRun !== undefined)" class="info-section">
+        <div v-if="checkInfo && (checkInfo.exeExists !== undefined || checkInfo.canRun !== undefined)"
+          class="info-section">
           <div class="info-title">环境检查</div>
           <div class="info-items">
             <a-tag v-if="checkInfo.exeExists !== undefined" :color="checkInfo.exeExists ? 'green' : 'orange'">
@@ -30,7 +31,8 @@
         </div>
 
         <!-- 仓库检查信息 -->
-        <div v-if="checkInfo && (checkInfo.exists !== undefined || checkInfo.isGitRepo !== undefined)" class="info-section">
+        <div v-if="checkInfo && (checkInfo.exists !== undefined || checkInfo.isGitRepo !== undefined)"
+          class="info-section">
           <div class="info-title">仓库检查</div>
           <div class="info-items">
             <a-tag v-if="checkInfo.exists !== undefined" :color="checkInfo.exists ? 'green' : 'orange'">
@@ -49,10 +51,12 @@
         </div>
 
         <!-- 依赖检查信息 -->
-        <div v-if="checkInfo && (checkInfo.requirementsExists !== undefined || checkInfo.needsInstall !== undefined)" class="info-section">
+        <div v-if="checkInfo && (checkInfo.requirementsExists !== undefined || checkInfo.needsInstall !== undefined)"
+          class="info-section">
           <div class="info-title">依赖检查</div>
           <div class="info-items">
-            <a-tag v-if="checkInfo.requirementsExists !== undefined" :color="checkInfo.requirementsExists ? 'green' : 'orange'">
+            <a-tag v-if="checkInfo.requirementsExists !== undefined"
+              :color="checkInfo.requirementsExists ? 'green' : 'orange'">
               requirements.txt: {{ checkInfo.requirementsExists ? '存在' : '不存在' }}
             </a-tag>
             <a-tag v-if="checkInfo.needsInstall !== undefined" :color="checkInfo.needsInstall ? 'orange' : 'green'">
@@ -127,18 +131,12 @@
 
     <!-- 失败状态 - 显示镜像源选择 -->
     <div v-else-if="status === 'failed' && showMirrorSelection" class="failed-state">
-      <a-alert
-        type="error"
-        :message="`${title}失败`"
-        :description="message"
-        show-icon
-        style="margin-bottom: 20px"
-      />
+      <a-alert type="error" :message="`${title}失败`" :description="message" show-icon style="margin-bottom: 20px" />
 
       <!-- 镜像源选择 -->
       <div class="mirror-selection">
         <h4>请选择镜像源重试</h4>
-        
+
         <!-- 镜像源 -->
         <div v-if="mirrorMirrors.length > 0" class="mirror-section">
           <div class="section-header">
@@ -146,13 +144,8 @@
             <a-tag color="green">推荐使用</a-tag>
           </div>
           <div class="mirror-grid">
-            <div
-              v-for="mirror in mirrorMirrors"
-              :key="mirror.key"
-              class="mirror-card"
-              :class="{ active: selectedMirror === mirror.key }"
-              @click="$emit('update:selected-mirror', mirror.key)"
-            >
+            <div v-for="mirror in mirrorMirrors" :key="mirror.key" class="mirror-card"
+              :class="{ active: selectedMirror === mirror.key }" @click="$emit('update:selected-mirror', mirror.key)">
               <div class="mirror-header">
                 <div class="mirror-title">
                   <h4>{{ mirror.name }}</h4>
@@ -171,13 +164,8 @@
             <a-tag color="orange">中国大陆连通性不佳</a-tag>
           </div>
           <div class="mirror-grid">
-            <div
-              v-for="mirror in officialMirrors"
-              :key="mirror.key"
-              class="mirror-card"
-              :class="{ active: selectedMirror === mirror.key }"
-              @click="$emit('update:selected-mirror', mirror.key)"
-            >
+            <div v-for="mirror in officialMirrors" :key="mirror.key" class="mirror-card"
+              :class="{ active: selectedMirror === mirror.key }" @click="$emit('update:selected-mirror', mirror.key)">
               <div class="mirror-header">
                 <div class="mirror-title">
                   <h4>{{ mirror.name }}</h4>
@@ -206,11 +194,7 @@
 
     <!-- 简单失败状态 -->
     <div v-else-if="status === 'failed'" class="simple-failed-state">
-      <a-result 
-        status="error" 
-        :title="`${title}失败`" 
-        :sub-title="message"
-      >
+      <a-result status="error" :title="`${title}失败`" :sub-title="message">
         <template #extra>
           <a-space>
             <a-button v-if="showSkipButton" @click="$emit('skip')">跳过此步骤</a-button>
@@ -342,8 +326,32 @@ const officialMirrors = computed(() => props.mirrors.filter((m: MirrorConfig) =>
   min-width: 200px;
 }
 
-.success-state,
-.failed-state,
+.success-state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  width: 100%;
+}
+
+.failed-state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 20px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  width: 100%;
+  min-height: 0;
+  padding: 8px;
+}
+
 .simple-failed-state {
   flex: 1;
   display: flex;
@@ -364,6 +372,7 @@ const officialMirrors = computed(() => props.mirrors.filter((m: MirrorConfig) =>
 
 .mirror-selection {
   width: 100%;
+  flex-shrink: 0;
 }
 
 .mirror-selection h4 {
@@ -376,6 +385,13 @@ const officialMirrors = computed(() => props.mirrors.filter((m: MirrorConfig) =>
 
 .mirror-section {
   margin-bottom: 20px;
+  flex-shrink: 0;
+}
+
+@media (max-height: 700px) {
+  .mirror-section {
+    margin-bottom: 12px;
+  }
 }
 
 .section-header {
@@ -395,9 +411,15 @@ const officialMirrors = computed(() => props.mirrors.filter((m: MirrorConfig) =>
 .mirror-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 16px;
+  gap: 12px;
   width: 100%;
   box-sizing: border-box;
+}
+
+@media (max-height: 700px) {
+  .mirror-grid {
+    gap: 8px;
+  }
 }
 
 .mirror-card {
@@ -407,6 +429,12 @@ const officialMirrors = computed(() => props.mirrors.filter((m: MirrorConfig) =>
   cursor: pointer;
   transition: all 0.2s ease;
   background: var(--ant-color-bg-container);
+}
+
+@media (max-height: 700px) {
+  .mirror-card {
+    padding: 12px;
+  }
 }
 
 .mirror-card:hover {

@@ -41,20 +41,14 @@
             <a-row :gutter="16">
               <a-col :span="16">
                 <a-form-item label="WebSocket URL">
-                  <a-input
-                    v-model:value="connectionForm.url"
-                    placeholder="例如: ws://127.0.0.1:8000/ws/external"
-                    :disabled="isConnected"
-                  />
+                  <a-input v-model:value="connectionForm.url" placeholder="例如: ws://127.0.0.1:8000/ws/external"
+                    :disabled="isConnected" />
                 </a-form-item>
               </a-col>
               <a-col :span="8">
                 <a-form-item label="认证 Token">
-                  <a-input-password
-                    v-model:value="connectionForm.token"
-                    placeholder="输入认证 Token"
-                    :disabled="isConnected"
-                  />
+                  <a-input-password v-model:value="connectionForm.token" placeholder="输入认证 Token"
+                    :disabled="isConnected" />
                 </a-form-item>
               </a-col>
             </a-row>
@@ -73,11 +67,7 @@
                   </template>
                   断开连接
                 </a-button>
-                <a-button
-                  v-if="isConnected && !isAuthenticated"
-                  type="primary"
-                  @click="authenticate"
-                >
+                <a-button v-if="isConnected && !isAuthenticated" type="primary" @click="authenticate">
                   <template #icon>
                     <SafetyOutlined />
                   </template>
@@ -106,10 +96,7 @@
               </a-col>
               <a-col :span="8">
                 <a-form-item label="消息子类型 (msgtype)">
-                  <a-select
-                    v-model:value="messageForm.msgtype"
-                    :disabled="messageForm.type !== 'message'"
-                  >
+                  <a-select v-model:value="messageForm.msgtype" :disabled="messageForm.type !== 'message'">
                     <a-select-option value="text">text</a-select-option>
                     <a-select-option value="html">html</a-select-option>
                     <a-select-option value="picture">picture</a-select-option>
@@ -118,11 +105,8 @@
               </a-col>
               <a-col :span="8">
                 <a-form-item label="用户 ID">
-                  <a-input
-                    v-model:value="messageForm.userId"
-                    placeholder="可选"
-                    :disabled="messageForm.type !== 'message'"
-                  />
+                  <a-input v-model:value="messageForm.userId" placeholder="可选"
+                    :disabled="messageForm.type !== 'message'" />
                 </a-form-item>
               </a-col>
             </a-row>
@@ -130,11 +114,8 @@
             <a-row :gutter="16">
               <a-col :span="24">
                 <a-form-item label="消息内容">
-                  <a-textarea
-                    v-model:value="messageForm.message"
-                    :rows="4"
-                    placeholder="输入消息内容（如果选择自定义类型，请输入完整的 JSON 对象）"
-                  />
+                  <a-textarea v-model:value="messageForm.message" :rows="4"
+                    placeholder="输入消息内容（如果选择自定义类型，请输入完整的 JSON 对象）" />
                 </a-form-item>
               </a-col>
             </a-row>
@@ -190,22 +171,13 @@
     <a-card title="消息记录" class="messages-card">
       <template #extra>
         <a-space>
-          <a-switch
-            v-model:checked="autoScroll"
-            checked-children="自动滚动"
-            un-checked-children="手动滚动"
-          />
+          <a-switch v-model:checked="autoScroll" checked-children="自动滚动" un-checked-children="手动滚动" />
           <a-tag color="blue">{{ messages.length }} 条消息</a-tag>
         </a-space>
       </template>
 
       <div ref="messageContainer" class="message-container">
-        <div
-          v-for="(msg, index) in messages"
-          :key="index"
-          class="message-item"
-          :class="msg.direction"
-        >
+        <div v-for="(msg, index) in messages" :key="index" class="message-item" :class="msg.direction">
           <div class="message-meta">
             <span class="message-time">{{ msg.time }}</span>
             <a-tag :color="msg.direction === 'sent' ? 'blue' : 'green'" size="small">

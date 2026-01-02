@@ -1,0 +1,144 @@
+{
+    "mirrors": {
+        "python": [
+            {
+                "key": "aliyun",
+                "name": "阿里云镜像",
+                "url": "https://mirrors.aliyun.com/python-release/windows/python-3.12.0-embed-amd64.zip",
+                "type": "mirror",
+                "description": "阿里云镜像服务，国内访问速度快"
+            },
+            {
+                "key": "tsinghua",
+                "name": "清华 TUNA 镜像",
+                "url": "https://mirrors.tuna.tsinghua.edu.cn/python/3.12.0/python-3.12.0-embed-amd64.zip",
+                "type": "mirror",
+                "description": "清华大学开源软件镜像站，国内访问速度快"
+            },
+            {
+                "key": "huawei",
+                "name": "华为云镜像",
+                "url": "https://mirrors.huaweicloud.com/repository/toolkit/python/3.12.0/python-3.12.0-embed-amd64.zip",
+                "type": "mirror",
+                "description": "华为云镜像服务，国内访问稳定"
+            },
+            {
+                "key": "autonas",
+                "name": "AUTO-MAS 自建源",
+                "url": "https://download.auto-mas.top/d/AUTO-MAS/Environment/python-3.12.0-embed-amd64.zip",
+                "type": "mirror",
+                "description": "AUTO-MAS 自建下载站，国内访问速度快"
+            },
+            {
+                "key": "official",
+                "name": "Python 官方",
+                "url": "https://www.python.org/ftp/python/3.12.0/python-3.12.0-embed-amd64.zip",
+                "type": "official",
+                "description": "Python 官方下载源，在中国大陆连通性不佳"
+            }
+        ],
+        "get_pip": [
+            {
+                "key": "autonas",
+                "name": "AUTO-MAS 自建源",
+                "url": "https://download.auto-mas.top/d/AUTO-MAS/Environment/get-pip.py",
+                "type": "mirror",
+                "description": "AUTO-MAS 自建下载站，国内访问速度快"
+            },
+            {
+                "key": "official",
+                "name": "官方源",
+                "url": "https://bootstrap.pypa.io/get-pip.py",
+                "type": "official",
+                "description": "官方源，在中国大陆连通性不佳"
+            }
+        ],
+        "git": [
+            {
+                "key": "autonas",
+                "name": "AUTO-MAS 自建源",
+                "url": "https://download.auto-mas.top/d/AUTO-MAS/Environment/git.zip",
+                "type": "mirror",
+                "description": "AUTO-MAS 自建下载站，国内访问速度快"
+            }
+        ],
+        "repo": [
+            {
+                "key": "gitee 镜像源",
+                "name": "gitee",
+                "url": "https://gitee.com/auto-mas-project/AUTO-MAS",
+                "type": "mirror",
+                "description": "gitee 镜像源，更新会有少许延迟"
+            },
+            {
+                "key": "ghproxy_cloudflare",
+                "name": "gh-proxy (Cloudflare)",
+                "url": "https://gh-proxy.com/https://github.com/AUTO-MAS-Project/AUTO-MAS.git",
+                "type": "mirror",
+                "description": "Cloudflare CDN 镜像，适合全球用户"
+            },
+            {
+                "key": "ghproxy_fastly",
+                "name": "gh-proxy (Fastly CDN)",
+                "url": "https://cdn.gh-proxy.com/https://github.com/AUTO-MAS-Project/AUTO-MAS.git",
+                "type": "mirror",
+                "description": "Fastly CDN 镜像服务"
+            },
+            {
+                "key": "ghproxy_edgeone",
+                "name": "gh-proxy (EdgeOne)",
+                "url": "https://edgeone.gh-proxy.com/https://github.com/AUTO-MAS-Project/AUTO-MAS.git",
+                "type": "mirror",
+                "description": "EdgeOne 镜像服务"
+            },
+            {
+                "key": "ghfast",
+                "name": "ghfast 镜像",
+                "url": "https://ghfast.top/https://github.com/AUTO-MAS-Project/AUTO-MAS.git",
+                "type": "mirror",
+                "description": "第三方镜像服务"
+            },
+            {
+                "key": "github",
+                "name": "GitHub 官方",
+                "url": "https://github.com/AUTO-MAS-Project/AUTO-MAS.git",
+                "type": "official",
+                "description": "官方源，在中国大陆连通性不佳，可能需要科学上网"
+            }
+        ],
+        "pip_mirror": [
+            {
+                "key": "aliyun",
+                "name": "阿里云",
+                "url": "https://mirrors.aliyun.com/pypi/simple/",
+                "type": "mirror",
+                "description": "阿里云 PyPI 镜像，国内访问速度快"
+            },
+            {
+                "key": "tsinghua",
+                "name": "清华大学",
+                "url": "https://pypi.tuna.tsinghua.edu.cn/simple/",
+                "type": "mirror",
+                "description": "清华大学 PyPI 镜像，国内访问速度快"
+            },
+            {
+                "key": "ustc",
+                "name": "中科大",
+                "url": "https://pypi.mirrors.ustc.edu.cn/simple/",
+                "type": "mirror",
+                "description": "中科大 PyPI 镜像，国内访问稳定"
+            },
+            {
+                "key": "official",
+                "name": "PyPI 官方",
+                "url": "https://pypi.org/simple/",
+                "type": "official",
+                "description": "PyPI 官方源，在中国大陆连通性不佳，下载速度慢"
+            }
+        ]
+    },
+    "apiEndpoints": {
+        "local": "http://localhost:36163",
+        "websocket": "ws://localhost:36163"
+    }
+}

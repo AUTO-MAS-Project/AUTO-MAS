@@ -93,7 +93,7 @@ export class DependencyService {
             })
 
             if (!forceInstall && !checkResult.needsInstall) {
-                logger.info('✅ 依赖已是最新版本，跳过安装')
+                logger.info('依赖已是最新版本，跳过安装')
                 onProgress?.({
                     stage: 'check',
                     progress: 100,
@@ -209,7 +209,7 @@ export class DependencyService {
                 fs.mkdirSync(dir, { recursive: true })
             }
             fs.writeFileSync(this.hashFilePath, hash, 'utf-8')
-            logger.info('✅ 哈希值已保存')
+            logger.info('哈希值已保存')
         } catch (error) {
             logger.warn('保存哈希文件失败:', error)
         }
@@ -259,7 +259,7 @@ export class DependencyService {
             return { success: false, error: result.error }
         }
 
-        logger.info(`✅ 依赖安装完成，使用镜像源: ${result.usedMirror?.name}`)
+        logger.info(`依赖安装完成，使用镜像源: ${result.usedMirror?.name}`)
         return { success: true }
     }
 
@@ -273,7 +273,7 @@ export class DependencyService {
         const toolsInstalled = await this.checkBasicTools()
 
         if (toolsInstalled) {
-            logger.info('✅ 基础工具已安装')
+            logger.info('基础工具已安装')
             return
         }
 
@@ -308,7 +308,7 @@ export class DependencyService {
 
             proc.on('close', (code) => {
                 if (code === 0) {
-                    logger.info('✅ 基础工具安装完成')
+                    logger.info('基础工具安装完成')
                     resolve()
                 } else {
                     // 即使失败也继续，因为可能已经存在
@@ -436,7 +436,7 @@ export class DependencyService {
                     stdoutData.toLowerCase().includes('requirement already satisfied')
 
                 if (code === 0 || hasSuccess || !hasActualError) {
-                    logger.info('✅ 依赖安装成功')
+                    logger.info('依赖安装成功')
                     resolve()
                 } else {
                     reject(new Error(`依赖安装失败，退出码: ${code}`))

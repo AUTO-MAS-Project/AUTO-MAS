@@ -21,11 +21,8 @@ uv.lock
 .DS_Store
 
 # User files
-config/
-data/
-debug/
-history/
-script/
-res/notice.json
-res/theme_image.json
-res/images/Home/BannerTheme.jpg
+/config/
+/data/
+/debug/
+/history/
+/script/

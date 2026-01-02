@@ -530,7 +530,6 @@ export function useScriptApi() {
         type: scriptType,
         name: config?.Info?.Name || `${item.type}脚本`,
         config,
-        createTime: new Date().toLocaleString(),
       }
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : '获取脚本详情失败'
@@ -595,7 +594,6 @@ export function useScriptApi() {
         throw new Error(errorMsg)
       }
 
-      message.success(response.message || '脚本更新成功')
       return true
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : '更新脚本失败'

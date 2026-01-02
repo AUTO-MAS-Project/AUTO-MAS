@@ -1,27 +1,15 @@
 <template>
   <!-- 应用内弹窗组件 -->
-  <Modal
-    v-model:open="isModalOpen"
-    :title="currentModal?.title || '操作提示'"
-    :closable="false"
-    :maskClosable="false"
-    :keyboard="true"
-    centered
-    @ok="handleOk"
-    @cancel="handleCancel"
-  >
+  <Modal v-model:open="isModalOpen" :title="currentModal?.title || '操作提示'" :closable="false" :maskClosable="false"
+    :keyboard="true" centered @ok="handleOk" @cancel="handleCancel">
     <p class="modal-message">{{ currentModal?.message || '' }}</p>
     <!-- 显示队列中还有多少待处理的弹窗 -->
     <p v-if="modalQueue.length > 0" class="modal-queue-hint">
       还有 {{ modalQueue.length }} 条消息待处理
     </p>
     <template #footer>
-      <Button
-        v-for="(option, index) in (currentModal?.options || ['确定', '取消'])"
-        :key="index"
-        :type="index === 0 ? 'primary' : 'default'"
-        @click="handleChoice(index === 0)"
-      >
+      <Button v-for="(option, index) in (currentModal?.options || ['确定', '取消'])" :key="index"
+        :type="index === 0 ? 'primary' : 'default'" @click="handleChoice(index === 0)">
         {{ option }}
       </Button>
     </template>
@@ -95,11 +83,11 @@ const handleChoice = (choice: boolean) => {
     sendResponse(currentModal.value.messageId, choice)
     logger.info('[WebSocket消息监听器] 弹窗已处理:', currentModal.value.messageId)
   }
-  
+
   // 关闭当前弹窗
   isModalOpen.value = false
   currentModal.value = null
-  
+
   // 显示队列中的下一个弹窗
   showNextModal()
 }
@@ -110,10 +98,10 @@ const showNextModal = async () => {
     // 从队列头部取出下一个弹窗
     const nextModal = modalQueue.value.shift()!
     logger.info('[WebSocket消息监听器] 显示队列中的下一个弹窗:', nextModal.messageId, `剩余队列: ${modalQueue.value.length}`)
-    
+
     // 激活窗口
     await focusWindow()
-    
+
     // 设置当前弹窗并显示
     currentModal.value = nextModal
     isModalOpen.value = true
@@ -139,10 +127,10 @@ const showQuestion = async (questionData: any) => {
   // 如果当前没有显示弹窗，直接显示
   if (!isModalOpen.value && !currentModal.value) {
     logger.info('[WebSocket消息监听器] 直接显示弹窗:', modalData.messageId)
-    
+
     // 激活窗口
     await focusWindow()
-    
+
     // 设置当前弹窗并显示
     currentModal.value = modalData
     isModalOpen.value = true
@@ -267,22 +255,22 @@ const handleOtherMessage = (data: any) => {
 
 // 组件挂载时订阅消息
 onMounted(() => {
-  logger.info('[WebSocket消息监听器~~] 组件挂载，开始监听Message类型的消息')
+  logger.info('组件挂载，开始监听Message类型的消息')
 
   // 使用新的 subscribe API，订阅 Message 类型的消息（注意大写M）
   subscriptionId = subscribe({ type: 'Message' }, handleMessage)
 
-  logger.info('[WebSocket消息监听器~~] 订阅ID:', subscriptionId)
-  logger.info('[WebSocket消息监听器~~] 订阅过滤器:', { type: 'Message' })
+  logger.info('订阅ID:', subscriptionId)
+  logger.info('订阅过滤器:', { type: 'Message' })
 
-  // 暴露调试接口到 window 对象（仅用于开发调试）
-  ;(window as any).__debugShowQuestion = showQuestion
+    // 暴露调试接口到 window 对象（仅用于开发调试）
+    ; (window as any).__debugShowQuestion = showQuestion
   logger.debug('[WebSocket消息监听器] 已暴露调试接口: window.__debugShowQuestion')
 })
 
 // 组件卸载时取消订阅
 onUnmounted(() => {
-  logger.info('[WebSocket消息监听器~~] 组件卸载，停止监听Message类型的消息')
+  logger.info('组件卸载，停止监听Message类型的消息')
   // 使用新的 unsubscribe API
   if (subscriptionId) {
     unsubscribe(subscriptionId)
