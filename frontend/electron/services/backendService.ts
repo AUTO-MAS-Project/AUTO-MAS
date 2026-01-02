@@ -10,6 +10,7 @@ import { spawn, ChildProcessWithoutNullStreams } from 'child_process'
 
 import { logService } from './logService'
 import { killAllRelatedProcesses } from '../utils/processManager'
+import { MirrorService } from './mirrorService'
 // 导入新的日志处理组件
 import { LoguruBackendLogParser } from '../utils/loguruBackendLogParser'
 import { BackendLogCapture } from '../utils/backendLogCapture'
@@ -38,6 +39,7 @@ export type BackendStatusCallback = (status: BackendStatus) => void
 
 export class BackendService {
     private appRoot: string
+    private mirrorService: MirrorService
     private backendProcess: ChildProcessWithoutNullStreams | null = null
     private startTime: Date | null = null
     private statusCallback: BackendStatusCallback | null = null
@@ -48,8 +50,9 @@ export class BackendService {
     private logProcessor: LogStreamProcessor | null = null
     private logCaptureEnabled: boolean = true
 
-    constructor(appRoot: string) {
+    constructor(appRoot: string, mirrorService: MirrorService) {
         this.appRoot = appRoot
+        this.mirrorService = mirrorService
 
         // 初始化新的日志处理组件
         this.logParser = LoguruBackendLogParser.getInstance()
@@ -173,16 +176,21 @@ export class BackendService {
         // 第一步：尝试通过 API 优雅关闭（无论是否追踪到进程）
         let apiSuccess = false
         try {
-            logService.info('后端服务', '尝试通过 /api/core/close 接口关闭后端')
+            // 从 MirrorService 获取 API 端点
+            const apiEndpoint = this.mirrorService.getApiEndpoint('local')
+            const apiUrl = `${apiEndpoint}/api/core/close`
+
+            logService.info('后端服务', `尝试通过 ${apiUrl} 接口关闭后端`)
             const controller = new AbortController()
             const apiTimeout = setTimeout(() => controller.abort(), 5000) // 增加到5秒
 
-            const response = await fetch('http://localhost:36163/api/core/close', {
+            const response = await fetch(apiUrl, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                signal: controller.signal
+                signal: controller.signal,
+                redirect: 'follow' // 允许重定向
             })
             clearTimeout(apiTimeout)
 

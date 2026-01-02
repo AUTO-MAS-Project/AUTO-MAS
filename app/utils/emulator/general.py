@@ -56,7 +56,7 @@ class GeneralDeviceManager(DeviceBase):
         self.process_managers: Dict[str, ProcessManager] = {}
         self.device_info: Dict[str, Dict[str, Any]] = {}
 
-    async def open(self, idx: str) -> DeviceInfo:
+    async def open(self, idx: str, package_name: str = "") -> DeviceInfo:
 
         # 检查是否已经在运行
         current_status = await self.getStatus(idx)

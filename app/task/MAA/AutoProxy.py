@@ -35,7 +35,7 @@ from app.models.emulator import DeviceInfo, DeviceBase
 from app.utils.constants import MAA_RUN_MOOD_BOOK, MAA_TASK_TRANSITION_METHOD_BOOK
 from app.services import Notify, System
 from app.utils import get_logger, LogMonitor, ProcessManager
-from app.utils.constants import UTC4, UTC8
+from app.utils.constants import UTC4, UTC8, MAA_TASKS, ARKNIGHTS_PACKAGE_NAME
 from .tools import skland_sign_in, push_notification, agree_bilibili, update_maa
 
 logger = get_logger("MAA 自动代理")
@@ -86,7 +86,7 @@ class AutoProxyTask(TaskExecuteBase):
             ).exists()
         ):
             self.cur_user_item.status = "异常"
-            return "未找到用户的 MAA 配置文件"
+            return "未找到用户的 MAA 配置文件，请先在用户配置页完成 「MAA配置」 步骤"
         return "Pass"
 
     async def prepare(self):
@@ -210,29 +210,13 @@ class AutoProxyTask(TaskExecuteBase):
 
             if self.mode == "Routine":
                 self.task_dict = {
-                    "WakeUp": str(self.cur_user_config.get("Task", "IfWakeUp")),
-                    "Recruiting": str(self.cur_user_config.get("Task", "IfRecruiting")),
-                    "Base": str(self.cur_user_config.get("Task", "IfBase")),
-                    "Combat": str(self.cur_user_config.get("Task", "IfCombat")),
-                    "Mission": str(self.cur_user_config.get("Task", "IfMission")),
-                    "Mall": str(self.cur_user_config.get("Task", "IfMall")),
-                    "AutoRoguelike": str(
-                        self.cur_user_config.get("Task", "IfAutoRoguelike")
-                    ),
-                    "Reclamation": str(
-                        self.cur_user_config.get("Task", "IfReclamation")
-                    ),
+                    task: str(self.cur_user_config.get("Task", f"If{task}"))
+                    for task in MAA_TASKS
                 }
             else:  # Annihilation
                 self.task_dict = {
-                    "WakeUp": "True",
-                    "Recruiting": "False",
-                    "Base": "False",
-                    "Combat": "True",
-                    "Mission": "False",
-                    "Mall": "False",
-                    "AutoRoguelike": "False",
-                    "Reclamation": "False",
+                    task: "True" if task in ("WakeUp", "Combat") else "False"
+                    for task in MAA_TASKS
                 }
 
             logger.info(
@@ -253,7 +237,10 @@ class AutoProxyTask(TaskExecuteBase):
                 try:
                     self.script_info.log = "正在启动模拟器"
                     emulator_info = await self.emulator_manager.open(
-                        self.script_config.get("Emulator", "Index")
+                        self.script_config.get("Emulator", "Index"),
+                        ARKNIGHTS_PACKAGE_NAME[
+                            self.cur_user_config.get("Info", "Server")
+                        ],
                     )
                 except Exception as e:
                     logger.exception(f"用户: {self.cur_user_uid} - 模拟器启动失败: {e}")
@@ -289,6 +276,7 @@ class AutoProxyTask(TaskExecuteBase):
                 logger.info(f"启动MAA进程: {self.maa_exe_path}")
                 self.wait_event.clear()
                 await self.maa_process_manager.open_process(self.maa_exe_path)
+                await asyncio.sleep(1)  # 等待 MAA 处理日志文件
                 await self.maa_log_monitor.start_monitor_file(
                     self.maa_log_path, self.log_start_time
                 )
@@ -323,6 +311,7 @@ class AutoProxyTask(TaskExecuteBase):
                     )
 
                 await update_maa(self.maa_root_path)
+                await asyncio.sleep(3)
 
     async def set_maa(self, emulator_info: DeviceInfo):
         """配置MAA运行参数"""
@@ -383,6 +372,7 @@ class AutoProxyTask(TaskExecuteBase):
         )
 
         # 直接运行任务
+        maa_set["Configurations"]["Default"]["Start.StartGame"] = "True"
         maa_set["Configurations"]["Default"]["Start.RunDirectly"] = "True"
         maa_set["Configurations"]["Default"]["Start.OpenEmulatorAfterLaunch"] = "False"
 
@@ -399,9 +389,9 @@ class AutoProxyTask(TaskExecuteBase):
 
         # 静默模式相关配置
         if Config.get("Function", "IfSilence"):
-            maa_set["Global"]["Start.MinimizeDirectly"] = "True"
             maa_set["Global"]["GUI.UseTray"] = "True"
             maa_set["Global"]["GUI.MinimizeToTray"] = "True"
+            maa_set["Global"]["Start.MinimizeDirectly"] = "True"
 
         # 服务器与账号切换
         maa_set["Configurations"]["Default"]["Start.ClientType"] = (
@@ -419,42 +409,21 @@ class AutoProxyTask(TaskExecuteBase):
             )
 
         # 任务配置
+        for task in MAA_TASKS:
+            maa_set["Configurations"]["Default"][f"TaskQueue.{task}.IsChecked"] = (
+                self.task_dict[task]
+            )
         maa_set["Configurations"]["Default"]["TaskQueue.WakeUp.IsChecked"] = "True"
-        maa_set["Configurations"]["Default"]["TaskQueue.Recruiting.IsChecked"] = (
-            self.task_dict["Recruiting"]
-        )
-        maa_set["Configurations"]["Default"]["TaskQueue.Base.IsChecked"] = (
-            self.task_dict["Base"]
-        )
-        maa_set["Configurations"]["Default"]["TaskQueue.Combat.IsChecked"] = (
-            self.task_dict["Combat"]
-        )
-        maa_set["Configurations"]["Default"]["TaskQueue.Mission.IsChecked"] = (
-            self.task_dict["Mission"]
-        )
-        maa_set["Configurations"]["Default"]["TaskQueue.Mall.IsChecked"] = (
-            self.task_dict["Mall"]
-        )
-        maa_set["Configurations"]["Default"]["TaskQueue.AutoRoguelike.IsChecked"] = (
-            self.task_dict["AutoRoguelike"]
-        )
-        maa_set["Configurations"]["Default"]["TaskQueue.Reclamation.IsChecked"] = (
-            self.task_dict["Reclamation"]
-        )
 
         # 任务顺序
         if (
             self.mode == "Annihilation"
             or self.cur_user_config.get("Info", "Mode") == "简洁"
         ):
-            maa_set["Configurations"]["Default"]["TaskQueue.Order.WakeUp"] = "0"
-            maa_set["Configurations"]["Default"]["TaskQueue.Order.Recruiting"] = "1"
-            maa_set["Configurations"]["Default"]["TaskQueue.Order.Base"] = "2"
-            maa_set["Configurations"]["Default"]["TaskQueue.Order.Combat"] = "3"
-            maa_set["Configurations"]["Default"]["TaskQueue.Order.Mall"] = "4"
-            maa_set["Configurations"]["Default"]["TaskQueue.Order.Mission"] = "5"
-            maa_set["Configurations"]["Default"]["TaskQueue.Order.AutoRoguelike"] = "6"
-            maa_set["Configurations"]["Default"]["TaskQueue.Order.Reclamation"] = "7"
+            for order, task in enumerate(MAA_TASKS):
+                maa_set["Configurations"]["Default"][f"TaskQueue.Order.{task}"] = str(
+                    order
+                )
 
         # 加载关卡号配置
         if self.cur_user_config.get("Info", "StageMode") == "Fixed":
@@ -696,6 +665,9 @@ class AutoProxyTask(TaskExecuteBase):
         if_six_star = False
         for t, log_item in self.cur_user_item.log_record.items():
 
+            if log_item.status == "MAA 正常运行中":
+                log_item.status = "任务被用户手动中止"
+
             dt = t.replace(tzinfo=datetime.now().astimezone().tzinfo).astimezone(UTC4)
             log_path = (
                 Path.cwd()
@@ -703,15 +675,7 @@ class AutoProxyTask(TaskExecuteBase):
             )
             user_logs_list.append(log_path.with_suffix(".json"))
 
-            if await Config.save_maa_log(
-                log_path,
-                log_item.content,
-                (
-                    log_item.status
-                    if log_item.status != "MAA 正常运行中"
-                    else "任务被用户手动中止"
-                ),
-            ):
+            if await Config.save_maa_log(log_path, log_item.content, log_item.status):
                 if_six_star = True
 
         if self.run_book["IfAnnihilationAccomplish"]:

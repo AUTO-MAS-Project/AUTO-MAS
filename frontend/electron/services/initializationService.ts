@@ -59,7 +59,7 @@ export class InitializationService {
     constructor(appRoot: string, targetBranch: string = 'dev') {
         this.appRoot = appRoot
         this.mirrorService = new MirrorService(appRoot)
-        this.backendService = new BackendService(appRoot)
+        this.backendService = new BackendService(appRoot, this.mirrorService)
         this.targetBranch = targetBranch
     }
 

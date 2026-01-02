@@ -9,7 +9,6 @@ import type { GlobalConfig } from '@/api'
 import { useSettingsApi } from '@/composables/useSettingsApi'
 import { useUpdateChecker } from '@/composables/useUpdateChecker.ts'
 import { Service, type VersionOut } from '@/api'
-import { mirrorManager } from '@/utils/mirrorManager'
 import { getLogger } from '@/utils/logger'
 
 const logger = getLogger('设置')
@@ -36,21 +35,6 @@ const {
 const activeKey = ref('basic')
 const version = (import.meta as any).env?.VITE_APP_VERSION || '获取版本失败！'
 const backendUpdateInfo = ref<VersionOut | null>(null)
-
-// 镜像配置状态
-type MirrorConfigStatus = {
-  isUsingCloudConfig: boolean
-  version?: string
-  lastUpdated?: string
-  source: 'cloud' | 'fallback'
-}
-const mirrorConfigStatus = ref<MirrorConfigStatus>({
-  isUsingCloudConfig: false,
-  version: undefined,
-  lastUpdated: undefined,
-  source: 'fallback',
-})
-const refreshingConfig = ref(false)
 
 // 设置数据 - 从API获取，不再使用硬编码初值
 const settings = reactive<GlobalConfig>({})
@@ -167,7 +151,7 @@ const handleSettingChange = async (category: keyof GlobalConfig, key: string, va
   // 只发送修改的字段
   const changes = { [key]: value }
   const success = await saveSettings(category, changes)
-  
+
   // 更新成功后重新获取最新配置
   if (success) {
     await refreshSettings()
@@ -202,7 +186,6 @@ const handleSettingChange = async (category: keyof GlobalConfig, key: string, va
   if (category === 'Update' && key === 'IfAutoUpdate') {
     try {
       await restartPolling()
-      message.success(value ? '已启用自动检查更新' : '已禁用自动检查更新')
     } catch (e) {
       logger.error('重启更新检查失败', e)
       message.error('更新检查设置变更失败')
@@ -254,27 +237,6 @@ const getBackendVersion = async () => {
   }
 }
 
-// 镜像配置
-const updateMirrorConfigStatus = () => {
-  mirrorConfigStatus.value = mirrorManager.getConfigStatus()
-}
-const refreshMirrorConfig = async () => {
-  refreshingConfig.value = true
-  try {
-    const result = await mirrorManager.refreshCloudConfig()
-    if (result.success) {
-      message.success('镜像配置刷新成功')
-      updateMirrorConfigStatus()
-    } else message.warning(result.error || '刷新失败，继续使用当前配置')
-  } catch (e) {
-    logger.error('刷新镜像配置失败', e)
-    message.error('刷新镜像配置失败')
-  } finally {
-    refreshingConfig.value = false
-  }
-}
-const goToMirrorTest = () => router.push('/mirror-test')
-
 // 通知测试
 const testingNotify = ref(false)
 const testNotify = async () => {
@@ -294,56 +256,34 @@ const testNotify = async () => {
 onMounted(() => {
   loadSettings()
   getBackendVersion()
-  updateMirrorConfigStatus()
 })
 </script>
 
 <template>
   <div class="settings-container">
-    <div class="settings-header"><h1 class="page-title">设置</h1></div>
+    <div class="settings-header">
+      <h1 class="page-title">设置</h1>
+    </div>
     <div class="settings-content">
       <a-tabs v-model:active-key="activeKey" type="card" :loading="loading" class="settings-tabs">
         <a-tab-pane key="basic" tab="界面设置">
-          <TabBasic
-            :settings="settings"
-            :theme-mode="themeMode"
-            :theme-color="themeColor"
-            :theme-mode-options="themeModeOptions"
-            :theme-color-options="themeColorOptions"
-            :handle-theme-mode-change="handleThemeModeChange"
-            :handle-theme-color-change="handleThemeColorChange"
-            :handle-setting-change="handleSettingChange"
-          />
+          <TabBasic :settings="settings" :theme-mode="themeMode" :theme-color="themeColor"
+            :theme-mode-options="themeModeOptions" :theme-color-options="themeColorOptions"
+            :handle-theme-mode-change="handleThemeModeChange" :handle-theme-color-change="handleThemeColorChange"
+            :handle-setting-change="handleSettingChange" />
         </a-tab-pane>
         <a-tab-pane key="function" tab="功能设置">
-          <TabFunction
-            :settings="settings"
-            :history-retention-options="historyRetentionOptions"
-            :update-source-options="updateSourceOptions"
-            :update-channel-options="updateChannelOptions"
-            :voice-type-options="voiceTypeOptions"
-            :handle-setting-change="handleSettingChange"
-            :check-update="checkUpdate"
-          />
+          <TabFunction :settings="settings" :history-retention-options="historyRetentionOptions"
+            :update-source-options="updateSourceOptions" :update-channel-options="updateChannelOptions"
+            :voice-type-options="voiceTypeOptions" :handle-setting-change="handleSettingChange"
+            :check-update="checkUpdate" />
         </a-tab-pane>
         <a-tab-pane key="notify" tab="通知设置">
-          <TabNotify
-            :settings="settings"
-            :send-task-result-time-options="sendTaskResultTimeOptions"
-            :handle-setting-change="handleSettingChange"
-            :test-notify="testNotify"
-            :testing-notify="testingNotify"
-          />
+          <TabNotify :settings="settings" :send-task-result-time-options="sendTaskResultTimeOptions"
+            :handle-setting-change="handleSettingChange" :test-notify="testNotify" :testing-notify="testingNotify" />
         </a-tab-pane>
         <a-tab-pane key="advanced" tab="高级设置">
-          <TabAdvanced
-            :go-to-logs="goToLogs"
-            :open-dev-tools="openDevTools"
-            :mirror-config-status="mirrorConfigStatus"
-            :refreshing-config="refreshingConfig"
-            :refresh-mirror-config="refreshMirrorConfig"
-            :go-to-mirror-test="goToMirrorTest"
-          />
+          <TabAdvanced :go-to-logs="goToLogs" :open-dev-tools="openDevTools" />
         </a-tab-pane>
         <a-tab-pane key="others" tab="其他设置">
           <TabOthers :version="version" :backend-update-info="backendUpdateInfo" />
@@ -360,31 +300,62 @@ onMounted(() => {
 .settings-container {
   /* Allow the settings page to expand with the window width */
   width: 100%;
-  max-width: none;
   margin: 0;
-  padding: 20px;
+  padding: 0;
   box-sizing: border-box;
+  /* Use full viewport min-height so the page can grow and scroll */
+  display: flex;
+  flex-direction: column;
 }
 
 .settings-header {
-  margin-bottom: 24px;
+  margin-bottom: 16px;
+  padding: 0 4px;
 }
 
 .page-title {
   margin: 0;
   font-size: 32px;
-  font-weight: 600;
+  font-weight: 700;
   color: var(--ant-color-text);
+  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .settings-content {
   background: var(--ant-color-bg-container);
+  /* Rounded on all corners for a consistent card look */
   border-radius: 12px;
   width: 100%;
+  flex: 1;
+  /* allow inner scrolling and cooperate with flexbox
+     min-height:0 prevents flex children from overflowing the container */
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
 }
 
 .settings-tabs {
   margin: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 12px;
+  /* ensure children with overflow:auto can scroll inside this flex item */
+  min-height: 0;
+}
+
+.settings-tabs :deep(.ant-tabs-nav) {
+  padding: 0;
+  margin: 0;
+}
+
+.settings-tabs :deep(.ant-tabs-content-holder) {
+  flex: 1;
+  overflow: auto;
 }
 
 .settings-tabs :deep(.ant-tabs-card > .ant-tabs-nav .ant-tabs-tab) {

@@ -2,6 +2,7 @@
 #   Copyright © 2024-2025 DLmaster361
 #   Copyright © 2025 AUTO-MAS Team
 import asyncio
+
 #   This file is part of AUTO-MAS.
 
 #   AUTO-MAS is free software: you can redistribute it and/or modify
@@ -77,7 +78,7 @@ class Notification:
             logger.error("plyer.notification 未正确导入, 无法推送系统通知")
 
     async def send_mail(
-            self, mode: Literal["文本", "网页"], title: str, content: str, to_address: str
+        self, mode: Literal["文本", "网页"], title: str, content: str, to_address: str
     ) -> None:
         """
         推送邮件通知
@@ -99,17 +100,17 @@ class Notification:
         if Config.get("Notify", "AuthorizationCode") == "":
             raise ValueError("邮件通知的授权码不能为空")
         if not bool(
-                re.match(
-                    r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$",
-                    Config.get("Notify", "FromAddress"),
-                )
+            re.match(
+                r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$",
+                Config.get("Notify", "FromAddress"),
+            )
         ):
             raise ValueError("邮件通知的发送邮箱格式错误或为空")
         if not bool(
-                re.match(
-                    r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$",
-                    to_address,
-                )
+            re.match(
+                r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$",
+                to_address,
+            )
         ):
             raise ValueError("邮件通知的接收邮箱格式错误或为空")
 
@@ -174,7 +175,7 @@ class Notification:
         params = {"title": title, "desp": content}
         headers = {"Content-Type": "application/json;charset=utf-8"}
 
-        async with httpx.AsyncClient(proxy=Config.get_proxy()) as client:
+        async with httpx.AsyncClient(proxy=Config.proxy) as client:
             response = await client.post(url, json=params, headers=headers)
             result = response.json()
 
@@ -204,8 +205,8 @@ class Notification:
 
         # 解析模板
         template = (
-                webhook.get("Data", "Template")
-                or '{"title": "{title}", "content": "{content}"}'
+            webhook.get("Data", "Template")
+            or '{"title": "{title}", "content": "{content}"}'
         )
 
         # 替换模板变量
@@ -278,7 +279,7 @@ class Notification:
         headers = {"Content-Type": "application/json"}
         headers.update(json.loads(webhook.get("Data", "Headers")))
 
-        async with httpx.AsyncClient(proxy=Config.get_proxy(), timeout=10) as client:
+        async with httpx.AsyncClient(proxy=Config.proxy, timeout=10) as client:
             if webhook.get("Data", "Method") == "POST":
                 if isinstance(data, dict):
                     response = await client.post(
@@ -326,7 +327,7 @@ class Notification:
         content = f"{title}\n{content}"
         data = {"msgtype": "text", "text": {"content": content}}
 
-        async with httpx.AsyncClient(proxy=Config.get_proxy()) as client:
+        async with httpx.AsyncClient(proxy=Config.proxy) as client:
             response = await client.post(url=webhook_url, json=data)
             info = response.json()
 
@@ -336,7 +337,7 @@ class Notification:
             raise Exception(f"WebHook 推送通知失败: {response.text}")
 
     async def CompanyWebHookBotPushImage(
-            self, image_path: Path, webhook_url: str
+        self, image_path: Path, webhook_url: str
     ) -> None:
         """
         使用企业微信群机器人推送图片通知（等待重新适配）
@@ -364,7 +365,7 @@ class Notification:
             "image": {"base64": image_base64, "md5": image_md5},
         }
 
-        async with httpx.AsyncClient(proxy=Config.get_proxy()) as client:
+        async with httpx.AsyncClient(proxy=Config.proxy) as client:
             response = await client.post(url=webhook_url, json=data)
             info = response.json()
 
@@ -373,11 +374,14 @@ class Notification:
         else:
             raise Exception(f"企业微信群机器人推送图片失败: {response.text}")
 
-    async def send_koishi(self, message: str,
-                          token: str,
-                          target: str = "admin",
-                          msgtype: str = "text",
-                          base_url: str = "http://localhost:5140/AUTO_MAS") -> dict:
+    async def send_koishi(
+        self,
+        message: str,
+        token: str,
+        target: str = "admin",
+        msgtype: str = "text",
+        base_url: str = "http://localhost:5140/AUTO_MAS",
+    ) -> dict:
         """
         推送消息到 Koishi AUTO-MAS 插件
 
@@ -396,14 +400,10 @@ class Notification:
         """
         headers = {
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {token}"
+            "Authorization": f"Bearer {token}",
         }
 
-        payload = {
-            "user_id": target,
-            "msgtype": msgtype,
-            "message": message
-        }
+        payload = {"user_id": target, "msgtype": msgtype, "message": message}
 
         async with httpx.AsyncClient(timeout=10) as client:
             try:
@@ -420,7 +420,6 @@ class Notification:
             except httpx.RequestError as e:
                 logger.error(f"Koishi 通知请求失败: {str(e)}")
                 raise
-
 
     async def send_test_notification(self) -> None:
         """发送测试通知到所有已启用的通知渠道"""
@@ -472,5 +471,10 @@ class Notification:
 
 if __name__ == "__main__":
     Notify = Notification()
-    response = asyncio.run(Notify.send_koishi("hello", "123456",))
+    response = asyncio.run(
+        Notify.send_koishi(
+            "hello",
+            "123456",
+        )
+    )
 Notify = Notification()

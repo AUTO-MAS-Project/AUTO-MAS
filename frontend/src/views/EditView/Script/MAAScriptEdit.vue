@@ -47,12 +47,8 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input
-                  v-model:value="formData.name"
-                  placeholder="请输入脚本名称"
-                  size="large"
-                  class="modern-input"
-                />
+                <a-input v-model:value="formData.name" placeholder="请输入脚本名称" size="large" class="modern-input"
+                  @blur="handleChange('Info', 'Name', formData.name)" />
               </a-form-item>
             </a-col>
             <a-col :span="16">
@@ -66,13 +62,8 @@
                   </a-tooltip>
                 </template>
                 <a-input-group compact class="path-input-group">
-                  <a-input
-                    v-model:value="formData.path"
-                    placeholder="请选择MAA.exe所在的文件夹"
-                    size="large"
-                    class="path-input"
-                    readonly
-                  />
+                  <a-input v-model:value="formData.path" placeholder="请选择MAA.exe所在的文件夹" size="large" class="path-input"
+                    readonly />
                   <a-button size="large" class="path-button" @click="selectMAAPath">
                     <template #icon>
                       <FolderOpenOutlined />
@@ -101,18 +92,9 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select
-                  v-model:value="maaConfig.Emulator.Id"
-                  size="large"
-                  placeholder="请选择模拟器"
-                  :loading="emulatorLoading"
-                  @change="handleEmulatorChange"
-                >
-                  <a-select-option
-                    v-for="item in emulatorOptions"
-                    :key="item.value"
-                    :value="item.value"
-                  >
+                <a-select v-model:value="maaConfig.Emulator.Id" size="large" placeholder="请选择模拟器"
+                  :loading="emulatorLoading" @change="handleEmulatorSelectChange">
+                  <a-select-option v-for="item in emulatorOptions" :key="item.value" :value="item.value">
                     {{ item.label }}
                   </a-select-option>
                 </a-select>
@@ -121,7 +103,8 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="emulatorDeviceOptions.length === 0 && !emulatorDeviceLoading ? '不支持自动扫描实例的模拟器，请手动输入实例信息' : '选择模拟器的具体实例'">
+                  <a-tooltip
+                    :title="emulatorDeviceOptions.length === 0 && !emulatorDeviceLoading ? '不支持自动扫描实例的模拟器，请手动输入实例信息' : '选择模拟器的具体实例'">
                     <span class="form-label">
                       模拟器实例
                       <QuestionCircleOutlined class="help-icon" />
@@ -129,27 +112,14 @@
                   </a-tooltip>
                 </template>
                 <!-- 当API返回空列表时显示输入框 -->
-                <a-input
-                  v-if="emulatorDeviceOptions.length === 0 && !emulatorDeviceLoading && maaConfig.Emulator.Id"
-                  v-model:value="maaConfig.Emulator.Index"
-                  size="large"
-                  placeholder="请输入实例信息，格式：启动附加命令 | ADB地址"
-                  class="modern-input"
-                />
+                <a-input v-if="emulatorDeviceOptions.length === 0 && !emulatorDeviceLoading && maaConfig.Emulator.Id"
+                  v-model:value="maaConfig.Emulator.Index" size="large" placeholder="请输入实例信息，格式：启动附加命令 | ADB地址"
+                  class="modern-input" @blur="handleChange('Emulator', 'Index', maaConfig.Emulator.Index)" />
                 <!-- 正常情况下显示下拉框 -->
-                <a-select
-                  v-else
-                  v-model:value="maaConfig.Emulator.Index"
-                  size="large"
-                  placeholder="请先选择模拟器"
-                  :loading="emulatorDeviceLoading"
-                  :disabled="!maaConfig.Emulator.Id"
-                >
-                  <a-select-option
-                    v-for="item in emulatorDeviceOptions"
-                    :key="item.value"
-                    :value="item.value"
-                  >
+                <a-select v-else v-model:value="maaConfig.Emulator.Index" size="large" placeholder="请先选择模拟器"
+                  :loading="emulatorDeviceLoading" :disabled="!maaConfig.Emulator.Id"
+                  @change="handleChange('Emulator', 'Index', $event)">
+                  <a-select-option v-for="item in emulatorDeviceOptions" :key="item.value" :value="item.value">
                     {{ item.label }}
                   </a-select-option>
                 </a-select>
@@ -174,7 +144,8 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select v-model:value="maaConfig.Run.TaskTransitionMethod" size="large">
+                <a-select v-model:value="maaConfig.Run.TaskTransitionMethod" size="large"
+                  @change="handleChange('Run', 'TaskTransitionMethod', $event)">
                   <a-select-option value="ExitEmulator">重启模拟器</a-select-option>
                   <a-select-option value="ExitGame">重启明日方舟</a-select-option>
                   <a-select-option value="NoAction">直接切换账号</a-select-option>
@@ -184,38 +155,30 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip
-                    title="当用户本日代理成功次数达到该阀值时跳过代理，阈值为「0」时视为无代理次数上限"
-                  >
+                  <a-tooltip title="当用户本日代理成功次数达到该阀值时跳过代理，阈值为「0」时视为无代理次数上限">
                     <span class="form-label">
                       用户单日代理次数上限
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input-number
-                  v-model:value="maaConfig.Run.ProxyTimesLimit"
-                  :min="0"
-                  :max="999"
-                  size="large"
-                  class="modern-number-input"
-                  style="width: 100%"
-                />
+                <a-input-number v-model:value="maaConfig.Run.ProxyTimesLimit" :min="0" :max="999" size="large"
+                  class="modern-number-input" style="width: 100%"
+                  @change="handleChange('Run', 'ProxyTimesLimit', $event)" />
               </a-form-item>
             </a-col>
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip
-                    title="每周剿灭达到上限后，本周剩余时间不在执行剿灭任务，本功能存在误判可能，请谨慎使用"
-                  >
+                  <a-tooltip title="每周剿灭达到上限后，本周剩余时间不在执行剿灭任务，本功能存在误判可能，请谨慎使用">
                     <span class="form-label">
                       每周剿灭仅执行到上限
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select v-model:value="maaConfig.Run.AnnihilationWeeklyLimit" size="large">
+                <a-select v-model:value="maaConfig.Run.AnnihilationWeeklyLimit" size="large"
+                  @change="handleChange('Run', 'AnnihilationWeeklyLimit', $event)">
                   <a-select-option :value="true">是</a-select-option>
                   <a-select-option :value="false">否</a-select-option>
                 </a-select>
@@ -233,14 +196,9 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input-number
-                  v-model:value="maaConfig.Run.AnnihilationTimeLimit"
-                  :min="1"
-                  :max="9999"
-                  size="large"
-                  class="modern-number-input"
-                  style="width: 100%"
-                />
+                <a-input-number v-model:value="maaConfig.Run.AnnihilationTimeLimit" :min="1" :max="9999" size="large"
+                  class="modern-number-input" style="width: 100%"
+                  @change="handleChange('Run', 'AnnihilationTimeLimit', $event)" />
               </a-form-item>
             </a-col>
             <a-col :span="8">
@@ -253,14 +211,9 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input-number
-                  v-model:value="maaConfig.Run.RoutineTimeLimit"
-                  :min="1"
-                  :max="9999"
-                  size="large"
-                  class="modern-number-input"
-                  style="width: 100%"
-                />
+                <a-input-number v-model:value="maaConfig.Run.RoutineTimeLimit" :min="1" :max="9999" size="large"
+                  class="modern-number-input" style="width: 100%"
+                  @change="handleChange('Run', 'RoutineTimeLimit', $event)" />
               </a-form-item>
             </a-col>
             <a-col :span="8">
@@ -273,14 +226,9 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input-number
-                  v-model:value="maaConfig.Run.RunTimesLimit"
-                  :min="1"
-                  :max="9999"
-                  size="large"
-                  class="modern-number-input"
-                  style="width: 100%"
-                />
+                <a-input-number v-model:value="maaConfig.Run.RunTimesLimit" :min="1" :max="9999" size="large"
+                  class="modern-number-input" style="width: 100%"
+                  @change="handleChange('Run', 'RunTimesLimit', $event)" />
               </a-form-item>
             </a-col>
           </a-row>
@@ -292,7 +240,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref, watch } from 'vue'
+import { onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
 import { message } from 'ant-design-vue'
@@ -367,34 +315,40 @@ const emulatorDeviceLoading = ref(false)
 const emulatorOptions = ref<ComboBoxItem[]>([])
 const emulatorDeviceOptions = ref<ComboBoxItem[]>([])
 
-// 实时保存函数（带防抖）
-let saveTimer: NodeJS.Timeout | null = null
-const autoSave = async () => {
+// 即时保存函数 - 只发送修改的字段（遵循最小原则）
+const handleChange = async (category: string, key: string, value: any) => {
   if (isInitializing.value || isSaving.value) return
-  
-  // 清除之前的定时器
-  if (saveTimer) {
-    clearTimeout(saveTimer)
-  }
-  
-  // 设置新的定时器，500ms 后保存
-  saveTimer = setTimeout(async () => {
-    isSaving.value = true
-    try {
-      maaConfig.Info.Name = formData.name
-      await updateScript(scriptId, maaConfig)
-      logger.info('配置已自动保存')
-    } catch (error) {
-      logger.error('自动保存失败:', error)
-    } finally {
-      isSaving.value = false
+
+  isSaving.value = true
+  try {
+    // 构建只包含单个修改字段的更新数据（遵循最小原则）
+    const updateData: any = { [category]: { [key]: value } }
+
+    const success = await updateScript(scriptId, updateData)
+    if (success) {
+      logger.info(`配置已保存: ${category}.${key}`)
+      // 保存成功后刷新数据
+      await refreshScript()
     }
-  }, 500)
+  } catch (error) {
+    logger.error('保存失败:', error)
+  } finally {
+    isSaving.value = false
+  }
 }
 
-// 监听配置变化，自动保存
-watch(() => formData.name, autoSave)
-watch(maaConfig, autoSave, { deep: true })
+// 刷新脚本配置
+const refreshScript = async () => {
+  try {
+    const scriptDetail = await getScript(scriptId)
+    if (scriptDetail) {
+      Object.assign(maaConfig, scriptDetail.config as MAAScriptConfig)
+      formData.name = scriptDetail.name
+    }
+  } catch (error) {
+    logger.error('刷新配置失败:', error)
+  }
+}
 
 onMounted(async () => {
   await loadScript()
@@ -433,7 +387,7 @@ const loadScript = async () => {
       formData.name = scriptDetail.name
 
       Object.assign(maaConfig, scriptDetail.config as MAAScriptConfig)
-      
+
       // 如果已经有选择的模拟器，加载对应的设备选项
       if (maaConfig.Emulator?.Id) {
         await loadEmulatorDeviceOptions(maaConfig.Emulator.Id)
@@ -472,7 +426,7 @@ const loadEmulatorOptions = async () => {
 
 const loadEmulatorDeviceOptions = async (emulatorId: string) => {
   if (!emulatorId) return
-  
+
   emulatorDeviceLoading.value = true
   try {
     const response = await Service.getEmulatorDevicesComboxApiInfoComboxEmulatorDevicesPost({
@@ -491,11 +445,31 @@ const loadEmulatorDeviceOptions = async (emulatorId: string) => {
   }
 }
 
-const handleEmulatorChange = async (emulatorId: string) => {
+const handleEmulatorSelectChange = async (emulatorId: string) => {
   // 清空模拟器实例选择
   maaConfig.Emulator.Index = ''
   emulatorDeviceOptions.value = []
-  
+
+  // 保存模拟器选择和清空的实例字段
+  isSaving.value = true
+  try {
+    const updateData = {
+      Emulator: {
+        Id: emulatorId,
+        Index: ''
+      }
+    }
+    const success = await updateScript(scriptId, updateData)
+    if (success) {
+      logger.info('模拟器配置已保存')
+      await refreshScript()
+    }
+  } catch (error) {
+    logger.error('保存模拟器配置失败:', error)
+  } finally {
+    isSaving.value = false
+  }
+
   // 加载新的模拟器实例选项
   if (emulatorId) {
     await loadEmulatorDeviceOptions(emulatorId)
@@ -513,6 +487,8 @@ const selectMAAPath = async () => {
     const path = await (window.electronAPI as any).selectFolder()
     if (path) {
       maaConfig.Info.Path = path
+      // 选择路径后立即保存
+      await handleChange('Info', 'Path', path)
       message.success('MAA路径选择成功')
     }
   } catch (error) {
@@ -856,6 +832,7 @@ const selectMAAPath = async () => {
     opacity: 0;
     transform: translateY(20px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);

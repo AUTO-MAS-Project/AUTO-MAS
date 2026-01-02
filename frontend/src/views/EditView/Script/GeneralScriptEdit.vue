@@ -53,12 +53,8 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input
-                  v-model:value="formData.name"
-                  placeholder="请输入脚本名称"
-                  size="large"
-                  class="modern-input"
-                />
+                <a-input v-model:value="formData.name" placeholder="请输入脚本名称" size="large" class="modern-input"
+                  @blur="handleChange('Info', 'Name', formData.name)" />
               </a-form-item>
             </a-col>
             <a-col :span="16">
@@ -72,13 +68,8 @@
                   </a-tooltip>
                 </template>
                 <a-input-group compact class="path-input-group">
-                  <a-input
-                    v-model:value="formData.rootPath"
-                    placeholder="请选择脚本根目录"
-                    size="large"
-                    class="path-input"
-                    readonly
-                  />
+                  <a-input v-model:value="formData.rootPath" placeholder="请选择脚本根目录" size="large" class="path-input"
+                    readonly />
                   <a-button size="large" class="path-button" @click="selectRootPath">
                     <template #icon>
                       <FolderOpenOutlined />
@@ -108,13 +99,8 @@
                   </a-tooltip>
                 </template>
                 <a-input-group compact class="path-input-group">
-                  <a-input
-                    v-model:value="formData.scriptPath"
-                    placeholder="请选择脚本主程序文件"
-                    size="large"
-                    class="path-input"
-                    readonly
-                  />
+                  <a-input v-model:value="formData.scriptPath" placeholder="请选择脚本主程序文件" size="large" class="path-input"
+                    readonly />
                   <a-button size="large" class="path-button" @click="selectScriptPath">
                     <template #icon>
                       <FileOutlined />
@@ -134,28 +120,91 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input
-                  v-model:value="generalConfig.Script.Arguments"
-                  placeholder="请输入脚本启动参数"
-                  size="large"
-                  class="modern-input"
-                />
+                <a-input v-model:value="generalConfig.Script.Arguments" placeholder="请输入脚本启动参数" size="large"
+                  class="modern-input" @blur="handleChange('Script', 'Arguments', generalConfig.Script.Arguments)" />
               </a-form-item>
             </a-col>
             <a-col :span="6">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="开启后仅在脚本进程及其所有子进程全部结束时认定脚本进程结束">
+                  <a-tooltip title="开启后仅在脚本的子进程结束时认定脚本进程结束">
                     <span class="form-label">
                       追踪子进程
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select v-model:value="generalConfig.Script.IfTrackProcess" size="large">
+                <a-select v-model:value="generalConfig.Script.IfTrackProcess" size="large"
+                  @change="handleChange('Script', 'IfTrackProcess', $event)">
                   <a-select-option :value="true">是</a-select-option>
                   <a-select-option :value="false">否</a-select-option>
                 </a-select>
+              </a-form-item>
+            </a-col>
+          </a-row>
+          <!-- 追踪子进程配置 -->
+          <a-row v-if="generalConfig.Script.IfTrackProcess" :gutter="24">
+            <a-col :span="8">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip title="要追踪的进程名称，打开脚本后启动任务管理器，在目标脚本进程右键，选择转到详细信息，填入名称栏中的内容即可，无法确认时可以留空">
+                    <span class="form-label">
+                      被追踪进程的名称
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-input v-model:value="generalConfig.Script.TrackProcessName" placeholder="请输入要追踪的进程名称" size="large"
+                  class="modern-input" @blur="
+                    handleChange(
+                      'Script',
+                      'TrackProcessName',
+                      generalConfig.Script.TrackProcessName
+                    )
+                    " />
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip title="要追踪的进程可执行文件路径，打开脚本后启动任务管理器，在目标脚本进程右键，选择「打开文件所在位置」，即可定位到可执行文件路径，无法确认时可以留空">
+                    <span class="form-label">
+                      被追踪进程的文件路径
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-input-group compact class="path-input-group">
+                  <a-input v-model:value="generalConfig.Script.TrackProcessExe" placeholder="请选择进程可执行文件路径" size="large"
+                    class="path-input" readonly />
+                  <a-button size="large" class="path-button" @click="selectTrackProcessExe">
+                    <template #icon>
+                      <FileOutlined />
+                    </template>
+                    选择文件
+                  </a-button>
+                </a-input-group>
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip
+                    title="要追踪的进程启动命令行参数，打开脚本后启动任务管理器，在目标脚本进程右键，选择「转到详细信息」，填入命令行栏中的内容即可，命令行栏不存在可以在标题栏右键，选择「选择列」，勾选命令行，无法确认时可以留空">
+                    <span class="form-label">
+                      追踪进程命令行参数
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-input v-model:value="generalConfig.Script.TrackProcessCmdline" placeholder="请输入进程启动命令行参数"
+                  size="large" class="modern-input" @blur="
+                    handleChange(
+                      'Script',
+                      'TrackProcessCmdline',
+                      generalConfig.Script.TrackProcessCmdline
+                    )
+                    " />
               </a-form-item>
             </a-col>
           </a-row>
@@ -163,13 +212,10 @@
             <a-col :span="12">
               <a-form-item name="configPath" :rules="rules.configPath">
                 <template #label>
-                  <a-tooltip
-                    :title="
-                      generalConfig.Script.ConfigPathMode === 'Folder'
-                        ? '脚本配置文件所在的文件夹路径'
-                        : '脚本配置文件的路径'
-                    "
-                  >
+                  <a-tooltip :title="generalConfig.Script.ConfigPathMode === 'Folder'
+                    ? '脚本配置文件所在的文件夹路径'
+                    : '脚本配置文件的路径'
+                    ">
                     <span class="form-label">
                       配置文件路径
                       <QuestionCircleOutlined class="help-icon" />
@@ -177,17 +223,10 @@
                   </a-tooltip>
                 </template>
                 <a-input-group compact class="path-input-group">
-                  <a-input
-                    v-model:value="formData.configPath"
-                    :placeholder="
-                      generalConfig.Script.ConfigPathMode === 'Folder'
-                        ? '请选择配置文件夹'
-                        : '请选择配置文件'
-                    "
-                    size="large"
-                    class="path-input"
-                    readonly
-                  />
+                  <a-input v-model:value="formData.configPath" :placeholder="generalConfig.Script.ConfigPathMode === 'Folder'
+                    ? '请选择配置文件夹'
+                    : '请选择配置文件'
+                    " size="large" class="path-input" readonly />
                   <a-button size="large" class="path-button" @click="selectConfigPath">
                     <template #icon>
                       <FolderOpenOutlined v-if="generalConfig.Script.ConfigPathMode === 'Folder'" />
@@ -210,7 +249,8 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select v-model:value="generalConfig.Script.ConfigPathMode" size="large">
+                <a-select v-model:value="generalConfig.Script.ConfigPathMode" size="large"
+                  @change="handleChange('Script', 'ConfigPathMode', $event)">
                   <a-select-option value="File">单文件</a-select-option>
                   <a-select-option value="Folder">文件夹</a-select-option>
                 </a-select>
@@ -226,7 +266,8 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select v-model:value="generalConfig.Script.UpdateConfigMode" size="large">
+                <a-select v-model:value="generalConfig.Script.UpdateConfigMode" size="large"
+                  @change="handleChange('Script', 'UpdateConfigMode', $event)">
                   <a-select-option value="Never">从不</a-select-option>
                   <a-select-option value="Success">成功时</a-select-option>
                   <a-select-option value="Failure">失败时</a-select-option>
@@ -247,13 +288,8 @@
                   </a-tooltip>
                 </template>
                 <a-input-group compact class="path-input-group">
-                  <a-input
-                    v-model:value="formData.logPath"
-                    placeholder="请选择日志文件"
-                    size="large"
-                    class="path-input"
-                    readonly
-                  />
+                  <a-input v-model:value="formData.logPath" placeholder="请选择日志文件" size="large" class="path-input"
+                    readonly />
                   <a-button size="large" class="path-button" @click="selectLogPath">
                     <template #icon>
                       <FolderOpenOutlined />
@@ -273,12 +309,10 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input
-                  v-model:value="generalConfig.Script.LogPathFormat"
-                  placeholder="日志文件名格式，文件名固定时留空"
-                  size="large"
-                  class="modern-input"
-                />
+                <a-input v-model:value="generalConfig.Script.LogPathFormat" placeholder="日志文件名格式，文件名固定时留空" size="large"
+                  class="modern-input" @blur="
+                    handleChange('Script', 'LogPathFormat', generalConfig.Script.LogPathFormat)
+                    " />
               </a-form-item>
             </a-col>
           </a-row>
@@ -294,14 +328,9 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input-number
-                  v-model:value="formData.logTimeStart"
-                  :min="1"
-                  :max="9999"
-                  size="large"
-                  class="modern-number-input"
-                  style="width: 100%"
-                />
+                <a-input-number v-model:value="formData.logTimeStart" :min="1" :max="9999" size="large"
+                  class="modern-number-input" style="width: 100%"
+                  @change="handleChange('Script', 'LogTimeStart', $event)" />
               </a-form-item>
             </a-col>
             <a-col :span="6">
@@ -314,14 +343,9 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input-number
-                  v-model:value="formData.logTimeEnd"
-                  :min="1"
-                  :max="9999"
-                  size="large"
-                  class="modern-number-input"
-                  style="width: 100%"
-                />
+                <a-input-number v-model:value="formData.logTimeEnd" :min="1" :max="9999" size="large"
+                  class="modern-number-input" style="width: 100%"
+                  @change="handleChange('Script', 'LogTimeEnd', $event)" />
               </a-form-item>
             </a-col>
 
@@ -335,12 +359,8 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input
-                  v-model:value="formData.logTimeFormat"
-                  placeholder="请输入脚本日志时间戳格式"
-                  size="large"
-                  class="modern-input"
-                />
+                <a-input v-model:value="formData.logTimeFormat" placeholder="请输入脚本日志时间戳格式" size="large"
+                  class="modern-input" @blur="handleChange('Script', 'LogTimeFormat', formData.logTimeFormat)" />
               </a-form-item>
             </a-col>
           </a-row>
@@ -350,20 +370,15 @@
               <a-form-item>
                 <template #label>
                   <a-tooltip
-                    title="若填写，且日志文本信息中任意任务成功日志先于任务异常日志出现，则视为任务成功，否则若脚本进程结束时，日志文本信息中不存在任何任务成功日志，则视为任务失败；若留空，且在脚本进程结束时，日志文本信息中不存在任意任务异常日志，则视为任务成功"
-                  >
+                    title="若填写，且日志文本信息中任意任务成功日志先于任务异常日志出现，则视为任务成功，否则若脚本进程结束时，日志文本信息中不存在任何任务成功日志，则视为任务失败；若留空，且在脚本进程结束时，日志文本信息中不存在任意任务异常日志，则视为任务成功">
                     <span class="form-label">
                       任务成功日志
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input
-                  v-model:value="generalConfig.Script.SuccessLog"
-                  placeholder="请输入脚本成功日志，以「 | 」进行分割"
-                  size="large"
-                  class="modern-input"
-                />
+                <a-input v-model:value="generalConfig.Script.SuccessLog" placeholder="请输入脚本成功日志，以「 | 」进行分割" size="large"
+                  class="modern-input" @blur="handleChange('Script', 'SuccessLog', generalConfig.Script.SuccessLog)" />
               </a-form-item>
             </a-col>
             <a-col :span="12">
@@ -376,12 +391,8 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input
-                  v-model:value="formData.errorLog"
-                  placeholder="请输入脚本失败日志，以「 | 」进行分割"
-                  size="large"
-                  class="modern-input"
-                />
+                <a-input v-model:value="formData.errorLog" placeholder="请输入脚本失败日志，以「 | 」进行分割" size="large"
+                  class="modern-input" @blur="handleChange('Script', 'ErrorLog', formData.errorLog)" />
               </a-form-item>
             </a-col>
           </a-row>
@@ -403,7 +414,8 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select v-model:value="generalConfig.Game.Enabled" size="large">
+                <a-select v-model:value="generalConfig.Game.Enabled" size="large"
+                  @change="handleChange('Game', 'Enabled', $event)">
                   <a-select-option :value="true">是</a-select-option>
                   <a-select-option :value="false">否</a-select-option>
                 </a-select>
@@ -419,11 +431,7 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select
-                  v-model:value="generalConfig.Game.Type"
-                  size="large"
-                  @change="handleGameTypeChange"
-                >
+                <a-select v-model:value="generalConfig.Game.Type" size="large" @change="handleGameTypeChange">
                   <a-select-option value="Emulator">模拟器</a-select-option>
                   <a-select-option value="Client">PC客户端</a-select-option>
                   <a-select-option value="URL">URL协议(如Starward)</a-select-option>
@@ -442,13 +450,8 @@
                   </a-tooltip>
                 </template>
                 <a-input-group compact class="path-input-group">
-                  <a-input
-                    v-model:value="generalConfig.Game.Path"
-                    placeholder="请选择游戏的可执行文件"
-                    size="large"
-                    class="path-input"
-                    readonly
-                  />
+                  <a-input v-model:value="generalConfig.Game.Path" placeholder="请选择游戏的可执行文件" size="large"
+                    class="path-input" readonly />
                   <a-button size="large" class="path-button" @click="selectGamePath">
                     <template #icon>
                       <FileOutlined />
@@ -469,18 +472,9 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select
-                  v-model:value="generalConfig.Game.EmulatorId"
-                  size="large"
-                  placeholder="请选择模拟器"
-                  :loading="emulatorLoading"
-                  @change="handleEmulatorChange"
-                >
-                  <a-select-option
-                    v-for="item in emulatorOptions"
-                    :key="item.value"
-                    :value="item.value"
-                  >
+                <a-select v-model:value="generalConfig.Game.EmulatorId" size="large" placeholder="请选择模拟器"
+                  :loading="emulatorLoading" @change="handleEmulatorChange">
+                  <a-select-option v-for="item in emulatorOptions" :key="item.value" :value="item.value">
                     {{ item.label }}
                   </a-select-option>
                 </a-select>
@@ -498,11 +492,8 @@
                   </a-tooltip>
                 </template>
                 <a-input-group class="path-input-group">
-                  <a-input
-                    v-model:value="generalConfig.Game.URL"
-                    placeholder="请输入URL参数，如：starward://startgame/xxxx"
-                    size="large"
-                  />
+                  <a-input v-model:value="generalConfig.Game.URL" placeholder="请输入URL参数，如：starward://startgame/xxxx"
+                    size="large" @blur="handleChange('Game', 'URL', generalConfig.Game.URL)" />
                 </a-input-group>
               </a-form-item>
             </a-col>
@@ -510,7 +501,10 @@
             <a-col v-if="generalConfig.Game.Type === 'Emulator'" :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="emulatorDeviceOptions.length === 0 && !emulatorDeviceLoading ? '不支持自动扫描实例的模拟器，请手动输入实例信息' : '选择模拟器的具体实例'">
+                  <a-tooltip :title="emulatorDeviceOptions.length === 0 && !emulatorDeviceLoading
+                    ? '不支持自动扫描实例的模拟器，请手动输入实例信息'
+                    : '选择模拟器的具体实例'
+                    ">
                     <span class="form-label">
                       模拟器实例
                       <QuestionCircleOutlined class="help-icon" />
@@ -518,27 +512,18 @@
                   </a-tooltip>
                 </template>
                 <!-- 当API返回空列表时显示输入框 -->
-                <a-input
-                  v-if="emulatorDeviceOptions.length === 0 && !emulatorDeviceLoading && generalConfig.Game.EmulatorId"
-                  v-model:value="generalConfig.Game.EmulatorIndex"
-                  size="large"
-                  placeholder="请输入实例信息，格式：启动附加命令 | ADB地址"
+                <a-input v-if="
+                  emulatorDeviceOptions.length === 0 &&
+                  !emulatorDeviceLoading &&
+                  generalConfig.Game.EmulatorId
+                " v-model:value="generalConfig.Game.EmulatorIndex" size="large" placeholder="请输入实例信息，格式：启动附加命令 | ADB地址"
                   class="modern-input"
-                />
+                  @blur="handleChange('Game', 'EmulatorIndex', generalConfig.Game.EmulatorIndex)" />
                 <!-- 正常情况下显示下拉框 -->
-                <a-select
-                  v-else
-                  v-model:value="generalConfig.Game.EmulatorIndex"
-                  size="large"
-                  placeholder="请先选择模拟器"
-                  :loading="emulatorDeviceLoading"
-                  :disabled="!generalConfig.Game.EmulatorId"
-                >
-                  <a-select-option
-                    v-for="item in emulatorDeviceOptions"
-                    :key="item.value"
-                    :value="item.value"
-                  >
+                <a-select v-else v-model:value="generalConfig.Game.EmulatorIndex" size="large" placeholder="请先选择模拟器"
+                  :loading="emulatorDeviceLoading" :disabled="!generalConfig.Game.EmulatorId"
+                  @change="handleChange('Game', 'EmulatorIndex', $event)">
+                  <a-select-option v-for="item in emulatorDeviceOptions" :key="item.value" :value="item.value">
                     {{ item.label }}
                   </a-select-option>
                 </a-select>
@@ -558,12 +543,8 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input
-                  v-model:value="generalConfig.Game.Arguments"
-                  placeholder="请输入启动参数"
-                  size="large"
-                  class="modern-input"
-                />
+                <a-input v-model:value="generalConfig.Game.Arguments" placeholder="请输入启动参数" size="large"
+                  class="modern-input" @blur="handleChange('Game', 'Arguments', generalConfig.Game.Arguments)" />
               </a-form-item>
             </a-col>
             <a-col :span="8">
@@ -576,14 +557,8 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input-number
-                  v-model:value="generalConfig.Game.WaitTime"
-                  :min="0"
-                  :max="300"
-                  size="large"
-                  class="modern-number-input"
-                  style="width: 100%"
-                />
+                <a-input-number v-model:value="generalConfig.Game.WaitTime" :min="0" :max="300" size="large"
+                  class="modern-number-input" style="width: 100%" @change="handleChange('Game', 'WaitTime', $event)" />
               </a-form-item>
             </a-col>
             <a-col :span="8">
@@ -596,7 +571,8 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select v-model:value="generalConfig.Game.IfForceClose" size="large">
+                <a-select v-model:value="generalConfig.Game.IfForceClose" size="large"
+                  @change="handleChange('Game', 'IfForceClose', $event)">
                   <a-select-option :value="true">是</a-select-option>
                   <a-select-option :value="false">否</a-select-option>
                 </a-select>
@@ -610,21 +586,15 @@
           <a-col :span="8">
             <a-form-item>
               <template #label>
-                <a-tooltip
-                  title="进程名称，如StarRail.exe，必须填写否则可能无法正确监测进程状态。开启游戏后，打开任务管理器查看程序详细信息即可获得。"
-                >
+                <a-tooltip title="进程名称，如StarRail.exe，必须填写否则可能无法正确监测进程状态。开启游戏后，打开任务管理器查看程序详细信息即可获得。">
                   <span class="form-label">
                     进程名称
                     <QuestionCircleOutlined class="help-icon" />
                   </span>
                 </a-tooltip>
               </template>
-              <a-input
-                v-model:value="generalConfig.Game.ProcessName"
-                placeholder="比如 StarRail.exe"
-                size="large"
-                class="modern-input"
-              />
+              <a-input v-model:value="generalConfig.Game.ProcessName" placeholder="比如 StarRail.exe" size="large"
+                class="modern-input" @blur="handleChange('Game', 'ProcessName', generalConfig.Game.ProcessName)" />
             </a-form-item>
           </a-col>
         </a-row>
@@ -637,23 +607,16 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip
-                    title="当用户本日代理成功次数达到该阀值时跳过代理，阈值为「0」时视为无代理次数上限"
-                  >
+                  <a-tooltip title="当用户本日代理成功次数达到该阀值时跳过代理，阈值为「0」时视为无代理次数上限">
                     <span class="form-label">
                       单日代理次数上限
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input-number
-                  v-model:value="generalConfig.Run.ProxyTimesLimit"
-                  :min="0"
-                  :max="999"
-                  size="large"
-                  class="modern-number-input"
-                  style="width: 100%"
-                />
+                <a-input-number v-model:value="generalConfig.Run.ProxyTimesLimit" :min="0" :max="999" size="large"
+                  class="modern-number-input" style="width: 100%"
+                  @change="handleChange('Run', 'ProxyTimesLimit', $event)" />
               </a-form-item>
             </a-col>
             <a-col :span="8">
@@ -666,14 +629,9 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input-number
-                  v-model:value="generalConfig.Run.RunTimesLimit"
-                  :min="1"
-                  :max="10"
-                  size="large"
-                  class="modern-number-input"
-                  style="width: 100%"
-                />
+                <a-input-number v-model:value="generalConfig.Run.RunTimesLimit" :min="1" :max="10" size="large"
+                  class="modern-number-input" style="width: 100%"
+                  @change="handleChange('Run', 'RunTimesLimit', $event)" />
               </a-form-item>
             </a-col>
             <a-col :span="8">
@@ -686,14 +644,9 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input-number
-                  v-model:value="generalConfig.Run.RunTimeLimit"
-                  :min="1"
-                  :max="300"
-                  size="large"
-                  class="modern-number-input"
-                  style="width: 100%"
-                />
+                <a-input-number v-model:value="generalConfig.Run.RunTimeLimit" :min="1" :max="300" size="large"
+                  class="modern-number-input" style="width: 100%"
+                  @change="handleChange('Run', 'RunTimeLimit', $event)" />
               </a-form-item>
             </a-col>
           </a-row>
@@ -703,61 +656,29 @@
   </div>
 
   <!-- 上传脚本弹窗 -->
-  <a-modal
-    v-model:open="uploadModalVisible"
-    title="上传脚本配置到云端"
-    :confirm-loading="uploadLoading"
-    width="600px"
-    :mask-closable="false"
-    @ok="handleUpload"
-    @cancel="handleUploadCancel"
-  >
-    <a-form
-      ref="uploadFormRef"
-      :model="uploadForm"
-      :rules="uploadRules"
-      layout="vertical"
-      class="upload-form"
-    >
+  <a-modal v-model:open="uploadModalVisible" title="上传脚本配置到云端" :confirm-loading="uploadLoading" width="600px"
+    :mask-closable="false" @ok="handleUpload" @cancel="handleUploadCancel">
+    <a-form ref="uploadFormRef" :model="uploadForm" :rules="uploadRules" layout="vertical" class="upload-form">
       <a-form-item name="config_name" label="配置名称">
-        <a-input
-          v-model:value="uploadForm.config_name"
-          placeholder="为您的脚本配置起一个易于识别的名称"
-          size="large"
-          :maxlength="50"
-          show-count
-          class="modern-input"
-        />
+        <a-input v-model:value="uploadForm.config_name" placeholder="为您的脚本配置起一个易于识别的名称" size="large" :maxlength="50"
+          show-count class="modern-input" />
       </a-form-item>
 
       <a-form-item name="author" label="作者">
-        <a-input
-          v-model:value="uploadForm.author"
-          placeholder="请输入作者名称"
-          size="large"
-          :maxlength="30"
-          show-count
-          class="modern-input"
-        />
+        <a-input v-model:value="uploadForm.author" placeholder="请输入作者名称" size="large" :maxlength="30" show-count
+          class="modern-input" />
       </a-form-item>
 
       <a-form-item name="description" label="描述">
-        <a-textarea
-          v-model:value="uploadForm.description"
-          placeholder="请简要描述该脚本配置的功能、适用场景等信息"
-          size="large"
-          :rows="4"
-          :maxlength="200"
-          show-count
-          class="modern-textarea"
-        />
+        <a-textarea v-model:value="uploadForm.description" placeholder="请简要描述该脚本配置的功能、适用场景等信息" size="large" :rows="4"
+          :maxlength="200" show-count class="modern-textarea" />
       </a-form-item>
 
       <a-alert message="分享说明" type="info">
         <template #description>
           <p>
-            所有<span style="font-weight: bold"> 敏感信息 </span
-            >均会在上传前自动移除，上传内容仅包含脚本配置的非敏感信息。上传且通过审核后，其他用户可以下载并使用您的脚本配置。请确保配置信息准确且描述清晰。
+            所有<span style="font-weight: bold"> 敏感信息
+            </span>均会在上传前自动移除，上传内容仅包含脚本配置的非敏感信息。上传且通过审核后，其他用户可以下载并使用您的脚本配置。请确保配置信息准确且描述清晰。
           </p>
         </template>
       </a-alert>
@@ -767,6 +688,7 @@
 
 <script setup lang="ts">
 import { onMounted, reactive, ref, watch, nextTick } from 'vue'
+import type { MAAScriptConfig } from '../../../types/script.ts'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
 import { message } from 'ant-design-vue'
@@ -958,7 +880,7 @@ const validatePath = (rootPath: string, targetPath: string, pathName: string): b
 
   // 检查是否在根目录下
   const isUnderRoot = pathUtils.isSubPath(rootPath, targetPath)
-  
+
   // 检查是否在 AppData 下
   let isUnderAppData = false
   if (appDataPath.value) {
@@ -1129,6 +1051,9 @@ const generalConfig = reactive<GeneralScriptConfig>({
     ConfigPathMode: 'File',
     ErrorLog: '',
     IfTrackProcess: false,
+    TrackProcessName: '',
+    TrackProcessExe: '',
+    TrackProcessCmdline: '',
     LogPath: '.',
     LogPathFormat: '%Y-%m-%d',
     LogTimeEnd: 1,
@@ -1165,6 +1090,7 @@ const emulatorOptions = ref<ComboBoxItem[]>([])
 const emulatorDeviceOptions = ref<ComboBoxItem[]>([])
 
 // 延迟注册 ConfigPathMode watcher（在加载脚本并完成初始化后再注册）
+// 注意：此 watcher 用于业务逻辑处理（配置文件类型切换时重置路径），而非简单的配置自动保存
 let stopConfigPathModeWatcher: (() => void) | null = null
 
 const setupConfigPathModeWatcher = () => {
@@ -1174,9 +1100,11 @@ const setupConfigPathModeWatcher = () => {
     stopConfigPathModeWatcher = null
   }
 
+  // 监听配置文件类型变化，当从"单文件"切换到"文件夹"或反之时，自动重置路径
+  // 这是必要的业务逻辑，因为文件路径和文件夹路径不能混用
   stopConfigPathModeWatcher = watch(
     () => generalConfig.Script.ConfigPathMode,
-    (newMode, oldMode) => {
+    async (newMode, oldMode) => {
       if (
         newMode !== oldMode &&
         generalConfig.Script.ConfigPath &&
@@ -1184,51 +1112,80 @@ const setupConfigPathModeWatcher = () => {
       ) {
         // 当配置文件类型改变时，重置为根目录路径
         const rootPath = generalConfig.Info.RootPath
+        let newConfigPath: string
         if (rootPath && rootPath !== '.') {
+          newConfigPath = rootPath
           generalConfig.Script.ConfigPath = rootPath
           const typeText = newMode === 'Folder' ? '文件夹' : '文件'
           message.info(`配置文件类型已切换为${typeText}，路径已重置为根目录`)
         } else {
           // 如果没有设置根目录，则清空路径
+          newConfigPath = '.'
           generalConfig.Script.ConfigPath = '.'
           const typeText = newMode === 'Folder' ? '文件夹' : '文件'
           message.info(`配置文件类型已切换为${typeText}，请重新选择路径`)
+        }
+
+        // 保存被重置的 ConfigPath（ConfigPathMode 已经通过 @change 保存了）
+        // 使用即时保存模式，而非 watch 自动保存
+        if (!isInitializing.value && !isSaving.value) {
+          isSaving.value = true
+          try {
+            const updateData = { Script: { ConfigPath: newConfigPath } }
+            const success = await updateScript(scriptId, updateData)
+            if (success) {
+              logger.info('配置路径已重置并保存')
+              await refreshScript()
+            }
+          } catch (error) {
+            logger.error('保存配置路径失败:', error)
+          } finally {
+            isSaving.value = false
+          }
         }
       }
     }
   )
 }
 
-// 实时保存函数（带防抖）
-let saveTimer: NodeJS.Timeout | null = null
-const autoSave = async () => {
+// 即时保存函数 - 只发送修改的字段（遵循最小原则）
+const handleChange = async (category: string, key: string, value: any) => {
   if (isInitializing.value || isSaving.value) return
-  
-  // 清除之前的定时器
-  if (saveTimer) {
-    clearTimeout(saveTimer)
-  }
-  
-  // 设置新的定时器，500ms 后保存
-  saveTimer = setTimeout(async () => {
-    isSaving.value = true
-    try {
-      generalConfig.Info.Name = formData.name
-      await updateScript(scriptId, generalConfig)
-      logger.info('配置已自动保存')
-    } catch (error) {
-      logger.error('自动保存失败:', error)
-    } finally {
-      isSaving.value = false
+
+  isSaving.value = true
+  try {
+    // 构建只包含单个修改字段的更新数据（遵循最小原则）
+    const updateData: any = { [category]: { [key]: value } }
+
+    const success = await updateScript(scriptId, updateData)
+    if (success) {
+      logger.info(`配置已保存: ${category}.${key}`)
+      // 保存成功后刷新数据
+      await refreshScript()
     }
-  }, 500)
+  } catch (error) {
+    logger.error('保存失败:', error)
+  } finally {
+    isSaving.value = false
+  }
 }
 
-// 监听配置变化，自动保存（排除根目录变化的 watch，因为它有自己的逻辑）
-watch(() => formData.name, autoSave)
-watch(generalConfig, autoSave, { deep: true })
+// 刷新脚本配置
+const refreshScript = async () => {
+  try {
+    const scriptDetail = await getScript(scriptId)
+    if (scriptDetail) {
+      Object.assign(generalConfig, scriptDetail.config as GeneralScriptConfig)
+      formData.name = scriptDetail.name
+    }
+  } catch (error) {
+    logger.error('刷新配置失败:', error)
+  }
+}
 
 // 监听根目录变化，自动调整其他路径以保持相对关系
+// 注意：此 watcher 用于维护路径间的相对关系（业务逻辑），而非配置自动保存
+// 实际的保存操作由用户选择路径后的 @blur/@change 事件触发
 watch(
   () => generalConfig.Info.RootPath,
   (newRootPath, oldRootPath) => {
@@ -1304,7 +1261,7 @@ const loadScript = async () => {
       setTimeout(() => {
         updatePathRelations()
       }, 100)
-      
+
       // 如果已经有选择的模拟器，且游戏类型为模拟器，则加载对应的设备选项
       if (generalConfig.Game?.Type === 'Emulator' && generalConfig.Game?.EmulatorId) {
         await loadEmulatorDeviceOptions(generalConfig.Game.EmulatorId)
@@ -1346,11 +1303,11 @@ const loadEmulatorOptions = async () => {
 
 const loadEmulatorDeviceOptions = async (emulatorId: string) => {
   if (!emulatorId) return
-  
+
   emulatorDeviceLoading.value = true
   try {
     const response = await Service.getEmulatorDevicesComboxApiInfoComboxEmulatorDevicesPost({
-      emulatorId: emulatorId
+      emulatorId: emulatorId,
     })
     if (response && response.code === 200) {
       emulatorDeviceOptions.value = response.data || []
@@ -1369,7 +1326,27 @@ const handleEmulatorChange = async (emulatorId: string) => {
   // 清空模拟器实例选择
   generalConfig.Game.EmulatorIndex = ''
   emulatorDeviceOptions.value = []
-  
+
+  // 保存模拟器选择和清空的实例字段
+  isSaving.value = true
+  try {
+    const updateData = {
+      Game: {
+        EmulatorId: emulatorId,
+        EmulatorIndex: '',
+      },
+    }
+    const success = await updateScript(scriptId, updateData)
+    if (success) {
+      logger.info('模拟器配置已保存')
+      await refreshScript()
+    }
+  } catch (error) {
+    logger.error('保存模拟器配置失败:', error)
+  } finally {
+    isSaving.value = false
+  }
+
   // 加载新的模拟器实例选项
   if (emulatorId) {
     await loadEmulatorDeviceOptions(emulatorId)
@@ -1377,6 +1354,9 @@ const handleEmulatorChange = async (emulatorId: string) => {
 }
 
 const handleGameTypeChange = async (gameType: string) => {
+  // 构建需要更新的字段对象
+  let updateFields: Record<string, any> = { Type: gameType }
+
   // 当游戏平台类型改变时，清空相关字段
   if (gameType === 'Emulator') {
     // 切换到模拟器时，清空PC客户端和URL相关字段
@@ -1385,6 +1365,14 @@ const handleGameTypeChange = async (gameType: string) => {
     generalConfig.Game.Arguments = ''
     generalConfig.Game.WaitTime = 0
     generalConfig.Game.IfForceClose = false
+    updateFields = {
+      ...updateFields,
+      Path: '.',
+      URL: '',
+      Arguments: '',
+      WaitTime: 0,
+      IfForceClose: false,
+    }
     // 加载模拟器选项
     await loadEmulatorOptions()
   } else if (gameType === 'Client') {
@@ -1394,6 +1382,12 @@ const handleGameTypeChange = async (gameType: string) => {
     generalConfig.Game.EmulatorIndex = ''
     emulatorDeviceOptions.value = []
     emulatorOptions.value = []
+    updateFields = {
+      ...updateFields,
+      URL: '',
+      EmulatorId: '',
+      EmulatorIndex: '',
+    }
   } else if (gameType === 'URL') {
     // 切换到URL时，清空PC客户端和模拟器相关字段
     generalConfig.Game.Path = '.'
@@ -1404,6 +1398,30 @@ const handleGameTypeChange = async (gameType: string) => {
     generalConfig.Game.EmulatorIndex = ''
     emulatorDeviceOptions.value = []
     emulatorOptions.value = []
+    updateFields = {
+      ...updateFields,
+      Path: '.',
+      Arguments: '',
+      WaitTime: 0,
+      IfForceClose: false,
+      EmulatorId: '',
+      EmulatorIndex: '',
+    }
+  }
+
+  // 保存所有更改的字段
+  isSaving.value = true
+  try {
+    const updateData = { Game: updateFields }
+    const success = await updateScript(scriptId, updateData)
+    if (success) {
+      logger.info('游戏配置已保存')
+      await refreshScript()
+    }
+  } catch (error) {
+    logger.error('保存游戏配置失败:', error)
+  } finally {
+    isSaving.value = false
   }
 }
 
@@ -1433,8 +1451,43 @@ const selectRootPath = async () => {
       // 如果有保存的相对路径关系，根据新根目录更新其他路径
       if (oldRootPath && oldRootPath !== '.' && oldRootPath !== normalizedPath) {
         updatePathsBasedOnRoot(generalConfig.Info.RootPath)
+
+        // 收集所有需要更新的字段
+        const updateFields: Record<string, any> = { RootPath: normalizedPath }
+
+        // 检查哪些路径被自动调整了，将它们也加入更新
+        const scriptPathUpdates: Record<string, any> = {}
+        if (generalConfig.Script.ScriptPath && generalConfig.Script.ScriptPath !== '.') {
+          scriptPathUpdates.ScriptPath = generalConfig.Script.ScriptPath
+        }
+        if (generalConfig.Script.ConfigPath && generalConfig.Script.ConfigPath !== '.') {
+          scriptPathUpdates.ConfigPath = generalConfig.Script.ConfigPath
+        }
+        if (generalConfig.Script.LogPath && generalConfig.Script.LogPath !== '.') {
+          scriptPathUpdates.LogPath = generalConfig.Script.LogPath
+        }
+
+        // 保存所有更改
+        isSaving.value = true
+        try {
+          const updateData: any = { Info: updateFields }
+          if (Object.keys(scriptPathUpdates).length > 0) {
+            updateData.Script = scriptPathUpdates
+          }
+          const success = await updateScript(scriptId, updateData)
+          if (success) {
+            logger.info('根路径及关联路径已保存')
+            await refreshScript()
+          }
+        } catch (error) {
+          logger.error('保存路径失败:', error)
+        } finally {
+          isSaving.value = false
+        }
         message.success('根路径选择成功，其他路径已自动调整以保持相对关系')
       } else {
+        // 保存根目录更改
+        await handleChange('Info', 'RootPath', normalizedPath)
         message.success('根路径选择成功')
       }
     }
@@ -1457,6 +1510,8 @@ const selectGamePath = async () => {
     ])
     if (paths && paths.length > 0) {
       generalConfig.Game.Path = paths[0]
+      // 保存游戏路径
+      await handleChange('Game', 'Path', paths[0])
       message.success('游戏路径选择成功')
     }
   } catch (error) {
@@ -1480,14 +1535,45 @@ const selectScriptPath = async () => {
       const path = paths[0]
       // 验证路径是否在根目录下
       if (validatePath(generalConfig.Info.RootPath, path, '主程序路径')) {
-        generalConfig.Script.ScriptPath = pathUtils.normalizePath(path)
+        const normalizedPath = pathUtils.normalizePath(path)
+        generalConfig.Script.ScriptPath = normalizedPath
         // 更新相对路径关系
         updatePathRelations()
+        // 保存脚本路径
+        await handleChange('Script', 'ScriptPath', normalizedPath)
         message.success('脚本路径选择成功')
       }
     }
   } catch (error) {
     logger.error('选择脚本路径失败:', error)
+    message.error('选择文件失败')
+  }
+}
+
+const selectTrackProcessExe = async () => {
+  try {
+    if (!window.electronAPI) {
+      message.error('文件选择功能不可用，请在 Electron 环境中运行')
+      return
+    }
+
+    const paths = await (window.electronAPI as any).selectFile([
+      { name: '可执行文件', extensions: ['exe'] },
+      { name: '所有文件', extensions: ['*'] },
+    ])
+    if (paths && paths.length > 0) {
+      const path = paths[0]
+      // 验证路径是否在根目录下（可选）
+      if (validatePath(generalConfig.Info.RootPath, path, '被追踪进程可执行文件路径')) {
+        const normalizedPath = pathUtils.normalizePath(path)
+        generalConfig.Script.TrackProcessExe = normalizedPath
+        // 保存被追踪进程可执行文件路径
+        await handleChange('Script', 'TrackProcessExe', normalizedPath)
+        message.success('被追踪进程可执行文件选择成功')
+      }
+    }
+  } catch (error) {
+    logger.error('选择被追踪进程可执行文件失败:', error)
     message.error('选择文件失败')
   }
 }
@@ -1523,9 +1609,12 @@ const selectConfigPath = async () => {
       // 验证路径是否在根目录下
       const pathType = generalConfig.Script.ConfigPathMode === 'Folder' ? '配置文件夹' : '配置文件'
       if (validatePath(generalConfig.Info.RootPath, selectedPath, `${pathType}路径`)) {
-        generalConfig.Script.ConfigPath = pathUtils.normalizePath(selectedPath)
+        const normalizedPath = pathUtils.normalizePath(selectedPath)
+        generalConfig.Script.ConfigPath = normalizedPath
         // 更新相对路径关系
         updatePathRelations()
+        // 保存配置路径
+        await handleChange('Script', 'ConfigPath', normalizedPath)
         message.success(`${pathType}路径选择成功`)
       }
     }
@@ -1548,9 +1637,12 @@ const selectLogPath = async () => {
       const path = paths[0]
       // 验证路径是否在根目录下
       if (validatePath(generalConfig.Info.RootPath, path, '日志文件路径')) {
-        generalConfig.Script.LogPath = pathUtils.normalizePath(path)
+        const normalizedPath = pathUtils.normalizePath(path)
+        generalConfig.Script.LogPath = normalizedPath
         // 更新相对路径关系
         updatePathRelations()
+        // 保存日志路径
+        await handleChange('Script', 'LogPath', normalizedPath)
         message.success('日志路径选择成功')
       }
     }
@@ -1955,6 +2047,7 @@ const handleUpload = async () => {
     opacity: 0;
     transform: translateY(20px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
