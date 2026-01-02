@@ -342,8 +342,32 @@ const officialMirrors = computed(() => props.mirrors.filter((m: MirrorConfig) =>
   min-width: 200px;
 }
 
-.success-state,
-.failed-state,
+.success-state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  width: 100%;
+}
+
+.failed-state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 20px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  width: 100%;
+  min-height: 0;
+  padding: 8px;
+}
+
 .simple-failed-state {
   flex: 1;
   display: flex;
@@ -364,6 +388,7 @@ const officialMirrors = computed(() => props.mirrors.filter((m: MirrorConfig) =>
 
 .mirror-selection {
   width: 100%;
+  flex-shrink: 0;
 }
 
 .mirror-selection h4 {
@@ -376,6 +401,13 @@ const officialMirrors = computed(() => props.mirrors.filter((m: MirrorConfig) =>
 
 .mirror-section {
   margin-bottom: 20px;
+  flex-shrink: 0;
+}
+
+@media (max-height: 700px) {
+  .mirror-section {
+    margin-bottom: 12px;
+  }
 }
 
 .section-header {
@@ -395,9 +427,15 @@ const officialMirrors = computed(() => props.mirrors.filter((m: MirrorConfig) =>
 .mirror-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 16px;
+  gap: 12px;
   width: 100%;
   box-sizing: border-box;
+}
+
+@media (max-height: 700px) {
+  .mirror-grid {
+    gap: 8px;
+  }
 }
 
 .mirror-card {
@@ -407,6 +445,12 @@ const officialMirrors = computed(() => props.mirrors.filter((m: MirrorConfig) =>
   cursor: pointer;
   transition: all 0.2s ease;
   background: var(--ant-color-bg-container);
+}
+
+@media (max-height: 700px) {
+  .mirror-card {
+    padding: 12px;
+  }
 }
 
 .mirror-card:hover {

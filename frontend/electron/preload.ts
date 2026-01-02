@@ -162,6 +162,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('install-dependencies', selectedMirror),
   getMirrors: (type: string) => ipcRenderer.invoke('get-mirrors', type),
 
+  // API 端点获取
+  getApiEndpoint: (key: string) => ipcRenderer.invoke('get-api-endpoint', key),
+  getApiEndpoints: () => ipcRenderer.invoke('get-api-endpoints'),
+
   // 完整初始化流程（保留用于兼容）
   initialize: (targetBranch?: string, startBackend?: boolean) =>
     ipcRenderer.invoke('initialize', targetBranch, startBackend),

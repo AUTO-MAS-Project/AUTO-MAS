@@ -31,7 +31,9 @@ function getInitService(targetBranch: string = 'dev'): InitializationService {
 function getBackendService(): BackendService {
     if (!backendService) {
         const appRoot = getAppRoot()
-        backendService = new BackendService(appRoot)
+        const initService = getInitService()
+        const mirrorService = initService.getMirrorService()
+        backendService = new BackendService(appRoot, mirrorService)
     }
 
     return backendService
@@ -187,6 +189,22 @@ export function registerInitializationHandlers(mainWindow: BrowserWindow) {
 
         const mirrors = mirrorService.getMirrors(type as any)
         return mirrors
+    })
+
+    // ==================== 获取 API 端点 ====================
+
+    ipcMain.handle('get-api-endpoint', async (event, key: string) => {
+        const initService = getInitService()
+        const mirrorService = initService.getMirrorService()
+
+        return mirrorService.getApiEndpoint(key as any)
+    })
+
+    ipcMain.handle('get-api-endpoints', async (event) => {
+        const initService = getInitService()
+        const mirrorService = initService.getMirrorService()
+
+        return mirrorService.getApiEndpoints()
     })
 
     // ==================== 完整初始化流程（保留用于兼容） ====================

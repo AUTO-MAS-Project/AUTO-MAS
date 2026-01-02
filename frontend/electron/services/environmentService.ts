@@ -82,6 +82,7 @@ abstract class BaseEnvironmentInstaller {
   protected mirrorService: MirrorService
   protected downloader: SmartDownloader
   protected rotationService: MirrorRotationService
+  protected currentOperationId: number = 0
 
   constructor(appRoot: string, mirrorService: MirrorService) {
     this.appRoot = appRoot
@@ -276,9 +277,18 @@ export class PythonInstaller extends BaseEnvironmentInstaller {
 
     // 使用镜像源轮替下载
     const downloadOperation: NetworkOperationCallback = async (mirror, onOpProgress) => {
+      // 为此操作分配一个新的ID
+      const operationId = ++this.currentOperationId
+      
       onOpProgress({ progress: 0, description: `正在从 ${mirror.name} 下载...` })
 
       const result = await this.downloader.download(mirror.url, tempZipPath, (progress) => {
+        // 检查是否是当前活跃的操作
+        if (operationId !== this.currentOperationId) {
+          // 这是一个过期的进度回调，忽略它
+          return
+        }
+        
         // 上报下载进度，包含速度和大小信息
         onProgress?.({
           progress: progress.progress,
@@ -421,9 +431,17 @@ export class PipInstaller extends BaseEnvironmentInstaller {
 
     // 使用镜像源轮替下载
     const downloadOperation: NetworkOperationCallback = async (mirror, onOpProgress) => {
+      // 为此操作分配一个新的ID
+      const operationId = ++this.currentOperationId
+      
       onOpProgress({ progress: 0, description: `正在从 ${mirror.name} 下载...` })
 
       const result = await this.downloader.download(mirror.url, getPipPath, (progress) => {
+        // 检查是否是当前活跃的操作
+        if (operationId !== this.currentOperationId) {
+          return
+        }
+        
         // 上报下载进度，包含速度和大小信息
         onProgress?.({
           progress: progress.progress,
@@ -617,9 +635,17 @@ export class GitInstaller extends BaseEnvironmentInstaller {
 
     // 使用镜像源轮替下载
     const downloadOperation: NetworkOperationCallback = async (mirror, onOpProgress) => {
+      // 为此操作分配一个新的ID
+      const operationId = ++this.currentOperationId
+      
       onOpProgress({ progress: 0, description: `正在从 ${mirror.name} 下载...` })
 
       const result = await this.downloader.download(mirror.url, tempZipPath, (progress) => {
+        // 检查是否是当前活跃的操作
+        if (operationId !== this.currentOperationId) {
+          return
+        }
+        
         // 上报下载进度，包含速度和大小信息
         onProgress?.({
           progress: progress.progress,

@@ -8,7 +8,21 @@ import { getLogger } from '@/utils/logger'
 const logger = getLogger('WebSocket连接')
 
 // ====== 配置项 ======
-const BASE_WS_URL = 'ws://localhost:36163/api/core/ws'
+// 动态获取 WebSocket 端点
+let BASE_WS_URL = 'ws://localhost:36163/api/core/ws'
+
+// 从 Electron 获取实际端点
+if (window.electronAPI?.getApiEndpoint) {
+  window.electronAPI.getApiEndpoint('websocket')
+    .then(endpoint => {
+      BASE_WS_URL = `${endpoint}/api/core/ws`
+      logger.info(`WebSocket 端点已更新: ${BASE_WS_URL}`)
+    })
+    .catch(error => {
+      logger.warn('获取 WebSocket 端点失败，使用默认值:', error)
+    })
+}
+
 const HEARTBEAT_INTERVAL = 30000 // 30秒心跳间隔，与后端保持一致
 const HEARTBEAT_TIMEOUT = 45000 // 45秒超时，给网络延迟留够时间
 const BACKEND_CHECK_INTERVAL = 6000 // 6秒检查间隔

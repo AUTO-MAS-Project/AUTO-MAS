@@ -50,7 +50,6 @@ import { message } from 'ant-design-vue'
 import { getLogger } from '@/utils/logger'
 import { forceEnterApp } from '@/utils/appEntry.ts'
 import { setInitialized } from '@/utils/config.ts'
-import { mirrorManager } from '@/utils/mirrorManager.ts'
 import StepPanel from './components/StepPanel.vue'
 import BackendStartStep from './components/BackendStartStep.vue'
 import type { MirrorConfig } from '@/types/mirror'
@@ -138,9 +137,6 @@ const currentStepProps = computed(() => {
   const state = stepStates.value[currentStep.value.key]
   const step = currentStep.value
   
-  // 对于环境安装步骤（Python/Pip/Git），失败时不显示镜像源选择
-  const isEnvironmentStep = ['python', 'pip', 'git'].includes(step.key)
-  
   return {
     title: step.title,
     status: state.status,
@@ -149,7 +145,7 @@ const currentStepProps = computed(() => {
     showProgress: true,
     progressStatus: (state.status === 'failed' ? 'exception' : 'normal') as 'normal' | 'exception' | 'success',
     successTitle: `${step.title}完成`,
-    showMirrorSelection: state.showMirrorSelection && !isEnvironmentStep, // 环境安装步骤失败时不显示镜像源选择
+    showMirrorSelection: state.showMirrorSelection, // 所有步骤失败时都显示镜像源选择
     showSkipButton: step.canSkip && state.status === 'failed', // 只有可跳过的步骤且失败时才显示跳过按钮
     mirrors: state.mirrors,
     selectedMirror: state.selectedMirror,
@@ -608,13 +604,8 @@ async function loadMirrorConfigs() {
     logger.info('Dependency 镜像源:', stepStates.value.dependency.mirrors.map(m => m.name))
   } catch (error) {
     logger.error('❌ 加载镜像源配置失败:', error)
-    // 如果加载失败，使用本地兜底配置
-    stepStates.value.python.mirrors = mirrorManager.getMirrors('python')
-    stepStates.value.pip.mirrors = mirrorManager.getMirrors('get_pip')
-    stepStates.value.git.mirrors = mirrorManager.getMirrors('git_package')
-    stepStates.value.repository.mirrors = mirrorManager.getMirrors('git')
-    stepStates.value.dependency.mirrors = mirrorManager.getMirrors('pip')
-    logger.warn('⚠️ 使用本地兜底配置')
+    // 镜像源配置由 Electron MirrorService 管理，如果失败则使用其默认配置
+    logger.warn('⚠️ 镜像源配置加载失败，将使用 Electron MirrorService 的默认配置')
   }
 }
 
@@ -716,7 +707,7 @@ onUnmounted(() => {
   box-sizing: border-box;
   display: flex; /* Enable flex for children (StepPanel) */
   flex-direction: column;
-  overflow: hidden; /* Ensure content stays within border */
+  overflow: auto; /* Allow scrolling when content overflows */
 }
 
 .step-actions {

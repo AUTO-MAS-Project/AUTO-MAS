@@ -124,6 +124,10 @@ export interface ElectronAPI {
   installDependencies: (selectedMirror?: string) => Promise<{ success: boolean; error?: string; skipped?: boolean }>
   getMirrors: (type: string) => Promise<any[]>
 
+  // API 端点获取
+  getApiEndpoint: (key: string) => Promise<string>
+  getApiEndpoints: () => Promise<{ local: string; websocket: string }>
+
   // 完整初始化流程（保留用于兼容）
   initialize: (targetBranch?: string, startBackend?: boolean) => Promise<{
     success: boolean

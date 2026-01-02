@@ -11,9 +11,6 @@ import 'dayjs/locale/zh-cn'
 // 导入日志系统
 import { logger } from '@/utils/logger'
 
-// 导入镜像管理器
-import { mirrorManager } from '@/utils/mirrorManager'
-
 // 导入WebSocket消息监听组件
 import WebSocketMessageListener from '@/components/WebSocketMessageListener.vue'
 
@@ -21,22 +18,25 @@ import WebSocketMessageListener from '@/components/WebSocketMessageListener.vue'
 // 配置dayjs中文本地化
 dayjs.locale('zh-cn')
 
-// 配置API基础URL
-OpenAPI.BASE = mirrorManager.getApiEndpoint('local')
-
-// 记录应用启动
-logger.info('前端应用开始初始化')
-logger.info(`API基础URL: ${OpenAPI.BASE}`)
-
-// 初始化镜像管理器（异步）
-mirrorManager
-  .initialize()
-  .then(() => {
-    logger.info('镜像管理器初始化完成')
-  })
-  .catch(error => {
-    logger.error('镜像管理器初始化失败:', error)
-  })
+// 从 Electron 获取 API 端点并设置 OpenAPI.BASE
+if (window.electronAPI?.getApiEndpoint) {
+  window.electronAPI.getApiEndpoint('local')
+    .then(endpoint => {
+      OpenAPI.BASE = endpoint
+      logger.info('前端应用开始初始化')
+      logger.info(`API基础URL: ${OpenAPI.BASE}`)
+    })
+    .catch(error => {
+      logger.error('获取 API 端点失败，使用默认值:', error)
+      OpenAPI.BASE = 'http://localhost:36163'
+      logger.info(`API基础URL (默认): ${OpenAPI.BASE}`)
+    })
+} else {
+  // 非 Electron 环境，使用默认值
+  OpenAPI.BASE = 'http://localhost:36163'
+  logger.info('前端应用开始初始化')
+  logger.info(`API基础URL (默认): ${OpenAPI.BASE}`)
+}
 
 // 创建应用实例
 const app = createApp(App)
