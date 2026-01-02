@@ -48,14 +48,13 @@
 </template>
 
 <script setup lang="ts">
-import type { UpdateCheckOut } from '@/api'
-import { Service, type VersionOut } from '@/api'
 import { useAppClosing } from '@/composables/useAppClosing'
 import { useTheme } from '@/composables/useTheme'
+import { updateInfo, backendUpdateInfo } from '@/composables/useVersionService'
 import { getLogger } from '@/utils/logger'
 import { BorderOutlined, CloseOutlined, MinusOutlined } from '@ant-design/icons-vue'
 import { Modal } from 'ant-design-vue'
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { onMounted, ref } from 'vue'
 
 const logger = getLogger('标题栏')
 
@@ -81,35 +80,6 @@ const isMaximized = ref(false)
 
 // 使用 import.meta.env 或直接定义版本号，确保打包后可用
 const version = import.meta.env.VITE_APP_VERSION || '获取版本失败！'
-const updateInfo = ref<UpdateCheckOut | null>(null)
-const backendUpdateInfo = ref<VersionOut | null>(null)
-
-const POLL_MS = 10 * 60 * 1000 // 10 分钟
-let pollTimer: number | null = null
-const polling = ref(false)
-
-// 获取是否有更新
-const getAppVersion = async () => {
-  try {
-    const ver = await Service.checkUpdateApiUpdateCheckPost({
-      current_version: version,
-    })
-    updateInfo.value = ver
-    return ver || '获取版本失败！'
-  } catch (error) {
-    logger.error('Failed to get app version:', error)
-    return '获取前端版本失败！'
-  }
-}
-
-const getBackendVersion = async () => {
-  try {
-    backendUpdateInfo.value = await Service.getGitVersionApiInfoVersionPost()
-  } catch (error) {
-    logger.error('Failed to get backend version:', error)
-    return '获取后端版本失败！'
-  }
-}
 
 // 生成更新提示的详细信息
 const getUpdateTooltip = () => {
@@ -181,39 +151,11 @@ const closeWindow = async () => {
   }
 }
 
-const pollOnce = async () => {
-  if (polling.value) return
-  polling.value = true
-  try {
-    const [appRes, backendRes] = await Promise.allSettled([getAppVersion(), getBackendVersion()])
-
-    if (appRes.status === 'rejected') {
-      logger.error('getAppVersion failed:', appRes.reason)
-    }
-    if (backendRes.status === 'rejected') {
-      logger.error('getBackendVersion failed:', backendRes.reason)
-    }
-  } finally {
-    polling.value = false
-  }
-}
-
 onMounted(async () => {
   try {
     isMaximized.value = (await window.electronAPI?.windowIsMaximized()) || false
   } catch (error) {
     logger.error('Failed to get window state:', error)
-  }
-  // 初始化立即跑一次
-  await pollOnce()
-  // 每 10 分钟检查一次更新
-  pollTimer = window.setInterval(pollOnce, POLL_MS)
-})
-
-onBeforeUnmount(() => {
-  if (pollTimer) {
-    clearInterval(pollTimer)
-    pollTimer = null
   }
 })
 </script>
