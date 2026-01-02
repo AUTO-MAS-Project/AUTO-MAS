@@ -116,7 +116,7 @@ abstract class BaseEnvironmentInstaller {
       })
 
       if (checkResult.exeExists && checkResult.canRun) {
-        logService.info('环境服务', '✅ 环境已存在且可正常运行，跳过安装')
+        logService.info('环境服务', '环境已存在且可正常运行，跳过安装')
         onProgress?.({
           stage: 'check',
           progress: 100,
@@ -279,7 +279,7 @@ export class PythonInstaller extends BaseEnvironmentInstaller {
     const downloadOperation: NetworkOperationCallback = async (mirror, onOpProgress) => {
       // 为此操作分配一个新的ID
       const operationId = ++this.currentOperationId
-      
+
       onOpProgress({ progress: 0, description: `正在从 ${mirror.name} 下载...` })
 
       const result = await this.downloader.download(mirror.url, tempZipPath, (progress) => {
@@ -288,7 +288,7 @@ export class PythonInstaller extends BaseEnvironmentInstaller {
           // 这是一个过期的进度回调，忽略它
           return
         }
-        
+
         // 上报下载进度，包含速度和大小信息
         onProgress?.({
           progress: progress.progress,
@@ -311,7 +311,7 @@ export class PythonInstaller extends BaseEnvironmentInstaller {
       return { success: false, error: result.error }
     }
 
-    logService.info('环境服务', `✅ Python 安装包下载完成，使用镜像源: ${result.usedMirror?.name}`)
+    logService.info('环境服务', `Python 安装包下载完成，使用镜像源: ${result.usedMirror?.name}`)
     return { success: true }
   }
 
@@ -335,7 +335,7 @@ export class PythonInstaller extends BaseEnvironmentInstaller {
       logService.info('环境服务', '正在解压 Python...')
       const zip = new AdmZip(tempZipPath)
       zip.extractAllTo(this.pythonPath, true)
-      logService.info('环境服务', '✅ Python 解压完成')
+      logService.info('环境服务', 'Python 解压完成')
 
       // 启用 site-packages 支持
       onProgress?.(70, '配置 Python 环境...')
@@ -344,7 +344,7 @@ export class PythonInstaller extends BaseEnvironmentInstaller {
         let content = fs.readFileSync(pthFile, 'utf-8')
         content = content.replace(/^#import site/m, 'import site')
         fs.writeFileSync(pthFile, content, 'utf-8')
-        logService.info('环境服务', '✅ 已启用 site-packages 支持')
+        logService.info('环境服务', '已启用 site-packages 支持')
       }
 
       // 清理临时文件
@@ -433,7 +433,7 @@ export class PipInstaller extends BaseEnvironmentInstaller {
     const downloadOperation: NetworkOperationCallback = async (mirror, onOpProgress) => {
       // 为此操作分配一个新的ID
       const operationId = ++this.currentOperationId
-      
+
       onOpProgress({ progress: 0, description: `正在从 ${mirror.name} 下载...` })
 
       const result = await this.downloader.download(mirror.url, getPipPath, (progress) => {
@@ -441,7 +441,7 @@ export class PipInstaller extends BaseEnvironmentInstaller {
         if (operationId !== this.currentOperationId) {
           return
         }
-        
+
         // 上报下载进度，包含速度和大小信息
         onProgress?.({
           progress: progress.progress,
@@ -464,7 +464,7 @@ export class PipInstaller extends BaseEnvironmentInstaller {
       return { success: false, error: result.error }
     }
 
-    logService.info('环境服务', `✅ get-pip.py 下载完成，使用镜像源: ${result.usedMirror?.name}`)
+    logService.info('环境服务', `get-pip.py 下载完成，使用镜像源: ${result.usedMirror?.name}`)
     return { success: true }
   }
 
@@ -515,7 +515,7 @@ export class PipInstaller extends BaseEnvironmentInstaller {
 
           proc.on('close', (code) => {
             if (code === 0) {
-              logService.info('环境服务', '✅ Pip 安装成功')
+              logService.info('环境服务', 'Pip 安装成功')
               onOpProgress({ progress: 100, description: 'Pip 安装完成' })
               resolve()
             } else {
@@ -558,7 +558,7 @@ export class PipInstaller extends BaseEnvironmentInstaller {
       fs.unlinkSync(getPipPath)
     }
 
-    logService.info('环境服务', `✅ Pip 安装完成，使用镜像源: ${result.usedMirror?.name}`)
+    logService.info('环境服务', `Pip 安装完成，使用镜像源: ${result.usedMirror?.name}`)
     return { success: true }
   }
 }
@@ -637,7 +637,7 @@ export class GitInstaller extends BaseEnvironmentInstaller {
     const downloadOperation: NetworkOperationCallback = async (mirror, onOpProgress) => {
       // 为此操作分配一个新的ID
       const operationId = ++this.currentOperationId
-      
+
       onOpProgress({ progress: 0, description: `正在从 ${mirror.name} 下载...` })
 
       const result = await this.downloader.download(mirror.url, tempZipPath, (progress) => {
@@ -645,7 +645,7 @@ export class GitInstaller extends BaseEnvironmentInstaller {
         if (operationId !== this.currentOperationId) {
           return
         }
-        
+
         // 上报下载进度，包含速度和大小信息
         onProgress?.({
           progress: progress.progress,
@@ -668,7 +668,7 @@ export class GitInstaller extends BaseEnvironmentInstaller {
       return { success: false, error: result.error }
     }
 
-    logService.info('环境服务', `✅ Git 安装包下载完成，使用镜像源: ${result.usedMirror?.name}`)
+    logService.info('环境服务', `Git 安装包下载完成，使用镜像源: ${result.usedMirror?.name}`)
     return { success: true }
   }
 
@@ -736,7 +736,7 @@ export class GitInstaller extends BaseEnvironmentInstaller {
         onProgress?.(itemProgress, `移动文件 ${i + 1}/${totalItems}...`)
       }
 
-      logService.info('环境服务', '✅ Git 解压完成')
+      logService.info('环境服务', 'Git 解压完成')
 
       // 清理临时文件
       onProgress?.(90, '清理临时文件...')

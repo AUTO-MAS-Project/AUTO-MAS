@@ -4,53 +4,32 @@
     <div class="log-toolbar">
       <div class="toolbar-left">
         <a-space>
-          <a-select
-            v-model:value="selectedLogLevel"
-            style="width: 120px"
-            placeholder="日志级别"
-            @change="onLogLevelChange"
-          >
+          <a-select v-model:value="selectedLogLevel" style="width: 120px" placeholder="日志级别" @change="onLogLevelChange">
             <a-select-option value="">全部级别</a-select-option>
             <a-select-option v-for="level in logLevels" :key="level" :value="level">
               {{ level }}
             </a-select-option>
           </a-select>
 
-          <a-select
-            v-model:value="selectedSource"
-            style="width: 120px"
-            placeholder="日志来源"
-            @change="onSourceChange"
-          >
+          <a-select v-model:value="selectedSource" style="width: 120px" placeholder="日志来源" @change="onSourceChange">
             <a-select-option value="">全部来源</a-select-option>
             <a-select-option v-for="source in logSources" :key="source" :value="source">
               {{ source }}
             </a-select-option>
           </a-select>
 
-          <a-input
-            v-model:value="searchKeyword"
-            style="width: 200px"
-            placeholder="搜索关键词"
-            @input="onSearchInput"
-            allow-clear
-          >
+          <a-input v-model:value="searchKeyword" style="width: 200px" placeholder="搜索关键词" @input="onSearchInput"
+            allow-clear>
             <template #prefix>
               <SearchOutlined />
             </template>
           </a-input>
 
-          <a-checkbox
-            v-model:checked="enableColorHighlight"
-            @change="onColorHighlightChange"
-          >
+          <a-checkbox v-model:checked="enableColorHighlight" @change="onColorHighlightChange">
             颜色高亮
           </a-checkbox>
 
-          <a-checkbox
-            v-model:checked="autoScroll"
-            @change="onAutoScrollChange"
-          >
+          <a-checkbox v-model:checked="autoScroll" @change="onAutoScrollChange">
             自动滚动
           </a-checkbox>
         </a-space>
@@ -86,17 +65,10 @@
     <div class="log-container" ref="containerRef" @scroll="onScroll">
       <div class="log-phantom" :style="{ height: `${totalHeight}px` }"></div>
       <div class="log-content" :style="{ transform: `translateY(${offsetY}px)` }">
-        <div
-          v-for="(log, index) in visibleLogs"
-          :key="`${log.timestamp.getTime()}-${index}`"
-          class="log-item"
-          :class="[
-            `log-level-${log.level.toLowerCase()}`,
-            { 'log-item-selected': selectedLogIndex === index }
-          ]"
-          @click="selectLog(index)"
-          @dblclick="onLogDoubleClick(index)"
-        >
+        <div v-for="(log, index) in visibleLogs" :key="`${log.timestamp.getTime()}-${index}`" class="log-item" :class="[
+          `log-level-${log.level.toLowerCase()}`,
+          { 'log-item-selected': selectedLogIndex === index }
+        ]" @click="selectLog(index)" @dblclick="onLogDoubleClick(index)">
           <div class="log-time">{{ formatTime(log.timestamp) }}</div>
           <div class="log-level" :style="getLevelStyle(log.level)">{{ log.level }}</div>
           <div class="log-module" :style="getModuleStyle(log.module, log.source)">{{ log.module }}</div>
@@ -119,12 +91,7 @@
     </div>
 
     <!-- 日志详情弹窗 -->
-    <a-modal
-      v-model:open="detailModalVisible"
-      title="日志详情"
-      width="800px"
-      :footer="null"
-    >
+    <a-modal v-model:open="detailModalVisible" title="日志详情" width="800px" :footer="null">
       <div v-if="selectedLogForDetail" class="log-detail">
         <div class="detail-row">
           <span class="detail-label">时间戳:</span>
@@ -132,7 +99,8 @@
         </div>
         <div class="detail-row">
           <span class="detail-label">级别:</span>
-          <span class="detail-value" :style="getLevelStyle(selectedLogForDetail.level)">{{ selectedLogForDetail.level }}</span>
+          <span class="detail-value" :style="getLevelStyle(selectedLogForDetail.level)">{{ selectedLogForDetail.level
+          }}</span>
         </div>
         <div class="detail-row">
           <span class="detail-label">来源:</span>
@@ -140,7 +108,9 @@
         </div>
         <div class="detail-row">
           <span class="detail-label">模块:</span>
-          <span class="detail-value" :style="getModuleStyle(selectedLogForDetail.module, selectedLogForDetail.source)">{{ selectedLogForDetail.module }}</span>
+          <span class="detail-value"
+            :style="getModuleStyle(selectedLogForDetail.module, selectedLogForDetail.source)">{{
+              selectedLogForDetail.module }}</span>
         </div>
         <div class="detail-row">
           <span class="detail-label">消息:</span>
@@ -250,7 +220,7 @@ const filteredLogs = computed(() => {
   // 按关键词搜索
   if (searchKeyword.value) {
     const keyword = searchKeyword.value.toLowerCase()
-    result = result.filter(log => 
+    result = result.filter(log =>
       log.message.toLowerCase().includes(keyword) ||
       log.module.toLowerCase().includes(keyword) ||
       log.level.toLowerCase().includes(keyword)

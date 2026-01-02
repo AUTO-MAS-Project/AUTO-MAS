@@ -54,7 +54,9 @@ const copyAllInfo = async () => {
       <div class="link-grid">
         <div class="link-item">
           <div class="link-card">
-            <div class="link-icon"><HomeOutlined /></div>
+            <div class="link-icon">
+              <HomeOutlined />
+            </div>
             <div class="link-content">
               <h4>软件官网</h4>
               <p>查看最新版本和功能介绍</p>
@@ -64,28 +66,26 @@ const copyAllInfo = async () => {
         </div>
         <div class="link-item">
           <div class="link-card">
-            <div class="link-icon"><GithubOutlined /></div>
+            <div class="link-icon">
+              <GithubOutlined />
+            </div>
             <div class="link-content">
               <h4>GitHub仓库</h4>
               <p>查看源代码、提交issue和捐赠</p>
-              <a
-                href="https://github.com/AUTO-MAS-Project/AUTO-MAS"
-                class="link-button"
-                @click="handleExternalLink"
-                >访问仓库</a
-              >
+              <a href="https://github.com/AUTO-MAS-Project/AUTO-MAS" class="link-button"
+                @click="handleExternalLink">访问仓库</a>
             </div>
           </div>
         </div>
         <div class="link-item">
           <div class="link-card">
-            <div class="link-icon"><QqOutlined /></div>
+            <div class="link-icon">
+              <QqOutlined />
+            </div>
             <div class="link-content">
               <h4>用户QQ群</h4>
               <p>加入社区，获取帮助和交流</p>
-              <a href="https://qm.qq.com/q/bd9fISNoME" class="link-button" @click="handleExternalLink"
-                >加入群聊</a
-              >
+              <a href="https://qm.qq.com/q/bd9fISNoME" class="link-button" @click="handleExternalLink">加入群聊</a>
             </div>
           </div>
         </div>

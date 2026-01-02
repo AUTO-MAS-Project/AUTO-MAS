@@ -71,7 +71,7 @@ export class MirrorRotationService {
                 return { success: false, error: `未找到指定的镜像源: ${preferredMirrorName}` }
             }
             sortedMirrors = [selectedMirror]
-            logger.info(`✅ 找到指定镜像源，将仅使用该镜像源进行操作`)
+            logger.info(`找到指定镜像源，将仅使用该镜像源进行操作`)
         } else {
             // 重新排序镜像源：优先使用配置的镜像源
             sortedMirrors = this.sortMirrors(mirrors, preferredMirrorName)
@@ -98,7 +98,7 @@ export class MirrorRotationService {
                 })
 
                 if (result.success) {
-                    logger.info(`✅ 镜像源 ${mirror.name} 操作成功`)
+                    logger.info(`镜像源 ${mirror.name} 操作成功`)
                     return {
                         success: true,
                         result: result.result,

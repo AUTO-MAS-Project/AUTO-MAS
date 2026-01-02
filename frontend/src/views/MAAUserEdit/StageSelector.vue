@@ -1,23 +1,12 @@
 <template>
-  <a-select
-    :value="value"
-    :disabled="loading"
-    size="large"
-    :placeholder="placeholder"
-    @update:value="$emit('update:value', $event)"
-  >
+  <a-select :value="value" :disabled="loading" size="large" :placeholder="placeholder"
+    @update:value="$emit('update:value', $event)">
     <template #dropdownRender="{ menuNode: menu }">
       <v-nodes :vnodes="menu" />
       <a-divider style="margin: 4px 0" />
       <a-space style="padding: 4px 8px" size="small">
-        <a-input
-          ref="inputRef"
-          v-model:value="customStageName"
-          placeholder="输入自定义关卡，如: 11-8"
-          style="flex: 1"
-          size="small"
-          @keyup.enter="addCustomStage"
-        />
+        <a-input ref="inputRef" v-model:value="customStageName" placeholder="输入自定义关卡，如: 11-8" style="flex: 1"
+          size="small" @keyup.enter="addCustomStage" />
         <a-button type="text" size="small" @click="addCustomStage">
           <template #icon>
             <PlusOutlined />
@@ -35,12 +24,7 @@
       </template>
       <template v-else>
         {{ option.label }}
-        <a-tag
-          v-if="isCustomStage(option.value)"
-          color="blue"
-          size="small"
-          style="margin-left: 8px"
-        >
+        <a-tag v-if="isCustomStage(option.value)" color="blue" size="small" style="margin-left: 8px">
           自定义
         </a-tag>
       </template>

@@ -49,11 +49,11 @@ export async function testWebSocketConnection() {
         logger.warn('获取端点失败，使用默认值:', error)
       }
     }
-    
+
     const ws = new WebSocket(wsUrl)
 
     ws.onopen = () => {
-      logger.info('✅ WebSocket连接成功')
+      logger.info('WebSocket连接成功')
       ws.send(
         JSON.stringify({
           type: 'Signal',

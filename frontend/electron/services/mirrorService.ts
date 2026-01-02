@@ -199,35 +199,35 @@ export class MirrorService {
             this.mirrorConfig = localCache.config.mirrors
             this.apiEndpoints = localCache.config.apiEndpoints || DEFAULT_API_ENDPOINTS
             this.currentEtag = localCache.etag
-            logger.info('✅ 加载本地缓存配置')
+            logger.info('加载本地缓存配置')
             logger.info(`ETag: ${this.currentEtag || '无'}`)
         }
 
         // 尝试从云端更新配置
         try {
             const result = await this.downloadCloudConfig(this.currentEtag)
-            
+
             if (result.status === 'updated') {
                 // 配置已更新
                 this.mirrorConfig = result.config!.mirrors
                 this.apiEndpoints = result.config!.apiEndpoints || DEFAULT_API_ENDPOINTS
                 this.currentEtag = result.etag
                 this.saveLocalConfig(result.config!, result.etag)
-                logger.info('✅ 云端配置已更新')
+                logger.info('云端配置已更新')
                 logger.info(`新 ETag: ${result.etag}`)
             } else if (result.status === 'not-modified') {
                 // 配置未变化
-                logger.info('✅ 云端配置未变化，使用缓存')
+                logger.info('云端配置未变化，使用缓存')
             } else {
                 // 下载失败，使用已加载的缓存或默认配置
                 if (!localCache) {
-                    logger.info('✅ 使用默认镜像源配置')
+                    logger.info('使用默认镜像源配置')
                 }
             }
         } catch (error) {
             logger.warn('⚠️ 检查云端配置失败:', error)
             if (!localCache) {
-                logger.info('✅ 使用默认镜像源配置')
+                logger.info('使用默认镜像源配置')
             }
         }
 
@@ -279,7 +279,7 @@ export class MirrorService {
 
                 // 304 Not Modified - 配置未变化
                 if (response.statusCode === 304) {
-                    logger.info('✅ 云端配置未变化 (304 Not Modified)')
+                    logger.info('云端配置未变化 (304 Not Modified)')
                     resolve({ status: 'not-modified' })
                     return
                 }
@@ -294,13 +294,13 @@ export class MirrorService {
                     response.on('end', () => {
                         try {
                             const config = JSON.parse(data) as CloudMirrorConfig
-                            
+
                             // 确保 apiEndpoints 存在
                             if (!config.apiEndpoints) {
                                 config.apiEndpoints = { ...DEFAULT_API_ENDPOINTS }
                             }
 
-                            logger.info(`✅ 云端配置下载成功`)
+                            logger.info(`云端配置下载成功`)
                             if (newEtag) {
                                 logger.info(`ETag: ${newEtag}`)
                             }
@@ -353,7 +353,7 @@ export class MirrorService {
             }
 
             fs.writeFileSync(this.localConfigPath, JSON.stringify(cache, null, 2), 'utf-8')
-            logger.info('✅ 镜像源配置已保存到本地')
+            logger.info('镜像源配置已保存到本地')
         } catch (error) {
             logger.error('保存本地配置失败:', error)
         }
@@ -369,7 +369,7 @@ export class MirrorService {
             }
             const data = fs.readFileSync(this.localConfigPath, 'utf-8')
             const parsed = JSON.parse(data)
-            
+
             // 兼容旧格式（直接是 CloudMirrorConfig）
             if (parsed.mirrors && !parsed.config) {
                 logger.info('检测到旧格式配置，自动转换')
@@ -378,7 +378,7 @@ export class MirrorService {
                     lastUpdated: new Date().toISOString()
                 }
             }
-            
+
             return parsed as LocalConfigCache
         } catch (error) {
             logger.error('加载本地配置失败:', error)

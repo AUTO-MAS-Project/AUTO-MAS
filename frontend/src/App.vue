@@ -3,9 +3,10 @@ import { computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { ConfigProvider } from 'ant-design-vue'
 import { useTheme } from './composables/useTheme.ts'
-import { useUpdateChecker, useUpdateModal } from './composables/useUpdateChecker.ts'
+import { useUpdateModal } from './composables/useUpdateChecker.ts'
 import { useAppClosing } from './composables/useAppClosing.ts'
 import { useAudioPlayer } from './composables/useAudioPlayer.ts'
+import { useAppInitialization } from './composables/useAppInitialization.ts'
 import AppLayout from './components/AppLayout.vue'
 import TitleBar from './components/TitleBar.vue'
 import UpdateModal from './components/UpdateModal.vue'
@@ -19,9 +20,9 @@ import { logger } from '@/utils/logger'
 const route = useRoute()
 const { antdTheme, initTheme } = useTheme()
 const { updateVisible, updateData, latestVersion, onUpdateConfirmed } = useUpdateModal()
-const { startPolling } = useUpdateChecker()
 const { isClosing } = useAppClosing()
 const { playSound } = useAudioPlayer()
+const { isInitialized } = useAppInitialization()
 
 // 判断是否为初始化页面
 const isInitializationPage = computed(() => route.name === 'Initialization')
@@ -30,18 +31,21 @@ onMounted(async () => {
   logger.info('App组件已挂载')
   initTheme()
   logger.info('主题初始化完成')
+  logger.info('初始化状态:', {
+    isInitializationPage: isInitializationPage.value,
+    isInitialized: isInitialized.value
+  })
 
-  // 启动自动更新检查器
-  try {
-    await startPolling()
-    logger.info('自动更新检查器已启动')
-  } catch (error) {
-    logger.error('启动自动更新检查器失败:', error)
-  }
+  // 注意：版本检查服务已在 appEntry.ts 中统一启动，此处不再重复启动
 
-  // 播放欢迎音频（非初始化页面时）
-  if (!isInitializationPage.value) {
+  // 播放欢迎音频（非初始化页面且已初始化时）
+  if (!isInitializationPage.value && isInitialized.value) {
+    logger.info('准备播放欢迎音频')
     await playSound('welcome_back')
+  } else {
+    logger.info('跳过欢迎音频播放', {
+      reason: isInitializationPage.value ? '当前是初始化页面' : '应用未初始化'
+    })
   }
 })
 </script>
@@ -55,27 +59,33 @@ onMounted(async () => {
         <router-view />
       </div>
     </div>
-    <!-- 其他页面使用带标题栏的应用布局 -->
-    <div v-else class="app-container">
+    <!-- 其他页面使用带标题栏的应用布局 - 仅在初始化完成后挂载 -->
+    <div v-else-if="isInitialized" class="app-container">
       <TitleBar />
       <AppLayout />
     </div>
 
-    <!-- 全局组件 -->
-    <!-- 全局更新模态框 -->
-    <UpdateModal v-model:visible="updateVisible" :update-data="updateData" :latest-version="latestVersion"
-      @confirmed="onUpdateConfirmed" />
-
-    <!-- 开发环境调试面板 -->
+    <!-- 开发环境调试面板 - 开发工具始终可用 -->
     <DevDebugPanel />
 
-    <!-- 全局电源倒计时弹窗 -->
-    <GlobalPowerCountdown />
+    <!-- 以下组件仅在初始化完成后挂载 -->
+    <template v-if="isInitialized">
+      <!-- 全局更新模态框 -->
+      <UpdateModal 
+        v-model:visible="updateVisible" 
+        :update-data="updateData" 
+        :latest-version="latestVersion"
+        @confirmed="onUpdateConfirmed" 
+      />
 
-    <!-- WebSocket 消息监听组件 -->
-    <WebSocketMessageListener />
+      <!-- 全局电源倒计时弹窗 -->
+      <GlobalPowerCountdown />
 
-    <!-- 应用关闭遮罩 -->
+      <!-- WebSocket 消息监听组件 -->
+      <WebSocketMessageListener />
+    </template>
+
+    <!-- 应用关闭遮罩 - 始终可用 -->
     <AppClosingOverlay :visible="isClosing" />
   </ConfigProvider>
 </template>

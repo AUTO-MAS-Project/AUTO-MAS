@@ -16,21 +16,13 @@
 
       <!-- 控制按钮 -->
       <div class="action-buttons">
-        <button
-          :disabled="isLoading || isBackendRunning"
-          class="action-btn start-btn"
-          @click="startBackend"
-        >
+        <button :disabled="isLoading || isBackendRunning" class="action-btn start-btn" @click="startBackend">
           <span v-if="isLoading" class="loading-spinner">⏳</span>
           <span v-else>▶️</span>
           启动后端
         </button>
 
-        <button
-          :disabled="isLoading || !isBackendRunning"
-          class="action-btn stop-btn"
-          @click="stopBackend"
-        >
+        <button :disabled="isLoading || !isBackendRunning" class="action-btn stop-btn" @click="stopBackend">
           <span v-if="isLoading" class="loading-spinner">⏳</span>
           <span v-else>⏹️</span>
           停止后端
@@ -44,13 +36,9 @@
       </div>
 
       <!-- 操作结果显示 -->
-      <div
-        v-if="lastResult"
-        class="result-card"
-        :class="{ success: lastResult.success, error: !lastResult.success }"
-      >
+      <div v-if="lastResult" class="result-card" :class="{ success: lastResult.success, error: !lastResult.success }">
         <div class="result-title">
-          {{ lastResult.success ? '✅ 操作成功' : '❌ 操作失败' }}
+          {{ lastResult.success ? '操作成功' : '❌ 操作失败' }}
         </div>
         <div v-if="lastResult.message" class="result-message">
           {{ lastResult.message }}
@@ -146,21 +134,15 @@
 
       <!-- WebSocket控制按钮 -->
       <div class="ws-actions">
-        <button
-          :disabled="isWsReconnecting || connectionInfo.isAutoReconnecting"
-          class="action-btn reconnect-btn"
-          @click="handleManualReconnect"
-        >
+        <button :disabled="isWsReconnecting || connectionInfo.isAutoReconnecting" class="action-btn reconnect-btn"
+          @click="handleManualReconnect">
           <span v-if="isWsReconnecting" class="loading-spinner">⏳</span>
           <span v-else>🔄</span>
           {{ isWsReconnecting ? '重连中...' : '手动重连' }}
         </button>
 
-        <button
-          :disabled="connectionInfo.isAutoReconnecting"
-          class="action-btn reset-btn"
-          @click="handleResetReconnect"
-        >
+        <button :disabled="connectionInfo.isAutoReconnecting" class="action-btn reset-btn"
+          @click="handleResetReconnect">
           🔧 重置重连状态
         </button>
 
@@ -299,7 +281,7 @@ const handleManualReconnect = async () => {
   try {
     const success = await manualReconnect()
     if (success) {
-      addLog('✅ WebSocket重连成功', 'success')
+      addLog('WebSocket重连成功', 'success')
     } else {
       addLog('❌ WebSocket重连失败', 'error')
     }
@@ -384,7 +366,7 @@ const quickStatusCheck = () => {
 
   if (shouldBeRunning && !currentBackendRunning) {
     isBackendRunning.value = true
-    addLog(`✅ 检测到后端运行 (WS: ${status.value}, Backend: ${backendStatus.value})`, 'success')
+    addLog(`检测到后端运行 (WS: ${status.value}, Backend: ${backendStatus.value})`, 'success')
   } else if (!shouldBeRunning && !wsConnecting && currentBackendRunning) {
     // 如果WebSocket断开且不是连接中状态，且backendStatus也不是running
     // 给一些时间缓冲，避免状态频繁切换
@@ -421,7 +403,7 @@ const startBackend = async () => {
 
     if (result.success) {
       lastResult.value = { success: true, message: '后端服务启动成功' }
-      addLog('✅ 后端服务启动成功', 'success')
+      addLog('后端服务启动成功', 'success')
 
       // 等待后端完全启动
       addLog('⏳ 等待后端服务完全启动...', 'info')
@@ -432,7 +414,7 @@ const startBackend = async () => {
       try {
         const connected = await connectAfterBackendStart()
         if (connected) {
-          addLog('✅ WebSocket连接成功，后端服务可用', 'success')
+          addLog('WebSocket连接成功，后端服务可用', 'success')
         } else {
           addLog('❌ WebSocket连接失败，请检查后端服务或手动重连', 'error')
         }
@@ -469,7 +451,7 @@ const stopBackend = async () => {
 
       if (result.success) {
         lastResult.value = { success: true, message: '后端服务已停止' }
-        addLog('✅ 后端服务已停止', 'success')
+        addLog('后端服务已停止', 'success')
         await refreshStatus()
       } else {
         lastResult.value = { success: false, error: result.error }
@@ -518,7 +500,7 @@ const forceKillProcesses = async () => {
 
     if (result.success) {
       lastResult.value = { success: true, message: '所有相关进程已强制结束' }
-      addLog('✅ 所有相关进程已强制结束', 'success')
+      addLog('所有相关进程已强制结束', 'success')
       await refreshStatus()
     } else {
       lastResult.value = { success: false, error: result.error }
@@ -551,7 +533,7 @@ const refreshStatus = async () => {
     // 如果WebSocket已连接，说明后端肯定在运行
     if (wsConnected) {
       isBackendRunning.value = true
-      addLog(`✅ WebSocket已连接，后端服务正在运行`, 'success')
+      addLog(`WebSocket已连接，后端服务正在运行`, 'success')
 
       // 尝试获取进程ID
       try {
@@ -615,7 +597,7 @@ const getProcessInfo = async () => {
     mainPyPath.value = 'main.py'
     workingDir.value = window.location.origin
 
-    addLog('✅ 进程信息获取完成', 'success')
+    addLog('进程信息获取完成', 'success')
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     addLog(`❌ 获取进程信息失败: ${errorMsg}`, 'error')
@@ -637,7 +619,7 @@ onMounted(() => {
 
   if (isBackendRunning.value) {
     addLog(
-      `✅ 初始化检测：后端服务正在运行 (WS: ${status.value}, Backend: ${backendStatus.value})`,
+      `初始化检测：后端服务正在运行 (WS: ${status.value}, Backend: ${backendStatus.value})`,
       'success'
     )
   } else {
@@ -744,9 +726,11 @@ onUnmounted(() => {
   0% {
     opacity: 1;
   }
+
   50% {
     opacity: 0.5;
   }
+
   100% {
     opacity: 1;
   }
@@ -828,6 +812,7 @@ onUnmounted(() => {
   from {
     transform: rotate(0deg);
   }
+
   to {
     transform: rotate(360deg);
   }
