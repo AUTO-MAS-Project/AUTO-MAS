@@ -96,7 +96,7 @@
           </template>
           <a-input-number v-model:value="formData.Info.RemainedDay" :min="-1" :max="9999" placeholder="0"
             :disabled="loading" size="large" style="width: 100%"
-            @change="emitSave('Info.RemainedDay', formData.Info.RemainedDay)" />
+            @blur="emitSave('Info.RemainedDay', formData.Info.RemainedDay)" />
         </a-form-item>
       </a-col>
     </a-row>
