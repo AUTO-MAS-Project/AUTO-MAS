@@ -558,7 +558,8 @@
                   </a-tooltip>
                 </template>
                 <a-input-number v-model:value="generalConfig.Game.WaitTime" :min="0" :max="300" size="large"
-                  class="modern-number-input" style="width: 100%" @change="handleChange('Game', 'WaitTime', $event)" />
+                  class="modern-number-input" style="width: 100%"
+                  @blur="handleChange('Game', 'WaitTime', generalConfig.Game.WaitTime)" />
               </a-form-item>
             </a-col>
             <a-col :span="8">
