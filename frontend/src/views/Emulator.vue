@@ -842,7 +842,7 @@ const handleBossKeyInputChange = (uuid: string) => {
                       </template>
                       <a-input-number v-model:value="getEditingData(element.uid).max_wait_time" placeholder="输入最大等待时间"
                         size="small" :bordered="false" style="width: 100%" :min="10" :max="300" :step="5" suffix="秒"
-                        @change="handleSaveChange(element.uid, 'max_wait_time', $event)" />
+                        @blur="handleSaveChange(element.uid, 'max_wait_time', getEditingData(element.uid).max_wait_time)" />
                     </a-descriptions-item>
                     <a-descriptions-item>
                       <template #label>
