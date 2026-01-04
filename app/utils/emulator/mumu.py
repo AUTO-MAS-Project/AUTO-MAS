@@ -93,8 +93,7 @@ class MumuManager(DeviceBase):
         if result.returncode != 0:
             raise RuntimeError(f"命令执行失败: {result.stdout}")
 
-        if not is_mumu_nx_exists and await self.find_mumu_nx_window() is not None:
-            logger.info("关闭 MuMuNX 窗口")
+        if not is_mumu_nx_exists:
             await self.close_mumu_nx_window()
 
         t = datetime.now()
@@ -285,10 +284,12 @@ class MumuManager(DeviceBase):
         关闭 MuMu 多开器窗口
         """
 
+        logger.info("关闭 MuMuNX 窗口")
         t = datetime.now()
         while datetime.now() - t < timedelta(seconds=10):
             hwnd = await self.find_mumu_nx_window()
             if hwnd is not None:
                 win32gui.PostMessage(hwnd, win32con.WM_CLOSE, 0, 0)
+                logger.success("已关闭 MuMuNX 窗口")
                 return
             await asyncio.sleep(0.1)
