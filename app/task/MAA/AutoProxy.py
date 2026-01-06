@@ -607,10 +607,18 @@ class AutoProxyTask(TaskExecuteBase):
             if (
                 "完成任务: Fight" in log
                 or "完成任务: 刷理智" in log
-                or (self.mode == "Annihilation" and "任务出错: 刷理智" in log)
+                or "完成任务: 理智作战" in log
+                or (
+                    self.mode == "Annihilation"
+                    and ("任务出错: 刷理智" in log or "任务出错: 理智作战" in log)
+                )
             ):
                 self.task_dict["Combat"] = "False"
-            if "完成任务: Mall" in log or "完成任务: 获取信用及购物" in log:
+            if (
+                "完成任务: Mall" in log
+                or "完成任务: 获取信用及购物" in log
+                or "完成任务: 信用收支" in log
+            ):
                 self.task_dict["Mall"] = "False"
             if "完成任务: Award" in log or "完成任务: 领取奖励" in log:
                 self.task_dict["Mission"] = "False"
