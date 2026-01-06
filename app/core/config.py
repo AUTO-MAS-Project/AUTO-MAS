@@ -78,7 +78,7 @@ except ImportError:
 
 
 class AppConfig(GlobalConfig):
-    VERSION = "v5.0.3-beta.1"
+    VERSION = "v5.0.3-beta.2"
 
     def __init__(self) -> None:
         super().__init__()
@@ -1807,16 +1807,26 @@ class AppConfig(GlobalConfig):
         # 查找所有Fight任务的开始和结束位置
         fight_tasks = []
         for i, line in enumerate(logs):
-            if "开始任务: Fight" in line or "开始任务: 刷理智" in line:
+            if (
+                "开始任务: Fight" in line
+                or "开始任务: 刷理智" in line
+                or "开始任务: 理智作战" in line
+            ):
                 # 查找对应的任务结束位置
                 end_index = -1
                 for j in range(i + 1, len(logs)):
-                    if "完成任务: Fight" in logs[j] or "完成任务: 刷理智" in logs[j]:
+                    if (
+                        "完成任务: Fight" in logs[j]
+                        or "完成任务: 刷理智" in logs[j]
+                        or "完成任务: 理智作战" in logs[j]
+                    ):
                         end_index = j
                         break
                     # 如果遇到新的Fight任务开始, 则当前任务没有正常结束
                     if j < len(logs) and (
-                        "开始任务: Fight" in logs[j] or "开始任务: 刷理智" in logs[j]
+                        "开始任务: Fight" in logs[j]
+                        or "开始任务: 刷理智" in logs[j]
+                        or "开始任务: 理智作战" in logs[j]
                     ):
                         break
 
@@ -1835,7 +1845,7 @@ class AppConfig(GlobalConfig):
 
             for line in task_logs:
                 # 匹配掉落统计行, 如"1-7 掉落统计:"
-                drop_match = re.search(r"([A-Za-z0-9\-]+) 掉落统计:", line)
+                drop_match = re.search(r"([\u4e00-\u9fffA-Za-z0-9\-]+) 掉落统计:", line)
                 if drop_match:
                     # 发现新的掉落统计, 重置当前关卡的掉落数据
                     current_stage = drop_match.group(1)
