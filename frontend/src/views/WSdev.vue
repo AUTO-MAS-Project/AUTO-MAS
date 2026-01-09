@@ -60,16 +60,18 @@
           <div class="client-list">
             <a-empty v-if="clientList.length === 0" description="暂无客户端，点击上方按钮创建" />
             <div
-              v-for="client in clientList"
+              v-for="client in sortedClientList"
               :key="client.name"
               class="client-item"
-              :class="{ active: selectedClient === client.name, connected: client.is_connected }"
+              :class="{ active: selectedClient === client.name, connected: client.is_connected, system: client.is_system }"
               @click="selectClient(client.name)"
             >
               <div class="client-info">
                 <div class="client-name">
                   <a-badge :status="client.is_connected ? 'success' : 'default'" />
+                  <LockOutlined v-if="client.is_system" style="margin-right: 4px; color: var(--ant-color-warning)" />
                   {{ client.name }}
+                  <a-tag v-if="client.is_system" color="orange" size="small" style="margin-left: 4px">系统</a-tag>
                 </div>
                 <div class="client-url">{{ client.url }}</div>
               </div>
@@ -93,6 +95,7 @@
                   断开
                 </a-button>
                 <a-button
+                  v-if="!client.is_system"
                   type="link"
                   size="small"
                   danger
@@ -100,6 +103,15 @@
                 >
                   <DeleteOutlined />
                 </a-button>
+                <a-tooltip v-else title="系统客户端不可删除">
+                  <a-button
+                    type="link"
+                    size="small"
+                    disabled
+                  >
+                    <DeleteOutlined />
+                  </a-button>
+                </a-tooltip>
               </div>
             </div>
           </div>
@@ -318,6 +330,7 @@ import {
   ReloadOutlined,
   DeleteOutlined,
   SendOutlined,
+  LockOutlined,
 } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import { WebSocketService } from '@/api'
@@ -328,6 +341,7 @@ interface ClientInfo {
   name: string
   url: string
   is_connected: boolean
+  is_system: boolean
   ping_interval: number
   ping_timeout: number
   reconnect_interval: number
@@ -396,6 +410,17 @@ const connectedCount = computed(() => {
 
 const totalMessageCount = computed(() => {
   return messages.value.length
+})
+
+// 排序后的客户端列表：系统客户端置顶
+const sortedClientList = computed(() => {
+  return [...clientList.value].sort((a, b) => {
+    // 系统客户端排在前面
+    if (a.is_system && !b.is_system) return -1
+    if (!a.is_system && b.is_system) return 1
+    // 同类型按名称排序
+    return a.name.localeCompare(b.name)
+  })
 })
 
 const isSelectedClientConnected = computed(() => {
@@ -867,6 +892,19 @@ onUnmounted(() => {
 
 .client-item.connected {
   border-left: 3px solid var(--ant-color-success);
+}
+
+.client-item.system {
+  background: var(--ant-color-warning-bg);
+}
+
+.client-item.system:hover {
+  background: var(--ant-color-warning-bg-hover);
+}
+
+.client-item.system.active {
+  background: var(--ant-color-warning-bg);
+  border: 1px solid var(--ant-color-warning);
 }
 
 .client-info {
