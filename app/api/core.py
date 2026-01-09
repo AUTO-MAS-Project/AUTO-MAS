@@ -28,6 +28,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from app.core import Config, Broadcast, TaskManager
 from app.services import System
 from app.models.schema import *
+from app.api.ws_command import ws_command
 
 router = APIRouter(prefix="/api/core", tags=["核心信息"])
 
@@ -82,6 +83,7 @@ async def connect_websocket(websocket: WebSocket):
     await System.set_power("KillSelf", from_frontend=True)
 
 
+@ws_command("core.close")
 @router.post(
     "/close",
     summary="关闭后端程序",
