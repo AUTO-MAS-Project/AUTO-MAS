@@ -119,15 +119,15 @@ async def execute_ws_command(endpoint: str, params: Optional[Dict[str, Any]] = N
         if not parameters:
             # 无参数函数
             result = await func()
-        elif params:
+        else:
             # 检查第一个参数是否是 Pydantic Model
             first_param = list(parameters.values())[0]
             param_type = first_param.annotation
             
             if param_type != inspect.Parameter.empty and isinstance(param_type, type) and issubclass(param_type, BaseModel):
-                # 参数是 Pydantic Model，使用 params 构建
+                # 参数是 Pydantic Model，使用 params 构建（params 为空时使用空字典）
                 try:
-                    param_instance = param_type(**params)
+                    param_instance = param_type(**(params or {}))
                     result = await func(param_instance)
                 except Exception as e:
                     logger.error(f"构建参数模型失败: {type(e).__name__}: {e}")
@@ -136,12 +136,12 @@ async def execute_ws_command(endpoint: str, params: Optional[Dict[str, Any]] = N
                         "message": f"参数错误: {str(e)}",
                         "code": 400
                     }
-            else:
+            elif params:
                 # 普通参数，直接传递
                 result = await func(**params)
-        else:
-            # 没有 params 但函数需要参数，尝试无参调用
-            result = await func()
+            else:
+                # 没有 params 且不是 Pydantic Model，尝试无参调用
+                result = await func()
         
         # 处理返回结果
         if isinstance(result, BaseModel):
