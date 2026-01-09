@@ -377,49 +377,50 @@ class Notification:
     async def send_koishi(
         self,
         message: str,
-        token: str,
-        target: str = "admin",
         msgtype: str = "text",
-        base_url: str = "http://localhost:5140/AUTO_MAS",
-    ) -> dict:
+        client_name: str = "Koishi",
+    ) -> bool:
         """
-        推送消息到 Koishi AUTO-MAS 插件
+        通过 WebSocket 推送消息到 Koishi AUTO-MAS 插件
 
         Args:
             message (str): 消息内容。
-            token (str): API 访问令牌。
-            target (str): 发送目标，默认 "admin"。
-            msgtype (str): 消息类型，可选 "text"、"html"、"picture"。
-            base_url (str): API 端点地址。
+            msgtype (str): 消息类型，可选 "text"、"html"、"picture"，默认 "text"。
+            client_name (str): WebSocket 客户端名称，默认 "Koishi"。
 
         Returns:
-            dict: API 响应结果。
-
-        Raises:
-            httpx.RequestError: 网络请求失败时抛出。
+            bool: 发送是否成功。
         """
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {token}",
+        from app.utils.websocket import ws_client_manager
+
+        # 获取 WebSocket 客户端
+        client = ws_client_manager.get_client(client_name)
+        if not client:
+            logger.error(f"Koishi 通知推送失败: 未找到名为 [{client_name}] 的 WebSocket 客户端")
+            return False
+
+        if not client.is_connected:
+            logger.error(f"Koishi 通知推送失败: WebSocket 客户端 [{client_name}] 未连接")
+            return False
+
+        # 构造通知消息
+        notify_message = {
+            "id": "Client",
+            "type": "notify",
+            "data": {
+                "msgtype": msgtype,
+                "message": message,
+            }
         }
 
-        payload = {"user_id": target, "msgtype": msgtype, "message": message}
+        # 发送消息
+        success = await client.send(notify_message)
+        if success:
+            logger.success(f"Koishi 通知推送成功: {message[:50]}")
+        else:
+            logger.error(f"Koishi 通知推送失败: 发送消息失败")
 
-        async with httpx.AsyncClient(timeout=10) as client:
-            try:
-                response = await client.post(base_url, json=payload, headers=headers)
-                response.raise_for_status()
-                result = response.json()
-
-                if result.get("success"):
-                    logger.success(f"Koishi 通知推送成功: {message[:50]}")
-                else:
-                    logger.error(f"Koishi 通知推送失败: {result.get('message')}")
-
-                return result
-            except httpx.RequestError as e:
-                logger.error(f"Koishi 通知请求失败: {str(e)}")
-                raise
+        return success
 
     async def send_test_notification(self) -> None:
         """发送测试通知到所有已启用的通知渠道"""
@@ -462,19 +463,10 @@ class Notification:
         # 发送Koishi通知
         if Config.get("Notify", "IfKoishiSupport"):
             await self.send_koishi(
-                "这是 AUTO-MAS 外部通知测试信息。如果你看到了这段内容, 说明 AUTO-MAS 的通知功能已经正确配置且可以正常工作！",
-                Config.get("Notify", "KoishiToken"),
+                "这是 AUTO-MAS 外部通知测试信息。如果你看到了这段内容, 说明 AUTO-MAS 的通知功能已经正确配置且可以正常工作！"
             )
 
         logger.success("测试通知发送完成")
 
 
-if __name__ == "__main__":
-    Notify = Notification()
-    response = asyncio.run(
-        Notify.send_koishi(
-            "hello",
-            "123456",
-        )
-    )
 Notify = Notification()
