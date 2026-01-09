@@ -90,6 +90,8 @@ export class WebSocketService {
     /**
      * 删除 WebSocket 客户端
      * 删除指定客户端（会自动断开连接）
+     *
+     * 注意：系统客户端（如 Koishi）不可删除
      * @param requestBody
      * @returns WSClientStatusOut Successful Response
      * @throws ApiError
