@@ -11,11 +11,11 @@ export type WSClientStatusOut = {
      */
     code?: number;
     /**
-     * 状态
+     * 操作状态
      */
     status?: string;
     /**
-     * 消息
+     * 操作消息
      */
     message?: string;
     /**
