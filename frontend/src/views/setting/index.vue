@@ -19,6 +19,7 @@ import TabFunction from './TabFunction.vue'
 import TabNotify from './TabNotify.vue'
 import TabAdvanced from './TabAdvanced.vue'
 import TabOthers from './TabOthers.vue'
+import TabLLM from './TabLLM.vue'
 
 const router = useRouter()
 const { themeMode, themeColor, themeColors, setThemeMode, setThemeColor } = useTheme()
@@ -267,20 +268,39 @@ onMounted(() => {
     <div class="settings-content">
       <a-tabs v-model:active-key="activeKey" type="card" :loading="loading" class="settings-tabs">
         <a-tab-pane key="basic" tab="界面设置">
-          <TabBasic :settings="settings" :theme-mode="themeMode" :theme-color="themeColor"
-            :theme-mode-options="themeModeOptions" :theme-color-options="themeColorOptions"
-            :handle-theme-mode-change="handleThemeModeChange" :handle-theme-color-change="handleThemeColorChange"
-            :handle-setting-change="handleSettingChange" />
+          <TabBasic
+            :settings="settings"
+            :theme-mode="themeMode"
+            :theme-color="themeColor"
+            :theme-mode-options="themeModeOptions"
+            :theme-color-options="themeColorOptions"
+            :handle-theme-mode-change="handleThemeModeChange"
+            :handle-theme-color-change="handleThemeColorChange"
+            :handle-setting-change="handleSettingChange"
+          />
         </a-tab-pane>
         <a-tab-pane key="function" tab="功能设置">
-          <TabFunction :settings="settings" :history-retention-options="historyRetentionOptions"
-            :update-source-options="updateSourceOptions" :update-channel-options="updateChannelOptions"
-            :voice-type-options="voiceTypeOptions" :handle-setting-change="handleSettingChange"
-            :check-update="checkUpdate" />
+          <TabFunction
+            :settings="settings"
+            :history-retention-options="historyRetentionOptions"
+            :update-source-options="updateSourceOptions"
+            :update-channel-options="updateChannelOptions"
+            :voice-type-options="voiceTypeOptions"
+            :handle-setting-change="handleSettingChange"
+            :check-update="checkUpdate"
+          />
         </a-tab-pane>
         <a-tab-pane key="notify" tab="通知设置">
-          <TabNotify :settings="settings" :send-task-result-time-options="sendTaskResultTimeOptions"
-            :handle-setting-change="handleSettingChange" :test-notify="testNotify" :testing-notify="testingNotify" />
+          <TabNotify
+            :settings="settings"
+            :send-task-result-time-options="sendTaskResultTimeOptions"
+            :handle-setting-change="handleSettingChange"
+            :test-notify="testNotify"
+            :testing-notify="testingNotify"
+          />
+        </a-tab-pane>
+        <a-tab-pane key="llm" tab="LLM 设置">
+          <TabLLM />
         </a-tab-pane>
         <a-tab-pane key="advanced" tab="高级设置">
           <TabAdvanced :go-to-logs="goToLogs" :open-dev-tools="openDevTools" />
