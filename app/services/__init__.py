@@ -27,5 +27,23 @@ from .matomo import Matomo
 from .notification import Notify
 from .system import System
 from .update import Updater
+from .llm import LLMService, get_llm_service
+from .token_tracker import (
+    TokenTracker,
+    TokenUsageRecord,
+    TokenStatistics,
+    get_token_tracker,
+)
 
-__all__ = ["Matomo", "Notify", "System", "Updater"]
+__all__ = [
+    "Matomo",
+    "Notify",
+    "System",
+    "Updater",
+    "LLMService",
+    "get_llm_service",
+    "TokenTracker",
+    "TokenUsageRecord",
+    "TokenStatistics",
+    "get_token_tracker",
+]

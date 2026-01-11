@@ -28,12 +28,15 @@ from pathlib import Path
 from datetime import datetime, timedelta
 
 from app.core import Config
-from app.models.task import TaskExecuteBase, ScriptItem, LogRecord
+from app.models.task import TaskExecuteBase, ScriptItem, LogRecord, TaskJudgmentResult
 from app.models.ConfigBase import MultipleConfig
 from app.models.config import MaaConfig, MaaUserConfig
 from app.models.emulator import DeviceInfo, DeviceBase
 from app.utils.constants import MAA_RUN_MOOD_BOOK, MAA_TASK_TRANSITION_METHOD_BOOK
 from app.services import Notify, System
+from app.services.llm import get_llm_service
+from app.services.token_tracker import get_token_tracker
+from app.core.llm_config import get_llm_config_manager
 from app.utils import get_logger, LogMonitor, ProcessManager
 from app.utils.constants import UTC4, UTC8, MAA_TASKS, ARKNIGHTS_PACKAGE_NAME
 from .tools import skland_sign_in, push_notification, agree_bilibili, update_maa
@@ -594,10 +597,11 @@ class AutoProxyTask(TaskExecuteBase):
         if self.mode == "Annihilation" and "任务出错: 刷理智" in log:
             self.run_book["IfAnnihilationAccomplish"] = True
 
+        # 传统判定逻辑
+        traditional_status = None
+        
         if "任务出错: StartUp" in log or "任务出错: 开始唤醒" in log:
-            self.cur_user_item.log_record[self.log_start_time].status = (
-                "MAA 未能正确登录 PRTS"
-            )
+            traditional_status = "MAA 未能正确登录 PRTS"
         elif "任务已全部完成！" in log:
             if "完成任务: StartUp" in log or "完成任务: 开始唤醒" in log:
                 self.task_dict["WakeUp"] = "False"
@@ -628,26 +632,104 @@ class AutoProxyTask(TaskExecuteBase):
             if "完成任务: Reclamation" in log or "完成任务: 生息演算" in log:
                 self.task_dict["Reclamation"] = "False"
             if all(v == "False" for v in self.task_dict.values()):
-                self.cur_user_log.status = "Success!"
+                traditional_status = "Success!"
             else:
-                self.cur_user_log.status = "MAA 部分任务执行失败"
+                traditional_status = "MAA 部分任务执行失败"
         elif "请 ｢检查连接设置｣ → ｢尝试重启模拟器与 ADB｣ → ｢重启电脑｣" in log:
-            self.cur_user_log.status = "MAA 的 ADB 连接异常"
+            traditional_status = "MAA 的 ADB 连接异常"
         elif "未检测到任何模拟器" in log:
-            self.cur_user_log.status = "MAA 未检测到任何模拟器"
+            traditional_status = "MAA 未检测到任何模拟器"
         elif "已停止" in log:
-            self.cur_user_log.status = "MAA 在完成任务前中止"
+            traditional_status = "MAA 在完成任务前中止"
         elif (
             "MaaAssistantArknights GUI exited" in log
             or not await self.maa_process_manager.is_running()
         ):
-            self.cur_user_log.status = "MAA 在完成任务前退出"
+            traditional_status = "MAA 在完成任务前退出"
         elif datetime.now() - latest_time > timedelta(
             minutes=self.script_config.get("Run", f"{self.mode}TimeLimit")
         ):
-            self.cur_user_log.status = "MAA 进程超时"
+            traditional_status = "MAA 进程超时"
         else:
-            self.cur_user_log.status = "MAA 正常运行中"
+            traditional_status = "MAA 正常运行中"
+
+        # 当传统判定即将判定为失败时，检查 LLM 功能并调用 LLM 判定
+        final_status = traditional_status
+        
+        # 判断是否为失败状态（非成功且非运行中）
+        is_failure_status = (
+            traditional_status != "Success!" 
+            and traditional_status != "MAA 正常运行中"
+        )
+        
+        if is_failure_status:
+            try:
+                # 检查 LLM 功能是否启用
+                config_manager = await get_llm_config_manager()
+                
+                if config_manager.is_enabled():
+                    logger.info(f"传统判定结果为失败 ({traditional_status})，调用 LLM 进行二次判定")
+                    
+                    # 构建任务上下文
+                    task_context = {
+                        "task_name": f"MAA 自动代理 - {MAA_RUN_MOOD_BOOK.get(self.mode, self.mode)}",
+                        "user_name": self.cur_user_item.name,
+                        "script_name": "MAA (明日方舟助手)",
+                        "script_type": "MAA",
+                        "mode": self.mode,
+                    }
+                    
+                    # 调用 LLM 服务分析日志
+                    llm_service = await get_llm_service()
+                    llm_result = await llm_service.analyze_log(
+                        log_content=log,
+                        task_context=task_context,
+                        traditional_result=traditional_status
+                    )
+                    
+                    # 记录 LLM 判定标识到日志记录
+                    self.cur_user_log.llm_judgment = llm_result
+                    
+                    # 根据 LLM 判定结果更新任务状态
+                    if llm_result.judged_by_llm:
+                        # 记录 Token 使用量
+                        try:
+                            token_tracker = await get_token_tracker()
+                            # Token 使用量在 LLM 服务内部已记录，这里只记录日志
+                            logger.info(
+                                f"LLM 判定完成: {llm_result.status}, "
+                                f"提供商: {llm_result.provider_name}, "
+                                f"模型: {llm_result.model_name}"
+                            )
+                        except Exception as e:
+                            logger.warning(f"Token 追踪器获取失败: {e}")
+                        
+                        # 如果 LLM 判定任务成功，标记为成功
+                        if llm_result.status == "Success!":
+                            logger.info(f"LLM 判定任务成功，覆盖传统判定结果")
+                            final_status = "Success!"
+                            # 如果 LLM 判定成功，更新任务字典
+                            for task in self.task_dict:
+                                self.task_dict[task] = "False"
+                        # 如果 LLM 判定任务仍在运行，继续监控
+                        elif "正常运行中" in llm_result.status:
+                            logger.info(f"LLM 判定任务仍在运行，继续监控")
+                            final_status = "MAA 正常运行中"
+                        # 如果 LLM 判定任务失败，使用 LLM 提供的错误描述
+                        else:
+                            logger.info(f"LLM 判定任务失败: {llm_result.status}")
+                            final_status = llm_result.status
+                    else:
+                        # LLM 调用失败，回退到传统判定结果
+                        logger.info(f"LLM 判定未执行或失败，使用传统判定结果: {traditional_status}")
+                        final_status = traditional_status
+                        
+            except Exception as e:
+                # 记录错误并回退到传统判定
+                logger.error(f"LLM 判定过程出错: {e}")
+                final_status = traditional_status
+
+        self.cur_user_log.status = final_status
 
         logger.debug(f"MAA 日志分析结果: {self.cur_user_log.status}")
         if self.cur_user_log.status != "MAA 正常运行中":
@@ -683,7 +765,7 @@ class AutoProxyTask(TaskExecuteBase):
             )
             user_logs_list.append(log_path.with_suffix(".json"))
 
-            if await Config.save_maa_log(log_path, log_item.content, log_item.status):
+            if await Config.save_maa_log(log_path, log_item.content, log_item.status, log_item.llm_judgment):
                 if_six_star = True
 
         if self.run_book["IfAnnihilationAccomplish"]:

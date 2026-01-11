@@ -956,6 +956,18 @@ class GlobalConfig(ConfigBase):
     ## 队列配置列表
     QueueConfig = MultipleConfig([QueueConfig], if_save_needed=False)
 
+    ## LLM --------------------------------------------------------------
+    ## 是否启用 LLM 功能
+    LLM_Enabled = ConfigItem("LLM", "Enabled", False, BoolValidator())
+    ## 当前激活的提供商 ID
+    LLM_ActiveProviderId = ConfigItem("LLM", "ActiveProviderId", "")
+    ## API 调用超时时间（秒）
+    LLM_Timeout = ConfigItem("LLM", "Timeout", 30, RangeValidator(5, 120))
+    ## 最大重试次数
+    LLM_MaxRetries = ConfigItem("LLM", "MaxRetries", 1, RangeValidator(0, 3))
+    ## 速率限制（每分钟最大请求数）
+    LLM_RateLimit = ConfigItem("LLM", "RateLimit", 10, RangeValidator(1, 60))
+
     def __init__(self):
         super().__init__()
 
@@ -963,6 +975,44 @@ class GlobalConfig(ConfigBase):
         GeneralConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         MaaUserConfig.related_config["PlanConfig"] = self.PlanConfig
         QueueItem.related_config["ScriptConfig"] = self.ScriptConfig
+
+
+class LLMProviderConfig(ConfigBase):
+    """LLM 提供商配置"""
+
+    def __init__(self) -> None:
+        super().__init__()
+
+        ## Info ------------------------------------------------------------
+        ## 提供商名称
+        self.Info_Name = ConfigItem("Info", "Name", "新 LLM 提供商")
+        ## 提供商类型
+        self.Info_Type = ConfigItem(
+            "Info",
+            "Type",
+            "custom",
+            OptionsValidator(
+                ["openai", "claude", "deepseek", "qwen", "mimo", "custom"]
+            ),
+        )
+        ## 是否激活
+        self.Info_Active = ConfigItem("Info", "Active", False, BoolValidator())
+
+        ## Data ------------------------------------------------------------
+        ## API 密钥
+        self.Data_ApiKey = ConfigItem("Data", "ApiKey", "", EncryptValidator())
+        ## Base URL
+        self.Data_BaseUrl = ConfigItem("Data", "BaseUrl", "")
+        ## 模型名称
+        self.Data_Model = ConfigItem("Data", "Model", "")
+        ## 最大 Token 数
+        self.Data_MaxTokens = ConfigItem(
+            "Data", "MaxTokens", 2000, RangeValidator(100, 32000)
+        )
+        ## Temperature
+        self.Data_Temperature = ConfigItem(
+            "Data", "Temperature", 0.3, RangeValidator(0.0, 2.0)
+        )
 
 
 CLASS_BOOK = {"MAA": MaaConfig, "MaaPlan": MaaPlanConfig, "General": GeneralConfig}

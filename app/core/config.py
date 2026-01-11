@@ -52,6 +52,7 @@ from app.models.config import (
     TimeSet,
     EmulatorConfig,
 )
+from app.models.task import TaskJudgmentResult
 from app.models.schema import WebSocketMessage
 from app.utils.constants import (
     UTC4,
@@ -1731,7 +1732,7 @@ class AppConfig(GlobalConfig):
 
         return remote_web_config
 
-    async def save_maa_log(self, log_path: Path, logs: list, maa_result: str) -> bool:
+    async def save_maa_log(self, log_path: Path, logs: list, maa_result: str, llm_judgment: Optional[TaskJudgmentResult] = None) -> bool:
         """
         保存MAA日志并生成对应统计数据
 
@@ -1741,6 +1742,8 @@ class AppConfig(GlobalConfig):
         :type logs: list
         :param maa_result: MAA 结果
         :type maa_result: str
+        :param llm_judgment: LLM 判定结果（如果有）
+        :type llm_judgment: Optional[TaskJudgmentResult]
         :return: 是否包含6★招募
         :rtype: bool
         """
@@ -1754,6 +1757,15 @@ class AppConfig(GlobalConfig):
             "sanity_full_at": "",
             "maa_result": maa_result,
         }
+        
+        # 添加 LLM 判定信息
+        if llm_judgment is not None and llm_judgment.judged_by_llm:
+            data["llm_judgment"] = {
+                "judged_by_llm": llm_judgment.judged_by_llm,
+                "provider_name": llm_judgment.provider_name,
+                "model_name": llm_judgment.model_name,
+                "reason": llm_judgment.reason,
+            }
 
         if_six_star = False
 
@@ -1899,7 +1911,7 @@ class AppConfig(GlobalConfig):
         return if_six_star
 
     async def save_general_log(
-        self, log_path: Path, logs: list, general_result: str
+        self, log_path: Path, logs: list, general_result: str, llm_judgment: Optional[TaskJudgmentResult] = None
     ) -> None:
         """
         保存通用日志并生成对应统计数据
@@ -1907,13 +1919,23 @@ class AppConfig(GlobalConfig):
         :param log_path: 日志文件保存路径
         :param logs: 日志内容列表
         :param general_result: 待保存的日志结果信息
+        :param llm_judgment: LLM 判定结果（如果有）
         """
 
         logger.info(
             f"开始处理通用日志, 日志长度: {len(logs)}, 日志标记: {general_result}"
         )
 
-        data: Dict[str, str] = {"general_result": general_result}
+        data: Dict[str, Any] = {"general_result": general_result}
+        
+        # 添加 LLM 判定信息
+        if llm_judgment is not None and llm_judgment.judged_by_llm:
+            data["llm_judgment"] = {
+                "judged_by_llm": llm_judgment.judged_by_llm,
+                "provider_name": llm_judgment.provider_name,
+                "model_name": llm_judgment.model_name,
+                "reason": llm_judgment.reason,
+            }
 
         # 保存日志
         log_path.parent.mkdir(parents=True, exist_ok=True)

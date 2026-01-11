@@ -29,11 +29,14 @@ from contextlib import suppress
 from datetime import datetime, timedelta
 
 from app.core import Config
-from app.models.task import TaskExecuteBase, ScriptItem, LogRecord
+from app.models.task import TaskExecuteBase, ScriptItem, LogRecord, TaskJudgmentResult
 from app.models.ConfigBase import MultipleConfig
 from app.models.config import GeneralConfig, GeneralUserConfig
 from app.models.emulator import DeviceBase
 from app.services import Notify, System
+from app.services.llm import get_llm_service
+from app.services.token_tracker import get_token_tracker
+from app.core.llm_config import get_llm_config_manager
 from app.utils import get_logger, LogMonitor, ProcessManager, ProcessInfo, strptime
 from app.utils.constants import UTC4
 from .tools import execute_script_task
@@ -468,27 +471,104 @@ class AutoProxyTask(TaskExecuteBase):
             except ValueError:
                 pass
 
+        # 传统判定逻辑
+        traditional_status = None
+        
         for success_sign in self.success_log:
             if success_sign in log:
-                self.cur_user_log.status = "Success!"
+                traditional_status = "Success!"
                 break
         else:
             if datetime.now() - latest_time > timedelta(
                 minutes=self.script_config.get("Run", "RunTimeLimit")
             ):
-                self.cur_user_log.status = "脚本进程超时"
+                traditional_status = "脚本进程超时"
             else:
                 for error_sign in self.error_log:
                     if error_sign in log:
-                        self.cur_user_log.status = f"异常日志: {error_sign}"
+                        traditional_status = f"异常日志: {error_sign}"
                         break
                 else:
                     if await self.general_process_manager.is_running():
-                        self.cur_user_log.status = "通用脚本正常运行中"
+                        traditional_status = "通用脚本正常运行中"
                     elif self.success_log:
-                        self.cur_user_log.status = "脚本在完成任务前退出"
+                        traditional_status = "脚本在完成任务前退出"
                     else:
-                        self.cur_user_log.status = "Success!"
+                        traditional_status = "Success!"
+
+        # 当传统判定即将判定为失败时，检查 LLM 功能并调用 LLM 判定
+        final_status = traditional_status
+        
+        # 判断是否为失败状态（非成功且非运行中）
+        is_failure_status = (
+            traditional_status != "Success!" 
+            and traditional_status != "通用脚本正常运行中"
+        )
+        
+        if is_failure_status:
+            try:
+                # 检查 LLM 功能是否启用
+                config_manager = await get_llm_config_manager()
+                
+                if config_manager.is_enabled():
+                    logger.info(f"传统判定结果为失败 ({traditional_status})，调用 LLM 进行二次判定")
+                    
+                    # 构建任务上下文
+                    task_context = {
+                        "task_name": f"通用脚本自动代理",
+                        "user_name": self.cur_user_item.name,
+                        "script_name": self.script_config.get("Info", "Name"),
+                        "script_type": "General",
+                    }
+                    
+                    # 调用 LLM 服务分析日志
+                    llm_service = await get_llm_service()
+                    llm_result = await llm_service.analyze_log(
+                        log_content=log,
+                        task_context=task_context,
+                        traditional_result=traditional_status
+                    )
+                    
+                    # 记录 LLM 判定标识到日志记录
+                    self.cur_user_log.llm_judgment = llm_result
+                    
+                    # 根据 LLM 判定结果更新任务状态
+                    if llm_result.judged_by_llm:
+                        # 记录 Token 使用量
+                        try:
+                            token_tracker = await get_token_tracker()
+                            # Token 使用量在 LLM 服务内部已记录，这里只记录日志
+                            logger.info(
+                                f"LLM 判定完成: {llm_result.status}, "
+                                f"提供商: {llm_result.provider_name}, "
+                                f"模型: {llm_result.model_name}"
+                            )
+                        except Exception as e:
+                            logger.warning(f"Token 追踪器获取失败: {e}")
+                        
+                        # 如果 LLM 判定任务成功，标记为成功
+                        if llm_result.status == "Success!":
+                            logger.info(f"LLM 判定任务成功，覆盖传统判定结果")
+                            final_status = "Success!"
+                        # 如果 LLM 判定任务仍在运行，继续监控
+                        elif "正常运行中" in llm_result.status:
+                            logger.info(f"LLM 判定任务仍在运行，继续监控")
+                            final_status = "通用脚本正常运行中"
+                        # 如果 LLM 判定任务失败，使用 LLM 提供的错误描述
+                        else:
+                            logger.info(f"LLM 判定任务失败: {llm_result.status}")
+                            final_status = llm_result.status
+                    else:
+                        # LLM 调用失败，回退到传统判定结果
+                        logger.info(f"LLM 判定未执行或失败，使用传统判定结果: {traditional_status}")
+                        final_status = traditional_status
+                        
+            except Exception as e:
+                # 记录错误并回退到传统判定
+                logger.error(f"LLM 判定过程出错: {e}")
+                final_status = traditional_status
+
+        self.cur_user_log.status = final_status
 
         logger.debug(f"通用脚本日志分析结果: {self.cur_user_log.status}")
         if self.cur_user_log.status != "通用脚本正常运行中":
@@ -532,7 +612,7 @@ class AutoProxyTask(TaskExecuteBase):
                 log_item.content = ["未捕获到任何日志内容"]
                 log_item.status = "未捕获到日志"
 
-            await Config.save_general_log(log_path, log_item.content, log_item.status)
+            await Config.save_general_log(log_path, log_item.content, log_item.status, log_item.llm_judgment)
 
         if self.run_book:
             if (

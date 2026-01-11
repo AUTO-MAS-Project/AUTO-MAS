@@ -28,6 +28,7 @@ from .broadcast import Broadcast
 from .config import Config, MaaConfig, GeneralConfig, MaaUserConfig, GeneralUserConfig
 from .emulator_manager import EmulatorManager
 from .task_manager import TaskManager
+from .llm_config import LLMConfigManager, get_llm_config_manager, PRESET_PROVIDERS
 
 from .timer import MainTimer
 __all__ = [
@@ -40,4 +41,7 @@ __all__ = [
     "MainTimer",
     "TaskManager",
     "EmulatorManager",
+    "LLMConfigManager",
+    "get_llm_config_manager",
+    "PRESET_PROVIDERS",
 ]

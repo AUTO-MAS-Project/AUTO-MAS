@@ -29,10 +29,31 @@ from typing import List, Optional, Literal
 
 
 @dataclass
+class TaskJudgmentResult:
+    """任务判定结果
+    
+    用于存储 LLM 或传统方式对任务状态的判定结果。
+    
+    Attributes:
+        status: 判定状态，可能的值包括 "Success!"、"xxx正常运行中" 或错误描述
+        reason: 判定理由，说明为何做出此判定
+        judged_by_llm: 是否由 LLM 判定，True 表示由 LLM 判定，False 表示由传统逻辑判定
+        provider_name: LLM 提供商名称（如果由 LLM 判定），如 "OpenAI"、"Claude" 等
+        model_name: 模型名称（如果由 LLM 判定），如 "gpt-4o-mini"、"claude-3-haiku" 等
+    """
+    status: str  # "Success!", "xxx正常运行中", 或错误描述
+    reason: str  # 判定理由
+    judged_by_llm: bool = False  # 是否由 LLM 判定
+    provider_name: str = ""  # LLM 提供商名称（如果由 LLM 判定）
+    model_name: str = ""  # 模型名称（如果由 LLM 判定）
+
+
+@dataclass
 class LogRecord:
 
     content: list[str] = field(default_factory=list)
     status: str = "未开始监看日志"
+    llm_judgment: Optional[TaskJudgmentResult] = None  # LLM 判定结果（如果有）
 
 
 @dataclass

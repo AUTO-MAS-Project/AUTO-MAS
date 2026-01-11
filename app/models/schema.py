@@ -1072,3 +1072,146 @@ class WSClearHistoryIn(BaseModel):
 class WSCommandsOut(OutBase):
     """可用命令列表响应"""
     data: Optional[Dict[str, Any]] = Field(default=None, description="命令列表")
+
+
+# ============== LLM 配置相关模型 ==============
+
+class LLMProviderIndexItem(BaseModel):
+    """LLM 提供商索引项"""
+    uid: str = Field(..., description="唯一标识符")
+    type: Literal["LLMProviderConfig"] = Field(..., description="配置类型")
+
+
+class LLMProviderConfig_Info(BaseModel):
+    """LLM 提供商基础信息"""
+    Name: Optional[str] = Field(default=None, description="提供商名称")
+    Type: Optional[Literal["openai", "claude", "deepseek", "qwen", "mimo", "custom"]] = Field(
+        default=None, description="提供商类型"
+    )
+    Active: Optional[bool] = Field(default=None, description="是否激活")
+
+
+class LLMProviderConfig_Data(BaseModel):
+    """LLM 提供商配置数据"""
+    ApiKey: Optional[str] = Field(default=None, description="API 密钥")
+    BaseUrl: Optional[str] = Field(default=None, description="API 基础 URL")
+    Model: Optional[str] = Field(default=None, description="模型名称")
+    MaxTokens: Optional[int] = Field(default=None, description="最大 Token 数")
+    Temperature: Optional[float] = Field(default=None, description="温度参数")
+
+
+class LLMProviderConfig(BaseModel):
+    """LLM 提供商配置"""
+    Info: Optional[LLMProviderConfig_Info] = Field(default=None, description="提供商基础信息")
+    Data: Optional[LLMProviderConfig_Data] = Field(default=None, description="提供商配置数据")
+
+
+class LLMGlobalSettings(BaseModel):
+    """LLM 全局设置"""
+    Enabled: Optional[bool] = Field(default=None, description="是否启用 LLM 功能")
+    ActiveProviderId: Optional[str] = Field(default=None, description="当前激活的提供商 ID")
+    Timeout: Optional[int] = Field(default=None, description="API 调用超时时间（秒）")
+    MaxRetries: Optional[int] = Field(default=None, description="最大重试次数")
+    RateLimit: Optional[int] = Field(default=None, description="速率限制（每分钟最大请求数）")
+
+
+class LLMConfig(BaseModel):
+    """LLM 完整配置"""
+    LLM: Optional[LLMGlobalSettings] = Field(default=None, description="全局设置")
+    Providers: Optional[Dict[str, LLMProviderConfig]] = Field(default=None, description="提供商配置")
+
+
+class LLMConfigGetOut(OutBase):
+    """获取 LLM 配置响应"""
+    index: List[LLMProviderIndexItem] = Field(default_factory=list, description="提供商索引列表")
+    data: Dict[str, LLMProviderConfig] = Field(default_factory=dict, description="提供商配置数据")
+    settings: LLMGlobalSettings = Field(default_factory=LLMGlobalSettings, description="全局设置")
+    preset_providers: Dict[str, Dict[str, str]] = Field(
+        default_factory=dict, description="预设提供商配置"
+    )
+
+
+class LLMConfigUpdateIn(BaseModel):
+    """更新 LLM 全局配置请求"""
+    settings: LLMGlobalSettings = Field(..., description="要更新的全局设置")
+
+
+class LLMProviderCreateIn(BaseModel):
+    """创建 LLM 提供商请求"""
+    provider_type: str = Field(default="custom", description="提供商类型")
+    api_key: str = Field(default="", description="API 密钥")
+
+
+class LLMProviderCreateOut(OutBase):
+    """创建 LLM 提供商响应"""
+    providerId: str = Field(..., description="新创建的提供商 ID")
+    data: LLMProviderConfig = Field(..., description="提供商配置数据")
+
+
+class LLMProviderGetIn(BaseModel):
+    """获取 LLM 提供商请求"""
+    providerId: Optional[str] = Field(
+        default=None, description="提供商 ID，未携带时表示获取所有提供商数据"
+    )
+
+
+class LLMProviderUpdateIn(BaseModel):
+    """更新 LLM 提供商请求"""
+    providerId: str = Field(..., description="提供商 ID")
+    data: LLMProviderConfig = Field(..., description="提供商更新数据")
+
+
+class LLMProviderDeleteIn(BaseModel):
+    """删除 LLM 提供商请求"""
+    providerId: str = Field(..., description="提供商 ID")
+
+
+class LLMProviderTestIn(BaseModel):
+    """测试 LLM 提供商连接请求"""
+    providerId: str = Field(..., description="提供商 ID")
+
+
+class LLMProviderTestOut(OutBase):
+    """测试 LLM 提供商连接响应"""
+    success: bool = Field(..., description="测试是否成功")
+    response_time: float = Field(default=0.0, description="响应时间（秒）")
+    model: str = Field(default="", description="测试使用的模型")
+
+
+class LLMUsageQueryIn(BaseModel):
+    """Token 使用量查询请求"""
+    start_date: Optional[str] = Field(default=None, description="开始日期，格式 YYYY-MM-DD")
+    end_date: Optional[str] = Field(default=None, description="结束日期，格式 YYYY-MM-DD")
+    period: Optional[Literal["daily", "weekly", "monthly"]] = Field(
+        default=None, description="查询周期类型"
+    )
+
+
+class TokenUsageRecord(BaseModel):
+    """Token 使用记录"""
+    id: str = Field(..., description="记录 ID")
+    timestamp: str = Field(..., description="时间戳")
+    provider_name: str = Field(..., description="提供商名称")
+    model_name: str = Field(..., description="模型名称")
+    input_tokens: int = Field(..., description="输入 Token 数")
+    output_tokens: int = Field(..., description="输出 Token 数")
+    total_tokens: int = Field(..., description="总 Token 数")
+    task_id: str = Field(default="", description="关联任务 ID")
+
+
+class LLMUsageStatisticsOut(OutBase):
+    """Token 使用统计响应"""
+    total_tokens: int = Field(default=0, description="总 Token 数")
+    total_requests: int = Field(default=0, description="总请求数")
+    average_tokens_per_request: float = Field(default=0.0, description="每次请求平均 Token 数")
+    input_tokens: int = Field(default=0, description="总输入 Token 数")
+    output_tokens: int = Field(default=0, description="总输出 Token 数")
+    daily: Optional[Dict[str, Any]] = Field(default=None, description="当天统计")
+    weekly: Optional[Dict[str, Any]] = Field(default=None, description="本周统计")
+    monthly: Optional[Dict[str, Any]] = Field(default=None, description="本月统计")
+
+
+class LLMUsageHistoryOut(OutBase):
+    """Token 使用历史响应"""
+    records: List[TokenUsageRecord] = Field(default_factory=list, description="使用记录列表")
+    total_count: int = Field(default=0, description="总记录数")
