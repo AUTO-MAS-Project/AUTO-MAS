@@ -591,7 +591,9 @@ class AutoProxyTask(TaskExecuteBase):
             except ValueError:
                 pass
 
-        if self.mode == "Annihilation" and "任务出错: 刷理智" in log:
+        if self.mode == "Annihilation" and (
+            "任务出错: 刷理智" in log or "任务出错: 理智作战" in log
+        ):
             self.run_book["IfAnnihilationAccomplish"] = True
 
         if "任务出错: StartUp" in log or "任务出错: 开始唤醒" in log:
