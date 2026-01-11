@@ -23,7 +23,7 @@
         </a-form-item>
       </a-col>
       <a-col :span="6">
-        <a-form-item name="ifCombat" label="刷理智">
+        <a-form-item name="ifCombat" label="理智作战">
           <a-switch v-model:checked="formData.Task.IfCombat" :disabled="loading"
             @change="emitSave('Task.IfCombat', formData.Task.IfCombat)" />
         </a-form-item>
@@ -31,7 +31,7 @@
     </a-row>
     <a-row :gutter="24">
       <a-col :span="6">
-        <a-form-item name="ifMall" label="获取信用及购物">
+        <a-form-item name="ifMall" label="信用收支">
           <a-switch v-model:checked="formData.Task.IfMall" :disabled="loading"
             @change="emitSave('Task.IfMall', formData.Task.IfMall)" />
         </a-form-item>
