@@ -23,6 +23,7 @@ import asyncio
 import aiofiles
 from contextlib import suppress
 from datetime import datetime, timedelta, date
+from copy import copy
 from pathlib import Path
 from typing import Callable, Optional, List, Awaitable
 
@@ -54,15 +55,17 @@ class LogMonitor:
         self,
         time_stamp_range: tuple[int, int],
         time_format: str,
-        callback: Callable[[List[str]], Awaitable[None]],
-        encoding: str = "utf-8",
+        callback: Callable[[List[str], datetime], Awaitable[None]],
+        except_logs: List[str] = [],
     ):
-        self.time_stamp_range = time_stamp_range
+        self.time_start = time_stamp_range[0]
+        self.time_end = time_stamp_range[1]
         self.time_format = time_format
         self.callback = callback
-        self.encoding = encoding
+        self.except_logs = except_logs
         self.last_callback_time: datetime = datetime.now()
         self.log_contents: List[str] = []
+        self.latest_time = datetime.now()
         self.task: Optional[asyncio.Task] = None
 
     async def monitor_file(self, log_file_path: Path, log_start_time: datetime):
@@ -70,11 +73,14 @@ class LogMonitor:
 
         logger.info(f"开始监控日志文件: {log_file_path}")
 
+        await self.update_latest_timestamp("", if_init=True)
+
         if_mtime_checked = False
+        if_log_start = False
+        offset = 0
+        log_contents = []
 
         while True:
-            log_contents = []
-            if_log_start = False
 
             # 检查文件是否仍然存在
             if not log_file_path.exists():
@@ -85,6 +91,7 @@ class LogMonitor:
 
             if not if_mtime_checked:
                 if date.fromtimestamp(log_file_path.stat().st_mtime) == date.today():
+                    log_stat = log_file_path.stat()
                     if_mtime_checked = True
                 else:
                     logger.warning(
@@ -96,25 +103,40 @@ class LogMonitor:
 
             # 尝试读取文件
             try:
+
+                if (
+                    log_stat.st_ino != log_file_path.stat().st_ino
+                    or log_stat.st_size > log_file_path.stat().st_size
+                ):
+                    offset = 0
+                    log_contents = []
+                    if_log_start = False
+
+                log_stat = log_file_path.stat()
+
+                if log_stat.st_size <= offset:
+                    await asyncio.sleep(1)
+                    continue
+
                 async with aiofiles.open(log_file_path, "rb") as f:
+                    await f.seek(offset)
                     async for bline in f:
+                        offset = await f.tell()
                         line = decode_bytes(bline)
                         if not if_log_start:
                             with suppress(IndexError, ValueError):
                                 entry_time = strptime(
-                                    line[
-                                        self.time_stamp_range[
-                                            0
-                                        ] : self.time_stamp_range[1]
-                                    ],
+                                    line[self.time_start : self.time_end],
                                     self.time_format,
                                     self.last_callback_time,
                                 )
                                 if entry_time > log_start_time:
                                     if_log_start = True
                                     log_contents.append(line)
+                                    await self.update_latest_timestamp(line)
                         else:
                             log_contents.append(line)
+                            await self.update_latest_timestamp(line)
 
             except (FileNotFoundError, PermissionError) as e:
                 logger.warning(f"文件访问错误: {e}")
@@ -122,11 +144,10 @@ class LogMonitor:
                 continue
 
             # 调用回调
-            if (
-                log_contents != self.log_contents
-                or datetime.now() - self.last_callback_time > timedelta(minutes=1)
-            ):
-                self.log_contents = log_contents
+            if len(log_contents) != len(
+                self.log_contents
+            ) or datetime.now() - self.last_callback_time > timedelta(minutes=1):
+                self.log_contents = copy(log_contents)
 
                 await self.do_callback()
 
@@ -136,6 +157,8 @@ class LogMonitor:
         """监控日志文件的主循环"""
 
         logger.info(f"开始监控进程日志: {process.pid}")
+
+        await self.update_latest_timestamp("", if_init=True)
 
         if process.stdout is None:
             raise ValueError("进程没有标准输出")
@@ -151,7 +174,9 @@ class LogMonitor:
                 await self.do_callback()
                 continue
 
-            self.log_contents.append(ANSI_ESCAPE_RE.sub("", decode_bytes(bline)))
+            line = ANSI_ESCAPE_RE.sub("", decode_bytes(bline))
+            self.log_contents.append(line)
+            await self.update_latest_timestamp(line)
 
             if datetime.now() - self.last_callback_time > timedelta(seconds=0.1):
                 await self.do_callback()
@@ -160,9 +185,29 @@ class LogMonitor:
         """安全调用回调函数"""
         self.last_callback_time = datetime.now()
         try:
-            await self.callback(self.log_contents)
+            await self.callback(self.log_contents, self.latest_time)
         except Exception as e:
             logger.error(f"回调函数执行失败: {e}")
+
+    async def update_latest_timestamp(self, log: str, if_init: bool = False) -> None:
+
+        if if_init:
+            self.last_log = log
+            self.latest_time = datetime.now()
+            return
+
+        if any(_ in log for _ in self.except_logs):
+            return
+
+        with suppress(IndexError, ValueError):
+            log_text = log[: self.time_start] + log[self.time_end :]
+            if log_text != self.last_log:
+                self.latest_time = strptime(
+                    log[self.time_start : self.time_end],
+                    self.time_format,
+                    self.last_callback_time,
+                )
+                self.last_log = log_text
 
     async def start_monitor_file(
         self, log_file_path: Path, start_time: datetime

@@ -25,7 +25,7 @@ import uuid
 import asyncio
 import shutil
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from app.core import Config, Broadcast
 from app.models.task import TaskExecuteBase, ScriptItem, LogRecord
@@ -333,7 +333,7 @@ class ManualReviewTask(TaskExecuteBase):
         )
         logger.success(f"MAA运行参数配置完成: 人工排查")
 
-    async def check_log(self, log_content: list[str]) -> None:
+    async def check_log(self, log_content: list[str], latest_time: datetime) -> None:
         """日志回调"""
 
         log = "".join(log_content)
@@ -353,6 +353,8 @@ class ManualReviewTask(TaskExecuteBase):
             or not await self.maa_process_manager.is_running()
         ):
             self.cur_user_log.status = "MAA 在完成任务前退出"
+        elif datetime.now() - latest_time > timedelta(minutes=10):
+            self.cur_user_log.status = "MAA 进程超时"
         else:
             self.cur_user_log.status = "MAA 正常运行中"
 
