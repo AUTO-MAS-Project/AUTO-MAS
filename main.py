@@ -86,6 +86,11 @@ def main():
             await System.set_Sleep()
             await System.set_SelfStart()
 
+            # 初始化 Koishi 系统客户端（如果已启用）
+            if Config.get("Notify", "IfKoishiSupport"):
+                from app.utils.websocket import ws_client_manager
+                await ws_client_manager.init_system_client_koishi()
+
             if (Path.cwd() / "AUTO-MAS-Setup.exe").exists():
                 try:
                     (Path.cwd() / "AUTO-MAS-Setup.exe").unlink()
@@ -127,6 +132,7 @@ def main():
             setting_router,
             update_router,
             ocr_router,
+            ws_debug_router,
         )
 
         app = FastAPI(
@@ -155,6 +161,7 @@ def main():
         app.include_router(setting_router)
         app.include_router(update_router)
         app.include_router(ocr_router)
+        app.include_router(ws_debug_router)
 
         app.mount(
             "/api/res/materials",
