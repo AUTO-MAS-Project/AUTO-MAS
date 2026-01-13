@@ -524,9 +524,6 @@ class AutoProxyTask(TaskExecuteBase):
                 maa_set["Configurations"]["Default"][
                     "MainFunction.Drops.Enable"
                 ] = "False"
-                maa_set["Configurations"]["Default"][
-                    "Fight.UseExpiringMedicine"
-                ] = "True"
 
             # 基建配置
             if self.cur_user_config.get("Info", "InfrastMode") == "Custom":
