@@ -92,7 +92,12 @@ class AutoProxyTask(TaskExecuteBase):
     async def prepare(self):
 
         self.maa_process_manager = ProcessManager()
-        self.maa_log_monitor = LogMonitor((1, 20), "%Y-%m-%d %H:%M:%S", self.check_log)
+        self.maa_log_monitor = LogMonitor(
+            (1, 20),
+            "%Y-%m-%d %H:%M:%S",
+            self.check_log,
+            except_logs=["如果长时间无进一步日志更新, 可能需要手动干预。"],
+        )
         self.wait_event = asyncio.Event()
         self.user_start_time = datetime.now()
         self.log_start_time = datetime.now()
@@ -574,22 +579,12 @@ class AutoProxyTask(TaskExecuteBase):
         )
         logger.success(f"MAA运行参数配置完成: {self.mode}")
 
-    async def check_log(self, log_content: list[str]) -> None:
+    async def check_log(self, log_content: list[str], latest_time: datetime) -> None:
         """日志回调"""
 
         log = "".join(log_content)
         self.cur_user_log.content = log_content
         self.script_info.log = log
-
-        latest_time = self.log_start_time
-        for line in log_content[::-1]:
-            try:
-                if "如果长时间无进一步日志更新, 可能需要手动干预。" in line:
-                    continue
-                latest_time = datetime.strptime(line[1:20], "%Y-%m-%d %H:%M:%S")
-                break
-            except ValueError:
-                pass
 
         if self.mode == "Annihilation" and (
             "任务出错: 刷理智" in log or "任务出错: 理智作战" in log
