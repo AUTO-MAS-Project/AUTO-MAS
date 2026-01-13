@@ -33,6 +33,7 @@ from .ProcessManager import ProcessManager, ProcessRunner, ProcessInfo, ProcessR
 from .security import dpapi_encrypt, dpapi_decrypt, sanitize_log_message
 from .emulator import MumuManager, LDManager, search_all_emulators, EMULATOR_TYPE_BOOK
 from .tools import decode_bytes
+from .websocket import WebSocketClient, create_ws_client
 
 __all__ = [
     "constants",
@@ -52,4 +53,6 @@ __all__ = [
     "search_all_emulators",
     "EMULATOR_TYPE_BOOK",
     "decode_bytes",
+    "WebSocketClient",
+    "create_ws_client",
 ]

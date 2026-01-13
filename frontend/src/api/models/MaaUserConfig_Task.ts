@@ -16,11 +16,11 @@ export type MaaUserConfig_Task = {
      */
     IfBase?: (boolean | null);
     /**
-     * 刷理智
+     * 理智作战
      */
     IfCombat?: (boolean | null);
     /**
-     * 获取信用及购物
+     * 信用收支
      */
     IfMall?: (boolean | null);
     /**

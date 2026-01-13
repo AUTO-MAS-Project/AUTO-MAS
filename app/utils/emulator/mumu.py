@@ -76,7 +76,7 @@ class MumuManager(DeviceBase):
         else:
             raise RuntimeError(f"模拟器 {idx} 无法启动, 当前状态码: {status}")
 
-        is_mumu_nx_exists = await self.find_mumu_nx_window() is not None
+        if_close_mumu_nx = await self.find_mumu_nx_window() is None
 
         result = await ProcessRunner.run_process(
             self.emulator_path,
@@ -93,15 +93,13 @@ class MumuManager(DeviceBase):
         if result.returncode != 0:
             raise RuntimeError(f"命令执行失败: {result.stdout}")
 
-        if not is_mumu_nx_exists and await self.find_mumu_nx_window() is not None:
-            logger.info("关闭 MuMuNX 窗口")
-            await self.close_mumu_nx_window()
-
         t = datetime.now()
         while datetime.now() - t < timedelta(
             seconds=self.config.get("Data", "MaxWaitTime")
         ):
             status = await self.getStatus(idx)
+            if if_close_mumu_nx:
+                if_close_mumu_nx = not await self.close_mumu_nx_window()
             if Config.get("Function", "IfSilence") and status == DeviceStatus.STARTING:
                 await self.setVisible(idx, False)
             elif status == DeviceStatus.ONLINE:
@@ -280,15 +278,14 @@ class MumuManager(DeviceBase):
             win32gui.EnumWindows(enum_cb, result)
         return result[0]
 
-    async def close_mumu_nx_window(self) -> None:
+    async def close_mumu_nx_window(self) -> bool:
         """
         关闭 MuMu 多开器窗口
         """
 
-        t = datetime.now()
-        while datetime.now() - t < timedelta(seconds=10):
-            hwnd = await self.find_mumu_nx_window()
-            if hwnd is not None:
-                win32gui.PostMessage(hwnd, win32con.WM_CLOSE, 0, 0)
-                return
-            await asyncio.sleep(0.1)
+        hwnd = await self.find_mumu_nx_window()
+        if hwnd is not None:
+            win32gui.PostMessage(hwnd, win32con.WM_CLOSE, 0, 0)
+            logger.success("已关闭 MuMuNX 窗口")
+            return True
+        return False

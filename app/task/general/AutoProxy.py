@@ -449,24 +449,12 @@ class AutoProxyTask(TaskExecuteBase):
 
         logger.info(f"脚本运行参数配置完成: 自动代理")
 
-    async def check_log(self, log_content: list[str]) -> None:
+    async def check_log(self, log_content: list[str], latest_time: datetime) -> None:
         """日志回调"""
 
         log = "".join(log_content)
         self.cur_user_log.content = log_content
         self.script_info.log = log
-
-        latest_time = self.log_start_time
-        for _ in log_content[::-1]:
-            try:
-                latest_time = strptime(
-                    _[self.log_time_range[0] : self.log_time_range[1]],
-                    self.script_config.get("Script", "LogTimeFormat"),
-                    self.log_start_time,
-                )
-                break
-            except ValueError:
-                pass
 
         for success_sign in self.success_log:
             if success_sign in log:

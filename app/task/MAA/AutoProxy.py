@@ -92,7 +92,12 @@ class AutoProxyTask(TaskExecuteBase):
     async def prepare(self):
 
         self.maa_process_manager = ProcessManager()
-        self.maa_log_monitor = LogMonitor((1, 20), "%Y-%m-%d %H:%M:%S", self.check_log)
+        self.maa_log_monitor = LogMonitor(
+            (1, 20),
+            "%Y-%m-%d %H:%M:%S",
+            self.check_log,
+            except_logs=["如果长时间无进一步日志更新, 可能需要手动干预。"],
+        )
         self.wait_event = asyncio.Event()
         self.user_start_time = datetime.now()
         self.log_start_time = datetime.now()
@@ -519,9 +524,6 @@ class AutoProxyTask(TaskExecuteBase):
                 maa_set["Configurations"]["Default"][
                     "MainFunction.Drops.Enable"
                 ] = "False"
-                maa_set["Configurations"]["Default"][
-                    "Fight.UseExpiringMedicine"
-                ] = "True"
 
             # 基建配置
             if self.cur_user_config.get("Info", "InfrastMode") == "Custom":
@@ -574,24 +576,16 @@ class AutoProxyTask(TaskExecuteBase):
         )
         logger.success(f"MAA运行参数配置完成: {self.mode}")
 
-    async def check_log(self, log_content: list[str]) -> None:
+    async def check_log(self, log_content: list[str], latest_time: datetime) -> None:
         """日志回调"""
 
         log = "".join(log_content)
         self.cur_user_log.content = log_content
         self.script_info.log = log
 
-        latest_time = self.log_start_time
-        for line in log_content[::-1]:
-            try:
-                if "如果长时间无进一步日志更新, 可能需要手动干预。" in line:
-                    continue
-                latest_time = datetime.strptime(line[1:20], "%Y-%m-%d %H:%M:%S")
-                break
-            except ValueError:
-                pass
-
-        if self.mode == "Annihilation" and "任务出错: 刷理智" in log:
+        if self.mode == "Annihilation" and (
+            "任务出错: 刷理智" in log or "任务出错: 理智作战" in log
+        ):
             self.run_book["IfAnnihilationAccomplish"] = True
 
         if "任务出错: StartUp" in log or "任务出错: 开始唤醒" in log:
@@ -608,10 +602,18 @@ class AutoProxyTask(TaskExecuteBase):
             if (
                 "完成任务: Fight" in log
                 or "完成任务: 刷理智" in log
-                or (self.mode == "Annihilation" and "任务出错: 刷理智" in log)
+                or "完成任务: 理智作战" in log
+                or (
+                    self.mode == "Annihilation"
+                    and ("任务出错: 刷理智" in log or "任务出错: 理智作战" in log)
+                )
             ):
                 self.task_dict["Combat"] = "False"
-            if "完成任务: Mall" in log or "完成任务: 获取信用及购物" in log:
+            if (
+                "完成任务: Mall" in log
+                or "完成任务: 获取信用及购物" in log
+                or "完成任务: 信用收支" in log
+            ):
                 self.task_dict["Mall"] = "False"
             if "完成任务: Award" in log or "完成任务: 领取奖励" in log:
                 self.task_dict["Mission"] = "False"

@@ -5,8 +5,8 @@
 "TaskQueue.WakeUp.IsChecked": "True"        #开始唤醒
 "TaskQueue.Recruiting.IsChecked": "True"        #自动公招
 "TaskQueue.Base.IsChecked": "True"      #基建换班
-"TaskQueue.Combat.IsChecked": "True"        #刷理智
-"TaskQueue.Mall.IsChecked": "True"       #获取信用及购物
+"TaskQueue.Combat.IsChecked": "True"        #理智作战
+"TaskQueue.Mall.IsChecked": "True"       #信用收支
 "TaskQueue.Mission.IsChecked": "True"       #领取奖励
 "TaskQueue.AutoRoguelike.IsChecked": "False"        #自动肉鸽
 "TaskQueue.Reclamation.IsChecked": "False"      #生息演算
@@ -20,7 +20,7 @@
 "TaskQueue.Order.Reclamation": "7"
 #开始唤醒
 "Start.StartGame"        #是否启动客户端
-#刷理智
+#理智作战
 "MainFunction.UseMedicine": "True"        #吃理智药
 "MainFunction.UseMedicine.Quantity": "999"        #吃理智药数量
 "MainFunction.TimesLimited": "True"        #指定次数

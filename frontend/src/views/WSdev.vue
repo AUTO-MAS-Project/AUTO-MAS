@@ -1,257 +1,442 @@
 <template>
   <div class="ws-debug-page">
-    <!-- 标题 -->
+    <!-- 页面标题 -->
     <div class="page-header">
-      <h1>WebSocket 测试页面</h1>
-      <p class="description">测试与后端 WebSocket 连接、认证、消息收发功能</p>
-      <p class="description">别忘了它只是个孩子，可能出现各种奇怪的问题</p>
+      <h1>WebSocket 客户端调试</h1>
+      <p class="description">后端作为 WebSocket 客户端连接外部服务器（如 Koishi）进行调试</p>
     </div>
 
-    <!-- 连接状态 -->
-    <a-card class="status-card">
+    <!-- 客户端概览 -->
+    <a-card class="overview-card" :bordered="false">
       <a-row :gutter="16">
-        <a-col :span="8">
-          <a-statistic title="连接状态">
-            <template #value>
-              <a-badge :status="connectionStatusBadge" :text="connectionStatusText" />
+        <a-col :span="6">
+          <a-statistic title="客户端总数" :value="clientList.length">
+            <template #prefix>
+              <ApiOutlined />
             </template>
           </a-statistic>
         </a-col>
-        <a-col :span="8">
-          <a-statistic title="认证状态">
-            <template #value>
-              <a-tag :color="isAuthenticated ? 'success' : 'warning'">
-                {{ isAuthenticated ? '已认证' : '未认证' }}
-              </a-tag>
+        <a-col :span="6">
+          <a-statistic title="已连接" :value="connectedCount">
+            <template #prefix>
+              <CheckCircleOutlined style="color: #52c41a" />
             </template>
           </a-statistic>
         </a-col>
-        <a-col :span="8">
-          <a-statistic title="收到消息数" :value="messageCount" />
+        <a-col :span="6">
+          <a-statistic title="未连接" :value="clientList.length - connectedCount">
+            <template #prefix>
+              <CloseCircleOutlined style="color: #ff4d4f" />
+            </template>
+          </a-statistic>
+        </a-col>
+        <a-col :span="6">
+          <a-statistic title="消息总数" :value="totalMessageCount">
+            <template #prefix>
+              <MessageOutlined />
+            </template>
+          </a-statistic>
         </a-col>
       </a-row>
     </a-card>
 
-    <!-- 功能选项卡 -->
-    <a-tabs v-model:active-key="activeTab" type="card">
-      <!-- 连接配置 -->
-      <a-tab-pane key="connection" tab="连接配置">
-        <a-card title="WebSocket 连接配置" class="config-card">
-          <a-form :model="connectionForm" layout="vertical">
-            <a-row :gutter="16">
-              <a-col :span="16">
-                <a-form-item label="WebSocket URL">
-                  <a-input v-model:value="connectionForm.url" placeholder="例如: ws://127.0.0.1:8000/ws/external"
-                    :disabled="isConnected" />
-                </a-form-item>
-              </a-col>
-              <a-col :span="8">
-                <a-form-item label="认证 Token">
-                  <a-input-password v-model:value="connectionForm.token" placeholder="输入认证 Token"
-                    :disabled="isConnected" />
-                </a-form-item>
-              </a-col>
-            </a-row>
+    <a-row :gutter="16" class="main-content">
+      <!-- 左侧：客户端管理 -->
+      <a-col :span="10">
+        <a-card title="客户端管理" :bordered="false" class="client-card">
+          <template #extra>
+            <a-space>
+              <a-button type="primary" size="small" @click="showCreateModal">
+                <template #icon><PlusOutlined /></template>
+                新建客户端
+              </a-button>
+              <a-button size="small" @click="refreshClientList">
+                <template #icon><ReloadOutlined /></template>
+              </a-button>
+            </a-space>
+          </template>
 
-            <a-form-item>
-              <a-space>
-                <a-button v-if="!isConnected" type="primary" :loading="connecting" @click="connect">
-                  <template #icon>
-                    <ApiOutlined />
-                  </template>
+          <!-- 客户端列表 -->
+          <div class="client-list">
+            <a-empty v-if="clientList.length === 0" description="暂无客户端，点击上方按钮创建" />
+            <div
+              v-for="client in sortedClientList"
+              :key="client.name"
+              class="client-item"
+              :class="{ active: selectedClient === client.name, connected: client.is_connected, system: client.is_system }"
+              @click="selectClient(client.name)"
+            >
+              <div class="client-info">
+                <div class="client-name">
+                  <a-badge :status="client.is_connected ? 'success' : 'default'" />
+                  <LockOutlined v-if="client.is_system" style="margin-right: 4px; color: var(--ant-color-warning)" />
+                  {{ client.name }}
+                  <a-tag v-if="client.is_system" color="orange" size="small" style="margin-left: 4px">系统</a-tag>
+                </div>
+                <div class="client-url">{{ client.url }}</div>
+              </div>
+              <div class="client-actions">
+                <a-button
+                  v-if="!client.is_connected"
+                  type="link"
+                  size="small"
+                  :loading="connectingClients[client.name]"
+                  @click.stop="connectClient(client.name)"
+                >
                   连接
                 </a-button>
-                <a-button v-else danger @click="disconnect">
-                  <template #icon>
-                    <DisconnectOutlined />
-                  </template>
-                  断开连接
+                <a-button
+                  v-else
+                  type="link"
+                  size="small"
+                  danger
+                  @click.stop="disconnectClient(client.name)"
+                >
+                  断开
                 </a-button>
-                <a-button v-if="isConnected && !isAuthenticated" type="primary" @click="authenticate">
-                  <template #icon>
-                    <SafetyOutlined />
-                  </template>
-                  发送认证
+                <a-button
+                  v-if="!client.is_system"
+                  type="link"
+                  size="small"
+                  danger
+                  @click.stop="removeClient(client.name)"
+                >
+                  <DeleteOutlined />
                 </a-button>
-              </a-space>
-            </a-form-item>
-          </a-form>
+                <a-tooltip v-else title="系统客户端不可删除">
+                  <a-button
+                    type="link"
+                    size="small"
+                    disabled
+                  >
+                    <DeleteOutlined />
+                  </a-button>
+                </a-tooltip>
+              </div>
+            </div>
+          </div>
         </a-card>
-      </a-tab-pane>
 
-      <!-- 发送消息 -->
-      <a-tab-pane key="send" tab="发送消息">
-        <a-card title="发送消息" class="config-card">
-          <a-form :model="messageForm" layout="vertical">
-            <a-row :gutter="16">
-              <a-col :span="8">
-                <a-form-item label="消息类型">
-                  <a-select v-model:value="messageForm.type">
-                    <a-select-option value="ping">ping (心跳)</a-select-option>
-                    <a-select-option value="auth">auth (认证)</a-select-option>
-                    <a-select-option value="message">message (消息)</a-select-option>
-                    <a-select-option value="custom">custom (自定义)</a-select-option>
-                  </a-select>
-                </a-form-item>
-              </a-col>
-              <a-col :span="8">
-                <a-form-item label="消息子类型 (msgtype)">
-                  <a-select v-model:value="messageForm.msgtype" :disabled="messageForm.type !== 'message'">
-                    <a-select-option value="text">text</a-select-option>
-                    <a-select-option value="html">html</a-select-option>
-                    <a-select-option value="picture">picture</a-select-option>
-                  </a-select>
-                </a-form-item>
-              </a-col>
-              <a-col :span="8">
-                <a-form-item label="用户 ID">
-                  <a-input v-model:value="messageForm.userId" placeholder="可选"
-                    :disabled="messageForm.type !== 'message'" />
-                </a-form-item>
-              </a-col>
-            </a-row>
+        <!-- 发送消息面板 -->
+        <a-card title="发送消息" :bordered="false" class="send-card" style="margin-top: 16px">
+          <a-form layout="vertical">
+            <a-form-item label="消息类型">
+              <a-radio-group v-model:value="sendMode" button-style="solid">
+                <a-radio-button value="formatted">格式化消息</a-radio-button>
+                <a-radio-button value="raw">原始 JSON</a-radio-button>
+                <a-radio-button value="auth">认证消息</a-radio-button>
+              </a-radio-group>
+            </a-form-item>
 
-            <a-row :gutter="16">
-              <a-col :span="24">
-                <a-form-item label="消息内容">
-                  <a-textarea v-model:value="messageForm.message" :rows="4"
-                    placeholder="输入消息内容（如果选择自定义类型，请输入完整的 JSON 对象）" />
-                </a-form-item>
-              </a-col>
-            </a-row>
+            <!-- 格式化消息 -->
+            <template v-if="sendMode === 'formatted'">
+              <a-row :gutter="12">
+                <a-col :span="12">
+                  <a-form-item label="消息 ID">
+                    <a-input v-model:value="formattedMessage.id" placeholder="Client" />
+                  </a-form-item>
+                </a-col>
+                <a-col :span="12">
+                  <a-form-item label="消息类型">
+                    <a-input v-model:value="formattedMessage.type" placeholder="command" />
+                  </a-form-item>
+                </a-col>
+              </a-row>
+              <a-form-item label="消息数据 (JSON)">
+                <a-textarea
+                  v-model:value="formattedMessage.data"
+                  :rows="4"
+                  placeholder='{"key": "value"}'
+                />
+              </a-form-item>
+            </template>
+
+            <!-- 原始 JSON -->
+            <template v-else-if="sendMode === 'raw'">
+              <a-form-item label="JSON 消息">
+                <a-textarea
+                  v-model:value="rawMessage"
+                  :rows="6"
+                  placeholder='{"id": "Client", "type": "command", "data": {}}'
+                />
+              </a-form-item>
+            </template>
+
+            <!-- 认证消息 -->
+            <template v-else-if="sendMode === 'auth'">
+              <a-row :gutter="12">
+                <a-col :span="12">
+                  <a-form-item label="认证 Token">
+                    <a-input-password v-model:value="authMessage.token" placeholder="输入 Token" />
+                  </a-form-item>
+                </a-col>
+                <a-col :span="12">
+                  <a-form-item label="认证类型">
+                    <a-input v-model:value="authMessage.type" placeholder="auth" />
+                  </a-form-item>
+                </a-col>
+              </a-row>
+              <a-form-item label="额外数据 (JSON, 可选)">
+                <a-textarea
+                  v-model:value="authMessage.extra"
+                  :rows="2"
+                  placeholder='{"extra_key": "extra_value"}'
+                />
+              </a-form-item>
+            </template>
 
             <a-form-item>
-              <a-space>
-                <a-button type="primary" :disabled="!isConnected" @click="sendMessage">
-                  <template #icon>
-                    <SendOutlined />
-                  </template>
-                  发送消息
-                </a-button>
-                <a-button @click="resetMessageForm">
-                  <template #icon>
-                    <ClearOutlined />
-                  </template>
-                  重置
-                </a-button>
-              </a-space>
+              <a-button
+                type="primary"
+                block
+                :loading="sending"
+                @click="sendMessage"
+              >
+                <template #icon><SendOutlined /></template>
+                发送消息
+              </a-button>
             </a-form-item>
           </a-form>
         </a-card>
-      </a-tab-pane>
+      </a-col>
 
-      <!-- 快捷操作 -->
-      <a-tab-pane key="quick" tab="快捷操作">
-        <a-card title="快捷操作" class="config-card">
-          <a-space wrap>
-            <a-button :disabled="!isConnected" @click="sendPing">
-              <template #icon>
-                <ThunderboltOutlined />
-              </template>
-              发送 Ping
-            </a-button>
-            <a-button :disabled="!isConnected" @click="sendTestMessage">
-              <template #icon>
-                <MessageOutlined />
-              </template>
-              发送测试消息
-            </a-button>
-            <a-button danger @click="clearMessages">
-              <template #icon>
-                <DeleteOutlined />
-              </template>
-              清空消息记录
-            </a-button>
-          </a-space>
-        </a-card>
-      </a-tab-pane>
-    </a-tabs>
+      <!-- 右侧：消息记录 -->
+      <a-col :span="14">
+        <a-card title="消息记录" :bordered="false" class="message-card">
+          <template #extra>
+            <a-space>
+              <a-switch
+                v-model:checked="autoScroll"
+                checked-children="自动滚动"
+                un-checked-children="手动滚动"
+              />
+              <a-select
+                v-model:value="messageFilter"
+                style="width: 120px"
+                size="small"
+              >
+                <a-select-option value="all">全部消息</a-select-option>
+                <a-select-option value="sent">仅发送</a-select-option>
+                <a-select-option value="received">仅接收</a-select-option>
+              </a-select>
+              <a-button size="small" danger @click="clearHistory">
+                <template #icon><DeleteOutlined /></template>
+                清空
+              </a-button>
+            </a-space>
+          </template>
 
-    <!-- 消息记录 -->
-    <a-card title="消息记录" class="messages-card">
-      <template #extra>
-        <a-space>
-          <a-switch v-model:checked="autoScroll" checked-children="自动滚动" un-checked-children="手动滚动" />
-          <a-tag color="blue">{{ messages.length }} 条消息</a-tag>
-        </a-space>
-      </template>
-
-      <div ref="messageContainer" class="message-container">
-        <div v-for="(msg, index) in messages" :key="index" class="message-item" :class="msg.direction">
-          <div class="message-meta">
-            <span class="message-time">{{ msg.time }}</span>
-            <a-tag :color="msg.direction === 'sent' ? 'blue' : 'green'" size="small">
-              {{ msg.direction === 'sent' ? '发送' : '接收' }}
-            </a-tag>
+          <div ref="messageContainer" class="message-container">
+            <template v-if="filteredMessages.length > 0">
+              <div
+                v-for="(msg, index) in filteredMessages"
+                :key="index"
+                class="message-item"
+                :class="msg.direction"
+              >
+                <div class="message-header">
+                  <a-tag :color="msg.direction === 'sent' ? 'blue' : 'green'" size="small">
+                    {{ msg.direction === 'sent' ? '发送' : '接收' }}
+                  </a-tag>
+                  <span class="message-client">{{ msg.client }}</span>
+                  <span class="message-time">{{ formatTime(msg.timestamp) }}</span>
+                </div>
+                <pre class="message-content">{{ formatJson(msg.data) }}</pre>
+              </div>
+            </template>
+            <a-empty v-else description="暂无消息记录" />
           </div>
-          <pre class="message-content">{{ formatJson(msg.data) }}</pre>
-        </div>
-        <a-empty v-if="messages.length === 0" description="暂无消息记录" />
-      </div>
-    </a-card>
+        </a-card>
+      </a-col>
+    </a-row>
+
+    <!-- 创建客户端弹窗 -->
+    <a-modal
+      v-model:open="createModalVisible"
+      title="创建 WebSocket 客户端"
+      @ok="createClient"
+      :confirmLoading="creating"
+    >
+      <a-form layout="vertical">
+        <a-form-item label="客户端名称" required>
+          <a-input
+            v-model:value="createForm.name"
+            placeholder="输入客户端名称，如 Koishi"
+          />
+        </a-form-item>
+        <a-form-item label="服务器 URL" required>
+          <a-input
+            v-model:value="createForm.url"
+            placeholder="ws://localhost:5140/AUTO_MAS"
+          />
+        </a-form-item>
+        <a-row :gutter="12">
+          <a-col :span="12">
+            <a-form-item label="心跳间隔（秒）">
+              <a-input-number
+                v-model:value="createForm.pingInterval"
+                :min="1"
+                :max="300"
+                style="width: 100%"
+              />
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item label="心跳超时（秒）">
+              <a-input-number
+                v-model:value="createForm.pingTimeout"
+                :min="5"
+                :max="600"
+                style="width: 100%"
+              />
+            </a-form-item>
+          </a-col>
+        </a-row>
+        <a-row :gutter="12">
+          <a-col :span="12">
+            <a-form-item label="重连间隔（秒）">
+              <a-input-number
+                v-model:value="createForm.reconnectInterval"
+                :min="1"
+                :max="60"
+                style="width: 100%"
+              />
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item label="最大重连次数">
+              <a-input-number
+                v-model:value="createForm.maxReconnectAttempts"
+                :min="-1"
+                style="width: 100%"
+              />
+              <div class="form-tip">-1 表示无限重连</div>
+            </a-form-item>
+          </a-col>
+        </a-row>
+      </a-form>
+    </a-modal>
   </div>
 </template>
 
 <script lang="ts" setup>
-import { ref, computed, watch, nextTick, onUnmounted } from 'vue'
+import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import {
   ApiOutlined,
-  DisconnectOutlined,
-  SafetyOutlined,
-  SendOutlined,
-  ClearOutlined,
-  ThunderboltOutlined,
+  CheckCircleOutlined,
+  CloseCircleOutlined,
   MessageOutlined,
+  PlusOutlined,
+  ReloadOutlined,
   DeleteOutlined,
+  SendOutlined,
+  LockOutlined,
 } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
+import { WebSocketService } from '@/api'
 
-// 连接状态
-const connecting = ref(false)
-const isConnected = ref(false)
-const isAuthenticated = ref(false)
-const messageCount = ref(0)
-const autoScroll = ref(true)
-const activeTab = ref('connection')
+// ============== 类型定义 ==============
 
-// WebSocket 实例
-let ws: WebSocket | null = null
-
-// 连接配置表单
-const connectionForm = ref({
-  url: 'ws://127.0.0.1:8000/ws/external',
-  token: '',
-})
-
-// 消息表单
-const messageForm = ref({
-  type: 'message' as 'ping' | 'auth' | 'message' | 'custom',
-  msgtype: 'text' as 'text' | 'html' | 'picture',
-  userId: '',
-  message: '',
-})
-
-// 消息记录
-interface MessageRecord {
-  time: string
-  direction: 'sent' | 'received'
-  data: any
+interface ClientInfo {
+  name: string
+  url: string
+  is_connected: boolean
+  is_system: boolean
+  ping_interval: number
+  ping_timeout: number
+  reconnect_interval: number
+  max_reconnect_attempts: number
+  message_count: number
 }
+
+interface MessageRecord {
+  direction: 'sent' | 'received'
+  timestamp: number
+  data: any
+  client: string
+}
+
+// ============== 状态定义 ==============
+
+// 客户端列表
+const clientList = ref<ClientInfo[]>([])
+const selectedClient = ref<string | null>(null)
+const connectingClients = ref<Record<string, boolean>>({})
+
+// 消息相关
 const messages = ref<MessageRecord[]>([])
+const messageFilter = ref<'all' | 'sent' | 'received'>('all')
+const autoScroll = ref(true)
 const messageContainer = ref<HTMLElement | null>(null)
 
-// 连接状态显示
-const connectionStatusBadge = computed(() => {
-  if (connecting.value) return 'processing'
-  if (isConnected.value) return 'success'
-  return 'default'
+// 发送消息
+const sendMode = ref<'formatted' | 'raw' | 'auth'>('formatted')
+const sending = ref(false)
+
+const formattedMessage = ref({
+  id: 'Client',
+  type: 'command',
+  data: '{}',
 })
 
-const connectionStatusText = computed(() => {
-  if (connecting.value) return '连接中...'
-  if (isConnected.value) return '已连接'
-  return '未连接'
+const rawMessage = ref('{\n  "id": "Client",\n  "type": "command",\n  "data": {}\n}')
+
+const authMessage = ref({
+  token: '',
+  type: 'auth',
+  extra: '',
 })
+
+// 创建客户端弹窗
+const createModalVisible = ref(false)
+const creating = ref(false)
+const createForm = ref({
+  name: '',
+  url: 'ws://localhost:5140/AUTO_MAS',
+  pingInterval: 15,
+  pingTimeout: 30,
+  reconnectInterval: 5,
+  maxReconnectAttempts: -1,
+})
+
+// 实时 WebSocket 连接
+let liveWs: WebSocket | null = null
+
+// ============== 计算属性 ==============
+
+const connectedCount = computed(() => {
+  return clientList.value.filter((c) => c.is_connected).length
+})
+
+const totalMessageCount = computed(() => {
+  return messages.value.length
+})
+
+// 排序后的客户端列表：系统客户端置顶
+const sortedClientList = computed(() => {
+  return [...clientList.value].sort((a, b) => {
+    // 系统客户端排在前面
+    if (a.is_system && !b.is_system) return -1
+    if (!a.is_system && b.is_system) return 1
+    // 同类型按名称排序
+    return a.name.localeCompare(b.name)
+  })
+})
+
+const isSelectedClientConnected = computed(() => {
+  if (!selectedClient.value) return false
+  const client = clientList.value.find((c) => c.name === selectedClient.value)
+  return client?.is_connected ?? false
+})
+
+const filteredMessages = computed(() => {
+  if (messageFilter.value === 'all') {
+    return messages.value
+  }
+  return messages.value.filter((m) => m.direction === messageFilter.value)
+})
+
+// ============== 方法 ==============
 
 // 格式化 JSON
 function formatJson(data: any): string {
@@ -265,27 +450,279 @@ function formatJson(data: any): string {
   }
 }
 
-// 获取当前时间字符串
-function getCurrentTime(): string {
-  const now = new Date()
+// 格式化时间戳
+function formatTime(timestamp: number): string {
+  const date = new Date(timestamp * 1000)
   return (
-    now.toLocaleTimeString('zh-CN', { hour12: false }) +
+    date.toLocaleTimeString('zh-CN', { hour12: false }) +
     '.' +
-    String(now.getMilliseconds()).padStart(3, '0')
+    String(date.getMilliseconds()).padStart(3, '0')
   )
 }
 
-// 添加消息记录
-function addMessage(direction: 'sent' | 'received', data: any) {
-  messages.value.push({
-    time: getCurrentTime(),
-    direction,
-    data,
-  })
-  if (direction === 'received') {
-    messageCount.value++
+// 刷新客户端列表
+async function refreshClientList() {
+  try {
+    const response = await WebSocketService.listClientsApiWsDebugClientListGet()
+    if (response.code === 200 && response.data) {
+      clientList.value = response.data.clients || []
+    }
+  } catch (error: any) {
+    console.error('刷新客户端列表失败:', error)
   }
-  // 自动滚动到底部
+}
+
+// 选择客户端
+function selectClient(name: string) {
+  selectedClient.value = name
+}
+
+// 显示创建弹窗
+function showCreateModal() {
+  createForm.value = {
+    name: '',
+    url: 'ws://localhost:5140/AUTO_MAS',
+    pingInterval: 15,
+    pingTimeout: 30,
+    reconnectInterval: 5,
+    maxReconnectAttempts: -1,
+  }
+  createModalVisible.value = true
+}
+
+// 记录 API 请求到消息记录
+function logApiRequest(endpoint: string, method: string, body: any) {
+  addMessage({
+    direction: 'sent',
+    timestamp: Date.now() / 1000,
+    data: {
+      _type: 'API_REQUEST',
+      endpoint,
+      method,
+      body,
+    },
+    client: 'Frontend',
+  })
+}
+
+// 记录 API 响应到消息记录
+function logApiResponse(endpoint: string, response: any) {
+  addMessage({
+    direction: 'received',
+    timestamp: Date.now() / 1000,
+    data: {
+      _type: 'API_RESPONSE',
+      endpoint,
+      response,
+    },
+    client: 'Backend',
+  })
+}
+
+// 创建客户端
+async function createClient() {
+  if (!createForm.value.name) {
+    message.error('请输入客户端名称')
+    return
+  }
+  if (!createForm.value.url) {
+    message.error('请输入服务器 URL')
+    return
+  }
+
+  creating.value = true
+  try {
+    const requestBody = {
+      name: createForm.value.name,
+      url: createForm.value.url,
+      ping_interval: createForm.value.pingInterval,
+      ping_timeout: createForm.value.pingTimeout,
+      reconnect_interval: createForm.value.reconnectInterval,
+      max_reconnect_attempts: createForm.value.maxReconnectAttempts,
+    }
+    logApiRequest('/api/ws_debug/client/create', 'POST', requestBody)
+    const response = await WebSocketService.createClientApiWsDebugClientCreatePost(requestBody)
+    logApiResponse('/api/ws_debug/client/create', response)
+
+    if (response.code === 200) {
+      message.success(`客户端 [${createForm.value.name}] 创建成功`)
+      createModalVisible.value = false
+      await refreshClientList()
+      selectedClient.value = createForm.value.name
+    } else {
+      message.error(response.message || '创建失败')
+    }
+  } catch (error: any) {
+    message.error(error.message || '创建失败')
+  } finally {
+    creating.value = false
+  }
+}
+
+// 连接客户端
+async function connectClient(name: string) {
+  connectingClients.value[name] = true
+  try {
+    const requestBody = { name }
+    logApiRequest('/api/ws_debug/client/connect', 'POST', requestBody)
+    const response = await WebSocketService.connectClientApiWsDebugClientConnectPost(requestBody)
+    logApiResponse('/api/ws_debug/client/connect', response)
+
+    if (response.code === 200) {
+      message.success(`客户端 [${name}] 连接成功`)
+      await refreshClientList()
+    } else {
+      message.error(response.message || '连接失败')
+    }
+  } catch (error: any) {
+    message.error(error.message || '连接失败')
+  } finally {
+    connectingClients.value[name] = false
+  }
+}
+
+// 断开客户端
+async function disconnectClient(name: string) {
+  try {
+    const requestBody = { name }
+    logApiRequest('/api/ws_debug/client/disconnect', 'POST', requestBody)
+    const response = await WebSocketService.disconnectClientApiWsDebugClientDisconnectPost(requestBody)
+    logApiResponse('/api/ws_debug/client/disconnect', response)
+
+    if (response.code === 200) {
+      message.success(`客户端 [${name}] 已断开`)
+      await refreshClientList()
+    } else {
+      message.error(response.message || '断开失败')
+    }
+  } catch (error: any) {
+    message.error(error.message || '断开失败')
+  }
+}
+
+// 删除客户端
+async function removeClient(name: string) {
+  try {
+    const requestBody = { name }
+    logApiRequest('/api/ws_debug/client/remove', 'POST', requestBody)
+    const response = await WebSocketService.removeClientApiWsDebugClientRemovePost(requestBody)
+    logApiResponse('/api/ws_debug/client/remove', response)
+
+    if (response.code === 200) {
+      message.success(`客户端 [${name}] 已删除`)
+      if (selectedClient.value === name) {
+        selectedClient.value = null
+      }
+      await refreshClientList()
+    } else {
+      message.error(response.message || '删除失败')
+    }
+  } catch (error: any) {
+    message.error(error.message || '删除失败')
+  }
+}
+
+// 发送消息
+async function sendMessage() {
+  if (!selectedClient.value) {
+    message.error('请先选择一个客户端')
+    return
+  }
+
+  sending.value = true
+  try {
+    let response: any
+
+    if (sendMode.value === 'formatted') {
+      let data: any
+      try {
+        data = JSON.parse(formattedMessage.value.data)
+      } catch {
+        message.error('消息数据不是有效的 JSON')
+        return
+      }
+
+      const jsonRequestBody = {
+        name: selectedClient.value,
+        msg_id: formattedMessage.value.id,
+        msg_type: formattedMessage.value.type,
+        data,
+      }
+      logApiRequest('/api/ws_debug/message/send_json', 'POST', jsonRequestBody)
+      response = await WebSocketService.sendJsonMessageApiWsDebugMessageSendJsonPost(jsonRequestBody)
+      logApiResponse('/api/ws_debug/message/send_json', response)
+    } else if (sendMode.value === 'raw') {
+      let messageObj: any
+      try {
+        messageObj = JSON.parse(rawMessage.value)
+      } catch {
+        message.error('消息内容不是有效的 JSON')
+        return
+      }
+
+      const rawRequestBody = {
+        name: selectedClient.value,
+        message: messageObj,
+      }
+      logApiRequest('/api/ws_debug/message/send', 'POST', rawRequestBody)
+      response = await WebSocketService.sendMessageApiWsDebugMessageSendPost(rawRequestBody)
+      logApiResponse('/api/ws_debug/message/send', response)
+    } else if (sendMode.value === 'auth') {
+      if (!authMessage.value.token) {
+        message.error('请输入认证 Token')
+        return
+      }
+
+      let extraData: any = undefined
+      if (authMessage.value.extra) {
+        try {
+          extraData = JSON.parse(authMessage.value.extra)
+        } catch {
+          message.error('额外数据不是有效的 JSON')
+          return
+        }
+      }
+
+      const authRequestBody = {
+        name: selectedClient.value,
+        token: authMessage.value.token,
+        auth_type: authMessage.value.type,
+        extra_data: extraData,
+      }
+      logApiRequest('/api/ws_debug/message/auth', 'POST', authRequestBody)
+      response = await WebSocketService.sendAuthApiWsDebugMessageAuthPost(authRequestBody)
+      logApiResponse('/api/ws_debug/message/auth', response)
+    }
+
+    if (response?.code === 200) {
+      message.success('消息发送成功')
+    } else {
+      message.error(response?.message || '发送失败')
+    }
+  } catch (error: any) {
+    message.error(error.message || '发送失败')
+  } finally {
+    sending.value = false
+  }
+}
+
+// 清空历史
+async function clearHistory() {
+  try {
+    await WebSocketService.clearHistoryApiWsDebugHistoryClearPost({
+      name: selectedClient.value || undefined,
+    })
+    messages.value = []
+    message.success('已清空消息历史')
+  } catch (error: any) {
+    message.error('清空失败')
+  }
+}
+
+// 添加消息
+function addMessage(record: MessageRecord) {
+  messages.value.push(record)
+
   if (autoScroll.value) {
     nextTick(() => {
       if (messageContainer.value) {
@@ -295,179 +732,106 @@ function addMessage(direction: 'sent' | 'received', data: any) {
   }
 }
 
-// 连接 WebSocket
-function connect() {
-  if (!connectionForm.value.url) {
-    message.error('请输入 WebSocket URL')
-    return
-  }
-
-  connecting.value = true
+// 建立实时 WebSocket 连接
+function connectLiveWs() {
+  const wsUrl = `ws://${window.location.host}/api/ws_debug/live`
 
   try {
-    ws = new WebSocket(connectionForm.value.url)
+    liveWs = new WebSocket(wsUrl)
 
-    ws.onopen = () => {
-      connecting.value = false
-      isConnected.value = true
-      message.success('WebSocket 连接成功')
-      addMessage('received', { event: 'connected', message: '连接已建立' })
+    liveWs.onopen = () => {
+      console.log('实时消息连接已建立')
     }
 
-    ws.onmessage = event => {
+    liveWs.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data)
-        addMessage('received', data)
 
-        // 检查认证结果
-        if (data.type === 'auth_result' && data.success) {
-          isAuthenticated.value = true
-          message.success('认证成功')
+        if (data.type === 'init') {
+          // 初始化客户端列表
+          clientList.value = data.clients || []
+        } else if (data.type === 'message') {
+          // 添加消息记录
+          addMessage({
+            direction: data.direction,
+            timestamp: data.timestamp,
+            data: data.data,
+            client: data.client,
+          })
+        } else if (data.type === 'event') {
+          // 处理事件
+          if (data.event === 'connected' || data.event === 'disconnected') {
+            refreshClientList()
+          }
         }
-      } catch {
-        addMessage('received', event.data)
+      } catch (error) {
+        console.error('解析实时消息失败:', error)
       }
     }
 
-    ws.onerror = error => {
-      connecting.value = false
-      message.error('WebSocket 连接错误')
-      addMessage('received', { event: 'error', message: '连接错误' })
-      console.error('WebSocket error:', error)
+    liveWs.onerror = (error) => {
+      console.error('实时消息连接错误:', error)
     }
 
-    ws.onclose = event => {
-      connecting.value = false
-      isConnected.value = false
-      isAuthenticated.value = false
-      message.info('WebSocket 连接已关闭')
-      addMessage('received', {
-        event: 'closed',
-        code: event.code,
-        reason: event.reason || '连接已关闭',
-      })
-      ws = null
+    liveWs.onclose = () => {
+      console.log('实时消息连接已关闭')
+      liveWs = null
+      // 5秒后重连
+      setTimeout(connectLiveWs, 5000)
     }
   } catch (error) {
-    connecting.value = false
-    message.error('创建 WebSocket 连接失败')
-    console.error('WebSocket creation error:', error)
+    console.error('创建实时消息连接失败:', error)
   }
 }
 
-// 断开连接
-function disconnect() {
-  if (ws) {
-    ws.close(1000, '用户主动断开')
+// 断开实时 WebSocket
+function disconnectLiveWs() {
+  if (liveWs) {
+    liveWs.close()
+    liveWs = null
   }
 }
 
-// 发送认证
-function authenticate() {
-  if (!ws || !isConnected.value) {
-    message.error('请先连接 WebSocket')
-    return
-  }
-
-  const authMessage = {
-    type: 'auth',
-    token: connectionForm.value.token,
-  }
-
-  ws.send(JSON.stringify(authMessage))
-  addMessage('sent', authMessage)
-}
-
-// 发送消息
-function sendMessage() {
-  if (!ws || !isConnected.value) {
-    message.error('请先连接 WebSocket')
-    return
-  }
-
-  let messageData: any
-
-  if (messageForm.value.type === 'custom') {
-    try {
-      messageData = JSON.parse(messageForm.value.message)
-    } catch {
-      message.error('自定义消息必须是有效的 JSON 格式')
-      return
+// 加载历史消息
+async function loadHistory() {
+  try {
+    const response = await WebSocketService.getHistoryApiWsDebugHistoryGet()
+    if (response.code === 200 && response.data?.history) {
+      messages.value = []
+      const history = response.data.history
+      for (const clientName of Object.keys(history)) {
+        for (const msg of history[clientName]) {
+          messages.value.push({
+            ...msg,
+            client: clientName,
+          })
+        }
+      }
+      // 按时间排序
+      messages.value.sort((a, b) => a.timestamp - b.timestamp)
     }
-  } else if (messageForm.value.type === 'ping') {
-    messageData = { type: 'ping' }
-  } else if (messageForm.value.type === 'auth') {
-    messageData = {
-      type: 'auth',
-      token: connectionForm.value.token,
-    }
-  } else {
-    messageData = {
-      type: messageForm.value.type,
-      msgtype: messageForm.value.msgtype,
-      user_id: messageForm.value.userId || undefined,
-      message: messageForm.value.message,
-    }
-  }
-
-  ws.send(JSON.stringify(messageData))
-  addMessage('sent', messageData)
-}
-
-// 发送 Ping
-function sendPing() {
-  if (!ws || !isConnected.value) return
-  const pingMessage = { type: 'ping' }
-  ws.send(JSON.stringify(pingMessage))
-  addMessage('sent', pingMessage)
-}
-
-// 发送测试消息
-function sendTestMessage() {
-  if (!ws || !isConnected.value) return
-  const testMessage = {
-    type: 'message',
-    msgtype: 'text',
-    message: `测试消息 - ${getCurrentTime()}`,
-  }
-  ws.send(JSON.stringify(testMessage))
-  addMessage('sent', testMessage)
-}
-
-// 清空消息记录
-function clearMessages() {
-  messages.value = []
-  messageCount.value = 0
-}
-
-// 重置消息表单
-function resetMessageForm() {
-  messageForm.value = {
-    type: 'message',
-    msgtype: 'text',
-    userId: '',
-    message: '',
+  } catch (error: any) {
+    console.error('加载历史消息失败:', error)
   }
 }
 
-// 组件卸载时断开连接
-onUnmounted(() => {
-  if (ws) {
-    ws.close()
-  }
+// 页面加载时
+onMounted(async () => {
+  await refreshClientList()
+  await loadHistory()
+  connectLiveWs()
 })
 
-// 监听连接状态变化
-watch(isConnected, connected => {
-  if (!connected) {
-    isAuthenticated.value = false
-  }
+// 页面卸载时
+onUnmounted(() => {
+  disconnectLiveWs()
 })
 </script>
 
 <style scoped>
 .ws-debug-page {
-  max-width: 1400px;
+  padding: 24px;
+  max-width: 1600px;
   margin: 0 auto;
 }
 
@@ -482,35 +846,100 @@ watch(isConnected, connected => {
 }
 
 .page-header .description {
-  margin: 4px 0;
+  margin: 0;
   color: var(--ant-color-text-secondary);
 }
 
-.status-card {
+.overview-card {
   margin-bottom: 24px;
 }
 
-.config-card {
-  margin-bottom: 16px;
+.main-content {
+  margin-top: 16px;
 }
 
-.messages-card {
-  margin-top: 24px;
+.client-card,
+.send-card,
+.message-card {
+  height: 100%;
+}
+
+.client-list {
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.client-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px;
+  margin-bottom: 8px;
+  border-radius: 8px;
+  background: var(--ant-color-fill-quaternary);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.client-item:hover {
+  background: var(--ant-color-fill-tertiary);
+}
+
+.client-item.active {
+  background: var(--ant-color-primary-bg);
+  border: 1px solid var(--ant-color-primary);
+}
+
+.client-item.connected {
+  border-left: 3px solid var(--ant-color-success);
+}
+
+.client-item.system {
+  background: var(--ant-color-warning-bg);
+}
+
+.client-item.system:hover {
+  background: var(--ant-color-warning-bg-hover);
+}
+
+.client-item.system.active {
+  background: var(--ant-color-warning-bg);
+  border: 1px solid var(--ant-color-warning);
+}
+
+.client-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.client-name {
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+
+.client-url {
+  font-size: 12px;
+  color: var(--ant-color-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.client-actions {
+  display: flex;
+  gap: 4px;
 }
 
 .message-container {
-  max-height: 500px;
+  max-height: 400px;
   overflow-y: auto;
-  padding: 12px;
-  background: var(--ant-color-bg-container);
-  border: 1px solid var(--ant-color-border);
-  border-radius: 6px;
+  padding: 8px;
 }
 
 .message-item {
   margin-bottom: 12px;
   padding: 12px;
-  border-radius: 6px;
+  border-radius: 8px;
   background: var(--ant-color-fill-quaternary);
 }
 
@@ -524,17 +953,23 @@ watch(isConnected, connected => {
   border-left: 3px solid var(--ant-color-success);
 }
 
-.message-meta {
+.message-header {
   display: flex;
   align-items: center;
   gap: 8px;
   margin-bottom: 8px;
 }
 
+.message-client {
+  font-weight: 500;
+  font-size: 13px;
+}
+
 .message-time {
   font-size: 12px;
   color: var(--ant-color-text-secondary);
   font-family: monospace;
+  margin-left: auto;
 }
 
 .message-content {
@@ -549,7 +984,9 @@ watch(isConnected, connected => {
   overflow-x: auto;
 }
 
-:deep(.ant-tabs) {
-  margin-bottom: 24px;
+.form-tip {
+  font-size: 12px;
+  color: var(--ant-color-text-secondary);
+  margin-top: 4px;
 }
 </style>

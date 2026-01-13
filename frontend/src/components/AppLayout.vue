@@ -51,6 +51,7 @@ import {
   CalendarOutlined,
   ControlOutlined,
   DatabaseOutlined,
+  FileSearchOutlined,
   FileTextOutlined,
   HistoryOutlined,
   HomeOutlined,
@@ -100,6 +101,7 @@ const devMenuItems = [
 
 const bottomMenuItems = [
   { key: '/history', label: '历史记录', icon: icon(HistoryOutlined) },
+  { key: '/logs', label: '日志', icon: icon(FileSearchOutlined) },
   { key: '/settings', label: '设置', icon: icon(SettingOutlined) },
 ]
 
