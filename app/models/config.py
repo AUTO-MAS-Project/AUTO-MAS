@@ -857,10 +857,10 @@ class GlobalConfig(ConfigBase):
     ## 是否发送邮件
     Notify_IfSendMail = ConfigItem("Notify", "IfSendMail", False, BoolValidator())
     ## 是否发送Koishi通知
-    Notify_IfSendKoishi = ConfigItem("Notify", "IfSendKoishi", False, BoolValidator())
-    ## Koishi 服务器地址
+    Notify_IfKoishiSupport = ConfigItem("Notify", "IfKoishiSupport", False, BoolValidator())
+    ## Koishi WebSocket 服务器地址
     Notify_KoishiServerAddress = ConfigItem(
-        "Notify", "KoishiServerAddress", "http://localhost:5140/onebot", URLValidator()
+        "Notify", "KoishiServerAddress", "ws://localhost:5140/AUTO_MAS", URLValidator()
     )
     ## Koishi Token
     Notify_KoishiToken = ConfigItem("Notify", "KoishiToken", "")

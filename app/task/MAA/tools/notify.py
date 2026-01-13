@@ -61,6 +61,12 @@ async def push_notification(
             )
         for webhook in Config.Notify_CustomWebhooks.values():
             await Notify.WebhookPush(title, f"{message_text}\nAUTO-MAS 敬上", webhook)
+
+        # 发送Koishi通知
+        if Config.get("Notify", "IfKoishiSupport"):
+            await Notify.send_koishi(
+                f"{title}\n\n{message_text}\nAUTO-MAS 敬上"
+            )
     elif mode == "统计信息":
         formatted = []
         if "drop_statistics" in message:
@@ -101,6 +107,12 @@ async def push_notification(
                 await Notify.WebhookPush(
                     title, f"{message_text}\nAUTO-MAS 敬上", webhook
                 )
+
+            # 发送Koishi通知
+            if Config.get("Notify", "IfKoishiSupport"):
+                await Notify.send_koishi(
+                    f"{title}\n\n{message_text}\nAUTO-MAS 敬上"
+                )
         if (
             user_config is not None
             and user_config.get("Notify", "Enabled")
@@ -139,6 +151,12 @@ async def push_notification(
                 )
             for webhook in Config.Notify_CustomWebhooks.values():
                 await Notify.WebhookPush(title, "好羡慕~\nAUTO-MAS 敬上", webhook)
+
+            # 发送Koishi通知
+            if Config.get("Notify", "IfKoishiSupport"):
+                await Notify.send_koishi(
+                    f"{title}\n\n好羡慕~\nAUTO-MAS 敬上"
+                )
         if (
             user_config is not None
             and user_config.get("Notify", "Enabled")

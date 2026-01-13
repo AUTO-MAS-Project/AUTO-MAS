@@ -330,7 +330,7 @@
                 </template>
                 <a-input-number v-model:value="formData.logTimeStart" :min="1" :max="9999" size="large"
                   class="modern-number-input" style="width: 100%"
-                  @change="handleChange('Script', 'LogTimeStart', $event)" />
+                  @blur="handleChange('Script', 'LogTimeStart', formData.logTimeStart)" />
               </a-form-item>
             </a-col>
             <a-col :span="6">
@@ -345,7 +345,7 @@
                 </template>
                 <a-input-number v-model:value="formData.logTimeEnd" :min="1" :max="9999" size="large"
                   class="modern-number-input" style="width: 100%"
-                  @change="handleChange('Script', 'LogTimeEnd', $event)" />
+                  @blur="handleChange('Script', 'LogTimeEnd', formData.logTimeEnd)" />
               </a-form-item>
             </a-col>
 
@@ -558,7 +558,8 @@
                   </a-tooltip>
                 </template>
                 <a-input-number v-model:value="generalConfig.Game.WaitTime" :min="0" :max="300" size="large"
-                  class="modern-number-input" style="width: 100%" @change="handleChange('Game', 'WaitTime', $event)" />
+                  class="modern-number-input" style="width: 100%"
+                  @blur="handleChange('Game', 'WaitTime', generalConfig.Game.WaitTime)" />
               </a-form-item>
             </a-col>
             <a-col :span="8">
@@ -616,7 +617,7 @@
                 </template>
                 <a-input-number v-model:value="generalConfig.Run.ProxyTimesLimit" :min="0" :max="999" size="large"
                   class="modern-number-input" style="width: 100%"
-                  @change="handleChange('Run', 'ProxyTimesLimit', $event)" />
+                  @blur="handleChange('Run', 'ProxyTimesLimit', generalConfig.Run.ProxyTimesLimit)" />
               </a-form-item>
             </a-col>
             <a-col :span="8">
@@ -631,7 +632,7 @@
                 </template>
                 <a-input-number v-model:value="generalConfig.Run.RunTimesLimit" :min="1" :max="10" size="large"
                   class="modern-number-input" style="width: 100%"
-                  @change="handleChange('Run', 'RunTimesLimit', $event)" />
+                  @blur="handleChange('Run', 'RunTimesLimit', generalConfig.Run.RunTimesLimit)" />
               </a-form-item>
             </a-col>
             <a-col :span="8">
@@ -646,7 +647,7 @@
                 </template>
                 <a-input-number v-model:value="generalConfig.Run.RunTimeLimit" :min="1" :max="300" size="large"
                   class="modern-number-input" style="width: 100%"
-                  @change="handleChange('Run', 'RunTimeLimit', $event)" />
+                  @blur="handleChange('Run', 'RunTimeLimit', generalConfig.Run.RunTimeLimit)" />
               </a-form-item>
             </a-col>
           </a-row>

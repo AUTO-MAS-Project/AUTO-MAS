@@ -164,7 +164,7 @@
                 </template>
                 <a-input-number v-model:value="maaConfig.Run.ProxyTimesLimit" :min="0" :max="999" size="large"
                   class="modern-number-input" style="width: 100%"
-                  @change="handleChange('Run', 'ProxyTimesLimit', $event)" />
+                  @blur="handleChange('Run', 'ProxyTimesLimit', maaConfig.Run.ProxyTimesLimit)" />
               </a-form-item>
             </a-col>
             <a-col :span="8">
@@ -198,7 +198,7 @@
                 </template>
                 <a-input-number v-model:value="maaConfig.Run.AnnihilationTimeLimit" :min="1" :max="9999" size="large"
                   class="modern-number-input" style="width: 100%"
-                  @change="handleChange('Run', 'AnnihilationTimeLimit', $event)" />
+                  @blur="handleChange('Run', 'AnnihilationTimeLimit', maaConfig.Run.AnnihilationTimeLimit)" />
               </a-form-item>
             </a-col>
             <a-col :span="8">
@@ -213,7 +213,7 @@
                 </template>
                 <a-input-number v-model:value="maaConfig.Run.RoutineTimeLimit" :min="1" :max="9999" size="large"
                   class="modern-number-input" style="width: 100%"
-                  @change="handleChange('Run', 'RoutineTimeLimit', $event)" />
+                  @blur="handleChange('Run', 'RoutineTimeLimit', maaConfig.Run.RoutineTimeLimit)" />
               </a-form-item>
             </a-col>
             <a-col :span="8">
@@ -228,7 +228,7 @@
                 </template>
                 <a-input-number v-model:value="maaConfig.Run.RunTimesLimit" :min="1" :max="9999" size="large"
                   class="modern-number-input" style="width: 100%"
-                  @change="handleChange('Run', 'RunTimesLimit', $event)" />
+                  @blur="handleChange('Run', 'RunTimesLimit', maaConfig.Run.RunTimesLimit)" />
               </a-form-item>
             </a-col>
           </a-row>
