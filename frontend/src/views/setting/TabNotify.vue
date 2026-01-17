@@ -102,7 +102,7 @@ const handleWebhookChange = async () => {
     <div class="form-section">
       <div class="section-header">
         <h3>邮件通知</h3>
-        <a href="https://doc.auto-mas.top/docsV5/advanced-features/notification.html#smtp-%E9%82%AE%E4%BB%B6%E6%8E%A8%E9%80%81%E6%B8%A0%E9%81%93"
+        <a href="https://doc.auto-mas.top/docs/advanced-features/notification.html#smtp-%E9%82%AE%E4%BB%B6%E6%8E%A8%E9%80%81%E6%B8%A0%E9%81%93"
           class="section-doc-link" title="查看电子邮箱配置文档" @click="handleExternalLink">
           文档
         </a>
@@ -185,7 +185,7 @@ const handleWebhookChange = async () => {
     <div class="form-section">
       <div class="section-header">
         <h3>Server酱通知</h3>
-        <a href="https://doc.auto-mas.top/docsV5/advanced-features/notification.html#serverchan-%E9%80%9A%E7%9F%A5%E6%8E%A8%E9%80%81%E6%B8%A0%E9%81%93"
+        <a href="https://doc.auto-mas.top/docs/advanced-features/notification.html#serverchan-%E9%80%9A%E7%9F%A5%E6%8E%A8%E9%80%81%E6%B8%A0%E9%81%93"
           class="section-doc-link" title="查看Server酱配置文档" @click="handleExternalLink">
           文档
         </a>
@@ -282,7 +282,7 @@ const handleWebhookChange = async () => {
     <div class="form-section">
       <div class="section-header">
         <h3>自定义 Webhook 通知</h3>
-        <a href="https://doc.auto-mas.top/docsV5/advanced-features/notification.html" class="section-doc-link"
+        <a href="https://doc.auto-mas.top/docs/advanced-features/notification.html" class="section-doc-link"
           title="查看自定义Webhook配置文档" @click="handleExternalLink">
           文档
         </a>
@@ -290,7 +290,6 @@ const handleWebhookChange = async () => {
       <WebhookManager mode="global" @change="handleWebhookChange" />
     </div>
 
-    <!-- 测试按钮已移至"通知内容"标题右侧 -->
   </div>
 </template>
 

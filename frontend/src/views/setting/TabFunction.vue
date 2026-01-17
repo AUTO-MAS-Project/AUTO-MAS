@@ -23,7 +23,6 @@ const {
 </script>
 <template>
   <div class="tab-content">
-    <!-- 启动设置 - 移到最上方 -->
     <div class="form-section">
       <div class="section-header">
         <h3>启动配置</h3>
@@ -63,7 +62,6 @@ const {
       </a-row>
     </div>
 
-    <!-- 原有的功能设置 -->
     <div class="form-section">
       <div class="section-header">
         <h3>功能设置</h3>
@@ -186,7 +184,6 @@ const {
       </a-row>
     </div>
 
-    <!-- 更新设置 - 移到最下方 -->
     <div class="form-section">
       <div class="section-header">
         <h3>更新配置</h3>
@@ -279,7 +276,6 @@ const {
       </a-row>
     </div>
 
-    <!-- 语音设置 - 移到最下方 -->
     <div class="form-section">
       <div class="section-header">
         <h3>语音配置</h3>
