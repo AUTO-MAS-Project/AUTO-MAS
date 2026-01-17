@@ -1,7 +1,7 @@
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2024-2025 DLmaster361
 #   Copyright © 2025 ClozyA
-#   Copyright © 2025 AUTO-MAS Team
+#   Copyright © 2025-2026 AUTO-MAS Team
 
 #   This file is part of AUTO-MAS.
 

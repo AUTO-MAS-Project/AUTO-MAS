@@ -1,5 +1,5 @@
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
-#   Copyright © 2025 AUTO-MAS Team
+#   Copyright © 2025-2026 AUTO-MAS Team
 
 #   This file is part of AUTO-MAS.
 
