@@ -1,6 +1,6 @@
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2025 MoeSnowyFox
-#   Copyright © 2025 AUTO-MAS Team
+#   Copyright © 2025-2026 AUTO-MAS Team
 
 #   This file is part of AUTO-MAS.
 
@@ -316,9 +316,7 @@ async def find_emulator_root_path(
                     "level": level + 1,
                 }
             )
-            logger.debug(
-                f"父目录(第{level+1}层)直接包含主程序: {parent_exe_path}"
-            )
+            logger.debug(f"父目录(第{level+1}层)直接包含主程序: {parent_exe_path}")
 
         current = parent
 
@@ -329,9 +327,7 @@ async def find_emulator_root_path(
 
         best_candidate = candidates[0]
         result = str(best_candidate["exe_path"])
-        logger.info(
-            f"找到模拟器主程序(向上第{best_candidate['level']}层): {result}"
-        )
+        logger.info(f"找到模拟器主程序(向上第{best_candidate['level']}层): {result}")
         return result
 
     # 3. 如果向上没找到，尝试向下搜索子目录（仅1层，且必须直接包含主管理器程序）
@@ -361,7 +357,5 @@ async def find_emulator_root_path(
         except PermissionError:
             pass
 
-    logger.warning(
-        f"未能找到{config['name']}主程序，返回原路径: {input_path}"
-    )
+    logger.warning(f"未能找到{config['name']}主程序，返回原路径: {input_path}")
     return input_path

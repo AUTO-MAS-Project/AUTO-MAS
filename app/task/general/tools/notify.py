@@ -1,6 +1,6 @@
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2024-2025 DLmaster361
-#   Copyright © 2025 AUTO-MAS Team
+#   Copyright © 2025-2026 AUTO-MAS Team
 
 #   This file is part of AUTO-MAS.
 
@@ -74,9 +74,7 @@ async def push_notification(
 
         # 发送Koishi通知
         if Config.get("Notify", "IfKoishiSupport"):
-            await Notify.send_koishi(
-                f"{title}\n\n{message_text}\n\nAUTO-MAS 敬上"
-            )
+            await Notify.send_koishi(f"{title}\n\n{message_text}\n\nAUTO-MAS 敬上")
 
     elif mode == "统计信息":
         message_text = (
@@ -114,9 +112,7 @@ async def push_notification(
 
             # 发送Koishi通知
             if Config.get("Notify", "IfKoishiSupport"):
-                await Notify.send_koishi(
-                    f"{title}\n\n{message_text}\n\nAUTO-MAS 敬上"
-                )
+                await Notify.send_koishi(f"{title}\n\n{message_text}\n\nAUTO-MAS 敬上")
 
         # 发送用户单独通知
         if (

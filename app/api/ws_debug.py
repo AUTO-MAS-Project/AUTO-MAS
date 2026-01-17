@@ -1,7 +1,7 @@
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2024-2025 DLmaster361
 #   Copyright © 2025 MoeSnowyFox
-#   Copyright © 2025 AUTO-MAS Team
+#   Copyright © 2025-2026 AUTO-MAS Team
 
 #   This file is part of AUTO-MAS.
 
@@ -58,6 +58,7 @@ router = APIRouter(prefix="/api/ws_debug", tags=["WebSocket调试"])
 
 # ============== API 路由 ==============
 
+
 @router.post(
     "/client/create",
     summary="创建 WebSocket 客户端",
@@ -66,7 +67,7 @@ router = APIRouter(prefix="/api/ws_debug", tags=["WebSocket调试"])
 async def create_client(request: WSClientCreateIn) -> WSClientCreateOut:
     """
     创建一个新的 WebSocket 客户端实例
-    
+
     - **name**: 客户端唯一名称
     - **url**: WebSocket 服务器地址
     - **ping_interval**: 心跳发送间隔
@@ -81,9 +82,9 @@ async def create_client(request: WSClientCreateIn) -> WSClientCreateOut:
             ping_interval=request.ping_interval,
             ping_timeout=request.ping_timeout,
             reconnect_interval=request.reconnect_interval,
-            max_reconnect_attempts=request.max_reconnect_attempts
+            max_reconnect_attempts=request.max_reconnect_attempts,
         )
-        
+
         return WSClientCreateOut(
             code=200,
             status="success",
@@ -91,15 +92,13 @@ async def create_client(request: WSClientCreateIn) -> WSClientCreateOut:
             data={
                 "name": request.name,
                 "url": request.url,
-                "is_connected": client.is_connected
-            }
+                "is_connected": client.is_connected,
+            },
         )
     except Exception as e:
         logger.error(f"创建客户端失败: {type(e).__name__}: {e}")
         return WSClientCreateOut(
-            code=500,
-            status="error",
-            message=f"创建客户端失败: {str(e)}"
+            code=500, status="error", message=f"创建客户端失败: {str(e)}"
         )
 
 
@@ -114,15 +113,13 @@ async def connect_client(request: WSClientConnectIn) -> WSClientStatusOut:
     """
     if not ws_client_manager.has_client(request.name):
         return WSClientStatusOut(
-            code=404,
-            status="error",
-            message=f"客户端 [{request.name}] 不存在"
+            code=404, status="error", message=f"客户端 [{request.name}] 不存在"
         )
-    
+
     try:
         success = await ws_client_manager.connect_client(request.name)
         client = ws_client_manager.get_client(request.name)
-        
+
         if success:
             return WSClientStatusOut(
                 code=200,
@@ -131,8 +128,8 @@ async def connect_client(request: WSClientConnectIn) -> WSClientStatusOut:
                 data={
                     "name": request.name,
                     "url": client.url if client else None,
-                    "is_connected": True
-                }
+                    "is_connected": True,
+                },
             )
         else:
             return WSClientStatusOut(
@@ -141,15 +138,13 @@ async def connect_client(request: WSClientConnectIn) -> WSClientStatusOut:
                 message=f"客户端 [{request.name}] 连接失败或超时",
                 data={
                     "name": request.name,
-                    "is_connected": client.is_connected if client else False
-                }
+                    "is_connected": client.is_connected if client else False,
+                },
             )
     except Exception as e:
         logger.error(f"连接客户端失败: {type(e).__name__}: {e}")
         return WSClientStatusOut(
-            code=500,
-            status="error",
-            message=f"连接失败: {str(e)}"
+            code=500, status="error", message=f"连接失败: {str(e)}"
         )
 
 
@@ -164,28 +159,21 @@ async def disconnect_client(request: WSClientDisconnectIn) -> WSClientStatusOut:
     """
     if not ws_client_manager.has_client(request.name):
         return WSClientStatusOut(
-            code=404,
-            status="error",
-            message=f"客户端 [{request.name}] 不存在"
+            code=404, status="error", message=f"客户端 [{request.name}] 不存在"
         )
-    
+
     try:
         await ws_client_manager.disconnect_client(request.name)
         return WSClientStatusOut(
             code=200,
             status="success",
             message=f"客户端 [{request.name}] 已断开",
-            data={
-                "name": request.name,
-                "is_connected": False
-            }
+            data={"name": request.name, "is_connected": False},
         )
     except Exception as e:
         logger.error(f"断开客户端失败: {type(e).__name__}: {e}")
         return WSClientStatusOut(
-            code=500,
-            status="error",
-            message=f"断开失败: {str(e)}"
+            code=500, status="error", message=f"断开失败: {str(e)}"
         )
 
 
@@ -197,37 +185,31 @@ async def disconnect_client(request: WSClientDisconnectIn) -> WSClientStatusOut:
 async def remove_client(request: WSClientRemoveIn) -> WSClientStatusOut:
     """
     删除指定客户端（会自动断开连接）
-    
+
     注意：系统客户端（如 Koishi）不可删除
     """
     if not ws_client_manager.has_client(request.name):
         return WSClientStatusOut(
-            code=404,
-            status="error",
-            message=f"客户端 [{request.name}] 不存在"
+            code=404, status="error", message=f"客户端 [{request.name}] 不存在"
         )
-    
+
     # 检查是否为系统客户端
     if ws_client_manager.is_system_client(request.name):
         return WSClientStatusOut(
             code=403,
             status="error",
-            message=f"客户端 [{request.name}] 是系统客户端，不可删除"
+            message=f"客户端 [{request.name}] 是系统客户端，不可删除",
         )
-    
+
     try:
         await ws_client_manager.remove_client(request.name)
         return WSClientStatusOut(
-            code=200,
-            status="success",
-            message=f"客户端 [{request.name}] 已删除"
+            code=200, status="success", message=f"客户端 [{request.name}] 已删除"
         )
     except Exception as e:
         logger.error(f"删除客户端失败: {type(e).__name__}: {e}")
         return WSClientStatusOut(
-            code=500,
-            status="error",
-            message=f"删除失败: {str(e)}"
+            code=500, status="error", message=f"删除失败: {str(e)}"
         )
 
 
@@ -243,11 +225,9 @@ async def get_client_status(request: WSClientStatusIn) -> WSClientStatusOut:
     client = ws_client_manager.get_client(request.name)
     if not client:
         return WSClientStatusOut(
-            code=404,
-            status="error",
-            message=f"客户端 [{request.name}] 不存在"
+            code=404, status="error", message=f"客户端 [{request.name}] 不存在"
         )
-    
+
     return WSClientStatusOut(
         code=200,
         status="success",
@@ -259,8 +239,8 @@ async def get_client_status(request: WSClientStatusIn) -> WSClientStatusOut:
             "ping_interval": client.ping_interval,
             "ping_timeout": client.ping_timeout,
             "reconnect_interval": client.reconnect_interval,
-            "max_reconnect_attempts": client.max_reconnect_attempts
-        }
+            "max_reconnect_attempts": client.max_reconnect_attempts,
+        },
     )
 
 
@@ -278,10 +258,7 @@ async def list_clients() -> WSClientListOut:
         code=200,
         status="success",
         message=f"共 {len(clients)} 个客户端",
-        data={
-            "clients": list(clients.values()),
-            "count": len(clients)
-        }
+        data={"clients": list(clients.values()), "count": len(clients)},
     )
 
 
@@ -296,19 +273,15 @@ async def send_message(request: WSClientSendIn) -> WSClientStatusOut:
     """
     if not ws_client_manager.has_client(request.name):
         return WSClientStatusOut(
-            code=404,
-            status="error",
-            message=f"客户端 [{request.name}] 不存在"
+            code=404, status="error", message=f"客户端 [{request.name}] 不存在"
         )
-    
+
     client = ws_client_manager.get_client(request.name)
     if not client or not client.is_connected:
         return WSClientStatusOut(
-            code=400,
-            status="error",
-            message=f"客户端 [{request.name}] 未连接"
+            code=400, status="error", message=f"客户端 [{request.name}] 未连接"
         )
-    
+
     try:
         success = await ws_client_manager.send_message(request.name, request.message)
         if success:
@@ -316,20 +289,14 @@ async def send_message(request: WSClientSendIn) -> WSClientStatusOut:
                 code=200,
                 status="success",
                 message="消息发送成功",
-                data={"sent": request.message}
+                data={"sent": request.message},
             )
         else:
-            return WSClientStatusOut(
-                code=500,
-                status="error",
-                message="消息发送失败"
-            )
+            return WSClientStatusOut(code=500, status="error", message="消息发送失败")
     except Exception as e:
         logger.error(f"发送消息失败: {type(e).__name__}: {e}")
         return WSClientStatusOut(
-            code=500,
-            status="error",
-            message=f"发送失败: {str(e)}"
+            code=500, status="error", message=f"发送失败: {str(e)}"
         )
 
 
@@ -344,25 +311,17 @@ async def send_json_message(request: WSClientSendJsonIn) -> WSClientStatusOut:
     """
     if not ws_client_manager.has_client(request.name):
         return WSClientStatusOut(
-            code=404,
-            status="error",
-            message=f"客户端 [{request.name}] 不存在"
+            code=404, status="error", message=f"客户端 [{request.name}] 不存在"
         )
-    
+
     client = ws_client_manager.get_client(request.name)
     if not client or not client.is_connected:
         return WSClientStatusOut(
-            code=400,
-            status="error",
-            message=f"客户端 [{request.name}] 未连接"
+            code=400, status="error", message=f"客户端 [{request.name}] 未连接"
         )
-    
-    message = {
-        "id": request.msg_id,
-        "type": request.msg_type,
-        "data": request.data
-    }
-    
+
+    message = {"id": request.msg_id, "type": request.msg_type, "data": request.data}
+
     try:
         success = await ws_client_manager.send_message(request.name, message)
         if success:
@@ -370,20 +329,14 @@ async def send_json_message(request: WSClientSendJsonIn) -> WSClientStatusOut:
                 code=200,
                 status="success",
                 message="消息发送成功",
-                data={"sent": message}
+                data={"sent": message},
             )
         else:
-            return WSClientStatusOut(
-                code=500,
-                status="error",
-                message="消息发送失败"
-            )
+            return WSClientStatusOut(code=500, status="error", message="消息发送失败")
     except Exception as e:
         logger.error(f"发送消息失败: {type(e).__name__}: {e}")
         return WSClientStatusOut(
-            code=500,
-            status="error",
-            message=f"发送失败: {str(e)}"
+            code=500, status="error", message=f"发送失败: {str(e)}"
         )
 
 
@@ -395,7 +348,7 @@ async def send_json_message(request: WSClientSendJsonIn) -> WSClientStatusOut:
 async def send_auth(request: WSClientAuthIn) -> WSClientStatusOut:
     """
     发送认证消息到服务器
-    
+
     - **name**: 客户端名称
     - **token**: 认证 Token
     - **auth_type**: 认证消息类型，默认 "auth"
@@ -403,45 +356,35 @@ async def send_auth(request: WSClientAuthIn) -> WSClientStatusOut:
     """
     if not ws_client_manager.has_client(request.name):
         return WSClientStatusOut(
-            code=404,
-            status="error",
-            message=f"客户端 [{request.name}] 不存在"
+            code=404, status="error", message=f"客户端 [{request.name}] 不存在"
         )
-    
+
     client = ws_client_manager.get_client(request.name)
     if not client or not client.is_connected:
         return WSClientStatusOut(
-            code=400,
-            status="error",
-            message=f"客户端 [{request.name}] 未连接"
+            code=400, status="error", message=f"客户端 [{request.name}] 未连接"
         )
-    
+
     try:
         success = await ws_client_manager.send_auth(
             name=request.name,
             token=request.token,
             auth_type=request.auth_type,
-            extra_data=request.extra_data
+            extra_data=request.extra_data,
         )
-        
+
         if success:
             return WSClientStatusOut(
-                code=200,
-                status="success",
-                message="认证消息发送成功"
+                code=200, status="success", message="认证消息发送成功"
             )
         else:
             return WSClientStatusOut(
-                code=500,
-                status="error",
-                message="认证消息发送失败"
+                code=500, status="error", message="认证消息发送失败"
             )
     except Exception as e:
         logger.error(f"发送认证消息失败: {type(e).__name__}: {e}")
         return WSClientStatusOut(
-            code=500,
-            status="error",
-            message=f"发送失败: {str(e)}"
+            code=500, status="error", message=f"发送失败: {str(e)}"
         )
 
 
@@ -453,21 +396,18 @@ async def send_auth(request: WSClientAuthIn) -> WSClientStatusOut:
 async def get_history(name: Optional[str] = None) -> WSMessageHistoryOut:
     """
     获取消息历史记录
-    
+
     - **name**: 客户端名称，为空则获取所有客户端的历史
     """
     history = ws_client_manager.get_message_history(name)
-    
+
     total_count = sum(len(msgs) for msgs in history.values())
-    
+
     return WSMessageHistoryOut(
         code=200,
         status="success",
         message=f"共 {total_count} 条消息",
-        data={
-            "history": history,
-            "total_count": total_count
-        }
+        data={"history": history, "total_count": total_count},
     )
 
 
@@ -479,22 +419,20 @@ async def get_history(name: Optional[str] = None) -> WSMessageHistoryOut:
 async def clear_history(request: WSClearHistoryIn) -> WSClientStatusOut:
     """
     清空消息历史记录
-    
+
     - **name**: 客户端名称，为空则清空所有
     """
     ws_client_manager.clear_message_history(request.name)
-    
+
     if request.name:
         return WSClientStatusOut(
             code=200,
             status="success",
-            message=f"已清空客户端 [{request.name}] 的消息历史"
+            message=f"已清空客户端 [{request.name}] 的消息历史",
         )
     else:
         return WSClientStatusOut(
-            code=200,
-            status="success",
-            message="已清空所有消息历史"
+            code=200, status="success", message="已清空所有消息历史"
         )
 
 
@@ -512,10 +450,7 @@ async def get_commands() -> WSCommandsOut:
         code=200,
         status="success",
         message=f"共 {len(commands)} 个命令",
-        data={
-            "commands": commands,
-            "count": len(commands)
-        }
+        data={"commands": commands, "count": len(commands)},
     )
 
 
@@ -523,32 +458,27 @@ async def get_commands() -> WSCommandsOut:
 async def websocket_live(websocket: WebSocket):
     """
     实时消息推送 WebSocket 端点
-    
+
     前端连接此端点后，可实时接收所有客户端的消息和事件
     """
     await websocket.accept()
     ws_client_manager.add_debug_connection(websocket)
-    
+
     logger.info(f"调试前端已连接: {websocket.client}")
-    
+
     try:
         # 发送当前所有客户端状态
         clients = ws_client_manager.list_clients()
-        await websocket.send_json({
-            "type": "init",
-            "clients": list(clients.values())
-        })
-        
+        await websocket.send_json({"type": "init", "clients": list(clients.values())})
+
         # 发送历史消息
         history = ws_client_manager.get_message_history()
         for client_name, messages in history.items():
             for msg in messages:
-                await websocket.send_json({
-                    "type": "message",
-                    "client": client_name,
-                    **msg
-                })
-        
+                await websocket.send_json(
+                    {"type": "message", "client": client_name, **msg}
+                )
+
         # 保持连接，接收心跳
         while True:
             try:
@@ -561,7 +491,7 @@ async def websocket_live(websocket: WebSocket):
             except Exception as e:
                 logger.error(f"WebSocket 错误: {e}")
                 break
-    
+
     finally:
         ws_client_manager.remove_debug_connection(websocket)
         logger.info(f"调试前端已断开: {websocket.client}")

@@ -2,7 +2,7 @@
   <div class="form-section">
     <div class="section-header">
       <h3>森空岛配置</h3>
-      <a href="https://doc.auto-mas.top/docsV5/script-guide/maa.html#%E6%A3%AE%E7%A9%BA%E5%B2%9B%E8%87%AA%E5%8A%A8%E7%AD%BE%E5%88%B0"
+      <a href="https://doc.auto-mas.top/docs/script-guide/maa.html#%E6%A3%AE%E7%A9%BA%E5%B2%9B%E8%87%AA%E5%8A%A8%E7%AD%BE%E5%88%B0"
         class="section-doc-link" title="查看森空岛签到配置文档" @click="handleExternalLink">
         文档
       </a>
@@ -19,9 +19,9 @@
     </a-row>
     <a-row :gutter="24" style="margin-top: 16px">
       <a-col :span="24">
-        <span style="font-weight: 500">森空岛Token</span>
+        <span style="font-weight: 500">鹰角网络通行证登录凭证</span>
         <a-input-password v-model:value="formData.Info.SklandToken" :disabled="loading || !formData.Info.IfSkland"
-          placeholder="请输入森空岛Token" size="large" style="margin-top: 8px; width: 100%" allow-clear
+          placeholder="请输入鹰角网络通行证登录凭证" size="large" style="margin-top: 8px; width: 100%" allow-clear
           @blur="emitSave('Info.SklandToken', formData.Info.SklandToken)" />
       </a-col>
     </a-row>
