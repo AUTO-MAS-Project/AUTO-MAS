@@ -1,6 +1,6 @@
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2024-2025 DLmaster361
-#   Copyright © 2025 AUTO-MAS Team
+#   Copyright © 2025-2026 AUTO-MAS Team
 import asyncio
 
 #   This file is part of AUTO-MAS.
@@ -396,11 +396,15 @@ class Notification:
         # 获取 WebSocket 客户端
         client = ws_client_manager.get_client(client_name)
         if not client:
-            logger.error(f"Koishi 通知推送失败: 未找到名为 [{client_name}] 的 WebSocket 客户端")
+            logger.error(
+                f"Koishi 通知推送失败: 未找到名为 [{client_name}] 的 WebSocket 客户端"
+            )
             return False
 
         if not client.is_connected:
-            logger.error(f"Koishi 通知推送失败: WebSocket 客户端 [{client_name}] 未连接")
+            logger.error(
+                f"Koishi 通知推送失败: WebSocket 客户端 [{client_name}] 未连接"
+            )
             return False
 
         # 构造通知消息
@@ -410,7 +414,7 @@ class Notification:
             "data": {
                 "msgtype": msgtype,
                 "message": message,
-            }
+            },
         }
 
         # 发送消息
