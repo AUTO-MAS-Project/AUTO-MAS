@@ -1,5 +1,5 @@
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
-#   Copyright © 2025 AUTO-MAS Team
+#   Copyright © 2025-2026 AUTO-MAS Team
 
 #   This file is part of AUTO-MAS.
 
@@ -857,7 +857,9 @@ class GlobalConfig(ConfigBase):
     ## 是否发送邮件
     Notify_IfSendMail = ConfigItem("Notify", "IfSendMail", False, BoolValidator())
     ## 是否发送Koishi通知
-    Notify_IfKoishiSupport = ConfigItem("Notify", "IfKoishiSupport", False, BoolValidator())
+    Notify_IfKoishiSupport = ConfigItem(
+        "Notify", "IfKoishiSupport", False, BoolValidator()
+    )
     ## Koishi WebSocket 服务器地址
     Notify_KoishiServerAddress = ConfigItem(
         "Notify", "KoishiServerAddress", "ws://localhost:5140/AUTO_MAS", URLValidator()
