@@ -1,7 +1,7 @@
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2024-2025 DLmaster361
 #   Copyright © 2025 MoeSnowyFox
-#   Copyright © 2025 AUTO-MAS Team
+#   Copyright © 2025-2026 AUTO-MAS Team
 
 #   This file is part of AUTO-MAS.
 
@@ -44,16 +44,16 @@ _ws_command_registry: Dict[str, Callable] = {}
 def ws_command(endpoint: str):
     """
     WebSocket 命令装饰器
-    
+
     将一个函数注册为 WebSocket 命令，使其可以通过 WebSocket 调用
-    
+
     用法:
         @ws_command("ws.clone")
         @router.post("/clone")
         async def clone_task(params: TaskCloneIn):
             # 你的逻辑
             return result
-    
+
     WebSocket 调用:
         {
             "id": "server",
@@ -63,33 +63,36 @@ def ws_command(endpoint: str):
                 "params": {...}  # 可选，传递给函数的参数
             }
         }
-    
+
     Args:
         endpoint: 命令的唯一标识符，如 "ws.clone", "core.shutdown"
     """
+
     def decorator(func: Callable):
         # 注册到全局命令表
         _ws_command_registry[endpoint] = func
         logger.debug(f"已注册 WebSocket 命令: {endpoint}")
-        
+
         @wraps(func)
         async def wrapper(*args, **kwargs):
             # 保持原函数功能不变
             return await func(*args, **kwargs)
-        
+
         return wrapper
-    
+
     return decorator
 
 
-async def execute_ws_command(endpoint: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+async def execute_ws_command(
+    endpoint: str, params: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
     """
     执行 WebSocket 命令
-    
+
     Args:
         endpoint: 命令标识符
         params: 命令参数（可选）
-    
+
     Returns:
         执行结果字典，格式为:
         {
@@ -102,19 +105,15 @@ async def execute_ws_command(endpoint: str, params: Optional[Dict[str, Any]] = N
     # 检查命令是否存在
     if endpoint not in _ws_command_registry:
         logger.warning(f"未找到命令: {endpoint}")
-        return {
-            "success": False,
-            "message": f"未找到命令: {endpoint}",
-            "code": 404
-        }
-    
+        return {"success": False, "message": f"未找到命令: {endpoint}", "code": 404}
+
     func = _ws_command_registry[endpoint]
-    
+
     try:
         # 获取函数签名
         sig = inspect.signature(func)
         parameters = sig.parameters
-        
+
         # 准备函数参数
         if not parameters:
             # 无参数函数
@@ -123,8 +122,12 @@ async def execute_ws_command(endpoint: str, params: Optional[Dict[str, Any]] = N
             # 检查第一个参数是否是 Pydantic Model
             first_param = list(parameters.values())[0]
             param_type = first_param.annotation
-            
-            if param_type != inspect.Parameter.empty and isinstance(param_type, type) and issubclass(param_type, BaseModel):
+
+            if (
+                param_type != inspect.Parameter.empty
+                and isinstance(param_type, type)
+                and issubclass(param_type, BaseModel)
+            ):
                 # 参数是 Pydantic Model，使用 params 构建（params 为空时使用空字典）
                 try:
                     param_instance = param_type(**(params or {}))
@@ -134,7 +137,7 @@ async def execute_ws_command(endpoint: str, params: Optional[Dict[str, Any]] = N
                     return {
                         "success": False,
                         "message": f"参数错误: {str(e)}",
-                        "code": 400
+                        "code": 400,
                     }
             elif params:
                 # 普通参数，直接传递
@@ -142,7 +145,7 @@ async def execute_ws_command(endpoint: str, params: Optional[Dict[str, Any]] = N
             else:
                 # 没有 params 且不是 Pydantic Model，尝试无参调用
                 result = await func()
-        
+
         # 处理返回结果
         if isinstance(result, BaseModel):
             result_dict = result.model_dump()
@@ -150,28 +153,26 @@ async def execute_ws_command(endpoint: str, params: Optional[Dict[str, Any]] = N
                 "success": result_dict.get("code", 200) == 200,
                 "data": result_dict,
                 "code": result_dict.get("code", 200),
-                "message": result_dict.get("message")
+                "message": result_dict.get("message"),
             }
         elif isinstance(result, dict):
             return {
                 "success": result.get("code", 200) == 200,
                 "data": result,
                 "code": result.get("code", 200),
-                "message": result.get("message")
+                "message": result.get("message"),
             }
         else:
-            return {
-                "success": True,
-                "data": result,
-                "code": 200
-            }
-    
+            return {"success": True, "data": result, "code": 200}
+
     except Exception as e:
-        logger.error(f"执行命令 {endpoint} 失败: {type(e).__name__}: {str(e)}", exc_info=True)
+        logger.error(
+            f"执行命令 {endpoint} 失败: {type(e).__name__}: {str(e)}", exc_info=True
+        )
         return {
             "success": False,
             "message": f"执行失败: {type(e).__name__}: {str(e)}",
-            "code": 500
+            "code": 500,
         }
 
 
@@ -188,10 +189,10 @@ def list_ws_commands() -> list[str]:
 def unregister_ws_command(endpoint: str) -> bool:
     """
     取消注册 WebSocket 命令
-    
+
     Args:
         endpoint: 命令标识符
-    
+
     Returns:
         是否成功取消注册
     """
