@@ -315,23 +315,21 @@ class MaaUserConfig(ConfigBase):
         )
 
         ## Task ------------------------------------------------------------
-        ## 是否 自动唤醒
-        self.Task_IfWakeUp = ConfigItem("Task", "IfWakeUp", True, BoolValidator())
-        ## 是否公招
-        self.Task_IfRecruiting = ConfigItem(
-            "Task", "IfRecruiting", True, BoolValidator()
-        )
-        ## 是否基建
-        self.Task_IfBase = ConfigItem("Task", "IfBase", True, BoolValidator())
-        ## 是否刷图
-        self.Task_IfCombat = ConfigItem("Task", "IfCombat", True, BoolValidator())
-        ## 是否商店
+        ## 是否自动唤醒
+        self.Task_IfStartUp = ConfigItem("Task", "IfStartUp", True, BoolValidator())
+        ## 是否理智作战
+        self.Task_IfFight = ConfigItem("Task", "IfFight", True, BoolValidator())
+        ## 是否基建换班
+        self.Task_IfInfrast = ConfigItem("Task", "IfInfrast", True, BoolValidator())
+        ## 是否公开招募
+        self.Task_IfRecruit = ConfigItem("Task", "IfRecruit", True, BoolValidator())
+        ## 是否信用收支
         self.Task_IfMall = ConfigItem("Task", "IfMall", True, BoolValidator())
-        ## 是否任务
-        self.Task_IfMission = ConfigItem("Task", "IfMission", True, BoolValidator())
+        ## 是否领取奖励
+        self.Task_IfAward = ConfigItem("Task", "IfAward", True, BoolValidator())
         ## 是否自动肉鸽
-        self.Task_IfAutoRoguelike = ConfigItem(
-            "Task", "IfAutoRoguelike", False, BoolValidator()
+        self.Task_IfRoguelike = ConfigItem(
+            "Task", "IfRoguelike", False, BoolValidator()
         )
         ## 是否生息演算
         self.Task_IfReclamation = ConfigItem(

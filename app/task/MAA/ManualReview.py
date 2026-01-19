@@ -34,7 +34,12 @@ from app.models.config import MaaConfig, MaaUserConfig
 from app.models.emulator import DeviceInfo, DeviceBase
 from app.services import System
 from app.utils import get_logger, LogMonitor, ProcessManager
-from app.utils.constants import UTC4, MAA_TASKS, ARKNIGHTS_PACKAGE_NAME
+from app.utils.constants import (
+    UTC4,
+    MAA_TASKS,
+    MAA_STARTUP_BASE,
+    ARKNIGHTS_PACKAGE_NAME,
+)
 from .tools import agree_bilibili
 
 logger = get_logger("MAA 人工排查")
@@ -71,7 +76,7 @@ class ManualReviewTask(TaskExecuteBase):
             self.cur_user_config.get("Info", "Mode") == "详细"
             and not (
                 Path.cwd()
-                / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile/gui.json"
+                / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile"
             ).exists()
         ):
             self.cur_user_item.status = "异常"
@@ -90,7 +95,7 @@ class ManualReviewTask(TaskExecuteBase):
         self.log_start_time = datetime.now()
 
         self.maa_root_path = Path(self.script_config.get("Info", "Path"))
-        self.maa_set_path = self.maa_root_path / "config/gui.json"
+        self.maa_set_path = self.maa_root_path / "config"
         self.maa_log_path = self.maa_root_path / "debug/gui.log"
         self.maa_exe_path = self.maa_root_path / "MAA.exe"
         self.maa_tasks_path = self.maa_root_path / "resource/tasks/tasks.json"
@@ -253,85 +258,90 @@ class ManualReviewTask(TaskExecuteBase):
             await agree_bilibili(self.maa_tasks_path, False)
 
         if self.cur_user_config.get("Info", "Mode") == "简洁":
-            shutil.copy(
-                (
-                    Path.cwd()
-                    / f"data/{self.script_info.script_id}/Default/ConfigFile/gui.json"
-                ),
+            shutil.copytree(
+                (Path.cwd() / f"data/{self.script_info.script_id}/Default/ConfigFile"),
                 self.maa_set_path,
+                dirs_exist_ok=True,
             )
         elif self.cur_user_config.get("Info", "Mode") == "详细":
-            shutil.copy(
+            shutil.copytree(
                 (
                     Path.cwd()
-                    / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile/gui.json"
+                    / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile"
                 ),
                 self.maa_set_path,
+                dirs_exist_ok=True,
             )
 
-        maa_set = json.loads(self.maa_set_path.read_text(encoding="utf-8"))
+        gui_set = json.loads(
+            (self.maa_set_path / "gui.json").read_text(encoding="utf-8")
+        )
+        gui_new_set = json.loads(
+            (self.maa_set_path / "gui.new.json").read_text(encoding="utf-8")
+        )
 
         # 多配置使用默认配置
-        if maa_set["Current"] != "Default":
-            maa_set["Configurations"]["Default"] = maa_set["Configurations"][
-                maa_set["Current"]
+        if gui_set["Current"] != "Default":
+            gui_set["Configurations"]["Default"] = gui_set["Configurations"][
+                gui_set["Current"]
             ]
-            maa_set["Current"] = "Default"
+            gui_new_set["Configurations"]["Default"] = gui_new_set["Configurations"][
+                gui_set["Current"]
+            ]
+            gui_set["Current"] = "Default"
+
+        # 各配置部分的引用
+        global_set = gui_set["Global"]
+        default_set = gui_set["Configurations"]["Default"]
 
         # 关闭所有定时
         for i in range(1, 9):
-            maa_set["Global"][f"Timer.Timer{i}"] = "False"
+            global_set[f"Timer.Timer{i}"] = "False"
 
         # 矫正 ADB 地址
         if emulator_info.adb_address != "Unknown":
-            maa_set["Configurations"]["Default"][
-                "Connect.Address"
-            ] = emulator_info.adb_address
+            default_set["Connect.Address"] = emulator_info.adb_address
 
         # 任务间切换方式
-        maa_set["Configurations"]["Default"]["MainFunction.PostActions"] = "8"
+        default_set["MainFunction.PostActions"] = "8"
 
         # 直接运行任务
-        maa_set["Configurations"]["Default"]["Start.StartGame"] = "True"
-        maa_set["Configurations"]["Default"]["Start.RunDirectly"] = "True"
-        maa_set["Configurations"]["Default"]["Start.OpenEmulatorAfterLaunch"] = "False"
-
-        # 静默模式相关配置
-        maa_set["Global"]["GUI.UseTray"] = "True"
-        maa_set["Global"]["GUI.MinimizeToTray"] = "True"
-        maa_set["Global"]["Start.MinimizeDirectly"] = "True"
+        default_set["Start.StartGame"] = "True"
+        default_set["Start.RunDirectly"] = "True"
+        default_set["Start.OpenEmulatorAfterLaunch"] = "False"
 
         # 更新配置
-        maa_set["Global"]["VersionUpdate.ScheduledUpdateCheck"] = "False"
-        maa_set["Global"]["VersionUpdate.AutoDownloadUpdatePackage"] = "False"
-        maa_set["Global"]["VersionUpdate.AutoInstallUpdatePackage"] = "False"
+        global_set["VersionUpdate.ScheduledUpdateCheck"] = "False"
+        global_set["VersionUpdate.AutoDownloadUpdatePackage"] = "False"
+        global_set["VersionUpdate.AutoInstallUpdatePackage"] = "False"
+
+        # 静默模式相关配置
+        global_set["GUI.UseTray"] = "True"
+        global_set["GUI.MinimizeToTray"] = "True"
+        global_set["Start.MinimizeDirectly"] = "True"
 
         # 服务器与账号切换
-        maa_set["Configurations"]["Default"]["Start.ClientType"] = (
-            self.cur_user_config.get("Info", "Server")
-        )
+        default_set["Start.ClientType"] = self.cur_user_config.get("Info", "Server")
+        startup = MAA_STARTUP_BASE.copy()
         if self.cur_user_config.get("Info", "Server") == "Official":
-            maa_set["Configurations"]["Default"]["Start.AccountName"] = (
+            startup["AccountName"] = (
                 f"{self.cur_user_config.get('Info', 'Id')[:3]}****{self.cur_user_config.get('Info', 'Id')[7:]}"
                 if len(self.cur_user_config.get("Info", "Id")) == 11
                 else self.cur_user_config.get("Info", "Id")
             )
         elif self.cur_user_config.get("Info", "Server") == "Bilibili":
-            maa_set["Configurations"]["Default"]["Start.AccountName"] = (
-                self.cur_user_config.get("Info", "Id")
-            )
+            startup["AccountName"] = self.cur_user_config.get("Info", "Id")
 
-        # 任务配置
-        for task in MAA_TASKS:
-            maa_set["Configurations"]["Default"][
-                f"TaskQueue.{task}.IsChecked"
-            ] = "False"
-        maa_set["Configurations"]["Default"]["TaskQueue.WakeUp.IsChecked"] = "True"
+        # 导出任务配置
+        gui_new_set["Configurations"]["Default"]["TaskQueue"] = [startup]
 
-        self.maa_set_path.write_text(
-            json.dumps(maa_set, ensure_ascii=False, indent=4), encoding="utf-8"
+        (self.maa_set_path / "gui.json").write_text(
+            json.dumps(gui_set, ensure_ascii=False, indent=4), encoding="utf-8"
         )
-        logger.success(f"MAA运行参数配置完成: 人工排查")
+        (self.maa_set_path / "gui.new.json").write_text(
+            json.dumps(gui_new_set, ensure_ascii=False, indent=4), encoding="utf-8"
+        )
+        logger.success("MAA运行参数配置完成: 人工排查")
 
     async def check_log(self, log_content: list[str], latest_time: datetime) -> None:
         """日志回调"""

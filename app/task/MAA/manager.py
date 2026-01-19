@@ -86,20 +86,29 @@ class MaaManager(TaskExecuteBase):
             / "MAA.exe"
         ).exists():
             return "MAA.exe文件不存在, 请检查MAA路径设置！"
-        if not (
-            Path(
-                Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
-                    "Info", "Path"
+        if (
+            not (
+                Path(
+                    Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
+                        "Info", "Path"
+                    )
                 )
-            )
-            / "config/gui.json"
-        ).exists():
-            return "MAA配置文件不存在, 请检查MAA路径设置！"
+                / "config/gui.json"
+            ).exists()
+            or not (
+                Path(
+                    Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
+                        "Info", "Path"
+                    )
+                )
+                / "config/gui.new.json"
+            ).exists()
+        ):
+            return "MAA配置文件不存在, 请检查MAA路径设置或先启动MAA完成配置文件生成！"
         if (
             self.task_info.mode != "ScriptConfig"
             and not (
-                Path.cwd()
-                / f"data/{self.script_info.script_id}/Default/ConfigFile/gui.json"
+                Path.cwd() / f"data/{self.script_info.script_id}/Default/ConfigFile"
             ).exists()
         ):
             return "未完成 MAA 全局设置, 请先设置 MAA！"
@@ -115,9 +124,7 @@ class MaaManager(TaskExecuteBase):
         await self.user_config.load(await self.script_config.UserData.toDict())
         logger.success(f"{self.script_info.script_id}已锁定, MAA配置提取完成")
 
-        self.maa_set_path = (
-            Path(self.script_config.get("Info", "Path")) / "config/gui.json"
-        )
+        self.maa_set_path = Path(self.script_config.get("Info", "Path")) / "config"
         self.temp_path = Path.cwd() / f"data/{self.script_info.script_id}/Temp"
 
         # 初始化模拟器管理器
@@ -128,7 +135,7 @@ class MaaManager(TaskExecuteBase):
         # 备份原始配置
         self.temp_path.mkdir(parents=True, exist_ok=True)
         if self.maa_set_path.exists():
-            shutil.copy(self.maa_set_path, self.temp_path / "gui.json")
+            shutil.copytree(self.maa_set_path, self.temp_path, dirs_exist_ok=True)
 
         # 构建用户列表
         if self.task_info.mode == "ScriptConfig":
@@ -236,8 +243,8 @@ class MaaManager(TaskExecuteBase):
                 )
 
         # 还原配置
-        if (self.temp_path / "gui.json").exists():
-            shutil.copy(self.temp_path / "gui.json", self.maa_set_path)
+        if (self.temp_path).exists():
+            shutil.copytree(self.temp_path, self.maa_set_path, dirs_exist_ok=True)
         shutil.rmtree(self.temp_path, ignore_errors=True)
 
         self.script_info.status = "完成"

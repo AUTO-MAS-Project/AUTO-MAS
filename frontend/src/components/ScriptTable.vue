@@ -125,8 +125,8 @@
                             user.Info.InfrastMode &&
                             user.Info.InfrastMode !== '-' &&
                             user.Info.InfrastMode !== ''
-                          " class="info-tag" :color="user.Task.IfBase ? 'purple' : 'red'">
-                            基建: {{ user.Task.IfBase ? getInfrastDisplayText(user) : '关闭' }}
+                          " class="info-tag" :color="user.Task.IfInfrast ? 'purple' : 'red'">
+                            基建: {{ user.Task.IfInfrast ? getInfrastDisplayText(user) : '关闭' }}
                           </a-tag>
 
                           <!-- 关卡信息 - 根据是否使用计划表配置显示不同内容 -->
