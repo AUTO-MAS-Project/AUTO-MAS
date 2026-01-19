@@ -63,7 +63,7 @@ class ScriptConfigTask(TaskExecuteBase):
         self.wait_event = asyncio.Event()
 
         self.maa_root_path = Path(self.script_config.get("Info", "Path"))
-        self.maa_set_path = self.maa_root_path / "config/gui.json"
+        self.maa_set_path = self.maa_root_path / "config"
         self.maa_exe_path = self.maa_root_path / "MAA.exe"
 
     async def main_task(self):
@@ -86,49 +86,60 @@ class ScriptConfigTask(TaskExecuteBase):
 
         if (
             Path.cwd()
-            / f"data/{self.script_info.script_id}/{self.cur_user_item.user_id}/ConfigFile/gui.json"
+            / f"data/{self.script_info.script_id}/{self.cur_user_item.user_id}/ConfigFile"
         ).exists():
-            shutil.copy(
-                Path.cwd()
-                / f"data/{self.script_info.script_id}/{self.cur_user_item.user_id}/ConfigFile/gui.json",
+            shutil.copytree(
+                (
+                    Path.cwd()
+                    / f"data/{self.script_info.script_id}/{self.cur_user_item.user_id}/ConfigFile"
+                ),
                 self.maa_set_path,
+                dirs_exist_ok=True,
             )
 
-        maa_set = json.loads(self.maa_set_path.read_text(encoding="utf-8"))
+        gui_set = json.loads(
+            (self.maa_set_path / "gui.json").read_text(encoding="utf-8")
+        )
+        gui_new_set = json.loads(
+            (self.maa_set_path / "gui.new.json").read_text(encoding="utf-8")
+        )
 
         # 多配置使用默认配置
-        if maa_set["Current"] != "Default":
-            maa_set["Configurations"]["Default"] = maa_set["Configurations"][
-                maa_set["Current"]
+        if gui_set["Current"] != "Default":
+            gui_set["Configurations"]["Default"] = gui_set["Configurations"][
+                gui_set["Current"]
             ]
-            maa_set["Current"] = "Default"
-        for i in range(1, 9):
-            maa_set["Global"][f"Timer.Timer{i}"] = "False"
+            gui_new_set["Configurations"]["Default"] = gui_new_set["Configurations"][
+                gui_set["Current"]
+            ]
+            gui_set["Current"] = "Default"
+
+        # 各配置部分的引用
+        global_set = gui_set["Global"]
+        default_set = gui_set["Configurations"]["Default"]
 
         # 任务间切换方式
-        maa_set["Configurations"]["Default"]["MainFunction.PostActions"] = "0"
+        default_set["MainFunction.PostActions"] = "0"
 
         # 不直接运行任务
-        maa_set["Configurations"]["Default"]["Start.StartGame"] = "True"
-        maa_set["Configurations"]["Default"]["Start.RunDirectly"] = "False"
-        maa_set["Configurations"]["Default"]["Start.OpenEmulatorAfterLaunch"] = "False"
+        default_set["Start.StartGame"] = "True"
+        default_set["Start.RunDirectly"] = "False"
+        default_set["Start.OpenEmulatorAfterLaunch"] = "False"
 
         # 更新配置
-        maa_set["Global"]["VersionUpdate.ScheduledUpdateCheck"] = "False"
-        maa_set["Global"]["VersionUpdate.AutoDownloadUpdatePackage"] = "False"
-        maa_set["Global"]["VersionUpdate.AutoInstallUpdatePackage"] = "False"
+        global_set["VersionUpdate.ScheduledUpdateCheck"] = "False"
+        global_set["VersionUpdate.AutoDownloadUpdatePackage"] = "False"
+        global_set["VersionUpdate.AutoInstallUpdatePackage"] = "False"
 
         # 静默模式相关配置
         if Config.get("Function", "IfSilence"):
-            maa_set["Global"]["Start.MinimizeDirectly"] = "False"
+            global_set["Start.MinimizeDirectly"] = "False"
 
-        # 任务配置
-        for task in MAA_TASKS:
-            maa_set["Configurations"]["Default"][
-                f"TaskQueue.{task}.IsChecked"
-            ] = "False"
-        self.maa_set_path.write_text(
-            json.dumps(maa_set, ensure_ascii=False, indent=4), encoding="utf-8"
+        (self.maa_set_path / "gui.json").write_text(
+            json.dumps(gui_set, ensure_ascii=False, indent=4), encoding="utf-8"
+        )
+        (self.maa_set_path / "gui.new.json").write_text(
+            json.dumps(gui_new_set, ensure_ascii=False, indent=4), encoding="utf-8"
         )
         logger.success(f"MAA运行参数配置完成: 设置脚本 {self.cur_user_item.user_id}")
 
@@ -141,10 +152,11 @@ class ScriptConfigTask(TaskExecuteBase):
             Path.cwd()
             / f"data/{self.script_info.script_id}/{self.cur_user_item.user_id}/ConfigFile"
         ).mkdir(parents=True, exist_ok=True)
-        shutil.copy(
+        shutil.copytree(
             self.maa_set_path,
             Path.cwd()
-            / f"data/{self.script_info.script_id}/{self.cur_user_item.user_id}/ConfigFile/gui.json",
+            / f"data/{self.script_info.script_id}/{self.cur_user_item.user_id}/ConfigFile",
+            dirs_exist_ok=True,
         )
 
     async def on_crash(self, e: Exception):

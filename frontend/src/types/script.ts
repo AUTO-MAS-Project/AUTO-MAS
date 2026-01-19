@@ -142,14 +142,14 @@ export interface User {
     ToAddress: string
   }
   Task: {
-    IfAutoRoguelike: boolean
-    IfBase: boolean
-    IfCombat: boolean
+    IfRoguelike: boolean
+    IfInfrast: boolean
+    IfFight: boolean
     IfMall: boolean
-    IfMission: boolean
+    IfAward: boolean
     IfReclamation: boolean
-    IfRecruiting: boolean
-    IfWakeUp: boolean
+    IfRecruit: boolean
+    IfStartUp: boolean
   }
   QFluentWidgets: {
     ThemeColor: string

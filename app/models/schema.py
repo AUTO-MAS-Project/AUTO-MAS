@@ -333,13 +333,13 @@ class MaaUserConfig_Data(BaseModel):
 
 
 class MaaUserConfig_Task(BaseModel):
-    IfWakeUp: Optional[bool] = Field(default=None, description="开始唤醒")
-    IfRecruiting: Optional[bool] = Field(default=None, description="自动公招")
-    IfBase: Optional[bool] = Field(default=None, description="基建换班")
-    IfCombat: Optional[bool] = Field(default=None, description="理智作战")
+    IfStartUp: Optional[bool] = Field(default=None, description="开始唤醒")
+    IfRecruit: Optional[bool] = Field(default=None, description="自动公招")
+    IfInfrast: Optional[bool] = Field(default=None, description="基建换班")
+    IfFight: Optional[bool] = Field(default=None, description="理智作战")
     IfMall: Optional[bool] = Field(default=None, description="信用收支")
-    IfMission: Optional[bool] = Field(default=None, description="领取奖励")
-    IfAutoRoguelike: Optional[bool] = Field(default=None, description="自动肉鸽")
+    IfAward: Optional[bool] = Field(default=None, description="领取奖励")
+    IfRoguelike: Optional[bool] = Field(default=None, description="自动肉鸽")
     IfReclamation: Optional[bool] = Field(default=None, description="生息演算")
 
 
