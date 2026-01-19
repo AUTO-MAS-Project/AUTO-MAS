@@ -5,57 +5,57 @@
     </div>
     <a-row :gutter="24">
       <a-col :span="6">
-        <a-form-item name="ifWakeUp" label="开始唤醒">
-          <a-switch v-model:checked="formData.Task.IfWakeUp" :disabled="loading"
-            @change="emitSave('Task.IfWakeUp', formData.Task.IfWakeUp)" />
+        <a-form-item name="IfStartUp" label="开始唤醒">
+          <a-switch v-model:checked="formData.Task.IfStartUp" :disabled="loading"
+            @change="emitSave('Task.IfStartUp', formData.Task.IfStartUp)" />
         </a-form-item>
       </a-col>
       <a-col :span="6">
-        <a-form-item name="ifRecruiting" label="自动公招">
-          <a-switch v-model:checked="formData.Task.IfRecruiting" :disabled="loading"
-            @change="emitSave('Task.IfRecruiting', formData.Task.IfRecruiting)" />
+        <a-form-item name="IfFight" label="理智作战">
+          <a-switch v-model:checked="formData.Task.IfFight" :disabled="loading"
+            @change="emitSave('Task.IfFight', formData.Task.IfFight)" />
         </a-form-item>
       </a-col>
       <a-col :span="6">
-        <a-form-item name="ifBase" label="基建换班">
-          <a-switch v-model:checked="formData.Task.IfBase" :disabled="loading"
-            @change="emitSave('Task.IfBase', formData.Task.IfBase)" />
+        <a-form-item name="IfInfrast" label="基建换班">
+          <a-switch v-model:checked="formData.Task.IfInfrast" :disabled="loading"
+            @change="emitSave('Task.IfInfrast', formData.Task.IfInfrast)" />
         </a-form-item>
       </a-col>
       <a-col :span="6">
-        <a-form-item name="ifCombat" label="理智作战">
-          <a-switch v-model:checked="formData.Task.IfCombat" :disabled="loading"
-            @change="emitSave('Task.IfCombat', formData.Task.IfCombat)" />
+        <a-form-item name="IfRecruit" label="自动公招">
+          <a-switch v-model:checked="formData.Task.IfRecruit" :disabled="loading"
+            @change="emitSave('Task.IfRecruit', formData.Task.IfRecruit)" />
         </a-form-item>
       </a-col>
     </a-row>
     <a-row :gutter="24">
       <a-col :span="6">
-        <a-form-item name="ifMall" label="信用收支">
+        <a-form-item name="IfMall" label="信用收支">
           <a-switch v-model:checked="formData.Task.IfMall" :disabled="loading"
             @change="emitSave('Task.IfMall', formData.Task.IfMall)" />
         </a-form-item>
       </a-col>
       <a-col :span="6">
-        <a-form-item name="ifMission" label="领取奖励">
-          <a-switch v-model:checked="formData.Task.IfMission" :disabled="loading"
-            @change="emitSave('Task.IfMission', formData.Task.IfMission)" />
+        <a-form-item name="IfAward" label="领取奖励">
+          <a-switch v-model:checked="formData.Task.IfAward" :disabled="loading"
+            @change="emitSave('Task.IfAward', formData.Task.IfAward)" />
         </a-form-item>
       </a-col>
       <a-col :span="6">
-        <a-form-item name="ifAutoRoguelike">
+        <a-form-item name="IfRoguelike">
           <template #label>
-            <a-tooltip title="你也许需要注意：长时间的自动肉鸽可能会导致你自动调度任务被取消">
+            <a-tooltip title="你也许需要注意：长时间的自动肉鸽可能会导致你自动调度任务被误判超时">
               <span>自动肉鸽 </span>
               <QuestionCircleOutlined class="help-icon" />
             </a-tooltip>
           </template>
-          <a-switch v-model:checked="formData.Task.IfAutoRoguelike" :disabled="loading"
-            @change="emitSave('Task.IfAutoRoguelike', formData.Task.IfAutoRoguelike)" />
+          <a-switch v-model:checked="formData.Task.IfRoguelike" :disabled="loading"
+            @change="emitSave('Task.IfRoguelike', formData.Task.IfRoguelike)" />
         </a-form-item>
       </a-col>
       <a-col :span="6">
-        <a-form-item name="ifReclamation">
+        <a-form-item name="IfReclamation">
           <template #label>
             <a-tooltip title="暂不支持，等待适配中~">
               <span>生息演算 </span>

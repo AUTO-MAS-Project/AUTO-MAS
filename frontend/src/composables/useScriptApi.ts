@@ -136,13 +136,13 @@ export function useScriptApi() {
               SklandToken: any
             }
             Task: {
-              IfWakeUp: any
-              IfRecruiting: any
-              IfBase: any
-              IfCombat: any
+              IfStartUp: any
+              IfRecruit: any
+              IfInfrast: any
+              IfFight: any
               IfMall: any
-              IfMission: any
-              IfAutoRoguelike: any
+              IfAward: any
+              IfRoguelike: any
               IfReclamation: any
             }
             Notify: {
@@ -296,29 +296,29 @@ export function useScriptApi() {
                             : '',
                       },
                       Task: {
-                        IfWakeUp:
-                          maaUserData.Task?.IfWakeUp !== undefined
-                            ? maaUserData.Task.IfWakeUp
+                        IfStartUp:
+                          maaUserData.Task?.IfStartUp !== undefined
+                            ? maaUserData.Task.IfStartUp
                             : true,
-                        IfRecruiting:
-                          maaUserData.Task?.IfRecruiting !== undefined
-                            ? maaUserData.Task.IfRecruiting
+                        IfRecruit:
+                          maaUserData.Task?.IfRecruit !== undefined
+                            ? maaUserData.Task.IfRecruit
                             : true,
-                        IfBase:
-                          maaUserData.Task?.IfBase !== undefined ? maaUserData.Task.IfBase : true,
-                        IfCombat:
-                          maaUserData.Task?.IfCombat !== undefined
-                            ? maaUserData.Task.IfCombat
+                        IfInfrast:
+                          maaUserData.Task?.IfInfrast !== undefined ? maaUserData.Task.IfInfrast : true,
+                        IfFight:
+                          maaUserData.Task?.IfFight !== undefined
+                            ? maaUserData.Task.IfFight
                             : true,
                         IfMall:
                           maaUserData.Task?.IfMall !== undefined ? maaUserData.Task.IfMall : true,
-                        IfMission:
-                          maaUserData.Task?.IfMission !== undefined
-                            ? maaUserData.Task.IfMission
+                        IfAward:
+                          maaUserData.Task?.IfAward !== undefined
+                            ? maaUserData.Task.IfAward
                             : true,
-                        IfAutoRoguelike:
-                          maaUserData.Task?.IfAutoRoguelike !== undefined
-                            ? maaUserData.Task.IfAutoRoguelike
+                        IfRoguelike:
+                          maaUserData.Task?.IfRoguelike !== undefined
+                            ? maaUserData.Task.IfRoguelike
                             : false,
                         IfReclamation:
                           maaUserData.Task?.IfReclamation !== undefined
