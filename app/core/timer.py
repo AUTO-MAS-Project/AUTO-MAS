@@ -75,6 +75,7 @@ class _MainTimer:
         """定时启动代理任务"""
 
         curtime = datetime.now().strftime("%Y-%m-%d %H:%M")
+        curday = datetime.now().strftime("%A")
 
         for uid, queue in Config.QueueConfig.items():
 
@@ -86,8 +87,10 @@ class _MainTimer:
                 continue
 
             for time_set in queue.TimeSet.values():
-                if time_set.get("Info", "Enabled") and curtime[11:16] == time_set.get(
-                    "Info", "Time"
+                if (
+                    time_set.get("Info", "Enabled")
+                    and curday in time_set.get("Info", "Days")
+                    and curtime[11:16] == time_set.get("Info", "Time")
                 ):
                     logger.info(f"定时唤起任务：{uid}")
                     task_id = await TaskManager.add_task("AutoProxy", str(uid))

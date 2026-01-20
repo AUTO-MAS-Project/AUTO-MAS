@@ -18,6 +18,7 @@
       <div class="draggable-table-header">
         <div class="header-cell index-cell">序号</div>
         <div class="header-cell status-cell">状态</div>
+        <div class="header-cell days-cell">执行周期</div>
         <div class="header-cell time-cell">执行时间</div>
         <div class="header-cell actions-cell">操作</div>
       </div>
@@ -33,6 +34,19 @@
                 @change="updateTimeSetStatus(record)">
                 <a-select-option :value="true">启用</a-select-option>
                 <a-select-option :value="false">禁用</a-select-option>
+              </a-select>
+            </div>
+            <div class="row-cell days-cell">
+              <a-select v-model:value="record.days" mode="multiple" size="small" style="width: 100%"
+                placeholder="请选择执行周期" :disabled="loading" @change="updateTimeSetDays(record)" :maxTagCount="7"
+                :bordered="false" class="days-select">
+                <a-select-option value="Monday">周一</a-select-option>
+                <a-select-option value="Tuesday">周二</a-select-option>
+                <a-select-option value="Wednesday">周三</a-select-option>
+                <a-select-option value="Thursday">周四</a-select-option>
+                <a-select-option value="Friday">周五</a-select-option>
+                <a-select-option value="Saturday">周六</a-select-option>
+                <a-select-option value="Sunday">周日</a-select-option>
               </a-select>
             </div>
             <div class="row-cell time-cell">
@@ -114,6 +128,22 @@ const formatTimeValue = (timeValue: any) => {
   }
 }
 
+// 星期排序工具函数
+type DayOfWeek = 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday' | 'Sunday'
+
+const sortDays = (days: string[]): DayOfWeek[] => {
+  const dayOrder: { [key: string]: number } = {
+    Monday: 1,
+    Tuesday: 2,
+    Wednesday: 3,
+    Thursday: 4,
+    Friday: 5,
+    Saturday: 6,
+    Sunday: 7,
+  }
+  return [...days].sort((a, b) => dayOrder[a] - dayOrder[b]) as DayOfWeek[]
+}
+
 // 表格列配置
 const timeColumns = [
   {
@@ -154,6 +184,7 @@ const processTimeSets = (rawTimeSets: any[]) => {
   return rawTimeSets.map(item => ({
     ...item,
     timeValue: parseTimeString(item.time),
+    days: sortDays(item.days || []),
   }))
 }
 
@@ -177,28 +208,13 @@ const addTimeSet = async () => {
 
     loading.value = true
 
-    // 先创建，再设置默认值
+    // 创建定时项，使用后端默认值
     const createResponse = await Service.addTimeSetApiQueueTimeAddPost({
       queueId: props.queueId,
     })
 
     if (createResponse.code === 200 && createResponse.timeSetId) {
-      const updateResponse = await Service.updateTimeSetApiQueueTimeUpdatePost({
-        queueId: props.queueId,
-        timeSetId: createResponse.timeSetId,
-        data: {
-          Info: {
-            Enabled: false, // 默认禁用
-            Time: '00:00', // 默认00:00
-          },
-        },
-      })
-
-      if (updateResponse.code === 200) {
-        emit('refresh')
-      } else {
-        message.error('定时项添加失败: ' + (updateResponse.message || '未知错误'))
-      }
+      emit('refresh')
     } else {
       message.error('创建定时项失败: ' + (createResponse.message || '未知错误'))
     }
@@ -266,6 +282,34 @@ const updateTimeSetStatus = async (timeSet: any) => {
     message.error('更新状态失败: ' + (error?.message || '网络错误'))
     // 回滚状态
     timeSet.enabled = !timeSet.enabled
+  }
+}
+
+// 更新定时项执行周期
+const updateTimeSetDays = async (timeSet: any) => {
+  try {
+    // 对选中的日期按星期顺序排序
+    const sortedDays = sortDays(timeSet.days || [])
+    timeSet.days = sortedDays
+
+    const response = await Service.updateTimeSetApiQueueTimeUpdatePost({
+      queueId: props.queueId,
+      timeSetId: timeSet.id,
+      data: {
+        Info: {
+          Days: sortedDays,
+        },
+      },
+    })
+
+    if (response.code === 200) {
+      // 周期更新成功，无需通知
+    } else {
+      message.error('执行周期更新失败: ' + (response.message || '未知错误'))
+    }
+  } catch (error: any) {
+    logger.error('更新执行周期失败:', error)
+    message.error('更新执行周期失败: ' + (error?.message || '网络错误'))
   }
 }
 
@@ -666,8 +710,6 @@ const onDragEnd = async (evt: any) => {
   padding: 8px 12px !important;
 }
 
-.status-select :deep(.ant-select-item-option-content) {}
-
 /* 时间显示样式 */
 .time-display {
   font-weight: 600;
@@ -833,9 +875,15 @@ const onDragEnd = async (evt: any) => {
   max-width: 120px;
 }
 
+.days-cell {
+  flex: 4;
+  min-width: 240px;
+}
+
 .time-cell {
   flex: 1;
-  min-width: 100px;
+  min-width: 120px;
+  max-width: 200px;
 }
 
 .actions-cell {
@@ -896,9 +944,15 @@ const onDragEnd = async (evt: any) => {
   max-width: 120px;
 }
 
+.row-cell.days-cell {
+  flex: 4;
+  min-width: 240px;
+}
+
 .row-cell.time-cell {
   flex: 1;
-  min-width: 100px;
+  min-width: 120px;
+  max-width: 200px;
 }
 
 .row-cell.actions-cell {
@@ -974,6 +1028,7 @@ const onDragEnd = async (evt: any) => {
   .index-cell,
   .status-cell,
   .time-cell,
+  .days-cell,
   .actions-cell {
     width: 100% !important;
     min-width: auto !important;
@@ -1008,6 +1063,17 @@ const onDragEnd = async (evt: any) => {
 
 :deep(.ant-picker-time-panel-cell:hover) {
   background: var(--ant-color-fill-tertiary);
+}
+
+/* 执行周期选择器样式优化 */
+.days-select :deep(.ant-select-selection-item) {
+  background: transparent !important;
+  border: none !important;
+  padding-right: 4px !important;
+}
+
+.days-select :deep(.ant-select-selection-item-remove) {
+  display: none !important;
 }
 </style>
 

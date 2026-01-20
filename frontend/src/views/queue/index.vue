@@ -143,20 +143,17 @@
         </div>
         <a-divider />
 
-        <!-- 定时项与队列项并排布局 -->
-        <a-row :gutter="24" class="managers-row">
-          <!-- 定时项管理 -->
-          <a-col :span="12" class="manager-col">
-            <TimeSetManager v-if="activeQueueId && currentQueueData" :queue-id="activeQueueId"
-              :time-sets="currentTimeSets" style="font-size: 14px" @refresh="refreshTimeSets" />
-          </a-col>
+        <!-- 定时项管理 -->
+        <a-col :span="24" class="manager-col">
+          <TimeSetManager v-if="activeQueueId && currentQueueData" :queue-id="activeQueueId"
+            :time-sets="currentTimeSets" style="font-size: 14px" @refresh="refreshTimeSets" />
+        </a-col>
 
-          <!-- 队列项管理 -->
-          <a-col :span="12" class="manager-col">
-            <QueueItemManager v-if="activeQueueId && currentQueueData" :queue-id="activeQueueId"
-              :queue-items="currentQueueItems" style="font-size: 14px" @refresh="refreshQueueItems" />
-          </a-col>
-        </a-row>
+        <!-- 队列项管理 -->
+        <a-col :span="24" class="manager-col">
+          <QueueItemManager v-if="activeQueueId && currentQueueData" :queue-id="activeQueueId"
+            :queue-items="currentQueueItems" style="font-size: 14px" @refresh="refreshQueueItems" />
+        </a-col>
       </a-card>
     </div>
   </div>
@@ -361,6 +358,7 @@ const refreshTimeSets = async () => {
               id: timeSetId,
               time: timeString,
               enabled: Boolean(timeSetData.Info.Enabled),
+              days: timeSetData.Info.Days || [],
             })
           }
         } catch (itemError) {
@@ -873,7 +871,7 @@ onMounted(async () => {
   margin-bottom: 12px;
 }
 
-/* 定时项与队列项并排布局 */
+/* 定时项与队列项上下布局 */
 .managers-row {
   margin-bottom: 24px;
 }
@@ -881,7 +879,6 @@ onMounted(async () => {
 .manager-col {
   display: flex;
   flex-direction: column;
-  height: 100%;
 }
 
 /* 垂直排列的表单项 */

@@ -34,6 +34,7 @@ from .ConfigBase import (
     MultipleUIDValidator,
     BoolValidator,
     OptionsValidator,
+    MultipleOptionsValidator,
     RangeValidator,
     VirtualConfigValidator,
     FileValidator,
@@ -137,8 +138,15 @@ class TimeSet(ConfigBase):
 
         ## Info ------------------------------------------------------------
         ## 是否启用
-        self.Info_Enabled = ConfigItem("Info", "Enabled", False, BoolValidator())
-        ## 时间点
+        self.Info_Enabled = ConfigItem("Info", "Enabled", True, BoolValidator())
+        ## 执行周期
+        self.Info_Days = ConfigItem(
+            "Info",
+            "Days",
+            list(calendar.day_name),
+            MultipleOptionsValidator(list(calendar.day_name)),
+        )
+        ## 执行时间
         self.Info_Time = ConfigItem("Info", "Time", "00:00", DateTimeValidator("%H:%M"))
 
 
@@ -477,16 +485,7 @@ class MaaPlanConfig(ConfigBase):
 
         self.config_item_dict: dict[str, dict[str, ConfigItem]] = {}
 
-        for group in [
-            "ALL",
-            "Monday",
-            "Tuesday",
-            "Wednesday",
-            "Thursday",
-            "Friday",
-            "Saturday",
-            "Sunday",
-        ]:
+        for group in ["ALL", *calendar.day_name]:
             self.config_item_dict[group] = {}
 
             ## 理智药数量
