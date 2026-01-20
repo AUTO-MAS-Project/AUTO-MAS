@@ -350,7 +350,9 @@ class ManualReviewTask(TaskExecuteBase):
         self.cur_user_log.content = log_content
         self.script_info.log = log
 
-        if "完成任务: StartUp" in log or "完成任务: 开始唤醒" in log:
+        if "未选择任务" in log:
+            self.cur_user_log.status = "MAA 未选择任何任务"
+        elif "完成任务: StartUp" in log or "完成任务: 开始唤醒" in log:
             self.cur_user_log.status = "Success!"
         elif "请 ｢检查连接设置｣ → ｢尝试重启模拟器与 ADB｣ → ｢重启电脑｣" in log:
             self.cur_user_log.status = "MAA 的 ADB 连接异常"
