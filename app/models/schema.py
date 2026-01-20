@@ -245,6 +245,19 @@ class QueueItem(BaseModel):
 
 class TimeSet_Info(BaseModel):
     Enabled: Optional[bool] = Field(default=None, description="是否启用")
+    Days: Optional[
+        List[
+            Literal[
+                "Monday",
+                "Tuesday",
+                "Wednesday",
+                "Thursday",
+                "Friday",
+                "Saturday",
+                "Sunday",
+            ]
+        ]
+    ] = Field(default=None, description="执行周期, 可多选")
     Time: Optional[str] = Field(default=None, description="时间设置, 格式为HH:MM")
 
 
