@@ -521,8 +521,8 @@ class AutoProxyTask(TaskExecuteBase):
                             ).get("plans", [])
                         )
                     ]
-                    task_set["Infrast"]["PlanSelect"] = self.cur_user_config.get(
-                        "Info", "InfrastIndex"
+                    task_set["Infrast"]["PlanSelect"] = int(
+                        self.cur_user_config.get("Info", "InfrastIndex")
                     )
                 else:
                     logger.warning(
