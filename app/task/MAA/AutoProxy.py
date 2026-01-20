@@ -585,10 +585,10 @@ class AutoProxyTask(TaskExecuteBase):
         if self.mode == "Annihilation" and "任务出错: 理智作战" in log:
             self.run_book["IfAnnihilationAccomplish"] = True
 
-        if "任务出错: StartUp" in log or "任务出错: 开始唤醒" in log:
-            self.cur_user_item.log_record[self.log_start_time].status = (
-                "MAA 未能正确登录 PRTS"
-            )
+        if "未选择任务" in log:
+            self.cur_user_log.status = "MAA 未选择任何任务"
+        elif "任务出错: StartUp" in log or "任务出错: 开始唤醒" in log:
+            self.cur_user_log.status = "MAA 未能正确登录 PRTS"
         elif "任务已全部完成！" in log:
 
             for en_task, zh_task in zip(MAA_TASKS, MAA_TASKS_ZH):
