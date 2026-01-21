@@ -97,6 +97,7 @@ export interface ElectronAPI {
   // 文件系统操作
   openFile: (filePath: string) => Promise<void>
   showItemInFolder: (filePath: string) => Promise<void>
+  readFile: (filePath: string) => Promise<string>
 
   // 主题信息获取
   getThemeInfo: () => Promise<{

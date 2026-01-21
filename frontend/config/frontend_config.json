@@ -1,0 +1,13 @@
+{
+  "UI": {
+    "IfShowTray": false,
+    "IfToTray": false,
+    "location": "100,100",
+    "maximized": false,
+    "size": "1600,1000"
+  },
+  "Start": {
+    "IfMinimizeDirectly": false,
+    "IfSelfStart": false
+  }
+}
