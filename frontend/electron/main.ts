@@ -17,6 +17,7 @@ import { checkEnvironment, getAppRoot } from './services/environmentService'
 import { logService } from './services/logService'
 import { registerInitializationHandlers, cleanupInitializationResources } from './ipc/initializationHandlers'
 import { logManagementService } from './services/logManagementService'
+import { registerFileHandlers } from './ipc/fileHandlers'
 
 // 强制清理相关进程的函数
 async function forceKillRelatedProcesses(): Promise<void> {
@@ -504,6 +505,10 @@ function createWindow() {
   // 注册初始化处理器
   registerInitializationHandlers(win)
   logService.info('应用初始化', '初始化处理器已注册')
+
+  // 注册文件操作处理器
+  registerFileHandlers()
+  logService.info('应用初始化', '文件操作处理器已注册')
 
   // 初始托盘配置（使用文件配置）
   updateTrayVisibility(config)
@@ -1761,3 +1766,7 @@ ipcMain.handle('logPipeline:getBatchStats', async () => {
     return { success: false, error: String(error) }
   }
 })
+
+
+
+
