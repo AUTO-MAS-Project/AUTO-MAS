@@ -97,6 +97,7 @@ class MumuManager(DeviceBase):
         while datetime.now() - t < timedelta(
             seconds=self.config.get("Data", "MaxWaitTime")
         ):
+            await asyncio.sleep(0.1)
             status = await self.getStatus(idx)
             if if_close_mumu_nx:
                 if_close_mumu_nx = not await self.close_mumu_nx_window()
@@ -110,7 +111,6 @@ class MumuManager(DeviceBase):
                     else 3
                 )  # 等待模拟器的 ADB 等服务完全启动, 低性能设备额外等待应用启动
                 return (await self.getInfo(idx))[idx]
-            await asyncio.sleep(0.1)
         else:
             if status in [DeviceStatus.ERROR, DeviceStatus.UNKNOWN]:
                 raise RuntimeError(f"模拟器 {idx} 启动失败, 状态码: {status}")
