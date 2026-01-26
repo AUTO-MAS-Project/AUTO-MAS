@@ -114,6 +114,14 @@ class MumuManager(DeviceBase):
         else:
             if status in [DeviceStatus.ERROR, DeviceStatus.UNKNOWN]:
                 raise RuntimeError(f"模拟器 {idx} 启动失败, 状态码: {status}")
+            if status == DeviceStatus.STARTING:
+
+                data = await self.get_device_info(idx)
+                data_json = json.loads(data)
+
+                if data_json["is_process_started"]:
+                    return (await self.getInfo(idx))[idx]
+
             raise RuntimeError(f"模拟器 {idx} 启动超时, 当前状态码: {status}")
 
     async def close(self, idx: str) -> DeviceStatus:
