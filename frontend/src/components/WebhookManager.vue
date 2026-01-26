@@ -142,10 +142,8 @@ import {
 } from '@ant-design/icons-vue'
 import { TEMPLATE_VARIABLES, WEBHOOK_TEMPLATES } from '@/utils/webhookTemplates'
 import { Service } from '@/api/services/Service'
-import { logger } from '@/utils/logger'
-import { getLogger } from '@/utils/logger'
 
-const webhookLogger = getLogger('Webhook管理器')
+const logger = window.electronAPI.getLogger('Webhook管理器')
 
 // 定义Webhook类型（兼容旧props用）
 interface CustomWebhook {
@@ -267,7 +265,7 @@ const loadWebhooks = async () => {
       })
     }
   } catch (error) {
-    webhookLogger.error('加载Webhook失败:', error)
+    logger.error('加载Webhook失败:', error)
     message.error('加载Webhook配置失败')
   } finally {
     loading.value = false
@@ -308,10 +306,10 @@ const showAddModal = async () => {
         formData.enabled = true
         formData.headersList = []
 
-        webhookLogger.info('创建新Webhook，ID:', response.webhookId)
+        logger.info('创建新Webhook，ID:', response.webhookId)
       }
     } catch (error) {
-      webhookLogger.error('创建Webhook失败:', error)
+      logger.error('创建Webhook失败:', error)
       message.error('创建Webhook失败')
       return
     }
@@ -391,7 +389,7 @@ const toggleWebhookEnabled = async (webhook: WebhookItem) => {
       await loadWebhooks()
       message.success(`Webhook "${webhook.name}" 已${newEnabled ? '启用' : '禁用'}`)
     } catch (error) {
-      webhookLogger.error('更新Webhook状态失败:', error)
+      logger.error('更新Webhook状态失败:', error)
       message.error('更新Webhook状态失败')
       // 恢复原状态
       webhook.enabled = !newEnabled
@@ -440,7 +438,7 @@ const deleteWebhook = (webhook: WebhookItem) => {
           await loadWebhooks()
           message.success('Webhook 删除成功')
         } catch (error) {
-          webhookLogger.error('删除Webhook失败:', error)
+          logger.error('删除Webhook失败:', error)
           message.error('删除Webhook失败')
         }
       } else {
@@ -484,7 +482,7 @@ const testWebhook = async (webhook: WebhookItem) => {
       message.error(`Webhook 测试失败: ${response.message || '未知错误'}`)
     }
   } catch (error: any) {
-    webhookLogger.error('Webhook测试错误:', error)
+    logger.error('Webhook测试错误:', error)
     const errorMsg = error.response?.data?.message || (error instanceof Error ? error.message : '网络错误')
     message.error(`Webhook 测试失败: ${errorMsg}`)
   } finally {
@@ -614,7 +612,7 @@ const handleSubmit = async () => {
           resetForm()
         }, 100)
       } catch (error) {
-        webhookLogger.error('保存Webhook失败:', error)
+        logger.error('保存Webhook失败:', error)
         message.error('保存Webhook失败')
       }
     } else {
@@ -650,7 +648,7 @@ const handleSubmit = async () => {
       }, 100)
     }
   } catch (error) {
-    webhookLogger.error('表单验证失败:', error)
+    logger.error('表单验证失败:', error)
   } finally {
     submitting.value = false
   }

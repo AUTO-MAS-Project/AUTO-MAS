@@ -1,12 +1,11 @@
 import { type HistoryData, HistorySearchIn } from '@/api'
 import { Service } from '@/api/services/Service'
 import { useLogHighlight } from '@/composables/useLogHighlight'
-import { getLogger } from '@/utils/logger'
 import { message } from 'ant-design-vue'
 import dayjs from 'dayjs'
 import { computed, onMounted, reactive, ref } from 'vue'
 
-const logger = getLogger('历史记录')
+const logger = window.electronAPI.getLogger('历史记录')
 
 // 历史记录日期分组接口
 export interface HistoryDateGroup {

@@ -35,10 +35,8 @@ import { message } from 'ant-design-vue'
 import MarkdownIt from 'markdown-it'
 import { Service } from '@/api/services/Service'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
-import { logger } from '@/utils/logger'
-import { getLogger } from '@/utils/logger'
 
-const noticeLogger = getLogger('公告模态框')
+const logger = window.electronAPI.getLogger('公告模态框')
 
 interface Props {
   visible: boolean
@@ -95,7 +93,7 @@ const confirmNotices = async () => {
       message.error(response.message || '确认公告失败')
     }
   } catch (error) {
-    noticeLogger.error('确认公告失败:', error)
+    logger.error('确认公告失败:', error)
     message.error('确认公告失败，请重试')
   } finally {
     confirming.value = false
@@ -114,7 +112,7 @@ const handleLinkClick = async (event: MouseEvent) => {
         if (window.electronAPI && window.electronAPI.openUrl) {
           const result = await window.electronAPI.openUrl(url)
           if (!result.success) {
-            noticeLogger.error('打开链接失败:', result.error)
+            logger.error('打开链接失败:', result.error)
             message.error('打开链接失败，请手动复制链接地址')
           }
         } else {
@@ -122,7 +120,7 @@ const handleLinkClick = async (event: MouseEvent) => {
           window.open(url, '_blank')
         }
       } catch (error) {
-        noticeLogger.error('打开链接失败:', error)
+        logger.error('打开链接失败:', error)
         message.error('打开链接失败，请手动复制链接地址')
       }
     }

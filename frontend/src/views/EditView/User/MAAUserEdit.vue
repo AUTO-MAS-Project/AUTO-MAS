@@ -81,10 +81,8 @@ import { Service } from '@/api'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn.ts'
 import { GetStageIn } from '@/api/models/GetStageIn.ts'
 import { getWeekdayInTimezone } from '@/utils/dateUtils.ts'
-import { logger } from '@/utils/logger'
-import { getLogger } from '@/utils/logger'
 
-const maaUserLogger = getLogger('MAA用户编辑')
+const logger = window.electronAPI.getLogger('MAA用户编辑')
 
 // 导入拆分的组件
 import MAAUserEditHeader from '../../MAAUserEdit/MAAUserEditHeader.vue'
@@ -349,7 +347,7 @@ const getPlanCurrentConfig = (planData: any) => {
     const weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
     const today = weekdays[todayWeekday]
 
-    maaUserLogger.debug('计划表周模式调试:', {
+    logger.debug('计划表周模式调试:', {
       东4区星期几: todayWeekday,
       星期: today,
       计划数据: planData,
@@ -511,9 +509,9 @@ const handleFieldSave = async (key: string, value: any) => {
     await updateUser(scriptId, userId, userData)
     // 刷新数据
     await loadUserData()
-    maaUserLogger.info('用户配置已保存:', key)
+    logger.info('用户配置已保存:', key)
   } catch (error) {
-    maaUserLogger.error('保存失败:', error)
+    logger.error('保存失败:', error)
   } finally {
     isSaving.value = false
   }
@@ -537,9 +535,9 @@ const saveFullUserData = async () => {
     }
 
     await updateUser(scriptId, userId, userData)
-    maaUserLogger.info('用户配置已保存')
+    logger.info('用户配置已保存')
   } catch (error) {
-    maaUserLogger.error('保存失败:', error)
+    logger.error('保存失败:', error)
   } finally {
     isSaving.value = false
   }
@@ -566,7 +564,7 @@ const loadScriptInfo = async () => {
       handleCancel()
     }
   } catch (error) {
-    maaUserLogger.error('加载脚本信息失败:', error)
+    logger.error('加载脚本信息失败:', error)
     message.error('加载脚本信息失败')
   }
 }
@@ -583,7 +581,7 @@ const createUserImmediately = async () => {
         name: route.name || undefined,
         params: { ...route.params, userId: result.userId },
       })
-      maaUserLogger.info('用户已创建，ID:', result.userId)
+      logger.info('用户已创建，ID:', result.userId)
       // 加载新创建用户的数据
       await loadUserData()
     } else {
@@ -591,7 +589,7 @@ const createUserImmediately = async () => {
       handleCancel()
     }
   } catch (error) {
-    maaUserLogger.error('创建用户失败:', error)
+    logger.error('创建用户失败:', error)
     message.error('创建用户失败')
     handleCancel()
   }
@@ -640,7 +638,7 @@ const loadUserData = async () => {
           }
         })
 
-        maaUserLogger.info('用户数据加载成功')
+        logger.info('用户数据加载成功')
 
         // 加载基建配置选项
         await loadInfrastructureOptions()
@@ -656,7 +654,7 @@ const loadUserData = async () => {
       handleCancel()
     }
   } catch (error) {
-    maaUserLogger.error('加载用户数据失败:', error)
+    logger.error('加载用户数据失败:', error)
     message.error('加载用户数据失败')
   }
 }
@@ -673,7 +671,7 @@ const loadStageOptions = async () => {
       }))
     }
   } catch (error) {
-    maaUserLogger.error('加载关卡选项失败:', error)
+    logger.error('加载关卡选项失败:', error)
   }
 }
 
@@ -684,7 +682,7 @@ const loadStageModeOptions = async () => {
       stageModeOptions.value = response.data
     }
   } catch (error) {
-    maaUserLogger.error('加载关卡配置模式选项失败:', error)
+    logger.error('加载关卡配置模式选项失败:', error)
     // 保持默认的固定选项
   }
 }
@@ -729,7 +727,7 @@ const selectAndImportInfrastructureConfig = async () => {
       }
     }
   } catch (error) {
-    maaUserLogger.error('基建配置导入失败:', error)
+    logger.error('基建配置导入失败:', error)
     message.error('基建配置导入失败')
   } finally {
     infrastructureImporting.value = false
@@ -754,7 +752,7 @@ const loadInfrastructureOptions = async () => {
       }))
     }
   } catch (error) {
-    maaUserLogger.error('加载基建配置选项失败:', error)
+    logger.error('加载基建配置选项失败:', error)
   } finally {
     infrastructureOptionsLoading.value = false
   }
@@ -789,7 +787,7 @@ const handleMAAConfig = async () => {
       // 订阅 websocket
       const subscriptionId = subscribe({ id: wsId }, (wsMessage: any) => {
         if (wsMessage.type === 'error') {
-          maaUserLogger.error(
+          logger.error(
             `用户 ${formData.Info?.Name || formData.userName} MAA配置错误:`,
             wsMessage.data
           )
@@ -807,7 +805,7 @@ const handleMAAConfig = async () => {
 
         // 处理Info类型的错误消息（显示错误但不取消订阅，等待Signal消息）
         if (wsMessage.type === 'Info' && wsMessage.data && wsMessage.data.Error) {
-          maaUserLogger.error(
+          logger.error(
             `用户 ${formData.Info?.Name || formData.userName} MAA配置异常:`,
             wsMessage.data.Error
           )
@@ -818,7 +816,7 @@ const handleMAAConfig = async () => {
 
         // 处理任务结束消息（Signal类型且包含Accomplish字段）
         if (wsMessage.type === 'Signal' && wsMessage.data && wsMessage.data.Accomplish !== undefined) {
-          maaUserLogger.info(
+          logger.info(
             `用户 ${formData.Info?.Name || formData.userName} MAA配置任务已结束`
           )
           // 根据结果显示不同消息
@@ -861,7 +859,7 @@ const handleMAAConfig = async () => {
       message.error(response?.message || '启动MAA配置失败')
     }
   } catch (error) {
-    maaUserLogger.error('启动MAA配置失败:', error)
+    logger.error('启动MAA配置失败:', error)
     message.error('启动MAA配置失败')
   } finally {
     maaConfigLoading.value = false
@@ -893,7 +891,7 @@ const handleSaveMAAConfig = async () => {
       message.error(response.message || '保存配置失败')
     }
   } catch (error) {
-    maaUserLogger.error('保存MAA配置失败:', error)
+    logger.error('保存MAA配置失败:', error)
     message.error('保存MAA配置失败')
   }
 }
@@ -1103,7 +1101,7 @@ onMounted(() => {
             // 新增：保存完整的计划数据用于悬浮提示
             fullPlanData.value = planData
 
-            maaUserLogger.info('计划配置加载成功:', {
+            logger.info('计划配置加载成功:', {
               planId: newStageMode,
               currentConfig,
               planModeConfigValue: planModeConfig.value,
@@ -1119,7 +1117,7 @@ onMounted(() => {
             planModeConfig.value = null
           }
         } catch (error) {
-          maaUserLogger.error('加载计划配置失败:', error)
+          logger.error('加载计划配置失败:', error)
           message.error('加载计划配置时发生错误')
           planModeConfig.value = null
         }

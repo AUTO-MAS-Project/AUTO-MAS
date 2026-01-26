@@ -871,7 +871,6 @@ import type { MAAScriptConfig } from '../../../types/script.ts'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
 import { message } from 'ant-design-vue'
-import { getLogger } from '@/utils/logger'
 import type { GeneralScriptConfig, ScriptType } from '../../../types/script.ts'
 import { useScriptApi } from '../../../composables/useScriptApi.ts'
 import { Service, type ComboBoxItem } from '../../../api'
@@ -885,7 +884,7 @@ import {
 } from '@ant-design/icons-vue'
 import LogTimestampSelector from '@/components/LogTimestampSelector.vue'
 
-const logger = getLogger('通用脚本编辑')
+const logger = window.electronAPI.getLogger('通用脚本编辑')
 
 const route = useRoute()
 const router = useRouter()

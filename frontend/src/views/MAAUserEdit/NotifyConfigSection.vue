@@ -64,11 +64,9 @@
 </template>
 
 <script setup lang="ts">
-import { logger } from '@/utils/logger'
-import { getLogger } from '@/utils/logger'
 import WebhookManager from '@/components/WebhookManager.vue'
 
-const webhookLogger = getLogger('通知配置组件')
+const logger = window.electronAPI.getLogger('通知配置组件')
 
 const props = defineProps<{
   formData: any
@@ -88,7 +86,7 @@ const emitSave = (key: string, value: any) => {
 // 处理 Webhook 变化
 const handleWebhookChange = () => {
   // Webhook 有自己的保存逻辑，这里只记录日志
-  webhookLogger.info('User webhooks changed for script:', props.scriptId, 'user:', props.userId)
+  logger.info('User webhooks changed for script:', props.scriptId, 'user:', props.userId)
 }
 </script>
 

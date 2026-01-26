@@ -60,10 +60,8 @@
 <script setup lang="ts">
 import { computed, getCurrentInstance, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { logger } from '@/utils/logger'
-import { getLogger } from '@/utils/logger'
 
-const quickNavLogger = getLogger('快速导航页面')
+const logger = window.electronAPI.getLogger('快速导航页面')
 
 const route = useRoute()
 const router = useRouter()
@@ -113,12 +111,12 @@ const openDevtool = () => {
   try {
     if ((window as any).electronAPI?.openDevTools) {
       ; (window as any).electronAPI.openDevTools()
-      quickNavLogger.info('开发者工具已打开')
+      logger.info('开发者工具已打开')
     } else {
-      quickNavLogger.warn('⚠️ 开发者工具API不可用')
+      logger.warn('⚠️ 开发者工具API不可用')
     }
   } catch (error) {
-    quickNavLogger.error('❌ 打开开发者工具失败:', error)
+    logger.error('❌ 打开开发者工具失败:', error)
   }
 }
 
@@ -133,38 +131,38 @@ const clearStorage = () => {
       if (window.indexedDB) {
         // 这里可以添加更复杂的IndexedDB清理逻辑
       }
-      quickNavLogger.info('本地存储已清除')
+      logger.info('本地存储已清除')
       alert('本地存储已清除，建议刷新页面')
     }
   } catch (error) {
-    quickNavLogger.error('❌ 清除存储失败:', error)
+    logger.error('❌ 清除存储失败:', error)
   }
 }
 
 // 重新加载页面
 const reloadPage = () => {
   try {
-    quickNavLogger.info('🔄 页面重新加载中...')
+    logger.info('🔄 页面重新加载中...')
     window.location.reload()
   } catch (error) {
-    quickNavLogger.error('❌ 页面重载失败:', error)
+    logger.error('❌ 页面重载失败:', error)
   }
 }
 
 // 切换控制台（显示有用的调试信息）
 const toggleConsole = () => {
   try {
-    quickNavLogger.info('当前URL:', window.location.href)
-    quickNavLogger.info('用户代理:', navigator.userAgent)
-    quickNavLogger.info('开发模式:', process.env.NODE_ENV === 'development')
-    quickNavLogger.info('Vue版本:', getCurrentInstance()?.appContext.app.version || 'Unknown')
-    quickNavLogger.info('localStorage项目数:', Object.keys(localStorage).length)
-    quickNavLogger.info('sessionStorage项目数:', Object.keys(sessionStorage).length)
+    logger.info('当前URL:', window.location.href)
+    logger.info('用户代理:', navigator.userAgent)
+    logger.info('开发模式:', process.env.NODE_ENV === 'development')
+    logger.info('Vue版本:', getCurrentInstance()?.appContext.app.version || 'Unknown')
+    logger.info('localStorage项目数:', Object.keys(localStorage).length)
+    logger.info('sessionStorage项目数:', Object.keys(sessionStorage).length)
     if ((window as any).wsDebug) {
-      quickNavLogger.info('WebSocket调试:', (window as any).wsDebug)
+      logger.info('WebSocket调试:', (window as any).wsDebug)
     }
   } catch (error) {
-    quickNavLogger.error('❌ 获取调试信息失败:', error)
+    logger.error('❌ 获取调试信息失败:', error)
   }
 }
 

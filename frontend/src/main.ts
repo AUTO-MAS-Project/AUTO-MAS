@@ -9,7 +9,7 @@ import dayjs from 'dayjs'
 import 'dayjs/locale/zh-cn'
 
 // 导入日志系统
-import { logger } from '@/utils/logger'
+const logger = window.electronAPI.getLogger('前端主入口')
 
 // 导入WebSocket消息监听组件
 import WebSocketMessageListener from '@/components/WebSocketMessageListener.vue'

@@ -15,7 +15,8 @@ import GlobalPowerCountdown from './components/GlobalPowerCountdown.vue'
 import WebSocketMessageListener from './components/WebSocketMessageListener.vue'
 import AppClosingOverlay from './components/AppClosingOverlay.vue'
 import zhCN from 'ant-design-vue/es/locale/zh_CN'
-import { logger } from '@/utils/logger'
+
+const logger = window.electronAPI.getLogger('App组件')
 
 const route = useRoute()
 const { antdTheme, initTheme } = useTheme()
@@ -26,6 +27,9 @@ const { isInitialized } = useAppInitialization()
 
 // 判断是否为初始化页面
 const isInitializationPage = computed(() => route.name === 'Initialization')
+
+// 判断是否为独立页面（不需要 AppLayout 的页面）
+const isStandalonePage = computed(() => route.name === 'Logs')
 
 onMounted(async () => {
   logger.info('App组件已挂载')
@@ -58,6 +62,10 @@ onMounted(async () => {
       <div class="initialization-content">
         <router-view />
       </div>
+    </div>
+    <!-- 独立页面（如日志窗口）使用全屏布局，不包含 AppLayout -->
+    <div v-else-if="isStandalonePage" class="standalone-container">
+      <router-view />
     </div>
     <!-- 其他页面使用带标题栏的应用布局 - 仅在初始化完成后挂载 -->
     <div v-else-if="isInitialized" class="app-container">
@@ -113,6 +121,13 @@ onMounted(async () => {
   /* Firefox */
   -ms-overflow-style: none;
   /* IE/Edge */
+}
+
+
+.standalone-container {
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
 }
 
 /* 隐藏 Webkit 浏览器的滚动条 */

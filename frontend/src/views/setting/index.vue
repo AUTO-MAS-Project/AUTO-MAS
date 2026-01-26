@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import type { ThemeColor, ThemeMode } from '@/composables/useTheme'
 import { useTheme } from '@/composables/useTheme'
@@ -9,9 +8,7 @@ import type { GlobalConfig } from '@/api'
 import { useSettingsApi } from '@/composables/useSettingsApi'
 import { useUpdateChecker } from '@/composables/useUpdateChecker.ts'
 import { Service, type VersionOut } from '@/api'
-import { getLogger } from '@/utils/logger'
-
-const logger = getLogger('设置')
+const logger = window.electronAPI.getLogger('设置')
 
 // 引入拆分后的 Tab 组件
 import TabBasic from './TabBasic.vue'
@@ -20,7 +17,6 @@ import TabNotify from './TabNotify.vue'
 import TabAdvanced from './TabAdvanced.vue'
 import TabOthers from './TabOthers.vue'
 
-const router = useRouter()
 const { themeMode, themeColor, themeColors, setThemeMode, setThemeColor } = useTheme()
 const { loading, getSettings, updateSettings } = useSettingsApi()
 const {
@@ -202,7 +198,6 @@ const handleThemeColorChange = (value: SelectValue) => {
 }
 
 // 其他操作
-const goToLogs = () => router.push('/logs')
 const openDevTools = () => (window as any).electronAPI?.openDevTools?.()
 
 // 更新检查 - 使用全局更新检查器
@@ -283,7 +278,7 @@ onMounted(() => {
             :handle-setting-change="handleSettingChange" :test-notify="testNotify" :testing-notify="testingNotify" />
         </a-tab-pane>
         <a-tab-pane key="advanced" tab="高级设置">
-          <TabAdvanced :go-to-logs="goToLogs" :open-dev-tools="openDevTools" />
+          <TabAdvanced :open-dev-tools="openDevTools" />
         </a-tab-pane>
         <a-tab-pane key="others" tab="其他设置">
           <TabOthers :version="version" :backend-update-info="backendUpdateInfo" />

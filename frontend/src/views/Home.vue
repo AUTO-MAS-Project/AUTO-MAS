@@ -193,9 +193,7 @@ import NoticeModal from '@/components/NoticeModal.vue'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 import dayjs from 'dayjs'
 import { OpenAPI } from '@/api'
-import { getLogger } from '@/utils/logger'
-
-const logger = getLogger('首页')
+const logger = window.electronAPI.getLogger('首页')
 
 interface ActivityInfo {
   Tip: string
