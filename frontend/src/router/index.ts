@@ -1,8 +1,6 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
 import { useAppInitialization } from '@/composables/useAppInitialization'
-import { getLogger } from '@/utils/logger'
-
-const logger = getLogger('路由管理')
+const logger = window.electronAPI.getLogger('路由管理')
 
 // 异步按需加载调度中心，避免弹窗窗口提前执行相关逻辑
 const SchedulerView = () => import('../views/scheduler/index.vue')
@@ -126,7 +124,7 @@ const routes = [
     path: '/logs',
     name: 'Logs',
     component: () => import('../views/Logs.vue'),
-    meta: { title: '日志查看' },
+    meta: { title: '日志查看', skipGuard: true },
   },
 ]
 

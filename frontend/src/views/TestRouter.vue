@@ -1,42 +1,32 @@
 <template>
   <div class="test-container">
-    <h2>¶Ô»°¿ò²âÊÔÒ³Ãæ</h2>
+    <h2>ï¿½Ô»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ò³ï¿½ï¿½</h2>
 
     <div class="test-section">
-      <h3>²âÊÔÓ¦ÓÃÄÚµ¯´°</h3>
-      <p>µã»÷ÏÂÃæµÄ°´Å¥²âÊÔ²»Í¬ÀàÐÍµÄ¶Ô»°¿ò</p>
+      <h3>ï¿½ï¿½ï¿½ï¿½Ó¦ï¿½ï¿½ï¿½Úµï¿½ï¿½ï¿½</h3>
+      <p>ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ä°ï¿½Å¥ï¿½ï¿½ï¿½Ô²ï¿½Í¬ï¿½ï¿½ï¿½ÍµÄ¶Ô»ï¿½ï¿½ï¿½</p>
 
       <div class="button-group">
-        <Button type="primary" @click="testBasicDialog">»ù´¡¶Ô»°¿ò</Button>
-        <Button type="primary" @click="testCustomDialog">×Ô¶¨ÒåÑ¡Ïî</Button>
-        <Button type="primary" @click="testLongMessage">³¤ÏûÏ¢²âÊÔ</Button>
+        <Button type="primary" @click="testBasicDialog">ï¿½ï¿½ï¿½ï¿½ï¿½Ô»ï¿½ï¿½ï¿½</Button>
+        <Button type="primary" @click="testCustomDialog">ï¿½Ô¶ï¿½ï¿½ï¿½Ñ¡ï¿½ï¿½</Button>
+        <Button type="primary" @click="testLongMessage">ï¿½ï¿½ï¿½ï¿½Ï¢ï¿½ï¿½ï¿½ï¿½</Button>
       </div>
 
       <div v-if="lastResult !== null" class="result">
-        <h4>ÉÏ´ÎÑ¡Ôñ½á¹û£º</h4>
+        <h4>ï¿½Ï´ï¿½Ñ¡ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½</h4>
         <p :class="lastResult ? 'success' : 'cancel'">
-          {{ lastResult ? ' È·ÈÏ' : ' È¡Ïû' }}
+          {{ lastResult ? ' È·ï¿½ï¿½' : ' È¡ï¿½ï¿½' }}
         </p>
       </div>
     </div>
 
-    <!-- Ó¦ÓÃÄÚµ¯´° -->
-    <Modal
-      v-model:open="isModalOpen"
-      :title="modalTitle"
-      :closable="false"
-      :maskClosable="false"
-      :keyboard="true"
-      centered
-    >
+    <!-- Ó¦ï¿½ï¿½ï¿½Úµï¿½ï¿½ï¿½ -->
+    <Modal v-model:open="isModalOpen" :title="modalTitle" :closable="false" :maskClosable="false" :keyboard="true"
+      centered>
       <p class="modal-message">{{ modalMessage }}</p>
       <template #footer>
-        <Button
-          v-for="(option, index) in modalOptions"
-          :key="index"
-          :type="index === 0 ? 'primary' : 'default'"
-          @click="handleChoice(index === 0)"
-        >
+        <Button v-for="(option, index) in modalOptions" :key="index" :type="index === 0 ? 'primary' : 'default'"
+          @click="handleChoice(index === 0)">
           {{ option }}
         </Button>
       </template>
@@ -47,13 +37,13 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { Modal, Button } from 'ant-design-vue'
-import { getLogger } from '@/utils/logger'
+
 
 defineOptions({
   name: 'TestRouterView',
 })
 
-const logger = getLogger('²âÊÔÂ·ÓÉ')
+const logger = window.electronAPI.getLogger('æµ‹è¯•è·¯ç”±')
 const lastResult = ref<boolean | null>(null)
 
 // Modal ×´Ì¬
@@ -63,7 +53,7 @@ const modalMessage = ref('')
 const modalOptions = ref<string[]>([])
 let resolvePromise: ((value: boolean) => void) | null = null
 
-// ÏÔÊ¾µ¯´°²¢·µ»Ø Promise
+// ï¿½ï¿½Ê¾ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ Promise
 const showModal = (options: {
   title: string
   message: string
@@ -72,13 +62,13 @@ const showModal = (options: {
   return new Promise(resolve => {
     modalTitle.value = options.title
     modalMessage.value = options.message
-    modalOptions.value = options.buttonOptions || ['È·¶¨', 'È¡Ïû']
+    modalOptions.value = options.buttonOptions || ['È·ï¿½ï¿½', 'È¡ï¿½ï¿½']
     resolvePromise = resolve
     isModalOpen.value = true
   })
 }
 
-// ´¦ÀíÓÃ»§Ñ¡Ôñ
+// ï¿½ï¿½ï¿½ï¿½ï¿½Ã»ï¿½Ñ¡ï¿½ï¿½
 const handleChoice = (choice: boolean) => {
   isModalOpen.value = false
   if (resolvePromise) {
@@ -90,47 +80,47 @@ const handleChoice = (choice: boolean) => {
 const testBasicDialog = async () => {
   try {
     const result = await showModal({
-      title: '»ù´¡È·ÈÏ',
-      message: 'ÕâÊÇÒ»¸ö»ù´¡µÄÈ·ÈÏ¶Ô»°¿ò',
-      buttonOptions: ['È·¶¨', 'È¡Ïû'],
+      title: 'ï¿½ï¿½ï¿½ï¿½È·ï¿½ï¿½',
+      message: 'ï¿½ï¿½ï¿½ï¿½Ò»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½È·ï¿½Ï¶Ô»ï¿½ï¿½ï¿½',
+      buttonOptions: ['È·ï¿½ï¿½', 'È¡ï¿½ï¿½'],
     })
     lastResult.value = result
-    logger.info('»ù´¡¶Ô»°¿ò½á¹û:', result)
+    logger.info('ï¿½ï¿½ï¿½ï¿½ï¿½Ô»ï¿½ï¿½ï¿½ï¿½ï¿½:', result)
   } catch (error) {
-    logger.error('ÏÔÊ¾¶Ô»°¿òÊ§°Ü:', error)
+    logger.error('ï¿½ï¿½Ê¾ï¿½Ô»ï¿½ï¿½ï¿½Ê§ï¿½ï¿½:', error)
   }
 }
 
 const testCustomDialog = async () => {
   try {
     const result = await showModal({
-      title: '×Ô¶¨ÒåÑ¡Ïî',
-      message: 'ÊÇ·ñÒª±£´æ¸ü¸Ä£¿',
-      buttonOptions: ['±£´æ', '²»±£´æ'],
+      title: 'ï¿½Ô¶ï¿½ï¿½ï¿½Ñ¡ï¿½ï¿½',
+      message: 'ï¿½Ç·ï¿½Òªï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ä£ï¿½',
+      buttonOptions: ['ï¿½ï¿½ï¿½ï¿½', 'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½'],
     })
     lastResult.value = result
-    logger.info('×Ô¶¨Òå¶Ô»°¿ò½á¹û:', result)
+    logger.info('ï¿½Ô¶ï¿½ï¿½ï¿½Ô»ï¿½ï¿½ï¿½ï¿½ï¿½:', result)
   } catch (error) {
-    logger.error('ÏÔÊ¾¶Ô»°¿òÊ§°Ü:', error)
+    logger.error('ï¿½ï¿½Ê¾ï¿½Ô»ï¿½ï¿½ï¿½Ê§ï¿½ï¿½:', error)
   }
 }
 
 const testLongMessage = async () => {
   try {
     const result = await showModal({
-      title: '³¤ÏûÏ¢²âÊÔ',
-      message: `ÕâÊÇÒ»¸ö°üº¬½Ï³¤ÏûÏ¢µÄ¶Ô»°¿ò²âÊÔ¡£
+      title: 'ï¿½ï¿½ï¿½ï¿½Ï¢ï¿½ï¿½ï¿½ï¿½',
+      message: `ï¿½ï¿½ï¿½ï¿½Ò»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ï³ï¿½ï¿½ï¿½Ï¢ï¿½Ä¶Ô»ï¿½ï¿½ï¿½ï¿½ï¿½Ô¡ï¿½
 
-ÏûÏ¢¿ÉÒÔ°üº¬¶àÐÐÎÄ±¾£¬
-ÓÃÓÚÏÔÊ¾¸üÏêÏ¸µÄÐÅÏ¢¡£
+ï¿½ï¿½Ï¢ï¿½ï¿½ï¿½Ô°ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ä±ï¿½ï¿½ï¿½
+ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ê¾ï¿½ï¿½ï¿½ï¿½Ï¸ï¿½ï¿½ï¿½ï¿½Ï¢ï¿½ï¿½
 
-ÊÇ·ñÒª¼ÌÐøÖ´ÐÐ´Ë²Ù×÷£¿`,
-      buttonOptions: ['¼ÌÐø', 'È¡Ïû'],
+ï¿½Ç·ï¿½Òªï¿½ï¿½ï¿½ï¿½Ö´ï¿½Ð´Ë²ï¿½ï¿½ï¿½ï¿½ï¿½`,
+      buttonOptions: ['ï¿½ï¿½ï¿½ï¿½', 'È¡ï¿½ï¿½'],
     })
     lastResult.value = result
-    logger.info('³¤ÏûÏ¢¶Ô»°¿ò½á¹û:', result)
+    logger.info('ï¿½ï¿½ï¿½ï¿½Ï¢ï¿½Ô»ï¿½ï¿½ï¿½ï¿½ï¿½:', result)
   } catch (error) {
-    logger.error('ÏÔÊ¾¶Ô»°¿òÊ§°Ü:', error)
+    logger.error('ï¿½ï¿½Ê¾ï¿½Ô»ï¿½ï¿½ï¿½Ê§ï¿½ï¿½:', error)
   }
 }
 </script>
@@ -208,7 +198,7 @@ p {
   color: #ff4d4f;
 }
 
-/* °µÉ«Ä£Ê½Ö§³Ö */
+/* ï¿½ï¿½É«Ä£Ê½Ö§ï¿½ï¿½ */
 @media (prefers-color-scheme: dark) {
   h2 {
     color: #ffffff;

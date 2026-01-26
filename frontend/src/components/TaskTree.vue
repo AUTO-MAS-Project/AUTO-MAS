@@ -33,12 +33,8 @@
               <span class="no-users-text">暂无用户</span>
             </div>
           </div>
-          <div
-            v-for="(user, index) in script.user_list"
-            :key="`user-${script.script_id}-${user.user_id}`"
-            class="user-item"
-            :class="{ 'last-item': index === script.user_list.length - 1 }"
-          >
+          <div v-for="(user, index) in script.user_list" :key="`user-${script.script_id}-${user.user_id}`"
+            class="user-item" :class="{ 'last-item': index === script.user_list.length - 1 }">
             <div class="user-content">
               <span class="user-name">{{ user.name }}</span>
               <a-tag :color="getStatusColor(user.status)" size="small" class="status-tag">
@@ -53,11 +49,10 @@
 </template>
 
 <script setup lang="ts">
-import { getLogger } from '@/utils/logger'
 import { CaretDownOutlined, CaretRightOutlined } from '@ant-design/icons-vue'
 import { ref, watch } from 'vue'
 
-const taskTreeLogger = getLogger('任务树组件')
+const logger = window.electronAPI.getLogger('任务树组件')
 
 interface User {
   user_id: string
@@ -131,21 +126,21 @@ const getStatusColor = (status: string) => {
 
 // 监听数据变化，自动展开新的脚本
 const updateExpandedScripts = () => {
-  taskTreeLogger.debug('更新展开脚本，当前数据:', props.taskData)
+  logger.debug('更新展开脚本，当前数据:', props.taskData)
   props.taskData.forEach(script => {
     if (!expandedScripts.value.has(script.script_id)) {
-      taskTreeLogger.debug('添加新脚本到展开列表:', script.script_id, script.name)
+      logger.debug('添加新脚本到展开列表:', script.script_id, script.name)
       expandedScripts.value.add(script.script_id)
     }
   })
-  taskTreeLogger.debug('更新后展开的脚本集合:', Array.from(expandedScripts.value))
+  logger.debug('更新后展开的脚本集合:', Array.from(expandedScripts.value))
 }
 
 // 监听 taskData 变化 - 移除防抖，直接比较数据差异
 watch(
   () => props.taskData,
   (newData, oldData) => {
-    taskTreeLogger.debug('TaskData 发生变化:', newData)
+    logger.debug('TaskData 发生变化:', newData)
 
     if (newData && newData.length > 0) {
       // 只有在脚本数量发生变化时才更新展开状态
@@ -216,21 +211,17 @@ defineExpose({
 .script-header {
   cursor: pointer;
   padding: 12px 16px;
-  background: linear-gradient(
-    135deg,
-    var(--ant-color-fill-quaternary) 0%,
-    var(--ant-color-fill-tertiary) 100%
-  );
+  background: linear-gradient(135deg,
+      var(--ant-color-fill-quaternary) 0%,
+      var(--ant-color-fill-tertiary) 100%);
   /* 保留hover过渡，但减少时间 */
   transition: background 0.1s ease;
 }
 
 .script-header:hover {
-  background: linear-gradient(
-    135deg,
-    var(--ant-color-fill-tertiary) 0%,
-    var(--ant-color-fill-secondary) 100%
-  );
+  background: linear-gradient(135deg,
+      var(--ant-color-fill-tertiary) 0%,
+      var(--ant-color-fill-secondary) 100%);
 }
 
 .script-content {

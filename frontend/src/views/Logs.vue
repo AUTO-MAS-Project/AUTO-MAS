@@ -1,15 +1,11 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue'
-import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
-import { DownloadOutlined, SyncOutlined, ArrowLeftOutlined } from '@ant-design/icons-vue'
+import { DownloadOutlined, SyncOutlined } from '@ant-design/icons-vue'
 import { VueMonacoEditor } from '@guolao/vue-monaco-editor'
 import { useTheme } from '@/composables/useTheme'
-import { getLogger } from '@/utils/logger'
-
-const logger = getLogger('日志查看')
+const logger = window.electronAPI.getLogger('日志查看')
 const { themeMode } = useTheme()
-const router = useRouter()
 
 // 日志显示模式类型
 type LogMode = 'follow' | 'browse'
@@ -184,11 +180,6 @@ watch(logs, () => {
     }
 })
 
-// 返回上一页
-const goBack = () => {
-    router.back()
-}
-
 onMounted(() => {
     loadLogs()
     if (realTimeEnabled.value) {
@@ -229,13 +220,6 @@ onUnmounted(() => {
                         </template>
                         导出压缩包
                     </a-button>
-
-                    <a-button @click="goBack">
-                        <template #icon>
-                            <ArrowLeftOutlined />
-                        </template>
-                        返回
-                    </a-button>
                 </a-space>
             </div>
         </div>
@@ -257,7 +241,7 @@ onUnmounted(() => {
     height: 100%;
     display: flex;
     flex-direction: column;
-    padding: 0;
+    padding: 20px;
     box-sizing: border-box;
 }
 

@@ -1,7 +1,5 @@
 // 调度中心调试工具
-import { getLogger } from '@/utils/logger'
-
-const logger = getLogger('调度器调试')
+const logger = window.electronAPI.getLogger('调度器调试')
 
 export function debugScheduler() {
   logger.info('=== 调度中心调试信息 ===')

@@ -32,38 +32,18 @@
       <div class="custom-form">
         <div class="form-group">
           <label>标题:</label>
-          <input
-            v-model="customMessage.title"
-            type="text"
-            placeholder="请输入弹窗标题"
-            class="form-input"
-          />
+          <input v-model="customMessage.title" type="text" placeholder="请输入弹窗标题" class="form-input" />
         </div>
         <div class="form-group">
           <label>消息内容:</label>
-          <textarea
-            v-model="customMessage.message"
-            placeholder="请输入消息内容"
-            class="form-textarea"
-            rows="3"
-          ></textarea>
+          <textarea v-model="customMessage.message" placeholder="请输入消息内容" class="form-textarea" rows="3"></textarea>
         </div>
         <div class="form-group">
           <label>发送数量:</label>
-          <input
-            v-model.number="sendCount"
-            type="number"
-            min="1"
-            max="10"
-            class="form-input"
-            style="width: 80px"
-          />
+          <input v-model.number="sendCount" type="number" min="1" max="10" class="form-input" style="width: 80px" />
         </div>
-        <button
-          class="test-btn primary"
-          :disabled="!customMessage.title || !customMessage.message"
-          @click="sendCustomMessage"
-        >
+        <button class="test-btn primary" :disabled="!customMessage.title || !customMessage.message"
+          @click="sendCustomMessage">
           发送自定义弹窗
         </button>
       </div>
@@ -88,7 +68,8 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref } from 'vue'
 import { useWebSocket } from '@/composables/useWebSocket'
-import { logger } from '@/utils/logger'
+
+const logger = window.electronAPI.getLogger('弹窗测试页面')
 
 const { subscribe, unsubscribe, getConnectionInfo } = useWebSocket()
 
@@ -183,7 +164,7 @@ const triggerModalViaDebugApi = (messageData: {
   message_id?: string
 }) => {
   const debugShowQuestion = (window as any).__debugShowQuestion
-  
+
   if (!debugShowQuestion) {
     logger.warn('[调试工具] 调试接口不可用，WebSocketMessageListener 可能未挂载')
     lastResponse.value = '错误: 调试接口不可用'
@@ -192,7 +173,7 @@ const triggerModalViaDebugApi = (messageData: {
   }
 
   const messageId = messageData.message_id || generateId()
-  
+
   const questionData = {
     title: messageData.title,
     message: messageData.message,
@@ -201,12 +182,12 @@ const triggerModalViaDebugApi = (messageData: {
   }
 
   logger.info('[调试工具] 通过调试接口触发弹窗:', questionData)
-  
+
   // 直接调用 WebSocketMessageListener 的 showQuestion 函数
   debugShowQuestion(questionData)
-  
+
   addTestHistory(`触发弹窗: ${messageData.title}`, `ID: ${messageId.slice(-6)}`)
-  
+
   return messageId
 }
 
@@ -304,7 +285,7 @@ const sendCustomMessage = () => {
   isTesting.value = true
 
   const count = Math.min(Math.max(sendCount.value, 1), 10)
-  
+
   for (let i = 0; i < count; i++) {
     const title = count > 1 ? `${customMessage.value.title} (${i + 1}/${count})` : customMessage.value.title
     triggerModalViaDebugApi({
@@ -314,8 +295,8 @@ const sendCustomMessage = () => {
     })
   }
 
-  lastResponse.value = count > 1 
-    ? `已触发 ${count} 个自定义弹窗` 
+  lastResponse.value = count > 1
+    ? `已触发 ${count} 个自定义弹窗`
     : `已触发自定义弹窗: ${customMessage.value.title}`
 
   setTimeout(() => {
@@ -700,6 +681,7 @@ onUnmounted(() => {
 
 /* 减少动画模式适配 */
 @media (prefers-reduced-motion: reduce) {
+
   .test-btn,
   .form-input,
   .form-textarea,

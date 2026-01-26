@@ -49,7 +49,6 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { message } from 'ant-design-vue'
-import { getLogger } from '@/utils/logger'
 import { usePlanApi } from '@/composables/usePlanApi'
 import { generateUniquePlanName, getPlanTypeLabel, validatePlanName } from '@/utils/planNameUtils'
 import PlanHeader from './components/PlanHeader.vue'
@@ -59,7 +58,7 @@ import MaaPlanTable from './tables/MaaPlanTable.vue'
 // import GeneralPlanTable from './tables/GeneralPlanTable.vue'
 // import CustomPlanTable from './tables/CustomPlanTable.vue'
 
-const logger = getLogger('计划管理')
+const logger = window.electronAPI.getLogger('计划管理')
 
 interface PlanData {
   [key: string]: any

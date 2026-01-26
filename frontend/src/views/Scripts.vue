@@ -260,9 +260,7 @@ import { usePlanApi } from '@/composables/usePlanApi'
 import { Service } from '@/api/services/Service'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import MarkdownIt from 'markdown-it'
-import { getLogger } from '@/utils/logger'
-
-const logger = getLogger('脚本管理')
+const logger = window.electronAPI.getLogger('脚本管理')
 
 const router = useRouter()
 const { addScript, deleteScript, getScriptsWithUsers } = useScriptApi()

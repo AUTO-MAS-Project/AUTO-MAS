@@ -60,9 +60,7 @@ import { message } from 'ant-design-vue'
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons-vue'
 import draggable from 'vuedraggable'
 import { Service } from '@/api'
-import { getLogger } from '@/utils/logger'
-
-const logger = getLogger('队列项管理')
+const logger = window.electronAPI.getLogger('队列项管理')
 
 // Props
 interface Props {

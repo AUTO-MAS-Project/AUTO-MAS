@@ -1,10 +1,9 @@
 import { ref, onUnmounted } from 'vue'
 import { Service } from '@/api'
-import { getLogger } from '@/utils/logger'
 import { message } from 'ant-design-vue'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 
-const logger = getLogger('更新检查器')
+const logger = window.electronAPI.getLogger('更新检查器')
 
 // 获取版本号，优先使用环境变量，否则使用一个测试版本
 const version = (import.meta as any).env.VITE_APP_VERSION || '1.0.0'

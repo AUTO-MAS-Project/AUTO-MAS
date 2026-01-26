@@ -2,9 +2,7 @@ import { ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { useSettingsApi } from '@/composables/useSettingsApi'
 import { OpenAPI } from '@/api'
-import { getLogger } from '@/utils/logger'
-
-const logger = getLogger('音频播放器')
+const logger = window.electronAPI.getLogger('音频播放器')
 
 export function useAudioPlayer() {
   const { getSettings } = useSettingsApi()
