@@ -108,7 +108,78 @@ export function initializeLogger(): void {
     // 设置按文件大小轮换
     log.transports.file.maxSize = 10 * 1024 * 1024 // 10MB
 
-    log.info('日志系统初始化完成')
+    log.info('日志', '日志组件初始化完成')
+
+    // Hook console 方法
+    hookConsole()
+}
+
+/**
+ * 保存原始 console 方法的引用
+ */
+const originalConsole = {
+    log: console.log,
+    info: console.info,
+    warn: console.warn,
+    error: console.error,
+    debug: console.debug,
+}
+
+/**
+ * Hook console 方法，将所有 console 调用重定向到 logger 系统
+ */
+function hookConsole(): void {
+    // Hook console.log -> log.info
+    console.log = function (...args: any[]) {
+        log.info('控制台', ...formatConsoleArgs(args))
+    }
+
+    // Hook console.info -> log.info
+    console.info = function (...args: any[]) {
+        log.info('控制台', ...formatConsoleArgs(args))
+    }
+
+    // Hook console.warn -> log.warn
+    console.warn = function (...args: any[]) {
+        log.warn('控制台', ...formatConsoleArgs(args))
+    }
+
+    // Hook console.error -> log.error
+    console.error = function (...args: any[]) {
+        log.error('控制台', ...formatConsoleArgs(args))
+    }
+
+    // Hook console.debug -> log.debug
+    console.debug = function (...args: any[]) {
+        log.debug('控制台', ...formatConsoleArgs(args))
+    }
+}
+
+/**
+ * 格式化 console 参数
+ */
+function formatConsoleArgs(args: any[]): any[] {
+    return args.map(arg => {
+        if (typeof arg === 'object' && arg !== null) {
+            try {
+                return JSON.stringify(arg, null, 2)
+            } catch {
+                return String(arg)
+            }
+        }
+        return arg
+    })
+}
+
+/**
+ * 恢复原始 console 方法（用于调试或特殊情况）
+ */
+export function restoreConsole(): void {
+    console.log = originalConsole.log
+    console.info = originalConsole.info
+    console.warn = originalConsole.warn
+    console.error = originalConsole.error
+    console.debug = originalConsole.debug
 }
 
 /**
