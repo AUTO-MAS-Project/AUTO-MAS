@@ -3,9 +3,7 @@ import { ref, type Ref } from 'vue'
 import schedulerHandlers from '@/views/scheduler/schedulerHandlers'
 import { Modal } from 'ant-design-vue'
 import { useAppClosing } from '@/composables/useAppClosing'
-import { getLogger } from '@/utils/logger'
-
-const logger = getLogger('WebSocket连接')
+const logger = window.electronAPI.getLogger('WebSocket连接')
 
 // ====== 配置项 ======
 // 动态获取 WebSocket 端点

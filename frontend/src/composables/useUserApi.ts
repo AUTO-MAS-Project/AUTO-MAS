@@ -2,10 +2,9 @@ import { ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { Service } from '@/api'
 import type { UserInBase, UserCreateOut, UserUpdateIn, UserDeleteIn, UserGetIn, UserReorderIn } from '@/api'
-import { getLogger } from '@/utils/logger'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 
-const logger = getLogger('用户API')
+const logger = window.electronAPI.getLogger('用户API')
 
 export function useUserApi() {
   const loading = ref(false)

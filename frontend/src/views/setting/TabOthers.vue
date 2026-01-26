@@ -2,10 +2,9 @@
 import { HomeOutlined, GithubOutlined, QqOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import type { VersionOut } from '@/api'
-import { getLogger } from '@/utils/logger'
 import { handleExternalLink } from '@/utils/openExternal'
 
-const logger = getLogger('设置-其他')
+const logger = window.electronAPI.getLogger('设置-其他')
 
 const { version, backendUpdateInfo } = defineProps<{
   version: string

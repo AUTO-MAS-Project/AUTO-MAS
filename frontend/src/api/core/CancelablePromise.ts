@@ -2,9 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import { getLogger } from '@/utils/logger'
-
-const logger = getLogger('可取消Promise')
+const logger = window.electronAPI.getLogger('可取消Promise')
 export class CancelError extends Error {
 
     constructor(message: string) {

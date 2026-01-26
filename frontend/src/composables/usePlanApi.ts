@@ -2,10 +2,9 @@ import { ref } from 'vue'
 import { message } from 'ant-design-vue'
 import type { PlanCreateIn, PlanDeleteIn, PlanGetIn, PlanReorderIn, PlanUpdateIn } from '@/api'
 import { Service } from '@/api'
-import { getLogger } from '@/utils/logger'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 
-const logger = getLogger('计划API')
+const logger = window.electronAPI.getLogger('计划API')
 
 export function usePlanApi() {
   const loading = ref(false)

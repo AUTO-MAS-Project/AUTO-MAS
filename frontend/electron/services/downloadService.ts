@@ -8,16 +8,10 @@ import * as https from 'https'
 import * as http from 'http'
 
 // 导入日志服务
-import { logService } from './logService'
+import { getLogger } from './logger'
+const logger = getLogger('下载服务')
 
-// 使用日志服务的日志记录器
-const logger = {
-    error: (message: string, ...args: any[]) => logService.error('下载服务', `${message} ${args.length > 0 ? JSON.stringify(args) : ''}`),
-    warn: (message: string, ...args: any[]) => logService.warn('下载服务', `${message} ${args.length > 0 ? JSON.stringify(args) : ''}`),
-    info: (message: string, ...args: any[]) => logService.info('下载服务', `${message} ${args.length > 0 ? JSON.stringify(args) : ''}`),
-    debug: (message: string, ...args: any[]) => logService.debug('下载服务', `${message} ${args.length > 0 ? JSON.stringify(args) : ''}`),
-    log: (message: string, ...args: any[]) => logService.info('下载服务', `${message} ${args.length > 0 ? JSON.stringify(args) : ''}`)
-}
+
 
 // ==================== 类型定义 ====================
 

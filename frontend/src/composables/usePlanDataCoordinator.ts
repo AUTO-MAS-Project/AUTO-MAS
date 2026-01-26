@@ -12,9 +12,7 @@ import { ref, computed } from 'vue'
 import type { MaaPlanConfig, MaaPlanConfig_Item, ComboBoxItem } from '@/api'
 import { Service } from '@/api'
 import { GetStageIn } from '@/api'
-import { getLogger } from '@/utils/logger'
-
-const logger = getLogger('计划数据协调器')
+const logger = window.electronAPI.getLogger('计划数据协调器')
 
 // 时间维度常量
 export const TIME_KEYS = [

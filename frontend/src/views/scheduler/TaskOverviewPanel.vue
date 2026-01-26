@@ -13,9 +13,7 @@
 <script setup lang="ts">
 import { ref, shallowRef } from 'vue'
 import TaskTree from '@/components/TaskTree.vue'
-import { getLogger } from '@/utils/logger'
-
-const logger = getLogger('任务总览面板')
+const logger = window.electronAPI.getLogger('任务总览面板')
 
 interface User {
   user_id: string

@@ -2,10 +2,9 @@ import { ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { type GeneralConfig, type MaaConfig, ScriptCreateIn, type ScriptReorderIn, Service } from '@/api'
 import type { ScriptDetail, ScriptType } from '@/types/script'
-import { getLogger } from '@/utils/logger'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 
-const logger = getLogger('脚本API')
+const logger = window.electronAPI.getLogger('脚本API')
 
 export function useScriptApi() {
   const loading = ref(false)

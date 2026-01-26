@@ -1,7 +1,6 @@
 import type { ThemeMode, ThemeColor } from '@/composables/useTheme'
-import { getLogger } from '@/utils/logger'
 
-const logger = getLogger('配置管理')
+const logger = window.electronAPI.getLogger('配置管理')
 
 export interface FrontendConfig {
   // 主题设置

@@ -6,16 +6,9 @@
 import { MirrorSource } from './mirrorService'
 
 // 导入日志服务
-import { logService } from './logService'
 
-// 使用日志服务的日志记录器
-const logger = {
-    error: (message: string, ...args: any[]) => logService.error('镜像轮替服务', `${message} ${args.length > 0 ? JSON.stringify(args) : ''}`),
-    warn: (message: string, ...args: any[]) => logService.warn('镜像轮替服务', `${message} ${args.length > 0 ? JSON.stringify(args) : ''}`),
-    info: (message: string, ...args: any[]) => logService.info('镜像轮替服务', `${message} ${args.length > 0 ? JSON.stringify(args) : ''}`),
-    debug: (message: string, ...args: any[]) => logService.debug('镜像轮替服务', `${message} ${args.length > 0 ? JSON.stringify(args) : ''}`),
-    log: (message: string, ...args: any[]) => logService.info('镜像轮替服务', `${message} ${args.length > 0 ? JSON.stringify(args) : ''}`)
-}
+import { getLogger } from './logger'
+const logger = getLogger('镜像轮替服务')
 
 // ==================== 类型定义 ====================
 

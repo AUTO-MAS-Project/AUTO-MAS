@@ -43,12 +43,11 @@
 import { useAppClosing } from '@/composables/useAppClosing'
 import { useTheme } from '@/composables/useTheme'
 import { updateInfo, backendUpdateInfo } from '@/composables/useVersionService'
-import { getLogger } from '@/utils/logger'
 import { BorderOutlined, CloseOutlined, MinusOutlined } from '@ant-design/icons-vue'
 import { Modal } from 'ant-design-vue'
 import { onMounted, ref } from 'vue'
 
-const logger = getLogger('标题栏')
+const logger = window.electronAPI.getLogger('标题栏')
 
 // 检查是否有运行中的队列任务
 const hasRunningTasks = (): boolean => {

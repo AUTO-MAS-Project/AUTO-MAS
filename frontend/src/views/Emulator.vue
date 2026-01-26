@@ -16,9 +16,7 @@ import {
 } from '@ant-design/icons-vue'
 import type { EmulatorConfigIndexItem, EmulatorSearchResult } from '@/api'
 import { Service } from '@/api'
-import { getLogger } from '@/utils/logger'
-
-const logger = getLogger('模拟器管理')
+const logger = window.electronAPI.getLogger('模拟器管理')
 
 // 编辑数据接口
 interface EmulatorInfo {

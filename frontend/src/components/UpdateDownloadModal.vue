@@ -74,9 +74,7 @@ import { computed, ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { message } from 'ant-design-vue'
 import { Service } from '@/api/services/Service.ts'
 import { subscribe, unsubscribe } from '@/composables/useWebSocket'
-import { getLogger } from '@/utils/logger'
-
-const logger = getLogger('更新下载模态框')
+const logger = window.electronAPI.getLogger('更新下载模态框')
 
 // Props 定义
 interface Props {

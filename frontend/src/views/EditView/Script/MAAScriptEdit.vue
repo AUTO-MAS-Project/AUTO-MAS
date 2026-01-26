@@ -244,7 +244,6 @@ import { onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
 import { message } from 'ant-design-vue'
-import { getLogger } from '@/utils/logger'
 import type { MAAScriptConfig, ScriptType } from '../../../types/script.ts'
 import { useScriptApi } from '../../../composables/useScriptApi.ts'
 import { Service, type ComboBoxItem } from '../../../api'
@@ -254,7 +253,7 @@ import {
   QuestionCircleOutlined,
 } from '@ant-design/icons-vue'
 
-const logger = getLogger('MAA脚本编辑')
+const logger = window.electronAPI.getLogger('MAA脚本编辑')
 
 const route = useRoute()
 const router = useRouter()

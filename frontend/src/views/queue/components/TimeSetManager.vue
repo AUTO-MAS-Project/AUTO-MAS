@@ -84,9 +84,7 @@ import { DeleteOutlined, PlusOutlined } from '@ant-design/icons-vue'
 import draggable from 'vuedraggable'
 import { Service } from '@/api'
 import dayjs from 'dayjs'
-import { getLogger } from '@/utils/logger'
-
-const logger = getLogger('定时项管理')
+const logger = window.electronAPI.getLogger('定时项管理')
 
 // Props
 interface Props {

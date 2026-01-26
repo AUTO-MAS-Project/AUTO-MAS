@@ -30,14 +30,13 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { message } from 'ant-design-vue'
-import { getLogger } from '@/utils/logger'
 import { enterApp, forceEnterApp } from '@/utils/appEntry.ts'
 import { markAsInitialized } from '@/composables/useAppInitialization'
 import StepPanel from './components/StepPanel.vue'
 import BackendStartStep from './components/BackendStartStep.vue'
 import type { MirrorConfig } from '@/types/mirror'
 
-const logger = getLogger('初始化流程')
+const logger = window.electronAPI.getLogger('初始化流程')
 
 // ==================== 步骤定义 ====================
 const steps = [
