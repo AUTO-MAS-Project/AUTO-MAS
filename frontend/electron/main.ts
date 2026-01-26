@@ -606,62 +606,6 @@ function createLogWindow() {
   })
 }
 
-// 托盘图标路径
-function getTrayIconPath(): string {
-  if (isInitialStartup && currentConfig.Start.IfMinimizeDirectly) {
-    if (currentConfig.UI.IfToTray) {
-      win.hide()
-      win.setSkipTaskbar(true)
-      logger.info('应用启动', '应用初次启动后直接最小化到托盘')
-    } else {
-      win.minimize()
-      logger.info('应用启动', '应用初次启动后直接最小化')
-    }
-    updateTrayVisibility(currentConfig)
-  }
-
-  // 标记初次启动已完成
-  isInitialStartup = false
-})
-}
-
-// 保存窗口状态（带防抖）
-function saveWindowState() {
-  if (!mainWindow || mainWindow.isDestroyed()) return
-
-  // 清除之前的定时器
-  if (saveWindowStateTimeout) {
-    clearTimeout(saveWindowStateTimeout)
-  }
-
-  // 设置新的定时器，500ms后保存
-  saveWindowStateTimeout = setTimeout(() => {
-    try {
-      // 再次检查窗口是否存在且未销毁
-      if (!mainWindow || mainWindow.isDestroyed()) {
-        logger.warn('窗口管理', '窗口已销毁，跳过保存状态')
-        return
-      }
-
-      const config = loadConfig()
-      const bounds = mainWindow.getBounds()
-      const isMaximized = mainWindow.isMaximized()
-
-      // 只有在窗口不是最大化状态时才保存位置和大小
-      if (!isMaximized) {
-        config.UI.size = `${bounds.width},${bounds.height}`
-        config.UI.location = `${bounds.x},${bounds.y}`
-      }
-      config.UI.maximized = isMaximized
-
-      saveConfig(config)
-      logger.info('窗口管理', '窗口状态已保存')
-    } catch (error) {
-      logger.error('窗口管理', '保存窗口状态失败')
-    }
-  }, 500)
-}
-
 // 日志系统 IPC 处理器
 ipcMain.handle('log:write', async (_event, level: string, moduleName: string, ...args: unknown[]) => {
   try {
