@@ -106,7 +106,7 @@ class AutoProxyTask(TaskExecuteBase):
             (1, 20),
             "%Y-%m-%d %H:%M:%S",
             self.check_log,
-            except_logs=["如果长时间无进一步日志更新, 可能需要手动干预。"],
+            except_logs=["如果长时间无进一步日志更新，可能需要手动干预。"],
         )
         self.wait_event = asyncio.Event()
         self.user_start_time = datetime.now()
