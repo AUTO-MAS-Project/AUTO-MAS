@@ -7,6 +7,7 @@ import { useRoute } from 'vue-router'
 import { message } from 'ant-design-vue'
 import {
   DeleteOutlined,
+  EyeOutlined,
   FolderOpenOutlined,
   PlayCircleOutlined,
   PlusOutlined,
@@ -72,6 +73,7 @@ const devicesData = ref<Record<string, Record<string, Record<string, any>>>>({})
 const loadingDevices = ref<Set<string>>(new Set())
 const startingDevices = ref<Set<string>>(new Set())
 const stoppingDevices = ref<Set<string>>(new Set())
+const showingDevices = ref<Set<string>>(new Set())
 
 // 轮询相关状态
 const pollingTimer = ref<ReturnType<typeof setTimeout> | null>(null)
@@ -521,6 +523,33 @@ const stopEmulator = async (uuid: string, index: string) => {
   }
 }
 
+// 显示模拟器
+const showEmulator = async (uuid: string, index: string) => {
+  const deviceKey = `${uuid}-${index}`
+  showingDevices.value.add(deviceKey)
+  showingDevices.value = new Set(showingDevices.value)
+
+  try {
+    const response = await Service.operationEmulatorApiEmulatorOperatePost({
+      emulatorId: uuid,
+      operate: 'show' as any,
+      index: index,
+    })
+
+    if (response.code === 200) {
+      message.success(response.message || `模拟器 ${index} 窗口已显示`)
+    } else {
+      message.error(response.message || '显示失败')
+    }
+  } catch (e) {
+    logger.error('显示模拟器失败', e)
+    message.error('显示模拟器失败')
+  } finally {
+    showingDevices.value.delete(deviceKey)
+    showingDevices.value = new Set(showingDevices.value)
+  }
+}
+
 // 路径选择
 const selectEmulatorPath = async (uuid: string) => {
   try {
@@ -922,7 +951,7 @@ const handleBossKeyInputChange = (uuid: string) => {
                           key: 'adb_address',
                           ellipsis: true,
                         },
-                        { title: '操作', key: 'action', width: 100 },
+                        { title: '操作', key: 'action', width: 160 },
                       ]" :pagination="false" size="small" :scroll="{ x: 'max-content', y: 'calc(100vh - 560px)' }">
                       <template #bodyCell="{ column, record }">
                         <template v-if="column.key === 'status'">
@@ -931,19 +960,27 @@ const handleBossKeyInputChange = (uuid: string) => {
                           </a-tag>
                         </template>
                         <template v-else-if="column.key === 'action'">
-                          <a-button v-if="canStartDevice(record.status)" type="primary" :icon="h(PlayCircleOutlined)"
-                            :loading="startingDevices.has(`${element.uid}-${record.index}`)"
-                            @click="startEmulator(element.uid, String(record.index))">
-                            启动
-                          </a-button>
-                          <a-button v-else-if="canStopDevice(record.status)" danger :icon="h(StopOutlined)"
-                            :loading="stoppingDevices.has(`${element.uid}-${record.index}`)"
-                            @click="stopEmulator(element.uid, String(record.index))">
-                            关闭
-                          </a-button>
-                          <a-button v-else disabled>
-                            {{ getDeviceStatusInfo(record.status).text }}
-                          </a-button>
+                          <a-space :size="4">
+                            <a-button :icon="h(EyeOutlined)"
+                              :disabled="record.status !== 0"
+                              :loading="showingDevices.has(`${element.uid}-${record.index}`)"
+                              @click="showEmulator(element.uid, String(record.index))">
+                              显示
+                            </a-button>
+                            <a-button v-if="canStartDevice(record.status)" type="primary" :icon="h(PlayCircleOutlined)"
+                              :loading="startingDevices.has(`${element.uid}-${record.index}`)"
+                              @click="startEmulator(element.uid, String(record.index))">
+                              启动
+                            </a-button>
+                            <a-button v-else-if="canStopDevice(record.status)" danger :icon="h(StopOutlined)"
+                              :loading="stoppingDevices.has(`${element.uid}-${record.index}`)"
+                              @click="stopEmulator(element.uid, String(record.index))">
+                              关闭
+                            </a-button>
+                            <a-button v-else disabled>
+                              {{ getDeviceStatusInfo(record.status).text }}
+                            </a-button>
+                          </a-space>
                         </template>
                       </template>
                     </a-table>
