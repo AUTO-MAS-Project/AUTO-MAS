@@ -710,7 +710,7 @@ class EmulatorReorderIn(BaseModel):
 
 class EmulatorOperateIn(BaseModel):
     emulatorId: str = Field(..., description="模拟器 ID")
-    operate: Literal["open", "close"] = Field(..., description="操作类型")
+    operate: Literal["open", "close", "show"] = Field(..., description="操作类型")
     index: str = Field(..., description="模拟器索引")
 
 
