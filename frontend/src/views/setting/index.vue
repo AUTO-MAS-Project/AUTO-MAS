@@ -280,7 +280,7 @@ onMounted(() => {
         <a-tab-pane key="advanced" tab="高级设置">
           <TabAdvanced :open-dev-tools="openDevTools" />
         </a-tab-pane>
-        <a-tab-pane key="others" tab="其他设置">
+        <a-tab-pane key="others" tab="关于">
           <TabOthers :version="version" :backend-update-info="backendUpdateInfo" />
         </a-tab-pane>
       </a-tabs>
