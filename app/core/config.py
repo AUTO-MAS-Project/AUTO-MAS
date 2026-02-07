@@ -117,7 +117,13 @@ class AppConfig(GlobalConfig):
         self.server: Optional[uvicorn.Server] = None
         self.websocket: Optional[WebSocket] = None
         self.power_sign: Literal[
-            "NoAction", "Shutdown", "ShutdownForce", "Hibernate", "Sleep", "KillSelf"
+            "NoAction",
+            "Shutdown",
+            "ShutdownForce",
+            "Reboot",
+            "Hibernate",
+            "Sleep",
+            "KillSelf",
         ] = "NoAction"
         self.temp_task: List[asyncio.Task] = []
 

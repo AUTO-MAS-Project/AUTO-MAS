@@ -195,11 +195,12 @@ const isEditingQueueName = ref<boolean>(false)
 // 完成后操作选项
 const afterAccomplishOptions = [
   { label: '无操作', value: 'NoAction' },
-  { label: '退出软件', value: 'KillSelf' },
-  { label: '睡眠', value: 'Sleep' },
-  { label: '休眠', value: 'Hibernate' },
   { label: '关机', value: 'Shutdown' },
   { label: '强制关机', value: 'ShutdownForce' },
+  { label: '重启', value: 'Reboot' },
+  { label: '休眠', value: 'Hibernate' },
+  { label: '睡眠', value: 'Sleep' },
+  { label: '退出软件', value: 'KillSelf' },
 ]
 
 // 当前队列的定时项和队列项
