@@ -961,8 +961,7 @@ const handleBossKeyInputChange = (uuid: string) => {
                         </template>
                         <template v-else-if="column.key === 'action'">
                           <a-space :size="4">
-                            <a-button :icon="h(EyeOutlined)"
-                              :disabled="record.status !== 0"
+                            <a-button :icon="h(EyeOutlined)" :disabled="record.status !== 0"
                               :loading="showingDevices.has(`${element.uid}-${record.index}`)"
                               @click="showEmulator(element.uid, String(record.index))">
                               显示
