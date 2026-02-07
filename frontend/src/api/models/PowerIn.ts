@@ -16,6 +16,7 @@ export namespace PowerIn {
         NO_ACTION = 'NoAction',
         SHUTDOWN = 'Shutdown',
         SHUTDOWN_FORCE = 'ShutdownForce',
+        REBOOT = 'Reboot',
         HIBERNATE = 'Hibernate',
         SLEEP = 'Sleep',
         KILL_SELF = 'KillSelf',

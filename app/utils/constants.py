@@ -452,6 +452,7 @@ POWER_SIGN_MAP = {
     "NoAction": "无动作",
     "Shutdown": "关机",
     "ShutdownForce": "强制关机",
+    "Reboot": "重启",
     "Hibernate": "休眠",
     "Sleep": "睡眠",
     "KillSelf": "退出程序",

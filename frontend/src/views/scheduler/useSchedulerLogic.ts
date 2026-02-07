@@ -795,6 +795,9 @@ export function useSchedulerLogic() {
       case 'ShutdownForce':
         newPowerAction = PowerIn.signal.SHUTDOWN_FORCE
         break
+      case 'Reboot':
+        newPowerAction = PowerIn.signal.REBOOT
+        break
       default:
         logger.warn('未知的PowerSign值:', powerSign)
         return
@@ -877,6 +880,7 @@ export function useSchedulerLogic() {
           'Hibernate': PowerIn.signal.HIBERNATE,
           'Shutdown': PowerIn.signal.SHUTDOWN,
           'ShutdownForce': PowerIn.signal.SHUTDOWN_FORCE,
+          'Reboot': PowerIn.signal.REBOOT,
         }
         const mappedSignal = signalMap[response.signal]
         if (mappedSignal) {
@@ -892,6 +896,12 @@ export function useSchedulerLogic() {
     }
   }
 
+  // 电源状态变更事件处理函数
+  const handlePowerStateChanged = () => {
+    logger.info('收到电源状态变更事件，重新获取电源状态')
+    getPowerState()
+  }
+
   // 初始化函数
   const initialize = () => {
     // 设置全局WebSocket的消息处理函数
@@ -902,6 +912,10 @@ export function useSchedulerLogic() {
 
     // 获取后端当前的电源状态
     getPowerState()
+
+    // 监听电源状态变更事件（从 GlobalPowerCountdown 组件触发）
+    window.addEventListener('power-state-changed', handlePowerStateChanged)
+    logger.info('已注册电源状态变更事件监听器')
 
     // 注册 UI hooks 到 schedulerHandlers，使其能在 schedulerHandlers 检测到 pending 时回放到当前 UI
     try {
@@ -1029,6 +1043,10 @@ export function useSchedulerLogic() {
       clearInterval(powerCountdownTimer)
       powerCountdownTimer = null
     }
+
+    // 移除电源状态变更事件监听器
+    window.removeEventListener('power-state-changed', handlePowerStateChanged)
+    logger.info('已移除电源状态变更事件监听器')
 
     // 清理全局WebSocket的消息处理函数
     // 不再清理或重置导出的处理函数，保持使用者注册的处理逻辑永久有效

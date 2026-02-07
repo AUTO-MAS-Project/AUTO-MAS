@@ -111,6 +111,10 @@ const handleCancel = async () => {
   try {
     await Service.cancelPowerTaskApiDispatchCancelPowerPost()
     logger.info('[GlobalPowerCountdown] 电源操作已取消')
+    
+    // 触发全局事件，通知调度中心刷新电源状态
+    window.dispatchEvent(new CustomEvent('power-state-changed'))
+    logger.info('[GlobalPowerCountdown] 已发送电源状态变更事件')
   } catch (error) {
     logger.error('[GlobalPowerCountdown] 取消电源操作失败:', error)
   }
