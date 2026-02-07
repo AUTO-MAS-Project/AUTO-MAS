@@ -59,6 +59,7 @@ class ComboBoxOut(OutBase):
 
 class GetStageIn(BaseModel):
     type: Literal[
+        "User",
         "Today",
         "ALL",
         "Monday",

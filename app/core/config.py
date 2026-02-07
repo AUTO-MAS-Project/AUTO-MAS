@@ -1431,6 +1431,7 @@ class AppConfig(GlobalConfig):
     async def get_stage_info(
         self,
         type: Literal[
+            "User",
             "Today",
             "ALL",
             "Monday",
@@ -1465,15 +1466,17 @@ class AppConfig(GlobalConfig):
                 "Activity": json.loads(self.get("Data", "Stage")).get("Info", []),
                 "Resource": res_stage_info,
             }
-        elif type == "Today":
-            data = json.loads(self.get("Data", "Stage")).get(
-                datetime.now(tz=UTC4).strftime("%A"), []
-            )
+        elif type == "User":
+            data = json.loads(self.get("Data", "Stage")).get("ALL", [])
             for combox in data:
                 combox["label"] = RESOURCE_STAGE_DATE_TEXT.get(
                     combox["value"], combox["label"]
                 )
             return data
+        elif type == "Today":
+            return json.loads(self.get("Data", "Stage")).get(
+                datetime.now(tz=UTC4).strftime("%A"), []
+            )
         else:
             return json.loads(self.get("Data", "Stage")).get(type, [])
 
