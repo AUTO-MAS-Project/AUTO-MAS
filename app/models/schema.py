@@ -956,13 +956,13 @@ class WebSocketMessage(BaseModel):
 
 class PowerIn(BaseModel):
     signal: Literal[
-        "NoAction", "Shutdown", "ShutdownForce", "Hibernate", "Sleep", "KillSelf"
+        "NoAction", "Shutdown", "ShutdownForce", "Reboot", "Hibernate", "Sleep", "KillSelf"
     ] = Field(..., description="电源操作信号")
 
 
 class PowerOut(OutBase):
     signal: Literal[
-        "NoAction", "Shutdown", "ShutdownForce", "Hibernate", "Sleep", "KillSelf"
+        "NoAction", "Shutdown", "ShutdownForce", "Reboot", "Hibernate", "Sleep", "KillSelf"
     ] = Field(..., description="电源操作信号")
 
 
