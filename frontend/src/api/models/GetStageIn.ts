@@ -13,6 +13,7 @@ export namespace GetStageIn {
      * 选择的日期类型, Today为当天, ALL为包含当天未开放关卡在内的所有项
      */
     export enum type {
+        USER = 'User',
         TODAY = 'Today',
         ALL = 'ALL',
         MONDAY = 'Monday',

@@ -662,7 +662,7 @@ const loadUserData = async () => {
 const loadStageOptions = async () => {
   try {
     const response = await Service.getStageComboxApiInfoComboxStagePost({
-      type: GetStageIn.type.TODAY,
+      type: GetStageIn.type.USER,
     })
     if (response && response.code === 200 && response.data) {
       stageOptions.value = [...response.data].map(option => ({
