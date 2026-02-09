@@ -96,8 +96,14 @@
   </div>
 </template>
 
+<script lang="ts">
+export default {
+  name: 'Scheduler', // 用于 keep-alive 识别
+}
+</script>
+
 <script setup lang="ts">
-import { onMounted, onUnmounted, computed } from 'vue'
+import { onMounted, onUnmounted, onActivated, onDeactivated, computed } from 'vue'
 import { MinusOutlined, PlusOutlined } from '@ant-design/icons-vue'
 import { POWER_ACTION_TEXT, TAB_STATUS_COLOR } from './schedulerConstants'
 import { useSchedulerLogic } from './useSchedulerLogic'
@@ -166,6 +172,7 @@ const onSchedulerTabEdit = (targetKey: string | MouseEvent, action: 'add' | 'rem
 
 // 生命周期
 onMounted(() => {
+  logger.info('调度中心组件首次挂载')
   initialize() // 初始化TaskManager订阅
   loadTaskOptions()
 
@@ -180,7 +187,17 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  logger.info('调度中心组件卸载')
   cleanup()
+})
+
+// keep-alive 生命周期钩子
+onActivated(() => {
+  logger.info('调度中心组件激活（路由切回）')
+})
+
+onDeactivated(() => {
+  logger.info('调度中心组件停用（路由切走），但组件保持存活，WebSocket订阅继续运行')
 })
 </script>
 
