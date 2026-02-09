@@ -88,7 +88,10 @@ const routes = [
     path: '/scheduler',
     name: 'Scheduler',
     component: SchedulerView,
-    meta: { title: '调度中心' },
+    meta: {
+      title: '调度中心',
+      keepAlive: true // 启用 keep-alive，保持组件存活
+    },
   },
   {
     path: '/TestRouter',
