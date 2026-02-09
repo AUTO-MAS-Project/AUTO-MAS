@@ -51,6 +51,7 @@ import {
   CalendarOutlined,
   ControlOutlined,
   DatabaseOutlined,
+  ExclamationCircleOutlined,
   FileSearchOutlined,
   FileTextOutlined,
   HistoryOutlined,
@@ -103,6 +104,7 @@ const bottomMenuItems = [
   { key: '/history', label: '历史记录', icon: icon(HistoryOutlined) },
   { key: '/logs', label: '日志', icon: icon(FileSearchOutlined) },
   { key: '/settings', label: '设置', icon: icon(SettingOutlined) },
+  { key: '/about', label: '关于', icon: icon(ExclamationCircleOutlined) },
 ]
 
 const allItems = computed(() => [

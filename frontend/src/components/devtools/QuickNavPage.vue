@@ -86,6 +86,7 @@ const commonRoutes = [
   { path: '/queue', title: '调度队列' },
   { path: '/settings', title: '设置' },
   { path: '/logs', title: '日志' },
+  { path: '/about', title: '关于' },
 ]
 
 // 导航到指定路由

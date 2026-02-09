@@ -128,6 +128,12 @@ const routes = [
     component: () => import('../views/Logs.vue'),
     meta: { title: '日志查看' },
   },
+  {
+    path: '/about',
+    name: 'About',
+    component: () => import('../views/about/index.vue'),
+    meta: { title: '关于' },
+  },
 ]
 
 const router = createRouter({

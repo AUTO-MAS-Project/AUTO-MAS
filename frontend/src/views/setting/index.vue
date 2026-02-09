@@ -8,7 +8,6 @@ import type { SelectValue } from 'ant-design-vue/es/select'
 import type { GlobalConfig } from '@/api'
 import { useSettingsApi } from '@/composables/useSettingsApi'
 import { useUpdateChecker } from '@/composables/useUpdateChecker.ts'
-import { Service, type VersionOut } from '@/api'
 import { getLogger } from '@/utils/logger'
 
 const logger = getLogger('设置')
@@ -18,7 +17,6 @@ import TabBasic from './TabBasic.vue'
 import TabFunction from './TabFunction.vue'
 import TabNotify from './TabNotify.vue'
 import TabAdvanced from './TabAdvanced.vue'
-import TabOthers from './TabOthers.vue'
 
 const router = useRouter()
 const { themeMode, themeColor, themeColors, setThemeMode, setThemeColor } = useTheme()
@@ -33,8 +31,6 @@ const {
 
 // 活动标签
 const activeKey = ref('basic')
-const version = (import.meta as any).env?.VITE_APP_VERSION || '获取版本失败！'
-const backendUpdateInfo = ref<VersionOut | null>(null)
 
 // 设置数据 - 从API获取，不再使用硬编码初值
 const settings = reactive<GlobalConfig>({})
@@ -228,14 +224,6 @@ const checkUpdate = async () => {
 
 // onUpdateConfirmed 不再需要，由全局UpdateModal管理
 
-// 后端版本
-const getBackendVersion = async () => {
-  try {
-    backendUpdateInfo.value = await Service.getGitVersionApiInfoVersionPost()
-  } catch (e) {
-    logger.error('获取后端版本失败', e)
-  }
-}
 
 // 通知测试
 const testingNotify = ref(false)
@@ -255,7 +243,6 @@ const testNotify = async () => {
 
 onMounted(() => {
   loadSettings()
-  getBackendVersion()
 })
 </script>
 
@@ -284,9 +271,6 @@ onMounted(() => {
         </a-tab-pane>
         <a-tab-pane key="advanced" tab="高级设置">
           <TabAdvanced :go-to-logs="goToLogs" :open-dev-tools="openDevTools" />
-        </a-tab-pane>
-        <a-tab-pane key="others" tab="其他设置">
-          <TabOthers :version="version" :backend-update-info="backendUpdateInfo" />
         </a-tab-pane>
       </a-tabs>
     </div>
