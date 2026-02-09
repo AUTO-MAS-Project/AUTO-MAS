@@ -64,13 +64,26 @@ const deepEqual = (obj1: any, obj2: any): boolean => {
   return obj1 === obj2
 }
 
+const getTaskInfoStats = (taskInfo: any[]) => {
+  const scriptCount = taskInfo.length
+  const userCount = taskInfo.reduce((total, task) => total + (task.userList?.length || 0), 0)
+  return { scriptCount, userCount }
+}
+
+const getScriptStats = (scripts: Script[]) => {
+  const scriptCount = scripts.length
+  const userCount = scripts.reduce((total, script) => total + (script.user_list?.length || 0), 0)
+  return { scriptCount, userCount }
+}
+
 // 处理 WebSocket 消息
 const handleWSMessage = (message: WSMessage) => {
 
   if (message.type === 'Update') {
     // 处理 task_info 数据（完整的脚本和用户数据）
     if (message.data?.task_info && Array.isArray(message.data.task_info)) {
-      logger.debug('更新任务数据 (task_info):', message.data.task_info)
+      const { scriptCount, userCount } = getTaskInfoStats(message.data.task_info)
+      logger.debug('更新任务数据 (task_info): 脚本数=%d, 用户数=%d', scriptCount, userCount)
 
       // 转换后端的 task_info 格式到前端的 Script 格式
       const newTaskData = message.data.task_info.map((task: any, index: number) => ({
@@ -84,7 +97,8 @@ const handleWSMessage = (message: WSMessage) => {
       if (!deepEqual(taskData.value, newTaskData)) {
         logger.debug('数据发生实际变化，更新组件')
         taskData.value = newTaskData
-        logger.debug('设置后的 taskData:', taskData.value)
+        const { scriptCount, userCount } = getScriptStats(taskData.value)
+        logger.debug('设置后的 taskData: 脚本数=%d, 用户数=%d', scriptCount, userCount)
       } else {
         logger.debug('数据内容完全相同，跳过更新')
       }
