@@ -126,21 +126,41 @@ const getStatusColor = (status: string) => {
 
 // 监听数据变化，自动展开新的脚本
 const updateExpandedScripts = () => {
-  logger.debug('更新展开脚本，当前数据:', props.taskData)
+  const previousExpandedCount = expandedScripts.value.size
+  let addedCount = 0
   props.taskData.forEach(script => {
     if (!expandedScripts.value.has(script.script_id)) {
-      logger.debug('添加新脚本到展开列表:', script.script_id, script.name)
       expandedScripts.value.add(script.script_id)
+      addedCount += 1
     }
   })
-  logger.debug('更新后展开的脚本集合:', Array.from(expandedScripts.value))
+  logger.debug(
+    '更新展开脚本: 脚本数=%d, 新增=%d, 展开数=%d (原展开数=%d)',
+    props.taskData.length,
+    addedCount,
+    expandedScripts.value.size,
+    previousExpandedCount
+  )
 }
 
 // 监听 taskData 变化 - 移除防抖，直接比较数据差异
 watch(
   () => props.taskData,
   (newData, oldData) => {
-    logger.debug('TaskData 发生变化:', newData)
+    const newScriptCount = newData?.length ?? 0
+    const oldScriptCount = oldData?.length ?? 0
+    const newUserCount = newData?.reduce((total, script) => total + (script.user_list?.length || 0), 0) ?? 0
+    const oldUserCount = oldData?.reduce((total, script) => total + (script.user_list?.length || 0), 0) ?? 0
+
+    if (newScriptCount !== oldScriptCount || newUserCount !== oldUserCount) {
+      logger.debug(
+        'TaskData 变化: 脚本数=%d (原=%d), 用户数=%d (原=%d)',
+        newScriptCount,
+        oldScriptCount,
+        newUserCount,
+        oldUserCount
+      )
+    }
 
     if (newData && newData.length > 0) {
       // 只有在脚本数量发生变化时才更新展开状态
