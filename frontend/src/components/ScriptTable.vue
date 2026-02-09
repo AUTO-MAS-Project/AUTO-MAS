@@ -92,6 +92,9 @@
 
                         <!-- 用户详细信息 - MAA脚本用户 -->
                         <div v-if="script.type === 'MAA'" class="user-info-tags">
+                          <a-tag v-if="user.Data?.IfPassCheck === false" class="info-tag" color="red">
+                            人工排查未通过
+                          </a-tag>
                           <!-- 剿灭模式 -->
                           <a-tag v-if="
                             user.Info.Annihilation &&
