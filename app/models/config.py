@@ -19,7 +19,6 @@
 #   Contact: DLmaster_361@163.com
 
 
-import re
 import uuid
 import json
 import calendar
