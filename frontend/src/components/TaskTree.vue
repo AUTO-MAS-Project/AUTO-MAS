@@ -126,21 +126,21 @@ const getStatusColor = (status: string) => {
 
 // 监听数据变化，自动展开新的脚本
 const updateExpandedScripts = () => {
-  logger.debug('更新展开脚本，当前数据:', props.taskData)
+  logger.debug('更新展开脚本，脚本数量:', props.taskData.length)
   props.taskData.forEach(script => {
     if (!expandedScripts.value.has(script.script_id)) {
       logger.debug('添加新脚本到展开列表:', script.script_id, script.name)
       expandedScripts.value.add(script.script_id)
     }
   })
-  logger.debug('更新后展开的脚本集合:', Array.from(expandedScripts.value))
+  logger.debug('更新后展开脚本数量:', expandedScripts.value.size)
 }
 
 // 监听 taskData 变化 - 移除防抖，直接比较数据差异
 watch(
   () => props.taskData,
   (newData, oldData) => {
-    logger.debug('TaskData 发生变化:', newData)
+    logger.debug('TaskData 发生变化，脚本数量:', newData?.length ?? 0)
 
     if (newData && newData.length > 0) {
       // 只有在脚本数量发生变化时才更新展开状态
