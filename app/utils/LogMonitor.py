@@ -115,6 +115,11 @@ class LogMonitor:
                 log_stat = log_file_path.stat()
 
                 if log_stat.st_size <= offset:
+
+                    # 日志无变化超时调用回调
+                    if datetime.now() - self.last_callback_time > timedelta(minutes=1):
+                        await self.do_callback()
+
                     await asyncio.sleep(1)
                     continue
 
@@ -143,12 +148,9 @@ class LogMonitor:
                 await asyncio.sleep(5)
                 continue
 
-            # 调用回调
-            if len(log_contents) != len(
-                self.log_contents
-            ) or datetime.now() - self.last_callback_time > timedelta(minutes=1):
+            # 日志变化调用回调
+            if len(log_contents) != len(self.log_contents):
                 self.log_contents = copy(log_contents)
-
                 await self.do_callback()
 
             await asyncio.sleep(1)
