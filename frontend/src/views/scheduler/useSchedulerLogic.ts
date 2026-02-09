@@ -376,19 +376,20 @@ export function useSchedulerLogic() {
   const subscribeToTask = (tab: SchedulerTab) => {
     if (!tab.websocketId) return
 
-    // 如果已经有活动的订阅，先清理旧订阅
+    // 如果订阅已存在且WebSocket ID未改变，则不需要重新订阅
     if (tab.subscriptionId) {
-      logger.info('检测到旧订阅，先清理:', {
+      logger.info('订阅已存在，跳过重复订阅:', {
         key: tab.key,
-        oldSubscriptionId: tab.subscriptionId,
-        newWebsocketId: tab.websocketId,
+        subscriptionId: tab.subscriptionId,
+        websocketId: tab.websocketId,
       })
-      ws.unsubscribe(tab.subscriptionId)
-      tab.subscriptionId = null
+      return
     }
 
-    const subscriptionId = ws.subscribe({ id: tab.websocketId }, message =>
-      handleWebSocketMessage(tab, message)
+    // 创建新订阅，不再needCache，因为keep-alive保持组件存活
+    const subscriptionId = ws.subscribe(
+      { id: tab.websocketId },
+      message => handleWebSocketMessage(tab, message)
     )
 
     // 将订阅ID保存到tab中，以便后续取消订阅
@@ -982,13 +983,16 @@ export function useSchedulerLogic() {
     }
 
     // 新增：为已有的"运行"标签恢复 WebSocket 订阅，防止路由切换返回后不再更新
+    // 注意：subscribeToTask 内部会检查订阅是否已存在，避免重复订阅
     try {
       schedulerTabs.value.forEach(tab => {
         if (tab.status === '运行' && tab.websocketId) {
-          logger.info('初始化阶段为运行的标签恢复订阅:', {
+          logger.info('初始化阶段检查运行中标签的订阅:', {
             key: tab.key,
             websocketId: tab.websocketId,
+            hasSubscription: !!tab.subscriptionId,
           })
+          // subscribeToTask 会自动跳过已有订阅，保持缓存标记不丢失
           subscribeToTask(tab)
         }
       })
@@ -1036,8 +1040,11 @@ export function useSchedulerLogic() {
     logger.info('[Scheduler Debug] WebSocket状态:', ws.status.value)
   }
 
-  // 清理函数
+  // 清理函数 - 由于keep-alive，这个函数只在组件真正销毁时调用
+  // 路由切换时不会调用，所以所有订阅都保持活跃
   const cleanup = () => {
+    logger.info('调度中心组件卸载，清理资源')
+
     // 清理倒计时器 - 已移至全局组件，这里保留以避免错误
     if (powerCountdownTimer) {
       clearInterval(powerCountdownTimer)
@@ -1048,17 +1055,26 @@ export function useSchedulerLogic() {
     window.removeEventListener('power-state-changed', handlePowerStateChanged)
     logger.info('已移除电源状态变更事件监听器')
 
-    // 清理全局WebSocket的消息处理函数
-    // 不再清理或重置导出的处理函数，保持使用者注册的处理逻辑永久有效
-
-    // 在组件卸载时，只取消非运行状态任务的订阅
-    // 运行任务的订阅将保持，以便在后台继续接收消息
+    // 注意：由于keep-alive机制，路由切换时组件不会卸载
+    // cleanup只在组件真正销毁时才会调用（如应用关闭）
+    // 所以这里清理所有订阅，包括运行中的任务
+    logger.info('清理所有WebSocket订阅')
     schedulerTabs.value.forEach(tab => {
-      if (tab.subscriptionId && tab.status !== '运行') {
-        ws.unsubscribe(tab.subscriptionId)
-        tab.subscriptionId = null // 清理订阅ID
+      if (tab.subscriptionId) {
+        logger.info('清理订阅:', {
+          key: tab.key,
+          status: tab.status,
+          subscriptionId: tab.subscriptionId,
+        })
+        try {
+          ws.unsubscribe(tab.subscriptionId)
+        } catch (error) {
+          logger.warn('清理订阅时发生错误:', error)
+        }
+        tab.subscriptionId = null
       }
     })
+
     saveTabsToStorage(schedulerTabs.value)
     // useLocalStorage 会自动同步 powerAction，无需手动保存
   }

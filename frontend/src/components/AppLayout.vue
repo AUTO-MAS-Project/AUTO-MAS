@@ -17,7 +17,11 @@
 
     <a-layout style="flex: 1; min-width: 0">
       <a-layout-content class="content-area">
-        <router-view />
+        <router-view v-slot="{ Component, route }">
+          <keep-alive :include="['Scheduler']">
+            <component :is="Component" :key="route.path" />
+          </keep-alive>
+        </router-view>
       </a-layout-content>
     </a-layout>
   </a-layout>
